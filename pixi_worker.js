@@ -1,20 +1,22 @@
+// pixi_worker.js - Rendering worker using PixiJS
+// Reads GameObject arrays and renders sprites
+
 importScripts("config.js");
-importScripts("sharedArrays.js");
-importScripts("pixi4webworkers.js");
 importScripts("gameObject.js");
-importScripts("boid.js");
+importScripts("pixi4webworkers.js");
 
 let FRAMENUM = 0;
 let app;
 let width, height, canvasWidth, canvasHeight, resolution, view;
-let arrays;
 let inputData;
 let cameraData;
-const bunnies = [];
+let entityCount = 0;
+const sprites = [];
 let lastTime = performance.now();
 let fps = 0;
 let mainContainer = new PIXI.Container();
 let pause = true;
+
 function getPosicionEnPantalla(x, y) {
   return {
     x: x * mainContainer.scale.x + mainContainer.x,
@@ -22,8 +24,7 @@ function getPosicionEnPantalla(x, y) {
   };
 }
 
-function isBunnyOnTheScreen(worldX, worldY) {
-  // Calculate the visible world area based on camera position and zoom
+function isSpriteOnTheScreen(worldX, worldY) {
   const pos = getPosicionEnPantalla(worldX, worldY);
   const marginX = canvasWidth * 0.25;
   const marginY = canvasHeight * 0.25;
@@ -46,6 +47,7 @@ function gameLoop(resuming = false) {
   lastTime = now;
   fps = 1000 / deltaTime;
   const dtRatio = resuming ? 1 : deltaTime / 16.67;
+
   // Read camera state from shared buffer
   const zoom = cameraData[0];
   const containerX = cameraData[1];
@@ -57,25 +59,25 @@ function gameLoop(resuming = false) {
   mainContainer.y = containerY;
 
   // Cache array references for performance
-  const x = arrays.x;
-  const y = arrays.y;
-  const rotation = arrays.rotation;
-  const scale = arrays.scale;
+  const x = GameObject.x;
+  const y = GameObject.y;
+  const rotation = GameObject.rotation;
+  const scale = GameObject.scale;
 
   // Update sprite positions
-  // This is cache-friendly! Sequential reads from x[], y[], rotation[]
-  for (let i = 0; i < ENTITY_COUNT; i++) {
-    const bunny = bunnies[i];
-    if (bunny) {
-      if (isBunnyOnTheScreen(x[i], y[i])) {
-        bunny.visible = true;
-        bunny.x = x[i];
-        bunny.y = y[i];
-        bunny.rotation = rotation[i];
-        bunny.scale.set(scale[i]);
-        bunny.zIndex = y[i];
+  // This is cache-friendly! Sequential reads from GameObject arrays
+  for (let i = 0; i < entityCount; i++) {
+    const sprite = sprites[i];
+    if (sprite) {
+      if (isSpriteOnTheScreen(x[i], y[i])) {
+        sprite.visible = true;
+        sprite.x = x[i];
+        sprite.y = y[i];
+        sprite.rotation = rotation[i];
+        sprite.scale.set(scale[i]);
+        sprite.zIndex = y[i];
       } else {
-        bunny.visible = false;
+        sprite.visible = false;
       }
     }
   }
@@ -88,9 +90,13 @@ function gameLoop(resuming = false) {
 
 async function initPIXI(data) {
   pause = false;
-  console.log("PIXI WORKER: Initializing PIXI with SharedArrayBuffer (SoA)");
+  console.log("PIXI WORKER: Initializing PIXI with GameObject arrays");
 
-  arrays = new BoidArrays(data.sharedBuffer);
+  entityCount = data.entityCount;
+
+  // Initialize GameObject arrays
+  GameObject.initializeArrays(data.gameObjectBuffer, entityCount);
+
   inputData = new Int32Array(data.inputBuffer);
   cameraData = new Float32Array(data.cameraBuffer);
 
@@ -109,7 +115,7 @@ async function initPIXI(data) {
     view,
     backgroundColor: 0x000000,
     // Performance optimizations
-    antialias: false, // Disable antialiasing for better performance
+    antialias: false,
     powerPreference: "high-performance",
   });
 
@@ -121,20 +127,20 @@ async function initPIXI(data) {
   app.stage.addChild(mainContainer);
   mainContainer.sortableChildren = true;
 
-  // Create sprites
-  for (let i = 0; i < ENTITY_COUNT; i++) {
-    const bunny = new PIXI.Sprite(texture);
-    bunny.anchor.set(0.5);
-    bunny.scale.set(arrays.scale[i]);
-    bunny.x = arrays.x[i];
-    bunny.y = arrays.y[i];
-    bunnies.push(bunny);
-    mainContainer.addChild(bunny);
+  // Create sprites for all entities
+  for (let i = 0; i < entityCount; i++) {
+    const sprite = new PIXI.Sprite(texture);
+    sprite.anchor.set(0.5);
+    sprite.scale.set(GameObject.scale[i]);
+    sprite.x = GameObject.x[i];
+    sprite.y = GameObject.y[i];
+    sprites.push(sprite);
+    mainContainer.addChild(sprite);
   }
 
-  console.log(`PIXI WORKER: Created ${ENTITY_COUNT} sprites`);
+  console.log(`PIXI WORKER: Created ${entityCount} sprites`);
 
-  // Start render loop - runs independently at ~60fps
+  // Start render loop
   app.ticker.add(gameLoop);
 }
 

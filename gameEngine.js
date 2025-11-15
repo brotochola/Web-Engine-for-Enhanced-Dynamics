@@ -1,5 +1,5 @@
 // GameEngine.js - Centralized game initialization and state management
-// Handles workers, SharedArrayBuffers, and input management
+// Handles workers, SharedArrayBuffers, class registration, and input management
 
 class GameEngine {
   constructor(config) {
@@ -7,7 +7,6 @@ class GameEngine {
       pause: false,
     };
     this.config = {
-      entityCount: config.entityCount || ENTITY_COUNT,
       canvasWidth: config.canvasWidth || CANVAS_WIDTH,
       canvasHeight: config.canvasHeight || CANVAS_HEIGHT,
       worldWidth: config.worldWidth || WIDTH,
@@ -35,6 +34,7 @@ class GameEngine {
 
     // Shared buffers
     this.buffers = {
+      gameObjectData: null,
       boidData: null,
       neighborData: null,
       inputData: null,
@@ -49,6 +49,11 @@ class GameEngine {
 
     // Canvas
     this.canvas = null;
+
+    // Entity registration
+    this.registeredClasses = []; // [{class, count, startIndex}, ...]
+    this.gameObjects = []; // All entity instances
+    this.totalEntityCount = 0;
 
     // Key mapping for input buffer
     this.keyMap = {
@@ -70,6 +75,30 @@ class GameEngine {
     this.updateRate = 1000 / 60; // 60 fps
   }
 
+  /**
+   * Register an entity class (e.g., Boid, Enemy)
+   * This calculates buffer sizes and tracks entity ranges
+   * @param {Class} EntityClass - The class to register (must extend GameObject)
+   * @param {number} count - Number of entities of this type
+   */
+  registerEntityClass(EntityClass, count) {
+    const startIndex = this.totalEntityCount;
+
+    this.registeredClasses.push({
+      class: EntityClass,
+      count: count,
+      startIndex: startIndex,
+    });
+
+    this.totalEntityCount += count;
+
+    console.log(
+      `✅ Registered ${
+        EntityClass.name
+      }: ${count} entities (indices ${startIndex}-${startIndex + count - 1})`
+    );
+  }
+
   // Initialize everything
   async init() {
     console.log("🎮 GameEngine: Initializing...");
@@ -85,6 +114,9 @@ class GameEngine {
     // Initialize canvas
     this.createCanvas();
 
+    // Create entity instances
+    this.createEntityInstances();
+
     // Create workers
     this.createWorkers();
 
@@ -97,7 +129,7 @@ class GameEngine {
     // Update boid count display
     const numberBoidsElement = document.getElementById("numberBoids");
     if (numberBoidsElement) {
-      numberBoidsElement.textContent = `Number of boids: ${this.config.entityCount}`;
+      numberBoidsElement.textContent = `Number of entities: ${this.totalEntityCount}`;
     }
 
     console.log("✅ GameEngine: Initialized successfully!");
@@ -105,25 +137,46 @@ class GameEngine {
 
   // Create all SharedArrayBuffers
   createSharedBuffers() {
-    const { entityCount, maxNeighbors } = this.config;
+    // GameObject buffer (transform + physics + perception)
+    const gameObjectBufferSize = GameObject.getBufferSize(
+      this.totalEntityCount
+    );
+    this.buffers.gameObjectData = new SharedArrayBuffer(gameObjectBufferSize);
+    GameObject.initializeArrays(
+      this.buffers.gameObjectData,
+      this.totalEntityCount
+    );
 
-    // Boid data buffer (Structure of Arrays)
-    const ARRAYS_COUNT = 8;
-    const BYTES_PER_ARRAY = entityCount * 4; // Float32
-    const TOTAL_BOID_BUFFER_SIZE = ARRAYS_COUNT * BYTES_PER_ARRAY;
-    this.buffers.boidData = new SharedArrayBuffer(TOTAL_BOID_BUFFER_SIZE);
+    // Initialize subclass buffers
+    for (const registration of this.registeredClasses) {
+      const { class: EntityClass, count } = registration;
+
+      if (EntityClass.getBufferSize && EntityClass.initializeArrays) {
+        const bufferSize = EntityClass.getBufferSize(count);
+        const buffer = new SharedArrayBuffer(bufferSize);
+
+        // Store buffer reference
+        if (EntityClass.name === "Boid") {
+          this.buffers.boidData = buffer;
+        }
+        // Add more entity types here as needed
+
+        EntityClass.initializeArrays(buffer, count);
+      }
+    }
 
     // Neighbor data buffer
-    const NEIGHBOR_BUFFER_SIZE = entityCount * (1 + maxNeighbors) * 4; // Int32
+    const NEIGHBOR_BUFFER_SIZE =
+      this.totalEntityCount * (1 + this.config.maxNeighbors) * 4;
     this.buffers.neighborData = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
 
     // Input buffer: [mouseX, mouseY, key0, key1, key2, ...]
-    const INPUT_BUFFER_SIZE = 32 * 4; // 32 Int32s
+    const INPUT_BUFFER_SIZE = 32 * 4;
     this.buffers.inputData = new SharedArrayBuffer(INPUT_BUFFER_SIZE);
     this.views.input = new Int32Array(this.buffers.inputData);
 
     // Camera buffer: [zoom, containerX, containerY]
-    const CAMERA_BUFFER_SIZE = 3 * 4; // 3 Float32s
+    const CAMERA_BUFFER_SIZE = 3 * 4;
     this.buffers.cameraData = new SharedArrayBuffer(CAMERA_BUFFER_SIZE);
     this.views.camera = new Float32Array(this.buffers.cameraData);
 
@@ -133,32 +186,28 @@ class GameEngine {
     this.views.camera[2] = 0; // containerY
 
     console.log(`✅ Created SharedArrayBuffers:`);
-    console.log(`   - Boid Data: ${TOTAL_BOID_BUFFER_SIZE} bytes`);
+    console.log(`   - GameObject Data: ${gameObjectBufferSize} bytes`);
+    if (this.buffers.boidData) {
+      console.log(`   - Boid Data: ${this.buffers.boidData.byteLength} bytes`);
+    }
     console.log(`   - Neighbor Data: ${NEIGHBOR_BUFFER_SIZE} bytes`);
     console.log(`   - Input Data: ${INPUT_BUFFER_SIZE} bytes`);
     console.log(`   - Camera Data: ${CAMERA_BUFFER_SIZE} bytes`);
-
-    // Initialize boid data with random values
-    this.initializeBoidData();
   }
 
-  // Initialize boid positions and velocities
-  initializeBoidData() {
-    const { entityCount, worldWidth, worldHeight } = this.config;
-    const arrays = new BoidArrays(this.buffers.boidData);
+  // Create entity instances and initialize their values
+  createEntityInstances() {
+    for (const registration of this.registeredClasses) {
+      const { class: EntityClass, count, startIndex } = registration;
 
-    for (let i = 0; i < entityCount; i++) {
-      arrays.x[i] = Math.random() * worldWidth;
-      arrays.y[i] = Math.random() * worldHeight;
-      arrays.vx[i] = (Math.random() - 0.5) * 2;
-      arrays.vy[i] = (Math.random() - 0.5) * 2;
-      arrays.ax[i] = 0;
-      arrays.ay[i] = 0;
-      arrays.rotation[i] = 0;
-      arrays.scale[i] = 0.45 + Math.random() * 0.15;
+      for (let i = 0; i < count; i++) {
+        const index = startIndex + i;
+        const entity = new EntityClass(index);
+        this.gameObjects[index] = entity;
+      }
+
+      console.log(`✅ Created ${count} ${EntityClass.name} instances`);
     }
-
-    console.log(`✅ Initialized ${entityCount} boids with random data`);
   }
 
   // Create canvas element
@@ -189,25 +238,34 @@ class GameEngine {
     // Initialize spatial worker
     this.workers.spatial.postMessage({
       msg: "init",
-      sharedBuffer: this.buffers.boidData,
+      gameObjectBuffer: this.buffers.gameObjectData,
       neighborBuffer: this.buffers.neighborData,
+      entityCount: this.totalEntityCount,
     });
 
     // Initialize logic worker
     this.workers.logic.postMessage({
       msg: "init",
-      sharedBuffer: this.buffers.boidData,
+      gameObjectBuffer: this.buffers.gameObjectData,
+      boidBuffer: this.buffers.boidData,
       neighborBuffer: this.buffers.neighborData,
       inputBuffer: this.buffers.inputData,
       cameraBuffer: this.buffers.cameraData,
+      entityCount: this.totalEntityCount,
+      registeredClasses: this.registeredClasses.map((r) => ({
+        name: r.class.name,
+        count: r.count,
+        startIndex: r.startIndex,
+      })),
     });
 
     // Initialize physics worker
     this.workers.physics.postMessage({
       msg: "init",
-      sharedBuffer: this.buffers.boidData,
+      gameObjectBuffer: this.buffers.gameObjectData,
       inputBuffer: this.buffers.inputData,
       cameraBuffer: this.buffers.cameraData,
+      entityCount: this.totalEntityCount,
     });
 
     // Initialize pixi worker (transfer canvas)
@@ -221,9 +279,10 @@ class GameEngine {
         canvasHeight: canvasHeight,
         resolution: 1,
         view: offscreenCanvas,
-        sharedBuffer: this.buffers.boidData,
+        gameObjectBuffer: this.buffers.gameObjectData,
         inputBuffer: this.buffers.inputData,
         cameraBuffer: this.buffers.cameraData,
+        entityCount: this.totalEntityCount,
       },
       [offscreenCanvas]
     );
@@ -275,11 +334,8 @@ class GameEngine {
     // Mouse events
     this.canvas.addEventListener("mousemove", (e) => {
       const rect = this.canvas.getBoundingClientRect();
-      // Convert screen coordinates to world coordinates
-      // 1. Get position relative to canvas
       const canvasX = e.clientX - rect.left;
       const canvasY = e.clientY - rect.top;
-      // 2. Convert to world space using camera transform
       this.mouse.x = (canvasX - this.camera.x) / this.camera.zoom;
       this.mouse.y = (canvasY - this.camera.y) / this.camera.zoom;
       this.updateInputBuffer();
@@ -303,12 +359,9 @@ class GameEngine {
   // Update input buffer with current input state
   updateInputBuffer() {
     const input = this.views.input;
-
-    // Mouse position (first 2 elements)
     input[0] = this.mouse.x;
     input[1] = this.mouse.y;
 
-    // Keyboard states (remaining elements)
     for (const [key, index] of Object.entries(this.keyMap)) {
       input[2 + index] = this.keyboard[key] ? 1 : 0;
     }
@@ -342,8 +395,6 @@ class GameEngine {
   // Main update function (60fps)
   update(deltaTime) {
     const dtRatio = deltaTime / 16.67;
-
-    // Update camera based on keyboard input
     const moveSpeed = (10 / this.camera.zoom) * dtRatio;
 
     if (this.keyboard.w || this.keyboard.arrowup) {
@@ -359,18 +410,15 @@ class GameEngine {
       this.camera.x -= moveSpeed;
     }
 
-    // Write camera state to shared buffer
     this.updateCameraBuffer();
   }
 
   // Cleanup
   destroy() {
-    // Terminate workers
     Object.values(this.workers).forEach((worker) => {
       if (worker) worker.terminate();
     });
 
-    // Remove canvas
     if (this.canvas && this.canvas.parentNode) {
       this.canvas.parentNode.removeChild(this.canvas);
     }
@@ -384,6 +432,7 @@ class GameEngine {
       if (worker) worker.postMessage({ msg: "pause" });
     });
   }
+
   resume() {
     this.state.pause = false;
     Object.values(this.workers).forEach((worker) => {

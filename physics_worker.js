@@ -1,34 +1,37 @@
 // physics_worker.js - Physics integration (velocity, position updates)
-// Separating physics from logic allows both to run in parallel
-importScripts("config.js");
-importScripts("sharedArrays.js");
+// Now uses per-entity maxVel, maxAcc, and friction from GameObject arrays
 
-// Physics constants
-const MAX_ACCELERATION = 0.5; // Prevent extreme accelerations
-const MAX_SPEED = 20; // Maximum velocity
-const MIN_SPEED = 1; // Minimum velocity (keep moving)
+importScripts("config.js");
+importScripts("gameObject.js");
 
 // Shared memory references
-let arrays;
 let inputData;
 let cameraData;
+let entityCount = 0;
 
 // Frame timing
 let FRAMENUM = 0;
 let lastTime = performance.now();
 let fps = 0;
 
+// Physics constants (fallback minimums)
+const MIN_SPEED = 1; // Minimum velocity (keep moving)
+
 /**
  * Initialize physics worker
  */
-function initPhysicsWorker(buffer, inputBuffer, camBuffer) {
+function initPhysicsWorker(gameObjectBuffer, inputBuffer, camBuffer, count) {
   console.log("PHYSICS WORKER: Initializing");
 
-  arrays = new BoidArrays(buffer);
+  entityCount = count;
+
+  // Initialize GameObject arrays
+  GameObject.initializeArrays(gameObjectBuffer, count);
+
   inputData = new Int32Array(inputBuffer);
   cameraData = new Float32Array(camBuffer);
 
-  console.log(`PHYSICS WORKER: Ready to integrate ${ENTITY_COUNT} entities`);
+  console.log(`PHYSICS WORKER: Ready to integrate ${count} entities`);
 
   gameLoop();
 }
@@ -36,6 +39,7 @@ function initPhysicsWorker(buffer, inputBuffer, camBuffer) {
 /**
  * Main physics loop
  * Integrates acceleration -> velocity -> position
+ * Now uses per-entity physics properties!
  */
 function gameLoop() {
   FRAMENUM++;
@@ -47,21 +51,25 @@ function gameLoop() {
   const dtRatio = deltaTime / 16.67;
 
   // Cache array references for better performance
-  const x = arrays.x;
-  const y = arrays.y;
-  const vx = arrays.vx;
-  const vy = arrays.vy;
-  const ax = arrays.ax;
-  const ay = arrays.ay;
-  const rotation = arrays.rotation;
+  const x = GameObject.x;
+  const y = GameObject.y;
+  const vx = GameObject.vx;
+  const vy = GameObject.vy;
+  const ax = GameObject.ax;
+  const ay = GameObject.ay;
+  const rotation = GameObject.rotation;
+  const maxVel = GameObject.maxVel;
+  const maxAcc = GameObject.maxAcc;
+  const friction = GameObject.friction;
 
   // Physics integration for all entities
-  // This loop is cache-friendly because we access arrays sequentially
-  for (let i = 0; i < ENTITY_COUNT; i++) {
-    // Step 1: Clamp acceleration to maximum
+  for (let i = 0; i < entityCount; i++) {
+    // Step 1: Clamp acceleration to entity's maximum
     const accel = Math.sqrt(ax[i] * ax[i] + ay[i] * ay[i]);
-    if (accel > MAX_ACCELERATION) {
-      const scale = MAX_ACCELERATION / accel;
+    const maxAcceleration = maxAcc[i];
+
+    if (accel > maxAcceleration && maxAcceleration > 0) {
+      const scale = maxAcceleration / accel;
       ax[i] *= scale;
       ay[i] *= scale;
     }
@@ -70,11 +78,19 @@ function gameLoop() {
     vx[i] += ax[i] * dtRatio;
     vy[i] += ay[i] * dtRatio;
 
-    // Step 3: Clamp velocity to min/max speed
-    const speed = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]);
+    // Step 3: Apply friction (if any)
+    if (friction[i] > 0) {
+      const frictionFactor = Math.pow(1 - friction[i], dtRatio);
+      vx[i] *= frictionFactor;
+      vy[i] *= frictionFactor;
+    }
 
-    if (speed > MAX_SPEED) {
-      const scale = MAX_SPEED / speed;
+    // Step 4: Clamp velocity to entity's min/max speed
+    const speed = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]);
+    const maxSpeed = maxVel[i];
+
+    if (speed > maxSpeed && maxSpeed > 0) {
+      const scale = maxSpeed / speed;
       vx[i] *= scale;
       vy[i] *= scale;
     } else if (speed < MIN_SPEED && speed > 0) {
@@ -83,14 +99,14 @@ function gameLoop() {
       vy[i] *= scale;
     }
 
-    // Step 4: Integrate velocity into position
+    // Step 5: Integrate velocity into position
     x[i] += vx[i] * dtRatio;
     y[i] += vy[i] * dtRatio;
 
-    // Step 5: Update sprite rotation to face direction of movement
+    // Step 6: Update sprite rotation to face direction of movement
     rotation[i] = Math.atan2(vy[i], vx[i]) + Math.PI / 2;
 
-    // Step 6: Clear acceleration (it will be recalculated next frame by logic worker)
+    // Step 7: Clear acceleration (will be recalculated next frame by logic worker)
     ax[i] = 0;
     ay[i] = 0;
   }
@@ -109,9 +125,10 @@ function gameLoop() {
 self.onmessage = (e) => {
   if (e.data.msg === "init") {
     initPhysicsWorker(
-      e.data.sharedBuffer,
+      e.data.gameObjectBuffer,
       e.data.inputBuffer,
-      e.data.cameraBuffer
+      e.data.cameraBuffer,
+      e.data.entityCount
     );
   }
 };

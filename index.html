@@ -53,18 +53,16 @@
     <p id="logicFPS">Logic Worker FPS: --</p>
     <p id="physicsFPS">Physics Worker FPS: --</p>
     <p id="renderFPS">Render Worker FPS: --</p>
-    <p id="numberBoids">Number of boids: 20000</p>
+    <p id="numberBoids">Number of entities: --</p>
     <p>Move camera with WASD or Arrow Keys, mousewheel to zoom in and out</p>
-    <script src="config.js"></script>
 
-    <script src="sharedArrays.js"></script>
-    <!-- <script src="gameObject.js"></script>
-    <script src="boid.js"></script> -->
+    <script src="config.js"></script>
+    <script src="gameObject.js"></script>
+    <script src="boid.js"></script>
     <script src="gameEngine.js"></script>
     <script>
-        // Simple initialization with GameEngine
+        // Initialize with GameEngine using class registration system
         const gameEngine = new GameEngine({
-            entityCount: ENTITY_COUNT,
             canvasWidth: CANVAS_WIDTH,
             canvasHeight: CANVAS_HEIGHT,
             worldWidth: WIDTH,
@@ -72,6 +70,15 @@
             maxNeighbors: MAX_NEIGHBORS_PER_ENTITY
         });
 
+        // Register entity classes
+        // This is where you define what entities exist and how many
+        gameEngine.registerEntityClass(Boid, ENTITY_COUNT);
+
+        // You can register more entity types here:
+        // gameEngine.registerEntityClass(Enemy, 500);
+        // gameEngine.registerEntityClass(Obstacle, 100);
+
+        // Initialize and start
         gameEngine.init().catch(error => {
             document.body.innerHTML = `
                 <div style="color: white; padding: 20px;">

@@ -1,29 +1,32 @@
 // Spatial Worker - Builds spatial hash grid and finds neighbors
-importScripts("config.js");
-importScripts("sharedArrays.js");
-importScripts("gameObject.js");
-importScripts("boid.js");
+// Now uses per-entity visual ranges and accurate distance checking
 
-let arrays;
+importScripts("config.js");
+importScripts("gameObject.js");
+
 let FRAMENUM = 0;
 let lastTime = performance.now();
 let fps = 0;
 let pause = true;
+let entityCount = 0;
 
 // Neighbor buffer layout:
-// For each boid: [count, id1, id2, ..., id_MAX]
-// Total size: ENTITY_COUNT * (1 + MAX_NEIGHBORS_PER_ENTITY) Int32s
+// For each entity: [count, id1, id2, ..., id_MAX]
 let neighborBuffer;
 let neighborData;
 
 // Spatial grid structure
-// Each cell contains a list of boid indices
+// Each cell contains a list of entity indices
 const grid = Array.from({ length: TOTAL_CELLS }, () => []);
 
-function initSpatialWorker(sharedBuffer, neighborsBuffer) {
+function initSpatialWorker(gameObjectBuffer, neighborsBuffer, count) {
   console.log("SPATIAL WORKER: Initializing with SharedArrayBuffer");
 
-  arrays = new BoidArrays(sharedBuffer);
+  entityCount = count;
+
+  // Initialize GameObject arrays
+  GameObject.initializeArrays(gameObjectBuffer, count);
+
   neighborBuffer = neighborsBuffer;
   neighborData = new Int32Array(neighborBuffer);
 
@@ -31,7 +34,10 @@ function initSpatialWorker(sharedBuffer, neighborsBuffer) {
     `SPATIAL WORKER: Grid is ${GRID_COLS}x${GRID_ROWS} = ${TOTAL_CELLS} cells`
   );
   console.log(
-    `SPATIAL WORKER: Max ${MAX_NEIGHBORS_PER_ENTITY} neighbors per boid`
+    `SPATIAL WORKER: Max ${MAX_NEIGHBORS_PER_ENTITY} neighbors per entity`
+  );
+  console.log(
+    `SPATIAL WORKER: Using per-entity visual ranges with accurate distance checking`
   );
 
   // Start the spatial partitioning loop
@@ -57,37 +63,45 @@ function rebuildGrid() {
     grid[i].length = 0;
   }
 
-  // Insert all boids into grid
-  const x = arrays.x;
-  const y = arrays.y;
+  // Insert all entities into grid
+  const x = GameObject.x;
+  const y = GameObject.y;
 
-  for (let i = 0; i < ENTITY_COUNT; i++) {
+  for (let i = 0; i < entityCount; i++) {
     const cellIndex = getCellIndex(x[i], y[i]);
     grid[cellIndex].push(i);
   }
 }
 
-// Find neighbors for all boids using spatial grid
+// Find neighbors for all entities using spatial grid
+// Now uses per-entity visual ranges and checks actual distances!
 function findAllNeighbors() {
-  const x = arrays.x;
-  const y = arrays.y;
-  const rangeSq = CELL_SIZE * 0.5 * (CELL_SIZE * 0.5);
+  const x = GameObject.x;
+  const y = GameObject.y;
+  const visualRange = GameObject.visualRange;
 
-  for (let i = 0; i < ENTITY_COUNT; i++) {
+  for (let i = 0; i < entityCount; i++) {
     const myX = x[i];
     const myY = y[i];
+    const myVisualRange = visualRange[i];
+    const visualRangeSq = myVisualRange * myVisualRange;
 
-    // Get cell coordinates
+    // Calculate how many cells we need to check based on visual range
+    // If visual range is 25 and cell size is 50, we check 1 cell in each direction (3x3)
+    // If visual range is 75 and cell size is 50, we check 2 cells in each direction (5x5)
+    const cellRadius = Math.ceil(myVisualRange / CELL_SIZE);
+
+    // Get entity's cell coordinates
     const col = Math.floor(myX / CELL_SIZE);
     const row = Math.floor(myY / CELL_SIZE);
 
-    // Buffer offset for this boid's neighbor list
+    // Buffer offset for this entity's neighbor list
     const offset = i * (1 + MAX_NEIGHBORS_PER_ENTITY);
     let neighborCount = 0;
 
-    // Check 3x3 grid around boid (9 cells total)
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
+    // Check grid cells within cellRadius
+    for (let dy = -cellRadius; dy <= cellRadius; dy++) {
+      for (let dx = -cellRadius; dx <= cellRadius; dx++) {
         const checkCol = col + dx;
         const checkRow = row + dy;
 
@@ -104,22 +118,26 @@ function findAllNeighbors() {
         const cellIndex = checkRow * GRID_COLS + checkCol;
         const cell = grid[cellIndex];
 
-        // Check all boids in this cell
+        // Check all entities in this cell
         for (let k = 0; k < cell.length; k++) {
           const j = cell[k];
 
+          // Skip self
           if (i === j) continue;
+
+          // Stop if we've hit the neighbor limit
           if (neighborCount >= MAX_NEIGHBORS_PER_ENTITY) break;
 
-          // const dx = x[j] - myX;
-          // const dy = y[j] - myY;
-          // const distSq = dx * dx + dy * dy;
+          // Calculate squared distance
+          const dx = x[j] - myX;
+          const dy = y[j] - myY;
+          const distSq = dx * dx + dy * dy;
 
-          // if (distSq < rangeSq) {
-          // Store neighbor ID
-          neighborData[offset + 1 + neighborCount] = j;
-          neighborCount++;
-          // }
+          // Only add if within visual range
+          if (distSq < visualRangeSq && distSq > 0) {
+            neighborData[offset + 1 + neighborCount] = j;
+            neighborCount++;
+          }
         }
 
         if (neighborCount >= MAX_NEIGHBORS_PER_ENTITY) break;
@@ -158,7 +176,11 @@ function gameLoop(resuming = false) {
 self.onmessage = (e) => {
   if (e.data.msg === "init") {
     pause = false;
-    initSpatialWorker(e.data.sharedBuffer, e.data.neighborBuffer);
+    initSpatialWorker(
+      e.data.gameObjectBuffer,
+      e.data.neighborBuffer,
+      e.data.entityCount
+    );
   }
   if (e.data.msg === "pause") {
     pause = true;
