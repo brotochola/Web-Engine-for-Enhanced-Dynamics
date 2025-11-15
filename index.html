@@ -1,9 +1,85 @@
 <!DOCTYPE html>
-<html lang="es">
-<head></head>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>PixiJS 8 - SharedArrayBuffer with 4 Workers (SoA + Spatial)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #111;
+            font-family: monospace;
+        }
 
+        canvas {
+            display: block;
+            width: 800px;
+            height: 600px;
+            border: 1px solid #333;
+        }
+
+        p {
+            color: white;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            margin: 5px 10px;
+        }
+
+        #config {
+            color: #4CAF50;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        #spatialFPS {
+            color: #a29bfe;
+        }
+
+        #logicFPS {
+            color: #ff6b6b;
+        }
+
+        #physicsFPS {
+            color: #4ecdc4;
+        }
+
+        #renderFPS {
+            color: #ffe66d;
+        }
+    </style>
+</head>
 <body>
+    <p id="config">Mode: SHARED ARRAY BUFFER (4 Workers) - Structure of Arrays + Spatial Hash</p>
+    <p id="spatialFPS">Spatial Worker FPS: --</p>
+    <p id="logicFPS">Logic Worker FPS: --</p>
+    <p id="physicsFPS">Physics Worker FPS: --</p>
+    <p id="renderFPS">Render Worker FPS: --</p>
+    <p id="numberBoids">Number of boids: 20000</p>
+    <p>Move camera with WASD or Arrow Keys, mousewheel to zoom in and out</p>
 
-</body>
+    <script src="front/boid.js"></script>
+    <script src="front/gameFramework.js"></script>
+    <script>
+        // Simple initialization with GameFramework
+        const game = new GameFramework({
+            entityCount: 20000,
+            canvasWidth: 800,
+            canvasHeight: 600,
+            worldWidth: 2200,
+            worldHeight: 1500
+        });
+
+        game.init().catch(error => {
+            document.body.innerHTML = `
+                <div style="color: white; padding: 20px;">
+                    <h1>Error initializing game!</h1>
+                    <p>${error.message}</p>
+                    <p>You need to serve this with proper CORS headers:</p>
+                    <pre>Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp</pre>
+                    <p>Use the provided server.js: <code>node server.js</code></p>
+                </div>
+            `;
+        });
+    </script>
 </body>
 </html>
