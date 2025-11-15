@@ -55,20 +55,24 @@
     <p id="renderFPS">Render Worker FPS: --</p>
     <p id="numberBoids">Number of boids: 20000</p>
     <p>Move camera with WASD or Arrow Keys, mousewheel to zoom in and out</p>
+    <script src="config.js"></script>
 
-    <script src="boid.js"></script>
-    <script src="gameFramework.js"></script>
+    <script src="sharedArrays.js"></script>
+    <!-- <script src="gameObject.js"></script>
+    <script src="boid.js"></script> -->
+    <script src="gameEngine.js"></script>
     <script>
-        // Simple initialization with GameFramework
-        const game = new GameFramework({
-            entityCount: 20000,
-            canvasWidth: 800,
-            canvasHeight: 600,
-            worldWidth: 2200,
-            worldHeight: 1500
+        // Simple initialization with GameEngine
+        const gameEngine = new GameEngine({
+            entityCount: ENTITY_COUNT,
+            canvasWidth: CANVAS_WIDTH,
+            canvasHeight: CANVAS_HEIGHT,
+            worldWidth: WIDTH,
+            worldHeight: HEIGHT,
+            maxNeighbors: MAX_NEIGHBORS_PER_ENTITY
         });
 
-        game.init().catch(error => {
+        gameEngine.init().catch(error => {
             document.body.innerHTML = `
                 <div style="color: white; padding: 20px;">
                     <h1>Error initializing game!</h1>

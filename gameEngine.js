@@ -1,15 +1,18 @@
-// GameFramework.js - Centralized game initialization and state management
+// GameEngine.js - Centralized game initialization and state management
 // Handles workers, SharedArrayBuffers, and input management
 
-class GameFramework {
+class GameEngine {
   constructor(config) {
+    this.state = {
+      pause: false,
+    };
     this.config = {
-      entityCount: config.entityCount || 20000,
-      canvasWidth: config.canvasWidth || 800,
-      canvasHeight: config.canvasHeight || 600,
-      worldWidth: config.worldWidth || 2200,
-      worldHeight: config.worldHeight || 1500,
-      maxNeighbors: config.maxNeighbors || 100,
+      entityCount: config.entityCount || ENTITY_COUNT,
+      canvasWidth: config.canvasWidth || CANVAS_WIDTH,
+      canvasHeight: config.canvasHeight || CANVAS_HEIGHT,
+      worldWidth: config.worldWidth || WIDTH,
+      worldHeight: config.worldHeight || HEIGHT,
+      maxNeighbors: config.maxNeighbors || MAX_NEIGHBORS_PER_ENTITY,
       ...config,
     };
 
@@ -69,7 +72,7 @@ class GameFramework {
 
   // Initialize everything
   async init() {
-    console.log("🎮 GameFramework: Initializing...");
+    console.log("🎮 GameEngine: Initializing...");
 
     // Check SharedArrayBuffer support
     if (typeof SharedArrayBuffer === "undefined") {
@@ -97,7 +100,7 @@ class GameFramework {
       numberBoidsElement.textContent = `Number of boids: ${this.config.entityCount}`;
     }
 
-    console.log("✅ GameFramework: Initialized successfully!");
+    console.log("✅ GameEngine: Initialized successfully!");
   }
 
   // Create all SharedArrayBuffers
@@ -372,11 +375,24 @@ class GameFramework {
       this.canvas.parentNode.removeChild(this.canvas);
     }
 
-    console.log("🔴 GameFramework destroyed");
+    console.log("🔴 GameEngine destroyed");
+  }
+
+  pause() {
+    this.state.pause = true;
+    Object.values(this.workers).forEach((worker) => {
+      if (worker) worker.postMessage({ msg: "pause" });
+    });
+  }
+  resume() {
+    this.state.pause = false;
+    Object.values(this.workers).forEach((worker) => {
+      if (worker) worker.postMessage({ msg: "resume" });
+    });
   }
 }
 
 // Export for use
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = GameFramework;
+  module.exports = GameEngine;
 }

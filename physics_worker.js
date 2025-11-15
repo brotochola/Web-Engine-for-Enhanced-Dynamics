@@ -1,26 +1,42 @@
-// Physics Worker - Integrates physics (SoA version)
-importScripts("boid.js");
+// physics_worker.js - Physics integration (velocity, position updates)
+// Separating physics from logic allows both to run in parallel
+importScripts("config.js");
+importScripts("sharedArrays.js");
 
+// Physics constants
+const MAX_ACCELERATION = 0.5; // Prevent extreme accelerations
+const MAX_SPEED = 20; // Maximum velocity
+const MIN_SPEED = 1; // Minimum velocity (keep moving)
+
+// Shared memory references
 let arrays;
 let inputData;
 let cameraData;
+
+// Frame timing
 let FRAMENUM = 0;
 let lastTime = performance.now();
 let fps = 0;
 
+/**
+ * Initialize physics worker
+ */
 function initPhysicsWorker(buffer, inputBuffer, camBuffer) {
-  console.log("PHYSICS WORKER: Initializing with SharedArrayBuffer (SoA)");
+  console.log("PHYSICS WORKER: Initializing");
 
   arrays = new BoidArrays(buffer);
   inputData = new Int32Array(inputBuffer);
   cameraData = new Float32Array(camBuffer);
 
-  console.log(`PHYSICS WORKER: Ready to process ${ENTITY_COUNT} boids`);
+  console.log(`PHYSICS WORKER: Ready to integrate ${ENTITY_COUNT} entities`);
 
-  // Start the physics loop
   gameLoop();
 }
 
+/**
+ * Main physics loop
+ * Integrates acceleration -> velocity -> position
+ */
 function gameLoop() {
   FRAMENUM++;
   const now = performance.now();
@@ -30,7 +46,7 @@ function gameLoop() {
 
   const dtRatio = deltaTime / 16.67;
 
-  // Cache-friendly sequential access!
+  // Cache array references for better performance
   const x = arrays.x;
   const y = arrays.y;
   const vx = arrays.vx;
@@ -39,44 +55,47 @@ function gameLoop() {
   const ay = arrays.ay;
   const rotation = arrays.rotation;
 
-  // Apply physics integration to all boids
+  // Physics integration for all entities
+  // This loop is cache-friendly because we access arrays sequentially
   for (let i = 0; i < ENTITY_COUNT; i++) {
-    // Limit acceleration
-    const acceleration = Math.sqrt(ax[i] * ax[i] + ay[i] * ay[i]);
-
-    if (acceleration > MAX_ACCELERATION) {
-      ax[i] = (ax[i] / acceleration) * MAX_ACCELERATION;
-      ay[i] = (ay[i] / acceleration) * MAX_ACCELERATION;
+    // Step 1: Clamp acceleration to maximum
+    const accel = Math.sqrt(ax[i] * ax[i] + ay[i] * ay[i]);
+    if (accel > MAX_ACCELERATION) {
+      const scale = MAX_ACCELERATION / accel;
+      ax[i] *= scale;
+      ay[i] *= scale;
     }
 
-    // Apply acceleration to velocity
+    // Step 2: Integrate acceleration into velocity
     vx[i] += ax[i] * dtRatio;
     vy[i] += ay[i] * dtRatio;
 
-    // Limit speed
+    // Step 3: Clamp velocity to min/max speed
     const speed = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]);
 
     if (speed > MAX_SPEED) {
-      vx[i] = (vx[i] / speed) * MAX_SPEED;
-      vy[i] = (vy[i] / speed) * MAX_SPEED;
+      const scale = MAX_SPEED / speed;
+      vx[i] *= scale;
+      vy[i] *= scale;
     } else if (speed < MIN_SPEED && speed > 0) {
-      vx[i] = (vx[i] / speed) * MIN_SPEED;
-      vy[i] = (vy[i] / speed) * MIN_SPEED;
+      const scale = MIN_SPEED / speed;
+      vx[i] *= scale;
+      vy[i] *= scale;
     }
 
-    // Apply velocity to position
+    // Step 4: Integrate velocity into position
     x[i] += vx[i] * dtRatio;
     y[i] += vy[i] * dtRatio;
 
-    // Update rotation
+    // Step 5: Update sprite rotation to face direction of movement
     rotation[i] = Math.atan2(vy[i], vx[i]) + Math.PI / 2;
 
-    // Clear acceleration (so it's not re-applied next frame)
+    // Step 6: Clear acceleration (it will be recalculated next frame by logic worker)
     ax[i] = 0;
     ay[i] = 0;
   }
 
-  // Log FPS every 30 frames
+  // Report FPS
   if (FRAMENUM % 30 === 0) {
     self.postMessage({ msg: "fps", fps: fps.toFixed(2) });
   }
@@ -84,6 +103,9 @@ function gameLoop() {
   requestAnimationFrame(gameLoop);
 }
 
+/**
+ * Message handler
+ */
 self.onmessage = (e) => {
   if (e.data.msg === "init") {
     initPhysicsWorker(

@@ -1,4 +1,7 @@
+importScripts("config.js");
+importScripts("sharedArrays.js");
 importScripts("pixi4webworkers.js");
+importScripts("gameObject.js");
 importScripts("boid.js");
 
 let FRAMENUM = 0;
@@ -11,7 +14,7 @@ const bunnies = [];
 let lastTime = performance.now();
 let fps = 0;
 let mainContainer = new PIXI.Container();
-
+let pause = true;
 function getPosicionEnPantalla(x, y) {
   return {
     x: x * mainContainer.scale.x + mainContainer.x,
@@ -35,13 +38,14 @@ function isBunnyOnTheScreen(worldX, worldY) {
   return false;
 }
 
-function gameLoop() {
+function gameLoop(resuming = false) {
+  if (pause) return;
   FRAMENUM++;
   const now = performance.now();
   const deltaTime = now - lastTime;
   lastTime = now;
   fps = 1000 / deltaTime;
-
+  const dtRatio = resuming ? 1 : deltaTime / 16.67;
   // Read camera state from shared buffer
   const zoom = cameraData[0];
   const containerX = cameraData[1];
@@ -83,6 +87,7 @@ function gameLoop() {
 }
 
 async function initPIXI(data) {
+  pause = false;
   console.log("PIXI WORKER: Initializing PIXI with SharedArrayBuffer (SoA)");
 
   arrays = new BoidArrays(data.sharedBuffer);
@@ -135,6 +140,14 @@ async function initPIXI(data) {
 
 self.onmessage = (e) => {
   if (e.data.msg === "init") {
+    pause = false;
     initPIXI(e.data);
+  }
+  if (e.data.msg === "pause") {
+    pause = true;
+  }
+  if (e.data.msg === "resume") {
+    pause = false;
+    gameLoop(true);
   }
 };
