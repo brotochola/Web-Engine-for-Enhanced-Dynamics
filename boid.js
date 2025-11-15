@@ -75,16 +75,16 @@ class Boid extends GameObject {
     GameObject.ax[i] = 0;
     GameObject.ay[i] = 0;
     GameObject.rotation[i] = 0;
-    GameObject.scale[i] = 0.45 + Math.random() * 0.15;
+    GameObject.scale[i] = 1;
 
     // Initialize GameObject physics properties
-    GameObject.maxVel[i] = 20; // Maximum speed
-    GameObject.maxAcc[i] = Math.random(); // Maximum acceleration
-    GameObject.friction[i] = Math.random(); // No friction for boids
-    GameObject.radius[i] = Math.random() * 5 + 1; // Collision radius
+    GameObject.maxVel[i] = 10;
+    GameObject.maxAcc[i] = 0.2;
+    GameObject.friction[i] = 0.01;
+    GameObject.radius[i] = 10;
 
     // Initialize GameObject perception
-    GameObject.visualRange[i] = Math.random() * 15 + 15; // How far boid can see
+    GameObject.visualRange[i] = 50; // How far boid can see
 
     // Initialize Boid-specific behavior properties (with slight randomization)
     Boid.protectedRange[i] = GameObject.radius[i] * 2; // Minimum distance from others
@@ -221,11 +221,11 @@ class Boid extends GameObject {
     const dy = myY - mouseY;
     const dist2 = dx * dx + dy * dy;
 
-    if (dist2 < 1e-4 || dist2 > 10000) return;
+    if (dist2 < 1e-4 || dist2 > 100000) return;
 
-    const strength = 4;
-    GameObject.ax[i] += (dx / dist2) * strength * dtRatio;
-    GameObject.ay[i] += (dy / dist2) * strength * dtRatio;
+    const strength = 1004545000;
+    GameObject.ax[i] = (dx / dist2) * strength * dtRatio;
+    GameObject.ay[i] = (dy / dist2) * strength * dtRatio;
   }
 
   /**

@@ -20,7 +20,7 @@ class GameEngine {
     this.mouse = { x: 0, y: 0 };
     this.camera = {
       zoom: 1,
-      x: 0,
+      x: 0, // Will be centered on world after init
       y: 0,
     };
 
@@ -182,8 +182,17 @@ class GameEngine {
 
     // Initialize camera buffer
     this.views.camera[0] = 1; // zoom
-    this.views.camera[1] = 0; // containerX
-    this.views.camera[2] = 0; // containerY
+
+    // Center camera on world
+    const worldCenterX =
+      this.config.worldWidth / 2 - this.config.canvasWidth / 2;
+    const worldCenterY =
+      this.config.worldHeight / 2 - this.config.canvasHeight / 2;
+    this.camera.x = worldCenterX;
+    this.camera.y = worldCenterY;
+
+    this.views.camera[1] = this.camera.x; // containerX
+    this.views.camera[2] = this.camera.y; // containerY
 
     console.log(`✅ Created SharedArrayBuffers:`);
     console.log(`   - GameObject Data: ${gameObjectBufferSize} bytes`);
@@ -223,14 +232,14 @@ class GameEngine {
   }
 
   // Create and initialize all workers
-  createWorkers() {
+  async createWorkers() {
     const { canvasWidth, canvasHeight, worldWidth, worldHeight } = this.config;
 
     // Create workers
     this.workers.spatial = new Worker("spatial_worker.js");
     this.workers.logic = new Worker("logic_worker.js");
     this.workers.physics = new Worker("physics_worker.js");
-    this.workers.pixi = new Worker("pixi_worker.js");
+    this.workers.threejs = new Worker("threejs_worker.js");
 
     // Setup FPS monitoring
     this.setupWorkerFPSMonitoring();
@@ -268,23 +277,36 @@ class GameEngine {
       entityCount: this.totalEntityCount,
     });
 
-    // Initialize pixi worker (transfer canvas)
+    // Load texture in main thread (workers can't access document)
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src =
+        "https://brotochola.github.io/render_from_webworkers_and_multithreading/1.png";
+    });
+
+    // Convert to ImageBitmap (transferable to worker)
+    const imageBitmap = await createImageBitmap(img);
+
+    // Initialize threejs worker (transfer canvas and texture)
     const offscreenCanvas = this.canvas.transferControlToOffscreen();
-    this.workers.pixi.postMessage(
+    this.workers.threejs.postMessage(
       {
         msg: "init",
         width: worldWidth,
         height: worldHeight,
         canvasWidth: canvasWidth,
         canvasHeight: canvasHeight,
-        resolution: 1,
         view: offscreenCanvas,
+        textureBitmap: imageBitmap,
         gameObjectBuffer: this.buffers.gameObjectData,
         inputBuffer: this.buffers.inputData,
         cameraBuffer: this.buffers.cameraData,
         entityCount: this.totalEntityCount,
       },
-      [offscreenCanvas]
+      [offscreenCanvas, imageBitmap] // Transfer both
     );
 
     console.log("✅ Created and initialized 4 workers");
@@ -311,7 +333,7 @@ class GameEngine {
       if (e.data.msg === "fps") updateFPS("physicsFPS", e.data.fps);
     };
 
-    this.workers.pixi.onmessage = (e) => {
+    this.workers.threejs.onmessage = (e) => {
       if (e.data.msg === "fps") updateFPS("renderFPS", e.data.fps);
     };
   }
@@ -331,13 +353,17 @@ class GameEngine {
       this.updateInputBuffer();
     });
 
-    // Mouse events
+    // Mouse events - convert canvas pixels to world coordinates
     this.canvas.addEventListener("mousemove", (e) => {
       const rect = this.canvas.getBoundingClientRect();
       const canvasX = e.clientX - rect.left;
       const canvasY = e.clientY - rect.top;
-      this.mouse.x = (canvasX - this.camera.x) / this.camera.zoom;
-      this.mouse.y = (canvasY - this.camera.y) / this.camera.zoom;
+
+      // Convert to world coordinates (Y-down system)
+      // World position = (canvas position + camera position) / zoom
+      this.mouse.x = canvasX / this.camera.zoom + this.camera.x;
+      this.mouse.y = canvasY / this.camera.zoom + this.camera.y;
+
       this.updateInputBuffer();
     });
 
@@ -346,12 +372,8 @@ class GameEngine {
       "wheel",
       (e) => {
         e.preventDefault();
-        const prevZoom = this.camera.zoom;
         this.camera.zoom += -e.deltaY * 0.001;
         this.camera.zoom = Math.max(0.1, Math.min(5, this.camera.zoom));
-        const zoomDelta = this.camera.zoom - prevZoom;
-        this.camera.x -= this.mouse.x * zoomDelta;
-        this.camera.y -= this.mouse.y * zoomDelta;
         this.updateCameraBuffer();
       },
       { passive: false }
@@ -399,7 +421,7 @@ class GameEngine {
   // Main update function (60fps)
   update(deltaTime) {
     const dtRatio = deltaTime / 16.67;
-    const moveSpeed = (10 / this.camera.zoom) * dtRatio;
+    const moveSpeed = (-10 / this.camera.zoom) * dtRatio;
 
     if (this.keyboard.w || this.keyboard.arrowup) {
       this.camera.y += moveSpeed;
