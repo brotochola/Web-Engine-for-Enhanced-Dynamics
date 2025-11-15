@@ -175,10 +175,10 @@ class GameFramework {
     const { canvasWidth, canvasHeight, worldWidth, worldHeight } = this.config;
 
     // Create workers
-    this.workers.spatial = new Worker("front/spatial_worker.js");
-    this.workers.logic = new Worker("front/logic_worker.js");
-    this.workers.physics = new Worker("front/physics_worker.js");
-    this.workers.pixi = new Worker("front/pixi_worker.js");
+    this.workers.spatial = new Worker("spatial_worker.js");
+    this.workers.logic = new Worker("logic_worker.js");
+    this.workers.physics = new Worker("physics_worker.js");
+    this.workers.pixi = new Worker("pixi_worker.js");
 
     // Setup FPS monitoring
     this.setupWorkerFPSMonitoring();
