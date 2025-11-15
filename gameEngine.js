@@ -346,8 +346,12 @@ class GameEngine {
       "wheel",
       (e) => {
         e.preventDefault();
+        const prevZoom = this.camera.zoom;
         this.camera.zoom += -e.deltaY * 0.001;
         this.camera.zoom = Math.max(0.1, Math.min(5, this.camera.zoom));
+        const zoomDelta = this.camera.zoom - prevZoom;
+        this.camera.x -= this.mouse.x * zoomDelta;
+        this.camera.y -= this.mouse.y * zoomDelta;
         this.updateCameraBuffer();
       },
       { passive: false }

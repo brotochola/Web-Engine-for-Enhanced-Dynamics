@@ -79,15 +79,15 @@ class Boid extends GameObject {
 
     // Initialize GameObject physics properties
     GameObject.maxVel[i] = 20; // Maximum speed
-    GameObject.maxAcc[i] = 0.5; // Maximum acceleration
-    GameObject.friction[i] = 0; // No friction for boids
-    GameObject.radius[i] = 5; // Collision radius
+    GameObject.maxAcc[i] = Math.random(); // Maximum acceleration
+    GameObject.friction[i] = Math.random(); // No friction for boids
+    GameObject.radius[i] = Math.random() * 5 + 1; // Collision radius
 
     // Initialize GameObject perception
-    GameObject.visualRange[i] = 25; // How far boid can see
+    GameObject.visualRange[i] = Math.random() * 15 + 15; // How far boid can see
 
     // Initialize Boid-specific behavior properties (with slight randomization)
-    Boid.protectedRange[i] = 7; // Minimum distance from others
+    Boid.protectedRange[i] = GameObject.radius[i] * 2; // Minimum distance from others
     Boid.centeringFactor[i] = 0.001; // Cohesion strength
     Boid.avoidFactor[i] = 0.3; // Separation strength
     Boid.matchingFactor[i] = 0.1; // Alignment strength
