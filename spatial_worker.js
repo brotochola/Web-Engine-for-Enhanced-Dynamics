@@ -75,11 +75,15 @@ class SpatialWorker extends AbstractWorker {
       this.grid[i].length = 0;
     }
 
-    // Insert all entities into grid
+    // Insert only active entities into grid
+    const active = GameObject.active;
     const x = GameObject.x;
     const y = GameObject.y;
 
     for (let i = 0; i < this.entityCount; i++) {
+      // Skip inactive entities - they don't participate in spatial queries
+      if (!active[i]) continue;
+
       const cellIndex = this.getCellIndex(x[i], y[i]);
       this.grid[cellIndex].push(i);
     }
@@ -90,11 +94,15 @@ class SpatialWorker extends AbstractWorker {
    * Uses per-entity visual ranges and checks actual distances
    */
   findAllNeighbors() {
+    const active = GameObject.active;
     const x = GameObject.x;
     const y = GameObject.y;
     const visualRange = GameObject.visualRange;
 
     for (let i = 0; i < this.entityCount; i++) {
+      // Skip inactive entities - they don't need neighbor updates
+      if (!active[i]) continue;
+
       this.findNeighborsForEntity(i, x, y, visualRange);
     }
   }

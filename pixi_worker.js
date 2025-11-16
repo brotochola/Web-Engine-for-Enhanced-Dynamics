@@ -80,6 +80,7 @@ class PixiRenderer extends AbstractWorker {
    */
   updateSprites() {
     // Cache array references for performance
+    const active = GameObject.active;
     const x = GameObject.x;
     const y = GameObject.y;
     const rotation = GameObject.rotation;
@@ -90,6 +91,12 @@ class PixiRenderer extends AbstractWorker {
     for (let i = 0; i < this.entityCount; i++) {
       const sprite = this.sprites[i];
       if (sprite) {
+        // Hide inactive entities immediately - skip visibility and transform calculations
+        if (!active[i]) {
+          sprite.visible = false;
+          continue;
+        }
+
         if (this.isSpriteVisible(x[i], y[i])) {
           sprite.visible = true;
           sprite.x = x[i];

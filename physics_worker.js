@@ -41,6 +41,7 @@ class PhysicsWorker extends AbstractWorker {
    */
   update(deltaTime, dtRatio, resuming) {
     // Cache array references for better performance
+    const active = GameObject.active;
     const x = GameObject.x;
     const y = GameObject.y;
     const vx = GameObject.vx;
@@ -54,6 +55,9 @@ class PhysicsWorker extends AbstractWorker {
 
     // Physics integration for all entities
     for (let i = 0; i < this.entityCount; i++) {
+      // Skip inactive entities - saves expensive physics calculations
+      if (!active[i]) continue;
+
       this.integrateEntity(
         i,
         dtRatio,

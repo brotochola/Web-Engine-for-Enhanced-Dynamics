@@ -4,8 +4,8 @@ const ENTITY_COUNT = 30000;
 // World and canvas dimensions
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
-const WIDTH = 6200;
-const HEIGHT = 4500;
+const WIDTH = CANVAS_WIDTH * 5;
+const HEIGHT = CANVAS_HEIGHT * 5;
 
 // Spatial hash grid configuration
 const CELL_SIZE = 50; // Each cell covers the visual range

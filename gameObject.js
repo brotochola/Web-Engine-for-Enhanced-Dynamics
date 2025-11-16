@@ -24,6 +24,10 @@ class GameObject {
 
   // Perception arrays
   static visualRange = null;
+
+  // State arrays
+  static active = null;
+
   static instances = [];
 
   /**
@@ -36,43 +40,48 @@ class GameObject {
     this.sharedBuffer = buffer;
     this.entityCount = count;
 
-    const ARRAYS_COUNT = 14; // Total number of arrays
-    const BYTES_PER_ARRAY = count * 4; // Float32 = 4 bytes
+    const ARRAYS_COUNT = 15; // Total number of arrays (14 Float32 + 1 Uint8)
+    const BYTES_PER_FLOAT_ARRAY = count * 4; // Float32 = 4 bytes
+    const BYTES_PER_UINT8_ARRAY = count * 1; // Uint8 = 1 byte
 
     // Create typed array views for each property
     let offset = 0;
 
     // Transform
     this.x = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
+    offset += BYTES_PER_FLOAT_ARRAY;
     this.y = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
+    offset += BYTES_PER_FLOAT_ARRAY;
     this.vx = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
+    offset += BYTES_PER_FLOAT_ARRAY;
     this.vy = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
+    offset += BYTES_PER_FLOAT_ARRAY;
     this.ax = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
+    offset += BYTES_PER_FLOAT_ARRAY;
     this.ay = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
+    offset += BYTES_PER_FLOAT_ARRAY;
     this.rotation = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
+    offset += BYTES_PER_FLOAT_ARRAY;
     this.scale = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
+    offset += BYTES_PER_FLOAT_ARRAY;
 
     // Physics
     this.maxVel = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
+    offset += BYTES_PER_FLOAT_ARRAY;
     this.maxAcc = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
+    offset += BYTES_PER_FLOAT_ARRAY;
     this.friction = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
+    offset += BYTES_PER_FLOAT_ARRAY;
     this.radius = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
+    offset += BYTES_PER_FLOAT_ARRAY;
 
     // Perception
     this.visualRange = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
+    offset += BYTES_PER_FLOAT_ARRAY;
+
+    // State
+    this.active = new Uint8Array(buffer, offset, count);
+    offset += BYTES_PER_UINT8_ARRAY;
 
     // console.log(
     //   `GameObject: Initialized ${ARRAYS_COUNT} arrays for ${count} entities (${offset} bytes total)`
@@ -85,8 +94,9 @@ class GameObject {
    * @returns {number} Buffer size in bytes
    */
   static getBufferSize(count) {
-    const ARRAYS_COUNT = 14;
-    return ARRAYS_COUNT * count * 4; // Float32 = 4 bytes
+    const FLOAT32_ARRAYS = 14;
+    const UINT8_ARRAYS = 1;
+    return FLOAT32_ARRAYS * count * 4 + UINT8_ARRAYS * count * 1;
   }
 
   /**
@@ -96,7 +106,7 @@ class GameObject {
    */
   constructor(index) {
     this.index = index;
-    this.active = true;
+    GameObject.active[index] = 1; // Set active in shared array (1 = true, 0 = false)
     GameObject.instances.push(this);
   }
 
@@ -123,6 +133,39 @@ class GameObject {
   }
   get vy() {
     return GameObject.vy[this.index];
+  }
+  get ax() {
+    return GameObject.ax[this.index];
+  }
+  get ay() {
+    return GameObject.ay[this.index];
+  }
+  get rotation() {
+    return GameObject.rotation[this.index];
+  }
+  get scale() {
+    return GameObject.scale[this.index];
+  }
+  get maxVel() {
+    return GameObject.maxVel[this.index];
+  }
+  get maxAcc() {
+    return GameObject.maxAcc[this.index];
+  }
+  get friction() {
+    return GameObject.friction[this.index];
+  }
+  get radius() {
+    return GameObject.radius[this.index];
+  }
+  get visualRange() {
+    return GameObject.visualRange[this.index];
+  }
+  get active() {
+    return GameObject.active[this.index];
+  }
+  set active(value) {
+    GameObject.active[this.index] = value ? 1 : 0;
   }
 }
 
