@@ -64,13 +64,23 @@
     <script src="gameEngine.js"></script>
     <script>
         // Initialize with GameEngine using class registration system
-        const gameEngine = new GameEngine({
-            canvasWidth: CANVAS_WIDTH,
-            canvasHeight: CANVAS_HEIGHT,
-            worldWidth: WIDTH,
-            worldHeight: HEIGHT,
-            maxNeighbors: MAX_NEIGHBORS_PER_ENTITY
-        });
+        const gameEngine = new GameEngine(
+            {
+                canvasWidth: CANVAS_WIDTH,
+                canvasHeight: CANVAS_HEIGHT,
+                worldWidth: WIDTH,
+                worldHeight: HEIGHT,
+                maxNeighbors: MAX_NEIGHBORS_PER_ENTITY
+            },
+            {
+                bunny: "1.png",
+                bg: "fondo.jpg",
+                light: "white_gradient_256.png"
+            }
+        );
+
+
+
 
         // Register entity classes
         // This is where you define what entities exist and how many

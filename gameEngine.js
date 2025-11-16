@@ -2,7 +2,8 @@
 // Handles workers, SharedArrayBuffers, class registration, and input management
 
 class GameEngine {
-  constructor(config) {
+  constructor(config, imageUrls) {
+    this.imageUrls = imageUrls;
     this.state = {
       pause: false,
     };
@@ -231,15 +232,8 @@ class GameEngine {
     // );
   }
 
-  async preloadAssets() {
+  async preloadAssets(imageUrls) {
     // Define your image URLs with their names
-    const imageUrls = {
-      bunny: "1.png",
-      // Add more images here:
-      bg: "fondo.jpg",
-      // playerSprite: "path/to/player.png",
-      // enemySprite: "path/to/enemy.png",
-    };
 
     const loadedTextures = {};
 
@@ -279,7 +273,7 @@ class GameEngine {
     this.workers.renderer = new Worker("pixi_worker.js");
 
     // Preload assets before initializing workers
-    const preloadedAssets = await this.preloadAssets();
+    const preloadedAssets = await this.preloadAssets(this.imageUrls);
 
     // Setup FPS monitoring
     this.setupWorkerFPSMonitoring();
