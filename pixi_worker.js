@@ -78,7 +78,7 @@ function gameLoop(resuming = false) {
         sprite.y = y[i];
         sprite.rotation = rotation[i];
         sprite.scale.set(scale[i]);
-        // sprite.zIndex = y[i];
+        sprite.zIndex = y[i];
       } else {
         sprite.visible = false;
       }

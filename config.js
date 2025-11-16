@@ -1,5 +1,5 @@
 //Config.js
-const ENTITY_COUNT = 50000;
+const ENTITY_COUNT = 30000;
 
 // World and canvas dimensions
 const CANVAS_WIDTH = 800;
