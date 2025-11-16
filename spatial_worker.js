@@ -70,7 +70,7 @@ class SpatialWorker extends AbstractWorker {
    * Clear and rebuild spatial grid
    */
   rebuildGrid() {
-    // Clear all cells
+    // Clear all cells efficiently - reuse arrays to avoid memory churn
     for (let i = 0; i < TOTAL_CELLS; i++) {
       this.grid[i].length = 0;
     }
@@ -130,10 +130,10 @@ class SpatialWorker extends AbstractWorker {
     let neighborCount = 0;
 
     // Check grid cells within cellRadius
-    for (let dy = -cellRadius; dy <= cellRadius; dy++) {
-      for (let dx = -cellRadius; dx <= cellRadius; dx++) {
-        const checkCol = col + dx;
-        const checkRow = row + dy;
+    for (let rowOffset = -cellRadius; rowOffset <= cellRadius; rowOffset++) {
+      for (let colOffset = -cellRadius; colOffset <= cellRadius; colOffset++) {
+        const checkCol = col + colOffset;
+        const checkRow = row + rowOffset;
 
         // Skip if out of bounds
         if (
@@ -147,9 +147,13 @@ class SpatialWorker extends AbstractWorker {
 
         const cellIndex = checkRow * GRID_COLS + checkCol;
         const cell = this.grid[cellIndex];
+        const cellLength = cell.length;
+
+        // Skip empty cells - common case optimization
+        if (cellLength === 0) continue;
 
         // Check all entities in this cell
-        for (let k = 0; k < cell.length; k++) {
+        for (let k = 0; k < cellLength; k++) {
           const j = cell[k];
 
           // Skip self
@@ -158,10 +162,10 @@ class SpatialWorker extends AbstractWorker {
           // Stop if we've hit the neighbor limit
           if (neighborCount >= MAX_NEIGHBORS_PER_ENTITY) break;
 
-          // Calculate squared distance
-          const dx = x[j] - myX;
-          const dy = y[j] - myY;
-          const distSq = dx * dx + dy * dy;
+          // Calculate squared distance (fixed variable names to avoid shadowing)
+          const deltaX = x[j] - myX;
+          const deltaY = y[j] - myY;
+          const distSq = deltaX * deltaX + deltaY * deltaY;
 
           // Only add if within visual range
           if (distSq < visualRangeSq && distSq > 0) {

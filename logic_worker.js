@@ -32,7 +32,7 @@ class LogicWorker extends AbstractWorker {
   initialize(data) {
     console.log("LOGIC WORKER: Initializing with GameObject pattern");
 
-    // Initialize common buffers from AbstractWorker
+    // Initialize common buffers from AbstractWorker (includes neighborBuffer now)
     this.initializeCommonBuffers(data);
 
     // Store registered classes
@@ -46,8 +46,8 @@ class LogicWorker extends AbstractWorker {
       // Add more entity types here as needed
     }
 
-    // Initialize neighbor data
-    this.neighborData = new Int32Array(data.neighborBuffer);
+    // Keep a reference to neighbor data for tick() calls
+    this.neighborData = GameObject.neighborData;
 
     // Create GameObject instances
     this.createGameObjectInstances();

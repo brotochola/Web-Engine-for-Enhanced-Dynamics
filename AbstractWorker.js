@@ -139,7 +139,11 @@ class AbstractWorker {
 
     // Initialize GameObject arrays if buffer provided
     if (data.gameObjectBuffer) {
-      GameObject.initializeArrays(data.gameObjectBuffer, this.entityCount);
+      GameObject.initializeArrays(
+        data.gameObjectBuffer,
+        this.entityCount,
+        data.neighborBuffer // Automatically initialize neighbor data
+      );
     }
 
     // Initialize common shared buffers

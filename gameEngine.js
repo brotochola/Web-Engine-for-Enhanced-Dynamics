@@ -142,9 +142,17 @@ class GameEngine {
       this.totalEntityCount
     );
     this.buffers.gameObjectData = new SharedArrayBuffer(gameObjectBufferSize);
+
+    // Neighbor data buffer (create before initializing GameObject)
+    const NEIGHBOR_BUFFER_SIZE =
+      this.totalEntityCount * (1 + this.config.maxNeighbors) * 4;
+    this.buffers.neighborData = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
+
+    // Initialize GameObject with neighbor buffer
     GameObject.initializeArrays(
       this.buffers.gameObjectData,
-      this.totalEntityCount
+      this.totalEntityCount,
+      this.buffers.neighborData
     );
 
     // Initialize subclass buffers
@@ -164,11 +172,6 @@ class GameEngine {
         EntityClass.initializeArrays(buffer, count);
       }
     }
-
-    // Neighbor data buffer
-    const NEIGHBOR_BUFFER_SIZE =
-      this.totalEntityCount * (1 + this.config.maxNeighbors) * 4;
-    this.buffers.neighborData = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
 
     // Input buffer: [mouseX, mouseY, key0, key1, key2, ...]
     const INPUT_BUFFER_SIZE = 32 * 4;

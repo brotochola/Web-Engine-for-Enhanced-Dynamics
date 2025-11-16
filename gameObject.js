@@ -28,6 +28,9 @@ class GameObject {
   // State arrays
   static active = null;
 
+  // Neighbor data (from spatial worker)
+  static neighborData = null;
+
   static instances = [];
 
   /**
@@ -35,8 +38,9 @@ class GameObject {
    * Called by GameEngine and by each worker
    * @param {SharedArrayBuffer} buffer - The shared memory
    * @param {number} count - Total number of entities
+   * @param {SharedArrayBuffer} [neighborBuffer] - Optional neighbor data buffer
    */
-  static initializeArrays(buffer, count) {
+  static initializeArrays(buffer, count, neighborBuffer = null) {
     this.sharedBuffer = buffer;
     this.entityCount = count;
 
@@ -82,6 +86,11 @@ class GameObject {
     // State
     this.active = new Uint8Array(buffer, offset, count);
     offset += BYTES_PER_UINT8_ARRAY;
+
+    // Initialize neighbor data if provided
+    if (neighborBuffer) {
+      this.neighborData = new Int32Array(neighborBuffer);
+    }
 
     // console.log(
     //   `GameObject: Initialized ${ARRAYS_COUNT} arrays for ${count} entities (${offset} bytes total)`
@@ -166,6 +175,26 @@ class GameObject {
   }
   set active(value) {
     GameObject.active[this.index] = value ? 1 : 0;
+  }
+
+  /**
+   * Get neighbors for this entity from the spatial worker's neighbor data
+   * @returns {number[]} Array of neighbor indices
+   */
+  get neighbors() {
+    if (!GameObject.neighborData) return [];
+
+    // Neighbor buffer layout: For each entity: [count, id1, id2, ..., id_MAX]
+    const offset = this.index * (1 + MAX_NEIGHBORS_PER_ENTITY);
+    const count = GameObject.neighborData[offset];
+
+    // Extract neighbor indices
+    const neighbors = [];
+    for (let i = 0; i < count; i++) {
+      neighbors.push(GameObject.neighborData[offset + 1 + i]);
+    }
+
+    return neighbors;
   }
 }
 

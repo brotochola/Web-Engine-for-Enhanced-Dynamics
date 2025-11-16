@@ -104,6 +104,30 @@ class Boid extends GameObject {
       Boid.protectedRange[i] * Boid.protectedRange[i];
   }
 
+  get protectedRange() {
+    return Boid.protectedRange[this.index];
+  }
+
+  get centeringFactor() {
+    return Boid.centeringFactor[this.index];
+  }
+
+  get avoidFactor() {
+    return Boid.avoidFactor[this.index];
+  }
+
+  get matchingFactor() {
+    return Boid.matchingFactor[this.index];
+  }
+
+  get turnFactor() {
+    return Boid.turnFactor[this.index];
+  }
+
+  get margin() {
+    return Boid.margin[this.index];
+  }
+
   /**
    * Main update - applies all boid rules
    * The spatial worker has already found neighbors for us!
