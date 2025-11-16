@@ -74,9 +74,9 @@ class GameObject {
     this.visualRange = new Float32Array(buffer, offset, count);
     offset += BYTES_PER_ARRAY;
 
-    console.log(
-      `GameObject: Initialized ${ARRAYS_COUNT} arrays for ${count} entities (${offset} bytes total)`
-    );
+    // console.log(
+    //   `GameObject: Initialized ${ARRAYS_COUNT} arrays for ${count} entities (${offset} bytes total)`
+    // );
   }
 
   /**

@@ -92,16 +92,16 @@ class GameEngine {
 
     this.totalEntityCount += count;
 
-    console.log(
-      `✅ Registered ${
-        EntityClass.name
-      }: ${count} entities (indices ${startIndex}-${startIndex + count - 1})`
-    );
+    // console.log(
+    //   `✅ Registered ${
+    //     EntityClass.name
+    //   }: ${count} entities (indices ${startIndex}-${startIndex + count - 1})`
+    // );
   }
 
   // Initialize everything
   async init() {
-    console.log("🎮 GameEngine: Initializing...");
+    // console.log("🎮 GameEngine: Initializing...");
 
     // Check SharedArrayBuffer support
     if (typeof SharedArrayBuffer === "undefined") {
@@ -132,7 +132,7 @@ class GameEngine {
       numberBoidsElement.textContent = `Number of entities: ${this.totalEntityCount}`;
     }
 
-    console.log("✅ GameEngine: Initialized successfully!");
+    // console.log("✅ GameEngine: Initialized successfully!");
   }
 
   // Create all SharedArrayBuffers
@@ -194,14 +194,14 @@ class GameEngine {
     this.views.camera[1] = this.camera.x; // containerX
     this.views.camera[2] = this.camera.y; // containerY
 
-    console.log(`✅ Created SharedArrayBuffers:`);
-    console.log(`   - GameObject Data: ${gameObjectBufferSize} bytes`);
-    if (this.buffers.boidData) {
-      console.log(`   - Boid Data: ${this.buffers.boidData.byteLength} bytes`);
-    }
-    console.log(`   - Neighbor Data: ${NEIGHBOR_BUFFER_SIZE} bytes`);
-    console.log(`   - Input Data: ${INPUT_BUFFER_SIZE} bytes`);
-    console.log(`   - Camera Data: ${CAMERA_BUFFER_SIZE} bytes`);
+    // console.log(`✅ Created SharedArrayBuffers:`);
+    // console.log(`   - GameObject Data: ${gameObjectBufferSize} bytes`);
+    // if (this.buffers.boidData) {
+    //   console.log(`   - Boid Data: ${this.buffers.boidData.byteLength} bytes`);
+    // }
+    // console.log(`   - Neighbor Data: ${NEIGHBOR_BUFFER_SIZE} bytes`);
+    // console.log(`   - Input Data: ${INPUT_BUFFER_SIZE} bytes`);
+    // console.log(`   - Camera Data: ${CAMERA_BUFFER_SIZE} bytes`);
   }
 
   // Create entity instances and initialize their values
@@ -215,7 +215,7 @@ class GameEngine {
         this.gameObjects[index] = entity;
       }
 
-      console.log(`✅ Created ${count} ${EntityClass.name} instances`);
+      // console.log(`✅ Created ${count} ${EntityClass.name} instances`);
     }
   }
 
@@ -226,9 +226,46 @@ class GameEngine {
     this.canvas.height = this.config.canvasHeight;
     document.body.appendChild(this.canvas);
 
-    console.log(
-      `✅ Created canvas: ${this.config.canvasWidth}x${this.config.canvasHeight}`
-    );
+    // console.log(
+    //   `✅ Created canvas: ${this.config.canvasWidth}x${this.config.canvasHeight}`
+    // );
+  }
+
+  async preloadAssets() {
+    // Define your image URLs with their names
+    const imageUrls = {
+      bunny: "1.png",
+      // Add more images here:
+      bg: "fondo.jpg",
+      // playerSprite: "path/to/player.png",
+      // enemySprite: "path/to/enemy.png",
+    };
+
+    const loadedTextures = {};
+
+    // Load all images in parallel
+    const loadPromises = Object.entries(imageUrls).map(async ([name, url]) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = url;
+      });
+
+      // Convert to ImageBitmap (transferable to worker)
+      const imageBitmap = await createImageBitmap(img);
+      loadedTextures[name] = imageBitmap;
+
+      // console.log(`✅ Loaded texture: ${name}`);
+    });
+
+    // Wait for all images to load
+    await Promise.all(loadPromises);
+
+    // console.log(`✅ Preloaded ${Object.keys(loadedTextures).length} textures`);
+    return loadedTextures;
   }
 
   // Create and initialize all workers
@@ -240,6 +277,9 @@ class GameEngine {
     this.workers.logic = new Worker("logic_worker.js");
     this.workers.physics = new Worker("physics_worker.js");
     this.workers.renderer = new Worker("pixi_worker.js");
+
+    // Preload assets before initializing workers
+    const preloadedAssets = await this.preloadAssets();
 
     // Setup FPS monitoring
     this.setupWorkerFPSMonitoring();
@@ -277,21 +317,12 @@ class GameEngine {
       entityCount: this.totalEntityCount,
     });
 
-    // Load texture in main thread (workers can't access document)
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    await new Promise((resolve, reject) => {
-      img.onload = resolve;
-      img.onerror = reject;
-      img.src =
-        "https://brotochola.github.io/render_from_webworkers_and_multithreading/1.png";
-    });
-
-    // Convert to ImageBitmap (transferable to worker)
-    const imageBitmap = await createImageBitmap(img);
-
-    // Initialize threejs worker (transfer canvas and texture)
+    // Initialize renderer worker (transfer canvas and all textures)
     const offscreenCanvas = this.canvas.transferControlToOffscreen();
+
+    // Create array of all ImageBitmaps to transfer
+    const texturesToTransfer = Object.values(preloadedAssets);
+
     this.workers.renderer.postMessage(
       {
         msg: "init",
@@ -300,16 +331,16 @@ class GameEngine {
         canvasWidth: canvasWidth,
         canvasHeight: canvasHeight,
         view: offscreenCanvas,
-        textureBitmap: imageBitmap,
+        textures: preloadedAssets, // Send as object with named keys
         gameObjectBuffer: this.buffers.gameObjectData,
         inputBuffer: this.buffers.inputData,
         cameraBuffer: this.buffers.cameraData,
         entityCount: this.totalEntityCount,
       },
-      [offscreenCanvas, imageBitmap] // Transfer both
+      [offscreenCanvas, ...texturesToTransfer] // Transfer canvas and all textures
     );
 
-    console.log("✅ Created and initialized 4 workers");
+    // console.log("✅ Created and initialized 4 workers");
   }
 
   // Setup FPS monitoring for workers
@@ -394,7 +425,7 @@ class GameEngine {
       { passive: false }
     );
 
-    console.log("✅ Setup event listeners");
+    // console.log("✅ Setup event listeners");
   }
 
   // Update input buffer with current input state
@@ -430,7 +461,7 @@ class GameEngine {
     };
 
     requestAnimationFrame(loop);
-    console.log("✅ Started main loop");
+    // console.log("✅ Started main loop");
   }
 
   // Main update function (60fps)
@@ -464,7 +495,7 @@ class GameEngine {
       this.canvas.parentNode.removeChild(this.canvas);
     }
 
-    console.log("🔴 GameEngine destroyed");
+    // console.log("🔴 GameEngine destroyed");
   }
 
   pause() {

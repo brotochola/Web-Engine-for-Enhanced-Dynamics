@@ -3,84 +3,106 @@
 
 importScripts("config.js");
 importScripts("gameObject.js");
+importScripts("AbstractWorker.js");
 
-let FRAMENUM = 0;
-let lastTime = performance.now();
-let fps = 0;
-let pause = true;
-let entityCount = 0;
+/**
+ * SpatialWorker - Handles spatial partitioning and neighbor detection
+ * Uses a spatial hash grid to efficiently find nearby entities
+ * Extends AbstractWorker for common worker functionality
+ */
+class SpatialWorker extends AbstractWorker {
+  constructor(selfRef) {
+    super(selfRef);
 
-// Neighbor buffer layout:
-// For each entity: [count, id1, id2, ..., id_MAX]
-let neighborBuffer;
-let neighborData;
+    // Neighbor buffer layout: For each entity: [count, id1, id2, ..., id_MAX]
+    this.neighborBuffer = null;
+    this.neighborData = null;
 
-// Spatial grid structure
-// Each cell contains a list of entity indices
-const grid = Array.from({ length: TOTAL_CELLS }, () => []);
+    // Spatial grid structure - each cell contains a list of entity indices
+    this.grid = Array.from({ length: TOTAL_CELLS }, () => []);
 
-function initSpatialWorker(gameObjectBuffer, neighborsBuffer, count) {
-  console.log("SPATIAL WORKER: Initializing with SharedArrayBuffer");
-
-  entityCount = count;
-
-  // Initialize GameObject arrays
-  GameObject.initializeArrays(gameObjectBuffer, count);
-
-  neighborBuffer = neighborsBuffer;
-  neighborData = new Int32Array(neighborBuffer);
-
-  console.log(
-    `SPATIAL WORKER: Grid is ${GRID_COLS}x${GRID_ROWS} = ${TOTAL_CELLS} cells`
-  );
-  console.log(
-    `SPATIAL WORKER: Max ${MAX_NEIGHBORS_PER_ENTITY} neighbors per entity`
-  );
-  console.log(
-    `SPATIAL WORKER: Using per-entity visual ranges with accurate distance checking`
-  );
-
-  // Start the spatial partitioning loop
-  gameLoop();
-}
-
-// Get cell index from position
-function getCellIndex(x, y) {
-  const col = Math.floor(x / CELL_SIZE);
-  const row = Math.floor(y / CELL_SIZE);
-
-  // Clamp to grid bounds
-  const clampedCol = Math.max(0, Math.min(GRID_COLS - 1, col));
-  const clampedRow = Math.max(0, Math.min(GRID_ROWS - 1, row));
-
-  return clampedRow * GRID_COLS + clampedCol;
-}
-
-// Clear and rebuild spatial grid
-function rebuildGrid() {
-  // Clear all cells
-  for (let i = 0; i < TOTAL_CELLS; i++) {
-    grid[i].length = 0;
+    // Update frequency (rebuild grid every N frames)
+    this.spatialUpdateInterval = 2;
   }
 
-  // Insert all entities into grid
-  const x = GameObject.x;
-  const y = GameObject.y;
+  /**
+   * Initialize spatial worker (implementation of AbstractWorker.initialize)
+   */
+  initialize(data) {
+    // console.log("SPATIAL WORKER: Initializing with SharedArrayBuffer");
 
-  for (let i = 0; i < entityCount; i++) {
-    const cellIndex = getCellIndex(x[i], y[i]);
-    grid[cellIndex].push(i);
+    // Initialize common buffers from AbstractWorker
+    this.initializeCommonBuffers(data);
+
+    // Initialize neighbor buffer
+    this.neighborBuffer = data.neighborBuffer;
+    this.neighborData = new Int32Array(this.neighborBuffer);
+
+    // console.log(
+    //   `SPATIAL WORKER: Grid is ${GRID_COLS}x${GRID_ROWS} = ${TOTAL_CELLS} cells`
+    // );
+    // console.log(
+    //   `SPATIAL WORKER: Max ${MAX_NEIGHBORS_PER_ENTITY} neighbors per entity`
+    // );
+    // console.log(
+    //   `SPATIAL WORKER: Using per-entity visual ranges with accurate distance checking`
+    // );
+
+    // Start the spatial partitioning loop
+    this.startGameLoop();
   }
-}
 
-// Find neighbors for all entities using spatial grid
-// Now uses per-entity visual ranges and checks actual distances!
-function findAllNeighbors() {
-  const x = GameObject.x;
-  const y = GameObject.y;
-  const visualRange = GameObject.visualRange;
+  /**
+   * Get cell index from world position
+   */
+  getCellIndex(x, y) {
+    const col = Math.floor(x / CELL_SIZE);
+    const row = Math.floor(y / CELL_SIZE);
 
-  for (let i = 0; i < entityCount; i++) {
+    // Clamp to grid bounds
+    const clampedCol = Math.max(0, Math.min(GRID_COLS - 1, col));
+    const clampedRow = Math.max(0, Math.min(GRID_ROWS - 1, row));
+
+    return clampedRow * GRID_COLS + clampedCol;
+  }
+
+  /**
+   * Clear and rebuild spatial grid
+   */
+  rebuildGrid() {
+    // Clear all cells
+    for (let i = 0; i < TOTAL_CELLS; i++) {
+      this.grid[i].length = 0;
+    }
+
+    // Insert all entities into grid
+    const x = GameObject.x;
+    const y = GameObject.y;
+
+    for (let i = 0; i < this.entityCount; i++) {
+      const cellIndex = this.getCellIndex(x[i], y[i]);
+      this.grid[cellIndex].push(i);
+    }
+  }
+
+  /**
+   * Find neighbors for all entities using spatial grid
+   * Uses per-entity visual ranges and checks actual distances
+   */
+  findAllNeighbors() {
+    const x = GameObject.x;
+    const y = GameObject.y;
+    const visualRange = GameObject.visualRange;
+
+    for (let i = 0; i < this.entityCount; i++) {
+      this.findNeighborsForEntity(i, x, y, visualRange);
+    }
+  }
+
+  /**
+   * Find neighbors for a single entity
+   */
+  findNeighborsForEntity(i, x, y, visualRange) {
     const myX = x[i];
     const myY = y[i];
     const myVisualRange = visualRange[i];
@@ -116,7 +138,7 @@ function findAllNeighbors() {
         }
 
         const cellIndex = checkRow * GRID_COLS + checkCol;
-        const cell = grid[cellIndex];
+        const cell = this.grid[cellIndex];
 
         // Check all entities in this cell
         for (let k = 0; k < cell.length; k++) {
@@ -135,7 +157,7 @@ function findAllNeighbors() {
 
           // Only add if within visual range
           if (distSq < visualRangeSq && distSq > 0) {
-            neighborData[offset + 1 + neighborCount] = j;
+            this.neighborData[offset + 1 + neighborCount] = j;
             neighborCount++;
           }
         }
@@ -146,47 +168,20 @@ function findAllNeighbors() {
     }
 
     // Store neighbor count at the beginning
-    neighborData[offset] = neighborCount;
+    this.neighborData[offset] = neighborCount;
+  }
+
+  /**
+   * Update method called each frame (implementation of AbstractWorker.update)
+   */
+  update(deltaTime, dtRatio, resuming) {
+    // Rebuild spatial grid and find neighbors every N frames
+    if (this.frameNumber % this.spatialUpdateInterval === 0) {
+      this.rebuildGrid();
+      this.findAllNeighbors();
+    }
   }
 }
 
-function gameLoop(resuming = false) {
-  if (pause) return;
-  FRAMENUM++;
-  const now = performance.now();
-  const deltaTime = now - lastTime;
-  lastTime = now;
-  fps = 1000 / deltaTime;
-  const dtRatio = resuming ? 1 : deltaTime / 16.67;
-
-  // Rebuild spatial grid and find neighbors every 2 frames
-  if (FRAMENUM % 2 === 0) {
-    rebuildGrid();
-    findAllNeighbors();
-  }
-
-  // Log FPS every 30 frames
-  if (FRAMENUM % 30 === 0) {
-    self.postMessage({ msg: "fps", fps: fps.toFixed(2) });
-  }
-
-  requestAnimationFrame(gameLoop);
-}
-
-self.onmessage = (e) => {
-  if (e.data.msg === "init") {
-    pause = false;
-    initSpatialWorker(
-      e.data.gameObjectBuffer,
-      e.data.neighborBuffer,
-      e.data.entityCount
-    );
-  }
-  if (e.data.msg === "pause") {
-    pause = true;
-  }
-  if (e.data.msg === "resume") {
-    pause = false;
-    gameLoop(true);
-  }
-};
+// Create singleton instance and setup message handler
+const spatialWorker = new SpatialWorker(self);

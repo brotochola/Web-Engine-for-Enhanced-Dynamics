@@ -4,121 +4,92 @@
 // Import dependencies
 importScripts("config.js");
 importScripts("gameObject.js");
+importScripts("AbstractWorker.js");
 importScripts("boid.js");
 
-// Shared memory references
-let neighborData; // Int32Array - precomputed neighbors from spatial worker
-let inputData; // Int32Array - mouse and keyboard input
-let cameraData; // Float32Array - camera position and zoom
-
-// Game objects - one per entity
-let gameObjects = [];
-let entityCount = 0;
-
-// Frame timing and FPS tracking
-let FRAMENUM = 0;
-let lastTime = performance.now();
-let fps = 0;
-
 /**
- * Initialize the logic worker
- * Sets up shared memory and creates GameObject instances
+ * LogicWorker - Handles game logic and AI for all entities
+ * Extends AbstractWorker for common worker functionality
  */
-function initLogicWorker(
-  gameObjectBuffer,
-  boidBuffer,
-  neighborsBuffer,
-  inputBuffer,
-  camBuffer,
-  count,
-  registeredClasses
-) {
-  console.log("LOGIC WORKER: Initializing with GameObject pattern");
+class LogicWorker extends AbstractWorker {
+  constructor(selfRef) {
+    super(selfRef);
 
-  entityCount = count;
+    // Game objects - one per entity
+    this.gameObjects = [];
 
-  // Initialize GameObject arrays
-  GameObject.initializeArrays(gameObjectBuffer, count);
+    // Neighbor data from spatial worker
+    this.neighborData = null;
 
-  // Initialize subclass arrays
-  for (const classInfo of registeredClasses) {
-    if (classInfo.name === "Boid") {
-      Boid.initializeArrays(boidBuffer, classInfo.count);
-    }
-    // Add more entity types here as needed
+    // Registered entity classes information
+    this.registeredClasses = [];
   }
 
-  neighborData = new Int32Array(neighborsBuffer);
-  inputData = new Int32Array(inputBuffer);
-  cameraData = new Float32Array(camBuffer);
+  /**
+   * Initialize the logic worker (implementation of AbstractWorker.initialize)
+   * Sets up shared memory and creates GameObject instances
+   */
+  initialize(data) {
+    console.log("LOGIC WORKER: Initializing with GameObject pattern");
 
-  // Create GameObject instances
-  // Each GameObject just holds its index - data stays in shared arrays!
-  for (const classInfo of registeredClasses) {
-    const { name, count, startIndex } = classInfo;
+    // Initialize common buffers from AbstractWorker
+    this.initializeCommonBuffers(data);
 
-    if (name === "Boid") {
-      for (let i = 0; i < count; i++) {
-        const index = startIndex + i;
-        gameObjects[index] = new Boid(index);
+    // Store registered classes
+    this.registeredClasses = data.registeredClasses || [];
+
+    // Initialize subclass arrays
+    for (const classInfo of this.registeredClasses) {
+      if (classInfo.name === "Boid") {
+        Boid.initializeArrays(data.boidBuffer, classInfo.count);
       }
-      console.log(`LOGIC WORKER: Created ${count} Boid GameObjects`);
+      // Add more entity types here as needed
     }
-    // Add more entity types here as needed
+
+    // Initialize neighbor data
+    this.neighborData = new Int32Array(data.neighborBuffer);
+
+    // Create GameObject instances
+    this.createGameObjectInstances();
+
+    console.log(`LOGIC WORKER: Total ${this.entityCount} GameObjects ready`);
+
+    // Start the game loop
+    this.startGameLoop();
   }
 
-  console.log(`LOGIC WORKER: Total ${entityCount} GameObjects ready`);
+  /**
+   * Create GameObject instances for all registered entity classes
+   */
+  createGameObjectInstances() {
+    for (const classInfo of this.registeredClasses) {
+      const { name, count, startIndex } = classInfo;
 
-  // Start the game loop
-  gameLoop();
-}
-
-/**
- * Main game loop - runs every frame
- * Calls tick() on all game objects
- */
-function gameLoop() {
-  FRAMENUM++;
-
-  // Calculate delta time
-  const now = performance.now();
-  const deltaTime = now - lastTime;
-  lastTime = now;
-  fps = 1000 / deltaTime;
-
-  // Normalize delta time to 60fps (16.67ms per frame)
-  const dtRatio = deltaTime / 16.67;
-
-  // Tick all game objects
-  // Each GameObject applies its logic, reading/writing directly to shared arrays
-  for (let i = 0; i < entityCount; i++) {
-    if (gameObjects[i] && gameObjects[i].active) {
-      gameObjects[i].tick(dtRatio, neighborData, inputData);
+      if (name === "Boid") {
+        for (let i = 0; i < count; i++) {
+          const index = startIndex + i;
+          this.gameObjects[index] = new Boid(index);
+        }
+        // console.log(`LOGIC WORKER: Created ${count} Boid GameObjects`);
+      }
+      // Add more entity types here as needed
     }
   }
 
-  // Report FPS to main thread every 30 frames
-  if (FRAMENUM % 30 === 0) {
-    self.postMessage({ msg: "fps", fps: fps.toFixed(2) });
+  /**
+   * Update method called each frame (implementation of AbstractWorker.update)
+   * Calls tick() on all game objects
+   */
+  update(deltaTime, dtRatio, resuming) {
+    // Tick all game objects
+    // Each GameObject applies its logic, reading/writing directly to shared arrays
+    for (let i = 0; i < this.entityCount; i++) {
+      if (this.gameObjects[i] && this.gameObjects[i].active) {
+        this.gameObjects[i].tick(dtRatio, this.neighborData, this.inputData);
+      }
+    }
   }
-
-  // Schedule next frame
-  requestAnimationFrame(gameLoop);
 }
 
-/**
- * Message handler - receives initialization data from main thread
- */
-self.onmessage = (e) => {
-  if (e.data.msg === "init") {
-    initLogicWorker(
-      e.data.gameObjectBuffer,
-      e.data.boidBuffer,
-      e.data.neighborBuffer,
-      e.data.inputBuffer,
-      e.data.cameraBuffer,
-      e.data.entityCount,
-      e.data.registeredClasses
-    );
-  }
-};
+// Create singleton instance and setup message handler
+const logicWorker = new LogicWorker(self);

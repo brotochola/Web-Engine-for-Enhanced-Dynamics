@@ -42,9 +42,9 @@ class Boid extends GameObject {
     this.margin = new Float32Array(buffer, offset, count);
     offset += BYTES_PER_ARRAY;
 
-    console.log(
-      `Boid: Initialized ${ARRAYS_COUNT} arrays for ${count} boids (${offset} bytes total)`
-    );
+    // console.log(
+    //   `Boid: Initialized ${ARRAYS_COUNT} arrays for ${count} boids (${offset} bytes total)`
+    // );
   }
 
   /**

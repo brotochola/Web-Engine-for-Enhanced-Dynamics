@@ -3,67 +3,91 @@
 
 importScripts("config.js");
 importScripts("gameObject.js");
-
-// Shared memory references
-let inputData;
-let cameraData;
-let entityCount = 0;
-
-// Frame timing
-let FRAMENUM = 0;
-let lastTime = performance.now();
-let fps = 0;
-
-// Physics constants (fallback minimums)
-const MIN_SPEED = 1; // Minimum velocity (keep moving)
+importScripts("AbstractWorker.js");
 
 /**
- * Initialize physics worker
- */
-function initPhysicsWorker(gameObjectBuffer, inputBuffer, camBuffer, count) {
-  console.log("PHYSICS WORKER: Initializing");
-
-  entityCount = count;
-
-  // Initialize GameObject arrays
-  GameObject.initializeArrays(gameObjectBuffer, count);
-
-  inputData = new Int32Array(inputBuffer);
-  cameraData = new Float32Array(camBuffer);
-
-  console.log(`PHYSICS WORKER: Ready to integrate ${count} entities`);
-
-  gameLoop();
-}
-
-/**
- * Main physics loop
+ * PhysicsWorker - Handles physics integration for all entities
  * Integrates acceleration -> velocity -> position
- * Now uses per-entity physics properties!
+ * Extends AbstractWorker for common worker functionality
  */
-function gameLoop() {
-  FRAMENUM++;
-  const now = performance.now();
-  const deltaTime = now - lastTime;
-  lastTime = now;
-  fps = 1000 / deltaTime;
+class PhysicsWorker extends AbstractWorker {
+  constructor(selfRef) {
+    super(selfRef);
 
-  const dtRatio = deltaTime / 16.67;
+    // Physics constants
+    this.MIN_SPEED = 1; // Minimum velocity (keep moving)
+  }
 
-  // Cache array references for better performance
-  const x = GameObject.x;
-  const y = GameObject.y;
-  const vx = GameObject.vx;
-  const vy = GameObject.vy;
-  const ax = GameObject.ax;
-  const ay = GameObject.ay;
-  const rotation = GameObject.rotation;
-  const maxVel = GameObject.maxVel;
-  const maxAcc = GameObject.maxAcc;
-  const friction = GameObject.friction;
+  /**
+   * Initialize physics worker (implementation of AbstractWorker.initialize)
+   */
+  initialize(data) {
+    console.log("PHYSICS WORKER: Initializing");
 
-  // Physics integration for all entities
-  for (let i = 0; i < entityCount; i++) {
+    // Initialize common buffers from AbstractWorker
+    this.initializeCommonBuffers(data);
+
+    console.log(
+      `PHYSICS WORKER: Ready to integrate ${this.entityCount} entities`
+    );
+
+    // Start the game loop
+    this.startGameLoop();
+  }
+
+  /**
+   * Update method called each frame (implementation of AbstractWorker.update)
+   * Performs physics integration for all entities
+   */
+  update(deltaTime, dtRatio, resuming) {
+    // Cache array references for better performance
+    const x = GameObject.x;
+    const y = GameObject.y;
+    const vx = GameObject.vx;
+    const vy = GameObject.vy;
+    const ax = GameObject.ax;
+    const ay = GameObject.ay;
+    const rotation = GameObject.rotation;
+    const maxVel = GameObject.maxVel;
+    const maxAcc = GameObject.maxAcc;
+    const friction = GameObject.friction;
+
+    // Physics integration for all entities
+    for (let i = 0; i < this.entityCount; i++) {
+      this.integrateEntity(
+        i,
+        dtRatio,
+        x,
+        y,
+        vx,
+        vy,
+        ax,
+        ay,
+        rotation,
+        maxVel,
+        maxAcc,
+        friction
+      );
+    }
+  }
+
+  /**
+   * Integrate physics for a single entity
+   */
+  integrateEntity(
+    i,
+    dtRatio,
+    x,
+    y,
+    vx,
+    vy,
+    ax,
+    ay,
+    rotation,
+    maxVel,
+    maxAcc,
+    friction
+  ) {
     // Step 1: Clamp acceleration to entity's maximum
     const accel = Math.sqrt(ax[i] * ax[i] + ay[i] * ay[i]);
     const maxAcceleration = maxAcc[i];
@@ -93,8 +117,8 @@ function gameLoop() {
       const scale = maxSpeed / speed;
       vx[i] *= scale;
       vy[i] *= scale;
-    } else if (speed < MIN_SPEED && speed > 0) {
-      const scale = MIN_SPEED / speed;
+    } else if (speed < this.MIN_SPEED && speed > 0) {
+      const scale = this.MIN_SPEED / speed;
       vx[i] *= scale;
       vy[i] *= scale;
     }
@@ -110,25 +134,7 @@ function gameLoop() {
     ax[i] = 0;
     ay[i] = 0;
   }
-
-  // Report FPS
-  if (FRAMENUM % 30 === 0) {
-    self.postMessage({ msg: "fps", fps: fps.toFixed(2) });
-  }
-
-  requestAnimationFrame(gameLoop);
 }
 
-/**
- * Message handler
- */
-self.onmessage = (e) => {
-  if (e.data.msg === "init") {
-    initPhysicsWorker(
-      e.data.gameObjectBuffer,
-      e.data.inputBuffer,
-      e.data.cameraBuffer,
-      e.data.entityCount
-    );
-  }
-};
+// Create singleton instance and setup message handler
+const physicsWorker = new PhysicsWorker(self);

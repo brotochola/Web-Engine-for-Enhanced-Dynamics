@@ -3,160 +3,235 @@
 
 importScripts("config.js");
 importScripts("gameObject.js");
+importScripts("AbstractWorker.js");
 importScripts("pixi4webworkers.js");
 
-let FRAMENUM = 0;
-let app;
-let width, height, canvasWidth, canvasHeight, resolution, view;
-let inputData;
-let cameraData;
-let entityCount = 0;
-const sprites = [];
-let lastTime = performance.now();
-let fps = 0;
-let mainContainer = new PIXI.Container();
-let pause = true;
+/**
+ * PixiRenderer - Manages rendering of game objects using PixiJS in a web worker
+ * Extends AbstractWorker for common worker functionality
+ */
+class PixiRenderer extends AbstractWorker {
+  constructor(selfRef) {
+    super(selfRef);
 
-function getPosicionEnPantalla(x, y) {
-  return {
-    x: x * mainContainer.scale.x + mainContainer.x,
-    y: y * mainContainer.scale.y + mainContainer.y,
-  };
-}
+    // Use PIXI ticker instead of requestAnimationFrame
+    this.usesCustomScheduler = true;
 
-function isSpriteOnTheScreen(worldX, worldY) {
-  const pos = getPosicionEnPantalla(worldX, worldY);
-  const marginX = canvasWidth * 0.25;
-  const marginY = canvasHeight * 0.25;
+    // PIXI application and rendering
+    this.pixiApp = null;
+    this.mainContainer = new PIXI.Container();
+    this.backgroundSprite = null;
+    this.textures = {}; // Store loaded PIXI textures by name
+    this.sprites = []; // Array of PIXI sprites for entities
 
-  if (
-    pos.x > -marginX &&
-    pos.x < canvasWidth + marginX &&
-    pos.y > -marginY &&
-    pos.y < canvasHeight + marginY
-  ) {
-    return true;
+    // World and viewport dimensions
+    this.worldWidth = 0;
+    this.worldHeight = 0;
+    this.canvasWidth = 0;
+    this.canvasHeight = 0;
+    this.resolution = 1;
+    this.canvasView = null;
   }
-  return false;
-}
 
-function gameLoop(resuming = false) {
-  if (pause) return;
-  FRAMENUM++;
-  const now = performance.now();
-  const deltaTime = now - lastTime;
-  lastTime = now;
-  fps = 1000 / deltaTime;
-  const dtRatio = resuming ? 1 : deltaTime / 16.67;
+  /**
+   * Convert world coordinates to screen coordinates
+   */
+  worldToScreenPosition(worldX, worldY) {
+    return {
+      x: worldX * this.mainContainer.scale.x + this.mainContainer.x,
+      y: worldY * this.mainContainer.scale.y + this.mainContainer.y,
+    };
+  }
 
-  // Read camera state from shared buffer
-  const zoom = cameraData[0];
-  const cameraX = cameraData[1];
-  const cameraY = cameraData[2];
+  /**
+   * Check if a sprite at world coordinates is visible on screen
+   */
+  isSpriteVisible(worldX, worldY) {
+    const screenPos = this.worldToScreenPosition(worldX, worldY);
+    const marginX = this.canvasWidth * 0.15;
+    const marginY = this.canvasHeight * 0.15;
 
-  // Apply camera state to main container
-  // Camera position represents the world coordinates of the top-left corner of the viewport
-  // PIXI applies scale first, then position, so we multiply by zoom
-  mainContainer.scale.set(zoom);
-  mainContainer.x = -cameraX * zoom;
-  mainContainer.y = -cameraY * zoom;
+    return (
+      screenPos.x > -marginX &&
+      screenPos.x < this.canvasWidth + marginX &&
+      screenPos.y > -marginY &&
+      screenPos.y < this.canvasHeight + marginY
+    );
+  }
 
-  // Cache array references for performance
-  const x = GameObject.x;
-  const y = GameObject.y;
-  const rotation = GameObject.rotation;
-  const scale = GameObject.scale;
+  /**
+   * Update camera transform on the main container
+   */
+  updateCameraTransform() {
+    const zoom = this.cameraData[0];
+    const cameraX = this.cameraData[1];
+    const cameraY = this.cameraData[2];
 
-  // Update sprite positions
-  // This is cache-friendly! Sequential reads from GameObject arrays
-  for (let i = 0; i < entityCount; i++) {
-    const sprite = sprites[i];
-    if (sprite) {
-      if (isSpriteOnTheScreen(x[i], y[i])) {
-        sprite.visible = true;
-        sprite.x = x[i];
-        sprite.y = y[i];
-        sprite.rotation = rotation[i];
-        sprite.scale.set(scale[i]);
-        sprite.zIndex = y[i];
-      } else {
-        sprite.visible = false;
+    // Apply camera state to main container
+    // Camera position represents the world coordinates of the top-left corner of the viewport
+    // PIXI applies scale first, then position, so we multiply by zoom
+    this.mainContainer.scale.set(zoom);
+    this.mainContainer.x = -cameraX * zoom;
+    this.mainContainer.y = -cameraY * zoom;
+  }
+
+  /**
+   * Update all sprite positions and visibility from GameObject arrays
+   */
+  updateSprites() {
+    // Cache array references for performance
+    const x = GameObject.x;
+    const y = GameObject.y;
+    const rotation = GameObject.rotation;
+    const scale = GameObject.scale;
+
+    // Update sprite positions
+    // This is cache-friendly! Sequential reads from GameObject arrays
+    for (let i = 0; i < this.entityCount; i++) {
+      const sprite = this.sprites[i];
+      if (sprite) {
+        if (this.isSpriteVisible(x[i], y[i])) {
+          sprite.visible = true;
+          sprite.x = x[i];
+          sprite.y = y[i];
+          sprite.rotation = rotation[i];
+          sprite.scale.set(scale[i]);
+          sprite.zIndex = y[i];
+        } else {
+          sprite.visible = false;
+        }
       }
     }
   }
 
-  // Log FPS every 30 frames
-  if (FRAMENUM % 30 === 0) {
-    self.postMessage({ msg: "fps", fps: fps.toFixed(2) });
+  /**
+   * Update method called each frame (implementation of AbstractWorker.update)
+   * @param {number} deltaTime - Time since last frame
+   * @param {number} dtRatio - Delta time ratio normalized to 60fps
+   * @param {boolean} resuming - Whether resuming from pause
+   */
+  update(deltaTime, dtRatio, resuming) {
+    this.updateCameraTransform();
+    this.updateSprites();
+  }
+
+  /**
+   * Setup PIXI ticker to call gameLoop (custom scheduler implementation)
+   */
+  onCustomSchedulerStart() {
+    // PIXI ticker will call gameLoop on every tick
+    this.pixiApp.ticker.add(() => this.gameLoop());
+  }
+
+  /**
+   * Create tiling background sprite
+   */
+  createBackground() {
+    if (!this.textures.bg) {
+      console.warn("Background texture not found");
+      return;
+    }
+
+    this.backgroundSprite = new PIXI.TilingSprite(
+      this.textures.bg,
+      this.worldWidth,
+      this.worldHeight
+    );
+    this.backgroundSprite.tileScale.set(0.5);
+    this.backgroundSprite.tilePosition.set(0, 0);
+    this.mainContainer.addChild(this.backgroundSprite);
+  }
+
+  /**
+   * Load textures from transferred ImageBitmaps
+   */
+  loadTextures(texturesData) {
+    if (!texturesData) return;
+
+    console.log(
+      `PIXI WORKER: Loading ${Object.keys(texturesData).length} textures`
+    );
+
+    for (const [name, imageBitmap] of Object.entries(texturesData)) {
+      // Create PIXI BaseTexture from ImageBitmap
+      const baseTexture = PIXI.BaseTexture.from(imageBitmap);
+      // Create PIXI Texture from BaseTexture
+      this.textures[name] = new PIXI.Texture(baseTexture);
+
+      console.log(`✅ Loaded texture: ${name}`);
+    }
+  }
+
+  /**
+   * Create PIXI sprites for all entities
+   */
+  createSprites() {
+    // Use the texture by name (e.g., textures.texture1 or textures['texture1'])
+    const defaultTexture =
+      this.textures.texture1 || Object.values(this.textures)[0];
+
+    if (!defaultTexture) {
+      console.error("No textures available for sprites");
+      return;
+    }
+
+    for (let i = 0; i < this.entityCount; i++) {
+      const sprite = new PIXI.Sprite(defaultTexture);
+      sprite.anchor.set(0.5);
+      sprite.scale.set(GameObject.scale[i]);
+      sprite.x = GameObject.x[i];
+      sprite.y = GameObject.y[i];
+      this.sprites.push(sprite);
+      this.mainContainer.addChild(sprite);
+    }
+
+    console.log(`PIXI WORKER: Created ${this.entityCount} sprites`);
+  }
+
+  /**
+   * Initialize the PIXI renderer with provided data (implementation of AbstractWorker.initialize)
+   */
+  async initialize(data) {
+    console.log("PIXI WORKER: Initializing PIXI with GameObject arrays");
+
+    // Initialize common buffers from AbstractWorker
+    this.initializeCommonBuffers(data);
+
+    // Store viewport and world dimensions
+    this.worldWidth = data.width;
+    this.worldHeight = data.height;
+    this.canvasWidth = data.canvasWidth;
+    this.canvasHeight = data.canvasHeight;
+    this.resolution = data.resolution;
+    this.canvasView = data.view;
+
+    // Create PIXI application
+    this.pixiApp = new PIXI.Application({
+      width: this.canvasWidth,
+      height: this.canvasHeight,
+      resolution: this.resolution,
+      view: this.canvasView,
+      backgroundColor: 0x000000,
+      // Performance optimizations
+      antialias: false,
+      powerPreference: "high-performance",
+    });
+
+    // Load textures
+    this.loadTextures(data.textures);
+    this.createBackground();
+
+    // Setup main container
+    this.pixiApp.stage.addChild(this.mainContainer);
+    this.mainContainer.sortableChildren = true;
+
+    // Create sprites for all entities
+    this.createSprites();
+
+    // Start render loop (will setup PIXI ticker via onCustomSchedulerStart)
+    this.startGameLoop();
   }
 }
 
-async function initPIXI(data) {
-  pause = false;
-  console.log("PIXI WORKER: Initializing PIXI with GameObject arrays");
-
-  entityCount = data.entityCount;
-
-  // Initialize GameObject arrays
-  GameObject.initializeArrays(data.gameObjectBuffer, entityCount);
-
-  inputData = new Int32Array(data.inputBuffer);
-  cameraData = new Float32Array(data.cameraBuffer);
-
-  width = data.width;
-  height = data.height;
-  canvasWidth = data.canvasWidth;
-  canvasHeight = data.canvasHeight;
-  resolution = data.resolution;
-  view = data.view;
-
-  // Create PIXI application
-  app = new PIXI.Application({
-    width: canvasWidth,
-    height: canvasHeight,
-    resolution,
-    view,
-    backgroundColor: 0x000000,
-    // Performance optimizations
-    antialias: false,
-    powerPreference: "high-performance",
-  });
-
-  // Load texture
-  const texture = await PIXI.Assets.load(
-    "https://brotochola.github.io/render_from_webworkers_and_multithreading/1.png"
-  );
-
-  app.stage.addChild(mainContainer);
-  mainContainer.sortableChildren = true;
-
-  // Create sprites for all entities
-  for (let i = 0; i < entityCount; i++) {
-    const sprite = new PIXI.Sprite(texture);
-    sprite.anchor.set(0.5);
-    sprite.scale.set(GameObject.scale[i]);
-    sprite.x = GameObject.x[i];
-    sprite.y = GameObject.y[i];
-    sprites.push(sprite);
-    mainContainer.addChild(sprite);
-  }
-
-  console.log(`PIXI WORKER: Created ${entityCount} sprites`);
-
-  // Start render loop
-  app.ticker.add(gameLoop);
-}
-
-self.onmessage = (e) => {
-  if (e.data.msg === "init") {
-    pause = false;
-    initPIXI(e.data);
-  }
-  if (e.data.msg === "pause") {
-    pause = true;
-  }
-  if (e.data.msg === "resume") {
-    pause = false;
-    gameLoop(true);
-  }
-};
+// Create singleton instance and setup message handler
+const pixiRenderer = new PixiRenderer(self);
