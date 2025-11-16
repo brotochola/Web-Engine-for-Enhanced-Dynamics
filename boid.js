@@ -2,17 +2,20 @@
 // Extends GameObject to implement the classic boids algorithm
 
 class Boid extends GameObject {
+  // Boid-specific behavior arrays schema
+  // Following the same pattern as GameObject.ARRAY_SCHEMA
+  static ARRAY_SCHEMA = {
+    protectedRange: Float32Array,
+    centeringFactor: Float32Array,
+    avoidFactor: Float32Array,
+    matchingFactor: Float32Array,
+    turnFactor: Float32Array,
+    margin: Float32Array,
+  };
+
   // Shared memory buffer for boid-specific data
   static sharedBuffer = null;
   static entityCount = 0;
-
-  // Boid-specific behavior arrays
-  static protectedRange = null;
-  static centeringFactor = null;
-  static avoidFactor = null;
-  static matchingFactor = null;
-  static turnFactor = null;
-  static margin = null;
   static instances = [];
 
   /**
@@ -24,26 +27,17 @@ class Boid extends GameObject {
     this.sharedBuffer = buffer;
     this.entityCount = count;
 
-    const ARRAYS_COUNT = 6; // Number of boid-specific arrays
-    const BYTES_PER_ARRAY = count * 4; // Float32 = 4 bytes
-
     let offset = 0;
 
-    this.protectedRange = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
-    this.centeringFactor = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
-    this.avoidFactor = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
-    this.matchingFactor = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
-    this.turnFactor = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
-    this.margin = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_ARRAY;
+    // Create typed array views for each property defined in schema
+    for (const [name, type] of Object.entries(this.ARRAY_SCHEMA)) {
+      const bytesPerElement = type.BYTES_PER_ELEMENT;
+      this[name] = new type(buffer, offset, count);
+      offset += count * bytesPerElement;
+    }
 
     // console.log(
-    //   `Boid: Initialized ${ARRAYS_COUNT} arrays for ${count} boids (${offset} bytes total)`
+    //   `Boid: Initialized ${Object.keys(this.ARRAY_SCHEMA).length} arrays for ${count} boids (${offset} bytes total)`
     // );
   }
 
@@ -53,8 +47,9 @@ class Boid extends GameObject {
    * @returns {number} Buffer size in bytes
    */
   static getBufferSize(count) {
-    const ARRAYS_COUNT = 6;
-    return ARRAYS_COUNT * count * 4;
+    return Object.values(this.ARRAY_SCHEMA).reduce((total, type) => {
+      return total + count * type.BYTES_PER_ELEMENT;
+    }, 0);
   }
 
   /**
@@ -104,28 +99,22 @@ class Boid extends GameObject {
       Boid.protectedRange[i] * Boid.protectedRange[i];
   }
 
-  get protectedRange() {
-    return Boid.protectedRange[this.index];
-  }
-
-  get centeringFactor() {
-    return Boid.centeringFactor[this.index];
-  }
-
-  get avoidFactor() {
-    return Boid.avoidFactor[this.index];
-  }
-
-  get matchingFactor() {
-    return Boid.matchingFactor[this.index];
-  }
-
-  get turnFactor() {
-    return Boid.turnFactor[this.index];
-  }
-
-  get margin() {
-    return Boid.margin[this.index];
+  // Auto-generated getters/setters for Boid-specific properties
+  // Static initialization block - dynamically create getters/setters from ARRAY_SCHEMA
+  static {
+    Object.entries(this.ARRAY_SCHEMA).forEach(([name, type]) => {
+      Object.defineProperty(this.prototype, name, {
+        get() {
+          return Boid[name][this.index];
+        },
+        set(value) {
+          Boid[name][this.index] =
+            type === Uint8Array ? (value ? 1 : 0) : value;
+        },
+        enumerable: true,
+        configurable: true,
+      });
+    });
   }
 
   /**
@@ -272,7 +261,12 @@ class Boid extends GameObject {
   }
 }
 
-// Export for use in workers
+// Export for use in workers and make globally accessible
 if (typeof module !== "undefined" && module.exports) {
   module.exports = Boid;
+}
+
+// Ensure class is accessible in worker global scope
+if (typeof self !== "undefined") {
+  self.Boid = Boid;
 }

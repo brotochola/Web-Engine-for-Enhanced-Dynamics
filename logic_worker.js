@@ -38,12 +38,17 @@ class LogicWorker extends AbstractWorker {
     // Store registered classes
     this.registeredClasses = data.registeredClasses || [];
 
-    // Initialize subclass arrays
+    // Initialize subclass arrays - dynamically for any entity type
     for (const classInfo of this.registeredClasses) {
-      if (classInfo.name === "Boid") {
-        Boid.initializeArrays(data.boidBuffer, classInfo.count);
+      const EntityClass = self[classInfo.name]; // Get class by name from global scope
+
+      if (EntityClass && EntityClass.initializeArrays && data.entityBuffers) {
+        const buffer = data.entityBuffers[classInfo.name];
+        if (buffer) {
+          EntityClass.initializeArrays(buffer, classInfo.count);
+          console.log(`LOGIC WORKER: Initialized ${classInfo.name} arrays`);
+        }
       }
-      // Add more entity types here as needed
     }
 
     // Keep a reference to neighbor data for tick() calls
@@ -59,20 +64,22 @@ class LogicWorker extends AbstractWorker {
   }
 
   /**
-   * Create GameObject instances for all registered entity classes
+   * Create GameObject instances for all registered entity classes - dynamically
    */
   createGameObjectInstances() {
     for (const classInfo of this.registeredClasses) {
       const { name, count, startIndex } = classInfo;
+      const EntityClass = self[name]; // Get class by name from global scope
 
-      if (name === "Boid") {
+      if (EntityClass) {
         for (let i = 0; i < count; i++) {
           const index = startIndex + i;
-          this.gameObjects[index] = new Boid(index);
+          this.gameObjects[index] = new EntityClass(index);
         }
-        // console.log(`LOGIC WORKER: Created ${count} Boid GameObjects`);
+        console.log(`LOGIC WORKER: Created ${count} ${name} instances`);
+      } else {
+        console.warn(`LOGIC WORKER: Class ${name} not found in worker scope!`);
       }
-      // Add more entity types here as needed
     }
   }
 

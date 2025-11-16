@@ -35,7 +35,7 @@ class GameEngine {
     // Shared buffers
     this.buffers = {
       gameObjectData: null,
-      boidData: null,
+      entityData: new Map(), // Map of EntityClassName -> SharedArrayBuffer
       neighborData: null,
       inputData: null,
       cameraData: null,
@@ -155,7 +155,7 @@ class GameEngine {
       this.buffers.neighborData
     );
 
-    // Initialize subclass buffers
+    // Initialize subclass buffers - generic for any entity type
     for (const registration of this.registeredClasses) {
       const { class: EntityClass, count } = registration;
 
@@ -163,11 +163,8 @@ class GameEngine {
         const bufferSize = EntityClass.getBufferSize(count);
         const buffer = new SharedArrayBuffer(bufferSize);
 
-        // Store buffer reference
-        if (EntityClass.name === "Boid") {
-          this.buffers.boidData = buffer;
-        }
-        // Add more entity types here as needed
+        // Store buffer reference generically by class name
+        this.buffers.entityData.set(EntityClass.name, buffer);
 
         EntityClass.initializeArrays(buffer, count);
       }
@@ -199,9 +196,9 @@ class GameEngine {
 
     // console.log(`✅ Created SharedArrayBuffers:`);
     // console.log(`   - GameObject Data: ${gameObjectBufferSize} bytes`);
-    // if (this.buffers.boidData) {
-    //   console.log(`   - Boid Data: ${this.buffers.boidData.byteLength} bytes`);
-    // }
+    // this.buffers.entityData.forEach((buffer, className) => {
+    //   console.log(`   - ${className} Data: ${buffer.byteLength} bytes`);
+    // });
     // console.log(`   - Neighbor Data: ${NEIGHBOR_BUFFER_SIZE} bytes`);
     // console.log(`   - Input Data: ${INPUT_BUFFER_SIZE} bytes`);
     // console.log(`   - Camera Data: ${CAMERA_BUFFER_SIZE} bytes`);
@@ -299,7 +296,7 @@ class GameEngine {
     this.workers.logic.postMessage({
       msg: "init",
       gameObjectBuffer: this.buffers.gameObjectData,
-      boidBuffer: this.buffers.boidData,
+      entityBuffers: Object.fromEntries(this.buffers.entityData), // Convert Map to plain object
       neighborBuffer: this.buffers.neighborData,
       inputBuffer: this.buffers.inputData,
       cameraBuffer: this.buffers.cameraData,

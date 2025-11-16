@@ -6,27 +6,29 @@ class GameObject {
   static sharedBuffer = null;
   static entityCount = 0;
 
-  // Transform arrays (position, velocity, acceleration, rotation, scale)
-  static x = null;
-  static y = null;
-  static vx = null;
-  static vy = null;
-  static ax = null;
-  static ay = null;
-  static rotation = null;
-  static scale = null;
-
-  // Physics arrays
-  static maxVel = null;
-  static maxAcc = null;
-  static friction = null;
-  static radius = null;
-
-  // Perception arrays
-  static visualRange = null;
-
-  // State arrays
-  static active = null;
+  // Array schema - defines all shared arrays and their types
+  // Order matters! Arrays are laid out in this exact order in memory
+  // Properties are created dynamically in initializeArrays()
+  static ARRAY_SCHEMA = {
+    // Transform
+    x: Float32Array,
+    y: Float32Array,
+    vx: Float32Array,
+    vy: Float32Array,
+    ax: Float32Array,
+    ay: Float32Array,
+    rotation: Float32Array,
+    scale: Float32Array,
+    // Physics
+    maxVel: Float32Array,
+    maxAcc: Float32Array,
+    friction: Float32Array,
+    radius: Float32Array,
+    // Perception
+    visualRange: Float32Array,
+    // State
+    active: Uint8Array,
+  };
 
   // Neighbor data (from spatial worker)
   static neighborData = null;
@@ -44,48 +46,14 @@ class GameObject {
     this.sharedBuffer = buffer;
     this.entityCount = count;
 
-    const ARRAYS_COUNT = 15; // Total number of arrays (14 Float32 + 1 Uint8)
-    const BYTES_PER_FLOAT_ARRAY = count * 4; // Float32 = 4 bytes
-    const BYTES_PER_UINT8_ARRAY = count * 1; // Uint8 = 1 byte
-
-    // Create typed array views for each property
     let offset = 0;
 
-    // Transform
-    this.x = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_FLOAT_ARRAY;
-    this.y = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_FLOAT_ARRAY;
-    this.vx = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_FLOAT_ARRAY;
-    this.vy = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_FLOAT_ARRAY;
-    this.ax = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_FLOAT_ARRAY;
-    this.ay = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_FLOAT_ARRAY;
-    this.rotation = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_FLOAT_ARRAY;
-    this.scale = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_FLOAT_ARRAY;
-
-    // Physics
-    this.maxVel = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_FLOAT_ARRAY;
-    this.maxAcc = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_FLOAT_ARRAY;
-    this.friction = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_FLOAT_ARRAY;
-    this.radius = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_FLOAT_ARRAY;
-
-    // Perception
-    this.visualRange = new Float32Array(buffer, offset, count);
-    offset += BYTES_PER_FLOAT_ARRAY;
-
-    // State
-    this.active = new Uint8Array(buffer, offset, count);
-    offset += BYTES_PER_UINT8_ARRAY;
+    // Create typed array views for each property defined in schema
+    for (const [name, type] of Object.entries(this.ARRAY_SCHEMA)) {
+      const bytesPerElement = type.BYTES_PER_ELEMENT;
+      this[name] = new type(buffer, offset, count);
+      offset += count * bytesPerElement;
+    }
 
     // Initialize neighbor data if provided
     if (neighborBuffer) {
@@ -93,7 +61,7 @@ class GameObject {
     }
 
     // console.log(
-    //   `GameObject: Initialized ${ARRAYS_COUNT} arrays for ${count} entities (${offset} bytes total)`
+    //   `GameObject: Initialized ${this.ARRAY_SCHEMA.length} arrays for ${count} entities (${offset} bytes total)`
     // );
   }
 
@@ -103,9 +71,9 @@ class GameObject {
    * @returns {number} Buffer size in bytes
    */
   static getBufferSize(count) {
-    const FLOAT32_ARRAYS = 14;
-    const UINT8_ARRAYS = 1;
-    return FLOAT32_ARRAYS * count * 4 + UINT8_ARRAYS * count * 1;
+    return Object.values(this.ARRAY_SCHEMA).reduce((total, type) => {
+      return total + count * type.BYTES_PER_ELEMENT;
+    }, 0);
   }
 
   /**
@@ -131,52 +99,6 @@ class GameObject {
     // Override in subclasses
   }
 
-  get x() {
-    return GameObject.x[this.index];
-  }
-  get y() {
-    return GameObject.y[this.index];
-  }
-  get vx() {
-    return GameObject.vx[this.index];
-  }
-  get vy() {
-    return GameObject.vy[this.index];
-  }
-  get ax() {
-    return GameObject.ax[this.index];
-  }
-  get ay() {
-    return GameObject.ay[this.index];
-  }
-  get rotation() {
-    return GameObject.rotation[this.index];
-  }
-  get scale() {
-    return GameObject.scale[this.index];
-  }
-  get maxVel() {
-    return GameObject.maxVel[this.index];
-  }
-  get maxAcc() {
-    return GameObject.maxAcc[this.index];
-  }
-  get friction() {
-    return GameObject.friction[this.index];
-  }
-  get radius() {
-    return GameObject.radius[this.index];
-  }
-  get visualRange() {
-    return GameObject.visualRange[this.index];
-  }
-  get active() {
-    return GameObject.active[this.index];
-  }
-  set active(value) {
-    GameObject.active[this.index] = value ? 1 : 0;
-  }
-
   /**
    * Get neighbors for this entity from the spatial worker's neighbor data
    * @returns {number[]} Array of neighbor indices
@@ -196,9 +118,32 @@ class GameObject {
 
     return neighbors;
   }
+
+  // Static initialization block - dynamically create getters/setters from ARRAY_SCHEMA
+  static {
+    Object.entries(this.ARRAY_SCHEMA).forEach(([name, type]) => {
+      Object.defineProperty(this.prototype, name, {
+        get() {
+          return GameObject[name][this.index];
+        },
+        // Special handling for Uint8Array to convert boolean to 0/1
+        set(value) {
+          GameObject[name][this.index] =
+            type === Uint8Array ? (value ? 1 : 0) : value;
+        },
+        enumerable: true,
+        configurable: true,
+      });
+    });
+  }
 }
 
-// Export for use in workers
+// Export for use in workers and make globally accessible
 if (typeof module !== "undefined" && module.exports) {
   module.exports = GameObject;
+}
+
+// Ensure class is accessible in worker global scope
+if (typeof self !== "undefined") {
+  self.GameObject = GameObject;
 }
