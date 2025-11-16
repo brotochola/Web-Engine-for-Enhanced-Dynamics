@@ -28,6 +28,7 @@ function isSpriteOnTheScreen(worldX, worldY) {
   const pos = getPosicionEnPantalla(worldX, worldY);
   const marginX = canvasWidth * 0.25;
   const marginY = canvasHeight * 0.25;
+
   if (
     pos.x > -marginX &&
     pos.x < canvasWidth + marginX &&
@@ -50,13 +51,15 @@ function gameLoop(resuming = false) {
 
   // Read camera state from shared buffer
   const zoom = cameraData[0];
-  const containerX = cameraData[1];
-  const containerY = cameraData[2];
+  const cameraX = cameraData[1];
+  const cameraY = cameraData[2];
 
   // Apply camera state to main container
+  // Camera position represents the world coordinates of the top-left corner of the viewport
+  // PIXI applies scale first, then position, so we multiply by zoom
   mainContainer.scale.set(zoom);
-  mainContainer.x = containerX;
-  mainContainer.y = containerY;
+  mainContainer.x = -cameraX * zoom;
+  mainContainer.y = -cameraY * zoom;
 
   // Cache array references for performance
   const x = GameObject.x;

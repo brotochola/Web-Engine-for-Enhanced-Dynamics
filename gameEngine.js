@@ -239,7 +239,7 @@ class GameEngine {
     this.workers.spatial = new Worker("spatial_worker.js");
     this.workers.logic = new Worker("logic_worker.js");
     this.workers.physics = new Worker("physics_worker.js");
-    this.workers.threejs = new Worker("threejs_worker.js");
+    this.workers.renderer = new Worker("pixi_worker.js");
 
     // Setup FPS monitoring
     this.setupWorkerFPSMonitoring();
@@ -292,7 +292,7 @@ class GameEngine {
 
     // Initialize threejs worker (transfer canvas and texture)
     const offscreenCanvas = this.canvas.transferControlToOffscreen();
-    this.workers.threejs.postMessage(
+    this.workers.renderer.postMessage(
       {
         msg: "init",
         width: worldWidth,
@@ -333,7 +333,7 @@ class GameEngine {
       if (e.data.msg === "fps") updateFPS("physicsFPS", e.data.fps);
     };
 
-    this.workers.threejs.onmessage = (e) => {
+    this.workers.renderer.onmessage = (e) => {
       if (e.data.msg === "fps") updateFPS("renderFPS", e.data.fps);
     };
   }
@@ -372,8 +372,23 @@ class GameEngine {
       "wheel",
       (e) => {
         e.preventDefault();
-        this.camera.zoom += -e.deltaY * 0.001;
-        this.camera.zoom = Math.max(0.1, Math.min(5, this.camera.zoom));
+
+        const oldZoom = this.camera.zoom;
+        const newZoom = Math.max(0.1, Math.min(5, oldZoom + -e.deltaY * 0.001));
+
+        // Zoom around the center of the screen
+        const centerX = this.config.canvasWidth / 2;
+        const centerY = this.config.canvasHeight / 2;
+
+        // World position of the center point before zoom
+        const worldCenterX = centerX / oldZoom + this.camera.x;
+        const worldCenterY = centerY / oldZoom + this.camera.y;
+
+        // Adjust camera position so the center point stays at the same world position
+        this.camera.x = worldCenterX - centerX / newZoom;
+        this.camera.y = worldCenterY - centerY / newZoom;
+        this.camera.zoom = newZoom;
+
         this.updateCameraBuffer();
       },
       { passive: false }

@@ -24,6 +24,7 @@ class GameObject {
 
   // Perception arrays
   static visualRange = null;
+  static instances = [];
 
   /**
    * Initialize static arrays from SharedArrayBuffer
@@ -96,6 +97,7 @@ class GameObject {
   constructor(index) {
     this.index = index;
     this.active = true;
+    GameObject.instances.push(this);
   }
 
   /**
@@ -108,6 +110,19 @@ class GameObject {
    */
   tick(dtRatio, neighborData, inputData) {
     // Override in subclasses
+  }
+
+  get x() {
+    return GameObject.x[this.index];
+  }
+  get y() {
+    return GameObject.y[this.index];
+  }
+  get vx() {
+    return GameObject.vx[this.index];
+  }
+  get vy() {
+    return GameObject.vy[this.index];
   }
 }
 

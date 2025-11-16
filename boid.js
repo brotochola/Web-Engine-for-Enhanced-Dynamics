@@ -13,6 +13,7 @@ class Boid extends GameObject {
   static matchingFactor = null;
   static turnFactor = null;
   static margin = null;
+  static instances = [];
 
   /**
    * Initialize boid-specific arrays from SharedArrayBuffer
@@ -66,6 +67,8 @@ class Boid extends GameObject {
     super(index);
 
     const i = index;
+
+    Boid.instances.push(this);
 
     // Initialize GameObject transform properties (random position)
     GameObject.x[i] = Math.random() * WIDTH;
