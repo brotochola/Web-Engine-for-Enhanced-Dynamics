@@ -33,8 +33,10 @@ class AbstractWorker {
     this.usesCustomScheduler = false; // Override in subclass if using custom scheduler
 
     // Shared buffers (common to most workers)
+    // Following the naming pattern: xBuffer (SharedArrayBuffer) -> xData (TypedArray view)
     this.inputData = null;
     this.cameraData = null;
+    this.neighborData = null;
 
     // Bind methods
     this.gameLoop = this.gameLoop.bind(this);
@@ -146,13 +148,58 @@ class AbstractWorker {
       );
     }
 
-    // Initialize common shared buffers
+    // Initialize common shared buffers using Buffer->Data naming pattern
     if (data.inputBuffer) {
       this.inputData = new Int32Array(data.inputBuffer);
     }
 
     if (data.cameraBuffer) {
       this.cameraData = new Float32Array(data.cameraBuffer);
+    }
+
+    // Initialize neighbor data reference (redundant with GameObject but kept for clarity)
+    if (data.neighborBuffer) {
+      this.neighborData = new Int32Array(data.neighborBuffer);
+    }
+  }
+
+  /**
+   * Initialize entity-specific arrays from entityBuffers
+   * @param {Object} entityBuffers - Map of entity class name to SharedArrayBuffer
+   * @param {Object} entityCounts - Map of entity class name to count (or array of class info objects)
+   * @param {Array} lightSourceIndices - Optional array of GameObject indices for light sources
+   */
+  initializeEntityArrays(
+    entityBuffers,
+    entityCounts,
+    lightSourceIndices = null
+  ) {
+    if (!entityBuffers) return;
+
+    // Support both object format {ClassName: count} and array format [{name, count}]
+    const classInfos = Array.isArray(entityCounts)
+      ? entityCounts
+      : Object.entries(entityCounts || {}).map(([name, count]) => ({
+          name,
+          count,
+        }));
+
+    for (const classInfo of classInfos) {
+      const { name, count } = classInfo;
+      const EntityClass = self[name];
+      const buffer = entityBuffers[name];
+
+      if (EntityClass && EntityClass.initializeArrays && buffer) {
+        // Pass lightSourceIndices to AbstractLightSourceEntity initialization
+        if (name === "AbstractLightSourceEntity" && lightSourceIndices) {
+          EntityClass.initializeArrays(buffer, count, lightSourceIndices);
+        } else {
+          EntityClass.initializeArrays(buffer, count);
+        }
+        console.log(
+          `${this.constructor.name}: Initialized ${name} arrays for ${count} instances`
+        );
+      }
     }
   }
 

@@ -5,6 +5,8 @@
 importScripts("config.js");
 importScripts("gameObject.js");
 importScripts("AbstractWorker.js");
+importScripts("abstractLightSourceEntity.js");
+importScripts("candle.js");
 importScripts("boid.js");
 
 /**
@@ -38,20 +40,14 @@ class LogicWorker extends AbstractWorker {
     // Store registered classes
     this.registeredClasses = data.registeredClasses || [];
 
-    // Initialize subclass arrays - dynamically for any entity type
-    for (const classInfo of this.registeredClasses) {
-      const EntityClass = self[classInfo.name]; // Get class by name from global scope
+    // Initialize all entity arrays using standardized method
+    this.initializeEntityArrays(
+      data.entityBuffers,
+      this.registeredClasses,
+      data.lightSourceIndices
+    );
 
-      if (EntityClass && EntityClass.initializeArrays && data.entityBuffers) {
-        const buffer = data.entityBuffers[classInfo.name];
-        if (buffer) {
-          EntityClass.initializeArrays(buffer, classInfo.count);
-          console.log(`LOGIC WORKER: Initialized ${classInfo.name} arrays`);
-        }
-      }
-    }
-
-    // Keep a reference to neighbor data for tick() calls
+    // Keep a reference to neighbor data for tick() calls (from AbstractWorker)
     this.neighborData = GameObject.neighborData;
 
     // Create GameObject instances
@@ -69,6 +65,12 @@ class LogicWorker extends AbstractWorker {
   createGameObjectInstances() {
     for (const classInfo of this.registeredClasses) {
       const { name, count, startIndex } = classInfo;
+
+      // Skip AbstractLightSourceEntity - it's a base class, not instantiated directly
+      if (name === "AbstractLightSourceEntity") {
+        continue;
+      }
+
       const EntityClass = self[name]; // Get class by name from global scope
 
       if (EntityClass) {

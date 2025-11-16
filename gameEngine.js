@@ -30,6 +30,7 @@ class GameEngine {
       spatial: null,
       logic: null,
       physics: null,
+      lighting: null,
       pixi: null,
     };
 
@@ -55,6 +56,11 @@ class GameEngine {
     this.registeredClasses = []; // [{class, count, startIndex}, ...]
     this.gameObjects = []; // All entity instances
     this.totalEntityCount = 0;
+
+    // Light source tracking
+    this.lightSources = []; // Array of light source GameObject indices
+    this.lightSourceCount = 0;
+    this.lightSourceIndexMap = new Map(); // Map from GameObject index to light source index
 
     // Key mapping for input buffer
     this.keyMap = {
@@ -93,11 +99,37 @@ class GameEngine {
 
     this.totalEntityCount += count;
 
+    // Track light sources (check if class extends AbstractLightSourceEntity)
+    // We check the prototype chain to see if it's a light source
+    if (this.isLightSourceClass(EntityClass)) {
+      for (let i = 0; i < count; i++) {
+        this.lightSources.push(startIndex + i);
+      }
+      this.lightSourceCount += count;
+    }
+
     // console.log(
     //   `✅ Registered ${
     //     EntityClass.name
     //   }: ${count} entities (indices ${startIndex}-${startIndex + count - 1})`
     // );
+  }
+
+  /**
+   * Check if a class extends AbstractLightSourceEntity
+   * @param {Class} EntityClass - The class to check
+   * @returns {boolean} - True if it's a light source
+   */
+  isLightSourceClass(EntityClass) {
+    // Check prototype chain for AbstractLightSourceEntity
+    let proto = EntityClass;
+    while (proto && proto.name) {
+      if (proto.name === "AbstractLightSourceEntity") {
+        return true;
+      }
+      proto = Object.getPrototypeOf(proto);
+    }
+    return false;
   }
 
   // Initialize everything
@@ -109,6 +141,16 @@ class GameEngine {
       throw new Error("SharedArrayBuffer not available! Check CORS headers.");
     }
 
+    // Register AbstractLightSourceEntity as a regular entity class if lighting is enabled
+    // This ensures all workers initialize it uniformly
+    if (USE_LIGHTING && this.lightSourceCount > 0) {
+      this.registeredClasses.push({
+        class: AbstractLightSourceEntity,
+        count: this.lightSourceCount,
+        startIndex: 0, // Not used for buffer-only classes
+      });
+    }
+
     // Create shared buffers
     this.createSharedBuffers();
 
@@ -117,6 +159,13 @@ class GameEngine {
 
     // Create entity instances
     this.createEntityInstances();
+
+    // Build mapping from GameObject index to light source index
+    if (USE_LIGHTING && AbstractLightSourceEntity.instances) {
+      for (const instance of AbstractLightSourceEntity.instances) {
+        this.lightSourceIndexMap.set(instance.index, instance.lightIndex);
+      }
+    }
 
     // Create workers
     this.createWorkers();
@@ -167,7 +216,12 @@ class GameEngine {
         // Store buffer reference generically by class name
         this.buffers.entityData.set(EntityClass.name, buffer);
 
-        EntityClass.initializeArrays(buffer, count);
+        // Pass lightSourceIndices to AbstractLightSourceEntity initialization
+        if (EntityClass.name === "AbstractLightSourceEntity") {
+          EntityClass.initializeArrays(buffer, count, this.lightSources);
+        } else {
+          EntityClass.initializeArrays(buffer, count);
+        }
       }
     }
 
@@ -209,6 +263,11 @@ class GameEngine {
   createEntityInstances() {
     for (const registration of this.registeredClasses) {
       const { class: EntityClass, count, startIndex } = registration;
+
+      // Skip AbstractLightSourceEntity - it's a base class, not instantiated directly
+      if (EntityClass.name === "AbstractLightSourceEntity") {
+        continue;
+      }
 
       for (let i = 0; i < count; i++) {
         const index = startIndex + i;
@@ -270,6 +329,9 @@ class GameEngine {
     this.workers.spatial = new Worker("spatial_worker.js");
     this.workers.logic = new Worker("logic_worker.js");
     this.workers.physics = new Worker("physics_worker.js");
+    if (USE_LIGHTING) {
+      this.workers.lighting = new Worker("lighting_worker.js");
+    }
     this.workers.renderer = new Worker("pixi_worker.js");
 
     // Preload assets before initializing workers
@@ -300,6 +362,7 @@ class GameEngine {
         count: r.count,
         startIndex: r.startIndex,
       })),
+      lightSourceIndices: USE_LIGHTING ? this.lightSources : undefined,
     });
 
     // Initialize physics worker
@@ -310,6 +373,24 @@ class GameEngine {
       cameraBuffer: this.buffers.cameraData,
       entityCount: this.totalEntityCount,
     });
+
+    // Initialize lighting worker
+    if (USE_LIGHTING) {
+      this.workers.lighting.postMessage({
+        msg: "init",
+        gameObjectBuffer: this.buffers.gameObjectData,
+        cameraBuffer: this.buffers.cameraData,
+        entityCount: this.totalEntityCount,
+        entityBuffers: Object.fromEntries(this.buffers.entityData), // Convert Map to plain object
+        registeredClasses: this.registeredClasses.map((r) => ({
+          name: r.class.name,
+          count: r.count,
+          startIndex: r.startIndex,
+        })),
+        lightSourceIndices: this.lightSources,
+        lightSourceIndexMap: Array.from(this.lightSourceIndexMap.entries()), // Convert Map to array of [gameObjectIndex, lightIndex] pairs
+      });
+    }
 
     // Initialize renderer worker (transfer canvas and all textures)
     const offscreenCanvas = this.canvas.transferControlToOffscreen();
@@ -361,6 +442,18 @@ class GameEngine {
     this.workers.renderer.onmessage = (e) => {
       if (e.data.msg === "fps") updateFPS("renderFPS", e.data.fps);
     };
+
+    // Lighting worker - forward lighting data to renderer
+    if (USE_LIGHTING) {
+      this.workers.lighting.onmessage = (e) => {
+        if (e.data.msg === "fps") {
+          updateFPS("lightingFPS", e.data.fps);
+        } else if (e.data.msg === "lightingData") {
+          // Forward lighting data to renderer worker
+          this.workers.renderer.postMessage(e.data);
+        }
+      };
+    }
   }
 
   // Setup all event listeners

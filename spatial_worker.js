@@ -14,10 +14,6 @@ class SpatialWorker extends AbstractWorker {
   constructor(selfRef) {
     super(selfRef);
 
-    // Neighbor buffer layout: For each entity: [count, id1, id2, ..., id_MAX]
-    this.neighborBuffer = null;
-    this.neighborData = null;
-
     // Spatial grid structure - each cell contains a list of entity indices
     this.grid = Array.from({ length: TOTAL_CELLS }, () => []);
 
@@ -31,12 +27,8 @@ class SpatialWorker extends AbstractWorker {
   initialize(data) {
     // console.log("SPATIAL WORKER: Initializing with SharedArrayBuffer");
 
-    // Initialize common buffers from AbstractWorker
+    // Initialize common buffers from AbstractWorker (includes neighborData)
     this.initializeCommonBuffers(data);
-
-    // Initialize neighbor buffer
-    this.neighborBuffer = data.neighborBuffer;
-    this.neighborData = new Int32Array(this.neighborBuffer);
 
     // console.log(
     //   `SPATIAL WORKER: Grid is ${GRID_COLS}x${GRID_ROWS} = ${TOTAL_CELLS} cells`
