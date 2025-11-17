@@ -28,6 +28,7 @@ class GameObject {
     visualRange: Float32Array,
     // State
     active: Uint8Array,
+    entityType: Uint8Array, // 0=Boid, 1=Prey, 2=Predator
   };
 
   // Neighbor data (from spatial worker)
@@ -91,6 +92,8 @@ class GameObject {
     this.index = index;
     this.config = config; // Store config for instance access
     GameObject.active[index] = 1; // Set active in shared array (1 = true, 0 = false)
+    //take the entity type from the class
+    GameObject.entityType[index] = this.constructor.entityType;
     GameObject.instances.push(this);
     this.constructor.instances.push(this);
   }

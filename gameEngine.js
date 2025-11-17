@@ -169,17 +169,20 @@ class GameEngine {
     );
 
     // Initialize subclass buffers - generic for any entity type
+    // IMPORTANT: Size arrays for TOTAL entity count, not just class count!
+    // This is because subclasses use global indices (e.g., Predator at index 15000
+    // needs to access Boid arrays, which must be sized for all entities)
     for (const registration of this.registeredClasses) {
       const { class: EntityClass, count } = registration;
 
       if (EntityClass.getBufferSize && EntityClass.initializeArrays) {
-        const bufferSize = EntityClass.getBufferSize(count);
+        const bufferSize = EntityClass.getBufferSize(this.totalEntityCount);
         const buffer = new SharedArrayBuffer(bufferSize);
 
         // Store buffer reference generically by class name
         this.buffers.entityData.set(EntityClass.name, buffer);
 
-        EntityClass.initializeArrays(buffer, count);
+        EntityClass.initializeArrays(buffer, this.totalEntityCount);
       }
     }
 
@@ -218,18 +221,22 @@ class GameEngine {
   }
 
   // Create entity instances and initialize their values
+  // NOTE: This is now handled by the logic worker!
+  // The main thread should NOT create instances to avoid race conditions
   createEntityInstances() {
-    for (const registration of this.registeredClasses) {
-      const { class: EntityClass, count, startIndex } = registration;
+    // Main thread no longer creates instances - logic worker handles this
+    // We just need to pre-allocate the array slots
+    this.gameObjects = new Array(this.totalEntityCount);
 
-      for (let i = 0; i < count; i++) {
-        const index = startIndex + i;
-        const entity = new EntityClass(index, this.config);
-        this.gameObjects[index] = entity;
-      }
-
-      // console.log(`✅ Created ${count} ${EntityClass.name} instances`);
+    // Initialize GameObject arrays to default values (all zeros/false)
+    // This ensures workers see valid data from the start
+    for (let i = 0; i < this.totalEntityCount; i++) {
+      GameObject.active[i] = 0; // Mark as inactive initially
     }
+
+    console.log(
+      `✅ Prepared ${this.totalEntityCount} entity slots (instances created by logic worker)`
+    );
   }
 
   // Create canvas element
@@ -293,9 +300,15 @@ class GameEngine {
     this.workers.spatial.postMessage({
       msg: "init",
       gameObjectBuffer: this.buffers.gameObjectData,
+      entityBuffers: Object.fromEntries(this.buffers.entityData), // Convert Map to plain object
       neighborBuffer: this.buffers.neighborData,
       entityCount: this.totalEntityCount,
       config: this.config,
+      registeredClasses: this.registeredClasses.map((r) => ({
+        name: r.class.name,
+        count: r.count,
+        startIndex: r.startIndex,
+      })),
     });
 
     // Initialize logic worker
@@ -319,10 +332,16 @@ class GameEngine {
     this.workers.physics.postMessage({
       msg: "init",
       gameObjectBuffer: this.buffers.gameObjectData,
+      entityBuffers: Object.fromEntries(this.buffers.entityData), // Convert Map to plain object
       inputBuffer: this.buffers.inputData,
       cameraBuffer: this.buffers.cameraData,
       entityCount: this.totalEntityCount,
       config: this.config,
+      registeredClasses: this.registeredClasses.map((r) => ({
+        name: r.class.name,
+        count: r.count,
+        startIndex: r.startIndex,
+      })),
     });
 
     // Initialize renderer worker (transfer canvas and all textures)
@@ -338,10 +357,16 @@ class GameEngine {
         view: offscreenCanvas,
         textures: this.loadedTextures, // Send as object with named keys
         gameObjectBuffer: this.buffers.gameObjectData,
+        entityBuffers: Object.fromEntries(this.buffers.entityData), // Convert Map to plain object
         inputBuffer: this.buffers.inputData,
         cameraBuffer: this.buffers.cameraData,
         entityCount: this.totalEntityCount,
         config: this.config,
+        registeredClasses: this.registeredClasses.map((r) => ({
+          name: r.class.name,
+          count: r.count,
+          startIndex: r.startIndex,
+        })),
       },
       [offscreenCanvas, ...Object.values(this.loadedTextures)] // Transfer canvas and all textures
     );

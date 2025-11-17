@@ -2,6 +2,8 @@
 // Extends GameObject to implement the classic boids algorithm
 
 class Boid extends GameObject {
+  static entityType = 0; // 0 = Boid
+
   // Define the boid-specific properties schema
   // GameEngine will automatically create all the required static properties!
   static ARRAY_SCHEMA = {
@@ -51,12 +53,6 @@ class Boid extends GameObject {
     Boid.matchingFactor[i] = 0.1; // Alignment strength
     Boid.turnFactor[i] = 0.1; // Boundary avoidance strength
     Boid.margin[i] = 20; // Distance from edge to start turning
-
-    // Cache squared ranges for performance
-    this.squaredVisualRange =
-      GameObject.visualRange[i] * GameObject.visualRange[i];
-    this.squaredProtectedRange =
-      Boid.protectedRange[i] * Boid.protectedRange[i];
   }
 
   // Getters/setters are auto-generated when this class is registered with GameEngine!
@@ -78,9 +74,9 @@ class Boid extends GameObject {
     );
 
     // Apply the three rules of boids
-    this.applyCohesion(i, dtRatio, neighborCount, neighbors);
-    this.applySeparation(i, dtRatio, neighborCount, neighbors);
-    this.applyAlignment(i, dtRatio, neighborCount, neighbors);
+    this.applyCohesion(i, dtRatio, neighborCount, neighbors); // Only same type
+    this.applySeparation(i, dtRatio, neighborCount, neighbors); // All entities
+    this.applyAlignment(i, dtRatio, neighborCount, neighbors); // Only same type
 
     // Additional behaviors
     this.avoidMouse(i, dtRatio, inputData);
@@ -88,23 +84,29 @@ class Boid extends GameObject {
   }
 
   /**
-   * Rule 1: Cohesion - Steer toward the center of mass of neighbors
+   * Rule 1: Cohesion - Steer toward the center of mass of neighbors (same type only)
    */
   applyCohesion(i, dtRatio, neighborCount, neighbors) {
     if (neighborCount === 0) return;
 
+    const myEntityType = GameObject.entityType[i];
     let centerX = 0;
     let centerY = 0;
+    let sameTypeCount = 0;
 
     for (let n = 0; n < neighborCount; n++) {
       const j = neighbors[n];
+      if (GameObject.entityType[j] !== myEntityType) continue;
 
       centerX += GameObject.x[j];
       centerY += GameObject.y[j];
+      sameTypeCount++;
     }
 
-    centerX /= neighborCount;
-    centerY /= neighborCount;
+    if (sameTypeCount === 0) return;
+
+    centerX /= sameTypeCount;
+    centerY /= sameTypeCount;
 
     GameObject.ax[i] +=
       (centerX - GameObject.x[i]) * Boid.centeringFactor[i] * dtRatio;
@@ -113,7 +115,7 @@ class Boid extends GameObject {
   }
 
   /**
-   * Rule 2: Separation - Avoid crowding neighbors
+   * Rule 2: Separation - Avoid crowding neighbors (all entity types)
    */
   applySeparation(i, dtRatio, neighborCount, neighbors) {
     if (neighborCount === 0) return;
@@ -144,23 +146,29 @@ class Boid extends GameObject {
   }
 
   /**
-   * Rule 3: Alignment - Match velocity with neighbors
+   * Rule 3: Alignment - Match velocity with neighbors (same type only)
    */
   applyAlignment(i, dtRatio, neighborCount, neighbors) {
     if (neighborCount === 0) return;
 
+    const myEntityType = GameObject.entityType[i];
     let avgVX = 0;
     let avgVY = 0;
+    let sameTypeCount = 0;
 
     for (let n = 0; n < neighborCount; n++) {
       const j = neighbors[n];
+      if (GameObject.entityType[j] !== myEntityType) continue;
 
       avgVX += GameObject.vx[j];
       avgVY += GameObject.vy[j];
+      sameTypeCount++;
     }
 
-    avgVX /= neighborCount;
-    avgVY /= neighborCount;
+    if (sameTypeCount === 0) return;
+
+    avgVX /= sameTypeCount;
+    avgVY /= sameTypeCount;
 
     GameObject.ax[i] +=
       (avgVX - GameObject.vx[i]) * Boid.matchingFactor[i] * dtRatio;

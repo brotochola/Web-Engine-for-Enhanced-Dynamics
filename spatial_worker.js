@@ -3,6 +3,9 @@
 
 importScripts("gameObject.js");
 importScripts("AbstractWorker.js");
+importScripts("boid.js");
+importScripts("prey.js");
+importScripts("predator.js");
 
 /**
  * SpatialWorker - Handles spatial partitioning and neighbor detection
@@ -89,7 +92,12 @@ class SpatialWorker extends AbstractWorker {
       // Skip inactive entities - they don't participate in spatial queries
       if (!active[i]) continue;
 
-      const cellIndex = this.getCellIndex(x[i], y[i]);
+      // Skip entities with invalid positions (race condition during initialization)
+      const posX = x[i];
+      const posY = y[i];
+      if (isNaN(posX) || isNaN(posY)) continue;
+
+      const cellIndex = this.getCellIndex(posX, posY);
       this.grid[cellIndex].push(i);
     }
   }
@@ -107,6 +115,9 @@ class SpatialWorker extends AbstractWorker {
     for (let i = 0; i < this.entityCount; i++) {
       // Skip inactive entities - they don't need neighbor updates
       if (!active[i]) continue;
+
+      // Skip entities with invalid positions
+      if (isNaN(x[i]) || isNaN(y[i])) continue;
 
       this.findNeighborsForEntity(i, x, y, visualRange);
     }

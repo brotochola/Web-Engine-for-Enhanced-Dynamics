@@ -3,6 +3,9 @@
 
 importScripts("gameObject.js");
 importScripts("AbstractWorker.js");
+importScripts("boid.js");
+importScripts("prey.js");
+importScripts("predator.js");
 
 /**
  * PhysicsWorker - Handles physics integration for all entities

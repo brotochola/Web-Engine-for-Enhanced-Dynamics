@@ -60,6 +60,8 @@
 
     <script src="gameObject.js"></script>
     <script src="boid.js"></script>
+    <script src="prey.js"></script>
+    <script src="predator.js"></script>
     <script src="gameEngine.js"></script>
     <script>
         // Initialize with GameEngine using class registration system
@@ -67,8 +69,8 @@
             {
                 canvasWidth: 800,
                 canvasHeight: 600,
-                worldWidth: 8000,
-                worldHeight: 4000,
+                worldWidth: 4000,
+                worldHeight: 2000,
                 maxNeighbors: 100,
                 // Spatial hash grid configuration
                 cellSize: 50 // Each cell covers the visual range
@@ -84,11 +86,9 @@
 
         // Register entity classes
         // This is where you define what entities exist and how many
-        gameEngine.registerEntityClass(Boid, 16000);
-
-        // You can register more entity types here:
-        // gameEngine.registerEntityClass(Enemy, 500);
-        // gameEngine.registerEntityClass(Obstacle, 100);
+        gameEngine.registerEntityClass(Boid, 0);
+        gameEngine.registerEntityClass(Prey, 10000);
+        gameEngine.registerEntityClass(Predator, 300);
 
         // Initialize and start
         gameEngine.init().catch(error => {

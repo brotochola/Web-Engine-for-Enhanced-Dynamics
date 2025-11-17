@@ -3,6 +3,9 @@
 
 importScripts("gameObject.js");
 importScripts("AbstractWorker.js");
+importScripts("boid.js");
+importScripts("prey.js");
+importScripts("predator.js");
 importScripts("pixi4webworkers.js");
 
 /**
@@ -84,6 +87,7 @@ class PixiRenderer extends AbstractWorker {
     const y = GameObject.y;
     const rotation = GameObject.rotation;
     const scale = GameObject.scale;
+    const entityType = GameObject.entityType;
 
     // Update sprite positions
     // This is cache-friendly! Sequential reads from GameObject arrays
@@ -103,7 +107,18 @@ class PixiRenderer extends AbstractWorker {
           sprite.rotation = rotation[i];
           sprite.scale.set(scale[i]);
           sprite.zIndex = y[i];
-          sprite.tint = 0xffffff;
+
+          // Color entities by type: 0=Boid (white), 1=Prey (green), 2=Predator (red)
+          switch (entityType[i]) {
+            case 1:
+              sprite.tint = 0x00ff00; // Green for Prey
+              break;
+            case 2:
+              sprite.tint = 0xff0000; // Red for Predator
+              break;
+            default:
+              sprite.tint = 0xffffff; // White for Boid
+          }
         } else {
           sprite.visible = false;
         }

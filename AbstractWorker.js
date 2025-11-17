@@ -204,9 +204,11 @@ class AbstractWorker {
       const buffer = entityBuffers[name];
 
       if (EntityClass && EntityClass.initializeArrays && buffer) {
-        EntityClass.initializeArrays(buffer, count);
+        // IMPORTANT: Use entityCount (total) not count (class-specific)
+        // Entity arrays must be sized for all entities because subclasses use global indices
+        EntityClass.initializeArrays(buffer, this.entityCount);
         console.log(
-          `${this.constructor.name}: Initialized ${name} arrays for ${count} instances`
+          `${this.constructor.name}: Initialized ${name} arrays for ${this.entityCount} total entities (${count} of this type)`
         );
       }
     }

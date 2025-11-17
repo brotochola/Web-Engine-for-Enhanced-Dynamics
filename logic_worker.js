@@ -5,6 +5,8 @@
 importScripts("gameObject.js");
 importScripts("AbstractWorker.js");
 importScripts("boid.js");
+importScripts("prey.js");
+importScripts("predator.js");
 
 /**
  * LogicWorker - Handles game logic and AI for all entities
