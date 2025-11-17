@@ -99,6 +99,42 @@ class Prey extends Boid {
       GameObject.ay[i] += fleeY * Prey.predatorAvoidFactor[i] * dtRatio;
     }
   }
+
+  /**
+   * Unity-style collision callback: Called when prey collides with predator
+   * This demonstrates the collision detection system
+   */
+  onCollisionEnter(otherIndex) {
+    const i = this.index;
+
+    // Check if we collided with a predator
+    if (GameObject.entityType[otherIndex] === Predator.entityType) {
+      // Prey is caught! Deactivate (die)
+      GameObject.active[i] = 0;
+
+      // Optional: Could post message to main thread for sound/particle effects
+      // this.logicWorker.self.postMessage({
+      //   msg: 'preyCaught',
+      //   preyIndex: i,
+      //   predatorIndex: otherIndex
+      // });
+    }
+  }
+
+  /**
+   * Unity-style collision callback: Called while prey is colliding with another entity
+   */
+  onCollisionStay(otherIndex) {
+    // Could add ongoing collision effects here
+    // For example: losing health over time while touching hazards
+  }
+
+  /**
+   * Unity-style collision callback: Called when collision ends
+   */
+  onCollisionExit(otherIndex) {
+    // Could add effects when prey escapes from predator
+  }
 }
 
 // Export for use in workers and make globally accessible

@@ -109,6 +109,46 @@ class Predator extends Boid {
       }
     }
   }
+
+  /**
+   * Unity-style collision callback: Called when predator catches prey
+   * This demonstrates the collision detection system
+   */
+  onCollisionEnter(otherIndex) {
+    const i = this.index;
+
+    // Check if we caught a prey
+    if (GameObject.entityType[otherIndex] === Prey.entityType) {
+      // Success! Caught prey
+      // The prey will deactivate itself via its own collision callback
+      // Could add effects here:
+      // - Increase predator health/energy
+      // - Play sound effect
+      // - Spawn particle effect
+      // Optional: Post message to main thread
+      // this.logicWorker.self.postMessage({
+      //   msg: 'preyCaught',
+      //   predatorIndex: i,
+      //   preyIndex: otherIndex
+      // });
+    }
+  }
+
+  /**
+   * Unity-style collision callback: Called while predator is colliding with prey
+   * This is called every frame while the collision continues
+   */
+  onCollisionStay(otherIndex) {
+    // Could add continuous collision effects here
+    // For example: draining prey health over time
+  }
+
+  /**
+   * Unity-style collision callback: Called when collision ends
+   */
+  onCollisionExit(otherIndex) {
+    // Could add effects when prey escapes
+  }
 }
 
 // Export for use in workers and make globally accessible
