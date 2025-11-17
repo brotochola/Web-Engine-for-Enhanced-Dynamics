@@ -90,7 +90,7 @@
         // Register entity classes with their script paths
         // This is where you define what entities exist and how many
         // The script paths allow workers to dynamically load game-specific code
-        gameEngine.registerEntityClass(Boid, 0, "boid.js");
+        // Note: Parent classes (like Boid) are automatically registered!
         gameEngine.registerEntityClass(Prey, 20000, "prey.js");
         gameEngine.registerEntityClass(Predator, 1000, "predator.js");
 
