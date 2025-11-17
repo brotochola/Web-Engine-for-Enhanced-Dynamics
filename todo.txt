@@ -1,0 +1,14 @@
+-poner todo lo q es del game engine en /lib
+-cambiar de animacion
+-agregar o sacar entidades
+-poner el juego en su carpeta
+
+-particle System 
+-physics_worker: detectar colisiones segun ambos radios
+    -crear nuevo buffer con "gameObjects colisionando"
+    -evaluar si el physics_worker tmb hace separacion
+
+-escenas donde se descargan y carcan cosas
+
+-metodo awake cuando un gameobject se hace activo (viene del pool)
+-worker con A* y con flowfiled pathfinding

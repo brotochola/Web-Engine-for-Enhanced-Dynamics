@@ -58,19 +58,20 @@
     <button id="pause" onclick="gameEngine.pause()">Pause</button>
     <button id="resume" onclick="gameEngine.resume()">Resume</button>
 
-    <script src="gameObject.js"></script>
+    <script src="lib/gameObject.js"></script>
+    <script src="lib/gameEngine.js"></script>
+
     <script src="boid.js"></script>
     <script src="prey.js"></script>
     <script src="predator.js"></script>
-    <script src="gameEngine.js"></script>
     <script>
         // Initialize with GameEngine using class registration system
         const gameEngine = new GameEngine(
             {
                 canvasWidth: 800,
                 canvasHeight: 600,
-                worldWidth: 4000,
-                worldHeight: 2000,
+                worldWidth: 10000,
+                worldHeight: 5000,
                 maxNeighbors: 100,
                 // Spatial hash grid configuration
                 cellSize: 50 // Each cell covers the visual range
@@ -86,11 +87,12 @@
 
 
 
-        // Register entity classes
+        // Register entity classes with their script paths
         // This is where you define what entities exist and how many
-        gameEngine.registerEntityClass(Boid, 0);
-        gameEngine.registerEntityClass(Prey, 23000);
-        gameEngine.registerEntityClass(Predator, 1000);
+        // The script paths allow workers to dynamically load game-specific code
+        gameEngine.registerEntityClass(Boid, 0, "boid.js");
+        gameEngine.registerEntityClass(Prey, 20000, "prey.js");
+        gameEngine.registerEntityClass(Predator, 1000, "predator.js");
 
         // Initialize and start
         gameEngine.init().catch(error => {
