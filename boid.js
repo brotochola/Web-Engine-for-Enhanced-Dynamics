@@ -2,8 +2,8 @@
 // Extends GameObject to implement the classic boids algorithm
 
 class Boid extends GameObject {
-  // Boid-specific behavior arrays schema
-  // Following the same pattern as GameObject.ARRAY_SCHEMA
+  // Define the boid-specific properties schema
+  // GameEngine will automatically create all the required static properties!
   static ARRAY_SCHEMA = {
     protectedRange: Float32Array,
     centeringFactor: Float32Array,
@@ -13,61 +13,21 @@ class Boid extends GameObject {
     margin: Float32Array,
   };
 
-  // Shared memory buffer for boid-specific data
-  static sharedBuffer = null;
-  static entityCount = 0;
-  static instances = [];
-
-  /**
-   * Initialize boid-specific arrays from SharedArrayBuffer
-   * @param {SharedArrayBuffer} buffer - The shared memory for boid data
-   * @param {number} count - Number of boids
-   */
-  static initializeArrays(buffer, count) {
-    this.sharedBuffer = buffer;
-    this.entityCount = count;
-
-    let offset = 0;
-
-    // Create typed array views for each property defined in schema
-    for (const [name, type] of Object.entries(this.ARRAY_SCHEMA)) {
-      const bytesPerElement = type.BYTES_PER_ELEMENT;
-      this[name] = new type(buffer, offset, count);
-      offset += count * bytesPerElement;
-    }
-
-    // console.log(
-    //   `Boid: Initialized ${Object.keys(this.ARRAY_SCHEMA).length} arrays for ${count} boids (${offset} bytes total)`
-    // );
-  }
-
-  /**
-   * Calculate total buffer size needed for boid-specific data
-   * @param {number} count - Number of boids
-   * @returns {number} Buffer size in bytes
-   */
-  static getBufferSize(count) {
-    return Object.values(this.ARRAY_SCHEMA).reduce((total, type) => {
-      return total + count * type.BYTES_PER_ELEMENT;
-    }, 0);
-  }
-
   /**
    * Boid constructor - initializes this boid's properties
    * Sets both GameObject properties (transform/physics) and Boid properties (behavior)
    *
    * @param {number} index - Position in shared arrays
+   * @param {Object} config - Configuration object from GameEngine
    */
-  constructor(index) {
-    super(index);
+  constructor(index, config = {}) {
+    super(index, config);
 
     const i = index;
 
-    Boid.instances.push(this);
-
     // Initialize GameObject transform properties (random position)
-    GameObject.x[i] = Math.random() * WIDTH;
-    GameObject.y[i] = Math.random() * HEIGHT;
+    GameObject.x[i] = Math.random() * (config.worldWidth || 800);
+    GameObject.y[i] = Math.random() * (config.worldHeight || 600);
     GameObject.vx[i] = (Math.random() - 0.5) * 2;
     GameObject.vy[i] = (Math.random() - 0.5) * 2;
     GameObject.ax[i] = 0;
@@ -99,23 +59,8 @@ class Boid extends GameObject {
       Boid.protectedRange[i] * Boid.protectedRange[i];
   }
 
-  // Auto-generated getters/setters for Boid-specific properties
-  // Static initialization block - dynamically create getters/setters from ARRAY_SCHEMA
-  static {
-    Object.entries(this.ARRAY_SCHEMA).forEach(([name, type]) => {
-      Object.defineProperty(this.prototype, name, {
-        get() {
-          return Boid[name][this.index];
-        },
-        set(value) {
-          Boid[name][this.index] =
-            type === Uint8Array ? (value ? 1 : 0) : value;
-        },
-        enumerable: true,
-        configurable: true,
-      });
-    });
-  }
+  // Getters/setters are auto-generated when this class is registered with GameEngine!
+  // No static block needed - GameEngine.registerEntityClass() handles it automatically.
 
   /**
    * Main update - applies all boid rules
@@ -125,7 +70,7 @@ class Boid extends GameObject {
     const i = this.index;
 
     // Get precomputed neighbors for this boid
-    const offset = i * (1 + MAX_NEIGHBORS_PER_ENTITY);
+    const offset = i * (1 + (this.config.maxNeighbors || 100));
     const neighborCount = neighborData[offset];
     const neighbors = neighborData.subarray(
       offset + 1,
@@ -250,13 +195,15 @@ class Boid extends GameObject {
   keepWithinBounds(i, dtRatio) {
     const x = GameObject.x[i];
     const y = GameObject.y[i];
+    const worldWidth = this.config.worldWidth || 800;
+    const worldHeight = this.config.worldHeight || 600;
 
     if (x < Boid.margin[i]) GameObject.ax[i] += Boid.turnFactor[i] * dtRatio;
-    if (x > WIDTH - Boid.margin[i])
+    if (x > worldWidth - Boid.margin[i])
       GameObject.ax[i] -= Boid.turnFactor[i] * dtRatio;
 
     if (y < Boid.margin[i]) GameObject.ay[i] += Boid.turnFactor[i] * dtRatio;
-    if (y > HEIGHT - Boid.margin[i])
+    if (y > worldHeight - Boid.margin[i])
       GameObject.ay[i] -= Boid.turnFactor[i] * dtRatio;
   }
 }

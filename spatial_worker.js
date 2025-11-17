@@ -1,7 +1,6 @@
 // Spatial Worker - Builds spatial hash grid and finds neighbors
 // Now uses per-entity visual ranges and accurate distance checking
 
-importScripts("config.js");
 importScripts("gameObject.js");
 importScripts("AbstractWorker.js");
 
@@ -14,8 +13,15 @@ class SpatialWorker extends AbstractWorker {
   constructor(selfRef) {
     super(selfRef);
 
-    // Spatial grid structure - each cell contains a list of entity indices
-    this.grid = Array.from({ length: TOTAL_CELLS }, () => []);
+    // Spatial grid structure - initialized after receiving config
+    this.grid = null;
+
+    // Grid parameters - set during initialization
+    this.cellSize = 0;
+    this.gridCols = 0;
+    this.gridRows = 0;
+    this.totalCells = 0;
+    this.maxNeighborsPerEntity = 0;
 
     // Update frequency (rebuild grid every N frames)
     this.spatialUpdateInterval = 2;
@@ -27,14 +33,21 @@ class SpatialWorker extends AbstractWorker {
   initialize(data) {
     // console.log("SPATIAL WORKER: Initializing with SharedArrayBuffer");
 
-    // Initialize common buffers from AbstractWorker (includes neighborData)
-    this.initializeCommonBuffers(data);
+    // Calculate grid parameters from config
+    this.cellSize = this.config.cellSize;
+    this.gridCols = Math.ceil(this.config.worldWidth / this.cellSize);
+    this.gridRows = Math.ceil(this.config.worldHeight / this.cellSize);
+    this.totalCells = this.gridCols * this.gridRows;
+    this.maxNeighborsPerEntity = this.config.maxNeighbors;
+
+    // Initialize spatial grid structure
+    this.grid = Array.from({ length: this.totalCells }, () => []);
 
     // console.log(
-    //   `SPATIAL WORKER: Grid is ${GRID_COLS}x${GRID_ROWS} = ${TOTAL_CELLS} cells`
+    //   `SPATIAL WORKER: Grid is ${this.gridCols}x${this.gridRows} = ${this.totalCells} cells`
     // );
     // console.log(
-    //   `SPATIAL WORKER: Max ${MAX_NEIGHBORS_PER_ENTITY} neighbors per entity`
+    //   `SPATIAL WORKER: Max ${this.maxNeighborsPerEntity} neighbors per entity`
     // );
     // console.log(
     //   `SPATIAL WORKER: Using per-entity visual ranges with accurate distance checking`
@@ -48,14 +61,14 @@ class SpatialWorker extends AbstractWorker {
    * Get cell index from world position
    */
   getCellIndex(x, y) {
-    const col = Math.floor(x / CELL_SIZE);
-    const row = Math.floor(y / CELL_SIZE);
+    const col = Math.floor(x / this.cellSize);
+    const row = Math.floor(y / this.cellSize);
 
     // Clamp to grid bounds
-    const clampedCol = Math.max(0, Math.min(GRID_COLS - 1, col));
-    const clampedRow = Math.max(0, Math.min(GRID_ROWS - 1, row));
+    const clampedCol = Math.max(0, Math.min(this.gridCols - 1, col));
+    const clampedRow = Math.max(0, Math.min(this.gridRows - 1, row));
 
-    return clampedRow * GRID_COLS + clampedCol;
+    return clampedRow * this.gridCols + clampedCol;
   }
 
   /**
@@ -63,7 +76,7 @@ class SpatialWorker extends AbstractWorker {
    */
   rebuildGrid() {
     // Clear all cells efficiently - reuse arrays to avoid memory churn
-    for (let i = 0; i < TOTAL_CELLS; i++) {
+    for (let i = 0; i < this.totalCells; i++) {
       this.grid[i].length = 0;
     }
 
@@ -111,14 +124,14 @@ class SpatialWorker extends AbstractWorker {
     // Calculate how many cells we need to check based on visual range
     // If visual range is 25 and cell size is 50, we check 1 cell in each direction (3x3)
     // If visual range is 75 and cell size is 50, we check 2 cells in each direction (5x5)
-    const cellRadius = Math.ceil(myVisualRange / CELL_SIZE);
+    const cellRadius = Math.ceil(myVisualRange / this.cellSize);
 
     // Get entity's cell coordinates
-    const col = Math.floor(myX / CELL_SIZE);
-    const row = Math.floor(myY / CELL_SIZE);
+    const col = Math.floor(myX / this.cellSize);
+    const row = Math.floor(myY / this.cellSize);
 
     // Buffer offset for this entity's neighbor list
-    const offset = i * (1 + MAX_NEIGHBORS_PER_ENTITY);
+    const offset = i * (1 + this.maxNeighborsPerEntity);
     let neighborCount = 0;
 
     // Check grid cells within cellRadius
@@ -130,14 +143,14 @@ class SpatialWorker extends AbstractWorker {
         // Skip if out of bounds
         if (
           checkCol < 0 ||
-          checkCol >= GRID_COLS ||
+          checkCol >= this.gridCols ||
           checkRow < 0 ||
-          checkRow >= GRID_ROWS
+          checkRow >= this.gridRows
         ) {
           continue;
         }
 
-        const cellIndex = checkRow * GRID_COLS + checkCol;
+        const cellIndex = checkRow * this.gridCols + checkCol;
         const cell = this.grid[cellIndex];
         const cellLength = cell.length;
 
@@ -152,7 +165,7 @@ class SpatialWorker extends AbstractWorker {
           if (i === j) continue;
 
           // Stop if we've hit the neighbor limit
-          if (neighborCount >= MAX_NEIGHBORS_PER_ENTITY) break;
+          if (neighborCount >= this.maxNeighborsPerEntity) break;
 
           // Calculate squared distance (fixed variable names to avoid shadowing)
           const deltaX = x[j] - myX;
@@ -166,9 +179,9 @@ class SpatialWorker extends AbstractWorker {
           }
         }
 
-        if (neighborCount >= MAX_NEIGHBORS_PER_ENTITY) break;
+        if (neighborCount >= this.maxNeighborsPerEntity) break;
       }
-      if (neighborCount >= MAX_NEIGHBORS_PER_ENTITY) break;
+      if (neighborCount >= this.maxNeighborsPerEntity) break;
     }
 
     // Store neighbor count at the beginning

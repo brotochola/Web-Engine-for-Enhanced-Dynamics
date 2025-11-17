@@ -11,7 +11,7 @@ Create a new file (e.g., `enemy.js`) that extends `GameObject`:
 ```javascript
 class Enemy extends GameObject {
   // Step 1: Define your entity-specific properties using ARRAY_SCHEMA
-  // The engine will automatically create SharedArrayBuffers for these!
+  // GameEngine automatically creates ALL infrastructure (buffers, getters, setters, instances)!
   static ARRAY_SCHEMA = {
     health: Float32Array,
     damage: Float32Array,
@@ -19,57 +19,16 @@ class Enemy extends GameObject {
     attackCooldown: Float32Array,
   };
 
-  // Shared memory buffer (required boilerplate)
-  static sharedBuffer = null;
-  static entityCount = 0;
-  static instances = [];
-
-  // Step 2: Use the same initialization pattern as Boid
-  static initializeArrays(buffer, count) {
-    this.sharedBuffer = buffer;
-    this.entityCount = count;
-
-    let offset = 0;
-    for (const [name, type] of Object.entries(this.ARRAY_SCHEMA)) {
-      const bytesPerElement = type.BYTES_PER_ELEMENT;
-      this[name] = new type(buffer, offset, count);
-      offset += count * bytesPerElement;
-    }
-  }
-
-  static getBufferSize(count) {
-    return Object.values(this.ARRAY_SCHEMA).reduce((total, type) => {
-      return total + count * type.BYTES_PER_ELEMENT;
-    }, 0);
-  }
-
-  // Step 3: Auto-generate getters/setters (copy this block as-is)
-  static {
-    Object.entries(this.ARRAY_SCHEMA).forEach(([name, type]) => {
-      Object.defineProperty(this.prototype, name, {
-        get() {
-          return Enemy[name][this.index];
-        },
-        set(value) {
-          Enemy[name][this.index] =
-            type === Uint8Array ? (value ? 1 : 0) : value;
-        },
-        enumerable: true,
-        configurable: true,
-      });
-    });
-  }
-
-  // Step 4: Constructor - initialize your entity's starting values
-  constructor(index) {
-    super(index); // Always call super first!
+  // Step 2: Constructor - initialize your entity's starting values
+  constructor(index, config = {}) {
+    super(index, config); // Always call super first and pass config!
 
     const i = index;
     Enemy.instances.push(this);
 
     // Initialize GameObject properties (inherited)
-    GameObject.x[i] = Math.random() * WIDTH;
-    GameObject.y[i] = Math.random() * HEIGHT;
+    GameObject.x[i] = Math.random() * (config.worldWidth || 800);
+    GameObject.y[i] = Math.random() * (config.worldHeight || 600);
     GameObject.vx[i] = 0;
     GameObject.vy[i] = 0;
     GameObject.maxVel[i] = 5;
@@ -82,7 +41,7 @@ class Enemy extends GameObject {
     Enemy.attackCooldown[i] = 0;
   }
 
-  // Step 5: Implement your game logic
+  // Step 3: Implement your game logic
   tick(dtRatio, neighborData, inputData) {
     const i = this.index;
 
@@ -128,11 +87,24 @@ In `index.html`, add your entity class:
 <!-- Add your new entity! -->
 <script src="gameEngine.js"></script>
 <script>
-  const gameEngine = new GameEngine({...});
+  const gameEngine = new GameEngine(
+    {
+      canvasWidth: 800,
+      canvasHeight: 600,
+      worldWidth: 8000,
+      worldHeight: 4000,
+      maxNeighbors: 100,
+      cellSize: 50,
+    },
+    {
+      bunny: "1.png",
+      bg: "fondo.jpg",
+    }
+  );
 
   // Register as many entity types as you want!
   gameEngine.registerEntityClass(Boid, 1000);
-  gameEngine.registerEntityClass(Enemy, 50);  // That's it!
+  gameEngine.registerEntityClass(Enemy, 50); // That's it!
 
   gameEngine.init();
 </script>
@@ -143,7 +115,6 @@ In `index.html`, add your entity class:
 In `logic_worker.js`, add your entity script:
 
 ```javascript
-importScripts("config.js");
 importScripts("gameObject.js");
 importScripts("AbstractWorker.js");
 importScripts("boid.js");
@@ -192,6 +163,26 @@ static ARRAY_SCHEMA = {
 };
 ```
 
+## Automatic Setup - Zero Boilerplate!
+
+**Great news!** Everything is now fully automated:
+
+- ✅ `sharedBuffer` - **Auto-created during registration**
+- ✅ `entityCount` - **Auto-created during registration**
+- ✅ `instances` - **Auto-created during registration**
+- ✅ `initializeArrays()` - **Inherited from GameObject**
+- ✅ `getBufferSize()` - **Inherited from GameObject**
+- ✅ Getters/Setters - **Auto-generated during registration**
+
+When you call `gameEngine.registerEntityClass(Enemy, 50)`, the engine automatically:
+
+1. Creates `sharedBuffer`, `entityCount`, and `instances` static properties
+2. Sets up all property getters/setters from your ARRAY_SCHEMA
+3. Calculates buffer sizes and manages entity indices
+4. Makes everything thread-safe across workers
+
+**You literally only need to define your ARRAY_SCHEMA!** The engine handles all infrastructure so you can focus **100% on your entity's unique behavior**!
+
 ## Tips
 
 1. **Keep constructors light** - Just initialize values, don't run logic
@@ -200,21 +191,101 @@ static ARRAY_SCHEMA = {
 4. **Mind the scope** - Workers need `importScripts()` for your class
 5. **Memory matters** - Use Uint8Array for small numbers, Float32Array for decimals
 6. **Export globally** - Always add `self.YourClass = YourClass` at the end of your file so workers can find it
+7. **Zero boilerplate** - Just define ARRAY_SCHEMA and register your class - GameEngine handles the rest!
 
 ## Before vs After Refactor
 
-### Before ❌
+### Before ❌ (Old Way - 40+ lines of boilerplate)
 
-- Had to modify `gameEngine.js` for each new entity type
-- Had to modify `logic_worker.js` initialization
-- Manual buffer management
-- Hardcoded property names everywhere
-- Copy-paste getters for each property
+```javascript
+class Enemy extends GameObject {
+  static ARRAY_SCHEMA = {
+    health: Float32Array,
+    damage: Float32Array,
+  };
 
-### After ✅
+  // 😫 Had to manually define these
+  static sharedBuffer = null;
+  static entityCount = 0;
+  static instances = [];
 
-- Zero engine changes needed
-- Automatic buffer management
-- Define schema once, everything else is automatic
-- Add unlimited entity types with no engine modifications
-- Perfect for other developers to extend your engine!
+  // 😫 Had to manually write this method
+  static initializeArrays(buffer, count) {
+    this.sharedBuffer = buffer;
+    this.entityCount = count;
+    let offset = 0;
+    for (const [name, type] of Object.entries(this.ARRAY_SCHEMA)) {
+      const bytesPerElement = type.BYTES_PER_ELEMENT;
+      this[name] = new type(buffer, offset, count);
+      offset += count * bytesPerElement;
+    }
+  }
+
+  // 😫 Had to manually write this method
+  static getBufferSize(count) {
+    return Object.values(this.ARRAY_SCHEMA).reduce((total, type) => {
+      return total + count * type.BYTES_PER_ELEMENT;
+    }, 0);
+  }
+
+  // 😫 Had to manually write this static block
+  static {
+    Object.entries(this.ARRAY_SCHEMA).forEach(([name, type]) => {
+      Object.defineProperty(this.prototype, name, {
+        get() {
+          return Enemy[name][this.index];
+        },
+        set(value) {
+          Enemy[name][this.index] = value;
+        },
+      });
+    });
+  }
+
+  constructor(index, config) {
+    /* ... */
+  }
+  tick(dtRatio, neighborData, inputData) {
+    /* ... */
+  }
+}
+```
+
+### After ✅ (New Way - Just define your schema!)
+
+```javascript
+class Enemy extends GameObject {
+  // 🎉 That's it! Just define what makes your entity unique!
+  static ARRAY_SCHEMA = {
+    health: Float32Array,
+    damage: Float32Array,
+  };
+
+  constructor(index, config) {
+    /* ... */
+  }
+  tick(dtRatio, neighborData, inputData) {
+    /* ... */
+  }
+}
+
+// Register and you're done!
+gameEngine.registerEntityClass(Enemy, 50);
+```
+
+**Eliminated:**
+
+- ❌ No more `sharedBuffer`, `entityCount`, `instances` declarations
+- ❌ No more `initializeArrays()` method (30+ lines)
+- ❌ No more `getBufferSize()` method (5 lines)
+- ❌ No more static initialization block (15 lines)
+- ❌ No more manual buffer management
+- ❌ No engine modifications needed
+
+**What you get:**
+
+- ✅ Clean, readable entity classes
+- ✅ Focus on behavior, not infrastructure
+- ✅ Automatic thread-safe memory management
+- ✅ Perfect for other developers to extend your engine
+- ✅ **90% less boilerplate code!**

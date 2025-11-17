@@ -38,6 +38,9 @@ class AbstractWorker {
     this.cameraData = null;
     this.neighborData = null;
 
+    // Registered entity classes information (set during initialization)
+    this.registeredClasses = [];
+
     // Bind methods
     this.gameLoop = this.gameLoop.bind(this);
     this.handleMessage = this.handleMessage.bind(this);
@@ -139,6 +142,9 @@ class AbstractWorker {
   initializeCommonBuffers(data) {
     this.entityCount = data.entityCount;
 
+    // Store config for worker access
+    this.config = data.config || {};
+
     // Initialize GameObject arrays if buffer provided
     if (data.gameObjectBuffer) {
       GameObject.initializeArrays(
@@ -160,6 +166,19 @@ class AbstractWorker {
     // Initialize neighbor data reference (redundant with GameObject but kept for clarity)
     if (data.neighborBuffer) {
       this.neighborData = new Int32Array(data.neighborBuffer);
+    }
+
+    // Store registered classes (used by logic worker and potentially others)
+    this.registeredClasses = data.registeredClasses || [];
+
+    // Initialize all entity arrays using standardized method
+    if (data.entityBuffers && this.registeredClasses.length > 0) {
+      this.initializeEntityArrays(data.entityBuffers, this.registeredClasses);
+    }
+
+    // Keep a reference to neighbor data for easy access (already set above, but also from GameObject)
+    if (GameObject.neighborData) {
+      this.neighborData = GameObject.neighborData;
     }
   }
 
@@ -203,6 +222,7 @@ class AbstractWorker {
     switch (msg) {
       case "init":
         this.isPaused = false;
+        this.initializeCommonBuffers(e.data);
         this.initialize(e.data);
         break;
 

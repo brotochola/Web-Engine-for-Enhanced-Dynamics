@@ -2,7 +2,6 @@
 // This worker runs independently, calculating accelerations for all entities
 
 // Import dependencies
-importScripts("config.js");
 importScripts("gameObject.js");
 importScripts("AbstractWorker.js");
 importScripts("boid.js");
@@ -17,12 +16,6 @@ class LogicWorker extends AbstractWorker {
 
     // Game objects - one per entity
     this.gameObjects = [];
-
-    // Neighbor data from spatial worker
-    this.neighborData = null;
-
-    // Registered entity classes information
-    this.registeredClasses = [];
   }
 
   /**
@@ -32,17 +25,8 @@ class LogicWorker extends AbstractWorker {
   initialize(data) {
     console.log("LOGIC WORKER: Initializing with GameObject pattern");
 
-    // Initialize common buffers from AbstractWorker (includes neighborBuffer now)
-    this.initializeCommonBuffers(data);
-
-    // Store registered classes
-    this.registeredClasses = data.registeredClasses || [];
-
-    // Initialize all entity arrays using standardized method
-    this.initializeEntityArrays(data.entityBuffers, this.registeredClasses);
-
-    // Keep a reference to neighbor data for tick() calls (from AbstractWorker)
-    this.neighborData = GameObject.neighborData;
+    // Initialize common buffers from AbstractWorker
+    // This now handles registeredClasses, entityBuffers, and neighborData automatically
 
     // Create GameObject instances
     this.createGameObjectInstances();
@@ -65,7 +49,7 @@ class LogicWorker extends AbstractWorker {
       if (EntityClass) {
         for (let i = 0; i < count; i++) {
           const index = startIndex + i;
-          this.gameObjects[index] = new EntityClass(index);
+          this.gameObjects[index] = new EntityClass(index, this.config);
         }
         console.log(`LOGIC WORKER: Created ${count} ${name} instances`);
       } else {

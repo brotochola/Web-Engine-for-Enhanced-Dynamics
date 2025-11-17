@@ -8,14 +8,7 @@ class GameEngine {
     this.state = {
       pause: false,
     };
-    this.config = {
-      canvasWidth: config.canvasWidth || CANVAS_WIDTH,
-      canvasHeight: config.canvasHeight || CANVAS_HEIGHT,
-      worldWidth: config.worldWidth || WIDTH,
-      worldHeight: config.worldHeight || HEIGHT,
-      maxNeighbors: config.maxNeighbors || MAX_NEIGHBORS_PER_ENTITY,
-      ...config,
-    };
+    this.config = config;
 
     // State
     this.keyboard = {};
@@ -93,6 +86,24 @@ class GameEngine {
     });
 
     this.totalEntityCount += count;
+
+    // Auto-initialize required static properties if they don't exist
+    // This eliminates boilerplate from entity class definitions!
+    if (!EntityClass.hasOwnProperty("sharedBuffer")) {
+      EntityClass.sharedBuffer = null;
+    }
+    if (!EntityClass.hasOwnProperty("entityCount")) {
+      EntityClass.entityCount = 0;
+    }
+    if (!EntityClass.hasOwnProperty("instances")) {
+      EntityClass.instances = [];
+    }
+
+    // Automatically create schema properties for this entity class
+    // This eliminates the need for developers to add a static block in each entity class!
+    if (EntityClass.ARRAY_SCHEMA && EntityClass !== GameObject) {
+      GameObject._createSchemaProperties(EntityClass);
+    }
 
     // console.log(
     //   `✅ Registered ${
@@ -213,7 +224,7 @@ class GameEngine {
 
       for (let i = 0; i < count; i++) {
         const index = startIndex + i;
-        const entity = new EntityClass(index);
+        const entity = new EntityClass(index, this.config);
         this.gameObjects[index] = entity;
       }
 
@@ -284,6 +295,7 @@ class GameEngine {
       gameObjectBuffer: this.buffers.gameObjectData,
       neighborBuffer: this.buffers.neighborData,
       entityCount: this.totalEntityCount,
+      config: this.config,
     });
 
     // Initialize logic worker
@@ -295,6 +307,7 @@ class GameEngine {
       inputBuffer: this.buffers.inputData,
       cameraBuffer: this.buffers.cameraData,
       entityCount: this.totalEntityCount,
+      config: this.config,
       registeredClasses: this.registeredClasses.map((r) => ({
         name: r.class.name,
         count: r.count,
@@ -309,6 +322,7 @@ class GameEngine {
       inputBuffer: this.buffers.inputData,
       cameraBuffer: this.buffers.cameraData,
       entityCount: this.totalEntityCount,
+      config: this.config,
     });
 
     // Initialize renderer worker (transfer canvas and all textures)
@@ -327,6 +341,7 @@ class GameEngine {
         inputBuffer: this.buffers.inputData,
         cameraBuffer: this.buffers.cameraData,
         entityCount: this.totalEntityCount,
+        config: this.config,
       },
       [offscreenCanvas, ...Object.values(this.loadedTextures)] // Transfer canvas and all textures
     );

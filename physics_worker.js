@@ -1,7 +1,6 @@
 // physics_worker.js - Physics integration (velocity, position updates)
 // Now uses per-entity maxVel, maxAcc, and friction from GameObject arrays
 
-importScripts("config.js");
 importScripts("gameObject.js");
 importScripts("AbstractWorker.js");
 
@@ -23,9 +22,6 @@ class PhysicsWorker extends AbstractWorker {
    */
   initialize(data) {
     console.log("PHYSICS WORKER: Initializing");
-
-    // Initialize common buffers from AbstractWorker
-    this.initializeCommonBuffers(data);
 
     console.log(
       `PHYSICS WORKER: Ready to integrate ${this.entityCount} entities`

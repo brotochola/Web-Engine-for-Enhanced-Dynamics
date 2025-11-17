@@ -1,7 +1,6 @@
 // pixi_worker.js - Rendering worker using PixiJS
 // Reads GameObject arrays and renders sprites
 
-importScripts("config.js");
 importScripts("gameObject.js");
 importScripts("AbstractWorker.js");
 importScripts("pixi4webworkers.js");
@@ -206,9 +205,6 @@ class PixiRenderer extends AbstractWorker {
    */
   async initialize(data) {
     console.log("PIXI WORKER: Initializing PIXI with GameObject arrays", data);
-
-    // Initialize common buffers from AbstractWorker
-    this.initializeCommonBuffers(data);
 
     // Store viewport and world dimensions
     this.worldWidth = data.width;

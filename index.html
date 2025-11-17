@@ -58,7 +58,6 @@
     <button id="pause" onclick="gameEngine.pause()">Pause</button>
     <button id="resume" onclick="gameEngine.resume()">Resume</button>
 
-    <script src="config.js"></script>
     <script src="gameObject.js"></script>
     <script src="boid.js"></script>
     <script src="gameEngine.js"></script>
@@ -66,11 +65,13 @@
         // Initialize with GameEngine using class registration system
         const gameEngine = new GameEngine(
             {
-                canvasWidth: CANVAS_WIDTH,
-                canvasHeight: CANVAS_HEIGHT,
-                worldWidth: WIDTH,
-                worldHeight: HEIGHT,
-                maxNeighbors: MAX_NEIGHBORS_PER_ENTITY
+                canvasWidth: 800,
+                canvasHeight: 600,
+                worldWidth: 8000,
+                worldHeight: 4000,
+                maxNeighbors: 100,
+                // Spatial hash grid configuration
+                cellSize: 50 // Each cell covers the visual range
             },
             {
                 bunny: "1.png",
@@ -83,7 +84,7 @@
 
         // Register entity classes
         // This is where you define what entities exist and how many
-        gameEngine.registerEntityClass(Boid, 10000);
+        gameEngine.registerEntityClass(Boid, 16000);
 
         // You can register more entity types here:
         // gameEngine.registerEntityClass(Enemy, 500);

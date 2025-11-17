@@ -38,6 +38,10 @@ class GameObject {
   /**
    * Initialize static arrays from SharedArrayBuffer
    * Called by GameEngine and by each worker
+   *
+   * This is a generic method that works for both GameObject and all subclasses (Boid, etc)
+   * by using 'this' which refers to the class it's called on.
+   *
    * @param {SharedArrayBuffer} buffer - The shared memory
    * @param {number} count - Total number of entities
    * @param {SharedArrayBuffer} [neighborBuffer] - Optional neighbor data buffer
@@ -49,19 +53,20 @@ class GameObject {
     let offset = 0;
 
     // Create typed array views for each property defined in schema
+    // 'this' refers to the class this method is called on (GameObject, Boid, etc.)
     for (const [name, type] of Object.entries(this.ARRAY_SCHEMA)) {
       const bytesPerElement = type.BYTES_PER_ELEMENT;
       this[name] = new type(buffer, offset, count);
       offset += count * bytesPerElement;
     }
 
-    // Initialize neighbor data if provided
-    if (neighborBuffer) {
+    // Initialize neighbor data if provided (only for GameObject)
+    if (neighborBuffer && this === GameObject) {
       this.neighborData = new Int32Array(neighborBuffer);
     }
 
     // console.log(
-    //   `GameObject: Initialized ${this.ARRAY_SCHEMA.length} arrays for ${count} entities (${offset} bytes total)`
+    //   `${this.name}: Initialized ${Object.keys(this.ARRAY_SCHEMA).length} arrays for ${count} entities (${offset} bytes total)`
     // );
   }
 
@@ -80,11 +85,14 @@ class GameObject {
    * Constructor - just stores the index
    * Subclasses should initialize their values in their constructors
    * @param {number} index - Position in shared arrays
+   * @param {Object} config - Configuration object from GameEngine
    */
-  constructor(index) {
+  constructor(index, config = {}) {
     this.index = index;
+    this.config = config; // Store config for instance access
     GameObject.active[index] = 1; // Set active in shared array (1 = true, 0 = false)
     GameObject.instances.push(this);
+    this.constructor.instances.push(this);
   }
 
   /**
@@ -104,10 +112,10 @@ class GameObject {
    * @returns {number[]} Array of neighbor indices
    */
   get neighbors() {
-    if (!GameObject.neighborData) return [];
+    if (!GameObject.neighborData || !this.config.maxNeighbors) return [];
 
     // Neighbor buffer layout: For each entity: [count, id1, id2, ..., id_MAX]
-    const offset = this.index * (1 + MAX_NEIGHBORS_PER_ENTITY);
+    const offset = this.index * (1 + this.config.maxNeighbors);
     const count = GameObject.neighborData[offset];
 
     // Extract neighbor indices
@@ -119,22 +127,32 @@ class GameObject {
     return neighbors;
   }
 
-  // Static initialization block - dynamically create getters/setters from ARRAY_SCHEMA
-  static {
-    Object.entries(this.ARRAY_SCHEMA).forEach(([name, type]) => {
-      Object.defineProperty(this.prototype, name, {
+  /**
+   * Helper method to dynamically create getters/setters from ARRAY_SCHEMA
+   * This is called in static initialization blocks by GameObject and all subclasses
+   *
+   * @param {Class} targetClass - The class to create properties for
+   */
+  static _createSchemaProperties(targetClass) {
+    Object.entries(targetClass.ARRAY_SCHEMA).forEach(([name, type]) => {
+      Object.defineProperty(targetClass.prototype, name, {
         get() {
-          return GameObject[name][this.index];
+          return targetClass[name][this.index];
         },
         // Special handling for Uint8Array to convert boolean to 0/1
         set(value) {
-          GameObject[name][this.index] =
+          targetClass[name][this.index] =
             type === Uint8Array ? (value ? 1 : 0) : value;
         },
         enumerable: true,
         configurable: true,
       });
     });
+  }
+
+  // Static initialization block - dynamically create getters/setters from ARRAY_SCHEMA
+  static {
+    GameObject._createSchemaProperties(GameObject);
   }
 }
 
