@@ -89,9 +89,10 @@ class GameObject {
    * @param {number} index - Position in shared arrays
    * @param {Object} config - Configuration object from GameEngine
    */
-  constructor(index, config = {}) {
+  constructor(index, config = {}, logicWorker = null) {
     this.index = index;
     this.config = config; // Store config for instance access
+    this.logicWorker = logicWorker;
     GameObject.active[index] = 1; // Set active in shared array (1 = true, 0 = false)
     //take the entity type from the class
     GameObject.entityType[index] = this.constructor.entityType;

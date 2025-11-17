@@ -15,9 +15,9 @@ class Prey extends Boid {
    * @param {number} index - Position in shared arrays
    * @param {Object} config - Configuration object from GameEngine
    */
-  constructor(index, config = {}) {
-    super(index, config);
-
+  constructor(index, config = {}, logicWorker = null) {
+    super(index, config, logicWorker);
+    // console.log(self);
     const i = index;
 
     // Initialize prey-specific properties

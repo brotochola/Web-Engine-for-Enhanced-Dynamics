@@ -127,9 +127,6 @@ class GameEngine {
     // Initialize canvas
     this.createCanvas();
 
-    // Create entity instances
-    this.createEntityInstances();
-
     // Create workers
     this.createWorkers();
 
@@ -167,6 +164,8 @@ class GameEngine {
       this.totalEntityCount,
       this.buffers.neighborData
     );
+
+    this.preInitializeEntityTypeArrays();
 
     // Initialize subclass buffers - generic for any entity type
     // IMPORTANT: Size arrays for TOTAL entity count, not just class count!
@@ -219,24 +218,19 @@ class GameEngine {
     // console.log(`   - Input Data: ${INPUT_BUFFER_SIZE} bytes`);
     // console.log(`   - Camera Data: ${CAMERA_BUFFER_SIZE} bytes`);
   }
-
-  // Create entity instances and initialize their values
-  // NOTE: This is now handled by the logic worker!
-  // The main thread should NOT create instances to avoid race conditions
-  createEntityInstances() {
-    // Main thread no longer creates instances - logic worker handles this
-    // We just need to pre-allocate the array slots
-    this.gameObjects = new Array(this.totalEntityCount);
-
-    // Initialize GameObject arrays to default values (all zeros/false)
-    // This ensures workers see valid data from the start
+  preInitializeEntityTypeArrays() {
+    // PRE-INITIALIZE entityType values to prevent race condition
+    // This ensures pixi_worker can read correct entityType values immediately
+    // when creating sprites, even before logic_worker creates instances
     for (let i = 0; i < this.totalEntityCount; i++) {
-      GameObject.active[i] = 0; // Mark as inactive initially
+      for (const registration of this.registeredClasses) {
+        const { class: EntityClass, startIndex, count } = registration;
+        if (i >= startIndex && i < startIndex + count) {
+          GameObject.entityType[i] = EntityClass.entityType;
+          break;
+        }
+      }
     }
-
-    console.log(
-      `✅ Prepared ${this.totalEntityCount} entity slots (instances created by logic worker)`
-    );
   }
 
   // Create canvas element
@@ -298,9 +292,6 @@ class GameEngine {
     // Preload assets before initializing workers
     await this.preloadAssets(this.imageUrls);
 
-    // Setup FPS monitoring
-    this.setupWorkerFPSMonitoring();
-
     // Create single initialization object for all workers
     const initData = {
       msg: "init",
@@ -350,8 +341,7 @@ class GameEngine {
   handleMessageFromWorker(e) {
     // const fromWorker = this.workers[e.currentTarget.name];
 
-    if (e.data.msg === "fps")
-      this.updateFPS(e.currentTarget.name + "FPS", e.data.fps);
+    if (e.data.msg === "fps") this.updateFPS(e.currentTarget.name, e.data.fps);
     else if (e.data.msg === "toAnotherWorker") {
       const { message, workerName } = e.data;
       this.workers[workerName].postMessage({
@@ -364,26 +354,10 @@ class GameEngine {
     // console.log("Message from worker:", e);
   }
   updateFPS(id, fps) {
-    const element = document.getElementById(id);
+    const element = document.getElementById(id + "FPS");
     if (element) {
       element.textContent = element.textContent.split(":")[0] + `: ${fps}`;
     }
-  }
-
-  // Setup FPS monitoring for workers
-  setupWorkerFPSMonitoring() {
-    // this.workers.spatial.onmessage = (e) => {
-    //   if (e.data.msg === "fps") updateFPS("spatialFPS", e.data.fps);
-    // };
-    // this.workers.logic.onmessage = (e) => {
-    //   if (e.data.msg === "fps") updateFPS("logicFPS", e.data.fps);
-    // };
-    // this.workers.physics.onmessage = (e) => {
-    //   if (e.data.msg === "fps") updateFPS("physicsFPS", e.data.fps);
-    // };
-    // this.workers.renderer.onmessage = (e) => {
-    //   if (e.data.msg === "fps") updateFPS("renderFPS", e.data.fps);
-    // };
   }
 
   // Setup all event listeners

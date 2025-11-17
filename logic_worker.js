@@ -51,7 +51,7 @@ class LogicWorker extends AbstractWorker {
       if (EntityClass) {
         for (let i = 0; i < count; i++) {
           const index = startIndex + i;
-          this.gameObjects[index] = new EntityClass(index, this.config);
+          this.gameObjects[index] = new EntityClass(index, this.config, this);
         }
         console.log(`LOGIC WORKER: Created ${count} ${name} instances`);
       } else {
