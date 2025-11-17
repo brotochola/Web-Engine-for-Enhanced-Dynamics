@@ -5,8 +5,8 @@
 importScripts("config.js");
 importScripts("gameObject.js");
 importScripts("AbstractWorker.js");
-importScripts("abstractLightSourceEntity.js");
-importScripts("candle.js");
+importScripts("lights/abstractLightSourceEntity.js");
+importScripts("lights/candle.js");
 importScripts("boid.js");
 
 /**

@@ -330,7 +330,7 @@ class GameEngine {
     this.workers.logic = new Worker("logic_worker.js");
     this.workers.physics = new Worker("physics_worker.js");
     if (USE_LIGHTING) {
-      this.workers.lighting = new Worker("lighting_worker.js");
+      this.workers.lighting = new Worker("lights/lighting_worker.js");
     }
     this.workers.renderer = new Worker("pixi_worker.js");
 
