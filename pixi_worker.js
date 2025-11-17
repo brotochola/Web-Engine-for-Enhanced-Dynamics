@@ -25,6 +25,7 @@ class PixiRenderer extends AbstractWorker {
     this.backgroundSprite = null;
     this.textures = {}; // Store loaded PIXI textures by name
     this.sprites = []; // Array of PIXI sprites for entities
+    this.entityTypeToTexture = {}; // Lookup table: entityType -> textureName
 
     // World and viewport dimensions
     this.worldWidth = 0;
@@ -107,18 +108,7 @@ class PixiRenderer extends AbstractWorker {
           sprite.rotation = rotation[i];
           sprite.scale.set(scale[i]);
           sprite.zIndex = y[i];
-
-          // Color entities by type: 0=Boid (white), 1=Prey (green), 2=Predator (red)
-          switch (entityType[i]) {
-            case 1:
-              sprite.tint = 0x00ff00; // Green for Prey
-              break;
-            case 2:
-              sprite.tint = 0xff0000; // Red for Predator
-              break;
-            default:
-              sprite.tint = 0xffffff; // White for Boid
-          }
+          // No tinting needed - using distinct textures per entity type
         } else {
           sprite.visible = false;
         }
@@ -165,6 +155,32 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
+   * Build lookup table from entityType to textureName by reading entity classes
+   * This allows entity classes to define their own rendering without hardcoding in renderer
+   */
+  buildEntityTextureMap(registeredClasses) {
+    // Map of class name to class reference
+    const classMap = {
+      Boid: Boid,
+      Prey: Prey,
+      Predator: Predator,
+      // Add more entity classes here as they're created
+    };
+
+    for (const registration of registeredClasses) {
+      const EntityClass = classMap[registration.name];
+
+      if (EntityClass && EntityClass.textureName !== undefined) {
+        this.entityTypeToTexture[EntityClass.entityType] =
+          EntityClass.textureName;
+        console.log(
+          `✅ Mapped entityType ${EntityClass.entityType} (${registration.name}) -> texture "${EntityClass.textureName}"`
+        );
+      }
+    }
+  }
+
+  /**
    * Load textures from transferred ImageBitmaps
    */
   loadTextures(texturesData) {
@@ -188,15 +204,22 @@ class PixiRenderer extends AbstractWorker {
    * Create PIXI sprites for all entities
    */
   createSprites() {
-    const defaultTexture = this.textures.bunny;
-
-    if (!defaultTexture) {
-      console.error("No textures available for sprites");
-      return;
-    }
-
     for (let i = 0; i < this.entityCount; i++) {
-      const sprite = new PIXI.Sprite(defaultTexture);
+      const entityType = GameObject.entityType[i];
+
+      // Look up texture name from entity class definition
+      const textureName = this.entityTypeToTexture[entityType];
+      let texture = textureName ? this.textures[textureName] : null;
+
+      // Fallback to first available texture if not found
+      if (!texture) {
+        texture = Object.values(this.textures)[0];
+        console.warn(
+          `No texture found for entityType ${entityType}, using fallback`
+        );
+      }
+
+      const sprite = new PIXI.Sprite(texture);
       sprite.anchor.set(0.5);
       sprite.scale.set(GameObject.scale[i]);
       sprite.x = GameObject.x[i];
@@ -244,6 +267,9 @@ class PixiRenderer extends AbstractWorker {
     // Load textures
     this.loadTextures(data.textures);
     this.createBackground();
+
+    // Build entity type -> texture mapping from entity class definitions
+    this.buildEntityTextureMap(data.registeredClasses);
 
     // Setup main container
     this.mainContainer.sortableChildren = true;

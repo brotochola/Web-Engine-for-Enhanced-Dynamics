@@ -12,7 +12,7 @@ class GameEngine {
 
     // State
     this.keyboard = {};
-    this.mouse = { x: 0, y: 0 };
+    this.mouse = { x: -100000, y: -100000 };
     this.camera = {
       zoom: 1,
       x: 0, // Will be centered on world after init
@@ -24,7 +24,7 @@ class GameEngine {
       spatial: null,
       logic: null,
       physics: null,
-      pixi: null,
+      renderer: null,
     };
 
     // Shared buffers
@@ -290,6 +290,11 @@ class GameEngine {
     this.workers.physics = new Worker("physics_worker.js");
     this.workers.renderer = new Worker("pixi_worker.js");
 
+    this.workers.spatial.name = "spatial";
+    this.workers.logic.name = "logic";
+    this.workers.physics.name = "physics";
+    this.workers.renderer.name = "renderer";
+
     // Preload assets before initializing workers
     await this.preloadAssets(this.imageUrls);
 
@@ -333,33 +338,52 @@ class GameEngine {
       [offscreenCanvas, ...Object.values(this.loadedTextures)] // Transfer canvas and all textures
     );
 
+    for (let worker of Object.values(this.workers)) {
+      worker.onmessage = (e) => {
+        this.handleMessageFromWorker(e);
+      };
+    }
+
     // console.log("✅ Created and initialized 4 workers");
+  }
+
+  handleMessageFromWorker(e) {
+    // const fromWorker = this.workers[e.currentTarget.name];
+
+    if (e.data.msg === "fps")
+      this.updateFPS(e.currentTarget.name + "FPS", e.data.fps);
+    else if (e.data.msg === "toAnotherWorker") {
+      const { message, workerName } = e.data;
+      this.workers[workerName].postMessage({
+        msg: "fromAnotherWorker",
+        from: e.currentTarget.name,
+        message,
+      });
+    }
+
+    // console.log("Message from worker:", e);
+  }
+  updateFPS(id, fps) {
+    const element = document.getElementById(id);
+    if (element) {
+      element.textContent = element.textContent.split(":")[0] + `: ${fps}`;
+    }
   }
 
   // Setup FPS monitoring for workers
   setupWorkerFPSMonitoring() {
-    const updateFPS = (id, fps) => {
-      const element = document.getElementById(id);
-      if (element) {
-        element.textContent = element.textContent.split(":")[0] + `: ${fps}`;
-      }
-    };
-
-    this.workers.spatial.onmessage = (e) => {
-      if (e.data.msg === "fps") updateFPS("spatialFPS", e.data.fps);
-    };
-
-    this.workers.logic.onmessage = (e) => {
-      if (e.data.msg === "fps") updateFPS("logicFPS", e.data.fps);
-    };
-
-    this.workers.physics.onmessage = (e) => {
-      if (e.data.msg === "fps") updateFPS("physicsFPS", e.data.fps);
-    };
-
-    this.workers.renderer.onmessage = (e) => {
-      if (e.data.msg === "fps") updateFPS("renderFPS", e.data.fps);
-    };
+    // this.workers.spatial.onmessage = (e) => {
+    //   if (e.data.msg === "fps") updateFPS("spatialFPS", e.data.fps);
+    // };
+    // this.workers.logic.onmessage = (e) => {
+    //   if (e.data.msg === "fps") updateFPS("logicFPS", e.data.fps);
+    // };
+    // this.workers.physics.onmessage = (e) => {
+    //   if (e.data.msg === "fps") updateFPS("physicsFPS", e.data.fps);
+    // };
+    // this.workers.renderer.onmessage = (e) => {
+    //   if (e.data.msg === "fps") updateFPS("renderFPS", e.data.fps);
+    // };
   }
 
   // Setup all event listeners

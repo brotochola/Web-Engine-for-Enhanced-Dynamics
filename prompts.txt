@@ -1,0 +1,5 @@
+prompts:
+
+
+I'm making a game engine, and the Prey and Predator are just to test. The following questions are about the development of the game engine. So before you answer, examine the code first.
+Think of the dev experience for the following issue. Dont code, let's talk first.

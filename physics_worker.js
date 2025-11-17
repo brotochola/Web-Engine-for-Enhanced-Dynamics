@@ -47,7 +47,7 @@ class PhysicsWorker extends AbstractWorker {
     const vy = GameObject.vy;
     const ax = GameObject.ax;
     const ay = GameObject.ay;
-    const rotation = GameObject.rotation;
+    const velocityAngle = GameObject.velocityAngle;
     const maxVel = GameObject.maxVel;
     const maxAcc = GameObject.maxAcc;
     const friction = GameObject.friction;
@@ -66,7 +66,7 @@ class PhysicsWorker extends AbstractWorker {
         vy,
         ax,
         ay,
-        rotation,
+        velocityAngle,
         maxVel,
         maxAcc,
         friction
@@ -86,7 +86,7 @@ class PhysicsWorker extends AbstractWorker {
     vy,
     ax,
     ay,
-    rotation,
+    velocityAngle,
     maxVel,
     maxAcc,
     friction
@@ -131,7 +131,7 @@ class PhysicsWorker extends AbstractWorker {
     y[i] += vy[i] * dtRatio;
 
     // Step 6: Update sprite rotation to face direction of movement
-    rotation[i] = Math.atan2(vy[i], vx[i]) + Math.PI / 2;
+    velocityAngle[i] = Math.atan2(vy[i], vx[i]) + Math.PI / 2;
 
     // Step 7: Clear acceleration (will be recalculated next frame by logic worker)
     ax[i] = 0;

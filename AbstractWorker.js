@@ -238,11 +238,19 @@ class AbstractWorker {
       case "resume":
         this.resume();
         break;
+      case "fromAnotherWorker":
+        this.handleMessageFromAnotherWorker(e.data);
+        break;
 
       default:
         this.handleCustomMessage(e.data);
         break;
     }
+  }
+
+  handleMessageFromAnotherWorker(data) {
+    const { message, from } = data;
+    console.log(this.constructor.name, "Received message from", from, message);
   }
 
   /**
@@ -300,5 +308,9 @@ class AbstractWorker {
    */
   handleCustomMessage(data) {
     // Override in subclass if needed
+  }
+
+  sendMessageToAnotherWorker(workerName, message) {
+    this.self.postMessage({ msg: "toAnotherWorker", message, workerName });
   }
 }

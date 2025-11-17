@@ -3,6 +3,7 @@
 
 class Predator extends Boid {
   static entityType = 2; // 2 = Predator
+  static textureName = "wolf"; // Texture to use for rendering
 
   // Define predator-specific properties schema
   static ARRAY_SCHEMA = {
@@ -19,8 +20,9 @@ class Predator extends Boid {
 
     const i = index;
 
-    GameObject.x[i] = 400;
-    GameObject.y[i] = 400;
+    GameObject.x[i] = 2000;
+    GameObject.y[i] = 1000;
+    GameObject.scale[i] = 0.2;
 
     // Initialize predator-specific properties
     Predator.huntFactor[i] = 0.2; // Chase strength

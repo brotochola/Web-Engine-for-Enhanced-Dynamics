@@ -3,6 +3,7 @@
 
 class Boid extends GameObject {
   static entityType = 0; // 0 = Boid
+  static textureName = "bunny"; // Texture to use for rendering
 
   // Define the boid-specific properties schema
   // GameEngine will automatically create all the required static properties!

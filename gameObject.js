@@ -18,6 +18,7 @@ class GameObject {
     ax: Float32Array,
     ay: Float32Array,
     rotation: Float32Array,
+    velocityAngle: Float32Array,
     scale: Float32Array,
     // Physics
     maxVel: Float32Array,
