@@ -250,7 +250,8 @@ class AbstractWorker {
 
   handleMessageFromAnotherWorker(data) {
     const { message, from } = data;
-    console.log(this.constructor.name, "Received message from", from, message);
+    this.lastMessage = { message, from };
+    // console.log(this.constructor.name, "Received message from", from, message);
   }
 
   /**

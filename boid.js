@@ -23,8 +23,8 @@ class Boid extends GameObject {
    * @param {number} index - Position in shared arrays
    * @param {Object} config - Configuration object from GameEngine
    */
-  constructor(index, config = {}) {
-    super(index, config);
+  constructor(index, config = {}, logicWorker = null) {
+    super(index, config, logicWorker);
 
     const i = index;
 
