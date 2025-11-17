@@ -296,12 +296,13 @@ class GameEngine {
     // Setup FPS monitoring
     this.setupWorkerFPSMonitoring();
 
-    // Initialize spatial worker
-    this.workers.spatial.postMessage({
+    // Create single initialization object for all workers
+    const initData = {
       msg: "init",
-      gameObjectBuffer: this.buffers.gameObjectData,
-      entityBuffers: Object.fromEntries(this.buffers.entityData), // Convert Map to plain object
-      neighborBuffer: this.buffers.neighborData,
+      buffers: {
+        ...this.buffers,
+        entityData: Object.fromEntries(this.buffers.entityData), // Convert Map to plain object
+      },
       entityCount: this.totalEntityCount,
       config: this.config,
       registeredClasses: this.registeredClasses.map((r) => ({
@@ -309,64 +310,25 @@ class GameEngine {
         count: r.count,
         startIndex: r.startIndex,
       })),
-    });
+    };
+
+    // Initialize spatial worker
+    this.workers.spatial.postMessage(initData);
 
     // Initialize logic worker
-    this.workers.logic.postMessage({
-      msg: "init",
-      gameObjectBuffer: this.buffers.gameObjectData,
-      entityBuffers: Object.fromEntries(this.buffers.entityData), // Convert Map to plain object
-      neighborBuffer: this.buffers.neighborData,
-      inputBuffer: this.buffers.inputData,
-      cameraBuffer: this.buffers.cameraData,
-      entityCount: this.totalEntityCount,
-      config: this.config,
-      registeredClasses: this.registeredClasses.map((r) => ({
-        name: r.class.name,
-        count: r.count,
-        startIndex: r.startIndex,
-      })),
-    });
+    this.workers.logic.postMessage(initData);
 
     // Initialize physics worker
-    this.workers.physics.postMessage({
-      msg: "init",
-      gameObjectBuffer: this.buffers.gameObjectData,
-      entityBuffers: Object.fromEntries(this.buffers.entityData), // Convert Map to plain object
-      inputBuffer: this.buffers.inputData,
-      cameraBuffer: this.buffers.cameraData,
-      entityCount: this.totalEntityCount,
-      config: this.config,
-      registeredClasses: this.registeredClasses.map((r) => ({
-        name: r.class.name,
-        count: r.count,
-        startIndex: r.startIndex,
-      })),
-    });
+    this.workers.physics.postMessage(initData);
 
     // Initialize renderer worker (transfer canvas and all textures)
     const offscreenCanvas = this.canvas.transferControlToOffscreen();
 
     this.workers.renderer.postMessage(
       {
-        msg: "init",
-        width: worldWidth,
-        height: worldHeight,
-        canvasWidth: canvasWidth,
-        canvasHeight: canvasHeight,
+        ...initData,
         view: offscreenCanvas,
         textures: this.loadedTextures, // Send as object with named keys
-        gameObjectBuffer: this.buffers.gameObjectData,
-        entityBuffers: Object.fromEntries(this.buffers.entityData), // Convert Map to plain object
-        inputBuffer: this.buffers.inputData,
-        cameraBuffer: this.buffers.cameraData,
-        entityCount: this.totalEntityCount,
-        config: this.config,
-        registeredClasses: this.registeredClasses.map((r) => ({
-          name: r.class.name,
-          count: r.count,
-          startIndex: r.startIndex,
-        })),
       },
       [offscreenCanvas, ...Object.values(this.loadedTextures)] // Transfer canvas and all textures
     );
@@ -426,6 +388,12 @@ class GameEngine {
       this.mouse.x = canvasX / this.camera.zoom + this.camera.x;
       this.mouse.y = canvasY / this.camera.zoom + this.camera.y;
 
+      this.updateInputBuffer();
+    });
+
+    this.canvas.addEventListener("mouseleave", (e) => {
+      this.mouse.x = -100000;
+      this.mouse.y = -100000;
       this.updateInputBuffer();
     });
 

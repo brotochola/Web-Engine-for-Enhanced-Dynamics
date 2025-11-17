@@ -146,34 +146,37 @@ class AbstractWorker {
     this.config = data.config || {};
 
     // Initialize GameObject arrays if buffer provided
-    if (data.gameObjectBuffer) {
+    if (data.buffers?.gameObjectData) {
       GameObject.initializeArrays(
-        data.gameObjectBuffer,
+        data.buffers.gameObjectData,
         this.entityCount,
-        data.neighborBuffer // Automatically initialize neighbor data
+        data.buffers.neighborData // Automatically initialize neighbor data
       );
     }
 
     // Initialize common shared buffers using Buffer->Data naming pattern
-    if (data.inputBuffer) {
-      this.inputData = new Int32Array(data.inputBuffer);
+    if (data.buffers?.inputData) {
+      this.inputData = new Int32Array(data.buffers.inputData);
     }
 
-    if (data.cameraBuffer) {
-      this.cameraData = new Float32Array(data.cameraBuffer);
+    if (data.buffers?.cameraData) {
+      this.cameraData = new Float32Array(data.buffers.cameraData);
     }
 
     // Initialize neighbor data reference (redundant with GameObject but kept for clarity)
-    if (data.neighborBuffer) {
-      this.neighborData = new Int32Array(data.neighborBuffer);
+    if (data.buffers?.neighborData) {
+      this.neighborData = new Int32Array(data.buffers.neighborData);
     }
 
     // Store registered classes (used by logic worker and potentially others)
     this.registeredClasses = data.registeredClasses || [];
 
     // Initialize all entity arrays using standardized method
-    if (data.entityBuffers && this.registeredClasses.length > 0) {
-      this.initializeEntityArrays(data.entityBuffers, this.registeredClasses);
+    if (data.buffers?.entityData && this.registeredClasses.length > 0) {
+      this.initializeEntityArrays(
+        data.buffers.entityData,
+        this.registeredClasses
+      );
     }
 
     // Keep a reference to neighbor data for easy access (already set above, but also from GameObject)

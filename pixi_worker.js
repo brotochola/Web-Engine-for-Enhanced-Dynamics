@@ -221,13 +221,13 @@ class PixiRenderer extends AbstractWorker {
   async initialize(data) {
     console.log("PIXI WORKER: Initializing PIXI with GameObject arrays", data);
 
-    // Store viewport and world dimensions
-    this.worldWidth = data.width;
-    this.worldHeight = data.height;
-    this.canvasWidth = data.canvasWidth;
-    this.canvasHeight = data.canvasHeight;
-    this.resolution = data.resolution;
+    // Store viewport and world dimensions from config
+    this.worldWidth = data.config.worldWidth;
+    this.worldHeight = data.config.worldHeight;
+    this.canvasWidth = data.config.canvasWidth;
+    this.canvasHeight = data.config.canvasHeight;
     this.canvasView = data.view;
+    this.resolution = 1;
 
     // Create PIXI application
     this.pixiApp = new PIXI.Application({
