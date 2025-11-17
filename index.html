@@ -45,18 +45,13 @@
         #renderFPS {
             color: #ffe66d;
         }
-
-        #lightingFPS {
-            color: #ff9ff3;
-        }
     </style>
 </head>
 <body>
-    <p id="config">Mode: SHARED ARRAY BUFFER (5 Workers) - Structure of Arrays + Spatial Hash + Lighting</p>
+    <p id="config">Mode: SHARED ARRAY BUFFER (4 Workers) - Structure of Arrays + Spatial Hash</p>
     <p id="spatialFPS">Spatial Worker FPS: --</p>
     <p id="logicFPS">Logic Worker FPS: --</p>
     <p id="physicsFPS">Physics Worker FPS: --</p>
-    <p id="lightingFPS">Lighting Worker FPS: --</p>
     <p id="renderFPS">Render Worker FPS: --</p>
     <p id="numberBoids">Number of entities: --</p>
     <p>Move camera with WASD or Arrow Keys, mousewheel to zoom in and out</p>
@@ -65,8 +60,6 @@
 
     <script src="config.js"></script>
     <script src="gameObject.js"></script>
-    <script src="lights/abstractLightSourceEntity.js"></script>
-    <script src="lights/candle.js"></script>
     <script src="boid.js"></script>
     <script src="gameEngine.js"></script>
     <script>
@@ -81,8 +74,7 @@
             },
             {
                 bunny: "1.png",
-                bg: "fondo.jpg",
-                light: "lights/white_gradient_256.png"
+                bg: "fondo.jpg"
             }
         );
 
@@ -91,10 +83,7 @@
 
         // Register entity classes
         // This is where you define what entities exist and how many
-        gameEngine.registerEntityClass(Boid, 10000); // Reduced from ENTITY_COUNT to see lighting better
-
-        // Register light sources (Candles)
-        // gameEngine.registerEntityClass(Candle, 100); // 50 candles scattered around
+        gameEngine.registerEntityClass(Boid, 10000);
 
         // You can register more entity types here:
         // gameEngine.registerEntityClass(Enemy, 500);

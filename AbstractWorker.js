@@ -167,13 +167,8 @@ class AbstractWorker {
    * Initialize entity-specific arrays from entityBuffers
    * @param {Object} entityBuffers - Map of entity class name to SharedArrayBuffer
    * @param {Object} entityCounts - Map of entity class name to count (or array of class info objects)
-   * @param {Array} lightSourceIndices - Optional array of GameObject indices for light sources
    */
-  initializeEntityArrays(
-    entityBuffers,
-    entityCounts,
-    lightSourceIndices = null
-  ) {
+  initializeEntityArrays(entityBuffers, entityCounts) {
     if (!entityBuffers) return;
 
     // Support both object format {ClassName: count} and array format [{name, count}]
@@ -190,12 +185,7 @@ class AbstractWorker {
       const buffer = entityBuffers[name];
 
       if (EntityClass && EntityClass.initializeArrays && buffer) {
-        // Pass lightSourceIndices to AbstractLightSourceEntity initialization
-        if (name === "AbstractLightSourceEntity" && lightSourceIndices) {
-          EntityClass.initializeArrays(buffer, count, lightSourceIndices);
-        } else {
-          EntityClass.initializeArrays(buffer, count);
-        }
+        EntityClass.initializeArrays(buffer, count);
         console.log(
           `${this.constructor.name}: Initialized ${name} arrays for ${count} instances`
         );
