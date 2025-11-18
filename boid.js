@@ -3,7 +3,12 @@
 
 class Boid extends RenderableGameObject {
   static entityType = 0; // 0 = Boid
-  static textureName = "bunny"; // Texture to use for rendering (fallback for simple sprites)
+
+  // Sprite configuration - standardized format for static sprites
+  static spriteConfig = {
+    type: "static",
+    textureName: "bunny",
+  };
 
   // Define the boid-specific properties schema
   // GameEngine will automatically create all the required static properties!

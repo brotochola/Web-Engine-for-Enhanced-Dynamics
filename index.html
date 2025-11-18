@@ -108,8 +108,8 @@
         gameEngine.registerEntityClass(Boid, 0, "boid.js");  // 0 instances, but needed by workers
 
         // Register actual game entities
-        gameEngine.registerEntityClass(Prey, 5000, "prey.js");
-        gameEngine.registerEntityClass(Predator, 140, "predator.js");
+        gameEngine.registerEntityClass(Prey, 15000, "prey.js");
+        gameEngine.registerEntityClass(Predator, 1040, "predator.js");
 
         // Initialize and start
         gameEngine.init().catch(error => {

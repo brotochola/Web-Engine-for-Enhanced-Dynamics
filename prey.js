@@ -4,29 +4,32 @@
 class Prey extends Boid {
   static entityType = 1; // 1 = Prey
 
-  // Sprite configuration for rendering
-  static spriteConfig = {
-    spritesheet: "person", // Use person spritesheet
-    animations: {
-      0: "parado", // Animation state 0 = idle
-      1: "caminar", // Animation state 1 = walk
-      2: "caminar", // Animation state 2 = run (using walk for now)
-      3: "caminar", // Animation state 3 = flee (using walk for now)
-    },
-    defaultAnimation: "parado", // Start with idle
-    animationSpeed: 0.15, // Animation playback speed
-  };
-
-  // Animation state constants
-  static ANIM_IDLE = 0;
-  static ANIM_WALK = 1;
-  static ANIM_RUN = 2;
-  static ANIM_FLEE = 3;
-
   // Define prey-specific properties schema
   static ARRAY_SCHEMA = {
     predatorAvoidFactor: Float32Array, // How strongly to flee from predators
   };
+
+  // Sprite configuration - standardized format for animated sprites
+  static spriteConfig = {
+    type: "animated",
+    spritesheet: "person",
+    defaultAnimation: "parado",
+    animationSpeed: 0.15,
+
+    // Animation states - maps state index to animation name
+    animStates: {
+      0: { name: "parado", label: "IDLE" }, // Idle/standing
+      1: { name: "caminar", label: "WALK" }, // Walking
+      2: { name: "caminar", label: "RUN" }, // Running (uses walk animation)
+      3: { name: "caminar", label: "FLEE" }, // Fleeing (uses walk animation)
+    },
+  };
+
+  // Animation state constants (for easy reference in code)
+  static ANIM_IDLE = 0;
+  static ANIM_WALK = 1;
+  static ANIM_RUN = 2;
+  static ANIM_FLEE = 3;
 
   /**
    * Prey constructor - initializes prey properties
@@ -137,7 +140,7 @@ class Prey extends Boid {
       RenderableGameObject.animationSpeed[i] = speed * 0.1;
     } else {
       newAnimState = Prey.ANIM_IDLE; // Idle/standing
-      RenderableGameObject.tint[i] = 0xffffff; // Normal color
+      RenderableGameObject.tint[i] = 0xff0000; // Normal color
     }
 
     // Update animation state
@@ -147,6 +150,8 @@ class Prey extends Boid {
     if (Math.abs(vx) > 0.1) {
       RenderableGameObject.flipX[i] = vx < 0 ? 1 : 0;
     }
+
+    // this.setSpriteProp("alpha", 0.1);
   }
 
   /**

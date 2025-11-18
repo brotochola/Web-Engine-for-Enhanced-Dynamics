@@ -4,20 +4,23 @@
 class Predator extends Boid {
   static entityType = 2; // 2 = Predator
 
-  // Sprite configuration for rendering
+  // Sprite configuration - standardized format for animated sprites
   static spriteConfig = {
-    spritesheet: "personaje", // Use personaje spritesheet
-    animations: {
-      0: "caminarDerecha", // Animation state 0 = idle (using walk for now)
-      1: "caminarDerecha", // Animation state 1 = walk
-      2: "caminarDerecha", // Animation state 2 = run
-      3: "caminarDerecha", // Animation state 3 = hunt (using walk)
+    type: "animated",
+    spritesheet: "personaje",
+    defaultAnimation: "caminarDerecha",
+    animationSpeed: 0.15,
+
+    // Animation states - maps state index to animation name
+    animStates: {
+      0: { name: "caminarDerecha", label: "IDLE" }, // Idle (using walk for now)
+      1: { name: "caminarDerecha", label: "WALK" }, // Walking
+      2: { name: "caminarDerecha", label: "RUN" }, // Running
+      3: { name: "caminarDerecha", label: "HUNT" }, // Hunting
     },
-    defaultAnimation: "caminarDerecha", // Start with walking animation
-    animationSpeed: 0.15, // Animation playback speed
   };
 
-  // Animation state constants
+  // Animation state constants (for easy reference in code)
   static ANIM_IDLE = 0;
   static ANIM_WALK = 1;
   static ANIM_RUN = 2;
