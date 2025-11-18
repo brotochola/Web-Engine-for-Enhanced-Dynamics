@@ -70,87 +70,113 @@ class Prey extends Boid {
   tick(dtRatio, inputData) {
     const i = this.index;
 
-    // Do all normal boid behaviors (cohesion, separation, alignment, boundaries)
-    super.tick(dtRatio, inputData);
+    // Apply flocking behaviors (uses Template Method Pattern from Boid)
+    // processNeighbor() hook will accumulate fleeing data during the loop
+    const context = super.applyFlockingBehaviors(i, dtRatio);
 
-    // Add predator avoidance behavior
-    const predatorNearby = this.avoidPredators(i, dtRatio);
+    // Apply fleeing force based on accumulated context
+    const predatorNearby = this.applyFleeing(i, dtRatio, context);
 
-    // Update animation based on speed and state
+    // Additional behaviors
+    this.avoidMouse(i, dtRatio, inputData);
+    this.keepWithinBounds(i, dtRatio);
+
+    // Update animation based on speed and state (cached)
     this.updateAnimation(i, predatorNearby);
   }
 
   /**
-   * Avoid predators - flee from any predators in visual range
-   * @returns {boolean} True if predator is nearby
+   * HOOK: Create context object for accumulating fleeing data during neighbor loop
    */
-  avoidPredators(i, dtRatio) {
-    const myX = GameObject.x[i];
-    const myY = GameObject.y[i];
-
-    let fleeX = 0;
-    let fleeY = 0;
-    let predatorCount = 0;
-
-    // Check all neighbors to find predators
-    for (let n = 0; n < this.neighborCount; n++) {
-      const j = this.neighbors[n];
-
-      // Check if this neighbor is a predator (entityType = 2)
-      if (GameObject.entityType[j] === Predator.entityType) {
-        const dx = myX - GameObject.x[j];
-        const dy = myY - GameObject.y[j];
-        const dist2 = dx * dx + dy * dy;
-
-        // Flee from predator (inverse square law for panic effect)
-        if (dist2 > 0) {
-          fleeX += dx / dist2;
-          fleeY += dy / dist2;
-          predatorCount++;
-        }
-      }
-    }
-
-    // Apply fleeing force if any predators nearby
-    if (predatorCount > 0) {
-      GameObject.ax[i] += fleeX * Prey.predatorAvoidFactor[i] * dtRatio;
-      GameObject.ay[i] += fleeY * Prey.predatorAvoidFactor[i] * dtRatio;
-    }
-
-    return predatorCount > 0;
+  createNeighborContext() {
+    return {
+      fleeX: 0,
+      fleeY: 0,
+      predatorCount: 0,
+    };
   }
 
   /**
-   * Update animation based on movement speed and state
+   * HOOK: Process each neighbor - called by Boid.applyFlockingBehaviors()
+   * Accumulates flee forces from all predators during the same loop that does flocking
+   */
+  processNeighbor(
+    neighborIndex,
+    neighborType,
+    dx,
+    dy,
+    dist2,
+    isSameType,
+    context
+  ) {
+    // Flee from predators (inverse square law for panic effect)
+    if (neighborType === Predator.entityType && dist2 > 0) {
+      context.fleeX += -dx / dist2; // Flee away from predator
+      context.fleeY += -dy / dist2;
+      context.predatorCount++;
+    }
+  }
+
+  /**
+   * Apply fleeing force away from predators (if any found)
+   * @returns {boolean} True if predator is nearby
+   */
+  applyFleeing(i, dtRatio, context) {
+    if (context.predatorCount > 0) {
+      GameObject.ax[i] += context.fleeX * Prey.predatorAvoidFactor[i] * dtRatio;
+      GameObject.ay[i] += context.fleeY * Prey.predatorAvoidFactor[i] * dtRatio;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * OPTIMIZED: Update animation based on movement speed and state
+   * Uses caching to avoid unnecessary writes when state hasn't changed
    */
   updateAnimation(i, predatorNearby) {
-    // Get speed from physics worker (already calculated and stored)
     const speed = GameObject.speed[i];
-
-    // Get velocity components for sprite flipping
     const vx = GameObject.vx[i];
+    const currentAnimState = RenderableGameObject.animationState[i];
+    const currentTint = RenderableGameObject.tint[i];
 
-    // Determine animation state based on speed and danger
+    // Determine new animation state based on speed and danger
     let newAnimState;
+    let newTint;
+    let newAnimSpeed;
 
     if (speed > 0.1) {
-      newAnimState = Prey.ANIM_WALK; // Walking
-      RenderableGameObject.tint[i] = 0xffffff; // Normal color
-      RenderableGameObject.animationSpeed[i] = speed * 0.1;
+      newAnimState = Prey.ANIM_WALK;
+      newTint = 0xffffff;
+      newAnimSpeed = speed * 0.1;
     } else {
-      newAnimState = Prey.ANIM_IDLE; // Idle/standing
-      RenderableGameObject.tint[i] = 0xff0000; // Normal color
+      newAnimState = Prey.ANIM_IDLE;
+      newTint = 0xff0000;
+      newAnimSpeed = RenderableGameObject.animationSpeed[i]; // Keep current
     }
 
-    // Update animation state
-    RenderableGameObject.animationState[i] = newAnimState;
+    // Only write if state changed
+    if (newAnimState !== currentAnimState) {
+      RenderableGameObject.animationState[i] = newAnimState;
+    }
 
-    // Flip sprite based on movement direction
+    // Only write if tint changed
+    if (newTint !== currentTint) {
+      RenderableGameObject.tint[i] = newTint;
+    }
+
+    // Only write animation speed when walking
+    if (speed > 0.1) {
+      RenderableGameObject.animationSpeed[i] = newAnimSpeed;
+    }
+
+    // Flip sprite based on movement direction (only if moving significantly)
     if (Math.abs(vx) > 0.1) {
-      RenderableGameObject.flipX[i] = vx < 0 ? 1 : 0;
+      const newFlipX = vx < 0 ? 1 : 0;
+      if (RenderableGameObject.flipX[i] !== newFlipX) {
+        RenderableGameObject.flipX[i] = newFlipX;
+      }
     }
-
-    // this.setSpriteProp("alpha", 0.1);
   }
 
   /**

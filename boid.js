@@ -71,10 +71,8 @@ class Boid extends RenderableGameObject {
   tick(dtRatio, inputData) {
     const i = this.index;
 
-    // Apply the three rules of boids using instance properties
-    this.applyCohesion(i, dtRatio); // Only same type
-    this.applySeparation(i, dtRatio); // All entities
-    this.applyAlignment(i, dtRatio); // Only same type
+    // Apply all three boid rules in a single optimized loop
+    this.applyFlockingBehaviors(i, dtRatio);
 
     // Additional behaviors
     this.avoidMouse(i, dtRatio, inputData);
@@ -82,96 +80,130 @@ class Boid extends RenderableGameObject {
   }
 
   /**
-   * Rule 1: Cohesion - Steer toward the center of mass of neighbors (same type only)
+   * OPTIMIZED: Apply all three boid rules (cohesion, separation, alignment) in a single loop
+   * Uses Template Method Pattern - subclasses can override processNeighbor() to add custom logic
+   * This reduces neighbor iteration from 3+ loops to 1 loop
+   *
+   * @returns {Object} neighborContext - Data that subclasses accumulated during the loop
    */
-  applyCohesion(i, dtRatio) {
-    if (this.neighborCount === 0) return;
+  applyFlockingBehaviors(i, dtRatio) {
+    if (this.neighborCount === 0) return {};
 
     const myEntityType = GameObject.entityType[i];
-    let centerX = 0;
-    let centerY = 0;
-    let sameTypeCount = 0;
-
-    for (let n = 0; n < this.neighborCount; n++) {
-      const j = this.neighbors[n];
-      if (GameObject.entityType[j] !== myEntityType) continue;
-
-      centerX += GameObject.x[j];
-      centerY += GameObject.y[j];
-      sameTypeCount++;
-    }
-
-    if (sameTypeCount === 0) return;
-
-    centerX /= sameTypeCount;
-    centerY /= sameTypeCount;
-
-    GameObject.ax[i] +=
-      (centerX - GameObject.x[i]) * Boid.centeringFactor[i] * dtRatio;
-    GameObject.ay[i] +=
-      (centerY - GameObject.y[i]) * Boid.centeringFactor[i] * dtRatio;
-  }
-
-  /**
-   * Rule 2: Separation - Avoid crowding neighbors (all entity types)
-   */
-  applySeparation(i, dtRatio) {
-    if (this.neighborCount === 0) return;
-
     const myX = GameObject.x[i];
     const myY = GameObject.y[i];
+    const protectedRange2 = Boid.protectedRange[i] * Boid.protectedRange[i];
 
-    let moveX = 0;
-    let moveY = 0;
+    // Cohesion accumulators (same type only)
+    let centerX = 0;
+    let centerY = 0;
 
+    // Alignment accumulators (same type only)
+    let avgVX = 0;
+    let avgVY = 0;
+
+    // Separation accumulators (all types)
+    let separateX = 0;
+    let separateY = 0;
+
+    let sameTypeCount = 0;
+
+    // Create context object for subclass to accumulate custom data
+    const neighborContext = this.createNeighborContext();
+
+    // Single loop through all neighbors
     for (let n = 0; n < this.neighborCount; n++) {
       const j = this.neighbors[n];
+      const neighborType = GameObject.entityType[j];
+      const isSameType = neighborType === myEntityType;
+
+      // Calculate distance once (used by all behaviors)
       const dx = GameObject.x[j] - myX;
       const dy = GameObject.y[j] - myY;
       const dist2 = dx * dx + dy * dy;
 
-      if (
-        dist2 < Boid.protectedRange[i] * Boid.protectedRange[i] &&
-        dist2 > 0
-      ) {
-        moveX -= dx / dist2;
-        moveY -= dy / dist2;
+      // Cohesion & Alignment (same type only)
+      if (isSameType) {
+        centerX += GameObject.x[j];
+        centerY += GameObject.y[j];
+        avgVX += GameObject.vx[j];
+        avgVY += GameObject.vy[j];
+        sameTypeCount++;
       }
+
+      // Separation (all types)
+      if (dist2 < protectedRange2 && dist2 > 0) {
+        separateX -= dx / dist2;
+        separateY -= dy / dist2;
+      }
+
+      // HOOK: Allow subclasses to process this neighbor (e.g., hunt prey, flee predators)
+      this.processNeighbor(
+        j,
+        neighborType,
+        dx,
+        dy,
+        dist2,
+        isSameType,
+        neighborContext
+      );
     }
 
-    GameObject.ax[i] += moveX * Boid.avoidFactor[i] * dtRatio;
-    GameObject.ay[i] += moveY * Boid.avoidFactor[i] * dtRatio;
+    // Apply cohesion force
+    if (sameTypeCount > 0) {
+      centerX /= sameTypeCount;
+      centerY /= sameTypeCount;
+      GameObject.ax[i] += (centerX - myX) * Boid.centeringFactor[i] * dtRatio;
+      GameObject.ay[i] += (centerY - myY) * Boid.centeringFactor[i] * dtRatio;
+
+      // Apply alignment force
+      avgVX /= sameTypeCount;
+      avgVY /= sameTypeCount;
+      GameObject.ax[i] +=
+        (avgVX - GameObject.vx[i]) * Boid.matchingFactor[i] * dtRatio;
+      GameObject.ay[i] +=
+        (avgVY - GameObject.vy[i]) * Boid.matchingFactor[i] * dtRatio;
+    }
+
+    // Apply separation force
+    GameObject.ax[i] += separateX * Boid.avoidFactor[i] * dtRatio;
+    GameObject.ay[i] += separateY * Boid.avoidFactor[i] * dtRatio;
+
+    // Return context so subclass can use accumulated data
+    return neighborContext;
   }
 
   /**
-   * Rule 3: Alignment - Match velocity with neighbors (same type only)
+   * HOOK: Create context object for subclasses to accumulate custom data during neighbor loop
+   * Override this in subclasses to add custom properties
+   * @returns {Object} Empty context object (subclasses extend this)
    */
-  applyAlignment(i, dtRatio) {
-    if (this.neighborCount === 0) return;
+  createNeighborContext() {
+    return {};
+  }
 
-    const myEntityType = GameObject.entityType[i];
-    let avgVX = 0;
-    let avgVY = 0;
-    let sameTypeCount = 0;
-
-    for (let n = 0; n < this.neighborCount; n++) {
-      const j = this.neighbors[n];
-      if (GameObject.entityType[j] !== myEntityType) continue;
-
-      avgVX += GameObject.vx[j];
-      avgVY += GameObject.vy[j];
-      sameTypeCount++;
-    }
-
-    if (sameTypeCount === 0) return;
-
-    avgVX /= sameTypeCount;
-    avgVY /= sameTypeCount;
-
-    GameObject.ax[i] +=
-      (avgVX - GameObject.vx[i]) * Boid.matchingFactor[i] * dtRatio;
-    GameObject.ay[i] +=
-      (avgVY - GameObject.vy[i]) * Boid.matchingFactor[i] * dtRatio;
+  /**
+   * HOOK: Process individual neighbor - called once per neighbor during flocking loop
+   * Override this in subclasses to add custom per-neighbor logic (hunting, fleeing, etc.)
+   *
+   * @param {number} neighborIndex - Index of the neighbor entity
+   * @param {number} neighborType - Entity type of the neighbor
+   * @param {number} dx - Delta X (neighbor.x - my.x)
+   * @param {number} dy - Delta Y (neighbor.y - my.y)
+   * @param {number} dist2 - Squared distance to neighbor
+   * @param {boolean} isSameType - Whether neighbor is same entity type
+   * @param {Object} context - Context object to accumulate data
+   */
+  processNeighbor(
+    neighborIndex,
+    neighborType,
+    dx,
+    dy,
+    dist2,
+    isSameType,
+    context
+  ) {
+    // Default: do nothing (base Boid doesn't need extra logic)
   }
 
   /**

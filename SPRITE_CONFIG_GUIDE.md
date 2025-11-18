@@ -267,9 +267,15 @@ static spriteConfig = {
   spritesheet: 'person',
   defaultAnimation: 'idle',
   animationSpeed: 0.15,
-  scale: 2.0,  // Double size
   animStates: { /* ... */ }
 };
+
+// To set scale, use RenderableGameObject properties in constructor:
+constructor(index, config, logicWorker) {
+  super(index, config, logicWorker);
+  RenderableGameObject.scaleX[index] = 2.0;  // Double width
+  RenderableGameObject.scaleY[index] = 2.0;  // Double height
+}
 ```
 
 ### Blend Modes

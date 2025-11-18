@@ -77,52 +77,64 @@ class Predator extends Boid {
   tick(dtRatio, inputData) {
     const i = this.index;
 
-    // Do normal boid behaviors (still flock with other predators)
-    super.tick(dtRatio, inputData);
+    // Apply flocking behaviors (uses Template Method Pattern from Boid)
+    // processNeighbor() hook will accumulate hunting data during the loop
+    const context = super.applyFlockingBehaviors(i, dtRatio);
 
-    // Add hunting behavior
-    const huntingPrey = this.chaseClosestPrey(i, dtRatio);
+    // Apply hunting force based on accumulated context
+    const huntingPrey = this.applyHunting(i, dtRatio, context);
 
-    // Update animation based on speed and state
+    // Additional behaviors
+    this.avoidMouse(i, dtRatio, inputData);
+    this.keepWithinBounds(i, dtRatio);
+
+    // Update animation based on speed and state (cached)
     this.updateAnimation(i, huntingPrey);
   }
 
   /**
-   * Chase the closest prey in visual range
+   * HOOK: Create context object for accumulating hunting data during neighbor loop
+   */
+  createNeighborContext() {
+    return {
+      closestPreyIndex: -1,
+      closestDist2: Infinity,
+    };
+  }
+
+  /**
+   * HOOK: Process each neighbor - called by Boid.applyFlockingBehaviors()
+   * Finds closest prey during the same loop that does flocking
+   */
+  processNeighbor(
+    neighborIndex,
+    neighborType,
+    dx,
+    dy,
+    dist2,
+    isSameType,
+    context
+  ) {
+    // Track closest prey
+    if (neighborType === Prey.entityType && dist2 < context.closestDist2) {
+      context.closestDist2 = dist2;
+      context.closestPreyIndex = neighborIndex;
+    }
+  }
+
+  /**
+   * Apply hunting force toward closest prey (if found)
    * @returns {boolean} True if actively hunting prey
    */
-  chaseClosestPrey(i, dtRatio) {
-    const myX = GameObject.x[i];
-    const myY = GameObject.y[i];
-
-    let closestPreyIndex = -1;
-    let closestDist2 = Infinity;
-
-    // Find the closest prey
-    for (let n = 0; n < this.neighborCount; n++) {
-      const j = this.neighbors[n];
-
-      // Check if this neighbor is a prey (entityType = 1)
-      if (GameObject.entityType[j] === Prey.entityType) {
-        const dx = GameObject.x[j] - myX;
-        const dy = GameObject.y[j] - myY;
-        const dist2 = dx * dx + dy * dy;
-
-        if (dist2 < closestDist2) {
-          closestDist2 = dist2;
-          closestPreyIndex = j;
-        }
-      }
-    }
-
-    // Chase the closest prey if found
-    if (closestPreyIndex !== -1) {
-      const dx = GameObject.x[closestPreyIndex] - myX;
-      const dy = GameObject.y[closestPreyIndex] - myY;
-      const dist = Math.sqrt(closestDist2);
+  applyHunting(i, dtRatio, context) {
+    if (context.closestPreyIndex !== -1) {
+      const myX = GameObject.x[i];
+      const myY = GameObject.y[i];
+      const dx = GameObject.x[context.closestPreyIndex] - myX;
+      const dy = GameObject.y[context.closestPreyIndex] - myY;
+      const dist = Math.sqrt(context.closestDist2);
 
       if (dist > 0) {
-        // Apply seeking force toward prey
         GameObject.ax[i] += (dx / dist) * Predator.huntFactor[i] * dtRatio;
         GameObject.ay[i] += (dy / dist) * Predator.huntFactor[i] * dtRatio;
       }
@@ -132,35 +144,48 @@ class Predator extends Boid {
   }
 
   /**
-   * Update animation based on movement speed and hunting state
+   * OPTIMIZED: Update animation based on movement speed and hunting state
+   * Uses caching to avoid unnecessary writes when state hasn't changed
    */
   updateAnimation(i, huntingPrey) {
-    // Get speed from physics worker (already calculated and stored)
     const speed = GameObject.speed[i];
+    const currentAnimState = RenderableGameObject.animationState[i];
+    const currentTint = RenderableGameObject.tint[i];
 
-    // Determine animation state based on speed and hunting
+    // Determine new animation state based on speed and hunting
     let newAnimState;
+    let newTint;
 
     if (huntingPrey && speed > 4) {
-      newAnimState = Predator.ANIM_HUNT; // Hunting prey
-      RenderableGameObject.tint[i] = 0xffaaaa; // Slight red tint when hunting
+      newAnimState = Predator.ANIM_HUNT;
+      newTint = 0xffaaaa; // Slight red tint when hunting
     } else if (speed > 4) {
-      newAnimState = Predator.ANIM_RUN; // Running
-      RenderableGameObject.tint[i] = 0xffffff; // Normal color
+      newAnimState = Predator.ANIM_RUN;
+      newTint = 0xffffff;
     } else if (speed > 1) {
-      newAnimState = Predator.ANIM_WALK; // Walking
-      RenderableGameObject.tint[i] = 0xffffff; // Normal color
+      newAnimState = Predator.ANIM_WALK;
+      newTint = 0xffffff;
     } else {
-      newAnimState = Predator.ANIM_IDLE; // Idle
-      RenderableGameObject.tint[i] = 0xffffff; // Normal color
+      newAnimState = Predator.ANIM_IDLE;
+      newTint = 0xffffff;
     }
 
-    // Update animation state
-    RenderableGameObject.animationState[i] = newAnimState;
+    // Only write if state changed
+    if (newAnimState !== currentAnimState) {
+      RenderableGameObject.animationState[i] = newAnimState;
+    }
 
-    // Flip sprite based on movement direction
+    // Only write if tint changed
+    if (newTint !== currentTint) {
+      RenderableGameObject.tint[i] = newTint;
+    }
+
+    // Flip sprite based on movement direction (only if moving significantly)
     if (Math.abs(GameObject.vx[i]) > 0.1) {
-      RenderableGameObject.flipX[i] = GameObject.vx[i] < 0 ? 1 : 0;
+      const newFlipX = GameObject.vx[i] < 0 ? 1 : 0;
+      if (RenderableGameObject.flipX[i] !== newFlipX) {
+        RenderableGameObject.flipX[i] = newFlipX;
+      }
     }
   }
 
