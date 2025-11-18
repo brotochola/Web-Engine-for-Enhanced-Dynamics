@@ -45,6 +45,10 @@
         #renderFPS {
             color: #ffe66d;
         }
+
+        #visibleUnits {
+            color: #95e1d3;
+        }
     </style>
 </head>
 <body>
@@ -54,6 +58,7 @@
     <p id="physicsFPS">Physics Worker FPS: --</p>
     <p id="rendererFPS">Renderer Worker FPS: --</p>
     <p id="numberBoids">Number of entities: --</p>
+    <p id="visibleUnits">Visible units: --</p>
     <p>Move camera with WASD or Arrow Keys, mousewheel to zoom in and out</p>
     <button id="pause" onclick="gameEngine.pause()">Pause</button>
     <button id="resume" onclick="gameEngine.resume()">Resume</button>
@@ -74,7 +79,7 @@
                 worldWidth: 2000,
                 worldHeight: 1500,
                 maxNeighbors: 100,
-                maxCollisionPairs: 60000, // Maximum collision pairs per frame
+                maxCollisionPairs: 80000, // Maximum collision pairs per frame
                 // Spatial hash grid configuration
                 cellSize: 50 // Each cell covers the visual range
             },
@@ -108,8 +113,8 @@
         gameEngine.registerEntityClass(Boid, 0, "boid.js");  // 0 instances, but needed by workers
 
         // Register actual game entities
-        gameEngine.registerEntityClass(Prey, 15000, "prey.js");
-        gameEngine.registerEntityClass(Predator, 1040, "predator.js");
+        gameEngine.registerEntityClass(Prey, 10000, "prey.js");
+        gameEngine.registerEntityClass(Predator, 2040, "predator.js");
 
         // Initialize and start
         gameEngine.init().catch(error => {

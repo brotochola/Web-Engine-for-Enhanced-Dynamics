@@ -41,7 +41,6 @@ class Boid extends RenderableGameObject {
     GameObject.ax[i] = 0;
     GameObject.ay[i] = 0;
     GameObject.rotation[i] = 0;
-    GameObject.scale[i] = 1;
 
     // Initialize GameObject physics properties
     GameObject.maxVel[i] = 10;

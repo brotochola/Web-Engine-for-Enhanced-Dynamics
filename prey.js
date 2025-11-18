@@ -49,7 +49,6 @@ class Prey extends Boid {
     GameObject.maxAcc[i] = 0.2;
     GameObject.friction[i] = 0.05;
     GameObject.radius[i] = 10;
-    GameObject.scale[i] = 1;
 
     // Initialize GameObject perception
     GameObject.visualRange[i] = 70; // How far boid can see

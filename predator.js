@@ -43,7 +43,6 @@ class Predator extends Boid {
 
     GameObject.x[i] = 2000;
     GameObject.y[i] = 1000;
-    GameObject.scale[i] = 1;
 
     // Initialize predator-specific properties
     Predator.huntFactor[i] = 0.2; // Chase strength

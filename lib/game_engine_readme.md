@@ -169,7 +169,6 @@ static ARRAY_SCHEMA = {
   ay: Float32Array,
   rotation: Float32Array,
   velocityAngle: Float32Array,
-  scale: Float32Array,
 
   // Physics
   maxVel: Float32Array,
@@ -430,7 +429,7 @@ update(deltaTime, dtRatio, resuming) {
     sprite.visible = true;
     sprite.position.set(x[i], y[i]);
     sprite.rotation = velocityAngle[i];
-    sprite.scale.set(scale[i]);
+    sprite.scale.set(scaleX[i], scaleY[i]);
   }
 
   container.scale.set(zoom);
@@ -1132,26 +1131,7 @@ this.workers.myCustom = new Worker("lib/my_custom_worker.js");
 this.workers.myCustom.postMessage(initData);
 ```
 
-### Inter-Worker Communication
-
-Workers can communicate via main thread:
-
-```javascript
-// In worker A
-this.sendMessageToAnotherWorker("renderer", {
-  cmd: "updateColor",
-  entityIndex: 5,
-  color: 0xFF0000,
-});
-
-// In worker B (renderer)
-handleMessageFromAnotherWorker(data) {
-  const { message, from } = data;
-  if (message.cmd === "updateColor") {
-    // Handle message
-  }
-}
-```
+````
 
 ### Custom Schedulers
 
@@ -1169,7 +1149,7 @@ class MyWorker extends AbstractWorker {
     setInterval(() => this.gameLoop(), 16.67);
   }
 }
-```
+````
 
 ---
 
@@ -1262,7 +1242,6 @@ new GameEngine(config, imageUrls);
 | `ax, ay`        | `Float32Array` | Acceleration                   |
 | `rotation`      | `Float32Array` | Rotation angle (radians)       |
 | `velocityAngle` | `Float32Array` | Direction of movement          |
-| `scale`         | `Float32Array` | Sprite scale                   |
 | `maxVel`        | `Float32Array` | Maximum speed                  |
 | `maxAcc`        | `Float32Array` | Maximum acceleration           |
 | `friction`      | `Float32Array` | Velocity decay (0-1)           |
