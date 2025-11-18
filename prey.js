@@ -7,6 +7,7 @@ class Prey extends Boid {
   // Define prey-specific properties schema
   static ARRAY_SCHEMA = {
     predatorAvoidFactor: Float32Array, // How strongly to flee from predators
+    life: Float32Array,
   };
 
   // Sprite configuration - standardized format for animated sprites
@@ -43,7 +44,7 @@ class Prey extends Boid {
 
     // Initialize prey-specific properties
     Prey.predatorAvoidFactor[i] = 311.5; // Strong avoidance of predators
-
+    Prey.life[i] = 1;
     // Initialize GameObject physics properties
     GameObject.maxVel[i] = 10;
     GameObject.maxAcc[i] = 0.2;
@@ -147,11 +148,11 @@ class Prey extends Boid {
 
     if (speed > 0.1) {
       newAnimState = Prey.ANIM_WALK;
-      newTint = 0xffffff;
+
       newAnimSpeed = speed * 0.1;
     } else {
       newAnimState = Prey.ANIM_IDLE;
-      newTint = 0xff0000;
+
       newAnimSpeed = RenderableGameObject.animationSpeed[i]; // Keep current
     }
 
@@ -161,8 +162,16 @@ class Prey extends Boid {
     }
 
     // Only write if tint changed
-    if (newTint !== currentTint) {
-      RenderableGameObject.tint[i] = newTint;
+
+    // Map life from white (0xffffff) to red (0xff0000) based on remaining life ratio
+    if (Prey.life[i] > 0) {
+      const maxLife = Prey.maxLife ? Prey.maxLife[i] : 1;
+      const ratio = Math.max(0, Math.min(1, Prey.life[i] / maxLife));
+      // Interpolate green/blue channel from 255 (white) to 0 (red)
+      const gb = Math.round(255 * ratio);
+      RenderableGameObject.tint[i] = (0xff << 16) | (gb << 8) | gb;
+    } else {
+      RenderableGameObject.tint[i] = 0xff0000;
     }
 
     // Only write animation speed when walking
@@ -183,13 +192,23 @@ class Prey extends Boid {
    * Unity-style collision callback: Called when prey collides with predator
    * This demonstrates the collision detection system
    */
-  onCollisionEnter(otherIndex) {
+  onCollisionEnter(otherIndex) {}
+
+  /**
+   * Unity-style collision callback: Called while prey is colliding with another entity
+   */
+  onCollisionStay(otherIndex) {
+    // Could add ongoing collision effects here
+    // For example: losing health over time while touching hazards
+
     const i = this.index;
 
     // Check if we collided with a predator
     if (GameObject.entityType[otherIndex] === Predator.entityType) {
-      // Prey is caught! Deactivate (die)
-      GameObject.active[i] = 0;
+      Prey.life[i] -= 0.01;
+      if (Prey.life[i] <= 0) {
+        GameObject.active[i] = 0;
+      }
 
       // Optional: Could post message to main thread for sound/particle effects
       // this.logicWorker.self.postMessage({
@@ -198,14 +217,6 @@ class Prey extends Boid {
       //   predatorIndex: otherIndex
       // });
     }
-  }
-
-  /**
-   * Unity-style collision callback: Called while prey is colliding with another entity
-   */
-  onCollisionStay(otherIndex) {
-    // Could add ongoing collision effects here
-    // For example: losing health over time while touching hazards
   }
 
   /**
