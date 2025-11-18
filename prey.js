@@ -3,7 +3,25 @@
 
 class Prey extends Boid {
   static entityType = 1; // 1 = Prey
-  static textureName = "sheep"; // Texture to use for rendering
+
+  // Sprite configuration for rendering
+  static spriteConfig = {
+    spritesheet: "person", // Use person spritesheet
+    animations: {
+      0: "parado", // Animation state 0 = idle
+      1: "caminar", // Animation state 1 = walk
+      2: "caminar", // Animation state 2 = run (using walk for now)
+      3: "caminar", // Animation state 3 = flee (using walk for now)
+    },
+    defaultAnimation: "parado", // Start with idle
+    animationSpeed: 0.15, // Animation playback speed
+  };
+
+  // Animation state constants
+  static ANIM_IDLE = 0;
+  static ANIM_WALK = 1;
+  static ANIM_RUN = 2;
+  static ANIM_FLEE = 3;
 
   // Define prey-specific properties schema
   static ARRAY_SCHEMA = {
@@ -28,10 +46,11 @@ class Prey extends Boid {
     GameObject.maxAcc[i] = 0.2;
     GameObject.friction[i] = 0.05;
     GameObject.radius[i] = 10;
-    GameObject.scale[i] = 0.2;
+    GameObject.scale[i] = 1;
 
     // Initialize GameObject perception
     GameObject.visualRange[i] = 70; // How far boid can see
+    RenderableGameObject.animationSpeed[i] = 0.15;
 
     // Initialize Boid-specific behavior properties (with slight randomization)
     Boid.protectedRange[i] = GameObject.radius[i] * 2; // Minimum distance from others
@@ -44,39 +63,36 @@ class Prey extends Boid {
 
   /**
    * Main update - applies boid behaviors plus predator avoidance
+   * Note: this.neighbors and this.neighborCount are updated before this is called
    */
-  tick(dtRatio, neighborData, inputData) {
+  tick(dtRatio, inputData) {
     const i = this.index;
 
     // Do all normal boid behaviors (cohesion, separation, alignment, boundaries)
-    super.tick(dtRatio, neighborData, inputData);
+    super.tick(dtRatio, inputData);
 
     // Add predator avoidance behavior
-    this.avoidPredators(i, dtRatio, neighborData);
+    const predatorNearby = this.avoidPredators(i, dtRatio);
+
+    // Update animation based on speed and state
+    this.updateAnimation(i, predatorNearby);
   }
 
   /**
    * Avoid predators - flee from any predators in visual range
+   * @returns {boolean} True if predator is nearby
    */
-  avoidPredators(i, dtRatio, neighborData) {
+  avoidPredators(i, dtRatio) {
     const myX = GameObject.x[i];
     const myY = GameObject.y[i];
-
-    // Get neighbors for this prey
-    const offset = i * (1 + (this.config.maxNeighbors || 100));
-    const neighborCount = neighborData[offset];
-    const neighbors = neighborData.subarray(
-      offset + 1,
-      offset + 1 + neighborCount
-    );
 
     let fleeX = 0;
     let fleeY = 0;
     let predatorCount = 0;
 
     // Check all neighbors to find predators
-    for (let n = 0; n < neighborCount; n++) {
-      const j = neighbors[n];
+    for (let n = 0; n < this.neighborCount; n++) {
+      const j = this.neighbors[n];
 
       // Check if this neighbor is a predator (entityType = 2)
       if (GameObject.entityType[j] === Predator.entityType) {
@@ -97,6 +113,39 @@ class Prey extends Boid {
     if (predatorCount > 0) {
       GameObject.ax[i] += fleeX * Prey.predatorAvoidFactor[i] * dtRatio;
       GameObject.ay[i] += fleeY * Prey.predatorAvoidFactor[i] * dtRatio;
+    }
+
+    return predatorCount > 0;
+  }
+
+  /**
+   * Update animation based on movement speed and state
+   */
+  updateAnimation(i, predatorNearby) {
+    // Get speed from physics worker (already calculated and stored)
+    const speed = GameObject.speed[i];
+
+    // Get velocity components for sprite flipping
+    const vx = GameObject.vx[i];
+
+    // Determine animation state based on speed and danger
+    let newAnimState;
+
+    if (speed > 0.1) {
+      newAnimState = Prey.ANIM_WALK; // Walking
+      RenderableGameObject.tint[i] = 0xffffff; // Normal color
+      RenderableGameObject.animationSpeed[i] = speed * 0.1;
+    } else {
+      newAnimState = Prey.ANIM_IDLE; // Idle/standing
+      RenderableGameObject.tint[i] = 0xffffff; // Normal color
+    }
+
+    // Update animation state
+    RenderableGameObject.animationState[i] = newAnimState;
+
+    // Flip sprite based on movement direction
+    if (Math.abs(vx) > 0.1) {
+      RenderableGameObject.flipX[i] = vx < 0 ? 1 : 0;
     }
   }
 

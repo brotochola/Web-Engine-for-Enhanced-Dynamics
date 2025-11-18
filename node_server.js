@@ -32,8 +32,11 @@ const mimeTypes = {
 const server = http.createServer((req, res) => {
   console.log(`${req.method} ${req.url}`);
 
-  // Parse URL and get file path
-  let filePath = "." + req.url;
+  // Parse URL and strip query parameters
+  const urlPath = req.url.split("?")[0]; // Remove query string
+
+  // Get file path
+  let filePath = "." + urlPath;
   if (filePath === "./") {
     filePath = "index.html";
   }
@@ -59,6 +62,13 @@ const server = http.createServer((req, res) => {
         "Cross-Origin-Opener-Policy": "same-origin",
         "Cross-Origin-Embedder-Policy": "require-corp",
         "Access-Control-Allow-Origin": "*",
+        // Disable caching for JavaScript files (especially workers)
+        "Cache-Control":
+          extname === ".js"
+            ? "no-cache, no-store, must-revalidate"
+            : "public, max-age=3600",
+        Pragma: extname === ".js" ? "no-cache" : "",
+        Expires: extname === ".js" ? "0" : "",
       });
       res.end(content, "utf-8");
     }

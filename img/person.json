@@ -1,0 +1,421 @@
+{
+  "frames": {
+    "sprite/caminar/04.png": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 36,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 42,
+        "y": 62,
+        "w": 36,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "sprite/caminar/09.png": {
+      "frame": {
+        "x": 0,
+        "y": 66,
+        "w": 36,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 42,
+        "y": 62,
+        "w": 36,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "sprite/parado/3.png": {
+      "frame": {
+        "x": 0,
+        "y": 132,
+        "w": 31,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 45,
+        "y": 62,
+        "w": 31,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "sprite/parado/4.png": {
+      "frame": {
+        "x": 0,
+        "y": 198,
+        "w": 31,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 45,
+        "y": 62,
+        "w": 31,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "sprite/caminar/00.png": {
+      "frame": {
+        "x": 0,
+        "y": 264,
+        "w": 38,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 42,
+        "y": 63,
+        "w": 38,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "sprite/caminar/05.png": {
+      "frame": {
+        "x": 31,
+        "y": 132,
+        "w": 37,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 42,
+        "y": 63,
+        "w": 37,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "sprite/parado/0.png": {
+      "frame": {
+        "x": 31,
+        "y": 197,
+        "w": 31,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 45,
+        "y": 63,
+        "w": 31,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "sprite/parado/1.png": {
+      "frame": {
+        "x": 36,
+        "y": 0,
+        "w": 31,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 45,
+        "y": 63,
+        "w": 31,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "sprite/parado/2.png": {
+      "frame": {
+        "x": 36,
+        "y": 65,
+        "w": 31,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 45,
+        "y": 63,
+        "w": 31,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "sprite/parado/5.png": {
+      "frame": {
+        "x": 67,
+        "y": 0,
+        "w": 31,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 45,
+        "y": 63,
+        "w": 31,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "sprite/caminar/03.png": {
+      "frame": {
+        "x": 67,
+        "y": 65,
+        "w": 28,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 42,
+        "y": 63,
+        "w": 28,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "sprite/caminar/08.png": {
+      "frame": {
+        "x": 0,
+        "y": 329,
+        "w": 28,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 42,
+        "y": 63,
+        "w": 28,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "sprite/caminar/01.png": {
+      "frame": {
+        "x": 0,
+        "y": 394,
+        "w": 37,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 42,
+        "y": 64,
+        "w": 37,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "sprite/caminar/06.png": {
+      "frame": {
+        "x": 28,
+        "y": 329,
+        "w": 37,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 42,
+        "y": 64,
+        "w": 37,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "sprite/caminar/02.png": {
+      "frame": {
+        "x": 38,
+        "y": 262,
+        "w": 33,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 42,
+        "y": 64,
+        "w": 33,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "sprite/caminar/07.png": {
+      "frame": {
+        "x": 65,
+        "y": 197,
+        "w": 33,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 42,
+        "y": 64,
+        "w": 33,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    }
+  },
+  "animations": {
+    "parado": [
+      "sprite/parado/0.png",
+      "sprite/parado/1.png",
+      "sprite/parado/2.png",
+      "sprite/parado/3.png",
+      "sprite/parado/4.png",
+      "sprite/parado/5.png"
+    ],
+    "caminar": [
+      "sprite/caminar/00.png",
+      "sprite/caminar/01.png",
+      "sprite/caminar/02.png",
+      "sprite/caminar/03.png",
+      "sprite/caminar/04.png",
+      "sprite/caminar/05.png",
+      "sprite/caminar/06.png",
+      "sprite/caminar/07.png",
+      "sprite/caminar/08.png",
+      "sprite/caminar/09.png"
+    ]
+  },
+  "meta": {
+    "app": "http://free-tex-packer.com",
+    "version": "0.6.7",
+    "image": "person.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 98,
+      "h": 458
+    },
+    "scale": 1
+  }
+}

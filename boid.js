@@ -1,9 +1,9 @@
 // Boid.js - Flocking behavior implementation
-// Extends GameObject to implement the classic boids algorithm
+// Extends RenderableGameObject to implement the classic boids algorithm
 
-class Boid extends GameObject {
+class Boid extends RenderableGameObject {
   static entityType = 0; // 0 = Boid
-  static textureName = "bunny"; // Texture to use for rendering
+  static textureName = "bunny"; // Texture to use for rendering (fallback for simple sprites)
 
   // Define the boid-specific properties schema
   // GameEngine will automatically create all the required static properties!
@@ -62,22 +62,15 @@ class Boid extends GameObject {
   /**
    * Main update - applies all boid rules
    * The spatial worker has already found neighbors for us!
+   * Note: this.neighbors and this.neighborCount are updated before this is called
    */
-  tick(dtRatio, neighborData, inputData) {
+  tick(dtRatio, inputData) {
     const i = this.index;
 
-    // Get precomputed neighbors for this boid
-    const offset = i * (1 + (this.config.maxNeighbors || 100));
-    const neighborCount = neighborData[offset];
-    const neighbors = neighborData.subarray(
-      offset + 1,
-      offset + 1 + neighborCount
-    );
-
-    // Apply the three rules of boids
-    this.applyCohesion(i, dtRatio, neighborCount, neighbors); // Only same type
-    this.applySeparation(i, dtRatio, neighborCount, neighbors); // All entities
-    this.applyAlignment(i, dtRatio, neighborCount, neighbors); // Only same type
+    // Apply the three rules of boids using instance properties
+    this.applyCohesion(i, dtRatio); // Only same type
+    this.applySeparation(i, dtRatio); // All entities
+    this.applyAlignment(i, dtRatio); // Only same type
 
     // Additional behaviors
     this.avoidMouse(i, dtRatio, inputData);
@@ -87,16 +80,16 @@ class Boid extends GameObject {
   /**
    * Rule 1: Cohesion - Steer toward the center of mass of neighbors (same type only)
    */
-  applyCohesion(i, dtRatio, neighborCount, neighbors) {
-    if (neighborCount === 0) return;
+  applyCohesion(i, dtRatio) {
+    if (this.neighborCount === 0) return;
 
     const myEntityType = GameObject.entityType[i];
     let centerX = 0;
     let centerY = 0;
     let sameTypeCount = 0;
 
-    for (let n = 0; n < neighborCount; n++) {
-      const j = neighbors[n];
+    for (let n = 0; n < this.neighborCount; n++) {
+      const j = this.neighbors[n];
       if (GameObject.entityType[j] !== myEntityType) continue;
 
       centerX += GameObject.x[j];
@@ -118,8 +111,8 @@ class Boid extends GameObject {
   /**
    * Rule 2: Separation - Avoid crowding neighbors (all entity types)
    */
-  applySeparation(i, dtRatio, neighborCount, neighbors) {
-    if (neighborCount === 0) return;
+  applySeparation(i, dtRatio) {
+    if (this.neighborCount === 0) return;
 
     const myX = GameObject.x[i];
     const myY = GameObject.y[i];
@@ -127,8 +120,8 @@ class Boid extends GameObject {
     let moveX = 0;
     let moveY = 0;
 
-    for (let n = 0; n < neighborCount; n++) {
-      const j = neighbors[n];
+    for (let n = 0; n < this.neighborCount; n++) {
+      const j = this.neighbors[n];
       const dx = GameObject.x[j] - myX;
       const dy = GameObject.y[j] - myY;
       const dist2 = dx * dx + dy * dy;
@@ -149,16 +142,16 @@ class Boid extends GameObject {
   /**
    * Rule 3: Alignment - Match velocity with neighbors (same type only)
    */
-  applyAlignment(i, dtRatio, neighborCount, neighbors) {
-    if (neighborCount === 0) return;
+  applyAlignment(i, dtRatio) {
+    if (this.neighborCount === 0) return;
 
     const myEntityType = GameObject.entityType[i];
     let avgVX = 0;
     let avgVY = 0;
     let sameTypeCount = 0;
 
-    for (let n = 0; n < neighborCount; n++) {
-      const j = neighbors[n];
+    for (let n = 0; n < this.neighborCount; n++) {
+      const j = this.neighbors[n];
       if (GameObject.entityType[j] !== myEntityType) continue;
 
       avgVX += GameObject.vx[j];

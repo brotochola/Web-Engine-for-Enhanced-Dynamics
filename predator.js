@@ -3,7 +3,25 @@
 
 class Predator extends Boid {
   static entityType = 2; // 2 = Predator
-  static textureName = "wolf"; // Texture to use for rendering
+
+  // Sprite configuration for rendering
+  static spriteConfig = {
+    spritesheet: "personaje", // Use personaje spritesheet
+    animations: {
+      0: "caminarDerecha", // Animation state 0 = idle (using walk for now)
+      1: "caminarDerecha", // Animation state 1 = walk
+      2: "caminarDerecha", // Animation state 2 = run
+      3: "caminarDerecha", // Animation state 3 = hunt (using walk)
+    },
+    defaultAnimation: "caminarDerecha", // Start with walking animation
+    animationSpeed: 0.15, // Animation playback speed
+  };
+
+  // Animation state constants
+  static ANIM_IDLE = 0;
+  static ANIM_WALK = 1;
+  static ANIM_RUN = 2;
+  static ANIM_HUNT = 3;
 
   // Define predator-specific properties schema
   static ARRAY_SCHEMA = {
@@ -22,7 +40,7 @@ class Predator extends Boid {
 
     GameObject.x[i] = 2000;
     GameObject.y[i] = 1000;
-    GameObject.scale[i] = 0.2;
+    GameObject.scale[i] = 1;
 
     // Initialize predator-specific properties
     Predator.huntFactor[i] = 0.2; // Chase strength
@@ -35,6 +53,8 @@ class Predator extends Boid {
     GameObject.maxAcc[i] = 0.2;
     GameObject.friction[i] = 0.05;
     GameObject.radius[i] = 10;
+
+    RenderableGameObject.animationSpeed[i] = 0.15;
 
     // Initialize GameObject perception
     GameObject.visualRange[i] = 70; // How far boid can see
@@ -50,38 +70,35 @@ class Predator extends Boid {
 
   /**
    * Main update - applies boid behaviors plus prey hunting
+   * Note: this.neighbors and this.neighborCount are updated before this is called
    */
-  tick(dtRatio, neighborData, inputData) {
+  tick(dtRatio, inputData) {
     const i = this.index;
 
     // Do normal boid behaviors (still flock with other predators)
-    super.tick(dtRatio, neighborData, inputData);
+    super.tick(dtRatio, inputData);
 
     // Add hunting behavior
-    this.chaseClosestPrey(i, dtRatio, neighborData);
+    const huntingPrey = this.chaseClosestPrey(i, dtRatio);
+
+    // Update animation based on speed and state
+    this.updateAnimation(i, huntingPrey);
   }
 
   /**
    * Chase the closest prey in visual range
+   * @returns {boolean} True if actively hunting prey
    */
-  chaseClosestPrey(i, dtRatio, neighborData) {
+  chaseClosestPrey(i, dtRatio) {
     const myX = GameObject.x[i];
     const myY = GameObject.y[i];
-
-    // Get neighbors for this predator
-    const offset = i * (1 + (this.config.maxNeighbors || 100));
-    const neighborCount = neighborData[offset];
-    const neighbors = neighborData.subarray(
-      offset + 1,
-      offset + 1 + neighborCount
-    );
 
     let closestPreyIndex = -1;
     let closestDist2 = Infinity;
 
     // Find the closest prey
-    for (let n = 0; n < neighborCount; n++) {
-      const j = neighbors[n];
+    for (let n = 0; n < this.neighborCount; n++) {
+      const j = this.neighbors[n];
 
       // Check if this neighbor is a prey (entityType = 1)
       if (GameObject.entityType[j] === Prey.entityType) {
@@ -107,6 +124,41 @@ class Predator extends Boid {
         GameObject.ax[i] += (dx / dist) * Predator.huntFactor[i] * dtRatio;
         GameObject.ay[i] += (dy / dist) * Predator.huntFactor[i] * dtRatio;
       }
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Update animation based on movement speed and hunting state
+   */
+  updateAnimation(i, huntingPrey) {
+    // Get speed from physics worker (already calculated and stored)
+    const speed = GameObject.speed[i];
+
+    // Determine animation state based on speed and hunting
+    let newAnimState;
+
+    if (huntingPrey && speed > 4) {
+      newAnimState = Predator.ANIM_HUNT; // Hunting prey
+      RenderableGameObject.tint[i] = 0xffaaaa; // Slight red tint when hunting
+    } else if (speed > 4) {
+      newAnimState = Predator.ANIM_RUN; // Running
+      RenderableGameObject.tint[i] = 0xffffff; // Normal color
+    } else if (speed > 1) {
+      newAnimState = Predator.ANIM_WALK; // Walking
+      RenderableGameObject.tint[i] = 0xffffff; // Normal color
+    } else {
+      newAnimState = Predator.ANIM_IDLE; // Idle
+      RenderableGameObject.tint[i] = 0xffffff; // Normal color
+    }
+
+    // Update animation state
+    RenderableGameObject.animationState[i] = newAnimState;
+
+    // Flip sprite based on movement direction
+    if (Math.abs(GameObject.vx[i]) > 0.1) {
+      RenderableGameObject.flipX[i] = GameObject.vx[i] < 0 ? 1 : 0;
     }
   }
 
