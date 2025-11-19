@@ -1,14 +1,77 @@
-
--cambiar de animacion
--agregar o sacar entidades
+ CULLING: spatial culling + transform-level culling + renderer-level culling
 
 
--particle System 
--physics_worker: detectar colisiones segun ambos radios
-    -crear nuevo buffer con "gameObjects colisionando"
-    -evaluar si el physics_worker tmb hace separacion
+
+------------------------------------------------------------------------------------------------
+      GAME OBJECTS:
+------------------------------------------------------------------------------------------------
+
+// Podrías tener:
+const entity = engine.createEntity()
+  .addComponent('Transform', {...})
+  .addComponent('Physics', {...})
+  .addComponent('FlockBehavior', {...})
+  .addComponent('PreyBehavior', {...});
+
+
+-activate and desactivate
+-metodo awake cuando un gameobject se hace activo (viene del pool)
+
+
+-------------------------------------------------------------------------------------------------
+    --- SCENES ----
+------------------------------------------------------------------------------------------------
+
+
 
 -escenas donde se descargan y cargan cosas
 
--metodo awake cuando un gameobject se hace activo (viene del pool)
+
+
+
+
+
+
+------------------------------------------------------------------------------------------------
+-- NEW WORKERS --
+------------------------------------------------------------------------------------------------
+
+-render debug worker (encima del canvas q ya tenemos)
+-particle System?
+-animation worker?
 -worker con A* y con flowfiled pathfinding
+-un worker q calcula datos extra de todos:
+  -isItOnScreen()
+  -velocityAngle
+  -linearSpeed
+-steering worker? (separar la logica de las entity classes en dos workers: logic y uno nuevo?)
+
+// mas de un worker para lo mismo?
+
+
+
+
+------------------------------------------------------------------------------------------------
+--- SPATIAL WORKER: ---
+------------------------------------------------------------------------------------------------
+- agregar al spatial worker q calcule las distancias entre todos los vecinos y lo guarde en un nuevo buffer/array
+- version con quadtree?
+- celdas no caminables
+
+
+
+
+
+
+
+------------------------------------------------------------------------------------------------
+--- PHYSICS WORKER: ---
+------------------------------------------------------------------------------------------------
+
+//conectar con https://rapier.rs/ en lugar de mi physics_worker
+
+
+------------------------------------------------------------------------------------------------
+--- PIXI-WORKER: ---
+------------------------------------------------------------------------------------------------
+- use cullable

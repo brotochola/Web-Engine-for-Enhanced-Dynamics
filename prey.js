@@ -26,12 +26,6 @@ class Prey extends Boid {
     },
   };
 
-  // Animation state constants (for easy reference in code)
-  static ANIM_IDLE = 0;
-  static ANIM_WALK = 1;
-  static ANIM_RUN = 2;
-  static ANIM_FLEE = 3;
-
   /**
    * Prey constructor - initializes prey properties
    * @param {number} index - Position in shared arrays

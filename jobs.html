@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimal Job System with Workers</title>
+    <script id="worker-code" type="text/javascript">
+
+        class JobWorker {
+            constructor() {
+                this.jobFunctions = {
+                    updateEntities: this.updateEntities.bind(this),
+                    calculatePhysics: this.calculatePhysics.bind(this),
+                };
+
+                self.onmessage = (e) => this.handleMessage(e);
+                self.postMessage({ type: 'ready' });
+            }
+
+            handleMessage(e) {
+                const { type, jobId, jobType, params } = e.data;
+
+                if (type === 'executeJob') {
+                    const jobFunction = this.jobFunctions[jobType];
+
+                    if (!jobFunction) {
+                        self.postMessage({
+                            type: 'jobComplete',
+                            jobId,
+                            result: { error: 'Job not found' }
+                        });
+                        return;
+                    }
+
+                    const startTime = performance.now();
+                    const result = jobFunction(params);
+                    const elapsed = performance.now() - startTime;
+
+                    self.postMessage({
+                        type: 'jobComplete',
+                        jobId,
+                        result: { ...result, timeSpent: elapsed }
+                    });
+                }
+            }
+
+            updateEntities(params) {
+                const { buffer, startIdx, endIdx, deltaTime } = params;
+                const entities = new Float32Array(buffer);
+
+                let updatedCount = 0;
+
+                // Simular trabajo: actualizar posiciones
+                for (let i = startIdx; i < endIdx; i++) {
+                    const x = entities[i * 2];
+                    const y = entities[i * 2 + 1];
+
+                    // Movimiento circular simple
+                    const time = performance.now() / 1000;
+                    entities[i * 2] = x + Math.sin(time + i) * 0.5;
+                    entities[i * 2 + 1] = y + Math.cos(time + i) * 0.5;
+
+                    updatedCount++;
+                }
+
+                return {
+                    jobType: 'updateEntities',
+                    entitiesProcessed: updatedCount
+                };
+            }
+
+            calculatePhysics(params) {
+                const { buffer, startIdx, endIdx, gravity } = params;
+                const entities = new Float32Array(buffer);
+
+                // Simular física simple
+                for (let i = startIdx; i < endIdx; i++) {
+                    entities[i * 2 + 1] += gravity;
+                }
+
+                return {
+                    jobType: 'calculatePhysics',
+                    entitiesProcessed: endIdx - startIdx
+                };
+            }
+        }
+
+        const worker = new JobWorker();
+    </script>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            margin: 0;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #4ec9b0;
+            border-bottom: 2px solid #4ec9b0;
+            padding-bottom: 10px;
+        }
+
+        .controls {
+            background: #252526;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+
+        button:hover {
+            background: #1177bb;
+        }
+
+        button:disabled {
+            background: #3e3e42;
+            cursor: not-allowed;
+        }
+
+        .stats {
+            background: #252526;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            padding: 5px;
+            background: #1e1e1e;
+            border-radius: 4px;
+        }
+
+        .stat-label {
+            color: #9cdcfe;
+        }
+
+        .stat-value {
+            color: #ce9178;
+            font-weight: bold;
+        }
+
+        .log {
+            background: #252526;
+            padding: 15px;
+            border-radius: 8px;
+            height: 300px;
+            overflow-y: auto;
+            font-size: 13px;
+        }
+
+        .log-entry {
+            margin: 4px 0;
+            padding: 4px 8px;
+            border-left: 3px solid #4ec9b0;
+            background: #1e1e1e;
+        }
+
+        .log-entry.worker {
+            border-left-color: #ce9178;
+        }
+
+        .log-entry.complete {
+            border-left-color: #608b4e;
+        }
+
+        .log-entry.frame {
+            border-left-color: #dcdcaa;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Minimal Job System - Unity DOTS Style</h1>
+
+        <div class="controls">
+            <button id="startBtn">Start Game Loop</button>
+            <button id="stopBtn" disabled>Stop</button>
+            <button id="clearBtn">Clear Log</button>
+        </div>
+
+        <div class="stats">
+            <div class="stat-row">
+                <span class="stat-label">Frame:</span>
+                <span class="stat-value" id="frameCount">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Frame Time:</span>
+                <span class="stat-value" id="frameTime">0ms</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Jobs Completed:</span>
+                <span class="stat-value" id="jobsCompleted">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Total Entities:</span>
+                <span class="stat-value" id="entityCount">20000</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Workers:</span>
+                <span class="stat-value" id="workerCount">2</span>
+            </div>
+        </div>
+
+        <div class="log" id="logContainer"></div>
+    </div>
+
+    <script>
+        // ============================================
+        // LOGGING UTILITIES
+        // ============================================
+        const logContainer = document.getElementById('logContainer');
+
+        function log(message, type = 'normal') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function clearLog() {
+            logContainer.innerHTML = '';
+        }
+
+        // ============================================
+        // JOB SYSTEM
+        // ============================================
+        class JobSystem {
+            constructor(workerCount = 2) {
+                this.workers = [];
+                this.jobQueue = [];
+                this.results = [];
+                this.workersReady = 0;
+                this.totalJobsCompleted = 0;
+
+                log(`🔧 Creating ${workerCount} workers...`);
+
+                // Crear workers inline (para evitar archivos externos)
+                for (let i = 0; i < workerCount; i++) {
+                    const workerCode = this.getWorkerCode();
+                    const blob = new Blob([workerCode], { type: 'application/javascript' });
+                    const workerUrl = URL.createObjectURL(blob);
+
+                    const worker = new Worker(workerUrl);
+                    worker.id = i;
+                    worker.onmessage = (e) => this.handleWorkerMessage(e, i);
+                    this.workers.push(worker);
+
+                    log(`✓ Worker ${i} created`, 'worker');
+                }
+            }
+
+            getWorkerCode() {
+                // Código del worker como string (inline)
+                return document.getElementById('worker-code').textContent;
+            }
+
+            handleWorkerMessage(e, workerId) {
+                const { type, result, jobId } = e.data;
+
+                if (type === 'ready') {
+                    this.workersReady++;
+                    log(`✓ Worker ${workerId} ready`, 'worker');
+                    return;
+                }
+
+                if (type === 'jobComplete') {
+                    this.results[jobId] = result;
+                    this.totalJobsCompleted++;
+
+                    // Si hay más jobs en la cola, asignar el siguiente
+                    if (this.jobQueue.length > 0) {
+                        const nextJob = this.jobQueue.shift();
+                        this.workers[workerId].postMessage(nextJob);
+                    } else {
+                        this.workersReady++;
+                    }
+                }
+            }
+
+            addJob(jobType, params) {
+                const jobId = this.results.length;
+                this.results.push(null);
+
+                return {
+                    type: 'executeJob',
+                    jobId,
+                    jobType,
+                    params
+                };
+            }
+
+            async executeJobs(jobs) {
+                this.jobQueue = [...jobs];
+                this.workersReady = 0;
+
+                // Asignar primeros jobs a cada worker
+                for (let i = 0; i < this.workers.length && this.jobQueue.length > 0; i++) {
+                    const job = this.jobQueue.shift();
+                    this.workers[i].postMessage(job);
+                }
+
+                // Esperar a que todos terminen
+                await this.waitForCompletion();
+
+                return [...this.results];
+            }
+
+            waitForCompletion() {
+                return new Promise((resolve) => {
+                    const check = () => {
+                        if (this.workersReady === this.workers.length) {
+                            resolve();
+                        } else {
+                            setTimeout(check, 1);
+                        }
+                    };
+                    check();
+                });
+            }
+
+            destroy() {
+                this.workers.forEach(w => w.terminate());
+                log('🔴 Workers terminated');
+            }
+        }
+
+        // ============================================
+        // GAME LOOP
+        // ============================================
+        let jobSystem = null;
+        let entities = null;
+        let isRunning = false;
+        let frameCount = 0;
+        let animationFrameId = null;
+
+        const ENTITY_COUNT = 20000;
+        const ENTITIES_PER_JOB = 5000;
+        const WORKERS_COUNT = 4
+
+        function init() {
+            log('🎮 Initializing game...', 'frame');
+
+            // Crear SharedArrayBuffer para entidades
+            entities = new Float32Array(new SharedArrayBuffer(ENTITY_COUNT * 8));
+
+            // Inicializar posiciones aleatorias
+            for (let i = 0; i < ENTITY_COUNT; i++) {
+                entities[i * 2] = Math.random() * 1000;     // x
+                entities[i * 2 + 1] = Math.random() * 1000; // y
+            }
+
+            log(`✓ Initialized ${ENTITY_COUNT} entities`);
+
+            // Crear job system
+            jobSystem = new JobSystem(Math.floor(navigator.hardwareConcurrency * 0.5));
+
+            // Esperar a que workers estén listos
+            setTimeout(() => {
+                log('✓ All workers ready!', 'complete');
+                log('🚀 Starting game loop...', 'frame');
+                isRunning = true;
+                gameLoop();
+            }, 100);
+        }
+
+        async function gameLoop() {
+            if (!isRunning) return;
+            console.log('gameLoop', frameCount);
+
+            frameCount++;
+            const startTime = performance.now();
+
+            // ============================================
+            // 1. CREAR JOBS - Dividir trabajo en chunks
+            // ============================================
+            const jobs = [];
+
+            for (let i = 0; i < ENTITY_COUNT; i += ENTITIES_PER_JOB) {
+                jobs.push(jobSystem.addJob('updateEntities', {
+                    buffer: entities.buffer,
+                    startIdx: i,
+                    endIdx: Math.min(i + ENTITIES_PER_JOB, ENTITY_COUNT),
+                    deltaTime: 16.67
+                }));
+            }
+
+            // ============================================
+            // 2. EJECUTAR JOBS EN PARALELO
+            // ============================================
+            const results = await jobSystem.executeJobs(jobs);
+
+            // ============================================
+            // 3. UPDATE UI
+            // ============================================
+            const elapsed = performance.now() - startTime;
+
+            // Update stats
+            document.getElementById('frameCount').textContent = frameCount;
+            document.getElementById('frameTime').textContent = elapsed.toFixed(2) + 'ms';
+            document.getElementById('jobsCompleted').textContent = jobSystem.totalJobsCompleted;
+
+            // Log cada 60 frames
+            if (frameCount % 60 === 0) {
+                log(`Frame ${frameCount} - ${elapsed.toFixed(2)}ms - ${jobs.length} jobs`, 'frame');
+            }
+
+            // Siguiente frame
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        function stop() {
+            isRunning = false;
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            if (jobSystem) {
+                jobSystem.destroy();
+                jobSystem = null;
+            }
+            log('⏸️ Game loop stopped', 'frame');
+        }
+
+        // ============================================
+        // UI CONTROLS
+        // ============================================
+        document.getElementById('startBtn').addEventListener('click', () => {
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            init();
+        });
+
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            stop();
+        });
+
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            clearLog();
+        });
+
+        // Initial log
+        log('💡 Click "Start Game Loop" to begin');
+        log(`💡 This simulates ${ENTITY_COUNT} entities updated in parallel by ${WORKERS_COUNT} workers`);
+    </script>
+</body>
+</html>
