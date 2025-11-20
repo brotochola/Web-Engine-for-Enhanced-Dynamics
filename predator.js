@@ -15,16 +15,13 @@ class Predator extends Boid {
     animStates: {
       0: { name: "caminarDerecha", label: "IDLE" }, // Idle (using walk for now)
       1: { name: "caminarDerecha", label: "WALK" }, // Walking
-      2: { name: "caminarDerecha", label: "RUN" }, // Running
-      3: { name: "caminarDerecha", label: "HUNT" }, // Hunting
     },
   };
 
-  // Animation state constants (for easy reference in code)
-  static ANIM_IDLE = 0;
-  static ANIM_WALK = 1;
-  static ANIM_RUN = 2;
-  static ANIM_HUNT = 3;
+  static anims = {
+    IDLE: 0,
+    WALK: 1,
+  };
 
   // Define predator-specific properties schema
   static ARRAY_SCHEMA = {
@@ -41,33 +38,33 @@ class Predator extends Boid {
 
     const i = index;
 
-    GameObject.x[i] = 2000;
-    GameObject.y[i] = 1000;
+    this.x = 2000;
+    this.y = 1000;
 
     // Initialize predator-specific properties
-    Predator.huntFactor[i] = 0.2; // Chase strength
+    this.huntFactor = 0.2; // Chase strength
 
     // Make predators slightly slower than prey (hunt by strategy, not speed)
-    GameObject.maxVel[i] = 7;
+    this.maxVel = 7;
 
-    GameObject.radius[i] = 12;
+    this.radius = 12;
 
-    GameObject.maxAcc[i] = 0.2;
-    GameObject.friction[i] = 0.05;
-    GameObject.radius[i] = 10;
+    this.maxAcc = 0.2;
+    this.friction = 0.05;
+    this.radius = 10;
 
-    RenderableGameObject.animationSpeed[i] = 0.15;
+    this.animationSpeed = 0.15;
 
     // Initialize GameObject perception
-    GameObject.visualRange[i] = 70; // How far boid can see
+    this.visualRange = 70; // How far boid can see
 
     // Initialize Boid-specific behavior properties (with slight randomization)
-    Boid.protectedRange[i] = GameObject.radius[i] * 2; // Minimum distance from others
-    Boid.centeringFactor[i] = 0.0005; // Cohesion strength
-    Boid.avoidFactor[i] = 2; // Separation strength
-    Boid.matchingFactor[i] = 0.01; // Alignment strength
-    Boid.turnFactor[i] = 0.1; // Boundary avoidance strength
-    Boid.margin[i] = 20; // Distance from edge to start turning
+    this.protectedRange = this.radius * 2; // Minimum distance from others
+    this.centeringFactor = 0.0005; // Cohesion strength
+    this.avoidFactor = 2; // Separation strength
+    this.matchingFactor = 0.01; // Alignment strength
+    this.turnFactor = 0.1; // Boundary avoidance strength
+    this.margin = 20; // Distance from edge to start turning
   }
 
   /**
@@ -135,8 +132,8 @@ class Predator extends Boid {
       const dist = Math.sqrt(context.closestDist2);
 
       if (dist > 0) {
-        GameObject.ax[i] += (dx / dist) * Predator.huntFactor[i] * dtRatio;
-        GameObject.ay[i] += (dy / dist) * Predator.huntFactor[i] * dtRatio;
+        this.ax += (dx / dist) * this.huntFactor * dtRatio;
+        this.ay += (dy / dist) * this.huntFactor * dtRatio;
       }
       return true;
     }
@@ -156,35 +153,33 @@ class Predator extends Boid {
     let newAnimState;
     let newTint;
 
-    if (huntingPrey && speed > 4) {
-      newAnimState = Predator.ANIM_HUNT;
-      newTint = 0xffaaaa; // Slight red tint when hunting
-    } else if (speed > 4) {
-      newAnimState = Predator.ANIM_RUN;
-      newTint = 0xffffff;
-    } else if (speed > 1) {
-      newAnimState = Predator.ANIM_WALK;
-      newTint = 0xffffff;
+    if (speed > 1) {
+      newAnimState = Predator.anims.WALK;
     } else {
-      newAnimState = Predator.ANIM_IDLE;
+      newAnimState = Predator.anims.IDLE;
+    }
+
+    if (huntingPrey) {
+      newTint = 0xffaaaa;
+    } else {
       newTint = 0xffffff;
     }
 
     // Only write if state changed
     if (newAnimState !== currentAnimState) {
-      RenderableGameObject.animationState[i] = newAnimState;
+      this.animationState = newAnimState;
     }
 
     // Only write if tint changed
     if (newTint !== currentTint) {
-      RenderableGameObject.tint[i] = newTint;
+      this.tint = newTint;
     }
 
     // Flip sprite based on movement direction (only if moving significantly)
-    if (Math.abs(GameObject.vx[i]) > 0.1) {
-      const newFlipX = GameObject.vx[i] < 0 ? 1 : 0;
-      if (RenderableGameObject.flipX[i] !== newFlipX) {
-        RenderableGameObject.flipX[i] = newFlipX;
+    if (Math.abs(this.vx) > 0.1) {
+      const newFlipX = this.vx < 0 ? 1 : 0;
+      if (this.flipX !== newFlipX) {
+        this.flipX = newFlipX;
       }
     }
   }

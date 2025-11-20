@@ -21,9 +21,12 @@ class Prey extends Boid {
     animStates: {
       0: { name: "parado", label: "IDLE" }, // Idle/standing
       1: { name: "caminar", label: "WALK" }, // Walking
-      2: { name: "caminar", label: "RUN" }, // Running (uses walk animation)
-      3: { name: "caminar", label: "FLEE" }, // Fleeing (uses walk animation)
     },
+  };
+
+  static anims = {
+    IDLE: 0,
+    WALK: 1,
   };
 
   /**
@@ -37,25 +40,25 @@ class Prey extends Boid {
     const i = index;
 
     // Initialize prey-specific properties
-    Prey.predatorAvoidFactor[i] = 311.5; // Strong avoidance of predators
-    Prey.life[i] = 1;
+    this.predatorAvoidFactor = 311.5; // Strong avoidance of predators
+    this.life = 1;
     // Initialize GameObject physics properties
-    GameObject.maxVel[i] = 10;
-    GameObject.maxAcc[i] = 0.2;
-    GameObject.friction[i] = 0.05;
-    GameObject.radius[i] = 10;
+    this.maxVel = 10;
+    this.maxAcc = 0.2;
+    this.friction = 0.05;
+    this.radius = 10;
 
     // Initialize GameObject perception
-    GameObject.visualRange[i] = 70; // How far boid can see
-    RenderableGameObject.animationSpeed[i] = 0.15;
+    this.visualRange = 70; // How far boid can see
+    this.animationSpeed = 0.15;
 
     // Initialize Boid-specific behavior properties (with slight randomization)
-    Boid.protectedRange[i] = GameObject.radius[i] * 2; // Minimum distance from others
-    Boid.centeringFactor[i] = 0.0005; // Cohesion strength
-    Boid.avoidFactor[i] = 2; // Separation strength
-    Boid.matchingFactor[i] = 0.01; // Alignment strength
-    Boid.turnFactor[i] = 0.1; // Boundary avoidance strength
-    Boid.margin[i] = 20; // Distance from edge to start turning
+    this.protectedRange = this.radius * 2; // Minimum distance from others
+    this.centeringFactor = 0.0005; // Cohesion strength
+    this.avoidFactor = 2; // Separation strength
+    this.matchingFactor = 0.01; // Alignment strength
+    this.turnFactor = 0.1; // Boundary avoidance strength
+    this.margin = 20; // Distance from edge to start turning
   }
 
   /**
@@ -141,11 +144,11 @@ class Prey extends Boid {
     let newAnimSpeed;
 
     if (speed > 0.1) {
-      newAnimState = Prey.ANIM_WALK;
+      newAnimState = Prey.anims.WALK;
 
       newAnimSpeed = speed * 0.1;
     } else {
-      newAnimState = Prey.ANIM_IDLE;
+      newAnimState = Prey.anims.IDLE;
 
       newAnimSpeed = RenderableGameObject.animationSpeed[i]; // Keep current
     }

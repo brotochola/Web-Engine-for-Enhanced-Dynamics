@@ -91,10 +91,10 @@ class Boid extends RenderableGameObject {
   applyFlockingBehaviors(i, dtRatio) {
     if (this.neighborCount === 0) return {};
 
-    const myEntityType = GameObject.entityType[i];
-    const myX = GameObject.x[i];
-    const myY = GameObject.y[i];
-    const protectedRange2 = Boid.protectedRange[i] * Boid.protectedRange[i];
+    const myEntityType = this.entityType;
+    const myX = this.x;
+    const myY = this.y;
+    const protectedRange2 = this.protectedRange * this.protectedRange;
 
     // Cohesion accumulators (same type only)
     let centerX = 0;
@@ -116,7 +116,7 @@ class Boid extends RenderableGameObject {
     // Single loop through all neighbors
     for (let n = 0; n < this.neighborCount; n++) {
       const j = this.neighbors[n];
-      const neighborType = GameObject.entityType[j];
+      const neighborType = this.entityType;
       const isSameType = neighborType === myEntityType;
 
       // Use pre-calculated squared distance from spatial worker (OPTIMIZATION!)
@@ -158,21 +158,19 @@ class Boid extends RenderableGameObject {
     if (sameTypeCount > 0) {
       centerX /= sameTypeCount;
       centerY /= sameTypeCount;
-      GameObject.ax[i] += (centerX - myX) * Boid.centeringFactor[i] * dtRatio;
-      GameObject.ay[i] += (centerY - myY) * Boid.centeringFactor[i] * dtRatio;
+      this.ax += (centerX - myX) * this.centeringFactor * dtRatio;
+      this.ay += (centerY - myY) * this.centeringFactor * dtRatio;
 
       // Apply alignment force
       avgVX /= sameTypeCount;
       avgVY /= sameTypeCount;
-      GameObject.ax[i] +=
-        (avgVX - GameObject.vx[i]) * Boid.matchingFactor[i] * dtRatio;
-      GameObject.ay[i] +=
-        (avgVY - GameObject.vy[i]) * Boid.matchingFactor[i] * dtRatio;
+      this.ax += (avgVX - this.vx) * this.matchingFactor * dtRatio;
+      this.ay += (avgVY - this.vy) * this.matchingFactor * dtRatio;
     }
 
     // Apply separation force
-    GameObject.ax[i] += separateX * Boid.avoidFactor[i] * dtRatio;
-    GameObject.ay[i] += separateY * Boid.avoidFactor[i] * dtRatio;
+    this.ax += separateX * this.avoidFactor * dtRatio;
+    this.ay += separateY * this.avoidFactor * dtRatio;
 
     // Return context so subclass can use accumulated data
     return neighborContext;
@@ -215,8 +213,8 @@ class Boid extends RenderableGameObject {
    * Avoid the mouse cursor
    */
   avoidMouse(i, dtRatio, inputData) {
-    const myX = GameObject.x[i];
-    const myY = GameObject.y[i];
+    const myX = this.x;
+    const myY = this.y;
 
     const mouseX = inputData[0];
     const mouseY = inputData[1];
@@ -228,26 +226,24 @@ class Boid extends RenderableGameObject {
     if (dist2 < 1e-4 || dist2 > 100000) return;
 
     const strength = 1004545000;
-    GameObject.ax[i] = (dx / dist2) * strength * dtRatio;
-    GameObject.ay[i] = (dy / dist2) * strength * dtRatio;
+    this.ax = (dx / dist2) * strength * dtRatio;
+    this.ay = (dy / dist2) * strength * dtRatio;
   }
 
   /**
    * Keep boids within world boundaries
    */
   keepWithinBounds(i, dtRatio) {
-    const x = GameObject.x[i];
-    const y = GameObject.y[i];
+    const x = this.x;
+    const y = this.y;
     const worldWidth = this.config.worldWidth || 800;
     const worldHeight = this.config.worldHeight || 600;
 
-    if (x < Boid.margin[i]) GameObject.ax[i] += Boid.turnFactor[i] * dtRatio;
-    if (x > worldWidth - Boid.margin[i])
-      GameObject.ax[i] -= Boid.turnFactor[i] * dtRatio;
+    if (x < this.margin) this.ax += this.turnFactor * dtRatio;
+    if (x > worldWidth - this.margin) this.ax -= this.turnFactor * dtRatio;
 
-    if (y < Boid.margin[i]) GameObject.ay[i] += Boid.turnFactor[i] * dtRatio;
-    if (y > worldHeight - Boid.margin[i])
-      GameObject.ay[i] -= Boid.turnFactor[i] * dtRatio;
+    if (y < this.margin) this.ay += this.turnFactor * dtRatio;
+    if (y > worldHeight - this.margin) this.ay -= this.turnFactor * dtRatio;
   }
 }
 
