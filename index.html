@@ -59,6 +59,7 @@
     <p id="rendererFPS">Renderer Worker FPS: --</p>
     <p id="numberBoids">Number of entities: --</p>
     <p id="visibleUnits">Visible units: --</p>
+    <p id="activeUnits">Active units: --</p>
     <p>Move camera with WASD or Arrow Keys, mousewheel to zoom in and out</p>
     <button id="pause" onclick="gameEngine.pause()">Pause</button>
     <button id="resume" onclick="gameEngine.resume()">Resume</button>
@@ -114,7 +115,7 @@
 
         // Register actual game entities
         gameEngine.registerEntityClass(Prey, 10000, "prey.js");
-        gameEngine.registerEntityClass(Predator, 2040, "predator.js");
+        gameEngine.registerEntityClass(Predator, 540, "predator.js");
 
         // Initialize and start
         gameEngine.init().catch(error => {
