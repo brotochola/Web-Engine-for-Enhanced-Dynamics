@@ -84,6 +84,8 @@ class Boid extends RenderableGameObject {
    * Uses Template Method Pattern - subclasses can override processNeighbor() to add custom logic
    * This reduces neighbor iteration from 3+ loops to 1 loop
    *
+   * NEW: Uses pre-calculated distances from spatial worker (no need to recalculate!)
+   *
    * @returns {Object} neighborContext - Data that subclasses accumulated during the loop
    */
   applyFlockingBehaviors(i, dtRatio) {
@@ -117,10 +119,13 @@ class Boid extends RenderableGameObject {
       const neighborType = GameObject.entityType[j];
       const isSameType = neighborType === myEntityType;
 
-      // Calculate distance once (used by all behaviors)
+      // Use pre-calculated squared distance from spatial worker (OPTIMIZATION!)
+      // This eliminates duplicate distance calculations between spatial & logic workers
+      const dist2 = this.neighborDistances ? this.neighborDistances[n] : 0;
+
+      // Calculate delta only when needed (for separation direction)
       const dx = GameObject.x[j] - myX;
       const dy = GameObject.y[j] - myY;
-      const dist2 = dx * dx + dy * dy;
 
       // Cohesion & Alignment (same type only)
       if (isSameType) {
