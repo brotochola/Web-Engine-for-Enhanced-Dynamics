@@ -3,14 +3,340 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minimal Job System with Workers</title>
-    <script id="worker-code" type="text/javascript">
+    <title>Job System Benchmark - Unity DOTS Style</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            margin: 0;
+        }
 
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #4ec9b0;
+            border-bottom: 2px solid #4ec9b0;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        h2 {
+            color: #9cdcfe;
+            font-size: 18px;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .controls {
+            background: #252526;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            color: #9cdcfe;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        input[type="number"],
+        input[type="range"] {
+            background: #3c3c3c;
+            border: 1px solid #555;
+            color: #d4d4d4;
+            padding: 8px;
+            border-radius: 4px;
+            width: 100%;
+            font-size: 14px;
+        }
+
+        input[type="range"] {
+            padding: 0;
+            height: 30px;
+        }
+
+        .range-value {
+            display: inline-block;
+            background: #1e1e1e;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin-left: 10px;
+            color: #ce9178;
+            font-weight: bold;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            flex: 1;
+        }
+
+        button:hover {
+            background: #1177bb;
+        }
+
+        button:disabled {
+            background: #3e3e42;
+            cursor: not-allowed;
+        }
+
+        button.success {
+            background: #0e7c3c;
+        }
+
+        button.success:hover {
+            background: #0f9d58;
+        }
+
+        button.danger {
+            background: #c9302c;
+        }
+
+        button.danger:hover {
+            background: #e74c3c;
+        }
+
+        .stats {
+            background: #252526;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            padding: 8px;
+            background: #1e1e1e;
+            border-radius: 4px;
+        }
+
+        .stat-label {
+            color: #9cdcfe;
+        }
+
+        .stat-value {
+            color: #ce9178;
+            font-weight: bold;
+        }
+
+        .stat-value.good {
+            color: #4ec9b0;
+        }
+
+        .stat-value.warning {
+            color: #dcdcaa;
+        }
+
+        .stat-value.bad {
+            color: #f48771;
+        }
+
+        .benchmark {
+            background: #252526;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .benchmark-results {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .benchmark-card {
+            background: #1e1e1e;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+            border-left: 3px solid #4ec9b0;
+        }
+
+        .benchmark-card .value {
+            font-size: 24px;
+            color: #ce9178;
+            font-weight: bold;
+        }
+
+        .benchmark-card .label {
+            font-size: 12px;
+            color: #9cdcfe;
+            margin-top: 5px;
+        }
+
+        .log {
+            background: #252526;
+            padding: 15px;
+            border-radius: 8px;
+            height: 300px;
+            overflow-y: auto;
+            font-size: 13px;
+        }
+
+        .log-entry {
+            margin: 4px 0;
+            padding: 4px 8px;
+            border-left: 3px solid #4ec9b0;
+            background: #1e1e1e;
+        }
+
+        .log-entry.worker {
+            border-left-color: #ce9178;
+        }
+
+        .log-entry.complete {
+            border-left-color: #608b4e;
+        }
+
+        .log-entry.frame {
+            border-left-color: #dcdcaa;
+            font-weight: bold;
+        }
+
+        .log-entry.benchmark {
+            border-left-color: #c586c0;
+            background: #2a2d2e;
+        }
+
+        .chart {
+            background: #252526;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .chart canvas {
+            width: 100%;
+            height: 200px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Job System Benchmark - Unity DOTS Style</h1>
+
+        <div class="grid">
+            <div class="controls">
+                <h2>⚙️ Configuration</h2>
+
+                <div class="control-group">
+                    <label>Entity Count: <span class="range-value" id="entityCountValue">20000</span></label>
+                    <input type="range" id="entityCount" min="1000" max="100000" step="1000" value="20000">
+                </div>
+
+                <div class="control-group">
+                    <label>Entities Per Job: <span class="range-value" id="entitiesPerJobValue">5000</span></label>
+                    <input type="range" id="entitiesPerJob" min="100" max="20000" step="100" value="5000">
+                </div>
+
+                <div class="control-group">
+                    <label>Worker Count: <span class="range-value" id="workerCountValue">2</span></label>
+                    <input type="range" id="workerCountSlider" min="1" max="8" step="1" value="2">
+                </div>
+
+                <div class="control-group">
+                    <label>Work Complexity (iterations): <span class="range-value"
+                            id="complexityValue">100</span></label>
+                    <input type="range" id="complexity" min="10" max="1000" step="10" value="100">
+                </div>
+
+                <div class="button-group">
+                    <button id="startBtn" class="success">▶️ Start</button>
+                    <button id="stopBtn" class="danger" disabled>⏹️ Stop</button>
+                </div>
+            </div>
+
+            <div class="stats">
+                <h2>📊 Real-time Stats</h2>
+                <div class="stat-row">
+                    <span class="stat-label">Frame:</span>
+                    <span class="stat-value" id="frameCount">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Frame Time:</span>
+                    <span class="stat-value" id="frameTime">0ms</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">FPS:</span>
+                    <span class="stat-value" id="fps">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Jobs Per Frame:</span>
+                    <span class="stat-value" id="jobsPerFrame">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Total Jobs:</span>
+                    <span class="stat-value" id="jobsCompleted">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Avg Frame Time:</span>
+                    <span class="stat-value" id="avgFrameTime">0ms</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="benchmark">
+            <h2>🏁 Benchmark Results</h2>
+            <div class="button-group">
+                <button id="benchmarkBtn">Run Benchmark Suite</button>
+                <button id="clearBenchBtn">Clear Results</button>
+            </div>
+            <div class="benchmark-results" id="benchmarkResults"></div>
+        </div>
+
+        <div class="controls">
+            <h2>📝 Event Log</h2>
+            <button id="clearBtn">Clear Log</button>
+        </div>
+
+        <div class="log" id="logContainer"></div>
+    </div>
+
+    <!-- Worker code as script -->
+    <script id="workerCode">
         class JobWorker {
             constructor() {
                 this.jobFunctions = {
                     updateEntities: this.updateEntities.bind(this),
-                    calculatePhysics: this.calculatePhysics.bind(this),
+                    heavyComputation: this.heavyComputation.bind(this),
                 };
 
                 self.onmessage = (e) => this.handleMessage(e);
@@ -45,20 +371,25 @@
             }
 
             updateEntities(params) {
-                const { buffer, startIdx, endIdx, deltaTime } = params;
+                const { buffer, startIdx, endIdx, deltaTime, complexity } = params;
                 const entities = new Float32Array(buffer);
 
                 let updatedCount = 0;
 
-                // Simular trabajo: actualizar posiciones
+                // Simular trabajo con complejidad variable
                 for (let i = startIdx; i < endIdx; i++) {
                     const x = entities[i * 2];
                     const y = entities[i * 2 + 1];
 
-                    // Movimiento circular simple
+                    // Trabajo artificial (más iteraciones = más pesado)
+                    let result = x + y;
+                    for (let j = 0; j < complexity; j++) {
+                        result = Math.sqrt(result * result + 1);
+                    }
+
                     const time = performance.now() / 1000;
-                    entities[i * 2] = x + Math.sin(time + i) * 0.5;
-                    entities[i * 2 + 1] = y + Math.cos(time + i) * 0.5;
+                    entities[i * 2] = x + Math.sin(time + i) * 0.5 + result * 0.0001;
+                    entities[i * 2 + 1] = y + Math.cos(time + i) * 0.5 + result * 0.0001;
 
                     updatedCount++;
                 }
@@ -69,161 +400,18 @@
                 };
             }
 
-            calculatePhysics(params) {
-                const { buffer, startIdx, endIdx, gravity } = params;
-                const entities = new Float32Array(buffer);
-
-                // Simular física simple
-                for (let i = startIdx; i < endIdx; i++) {
-                    entities[i * 2 + 1] += gravity;
+            heavyComputation(params) {
+                const { iterations } = params;
+                let result = 0;
+                for (let i = 0; i < iterations; i++) {
+                    result += Math.sqrt(i * Math.PI);
                 }
-
-                return {
-                    jobType: 'calculatePhysics',
-                    entitiesProcessed: endIdx - startIdx
-                };
+                return { result };
             }
         }
 
         const worker = new JobWorker();
     </script>
-    <style>
-        body {
-            font-family: 'Courier New', monospace;
-            background: #1e1e1e;
-            color: #d4d4d4;
-            padding: 20px;
-            margin: 0;
-        }
-
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-        }
-
-        h1 {
-            color: #4ec9b0;
-            border-bottom: 2px solid #4ec9b0;
-            padding-bottom: 10px;
-        }
-
-        .controls {
-            background: #252526;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }
-
-        button {
-            background: #0e639c;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            margin-right: 10px;
-        }
-
-        button:hover {
-            background: #1177bb;
-        }
-
-        button:disabled {
-            background: #3e3e42;
-            cursor: not-allowed;
-        }
-
-        .stats {
-            background: #252526;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }
-
-        .stat-row {
-            display: flex;
-            justify-content: space-between;
-            margin: 8px 0;
-            padding: 5px;
-            background: #1e1e1e;
-            border-radius: 4px;
-        }
-
-        .stat-label {
-            color: #9cdcfe;
-        }
-
-        .stat-value {
-            color: #ce9178;
-            font-weight: bold;
-        }
-
-        .log {
-            background: #252526;
-            padding: 15px;
-            border-radius: 8px;
-            height: 300px;
-            overflow-y: auto;
-            font-size: 13px;
-        }
-
-        .log-entry {
-            margin: 4px 0;
-            padding: 4px 8px;
-            border-left: 3px solid #4ec9b0;
-            background: #1e1e1e;
-        }
-
-        .log-entry.worker {
-            border-left-color: #ce9178;
-        }
-
-        .log-entry.complete {
-            border-left-color: #608b4e;
-        }
-
-        .log-entry.frame {
-            border-left-color: #dcdcaa;
-            font-weight: bold;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🚀 Minimal Job System - Unity DOTS Style</h1>
-
-        <div class="controls">
-            <button id="startBtn">Start Game Loop</button>
-            <button id="stopBtn" disabled>Stop</button>
-            <button id="clearBtn">Clear Log</button>
-        </div>
-
-        <div class="stats">
-            <div class="stat-row">
-                <span class="stat-label">Frame:</span>
-                <span class="stat-value" id="frameCount">0</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Frame Time:</span>
-                <span class="stat-value" id="frameTime">0ms</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Jobs Completed:</span>
-                <span class="stat-value" id="jobsCompleted">0</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Total Entities:</span>
-                <span class="stat-value" id="entityCount">20000</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Workers:</span>
-                <span class="stat-value" id="workerCount">2</span>
-            </div>
-        </div>
-
-        <div class="log" id="logContainer"></div>
-    </div>
 
     <script>
         // ============================================
@@ -273,7 +461,88 @@
 
             getWorkerCode() {
                 // Código del worker como string (inline)
-                return document.getElementById('worker-code').textContent;
+                return `
+          class JobWorker {
+            constructor() {
+              this.jobFunctions = {
+                updateEntities: this.updateEntities.bind(this),
+                calculatePhysics: this.calculatePhysics.bind(this),
+              };
+              
+              self.onmessage = (e) => this.handleMessage(e);
+              self.postMessage({ type: 'ready' });
+            }
+
+            handleMessage(e) {
+              const { type, jobId, jobType, params } = e.data;
+              
+              if (type === 'executeJob') {
+                const jobFunction = this.jobFunctions[jobType];
+                
+                if (!jobFunction) {
+                  self.postMessage({ 
+                    type: 'jobComplete', 
+                    jobId, 
+                    result: { error: 'Job not found' } 
+                  });
+                  return;
+                }
+                
+                const startTime = performance.now();
+                const result = jobFunction(params);
+                const elapsed = performance.now() - startTime;
+                
+                self.postMessage({ 
+                  type: 'jobComplete', 
+                  jobId, 
+                  result: { ...result, timeSpent: elapsed }
+                });
+              }
+            }
+
+            updateEntities(params) {
+              const { buffer, startIdx, endIdx, deltaTime } = params;
+              const entities = new Float32Array(buffer);
+              
+              let updatedCount = 0;
+              
+              // Simular trabajo: actualizar posiciones
+              for (let i = startIdx; i < endIdx; i++) {
+                const x = entities[i * 2];
+                const y = entities[i * 2 + 1];
+                
+                // Movimiento circular simple
+                const time = performance.now() / 1000;
+                entities[i * 2] = x + Math.sin(time + i) * 0.5;
+                entities[i * 2 + 1] = y + Math.cos(time + i) * 0.5;
+                
+                updatedCount++;
+              }
+              
+              return { 
+                jobType: 'updateEntities',
+                entitiesProcessed: updatedCount
+              };
+            }
+
+            calculatePhysics(params) {
+              const { buffer, startIdx, endIdx, gravity } = params;
+              const entities = new Float32Array(buffer);
+              
+              // Simular física simple
+              for (let i = startIdx; i < endIdx; i++) {
+                entities[i * 2 + 1] += gravity;
+              }
+              
+              return { 
+                jobType: 'calculatePhysics',
+                entitiesProcessed: endIdx - startIdx
+              };
+            }
+          }
+
+          const worker = new JobWorker();
+        `;
             }
 
             handleWorkerMessage(e, workerId) {
@@ -357,7 +626,6 @@
 
         const ENTITY_COUNT = 20000;
         const ENTITIES_PER_JOB = 5000;
-        const WORKERS_COUNT = 4
 
         function init() {
             log('🎮 Initializing game...', 'frame');
@@ -374,7 +642,7 @@
             log(`✓ Initialized ${ENTITY_COUNT} entities`);
 
             // Crear job system
-            jobSystem = new JobSystem(Math.floor(navigator.hardwareConcurrency * 0.5));
+            jobSystem = new JobSystem(2);
 
             // Esperar a que workers estén listos
             setTimeout(() => {
@@ -387,7 +655,6 @@
 
         async function gameLoop() {
             if (!isRunning) return;
-            console.log('gameLoop', frameCount);
 
             frameCount++;
             const startTime = performance.now();
@@ -445,15 +712,20 @@
         // ============================================
         // UI CONTROLS
         // ============================================
+
+        // Buttons
         document.getElementById('startBtn').addEventListener('click', () => {
             document.getElementById('startBtn').disabled = true;
             document.getElementById('stopBtn').disabled = false;
+            // Disable controls during run
+            document.querySelectorAll('input').forEach(el => el.disabled = true);
             init();
         });
 
         document.getElementById('stopBtn').addEventListener('click', () => {
             document.getElementById('startBtn').disabled = false;
             document.getElementById('stopBtn').disabled = true;
+            document.querySelectorAll('input').forEach(el => el.disabled = false);
             stop();
         });
 
@@ -461,9 +733,24 @@
             clearLog();
         });
 
+        document.getElementById('benchmarkBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('benchmarkBtn');
+            btn.disabled = true;
+            btn.textContent = 'Running...';
+
+            await runBenchmark();
+
+            btn.disabled = false;
+            btn.textContent = 'Run Benchmark Suite';
+        });
+
+        document.getElementById('clearBenchBtn').addEventListener('click', () => {
+            document.getElementById('benchmarkResults').innerHTML = '';
+        });
+
         // Initial log
-        log('💡 Click "Start Game Loop" to begin');
-        log(`💡 This simulates ${ENTITY_COUNT} entities updated in parallel by ${WORKERS_COUNT} workers`);
+        log('💡 Configure settings and click "Start" to begin');
+        log('💡 Use "Run Benchmark Suite" to test different configurations');
     </script>
 </body>
 </html>
