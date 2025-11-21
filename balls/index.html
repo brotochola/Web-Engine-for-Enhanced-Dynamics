@@ -101,23 +101,20 @@
 
                 // Physics configuration
                 physics: {
-                    noLimitFPS: false,    // If true, runs as fast as possible instead of 60fps
+                    mode: "verlet",      // Use Verlet integration (RopeBall-style position-based physics)
+                    subStepCount: 2,     // Constraint solver iterations per frame (4-8 recommended)
+                    noLimitFPS: false,   // If true, runs as fast as possible instead of 60fps
 
                     // Collision Detection
                     maxCollisionPairs: 990000, // Maximum collision pairs per frame
 
-                    // Simple Separation (boid-style push, no velocity change)
-                    applySeparation: true,      // Enable simple position-only separation - PERFECT for stacking!
-                    separationStrength: 0.4,    // How strong the push-apart force is (0.0 to 1.0)
-
-                    // Full Physics Resolution (velocity + position, with bounce)
-                    resolveCollisions: false,          // Disable complex physics - causes jitter with large stacks
-                    collisionRestitution: 0.5,         // (not used when resolveCollisions is false)
-                    collisionPositionCorrection: 0.5,  // (not used when resolveCollisions is false)
-                    collisionFriction: 0.5,            // (not used when resolveCollisions is false)
+                    // IMPORTANT: Verlet mode handles collisions internally via constraints
+                    // Do NOT enable applySeparation or resolveCollisions in Verlet mode!
+                    applySeparation: false,     // Disabled - Verlet uses constraint solver
+                    resolveCollisions: false,   // Disabled - Verlet uses constraint solver
 
                     // Global Forces
-                    gravity: { x: 0, y: 0.1 }   // Global gravity applied to all entities
+                    gravity: { x: 0, y: 0.2 }   // Global gravity (lower = more stable stacking)
                 }
             },
             {

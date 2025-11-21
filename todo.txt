@@ -68,7 +68,7 @@ const entity = engine.createEntity()
 --- PHYSICS WORKER: ---
 ------------------------------------------------------------------------------------------------
 
-//conectar con https://rapier.rs/ en lugar de mi physics_worker
+https://github.com/codemaker4/ropeball
 
 
 ------------------------------------------------------------------------------------------------

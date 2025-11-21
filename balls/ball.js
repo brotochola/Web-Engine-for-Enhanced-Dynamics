@@ -24,13 +24,13 @@ class Ball extends RenderableGameObject {
     const i = index;
 
     // Initialize ball-specific properties
-    this.bounceFactor = 0.2; // Low bounce for stable piles
+    this.bounceFactor = 0.3; // Low bounce for stable piles
 
     // Initialize GameObject physics properties
     this.maxVel = 20; // Max velocity
     this.maxAcc = 1; // Max acceleration
     this.minSpeed = 0; // Balls can come to rest
-    this.friction = 0.02; // Low friction - let balls settle naturally
+    this.friction = 0; // Low friction - let balls settle naturally
     this.radius = 7; // Ball size
 
     // Visual range for separation (should be larger than radius)
@@ -90,8 +90,14 @@ class Ball extends RenderableGameObject {
   tick(dtRatio, inputData) {
     const i = this.index;
 
-    // Keep balls within world bounds with bouncing
-    this.bounceOffBounds(i, dtRatio);
+    // In Verlet mode, physics worker handles boundaries and collisions
+    // In standard mode, we handle bouncing ourselves
+    const isVerletMode = this.config?.physics?.mode === "verlet";
+
+    if (!isVerletMode) {
+      // Keep balls within world bounds with bouncing (standard physics only)
+      this.bounceOffBounds(i, dtRatio);
+    }
 
     // Update rotation based on velocity (balls roll)
     this.updateRotation(i, dtRatio);
