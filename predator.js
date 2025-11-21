@@ -142,45 +142,28 @@ class Predator extends Boid {
 
   /**
    * OPTIMIZED: Update animation based on movement speed and hunting state
-   * Uses caching to avoid unnecessary writes when state hasn't changed
+   * Uses helper methods with dirty flag optimization for efficient rendering
    */
   updateAnimation(i, huntingPrey) {
     const speed = GameObject.speed[i];
-    const currentAnimState = RenderableGameObject.animationState[i];
-    const currentTint = RenderableGameObject.tint[i];
 
-    // Determine new animation state based on speed and hunting
-    let newAnimState;
-    let newTint;
-
+    // Determine animation state based on speed
     if (speed > 1) {
-      newAnimState = Predator.anims.WALK;
+      this.setAnimationState(Predator.anims.WALK);
     } else {
-      newAnimState = Predator.anims.IDLE;
+      this.setAnimationState(Predator.anims.IDLE);
     }
 
+    // Change tint when hunting (reddish tint = aggressive state)
     if (huntingPrey) {
-      newTint = 0xffaaaa;
+      this.setTint(0xffaaaa); // Pink/red tint when hunting
     } else {
-      newTint = 0xffffff;
-    }
-
-    // Only write if state changed
-    if (newAnimState !== currentAnimState) {
-      this.animationState = newAnimState;
-    }
-
-    // Only write if tint changed
-    if (newTint !== currentTint) {
-      this.tint = newTint;
+      this.setTint(0xffffff); // Normal white
     }
 
     // Flip sprite based on movement direction (only if moving significantly)
     if (Math.abs(this.vx) > 0.1) {
-      const newFlipX = this.vx < 0 ? 1 : 0;
-      if (this.flipX !== newFlipX) {
-        this.flipX = newFlipX;
-      }
+      this.setFlip(this.vx < 0); // Flip X when moving left
     }
   }
 

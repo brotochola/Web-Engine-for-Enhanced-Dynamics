@@ -77,7 +77,7 @@
             {
                 canvasWidth: 800,
                 canvasHeight: 600,
-                worldWidth: 2000,
+                worldWidth: 3000,
                 worldHeight: 1500,
                 maxNeighbors: 100,
                 maxCollisionPairs: 80000, // Maximum collision pairs per frame
@@ -111,11 +111,11 @@
         // The script paths allow workers to dynamically load game-specific code
 
         // Register base classes that workers need to load (must be before child classes)
-        gameEngine.registerEntityClass(Boid, 11110, "boid.js");  // 0 instances, but needed by workers
+        gameEngine.registerEntityClass(Boid, 0, "boid.js");  // 0 instances, but needed by workers
 
         // Register actual game entities
-        // gameEngine.registerEntityClass(Prey, 10000, "prey.js");
-        // gameEngine.registerEntityClass(Predator, 540, "predator.js");
+        gameEngine.registerEntityClass(Prey, 10000, "prey.js");
+        gameEngine.registerEntityClass(Predator, 540, "predator.js");
 
         // Initialize and start
         gameEngine.init().catch(error => {

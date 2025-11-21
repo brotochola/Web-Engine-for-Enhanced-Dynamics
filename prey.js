@@ -130,58 +130,37 @@ class Prey extends Boid {
 
   /**
    * OPTIMIZED: Update animation based on movement speed and state
-   * Uses caching to avoid unnecessary writes when state hasn't changed
+   * Uses helper methods with dirty flag optimization for efficient rendering
    */
   updateAnimation(i, predatorNearby) {
     const speed = GameObject.speed[i];
     const vx = GameObject.vx[i];
-    const currentAnimState = RenderableGameObject.animationState[i];
-    const currentTint = RenderableGameObject.tint[i];
 
-    // Determine new animation state based on speed and danger
-    let newAnimState;
-    let newTint;
-    let newAnimSpeed;
-
+    // Determine animation state based on speed
     if (speed > 0.1) {
-      newAnimState = Prey.anims.WALK;
-
-      newAnimSpeed = speed * 0.1;
+      this.setAnimationState(Prey.anims.WALK);
+      this.setAnimationSpeed(speed * 0.1);
     } else {
-      newAnimState = Prey.anims.IDLE;
-
-      newAnimSpeed = RenderableGameObject.animationSpeed[i]; // Keep current
+      this.setAnimationState(Prey.anims.IDLE);
     }
 
-    // Only write if state changed
-    if (newAnimState !== currentAnimState) {
-      RenderableGameObject.animationState[i] = newAnimState;
-    }
-
-    // Only write if tint changed
-
+    // Update tint based on life (white = healthy, red = damaged)
     // Map life from white (0xffffff) to red (0xff0000) based on remaining life ratio
+    let newTint;
     if (Prey.life[i] > 0) {
       const maxLife = Prey.maxLife ? Prey.maxLife[i] : 1;
       const ratio = Math.max(0, Math.min(1, Prey.life[i] / maxLife));
       // Interpolate green/blue channel from 255 (white) to 0 (red)
       const gb = Math.round(255 * ratio);
-      RenderableGameObject.tint[i] = (0xff << 16) | (gb << 8) | gb;
+      newTint = (0xff << 16) | (gb << 8) | gb;
     } else {
-      RenderableGameObject.tint[i] = 0xff0000;
+      newTint = 0xff0000; // Dead = red
     }
-
-    // Only write animation speed when walking
-    if (speed > 0.1) {
-      RenderableGameObject.animationSpeed[i] = newAnimSpeed;
-    }
+    this.setTint(newTint);
 
     // Flip sprite based on movement direction (only if moving significantly)
     if (Math.abs(vx) > 0.1) {
-      const newFlipX = vx < 0 ? 1 : 0;
-      if (RenderableGameObject.flipX[i] !== newFlipX) {
-        RenderableGameObject.flipX[i] = newFlipX;
-      }
+      this.setFlip(vx < 0); // Flip X when moving left
     }
   }
 
