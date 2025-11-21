@@ -3,6 +3,7 @@
 
 class Boid extends RenderableGameObject {
   static entityType = 0; // 0 = Boid
+  static instances = []; // Instance tracking for this class
 
   // Sprite configuration - standardized format for static sprites
   static spriteConfig = {
@@ -62,6 +63,23 @@ class Boid extends RenderableGameObject {
 
   // Getters/setters are auto-generated when this class is registered with GameEngine!
   // No static block needed - GameEngine.registerEntityClass() handles it automatically.
+
+  /**
+   * LIFECYCLE: Called when boid is spawned/respawned from pool
+   * Reset all properties to initial state
+   */
+  awake() {
+    // Reset physics (spawn config will override position/velocity if provided)
+    this.ax = 0;
+    this.ay = 0;
+  }
+
+  /**
+   * LIFECYCLE: Called when boid is despawned (returned to pool)
+   */
+  sleep() {
+    console.log(`Boid ${this.index} despawned`);
+  }
 
   /**
    * Main update - applies all boid rules

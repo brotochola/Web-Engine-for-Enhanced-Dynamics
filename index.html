@@ -60,9 +60,19 @@
     <p id="numberBoids">Number of entities: --</p>
     <p id="visibleUnits">Visible units: --</p>
     <p id="activeUnits">Active units: --</p>
+    <p id="poolStats" style="color: #95e1d3;">Pool Stats: --</p>
+    <p id="mousePos" style="color: #999; font-size: 12px;">Mouse: --</p>
     <p>Move camera with WASD or Arrow Keys, mousewheel to zoom in and out</p>
-    <button id="pause" onclick="gameEngine.pause()">Pause</button>
-    <button id="resume" onclick="gameEngine.resume()">Resume</button>
+
+    <div style="padding: 10px 0;">
+        <button onclick="gameEngine.pause()">⏸️ Pause</button>
+        <button onclick="gameEngine.resume()">▶️ Resume</button>
+        <button onclick="spawnRandomPrey()">➕ Spawn Prey</button>
+        <button onclick="spawnRandomPredator()">➕ Spawn Predator</button>
+        <button onclick="spawnPreyAtMouse()">🎯 Spawn Prey at Mouse</button>
+        <button onclick="spawnPredatorAtMouse()">🎯 Spawn Predator at Mouse</button>
+        <button onclick="clearAllEntities()" style="background: #ff6b6b;">🗑️ Clear All</button>
+    </div>
 
     <script src="lib/gameObject.js"></script>
     <script src="lib/RenderableGameObject.js"></script>
@@ -111,11 +121,73 @@
         // The script paths allow workers to dynamically load game-specific code
 
         // Register base classes that workers need to load (must be before child classes)
-        gameEngine.registerEntityClass(Boid, 0, "boid.js");  // 0 instances, but needed by workers
+        gameEngine.registerEntityClass(Boid, 0, "boid.js");  // Base boid entities
 
         // Register actual game entities
         gameEngine.registerEntityClass(Prey, 10000, "prey.js");
         gameEngine.registerEntityClass(Predator, 540, "predator.js");
+
+
+
+
+        // Spawning functions
+        function spawnRandomPrey() {
+            gameEngine.spawnEntity('Prey', {
+                x: Math.random() * gameEngine.config.worldWidth,
+                y: Math.random() * gameEngine.config.worldHeight,
+                vx: 0,
+                vy: 0
+            });
+        }
+
+        function spawnRandomPredator() {
+            gameEngine.spawnEntity('Predator', {
+                x: Math.random() * gameEngine.config.worldWidth,
+                y: Math.random() * gameEngine.config.worldHeight,
+                vx: 0,
+                vy: 0
+            });
+        }
+
+        function spawnPreyAtMouse() {
+            if (gameEngine.mouse.x > 0 && gameEngine.mouse.y > 0) {
+                gameEngine.spawnEntity('Prey', {
+                    x: gameEngine.mouse.x,
+                    y: gameEngine.mouse.y,
+                    vx: 0,
+                    vy: 0
+                });
+            }
+        }
+
+        function spawnPredatorAtMouse() {
+            if (gameEngine.mouse.x > 0 && gameEngine.mouse.y > 0) {
+                gameEngine.spawnEntity('Predator', {
+                    x: gameEngine.mouse.x,
+                    y: gameEngine.mouse.y,
+                    vx: 0,
+                    vy: 0
+                });
+            }
+        }
+
+        function clearAllEntities() {
+            if (confirm('Clear all entities?')) {
+                gameEngine.workers.logic.postMessage({ msg: 'clearAll' });
+            }
+        }
+
+        // Update pool stats periodically
+        setInterval(() => {
+            const poolStatsEl = document.getElementById('poolStats');
+            if (poolStatsEl) {
+                const boidStats = gameEngine.getPoolStats(Boid);
+                const preyStats = gameEngine.getPoolStats(Prey);
+                const predStats = gameEngine.getPoolStats(Predator);
+
+                poolStatsEl.textContent = `Pool: Boid ${boidStats.active}/${boidStats.total} | Prey ${preyStats.active}/${preyStats.total} | Predator ${predStats.active}/${predStats.total}`;
+            }
+        }, 500);
 
         // Initialize and start
         gameEngine.init().catch(error => {

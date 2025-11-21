@@ -3,6 +3,7 @@
 
 class Prey extends Boid {
   static entityType = 1; // 1 = Prey
+  static instances = []; // Instance tracking for this class
 
   // Define prey-specific properties schema
   static ARRAY_SCHEMA = {
@@ -59,6 +60,35 @@ class Prey extends Boid {
     this.matchingFactor = 0.01; // Alignment strength
     this.turnFactor = 0.1; // Boundary avoidance strength
     this.margin = 20; // Distance from edge to start turning
+  }
+
+  /**
+   * LIFECYCLE: Called when prey is spawned/respawned from pool
+   * Reset all properties to initial state
+   */
+  awake() {
+    // Reset health
+    this.life = 1.0;
+
+    // Reset visual properties
+
+    this.setAnimationState(Prey.anims.IDLE);
+    this.setAnimationSpeed(0.15);
+
+    // console.log(
+    //   `Prey ${this.index} spawned at (${this.x.toFixed(1)}, ${this.y.toFixed(
+    //     1
+    //   )})`
+    // );
+  }
+
+  /**
+   * LIFECYCLE: Called when prey is despawned (returned to pool)
+   * Cleanup and save state if needed
+   */
+  sleep() {
+    // console.log(`Prey ${this.index} despawned (life: ${this.life.toFixed(2)})`);
+    // Could save stats, play death effects, etc.
   }
 
   /**
@@ -183,7 +213,7 @@ class Prey extends Boid {
     if (GameObject.entityType[otherIndex] === Predator.entityType) {
       Prey.life[i] -= 0.01;
       if (Prey.life[i] <= 0) {
-        GameObject.active[i] = 0;
+        this.despawn(); // Use proper despawn instead of directly setting active
       }
 
       // Optional: Could post message to main thread for sound/particle effects

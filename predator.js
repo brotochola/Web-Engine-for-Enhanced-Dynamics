@@ -3,6 +3,7 @@
 
 class Predator extends Boid {
   static entityType = 2; // 2 = Predator
+  static instances = []; // Instance tracking for this class
 
   // Sprite configuration - standardized format for animated sprites
   static spriteConfig = {
@@ -65,6 +66,24 @@ class Predator extends Boid {
     this.matchingFactor = 0.01; // Alignment strength
     this.turnFactor = 0.1; // Boundary avoidance strength
     this.margin = 20; // Distance from edge to start turning
+  }
+
+  /**
+   * LIFECYCLE: Called when predator is spawned/respawned from pool
+   * Reset all properties to initial state
+   */
+  awake() {
+    this.setAnimationState(Predator.anims.IDLE);
+    this.setAnimationSpeed(0.15);
+  }
+
+  /**
+   * LIFECYCLE: Called when predator is despawned (returned to pool)
+   * Cleanup and save state if needed
+   */
+  sleep() {
+    console.log(`Predator ${this.index} despawned`);
+    // Could save hunting stats, etc.
   }
 
   /**
