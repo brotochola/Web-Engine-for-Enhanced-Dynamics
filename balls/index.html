@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Balls Game - Gravity and Separation Demo</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #111;
+            font-family: monospace;
+        }
+
+        canvas {
+            display: block;
+            width: 800px;
+            height: 600px;
+            border: 1px solid #333;
+        }
+
+        p {
+            color: white;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            margin: 5px 10px;
+        }
+
+        #config {
+            color: #4CAF50;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        #spatialFPS {
+            color: #a29bfe;
+        }
+
+        #logicFPS {
+            color: #ff6b6b;
+        }
+
+        #physicsFPS {
+            color: #4ecdc4;
+        }
+
+        #renderFPS {
+            color: #ffe66d;
+        }
+
+        #visibleUnits {
+            color: #95e1d3;
+        }
+    </style>
+</head>
+<body>
+    <p id="config">Balls Game - Gravity & Separation Physics Demo</p>
+    <p id="spatialFPS">Spatial Worker FPS: --</p>
+    <p id="logicFPS">Logic Worker FPS: --</p>
+    <p id="physicsFPS">Physics Worker FPS: --</p>
+    <p id="rendererFPS">Renderer Worker FPS: --</p>
+    <p id="numberBoids">Number of entities: --</p>
+    <p id="visibleUnits">Visible units: --</p>
+    <p id="activeUnits">Active units: --</p>
+    <p id="poolStats" style="color: #95e1d3;">Pool Stats: --</p>
+    <p id="mousePos" style="color: #999; font-size: 12px;">Mouse: --</p>
+    <p>Move camera with WASD or Arrow Keys, mousewheel to zoom in and out</p>
+
+    <div style="padding: 10px 0;">
+        <button onclick="gameEngine.pause()">⏸️ Pause</button>
+        <button onclick="gameEngine.resume()">▶️ Resume</button>
+        <button onclick="spawnRandomBall()">➕ Spawn Ball</button>
+        <button onclick="spawnBallAtMouse()">🎯 Spawn Ball at Mouse</button>
+        <button onclick="spawnMultipleBalls()">➕➕ Spawn 10 Balls</button>
+        <button onclick="clearAllEntities()" style="background: #ff6b6b;">🗑️ Clear All</button>
+    </div>
+
+    <script src="/lib/gameObject.js"></script>
+    <script src="/lib/RenderableGameObject.js"></script>
+    <script src="/lib/gameEngine.js"></script>
+
+    <script src="/balls/ball.js"></script>
+    <script>
+        // Initialize with GameEngine using class registration system
+        const gameEngine = new GameEngine(
+            {
+                canvasWidth: 800,
+                canvasHeight: 600,
+                worldWidth: 800,
+                worldHeight: 600,
+
+                // Spatial hash grid configuration
+                spatial: {
+                    cellSize: 60,        // Each cell size in world units
+                    maxNeighbors: 150,   // Maximum neighbors to track per entity
+                    noLimitFPS: false    // If true, runs as fast as possible instead of 60fps
+                },
+
+                // Logic configuration
+                logic: {
+                    noLimitFPS: false    // If true, runs as fast as possible instead of 60fps
+                },
+
+                // Physics configuration
+                physics: {
+                    noLimitFPS: false,    // If true, runs as fast as possible instead of 60fps
+
+                    // Collision Detection
+                    maxCollisionPairs: 990000, // Maximum collision pairs per frame
+
+                    // Simple Separation (boid-style push, no velocity change)
+                    applySeparation: true,      // Enable simple position-only separation - PERFECT for stacking!
+                    separationStrength: 0.4,    // How strong the push-apart force is (0.0 to 1.0)
+
+                    // Full Physics Resolution (velocity + position, with bounce)
+                    resolveCollisions: false,          // Disable complex physics - causes jitter with large stacks
+                    collisionRestitution: 0.5,         // (not used when resolveCollisions is false)
+                    collisionPositionCorrection: 0.5,  // (not used when resolveCollisions is false)
+                    collisionFriction: 0.5,            // (not used when resolveCollisions is false)
+
+                    // Global Forces
+                    gravity: { x: 0, y: 0.1 }   // Global gravity applied to all entities
+                }
+            },
+            {
+                // Simple textures
+                ball: "/balls/bola.png",
+                bg: "/predators/img/fondo.jpg",
+            }
+        );
+
+        // Register entity classes with their script paths
+        // Note: Paths are relative to lib/ folder where workers are located
+        gameEngine.registerEntityClass(Ball, 1500, "../balls/ball.js");
+
+        // Spawning functions
+        function spawnRandomBall() {
+            gameEngine.spawnEntity('Ball', {
+                x: Math.random() * gameEngine.config.worldWidth,
+                y: Math.random() * 100 + 50, // Spawn near top
+                vx: 0,//(Math.random() - 0.5) * 5, // Random horizontal velocity
+                vy: 0 // Start with no vertical velocity
+            });
+        }
+
+        function spawnBallAtMouse() {
+            if (gameEngine.mouse.x > 0 && gameEngine.mouse.y > 0) {
+                gameEngine.spawnEntity('Ball', {
+                    x: gameEngine.mouse.x,
+                    y: gameEngine.mouse.y,
+                    vx: 0,
+                    vy: 0
+                });
+            }
+        }
+
+        function spawnMultipleBalls() {
+            for (let i = 0; i < 10; i++) {
+                setTimeout(() => {
+                    spawnRandomBall();
+                }, i * 50); // Stagger spawning slightly
+            }
+        }
+
+        function clearAllEntities() {
+            if (confirm('Clear all balls?')) {
+                gameEngine.workers.logic.postMessage({ msg: 'clearAll' });
+            }
+        }
+
+        // Update pool stats periodically
+        setInterval(() => {
+            const poolStatsEl = document.getElementById('poolStats');
+            if (poolStatsEl) {
+                const ballStats = gameEngine.getPoolStats(Ball);
+                poolStatsEl.textContent = `Pool: Ball ${ballStats.active}/${ballStats.total}`;
+            }
+        }, 500);
+
+        // Initialize and start
+        gameEngine.init().catch(error => {
+            document.body.innerHTML = `
+                <div style="color: white; padding: 20px;">
+                    <h1>Error initializing game!</h1>
+                    <p>${error.message}</p>
+                    <p>You need to serve this with proper CORS headers:</p>
+                    <pre>Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp</pre>
+                    <p>Use the provided server.js: <code>node server.js</code></p>
+                </div>
+            `;
+        });
+    </script>
+</body>
+</html>

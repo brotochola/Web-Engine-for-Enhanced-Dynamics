@@ -46,6 +46,7 @@ class Boid extends RenderableGameObject {
     // Initialize GameObject physics properties
     GameObject.maxVel[i] = 10;
     GameObject.maxAcc[i] = 0.2;
+    GameObject.minSpeed[i] = 1; // Keep boids moving
     GameObject.friction[i] = 0.01;
     GameObject.radius[i] = 10;
 
@@ -134,7 +135,7 @@ class Boid extends RenderableGameObject {
     // Single loop through all neighbors
     for (let n = 0; n < this.neighborCount; n++) {
       const j = this.neighbors[n];
-      const neighborType = this.entityType;
+      const neighborType = GameObject.entityType[j];
       const isSameType = neighborType === myEntityType;
 
       // Use pre-calculated squared distance from spatial worker (OPTIMIZATION!)
@@ -233,6 +234,8 @@ class Boid extends RenderableGameObject {
   avoidMouse(i, dtRatio, inputData) {
     const myX = this.x;
     const myY = this.y;
+
+    if (inputData[2] === 0) return;
 
     const mouseX = inputData[0];
     const mouseY = inputData[1];

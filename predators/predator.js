@@ -51,6 +51,7 @@ class Predator extends Boid {
     this.radius = 12;
 
     this.maxAcc = 0.2;
+    this.minSpeed = 1; // Keep predators moving
     this.friction = 0.05;
     this.radius = 10;
 

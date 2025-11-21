@@ -74,13 +74,13 @@
         <button onclick="clearAllEntities()" style="background: #ff6b6b;">🗑️ Clear All</button>
     </div>
 
-    <script src="lib/gameObject.js"></script>
-    <script src="lib/RenderableGameObject.js"></script>
-    <script src="lib/gameEngine.js"></script>
+    <script src="/lib/gameObject.js"></script>
+    <script src="/lib/RenderableGameObject.js"></script>
+    <script src="/lib/gameEngine.js"></script>
 
-    <script src="boid.js"></script>
-    <script src="prey.js"></script>
-    <script src="predator.js"></script>
+    <script src="/predators/boid.js"></script>
+    <script src="/predators/prey.js"></script>
+    <script src="/predators/predator.js"></script>
     <script>
         // Initialize with GameEngine using class registration system
         const gameEngine = new GameEngine(
@@ -89,25 +89,54 @@
                 canvasHeight: 600,
                 worldWidth: 3000,
                 worldHeight: 1500,
-                maxNeighbors: 100,
-                maxCollisionPairs: 80000, // Maximum collision pairs per frame
+
                 // Spatial hash grid configuration
-                cellSize: 50 // Each cell covers the visual range
+                spatial: {
+                    cellSize: 50,        // Each cell size in world units
+                    maxNeighbors: 100,   // Maximum neighbors to track per entity
+                    noLimitFPS: false    // If true, runs as fast as possible instead of 60fps
+                },
+
+                // Logic configuration
+                logic: {
+                    noLimitFPS: false    // If true, runs as fast as possible instead of 60fps
+                },
+
+                // Physics configuration
+                physics: {
+                    noLimitFPS: false,   // If true, runs as fast as possible instead of 60fps
+
+                    // Collision Detection
+                    maxCollisionPairs: 80000, // Maximum collision pairs per frame
+
+                    // Simple Separation (boid-style push, no velocity change)
+                    applySeparation: true,      // Enable simple position-only separation
+                    separationStrength: 0.5,    // How strong the push-apart force is (0.0 to 1.0)
+
+                    // Full Physics Resolution (velocity + position, with bounce)
+                    resolveCollisions: false,          // Enable complex physics collision resolution
+                    collisionRestitution: 0.5,         // Bounciness (0=no bounce, 1=perfect bounce)
+                    collisionPositionCorrection: 0.4,  // How strongly to push overlapping objects apart (0.0 to 1.0)
+                    collisionFriction: 0.05,           // Friction during collisions (0.0 to 1.0)
+
+                    // Global Forces
+                    gravity: { x: 0, y: 0 }     // Global gravity applied to all entities
+                }
             },
             {
                 // Simple textures (for background, etc.)
-                bg: "img/fondo.jpg",
-                bunny: "img/bunny.png",
+                bg: "/predators/img/fondo.jpg",
+                bunny: "/predators/img/bunny.png",
 
                 // Spritesheets configuration
                 spritesheets: {
                     person: {
-                        json: "img/person.json",
-                        png: "img/person.png"
+                        json: "/predators/img/person.json",
+                        png: "/predators/img/person.png"
                     },
                     personaje: {
-                        json: "img/personaje.json",
-                        png: "img/personaje.png"
+                        json: "/predators/img/personaje.json",
+                        png: "/predators/img/personaje.png"
                     }
                 }
             }
@@ -119,13 +148,14 @@
         // Register entity classes with their script paths
         // This is where you define what entities exist and how many
         // The script paths allow workers to dynamically load game-specific code
+        // Note: Paths are relative to lib/ folder where workers are located
 
         // Register base classes that workers need to load (must be before child classes)
-        gameEngine.registerEntityClass(Boid, 0, "boid.js");  // Base boid entities
+        gameEngine.registerEntityClass(Boid, 0, "../predators/boid.js");  // Base boid entities
 
         // Register actual game entities
-        gameEngine.registerEntityClass(Prey, 10000, "prey.js");
-        gameEngine.registerEntityClass(Predator, 540, "predator.js");
+        gameEngine.registerEntityClass(Prey, 5000, "../predators/prey.js");
+        gameEngine.registerEntityClass(Predator, 100, "../predators/predator.js");
 
 
 

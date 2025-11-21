@@ -38,7 +38,12 @@ const server = http.createServer((req, res) => {
   // Get file path
   let filePath = "." + urlPath;
   if (filePath === "./") {
-    filePath = "index.html";
+    filePath = "./index.html";
+  }
+
+  // Check if path is a directory and append index.html
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+    filePath = path.join(filePath, "index.html");
   }
 
   // Get file extension
