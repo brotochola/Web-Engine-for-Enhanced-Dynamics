@@ -84,8 +84,8 @@
             {
                 canvasWidth: 800,
                 canvasHeight: 600,
-                worldWidth: 1200,
-                worldHeight: 7000,
+                worldWidth: 3620,
+                worldHeight: 1200,
 
                 // Spatial hash grid configuration
                 spatial: {
@@ -102,12 +102,14 @@
                 // Physics configuration
                 physics: {
                     mode: "verlet",      // Use Verlet integration (RopeBall-style position-based physics)
-                    subStepCount: 7,     // Constraint solver iterations per frame (4-8 recommended)
-                    noLimitFPS: false,   // If true, runs as fast as possible instead of 60fps
+                    subStepCount: 6,     // Constraint solver iterations per frame (4-8 recommended)
+                    noLimitFPS: true,   // If true, runs as fast as possible instead of 60fps
 
                     // Collision Detection
                     maxCollisionPairs: 990000, // Maximum collision pairs per frame
-
+                    verletDamping: 0.999,
+                    boundaryElasticity: 0.5,
+                    collisionResponseStrength: 0.3,
                     // IMPORTANT: Verlet mode handles collisions internally via constraints
                     // Do NOT enable applySeparation or resolveCollisions in Verlet mode!
                     applySeparation: false,     // Disabled - Verlet uses constraint solver
@@ -120,13 +122,13 @@
             {
                 // Simple textures
                 ball: "/balls/bola.png",
-                bg: "/predators/img/fondo.jpg",
+                // bg: "/predators/img/fondo.jpg",
             }
         );
 
         // Register entity classes with their script paths
         // Note: Paths are relative to lib/ folder where workers are located
-        gameEngine.registerEntityClass(Ball, 1200, "../balls/ball.js");
+        gameEngine.registerEntityClass(Ball, 2200, "../balls/ball.js");
 
         // Spawning functions
         function spawnRandomBall() {

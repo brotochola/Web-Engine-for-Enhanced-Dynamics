@@ -2,11 +2,6 @@ class Ball extends RenderableGameObject {
   static entityType = 1; // 1 = Ball
   static instances = []; // Instance tracking for this class
 
-  // Define ball-specific properties schema
-  static ARRAY_SCHEMA = {
-    bounceFactor: Float32Array, // Bounce coefficient (0-1, 0=no bounce, 1=perfect bounce)
-  };
-
   // Sprite configuration - using static sprite
   static spriteConfig = {
     type: "static",
@@ -21,14 +16,9 @@ class Ball extends RenderableGameObject {
   constructor(index, config = {}, logicWorker = null) {
     super(index, config, logicWorker);
 
-    const i = index;
-
-    // Initialize ball-specific properties
-    this.bounceFactor = 0; // Low bounce for stable piles
-
     // Initialize GameObject physics properties
-    this.maxVel = 1456; // Max velocity
-    this.maxAcc = 1456; // Max acceleration
+    this.maxVel = 100; // Max velocity
+    this.maxAcc = 2; // Max acceleration
     this.minSpeed = 0; // Balls can come to rest
     this.friction = 0.01; // Low friction - let balls settle naturally
 
@@ -107,48 +97,8 @@ class Ball extends RenderableGameObject {
   tick(dtRatio, inputData) {
     const i = this.index;
 
-    // In Verlet mode, physics worker handles boundaries and collisions
-    // In standard mode, we handle bouncing ourselves
-    const isVerletMode = this.config?.physics?.mode === "verlet";
-
-    if (!isVerletMode) {
-      // Keep balls within world bounds with bouncing (standard physics only)
-      this.bounceOffBounds(i, dtRatio);
-    }
-
     // Update rotation based on velocity (balls roll)
     this.updateRotation(i, dtRatio);
-  }
-
-  /**
-   * Bounce off world boundaries
-   */
-  bounceOffBounds(i, dtRatio) {
-    const margin = GameObject.radius[i];
-    const worldWidth = this.config.worldWidth;
-    const worldHeight = this.config.worldHeight;
-    const bounceFactor = Ball.bounceFactor[i];
-
-    // Bounce off left/right walls
-    if (GameObject.x[i] <= margin) {
-      GameObject.x[i] = margin;
-      GameObject.vx[i] = Math.abs(GameObject.vx[i]) * bounceFactor;
-    } else if (GameObject.x[i] >= worldWidth - margin) {
-      GameObject.x[i] = worldWidth - margin;
-      GameObject.vx[i] = -Math.abs(GameObject.vx[i]) * bounceFactor;
-    }
-
-    // Bounce off top/bottom walls
-    if (GameObject.y[i] <= margin) {
-      GameObject.y[i] = margin;
-      GameObject.vy[i] = Math.abs(GameObject.vy[i]) * bounceFactor;
-    } else if (GameObject.y[i] >= worldHeight - margin) {
-      GameObject.y[i] = worldHeight - margin;
-      GameObject.vy[i] = -Math.abs(GameObject.vy[i]) * bounceFactor;
-
-      // Add friction when bouncing on ground
-      GameObject.vx[i] *= 0.95;
-    }
   }
 
   /**
