@@ -24,20 +24,33 @@ class Ball extends RenderableGameObject {
     const i = index;
 
     // Initialize ball-specific properties
-    this.bounceFactor = 0.3; // Low bounce for stable piles
+    this.bounceFactor = 0; // Low bounce for stable piles
 
     // Initialize GameObject physics properties
-    this.maxVel = 20; // Max velocity
-    this.maxAcc = 1; // Max acceleration
+    this.maxVel = 1456; // Max velocity
+    this.maxAcc = 1456; // Max acceleration
     this.minSpeed = 0; // Balls can come to rest
-    this.friction = 0; // Low friction - let balls settle naturally
-    this.radius = 7; // Ball size
+    this.friction = 0.01; // Low friction - let balls settle naturally
 
     // Visual range for separation (should be larger than radius)
     this.visualRange = 60; // How far ball can detect other balls
 
     this.x = Math.random() * config.worldWidth;
     this.y = Math.random() * config.worldHeight;
+    this.vx = 0;
+    this.vy = 0;
+    this.ax = 0;
+    this.ay = 0;
+
+    const actualBallSize = 14; //png width
+    this.radius = Math.random() * 20 + 10;
+
+    const scale = (this.radius * 2) / actualBallSize;
+
+    this.setScale(scale, scale);
+
+    this.setSpriteProp("anchor.y", 0.5);
+    this.setSpriteProp("anchor.x", 0.5);
 
     this.awake();
   }
@@ -51,9 +64,9 @@ class Ball extends RenderableGameObject {
     this.setAlpha(1.0);
     this.setTint(0xffffff);
 
-    // Set random scale for variety
-    const scale = 0.8 + Math.random() * 0.4; // Random scale between 0.8 and 1.2
-    this.setScale(scale, scale);
+    // // Set random scale for variety
+    // const scale = 0.8 + Math.random() * 0.4; // Random scale between 0.8 and 1.2
+    // this.setScale(scale, scale);
 
     // Random color tint for visual variety
     const colors = [
@@ -73,6 +86,10 @@ class Ball extends RenderableGameObject {
     //     1
     //   )})`
     // );
+  }
+
+  onCollisionEnter(otherIndex) {
+    console.log(`Ball ${this.index} collided with ball ${otherIndex}`);
   }
 
   /**

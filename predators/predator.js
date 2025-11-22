@@ -48,12 +48,11 @@ class Predator extends Boid {
     // Make predators slightly slower than prey (hunt by strategy, not speed)
     this.maxVel = 7;
 
-    this.radius = 12;
+    this.radius = 30;
 
     this.maxAcc = 0.2;
     this.minSpeed = 1; // Keep predators moving
     this.friction = 0.05;
-    this.radius = 10;
 
     this.animationSpeed = 0.15;
 
@@ -67,6 +66,7 @@ class Predator extends Boid {
     this.matchingFactor = 0.01; // Alignment strength
     this.turnFactor = 0.1; // Boundary avoidance strength
     this.margin = 20; // Distance from edge to start turning
+    this.scaleX = this.scaleY = 2;
   }
 
   /**

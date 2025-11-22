@@ -84,8 +84,8 @@
             {
                 canvasWidth: 800,
                 canvasHeight: 600,
-                worldWidth: 800,
-                worldHeight: 600,
+                worldWidth: 1200,
+                worldHeight: 7000,
 
                 // Spatial hash grid configuration
                 spatial: {
@@ -102,7 +102,7 @@
                 // Physics configuration
                 physics: {
                     mode: "verlet",      // Use Verlet integration (RopeBall-style position-based physics)
-                    subStepCount: 2,     // Constraint solver iterations per frame (4-8 recommended)
+                    subStepCount: 7,     // Constraint solver iterations per frame (4-8 recommended)
                     noLimitFPS: false,   // If true, runs as fast as possible instead of 60fps
 
                     // Collision Detection
@@ -114,7 +114,7 @@
                     resolveCollisions: false,   // Disabled - Verlet uses constraint solver
 
                     // Global Forces
-                    gravity: { x: 0, y: 0.2 }   // Global gravity (lower = more stable stacking)
+                    gravity: { x: 0, y: 0.5 }   // Global gravity (lower = more stable stacking)
                 }
             },
             {
@@ -126,7 +126,7 @@
 
         // Register entity classes with their script paths
         // Note: Paths are relative to lib/ folder where workers are located
-        gameEngine.registerEntityClass(Ball, 1500, "../balls/ball.js");
+        gameEngine.registerEntityClass(Ball, 1200, "../balls/ball.js");
 
         // Spawning functions
         function spawnRandomBall() {

@@ -41,11 +41,11 @@ class Prey extends Boid {
     const i = index;
 
     // Initialize prey-specific properties
-    this.predatorAvoidFactor = 71.5; // Strong avoidance of predators
+    this.predatorAvoidFactor = 1230; // Strong avoidance of predators
     this.life = 1;
     // Initialize GameObject physics properties
-    this.maxVel = 20;
-    this.maxAcc = 0.4;
+    this.maxVel = 3;
+    this.maxAcc = 0.2;
     this.minSpeed = 0;
     this.friction = 0.05;
     this.radius = 10;
@@ -55,8 +55,8 @@ class Prey extends Boid {
     this.animationSpeed = 0.15;
 
     // Initialize Boid-specific behavior properties (with slight randomization)
-    this.protectedRange = this.radius * 2; // Minimum distance from others
-    this.centeringFactor = 0.0005; // Cohesion strength
+    this.protectedRange = this.radius * 4; // Minimum distance from others
+    this.centeringFactor = 0.005; // Cohesion strength
     this.avoidFactor = 2; // Separation strength
     this.matchingFactor = 0.01; // Alignment strength
     this.turnFactor = 0.1; // Boundary avoidance strength
