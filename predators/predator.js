@@ -39,8 +39,8 @@ class Predator extends Boid {
 
     const i = index;
 
-    this.x = 1200; // + Math.random() * 100;
-    this.y = 500; //+ Math.random() * 100;
+    this.x = Math.random() * config.worldWidth;
+    this.y = Math.random() * config.worldHeight;
 
     // Initialize predator-specific properties
     this.huntFactor = 0.2; // Chase strength
@@ -60,10 +60,10 @@ class Predator extends Boid {
     this.visualRange = 200; // How far boid can see
 
     // Initialize Boid-specific behavior properties (with slight randomization)
-    this.protectedRange = this.radius * 3; // Minimum distance from others
-    this.centeringFactor = 0.0005; // Cohesion strength
-    this.avoidFactor = 0.5; // Separation strength
-    this.matchingFactor = 0.01; // Alignment strength
+    this.protectedRange = 0; //this.radius * 3; // Minimum distance from others
+    this.centeringFactor = 0; //0.0005; // Cohesion strength
+    this.avoidFactor = 0; //0.5; // Separation strength
+    this.matchingFactor = 0; //0.01; // Alignment strength
     this.turnFactor = 0.1; // Boundary avoidance strength
     this.margin = 20; // Distance from edge to start turning
     this.scaleX = this.scaleY = 2;
@@ -107,6 +107,10 @@ class Predator extends Boid {
 
     // Update animation based on speed and state (cached)
     this.updateAnimation(i, huntingPrey);
+  }
+
+  onCollisionEnter(otherIndex) {
+    // console.log(`Predator ${this.index} collided with ${otherIndex}`);
   }
 
   /**

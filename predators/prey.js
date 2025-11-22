@@ -45,13 +45,16 @@ class Prey extends Boid {
     this.life = 1;
     // Initialize GameObject physics properties
     this.maxVel = 3;
-    this.maxAcc = 0.2;
+    this.maxAcc = 0.1;
     this.minSpeed = 0;
     this.friction = 0.05;
     this.radius = 5;
 
+    this.vx = 0;
+    this.vy = 0;
+
     // Initialize GameObject perception
-    this.visualRange = 70; // How far boid can see
+    this.visualRange = 60; // How far boid can see
     this.animationSpeed = 0.15;
 
     // Initialize Boid-specific behavior properties (with slight randomization)
@@ -199,7 +202,9 @@ class Prey extends Boid {
    * Unity-style collision callback: Called when prey collides with predator
    * This demonstrates the collision detection system
    */
-  onCollisionEnter(otherIndex) {}
+  onCollisionEnter(otherIndex) {
+    // console.log(`Prey ${this.index} collided with ${otherIndex}`);
+  }
 
   /**
    * Unity-style collision callback: Called while prey is colliding with another entity

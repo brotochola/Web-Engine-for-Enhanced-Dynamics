@@ -35,31 +35,31 @@ class Boid extends RenderableGameObject {
     const i = index;
 
     // Initialize GameObject transform properties (random position)
-    GameObject.x[i] = Math.random() * (config.worldWidth || 800);
-    GameObject.y[i] = Math.random() * (config.worldHeight || 600);
-    GameObject.vx[i] = (Math.random() - 0.5) * 2;
-    GameObject.vy[i] = (Math.random() - 0.5) * 2;
-    GameObject.ax[i] = 0;
-    GameObject.ay[i] = 0;
-    GameObject.rotation[i] = 0;
+    this.x = Math.random() * (config.worldWidth || 800);
+    this.y = Math.random() * (config.worldHeight || 600);
+    this.vx = 0;
+    this.vy = 0;
+    this.ax = 0;
+    this.ay = 0;
+    this.rotation = 0;
 
     // Initialize GameObject physics properties
-    GameObject.maxVel[i] = 10;
-    GameObject.maxAcc[i] = 0.2;
-    GameObject.minSpeed[i] = 1; // Keep boids moving
-    GameObject.friction[i] = 0.01;
-    GameObject.radius[i] = 10;
+    this.maxVel = 10;
+    this.maxAcc = 0.2;
+    this.minSpeed = 1; // Keep boids moving
+    this.friction = 0.01;
+    this.radius = 10;
 
     // Initialize GameObject perception
-    GameObject.visualRange[i] = 50; // How far boid can see
+    this.visualRange = 50; // How far boid can see
 
     // Initialize Boid-specific behavior properties (with slight randomization)
-    Boid.protectedRange[i] = GameObject.radius[i] * 2; // Minimum distance from others
-    Boid.centeringFactor[i] = 0.001; // Cohesion strength
-    Boid.avoidFactor[i] = 0.3; // Separation strength
-    Boid.matchingFactor[i] = 0.1; // Alignment strength
-    Boid.turnFactor[i] = 0.1; // Boundary avoidance strength
-    Boid.margin[i] = 20; // Distance from edge to start turning
+    this.protectedRange = this.radius * 2; // Minimum distance from others
+    this.centeringFactor = 0.001; // Cohesion strength
+    this.avoidFactor = 0.3; // Separation strength
+    this.matchingFactor = 0.1; // Alignment strength
+    this.turnFactor = 0.1; // Boundary avoidance strength
+    this.margin = 20; // Distance from edge to start turning
   }
 
   // Getters/setters are auto-generated when this class is registered with GameEngine!
