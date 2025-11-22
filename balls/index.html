@@ -84,14 +84,14 @@
             {
                 canvasWidth: 800,
                 canvasHeight: 600,
-                worldWidth: 3620,
-                worldHeight: 1200,
+                worldWidth: 7600,
+                worldHeight: 1420,
 
                 // Spatial hash grid configuration
                 spatial: {
-                    cellSize: 60,        // Each cell size in world units
+                    cellSize: 80,        // Each cell size in world units
                     maxNeighbors: 150,   // Maximum neighbors to track per entity
-                    noLimitFPS: false    // If true, runs as fast as possible instead of 60fps
+                    noLimitFPS: true    // If true, runs as fast as possible instead of 60fps
                 },
 
                 // Logic configuration
@@ -101,20 +101,14 @@
 
                 // Physics configuration
                 physics: {
-                    mode: "verlet",      // Use Verlet integration (RopeBall-style position-based physics)
-                    subStepCount: 6,     // Constraint solver iterations per frame (4-8 recommended)
+                    subStepCount: 1,     // Constraint solver iterations per frame (4-8 recommended)
                     noLimitFPS: true,   // If true, runs as fast as possible instead of 60fps
 
                     // Collision Detection
-                    maxCollisionPairs: 990000, // Maximum collision pairs per frame
-                    verletDamping: 0.999,
-                    boundaryElasticity: 0.5,
-                    collisionResponseStrength: 0.3,
-                    // IMPORTANT: Verlet mode handles collisions internally via constraints
-                    // Do NOT enable applySeparation or resolveCollisions in Verlet mode!
-                    applySeparation: false,     // Disabled - Verlet uses constraint solver
-                    resolveCollisions: false,   // Disabled - Verlet uses constraint solver
-
+                    maxCollisionPairs: 11990000, // Maximum collision pairs per frame
+                    verletDamping: 0.99,
+                    boundaryElasticity: 0,
+                    collisionResponseStrength: 0.98,
                     // Global Forces
                     gravity: { x: 0, y: 0.5 }   // Global gravity (lower = more stable stacking)
                 }
@@ -128,7 +122,7 @@
 
         // Register entity classes with their script paths
         // Note: Paths are relative to lib/ folder where workers are located
-        gameEngine.registerEntityClass(Ball, 2200, "../balls/ball.js");
+        gameEngine.registerEntityClass(Ball, 4000, "../balls/ball.js");
 
         // Spawning functions
         function spawnRandomBall() {

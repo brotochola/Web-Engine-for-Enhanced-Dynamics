@@ -148,6 +148,7 @@ class Boid extends RenderableGameObject {
 
       // Cohesion & Alignment (same type only)
       if (isSameType) {
+        if (dist2 < protectedRange2) continue;
         centerX += GameObject.x[j];
         centerY += GameObject.y[j];
         avgVX += GameObject.vx[j];
@@ -246,7 +247,7 @@ class Boid extends RenderableGameObject {
 
     if (dist2 < 1e-4 || dist2 > 100000) return;
 
-    const strength = 1004545000;
+    const strength = 10;
     this.ax = (dx / dist2) * strength * dtRatio;
     this.ay = (dy / dist2) * strength * dtRatio;
   }

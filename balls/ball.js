@@ -22,9 +22,6 @@ class Ball extends RenderableGameObject {
     this.minSpeed = 0; // Balls can come to rest
     this.friction = 0.01; // Low friction - let balls settle naturally
 
-    // Visual range for separation (should be larger than radius)
-    this.visualRange = 60; // How far ball can detect other balls
-
     this.x = Math.random() * config.worldWidth;
     this.y = Math.random() * config.worldHeight;
     this.vx = 0;
@@ -34,6 +31,8 @@ class Ball extends RenderableGameObject {
 
     const actualBallSize = 14; //png width
     this.radius = Math.random() * 20 + 10;
+
+    this.visualRange = this.config.spatial.cellSize * 2; // How far ball can detect other balls
 
     const scale = (this.radius * 2) / actualBallSize;
 
@@ -79,7 +78,8 @@ class Ball extends RenderableGameObject {
   }
 
   onCollisionEnter(otherIndex) {
-    console.log(`Ball ${this.index} collided with ball ${otherIndex}`);
+    // console.log(`Ball ${this.index} collided with ball ${otherIndex}`);
+    this.setTint(0xff0000);
   }
 
   /**
@@ -110,25 +110,8 @@ class Ball extends RenderableGameObject {
     GameObject.rotation[i] += angularVelocity * dtRatio;
   }
 
-  /**
-   * Unity-style collision callback: Called when balls collide
-   */
-  onCollisionEnter(otherIndex) {
-    // Could add collision effects here
-  }
-
-  /**
-   * Unity-style collision callback: Called while balls are colliding
-   */
-  onCollisionStay(otherIndex) {
-    // Could add ongoing collision effects here
-  }
-
-  /**
-   * Unity-style collision callback: Called when collision ends
-   */
   onCollisionExit(otherIndex) {
-    // Could add effects when balls separate
+    this.setTint(0xffffff);
   }
 }
 

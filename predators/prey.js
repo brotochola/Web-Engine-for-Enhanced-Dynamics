@@ -14,14 +14,14 @@ class Prey extends Boid {
   // Sprite configuration - standardized format for animated sprites
   static spriteConfig = {
     type: "animated",
-    spritesheet: "person",
-    defaultAnimation: "parado",
+    spritesheet: "personaje",
+    defaultAnimation: "caminarDerecha",
     animationSpeed: 0.15,
 
     // Animation states - maps state index to animation name
     animStates: {
-      0: { name: "parado", label: "IDLE" }, // Idle/standing
-      1: { name: "caminar", label: "WALK" }, // Walking
+      0: { name: "caminarDerecha", label: "IDLE" }, // Idle (using walk for now)
+      1: { name: "caminarDerecha", label: "WALK" }, // Walking
     },
   };
 
@@ -41,14 +41,14 @@ class Prey extends Boid {
     const i = index;
 
     // Initialize prey-specific properties
-    this.predatorAvoidFactor = 1230; // Strong avoidance of predators
+    this.predatorAvoidFactor = 3; // Strong avoidance of predators
     this.life = 1;
     // Initialize GameObject physics properties
     this.maxVel = 3;
     this.maxAcc = 0.2;
     this.minSpeed = 0;
     this.friction = 0.05;
-    this.radius = 10;
+    this.radius = 5;
 
     // Initialize GameObject perception
     this.visualRange = 70; // How far boid can see
@@ -56,8 +56,8 @@ class Prey extends Boid {
 
     // Initialize Boid-specific behavior properties (with slight randomization)
     this.protectedRange = this.radius * 4; // Minimum distance from others
-    this.centeringFactor = 0.005; // Cohesion strength
-    this.avoidFactor = 2; // Separation strength
+    this.centeringFactor = 0; //0.005; // Cohesion strength
+    this.avoidFactor = 3; // Separation strength
     this.matchingFactor = 0.01; // Alignment strength
     this.turnFactor = 0.1; // Boundary avoidance strength
     this.margin = 20; // Distance from edge to start turning
@@ -212,7 +212,7 @@ class Prey extends Boid {
 
     // Check if we collided with a predator
     if (GameObject.entityType[otherIndex] === Predator.entityType) {
-      Prey.life[i] -= 0.01;
+      Prey.life[i] -= 0.1;
       if (Prey.life[i] <= 0) {
         this.despawn(); // Use proper despawn instead of directly setting active
       }

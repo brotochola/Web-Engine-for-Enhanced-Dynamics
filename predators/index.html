@@ -104,22 +104,14 @@
 
                 // Physics configuration
                 physics: {
-                    mode: "verlet",
-                    subStepCount: 4,
+                    subStepCount: 1,
                     noLimitFPS: false,   // If true, runs as fast as possible instead of 60fps
 
                     // Collision Detection
                     maxCollisionPairs: 80000, // Maximum collision pairs per frame
-
-                    // Simple Separation (boid-style push, no velocity change)
-                    applySeparation: true,      // Enable simple position-only separation
-                    separationStrength: 0.5,    // How strong the push-apart force is (0.0 to 1.0)
-
-                    // Full Physics Resolution (velocity + position, with bounce)
-                    resolveCollisions: false,          // Enable complex physics collision resolution
-                    collisionRestitution: 0.5,         // Bounciness (0=no bounce, 1=perfect bounce)
-                    collisionPositionCorrection: 0.4,  // How strongly to push overlapping objects apart (0.0 to 1.0)
-                    collisionFriction: 0.05,           // Friction during collisions (0.0 to 1.0)
+                    boundaryElasticity: 0,
+                    collisionResponseStrength: 0.99,
+                    verletDamping: 0.99,
 
                     // Global Forces
                     gravity: { x: 0, y: 0 }     // Global gravity applied to all entities
@@ -127,7 +119,7 @@
             },
             {
                 // Simple textures (for background, etc.)
-                bg: "/predators/img/fondo.jpg",
+                // bg: "/predators/img/fondo.jpg",
                 bunny: "/predators/img/bunny.png",
 
                 // Spritesheets configuration
@@ -156,8 +148,8 @@
         gameEngine.registerEntityClass(Boid, 0, "../predators/boid.js");  // Base boid entities
 
         // Register actual game entities
-        gameEngine.registerEntityClass(Prey, 5000, "../predators/prey.js");
-        gameEngine.registerEntityClass(Predator, 100, "../predators/predator.js");
+        gameEngine.registerEntityClass(Prey, 10000, "../predators/prey.js");
+        gameEngine.registerEntityClass(Predator, 10, "../predators/predator.js");
 
 
 

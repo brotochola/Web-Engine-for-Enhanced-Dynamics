@@ -39,8 +39,8 @@ class Predator extends Boid {
 
     const i = index;
 
-    this.x = 2000;
-    this.y = 1000;
+    this.x = 1200; // + Math.random() * 100;
+    this.y = 500; //+ Math.random() * 100;
 
     // Initialize predator-specific properties
     this.huntFactor = 0.2; // Chase strength
@@ -51,18 +51,18 @@ class Predator extends Boid {
     this.radius = 30;
 
     this.maxAcc = 0.2;
-    this.minSpeed = 1; // Keep predators moving
+    this.minSpeed = 0; //1; // Keep predators moving
     this.friction = 0.05;
 
     this.animationSpeed = 0.15;
 
     // Initialize GameObject perception
-    this.visualRange = 70; // How far boid can see
+    this.visualRange = 200; // How far boid can see
 
     // Initialize Boid-specific behavior properties (with slight randomization)
-    this.protectedRange = this.radius * 2; // Minimum distance from others
+    this.protectedRange = this.radius * 3; // Minimum distance from others
     this.centeringFactor = 0.0005; // Cohesion strength
-    this.avoidFactor = 2; // Separation strength
+    this.avoidFactor = 0.5; // Separation strength
     this.matchingFactor = 0.01; // Alignment strength
     this.turnFactor = 0.1; // Boundary avoidance strength
     this.margin = 20; // Distance from edge to start turning
@@ -185,46 +185,6 @@ class Predator extends Boid {
     if (Math.abs(this.vx) > 0.1) {
       this.setFlip(this.vx < 0); // Flip X when moving left
     }
-  }
-
-  /**
-   * Unity-style collision callback: Called when predator catches prey
-   * This demonstrates the collision detection system
-   */
-  onCollisionEnter(otherIndex) {
-    const i = this.index;
-
-    // Check if we caught a prey
-    if (GameObject.entityType[otherIndex] === Prey.entityType) {
-      // Success! Caught prey
-      // The prey will deactivate itself via its own collision callback
-      // Could add effects here:
-      // - Increase predator health/energy
-      // - Play sound effect
-      // - Spawn particle effect
-      // Optional: Post message to main thread
-      // this.logicWorker.self.postMessage({
-      //   msg: 'preyCaught',
-      //   predatorIndex: i,
-      //   preyIndex: otherIndex
-      // });
-    }
-  }
-
-  /**
-   * Unity-style collision callback: Called while predator is colliding with prey
-   * This is called every frame while the collision continues
-   */
-  onCollisionStay(otherIndex) {
-    // Could add continuous collision effects here
-    // For example: draining prey health over time
-  }
-
-  /**
-   * Unity-style collision callback: Called when collision ends
-   */
-  onCollisionExit(otherIndex) {
-    // Could add effects when prey escapes
   }
 }
 
