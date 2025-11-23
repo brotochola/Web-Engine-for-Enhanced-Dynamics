@@ -66,7 +66,8 @@ class Predator extends Boid {
     this.matchingFactor = 0; //0.01; // Alignment strength
     this.turnFactor = 0.1; // Boundary avoidance strength
     this.margin = 20; // Distance from edge to start turning
-    this.scaleX = this.scaleY = 2;
+    this.scale=2
+    this.scaleX = this.scaleY = this.scale
   }
 
   /**
@@ -184,10 +185,10 @@ class Predator extends Boid {
     } else {
       this.setTint(0xffffff); // Normal white
     }
-
-    // Flip sprite based on movement direction (only if moving significantly)
-    if (Math.abs(this.vx) > 0.1) {
-      this.setFlip(this.vx < 0); // Flip X when moving left
+    const vx = GameObject.vx[i];
+  // Flip sprite based on movement direction (only if moving significantly)
+    if (Math.abs(vx) > 0.1) {
+      this.setScale(vx < 0 ? -2 : 2,2); // Flip X when moving left
     }
   }
 }
