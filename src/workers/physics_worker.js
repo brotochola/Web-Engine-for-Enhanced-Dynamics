@@ -6,9 +6,9 @@ self.postMessage({
 // physics_worker.js - Physics integration (velocity, position updates)
 // Now uses per-entity maxVel, maxAcc, and friction from GameObject arrays
 
-// Import engine dependencies only
-importScripts("gameObject.js");
-importScripts("AbstractWorker.js");
+// Import engine dependencies
+import { GameObject } from '../core/gameObject.js';
+import { AbstractWorker } from './AbstractWorker.js';
 
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
 // Physics worker only needs GameObject arrays for physics calculations

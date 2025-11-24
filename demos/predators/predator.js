@@ -1,6 +1,10 @@
 // Predator.js - Predator that flocks with other predators and hunts prey
 // Extends Boid to inherit flocking behavior
 
+import { GameObject } from '/src/core/gameObject.js';
+import { Boid } from './boid.js';
+import { Prey } from './prey.js';
+
 class Predator extends Boid {
   static entityType = 2; // 2 = Predator
   static instances = []; // Instance tracking for this class
@@ -193,12 +197,5 @@ class Predator extends Boid {
   }
 }
 
-// Export for use in workers and make globally accessible
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = Predator;
-}
-
-// Ensure class is accessible in worker global scope
-if (typeof self !== "undefined") {
-  self.Predator = Predator;
-}
+// ES6 module export
+export { Predator };

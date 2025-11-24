@@ -6,9 +6,9 @@ self.postMessage({
 // Spatial Worker - Builds spatial hash grid and finds neighbors
 // Now uses per-entity visual ranges and accurate distance checking
 
-// Import engine dependencies only
-importScripts("gameObject.js");
-importScripts("AbstractWorker.js");
+// Import engine dependencies
+import { GameObject } from '../core/gameObject.js';
+import { AbstractWorker } from './AbstractWorker.js';
 
 // Note: Spatial worker doesn't need game-specific entity classes
 // It only works with GameObject arrays for spatial partitioning

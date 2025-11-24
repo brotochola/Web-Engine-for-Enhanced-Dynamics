@@ -7,10 +7,17 @@ self.postMessage({
 // Reads GameObject arrays and renders sprites with animations
 
 // Import engine dependencies
-importScripts("gameObject.js");
-importScripts("RenderableGameObject.js");
-importScripts("AbstractWorker.js");
-importScripts("pixi4webworkers.js");
+import { GameObject } from '../core/gameObject.js';
+import { RenderableGameObject } from '../core/RenderableGameObject.js';
+import { AbstractWorker } from './AbstractWorker.js';
+
+// Import PixiJS library (now ES6 module)
+import { PIXI } from './pixi4webworkers.js';
+
+// Make imported classes globally available for dynamic instantiation
+self.GameObject = GameObject;
+self.RenderableGameObject = RenderableGameObject;
+self.PIXI = PIXI;
 
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
 
@@ -189,8 +196,8 @@ class PixiRenderer extends AbstractWorker {
         bodySprite.alpha = alpha[i];
 
         // Handle flipping
-        bodySprite.scale.x = flipX[i] ? -1 : 1;
-        bodySprite.scale.y = flipY[i] ? -1 : 1;
+        bodySprite.scale.x = flipX[i] ? -scaleX[i] : scaleX[i];
+        bodySprite.scale.y = flipY[i] ? -scaleY[i] : scaleY[i];
 
         // Update animation if changed
         this.updateSpriteAnimation(bodySprite, i, animationState[i]);

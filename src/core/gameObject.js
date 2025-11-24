@@ -523,12 +523,5 @@ class GameObject {
   }
 }
 
-// Export for use in workers and make globally accessible
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = GameObject;
-}
-
-// Ensure class is accessible in worker global scope
-if (typeof self !== "undefined") {
-  self.GameObject = GameObject;
-}
+// ES6 module export
+export { GameObject };

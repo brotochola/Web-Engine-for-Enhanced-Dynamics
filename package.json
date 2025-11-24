@@ -2,13 +2,14 @@
   "name": "multithreadad-game-engine",
   "version": "1.0.0",
   "description": "https://multithreaded-game-engine.vercel.app/",
-  "main": "node_server.js",
+  "main": "server/node_server.js",
   "directories": {
-    "lib": "lib",
-    "test": "tests"
+    "lib": "src",
+    "test": "tests",
+    "doc": "docs"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "node server/node_server.js"
   },
   "keywords": [],
   "author": "",

@@ -1,5 +1,8 @@
-// Prey.js - Prey that flock like boids but avoid predators
-// Extends Boid to inherit flocking behavior
+// Prey.js - Boid that tries to survive by avoiding predators
+// Extends Boid to implement prey-specific behaviors
+
+import { GameObject } from '/src/core/gameObject.js';
+import { Boid } from './boid.js';
 
 class Prey extends Boid {
   static entityType = 1; // 1 = Prey
@@ -239,12 +242,5 @@ class Prey extends Boid {
   }
 }
 
-// Export for use in workers and make globally accessible
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = Prey;
-}
-
-// Ensure class is accessible in worker global scope
-if (typeof self !== "undefined") {
-  self.Prey = Prey;
-}
+// ES6 module export
+export { Prey };

@@ -23464,3 +23464,6 @@ void main(void)\r
   );
 })({});
 //# sourceMappingURL=webworker.min.js.map
+
+// ES6 module export
+export { PIXI };

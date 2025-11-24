@@ -73,12 +73,11 @@
         <button onclick="clearAllEntities()" style="background: #ff6b6b;">🗑️ Clear All</button>
     </div>
 
-    <script src="/lib/gameObject.js"></script>
-    <script src="/lib/RenderableGameObject.js"></script>
-    <script src="/lib/gameEngine.js"></script>
+    <script type="module">
+        // Import engine classes
+        import { GameEngine } from '/src/core/gameEngine.js';
+        import { Ball } from '/demos/balls/ball.js';
 
-    <script src="/balls/ball.js"></script>
-    <script>
         // Initialize with GameEngine using class registration system
         const gameEngine = new GameEngine(
             {
@@ -115,14 +114,14 @@
             },
             {
                 // Simple textures
-                ball: "/balls/bola.png",
-                // bg: "/predators/img/fondo.jpg",
+                ball: "/demos/balls/bola.png",
+                // bg: "/demos/predators/img/fondo.jpg",
             }
         );
 
         // Register entity classes with their script paths
-        // Note: Paths are relative to lib/ folder where workers are located
-        gameEngine.registerEntityClass(Ball, 4000, "../balls/ball.js");
+        // Note: Paths are relative to src/workers/ folder where workers are located
+        gameEngine.registerEntityClass(Ball, 4000, "../../demos/balls/ball.js");
 
         // Spawning functions
         function spawnRandomBall() {

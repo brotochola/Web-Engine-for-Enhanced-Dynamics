@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <title>PixiJS 8 - SharedArrayBuffer with 4 Workers (SoA + Spatial)</title>
+    <title>Predators Demo - Multithreaded Game Engine</title>
     <style>
         body {
             margin: 0;
@@ -74,14 +74,13 @@
         <button onclick="clearAllEntities()" style="background: #ff6b6b;">🗑️ Clear All</button>
     </div>
 
-    <script src="/lib/gameObject.js"></script>
-    <script src="/lib/RenderableGameObject.js"></script>
-    <script src="/lib/gameEngine.js"></script>
+    <script type="module">
+        // Import engine classes and entity classes
+        import { GameEngine } from '/src/core/gameEngine.js';
+        import { Boid } from '/demos/predators/boid.js';
+        import { Prey } from '/demos/predators/prey.js';
+        import { Predator } from '/demos/predators/predator.js';
 
-    <script src="/predators/boid.js"></script>
-    <script src="/predators/prey.js"></script>
-    <script src="/predators/predator.js"></script>
-    <script>
         // Initialize with GameEngine using class registration system
         const gameEngine = new GameEngine(
             {
@@ -92,88 +91,70 @@
 
                 // Spatial hash grid configuration
                 spatial: {
-                    cellSize: 50,        // Each cell size in world units
-                    maxNeighbors: 400,   // Maximum neighbors to track per entity
-                    noLimitFPS: false    // If true, runs as fast as possible instead of 60fps
+                    cellSize: 50,
+                    maxNeighbors: 400,
+                    noLimitFPS: false
                 },
 
                 // Logic configuration
                 logic: {
-                    noLimitFPS: false    // If true, runs as fast as possible instead of 60fps
+                    noLimitFPS: false
                 },
 
                 // Physics configuration
                 physics: {
                     subStepCount: 2,
-                    noLimitFPS: false,   // If true, runs as fast as possible instead of 60fps
-
-                    // Collision Detection
-                    maxCollisionPairs: 2200000, // Maximum collision pairs per frame
+                    noLimitFPS: false,
+                    maxCollisionPairs: 2200000,
                     boundaryElasticity: 0,
                     collisionResponseStrength: 0.9,
                     verletDamping: 0.99,
-
-                    // Global Forces
-                    gravity: { x: 0, y: 0 }     // Global gravity applied to all entities
+                    gravity: { x: 0, y: 0 }
                 }
             },
             {
-                // Simple textures (for background, etc.)
-                // bg: "/predators/img/fondo.jpg",
-                bunny: "/predators/img/bunny.png",
-
-                // Spritesheets configuration
+                bunny: "/demos/predators/img/bunny.png",
                 spritesheets: {
                     person: {
-                        json: "/predators/img/person.json",
-                        png: "/predators/img/person.png"
+                        json: "/demos/predators/img/person.json",
+                        png: "/demos/predators/img/person.png"
                     },
                     personaje: {
-                        json: "/predators/img/personaje.json",
-                        png: "/predators/img/personaje.png"
+                        json: "/demos/predators/img/personaje.json",
+                        png: "/demos/predators/img/personaje.png"
                     }
                 }
             }
         );
 
-
-
-
         // Register entity classes with their script paths
-        // This is where you define what entities exist and how many
-        // The script paths allow workers to dynamically load game-specific code
-        // Note: Paths are relative to lib/ folder where workers are located
+        gameEngine.registerEntityClass(Boid, 0, "../../demos/predators/boid.js");
+        gameEngine.registerEntityClass(Prey, 10000, "../../demos/predators/prey.js");
+        gameEngine.registerEntityClass(Predator, 10, "../../demos/predators/predator.js");
 
-        // Register base classes that workers need to load (must be before child classes)
-        gameEngine.registerEntityClass(Boid, 0, "../predators/boid.js");  // Base boid entities
-
-        // Register actual game entities
-        gameEngine.registerEntityClass(Prey, 10000, "../predators/prey.js");
-        gameEngine.registerEntityClass(Predator, 10, "../predators/predator.js");
-
-
-
+        // Make gameEngine global for button onclick handlers
+        window.gameEngine = gameEngine;
 
         // Spawning functions
-        function spawnRandomPrey() {
+        window.spawnRandomPrey = function () {
             gameEngine.spawnEntity('Prey', {
                 x: Math.random() * gameEngine.config.worldWidth,
                 y: Math.random() * gameEngine.config.worldHeight,
                 vx: 0,
                 vy: 0
             });
-        }
+        };
 
-        function spawnRandomPredator() {
+        window.spawnRandomPredator = function () {
             gameEngine.spawnEntity('Predator', {
                 x: Math.random() * gameEngine.config.worldWidth,
                 y: Math.random() * gameEngine.config.worldHeight,
                 vx: 0,
                 vy: 0
             });
-        }
+        };
 
-        function spawnPreyAtMouse() {
+        window.spawnPreyAtMouse = function () {
             if (gameEngine.mouse.x > 0 && gameEngine.mouse.y > 0) {
                 gameEngine.spawnEntity('Prey', {
                     x: gameEngine.mouse.x,
@@ -182,9 +163,9 @@
                     vy: 0
                 });
             }
-        }
+        };
 
-        function spawnPredatorAtMouse() {
+        window.spawnPredatorAtMouse = function () {
             if (gameEngine.mouse.x > 0 && gameEngine.mouse.y > 0) {
                 gameEngine.spawnEntity('Predator', {
                     x: gameEngine.mouse.x,
@@ -193,13 +174,13 @@
                     vy: 0
                 });
             }
-        }
+        };
 
-        function clearAllEntities() {
+        window.clearAllEntities = function () {
             if (confirm('Clear all entities?')) {
                 gameEngine.workers.logic.postMessage({ msg: 'clearAll' });
             }
-        }
+        };
 
         // Update pool stats periodically
         setInterval(() => {
@@ -222,7 +203,7 @@
                     <p>You need to serve this with proper CORS headers:</p>
                     <pre>Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp</pre>
-                    <p>Use the provided server.js: <code>node server.js</code></p>
+                    <p>Use the provided server: <code>node server/node_server.js</code></p>
                 </div>
             `;
         });

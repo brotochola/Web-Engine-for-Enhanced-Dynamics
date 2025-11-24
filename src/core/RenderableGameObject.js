@@ -1,6 +1,8 @@
 // RenderableGameObject.js - Game object with rendering properties
 // Extends GameObject to add visual/animation state for rendering
 
+import { GameObject } from './gameObject.js';
+
 class RenderableGameObject extends GameObject {
   static instances = []; // Instance tracking for this class
 
@@ -282,12 +284,5 @@ class RenderableGameObject extends GameObject {
   }
 }
 
-// Export for use in workers and make globally accessible
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = RenderableGameObject;
-}
-
-// Ensure class is accessible in worker global scope
-if (typeof self !== "undefined") {
-  self.RenderableGameObject = RenderableGameObject;
-}
+// ES6 module export
+export { RenderableGameObject };

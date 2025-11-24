@@ -1,6 +1,9 @@
 // Boid.js - Flocking behavior implementation
 // Extends RenderableGameObject to implement the classic boids algorithm
 
+import { GameObject } from '/src/core/gameObject.js';
+import { RenderableGameObject } from '/src/core/RenderableGameObject.js';
+
 class Boid extends RenderableGameObject {
   static entityType = 0; // 0 = Boid
   static instances = []; // Instance tracking for this class
@@ -269,12 +272,5 @@ class Boid extends RenderableGameObject {
   }
 }
 
-// Export for use in workers and make globally accessible
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = Boid;
-}
-
-// Ensure class is accessible in worker global scope
-if (typeof self !== "undefined") {
-  self.Boid = Boid;
-}
+// ES6 module export
+export { Boid };

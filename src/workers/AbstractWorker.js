@@ -1,5 +1,7 @@
 // AbstractWorker.js - Base class for all game engine workers
-// Provides common functionality: frame timing, FPS tracking, pause state, message handling
+// Provides common functionality: frame timing,  FPS tracking, pause state, message handling
+
+import { GameObject } from '../core/gameObject.js';
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -163,7 +165,7 @@ class AbstractWorker {
    * Initialize common buffers
    * @param {Object} data - Initialization data from main thread
    */
-  initializeCommonBuffers(data) {
+  async initializeCommonBuffers(data) {
     this.reportLog("initializing common buffers");
     this.entityCount = data.entityCount;
 
@@ -195,9 +197,15 @@ class AbstractWorker {
       console.log(
         `${this.constructor.name}: Loading ${data.scriptsToLoad.length} game scripts...`
       );
-      data.scriptsToLoad.forEach((scriptPath) => {
+      
+      // Use dynamic import() for ES6 modules (async/await)
+      for (const scriptPath of data.scriptsToLoad) {
         try {
-          importScripts(scriptPath);
+          const module = await import(scriptPath);
+          // Make the exported class(es) available globally in worker
+          Object.keys(module).forEach(key => {
+            self[key] = module[key];
+          });
           console.log(`${this.constructor.name}: ✓ Loaded ${scriptPath}`);
         } catch (error) {
           console.error(
@@ -205,7 +213,7 @@ class AbstractWorker {
             error
           );
         }
-      });
+      }
     } else if (!this.needsGameScripts) {
       console.log(
         `${this.constructor.name}: Skipping game scripts (generic worker)`
@@ -317,13 +325,13 @@ class AbstractWorker {
    * Handle incoming messages from main thread
    * @param {MessageEvent} e - Message event
    */
-  handleMessage(e) {
+  async handleMessage(e) {
     const { msg } = e.data;
 
     switch (msg) {
       case "init":
         this.isPaused = true; // Keep paused until "start" message
-        this.initializeCommonBuffers(e.data);
+        await this.initializeCommonBuffers(e.data);
         this.initializeWorkerPorts(e.data.workerPorts); // Initialize direct worker communication
         this.initialize(e.data);
         // After initialization, signal ready to main thread
@@ -475,3 +483,6 @@ class AbstractWorker {
     // Override in subclass if needed
   }
 }
+
+// ES6 module export
+export { AbstractWorker };

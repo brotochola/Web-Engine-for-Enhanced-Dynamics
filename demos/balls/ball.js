@@ -1,3 +1,6 @@
+import { GameObject } from '/src/core/gameObject.js';
+import { RenderableGameObject } from '/src/core/RenderableGameObject.js';
+
 class Ball extends RenderableGameObject {
   static entityType = 1; // 1 = Ball
   static instances = []; // Instance tracking for this class
@@ -16,7 +19,17 @@ class Ball extends RenderableGameObject {
   constructor(index, config = {}, logicWorker = null) {
     super(index, config, logicWorker);
 
-    // Initialize GameObject physics properties
+
+
+    this.awake(config);
+  }
+
+  /**
+   * LIFECYCLE: Called when ball is spawned/respawned from pool
+   * Reset all properties to initial state
+   */
+  awake(config) {
+        // Initialize GameObject physics properties
     this.maxVel = 100; // Max velocity
     this.maxAcc = 2; // Max acceleration
     this.minSpeed = 0; // Balls can come to rest
@@ -41,14 +54,6 @@ class Ball extends RenderableGameObject {
     this.setSpriteProp("anchor.y", 0.5);
     this.setSpriteProp("anchor.x", 0.5);
 
-    this.awake();
-  }
-
-  /**
-   * LIFECYCLE: Called when ball is spawned/respawned from pool
-   * Reset all properties to initial state
-   */
-  awake() {
     // Reset visual properties
     this.setAlpha(1.0);
     this.setTint(0xffffff);
@@ -81,6 +86,9 @@ class Ball extends RenderableGameObject {
     // console.log(`Ball ${this.index} collided with ball ${otherIndex}`);
     this.setTint(0xff0000);
   }
+  onCollisionExit(otherIndex) {
+    this.setTint(0xffffff);
+  }
 
   /**
    * LIFECYCLE: Called when ball is despawned (returned to pool)
@@ -110,17 +118,8 @@ class Ball extends RenderableGameObject {
     GameObject.rotation[i] += angularVelocity * dtRatio;
   }
 
-  onCollisionExit(otherIndex) {
-    this.setTint(0xffffff);
-  }
+
 }
 
-// Export for use in workers and make globally accessible
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = Ball;
-}
-
-// Ensure class is accessible in worker global scope
-if (typeof self !== "undefined") {
-  self.Ball = Ball;
-}
+// ES6 module export
+export { Ball };

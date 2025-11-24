@@ -1,6 +1,9 @@
 // GameEngine.js - Centralized game initialization and state management
 // Handles workers, SharedArrayBuffers, class registration, and input management
 
+import { GameObject } from './gameObject.js';
+import { RenderableGameObject } from './RenderableGameObject.js';
+
 class GameEngine {
   static now = Date.now();
   constructor(config, imageUrls) {
@@ -560,13 +563,13 @@ class GameEngine {
   async createWorkers() {
     const { canvasWidth, canvasHeight, worldWidth, worldHeight } = this.config;
 
-    // Create workers
+    // Create workers with module type
     // Add cache-busting parameter to force reload of workers
     const cacheBust = `?v=${Date.now()}`;
-    this.workers.spatial = new Worker(`lib/spatial_worker.js${cacheBust}`);
-    this.workers.logic = new Worker(`lib/logic_worker.js${cacheBust}`);
-    this.workers.physics = new Worker(`lib/physics_worker.js${cacheBust}`);
-    this.workers.renderer = new Worker(`lib/pixi_worker.js${cacheBust}`);
+    this.workers.spatial = new Worker(`/src/workers/spatial_worker.js${cacheBust}`, { type: 'module' });
+    this.workers.logic = new Worker(`/src/workers/logic_worker.js${cacheBust}`, { type: 'module' });
+    this.workers.physics = new Worker(`/src/workers/physics_worker.js${cacheBust}`, { type: 'module' });
+    this.workers.renderer = new Worker(`/src/workers/pixi_worker.js${cacheBust}`, { type: 'module' });
 
     this.workers.spatial.name = "spatial";
     this.workers.logic.name = "logic";
@@ -1012,7 +1015,5 @@ class GameEngine {
   }
 }
 
-// Export for use
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = GameEngine;
-}
+// ES6 module export
+export { GameEngine };

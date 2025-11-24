@@ -6,10 +6,14 @@ self.postMessage({
 // logic_worker.js - Calculates game logic using GameObject pattern
 // This worker runs independently, calculating accelerations for all entities
 
-// Import engine dependencies only
-importScripts("gameObject.js");
-importScripts("RenderableGameObject.js");
-importScripts("AbstractWorker.js");
+// Import engine dependencies
+import { GameObject } from '../core/gameObject.js';
+import { RenderableGameObject } from '../core/RenderableGameObject.js';
+import { AbstractWorker } from './AbstractWorker.js';
+
+// Make imported classes globally available for dynamic instantiation
+self.GameObject = GameObject;
+self.RenderableGameObject = RenderableGameObject;
 
 // Game-specific scripts will be loaded dynamically during initialization
 
