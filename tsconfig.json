@@ -1,0 +1,52 @@
+{
+    "compilerOptions": {
+        // Target ES2020 for modern features and web worker support
+        "target": "ES2020",
+        "module": "ESNext",
+        "lib": [
+            "ES2020",
+            "DOM",
+            "WebWorker"
+        ],
+        // Module resolution
+        "moduleResolution": "bundler",
+        "resolveJsonModule": true,
+        "allowSyntheticDefaultImports": true,
+        "esModuleInterop": true,
+        // Output configuration
+        "outDir": "./dist",
+        "declarationDir": "./dist",
+        "declaration": true,
+        "declarationMap": true,
+        "sourceMap": true,
+        // Strict type checking
+        "strict": true,
+        "noImplicitAny": true,
+        "strictNullChecks": true,
+        "strictFunctionTypes": true,
+        "strictBindCallApply": true,
+        "strictPropertyInitialization": false, // Disabled for SharedArrayBuffer patterns
+        "noImplicitThis": true,
+        "alwaysStrict": true,
+        // Additional checks
+        "noUnusedLocals": false, // Can enable later
+        "noUnusedParameters": false, // Can enable later
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
+        // Advanced options
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "allowJs": true, // Allow importing JS files during migration
+        "checkJs": false // Don't type-check JS files
+    },
+    "include": [
+        "src/**/*"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "demos",
+        "server",
+        "tests"
+    ]
+}
