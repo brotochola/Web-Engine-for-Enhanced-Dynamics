@@ -845,6 +845,35 @@ class GameEngine {
       this.updateInputBuffer();
     });
 
+
+    this.canvas.addEventListener("mousedown", (e) => {
+        if(!this.mouse)this.mouse = {};
+     if(e.button==0){
+        this.mouse.button0Down = true
+      }
+      if(e.button==1){
+        this.mouse.button1Down = true
+      }
+      if(e.button==2){
+        this.mouse.button2Down = true
+      }
+      this.updateInputBuffer();
+    });
+
+    this.canvas.addEventListener("mouseup", (e) => {
+        if(!this.mouse)this.mouse = {};
+      if(e.button==0){
+        this.mouse.button0Down = false
+      }
+      if(e.button==1){
+        this.mouse.button1Down = false
+      }
+      if(e.button==2){
+        this.mouse.button2Down = false
+      }
+      this.updateInputBuffer();
+    });
+
     // Mouse events - convert canvas pixels to world coordinates
     this.canvas.addEventListener("mousemove", (e) => {
       const rect = this.canvas.getBoundingClientRect();
@@ -853,7 +882,7 @@ class GameEngine {
 
       // Convert to world coordinates (Y-down system)
       // World position = (canvas position + camera position) / zoom
-      this.mouse = {};
+      if(!this.mouse)this.mouse = {};
       this.mouse.x = canvasX / this.camera.zoom + this.camera.x;
       this.mouse.y = canvasY / this.camera.zoom + this.camera.y;
 
@@ -902,14 +931,20 @@ class GameEngine {
       input[0] = this.mouse.x;
       input[1] = this.mouse.y;
       input[2] = 1; // Mouse present flag
+      input[3] = this.mouse.button0Down ? 1 : 0; // Mouse down flag
+      input[4] = this.mouse.button1Down ? 1 : 0; // Mouse down flag
+      input[5] = this.mouse.button2Down ? 1 : 0; // Mouse down flag
     } else {
       input[0] = 0; // Clear mouse position
       input[1] = 0;
       input[2] = 0; // Mouse NOT present
+      input[3] = 0;
+      input[4] = 0;
+      input[5] = 0;
     }
 
     for (const [key, index] of Object.entries(this.keyMap)) {
-      input[3 + index] = this.keyboard[key] ? 1 : 0; // Keyboard starts at index 3
+      input[6 + index] = this.keyboard[key] ? 1 : 0; // Keyboard starts at index 3
     }
   }
 

@@ -138,16 +138,20 @@ class LogicWorker extends AbstractWorker {
    * Calls tick() on all game objects
    */
   update(deltaTime, dtRatio, resuming) {
+    
     // Process collision callbacks BEFORE entity logic (Unity-style)
     if (this.collisionData) {
       this.processCollisionCallbacks();
     }
 
+    // console.log(this.inputData[3],this.inputData[4],this.inputData[5])
+
     // Tick all game objects
     // Each GameObject applies its logic, reading/writing directly to shared arrays
     for (let i = 0; i < this.entityCount; i++) {
-      if (this.gameObjects[i] && this.gameObjects[i].active) {
+      if (this.gameObjects[i] && GameObject.active[i]) {
         const obj = this.gameObjects[i];
+        
         // Update neighbor references before tick (parsed once per frame)
         // Now includes pre-calculated squared distances from spatial worker
         obj.updateNeighbors(this.neighborData, this.distanceData);
@@ -244,17 +248,7 @@ class LogicWorker extends AbstractWorker {
         }
 
         const instance = GameObject.spawn(EntityClass, spawnConfig);
-        if (instance) {
-          console.log(
-            `LOGIC WORKER: Spawned ${className} at (${instance.transform.worldX.toFixed(
-              1
-            )}, ${instance.transform.worldY.toFixed(1)})`
-          );
-        } else {
-          console.warn(
-            `LOGIC WORKER: Failed to spawn ${className} - pool exhausted!`
-          );
-        }
+        if (!instance) console.warn(`LOGIC WORKER: Failed to spawn ${className} - pool exhausted!`);
         break;
       }
 
@@ -293,7 +287,7 @@ class LogicWorker extends AbstractWorker {
         let totalDespawned = 0;
 
         // Iterate through all game objects and despawn active ones
-        for (let i = 0; i < this.entityCount; i++) {
+        for (let i = 0; i < this.entityCount; i++) {          
           if (GameObject.active[i] && this.gameObjects[i]) {
             this.gameObjects[i].despawn();
             totalDespawned++;
@@ -315,3 +309,4 @@ class LogicWorker extends AbstractWorker {
 
 // Create singleton instance and setup message handler
 const logicWorker = new LogicWorker(self);
+console.log(logicWorker)

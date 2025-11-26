@@ -16,15 +16,15 @@ class Ball extends GameObject {
     textureName: 'ball',
   };
 
-  /**
-   * Ball constructor - initializes ball properties
-   * @param {number} index - Position in shared arrays
-   * @param {Object} componentIndices - Component indices { transform, rigidBody, collider, spriteRenderer }
-   * @param {Object} config - Configuration object from GameEngine
-   */
-  constructor(index, componentIndices, config = {}, logicWorker = null) {
-    super(index, componentIndices, config, logicWorker);
-  }
+  // /**
+  //  * Ball constructor - initializes ball properties
+  //  * @param {number} index - Position in shared arrays
+  //  * @param {Object} componentIndices - Component indices { transform, rigidBody, collider, spriteRenderer }
+  //  * @param {Object} config - Configuration object from GameEngine
+  //  */
+  // constructor(index, componentIndices, config = {}, logicWorker = null) {
+  //   super(index, componentIndices, config, logicWorker);
+  // }
 
   /**
    * LIFECYCLE: Called when ball is spawned/respawned from pool
@@ -42,7 +42,9 @@ class Ball extends GameObject {
 
     // Set initial position in RigidBody (physics)
     this.rigidBody.x = Math.random() * (config.worldWidth || 7600);
-    this.rigidBody.y = Math.random() * 100 + 50; // Spawn near top
+    this.rigidBody.y = Math.random() * 1000 + 50; // Spawn spread out vertically
+    this.rigidBody.px = this.rigidBody.x; // Initialize previous position for Verlet
+    this.rigidBody.py = this.rigidBody.y;
     this.rigidBody.vx = 0;
     this.rigidBody.vy = 0;
     this.rigidBody.ax = 0;
@@ -59,7 +61,7 @@ class Ball extends GameObject {
     this.collider.radius = ballRadius;
 
     // Set visual range for spatial queries
-    this.collider.visualRange = (config.spatial?.cellSize || 80) * 2;
+    this.collider.visualRange = (config.spatial?.cellSize || 80) * 1.33;
 
     const scale = (ballRadius * 2) / actualBallSize;
 
@@ -84,7 +86,8 @@ class Ball extends GameObject {
       0x48dbfb, // Blue
       0xff9ff3, // Pink
     ];
-    this.setTint(colors[Math.floor(Math.random() * colors.length)]);
+    this.myColor = colors[Math.floor(Math.random() * colors.length)];
+    this.setTint(this.myColor);
   }
 
   onCollisionEnter(otherIndex) {
@@ -92,7 +95,7 @@ class Ball extends GameObject {
   }
 
   onCollisionExit(otherIndex) {
-    this.setTint(0xffffff);
+    this.setTint(this.myColor);  
   }
 
   /**
@@ -108,21 +111,28 @@ class Ball extends GameObject {
    * Note: Gravity and collision resolution are handled by physics worker
    */
   tick(dtRatio, inputData) {
-    const i = this.index;
-
-    // Update rotation based on velocity (balls roll)
-    this.updateRotation(i, dtRatio);
+    
+  
+  
+  if(inputData[3] ){
+    const dist2=(this.rigidBody.x-inputData[0])**2+(this.rigidBody.y-inputData[1])**2
+    if(dist2>20000)return
+    
+    this.rigidBody.ax = (this.rigidBody.x-inputData[0])*0.2
+    this.rigidBody.ay = (this.rigidBody.y-inputData[1])*0.2
+  }
+  
+    
+  //  //on click of the mouse, make the balls that are close, to explode (add ax and ay
+  //  if(gameEngine.mouse.isDown){
+  //   const ball = this.rigidBody;
+  //   ball.ax = 1;
+  //   ball.ay = 1;
+  //  }
+   
   }
 
-  /**
-   * Update rotation based on velocity (rolling effect)
-   */
-  updateRotation(i, dtRatio) {
-    // Rotate based on horizontal velocity
-    const rigidBody = this.rigidBody;
-    const angularVelocity = rigidBody.vx * 0.02;
-    rigidBody.rotation += angularVelocity * dtRatio;
-  }
+
 }
 
 // ES6 module export

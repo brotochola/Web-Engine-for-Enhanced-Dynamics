@@ -83,8 +83,8 @@
             {
                 canvasWidth: 800,
                 canvasHeight: 600,
-                worldWidth: 7600,
-                worldHeight: 1420,
+                worldWidth: 4000,
+                worldHeight: 3420,
 
                 // Spatial hash grid configuration
                 spatial: {
@@ -123,7 +123,7 @@
 
         // Register entity classes with their script paths
         // Note: Paths are relative to src/workers/ folder where workers are located
-        gameEngine.registerEntityClass(Ball, 4000, "../../demos/balls/ball.js");
+        gameEngine.registerEntityClass(Ball, 7000, "../../demos/balls/ball.js");
 
         // Spawning functions
         function spawnRandomBall() {
