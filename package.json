@@ -1,6 +1,6 @@
 {
   "name": "multithreadad-game-engine",
-  "version": "1.0.0",
+  "version": "0.0.2",
   "description": "https://multithreaded-game-engine.vercel.app/",
   "main": "server/node_server.js",
   "directories": {
@@ -13,8 +13,5 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "@dimforge/rapier2d-compat": "^0.11.2"
-  }
+  "license": "ISC"
 }

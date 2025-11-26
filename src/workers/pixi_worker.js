@@ -8,7 +8,9 @@ self.postMessage({
 
 // Import engine dependencies
 import { GameObject } from '../core/gameObject.js';
-import { RenderableGameObject } from '../core/RenderableGameObject.js';
+import { Transform } from '../components/Transform.js';
+import { RigidBody } from '../components/RigidBody.js';
+import { SpriteRenderer } from '../components/SpriteRenderer.js';
 import { AbstractWorker } from './AbstractWorker.js';
 
 // Import PixiJS library (now ES6 module)
@@ -16,7 +18,9 @@ import { PIXI } from './pixi4webworkers.js';
 
 // Make imported classes globally available for dynamic instantiation
 self.GameObject = GameObject;
-self.RenderableGameObject = RenderableGameObject;
+self.Transform = Transform;
+self.RigidBody = RigidBody;
+self.SpriteRenderer = SpriteRenderer;
 self.PIXI = PIXI;
 
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
@@ -143,23 +147,23 @@ class PixiRenderer extends AbstractWorker {
   updateSprites() {
     // Cache array references for performance
     const active = GameObject.active;
-    const x = GameObject.x;
-    const y = GameObject.y;
-    const rotation = GameObject.rotation;
+    const worldX = Transform.worldX;
+    const worldY = Transform.worldY;
+    const rotation = RigidBody.rotation;
 
-    // Renderable properties
-    const animationState = RenderableGameObject.animationState;
-    const animationSpeed = RenderableGameObject.animationSpeed;
-    const tint = RenderableGameObject.tint;
-    const alpha = RenderableGameObject.alpha;
-    const flipX = RenderableGameObject.flipX;
-    const flipY = RenderableGameObject.flipY;
-    const scaleX = RenderableGameObject.scaleX;
-    const scaleY = RenderableGameObject.scaleY;
-    const renderVisible = RenderableGameObject.renderVisible;
-    const zOffset = RenderableGameObject.zOffset;
+    // SpriteRenderer properties
+    const animationState = SpriteRenderer.animationState;
+    const animationSpeed = SpriteRenderer.animationSpeed;
+    const tint = SpriteRenderer.tint;
+    const alpha = SpriteRenderer.alpha;
+    const flipX = SpriteRenderer.flipX;
+    const flipY = SpriteRenderer.flipY;
+    const scaleX = SpriteRenderer.scaleX;
+    const scaleY = SpriteRenderer.scaleY;
+    const renderVisible = SpriteRenderer.renderVisible;
+    const zOffset = SpriteRenderer.zOffset;
     const isItOnScreen = GameObject.isItOnScreen;
-    const renderDirty = RenderableGameObject.renderDirty; // OPTIMIZATION: Dirty flag
+    const renderDirty = SpriteRenderer.renderDirty; // OPTIMIZATION: Dirty flag
 
     // Track visible units count
     let visibleCount = 0;
@@ -182,11 +186,11 @@ class PixiRenderer extends AbstractWorker {
       visibleCount++;
 
       // ALWAYS update transform (position, rotation, scale) - these change frequently
-      container.x = x[i];
-      container.y = y[i];
+      container.x = worldX[i];
+      container.y = worldY[i];
       container.rotation = rotation[i];
       container.scale.set(scaleX[i], scaleY[i]);
-      container.zIndex = y[i] + zOffset[i];
+      container.zIndex = worldY[i] + zOffset[i];
 
       // OPTIMIZATION: Only update visual properties if dirty flag is set
       // This skips expensive operations (tint, alpha, flipping, animations) when unchanged
@@ -589,7 +593,7 @@ class PixiRenderer extends AbstractWorker {
    * Initialize the PIXI renderer with provided data
    */
   initialize(data) {
-    console.log("PIXI WORKER: Initializing PIXI with spritesheets", data);
+    console.log("PIXI WORKER: Initializing with component system", data);
 
     // Store viewport and world dimensions from config
     this.worldWidth = data.config.worldWidth;
@@ -597,6 +601,25 @@ class PixiRenderer extends AbstractWorker {
     this.canvasWidth = data.config.canvasWidth;
     this.canvasHeight = data.config.canvasHeight;
     this.canvasView = data.view;
+
+    // Initialize component arrays from SharedArrayBuffers
+    console.log('PIXI WORKER: Initializing component arrays...');
+    
+    // Transform (for positions)
+    Transform.initializeArrays(data.buffers.componentData.Transform, this.entityCount);
+    console.log(`  ✅ Transform: ${this.entityCount} slots`);
+    
+    // RigidBody (for rotation)
+    if (data.buffers.componentData.RigidBody) {
+      RigidBody.initializeArrays(data.buffers.componentData.RigidBody, data.componentPools.RigidBody.count);
+      console.log(`  ✅ RigidBody: ${data.componentPools.RigidBody.count} slots`);
+    }
+    
+    // SpriteRenderer (for visual properties)
+    if (data.buffers.componentData.SpriteRenderer) {
+      SpriteRenderer.initializeArrays(data.buffers.componentData.SpriteRenderer, data.componentPools.SpriteRenderer.count);
+      console.log(`  ✅ SpriteRenderer: ${data.componentPools.SpriteRenderer.count} slots`);
+    }
 
     // Create PIXI application
     this.pixiApp = new PIXI.Application({

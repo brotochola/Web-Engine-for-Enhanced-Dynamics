@@ -8,10 +8,13 @@ self.postMessage({
 
 // Import engine dependencies
 import { GameObject } from '../core/gameObject.js';
+import { Transform } from '../components/Transform.js';
+import { RigidBody } from '../components/RigidBody.js';
+import { Collider } from '../components/Collider.js';
 import { AbstractWorker } from './AbstractWorker.js';
 
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
-// Physics worker only needs GameObject arrays for physics calculations
+// Physics worker uses RigidBody component for physics calculations
 
 /**
  * PhysicsWorker - Handles physics integration for all entities
@@ -40,7 +43,16 @@ class PhysicsWorker extends AbstractWorker {
    * Initialize physics worker (implementation of AbstractWorker.initialize)
    */
   initialize(data) {
-    console.log("PHYSICS WORKER: Initializing");
+    console.log("PHYSICS WORKER: Initializing with component system");
+
+    // Initialize component arrays
+    Transform.initializeArrays(data.buffers.componentData.Transform, this.entityCount);
+    if (data.buffers.componentData.RigidBody) {
+      RigidBody.initializeArrays(data.buffers.componentData.RigidBody, data.componentPools.RigidBody.count);
+    }
+    if (data.buffers.componentData.Collider) {
+      Collider.initializeArrays(data.buffers.componentData.Collider, data.componentPools.Collider.count);
+    }
 
     this.applyPhysicsConfig(this.config.physics || {});
 
@@ -64,6 +76,9 @@ class PhysicsWorker extends AbstractWorker {
    */
   update(deltaTime, dtRatio, resuming) {
     this.updateVerlet(deltaTime, dtRatio);
+    
+    // CRITICAL: Sync RigidBody positions to Transform for rendering
+    this.syncPhysicsToTransform();
   }
 
   /**
@@ -125,26 +140,47 @@ class PhysicsWorker extends AbstractWorker {
   }
 
   /**
+   * Sync RigidBody physics positions to Transform for rendering
+   * CRITICAL: Renderer reads Transform.worldX/Y, physics writes RigidBody.x/y
+   */
+  syncPhysicsToTransform() {
+    const active = GameObject.active;
+    
+    for (let i = 0; i < this.entityCount; i++) {
+      if (!active[i]) continue;
+      
+      // Copy physics positions to transform for rendering
+      Transform.worldX[i] = RigidBody.x[i];
+      Transform.worldY[i] = RigidBody.y[i];
+      Transform.localX[i] = RigidBody.x[i];
+      Transform.localY[i] = RigidBody.y[i];
+      Transform.worldRotation[i] = RigidBody.rotation[i];
+      Transform.localRotation[i] = RigidBody.rotation[i];
+    }
+  }
+
+  /**
    * Verlet Integration Physics (RopeBall-style)
    * Uses position-based dynamics with constraint solving
    * More stable for particle systems and large numbers of colliding objects
    */
   updateVerlet(deltaTime, dtRatio) {
-    // Cache array references
+    // Cache array references from components
     const active = GameObject.active;
-    const x = GameObject.x;
-    const y = GameObject.y;
-    const px = GameObject.px;
-    const py = GameObject.py;
-    const vx = GameObject.vx;
-    const vy = GameObject.vy;
-    const ax = GameObject.ax;
-    const ay = GameObject.ay;
-    const velocityAngle = GameObject.velocityAngle;
-    const speed = GameObject.speed;
-    const maxVel = GameObject.maxVel;
-    const radius = GameObject.radius;
-    const collisionCount = GameObject.collisionCount;
+    const x = RigidBody.x;
+    const y = RigidBody.y;
+    const px = RigidBody.px;
+    const py = RigidBody.py;
+    const vx = RigidBody.vx;
+    const vy = RigidBody.vy;
+    const ax = RigidBody.ax;
+    const ay = RigidBody.ay;
+    const velocityAngle = RigidBody.velocityAngle;
+    const speed = RigidBody.speed;
+    const maxVel = RigidBody.maxVel;
+    const rotation = RigidBody.rotation;
+    const radius = Collider.radius;
+    const collisionCount = RigidBody.collisionCount;
 
     // Get world bounds for boundary constraints
     const worldWidth = this.config.worldWidth;
@@ -293,8 +329,8 @@ class PhysicsWorker extends AbstractWorker {
     worldHeight
   ) {
     // Get previous position arrays for velocity manipulation
-    const px = GameObject.px;
-    const py = GameObject.py;
+    const px = RigidBody.px;
+    const py = RigidBody.py;
 
     const boundaryElasticity = this.settings.boundaryElasticity;
 

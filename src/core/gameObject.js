@@ -1,61 +1,40 @@
-// GameObject.js - Base class for all game entities with static shared arrays
-// Provides transform, physics, and perception components via Structure of Arrays
+// GameObject.js - Base class for all game entities using component composition
+// Entities are composed of components (Transform, RigidBody, Collider, etc.)
+
+import { Transform } from '../components/Transform.js';
+import { RigidBody } from '../components/RigidBody.js';
+import { Collider } from '../components/Collider.js';
+import { SpriteRenderer } from '../components/SpriteRenderer.js';
 
 class GameObject {
-  // Shared memory buffer
-  static sharedBuffer = null;
-  static entityCount = 0;
-
   // Entity class metadata (for spawning system)
   static startIndex = 0; // Starting index in arrays for this entity type
   static totalCount = 0; // Total allocated entities of this type
 
-  // Array schema - defines all shared arrays and their types
-  // Order matters! Arrays are laid out in this exact order in memory
-  // Properties are created dynamically in initializeArrays()
-  static ARRAY_SCHEMA = {
-    // Transform
-    x: Float32Array,
-    y: Float32Array,
-    vx: Float32Array,
-    vy: Float32Array,
-    ax: Float32Array,
-    ay: Float32Array,
-    rotation: Float32Array,
-    velocityAngle: Float32Array,
-    speed: Float32Array,
-    // Verlet Integration (for alternative physics mode)
-    px: Float32Array, // Previous X position
-    py: Float32Array, // Previous Y position
-    // Physics
-    maxVel: Float32Array,
-    maxAcc: Float32Array,
-    minSpeed: Float32Array,
-    friction: Float32Array,
-    radius: Float32Array,
-    collisionCount: Uint8Array, // Number of collisions this frame (for Verlet mode)
-    // Perception
-    visualRange: Float32Array,
-    // State
-    active: Uint8Array,
-    entityType: Uint8Array, // 0=Boid, 1=Prey, 2=Predator
-    isItOnScreen: Uint8Array,
-  };
+  // Component composition - define which components this entity type has
+  // Override in subclasses, e.g.: static components = [RigidBody, Collider, SpriteRenderer]
+  static components = []; // By default, only Transform (added automatically)
 
   // Neighbor data (from spatial worker)
   static neighborData = null;
   static distanceData = null; // Squared distances for each neighbor
 
+  // Entity state arrays (minimal - just active state and type)
+  static active = null; // Uint8Array
+  static entityType = null; // Uint8Array
+  static isItOnScreen = null; // Uint8Array
+  
+  static sharedBuffer = null; // For entity state arrays
+  static entityCount = 0;
+
   static instances = [];
 
   /**
-   * Initialize static arrays from SharedArrayBuffer
-   * Called by GameEngine and by each worker
+   * Initialize entity state arrays from SharedArrayBuffer
+   * This only initializes the minimal entity state (active, entityType, isItOnScreen)
+   * Components are initialized separately
    *
-   * This is a generic method that works for both GameObject and all subclasses (Boid, etc)
-   * by using 'this' which refers to the class it's called on.
-   *
-   * @param {SharedArrayBuffer} buffer - The shared memory
+   * @param {SharedArrayBuffer} buffer - The shared memory for entity state
    * @param {number} count - Total number of entities
    * @param {SharedArrayBuffer} [neighborBuffer] - Optional neighbor data buffer
    * @param {SharedArrayBuffer} [distanceBuffer] - Optional distance data buffer
@@ -69,74 +48,75 @@ class GameObject {
     this.sharedBuffer = buffer;
     this.entityCount = count;
 
-    let offset = 0;
+    // Create entity state arrays
+    this.active = new Uint8Array(buffer, 0, count);
+    this.entityType = new Uint8Array(buffer, count, count);
+    this.isItOnScreen = new Uint8Array(buffer, count * 2, count);
 
-    // Create typed array views for each property defined in schema
-    // 'this' refers to the class this method is called on (GameObject, Boid, etc.)
-    for (const [name, type] of Object.entries(this.ARRAY_SCHEMA)) {
-      const bytesPerElement = type.BYTES_PER_ELEMENT;
-
-      // Ensure proper alignment for this typed array
-      const remainder = offset % bytesPerElement;
-      if (remainder !== 0) {
-        offset += bytesPerElement - remainder;
-      }
-
-      this[name] = new type(buffer, offset, count);
-      offset += count * bytesPerElement;
-    }
-
-    // Initialize neighbor data if provided (only for GameObject)
-    if (neighborBuffer && this === GameObject) {
+    // Initialize neighbor data if provided
+    if (neighborBuffer) {
       this.neighborData = new Int32Array(neighborBuffer);
     }
 
-    // Initialize distance data if provided (only for GameObject)
-    if (distanceBuffer && this === GameObject) {
+    // Initialize distance data if provided
+    if (distanceBuffer) {
       this.distanceData = new Float32Array(distanceBuffer);
     }
-
-    // console.log(
-    //   `${this.name}: Initialized ${Object.keys(this.ARRAY_SCHEMA).length} arrays for ${count} entities (${offset} bytes total)`
-    // );
   }
 
   /**
-   * Calculate total buffer size needed
+   * Calculate buffer size needed for entity state arrays
    * @param {number} count - Number of entities
    * @returns {number} Buffer size in bytes
    */
   static getBufferSize(count) {
-    let offset = 0;
-
-    for (const type of Object.values(this.ARRAY_SCHEMA)) {
-      const bytesPerElement = type.BYTES_PER_ELEMENT;
-
-      // Add alignment padding
-      const remainder = offset % bytesPerElement;
-      if (remainder !== 0) {
-        offset += bytesPerElement - remainder;
-      }
-
-      offset += count * bytesPerElement;
-    }
-
-    return offset;
+    // 3 Uint8Arrays: active, entityType, isItOnScreen
+    return count * 3;
   }
 
   /**
-   * Constructor - just stores the index
-   * Subclasses should initialize their values in their constructors
-   * @param {number} index - Position in shared arrays
-   * @param {Object} config - Configuration object from GameEngine
+   * Collect all components from class hierarchy
+   * Walks up the prototype chain and collects all unique components
+   * @param {Class} EntityClass - The entity class to collect components from
+   * @returns {Array<Component>} Array of unique component classes
    */
-  constructor(index, config = {}, logicWorker = null) {
+  static _collectComponents(EntityClass) {
+    const components = new Set();
+    let currentClass = EntityClass;
+
+    // Walk up the prototype chain
+    while (currentClass && currentClass !== Object) {
+      if (currentClass.components && Array.isArray(currentClass.components)) {
+        currentClass.components.forEach((c) => components.add(c));
+      }
+      currentClass = Object.getPrototypeOf(currentClass);
+    }
+
+    // Transform is always included
+    components.add(Transform);
+
+    return Array.from(components);
+  }
+
+  /**
+   * Constructor - stores entity index and component indices
+   * @param {number} index - Entity index
+   * @param {Object} componentIndices - Map of component indices { transform: N, rigidBody: N, ... }
+   * @param {Object} config - Configuration object from GameEngine
+   * @param {Object} logicWorker - Logic worker reference
+   */
+  constructor(index, componentIndices = {}, config = {}, logicWorker = null) {
     this.index = index;
-    this.config = config; // Store config for instance access
+    this.config = config;
     this.logicWorker = logicWorker;
-    GameObject.active[index] = 1; // Set active in shared array (1 = true, 0 = false)
-    //take the entity type from the class
-    GameObject.entityType[index] = this.constructor.entityType;
+
+    // Store component indices
+    this._componentIndices = componentIndices;
+
+    // Set active in shared array
+    GameObject.active[index] = 1;
+    GameObject.entityType[index] = this.constructor.entityType || 0;
+
     GameObject.instances.push(this);
     this.constructor.instances.push(this);
 
@@ -144,6 +124,215 @@ class GameObject {
     this.neighborCount = 0;
     this.neighbors = null; // Will be a TypedArray subarray
     this.neighborDistances = null; // Will be a TypedArray subarray of squared distances
+
+    // Create component accessor cache
+    this._componentAccessors = {};
+  }
+
+  /**
+   * Component accessor: Transform (always present)
+   */
+  get transform() {
+    if (!this._componentAccessors.transform) {
+      const index = this._componentIndices.transform;
+      this._componentAccessors.transform = this._createComponentAccessor(
+        Transform,
+        index
+      );
+    }
+    return this._componentAccessors.transform;
+  }
+
+  /**
+   * Component accessor: RigidBody (if entity has it)
+   */
+  get rigidBody() {
+    if (this._componentIndices.rigidBody === undefined) return null;
+
+    if (!this._componentAccessors.rigidBody) {
+      const index = this._componentIndices.rigidBody;
+      this._componentAccessors.rigidBody = this._createComponentAccessor(
+        RigidBody,
+        index
+      );
+    }
+    return this._componentAccessors.rigidBody;
+  }
+
+  /**
+   * Component accessor: Collider (if entity has it)
+   */
+  get collider() {
+    if (this._componentIndices.collider === undefined) return null;
+
+    if (!this._componentAccessors.collider) {
+      const index = this._componentIndices.collider;
+      this._componentAccessors.collider = this._createComponentAccessor(
+        Collider,
+        index
+      );
+    }
+    return this._componentAccessors.collider;
+  }
+
+  /**
+   * Component accessor: SpriteRenderer (if entity has it)
+   */
+  get spriteRenderer() {
+    if (this._componentIndices.spriteRenderer === undefined) return null;
+
+    if (!this._componentAccessors.spriteRenderer) {
+      const index = this._componentIndices.spriteRenderer;
+      this._componentAccessors.spriteRenderer = this._createComponentAccessor(
+        SpriteRenderer,
+        index
+      );
+    }
+    return this._componentAccessors.spriteRenderer;
+  }
+
+  /**
+   * Create a component accessor object with getters/setters
+   * @param {Component} ComponentClass - The component class
+   * @param {number} index - Index in component arrays
+   * @returns {Object} Accessor object
+   */
+  _createComponentAccessor(ComponentClass, index) {
+    const accessor = {};
+
+    Object.entries(ComponentClass.ARRAY_SCHEMA).forEach(([name, type]) => {
+      Object.defineProperty(accessor, name, {
+        get() {
+          return ComponentClass[name][index];
+        },
+        set(value) {
+          ComponentClass[name][index] =
+            type === Uint8Array ? (value ? 1 : 0) : value;
+        },
+        enumerable: true,
+        configurable: true,
+      });
+    });
+
+    return accessor;
+  }
+
+  /**
+   * Helper method for SpriteRenderer - mark as dirty
+   */
+  markDirty() {
+    if (this.spriteRenderer) {
+      this.spriteRenderer.renderDirty = 1;
+    }
+  }
+
+  /**
+   * Helper setters for SpriteRenderer compatibility
+   */
+  setTint(tint) {
+    if (this.spriteRenderer && this.spriteRenderer.tint !== tint) {
+      this.spriteRenderer.tint = tint;
+      this.markDirty();
+    }
+  }
+
+  setAlpha(alpha) {
+    if (this.spriteRenderer && this.spriteRenderer.alpha !== alpha) {
+      this.spriteRenderer.alpha = alpha;
+      this.markDirty();
+    }
+  }
+
+  setScale(scaleX, scaleY) {
+    if (!this.spriteRenderer) return;
+
+    let changed = false;
+    if (this.spriteRenderer.scaleX !== scaleX) {
+      this.spriteRenderer.scaleX = scaleX;
+      changed = true;
+    }
+    if (scaleY !== undefined && this.spriteRenderer.scaleY !== scaleY) {
+      this.spriteRenderer.scaleY = scaleY;
+      changed = true;
+    }
+    if (changed) this.markDirty();
+  }
+
+  setFlip(flipX, flipY) {
+    if (!this.spriteRenderer) return;
+
+    let changed = false;
+    if (this.spriteRenderer.flipX !== (flipX ? 1 : 0)) {
+      this.spriteRenderer.flipX = flipX ? 1 : 0;
+      changed = true;
+    }
+    if (flipY !== undefined && this.spriteRenderer.flipY !== (flipY ? 1 : 0)) {
+      this.spriteRenderer.flipY = flipY ? 1 : 0;
+      changed = true;
+    }
+    if (changed) this.markDirty();
+  }
+
+  setVisible(visible) {
+    if (this.spriteRenderer && this.spriteRenderer.renderVisible !== (visible ? 1 : 0)) {
+      this.spriteRenderer.renderVisible = visible ? 1 : 0;
+      this.markDirty();
+    }
+  }
+
+  setAnimationState(state) {
+    if (this.spriteRenderer && this.spriteRenderer.animationState !== state) {
+      this.spriteRenderer.animationState = state;
+      this.markDirty();
+    }
+  }
+
+  setAnimationSpeed(speed) {
+    if (this.spriteRenderer && this.spriteRenderer.animationSpeed !== speed) {
+      this.spriteRenderer.animationSpeed = speed;
+      this.markDirty();
+    }
+  }
+
+  /**
+   * Helper method to send sprite property changes to renderer
+   */
+  setSpriteProp(prop, value) {
+    if (this.logicWorker) {
+      this.logicWorker.sendDataToWorker('renderer', {
+        cmd: 'setProp',
+        entityId: this.index,
+        prop: prop,
+        value: value,
+      });
+    }
+  }
+
+  /**
+   * Helper method to call sprite methods
+   */
+  callSpriteMethod(method, args = []) {
+    if (this.logicWorker) {
+      this.logicWorker.sendDataToWorker('renderer', {
+        cmd: 'callMethod',
+        entityId: this.index,
+        method: method,
+        args: args,
+      });
+    }
+  }
+
+  /**
+   * Helper method to batch multiple sprite updates
+   */
+  updateSprite(updates) {
+    if (this.logicWorker) {
+      this.logicWorker.sendDataToWorker('renderer', {
+        cmd: 'batchUpdate',
+        entityId: this.index,
+        ...updates,
+      });
+    }
   }
 
   /**
@@ -274,52 +463,6 @@ class GameObject {
   }
 
   /**
-   * Helper method to dynamically create getters/setters from ARRAY_SCHEMA
-   * This is called in static initialization blocks by GameObject and all subclasses
-   *
-   * @param {Class} targetClass - The class to create properties for
-   */
-  static _createSchemaProperties(targetClass) {
-    Object.entries(targetClass.ARRAY_SCHEMA).forEach(([name, type]) => {
-      Object.defineProperty(targetClass.prototype, name, {
-        get() {
-          return targetClass[name][this.index];
-        },
-        // Special handling for Uint8Array to convert boolean to 0/1
-        set(value) {
-          targetClass[name][this.index] =
-            type === Uint8Array ? (value ? 1 : 0) : value;
-        },
-        enumerable: true,
-        configurable: true,
-      });
-
-      Object.defineProperty(targetClass.prototype, "x", {
-        get() {
-          return targetClass.x[this.index];
-        },
-        set(value) {
-          targetClass.x[this.index] = value;
-          targetClass.px[this.index] = value;
-        },
-        enumerable: true,
-        configurable: true,
-      });
-      Object.defineProperty(targetClass.prototype, "y", {
-        get() {
-          return targetClass.y[this.index];
-        },
-        set(value) {
-          targetClass.y[this.index] = value;
-          targetClass.py[this.index] = value;
-        },
-        enumerable: true,
-        configurable: true,
-      });
-    });
-  }
-
-  /**
    * SPAWNING SYSTEM: Initialize free list for O(1) spawning
    * Must be called after registration and before any spawning
    * @param {Class} EntityClass - The entity class to initialize
@@ -333,23 +476,17 @@ class GameObject {
     EntityClass.freeListTop = count - 1;
 
     // Fill with all indices (initially all are free)
-    // We fill in reverse order so that we pop from the beginning first (optional)
     for (let i = 0; i < count; i++) {
       EntityClass.freeList[i] = startIndex + i;
     }
-    
-    // console.log(`Initialized free list for ${EntityClass.name} with ${count} slots`);
   }
 
   /**
    * SPAWNING SYSTEM: Spawn an entity from the pool (activate an inactive entity)
    *
-   * @param {Class} EntityClass - The entity class to spawn (e.g., Prey, Predator)
+   * @param {Class} EntityClass - The entity class to spawn (e.g., Ball, Car)
    * @param {Object} spawnConfig - Initial configuration (position, velocity, etc.)
    * @returns {GameObject|null} - The spawned entity instance, or null if pool exhausted
-   *
-   * @example
-   * const prey = GameObject.spawn(Prey, { x: 500, y: 300, vx: 2, vy: -1 });
    */
   static spawn(EntityClass, spawnConfig = {}) {
     // Validate EntityClass has required metadata
@@ -389,40 +526,67 @@ class GameObject {
       return null;
     }
 
-    instance.ax = 0;
-    instance.ay = 0;
-    instance.vx = 0;
-    instance.vy = 0;
+    // Reset component values
+    if (instance.rigidBody) {
+      instance.rigidBody.ax = 0;
+      instance.rigidBody.ay = 0;
+      instance.rigidBody.vx = 0;
+      instance.rigidBody.vy = 0;
+      instance.rigidBody.speed = 0;
+      instance.rigidBody.velocityAngle = 0;
+      instance.rigidBody.x = 0;
+      instance.rigidBody.y = 0;
+      instance.rigidBody.px = 0;
+      instance.rigidBody.py = 0;
+      instance.rigidBody.rotation = 0;
+    }
 
-    instance.speed = 0;
-    instance.velocityAngle = 0;
-    instance.x = 0;
-    instance.y = 0;
-    instance.px = 0;
-    instance.py = 0;
-    instance.rotation = 0;
-    instance.setTint(0xffffff); // White when healthy
-    instance.setAlpha(1.0); // Fully visible
+    if (instance.transform) {
+      instance.transform.localX = 0;
+      instance.transform.localY = 0;
+      instance.transform.localRotation = 0;
+      instance.transform.localScaleX = 1;
+      instance.transform.localScaleY = 1;
+      instance.transform.worldX = 0;
+      instance.transform.worldY = 0;
+      instance.transform.worldRotation = 0;
+      instance.transform.worldScaleX = 1;
+      instance.transform.worldScaleY = 1;
+      instance.transform.parentId = -1;
+    }
 
-    // IMPORTANT: Apply spawn config BEFORE activating to prevent race condition
-    // If entity is active, it can start ticking immediately on next frame
+    if (instance.spriteRenderer) {
+      instance.setTint(0xffffff);
+      instance.setAlpha(1.0);
+      instance.setVisible(true);
+    }
+
+    // Apply spawn config BEFORE activating
     Object.keys(spawnConfig).forEach((key) => {
-      if (instance[key] !== undefined) {
+      // Handle component properties
+      if (key.includes('.')) {
+        const [compName, propName] = key.split('.');
+        const comp = instance[compName];
+        if (comp && comp[propName] !== undefined) {
+          comp[propName] = spawnConfig[key];
+        }
+      } else if (instance[key] !== undefined) {
         instance[key] = spawnConfig[key];
       }
     });
 
     // Initialize previous positions for Verlet integration
-    // Set px/py based on current velocity to give initial momentum
-    instance.px = instance.x - instance.vx;
-    instance.py = instance.y - instance.vy;
+    if (instance.rigidBody) {
+      instance.rigidBody.px = instance.rigidBody.x - instance.rigidBody.vx;
+      instance.rigidBody.py = instance.rigidBody.y - instance.rigidBody.vy;
+    }
 
     // Call lifecycle method BEFORE activating
     if (instance.awake) {
       instance.awake();
     }
 
-    // NOW activate the entity (after config and awake are done)
+    // NOW activate the entity
     GameObject.active[i] = 1;
 
     return instance;
@@ -433,10 +597,6 @@ class GameObject {
    *
    * @param {Class} EntityClass - The entity class to check
    * @returns {Object} - { total, active, available }
-   *
-   * @example
-   * const stats = GameObject.getPoolStats(Prey);
-   * console.log(`Prey: ${stats.active}/${stats.total} active, ${stats.available} available`);
    */
   static getPoolStats(EntityClass) {
     if (
@@ -492,8 +652,6 @@ class GameObject {
     const endIndex = startIndex + EntityClass.totalCount;
     let despawnedCount = 0;
 
-    // Iterate all entities to find active ones
-    // We could optimize this by tracking active entities, but despawnAll is rare
     for (let i = startIndex; i < endIndex; i++) {
       if (GameObject.active[i]) {
         const instance = EntityClass.instances[i - startIndex];
@@ -501,25 +659,20 @@ class GameObject {
           instance.despawn();
           despawnedCount++;
         } else {
-          // Manual despawn if instance missing (shouldn't happen)
+          // Manual despawn if instance missing
           GameObject.active[i] = 0;
-          
+
           // Return to free list if exists
           if (EntityClass.freeList) {
-             EntityClass.freeList[++EntityClass.freeListTop] = i;
+            EntityClass.freeList[++EntityClass.freeListTop] = i;
           }
-          
+
           despawnedCount++;
         }
       }
     }
 
     return despawnedCount;
-  }
-
-  // Static initialization block - dynamically create getters/setters from ARRAY_SCHEMA
-  static {
-    GameObject._createSchemaProperties(GameObject);
   }
 }
 

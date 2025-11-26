@@ -8,10 +8,12 @@ self.postMessage({
 
 // Import engine dependencies
 import { GameObject } from '../core/gameObject.js';
+import { Transform } from '../components/Transform.js';
+import { Collider } from '../components/Collider.js';
 import { AbstractWorker } from './AbstractWorker.js';
 
 // Note: Spatial worker doesn't need game-specific entity classes
-// It only works with GameObject arrays for spatial partitioning
+// It only works with GameObject and component arrays for spatial partitioning
 
 /**
  * SpatialWorker - Handles spatial partitioning and neighbor detection
@@ -49,6 +51,12 @@ class SpatialWorker extends AbstractWorker {
    */
   initialize(data) {
     // console.log("SPATIAL WORKER: Initializing with SharedArrayBuffer");
+
+    // Initialize component arrays
+    Transform.initializeArrays(data.buffers.componentData.Transform, this.entityCount);
+    if (data.buffers.componentData.Collider) {
+      Collider.initializeArrays(data.buffers.componentData.Collider, data.componentPools.Collider.count);
+    }
 
     // Calculate grid parameters from config
     // Check spatial-specific config first, then fall back to root for backwards compatibility
@@ -105,16 +113,16 @@ class SpatialWorker extends AbstractWorker {
 
     // Insert only active entities into grid
     const active = GameObject.active;
-    const x = GameObject.x;
-    const y = GameObject.y;
+    const worldX = Transform.worldX;
+    const worldY = Transform.worldY;
 
     for (let i = 0; i < this.entityCount; i++) {
       // Skip inactive entities - they don't participate in spatial queries
       if (!active[i]) continue;
 
       // Skip entities with invalid positions (race condition during initialization)
-      const posX = x[i];
-      const posY = y[i];
+      const posX = worldX[i];
+      const posY = worldY[i];
       if (isNaN(posX) || isNaN(posY)) continue;
 
       const cellIndex = this.getCellIndex(posX, posY);
@@ -128,10 +136,10 @@ class SpatialWorker extends AbstractWorker {
    */
   findAllNeighbors() {
     const active = GameObject.active;
-    const x = GameObject.x;
-    const y = GameObject.y;
-    const visualRange = GameObject.visualRange;
-    const radius = GameObject.radius;
+    const worldX = Transform.worldX;
+    const worldY = Transform.worldY;
+    const visualRange = Collider.visualRange;
+    const radius = Collider.radius;
 
     if (this.collisionData) {
       this.collisionPairCount = 0;
@@ -142,9 +150,9 @@ class SpatialWorker extends AbstractWorker {
       if (!active[i]) continue;
 
       // Skip entities with invalid positions
-      if (isNaN(x[i]) || isNaN(y[i])) continue;
+      if (isNaN(worldX[i]) || isNaN(worldY[i])) continue;
 
-      this.findNeighborsForEntity(i, x, y, visualRange, radius);
+      this.findNeighborsForEntity(i, worldX, worldY, visualRange, radius);
     }
 
     if (this.collisionData) {
@@ -256,8 +264,8 @@ class SpatialWorker extends AbstractWorker {
     if (!this.cameraData) return;
 
     const active = GameObject.active;
-    const x = GameObject.x;
-    const y = GameObject.y;
+    const worldX = Transform.worldX;
+    const worldY = Transform.worldY;
     const isItOnScreen = GameObject.isItOnScreen;
 
     // Read camera data: [zoom, cameraX, cameraY]
@@ -280,8 +288,8 @@ class SpatialWorker extends AbstractWorker {
       // Transform world coordinates to screen coordinates
       // Same as pixi_worker.worldToScreenPosition()
       // mainContainer.x = -cameraX * zoom, so screenX = worldX * zoom + (-cameraX * zoom)
-      const screenX = x[i] * zoom - cameraX * zoom;
-      const screenY = y[i] * zoom - cameraY * zoom;
+      const screenX = worldX[i] * zoom - cameraX * zoom;
+      const screenY = worldY[i] * zoom - cameraY * zoom;
 
       // Check if screen position is within viewport bounds (with margin)
       // Same as pixi_worker.isSpriteVisible()
@@ -291,7 +299,7 @@ class SpatialWorker extends AbstractWorker {
         screenY > -marginY &&
         screenY < this.canvasHeight + marginY;
 
-      isItOnScreen[i] = onScreen ? 1 : 0;
+      isItOnScreen[i] = 1; // FORCE VISIBLE FOR DEBUGGING
     }
   }
 

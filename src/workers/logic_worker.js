@@ -8,12 +8,18 @@ self.postMessage({
 
 // Import engine dependencies
 import { GameObject } from '../core/gameObject.js';
-import { RenderableGameObject } from '../core/RenderableGameObject.js';
+import { Transform } from '../components/Transform.js';
+import { RigidBody } from '../components/RigidBody.js';
+import { Collider } from '../components/Collider.js';
+import { SpriteRenderer } from '../components/SpriteRenderer.js';
 import { AbstractWorker } from './AbstractWorker.js';
 
 // Make imported classes globally available for dynamic instantiation
 self.GameObject = GameObject;
-self.RenderableGameObject = RenderableGameObject;
+self.Transform = Transform;
+self.RigidBody = RigidBody;
+self.Collider = Collider;
+self.SpriteRenderer = SpriteRenderer;
 
 // Game-specific scripts will be loaded dynamically during initialization
 
@@ -39,12 +45,37 @@ class LogicWorker extends AbstractWorker {
    * Sets up shared memory and creates GameObject instances
    */
   initialize(data) {
-    console.log("LOGIC WORKER: Initializing with GameObject pattern");
+    console.log("LOGIC WORKER: Initializing with component system");
 
     // Initialize collision buffer
     if (data.buffers.collisionData) {
       this.collisionData = new Int32Array(data.buffers.collisionData);
       console.log("LOGIC WORKER: Collision callbacks enabled");
+    }
+
+    // Initialize component arrays from SharedArrayBuffers
+    console.log('LOGIC WORKER: Initializing component arrays...');
+    
+    // Transform (all entities have this)
+    Transform.initializeArrays(data.buffers.componentData.Transform, this.entityCount);
+    console.log(`  ✅ Transform: ${this.entityCount} slots`);
+    
+    // RigidBody
+    if (data.buffers.componentData.RigidBody) {
+      RigidBody.initializeArrays(data.buffers.componentData.RigidBody, data.componentPools.RigidBody.count);
+      console.log(`  ✅ RigidBody: ${data.componentPools.RigidBody.count} slots`);
+    }
+    
+    // Collider
+    if (data.buffers.componentData.Collider) {
+      Collider.initializeArrays(data.buffers.componentData.Collider, data.componentPools.Collider.count);
+      console.log(`  ✅ Collider: ${data.componentPools.Collider.count} slots`);
+    }
+    
+    // SpriteRenderer
+    if (data.buffers.componentData.SpriteRenderer) {
+      SpriteRenderer.initializeArrays(data.buffers.componentData.SpriteRenderer, data.componentPools.SpriteRenderer.count);
+      console.log(`  ✅ SpriteRenderer: ${data.componentPools.SpriteRenderer.count} slots`);
     }
 
     // Note: Game-specific scripts are loaded automatically by AbstractWorker.initializeCommonBuffers()
@@ -65,7 +96,7 @@ class LogicWorker extends AbstractWorker {
    */
   createGameObjectInstances() {
     for (const classInfo of this.registeredClasses) {
-      const { name, count, startIndex } = classInfo;
+      const { name, count, startIndex, componentIndices } = classInfo;
 
       const EntityClass = self[name]; // Get class by name from global scope
 
@@ -76,7 +107,18 @@ class LogicWorker extends AbstractWorker {
 
         for (let i = 0; i < count; i++) {
           const index = startIndex + i;
-          const instance = new EntityClass(index, this.config, this);
+          
+          // Calculate component indices for this entity instance
+          const entityComponentIndices = {};
+          for (const [componentName, allocation] of Object.entries(componentIndices)) {
+            // Each entity gets its slot in the component pool
+            // Convert PascalCase (ClassName) to camelCase for property access
+            const camelCaseName = componentName.charAt(0).toLowerCase() + componentName.slice(1);
+            entityComponentIndices[camelCaseName] = allocation.start + i;
+          }
+          
+          // Create instance with component indices
+          const instance = new EntityClass(index, entityComponentIndices, this.config, this);
           this.gameObjects[index] = instance;
 
           // Call start() lifecycle method (one-time initialization)
@@ -84,7 +126,7 @@ class LogicWorker extends AbstractWorker {
             instance.start();
           }
         }
-        console.log(`LOGIC WORKER: Created ${count} ${name} instances`);
+        console.log(`LOGIC WORKER: Created ${count} ${name} instances with components: ${Object.keys(componentIndices).join(', ')}`);
       } else {
         console.warn(`LOGIC WORKER: Class ${name} not found in worker scope!`);
       }
@@ -204,9 +246,9 @@ class LogicWorker extends AbstractWorker {
         const instance = GameObject.spawn(EntityClass, spawnConfig);
         if (instance) {
           console.log(
-            `LOGIC WORKER: Spawned ${className} at (${instance.x.toFixed(
+            `LOGIC WORKER: Spawned ${className} at (${instance.transform.worldX.toFixed(
               1
-            )}, ${instance.y.toFixed(1)})`
+            )}, ${instance.transform.worldY.toFixed(1)})`
           );
         } else {
           console.warn(

@@ -170,7 +170,13 @@
         }, 500);
 
         // Initialize and start
-        gameEngine.init().catch(error => {
+        gameEngine.init().then(() => {
+            console.log("Game initialized. Spawning 4000 balls...");
+            // Spawn 4000 balls
+            for (let i = 0; i < 4000; i++) {
+                spawnRandomBall();
+            }
+        }).catch(error => {
             document.body.innerHTML = `
                 <div style="color: white; padding: 20px;">
                     <h1>Error initializing game!</h1>

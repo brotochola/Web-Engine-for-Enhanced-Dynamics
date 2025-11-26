@@ -2,7 +2,10 @@
 // Handles workers, SharedArrayBuffers, class registration, and input management
 
 import { GameObject } from './gameObject.js';
-import { RenderableGameObject } from './RenderableGameObject.js';
+import { Transform } from '../components/Transform.js';
+import { RigidBody } from '../components/RigidBody.js';
+import { Collider } from '../components/Collider.js';
+import { SpriteRenderer } from '../components/SpriteRenderer.js';
 
 class GameEngine {
   static now = Date.now();
@@ -74,13 +77,28 @@ class GameEngine {
 
     // Shared buffers
     this.buffers = {
-      gameObjectData: null,
-      entityData: new Map(), // Map of EntityClassName -> SharedArrayBuffer
+      gameObjectData: null, // Entity state arrays (active, entityType, isItOnScreen)
+      entityData: new Map(), // Map of EntityClassName -> SharedArrayBuffer (legacy, may be removed)
       neighborData: null,
       distanceData: null, // Squared distances for each neighbor
       collisionData: null,
       inputData: null,
       cameraData: null,
+      // Component buffers
+      componentData: {
+        Transform: null,
+        RigidBody: null,
+        Collider: null,
+        SpriteRenderer: null,
+      },
+    };
+
+    // Component pool tracking
+    this.componentPools = {
+      Transform: { count: 0, indices: new Map() }, // Map: EntityClassName -> { start, count }
+      RigidBody: { count: 0, indices: new Map() },
+      Collider: { count: 0, indices: new Map() },
+      SpriteRenderer: { count: 0, indices: new Map() },
     };
 
     // Typed array views
@@ -116,10 +134,15 @@ class GameEngine {
     // Frame timing
     this.lastFrameTime = performance.now();
     this.updateRate = 1000 / 60; // 60 fps
+
+    // Initialization promise
+    this.readyPromise = new Promise((resolve) => {
+      this.resolveReady = resolve;
+    });
   }
 
   /**
-   * Register an entity class (e.g., Boid, Enemy)
+   * Register an entity class (e.g., Ball, Car)
    * This calculates buffer sizes and tracks entity ranges
    * @param {Class} EntityClass - The class to register (must extend GameObject)
    * @param {number} count - Number of entities of this type
@@ -129,21 +152,13 @@ class GameEngine {
     // Auto-detect and register parent classes (if not already registered)
     this._autoRegisterParentClasses(EntityClass);
 
-    // Validate spriteConfig for entities that extend RenderableGameObject
-    if (
-      typeof RenderableGameObject !== "undefined" &&
-      EntityClass.prototype instanceof RenderableGameObject &&
-      count > 0
-    ) {
-      // Only validate if instances will be created
-      const validation = RenderableGameObject.validateSpriteConfig(EntityClass);
-      if (!validation.valid) {
-        console.error(`❌ ${validation.error}`);
-        console.error(
-          `   Please define a proper spriteConfig in ${EntityClass.name}`
-        );
-        console.error(`   See SPRITE_CONFIG_GUIDE.md for examples`);
-        throw new Error(validation.error);
+    // Validate spriteConfig for entities that have SpriteRenderer component
+    const components = GameObject._collectComponents(EntityClass);
+    if (components.includes(SpriteRenderer) && count > 0) {
+      // Validate spriteConfig
+      if (!EntityClass.spriteConfig) {
+        console.error(`❌ ${EntityClass.name} has SpriteRenderer component but no spriteConfig defined!`);
+        throw new Error(`${EntityClass.name} must define static spriteConfig`);
       }
     }
 
@@ -160,24 +175,40 @@ class GameEngine {
 
     const startIndex = this.totalEntityCount;
 
+    // Allocate component pool space for this entity class
+    const componentIndices = {};
+    for (const ComponentClass of components) {
+      const componentName = ComponentClass.name;
+      const pool = this.componentPools[componentName];
+      
+      if (!pool) {
+        console.warn(`Unknown component: ${componentName}`);
+        continue;
+      }
+
+      // Allocate space in this component's pool
+      componentIndices[componentName] = {
+        start: pool.count,
+        count: count,
+      };
+      
+      pool.count += count;
+      pool.indices.set(EntityClass.name, componentIndices[componentName]);
+    }
+
     this.registeredClasses.push({
       class: EntityClass,
       count: count,
       startIndex: startIndex,
       scriptPath: scriptPath, // Track script path for workers
+      components: components, // Track which components this entity uses
+      componentIndices: componentIndices, // Track component pool allocations
     });
 
     this.totalEntityCount += count;
 
     // Auto-initialize required static properties if they don't exist
-    // This eliminates boilerplate from entity class definitions!
-    if (!EntityClass.hasOwnProperty("sharedBuffer")) {
-      EntityClass.sharedBuffer = null;
-    }
-    if (!EntityClass.hasOwnProperty("entityCount")) {
-      EntityClass.entityCount = 0;
-    }
-    if (!EntityClass.hasOwnProperty("instances")) {
+    if (!EntityClass.hasOwnProperty('instances')) {
       EntityClass.instances = [];
     }
 
@@ -185,17 +216,9 @@ class GameEngine {
     EntityClass.startIndex = startIndex;
     EntityClass.totalCount = count;
 
-    // Automatically create schema properties for this entity class
-    // This eliminates the need for developers to add a static block in each entity class!
-    if (EntityClass.ARRAY_SCHEMA && EntityClass !== GameObject) {
-      GameObject._createSchemaProperties(EntityClass);
-    }
-
-    // console.log(
-    //   `✅ Registered ${
-    //     EntityClass.name
-    //   }: ${count} entities (indices ${startIndex}-${startIndex + count - 1})`
-    // );
+    console.log(
+      `✅ Registered ${EntityClass.name}: ${count} entities with components: ${components.map(c => c.name).join(', ')}`
+    );
   }
 
   /**
@@ -287,12 +310,15 @@ class GameEngine {
       numberBoidsElement.textContent = `Number of entities: ${this.totalEntityCount}`;
     }
 
+    // Wait for all workers to be ready
+    await this.readyPromise;
+
     // console.log("✅ GameEngine: Initialized successfully!");
   }
 
   // Create all SharedArrayBuffers
   createSharedBuffers() {
-    // GameObject buffer (transform + physics + perception)
+    // 1. GameObject entity state buffer (minimal - just active, entityType, isItOnScreen)
     const gameObjectBufferSize = GameObject.getBufferSize(
       this.totalEntityCount
     );
@@ -305,12 +331,10 @@ class GameEngine {
     this.buffers.neighborData = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
 
     // Distance data buffer (stores squared distances for each neighbor)
-    // Same structure as neighborData: [count, dist1, dist2, ..., distN]
-    // This eliminates duplicate distance calculations between spatial & logic workers
     const DISTANCE_BUFFER_SIZE = this.totalEntityCount * (1 + maxNeighbors) * 4;
     this.buffers.distanceData = new SharedArrayBuffer(DISTANCE_BUFFER_SIZE);
 
-    // Initialize GameObject with neighbor and distance buffers
+    // Initialize GameObject entity state arrays
     GameObject.initializeArrays(
       this.buffers.gameObjectData,
       this.totalEntityCount,
@@ -320,27 +344,40 @@ class GameEngine {
 
     this.preInitializeEntityTypeArrays();
 
-    // Initialize subclass buffers - generic for any entity type
-    // IMPORTANT: Size arrays for TOTAL entity count, not just class count!
-    // This is because subclasses use global indices (e.g., Predator at index 15000
-    // needs to access Boid arrays, which must be sized for all entities)
-    for (const registration of this.registeredClasses) {
-      const { class: EntityClass, count } = registration;
+    // 2. Create Component buffers
+    console.log('📦 Creating component buffers...');
 
-      if (EntityClass.getBufferSize && EntityClass.initializeArrays) {
-        const bufferSize = EntityClass.getBufferSize(this.totalEntityCount);
-        const buffer = new SharedArrayBuffer(bufferSize);
+    // Transform component (size for total entity count - everyone has Transform)
+    const transformBufferSize = Transform.getBufferSize(this.totalEntityCount);
+    this.buffers.componentData.Transform = new SharedArrayBuffer(transformBufferSize);
+    Transform.initializeArrays(this.buffers.componentData.Transform, this.totalEntityCount);
+    console.log(`   ✅ Transform: ${transformBufferSize} bytes for ${this.totalEntityCount} entities`);
 
-        // Store buffer reference generically by class name
-        this.buffers.entityData.set(EntityClass.name, buffer);
+    // RigidBody component
+    if (this.componentPools.RigidBody.count > 0) {
+      const rigidBodyBufferSize = RigidBody.getBufferSize(this.componentPools.RigidBody.count);
+      this.buffers.componentData.RigidBody = new SharedArrayBuffer(rigidBodyBufferSize);
+      RigidBody.initializeArrays(this.buffers.componentData.RigidBody, this.componentPools.RigidBody.count);
+      console.log(`   ✅ RigidBody: ${rigidBodyBufferSize} bytes for ${this.componentPools.RigidBody.count} entities`);
+    }
 
-        EntityClass.initializeArrays(buffer, this.totalEntityCount);
-      }
+    // Collider component
+    if (this.componentPools.Collider.count > 0) {
+      const colliderBufferSize = Collider.getBufferSize(this.componentPools.Collider.count);
+      this.buffers.componentData.Collider = new SharedArrayBuffer(colliderBufferSize);
+      Collider.initializeArrays(this.buffers.componentData.Collider, this.componentPools.Collider.count);
+      console.log(`   ✅ Collider: ${colliderBufferSize} bytes for ${this.componentPools.Collider.count} entities`);
+    }
+
+    // SpriteRenderer component
+    if (this.componentPools.SpriteRenderer.count > 0) {
+      const spriteRendererBufferSize = SpriteRenderer.getBufferSize(this.componentPools.SpriteRenderer.count);
+      this.buffers.componentData.SpriteRenderer = new SharedArrayBuffer(spriteRendererBufferSize);
+      SpriteRenderer.initializeArrays(this.buffers.componentData.SpriteRenderer, this.componentPools.SpriteRenderer.count);
+      console.log(`   ✅ SpriteRenderer: ${spriteRendererBufferSize} bytes for ${this.componentPools.SpriteRenderer.count} entities`);
     }
 
     // Collision data buffer (for Unity-style collision detection)
-    // Structure: [pairCount, entityA, entityB, entityA, entityB, ...]
-    // Physics worker writes collision pairs, logic worker reads for callbacks
     const maxCollisionPairs =
       this.config.physics?.maxCollisionPairs ||
       this.config.maxCollisionPairs ||
@@ -373,15 +410,6 @@ class GameEngine {
 
     this.views.camera[1] = this.camera.x; // containerX
     this.views.camera[2] = this.camera.y; // containerY
-
-    // console.log(`✅ Created SharedArrayBuffers:`);
-    // console.log(`   - GameObject Data: ${gameObjectBufferSize} bytes`);
-    // this.buffers.entityData.forEach((buffer, className) => {
-    //   console.log(`   - ${className} Data: ${buffer.byteLength} bytes`);
-    // });
-    // console.log(`   - Neighbor Data: ${NEIGHBOR_BUFFER_SIZE} bytes`);
-    // console.log(`   - Input Data: ${INPUT_BUFFER_SIZE} bytes`);
-    // console.log(`   - Camera Data: ${CAMERA_BUFFER_SIZE} bytes`);
   }
   preInitializeEntityTypeArrays() {
     // PRE-INITIALIZE entityType values to prevent race condition
@@ -606,10 +634,16 @@ class GameEngine {
     // Create single initialization object for all workers
     // Config is passed as-is with nested structure (physics, spatial, logic sub-configs)
     const initData = {
-      msg: "init",
+      msg: 'init',
       buffers: {
-        ...this.buffers,
-        entityData: Object.fromEntries(this.buffers.entityData), // Convert Map to plain object
+        gameObjectData: this.buffers.gameObjectData,
+        neighborData: this.buffers.neighborData,
+        distanceData: this.buffers.distanceData,
+        collisionData: this.buffers.collisionData,
+        inputData: this.buffers.inputData,
+        cameraData: this.buffers.cameraData,
+        // Component buffers
+        componentData: this.buffers.componentData,
       },
       entityCount: this.totalEntityCount,
       config: this.config,
@@ -618,7 +652,16 @@ class GameEngine {
         name: r.class.name,
         count: r.count,
         startIndex: r.startIndex,
+        components: r.components.map(c => c.name), // Component names
+        componentIndices: r.componentIndices, // Component pool allocation { Transform: {start, count}, ... }
       })),
+      // Component pool sizes (for workers to know buffer sizes)
+      componentPools: {
+        Transform: { count: this.componentPools.Transform.count },
+        RigidBody: { count: this.componentPools.RigidBody.count },
+        Collider: { count: this.componentPools.Collider.count },
+        SpriteRenderer: { count: this.componentPools.SpriteRenderer.count },
+      },
     };
 
     // Initialize spatial worker (no ports needed for now)
@@ -716,6 +759,7 @@ class GameEngine {
     if (allReady) {
       console.log("🎮 All workers ready! Starting synchronized game loop...");
       this.startAllWorkers();
+      if (this.resolveReady) this.resolveReady();
     } else {
       // Count how many are ready
       const readyCount = Object.values(this.workerReadyStates).filter(

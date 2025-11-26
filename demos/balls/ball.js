@@ -1,66 +1,77 @@
 import { GameObject } from '/src/core/gameObject.js';
-import { RenderableGameObject } from '/src/core/RenderableGameObject.js';
+import { RigidBody } from '/src/components/RigidBody.js';
+import { Collider } from '/src/components/Collider.js';
+import { SpriteRenderer } from '/src/components/SpriteRenderer.js';
 
-class Ball extends RenderableGameObject {
+class Ball extends GameObject {
   static entityType = 1; // 1 = Ball
   static instances = []; // Instance tracking for this class
 
+  // Define components this entity uses
+  static components = [RigidBody, Collider, SpriteRenderer];
+
   // Sprite configuration - using static sprite
   static spriteConfig = {
-    type: "static",
-    textureName: "ball",
+    type: 'static',
+    textureName: 'ball',
   };
 
   /**
    * Ball constructor - initializes ball properties
    * @param {number} index - Position in shared arrays
+   * @param {Object} componentIndices - Component indices { transform, rigidBody, collider, spriteRenderer }
    * @param {Object} config - Configuration object from GameEngine
    */
-  constructor(index, config = {}, logicWorker = null) {
-    super(index, config, logicWorker);
-
-
-
-    this.awake(config);
+  constructor(index, componentIndices, config = {}, logicWorker = null) {
+    super(index, componentIndices, config, logicWorker);
   }
 
   /**
    * LIFECYCLE: Called when ball is spawned/respawned from pool
    * Reset all properties to initial state
    */
-  awake(config) {
-        // Initialize GameObject physics properties
-    this.maxVel = 100; // Max velocity
-    this.maxAcc = 2; // Max acceleration
-    this.minSpeed = 0; // Balls can come to rest
-    this.friction = 0.01; // Low friction - let balls settle naturally
+  awake() {
+    // Get config from instance (passed during construction)
+    const config = this.config || {};
 
-    this.x = Math.random() * config.worldWidth;
-    this.y = Math.random() * config.worldHeight;
-    this.vx = 0;
-    this.vy = 0;
-    this.ax = 0;
-    this.ay = 0;
+    // Initialize RigidBody physics properties
+    this.rigidBody.maxVel = 100; // Max velocity
+    this.rigidBody.maxAcc = 2; // Max acceleration
+    this.rigidBody.minSpeed = 0; // Balls can come to rest
+    this.rigidBody.friction = 0.01; // Low friction - let balls settle naturally
+
+    // Set initial position in RigidBody (physics)
+    this.rigidBody.x = Math.random() * (config.worldWidth || 7600);
+    this.rigidBody.y = Math.random() * 100 + 50; // Spawn near top
+    this.rigidBody.vx = 0;
+    this.rigidBody.vy = 0;
+    this.rigidBody.ax = 0;
+    this.rigidBody.ay = 0;
+
+    // Sync Transform with RigidBody position (renderer uses Transform.worldX/Y)
+    this.transform.localX = this.rigidBody.x;
+    this.transform.localY = this.rigidBody.y;
+    this.transform.worldX = this.rigidBody.x;
+    this.transform.worldY = this.rigidBody.y;
 
     const actualBallSize = 14; //png width
-    this.radius = Math.random() * 20 + 10;
+    const ballRadius = Math.random() * 20 + 10;
+    this.collider.radius = ballRadius;
 
-    this.visualRange = this.config.spatial.cellSize * 2; // How far ball can detect other balls
+    // Set visual range for spatial queries
+    this.collider.visualRange = (config.spatial?.cellSize || 80) * 2;
 
-    const scale = (this.radius * 2) / actualBallSize;
+    const scale = (ballRadius * 2) / actualBallSize;
 
-    this.setScale(scale, scale);
+    this.spriteRenderer.scaleX = scale;
+    this.spriteRenderer.scaleY = scale;
 
-    this.setSpriteProp("anchor.y", 0.5);
-    this.setSpriteProp("anchor.x", 0.5);
+    this.setSpriteProp('anchor.y', 0.5);
+    this.setSpriteProp('anchor.x', 0.5);
 
     // Reset visual properties
     this.setAlpha(1.0);
     this.setTint(0xffffff);
-
-    // // Set random scale for variety
-    // const scale = 0.8 + Math.random() * 0.4; // Random scale between 0.8 and 1.2
-    // this.setScale(scale, scale);
 
     // Random color tint for visual variety
     const colors = [
@@ -74,18 +85,12 @@ class Ball extends RenderableGameObject {
       0xff9ff3, // Pink
     ];
     this.setTint(colors[Math.floor(Math.random() * colors.length)]);
-
-    // console.log(
-    //   `Ball ${this.index} spawned at (${this.x.toFixed(1)}, ${this.y.toFixed(
-    //     1
-    //   )})`
-    // );
   }
 
   onCollisionEnter(otherIndex) {
-    // console.log(`Ball ${this.index} collided with ball ${otherIndex}`);
     this.setTint(0xff0000);
   }
+
   onCollisionExit(otherIndex) {
     this.setTint(0xffffff);
   }
@@ -114,11 +119,10 @@ class Ball extends RenderableGameObject {
    */
   updateRotation(i, dtRatio) {
     // Rotate based on horizontal velocity
-    const angularVelocity = GameObject.vx[i] * 0.02;
-    GameObject.rotation[i] += angularVelocity * dtRatio;
+    const rigidBody = this.rigidBody;
+    const angularVelocity = rigidBody.vx * 0.02;
+    rigidBody.rotation += angularVelocity * dtRatio;
   }
-
-
 }
 
 // ES6 module export
