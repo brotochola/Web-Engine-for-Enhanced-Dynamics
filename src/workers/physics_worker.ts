@@ -1,17 +1,23 @@
-self.postMessage({
-  msg: "log",
-  message: "js loaded",
-  when: Date.now(),
-});
-// physics_worker.js - Physics integration (velocity, position updates)
+
+// physics_worker.ts - Physics integration (velocity, position updates)
 // Now uses per-entity maxVel, maxAcc, and friction from GameObject arrays
 
 // Import engine dependencies
 import { GameObject } from '../core/gameObject.js';
 import { AbstractWorker } from './AbstractWorker.js';
+import type { WorkerInitData, GameConfig } from '../types/index.js';
 
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
 // Physics worker only needs GameObject arrays for physics calculations
+
+interface PhysicsSettings {
+  subStepCount: number;
+  boundaryElasticity: number;
+  collisionResponseStrength: number;
+  verletDamping: number;
+  minSpeedForRotation: number;
+  gravity: { x: number; y: number };
+}
 
 /**
  * PhysicsWorker - Handles physics integration for all entities
@@ -19,27 +25,27 @@ import { AbstractWorker } from './AbstractWorker.js';
  * Extends AbstractWorker for common worker functionality
  */
 class PhysicsWorker extends AbstractWorker {
-  constructor(selfRef) {
+  // Runtime physics settings (filled from config)
+  private settings: PhysicsSettings = {
+    subStepCount: 4,
+    boundaryElasticity: 0.8,
+    collisionResponseStrength: 0.5,
+    verletDamping: 0.995,
+    minSpeedForRotation: 0.1,
+    gravity: { x: 0, y: 0 },
+  };
+
+  constructor(selfRef: DedicatedWorkerGlobalScope) {
     super(selfRef);
 
     // Physics worker is generic - doesn't need game-specific classes
     this.needsGameScripts = false;
-
-    // Runtime physics settings (filled from config)
-    this.settings = {
-      subStepCount: 4,
-      boundaryElasticity: 0.8,
-      collisionResponseStrength: 0.5,
-      verletDamping: 0.995,
-      minSpeedForRotation: 0.1,
-      gravity: { x: 0, y: 0 },
-    };
   }
 
   /**
    * Initialize physics worker (implementation of AbstractWorker.initialize)
    */
-  initialize(data) {
+  protected initialize(data: WorkerInitData): void {
     console.log("PHYSICS WORKER: Initializing");
 
     this.applyPhysicsConfig(this.config.physics || {});
@@ -62,16 +68,16 @@ class PhysicsWorker extends AbstractWorker {
    * Update method called each frame (implementation of AbstractWorker.update)
    * Performs physics integration for all entities
    */
-  update(deltaTime, dtRatio, resuming) {
+  protected update(deltaTime: number, dtRatio: number, resuming: boolean): void {
     this.updateVerlet(deltaTime, dtRatio);
   }
 
   /**
    * Merge new physics config sent from main thread
-   * @param {Object} partialConfig
+   * @param partialConfig
    */
-  applyPhysicsConfig(partialConfig = {}) {
-    const clamp01 = (value, fallback) => {
+  private applyPhysicsConfig(partialConfig: any = {}): void {
+    const clamp01 = (value: any, fallback: number): number => {
       if (typeof value !== "number") return fallback;
       return Math.max(0, Math.min(1, value));
     };
@@ -88,37 +94,37 @@ class PhysicsWorker extends AbstractWorker {
       ...this.settings,
       subStepCount: Math.max(
         1,
-        source.subStepCount ?? this.settings.subStepCount
+        source?.subStepCount ?? this.settings.subStepCount
       ),
       boundaryElasticity: clamp01(
-        source.boundaryElasticity ?? this.settings.boundaryElasticity,
+        source?.boundaryElasticity ?? this.settings.boundaryElasticity,
         this.settings.boundaryElasticity
       ),
       collisionResponseStrength: clamp01(
-        source.collisionResponseStrength ??
+        source?.collisionResponseStrength ??
           this.settings.collisionResponseStrength,
         this.settings.collisionResponseStrength
       ),
       verletDamping: clamp01(
-        source.verletDamping ?? this.settings.verletDamping,
+        source?.verletDamping ?? this.settings.verletDamping,
         this.settings.verletDamping
       ),
       minSpeedForRotation:
-        source.minSpeedForRotation ?? this.settings.minSpeedForRotation,
+        source?.minSpeedForRotation ?? this.settings.minSpeedForRotation,
       gravity: {
         x:
-          source.gravity && typeof source.gravity.x === "number"
+          source?.gravity && typeof source.gravity.x === "number"
             ? source.gravity.x
             : this.config.gravity?.x ?? this.settings.gravity.x ?? 0,
         y:
-          source.gravity && typeof source.gravity.y === "number"
+          source?.gravity && typeof source.gravity.y === "number"
             ? source.gravity.y
             : this.config.gravity?.y ?? this.settings.gravity.y ?? 0,
       },
     };
   }
 
-  handleCustomMessage(data) {
+  protected handleCustomMessage(data: any): void {
     if (data.msg === "updatePhysicsConfig") {
       this.applyPhysicsConfig(data.config || {});
     }
@@ -129,7 +135,7 @@ class PhysicsWorker extends AbstractWorker {
    * Uses position-based dynamics with constraint solving
    * More stable for particle systems and large numbers of colliding objects
    */
-  updateVerlet(deltaTime, dtRatio) {
+  private updateVerlet(deltaTime: number, dtRatio: number): void {
     // Cache array references
     const active = GameObject.active;
     const x = GameObject.x;
@@ -147,8 +153,8 @@ class PhysicsWorker extends AbstractWorker {
     const collisionCount = GameObject.collisionCount;
 
     // Get world bounds for boundary constraints
-    const worldWidth = this.config.worldWidth;
-    const worldHeight = this.config.worldHeight;
+    const worldWidth = this.config.worldWidth || 0;
+    const worldHeight = this.config.worldHeight || 0;
 
     // Reset collision counters once per frame (used for diagnostics/tuning)
     for (let i = 0; i < this.entityCount; i++) {
@@ -208,22 +214,22 @@ class PhysicsWorker extends AbstractWorker {
    * Move balls using Verlet integration
    * ENHANCED: Now includes configurable damping for energy dissipation
    */
-  moveBallsVerlet(
-    active,
-    x,
-    y,
-    px,
-    py,
-    vx,
-    vy,
-    ax,
-    ay,
-    dtRatio,
-    gx,
-    gy,
-    maxVel,
-    radius
-  ) {
+  private moveBallsVerlet(
+    active: Uint8Array,
+    x: Float32Array,
+    y: Float32Array,
+    px: Float32Array,
+    py: Float32Array,
+    vx: Float32Array,
+    vy: Float32Array,
+    ax: Float32Array,
+    ay: Float32Array,
+    dtRatio: number,
+    gx: number,
+    gy: number,
+    maxVel: Float32Array,
+    radius: Float32Array
+  ): void {
     const damping = this.settings.verletDamping;
 
     const gravityScale = Math.pow(dtRatio, 2);
@@ -283,15 +289,15 @@ class PhysicsWorker extends AbstractWorker {
    * ENHANCED: Now includes configurable boundary elasticity (bouncy walls)
    * This is run multiple times per frame (sub-stepping) for stability
    */
-  applyConstraintsVerlet(
-    active,
-    x,
-    y,
-    radius,
-    collisionCount,
-    worldWidth,
-    worldHeight
-  ) {
+  private applyConstraintsVerlet(
+    active: Uint8Array,
+    x: Float32Array,
+    y: Float32Array,
+    radius: Float32Array,
+    collisionCount: Uint8Array,
+    worldWidth: number,
+    worldHeight: number
+  ): void {
     // Get previous position arrays for velocity manipulation
     const px = GameObject.px;
     const py = GameObject.py;
@@ -344,9 +350,15 @@ class PhysicsWorker extends AbstractWorker {
    * ENHANCED: Better handling of exact overlaps and configurable response strength
    * Pushes overlapping entities apart (RopeBall style)
    */
-  resolveCollisionsVerlet(active, x, y, radius, collisionCount) {
+  private resolveCollisionsVerlet(
+    active: Uint8Array,
+    x: Float32Array,
+    y: Float32Array,
+    radius: Float32Array,
+    collisionCount: Uint8Array
+  ): void {
     const maxNeighbors =
-      this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
+      this.config.spatial?.maxNeighbors || (this.config as any).maxNeighbors || 100;
 
     // Get collision response strength (0.5 = soft/bouncy, 1.0 = rigid)
     const responseStrength = this.settings.collisionResponseStrength;
@@ -360,6 +372,7 @@ class PhysicsWorker extends AbstractWorker {
 
       // Check collisions with each neighbor
       for (let n = 0; n < neighborCount; n++) {
+        // @ts-ignore - neighborData is checked above
         const j = this.neighborData[offset + 1 + n];
 
         if (i === j || !active[j]) continue;
@@ -425,7 +438,17 @@ class PhysicsWorker extends AbstractWorker {
    * ENHANCED: Minimum speed threshold prevents rotation jitter when stationary
    * Calculate velocity, speed, and angle from position changes
    */
-  updateDerivedProperties(active, x, y, px, py, vx, vy, velocityAngle, speed) {
+  private updateDerivedProperties(
+    active: Uint8Array,
+    x: Float32Array,
+    y: Float32Array,
+    px: Float32Array,
+    py: Float32Array,
+    vx: Float32Array,
+    vy: Float32Array,
+    velocityAngle: Float32Array,
+    speed: Float32Array
+  ): void {
     const minSpeedForRotation = this.settings.minSpeedForRotation;
 
     for (let i = 0; i < this.entityCount; i++) {
@@ -445,4 +468,4 @@ class PhysicsWorker extends AbstractWorker {
 }
 
 // Create singleton instance and setup message handler
-const physicsWorker = new PhysicsWorker(self);
+const physicsWorker = new PhysicsWorker(self as unknown as DedicatedWorkerGlobalScope);

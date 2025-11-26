@@ -1,14 +1,11 @@
-self.postMessage({
-  msg: "log",
-  message: "js loaded",
-  when: Date.now(),
-});
+
 // Spatial Worker - Builds spatial hash grid and finds neighbors
 // Now uses per-entity visual ranges and accurate distance checking
 
 // Import engine dependencies
 import { GameObject } from '../core/gameObject.js';
 import { AbstractWorker } from './AbstractWorker.js';
+import type { WorkerInitData } from '../types/index.js';
 
 // Note: Spatial worker doesn't need game-specific entity classes
 // It only works with GameObject arrays for spatial partitioning
@@ -19,49 +16,53 @@ import { AbstractWorker } from './AbstractWorker.js';
  * Extends AbstractWorker for common worker functionality
  */
 class SpatialWorker extends AbstractWorker {
-  constructor(selfRef) {
+  // Spatial grid structure - initialized after receiving config
+  private grid: number[][] | null = null;
+
+  // Grid parameters - set during initialization
+  private cellSize: number = 0;
+  private gridCols: number = 0;
+  private gridRows: number = 0;
+  private totalCells: number = 0;
+  private maxNeighborsPerEntity: number = 0;
+
+  // Update frequency (rebuild grid every N frames)
+  private spatialUpdateInterval: number = 2;
+
+  // Collision pair sharing
+  private collisionData: Int32Array | null = null;
+  private maxCollisionPairs: number = 0;
+  private collisionPairCount: number = 0;
+
+  // Viewport dimensions for screen visibility checks
+  private canvasWidth: number = 0;
+  private canvasHeight: number = 0;
+
+  constructor(selfRef: DedicatedWorkerGlobalScope) {
     super(selfRef);
 
     // Spatial worker is generic - doesn't need game-specific classes
     this.needsGameScripts = false;
-
-    // Spatial grid structure - initialized after receiving config
-    this.grid = null;
-
-    // Grid parameters - set during initialization
-    this.cellSize = 0;
-    this.gridCols = 0;
-    this.gridRows = 0;
-    this.totalCells = 0;
-    this.maxNeighborsPerEntity = 0;
-
-    // Update frequency (rebuild grid every N frames)
-    this.spatialUpdateInterval = 2;
-
-    // Collision pair sharing
-    this.collisionData = null;
-    this.maxCollisionPairs = 0;
-    this.collisionPairCount = 0;
   }
 
   /**
    * Initialize spatial worker (implementation of AbstractWorker.initialize)
    */
-  initialize(data) {
+  protected initialize(data: WorkerInitData): void {
     // console.log("SPATIAL WORKER: Initializing with SharedArrayBuffer");
 
     // Calculate grid parameters from config
     // Check spatial-specific config first, then fall back to root for backwards compatibility
-    this.cellSize = this.config.spatial?.cellSize || this.config.cellSize;
+    this.cellSize = this.config.spatial?.cellSize || (this.config as any).cellSize;
     this.gridCols = Math.ceil(this.config.worldWidth / this.cellSize);
     this.gridRows = Math.ceil(this.config.worldHeight / this.cellSize);
     this.totalCells = this.gridCols * this.gridRows;
     this.maxNeighborsPerEntity =
-      this.config.spatial?.maxNeighbors || this.config.maxNeighbors;
+      this.config.spatial?.maxNeighbors || (this.config as any).maxNeighbors;
 
     // Store viewport dimensions for screen visibility checks
-    this.canvasWidth = this.config.canvasWidth;
-    this.canvasHeight = this.config.canvasHeight;
+    this.canvasWidth = this.config.canvasWidth || 0;
+    this.canvasHeight = this.config.canvasHeight || 0;
 
     // Initialize spatial grid structure - Array of Arrays
     // This allocates memory every frame but provides better cache locality for dense cells
@@ -83,7 +84,7 @@ class SpatialWorker extends AbstractWorker {
   /**
    * Get cell index from world position
    */
-  getCellIndex(x, y) {
+  private getCellIndex(x: number, y: number): number {
     const col = Math.floor(x / this.cellSize);
     const row = Math.floor(y / this.cellSize);
 
@@ -97,7 +98,9 @@ class SpatialWorker extends AbstractWorker {
   /**
    * Clear and rebuild spatial grid
    */
-  rebuildGrid() {
+  private rebuildGrid(): void {
+    if (!this.grid) return;
+
     // Clear all cells efficiently - reuse arrays to avoid memory churn
     for (let i = 0; i < this.totalCells; i++) {
       this.grid[i].length = 0;
@@ -126,7 +129,7 @@ class SpatialWorker extends AbstractWorker {
    * Find neighbors for all entities using spatial grid
    * Uses per-entity visual ranges and checks actual distances
    */
-  findAllNeighbors() {
+  private findAllNeighbors(): void {
     const active = GameObject.active;
     const x = GameObject.x;
     const y = GameObject.y;
@@ -156,7 +159,15 @@ class SpatialWorker extends AbstractWorker {
    * Find neighbors for a single entity
    * Now also stores squared distances to eliminate duplicate calculations
    */
-  findNeighborsForEntity(i, x, y, visualRange, radius) {
+  private findNeighborsForEntity(
+    i: number,
+    x: Float32Array,
+    y: Float32Array,
+    visualRange: Float32Array,
+    radius: Float32Array
+  ): void {
+    if (!this.grid || !this.neighborData || !this.distanceData) return;
+
     const myX = x[i];
     const myY = y[i];
     const myVisualRange = visualRange[i];
@@ -252,7 +263,7 @@ class SpatialWorker extends AbstractWorker {
    * Checks if each entity's position is within the visible viewport
    * Uses the same transformation as pixi_worker.isSpriteVisible()
    */
-  updateScreenVisibility() {
+  private updateScreenVisibility(): void {
     if (!this.cameraData) return;
 
     const active = GameObject.active;
@@ -298,7 +309,7 @@ class SpatialWorker extends AbstractWorker {
   /**
    * Update method called each frame (implementation of AbstractWorker.update)
    */
-  update(deltaTime, dtRatio, resuming) {
+  protected update(deltaTime: number, dtRatio: number, resuming: boolean): void {
     // Rebuild spatial grid and find neighbors every frame for physics stability!
     // Was previously skipping frames which causes physics objects to "pass through" each other
     // if they move fast enough to cross cells in the skipped frames.
@@ -311,4 +322,4 @@ class SpatialWorker extends AbstractWorker {
 }
 
 // Create singleton instance and setup message handler
-const spatialWorker = new SpatialWorker(self);
+const spatialWorker = new SpatialWorker(self as unknown as DedicatedWorkerGlobalScope);

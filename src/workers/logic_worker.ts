@@ -1,19 +1,16 @@
-self.postMessage({
-  msg: "log",
-  message: "js loaded",
-  when: Date.now(),
-});
-// logic_worker.js - Calculates game logic using GameObject pattern
+
+// logic_worker.ts - Calculates game logic using GameObject pattern
 // This worker runs independently, calculating accelerations for all entities
 
 // Import engine dependencies
 import { GameObject } from '../core/gameObject.js';
 import { RenderableGameObject } from '../core/RenderableGameObject.js';
 import { AbstractWorker } from './AbstractWorker.js';
+import type { WorkerInitData, EntityClassInfo } from '../types/index.js';
 
 // Make imported classes globally available for dynamic instantiation
-self.GameObject = GameObject;
-self.RenderableGameObject = RenderableGameObject;
+(self as any).GameObject = GameObject;
+(self as any).RenderableGameObject = RenderableGameObject;
 
 // Game-specific scripts will be loaded dynamically during initialization
 
@@ -22,27 +19,27 @@ self.RenderableGameObject = RenderableGameObject;
  * Extends AbstractWorker for common worker functionality
  */
 class LogicWorker extends AbstractWorker {
-  constructor(selfRef) {
+  // Game objects - one per entity
+  private gameObjects: any[] = [];
+
+  // Collision tracking (Unity-style Enter/Stay/Exit)
+  private collisionData: Int32Array | null = null; // SharedArrayBuffer for collision pairs from physics worker
+  private previousCollisions: Set<string> = new Set(); // Track collisions from last frame
+  private currentCollisions: Set<string> = new Set(); // Track collisions in current frame
+
+  constructor(selfRef: DedicatedWorkerGlobalScope) {
     super(selfRef);
-
-    // Game objects - one per entity
-    this.gameObjects = [];
-
-    // Collision tracking (Unity-style Enter/Stay/Exit)
-    this.collisionData = null; // SharedArrayBuffer for collision pairs from physics worker
-    this.previousCollisions = new Set(); // Track collisions from last frame
-    this.currentCollisions = new Set(); // Track collisions in current frame
   }
 
   /**
    * Initialize the logic worker (implementation of AbstractWorker.initialize)
    * Sets up shared memory and creates GameObject instances
    */
-  initialize(data) {
+  protected initialize(data: WorkerInitData): void {
     console.log("LOGIC WORKER: Initializing with GameObject pattern");
 
     // Initialize collision buffer
-    if (data.buffers.collisionData) {
+    if (data.buffers?.collisionData) {
       this.collisionData = new Int32Array(data.buffers.collisionData);
       console.log("LOGIC WORKER: Collision callbacks enabled");
     }
@@ -63,11 +60,11 @@ class LogicWorker extends AbstractWorker {
   /**
    * Create GameObject instances for all registered entity classes - dynamically
    */
-  createGameObjectInstances() {
+  private createGameObjectInstances(): void {
     for (const classInfo of this.registeredClasses) {
       const { name, count, startIndex } = classInfo;
 
-      const EntityClass = self[name]; // Get class by name from global scope
+      const EntityClass = (self as any)[name]; // Get class by name from global scope
 
       if (EntityClass) {
         // Store metadata for spawning system
@@ -95,7 +92,7 @@ class LogicWorker extends AbstractWorker {
    * Update method called each frame (implementation of AbstractWorker.update)
    * Calls tick() on all game objects
    */
-  update(deltaTime, dtRatio, resuming) {
+  protected update(deltaTime: number, dtRatio: number, resuming: boolean): void {
     // Process collision callbacks BEFORE entity logic (Unity-style)
     if (this.collisionData) {
       this.processCollisionCallbacks();
@@ -119,7 +116,9 @@ class LogicWorker extends AbstractWorker {
    * Process collision callbacks (Unity-style)
    * Determines Enter/Stay/Exit states and calls appropriate callbacks
    */
-  processCollisionCallbacks() {
+  private processCollisionCallbacks(): void {
+    if (!this.collisionData) return;
+
     // Read collision pairs from physics worker
     const pairCount = this.collisionData[0];
 
@@ -186,13 +185,13 @@ class LogicWorker extends AbstractWorker {
    * Handle custom messages from main thread or other workers
    * Implements spawning and despawning commands
    */
-  handleCustomMessage(data) {
+  protected handleCustomMessage(data: any): void {
     const { msg } = data;
 
     switch (msg) {
       case "spawn": {
         const { className, spawnConfig } = data;
-        const EntityClass = self[className];
+        const EntityClass = (self as any)[className];
 
         if (!EntityClass) {
           console.error(
@@ -218,7 +217,7 @@ class LogicWorker extends AbstractWorker {
 
       case "despawnAll": {
         const { className } = data;
-        const EntityClass = self[className];
+        const EntityClass = (self as any)[className];
 
         if (!EntityClass) {
           console.error(
@@ -272,4 +271,4 @@ class LogicWorker extends AbstractWorker {
 }
 
 // Create singleton instance and setup message handler
-const logicWorker = new LogicWorker(self);
+const logicWorker = new LogicWorker(self as unknown as DedicatedWorkerGlobalScope);

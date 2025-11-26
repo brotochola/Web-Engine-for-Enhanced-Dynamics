@@ -290,6 +290,30 @@ export interface EntityClassInfo {
 }
 
 /**
+ * Initialization data for workers
+ */
+export interface WorkerInitData {
+  entityCount: number;
+  config?: GameConfig;
+  scriptsToLoad?: string[];
+  buffers?: {
+    gameObjectData?: SharedArrayBuffer;
+    neighborData?: SharedArrayBuffer;
+    distanceData?: SharedArrayBuffer;
+    inputData?: SharedArrayBuffer;
+    cameraData?: SharedArrayBuffer;
+    entityData?: Record<string, SharedArrayBuffer>;
+    collisionData?: SharedArrayBuffer;
+  };
+  registeredClasses?: EntityClassInfo[];
+  workerPorts?: Record<string, MessagePort>;
+  // Pixi worker specific
+  view?: OffscreenCanvas;
+  textures?: Record<string, ImageBitmap>;
+  spritesheets?: Record<string, { imageBitmap: ImageBitmap; json: any }>;
+}
+
+/**
  * Texture/Spritesheet loading configuration
  */
 export interface TextureConfig {
