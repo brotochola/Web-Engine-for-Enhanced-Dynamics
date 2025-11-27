@@ -30,6 +30,107 @@ class SpriteRenderer extends Component {
     // Performance optimization - dirty flag
     renderDirty: Uint8Array, // 1 = visual properties changed, needs update this frame
   };
+
+  /**
+   * Constructor - creates a component instance for a specific entity index
+   * @param {number} index - Index in the component arrays
+   */
+  constructor(index) {
+    super();
+    this.index = index;
+  }
+
+  // Instance getters/setters that forward to static arrays
+  get animationState() {
+    return SpriteRenderer.animationState[this.index];
+  }
+  set animationState(v) {
+    SpriteRenderer.animationState[this.index] = v;
+  }
+
+  get animationFrame() {
+    return SpriteRenderer.animationFrame[this.index];
+  }
+  set animationFrame(v) {
+    SpriteRenderer.animationFrame[this.index] = v;
+  }
+
+  get animationSpeed() {
+    return SpriteRenderer.animationSpeed[this.index];
+  }
+  set animationSpeed(v) {
+    SpriteRenderer.animationSpeed[this.index] = v;
+  }
+
+  get tint() {
+    return SpriteRenderer.tint[this.index];
+  }
+  set tint(v) {
+    SpriteRenderer.tint[this.index] = v;
+  }
+
+  get alpha() {
+    return SpriteRenderer.alpha[this.index];
+  }
+  set alpha(v) {
+    SpriteRenderer.alpha[this.index] = v;
+  }
+
+  get scaleX() {
+    return SpriteRenderer.scaleX[this.index];
+  }
+  set scaleX(v) {
+    SpriteRenderer.scaleX[this.index] = v;
+  }
+
+  get scaleY() {
+    return SpriteRenderer.scaleY[this.index];
+  }
+  set scaleY(v) {
+    SpriteRenderer.scaleY[this.index] = v;
+  }
+
+  get spriteVariant() {
+    return SpriteRenderer.spriteVariant[this.index];
+  }
+  set spriteVariant(v) {
+    SpriteRenderer.spriteVariant[this.index] = v;
+  }
+
+  get zOffset() {
+    return SpriteRenderer.zOffset[this.index];
+  }
+  set zOffset(v) {
+    SpriteRenderer.zOffset[this.index] = v;
+  }
+
+  get blendMode() {
+    return SpriteRenderer.blendMode[this.index];
+  }
+  set blendMode(v) {
+    SpriteRenderer.blendMode[this.index] = v;
+  }
+
+  get renderVisible() {
+    return SpriteRenderer.renderVisible[this.index];
+  }
+  set renderVisible(v) {
+    SpriteRenderer.renderVisible[this.index] = v ? 1 : 0;
+  }
+
+  get isItOnScreen() {
+    return SpriteRenderer.isItOnScreen[this.index];
+  }
+  set isItOnScreen(v) {
+    SpriteRenderer.isItOnScreen[this.index] = v ? 1 : 0;
+  }
+
+  get renderDirty() {
+    return SpriteRenderer.renderDirty[this.index];
+  }
+  set renderDirty(v) {
+    SpriteRenderer.renderDirty[this.index] = v ? 1 : 0;
+  }
 }
 
 // ES6 module export

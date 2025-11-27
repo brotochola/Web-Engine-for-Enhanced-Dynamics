@@ -97,17 +97,23 @@ class GameObject {
 
   /**
    * Constructor - stores entity index and component indices
-   * @param {number} index - Entity index
+   * @param {number} index - Entity index (unique across all entities)
    * @param {Object} componentIndices - Map of component indices { transform: N, rigidBody: N, ... }
    * @param {Object} config - Configuration object from GameEngine
    * @param {Object} logicWorker - Logic worker reference
+   *
+   * SPARSE COMPONENT ALLOCATION:
+   * Component indices may differ from entity indices when entity types have different components.
+   * Example: If 100 Balls (all components) are followed by 50 StaticWalls (no RigidBody),
+   * then 50 Predators, the Predators' RigidBody indices start at 100, not 150.
+   * This saves memory by only allocating space for components that entities actually use.
    */
   constructor(index, componentIndices = {}, config = {}, logicWorker = null) {
     this.index = index;
     this.config = config;
     this.logicWorker = logicWorker;
 
-    // Store component indices
+    // Store component indices for sparse allocation
     this._componentIndices = componentIndices;
 
     // Set entityType metadata
@@ -125,96 +131,141 @@ class GameObject {
     this.neighbors = null; // Will be a TypedArray subarray
     this.neighborDistances = null; // Will be a TypedArray subarray of squared distances
 
-    // Create component accessor cache
-    this._componentAccessors = {};
+    // Create actual component instances (lazy-loaded on first access)
+    this._transform = null;
+    this._rigidBody = null;
+    this._collider = null;
+    this._spriteRenderer = null;
   }
 
   /**
    * Component accessor: Transform (always present)
+   * Returns an actual Transform instance
    */
   get transform() {
-    if (!this._componentAccessors.transform) {
+    if (!this._transform) {
       const index = this._componentIndices.transform;
-      this._componentAccessors.transform = this._createComponentAccessor(
-        Transform,
-        index
-      );
+      this._transform = new Transform(index);
     }
-    return this._componentAccessors.transform;
+    return this._transform;
+  }
+
+  // ========================================================================
+  // ERGONOMIC API: Direct property access (forwards to components)
+  // These provide convenient shortcuts while maintaining the component system
+  // ========================================================================
+
+  /**
+   * Position X - forwards to Transform
+   * NOTE: Setting position also updates RigidBody.px to prevent Verlet velocity
+   */
+  get x() {
+    return Transform.x[this.index];
+  }
+
+  set x(value) {
+    Transform.x[this.index] = value;
+    // Sync previous position for Verlet integration (prevents unwanted velocity)
+    if (this._componentIndices.rigidBody !== undefined) {
+      RigidBody.px[this._componentIndices.rigidBody] = value;
+    }
+  }
+
+  /**
+   * Position Y - forwards to Transform
+   * NOTE: Setting position also updates RigidBody.py to prevent Verlet velocity
+   */
+  get y() {
+    return Transform.y[this.index];
+  }
+
+  set y(value) {
+    Transform.y[this.index] = value;
+    // Sync previous position for Verlet integration (prevents unwanted velocity)
+    if (this._componentIndices.rigidBody !== undefined) {
+      RigidBody.py[this._componentIndices.rigidBody] = value;
+    }
+  }
+
+  /**
+   * Rotation - forwards to Transform
+   */
+  get rotation() {
+    return Transform.rotation[this.index];
+  }
+
+  set rotation(value) {
+    Transform.rotation[this.index] = value;
+  }
+
+  /**
+   * Velocity X - forwards to RigidBody (if entity has one)
+   */
+  get vx() {
+    if (this._componentIndices.rigidBody === undefined) return 0;
+    return RigidBody.vx[this._componentIndices.rigidBody];
+  }
+
+  set vx(value) {
+    if (this._componentIndices.rigidBody !== undefined) {
+      RigidBody.vx[this._componentIndices.rigidBody] = value;
+    }
+  }
+
+  /**
+   * Velocity Y - forwards to RigidBody (if entity has one)
+   */
+  get vy() {
+    if (this._componentIndices.rigidBody === undefined) return 0;
+    return RigidBody.vy[this._componentIndices.rigidBody];
+  }
+
+  set vy(value) {
+    if (this._componentIndices.rigidBody !== undefined) {
+      RigidBody.vy[this._componentIndices.rigidBody] = value;
+    }
   }
 
   /**
    * Component accessor: RigidBody (if entity has it)
+   * Returns an actual RigidBody instance
    */
   get rigidBody() {
     if (this._componentIndices.rigidBody === undefined) return null;
 
-    if (!this._componentAccessors.rigidBody) {
+    if (!this._rigidBody) {
       const index = this._componentIndices.rigidBody;
-      this._componentAccessors.rigidBody = this._createComponentAccessor(
-        RigidBody,
-        index
-      );
+      this._rigidBody = new RigidBody(index);
     }
-    return this._componentAccessors.rigidBody;
+    return this._rigidBody;
   }
 
   /**
    * Component accessor: Collider (if entity has it)
+   * Returns an actual Collider instance
    */
   get collider() {
     if (this._componentIndices.collider === undefined) return null;
 
-    if (!this._componentAccessors.collider) {
+    if (!this._collider) {
       const index = this._componentIndices.collider;
-      this._componentAccessors.collider = this._createComponentAccessor(
-        Collider,
-        index
-      );
+      this._collider = new Collider(index);
     }
-    return this._componentAccessors.collider;
+    return this._collider;
   }
 
   /**
    * Component accessor: SpriteRenderer (if entity has it)
+   * Returns an actual SpriteRenderer instance
    */
   get spriteRenderer() {
     if (this._componentIndices.spriteRenderer === undefined) return null;
 
-    if (!this._componentAccessors.spriteRenderer) {
+    if (!this._spriteRenderer) {
       const index = this._componentIndices.spriteRenderer;
-      this._componentAccessors.spriteRenderer = this._createComponentAccessor(
-        SpriteRenderer,
-        index
-      );
+      this._spriteRenderer = new SpriteRenderer(index);
     }
-    return this._componentAccessors.spriteRenderer;
-  }
-
-  /**
-   * Create a component accessor object with getters/setters
-   * @param {Component} ComponentClass - The component class
-   * @param {number} index - Index in component arrays
-   * @returns {Object} Accessor object
-   */
-  _createComponentAccessor(ComponentClass, index) {
-    const accessor = {};
-
-    Object.entries(ComponentClass.ARRAY_SCHEMA).forEach(([name, type]) => {
-      Object.defineProperty(accessor, name, {
-        get() {
-          return ComponentClass[name][index];
-        },
-        set(value) {
-          ComponentClass[name][index] =
-            type === Uint8Array ? (value ? 1 : 0) : value;
-        },
-        enumerable: true,
-        configurable: true,
-      });
-    });
-
-    return accessor;
+    return this._spriteRenderer;
   }
 
   /**

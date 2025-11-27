@@ -40,16 +40,14 @@ class Ball extends GameObject {
     this.rigidBody.minSpeed = 0; // Balls can come to rest
     this.rigidBody.friction = 0.01; // Low friction - let balls settle naturally
 
-    // Initialize Transform position
-    this.transform.x = Math.random() * (config.worldWidth || 7600);
-    this.transform.y = Math.random() * 1000 + 50; // Spawn spread out vertically
-    this.transform.rotation = 0;
+    // Initialize position using ergonomic API (automatically syncs px/py for Verlet)
+    this.x = Math.random() * (config.worldWidth || 7600);
+    this.y = Math.random() * 1000 + 50; // Spawn spread out vertically
+    this.rotation = 0;
 
-    // Initialize RigidBody physics properties
-    this.rigidBody.px = this.transform.x; // Initialize previous position for Verlet
-    this.rigidBody.py = this.transform.y;
-    this.rigidBody.vx = 0;
-    this.rigidBody.vy = 0;
+    // Initialize RigidBody velocities and accelerations
+    this.vx = 0;
+    this.vy = 0;
     this.rigidBody.ax = 0;
     this.rigidBody.ay = 0;
 
@@ -106,24 +104,24 @@ class Ball extends GameObject {
   /**
    * Main update - simple behavior for balls
    * Note: Gravity and collision resolution are handled by physics worker
+   *
+   * ERGONOMIC API DEMO: Using this.x, this.y for clean, readable code
+   * For performance-critical loops with 1000+ entities, use direct array access instead
    */
   tick(dtRatio, inputData) {
+    // Mouse interaction: push balls away from cursor on click
     if (inputData[3]) {
-      const dist2 =
-        (this.transform.x - inputData[0]) ** 2 +
-        (this.transform.y - inputData[1]) ** 2;
-      if (dist2 > 20000) return;
+      // Calculate distance using ergonomic API (clean and readable!)
+      const dx = this.x - inputData[0];
+      const dy = this.y - inputData[1];
+      const dist2 = dx * dx + dy * dy;
 
-      this.rigidBody.ax = (this.transform.x - inputData[0]) * 0.2;
-      this.rigidBody.ay = (this.transform.y - inputData[1]) * 0.2;
+      if (dist2 > 20000) return; // Only affect nearby balls
+
+      // Apply repulsion force
+      this.rigidBody.ax = dx * 0.2;
+      this.rigidBody.ay = dy * 0.2;
     }
-
-    //  //on click of the mouse, make the balls that are close, to explode (add ax and ay
-    //  if(gameEngine.mouse.isDown){
-    //   const ball = this.rigidBody;
-    //   ball.ax = 1;
-    //   ball.ay = 1;
-    //  }
   }
 }
 
