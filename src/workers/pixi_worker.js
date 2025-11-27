@@ -7,14 +7,14 @@ self.postMessage({
 // Reads GameObject arrays and renders sprites with animations
 
 // Import engine dependencies
-import { GameObject } from '../core/gameObject.js';
-import { Transform } from '../components/Transform.js';
-import { RigidBody } from '../components/RigidBody.js';
-import { SpriteRenderer } from '../components/SpriteRenderer.js';
-import { AbstractWorker } from './AbstractWorker.js';
+import { GameObject } from "../core/gameObject.js";
+import { Transform } from "../components/Transform.js";
+import { RigidBody } from "../components/RigidBody.js";
+import { SpriteRenderer } from "../components/SpriteRenderer.js";
+import { AbstractWorker } from "./AbstractWorker.js";
 
 // Import PixiJS library (now ES6 module)
-import { PIXI } from './pixi4webworkers.js';
+import { PIXI } from "./pixi4webworkers.js";
 
 // Make imported classes globally available for dynamic instantiation
 self.GameObject = GameObject;
@@ -146,10 +146,10 @@ class PixiRenderer extends AbstractWorker {
    */
   updateSprites() {
     // Cache array references for performance
-    const active = GameObject.active;
-    const worldX = Transform.worldX;
-    const worldY = Transform.worldY;
-    const rotation = RigidBody.rotation;
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
+    const rotation = Transform.rotation;
 
     // SpriteRenderer properties
     const animationState = SpriteRenderer.animationState;
@@ -162,7 +162,7 @@ class PixiRenderer extends AbstractWorker {
     const scaleY = SpriteRenderer.scaleY;
     const renderVisible = SpriteRenderer.renderVisible;
     const zOffset = SpriteRenderer.zOffset;
-    const isItOnScreen = GameObject.isItOnScreen;
+    const isItOnScreen = SpriteRenderer.isItOnScreen;
     const renderDirty = SpriteRenderer.renderDirty; // OPTIMIZATION: Dirty flag
 
     // Track visible units count
@@ -186,11 +186,11 @@ class PixiRenderer extends AbstractWorker {
       visibleCount++;
 
       // ALWAYS update transform (position, rotation, scale) - these change frequently
-      container.x = worldX[i];
-      container.y = worldY[i];
+      container.x = x[i];
+      container.y = y[i];
       container.rotation = rotation[i];
       container.scale.set(scaleX[i], scaleY[i]);
-      container.zIndex = worldY[i] + zOffset[i];
+      container.zIndex = y[i] + zOffset[i];
 
       // OPTIMIZATION: Only update visual properties if dirty flag is set
       // This skips expensive operations (tint, alpha, flipping, animations) when unchanged
@@ -603,22 +603,35 @@ class PixiRenderer extends AbstractWorker {
     this.canvasView = data.view;
 
     // Initialize component arrays from SharedArrayBuffers
-    console.log('PIXI WORKER: Initializing component arrays...');
-    
+    console.log("PIXI WORKER: Initializing component arrays...");
+
     // Transform (for positions)
-    Transform.initializeArrays(data.buffers.componentData.Transform, this.entityCount);
+    Transform.initializeArrays(
+      data.buffers.componentData.Transform,
+      this.entityCount
+    );
     console.log(`  ✅ Transform: ${this.entityCount} slots`);
-    
+
     // RigidBody (for rotation)
     if (data.buffers.componentData.RigidBody) {
-      RigidBody.initializeArrays(data.buffers.componentData.RigidBody, data.componentPools.RigidBody.count);
-      console.log(`  ✅ RigidBody: ${data.componentPools.RigidBody.count} slots`);
+      RigidBody.initializeArrays(
+        data.buffers.componentData.RigidBody,
+        data.componentPools.RigidBody.count
+      );
+      console.log(
+        `  ✅ RigidBody: ${data.componentPools.RigidBody.count} slots`
+      );
     }
-    
+
     // SpriteRenderer (for visual properties)
     if (data.buffers.componentData.SpriteRenderer) {
-      SpriteRenderer.initializeArrays(data.buffers.componentData.SpriteRenderer, data.componentPools.SpriteRenderer.count);
-      console.log(`  ✅ SpriteRenderer: ${data.componentPools.SpriteRenderer.count} slots`);
+      SpriteRenderer.initializeArrays(
+        data.buffers.componentData.SpriteRenderer,
+        data.componentPools.SpriteRenderer.count
+      );
+      console.log(
+        `  ✅ SpriteRenderer: ${data.componentPools.SpriteRenderer.count} slots`
+      );
     }
 
     // Create PIXI application
@@ -662,4 +675,4 @@ class PixiRenderer extends AbstractWorker {
 }
 
 // Create singleton instance and setup message handler
-const pixiRenderer = new PixiRenderer(self);
+self.pixiRenderer = new PixiRenderer(self);

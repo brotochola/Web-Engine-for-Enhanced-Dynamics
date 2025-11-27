@@ -1,11 +1,11 @@
 // GameEngine.js - Centralized game initialization and state management
 // Handles workers, SharedArrayBuffers, class registration, and input management
 
-import { GameObject } from './gameObject.js';
-import { Transform } from '../components/Transform.js';
-import { RigidBody } from '../components/RigidBody.js';
-import { Collider } from '../components/Collider.js';
-import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { GameObject } from "./gameObject.js";
+import { Transform } from "../components/Transform.js";
+import { RigidBody } from "../components/RigidBody.js";
+import { Collider } from "../components/Collider.js";
+import { SpriteRenderer } from "../components/SpriteRenderer.js";
 
 class GameEngine {
   static now = Date.now();
@@ -157,7 +157,9 @@ class GameEngine {
     if (components.includes(SpriteRenderer) && count > 0) {
       // Validate spriteConfig
       if (!EntityClass.spriteConfig) {
-        console.error(`❌ ${EntityClass.name} has SpriteRenderer component but no spriteConfig defined!`);
+        console.error(
+          `❌ ${EntityClass.name} has SpriteRenderer component but no spriteConfig defined!`
+        );
         throw new Error(`${EntityClass.name} must define static spriteConfig`);
       }
     }
@@ -180,7 +182,7 @@ class GameEngine {
     for (const ComponentClass of components) {
       const componentName = ComponentClass.name;
       const pool = this.componentPools[componentName];
-      
+
       if (!pool) {
         console.warn(`Unknown component: ${componentName}`);
         continue;
@@ -191,7 +193,7 @@ class GameEngine {
         start: pool.count,
         count: count,
       };
-      
+
       pool.count += count;
       pool.indices.set(EntityClass.name, componentIndices[componentName]);
     }
@@ -208,7 +210,7 @@ class GameEngine {
     this.totalEntityCount += count;
 
     // Auto-initialize required static properties if they don't exist
-    if (!EntityClass.hasOwnProperty('instances')) {
+    if (!EntityClass.hasOwnProperty("instances")) {
       EntityClass.instances = [];
     }
 
@@ -217,7 +219,11 @@ class GameEngine {
     EntityClass.totalCount = count;
 
     console.log(
-      `✅ Registered ${EntityClass.name}: ${count} entities with components: ${components.map(c => c.name).join(', ')}`
+      `✅ Registered ${
+        EntityClass.name
+      }: ${count} entities with components: ${components
+        .map((c) => c.name)
+        .join(", ")}`
     );
   }
 
@@ -318,7 +324,8 @@ class GameEngine {
 
   // Create all SharedArrayBuffers
   createSharedBuffers() {
-    // 1. GameObject entity state buffer (minimal - just active, entityType, isItOnScreen)
+    // 1. GameObject entity metadata buffer (just entityType)
+    // Note: 'active' moved to Transform, 'isItOnScreen' moved to SpriteRenderer
     const gameObjectBufferSize = GameObject.getBufferSize(
       this.totalEntityCount
     );
@@ -345,36 +352,70 @@ class GameEngine {
     this.preInitializeEntityTypeArrays();
 
     // 2. Create Component buffers
-    console.log('📦 Creating component buffers...');
+    console.log("📦 Creating component buffers...");
 
     // Transform component (size for total entity count - everyone has Transform)
     const transformBufferSize = Transform.getBufferSize(this.totalEntityCount);
-    this.buffers.componentData.Transform = new SharedArrayBuffer(transformBufferSize);
-    Transform.initializeArrays(this.buffers.componentData.Transform, this.totalEntityCount);
-    console.log(`   ✅ Transform: ${transformBufferSize} bytes for ${this.totalEntityCount} entities`);
+    this.buffers.componentData.Transform = new SharedArrayBuffer(
+      transformBufferSize
+    );
+    Transform.initializeArrays(
+      this.buffers.componentData.Transform,
+      this.totalEntityCount
+    );
+    console.log(
+      `   ✅ Transform: ${transformBufferSize} bytes for ${this.totalEntityCount} entities`
+    );
 
     // RigidBody component
     if (this.componentPools.RigidBody.count > 0) {
-      const rigidBodyBufferSize = RigidBody.getBufferSize(this.componentPools.RigidBody.count);
-      this.buffers.componentData.RigidBody = new SharedArrayBuffer(rigidBodyBufferSize);
-      RigidBody.initializeArrays(this.buffers.componentData.RigidBody, this.componentPools.RigidBody.count);
-      console.log(`   ✅ RigidBody: ${rigidBodyBufferSize} bytes for ${this.componentPools.RigidBody.count} entities`);
+      const rigidBodyBufferSize = RigidBody.getBufferSize(
+        this.componentPools.RigidBody.count
+      );
+      this.buffers.componentData.RigidBody = new SharedArrayBuffer(
+        rigidBodyBufferSize
+      );
+      RigidBody.initializeArrays(
+        this.buffers.componentData.RigidBody,
+        this.componentPools.RigidBody.count
+      );
+      console.log(
+        `   ✅ RigidBody: ${rigidBodyBufferSize} bytes for ${this.componentPools.RigidBody.count} entities`
+      );
     }
 
     // Collider component
     if (this.componentPools.Collider.count > 0) {
-      const colliderBufferSize = Collider.getBufferSize(this.componentPools.Collider.count);
-      this.buffers.componentData.Collider = new SharedArrayBuffer(colliderBufferSize);
-      Collider.initializeArrays(this.buffers.componentData.Collider, this.componentPools.Collider.count);
-      console.log(`   ✅ Collider: ${colliderBufferSize} bytes for ${this.componentPools.Collider.count} entities`);
+      const colliderBufferSize = Collider.getBufferSize(
+        this.componentPools.Collider.count
+      );
+      this.buffers.componentData.Collider = new SharedArrayBuffer(
+        colliderBufferSize
+      );
+      Collider.initializeArrays(
+        this.buffers.componentData.Collider,
+        this.componentPools.Collider.count
+      );
+      console.log(
+        `   ✅ Collider: ${colliderBufferSize} bytes for ${this.componentPools.Collider.count} entities`
+      );
     }
 
     // SpriteRenderer component
     if (this.componentPools.SpriteRenderer.count > 0) {
-      const spriteRendererBufferSize = SpriteRenderer.getBufferSize(this.componentPools.SpriteRenderer.count);
-      this.buffers.componentData.SpriteRenderer = new SharedArrayBuffer(spriteRendererBufferSize);
-      SpriteRenderer.initializeArrays(this.buffers.componentData.SpriteRenderer, this.componentPools.SpriteRenderer.count);
-      console.log(`   ✅ SpriteRenderer: ${spriteRendererBufferSize} bytes for ${this.componentPools.SpriteRenderer.count} entities`);
+      const spriteRendererBufferSize = SpriteRenderer.getBufferSize(
+        this.componentPools.SpriteRenderer.count
+      );
+      this.buffers.componentData.SpriteRenderer = new SharedArrayBuffer(
+        spriteRendererBufferSize
+      );
+      SpriteRenderer.initializeArrays(
+        this.buffers.componentData.SpriteRenderer,
+        this.componentPools.SpriteRenderer.count
+      );
+      console.log(
+        `   ✅ SpriteRenderer: ${spriteRendererBufferSize} bytes for ${this.componentPools.SpriteRenderer.count} entities`
+      );
     }
 
     // Collision data buffer (for Unity-style collision detection)
@@ -594,10 +635,22 @@ class GameEngine {
     // Create workers with module type
     // Add cache-busting parameter to force reload of workers
     const cacheBust = `?v=${Date.now()}`;
-    this.workers.spatial = new Worker(`/src/workers/spatial_worker.js${cacheBust}`, { type: 'module' });
-    this.workers.logic = new Worker(`/src/workers/logic_worker.js${cacheBust}`, { type: 'module' });
-    this.workers.physics = new Worker(`/src/workers/physics_worker.js${cacheBust}`, { type: 'module' });
-    this.workers.renderer = new Worker(`/src/workers/pixi_worker.js${cacheBust}`, { type: 'module' });
+    this.workers.spatial = new Worker(
+      `/src/workers/spatial_worker.js${cacheBust}`,
+      { type: "module" }
+    );
+    this.workers.logic = new Worker(
+      `/src/workers/logic_worker.js${cacheBust}`,
+      { type: "module" }
+    );
+    this.workers.physics = new Worker(
+      `/src/workers/physics_worker.js${cacheBust}`,
+      { type: "module" }
+    );
+    this.workers.renderer = new Worker(
+      `/src/workers/pixi_worker.js${cacheBust}`,
+      { type: "module" }
+    );
 
     this.workers.spatial.name = "spatial";
     this.workers.logic.name = "logic";
@@ -634,7 +687,7 @@ class GameEngine {
     // Create single initialization object for all workers
     // Config is passed as-is with nested structure (physics, spatial, logic sub-configs)
     const initData = {
-      msg: 'init',
+      msg: "init",
       buffers: {
         gameObjectData: this.buffers.gameObjectData,
         neighborData: this.buffers.neighborData,
@@ -652,7 +705,7 @@ class GameEngine {
         name: r.class.name,
         count: r.count,
         startIndex: r.startIndex,
-        components: r.components.map(c => c.name), // Component names
+        components: r.components.map((c) => c.name), // Component names
         componentIndices: r.componentIndices, // Component pool allocation { Transform: {start, count}, ... }
       })),
       // Component pool sizes (for workers to know buffer sizes)
@@ -712,6 +765,16 @@ class GameEngine {
     for (let worker of Object.values(this.workers)) {
       worker.onmessage = (e) => {
         this.handleMessageFromWorker(e);
+      };
+
+      // Add error handler to catch worker crashes
+      worker.onerror = (e) => {
+        console.error(
+          `❌ ERROR in ${worker.name} worker:\n`,
+          `Message: ${e.message}\n`,
+          `File: ${e.filename}:${e.lineno}:${e.colno}`
+        );
+        // We don't prevent default so it still shows up as an error in dev tools
       };
     }
 
@@ -845,31 +908,30 @@ class GameEngine {
       this.updateInputBuffer();
     });
 
-
     this.canvas.addEventListener("mousedown", (e) => {
-        if(!this.mouse)this.mouse = {};
-     if(e.button==0){
-        this.mouse.button0Down = true
+      if (!this.mouse) this.mouse = {};
+      if (e.button == 0) {
+        this.mouse.button0Down = true;
       }
-      if(e.button==1){
-        this.mouse.button1Down = true
+      if (e.button == 1) {
+        this.mouse.button1Down = true;
       }
-      if(e.button==2){
-        this.mouse.button2Down = true
+      if (e.button == 2) {
+        this.mouse.button2Down = true;
       }
       this.updateInputBuffer();
     });
 
     this.canvas.addEventListener("mouseup", (e) => {
-        if(!this.mouse)this.mouse = {};
-      if(e.button==0){
-        this.mouse.button0Down = false
+      if (!this.mouse) this.mouse = {};
+      if (e.button == 0) {
+        this.mouse.button0Down = false;
       }
-      if(e.button==1){
-        this.mouse.button1Down = false
+      if (e.button == 1) {
+        this.mouse.button1Down = false;
       }
-      if(e.button==2){
-        this.mouse.button2Down = false
+      if (e.button == 2) {
+        this.mouse.button2Down = false;
       }
       this.updateInputBuffer();
     });
@@ -882,7 +944,7 @@ class GameEngine {
 
       // Convert to world coordinates (Y-down system)
       // World position = (canvas position + camera position) / zoom
-      if(!this.mouse)this.mouse = {};
+      if (!this.mouse) this.mouse = {};
       this.mouse.x = canvasX / this.camera.zoom + this.camera.x;
       this.mouse.y = canvasY / this.camera.zoom + this.camera.y;
 
@@ -993,8 +1055,10 @@ class GameEngine {
 
     this.updateCameraBuffer();
 
-    this.updateVisibleUnits(GameObject.isItOnScreen.filter((v) => !!v).length);
-    this.updateActiveUnits(GameObject.active.filter((v) => !!v).length);
+    this.updateVisibleUnits(
+      SpriteRenderer.isItOnScreen.filter((v) => !!v).length
+    );
+    this.updateActiveUnits(Transform.active.filter((v) => !!v).length);
   }
 
   // Cleanup
@@ -1081,7 +1145,7 @@ class GameEngine {
     let activeCount = 0;
 
     for (let i = startIndex; i < startIndex + total; i++) {
-      if (GameObject.active[i]) {
+      if (Transform.active[i]) {
         activeCount++;
       }
     }

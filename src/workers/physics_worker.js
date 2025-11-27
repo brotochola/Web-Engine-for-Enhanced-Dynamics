@@ -7,11 +7,11 @@ self.postMessage({
 // Now uses per-entity maxVel, maxAcc, and friction from GameObject arrays
 
 // Import engine dependencies
-import { GameObject } from '../core/gameObject.js';
-import { Transform } from '../components/Transform.js';
-import { RigidBody } from '../components/RigidBody.js';
-import { Collider } from '../components/Collider.js';
-import { AbstractWorker } from './AbstractWorker.js';
+import { GameObject } from "../core/gameObject.js";
+import { Transform } from "../components/Transform.js";
+import { RigidBody } from "../components/RigidBody.js";
+import { Collider } from "../components/Collider.js";
+import { AbstractWorker } from "./AbstractWorker.js";
 
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
 // Physics worker uses RigidBody component for physics calculations
@@ -46,12 +46,21 @@ class PhysicsWorker extends AbstractWorker {
     console.log("PHYSICS WORKER: Initializing with component system");
 
     // Initialize component arrays
-    Transform.initializeArrays(data.buffers.componentData.Transform, this.entityCount);
+    Transform.initializeArrays(
+      data.buffers.componentData.Transform,
+      this.entityCount
+    );
     if (data.buffers.componentData.RigidBody) {
-      RigidBody.initializeArrays(data.buffers.componentData.RigidBody, data.componentPools.RigidBody.count);
+      RigidBody.initializeArrays(
+        data.buffers.componentData.RigidBody,
+        data.componentPools.RigidBody.count
+      );
     }
     if (data.buffers.componentData.Collider) {
-      Collider.initializeArrays(data.buffers.componentData.Collider, data.componentPools.Collider.count);
+      Collider.initializeArrays(
+        data.buffers.componentData.Collider,
+        data.componentPools.Collider.count
+      );
     }
 
     this.applyPhysicsConfig(this.config.physics || {});
@@ -76,7 +85,7 @@ class PhysicsWorker extends AbstractWorker {
    */
   update(deltaTime, dtRatio, resuming) {
     this.updateVerlet(deltaTime, dtRatio);
-    
+
     // CRITICAL: Sync RigidBody positions to Transform for rendering
     this.syncPhysicsToTransform();
   }
@@ -141,22 +150,11 @@ class PhysicsWorker extends AbstractWorker {
 
   /**
    * Sync RigidBody physics positions to Transform for rendering
-   * CRITICAL: Renderer reads Transform.worldX/Y, physics writes RigidBody.x/y
+   * NOTE: No longer needed - physics now writes directly to Transform.x/y/rotation
    */
   syncPhysicsToTransform() {
-    const active = GameObject.active;
-    
-    for (let i = 0; i < this.entityCount; i++) {
-      if (!active[i]) continue;
-      
-      // Copy physics positions to transform for rendering
-      Transform.worldX[i] = RigidBody.x[i];
-      Transform.worldY[i] = RigidBody.y[i];
-      Transform.localX[i] = RigidBody.x[i];
-      Transform.localY[i] = RigidBody.y[i];
-      Transform.worldRotation[i] = RigidBody.rotation[i];
-      Transform.localRotation[i] = RigidBody.rotation[i];
-    }
+    // REMOVED: Transform now stores position/rotation directly
+    // Physics worker reads/writes Transform.x/y/rotation instead of RigidBody.x/y/rotation
   }
 
   /**
@@ -166,9 +164,10 @@ class PhysicsWorker extends AbstractWorker {
    */
   updateVerlet(deltaTime, dtRatio) {
     // Cache array references from components
-    const active = GameObject.active;
-    const x = RigidBody.x;
-    const y = RigidBody.y;
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
+    const rotation = Transform.rotation;
     const px = RigidBody.px;
     const py = RigidBody.py;
     const vx = RigidBody.vx;
@@ -178,7 +177,6 @@ class PhysicsWorker extends AbstractWorker {
     const velocityAngle = RigidBody.velocityAngle;
     const speed = RigidBody.speed;
     const maxVel = RigidBody.maxVel;
-    const rotation = RigidBody.rotation;
     const radius = Collider.radius;
     const collisionCount = RigidBody.collisionCount;
 

@@ -1,9 +1,10 @@
 // Predator.js - Predator that flocks with other predators and hunts prey
 // Extends Boid to inherit flocking behavior
 
-import { GameObject } from '/src/core/gameObject.js';
-import { Boid } from './boid.js';
-import { Prey } from './prey.js';
+import { GameObject } from "/src/core/gameObject.js";
+import { RigidBody } from "/src/components/RigidBody.js";
+import { Boid } from "./boid.js";
+import { Prey } from "./prey.js";
 
 class Predator extends Boid {
   static entityType = 2; // 2 = Predator
@@ -36,42 +37,40 @@ class Predator extends Boid {
   /**
    * Predator constructor - initializes predator properties
    * @param {number} index - Position in shared arrays
+   * @param {Object} componentIndices - Component indices { transform, rigidBody, collider, spriteRenderer }
    * @param {Object} config - Configuration object from GameEngine
    */
-  constructor(index, config = {}, logicWorker = null) {
-    super(index, config, logicWorker);
+  constructor(index, componentIndices, config = {}, logicWorker = null) {
+    super(index, componentIndices, config, logicWorker);
 
     const i = index;
-
-    this.x = Math.random() * config.worldWidth;
-    this.y = Math.random() * config.worldHeight;
 
     // Initialize predator-specific properties
     this.huntFactor = 0.2; // Chase strength
 
-    // Make predators slightly slower than prey (hunt by strategy, not speed)
-    this.maxVel = 7;
+    // Override Boid's physics properties for predator behavior
+    this.rigidBody.maxVel = 7;
+    this.rigidBody.maxAcc = 0.2;
+    this.rigidBody.minSpeed = 0; //1; // Keep predators moving
+    this.rigidBody.friction = 0.05;
 
-    this.radius = 30;
+    this.collider.radius = 30;
+    this.spriteRenderer.animationSpeed = 0.15;
 
-    this.maxAcc = 0.2;
-    this.minSpeed = 0; //1; // Keep predators moving
-    this.friction = 0.05;
+    // Override Boid's perception
+    this.collider.visualRange = 200; // How far predator can see
 
-    this.animationSpeed = 0.15;
-
-    // Initialize GameObject perception
-    this.visualRange = 200; // How far boid can see
-
-    // Initialize Boid-specific behavior properties (with slight randomization)
-    this.protectedRange = 0; //this.radius * 3; // Minimum distance from others
+    // Override Boid-specific behavior properties
+    this.protectedRange = 0; //this.collider.radius * 3; // Minimum distance from others
     this.centeringFactor = 0; //0.0005; // Cohesion strength
     this.avoidFactor = 0; //0.5; // Separation strength
     this.matchingFactor = 0; //0.01; // Alignment strength
     this.turnFactor = 0.1; // Boundary avoidance strength
     this.margin = 20; // Distance from edge to start turning
-    this.scale=2
-    this.scaleX = this.scaleY = this.scale
+
+    const scale = 2;
+    this.spriteRenderer.scaleX = scale;
+    this.spriteRenderer.scaleY = scale;
   }
 
   /**
@@ -79,8 +78,15 @@ class Predator extends Boid {
    * Reset all properties to initial state
    */
   awake() {
+    // console.log(`Predator ${this.index} awake() called - calling parent Boid.awake()`);
+
+    // Call parent Boid.awake() to initialize position
+    super.awake();
+
     this.setAnimationState(Predator.anims.IDLE);
     this.setAnimationSpeed(0.15);
+
+    // console.log(`Predator ${this.index} fully initialized at position (${this.transform.x.toFixed(1)}, ${this.transform.y.toFixed(1)})`);
   }
 
   /**
@@ -88,7 +94,7 @@ class Predator extends Boid {
    * Cleanup and save state if needed
    */
   sleep() {
-    console.log(`Predator ${this.index} despawned`);
+    // console.log(`Predator ${this.index} despawned`);
     // Could save hunting stats, etc.
   }
 
@@ -150,19 +156,28 @@ class Predator extends Boid {
 
   /**
    * Apply hunting force toward closest prey (if found)
+   * CACHE-FRIENDLY: Direct array access
    * @returns {boolean} True if actively hunting prey
    */
   applyHunting(i, dtRatio, context) {
     if (context.closestPreyIndex !== -1) {
-      const myX = GameObject.x[i];
-      const myY = GameObject.y[i];
-      const dx = GameObject.x[context.closestPreyIndex] - myX;
-      const dy = GameObject.y[context.closestPreyIndex] - myY;
+      // Cache array references
+      const tX = Transform.x;
+      const tY = Transform.y;
+      const rbAX = RigidBody.ax;
+      const rbAY = RigidBody.ay;
+
+      const myX = tX[i];
+      const myY = tY[i];
+
+      const preyIndex = context.closestPreyIndex;
+      const dx = tX[preyIndex] - myX;
+      const dy = tY[preyIndex] - myY;
       const dist = Math.sqrt(context.closestDist2);
 
       if (dist > 0) {
-        this.ax += (dx / dist) * this.huntFactor * dtRatio;
-        this.ay += (dy / dist) * this.huntFactor * dtRatio;
+        rbAX[i] += (dx / dist) * this.huntFactor * dtRatio;
+        rbAY[i] += (dy / dist) * this.huntFactor * dtRatio;
       }
       return true;
     }
@@ -172,9 +187,15 @@ class Predator extends Boid {
   /**
    * OPTIMIZED: Update animation based on movement speed and hunting state
    * Uses helper methods with dirty flag optimization for efficient rendering
+   * CACHE-FRIENDLY: Direct array access for reading physics data
    */
   updateAnimation(i, huntingPrey) {
-    const speed = GameObject.speed[i];
+    // Cache array references for reading
+    const rbSpeed = RigidBody.speed;
+    const rbVX = RigidBody.vx;
+
+    const speed = rbSpeed[i];
+    const vx = rbVX[i];
 
     // Determine animation state based on speed
     if (speed > 1) {
@@ -189,10 +210,10 @@ class Predator extends Boid {
     } else {
       this.setTint(0xffffff); // Normal white
     }
-    const vx = GameObject.vx[i];
-  // Flip sprite based on movement direction (only if moving significantly)
+
+    // Flip sprite based on movement direction (only if moving significantly)
     if (Math.abs(vx) > 0.1) {
-      this.setScale(vx < 0 ? -2 : 2,2); // Flip X when moving left
+      this.setScale(vx < 0 ? -2 : 2, 2); // Flip X when moving left
     }
   }
 }

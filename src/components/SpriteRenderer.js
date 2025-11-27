@@ -1,7 +1,7 @@
 // SpriteRenderer.js - Rendering component for visual appearance
 // Handles animation, tinting, transparency, and sprite effects
 
-import { Component } from '../core/Component.js';
+import { Component } from "../core/Component.js";
 
 class SpriteRenderer extends Component {
   // Array schema - defines all rendering properties
@@ -28,6 +28,7 @@ class SpriteRenderer extends Component {
 
     // Visibility
     renderVisible: Uint8Array, // Override visibility (separate from culling)
+    isItOnScreen: Uint8Array, // Screen culling - updated by spatial worker
 
     // Performance optimization - dirty flag
     renderDirty: Uint8Array, // 1 = visual properties changed, needs update this frame

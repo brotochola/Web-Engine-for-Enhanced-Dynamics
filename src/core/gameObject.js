@@ -1,10 +1,10 @@
 // GameObject.js - Base class for all game entities using component composition
 // Entities are composed of components (Transform, RigidBody, Collider, etc.)
 
-import { Transform } from '../components/Transform.js';
-import { RigidBody } from '../components/RigidBody.js';
-import { Collider } from '../components/Collider.js';
-import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { Transform } from "../components/Transform.js";
+import { RigidBody } from "../components/RigidBody.js";
+import { Collider } from "../components/Collider.js";
+import { SpriteRenderer } from "../components/SpriteRenderer.js";
 
 class GameObject {
   // Entity class metadata (for spawning system)
@@ -19,22 +19,20 @@ class GameObject {
   static neighborData = null;
   static distanceData = null; // Squared distances for each neighbor
 
-  // Entity state arrays (minimal - just active state and type)
-  static active = null; // Uint8Array
+  // Entity metadata (minimal - just entityType)
   static entityType = null; // Uint8Array
-  static isItOnScreen = null; // Uint8Array
-  
-  static sharedBuffer = null; // For entity state arrays
+
+  static sharedBuffer = null; // For entity metadata
   static entityCount = 0;
 
   static instances = [];
 
   /**
-   * Initialize entity state arrays from SharedArrayBuffer
-   * This only initializes the minimal entity state (active, entityType, isItOnScreen)
-   * Components are initialized separately
+   * Initialize entity metadata from SharedArrayBuffer
+   * This only initializes minimal entity metadata (entityType)
+   * Components (including Transform with 'active') are initialized separately
    *
-   * @param {SharedArrayBuffer} buffer - The shared memory for entity state
+   * @param {SharedArrayBuffer} buffer - The shared memory for entity metadata
    * @param {number} count - Total number of entities
    * @param {SharedArrayBuffer} [neighborBuffer] - Optional neighbor data buffer
    * @param {SharedArrayBuffer} [distanceBuffer] - Optional distance data buffer
@@ -48,10 +46,8 @@ class GameObject {
     this.sharedBuffer = buffer;
     this.entityCount = count;
 
-    // Create entity state arrays
-    this.active = new Uint8Array(buffer, 0, count);
-    this.entityType = new Uint8Array(buffer, count, count);
-    this.isItOnScreen = new Uint8Array(buffer, count * 2, count);
+    // Create entity metadata array (just entityType now)
+    this.entityType = new Uint8Array(buffer, 0, count);
 
     // Initialize neighbor data if provided
     if (neighborBuffer) {
@@ -65,13 +61,14 @@ class GameObject {
   }
 
   /**
-   * Calculate buffer size needed for entity state arrays
+   * Calculate buffer size needed for entity metadata
    * @param {number} count - Number of entities
    * @returns {number} Buffer size in bytes
    */
   static getBufferSize(count) {
-    // 3 Uint8Arrays: active, entityType, isItOnScreen
-    return count * 3;
+    // 1 Uint8Array: entityType
+    // Note: 'active' moved to Transform, 'isItOnScreen' moved to SpriteRenderer
+    return count * 1;
   }
 
   /**
@@ -113,9 +110,12 @@ class GameObject {
     // Store component indices
     this._componentIndices = componentIndices;
 
-    // Set active in shared array
-    GameObject.active[index] = 1;
+    // Set entityType metadata
     GameObject.entityType[index] = this.constructor.entityType || 0;
+
+    // Set INACTIVE in Transform (entities start in pool, spawn() activates them)
+    // Note: Transform is always present at entity index
+    Transform.active[index] = 0;
 
     GameObject.instances.push(this);
     this.constructor.instances.push(this);
@@ -274,7 +274,10 @@ class GameObject {
   }
 
   setVisible(visible) {
-    if (this.spriteRenderer && this.spriteRenderer.renderVisible !== (visible ? 1 : 0)) {
+    if (
+      this.spriteRenderer &&
+      this.spriteRenderer.renderVisible !== (visible ? 1 : 0)
+    ) {
       this.spriteRenderer.renderVisible = visible ? 1 : 0;
       this.markDirty();
     }
@@ -299,8 +302,8 @@ class GameObject {
    */
   setSpriteProp(prop, value) {
     if (this.logicWorker) {
-      this.logicWorker.sendDataToWorker('renderer', {
-        cmd: 'setProp',
+      this.logicWorker.sendDataToWorker("renderer", {
+        cmd: "setProp",
         entityId: this.index,
         prop: prop,
         value: value,
@@ -313,8 +316,8 @@ class GameObject {
    */
   callSpriteMethod(method, args = []) {
     if (this.logicWorker) {
-      this.logicWorker.sendDataToWorker('renderer', {
-        cmd: 'callMethod',
+      this.logicWorker.sendDataToWorker("renderer", {
+        cmd: "callMethod",
         entityId: this.index,
         method: method,
         args: args,
@@ -327,8 +330,8 @@ class GameObject {
    */
   updateSprite(updates) {
     if (this.logicWorker) {
-      this.logicWorker.sendDataToWorker('renderer', {
-        cmd: 'batchUpdate',
+      this.logicWorker.sendDataToWorker("renderer", {
+        cmd: "batchUpdate",
         entityId: this.index,
         ...updates,
       });
@@ -365,9 +368,9 @@ class GameObject {
    */
   despawn() {
     // Prevent double-despawn which corrupts the free list
-    if (GameObject.active[this.index] === 0) return;
+    if (Transform.active[this.index] === 0) return;
 
-    GameObject.active[this.index] = 0;
+    Transform.active[this.index] = 0;
 
     // Return to free list if exists (O(1))
     const EntityClass = this.constructor;
@@ -520,9 +523,7 @@ class GameObject {
     const instance = EntityClass.instances[i - EntityClass.startIndex];
 
     if (!instance) {
-      console.error(
-        `No instance found at index ${i} for ${EntityClass.name}`
-      );
+      console.error(`No instance found at index ${i} for ${EntityClass.name}`);
       return null;
     }
 
@@ -534,25 +535,14 @@ class GameObject {
       instance.rigidBody.vy = 0;
       instance.rigidBody.speed = 0;
       instance.rigidBody.velocityAngle = 0;
-      instance.rigidBody.x = 0;
-      instance.rigidBody.y = 0;
       instance.rigidBody.px = 0;
       instance.rigidBody.py = 0;
-      instance.rigidBody.rotation = 0;
     }
 
     if (instance.transform) {
-      instance.transform.localX = 0;
-      instance.transform.localY = 0;
-      instance.transform.localRotation = 0;
-      instance.transform.localScaleX = 1;
-      instance.transform.localScaleY = 1;
-      instance.transform.worldX = 0;
-      instance.transform.worldY = 0;
-      instance.transform.worldRotation = 0;
-      instance.transform.worldScaleX = 1;
-      instance.transform.worldScaleY = 1;
-      instance.transform.parentId = -1;
+      instance.transform.x = 0;
+      instance.transform.y = 0;
+      instance.transform.rotation = 0;
     }
 
     if (instance.spriteRenderer) {
@@ -564,8 +554,8 @@ class GameObject {
     // Apply spawn config BEFORE activating
     Object.keys(spawnConfig).forEach((key) => {
       // Handle component properties
-      if (key.includes('.')) {
-        const [compName, propName] = key.split('.');
+      if (key.includes(".")) {
+        const [compName, propName] = key.split(".");
         const comp = instance[compName];
         if (comp && comp[propName] !== undefined) {
           comp[propName] = spawnConfig[key];
@@ -576,18 +566,22 @@ class GameObject {
     });
 
     // Initialize previous positions for Verlet integration
-    if (instance.rigidBody) {
-      instance.rigidBody.px = instance.rigidBody.x - instance.rigidBody.vx;
-      instance.rigidBody.py = instance.rigidBody.y - instance.rigidBody.vy;
+    if (instance.rigidBody && instance.transform) {
+      instance.rigidBody.px = instance.transform.x - instance.rigidBody.vx;
+      instance.rigidBody.py = instance.transform.y - instance.rigidBody.vy;
     }
 
     // Call lifecycle method BEFORE activating
     if (instance.awake) {
+      // console.log(`GameObject.spawn: Calling awake() for ${EntityClass.name} index ${i}`);
       instance.awake();
+      // console.log(`GameObject.spawn: Finished awake() for ${EntityClass.name} index ${i}`);
+    } else {
+      // console.log(`GameObject.spawn: No awake() method for ${EntityClass.name} index ${i}`);
     }
 
     // NOW activate the entity
-    GameObject.active[i] = 1;
+    Transform.active[i] = 1;
 
     return instance;
   }
@@ -622,7 +616,7 @@ class GameObject {
     let activeCount = 0;
 
     for (let i = startIndex; i < startIndex + total; i++) {
-      if (GameObject.active[i]) {
+      if (Transform.active[i]) {
         activeCount++;
       }
     }
@@ -653,14 +647,14 @@ class GameObject {
     let despawnedCount = 0;
 
     for (let i = startIndex; i < endIndex; i++) {
-      if (GameObject.active[i]) {
+      if (Transform.active[i]) {
         const instance = EntityClass.instances[i - startIndex];
         if (instance && instance.despawn) {
           instance.despawn();
           despawnedCount++;
         } else {
           // Manual despawn if instance missing
-          GameObject.active[i] = 0;
+          Transform.active[i] = 0;
 
           // Return to free list if exists
           if (EntityClass.freeList) {

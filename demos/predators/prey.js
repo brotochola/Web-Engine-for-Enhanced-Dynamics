@@ -1,8 +1,10 @@
 // Prey.js - Boid that tries to survive by avoiding predators
 // Extends Boid to implement prey-specific behaviors
 
-import { GameObject } from '/src/core/gameObject.js';
-import { Boid } from './boid.js';
+import { GameObject } from "/src/core/gameObject.js";
+import { RigidBody } from "/src/components/RigidBody.js";
+import { Boid } from "./boid.js";
+import { Predator } from "./predator.js";
 
 class Prey extends Boid {
   static entityType = 1; // 1 = Prey
@@ -36,32 +38,36 @@ class Prey extends Boid {
   /**
    * Prey constructor - initializes prey properties
    * @param {number} index - Position in shared arrays
+   * @param {Object} componentIndices - Component indices { transform, rigidBody, collider, spriteRenderer }
    * @param {Object} config - Configuration object from GameEngine
    */
-  constructor(index, config = {}, logicWorker = null) {
-    super(index, config, logicWorker);
+  constructor(index, componentIndices, config = {}, logicWorker = null) {
+    super(index, componentIndices, config, logicWorker);
 
     const i = index;
 
     // Initialize prey-specific properties
     this.predatorAvoidFactor = 3; // Strong avoidance of predators
     this.life = 1;
-    // Initialize GameObject physics properties
-    this.maxVel = 3;
-    this.maxAcc = 0.1;
-    this.minSpeed = 0;
-    this.friction = 0.05;
-    this.radius = 5;
 
-    this.vx = 0;
-    this.vy = 0;
+    // Override Boid's physics properties for prey behavior
+    this.rigidBody.maxVel = 3;
+    this.rigidBody.maxAcc = 0.1;
+    this.rigidBody.minSpeed = 0;
+    this.rigidBody.friction = 0.05;
+    this.collider.radius = 5;
 
-    // Initialize GameObject perception
-    this.visualRange = 60; // How far boid can see
-    this.animationSpeed = 0.15;
+    // Override Boid's perception
+    this.collider.visualRange = 60; // How far prey can see
+    this.spriteRenderer.animationSpeed = 0.15;
 
-    // Initialize Boid-specific behavior properties (with slight randomization)
-    this.protectedRange = this.radius * 4; // Minimum distance from others
+    // Set sprite scale
+    const scale = 1;
+    this.spriteRenderer.scaleX = scale;
+    this.spriteRenderer.scaleY = scale;
+
+    // Override Boid-specific behavior properties
+    this.protectedRange = this.collider.radius * 4; // Minimum distance from others
     this.centeringFactor = 0; //0.005; // Cohesion strength
     this.avoidFactor = 3; // Separation strength
     this.matchingFactor = 0.01; // Alignment strength
@@ -74,19 +80,16 @@ class Prey extends Boid {
    * Reset all properties to initial state
    */
   awake() {
+    // Call parent Boid.awake() to initialize position
+    super.awake();
+
     // Reset health
     this.life = 1.0;
 
     // Reset visual properties
-
+    this.setScale(1, 1); // CRITICAL: Set sprite scale!
     this.setAnimationState(Prey.anims.IDLE);
     this.setAnimationSpeed(0.15);
-
-    // console.log(
-    //   `Prey ${this.index} spawned at (${this.x.toFixed(1)}, ${this.y.toFixed(
-    //     1
-    //   )})`
-    // );
   }
 
   /**
@@ -94,7 +97,6 @@ class Prey extends Boid {
    * Cleanup and save state if needed
    */
   sleep() {
-    // console.log(`Prey ${this.index} despawned (life: ${this.life.toFixed(2)})`);
     // Could save stats, play death effects, etc.
   }
 
@@ -154,12 +156,17 @@ class Prey extends Boid {
 
   /**
    * Apply fleeing force away from predators (if any found)
+   * CACHE-FRIENDLY: Direct array access
    * @returns {boolean} True if predator is nearby
    */
   applyFleeing(i, dtRatio, context) {
     if (context.predatorCount > 0) {
-      GameObject.ax[i] += context.fleeX * Prey.predatorAvoidFactor[i] * dtRatio;
-      GameObject.ay[i] += context.fleeY * Prey.predatorAvoidFactor[i] * dtRatio;
+      // Cache array references
+      const rbAX = RigidBody.ax;
+      const rbAY = RigidBody.ay;
+
+      rbAX[i] += context.fleeX * this.predatorAvoidFactor * dtRatio;
+      rbAY[i] += context.fleeY * this.predatorAvoidFactor * dtRatio;
       return true;
     }
     return false;
@@ -168,10 +175,15 @@ class Prey extends Boid {
   /**
    * OPTIMIZED: Update animation based on movement speed and state
    * Uses helper methods with dirty flag optimization for efficient rendering
+   * CACHE-FRIENDLY: Direct array access for reading physics data
    */
   updateAnimation(i, predatorNearby) {
-    const speed = GameObject.speed[i];
-    const vx = GameObject.vx[i];
+    // Cache array references for reading
+    const rbSpeed = RigidBody.speed;
+    const rbVX = RigidBody.vx;
+
+    const speed = rbSpeed[i];
+    const vx = rbVX[i];
 
     // Determine animation state based on speed
     if (speed > 0.1) {
@@ -184,9 +196,9 @@ class Prey extends Boid {
     // Update tint based on life (white = healthy, red = damaged)
     // Map life from white (0xffffff) to red (0xff0000) based on remaining life ratio
     let newTint;
-    if (Prey.life[i] > 0) {
-      const maxLife = Prey.maxLife ? Prey.maxLife[i] : 1;
-      const ratio = Math.max(0, Math.min(1, Prey.life[i] / maxLife));
+    if (this.life > 0) {
+      const maxLife = 1; // Default max life
+      const ratio = Math.max(0, Math.min(1, this.life / maxLife));
       // Interpolate green/blue channel from 255 (white) to 0 (red)
       const gb = Math.round(255 * ratio);
       newTint = (0xff << 16) | (gb << 8) | gb;
@@ -215,23 +227,20 @@ class Prey extends Boid {
   onCollisionStay(otherIndex) {
     // Could add ongoing collision effects here
     // For example: losing health over time while touching hazards
-
-    const i = this.index;
-
-    // Check if we collided with a predator
-    if (GameObject.entityType[otherIndex] === Predator.entityType) {
-      Prey.life[i] -= 0.1;
-      if (Prey.life[i] <= 0) {
-        this.despawn(); // Use proper despawn instead of directly setting active
-      }
-
-      // Optional: Could post message to main thread for sound/particle effects
-      // this.logicWorker.self.postMessage({
-      //   msg: 'preyCaught',
-      //   preyIndex: i,
-      //   predatorIndex: otherIndex
-      // });
-    }
+    // const i = this.index;
+    // // Check if we collided with a predator
+    // if (GameObject.entityType[otherIndex] === Predator.entityType) {
+    //   this.life -= 0.1;
+    //   if (this.life <= 0) {
+    //     this.despawn(); // Use proper despawn instead of directly setting active
+    //   }
+    //   // Optional: Could post message to main thread for sound/particle effects
+    //   // this.logicWorker.self.postMessage({
+    //   //   msg: 'preyCaught',
+    //   //   preyIndex: i,
+    //   //   predatorIndex: otherIndex
+    //   // });
+    // }
   }
 
   /**

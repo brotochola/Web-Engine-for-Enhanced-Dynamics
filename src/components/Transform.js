@@ -1,27 +1,18 @@
-// Transform.js - Transform component for entity positioning and hierarchy
-// Handles local and world space transforms with parent-child relationships
+// Transform.js - Transform component for entity positioning
+// Handles position, rotation, and active state (every entity has this)
 
-import { Component } from '../core/Component.js';
+import { Component } from "../core/Component.js";
 
 class Transform extends Component {
   // Array schema - defines all transform properties
   static ARRAY_SCHEMA = {
-    // Hierarchy
-    parentId: Int32Array, // -1 if no parent
+    // Entity state
+    active: Uint8Array, // 0 = inactive, 1 = active
 
-    // Local transform (relative to parent)
-    localX: Float32Array,
-    localY: Float32Array,
-    localRotation: Float32Array,
-    localScaleX: Float32Array,
-    localScaleY: Float32Array,
-
-    // World transform (computed by TransformSystem)
-    worldX: Float32Array,
-    worldY: Float32Array,
-    worldRotation: Float32Array,
-    worldScaleX: Float32Array,
-    worldScaleY: Float32Array,
+    // Position and rotation (world space)
+    x: Float32Array,
+    y: Float32Array,
+    rotation: Float32Array,
   };
 }
 

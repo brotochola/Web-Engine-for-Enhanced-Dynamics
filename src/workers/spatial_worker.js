@@ -7,10 +7,11 @@ self.postMessage({
 // Now uses per-entity visual ranges and accurate distance checking
 
 // Import engine dependencies
-import { GameObject } from '../core/gameObject.js';
-import { Transform } from '../components/Transform.js';
-import { Collider } from '../components/Collider.js';
-import { AbstractWorker } from './AbstractWorker.js';
+import { GameObject } from "../core/gameObject.js";
+import { Transform } from "../components/Transform.js";
+import { Collider } from "../components/Collider.js";
+import { SpriteRenderer } from "../components/SpriteRenderer.js";
+import { AbstractWorker } from "./AbstractWorker.js";
 
 // Note: Spatial worker doesn't need game-specific entity classes
 // It only works with GameObject and component arrays for spatial partitioning
@@ -53,9 +54,21 @@ class SpatialWorker extends AbstractWorker {
     // console.log("SPATIAL WORKER: Initializing with SharedArrayBuffer");
 
     // Initialize component arrays
-    Transform.initializeArrays(data.buffers.componentData.Transform, this.entityCount);
+    Transform.initializeArrays(
+      data.buffers.componentData.Transform,
+      this.entityCount
+    );
     if (data.buffers.componentData.Collider) {
-      Collider.initializeArrays(data.buffers.componentData.Collider, data.componentPools.Collider.count);
+      Collider.initializeArrays(
+        data.buffers.componentData.Collider,
+        data.componentPools.Collider.count
+      );
+    }
+    if (data.buffers.componentData.SpriteRenderer) {
+      SpriteRenderer.initializeArrays(
+        data.buffers.componentData.SpriteRenderer,
+        data.componentPools.SpriteRenderer.count
+      );
     }
 
     // Calculate grid parameters from config
@@ -112,17 +125,17 @@ class SpatialWorker extends AbstractWorker {
     }
 
     // Insert only active entities into grid
-    const active = GameObject.active;
-    const worldX = Transform.worldX;
-    const worldY = Transform.worldY;
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
 
     for (let i = 0; i < this.entityCount; i++) {
       // Skip inactive entities - they don't participate in spatial queries
       if (!active[i]) continue;
 
       // Skip entities with invalid positions (race condition during initialization)
-      const posX = worldX[i];
-      const posY = worldY[i];
+      const posX = x[i];
+      const posY = y[i];
       if (isNaN(posX) || isNaN(posY)) continue;
 
       const cellIndex = this.getCellIndex(posX, posY);
@@ -135,9 +148,9 @@ class SpatialWorker extends AbstractWorker {
    * Uses per-entity visual ranges and checks actual distances
    */
   findAllNeighbors() {
-    const active = GameObject.active;
-    const worldX = Transform.worldX;
-    const worldY = Transform.worldY;
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
     const visualRange = Collider.visualRange;
     const radius = Collider.radius;
 
@@ -150,9 +163,9 @@ class SpatialWorker extends AbstractWorker {
       if (!active[i]) continue;
 
       // Skip entities with invalid positions
-      if (isNaN(worldX[i]) || isNaN(worldY[i])) continue;
+      if (isNaN(x[i]) || isNaN(y[i])) continue;
 
-      this.findNeighborsForEntity(i, worldX, worldY, visualRange, radius);
+      this.findNeighborsForEntity(i, x, y, visualRange, radius);
     }
 
     if (this.collisionData) {
@@ -263,10 +276,10 @@ class SpatialWorker extends AbstractWorker {
   updateScreenVisibility() {
     if (!this.cameraData) return;
 
-    const active = GameObject.active;
-    const worldX = Transform.worldX;
-    const worldY = Transform.worldY;
-    const isItOnScreen = GameObject.isItOnScreen;
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
+    const isItOnScreen = SpriteRenderer.isItOnScreen;
 
     // Read camera data: [zoom, cameraX, cameraY]
     const zoom = this.cameraData[0];
@@ -288,8 +301,8 @@ class SpatialWorker extends AbstractWorker {
       // Transform world coordinates to screen coordinates
       // Same as pixi_worker.worldToScreenPosition()
       // mainContainer.x = -cameraX * zoom, so screenX = worldX * zoom + (-cameraX * zoom)
-      const screenX = worldX[i] * zoom - cameraX * zoom;
-      const screenY = worldY[i] * zoom - cameraY * zoom;
+      const screenX = x[i] * zoom - cameraX * zoom;
+      const screenY = y[i] * zoom - cameraY * zoom;
 
       // Check if screen position is within viewport bounds (with margin)
       // Same as pixi_worker.isSpriteVisible()
@@ -299,7 +312,7 @@ class SpatialWorker extends AbstractWorker {
         screenY > -marginY &&
         screenY < this.canvasHeight + marginY;
 
-      isItOnScreen[i] = 1; // FORCE VISIBLE FOR DEBUGGING
+      isItOnScreen[i] = onScreen ? 1 : 0;
     }
   }
 

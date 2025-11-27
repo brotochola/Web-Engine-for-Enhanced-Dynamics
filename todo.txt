@@ -3,7 +3,9 @@
 -----------------------
 
 
+-getters con stats en tiempo real
 
+-convertir todos los pngs en uno unico con un unico json
 
 
 
@@ -16,6 +18,13 @@
 
 -el mouse deberia ser un gameobject,
  asi podemos ver si el mouse esta cerca de las entidades
+
+
+
+-rigidbodies:
+ q no tengan x e y, pq ya lo tiene transform.
+ pero q si tengan px y py
+
 
 
 -------------------------------------------------------------------------------------------------

@@ -1,15 +1,12 @@
 // RigidBody.js - Physics component for entity motion and dynamics
 // Handles velocity, acceleration, mass, and physics properties
+// Position and rotation are stored in Transform component
 
-import { Component } from '../core/Component.js';
+import { Component } from "../core/Component.js";
 
 class RigidBody extends Component {
   // Array schema - defines all physics properties
   static ARRAY_SCHEMA = {
-    // Position (for physics simulation)
-    x: Float32Array,
-    y: Float32Array,
-
     // Linear motion
     vx: Float32Array,
     vy: Float32Array,
@@ -21,7 +18,6 @@ class RigidBody extends Component {
     py: Float32Array, // Previous Y position
 
     // Angular motion
-    rotation: Float32Array,
     angularVelocity: Float32Array,
     angularAccel: Float32Array,
 
@@ -40,10 +36,6 @@ class RigidBody extends Component {
     maxAcc: Float32Array,
     minSpeed: Float32Array,
     friction: Float32Array,
-
-    // Physics mode
-    isKinematic: Uint8Array, // 0 = dynamic, 1 = kinematic
-    useGravity: Uint8Array,
 
     // Computed values
     velocityAngle: Float32Array,
