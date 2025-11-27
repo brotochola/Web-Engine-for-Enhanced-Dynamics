@@ -156,8 +156,7 @@ class PixiRenderer extends AbstractWorker {
     const animationSpeed = SpriteRenderer.animationSpeed;
     const tint = SpriteRenderer.tint;
     const alpha = SpriteRenderer.alpha;
-    const flipX = SpriteRenderer.flipX;
-    const flipY = SpriteRenderer.flipY;
+
     const scaleX = SpriteRenderer.scaleX;
     const scaleY = SpriteRenderer.scaleY;
     const renderVisible = SpriteRenderer.renderVisible;
@@ -200,8 +199,8 @@ class PixiRenderer extends AbstractWorker {
         bodySprite.alpha = alpha[i];
 
         // Handle flipping
-        bodySprite.scale.x = flipX[i] ? -scaleX[i] : scaleX[i];
-        bodySprite.scale.y = flipY[i] ? -scaleY[i] : scaleY[i];
+        bodySprite.scale.x = scaleX[i];
+        bodySprite.scale.y = scaleY[i];
 
         // Update animation if changed
         this.updateSpriteAnimation(bodySprite, i, animationState[i]);

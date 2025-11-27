@@ -15,9 +15,6 @@ class SpriteRenderer extends Component {
     tint: Uint32Array, // Color tint (0xFFFFFF = white/normal)
     alpha: Float32Array, // Transparency (0-1)
 
-    // Sprite modifications
-    flipX: Uint8Array, // Flip horizontally
-    flipY: Uint8Array, // Flip vertically
     scaleX: Float32Array, // Separate X scale
     scaleY: Float32Array, // Separate Y scale
 

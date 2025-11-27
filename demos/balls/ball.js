@@ -1,7 +1,7 @@
-import { GameObject } from '/src/core/gameObject.js';
-import { RigidBody } from '/src/components/RigidBody.js';
-import { Collider } from '/src/components/Collider.js';
-import { SpriteRenderer } from '/src/components/SpriteRenderer.js';
+import { GameObject } from "/src/core/gameObject.js";
+import { RigidBody } from "/src/components/RigidBody.js";
+import { Collider } from "/src/components/Collider.js";
+import { SpriteRenderer } from "/src/components/SpriteRenderer.js";
 
 class Ball extends GameObject {
   static entityType = 1; // 1 = Ball
@@ -12,8 +12,8 @@ class Ball extends GameObject {
 
   // Sprite configuration - using static sprite
   static spriteConfig = {
-    type: 'static',
-    textureName: 'ball',
+    type: "static",
+    textureName: "ball",
   };
 
   // /**
@@ -40,21 +40,18 @@ class Ball extends GameObject {
     this.rigidBody.minSpeed = 0; // Balls can come to rest
     this.rigidBody.friction = 0.01; // Low friction - let balls settle naturally
 
-    // Set initial position in RigidBody (physics)
-    this.rigidBody.x = Math.random() * (config.worldWidth || 7600);
-    this.rigidBody.y = Math.random() * 1000 + 50; // Spawn spread out vertically
-    this.rigidBody.px = this.rigidBody.x; // Initialize previous position for Verlet
-    this.rigidBody.py = this.rigidBody.y;
+    // Initialize Transform position
+    this.transform.x = Math.random() * (config.worldWidth || 7600);
+    this.transform.y = Math.random() * 1000 + 50; // Spawn spread out vertically
+    this.transform.rotation = 0;
+
+    // Initialize RigidBody physics properties
+    this.rigidBody.px = this.transform.x; // Initialize previous position for Verlet
+    this.rigidBody.py = this.transform.y;
     this.rigidBody.vx = 0;
     this.rigidBody.vy = 0;
     this.rigidBody.ax = 0;
     this.rigidBody.ay = 0;
-
-    // Sync Transform with RigidBody position (renderer uses Transform.worldX/Y)
-    this.transform.localX = this.rigidBody.x;
-    this.transform.localY = this.rigidBody.y;
-    this.transform.worldX = this.rigidBody.x;
-    this.transform.worldY = this.rigidBody.y;
 
     const actualBallSize = 14; //png width
     const ballRadius = Math.random() * 20 + 10;
@@ -68,8 +65,8 @@ class Ball extends GameObject {
     this.spriteRenderer.scaleX = scale;
     this.spriteRenderer.scaleY = scale;
 
-    this.setSpriteProp('anchor.y', 0.5);
-    this.setSpriteProp('anchor.x', 0.5);
+    this.setSpriteProp("anchor.y", 0.5);
+    this.setSpriteProp("anchor.x", 0.5);
 
     // Reset visual properties
     this.setAlpha(1.0);
@@ -91,11 +88,11 @@ class Ball extends GameObject {
   }
 
   onCollisionEnter(otherIndex) {
-    this.setTint(0xff0000);
+    // this.setTint(0xff0000);
   }
 
   onCollisionExit(otherIndex) {
-    this.setTint(this.myColor);  
+    // this.setTint(this.myColor);
   }
 
   /**
@@ -111,28 +108,23 @@ class Ball extends GameObject {
    * Note: Gravity and collision resolution are handled by physics worker
    */
   tick(dtRatio, inputData) {
-    
-  
-  
-  if(inputData[3] ){
-    const dist2=(this.rigidBody.x-inputData[0])**2+(this.rigidBody.y-inputData[1])**2
-    if(dist2>20000)return
-    
-    this.rigidBody.ax = (this.rigidBody.x-inputData[0])*0.2
-    this.rigidBody.ay = (this.rigidBody.y-inputData[1])*0.2
-  }
-  
-    
-  //  //on click of the mouse, make the balls that are close, to explode (add ax and ay
-  //  if(gameEngine.mouse.isDown){
-  //   const ball = this.rigidBody;
-  //   ball.ax = 1;
-  //   ball.ay = 1;
-  //  }
-   
-  }
+    if (inputData[3]) {
+      const dist2 =
+        (this.transform.x - inputData[0]) ** 2 +
+        (this.transform.y - inputData[1]) ** 2;
+      if (dist2 > 20000) return;
 
+      this.rigidBody.ax = (this.transform.x - inputData[0]) * 0.2;
+      this.rigidBody.ay = (this.transform.y - inputData[1]) * 0.2;
+    }
 
+    //  //on click of the mouse, make the balls that are close, to explode (add ax and ay
+    //  if(gameEngine.mouse.isDown){
+    //   const ball = this.rigidBody;
+    //   ball.ax = 1;
+    //   ball.ay = 1;
+    //  }
+  }
 }
 
 // ES6 module export

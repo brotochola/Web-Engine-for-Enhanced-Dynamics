@@ -258,21 +258,6 @@ class GameObject {
     if (changed) this.markDirty();
   }
 
-  setFlip(flipX, flipY) {
-    if (!this.spriteRenderer) return;
-
-    let changed = false;
-    if (this.spriteRenderer.flipX !== (flipX ? 1 : 0)) {
-      this.spriteRenderer.flipX = flipX ? 1 : 0;
-      changed = true;
-    }
-    if (flipY !== undefined && this.spriteRenderer.flipY !== (flipY ? 1 : 0)) {
-      this.spriteRenderer.flipY = flipY ? 1 : 0;
-      changed = true;
-    }
-    if (changed) this.markDirty();
-  }
-
   setVisible(visible) {
     if (
       this.spriteRenderer &&

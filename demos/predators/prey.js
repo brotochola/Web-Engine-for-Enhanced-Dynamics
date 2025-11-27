@@ -209,7 +209,7 @@ class Prey extends Boid {
 
     // Flip sprite based on movement direction (only if moving significantly)
     if (Math.abs(vx) > 0.1) {
-      this.setFlip(vx < 0); // Flip X when moving left
+      this.setScale(vx < 0 ? -1 : 1, 1); // Flip X when moving left
     }
   }
 
