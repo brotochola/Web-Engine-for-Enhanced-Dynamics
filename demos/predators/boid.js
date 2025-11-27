@@ -5,13 +5,14 @@ import { GameObject } from "/src/core/gameObject.js";
 import { RigidBody } from "/src/components/RigidBody.js";
 import { Collider } from "/src/components/Collider.js";
 import { SpriteRenderer } from "/src/components/SpriteRenderer.js";
+import { Flocking } from "./Flocking.js";
 
 class Boid extends GameObject {
   static entityType = 0; // 0 = Boid
   static instances = []; // Instance tracking for this class
 
-  // Define components this entity uses
-  static components = [RigidBody, Collider, SpriteRenderer];
+  // Define components this entity uses (including custom Flocking component)
+  static components = [RigidBody, Collider, SpriteRenderer, Flocking];
 
   // Sprite configuration - standardized format for static sprites
   static spriteConfig = {
@@ -19,23 +20,15 @@ class Boid extends GameObject {
     textureName: "bunny",
   };
 
-  // Define the boid-specific properties schema
-  // GameEngine will automatically create all the required static properties!
-  static ARRAY_SCHEMA = {
-    protectedRange: Float32Array,
-    centeringFactor: Float32Array,
-    avoidFactor: Float32Array,
-    matchingFactor: Float32Array,
-    turnFactor: Float32Array,
-    margin: Float32Array,
-  };
+  // Note: Flocking behavior properties are now in the Flocking component
+  // (protectedRange, centeringFactor, avoidFactor, matchingFactor, turnFactor, margin)
 
   /**
    * Boid constructor - initializes this boid's properties
    * Sets both GameObject properties (transform/physics) and Boid properties (behavior)
    *
    * @param {number} index - Position in shared arrays
-   * @param {Object} componentIndices - Component indices { transform, rigidBody, collider, spriteRenderer }
+   * @param {Object} componentIndices - Component indices { transform, rigidBody, collider, spriteRenderer, flocking }
    * @param {Object} config - Configuration object from GameEngine
    */
   constructor(index, componentIndices, config = {}, logicWorker = null) {
@@ -43,7 +36,7 @@ class Boid extends GameObject {
 
     const i = index;
 
-    // Initialize RigidBody constraints (behavior parameters stay in constructor)
+    // Initialize RigidBody constraints
     this.rigidBody.maxVel = 10;
     this.rigidBody.maxAcc = 0.2;
     this.rigidBody.minSpeed = 1; // Keep boids moving
@@ -53,17 +46,17 @@ class Boid extends GameObject {
     this.collider.radius = 10;
     this.collider.visualRange = 50; // How far boid can see
 
-    // Initialize Boid-specific behavior properties (with slight randomization)
-    this.protectedRange = this.collider.radius * 2; // Minimum distance from others
-    this.centeringFactor = 0.001; // Cohesion strength
-    this.avoidFactor = 0.3; // Separation strength
-    this.matchingFactor = 0.1; // Alignment strength
-    this.turnFactor = 0.1; // Boundary avoidance strength
-    this.margin = 20; // Distance from edge to start turning
+    // Initialize Flocking component behavior properties
+    this.flocking.protectedRange = this.collider.radius * 2; // Minimum distance from others
+    this.flocking.centeringFactor = 0.001; // Cohesion strength
+    this.flocking.avoidFactor = 0.3; // Separation strength
+    this.flocking.matchingFactor = 0.1; // Alignment strength
+    this.flocking.turnFactor = 0.1; // Boundary avoidance strength
+    this.flocking.margin = 20; // Distance from edge to start turning
   }
 
-  // Getters/setters are auto-generated when this class is registered with GameEngine!
-  // No static block needed - GameEngine.registerEntityClass() handles it automatically.
+  // Note: this.flocking is automatically available because Flocking is in static components[]
+  // GameObject._createComponentAccessors() creates instances for all components automatically
 
   /**
    * LIFECYCLE: Called when boid is spawned/respawned from pool
@@ -139,7 +132,8 @@ class Boid extends GameObject {
     const myEntityType = entityTypes[i];
     const myX = tX[i];
     const myY = tY[i];
-    const protectedRange2 = this.protectedRange * this.protectedRange;
+    const protectedRange2 =
+      this.flocking.protectedRange * this.flocking.protectedRange;
 
     // Cohesion accumulators (same type only)
     let centerX = 0;
@@ -204,19 +198,19 @@ class Boid extends GameObject {
     if (sameTypeCount > 0) {
       centerX /= sameTypeCount;
       centerY /= sameTypeCount;
-      rbAX[i] += (centerX - myX) * this.centeringFactor * dtRatio;
-      rbAY[i] += (centerY - myY) * this.centeringFactor * dtRatio;
+      rbAX[i] += (centerX - myX) * this.flocking.centeringFactor * dtRatio;
+      rbAY[i] += (centerY - myY) * this.flocking.centeringFactor * dtRatio;
 
       // Apply alignment force
       avgVX /= sameTypeCount;
       avgVY /= sameTypeCount;
-      rbAX[i] += (avgVX - rbVX[i]) * this.matchingFactor * dtRatio;
-      rbAY[i] += (avgVY - rbVY[i]) * this.matchingFactor * dtRatio;
+      rbAX[i] += (avgVX - rbVX[i]) * this.flocking.matchingFactor * dtRatio;
+      rbAY[i] += (avgVY - rbVY[i]) * this.flocking.matchingFactor * dtRatio;
     }
 
     // Apply separation force
-    rbAX[i] += separateX * this.avoidFactor * dtRatio;
-    rbAY[i] += separateY * this.avoidFactor * dtRatio;
+    rbAX[i] += separateX * this.flocking.avoidFactor * dtRatio;
+    rbAY[i] += separateY * this.flocking.avoidFactor * dtRatio;
 
     // Return context so subclass can use accumulated data
     return neighborContext;
@@ -298,11 +292,13 @@ class Boid extends GameObject {
     const worldWidth = this.config.worldWidth || 800;
     const worldHeight = this.config.worldHeight || 600;
 
-    if (x < this.margin) rbAX[i] += this.turnFactor * dtRatio;
-    if (x > worldWidth - this.margin) rbAX[i] -= this.turnFactor * dtRatio;
+    if (x < this.flocking.margin) rbAX[i] += this.flocking.turnFactor * dtRatio;
+    if (x > worldWidth - this.flocking.margin)
+      rbAX[i] -= this.flocking.turnFactor * dtRatio;
 
-    if (y < this.margin) rbAY[i] += this.turnFactor * dtRatio;
-    if (y > worldHeight - this.margin) rbAY[i] -= this.turnFactor * dtRatio;
+    if (y < this.flocking.margin) rbAY[i] += this.flocking.turnFactor * dtRatio;
+    if (y > worldHeight - this.flocking.margin)
+      rbAY[i] -= this.flocking.turnFactor * dtRatio;
   }
 }
 

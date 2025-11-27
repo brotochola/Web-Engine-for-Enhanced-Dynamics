@@ -95,10 +95,14 @@ class GameEngine {
 
     // Component pool tracking
     this.componentPools = {
-      Transform: { count: 0, indices: new Map() }, // Map: EntityClassName -> { start, count }
-      RigidBody: { count: 0, indices: new Map() },
-      Collider: { count: 0, indices: new Map() },
-      SpriteRenderer: { count: 0, indices: new Map() },
+      Transform: { count: 0, ComponentClass: Transform, indices: new Map() },
+      RigidBody: { count: 0, ComponentClass: RigidBody, indices: new Map() },
+      Collider: { count: 0, ComponentClass: Collider, indices: new Map() },
+      SpriteRenderer: {
+        count: 0,
+        ComponentClass: SpriteRenderer,
+        indices: new Map(),
+      },
     };
 
     // Typed array views
@@ -181,11 +185,17 @@ class GameEngine {
     const componentIndices = {};
     for (const ComponentClass of components) {
       const componentName = ComponentClass.name;
-      const pool = this.componentPools[componentName];
+      let pool = this.componentPools[componentName];
 
+      // Auto-create pool for custom components (e.g., Flocking)
       if (!pool) {
-        console.warn(`Unknown component: ${componentName}`);
-        continue;
+        console.log(`📦 Auto-registering custom component: ${componentName}`);
+        pool = {
+          count: 0,
+          ComponentClass: ComponentClass,
+          indices: new Map(),
+        };
+        this.componentPools[componentName] = pool;
       }
 
       // Allocate space in this component's pool
@@ -354,68 +364,29 @@ class GameEngine {
     // 2. Create Component buffers
     console.log("📦 Creating component buffers...");
 
-    // Transform component (size for total entity count - everyone has Transform)
-    const transformBufferSize = Transform.getBufferSize(this.totalEntityCount);
-    this.buffers.componentData.Transform = new SharedArrayBuffer(
-      transformBufferSize
-    );
-    Transform.initializeArrays(
-      this.buffers.componentData.Transform,
-      this.totalEntityCount
-    );
+    // Initialize ALL components (core and custom) using the same logic
     console.log(
-      `   ✅ Transform: ${transformBufferSize} bytes for ${this.totalEntityCount} entities`
+      `   Component pools: ${Object.keys(this.componentPools).join(", ")}`
     );
 
-    // RigidBody component
-    if (this.componentPools.RigidBody.count > 0) {
-      const rigidBodyBufferSize = RigidBody.getBufferSize(
-        this.componentPools.RigidBody.count
-      );
-      this.buffers.componentData.RigidBody = new SharedArrayBuffer(
-        rigidBodyBufferSize
-      );
-      RigidBody.initializeArrays(
-        this.buffers.componentData.RigidBody,
-        this.componentPools.RigidBody.count
-      );
-      console.log(
-        `   ✅ RigidBody: ${rigidBodyBufferSize} bytes for ${this.componentPools.RigidBody.count} entities`
-      );
-    }
+    for (const [componentName, pool] of Object.entries(this.componentPools)) {
+      if (pool.count > 0 && pool.ComponentClass) {
+        const ComponentClass = pool.ComponentClass;
+        const bufferSize = ComponentClass.getBufferSize(pool.count);
+        this.buffers.componentData[componentName] = new SharedArrayBuffer(
+          bufferSize
+        );
+        ComponentClass.initializeArrays(
+          this.buffers.componentData[componentName],
+          pool.count
+        );
 
-    // Collider component
-    if (this.componentPools.Collider.count > 0) {
-      const colliderBufferSize = Collider.getBufferSize(
-        this.componentPools.Collider.count
-      );
-      this.buffers.componentData.Collider = new SharedArrayBuffer(
-        colliderBufferSize
-      );
-      Collider.initializeArrays(
-        this.buffers.componentData.Collider,
-        this.componentPools.Collider.count
-      );
-      console.log(
-        `   ✅ Collider: ${colliderBufferSize} bytes for ${this.componentPools.Collider.count} entities`
-      );
-    }
-
-    // SpriteRenderer component
-    if (this.componentPools.SpriteRenderer.count > 0) {
-      const spriteRendererBufferSize = SpriteRenderer.getBufferSize(
-        this.componentPools.SpriteRenderer.count
-      );
-      this.buffers.componentData.SpriteRenderer = new SharedArrayBuffer(
-        spriteRendererBufferSize
-      );
-      SpriteRenderer.initializeArrays(
-        this.buffers.componentData.SpriteRenderer,
-        this.componentPools.SpriteRenderer.count
-      );
-      console.log(
-        `   ✅ SpriteRenderer: ${spriteRendererBufferSize} bytes for ${this.componentPools.SpriteRenderer.count} entities`
-      );
+        const isTransform = componentName === "Transform";
+        const note = isTransform ? " (all entities have Transform)" : "";
+        console.log(
+          `   ✅ ${componentName}: ${bufferSize} bytes for ${pool.count} entities${note}`
+        );
+      }
     }
 
     // Collision data buffer (for Unity-style collision detection)
@@ -709,12 +680,13 @@ class GameEngine {
         componentIndices: r.componentIndices, // Component pool allocation { Transform: {start, count}, ... }
       })),
       // Component pool sizes (for workers to know buffer sizes)
-      componentPools: {
-        Transform: { count: this.componentPools.Transform.count },
-        RigidBody: { count: this.componentPools.RigidBody.count },
-        Collider: { count: this.componentPools.Collider.count },
-        SpriteRenderer: { count: this.componentPools.SpriteRenderer.count },
-      },
+      // Send ALL component pools (core and custom)
+      componentPools: Object.fromEntries(
+        Object.entries(this.componentPools).map(([name, pool]) => [
+          name,
+          { count: pool.count },
+        ])
+      ),
     };
 
     // Initialize spatial worker (no ports needed for now)

@@ -46,116 +46,13 @@ class Collider extends Component {
   /**
    * Constructor - creates a component instance for a specific entity index
    * @param {number} index - Index in the component arrays
+   *
+   * Note: Getters/setters for all properties (shapeType, radius, width, height, etc.)
+   * are auto-generated from ARRAY_SCHEMA by Component._createInstanceProperties()
    */
   constructor(index) {
     super();
     this.index = index;
-  }
-
-  // Instance getters/setters that forward to static arrays
-  get shapeType() {
-    return Collider.shapeType[this.index];
-  }
-  set shapeType(v) {
-    Collider.shapeType[this.index] = v;
-  }
-
-  get offsetX() {
-    return Collider.offsetX[this.index];
-  }
-  set offsetX(v) {
-    Collider.offsetX[this.index] = v;
-  }
-
-  get offsetY() {
-    return Collider.offsetY[this.index];
-  }
-  set offsetY(v) {
-    Collider.offsetY[this.index] = v;
-  }
-
-  get radius() {
-    return Collider.radius[this.index];
-  }
-  set radius(v) {
-    Collider.radius[this.index] = v;
-  }
-
-  get width() {
-    return Collider.width[this.index];
-  }
-  set width(v) {
-    Collider.width[this.index] = v;
-  }
-
-  get height() {
-    return Collider.height[this.index];
-  }
-  set height(v) {
-    Collider.height[this.index] = v;
-  }
-
-  get isTrigger() {
-    return Collider.isTrigger[this.index];
-  }
-  set isTrigger(v) {
-    Collider.isTrigger[this.index] = v ? 1 : 0;
-  }
-
-  get restitution() {
-    return Collider.restitution[this.index];
-  }
-  set restitution(v) {
-    Collider.restitution[this.index] = v;
-  }
-
-  get collisionLayer() {
-    return Collider.collisionLayer[this.index];
-  }
-  set collisionLayer(v) {
-    Collider.collisionLayer[this.index] = v;
-  }
-
-  get collisionMask() {
-    return Collider.collisionMask[this.index];
-  }
-  set collisionMask(v) {
-    Collider.collisionMask[this.index] = v;
-  }
-
-  get aabbMinX() {
-    return Collider.aabbMinX[this.index];
-  }
-  set aabbMinX(v) {
-    Collider.aabbMinX[this.index] = v;
-  }
-
-  get aabbMinY() {
-    return Collider.aabbMinY[this.index];
-  }
-  set aabbMinY(v) {
-    Collider.aabbMinY[this.index] = v;
-  }
-
-  get aabbMaxX() {
-    return Collider.aabbMaxX[this.index];
-  }
-  set aabbMaxX(v) {
-    Collider.aabbMaxX[this.index] = v;
-  }
-
-  get aabbMaxY() {
-    return Collider.aabbMaxY[this.index];
-  }
-  set aabbMaxY(v) {
-    Collider.aabbMaxY[this.index] = v;
-  }
-
-  get visualRange() {
-    return Collider.visualRange[this.index];
-  }
-  set visualRange(v) {
-    Collider.visualRange[this.index] = v;
   }
 }
 

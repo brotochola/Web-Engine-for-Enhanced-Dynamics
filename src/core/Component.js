@@ -36,6 +36,36 @@ class Component {
       this[name] = new type(buffer, offset, count);
       offset += count * bytesPerElement;
     }
+
+    // Auto-generate instance getters/setters on prototype
+    this._createInstanceProperties();
+  }
+
+  /**
+   * Automatically create instance getters/setters from ARRAY_SCHEMA
+   * This makes component instances have properties that forward to static arrays
+   */
+  static _createInstanceProperties() {
+    const ComponentClass = this;
+
+    // Skip if already created (avoid duplicate property definitions)
+    if (ComponentClass.prototype._propertiesCreated) return;
+
+    Object.entries(ComponentClass.ARRAY_SCHEMA).forEach(([name, type]) => {
+      Object.defineProperty(ComponentClass.prototype, name, {
+        get() {
+          return ComponentClass[name][this.index];
+        },
+        set(value) {
+          ComponentClass[name][this.index] =
+            type === Uint8Array ? (value ? 1 : 0) : value;
+        },
+        enumerable: true,
+        configurable: true,
+      });
+    });
+
+    ComponentClass.prototype._propertiesCreated = true;
   }
 
   /**

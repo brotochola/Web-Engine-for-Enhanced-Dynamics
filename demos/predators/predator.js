@@ -60,13 +60,13 @@ class Predator extends Boid {
     // Override Boid's perception
     this.collider.visualRange = 200; // How far predator can see
 
-    // Override Boid-specific behavior properties
-    this.protectedRange = 0; //this.collider.radius * 3; // Minimum distance from others
-    this.centeringFactor = 0; //0.0005; // Cohesion strength
-    this.avoidFactor = 0; //0.5; // Separation strength
-    this.matchingFactor = 0; //0.01; // Alignment strength
-    this.turnFactor = 0.1; // Boundary avoidance strength
-    this.margin = 20; // Distance from edge to start turning
+    // Override Boid's Flocking component properties
+    this.flocking.protectedRange = 0; //this.collider.radius * 3; // Minimum distance from others
+    this.flocking.centeringFactor = 0; //0.0005; // Cohesion strength
+    this.flocking.avoidFactor = 0; //0.5; // Separation strength
+    this.flocking.matchingFactor = 0; //0.01; // Alignment strength
+    this.flocking.turnFactor = 0.1; // Boundary avoidance strength
+    this.flocking.margin = 20; // Distance from edge to start turning
 
     const scale = 2;
     this.spriteRenderer.scaleX = scale;

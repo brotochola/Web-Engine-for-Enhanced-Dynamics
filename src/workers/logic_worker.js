@@ -53,49 +53,11 @@ class LogicWorker extends AbstractWorker {
       console.log("LOGIC WORKER: Collision callbacks enabled");
     }
 
-    // Initialize component arrays from SharedArrayBuffers
-    console.log("LOGIC WORKER: Initializing component arrays...");
-
-    // Transform (all entities have this)
-    Transform.initializeArrays(
-      data.buffers.componentData.Transform,
-      this.entityCount
-    );
-    console.log(`  ✅ Transform: ${this.entityCount} slots`);
-
-    // RigidBody
-    if (data.buffers.componentData.RigidBody) {
-      RigidBody.initializeArrays(
-        data.buffers.componentData.RigidBody,
-        data.componentPools.RigidBody.count
-      );
-      console.log(
-        `  ✅ RigidBody: ${data.componentPools.RigidBody.count} slots`
-      );
-    }
-
-    // Collider
-    if (data.buffers.componentData.Collider) {
-      Collider.initializeArrays(
-        data.buffers.componentData.Collider,
-        data.componentPools.Collider.count
-      );
-      console.log(`  ✅ Collider: ${data.componentPools.Collider.count} slots`);
-    }
-
-    // SpriteRenderer
-    if (data.buffers.componentData.SpriteRenderer) {
-      SpriteRenderer.initializeArrays(
-        data.buffers.componentData.SpriteRenderer,
-        data.componentPools.SpriteRenderer.count
-      );
-      console.log(
-        `  ✅ SpriteRenderer: ${data.componentPools.SpriteRenderer.count} slots`
-      );
-    }
-
     // Note: Game-specific scripts are loaded automatically by AbstractWorker.initializeCommonBuffers()
     // This makes entity classes available in the worker's global scope
+
+    // Initialize ALL components (core and custom) - must be done AFTER entity classes are loaded
+    this.initializeAllComponents(data);
 
     // Create GameObject instances
     this.createGameObjectInstances();
@@ -105,6 +67,39 @@ class LogicWorker extends AbstractWorker {
       "LOGIC WORKER: Initialization complete, waiting for start signal..."
     );
     // Note: Game loop will start when "start" message is received from main thread
+  }
+
+  /**
+   * Initialize ALL components by collecting them from entity classes
+   * This handles both core (Transform, RigidBody, etc.) and custom (Flocking, etc.) components
+   */
+  initializeAllComponents(data) {
+    console.log("LOGIC WORKER: Initializing component arrays...");
+
+    const componentClasses = new Map(); // componentName -> ComponentClass
+
+    // Collect ALL components from all registered entity classes
+    for (const classInfo of this.registeredClasses) {
+      const EntityClass = self[classInfo.name];
+      if (!EntityClass) continue;
+
+      const components = GameObject._collectComponents(EntityClass);
+      for (const ComponentClass of components) {
+        const componentName = ComponentClass.name;
+        componentClasses.set(componentName, ComponentClass);
+      }
+    }
+
+    // Initialize all component arrays
+    for (const [componentName, ComponentClass] of componentClasses) {
+      const pool = data.componentPools[componentName];
+      const buffer = data.buffers.componentData[componentName];
+
+      if (buffer && pool && pool.count > 0) {
+        ComponentClass.initializeArrays(buffer, pool.count);
+        console.log(`  ✅ ${componentName}: ${pool.count} slots`);
+      }
+    }
   }
 
   /**
@@ -120,6 +115,19 @@ class LogicWorker extends AbstractWorker {
         // Store metadata for spawning system
         EntityClass.startIndex = startIndex;
         EntityClass.totalCount = count;
+
+        // Create component class map for this entity
+        // Get component classes directly from the entity's static components array
+        const componentClassMap = {};
+        const components = GameObject._collectComponents(EntityClass);
+
+        for (const ComponentClass of components) {
+          const componentName = ComponentClass.name;
+          const camelCaseName =
+            componentName.charAt(0).toLowerCase() + componentName.slice(1);
+          componentClassMap[camelCaseName] = ComponentClass;
+        }
+        EntityClass._componentClassMap = componentClassMap;
 
         for (let i = 0; i < count; i++) {
           const index = startIndex + i;

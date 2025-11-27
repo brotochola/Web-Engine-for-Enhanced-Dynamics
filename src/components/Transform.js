@@ -18,39 +18,13 @@ class Transform extends Component {
   /**
    * Constructor - creates a component instance for a specific entity index
    * @param {number} index - Index in the component arrays
+   *
+   * Note: Getters/setters for properties (active, x, y, rotation) are auto-generated
+   * from ARRAY_SCHEMA by Component._createInstanceProperties() when arrays are initialized
    */
   constructor(index) {
     super();
     this.index = index;
-  }
-
-  // Instance getters/setters that forward to static arrays
-  get active() {
-    return Transform.active[this.index];
-  }
-  set active(v) {
-    Transform.active[this.index] = v ? 1 : 0;
-  }
-
-  get x() {
-    return Transform.x[this.index];
-  }
-  set x(v) {
-    Transform.x[this.index] = v;
-  }
-
-  get y() {
-    return Transform.y[this.index];
-  }
-  set y(v) {
-    Transform.y[this.index] = v;
-  }
-
-  get rotation() {
-    return Transform.rotation[this.index];
-  }
-  set rotation(v) {
-    Transform.rotation[this.index] = v;
   }
 }
 

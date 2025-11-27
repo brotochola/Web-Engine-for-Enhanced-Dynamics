@@ -131,28 +131,81 @@ class GameObject {
     this.neighbors = null; // Will be a TypedArray subarray
     this.neighborDistances = null; // Will be a TypedArray subarray of squared distances
 
-    // Create actual component instances (lazy-loaded on first access)
-    this._transform = null;
-    this._rigidBody = null;
-    this._collider = null;
-    this._spriteRenderer = null;
+    // Component instance cache (lazy-loaded on first access)
+    this._componentCache = {};
+
+    // Ensure component accessors are defined on prototype (done once per class)
+    this.constructor._ensureComponentAccessors();
   }
 
   /**
-   * Component accessor: Transform (always present)
-   * Returns an actual Transform instance
+   * Ensure component accessors are defined on the class prototype (called once per class)
+   * This makes both core and custom components accessible via this.componentName
    */
-  get transform() {
-    if (!this._transform) {
-      const index = this._componentIndices.transform;
-      this._transform = new Transform(index);
+  static _ensureComponentAccessors() {
+    // Skip if already created for this class
+    if (this.prototype._componentAccessorsCreated) {
+      return;
     }
-    return this._transform;
+
+    // Core component class map
+    const coreComponents = {
+      transform: Transform,
+      rigidBody: RigidBody,
+      collider: Collider,
+      spriteRenderer: SpriteRenderer,
+    };
+
+    // Get component class map from entity class (set during registration)
+    const entityComponentMap = this._componentClassMap || {};
+
+    // Define getters for all components this entity class uses
+    for (const componentName of Object.keys(entityComponentMap)) {
+      // Skip if getter already exists
+      if (Object.getOwnPropertyDescriptor(this.prototype, componentName)) {
+        continue;
+      }
+
+      const ComponentClass =
+        entityComponentMap[componentName] || coreComponents[componentName];
+
+      if (!ComponentClass) {
+        continue;
+      }
+
+      // Define getter on prototype (shared by all instances)
+      Object.defineProperty(this.prototype, componentName, {
+        get: function () {
+          // Return cached instance if exists
+          if (this._componentCache[componentName]) {
+            return this._componentCache[componentName];
+          }
+
+          // Get component index for this specific entity instance
+          const componentIndex = this._componentIndices[componentName];
+          if (componentIndex === undefined) {
+            return null;
+          }
+
+          // Create and cache the component instance
+          const instance = new ComponentClass(componentIndex);
+          this._componentCache[componentName] = instance;
+          return instance;
+        },
+        enumerable: true,
+        configurable: true,
+      });
+    }
+
+    // Mark as created
+    this.prototype._componentAccessorsCreated = true;
   }
 
   // ========================================================================
   // ERGONOMIC API: Direct property access (forwards to components)
   // These provide convenient shortcuts while maintaining the component system
+  // Note: Component accessors (this.transform, this.rigidBody, etc.) are now
+  // dynamically created in _createComponentAccessors() for all components
   // ========================================================================
 
   /**
@@ -226,47 +279,8 @@ class GameObject {
     }
   }
 
-  /**
-   * Component accessor: RigidBody (if entity has it)
-   * Returns an actual RigidBody instance
-   */
-  get rigidBody() {
-    if (this._componentIndices.rigidBody === undefined) return null;
-
-    if (!this._rigidBody) {
-      const index = this._componentIndices.rigidBody;
-      this._rigidBody = new RigidBody(index);
-    }
-    return this._rigidBody;
-  }
-
-  /**
-   * Component accessor: Collider (if entity has it)
-   * Returns an actual Collider instance
-   */
-  get collider() {
-    if (this._componentIndices.collider === undefined) return null;
-
-    if (!this._collider) {
-      const index = this._componentIndices.collider;
-      this._collider = new Collider(index);
-    }
-    return this._collider;
-  }
-
-  /**
-   * Component accessor: SpriteRenderer (if entity has it)
-   * Returns an actual SpriteRenderer instance
-   */
-  get spriteRenderer() {
-    if (this._componentIndices.spriteRenderer === undefined) return null;
-
-    if (!this._spriteRenderer) {
-      const index = this._componentIndices.spriteRenderer;
-      this._spriteRenderer = new SpriteRenderer(index);
-    }
-    return this._spriteRenderer;
-  }
+  // Component accessors are now dynamically created in _createComponentAccessors()
+  // No need for hardcoded getters - works for both core and custom components!
 
   /**
    * Helper method for SpriteRenderer - mark as dirty

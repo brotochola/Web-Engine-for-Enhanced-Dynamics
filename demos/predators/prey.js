@@ -66,13 +66,13 @@ class Prey extends Boid {
     this.spriteRenderer.scaleX = scale;
     this.spriteRenderer.scaleY = scale;
 
-    // Override Boid-specific behavior properties
-    this.protectedRange = this.collider.radius * 4; // Minimum distance from others
-    this.centeringFactor = 0; //0.005; // Cohesion strength
-    this.avoidFactor = 3; // Separation strength
-    this.matchingFactor = 0.01; // Alignment strength
-    this.turnFactor = 0.1; // Boundary avoidance strength
-    this.margin = 20; // Distance from edge to start turning
+    // Override Boid's Flocking component properties
+    this.flocking.protectedRange = this.collider.radius * 4; // Minimum distance from others
+    this.flocking.centeringFactor = 0; //0.005; // Cohesion strength
+    this.flocking.avoidFactor = 3; // Separation strength
+    this.flocking.matchingFactor = 0.01; // Alignment strength
+    this.flocking.turnFactor = 0.1; // Boundary avoidance strength
+    this.flocking.margin = 20; // Distance from edge to start turning
   }
 
   /**
