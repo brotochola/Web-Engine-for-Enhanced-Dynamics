@@ -1,4 +1,12 @@
- CULLING: spatial culling + transform-level culling + renderer-level culling
+---------------------
+ GAME ENGINE:
+-----------------------
+
+
+
+
+
+
 
 
 
@@ -6,16 +14,8 @@
       GAME OBJECTS:
 ------------------------------------------------------------------------------------------------
 
-// Podrías tener:
-const entity = engine.createEntity()
-  .addComponent('Transform', {...})
-  .addComponent('Physics', {...})
-  .addComponent('FlockBehavior', {...})
-  .addComponent('PreyBehavior', {...});
-
-
--activate and desactivate
--metodo awake cuando un gameobject se hace activo (viene del pool)
+-el mouse deberia ser un gameobject,
+ asi podemos ver si el mouse esta cerca de las entidades
 
 
 -------------------------------------------------------------------------------------------------
@@ -25,6 +25,8 @@ const entity = engine.createEntity()
 
 
 -escenas donde se descargan y cargan cosas
+-Scene.tick
+-Scene extends GameObject??
 
 
 
@@ -68,10 +70,9 @@ const entity = engine.createEntity()
 --- PHYSICS WORKER: ---
 ------------------------------------------------------------------------------------------------
 
-https://github.com/codemaker4/ropeball
+-agregar entidades q sean rectangulos y q su collider funcione
 
 
 ------------------------------------------------------------------------------------------------
 --- PIXI-WORKER: ---
 ------------------------------------------------------------------------------------------------
-- use cullable
