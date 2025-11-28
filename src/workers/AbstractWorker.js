@@ -1,7 +1,7 @@
 // AbstractWorker.js - Base class for all game engine workers
 // Provides common functionality: frame timing,  FPS tracking, pause state, message handling
 
-import { GameObject } from '../core/gameObject.js';
+import { GameObject } from "../core/gameObject.js";
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -197,13 +197,13 @@ class AbstractWorker {
       console.log(
         `${this.constructor.name}: Loading ${data.scriptsToLoad.length} game scripts...`
       );
-      
+
       // Use dynamic import() for ES6 modules (async/await)
       for (const scriptPath of data.scriptsToLoad) {
         try {
           const module = await import(scriptPath);
           // Make the exported class(es) available globally in worker
-          Object.keys(module).forEach(key => {
+          Object.keys(module).forEach((key) => {
             self[key] = module[key];
           });
           console.log(`${this.constructor.name}: ✓ Loaded ${scriptPath}`);
@@ -300,22 +300,6 @@ class AbstractWorker {
         console.log(
           `${this.constructor.name}: Initialized ${name} arrays for ${this.entityCount} total entities (${count} of this type)`
         );
-
-        // AUTOMATIC PROPERTY CREATION: Create getters/setters for this class's ARRAY_SCHEMA
-        // This makes properties accessible as instance properties (e.g., this.x instead of GameObject.x[this.index])
-        // Only create properties if the class has an ARRAY_SCHEMA and we have GameObject._createSchemaProperties
-        if (
-          EntityClass.ARRAY_SCHEMA &&
-          GameObject &&
-          GameObject._createSchemaProperties
-        ) {
-          GameObject._createSchemaProperties(EntityClass);
-          console.log(
-            `${this.constructor.name}: Auto-created ${
-              Object.keys(EntityClass.ARRAY_SCHEMA).length
-            } properties for ${name}`
-          );
-        }
       }
     }
     this.reportLog("finished initializing entity arrays");

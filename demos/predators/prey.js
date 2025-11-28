@@ -5,16 +5,16 @@ import { GameObject } from "/src/core/gameObject.js";
 import { RigidBody } from "/src/components/RigidBody.js";
 import { Boid } from "./boid.js";
 import { Predator } from "./predator.js";
+import { PreyBehavior } from "./PreyBehavior.js";
 
 class Prey extends Boid {
   static entityType = 1; // 1 = Prey
   static instances = []; // Instance tracking for this class
 
-  // Define prey-specific properties schema
-  static ARRAY_SCHEMA = {
-    predatorAvoidFactor: Float32Array, // How strongly to flee from predators
-    life: Float32Array,
-  };
+  // Add PreyBehavior component for prey-specific properties
+  static components = [...Boid.components, PreyBehavior];
+
+  // Note: ARRAY_SCHEMA removed - all data now in components (pure ECS architecture)
 
   // Sprite configuration - standardized format for animated sprites
   static spriteConfig = {
@@ -47,8 +47,8 @@ class Prey extends Boid {
     const i = index;
 
     // Initialize prey-specific properties
-    this.predatorAvoidFactor = 3; // Strong avoidance of predators
-    this.life = 1;
+    this.preyBehavior.predatorAvoidFactor = 3; // Strong avoidance of predators
+    this.preyBehavior.life = 1;
 
     // Override Boid's physics properties for prey behavior
     this.rigidBody.maxVel = 3;
@@ -84,7 +84,7 @@ class Prey extends Boid {
     super.awake();
 
     // Reset health
-    this.life = 1.0;
+    this.preyBehavior.life = 1.0;
 
     // Reset visual properties
     this.setScale(1, 1); // CRITICAL: Set sprite scale!
@@ -165,8 +165,10 @@ class Prey extends Boid {
       const rbAX = RigidBody.ax;
       const rbAY = RigidBody.ay;
 
-      rbAX[i] += context.fleeX * this.predatorAvoidFactor * dtRatio;
-      rbAY[i] += context.fleeY * this.predatorAvoidFactor * dtRatio;
+      rbAX[i] +=
+        context.fleeX * this.preyBehavior.predatorAvoidFactor * dtRatio;
+      rbAY[i] +=
+        context.fleeY * this.preyBehavior.predatorAvoidFactor * dtRatio;
       return true;
     }
     return false;
@@ -196,9 +198,9 @@ class Prey extends Boid {
     // Update tint based on life (white = healthy, red = damaged)
     // Map life from white (0xffffff) to red (0xff0000) based on remaining life ratio
     let newTint;
-    if (this.life > 0) {
+    if (this.preyBehavior.life > 0) {
       const maxLife = 1; // Default max life
-      const ratio = Math.max(0, Math.min(1, this.life / maxLife));
+      const ratio = Math.max(0, Math.min(1, this.preyBehavior.life / maxLife));
       // Interpolate green/blue channel from 255 (white) to 0 (red)
       const gb = Math.round(255 * ratio);
       newTint = (0xff << 16) | (gb << 8) | gb;
@@ -230,8 +232,8 @@ class Prey extends Boid {
     // const i = this.index;
     // // Check if we collided with a predator
     // if (GameObject.entityType[otherIndex] === Predator.entityType) {
-    //   this.life -= 0.1;
-    //   if (this.life <= 0) {
+    //   this.preyBehavior.life -= 0.1;
+    //   if (this.preyBehavior.life <= 0) {
     //     this.despawn(); // Use proper despawn instead of directly setting active
     //   }
     //   // Optional: Could post message to main thread for sound/particle effects

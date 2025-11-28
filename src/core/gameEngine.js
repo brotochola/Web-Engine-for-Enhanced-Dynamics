@@ -284,11 +284,6 @@ class GameEngine {
           ParentClass.instances = [];
         }
 
-        // Initialize schema properties for parent class
-        if (ParentClass.ARRAY_SCHEMA && ParentClass !== GameObject) {
-          GameObject._createSchemaProperties(ParentClass);
-        }
-
         console.log(
           `🔧 Auto-registered parent class ${ParentClass.name} (0 instances) for ${EntityClass.name}`
         );

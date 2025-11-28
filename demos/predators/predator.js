@@ -5,10 +5,14 @@ import { GameObject } from "/src/core/gameObject.js";
 import { RigidBody } from "/src/components/RigidBody.js";
 import { Boid } from "./boid.js";
 import { Prey } from "./prey.js";
+import { PredatorBehavior } from "./PredatorBehavior.js";
 
 class Predator extends Boid {
   static entityType = 2; // 2 = Predator
   static instances = []; // Instance tracking for this class
+
+  // Add PredatorBehavior component for predator-specific properties
+  static components = [...Boid.components, PredatorBehavior];
 
   // Sprite configuration - standardized format for animated sprites
   static spriteConfig = {
@@ -29,10 +33,7 @@ class Predator extends Boid {
     WALK: 1,
   };
 
-  // Define predator-specific properties schema
-  static ARRAY_SCHEMA = {
-    huntFactor: Float32Array, // How strongly to chase prey
-  };
+  // Note: ARRAY_SCHEMA removed - all data now in components (pure ECS architecture)
 
   /**
    * Predator constructor - initializes predator properties
@@ -46,7 +47,7 @@ class Predator extends Boid {
     const i = index;
 
     // Initialize predator-specific properties
-    this.huntFactor = 0.2; // Chase strength
+    this.predatorBehavior.huntFactor = 0.2; // Chase strength
 
     // Override Boid's physics properties for predator behavior
     this.rigidBody.maxVel = 7;
@@ -176,8 +177,8 @@ class Predator extends Boid {
       const dist = Math.sqrt(context.closestDist2);
 
       if (dist > 0) {
-        rbAX[i] += (dx / dist) * this.huntFactor * dtRatio;
-        rbAY[i] += (dy / dist) * this.huntFactor * dtRatio;
+        rbAX[i] += (dx / dist) * this.predatorBehavior.huntFactor * dtRatio;
+        rbAY[i] += (dy / dist) * this.predatorBehavior.huntFactor * dtRatio;
       }
       return true;
     }
