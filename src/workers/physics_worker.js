@@ -12,6 +12,7 @@ import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { AbstractWorker } from "./AbstractWorker.js";
+import { clamp01, validatePhysicsConfig } from "../core/utils.js";
 
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
 // Physics worker uses RigidBody component for physics calculations
@@ -95,51 +96,14 @@ class PhysicsWorker extends AbstractWorker {
    * @param {Object} partialConfig
    */
   applyPhysicsConfig(partialConfig = {}) {
-    const clamp01 = (value, fallback) => {
-      if (typeof value !== "number") return fallback;
-      return Math.max(0, Math.min(1, value));
-    };
-
     // Persist merged config on worker (helps future updates)
     this.config.physics = {
       ...(this.config.physics || {}),
       ...partialConfig,
     };
 
-    const source = this.config.physics;
-
-    this.settings = {
-      ...this.settings,
-      subStepCount: Math.max(
-        1,
-        source.subStepCount ?? this.settings.subStepCount
-      ),
-      boundaryElasticity: clamp01(
-        source.boundaryElasticity ?? this.settings.boundaryElasticity,
-        this.settings.boundaryElasticity
-      ),
-      collisionResponseStrength: clamp01(
-        source.collisionResponseStrength ??
-          this.settings.collisionResponseStrength,
-        this.settings.collisionResponseStrength
-      ),
-      verletDamping: clamp01(
-        source.verletDamping ?? this.settings.verletDamping,
-        this.settings.verletDamping
-      ),
-      minSpeedForRotation:
-        source.minSpeedForRotation ?? this.settings.minSpeedForRotation,
-      gravity: {
-        x:
-          source.gravity && typeof source.gravity.x === "number"
-            ? source.gravity.x
-            : this.config.gravity?.x ?? this.settings.gravity.x ?? 0,
-        y:
-          source.gravity && typeof source.gravity.y === "number"
-            ? source.gravity.y
-            : this.config.gravity?.y ?? this.settings.gravity.y ?? 0,
-      },
-    };
+    // Use utility function for validation and merging
+    this.settings = validatePhysicsConfig(this.settings, this.config.physics);
   }
 
   handleCustomMessage(data) {

@@ -12,6 +12,7 @@ import { Transform } from "../components/Transform.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { AbstractWorker } from "./AbstractWorker.js";
+import { getCellIndex } from "../core/utils.js";
 
 // Note: Spatial worker doesn't need game-specific entity classes
 // It only works with GameObject and component arrays for spatial partitioning
@@ -102,17 +103,10 @@ class SpatialWorker extends AbstractWorker {
   }
 
   /**
-   * Get cell index from world position
+   * Get cell index from world position (delegates to utils.js)
    */
   getCellIndex(x, y) {
-    const col = Math.floor(x / this.cellSize);
-    const row = Math.floor(y / this.cellSize);
-
-    // Clamp to grid bounds
-    const clampedCol = Math.max(0, Math.min(this.gridCols - 1, col));
-    const clampedRow = Math.max(0, Math.min(this.gridRows - 1, row));
-
-    return clampedRow * this.gridCols + clampedCol;
+    return getCellIndex(x, y, this.cellSize, this.gridCols, this.gridRows);
   }
 
   /**

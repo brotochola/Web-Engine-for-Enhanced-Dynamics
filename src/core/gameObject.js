@@ -5,6 +5,7 @@ import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
+import { collectComponents } from "./utils.js";
 
 class GameObject {
   // Entity class metadata (for spawning system)
@@ -72,27 +73,13 @@ class GameObject {
   }
 
   /**
-   * Collect all components from class hierarchy
+   * Collect all components from class hierarchy (delegates to utils.js)
    * Walks up the prototype chain and collects all unique components
    * @param {Class} EntityClass - The entity class to collect components from
    * @returns {Array<Component>} Array of unique component classes
    */
   static _collectComponents(EntityClass) {
-    const components = new Set();
-    let currentClass = EntityClass;
-
-    // Walk up the prototype chain
-    while (currentClass && currentClass !== Object) {
-      if (currentClass.components && Array.isArray(currentClass.components)) {
-        currentClass.components.forEach((c) => components.add(c));
-      }
-      currentClass = Object.getPrototypeOf(currentClass);
-    }
-
-    // Transform is always included
-    components.add(Transform);
-
-    return Array.from(components);
+    return collectComponents(EntityClass, GameObject, Transform);
   }
 
   /**

@@ -90,36 +90,6 @@ class Component {
 
     return offset;
   }
-
-  /**
-   * Helper method to dynamically create getters/setters from ARRAY_SCHEMA
-   * Creates instance properties that read/write to static arrays
-   *
-   * @param {Class} ComponentClass - The component class to create properties for
-   * @param {Object} target - Target object to define properties on (usually prototype)
-   * @param {Function} indexGetter - Function that returns the component index for an instance
-   */
-  static _createAccessor(ComponentClass, target, indexGetter) {
-    const accessor = {};
-
-    Object.entries(ComponentClass.ARRAY_SCHEMA).forEach(([name, type]) => {
-      Object.defineProperty(accessor, name, {
-        get() {
-          const index = indexGetter();
-          return ComponentClass[name][index];
-        },
-        set(value) {
-          const index = indexGetter();
-          ComponentClass[name][index] =
-            type === Uint8Array ? (value ? 1 : 0) : value;
-        },
-        enumerable: true,
-        configurable: true,
-      });
-    });
-
-    return accessor;
-  }
 }
 
 // ES6 module export

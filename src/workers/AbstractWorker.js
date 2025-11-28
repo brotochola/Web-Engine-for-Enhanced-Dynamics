@@ -252,13 +252,6 @@ class AbstractWorker {
     // Store registered classes (used by logic worker and potentially others)
     this.registeredClasses = data.registeredClasses || [];
     this.reportLog("finished initializing common buffers");
-    // Initialize all entity arrays using standardized method
-    if (data.buffers?.entityData && this.registeredClasses.length > 0) {
-      this.initializeEntityArrays(
-        data.buffers.entityData,
-        this.registeredClasses
-      );
-    }
 
     // Keep a reference to neighbor data for easy access (already set above, but also from GameObject)
     if (GameObject.neighborData) {
@@ -269,40 +262,6 @@ class AbstractWorker {
     if (GameObject.distanceData) {
       this.distanceData = GameObject.distanceData;
     }
-  }
-
-  /**
-   * Initialize entity-specific arrays from entityBuffers
-   * @param {Object} entityBuffers - Map of entity class name to SharedArrayBuffer
-   * @param {Object} entityCounts - Map of entity class name to count (or array of class info objects)
-   */
-  initializeEntityArrays(entityBuffers, entityCounts) {
-    this.reportLog("initializing entity arrays");
-    if (!entityBuffers) return;
-
-    // Support both object format {ClassName: count} and array format [{name, count}]
-    const classInfos = Array.isArray(entityCounts)
-      ? entityCounts
-      : Object.entries(entityCounts || {}).map(([name, count]) => ({
-          name,
-          count,
-        }));
-
-    for (const classInfo of classInfos) {
-      const { name, count } = classInfo;
-      const EntityClass = self[name];
-      const buffer = entityBuffers[name];
-
-      if (EntityClass && EntityClass.initializeArrays && buffer) {
-        // IMPORTANT: Use entityCount (total) not count (class-specific)
-        // Entity arrays must be sized for all entities because subclasses use global indices
-        EntityClass.initializeArrays(buffer, this.entityCount);
-        console.log(
-          `${this.constructor.name}: Initialized ${name} arrays for ${this.entityCount} total entities (${count} of this type)`
-        );
-      }
-    }
-    this.reportLog("finished initializing entity arrays");
   }
 
   /**

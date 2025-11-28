@@ -6,6 +6,7 @@ import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
+import { setupWorkerCommunication } from "./utils.js";
 
 class GameEngine {
   static now = Date.now();
@@ -77,14 +78,13 @@ class GameEngine {
 
     // Shared buffers
     this.buffers = {
-      gameObjectData: null, // Entity state arrays (active, entityType, isItOnScreen)
-      entityData: new Map(), // Map of EntityClassName -> SharedArrayBuffer (legacy, may be removed)
+      gameObjectData: null, // Entity metadata (just entityType now)
       neighborData: null,
       distanceData: null, // Squared distances for each neighbor
       collisionData: null,
       inputData: null,
       cameraData: null,
-      // Component buffers
+      // Component buffers (core + custom components auto-registered)
       componentData: {
         Transform: null,
         RigidBody: null,
@@ -564,7 +564,7 @@ class GameEngine {
   }
 
   /**
-   * Setup direct MessagePort communication between workers
+   * Setup direct MessagePort communication between workers (delegates to utils.js)
    * This allows workers to communicate without going through the main thread
    * @returns {Object} workerPorts - Object mapping worker names to their ports
    */
@@ -576,22 +576,8 @@ class GameEngine {
       // Add more connections as needed
     ];
 
-    const workerPorts = {}; // { logic: { renderer: port }, renderer: { logic: port } }
-
-    connections.forEach(({ from, to }) => {
-      const channel = new MessageChannel();
-
-      // Initialize nested objects if they don't exist
-      if (!workerPorts[from]) workerPorts[from] = {};
-      if (!workerPorts[to]) workerPorts[to] = {};
-
-      // Assign ports (bidirectional communication)
-      workerPorts[from][to] = channel.port1;
-      workerPorts[to][from] = channel.port2;
-    });
-
     console.log("🔗 Worker communication channels established:", connections);
-    return workerPorts;
+    return setupWorkerCommunication(connections);
   }
 
   // Create and initialize all workers
