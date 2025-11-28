@@ -47,7 +47,7 @@ class Prey extends Boid {
     const i = index;
 
     // Initialize prey-specific properties
-    this.preyBehavior.predatorAvoidFactor = 3; // Strong avoidance of predators
+    this.preyBehavior.predatorAvoidFactor = 5; // Strong avoidance of predators
     this.preyBehavior.life = 1;
 
     // Override Boid's physics properties for prey behavior
@@ -58,7 +58,7 @@ class Prey extends Boid {
     this.collider.radius = 5;
 
     // Override Boid's perception
-    this.collider.visualRange = 60; // How far prey can see
+    this.collider.visualRange = 60; // Reduced for performance (fewer neighbor checks)
     this.spriteRenderer.animationSpeed = 0.15;
 
     // Set sprite scale
@@ -66,11 +66,11 @@ class Prey extends Boid {
     this.spriteRenderer.scaleX = scale;
     this.spriteRenderer.scaleY = scale;
 
-    // Override Boid's Flocking component properties
+    // Override Boid's Flocking component properties - OPTIMIZED for performance
     this.flocking.protectedRange = this.collider.radius * 4; // Minimum distance from others
-    this.flocking.centeringFactor = 0; //0.005; // Cohesion strength
-    this.flocking.avoidFactor = 3; // Separation strength
-    this.flocking.matchingFactor = 0.01; // Alignment strength
+    this.flocking.centeringFactor = 0.003; // Cohesion: gentle attraction to flock center
+    this.flocking.avoidFactor = 3; // Separation: moderate avoidance (reduced from 3)
+    this.flocking.matchingFactor = 0.05; // Alignment: match flock velocity
     this.flocking.turnFactor = 0.1; // Boundary avoidance strength
     this.flocking.margin = 20; // Distance from edge to start turning
   }

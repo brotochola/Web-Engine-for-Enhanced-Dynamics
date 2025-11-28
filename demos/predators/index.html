@@ -91,8 +91,8 @@
 
                 // Spatial hash grid configuration
                 spatial: {
-                    cellSize: 50,
-                    maxNeighbors: 400,
+                    cellSize: 70,  // Increased to match visual range (reduces grid overhead)
+                    maxNeighbors: 50,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
                     noLimitFPS: false
                 },
 

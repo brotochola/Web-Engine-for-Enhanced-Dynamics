@@ -152,8 +152,11 @@ class Boid extends GameObject {
     // Create context object for subclass to accumulate custom data
     const neighborContext = this.createNeighborContext();
 
+    // Performance optimization: limit processing to reasonable neighbor count
+    const maxProcessed = Math.min(this.neighborCount, 30); // Process max 30 neighbors
+
     // Single loop through all neighbors
-    for (let n = 0; n < this.neighborCount; n++) {
+    for (let n = 0; n < maxProcessed; n++) {
       const j = this.neighbors[n];
       const neighborType = entityTypes[j];
       const isSameType = neighborType === myEntityType;
