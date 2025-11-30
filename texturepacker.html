@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprite Atlas Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .upload-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .upload-zone {
+            border: 3px dashed #cbd5e0;
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #f7fafc;
+        }
+
+        .upload-zone:hover {
+            border-color: #5a67d8;
+            background: #edf2f7;
+        }
+
+        .upload-zone.dragover {
+            border-color: #5a67d8;
+            background: #e6fffa;
+        }
+
+        .upload-zone h3 {
+            color: #2d3748;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .upload-icon {
+            font-size: 36px;
+            margin-bottom: 12px;
+        }
+
+        .controls {
+            margin: 20px 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label {
+            font-weight: 600;
+            color: #2d3748;
+            font-size: 14px;
+        }
+
+        input[type="number"],
+        select {
+            padding: 10px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        input[type="number"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #5a67d8;
+        }
+
+        button {
+            background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(90, 103, 216, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .preview {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .preview.active {
+            display: block;
+        }
+
+        .preview h2 {
+            color: #2d3748;
+            margin-bottom: 15px;
+        }
+
+        canvas {
+            max-width: 100%;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            background: repeating-conic-gradient(#f7fafc 0% 25%, #e2e8f0 0% 50%) 50% / 20px 20px;
+        }
+
+        .downloads {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .file-list {
+            margin: 15px 0;
+            padding: 15px;
+            background: #f7fafc;
+            border-radius: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .file-item {
+            padding: 8px;
+            background: white;
+            margin: 5px 0;
+            border-radius: 4px;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .file-item span {
+            color: #718096;
+        }
+
+        .file-item.spritesheet {
+            background: #e6fffa;
+            border-left: 3px solid #38b2ac;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎨 Sprite Atlas Generator</h1>
+            <p class="subtitle">Combine individual PNGs and spritesheets into one atlas</p>
+        </div>
+        <div class="content">
+            <div class="upload-section">
+                <div class="upload-zone" id="uploadZonePng">
+                    <h3>Individual Images</h3>
+                    <div class="upload-icon">🖼️</div>
+                    <p style="font-size: 14px; margin-bottom: 8px;">Drop PNG files here</p>
+                    <input type="file" id="fileInputPng" accept="image/png" multiple>
+                </div>
+
+                <div class="upload-zone" id="uploadZoneSpritesheet">
+                    <h3>Spritesheets</h3>
+                    <div class="upload-icon">📊</div>
+                    <p style="font-size: 14px; margin-bottom: 8px;">Drop PNG + JSON pairs</p>
+                    <input type="file" id="fileInputSpritesheet" accept="image/png,.json" multiple>
+                </div>
+            </div>
+
+            <div class="file-list" id="fileList" style="display: none;"></div>
+
+            <div class="controls">
+                <div class="control-group">
+                    <label>Max Width (px)</label>
+                    <input type="number" id="maxWidth" value="2048" min="256" max="8192" step="256">
+                </div>
+                <div class="control-group">
+                    <label>Max Height (px)</label>
+                    <input type="number" id="maxHeight" value="2048" min="256" max="8192" step="256">
+                </div>
+                <div class="control-group">
+                    <label>Padding (px)</label>
+                    <input type="number" id="padding" value="2" min="0" max="32">
+                </div>
+                <div class="control-group">
+                    <label>Heuristic</label>
+                    <select id="heuristic">
+                        <option value="best-short-side">Best Short Side Fit</option>
+                        <option value="best-long-side">Best Long Side Fit</option>
+                        <option value="best-area">Best Area Fit</option>
+                        <option value="bottom-left">Bottom Left</option>
+                    </select>
+                </div>
+            </div>
+
+            <button id="generateBtn" disabled>Generate Atlas</button>
+
+            <div class="preview" id="preview">
+                <h2>Generated Atlas</h2>
+                <canvas id="canvas"></canvas>
+                <div class="downloads">
+                    <button id="downloadPng">Download PNG</button>
+                    <button id="downloadJson">Download JSON</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class MaxRectsPacker {
+            constructor(width, height, padding = 0) {
+                this.width = width;
+                this.height = height;
+                this.padding = padding;
+                this.freeRects = [{ x: 0, y: 0, width, height }];
+                this.usedRects = [];
+            }
+
+            insert(width, height, heuristic = 'best-short-side') {
+                width += this.padding * 2;
+                height += this.padding * 2;
+
+                let bestRect = null;
+                let bestScore = Infinity;
+                let bestSecondaryScore = Infinity;
+
+                for (let freeRect of this.freeRects) {
+                    if (freeRect.width >= width && freeRect.height >= height) {
+                        let score, secondaryScore;
+
+                        if (heuristic === 'best-short-side') {
+                            score = Math.min(freeRect.width - width, freeRect.height - height);
+                            secondaryScore = Math.max(freeRect.width - width, freeRect.height - height);
+                        } else if (heuristic === 'best-long-side') {
+                            score = Math.max(freeRect.width - width, freeRect.height - height);
+                            secondaryScore = Math.min(freeRect.width - width, freeRect.height - height);
+                        } else if (heuristic === 'best-area') {
+                            score = freeRect.width * freeRect.height - width * height;
+                            secondaryScore = Math.min(freeRect.width - width, freeRect.height - height);
+                        } else { // bottom-left
+                            score = freeRect.y;
+                            secondaryScore = freeRect.x;
+                        }
+
+                        if (score < bestScore || (score === bestScore && secondaryScore < bestSecondaryScore)) {
+                            bestRect = { x: freeRect.x, y: freeRect.y, width, height };
+                            bestScore = score;
+                            bestSecondaryScore = secondaryScore;
+                        }
+                    }
+                }
+
+                if (bestRect) {
+                    this.placeRect(bestRect);
+                    return {
+                        x: bestRect.x + this.padding,
+                        y: bestRect.y + this.padding,
+                        width: width - this.padding * 2,
+                        height: height - this.padding * 2
+                    };
+                }
+
+                return null;
+            }
+
+            placeRect(rect) {
+                let numRectsToProcess = this.freeRects.length;
+                for (let i = 0; i < numRectsToProcess; i++) {
+                    if (this.splitFreeNode(this.freeRects[i], rect)) {
+                        this.freeRects.splice(i, 1);
+                        i--;
+                        numRectsToProcess--;
+                    }
+                }
+
+                this.pruneFreeList();
+                this.usedRects.push(rect);
+            }
+
+            splitFreeNode(freeNode, usedNode) {
+                if (usedNode.x >= freeNode.x + freeNode.width ||
+                    usedNode.x + usedNode.width <= freeNode.x ||
+                    usedNode.y >= freeNode.y + freeNode.height ||
+                    usedNode.y + usedNode.height <= freeNode.y) {
+                    return false;
+                }
+
+                if (usedNode.x < freeNode.x + freeNode.width && usedNode.x + usedNode.width > freeNode.x) {
+                    if (usedNode.y > freeNode.y && usedNode.y < freeNode.y + freeNode.height) {
+                        let newNode = { ...freeNode };
+                        newNode.height = usedNode.y - newNode.y;
+                        this.freeRects.push(newNode);
+                    }
+
+                    if (usedNode.y + usedNode.height < freeNode.y + freeNode.height) {
+                        let newNode = { ...freeNode };
+                        newNode.y = usedNode.y + usedNode.height;
+                        newNode.height = freeNode.y + freeNode.height - (usedNode.y + usedNode.height);
+                        this.freeRects.push(newNode);
+                    }
+                }
+
+                if (usedNode.y < freeNode.y + freeNode.height && usedNode.y + usedNode.height > freeNode.y) {
+                    if (usedNode.x > freeNode.x && usedNode.x < freeNode.x + freeNode.width) {
+                        let newNode = { ...freeNode };
+                        newNode.width = usedNode.x - newNode.x;
+                        this.freeRects.push(newNode);
+                    }
+
+                    if (usedNode.x + usedNode.width < freeNode.x + freeNode.width) {
+                        let newNode = { ...freeNode };
+                        newNode.x = usedNode.x + usedNode.width;
+                        newNode.width = freeNode.x + freeNode.width - (usedNode.x + usedNode.width);
+                        this.freeRects.push(newNode);
+                    }
+                }
+
+                return true;
+            }
+
+            pruneFreeList() {
+                for (let i = 0; i < this.freeRects.length; i++) {
+                    for (let j = i + 1; j < this.freeRects.length; j++) {
+                        if (this.isContainedIn(this.freeRects[i], this.freeRects[j])) {
+                            this.freeRects.splice(i, 1);
+                            i--;
+                            break;
+                        }
+                        if (this.isContainedIn(this.freeRects[j], this.freeRects[i])) {
+                            this.freeRects.splice(j, 1);
+                            j--;
+                        }
+                    }
+                }
+            }
+
+            isContainedIn(a, b) {
+                return a.x >= b.x && a.y >= b.y &&
+                    a.x + a.width <= b.x + b.width &&
+                    a.y + a.height <= b.y + b.height;
+            }
+        }
+
+        let individualImages = [];
+        let spritesheets = [];
+        let atlasData = null;
+
+        const uploadZonePng = document.getElementById('uploadZonePng');
+        const uploadZoneSpritesheet = document.getElementById('uploadZoneSpritesheet');
+        const fileInputPng = document.getElementById('fileInputPng');
+        const fileInputSpritesheet = document.getElementById('fileInputSpritesheet');
+        const fileList = document.getElementById('fileList');
+        const generateBtn = document.getElementById('generateBtn');
+        const preview = document.getElementById('preview');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Individual PNG uploads
+        uploadZonePng.addEventListener('click', () => fileInputPng.click());
+        uploadZonePng.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZonePng.classList.add('dragover');
+        });
+        uploadZonePng.addEventListener('dragleave', () => {
+            uploadZonePng.classList.remove('dragover');
+        });
+        uploadZonePng.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZonePng.classList.remove('dragover');
+            handleIndividualFiles(e.dataTransfer.files);
+        });
+        fileInputPng.addEventListener('change', (e) => {
+            handleIndividualFiles(e.target.files);
+        });
+
+        // Spritesheet uploads
+        uploadZoneSpritesheet.addEventListener('click', () => fileInputSpritesheet.click());
+        uploadZoneSpritesheet.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZoneSpritesheet.classList.add('dragover');
+        });
+        uploadZoneSpritesheet.addEventListener('dragleave', () => {
+            uploadZoneSpritesheet.classList.remove('dragover');
+        });
+        uploadZoneSpritesheet.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZoneSpritesheet.classList.remove('dragover');
+            handleSpritesheetFiles(e.dataTransfer.files);
+        });
+        fileInputSpritesheet.addEventListener('change', (e) => {
+            handleSpritesheetFiles(e.target.files);
+        });
+
+        function handleIndividualFiles(files) {
+            const pngFiles = Array.from(files).filter(f => f.type === 'image/png');
+
+            if (pngFiles.length === 0) return;
+
+            pngFiles.forEach(file => {
+                const img = new Image();
+                img.onload = () => {
+                    individualImages.push({
+                        name: file.name.replace('.png', ''),
+                        img: img,
+                        width: img.width,
+                        height: img.height
+                    });
+                    updateFileList();
+                };
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
+        function handleSpritesheetFiles(files) {
+            const filesArray = Array.from(files);
+            const pngFiles = filesArray.filter(f => f.type === 'image/png');
+            const jsonFiles = filesArray.filter(f => f.name.endsWith('.json'));
+
+            // Group files by base name
+            const pairs = {};
+
+            pngFiles.forEach(pngFile => {
+                const baseName = pngFile.name.replace('.png', '');
+                if (!pairs[baseName]) pairs[baseName] = {};
+                pairs[baseName].png = pngFile;
+            });
+
+            jsonFiles.forEach(jsonFile => {
+                const baseName = jsonFile.name.replace('.json', '');
+                if (!pairs[baseName]) pairs[baseName] = {};
+                pairs[baseName].json = jsonFile;
+            });
+
+            // Process pairs
+            Object.entries(pairs).forEach(([baseName, files]) => {
+                if (files.png && files.json) {
+                    loadSpritesheet(baseName, files.png, files.json);
+                }
+            });
+        }
+
+        function loadSpritesheet(baseName, pngFile, jsonFile) {
+            const img = new Image();
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                try {
+                    const jsonData = JSON.parse(e.target.result);
+
+                    img.onload = () => {
+                        spritesheets.push({
+                            baseName,
+                            img,
+                            data: jsonData
+                        });
+                        updateFileList();
+                    };
+                    img.src = URL.createObjectURL(pngFile);
+                } catch (err) {
+                    alert(`Error parsing ${jsonFile.name}: ${err.message}`);
+                }
+            };
+
+            reader.readAsText(jsonFile);
+        }
+
+        function updateFileList() {
+            fileList.innerHTML = '';
+
+            individualImages.forEach(img => {
+                const item = document.createElement('div');
+                item.className = 'file-item';
+                item.innerHTML = `
+                    <strong>${img.name}.png</strong>
+                    <span>${img.width}x${img.height}</span>
+                `;
+                fileList.appendChild(item);
+            });
+
+            spritesheets.forEach(sheet => {
+                const frameCount = Object.keys(sheet.data.frames).length;
+                const animCount = sheet.data.animations ? Object.keys(sheet.data.animations).length : 0;
+                const item = document.createElement('div');
+                item.className = 'file-item spritesheet';
+                item.innerHTML = `
+                    <strong>📊 ${sheet.baseName}</strong>
+                    <span>${frameCount} frames, ${animCount} animations</span>
+                `;
+                fileList.appendChild(item);
+            });
+
+            if (individualImages.length > 0 || spritesheets.length > 0) {
+                fileList.style.display = 'block';
+                generateBtn.disabled = false;
+            }
+        }
+
+        generateBtn.addEventListener('click', generateAtlas);
+
+        function generateAtlas() {
+            const maxWidth = parseInt(document.getElementById('maxWidth').value);
+            const maxHeight = parseInt(document.getElementById('maxHeight').value);
+            const padding = parseInt(document.getElementById('padding').value);
+            const heuristic = document.getElementById('heuristic').value;
+
+            const packer = new MaxRectsPacker(maxWidth, maxHeight, padding);
+            const frames = {};
+            const animations = {};
+            const imagesToPack = [];
+
+            // Add individual images
+            individualImages.forEach(imgData => {
+                imagesToPack.push({
+                    name: imgData.name,
+                    img: imgData.img,
+                    width: imgData.width,
+                    height: imgData.height,
+                    sourceX: 0,
+                    sourceY: 0,
+                    sourceWidth: imgData.width,
+                    sourceHeight: imgData.height
+                });
+            });
+
+            // Extract frames from spritesheets
+            spritesheets.forEach(sheet => {
+                const prefix = sheet.baseName;
+
+                Object.entries(sheet.data.frames).forEach(([frameName, frameData]) => {
+                    const newFrameName = `${prefix}_${frameName}`;
+                    const frame = frameData.frame;
+
+                    // Create a canvas to extract this frame from the spritesheet
+                    const frameCanvas = document.createElement('canvas');
+                    frameCanvas.width = frame.w;
+                    frameCanvas.height = frame.h;
+                    const frameCtx = frameCanvas.getContext('2d');
+
+                    frameCtx.drawImage(
+                        sheet.img,
+                        frame.x, frame.y, frame.w, frame.h,
+                        0, 0, frame.w, frame.h
+                    );
+
+                    const frameImg = new Image();
+                    frameImg.src = frameCanvas.toDataURL();
+
+                    imagesToPack.push({
+                        name: newFrameName,
+                        img: frameImg,
+                        width: frame.w,
+                        height: frame.h,
+                        sourceX: frameData.spriteSourceSize?.x || 0,
+                        sourceY: frameData.spriteSourceSize?.y || 0,
+                        sourceWidth: frameData.sourceSize?.w || frame.w,
+                        sourceHeight: frameData.sourceSize?.h || frame.h,
+                        pivot: frameData.pivot
+                    });
+                });
+
+                Object.entries(sheet.data.animations).forEach(([animName, frameList]) => {
+                    const newAnimName = `${prefix}_${animName}`;
+                    animations[newAnimName] = frameList.map(f => `${prefix}_${f}`);
+                });
+            });
+
+            // Sort by size (largest first)
+            imagesToPack.sort((a, b) => Math.max(b.width, b.height) - Math.max(a.width, a.height));
+
+            // Wait for all images to load
+            let loadedCount = 0;
+            const totalImages = imagesToPack.length;
+
+            imagesToPack.forEach(imgData => {
+                if (imgData.img.complete) {
+                    loadedCount++;
+                    if (loadedCount === totalImages) {
+                        packAndRender();
+                    }
+                } else {
+                    imgData.img.onload = () => {
+                        loadedCount++;
+                        if (loadedCount === totalImages) {
+                            packAndRender();
+                        }
+                    };
+                }
+            });
+
+            function packAndRender() {
+                let actualWidth = 0;
+                let actualHeight = 0;
+
+                // Pack all images
+                imagesToPack.forEach(imgData => {
+                    const rect = packer.insert(imgData.width, imgData.height, heuristic);
+
+                    if (!rect) {
+                        alert(`Could not fit "${imgData.name}" into atlas. Try increasing max dimensions.`);
+                        return;
+                    }
+
+                    frames[imgData.name] = {
+                        frame: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
+                        rotated: false,
+                        trimmed: false,
+                        spriteSourceSize: {
+                            x: imgData.sourceX,
+                            y: imgData.sourceY,
+                            w: imgData.width,
+                            h: imgData.height
+                        },
+                        sourceSize: { w: imgData.sourceWidth, h: imgData.sourceHeight }
+                    };
+
+                    if (imgData.pivot) {
+                        frames[imgData.name].pivot = imgData.pivot;
+                    }
+
+                    imgData.rect = rect;
+                    actualWidth = Math.max(actualWidth, rect.x + rect.width);
+                    actualHeight = Math.max(actualHeight, rect.y + rect.height);
+                });
+
+                // Create canvas and draw
+                canvas.width = actualWidth;
+                canvas.height = actualHeight;
+                ctx.clearRect(0, 0, actualWidth, actualHeight);
+
+                imagesToPack.forEach(imgData => {
+                    if (imgData.rect) {
+                        ctx.drawImage(imgData.img, imgData.rect.x, imgData.rect.y, imgData.rect.width, imgData.rect.height);
+                    }
+                });
+
+                atlasData = {
+                    frames: frames,
+                    animations: animations,
+                    meta: {
+                        image: 'atlas.png',
+                        format: 'RGBA8888',
+                        size: { w: actualWidth, h: actualHeight },
+                        scale: 1
+                    }
+                };
+
+                preview.classList.add('active');
+                preview.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        document.getElementById('downloadPng').addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = 'atlas.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        });
+
+        document.getElementById('downloadJson').addEventListener('click', () => {
+            const blob = new Blob([JSON.stringify(atlasData, null, 2)], { type: 'application/json' });
+            const link = document.createElement('a');
+            link.download = 'atlas.json';
+            link.href = URL.createObjectURL(blob);
+            link.click();
+        });
+    </script>
+</body>
+</html>

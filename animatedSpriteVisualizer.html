@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnimatedSprite Visualizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .upload-area {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 3px dashed rgba(255, 255, 255, 0.4);
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 30px;
+            transition: all 0.3s;
+        }
+
+        .upload-area:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.6);
+        }
+
+        .upload-area.dragover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: #fff;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .upload-btn {
+            background: #fff;
+            color: #667eea;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 50px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .upload-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+        }
+
+        .sidebar {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            height: fit-content;
+        }
+
+        .sidebar h2 {
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .animation-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .animation-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid transparent;
+            padding: 12px 20px;
+            border-radius: 10px;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 1em;
+            text-align: left;
+        }
+
+        .animation-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .animation-btn.active {
+            background: #fff;
+            color: #667eea;
+            border-color: #fff;
+            font-weight: 600;
+        }
+
+        .viewer {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+        }
+
+        #canvas-container {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 400px;
+            position: relative;
+            overflow: hidden;
+            cursor: grab;
+        }
+
+        #canvas-container:active {
+            cursor: grabbing;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .control-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 1em;
+        }
+
+        .control-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .info-box {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        .info-box label {
+            display: block;
+            font-size: 0.85em;
+            opacity: 0.8;
+            margin-bottom: 5px;
+        }
+
+        .info-box .value {
+            font-size: 1.3em;
+            font-weight: 600;
+        }
+
+        .slider-control {
+            margin-top: 15px;
+        }
+
+        .slider-control label {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .slider-control input {
+            width: 100%;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 AnimatedSprite Visualizer</h1>
+
+        <div class="upload-area" id="uploadArea">
+            <p style="font-size: 1.2em; margin-bottom: 20px;">Drop PNG + JSON files here or click to upload</p>
+            <button class="upload-btn" onclick="document.getElementById('fileInput').click()">Choose Files</button>
+            <input type="file" id="fileInput" multiple accept=".png,.json">
+            <p style="margin-top: 15px; opacity: 0.8; font-size: 0.9em;">Upload both the spritesheet PNG and its JSON
+                atlas</p>
+        </div>
+
+        <div class="main-content hidden" id="mainContent">
+            <div class="sidebar">
+                <h2>Animations</h2>
+                <div class="animation-list" id="animationList"></div>
+
+                <h2 style="margin-top: 25px;">Individual Frames</h2>
+                <div class="animation-list" id="frameList"></div>
+            </div>
+
+            <div class="viewer">
+                <div id="canvas-container"></div>
+
+                <div class="controls">
+                    <button class="control-btn" id="playBtn">▶ Play</button>
+                    <button class="control-btn" id="pauseBtn">⏸ Pause</button>
+                    <button class="control-btn" id="stopBtn">⏹ Stop</button>
+                </div>
+
+                <div class="slider-control">
+                    <label>Animation Speed: <span id="speedValue">1.0</span>x</label>
+                    <input type="range" id="speedSlider" min="0.1" max="3" step="0.1" value="1">
+                </div>
+
+                <div class="slider-control">
+                    <label>Zoom: <span id="zoomValue">100</span>%</label>
+                    <input type="range" id="zoomSlider" min="10" max="500" step="10" value="100">
+                </div>
+
+                <div class="info-grid" id="infoGrid">
+                    <div class="info-box">
+                        <label>Current Frame</label>
+                        <div class="value" id="currentFrame">-</div>
+                    </div>
+                    <div class="info-box">
+                        <label>Total Frames</label>
+                        <div class="value" id="totalFrames">-</div>
+                    </div>
+                    <div class="info-box">
+                        <label>Animation Name</label>
+                        <div class="value" id="animName">-</div>
+                    </div>
+                    <div class="info-box">
+                        <label>FPS</label>
+                        <div class="value" id="fps">-</div>
+                    </div>
+                    <div class="info-box">
+                        <label>Loop</label>
+                        <div class="value" id="loop">-</div>
+                    </div>
+                    <div class="info-box">
+                        <label>Playing</label>
+                        <div class="value" id="playing">-</div>
+                    </div>
+                    <div class="info-box">
+                        <label>Sprite Width</label>
+                        <div class="value" id="spriteWidth">-</div>
+                    </div>
+                    <div class="info-box">
+                        <label>Sprite Height</label>
+                        <div class="value" id="spriteHeight">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let app, animatedSprite, spritesheet, currentAnim;
+        const files = { png: null, json: null };
+        let zoomLevel = 1;
+        let panX = 0, panY = 0;
+        let isDragging = false;
+        let lastX = 0, lastY = 0;
+
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const mainContent = document.getElementById('mainContent');
+        const animationList = document.getElementById('animationList');
+        const canvasContainer = document.getElementById('canvas-container');
+
+        // Drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        function handleFiles(fileList) {
+            for (let file of fileList) {
+                if (file.name.endsWith('.png')) {
+                    files.png = file;
+                } else if (file.name.endsWith('.json')) {
+                    files.json = file;
+                }
+            }
+
+            if (files.png && files.json) {
+                loadSpritesheet();
+            }
+        }
+
+        async function loadSpritesheet() {
+            const pngUrl = URL.createObjectURL(files.png);
+            const jsonText = await files.json.text();
+            const jsonData = JSON.parse(jsonText);
+
+            if (app) {
+                app.destroy(true, { children: true, texture: true });
+            }
+
+            app = new PIXI.Application({
+                width: 800,
+                height: 400,
+                backgroundColor: 0x1a1a2e,
+                resolution: window.devicePixelRatio || 1,
+                autoDensity: true,
+            });
+
+            canvasContainer.innerHTML = '';
+            canvasContainer.appendChild(app.view);
+
+            // Pan functionality
+            canvasContainer.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                lastX = e.clientX;
+                lastY = e.clientY;
+            });
+
+            canvasContainer.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                const dx = e.clientX - lastX;
+                const dy = e.clientY - lastY;
+                panX += dx;
+                panY += dy;
+                lastX = e.clientX;
+                lastY = e.clientY;
+                updateSpriteTransform();
+            });
+
+            canvasContainer.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+
+            canvasContainer.addEventListener('mouseleave', () => {
+                isDragging = false;
+            });
+
+            // Zoom with mouse wheel
+            canvasContainer.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? 0.9 : 1.1;
+                zoomLevel *= delta;
+                zoomLevel = Math.max(0.1, Math.min(5, zoomLevel));
+                document.getElementById('zoomSlider').value = zoomLevel * 100;
+                document.getElementById('zoomValue').textContent = Math.round(zoomLevel * 100);
+                updateSpriteTransform();
+            });
+
+            // Load base texture first
+            const baseTexture = await PIXI.BaseTexture.from(pngUrl);
+            const texture = new PIXI.Texture(baseTexture);
+
+            spritesheet = new PIXI.Spritesheet(baseTexture, jsonData);
+            await spritesheet.parse();
+
+            const animations = Object.keys(spritesheet.animations);
+
+            // Get all frames used in animations
+            const usedFrames = new Set();
+            animations.forEach(animName => {
+                spritesheet.animations[animName].forEach(texture => {
+                    // Get the texture name from the cache
+                    for (let [name, tex] of Object.entries(spritesheet.textures)) {
+                        if (tex === texture) {
+                            usedFrames.add(name);
+                        }
+                    }
+                });
+            });
+
+            // Get individual frames not in animations
+            const allFrames = Object.keys(spritesheet.textures);
+            const individualFrames = allFrames.filter(name => !usedFrames.has(name));
+
+            // Populate animations list
+            animationList.innerHTML = '';
+            animations.forEach((animName, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'animation-btn';
+                btn.textContent = animName;
+                btn.onclick = () => playAnimation(animName);
+                animationList.appendChild(btn);
+
+                if (index === 0 && individualFrames.length === 0) {
+                    playAnimation(animName);
+                }
+            });
+
+            // Populate individual frames list
+            const frameList = document.getElementById('frameList');
+            frameList.innerHTML = '';
+            individualFrames.forEach((frameName, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'animation-btn';
+                btn.textContent = frameName;
+                btn.onclick = () => showFrame(frameName);
+                frameList.appendChild(btn);
+
+                if (index === 0 && animations.length === 0) {
+                    showFrame(frameName);
+                }
+            });
+
+            // Show first item (animation or frame)
+            if (animations.length > 0) {
+                playAnimation(animations[0]);
+            } else if (individualFrames.length > 0) {
+                showFrame(individualFrames[0]);
+            }
+
+            mainContent.classList.remove('hidden');
+        }
+
+        function playAnimation(animName) {
+            if (animatedSprite) {
+                app.stage.removeChild(animatedSprite);
+                animatedSprite.destroy();
+            }
+
+            currentAnim = animName;
+            const frames = spritesheet.animations[animName];
+            animatedSprite = new PIXI.AnimatedSprite(frames);
+
+            animatedSprite.anchor.set(0.5);
+            animatedSprite.animationSpeed = 0.1;
+            animatedSprite.play();
+
+            app.stage.addChild(animatedSprite);
+            updateSpriteTransform();
+
+            document.querySelectorAll('.animation-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.textContent === animName) {
+                    btn.classList.add('active');
+                }
+            });
+
+            updateInfo();
+
+            app.ticker.add(updateInfo);
+        }
+
+        function showFrame(frameName) {
+            if (animatedSprite) {
+                app.stage.removeChild(animatedSprite);
+                animatedSprite.destroy();
+            }
+
+            currentAnim = frameName;
+            const texture = spritesheet.textures[frameName];
+
+            // Create a simple sprite instead of AnimatedSprite
+            const sprite = new PIXI.Sprite(texture);
+            sprite.anchor.set(0.5);
+
+            // Wrap it in AnimatedSprite interface for compatibility with existing code
+            animatedSprite = sprite;
+            animatedSprite.totalFrames = 1;
+            animatedSprite.currentFrame = 0;
+            animatedSprite.playing = false;
+            animatedSprite.loop = false;
+            animatedSprite.animationSpeed = 0;
+
+            app.stage.addChild(animatedSprite);
+            updateSpriteTransform();
+
+            document.querySelectorAll('.animation-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.textContent === frameName) {
+                    btn.classList.add('active');
+                }
+            });
+
+            updateInfo();
+
+            app.ticker.add(updateInfo);
+        }
+
+        function updateSpriteTransform() {
+            if (!animatedSprite) return;
+            animatedSprite.x = app.screen.width / 2 + panX;
+            animatedSprite.y = app.screen.height / 2 + panY;
+            animatedSprite.scale.set(zoomLevel);
+        }
+
+        function updateInfo() {
+            if (!animatedSprite) return;
+
+            document.getElementById('currentFrame').textContent = Math.floor(animatedSprite.currentFrame);
+            document.getElementById('totalFrames').textContent = animatedSprite.totalFrames;
+            document.getElementById('animName').textContent = currentAnim;
+            document.getElementById('fps').textContent = (animatedSprite.animationSpeed * 60).toFixed(1);
+            document.getElementById('loop').textContent = animatedSprite.loop ? 'Yes' : 'No';
+            document.getElementById('playing').textContent = animatedSprite.playing ? 'Yes' : 'No';
+            document.getElementById('spriteWidth').textContent = Math.round(animatedSprite.width / zoomLevel) + 'px';
+            document.getElementById('spriteHeight').textContent = Math.round(animatedSprite.height / zoomLevel) + 'px';
+        }
+
+        document.getElementById('playBtn').addEventListener('click', () => {
+            if (animatedSprite) animatedSprite.play();
+        });
+
+        document.getElementById('pauseBtn').addEventListener('click', () => {
+            if (animatedSprite) animatedSprite.stop();
+        });
+
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            if (animatedSprite) {
+                animatedSprite.gotoAndStop(0);
+            }
+        });
+
+        document.getElementById('speedSlider').addEventListener('input', (e) => {
+            const speed = parseFloat(e.target.value);
+            document.getElementById('speedValue').textContent = speed.toFixed(1);
+            if (animatedSprite) {
+                animatedSprite.animationSpeed = speed * 0.1;
+            }
+        });
+
+        document.getElementById('zoomSlider').addEventListener('input', (e) => {
+            zoomLevel = parseFloat(e.target.value) / 100;
+            document.getElementById('zoomValue').textContent = Math.round(zoomLevel * 100);
+            updateSpriteTransform();
+        });
+    </script>
+</body>
+</html>
