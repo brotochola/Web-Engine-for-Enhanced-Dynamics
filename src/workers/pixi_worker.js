@@ -45,14 +45,8 @@ class PixiRenderer extends AbstractWorker {
     // PIXI application and rendering
     this.pixiApp = null;
     // Single ParticleContainer with Y-sorting for proper depth ordering
-    this.particleContainer = new PIXI.ParticleContainer(10000, {
-      scale: true,
-      position: true,
-      rotation: true,
-      uvs: false,
-      tint: true,
-      alpha: true,
-    });
+    // Will be created during initialization with correct entityCount
+    this.particleContainer = null;
     this.backgroundSprite = null;
 
     // Texture and spritesheet storage
@@ -701,6 +695,20 @@ class PixiRenderer extends AbstractWorker {
     this.canvasWidth = data.config.canvasWidth;
     this.canvasHeight = data.config.canvasHeight;
     this.canvasView = data.view;
+
+    // Create ParticleContainer with exact entityCount size (with 10% buffer for safety)
+    const maxSize = Math.ceil(this.entityCount * 1.1);
+    console.log(
+      `PIXI WORKER: Creating ParticleContainer with maxSize: ${maxSize} (entityCount: ${this.entityCount})`
+    );
+    this.particleContainer = new PIXI.ParticleContainer(maxSize, {
+      scale: true,
+      position: true,
+      rotation: true,
+      uvs: false,
+      tint: true,
+      alpha: true,
+    });
 
     // Read renderer-specific configuration
     const rendererConfig = this.config.renderer || {};

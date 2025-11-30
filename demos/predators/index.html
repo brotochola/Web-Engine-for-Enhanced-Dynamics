@@ -6,15 +6,15 @@
     <style>
         body {
             margin: 0;
-            overflow: hidden;
+            /* overflow: hidden; */
             background: #111;
             font-family: monospace;
         }
 
         canvas {
             display: block;
-            width: 800px;
-            height: 600px;
+            /* width: 800px;
+            height: 600px; */
             border: 1px solid #333;
         }
 
@@ -86,7 +86,7 @@
 
         const gameEngine = new GameEngine(
             {
-                canvasWidth: 800,
+                canvasWidth: window.innerWidth * 0.9,
                 canvasHeight: 600,
                 worldWidth: 2800,
                 worldHeight: 2600,
