@@ -17,14 +17,14 @@ class Predator extends Boid {
   // Sprite configuration - standardized format for animated sprites
   static spriteConfig = {
     type: "animated",
-    spritesheet: "personaje",
-    defaultAnimation: "caminarDerecha",
+    spritesheet: "lpc",
+    defaultAnimation: "idle_down",
     animationSpeed: 0.15,
 
     // Animation states - maps state index to animation name
     animStates: {
-      0: { name: "caminarDerecha", label: "IDLE" }, // Idle (using walk for now)
-      1: { name: "caminarDerecha", label: "WALK" }, // Walking
+      0: { name: "idle_down", label: "IDLE" }, // Idle (using walk for now)
+      1: { name: "walk_right", label: "WALK" }, // Walking
     },
   };
 

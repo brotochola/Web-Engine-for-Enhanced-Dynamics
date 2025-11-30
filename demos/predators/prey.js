@@ -17,16 +17,17 @@ class Prey extends Boid {
   // Note: ARRAY_SCHEMA removed - all data now in components (pure ECS architecture)
 
   // Sprite configuration - standardized format for animated sprites
+  // Sprite configuration - standardized format for animated sprites
   static spriteConfig = {
     type: "animated",
-    spritesheet: "personaje",
-    defaultAnimation: "caminarDerecha",
+    spritesheet: "lpc",
+    defaultAnimation: "idle_down",
     animationSpeed: 0.15,
 
     // Animation states - maps state index to animation name
     animStates: {
-      0: { name: "caminarDerecha", label: "IDLE" }, // Idle (using walk for now)
-      1: { name: "caminarDerecha", label: "WALK" }, // Walking
+      0: { name: "idle_down", label: "IDLE" }, // Idle (using walk for now)
+      1: { name: "walk_right", label: "WALK" }, // Walking
     },
   };
 
@@ -34,7 +35,6 @@ class Prey extends Boid {
     IDLE: 0,
     WALK: 1,
   };
-
   /**
    * Prey constructor - initializes prey properties
    * @param {number} index - Position in shared arrays
