@@ -75,7 +75,7 @@
     </div>
 
     <script type="module">
-        const numberOfPrey = 10000;
+        const numberOfPrey = 25000;
         const numberOfPredators = 50;
         const numberOfBoids = 0;
         // Import engine classes and entity classes
@@ -112,6 +112,11 @@
                     collisionResponseStrength: 0.9,
                     verletDamping: 0.99,
                     gravity: { x: 0, y: 0 }
+                },
+                renderer: {
+                    noLimitFPS: false,
+                    // bg: "bg",
+                    ySorting: true,
                 }
             },
             {

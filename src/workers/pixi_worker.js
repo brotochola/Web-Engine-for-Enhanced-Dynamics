@@ -25,8 +25,7 @@ self.PIXI = PIXI;
 
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
 
-// Number of layer containers for depth sorting
-const NUM_LAYERS = 1;
+// Single ParticleContainer with Y-sorting for depth
 
 /**
  * PixiRenderer - Manages rendering of game objects using PixiJS in a web worker
@@ -39,21 +38,21 @@ class PixiRenderer extends AbstractWorker {
     // Use PIXI ticker instead of requestAnimationFrame
     this.usesCustomScheduler = true;
 
+    // Renderer configuration options (set during initialize)
+    this.ySorting = false; // Enable/disable Y-sorting for depth ordering
+    this.bgTextureName = null; // Texture name to use for background
+
     // PIXI application and rendering
     this.pixiApp = null;
-    // Array of ParticleContainers for layer-based rendering
-    // Lower indices = background layers, higher indices = foreground layers
-    this.layerContainers = [];
-    for (let i = 0; i < NUM_LAYERS; i++) {
-      this.layerContainers[i] = new PIXI.ParticleContainer(10000, {
-        scale: true,
-        position: true,
-        rotation: true,
-        uvs: false,
-        tint: true,
-        alpha: true,
-      });
-    }
+    // Single ParticleContainer with Y-sorting for proper depth ordering
+    this.particleContainer = new PIXI.ParticleContainer(10000, {
+      scale: true,
+      position: true,
+      rotation: true,
+      uvs: false,
+      tint: true,
+      alpha: true,
+    });
     this.backgroundSprite = null;
 
     // Texture and spritesheet storage
@@ -86,21 +85,19 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * Update camera transform on all layer containers and background
+   * Update camera transform on particle container and background
    */
   updateCameraTransform() {
     const zoom = this.cameraData[0];
     const cameraX = this.cameraData[1];
     const cameraY = this.cameraData[2];
 
-    // Apply camera state to all layer containers
-    for (let i = 0; i < this.layerContainers.length; i++) {
-      this.layerContainers[i].scale.set(zoom);
-      this.layerContainers[i].x = -cameraX * zoom;
-      this.layerContainers[i].y = -cameraY * zoom;
-    }
+    // Apply camera state to particle container
+    this.particleContainer.scale.set(zoom);
+    this.particleContainer.x = -cameraX * zoom;
+    this.particleContainer.y = -cameraY * zoom;
 
-    // Apply camera state to background (since it's not a child of layerContainers)
+    // Apply camera state to background (since it's not a child of particleContainer)
     if (this.backgroundSprite) {
       this.backgroundSprite.scale.set(zoom);
       this.backgroundSprite.x = -cameraX * zoom;
@@ -180,8 +177,8 @@ class PixiRenderer extends AbstractWorker {
     // Convert deltaTime from ms to seconds for frame calculation
     const deltaSeconds = deltaTime / 1000;
 
-    // Array to collect visible sprites for Y-sorting
-    const visibleSprites = [];
+    // Array to collect visible sprites for Y-sorting (only if ySorting is enabled)
+    const visibleSprites = this.ySorting ? [] : null;
 
     // First pass: update sprite properties and collect visible sprites
     for (let i = 0; i < this.entityCount; i++) {
@@ -200,9 +197,18 @@ class PixiRenderer extends AbstractWorker {
         continue;
       }
 
-      // Entity should be visible - count it and collect for sorting
+      // Entity should be visible - count it
       visibleCount++;
-      visibleSprites.push({ entityId: i, sprite: bodySprite, y: y[i] });
+
+      // Collect for Y-sorting if enabled
+      if (this.ySorting) {
+        visibleSprites.push({ entityId: i, sprite: bodySprite, y: y[i] });
+      } else {
+        // No Y-sorting: just make sprite visible
+        if (!bodySprite.visible) {
+          bodySprite.visible = true;
+        }
+      }
 
       // Update transform (position, rotation, scale)
       bodySprite.x = x[i];
@@ -232,21 +238,20 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
-    // Second pass: Y-sort and re-add sprites to container in correct order
-    // Sort by Y position (lower Y = render first/background, higher Y = foreground)
-    visibleSprites.sort((a, b) => a.y - b.y);
+    // Second pass: Y-sort and re-add sprites to container (only if ySorting is enabled)
+    if (this.ySorting) {
+      // Sort by Y position (lower Y = render first/background, higher Y = foreground)
+      visibleSprites.sort((a, b) => a.y - b.y);
 
-    // Get the single container
-    const container = this.layerContainers[0];
+      // Remove all children from container
+      this.particleContainer.removeChildren();
 
-    // Remove all children from container
-    container.removeChildren();
-
-    // Re-add sprites in sorted order and make them visible
-    for (const item of visibleSprites) {
-      container.addChild(item.sprite);
-      if (!item.sprite.visible) {
-        item.sprite.visible = true;
+      // Re-add sprites in sorted order and make them visible
+      for (const item of visibleSprites) {
+        this.particleContainer.addChild(item.sprite);
+        if (!item.sprite.visible) {
+          item.sprite.visible = true;
+        }
       }
     }
   }
@@ -286,8 +291,18 @@ class PixiRenderer extends AbstractWorker {
    * Setup PIXI ticker to call gameLoop (custom scheduler implementation)
    */
   onCustomSchedulerStart() {
-    // PIXI ticker will call gameLoop on every tick
-    this.pixiApp.ticker.add(() => this.gameLoop());
+    if (this.noLimitFPS) {
+      // When noLimitFPS is true, bypass PIXI ticker and use standard loop
+      // This allows unlimited FPS like other workers
+      console.log(
+        "PIXI WORKER: Using unlimited FPS mode (bypassing PIXI ticker)"
+      );
+      this.usesCustomScheduler = false; // Switch to standard scheduler
+      this.scheduleNextFrame(); // Start the standard loop
+    } else {
+      // Standard mode: PIXI ticker will call gameLoop on every tick (60fps)
+      this.pixiApp.ticker.add(() => this.gameLoop());
+    }
   }
 
   /**
@@ -295,13 +310,15 @@ class PixiRenderer extends AbstractWorker {
    * Note: Background is added to stage, not ParticleContainer (which only supports simple sprites)
    */
   createBackground() {
-    if (!this.textures.bg) {
-      console.warn("Background texture not found");
+    const bgTexture = this.textures[this.bgTextureName];
+
+    if (!bgTexture) {
+      console.warn(`Background texture "${this.bgTextureName}" not found`);
       return;
     }
 
     this.backgroundSprite = new PIXI.TilingSprite(
-      this.textures.bg,
+      bgTexture,
       this.worldWidth,
       this.worldHeight
     );
@@ -583,16 +600,15 @@ class PixiRenderer extends AbstractWorker {
       bodySprite.anchor.set(0.5, 1);
       bodySprite.zIndex = 0;
 
-      // Add sprite to container
-      // container.addChild(bodySprite);
-
       // Store references
-      // this.containers[i] = bodySprite;
       this.bodySprites[i] = bodySprite;
       this.previousAnimStates[i] = -1; // Initialize to invalid state
 
-      // Note: Sprites will be added to container during first updateSprites() call
-      // based on Y-sorting, so we don't add them here
+      // Add sprite to container if Y-sorting is disabled
+      // When Y-sorting is enabled, sprites are added during updateSprites()
+      if (!this.ySorting) {
+        this.particleContainer.addChild(bodySprite);
+      }
     }
 
     console.log(`PIXI WORKER: Created ${this.entityCount} entity containers`);
@@ -686,6 +702,28 @@ class PixiRenderer extends AbstractWorker {
     this.canvasHeight = data.config.canvasHeight;
     this.canvasView = data.view;
 
+    // Read renderer-specific configuration
+    const rendererConfig = this.config.renderer || {};
+
+    // Configure noLimitFPS (AbstractWorker checks for workerType, but we use 'renderer' key)
+    if (rendererConfig.noLimitFPS === true) {
+      this.noLimitFPS = true;
+      console.log(`PIXI WORKER: Running in unlimited FPS mode (noLimitFPS)`);
+    }
+
+    // Configure Y-sorting (default: true)
+    this.ySorting =
+      rendererConfig.ySorting !== undefined ? rendererConfig.ySorting : true;
+    console.log(
+      `PIXI WORKER: Y-sorting ${this.ySorting ? "enabled" : "disabled"}`
+    );
+
+    // Configure background texture name (default: 'bg')
+    this.bgTextureName = rendererConfig.bg; //|| "bg";
+    console.log(
+      `PIXI WORKER: Background texture set to "${this.bgTextureName}"`
+    );
+
     // Initialize component arrays from SharedArrayBuffers
     console.log("PIXI WORKER: Initializing component arrays...");
 
@@ -739,13 +777,11 @@ class PixiRenderer extends AbstractWorker {
     this.reportLog("finished loading spritesheets");
 
     // Create background
-    // this.createBackground();
+    this.createBackground();
 
-    // Add all layer containers to the stage in order (background to foreground)
-    // Note: ParticleContainer doesn't support sortableChildren, but uses zIndex internally for ordering
-    for (let i = 0; i < this.layerContainers.length; i++) {
-      this.pixiApp.stage.addChild(this.layerContainers[i]);
-    }
+    // Add particle container to the stage
+    // Sprites are Y-sorted and re-added every frame for proper depth ordering
+    this.pixiApp.stage.addChild(this.particleContainer);
 
     // Build entity sprite configs from class definitions
     this.buildEntitySpriteConfigs(data.registeredClasses);

@@ -259,6 +259,7 @@ class Boid extends GameObject {
    */
   avoidMouse(i, dtRatio, inputData) {
     if (inputData[2] === 0) return;
+    if (inputData[3] === 0) return;
 
     // Cache array references
     const tX = Transform.x;
