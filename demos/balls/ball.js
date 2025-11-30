@@ -41,8 +41,8 @@ class Ball extends GameObject {
     this.rigidBody.friction = 0.01; // Low friction - let balls settle naturally
 
     // Initialize position using ergonomic API (automatically syncs px/py for Verlet)
-    this.x = Math.random() * (config.worldWidth || 7600);
-    this.y = Math.random() * 1000 + 50; // Spawn spread out vertically
+    this.x = Math.random() * config.worldWidth;
+    this.y = Math.random() * config.worldHeight;
     this.rotation = 0;
 
     // Initialize RigidBody velocities and accelerations

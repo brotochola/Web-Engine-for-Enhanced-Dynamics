@@ -13,8 +13,8 @@
 
         canvas {
             display: block;
-            width: 800px;
-            height: 600px;
+            /* width: 800px;
+            height: 600px; */
             border: 1px solid #333;
         }
 
@@ -78,18 +78,20 @@
         import { GameEngine } from '/src/core/gameEngine.js';
         import { Ball } from '/demos/balls/ball.js';
 
+        const numOfBalls = 10000;
+
         // Initialize with GameEngine using class registration system
         const gameEngine = new GameEngine(
             {
-                canvasWidth: 800,
+                canvasWidth: window.innerWidth * 0.9,
                 canvasHeight: 600,
-                worldWidth: 4000,
-                worldHeight: 3420,
+                worldWidth: 9000,
+                worldHeight: 4000,
 
                 // Spatial hash grid configuration
                 spatial: {
-                    cellSize: 80,        // Each cell size in world units
-                    maxNeighbors: 150,   // Maximum neighbors to track per entity
+                    cellSize: 50,        // Each cell size in world units
+                    maxNeighbors: 200,   // Maximum neighbors to track per entity
                     noLimitFPS: true    // If true, runs as fast as possible instead of 60fps
                 },
 
@@ -100,16 +102,18 @@
 
                 // Physics configuration
                 physics: {
-                    subStepCount: 1,     // Constraint solver iterations per frame (4-8 recommended)
+                    subStepCount: 3,     // Constraint solver iterations per frame (4-8 recommended)
                     noLimitFPS: true,   // If true, runs as fast as possible instead of 60fps
 
                     // Collision Detection
-                    maxCollisionPairs: 11990000, // Maximum collision pairs per frame
+                    maxCollisionPairs: 150000, // Maximum collision pairs per frame
                     verletDamping: 0.99,
-                    boundaryElasticity: 0,
-                    collisionResponseStrength: 0.98,
+                    boundaryElasticity: 0.5,
+                    collisionResponseStrength: 0.99,
                     // Global Forces
                     gravity: { x: 0, y: 0.5 }   // Global gravity (lower = more stable stacking)
+                }, renderer: {
+                    noLimitFPS: false,
                 }
             },
             {
@@ -123,7 +127,7 @@
 
         // Register entity classes with their script paths
         // Note: Paths are relative to src/workers/ folder where workers are located
-        gameEngine.registerEntityClass(Ball, 7000, "../../demos/balls/ball.js");
+        gameEngine.registerEntityClass(Ball, numOfBalls, "../../demos/balls/ball.js");
 
         // Spawning functions
         function spawnRandomBall() {
@@ -173,7 +177,7 @@
         gameEngine.init().then(() => {
             console.log("Game initialized. Spawning 4000 balls...");
             // Spawn 4000 balls
-            for (let i = 0; i < 4000; i++) {
+            for (let i = 0; i < numOfBalls; i++) {
                 spawnRandomBall();
             }
         }).catch(error => {
