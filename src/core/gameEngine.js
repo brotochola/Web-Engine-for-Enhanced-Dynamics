@@ -1224,6 +1224,29 @@ class GameEngine {
       available: total - activeCount,
     };
   }
+
+  /**
+   * Enable or disable detailed profiling in logic workers
+   * When enabled, workers will log performance breakdowns every ~2 seconds
+   * @param {boolean} enabled - Whether to enable profiling
+   */
+  enableProfiling(enabled = true) {
+    if (!this.workers.logicWorkers || this.workers.logicWorkers.length === 0) {
+      console.error("Logic workers not initialized");
+      return;
+    }
+
+    console.log(
+      `${enabled ? "Enabling" : "Disabling"} profiling on all logic workers...`
+    );
+
+    this.workers.logicWorkers.forEach((worker) => {
+      worker.postMessage({
+        msg: "enableProfiling",
+        enabled: enabled,
+      });
+    });
+  }
 }
 
 // ES6 module export

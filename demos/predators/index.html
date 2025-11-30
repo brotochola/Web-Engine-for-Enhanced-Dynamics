@@ -94,7 +94,7 @@
                 // Spatial hash grid configuration
                 spatial: {
                     cellSize: 50,  // Increased to match visual range (reduces grid overhead)
-                    maxNeighbors: 300,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
+                    maxNeighbors: 200,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
                     noLimitFPS: true,
 
                 },
@@ -103,8 +103,7 @@
                 logic: {
                     noLimitFPS: false,
                     numberOfLogicWorkers: 4,
-                    numberOfEntitiesPerJob: 1000,
-
+                    numberOfEntitiesPerJob: 250
                 },
 
                 // Physics configuration
@@ -146,6 +145,9 @@
 
         // Make gameEngine global for button onclick handlers
         window.gameEngine = gameEngine;
+
+        // Add helper functions to window for easy console access
+        window.enableProfiling = (enabled = true) => gameEngine.enableProfiling(enabled);
 
         // Dynamically create FPS display elements for each logic worker
         const logicFPSContainer = document.getElementById('logicFPSContainer');

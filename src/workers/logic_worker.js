@@ -38,7 +38,7 @@ class LogicWorker extends AbstractWorker {
     this.workerIndex = 0; // Which worker am I? (0, 1, 2, ...)
 
     // Frame synchronization (for multi-worker coordination)
-    this.syncData = null; // Int32Array for Atomics-based synchronization
+    this.syncData = null; // Int32Array for Atomics-based work coordination
     this.totalLogicWorkers = 1; // Total number of logic workers
 
     // Job queue for dynamic work distribution
@@ -46,6 +46,21 @@ class LogicWorker extends AbstractWorker {
 
     // Performance tracking
     this.activeEntityCount = 0; // Number of active entities this worker is processing
+    this.jobsProcessedThisFrame = 0; // Track jobs claimed
+    this.entitiesProcessedThisFrame = 0; // Track actual entities processed
+    this.frameStartTime = 0; // For timing diagnostics
+
+    // Detailed profiling (only tracked when enabled)
+    this.enableProfiling = false; // Set to true to enable detailed profiling
+    this.profilingStats = {
+      collisionTime: 0,
+      jobProcessingTime: 0,
+      neighborUpdateTime: 0,
+      tickTime: 0,
+      totalFrameTime: 0,
+      totalNeighborsProcessed: 0,
+    };
+    this.profileReportInterval = 120; // Report every N frames
 
     // Collision tracking (Unity-style Enter/Stay/Exit)
     this.collisionData = null; // SharedArrayBuffer for collision pairs from physics worker
@@ -74,7 +89,7 @@ class LogicWorker extends AbstractWorker {
       this.totalLogicWorkers = this.syncData[2]; // Total workers stored at index 2
 
       console.log(
-        `LOGIC WORKER ${this.workerIndex}: Frame synchronization enabled (${this.totalLogicWorkers} workers total)`
+        `LOGIC WORKER ${this.workerIndex}: Job-based work distribution with ${this.totalLogicWorkers} workers`
       );
     }
 
@@ -220,22 +235,34 @@ class LogicWorker extends AbstractWorker {
   /**
    * Update method called each frame (implementation of AbstractWorker.update)
    * Uses job-based system: workers atomically claim jobs and process them
-   * FIXED: Barrier happens at START of frame to prevent race conditions
    */
   update(deltaTime, dtRatio, resuming) {
-    // CRITICAL: Synchronize BEFORE starting work on new frame
-    // This ensures all workers finished the previous frame before any start the next
-    if (this.syncData && this.totalLogicWorkers > 1) {
-      this.synchronizeFrameStart();
-    }
+    this.frameStartTime = performance.now();
+    let t0, t1, t2, t3, t4;
 
     // Process collision callbacks BEFORE entity logic (Unity-style)
     if (this.collisionData) {
+      if (this.enableProfiling) {
+        t0 = performance.now();
+      }
+
       this.processCollisionCallbacks();
+
+      if (this.enableProfiling) {
+        t1 = performance.now();
+        this.profilingStats.collisionTime += t1 - t0;
+      }
     }
 
     // Count active entities while processing jobs
     let activeCount = 0;
+    this.jobsProcessedThisFrame = 0;
+    this.entitiesProcessedThisFrame = 0;
+    let totalNeighborsThisFrame = 0;
+
+    if (this.enableProfiling) {
+      t2 = performance.now();
+    }
 
     // Job-based processing: atomically claim jobs until none remain
     while (true) {
@@ -248,6 +275,8 @@ class LogicWorker extends AbstractWorker {
         break; // No more jobs, this worker is done
       }
 
+      this.jobsProcessedThisFrame++;
+
       // Get job range from buffer
       const jobStartIndex = this.jobQueueData[2 + jobIndex * 2];
       const jobEndIndex = this.jobQueueData[2 + jobIndex * 2 + 1];
@@ -257,99 +286,63 @@ class LogicWorker extends AbstractWorker {
         if (this.gameObjects[i] && Transform.active[i]) {
           const obj = this.gameObjects[i];
           activeCount++;
+          this.entitiesProcessedThisFrame++;
 
           // Update neighbor references before tick
+          const neighborStart = this.enableProfiling ? performance.now() : 0;
           obj.updateNeighbors(this.neighborData, this.distanceData);
+
+          if (this.enableProfiling) {
+            const neighborEnd = performance.now();
+            this.profilingStats.neighborUpdateTime +=
+              neighborEnd - neighborStart;
+            // Track how many neighbors this entity has
+            const neighborOffset =
+              i * (1 + (this.config.spatial?.maxNeighbors || 100));
+            totalNeighborsThisFrame += this.neighborData[neighborOffset];
+          }
+
           // Tick entity logic
+          const tickStart = this.enableProfiling ? performance.now() : 0;
           obj.tick(dtRatio, this.inputData);
+
+          if (this.enableProfiling) {
+            const tickEnd = performance.now();
+            this.profilingStats.tickTime += tickEnd - tickStart;
+          }
         }
+      }
+    }
+
+    // Reset job queue for next frame
+    // Use syncData[1] as a "workers finished" counter for this frame
+    if (this.syncData && this.totalLogicWorkers > 1) {
+      const finishedCount = Atomics.add(this.syncData, 1, 1) + 1;
+
+      if (finishedCount === this.totalLogicWorkers) {
+        // Last worker to finish - reset for next frame
+        Atomics.store(this.jobQueueData, 0, 0); // Reset job counter
+        Atomics.store(this.syncData, 1, 0); // Reset finished counter
+      }
+    } else if (this.totalLogicWorkers === 1) {
+      // Single worker mode - just reset directly
+      Atomics.store(this.jobQueueData, 0, 0);
+    }
+
+    if (this.enableProfiling) {
+      t3 = performance.now();
+      this.profilingStats.jobProcessingTime += t3 - t2;
+      this.profilingStats.totalNeighborsProcessed += totalNeighborsThisFrame;
+      this.profilingStats.totalFrameTime += t3 - t0;
+
+      // Report profiling stats periodically
+      if (this.frameNumber % this.profileReportInterval === 0) {
+        this.reportProfilingStats(totalNeighborsThisFrame);
       }
     }
 
     // Store active count for FPS reporting
     this.activeEntityCount = activeCount;
-
-    // Frame complete - no end barrier needed since we barrier at start of next frame
-  }
-
-  /**
-   * Synchronize at frame START - ensures all workers finished previous frame
-   * This is the correct place for the barrier to prevent race conditions
-   * OPTIMIZED: Hybrid spin-then-wait strategy for lower latency
-   */
-  synchronizeFrameStart() {
-    // Atomically increment the arrival counter
-    const arrivedWorkers = Atomics.add(this.syncData, 1, 1) + 1;
-
-    if (arrivedWorkers === this.totalLogicWorkers) {
-      // Last worker to arrive at the new frame
-      // All workers from previous frame have finished
-
-      // Reset job queue for the NEW frame (safe now - all workers are waiting)
-      Atomics.store(this.jobQueueData, 0, 0);
-
-      // Reset the arrival counter for next barrier
-      Atomics.store(this.syncData, 1, 0);
-
-      // Increment frame counter for debugging
-      Atomics.add(this.syncData, 0, 1);
-
-      // Increment barrier flag to signal release
-      Atomics.add(this.syncData, 3, 1);
-
-      // Wake up all waiting workers to start new frame
-      Atomics.notify(this.syncData, 3, this.totalLogicWorkers - 1);
-    } else {
-      // Not the last worker - wait for others to arrive
-      const currentBarrier = Atomics.load(this.syncData, 3);
-
-      // PHASE 1: Active spin for ~100 microseconds (typical worker arrival time)
-      // This avoids the overhead of Atomics.wait for the common case where
-      // other workers arrive within microseconds
-      const spinStartTime = performance.now();
-      const spinDuration = 0.1; // 100 microseconds in milliseconds
-
-      while (performance.now() - spinStartTime < spinDuration) {
-        // Check if barrier has been released (flag incremented)
-        if (Atomics.load(this.syncData, 3) !== currentBarrier) {
-          return; // Released! Start new frame
-        }
-        // Tight spin loop - CPU stays hot, lowest latency
-      }
-
-      // PHASE 2: If still not released after spin, use progressive wait
-      // Start with short timeouts and increase gradually
-      const timeouts = [1, 2, 5, 10, 20]; // Progressive timeouts in ms
-
-      for (const timeout of timeouts) {
-        const result = Atomics.wait(this.syncData, 3, currentBarrier, timeout);
-
-        if (result === "ok" || result === "not-equal") {
-          // Successfully synchronized or barrier already passed
-          return;
-        }
-        // If timed-out, try next longer timeout
-      }
-
-      // PHASE 3: Final long wait with warning (should rarely reach here)
-      const result = Atomics.wait(this.syncData, 3, currentBarrier, 50);
-
-      if (result === "timed-out") {
-        // This indicates a stuck worker - log detailed diagnostics
-        console.error(
-          `LOGIC WORKER ${this.workerIndex}: BARRIER TIMEOUT! ` +
-            `Arrived: ${Atomics.load(this.syncData, 1)}/${
-              this.totalLogicWorkers
-            }, ` +
-            `Frame: ${Atomics.load(this.syncData, 0)}, ` +
-            `Barrier: ${Atomics.load(
-              this.syncData,
-              3
-            )} (expected ${currentBarrier})`
-        );
-        // Continue anyway to prevent complete hang, but frame will be desynced
-      }
-    }
   }
 
   /**
@@ -453,6 +446,60 @@ class LogicWorker extends AbstractWorker {
   }
 
   /**
+   * Report detailed profiling statistics
+   */
+  reportProfilingStats(neighborsThisFrame) {
+    const frames = this.profileReportInterval;
+    const avgFrameTime = this.profilingStats.totalFrameTime / frames;
+    const avgCollisionTime = this.profilingStats.collisionTime / frames;
+    const avgJobProcessingTime = this.profilingStats.jobProcessingTime / frames;
+    const avgNeighborUpdateTime =
+      this.profilingStats.neighborUpdateTime / frames;
+    const avgTickTime = this.profilingStats.tickTime / frames;
+    const avgNeighborsPerFrame =
+      this.profilingStats.totalNeighborsProcessed / frames;
+
+    console.log(
+      `\n📊 LOGIC WORKER ${this.workerIndex} PROFILING (avg over ${frames} frames):\n` +
+        `  Total frame time: ${avgFrameTime.toFixed(2)}ms\n` +
+        `    ├─ Collision cbs:     ${avgCollisionTime.toFixed(2)}ms (${(
+          (avgCollisionTime / avgFrameTime) *
+          100
+        ).toFixed(1)}%)\n` +
+        `    └─ Job processing:    ${avgJobProcessingTime.toFixed(2)}ms (${(
+          (avgJobProcessingTime / avgFrameTime) *
+          100
+        ).toFixed(1)}%)\n` +
+        `        ├─ Neighbor update: ${avgNeighborUpdateTime.toFixed(2)}ms (${(
+          (avgNeighborUpdateTime / avgJobProcessingTime) *
+          100
+        ).toFixed(1)}%)\n` +
+        `        └─ Entity tick():   ${avgTickTime.toFixed(2)}ms (${(
+          (avgTickTime / avgJobProcessingTime) *
+          100
+        ).toFixed(1)}%)\n` +
+        `  Work distribution:\n` +
+        `    - Jobs/frame:      ${this.jobsProcessedThisFrame.toFixed(1)}\n` +
+        `    - Entities/frame:  ${this.entitiesProcessedThisFrame.toFixed(
+          0
+        )}\n` +
+        `    - Neighbors/frame: ${avgNeighborsPerFrame.toFixed(0)}\n` +
+        `    - μs/entity:       ${(
+          (avgFrameTime / this.entitiesProcessedThisFrame) *
+          1000
+        ).toFixed(1)}μs`
+    );
+
+    // Reset stats for next interval
+    this.profilingStats.collisionTime = 0;
+    this.profilingStats.jobProcessingTime = 0;
+    this.profilingStats.neighborUpdateTime = 0;
+    this.profilingStats.tickTime = 0;
+    this.profilingStats.totalFrameTime = 0;
+    this.profilingStats.totalNeighborsProcessed = 0;
+  }
+
+  /**
    * Handle custom messages from main thread or other workers
    * Implements spawning and despawning commands
    */
@@ -460,6 +507,16 @@ class LogicWorker extends AbstractWorker {
     const { msg } = data;
 
     switch (msg) {
+      case "enableProfiling": {
+        this.enableProfiling = data.enabled !== undefined ? data.enabled : true;
+        console.log(
+          `LOGIC WORKER ${this.workerIndex}: Profiling ${
+            this.enableProfiling ? "ENABLED" : "DISABLED"
+          }`
+        );
+        break;
+      }
+
       case "spawn": {
         const { className, spawnConfig } = data;
         const EntityClass = self[className];
