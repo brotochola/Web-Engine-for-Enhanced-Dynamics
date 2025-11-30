@@ -49,8 +49,15 @@ class LogicWorker extends AbstractWorker {
 
     // Collision tracking (Unity-style Enter/Stay/Exit)
     this.collisionData = null; // SharedArrayBuffer for collision pairs from physics worker
-    this.previousCollisions = new Set(); // Track collisions from last frame
-    this.currentCollisions = new Set(); // Track collisions in current frame
+
+    // Optimized collision tracking using numeric keys instead of strings
+    // Uses Cantor pairing function: key = (a + b) * (a + b + 1) / 2 + b
+    // This eliminates string allocation and GC pressure
+    this.previousCollisions = new Set(); // Track collisions from last frame (numeric keys)
+    this.currentCollisions = new Set(); // Track collisions in current frame (numeric keys)
+
+    // Collision pair cache for reverse lookups (key -> [entityA, entityB])
+    this.collisionPairCache = new Map(); // Only for exit events
   }
 
   /**
@@ -213,12 +220,13 @@ class LogicWorker extends AbstractWorker {
   /**
    * Update method called each frame (implementation of AbstractWorker.update)
    * Uses job-based system: workers atomically claim jobs and process them
+   * FIXED: Barrier happens at START of frame to prevent race conditions
    */
   update(deltaTime, dtRatio, resuming) {
-    // Reset job queue at the start of each frame (only first worker to arrive)
-    // This is safe because of the barrier at the end of the previous frame
-    if (this.jobQueueData) {
-      Atomics.store(this.jobQueueData, 0, 0); // Reset current job index to 0
+    // CRITICAL: Synchronize BEFORE starting work on new frame
+    // This ensures all workers finished the previous frame before any start the next
+    if (this.syncData && this.totalLogicWorkers > 1) {
+      this.synchronizeFrameStart();
     }
 
     // Process collision callbacks BEFORE entity logic (Unity-style)
@@ -261,49 +269,107 @@ class LogicWorker extends AbstractWorker {
     // Store active count for FPS reporting
     this.activeEntityCount = activeCount;
 
-    // Synchronize with other logic workers (barrier ensures all workers finish frame)
-    if (this.syncData && this.totalLogicWorkers > 1) {
-      this.synchronizeFrame();
+    // Frame complete - no end barrier needed since we barrier at start of next frame
+  }
+
+  /**
+   * Synchronize at frame START - ensures all workers finished previous frame
+   * This is the correct place for the barrier to prevent race conditions
+   * OPTIMIZED: Hybrid spin-then-wait strategy for lower latency
+   */
+  synchronizeFrameStart() {
+    // Atomically increment the arrival counter
+    const arrivedWorkers = Atomics.add(this.syncData, 1, 1) + 1;
+
+    if (arrivedWorkers === this.totalLogicWorkers) {
+      // Last worker to arrive at the new frame
+      // All workers from previous frame have finished
+
+      // Reset job queue for the NEW frame (safe now - all workers are waiting)
+      Atomics.store(this.jobQueueData, 0, 0);
+
+      // Reset the arrival counter for next barrier
+      Atomics.store(this.syncData, 1, 0);
+
+      // Increment frame counter for debugging
+      Atomics.add(this.syncData, 0, 1);
+
+      // Increment barrier flag to signal release
+      Atomics.add(this.syncData, 3, 1);
+
+      // Wake up all waiting workers to start new frame
+      Atomics.notify(this.syncData, 3, this.totalLogicWorkers - 1);
+    } else {
+      // Not the last worker - wait for others to arrive
+      const currentBarrier = Atomics.load(this.syncData, 3);
+
+      // PHASE 1: Active spin for ~100 microseconds (typical worker arrival time)
+      // This avoids the overhead of Atomics.wait for the common case where
+      // other workers arrive within microseconds
+      const spinStartTime = performance.now();
+      const spinDuration = 0.1; // 100 microseconds in milliseconds
+
+      while (performance.now() - spinStartTime < spinDuration) {
+        // Check if barrier has been released (flag incremented)
+        if (Atomics.load(this.syncData, 3) !== currentBarrier) {
+          return; // Released! Start new frame
+        }
+        // Tight spin loop - CPU stays hot, lowest latency
+      }
+
+      // PHASE 2: If still not released after spin, use progressive wait
+      // Start with short timeouts and increase gradually
+      const timeouts = [1, 2, 5, 10, 20]; // Progressive timeouts in ms
+
+      for (const timeout of timeouts) {
+        const result = Atomics.wait(this.syncData, 3, currentBarrier, timeout);
+
+        if (result === "ok" || result === "not-equal") {
+          // Successfully synchronized or barrier already passed
+          return;
+        }
+        // If timed-out, try next longer timeout
+      }
+
+      // PHASE 3: Final long wait with warning (should rarely reach here)
+      const result = Atomics.wait(this.syncData, 3, currentBarrier, 50);
+
+      if (result === "timed-out") {
+        // This indicates a stuck worker - log detailed diagnostics
+        console.error(
+          `LOGIC WORKER ${this.workerIndex}: BARRIER TIMEOUT! ` +
+            `Arrived: ${Atomics.load(this.syncData, 1)}/${
+              this.totalLogicWorkers
+            }, ` +
+            `Frame: ${Atomics.load(this.syncData, 0)}, ` +
+            `Barrier: ${Atomics.load(
+              this.syncData,
+              3
+            )} (expected ${currentBarrier})`
+        );
+        // Continue anyway to prevent complete hang, but frame will be desynced
+      }
     }
   }
 
   /**
-   * Synchronize this worker with other logic workers using Atomics
-   * Ensures all workers finish their frame before any proceeds to the next
+   * Generate a unique numeric key for a collision pair using Cantor pairing function
+   * This eliminates string allocation and GC pressure
+   * @param {number} a - First entity ID
+   * @param {number} b - Second entity ID
+   * @returns {number} - Unique numeric key
    */
-  synchronizeFrame() {
-    // Atomically increment the completion counter
-    const completedWorkers = Atomics.add(this.syncData, 1, 1) + 1;
-
-    if (completedWorkers === this.totalLogicWorkers) {
-      // This is the last worker to complete this frame
-      // Reset the completion counter for the next frame
-      Atomics.store(this.syncData, 1, 0);
-
-      // Increment frame counter
-      Atomics.add(this.syncData, 0, 1);
-
-      // Wake up all waiting workers
-      Atomics.notify(this.syncData, 3, this.totalLogicWorkers - 1);
-    } else {
-      // Not the last worker - wait for others to complete
-      // Use a spinlock with wait to avoid blocking the event loop completely
-      const startValue = Atomics.load(this.syncData, 3);
-
-      // Wait with timeout to prevent deadlock (1 frame = ~16ms worst case)
-      const result = Atomics.wait(this.syncData, 3, startValue, 50);
-
-      // If timeout, just continue (failsafe - better to jitter than hang)
-      if (result === "timed-out") {
-        console.warn(`LOGIC WORKER ${this.workerIndex}: Frame sync timeout`);
-      }
-    }
+  getCollisionKey(a, b) {
+    // Cantor pairing function: maps two naturals to a unique natural
+    // key = (a + b) * (a + b + 1) / 2 + b
+    return ((a + b) * (a + b + 1)) / 2 + b;
   }
 
   /**
    * Process collision callbacks (Unity-style)
    * Determines Enter/Stay/Exit states and calls appropriate callbacks
    * Partitions collision processing across workers using modulo (entityA % workers == myIndex)
+   * OPTIMIZED: Uses numeric keys instead of string concatenation for zero-allocation tracking
    */
   processCollisionCallbacks() {
     // Read collision pairs from physics worker
@@ -323,12 +389,19 @@ class LogicWorker extends AbstractWorker {
         continue;
       }
 
-      // Create unique pair keys (both directions for easy lookup)
-      const keyAB = `${entityA},${entityB}`;
-      const keyBA = `${entityB},${entityA}`;
+      // Create unique numeric keys (both directions for easy lookup)
+      // NO STRING ALLOCATION - uses Cantor pairing function
+      const keyAB = this.getCollisionKey(entityA, entityB);
+      const keyBA = this.getCollisionKey(entityB, entityA);
 
       this.currentCollisions.add(keyAB);
       this.currentCollisions.add(keyBA);
+
+      // Cache the pair for potential exit events (only if new)
+      if (!this.previousCollisions.has(keyAB)) {
+        this.collisionPairCache.set(keyAB, [entityA, entityB]);
+        this.collisionPairCache.set(keyBA, [entityB, entityA]);
+      }
 
       // Determine if this is a new collision or continuing
       const isNewCollision = !this.previousCollisions.has(keyAB);
@@ -354,8 +427,11 @@ class LogicWorker extends AbstractWorker {
     // Check for collisions that ended (OnCollisionExit)
     for (const prevKey of this.previousCollisions) {
       if (!this.currentCollisions.has(prevKey)) {
-        // Parse the key to get entity indices
-        const [entityA, entityB] = prevKey.split(",").map(Number);
+        // Retrieve entity indices from cache (no string parsing!)
+        const pair = this.collisionPairCache.get(prevKey);
+        if (!pair) continue; // Shouldn't happen, but safety check
+
+        const [entityA, entityB] = pair;
 
         // Only process if this worker "owns" entityA (using same partitioning)
         if (entityA % this.totalLogicWorkers === this.workerIndex) {
@@ -364,6 +440,9 @@ class LogicWorker extends AbstractWorker {
             objA.onCollisionExit(entityB);
           }
         }
+
+        // Clean up cache entry for ended collision
+        this.collisionPairCache.delete(prevKey);
       }
     }
 

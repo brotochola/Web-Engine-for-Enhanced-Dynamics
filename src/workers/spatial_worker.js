@@ -29,15 +29,19 @@ class SpatialWorker extends AbstractWorker {
     // Spatial worker is generic - doesn't need game-specific classes
     this.needsGameScripts = false;
 
-    // Spatial grid structure - initialized after receiving config
-    this.grid = null;
-
     // Grid parameters - set during initialization
     this.cellSize = 0;
     this.gridCols = 0;
     this.gridRows = 0;
     this.totalCells = 0;
     this.maxNeighborsPerEntity = 0;
+
+    // OPTIMIZED: Flat grid structure using pooled arrays for zero-allocation rebuilds
+    // Structure: [cell0_count, cell0_entity0, cell0_entity1, ..., cell1_count, ...]
+    // Each cell has a fixed size slot: 1 (count) + maxEntitiesPerCell
+    this.gridData = null; // Int32Array for the flat grid
+    this.maxEntitiesPerCell = 0; // Maximum entities per cell (computed from entity density)
+    this.cellStride = 0; // Size of each cell slot (1 + maxEntitiesPerCell)
 
     // Update frequency (rebuild grid every N frames)
     this.spatialUpdateInterval = 2;
@@ -85,9 +89,25 @@ class SpatialWorker extends AbstractWorker {
     this.canvasWidth = this.config.canvasWidth;
     this.canvasHeight = this.config.canvasHeight;
 
-    // Initialize spatial grid structure - Array of Arrays
-    // This allocates memory every frame but provides better cache locality for dense cells
-    this.grid = Array.from({ length: this.totalCells }, () => []);
+    // Calculate maxEntitiesPerCell based on entity density
+    // Average density = entities / cells, then add 3x headroom for clustering
+    const averageDensity = Math.ceil(this.entityCount / this.totalCells);
+    this.maxEntitiesPerCell = Math.max(
+      32, // Minimum per cell
+      Math.min(256, averageDensity * 3) // 3x headroom, cap at 256
+    );
+    this.cellStride = 1 + this.maxEntitiesPerCell; // count + entities
+
+    // OPTIMIZED: Flat grid structure - single Int32Array, zero allocation per frame
+    // Layout: [cell0_count, cell0_ent0, cell0_ent1, ..., cell1_count, ...]
+    const gridBufferSize = this.totalCells * this.cellStride;
+    this.gridData = new Int32Array(gridBufferSize);
+
+    console.log(
+      `SPATIAL WORKER: Flat grid initialized - ${this.totalCells} cells, ` +
+        `${this.maxEntitiesPerCell} max entities/cell, ` +
+        `${((gridBufferSize * 4) / 1024 / 1024).toFixed(2)} MB`
+    );
 
     // Initialize collision buffer view if provided
     if (data.buffers?.collisionData) {
@@ -111,11 +131,13 @@ class SpatialWorker extends AbstractWorker {
 
   /**
    * Clear and rebuild spatial grid
+   * OPTIMIZED: Uses flat array structure with no allocations
    */
   rebuildGrid() {
-    // Clear all cells efficiently - reuse arrays to avoid memory churn
-    for (let i = 0; i < this.totalCells; i++) {
-      this.grid[i].length = 0;
+    // Clear all cell counts (single linear pass, very cache-friendly)
+    // We only need to zero the count field, not the entity data
+    for (let cellIdx = 0; cellIdx < this.totalCells; cellIdx++) {
+      this.gridData[cellIdx * this.cellStride] = 0;
     }
 
     // Insert only active entities into grid
@@ -133,7 +155,19 @@ class SpatialWorker extends AbstractWorker {
       if (isNaN(posX) || isNaN(posY)) continue;
 
       const cellIndex = this.getCellIndex(posX, posY);
-      this.grid[cellIndex].push(i);
+      const cellOffset = cellIndex * this.cellStride;
+      const count = this.gridData[cellOffset];
+
+      // Check for cell overflow (rare, but handle gracefully)
+      if (count >= this.maxEntitiesPerCell) {
+        // Silently skip - cell is full. This is a design trade-off.
+        // Could log warning once per frame if needed for debugging
+        continue;
+      }
+
+      // Add entity to cell: [count, ent0, ent1, ...]
+      this.gridData[cellOffset + 1 + count] = i;
+      this.gridData[cellOffset]++; // Increment count
     }
   }
 
@@ -170,6 +204,7 @@ class SpatialWorker extends AbstractWorker {
   /**
    * Find neighbors for a single entity
    * Now also stores squared distances to eliminate duplicate calculations
+   * OPTIMIZED: Uses flat grid structure for cache-friendly access
    */
   findNeighborsForEntity(i, x, y, visualRange, radius) {
     const myX = x[i];
@@ -207,15 +242,18 @@ class SpatialWorker extends AbstractWorker {
         }
 
         const cellIndex = checkRow * this.gridCols + checkCol;
-        const cell = this.grid[cellIndex];
-        const cellLength = cell.length;
+
+        // OPTIMIZED: Read from flat grid structure
+        const cellOffset = cellIndex * this.cellStride;
+        const cellLength = this.gridData[cellOffset]; // First element is count
 
         // Skip empty cells - common case optimization
         if (cellLength === 0) continue;
 
         // Check all entities in this cell
+        // Entities start at cellOffset + 1
         for (let k = 0; k < cellLength; k++) {
-          const j = cell[k];
+          const j = this.gridData[cellOffset + 1 + k];
 
           // Skip self
           if (i === j) continue;
