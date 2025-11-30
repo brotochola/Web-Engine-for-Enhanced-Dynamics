@@ -26,7 +26,7 @@ self.PIXI = PIXI;
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
 
 // Number of layer containers for depth sorting
-const NUM_LAYERS = 45;
+const NUM_LAYERS = 1;
 
 /**
  * PixiRenderer - Manages rendering of game objects using PixiJS in a web worker
@@ -63,7 +63,6 @@ class PixiRenderer extends AbstractWorker {
     // Entity rendering
     // this.containers = []; // Array of PIXI containers (one per entity)
     this.bodySprites = []; // Array of main body sprites (now regular Sprite, not AnimatedSprite)
-    this.spriteLayers = []; // Track which layer each sprite is currently in
     this.entitySpriteConfigs = {}; // Store sprite config per entityType
     this.previousAnimStates = []; // Track previous animation state per entity
 
@@ -107,24 +106,6 @@ class PixiRenderer extends AbstractWorker {
       this.backgroundSprite.x = -cameraX * zoom;
       this.backgroundSprite.y = -cameraY * zoom;
     }
-  }
-
-  /**
-   * Calculate which layer a sprite should be in based on screenY position
-   * Lower screenY = background, higher screenY = foreground
-   */
-  getLayerForScreenY(screenY) {
-    // Divide the canvas height into NUM_LAYERS sections
-    // Sprites at the top of the screen go to layer 0 (background)
-    // Sprites at the bottom of the screen go to layer NUM_LAYERS-1 (foreground)
-    const layerHeight = this.canvasHeight / NUM_LAYERS;
-    let layer = Math.floor(screenY / layerHeight);
-
-    // Clamp to valid layer range
-    if (layer < 0) layer = 0;
-    if (layer >= NUM_LAYERS) layer = NUM_LAYERS - 1;
-
-    return layer;
   }
 
   /**
@@ -199,40 +180,31 @@ class PixiRenderer extends AbstractWorker {
     // Convert deltaTime from ms to seconds for frame calculation
     const deltaSeconds = deltaTime / 1000;
 
-    // Update all entities
+    // Array to collect visible sprites for Y-sorting
+    const visibleSprites = [];
+
+    // First pass: update sprite properties and collect visible sprites
     for (let i = 0; i < this.entityCount; i++) {
-      // const container = this.containers[i];
       const bodySprite = this.bodySprites[i];
 
       if (!bodySprite) continue;
 
+      // Determine if sprite should be visible
+      const shouldBeVisible = active[i] && renderVisible[i] && isItOnScreen[i];
+
       // Hide inactive or explicitly hidden entities
-      if (!active[i] || !renderVisible[i] || !isItOnScreen[i]) {
+      if (!shouldBeVisible) {
         if (bodySprite.visible) {
           bodySprite.visible = false;
         }
         continue;
       }
 
-      // Entity is active and on-screen
-      bodySprite.visible = true;
+      // Entity should be visible - count it and collect for sorting
       visibleCount++;
+      visibleSprites.push({ entityId: i, sprite: bodySprite, y: y[i] });
 
-      // Check if sprite needs to move to a different layer
-      const targetLayer = this.getLayerForScreenY(screenY[i]);
-      const currentLayer = this.spriteLayers[i];
-
-      if (currentLayer !== targetLayer) {
-        // Move sprite to the correct layer
-        if (currentLayer !== undefined && this.layerContainers[currentLayer]) {
-          this.layerContainers[currentLayer].removeChild(bodySprite);
-        }
-        this.layerContainers[targetLayer].addChild(bodySprite);
-        this.spriteLayers[i] = targetLayer;
-      }
-
-      // Update transform (position, rotation, scale) - only if changed
-      // Direct assignment is faster than checking for most properties that change every frame
+      // Update transform (position, rotation, scale)
       bodySprite.x = x[i];
       bodySprite.y = y[i];
       bodySprite.rotation = rotation[i];
@@ -240,7 +212,6 @@ class PixiRenderer extends AbstractWorker {
       // Optimize scale update - direct assignment is cheaper than .set()
       if (bodySprite.scale.x !== scaleX[i]) bodySprite.scale.x = scaleX[i];
       if (bodySprite.scale.y !== scaleY[i]) bodySprite.scale.y = scaleY[i];
-      // bodySprite.zIndex = y[i] + zOffset[i];
 
       // OPTIMIZATION: Only update visual properties if dirty flag is set
       // This skips expensive operations (tint, alpha, flipping, animations) when unchanged
@@ -258,6 +229,24 @@ class PixiRenderer extends AbstractWorker {
 
         // Clear dirty flag after updating
         renderDirty[i] = 0;
+      }
+    }
+
+    // Second pass: Y-sort and re-add sprites to container in correct order
+    // Sort by Y position (lower Y = render first/background, higher Y = foreground)
+    visibleSprites.sort((a, b) => a.y - b.y);
+
+    // Get the single container
+    const container = this.layerContainers[0];
+
+    // Remove all children from container
+    container.removeChildren();
+
+    // Re-add sprites in sorted order and make them visible
+    for (const item of visibleSprites) {
+      container.addChild(item.sprite);
+      if (!item.sprite.visible) {
+        item.sprite.visible = true;
       }
     }
   }
@@ -602,13 +591,8 @@ class PixiRenderer extends AbstractWorker {
       this.bodySprites[i] = bodySprite;
       this.previousAnimStates[i] = -1; // Initialize to invalid state
 
-      // Determine initial layer based on screenY position
-      const screenY = SpriteRenderer.screenY[i];
-      const initialLayer = this.getLayerForScreenY(screenY);
-      this.spriteLayers[i] = initialLayer;
-
-      // Add sprite to the appropriate layer container
-      this.layerContainers[initialLayer].addChild(bodySprite);
+      // Note: Sprites will be added to container during first updateSprites() call
+      // based on Y-sorting, so we don't add them here
     }
 
     console.log(`PIXI WORKER: Created ${this.entityCount} entity containers`);
