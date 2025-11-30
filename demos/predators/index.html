@@ -34,7 +34,7 @@
             color: #a29bfe;
         }
 
-        #logicFPS {
+        .logicFPS {
             color: #ff6b6b;
         }
 
@@ -52,9 +52,9 @@
     </style>
 </head>
 <body>
-    <p id="config">Mode: SHARED ARRAY BUFFER (4 Workers) - Structure of Arrays + Spatial Hash</p>
+    <p id="config">Mode: SHARED ARRAY BUFFER (Multi-Worker) - Structure of Arrays + Spatial Hash</p>
     <p id="spatialFPS">Spatial Worker FPS: --</p>
-    <p id="logicFPS">Logic Worker FPS: --</p>
+    <div id="logicFPSContainer"></div>
     <p id="physicsFPS">Physics Worker FPS: --</p>
     <p id="rendererFPS">Renderer Worker FPS: --</p>
     <p id="numberBoids">Number of entities: --</p>
@@ -75,7 +75,7 @@
     </div>
 
     <script type="module">
-        const numberOfPrey = 25000;
+        const numberOfPrey = 20000;
         const numberOfPredators = 50;
         const numberOfBoids = 0;
         // Import engine classes and entity classes
@@ -94,13 +94,14 @@
                 // Spatial hash grid configuration
                 spatial: {
                     cellSize: 50,  // Increased to match visual range (reduces grid overhead)
-                    maxNeighbors: 500,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
+                    maxNeighbors: 300,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
                     noLimitFPS: true
                 },
 
                 // Logic configuration
                 logic: {
-                    noLimitFPS: false
+                    noLimitFPS: false,
+                    numberOfLogicWorkers: 4,
                 },
 
                 // Physics configuration
@@ -142,6 +143,23 @@
 
         // Make gameEngine global for button onclick handlers
         window.gameEngine = gameEngine;
+
+        // Dynamically create FPS display elements for each logic worker
+        const logicFPSContainer = document.getElementById('logicFPSContainer');
+        const numberOfLogicWorkers = gameEngine.numberOfLogicWorkers;
+        for (let i = 0; i < numberOfLogicWorkers; i++) {
+            const p = document.createElement('p');
+            p.id = `logic${i}FPS`;
+            p.className = 'logicFPS';
+            p.textContent = `Logic Worker ${i} FPS: --`;
+            logicFPSContainer.appendChild(p);
+        }
+
+        // Update config display to show actual number of workers
+        const totalWorkers = 3 + numberOfLogicWorkers; // spatial + physics + renderer + N logic workers
+        document.getElementById('config').textContent =
+            `Mode: SHARED ARRAY BUFFER (${totalWorkers} Workers: 1 Spatial + ${numberOfLogicWorkers} Logic + 1 Physics + 1 Renderer)`;
+
 
         // Spawning functions - FIXED to use component property notation
         window.spawnRandomPrey = function () {

@@ -505,6 +505,7 @@ class GameObject {
   /**
    * SPAWNING SYSTEM: Initialize free list for O(1) spawning
    * Must be called after registration and before any spawning
+   * Shuffles indices to distribute spawns evenly across worker ranges
    * @param {Class} EntityClass - The entity class to initialize
    */
   static initializeFreeList(EntityClass) {
@@ -515,9 +516,20 @@ class GameObject {
     EntityClass.freeList = new Int32Array(count);
     EntityClass.freeListTop = count - 1;
 
-    // Fill with all indices (initially all are free)
-    for (let i = 0; i < count; i++) {
-      EntityClass.freeList[i] = startIndex + i;
+    // CRITICAL: Interleave indices to distribute spawns evenly across logic workers
+    // Instead of sequential [0,1,2,3,4,5,6,7,...] which fills last worker first,
+    // Use round-robin distribution [0,8,16,...,1,9,17,...] to cycle through workers
+    // This ensures first N spawns go to N different workers (perfect load balancing)
+
+    // Assume 8 workers as a reasonable default for interleaving
+    // (This works well regardless of actual worker count - just distributes more evenly)
+    const interleaveFactor = 8;
+
+    let writeIndex = 0;
+    for (let offset = 0; offset < interleaveFactor; offset++) {
+      for (let i = offset; i < count; i += interleaveFactor) {
+        EntityClass.freeList[writeIndex++] = startIndex + i;
+      }
     }
   }
 

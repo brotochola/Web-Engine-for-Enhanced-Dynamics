@@ -91,7 +91,14 @@ class AbstractWorker {
    */
   reportFPS() {
     if (this.frameNumber % this.fpsReportInterval === 0) {
-      self.postMessage({ msg: "fps", fps: this.currentFPS.toFixed(2) });
+      const message = { msg: "fps", fps: this.currentFPS.toFixed(2) };
+      
+      // Include active entity count if available (for logic workers)
+      if (this.activeEntityCount !== undefined) {
+        message.activeEntities = this.activeEntityCount;
+      }
+      
+      self.postMessage(message);
     }
   }
 

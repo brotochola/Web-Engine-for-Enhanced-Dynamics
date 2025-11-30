@@ -45,10 +45,13 @@ class GameEngine {
       y: 0,
     };
 
+    // Get number of logic workers from config (default to 1 for backward compatibility)
+    this.numberOfLogicWorkers = this.config.logic?.numberOfLogicWorkers || 1;
+
     // Workers
     this.workers = {
       spatial: null,
-      logic: null,
+      logicWorkers: [], // Array of logic workers
       physics: null,
       renderer: null,
     };
@@ -68,13 +71,17 @@ class GameEngine {
     });
 
     // Worker synchronization (for two-phase initialization)
+    // Dynamically create ready states for all logic workers
     this.workerReadyStates = {
       spatial: false,
-      logic: false,
       physics: false,
       renderer: false,
     };
-    this.totalWorkers = 4;
+    // Add ready states for each logic worker
+    for (let i = 0; i < this.numberOfLogicWorkers; i++) {
+      this.workerReadyStates[`logic${i}`] = false;
+    }
+    this.totalWorkers = 3 + this.numberOfLogicWorkers; // spatial + physics + renderer + N logic workers
 
     // Shared buffers
     this.buffers = {
@@ -84,6 +91,7 @@ class GameEngine {
       collisionData: null,
       inputData: null,
       cameraData: null,
+      syncData: null, // Synchronization buffer for logic workers
       // Component buffers (core + custom components auto-registered)
       componentData: {
         Transform: null,
@@ -407,6 +415,19 @@ class GameEngine {
     // Initialize camera buffer
     this.views.camera[0] = this.camera.zoom; // zoom
 
+    // Synchronization buffer for logic workers (uses Atomics for thread-safe operations)
+    // [0]: Current frame number (for debugging)
+    // [1]: Worker completion counter (how many workers finished current frame)
+    // [2]: Total number of logic workers
+    // [3]: Barrier flag for Atomics.wait/notify
+    const SYNC_BUFFER_SIZE = 4 * 4;
+    this.buffers.syncData = new SharedArrayBuffer(SYNC_BUFFER_SIZE);
+    const syncView = new Int32Array(this.buffers.syncData);
+    syncView[0] = 0; // Initialize frame counter
+    syncView[1] = 0; // Initialize completion counter
+    syncView[2] = this.numberOfLogicWorkers; // Total workers
+    syncView[3] = 0; // Barrier flag
+
     // Center camera on world
     const worldCenterX =
       this.config.worldWidth / 2 - this.config.canvasWidth / 2;
@@ -571,10 +592,14 @@ class GameEngine {
   setupWorkerCommunication() {
     // Define which workers need direct communication
     const connections = [
-      { from: "logic", to: "renderer" }, // Logic worker sends sprite commands to renderer
       { from: "physics", to: "renderer" }, // Physics could send debug info to renderer
       // Add more connections as needed
     ];
+
+    // Add connection for each logic worker to renderer
+    for (let i = 0; i < this.numberOfLogicWorkers; i++) {
+      connections.push({ from: `logic${i}`, to: "renderer" });
+    }
 
     console.log("🔗 Worker communication channels established:", connections);
     return setupWorkerCommunication(connections);
@@ -591,10 +616,17 @@ class GameEngine {
       `/src/workers/spatial_worker.js${cacheBust}`,
       { type: "module" }
     );
-    this.workers.logic = new Worker(
-      `/src/workers/logic_worker.js${cacheBust}`,
-      { type: "module" }
-    );
+
+    // Create multiple logic workers based on config
+    for (let i = 0; i < this.numberOfLogicWorkers; i++) {
+      const logicWorker = new Worker(
+        `/src/workers/logic_worker.js${cacheBust}`,
+        { type: "module" }
+      );
+      logicWorker.name = `logic${i}`;
+      this.workers.logicWorkers.push(logicWorker);
+    }
+
     this.workers.physics = new Worker(
       `/src/workers/physics_worker.js${cacheBust}`,
       { type: "module" }
@@ -605,7 +637,6 @@ class GameEngine {
     );
 
     this.workers.spatial.name = "spatial";
-    this.workers.logic.name = "logic";
     this.workers.physics.name = "physics";
     this.workers.renderer.name = "renderer";
 
@@ -647,6 +678,7 @@ class GameEngine {
         collisionData: this.buffers.collisionData,
         inputData: this.buffers.inputData,
         cameraData: this.buffers.cameraData,
+        syncData: this.buffers.syncData, // Synchronization buffer for logic workers
         // Component buffers
         componentData: this.buffers.componentData,
       },
@@ -673,14 +705,32 @@ class GameEngine {
     // Initialize spatial worker (no ports needed for now)
     this.workers.spatial.postMessage(initData);
 
-    // Initialize logic worker (with port to renderer)
-    this.workers.logic.postMessage(
-      {
-        ...initData,
-        workerPorts: workerPorts.logic,
-      },
-      workerPorts.logic ? Object.values(workerPorts.logic) : []
+    // Initialize logic workers (each with its entity range)
+    const entitiesPerWorker = Math.ceil(
+      this.totalEntityCount / this.numberOfLogicWorkers
     );
+    for (let i = 0; i < this.numberOfLogicWorkers; i++) {
+      const startIndex = i * entitiesPerWorker;
+      const endIndex = Math.min(
+        (i + 1) * entitiesPerWorker,
+        this.totalEntityCount
+      );
+
+      this.workers.logicWorkers[i].postMessage(
+        {
+          ...initData,
+          workerPorts: workerPorts[`logic${i}`],
+          entityRange: { startIndex, endIndex }, // Add range info for this worker
+        },
+        workerPorts[`logic${i}`] ? Object.values(workerPorts[`logic${i}`]) : []
+      );
+
+      console.log(
+        `🧠 Logic Worker ${i}: entities ${startIndex}-${endIndex - 1} (${
+          endIndex - startIndex
+        } entities)`
+      );
+    }
 
     // Initialize physics worker (with port to renderer)
     this.workers.physics.postMessage(
@@ -715,7 +765,15 @@ class GameEngine {
       transferables
     );
 
-    for (let worker of Object.values(this.workers)) {
+    // Setup message handlers for all workers
+    const allWorkers = [
+      this.workers.spatial,
+      ...this.workers.logicWorkers,
+      this.workers.physics,
+      this.workers.renderer,
+    ];
+
+    for (let worker of allWorkers) {
       worker.onmessage = (e) => {
         this.handleMessageFromWorker(e);
       };
@@ -738,8 +796,9 @@ class GameEngine {
   handleMessageFromWorker(e) {
     // const fromWorker = this.workers[e.currentTarget.name];
 
-    if (e.data.msg === "fps") this.updateFPS(e.currentTarget.name, e.data.fps);
-    else if (e.data.msg === "log") {
+    if (e.data.msg === "fps") {
+      this.updateFPS(e.currentTarget.name, e.data.fps, e.data.activeEntities);
+    } else if (e.data.msg === "log") {
       this.log.push({
         worker: e.currentTarget.name,
         message: e.data.message,
@@ -795,7 +854,14 @@ class GameEngine {
   startAllWorkers() {
     console.log("📢 Broadcasting START to all workers");
 
-    for (const [name, worker] of Object.entries(this.workers)) {
+    const allWorkers = [
+      this.workers.spatial,
+      ...this.workers.logicWorkers,
+      this.workers.physics,
+      this.workers.renderer,
+    ];
+
+    for (const worker of allWorkers) {
       if (worker) {
         worker.postMessage({ msg: "start" });
       }
@@ -826,10 +892,15 @@ class GameEngine {
       this.pendingPhysicsUpdates.push(updatePayload);
     }
   }
-  updateFPS(id, fps) {
+  updateFPS(id, fps, activeEntities) {
     const element = document.getElementById(id + "FPS");
     if (element) {
-      element.textContent = element.textContent.split(":")[0] + `: ${fps}`;
+      const baseText = element.textContent.split(":")[0];
+      if (activeEntities !== undefined) {
+        element.textContent = `${baseText}: ${fps} FPS (${activeEntities} active)`;
+      } else {
+        element.textContent = `${baseText}: ${fps}`;
+      }
     }
   }
 
@@ -1017,7 +1088,14 @@ class GameEngine {
 
   // Cleanup
   destroy() {
-    Object.values(this.workers).forEach((worker) => {
+    const allWorkers = [
+      this.workers.spatial,
+      ...this.workers.logicWorkers,
+      this.workers.physics,
+      this.workers.renderer,
+    ];
+
+    allWorkers.forEach((worker) => {
       if (worker) worker.terminate();
     });
 
@@ -1030,21 +1108,35 @@ class GameEngine {
 
   pause() {
     this.state.pause = true;
-    Object.values(this.workers).forEach((worker) => {
+    const allWorkers = [
+      this.workers.spatial,
+      ...this.workers.logicWorkers,
+      this.workers.physics,
+      this.workers.renderer,
+    ];
+
+    allWorkers.forEach((worker) => {
       if (worker) worker.postMessage({ msg: "pause" });
     });
   }
 
   resume() {
     this.state.pause = false;
-    Object.values(this.workers).forEach((worker) => {
+    const allWorkers = [
+      this.workers.spatial,
+      ...this.workers.logicWorkers,
+      this.workers.physics,
+      this.workers.renderer,
+    ];
+
+    allWorkers.forEach((worker) => {
       if (worker) worker.postMessage({ msg: "resume" });
     });
   }
 
   /**
    * Spawn an entity from the pool
-   * Sends spawn command to logic worker which handles the actual spawning
+   * Sends spawn command to all logic workers (they coordinate internally)
    *
    * @param {string} className - Name of the entity class (e.g., 'Prey', 'Predator')
    * @param {Object} spawnConfig - Initial configuration (position, velocity, etc.)
@@ -1053,15 +1145,18 @@ class GameEngine {
    * gameEngine.spawnEntity('Prey', { x: 500, y: 300, vx: 2, vy: -1 });
    */
   spawnEntity(className, spawnConfig = {}) {
-    if (!this.workers.logic) {
-      console.error("Logic worker not initialized");
+    if (!this.workers.logicWorkers || this.workers.logicWorkers.length === 0) {
+      console.error("Logic workers not initialized");
       return;
     }
 
-    this.workers.logic.postMessage({
-      msg: "spawn",
-      className: className,
-      spawnConfig: spawnConfig,
+    // Broadcast to all logic workers - each worker manages its own entity range
+    this.workers.logicWorkers.forEach((worker) => {
+      worker.postMessage({
+        msg: "spawn",
+        className: className,
+        spawnConfig: spawnConfig,
+      });
     });
   }
 
@@ -1071,14 +1166,17 @@ class GameEngine {
    * @param {string} className - Name of the entity class to despawn
    */
   despawnAllEntities(className) {
-    if (!this.workers.logic) {
-      console.error("Logic worker not initialized");
+    if (!this.workers.logicWorkers || this.workers.logicWorkers.length === 0) {
+      console.error("Logic workers not initialized");
       return;
     }
 
-    this.workers.logic.postMessage({
-      msg: "despawnAll",
-      className: className,
+    // Broadcast to all logic workers - each worker despawns entities in its range
+    this.workers.logicWorkers.forEach((worker) => {
+      worker.postMessage({
+        msg: "despawnAll",
+        className: className,
+      });
     });
   }
 
