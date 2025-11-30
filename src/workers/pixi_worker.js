@@ -25,6 +25,9 @@ self.PIXI = PIXI;
 
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
 
+// Number of layer containers for depth sorting
+const NUM_LAYERS = 45;
+
 /**
  * PixiRenderer - Manages rendering of game objects using PixiJS in a web worker
  * Extends AbstractWorker for common worker functionality
@@ -38,15 +41,19 @@ class PixiRenderer extends AbstractWorker {
 
     // PIXI application and rendering
     this.pixiApp = null;
-    // ParticleContainer with all features enabled for maximum performance
-    this.mainContainer = new PIXI.ParticleContainer(50000, {
-      scale: true,
-      position: true,
-      rotation: true,
-      uvs: false,
-      tint: true,
-      alpha: true,
-    });
+    // Array of ParticleContainers for layer-based rendering
+    // Lower indices = background layers, higher indices = foreground layers
+    this.layerContainers = [];
+    for (let i = 0; i < NUM_LAYERS; i++) {
+      this.layerContainers[i] = new PIXI.ParticleContainer(10000, {
+        scale: true,
+        position: true,
+        rotation: true,
+        uvs: false,
+        tint: true,
+        alpha: true,
+      });
+    }
     this.backgroundSprite = null;
 
     // Texture and spritesheet storage
@@ -55,9 +62,16 @@ class PixiRenderer extends AbstractWorker {
 
     // Entity rendering
     // this.containers = []; // Array of PIXI containers (one per entity)
-    this.bodySprites = []; // Array of main body sprites (AnimatedSprite or Sprite)
+    this.bodySprites = []; // Array of main body sprites (now regular Sprite, not AnimatedSprite)
+    this.spriteLayers = []; // Track which layer each sprite is currently in
     this.entitySpriteConfigs = {}; // Store sprite config per entityType
     this.previousAnimStates = []; // Track previous animation state per entity
+
+    // Manual animation tracking (for regular Sprites)
+    this.currentAnimationFrames = []; // Array of texture arrays (one per entity)
+    this.currentFrameIndex = []; // Current frame index in animation
+    this.frameAccumulator = []; // Time accumulator for frame advancement
+    this.animationSpeed = []; // Animation speed per entity (frames per second)
 
     // World and viewport dimensions
     this.worldWidth = 0;
@@ -73,19 +87,21 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * Update camera transform on the main container and background
+   * Update camera transform on all layer containers and background
    */
   updateCameraTransform() {
     const zoom = this.cameraData[0];
     const cameraX = this.cameraData[1];
     const cameraY = this.cameraData[2];
 
-    // Apply camera state to main container
-    this.mainContainer.scale.set(zoom);
-    this.mainContainer.x = -cameraX * zoom;
-    this.mainContainer.y = -cameraY * zoom;
+    // Apply camera state to all layer containers
+    for (let i = 0; i < this.layerContainers.length; i++) {
+      this.layerContainers[i].scale.set(zoom);
+      this.layerContainers[i].x = -cameraX * zoom;
+      this.layerContainers[i].y = -cameraY * zoom;
+    }
 
-    // Apply camera state to background (since it's not a child of mainContainer)
+    // Apply camera state to background (since it's not a child of layerContainers)
     if (this.backgroundSprite) {
       this.backgroundSprite.scale.set(zoom);
       this.backgroundSprite.x = -cameraX * zoom;
@@ -94,20 +110,35 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * Update animation state for an entity
+   * Calculate which layer a sprite should be in based on screenY position
+   * Lower screenY = background, higher screenY = foreground
+   */
+  getLayerForScreenY(screenY) {
+    // Divide the canvas height into NUM_LAYERS sections
+    // Sprites at the top of the screen go to layer 0 (background)
+    // Sprites at the bottom of the screen go to layer NUM_LAYERS-1 (foreground)
+    const layerHeight = this.canvasHeight / NUM_LAYERS;
+    let layer = Math.floor(screenY / layerHeight);
+
+    // Clamp to valid layer range
+    if (layer < 0) layer = 0;
+    if (layer >= NUM_LAYERS) layer = NUM_LAYERS - 1;
+
+    return layer;
+  }
+
+  /**
+   * Update animation state for an entity (manual animation with regular Sprite)
    */
   updateSpriteAnimation(sprite, entityId, newState) {
     // Check if animation state changed
     if (this.previousAnimStates[entityId] === newState) return;
     this.previousAnimStates[entityId] = newState;
 
-    // Skip if not an AnimatedSprite
-    if (!sprite.textures || !Array.isArray(sprite.textures)) return;
-
     // Get entity type and config
     const entityType = GameObject.entityType[entityId];
     const config = this.entitySpriteConfigs[entityType];
-    if (!config) return;
+    if (!config || config.type !== "animated") return;
 
     // Get animation name from animStates
     if (!config.animStates || !config.animStates[newState]) return;
@@ -124,16 +155,24 @@ class PixiRenderer extends AbstractWorker {
       return;
     }
 
-    // Update sprite textures and play
-    sprite.textures = sheet.animations[animName];
-    sprite.gotoAndPlay(0);
+    // Update animation frames array for manual playback
+    const frames = sheet.animations[animName];
+    this.currentAnimationFrames[entityId] = frames;
+    this.currentFrameIndex[entityId] = 0;
+    this.frameAccumulator[entityId] = 0;
+
+    // Set initial texture
+    if (frames.length > 0) {
+      sprite.texture = frames[0];
+    }
   }
 
   /**
    * Update all sprite positions, visibility, and properties from SharedArrayBuffer
    * Uses dirty flags to skip unnecessary visual property updates
+   * @param {number} deltaTime - Time elapsed since last frame in milliseconds
    */
-  updateSprites() {
+  updateSprites(deltaTime) {
     // Cache array references for performance
     const active = Transform.active;
     const x = Transform.x;
@@ -151,10 +190,14 @@ class PixiRenderer extends AbstractWorker {
     const renderVisible = SpriteRenderer.renderVisible;
     const zOffset = SpriteRenderer.zOffset;
     const isItOnScreen = SpriteRenderer.isItOnScreen;
+    const screenY = SpriteRenderer.screenY;
     const renderDirty = SpriteRenderer.renderDirty; // OPTIMIZATION: Dirty flag
 
     // Track visible units count
     let visibleCount = 0;
+
+    // Convert deltaTime from ms to seconds for frame calculation
+    const deltaSeconds = deltaTime / 1000;
 
     // Update all entities
     for (let i = 0; i < this.entityCount; i++) {
@@ -167,10 +210,6 @@ class PixiRenderer extends AbstractWorker {
       if (!active[i] || !renderVisible[i] || !isItOnScreen[i]) {
         if (bodySprite.visible) {
           bodySprite.visible = false;
-          // Stop animation for off-screen sprites to save CPU
-          if (bodySprite.playing && bodySprite.stop) {
-            bodySprite.stop();
-          }
         }
         continue;
       }
@@ -179,9 +218,17 @@ class PixiRenderer extends AbstractWorker {
       bodySprite.visible = true;
       visibleCount++;
 
-      // Enable animation for on-screen sprites
-      if (bodySprite.playing === false && bodySprite.play) {
-        bodySprite.play();
+      // Check if sprite needs to move to a different layer
+      const targetLayer = this.getLayerForScreenY(screenY[i]);
+      const currentLayer = this.spriteLayers[i];
+
+      if (currentLayer !== targetLayer) {
+        // Move sprite to the correct layer
+        if (currentLayer !== undefined && this.layerContainers[currentLayer]) {
+          this.layerContainers[currentLayer].removeChild(bodySprite);
+        }
+        this.layerContainers[targetLayer].addChild(bodySprite);
+        this.spriteLayers[i] = targetLayer;
       }
 
       // Update transform (position, rotation, scale) - only if changed
@@ -204,14 +251,36 @@ class PixiRenderer extends AbstractWorker {
 
         // Update animation if changed
         this.updateSpriteAnimation(bodySprite, i, animationState[i]);
+        this.changeFrameOfSprite(bodySprite, i, deltaSeconds);
 
-        // Update animation speed for AnimatedSprites
-        if (bodySprite.animationSpeed !== undefined) {
-          bodySprite.animationSpeed = animationSpeed[i];
-        }
+        // Update animation speed (stored locally for manual animation)
+        this.animationSpeed[i] = animationSpeed[i];
 
         // Clear dirty flag after updating
         renderDirty[i] = 0;
+      }
+    }
+  }
+
+  changeFrameOfSprite(bodySprite, i, deltaSeconds) {
+    // Manual animation frame advancement (for animated sprites only)
+    const frames = this.currentAnimationFrames[i];
+    if (frames && frames.length > 1) {
+      // Accumulate time
+      this.frameAccumulator[i] += deltaSeconds;
+
+      // Calculate frame duration based on animation speed
+      // animationSpeed represents frames per second (FPS)
+      const frameDuration = 1 / (this.animationSpeed[i] * 60); // Convert to seconds per frame
+
+      // Advance frames if enough time has passed
+      if (this.frameAccumulator[i] >= frameDuration) {
+        this.frameAccumulator[i] -= frameDuration;
+        this.currentFrameIndex[i] =
+          (this.currentFrameIndex[i] + 1) % frames.length;
+
+        // Update sprite texture
+        bodySprite.texture = frames[this.currentFrameIndex[i]];
       }
     }
   }
@@ -221,7 +290,7 @@ class PixiRenderer extends AbstractWorker {
    */
   update(deltaTime, dtRatio, resuming) {
     this.updateCameraTransform();
-    this.updateSprites();
+    this.updateSprites(deltaTime);
   }
 
   /**
@@ -446,8 +515,13 @@ class PixiRenderer extends AbstractWorker {
         );
         // Create placeholder to prevent crashes
         bodySprite = new PIXI.Sprite(PIXI.Texture.WHITE);
+        // Initialize tracking arrays
+        this.currentAnimationFrames[i] = [];
+        this.currentFrameIndex[i] = 0;
+        this.frameAccumulator[i] = 0;
+        this.animationSpeed[i] = 0;
       } else if (config.type === "animated" && config.spritesheet) {
-        // Create AnimatedSprite from spritesheet
+        // Create regular Sprite from spritesheet (manual animation)
         const sheet = this.spritesheets[config.spritesheet];
 
         if (!sheet) {
@@ -455,6 +529,7 @@ class PixiRenderer extends AbstractWorker {
             `❌ Spritesheet "${config.spritesheet}" not found for entityType ${entityType}`
           );
           bodySprite = new PIXI.Sprite(PIXI.Texture.WHITE);
+          this.currentAnimationFrames[i] = [];
         } else {
           const defaultAnim = config.defaultAnimation;
 
@@ -465,17 +540,25 @@ class PixiRenderer extends AbstractWorker {
             // Use first available animation as emergency fallback
             const firstAnim = Object.keys(sheet.animations)[0];
             if (firstAnim) {
-              bodySprite = new PIXI.AnimatedSprite(sheet.animations[firstAnim]);
+              const frames = sheet.animations[firstAnim];
+              bodySprite = new PIXI.Sprite(frames[0]); // Start with first frame
+              this.currentAnimationFrames[i] = frames;
               console.warn(`   Using "${firstAnim}" as fallback animation`);
             } else {
               bodySprite = new PIXI.Sprite(PIXI.Texture.WHITE);
+              this.currentAnimationFrames[i] = [];
             }
           } else {
-            bodySprite = new PIXI.AnimatedSprite(sheet.animations[defaultAnim]);
-            bodySprite.animationSpeed = config.animationSpeed || 0.2;
-            bodySprite.play();
+            const frames = sheet.animations[defaultAnim];
+            bodySprite = new PIXI.Sprite(frames[0]); // Start with first frame
+            this.currentAnimationFrames[i] = frames;
           }
         }
+
+        // Initialize animation tracking
+        this.currentFrameIndex[i] = 0;
+        this.frameAccumulator[i] = 0;
+        this.animationSpeed[i] = config.animationSpeed || 0.2;
       } else if (config.type === "static" && config.textureName) {
         // Create static Sprite from texture
         const texture = this.textures[config.textureName];
@@ -488,12 +571,23 @@ class PixiRenderer extends AbstractWorker {
         } else {
           bodySprite = new PIXI.Sprite(texture);
         }
+
+        // Initialize tracking arrays (no animation for static sprites)
+        this.currentAnimationFrames[i] = [];
+        this.currentFrameIndex[i] = 0;
+        this.frameAccumulator[i] = 0;
+        this.animationSpeed[i] = 0;
       } else {
         console.error(
           `❌ Invalid sprite config for entityType ${entityType}:`,
           config
         );
         bodySprite = new PIXI.Sprite(PIXI.Texture.WHITE);
+        // Initialize tracking arrays
+        this.currentAnimationFrames[i] = [];
+        this.currentFrameIndex[i] = 0;
+        this.frameAccumulator[i] = 0;
+        this.animationSpeed[i] = 0;
       }
 
       // Setup sprite
@@ -508,8 +602,13 @@ class PixiRenderer extends AbstractWorker {
       this.bodySprites[i] = bodySprite;
       this.previousAnimStates[i] = -1; // Initialize to invalid state
 
-      // Add container to main scene
-      this.mainContainer.addChild(bodySprite);
+      // Determine initial layer based on screenY position
+      const screenY = SpriteRenderer.screenY[i];
+      const initialLayer = this.getLayerForScreenY(screenY);
+      this.spriteLayers[i] = initialLayer;
+
+      // Add sprite to the appropriate layer container
+      this.layerContainers[initialLayer].addChild(bodySprite);
     }
 
     console.log(`PIXI WORKER: Created ${this.entityCount} entity containers`);
@@ -656,11 +755,13 @@ class PixiRenderer extends AbstractWorker {
     this.reportLog("finished loading spritesheets");
 
     // Create background
-    this.createBackground();
+    // this.createBackground();
 
-    // Setup main container
+    // Add all layer containers to the stage in order (background to foreground)
     // Note: ParticleContainer doesn't support sortableChildren, but uses zIndex internally for ordering
-    this.pixiApp.stage.addChild(this.mainContainer);
+    for (let i = 0; i < this.layerContainers.length; i++) {
+      this.pixiApp.stage.addChild(this.layerContainers[i]);
+    }
 
     // Build entity sprite configs from class definitions
     this.buildEntitySpriteConfigs(data.registeredClasses);

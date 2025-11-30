@@ -274,15 +274,16 @@ class SpatialWorker extends AbstractWorker {
     const x = Transform.x;
     const y = Transform.y;
     const isItOnScreen = SpriteRenderer.isItOnScreen;
-
+    const screenX = SpriteRenderer.screenX;
+    const screenY = SpriteRenderer.screenY;
     // Read camera data: [zoom, cameraX, cameraY]
     const zoom = this.cameraData[0];
     const cameraX = this.cameraData[1];
     const cameraY = this.cameraData[2];
 
     // Calculate screen margins (15% on each side)
-    const marginX = this.canvasWidth * 0.05;
-    const marginY = this.canvasHeight * 0.05;
+    const marginX = this.canvasWidth * 0.1;
+    const marginY = this.canvasHeight * 0.1;
 
     // Check all entities
     for (let i = 0; i < this.entityCount; i++) {
@@ -295,16 +296,16 @@ class SpatialWorker extends AbstractWorker {
       // Transform world coordinates to screen coordinates
       // Same as pixi_worker.worldToScreenPosition()
       // mainContainer.x = -cameraX * zoom, so screenX = worldX * zoom + (-cameraX * zoom)
-      const screenX = x[i] * zoom - cameraX * zoom;
-      const screenY = y[i] * zoom - cameraY * zoom;
+      screenX[i] = x[i] * zoom - cameraX * zoom;
+      screenY[i] = y[i] * zoom - cameraY * zoom;
 
       // Check if screen position is within viewport bounds (with margin)
       // Same as pixi_worker.isSpriteVisible()
       const onScreen =
-        screenX > -marginX &&
-        screenX < this.canvasWidth + marginX &&
-        screenY > -marginY &&
-        screenY < this.canvasHeight + marginY;
+        screenX[i] > -marginX &&
+        screenX[i] < this.canvasWidth + marginX &&
+        screenY[i] > -marginY &&
+        screenY[i] < this.canvasHeight + marginY;
 
       isItOnScreen[i] = onScreen ? 1 : 0;
     }

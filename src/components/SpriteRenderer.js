@@ -29,6 +29,8 @@ class SpriteRenderer extends Component {
 
     // Performance optimization - dirty flag
     renderDirty: Uint8Array, // 1 = visual properties changed, needs update this frame
+    screenX: Float32Array,
+    screenY: Float32Array,
   };
 
   /**

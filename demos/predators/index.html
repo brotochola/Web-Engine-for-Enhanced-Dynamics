@@ -75,6 +75,9 @@
     </div>
 
     <script type="module">
+        const numberOfPrey = 10000;
+        const numberOfPredators = 50;
+        const numberOfBoids = 0;
         // Import engine classes and entity classes
         import { GameEngine } from '/src/core/gameEngine.js';
         import { Boid } from '/demos/predators/boid.js';
@@ -92,7 +95,7 @@
                 spatial: {
                     cellSize: 50,  // Increased to match visual range (reduces grid overhead)
                     maxNeighbors: 500,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
-                    noLimitFPS: false
+                    noLimitFPS: true
                 },
 
                 // Logic configuration
@@ -128,16 +131,16 @@
         );
 
         // Register entity classes with their script paths
-        gameEngine.registerEntityClass(Boid, 15000, "../../demos/predators/boid.js");
-        // gameEngine.registerEntityClass(Prey, 15000, "../../demos/predators/prey.js");
-        // gameEngine.registerEntityClass(Predator, 50, "../../demos/predators/predator.js");
+        gameEngine.registerEntityClass(Boid, numberOfBoids, "../../demos/predators/boid.js");
+        gameEngine.registerEntityClass(Prey, numberOfPrey, "../../demos/predators/prey.js");
+        gameEngine.registerEntityClass(Predator, numberOfPredators, "../../demos/predators/predator.js");
 
         // Make gameEngine global for button onclick handlers
         window.gameEngine = gameEngine;
 
         // Spawning functions - FIXED to use component property notation
         window.spawnRandomPrey = function () {
-            for (let i = 0; i < 10000; i++) {
+            for (let i = 0; i < numberOfPrey; i++) {
                 gameEngine.spawnEntity('Prey', {
                     'transform.x': Math.random() * gameEngine.config.worldWidth,
                     'transform.y': Math.random() * gameEngine.config.worldHeight,
@@ -148,7 +151,7 @@
         };
 
         window.spawnBoids = function () {
-            for (let i = 0; i < 5000; i++) {
+            for (let i = 0; i < numberOfBoids; i++) {
                 gameEngine.spawnEntity('Boid', {
                     'transform.x': Math.random() * gameEngine.config.worldWidth,
                     'transform.y': Math.random() * gameEngine.config.worldHeight,
@@ -217,14 +220,14 @@
             // Spawn 100 prey
             // console.log("Spawning 100 prey...");
             // // for (let i = 0; i < 4000; i++) {
-            // spawnRandomPrey();
+            spawnRandomPrey();
             // // }
 
             // // // Spawn 10 predators
             // // console.log("Spawning 10 predators...");
-            // for (let i = 0; i < 10; i++) {
-            //     spawnRandomPredator();
-            // }
+            for (let i = 0; i < numberOfPredators; i++) {
+                spawnRandomPredator();
+            }
 
 
 
