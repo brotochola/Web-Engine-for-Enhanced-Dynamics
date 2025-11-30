@@ -130,8 +130,8 @@ class GameObject {
    * This makes both core and custom components accessible via this.componentName
    */
   static _ensureComponentAccessors() {
-    // Skip if already created for this class
-    if (this.prototype._componentAccessorsCreated) {
+    // Skip if already created for THIS SPECIFIC class (not inherited from parent)
+    if (this.prototype.hasOwnProperty("_componentAccessorsCreated")) {
       return;
     }
 
@@ -586,6 +586,9 @@ class GameObject {
       instance.setTint(0xffffff);
       instance.setAlpha(1.0);
       instance.setVisible(true);
+      // CRITICAL: Initialize isItOnScreen to 1 so entity is visible immediately
+      // The spatial worker will update this properly on its next frame
+      instance.spriteRenderer.isItOnScreen = 1;
     }
 
     // Apply spawn config BEFORE activating

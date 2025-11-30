@@ -281,8 +281,8 @@ class SpatialWorker extends AbstractWorker {
     const cameraY = this.cameraData[2];
 
     // Calculate screen margins (15% on each side)
-    const marginX = this.canvasWidth * 0.15;
-    const marginY = this.canvasHeight * 0.15;
+    const marginX = this.canvasWidth * 0.05;
+    const marginY = this.canvasHeight * 0.05;
 
     // Check all entities
     for (let i = 0; i < this.entityCount; i++) {

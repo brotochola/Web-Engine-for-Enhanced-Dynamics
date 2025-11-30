@@ -38,7 +38,15 @@ class PixiRenderer extends AbstractWorker {
 
     // PIXI application and rendering
     this.pixiApp = null;
-    this.mainContainer = new PIXI.Container();
+    // ParticleContainer with all features enabled for maximum performance
+    this.mainContainer = new PIXI.ParticleContainer(50000, {
+      scale: true,
+      position: true,
+      rotation: true,
+      uvs: false,
+      tint: true,
+      alpha: true,
+    });
     this.backgroundSprite = null;
 
     // Texture and spritesheet storage
@@ -46,7 +54,7 @@ class PixiRenderer extends AbstractWorker {
     this.spritesheets = {}; // Store loaded spritesheets by name
 
     // Entity rendering
-    this.containers = []; // Array of PIXI containers (one per entity)
+    // this.containers = []; // Array of PIXI containers (one per entity)
     this.bodySprites = []; // Array of main body sprites (AnimatedSprite or Sprite)
     this.entitySpriteConfigs = {}; // Store sprite config per entityType
     this.previousAnimStates = []; // Track previous animation state per entity
@@ -65,33 +73,7 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * Convert world coordinates to screen coordinates
-   */
-  worldToScreenPosition(worldX, worldY) {
-    return {
-      x: worldX * this.mainContainer.scale.x + this.mainContainer.x,
-      y: worldY * this.mainContainer.scale.y + this.mainContainer.y,
-    };
-  }
-
-  // /**
-  //  * Check if a sprite at world coordinates is visible on screen
-  //  */
-  // isSpriteVisible(worldX, worldY) {
-  //   const screenPos = this.worldToScreenPosition(worldX, worldY);
-  //   const marginX = this.canvasWidth * 0.15;
-  //   const marginY = this.canvasHeight * 0.15;
-
-  //   return (
-  //     screenPos.x > -marginX &&
-  //     screenPos.x < this.canvasWidth + marginX &&
-  //     screenPos.y > -marginY &&
-  //     screenPos.y < this.canvasHeight + marginY
-  //   );
-  // }
-
-  /**
-   * Update camera transform on the main container
+   * Update camera transform on the main container and background
    */
   updateCameraTransform() {
     const zoom = this.cameraData[0];
@@ -102,6 +84,13 @@ class PixiRenderer extends AbstractWorker {
     this.mainContainer.scale.set(zoom);
     this.mainContainer.x = -cameraX * zoom;
     this.mainContainer.y = -cameraY * zoom;
+
+    // Apply camera state to background (since it's not a child of mainContainer)
+    if (this.backgroundSprite) {
+      this.backgroundSprite.scale.set(zoom);
+      this.backgroundSprite.x = -cameraX * zoom;
+      this.backgroundSprite.y = -cameraY * zoom;
+    }
   }
 
   /**
@@ -169,27 +158,42 @@ class PixiRenderer extends AbstractWorker {
 
     // Update all entities
     for (let i = 0; i < this.entityCount; i++) {
-      const container = this.containers[i];
+      // const container = this.containers[i];
       const bodySprite = this.bodySprites[i];
 
-      if (!container || !bodySprite) continue;
+      if (!bodySprite) continue;
 
       // Hide inactive or explicitly hidden entities
       if (!active[i] || !renderVisible[i] || !isItOnScreen[i]) {
-        container.visible = false;
+        if (bodySprite.visible) {
+          bodySprite.visible = false;
+          // Stop animation for off-screen sprites to save CPU
+          if (bodySprite.playing && bodySprite.stop) {
+            bodySprite.stop();
+          }
+        }
         continue;
       }
 
       // Entity is active and on-screen
-      container.visible = true;
+      bodySprite.visible = true;
       visibleCount++;
 
-      // ALWAYS update transform (position, rotation, scale) - these change frequently
-      container.x = x[i];
-      container.y = y[i];
-      container.rotation = rotation[i];
-      container.scale.set(scaleX[i], scaleY[i]);
-      container.zIndex = y[i] + zOffset[i];
+      // Enable animation for on-screen sprites
+      if (bodySprite.playing === false && bodySprite.play) {
+        bodySprite.play();
+      }
+
+      // Update transform (position, rotation, scale) - only if changed
+      // Direct assignment is faster than checking for most properties that change every frame
+      bodySprite.x = x[i];
+      bodySprite.y = y[i];
+      bodySprite.rotation = rotation[i];
+
+      // Optimize scale update - direct assignment is cheaper than .set()
+      if (bodySprite.scale.x !== scaleX[i]) bodySprite.scale.x = scaleX[i];
+      if (bodySprite.scale.y !== scaleY[i]) bodySprite.scale.y = scaleY[i];
+      // bodySprite.zIndex = y[i] + zOffset[i];
 
       // OPTIMIZATION: Only update visual properties if dirty flag is set
       // This skips expensive operations (tint, alpha, flipping, animations) when unchanged
@@ -197,10 +201,6 @@ class PixiRenderer extends AbstractWorker {
         // Update body sprite visual properties
         bodySprite.tint = tint[i];
         bodySprite.alpha = alpha[i];
-
-        // Handle flipping
-        bodySprite.scale.x = scaleX[i];
-        bodySprite.scale.y = scaleY[i];
 
         // Update animation if changed
         this.updateSpriteAnimation(bodySprite, i, animationState[i]);
@@ -234,6 +234,7 @@ class PixiRenderer extends AbstractWorker {
 
   /**
    * Create tiling background sprite
+   * Note: Background is added to stage, not ParticleContainer (which only supports simple sprites)
    */
   createBackground() {
     if (!this.textures.bg) {
@@ -248,7 +249,8 @@ class PixiRenderer extends AbstractWorker {
     );
     this.backgroundSprite.tileScale.set(0.5);
     this.backgroundSprite.tilePosition.set(0, 0);
-    this.mainContainer.addChild(this.backgroundSprite);
+    // Add background to stage directly (ParticleContainer can't hold TilingSprites)
+    this.pixiApp.stage.addChildAt(this.backgroundSprite, 0); // Add at bottom
   }
 
   /**
@@ -502,7 +504,7 @@ class PixiRenderer extends AbstractWorker {
       // container.addChild(bodySprite);
 
       // Store references
-      this.containers[i] = bodySprite;
+      // this.containers[i] = bodySprite;
       this.bodySprites[i] = bodySprite;
       this.previousAnimStates[i] = -1; // Initialize to invalid state
 
@@ -657,7 +659,7 @@ class PixiRenderer extends AbstractWorker {
     this.createBackground();
 
     // Setup main container
-    this.mainContainer.sortableChildren = true;
+    // Note: ParticleContainer doesn't support sortableChildren, but uses zIndex internally for ordering
     this.pixiApp.stage.addChild(this.mainContainer);
 
     // Build entity sprite configs from class definitions

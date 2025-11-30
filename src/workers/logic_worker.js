@@ -144,6 +144,10 @@ class LogicWorker extends AbstractWorker {
             entityComponentIndices[camelCaseName] = allocation.start + i;
           }
 
+          // CRITICAL: Transform always uses entity index (not a separate component pool index)
+          // Every entity has Transform at its entity index
+          entityComponentIndices.transform = index;
+
           // Create instance with component indices
           const instance = new EntityClass(
             index,

@@ -39,12 +39,16 @@ class Boid extends GameObject {
     // Initialize RigidBody constraints
     this.rigidBody.maxVel = 10;
     this.rigidBody.maxAcc = 0.2;
-    this.rigidBody.minSpeed = 1; // Keep boids moving
+    this.rigidBody.minSpeed = 0; // Keep boids moving
     this.rigidBody.friction = 0.01;
 
     // Initialize Collider
     this.collider.radius = 10;
-    this.collider.visualRange = 50; // How far boid can see
+    this.collider.visualRange = 100; // How far boid can see
+
+    // Initialize SpriteRenderer
+    this.spriteRenderer.scaleX = 1;
+    this.spriteRenderer.scaleY = 1;
 
     // Initialize Flocking component behavior properties
     this.flocking.protectedRange = this.collider.radius * 2; // Minimum distance from others

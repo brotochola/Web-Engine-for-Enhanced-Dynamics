@@ -91,7 +91,7 @@
                 // Spatial hash grid configuration
                 spatial: {
                     cellSize: 50,  // Increased to match visual range (reduces grid overhead)
-                    maxNeighbors: 150,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
+                    maxNeighbors: 500,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
                     noLimitFPS: false
                 },
 
@@ -104,7 +104,7 @@
                 physics: {
                     subStepCount: 1,
                     noLimitFPS: true,
-                    maxCollisionPairs: 10000,
+                    maxCollisionPairs: 100000,
                     boundaryElasticity: 0,
                     collisionResponseStrength: 0.9,
                     verletDamping: 0.99,
@@ -112,6 +112,7 @@
                 }
             },
             {
+                bg: "/demos/predators/img/fondo.jpg",
                 bunny: "/demos/predators/img/bunny.png",
                 spritesheets: {
                     person: {
@@ -127,9 +128,9 @@
         );
 
         // Register entity classes with their script paths
-        gameEngine.registerEntityClass(Boid, 0, "../../demos/predators/boid.js");
-        gameEngine.registerEntityClass(Prey, 15000, "../../demos/predators/prey.js");
-        gameEngine.registerEntityClass(Predator, 50, "../../demos/predators/predator.js");
+        gameEngine.registerEntityClass(Boid, 15000, "../../demos/predators/boid.js");
+        // gameEngine.registerEntityClass(Prey, 15000, "../../demos/predators/prey.js");
+        // gameEngine.registerEntityClass(Predator, 50, "../../demos/predators/predator.js");
 
         // Make gameEngine global for button onclick handlers
         window.gameEngine = gameEngine;
@@ -145,6 +146,18 @@
                 });
             }
         };
+
+        window.spawnBoids = function () {
+            for (let i = 0; i < 5000; i++) {
+                gameEngine.spawnEntity('Boid', {
+                    'transform.x': Math.random() * gameEngine.config.worldWidth,
+                    'transform.y': Math.random() * gameEngine.config.worldHeight,
+                    'rigidBody.vx': 0,
+                    'rigidBody.vy': 0
+                });
+            }
+        };
+
 
         window.spawnRandomPredator = function () {
             gameEngine.spawnEntity('Predator', {
@@ -199,17 +212,21 @@
         gameEngine.init().then(() => {
             console.log("Game initialized. Spawning entities...");
 
+
+            spawnBoids();
             // Spawn 100 prey
-            console.log("Spawning 100 prey...");
-            // for (let i = 0; i < 4000; i++) {
-            spawnRandomPrey();
+            // console.log("Spawning 100 prey...");
+            // // for (let i = 0; i < 4000; i++) {
+            // spawnRandomPrey();
+            // // }
+
+            // // // Spawn 10 predators
+            // // console.log("Spawning 10 predators...");
+            // for (let i = 0; i < 10; i++) {
+            //     spawnRandomPredator();
             // }
 
-            // // Spawn 10 predators
-            // console.log("Spawning 10 predators...");
-            for (let i = 0; i < 10; i++) {
-                spawnRandomPredator();
-            }
+
 
             console.log("Spawning complete!");
         }).catch(error => {
