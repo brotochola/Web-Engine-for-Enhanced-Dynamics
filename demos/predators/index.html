@@ -81,7 +81,6 @@
         import { Prey } from '/demos/predators/prey.js';
         import { Predator } from '/demos/predators/predator.js';
 
-        // Initialize with GameEngine using class registration system
         const gameEngine = new GameEngine(
             {
                 canvasWidth: 800,
@@ -91,8 +90,8 @@
 
                 // Spatial hash grid configuration
                 spatial: {
-                    cellSize: 70,  // Increased to match visual range (reduces grid overhead)
-                    maxNeighbors: 50,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
+                    cellSize: 50,  // Increased to match visual range (reduces grid overhead)
+                    maxNeighbors: 150,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
                     noLimitFPS: false
                 },
 
@@ -103,9 +102,9 @@
 
                 // Physics configuration
                 physics: {
-                    subStepCount: 2,
-                    noLimitFPS: false,
-                    maxCollisionPairs: 100000,
+                    subStepCount: 1,
+                    noLimitFPS: true,
+                    maxCollisionPairs: 10000,
                     boundaryElasticity: 0,
                     collisionResponseStrength: 0.9,
                     verletDamping: 0.99,

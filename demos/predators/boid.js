@@ -67,17 +67,14 @@ class Boid extends GameObject {
     const config = this.config || {};
 
     // Initialize Transform position
-    // Spawn config will override these if provided
+    // NOTE: Spawn config already sets position, so only randomize if not set
     if (this.transform.x === undefined || this.transform.x === 0) {
-      this.transform.x = Math.random() * (config.worldWidth || 800);
-      this.transform.y = Math.random() * (config.worldHeight || 600);
+      this.x = Math.random() * (config.worldWidth || 800);
+      this.y = Math.random() * (config.worldHeight || 600);
     }
 
     this.transform.rotation = 0;
 
-    // Initialize RigidBody physics properties
-    this.rigidBody.px = this.transform.x; // Initialize previous position for Verlet
-    this.rigidBody.py = this.transform.y;
     this.rigidBody.vx = this.rigidBody.vx || 0;
     this.rigidBody.vy = this.rigidBody.vy || 0;
     this.rigidBody.ax = 0;
@@ -153,7 +150,7 @@ class Boid extends GameObject {
     const neighborContext = this.createNeighborContext();
 
     // Performance optimization: limit processing to reasonable neighbor count
-    const maxProcessed = Math.min(this.neighborCount, 30); // Process max 30 neighbors
+    const maxProcessed = this.neighborCount; // Math.min(this.neighborCount, 30); // Process max 30 neighbors
 
     // Single loop through all neighbors
     for (let n = 0; n < maxProcessed; n++) {
@@ -275,8 +272,8 @@ class Boid extends GameObject {
     if (dist2 < 1e-4 || dist2 > 100000) return;
 
     const strength = 10;
-    rbAX[i] = (dx / dist2) * strength * dtRatio;
-    rbAY[i] = (dy / dist2) * strength * dtRatio;
+    rbAX[i] += (dx / dist2) * strength * dtRatio;
+    rbAY[i] += (dy / dist2) * strength * dtRatio;
   }
 
   /**

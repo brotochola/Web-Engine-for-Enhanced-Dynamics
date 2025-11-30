@@ -725,7 +725,8 @@ class GameEngine {
         console.error(
           `❌ ERROR in ${worker.name} worker:\n`,
           `Message: ${e.message}\n`,
-          `File: ${e.filename}:${e.lineno}:${e.colno}`
+          `File: ${e.filename}:${e.lineno}:${e.colno}`,
+          e
         );
         // We don't prevent default so it still shows up as an error in dev tools
       };

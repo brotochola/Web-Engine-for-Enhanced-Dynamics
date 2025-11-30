@@ -55,7 +55,7 @@ class Prey extends Boid {
     this.rigidBody.maxAcc = 0.1;
     this.rigidBody.minSpeed = 0;
     this.rigidBody.friction = 0.05;
-    this.collider.radius = 5;
+    this.collider.radius = 6;
 
     // Override Boid's perception
     this.collider.visualRange = 60; // Reduced for performance (fewer neighbor checks)

@@ -65,7 +65,7 @@
 ------------------------------------------------------------------------------------------------
 --- SPATIAL WORKER: ---
 ------------------------------------------------------------------------------------------------
-- agregar al spatial worker q calcule las distancias entre todos los vecinos y lo guarde en un nuevo buffer/array
+-objetos grandes q ocupen mas de una celda
 - version con quadtree?
 - celdas no caminables
 
