@@ -76,7 +76,7 @@
 
     <script type="module">
         const numberOfPrey = 20000;
-        const numberOfPredators = 50;
+        const numberOfPredators = 150;
         const numberOfBoids = 0;
         // Import engine classes and entity classes
         import { GameEngine } from '/src/core/gameEngine.js';
@@ -95,13 +95,16 @@
                 spatial: {
                     cellSize: 50,  // Increased to match visual range (reduces grid overhead)
                     maxNeighbors: 300,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
-                    noLimitFPS: true
+                    noLimitFPS: true,
+
                 },
 
                 // Logic configuration
                 logic: {
                     noLimitFPS: false,
                     numberOfLogicWorkers: 4,
+                    numberOfEntitiesPerJob: 3000,
+
                 },
 
                 // Physics configuration
@@ -218,7 +221,10 @@
 
         window.clearAllEntities = function () {
             if (confirm('Clear all entities?')) {
-                gameEngine.workers.logic.postMessage({ msg: 'clearAll' });
+                // Broadcast to all logic workers
+                gameEngine.workers.logicWorkers.forEach((worker) => {
+                    worker.postMessage({ msg: 'clearAll' });
+                });
             }
         };
 

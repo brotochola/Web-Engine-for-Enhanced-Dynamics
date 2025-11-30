@@ -34,14 +34,15 @@ class LogicWorker extends AbstractWorker {
     // Game objects - one per entity
     this.gameObjects = [];
 
-    // Entity range for this worker (set during initialization)
-    this.entityStartIndex = 0;
-    this.entityEndIndex = 0;
+    // Worker identification
     this.workerIndex = 0; // Which worker am I? (0, 1, 2, ...)
 
     // Frame synchronization (for multi-worker coordination)
     this.syncData = null; // Int32Array for Atomics-based synchronization
     this.totalLogicWorkers = 1; // Total number of logic workers
+
+    // Job queue for dynamic work distribution
+    this.jobQueueData = null; // Int32Array: [currentJobIndex, totalJobs, job0_start, job0_end, ...]
 
     // Performance tracking
     this.activeEntityCount = 0; // Number of active entities this worker is processing
@@ -57,35 +58,25 @@ class LogicWorker extends AbstractWorker {
    * Sets up shared memory and creates GameObject instances
    */
   initialize(data) {
-    // Set entity range for this worker (from GameEngine)
-    if (data.entityRange) {
-      this.entityStartIndex = data.entityRange.startIndex;
-      this.entityEndIndex = data.entityRange.endIndex;
-      console.log(
-        `LOGIC WORKER: Assigned entity range ${this.entityStartIndex}-${
-          this.entityEndIndex - 1
-        }`
-      );
-    } else {
-      // Backward compatibility: if no range specified, process all entities
-      this.entityStartIndex = 0;
-      this.entityEndIndex = data.entityCount;
-      console.log("LOGIC WORKER: No range specified, processing all entities");
-    }
+    // Set worker index for identification
+    this.workerIndex = data.workerIndex || 0;
 
     // Initialize synchronization buffer for multi-worker coordination
     if (data.buffers.syncData) {
       this.syncData = new Int32Array(data.buffers.syncData);
       this.totalLogicWorkers = this.syncData[2]; // Total workers stored at index 2
 
-      // Calculate this worker's index based on entity range
-      const entitiesPerWorker = Math.ceil(
-        data.entityCount / this.totalLogicWorkers
-      );
-      this.workerIndex = Math.floor(this.entityStartIndex / entitiesPerWorker);
-
       console.log(
         `LOGIC WORKER ${this.workerIndex}: Frame synchronization enabled (${this.totalLogicWorkers} workers total)`
+      );
+    }
+
+    // Initialize job queue for dynamic work distribution
+    if (data.buffers.jobQueueData) {
+      this.jobQueueData = new Int32Array(data.buffers.jobQueueData);
+      const totalJobs = this.jobQueueData[1];
+      console.log(
+        `LOGIC WORKER ${this.workerIndex}: Job queue initialized (${totalJobs} jobs total)`
       );
     }
 
@@ -107,12 +98,10 @@ class LogicWorker extends AbstractWorker {
     this.createGameObjectInstances();
 
     console.log(
-      `LOGIC WORKER: Total ${this.entityCount} GameObjects ready (processing ${
-        this.entityEndIndex - this.entityStartIndex
-      })`
+      `LOGIC WORKER ${this.workerIndex}: Total ${this.entityCount} GameObjects ready (job-based processing)`
     );
     console.log(
-      "LOGIC WORKER: Initialization complete, waiting for start signal..."
+      `LOGIC WORKER ${this.workerIndex}: Initialization complete, waiting for start signal...`
     );
     // Note: Game loop will start when "start" message is received from main thread
   }
@@ -223,38 +212,56 @@ class LogicWorker extends AbstractWorker {
 
   /**
    * Update method called each frame (implementation of AbstractWorker.update)
-   * Calls tick() on all game objects IN THIS WORKER'S RANGE
+   * Uses job-based system: workers atomically claim jobs and process them
    */
   update(deltaTime, dtRatio, resuming) {
+    // Reset job queue at the start of each frame (only first worker to arrive)
+    // This is safe because of the barrier at the end of the previous frame
+    if (this.jobQueueData) {
+      Atomics.store(this.jobQueueData, 0, 0); // Reset current job index to 0
+    }
+
     // Process collision callbacks BEFORE entity logic (Unity-style)
     if (this.collisionData) {
       this.processCollisionCallbacks();
     }
 
-    // console.log(this.inputData[3],this.inputData[4],this.inputData[5])
-
-    // Count active entities while ticking (for load balancing metrics)
+    // Count active entities while processing jobs
     let activeCount = 0;
 
-    // Tick only game objects in this worker's range
-    // Each GameObject applies its logic, reading/writing directly to shared arrays
-    for (let i = this.entityStartIndex; i < this.entityEndIndex; i++) {
-      if (this.gameObjects[i] && Transform.active[i]) {
-        const obj = this.gameObjects[i];
-        activeCount++;
+    // Job-based processing: atomically claim jobs until none remain
+    while (true) {
+      // Atomically claim the next job
+      const jobIndex = Atomics.add(this.jobQueueData, 0, 1);
+      const totalJobs = this.jobQueueData[1];
 
-        // Update neighbor references before tick (parsed once per frame)
-        // Now includes pre-calculated squared distances from spatial worker
-        obj.updateNeighbors(this.neighborData, this.distanceData);
-        // Now tick with cleaner API (no neighborData parameter)
-        obj.tick(dtRatio, this.inputData);
+      // Check if all jobs are claimed
+      if (jobIndex >= totalJobs) {
+        break; // No more jobs, this worker is done
+      }
+
+      // Get job range from buffer
+      const jobStartIndex = this.jobQueueData[2 + jobIndex * 2];
+      const jobEndIndex = this.jobQueueData[2 + jobIndex * 2 + 1];
+
+      // Process all entities in this job's range
+      for (let i = jobStartIndex; i < jobEndIndex; i++) {
+        if (this.gameObjects[i] && Transform.active[i]) {
+          const obj = this.gameObjects[i];
+          activeCount++;
+
+          // Update neighbor references before tick
+          obj.updateNeighbors(this.neighborData, this.distanceData);
+          // Tick entity logic
+          obj.tick(dtRatio, this.inputData);
+        }
       }
     }
 
     // Store active count for FPS reporting
     this.activeEntityCount = activeCount;
 
-    // Synchronize with other logic workers (if multi-worker mode enabled)
+    // Synchronize with other logic workers (barrier ensures all workers finish frame)
     if (this.syncData && this.totalLogicWorkers > 1) {
       this.synchronizeFrame();
     }
@@ -296,7 +303,7 @@ class LogicWorker extends AbstractWorker {
   /**
    * Process collision callbacks (Unity-style)
    * Determines Enter/Stay/Exit states and calls appropriate callbacks
-   * Only processes collisions where entityA is in this worker's range
+   * Partitions collision processing across workers using modulo (entityA % workers == myIndex)
    */
   processCollisionCallbacks() {
     // Read collision pairs from physics worker
@@ -310,9 +317,9 @@ class LogicWorker extends AbstractWorker {
       const entityA = this.collisionData[1 + i * 2];
       const entityB = this.collisionData[1 + i * 2 + 1];
 
-      // Only process collisions where entityA is in this worker's range
+      // Partition collision processing across workers using modulo
       // This avoids duplicate processing across multiple logic workers
-      if (entityA < this.entityStartIndex || entityA >= this.entityEndIndex) {
+      if (entityA % this.totalLogicWorkers !== this.workerIndex) {
         continue;
       }
 
@@ -327,20 +334,20 @@ class LogicWorker extends AbstractWorker {
       const isNewCollision = !this.previousCollisions.has(keyAB);
 
       const objA = this.gameObjects[entityA];
-      const objB = this.gameObjects[entityB];
+      // const objB = this.gameObjects[entityB];
 
       if (isNewCollision) {
         // OnCollisionEnter - First frame of collision
         if (objA && objA.onCollisionEnter) {
           objA.onCollisionEnter(entityB);
         }
-        // Note: We DON'T call objB's callback here since another worker might own entityB
+        // Note: We DON'T call objB's callback here since another worker might process entityB
       } else {
         // OnCollisionStay - Continuous collision
         if (objA && objA.onCollisionStay) {
           objA.onCollisionStay(entityB);
         }
-        // Note: We DON'T call objB's callback here since another worker might own entityB
+        // Note: We DON'T call objB's callback here since another worker might process entityB
       }
     }
 
@@ -350,8 +357,8 @@ class LogicWorker extends AbstractWorker {
         // Parse the key to get entity indices
         const [entityA, entityB] = prevKey.split(",").map(Number);
 
-        // Only process if entityA is in our range
-        if (entityA >= this.entityStartIndex && entityA < this.entityEndIndex) {
+        // Only process if this worker "owns" entityA (using same partitioning)
+        if (entityA % this.totalLogicWorkers === this.workerIndex) {
           const objA = this.gameObjects[entityA];
           if (objA && objA.onCollisionExit) {
             objA.onCollisionExit(entityB);
@@ -399,16 +406,21 @@ class LogicWorker extends AbstractWorker {
 
         if (!EntityClass) {
           console.error(
-            `LOGIC WORKER: Cannot despawn ${className} - class not found!`
+            `LOGIC WORKER ${this.workerIndex}: Cannot despawn ${className} - class not found!`
           );
           return;
         }
 
-        // Despawn all entities of this type IN THIS WORKER'S RANGE
+        // Despawn all entities of this type that this worker "owns" (using modulo partitioning)
         let count = 0;
         const entityType = EntityClass.entityType;
 
-        for (let i = this.entityStartIndex; i < this.entityEndIndex; i++) {
+        for (let i = 0; i < this.entityCount; i++) {
+          // Only process entities that belong to this worker (modulo partitioning)
+          if (i % this.totalLogicWorkers !== this.workerIndex) {
+            continue;
+          }
+
           if (
             Transform.active[i] &&
             GameObject.entityType[i] === entityType &&
@@ -420,19 +432,21 @@ class LogicWorker extends AbstractWorker {
         }
 
         console.log(
-          `LOGIC WORKER: Despawned ${count} ${className} entities in range ${
-            this.entityStartIndex
-          }-${this.entityEndIndex - 1}`
+          `LOGIC WORKER ${this.workerIndex}: Despawned ${count} ${className} entities`
         );
         break;
       }
 
       case "clearAll": {
-        // Despawn all entities IN THIS WORKER'S RANGE
+        // Despawn all entities that this worker "owns" (using modulo partitioning)
         let totalDespawned = 0;
 
-        // Iterate through game objects in this worker's range and despawn active ones
-        for (let i = this.entityStartIndex; i < this.entityEndIndex; i++) {
+        for (let i = 0; i < this.entityCount; i++) {
+          // Only process entities that belong to this worker (modulo partitioning)
+          if (i % this.totalLogicWorkers !== this.workerIndex) {
+            continue;
+          }
+
           if (Transform.active[i] && this.gameObjects[i]) {
             this.gameObjects[i].despawn();
             totalDespawned++;
@@ -440,9 +454,7 @@ class LogicWorker extends AbstractWorker {
         }
 
         console.log(
-          `LOGIC WORKER: Cleared entities in range ${this.entityStartIndex}-${
-            this.entityEndIndex - 1
-          } (${totalDespawned} total)`
+          `LOGIC WORKER ${this.workerIndex}: Cleared ${totalDespawned} entities`
         );
         break;
       }

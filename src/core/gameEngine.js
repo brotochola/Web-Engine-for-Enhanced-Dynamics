@@ -92,6 +92,7 @@ class GameEngine {
       inputData: null,
       cameraData: null,
       syncData: null, // Synchronization buffer for logic workers
+      jobQueueData: null, // Job queue buffer for dynamic work distribution
       // Component buffers (core + custom components auto-registered)
       componentData: {
         Transform: null,
@@ -428,6 +429,33 @@ class GameEngine {
     syncView[2] = this.numberOfLogicWorkers; // Total workers
     syncView[3] = 0; // Barrier flag
 
+    // Job queue buffer for dynamic work distribution
+    // [0]: Current job index (atomically incremented by workers)
+    // [1]: Total number of jobs
+    // [2+]: Job ranges (start, end, start, end, ...) - each job is 2 ints
+    const entitiesPerJob = this.config.logic?.numberOfEntitiesPerJob || 1000;
+    const totalJobs = Math.ceil(this.totalEntityCount / entitiesPerJob);
+    const JOB_QUEUE_SIZE = (2 + totalJobs * 2) * 4; // header + (start,end) pairs
+    this.buffers.jobQueueData = new SharedArrayBuffer(JOB_QUEUE_SIZE);
+    const jobQueueView = new Int32Array(this.buffers.jobQueueData);
+    jobQueueView[0] = 0; // Current job index (reset each frame by first worker)
+    jobQueueView[1] = totalJobs; // Total jobs
+
+    // Pre-create job ranges
+    for (let i = 0; i < totalJobs; i++) {
+      const startIndex = i * entitiesPerJob;
+      const endIndex = Math.min(
+        (i + 1) * entitiesPerJob,
+        this.totalEntityCount
+      );
+      jobQueueView[2 + i * 2] = startIndex; // Job start
+      jobQueueView[2 + i * 2 + 1] = endIndex; // Job end
+    }
+
+    console.log(
+      `📋 Created ${totalJobs} jobs (${entitiesPerJob} entities per job)`
+    );
+
     // Center camera on world
     const worldCenterX =
       this.config.worldWidth / 2 - this.config.canvasWidth / 2;
@@ -679,6 +707,7 @@ class GameEngine {
         inputData: this.buffers.inputData,
         cameraData: this.buffers.cameraData,
         syncData: this.buffers.syncData, // Synchronization buffer for logic workers
+        jobQueueData: this.buffers.jobQueueData, // Job queue for dynamic work distribution
         // Component buffers
         componentData: this.buffers.componentData,
       },
@@ -705,31 +734,18 @@ class GameEngine {
     // Initialize spatial worker (no ports needed for now)
     this.workers.spatial.postMessage(initData);
 
-    // Initialize logic workers (each with its entity range)
-    const entitiesPerWorker = Math.ceil(
-      this.totalEntityCount / this.numberOfLogicWorkers
-    );
+    // Initialize logic workers (using job-based system - no static ranges)
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
-      const startIndex = i * entitiesPerWorker;
-      const endIndex = Math.min(
-        (i + 1) * entitiesPerWorker,
-        this.totalEntityCount
-      );
-
       this.workers.logicWorkers[i].postMessage(
         {
           ...initData,
           workerPorts: workerPorts[`logic${i}`],
-          entityRange: { startIndex, endIndex }, // Add range info for this worker
+          workerIndex: i, // Just for identification/logging
         },
         workerPorts[`logic${i}`] ? Object.values(workerPorts[`logic${i}`]) : []
       );
 
-      console.log(
-        `🧠 Logic Worker ${i}: entities ${startIndex}-${endIndex - 1} (${
-          endIndex - startIndex
-        } entities)`
-      );
+      console.log(`🧠 Logic Worker ${i}: Ready for job-based processing`);
     }
 
     // Initialize physics worker (with port to renderer)
