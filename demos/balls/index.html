@@ -91,7 +91,7 @@
                 // Spatial hash grid configuration
                 spatial: {
                     cellSize: 50,        // Each cell size in world units
-                    maxNeighbors: 200,   // Maximum neighbors to track per entity
+                    maxNeighbors: 900,   // Maximum neighbors to track per entity
                     noLimitFPS: true    // If true, runs as fast as possible instead of 60fps
                 },
 
@@ -102,13 +102,13 @@
 
                 // Physics configuration
                 physics: {
-                    subStepCount: 3,     // Constraint solver iterations per frame (4-8 recommended)
+                    subStepCount: 2,     // Constraint solver iterations per frame (4-8 recommended)
                     noLimitFPS: true,   // If true, runs as fast as possible instead of 60fps
 
                     // Collision Detection
-                    maxCollisionPairs: 150000, // Maximum collision pairs per frame
+                    maxCollisionPairs: 0, // Maximum collision pairs per frame
                     verletDamping: 0.99,
-                    boundaryElasticity: 0.5,
+                    boundaryElasticity: 0,
                     collisionResponseStrength: 0.99,
                     // Global Forces
                     gravity: { x: 0, y: 0.5 }   // Global gravity (lower = more stable stacking)
