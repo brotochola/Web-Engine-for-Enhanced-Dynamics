@@ -63,8 +63,9 @@ class Ball extends GameObject {
     this.spriteRenderer.scaleX = scale;
     this.spriteRenderer.scaleY = scale;
 
-    this.setSpriteProp("anchor.y", 0.5);
-    this.setSpriteProp("anchor.x", 0.5);
+    // Center the sprite anchor (0-1 range)
+    this.spriteRenderer.anchorX = 0.5;
+    this.spriteRenderer.anchorY = 0.5;
 
     // Reset visual properties
     this.setAlpha(1.0);

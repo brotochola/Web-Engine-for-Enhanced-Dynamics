@@ -17,6 +17,8 @@ class SpriteRenderer extends Component {
 
     scaleX: Float32Array, // Separate X scale
     scaleY: Float32Array, // Separate Y scale
+    anchorX: Float32Array, // Separate X anchor
+    anchorY: Float32Array, // Separate Y anchor
 
     // Rendering options
     spriteVariant: Uint8Array, // Texture/sprite variant (for different skins)

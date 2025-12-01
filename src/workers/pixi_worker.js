@@ -159,6 +159,8 @@ class PixiRenderer extends AbstractWorker {
 
     const scaleX = SpriteRenderer.scaleX;
     const scaleY = SpriteRenderer.scaleY;
+    const anchorX = SpriteRenderer.anchorX;
+    const anchorY = SpriteRenderer.anchorY;
     const renderVisible = SpriteRenderer.renderVisible;
     const zOffset = SpriteRenderer.zOffset;
     const isItOnScreen = SpriteRenderer.isItOnScreen;
@@ -212,6 +214,10 @@ class PixiRenderer extends AbstractWorker {
       // Optimize scale update - direct assignment is cheaper than .set()
       if (bodySprite.scale.x !== scaleX[i]) bodySprite.scale.x = scaleX[i];
       if (bodySprite.scale.y !== scaleY[i]) bodySprite.scale.y = scaleY[i];
+
+      // Update anchor points (0-1 range)
+      if (bodySprite.anchor.x !== anchorX[i]) bodySprite.anchor.x = anchorX[i];
+      if (bodySprite.anchor.y !== anchorY[i]) bodySprite.anchor.y = anchorY[i];
 
       // OPTIMIZATION: Only update visual properties if dirty flag is set
       // This skips expensive operations (tint, alpha, flipping, animations) when unchanged
@@ -590,8 +596,8 @@ class PixiRenderer extends AbstractWorker {
         this.animationSpeed[i] = 0;
       }
 
-      // Setup sprite
-      bodySprite.anchor.set(0.5, 1);
+      // Setup sprite with default centered anchor (will be updated per-entity in updateSprites)
+      bodySprite.anchor.set(0.5, 0.5);
       bodySprite.zIndex = 0;
 
       // Store references
