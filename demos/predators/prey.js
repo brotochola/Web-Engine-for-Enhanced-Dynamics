@@ -36,15 +36,12 @@ class Prey extends Boid {
     WALK: 1,
   };
   /**
-   * Prey constructor - initializes prey properties
-   * @param {number} index - Position in shared arrays
-   * @param {Object} componentIndices - Component indices { transform, rigidBody, collider, spriteRenderer }
-   * @param {Object} config - Configuration object from GameEngine
+   * LIFECYCLE: Configure this entity TYPE - runs ONCE per instance
+   * Overrides and extends Boid's setup()
    */
-  constructor(index, componentIndices, config = {}, logicWorker = null) {
-    super(index, componentIndices, config, logicWorker);
-
-    const i = index;
+  setup() {
+    // Call parent Boid.setup() first
+    super.setup();
 
     // Initialize prey-specific properties
     this.preyBehavior.predatorAvoidFactor = 5; // Strong avoidance of predators
@@ -66,6 +63,10 @@ class Prey extends Boid {
     this.spriteRenderer.scaleX = scale;
     this.spriteRenderer.scaleY = scale;
 
+    // Set anchor for character sprite (bottom-center for ground alignment)
+    this.spriteRenderer.anchorX = 0.5;
+    this.spriteRenderer.anchorY = 1.0;
+
     // Override Boid's Flocking component properties - OPTIMIZED for performance
     this.flocking.protectedRange = this.collider.radius * 4; // Minimum distance from others
     this.flocking.centeringFactor = 0.003; // Cohesion: gentle attraction to flock center
@@ -77,11 +78,12 @@ class Prey extends Boid {
 
   /**
    * LIFECYCLE: Called when prey is spawned/respawned from pool
-   * Reset all properties to initial state
+   * Initialize THIS instance - runs EVERY spawn
+   * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
    */
-  awake() {
-    // Call parent Boid.awake() to initialize position
-    super.awake();
+  onSpawned(spawnConfig = {}) {
+    // Call parent Boid.onSpawned() to initialize position
+    super.onSpawned(spawnConfig);
 
     // Reset health
     this.preyBehavior.life = 1.0;
@@ -96,7 +98,7 @@ class Prey extends Boid {
    * LIFECYCLE: Called when prey is despawned (returned to pool)
    * Cleanup and save state if needed
    */
-  sleep() {
+  onDespawned() {
     // Could save stats, play death effects, etc.
   }
 

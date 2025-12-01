@@ -23,19 +23,14 @@ class Boid extends GameObject {
   // Note: Flocking behavior properties are now in the Flocking component
   // (protectedRange, centeringFactor, avoidFactor, matchingFactor, turnFactor, margin)
 
+  // Note: Constructor is handled by GameObject - developers don't override it!
+  // Use setup() instead to configure entity type properties
+
   /**
-   * Boid constructor - initializes this boid's properties
-   * Sets both GameObject properties (transform/physics) and Boid properties (behavior)
-   *
-   * @param {number} index - Position in shared arrays
-   * @param {Object} componentIndices - Component indices { transform, rigidBody, collider, spriteRenderer, flocking }
-   * @param {Object} config - Configuration object from GameEngine
+   * LIFECYCLE: Configure this entity TYPE - runs ONCE per instance
+   * All components are guaranteed to be initialized at this point
    */
-  constructor(index, componentIndices, config = {}, logicWorker = null) {
-    super(index, componentIndices, config, logicWorker);
-
-    const i = index;
-
+  setup() {
     // Initialize RigidBody constraints
     this.rigidBody.maxVel = 10;
     this.rigidBody.maxAcc = 0.2;
@@ -49,6 +44,10 @@ class Boid extends GameObject {
     // Initialize SpriteRenderer
     this.spriteRenderer.scaleX = 1;
     this.spriteRenderer.scaleY = 1;
+
+    // Set anchor for sprite (centered for bunny)
+    this.spriteRenderer.anchorX = 0.5;
+    this.spriteRenderer.anchorY = 0.5;
 
     // Initialize Flocking component behavior properties
     this.flocking.protectedRange = this.collider.radius * 2; // Minimum distance from others
@@ -64,31 +63,31 @@ class Boid extends GameObject {
 
   /**
    * LIFECYCLE: Called when boid is spawned/respawned from pool
-   * Reset all properties to initial state
+   * Initialize THIS instance - runs EVERY spawn
+   * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
    */
-  awake() {
+  onSpawned(spawnConfig = {}) {
     // Get config from instance (passed during construction)
     const config = this.config || {};
 
     // Initialize Transform position
-    // NOTE: Spawn config already sets position, so only randomize if not set
-    if (this.transform.x === undefined || this.transform.x === 0) {
-      this.x = Math.random() * (config.worldWidth || 800);
-      this.y = Math.random() * (config.worldHeight || 600);
-    }
-
+    // Use spawn config if provided, otherwise randomize
+    this.x = spawnConfig.x ?? Math.random() * (config.worldWidth || 800);
+    this.y = spawnConfig.y ?? Math.random() * (config.worldHeight || 600);
     this.transform.rotation = 0;
 
-    this.rigidBody.vx = this.rigidBody.vx || 0;
-    this.rigidBody.vy = this.rigidBody.vy || 0;
+    // Reset physics state
+    this.rigidBody.vx = spawnConfig.vx ?? 0;
+    this.rigidBody.vy = spawnConfig.vy ?? 0;
     this.rigidBody.ax = 0;
     this.rigidBody.ay = 0;
   }
 
   /**
    * LIFECYCLE: Called when boid is despawned (returned to pool)
+   * Cleanup and save state if needed
    */
-  sleep() {
+  onDespawned() {
     console.log(`Boid ${this.index} despawned`);
   }
 

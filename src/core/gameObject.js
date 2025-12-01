@@ -123,6 +123,13 @@ class GameObject {
 
     // Ensure component accessors are defined on prototype (done once per class)
     this.constructor._ensureComponentAccessors();
+
+    // LIFECYCLE: Call setup() at the end of constructor
+    // This allows subclasses to configure entity type properties
+    // All components are now initialized and accessible
+    if (this.setup) {
+      this.setup();
+    }
   }
 
   /**
@@ -376,26 +383,82 @@ class GameObject {
   }
 
   /**
-   * LIFECYCLE: Called when entity is first created (one-time initialization)
-   * Override in subclasses for setup that should only happen once
+   * LIFECYCLE: Called at the END of constructor - runs ONCE per entity lifetime
+   * Override in subclasses to configure entity TYPE properties
+   * (physics params, flocking behavior, collision settings, sprite config, etc.)
+   * All components are guaranteed to be initialized at this point
+   *
+   * Example:
+   *   setup() {
+   *     this.rigidBody.maxVel = 10;
+   *     this.collider.radius = 15;
+   *     this.flocking.centeringFactor = 0.001;
+   *   }
    */
-  start() {
+  setup() {
     // Override in subclasses
   }
 
   /**
-   * LIFECYCLE: Called when entity becomes active (spawned from pool)
-   * Override in subclasses to reset/initialize state for reuse
+   * LIFECYCLE: Called EVERY time entity is spawned from pool (or first spawn)
+   * Override in subclasses to reset/initialize instance-specific state
+   * (position, velocity, health, etc.)
+   *
+   * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
+   *
+   * Example:
+   *   onSpawned(spawnConfig) {
+   *     this.x = spawnConfig.x ?? Math.random() * 800;
+   *     this.y = spawnConfig.y ?? Math.random() * 600;
+   *     this.health = 100;
+   *     this.rigidBody.vx = 0;
+   *     this.rigidBody.vy = 0;
+   *   }
    */
-  awake() {
+  onSpawned(spawnConfig = {}) {
     // Override in subclasses
   }
 
   /**
-   * LIFECYCLE: Called when entity becomes inactive (returned to pool)
-   * Override in subclasses for cleanup, saving state, etc.
+   * LIFECYCLE: Called when entity is despawned (returned to pool)
+   * Override in subclasses for cleanup, saving state, triggering effects, etc.
+   *
+   * Example:
+   *   onDespawned() {
+   *     this.saveStats();
+   *     this.playDeathEffect();
+   *     this.clearReferences();
+   *   }
    */
-  sleep() {
+  onDespawned() {
+    // Override in subclasses
+  }
+
+  /**
+   * LIFECYCLE: Called when entity enters screen (becomes visible)
+   * Override in subclasses to enable expensive behaviors only for visible entities
+   *
+   * Example:
+   *   onScreenEnter() {
+   *     this.enableParticles();
+   *     this.startAnimations();
+   *   }
+   */
+  onScreenEnter() {
+    // Override in subclasses
+  }
+
+  /**
+   * LIFECYCLE: Called when entity exits screen (becomes invisible)
+   * Override in subclasses to disable expensive calculations for off-screen entities
+   *
+   * Example:
+   *   onScreenExit() {
+   *     this.disableParticles();
+   *     this.pauseAnimations();
+   *   }
+   */
+  onScreenExit() {
     // Override in subclasses
   }
 
@@ -407,17 +470,18 @@ class GameObject {
     // Prevent double-despawn which corrupts the free list
     if (Transform.active[this.index] === 0) return;
 
+    // LIFECYCLE: Call onDespawned() BEFORE deactivating
+    // This allows cleanup, saving state, triggering effects, etc.
+    if (this.onDespawned) {
+      this.onDespawned();
+    }
+
     Transform.active[this.index] = 0;
 
     // Return to free list if exists (O(1))
     const EntityClass = this.constructor;
     if (EntityClass.freeList) {
       EntityClass.freeList[++EntityClass.freeListTop] = this.index;
-    }
-
-    // Call lifecycle callback
-    if (this.sleep) {
-      this.sleep();
     }
   }
 
@@ -460,13 +524,21 @@ class GameObject {
   }
 
   /**
-   * Main update method - called every frame by logic worker
+   * LIFECYCLE: Main update - called EVERY frame while entity is active
    * Override this in subclasses to define entity behavior
+   * (AI, physics forces, animations, input handling, etc.)
    *
    * Note: this.neighbors and this.neighborCount are updated before this is called
    *
    * @param {number} dtRatio - Delta time ratio (1.0 = 16.67ms frame)
    * @param {Int32Array} inputData - Mouse and keyboard input
+   *
+   * Example:
+   *   tick(dtRatio, inputData) {
+   *     this.applyFlockingBehaviors(dtRatio);
+   *     this.avoidMouse(dtRatio, inputData);
+   *     this.updateAnimation();
+   *   }
    */
   tick(dtRatio, inputData) {
     // Override in subclasses
@@ -623,13 +695,10 @@ class GameObject {
       instance.rigidBody.py = instance.transform.y - instance.rigidBody.vy;
     }
 
-    // Call lifecycle method BEFORE activating
-    if (instance.awake) {
-      // console.log(`GameObject.spawn: Calling awake() for ${EntityClass.name} index ${i}`);
-      instance.awake();
-      // console.log(`GameObject.spawn: Finished awake() for ${EntityClass.name} index ${i}`);
-    } else {
-      // console.log(`GameObject.spawn: No awake() method for ${EntityClass.name} index ${i}`);
+    // LIFECYCLE: Call onSpawned() BEFORE activating
+    // This allows entity to initialize instance state based on spawn config
+    if (instance.onSpawned) {
+      instance.onSpawned(spawnConfig);
     }
 
     // NOW activate the entity

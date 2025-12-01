@@ -433,7 +433,7 @@ class GameEngine {
     // [0]: Current job index (atomically incremented by workers)
     // [1]: Total number of jobs
     // [2+]: Job ranges (start, end, start, end, ...) - each job is 2 ints
-    const entitiesPerJob = this.config.logic?.numberOfEntitiesPerJob || 1000;
+    const entitiesPerJob = this.config.logic?.numberOfEntitiesPerJob || 250;
     const totalJobs = Math.ceil(this.totalEntityCount / entitiesPerJob);
     const JOB_QUEUE_SIZE = (2 + totalJobs * 2) * 4; // header + (start,end) pairs
     this.buffers.jobQueueData = new SharedArrayBuffer(JOB_QUEUE_SIZE);

@@ -16,60 +16,57 @@ class Ball extends GameObject {
     textureName: "ball",
   };
 
-  // /**
-  //  * Ball constructor - initializes ball properties
-  //  * @param {number} index - Position in shared arrays
-  //  * @param {Object} componentIndices - Component indices { transform, rigidBody, collider, spriteRenderer }
-  //  * @param {Object} config - Configuration object from GameEngine
-  //  */
-  // constructor(index, componentIndices, config = {}, logicWorker = null) {
-  //   super(index, componentIndices, config, logicWorker);
-  // }
-
   /**
-   * LIFECYCLE: Called when ball is spawned/respawned from pool
-   * Reset all properties to initial state
+   * LIFECYCLE: Configure this entity TYPE - runs ONCE per instance
+   * All components are guaranteed to be initialized at this point
    */
-  awake() {
-    // Get config from instance (passed during construction)
-    const config = this.config || {};
-
-    // Initialize RigidBody physics properties
-    this.rigidBody.maxVel = 100; // Max velocity
+  setup() {
+    // Configure RigidBody physics properties (same for all balls)
+    this.rigidBody.maxVel = 50; // Max velocity
     this.rigidBody.maxAcc = 2; // Max acceleration
     this.rigidBody.minSpeed = 0; // Balls can come to rest
     this.rigidBody.friction = 0.01; // Low friction - let balls settle naturally
-
-    // Initialize position using ergonomic API (automatically syncs px/py for Verlet)
-    this.x = Math.random() * config.worldWidth;
-    this.y = Math.random() * config.worldHeight;
-    this.rotation = 0;
-
-    // Initialize RigidBody velocities and accelerations
-    this.vx = 0;
-    this.vy = 0;
-    this.rigidBody.ax = 0;
-    this.rigidBody.ay = 0;
-
-    const actualBallSize = 14; //png width
-    const ballRadius = Math.random() * 20 + 10;
-    this.collider.radius = ballRadius;
-
-    // Set visual range for spatial queries
-    this.collider.visualRange = (config.spatial?.cellSize || 80) * 1.33;
-
-    const scale = (ballRadius * 2) / actualBallSize;
-
-    this.spriteRenderer.scaleX = scale;
-    this.spriteRenderer.scaleY = scale;
 
     // Center the sprite anchor (0-1 range)
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.5;
 
+    // Set visual range for spatial queries
+    const config = this.config || {};
+    this.collider.visualRange = (config.spatial?.cellSize || 80) * 1.33;
+  }
+
+  /**
+   * LIFECYCLE: Called when ball is spawned/respawned from pool
+   * Initialize THIS instance - runs EVERY spawn
+   * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
+   */
+  onSpawned(spawnConfig = {}) {
+    // Get config from instance
+    const config = this.config || {};
+
+    // Initialize position using ergonomic API (automatically syncs px/py for Verlet)
+    this.x = spawnConfig.x; //?? Math.random() * config.worldWidth;
+    this.y = spawnConfig.y; //?? Math.random() * config.worldHeight;
+    this.rotation = 0;
+
+    // Initialize RigidBody velocities and accelerations
+    this.vx = spawnConfig.vx ?? 0;
+    this.vy = spawnConfig.vy ?? 0;
+    this.rigidBody.ax = 0;
+    this.rigidBody.ay = 0;
+
+    // Randomize ball size for each spawn
+    const actualBallSize = 14; //png width
+    const ballRadius = Math.random() * 20 + 10;
+    this.collider.radius = ballRadius;
+
+    const scale = (ballRadius * 2) / actualBallSize;
+    this.spriteRenderer.scaleX = scale;
+    this.spriteRenderer.scaleY = scale;
+
     // Reset visual properties
     this.setAlpha(1.0);
-    this.setTint(0xffffff);
 
     // Random color tint for visual variety
     const colors = [
@@ -98,7 +95,7 @@ class Ball extends GameObject {
    * LIFECYCLE: Called when ball is despawned (returned to pool)
    * Cleanup and save state if needed
    */
-  sleep() {
+  onDespawned() {
     // console.log(`Ball ${this.index} despawned`);
   }
 

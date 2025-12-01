@@ -36,15 +36,12 @@ class Predator extends Boid {
   // Note: ARRAY_SCHEMA removed - all data now in components (pure ECS architecture)
 
   /**
-   * Predator constructor - initializes predator properties
-   * @param {number} index - Position in shared arrays
-   * @param {Object} componentIndices - Component indices { transform, rigidBody, collider, spriteRenderer }
-   * @param {Object} config - Configuration object from GameEngine
+   * LIFECYCLE: Configure this entity TYPE - runs ONCE per instance
+   * Overrides and extends Boid's setup()
    */
-  constructor(index, componentIndices, config = {}, logicWorker = null) {
-    super(index, componentIndices, config, logicWorker);
-
-    const i = index;
+  setup() {
+    // Call parent Boid.setup() first
+    super.setup();
 
     // Initialize predator-specific properties
     this.predatorBehavior.huntFactor = 0.2; // Chase strength
@@ -72,30 +69,30 @@ class Predator extends Boid {
     const scale = 2;
     this.spriteRenderer.scaleX = scale;
     this.spriteRenderer.scaleY = scale;
+
+    // Set anchor for character sprite (bottom-center for ground alignment)
+    this.spriteRenderer.anchorX = 0.5;
+    this.spriteRenderer.anchorY = 1.0;
   }
 
   /**
    * LIFECYCLE: Called when predator is spawned/respawned from pool
-   * Reset all properties to initial state
+   * Initialize THIS instance - runs EVERY spawn
+   * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
    */
-  awake() {
-    // console.log(`Predator ${this.index} awake() called - calling parent Boid.awake()`);
-
-    // Call parent Boid.awake() to initialize position
-    super.awake();
+  onSpawned(spawnConfig = {}) {
+    // Call parent Boid.onSpawned() to initialize position
+    super.onSpawned(spawnConfig);
 
     this.setAnimationState(Predator.anims.IDLE);
     this.setAnimationSpeed(0.15);
-
-    // console.log(`Predator ${this.index} fully initialized at position (${this.transform.x.toFixed(1)}, ${this.transform.y.toFixed(1)})`);
   }
 
   /**
    * LIFECYCLE: Called when predator is despawned (returned to pool)
    * Cleanup and save state if needed
    */
-  sleep() {
-    // console.log(`Predator ${this.index} despawned`);
+  onDespawned() {
     // Could save hunting stats, etc.
   }
 
