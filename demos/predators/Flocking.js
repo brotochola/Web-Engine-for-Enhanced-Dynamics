@@ -22,6 +22,7 @@ class Flocking extends Component {
    * Note: Getters/setters for properties (protectedRange, centeringFactor, avoidFactor, etc.)
    * are auto-generated from ARRAY_SCHEMA by Component._createInstanceProperties()
    */
+  //TODO: sacar esto , se puede bypassear
   constructor(index) {
     super();
     this.index = index;
