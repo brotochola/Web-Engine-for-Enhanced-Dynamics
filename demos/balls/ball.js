@@ -36,6 +36,10 @@ class Ball extends GameObject {
     this.collider.visualRange = (config.spatial?.cellSize || 80) * 1.33;
   }
 
+  onScreenEnter() {}
+
+  onScreenExit() {}
+
   /**
    * LIFECYCLE: Called when ball is spawned/respawned from pool
    * Initialize THIS instance - runs EVERY spawn

@@ -1,7 +1,7 @@
 // Component.js - Base class for all ECS components
 // Provides shared array functionality via Structure of Arrays (SoA)
 
-class Component {
+export class Component {
   // Shared memory buffer for this component type
   static sharedBuffer = null;
   static entityCount = 0;
@@ -90,7 +90,8 @@ class Component {
 
     return offset;
   }
-}
 
-// ES6 module export
-export { Component };
+  constructor(index) {
+    this.index = index;
+  }
+}

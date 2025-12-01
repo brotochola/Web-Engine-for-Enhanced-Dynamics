@@ -73,6 +73,10 @@ class LogicWorker extends AbstractWorker {
 
     // Collision pair cache for reverse lookups (key -> [entityA, entityB])
     this.collisionPairCache = new Map(); // Only for exit events
+
+    // Screen visibility tracking (for onScreenEnter/Exit lifecycle methods)
+    // Track previous frame's visibility state to detect transitions
+    this.previousScreenVisibility = new Uint8Array(0); // Will be sized in initialize()
   }
 
   /**
@@ -109,6 +113,12 @@ class LogicWorker extends AbstractWorker {
       this.collisionData = new Int32Array(data.buffers.collisionData);
       console.log("LOGIC WORKER: Collision callbacks enabled");
     }
+
+    // Initialize screen visibility tracking array
+    this.previousScreenVisibility = new Uint8Array(data.entityCount);
+    // Initialize to 0 (off-screen) - first frame will trigger onScreenEnter for visible entities
+    this.previousScreenVisibility.fill(0);
+    console.log("LOGIC WORKER: Screen visibility tracking enabled");
 
     // Note: Game-specific scripts are loaded automatically by AbstractWorker.initializeCommonBuffers()
     // This makes entity classes available in the worker's global scope
@@ -310,6 +320,9 @@ class LogicWorker extends AbstractWorker {
             const tickEnd = performance.now();
             this.profilingStats.tickTime += tickEnd - tickStart;
           }
+
+          // Check for screen visibility changes and call lifecycle methods
+          this.checkScreenVisibility(i, obj);
         }
       }
     }
@@ -443,6 +456,34 @@ class LogicWorker extends AbstractWorker {
     const temp = this.previousCollisions;
     this.previousCollisions = this.currentCollisions;
     this.currentCollisions = temp;
+  }
+
+  /**
+   * Check screen visibility changes and trigger lifecycle methods
+   * Detects when entities enter or exit the screen and calls onScreenEnter/onScreenExit
+   * @param {number} entityIndex - The entity's index
+   * @param {GameObject} obj - The entity instance
+   */
+  checkScreenVisibility(entityIndex, obj) {
+    // Get current visibility state from SpriteRenderer (updated by spatial worker)
+    const currentlyVisible = SpriteRenderer.isItOnScreen[entityIndex];
+    const wasVisible = this.previousScreenVisibility[entityIndex];
+
+    // Check for visibility state transitions
+    if (currentlyVisible && !wasVisible) {
+      // Entity just entered the screen
+      if (obj.onScreenEnter) {
+        obj.onScreenEnter();
+      }
+    } else if (!currentlyVisible && wasVisible) {
+      // Entity just exited the screen
+      if (obj.onScreenExit) {
+        obj.onScreenExit();
+      }
+    }
+
+    // Update previous visibility state for next frame
+    this.previousScreenVisibility[entityIndex] = currentlyVisible;
   }
 
   /**

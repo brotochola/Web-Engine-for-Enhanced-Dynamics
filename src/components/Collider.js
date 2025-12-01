@@ -42,18 +42,6 @@ class Collider extends Component {
     // Perception (for spatial queries)
     visualRange: Float32Array,
   };
-
-  /**
-   * Constructor - creates a component instance for a specific entity index
-   * @param {number} index - Index in the component arrays
-   *
-   * Note: Getters/setters for all properties (shapeType, radius, width, height, etc.)
-   * are auto-generated from ARRAY_SCHEMA by Component._createInstanceProperties()
-   */
-  constructor(index) {
-    super();
-    this.index = index;
-  }
 }
 
 // ES6 module export

@@ -979,17 +979,7 @@ class GameEngine {
 
     // Mouse events - convert canvas pixels to world coordinates
     this.canvas.addEventListener("mousemove", (e) => {
-      const rect = this.canvas.getBoundingClientRect();
-      const canvasX = e.clientX - rect.left;
-      const canvasY = e.clientY - rect.top;
-
-      // Convert to world coordinates (Y-down system)
-      // World position = (canvas position + camera position) / zoom
-      if (!this.mouse) this.mouse = {};
-      this.mouse.x = canvasX / this.camera.zoom + this.camera.x;
-      this.mouse.y = canvasY / this.camera.zoom + this.camera.y;
-
-      this.updateInputBuffer();
+      this.handleOnMouseMove(e);
     });
 
     this.canvas.addEventListener("mouseleave", (e) => {
@@ -1027,6 +1017,29 @@ class GameEngine {
     // console.log("✅ Setup event listeners");
   }
 
+  handleOnMouseMove(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    if (!this.mouse) this.mouse = {};
+
+    // Store canvas coordinates as properties so we can recalculate world position when camera moves
+    this.mouse.canvasX = e.clientX - rect.left;
+    this.mouse.canvasY = e.clientY - rect.top;
+
+    this.updateMouseWorldPosition();
+    this.updateInputBuffer();
+  }
+
+  // Update mouse world position from canvas coordinates
+  // This should be called when the camera moves or when the mouse moves
+  updateMouseWorldPosition() {
+    if (!this.mouse || this.mouse.canvasX === undefined) return;
+
+    // Convert to world coordinates (Y-down system)
+    // World position = (canvas position / zoom) + camera position
+    this.mouse.x = this.mouse.canvasX / this.camera.zoom + this.camera.x;
+    this.mouse.y = this.mouse.canvasY / this.camera.zoom + this.camera.y;
+  }
+
   // Update input buffer with current input state
   updateInputBuffer() {
     const input = this.views.input;
@@ -1057,6 +1070,10 @@ class GameEngine {
     cam[0] = this.camera.zoom;
     cam[1] = this.camera.x;
     cam[2] = this.camera.y;
+
+    // Update mouse world position when camera changes
+    this.updateMouseWorldPosition();
+    this.updateInputBuffer();
   }
 
   // Main game loop (runs in main thread)

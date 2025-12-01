@@ -7,7 +7,7 @@ import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { collectComponents } from "./utils.js";
 
-class GameObject {
+export class GameObject {
   // Entity class metadata (for spawning system)
   static startIndex = 0; // Starting index in arrays for this entity type
   static totalCount = 0; // Total allocated entities of this type
@@ -790,6 +790,3 @@ class GameObject {
     return despawnedCount;
   }
 }
-
-// ES6 module export
-export { GameObject };

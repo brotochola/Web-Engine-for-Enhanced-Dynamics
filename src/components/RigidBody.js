@@ -4,7 +4,7 @@
 
 import { Component } from "../core/Component.js";
 
-class RigidBody extends Component {
+export class RigidBody extends Component {
   // Array schema - defines all physics properties
   static ARRAY_SCHEMA = {
     // Linear motion
@@ -42,19 +42,4 @@ class RigidBody extends Component {
     speed: Float32Array,
     collisionCount: Uint8Array, // Number of collisions this frame
   };
-
-  /**
-   * Constructor - creates a component instance for a specific entity index
-   * @param {number} index - Index in the component arrays
-   *
-   * Note: Getters/setters for all 21 properties (vx, vy, ax, ay, px, py, etc.)
-   * are auto-generated from ARRAY_SCHEMA by Component._createInstanceProperties()
-   */
-  constructor(index) {
-    super();
-    this.index = index;
-  }
 }
-
-// ES6 module export
-export { RigidBody };
