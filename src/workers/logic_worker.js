@@ -406,6 +406,13 @@ class LogicWorker extends AbstractWorker {
     // Read collision pairs from physics worker
     const pairCount = this.collisionData[0];
 
+    // DEBUG: Log collision processing
+    if (this.frameCount % 60 === 0 && pairCount > 0 && this.workerIndex === 0) {
+      console.log(
+        `[Logic ${this.workerIndex}] Frame ${this.frameCount}: Processing ${pairCount} collision pairs`
+      );
+    }
+
     // Clear current collisions set
     this.currentCollisions.clear();
 
@@ -443,6 +450,12 @@ class LogicWorker extends AbstractWorker {
       if (isNewCollision) {
         // OnCollisionEnter - First frame of collision
         if (objA && objA.onCollisionEnter) {
+          // DEBUG: Log collision callbacks
+          if (this.frameCount % 60 === 0) {
+            console.log(
+              `[Logic ${this.workerIndex}] Calling onCollisionEnter for entity ${entityA} with ${entityB}`
+            );
+          }
           objA.onCollisionEnter(entityB);
         }
         // Note: We DON'T call objB's callback here since another worker might process entityB

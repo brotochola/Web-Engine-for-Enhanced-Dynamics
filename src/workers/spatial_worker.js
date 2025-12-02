@@ -198,6 +198,12 @@ class SpatialWorker extends AbstractWorker {
 
     if (this.collisionData) {
       this.collisionData[0] = this.collisionPairCount;
+      // DEBUG: Log collision count occasionally
+      if (this.frameCount % 60 === 0 && this.collisionPairCount > 0) {
+        console.log(
+          `[Spatial] Frame ${this.frameCount}: ${this.collisionPairCount} collision pairs detected`
+        );
+      }
     }
   }
 
@@ -285,6 +291,20 @@ class SpatialWorker extends AbstractWorker {
                 this.collisionData[outIndex] = i;
                 this.collisionData[outIndex + 1] = j;
                 this.collisionPairCount++;
+                // DEBUG: Log first few collisions
+                if (
+                  this.collisionPairCount <= 3 &&
+                  this.frameCount % 60 === 0
+                ) {
+                  const dist = Math.sqrt(distSq);
+                  console.log(
+                    `[Spatial] Collision: entity ${i} (radius ${
+                      radius[i]
+                    }) <-> entity ${j} (radius ${
+                      radius[j]
+                    }), dist=${dist.toFixed(2)}, minDist=${radiusSum}`
+                  );
+                }
               }
             }
           }

@@ -47,7 +47,7 @@ class Prey extends Boid {
     this.collider.radius = 6;
 
     // Override Boid's perception
-    this.collider.visualRange = 60; // Reduced for performance (fewer neighbor checks)
+    this.collider.visualRange = 120; // Must be >= max collision distance (6 + 60 = 66) for collision detection to work!
     this.spriteRenderer.animationSpeed = 0.15;
 
     // Set sprite scale
@@ -61,7 +61,7 @@ class Prey extends Boid {
 
     // Override Boid's Flocking component properties - OPTIMIZED for performance
     this.flocking.protectedRange = this.collider.radius * 4; // Minimum distance from others
-    this.flocking.centeringFactor = 0.003; // Cohesion: gentle attraction to flock center
+    this.flocking.centeringFactor = 0.0001; // Cohesion: gentle attraction to flock center
     this.flocking.avoidFactor = 3; // Separation: moderate avoidance (reduced from 3)
     this.flocking.matchingFactor = 0.05; // Alignment: match flock velocity
     this.flocking.turnFactor = 0.1; // Boundary avoidance strength

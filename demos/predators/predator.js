@@ -46,7 +46,7 @@ class Predator extends Boid {
     this.rigidBody.minSpeed = 0; //1; // Keep predators moving
     this.rigidBody.friction = 0.05;
 
-    this.collider.radius = 30;
+    this.collider.radius = 60; // Increased to match visual size (sprite is scaled 2x)
     this.spriteRenderer.animationSpeed = 0.15;
 
     // Override Boid's perception
@@ -80,6 +80,8 @@ class Predator extends Boid {
 
     this.setAnimation("idle_down"); // Use string name directly!
     this.setAnimationSpeed(0.15);
+
+    this.collision = false;
   }
 
   /**
@@ -102,6 +104,15 @@ class Predator extends Boid {
     const context = super.applyFlockingBehaviors(i, dtRatio);
 
     // Apply hunting force based on accumulated context
+    if (this.collision) {
+      this.vx = 0;
+      this.vy = 0;
+      this.setAnimation(
+        "1h_slash_up_" +
+          getDirectionFromAngle(RigidBody.velocityAngle[this.index])
+      );
+      return;
+    }
     const huntingPrey = this.applyHunting(i, dtRatio, context);
 
     // Additional behaviors
@@ -113,7 +124,20 @@ class Predator extends Boid {
   }
 
   onCollisionEnter(otherIndex) {
-    // console.log(`Predator ${this.index} collided with ${otherIndex}`);
+    console.log(
+      `[Predator ${this.index}] onCollisionEnter called with entity ${otherIndex}, entityType=${GameObject.entityType[otherIndex]}, PreyType=${Prey.entityType}`
+    );
+    if (GameObject.entityType[otherIndex] === Prey.entityType) {
+      console.log("collision predator", GameObject.entityType[otherIndex]);
+      this.collision = true;
+      this.vx = 0;
+      this.vy = 0;
+    }
+  }
+
+  onCollisionStay(otherIndex) {
+    this.vx = 0;
+    this.vy = 0;
   }
 
   /**
