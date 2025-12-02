@@ -100,7 +100,7 @@ class Predator extends Boid {
    * Main update - applies boid behaviors plus prey hunting
    * Note: this.neighbors and this.neighborCount are updated before this is called
    */
-  tick(dtRatio, inputData) {
+  tick(dtRatio) {
     const i = this.index;
 
     // Apply flocking behaviors (uses Template Method Pattern from Boid)
@@ -111,7 +111,7 @@ class Predator extends Boid {
     const huntingPrey = this.applyHunting(i, dtRatio, context);
 
     // Additional behaviors
-    this.avoidMouse(i, dtRatio, inputData);
+    this.avoidMouse(i, dtRatio);
     this.keepWithinBounds(i, dtRatio);
 
     // Update animation based on speed and state (cached)

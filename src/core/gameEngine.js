@@ -129,20 +129,64 @@ class GameEngine {
     this.gameObjects = []; // All entity instances
     this.totalEntityCount = 0;
 
-    // Key mapping for input buffer
-    this.keyMap = {
-      w: 0,
-      a: 1,
-      s: 2,
-      d: 3,
-      arrowup: 4,
-      arrowdown: 5,
-      arrowleft: 6,
-      arrowright: 7,
-      " ": 8, // spacebar
-      shift: 9,
-      control: 10,
-    };
+    // Key mapping for input buffer - comprehensive key support
+    // Using a more extensive mapping for all common keys
+    this.keyMap = {};
+    let keyIndex = 0;
+
+    // Letters a-z (indices 0-25)
+    for (let i = 0; i < 26; i++) {
+      this.keyMap[String.fromCharCode(97 + i)] = keyIndex++; // 'a' = 97 in ASCII
+    }
+
+    // Numbers 0-9 (indices 26-35)
+    for (let i = 0; i < 10; i++) {
+      this.keyMap[String.fromCharCode(48 + i)] = keyIndex++; // '0' = 48 in ASCII
+    }
+
+    // Special keys (indices 36+)
+    this.keyMap[" "] = keyIndex++; // space (36)
+    this.keyMap["enter"] = keyIndex++;
+    this.keyMap["escape"] = keyIndex++;
+    this.keyMap["tab"] = keyIndex++;
+    this.keyMap["backspace"] = keyIndex++;
+    this.keyMap["delete"] = keyIndex++;
+    this.keyMap["shift"] = keyIndex++;
+    this.keyMap["control"] = keyIndex++;
+    this.keyMap["alt"] = keyIndex++;
+    this.keyMap["meta"] = keyIndex++; // Command/Windows key
+
+    // Arrow keys (indices 46+)
+    this.keyMap["arrowup"] = keyIndex++;
+    this.keyMap["arrowdown"] = keyIndex++;
+    this.keyMap["arrowleft"] = keyIndex++;
+    this.keyMap["arrowright"] = keyIndex++;
+
+    // Function keys F1-F12 (indices 50+)
+    for (let i = 1; i <= 12; i++) {
+      this.keyMap[`f${i}`] = keyIndex++;
+    }
+
+    // Common punctuation (indices 62+)
+    const punctuation = [
+      "-",
+      "=",
+      "[",
+      "]",
+      "\\",
+      ";",
+      "'",
+      ",",
+      ".",
+      "/",
+      "`",
+    ];
+    punctuation.forEach((char) => {
+      this.keyMap[char] = keyIndex++;
+    });
+
+    // Total keys mapped: ~73
+    this.inputBufferSize = 6 + keyIndex; // 6 for mouse data + all keys
 
     // Frame timing
     this.lastFrameTime = performance.now();
@@ -403,8 +447,8 @@ class GameEngine {
     this.views.collision = new Int32Array(this.buffers.collisionData);
     this.views.collision[0] = 0; // Initialize pair count to 0
 
-    // Input buffer: [mouseX, mouseY, key0, key1, key2, ...]
-    const INPUT_BUFFER_SIZE = 32 * 4;
+    // Input buffer: [mouseX, mouseY, mouseInWorld, button0, button1, button2, key0, key1, key2, ...]
+    const INPUT_BUFFER_SIZE = this.inputBufferSize * 4; // 4 bytes per Int32
     this.buffers.inputData = new SharedArrayBuffer(INPUT_BUFFER_SIZE);
     this.views.input = new Int32Array(this.buffers.inputData);
 
@@ -729,6 +773,8 @@ class GameEngine {
           { count: pool.count },
         ])
       ),
+      // Key index mapping for Keyboard class
+      keyIndexMap: this.createKeyIndexMap(),
     };
 
     // Initialize spatial worker (no ports needed for now)
@@ -745,7 +791,7 @@ class GameEngine {
         workerPorts[`logic${i}`] ? Object.values(workerPorts[`logic${i}`]) : []
       );
 
-      console.log(`🧠 Logic Worker ${i}: Ready for job-based processing`);
+      console.log(`🧠 Logic Worker ${i}: Initializing...`);
     }
 
     // Initialize physics worker (with port to renderer)
@@ -1060,7 +1106,7 @@ class GameEngine {
     }
 
     for (const [key, index] of Object.entries(this.keyMap)) {
-      input[6 + index] = this.keyboard[key] ? 1 : 0; // Keyboard starts at index 3
+      input[6 + index] = this.keyboard[key] ? 1 : 0; // Keyboard starts at index 6 (after mouse data)
     }
   }
 
@@ -1117,6 +1163,15 @@ class GameEngine {
       SpriteRenderer.isItOnScreen.filter((v) => !!v).length
     );
     this.updateActiveUnits(Transform.active.filter((v) => !!v).length);
+  }
+
+  /**
+   * Create key index mapping for workers
+   * Returns the keyMap that maps key names to their buffer indices
+   * @returns {Object} - Key-to-index mapping
+   */
+  createKeyIndexMap() {
+    return this.keyMap;
   }
 
   // Cleanup

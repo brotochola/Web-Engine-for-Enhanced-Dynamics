@@ -6,6 +6,7 @@ import { RigidBody } from "/src/components/RigidBody.js";
 import { Collider } from "/src/components/Collider.js";
 import { SpriteRenderer } from "/src/components/SpriteRenderer.js";
 import { Flocking } from "./Flocking.js";
+import { Mouse } from "../../src/core/Mouse.js";
 
 class Boid extends GameObject {
   static entityType = 0; // 0 = Boid
@@ -96,14 +97,14 @@ class Boid extends GameObject {
    * The spatial worker has already found neighbors for us!
    * Note: this.neighbors and this.neighborCount are updated before this is called
    */
-  tick(dtRatio, inputData) {
+  tick(dtRatio) {
     const i = this.index;
 
     // Apply all three boid rules in a single optimized loop
     this.applyFlockingBehaviors(i, dtRatio);
 
     // Additional behaviors
-    this.avoidMouse(i, dtRatio, inputData);
+    this.avoidMouse(i, dtRatio);
     this.keepWithinBounds(i, dtRatio);
   }
 
@@ -256,9 +257,9 @@ class Boid extends GameObject {
    * Avoid the mouse cursor
    * CACHE-FRIENDLY: Direct array access
    */
-  avoidMouse(i, dtRatio, inputData) {
-    if (inputData[2] === 0) return;
-    if (inputData[3] === 0) return;
+  avoidMouse(i, dtRatio) {
+    if (!Mouse.x) return;
+    if (!Mouse.isDown) return;
 
     // Cache array references
     const tX = Transform.x;
@@ -266,11 +267,8 @@ class Boid extends GameObject {
     const rbAX = RigidBody.ax;
     const rbAY = RigidBody.ay;
 
-    const mouseX = inputData[0];
-    const mouseY = inputData[1];
-
-    const dx = tX[i] - mouseX;
-    const dy = tY[i] - mouseY;
+    const dx = tX[i] - Mouse.x;
+    const dy = tY[i] - Mouse.y;
     const dist2 = dx * dx + dy * dy;
 
     if (dist2 < 1e-4 || dist2 > 100000) return;

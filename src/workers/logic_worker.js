@@ -8,6 +8,8 @@ self.postMessage({
 
 // Import engine dependencies
 import { GameObject } from "../core/gameObject.js";
+import { Mouse } from "../core/Mouse.js";
+import Keyboard from "../core/Keyboard.js";
 import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
@@ -20,6 +22,8 @@ self.Transform = Transform;
 self.RigidBody = RigidBody;
 self.Collider = Collider;
 self.SpriteRenderer = SpriteRenderer;
+self.Mouse = Mouse;
+self.Keyboard = Keyboard;
 
 // Game-specific scripts will be loaded dynamically during initialization
 
@@ -30,6 +34,9 @@ self.SpriteRenderer = SpriteRenderer;
 class LogicWorker extends AbstractWorker {
   constructor(selfRef) {
     super(selfRef);
+
+    // Logic worker NEEDS game scripts (entity classes)
+    this.needsGameScripts = true;
 
     // Game objects - one per entity
     this.gameObjects = [];
@@ -86,6 +93,9 @@ class LogicWorker extends AbstractWorker {
   initialize(data) {
     // Set worker index for identification
     this.workerIndex = data.workerIndex || 0;
+
+    // Store key index mapping for Keyboard class
+    this.keyIndexMap = data.keyIndexMap || {};
 
     // Initialize synchronization buffer for multi-worker coordination
     if (data.buffers.syncData) {
@@ -250,6 +260,10 @@ class LogicWorker extends AbstractWorker {
     this.frameStartTime = performance.now();
     let t0, t1, t2, t3, t4;
 
+    // Initialize Mouse and Keyboard static classes with input data
+    Mouse.initialize(this.inputData);
+    Keyboard.initialize(this.inputData, this.keyIndexMap);
+
     // Process collision callbacks BEFORE entity logic (Unity-style)
     if (this.collisionData) {
       if (this.enableProfiling) {
@@ -312,9 +326,9 @@ class LogicWorker extends AbstractWorker {
             totalNeighborsThisFrame += this.neighborData[neighborOffset];
           }
 
-          // Tick entity logic
+          // Tick entity logic (no inputData parameter - use this.mouse / this.keyboard instead)
           const tickStart = this.enableProfiling ? performance.now() : 0;
-          obj.tick(dtRatio, this.inputData);
+          obj.tick(dtRatio);
 
           if (this.enableProfiling) {
             const tickEnd = performance.now();

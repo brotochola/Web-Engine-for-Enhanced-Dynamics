@@ -1,4 +1,4 @@
-import { GameObject } from "/src/core/gameObject.js";
+import { GameObject, Mouse, Keyboard } from "/src/core/gameObject.js";
 import { RigidBody } from "/src/components/RigidBody.js";
 import { Collider } from "/src/components/Collider.js";
 import { SpriteRenderer } from "/src/components/SpriteRenderer.js";
@@ -107,15 +107,15 @@ class Ball extends GameObject {
    * Main update - simple behavior for balls
    * Note: Gravity and collision resolution are handled by physics worker
    *
-   * ERGONOMIC API DEMO: Using this.x, this.y for clean, readable code
+   * ERGONOMIC API DEMO: Using this.x, this.y, Mouse.x, Mouse.y for clean, readable code
    * For performance-critical loops with 1000+ entities, use direct array access instead
    */
-  tick(dtRatio, inputData) {
+  tick(dtRatio) {
     // Mouse interaction: push balls away from cursor on click
-    if (inputData[3]) {
+    if (Mouse.isDown) {
       // Calculate distance using ergonomic API (clean and readable!)
-      const dx = this.x - inputData[0];
-      const dy = this.y - inputData[1];
+      const dx = this.x - Mouse.x;
+      const dy = this.y - Mouse.y;
       const dist2 = dx * dx + dy * dy;
 
       if (dist2 > 20000) return; // Only affect nearby balls
@@ -123,6 +123,10 @@ class Ball extends GameObject {
       // Apply repulsion force
       this.rigidBody.ax = dx * 0.2;
       this.rigidBody.ay = dy * 0.2;
+    }
+
+    if (Keyboard.m) {
+      this.rigidBody.ax = -3;
     }
   }
 }

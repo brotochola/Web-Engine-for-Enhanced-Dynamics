@@ -6,6 +6,11 @@ import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { collectComponents } from "./utils.js";
+import { Mouse } from "./Mouse.js";
+import Keyboard from "./Keyboard.js";
+
+// Export Mouse and Keyboard for easy access
+export { Mouse, Keyboard };
 
 export class GameObject {
   // Entity class metadata (for spawning system)
@@ -194,13 +199,6 @@ export class GameObject {
     // Mark as created
     this.prototype._componentAccessorsCreated = true;
   }
-
-  // ========================================================================
-  // ERGONOMIC API: Direct property access (forwards to components)
-  // These provide convenient shortcuts while maintaining the component system
-  // Note: Component accessors (this.transform, this.rigidBody, etc.) are now
-  // dynamically created in _createComponentAccessors() for all components
-  // ========================================================================
 
   /**
    * Position X - forwards to Transform
@@ -529,18 +527,21 @@ export class GameObject {
    * (AI, physics forces, animations, input handling, etc.)
    *
    * Note: this.neighbors and this.neighborCount are updated before this is called
+   * Input is available via this.mouse and this.keyboard
    *
    * @param {number} dtRatio - Delta time ratio (1.0 = 16.67ms frame)
-   * @param {Int32Array} inputData - Mouse and keyboard input
    *
    * Example:
-   *   tick(dtRatio, inputData) {
-   *     this.applyFlockingBehaviors(dtRatio);
-   *     this.avoidMouse(dtRatio, inputData);
-   *     this.updateAnimation();
+   *   tick(dtRatio) {
+   *     if (this.mouse.isDown) {
+   *       this.runAwayFromMouse();
+   *     }
+   *     if (this.keyboard.w) {
+   *       this.moveUp();
+   *     }
    *   }
    */
-  tick(dtRatio, inputData) {
+  tick(dtRatio) {
     // Override in subclasses
   }
 

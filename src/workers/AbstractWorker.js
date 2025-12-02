@@ -173,6 +173,9 @@ class AbstractWorker {
    * @param {Object} data - Initialization data from main thread
    */
   async initializeCommonBuffers(data) {
+    console.log(
+      `${this.constructor.name}: initializeCommonBuffers called, needsGameScripts=${this.needsGameScripts}`
+    );
     this.reportLog("initializing common buffers");
     this.entityCount = data.entityCount;
 
@@ -196,6 +199,11 @@ class AbstractWorker {
 
     // Load game-specific scripts dynamically (if this worker needs them)
     // Some workers (spatial, physics) are generic and don't need game classes
+    console.log(
+      `${this.constructor.name}: Checking script loading - needsGameScripts=${
+        this.needsGameScripts
+      }, scriptsToLoad=${data.scriptsToLoad?.length || 0}`
+    );
     if (
       this.needsGameScripts &&
       data.scriptsToLoad &&
@@ -212,6 +220,9 @@ class AbstractWorker {
           // Make the exported class(es) available globally in worker
           Object.keys(module).forEach((key) => {
             self[key] = module[key];
+            console.log(
+              `${this.constructor.name}: ✓ Registered ${key} from ${scriptPath}`
+            );
           });
           console.log(`${this.constructor.name}: ✓ Loaded ${scriptPath}`);
         } catch (error) {
@@ -219,6 +230,7 @@ class AbstractWorker {
             `${this.constructor.name}: ✗ Failed to load ${scriptPath}:`,
             error
           );
+          console.error(`Error stack:`, error.stack);
         }
       }
     } else if (!this.needsGameScripts) {
