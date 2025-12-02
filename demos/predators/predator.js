@@ -3,9 +3,11 @@
 
 import { GameObject } from "/src/core/gameObject.js";
 import { RigidBody } from "/src/components/RigidBody.js";
+import { Transform } from "/src/components/Transform.js";
 import { Boid } from "./boid.js";
 import { Prey } from "./prey.js";
 import { PredatorBehavior } from "./PredatorBehavior.js";
+import { getDirectionFromAngle } from "../../src/core/utils.js";
 
 class Predator extends Boid {
   static entityType = 2; // 2 = Predator
@@ -14,24 +16,16 @@ class Predator extends Boid {
   // Add PredatorBehavior component for predator-specific properties
   static components = [...Boid.components, PredatorBehavior];
 
-  // Sprite configuration - standardized format for animated sprites
+  // Sprite configuration - NEW SIMPLIFIED API!
+  // Just specify the spritesheet - all animations from lpc.json are automatically available!
   static spriteConfig = {
     type: "animated",
-    spritesheet: "lpc",
-    defaultAnimation: "idle_down",
-    animationSpeed: 0.15,
-
-    // Animation states - maps state index to animation name
-    animStates: {
-      0: { name: "idle_down", label: "IDLE" }, // Idle (using walk for now)
-      1: { name: "walk_right", label: "WALK" }, // Walking
-    },
+    spritesheet: "lpc", // References the loaded "lpc" spritesheet
+    defaultAnimation: "idle_down", // Starting animation
+    animationSpeed: 0.15, // Default playback speed
   };
 
-  static anims = {
-    IDLE: 0,
-    WALK: 1,
-  };
+  // No more manual mapping needed! Use animation names directly from the spritesheet.
 
   // Note: ARRAY_SCHEMA removed - all data now in components (pure ECS architecture)
 
@@ -84,7 +78,7 @@ class Predator extends Boid {
     // Call parent Boid.onSpawned() to initialize position
     super.onSpawned(spawnConfig);
 
-    this.setAnimationState(Predator.anims.IDLE);
+    this.setAnimation("idle_down"); // Use string name directly!
     this.setAnimationSpeed(0.15);
   }
 
@@ -190,16 +184,34 @@ class Predator extends Boid {
   updateAnimation(i, huntingPrey) {
     // Cache array references for reading
     const rbSpeed = RigidBody.speed;
-    const rbVX = RigidBody.vx;
+    const rbVelocityAngle = RigidBody.velocityAngle;
 
     const speed = rbSpeed[i];
-    const vx = rbVX[i];
 
-    // Determine animation state based on speed
-    if (speed > 1) {
-      this.setAnimationState(Predator.anims.WALK);
+    // Determine animation state based on speed and direction
+    // NEW API: Use animation names directly from the spritesheet!
+    if (speed > 0.5) {
+      // Use precalculated velocity angle from RigidBody
+      const angle = rbVelocityAngle[i];
+
+      // Convert angle to direction (8 directions -> 4 cardinal directions)
+      const direction = getDirectionFromAngle(angle);
+
+      // Choose walk or run based on speed threshold (predators run faster)
+      const isRunning = speed > 2.5; // Higher threshold for predator running
+      const animPrefix = isRunning ? "run" : "walk";
+
+      // Store last direction for idle state
+      if (!this.lastDirection) this.lastDirection = "down";
+      this.lastDirection = direction;
+
+      // Set animation with speed-based animation speed
+      this.setAnimation(`${animPrefix}_${direction}`);
+      this.setAnimationSpeed(speed * 0.08);
     } else {
-      this.setAnimationState(Predator.anims.IDLE);
+      // Use idle animation in last facing direction
+      const direction = this.lastDirection || "down";
+      this.setAnimation(`idle_${direction}`);
     }
 
     // Change tint when hunting (reddish tint = aggressive state)
@@ -207,11 +219,6 @@ class Predator extends Boid {
       this.setTint(0xffaaaa); // Pink/red tint when hunting
     } else {
       this.setTint(0xffffff); // Normal white
-    }
-
-    // Flip sprite based on movement direction (only if moving significantly)
-    if (Math.abs(vx) > 0.1) {
-      this.setScale(vx < 0 ? -2 : 2, 2); // Flip X when moving left
     }
   }
 }

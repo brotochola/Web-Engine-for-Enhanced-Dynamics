@@ -14,6 +14,7 @@ import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
+import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 
 // Make imported classes globally available for dynamic instantiation
@@ -96,6 +97,16 @@ class LogicWorker extends AbstractWorker {
 
     // Store key index mapping for Keyboard class
     this.keyIndexMap = data.keyIndexMap || {};
+
+    // Deserialize spritesheet metadata for animation lookups
+    if (data.spritesheetMetadata) {
+      SpriteSheetRegistry.deserialize(data.spritesheetMetadata);
+      console.log(
+        `LOGIC WORKER ${this.workerIndex}: Loaded ${
+          SpriteSheetRegistry.getSpritesheetNames().length
+        } spritesheets`
+      );
+    }
 
     // Initialize synchronization buffer for multi-worker coordination
     if (data.buffers.syncData) {

@@ -6,6 +6,7 @@ import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
+import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { setupWorkerCommunication } from "./utils.js";
 
 class GameEngine {
@@ -635,6 +636,9 @@ class GameEngine {
             imageBitmap: imageBitmap,
           };
 
+          // Register in SpriteSheetRegistry for animation lookups
+          SpriteSheetRegistry.register(name, jsonData);
+
           console.log(
             `✅ Loaded spritesheet: ${name} with ${
               Object.keys(jsonData.animations || {}).length
@@ -775,6 +779,8 @@ class GameEngine {
       ),
       // Key index mapping for Keyboard class
       keyIndexMap: this.createKeyIndexMap(),
+      // Spritesheet registry metadata for animation lookups
+      spritesheetMetadata: SpriteSheetRegistry.serialize(),
     };
 
     // Initialize spatial worker (no ports needed for now)

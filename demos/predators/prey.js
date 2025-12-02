@@ -6,6 +6,7 @@ import { RigidBody } from "/src/components/RigidBody.js";
 import { Boid } from "./boid.js";
 import { Predator } from "./predator.js";
 import { PreyBehavior } from "./PreyBehavior.js";
+import { getDirectionFromAngle } from "../../src/core/utils.js";
 
 class Prey extends Boid {
   static entityType = 1; // 1 = Prey
@@ -16,25 +17,16 @@ class Prey extends Boid {
 
   // Note: ARRAY_SCHEMA removed - all data now in components (pure ECS architecture)
 
-  // Sprite configuration - standardized format for animated sprites
-  // Sprite configuration - standardized format for animated sprites
+  // Sprite configuration - NEW SIMPLIFIED API!
+  // Just specify the spritesheet - all animations from lpc.json are automatically available!
   static spriteConfig = {
     type: "animated",
-    spritesheet: "lpc",
-    defaultAnimation: "idle_down",
-    animationSpeed: 0.15,
-
-    // Animation states - maps state index to animation name
-    animStates: {
-      0: { name: "idle_down", label: "IDLE" }, // Idle (using walk for now)
-      1: { name: "walk_right", label: "WALK" }, // Walking
-    },
+    spritesheet: "lpc", // References the loaded "lpc" spritesheet
+    defaultAnimation: "idle_down", // Starting animation
+    animationSpeed: 0.15, // Default playback speed
   };
 
-  static anims = {
-    IDLE: 0,
-    WALK: 1,
-  };
+  // No more manual mapping needed! Use animation names directly from the spritesheet.
   /**
    * LIFECYCLE: Configure this entity TYPE - runs ONCE per instance
    * Overrides and extends Boid's setup()
@@ -90,7 +82,7 @@ class Prey extends Boid {
 
     // Reset visual properties
     this.setScale(1, 1); // CRITICAL: Set sprite scale!
-    this.setAnimationState(Prey.anims.IDLE);
+    this.setAnimation("idle_down"); // Use string name directly!
     this.setAnimationSpeed(0.15);
   }
 
@@ -184,37 +176,55 @@ class Prey extends Boid {
   updateAnimation(i, predatorNearby) {
     // Cache array references for reading
     const rbSpeed = RigidBody.speed;
-    const rbVX = RigidBody.vx;
+    const rbVelocityAngle = RigidBody.velocityAngle;
 
     const speed = rbSpeed[i];
-    const vx = rbVX[i];
 
-    // Determine animation state based on speed
+    // Determine animation state based on speed and direction
+    // NEW API: Use animation names directly from the spritesheet!
     if (speed > 0.1) {
-      this.setAnimationState(Prey.anims.WALK);
+      // Use precalculated velocity angle from RigidBody
+      const angle = rbVelocityAngle[i];
+
+      // Convert angle to direction (8 directions -> 4 cardinal directions)
+      // atan2 returns [-PI, PI] where 0 = right, PI/2 = down, -PI/2 = up, PI/-PI = left
+      const direction = getDirectionFromAngle(angle);
+
+      // Choose walk or run based on speed threshold
+      const isRunning = speed > 2; // Threshold for running animation
+      const animPrefix = isRunning ? "run" : "walk";
+
+      // Store last direction for idle state
+      if (!this.lastDirection) this.lastDirection = "down";
+      this.lastDirection = direction;
+
+      // Set animation and speed
+      this.setAnimation(`${animPrefix}_${direction}`);
       this.setAnimationSpeed(speed * 0.1);
     } else {
-      this.setAnimationState(Prey.anims.IDLE);
+      // Use idle animation in last facing direction
+      const direction = this.lastDirection || "down";
+      this.setAnimation(`idle_${direction}`);
     }
 
     // Update tint based on life (white = healthy, red = damaged)
     // Map life from white (0xffffff) to red (0xff0000) based on remaining life ratio
-    let newTint;
-    if (this.preyBehavior.life > 0) {
-      const maxLife = 1; // Default max life
-      const ratio = Math.max(0, Math.min(1, this.preyBehavior.life / maxLife));
-      // Interpolate green/blue channel from 255 (white) to 0 (red)
-      const gb = Math.round(255 * ratio);
-      newTint = (0xff << 16) | (gb << 8) | gb;
-    } else {
-      newTint = 0xff0000; // Dead = red
-    }
-    this.setTint(newTint);
+    // let newTint;
+    // if (this.preyBehavior.life > 0) {
+    //   const maxLife = 1; // Default max life
+    //   const ratio = Math.max(0, Math.min(1, this.preyBehavior.life / maxLife));
+    //   // Interpolate green/blue channel from 255 (white) to 0 (red)
+    //   const gb = Math.round(255 * ratio);
+    //   newTint = (0xff << 16) | (gb << 8) | gb;
+    // } else {
+    //   newTint = 0xff0000; // Dead = red
+    // }
+    // this.setTint(newTint);
 
     // Flip sprite based on movement direction (only if moving significantly)
-    if (Math.abs(vx) > 0.1) {
-      this.setScale(vx < 0 ? -1 : 1, 1); // Flip X when moving left
-    }
+    // if (Math.abs(vx) > 0.1) {
+    //   this.setScale(vx < 0 ? -1 : 1, 1); // Flip X when moving left
+    // }
   }
 
   /**
@@ -222,6 +232,7 @@ class Prey extends Boid {
    * This demonstrates the collision detection system
    */
   onCollisionEnter(otherIndex) {
+    // this.setTint(0xff0000);
     // console.log(`Prey ${this.index} collided with ${otherIndex}`);
   }
 
@@ -251,6 +262,7 @@ class Prey extends Boid {
    * Unity-style collision callback: Called when collision ends
    */
   onCollisionExit(otherIndex) {
+    // this.setTint(0xffffff);
     // Could add effects when prey escapes from predator
   }
 }

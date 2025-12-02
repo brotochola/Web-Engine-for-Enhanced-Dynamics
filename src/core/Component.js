@@ -57,8 +57,9 @@ export class Component {
           return ComponentClass[name][this.index];
         },
         set(value) {
-          ComponentClass[name][this.index] =
-            type === Uint8Array ? (value ? 1 : 0) : value;
+          // Store value directly - no boolean conversion
+          // Uint8Array can store 0-255, so animationState and other numeric fields work correctly
+          ComponentClass[name][this.index] = value;
         },
         enumerable: true,
         configurable: true,

@@ -75,15 +75,16 @@
     </div>
 
     <script type="module">
-        const numberOfPrey = 20000;
-        const numberOfPredators = 150;
+        const numberOfPrey = 10000;
+        const numberOfPredators = 50;
         const numberOfBoids = 0;
         // Import engine classes and entity classes
         import { GameEngine } from '/src/core/gameEngine.js';
         import { Boid } from '/demos/predators/boid.js';
         import { Prey } from '/demos/predators/prey.js';
         import { Predator } from '/demos/predators/predator.js';
-
+        import { SpriteSheetRegistry } from '/src/core/SpriteSheetRegistry.js';
+        window.SpriteSheetRegistry = SpriteSheetRegistry
         const gameEngine = new GameEngine(
             {
                 canvasWidth: window.innerWidth * 0.9,
@@ -246,9 +247,25 @@
             }
         }, 500);
 
+        // DEBUG: Helper to check registry status
+        window.checkRegistry = function () {
+            console.log("=== SpriteSheet Registry Status ===");
+            const sheets = SpriteSheetRegistry.getSpritesheetNames();
+            console.log(`Loaded spritesheets: ${sheets.join(", ")}`);
+
+            sheets.forEach(sheetName => {
+                const anims = SpriteSheetRegistry.getAnimationNames(sheetName);
+                console.log(`\n${sheetName}: ${anims.length} animations`);
+                console.log("First 10:", anims.slice(0, 10));
+            });
+        };
+
         // Initialize and start
         gameEngine.init().then(() => {
             console.log("Game initialized. Spawning entities...");
+
+            // DEBUG: Check registry after init
+            checkRegistry();
 
 
             spawnBoids();

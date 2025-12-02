@@ -5,6 +5,7 @@ import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
+import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { collectComponents } from "./utils.js";
 import { Mouse } from "./Mouse.js";
 import Keyboard from "./Keyboard.js";
@@ -330,6 +331,66 @@ export class GameObject {
       this.spriteRenderer.animationState = state;
       this.markDirty();
     }
+  }
+
+  /**
+   * Set animation by string name (developer-friendly API)
+   * Looks up animation index from registry and calls setAnimationState()
+   *
+   * PERFORMANCE: Uses cached lookup - first call per entity class does registry lookup,
+   * subsequent calls use cached index. Zero overhead in game loop.
+   *
+   * @param {string} animationName - Animation name (e.g., "walk_right", "idle_down")
+   *
+   * @example
+   * this.setAnimation("walk_right");
+   * this.setAnimation("idle_down");
+   */
+  setAnimation(animationName) {
+    if (!this.spriteRenderer) return;
+
+    const spriteConfig = this.constructor.spriteConfig;
+    if (!spriteConfig || !spriteConfig.spritesheet) {
+      console.error(
+        `${this.constructor.name}: Cannot use setAnimation() without spriteConfig.spritesheet`
+      );
+      return;
+    }
+
+    const sheetName = spriteConfig.spritesheet;
+
+    // PERFORMANCE: Cache animation indices per entity class to avoid repeated lookups
+    // This cache is created once per entity CLASS (not per instance), so it's very efficient
+    if (!this.constructor._animationCache) {
+      this.constructor._animationCache = {};
+    }
+
+    let animIndex = this.constructor._animationCache[animationName];
+
+    if (animIndex === undefined) {
+      // First time this animation is used by this entity class - look it up
+      animIndex = SpriteSheetRegistry.getAnimationIndex(
+        sheetName,
+        animationName
+      );
+
+      if (animIndex === undefined) {
+        // Animation not found - error already logged by registry
+        console.error(
+          `❌ ${this.constructor.name}: Animation "${animationName}" not found. ` +
+            `Registry has: ${SpriteSheetRegistry.getSpritesheetNames().join(
+              ", "
+            )}`
+        );
+        return;
+      }
+
+      // Cache it for future calls (on this entity class)
+      this.constructor._animationCache[animationName] = animIndex;
+    }
+
+    // Use the cached/looked-up index (fast path)
+    this.setAnimationState(animIndex);
   }
 
   setAnimationSpeed(speed) {

@@ -11,6 +11,7 @@ import { GameObject } from "../core/gameObject.js";
 import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
+import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 
 // Import PixiJS library (now ES6 module)
@@ -112,11 +113,18 @@ class PixiRenderer extends AbstractWorker {
     const config = this.entitySpriteConfigs[entityType];
     if (!config || config.type !== "animated") return;
 
-    // Get animation name from animStates
-    if (!config.animStates || !config.animStates[newState]) return;
+    // NEW API: Get animation name from registry using numeric index
+    const animName = SpriteSheetRegistry.getAnimationName(
+      config.spritesheet,
+      newState
+    );
 
-    const animName = config.animStates[newState].name;
-    if (!animName) return;
+    if (!animName) {
+      console.warn(
+        `Animation index ${newState} not found in spritesheet "${config.spritesheet}"`
+      );
+      return;
+    }
 
     // Get spritesheet
     const sheet = this.spritesheets[config.spritesheet];
@@ -767,6 +775,16 @@ class PixiRenderer extends AbstractWorker {
       );
       console.log(
         `  ✅ SpriteRenderer: ${data.componentPools.SpriteRenderer.count} slots`
+      );
+    }
+
+    // Deserialize spritesheet metadata for animation lookups
+    if (data.spritesheetMetadata) {
+      SpriteSheetRegistry.deserialize(data.spritesheetMetadata);
+      console.log(
+        `PIXI WORKER: Loaded ${
+          SpriteSheetRegistry.getSpritesheetNames().length
+        } spritesheets`
       );
     }
 

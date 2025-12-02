@@ -247,3 +247,33 @@ export function validatePhysicsConfig(currentConfig, newConfig) {
     },
   };
 }
+
+/**
+ * Convert angle (radians) to cardinal direction string
+ * @param {number} angle - Angle from RigidBody.velocityAngle (already has +PI/2 offset for rotation)
+ * @returns {string} One of: "right", "down", "left", "up"
+ */
+export function getDirectionFromAngle(angle) {
+  // velocityAngle = atan2(vy, vx) + PI/2 (for sprite rotation)
+  // So we need to account for that offset:
+  // Moving RIGHT: velocityAngle = PI/2
+  // Moving DOWN: velocityAngle = PI
+  // Moving LEFT: velocityAngle = 3*PI/2
+  // Moving UP: velocityAngle = 0 (or 2*PI)
+
+  // Normalize angle to [0, 2*PI]
+  const normalizedAngle = angle < 0 ? angle + Math.PI * 2 : angle;
+  const PI = Math.PI;
+  const PI_4 = PI / 4;
+
+  // Map velocityAngle to cardinal directions (accounting for +PI/2 offset)
+  if (normalizedAngle < PI_4 || normalizedAngle >= (PI * 7) / 4) {
+    return "up"; // 315° to 45° (North)
+  } else if (normalizedAngle < (PI * 3) / 4) {
+    return "right"; // 45° to 135° (East)
+  } else if (normalizedAngle < (PI * 5) / 4) {
+    return "down"; // 135° to 225° (South)
+  } else {
+    return "left"; // 225° to 315° (West)
+  }
+}
