@@ -318,6 +318,42 @@ class SpatialWorker extends AbstractWorker {
     // Store neighbor count at the beginning (both buffers use same count)
     this.neighborData[offset] = neighborCount;
     this.distanceData[offset] = neighborCount;
+
+    // ===== CACHE OPTIMIZATION: Sort neighbors by index =====
+    // When game logic accesses component arrays (Transform.x[j], RigidBody.vx[j], etc.),
+    // random neighbor indices cause cache thrashing. Sorting by index makes memory
+    // access more sequential, dramatically improving cache hit rates.
+    // Cost: O(n log n) sort vs. benefit: ~100 CPU cycles saved per cache miss avoided
+    if (neighborCount > 1) {
+      this.sortNeighborsByIndex(offset, neighborCount);
+    }
+  }
+
+  /**
+   * Sort neighbors by index for cache-friendly memory access
+   * Uses insertion sort for small arrays (fast for n < 32)
+   * Maintains parallel arrays: neighborData and distanceData stay in sync
+   */
+  sortNeighborsByIndex(offset, count) {
+    const neighbors = this.neighborData;
+    const distances = this.distanceData;
+    const start = offset + 1; // Skip the count field
+
+    // Insertion sort - optimal for small arrays, in-place, stable
+    for (let i = 1; i < count; i++) {
+      const neighborIdx = neighbors[start + i];
+      const distVal = distances[start + i];
+
+      let j = i - 1;
+      // Shift elements that are greater than neighborIdx
+      while (j >= 0 && neighbors[start + j] > neighborIdx) {
+        neighbors[start + j + 1] = neighbors[start + j];
+        distances[start + j + 1] = distances[start + j];
+        j--;
+      }
+      neighbors[start + j + 1] = neighborIdx;
+      distances[start + j + 1] = distVal;
+    }
   }
 
   /**

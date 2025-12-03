@@ -35,6 +35,13 @@ class Prey extends Boid {
     // Call parent Boid.setup() first
     super.setup();
 
+    // OPTIMIZATION: Pre-allocate reusable context object to avoid per-frame allocations
+    this._neighborContext = {
+      fleeX: 0,
+      fleeY: 0,
+      predatorCount: 0,
+    };
+
     // Initialize prey-specific properties
     this.preyBehavior.predatorAvoidFactor = 5; // Strong avoidance of predators
     this.preyBehavior.life = 1;
@@ -118,13 +125,14 @@ class Prey extends Boid {
 
   /**
    * HOOK: Create context object for accumulating fleeing data during neighbor loop
+   * OPTIMIZATION: Reuses cached object to avoid per-frame allocations (GC pressure)
    */
   createNeighborContext() {
-    return {
-      fleeX: 0,
-      fleeY: 0,
-      predatorCount: 0,
-    };
+    // Reset values and return cached object - no new allocation per frame
+    this._neighborContext.fleeX = 0;
+    this._neighborContext.fleeY = 0;
+    this._neighborContext.predatorCount = 0;
+    return this._neighborContext;
   }
 
   /**

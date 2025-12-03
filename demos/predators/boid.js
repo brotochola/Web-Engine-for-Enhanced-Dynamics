@@ -32,6 +32,9 @@ class Boid extends GameObject {
    * All components are guaranteed to be initialized at this point
    */
   setup() {
+    // OPTIMIZATION: Pre-allocate reusable context object to avoid per-frame allocations
+    this._neighborContext = {};
+
     // Initialize RigidBody constraints
     this.rigidBody.maxVel = 10;
     this.rigidBody.maxAcc = 0.2;
@@ -223,10 +226,12 @@ class Boid extends GameObject {
   /**
    * HOOK: Create context object for subclasses to accumulate custom data during neighbor loop
    * Override this in subclasses to add custom properties
-   * @returns {Object} Empty context object (subclasses extend this)
+   * OPTIMIZATION: Reuses cached object to avoid per-frame allocations (GC pressure)
+   * @returns {Object} Reusable context object (subclasses extend this)
    */
   createNeighborContext() {
-    return {};
+    // Return cached object - no new allocation per frame
+    return this._neighborContext;
   }
 
   /**

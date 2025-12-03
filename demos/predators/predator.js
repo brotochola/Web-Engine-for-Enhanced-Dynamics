@@ -37,6 +37,12 @@ class Predator extends Boid {
     // Call parent Boid.setup() first
     super.setup();
 
+    // OPTIMIZATION: Pre-allocate reusable context object to avoid per-frame allocations
+    this._neighborContext = {
+      closestPreyIndex: -1,
+      closestDist2: Infinity,
+    };
+
     // Initialize predator-specific properties
     this.predatorBehavior.huntFactor = 0.2; // Chase strength
 
@@ -50,7 +56,7 @@ class Predator extends Boid {
     this.spriteRenderer.animationSpeed = 0.15;
 
     // Override Boid's perception
-    this.collider.visualRange = 200; // How far predator can see
+    this.collider.visualRange = 150; // How far predator can see
 
     // Override Boid's Flocking component properties
     this.flocking.protectedRange = 0; //this.collider.radius * 3; // Minimum distance from others
@@ -124,11 +130,8 @@ class Predator extends Boid {
   }
 
   onCollisionEnter(otherIndex) {
-    console.log(
-      `[Predator ${this.index}] onCollisionEnter called with entity ${otherIndex}, entityType=${GameObject.entityType[otherIndex]}, PreyType=${Prey.entityType}`
-    );
+    // console.log("collision predator", GameObject.entityType[otherIndex]);
     if (GameObject.entityType[otherIndex] === Prey.entityType) {
-      console.log("collision predator", GameObject.entityType[otherIndex]);
       this.collision = true;
       this.vx = 0;
       this.vy = 0;
@@ -142,12 +145,13 @@ class Predator extends Boid {
 
   /**
    * HOOK: Create context object for accumulating hunting data during neighbor loop
+   * OPTIMIZATION: Reuses cached object to avoid per-frame allocations (GC pressure)
    */
   createNeighborContext() {
-    return {
-      closestPreyIndex: -1,
-      closestDist2: Infinity,
-    };
+    // Reset values and return cached object - no new allocation per frame
+    this._neighborContext.closestPreyIndex = -1;
+    this._neighborContext.closestDist2 = Infinity;
+    return this._neighborContext;
   }
 
   /**
