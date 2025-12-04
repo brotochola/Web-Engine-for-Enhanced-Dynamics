@@ -67,9 +67,9 @@ class Prey extends Boid {
     this.spriteRenderer.anchorY = 1.0;
 
     // Override Boid's Flocking component properties - OPTIMIZED for performance
-    this.flocking.protectedRange = this.collider.radius * 4; // Minimum distance from others
-    this.flocking.centeringFactor = 0.0001; // Cohesion: gentle attraction to flock center
-    this.flocking.avoidFactor = 3; // Separation: moderate avoidance (reduced from 3)
+    this.flocking.protectedRange = this.collider.radius * 1.25; // Minimum distance from others
+    this.flocking.centeringFactor = 0.0005; // Cohesion: gentle attraction to flock center
+    this.flocking.avoidFactor = 6; // Separation: moderate avoidance (reduced from 3)
     this.flocking.matchingFactor = 0.05; // Alignment: match flock velocity
     this.flocking.turnFactor = 0.1; // Boundary avoidance strength
     this.flocking.margin = 20; // Distance from edge to start turning
@@ -241,7 +241,7 @@ class Prey extends Boid {
    */
   onCollisionEnter(otherIndex) {
     // this.setTint(0xff0000);
-    // console.log(`Prey ${this.index} collided with ${otherIndex}`);
+    // console.log("collision prey", GameObject.entityType[otherIndex]);
   }
 
   /**

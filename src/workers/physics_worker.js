@@ -38,6 +38,10 @@ class PhysicsWorker extends AbstractWorker {
       minSpeedForRotation: 0.1,
       gravity: { x: 0, y: 0 },
     };
+
+    // Collision data buffer for Unity-style callbacks
+    this.collisionData = null;
+    this.maxCollisionPairs = 10000; // Default, will be set from config
   }
 
   /**
@@ -61,6 +65,18 @@ class PhysicsWorker extends AbstractWorker {
       Collider.initializeArrays(
         data.buffers.componentData.Collider,
         data.componentPools.Collider.count
+      );
+    }
+
+    // Initialize collision data buffer for Unity-style collision callbacks
+    if (data.buffers.collisionData) {
+      this.collisionData = new Int32Array(data.buffers.collisionData);
+      this.maxCollisionPairs =
+        this.config.physics?.maxCollisionPairs ||
+        this.config.maxCollisionPairs ||
+        10000;
+      console.log(
+        `PHYSICS WORKER: Collision callbacks enabled (max ${this.maxCollisionPairs} pairs)`
       );
     }
 
@@ -341,6 +357,7 @@ class PhysicsWorker extends AbstractWorker {
    * Resolve collisions using constraint-based approach
    * ENHANCED: Better handling of exact overlaps and configurable response strength
    * Pushes overlapping entities apart (RopeBall style)
+   * Also records collision pairs for Unity-style callbacks (Enter/Stay/Exit)
    */
   resolveCollisionsVerlet(active, x, y, radius, collisionCount) {
     const maxNeighbors =
@@ -348,6 +365,11 @@ class PhysicsWorker extends AbstractWorker {
 
     // Get collision response strength (0.5 = soft/bouncy, 1.0 = rigid)
     const responseStrength = this.settings.collisionResponseStrength;
+
+    // Track collision pairs for callbacks
+    let pairCount = 0;
+    const collisionData = this.collisionData;
+    const maxPairs = this.maxCollisionPairs;
 
     for (let i = 0; i < this.entityCount; i++) {
       if (!active[i]) continue;
@@ -389,6 +411,13 @@ class PhysicsWorker extends AbstractWorker {
           y[j] = y[j] - Math.sin(angle) * separation;
           collisionCount[i]++;
           collisionCount[j]++;
+
+          // Record collision pair for callbacks
+          if (collisionData && pairCount < maxPairs) {
+            collisionData[1 + pairCount * 2] = i;
+            collisionData[1 + pairCount * 2 + 1] = j;
+            pairCount++;
+          }
           continue;
         }
 
@@ -413,8 +442,20 @@ class PhysicsWorker extends AbstractWorker {
           // Track collision count for adaptive speed limiting
           collisionCount[i]++;
           collisionCount[j]++;
+
+          // Record collision pair for callbacks
+          if (collisionData && pairCount < maxPairs) {
+            collisionData[1 + pairCount * 2] = i;
+            collisionData[1 + pairCount * 2 + 1] = j;
+            pairCount++;
+          }
         }
       }
+    }
+
+    // Write total pair count to shared buffer (index 0)
+    if (collisionData) {
+      collisionData[0] = pairCount;
     }
   }
 

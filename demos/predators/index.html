@@ -76,7 +76,7 @@
 
     <script type="module">
         const numberOfPrey = 15000;
-        const numberOfPredators = 50;
+        const numberOfPredators = 1;
         const numberOfBoids = 0;
         // Import engine classes and entity classes
         import { GameEngine } from '/src/core/gameEngine.js';
@@ -94,7 +94,7 @@
 
                 // Spatial hash grid configuration
                 spatial: {
-                    cellSize: 50,  // Increased to match visual range (reduces grid overhead)
+                    cellSize: 100,  // Increased to match visual range (reduces grid overhead)
                     maxNeighbors: 500,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
                     noLimitFPS: true,
 
@@ -111,7 +111,7 @@
                 physics: {
                     subStepCount: 1,
                     noLimitFPS: true,
-                    maxCollisionPairs: 1000000,
+                    maxCollisionPairs: 100000000,
                     boundaryElasticity: 0,
                     collisionResponseStrength: 0.9,
                     verletDamping: 0.99,

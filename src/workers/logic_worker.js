@@ -445,26 +445,25 @@ class LogicWorker extends AbstractWorker {
       const isNewCollision = !this.previousCollisions.has(keyAB);
 
       const objA = this.gameObjects[entityA];
-      // const objB = this.gameObjects[entityB];
+      const objB = this.gameObjects[entityB];
 
       if (isNewCollision) {
         // OnCollisionEnter - First frame of collision
+        // Call BOTH entities' callbacks since physics only stores pairs once (i < j)
         if (objA && objA.onCollisionEnter) {
-          // DEBUG: Log collision callbacks
-          if (this.frameCount % 60 === 0) {
-            console.log(
-              `[Logic ${this.workerIndex}] Calling onCollisionEnter for entity ${entityA} with ${entityB}`
-            );
-          }
           objA.onCollisionEnter(entityB);
         }
-        // Note: We DON'T call objB's callback here since another worker might process entityB
+        if (objB && objB.onCollisionEnter) {
+          objB.onCollisionEnter(entityA);
+        }
       } else {
         // OnCollisionStay - Continuous collision
         if (objA && objA.onCollisionStay) {
           objA.onCollisionStay(entityB);
         }
-        // Note: We DON'T call objB's callback here since another worker might process entityB
+        if (objB && objB.onCollisionStay) {
+          objB.onCollisionStay(entityA);
+        }
       }
     }
 
@@ -480,8 +479,14 @@ class LogicWorker extends AbstractWorker {
         // Only process if this worker "owns" entityA (using same partitioning)
         if (entityA % this.totalLogicWorkers === this.workerIndex) {
           const objA = this.gameObjects[entityA];
+          const objB = this.gameObjects[entityB];
+
+          // Call BOTH entities' callbacks
           if (objA && objA.onCollisionExit) {
             objA.onCollisionExit(entityB);
+          }
+          if (objB && objB.onCollisionExit) {
+            objB.onCollisionExit(entityA);
           }
         }
 

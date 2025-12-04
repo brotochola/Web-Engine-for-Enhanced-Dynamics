@@ -110,15 +110,14 @@ class Predator extends Boid {
     const context = super.applyFlockingBehaviors(i, dtRatio);
 
     // Apply hunting force based on accumulated context
-    if (this.collision) {
-      this.vx = 0;
-      this.vy = 0;
-      this.setAnimation(
-        "1h_slash_up_" +
-          getDirectionFromAngle(RigidBody.velocityAngle[this.index])
-      );
-      return;
-    }
+    // if (this.collision) {
+    //   // this.vx = 0;
+    //   // this.vy = 0;
+    //   this.setAnimation(
+    //     "1h_slash_" + getDirectionFromAngle(RigidBody.velocityAngle[this.index])
+    //   );
+    //   // return;
+    // }
     const huntingPrey = this.applyHunting(i, dtRatio, context);
 
     // Additional behaviors
@@ -131,16 +130,16 @@ class Predator extends Boid {
 
   onCollisionEnter(otherIndex) {
     console.log("collision predator", GameObject.entityType[otherIndex]);
-    if (GameObject.entityType[otherIndex] === Prey.entityType) {
-      this.collision = true;
-      this.vx = 0;
-      this.vy = 0;
-    }
+    // if (GameObject.entityType[otherIndex] === Prey.entityType) {
+    //   this.collision = true;
+    //   // this.vx = 0;
+    //   // this.vy = 0;
+    // }
   }
 
   onCollisionStay(otherIndex) {
-    this.vx = 0;
-    this.vy = 0;
+    // this.vx = 0;
+    // this.vy = 0;
   }
 
   /**

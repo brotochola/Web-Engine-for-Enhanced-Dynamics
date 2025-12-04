@@ -173,20 +173,21 @@ class Boid extends GameObject {
       const dx = tX[j] - myX;
       const dy = tY[j] - myY;
 
+      // Separation (all types)
+      if (dist2 < protectedRange2 && dist2 > 0) {
+        separateX -= dx / dist2;
+        separateY -= dy / dist2;
+        continue;
+      }
+
       // Cohesion & Alignment (same type only)
       if (isSameType) {
-        if (dist2 < protectedRange2) continue;
+        // if (dist2 < protectedRange2) continue;
         centerX += tX[j];
         centerY += tY[j];
         avgVX += rbVX[j];
         avgVY += rbVY[j];
         sameTypeCount++;
-      }
-
-      // Separation (all types)
-      if (dist2 < protectedRange2 && dist2 > 0) {
-        separateX -= dx / dist2;
-        separateY -= dy / dist2;
       }
 
       // HOOK: Allow subclasses to process this neighbor (e.g., hunt prey, flee predators)
