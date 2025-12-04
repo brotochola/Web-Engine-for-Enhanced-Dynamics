@@ -8,6 +8,7 @@ import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { setupWorkerCommunication } from "./utils.js";
+import { Debug } from "./Debug.js";
 
 class GameEngine {
   static now = Date.now();
@@ -94,6 +95,7 @@ class GameEngine {
       cameraData: null,
       syncData: null, // Synchronization buffer for logic workers
       jobQueueData: null, // Job queue buffer for dynamic work distribution
+      debugData: null, // Debug flags for visualization
       // Component buffers (core + custom components auto-registered)
       componentData: {
         Transform: null,
@@ -486,6 +488,14 @@ class GameEngine {
     // Initialize camera buffer
     this.views.camera[0] = this.camera.zoom; // zoom
 
+    // Debug buffer: [flag0, flag1, flag2, ..., flag31]
+    const DEBUG_BUFFER_SIZE = 32; // 32 debug flags (1 byte each)
+    this.buffers.debugData = new SharedArrayBuffer(DEBUG_BUFFER_SIZE);
+
+    // Initialize Debug API
+    this.debug = new Debug(this.buffers.debugData);
+    console.log("🔧 Debug system initialized");
+
     // Synchronization buffer for logic workers (uses Atomics for thread-safe operations)
     // [0]: Current frame number (for debugging)
     // [1]: Worker completion counter (how many workers finished current frame)
@@ -786,6 +796,7 @@ class GameEngine {
         cameraData: this.buffers.cameraData,
         syncData: this.buffers.syncData, // Synchronization buffer for logic workers
         jobQueueData: this.buffers.jobQueueData, // Job queue for dynamic work distribution
+        debugData: this.buffers.debugData, // Debug visualization flags
         // Component buffers
         componentData: this.buffers.componentData,
       },

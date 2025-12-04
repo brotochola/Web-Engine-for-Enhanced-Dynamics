@@ -63,6 +63,9 @@
     <p id="poolStats" style="color: #95e1d3;">Pool Stats: --</p>
     <p id="mousePos" style="color: #999; font-size: 12px;">Mouse: --</p>
     <p>Move camera with WASD or Arrow Keys, mousewheel to zoom in and out</p>
+    <p id="debugInfo" style="color: #00ff88; font-size: 12px;">
+        Debug: Press [1] Colliders | [2] Velocity | [3] Accel | [4] Neighbors | [5] Grid | [0] All Off
+    </p>
 
     <div style="padding: 10px 0;">
         <button onclick="gameEngine.pause()">⏸️ Pause</button>
@@ -72,6 +75,15 @@
         <button onclick="spawnPreyAtMouse()">🎯 Spawn Prey at Mouse</button>
         <button onclick="spawnPredatorAtMouse()">🎯 Spawn Predator at Mouse</button>
         <button onclick="clearAllEntities()" style="background: #ff6b6b;">🗑️ Clear All</button>
+    </div>
+
+    <div style="padding: 10px 0;">
+        <button onclick="gameEngine.debug.showColliders(true)">🔵 Show Colliders</button>
+        <button onclick="gameEngine.debug.showVelocity(true)">🔵 Show Velocity</button>
+        <button onclick="gameEngine.debug.showAcceleration(true)">🔴 Show Acceleration</button>
+        <button onclick="gameEngine.debug.showNeighbors(true)">🔵 Show Neighbors</button>
+        <button onclick="gameEngine.debug.showSpatialGrid(true)">⬜ Show Grid</button>
+        <button onclick="gameEngine.debug.disableAll()" style="background: #ff6b6b;">❌ Debug Off</button>
     </div>
 
     <script type="module">
@@ -95,7 +107,7 @@
                 // Spatial hash grid configuration
                 spatial: {
                     cellSize: 100,  // Increased to match visual range (reduces grid overhead)
-                    maxNeighbors: 300,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
+                    maxNeighbors: 400,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
                     noLimitFPS: true,
 
                 },
@@ -259,9 +271,31 @@
             });
         };
 
+        // Setup debug keyboard shortcuts
+        window.addEventListener('keydown', (e) => {
+            if (e.key === '1') {
+                gameEngine.debug.showColliders(!gameEngine.debug.isEnabled(0));
+            } else if (e.key === '2') {
+                gameEngine.debug.showVelocity(!gameEngine.debug.isEnabled(1));
+            } else if (e.key === '3') {
+                gameEngine.debug.showAcceleration(!gameEngine.debug.isEnabled(2));
+            } else if (e.key === '4') {
+                gameEngine.debug.showNeighbors(!gameEngine.debug.isEnabled(3));
+            } else if (e.key === '5') {
+                gameEngine.debug.showSpatialGrid(!gameEngine.debug.isEnabled(4));
+            } else if (e.key === '0') {
+                gameEngine.debug.disableAll();
+            }
+        });
+
         // Initialize and start
         gameEngine.init().then(() => {
             console.log("Game initialized. Spawning entities...");
+
+            // Make debug API available in console
+            window.debug = gameEngine.debug;
+            console.log("💡 Debug API: Use window.debug or gameEngine.debug");
+            console.log("   Try: debug.enableAIDebug() or debug.enablePhysicsDebug()");
 
             // DEBUG: Check registry after init
             checkRegistry();

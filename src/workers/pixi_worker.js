@@ -10,9 +10,11 @@ self.postMessage({
 import { GameObject } from "../core/gameObject.js";
 import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
+import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
 import { AbstractWorker } from "./AbstractWorker.js";
+import { DEBUG_FLAGS } from "../core/Debug.js";
 
 // Import PixiJS library (now ES6 module)
 import { PIXI } from "./pixi4webworkers.js";
@@ -77,6 +79,20 @@ class PixiRenderer extends AbstractWorker {
     this.lastReportedVisibleCount = -1;
     this.visibleUnitsReportInterval = 500; // Report every 500ms
     this.lastVisibleUnitsReportTime = 0;
+
+    // Debug visualization
+    this.debugLayer = null; // PIXI.Graphics for debug overlays
+    this.debugFlags = null; // Uint8Array view of debug flags from SharedArrayBuffer
+    this.debugColors = {
+      collider: 0x00ff00, // Green
+      trigger: 0xffff00, // Yellow
+      velocity: 0x0088ff, // Blue
+      acceleration: 0xff0044, // Red
+      neighbor: 0x00ffff, // Cyan
+      grid: 0x444444, // Gray
+      aabb: 0xff8800, // Orange
+      text: 0xffffff, // White
+    };
   }
 
   /**
@@ -97,6 +113,242 @@ class PixiRenderer extends AbstractWorker {
       this.backgroundSprite.scale.set(zoom);
       this.backgroundSprite.x = -cameraX * zoom;
       this.backgroundSprite.y = -cameraY * zoom;
+    }
+  }
+
+  /**
+   * Render debug overlays based on enabled flags
+   */
+  renderDebugOverlays() {
+    if (!this.debugLayer || !this.debugFlags) return;
+
+    // Clear previous debug drawings
+    this.debugLayer.clear();
+
+    // Apply camera transform to debug layer so it moves with the world
+    const zoom = this.cameraData[0];
+    const cameraX = this.cameraData[1];
+    const cameraY = this.cameraData[2];
+    this.debugLayer.scale.set(zoom);
+    this.debugLayer.x = -cameraX * zoom;
+    this.debugLayer.y = -cameraY * zoom;
+
+    // Cache array references
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
+    const isOnScreen = SpriteRenderer.isItOnScreen;
+
+    // Render spatial grid if enabled
+    if (this.debugFlags[DEBUG_FLAGS.SHOW_SPATIAL_GRID]) {
+      this.renderSpatialGrid();
+    }
+
+    // Render per-entity debug visualizations
+    for (let i = 0; i < this.entityCount; i++) {
+      if (!active[i] || !isOnScreen[i]) continue;
+
+      const posX = x[i];
+      const posY = y[i];
+
+      // Render colliders
+      if (this.debugFlags[DEBUG_FLAGS.SHOW_COLLIDERS]) {
+        this.renderCollider(i, posX, posY);
+      }
+
+      // Render velocity vectors
+      if (this.debugFlags[DEBUG_FLAGS.SHOW_VELOCITY]) {
+        this.renderVelocityVector(i, posX, posY);
+      }
+
+      // Render acceleration vectors
+      if (this.debugFlags[DEBUG_FLAGS.SHOW_ACCELERATION]) {
+        this.renderAccelerationVector(i, posX, posY);
+      }
+
+      // Render entity index
+      if (this.debugFlags[DEBUG_FLAGS.SHOW_ENTITY_INDICES]) {
+        this.renderEntityIndex(i, posX, posY);
+      }
+    }
+
+    // Render neighbor connections (after all entities to avoid occlusion)
+    if (this.debugFlags[DEBUG_FLAGS.SHOW_NEIGHBORS]) {
+      this.renderNeighborConnections();
+    }
+  }
+
+  /**
+   * Render collision shape for an entity
+   */
+  renderCollider(entityIndex, posX, posY) {
+    if (!Collider) return;
+
+    const radius = Collider.radius[entityIndex];
+    const isTrigger = Collider.isTrigger[entityIndex];
+
+    // Choose color based on trigger status
+    const color = isTrigger
+      ? this.debugColors.trigger
+      : this.debugColors.collider;
+
+    this.debugLayer.lineStyle(2 / this.cameraData[0], color, 0.8); // Adjust line width by zoom
+    this.debugLayer.drawCircle(posX, posY, radius);
+  }
+
+  /**
+   * Render velocity vector for an entity
+   */
+  renderVelocityVector(entityIndex, posX, posY) {
+    if (!RigidBody) return;
+
+    const vx = RigidBody.vx[entityIndex];
+    const vy = RigidBody.vy[entityIndex];
+
+    // Skip if velocity is too small
+    if (Math.abs(vx) < 0.01 && Math.abs(vy) < 0.01) return;
+
+    const scale = 10; // Scale factor for visualization
+    const endX = posX + vx * scale;
+    const endY = posY + vy * scale;
+
+    this.debugLayer.lineStyle(
+      2 / this.cameraData[0],
+      this.debugColors.velocity,
+      0.9
+    );
+    this.debugLayer.moveTo(posX, posY);
+    this.debugLayer.lineTo(endX, endY);
+
+    // Draw arrowhead
+    const angle = Math.atan2(vy, vx);
+    const arrowSize = 5;
+    this.debugLayer.lineTo(
+      endX - arrowSize * Math.cos(angle - Math.PI / 6),
+      endY - arrowSize * Math.sin(angle - Math.PI / 6)
+    );
+    this.debugLayer.moveTo(endX, endY);
+    this.debugLayer.lineTo(
+      endX - arrowSize * Math.cos(angle + Math.PI / 6),
+      endY - arrowSize * Math.sin(angle + Math.PI / 6)
+    );
+  }
+
+  /**
+   * Render acceleration vector for an entity
+   */
+  renderAccelerationVector(entityIndex, posX, posY) {
+    if (!RigidBody) return;
+
+    const ax = RigidBody.ax[entityIndex];
+    const ay = RigidBody.ay[entityIndex];
+
+    // Skip if acceleration is too small
+    if (Math.abs(ax) < 0.01 && Math.abs(ay) < 0.01) return;
+
+    const scale = 50; // Scale factor for visualization (acceleration is smaller than velocity)
+    const endX = posX + ax * scale;
+    const endY = posY + ay * scale;
+
+    this.debugLayer.lineStyle(
+      2 / this.cameraData[0],
+      this.debugColors.acceleration,
+      0.9
+    );
+    this.debugLayer.moveTo(posX, posY);
+    this.debugLayer.lineTo(endX, endY);
+
+    // Draw arrowhead
+    const angle = Math.atan2(ay, ax);
+    const arrowSize = 5;
+    this.debugLayer.lineTo(
+      endX - arrowSize * Math.cos(angle - Math.PI / 6),
+      endY - arrowSize * Math.sin(angle - Math.PI / 6)
+    );
+    this.debugLayer.moveTo(endX, endY);
+    this.debugLayer.lineTo(
+      endX - arrowSize * Math.cos(angle + Math.PI / 6),
+      endY - arrowSize * Math.sin(angle + Math.PI / 6)
+    );
+  }
+
+  /**
+   * Render entity index number
+   */
+  renderEntityIndex(entityIndex, posX, posY) {
+    // Note: Text rendering in PIXI.Graphics is not optimal
+    // For production, consider using a separate PIXI.Text pool
+    // For now, we'll draw a simple marker and developers can use console
+    this.debugLayer.lineStyle(0);
+    this.debugLayer.beginFill(this.debugColors.text, 0.8);
+    this.debugLayer.drawCircle(posX, posY, 2 / this.cameraData[0]);
+    this.debugLayer.endFill();
+  }
+
+  /**
+   * Render neighbor connections (requires neighbor data from spatial worker)
+   */
+  renderNeighborConnections() {
+    if (!GameObject.neighborData) return;
+
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
+    const maxNeighbors = this.config.spatial?.maxNeighbors || 100;
+
+    this.debugLayer.lineStyle(
+      1 / this.cameraData[0],
+      this.debugColors.neighbor,
+      0.3
+    );
+
+    for (let i = 0; i < this.entityCount; i++) {
+      if (!active[i]) continue;
+
+      const offset = i * (1 + maxNeighbors);
+      const neighborCount = GameObject.neighborData[offset];
+
+      const myX = x[i];
+      const myY = y[i];
+
+      // Draw lines to all neighbors
+      for (let n = 0; n < neighborCount; n++) {
+        const neighborIndex = GameObject.neighborData[offset + 1 + n];
+        if (!active[neighborIndex]) continue;
+
+        const neighborX = x[neighborIndex];
+        const neighborY = y[neighborIndex];
+
+        this.debugLayer.moveTo(myX, myY);
+        this.debugLayer.lineTo(neighborX, neighborY);
+      }
+    }
+  }
+
+  /**
+   * Render spatial hash grid
+   */
+  renderSpatialGrid() {
+    const cellSize = this.config.spatial?.cellSize || 100;
+    const worldWidth = this.worldWidth;
+    const worldHeight = this.worldHeight;
+
+    this.debugLayer.lineStyle(
+      1 / this.cameraData[0],
+      this.debugColors.grid,
+      0.2
+    );
+
+    // Draw vertical lines
+    for (let x = 0; x <= worldWidth; x += cellSize) {
+      this.debugLayer.moveTo(x, 0);
+      this.debugLayer.lineTo(x, worldHeight);
+    }
+
+    // Draw horizontal lines
+    for (let y = 0; y <= worldHeight; y += cellSize) {
+      this.debugLayer.moveTo(0, y);
+      this.debugLayer.lineTo(worldWidth, y);
     }
   }
 
@@ -293,6 +545,11 @@ class PixiRenderer extends AbstractWorker {
   update(deltaTime, dtRatio, resuming) {
     this.updateCameraTransform();
     this.updateSprites(deltaTime);
+
+    // Render debug overlays (only if debug system is enabled)
+    if (this.debugLayer) {
+      this.renderDebugOverlays();
+    }
   }
 
   /**
@@ -814,6 +1071,27 @@ class PixiRenderer extends AbstractWorker {
     // Add particle container to the stage
     // Sprites are Y-sorted and re-added every frame for proper depth ordering
     this.pixiApp.stage.addChild(this.particleContainer);
+
+    // Initialize debug visualization system
+    if (data.buffers.debugData) {
+      this.debugFlags = new Uint8Array(data.buffers.debugData);
+      this.debugLayer = new PIXI.Graphics();
+      this.debugLayer.zIndex = 10000; // Always on top
+      this.pixiApp.stage.addChild(this.debugLayer);
+
+      // Initialize Collider component arrays for debug rendering
+      if (data.buffers.componentData.Collider) {
+        Collider.initializeArrays(
+          data.buffers.componentData.Collider,
+          data.componentPools.Collider.count
+        );
+        console.log(
+          `PIXI WORKER: Collider component loaded for debug rendering`
+        );
+      }
+
+      console.log("PIXI WORKER: Debug visualization layer initialized");
+    }
 
     // Build entity sprite configs from class definitions
     this.buildEntitySpriteConfigs(data.registeredClasses);

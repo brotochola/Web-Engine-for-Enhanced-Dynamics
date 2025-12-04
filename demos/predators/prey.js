@@ -46,7 +46,7 @@ class Prey extends Boid {
     };
 
     // Initialize prey-specific properties
-    this.preyBehavior.predatorAvoidFactor = 5; // Strong avoidance of predators
+    this.preyBehavior.predatorAvoidFactor = 10; // Strong avoidance of predators
     this.preyBehavior.life = 1;
 
     // Override Boid's physics properties for prey behavior
