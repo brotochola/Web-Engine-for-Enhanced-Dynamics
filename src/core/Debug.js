@@ -77,6 +77,12 @@ export class Debug {
   showNeighbors(enabled = true) {
     this.flags[DEBUG_FLAGS.SHOW_NEIGHBORS] = enabled ? 1 : 0;
     console.log(`🔧 Debug: Neighbor connections ${enabled ? "ON" : "OFF"}`);
+    if (enabled) {
+      console.log("   ℹ️ Move your mouse over entities to see their neighbors");
+      console.log(
+        "   💡 Yellow ring = selected entity, Cyan lines = neighbors"
+      );
+    }
     return this;
   }
 

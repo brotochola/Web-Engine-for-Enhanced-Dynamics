@@ -55,7 +55,7 @@ class Predator extends Boid {
     this.rigidBody.minSpeed = 0; //1; // Keep predators moving
     this.rigidBody.friction = 0.05;
 
-    this.collider.radius = 60; // Increased to match visual size (sprite is scaled 2x)
+    this.collider.radius = 30; // Increased to match visual size (sprite is scaled 2x)
     this.spriteRenderer.animationSpeed = 0.15;
 
     // Override Boid's perception

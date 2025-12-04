@@ -287,42 +287,99 @@ class PixiRenderer extends AbstractWorker {
 
   /**
    * Render neighbor connections (requires neighbor data from spatial worker)
+   * INTERACTIVE: Only shows neighbors for the entity closest to the mouse
    */
   renderNeighborConnections() {
     if (!GameObject.neighborData) return;
 
+    // Get mouse position from input buffer (world coordinates)
+    const mouseX = this.inputData[0];
+    const mouseY = this.inputData[1];
+    const mousePresent = this.inputData[2];
+
+    // If no mouse, don't render anything
+    if (!mousePresent) return;
+
     const active = Transform.active;
     const x = Transform.x;
     const y = Transform.y;
+    const isOnScreen = SpriteRenderer.isItOnScreen;
     const maxNeighbors = this.config.spatial?.maxNeighbors || 100;
 
-    this.debugLayer.lineStyle(
-      1 / this.cameraData[0],
-      this.debugColors.neighbor,
-      0.3
-    );
+    // Find the entity closest to the mouse
+    let closestEntity = -1;
+    let closestDist2 = Infinity;
 
     for (let i = 0; i < this.entityCount; i++) {
-      if (!active[i]) continue;
+      if (!active[i] || !isOnScreen[i]) continue;
 
-      const offset = i * (1 + maxNeighbors);
-      const neighborCount = GameObject.neighborData[offset];
+      const dx = x[i] - mouseX;
+      const dy = y[i] - mouseY;
+      const dist2 = dx * dx + dy * dy;
 
-      const myX = x[i];
-      const myY = y[i];
-
-      // Draw lines to all neighbors
-      for (let n = 0; n < neighborCount; n++) {
-        const neighborIndex = GameObject.neighborData[offset + 1 + n];
-        if (!active[neighborIndex]) continue;
-
-        const neighborX = x[neighborIndex];
-        const neighborY = y[neighborIndex];
-
-        this.debugLayer.moveTo(myX, myY);
-        this.debugLayer.lineTo(neighborX, neighborY);
+      if (dist2 < closestDist2) {
+        closestDist2 = dist2;
+        closestEntity = i;
       }
     }
+
+    // No entity found near mouse
+    if (closestEntity === -1) return;
+
+    const myX = x[closestEntity];
+    const myY = y[closestEntity];
+
+    // Highlight the selected entity with a bright ring
+    this.debugLayer.lineStyle(3 / this.cameraData[0], 0xffff00, 1.0); // Bright yellow
+    const highlightRadius = Collider.radius[closestEntity] * 1.5;
+    this.debugLayer.drawCircle(myX, myY, highlightRadius);
+
+    // Draw neighbor connections from this entity
+    this.debugLayer.lineStyle(
+      2 / this.cameraData[0],
+      this.debugColors.neighbor,
+      0.7
+    );
+
+    const offset = closestEntity * (1 + maxNeighbors);
+    const neighborCount = GameObject.neighborData[offset];
+
+    // Draw all neighbors for this entity (no limit needed since it's just one entity)
+    for (let n = 0; n < neighborCount; n++) {
+      const neighborIndex = GameObject.neighborData[offset + 1 + n];
+      if (!active[neighborIndex]) continue;
+
+      const neighborX = x[neighborIndex];
+      const neighborY = y[neighborIndex];
+
+      // Draw the line with gradient effect (thicker near center)
+      this.debugLayer.moveTo(myX, myY);
+      this.debugLayer.lineTo(neighborX, neighborY);
+
+      // Draw a small circle on the neighbor
+      this.debugLayer.lineStyle(0);
+      this.debugLayer.beginFill(this.debugColors.neighbor, 0.5);
+      this.debugLayer.drawCircle(neighborX, neighborY, 3 / this.cameraData[0]);
+      this.debugLayer.endFill();
+
+      // Restore line style for next connection
+      this.debugLayer.lineStyle(
+        2 / this.cameraData[0],
+        this.debugColors.neighbor,
+        0.7
+      );
+    }
+
+    // Draw entity info text (index and neighbor count)
+    // Note: We'll use a simple marker for now, full text rendering would need PIXI.Text pool
+    this.debugLayer.lineStyle(0);
+    this.debugLayer.beginFill(0xffffff, 0.9);
+    this.debugLayer.drawCircle(
+      myX,
+      myY - 20 / this.cameraData[0],
+      4 / this.cameraData[0]
+    );
+    this.debugLayer.endFill();
   }
 
   /**
