@@ -4,6 +4,9 @@ import { Collider } from "/src/components/Collider.js";
 import { SpriteRenderer } from "/src/components/SpriteRenderer.js";
 
 class Ball extends GameObject {
+  // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
+  static scriptUrl = import.meta.url;
+
   static entityType = 1; // 1 = Ball
   static instances = []; // Instance tracking for this class
 

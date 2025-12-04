@@ -9,6 +9,9 @@ import { Flocking } from "./Flocking.js";
 import { Mouse } from "../../src/core/Mouse.js";
 
 class Boid extends GameObject {
+  // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
+  static scriptUrl = import.meta.url;
+
   static entityType = 0; // 0 = Boid
   static instances = []; // Instance tracking for this class
 

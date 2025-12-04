@@ -205,8 +205,17 @@ class GameEngine {
    * @param {Class} EntityClass - The class to register (must extend GameObject)
    * @param {number} count - Number of entities of this type
    * @param {string} scriptPath - Path to the script file (for worker loading)
+   *                              If omitted, auto-detected from EntityClass.scriptUrl
    */
   registerEntityClass(EntityClass, count, scriptPath = null) {
+    // Auto-detect script path from EntityClass.scriptUrl (set via import.meta.url)
+    if (!scriptPath && EntityClass.scriptUrl) {
+      scriptPath = this._urlToPath(EntityClass.scriptUrl);
+      console.log(
+        `🔍 Auto-detected script path for ${EntityClass.name}: ${scriptPath}`
+      );
+    }
+
     // Auto-detect and register parent classes (if not already registered)
     this._autoRegisterParentClasses(EntityClass);
 
@@ -289,6 +298,22 @@ class GameEngine {
         .map((c) => c.name)
         .join(", ")}`
     );
+  }
+
+  /**
+   * Convert a full URL (from import.meta.url) to an absolute path
+   * @param {string} url - Full URL like "http://localhost:3000/demos/predators/prey.js"
+   * @returns {string} Absolute path like "/demos/predators/prey.js"
+   * @private
+   */
+  _urlToPath(url) {
+    try {
+      const urlObj = new URL(url);
+      return urlObj.pathname; // Returns "/demos/predators/prey.js"
+    } catch (e) {
+      // If URL parsing fails, return as-is (might already be a path)
+      return url;
+    }
   }
 
   /**
@@ -722,18 +747,23 @@ class GameEngine {
     await this.preloadAssets(this.imageUrls, spritesheetConfigs);
 
     // Collect unique script paths for workers (filter out nulls/undefined)
-    // Adjust paths to be relative to worker location (workers are in lib/ folder)
+    // Supports: absolute paths (/demos/...), relative paths (../../demos/...), and URLs (http://...)
     const scriptsToLoad = [
       ...new Set(
         this.registeredClasses
           .map((r) => r.scriptPath)
           .filter((path) => path !== null && path !== undefined)
           .map((path) => {
-            // If path doesn't start with ../ or http, prepend ../ for workers in lib/
-            if (!path.startsWith("../") && !path.startsWith("http")) {
-              return `../${path}`;
+            // Absolute paths starting with / work directly with dynamic import()
+            if (path.startsWith("/") || path.startsWith("http")) {
+              return path;
             }
-            return path;
+            // Legacy relative paths (../../demos/...) - keep as-is
+            if (path.startsWith("../")) {
+              return path;
+            }
+            // Other relative paths - prepend ../ for workers in src/workers/
+            return `../${path}`;
           })
       ),
     ];

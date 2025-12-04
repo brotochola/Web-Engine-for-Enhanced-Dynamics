@@ -9,6 +9,9 @@ import { PreyBehavior } from "./PreyBehavior.js";
 import { getDirectionFromAngle } from "../../src/core/utils.js";
 
 class Prey extends Boid {
+  // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
+  static scriptUrl = import.meta.url;
+
   static entityType = 1; // 1 = Prey
   static instances = []; // Instance tracking for this class
 

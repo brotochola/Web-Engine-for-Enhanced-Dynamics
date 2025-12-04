@@ -10,6 +10,9 @@ import { PredatorBehavior } from "./PredatorBehavior.js";
 import { getDirectionFromAngle } from "../../src/core/utils.js";
 
 class Predator extends Boid {
+  // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
+  static scriptUrl = import.meta.url;
+
   static entityType = 2; // 2 = Predator
   static instances = []; // Instance tracking for this class
 

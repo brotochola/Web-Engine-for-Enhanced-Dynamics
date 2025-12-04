@@ -95,7 +95,7 @@
                 // Spatial hash grid configuration
                 spatial: {
                     cellSize: 100,  // Increased to match visual range (reduces grid overhead)
-                    maxNeighbors: 500,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
+                    maxNeighbors: 300,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
                     noLimitFPS: true,
 
                 },
@@ -111,7 +111,7 @@
                 physics: {
                     subStepCount: 1,
                     noLimitFPS: true,
-                    maxCollisionPairs: 100000000,
+                    maxCollisionPairs: 1000000,
                     boundaryElasticity: 0,
                     collisionResponseStrength: 0.9,
                     verletDamping: 0.99,
@@ -143,10 +143,10 @@
             }
         );
 
-        // Register entity classes with their script paths
-        gameEngine.registerEntityClass(Boid, numberOfBoids, "../../demos/predators/boid.js");
-        gameEngine.registerEntityClass(Prey, numberOfPrey, "../../demos/predators/prey.js");
-        gameEngine.registerEntityClass(Predator, numberOfPredators, "../../demos/predators/predator.js");
+        // Register entity classes - script paths auto-detected via EntityClass.scriptUrl!
+        gameEngine.registerEntityClass(Boid, numberOfBoids);
+        gameEngine.registerEntityClass(Prey, numberOfPrey);
+        gameEngine.registerEntityClass(Predator, numberOfPredators);
 
         // Make gameEngine global for button onclick handlers
         window.gameEngine = gameEngine;

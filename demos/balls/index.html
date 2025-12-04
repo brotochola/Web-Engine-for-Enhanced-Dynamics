@@ -125,9 +125,8 @@
 
         window.gameEngine = gameEngine
 
-        // Register entity classes with their script paths
-        // Note: Paths are relative to src/workers/ folder where workers are located
-        gameEngine.registerEntityClass(Ball, numOfBalls, "../../demos/balls/ball.js");
+        // Register entity classes - script path auto-detected via Ball.scriptUrl!
+        gameEngine.registerEntityClass(Ball, numOfBalls);
 
         // Spawning functions
         function spawnRandomBall() {
