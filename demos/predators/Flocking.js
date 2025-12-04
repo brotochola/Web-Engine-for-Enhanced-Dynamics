@@ -4,7 +4,7 @@
 
 import { Component } from "../../src/core/Component.js";
 
-class Flocking extends Component {
+export class Flocking extends Component {
   // Array schema - defines all flocking behavior properties
   static ARRAY_SCHEMA = {
     protectedRange: Float32Array, // Minimum distance from other boids
@@ -14,20 +14,4 @@ class Flocking extends Component {
     turnFactor: Float32Array, // Boundary avoidance strength
     margin: Float32Array, // Distance from world edge to start turning
   };
-
-  /**
-   * Constructor - creates a component instance for a specific entity index
-   * @param {number} index - Index in the component arrays
-   *
-   * Note: Getters/setters for properties (protectedRange, centeringFactor, avoidFactor, etc.)
-   * are auto-generated from ARRAY_SCHEMA by Component._createInstanceProperties()
-   */
-  //TODO: sacar esto , se puede bypassear
-  constructor(index) {
-    super();
-    this.index = index;
-  }
 }
-
-// ES6 module export
-export { Flocking };

@@ -132,7 +132,7 @@ class Predator extends Boid {
   }
 
   onCollisionEnter(otherIndex) {
-    console.log("collision predator", GameObject.entityType[otherIndex]);
+    // console.log("collision predator", GameObject.entityType[otherIndex]);
     // if (GameObject.entityType[otherIndex] === Prey.entityType) {
     //   this.collision = true;
     //   // this.vx = 0;
