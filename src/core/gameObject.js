@@ -738,18 +738,12 @@ export class GameObject {
     }
 
     // Apply spawn config BEFORE activating
-    Object.keys(spawnConfig).forEach((key) => {
-      // Handle component properties
-      if (key.includes(".")) {
-        const [compName, propName] = key.split(".");
-        const comp = instance[compName];
-        if (comp && comp[propName] !== undefined) {
-          comp[propName] = spawnConfig[key];
-        }
-      } else if (instance[key] !== undefined) {
+    // Uses clean property names: x, y, vx, vy, rotation, etc.
+    for (const key in spawnConfig) {
+      if (instance[key] !== undefined) {
         instance[key] = spawnConfig[key];
       }
-    });
+    }
 
     // Initialize previous positions for Verlet integration
     if (instance.rigidBody && instance.transform) {

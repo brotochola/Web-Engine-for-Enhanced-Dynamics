@@ -171,14 +171,14 @@
             `Mode: SHARED ARRAY BUFFER (${totalWorkers} Workers: 1 Spatial + ${numberOfLogicWorkers} Logic + 1 Physics + 1 Renderer)`;
 
 
-        // Spawning functions - FIXED to use component property notation
+        // Spawning functions - using clean unified API
         window.spawnRandomPrey = function () {
             for (let i = 0; i < numberOfPrey; i++) {
                 gameEngine.spawnEntity('Prey', {
-                    'transform.x': Math.random() * gameEngine.config.worldWidth,
-                    'transform.y': Math.random() * gameEngine.config.worldHeight,
-                    'rigidBody.vx': 0,
-                    'rigidBody.vy': 0
+                    x: Math.random() * gameEngine.config.worldWidth,
+                    y: Math.random() * gameEngine.config.worldHeight,
+                    vx: 0,
+                    vy: 0
                 });
             }
         };
@@ -186,31 +186,30 @@
         window.spawnBoids = function () {
             for (let i = 0; i < numberOfBoids; i++) {
                 gameEngine.spawnEntity('Boid', {
-                    'transform.x': Math.random() * gameEngine.config.worldWidth,
-                    'transform.y': Math.random() * gameEngine.config.worldHeight,
-                    'rigidBody.vx': 0,
-                    'rigidBody.vy': 0
+                    x: Math.random() * gameEngine.config.worldWidth,
+                    y: Math.random() * gameEngine.config.worldHeight,
+                    vx: 0,
+                    vy: 0
                 });
             }
         };
 
-
         window.spawnRandomPredator = function () {
             gameEngine.spawnEntity('Predator', {
-                'transform.x': Math.random() * gameEngine.config.worldWidth,
-                'transform.y': Math.random() * gameEngine.config.worldHeight,
-                'rigidBody.vx': 0,
-                'rigidBody.vy': 0
+                x: Math.random() * gameEngine.config.worldWidth,
+                y: Math.random() * gameEngine.config.worldHeight,
+                vx: 0,
+                vy: 0
             });
         };
 
         window.spawnPreyAtMouse = function () {
             if (gameEngine.mouse && gameEngine.mouse.x > 0 && gameEngine.mouse.y > 0) {
                 gameEngine.spawnEntity('Prey', {
-                    'transform.x': gameEngine.mouse.x,
-                    'transform.y': gameEngine.mouse.y,
-                    'rigidBody.vx': 0,
-                    'rigidBody.vy': 0
+                    x: gameEngine.mouse.x,
+                    y: gameEngine.mouse.y,
+                    vx: 0,
+                    vy: 0
                 });
             }
         };
@@ -218,10 +217,10 @@
         window.spawnPredatorAtMouse = function () {
             if (gameEngine.mouse && gameEngine.mouse.x > 0 && gameEngine.mouse.y > 0) {
                 gameEngine.spawnEntity('Predator', {
-                    'transform.x': gameEngine.mouse.x,
-                    'transform.y': gameEngine.mouse.y,
-                    'rigidBody.vx': 0,
-                    'rigidBody.vy': 0
+                    x: gameEngine.mouse.x,
+                    y: gameEngine.mouse.y,
+                    vx: 0,
+                    vy: 0
                 });
             }
         };

@@ -282,7 +282,7 @@ class Boid extends GameObject {
 
     if (dist2 < 1e-4 || dist2 > 100000) return;
 
-    const strength = 10;
+    const strength = 100;
     rbAX[i] += (dx / dist2) * strength * dtRatio;
     rbAY[i] += (dy / dist2) * strength * dtRatio;
   }
