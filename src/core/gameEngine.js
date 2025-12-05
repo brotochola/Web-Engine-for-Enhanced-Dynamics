@@ -9,6 +9,7 @@ import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { setupWorkerCommunication } from "./utils.js";
 import { Debug } from "./Debug.js";
+import { Mouse } from "./Mouse.js";
 
 class GameEngine {
   static now = Date.now();
@@ -40,7 +41,7 @@ class GameEngine {
 
     // State
     this.keyboard = {};
-    this.mouse = null; //{ x: -100000, y: -100000 };
+    // Mouse is accessed via Mouse static class (writes directly to SharedArrayBuffer)
     this.camera = {
       zoom: 1,
       x: 0, // Will be centered on world after init
@@ -189,7 +190,7 @@ class GameEngine {
     });
 
     // Total keys mapped: ~73
-    this.inputBufferSize = 6 + keyIndex; // 6 for mouse data + all keys
+    this.inputBufferSize = keyIndex; // Keyboard only (mouse uses Transform/MouseComponent)
 
     // Frame timing
     this.lastFrameTime = performance.now();
@@ -213,9 +214,9 @@ class GameEngine {
     // Auto-detect script path from EntityClass.scriptUrl (set via import.meta.url)
     if (!scriptPath && EntityClass.scriptUrl) {
       scriptPath = this._urlToPath(EntityClass.scriptUrl);
-      console.log(
-        `🔍 Auto-detected script path for ${EntityClass.name}: ${scriptPath}`
-      );
+      // console.log(
+      //   `🔍 Auto-detected script path for ${EntityClass.name}: ${scriptPath}`
+      // );
     }
 
     // Auto-detect and register parent classes (if not already registered)
@@ -254,7 +255,7 @@ class GameEngine {
 
       // Auto-create pool for custom components (e.g., Flocking)
       if (!pool) {
-        console.log(`📦 Auto-registering custom component: ${componentName}`);
+        // console.log(`📦 Auto-registering custom component: ${componentName}`);
         pool = {
           count: 0,
           ComponentClass: ComponentClass,
@@ -293,13 +294,13 @@ class GameEngine {
     EntityClass.startIndex = startIndex;
     EntityClass.totalCount = count;
 
-    console.log(
-      `✅ Registered ${
-        EntityClass.name
-      }: ${count} entities with components: ${components
-        .map((c) => c.name)
-        .join(", ")}`
-    );
+    // console.log(
+    //   `✅ Registered ${
+    //     EntityClass.name
+    //   }: ${count} entities with components: ${components
+    //     .map((c) => c.name)
+    //     .join(", ")}`
+    // );
   }
 
   /**
@@ -365,9 +366,9 @@ class GameEngine {
           ParentClass.instances = [];
         }
 
-        console.log(
-          `🔧 Auto-registered parent class ${ParentClass.name} (0 instances) for ${EntityClass.name}`
-        );
+        // console.log(
+        //   `🔧 Auto-registered parent class ${ParentClass.name} (0 instances) for ${EntityClass.name}`
+        // );
       }
     }
   }
@@ -410,6 +411,16 @@ class GameEngine {
 
   // Create all SharedArrayBuffers
   createSharedBuffers() {
+    // Auto-register Mouse entity (1 instance) for spatial grid tracking
+    // This must happen before buffer creation so Mouse is included in totalEntityCount
+    // Mouse is registered FIRST so we know its entity index
+    if (!this.registeredClasses.some((r) => r.class === Mouse)) {
+      this.registerEntityClass(Mouse, 1);
+      console.log(
+        `🖱️ Auto-registered Mouse entity at index ${Mouse.startIndex}`
+      );
+    }
+
     // 1. GameObject entity metadata buffer (just entityType)
     // Note: 'active' moved to Transform, 'isItOnScreen' moved to SpriteRenderer
     const gameObjectBufferSize = GameObject.getBufferSize(
@@ -465,6 +476,20 @@ class GameEngine {
       }
     }
 
+    // Configure Mouse class for direct array access from main thread
+    if (this.componentPools.MouseComponent) {
+      const mouseAllocation =
+        this.componentPools.MouseComponent.indices.get("Mouse");
+      if (mouseAllocation) {
+        const mouseEntityIndex = Mouse.startIndex;
+        const mouseComponentIndex = mouseAllocation.start;
+        Mouse.configure(mouseEntityIndex, mouseComponentIndex);
+        console.log(
+          `   🖱️ Mouse configured: entity=${mouseEntityIndex}, component=${mouseComponentIndex}`
+        );
+      }
+    }
+
     // Collision data buffer (for Unity-style collision detection)
     const maxCollisionPairs =
       this.config.physics?.maxCollisionPairs ||
@@ -475,7 +500,6 @@ class GameEngine {
     this.views.collision = new Int32Array(this.buffers.collisionData);
     this.views.collision[0] = 0; // Initialize pair count to 0
 
-    // Input buffer: [mouseX, mouseY, mouseInWorld, button0, button1, button2, key0, key1, key2, ...]
     const INPUT_BUFFER_SIZE = this.inputBufferSize * 4; // 4 bytes per Int32
     this.buffers.inputData = new SharedArrayBuffer(INPUT_BUFFER_SIZE);
     this.views.input = new Int32Array(this.buffers.inputData);
@@ -494,7 +518,7 @@ class GameEngine {
 
     // Initialize Debug API
     this.debug = new Debug(this.buffers.debugData);
-    console.log("🔧 Debug system initialized");
+    // console.log("🔧 Debug system initialized");
 
     // Synchronization buffer for logic workers (uses Atomics for thread-safe operations)
     // [0]: Current frame number (for debugging)
@@ -532,9 +556,9 @@ class GameEngine {
       jobQueueView[2 + i * 2 + 1] = endIndex; // Job end
     }
 
-    console.log(
-      `📋 Created ${totalJobs} jobs (${entitiesPerJob} entities per job)`
-    );
+    // console.log(
+    //   `📋 Created ${totalJobs} jobs (${entitiesPerJob} entities per job)`
+    // );
 
     // Center camera on world
     const worldCenterX =
@@ -578,24 +602,24 @@ class GameEngine {
     this.loadedTextures = {};
     this.loadedSpritesheets = {};
 
-    // Debug: log what we received
-    console.log("📦 preloadAssets called with:", {
-      imageUrls: imageUrls,
-      imageUrlsKeys: Object.keys(imageUrls),
-      spritesheetConfigsKeys: Object.keys(spritesheetConfigs),
-    });
+    // // Debug: log what we received
+    // console.log("📦 preloadAssets called with:", {
+    //   imageUrls: imageUrls,
+    //   imageUrlsKeys: Object.keys(imageUrls),
+    //   spritesheetConfigsKeys: Object.keys(spritesheetConfigs),
+    // });
 
     // Load simple textures (filter out 'spritesheets' key and non-string values)
     const textureEntries = Object.entries(imageUrls).filter(([name, url]) => {
-      console.log(
-        `  Checking entry: "${name}" = ${
-          typeof url === "string" ? url : `[${typeof url}]`
-        }`
-      );
+      // console.log(
+      //   `  Checking entry: "${name}" = ${
+      //     typeof url === "string" ? url : `[${typeof url}]`
+      //   }`
+      // );
 
       // Skip the spritesheets object
       if (name === "spritesheets") {
-        console.log(`    ⏭️ Skipping "spritesheets" object`);
+        // console.log(`    ⏭️ Skipping "spritesheets" object`);
         return false;
       }
       // Skip non-string URLs
@@ -605,11 +629,11 @@ class GameEngine {
         );
         return false;
       }
-      console.log(`    ✅ Including texture "${name}"`);
+      // console.log(`    ✅ Including texture "${name}"`);
       return true;
     });
 
-    console.log(`📦 Loading ${textureEntries.length} textures...`);
+    // console.log(`📦 Loading ${textureEntries.length} textures...`);
 
     const texturePromises = textureEntries.map(async ([name, url]) => {
       try {
@@ -626,21 +650,21 @@ class GameEngine {
         const imageBitmap = await createImageBitmap(img);
         this.loadedTextures[name] = imageBitmap;
 
-        console.log(`✅ Loaded texture: ${name}`);
+        // console.log(`✅ Loaded texture: ${name}`);
       } catch (error) {
         console.error(`❌ Failed to load texture ${name} from ${url}:`, error);
       }
     });
 
     // Load spritesheets (JSON + PNG)
-    console.log(
-      `📦 Loading ${Object.keys(spritesheetConfigs).length} spritesheets...`
-    );
+    // console.log(
+    //   `📦 Loading ${Object.keys(spritesheetConfigs).length} spritesheets...`
+    // );
 
     const spritesheetPromises = Object.entries(spritesheetConfigs).map(
       async ([name, config]) => {
         try {
-          console.log(`  Loading spritesheet "${name}"...`);
+          // console.log(`  Loading spritesheet "${name}"...`);
 
           // Validate config
           if (!config.json || !config.png) {
@@ -674,11 +698,11 @@ class GameEngine {
           // Register in SpriteSheetRegistry for animation lookups
           SpriteSheetRegistry.register(name, jsonData);
 
-          console.log(
-            `✅ Loaded spritesheet: ${name} with ${
-              Object.keys(jsonData.animations || {}).length
-            } animations`
-          );
+          // console.log(
+          //   `✅ Loaded spritesheet: ${name} with ${
+          //     Object.keys(jsonData.animations || {}).length
+          //   } animations`
+          // );
         } catch (error) {
           console.error(`❌ Failed to load spritesheet ${name}:`, error);
         }
@@ -688,11 +712,11 @@ class GameEngine {
     // Wait for all assets to load
     await Promise.all([...texturePromises, ...spritesheetPromises]);
 
-    console.log(
-      `✅ Preloaded ${Object.keys(this.loadedTextures).length} textures and ${
-        Object.keys(this.loadedSpritesheets).length
-      } spritesheets`
-    );
+    // console.log(
+    //   `✅ Preloaded ${Object.keys(this.loadedTextures).length} textures and ${
+    //     Object.keys(this.loadedSpritesheets).length
+    //   } spritesheets`
+    // );
   }
 
   /**
@@ -712,7 +736,7 @@ class GameEngine {
       connections.push({ from: `logic${i}`, to: "renderer" });
     }
 
-    console.log("🔗 Worker communication channels established:", connections);
+    // console.log("🔗 Worker communication channels established:", connections);
     return setupWorkerCommunication(connections);
   }
 
@@ -778,7 +802,7 @@ class GameEngine {
       ),
     ];
 
-    console.log("📜 Game scripts to load in workers:", scriptsToLoad);
+    // console.log("📜 Game scripts to load in workers:", scriptsToLoad);
 
     // Setup direct worker-to-worker communication via MessagePorts
     const workerPorts = this.setupWorkerCommunication();
@@ -838,7 +862,7 @@ class GameEngine {
         workerPorts[`logic${i}`] ? Object.values(workerPorts[`logic${i}`]) : []
       );
 
-      console.log(`🧠 Logic Worker ${i}: Initializing...`);
+      // console.log(`🧠 Logic Worker ${i}: Initializing...`);
     }
 
     // Initialize physics worker (with port to renderer)
@@ -923,7 +947,7 @@ class GameEngine {
    * When all workers are ready, broadcast start signal
    */
   handleWorkerReady(workerName) {
-    console.log(`✅ ${workerName} worker is ready`);
+    // console.log(`✅ ${workerName} worker is ready`);
     this.workerReadyStates[workerName] = true;
 
     if (workerName === "physics" && this.pendingPhysicsUpdates.length) {
@@ -942,7 +966,7 @@ class GameEngine {
     );
 
     if (allReady) {
-      console.log("🎮 All workers ready! Starting synchronized game loop...");
+      // console.log("🎮 All workers ready! Starting synchronized game loop...");
       this.startAllWorkers();
       if (this.resolveReady) this.resolveReady();
     } else {
@@ -950,9 +974,9 @@ class GameEngine {
       const readyCount = Object.values(this.workerReadyStates).filter(
         (r) => r
       ).length;
-      console.log(
-        `   Waiting... (${readyCount}/${this.totalWorkers} workers ready)`
-      );
+      // console.log(
+      //   `   Waiting... (${readyCount}/${this.totalWorkers} workers ready)`
+      // );
     }
   }
 
@@ -961,7 +985,7 @@ class GameEngine {
    * This ensures synchronized startup with no race conditions
    */
   startAllWorkers() {
-    console.log("📢 Broadcasting START to all workers");
+    // console.log("📢 Broadcasting START to all workers");
 
     const allWorkers = [
       this.workers.spatial,
@@ -976,7 +1000,11 @@ class GameEngine {
       }
     }
 
-    console.log("✅ All workers started synchronously!");
+    // Spawn the Mouse entity for spatial grid tracking
+    this.spawnEntity("Mouse", {});
+    // console.log("🖱️ Mouse entity spawned for spatial tracking");
+
+    // console.log("✅ All workers started synchronously!");
   }
 
   updatePhysicsConfig(partialConfig = {}) {
@@ -1033,51 +1061,40 @@ class GameEngine {
     window.addEventListener("keydown", (e) => {
       const key = e.key.toLowerCase();
       this.keyboard[key] = true;
-      this.updateInputBuffer();
+      this.updateKeyboardBuffer();
     });
 
     window.addEventListener("keyup", (e) => {
       const key = e.key.toLowerCase();
       this.keyboard[key] = false;
-      this.updateInputBuffer();
+      this.updateKeyboardBuffer();
     });
 
     this.canvas.addEventListener("mousedown", (e) => {
-      if (!this.mouse) this.mouse = {};
-      if (e.button == 0) {
-        this.mouse.button0Down = true;
-      }
-      if (e.button == 1) {
-        this.mouse.button1Down = true;
-      }
-      if (e.button == 2) {
-        this.mouse.button2Down = true;
-      }
-      this.updateInputBuffer();
+      if (e.button == 0) Mouse.isButton0Down = true;
+      if (e.button == 1) Mouse.isButton1Down = true;
+      if (e.button == 2) Mouse.isButton2Down = true;
     });
 
     this.canvas.addEventListener("mouseup", (e) => {
-      if (!this.mouse) this.mouse = {};
-      if (e.button == 0) {
-        this.mouse.button0Down = false;
-      }
-      if (e.button == 1) {
-        this.mouse.button1Down = false;
-      }
-      if (e.button == 2) {
-        this.mouse.button2Down = false;
-      }
-      this.updateInputBuffer();
+      if (e.button == 0) Mouse.isButton0Down = false;
+      if (e.button == 1) Mouse.isButton1Down = false;
+      if (e.button == 2) Mouse.isButton2Down = false;
     });
 
     // Mouse events - convert canvas pixels to world coordinates
     this.canvas.addEventListener("mousemove", (e) => {
-      this.handleOnMouseMove(e);
+      const rect = this.canvas.getBoundingClientRect();
+      Mouse.isPresent = true;
+      Mouse.setCanvasPosition(
+        e.clientX - rect.left,
+        e.clientY - rect.top,
+        this.camera
+      );
     });
 
-    this.canvas.addEventListener("mouseleave", (e) => {
-      this.mouse = null;
-      this.updateInputBuffer();
+    this.canvas.addEventListener("mouseleave", () => {
+      Mouse.isPresent = false;
     });
 
     // Mouse wheel for zoom
@@ -1110,50 +1127,11 @@ class GameEngine {
     // console.log("✅ Setup event listeners");
   }
 
-  handleOnMouseMove(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    if (!this.mouse) this.mouse = {};
-
-    // Store canvas coordinates as properties so we can recalculate world position when camera moves
-    this.mouse.canvasX = e.clientX - rect.left;
-    this.mouse.canvasY = e.clientY - rect.top;
-
-    this.updateMouseWorldPosition();
-    this.updateInputBuffer();
-  }
-
-  // Update mouse world position from canvas coordinates
-  // This should be called when the camera moves or when the mouse moves
-  updateMouseWorldPosition() {
-    if (!this.mouse || this.mouse.canvasX === undefined) return;
-
-    // Convert to world coordinates (Y-down system)
-    // World position = (canvas position / zoom) + camera position
-    this.mouse.x = this.mouse.canvasX / this.camera.zoom + this.camera.x;
-    this.mouse.y = this.mouse.canvasY / this.camera.zoom + this.camera.y;
-  }
-
-  // Update input buffer with current input state
-  updateInputBuffer() {
+  // Update keyboard state in inputData buffer
+  updateKeyboardBuffer() {
     const input = this.views.input;
-    if (this.mouse) {
-      input[0] = this.mouse.x;
-      input[1] = this.mouse.y;
-      input[2] = 1; // Mouse present flag
-      input[3] = this.mouse.button0Down ? 1 : 0; // Mouse down flag
-      input[4] = this.mouse.button1Down ? 1 : 0; // Mouse down flag
-      input[5] = this.mouse.button2Down ? 1 : 0; // Mouse down flag
-    } else {
-      input[0] = 0; // Clear mouse position
-      input[1] = 0;
-      input[2] = 0; // Mouse NOT present
-      input[3] = 0;
-      input[4] = 0;
-      input[5] = 0;
-    }
-
     for (const [key, index] of Object.entries(this.keyMap)) {
-      input[6 + index] = this.keyboard[key] ? 1 : 0; // Keyboard starts at index 6 (after mouse data)
+      input[index] = this.keyboard[key] ? 1 : 0;
     }
   }
 
@@ -1165,8 +1143,7 @@ class GameEngine {
     cam[2] = this.camera.y;
 
     // Update mouse world position when camera changes
-    this.updateMouseWorldPosition();
-    this.updateInputBuffer();
+    Mouse.updateWorldPosition(this.camera);
   }
 
   // Main game loop (runs in main thread)

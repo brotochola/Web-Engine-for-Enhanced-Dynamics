@@ -55,23 +55,23 @@ class SpatialWorker extends AbstractWorker {
       if (data.buffers.componentData.Transform) {
         Transform.initializeArrays(
           data.buffers.componentData.Transform,
-          this.entityCount
+          data.componentPools?.Transform?.count || this.entityCount
         );
-        console.log(`SPATIAL WORKER: ✅ Transform initialized`);
+        // console.log(`SPATIAL WORKER: ✅ Transform initialized`);
       }
       if (data.buffers.componentData.Collider) {
         Collider.initializeArrays(
           data.buffers.componentData.Collider,
-          data.componentCounts?.Collider || this.entityCount
+          data.componentPools?.Collider?.count || this.entityCount
         );
-        console.log(`SPATIAL WORKER: ✅ Collider initialized`);
+        // console.log(`SPATIAL WORKER: ✅ Collider initialized`);
       }
       if (data.buffers.componentData.SpriteRenderer) {
         SpriteRenderer.initializeArrays(
           data.buffers.componentData.SpriteRenderer,
-          data.componentCounts?.SpriteRenderer || this.entityCount
+          data.componentPools?.SpriteRenderer?.count || this.entityCount
         );
-        console.log(`SPATIAL WORKER: ✅ SpriteRenderer initialized`);
+        // console.log(`SPATIAL WORKER: ✅ SpriteRenderer initialized`);
       }
     }
 
@@ -109,9 +109,9 @@ class SpatialWorker extends AbstractWorker {
     //   `SPATIAL WORKER: Using per-entity visual ranges with accurate distance checking`
     // );
 
-    console.log(
-      "SPATIAL WORKER: Initialization complete, waiting for start signal..."
-    );
+    // console.log(
+    //   "SPATIAL WORKER: Initialization complete, waiting for start signal..."
+    // );
     // Note: Game loop will start when "start" message is received from main thread
   }
 
@@ -331,6 +331,9 @@ class SpatialWorker extends AbstractWorker {
    * Update method called each frame (implementation of AbstractWorker.update)
    */
   update(deltaTime, dtRatio, resuming) {
+    // Mouse position is now written directly to Transform by main thread
+    // No special syncing needed - spatial grid will see current position
+
     // Rebuild spatial grid and find neighbors every frame for physics stability!
     // Was previously skipping frames which causes physics objects to "pass through" each other
     // if they move fast enough to cross cells in the skipped frames.

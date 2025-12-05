@@ -1,4 +1,5 @@
-import { GameObject, Mouse, Keyboard } from "/src/core/gameObject.js";
+import { GameObject, Keyboard } from "/src/core/gameObject.js";
+import { Mouse } from "/src/core/Mouse.js";
 import { RigidBody } from "/src/components/RigidBody.js";
 import { Collider } from "/src/components/Collider.js";
 import { SpriteRenderer } from "/src/components/SpriteRenderer.js";

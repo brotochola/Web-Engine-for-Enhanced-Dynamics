@@ -7,11 +7,10 @@ import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { collectComponents } from "./utils.js";
-import { Mouse } from "./Mouse.js";
 import Keyboard from "./Keyboard.js";
 
-// Export Mouse and Keyboard for easy access
-export { Mouse, Keyboard };
+// Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
+export { Keyboard };
 
 export class GameObject {
   // Entity class metadata (for spawning system)

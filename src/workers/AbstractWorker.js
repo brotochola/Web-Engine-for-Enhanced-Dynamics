@@ -173,9 +173,9 @@ class AbstractWorker {
    * @param {Object} data - Initialization data from main thread
    */
   async initializeCommonBuffers(data) {
-    console.log(
-      `${this.constructor.name}: initializeCommonBuffers called, needsGameScripts=${this.needsGameScripts}`
-    );
+    // console.log(
+    //   `${this.constructor.name}: initializeCommonBuffers called, needsGameScripts=${this.needsGameScripts}`
+    // );
     this.reportLog("initializing common buffers");
     this.entityCount = data.entityCount;
 
@@ -192,26 +192,26 @@ class AbstractWorker {
     const workerConfig = this.config[workerType] || {};
     if (workerConfig.noLimitFPS === true) {
       this.noLimitFPS = true;
-      console.log(
-        `${this.constructor.name}: Running in unlimited FPS mode (noLimitFPS)`
-      );
+      // console.log(
+      //   `${this.constructor.name}: Running in unlimited FPS mode (noLimitFPS)`
+      // );
     }
 
     // Load game-specific scripts dynamically (if this worker needs them)
     // Some workers (spatial, physics) are generic and don't need game classes
-    console.log(
-      `${this.constructor.name}: Checking script loading - needsGameScripts=${
-        this.needsGameScripts
-      }, scriptsToLoad=${data.scriptsToLoad?.length || 0}`
-    );
+    // console.log(
+    //   `${this.constructor.name}: Checking script loading - needsGameScripts=${
+    //     this.needsGameScripts
+    //   }, scriptsToLoad=${data.scriptsToLoad?.length || 0}`
+    // );
     if (
       this.needsGameScripts &&
       data.scriptsToLoad &&
       data.scriptsToLoad.length > 0
     ) {
-      console.log(
-        `${this.constructor.name}: Loading ${data.scriptsToLoad.length} game scripts...`
-      );
+      // console.log(
+      //   `${this.constructor.name}: Loading ${data.scriptsToLoad.length} game scripts...`
+      // );
 
       // Use dynamic import() for ES6 modules (async/await)
       for (const scriptPath of data.scriptsToLoad) {
@@ -220,23 +220,23 @@ class AbstractWorker {
           // Make the exported class(es) available globally in worker
           Object.keys(module).forEach((key) => {
             self[key] = module[key];
-            console.log(
-              `${this.constructor.name}: ✓ Registered ${key} from ${scriptPath}`
-            );
+            // console.log(
+            //   `${this.constructor.name}: ✓ Registered ${key} from ${scriptPath}`
+            // );
           });
-          console.log(`${this.constructor.name}: ✓ Loaded ${scriptPath}`);
+          // console.log(`${this.constructor.name}: ✓ Loaded ${scriptPath}`);
         } catch (error) {
-          console.error(
-            `${this.constructor.name}: ✗ Failed to load ${scriptPath}:`,
-            error
-          );
-          console.error(`Error stack:`, error.stack);
+          // console.error(
+          //   `${this.constructor.name}: ✗ Failed to load ${scriptPath}:`,
+          //   error
+          // );
+          // console.error(`Error stack:`, error.stack);
         }
       }
     } else if (!this.needsGameScripts) {
-      console.log(
-        `${this.constructor.name}: Skipping game scripts (generic worker)`
-      );
+      //  console.log(
+      //   `${this.constructor.name}: Skipping game scripts (generic worker)`
+      // );
     }
 
     // Initialize GameObject arrays if buffer provided
@@ -347,10 +347,10 @@ class AbstractWorker {
       };
     });
 
-    console.log(
-      `${this.constructor.name}: Connected to workers:`,
-      Array.from(this.workerPorts.keys())
-    );
+    // console.log(
+    //   `${this.constructor.name}: Connected to workers:`,
+    //   Array.from(this.workerPorts.keys())
+    // );
   }
 
   /**

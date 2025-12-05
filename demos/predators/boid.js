@@ -95,7 +95,7 @@ class Boid extends GameObject {
    * Cleanup and save state if needed
    */
   onDespawned() {
-    console.log(`Boid ${this.index} despawned`);
+    // console.log(`Boid ${this.index} despawned`);
   }
 
   /**
@@ -165,7 +165,9 @@ class Boid extends GameObject {
     // Single loop through all neighbors
     for (let n = 0; n < maxProcessed; n++) {
       const j = this.neighbors[n];
+
       const neighborType = entityTypes[j];
+      if (Mouse.entityType == neighborType) continue;
       const isSameType = neighborType === myEntityType;
 
       // Use pre-calculated squared distance from spatial worker (OPTIMIZATION!)
@@ -270,21 +272,37 @@ class Boid extends GameObject {
     if (!Mouse.x) return;
     if (!Mouse.isDown) return;
 
+    // Get mouse entity index
+    const mouseEntityIndex = Mouse._instance.index;
+
+    // Find mouse in neighbors array
+    let mouseNeighborPos = -1;
+    for (let n = 0; n < this.neighborCount; n++) {
+      if (this.neighbors[n] === mouseEntityIndex) {
+        mouseNeighborPos = n;
+        break;
+      }
+    }
+
+    // Mouse is not a neighbor (too far away)
+    if (mouseNeighborPos === -1) return;
+
+    // Now use the pre-calculated distance from the spatial worker
+    const dist2 = this.neighborDistances[mouseNeighborPos];
+    if (!dist2 || dist2 === 0) return;
+
     // Cache array references
     const tX = Transform.x;
     const tY = Transform.y;
     const rbAX = RigidBody.ax;
     const rbAY = RigidBody.ay;
 
-    const dx = tX[i] - Mouse.x;
-    const dy = tY[i] - Mouse.y;
-    const dist2 = dx * dx + dy * dy;
-
-    if (dist2 < 1e-4 || dist2 > 100000) return;
+    const dx = tX[mouseEntityIndex] - tX[i];
+    const dy = tY[mouseEntityIndex] - tY[i];
 
     const strength = 100;
-    rbAX[i] += (dx / dist2) * strength * dtRatio;
-    rbAY[i] += (dy / dist2) * strength * dtRatio;
+    rbAX[i] -= (dx / dist2) * strength * dtRatio;
+    rbAY[i] -= (dy / dist2) * strength * dtRatio;
   }
 
   /**

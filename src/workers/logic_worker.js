@@ -101,11 +101,11 @@ class LogicWorker extends AbstractWorker {
     // Deserialize spritesheet metadata for animation lookups
     if (data.spritesheetMetadata) {
       SpriteSheetRegistry.deserialize(data.spritesheetMetadata);
-      console.log(
-        `LOGIC WORKER ${this.workerIndex}: Loaded ${
-          SpriteSheetRegistry.getSpritesheetNames().length
-        } spritesheets`
-      );
+      // console.log(
+      //   `LOGIC WORKER ${this.workerIndex}: Loaded ${
+      //     SpriteSheetRegistry.getSpritesheetNames().length
+      //   } spritesheets`
+      // );
     }
 
     // Initialize synchronization buffer for multi-worker coordination
@@ -113,21 +113,21 @@ class LogicWorker extends AbstractWorker {
       this.syncData = new Int32Array(data.buffers.syncData);
       this.totalLogicWorkers = this.syncData[2]; // Total workers stored at index 2
 
-      console.log(
-        `LOGIC WORKER ${this.workerIndex}: Job-based work distribution with ${this.totalLogicWorkers} workers`
-      );
+      // console.log(
+      //   `LOGIC WORKER ${this.workerIndex}: Job-based work distribution with ${this.totalLogicWorkers} workers`
+      // );
     }
 
     // Initialize job queue for dynamic work distribution
     if (data.buffers.jobQueueData) {
       this.jobQueueData = new Int32Array(data.buffers.jobQueueData);
       const totalJobs = this.jobQueueData[1];
-      console.log(
-        `LOGIC WORKER ${this.workerIndex}: Job queue initialized (${totalJobs} jobs total)`
-      );
+      //  console.log(
+      //   `LOGIC WORKER ${this.workerIndex}: Job queue initialized (${totalJobs} jobs total)`
+      // );
     }
 
-    console.log("LOGIC WORKER: Initializing with component system");
+    // console.log("LOGIC WORKER: Initializing with component system");
 
     // Initialize collision buffer
     if (data.buffers.collisionData) {
@@ -139,7 +139,7 @@ class LogicWorker extends AbstractWorker {
     this.previousScreenVisibility = new Uint8Array(data.entityCount);
     // Initialize to 0 (off-screen) - first frame will trigger onScreenEnter for visible entities
     this.previousScreenVisibility.fill(0);
-    console.log("LOGIC WORKER: Screen visibility tracking enabled");
+    // console.log("LOGIC WORKER: Screen visibility tracking enabled");
 
     // Note: Game-specific scripts are loaded automatically by AbstractWorker.initializeCommonBuffers()
     // This makes entity classes available in the worker's global scope
@@ -150,12 +150,12 @@ class LogicWorker extends AbstractWorker {
     // Create GameObject instances
     this.createGameObjectInstances();
 
-    console.log(
-      `LOGIC WORKER ${this.workerIndex}: Total ${this.entityCount} GameObjects ready (job-based processing)`
-    );
-    console.log(
-      `LOGIC WORKER ${this.workerIndex}: Initialization complete, waiting for start signal...`
-    );
+    // console.log(
+    //   `LOGIC WORKER ${this.workerIndex}: Total ${this.entityCount} GameObjects ready (job-based processing)`
+    // );
+    // console.log(
+    //   `LOGIC WORKER ${this.workerIndex}: Initialization complete, waiting for start signal...`
+    // );
     // Note: Game loop will start when "start" message is received from main thread
   }
 
@@ -164,7 +164,7 @@ class LogicWorker extends AbstractWorker {
    * This handles both core (Transform, RigidBody, etc.) and custom (Flocking, etc.) components
    */
   initializeAllComponents(data) {
-    console.log("LOGIC WORKER: Initializing component arrays...");
+    // console.log("LOGIC WORKER: Initializing component arrays...");
 
     const componentClasses = new Map(); // componentName -> ComponentClass
 
@@ -187,7 +187,7 @@ class LogicWorker extends AbstractWorker {
 
       if (buffer && pool && pool.count > 0) {
         ComponentClass.initializeArrays(buffer, pool.count);
-        console.log(`  ✅ ${componentName}: ${pool.count} slots`);
+        // console.log(`  ✅ ${componentName}: ${pool.count} slots`);
       }
     }
   }
@@ -205,6 +205,12 @@ class LogicWorker extends AbstractWorker {
         // Store metadata for spawning system
         EntityClass.startIndex = startIndex;
         EntityClass.totalCount = count;
+
+        // CRITICAL: Initialize instances array for THIS class (not inherited from GameObject)
+        // Without this, all entity types share GameObject.instances causing spawn bugs
+        if (!EntityClass.hasOwnProperty("instances")) {
+          EntityClass.instances = [];
+        }
 
         // Create component class map for this entity
         // Get component classes directly from the entity's static components array
@@ -252,11 +258,11 @@ class LogicWorker extends AbstractWorker {
             instance.start();
           }
         }
-        console.log(
-          `LOGIC WORKER: Created ${count} ${name} instances with components: ${Object.keys(
-            componentIndices
-          ).join(", ")}`
-        );
+        // console.log(
+        //   `LOGIC WORKER: Created ${count} ${name} instances with components: ${Object.keys(
+        //     componentIndices
+        //   ).join(", ")}`
+        // );
       } else {
         console.warn(`LOGIC WORKER: Class ${name} not found in worker scope!`);
       }
@@ -271,8 +277,8 @@ class LogicWorker extends AbstractWorker {
     this.frameStartTime = performance.now();
     let t0, t1, t2, t3, t4;
 
-    // Initialize Mouse and Keyboard static classes with input data
-    Mouse.initialize(this.inputData);
+    // Initialize Keyboard static class with input data
+    // Note: Mouse position/state is now read directly from Transform/MouseComponent
     Keyboard.initialize(this.inputData, this.keyIndexMap);
 
     // Process collision callbacks BEFORE entity logic (Unity-style)
@@ -408,9 +414,9 @@ class LogicWorker extends AbstractWorker {
 
     // DEBUG: Log collision processing
     if (this.frameCount % 60 === 0 && pairCount > 0 && this.workerIndex === 0) {
-      console.log(
-        `[Logic ${this.workerIndex}] Frame ${this.frameCount}: Processing ${pairCount} collision pairs`
-      );
+      // console.log(
+      //   `[Logic ${this.workerIndex}] Frame ${this.frameCount}: Processing ${pairCount} collision pairs`
+      // );
     }
 
     // Clear current collisions set
@@ -613,10 +619,14 @@ class LogicWorker extends AbstractWorker {
         }
 
         const instance = GameObject.spawn(EntityClass, spawnConfig);
-        if (!instance)
+        if (!instance) {
           console.warn(
             `LOGIC WORKER: Failed to spawn ${className} - pool exhausted!`
           );
+        } else if (className === "Mouse") {
+          // Set the singleton Mouse instance for static access
+          Mouse.setInstance(instance);
+        }
         break;
       }
 
@@ -651,9 +661,9 @@ class LogicWorker extends AbstractWorker {
           }
         }
 
-        console.log(
-          `LOGIC WORKER ${this.workerIndex}: Despawned ${count} ${className} entities`
-        );
+        // console.log(
+        //   `LOGIC WORKER ${this.workerIndex}: Despawned ${count} ${className} entities`
+        // );
         break;
       }
 
@@ -673,9 +683,9 @@ class LogicWorker extends AbstractWorker {
           }
         }
 
-        console.log(
-          `LOGIC WORKER ${this.workerIndex}: Cleared ${totalDespawned} entities`
-        );
+        // console.log(
+        //   `LOGIC WORKER ${this.workerIndex}: Cleared ${totalDespawned} entities`
+        // );
         break;
       }
 

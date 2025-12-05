@@ -107,7 +107,7 @@
                 // Spatial hash grid configuration
                 spatial: {
                     cellSize: 100,  // Increased to match visual range (reduces grid overhead)
-                    maxNeighbors: 400,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
+                    maxNeighbors: 600,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
                     noLimitFPS: true,
 
                 },
@@ -260,14 +260,14 @@
 
         // DEBUG: Helper to check registry status
         window.checkRegistry = function () {
-            console.log("=== SpriteSheet Registry Status ===");
+            // console.log("=== SpriteSheet Registry Status ===");
             const sheets = SpriteSheetRegistry.getSpritesheetNames();
-            console.log(`Loaded spritesheets: ${sheets.join(", ")}`);
+            // console.log(`Loaded spritesheets: ${sheets.join(", ")}`);
 
             sheets.forEach(sheetName => {
                 const anims = SpriteSheetRegistry.getAnimationNames(sheetName);
-                console.log(`\n${sheetName}: ${anims.length} animations`);
-                console.log("First 10:", anims.slice(0, 10));
+                // console.log(`\n${sheetName}: ${anims.length} animations`);
+                // console.log("First 10:", anims.slice(0, 10));
             });
         };
 
@@ -290,12 +290,12 @@
 
         // Initialize and start
         gameEngine.init().then(() => {
-            console.log("Game initialized. Spawning entities...");
+            // console.log("Game initialized. Spawning entities...");
 
             // Make debug API available in console
             window.debug = gameEngine.debug;
-            console.log("💡 Debug API: Use window.debug or gameEngine.debug");
-            console.log("   Try: debug.enableAIDebug() or debug.enablePhysicsDebug()");
+            // console.log("💡 Debug API: Use window.debug or gameEngine.debug");
+            // console.log("   Try: debug.enableAIDebug() or debug.enablePhysicsDebug()");
 
             // DEBUG: Check registry after init
             checkRegistry();
@@ -316,7 +316,7 @@
 
 
 
-            console.log("Spawning complete!");
+            // console.log("Spawning complete!");
         }).catch(error => {
             document.body.innerHTML = `
                 <div style="color: white; padding: 20px;">

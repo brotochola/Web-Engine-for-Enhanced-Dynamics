@@ -48,7 +48,7 @@ class PhysicsWorker extends AbstractWorker {
    * Initialize physics worker (implementation of AbstractWorker.initialize)
    */
   initialize(data) {
-    console.log("PHYSICS WORKER: Initializing with component system");
+    //console.log("PHYSICS WORKER: Initializing with component system");
 
     // Initialize component arrays
     Transform.initializeArrays(
@@ -75,24 +75,24 @@ class PhysicsWorker extends AbstractWorker {
         this.config.physics?.maxCollisionPairs ||
         this.config.maxCollisionPairs ||
         10000;
-      console.log(
-        `PHYSICS WORKER: Collision callbacks enabled (max ${this.maxCollisionPairs} pairs)`
-      );
+      // console.log(
+      //   `PHYSICS WORKER: Collision callbacks enabled (max ${this.maxCollisionPairs} pairs)`
+      // );
     }
 
     this.applyPhysicsConfig(this.config.physics || {});
 
-    console.log("PHYSICS WORKER: Using Verlet integration exclusively");
-    console.log(
-      `PHYSICS WORKER: Sub-steps per frame: ${this.settings.subStepCount}`
-    );
+    // console.log("PHYSICS WORKER: Using Verlet integration exclusively");
+    // console.log(
+    //   `PHYSICS WORKER: Sub-steps per frame: ${this.settings.subStepCount}`
+    // );
 
-    console.log(
-      `PHYSICS WORKER: Ready to integrate ${this.entityCount} entities`
-    );
-    console.log(
-      "PHYSICS WORKER: Initialization complete, waiting for start signal..."
-    );
+    // console.log(
+    //   `PHYSICS WORKER: Ready to integrate ${this.entityCount} entities`
+    // );
+    // console.log(
+    //   "PHYSICS WORKER: Initialization complete, waiting for start signal..."
+    // );
     // Note: Game loop will start when "start" message is received from main thread
   }
 
@@ -158,14 +158,18 @@ class PhysicsWorker extends AbstractWorker {
     const speed = RigidBody.speed;
     const maxVel = RigidBody.maxVel;
     const radius = Collider.radius;
+    const isTrigger = Collider.isTrigger;
     const collisionCount = RigidBody.collisionCount;
 
     // Get world bounds for boundary constraints
     const worldWidth = this.config.worldWidth;
     const worldHeight = this.config.worldHeight;
 
+    // Get the number of entities with RigidBody (not all entities have physics)
+    const rigidBodyCount = RigidBody.px?.length || 0;
+
     // Reset collision counters once per frame (used for diagnostics/tuning)
-    for (let i = 0; i < this.entityCount; i++) {
+    for (let i = 0; i < rigidBodyCount; i++) {
       if (!active[i]) continue;
       collisionCount[i] = 0;
     }
@@ -188,7 +192,8 @@ class PhysicsWorker extends AbstractWorker {
       gx,
       gy,
       maxVel,
-      radius
+      radius,
+      rigidBodyCount
     );
 
     // Step 2: Apply constraints (collisions, boundaries) with sub-stepping
@@ -198,9 +203,11 @@ class PhysicsWorker extends AbstractWorker {
         x,
         y,
         radius,
+        isTrigger,
         collisionCount,
         worldWidth,
-        worldHeight
+        worldHeight,
+        rigidBodyCount
       );
     }
 
@@ -214,7 +221,8 @@ class PhysicsWorker extends AbstractWorker {
       vx,
       vy,
       velocityAngle,
-      speed
+      speed,
+      rigidBodyCount
     );
   }
 
@@ -236,13 +244,15 @@ class PhysicsWorker extends AbstractWorker {
     gx,
     gy,
     maxVel,
-    radius
+    radius,
+    rigidBodyCount
   ) {
     const damping = this.settings.verletDamping;
 
     const gravityScale = Math.pow(dtRatio, 2);
 
-    for (let i = 0; i < this.entityCount; i++) {
+    // Only process entities that have RigidBody component
+    for (let i = 0; i < rigidBodyCount; i++) {
       if (!active[i]) continue;
 
       // Store old position for Verlet integration
@@ -302,9 +312,11 @@ class PhysicsWorker extends AbstractWorker {
     x,
     y,
     radius,
+    isTrigger,
     collisionCount,
     worldWidth,
-    worldHeight
+    worldHeight,
+    rigidBodyCount
   ) {
     // Get previous position arrays for velocity manipulation
     const px = RigidBody.px;
@@ -312,8 +324,8 @@ class PhysicsWorker extends AbstractWorker {
 
     const boundaryElasticity = this.settings.boundaryElasticity;
 
-    // Apply boundary constraints with bounce
-    for (let i = 0; i < this.entityCount; i++) {
+    // Apply boundary constraints with bounce - only for entities with RigidBody
+    for (let i = 0; i < rigidBodyCount; i++) {
       if (!active[i]) continue;
 
       const r = radius[i];
@@ -349,7 +361,15 @@ class PhysicsWorker extends AbstractWorker {
       // In Verlet mode, we don't need to rely on neighborData strictly if we're just checking all pairs
       // But that's O(N^2). We must use neighborData.
       // If neighbors are missing, collisions are missed.
-      this.resolveCollisionsVerlet(active, x, y, radius, collisionCount);
+      this.resolveCollisionsVerlet(
+        active,
+        x,
+        y,
+        radius,
+        isTrigger,
+        collisionCount,
+        rigidBodyCount
+      );
     }
   }
 
@@ -358,8 +378,18 @@ class PhysicsWorker extends AbstractWorker {
    * ENHANCED: Better handling of exact overlaps and configurable response strength
    * Pushes overlapping entities apart (RopeBall style)
    * Also records collision pairs for Unity-style callbacks (Enter/Stay/Exit)
+   *
+   * Note: Trigger colliders (isTrigger=1) detect collisions but don't apply physical response
    */
-  resolveCollisionsVerlet(active, x, y, radius, collisionCount) {
+  resolveCollisionsVerlet(
+    active,
+    x,
+    y,
+    radius,
+    isTrigger,
+    collisionCount,
+    rigidBodyCount
+  ) {
     const maxNeighbors =
       this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
 
@@ -371,6 +401,7 @@ class PhysicsWorker extends AbstractWorker {
     const collisionData = this.collisionData;
     const maxPairs = this.maxCollisionPairs;
 
+    // Process all entities for collision detection (including trigger-only entities like Mouse)
     for (let i = 0; i < this.entityCount; i++) {
       if (!active[i]) continue;
 
@@ -402,17 +433,25 @@ class PhysicsWorker extends AbstractWorker {
 
         // Handle exact overlap (rare but possible)
         if (dist === 0) {
-          // Push in random direction
-          const angle = Math.random() * Math.PI * 2;
-          const separation = 0.001;
-          x[i] = x[i] + Math.cos(angle) * separation;
-          y[i] = y[i] + Math.sin(angle) * separation;
-          x[j] = x[j] - Math.cos(angle) * separation;
-          y[j] = y[j] - Math.sin(angle) * separation;
-          collisionCount[i]++;
-          collisionCount[j]++;
+          // Check if either entity is a trigger
+          const eitherIsTrigger = isTrigger[i] || isTrigger[j];
 
-          // Record collision pair for callbacks
+          // Only apply physical response if neither is a trigger
+          if (!eitherIsTrigger) {
+            // Push in random direction
+            const angle = Math.random() * Math.PI * 2;
+            const separation = 0.001;
+            x[i] = x[i] + Math.cos(angle) * separation;
+            y[i] = y[i] + Math.sin(angle) * separation;
+            x[j] = x[j] - Math.cos(angle) * separation;
+            y[j] = y[j] - Math.sin(angle) * separation;
+          }
+
+          // Only increment collision count for entities with RigidBody
+          if (i < rigidBodyCount) collisionCount[i]++;
+          if (j < rigidBodyCount) collisionCount[j]++;
+
+          // Record collision pair for callbacks (even for triggers!)
           if (collisionData && pairCount < maxPairs) {
             collisionData[1 + pairCount * 2] = i;
             collisionData[1 + pairCount * 2 + 1] = j;
@@ -425,25 +464,31 @@ class PhysicsWorker extends AbstractWorker {
         const depth = minDist - dist;
 
         if (depth > 0) {
-          // Normalize direction vector
-          const nx = dx / dist;
-          const ny = dy / dist;
+          // Check if either entity is a trigger (no physical response, just detection)
+          const eitherIsTrigger = isTrigger[i] || isTrigger[j];
 
-          // Calculate push factor with response strength
-          // Split the correction evenly between both entities
-          const correction = depth * responseStrength * 0.5;
+          // Only apply physical response if neither is a trigger
+          if (!eitherIsTrigger) {
+            // Normalize direction vector
+            const nx = dx / dist;
+            const ny = dy / dist;
 
-          // Push both entities apart
-          x[i] += nx * correction;
-          y[i] += ny * correction;
-          x[j] -= nx * correction;
-          y[j] -= ny * correction;
+            // Calculate push factor with response strength
+            // Split the correction evenly between both entities
+            const correction = depth * responseStrength * 0.5;
 
-          // Track collision count for adaptive speed limiting
-          collisionCount[i]++;
-          collisionCount[j]++;
+            // Push both entities apart
+            x[i] += nx * correction;
+            y[i] += ny * correction;
+            x[j] -= nx * correction;
+            y[j] -= ny * correction;
+          }
 
-          // Record collision pair for callbacks
+          // Track collision count for adaptive speed limiting (only for entities with RigidBody)
+          if (i < rigidBodyCount) collisionCount[i]++;
+          if (j < rigidBodyCount) collisionCount[j]++;
+
+          // Record collision pair for callbacks (even for triggers!)
           if (collisionData && pairCount < maxPairs) {
             collisionData[1 + pairCount * 2] = i;
             collisionData[1 + pairCount * 2 + 1] = j;
@@ -464,10 +509,22 @@ class PhysicsWorker extends AbstractWorker {
    * ENHANCED: Minimum speed threshold prevents rotation jitter when stationary
    * Calculate velocity, speed, and angle from position changes
    */
-  updateDerivedProperties(active, x, y, px, py, vx, vy, velocityAngle, speed) {
+  updateDerivedProperties(
+    active,
+    x,
+    y,
+    px,
+    py,
+    vx,
+    vy,
+    velocityAngle,
+    speed,
+    rigidBodyCount
+  ) {
     const minSpeedForRotation = this.settings.minSpeedForRotation;
 
-    for (let i = 0; i < this.entityCount; i++) {
+    // Only process entities that have RigidBody component
+    for (let i = 0; i < rigidBodyCount; i++) {
       if (!active[i]) continue;
 
       // Velocity is already stored in vx/vy from moveBallsVerlet

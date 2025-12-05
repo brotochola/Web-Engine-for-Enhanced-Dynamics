@@ -9,7 +9,7 @@ import { Prey } from "./prey.js";
 import { PredatorBehavior } from "./PredatorBehavior.js";
 import { getDirectionFromAngle } from "../../src/core/utils.js";
 
-class Predator extends Boid {
+export class Predator extends Boid {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
   static scriptUrl = import.meta.url;
 
@@ -129,6 +129,7 @@ class Predator extends Boid {
 
     // Update animation based on speed and state (cached)
     this.updateAnimation(i, huntingPrey);
+    // console.log(this.neighborCount);
   }
 
   onCollisionEnter(otherIndex) {
@@ -252,6 +253,3 @@ class Predator extends Boid {
     }
   }
 }
-
-// ES6 module export
-export { Predator };

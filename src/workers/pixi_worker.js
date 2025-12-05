@@ -616,9 +616,9 @@ class PixiRenderer extends AbstractWorker {
     if (this.noLimitFPS) {
       // When noLimitFPS is true, bypass PIXI ticker and use standard loop
       // This allows unlimited FPS like other workers
-      console.log(
-        "PIXI WORKER: Using unlimited FPS mode (bypassing PIXI ticker)"
-      );
+      // console.log(
+      //   "PIXI WORKER: Using unlimited FPS mode (bypassing PIXI ticker)"
+      // );
       this.usesCustomScheduler = false; // Switch to standard scheduler
       this.scheduleNextFrame(); // Start the standard loop
     } else {
@@ -654,16 +654,21 @@ class PixiRenderer extends AbstractWorker {
    * Build sprite configuration map from registered entity classes
    */
   buildEntitySpriteConfigs(registeredClasses) {
-    console.log(
-      `🎨 Building sprite configs for ${registeredClasses.length} registered classes...`
-    );
+    // console.log(
+    //   `🎨 Building sprite configs for ${registeredClasses.length} registered classes...`
+    // );
 
     for (const registration of registeredClasses) {
       // Skip classes with 0 instances (base classes that won't be rendered)
       if (registration.count === 0) {
-        console.log(
-          `⏭️  Skipping ${registration.name} (0 instances, base class)`
-        );
+        // console.log(
+        //   `⏭️  Skipping ${registration.name} (0 instances, base class)`
+        // );
+        continue;
+      }
+
+      // Skip entities without SpriteRenderer (e.g., Mouse for spatial tracking)
+      if (!registration.components?.includes("SpriteRenderer")) {
         continue;
       }
 
@@ -690,15 +695,23 @@ class PixiRenderer extends AbstractWorker {
         continue;
       }
 
+      // Check if entity has SpriteRenderer component
+      const hasSpriteRenderer =
+        registration.components?.includes("SpriteRenderer");
+
       // Validate and handle spriteConfig (standardized approach only)
       if (!EntityClass.spriteConfig) {
-        console.error(
-          `❌ ${registration.name} (entityType ${entityType}) has no spriteConfig defined!`
-        );
-        console.error(
-          `   All entities extending RenderableGameObject must define spriteConfig`
-        );
-        console.error(`   See SPRITE_CONFIG_GUIDE.md for examples`);
+        if (hasSpriteRenderer) {
+          // Only error if entity HAS SpriteRenderer but no config
+          console.error(
+            `❌ ${registration.name} (entityType ${entityType}) has no spriteConfig defined!`
+          );
+          console.error(
+            `   All entities with SpriteRenderer must define spriteConfig`
+          );
+          console.error(`   See SPRITE_CONFIG_GUIDE.md for examples`);
+        }
+        // Skip entities without spriteConfig (no sprite to create)
         continue;
       }
 
@@ -716,17 +729,17 @@ class PixiRenderer extends AbstractWorker {
 
       // Log appropriate message based on type
       if (config.type === "animated") {
-        console.log(
-          `✅ Mapped entityType ${entityType} (${registration.name}) -> animated spritesheet "${config.spritesheet}"`
-        );
+        // console.log(
+        //   `✅ Mapped entityType ${entityType} (${registration.name}) -> animated spritesheet "${config.spritesheet}"`
+        // );
       } else if (config.type === "static") {
-        console.log(
-          `✅ Mapped entityType ${entityType} (${registration.name}) -> static texture "${config.textureName}"`
-        );
+        // console.log(
+        //   `✅ Mapped entityType ${entityType} (${registration.name}) -> static texture "${config.textureName}"`
+        // );
       }
     }
 
-    console.log(`📋 Final entitySpriteConfigs:`, this.entitySpriteConfigs);
+    // console.log(`📋 Final entitySpriteConfigs:`, this.entitySpriteConfigs);
   }
 
   /**
@@ -735,9 +748,9 @@ class PixiRenderer extends AbstractWorker {
   loadTextures(texturesData) {
     if (!texturesData) return;
 
-    console.log(
-      `PIXI WORKER: Loading ${Object.keys(texturesData).length} textures`
-    );
+    // console.log(
+    //   `PIXI WORKER: Loading ${Object.keys(texturesData).length} textures`
+    // );
 
     for (const [name, imageBitmap] of Object.entries(texturesData)) {
       // Create PIXI BaseTexture from ImageBitmap
@@ -745,7 +758,7 @@ class PixiRenderer extends AbstractWorker {
       // Create PIXI Texture from BaseTexture
       this.textures[name] = new PIXI.Texture(baseTexture);
 
-      console.log(`✅ Loaded texture: ${name}`);
+      // console.log(`✅ Loaded texture: ${name}`);
     }
   }
 
@@ -755,17 +768,17 @@ class PixiRenderer extends AbstractWorker {
    */
   loadSpritesheets(spritesheetData) {
     if (!spritesheetData) {
-      console.log("PIXI WORKER: No spritesheets to load");
+      // console.log("PIXI WORKER: No spritesheets to load");
       return;
     }
 
-    console.log(
-      `PIXI WORKER: Loading ${Object.keys(spritesheetData).length} spritesheets`
-    );
+    // console.log(
+    //   `PIXI WORKER: Loading ${Object.keys(spritesheetData).length} spritesheets`
+    // );
 
     for (const [name, data] of Object.entries(spritesheetData)) {
       try {
-        console.log(`  Loading spritesheet "${name}"...`);
+        // console.log(`  Loading spritesheet "${name}"...`);
 
         // Validate data
         if (!data.imageBitmap || !data.json) {
@@ -806,26 +819,26 @@ class PixiRenderer extends AbstractWorker {
           baseTexture: baseTexture,
         };
 
-        console.log(
-          `✅ Loaded spritesheet: ${name} with ${
-            Object.keys(animations).length
-          } animations`
-        );
+        // console.log(
+        //   `✅ Loaded spritesheet: ${name} with ${
+        //     Object.keys(animations).length
+        //   } animations`
+        // );
       } catch (error) {
         console.error(`❌ Failed to load spritesheet ${name}:`, error);
       }
     }
 
-    console.log("PIXI WORKER: Finished loading all spritesheets");
+    // console.log("PIXI WORKER: Finished loading all spritesheets");
   }
 
   /**
    * Create container and sprite for each entity
    */
   createSprites() {
-    console.log(
-      `PIXI WORKER: Creating sprites for ${this.entityCount} entities...`
-    );
+    // console.log(
+    //   `PIXI WORKER: Creating sprites for ${this.entityCount} entities...`
+    // );
     for (let i = 0; i < this.entityCount; i++) {
       const entityType = GameObject.entityType[i];
       const config = this.entitySpriteConfigs[entityType];
@@ -838,16 +851,14 @@ class PixiRenderer extends AbstractWorker {
 
       // Handle sprite creation based on standardized config
       if (!config) {
-        console.error(
-          `❌ No sprite config found for entityType ${entityType}! Cannot create sprite.`
-        );
-        // Create placeholder to prevent crashes
-        bodySprite = new PIXI.Sprite(PIXI.Texture.WHITE);
-        // Initialize tracking arrays
+        // Entity doesn't have a sprite (e.g., Mouse entity for spatial tracking)
+        // Skip creating a sprite for this entity
+        this.bodySprites[i] = null;
         this.currentAnimationFrames[i] = [];
         this.currentFrameIndex[i] = 0;
         this.frameAccumulator[i] = 0;
         this.animationSpeed[i] = 0;
+        continue;
       } else if (config.type === "animated" && config.spritesheet) {
         // Create regular Sprite from spritesheet (manual animation)
         const sheet = this.spritesheets[config.spritesheet];
@@ -933,7 +944,7 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
-    console.log(`PIXI WORKER: Created ${this.entityCount} entity containers`);
+    // console.log(`PIXI WORKER: Created ${this.entityCount} entity containers`);
   }
 
   /**
@@ -1015,7 +1026,7 @@ class PixiRenderer extends AbstractWorker {
    * Initialize the PIXI renderer with provided data
    */
   initialize(data) {
-    console.log("PIXI WORKER: Initializing with component system", data);
+    // console.log("PIXI WORKER: Initializing with component system", data);
 
     // Store viewport and world dimensions from config
     this.worldWidth = data.config.worldWidth;
@@ -1026,9 +1037,9 @@ class PixiRenderer extends AbstractWorker {
 
     // Create ParticleContainer with exact entityCount size (with 10% buffer for safety)
     const maxSize = Math.ceil(this.entityCount * 1.1);
-    console.log(
-      `PIXI WORKER: Creating ParticleContainer with maxSize: ${maxSize} (entityCount: ${this.entityCount})`
-    );
+    // console.log(
+    //   `PIXI WORKER: Creating ParticleContainer with maxSize: ${maxSize} (entityCount: ${this.entityCount})`
+    // );
     this.particleContainer = new PIXI.ParticleContainer(maxSize, {
       scale: true,
       position: true,
@@ -1044,31 +1055,31 @@ class PixiRenderer extends AbstractWorker {
     // Configure noLimitFPS (AbstractWorker checks for workerType, but we use 'renderer' key)
     if (rendererConfig.noLimitFPS === true) {
       this.noLimitFPS = true;
-      console.log(`PIXI WORKER: Running in unlimited FPS mode (noLimitFPS)`);
+      // console.log(`PIXI WORKER: Running in unlimited FPS mode (noLimitFPS)`);
     }
 
     // Configure Y-sorting (default: true)
     this.ySorting =
       rendererConfig.ySorting !== undefined ? rendererConfig.ySorting : true;
-    console.log(
-      `PIXI WORKER: Y-sorting ${this.ySorting ? "enabled" : "disabled"}`
-    );
+    // console.log(
+    //   `PIXI WORKER: Y-sorting ${this.ySorting ? "enabled" : "disabled"}`
+    // );
 
     // Configure background texture name (default: 'bg')
     this.bgTextureName = rendererConfig.bg; //|| "bg";
-    console.log(
-      `PIXI WORKER: Background texture set to "${this.bgTextureName}"`
-    );
+    // console.log(
+    //   `PIXI WORKER: Background texture set to "${this.bgTextureName}"`
+    // );
 
     // Initialize component arrays from SharedArrayBuffers
-    console.log("PIXI WORKER: Initializing component arrays...");
+    // console.log("PIXI WORKER: Initializing component arrays...");
 
     // Transform (for positions)
     Transform.initializeArrays(
       data.buffers.componentData.Transform,
       this.entityCount
     );
-    console.log(`  ✅ Transform: ${this.entityCount} slots`);
+    // console.log(`  ✅ Transform: ${this.entityCount} slots`);
 
     // RigidBody (for rotation)
     if (data.buffers.componentData.RigidBody) {
@@ -1076,9 +1087,9 @@ class PixiRenderer extends AbstractWorker {
         data.buffers.componentData.RigidBody,
         data.componentPools.RigidBody.count
       );
-      console.log(
-        `  ✅ RigidBody: ${data.componentPools.RigidBody.count} slots`
-      );
+      // console.log(
+      //   `  ✅ RigidBody: ${data.componentPools.RigidBody.count} slots`
+      // );
     }
 
     // SpriteRenderer (for visual properties)
@@ -1087,19 +1098,19 @@ class PixiRenderer extends AbstractWorker {
         data.buffers.componentData.SpriteRenderer,
         data.componentPools.SpriteRenderer.count
       );
-      console.log(
-        `  ✅ SpriteRenderer: ${data.componentPools.SpriteRenderer.count} slots`
-      );
+      // console.log(
+      //   `  ✅ SpriteRenderer: ${data.componentPools.SpriteRenderer.count} slots`
+      // );
     }
 
     // Deserialize spritesheet metadata for animation lookups
     if (data.spritesheetMetadata) {
       SpriteSheetRegistry.deserialize(data.spritesheetMetadata);
-      console.log(
-        `PIXI WORKER: Loaded ${
-          SpriteSheetRegistry.getSpritesheetNames().length
-        } spritesheets`
-      );
+      // console.log(
+      //   `PIXI WORKER: Loaded ${
+      //     SpriteSheetRegistry.getSpritesheetNames().length
+      //   } spritesheets`
+      // );
     }
 
     // Create PIXI application

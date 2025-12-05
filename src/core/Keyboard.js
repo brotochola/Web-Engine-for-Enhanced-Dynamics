@@ -25,7 +25,7 @@ export class Keyboard {
     if (!this._inputData || !this._keyIndexMap) return false;
     const normalizedKey = key.toLowerCase();
     const index = this._keyIndexMap[normalizedKey];
-    return index !== undefined ? this._inputData[6 + index] === 1 : false;
+    return index !== undefined ? this._inputData[index] === 1 : false;
   }
 
   /**
@@ -67,7 +67,7 @@ const KeyboardProxy = new Proxy(Keyboard, {
 
       if (!target._inputData || !target._keyIndexMap) return false;
       const index = target._keyIndexMap[keyName];
-      return index !== undefined ? target._inputData[6 + index] === 1 : false;
+      return index !== undefined ? target._inputData[index] === 1 : false;
     }
 
     return undefined;
