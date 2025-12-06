@@ -8,8 +8,10 @@ export class SpriteRenderer extends Component {
   static ARRAY_SCHEMA = {
     // Animation control
     animationState: Uint8Array, // Current animation index (0-255)
-    animationFrame: Uint16Array, // Manual frame control if needed
+    animationFrame: Uint16Array, // Current frame within the animation
     animationSpeed: Float32Array, // Playback speed multiplier (1.0 = normal)
+    isAnimated: Uint8Array, // 0 = static sprite (single frame), 1 = animated sprite (multi-frame)
+    spritesheetId: Uint8Array, // Which spritesheet to use (civil1, civil2, bunny, etc.) - proxies to bigAtlas
 
     // Visual effects
     tint: Uint32Array, // Color tint (0xFFFFFF = white/normal)
@@ -22,7 +24,6 @@ export class SpriteRenderer extends Component {
 
     // Rendering options
 
-    spritesheetId: Uint8Array, // Per-instance spritesheet override (0 = use class default, 1-255 = override)
     zOffset: Float32Array, // Z-index offset (for layering)
     blendMode: Uint8Array, // Blend mode (0=normal, 1=add, 2=multiply, etc.)
 

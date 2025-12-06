@@ -12,6 +12,9 @@ class Boid extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
   static scriptUrl = import.meta.url;
 
+  // CRITICAL: Each entity class needs its own instances array (don't inherit from GameObject)
+  static instances = []; // Instance tracking for this class
+
   // Define components this entity uses (including custom Flocking component)
   static components = [RigidBody, Collider, SpriteRenderer, Flocking];
 
@@ -36,12 +39,12 @@ class Boid extends GameObject {
     this.rigidBody.friction = 0.01;
 
     // Initialize Collider
-    // this.collider.radius = 10;
+    this.collider.radius = 10;
     this.collider.visualRange = 100; // How far boid can see
 
     // // Initialize SpriteRenderer
-    // this.spriteRenderer.scaleX = 1;
-    // this.spriteRenderer.scaleY = 1;
+    this.spriteRenderer.scaleX = 1;
+    this.spriteRenderer.scaleY = 1;
 
     // Set anchor for sprite (centered for bunny)
     this.spriteRenderer.anchorX = 0.5;
@@ -79,6 +82,9 @@ class Boid extends GameObject {
     this.rigidBody.vy = spawnConfig.vy ?? 0;
     this.rigidBody.ax = 0;
     this.rigidBody.ay = 0;
+
+    // Initialize sprite (bunny is a static image in bigAtlas)
+    this.setSprite("bunny");
   }
 
   /**

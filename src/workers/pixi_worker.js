@@ -551,6 +551,15 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
+    // BUGFIX: If oldSpritesheetId is 0 (first time setting sprite), try to get animation name from NEW sheet
+    // This respects the animationState that was set by logic worker's setSprite()
+    if (!animName) {
+      animName = SpriteSheetRegistry.getAnimationName(
+        sheetName,
+        currentAnimState
+      );
+    }
+
     // If no animation name resolved, or it doesn't exist in new sheet, use first animation
     if (!animName || !sheet.animations[animName]) {
       animName = Object.keys(sheet.animations)[0];

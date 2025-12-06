@@ -229,9 +229,11 @@ class GameEngine {
     // Collect all components for this entity class
     const components = GameObject._collectComponents(EntityClass);
 
-    // Check if this class is already registered
+    // Check if this class is already registered (by identity OR name)
+    // BUGFIX: Check by name to handle ES module edge cases where same class
+    // may appear as different objects due to different import paths
     const existing = this.registeredClasses.find(
-      (r) => r.class === EntityClass
+      (r) => r.class === EntityClass || r.class.name === EntityClass.name
     );
     if (existing) {
       console.warn(
@@ -323,13 +325,32 @@ class GameEngine {
 
     // Register each class in the chain (if not already registered)
     for (const ParentClass of parentChain) {
+      // BUGFIX: Check by class NAME, not identity, to handle ES module edge cases
+      // where the same class may appear as different objects due to import paths
       const alreadyRegistered = this.registeredClasses.some(
-        (r) => r.class === ParentClass
+        (r) => r.class === ParentClass || r.class.name === ParentClass.name
       );
 
       if (!alreadyRegistered && ParentClass !== EntityClass) {
         // Register parent class with 0 instances
         const startIndex = this.totalEntityCount;
+
+        // Collect components for parent class
+        const parentComponents = GameObject._collectComponents(ParentClass);
+
+        // Register parent components in component pools
+        for (const ComponentClass of parentComponents) {
+          const componentName = ComponentClass.name;
+          if (!this.componentPools[componentName]) {
+            this.componentPools[componentName] = {
+              ComponentClass: ComponentClass,
+            };
+          }
+        }
+
+        // Assign entity type ID to parent class
+        const entityTypeId = this.registeredClasses.length;
+        ParentClass.entityType = entityTypeId;
 
         // Parent classes don't get script paths automatically
         // Developer must explicitly register base classes that workers need to load
@@ -339,7 +360,9 @@ class GameEngine {
           class: ParentClass,
           count: 0,
           startIndex: startIndex,
+          entityType: entityTypeId, // Store for workers
           scriptPath: null, // No automatic script path
+          components: parentComponents, // CRITICAL: Must include components!
         });
 
         // Initialize static properties for parent class
