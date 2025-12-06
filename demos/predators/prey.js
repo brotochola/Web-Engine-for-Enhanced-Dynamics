@@ -197,26 +197,23 @@ class Prey extends Boid {
 
     // Determine animation state based on speed and direction
     // NEW API: Use animation names directly from the spritesheet!
-    if (speed > 0.1) {
-      // Use precalculated velocity angle from RigidBody
-      // Convert angle to direction (8 directions -> 4 cardinal directions)
-      // atan2 returns [-PI, PI] where 0 = right, PI/2 = down, -PI/2 = up, PI/-PI = left
-      const direction = getDirectionFromAngle(velocityAngle);
 
+    // Only update lastDirection when speed is high enough for stable velocity angle
+    // At very low speeds, atan2 becomes unstable and causes direction flickering
+
+    const direction = getDirectionFromAngle(velocityAngle);
+    this.lastDirection = direction;
+
+    if (speed > 0.2) {
       // Choose walk or run based on speed threshold
-      const isRunning = speed > 2; // Threshold for running animation
+      const isRunning = speed > 2;
       const animPrefix = isRunning ? "run" : "walk";
-
-      // Store last direction for idle state
-      if (!this.lastDirection) this.lastDirection = "down";
-      this.lastDirection = direction;
 
       // Set animation and speed
       this.setAnimation(`${animPrefix}_${direction}`);
       this.setAnimationSpeed(speed * 0.1);
     } else {
       // Use idle animation in last facing direction
-      const direction = this.lastDirection || "down";
       this.setAnimation(`idle_${direction}`);
     }
 
