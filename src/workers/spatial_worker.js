@@ -59,37 +59,19 @@ class SpatialWorker extends AbstractWorker {
         );
         // console.log(`SPATIAL WORKER: ✅ Transform initialized`);
       }
+      // DENSE ALLOCATION: All components have slots for all entities
+      // entityIndex === componentIndex for all components
       if (data.buffers.componentData.Collider) {
         Collider.initializeArrays(
           data.buffers.componentData.Collider,
-          data.componentPools?.Collider?.count || this.entityCount
+          this.entityCount // DENSE: all entities have slots
         );
-        // console.log(`SPATIAL WORKER: ✅ Collider initialized`);
       }
       if (data.buffers.componentData.SpriteRenderer) {
         SpriteRenderer.initializeArrays(
           data.buffers.componentData.SpriteRenderer,
-          data.componentPools?.SpriteRenderer?.count || this.entityCount
+          this.entityCount // DENSE: all entities have slots
         );
-
-        // Build entity-to-spriteRenderer index mapping (sparse component allocation)
-        this.entityToSpriteRendererIndex = new Int32Array(this.entityCount);
-        this.entityToSpriteRendererIndex.fill(-1); // -1 means no sprite renderer
-
-        for (const classInfo of data.registeredClasses) {
-          const { componentIndices, startIndex, count } = classInfo;
-          if (componentIndices?.SpriteRenderer) {
-            const spriteRendererStart = componentIndices.SpriteRenderer.start;
-            for (let i = 0; i < count; i++) {
-              const entityIndex = startIndex + i;
-              const spriteRendererIndex = spriteRendererStart + i;
-              this.entityToSpriteRendererIndex[entityIndex] =
-                spriteRendererIndex;
-            }
-          }
-        }
-
-        // console.log(`SPATIAL WORKER: ✅ SpriteRenderer initialized`);
       }
     }
 
@@ -332,17 +314,13 @@ class SpatialWorker extends AbstractWorker {
       for (let k = 0; k < cellLength; k++) {
         const i = cell[k];
 
-        // Map entity index to SpriteRenderer component index (sparse allocation)
-        const srIdx = this.entityToSpriteRendererIndex?.[i];
-        if (srIdx === undefined || srIdx === -1) continue; // Entity has no SpriteRenderer
-
         // Transform world coordinates to screen coordinates
         const screenX = x[i] * zoom - cameraOffsetX;
         const screenY = y[i] * zoom - cameraOffsetY;
 
+        // DENSE ALLOCATION: entityIndex === componentIndex
         // Check if screen position is within viewport bounds (with margin)
-        // Use srIdx (component index) not i (entity index) for SpriteRenderer arrays
-        isItOnScreen[srIdx] =
+        isItOnScreen[i] =
           screenX > minX && screenX < maxX && screenY > minY && screenY < maxY
             ? 1
             : 0;

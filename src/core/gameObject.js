@@ -88,25 +88,36 @@ export class GameObject {
   }
 
   /**
-   * Constructor - stores entity index and component indices
+   * Constructor - stores entity index
    * @param {number} index - Entity index (unique across all entities)
-   * @param {Object} componentIndices - Map of component indices { transform: N, rigidBody: N, ... }
    * @param {Object} config - Configuration object from GameEngine
    * @param {Object} logicWorker - Logic worker reference
    *
-   * SPARSE COMPONENT ALLOCATION:
-   * Component indices may differ from entity indices when entity types have different components.
-   * Example: If 100 Balls (all components) are followed by 50 StaticWalls (no RigidBody),
-   * then 50 Predators, the Predators' RigidBody indices start at 100, not 150.
-   * This saves memory by only allocating space for components that entities actually use.
+   * DENSE COMPONENT ALLOCATION:
+   * All components are allocated for all entities. Entity index === component index.
+   * This simplifies code: just use SpriteRenderer.property[entityIndex] directly.
+   * Unused slots have default values (0/false).
    */
-  constructor(index, componentIndices = {}, config = {}, logicWorker = null) {
+  constructor(index, config = {}, logicWorker = null) {
     this.index = index;
     this.config = config;
     this.logicWorker = logicWorker;
 
-    // Store component indices for sparse allocation
-    this._componentIndices = componentIndices;
+    // DENSE ALLOCATION: entityIndex === componentIndex for all components
+    // Store which components this entity TYPE has (for validation)
+    // Keys are stored in BOTH PascalCase and camelCase for easy lookup
+    this._hasComponents = {};
+    const entityComponents = collectComponents(
+      this.constructor,
+      GameObject,
+      Transform
+    );
+    for (const ComponentClass of entityComponents) {
+      const name = ComponentClass.name;
+      const camelCaseName = name.charAt(0).toLowerCase() + name.slice(1);
+      this._hasComponents[name] = true; // PascalCase: "RigidBody"
+      this._hasComponents[camelCaseName] = true; // camelCase: "rigidBody"
+    }
 
     // Set entityType metadata
     GameObject.entityType[index] = this.constructor.entityType || 0;
@@ -180,14 +191,14 @@ export class GameObject {
             return this._componentCache[componentName];
           }
 
-          // Get component index for this specific entity instance
-          const componentIndex = this._componentIndices[componentName];
-          if (componentIndex === undefined) {
+          // Check if this entity TYPE has this component
+          if (!this._hasComponents[componentName]) {
             return null;
           }
 
-          // Create and cache the component instance
-          const instance = new ComponentClass(componentIndex);
+          // DENSE ALLOCATION: entityIndex === componentIndex
+          // Create and cache the component instance using entity index directly
+          const instance = new ComponentClass(this.index);
           this._componentCache[componentName] = instance;
           return instance;
         },
@@ -211,8 +222,9 @@ export class GameObject {
   set x(value) {
     Transform.x[this.index] = value;
     // Sync previous position for Verlet integration (prevents unwanted velocity)
-    if (this._componentIndices.rigidBody !== undefined) {
-      RigidBody.px[this._componentIndices.rigidBody] = value;
+    // DENSE: use this.index directly for all component access
+    if (this._hasComponents.RigidBody) {
+      RigidBody.px[this.index] = value;
     }
   }
 
@@ -227,8 +239,9 @@ export class GameObject {
   set y(value) {
     Transform.y[this.index] = value;
     // Sync previous position for Verlet integration (prevents unwanted velocity)
-    if (this._componentIndices.rigidBody !== undefined) {
-      RigidBody.py[this._componentIndices.rigidBody] = value;
+    // DENSE: use this.index directly for all component access
+    if (this._hasComponents.RigidBody) {
+      RigidBody.py[this.index] = value;
     }
   }
 
@@ -245,29 +258,31 @@ export class GameObject {
 
   /**
    * Velocity X - forwards to RigidBody (if entity has one)
+   * DENSE: use this.index directly for component access
    */
   get vx() {
-    if (this._componentIndices.rigidBody === undefined) return 0;
-    return RigidBody.vx[this._componentIndices.rigidBody];
+    if (!this._hasComponents.RigidBody) return 0;
+    return RigidBody.vx[this.index];
   }
 
   set vx(value) {
-    if (this._componentIndices.rigidBody !== undefined) {
-      RigidBody.vx[this._componentIndices.rigidBody] = value;
+    if (this._hasComponents.RigidBody) {
+      RigidBody.vx[this.index] = value;
     }
   }
 
   /**
    * Velocity Y - forwards to RigidBody (if entity has one)
+   * DENSE: use this.index directly for component access
    */
   get vy() {
-    if (this._componentIndices.rigidBody === undefined) return 0;
-    return RigidBody.vy[this._componentIndices.rigidBody];
+    if (!this._hasComponents.RigidBody) return 0;
+    return RigidBody.vy[this.index];
   }
 
   set vy(value) {
-    if (this._componentIndices.rigidBody !== undefined) {
-      RigidBody.vy[this._componentIndices.rigidBody] = value;
+    if (this._hasComponents.RigidBody) {
+      RigidBody.vy[this.index] = value;
     }
   }
 

@@ -107,15 +107,13 @@ class GameEngine {
     };
 
     // Component pool tracking
+    // DENSE ALLOCATION: All components have slots for all entities
+    // Just track ComponentClass for buffer creation
     this.componentPools = {
-      Transform: { count: 0, ComponentClass: Transform, indices: new Map() },
-      RigidBody: { count: 0, ComponentClass: RigidBody, indices: new Map() },
-      Collider: { count: 0, ComponentClass: Collider, indices: new Map() },
-      SpriteRenderer: {
-        count: 0,
-        ComponentClass: SpriteRenderer,
-        indices: new Map(),
-      },
+      Transform: { ComponentClass: Transform },
+      RigidBody: { ComponentClass: RigidBody },
+      Collider: { ComponentClass: Collider },
+      SpriteRenderer: { ComponentClass: SpriteRenderer },
     };
 
     // Typed array views
@@ -252,31 +250,17 @@ class GameEngine {
 
     const startIndex = this.totalEntityCount;
 
-    // Allocate component pool space for this entity class
-    const componentIndices = {};
+    // DENSE ALLOCATION: Just register custom components (no index tracking needed)
+    // All components will have slots for ALL entities (entityIndex === componentIndex)
     for (const ComponentClass of components) {
       const componentName = ComponentClass.name;
-      let pool = this.componentPools[componentName];
 
       // Auto-create pool for custom components (e.g., Flocking)
-      if (!pool) {
-        // console.log(`📦 Auto-registering custom component: ${componentName}`);
-        pool = {
-          count: 0,
+      if (!this.componentPools[componentName]) {
+        this.componentPools[componentName] = {
           ComponentClass: ComponentClass,
-          indices: new Map(),
         };
-        this.componentPools[componentName] = pool;
       }
-
-      // Allocate space in this component's pool
-      componentIndices[componentName] = {
-        start: pool.count,
-        count: count,
-      };
-
-      pool.count += count;
-      pool.indices.set(EntityClass.name, componentIndices[componentName]);
     }
 
     this.registeredClasses.push({
@@ -285,7 +269,7 @@ class GameEngine {
       startIndex: startIndex,
       scriptPath: scriptPath, // Track script path for workers
       components: components, // Track which components this entity uses
-      componentIndices: componentIndices, // Track component pool allocations
+      // Note: componentIndices removed - dense allocation means entityIndex === componentIndex
     });
 
     this.totalEntityCount += count;
@@ -453,29 +437,29 @@ class GameEngine {
     this.preInitializeEntityTypeArrays();
 
     // 2. Create Component buffers
-    console.log("📦 Creating component buffers...");
+    // SIMPLIFIED: ALL components are allocated for ALL entities (dense allocation)
+    // This means entity index === component index, making code much simpler
+    console.log("📦 Creating component buffers (dense allocation)...");
 
-    // Initialize ALL components (core and custom) using the same logic
     console.log(
       `   Component pools: ${Object.keys(this.componentPools).join(", ")}`
     );
 
     for (const [componentName, pool] of Object.entries(this.componentPools)) {
-      if (pool.count > 0 && pool.ComponentClass) {
+      if (pool.ComponentClass) {
         const ComponentClass = pool.ComponentClass;
-        const bufferSize = ComponentClass.getBufferSize(pool.count);
+        // DENSE: Use totalEntityCount for ALL components, not pool.count
+        const bufferSize = ComponentClass.getBufferSize(this.totalEntityCount);
         this.buffers.componentData[componentName] = new SharedArrayBuffer(
           bufferSize
         );
         ComponentClass.initializeArrays(
           this.buffers.componentData[componentName],
-          pool.count
+          this.totalEntityCount
         );
 
-        const isTransform = componentName === "Transform";
-        const note = isTransform ? " (all entities have Transform)" : "";
         console.log(
-          `   ✅ ${componentName}: ${bufferSize} bytes for ${pool.count} entities${note}`
+          `   ✅ ${componentName}: ${bufferSize} bytes for ${this.totalEntityCount} entities`
         );
       }
     }
@@ -824,14 +808,13 @@ class GameEngine {
         count: r.count,
         startIndex: r.startIndex,
         components: r.components.map((c) => c.name), // Component names
-        componentIndices: r.componentIndices, // Component pool allocation { Transform: {start, count}, ... }
+        // Note: componentIndices no longer needed - dense allocation means entityIndex === componentIndex
       })),
-      // Component pool sizes (for workers to know buffer sizes)
-      // Send ALL component pools (core and custom)
+      // Component pool sizes (all pools have totalEntityCount slots - dense allocation)
       componentPools: Object.fromEntries(
         Object.entries(this.componentPools).map(([name, pool]) => [
           name,
-          { count: pool.count },
+          { count: this.totalEntityCount }, // DENSE: all components have slots for all entities
         ])
       ),
       // Key index mapping for Keyboard class

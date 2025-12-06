@@ -194,10 +194,11 @@ class LogicWorker extends AbstractWorker {
 
   /**
    * Create GameObject instances for all registered entity classes - dynamically
+   * DENSE ALLOCATION: entityIndex === componentIndex for all components
    */
   createGameObjectInstances() {
     for (const classInfo of this.registeredClasses) {
-      const { name, count, startIndex, componentIndices } = classInfo;
+      const { name, count, startIndex } = classInfo;
 
       const EntityClass = self[name]; // Get class by name from global scope
 
@@ -228,29 +229,9 @@ class LogicWorker extends AbstractWorker {
         for (let i = 0; i < count; i++) {
           const index = startIndex + i;
 
-          // Calculate component indices for this entity instance
-          const entityComponentIndices = {};
-          for (const [componentName, allocation] of Object.entries(
-            componentIndices
-          )) {
-            // Each entity gets its slot in the component pool
-            // Convert PascalCase (ClassName) to camelCase for property access
-            const camelCaseName =
-              componentName.charAt(0).toLowerCase() + componentName.slice(1);
-            entityComponentIndices[camelCaseName] = allocation.start + i;
-          }
-
-          // CRITICAL: Transform always uses entity index (not a separate component pool index)
-          // Every entity has Transform at its entity index
-          entityComponentIndices.transform = index;
-
-          // Create instance with component indices
-          const instance = new EntityClass(
-            index,
-            entityComponentIndices,
-            this.config,
-            this
-          );
+          // DENSE ALLOCATION: entityIndex === componentIndex for all components
+          // Create instance - GameObject will use entity index for all component access
+          const instance = new EntityClass(index, this.config, this);
           this.gameObjects[index] = instance;
 
           // Call start() lifecycle method (one-time initialization)
@@ -258,11 +239,6 @@ class LogicWorker extends AbstractWorker {
             instance.start();
           }
         }
-        // console.log(
-        //   `LOGIC WORKER: Created ${count} ${name} instances with components: ${Object.keys(
-        //     componentIndices
-        //   ).join(", ")}`
-        // );
       } else {
         console.warn(`LOGIC WORKER: Class ${name} not found in worker scope!`);
       }

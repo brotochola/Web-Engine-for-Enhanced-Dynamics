@@ -82,14 +82,14 @@ class Prey extends Boid {
     super.onSpawned(spawnConfig);
     // Set random scale and match collider to visual size
     // 64x64 sprite, character body/feet width is ~16-20px, so radius ~8-10px at scale 1.0
-    const normalRadius = 10; // Base radius of character body at scale 1.0
-    const scale = Math.random() * 0.2 + 0.9; // Random scale 0.5-2.0x
+    // const normalRadius = 10; // Base radius of character body at scale 1.0
+    const scale = Math.random() * 0.3 + 0.85; // Random scale 0.5-2.0x
 
     // Apply scale to sprite
-    this.setScale(scale, scale);
+    this.setScale((1 + scale) * 0.5, scale);
 
     // Set collider radius to match the scaled visual size
-    this.collider.radius = normalRadius * scale;
+    this.collider.radius = 10 * Math.pow(scale, 2);
 
     // Reset health
     this.preyBehavior.life = 1.0;
@@ -190,20 +190,18 @@ class Prey extends Boid {
    */
   updateAnimation(i, predatorNearby) {
     // Cache array references for reading
-    const rbSpeed = RigidBody.speed;
-    const rbVelocityAngle = RigidBody.velocityAngle;
 
-    const speed = rbSpeed[i];
+    const velocityAngle = this.rigidBody.velocityAngle;
+
+    const speed = this.rigidBody.speed;
 
     // Determine animation state based on speed and direction
     // NEW API: Use animation names directly from the spritesheet!
     if (speed > 0.1) {
       // Use precalculated velocity angle from RigidBody
-      const angle = rbVelocityAngle[i];
-
       // Convert angle to direction (8 directions -> 4 cardinal directions)
       // atan2 returns [-PI, PI] where 0 = right, PI/2 = down, -PI/2 = up, PI/-PI = left
-      const direction = getDirectionFromAngle(angle);
+      const direction = getDirectionFromAngle(velocityAngle);
 
       // Choose walk or run based on speed threshold
       const isRunning = speed > 2; // Threshold for running animation
