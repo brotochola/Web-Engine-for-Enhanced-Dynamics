@@ -15,6 +15,8 @@ import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 import { DEBUG_FLAGS } from "../core/Debug.js";
+import { Mouse } from "../core/Mouse.js";
+import { MouseComponent } from "../components/MouseComponent.js";
 
 // Import PixiJS library (now ES6 module)
 import { PIXI } from "./pixi4webworkers.js";
@@ -24,6 +26,8 @@ self.GameObject = GameObject;
 self.Transform = Transform;
 self.RigidBody = RigidBody;
 self.SpriteRenderer = SpriteRenderer;
+self.MouseComponent = MouseComponent;
+self.Mouse = Mouse;
 self.PIXI = PIXI;
 
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
@@ -146,7 +150,14 @@ class PixiRenderer extends AbstractWorker {
 
     // Render per-entity debug visualizations
     for (let i = 0; i < this.entityCount; i++) {
-      if (!active[i] || !isOnScreen[i]) continue;
+      if (!active[i]) continue;
+
+      // Map entity index to SpriteRenderer component index for screen visibility check
+      // Entities without SpriteRenderer (e.g., Mouse) can still be debugged if active
+      const srIdx = this.entityToSpriteRendererIndex?.[i];
+      const entityIsOnScreen =
+        srIdx !== undefined && srIdx !== -1 ? isOnScreen[srIdx] : 1;
+      if (!entityIsOnScreen) continue;
 
       const posX = x[i];
       const posY = y[i];
@@ -182,10 +193,23 @@ class PixiRenderer extends AbstractWorker {
    * Render collision shape for an entity
    */
   renderCollider(entityIndex, posX, posY) {
-    if (!Collider) return;
+    if (!Collider || !this.entityToColliderIndex) return;
 
-    const radius = Collider.radius[entityIndex];
-    const isTrigger = Collider.isTrigger[entityIndex];
+    // Map entity index to component index (sparse allocation)
+    const colliderIndex = this.entityToColliderIndex[entityIndex];
+    if (colliderIndex === -1) return; // Entity has no collider
+
+    const radius = Collider.radius[colliderIndex];
+    const isTrigger = Collider.isTrigger[colliderIndex];
+
+    // Debug: log a few mappings
+    if (this.frameNumber === 60 && entityIndex >= 1 && entityIndex <= 5) {
+      console.log(
+        `DEBUG: Entity ${entityIndex} -> Collider ${colliderIndex}, radius=${radius.toFixed(
+          2
+        )}, pos=(${posX.toFixed(0)}, ${posY.toFixed(0)})`
+      );
+    }
 
     // Choose color based on trigger status
     const color = isTrigger
@@ -200,10 +224,14 @@ class PixiRenderer extends AbstractWorker {
    * Render velocity vector for an entity
    */
   renderVelocityVector(entityIndex, posX, posY) {
-    if (!RigidBody) return;
+    if (!RigidBody || !this.entityToRigidBodyIndex) return;
 
-    const vx = RigidBody.vx[entityIndex];
-    const vy = RigidBody.vy[entityIndex];
+    // Map entity index to RigidBody component index (sparse allocation)
+    const rbIdx = this.entityToRigidBodyIndex[entityIndex];
+    if (rbIdx === -1) return; // Entity has no RigidBody
+
+    const vx = RigidBody.vx[rbIdx];
+    const vy = RigidBody.vy[rbIdx];
 
     // Skip if velocity is too small
     if (Math.abs(vx) < 0.01 && Math.abs(vy) < 0.01) return;
@@ -238,10 +266,14 @@ class PixiRenderer extends AbstractWorker {
    * Render acceleration vector for an entity
    */
   renderAccelerationVector(entityIndex, posX, posY) {
-    if (!RigidBody) return;
+    if (!RigidBody || !this.entityToRigidBodyIndex) return;
 
-    const ax = RigidBody.ax[entityIndex];
-    const ay = RigidBody.ay[entityIndex];
+    // Map entity index to RigidBody component index (sparse allocation)
+    const rbIdx = this.entityToRigidBodyIndex[entityIndex];
+    if (rbIdx === -1) return; // Entity has no RigidBody
+
+    const ax = RigidBody.ax[rbIdx];
+    const ay = RigidBody.ay[rbIdx];
 
     // Skip if acceleration is too small
     if (Math.abs(ax) < 0.01 && Math.abs(ay) < 0.01) return;
@@ -293,9 +325,9 @@ class PixiRenderer extends AbstractWorker {
     if (!GameObject.neighborData) return;
 
     // Get mouse position from input buffer (world coordinates)
-    const mouseX = this.inputData[0];
-    const mouseY = this.inputData[1];
-    const mousePresent = this.inputData[2];
+    const mouseX = Mouse.x;
+    const mouseY = Mouse.y;
+    const mousePresent = Mouse.isPresent;
 
     // If no mouse, don't render anything
     if (!mousePresent) return;
@@ -499,8 +531,13 @@ class PixiRenderer extends AbstractWorker {
 
       if (!bodySprite) continue;
 
+      // Map entity index to SpriteRenderer component index (sparse allocation)
+      const srIdx = this.entityToSpriteRendererIndex[i];
+      if (srIdx === -1) continue; // Entity has no SpriteRenderer
+
       // Determine if sprite should be visible
-      const shouldBeVisible = active[i] && renderVisible[i] && isItOnScreen[i];
+      const shouldBeVisible =
+        active[i] && renderVisible[srIdx] && isItOnScreen[srIdx];
 
       // Hide inactive or explicitly hidden entities
       if (!shouldBeVisible) {
@@ -529,29 +566,34 @@ class PixiRenderer extends AbstractWorker {
       bodySprite.rotation = rotation[i];
 
       // Optimize scale update - direct assignment is cheaper than .set()
-      if (bodySprite.scale.x !== scaleX[i]) bodySprite.scale.x = scaleX[i];
-      if (bodySprite.scale.y !== scaleY[i]) bodySprite.scale.y = scaleY[i];
+      // Use srIdx (SpriteRenderer component index) for component data
+      if (bodySprite.scale.x !== scaleX[srIdx])
+        bodySprite.scale.x = scaleX[srIdx];
+      if (bodySprite.scale.y !== scaleY[srIdx])
+        bodySprite.scale.y = scaleY[srIdx];
 
       // Update anchor points (0-1 range)
-      if (bodySprite.anchor.x !== anchorX[i]) bodySprite.anchor.x = anchorX[i];
-      if (bodySprite.anchor.y !== anchorY[i]) bodySprite.anchor.y = anchorY[i];
+      if (bodySprite.anchor.x !== anchorX[srIdx])
+        bodySprite.anchor.x = anchorX[srIdx];
+      if (bodySprite.anchor.y !== anchorY[srIdx])
+        bodySprite.anchor.y = anchorY[srIdx];
 
       // OPTIMIZATION: Only update visual properties if dirty flag is set
       // This skips expensive operations (tint, alpha, flipping, animations) when unchanged
-      if (renderDirty[i]) {
+      if (renderDirty[srIdx]) {
         // Update body sprite visual properties
-        bodySprite.tint = tint[i];
-        bodySprite.alpha = alpha[i];
+        bodySprite.tint = tint[srIdx];
+        bodySprite.alpha = alpha[srIdx];
 
         // Update animation if changed
-        this.updateSpriteAnimation(bodySprite, i, animationState[i]);
+        this.updateSpriteAnimation(bodySprite, i, animationState[srIdx]);
         this.changeFrameOfSprite(bodySprite, i, deltaSeconds);
 
         // Update animation speed (stored locally for manual animation)
-        this.animationSpeed[i] = animationSpeed[i];
+        this.animationSpeed[i] = animationSpeed[srIdx];
 
         // Clear dirty flag after updating
-        renderDirty[i] = 0;
+        renderDirty[srIdx] = 0;
       }
     }
 
@@ -657,6 +699,8 @@ class PixiRenderer extends AbstractWorker {
     // console.log(
     //   `🎨 Building sprite configs for ${registeredClasses.length} registered classes...`
     // );
+
+    // Mouse is always at index 0 (registered first), no configuration needed
 
     for (const registration of registeredClasses) {
       // Skip classes with 0 instances (base classes that won't be rendered)
@@ -1081,12 +1125,29 @@ class PixiRenderer extends AbstractWorker {
     );
     // console.log(`  ✅ Transform: ${this.entityCount} slots`);
 
-    // RigidBody (for rotation)
+    // RigidBody (for rotation, velocity, acceleration)
     if (data.buffers.componentData.RigidBody) {
       RigidBody.initializeArrays(
         data.buffers.componentData.RigidBody,
         data.componentPools.RigidBody.count
       );
+
+      // Build entity-to-rigidBody index mapping (sparse component allocation)
+      this.entityToRigidBodyIndex = new Int32Array(this.entityCount);
+      this.entityToRigidBodyIndex.fill(-1); // -1 means no rigid body
+
+      for (const classInfo of data.registeredClasses) {
+        const { componentIndices, startIndex, count } = classInfo;
+        if (componentIndices?.RigidBody) {
+          const rigidBodyStart = componentIndices.RigidBody.start;
+          for (let i = 0; i < count; i++) {
+            const entityIndex = startIndex + i;
+            const rigidBodyIndex = rigidBodyStart + i;
+            this.entityToRigidBodyIndex[entityIndex] = rigidBodyIndex;
+          }
+        }
+      }
+
       // console.log(
       //   `  ✅ RigidBody: ${data.componentPools.RigidBody.count} slots`
       // );
@@ -1098,6 +1159,23 @@ class PixiRenderer extends AbstractWorker {
         data.buffers.componentData.SpriteRenderer,
         data.componentPools.SpriteRenderer.count
       );
+
+      // Build entity-to-spriteRenderer index mapping (sparse component allocation)
+      this.entityToSpriteRendererIndex = new Int32Array(this.entityCount);
+      this.entityToSpriteRendererIndex.fill(-1); // -1 means no sprite renderer
+
+      for (const classInfo of data.registeredClasses) {
+        const { componentIndices, startIndex, count } = classInfo;
+        if (componentIndices?.SpriteRenderer) {
+          const spriteRendererStart = componentIndices.SpriteRenderer.start;
+          for (let i = 0; i < count; i++) {
+            const entityIndex = startIndex + i;
+            const spriteRendererIndex = spriteRendererStart + i;
+            this.entityToSpriteRendererIndex[entityIndex] = spriteRendererIndex;
+          }
+        }
+      }
+
       // console.log(
       //   `  ✅ SpriteRenderer: ${data.componentPools.SpriteRenderer.count} slots`
       // );
@@ -1153,8 +1231,37 @@ class PixiRenderer extends AbstractWorker {
           data.buffers.componentData.Collider,
           data.componentPools.Collider.count
         );
+
+        // Build entity-to-collider index mapping (sparse component allocation)
+        this.entityToColliderIndex = new Int32Array(this.entityCount);
+        this.entityToColliderIndex.fill(-1); // -1 means no collider
+
+        console.log("PIXI WORKER: Building entity-to-collider mapping...");
+        for (const classInfo of data.registeredClasses) {
+          const { componentIndices, startIndex, count, name } = classInfo;
+          if (componentIndices?.Collider) {
+            const colliderStart = componentIndices.Collider.start;
+            console.log(
+              `  ${name}: entities ${startIndex}-${
+                startIndex + count - 1
+              } -> colliders ${colliderStart}-${colliderStart + count - 1}`
+            );
+            for (let i = 0; i < count; i++) {
+              const entityIndex = startIndex + i;
+              const colliderIndex = colliderStart + i;
+              this.entityToColliderIndex[entityIndex] = colliderIndex;
+            }
+          }
+        }
+
+        // Debug: print first 10 mappings
         console.log(
-          `PIXI WORKER: Collider component loaded for debug rendering`
+          "First 10 entity->collider mappings:",
+          Array.from(this.entityToColliderIndex.slice(0, 10))
+        );
+
+        console.log(
+          `PIXI WORKER: Collider component loaded for debug rendering (${data.componentPools.Collider.count} colliders)`
         );
       }
 

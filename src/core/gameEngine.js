@@ -200,6 +200,11 @@ class GameEngine {
     this.readyPromise = new Promise((resolve) => {
       this.resolveReady = resolve;
     });
+
+    // CRITICAL: Auto-register Mouse FIRST (must be at index 0)
+    // This happens in constructor so Mouse is always registered before user entities
+    this.registerEntityClass(Mouse, 1);
+    console.log(`🖱️ Mouse auto-registered at index 0`);
   }
 
   /**
@@ -411,13 +416,12 @@ class GameEngine {
 
   // Create all SharedArrayBuffers
   createSharedBuffers() {
-    // Auto-register Mouse entity (1 instance) for spatial grid tracking
-    // This must happen before buffer creation so Mouse is included in totalEntityCount
-    // Mouse is registered FIRST so we know its entity index
-    if (!this.registeredClasses.some((r) => r.class === Mouse)) {
-      this.registerEntityClass(Mouse, 1);
-      console.log(
-        `🖱️ Auto-registered Mouse entity at index ${Mouse.startIndex}`
+    // CRITICAL: Mouse must always be at index 0 for simplified static access
+    // Mouse is auto-registered in constructor, but verify it's still at index 0
+    if (Mouse.startIndex !== 0) {
+      throw new Error(
+        `INTERNAL ERROR: Mouse should be at index 0 but got startIndex=${Mouse.startIndex}. ` +
+          `This should never happen - Mouse is registered in GameEngine constructor.`
       );
     }
 
@@ -476,19 +480,7 @@ class GameEngine {
       }
     }
 
-    // Configure Mouse class for direct array access from main thread
-    if (this.componentPools.MouseComponent) {
-      const mouseAllocation =
-        this.componentPools.MouseComponent.indices.get("Mouse");
-      if (mouseAllocation) {
-        const mouseEntityIndex = Mouse.startIndex;
-        const mouseComponentIndex = mouseAllocation.start;
-        Mouse.configure(mouseEntityIndex, mouseComponentIndex);
-        console.log(
-          `   🖱️ Mouse configured: entity=${mouseEntityIndex}, component=${mouseComponentIndex}`
-        );
-      }
-    }
+    // Mouse is always at index 0 (registered first), no configuration needed
 
     // Collision data buffer (for Unity-style collision detection)
     const maxCollisionPairs =

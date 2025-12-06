@@ -15,116 +15,68 @@ export class Mouse extends GameObject {
   // Default visual range for mouse (how far it "sees" neighbors)
   static defaultVisualRange = 150;
 
-  // Indices for direct array access (set by main thread before spawning)
-  static _entityIndex = -1;
-  static _componentIndex = -1;
+  // Mouse is ALWAYS registered first, so its entity index is ALWAYS 0
+  // Mouse component index is also 0 (only one Mouse exists)
+  // No configuration needed - just use index 0 everywhere!
 
-  // Singleton instance reference (set by worker after spawning)
-  static _instance = null;
-
-  // Canvas position for world coordinate calculation
+  // Canvas position for world coordinate calculation (main thread only)
   static _canvasX = 0;
   static _canvasY = 0;
-
-  /**
-   * Configure Mouse for main thread use (set indices for direct array access)
-   * Called by GameEngine after buffer creation, before spawning
-   * @param {number} entityIndex - Entity index in Transform arrays
-   * @param {number} componentIndex - Component index in MouseComponent arrays
-   */
-  static configure(entityIndex, componentIndex) {
-    this._entityIndex = entityIndex;
-    this._componentIndex = componentIndex;
-  }
-
-  /**
-   * Set the singleton mouse instance (called after spawning in worker)
-   * @param {Mouse} instance - The spawned mouse entity
-   */
-  static setInstance(instance) {
-    this._instance = instance;
-  }
-
-  /**
-   * Get the singleton mouse instance
-   * @returns {Mouse|null} The mouse instance
-   */
-  static getInstance() {
-    return this._instance;
-  }
 
   // ============================================
   // POSITION - getters and setters
   // ============================================
 
   static get x() {
-    const idx = this._instance?.index ?? this._entityIndex;
-    return idx >= 0 ? Transform.x[idx] : 0;
+    return Transform.x[0];
   }
 
   static set x(value) {
-    const idx = this._instance?.index ?? this._entityIndex;
-    if (idx >= 0 && Transform.x) Transform.x[idx] = value;
+    Transform.x[0] = value;
   }
 
   static get y() {
-    const idx = this._instance?.index ?? this._entityIndex;
-    return idx >= 0 ? Transform.y[idx] : 0;
+    return Transform.y[0];
   }
 
   static set y(value) {
-    const idx = this._instance?.index ?? this._entityIndex;
-    if (idx >= 0 && Transform.y) Transform.y[idx] = value;
+    Transform.y[0] = value;
   }
 
   // ============================================
   // BUTTON STATE - getters and setters
   // ============================================
 
-  static get _compIdx() {
-    return (
-      this._instance?._componentIndices?.mouseComponent ?? this._componentIndex
-    );
-  }
-
   static get isButton0Down() {
-    const idx = this._compIdx;
-    return idx >= 0 ? MouseComponent.button0Down[idx] === 1 : false;
+    return MouseComponent.button0Down[0] === 1;
   }
 
   static set isButton0Down(value) {
-    const idx = this._compIdx;
-    if (idx >= 0) MouseComponent.button0Down[idx] = value ? 1 : 0;
+    MouseComponent.button0Down[0] = value ? 1 : 0;
   }
 
   static get isButton1Down() {
-    const idx = this._compIdx;
-    return idx >= 0 ? MouseComponent.button1Down[idx] === 1 : false;
+    return MouseComponent.button1Down[0] === 1;
   }
 
   static set isButton1Down(value) {
-    const idx = this._compIdx;
-    if (idx >= 0) MouseComponent.button1Down[idx] = value ? 1 : 0;
+    MouseComponent.button1Down[0] = value ? 1 : 0;
   }
 
   static get isButton2Down() {
-    const idx = this._compIdx;
-    return idx >= 0 ? MouseComponent.button2Down[idx] === 1 : false;
+    return MouseComponent.button2Down[0] === 1;
   }
 
   static set isButton2Down(value) {
-    const idx = this._compIdx;
-    if (idx >= 0) MouseComponent.button2Down[idx] = value ? 1 : 0;
+    MouseComponent.button2Down[0] = value ? 1 : 0;
   }
 
   static get isPresent() {
-    const idx = this._compIdx;
-    return idx >= 0 ? MouseComponent.isPresent[idx] === 1 : false;
+    return MouseComponent.isPresent[0] === 1;
   }
 
   static set isPresent(value) {
-    const idx = this._compIdx;
-    if (idx >= 0) MouseComponent.isPresent[idx] = value ? 1 : 0;
+    MouseComponent.isPresent[0] = value ? 1 : 0;
   }
 
   // ============================================

@@ -55,7 +55,13 @@ export class Predator extends Boid {
     this.rigidBody.minSpeed = 0; //1; // Keep predators moving
     this.rigidBody.friction = 0.05;
 
-    this.collider.radius = 30; // Increased to match visual size (sprite is scaled 2x)
+    // Set predator scale and collider
+    const normalRadius = 10; // Base radius of character body at scale 1.0
+    const scale = 2; // Predators are 2x larger than prey
+    this.spriteRenderer.scaleX = scale;
+    this.spriteRenderer.scaleY = scale;
+    this.collider.radius = normalRadius * scale; // Match scaled visual size (40px)
+
     this.spriteRenderer.animationSpeed = 0.15;
 
     // Override Boid's perception
@@ -68,10 +74,6 @@ export class Predator extends Boid {
     this.flocking.matchingFactor = 0; //0.01; // Alignment strength
     this.flocking.turnFactor = 0.1; // Boundary avoidance strength
     this.flocking.margin = 20; // Distance from edge to start turning
-
-    const scale = 2;
-    this.spriteRenderer.scaleX = scale;
-    this.spriteRenderer.scaleY = scale;
 
     // Set anchor for character sprite (bottom-center for ground alignment)
     this.spriteRenderer.anchorX = 0.5;

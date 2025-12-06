@@ -87,8 +87,8 @@
     </div>
 
     <script type="module">
-        const numberOfPrey = 15000;
-        const numberOfPredators = 1;
+        const numberOfPrey = 10000;
+        const numberOfPredators = 10;
         const numberOfBoids = 0;
         // Import engine classes and entity classes
         import { GameEngine } from '/src/core/gameEngine.js';
@@ -101,13 +101,13 @@
             {
                 canvasWidth: window.innerWidth * 0.9,
                 canvasHeight: 600,
-                worldWidth: 2800,
+                worldWidth: 5800,
                 worldHeight: 2600,
 
                 // Spatial hash grid configuration
                 spatial: {
                     cellSize: 100,  // Increased to match visual range (reduces grid overhead)
-                    maxNeighbors: 600,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
+                    maxNeighbors: 450,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
                     noLimitFPS: true,
 
                 },

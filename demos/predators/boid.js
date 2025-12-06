@@ -45,12 +45,12 @@ class Boid extends GameObject {
     this.rigidBody.friction = 0.01;
 
     // Initialize Collider
-    this.collider.radius = 10;
+    // this.collider.radius = 10;
     this.collider.visualRange = 100; // How far boid can see
 
-    // Initialize SpriteRenderer
-    this.spriteRenderer.scaleX = 1;
-    this.spriteRenderer.scaleY = 1;
+    // // Initialize SpriteRenderer
+    // this.spriteRenderer.scaleX = 1;
+    // this.spriteRenderer.scaleY = 1;
 
     // Set anchor for sprite (centered for bunny)
     this.spriteRenderer.anchorX = 0.5;
@@ -61,7 +61,7 @@ class Boid extends GameObject {
     this.flocking.centeringFactor = 0.001; // Cohesion strength
     this.flocking.avoidFactor = 0.3; // Separation strength
     this.flocking.matchingFactor = 0.1; // Alignment strength
-    this.flocking.turnFactor = 0.1; // Boundary avoidance strength
+    this.flocking.turnFactor = 0.01; // Boundary avoidance strength
     this.flocking.margin = 20; // Distance from edge to start turning
   }
 
@@ -272,8 +272,8 @@ class Boid extends GameObject {
     if (!Mouse.x) return;
     if (!Mouse.isDown) return;
 
-    // Get mouse entity index
-    const mouseEntityIndex = Mouse._instance.index;
+    // Mouse is always at entity index 0
+    const mouseEntityIndex = 0;
 
     // Find mouse in neighbors array
     let mouseNeighborPos = -1;
@@ -300,7 +300,7 @@ class Boid extends GameObject {
     const dx = tX[mouseEntityIndex] - tX[i];
     const dy = tY[mouseEntityIndex] - tY[i];
 
-    const strength = 100;
+    const strength = 1000;
     rbAX[i] -= (dx / dist2) * strength * dtRatio;
     rbAY[i] -= (dy / dist2) * strength * dtRatio;
   }

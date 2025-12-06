@@ -54,16 +54,10 @@ class Prey extends Boid {
     this.rigidBody.maxAcc = 0.1;
     this.rigidBody.minSpeed = 0;
     this.rigidBody.friction = 0.05;
-    this.collider.radius = 7;
 
     // Override Boid's perception
     this.collider.visualRange = 120; // Must be >= max collision distance (6 + 60 = 66) for collision detection to work!
     this.spriteRenderer.animationSpeed = 0.15;
-
-    // Set sprite scale
-    const scale = 1;
-    this.spriteRenderer.scaleX = scale;
-    this.spriteRenderer.scaleY = scale;
 
     // Set anchor for character sprite (bottom-center for ground alignment)
     this.spriteRenderer.anchorX = 0.5;
@@ -74,7 +68,7 @@ class Prey extends Boid {
     this.flocking.centeringFactor = 0.0005; // Cohesion: gentle attraction to flock center
     this.flocking.avoidFactor = 6; // Separation: moderate avoidance (reduced from 3)
     this.flocking.matchingFactor = 0.05; // Alignment: match flock velocity
-    this.flocking.turnFactor = 0.1; // Boundary avoidance strength
+    this.flocking.turnFactor = 0.001; // Boundary avoidance strength
     this.flocking.margin = 20; // Distance from edge to start turning
   }
 
@@ -86,12 +80,22 @@ class Prey extends Boid {
   onSpawned(spawnConfig = {}) {
     // Call parent Boid.onSpawned() to initialize position
     super.onSpawned(spawnConfig);
+    // Set random scale and match collider to visual size
+    // 64x64 sprite, character body/feet width is ~16-20px, so radius ~8-10px at scale 1.0
+    const normalRadius = 10; // Base radius of character body at scale 1.0
+    const scale = Math.random() * 0.2 + 0.9; // Random scale 0.5-2.0x
+
+    // Apply scale to sprite
+    this.setScale(scale, scale);
+
+    // Set collider radius to match the scaled visual size
+    this.collider.radius = normalRadius * scale;
 
     // Reset health
     this.preyBehavior.life = 1.0;
 
     // Reset visual properties
-    this.setScale(1, 1); // CRITICAL: Set sprite scale!
+    // this.setScale(1, 1); // CRITICAL: Set sprite scale!
     this.setAnimation("idle_down"); // Use string name directly!
     this.setAnimationSpeed(0.15);
   }

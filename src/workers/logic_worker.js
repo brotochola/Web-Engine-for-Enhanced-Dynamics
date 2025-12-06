@@ -608,12 +608,18 @@ class LogicWorker extends AbstractWorker {
       }
 
       case "spawn": {
+        // Only worker 0 handles spawn messages to avoid race conditions
+        // All workers receive the broadcast, but only worker 0 actually spawns
+        if (this.workerIndex !== 0) {
+          break; // Ignore spawn messages on other workers
+        }
+
         const { className, spawnConfig } = data;
         const EntityClass = self[className];
 
         if (!EntityClass) {
           console.error(
-            `LOGIC WORKER: Cannot spawn ${className} - class not found!`
+            `LOGIC WORKER ${this.workerIndex}: Cannot spawn ${className} - class not found!`
           );
           return;
         }
@@ -621,11 +627,8 @@ class LogicWorker extends AbstractWorker {
         const instance = GameObject.spawn(EntityClass, spawnConfig);
         if (!instance) {
           console.warn(
-            `LOGIC WORKER: Failed to spawn ${className} - pool exhausted!`
+            `LOGIC WORKER ${this.workerIndex}: Failed to spawn ${className} - pool exhausted!`
           );
-        } else if (className === "Mouse") {
-          // Set the singleton Mouse instance for static access
-          Mouse.setInstance(instance);
         }
         break;
       }
