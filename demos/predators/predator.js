@@ -19,17 +19,6 @@ export class Predator extends Boid {
   // Add PredatorBehavior component for predator-specific properties
   static components = [...Boid.components, PredatorBehavior];
 
-  // Sprite configuration - NEW SIMPLIFIED API!
-  // Just specify the spritesheet - all animations from lpc.json are automatically available!
-  static spriteConfig = {
-    type: "animated",
-    spritesheet: "civil3", // References the loaded "lpc" spritesheet
-    defaultAnimation: "idle_down", // Starting animation
-    animationSpeed: 0.15, // Default playback speed
-  };
-
-  // No more manual mapping needed! Use animation names directly from the spritesheet.
-
   // Note: ARRAY_SCHEMA removed - all data now in components (pure ECS architecture)
 
   /**
@@ -89,10 +78,10 @@ export class Predator extends Boid {
     // Call parent Boid.onSpawned() to initialize position
     super.onSpawned(spawnConfig);
 
-    this.setAnimation("idle_down"); // Use string name directly!
+    // Set spritesheet for this instance
+    this.setSpritesheet("civil3");
+    this.setAnimation("idle_down");
     this.setAnimationSpeed(0.15);
-
-    this.collision = false;
   }
 
   /**
@@ -115,14 +104,6 @@ export class Predator extends Boid {
     const context = super.applyFlockingBehaviors(i, dtRatio);
 
     // Apply hunting force based on accumulated context
-    // if (this.collision) {
-    //   // this.vx = 0;
-    //   // this.vy = 0;
-    //   this.setAnimation(
-    //     "1h_slash_" + getDirectionFromAngle(RigidBody.velocityAngle[this.index])
-    //   );
-    //   // return;
-    // }
     const huntingPrey = this.applyHunting(i, dtRatio, context);
 
     // Additional behaviors
@@ -131,21 +112,6 @@ export class Predator extends Boid {
 
     // Update animation based on speed and state (cached)
     this.updateAnimation(i, huntingPrey);
-    // console.log(this.neighborCount);
-  }
-
-  onCollisionEnter(otherIndex) {
-    // console.log("collision predator", Transform.entityType[otherIndex]);
-    // if (Transform.entityType[otherIndex] === Prey.entityType) {
-    //   this.collision = true;
-    //   // this.vx = 0;
-    //   // this.vy = 0;
-    // }
-  }
-
-  onCollisionStay(otherIndex) {
-    // this.vx = 0;
-    // this.vy = 0;
   }
 
   /**
@@ -245,13 +211,6 @@ export class Predator extends Boid {
       // Use idle animation in last facing direction
       const direction = this.lastDirection || "down";
       this.setAnimation(`idle_${direction}`);
-    }
-
-    // Change tint when hunting (reddish tint = aggressive state)
-    if (huntingPrey) {
-      this.setTint(0xffaaaa); // Pink/red tint when hunting
-    } else {
-      this.setTint(0xffffff); // Normal white
     }
   }
 }

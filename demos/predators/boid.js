@@ -12,17 +12,8 @@ class Boid extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
   static scriptUrl = import.meta.url;
 
-  // entityType auto-assigned during registration (no manual ID needed!)
-  static instances = []; // Instance tracking for this class
-
   // Define components this entity uses (including custom Flocking component)
   static components = [RigidBody, Collider, SpriteRenderer, Flocking];
-
-  // Sprite configuration - standardized format for static sprites
-  static spriteConfig = {
-    type: "static",
-    textureName: "bunny",
-  };
 
   // Note: Flocking behavior properties are now in the Flocking component
   // (protectedRange, centeringFactor, avoidFactor, matchingFactor, turnFactor, margin)

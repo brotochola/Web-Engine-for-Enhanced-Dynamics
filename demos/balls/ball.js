@@ -14,12 +14,6 @@ class Ball extends GameObject {
   // Define components this entity uses
   static components = [RigidBody, Collider, SpriteRenderer];
 
-  // Sprite configuration - using static sprite
-  static spriteConfig = {
-    type: "static",
-    textureName: "ball",
-  };
-
   /**
    * LIFECYCLE: Configure this entity TYPE - runs ONCE per instance
    * All components are guaranteed to be initialized at this point
@@ -53,9 +47,12 @@ class Ball extends GameObject {
     // Get config from instance
     const config = this.config || {};
 
+    // Set the texture for this static sprite
+    this.setSpritesheet("ball");
+
     // Initialize position using ergonomic API (automatically syncs px/py for Verlet)
-    this.x = spawnConfig.x; //?? Math.random() * config.worldWidth;
-    this.y = spawnConfig.y; //?? Math.random() * config.worldHeight;
+    this.x = spawnConfig.x;
+    this.y = spawnConfig.y;
     this.rotation = 0;
 
     // Initialize RigidBody velocities and accelerations

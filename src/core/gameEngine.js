@@ -226,17 +226,8 @@ class GameEngine {
     // Auto-detect and register parent classes (if not already registered)
     this._autoRegisterParentClasses(EntityClass);
 
-    // Validate spriteConfig for entities that have SpriteRenderer component
+    // Collect all components for this entity class
     const components = GameObject._collectComponents(EntityClass);
-    if (components.includes(SpriteRenderer) && count > 0) {
-      // Validate spriteConfig
-      if (!EntityClass.spriteConfig) {
-        console.error(
-          `❌ ${EntityClass.name} has SpriteRenderer component but no spriteConfig defined!`
-        );
-        throw new Error(`${EntityClass.name} must define static spriteConfig`);
-      }
-    }
 
     // Check if this class is already registered
     const existing = this.registeredClasses.find(

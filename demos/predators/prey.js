@@ -21,16 +21,6 @@ class Prey extends Boid {
 
   // Note: ARRAY_SCHEMA removed - all data now in components (pure ECS architecture)
 
-  // Sprite configuration - NEW SIMPLIFIED API!
-  // Just specify the spritesheet - all animations from lpc.json are automatically available!
-  static spriteConfig = {
-    type: "animated",
-    spritesheet: "civil2", // References the loaded "lpc" spritesheet
-    defaultAnimation: "idle_down", // Starting animation
-    animationSpeed: 0.15, // Default playback speed
-  };
-
-  // No more manual mapping needed! Use animation names directly from the spritesheet.
   /**
    * LIFECYCLE: Configure this entity TYPE - runs ONCE per instance
    * Overrides and extends Boid's setup()
@@ -73,6 +63,18 @@ class Prey extends Boid {
     this.flocking.margin = 20; // Distance from edge to start turning
   }
 
+  defineSpritesheets() {
+    // Choose random spritesheet for visual variety
+    const spritesheets = ["civil1", "civil2", "civil3", "civil4", "civil5"];
+    const randomSheet =
+      spritesheets[Math.floor(Math.random() * spritesheets.length)];
+
+    // Set the spritesheet for THIS instance
+    this.setSpritesheet(randomSheet);
+    this.setAnimation("idle_down");
+    this.setAnimationSpeed(0.15);
+  }
+
   /**
    * LIFECYCLE: Called when prey is spawned/respawned from pool
    * Initialize THIS instance - runs EVERY spawn
@@ -81,12 +83,10 @@ class Prey extends Boid {
   onSpawned(spawnConfig = {}) {
     // Call parent Boid.onSpawned() to initialize position
     super.onSpawned(spawnConfig);
-    // Set random scale and match collider to visual size
-    // 64x64 sprite, character body/feet width is ~16-20px, so radius ~8-10px at scale 1.0
-    // const normalRadius = 10; // Base radius of character body at scale 1.0
-    const scale = Math.random() * 0.3 + 0.85; // Random scale 0.5-2.0x
+    this.defineSpritesheets();
 
-    // Apply scale to sprite
+    // Set random scale and match collider to visual size
+    const scale = Math.random() * 0.3 + 0.85;
     this.setScale((1 + scale) * 0.5, scale);
 
     // Set collider radius to match the scaled visual size
@@ -94,11 +94,6 @@ class Prey extends Boid {
 
     // Reset health
     this.preyBehavior.life = 1.0;
-
-    // Reset visual properties
-    // this.setScale(1, 1); // CRITICAL: Set sprite scale!
-    this.setAnimation("idle_down"); // Use string name directly!
-    this.setAnimationSpeed(0.15);
   }
 
   /**
@@ -205,76 +200,18 @@ class Prey extends Boid {
     const direction = getDirectionFromAngle(velocityAngle);
     this.lastDirection = direction;
 
-    if (speed > 0.2) {
+    if (speed > 0.1) {
       // Choose walk or run based on speed threshold
       const isRunning = speed > 2;
       const animPrefix = isRunning ? "run" : "walk";
 
       // Set animation and speed
       this.setAnimation(`${animPrefix}_${direction}`);
-      this.setAnimationSpeed(speed * 0.1);
+      this.setAnimationSpeed(speed * 0.15);
     } else {
       // Use idle animation in last facing direction
       this.setAnimation(`idle_${direction}`);
     }
-
-    // Update tint based on life (white = healthy, red = damaged)
-    // Map life from white (0xffffff) to red (0xff0000) based on remaining life ratio
-    // let newTint;
-    // if (this.preyBehavior.life > 0) {
-    //   const maxLife = 1; // Default max life
-    //   const ratio = Math.max(0, Math.min(1, this.preyBehavior.life / maxLife));
-    //   // Interpolate green/blue channel from 255 (white) to 0 (red)
-    //   const gb = Math.round(255 * ratio);
-    //   newTint = (0xff << 16) | (gb << 8) | gb;
-    // } else {
-    //   newTint = 0xff0000; // Dead = red
-    // }
-    // this.setTint(newTint);
-
-    // Flip sprite based on movement direction (only if moving significantly)
-    // if (Math.abs(vx) > 0.1) {
-    //   this.setScale(vx < 0 ? -1 : 1, 1); // Flip X when moving left
-    // }
-  }
-
-  /**
-   * Unity-style collision callback: Called when prey collides with predator
-   * This demonstrates the collision detection system
-   */
-  onCollisionEnter(otherIndex) {
-    // this.setTint(0xff0000);
-    // console.log("collision prey", Transform.entityType[otherIndex]);
-  }
-
-  /**
-   * Unity-style collision callback: Called while prey is colliding with another entity
-   */
-  onCollisionStay(otherIndex) {
-    // Could add ongoing collision effects here
-    // For example: losing health over time while touching hazards
-    // const i = this.index;
-    // // Check if we collided with a predator
-    // if (Transform.entityType[otherIndex] === Predator.entityType) {
-    //   this.preyBehavior.life -= 0.1;
-    //   if (this.preyBehavior.life <= 0) {
-    //     this.despawn(); // Use proper despawn instead of directly setting active
-    //   }
-    //   // Optional: Could post message to main thread for sound/particle effects
-    //   // this.logicWorker.self.postMessage({
-    //   //   msg: 'preyCaught',
-    //   //   preyIndex: i,
-    //   //   predatorIndex: otherIndex
-    //   // });
-    // }
-  }
-
-  /**
-   * Unity-style collision callback: Called when collision ends
-   */
-  onCollisionExit(otherIndex) {
-    // this.setTint(0xffffff);
-    // Could add effects when prey escapes from predator
   }
 }
 

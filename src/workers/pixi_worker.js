@@ -97,6 +97,9 @@ class PixiRenderer extends AbstractWorker {
       aabb: 0xff8800, // Orange
       text: 0xffffff, // White
     };
+
+    // Per-instance spritesheet tracking
+    this.currentSpritesheetIds = null; // Will be initialized in createSprites
   }
 
   /**
@@ -442,35 +445,38 @@ class PixiRenderer extends AbstractWorker {
 
   /**
    * Update animation state for an entity (manual animation with regular Sprite)
+   * Requires spritesheet to be set via setSpritesheet() first
    */
   updateSpriteAnimation(sprite, entityId, newState) {
     // Check if animation state changed
     if (this.previousAnimStates[entityId] === newState) return;
     this.previousAnimStates[entityId] = newState;
 
-    // Get entity type and config
-    const entityType = Transform.entityType[entityId];
-    const config = this.entitySpriteConfigs[entityType];
-    if (!config || config.type !== "animated") return;
+    // Get the entity's current spritesheet (set via setSpritesheet)
+    const spritesheetId = SpriteRenderer.spritesheetId[entityId];
+    if (!spritesheetId || spritesheetId === 0) return; // No spritesheet set yet
 
-    // NEW API: Get animation name from registry using numeric index
-    const animName = SpriteSheetRegistry.getAnimationName(
-      config.spritesheet,
-      newState
-    );
+    const sheetName = SpriteSheetRegistry.getSpritesheetName(spritesheetId);
+    if (!sheetName) return;
 
+    // Check if this is an animated spritesheet
+    const sheet = this.spritesheets[sheetName];
+    if (!sheet || !sheet.animations) return; // Static texture, no animation
+
+    // Get animation name from registry using numeric index
+    const animName = SpriteSheetRegistry.getAnimationName(sheetName, newState);
     if (!animName) {
       console.warn(
-        `Animation index ${newState} not found in spritesheet "${config.spritesheet}"`
+        `Animation index ${newState} not found in SpriteSheetRegistry for "${sheetName}"`
       );
       return;
     }
 
-    // Get spritesheet
-    const sheet = this.spritesheets[config.spritesheet];
-    if (!sheet || !sheet.animations[animName]) {
+    if (!sheet.animations[animName]) {
       console.warn(
-        `Animation "${animName}" not found in spritesheet "${config.spritesheet}"`
+        `Animation "${animName}" (index ${newState}) not found in PIXI spritesheet "${sheetName}"`,
+        `\nAvailable animations:`,
+        Object.keys(sheet.animations || {})
       );
       return;
     }
@@ -485,6 +491,101 @@ class PixiRenderer extends AbstractWorker {
     if (frames.length > 0) {
       sprite.texture = frames[0];
     }
+  }
+
+  /**
+   * Update an entity's sprite to use a different spritesheet or texture
+   * Handles both animated spritesheets and static textures
+   * Called when spritesheetId changes in SharedArrayBuffer
+   *
+   * @param {PIXI.Sprite} sprite - The entity's sprite
+   * @param {number} entityId - Entity index
+   * @param {number} newSpritesheetId - New spritesheet ID (0 = not set, 1-255 = valid)
+   */
+  updateEntitySpritesheet(sprite, entityId, newSpritesheetId) {
+    if (newSpritesheetId === 0) return; // Not set yet
+
+    const targetName = SpriteSheetRegistry.getSpritesheetName(newSpritesheetId);
+    if (!targetName) {
+      console.warn(
+        `Invalid spritesheetId ${newSpritesheetId} for entity ${entityId}`
+      );
+      return;
+    }
+
+    // Check if it's an animated spritesheet or a static texture
+    const sheet = this.spritesheets[targetName];
+
+    if (sheet && sheet.animations && Object.keys(sheet.animations).length > 0) {
+      // ANIMATED SPRITESHEET - has animations
+      this.setAnimatedSpritesheet(sprite, entityId, targetName, sheet);
+    } else {
+      // STATIC TEXTURE - check textures map
+      const texture = this.textures[targetName];
+      if (texture) {
+        this.setStaticTexture(sprite, entityId, texture);
+      } else {
+        console.warn(`Neither spritesheet nor texture "${targetName}" found`);
+      }
+    }
+  }
+
+  /**
+   * Set an animated spritesheet on a sprite
+   * @private
+   */
+  setAnimatedSpritesheet(sprite, entityId, sheetName, sheet) {
+    // Get current animation name from OLD spritesheet (if any)
+    const oldSpritesheetId = this.currentSpritesheetIds[entityId];
+    const currentAnimState = SpriteRenderer.animationState[entityId];
+
+    let animName = null;
+    if (oldSpritesheetId > 0) {
+      const oldSheetName =
+        SpriteSheetRegistry.getSpritesheetName(oldSpritesheetId);
+      if (oldSheetName) {
+        animName = SpriteSheetRegistry.getAnimationName(
+          oldSheetName,
+          currentAnimState
+        );
+      }
+    }
+
+    // If no animation name resolved, or it doesn't exist in new sheet, use first animation
+    if (!animName || !sheet.animations[animName]) {
+      animName = Object.keys(sheet.animations)[0];
+    }
+
+    if (!animName) {
+      console.warn(`No animations found in spritesheet "${sheetName}"`);
+      return;
+    }
+
+    // Update to new spritesheet's animation
+    const frames = sheet.animations[animName];
+    this.currentAnimationFrames[entityId] = frames;
+    this.currentFrameIndex[entityId] = 0;
+    this.frameAccumulator[entityId] = 0;
+    sprite.texture = frames[0];
+
+    // Update animation state to match new sheet's index
+    const newIndex = SpriteSheetRegistry.getAnimationIndex(sheetName, animName);
+    if (newIndex !== undefined) {
+      SpriteRenderer.animationState[entityId] = newIndex;
+      this.previousAnimStates[entityId] = newIndex;
+    }
+  }
+
+  /**
+   * Set a static texture on a sprite
+   * @private
+   */
+  setStaticTexture(sprite, entityId, texture) {
+    sprite.texture = texture;
+    // Clear animation data for static sprites
+    this.currentAnimationFrames[entityId] = [];
+    this.currentFrameIndex[entityId] = 0;
+    this.frameAccumulator[entityId] = 0;
   }
 
   /**
@@ -571,6 +672,17 @@ class PixiRenderer extends AbstractWorker {
       // OPTIMIZATION: Only update visual properties if dirty flag is set
       // This skips expensive operations (tint, alpha, flipping, animations) when unchanged
       if (renderDirty[i]) {
+        // Check if spritesheet changed (per-instance override)
+        const spritesheetId = SpriteRenderer.spritesheetId;
+        if (
+          spritesheetId &&
+          this.currentSpritesheetIds &&
+          this.currentSpritesheetIds[i] !== spritesheetId[i]
+        ) {
+          this.updateEntitySpritesheet(bodySprite, i, spritesheetId[i]);
+          this.currentSpritesheetIds[i] = spritesheetId[i];
+        }
+
         // Update body sprite visual properties
         bodySprite.tint = tint[i];
         bodySprite.alpha = alpha[i];
@@ -683,97 +795,21 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * Build sprite configuration map from registered entity classes
+   * Build map of entity types that have SpriteRenderer component
+   * Spritesheets are now set per-instance via setSpritesheet(), not per-class
    */
   buildEntitySpriteConfigs(registeredClasses) {
-    // console.log(
-    //   `🎨 Building sprite configs for ${registeredClasses.length} registered classes...`
-    // );
-
-    // Mouse is always at index 0 (registered first), no configuration needed
-
+    // Track which entity types have SpriteRenderer (they need placeholder sprites)
     for (const registration of registeredClasses) {
-      // Skip classes with 0 instances (base classes that won't be rendered)
-      if (registration.count === 0) {
-        // console.log(
-        //   `⏭️  Skipping ${registration.name} (0 instances, base class)`
-        // );
-        continue;
-      }
+      if (registration.count === 0) continue;
+      if (!registration.components?.includes("SpriteRenderer")) continue;
 
-      // Skip entities without SpriteRenderer (e.g., Mouse for spatial tracking)
-      if (!registration.components?.includes("SpriteRenderer")) {
-        continue;
-      }
-
-      // Dynamically get class from global scope (self)
-      const EntityClass = self[registration.name];
-
-      if (!EntityClass) {
-        console.warn(
-          `⚠️ Class ${registration.name} not found in worker global scope`
-        );
-        continue;
-      }
-
-      // Get entityType from registration data (auto-assigned during registration)
       const entityType = registration.entityType;
+      if (entityType === undefined || typeof entityType !== "number") continue;
 
-      if (entityType === undefined || typeof entityType !== "number") {
-        console.warn(
-          `⚠️ ${registration.name} has no valid entityType in registration data`
-        );
-        continue;
-      }
-
-      // Store entityType on class for consistency (optional, but useful for debugging)
-      EntityClass.entityType = entityType;
-
-      // Check if entity has SpriteRenderer component
-      const hasSpriteRenderer =
-        registration.components?.includes("SpriteRenderer");
-
-      // Validate and handle spriteConfig (standardized approach only)
-      if (!EntityClass.spriteConfig) {
-        if (hasSpriteRenderer) {
-          // Only error if entity HAS SpriteRenderer but no config
-          console.error(
-            `❌ ${registration.name} (entityType ${entityType}) has no spriteConfig defined!`
-          );
-          console.error(
-            `   All entities with SpriteRenderer must define spriteConfig`
-          );
-          console.error(`   See SPRITE_CONFIG_GUIDE.md for examples`);
-        }
-        // Skip entities without spriteConfig (no sprite to create)
-        continue;
-      }
-
-      const config = EntityClass.spriteConfig;
-
-      // Validate config has required type field
-      if (!config.type) {
-        console.error(
-          `❌ ${registration.name}.spriteConfig missing 'type' field! Use 'static' or 'animated'`
-        );
-        continue;
-      }
-
-      this.entitySpriteConfigs[entityType] = config;
-
-      // Log appropriate message based on type
-      if (config.type === "animated") {
-        // console.log(
-        //   `✅ Mapped entityType ${entityType} (${registration.name}) -> animated spritesheet "${config.spritesheet}"`
-        // );
-      } else if (config.type === "static") {
-        // console.log(
-        //   `✅ Mapped entityType ${entityType} (${registration.name}) -> static texture "${config.textureName}"`
-        // );
-      }
+      // Mark this entity type as having SpriteRenderer (spritesheet set per-instance)
+      this.entitySpriteConfigs[entityType] = { hasSpriteRenderer: true };
     }
-
-    // console.log(`📋 Final entitySpriteConfigs:`, this.entitySpriteConfigs);
   }
 
   /**
@@ -902,6 +938,10 @@ class PixiRenderer extends AbstractWorker {
           if (bigAtlas.animations[prefixedName]) {
             // Map unprefixed name to bigAtlas animation
             proxyAnimations[animName] = bigAtlas.animations[prefixedName];
+          } else {
+            console.warn(
+              `⚠️ Proxy "${proxyName}": Animation "${animName}" (${prefixedName}) not found in bigAtlas`
+            );
           }
         }
 
@@ -937,118 +977,50 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * Create container and sprite for each entity
+   * Create placeholder sprites for all entities with SpriteRenderer
+   * Actual textures/spritesheets are set per-instance via setSpritesheet()
    */
   createSprites() {
-    // console.log(
-    //   `PIXI WORKER: Creating sprites for ${this.entityCount} entities...`
-    // );
+    // Initialize spritesheet tracking array once
+    this.currentSpritesheetIds = new Uint8Array(this.entityCount);
+
     for (let i = 0; i < this.entityCount; i++) {
       const entityType = Transform.entityType[i];
       const config = this.entitySpriteConfigs[entityType];
 
-      // Create container for this entity
-      // const container = new PIXI.Container();
-      // container.sortableChildren = true;
-
-      let bodySprite = null;
-
-      // Handle sprite creation based on standardized config
-      if (!config) {
-        // Entity doesn't have a sprite (e.g., Mouse entity for spatial tracking)
-        // Skip creating a sprite for this entity
+      // Skip entities without SpriteRenderer (e.g., Mouse entity for spatial tracking)
+      if (!config || !config.hasSpriteRenderer) {
         this.bodySprites[i] = null;
         this.currentAnimationFrames[i] = [];
         this.currentFrameIndex[i] = 0;
         this.frameAccumulator[i] = 0;
         this.animationSpeed[i] = 0;
         continue;
-      } else if (config.type === "animated" && config.spritesheet) {
-        // Create regular Sprite from spritesheet (manual animation)
-        const sheet = this.spritesheets[config.spritesheet];
-
-        if (!sheet) {
-          console.error(
-            `❌ Spritesheet "${config.spritesheet}" not found for entityType ${entityType}`
-          );
-          bodySprite = new PIXI.Sprite(PIXI.Texture.WHITE);
-          this.currentAnimationFrames[i] = [];
-        } else {
-          const defaultAnim = config.defaultAnimation;
-
-          if (!defaultAnim || !sheet.animations[defaultAnim]) {
-            console.error(
-              `❌ Default animation "${defaultAnim}" not found in spritesheet "${config.spritesheet}"`
-            );
-            // Use first available animation as emergency fallback
-            const firstAnim = Object.keys(sheet.animations)[0];
-            if (firstAnim) {
-              const frames = sheet.animations[firstAnim];
-              bodySprite = new PIXI.Sprite(frames[0]); // Start with first frame
-              this.currentAnimationFrames[i] = frames;
-              console.warn(`   Using "${firstAnim}" as fallback animation`);
-            } else {
-              bodySprite = new PIXI.Sprite(PIXI.Texture.WHITE);
-              this.currentAnimationFrames[i] = [];
-            }
-          } else {
-            const frames = sheet.animations[defaultAnim];
-            bodySprite = new PIXI.Sprite(frames[0]); // Start with first frame
-            this.currentAnimationFrames[i] = frames;
-          }
-        }
-
-        // Initialize animation tracking
-        this.currentFrameIndex[i] = 0;
-        this.frameAccumulator[i] = 0;
-        this.animationSpeed[i] = config.animationSpeed || 0.2;
-      } else if (config.type === "static" && config.textureName) {
-        // Create static Sprite from texture
-        const texture = this.textures[config.textureName];
-
-        if (!texture) {
-          console.error(
-            `❌ Texture "${config.textureName}" not found for entityType ${entityType}`
-          );
-          bodySprite = new PIXI.Sprite(PIXI.Texture.WHITE);
-        } else {
-          bodySprite = new PIXI.Sprite(texture);
-        }
-
-        // Initialize tracking arrays (no animation for static sprites)
-        this.currentAnimationFrames[i] = [];
-        this.currentFrameIndex[i] = 0;
-        this.frameAccumulator[i] = 0;
-        this.animationSpeed[i] = 0;
-      } else {
-        console.error(
-          `❌ Invalid sprite config for entityType ${entityType}:`,
-          config
-        );
-        bodySprite = new PIXI.Sprite(PIXI.Texture.WHITE);
-        // Initialize tracking arrays
-        this.currentAnimationFrames[i] = [];
-        this.currentFrameIndex[i] = 0;
-        this.frameAccumulator[i] = 0;
-        this.animationSpeed[i] = 0;
       }
 
-      // Setup sprite with default centered anchor (will be updated per-entity in updateSprites)
+      // Create placeholder sprite - actual texture set via setSpritesheet()
+      const bodySprite = new PIXI.Sprite(PIXI.Texture.WHITE);
       bodySprite.anchor.set(0.5, 0.5);
       bodySprite.zIndex = 0;
 
       // Store references
       this.bodySprites[i] = bodySprite;
-      this.previousAnimStates[i] = -1; // Initialize to invalid state
+      this.previousAnimStates[i] = -1;
+
+      // Initialize animation tracking
+      this.currentAnimationFrames[i] = [];
+      this.currentFrameIndex[i] = 0;
+      this.frameAccumulator[i] = 0;
+      this.animationSpeed[i] = 0;
+
+      // Initialize spritesheet tracking (0 = not set yet)
+      this.currentSpritesheetIds[i] = 0;
 
       // Add sprite to container if Y-sorting is disabled
-      // When Y-sorting is enabled, sprites are added during updateSprites()
       if (!this.ySorting) {
         this.particleContainer.addChild(bodySprite);
       }
     }
-
-    // console.log(`PIXI WORKER: Created ${this.entityCount} entity containers`);
   }
 
   /**

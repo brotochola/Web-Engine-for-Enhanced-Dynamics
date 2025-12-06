@@ -351,58 +351,61 @@ export class GameObject {
 
   /**
    * Set animation by string name (developer-friendly API)
-   * Looks up animation index from registry and calls setAnimationState()
+   * Requires setSpritesheet() to be called first to set the spritesheet
    *
-   * PERFORMANCE: Uses cached lookup - first call per entity class does registry lookup,
-   * subsequent calls use cached index. Zero overhead in game loop.
+   * PERFORMANCE: Uses global cache keyed by spritesheet name to avoid repeated lookups.
    *
    * @param {string} animationName - Animation name (e.g., "walk_right", "idle_down")
    *
    * @example
+   * this.setSpritesheet("civil1");
    * this.setAnimation("walk_right");
-   * this.setAnimation("idle_down");
    */
   setAnimation(animationName) {
     if (!this.spriteRenderer) return;
 
-    const spriteConfig = this.constructor.spriteConfig;
-    if (!spriteConfig || !spriteConfig.spritesheet) {
+    // Get the spritesheet set via setSpritesheet()
+    const spritesheetId = SpriteRenderer.spritesheetId[this.index];
+    if (!spritesheetId || spritesheetId === 0) {
       console.error(
-        `${this.constructor.name}: Cannot use setAnimation() without spriteConfig.spritesheet`
+        `${this.constructor.name}: Call setSpritesheet() before setAnimation()`
       );
       return;
     }
 
-    const sheetName = spriteConfig.spritesheet;
-
-    // PERFORMANCE: Cache animation indices per entity class to avoid repeated lookups
-    // This cache is created once per entity CLASS (not per instance), so it's very efficient
-    if (!this.constructor._animationCache) {
-      this.constructor._animationCache = {};
+    const sheetName = SpriteSheetRegistry.getSpritesheetName(spritesheetId);
+    if (!sheetName) {
+      console.error(
+        `${this.constructor.name}: Invalid spritesheetId ${spritesheetId}`
+      );
+      return;
     }
 
-    let animIndex = this.constructor._animationCache[animationName];
+    // PERFORMANCE: Global cache keyed by "sheetName:animName"
+    if (!GameObject._globalAnimationCache) {
+      GameObject._globalAnimationCache = {};
+    }
+
+    const cacheKey = `${sheetName}:${animationName}`;
+    let animIndex = GameObject._globalAnimationCache[cacheKey];
 
     if (animIndex === undefined) {
-      // First time this animation is used by this entity class - look it up
+      // First time this animation is used for this spritesheet - look it up
       animIndex = SpriteSheetRegistry.getAnimationIndex(
         sheetName,
         animationName
       );
 
       if (animIndex === undefined) {
-        // Animation not found - error already logged by registry
+        // Animation not found
         console.error(
-          `❌ ${this.constructor.name}: Animation "${animationName}" not found. ` +
-            `Registry has: ${SpriteSheetRegistry.getSpritesheetNames().join(
-              ", "
-            )}`
+          `❌ ${this.constructor.name}: Animation "${animationName}" not found in "${sheetName}"`
         );
         return;
       }
 
-      // Cache it for future calls (on this entity class)
-      this.constructor._animationCache[animationName] = animIndex;
+      // Cache it globally by spritesheet:animation key
+      GameObject._globalAnimationCache[cacheKey] = animIndex;
     }
 
     // Use the cached/looked-up index (fast path)
@@ -414,6 +417,42 @@ export class GameObject {
       this.spriteRenderer.animationSpeed = speed;
       this.markDirty();
     }
+  }
+
+  /**
+   * Change the spritesheet for this entity instance
+   * Allows per-instance sprite variety without creating separate entity classes
+   *
+   * PERFORMANCE: Uses SharedArrayBuffer for zero-copy communication with renderer
+   * String name is converted to numeric ID for efficient storage
+   *
+   * @param {string} spritesheetName - Name of spritesheet to use (e.g., "civil3")
+   *
+   * @example
+   * this.setSpritesheet("civil2");  // Switch this instance to a different character sprite
+   * this.setSpritesheet("person");  // Can use any registered spritesheet
+   */
+  setSpritesheet(spritesheetName) {
+    if (!this.spriteRenderer) {
+      console.warn(`Entity ${this.index} has no SpriteRenderer component`);
+      return;
+    }
+
+    const sheetId = SpriteSheetRegistry.getSpritesheetId(spritesheetName);
+
+    if (sheetId === 0) {
+      console.warn(
+        `Spritesheet/texture "${spritesheetName}" not registered. ` +
+          `Make sure it's included in your assets config.`
+      );
+      return;
+    }
+
+    // Update SharedArrayBuffer
+    this.spriteRenderer.spritesheetId = sheetId;
+
+    // Mark dirty so pixi worker updates on next frame
+    this.markDirty();
   }
 
   /**

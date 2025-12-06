@@ -20,6 +20,11 @@ class SpriteSheetRegistry {
   // Main registry: Map<sheetName, metadata>
   static spritesheets = new Map();
 
+  // Spritesheet ID mapping for SharedArrayBuffer storage
+  // We can't store strings in SharedArrayBuffer, so we use numeric IDs
+  static spritesheetNames = [""]; // Index 0 = empty/default (use class spriteconfig)
+  static spritesheetNameToId = new Map(); // Map<string, number>
+
   /**
    * Register a spritesheet and build animation index
    * Called once per spritesheet during asset loading
@@ -61,6 +66,9 @@ class SpriteSheetRegistry {
 
     this.spritesheets.set(name, metadata);
 
+    // Auto-register spritesheet ID for per-instance switching
+    this.registerSpritesheetId(name);
+
     console.log(
       `✅ Registered spritesheet "${name}": ${currentIndex} animations`
     );
@@ -82,24 +90,12 @@ class SpriteSheetRegistry {
       return undefined;
     }
 
-    // Handle proxy sheets (redirect to bigAtlas with prefixed name)
+    // Handle proxy sheets - return proxy-specific index, not global bigAtlas index
     if (sheet.isProxy) {
-      const prefixedAnimName = sheet.prefix + animName;
-      const targetSheet = this.spritesheets.get(sheet.targetSheet);
-
-      if (!targetSheet) {
-        console.error(
-          `❌ Proxy target "${sheet.targetSheet}" not found for sheet "${sheetName}"`
-        );
-        return undefined;
-      }
-
-      const anim = targetSheet.animations[prefixedAnimName];
-      if (!anim) {
+      const animInfo = sheet.animations[animName];
+      if (!animInfo) {
         // Provide helpful suggestions for typos
-        const available = Object.keys(sheet.animations).map((name) =>
-          name.replace(sheet.prefix, "")
-        );
+        const available = Object.keys(sheet.animations);
         const suggestions = this._findSimilar(animName, available).slice(0, 3);
         console.error(
           `❌ Animation "${animName}" not found in "${sheetName}"\n` +
@@ -111,7 +107,8 @@ class SpriteSheetRegistry {
         return undefined;
       }
 
-      return anim.index;
+      // Return the proxy-specific index (0, 1, 2, ...) not the global bigAtlas index
+      return animInfo.index;
     }
 
     // Regular sheet lookup
@@ -146,12 +143,9 @@ class SpriteSheetRegistry {
     if (!sheet) return undefined;
 
     if (sheet.isProxy) {
-      const targetSheet = this.spritesheets.get(sheet.targetSheet);
-      if (!targetSheet) return undefined;
-
-      const prefixedName = targetSheet.indexToName[index];
-      // Strip prefix to return original name
-      return prefixedName?.replace(sheet.prefix, "");
+      // For proxy sheets, use the proxy's own indexToName mapping
+      // Each proxy sheet has its own independent index space
+      return sheet.indexToName?.[index];
     }
 
     return sheet.indexToName[index];
@@ -170,9 +164,8 @@ class SpriteSheetRegistry {
     if (!sheet) return undefined;
 
     if (sheet.isProxy) {
-      const prefixedAnimName = sheet.prefix + animName;
-      const targetSheet = this.spritesheets.get(sheet.targetSheet);
-      return targetSheet?.animations[prefixedAnimName];
+      // Return proxy's own animation data (includes proxy-specific index)
+      return sheet.animations[animName];
     }
 
     return sheet.animations[animName];
@@ -225,13 +218,18 @@ class SpriteSheetRegistry {
    * @returns {Object} Serialized registry metadata
    */
   static serialize() {
-    const serialized = {};
+    const serialized = {
+      spritesheets: {},
+      // Include spritesheet ID mappings for per-instance switching
+      spritesheetNames: this.spritesheetNames,
+      spritesheetNameToId: Object.fromEntries(this.spritesheetNameToId),
+    };
 
     for (const [name, sheet] of this.spritesheets) {
       // Skip proxy sheets - they'll be registered separately in workers
       if (sheet.isProxy) continue;
 
-      serialized[name] = {
+      serialized.spritesheets[name] = {
         name: sheet.name,
         animations: sheet.animations,
         indexToName: sheet.indexToName,
@@ -252,7 +250,19 @@ class SpriteSheetRegistry {
   static deserialize(serialized) {
     this.spritesheets.clear();
 
-    for (const [name, sheet] of Object.entries(serialized)) {
+    // Restore spritesheet ID mappings
+    if (serialized.spritesheetNames) {
+      this.spritesheetNames = serialized.spritesheetNames;
+    }
+    if (serialized.spritesheetNameToId) {
+      this.spritesheetNameToId = new Map(
+        Object.entries(serialized.spritesheetNameToId)
+      );
+    }
+
+    // Restore spritesheets
+    const sheets = serialized.spritesheets || serialized;
+    for (const [name, sheet] of Object.entries(sheets)) {
       this.spritesheets.set(name, sheet);
     }
 
@@ -365,6 +375,57 @@ class SpriteSheetRegistry {
     }
 
     return true;
+  }
+
+  /**
+   * Register a spritesheet name in the ID mapping system
+   * Called during asset loading to build the string → ID map
+   *
+   * @param {string} name - Spritesheet name to register
+   * @returns {number} The assigned ID (1-255)
+   */
+  static registerSpritesheetId(name) {
+    if (this.spritesheetNameToId.has(name)) {
+      return this.spritesheetNameToId.get(name);
+    }
+
+    const id = this.spritesheetNames.length;
+    if (id > 255) {
+      console.error(
+        `❌ Too many spritesheets (max 255). Cannot register "${name}"`
+      );
+      return 0;
+    }
+
+    this.spritesheetNames.push(name);
+    this.spritesheetNameToId.set(name, id);
+
+    return id;
+  }
+
+  /**
+   * Get numeric ID for a spritesheet name
+   * Used when setting per-instance spritesheet
+   *
+   * @param {string} name - Spritesheet name
+   * @returns {number} Spritesheet ID (0 = not found/use default, 1-255 = valid)
+   */
+  static getSpritesheetId(name) {
+    return this.spritesheetNameToId.get(name) || 0;
+  }
+
+  /**
+   * Get spritesheet name from numeric ID
+   * Used by pixi worker to resolve spritesheet from SharedArrayBuffer
+   *
+   * @param {number} id - Spritesheet ID (1-255)
+   * @returns {string|null} Spritesheet name or null if invalid
+   */
+  static getSpritesheetName(id) {
+    if (id < 0 || id >= this.spritesheetNames.length) {
+      return null;
+    }
+    return this.spritesheetNames[id] || null;
   }
 
   /**
@@ -614,12 +675,13 @@ class SpriteSheetRegistry {
           this._loadSpritesheet(sheetName, config).then((sheetData) => {
             const { img, jsonData } = sheetData;
 
-            // Create proxy sheet entry
+            // Create proxy sheet entry with its own index space
             proxySheets[sheetName] = {
               isProxy: true,
               targetSheet: "bigAtlas",
               prefix: `${sheetName}_`,
               animations: {},
+              indexToName: {}, // Each proxy has its own animation index space
             };
 
             // Extract frames from this spritesheet
@@ -666,6 +728,7 @@ class SpriteSheetRegistry {
 
             // Map animations with prefixed names
             if (jsonData.animations) {
+              let proxyIndex = 0; // Each proxy sheet has its own index space starting at 0
               Object.entries(jsonData.animations).forEach(
                 ([animName, frameList]) => {
                   const prefixedAnimName = `${sheetName}_${animName}`;
@@ -677,7 +740,12 @@ class SpriteSheetRegistry {
                   proxySheets[sheetName].animations[animName] = {
                     originalName: animName,
                     prefixedName: prefixedAnimName,
+                    index: proxyIndex, // Proxy-specific index
                   };
+                  
+                  // Build proxy's own indexToName mapping
+                  proxySheets[sheetName].indexToName[proxyIndex] = animName;
+                  proxyIndex++;
                 }
               );
             }
@@ -784,6 +852,15 @@ class SpriteSheetRegistry {
       },
     };
 
+    // Register individual texture names as spritesheet IDs
+    // This allows setSpritesheet("ball") to work for static textures
+    const individualTextures = [];
+    for (const [name, url] of Object.entries(assetsConfig)) {
+      if (name === "spritesheets" || typeof url !== "string") continue;
+      this.registerSpritesheetId(name);
+      individualTextures.push(name);
+    }
+
     console.log(
       `✅ BigAtlas created: ${actualWidth}x${actualHeight} with ${
         Object.keys(frames).length
@@ -794,6 +871,7 @@ class SpriteSheetRegistry {
       canvas: canvas,
       json: atlasJson,
       proxySheets: proxySheets,
+      individualTextures: individualTextures, // For reference
     };
   }
 
@@ -835,6 +913,10 @@ class SpriteSheetRegistry {
    */
   static registerProxy(sheetName, proxyData) {
     this.spritesheets.set(sheetName, proxyData);
+
+    // Auto-register spritesheet ID for per-instance switching
+    this.registerSpritesheetId(sheetName);
+
     console.log(`  🔗 Registered proxy sheet: ${sheetName} → bigAtlas`);
   }
 }

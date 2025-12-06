@@ -21,7 +21,8 @@ export class SpriteRenderer extends Component {
     anchorY: Float32Array, // Separate Y anchor
 
     // Rendering options
-    spriteVariant: Uint8Array, // Texture/sprite variant (for different skins)
+
+    spritesheetId: Uint8Array, // Per-instance spritesheet override (0 = use class default, 1-255 = override)
     zOffset: Float32Array, // Z-index offset (for layering)
     blendMode: Uint8Array, // Blend mode (0=normal, 1=add, 2=multiply, etc.)
 
