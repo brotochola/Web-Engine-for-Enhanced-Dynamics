@@ -4,30 +4,165 @@
     <meta charset="UTF-8" />
     <title>Predators Demo - Multithreaded Game Engine</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             margin: 0;
-            /* overflow: hidden; */
-            background: #111;
-            font-family: monospace;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Courier New', monospace;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
         }
 
         canvas {
             display: block;
-            /* width: 800px;
-            height: 600px; */
-            border: 1px solid #333;
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
         }
 
-        p {
+        /* Overlay Panels */
+        .overlay-panel {
+            position: fixed;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 15px;
             color: white;
-            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
-            margin: 5px 10px;
+            font-size: 13px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            z-index: 1000;
         }
 
+        .overlay-panel.hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-10px);
+        }
+
+        /* Stats Panel */
+        #statsPanel {
+            top: 20px;
+            left: 20px;
+            max-width: 400px;
+        }
+
+        #statsPanel p {
+            margin: 5px 0;
+            line-height: 1.6;
+        }
+
+        /* Debug Controls Panel */
+        #debugPanel {
+            top: 20px;
+            right: 20px;
+            max-width: 300px;
+        }
+
+        /* Control Buttons Panel */
+        #controlsPanel {
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            max-width: 90vw;
+        }
+
+        #controlsPanel.hidden {
+            transform: translateX(-50%) translateY(10px);
+        }
+
+        /* Toggle Buttons */
+        .toggle-btn {
+            position: fixed;
+            z-index: 1001;
+            background: rgba(76, 175, 80, 0.9);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            font-size: 18px;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .toggle-btn:hover {
+            background: rgba(76, 175, 80, 1);
+            transform: scale(1.1);
+        }
+
+        #toggleStats {
+            top: 20px;
+            left: 20px;
+        }
+
+        #toggleDebug {
+            top: 20px;
+            right: 20px;
+        }
+
+        #toggleControls {
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: auto;
+            padding: 10px 20px;
+            border-radius: 20px;
+        }
+
+        /* Action Buttons */
+        button {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            transition: all 0.2s ease;
+        }
+
+        button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        /* Color coding for different stats */
         #config {
             color: #4CAF50;
             font-weight: bold;
-            font-size: 18px;
+            font-size: 14px;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         #spatialFPS {
@@ -42,53 +177,125 @@
             color: #4ecdc4;
         }
 
-        #renderFPS {
+        #rendererFPS {
             color: #ffe66d;
         }
 
-        #visibleUnits {
+        #visibleUnits,
+        #poolStats {
             color: #95e1d3;
+        }
+
+        #mousePos,
+        #debugInfo {
+            color: #999;
+            font-size: 11px;
+        }
+
+        .panel-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #4CAF50;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .button-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .button-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        /* Branding */
+        #branding {
+            position: fixed;
+            top: 50%;
+            right: 20px;
+            transform: translateY(-50%);
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            font-size: 24px;
+            font-weight: bold;
+            color: rgba(76, 175, 80, 0.3);
+            letter-spacing: 4px;
+            z-index: 999;
+            text-shadow: 0 0 20px rgba(76, 175, 80, 0.5);
         }
     </style>
 </head>
 <body>
-    <p id="config">Mode: SHARED ARRAY BUFFER (Multi-Worker) - Structure of Arrays + Spatial Hash</p>
-    <p id="spatialFPS">Spatial Worker FPS: --</p>
-    <div id="logicFPSContainer"></div>
-    <p id="physicsFPS">Physics Worker FPS: --</p>
-    <p id="rendererFPS">Renderer Worker FPS: --</p>
-    <p id="numberBoids">Number of entities: --</p>
-    <p id="visibleUnits">Visible units: --</p>
-    <p id="activeUnits">Active units: --</p>
-    <p id="poolStats" style="color: #95e1d3;">Pool Stats: --</p>
-    <p id="mousePos" style="color: #999; font-size: 12px;">Mouse: --</p>
-    <p>Move camera with WASD or Arrow Keys, mousewheel to zoom in and out</p>
-    <p id="debugInfo" style="color: #00ff88; font-size: 12px;">
-        Debug: Press [1] Colliders | [2] Velocity | [3] Accel | [4] Neighbors (hover entity!) | [5] Grid | [0] All Off
-    </p>
+    <!-- Branding -->
+    <!-- <div id="branding">WEEDJS 🌿</div> -->
 
-    <div style="padding: 10px 0;">
-        <button onclick="gameEngine.pause()">⏸️ Pause</button>
-        <button onclick="gameEngine.resume()">▶️ Resume</button>
-        <button onclick="spawnRandomPrey()">➕ Spawn Prey</button>
-        <button onclick="spawnRandomPredator()">➕ Spawn Predator</button>
-        <button onclick="spawnPreyAtMouse()">🎯 Spawn Prey at Mouse</button>
-        <button onclick="spawnPredatorAtMouse()">🎯 Spawn Predator at Mouse</button>
-        <button onclick="clearAllEntities()" style="background: #ff6b6b;">🗑️ Clear All</button>
+    <!-- Toggle Buttons -->
+    <button class="toggle-btn" id="toggleStats" onclick="togglePanel('statsPanel')" title="Toggle Stats">📊</button>
+    <button class="toggle-btn" id="toggleDebug" onclick="togglePanel('debugPanel')" title="Toggle Debug">🔧</button>
+    <button class="toggle-btn" id="toggleControls" onclick="togglePanel('controlsPanel')" title="Toggle Controls">⚙️
+        Controls</button>
+
+    <!-- Stats Panel -->
+    <div class="overlay-panel" id="statsPanel">
+        <div class="panel-title">⚡ Performance Stats</div>
+        <p id="config">Mode: SHARED ARRAY BUFFER (Multi-Worker) - Structure of Arrays + Spatial Hash</p>
+        <p id="spatialFPS">Spatial Worker FPS: --</p>
+        <div id="logicFPSContainer"></div>
+        <p id="physicsFPS">Physics Worker FPS: --</p>
+        <p id="rendererFPS">Renderer Worker FPS: --</p>
+        <p id="numberBoids">Number of entities: --</p>
+        <p id="visibleUnits">Visible units: --</p>
+        <p id="activeUnits">Active units: --</p>
+        <p id="poolStats">Pool Stats: --</p>
+        <p id="mousePos">Mouse: --</p>
+        <p
+            style="color: #666; font-size: 11px; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
+            🎮 WASD or Arrow Keys to move | Mousewheel to zoom
+        </p>
     </div>
 
-    <div style="padding: 10px 0;">
-        <button onclick="gameEngine.debug.showColliders(true)">🔵 Show Colliders</button>
-        <button onclick="gameEngine.debug.showVelocity(true)">🔵 Show Velocity</button>
-        <button onclick="gameEngine.debug.showAcceleration(true)">🔴 Show Acceleration</button>
-        <button onclick="gameEngine.debug.showNeighbors(true)">🔵 Show Neighbors</button>
-        <button onclick="gameEngine.debug.showSpatialGrid(true)">⬜ Show Grid</button>
-        <button onclick="gameEngine.debug.disableAll()" style="background: #ff6b6b;">❌ Debug Off</button>
+    <!-- Debug Panel -->
+    <div class="overlay-panel" id="debugPanel">
+        <div class="panel-title">🔧 Debug Tools</div>
+        <p id="debugInfo">
+            Keyboard Shortcuts:<br>
+            [1] Colliders | [2] Velocity | [3] Accel<br>
+            [4] Neighbors | [5] Grid | [0] All Off<br>
+            [H] Hide/Show All Panels
+        </p>
+        <div class="button-group">
+            <button onclick="gameEngine.debug.showColliders(true)">🔵 Show Colliders</button>
+            <button onclick="gameEngine.debug.showVelocity(true)">🔵 Show Velocity</button>
+            <button onclick="gameEngine.debug.showAcceleration(true)">🔴 Show Acceleration</button>
+            <button onclick="gameEngine.debug.showNeighbors(true)">🔵 Show Neighbors</button>
+            <button onclick="gameEngine.debug.showSpatialGrid(true)">⬜ Show Grid</button>
+            <button onclick="gameEngine.debug.disableAll()" style="background: rgba(255, 107, 107, 0.3);">❌ Debug
+                Off</button>
+        </div>
+    </div>
+
+    <!-- Controls Panel -->
+    <div class="overlay-panel" id="controlsPanel">
+        <div class="button-row">
+            <button onclick="gameEngine.pause()">⏸️ Pause</button>
+            <button onclick="gameEngine.resume()">▶️ Resume</button>
+            <button onclick="spawnRandomPrey()">➕ Spawn Prey</button>
+            <button onclick="spawnRandomPredator()">➕ Spawn Predator</button>
+            <button onclick="spawnPreyAtMouse()">🎯 Prey at Mouse</button>
+            <button onclick="spawnPredatorAtMouse()">🎯 Predator at Mouse</button>
+            <button onclick="clearAllEntities()" style="background: rgba(255, 107, 107, 0.3);">🗑️ Clear All</button>
+        </div>
     </div>
 
     <script type="module">
-        const numberOfPrey = 10000;
-        const numberOfPredators = 100;
+        const numberOfPrey = 20000;
+        const numberOfPredators = 10;
         const numberOfBoids = 0;
         // Import WeedJS engine 🌿
         import WEED from '/src/index.js';
@@ -99,12 +306,18 @@
         // Destructure what we need from WEED
         const { GameEngine, SpriteSheetRegistry } = WEED;
 
+        // Panel toggle functionality
+        window.togglePanel = function (panelId) {
+            const panel = document.getElementById(panelId);
+            panel.classList.toggle('hidden');
+        };
+
         const gameEngine = new GameEngine(
             {
-                canvasWidth: window.innerWidth * 0.9,
-                canvasHeight: 600,
-                worldWidth: 5800,
-                worldHeight: 2600,
+                canvasWidth: window.innerWidth,
+                canvasHeight: window.innerHeight,
+                worldWidth: 5000,
+                worldHeight: 2500,
 
                 // Spatial hash grid configuration
                 spatial: {
@@ -160,6 +373,14 @@
                     civil5: {
                         json: "/demos/predators/img/civil5.json",
                         png: "/demos/predators/img/civil5.png"
+                    },
+                    civil6: {
+                        json: "/demos/predators/img/civil6.json",
+                        png: "/demos/predators/img/civil6.png"
+                    },
+                    civil7: {
+                        json: "/demos/predators/img/civil7.json",
+                        png: "/demos/predators/img/civil7.png"
                     }
                 }
             }
@@ -281,6 +502,14 @@
             });
         };
 
+        // Toggle all panels with H key
+        window.toggleAllPanels = function () {
+            const panels = ['statsPanel', 'debugPanel', 'controlsPanel'];
+            panels.forEach(panelId => {
+                document.getElementById(panelId).classList.toggle('hidden');
+            });
+        };
+
         // Setup debug keyboard shortcuts
         window.addEventListener('keydown', (e) => {
             if (e.key === '1') {
@@ -295,6 +524,8 @@
                 gameEngine.debug.showSpatialGrid(!gameEngine.debug.isEnabled(4));
             } else if (e.key === '0') {
                 gameEngine.debug.disableAll();
+            } else if (e.key === 'h' || e.key === 'H') {
+                toggleAllPanels();
             }
         });
 

@@ -219,9 +219,6 @@ class GameEngine {
     // Auto-detect script path from EntityClass.scriptUrl (set via import.meta.url)
     if (!scriptPath && EntityClass.scriptUrl) {
       scriptPath = this._urlToPath(EntityClass.scriptUrl);
-      // console.log(
-      //   `🔍 Auto-detected script path for ${EntityClass.name}: ${scriptPath}`
-      // );
     }
 
     // Auto-detect and register parent classes (if not already registered)

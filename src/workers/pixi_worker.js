@@ -1210,7 +1210,8 @@ class PixiRenderer extends AbstractWorker {
       view: this.canvasView,
       backgroundColor: 0x000000,
       // Performance optimizations
-      // antialias: true,
+      // roundPixels: true,
+      // antialias: false,
       powerPreference: "high-performance",
     });
     this.reportLog("finished initializing pixi app");

@@ -48,7 +48,7 @@ class Ball extends GameObject {
     const config = this.config || {};
 
     // Set the texture for this static sprite
-    this.setSpritesheet("ball");
+    this.setSprite("ball");
 
     // Initialize position using ergonomic API (automatically syncs px/py for Verlet)
     this.x = spawnConfig.x;

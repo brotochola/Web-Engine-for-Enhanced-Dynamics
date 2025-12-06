@@ -4,7 +4,9 @@
 
 Built with SharedArrayBuffers and Web Workers, featuring multithreaded physics, spatial partitioning, and rendering.
 
-🔗 **Live Demo**: https://multithreaded-game-engine.vercel.app/
+🔗 **Live Demo**: https://multithreaded-game-engine.vercel.app/demos/predators
+
+![WeedJS Demo](screen-capture.gif)
 
 ## 🎮 Features
 

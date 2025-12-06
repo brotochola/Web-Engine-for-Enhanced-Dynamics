@@ -62,7 +62,15 @@ class Prey extends Boid {
 
   defineSpritesheets() {
     // Choose random spritesheet for visual variety
-    const spritesheets = ["civil1", "civil2", "civil3", "civil4", "civil5"];
+    const spritesheets = [
+      "civil1",
+      "civil2",
+      "civil3",
+      "civil4",
+      "civil5",
+      "civil6",
+      "civil7",
+    ];
     const randomSheet =
       spritesheets[Math.floor(Math.random() * spritesheets.length)];
 
