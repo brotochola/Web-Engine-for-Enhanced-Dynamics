@@ -20,14 +20,8 @@
       GAME OBJECTS:
 ------------------------------------------------------------------------------------------------
 
--el mouse deberia ser un gameobject,
- asi podemos ver si el mouse esta cerca de las entidades
 
 
-
--rigidbodies:
- q no tengan x e y, pq ya lo tiene transform.
- pero q si tengan px y py
 
 
 
@@ -66,6 +60,7 @@
 
 
 
+
 ------------------------------------------------------------------------------------------------
 --- SPATIAL WORKER: ---
 ------------------------------------------------------------------------------------------------
@@ -83,7 +78,8 @@
 --- LOGIC WORKERs: ---
 ------------------------------------------------------------------------------------------------
 
--stop using messages to communicate about the jobs, use a shared buffer
+
+-automaticamente agregar o sacar workers
 
 
 
