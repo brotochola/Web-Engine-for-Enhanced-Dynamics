@@ -12,9 +12,6 @@ class Boid extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
   static scriptUrl = import.meta.url;
 
-  // CRITICAL: Each entity class needs its own instances array (don't inherit from GameObject)
-  static instances = []; // Instance tracking for this class
-
   // Define components this entity uses (including custom Flocking component)
   static components = [RigidBody, Collider, SpriteRenderer, Flocking];
 

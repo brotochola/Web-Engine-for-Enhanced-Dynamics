@@ -215,6 +215,7 @@ class GameEngine {
    *                              If omitted, auto-detected from EntityClass.scriptUrl
    */
   registerEntityClass(EntityClass, count, scriptPath = null) {
+    console.log(import.meta);
     // Auto-detect script path from EntityClass.scriptUrl (set via import.meta.url)
     if (!scriptPath && EntityClass.scriptUrl) {
       scriptPath = this._urlToPath(EntityClass.scriptUrl);

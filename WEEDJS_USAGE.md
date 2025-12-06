@@ -89,20 +89,26 @@ const { GameEngine, GameObject, RigidBody, Collider, SpriteRenderer } = WEED;
 
 // Create a custom entity
 class Ball extends GameObject {
+  // Optional: Enables auto-detection of script path for worker loading
   static scriptUrl = import.meta.url;
+
+  // Define which components this entity uses
   static components = [RigidBody, Collider, SpriteRenderer];
 
+  // Optional: Define sprite configuration
   static spriteConfig = {
     type: "static",
     textureName: "ball",
   };
 
+  // Configure entity type properties (runs once per instance)
   setup() {
     this.rigidBody.maxVel = 50;
     this.rigidBody.friction = 0.01;
     this.collider.radius = 20;
   }
 
+  // Update logic (runs every frame)
   tick(dtRatio) {
     // Game logic here
     if (WEED.Keyboard.isPressed("Space")) {
