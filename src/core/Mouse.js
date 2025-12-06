@@ -9,7 +9,7 @@ import { Collider } from "../components/Collider.js";
 import { MouseComponent } from "../components/MouseComponent.js";
 
 export class Mouse extends GameObject {
-  static entityType = 255; // Special entity type for mouse
+  // entityType auto-assigned during registration (Mouse is always registered first, so gets ID 0)
   static components = [Collider, MouseComponent]; // Collider for spatial queries, MouseComponent for input state
 
   // Default visual range for mouse (how far it "sees" neighbors)

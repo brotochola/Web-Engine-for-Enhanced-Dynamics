@@ -198,7 +198,7 @@ class LogicWorker extends AbstractWorker {
    */
   createGameObjectInstances() {
     for (const classInfo of this.registeredClasses) {
-      const { name, count, startIndex } = classInfo;
+      const { name, count, startIndex, entityType } = classInfo;
 
       const EntityClass = self[name]; // Get class by name from global scope
 
@@ -206,6 +206,7 @@ class LogicWorker extends AbstractWorker {
         // Store metadata for spawning system
         EntityClass.startIndex = startIndex;
         EntityClass.totalCount = count;
+        EntityClass.entityType = entityType; // Auto-assigned entity type ID
 
         // CRITICAL: Initialize instances array for THIS class (not inherited from GameObject)
         // Without this, all entity types share GameObject.instances causing spawn bugs
@@ -632,7 +633,7 @@ class LogicWorker extends AbstractWorker {
 
           if (
             Transform.active[i] &&
-            GameObject.entityType[i] === entityType &&
+            Transform.entityType[i] === entityType &&
             this.gameObjects[i]
           ) {
             this.gameObjects[i].despawn();

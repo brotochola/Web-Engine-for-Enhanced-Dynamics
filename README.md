@@ -7,12 +7,14 @@ A high-performance game engine built with SharedArrayBuffers and Web Workers, fe
 ## 🎮 Features
 
 - **Multithreaded Architecture**: Parallel processing with 4 dedicated workers
+
   - Spatial Worker: Spatial hash grid for efficient neighbor detection
   - Logic Worker: Game logic and AI
   - Physics Worker: Verlet integration with collision detection
   - Renderer Worker: PixiJS-based rendering with AnimatedSprite support
 
 - **High Performance**: Optimized for thousands of entities
+
   - Structure of Arrays (SoA) pattern for cache efficiency
   - Dirty flags to minimize unnecessary updates
   - Object pooling for zero-allocation spawning
@@ -64,6 +66,7 @@ multithreaded-game-engine/
 ### Running Locally
 
 1. **Start the development server**:
+
    ```bash
    node server/node_server.js
    ```
@@ -86,11 +89,13 @@ Cross-Origin-Embedder-Policy: require-corp
 ## 🎯 Demos
 
 ### Balls Demo (`demos/balls/`)
+
 - Physics simulation with gravity
 - Collision detection and response
 - Object pooling demonstration
 
 ### Predators Demo (`demos/predators/`)
+
 - Boid flocking behavior
 - Predator-prey interactions
 - Sprite animation system
@@ -102,13 +107,13 @@ Cross-Origin-Embedder-Policy: require-corp
 
 ```javascript
 class MyEntity extends RenderableGameObject {
-  static entityType = 1;  // Unique ID
-  
+  // entityType is auto-assigned during registration (no manual ID needed!)
+
   static spriteConfig = {
     type: "static",
-    textureName: "myTexture"
+    textureName: "myTexture",
   };
-  
+
   tick(dtRatio, inputData) {
     // Your game logic here
   }
@@ -126,11 +131,11 @@ await gameEngine.init();
 ### 3. Spawn Entities
 
 ```javascript
-gameEngine.spawnEntity('MyEntity', {
+gameEngine.spawnEntity("MyEntity", {
   x: 100,
   y: 200,
   vx: 5,
-  vy: 0
+  vy: 0,
 });
 ```
 
@@ -151,17 +156,17 @@ const config = {
   canvasHeight: 600,
   worldWidth: 3000,
   worldHeight: 1500,
-  
+
   spatial: {
     cellSize: 50,
-    maxNeighbors: 400
+    maxNeighbors: 400,
   },
-  
+
   physics: {
     subStepCount: 2,
     gravity: { x: 0, y: 0.5 },
-    verletDamping: 0.99
-  }
+    verletDamping: 0.99,
+  },
 };
 ```
 
@@ -172,7 +177,7 @@ const config = {
 ```javascript
 const imageUrls = {
   mySprite: "/path/to/sprite.png",
-  background: "/path/to/bg.jpg"
+  background: "/path/to/bg.jpg",
 };
 ```
 
@@ -183,9 +188,9 @@ const imageUrls = {
   spritesheets: {
     character: {
       json: "/path/to/character.json",
-      png: "/path/to/character.png"
-    }
-  }
+      png: "/path/to/character.png",
+    },
+  },
 };
 ```
 
@@ -199,6 +204,7 @@ const imageUrls = {
 ## 🤝 Contributing
 
 Contributions are welcome! Please ensure:
+
 - Code follows existing patterns
 - Documentation is updated
 - Demos still work after changes

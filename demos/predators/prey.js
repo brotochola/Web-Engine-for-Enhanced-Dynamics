@@ -12,7 +12,7 @@ class Prey extends Boid {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
   static scriptUrl = import.meta.url;
 
-  static entityType = 1; // 1 = Prey
+  // entityType auto-assigned during registration (no manual ID needed!)
   static instances = []; // Instance tracking for this class
 
   // Add PreyBehavior component for prey-specific properties
@@ -243,7 +243,7 @@ class Prey extends Boid {
    */
   onCollisionEnter(otherIndex) {
     // this.setTint(0xff0000);
-    // console.log("collision prey", GameObject.entityType[otherIndex]);
+    // console.log("collision prey", Transform.entityType[otherIndex]);
   }
 
   /**
@@ -254,7 +254,7 @@ class Prey extends Boid {
     // For example: losing health over time while touching hazards
     // const i = this.index;
     // // Check if we collided with a predator
-    // if (GameObject.entityType[otherIndex] === Predator.entityType) {
+    // if (Transform.entityType[otherIndex] === Predator.entityType) {
     //   this.preyBehavior.life -= 0.1;
     //   if (this.preyBehavior.life <= 0) {
     //     this.despawn(); // Use proper despawn instead of directly setting active

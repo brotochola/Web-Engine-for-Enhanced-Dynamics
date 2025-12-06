@@ -13,7 +13,7 @@ export class Predator extends Boid {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
   static scriptUrl = import.meta.url;
 
-  static entityType = 2; // 2 = Predator
+  // entityType auto-assigned during registration (no manual ID needed!)
   static instances = []; // Instance tracking for this class
 
   // Add PredatorBehavior component for predator-specific properties
@@ -135,8 +135,8 @@ export class Predator extends Boid {
   }
 
   onCollisionEnter(otherIndex) {
-    // console.log("collision predator", GameObject.entityType[otherIndex]);
-    // if (GameObject.entityType[otherIndex] === Prey.entityType) {
+    // console.log("collision predator", Transform.entityType[otherIndex]);
+    // if (Transform.entityType[otherIndex] === Prey.entityType) {
     //   this.collision = true;
     //   // this.vx = 0;
     //   // this.vy = 0;

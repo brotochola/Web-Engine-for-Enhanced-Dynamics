@@ -250,6 +250,11 @@ class GameEngine {
 
     const startIndex = this.totalEntityCount;
 
+    // AUTO-ASSIGN ENTITY TYPE ID
+    // Sequential ID assignment: 0 = Mouse, 1 = first registered class, 2 = second, etc.
+    const entityTypeId = this.registeredClasses.length;
+    EntityClass.entityType = entityTypeId;
+
     // DENSE ALLOCATION: Just register custom components (no index tracking needed)
     // All components will have slots for ALL entities (entityIndex === componentIndex)
     for (const ComponentClass of components) {
@@ -267,6 +272,7 @@ class GameEngine {
       class: EntityClass,
       count: count,
       startIndex: startIndex,
+      entityType: entityTypeId, // Store for workers
       scriptPath: scriptPath, // Track script path for workers
       components: components, // Track which components this entity uses
       // Note: componentIndices removed - dense allocation means entityIndex === componentIndex
@@ -286,7 +292,7 @@ class GameEngine {
     // console.log(
     //   `✅ Registered ${
     //     EntityClass.name
-    //   }: ${count} entities with components: ${components
+    //   }: ${count} entities with entityType=${entityTypeId}, components: ${components
     //     .map((c) => c.name)
     //     .join(", ")}`
     // );
@@ -434,8 +440,6 @@ class GameEngine {
       this.buffers.distanceData
     );
 
-    this.preInitializeEntityTypeArrays();
-
     // 2. Create Component buffers
     // SIMPLIFIED: ALL components are allocated for ALL entities (dense allocation)
     // This means entity index === component index, making code much simpler
@@ -463,6 +467,9 @@ class GameEngine {
         );
       }
     }
+
+    // Pre-initialize entityType values (MUST be after Transform initialization!)
+    this.preInitializeEntityTypeArrays();
 
     // Mouse is always at index 0 (registered first), no configuration needed
 
@@ -555,7 +562,7 @@ class GameEngine {
       for (const registration of this.registeredClasses) {
         const { class: EntityClass, startIndex, count } = registration;
         if (i >= startIndex && i < startIndex + count) {
-          GameObject.entityType[i] = EntityClass.entityType;
+          Transform.entityType[i] = EntityClass.entityType;
           break;
         }
       }
@@ -807,6 +814,7 @@ class GameEngine {
         name: r.class.name,
         count: r.count,
         startIndex: r.startIndex,
+        entityType: r.entityType, // Auto-assigned entity type ID
         components: r.components.map((c) => c.name), // Component names
         // Note: componentIndices no longer needed - dense allocation means entityIndex === componentIndex
       })),

@@ -12,7 +12,7 @@ class Boid extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
   static scriptUrl = import.meta.url;
 
-  static entityType = 0; // 0 = Boid
+  // entityType auto-assigned during registration (no manual ID needed!)
   static instances = []; // Instance tracking for this class
 
   // Define components this entity uses (including custom Flocking component)
@@ -128,7 +128,7 @@ class Boid extends GameObject {
     if (this.neighborCount === 0) return {};
 
     // PERFORMANCE: Cache array references once (avoids getter overhead)
-    const entityTypes = GameObject.entityType;
+    const entityTypes = Transform.entityType;
     const tX = Transform.x;
     const tY = Transform.y;
     const rbVX = RigidBody.vx;

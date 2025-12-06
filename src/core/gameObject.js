@@ -25,20 +25,21 @@ export class GameObject {
   static neighborData = null;
   static distanceData = null; // Squared distances for each neighbor
 
-  // Entity metadata (minimal - just entityType)
-  static entityType = null; // Uint8Array
+  // Entity type ID (auto-assigned during registration)
+  // Note: entityType moved to Transform component for pure ECS architecture
+  static entityType = null; // Numeric ID assigned by GameEngine
 
-  static sharedBuffer = null; // For entity metadata
+  static sharedBuffer = null; // For entity metadata (deprecated - kept for backward compat)
   static entityCount = 0;
 
   static instances = [];
 
   /**
    * Initialize entity metadata from SharedArrayBuffer
-   * This only initializes minimal entity metadata (entityType)
-   * Components (including Transform with 'active') are initialized separately
+   * DEPRECATED: Entity metadata now stored in components (Transform.entityType)
+   * Kept for backward compatibility with neighbor data initialization
    *
-   * @param {SharedArrayBuffer} buffer - The shared memory for entity metadata
+   * @param {SharedArrayBuffer} buffer - Unused (deprecated)
    * @param {number} count - Total number of entities
    * @param {SharedArrayBuffer} [neighborBuffer] - Optional neighbor data buffer
    * @param {SharedArrayBuffer} [distanceBuffer] - Optional distance data buffer
@@ -52,8 +53,8 @@ export class GameObject {
     this.sharedBuffer = buffer;
     this.entityCount = count;
 
-    // Create entity metadata array (just entityType now)
-    this.entityType = new Uint8Array(buffer, 0, count);
+    // NOTE: entityType moved to Transform component - no longer using this buffer
+    // Kept for backward compatibility with neighbor data initialization
 
     // Initialize neighbor data if provided
     if (neighborBuffer) {
@@ -68,13 +69,14 @@ export class GameObject {
 
   /**
    * Calculate buffer size needed for entity metadata
+   * DEPRECATED: Returns 0 since metadata moved to components
    * @param {number} count - Number of entities
-   * @returns {number} Buffer size in bytes
+   * @returns {number} Buffer size in bytes (always 0 now)
    */
   static getBufferSize(count) {
-    // 1 Uint8Array: entityType
-    // Note: 'active' moved to Transform, 'isItOnScreen' moved to SpriteRenderer
-    return count * 1;
+    // Entity metadata moved to components (Transform.entityType)
+    // No separate buffer needed anymore
+    return 0;
   }
 
   /**
@@ -119,8 +121,8 @@ export class GameObject {
       this._hasComponents[camelCaseName] = true; // camelCase: "rigidBody"
     }
 
-    // Set entityType metadata
-    GameObject.entityType[index] = this.constructor.entityType || 0;
+    // Set entityType in Transform component (auto-assigned during registration)
+    Transform.entityType[index] = this.constructor.entityType || 0;
 
     // Set INACTIVE in Transform (entities start in pool, spawn() activates them)
     // Note: Transform is always present at entity index

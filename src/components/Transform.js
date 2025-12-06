@@ -8,6 +8,7 @@ export class Transform extends Component {
   static ARRAY_SCHEMA = {
     // Entity state
     active: Uint8Array, // 0 = inactive, 1 = active
+    entityType: Uint8Array, // Entity type ID (auto-assigned during registration)
 
     // Position and rotation (world space)
     x: Float32Array,

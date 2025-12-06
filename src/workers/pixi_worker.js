@@ -449,7 +449,7 @@ class PixiRenderer extends AbstractWorker {
     this.previousAnimStates[entityId] = newState;
 
     // Get entity type and config
-    const entityType = GameObject.entityType[entityId];
+    const entityType = Transform.entityType[entityId];
     const config = this.entitySpriteConfigs[entityType];
     if (!config || config.type !== "animated") return;
 
@@ -716,18 +716,18 @@ class PixiRenderer extends AbstractWorker {
         continue;
       }
 
-      // Get entityType - handle both static property and TypedArray after initialization
-      const entityType =
-        typeof EntityClass.entityType === "number"
-          ? EntityClass.entityType
-          : undefined;
+      // Get entityType from registration data (auto-assigned during registration)
+      const entityType = registration.entityType;
 
-      if (entityType === undefined) {
+      if (entityType === undefined || typeof entityType !== "number") {
         console.warn(
-          `⚠️ ${registration.name} has no valid entityType (static property)`
+          `⚠️ ${registration.name} has no valid entityType in registration data`
         );
         continue;
       }
+
+      // Store entityType on class for consistency (optional, but useful for debugging)
+      EntityClass.entityType = entityType;
 
       // Check if entity has SpriteRenderer component
       const hasSpriteRenderer =
@@ -874,7 +874,7 @@ class PixiRenderer extends AbstractWorker {
     //   `PIXI WORKER: Creating sprites for ${this.entityCount} entities...`
     // );
     for (let i = 0; i < this.entityCount; i++) {
-      const entityType = GameObject.entityType[i];
+      const entityType = Transform.entityType[i];
       const config = this.entitySpriteConfigs[entityType];
 
       // Create container for this entity
