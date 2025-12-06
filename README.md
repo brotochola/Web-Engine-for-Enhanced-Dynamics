@@ -110,7 +110,7 @@ Cross-Origin-Embedder-Policy: require-corp
 
 ```javascript
 // Import the WEED namespace (PIXI-style)
-import WEED from '/src/index.js';
+import WEED from "/src/index.js";
 
 // Use it like PIXI
 const { GameEngine, GameObject, RigidBody, Collider } = WEED;
@@ -124,7 +124,7 @@ const engine = new WEED.GameEngine(config);
 ```javascript
 class MyEntity extends WEED.GameObject {
   // entityType is auto-assigned during registration (no manual ID needed!)
-  
+
   static components = [WEED.RigidBody, WEED.Collider, WEED.SpriteRenderer];
 
   static spriteConfig = {
