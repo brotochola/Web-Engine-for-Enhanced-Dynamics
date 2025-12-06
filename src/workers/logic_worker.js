@@ -101,6 +101,21 @@ class LogicWorker extends AbstractWorker {
     // Deserialize spritesheet metadata for animation lookups
     if (data.spritesheetMetadata) {
       SpriteSheetRegistry.deserialize(data.spritesheetMetadata);
+
+      // Register proxy sheets for transparent lookups
+      if (data.bigAtlasProxySheets) {
+        for (const [sheetName, proxyData] of Object.entries(
+          data.bigAtlasProxySheets
+        )) {
+          SpriteSheetRegistry.registerProxy(sheetName, proxyData);
+        }
+        console.log(
+          `LOGIC WORKER ${this.workerIndex}: Registered ${
+            Object.keys(data.bigAtlasProxySheets).length
+          } proxy sheets`
+        );
+      }
+
       // console.log(
       //   `LOGIC WORKER ${this.workerIndex}: Loaded ${
       //     SpriteSheetRegistry.getSpritesheetNames().length

@@ -800,7 +800,7 @@ class PixiRenderer extends AbstractWorker {
    * Load spritesheets from JSON + texture data
    * NOTE: PIXI.Spritesheet.parse() doesn't work in workers, so we manually build animations
    */
-  loadSpritesheets(spritesheetData) {
+  loadSpritesheets(spritesheetData, proxySheets = {}) {
     if (!spritesheetData) {
       // console.log("PIXI WORKER: No spritesheets to load");
       return;
@@ -853,6 +853,19 @@ class PixiRenderer extends AbstractWorker {
           baseTexture: baseTexture,
         };
 
+        // BIGATLAST SUPPORT: If this is the bigAtlas, also populate this.textures
+        // This allows static textures (like "bunny") to be accessed directly
+        if (name === "bigAtlas") {
+          for (const [frameName, texture] of Object.entries(frameTextures)) {
+            this.textures[frameName] = texture;
+          }
+          console.log(
+            `✅ BigAtlas loaded: ${
+              Object.keys(frameTextures).length
+            } frames available as textures`
+          );
+        }
+
         // console.log(
         //   `✅ Loaded spritesheet: ${name} with ${
         //     Object.keys(animations).length
@@ -860,6 +873,63 @@ class PixiRenderer extends AbstractWorker {
         // );
       } catch (error) {
         console.error(`❌ Failed to load spritesheet ${name}:`, error);
+      }
+    }
+
+    // Create proxy spritesheet entries that redirect to bigAtlas
+    if (proxySheets && Object.keys(proxySheets).length > 0) {
+      console.log(
+        `🔗 Creating ${Object.keys(proxySheets).length} proxy spritesheets...`
+      );
+
+      const bigAtlas = this.spritesheets["bigAtlas"];
+      if (!bigAtlas) {
+        console.error("❌ Cannot create proxy sheets: bigAtlas not loaded!");
+        return;
+      }
+
+      for (const [proxyName, proxyData] of Object.entries(proxySheets)) {
+        const prefix = proxyData.prefix;
+
+        // Extract animations from bigAtlas that match this proxy's prefix
+        const proxyAnimations = {};
+        const proxyTextures = {};
+
+        for (const [animName, animInfo] of Object.entries(
+          proxyData.animations
+        )) {
+          const prefixedName = animInfo.prefixedName;
+          if (bigAtlas.animations[prefixedName]) {
+            // Map unprefixed name to bigAtlas animation
+            proxyAnimations[animName] = bigAtlas.animations[prefixedName];
+          }
+        }
+
+        // Also extract frame textures with this prefix
+        for (const [frameName, texture] of Object.entries(bigAtlas.textures)) {
+          if (frameName.startsWith(prefix)) {
+            const unprefixedName = frameName.substring(prefix.length);
+            proxyTextures[unprefixedName] = texture;
+          }
+        }
+
+        // Create proxy spritesheet entry (for PIXI rendering)
+        this.spritesheets[proxyName] = {
+          textures: proxyTextures,
+          animations: proxyAnimations,
+          baseTexture: bigAtlas.baseTexture,
+          isProxy: true,
+          targetSheet: "bigAtlas",
+        };
+
+        // Also register in SpriteSheetRegistry (for animation lookups)
+        SpriteSheetRegistry.registerProxy(proxyName, proxyData);
+
+        console.log(
+          `  ✅ Proxy "${proxyName}": ${
+            Object.keys(proxyAnimations).length
+          } animations`
+        );
       }
     }
 
@@ -1168,7 +1238,7 @@ class PixiRenderer extends AbstractWorker {
     this.reportLog("finished loading textures");
 
     // Load spritesheets (synchronous now - manually parsed)
-    this.loadSpritesheets(data.spritesheets);
+    this.loadSpritesheets(data.spritesheets, data.bigAtlasProxySheets);
     this.reportLog("finished loading spritesheets");
 
     // Create background

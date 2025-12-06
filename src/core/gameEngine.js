@@ -10,6 +10,7 @@ import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { setupWorkerCommunication } from "./utils.js";
 import { Debug } from "./Debug.js";
 import { Mouse } from "./Mouse.js";
+import { BigAtlasInspector } from "./BigAtlasInspector.js";
 
 class GameEngine {
   static now = Date.now();
@@ -585,121 +586,69 @@ class GameEngine {
     this.loadedTextures = {};
     this.loadedSpritesheets = {};
 
-    // // Debug: log what we received
-    // console.log("📦 preloadAssets called with:", {
-    //   imageUrls: imageUrls,
-    //   imageUrlsKeys: Object.keys(imageUrls),
-    //   spritesheetConfigsKeys: Object.keys(spritesheetConfigs),
-    // });
+    // NEW: Generate BigAtlas from all assets
+    console.log("🎨 Generating BigAtlas from all assets...");
 
-    // Load simple textures (filter out 'spritesheets' key and non-string values)
-    const textureEntries = Object.entries(imageUrls).filter(([name, url]) => {
-      // console.log(
-      //   `  Checking entry: "${name}" = ${
-      //     typeof url === "string" ? url : `[${typeof url}]`
-      //   }`
-      // );
+    try {
+      const bigAtlas = await SpriteSheetRegistry.createBigAtlas(imageUrls, {
+        maxWidth: 4096,
+        maxHeight: 4096,
+        padding: 2,
+        heuristic: "best-short-side",
+      });
 
-      // Skip the spritesheets object
-      if (name === "spritesheets") {
-        // console.log(`    ⏭️ Skipping "spritesheets" object`);
-        return false;
+      // Convert canvas to ImageBitmap for worker transfer
+      const imageBitmap = await createImageBitmap(bigAtlas.canvas);
+
+      // Store the bigAtlas as the only "spritesheet"
+      this.loadedSpritesheets["bigAtlas"] = {
+        json: bigAtlas.json,
+        imageBitmap: imageBitmap,
+      };
+
+      // Register the bigAtlas in the registry
+      SpriteSheetRegistry.register("bigAtlas", bigAtlas.json);
+
+      // Register all proxy sheets for transparent lookups
+      for (const [sheetName, proxyData] of Object.entries(
+        bigAtlas.proxySheets
+      )) {
+        SpriteSheetRegistry.registerProxy(sheetName, proxyData);
       }
-      // Skip non-string URLs
-      if (typeof url !== "string") {
-        console.warn(
-          `    ⚠️ Skipping invalid texture "${name}": not a string URL`
-        );
-        return false;
-      }
-      // console.log(`    ✅ Including texture "${name}"`);
-      return true;
-    });
 
-    // console.log(`📦 Loading ${textureEntries.length} textures...`);
+      console.log(
+        `✅ BigAtlas ready with ${
+          Object.keys(bigAtlas.proxySheets).length
+        } proxy sheets`
+      );
 
-    const texturePromises = textureEntries.map(async ([name, url]) => {
-      try {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
+      // Store proxy sheets for worker initialization
+      this.bigAtlasProxySheets = bigAtlas.proxySheets;
 
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
-          img.src = url;
-        });
+      // Store canvas and JSON reference for debugging/visualization
+      this.bigAtlasCanvas = bigAtlas.canvas;
+      this.bigAtlasJson = bigAtlas.json;
 
-        // Convert to ImageBitmap (transferable to worker)
-        const imageBitmap = await createImageBitmap(img);
-        this.loadedTextures[name] = imageBitmap;
+      // Make helper functions available globally for easy access
+      window.downloadBigAtlas = () => {
+        const link = document.createElement("a");
+        link.download = `bigAtlas_${bigAtlas.json.meta.size.w}x${bigAtlas.json.meta.size.h}.png`;
+        link.href = this.bigAtlasCanvas.toDataURL();
+        link.click();
+        console.log(`📥 Downloaded bigAtlas: ${link.download}`);
+      };
 
-        // console.log(`✅ Loaded texture: ${name}`);
-      } catch (error) {
-        console.error(`❌ Failed to load texture ${name} from ${url}:`, error);
-      }
-    });
+      window.inspectBigAtlas = () => {
+        BigAtlasInspector.show(this.bigAtlasCanvas, this.bigAtlasJson);
+      };
 
-    // Load spritesheets (JSON + PNG)
-    // console.log(
-    //   `📦 Loading ${Object.keys(spritesheetConfigs).length} spritesheets...`
-    // );
-
-    const spritesheetPromises = Object.entries(spritesheetConfigs).map(
-      async ([name, config]) => {
-        try {
-          // console.log(`  Loading spritesheet "${name}"...`);
-
-          // Validate config
-          if (!config.json || !config.png) {
-            throw new Error(
-              `Invalid spritesheet config: missing json or png property`
-            );
-          }
-
-          // Load JSON
-          const jsonResponse = await fetch(config.json);
-          const jsonData = await jsonResponse.json();
-
-          // Load image
-          const img = new Image();
-          img.crossOrigin = "anonymous";
-
-          await new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = reject;
-            img.src = config.png;
-          });
-
-          // Convert to ImageBitmap (transferable to worker)
-          const imageBitmap = await createImageBitmap(img);
-
-          this.loadedSpritesheets[name] = {
-            json: jsonData,
-            imageBitmap: imageBitmap,
-          };
-
-          // Register in SpriteSheetRegistry for animation lookups
-          SpriteSheetRegistry.register(name, jsonData);
-
-          // console.log(
-          //   `✅ Loaded spritesheet: ${name} with ${
-          //     Object.keys(jsonData.animations || {}).length
-          //   } animations`
-          // );
-        } catch (error) {
-          console.error(`❌ Failed to load spritesheet ${name}:`, error);
-        }
-      }
-    );
-
-    // Wait for all assets to load
-    await Promise.all([...texturePromises, ...spritesheetPromises]);
-
-    // console.log(
-    //   `✅ Preloaded ${Object.keys(this.loadedTextures).length} textures and ${
-    //     Object.keys(this.loadedSpritesheets).length
-    //   } spritesheets`
-    // );
+      console.log(
+        "💡 TIP: Call inspectBigAtlas() or downloadBigAtlas() in console"
+      );
+    } catch (error) {
+      console.error("❌ Failed to generate BigAtlas:", error);
+      throw error;
+    }
   }
 
   /**
@@ -841,6 +790,7 @@ class GameEngine {
           ...initData,
           workerPorts: workerPorts[`logic${i}`],
           workerIndex: i, // Just for identification/logging
+          bigAtlasProxySheets: this.bigAtlasProxySheets || {}, // Proxy sheet metadata for animation lookups
         },
         workerPorts[`logic${i}`] ? Object.values(workerPorts[`logic${i}`]) : []
       );
@@ -874,8 +824,9 @@ class GameEngine {
       {
         ...initData,
         view: offscreenCanvas,
-        textures: this.loadedTextures, // Simple textures
-        spritesheets: this.loadedSpritesheets, // Spritesheets with JSON + ImageBitmap
+        textures: this.loadedTextures, // Simple textures (empty with bigAtlas)
+        spritesheets: this.loadedSpritesheets, // Spritesheets with JSON + ImageBitmap (bigAtlas only)
+        bigAtlasProxySheets: this.bigAtlasProxySheets || {}, // Proxy sheet metadata for transparent lookups
         workerPorts: workerPorts.renderer, // MessagePorts for direct communication
       },
       transferables

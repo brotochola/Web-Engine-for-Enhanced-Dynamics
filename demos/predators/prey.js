@@ -24,7 +24,7 @@ class Prey extends Boid {
   // Just specify the spritesheet - all animations from lpc.json are automatically available!
   static spriteConfig = {
     type: "animated",
-    spritesheet: "lpc", // References the loaded "lpc" spritesheet
+    spritesheet: "civil1", // References the loaded "lpc" spritesheet
     defaultAnimation: "idle_down", // Starting animation
     animationSpeed: 0.15, // Default playback speed
   };
