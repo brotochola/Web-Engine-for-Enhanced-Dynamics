@@ -1,8 +1,8 @@
-import { GameObject, Keyboard } from "/src/core/gameObject.js";
-import { Mouse } from "/src/core/Mouse.js";
-import { RigidBody } from "/src/components/RigidBody.js";
-import { Collider } from "/src/components/Collider.js";
-import { SpriteRenderer } from "/src/components/SpriteRenderer.js";
+import WEED from "/src/index.js";
+
+// Destructure what we need from WEED
+const { GameObject, Keyboard, Mouse, RigidBody, Collider, SpriteRenderer } =
+  WEED;
 
 class Ball extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!

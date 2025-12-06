@@ -1,6 +1,8 @@
-# Multithreaded Web Game Engine
+# WeedJS 🌿
 
-A high-performance game engine built with SharedArrayBuffers and Web Workers, featuring multithreaded physics, spatial partitioning, and rendering.
+**A high-performance multithreaded web game engine**
+
+Built with SharedArrayBuffers and Web Workers, featuring multithreaded physics, spatial partitioning, and rendering.
 
 🔗 **Live Demo**: https://multithreaded-game-engine.vercel.app/
 
@@ -27,28 +29,29 @@ A high-performance game engine built with SharedArrayBuffers and Web Workers, fe
 ## 📁 Project Structure
 
 ```
-multithreaded-game-engine/
+weedjs/
 ├── src/
+│   ├── index.js                 # 🌿 Main entry point - WEED namespace
 │   ├── core/                    # Core engine files
 │   │   ├── gameEngine.js        # Main engine coordinator
 │   │   ├── gameObject.js        # Base entity class
-│   │   ├── RenderableGameObject.js  # Renderable entities
+│   │   ├── Component.js         # Base component class
 │   │   └── utils.js             # Utility functions
+│   ├── components/              # Built-in components
+│   │   ├── Transform.js         # Position & rotation
+│   │   ├── RigidBody.js         # Physics properties
+│   │   ├── Collider.js          # Collision detection
+│   │   └── SpriteRenderer.js    # Visual rendering
 │   └── workers/                 # Web workers
 │       ├── AbstractWorker.js    # Base worker class
 │       ├── logic_worker.js      # Game logic & AI
 │       ├── physics_worker.js    # Physics integration
 │       ├── spatial_worker.js    # Spatial partitioning
-│       ├── pixi_worker.js       # Rendering
-│       └── pixi4webworkers.js   # PixiJS for workers
+│       └── pixi_worker.js       # Rendering
 ├── demos/                       # Demo projects
 │   ├── balls/                   # Gravity & collision demo
 │   └── predators/               # Predator-prey boids demo
 ├── docs/                        # Documentation
-│   ├── game_engine_readme.md   # Detailed engine docs
-│   ├── ANIMATION_SYSTEM.md
-│   ├── SPAWNING_SYSTEM_GUIDE.md
-│   └── ... (more guides)
 ├── tests/                       # Test files
 ├── server/                      # Development server
 │   └── node_server.js
@@ -103,11 +106,26 @@ Cross-Origin-Embedder-Policy: require-corp
 
 ## 🛠️ Creating Your Own Game
 
-### 1. Create Entity Class
+### 1. Import WeedJS
 
 ```javascript
-class MyEntity extends RenderableGameObject {
+// Import the WEED namespace (PIXI-style)
+import WEED from '/src/index.js';
+
+// Use it like PIXI
+const { GameEngine, GameObject, RigidBody, Collider } = WEED;
+
+// Or use the global namespace (if loaded in browser)
+const engine = new WEED.GameEngine(config);
+```
+
+### 2. Create Entity Class
+
+```javascript
+class MyEntity extends WEED.GameObject {
   // entityType is auto-assigned during registration (no manual ID needed!)
+  
+  static components = [WEED.RigidBody, WEED.Collider, WEED.SpriteRenderer];
 
   static spriteConfig = {
     type: "static",
@@ -116,19 +134,20 @@ class MyEntity extends RenderableGameObject {
 
   tick(dtRatio, inputData) {
     // Your game logic here
+    this.rigidBody.vx += 0.1;
   }
 }
 ```
 
-### 2. Register and Initialize
+### 3. Register and Initialize
 
 ```javascript
-const gameEngine = new GameEngine(config, imageUrls);
+const gameEngine = new WEED.GameEngine(config, imageUrls);
 gameEngine.registerEntityClass(MyEntity, 1000, "path/to/myentity.js");
 await gameEngine.init();
 ```
 
-### 3. Spawn Entities
+### 4. Spawn Entities
 
 ```javascript
 gameEngine.spawnEntity("MyEntity", {
@@ -212,6 +231,20 @@ Contributions are welcome! Please ensure:
 ## 📄 License
 
 ISC
+
+## 🌿 Why WeedJS?
+
+WeedJS provides a **PIXI-style namespace** for easy imports and clean code:
+
+```javascript
+// Just like PIXI.Container, PIXI.Sprite...
+const ball = new WEED.GameObject();
+ball.rigidBody.vx = 10;
+ball.transform.x = 100;
+
+// Or destructure what you need
+const { GameObject, RigidBody, Transform } = WEED;
+```
 
 ## 🙏 Acknowledgments
 

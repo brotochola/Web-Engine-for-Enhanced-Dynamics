@@ -86,9 +86,12 @@
     </div>
 
     <script type="module">
-        // Import engine classes
-        import { GameEngine } from '/src/core/gameEngine.js';
+        // Import WeedJS engine 🌿
+        import WEED from '/src/index.js';
         import { Ball } from '/demos/balls/ball.js';
+        
+        // Destructure what we need from WEED
+        const { GameEngine } = WEED;
 
         const numOfBalls = 10000;
 

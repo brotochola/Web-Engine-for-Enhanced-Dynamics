@@ -87,15 +87,17 @@
     </div>
 
     <script type="module">
-        const numberOfPrey = 15000;
+        const numberOfPrey = 12000;
         const numberOfPredators = 10;
         const numberOfBoids = 0;
-        // Import engine classes and entity classes
-        import { GameEngine } from '/src/core/gameEngine.js';
+        // Import WeedJS engine 🌿
+        import WEED from '/src/index.js';
         import { Boid } from '/demos/predators/boid.js';
         import { Prey } from '/demos/predators/prey.js';
         import { Predator } from '/demos/predators/predator.js';
-        import { SpriteSheetRegistry } from '/src/core/SpriteSheetRegistry.js';
+
+        // Destructure what we need from WEED
+        const { GameEngine, SpriteSheetRegistry } = WEED;
 
         const gameEngine = new GameEngine(
             {
@@ -136,24 +138,24 @@
                 }
             },
             {
-                bg: "/demos/predators/img/fondo.jpg",
+                bg: "/demos/predators/img/bg.png",
                 bunny: "/demos/predators/img/bunny.png",
                 spritesheets: {
-                    person: {
-                        json: "/demos/predators/img/person.json",
-                        png: "/demos/predators/img/person.png"
-                    },
-                    personaje: {
-                        json: "/demos/predators/img/personaje.json",
-                        png: "/demos/predators/img/personaje.png"
-                    },
-                    lpc: {
-                        json: "/demos/predators/img/lpc.json",
-                        png: "/demos/predators/img/lpc.png"
-                    },
                     civil1: {
                         json: "/demos/predators/img/civil1.json",
                         png: "/demos/predators/img/civil1.png"
+                    },
+                    civil2: {
+                        json: "/demos/predators/img/civil2.json",
+                        png: "/demos/predators/img/civil2.png"
+                    },
+                    civil3: {
+                        json: "/demos/predators/img/civil3.json",
+                        png: "/demos/predators/img/civil3.png"
+                    },
+                    civil4: {
+                        json: "/demos/predators/img/civil4.json",
+                        png: "/demos/predators/img/civil4.png"
                     }
                 }
             }

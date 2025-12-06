@@ -1,13 +1,13 @@
 // Predator.js - Predator that flocks with other predators and hunts prey
 // Extends Boid to inherit flocking behavior
 
-import { GameObject } from "/src/core/gameObject.js";
-import { RigidBody } from "/src/components/RigidBody.js";
-import { Transform } from "/src/components/Transform.js";
+import WEED from "/src/index.js";
 import { Boid } from "./boid.js";
 import { Prey } from "./prey.js";
 import { PredatorBehavior } from "./PredatorBehavior.js";
-import { getDirectionFromAngle } from "../../src/core/utils.js";
+
+// Destructure what we need from WEED
+const { GameObject, RigidBody, Transform, getDirectionFromAngle } = WEED;
 
 export class Predator extends Boid {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
@@ -23,7 +23,7 @@ export class Predator extends Boid {
   // Just specify the spritesheet - all animations from lpc.json are automatically available!
   static spriteConfig = {
     type: "animated",
-    spritesheet: "lpc", // References the loaded "lpc" spritesheet
+    spritesheet: "civil3", // References the loaded "lpc" spritesheet
     defaultAnimation: "idle_down", // Starting animation
     animationSpeed: 0.15, // Default playback speed
   };

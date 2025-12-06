@@ -1,12 +1,12 @@
 // Boid.js - Flocking behavior implementation
 // Extends GameObject to implement the classic boids algorithm
 
-import { GameObject } from "/src/core/gameObject.js";
-import { RigidBody } from "/src/components/RigidBody.js";
-import { Collider } from "/src/components/Collider.js";
-import { SpriteRenderer } from "/src/components/SpriteRenderer.js";
+import WEED from "/src/index.js";
 import { Flocking } from "./Flocking.js";
-import { Mouse } from "../../src/core/Mouse.js";
+
+// Destructure what we need from WEED
+const { GameObject, RigidBody, Collider, SpriteRenderer, Mouse, Transform } =
+  WEED;
 
 class Boid extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!

@@ -1,12 +1,13 @@
 // Prey.js - Boid that tries to survive by avoiding predators
 // Extends Boid to implement prey-specific behaviors
 
-import { GameObject } from "/src/core/gameObject.js";
-import { RigidBody } from "/src/components/RigidBody.js";
+import WEED from "/src/index.js";
 import { Boid } from "./boid.js";
 import { Predator } from "./predator.js";
 import { PreyBehavior } from "./PreyBehavior.js";
-import { getDirectionFromAngle } from "../../src/core/utils.js";
+
+// Destructure what we need from WEED
+const { GameObject, RigidBody, getDirectionFromAngle } = WEED;
 
 class Prey extends Boid {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
@@ -24,7 +25,7 @@ class Prey extends Boid {
   // Just specify the spritesheet - all animations from lpc.json are automatically available!
   static spriteConfig = {
     type: "animated",
-    spritesheet: "civil1", // References the loaded "lpc" spritesheet
+    spritesheet: "civil2", // References the loaded "lpc" spritesheet
     defaultAnimation: "idle_down", // Starting animation
     animationSpeed: 0.15, // Default playback speed
   };

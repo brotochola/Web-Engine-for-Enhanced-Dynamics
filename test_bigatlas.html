@@ -98,7 +98,9 @@
     </div>
 
     <script type="module">
-        import { SpriteSheetRegistry } from './src/core/SpriteSheetRegistry.js';
+        // Import WeedJS engine 🌿
+        import WEED from './src/index.js';
+        const { SpriteSheetRegistry } = WEED;
 
         const statusEl = document.getElementById('status');
         const canvasEl = document.getElementById('atlasCanvas');
