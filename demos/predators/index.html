@@ -294,7 +294,7 @@
     </div>
 
     <script type="module">
-        const numberOfPrey = 20000;
+        const numberOfPrey = 29990;
         const numberOfPredators = 10;
         const numberOfBoids = 0;
         // Import WeedJS engine 🌿
@@ -318,6 +318,7 @@
                 canvasHeight: window.innerHeight,
                 worldWidth: 5000,
                 worldHeight: 2500,
+                seed: 123456,
 
                 // Spatial hash grid configuration
                 spatial: {
@@ -418,8 +419,8 @@
         window.spawnRandomPrey = function () {
             for (let i = 0; i < numberOfPrey; i++) {
                 gameEngine.spawnEntity('Prey', {
-                    x: Math.random() * gameEngine.config.worldWidth,
-                    y: Math.random() * gameEngine.config.worldHeight,
+                    x: gameEngine.rng() * gameEngine.config.worldWidth,
+                    y: gameEngine.rng() * gameEngine.config.worldHeight,
                     vx: 0,
                     vy: 0
                 });
@@ -429,8 +430,8 @@
         window.spawnBoids = function () {
             for (let i = 0; i < numberOfBoids; i++) {
                 gameEngine.spawnEntity('Boid', {
-                    x: Math.random() * gameEngine.config.worldWidth,
-                    y: Math.random() * gameEngine.config.worldHeight,
+                    x: gameEngine.rng() * gameEngine.config.worldWidth,
+                    y: gameEngine.rng() * gameEngine.config.worldHeight,
                     vx: 0,
                     vy: 0
                 });
@@ -438,12 +439,14 @@
         };
 
         window.spawnRandomPredator = function () {
-            gameEngine.spawnEntity('Predator', {
-                x: Math.random() * gameEngine.config.worldWidth,
-                y: Math.random() * gameEngine.config.worldHeight,
-                vx: 0,
-                vy: 0
-            });
+            for (let i = 0; i < numberOfPredators; i++) {
+                gameEngine.spawnEntity('Predator', {
+                    x: gameEngine.rng() * gameEngine.config.worldWidth,
+                    y: gameEngine.rng() * gameEngine.config.worldHeight,
+                    vx: 0,
+                    vy: 0
+                });
+            }
         };
 
         window.spawnPreyAtMouse = function () {
@@ -541,19 +544,16 @@
             // DEBUG: Check registry after init
             checkRegistry();
 
-
-            spawnBoids();
-            // Spawn 100 prey
-            // console.log("Spawning 100 prey...");
-            // // for (let i = 0; i < 4000; i++) {
-            spawnRandomPrey();
-            // // }
-
-            // // // Spawn 10 predators
-            // // console.log("Spawning 10 predators...");
             for (let i = 0; i < numberOfPredators; i++) {
                 spawnRandomPredator();
             }
+
+            spawnBoids();
+
+            spawnRandomPrey();
+
+
+
 
 
 

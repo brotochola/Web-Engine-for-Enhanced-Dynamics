@@ -70,8 +70,8 @@ class Boid extends GameObject {
 
     // Initialize Transform position
     // Use spawn config if provided, otherwise randomize
-    this.x = spawnConfig.x ?? Math.random() * (config.worldWidth || 800);
-    this.y = spawnConfig.y ?? Math.random() * (config.worldHeight || 600);
+    this.x = spawnConfig.x ?? rng() * (config.worldWidth || 800);
+    this.y = spawnConfig.y ?? rng() * (config.worldHeight || 600);
     this.transform.rotation = 0;
 
     // Reset physics state

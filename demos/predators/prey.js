@@ -7,7 +7,7 @@ import { Predator } from "./predator.js";
 import { PreyBehavior } from "./PreyBehavior.js";
 
 // Destructure what we need from WEED
-const { GameObject, RigidBody, getDirectionFromAngle } = WEED;
+const { GameObject, RigidBody, getDirectionFromAngle, rng } = WEED;
 
 class Prey extends Boid {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
@@ -71,8 +71,8 @@ class Prey extends Boid {
       "civil6",
       "civil7",
     ];
-    const randomSheet =
-      spritesheets[Math.floor(Math.random() * spritesheets.length)];
+
+    const randomSheet = spritesheets[Math.floor(rng() * spritesheets.length)];
 
     // Set the spritesheet for THIS instance
     this.setSpritesheet(randomSheet);
@@ -91,7 +91,7 @@ class Prey extends Boid {
     this.defineSpritesheets();
 
     // Set random scale and match collider to visual size
-    const scale = Math.random() * 0.3 + 0.85;
+    const scale = rng() * 0.3 + 0.85;
     this.setScale((1 + scale) * 0.5, scale);
 
     // Set collider radius to match the scaled visual size

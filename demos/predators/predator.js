@@ -7,7 +7,7 @@ import { Prey } from "./prey.js";
 import { PredatorBehavior } from "./PredatorBehavior.js";
 
 // Destructure what we need from WEED
-const { GameObject, RigidBody, Transform, getDirectionFromAngle } = WEED;
+const { GameObject, RigidBody, Transform, getDirectionFromAngle, rng } = WEED;
 
 export class Predator extends Boid {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!

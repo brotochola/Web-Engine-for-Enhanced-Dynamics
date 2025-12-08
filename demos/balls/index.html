@@ -91,7 +91,7 @@
         import { Ball } from '/demos/balls/ball.js';
 
         // Destructure what we need from WEED
-        const { GameEngine } = WEED;
+        const { GameEngine, rng } = WEED;
 
         const numOfBalls = 10000;
 
@@ -146,10 +146,10 @@
         // Spawning functions
         function spawnRandomBall() {
             gameEngine.spawnEntity('Ball', {
-                x: Math.random() * gameEngine.config.worldWidth,
-                y: Math.random() * gameEngine.config.worldHeight,
-                vx: 0,//(Math.random() - 0.5) * 5, // Random horizontal velocity
-                vy: 0 // Start with no vertical velocity
+                x: rng() * gameEngine.config.worldWidth,
+                y: rng() * gameEngine.config.worldHeight,
+                vx: 0,
+                vy: 0
             });
         }
 
