@@ -30,7 +30,6 @@ export { MouseComponent } from "./components/MouseComponent.js";
 // Note: Workers are typically loaded as separate files via new Worker()
 // but we export them here for bundling purposes
 export { AbstractWorker } from "./workers/AbstractWorker.js";
-export { SpriteUpdateOptimizer } from "./workers/SpriteUpdateOptimizer.js";
 
 // Worker files (logic_worker, physics_worker, pixi_worker, spatial_worker, pixi4webworkers)
 // are designed to be loaded as Web Workers and don't have default exports,
@@ -61,7 +60,6 @@ import { SpriteRenderer } from "./components/SpriteRenderer.js";
 import { MouseComponent } from "./components/MouseComponent.js";
 
 import { AbstractWorker } from "./workers/AbstractWorker.js";
-import { SpriteUpdateOptimizer } from "./workers/SpriteUpdateOptimizer.js";
 
 // Create the WEED namespace object (like PIXI)
 const WEED = {
@@ -84,7 +82,6 @@ const WEED = {
 
   // Workers
   AbstractWorker,
-  SpriteUpdateOptimizer,
 
   // Utils (spread all utility functions)
   ...utils,

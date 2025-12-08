@@ -60,7 +60,6 @@ const engine = new WEED.GameEngine(config);
 ### Workers
 
 - `WEED.AbstractWorker` - Base worker class
-- `WEED.SpriteUpdateOptimizer` - Sprite update optimization
 
 ### Utility Functions
 

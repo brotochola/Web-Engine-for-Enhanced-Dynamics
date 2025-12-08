@@ -38,13 +38,13 @@ class Prey extends Boid {
     this.preyBehavior.life = 1;
 
     // Override Boid's physics properties for prey behavior
-    this.rigidBody.maxVel = 3;
-    this.rigidBody.maxAcc = 0.1;
+    this.rigidBody.maxVel = 1.5 + rng() * 2;
+    this.rigidBody.maxAcc = 0.07 + rng() * 0.1;
     this.rigidBody.minSpeed = 0;
     this.rigidBody.friction = 0.05;
 
     // Override Boid's perception
-    this.collider.visualRange = 120; // Must be >= max collision distance (6 + 60 = 66) for collision detection to work!
+    this.collider.visualRange = 60 + rng() * 100; // Must be >= max collision distance (6 + 60 = 66) for collision detection to work!
     this.spriteRenderer.animationSpeed = 0.15;
 
     // Set anchor for character sprite (bottom-center for ground alignment)
