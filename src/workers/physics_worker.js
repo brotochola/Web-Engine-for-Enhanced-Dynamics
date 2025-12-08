@@ -13,7 +13,7 @@ import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 import { clamp01, validatePhysicsConfig } from "../core/utils.js";
-
+import { rng } from "../core/utils.js";
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
 // Physics worker uses RigidBody component for physics calculations
 
@@ -439,7 +439,7 @@ class PhysicsWorker extends AbstractWorker {
           // Only apply physical response if neither is a trigger
           if (!eitherIsTrigger) {
             // Push in random direction
-            const angle = Math.random() * Math.PI * 2;
+            const angle = rng() * Math.PI * 2;
             const separation = 0.001;
             x[i] = x[i] + Math.cos(angle) * separation;
             y[i] = y[i] + Math.sin(angle) * separation;

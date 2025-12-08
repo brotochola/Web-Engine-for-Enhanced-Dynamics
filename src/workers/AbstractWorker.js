@@ -2,12 +2,13 @@
 // Provides common functionality: frame timing,  FPS tracking, pause state, message handling
 
 import { GameObject } from "../core/gameObject.js";
+import { seededRandom } from "../core/utils.js";
 
 /**
  * AbstractWorker - Base class for all game engine workers
  * Handles common worker functionality like frame timing, FPS tracking, and message handling
  */
-class AbstractWorker {
+export class AbstractWorker {
   constructor(selfRef) {
     this.self = selfRef;
 
@@ -283,6 +284,13 @@ class AbstractWorker {
     }
   }
 
+  initSeendedRandom(seed) {
+    console.log("initSeendedRandom", seed);
+    self.rng = seededRandom(seed);
+    // Also make it available globally without 'self.' prefix for entity code
+    globalThis.rng = self.rng;
+  }
+
   /**
    * Handle incoming messages from main thread
    * @param {MessageEvent} e - Message event
@@ -292,6 +300,7 @@ class AbstractWorker {
 
     switch (msg) {
       case "init":
+        this.initSeendedRandom(e.data.config.seed);
         this.isPaused = true; // Keep paused until "start" message
         await this.initializeCommonBuffers(e.data);
         this.initializeWorkerPorts(e.data.workerPorts); // Initialize direct worker communication
@@ -445,6 +454,3 @@ class AbstractWorker {
     // Override in subclass if needed
   }
 }
-
-// ES6 module export
-export { AbstractWorker };

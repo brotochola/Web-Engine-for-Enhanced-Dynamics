@@ -277,3 +277,31 @@ export function getDirectionFromAngle(angle) {
     return "left"; // 225° to 315° (West)
   }
 }
+
+export function seededRandom(seed) {
+  let t = seed;
+  const fn = function () {
+    t += 0x6d2b79f5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+  return fn;
+}
+
+/**
+ * Seeded random number generator - wrapper that accesses globalThis.rng
+ * This allows entity code to use rng() which gets initialized in workers
+ * In worker context: globalThis.rng is set by AbstractWorker.initSeendedRandom()
+ * In main thread: can be set via seededRandom() if needed
+ * @returns {number} Random number between 0 and 1
+ */
+export function rng() {
+  if (typeof globalThis.rng === "function") {
+    return globalThis.rng();
+  }
+
+  // Fallback to Math.random if not initialized (shouldn't happen in worker context)
+  console.warn("rng() called before initialization, using Math.random()");
+  return Math.random();
+}

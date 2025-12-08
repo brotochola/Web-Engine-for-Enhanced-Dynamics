@@ -7,7 +7,7 @@ import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
-import { setupWorkerCommunication } from "./utils.js";
+import { setupWorkerCommunication, seededRandom } from "./utils.js";
 import { Debug } from "./Debug.js";
 import { Mouse } from "./Mouse.js";
 import { BigAtlasInspector } from "./BigAtlasInspector.js";
@@ -18,6 +18,10 @@ class GameEngine {
     this.log = [];
     this.loadedTextures = null;
     this.imageUrls = imageUrls;
+    this.seed = config.seed || Math.random();
+    this.rng = seededRandom(this.seed);
+    // Make seeded random available globally for entity code
+    globalThis.rng = this.rng;
     this.state = {
       pause: false,
     };
