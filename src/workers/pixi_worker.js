@@ -18,8 +18,37 @@ import { DEBUG_FLAGS } from "../core/Debug.js";
 import { Mouse } from "../core/Mouse.js";
 import { MouseComponent } from "../components/MouseComponent.js";
 
-// Import PixiJS library (now ES6 module)
-import { PIXI } from "./pixi4webworkers.js";
+// Import PixiJS 8 library (ES6 module with named exports)
+import {
+  Application,
+  Container,
+  Sprite,
+  Texture,
+  Rectangle,
+  Graphics,
+  TilingSprite,
+  TextureSource,
+  ImageSource,
+  Ticker,
+  ParticleContainer,
+  Particle,
+} from "./pixi8webworker.js";
+
+// Create PIXI-like namespace for compatibility with existing code patterns
+const PIXI = {
+  Application,
+  Container,
+  Sprite,
+  Texture,
+  Rectangle,
+  Graphics,
+  TilingSprite,
+  TextureSource,
+  ImageSource,
+  Ticker,
+  ParticleContainer,
+  Particle,
+};
 
 // Make imported classes globally available for dynamic instantiation
 self.GameObject = GameObject;
@@ -205,7 +234,7 @@ class PixiRenderer extends AbstractWorker {
     // Debug: log a few mappings
     if (this.frameNumber === 60 && entityIndex >= 1 && entityIndex <= 5) {
       console.log(
-        `DEBUG: Entity ${entityIndex} -> Collider ${colliderIndex}, radius=${radius.toFixed(
+        `DEBUG: Entity ${entityIndex} -> Collider radius=${radius.toFixed(
           2
         )}, pos=(${posX.toFixed(0)}, ${posY.toFixed(0)})`
       );
@@ -216,8 +245,13 @@ class PixiRenderer extends AbstractWorker {
       ? this.debugColors.trigger
       : this.debugColors.collider;
 
-    this.debugLayer.lineStyle(2 / this.cameraData[0], color, 0.8); // Adjust line width by zoom
-    this.debugLayer.drawCircle(posX, posY, radius);
+    // PixiJS 8: draw shape first, then stroke
+    this.debugLayer.circle(posX, posY, radius);
+    this.debugLayer.stroke({
+      width: 2 / this.cameraData[0],
+      color,
+      alpha: 0.8,
+    });
   }
 
   /**
@@ -238,26 +272,27 @@ class PixiRenderer extends AbstractWorker {
     const endX = posX + vx * scale;
     const endY = posY + vy * scale;
 
-    this.debugLayer.lineStyle(
-      2 / this.cameraData[0],
-      this.debugColors.velocity,
-      0.9
-    );
-    this.debugLayer.moveTo(posX, posY);
-    this.debugLayer.lineTo(endX, endY);
-
-    // Draw arrowhead
+    // PixiJS 8: draw path then stroke
     const angle = Math.atan2(vy, vx);
     const arrowSize = 5;
-    this.debugLayer.lineTo(
-      endX - arrowSize * Math.cos(angle - Math.PI / 6),
-      endY - arrowSize * Math.sin(angle - Math.PI / 6)
-    );
-    this.debugLayer.moveTo(endX, endY);
-    this.debugLayer.lineTo(
-      endX - arrowSize * Math.cos(angle + Math.PI / 6),
-      endY - arrowSize * Math.sin(angle + Math.PI / 6)
-    );
+
+    this.debugLayer
+      .moveTo(posX, posY)
+      .lineTo(endX, endY)
+      .lineTo(
+        endX - arrowSize * Math.cos(angle - Math.PI / 6),
+        endY - arrowSize * Math.sin(angle - Math.PI / 6)
+      )
+      .moveTo(endX, endY)
+      .lineTo(
+        endX - arrowSize * Math.cos(angle + Math.PI / 6),
+        endY - arrowSize * Math.sin(angle + Math.PI / 6)
+      )
+      .stroke({
+        width: 2 / this.cameraData[0],
+        color: this.debugColors.velocity,
+        alpha: 0.9,
+      });
   }
 
   /**
@@ -278,26 +313,27 @@ class PixiRenderer extends AbstractWorker {
     const endX = posX + ax * scale;
     const endY = posY + ay * scale;
 
-    this.debugLayer.lineStyle(
-      2 / this.cameraData[0],
-      this.debugColors.acceleration,
-      0.9
-    );
-    this.debugLayer.moveTo(posX, posY);
-    this.debugLayer.lineTo(endX, endY);
-
-    // Draw arrowhead
+    // PixiJS 8: draw path then stroke
     const angle = Math.atan2(ay, ax);
     const arrowSize = 5;
-    this.debugLayer.lineTo(
-      endX - arrowSize * Math.cos(angle - Math.PI / 6),
-      endY - arrowSize * Math.sin(angle - Math.PI / 6)
-    );
-    this.debugLayer.moveTo(endX, endY);
-    this.debugLayer.lineTo(
-      endX - arrowSize * Math.cos(angle + Math.PI / 6),
-      endY - arrowSize * Math.sin(angle + Math.PI / 6)
-    );
+
+    this.debugLayer
+      .moveTo(posX, posY)
+      .lineTo(endX, endY)
+      .lineTo(
+        endX - arrowSize * Math.cos(angle - Math.PI / 6),
+        endY - arrowSize * Math.sin(angle - Math.PI / 6)
+      )
+      .moveTo(endX, endY)
+      .lineTo(
+        endX - arrowSize * Math.cos(angle + Math.PI / 6),
+        endY - arrowSize * Math.sin(angle + Math.PI / 6)
+      )
+      .stroke({
+        width: 2 / this.cameraData[0],
+        color: this.debugColors.acceleration,
+        alpha: 0.9,
+      });
   }
 
   /**
@@ -307,10 +343,10 @@ class PixiRenderer extends AbstractWorker {
     // Note: Text rendering in PIXI.Graphics is not optimal
     // For production, consider using a separate PIXI.Text pool
     // For now, we'll draw a simple marker and developers can use console
-    this.debugLayer.lineStyle(0);
-    this.debugLayer.beginFill(this.debugColors.text, 0.8);
-    this.debugLayer.drawCircle(posX, posY, 2 / this.cameraData[0]);
-    this.debugLayer.endFill();
+    // PixiJS 8: draw shape then fill
+    this.debugLayer
+      .circle(posX, posY, 2 / this.cameraData[0])
+      .fill({ color: this.debugColors.text, alpha: 0.8 });
   }
 
   /**
@@ -363,17 +399,11 @@ class PixiRenderer extends AbstractWorker {
     const myY = y[closestEntity];
 
     // Highlight the selected entity with a bright ring
-    this.debugLayer.lineStyle(3 / this.cameraData[0], 0xffff00, 1.0); // Bright yellow
     // DENSE: use entity index directly for component access
     const highlightRadius = Collider.radius[closestEntity] * 1.5 || 10;
-    this.debugLayer.drawCircle(myX, myY, highlightRadius);
-
-    // Draw neighbor connections from this entity
-    this.debugLayer.lineStyle(
-      2 / this.cameraData[0],
-      this.debugColors.neighbor,
-      0.7
-    );
+    this.debugLayer
+      .circle(myX, myY, highlightRadius)
+      .stroke({ width: 3 / this.cameraData[0], color: 0xffff00, alpha: 1.0 });
 
     const offset = closestEntity * (1 + maxNeighbors);
     const neighborCount = GameObject.neighborData[offset];
@@ -386,34 +416,27 @@ class PixiRenderer extends AbstractWorker {
       const neighborX = x[neighborIndex];
       const neighborY = y[neighborIndex];
 
-      // Draw the line with gradient effect (thicker near center)
-      this.debugLayer.moveTo(myX, myY);
-      this.debugLayer.lineTo(neighborX, neighborY);
+      // Draw the line connection
+      this.debugLayer
+        .moveTo(myX, myY)
+        .lineTo(neighborX, neighborY)
+        .stroke({
+          width: 2 / this.cameraData[0],
+          color: this.debugColors.neighbor,
+          alpha: 0.7,
+        });
 
       // Draw a small circle on the neighbor
-      this.debugLayer.lineStyle(0);
-      this.debugLayer.beginFill(this.debugColors.neighbor, 0.5);
-      this.debugLayer.drawCircle(neighborX, neighborY, 3 / this.cameraData[0]);
-      this.debugLayer.endFill();
-
-      // Restore line style for next connection
-      this.debugLayer.lineStyle(
-        2 / this.cameraData[0],
-        this.debugColors.neighbor,
-        0.7
-      );
+      this.debugLayer
+        .circle(neighborX, neighborY, 3 / this.cameraData[0])
+        .fill({ color: this.debugColors.neighbor, alpha: 0.5 });
     }
 
     // Draw entity info text (index and neighbor count)
     // Note: We'll use a simple marker for now, full text rendering would need PIXI.Text pool
-    this.debugLayer.lineStyle(0);
-    this.debugLayer.beginFill(0xffffff, 0.9);
-    this.debugLayer.drawCircle(
-      myX,
-      myY - 20 / this.cameraData[0],
-      4 / this.cameraData[0]
-    );
-    this.debugLayer.endFill();
+    this.debugLayer
+      .circle(myX, myY - 20 / this.cameraData[0], 4 / this.cameraData[0])
+      .fill({ color: 0xffffff, alpha: 0.9 });
   }
 
   /**
@@ -424,23 +447,23 @@ class PixiRenderer extends AbstractWorker {
     const worldWidth = this.worldWidth;
     const worldHeight = this.worldHeight;
 
-    this.debugLayer.lineStyle(
-      1 / this.cameraData[0],
-      this.debugColors.grid,
-      0.2
-    );
-
+    // PixiJS 8: build all lines then stroke once
     // Draw vertical lines
     for (let x = 0; x <= worldWidth; x += cellSize) {
-      this.debugLayer.moveTo(x, 0);
-      this.debugLayer.lineTo(x, worldHeight);
+      this.debugLayer.moveTo(x, 0).lineTo(x, worldHeight);
     }
 
     // Draw horizontal lines
     for (let y = 0; y <= worldHeight; y += cellSize) {
-      this.debugLayer.moveTo(0, y);
-      this.debugLayer.lineTo(worldWidth, y);
+      this.debugLayer.moveTo(0, y).lineTo(worldWidth, y);
     }
+
+    // Apply stroke to all grid lines
+    this.debugLayer.stroke({
+      width: 1 / this.cameraData[0],
+      color: this.debugColors.grid,
+      alpha: 0.2,
+    });
   }
 
   /**
@@ -671,12 +694,14 @@ class PixiRenderer extends AbstractWorker {
       bodySprite.rotation = rotation[i];
 
       // DENSE: use entity index directly for all component data
-      if (bodySprite.scale.x !== scaleX[i]) bodySprite.scale.x = scaleX[i];
-      if (bodySprite.scale.y !== scaleY[i]) bodySprite.scale.y = scaleY[i];
+      // PixiJS 8 Particle uses scaleX/scaleY instead of scale.x/scale.y
+      if (bodySprite.scaleX !== scaleX[i]) bodySprite.scaleX = scaleX[i];
+      if (bodySprite.scaleY !== scaleY[i]) bodySprite.scaleY = scaleY[i];
 
       // Update anchor points (0-1 range)
-      if (bodySprite.anchor.x !== anchorX[i]) bodySprite.anchor.x = anchorX[i];
-      if (bodySprite.anchor.y !== anchorY[i]) bodySprite.anchor.y = anchorY[i];
+      // PixiJS 8 Particle uses anchorX/anchorY instead of anchor.x/anchor.y
+      if (bodySprite.anchorX !== anchorX[i]) bodySprite.anchorX = anchorX[i];
+      if (bodySprite.anchorY !== anchorY[i]) bodySprite.anchorY = anchorY[i];
 
       // OPTIMIZATION: Only update visual properties if dirty flag is set
       // This skips expensive operations (tint, alpha, flipping, animations) when unchanged
@@ -708,21 +733,21 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
-    // Second pass: Y-sort and re-add sprites to container (only if ySorting is enabled)
+    // Second pass: Y-sort and re-add particles to container (only if ySorting is enabled)
     if (this.ySorting) {
       // Sort by Y position (lower Y = render first/background, higher Y = foreground)
       visibleSprites.sort((a, b) => a.y - b.y);
 
-      // Remove all children from container
-      this.particleContainer.removeChildren();
+      // PixiJS 8: Clear particleChildren array and re-add in sorted order
+      this.particleContainer.particleChildren.length = 0;
 
-      // Re-add sprites in sorted order and make them visible
+      // Re-add particles in sorted order
       for (const item of visibleSprites) {
-        this.particleContainer.addChild(item.sprite);
-        if (!item.sprite.visible) {
-          item.sprite.visible = true;
-        }
+        this.particleContainer.addParticle(item.sprite);
       }
+
+      // Mark container as needing update
+      this.particleContainer.update();
     }
   }
 
@@ -792,12 +817,13 @@ class PixiRenderer extends AbstractWorker {
       return;
     }
 
-    this.backgroundSprite = new PIXI.TilingSprite(
-      bgTexture,
-      this.worldWidth,
-      this.worldHeight
-    );
-    this.backgroundSprite.tileScale.set(0.5);
+    // PixiJS 8: TilingSprite uses options object
+    this.backgroundSprite = new PIXI.TilingSprite({
+      texture: bgTexture,
+      width: this.worldWidth,
+      height: this.worldHeight,
+    });
+    this.backgroundSprite.tileScale.set(0.5, 0.5);
     this.backgroundSprite.tilePosition.set(0, 0);
     // Add background to stage directly (ParticleContainer can't hold TilingSprites)
     this.pixiApp.stage.addChildAt(this.backgroundSprite, 0); // Add at bottom
@@ -823,6 +849,7 @@ class PixiRenderer extends AbstractWorker {
 
   /**
    * Load simple textures from transferred ImageBitmaps
+   * PixiJS 8: Uses ImageSource instead of BaseTexture
    */
   loadTextures(texturesData) {
     if (!texturesData) return;
@@ -832,10 +859,9 @@ class PixiRenderer extends AbstractWorker {
     // );
 
     for (const [name, imageBitmap] of Object.entries(texturesData)) {
-      // Create PIXI BaseTexture from ImageBitmap
-      const baseTexture = PIXI.BaseTexture.from(imageBitmap);
-      // Create PIXI Texture from BaseTexture
-      this.textures[name] = new PIXI.Texture(baseTexture);
+      // PixiJS 8: Create TextureSource from ImageBitmap, then create Texture
+      const source = new PIXI.ImageSource({ resource: imageBitmap });
+      this.textures[name] = new PIXI.Texture({ source });
 
       // console.log(`✅ Loaded texture: ${name}`);
     }
@@ -864,18 +890,19 @@ class PixiRenderer extends AbstractWorker {
           throw new Error(`Missing imageBitmap or json for ${name}`);
         }
 
-        // Create base texture from ImageBitmap
-        const baseTexture = PIXI.BaseTexture.from(data.imageBitmap);
+        // PixiJS 8: Create ImageSource from ImageBitmap
+        const source = new PIXI.ImageSource({ resource: data.imageBitmap });
         const jsonData = data.json;
 
         // Manually create textures for each frame
         const frameTextures = {};
         for (const [frameName, frameData] of Object.entries(jsonData.frames)) {
           const frame = frameData.frame;
-          const texture = new PIXI.Texture(
-            baseTexture,
-            new PIXI.Rectangle(frame.x, frame.y, frame.w, frame.h)
-          );
+          // PixiJS 8: Texture constructor takes options object with source and frame
+          const texture = new PIXI.Texture({
+            source,
+            frame: new PIXI.Rectangle(frame.x, frame.y, frame.w, frame.h),
+          });
           frameTextures[frameName] = texture;
         }
 
@@ -895,7 +922,7 @@ class PixiRenderer extends AbstractWorker {
         this.spritesheets[name] = {
           textures: frameTextures,
           animations: animations,
-          baseTexture: baseTexture,
+          source: source, // PixiJS 8: uses source instead of baseTexture
         };
 
         // BIGATLAST SUPPORT: If this is the bigAtlas, also populate this.textures
@@ -966,7 +993,7 @@ class PixiRenderer extends AbstractWorker {
         this.spritesheets[proxyName] = {
           textures: proxyTextures,
           animations: proxyAnimations,
-          baseTexture: bigAtlas.baseTexture,
+          source: bigAtlas.source, // PixiJS 8: uses source instead of baseTexture
           isProxy: true,
           targetSheet: "bigAtlas",
         };
@@ -986,8 +1013,9 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * Create placeholder sprites for all entities with SpriteRenderer
+   * Create placeholder particles for all entities with SpriteRenderer
    * Actual textures/spritesheets are set per-instance via setSpritesheet()
+   * PixiJS 8: Uses Particle objects instead of Sprite for ParticleContainer
    */
   createSprites() {
     // Initialize spritesheet tracking array once
@@ -1007,10 +1035,12 @@ class PixiRenderer extends AbstractWorker {
         continue;
       }
 
-      // Create placeholder sprite - actual texture set via setSpritesheet()
-      const bodySprite = new PIXI.Sprite(PIXI.Texture.WHITE);
-      bodySprite.anchor.set(0.5, 0.5);
-      bodySprite.zIndex = 0;
+      // Create Particle object - PixiJS 8 ParticleContainer uses Particle, not Sprite
+      const bodySprite = new PIXI.Particle({
+        texture: PIXI.Texture.WHITE,
+        anchorX: 0.5,
+        anchorY: 0.5,
+      });
 
       // Store references
       this.bodySprites[i] = bodySprite;
@@ -1025,9 +1055,9 @@ class PixiRenderer extends AbstractWorker {
       // Initialize spritesheet tracking (0 = not set yet)
       this.currentSpritesheetIds[i] = 0;
 
-      // Add sprite to container if Y-sorting is disabled
+      // Add particle to container if Y-sorting is disabled
       if (!this.ySorting) {
-        this.particleContainer.addChild(bodySprite);
+        this.particleContainer.addParticle(bodySprite);
       }
     }
   }
@@ -1110,7 +1140,7 @@ class PixiRenderer extends AbstractWorker {
   /**
    * Initialize the PIXI renderer with provided data
    */
-  initialize(data) {
+  async initialize(data) {
     // console.log("PIXI WORKER: Initializing with component system", data);
 
     // Store viewport and world dimensions from config
@@ -1120,18 +1150,16 @@ class PixiRenderer extends AbstractWorker {
     this.canvasHeight = data.config.canvasHeight;
     this.canvasView = data.view;
 
-    // Create ParticleContainer with exact entityCount size (with 10% buffer for safety)
-    const maxSize = Math.ceil(this.entityCount * 1.1);
-    // console.log(
-    //   `PIXI WORKER: Creating ParticleContainer with maxSize: ${maxSize} (entityCount: ${this.entityCount})`
-    // );
-    this.particleContainer = new PIXI.ParticleContainer(maxSize, {
-      scale: true,
-      position: true,
-      rotation: true,
-      uvs: false,
-      tint: true,
-      alpha: true,
+    // Create ParticleContainer with dynamic properties for sprites
+    // PixiJS 8 ParticleContainer API
+    this.particleContainer = new PIXI.ParticleContainer({
+      dynamicProperties: {
+        vertex: false,
+        position: true,
+        rotation: true,
+        uvs: true,
+        color: true,
+      },
     });
 
     // Read renderer-specific configuration
@@ -1202,17 +1230,17 @@ class PixiRenderer extends AbstractWorker {
       // );
     }
 
-    // Create PIXI application
-    this.pixiApp = new PIXI.Application({
+    // Create PIXI application (PixiJS 8 uses async init)
+    this.pixiApp = new PIXI.Application();
+    await this.pixiApp.init({
       width: this.canvasWidth,
       height: this.canvasHeight,
       resolution: 1,
-      view: this.canvasView,
+      canvas: this.canvasView, // v8 uses 'canvas' instead of 'view'
       backgroundColor: 0x000000,
       // Performance optimizations
-      // roundPixels: true,
-      // antialias: false,
       powerPreference: "high-performance",
+      preference: "webgl", // Force WebGL for worker compatibility
     });
     this.reportLog("finished initializing pixi app");
     // Load simple textures
