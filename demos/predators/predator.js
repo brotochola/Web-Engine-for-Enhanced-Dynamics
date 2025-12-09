@@ -93,7 +93,7 @@ export class Predator extends Boid {
     const otherObject = GameObject.instances[other];
     if (otherObject.entityType === Prey.entityType) {
       ParticleEmitter.emit({
-        count: 100,
+        count: { min: 10, max: 20 },
         texture: "blood",
         x: otherObject.x,
         y: otherObject.y,

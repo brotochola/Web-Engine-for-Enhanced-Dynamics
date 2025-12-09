@@ -94,7 +94,7 @@ export class ParticleEmitter {
       return 0;
     }
 
-    const count = config.count ?? 1;
+    const count = Math.round(this.randomRange(config.count, 1));
     let spawned = 0;
 
     // Resolve texture name to textureId (frame index in bigAtlas)

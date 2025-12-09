@@ -36,6 +36,10 @@ class ParticleWorker extends AbstractWorker {
     // Get max particles from config (passed from gameEngine)
     this.maxParticles = data.maxParticles || 0;
 
+    // Store viewport dimensions for screen visibility checks
+    this.canvasWidth = this.config.canvasWidth;
+    this.canvasHeight = this.config.canvasHeight;
+
     if (this.maxParticles === 0) {
       console.warn("PARTICLE WORKER: No particles configured!");
       return;
@@ -85,8 +89,37 @@ class ParticleWorker extends AbstractWorker {
     const fadeOnTheFloor = ParticleComponent.fadeOnTheFloor;
     const timeOnFloor = ParticleComponent.timeOnFloor;
     const initialAlpha = ParticleComponent.initialAlpha;
+    const isItOnScreen = ParticleComponent.isItOnScreen;
+
     // Count active particles
     let activeCount = 0;
+
+    // Pre-calculate camera/viewport bounds for screen visibility (same as spatial_worker)
+    let zoom = 1,
+      cameraOffsetX = 0,
+      cameraOffsetY = 0;
+    let minX = 0,
+      maxX = 0,
+      minY = 0,
+      maxY = 0;
+    const hasCamera = this.cameraData !== null;
+
+    if (hasCamera) {
+      // Read camera data: [zoom, cameraX, cameraY]
+      zoom = this.cameraData[0];
+      const cameraX = this.cameraData[1];
+      const cameraY = this.cameraData[2];
+
+      // Pre-calculate all bounds once
+      cameraOffsetX = cameraX * zoom;
+      cameraOffsetY = cameraY * zoom;
+      const marginX = this.canvasWidth * 0.15;
+      const marginY = this.canvasHeight * 0.15;
+      minX = -marginX;
+      maxX = this.canvasWidth + marginX;
+      minY = -marginY;
+      maxY = this.canvasHeight + marginY;
+    }
 
     // Update all particles in pool (indices 0 to maxParticles-1)
     for (let i = 0; i < this.maxParticles; i++) {
@@ -144,6 +177,19 @@ class ParticleWorker extends AbstractWorker {
             continue;
           }
         }
+      }
+
+      // Update screen visibility for this particle (same as spatial_worker)
+      if (hasCamera) {
+        // Transform world coordinates to screen coordinates
+        const screenX = x[i] * zoom - cameraOffsetX;
+        const screenY = y[i] * zoom - cameraOffsetY;
+
+        // Check if screen position is within viewport bounds (with margin)
+        isItOnScreen[i] =
+          screenX > minX && screenX < maxX && screenY > minY && screenY < maxY
+            ? 1
+            : 0;
       }
     }
 

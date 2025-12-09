@@ -36,7 +36,7 @@ export class ParticleComponent extends Component {
     fadeOnTheFloor: Uint16Array, // Time in ms to fade out when on floor (0 = no fade)
     timeOnFloor: Uint16Array, // Tracks how long particle has been on floor
     initialAlpha: Float32Array, // Alpha when particle hit the floor (for fade calculation)
-
+    isItOnScreen: Uint8Array, // 0 = not on screen, 1 = on screen
     // Note: Anchor is always 0.5, 0.5 for particles (centered)
     // Note: No animation support - particles are static sprites
   };

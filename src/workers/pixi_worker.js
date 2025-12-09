@@ -1074,13 +1074,14 @@ class PixiRenderer extends AbstractWorker {
     const alpha = ParticleComponent.alpha;
     const tint = ParticleComponent.tint;
     const textureId = ParticleComponent.textureId;
+    const isItOnScreen = ParticleComponent.isItOnScreen;
 
     for (let i = 0; i < this.maxParticles; i++) {
       const sprite = this.particleSprites[i];
       if (!sprite) continue;
 
       // Check if particle is active
-      if (!active[i]) {
+      if (!active[i] || !isItOnScreen[i]) {
         if (sprite.visible) {
           sprite.visible = false;
         }
