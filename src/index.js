@@ -23,6 +23,13 @@ export { RigidBody } from "./components/RigidBody.js";
 export { Collider } from "./components/Collider.js";
 export { SpriteRenderer } from "./components/SpriteRenderer.js";
 export { MouseComponent } from "./components/MouseComponent.js";
+export { ParticleComponent } from "./components/ParticleComponent.js";
+
+// ============================================================================
+// PARTICLES
+// ============================================================================
+// Note: Particles are NOT GameObjects - they use ParticleComponent directly
+export { ParticleEmitter } from "./core/ParticleEmitter.js";
 
 // ============================================================================
 // WORKERS
@@ -58,6 +65,9 @@ import { RigidBody } from "./components/RigidBody.js";
 import { Collider } from "./components/Collider.js";
 import { SpriteRenderer } from "./components/SpriteRenderer.js";
 import { MouseComponent } from "./components/MouseComponent.js";
+import { ParticleComponent } from "./components/ParticleComponent.js";
+
+import { ParticleEmitter } from "./core/ParticleEmitter.js";
 
 import { AbstractWorker } from "./workers/AbstractWorker.js";
 
@@ -79,6 +89,10 @@ const WEED = {
   Collider,
   SpriteRenderer,
   MouseComponent,
+  ParticleComponent,
+
+  // Particles
+  ParticleEmitter,
 
   // Workers
   AbstractWorker,

@@ -12,6 +12,7 @@ import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
+import { ParticleComponent } from "../components/ParticleComponent.js";
 import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 import { DEBUG_FLAGS } from "../core/Debug.js";
@@ -100,6 +101,11 @@ class PixiRenderer extends AbstractWorker {
     this.currentFrameIndex = []; // Current frame index in animation
     this.frameAccumulator = []; // Time accumulator for frame advancement
     this.animationSpeed = []; // Animation speed per entity (frames per second)
+
+    // Particle rendering (separate from entities)
+    this.particleSprites = []; // Array of particle sprites (indexed 0 to maxParticles-1)
+    this.maxParticles = 0; // Number of particles in pool
+    this.particleTextureCache = {}; // Cache for particle textures by textureId
 
     // World and viewport dimensions
     this.worldWidth = 0;
@@ -643,9 +649,9 @@ class PixiRenderer extends AbstractWorker {
     const anchorX = SpriteRenderer.anchorX;
     const anchorY = SpriteRenderer.anchorY;
     const renderVisible = SpriteRenderer.renderVisible;
-    const zOffset = SpriteRenderer.zOffset;
+
     const isItOnScreen = SpriteRenderer.isItOnScreen;
-    const screenY = SpriteRenderer.screenY;
+
     const renderDirty = SpriteRenderer.renderDirty; // OPTIMIZATION: Dirty flag
 
     // Track visible units count
@@ -733,7 +739,12 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
-    // Second pass: Y-sort and re-add particles to container (only if ySorting is enabled)
+    // Update particle sprites (adds to visibleSprites if Y-sorting is enabled)
+    if (this.maxParticles > 0) {
+      this.updateParticleSprites(visibleSprites);
+    }
+
+    // Second pass: Y-sort and re-add all sprites to container (only if ySorting is enabled)
     if (this.ySorting) {
       // Sort by Y position (lower Y = render first/background, higher Y = foreground)
       visibleSprites.sort((a, b) => a.y - b.y);
@@ -741,7 +752,7 @@ class PixiRenderer extends AbstractWorker {
       // PixiJS 8: Clear particleChildren array and re-add in sorted order
       this.particleContainer.particleChildren.length = 0;
 
-      // Re-add particles in sorted order
+      // Re-add all sprites (entities + particles) in sorted order
       for (const item of visibleSprites) {
         this.particleContainer.addParticle(item.sprite);
       }
@@ -1013,6 +1024,113 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
+   * Create particle sprites (separate from entity sprites)
+   * Particles are static sprites with fixed anchor (0.5, 0.5)
+   */
+  createParticleSprites() {
+    if (this.maxParticles === 0) return;
+
+    console.log(`PIXI WORKER: Creating ${this.maxParticles} particle sprites`);
+
+    for (let i = 0; i < this.maxParticles; i++) {
+      // Create Particle object for ParticleContainer
+      const particleSprite = new PIXI.Particle({
+        texture: PIXI.Texture.WHITE, // Default texture, will be set when particle spawns
+        anchorX: 0.5,
+        anchorY: 0.5,
+      });
+
+      // Start invisible (particles are spawned by ParticleEmitter)
+      particleSprite.visible = false;
+
+      this.particleSprites[i] = particleSprite;
+
+      // Add to container if Y-sorting is disabled
+      // (if Y-sorting is enabled, particles are added during updateSprites)
+      if (!this.ySorting) {
+        this.particleContainer.addParticle(particleSprite);
+      }
+    }
+
+    console.log(
+      `PIXI WORKER: Created ${this.maxParticles} particle sprites (separate pool)`
+    );
+  }
+
+  /**
+   * Update particle sprites from ParticleComponent data
+   * Returns array of visible particle info for Y-sorting
+   * @param {Array} visibleSprites - Array to add visible particles to (for Y-sorting)
+   */
+  updateParticleSprites(visibleSprites) {
+    if (this.maxParticles === 0) return;
+
+    // Cache array references
+    const active = ParticleComponent.active;
+    const x = ParticleComponent.x;
+    const y = ParticleComponent.y;
+    const z = ParticleComponent.z;
+    const scale = ParticleComponent.scale;
+    const alpha = ParticleComponent.alpha;
+    const tint = ParticleComponent.tint;
+    const textureId = ParticleComponent.textureId;
+
+    for (let i = 0; i < this.maxParticles; i++) {
+      const sprite = this.particleSprites[i];
+      if (!sprite) continue;
+
+      // Check if particle is active
+      if (!active[i]) {
+        if (sprite.visible) {
+          sprite.visible = false;
+        }
+        continue;
+      }
+
+      // Calculate render Y (ground Y + height offset)
+      const renderY = y[i] + z[i];
+
+      // Update sprite properties from ParticleComponent
+      sprite.x = x[i];
+      sprite.y = renderY;
+      sprite.scaleX = scale[i];
+      sprite.scaleY = scale[i];
+      sprite.alpha = alpha[i];
+      sprite.tint = tint[i];
+
+      // Update texture if needed (check cache)
+      const tid = textureId[i];
+      if (tid > 0 && !this.particleTextureCache[i + "_" + tid]) {
+        // Get texture from bigAtlas by animation index
+        const textureName = SpriteSheetRegistry.getAnimationName(
+          "bigAtlas",
+          tid
+        );
+        if (textureName && this.textures[textureName]) {
+          sprite.texture = this.textures[textureName];
+          this.particleTextureCache[i + "_" + tid] = true;
+        }
+      }
+
+      // Add to Y-sort list if sorting is enabled
+      // Use ground Y (y[i]) for sorting, renderY for display
+      if (visibleSprites) {
+        visibleSprites.push({
+          entityId: -1, // Mark as particle (not an entity)
+          particleIndex: i,
+          sprite: sprite,
+          y: y[i], // Sort by ground position
+        });
+      } else {
+        // Y-sorting disabled - just show the sprite
+        if (!sprite.visible) {
+          sprite.visible = true;
+        }
+      }
+    }
+  }
+
+  /**
    * Create placeholder particles for all entities with SpriteRenderer
    * Actual textures/spritesheets are set per-instance via setSpritesheet()
    * PixiJS 8: Uses Particle objects instead of Sprite for ParticleContainer
@@ -1153,12 +1271,14 @@ class PixiRenderer extends AbstractWorker {
     // Create ParticleContainer with dynamic properties for sprites
     // PixiJS 8 ParticleContainer API
     this.particleContainer = new PIXI.ParticleContainer({
+      blendMode: "normal-npm",
       dynamicProperties: {
         vertex: false,
         position: true,
         rotation: true,
         uvs: true,
         color: true,
+        alpha: true,
       },
     });
 
@@ -1217,6 +1337,20 @@ class PixiRenderer extends AbstractWorker {
       SpriteRenderer.initializeArrays(
         data.buffers.componentData.SpriteRenderer,
         this.entityCount // DENSE: all entities have slots
+      );
+    }
+
+    // ParticleComponent (separate from entity system)
+    // Particles have their own pool with maxParticles size
+    this.maxParticles = data.maxParticles || 0;
+    if (data.buffers.componentData.ParticleComponent && this.maxParticles > 0) {
+      ParticleComponent.initializeArrays(
+        data.buffers.componentData.ParticleComponent,
+        this.maxParticles
+      );
+      ParticleComponent.particleCount = this.maxParticles;
+      console.log(
+        `PIXI WORKER: ParticleComponent initialized for ${this.maxParticles} particles`
       );
     }
 
@@ -1286,6 +1420,9 @@ class PixiRenderer extends AbstractWorker {
     // Create sprites for all entities
     this.createSprites();
     this.reportLog("finished creating sprites");
+    // Create particle sprites (separate pool)
+    this.createParticleSprites();
+    this.reportLog("finished creating particle sprites");
     console.log(
       "PIXI WORKER: Initialization complete, waiting for start signal..."
     );

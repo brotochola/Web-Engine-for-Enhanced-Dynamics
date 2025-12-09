@@ -14,7 +14,9 @@ import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
+import { ParticleComponent } from "../components/ParticleComponent.js";
 import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
+import { ParticleEmitter } from "../core/ParticleEmitter.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 
 // Make imported classes globally available for dynamic instantiation
@@ -23,8 +25,10 @@ self.Transform = Transform;
 self.RigidBody = RigidBody;
 self.Collider = Collider;
 self.SpriteRenderer = SpriteRenderer;
+self.ParticleComponent = ParticleComponent;
 self.Mouse = Mouse;
 self.Keyboard = Keyboard;
+self.ParticleEmitter = ParticleEmitter;
 
 // Game-specific scripts will be loaded dynamically during initialization
 
@@ -161,6 +165,21 @@ class LogicWorker extends AbstractWorker {
 
     // Initialize ALL components (core and custom) - must be done AFTER entity classes are loaded
     this.initializeAllComponents(data);
+
+    // Initialize ParticleEmitter if particles are configured
+    // Particles are NOT entities - they have their own separate pool
+    const maxParticles = data.maxParticles || 0;
+    if (maxParticles > 0) {
+      // Initialize ParticleComponent arrays for the emitter to write to
+      if (data.buffers.componentData.ParticleComponent) {
+        ParticleComponent.initializeArrays(
+          data.buffers.componentData.ParticleComponent,
+          maxParticles
+        );
+        ParticleComponent.particleCount = maxParticles;
+      }
+      ParticleEmitter.initialize(maxParticles);
+    }
 
     // Create GameObject instances
     this.createGameObjectInstances();

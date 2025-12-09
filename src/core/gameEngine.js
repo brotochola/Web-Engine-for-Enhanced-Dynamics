@@ -6,11 +6,13 @@ import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
+import { ParticleComponent } from "../components/ParticleComponent.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { setupWorkerCommunication, seededRandom } from "./utils.js";
 import { Debug } from "./Debug.js";
 import { Mouse } from "./Mouse.js";
 import { BigAtlasInspector } from "./BigAtlasInspector.js";
+// Note: Particles are NOT GameObjects - they use ParticleComponent directly
 
 class GameEngine {
   static now = Date.now();
@@ -62,6 +64,7 @@ class GameEngine {
       logicWorkers: [], // Array of logic workers
       physics: null,
       renderer: null,
+      particle: null, // Particle physics worker
     };
 
     this.pendingPhysicsUpdates = [];
@@ -89,7 +92,13 @@ class GameEngine {
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
       this.workerReadyStates[`logic${i}`] = false;
     }
-    this.totalWorkers = 3 + this.numberOfLogicWorkers; // spatial + physics + renderer + N logic workers
+    // Add particle worker if configured
+    this.hasParticles = !!(this.config.particle?.maxParticles > 0);
+    if (this.hasParticles) {
+      this.workerReadyStates.particle = false;
+    }
+    this.totalWorkers =
+      3 + this.numberOfLogicWorkers + (this.hasParticles ? 1 : 0);
 
     // Shared buffers
     this.buffers = {
@@ -114,12 +123,16 @@ class GameEngine {
     // Component pool tracking
     // DENSE ALLOCATION: All components have slots for all entities
     // Just track ComponentClass for buffer creation
+    // Note: ParticleComponent is handled separately (not entity-based)
     this.componentPools = {
       Transform: { ComponentClass: Transform },
       RigidBody: { ComponentClass: RigidBody },
       Collider: { ComponentClass: Collider },
       SpriteRenderer: { ComponentClass: SpriteRenderer },
     };
+
+    // Particle pool size (separate from entity system)
+    this.maxParticles = this.config.particle?.maxParticles || 0;
 
     // Typed array views
     this.views = {
@@ -394,6 +407,9 @@ class GameEngine {
       throw new Error("SharedArrayBuffer not available! Check CORS headers.");
     }
 
+    // Note: Particles are NOT registered as entities - they have their own separate pool
+    // ParticleComponent buffer is created in createSharedBuffers() with maxParticles size
+
     // Create shared buffers
     this.createSharedBuffers();
 
@@ -483,6 +499,26 @@ class GameEngine {
           `   ✅ ${componentName}: ${bufferSize} bytes for ${this.totalEntityCount} entities`
         );
       }
+    }
+
+    // Create ParticleComponent buffer separately (NOT entity-based)
+    // Particles have their own pool with indices 0 to maxParticles-1
+    if (this.hasParticles && this.maxParticles > 0) {
+      const particleBufferSize = ParticleComponent.getBufferSize(
+        this.maxParticles
+      );
+      this.buffers.componentData.ParticleComponent = new SharedArrayBuffer(
+        particleBufferSize
+      );
+      ParticleComponent.initializeArrays(
+        this.buffers.componentData.ParticleComponent,
+        this.maxParticles
+      );
+      ParticleComponent.particleCount = this.maxParticles;
+
+      console.log(
+        `   🎆 ParticleComponent: ${particleBufferSize} bytes for ${this.maxParticles} particles (separate pool)`
+      );
     }
 
     // Pre-initialize entityType values (MUST be after Transform initialization!)
@@ -719,6 +755,15 @@ class GameEngine {
       { type: "module" }
     );
 
+    // Create particle worker if particles are configured
+    if (this.hasParticles) {
+      this.workers.particle = new Worker(
+        `/src/workers/particle_worker.js${cacheBust}`,
+        { type: "module" }
+      );
+      this.workers.particle.name = "particle";
+    }
+
     this.workers.spatial.name = "spatial";
     this.workers.physics.name = "physics";
     this.workers.renderer.name = "renderer";
@@ -794,6 +839,8 @@ class GameEngine {
       keyIndexMap: this.createKeyIndexMap(),
       // Spritesheet registry metadata for animation lookups
       spritesheetMetadata: SpriteSheetRegistry.serialize(),
+      // Particle system info (separate from entity system)
+      maxParticles: this.maxParticles,
     };
 
     // Initialize spatial worker (no ports needed for now)
@@ -822,6 +869,11 @@ class GameEngine {
       },
       workerPorts.physics ? Object.values(workerPorts.physics) : []
     );
+
+    // Initialize particle worker if configured
+    if (this.hasParticles && this.workers.particle) {
+      this.workers.particle.postMessage(initData);
+    }
 
     // Initialize renderer worker (transfer canvas, textures, spritesheets, and ports)
     const offscreenCanvas = this.canvas.transferControlToOffscreen();
@@ -854,6 +906,9 @@ class GameEngine {
       ...this.workers.logicWorkers,
       this.workers.physics,
       this.workers.renderer,
+      ...(this.hasParticles && this.workers.particle
+        ? [this.workers.particle]
+        : []),
     ];
 
     for (let worker of allWorkers) {
@@ -880,7 +935,12 @@ class GameEngine {
     // const fromWorker = this.workers[e.currentTarget.name];
 
     if (e.data.msg === "fps") {
-      this.updateFPS(e.currentTarget.name, e.data.fps, e.data.activeEntities);
+      this.updateFPS(
+        e.currentTarget.name,
+        e.data.fps,
+        e.data.activeEntities,
+        e.data
+      );
     } else if (e.data.msg === "log") {
       this.log.push({
         worker: e.currentTarget.name,
@@ -942,6 +1002,9 @@ class GameEngine {
       ...this.workers.logicWorkers,
       this.workers.physics,
       this.workers.renderer,
+      ...(this.hasParticles && this.workers.particle
+        ? [this.workers.particle]
+        : []),
     ];
 
     for (const worker of allWorkers) {
@@ -979,11 +1042,14 @@ class GameEngine {
       this.pendingPhysicsUpdates.push(updatePayload);
     }
   }
-  updateFPS(id, fps, activeEntities) {
+  updateFPS(id, fps, activeEntities, data = {}) {
     const element = document.getElementById(id + "FPS");
     if (element) {
       const baseText = element.textContent.split(":")[0];
-      if (activeEntities !== undefined) {
+      if (id === "particle" && data.activeParticles !== undefined) {
+        // Particle worker - show active/total particles
+        element.textContent = `${baseText}: ${fps} FPS (${data.activeParticles}/${data.totalParticles} particles)`;
+      } else if (activeEntities !== undefined) {
         element.textContent = `${baseText}: ${fps} FPS (${activeEntities} active)`;
       } else {
         element.textContent = `${baseText}: ${fps}`;
@@ -1155,6 +1221,9 @@ class GameEngine {
       ...this.workers.logicWorkers,
       this.workers.physics,
       this.workers.renderer,
+      ...(this.hasParticles && this.workers.particle
+        ? [this.workers.particle]
+        : []),
     ];
 
     allWorkers.forEach((worker) => {
@@ -1175,6 +1244,9 @@ class GameEngine {
       ...this.workers.logicWorkers,
       this.workers.physics,
       this.workers.renderer,
+      ...(this.hasParticles && this.workers.particle
+        ? [this.workers.particle]
+        : []),
     ];
 
     allWorkers.forEach((worker) => {
@@ -1189,6 +1261,9 @@ class GameEngine {
       ...this.workers.logicWorkers,
       this.workers.physics,
       this.workers.renderer,
+      ...(this.hasParticles && this.workers.particle
+        ? [this.workers.particle]
+        : []),
     ];
 
     allWorkers.forEach((worker) => {

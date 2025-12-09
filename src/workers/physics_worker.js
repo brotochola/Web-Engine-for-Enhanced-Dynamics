@@ -281,6 +281,7 @@ class PhysicsWorker extends AbstractWorker {
       */
 
       // Clamp velocity to prevent instability
+      //TODO: this should check the linearVelocity, not x and y
       dx = Math.max(-maxSpeed, Math.min(maxSpeed, dx));
       dy = Math.max(-maxSpeed, Math.min(maxSpeed, dy));
 

@@ -7,7 +7,14 @@ import { Prey } from "./prey.js";
 import { PredatorBehavior } from "./PredatorBehavior.js";
 
 // Destructure what we need from WEED
-const { GameObject, RigidBody, Transform, getDirectionFromAngle, rng } = WEED;
+const {
+  GameObject,
+  RigidBody,
+  Transform,
+  getDirectionFromAngle,
+  rng,
+  ParticleEmitter,
+} = WEED;
 
 export class Predator extends Boid {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
@@ -36,8 +43,8 @@ export class Predator extends Boid {
     this.predatorBehavior.huntFactor = 0.2; // Chase strength
 
     // Override Boid's physics properties for predator behavior
-    this.rigidBody.maxVel = 7;
-    this.rigidBody.maxAcc = 0.2;
+    this.rigidBody.maxVel = 20;
+    this.rigidBody.maxAcc = 1;
     this.rigidBody.minSpeed = 0; //1; // Keep predators moving
     this.rigidBody.friction = 0.05;
 
@@ -51,7 +58,7 @@ export class Predator extends Boid {
     this.spriteRenderer.animationSpeed = 0.15;
 
     // Override Boid's perception
-    this.collider.visualRange = 150; // How far predator can see
+    this.collider.visualRange = 250; // How far predator can see
 
     // Override Boid's Flocking component properties
     this.flocking.protectedRange = 0; //this.collider.radius * 3; // Minimum distance from others
@@ -79,6 +86,36 @@ export class Predator extends Boid {
     this.setSpritesheet("civil3");
     this.setAnimation("idle_down");
     this.setAnimationSpeed(0.15);
+  }
+
+  onCollisionStay(other) {
+    // console.log(other);
+    const otherObject = GameObject.instances[other];
+    if (otherObject.entityType === Prey.entityType) {
+      ParticleEmitter.emit({
+        count: 100,
+        texture: "blood",
+        x: otherObject.x,
+        y: otherObject.y,
+        z: -30,
+        angleXY: { min: 0, max: 360 },
+        speed: { min: 1, max: 2.33 },
+        vz: { min: -4, max: 0 },
+        lifespan: 6000,
+        gravity: 0.15,
+        scale: { min: 1.5, max: 2.5 },
+        alpha: { min: 0.4, max: 0.9 },
+        fadeOnTheFloor: 1000,
+      });
+    }
+    // ParticleEmitter.emit({
+    //   texture: "blood",
+    //   x: this.transform.x,
+    //   y: this.transform.y,
+    //   z: this.transform.z,
+    //   scale: 1,
+    //   alpha: 1,
+    // });
   }
 
   /**

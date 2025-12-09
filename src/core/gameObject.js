@@ -34,6 +34,10 @@ export class GameObject {
 
   static instances = [];
 
+  static getByIndex(index) {
+    return this.instances[index];
+  }
+
   /**
    * Initialize entity metadata from SharedArrayBuffer
    * DEPRECATED: Entity metadata now stored in components (Transform.entityType)
@@ -286,6 +290,10 @@ export class GameObject {
     if (this._hasComponents.RigidBody) {
       RigidBody.vy[this.index] = value;
     }
+  }
+
+  get entityType() {
+    return Transform.entityType[this.index];
   }
 
   // Component accessors are now dynamically created in _createComponentAccessors()

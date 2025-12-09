@@ -24,7 +24,7 @@ export class SpriteRenderer extends Component {
 
     // Rendering options
 
-    zOffset: Float32Array, // Z-index offset (for layering)
+    zOffset: Float32Array,
     blendMode: Uint8Array, // Blend mode (0=normal, 1=add, 2=multiply, etc.)
 
     // Visibility
