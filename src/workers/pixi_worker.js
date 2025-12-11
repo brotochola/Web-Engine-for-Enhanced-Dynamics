@@ -18,6 +18,7 @@ import { AbstractWorker } from "./AbstractWorker.js";
 import { DEBUG_FLAGS } from "../core/Debug.js";
 import { Mouse } from "../core/Mouse.js";
 import { MouseComponent } from "../components/MouseComponent.js";
+import { LightEmitter } from "../components/LightEmitter.js";
 
 // Import PixiJS 8 library (ES6 module with named exports)
 import {
@@ -33,6 +34,11 @@ import {
   Ticker,
   ParticleContainer,
   Particle,
+  // Shader/Mesh for lighting system
+  Geometry,
+  Mesh,
+  Shader,
+  GlProgram,
 } from "./pixi8webworker.js";
 
 // Create PIXI-like namespace for compatibility with existing code patterns
@@ -49,6 +55,10 @@ const PIXI = {
   Ticker,
   ParticleContainer,
   Particle,
+  Geometry,
+  Mesh,
+  Shader,
+  GlProgram,
 };
 
 // Make imported classes globally available for dynamic instantiation
@@ -156,6 +166,16 @@ class PixiRenderer extends AbstractWorker {
     this.decalTileContainer = null; // Container for decal tile sprites
     this.decalTileSprites = []; // Array of Sprite per tile
     this.decalTileTextureSources = []; // TextureSource per tile (for updating)
+
+    // ========================================
+    // LIGHTING SYSTEM
+    // ========================================
+    // Full-screen shader mesh for dynamic lighting (multiply blend)
+    // Configured via config.lighting: { enabled, lightingAmbient }
+    this.lightingEnabled = false;
+    this.lightingMesh = null; // PIXI.Mesh with lighting shader
+    this.lightingShader = null; // Shader instance for updating uniforms
+    this.lightingAmbient = 0.05; // Ambient light level (0-1), read from config
   }
 
   /**
@@ -826,6 +846,9 @@ class PixiRenderer extends AbstractWorker {
     // Update decal decal tiles (check for dirty tiles from particle_worker)
     this.updateDecalTiles();
 
+    // Update lighting shader uniforms from LightEmitter components
+    this.updateLighting();
+
     this.updateSprites(deltaTime);
 
     // Render debug overlays (only if debug system is enabled)
@@ -953,6 +976,194 @@ class PixiRenderer extends AbstractWorker {
     this.backgroundSprite.tilePosition.set(0, 0);
     // Add background to stage directly (ParticleContainer can't hold TilingSprites)
     this.pixiApp.stage.addChildAt(this.backgroundSprite, 0); // Add at bottom
+  }
+
+  /**
+   * Create the lighting system - full-screen mesh with lighting shader
+   * Renders between decals and particle container with multiply blend
+   */
+  createLightingSystem() {
+    // Vertex shader - simple full-screen quad
+    const vertexSrc = `
+      in vec2 aPosition;
+      in vec2 aUV;
+      out vec2 vUV;
+      void main() {
+        vUV = aUV;
+        gl_Position = vec4(aPosition, 0.0, 1.0);
+      }
+    `;
+
+    // Fragment shader - accumulates light from all sources using 1/(d*d) falloff
+    const fragmentSrc = `
+      precision mediump float;
+      
+      in vec2 vUV;
+      
+      // Light data arrays - indexed by light count
+      uniform float uLightX[32];
+      uniform float uLightY[32];
+      uniform float uLightIntensity[32];
+      uniform float uLightR[32];
+      uniform float uLightG[32];
+      uniform float uLightB[32];
+      uniform int uLightCount;
+      uniform float uAmbient;
+
+      void main() {
+        vec2 p = vUV * 2.0 - 1.0;
+        vec3 totalLight = vec3(uAmbient);
+
+        for (int i = 0; i < 32; i++) {
+          if (i >= uLightCount) break;
+          
+          vec2 lightPos = vec2(uLightX[i], uLightY[i]);
+          float intensity = uLightIntensity[i];
+          vec3 color = vec3(uLightR[i], uLightG[i], uLightB[i]);
+          
+          float d = length(p - lightPos);
+          // Inverse square falloff with small offset to prevent division by zero
+          float attenuation = intensity / (d * d + 0.01);
+          
+          totalLight += color * attenuation;
+        }
+
+        totalLight = min(totalLight, vec3(1.0));
+        gl_FragColor = vec4(totalLight, 1.0);
+      }
+    `;
+
+    // Create full-screen quad geometry
+    const geometry = new PIXI.Geometry({
+      attributes: {
+        aPosition: [-1, -1, 1, -1, 1, 1, -1, 1],
+        aUV: [0, 0, 1, 0, 1, 1, 0, 1],
+      },
+      indexBuffer: [0, 1, 2, 0, 2, 3],
+    });
+
+    // Create shader program
+    const glProgram = new PIXI.GlProgram({
+      vertex: vertexSrc,
+      fragment: fragmentSrc,
+    });
+
+    // Initialize uniform arrays (32 lights max buffer size)
+    const maxLights = 32;
+    const initialX = new Array(maxLights).fill(0);
+    const initialY = new Array(maxLights).fill(0);
+    const initialIntensity = new Array(maxLights).fill(0);
+    const initialR = new Array(maxLights).fill(1);
+    const initialG = new Array(maxLights).fill(1);
+    const initialB = new Array(maxLights).fill(1);
+
+    // Create shader with uniforms
+    this.lightingShader = new PIXI.Shader({
+      glProgram,
+      resources: {
+        uniforms: {
+          uLightX: { value: initialX, type: "f32", size: maxLights },
+          uLightY: { value: initialY, type: "f32", size: maxLights },
+          uLightIntensity: {
+            value: initialIntensity,
+            type: "f32",
+            size: maxLights,
+          },
+          uLightR: { value: initialR, type: "f32", size: maxLights },
+          uLightG: { value: initialG, type: "f32", size: maxLights },
+          uLightB: { value: initialB, type: "f32", size: maxLights },
+          uLightCount: { value: 0, type: "i32" },
+          uAmbient: { value: this.lightingAmbient, type: "f32" },
+        },
+      },
+    });
+
+    // Create mesh with multiply blend mode
+    this.lightingMesh = new PIXI.Mesh({
+      geometry,
+      shader: this.lightingShader,
+    });
+    this.lightingMesh.blendMode = "multiply";
+
+    // Add to stage (after decals, before particle container)
+    this.pixiApp.stage.addChild(this.lightingMesh);
+  }
+
+  /**
+   * Update lighting shader uniforms from LightEmitter components
+   * Collects all active lights and updates shader uniforms
+   */
+  updateLighting() {
+    if (!this.lightingEnabled || !this.lightingShader) return;
+
+    const uniforms = this.lightingShader.resources.uniforms.uniforms;
+
+    // Cache component arrays
+    const active = Transform.active;
+    const worldX = Transform.x;
+    const worldY = Transform.y;
+    const isOnScreen = SpriteRenderer.isItOnScreen;
+    const lightEnabled = LightEmitter.enabled;
+    const lightColor = LightEmitter.lightColor;
+    const lightIntensity = LightEmitter.lightIntensity;
+
+    // Get camera data for world→screen transform
+    const zoom = this.cameraData[0];
+    const cameraX = this.cameraData[1];
+    const cameraY = this.cameraData[2];
+
+    let lightIndex = 0;
+    // const maxLights = 32;
+
+    // Iterate all entities looking for active light emitters
+    for (let i = 0; i < this.entityCount; i++) {
+      if (!active[i]) continue;
+      if (!lightEnabled[i]) continue;
+      // Skip isOnScreen check - lights can illuminate from off-screen
+      // if (lightIndex >= maxLights) break;
+
+      // Calculate screen position from world position + camera
+      const screenX = (worldX[i] - cameraX) * zoom;
+      const screenY = (worldY[i] - cameraY) * zoom;
+
+      // Convert screen position to shader space (-1 to 1)
+      const shaderX = (screenX / this.canvasWidth) * 2.0 - 1.0;
+      const shaderY = -((screenY / this.canvasHeight) * 2.0 - 1.0);
+
+      // Extract RGB from lightColor (0xRRGGBB)
+      const color = lightColor[i];
+      const r = ((color >> 16) & 0xff) / 255;
+      const g = ((color >> 8) & 0xff) / 255;
+      const b = (color & 0xff) / 255;
+
+      // Scale intensity by zoom² to maintain consistent world-space light radius
+      // When zoomed out, lights cover less screen space so need higher intensity
+      const scaledIntensity = lightIntensity[i] * zoom * zoom;
+
+      // Update uniforms
+      uniforms.uLightX[lightIndex] = shaderX;
+      uniforms.uLightY[lightIndex] = shaderY;
+      uniforms.uLightIntensity[lightIndex] = scaledIntensity;
+      uniforms.uLightR[lightIndex] = r;
+      uniforms.uLightG[lightIndex] = g;
+      uniforms.uLightB[lightIndex] = b;
+
+      lightIndex++;
+    }
+
+    // Update light count
+    uniforms.uLightCount = lightIndex;
+
+    // Debug: log light count occasionally
+    if (this.frameNumber % 120 === 0 && lightIndex > 0) {
+      console.log(
+        `LIGHTING: ${lightIndex} lights active, first light at (${uniforms.uLightX[0].toFixed(
+          2
+        )}, ${uniforms.uLightY[0].toFixed(
+          2
+        )}) intensity=${uniforms.uLightIntensity[0].toFixed(2)}`
+      );
+    }
   }
 
   /**
@@ -1474,6 +1685,17 @@ class PixiRenderer extends AbstractWorker {
       );
     }
 
+    // LightEmitter (for lighting system)
+    if (data.buffers.componentData.LightEmitter) {
+      LightEmitter.initializeArrays(
+        data.buffers.componentData.LightEmitter,
+        this.entityCount
+      );
+      console.log(
+        `PIXI WORKER: LightEmitter component initialized (${this.entityCount} slots)`
+      );
+    }
+
     // Deserialize spritesheet metadata for animation lookups
     if (data.spritesheetMetadata) {
       SpriteSheetRegistry.deserialize(data.spritesheetMetadata);
@@ -1536,6 +1758,25 @@ class PixiRenderer extends AbstractWorker {
 
       console.log(
         `PIXI WORKER: decal decals enabled - ${this.decalsTilesX}×${this.decalsTilesY} tiles (${this.decalsTileSize}px world, ${this.decalsTilePixelSize}px texture @ ${this.decalsResolution}x)`
+      );
+    }
+
+    // ========================================
+    // LIGHTING SYSTEM - Initialize
+    // ========================================
+    const lightingConfig = this.config.lighting || {};
+    if (lightingConfig.enabled && data.buffers.componentData.LightEmitter) {
+      this.lightingEnabled = true;
+      this.lightingAmbient =
+        lightingConfig.lightingAmbient !== undefined
+          ? lightingConfig.lightingAmbient
+          : 0.05;
+
+      // Create lighting mesh (full-screen quad with multiply blend)
+      this.createLightingSystem();
+
+      console.log(
+        `PIXI WORKER: Lighting system enabled (ambient: ${this.lightingAmbient})`
       );
     }
 

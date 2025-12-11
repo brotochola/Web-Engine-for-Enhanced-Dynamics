@@ -66,8 +66,6 @@ class ParticleWorker extends AbstractWorker {
    * Initialize the particle worker
    */
   async initialize(data) {
-    console.log("PARTICLE WORKER: Initializing...");
-
     // Get max particles from config (passed from gameEngine)
     this.maxParticles = data.maxParticles || 0;
 
@@ -92,16 +90,9 @@ class ParticleWorker extends AbstractWorker {
       return;
     }
 
-    console.log(
-      `PARTICLE WORKER: Pool ready with ${
-        this.maxParticles
-      } particles (indices 0-${this.maxParticles - 1})`
-    );
-
     // ========================================
     // BLOOD DECALS TILEMAP - Initialize SABs
     // ========================================
-    console.log("PARTICLE WORKER: Checking decals config:", data.decals);
 
     if (data.decals && data.decals.enabled) {
       this.decalsEnabled = true;
@@ -129,18 +120,9 @@ class ParticleWorker extends AbstractWorker {
             rgba: new Uint8ClampedArray(textureData.rgba),
           };
         }
-        console.log(
-          `PARTICLE WORKER: Loaded ${
-            Object.keys(this.decalTextures).length
-          } decal textures`
-        );
       } else {
         console.warn("PARTICLE WORKER: No decal textures provided!");
       }
-
-      console.log(
-        `PARTICLE WORKER: Blood decals enabled - ${this.decalsTilesX}×${this.decalsTilesY} tiles (${this.decalsTileSize}px world, ${this.decalsTilePixelSize}px texture @ ${this.decalsResolution}x)`
-      );
     } else {
       console.warn("PARTICLE WORKER: Blood decals NOT enabled!", {
         decals: data.decals,
@@ -148,10 +130,6 @@ class ParticleWorker extends AbstractWorker {
         enabled: data.decals?.enabled,
       });
     }
-
-    console.log(
-      "PARTICLE WORKER: Initialization complete, waiting for start signal..."
-    );
   }
 
   /**
@@ -313,13 +291,6 @@ class ParticleWorker extends AbstractWorker {
     // Process all particles that hit the floor this frame
     // Batching improves cache locality for tile writes
     if (this.particlesToStamp.length > 0) {
-      // Debug: log how many particles to stamp
-      if (this.frameNumber % 60 === 0) {
-        console.log(
-          `PARTICLE WORKER: ${this.particlesToStamp.length} particles to stamp, decalsEnabled=${this.decalsEnabled}`
-        );
-      }
-
       if (this.decalsEnabled) {
         const particleX = ParticleComponent.x;
         const particleY = ParticleComponent.y;
