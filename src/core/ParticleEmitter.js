@@ -60,6 +60,7 @@ export class ParticleEmitter {
    * @param {number|{min,max}} [config.scale=1] - Scale or range
    * @param {number|{min,max}} [config.alpha=1] - Alpha (opacity) or range
    * @param {number} [config.fadeOnTheFloor=0] - Time in ms to fade out particles when they hit the floor
+   * @param {boolean} [config.stayOnTheFloor=false] - If true, particle stamps a decal on floor and despawns immediately
    * @returns {number} - Number of particles actually spawned
    *
    * @example
@@ -123,6 +124,8 @@ export class ParticleEmitter {
     const fadeOnTheFloor = ParticleComponent.fadeOnTheFloor;
     const timeOnFloor = ParticleComponent.timeOnFloor;
     const initialAlpha = ParticleComponent.initialAlpha;
+    const stayOnTheFloor = ParticleComponent.stayOnTheFloor;
+
     // Scan for inactive particles (indices 0 to maxParticles-1)
     for (let i = 0; i < this.maxParticles && spawned < count; i++) {
       if (active[i] === 0) {
@@ -170,6 +173,9 @@ export class ParticleEmitter {
         fadeOnTheFloor[i] = config.fadeOnTheFloor ?? 0;
         timeOnFloor[i] = 0;
         initialAlpha[i] = 0;
+
+        // Blood decal system: if true, particle stamps decal on floor hit and despawns
+        stayOnTheFloor[i] = config.stayOnTheFloor ? 1 : 0;
 
         spawned++;
       }

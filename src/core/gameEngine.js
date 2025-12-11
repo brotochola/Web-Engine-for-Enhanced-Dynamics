@@ -134,6 +134,35 @@ class GameEngine {
     // Particle pool size (separate from entity system)
     this.maxParticles = this.config.particle?.maxParticles || 0;
 
+    // ========================================
+    // BLOOD DECALS TILEMAP SYSTEM
+    // ========================================
+    // When particles with stayOnTheFloor=true hit the ground, they stamp
+    // a permanent blood splat onto a tilemap. This allows thousands of
+    // decals without individual sprites.
+    //
+    // Architecture:
+    // - World is divided into tiles (e.g., 256x256 pixels each)
+    // - Each tile has an RGBA buffer for pixel data
+    // - particle_worker stamps blood patterns into tiles when particles land
+    // - pixi_worker renders dirty tiles as textures
+    console.log("DEBUG: config.particle =", JSON.stringify(config.particle));
+    console.log(
+      "DEBUG: this.config.particle =",
+      JSON.stringify(this.config.particle)
+    );
+    console.log(
+      "DEBUG: this.config.particle?.decals =",
+      this.config.particle?.decals
+    );
+    this.decalsEnabled = this.config.particle?.decals || false;
+    this.decalsTileSize = this.config.particle?.decalsTileSize || 256; // World units each tile covers
+    this.decalsResolution = this.config.particle?.decalsResolution || 1.0; // 0.5 = half res
+    this.decalsTilePixelSize = Math.floor(
+      this.decalsTileSize * this.decalsResolution
+    ); // Actual pixel size
+    console.log("DEBUG: decalsEnabled =", this.decalsEnabled);
+
     // Typed array views
     this.views = {
       input: null,
@@ -521,6 +550,54 @@ class GameEngine {
       );
     }
 
+    // ========================================
+    // BLOOD DECALS TILEMAP - SharedArrayBuffer Creation
+    // ========================================
+    // Creates two SABs:
+    // 1. bloodTilesRGBA: Stores RGBA pixel data for all tiles (write by particle_worker, read by pixi_worker)
+    // 2. bloodTilesDirty: Dirty flags per tile (set by particle_worker, cleared by pixi_worker)
+    if (this.decalsEnabled) {
+      const tileSize = this.decalsTileSize; // World units each tile covers
+      const tilePixelSize = this.decalsTilePixelSize; // Actual pixel dimensions
+      const worldWidth = this.config.worldWidth;
+      const worldHeight = this.config.worldHeight;
+
+      // Calculate tile grid dimensions (based on world coverage, not pixel size)
+      const tilesX = Math.ceil(worldWidth / tileSize);
+      const tilesY = Math.ceil(worldHeight / tileSize);
+      const totalTiles = tilesX * tilesY;
+
+      // Each tile is tilePixelSize × tilePixelSize pixels × 4 bytes (RGBA)
+      // Lower resolution = smaller buffers = better performance
+      const bytesPerTile = tilePixelSize * tilePixelSize * 4;
+      const totalTileBytes = totalTiles * bytesPerTile;
+
+      // Create SharedArrayBuffer for tile RGBA data
+      // particle_worker writes blood patterns here
+      // pixi_worker reads and converts to textures
+      this.buffers.bloodTilesRGBA = new SharedArrayBuffer(totalTileBytes);
+
+      // Create SharedArrayBuffer for dirty flags (1 byte per tile)
+      // particle_worker sets flag to 1 when a tile is modified
+      // pixi_worker clears flag to 0 after updating texture
+      this.buffers.bloodTilesDirty = new SharedArrayBuffer(totalTiles);
+
+      // Store tile grid metadata for workers
+      this.decalsTilesX = tilesX;
+      this.decalsTilesY = tilesY;
+      this.decalsTotalTiles = totalTiles;
+
+      console.log(
+        `   🩸 Blood Decals: ${tilesX}×${tilesY} = ${totalTiles} tiles (${tileSize}px world, ${tilePixelSize}px texture @ ${
+          this.decalsResolution
+        }x), ${(totalTileBytes / 1024 / 1024).toFixed(1)} MB`
+      );
+    } else {
+      console.log(
+        `   🩸 Blood Decals: DISABLED (decalsEnabled=${this.decalsEnabled}, config.particle.decals=${this.config.particle?.decals})`
+      );
+    }
+
     // Pre-initialize entityType values (MUST be after Transform initialization!)
     this.preInitializeEntityTypeArrays();
 
@@ -681,6 +758,23 @@ class GameEngine {
       this.bigAtlasCanvas = bigAtlas.canvas;
       this.bigAtlasJson = bigAtlas.json;
 
+      // ========================================
+      // BLOOD DECALS: Extract texture pixel data
+      // ========================================
+      // Extract RGBA pixel data for each frame in the bigAtlas
+      // This data is sent to particle_worker for stamping
+      if (this.decalsEnabled) {
+        this.decalTextureData = this.extractDecalTextures(
+          bigAtlas.canvas,
+          bigAtlas.json
+        );
+        console.log(
+          `🩸 Extracted ${
+            Object.keys(this.decalTextureData).length
+          } textures for blood decals`
+        );
+      }
+
       // Make helper functions available globally for easy access
       window.downloadBigAtlas = () => {
         const link = document.createElement("a");
@@ -701,6 +795,65 @@ class GameEngine {
       console.error("❌ Failed to generate BigAtlas:", error);
       throw error;
     }
+  }
+
+  /**
+   * Extract RGBA pixel data for decal textures from the bigAtlas
+   * Used by particle_worker for stamping blood decals
+   *
+   * For particles, textureId = animation index in bigAtlas
+   * Each animation in bigAtlas maps to a frame (or first frame of an animation)
+   *
+   * @param {HTMLCanvasElement} atlasCanvas - The bigAtlas canvas
+   * @param {Object} atlasJson - The bigAtlas JSON metadata
+   * @returns {Object} Map of textureId -> { width, height, rgba: ArrayBuffer }
+   */
+  extractDecalTextures(atlasCanvas, atlasJson) {
+    const ctx = atlasCanvas.getContext("2d");
+    const textures = {};
+
+    // Iterate through all animations in bigAtlas
+    // textureId in ParticleComponent = animation index
+    // We extract the first frame of each animation
+    const animationNames = Object.keys(atlasJson.animations);
+
+    for (let textureId = 0; textureId < animationNames.length; textureId++) {
+      const animName = animationNames[textureId];
+      const frameList = atlasJson.animations[animName];
+
+      if (!frameList || frameList.length === 0) continue;
+
+      // Get the first frame of this animation
+      const firstFrameName = frameList[0];
+      const frameData = atlasJson.frames[firstFrameName];
+
+      if (!frameData) {
+        console.warn(
+          `Decal texture: Frame "${firstFrameName}" not found for animation "${animName}"`
+        );
+        continue;
+      }
+
+      const frame = frameData.frame;
+
+      // Extract pixel data for this frame
+      const imageData = ctx.getImageData(frame.x, frame.y, frame.w, frame.h);
+
+      // Store as transferable ArrayBuffer
+      textures[textureId] = {
+        width: frame.w,
+        height: frame.h,
+        rgba: imageData.data.buffer, // ArrayBuffer (transferable)
+      };
+    }
+
+    console.log(
+      `   Extracted ${
+        Object.keys(textures).length
+      } decal textures from bigAtlas`
+    );
+
+    return textures;
   }
 
   /**
@@ -841,6 +994,28 @@ class GameEngine {
       spritesheetMetadata: SpriteSheetRegistry.serialize(),
       // Particle system info (separate from entity system)
       maxParticles: this.maxParticles,
+
+      // ========================================
+      // BLOOD DECALS TILEMAP - Worker Data
+      // ========================================
+      // Passed to both particle_worker (for stamping) and pixi_worker (for rendering)
+      decals: this.decalsEnabled
+        ? {
+            enabled: true,
+            tileSize: this.decalsTileSize, // World units each tile covers
+            tilePixelSize: this.decalsTilePixelSize, // Actual pixel size of textures
+            resolution: this.decalsResolution, // Resolution multiplier (0.5 = half res)
+            tilesX: this.decalsTilesX,
+            tilesY: this.decalsTilesY,
+            totalTiles: this.decalsTotalTiles,
+            // SharedArrayBuffers for cross-worker communication
+            tilesRGBA: this.buffers.bloodTilesRGBA, // RGBA pixel data
+            tilesDirty: this.buffers.bloodTilesDirty, // Dirty flags
+            // Texture pixel data for stamping (particle_worker needs this)
+            // Map of textureId -> { width, height, rgba: ArrayBuffer }
+            textures: this.decalTextureData,
+          }
+        : null,
     };
 
     // Initialize spatial worker (no ports needed for now)

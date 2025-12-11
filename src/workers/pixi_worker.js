@@ -135,10 +135,31 @@ class PixiRenderer extends AbstractWorker {
 
     // Per-instance spritesheet tracking
     this.currentSpritesheetIds = null; // Will be initialized in createSprites
+
+    // ========================================
+    // decal DECALS TILEMAP SYSTEM
+    // ========================================
+    // Renders decal splats stamped by particle_worker onto tile sprites
+    this.decalsEnabled = false;
+    this.decalsTileSize = 256; // World units each tile covers
+    this.decalsTilePixelSize = 256; // Actual texture pixel size
+    this.decalsResolution = 1.0; // Resolution multiplier
+    this.decalsTilesX = 0;
+    this.decalsTilesY = 0;
+    this.decalsTotalTiles = 0;
+
+    // SharedArrayBuffer views (shared with particle_worker)
+    this.decalTilesRGBA = null; // Uint8ClampedArray - RGBA pixel data
+    this.decalTilesDirty = null; // Uint8Array - dirty flags (0=clean, 1=modified)
+
+    // PIXI rendering
+    this.decalTileContainer = null; // Container for decal tile sprites
+    this.decalTileSprites = []; // Array of Sprite per tile
+    this.decalTileTextureSources = []; // TextureSource per tile (for updating)
   }
 
   /**
-   * Update camera transform on particle container and background
+   * Update camera transform on particle container, background, and decal tiles
    */
   updateCameraTransform() {
     const zoom = this.cameraData[0];
@@ -155,6 +176,13 @@ class PixiRenderer extends AbstractWorker {
       this.backgroundSprite.scale.set(zoom);
       this.backgroundSprite.x = -cameraX * zoom;
       this.backgroundSprite.y = -cameraY * zoom;
+    }
+
+    // Apply camera state to decal tile container
+    if (this.decalTileContainer) {
+      this.decalTileContainer.scale.set(zoom);
+      this.decalTileContainer.x = -cameraX * zoom;
+      this.decalTileContainer.y = -cameraY * zoom;
     }
   }
 
@@ -686,6 +714,10 @@ class PixiRenderer extends AbstractWorker {
 
       // Collect for Y-sorting if enabled
       if (this.ySorting) {
+        // Make sprite visible before adding to sort list
+        if (!bodySprite.visible) {
+          bodySprite.visible = true;
+        }
         visibleSprites.push({ entityId: i, sprite: bodySprite, y: y[i] });
       } else {
         // No Y-sorting: just make sprite visible
@@ -790,6 +822,10 @@ class PixiRenderer extends AbstractWorker {
    */
   update(deltaTime, dtRatio, resuming) {
     this.updateCameraTransform();
+
+    // Update decal decal tiles (check for dirty tiles from particle_worker)
+    this.updateDecalTiles();
+
     this.updateSprites(deltaTime);
 
     // Render debug overlays (only if debug system is enabled)
@@ -813,6 +849,85 @@ class PixiRenderer extends AbstractWorker {
     } else {
       // Standard mode: PIXI ticker will call gameLoop on every tick (60fps)
       this.pixiApp.ticker.add(() => this.gameLoop());
+    }
+  }
+
+  /**
+   * Create sprites for each decal decal tile
+   * Each tile is a Sprite with an initially transparent texture
+   * Textures are updated when particle_worker marks tiles as dirty
+   */
+  createDecalTileSprites() {
+    const tileSize = this.decalsTileSize;
+
+    for (let ty = 0; ty < this.decalsTilesY; ty++) {
+      for (let tx = 0; tx < this.decalsTilesX; tx++) {
+        const tileIndex = tx + ty * this.decalsTilesX;
+
+        // Create an initially transparent texture for this tile
+        // We'll update the texture source when the tile becomes dirty
+        const sprite = new PIXI.Sprite(PIXI.Texture.EMPTY);
+        sprite.x = tx * tileSize;
+        sprite.y = ty * tileSize;
+        sprite.width = tileSize;
+        sprite.height = tileSize;
+        sprite.visible = false; // Hidden until first decal splat
+
+        this.decalTileSprites[tileIndex] = sprite;
+        this.decalTileTextureSources[tileIndex] = null; // Created on first update
+        this.decalTileContainer.addChild(sprite);
+      }
+    }
+
+    console.log(
+      `PIXI WORKER: Created ${this.decalsTotalTiles} decal tile sprites`
+    );
+  }
+
+  /**
+   * Update decal tile textures for any dirty tiles
+   * Called each frame to check for tiles modified by particle_worker
+   * Uses fire-and-forget createImageBitmap for async texture updates
+   */
+  updateDecalTiles() {
+    if (!this.decalsEnabled) return;
+
+    // Use pixel size for buffer operations (not world tile size)
+    const tilePixelSize = this.decalsTilePixelSize;
+    const bytesPerTile = tilePixelSize * tilePixelSize * 4;
+
+    for (let tileIndex = 0; tileIndex < this.decalsTotalTiles; tileIndex++) {
+      // Check if this tile was modified by particle_worker
+      if (this.decalTilesDirty[tileIndex] === 0) continue;
+
+      // Clear dirty flag immediately (particle_worker may set it again)
+      this.decalTilesDirty[tileIndex] = 0;
+
+      // Get the RGBA data for this tile from SharedArrayBuffer
+      const tileByteOffset = tileIndex * bytesPerTile;
+      const tileRGBAShared = new Uint8ClampedArray(
+        this.decalTilesRGBA.buffer,
+        tileByteOffset,
+        bytesPerTile
+      );
+
+      // Create a non-shared copy for ImageData (ImageData can't use SharedArrayBuffer)
+      const tileRGBA = new Uint8ClampedArray(tileRGBAShared);
+
+      // Create ImageData from the tile's RGBA buffer (uses pixel size)
+      const imageData = new ImageData(tileRGBA, tilePixelSize, tilePixelSize);
+
+      // Fire-and-forget: create ImageBitmap and update texture
+      // The tile will appear on the next frame after the bitmap is ready
+      // PIXI will scale the lower-res texture up to the sprite's world size
+      const sprite = this.decalTileSprites[tileIndex];
+
+      createImageBitmap(imageData).then((bitmap) => {
+        // Create or update texture source
+        const source = new PIXI.ImageSource({ resource: bitmap });
+        sprite.texture = new PIXI.Texture({ source });
+        sprite.visible = true; // Show the tile now that it has content
+      });
     }
   }
 
@@ -1116,6 +1231,10 @@ class PixiRenderer extends AbstractWorker {
       // Add to Y-sort list if sorting is enabled
       // Use ground Y (y[i]) for sorting, renderY for display
       if (visibleSprites) {
+        // Make sprite visible before adding to sort list
+        if (!sprite.visible) {
+          sprite.visible = true;
+        }
         visibleSprites.push({
           entityId: -1, // Mark as particle (not an entity)
           particleIndex: i,
@@ -1388,6 +1507,37 @@ class PixiRenderer extends AbstractWorker {
 
     // Create background
     this.createBackground();
+
+    // ========================================
+    // decal DECALS TILEMAP - Initialize
+    // ========================================
+    if (data.decals && data.decals.enabled) {
+      this.decalsEnabled = true;
+      this.decalsTileSize = data.decals.tileSize; // World units per tile
+      this.decalsTilePixelSize = data.decals.tilePixelSize; // Actual texture pixels
+      this.decalsResolution = data.decals.resolution; // Resolution multiplier
+      this.decalsTilesX = data.decals.tilesX;
+      this.decalsTilesY = data.decals.tilesY;
+      this.decalsTotalTiles = data.decals.totalTiles;
+
+      // Create typed array views over SharedArrayBuffers
+      this.decalTilesRGBA = new Uint8ClampedArray(data.decals.tilesRGBA);
+      this.decalTilesDirty = new Uint8Array(data.decals.tilesDirty);
+
+      // Create decal tile container (renders between background and entities)
+      this.decalTileContainer = new PIXI.Container();
+
+      // Create sprites for each tile
+      this.createDecalTileSprites();
+
+      // Add decal tile container to stage (between background and entities)
+      // decal decals render above background but below entities
+      this.pixiApp.stage.addChild(this.decalTileContainer);
+
+      console.log(
+        `PIXI WORKER: decal decals enabled - ${this.decalsTilesX}×${this.decalsTilesY} tiles (${this.decalsTileSize}px world, ${this.decalsTilePixelSize}px texture @ ${this.decalsResolution}x)`
+      );
+    }
 
     // Add particle container to the stage
     // Sprites are Y-sorted and re-added every frame for proper depth ordering

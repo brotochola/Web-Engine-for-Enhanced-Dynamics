@@ -92,6 +92,7 @@ export class Predator extends Boid {
     // console.log(other);
     const otherObject = GameObject.instances[other];
     if (otherObject.entityType === Prey.entityType) {
+      // console.log("Predator: onCollisionStay", otherObject);
       ParticleEmitter.emit({
         count: { min: 4, max: 8 },
         texture: "blood",
@@ -105,7 +106,8 @@ export class Predator extends Boid {
         gravity: 0.15,
         scale: { min: 1.5, max: 2.5 },
         alpha: { min: 0.4, max: 0.9 },
-        fadeOnTheFloor: 1000,
+        // fadeOnTheFloor: 1000,
+        stayOnTheFloor: true,
       });
     }
     // ParticleEmitter.emit({

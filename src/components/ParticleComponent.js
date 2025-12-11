@@ -33,9 +33,17 @@ export class ParticleComponent extends Component {
     tint: Uint32Array, // Color tint (0xRRGGBB)
     textureId: Uint16Array, // Index into texture atlas (NOT spritesheetId)
 
+    // === Floor behavior ===
     fadeOnTheFloor: Uint16Array, // Time in ms to fade out when on floor (0 = no fade)
     timeOnFloor: Uint16Array, // Tracks how long particle has been on floor
     initialAlpha: Float32Array, // Alpha when particle hit the floor (for fade calculation)
+
+    // === Blood Decals System ===
+    // When stayOnTheFloor=1, particle will stamp a decal on the tilemap when hitting floor
+    // The particle is then immediately despawned (no fade animation)
+    stayOnTheFloor: Uint8Array, // 0 = normal behavior, 1 = stamp decal on floor hit
+
+    // === Visibility ===
     isItOnScreen: Uint8Array, // 0 = not on screen, 1 = on screen
     // Note: Anchor is always 0.5, 0.5 for particles (centered)
     // Note: No animation support - particles are static sprites

@@ -299,7 +299,7 @@
     </div>
 
     <script type="module">
-        const numberOfPrey = 20000;
+        const numberOfPrey = 10000;
         const numberOfPredators = 4;
         const numberOfBoids = 0;
         // Import WeedJS engine 🌿
@@ -327,14 +327,17 @@
 
                 // Spatial hash grid configuration
                 spatial: {
-                    cellSize: 100,  // Increased to match visual range (reduces grid overhead)
+                    cellSize: 128,  // Increased to match visual range (reduces grid overhead)
                     maxNeighbors: 450,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
                     noLimitFPS: true,
 
                 },
                 particle: {
                     noLimitFPS: true,
-                    maxParticles: 50000
+                    maxParticles: 50000,
+                    decals: true,
+                    decalsTileSize: 256,
+                    decalsResolution: 0.5,
                 },
 
                 // Logic configuration
@@ -356,7 +359,7 @@
                 },
                 renderer: {
                     noLimitFPS: false,
-                    // bg: "bg",
+                    bg: "bg",
                     ySorting: true,
                 }
             },
