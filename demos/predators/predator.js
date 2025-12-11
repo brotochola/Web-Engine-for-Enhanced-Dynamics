@@ -104,8 +104,9 @@ export class Predator extends Boid {
         vz: { min: -4, max: 0 },
         lifespan: 6000,
         gravity: 0.15,
-        scale: { min: 1.5, max: 2.5 },
+        scale: { min: 0.1, max: 0.2 },
         alpha: { min: 0.4, max: 0.9 },
+        tint: { min: 0xaaaaaa, max: 0xffffff },
         // fadeOnTheFloor: 1000,
         stayOnTheFloor: true,
       });

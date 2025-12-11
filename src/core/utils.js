@@ -41,6 +41,58 @@ export function lerp(a, b, t) {
 }
 
 /**
+ * Resolve a value that can be a number or { min, max } range
+ * @param {number|{min:number, max:number}} value - Value or range
+ * @param {number} defaultVal - Default if value is undefined
+ * @returns {number} - Resolved value (randomized if range)
+ */
+export function randomRange(value, defaultVal = 0) {
+  if (value === undefined || value === null) return defaultVal;
+  if (typeof value === "number") return value;
+  // { min, max } object - return random value in range
+  const min = value.min ?? defaultVal;
+  const max = value.max ?? defaultVal;
+  return min + Math.random() * (max - min);
+}
+
+/**
+ * Resolve a color value that can be a number or { min, max } range
+ * Properly interpolates RGB channels separately
+ * @param {number|{min:number, max:number}} value - Color value or range (e.g., 0xff0000 or { min: 0xaaaaaa, max: 0xffffff })
+ * @param {number} defaultVal - Default if value is undefined
+ * @returns {number} - Resolved color value
+ */
+export function randomColor(value, defaultVal = 0xffffff) {
+  if (value === undefined || value === null) return defaultVal;
+  if (typeof value === "number") return value;
+
+  // { min, max } object - interpolate each RGB channel separately
+  const minColor = value.min ?? defaultVal;
+  const maxColor = value.max ?? defaultVal;
+
+  // Extract RGB components from min color
+  const minR = (minColor >> 16) & 0xff;
+  const minG = (minColor >> 8) & 0xff;
+  const minB = minColor & 0xff;
+
+  // Extract RGB components from max color
+  const maxR = (maxColor >> 16) & 0xff;
+  const maxG = (maxColor >> 8) & 0xff;
+  const maxB = maxColor & 0xff;
+
+  // Random interpolation factor
+  const t = Math.random();
+
+  // Interpolate each channel
+  const r = Math.round(minR + t * (maxR - minR));
+  const g = Math.round(minG + t * (maxG - minG));
+  const b = Math.round(minB + t * (maxB - minB));
+
+  // Combine back into hex color
+  return (r << 16) | (g << 8) | b;
+}
+
+/**
  * Calculate squared distance between two 2D points (faster than distance)
  * @param {number} x1 - First point X
  * @param {number} y1 - First point Y

@@ -4,6 +4,7 @@
 
 import { ParticleComponent } from "../components/ParticleComponent.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
+import { randomRange, randomColor } from "./utils.js";
 
 export class ParticleEmitter {
   // Particle pool size (set during initialization)
@@ -26,21 +27,6 @@ export class ParticleEmitter {
   }
 
   /**
-   * Resolve a value that can be a number or { min, max } range
-   * @param {number|{min:number, max:number}} value - Value or range
-   * @param {number} defaultVal - Default if value is undefined
-   * @returns {number} - Resolved value (randomized if range)
-   */
-  static randomRange(value, defaultVal = 0) {
-    if (value === undefined || value === null) return defaultVal;
-    if (typeof value === "number") return value;
-    // { min, max } object - return random value in range
-    const min = value.min ?? defaultVal;
-    const max = value.max ?? defaultVal;
-    return min + Math.random() * (max - min);
-  }
-
-  /**
    * Emit particles with the given configuration
    *
    * @param {Object} config - Particle emission configuration
@@ -56,7 +42,7 @@ export class ParticleEmitter {
    * @param {number|{min,max}} [config.lifespan=1000] - Lifetime in ms or range
    * @param {number} [config.gravity=0.15] - Gravity strength
    * @param {string} config.texture - Texture name (from bigAtlas)
-   * @param {number} [config.tint=0xFFFFFF] - Color tint
+   * @param {number|{min,max}} [config.tint=0xFFFFFF] - Color tint or range (RGB channels interpolated separately)
    * @param {number|{min,max}} [config.scale=1] - Scale or range
    * @param {number|{min,max}} [config.alpha=1] - Alpha (opacity) or range
    * @param {number} [config.fadeOnTheFloor=0] - Time in ms to fade out particles when they hit the floor
@@ -95,7 +81,7 @@ export class ParticleEmitter {
       return 0;
     }
 
-    const count = Math.round(this.randomRange(config.count, 1));
+    const count = Math.round(randomRange(config.count, 1));
     let spawned = 0;
 
     // Resolve texture name to textureId (frame index in bigAtlas)
@@ -133,42 +119,42 @@ export class ParticleEmitter {
         active[i] = 1;
 
         // Position
-        x[i] = this.randomRange(config.x);
-        y[i] = this.randomRange(config.y);
-        z[i] = this.randomRange(config.z, 0);
+        x[i] = randomRange(config.x);
+        y[i] = randomRange(config.y);
+        z[i] = randomRange(config.z, 0);
 
         // Velocity
         let particleVx, particleVy;
 
         if (config.angleXY !== undefined && config.speed !== undefined) {
           // Polar mode: angleXY (degrees) + speed
-          const angleDeg = this.randomRange(config.angleXY, 0);
+          const angleDeg = randomRange(config.angleXY, 0);
           const angleRad = (angleDeg * Math.PI) / 180;
-          const speed = this.randomRange(config.speed, 0);
+          const speed = randomRange(config.speed, 0);
 
           particleVx = speed * Math.cos(angleRad);
           particleVy = speed * Math.sin(angleRad);
         } else {
           // Cartesian mode: vx/vy ranges
-          particleVx = this.randomRange(config.vx, 0);
-          particleVy = this.randomRange(config.vy, 0);
+          particleVx = randomRange(config.vx, 0);
+          particleVy = randomRange(config.vy, 0);
         }
 
         vx[i] = particleVx;
         vy[i] = particleVy;
-        vz[i] = this.randomRange(config.vz, 0);
+        vz[i] = randomRange(config.vz, 0);
 
         // Lifecycle
-        lifespan[i] = this.randomRange(config.lifespan, 1000);
+        lifespan[i] = randomRange(config.lifespan, 1000);
         currentLife[i] = 0;
 
         // Physics
         gravity[i] = config.gravity ?? 0.15;
 
         // Visual properties
-        scale[i] = this.randomRange(config.scale, 1);
-        alpha[i] = this.randomRange(config.alpha, 1);
-        tint[i] = config.tint ?? 0xffffff;
+        scale[i] = randomRange(config.scale, 1);
+        alpha[i] = randomRange(config.alpha, 1);
+        tint[i] = randomColor(config.tint);
         particleTextureId[i] = textureId;
         fadeOnTheFloor[i] = config.fadeOnTheFloor ?? 0;
         timeOnFloor[i] = 0;
