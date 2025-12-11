@@ -23,13 +23,13 @@ export class TallLight extends GameObject {
     this.rigidBody.maxAcc = 0;
     this.rigidBody.static = 1; // Static body - nothing can move it
     this.setSprite("tallLight");
-    this.collider.radius = 20;
+    this.collider.radius = 17;
     this.lightEmitter.lightColor = 0xffffff;
     this.lightEmitter.lightIntensity = 1;
     this.lightEmitter.enabled = 1;
 
     // Override Boid's perception
-    this.collider.visualRange = 60 + rng() * 100; // Must be >= max collision distance (6 + 60 = 66) for collision detection to work!
+    this.collider.visualRange = 200;
   }
 
   /**
