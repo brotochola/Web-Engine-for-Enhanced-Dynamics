@@ -7,6 +7,8 @@ import { Component } from "../core/Component.js";
 export class RigidBody extends Component {
   // Array schema - defines all physics properties
   static ARRAY_SCHEMA = {
+    static: Uint8Array, // 0 = dynamic, 1 = static
+
     // Linear motion
     vx: Float32Array,
     vy: Float32Array,

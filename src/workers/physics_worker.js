@@ -229,6 +229,7 @@ class PhysicsWorker extends AbstractWorker {
   /**
    * Move balls using Verlet integration
    * ENHANCED: Now includes configurable damping for energy dissipation
+   * Static bodies (RigidBody.static = 1) are skipped - they don't move
    */
   moveBallsVerlet(
     active,
@@ -248,12 +249,16 @@ class PhysicsWorker extends AbstractWorker {
     rigidBodyCount
   ) {
     const damping = this.settings.verletDamping;
+    const isStatic = RigidBody.static;
 
     const gravityScale = Math.pow(dtRatio, 2);
 
     // Only process entities that have RigidBody component
     for (let i = 0; i < rigidBodyCount; i++) {
       if (!active[i]) continue;
+
+      // Static bodies don't move - skip physics integration entirely
+      if (isStatic[i]) continue;
 
       // Store old position for Verlet integration
       const oldX = x[i];
@@ -324,10 +329,14 @@ class PhysicsWorker extends AbstractWorker {
     const py = RigidBody.py;
 
     const boundaryElasticity = this.settings.boundaryElasticity;
+    const isStatic = RigidBody.static;
 
     // Apply boundary constraints with bounce - only for entities with RigidBody
     for (let i = 0; i < rigidBodyCount; i++) {
       if (!active[i]) continue;
+
+      // Static bodies don't need boundary constraints (they don't move)
+      if (isStatic[i]) continue;
 
       const r = radius[i];
 
@@ -439,13 +448,34 @@ class PhysicsWorker extends AbstractWorker {
 
           // Only apply physical response if neither is a trigger
           if (!eitherIsTrigger) {
+            // Check if either entity is static
+            const isStatic = RigidBody.static;
+            const iStatic = isStatic[i];
+            const jStatic = isStatic[j];
+
             // Push in random direction
             const angle = rng() * Math.PI * 2;
             const separation = 0.001;
-            x[i] = x[i] + Math.cos(angle) * separation;
-            y[i] = y[i] + Math.sin(angle) * separation;
-            x[j] = x[j] - Math.cos(angle) * separation;
-            y[j] = y[j] - Math.sin(angle) * separation;
+            const cosAngle = Math.cos(angle) * separation;
+            const sinAngle = Math.sin(angle) * separation;
+
+            if (iStatic && jStatic) {
+              // Both static - no movement
+            } else if (iStatic) {
+              // i is static - only move j
+              x[j] = x[j] - cosAngle * 2;
+              y[j] = y[j] - sinAngle * 2;
+            } else if (jStatic) {
+              // j is static - only move i
+              x[i] = x[i] + cosAngle * 2;
+              y[i] = y[i] + sinAngle * 2;
+            } else {
+              // Both dynamic - move both
+              x[i] = x[i] + cosAngle;
+              y[i] = y[i] + sinAngle;
+              x[j] = x[j] - cosAngle;
+              y[j] = y[j] - sinAngle;
+            }
           }
 
           // Only increment collision count for entities with RigidBody
@@ -474,15 +504,32 @@ class PhysicsWorker extends AbstractWorker {
             const nx = dx / dist;
             const ny = dy / dist;
 
-            // Calculate push factor with response strength
-            // Split the correction evenly between both entities
-            const correction = depth * responseStrength * 0.5;
+            // Check if either entity is static
+            const isStatic = RigidBody.static;
+            const iStatic = isStatic[i];
+            const jStatic = isStatic[j];
 
-            // Push both entities apart
-            x[i] += nx * correction;
-            y[i] += ny * correction;
-            x[j] -= nx * correction;
-            y[j] -= ny * correction;
+            // Calculate push factor with response strength
+            const correction = depth * responseStrength;
+
+            if (iStatic && jStatic) {
+              // Both static - no movement (shouldn't happen often but handle it)
+            } else if (iStatic) {
+              // i is static - only push j away (full correction)
+              x[j] -= nx * correction;
+              y[j] -= ny * correction;
+            } else if (jStatic) {
+              // j is static - only push i away (full correction)
+              x[i] += nx * correction;
+              y[i] += ny * correction;
+            } else {
+              // Both dynamic - split correction evenly between both entities
+              const halfCorrection = correction * 0.5;
+              x[i] += nx * halfCorrection;
+              y[i] += ny * halfCorrection;
+              x[j] -= nx * halfCorrection;
+              y[j] -= ny * halfCorrection;
+            }
           }
 
           // Track collision count for adaptive speed limiting (only for entities with RigidBody)

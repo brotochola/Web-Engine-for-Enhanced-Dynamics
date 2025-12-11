@@ -866,6 +866,9 @@ export class GameObject {
     if (instance.spriteRenderer) {
       instance.setTint(0xffffff);
       instance.setAlpha(1.0);
+      instance.setScale(1, 1); // Default scale to 1 (Float32Array defaults to 0, making sprite invisible)
+      instance.spriteRenderer.anchorX = 0.5;
+      instance.spriteRenderer.anchorY = 1.0;
       instance.setVisible(true);
       // CRITICAL: Initialize isItOnScreen to 1 so entity is visible immediately
       // The spatial worker will update this properly on its next frame

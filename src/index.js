@@ -68,7 +68,7 @@ import { MouseComponent } from "./components/MouseComponent.js";
 import { ParticleComponent } from "./components/ParticleComponent.js";
 
 import { ParticleEmitter } from "./core/ParticleEmitter.js";
-
+import { LightEmitter } from "./components/LightEmitter.js";
 import { AbstractWorker } from "./workers/AbstractWorker.js";
 
 // Create the WEED namespace object (like PIXI)
@@ -90,7 +90,7 @@ const WEED = {
   SpriteRenderer,
   MouseComponent,
   ParticleComponent,
-
+  LightEmitter,
   // Particles
   ParticleEmitter,
 

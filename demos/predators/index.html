@@ -302,12 +302,13 @@
         const numberOfPrey = 10000;
         const numberOfPredators = 4;
         const numberOfBoids = 0;
+        const numberOfTallLights = 10;
         // Import WeedJS engine 🌿
         import WEED from '/src/index.js';
         import { Boid } from '/demos/predators/boid.js';
         import { Prey } from '/demos/predators/prey.js';
         import { Predator } from '/demos/predators/predator.js';
-
+        import { TallLight } from '/demos/predators/tallLight.js';
         // Destructure what we need from WEED
         const { GameEngine, SpriteSheetRegistry } = WEED;
 
@@ -333,7 +334,7 @@
 
                 },
                 particle: {
-                    noLimitFPS: true,
+                    noLimitFPS: false,
                     maxParticles: 50000,
                     decals: true,
                     decalsTileSize: 256,
@@ -367,6 +368,7 @@
                 bg: "/demos/predators/img/bg.png",
                 bunny: "/demos/predators/img/bunny.png",
                 blood: "/demos/predators/img/blood.png",
+                tallLight: "/demos/predators/img/tallLight.png",
                 spritesheets: {
                     civil1: {
                         json: "/demos/predators/img/civil1.json",
@@ -404,7 +406,7 @@
         gameEngine.registerEntityClass(Boid, numberOfBoids);
         gameEngine.registerEntityClass(Prey, numberOfPrey);
         gameEngine.registerEntityClass(Predator, numberOfPredators);
-
+        gameEngine.registerEntityClass(TallLight, numberOfTallLights);
         // Make gameEngine global for button onclick handlers
         window.gameEngine = gameEngine;
 
@@ -429,6 +431,15 @@
         document.getElementById('config').textContent =
             `Mode: SHARED ARRAY BUFFER (${totalWorkers} Workers: 1 Spatial + ${numberOfLogicWorkers} Logic + 1 Physics + 1 Renderer${particleInfo})`;
 
+        // Spawning functions - using clean unified API
+        window.spawnRandomTallLight = function () {
+            for (let i = 0; i < numberOfTallLights; i++) {
+                gameEngine.spawnEntity('TallLight', {
+                    x: gameEngine.rng() * gameEngine.config.worldWidth,
+                    y: gameEngine.rng() * gameEngine.config.worldHeight,
+                });
+            }
+        };
 
         // Spawning functions - using clean unified API
         window.spawnRandomPrey = function () {
@@ -564,7 +575,7 @@
             }
 
             spawnBoids();
-
+            spawnRandomTallLight();
             spawnRandomPrey();
 
 
