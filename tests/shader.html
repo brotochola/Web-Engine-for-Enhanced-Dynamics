@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>PixiJS 8 - Multiple Lights + Projected Shadows</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <script type="module">
+        import { Application, Geometry, Mesh, Shader, GlProgram, Assets, Sprite, Container, AnimatedSprite, Spritesheet, Graphics } from "https://cdn.jsdelivr.net/npm/pixi.js@8.x/dist/pixi.mjs";
+
+        const MAX_LIGHTS = 8;
+        const MAX_SHADOW_CASTERS = 24;
+
+        // ==========================================
+        // LIGHT MANAGER
+        // ==========================================
+        class LightManager {
+            constructor(app, shader) {
+                this.app = app;
+                this.shader = shader;
+                this.lights = [];
+                this.shadowCasters = []; // Sprites that cast shadows
+            }
+
+            createLight(x, y, color = [1.0, 0.9, 0.7], radius = 200) {
+                if (this.lights.length >= MAX_LIGHTS) {
+                    console.warn('Max lights reached!');
+                    return null;
+                }
+
+                const index = this.lights.length;
+                const light = new Light(this.app, this, index, color, radius);
+                light.setPosition(x, y);
+                this.lights.push(light);
+
+                this.shader.resources.uniforms.uniforms.uLightCount = this.lights.length;
+                return light;
+            }
+
+            // Register a sprite as a shadow caster
+            addShadowCaster(sprite, radius = 15) {
+                if (this.shadowCasters.length >= MAX_SHADOW_CASTERS) {
+                    console.warn('Max shadow casters reached!');
+                    return;
+                }
+                this.shadowCasters.push({ sprite, radius });
+            }
+
+            updateShaderLight(index, shaderX, shaderY, intensity) {
+                const uniforms = this.shader.resources.uniforms.uniforms;
+                uniforms.uLightPositions[index * 2] = shaderX;
+                uniforms.uLightPositions[index * 2 + 1] = shaderY;
+                uniforms.uLightIntensities[index] = intensity;
+            }
+
+            // Update shadow caster positions in shader
+            updateShadowCasters() {
+                const uniforms = this.shader.resources.uniforms.uniforms;
+
+                for (let i = 0; i < this.shadowCasters.length; i++) {
+                    const caster = this.shadowCasters[i];
+                    const sprite = caster.sprite;
+
+                    // Convert screen position to shader space (-1 to 1)
+                    const normX = sprite.x / this.app.screen.width;
+                    const normY = sprite.y / this.app.screen.height;
+                    const shaderX = normX * 2.0 - 1.0;
+                    const shaderY = -(normY * 2.0 - 1.0);
+
+                    // Convert pixel radius to shader space
+                    const shaderRadius = (caster.radius / this.app.screen.width) * 2.0;
+
+                    uniforms.uCasterPositions[i * 2] = shaderX;
+                    uniforms.uCasterPositions[i * 2 + 1] = shaderY;
+                    uniforms.uCasterRadii[i] = shaderRadius;
+                }
+
+                uniforms.uCasterCount = this.shadowCasters.length;
+            }
+
+            // Calculate light intensity at a screen position (for tinting sprites)
+            getLightAtPosition(x, y) {
+                let totalR = 0.05; // ambient
+                let totalG = 0.05;
+                let totalB = 0.05;
+
+                for (const light of this.lights) {
+                    const dx = x - light.container.x;
+                    const dy = y - light.container.y;
+                    const distSq = dx * dx + dy * dy;
+                    const radiusSq = light.radius * light.radius;
+
+                    if (distSq < radiusSq) {
+                        // Smooth falloff based on distance
+                        const dist = Math.sqrt(distSq);
+                        const falloff = 1 - (dist / light.radius);
+                        const intensity = falloff * falloff * light.intensity; // quadratic falloff
+
+                        totalR += light.color[0] * intensity;
+                        totalG += light.color[1] * intensity;
+                        totalB += light.color[2] * intensity;
+                    }
+                }
+
+                // Clamp to 0-1
+                totalR = Math.min(1, totalR);
+                totalG = Math.min(1, totalG);
+                totalB = Math.min(1, totalB);
+
+                return { r: totalR, g: totalG, b: totalB };
+            }
+
+            // Convert RGB (0-1) to hex tint
+            rgbToTint(r, g, b) {
+                const ri = Math.floor(r * 255);
+                const gi = Math.floor(g * 255);
+                const bi = Math.floor(b * 255);
+                return (ri << 16) | (gi << 8) | bi;
+            }
+
+            update(deltaTime) {
+                for (const light of this.lights) {
+                    light.update(deltaTime);
+                }
+                // Update shadow caster positions every frame
+                this.updateShadowCasters();
+            }
+        }
+
+        // ==========================================
+        // LIGHT CLASS
+        // ==========================================
+        class Light {
+            constructor(app, manager, index, color, radius) {
+                this.app = app;
+                this.manager = manager;
+                this.index = index;
+                this.color = color;
+                this.radius = radius; // In screen pixels
+
+                this.container = new Container();
+                this.container.eventMode = 'static';
+                this.container.cursor = 'pointer';
+
+                this.sprite = this.createCandleGraphic();
+                this.container.addChild(this.sprite);
+
+                this.flickerTime = Math.random() * 100;
+                this.intensity = 1.0;
+
+                this.dragging = false;
+                this.setupDrag();
+            }
+
+            createCandleGraphic() {
+                const g = new Graphics();
+                g.rect(-8, -20, 16, 40);
+                g.fill(0xFFF8DC);
+                g.stroke({ color: 0xDDCCAA, width: 1 });
+                g.rect(-1, -25, 2, 8);
+                g.fill(0x333333);
+                g.ellipse(0, -35, 8, 12);
+                g.fill({ color: 0xFF6600, alpha: 0.6 });
+                g.ellipse(0, -33, 5, 9);
+                g.fill(0xFFDD00);
+                g.ellipse(0, -31, 2, 5);
+                g.fill(0xFFFFFF);
+                return g;
+            }
+
+            setupDrag() {
+                this.container.on('pointerdown', (e) => {
+                    this.dragging = true;
+                    this.container.alpha = 0.8;
+                    e.stopPropagation();
+                });
+
+                this.app.stage.eventMode = 'static';
+                this.app.stage.hitArea = this.app.screen;
+
+                this.app.stage.on('pointermove', (e) => {
+                    if (this.dragging) {
+                        this.setPosition(e.global.x, e.global.y);
+                    }
+                });
+
+                this.app.stage.on('pointerup', () => {
+                    this.dragging = false;
+                    this.container.alpha = 1;
+                });
+
+                this.app.stage.on('pointerupoutside', () => {
+                    this.dragging = false;
+                    this.container.alpha = 1;
+                });
+            }
+
+            setPosition(x, y) {
+                this.container.x = x;
+                this.container.y = y;
+                this.updateShader();
+            }
+
+            updateShader() {
+                const normX = this.container.x / this.app.screen.width;
+                const normY = this.container.y / this.app.screen.height;
+                const shaderX = normX * 2.0 - 1.0;
+                const shaderY = -(normY * 2.0 - 1.0);
+
+                // Convert pixel radius to shader space (roughly)
+                const shaderRadius = (this.radius / this.app.screen.width) * 2.0;
+                this.manager.shader.resources.uniforms.uniforms.uLightRadii[this.index] = shaderRadius;
+
+                this.manager.updateShaderLight(this.index, shaderX, shaderY, this.intensity);
+            }
+
+            update(deltaTime) {
+                this.flickerTime += deltaTime * 0.1;
+                const flicker = 1 + Math.sin(this.flickerTime * 10) * 0.05 + Math.sin(this.flickerTime * 23) * 0.03;
+                this.sprite.scale.set(flicker, flicker);
+                this.intensity = 0.9 + Math.sin(this.flickerTime * 15) * 0.1;
+                this.updateShader();
+            }
+        }
+
+        // ==========================================
+        // SHADERS
+        // ==========================================
+        const vertexSrc = `
+        in vec2 aPosition;
+        in vec2 aUV;
+        out vec2 vUV;
+        void main() {
+            vUV = aUV;
+            gl_Position = vec4(aPosition, 0.0, 1.0);
+        }
+    `;
+
+        const fragmentSrc = `
+        #define MAX_LIGHTS ${MAX_LIGHTS}
+        #define MAX_CASTERS ${MAX_SHADOW_CASTERS}
+        
+        in vec2 vUV;
+        uniform float uLightPositions[MAX_LIGHTS * 2];
+        uniform float uLightIntensities[MAX_LIGHTS];
+        uniform float uLightRadii[MAX_LIGHTS];
+        uniform vec3 uLightColors[MAX_LIGHTS];
+        uniform int uLightCount;
+        uniform float uAmbient;
+        
+        // Shadow casters (sprites)
+        uniform float uCasterPositions[MAX_CASTERS * 2];
+        uniform float uCasterRadii[MAX_CASTERS];
+        uniform int uCasterCount;
+        uniform float uShadowStrength;
+        uniform float uShadowLength;
+
+        // Calculate shadow using ray-circle intersection
+        // Shadow projects from the circle's back edge away from the light
+        float getShadowFactor(vec2 pixelPos, vec2 lightPos, vec2 casterPos, float casterRadius) {
+            vec2 lightToCaster = casterPos - lightPos;
+            float distToCaster = length(lightToCaster);
+            
+            // Light is inside the circle - no shadow
+            if (distToCaster < casterRadius) return 1.0;
+            
+            float totalShadow = 0.0;
+            
+            // === CIRCULAR SHADOW (under the object) ===
+            // Extends in direction away from light for merging with cone
+            float distPixelToCaster = length(pixelPos - casterPos);
+            vec2 dirFromLight = normalize(lightToCaster);
+            
+            // Offset the circle center away from light for elongated shadow
+            vec2 shadowCenter = casterPos + dirFromLight * casterRadius * 0.5;
+            float distToShadowCenter = length(pixelPos - shadowCenter);
+
+            float extendedRadius = casterRadius * 2.3; //gameObject Shadow Circle!
+            
+            if (distToShadowCenter < extendedRadius) {
+                float normalizedDist = distToShadowCenter / extendedRadius;
+                float circleShadow = (1.0 - smoothstep(0.25, 1.0, normalizedDist)) * uShadowStrength;
+                totalShadow = max(totalShadow, circleShadow);
+            }
+            
+            // === CONE SHADOW (projected behind the object) ===
+            vec2 lightToPixel = pixelPos - lightPos;
+            float distToPixel = length(lightToPixel);
+            
+            if (distToPixel > 0.001) {
+                vec2 dirToPixel = lightToPixel / distToPixel;
+                
+                // Project caster center onto the light->pixel ray
+                float projDist = dot(lightToCaster, dirToPixel);
+                
+                if (projDist > 0.0) {
+                    // Perpendicular distance from caster center to the ray
+                    vec2 projPoint = dirToPixel * projDist;
+                    float perpDistSq = dot(lightToCaster - projPoint, lightToCaster - projPoint);
+                    float perpDist = sqrt(perpDistSq);
+                    
+                    // Check if ray intersects circle
+                    if (perpDist < casterRadius) {
+                        // Ray intersects circle - calculate far edge
+                        float halfChord = sqrt(casterRadius * casterRadius - perpDistSq);
+                        float farEdge = projDist + halfChord;
+                        
+                        // Only shadow pixels behind the far edge
+                        if (distToPixel > farEdge) {
+                            // Shadow depth based on how centered the ray passes through circle
+                            float normalizedPerp = perpDist / casterRadius;
+                            float shadowDepth = sqrt(1.0 - normalizedPerp * normalizedPerp);
+                            
+                            // Distance fade
+                            float behindDist = distToPixel - farEdge;
+                            float distanceFade = 1.0 - clamp(behindDist / uShadowLength, 0.0, 1.0);
+                            
+                            // Soft edges
+                            float softDepth = smoothstep(0.0, 1.0, shadowDepth);
+                            
+                            float coneShadow = softDepth * distanceFade * uShadowStrength;
+                            totalShadow = max(totalShadow, coneShadow);
+                        }
+                    }
+                }
+            }
+            
+            return 1.0 - totalShadow;
+        }
+
+        void main() {
+            vec2 p = vUV * 2.0 - 1.0;
+            vec3 totalLight = vec3(uAmbient);
+
+            for (int i = 0; i < MAX_LIGHTS; i++) {
+                if (i >= uLightCount) break;
+                
+                vec2 lightPos = vec2(uLightPositions[i * 2], uLightPositions[i * 2 + 1]);
+                float radius = uLightRadii[i];
+                float intensity = uLightIntensities[i];
+                vec3 color = uLightColors[i];
+                
+                float d = length(p - lightPos);
+                float lightContribution = smoothstep(radius, 0.0, d) * intensity;
+                
+                // Calculate combined shadow factor from all casters for this light
+                float combinedShadow = 1.0;
+                for (int j = 0; j < MAX_CASTERS; j++) {
+                    if (j >= uCasterCount) break;
+                    
+                    vec2 casterPos = vec2(uCasterPositions[j * 2], uCasterPositions[j * 2 + 1]);
+                    float casterRadius = uCasterRadii[j];
+                    
+                    float shadowFactor = getShadowFactor(p, lightPos, casterPos, casterRadius);
+                    combinedShadow = min(combinedShadow, shadowFactor);
+                }
+                
+                totalLight += color * lightContribution * combinedShadow;
+            }
+
+            totalLight = min(totalLight, vec3(1.0));
+            gl_FragColor = vec4(totalLight, 1.0);
+        }
+    `;
+
+        // ==========================================
+        // MAIN
+        // ==========================================
+        async function main() {
+            const app = new Application();
+            await app.init({
+                background: "#0a0a15",
+                resizeTo: window,
+                preference: 'webgl'
+            });
+
+            globalThis.__PIXI_APP__ = app;
+            document.body.appendChild(app.canvas);
+
+            const container = new Container();
+            app.stage.addChild(container);
+
+            // LAYER 1: Background
+            const bgTexture = await Assets.load('../src/logo1.png');
+            const bgSprite = new Sprite(bgTexture);
+            bgSprite.anchor.set(0.5);
+            bgSprite.x = app.screen.width / 2;
+            bgSprite.y = app.screen.height / 2;
+            bgSprite.scale.set(2);
+            container.addChild(bgSprite);
+
+            // LAYER 2: Light shader mesh
+            const geometry = new Geometry({
+                attributes: {
+                    aPosition: [-1, -1, 1, -1, 1, 1, -1, 1],
+                    aUV: [0, 0, 1, 0, 1, 1, 0, 1]
+                },
+                indexBuffer: [0, 1, 2, 0, 2, 3]
+            });
+
+            const glProgram = new GlProgram({ vertex: vertexSrc, fragment: fragmentSrc });
+
+            const initialPositions = new Array(MAX_LIGHTS * 2).fill(0);
+            const initialIntensities = new Array(MAX_LIGHTS).fill(0);
+            const initialRadii = new Array(MAX_LIGHTS).fill(0.5);
+            const initialColors = [];
+            for (let i = 0; i < MAX_LIGHTS; i++) {
+                initialColors.push(1.0, 0.9, 0.7);
+            }
+
+            // Shadow caster uniforms
+            const initialCasterPositions = new Array(MAX_SHADOW_CASTERS * 2).fill(0);
+            const initialCasterRadii = new Array(MAX_SHADOW_CASTERS).fill(0.0002);
+
+            const shader = new Shader({
+                glProgram,
+                resources: {
+                    uniforms: {
+                        uLightPositions: { value: initialPositions, type: 'f32', size: MAX_LIGHTS * 2 },
+                        uLightIntensities: { value: initialIntensities, type: 'f32', size: MAX_LIGHTS },
+                        uLightRadii: { value: initialRadii, type: 'f32', size: MAX_LIGHTS },
+                        uLightColors: { value: initialColors, type: 'vec3<f32>', size: MAX_LIGHTS },
+                        uLightCount: { value: 0, type: 'i32' },
+                        uAmbient: { value: 0.05, type: 'f32' },
+                        // Shadow caster uniforms
+                        uCasterPositions: { value: initialCasterPositions, type: 'f32', size: MAX_SHADOW_CASTERS * 2 },
+                        uCasterRadii: { value: initialCasterRadii, type: 'f32', size: MAX_SHADOW_CASTERS },
+                        uCasterCount: { value: 0, type: 'i32' },
+                        uShadowStrength: { value: 0.85, type: 'f32' },
+                        uShadowLength: { value: 0.8, type: 'f32' }
+                    }
+                }
+            });
+
+            const lightMesh = new Mesh({ geometry, shader });
+            lightMesh.blendMode = 'multiply';
+            container.addChild(lightMesh);
+
+            // LAYER 3: Create 20 animated sprites at random positions
+            const spriteContainer = new Container();
+            container.addChild(spriteContainer);
+
+            const spritesheetTexture = await Assets.load('../demos/predators/img/civil1.png');
+            const spritesheetData = await fetch('../demos/predators/img/civil1.json').then(r => r.json());
+            const spritesheet = new Spritesheet(spritesheetTexture, spritesheetData);
+            await spritesheet.parse();
+
+            const animations = ['walk_down', 'walk_up', 'walk_left', 'walk_right', 'idle_down'];
+            const sprites = [];
+
+            // LAYER 4: Light manager (create before sprites so we can register them)
+            const lightManager = new LightManager(app, shader);
+
+            for (let i = 0; i < 20; i++) {
+                const anim = animations[Math.floor(Math.random() * animations.length)];
+                const sprite = new AnimatedSprite(spritesheet.animations[anim]);
+                sprite.anchor.set(0.5, 1);
+                sprite.x = Math.random() * app.screen.width;
+                sprite.y = Math.random() * app.screen.height;
+                sprite.scale.set(0.75); // 25% of original size 3 → 0.75
+                sprite.animationSpeed = 0.1 + Math.random() * 0.1;
+                sprite.play();
+                sprite.gotoAndPlay(Math.floor(Math.random() * sprite.totalFrames));
+                spriteContainer.addChild(sprite);
+                sprites.push(sprite);
+
+                // Register sprite as shadow caster (radius in pixels for the shadow silhouette)
+                lightManager.addShadowCaster(sprite, 12);
+            }
+
+            // Create 3 candles with colors (radius in pixels now)
+            lightManager.createLight(app.screen.width * 0.25, app.screen.height * 0.3, [1.0, 0.9, 0.7], 250);
+            lightManager.createLight(app.screen.width * 0.75, app.screen.height * 0.3, [1.0, 0.6, 0.4], 200);
+            lightManager.createLight(app.screen.width * 0.5, app.screen.height * 0.7, [0.7, 0.85, 1.0], 220);
+
+            // Set colors in shader
+            const uniforms = shader.resources.uniforms.uniforms;
+            uniforms.uLightColors[0] = 1.0; uniforms.uLightColors[1] = 0.9; uniforms.uLightColors[2] = 0.7;
+            uniforms.uLightColors[3] = 1.0; uniforms.uLightColors[4] = 0.6; uniforms.uLightColors[5] = 0.4;
+            uniforms.uLightColors[6] = 0.7; uniforms.uLightColors[7] = 0.85; uniforms.uLightColors[8] = 1.0;
+
+            // Add candle sprites to stage
+            for (const light of lightManager.lights) {
+                app.stage.addChild(light.container);
+            }
+
+            // Game loop - update lights and sprite tints
+            app.ticker.add((ticker) => {
+                lightManager.update(ticker.deltaTime);
+
+                // Update each sprite's tint based on light
+                for (const sprite of sprites) {
+                    const light = lightManager.getLightAtPosition(sprite.x, sprite.y);
+                    sprite.tint = lightManager.rgbToTint(light.r, light.g, light.b);
+                }
+            });
+        }
+
+        main();
+    </script>
+</body>
+</html>
