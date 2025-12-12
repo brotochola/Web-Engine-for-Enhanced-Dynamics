@@ -48,13 +48,6 @@ export class Predator extends Boid {
     this.rigidBody.minSpeed = 0; //1; // Keep predators moving
     this.rigidBody.friction = 0.05;
 
-    // Set predator scale and collider
-    const normalRadius = 10; // Base radius of character body at scale 1.0
-    const scale = 2; // Predators are 2x larger than prey
-    this.spriteRenderer.scaleX = scale;
-    this.spriteRenderer.scaleY = scale;
-    this.collider.radius = normalRadius * scale; // Match scaled visual size (40px)
-
     this.spriteRenderer.animationSpeed = 0.15;
 
     // Override Boid's perception
@@ -81,6 +74,12 @@ export class Predator extends Boid {
   onSpawned(spawnConfig = {}) {
     // Call parent Boid.onSpawned() to initialize position
     super.onSpawned(spawnConfig);
+
+    // Set predator scale and collider
+    const normalRadius = 10; // Base radius of character body at scale 1.0
+    this.scale = 3; // Predators are 2x larger than prey
+    this.setScale(this.scale, this.scale);
+    this.collider.radius = normalRadius * this.scale; // Match scaled visual size (40px)
 
     // Set spritesheet for this instance
     this.setSpritesheet("civil3");
