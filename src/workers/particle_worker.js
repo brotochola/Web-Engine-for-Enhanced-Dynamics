@@ -589,46 +589,122 @@ class ParticleWorker extends AbstractWorker {
    * Calculate lighting tints for all visible game entities with SpriteRenderer
    * Only updates entities that are active and on screen for performance
    * Requires config.lighting.entityLighting = true to enable
+   * Uses precomputed squared distances from spatial worker when available
    */
   updateEntityLighting() {
-    if (!this.entityLightingEnabled) return;
-    if (!SpriteRenderer.tint || !SpriteRenderer.baseTint) return;
+    if (
+      !this.entityLightingEnabled ||
+      !SpriteRenderer.tint ||
+      !SpriteRenderer.baseTint
+    ) {
+      return;
+    }
 
     // Cache component arrays
     const active = Transform.active;
-    const entityX = Transform.x;
-    const entityY = Transform.y;
     const tint = SpriteRenderer.tint;
     const baseTint = SpriteRenderer.baseTint;
     const isItOnScreen = SpriteRenderer.isItOnScreen;
 
-    // Prepare light data object for utility function
-    const lightData = this.getLightData();
+    // Check if we can use precomputed distances from spatial worker
+    const usePrecomputedDistances =
+      this.neighborData &&
+      this.distanceData &&
+      this.config.spatial?.maxNeighbors;
 
-    // Calculate lighting for each visible entity
-    for (let i = 0; i < this.entityCount; i++) {
-      // Skip inactive or off-screen entities
-      if (!active[i] || !isItOnScreen[i]) continue;
+    if (usePrecomputedDistances) {
+      // OPTIMIZED PATH: Iterate through LIGHTS and use their neighbors
+      // The LIGHT's visualRange determines which entities receive light
+      const lightIntensity = LightEmitter.lightIntensity;
+      const lightEnabled = LightEmitter.enabled;
+      const maxNeighbors = this.config.spatial.maxNeighbors;
+      const stride = 1 + maxNeighbors;
+      const ambient = this.lightingAmbient;
 
-      // Skip entities with uninitialized baseTint (0 = black, likely not set)
-      // These entities haven't been spawned yet or don't use tinting
-      const entityBaseTint = baseTint[i];
-      if (entityBaseTint === 0) continue;
+      // Reuse or create brightness accumulator array
+      if (
+        !this.entityBrightness ||
+        this.entityBrightness.length < this.entityCount
+      ) {
+        this.entityBrightness = new Float32Array(this.entityCount);
+      }
+      const entityBrightness = this.entityBrightness;
 
-      // Calculate total light at entity position
-      const brightness = calculateTotalLightAtPosition(
-        entityX[i],
-        entityY[i],
-        lightData,
-        this.lightingAmbient
-      );
+      // Initialize all entities to ambient light
+      for (let i = 0; i < this.entityCount; i++) {
+        entityBrightness[i] = ambient;
+      }
 
-      // Apply brightness to the original entity color (baseTint)
-      tint[i] = this.applyBrightnessToColor(entityBaseTint, brightness * 3000);
-      // if (i % 200 == 0) {
-      //   // console.log(brightness);
-      // }
+      // For each LIGHT, add its contribution to its neighbors
+      // This uses the LIGHT's visualRange to determine reach
+      for (let lightIdx = 0; lightIdx < this.entityCount; lightIdx++) {
+        if (!lightEnabled[lightIdx]) continue;
+
+        const intensity = lightIntensity[lightIdx];
+        if (intensity <= 0) continue;
+
+        const offset = lightIdx * stride;
+        const neighborCount = this.neighborData[offset];
+
+        // Add this light's contribution to all its neighbors
+        for (let k = 0; k < neighborCount; k++) {
+          const neighborIdx = this.neighborData[offset + 1 + k];
+          const distSq = this.distanceData[offset + 1 + k];
+
+          // inverse square falloff: intensity / (1 + distSq)
+          entityBrightness[neighborIdx] += intensity / (1 + distSq);
+        }
+      }
+
+      // Apply accumulated brightness to visible entities
+      for (let i = 0; i < this.entityCount; i++) {
+        if (!active[i] || !isItOnScreen[i]) continue;
+        //Light Emitters are always fully lit
+        if (LightEmitter.enabled[i] === 1) {
+          tint[i] = 0xffffff;
+          continue;
+        }
+
+        const entityBaseTint = baseTint[i];
+        if (entityBaseTint === 0) continue;
+
+        const brightness = Math.min(entityBrightness[i], 1.5);
+        tint[i] = this.applyBrightnessToColor(
+          entityBaseTint,
+          brightness * 10000
+        );
+        SpriteRenderer.renderDirty[i] = 1;
+      }
     }
+    // else {
+    //   // FALLBACK PATH: Calculate distances manually (no spatial data available)
+    //   const entityX = Transform.x;
+    //   const entityY = Transform.y;
+    //   const lightData = this.getLightData();
+
+    //   for (let i = 0; i < this.entityCount; i++) {
+    //     // Skip inactive or off-screen entities
+    //     if (!active[i] || !isItOnScreen[i]) continue;
+
+    //     // Skip entities with uninitialized baseTint (0 = black, likely not set)
+    //     const entityBaseTint = baseTint[i];
+    //     if (entityBaseTint === 0) continue;
+
+    //     // Calculate total light at entity position (manual distance calculation)
+    //     const brightness = calculateTotalLightAtPosition(
+    //       entityX[i],
+    //       entityY[i],
+    //       lightData,
+    //       this.lightingAmbient
+    //     );
+
+    //     // Apply brightness to the original entity color (baseTint)
+    //     tint[i] = this.applyBrightnessToColor(
+    //       entityBaseTint,
+    //       brightness * 3000
+    //     );
+    //   }
+    // }
   }
 
   /**

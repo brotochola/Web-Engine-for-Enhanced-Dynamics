@@ -176,6 +176,7 @@ class PixiRenderer extends AbstractWorker {
     this.lightingMesh = null; // PIXI.Mesh with lighting shader
     this.lightingShader = null; // Shader instance for updating uniforms
     this.lightingAmbient = 0.05; // Ambient light level (0-1), read from config
+    this.maxLights = 128; // Maximum number of lights (default: 128), read from config
   }
 
   /**
@@ -995,18 +996,19 @@ class PixiRenderer extends AbstractWorker {
     `;
 
     // Fragment shader - accumulates light from all sources using 1/(d*d) falloff
+    // Uses this.maxLights to set array sizes dynamically
     const fragmentSrc = `
       precision mediump float;
       
       in vec2 vUV;
       
-      // Light data arrays - indexed by light count
-      uniform float uLightX[32];
-      uniform float uLightY[32];
-      uniform float uLightIntensity[32];
-      uniform float uLightR[32];
-      uniform float uLightG[32];
-      uniform float uLightB[32];
+      // Light data arrays - sized by maxLights config
+      uniform float uLightX[${this.maxLights}];
+      uniform float uLightY[${this.maxLights}];
+      uniform float uLightIntensity[${this.maxLights}];
+      uniform float uLightR[${this.maxLights}];
+      uniform float uLightG[${this.maxLights}];
+      uniform float uLightB[${this.maxLights}];
       uniform int uLightCount;
       uniform float uAmbient;
 
@@ -1014,7 +1016,7 @@ class PixiRenderer extends AbstractWorker {
         vec2 p = vUV * 2.0 - 1.0;
         vec3 totalLight = vec3(uAmbient);
 
-        for (int i = 0; i < 32; i++) {
+        for (int i = 0; i < ${this.maxLights}; i++) {
           if (i >= uLightCount) break;
           
           vec2 lightPos = vec2(uLightX[i], uLightY[i]);
@@ -1048,8 +1050,8 @@ class PixiRenderer extends AbstractWorker {
       fragment: fragmentSrc,
     });
 
-    // Initialize uniform arrays (32 lights max buffer size)
-    const maxLights = 128;
+    // Initialize uniform arrays (configurable max lights buffer size)
+    const maxLights = this.maxLights;
     const initialX = new Array(maxLights).fill(0);
     const initialY = new Array(maxLights).fill(0);
     const initialIntensity = new Array(maxLights).fill(0);
@@ -1102,7 +1104,6 @@ class PixiRenderer extends AbstractWorker {
     const active = Transform.active;
     const worldX = Transform.x;
     const worldY = Transform.y;
-    const isOnScreen = SpriteRenderer.isItOnScreen;
 
     const lightEnabled = LightEmitter.enabled;
     const lightColor = LightEmitter.lightColor;
@@ -1114,22 +1115,25 @@ class PixiRenderer extends AbstractWorker {
     const cameraY = this.cameraData[2];
 
     let lightIndex = 0;
-    // const maxLights = 32;
 
     // Iterate all entities looking for active light emitters
     for (let i = 0; i < this.entityCount; i++) {
       if (!active[i]) continue;
       if (!lightEnabled[i]) continue;
-      // Skip isOnScreen check - lights can illuminate from off-screen
-      // if (lightIndex >= maxLights) break;
+      // Stop if we've reached maxLights limit (shader uniform array size)
+      if (lightIndex >= this.maxLights) break;
 
       // Calculate screen position from world position + camera
-      const screenX = (worldX[i] - cameraX) * zoom;
-      const screenY = (worldY[i] - cameraY) * zoom;
+      // const screenX = (worldX[i] - cameraX) * zoom;
+      // const screenY = (worldY[i] - cameraY) * zoom;
 
       // Convert screen position to shader space (-1 to 1)
-      const shaderX = (screenX / this.canvasWidth) * 2.0 - 1.0;
-      const shaderY = -((screenY / this.canvasHeight) * 2.0 - 1.0);
+      const shaderX =
+        (SpriteRenderer.screenX[i] / this.canvasWidth) * 2.0 - 1.0;
+      const shaderY = -(
+        (SpriteRenderer.screenY[i] / this.canvasHeight) * 2.0 -
+        1.0
+      );
 
       // Extract RGB from lightColor (0xRRGGBB)
       const color = lightColor[i];
@@ -1154,17 +1158,6 @@ class PixiRenderer extends AbstractWorker {
 
     // Update light count
     uniforms.uLightCount = lightIndex;
-
-    // Debug: log light count occasionally
-    if (this.frameNumber % 120 === 0 && lightIndex > 0) {
-      console.log(
-        `LIGHTING: ${lightIndex} lights active, first light at (${uniforms.uLightX[0].toFixed(
-          2
-        )}, ${uniforms.uLightY[0].toFixed(
-          2
-        )}) intensity=${uniforms.uLightIntensity[0].toFixed(2)}`
-      );
-    }
   }
 
   /**
@@ -1772,12 +1765,14 @@ class PixiRenderer extends AbstractWorker {
         lightingConfig.lightingAmbient !== undefined
           ? lightingConfig.lightingAmbient
           : 0.05;
+      this.maxLights =
+        lightingConfig.maxLights !== undefined ? lightingConfig.maxLights : 128;
 
       // Create lighting mesh (full-screen quad with multiply blend)
       this.createLightingSystem();
 
       console.log(
-        `PIXI WORKER: Lighting system enabled (ambient: ${this.lightingAmbient})`
+        `PIXI WORKER: Lighting system enabled (ambient: ${this.lightingAmbient}, maxLights: ${this.maxLights})`
       );
     }
 

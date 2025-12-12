@@ -317,6 +317,8 @@ class SpatialWorker extends AbstractWorker {
         // Transform world coordinates to screen coordinates
         const screenX = x[i] * zoom - cameraOffsetX;
         const screenY = y[i] * zoom - cameraOffsetY;
+        SpriteRenderer.screenX[i] = screenX;
+        SpriteRenderer.screenY[i] = screenY;
 
         // DENSE ALLOCATION: entityIndex === componentIndex
         // Check if screen position is within viewport bounds (with margin)

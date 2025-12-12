@@ -25,11 +25,11 @@ export class TallLight extends GameObject {
     this.setSprite("tallLight");
     this.collider.radius = 17;
     this.lightEmitter.lightColor = 0xffffff;
-    this.lightEmitter.lightIntensity = 1;
+    this.lightEmitter.lightIntensity = 0.66;
     this.lightEmitter.enabled = 1;
 
     // Override Boid's perception
-    this.collider.visualRange = 200;
+    this.collider.visualRange = 500;
   }
 
   /**

@@ -421,6 +421,55 @@ export function calculateTotalLightAtPosition(
 }
 
 /**
+ * Calculate total light for an entity using precomputed neighbor distances
+ * Uses the spatial worker's distanceData to avoid recalculating distances
+ * Only considers neighbors (lights within visualRange), so this is an optimization
+ * for dense scenes where lights are typically nearby entities
+ *
+ * @param {number} entityIndex - The entity's index
+ * @param {Int32Array} neighborData - Neighbor indices buffer from spatial worker
+ * @param {Float32Array} distanceData - Precomputed squared distances from spatial worker
+ * @param {Float32Array} lightIntensity - Light intensity per entity
+ * @param {Uint8Array} lightEnabled - Light enabled flags per entity
+ * @param {number} stride - Neighbor buffer stride (1 + maxNeighbors)
+ * @param {number} ambient - Ambient light level (0-1)
+ * @param {number} maxLight - Maximum light value (default: 1.5)
+ * @returns {number} Total light level (clamped to maxLight)
+ */
+export function calculateLightFromNeighbors(
+  entityIndex,
+  neighborData,
+  distanceData,
+  lightIntensity,
+  lightEnabled,
+  stride,
+  ambient = 0.05,
+  maxLight = 1.5
+) {
+  let totalLight = ambient;
+
+  const offset = entityIndex * stride;
+  const neighborCount = neighborData[offset];
+
+  for (let k = 0; k < neighborCount; k++) {
+    const neighborIdx = neighborData[offset + 1 + k];
+
+    // Skip if this neighbor is not a light
+    if (!lightEnabled[neighborIdx]) continue;
+
+    // Use precomputed squared distance
+    const distSq = distanceData[offset + 1 + k];
+
+    totalLight += calculateLightAttenuation(
+      lightIntensity[neighborIdx],
+      distSq
+    );
+  }
+
+  return Math.min(totalLight, maxLight);
+}
+
+/**
  * Convert a brightness value (0-1+) to a tint color
  * Brightness 1.0 = white (0xFFFFFF), 0.0 = black (0x000000)
  *
