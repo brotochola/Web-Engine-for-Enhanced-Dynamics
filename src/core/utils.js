@@ -357,3 +357,102 @@ export function rng() {
   console.warn("rng() called before initialization, using Math.random()");
   return Math.random();
 }
+
+// ============================================================================
+// LIGHTING UTILITIES
+// ============================================================================
+
+/**
+ * Calculate light contribution using inverse square falloff
+ * Formula: intensity / (distance² + epsilon)
+ *
+ * @param {number} intensity - Light intensity
+ * @param {number} distanceSquared - Squared distance from light to target
+ * @param {number} epsilon - Small value to prevent division by zero (default: 1.0)
+ * @returns {number} Light contribution (0 to infinity, typically clamped later)
+ */
+export function calculateLightAttenuation(
+  intensity,
+  distanceSquared,
+  epsilon = 1.0
+) {
+  return intensity / (distanceSquared + epsilon);
+}
+
+/**
+ * Calculate total light received at a position from multiple light sources
+ * Uses inverse square falloff: totalLight = ambient + Σ(intensity / d²)
+ *
+ * @param {number} targetX - Target position X (world space)
+ * @param {number} targetY - Target position Y (world space)
+ * @param {Object} lightData - Object containing light arrays:
+ *   - lightX: Float32Array of light X positions
+ *   - lightY: Float32Array of light Y positions
+ *   - lightIntensity: Float32Array of light intensities
+ *   - lightEnabled: Uint8Array of enabled flags
+ *   - lightCount: Number of potential lights to check
+ * @param {number} ambient - Ambient light level (0-1)
+ * @param {number} maxLight - Maximum light value (default: 1.5)
+ * @returns {number} Total light level (clamped to maxLight)
+ */
+export function calculateTotalLightAtPosition(
+  targetX,
+  targetY,
+  lightData,
+  ambient = 0.05,
+  maxLight = 1.5
+) {
+  let totalLight = ambient;
+
+  const { lightX, lightY, lightIntensity, lightEnabled, lightCount } =
+    lightData;
+
+  for (let i = 0; i < lightCount; i++) {
+    if (!lightEnabled[i]) continue;
+
+    const dx = targetX - lightX[i];
+    const dy = targetY - lightY[i];
+    const distSq = dx * dx + dy * dy;
+
+    totalLight += calculateLightAttenuation(lightIntensity[i], distSq);
+  }
+
+  return Math.min(totalLight, maxLight);
+}
+
+/**
+ * Convert a brightness value (0-1+) to a tint color
+ * Brightness 1.0 = white (0xFFFFFF), 0.0 = black (0x000000)
+ *
+ * @param {number} brightness - Light level (0 to 1+, will be clamped)
+ * @returns {number} Tint color in 0xRRGGBB format
+ */
+export function brightnessToTint(brightness) {
+  const clamped = Math.max(0, Math.min(1, brightness));
+  const value = Math.round(clamped * 255);
+  return (value << 16) | (value << 8) | value;
+}
+
+/**
+ * Convert a brightness value and color to a tinted color
+ * Multiplies the base color by the brightness
+ *
+ * @param {number} brightness - Light level (0 to 1+, will be clamped)
+ * @param {number} baseColor - Base color in 0xRRGGBB format (default: white)
+ * @returns {number} Tinted color in 0xRRGGBB format
+ */
+export function brightnessToColoredTint(brightness, baseColor = 0xffffff) {
+  const clamped = Math.max(0, Math.min(1, brightness));
+
+  // Extract base RGB
+  const baseR = (baseColor >> 16) & 0xff;
+  const baseG = (baseColor >> 8) & 0xff;
+  const baseB = baseColor & 0xff;
+
+  // Apply brightness
+  const r = Math.round(baseR * clamped);
+  const g = Math.round(baseG * clamped);
+  const b = Math.round(baseB * clamped);
+
+  return (r << 16) | (g << 8) | b;
+}

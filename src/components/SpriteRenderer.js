@@ -14,7 +14,8 @@ export class SpriteRenderer extends Component {
     spritesheetId: Uint8Array, // Which spritesheet to use (civil1, civil2, bunny, etc.) - proxies to bigAtlas
 
     // Visual effects
-    tint: Uint32Array, // Color tint (0xFFFFFF = white/normal)
+    tint: Uint32Array, // Color tint (0xFFFFFF = white/normal) - modified by lighting
+    baseTint: Uint32Array, // Original color set by game logic (preserved for lighting calculation)
     alpha: Float32Array, // Transparency (0-1)
 
     scaleX: Float32Array, // Separate X scale

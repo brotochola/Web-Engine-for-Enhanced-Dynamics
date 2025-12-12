@@ -312,9 +312,14 @@ export class GameObject {
    * Helper setters for SpriteRenderer compatibility
    */
   setTint(tint) {
-    if (this.spriteRenderer && this.spriteRenderer.tint !== tint) {
-      this.spriteRenderer.tint = tint;
-      this.markDirty();
+    if (this.spriteRenderer) {
+      // Always update baseTint (the original color for lighting calculations)
+      this.spriteRenderer.baseTint = tint;
+      // Only update tint and mark dirty if value actually changed
+      if (this.spriteRenderer.tint !== tint) {
+        this.spriteRenderer.tint = tint;
+        this.markDirty();
+      }
     }
   }
 
@@ -864,7 +869,9 @@ export class GameObject {
     }
 
     if (instance.spriteRenderer) {
-      instance.setTint(0xffffff);
+      // Initialize both tint and baseTint to white (for lighting system)
+      instance.spriteRenderer.tint = 0xffffff;
+      instance.spriteRenderer.baseTint = 0xffffff;
       instance.setAlpha(1.0);
       instance.setScale(1, 1); // Default scale to 1 (Float32Array defaults to 0, making sprite invisible)
       instance.spriteRenderer.anchorX = 0.5;
@@ -873,6 +880,7 @@ export class GameObject {
       // CRITICAL: Initialize isItOnScreen to 1 so entity is visible immediately
       // The spatial worker will update this properly on its next frame
       instance.spriteRenderer.isItOnScreen = 1;
+      instance.markDirty();
       // Reset sprite state to allow onSpawned() to set it fresh
       // NOTE: Don't reset spritesheetId/animationState here - let onSpawned() handle it
     }

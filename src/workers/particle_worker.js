@@ -3,10 +3,20 @@
 // Particles are NOT GameObjects - they use ParticleComponent directly
 
 import { ParticleComponent } from "../components/ParticleComponent.js";
+import { Transform } from "../components/Transform.js";
+import { LightEmitter } from "../components/LightEmitter.js";
+import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { AbstractWorker } from "./AbstractWorker.js";
+import {
+  calculateTotalLightAtPosition,
+  brightnessToTint,
+} from "../core/utils.js";
 
 // Make components globally available
 self.ParticleComponent = ParticleComponent;
+self.Transform = Transform;
+self.LightEmitter = LightEmitter;
+self.SpriteRenderer = SpriteRenderer;
 
 /**
  * ParticleWorker - Handles particle physics simulation
@@ -60,6 +70,15 @@ class ParticleWorker extends AbstractWorker {
     // Received from gameEngine during initialization
     // Each texture's RGBA pixel data is extracted from the bigAtlas
     this.decalTextures = {};
+
+    // ========================================
+    // PARTICLE LIGHTING SYSTEM
+    // ========================================
+    // CPU-based per-particle lighting using LightEmitter components
+    this.lightingEnabled = false;
+    this.entityLightingEnabled = false; // Separate flag for entity tint updates
+    this.lightingAmbient = 0.05; // Base ambient light level
+    this.entityCount = 0; // Number of game entities (for iterating lights)
   }
 
   /**
@@ -130,6 +149,53 @@ class ParticleWorker extends AbstractWorker {
         enabled: data.decals?.enabled,
       });
     }
+
+    // ========================================
+    // PARTICLE LIGHTING - Initialize
+    // ========================================
+    const lightingConfig = this.config.lighting || {};
+    if (
+      lightingConfig.enabled &&
+      data.buffers.componentData.LightEmitter &&
+      data.buffers.componentData.Transform
+    ) {
+      this.lightingEnabled = true;
+      this.lightingAmbient = lightingConfig.lightingAmbient ?? 0.05;
+      this.entityCount = data.entityCount || 0;
+
+      // Initialize Transform arrays (need light positions)
+      Transform.initializeArrays(
+        data.buffers.componentData.Transform,
+        this.entityCount
+      );
+
+      // Initialize LightEmitter arrays
+      LightEmitter.initializeArrays(
+        data.buffers.componentData.LightEmitter,
+        this.entityCount
+      );
+
+      // Initialize SpriteRenderer arrays (for entity tint updates)
+      // Entity lighting is enabled by default when lighting is on
+      // Can be disabled via config.lighting.entityLighting = false
+      if (
+        lightingConfig.entityLighting !== false &&
+        data.buffers.componentData.SpriteRenderer
+      ) {
+        this.entityLightingEnabled = true;
+        SpriteRenderer.initializeArrays(
+          data.buffers.componentData.SpriteRenderer,
+          this.entityCount
+        );
+        console.log(
+          `PARTICLE WORKER: Entity lighting enabled (${this.entityCount} entities)`
+        );
+      }
+
+      console.log(
+        `PARTICLE WORKER: Lighting enabled (ambient: ${this.lightingAmbient}, entities: ${this.entityCount})`
+      );
+    }
   }
 
   /**
@@ -141,7 +207,81 @@ class ParticleWorker extends AbstractWorker {
    * This batching improves cache locality for SAB writes.
    */
   update(deltaTime, dtRatio) {
-    if (this.maxParticles === 0) return;
+    if (this.maxParticles === 0 && this.entityCount === 0) return;
+
+    // Clear stamp collection for this frame
+    this.clearParticleStampList();
+
+    // Calculate camera bounds for screen visibility checks
+    const cameraBounds = this.calculateCameraBounds();
+
+    // Run particle physics and collect particles to stamp
+    const activeCount = this.updateParticlePhysics(
+      deltaTime,
+      dtRatio,
+      cameraBounds
+    );
+
+    // Stamp collected particles onto blood decal tiles
+    this.stampCollectedParticles();
+
+    // Update lighting tints for all active particles
+    this.updateParticleLighting();
+
+    // Update lighting tints for all visible game entities
+    this.updateEntityLighting();
+
+    // Store for FPS reporting
+    this.activeParticleCount = activeCount;
+  }
+
+  /**
+   * Clear the list of particles to stamp this frame
+   * Reuses array to avoid allocations
+   */
+  clearParticleStampList() {
+    this.particlesToStamp.length = 0;
+  }
+
+  /**
+   * Calculate camera viewport bounds for screen visibility checks
+   * @returns {Object|null} Camera bounds object or null if no camera
+   */
+  calculateCameraBounds() {
+    if (this.cameraData === null) return null;
+
+    // Read camera data: [zoom, cameraX, cameraY]
+    const zoom = this.cameraData[0];
+    const cameraX = this.cameraData[1];
+    const cameraY = this.cameraData[2];
+
+    // Pre-calculate all bounds once
+    const cameraOffsetX = cameraX * zoom;
+    const cameraOffsetY = cameraY * zoom;
+    const marginX = this.canvasWidth * 0.15;
+    const marginY = this.canvasHeight * 0.15;
+
+    return {
+      zoom,
+      cameraOffsetX,
+      cameraOffsetY,
+      minX: -marginX,
+      maxX: this.canvasWidth + marginX,
+      minY: -marginY,
+      maxY: this.canvasHeight + marginY,
+    };
+  }
+
+  /**
+   * Update particle physics: positions, velocities, lifetimes, ground collision
+   * Collects particles that hit the floor for stamping
+   * @param {number} deltaTime - Frame time in milliseconds
+   * @param {number} dtRatio - Delta time ratio for frame-rate independence
+   * @param {Object|null} cameraBounds - Camera bounds for screen visibility
+   * @returns {number} Count of active particles
+   */
+  updateParticlePhysics(deltaTime, dtRatio, cameraBounds) {
+    if (this.maxParticles === 0) return 0;
 
     // Cache array references for performance
     const active = ParticleComponent.active;
@@ -161,41 +301,7 @@ class ParticleWorker extends AbstractWorker {
     const isItOnScreen = ParticleComponent.isItOnScreen;
     const stayOnTheFloor = ParticleComponent.stayOnTheFloor;
 
-    // Count active particles
     let activeCount = 0;
-
-    // ========================================
-    // PHASE 1: Clear particles-to-stamp list
-    // ========================================
-    // Reuse array to avoid allocations
-    this.particlesToStamp.length = 0;
-
-    // Pre-calculate camera/viewport bounds for screen visibility (same as spatial_worker)
-    let zoom = 1,
-      cameraOffsetX = 0,
-      cameraOffsetY = 0;
-    let minX = 0,
-      maxX = 0,
-      minY = 0,
-      maxY = 0;
-    const hasCamera = this.cameraData !== null;
-
-    if (hasCamera) {
-      // Read camera data: [zoom, cameraX, cameraY]
-      zoom = this.cameraData[0];
-      const cameraX = this.cameraData[1];
-      const cameraY = this.cameraData[2];
-
-      // Pre-calculate all bounds once
-      cameraOffsetX = cameraX * zoom;
-      cameraOffsetY = cameraY * zoom;
-      const marginX = this.canvasWidth * 0.15;
-      const marginY = this.canvasHeight * 0.15;
-      minX = -marginX;
-      maxX = this.canvasWidth + marginX;
-      minY = -marginY;
-      maxY = this.canvasHeight + marginY;
-    }
 
     // Update all particles in pool (indices 0 to maxParticles-1)
     for (let i = 0; i < this.maxParticles; i++) {
@@ -208,9 +314,8 @@ class ParticleWorker extends AbstractWorker {
 
       // Check if particle expired
       if (currentLife[i] >= lifespan[i]) {
-        // Despawn particle
         active[i] = 0;
-        activeCount--; // Particle just died, decrement count
+        activeCount--;
         continue;
       }
 
@@ -230,17 +335,11 @@ class ParticleWorker extends AbstractWorker {
         vy[i] = 0;
         vz[i] = 0;
 
-        // ========================================
-        // BLOOD DECALS: Stamp and despawn
-        // ========================================
         // If stayOnTheFloor is enabled, collect particle for stamping
-        // Particle will be despawned immediately after stamping
         if (stayOnTheFloor[i]) {
           if (this.decalsEnabled) {
-            // Collect particle index for batch stamping after physics loop
             this.particlesToStamp.push(i);
           }
-          // Despawn particle immediately (stamp will use cached position/properties)
           active[i] = 0;
           activeCount--;
           continue;
@@ -248,21 +347,14 @@ class ParticleWorker extends AbstractWorker {
 
         // Handle fade on floor (only if not stamping)
         if (fadeOnTheFloor[i] > 0) {
-          // First frame on floor - store initial alpha
           if (timeOnFloor[i] === 0) {
             initialAlpha[i] = alpha[i];
           }
 
-          // Increment time on floor
           timeOnFloor[i] += deltaTime;
-
-          // Calculate fade progress (0 to 1)
           const fadeProgress = Math.min(timeOnFloor[i] / fadeOnTheFloor[i], 1);
-
-          // Lerp alpha from initial to 0
           alpha[i] = initialAlpha[i] * (1 - fadeProgress);
 
-          // Despawn when fully faded
           if (alpha[i] <= 0) {
             active[i] = 0;
             activeCount--;
@@ -271,49 +363,48 @@ class ParticleWorker extends AbstractWorker {
         }
       }
 
-      // Update screen visibility for this particle (same as spatial_worker)
-      if (hasCamera) {
-        // Transform world coordinates to screen coordinates
-        const screenX = x[i] * zoom - cameraOffsetX;
-        const screenY = y[i] * zoom - cameraOffsetY;
+      // Update screen visibility for this particle
+      if (cameraBounds) {
+        const screenX = x[i] * cameraBounds.zoom - cameraBounds.cameraOffsetX;
+        const screenY = y[i] * cameraBounds.zoom - cameraBounds.cameraOffsetY;
 
-        // Check if screen position is within viewport bounds (with margin)
         isItOnScreen[i] =
-          screenX > minX && screenX < maxX && screenY > minY && screenY < maxY
+          screenX > cameraBounds.minX &&
+          screenX < cameraBounds.maxX &&
+          screenY > cameraBounds.minY &&
+          screenY < cameraBounds.maxY
             ? 1
             : 0;
       }
     }
 
-    // ========================================
-    // PHASE 3: Stamp all collected particles
-    // ========================================
-    // Process all particles that hit the floor this frame
-    // Batching improves cache locality for tile writes
-    if (this.particlesToStamp.length > 0) {
-      if (this.decalsEnabled) {
-        const particleX = ParticleComponent.x;
-        const particleY = ParticleComponent.y;
-        const particleTint = ParticleComponent.tint;
-        const particleScale = ParticleComponent.scale;
-        const particleTextureId = ParticleComponent.textureId;
-        const particleAlpha = ParticleComponent.alpha;
+    return activeCount;
+  }
 
-        for (const particleIndex of this.particlesToStamp) {
-          this.stampParticleToTile(
-            particleX[particleIndex],
-            particleY[particleIndex],
-            particleTint[particleIndex],
-            particleScale[particleIndex],
-            particleTextureId[particleIndex],
-            particleAlpha[particleIndex]
-          );
-        }
-      }
+  /**
+   * Stamp all collected particles onto blood decal tiles
+   * Batching improves cache locality for tile writes
+   */
+  stampCollectedParticles() {
+    if (this.particlesToStamp.length === 0 || !this.decalsEnabled) return;
+
+    const particleX = ParticleComponent.x;
+    const particleY = ParticleComponent.y;
+    const particleTint = ParticleComponent.tint;
+    const particleScale = ParticleComponent.scale;
+    const particleTextureId = ParticleComponent.textureId;
+    const particleAlpha = ParticleComponent.alpha;
+
+    for (const particleIndex of this.particlesToStamp) {
+      this.stampParticleToTile(
+        particleX[particleIndex],
+        particleY[particleIndex],
+        particleTint[particleIndex],
+        particleScale[particleIndex],
+        particleTextureId[particleIndex],
+        particleAlpha[particleIndex]
+      );
     }
-
-    // Store for FPS reporting
-    this.activeParticleCount = activeCount;
   }
 
   /**
@@ -456,6 +547,126 @@ class ParticleWorker extends AbstractWorker {
 
     // Mark tile as dirty so pixi_worker updates its texture
     this.bloodTilesDirty[tileIndex] = 1;
+  }
+
+  /**
+   * Calculate lighting tints for all active particles
+   * Uses inverse square falloff: brightness = ambient + Σ(intensity / d²)
+   * Multiplies original particle tint by brightness to preserve color
+   */
+  updateParticleLighting() {
+    if (!this.lightingEnabled || this.maxParticles === 0) return;
+
+    // Cache particle arrays
+    const active = ParticleComponent.active;
+    const particleX = ParticleComponent.x;
+    const particleY = ParticleComponent.y;
+    const tint = ParticleComponent.tint;
+    const baseTint = ParticleComponent.baseTint; // Original color set by emitter
+
+    // Prepare light data object for utility function
+    const lightData = this.getLightData();
+
+    // Calculate lighting for each active particle
+    for (let i = 0; i < this.maxParticles; i++) {
+      if (!active[i]) continue;
+
+      // Calculate total light at particle position
+      const brightness = calculateTotalLightAtPosition(
+        particleX[i],
+        particleY[i],
+        lightData,
+        this.lightingAmbient
+      );
+
+      // Apply brightness to the original particle color (baseTint)
+      // This preserves blood red color while darkening/brightening based on lighting
+      tint[i] = this.applyBrightnessToColor(baseTint[i], brightness * 3000);
+    }
+  }
+
+  /**
+   * Calculate lighting tints for all visible game entities with SpriteRenderer
+   * Only updates entities that are active and on screen for performance
+   * Requires config.lighting.entityLighting = true to enable
+   */
+  updateEntityLighting() {
+    if (!this.entityLightingEnabled) return;
+    if (!SpriteRenderer.tint || !SpriteRenderer.baseTint) return;
+
+    // Cache component arrays
+    const active = Transform.active;
+    const entityX = Transform.x;
+    const entityY = Transform.y;
+    const tint = SpriteRenderer.tint;
+    const baseTint = SpriteRenderer.baseTint;
+    const isItOnScreen = SpriteRenderer.isItOnScreen;
+
+    // Prepare light data object for utility function
+    const lightData = this.getLightData();
+
+    // Calculate lighting for each visible entity
+    for (let i = 0; i < this.entityCount; i++) {
+      // Skip inactive or off-screen entities
+      if (!active[i] || !isItOnScreen[i]) continue;
+
+      // Skip entities with uninitialized baseTint (0 = black, likely not set)
+      // These entities haven't been spawned yet or don't use tinting
+      const entityBaseTint = baseTint[i];
+      if (entityBaseTint === 0) continue;
+
+      // Calculate total light at entity position
+      const brightness = calculateTotalLightAtPosition(
+        entityX[i],
+        entityY[i],
+        lightData,
+        this.lightingAmbient
+      );
+
+      // Apply brightness to the original entity color (baseTint)
+      tint[i] = this.applyBrightnessToColor(entityBaseTint, brightness * 3000);
+      // if (i % 200 == 0) {
+      //   // console.log(brightness);
+      // }
+    }
+  }
+
+  /**
+   * Get light data object for lighting calculations
+   * Caches array references for reuse between particle and entity lighting
+   * @returns {Object} Light data with arrays for positions, intensities, and enabled flags
+   */
+  getLightData() {
+    return {
+      lightX: Transform.x,
+      lightY: Transform.y,
+      lightIntensity: LightEmitter.lightIntensity,
+      lightEnabled: LightEmitter.enabled,
+      lightCount: this.entityCount,
+    };
+  }
+
+  /**
+   * Apply brightness multiplier to a color while preserving hue
+   * @param {number} color - Original color in 0xRRGGBB format
+   * @param {number} brightness - Brightness multiplier (0 to 1+)
+   * @returns {number} Lit color in 0xRRGGBB format
+   */
+  applyBrightnessToColor(color, brightness) {
+    // Clamp brightness to prevent over-saturation
+    const b = Math.min(brightness, 1.0);
+
+    // Extract RGB channels
+    const r = (color >> 16) & 0xff;
+    const g = (color >> 8) & 0xff;
+    const blue = color & 0xff;
+
+    // Apply brightness
+    const litR = Math.round(r * b);
+    const litG = Math.round(g * b);
+    const litB = Math.round(blue * b);
+
+    return (litR << 16) | (litG << 8) | litB;
   }
 
   /**

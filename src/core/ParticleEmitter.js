@@ -106,6 +106,7 @@ export class ParticleEmitter {
     const scale = ParticleComponent.scale;
     const alpha = ParticleComponent.alpha;
     const tint = ParticleComponent.tint;
+    const baseTint = ParticleComponent.baseTint;
     const particleTextureId = ParticleComponent.textureId;
     const fadeOnTheFloor = ParticleComponent.fadeOnTheFloor;
     const timeOnFloor = ParticleComponent.timeOnFloor;
@@ -154,7 +155,9 @@ export class ParticleEmitter {
         // Visual properties
         scale[i] = randomRange(config.scale, 1);
         alpha[i] = randomRange(config.alpha, 1);
-        tint[i] = randomColor(config.tint);
+        const particleColor = randomColor(config.tint);
+        tint[i] = particleColor;
+        baseTint[i] = particleColor; // Store original color for lighting calculation
         particleTextureId[i] = textureId;
         fadeOnTheFloor[i] = config.fadeOnTheFloor ?? 0;
         timeOnFloor[i] = 0;

@@ -30,7 +30,8 @@ export class ParticleComponent extends Component {
     // === Visuals (simplified - static sprites only) ===
     scale: Float32Array, // Uniform scale (particles don't need scaleX/Y)
     alpha: Float32Array, // Opacity (0-1)
-    tint: Uint32Array, // Color tint (0xRRGGBB)
+    tint: Uint32Array, // Color tint (0xRRGGBB) - modified by lighting
+    baseTint: Uint32Array, // Original color set by emitter (preserved for lighting calculation)
     textureId: Uint16Array, // Index into texture atlas (NOT spritesheetId)
 
     // === Floor behavior ===

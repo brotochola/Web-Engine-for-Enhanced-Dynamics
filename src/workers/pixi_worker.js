@@ -1018,7 +1018,7 @@ class PixiRenderer extends AbstractWorker {
           if (i >= uLightCount) break;
           
           vec2 lightPos = vec2(uLightX[i], uLightY[i]);
-          float intensity = uLightIntensity[i];
+          float intensity = uLightIntensity[i] * 0.03;
           vec3 color = vec3(uLightR[i], uLightG[i], uLightB[i]);
           
           float d = length(p - lightPos);
@@ -1049,7 +1049,7 @@ class PixiRenderer extends AbstractWorker {
     });
 
     // Initialize uniform arrays (32 lights max buffer size)
-    const maxLights = 32;
+    const maxLights = 128;
     const initialX = new Array(maxLights).fill(0);
     const initialY = new Array(maxLights).fill(0);
     const initialIntensity = new Array(maxLights).fill(0);
@@ -1103,6 +1103,7 @@ class PixiRenderer extends AbstractWorker {
     const worldX = Transform.x;
     const worldY = Transform.y;
     const isOnScreen = SpriteRenderer.isItOnScreen;
+
     const lightEnabled = LightEmitter.enabled;
     const lightColor = LightEmitter.lightColor;
     const lightIntensity = LightEmitter.lightIntensity;
