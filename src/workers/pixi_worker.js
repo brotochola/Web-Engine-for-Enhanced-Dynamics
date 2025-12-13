@@ -1287,9 +1287,9 @@ class PixiRenderer extends AbstractWorker {
     // 2. Create ParticleContainer for shadows
     // ========================================
     this.shadowSpriteContainer = new PIXI.ParticleContainer({
-      blendMode: "normal-npm", // Normal blend (semi-transparent black overlays)
+      blendMode: "multiply", // Normal blend (semi-transparent black overlays)
       dynamicProperties: {
-        vertex: false,
+        vertex: true, // Required for scale changes
         position: true,
         rotation: true,
         uvs: true,
@@ -1317,6 +1317,7 @@ class PixiRenderer extends AbstractWorker {
       });
 
       shadowSprite.visible = false;
+
       this.shadowSprites[i] = shadowSprite;
       this.shadowSpriteContainer.addParticle(shadowSprite);
     }
@@ -1327,9 +1328,13 @@ class PixiRenderer extends AbstractWorker {
   /**
    * Update shadow sprites from shadow sprite buffer
    * Reads positions/rotations/scales calculated by particle_worker
+   * Shadows use world coordinates; container moves with camera
    */
   updateShadowSprites() {
     if (!this.shadowSpritesEnabled || !this.shadowSpriteActive) return;
+
+    const sprites = this.shadowSprites;
+    const maxSprites = this.maxShadowSprites;
 
     // Cache array references (from SharedArrayBuffer views)
     const active = this.shadowSpriteActive;
@@ -1340,19 +1345,17 @@ class PixiRenderer extends AbstractWorker {
     const scaleY = this.shadowSpriteScaleY;
     const alpha = this.shadowSpriteAlpha;
 
-    for (let i = 0; i < this.maxShadowSprites; i++) {
-      const sprite = this.shadowSprites[i];
+    // THEN: Only show shadows that are active AND on screen
+    for (let i = 0; i < maxSprites; i++) {
+      const sprite = sprites[i];
       if (!sprite) continue;
-
       if (!active[i]) {
-        if (sprite.visible) {
-          sprite.visible = false;
-        }
+        sprite.alpha = 0;
         continue;
       }
 
-      // Update sprite from buffer data
-      sprite.visible = true;
+      // Update sprite from buffer data (world coordinates)
+      // sprite.visible = true;
       sprite.x = x[i];
       sprite.y = y[i];
       sprite.rotation = rotation[i];

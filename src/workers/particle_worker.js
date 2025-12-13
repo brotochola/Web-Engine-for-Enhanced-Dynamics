@@ -824,6 +824,13 @@ class ParticleWorker extends AbstractWorker {
   updateShadowSprites() {
     if (!this.shadowsEnabled || !this.shadowSpriteActive) return;
 
+    // ALWAYS clear all shadow slots first to prevent stale shadows
+    // This fixes shadows persisting when entities leave the area
+    const shadowActive = this.shadowSpriteActive;
+    for (let i = 0; i < this.maxShadowSprites; i++) {
+      shadowActive[i] = 0;
+    }
+
     // Check if we have precomputed distances from spatial worker
     const usePrecomputedDistances =
       this.neighborData &&
@@ -831,11 +838,7 @@ class ParticleWorker extends AbstractWorker {
       this.config.spatial?.maxNeighbors;
 
     if (!usePrecomputedDistances) {
-      // Clear all shadows if no spatial data available
-      for (let i = 0; i < this.maxShadowSprites; i++) {
-        this.shadowSpriteActive[i] = 0;
-      }
-      return;
+      return; // Already cleared above
     }
 
     // Cache component arrays (entity data)
@@ -852,8 +855,7 @@ class ParticleWorker extends AbstractWorker {
     const stride = 1 + maxNeighbors;
     const maxDistSq = this.maxDistanceFromLightSq;
 
-    // Shadow sprite output arrays
-    const shadowActive = this.shadowSpriteActive;
+    // Shadow sprite output arrays (shadowActive already cached above)
     const shadowRadius = this.shadowSpriteRadius;
     const shadowX = this.shadowSpriteX;
     const shadowY = this.shadowSpriteY;
@@ -920,20 +922,20 @@ class ParticleWorker extends AbstractWorker {
         const angle = Math.atan2(dy, dx);
 
         // Shadow position: at caster's feet, slightly offset in shadow direction
-        const offsetDist = casterRadius * 0.3;
+        const offsetDist = -casterRadius * 0.5;
         const posX = casterX + Math.cos(angle) * offsetDist;
         const posY = casterY + Math.sin(angle) * offsetDist;
 
         // Shadow scale based on caster size and distance
         // Closer to light = shorter shadow, farther = longer shadow
         const distRatio = Math.min(dist / this.maxDistanceFromLight, 1);
-        const lengthScale = 0.8 + distRatio * 1.5; // 0.8 to 2.3
+        const lengthScale = 0.5 + distRatio; // 0.3 to 0.8 (shorter shadows)
         const widthScale = casterRadius / 10; // Use entity's shadowRadius for width
 
         // Shadow alpha: stronger near light, fades with distance
-        const intensityFactor = Math.min(intensity * 0.5, 1);
+        const intensityFactor = Math.min(intensity * 0.66, 1);
         const distFade = 1 - distRatio * 0.7; // 1.0 to 0.3
-        const alpha = Math.min(0.6 * intensityFactor * distFade, 0.7);
+        const alpha = Math.min(intensityFactor * distFade, 0.7);
 
         // Write shadow data
         // FIXED: angle - PI/2 to make shadow point AWAY from light
@@ -951,11 +953,7 @@ class ParticleWorker extends AbstractWorker {
         shadowsForThisLight++;
       }
     }
-
-    // Mark remaining shadow slots as inactive
-    for (; shadowIdx < this.maxShadowSprites; shadowIdx++) {
-      shadowActive[shadowIdx] = 0;
-    }
+    // All slots were cleared at start, active ones were set to 1 above
   }
 
   /**
