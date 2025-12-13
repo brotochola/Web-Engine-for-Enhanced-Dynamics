@@ -116,9 +116,6 @@ export class ParticleEmitter {
     // Scan for inactive particles (indices 0 to maxParticles-1)
     for (let i = 0; i < this.maxParticles && spawned < count; i++) {
       if (active[i] === 0) {
-        // Claim this particle
-        active[i] = 1;
-
         // Position
         x[i] = randomRange(config.x);
         y[i] = randomRange(config.y);
@@ -167,6 +164,8 @@ export class ParticleEmitter {
         stayOnTheFloor[i] = config.stayOnTheFloor ? 1 : 0;
 
         spawned++;
+        // Claim this particle
+        active[i] = 1;
       }
     }
 

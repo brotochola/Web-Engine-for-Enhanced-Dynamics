@@ -106,6 +106,9 @@ class ParticleWorker extends AbstractWorker {
     this.maxShadowSprites = 0;
     this.maxDistanceFromLight = 512;
     this.maxDistanceFromLightSq = 512 * 512;
+    this.invMaxDistanceFromLight = 1 / 512; // Pre-computed for shadow calculations
+
+    this.howMuchMoreLightToParticles = 8;
   }
 
   /**
@@ -240,6 +243,7 @@ class ParticleWorker extends AbstractWorker {
       this.maxDistanceFromLight = data.shadows.maxDistanceFromLight;
       this.maxDistanceFromLightSq =
         this.maxDistanceFromLight * this.maxDistanceFromLight;
+      this.invMaxDistanceFromLight = 1 / this.maxDistanceFromLight;
 
       // Initialize entity-level ShadowCaster arrays (marks which entities cast shadows)
       ShadowCaster.initializeArrays(
@@ -535,9 +539,9 @@ class ParticleWorker extends AbstractWorker {
       return;
     }
 
-    // Calculate which tile this particle is on
-    const tileX = Math.floor(worldX / this.decalsTileSize);
-    const tileY = Math.floor(worldY / this.decalsTileSize);
+    // Calculate which tile this particle is on (bitwise floor for positive values)
+    const tileX = (worldX / this.decalsTileSize) | 0;
+    const tileY = (worldY / this.decalsTileSize) | 0;
 
     // Bounds check - particle outside world
     if (
@@ -553,24 +557,19 @@ class ParticleWorker extends AbstractWorker {
 
     // Calculate local position within tile in PIXEL coordinates
     // World position % tileSize gives world-space local pos, then scale by resolution
-    const localX = Math.floor(
-      (worldX % this.decalsTileSize) * this.decalsResolution
-    );
-    const localY = Math.floor(
-      (worldY % this.decalsTileSize) * this.decalsResolution
-    );
+    const localX = ((worldX % this.decalsTileSize) * this.decalsResolution) | 0;
+    const localY = ((worldY % this.decalsTileSize) * this.decalsResolution) | 0;
 
     // Calculate scaled texture dimensions (also scaled by resolution)
-    const scaledWidth = Math.ceil(
-      texture.width * scale * this.decalsResolution
-    );
-    const scaledHeight = Math.ceil(
-      texture.height * scale * this.decalsResolution
-    );
+    // Using | 0 + 1 as a fast ceil for positive numbers
+    const scaledWidth =
+      (texture.width * scale * this.decalsResolution + 0.999) | 0;
+    const scaledHeight =
+      (texture.height * scale * this.decalsResolution + 0.999) | 0;
 
     // Calculate stamp bounds (centered on localX, localY)
-    const halfWidth = Math.floor(scaledWidth / 2);
-    const halfHeight = Math.floor(scaledHeight / 2);
+    const halfWidth = (scaledWidth / 2) | 0;
+    const halfHeight = (scaledHeight / 2) | 0;
     const startX = localX - halfWidth;
     const startY = localY - halfHeight;
 
@@ -579,78 +578,74 @@ class ParticleWorker extends AbstractWorker {
     const tintG = (tint >> 8) & 0xff;
     const tintB = tint & 0xff;
 
-    // Tile byte offset in the big RGBA buffer (uses pixel size, not world size)
-    const tileByteOffset =
-      tileIndex * this.decalsTilePixelSize * this.decalsTilePixelSize * 4;
+    // Cache frequently accessed values
+    const tilePixelSize = this.decalsTilePixelSize;
+    const bloodTiles = this.bloodTilesRGBA;
+    const textureRgba = texture.rgba;
+    const texWidth = texture.width;
+    const texHeight = texture.height;
+
+    // Tile byte offset in the big RGBA buffer
+    const tileByteOffset = tileIndex * tilePixelSize * tilePixelSize * 4;
+
+    // Pre-calculate inverse dimensions for UV mapping (avoid division in loop)
+    const invScaledWidth = texWidth / scaledWidth;
+    const invScaledHeight = texHeight / scaledHeight;
 
     // Stamp texture pixels onto tile
     // Uses simple nearest-neighbor scaling for performance
     for (let dy = 0; dy < scaledHeight; dy++) {
-      for (let dx = 0; dx < scaledWidth; dx++) {
-        // Calculate position in tile (pixel coordinates)
-        const tilePixelX = startX + dx;
-        const tilePixelY = startY + dy;
+      const tilePixelY = startY + dy;
+      // Skip entire row if outside tile bounds
+      if (tilePixelY < 0 || tilePixelY >= tilePixelSize) continue;
 
-        // Skip pixels outside tile bounds (uses pixel size)
-        if (
-          tilePixelX < 0 ||
-          tilePixelX >= this.decalsTilePixelSize ||
-          tilePixelY < 0 ||
-          tilePixelY >= this.decalsTilePixelSize
-        ) {
-          continue;
-        }
+      // Pre-calculate source Y and row offsets
+      const srcY = (dy * invScaledHeight) | 0;
+      const srcRowOffset = srcY * texWidth;
+      const dstRowOffset = tileByteOffset + tilePixelY * tilePixelSize * 4;
+
+      for (let dx = 0; dx < scaledWidth; dx++) {
+        const tilePixelX = startX + dx;
+        // Skip pixels outside tile bounds
+        if (tilePixelX < 0 || tilePixelX >= tilePixelSize) continue;
 
         // Sample from source texture (nearest-neighbor)
-        const srcX = Math.floor((dx / scaledWidth) * texture.width);
-        const srcY = Math.floor((dy / scaledHeight) * texture.height);
-        const srcOffset = (srcY * texture.width + srcX) * 4;
+        const srcX = (dx * invScaledWidth) | 0;
+        const srcOffset = (srcRowOffset + srcX) * 4;
 
-        // Get source RGBA
-        const srcR = texture.rgba[srcOffset];
-        const srcG = texture.rgba[srcOffset + 1];
-        const srcB = texture.rgba[srcOffset + 2];
         // Apply particle alpha to texture alpha
-        const srcA = texture.rgba[srcOffset + 3] * alpha;
+        const srcA = textureRgba[srcOffset + 3] * alpha;
 
         // Skip fully transparent pixels
         if (srcA < 1) continue;
 
-        // Calculate destination offset in tile buffer (uses pixel size)
-        const dstOffset =
-          tileByteOffset +
-          (tilePixelY * this.decalsTilePixelSize + tilePixelX) * 4;
+        // Get source RGB
+        const srcR = textureRgba[srcOffset];
+        const srcG = textureRgba[srcOffset + 1];
+        const srcB = textureRgba[srcOffset + 2];
 
-        // Apply tint to source color (multiply blend)
-        // Tint is normalized: (tintChannel / 255) * srcChannel
-        const finalR = Math.floor((srcR * tintR) / 255);
-        const finalG = Math.floor((srcG * tintG) / 255);
-        const finalB = Math.floor((srcB * tintB) / 255);
+        // Calculate destination offset in tile buffer
+        const dstOffset = dstRowOffset + tilePixelX * 4;
+
+        // Apply tint to source color (multiply blend) - use bitwise for speed
+        const finalR = ((srcR * tintR) / 255) | 0;
+        const finalG = ((srcG * tintG) / 255) | 0;
+        const finalB = ((srcB * tintB) / 255) | 0;
 
         // Alpha blending with existing tile content
-        // newColor = srcColor * srcA + dstColor * (1 - srcA)
         const srcAlphaNorm = srcA / 255;
         const invSrcAlpha = 1 - srcAlphaNorm;
 
-        const dstR = this.bloodTilesRGBA[dstOffset];
-        const dstG = this.bloodTilesRGBA[dstOffset + 1];
-        const dstB = this.bloodTilesRGBA[dstOffset + 2];
-        const dstA = this.bloodTilesRGBA[dstOffset + 3];
-
-        // Blend colors
-        this.bloodTilesRGBA[dstOffset] = Math.floor(
-          finalR * srcAlphaNorm + dstR * invSrcAlpha
-        );
-        this.bloodTilesRGBA[dstOffset + 1] = Math.floor(
-          finalG * srcAlphaNorm + dstG * invSrcAlpha
-        );
-        this.bloodTilesRGBA[dstOffset + 2] = Math.floor(
-          finalB * srcAlphaNorm + dstB * invSrcAlpha
-        );
+        // Blend colors (bitwise truncation)
+        bloodTiles[dstOffset] =
+          (finalR * srcAlphaNorm + bloodTiles[dstOffset] * invSrcAlpha) | 0;
+        bloodTiles[dstOffset + 1] =
+          (finalG * srcAlphaNorm + bloodTiles[dstOffset + 1] * invSrcAlpha) | 0;
+        bloodTiles[dstOffset + 2] =
+          (finalB * srcAlphaNorm + bloodTiles[dstOffset + 2] * invSrcAlpha) | 0;
         // Alpha: combine using "over" operator
-        this.bloodTilesRGBA[dstOffset + 3] = Math.floor(
-          srcA + dstA * invSrcAlpha
-        );
+        bloodTiles[dstOffset + 3] =
+          (srcA + bloodTiles[dstOffset + 3] * invSrcAlpha) | 0;
       }
     }
 
@@ -662,6 +657,8 @@ class ParticleWorker extends AbstractWorker {
    * Calculate lighting tints for all active particles
    * Uses inverse square falloff: brightness = ambient + Σ(intensity / d²)
    * Multiplies original particle tint by brightness to preserve color
+   *
+   * OPTIMIZED: Inlined light calculation, distance culling, on-screen only
    */
   updateParticleLighting() {
     if (!this.lightingEnabled || this.maxParticles === 0) return;
@@ -671,26 +668,49 @@ class ParticleWorker extends AbstractWorker {
     const particleX = ParticleComponent.x;
     const particleY = ParticleComponent.y;
     const tint = ParticleComponent.tint;
-    const baseTint = ParticleComponent.baseTint; // Original color set by emitter
+    const baseTint = ParticleComponent.baseTint;
+    const isItOnScreen = ParticleComponent.isItOnScreen;
 
-    // Prepare light data object for utility function
-    const lightData = this.getLightData();
+    // Cache light arrays directly (avoid object destructuring in hot path)
+    const lightX = Transform.x;
+    const lightY = Transform.y;
+    const lightIntensity = LightEmitter.lightIntensity;
+    const lightEnabled = LightEmitter.active;
+    const lightCount = this.entityCount;
 
-    // Calculate lighting for each active particle
+    const ambient = this.lightingAmbient;
+    // Max distance squared beyond which light contribution is negligible
+    // intensity / (1 + distSq) < 0.001 when distSq > intensity * 1000
+    const maxLightDistSq = 500000; // ~707 world units for typical light intensities
+
+    // Calculate lighting for each active, on-screen particle
     for (let i = 0; i < this.maxParticles; i++) {
       if (!active[i]) continue;
+      // Skip off-screen particles - they won't be rendered anyway
+      if (!isItOnScreen[i]) continue;
 
-      // Calculate total light at particle position
-      const brightness = calculateTotalLightAtPosition(
-        particleX[i],
-        particleY[i],
-        lightData,
-        this.lightingAmbient
-      );
+      const px = particleX[i];
+      const py = particleY[i];
+      let totalLight = ambient;
+
+      // Inlined light calculation - no function call overhead
+      for (let j = 0; j < lightCount; j++) {
+        if (!lightEnabled[j]) continue;
+
+        const dx = px - lightX[j];
+        const dy = py - lightY[j];
+        const distSq = dx * dx + dy * dy;
+
+        // Early exit: skip lights too far away to contribute meaningfully
+        if (distSq > maxLightDistSq) continue;
+
+        // Inverse square falloff
+        totalLight +=
+          (lightIntensity[j] * this.howMuchMoreLightToParticles) / (1 + distSq);
+      }
 
       // Apply brightness to the original particle color (baseTint)
-      // This preserves blood red color while darkening/brightening based on lighting
-      tint[i] = this.applyBrightnessToColor(baseTint[i], brightness * 3000);
+      tint[i] = this.applyBrightnessToColor(baseTint[i], totalLight * 3000);
     }
   }
 
@@ -917,24 +937,32 @@ class ParticleWorker extends AbstractWorker {
         // Skip if light is at caster position (avoid division by zero)
         if (dist < 1) continue;
 
-        // Angle from light to caster = direction shadow should point (AWAY from light)
-        const angle = Math.atan2(dy, dx);
+        // Use normalized direction instead of trig functions (faster)
+        const invDist = 1 / dist;
+        const dirX = dx * invDist; // cos(angle)
+        const dirY = dy * invDist; // sin(angle)
 
         // Shadow position: at caster's feet, slightly offset in shadow direction
         const offsetDist = -casterRadius * 0.5;
-        const posX = casterX + Math.cos(angle) * offsetDist;
-        const posY = casterY + Math.sin(angle) * offsetDist;
+        const posX = casterX + dirX * offsetDist;
+        const posY = casterY + dirY * offsetDist;
 
         // Shadow scale based on caster size and distance
         // Closer to light = shorter shadow, farther = longer shadow
-        const distRatio = Math.min(dist / this.maxDistanceFromLight, 1);
-        const lengthScale = 0.5 + distRatio; // 0.3 to 0.8 (shorter shadows)
-        const widthScale = casterRadius / 10; // Use entity's shadowRadius for width
+        const rawDistRatio = dist * this.invMaxDistanceFromLight; // Pre-computed inverse
+        const distRatio = rawDistRatio > 1 ? 1 : rawDistRatio;
+        const lengthScale = 0.3 + distRatio * 0.9;
+        const widthScale = casterRadius * 0.1; // Use entity's shadowRadius for width
 
         // Shadow alpha: stronger near light, fades with distance
-        const intensityFactor = Math.min(intensity * 0.66, 1);
-        const distFade = 1 - distRatio * 0.7; // 1.0 to 0.3
-        const alpha = Math.min(intensityFactor * distFade, 0.7);
+
+        const intensityFactor = intensity > 1 ? 1 : intensity;
+        const distFade = 1 - distRatio * 0.7;
+        const rawAlpha = intensityFactor * distFade;
+        const alpha = rawAlpha > 0.7 ? 0.7 : rawAlpha;
+
+        // Angle from light to caster (still need atan2 for rotation, but only once per shadow)
+        const angle = Math.atan2(dy, dx);
 
         // Write shadow data
         // FIXED: angle - PI/2 to make shadow point AWAY from light
@@ -943,7 +971,7 @@ class ParticleWorker extends AbstractWorker {
         shadowRadius[shadowIdx] = casterRadius;
         shadowX[shadowIdx] = posX;
         shadowY[shadowIdx] = posY;
-        shadowRotation[shadowIdx] = angle - Math.PI / 2; // FIXED: was + PI/2, now - PI/2
+        shadowRotation[shadowIdx] = angle - 1.5707963267948966; // PI/2 as constant
         shadowScaleX[shadowIdx] = widthScale;
         shadowScaleY[shadowIdx] = lengthScale;
         shadowAlpha[shadowIdx] = alpha;
@@ -979,23 +1007,19 @@ class ParticleWorker extends AbstractWorker {
 
   /**
    * Apply brightness multiplier to a color while preserving hue
+   * OPTIMIZED: Uses bitwise ops instead of Math.round for speed
    * @param {number} color - Original color in 0xRRGGBB format
    * @param {number} brightness - Brightness multiplier (0 to 1+)
    * @returns {number} Lit color in 0xRRGGBB format
    */
   applyBrightnessToColor(color, brightness) {
-    // Clamp brightness to prevent over-saturation
-    const b = Math.min(brightness, 1.0);
+    // Clamp brightness to prevent over-saturation (branchless would be even faster but less readable)
+    const b = brightness > 1.0 ? 1.0 : brightness;
 
-    // Extract RGB channels
-    const r = (color >> 16) & 0xff;
-    const g = (color >> 8) & 0xff;
-    const blue = color & 0xff;
-
-    // Apply brightness
-    const litR = Math.round(r * b);
-    const litG = Math.round(g * b);
-    const litB = Math.round(blue * b);
+    // Extract RGB and apply brightness using bitwise truncation (faster than Math.round)
+    const litR = (((color >> 16) & 0xff) * b) | 0;
+    const litG = (((color >> 8) & 0xff) * b) | 0;
+    const litB = ((color & 0xff) * b) | 0;
 
     return (litR << 16) | (litG << 8) | litB;
   }

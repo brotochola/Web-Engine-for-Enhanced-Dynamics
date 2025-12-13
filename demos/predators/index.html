@@ -300,9 +300,9 @@
 
     <script type="module">
         const numberOfPrey = 15000;
-        const numberOfPredators = 10;
+        const numberOfPredators = 8;
         const numberOfBoids = 0;
-        const numberOfTallLights = 70;
+        const numberOfTallLights = 50;
         // Import WeedJS engine 🌿
         import WEED from '/src/index.js';
         import { Boid } from '/demos/predators/boid.js';
@@ -322,14 +322,14 @@
             {
                 canvasWidth: window.innerWidth,
                 canvasHeight: window.innerHeight,
-                worldWidth: 7000,
-                worldHeight: 2500,
+                worldWidth: 5000,
+                worldHeight: 2000,
                 seed: 123456,
 
                 // Spatial hash grid configuration
                 spatial: {
                     cellSize: 128,  // Increased to match visual range (reduces grid overhead)
-                    maxNeighbors: 2048,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
+                    maxNeighbors: 1024,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
                     noLimitFPS: true,
 
                 },
@@ -369,9 +369,9 @@
                     maxLights: 100, // Maximum number of lights for the shader
                     // Shadow sprite system (calculated by particle_worker, rendered by pixi_worker)
                     shadowsEnabled: true, // Enable shadow sprite system
-                    maxShadowCastingLights: 40, // How many lights actively cast shadows
-                    maxShadowsPerLight: 300, // Closest N entities per light get shadows
-                    maxDistanceFromLight: 220, // Max world distance to cast shadow
+                    maxShadowCastingLights: 10, // How many lights actively cast shadows
+                    maxShadowsPerLight: 50, // Closest N entities per light get shadows
+                    maxDistanceFromLight: 200, // Max world distance to cast shadow
                 }
             },
             {
