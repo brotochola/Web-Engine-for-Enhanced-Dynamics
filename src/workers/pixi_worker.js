@@ -1138,9 +1138,10 @@ class PixiRenderer extends AbstractWorker {
       const g = ((color >> 8) & 0xff) / 255;
       const b = (color & 0xff) / 255;
 
-      // Scale intensity by zoom² to maintain consistent world-space light radius
-      // When zoomed out, lights cover less screen space so need higher intensity
-      const scaledIntensity = lightIntensity[i] * zoom ** 1.57;
+      // Scale intensity to maintain perceptually consistent brightness across zoom
+      // Blend of linear and quadratic: smoother than power law across zoom range
+      const zoomFactor = (zoom + zoom * zoom) * 0.5;
+      const scaledIntensity = lightIntensity[i] * zoomFactor;
 
       // Update uniforms
       uniforms.uLightX[lightIndex] = shaderX;
