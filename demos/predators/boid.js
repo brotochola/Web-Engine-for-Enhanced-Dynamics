@@ -95,7 +95,8 @@ class Boid extends GameObject {
   /**
    * Main update - applies all boid rules
    * The spatial worker has already found neighbors for us!
-   * Note: this.neighbors and this.neighborCount are updated before this is called
+   * Note: this.neighborCount is updated before this is called
+   * Use getNeighbor(n) and getNeighborDistance(n) for inline access (zero allocations)
    */
   tick(dtRatio) {
     const i = this.index;
@@ -157,8 +158,9 @@ class Boid extends GameObject {
     const maxProcessed = this.neighborCount; // Math.min(this.neighborCount, 30); // Process max 30 neighbors
 
     // Single loop through all neighbors
+    // OPTIMIZATION: Use inline index access instead of subarray views (zero allocations)
     for (let n = 0; n < maxProcessed; n++) {
-      const j = this.neighbors[n];
+      const j = this.getNeighbor(n);
 
       const neighborType = entityTypes[j];
       if (Mouse.entityType == neighborType) continue;
@@ -166,7 +168,7 @@ class Boid extends GameObject {
 
       // Use pre-calculated squared distance from spatial worker (OPTIMIZATION!)
       // This eliminates duplicate distance calculations between spatial & logic workers
-      const dist2 = this.neighborDistances ? this.neighborDistances[n] : 0;
+      const dist2 = this.getNeighborDistance(n);
 
       // Calculate delta using direct array access
       const dx = tX[j] - myX;
@@ -269,10 +271,10 @@ class Boid extends GameObject {
     // Mouse is always at entity index 0
     const mouseEntityIndex = 0;
 
-    // Find mouse in neighbors array
+    // Find mouse in neighbors array (using inline index access)
     let mouseNeighborPos = -1;
     for (let n = 0; n < this.neighborCount; n++) {
-      if (this.neighbors[n] === mouseEntityIndex) {
+      if (this.getNeighbor(n) === mouseEntityIndex) {
         mouseNeighborPos = n;
         break;
       }
@@ -282,7 +284,7 @@ class Boid extends GameObject {
     if (mouseNeighborPos === -1) return;
 
     // Now use the pre-calculated distance from the spatial worker
-    const dist2 = this.neighborDistances[mouseNeighborPos];
+    const dist2 = this.getNeighborDistance(mouseNeighborPos);
     if (!dist2 || dist2 === 0) return;
 
     // Cache array references

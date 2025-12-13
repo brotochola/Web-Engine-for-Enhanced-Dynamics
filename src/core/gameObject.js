@@ -692,6 +692,10 @@ export class GameObject {
    * Update neighbor references for this entity
    * Called by logic worker before tick() each frame
    *
+   * OPTIMIZATION: Stores raw array references and offset instead of creating
+   * subarray views. This eliminates 2.4M allocations/sec (2 views × 20K entities × 60fps).
+   * Use getNeighbor(n) and getNeighborDistance(n) for inline index access.
+   *
    * @param {Int32Array} neighborData - Precomputed neighbors from spatial worker
    * @param {Float32Array} distanceData - Precomputed squared distances from spatial worker
    */
@@ -702,28 +706,38 @@ export class GameObject {
 
     if (!neighborData || !maxNeighbors) {
       this.neighborCount = 0;
-      this.neighbors = null;
-      this.neighborDistances = null;
+      this._neighborData = null;
+      this._distanceData = null;
+      this._neighborOffset = 0;
       return;
     }
 
-    // Parse neighbor data buffer: [count, id1, id2, ..., id_MAX]
-    const offset = this.index * (1 + maxNeighbors);
-    this.neighborCount = neighborData[offset];
-    this.neighbors = neighborData.subarray(
-      offset + 1,
-      offset + 1 + this.neighborCount
-    );
+    // Store raw references and calculate offset once (NO subarray allocation!)
+    // Buffer layout: [count, id1, id2, ..., id_MAX] per entity
+    this._neighborData = neighborData;
+    this._distanceData = distanceData;
+    this._neighborOffset = this.index * (1 + maxNeighbors) + 1; // +1 to skip count
+    this.neighborCount = neighborData[this._neighborOffset - 1];
+  }
 
-    // Parse distance data buffer (same structure as neighborData)
-    if (distanceData) {
-      this.neighborDistances = distanceData.subarray(
-        offset + 1,
-        offset + 1 + this.neighborCount
-      );
-    } else {
-      this.neighborDistances = null;
-    }
+  /**
+   * Get neighbor entity index at position n (inline index calculation)
+   * @param {number} n - Position in neighbor list (0 to neighborCount-1)
+   * @returns {number} Entity index of the neighbor
+   */
+  getNeighbor(n) {
+    return this._neighborData[this._neighborOffset + n];
+  }
+
+  /**
+   * Get squared distance to neighbor at position n (inline index calculation)
+   * @param {number} n - Position in neighbor list (0 to neighborCount-1)
+   * @returns {number} Squared distance to the neighbor
+   */
+  getNeighborDistance(n) {
+    return this._distanceData
+      ? this._distanceData[this._neighborOffset + n]
+      : 0;
   }
 
   /**
@@ -731,7 +745,8 @@ export class GameObject {
    * Override this in subclasses to define entity behavior
    * (AI, physics forces, animations, input handling, etc.)
    *
-   * Note: this.neighbors and this.neighborCount are updated before this is called
+   * Note: this.neighborCount is updated before this is called
+   * Use getNeighbor(n) and getNeighborDistance(n) for inline access (zero allocations)
    * Input is available via this.mouse and this.keyboard
    *
    * @param {number} dtRatio - Delta time ratio (1.0 = 16.67ms frame)

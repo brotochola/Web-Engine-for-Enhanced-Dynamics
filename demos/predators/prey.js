@@ -111,7 +111,8 @@ class Prey extends Boid {
 
   /**
    * Main update - applies boid behaviors plus predator avoidance
-   * Note: this.neighbors and this.neighborCount are updated before this is called
+   * Note: this.neighborCount is updated before this is called
+   * Use getNeighbor(n) and getNeighborDistance(n) for inline access (zero allocations)
    */
   tick(dtRatio) {
     const i = this.index;
