@@ -377,8 +377,9 @@ export class GameObject {
   setSpritesheet(spritesheetName) {
     if (!this.spriteRenderer) return;
 
-    // Verify the spritesheet exists
-    if (!SpriteSheetRegistry.spritesheets.has(spritesheetName)) {
+    // Verify the spritesheet exists and cache it for fast animation lookup
+    const sheet = SpriteSheetRegistry.spritesheets.get(spritesheetName);
+    if (!sheet) {
       console.error(
         `❌ ${this.constructor.name}: Spritesheet "${spritesheetName}" not found. ` +
           `Available: ${Array.from(
@@ -397,6 +398,16 @@ export class GameObject {
       return;
     }
     this.spriteRenderer.spritesheetId = spritesheetId;
+
+    // PERFORMANCE: Cache animation lookup for this instance
+    // Eliminates string concatenation in hot path setAnimation()
+    if (sheet.animations) {
+      this._animLookup = sheet.animations;
+    } else {
+      console.warn(
+        `⚠️ ${this.constructor.name}: Spritesheet "${spritesheetName}" has no animations property`
+      );
+    }
 
     // Mark as animated
     this.spriteRenderer.isAnimated = 1;
@@ -419,7 +430,27 @@ export class GameObject {
   setAnimation(animationName) {
     if (!this.spriteRenderer) return;
 
-    // Get which spritesheet is currently set
+    // FAST PATH: Use instance-level cached lookup (no string concatenation!)
+    // This is set by setSpritesheet() and provides O(1) property lookup
+    if (this._animLookup) {
+      const anim = this._animLookup[animationName];
+      if (anim) {
+        this.setAnimationState(anim.index);
+        return;
+      }
+
+      // Animation not found in cached lookup - provide helpful error
+      const availableAnims = Object.keys(this._animLookup);
+      console.error(
+        `❌ ${this.constructor.name}: Animation "${animationName}" not found. ` +
+          `Available: ${availableAnims.slice(0, 10).join(", ")}${
+            availableAnims.length > 10 ? "..." : ""
+          }`
+      );
+      return;
+    }
+
+    // SLOW PATH: Fallback - rebuild cache from spritesheetId
     const spritesheetId = this.spriteRenderer.spritesheetId;
     if (!spritesheetId || spritesheetId === 0) {
       console.error(
@@ -437,41 +468,37 @@ export class GameObject {
       return;
     }
 
-    // PERFORMANCE: Global cache keyed by "sheet:animName"
-    if (!GameObject._globalAnimationCache) {
-      GameObject._globalAnimationCache = {};
-    }
-
-    const cacheKey = `${spritesheet}:${animationName}`;
-    let animIndex = GameObject._globalAnimationCache[cacheKey];
-
-    if (animIndex === undefined) {
-      // First time this animation is used - look it up via proxy
-      animIndex = SpriteSheetRegistry.getAnimationIndex(
-        spritesheet,
-        animationName
-      );
-
-      if (animIndex === undefined) {
-        // Animation not found
-        const availableAnims = Object.keys(
-          SpriteSheetRegistry.spritesheets.get(spritesheet)?.animations || {}
-        );
-
-        console.error(
-          `❌ ${this.constructor.name}: Animation "${animationName}" not found in "${spritesheet}". ` +
-            `Available: ${availableAnims.slice(0, 10).join(", ")}${
-              availableAnims.length > 10 ? "..." : ""
-            }`
-        );
+    // Rebuild the cache so subsequent calls use fast path
+    const sheet = SpriteSheetRegistry.spritesheets.get(spritesheet);
+    if (sheet && sheet.animations) {
+      this._animLookup = sheet.animations;
+      // Now use fast path
+      const anim = this._animLookup[animationName];
+      if (anim) {
+        this.setAnimationState(anim.index);
         return;
       }
-
-      // Cache it globally
-      GameObject._globalAnimationCache[cacheKey] = animIndex;
     }
 
-    // Set the animation
+    // Fallback to registry lookup (shouldn't normally reach here)
+    const animIndex = SpriteSheetRegistry.getAnimationIndex(
+      spritesheet,
+      animationName
+    );
+
+    if (animIndex === undefined) {
+      const availableAnims = Object.keys(
+        SpriteSheetRegistry.spritesheets.get(spritesheet)?.animations || {}
+      );
+      console.error(
+        `❌ ${this.constructor.name}: Animation "${animationName}" not found in "${spritesheet}". ` +
+          `Available: ${availableAnims.slice(0, 10).join(", ")}${
+            availableAnims.length > 10 ? "..." : ""
+          }`
+      );
+      return;
+    }
+
     this.setAnimationState(animIndex);
   }
 
