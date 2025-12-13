@@ -145,6 +145,8 @@ class PhysicsWorker extends AbstractWorker {
   updateVerlet(deltaTime, dtRatio) {
     // Cache array references from components
     const active = Transform.active;
+    const rigidBodyActive = RigidBody.active; // Component active flag (dense allocation)
+    const colliderActive = Collider.active; // Component active flag (dense allocation)
     const x = Transform.x;
     const y = Transform.y;
     const rotation = Transform.rotation;
@@ -170,7 +172,7 @@ class PhysicsWorker extends AbstractWorker {
 
     // Reset collision counters once per frame (used for diagnostics/tuning)
     for (let i = 0; i < rigidBodyCount; i++) {
-      if (!active[i]) continue;
+      if (!active[i] || !rigidBodyActive[i]) continue;
       collisionCount[i] = 0;
     }
 
@@ -180,6 +182,7 @@ class PhysicsWorker extends AbstractWorker {
     // Step 1: Move balls using Verlet integration
     this.moveBallsVerlet(
       active,
+      rigidBodyActive,
       x,
       y,
       px,
@@ -200,6 +203,8 @@ class PhysicsWorker extends AbstractWorker {
     for (let step = 0; step < this.settings.subStepCount; step++) {
       this.applyConstraintsVerlet(
         active,
+        rigidBodyActive,
+        colliderActive,
         x,
         y,
         radius,
@@ -214,6 +219,7 @@ class PhysicsWorker extends AbstractWorker {
     // Step 3: Update derived properties (velocityAngle, speed) from positions
     this.updateDerivedProperties(
       active,
+      rigidBodyActive,
       x,
       y,
       px,
@@ -233,6 +239,7 @@ class PhysicsWorker extends AbstractWorker {
    */
   moveBallsVerlet(
     active,
+    rigidBodyActive,
     x,
     y,
     px,
@@ -255,7 +262,7 @@ class PhysicsWorker extends AbstractWorker {
 
     // Only process entities that have RigidBody component
     for (let i = 0; i < rigidBodyCount; i++) {
-      if (!active[i]) continue;
+      if (!active[i] || !rigidBodyActive[i]) continue;
 
       // Static bodies don't move - skip physics integration entirely
       if (isStatic[i]) continue;
@@ -315,6 +322,8 @@ class PhysicsWorker extends AbstractWorker {
    */
   applyConstraintsVerlet(
     active,
+    rigidBodyActive,
+    colliderActive,
     x,
     y,
     radius,
@@ -333,7 +342,7 @@ class PhysicsWorker extends AbstractWorker {
 
     // Apply boundary constraints with bounce - only for entities with RigidBody
     for (let i = 0; i < rigidBodyCount; i++) {
-      if (!active[i]) continue;
+      if (!active[i] || !rigidBodyActive[i]) continue;
 
       // Static bodies don't need boundary constraints (they don't move)
       if (isStatic[i]) continue;
@@ -373,6 +382,8 @@ class PhysicsWorker extends AbstractWorker {
       // If neighbors are missing, collisions are missed.
       this.resolveCollisionsVerlet(
         active,
+        rigidBodyActive,
+        colliderActive,
         x,
         y,
         radius,
@@ -393,6 +404,8 @@ class PhysicsWorker extends AbstractWorker {
    */
   resolveCollisionsVerlet(
     active,
+    rigidBodyActive,
+    colliderActive,
     x,
     y,
     radius,
@@ -413,7 +426,8 @@ class PhysicsWorker extends AbstractWorker {
 
     // Process all entities for collision detection (including trigger-only entities like Mouse)
     for (let i = 0; i < this.entityCount; i++) {
-      if (!active[i]) continue;
+      // Skip if entity not active or doesn't have a collider
+      if (!active[i] || !colliderActive[i]) continue;
 
       // Get neighbors from spatial worker
       const offset = i * (1 + maxNeighbors);
@@ -423,7 +437,8 @@ class PhysicsWorker extends AbstractWorker {
       for (let n = 0; n < neighborCount; n++) {
         const j = this.neighborData[offset + 1 + n];
 
-        if (i === j || !active[j]) continue;
+        // Skip if neighbor not active or doesn't have a collider
+        if (i === j || !active[j] || !colliderActive[j]) continue;
 
         // Only process each pair once (i < j)
         if (i >= j) continue;
@@ -559,6 +574,7 @@ class PhysicsWorker extends AbstractWorker {
    */
   updateDerivedProperties(
     active,
+    rigidBodyActive,
     x,
     y,
     px,
@@ -573,7 +589,7 @@ class PhysicsWorker extends AbstractWorker {
 
     // Only process entities that have RigidBody component
     for (let i = 0; i < rigidBodyCount; i++) {
-      if (!active[i]) continue;
+      if (!active[i] || !rigidBodyActive[i]) continue;
 
       // Velocity is already stored in vx/vy from moveBallsVerlet
       const currentSpeed = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]);

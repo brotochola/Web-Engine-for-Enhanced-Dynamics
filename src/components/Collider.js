@@ -6,6 +6,8 @@ import { Component } from "../core/Component.js";
 class Collider extends Component {
   // Array schema - defines all collision properties
   static ARRAY_SCHEMA = {
+    active: Uint8Array, // 0 = entity doesn't have this component, 1 = active
+
     // Shape type
     shapeType: Uint8Array, // 0=Circle, 1=Box, 2=Polygon
 

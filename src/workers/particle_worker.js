@@ -616,7 +616,7 @@ class ParticleWorker extends AbstractWorker {
       // OPTIMIZED PATH: Iterate through LIGHTS and use their neighbors
       // The LIGHT's visualRange determines which entities receive light
       const lightIntensity = LightEmitter.lightIntensity;
-      const lightEnabled = LightEmitter.enabled;
+      const lightEnabled = LightEmitter.active;
       const maxNeighbors = this.config.spatial.maxNeighbors;
       const stride = 1 + maxNeighbors;
       const ambient = this.lightingAmbient;
@@ -660,7 +660,7 @@ class ParticleWorker extends AbstractWorker {
       for (let i = 0; i < this.entityCount; i++) {
         if (!active[i] || !isItOnScreen[i]) continue;
         //Light Emitters are always fully lit
-        if (LightEmitter.enabled[i] === 1) {
+        if (LightEmitter.active[i] === 1) {
           tint[i] = 0xffffff;
           continue;
         }
@@ -717,7 +717,7 @@ class ParticleWorker extends AbstractWorker {
       lightX: Transform.x,
       lightY: Transform.y,
       lightIntensity: LightEmitter.lightIntensity,
-      lightEnabled: LightEmitter.enabled,
+      lightEnabled: LightEmitter.active,
       lightCount: this.entityCount,
     };
   }

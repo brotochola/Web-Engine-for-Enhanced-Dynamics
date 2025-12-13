@@ -720,6 +720,7 @@ class PixiRenderer extends AbstractWorker {
 
       // DENSE ALLOCATION: entityIndex === componentIndex
       // Determine if sprite should be visible
+      // Note: spriteActive check removed - bodySprite null check already filters entities without SpriteRenderer
       const shouldBeVisible = active[i] && renderVisible[i] && isItOnScreen[i];
 
       // Hide inactive or explicitly hidden entities
@@ -1105,7 +1106,7 @@ class PixiRenderer extends AbstractWorker {
     const worldX = Transform.x;
     const worldY = Transform.y;
 
-    const lightEnabled = LightEmitter.enabled;
+    const lightEnabled = LightEmitter.active;
     const lightColor = LightEmitter.lightColor;
     const lightIntensity = LightEmitter.lightIntensity;
 

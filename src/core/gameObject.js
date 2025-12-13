@@ -5,6 +5,7 @@ import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
+import { LightEmitter } from "../components/LightEmitter.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { collectComponents } from "./utils.js";
 import Keyboard from "./Keyboard.js";
@@ -673,7 +674,12 @@ export class GameObject {
       this.onDespawned();
     }
 
+    // Deactivate all component active flags
     Transform.active[this.index] = 0;
+    if (this.rigidBody) RigidBody.active[this.index] = 0;
+    if (this.collider) Collider.active[this.index] = 0;
+    if (this.spriteRenderer) SpriteRenderer.active[this.index] = 0;
+    if (this.lightEmitter) LightEmitter.active[this.index] = 0;
 
     // Return to free list if exists (O(1))
     const EntityClass = this.constructor;
@@ -867,8 +873,9 @@ export class GameObject {
       return null;
     }
 
-    // Reset component values
+    // Reset component values and set component active flags
     if (instance.rigidBody) {
+      instance.rigidBody.active = 1; // Mark component as active for this entity
       instance.rigidBody.ax = 0;
       instance.rigidBody.ay = 0;
       instance.rigidBody.vx = 0;
@@ -885,7 +892,16 @@ export class GameObject {
       instance.transform.rotation = 0;
     }
 
+    if (instance.collider) {
+      instance.collider.active = 1; // Mark component as active for this entity
+    }
+
+    if (instance.lightEmitter) {
+      instance.lightEmitter.active = 1; // Mark component as active for this entity
+    }
+
     if (instance.spriteRenderer) {
+      instance.spriteRenderer.active = 1; // Mark component as active for this entity
       // Initialize both tint and baseTint to white (for lighting system)
       instance.spriteRenderer.tint = 0xffffff;
       instance.spriteRenderer.baseTint = 0xffffff;
