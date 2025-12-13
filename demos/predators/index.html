@@ -299,7 +299,7 @@
     </div>
 
     <script type="module">
-        const numberOfPrey = 10000;
+        const numberOfPrey = 20000;
         const numberOfPredators = 4;
         const numberOfBoids = 0;
         const numberOfTallLights = 40;
@@ -329,7 +329,7 @@
                 // Spatial hash grid configuration
                 spatial: {
                     cellSize: 128,  // Increased to match visual range (reduces grid overhead)
-                    maxNeighbors: 1024,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
+                    maxNeighbors: 2048,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
                     noLimitFPS: true,
 
                 },

@@ -1123,17 +1123,14 @@ class PixiRenderer extends AbstractWorker {
       // Stop if we've reached maxLights limit (shader uniform array size)
       if (lightIndex >= this.maxLights) break;
 
-      // Calculate screen position from world position + camera
-      // const screenX = (worldX[i] - cameraX) * zoom;
-      // const screenY = (worldY[i] - cameraY) * zoom;
+      // Calculate screen position locally using the same camera data we use for intensity
+      // This avoids race conditions with spatial_worker's stale SpriteRenderer.screenX values
+      const screenX = (worldX[i] - cameraX) * zoom;
+      const screenY = (worldY[i] - cameraY) * zoom;
 
       // Convert screen position to shader space (-1 to 1)
-      const shaderX =
-        (SpriteRenderer.screenX[i] / this.canvasWidth) * 2.0 - 1.0;
-      const shaderY = -(
-        (SpriteRenderer.screenY[i] / this.canvasHeight) * 2.0 -
-        1.0
-      );
+      const shaderX = (screenX / this.canvasWidth) * 2.0 - 1.0;
+      const shaderY = -((screenY / this.canvasHeight) * 2.0 - 1.0);
 
       // Extract RGB from lightColor (0xRRGGBB)
       const color = lightColor[i];
