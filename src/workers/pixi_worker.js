@@ -147,6 +147,13 @@ class PixiRenderer extends AbstractWorker {
     this.currentSpritesheetIds = null; // Will be initialized in createSprites
 
     // ========================================
+    // Y-SORTING POOL (GC optimization)
+    // ========================================
+    // Reusable pool of objects for Y-sorting to avoid per-frame allocations
+    this._ySortPool = [];
+    this._ySortPoolSize = 0;
+
+    // ========================================
     // decal DECALS TILEMAP SYSTEM
     // ========================================
     // Renders decal splats stamped by particle_worker onto tile sprites
@@ -709,8 +716,9 @@ class PixiRenderer extends AbstractWorker {
     // Convert deltaTime from ms to seconds for frame calculation
     const deltaSeconds = deltaTime / 1000;
 
-    // Array to collect visible sprites for Y-sorting (only if ySorting is enabled)
-    const visibleSprites = this.ySorting ? [] : null;
+    // Reset Y-sort pool for this frame (reuse array, avoid GC pressure)
+    // Instead of creating new array + objects every frame, we reuse a pre-allocated pool
+    this._ySortPoolSize = 0;
 
     // First pass: update sprite properties and collect visible sprites
     for (let i = 0; i < this.entityCount; i++) {
@@ -740,7 +748,15 @@ class PixiRenderer extends AbstractWorker {
         if (!bodySprite.visible) {
           bodySprite.visible = true;
         }
-        visibleSprites.push({ entityId: i, sprite: bodySprite, y: y[i] });
+        // GC OPTIMIZATION: Reuse pooled objects instead of allocating new ones each frame
+        const poolIdx = this._ySortPoolSize++;
+        if (!this._ySortPool[poolIdx]) {
+          this._ySortPool[poolIdx] = { entityId: 0, sprite: null, y: 0 };
+        }
+        const item = this._ySortPool[poolIdx];
+        item.entityId = i;
+        item.sprite = bodySprite;
+        item.y = y[i];
       } else {
         // No Y-sorting: just make sprite visible
         if (!bodySprite.visible) {
@@ -793,22 +809,30 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
-    // Update particle sprites (adds to visibleSprites if Y-sorting is enabled)
+    // Update particle sprites (adds to _ySortPool if Y-sorting is enabled)
     if (this.maxParticles > 0) {
-      this.updateParticleSprites(visibleSprites);
+      this.updateParticleSprites();
     }
 
     // Second pass: Y-sort and re-add all sprites to container (only if ySorting is enabled)
     if (this.ySorting) {
-      // Sort by Y position (lower Y = render first/background, higher Y = foreground)
-      visibleSprites.sort((a, b) => a.y - b.y);
+      const pool = this._ySortPool;
+      const poolSize = this._ySortPoolSize;
+
+      // GC OPTIMIZATION: Truncate pool to active size before sorting
+      // This allows native sort (O(n log n)) to only process active items
+      // Setting .length doesn't allocate - pool regrows lazily next frame if needed
+      pool.length = poolSize;
+
+      // Sort by Y position using native Timsort (O(n log n), highly optimized)
+      pool.sort((a, b) => a.y - b.y);
 
       // PixiJS 8: Clear particleChildren array and re-add in sorted order
       this.particleContainer.particleChildren.length = 0;
 
       // Re-add all sprites (entities + particles) in sorted order
-      for (const item of visibleSprites) {
-        this.particleContainer.addParticle(item.sprite);
+      for (let i = 0; i < poolSize; i++) {
+        this.particleContainer.addParticle(pool[i].sprite);
       }
 
       // Mark container as needing update
@@ -1378,10 +1402,9 @@ class PixiRenderer extends AbstractWorker {
 
   /**
    * Update particle sprites from ParticleComponent data
-   * Returns array of visible particle info for Y-sorting
-   * @param {Array} visibleSprites - Array to add visible particles to (for Y-sorting)
+   * Adds visible particles to _ySortPool for Y-sorting (GC optimized)
    */
-  updateParticleSprites(visibleSprites) {
+  updateParticleSprites() {
     if (this.maxParticles === 0) return;
 
     // Cache array references
@@ -1434,17 +1457,26 @@ class PixiRenderer extends AbstractWorker {
 
       // Add to Y-sort list if sorting is enabled
       // Use ground Y (y[i]) for sorting, renderY for display
-      if (visibleSprites) {
+      if (this.ySorting) {
         // Make sprite visible before adding to sort list
         if (!sprite.visible) {
           sprite.visible = true;
         }
-        visibleSprites.push({
-          entityId: -1, // Mark as particle (not an entity)
-          particleIndex: i,
-          sprite: sprite,
-          y: y[i], // Sort by ground position
-        });
+        // GC OPTIMIZATION: Reuse pooled objects instead of allocating new ones each frame
+        const poolIdx = this._ySortPoolSize++;
+        if (!this._ySortPool[poolIdx]) {
+          this._ySortPool[poolIdx] = {
+            entityId: 0,
+            particleIndex: 0,
+            sprite: null,
+            y: 0,
+          };
+        }
+        const item = this._ySortPool[poolIdx];
+        item.entityId = -1; // Mark as particle (not an entity)
+        item.particleIndex = i;
+        item.sprite = sprite;
+        item.y = y[i]; // Sort by ground position
       } else {
         // Y-sorting disabled - just show the sprite
         if (!sprite.visible) {

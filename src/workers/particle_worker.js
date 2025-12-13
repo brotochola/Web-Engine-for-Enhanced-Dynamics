@@ -79,6 +79,20 @@ class ParticleWorker extends AbstractWorker {
     this.entityLightingEnabled = false; // Separate flag for entity tint updates
     this.lightingAmbient = 0.05; // Base ambient light level
     this.entityCount = 0; // Number of game entities (for iterating lights)
+
+    // ========================================
+    // GC OPTIMIZATION: Cached objects
+    // ========================================
+    // Reusable camera bounds object to avoid per-frame allocations
+    this._cameraBounds = {
+      zoom: 0,
+      cameraOffsetX: 0,
+      cameraOffsetY: 0,
+      minX: 0,
+      maxX: 0,
+      minY: 0,
+      maxY: 0,
+    };
   }
 
   /**
@@ -245,6 +259,7 @@ class ParticleWorker extends AbstractWorker {
 
   /**
    * Calculate camera viewport bounds for screen visibility checks
+   * GC OPTIMIZED: Reuses cached _cameraBounds object to avoid per-frame allocations
    * @returns {Object|null} Camera bounds object or null if no camera
    */
   calculateCameraBounds() {
@@ -261,15 +276,17 @@ class ParticleWorker extends AbstractWorker {
     const marginX = this.canvasWidth * 0.15;
     const marginY = this.canvasHeight * 0.15;
 
-    return {
-      zoom,
-      cameraOffsetX,
-      cameraOffsetY,
-      minX: -marginX,
-      maxX: this.canvasWidth + marginX,
-      minY: -marginY,
-      maxY: this.canvasHeight + marginY,
-    };
+    // GC OPTIMIZATION: Reuse cached object instead of creating new one each frame
+    const bounds = this._cameraBounds;
+    bounds.zoom = zoom;
+    bounds.cameraOffsetX = cameraOffsetX;
+    bounds.cameraOffsetY = cameraOffsetY;
+    bounds.minX = -marginX;
+    bounds.maxX = this.canvasWidth + marginX;
+    bounds.minY = -marginY;
+    bounds.maxY = this.canvasHeight + marginY;
+
+    return bounds;
   }
 
   /**
