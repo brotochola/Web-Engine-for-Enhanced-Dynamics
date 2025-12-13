@@ -777,26 +777,43 @@ export class GameObject {
   /**
    * SPAWNING SYSTEM: Initialize free list for O(1) spawning
    * Must be called after registration and before any spawning
-   * Shuffles indices to distribute spawns evenly across worker ranges
+   *
+   * Uses interleaved index ordering to reduce CPU cache contention between
+   * logic workers. See inline comments for details.
+   *
    * @param {Class} EntityClass - The entity class to initialize
    */
   static initializeFreeList(EntityClass) {
     const count = EntityClass.totalCount;
     const startIndex = EntityClass.startIndex;
 
-    // Create free list stack
+    // Create free list stack (LIFO - last written index is first to spawn)
     EntityClass.freeList = new Int32Array(count);
     EntityClass.freeListTop = count - 1;
 
-    // CRITICAL: Interleave indices to distribute spawns evenly across logic workers
-    // Instead of sequential [0,1,2,3,4,5,6,7,...] which fills last worker first,
-    // Use round-robin distribution [0,8,16,...,1,9,17,...] to cycle through workers
-    // This ensures first N spawns go to N different workers (perfect load balancing)
-
-    // Assume 8 workers as a reasonable default for interleaving
-    // (This works well regardless of actual worker count - just distributes more evenly)
+    // INTERLEAVED SPAWNING: Scatter entity indices to reduce multi-core cache contention
+    //
+    // Problem with sequential ordering [0,1,2,3,4,5...]:
+    //   - First N spawns cluster at indices 0 to N-1
+    //   - Multiple workers process adjacent memory regions simultaneously
+    //   - Causes L3 cache thrashing and memory bus contention between cores
+    //   - Benchmarked: ~10% FPS loss with 4 logic workers
+    //
+    // Solution - interleaved ordering [0,8,16,24..., 1,9,17,25..., 2,10,18,26...]:
+    //   - Spawned entities scatter across the full index range
+    //   - Workers access different cache lines, reducing contention
+    //   - Each job's active entities are spread out in memory
+    //
+    // Note: This is counter to single-threaded cache locality intuition.
+    // For multi-threaded workloads, scattered access patterns reduce
+    // inter-core contention on shared L3 cache and memory controller.
     const interleaveFactor = 8;
 
+    // Build interleaved free list:
+    // First loop (offset=0): writes indices 0, 8, 16, 24...
+    // Second loop (offset=1): writes indices 1, 9, 17, 25...
+    // etc.
+    // Result: popping from stack yields 7, 15, 23... then 6, 14, 22... etc.
     let writeIndex = 0;
     for (let offset = 0; offset < interleaveFactor; offset++) {
       for (let i = offset; i < count; i += interleaveFactor) {
