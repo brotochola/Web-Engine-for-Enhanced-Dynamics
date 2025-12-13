@@ -777,10 +777,10 @@ class ParticleWorker extends AbstractWorker {
         const entityBaseTint = baseTint[i];
         if (entityBaseTint === 0) continue;
 
-        const brightness = Math.min(entityBrightness[i], 1.5);
+        const brightness = entityBrightness[i];
         tint[i] = this.applyBrightnessToColor(
           entityBaseTint,
-          brightness * 10000
+          brightness * 9000
         );
         SpriteRenderer.renderDirty[i] = 1;
       }
@@ -824,12 +824,7 @@ class ParticleWorker extends AbstractWorker {
   updateShadowSprites() {
     if (!this.shadowsEnabled || !this.shadowSpriteActive) return;
 
-    // ALWAYS clear all shadow slots first to prevent stale shadows
-    // This fixes shadows persisting when entities leave the area
     const shadowActive = this.shadowSpriteActive;
-    for (let i = 0; i < this.maxShadowSprites; i++) {
-      shadowActive[i] = 0;
-    }
 
     // Check if we have precomputed distances from spatial worker
     const usePrecomputedDistances =
@@ -838,7 +833,11 @@ class ParticleWorker extends AbstractWorker {
       this.config.spatial?.maxNeighbors;
 
     if (!usePrecomputedDistances) {
-      return; // Already cleared above
+      // Clear all slots only when no data available
+      for (let i = 0; i < this.maxShadowSprites; i++) {
+        shadowActive[i] = 0;
+      }
+      return;
     }
 
     // Cache component arrays (entity data)
@@ -953,7 +952,14 @@ class ParticleWorker extends AbstractWorker {
         shadowsForThisLight++;
       }
     }
-    // All slots were cleared at start, active ones were set to 1 above
+
+    // RACE CONDITION FIX: Clear only UNUSED slots at the END
+    // This prevents pixi_worker from reading a "cleared" buffer while we're still writing.
+    // By clearing only the remaining slots AFTER writing active shadows, the buffer
+    // always contains valid shadow data, eliminating the flashing issue.
+    for (let i = shadowIdx; i < this.maxShadowSprites; i++) {
+      shadowActive[i] = 0;
+    }
   }
 
   /**
