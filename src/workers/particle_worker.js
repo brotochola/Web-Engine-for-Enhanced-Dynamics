@@ -6,6 +6,7 @@ import { ParticleComponent } from "../components/ParticleComponent.js";
 import { Transform } from "../components/Transform.js";
 import { LightEmitter } from "../components/LightEmitter.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
+import { ShadowCaster } from "../components/ShadowCaster.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 import {
   calculateTotalLightAtPosition,
@@ -93,6 +94,18 @@ class ParticleWorker extends AbstractWorker {
       minY: 0,
       maxY: 0,
     };
+
+    // ========================================
+    // SHADOW SPRITE SYSTEM
+    // ========================================
+    // Calculates shadow positions for entities near lights
+    // Writes to ShadowSprite buffer, read by pixi_worker
+    this.shadowsEnabled = false;
+    this.maxShadowCastingLights = 20;
+    this.maxShadowsPerLight = 15;
+    this.maxShadowSprites = 0;
+    this.maxDistanceFromLight = 512;
+    this.maxDistanceFromLightSq = 512 * 512;
   }
 
   /**
@@ -210,6 +223,82 @@ class ParticleWorker extends AbstractWorker {
         `PARTICLE WORKER: Lighting enabled (ambient: ${this.lightingAmbient}, entities: ${this.entityCount})`
       );
     }
+
+    // ========================================
+    // SHADOW SPRITE SYSTEM - Initialize
+    // ========================================
+    if (
+      data.shadows &&
+      data.shadows.enabled &&
+      data.shadows.spriteData &&
+      data.buffers.componentData.ShadowCaster
+    ) {
+      this.shadowsEnabled = true;
+      this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
+      this.maxShadowsPerLight = data.shadows.maxShadowsPerLight;
+      this.maxShadowSprites = data.shadows.maxShadowSprites;
+      this.maxDistanceFromLight = data.shadows.maxDistanceFromLight;
+      this.maxDistanceFromLightSq =
+        this.maxDistanceFromLight * this.maxDistanceFromLight;
+
+      // Initialize entity-level ShadowCaster arrays (marks which entities cast shadows)
+      ShadowCaster.initializeArrays(
+        data.buffers.componentData.ShadowCaster,
+        this.entityCount
+      );
+
+      // Create separate typed array views for shadow SPRITE data
+      // Uses same schema as ShadowCaster but different buffer
+      this.shadowSpriteActive = new Uint8Array(
+        data.shadows.spriteData,
+        0,
+        this.maxShadowSprites
+      );
+
+      // Calculate offsets for Float32 arrays (after Uint8 active array, aligned to 4 bytes)
+      const float32Offset = Math.ceil(this.maxShadowSprites / 4) * 4;
+      const floatCount = this.maxShadowSprites;
+
+      this.shadowSpriteRadius = new Float32Array(
+        data.shadows.spriteData,
+        float32Offset,
+        floatCount
+      );
+      this.shadowSpriteX = new Float32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 4,
+        floatCount
+      );
+      this.shadowSpriteY = new Float32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 8,
+        floatCount
+      );
+      this.shadowSpriteRotation = new Float32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 12,
+        floatCount
+      );
+      this.shadowSpriteScaleX = new Float32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 16,
+        floatCount
+      );
+      this.shadowSpriteScaleY = new Float32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 20,
+        floatCount
+      );
+      this.shadowSpriteAlpha = new Float32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 24,
+        floatCount
+      );
+
+      console.log(
+        `PARTICLE WORKER: Shadow system enabled (${this.maxShadowSprites} shadow slots, maxDist: ${this.maxDistanceFromLight})`
+      );
+    }
   }
 
   /**
@@ -244,6 +333,9 @@ class ParticleWorker extends AbstractWorker {
 
     // Update lighting tints for all visible game entities
     this.updateEntityLighting();
+
+    // Calculate shadow sprite positions (uses same neighbor data as lighting)
+    this.updateShadowSprites();
 
     // Store for FPS reporting
     this.activeParticleCount = activeCount;
@@ -722,6 +814,148 @@ class ParticleWorker extends AbstractWorker {
     //     );
     //   }
     // }
+  }
+
+  /**
+   * Calculate shadow sprite positions for all active lights
+   * Iterates through lights, finds nearby shadow casters, writes to shadow sprite buffer
+   * Uses precomputed neighbor/distance data from spatial worker
+   */
+  updateShadowSprites() {
+    if (!this.shadowsEnabled || !this.shadowSpriteActive) return;
+
+    // Check if we have precomputed distances from spatial worker
+    const usePrecomputedDistances =
+      this.neighborData &&
+      this.distanceData &&
+      this.config.spatial?.maxNeighbors;
+
+    if (!usePrecomputedDistances) {
+      // Clear all shadows if no spatial data available
+      for (let i = 0; i < this.maxShadowSprites; i++) {
+        this.shadowSpriteActive[i] = 0;
+      }
+      return;
+    }
+
+    // Cache component arrays (entity data)
+    const transformActive = Transform.active;
+    const worldX = Transform.x;
+    const worldY = Transform.y;
+    const lightEnabled = LightEmitter.active;
+    const lightIntensity = LightEmitter.lightIntensity;
+    const shadowCasterActive = ShadowCaster.active;
+    const entityShadowRadius = ShadowCaster.shadowRadius;
+    const isOnScreen = SpriteRenderer.isItOnScreen;
+
+    const maxNeighbors = this.config.spatial.maxNeighbors;
+    const stride = 1 + maxNeighbors;
+    const maxDistSq = this.maxDistanceFromLightSq;
+
+    // Shadow sprite output arrays
+    const shadowActive = this.shadowSpriteActive;
+    const shadowRadius = this.shadowSpriteRadius;
+    const shadowX = this.shadowSpriteX;
+    const shadowY = this.shadowSpriteY;
+    const shadowRotation = this.shadowSpriteRotation;
+    const shadowScaleX = this.shadowSpriteScaleX;
+    const shadowScaleY = this.shadowSpriteScaleY;
+    const shadowAlpha = this.shadowSpriteAlpha;
+
+    let shadowIdx = 0;
+    let lightsProcessed = 0;
+
+    // For each LIGHT, find nearby shadow casters and generate shadows
+    for (let lightIdx = 0; lightIdx < this.entityCount; lightIdx++) {
+      if (shadowIdx >= this.maxShadowSprites) break;
+      if (lightsProcessed >= this.maxShadowCastingLights) break;
+      if (!lightEnabled[lightIdx]) continue;
+      if (!transformActive[lightIdx]) continue;
+      if (!isOnScreen[lightIdx]) continue;
+
+      const intensity = lightIntensity[lightIdx];
+      if (intensity <= 0) continue;
+
+      lightsProcessed++;
+
+      const lightX = worldX[lightIdx];
+      const lightY = worldY[lightIdx];
+
+      // Get neighbors of this light (entities within its visualRange)
+      const offset = lightIdx * stride;
+      const neighborCount = this.neighborData[offset];
+
+      let shadowsForThisLight = 0;
+
+      // Process neighbors, create shadows for shadow casters
+      for (let k = 0; k < neighborCount; k++) {
+        if (shadowsForThisLight >= this.maxShadowsPerLight) break;
+        if (shadowIdx >= this.maxShadowSprites) break;
+
+        const neighborIdx = this.neighborData[offset + 1 + k];
+
+        // Skip if not a shadow caster
+        if (!shadowCasterActive[neighborIdx]) continue;
+        if (!transformActive[neighborIdx]) continue;
+        if (!isOnScreen[neighborIdx]) continue;
+
+        const distSq = this.distanceData[offset + 1 + k];
+
+        // Skip if too far from light
+        if (distSq > maxDistSq) continue;
+
+        const casterX = worldX[neighborIdx];
+        const casterY = worldY[neighborIdx];
+        const casterRadius = entityShadowRadius[neighborIdx] || 10;
+
+        // Calculate shadow properties
+        const dx = casterX - lightX;
+        const dy = casterY - lightY;
+        const dist = Math.sqrt(distSq);
+
+        // Skip if light is at caster position (avoid division by zero)
+        if (dist < 1) continue;
+
+        // Angle from light to caster = direction shadow should point (AWAY from light)
+        const angle = Math.atan2(dy, dx);
+
+        // Shadow position: at caster's feet, slightly offset in shadow direction
+        const offsetDist = casterRadius * 0.3;
+        const posX = casterX + Math.cos(angle) * offsetDist;
+        const posY = casterY + Math.sin(angle) * offsetDist;
+
+        // Shadow scale based on caster size and distance
+        // Closer to light = shorter shadow, farther = longer shadow
+        const distRatio = Math.min(dist / this.maxDistanceFromLight, 1);
+        const lengthScale = 0.8 + distRatio * 1.5; // 0.8 to 2.3
+        const widthScale = casterRadius / 10; // Use entity's shadowRadius for width
+
+        // Shadow alpha: stronger near light, fades with distance
+        const intensityFactor = Math.min(intensity * 0.5, 1);
+        const distFade = 1 - distRatio * 0.7; // 1.0 to 0.3
+        const alpha = Math.min(0.6 * intensityFactor * distFade, 0.7);
+
+        // Write shadow data
+        // FIXED: angle - PI/2 to make shadow point AWAY from light
+        // (texture points down by default, we rotate to point in angle direction)
+        shadowActive[shadowIdx] = 1;
+        shadowRadius[shadowIdx] = casterRadius;
+        shadowX[shadowIdx] = posX;
+        shadowY[shadowIdx] = posY;
+        shadowRotation[shadowIdx] = angle - Math.PI / 2; // FIXED: was + PI/2, now - PI/2
+        shadowScaleX[shadowIdx] = widthScale;
+        shadowScaleY[shadowIdx] = lengthScale;
+        shadowAlpha[shadowIdx] = alpha;
+
+        shadowIdx++;
+        shadowsForThisLight++;
+      }
+    }
+
+    // Mark remaining shadow slots as inactive
+    for (; shadowIdx < this.maxShadowSprites; shadowIdx++) {
+      shadowActive[shadowIdx] = 0;
+    }
   }
 
   /**

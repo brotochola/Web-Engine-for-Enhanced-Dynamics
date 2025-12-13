@@ -5,15 +5,28 @@ import WEED from "/src/index.js";
 import { Flocking } from "./Flocking.js";
 
 // Destructure what we need from WEED
-const { GameObject, RigidBody, Collider, SpriteRenderer, Mouse, Transform } =
-  WEED;
+const {
+  GameObject,
+  RigidBody,
+  Collider,
+  SpriteRenderer,
+  Mouse,
+  Transform,
+  ShadowCaster,
+} = WEED;
 
 class Boid extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
   static scriptUrl = import.meta.url;
 
   // Define components this entity uses (including custom Flocking component)
-  static components = [RigidBody, Collider, SpriteRenderer, Flocking];
+  static components = [
+    RigidBody,
+    Collider,
+    SpriteRenderer,
+    Flocking,
+    ShadowCaster,
+  ];
 
   // Note: Flocking behavior properties are now in the Flocking component
   // (protectedRange, centeringFactor, avoidFactor, matchingFactor, turnFactor, margin)
@@ -54,6 +67,9 @@ class Boid extends GameObject {
     this.flocking.matchingFactor = 0.1; // Alignment strength
     this.flocking.turnFactor = 0.01; // Boundary avoidance strength
     this.flocking.margin = 20; // Distance from edge to start turning
+
+    // Initialize ShadowCaster - shadow radius based on collider
+    this.shadowCaster.shadowRadius = this.collider.radius;
   }
 
   // Note: this.flocking is automatically available because Flocking is in static components[]

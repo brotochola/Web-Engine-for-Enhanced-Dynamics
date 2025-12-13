@@ -6,6 +6,7 @@ import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { LightEmitter } from "../components/LightEmitter.js";
+import { ShadowCaster } from "../components/ShadowCaster.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { collectComponents } from "./utils.js";
 import Keyboard from "./Keyboard.js";
@@ -680,6 +681,7 @@ export class GameObject {
     if (this.collider) Collider.active[this.index] = 0;
     if (this.spriteRenderer) SpriteRenderer.active[this.index] = 0;
     if (this.lightEmitter) LightEmitter.active[this.index] = 0;
+    if (this.shadowCaster) ShadowCaster.active[this.index] = 0;
 
     // Return to free list if exists (O(1))
     const EntityClass = this.constructor;
@@ -898,6 +900,10 @@ export class GameObject {
 
     if (instance.lightEmitter) {
       instance.lightEmitter.active = 1; // Mark component as active for this entity
+    }
+
+    if (instance.shadowCaster) {
+      instance.shadowCaster.active = 1; // Mark component as active for this entity
     }
 
     if (instance.spriteRenderer) {

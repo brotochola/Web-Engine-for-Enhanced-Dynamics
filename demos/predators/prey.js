@@ -97,6 +97,9 @@ class Prey extends Boid {
     // Set collider radius to match the scaled visual size
     this.collider.radius = 10 * Math.pow(scale, 2);
 
+    // Update shadow radius to match scaled collider
+    this.shadowCaster.shadowRadius = this.collider.radius;
+
     // Reset health
     this.preyBehavior.life = 1.0;
   }

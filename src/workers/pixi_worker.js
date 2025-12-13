@@ -19,6 +19,7 @@ import { DEBUG_FLAGS } from "../core/Debug.js";
 import { Mouse } from "../core/Mouse.js";
 import { MouseComponent } from "../components/MouseComponent.js";
 import { LightEmitter } from "../components/LightEmitter.js";
+import { ShadowCaster } from "../components/ShadowCaster.js";
 
 // Import PixiJS 8 library (ES6 module with named exports)
 import {
@@ -184,6 +185,17 @@ class PixiRenderer extends AbstractWorker {
     this.lightingShader = null; // Shader instance for updating uniforms
     this.lightingAmbient = 0.05; // Ambient light level (0-1), read from config
     this.maxLights = 128; // Maximum number of lights (default: 128), read from config
+
+    // ========================================
+    // SPRITE-BASED SHADOW SYSTEM
+    // ========================================
+    // Shadows are rendered as sprites in a separate ParticleContainer
+    // Shadow positions are calculated by particle_worker, read from ShadowSprite buffer
+    this.shadowSpritesEnabled = false;
+    this.maxShadowSprites = 0;
+    this.shadowSpriteContainer = null; // ParticleContainer for shadow sprites
+    this.shadowSprites = []; // Array of Particle objects for shadows
+    this.shadowConeTexture = null; // Pre-rendered shadow cone texture (PIXI.Texture)
   }
 
   /**
@@ -211,6 +223,13 @@ class PixiRenderer extends AbstractWorker {
       this.decalTileContainer.scale.set(zoom);
       this.decalTileContainer.x = -cameraX * zoom;
       this.decalTileContainer.y = -cameraY * zoom;
+    }
+
+    // Apply camera state to shadow sprite container
+    if (this.shadowSpriteContainer) {
+      this.shadowSpriteContainer.scale.set(zoom);
+      this.shadowSpriteContainer.x = -cameraX * zoom;
+      this.shadowSpriteContainer.y = -cameraY * zoom;
     }
   }
 
@@ -875,6 +894,9 @@ class PixiRenderer extends AbstractWorker {
     // Update lighting shader uniforms from LightEmitter components
     this.updateLighting();
 
+    // Update shadow sprites from ShadowSprite buffer (calculated by particle_worker)
+    this.updateShadowSprites();
+
     this.updateSprites(deltaTime);
 
     // Render debug overlays (only if debug system is enabled)
@@ -1007,6 +1029,7 @@ class PixiRenderer extends AbstractWorker {
   /**
    * Create the lighting system - full-screen mesh with lighting shader
    * Renders between decals and particle container with multiply blend
+   * Shadows are now handled as sprites, not in the shader
    */
   createLightingSystem() {
     // Vertex shader - simple full-screen quad
@@ -1020,9 +1043,74 @@ class PixiRenderer extends AbstractWorker {
       }
     `;
 
-    // Fragment shader - accumulates light from all sources using 1/(d*d) falloff
-    // Uses this.maxLights to set array sizes dynamically
-    const fragmentSrc = `
+    // Fragment shader - basic lighting only (shadows are sprites now)
+    const fragmentSrc = this.buildFragmentShaderBasic();
+
+    // Create full-screen quad geometry
+    const geometry = new PIXI.Geometry({
+      attributes: {
+        aPosition: [-1, -1, 1, -1, 1, 1, -1, 1],
+        aUV: [0, 0, 1, 0, 1, 1, 0, 1],
+      },
+      indexBuffer: [0, 1, 2, 0, 2, 3],
+    });
+
+    // Create shader program
+    const glProgram = new PIXI.GlProgram({
+      vertex: vertexSrc,
+      fragment: fragmentSrc,
+    });
+
+    // Initialize uniform arrays (configurable max lights buffer size)
+    const maxLights = this.maxLights;
+    const initialX = new Array(maxLights).fill(0);
+    const initialY = new Array(maxLights).fill(0);
+    const initialIntensity = new Array(maxLights).fill(0);
+    const initialR = new Array(maxLights).fill(1);
+    const initialG = new Array(maxLights).fill(1);
+    const initialB = new Array(maxLights).fill(1);
+
+    // Build uniforms object (simple lighting only - shadows are sprites)
+    const uniformsConfig = {
+      uLightX: { value: initialX, type: "f32", size: maxLights },
+      uLightY: { value: initialY, type: "f32", size: maxLights },
+      uLightIntensity: {
+        value: initialIntensity,
+        type: "f32",
+        size: maxLights,
+      },
+      uLightR: { value: initialR, type: "f32", size: maxLights },
+      uLightG: { value: initialG, type: "f32", size: maxLights },
+      uLightB: { value: initialB, type: "f32", size: maxLights },
+      uLightCount: { value: 0, type: "i32" },
+      uAmbient: { value: this.lightingAmbient, type: "f32" },
+    };
+
+    // Create shader with uniforms
+    this.lightingShader = new PIXI.Shader({
+      glProgram,
+      resources: {
+        uniforms: uniformsConfig,
+      },
+    });
+
+    // Create mesh with multiply blend mode
+    this.lightingMesh = new PIXI.Mesh({
+      geometry,
+      shader: this.lightingShader,
+    });
+    this.lightingMesh.blendMode = "multiply";
+
+    // Add to stage (after decals, before particle container)
+    this.pixiApp.stage.addChild(this.lightingMesh);
+  }
+
+  /**
+   * Build basic fragment shader without shadows
+   * Uses inverse-square falloff: intensity / (d² + 0.01)
+   */
+  buildFragmentShaderBasic() {
+    return `
       precision mediump float;
       
       in vec2 vUV;
@@ -1059,61 +1147,6 @@ class PixiRenderer extends AbstractWorker {
         gl_FragColor = vec4(totalLight, 1.0);
       }
     `;
-
-    // Create full-screen quad geometry
-    const geometry = new PIXI.Geometry({
-      attributes: {
-        aPosition: [-1, -1, 1, -1, 1, 1, -1, 1],
-        aUV: [0, 0, 1, 0, 1, 1, 0, 1],
-      },
-      indexBuffer: [0, 1, 2, 0, 2, 3],
-    });
-
-    // Create shader program
-    const glProgram = new PIXI.GlProgram({
-      vertex: vertexSrc,
-      fragment: fragmentSrc,
-    });
-
-    // Initialize uniform arrays (configurable max lights buffer size)
-    const maxLights = this.maxLights;
-    const initialX = new Array(maxLights).fill(0);
-    const initialY = new Array(maxLights).fill(0);
-    const initialIntensity = new Array(maxLights).fill(0);
-    const initialR = new Array(maxLights).fill(1);
-    const initialG = new Array(maxLights).fill(1);
-    const initialB = new Array(maxLights).fill(1);
-
-    // Create shader with uniforms
-    this.lightingShader = new PIXI.Shader({
-      glProgram,
-      resources: {
-        uniforms: {
-          uLightX: { value: initialX, type: "f32", size: maxLights },
-          uLightY: { value: initialY, type: "f32", size: maxLights },
-          uLightIntensity: {
-            value: initialIntensity,
-            type: "f32",
-            size: maxLights,
-          },
-          uLightR: { value: initialR, type: "f32", size: maxLights },
-          uLightG: { value: initialG, type: "f32", size: maxLights },
-          uLightB: { value: initialB, type: "f32", size: maxLights },
-          uLightCount: { value: 0, type: "i32" },
-          uAmbient: { value: this.lightingAmbient, type: "f32" },
-        },
-      },
-    });
-
-    // Create mesh with multiply blend mode
-    this.lightingMesh = new PIXI.Mesh({
-      geometry,
-      shader: this.lightingShader,
-    });
-    this.lightingMesh.blendMode = "multiply";
-
-    // Add to stage (after decals, before particle container)
-    this.pixiApp.stage.addChild(this.lightingMesh);
   }
 
   /**
@@ -1165,7 +1198,7 @@ class PixiRenderer extends AbstractWorker {
 
       // Scale intensity to maintain perceptually consistent brightness across zoom
       // Blend of linear and quadratic: smoother than power law across zoom range
-      const zoomFactor = (zoom + zoom * zoom) * 0.5;
+      const zoomFactor = (zoom + zoom ** 2) * 0.25;
       const scaledIntensity = lightIntensity[i] * zoomFactor;
 
       // Update uniforms
@@ -1181,6 +1214,152 @@ class PixiRenderer extends AbstractWorker {
 
     // Update light count
     uniforms.uLightCount = lightIndex;
+  }
+
+  /**
+   * Create the shadow sprite system:
+   * 1. Pre-render shadow cone texture using OffscreenCanvas
+   * 2. Create ParticleContainer for shadow sprites
+   * 3. Create pool of shadow Particle objects
+   */
+  createShadowSpriteSystem() {
+    // ========================================
+    // 1. Pre-render shadow cone texture
+    // ========================================
+    const width = 64;
+    const height = 128;
+
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext("2d");
+
+    // Apply blur for soft edges
+    ctx.filter = "blur(4px)";
+
+    // Create gradient from top (near caster) to bottom (far from caster)
+    const gradient = ctx.createLinearGradient(width / 2, 0, width / 2, height);
+    gradient.addColorStop(0, "rgba(0, 0, 0, 0.5)"); // Near caster - darker
+    gradient.addColorStop(0.3, "rgba(0, 0, 0, 0.35)");
+    gradient.addColorStop(0.7, "rgba(0, 0, 0, 0.15)");
+    gradient.addColorStop(1, "rgba(0, 0, 0, 0)"); // Far end - transparent
+
+    // Draw trapezoidal shape (narrow at top, wide at bottom)
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+
+    // Top edge (narrow, near caster)
+    const topLeft = { x: width * 0.35, y: 8 };
+    const topRight = { x: width * 0.65, y: 8 };
+
+    // Bottom edge (wide, far from caster)
+    const bottomLeft = { x: width * 0.15, y: height - 8 };
+    const bottomRight = { x: width * 0.85, y: height - 8 };
+
+    // Draw with curved top (semicircle near caster)
+    ctx.moveTo(topLeft.x, topLeft.y);
+    ctx.quadraticCurveTo(width / 2, topLeft.y - 6, topRight.x, topRight.y);
+    ctx.lineTo(bottomRight.x, bottomRight.y);
+    ctx.quadraticCurveTo(
+      width / 2,
+      bottomRight.y + 10,
+      bottomLeft.x,
+      bottomLeft.y
+    );
+    ctx.lineTo(topLeft.x, topLeft.y);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.filter = "none";
+
+    // Convert to PIXI texture
+    createImageBitmap(canvas).then((bitmap) => {
+      const source = new PIXI.ImageSource({ resource: bitmap });
+      this.shadowConeTexture = new PIXI.Texture({ source });
+
+      // Now create the shadow sprites with the texture
+      this.createShadowSprites();
+
+      console.log(
+        `PIXI WORKER: Shadow cone texture created (${width}x${height})`
+      );
+    });
+
+    // ========================================
+    // 2. Create ParticleContainer for shadows
+    // ========================================
+    this.shadowSpriteContainer = new PIXI.ParticleContainer({
+      blendMode: "normal-npm", // Normal blend (semi-transparent black overlays)
+      dynamicProperties: {
+        vertex: false,
+        position: true,
+        rotation: true,
+        uvs: true,
+        color: true,
+        alpha: true,
+      },
+    });
+
+    // Shadow container renders AFTER lighting mesh, BEFORE entity container
+    // Will be added to stage after lighting mesh in initialize
+  }
+
+  /**
+   * Create pool of shadow Particle objects
+   * Called after shadow texture is ready
+   */
+  createShadowSprites() {
+    if (!this.shadowConeTexture) return;
+
+    for (let i = 0; i < this.maxShadowSprites; i++) {
+      const shadowSprite = new PIXI.Particle({
+        texture: this.shadowConeTexture,
+        anchorX: 0.5,
+        anchorY: 0, // Anchor at top center (shadow extends from caster)
+      });
+
+      shadowSprite.visible = false;
+      this.shadowSprites[i] = shadowSprite;
+      this.shadowSpriteContainer.addParticle(shadowSprite);
+    }
+
+    console.log(`PIXI WORKER: Created ${this.maxShadowSprites} shadow sprites`);
+  }
+
+  /**
+   * Update shadow sprites from shadow sprite buffer
+   * Reads positions/rotations/scales calculated by particle_worker
+   */
+  updateShadowSprites() {
+    if (!this.shadowSpritesEnabled || !this.shadowSpriteActive) return;
+
+    // Cache array references (from SharedArrayBuffer views)
+    const active = this.shadowSpriteActive;
+    const x = this.shadowSpriteX;
+    const y = this.shadowSpriteY;
+    const rotation = this.shadowSpriteRotation;
+    const scaleX = this.shadowSpriteScaleX;
+    const scaleY = this.shadowSpriteScaleY;
+    const alpha = this.shadowSpriteAlpha;
+
+    for (let i = 0; i < this.maxShadowSprites; i++) {
+      const sprite = this.shadowSprites[i];
+      if (!sprite) continue;
+
+      if (!active[i]) {
+        if (sprite.visible) {
+          sprite.visible = false;
+        }
+        continue;
+      }
+
+      // Update sprite from buffer data
+      sprite.visible = true;
+      sprite.x = x[i];
+      sprite.y = y[i];
+      sprite.rotation = rotation[i];
+      sprite.scaleX = scaleX[i];
+      sprite.scaleY = scaleY[i];
+      sprite.alpha = alpha[i];
+    }
   }
 
   /**
@@ -1800,7 +1979,73 @@ class PixiRenderer extends AbstractWorker {
         lightingConfig.maxLights !== undefined ? lightingConfig.maxLights : 128;
 
       // Create lighting mesh (full-screen quad with multiply blend)
+      // Shadows are now sprites, not in shader
       this.createLightingSystem();
+
+      // ========================================
+      // SHADOW SPRITES - Initialize (requires lighting)
+      // ========================================
+      if (data.shadows && data.shadows.enabled && data.shadows.spriteData) {
+        this.shadowSpritesEnabled = true;
+        this.maxShadowSprites = data.shadows.maxShadowSprites;
+
+        // Create typed array views for shadow sprite data (uses ShadowCaster schema)
+        this.shadowSpriteActive = new Uint8Array(
+          data.shadows.spriteData,
+          0,
+          this.maxShadowSprites
+        );
+
+        // Calculate offsets for Float32 arrays (after Uint8 active array, aligned to 4 bytes)
+        const float32Offset = Math.ceil(this.maxShadowSprites / 4) * 4;
+        const floatCount = this.maxShadowSprites;
+
+        this.shadowSpriteRadius = new Float32Array(
+          data.shadows.spriteData,
+          float32Offset,
+          floatCount
+        );
+        this.shadowSpriteX = new Float32Array(
+          data.shadows.spriteData,
+          float32Offset + floatCount * 4,
+          floatCount
+        );
+        this.shadowSpriteY = new Float32Array(
+          data.shadows.spriteData,
+          float32Offset + floatCount * 8,
+          floatCount
+        );
+        this.shadowSpriteRotation = new Float32Array(
+          data.shadows.spriteData,
+          float32Offset + floatCount * 12,
+          floatCount
+        );
+        this.shadowSpriteScaleX = new Float32Array(
+          data.shadows.spriteData,
+          float32Offset + floatCount * 16,
+          floatCount
+        );
+        this.shadowSpriteScaleY = new Float32Array(
+          data.shadows.spriteData,
+          float32Offset + floatCount * 20,
+          floatCount
+        );
+        this.shadowSpriteAlpha = new Float32Array(
+          data.shadows.spriteData,
+          float32Offset + floatCount * 24,
+          floatCount
+        );
+
+        // Create shadow sprite container and texture
+        this.createShadowSpriteSystem();
+
+        // Add shadow container to stage (after lighting mesh, before entity container)
+        this.pixiApp.stage.addChild(this.shadowSpriteContainer);
+
+        console.log(
+          `PIXI WORKER: Shadow sprites enabled (${this.maxShadowSprites} sprites)`
+        );
+      }
 
       console.log(
         `PIXI WORKER: Lighting system enabled (ambient: ${this.lightingAmbient}, maxLights: ${this.maxLights})`

@@ -7,6 +7,7 @@ import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { ParticleComponent } from "../components/ParticleComponent.js";
+import { ShadowCaster } from "../components/ShadowCaster.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { setupWorkerCommunication, seededRandom } from "./utils.js";
 import { Debug } from "./Debug.js";
@@ -133,6 +134,20 @@ class GameEngine {
 
     // Particle pool size (separate from entity system)
     this.maxParticles = this.config.particle?.maxParticles || 0;
+
+    // ========================================
+    // SHADOW SPRITE SYSTEM
+    // ========================================
+    // Shadows are rendered as sprites in a separate ParticleContainer
+    // Buffer is written by particle_worker, read by pixi_worker
+    const lightingConfig = this.config.lighting || {};
+    this.shadowsEnabled =
+      lightingConfig.enabled && lightingConfig.shadowsEnabled !== false;
+    this.maxShadowCastingLights = lightingConfig.maxShadowCastingLights || 20;
+    this.maxShadowsPerLight = lightingConfig.maxShadowsPerLight || 15;
+    this.maxShadowSprites =
+      this.maxShadowCastingLights * this.maxShadowsPerLight;
+    this.maxDistanceFromLight = lightingConfig.maxDistanceFromLight || 512;
 
     // ========================================
     // BLOOD DECALS TILEMAP SYSTEM
@@ -547,6 +562,24 @@ class GameEngine {
 
       console.log(
         `   🎆 ParticleComponent: ${particleBufferSize} bytes for ${this.maxParticles} particles (separate pool)`
+      );
+    }
+
+    // ========================================
+    // SHADOW SPRITE SYSTEM - SharedArrayBuffer Creation
+    // ========================================
+    // Creates buffer for shadow sprite data (written by particle_worker, read by pixi_worker)
+    // Uses ShadowCaster component schema for both entity markers AND sprite data
+    if (this.shadowsEnabled && this.maxShadowSprites > 0) {
+      const shadowSpriteBufferSize = ShadowCaster.getBufferSize(
+        this.maxShadowSprites
+      );
+      this.buffers.shadowSpriteData = new SharedArrayBuffer(
+        shadowSpriteBufferSize
+      );
+
+      console.log(
+        `   🌑 ShadowCaster sprites: ${shadowSpriteBufferSize} bytes for ${this.maxShadowSprites} shadows (${this.maxShadowCastingLights} lights × ${this.maxShadowsPerLight} shadows/light)`
       );
     }
 
@@ -1014,6 +1047,22 @@ class GameEngine {
             // Texture pixel data for stamping (particle_worker needs this)
             // Map of textureId -> { width, height, rgba: ArrayBuffer }
             textures: this.decalTextureData,
+          }
+        : null,
+
+      // ========================================
+      // SHADOW SPRITE SYSTEM - Worker Data
+      // ========================================
+      // Passed to particle_worker (for calculating) and pixi_worker (for rendering)
+      shadows: this.shadowsEnabled
+        ? {
+            enabled: true,
+            maxShadowCastingLights: this.maxShadowCastingLights,
+            maxShadowsPerLight: this.maxShadowsPerLight,
+            maxShadowSprites: this.maxShadowSprites,
+            maxDistanceFromLight: this.maxDistanceFromLight,
+            // SharedArrayBuffer for shadow sprite data (uses ShadowCaster schema)
+            spriteData: this.buffers.shadowSpriteData,
           }
         : null,
     };

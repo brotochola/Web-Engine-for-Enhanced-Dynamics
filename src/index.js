@@ -24,6 +24,8 @@ export { Collider } from "./components/Collider.js";
 export { SpriteRenderer } from "./components/SpriteRenderer.js";
 export { MouseComponent } from "./components/MouseComponent.js";
 export { ParticleComponent } from "./components/ParticleComponent.js";
+export { LightEmitter } from "./components/LightEmitter.js";
+export { ShadowCaster } from "./components/ShadowCaster.js";
 
 // ============================================================================
 // PARTICLES
@@ -69,6 +71,7 @@ import { ParticleComponent } from "./components/ParticleComponent.js";
 
 import { ParticleEmitter } from "./core/ParticleEmitter.js";
 import { LightEmitter } from "./components/LightEmitter.js";
+import { ShadowCaster } from "./components/ShadowCaster.js";
 import { AbstractWorker } from "./workers/AbstractWorker.js";
 
 // Create the WEED namespace object (like PIXI)
@@ -91,6 +94,7 @@ const WEED = {
   MouseComponent,
   ParticleComponent,
   LightEmitter,
+  ShadowCaster,
   // Particles
   ParticleEmitter,
 

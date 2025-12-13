@@ -299,10 +299,10 @@
     </div>
 
     <script type="module">
-        const numberOfPrey = 20000;
+        const numberOfPrey = 1500;
         const numberOfPredators = 4;
         const numberOfBoids = 0;
-        const numberOfTallLights = 40;
+        const numberOfTallLights = 30;
         // Import WeedJS engine 🌿
         import WEED from '/src/index.js';
         import { Boid } from '/demos/predators/boid.js';
@@ -351,7 +351,7 @@
                 // Physics configuration
                 physics: {
                     subStepCount: 1,
-                    noLimitFPS: true,
+                    noLimitFPS: false,
                     maxCollisionPairs: 1000000,
                     boundaryElasticity: 0,
                     collisionResponseStrength: 0.9,
@@ -366,7 +366,12 @@
                 lighting: {
                     enabled: true,
                     lightingAmbient: 0,
-                    maxLights: 128, // Maximum number of lights (default: 128)
+                    maxLights: 100, // Maximum number of lights for the shader
+                    // Shadow sprite system (calculated by particle_worker, rendered by pixi_worker)
+                    shadowsEnabled: true, // Enable shadow sprite system
+                    maxShadowCastingLights: 100, // How many lights actively cast shadows
+                    maxShadowsPerLight: 300, // Closest N entities per light get shadows
+                    maxDistanceFromLight: 200, // Max world distance to cast shadow
                 }
             },
             {
