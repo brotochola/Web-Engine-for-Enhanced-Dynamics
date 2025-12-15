@@ -86,6 +86,7 @@ class PixiRenderer extends AbstractWorker {
     CASTED_SHADOWS: 2,
     ENTITIES: 3,
     LIGHTING: 4,
+    LIGHT_GLOW: 5,
   };
 
   constructor(selfRef) {
@@ -209,6 +210,16 @@ class PixiRenderer extends AbstractWorker {
     this.shadowSpriteContainer = null; // ParticleContainer for shadow sprites
     this.shadowSprites = []; // Array of Particle objects for shadows
     this.shadowConeTexture = null; // Pre-rendered shadow cone texture (PIXI.Texture)
+
+    // ========================================
+    // LIGHT GLOW SPRITE SYSTEM
+    // ========================================
+    // Additive-blend glow sprites rendered at light positions
+    // Uses _lightGradient texture from BigAtlas
+    this.lightGlowEnabled = false;
+    this.lightGlowContainer = null; // ParticleContainer for glow sprites
+    this.lightGlowSprites = []; // Array of Particle objects (one per entity slot)
+    this.lightGlowTexture = null; // PIXI.Texture reference to _lightGradient
   }
 
   /**
@@ -309,6 +320,13 @@ class PixiRenderer extends AbstractWorker {
       this.shadowSpriteContainer.scale.set(zoom);
       this.shadowSpriteContainer.x = -cameraX * zoom;
       this.shadowSpriteContainer.y = -cameraY * zoom;
+    }
+
+    // Apply camera state to light glow container
+    if (this.lightGlowContainer) {
+      this.lightGlowContainer.scale.set(zoom);
+      this.lightGlowContainer.x = -cameraX * zoom;
+      this.lightGlowContainer.y = -cameraY * zoom;
     }
   }
 
@@ -979,6 +997,9 @@ class PixiRenderer extends AbstractWorker {
     // Update shadow sprites from ShadowSprite buffer (calculated by particle_worker)
     this.updateShadowSprites();
 
+    // Update light glow sprites from LightEmitter component arrays
+    this.updateLightGlowSprites();
+
     this.updateSprites(deltaTime);
 
     // Render debug overlays (only if debug system is enabled)
@@ -1390,6 +1411,152 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     console.log(`PIXI WORKER: Created ${this.maxShadowSprites} shadow sprites`);
+  }
+
+  // ========================================
+  // LIGHT GLOW SYSTEM
+  // ========================================
+
+  /**
+   * Create the light glow system:
+   * 1. Get _lightGradient texture from BigAtlas
+   * 2. Create ParticleContainer with additive blend
+   * 3. Create glow sprites for each entity slot
+   */
+  createLightGlowSystem() {
+    // Get the gradient texture from BigAtlas
+    this.lightGlowTexture = this.textures["_lightGradient"];
+    if (!this.lightGlowTexture) {
+      console.warn("PIXI WORKER: _lightGradient texture not found in BigAtlas");
+      return;
+    }
+
+    // Create ParticleContainer with additive blend for glow effect
+    this.lightGlowContainer = new PIXI.ParticleContainer({
+      blendMode: "add", // Additive blend for light glow
+      dynamicProperties: {
+        vertex: true, // Required for scale changes
+        position: true,
+        rotation: false, // Glows don't rotate
+        uvs: true,
+        color: true, // For light color
+        alpha: true,
+      },
+    });
+
+    // Render above entities but below UI
+    this.lightGlowContainer.zIndex = PixiRenderer.Z_INDICES.LIGHT_GLOW;
+
+    console.log("PIXI WORKER: Light glow system created");
+  }
+
+  /**
+   * Create glow sprites pool (size = maxLights)
+   * Called after textures are loaded
+   */
+  createLightGlowSprites() {
+    if (!this.lightGlowTexture || !this.lightGlowContainer) return;
+
+    // Create only maxLights sprites (same limit as shader)
+    for (let i = 0; i < this.maxLights; i++) {
+      const glowSprite = new PIXI.Particle({
+        texture: this.lightGlowTexture,
+        anchorX: 0.5,
+        anchorY: 0.5, // Center anchor for radial glow
+      });
+
+      // Start hidden AND off-screen to prevent (0,0) flash
+      glowSprite.alpha = 0;
+      glowSprite.scaleX = 0;
+      glowSprite.scaleY = 0;
+      glowSprite.x = -10000;
+      glowSprite.y = -10000;
+
+      this.lightGlowSprites[i] = glowSprite;
+      this.lightGlowContainer.addParticle(glowSprite);
+    }
+
+    console.log(`PIXI WORKER: Created ${this.maxLights} light glow sprites`);
+  }
+
+  /**
+   * Update light glow sprites each frame
+   * Iterates through entities with LightEmitter, maps to sprite pool (maxLights)
+   * Same iteration pattern as updateLighting() for consistency
+   */
+  updateLightGlowSprites() {
+    if (!this.lightGlowEnabled || !this.lightGlowContainer) return;
+
+    const sprites = this.lightGlowSprites;
+    const maxLights = this.maxLights;
+
+    // Cache component array references
+    const active = Transform.active;
+    const worldX = Transform.x;
+    const worldY = Transform.y;
+    const lightEnabled = LightEmitter.active;
+    const lightColor = LightEmitter.lightColor;
+    const lightHeight = LightEmitter.height;
+    const visualRange = Collider.visualRange;
+    const lightIntensity = LightEmitter.lightIntensity;
+
+    // Gradient texture base size (200px diameter = radius 100)
+    const textureRadius = 100;
+
+    // Sprite pool index (maps active lights to sprite pool)
+    let spriteIndex = 0;
+
+    // Iterate through all entities, same pattern as updateLighting()
+    for (let i = 0; i < this.entityCount; i++) {
+      // Skip inactive entities or entities without LightEmitter
+      // DON'T touch the sprite pool for non-light entities!
+      if (!active[i] || !lightEnabled[i]) continue;
+
+      // Stop if we've used all sprites in pool
+      if (spriteIndex >= maxLights) break;
+
+      const sprite = sprites[spriteIndex];
+      if (!sprite) {
+        spriteIndex++;
+        continue;
+      }
+
+      // Get visual range for this entity (from Collider component)
+      const range = visualRange[i] || 200;
+      const glowDiameter = range;
+      const scale = glowDiameter / textureRadius;
+
+      // Position: entity position with height offset (light is above entity)
+      sprite.x = worldX[i];
+      sprite.y = worldY[i] - (lightHeight[i] || 0);
+
+      // Scale based on visualRange
+      sprite.scaleX = scale;
+      sprite.scaleY = scale;
+
+      // Color from LightEmitter (PixiJS 8 Particle uses tint)
+      const color = lightColor[i] || 0xffffff;
+
+      sprite.tint = color;
+
+      // Show this sprite (alpha controls visibility for ParticleContainer)
+      sprite.alpha = (0.8 * lightIntensity[i]) / 50000;
+
+      spriteIndex++;
+    }
+
+    // Hide any unused sprites in the pool
+    // Move off-screen AND set alpha=0 to prevent (0,0) rendering
+    for (let i = spriteIndex; i < maxLights; i++) {
+      const sprite = sprites[i];
+      if (sprite && sprite.alpha !== 0) {
+        sprite.alpha = 0;
+        sprite.scaleX = 0;
+        sprite.scaleY = 0;
+        sprite.x = -10000;
+        sprite.y = -10000;
+      }
+    }
   }
 
   /**
@@ -2082,6 +2249,25 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       console.log(
         `PIXI WORKER: Lighting system enabled (ambient: ${this.lightingAmbient}, maxLights: ${this.maxLights})`
       );
+
+      // ========================================
+      // LIGHT GLOW SPRITES - Initialize
+      // ========================================
+      // Create glow system (needs textures to be loaded first)
+      this.lightGlowEnabled = true;
+      this.createLightGlowSystem();
+
+      if (this.lightGlowContainer) {
+        // Create glow sprites pool (size = maxLights)
+        this.createLightGlowSprites();
+
+        // Add glow container to stage
+        this.pixiApp.stage.addChild(this.lightGlowContainer);
+
+        console.log(
+          `PIXI WORKER: Light glow system enabled (${this.maxLights} sprites)`
+        );
+      }
     }
 
     // Initialize debug visualization system

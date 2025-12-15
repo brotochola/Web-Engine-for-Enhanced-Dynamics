@@ -2,6 +2,8 @@
 // Provides string→index mapping for animations without runtime overhead
 // String lookups happen ONCE at setup, game loop uses fast numeric indices
 
+import { createCircularGradientCanvas } from "./utils.js";
+
 /**
  * SpriteSheetRegistry - Manages spritesheet metadata and animation lookups
  *
@@ -742,7 +744,7 @@ class SpriteSheetRegistry {
                     prefixedName: prefixedAnimName,
                     index: proxyIndex, // Proxy-specific index
                   };
-                  
+
                   // Build proxy's own indexToName mapping
                   proxySheets[sheetName].indexToName[proxyIndex] = animName;
                   proxyIndex++;
@@ -765,17 +767,41 @@ class SpriteSheetRegistry {
     // Wait for all assets to load
     await Promise.all([...individualImagePromises, ...spritesheetPromises]);
 
+    // ========================================
+    // INJECT BUILT-IN TEXTURES
+    // ========================================
+    // Light glow gradient (200px diameter white radial gradient)
+    const lightGradientCanvas = createCircularGradientCanvas(100, 0xffffff);
+    imagesToPack.push({
+      name: "_lightGradient",
+      img: lightGradientCanvas,
+      width: lightGradientCanvas.width,
+      height: lightGradientCanvas.height,
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth: lightGradientCanvas.width,
+      sourceHeight: lightGradientCanvas.height,
+    });
+    animations["_lightGradient"] = ["_lightGradient"];
+    console.log(
+      `  ✅ Generated built-in: _lightGradient (${lightGradientCanvas.width}x${lightGradientCanvas.height})`
+    );
+
     // Sort images by size (largest first) for better packing
     imagesToPack.sort(
       (a, b) => Math.max(b.width, b.height) - Math.max(a.width, a.height)
     );
 
     // Wait for all frame images to be ready
+    // Note: Canvas elements are always "complete" (no loading needed)
     await Promise.all(
       imagesToPack.map(
         (imgData) =>
           new Promise((resolve) => {
-            if (imgData.img.complete) {
+            // Canvas elements don't need loading - they're ready immediately
+            if (imgData.img instanceof HTMLCanvasElement) {
+              resolve();
+            } else if (imgData.img.complete) {
               resolve();
             } else {
               imgData.img.onload = resolve;

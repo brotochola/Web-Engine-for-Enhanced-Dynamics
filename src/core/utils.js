@@ -505,3 +505,60 @@ export function brightnessToColoredTint(brightness, baseColor = 0xffffff) {
 
   return (r << 16) | (g << 8) | b;
 }
+
+// ============================================================================
+// TEXTURE GENERATION UTILITIES
+// ============================================================================
+
+/**
+ * Create a circular gradient canvas for light glow effects
+ * Generates a radial gradient from center (opaque) to edge (transparent)
+ * with exponential falloff for realistic light attenuation
+ *
+ * @param {number} radius - Radius of the gradient circle (default: 100, so 200px diameter)
+ * @param {number} color - Color in 0xRRGGBB format (default: white)
+ * @returns {HTMLCanvasElement} Canvas with the gradient drawn
+ */
+export function createCircularGradientCanvas(radius = 100, color = 0xffffff) {
+  radius = Math.round(radius);
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const size = radius * 2;
+  canvas.width = size;
+  canvas.height = size;
+
+  // Create radial gradient centered in canvas
+  const gradient = ctx.createRadialGradient(
+    radius,
+    radius,
+    0, // Inner circle (center)
+    radius,
+    radius,
+    radius // Outer circle (edge)
+  );
+
+  // Extract RGB components
+  const r = (color >> 16) & 255;
+  const g = (color >> 8) & 255;
+  const b = color & 255;
+
+  // Exponential falloff for realistic light attenuation
+  // Uses 2^(1-i) for smooth falloff: 1.0 → 0.5 → 0.25 → 0.125 → ...
+  const numStops = 10;
+  for (let i = 1; i <= numStops; i++) {
+    const alpha = Math.pow(2, 1 - i);
+    gradient.addColorStop(i / numStops, `rgba(${r},${g},${b},${alpha})`);
+  }
+
+  // Fill with transparent background first
+  ctx.fillStyle = "transparent";
+  ctx.fillRect(0, 0, size, size);
+
+  // Draw the gradient circle
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(radius, radius, radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  return canvas;
+}

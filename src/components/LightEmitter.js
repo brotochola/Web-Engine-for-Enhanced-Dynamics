@@ -5,5 +5,6 @@ export class LightEmitter extends Component {
     active: Uint8Array, // 0 = entity doesn't have this component, 1 = active
     lightColor: Uint32Array,
     lightIntensity: Float32Array,
+    height: Float32Array,
   };
 }
