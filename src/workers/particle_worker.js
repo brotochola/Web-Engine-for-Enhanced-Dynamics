@@ -972,10 +972,8 @@ class ParticleWorker extends AbstractWorker {
         const widthScale = casterRadius * 0.0714; // Use entity's shadowRadius for width
 
         // Shadow alpha: stronger near light, fades with distance
-        const intensityFactor = intensity > 1 ? 1 : intensity;
-        const distFade = 1 - clampedDistRatio * 0.7;
-        const rawAlpha = intensityFactor * distFade;
-        const alpha = rawAlpha > 0.7 ? 0.7 : rawAlpha;
+
+        const alpha = intensity / (distSq * 2);
 
         // Angle from light to caster (still need atan2 for rotation, but only once per shadow)
         const angle = Math.atan2(dy, dx);
