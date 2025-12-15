@@ -363,20 +363,20 @@ export function rng() {
 // ============================================================================
 
 /**
- * Calculate light contribution using inverse square falloff
- * Formula: intensity / (distance² + epsilon)
+ * Calculate light contribution using capped inverse square falloff
+ * Formula: intensity / (intensity + distance²)
  *
- * @param {number} intensity - Light intensity
+ * This formula ensures:
+ * - Maximum attenuation is 1.0 at distance=0 (no white centers)
+ * - Higher intensity = light reaches farther
+ * - sqrt(intensity) = distance at which brightness is 50%
+ *
+ * @param {number} intensity - Light intensity (also controls reach)
  * @param {number} distanceSquared - Squared distance from light to target
- * @param {number} epsilon - Small value to prevent division by zero (default: 1.0)
- * @returns {number} Light contribution (0 to infinity, typically clamped later)
+ * @returns {number} Light contribution (0 to 1.0)
  */
-export function calculateLightAttenuation(
-  intensity,
-  distanceSquared,
-  epsilon = 1.0
-) {
-  return intensity / (distanceSquared + epsilon);
+export function calculateLightAttenuation(intensity, distanceSquared) {
+  return intensity / (intensity + distanceSquared);
 }
 
 /**

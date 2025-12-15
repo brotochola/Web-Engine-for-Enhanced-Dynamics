@@ -80,6 +80,14 @@ self.PIXI = PIXI;
  * Extends AbstractWorker for common worker functionality
  */
 class PixiRenderer extends AbstractWorker {
+  static Z_INDICES = {
+    BACKGROUND: 0,
+    DECALS: 1,
+    CASTED_SHADOWS: 2,
+    ENTITIES: 3,
+    LIGHTING: 4,
+  };
+
   constructor(selfRef) {
     super(selfRef);
 
@@ -1022,198 +1030,183 @@ class PixiRenderer extends AbstractWorker {
     });
     this.backgroundSprite.tileScale.set(0.5, 0.5);
     this.backgroundSprite.tilePosition.set(0, 0);
+    this.backgroundSprite.zIndex = PixiRenderer.Z_INDICES.BACKGROUND;
     // Add background to stage directly (ParticleContainer can't hold TilingSprites)
-    this.pixiApp.stage.addChildAt(this.backgroundSprite, 0); // Add at bottom
+    this.pixiApp.stage.addChild(this.backgroundSprite);
   }
+  /* =====================
+LIGHTING SYSTEM SETUP
+===================== */
 
-  /**
-   * Create the lighting system - full-screen mesh with lighting shader
-   * Renders between decals and particle container with multiply blend
-   * Shadows are now handled as sprites, not in the shader
-   */
   createLightingSystem() {
-    // Vertex shader - simple full-screen quad
     const vertexSrc = `
-      in vec2 aPosition;
-      in vec2 aUV;
-      out vec2 vUV;
-      void main() {
-        vUV = aUV;
-        gl_Position = vec4(aPosition, 0.0, 1.0);
-      }
-    `;
+  in vec2 aPosition;
+  void main() {
+  gl_Position = vec4(aPosition, 0.0, 1.0);
+  }
+  `;
 
-    // Fragment shader - basic lighting only (shadows are sprites now)
     const fragmentSrc = this.buildFragmentShaderBasic();
 
-    // Create full-screen quad geometry
     const geometry = new PIXI.Geometry({
       attributes: {
         aPosition: [-1, -1, 1, -1, 1, 1, -1, 1],
-        aUV: [0, 0, 1, 0, 1, 1, 0, 1],
       },
       indexBuffer: [0, 1, 2, 0, 2, 3],
     });
 
-    // Create shader program
     const glProgram = new PIXI.GlProgram({
       vertex: vertexSrc,
       fragment: fragmentSrc,
     });
 
-    // Initialize uniform arrays (configurable max lights buffer size)
     const maxLights = this.maxLights;
-    const initialX = new Array(maxLights).fill(0);
-    const initialY = new Array(maxLights).fill(0);
-    const initialIntensity = new Array(maxLights).fill(0);
-    const initialR = new Array(maxLights).fill(1);
-    const initialG = new Array(maxLights).fill(1);
-    const initialB = new Array(maxLights).fill(1);
 
-    // Build uniforms object (simple lighting only - shadows are sprites)
-    const uniformsConfig = {
-      uLightX: { value: initialX, type: "f32", size: maxLights },
-      uLightY: { value: initialY, type: "f32", size: maxLights },
-      uLightIntensity: {
-        value: initialIntensity,
-        type: "f32",
-        size: maxLights,
-      },
-      uLightR: { value: initialR, type: "f32", size: maxLights },
-      uLightG: { value: initialG, type: "f32", size: maxLights },
-      uLightB: { value: initialB, type: "f32", size: maxLights },
-      uLightCount: { value: 0, type: "i32" },
-      uAmbient: { value: this.lightingAmbient, type: "f32" },
-    };
+    // Pre-allocate Float32Arrays for light uniforms (reused each frame)
+    this._lightX = new Float32Array(maxLights);
+    this._lightY = new Float32Array(maxLights);
+    this._lightIntensity = new Float32Array(maxLights);
+    this._lightR = new Float32Array(maxLights).fill(1);
+    this._lightG = new Float32Array(maxLights).fill(1);
+    this._lightB = new Float32Array(maxLights).fill(1);
 
-    // Create shader with uniforms
     this.lightingShader = new PIXI.Shader({
       glProgram,
       resources: {
-        uniforms: uniformsConfig,
+        uniforms: {
+          uCameraPos: { value: new Float32Array([0, 0]), type: "vec2<f32>" },
+          uZoom: { value: 1.0, type: "f32" },
+          uViewport: {
+            value: new Float32Array([this.canvasWidth, this.canvasHeight]),
+            type: "vec2<f32>",
+          },
+
+          uLightX: { value: this._lightX, type: "f32", size: maxLights },
+          uLightY: { value: this._lightY, type: "f32", size: maxLights },
+          uLightIntensity: {
+            value: this._lightIntensity,
+            type: "f32",
+            size: maxLights,
+          },
+          uLightR: { value: this._lightR, type: "f32", size: maxLights },
+          uLightG: { value: this._lightG, type: "f32", size: maxLights },
+          uLightB: { value: this._lightB, type: "f32", size: maxLights },
+          uLightCount: { value: 0, type: "i32" },
+          uAmbient: { value: this.lightingAmbient, type: "f32" },
+        },
       },
     });
 
-    // Create mesh with multiply blend mode
     this.lightingMesh = new PIXI.Mesh({
       geometry,
       shader: this.lightingShader,
     });
     this.lightingMesh.blendMode = "multiply";
+    this.lightingMesh.zIndex = PixiRenderer.Z_INDICES.LIGHTING;
 
-    // Add to stage (after decals, before particle container)
     this.pixiApp.stage.addChild(this.lightingMesh);
   }
 
-  /**
-   * Build basic fragment shader without shadows
-   * Uses inverse-square falloff: intensity / (d² + 0.01)
-   */
   buildFragmentShaderBasic() {
     return `
-      precision mediump float;
+    precision mediump float;
+    
+    uniform vec2 uCameraPos;
+    uniform float uZoom;
+    uniform vec2 uViewport;
+    
+    uniform float uLightX[${this.maxLights}];
+    uniform float uLightY[${this.maxLights}];
+    uniform float uLightIntensity[${this.maxLights}];
+    uniform float uLightR[${this.maxLights}];
+    uniform float uLightG[${this.maxLights}];
+    uniform float uLightB[${this.maxLights}];
+    uniform int uLightCount;
+    uniform float uAmbient;
+    
+    void main() {
+      // Convert fragment to WORLD SPACE
+      // gl_FragCoord.y is 0 at bottom, but game Y is 0 at top - flip it
+      vec2 screenPos = vec2(gl_FragCoord.x, uViewport.y - gl_FragCoord.y);
+      vec2 fragWorld = (screenPos / uZoom) + uCameraPos;
       
-      in vec2 vUV;
+      vec3 totalLight = vec3(uAmbient);
       
-      // Light data arrays - sized by maxLights config
-      uniform float uLightX[${this.maxLights}];
-      uniform float uLightY[${this.maxLights}];
-      uniform float uLightIntensity[${this.maxLights}];
-      uniform float uLightR[${this.maxLights}];
-      uniform float uLightG[${this.maxLights}];
-      uniform float uLightB[${this.maxLights}];
-      uniform int uLightCount;
-      uniform float uAmbient;
-
-      void main() {
-        vec2 p = vUV * 2.0 - 1.0;
-        vec3 totalLight = vec3(uAmbient);
-
-        for (int i = 0; i < ${this.maxLights}; i++) {
-          if (i >= uLightCount) break;
-          
-          vec2 lightPos = vec2(uLightX[i], uLightY[i]);
-          float intensity = uLightIntensity[i] * 0.03;
-          vec3 color = vec3(uLightR[i], uLightG[i], uLightB[i]);
-          
-          float d = length(p - lightPos);
-          // Inverse square falloff with small offset to prevent division by zero
-          float attenuation = intensity / (d * d + 0.01);
-          
-          totalLight += color * attenuation;
-        }
-
-        totalLight = min(totalLight, vec3(1.0));
-        gl_FragColor = vec4(totalLight, 1.0);
+      for (int i = 0; i < ${this.maxLights}; i++) {
+        if (i >= uLightCount) break;
+        
+        vec2 lightWorld = vec2(uLightX[i], uLightY[i]);
+        float intensity = uLightIntensity[i];
+        vec3 color = vec3(uLightR[i], uLightG[i], uLightB[i]);
+        
+        float d = length(fragWorld - lightWorld);
+        // Formula: intensity / (intensity + d²) → caps at 1.0 when d=0, falls off with distance
+        // Higher intensity = light reaches farther, but max brightness is always 1.0
+        float attenuation = intensity / (intensity + d*d);
+        
+        totalLight += color * attenuation;
       }
+      
+      totalLight = min(totalLight, vec3(1.0));
+      gl_FragColor = vec4(totalLight, 1.0);
+    }
     `;
   }
 
-  /**
-   * Update lighting shader uniforms from LightEmitter components
-   * Collects all active lights and updates shader uniforms
-   */
+  /* =====================
+UPDATE LIGHTING (NO ZOOM SCALING)
+===================== */
+
   updateLighting() {
     if (!this.lightingEnabled || !this.lightingShader) return;
 
-    const uniforms = this.lightingShader.resources.uniforms.uniforms;
+    const uniformGroup = this.lightingShader.resources.uniforms;
 
-    // Cache component arrays
     const active = Transform.active;
     const worldX = Transform.x;
     const worldY = Transform.y;
-
     const lightEnabled = LightEmitter.active;
     const lightColor = LightEmitter.lightColor;
     const lightIntensity = LightEmitter.lightIntensity;
 
-    // Get camera data for world→screen transform
     const zoom = this.cameraData[0];
     const cameraX = this.cameraData[1];
     const cameraY = this.cameraData[2];
 
+    // Update camera uniforms (vec2 types)
+    uniformGroup.uniforms.uCameraPos[0] = cameraX;
+    uniformGroup.uniforms.uCameraPos[1] = cameraY;
+    uniformGroup.uniforms.uZoom = zoom;
+
+    // Use pre-allocated Float32Arrays for light data
+    const lightX = this._lightX;
+    const lightY = this._lightY;
+    const lightIntensityArr = this._lightIntensity;
+    const lightR = this._lightR;
+    const lightG = this._lightG;
+    const lightB = this._lightB;
+
     let lightIndex = 0;
 
-    // Iterate all entities looking for active light emitters
     for (let i = 0; i < this.entityCount; i++) {
-      if (!active[i]) continue;
-      if (!lightEnabled[i]) continue;
-      // Stop if we've reached maxLights limit (shader uniform array size)
+      if (!active[i] || !lightEnabled[i]) continue;
       if (lightIndex >= this.maxLights) break;
 
-      // Calculate screen position locally using the same camera data we use for intensity
-      // This avoids race conditions with spatial_worker's stale SpriteRenderer.screenX values
-      const screenX = (worldX[i] - cameraX) * zoom;
-      const screenY = (worldY[i] - cameraY) * zoom;
-
-      // Convert screen position to shader space (-1 to 1)
-      const shaderX = (screenX / this.canvasWidth) * 2.0 - 1.0;
-      const shaderY = -((screenY / this.canvasHeight) * 2.0 - 1.0);
-
-      // Extract RGB from lightColor (0xRRGGBB)
       const color = lightColor[i];
-      const r = ((color >> 16) & 0xff) / 255;
-      const g = ((color >> 8) & 0xff) / 255;
-      const b = (color & 0xff) / 255;
 
-      // Scale intensity to maintain perceptually consistent brightness across zoom
-      // Blend of linear and quadratic: smoother than power law across zoom range
-      const zoomFactor = (zoom + zoom ** 2) * 0.25;
-      const scaledIntensity = lightIntensity[i] * zoomFactor;
+      lightX[lightIndex] = worldX[i];
+      lightY[lightIndex] = worldY[i];
+      lightIntensityArr[lightIndex] = lightIntensity[i]; // NO ZOOM SCALING
 
-      // Update uniforms
-      uniforms.uLightX[lightIndex] = shaderX;
-      uniforms.uLightY[lightIndex] = shaderY;
-      uniforms.uLightIntensity[lightIndex] = scaledIntensity;
-      uniforms.uLightR[lightIndex] = r;
-      uniforms.uLightG[lightIndex] = g;
-      uniforms.uLightB[lightIndex] = b;
+      lightR[lightIndex] = ((color >> 16) & 0xff) / 255;
+      lightG[lightIndex] = ((color >> 8) & 0xff) / 255;
+      lightB[lightIndex] = (color & 0xff) / 255;
 
       lightIndex++;
     }
 
-    // Update light count
-    uniforms.uLightCount = lightIndex;
+    // Update light count uniform
+    uniformGroup.uniforms.uLightCount = lightIndex;
   }
 
   /**
@@ -1297,9 +1290,9 @@ class PixiRenderer extends AbstractWorker {
         alpha: true,
       },
     });
+    this.shadowSpriteContainer.zIndex = PixiRenderer.Z_INDICES.CASTED_SHADOWS;
 
-    // Shadow container renders AFTER lighting mesh, BEFORE entity container
-    // Will be added to stage after lighting mesh in initialize
+    // Shadow container is added to stage in initialize()
   }
 
   /**
@@ -1925,6 +1918,8 @@ class PixiRenderer extends AbstractWorker {
       powerPreference: "high-performance",
       preference: "webgl", // Force WebGL for worker compatibility
     });
+    // Enable z-index based sorting on the stage
+    this.pixiApp.stage.sortableChildren = true;
     this.reportLog("finished initializing pixi app");
     // Load simple textures
     this.loadTextures(data.textures);
@@ -1955,18 +1950,28 @@ class PixiRenderer extends AbstractWorker {
 
       // Create decal tile container (renders between background and entities)
       this.decalTileContainer = new PIXI.Container();
+      this.decalTileContainer.zIndex = PixiRenderer.Z_INDICES.DECALS;
 
       // Create sprites for each tile
       this.createDecalTileSprites();
 
-      // Add decal tile container to stage (between background and entities)
-      // decal decals render above background but below entities
+      // Add decal tile container to stage
       this.pixiApp.stage.addChild(this.decalTileContainer);
 
       console.log(
         `PIXI WORKER: decal decals enabled - ${this.decalsTilesX}×${this.decalsTilesY} tiles (${this.decalsTileSize}px world, ${this.decalsTilePixelSize}px texture @ ${this.decalsResolution}x)`
       );
     }
+
+    // ========================================
+    // CASTED SHADOWS SYSTEM - Initialize
+    // ========================================
+    this.createCastedShadowsSystem(data);
+
+    // Add particle container to the stage
+    // Sprites are Y-sorted and re-added every frame for proper depth ordering
+    this.particleContainer.zIndex = PixiRenderer.Z_INDICES.ENTITIES;
+    this.pixiApp.stage.addChild(this.particleContainer);
 
     // ========================================
     // LIGHTING SYSTEM - Initialize
@@ -1985,79 +1990,10 @@ class PixiRenderer extends AbstractWorker {
       // Shadows are now sprites, not in shader
       this.createLightingSystem();
 
-      // ========================================
-      // SHADOW SPRITES - Initialize (requires lighting)
-      // ========================================
-      if (data.shadows && data.shadows.enabled && data.shadows.spriteData) {
-        this.shadowSpritesEnabled = true;
-        this.maxShadowSprites = data.shadows.maxShadowSprites;
-
-        // Create typed array views for shadow sprite data (uses ShadowCaster schema)
-        this.shadowSpriteActive = new Uint8Array(
-          data.shadows.spriteData,
-          0,
-          this.maxShadowSprites
-        );
-
-        // Calculate offsets for Float32 arrays (after Uint8 active array, aligned to 4 bytes)
-        const float32Offset = Math.ceil(this.maxShadowSprites / 4) * 4;
-        const floatCount = this.maxShadowSprites;
-
-        this.shadowSpriteRadius = new Float32Array(
-          data.shadows.spriteData,
-          float32Offset,
-          floatCount
-        );
-        this.shadowSpriteX = new Float32Array(
-          data.shadows.spriteData,
-          float32Offset + floatCount * 4,
-          floatCount
-        );
-        this.shadowSpriteY = new Float32Array(
-          data.shadows.spriteData,
-          float32Offset + floatCount * 8,
-          floatCount
-        );
-        this.shadowSpriteRotation = new Float32Array(
-          data.shadows.spriteData,
-          float32Offset + floatCount * 12,
-          floatCount
-        );
-        this.shadowSpriteScaleX = new Float32Array(
-          data.shadows.spriteData,
-          float32Offset + floatCount * 16,
-          floatCount
-        );
-        this.shadowSpriteScaleY = new Float32Array(
-          data.shadows.spriteData,
-          float32Offset + floatCount * 20,
-          floatCount
-        );
-        this.shadowSpriteAlpha = new Float32Array(
-          data.shadows.spriteData,
-          float32Offset + floatCount * 24,
-          floatCount
-        );
-
-        // Create shadow sprite container and texture
-        this.createShadowSpriteSystem();
-
-        // Add shadow container to stage (after lighting mesh, before entity container)
-        this.pixiApp.stage.addChild(this.shadowSpriteContainer);
-
-        console.log(
-          `PIXI WORKER: Shadow sprites enabled (${this.maxShadowSprites} sprites)`
-        );
-      }
-
       console.log(
         `PIXI WORKER: Lighting system enabled (ambient: ${this.lightingAmbient}, maxLights: ${this.maxLights})`
       );
     }
-
-    // Add particle container to the stage
-    // Sprites are Y-sorted and re-added every frame for proper depth ordering
-    this.pixiApp.stage.addChild(this.particleContainer);
 
     // Initialize debug visualization system
     if (data.buffers.debugData) {
@@ -2094,6 +2030,73 @@ class PixiRenderer extends AbstractWorker {
       "PIXI WORKER: Initialization complete, waiting for start signal..."
     );
     // Note: Game loop will start when "start" message is received from main thread
+  }
+
+  createCastedShadowsSystem(data) {
+    // ========================================
+    // SHADOW SPRITES - Initialize (requires lighting)
+    // ========================================
+    if (data.shadows && data.shadows.enabled && data.shadows.spriteData) {
+      this.shadowSpritesEnabled = true;
+      this.maxShadowSprites = data.shadows.maxShadowSprites;
+
+      // Create typed array views for shadow sprite data (uses ShadowCaster schema)
+      this.shadowSpriteActive = new Uint8Array(
+        data.shadows.spriteData,
+        0,
+        this.maxShadowSprites
+      );
+
+      // Calculate offsets for Float32 arrays (after Uint8 active array, aligned to 4 bytes)
+      const float32Offset = Math.ceil(this.maxShadowSprites / 4) * 4;
+      const floatCount = this.maxShadowSprites;
+
+      this.shadowSpriteRadius = new Float32Array(
+        data.shadows.spriteData,
+        float32Offset,
+        floatCount
+      );
+      this.shadowSpriteX = new Float32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 4,
+        floatCount
+      );
+      this.shadowSpriteY = new Float32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 8,
+        floatCount
+      );
+      this.shadowSpriteRotation = new Float32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 12,
+        floatCount
+      );
+      this.shadowSpriteScaleX = new Float32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 16,
+        floatCount
+      );
+      this.shadowSpriteScaleY = new Float32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 20,
+        floatCount
+      );
+      this.shadowSpriteAlpha = new Float32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 24,
+        floatCount
+      );
+
+      // Create shadow sprite container and texture
+      this.createShadowSpriteSystem();
+
+      // Add shadow container to stage (zIndex handles ordering)
+      this.pixiApp.stage.addChild(this.shadowSpriteContainer);
+
+      console.log(
+        `PIXI WORKER: Shadow sprites enabled (${this.maxShadowSprites} sprites)`
+      );
+    }
   }
 }
 

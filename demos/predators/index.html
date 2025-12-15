@@ -302,7 +302,7 @@
         const numberOfPrey = 15000;
         const numberOfPredators = 8;
         const numberOfBoids = 0;
-        const numberOfTallLights = 50;
+        const numberOfTallLights = 10;
         // Import WeedJS engine 🌿
         import WEED from '/src/index.js';
         import { Boid } from '/demos/predators/boid.js';
@@ -317,7 +317,7 @@
             const panel = document.getElementById(panelId);
             panel.classList.toggle('hidden');
         };
-
+        console.log(1)
         const gameEngine = new GameEngine(
             {
                 canvasWidth: window.innerWidth,

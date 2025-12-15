@@ -333,10 +333,10 @@ class ParticleWorker extends AbstractWorker {
     this.stampCollectedParticles();
 
     // Update lighting tints for all active particles
-    this.updateParticleLighting();
+    // this.updateParticleLighting();
 
     // Update lighting tints for all visible game entities
-    this.updateEntityLighting();
+    // this.updateEntityLighting();
 
     // Calculate shadow sprite positions (uses same neighbor data as lighting)
     this.updateShadowSprites();
@@ -653,188 +653,188 @@ class ParticleWorker extends AbstractWorker {
     this.bloodTilesDirty[tileIndex] = 1;
   }
 
-  /**
-   * Calculate lighting tints for all active particles
-   * Uses inverse square falloff: brightness = ambient + Σ(intensity / d²)
-   * Multiplies original particle tint by brightness to preserve color
-   *
-   * OPTIMIZED: Inlined light calculation, distance culling, on-screen only
-   */
-  updateParticleLighting() {
-    if (!this.lightingEnabled || this.maxParticles === 0) return;
+  // /**
+  //  * Calculate lighting tints for all active particles
+  //  * Uses inverse square falloff: brightness = ambient + Σ(intensity / d²)
+  //  * Multiplies original particle tint by brightness to preserve color
+  //  *
+  //  * OPTIMIZED: Inlined light calculation, distance culling, on-screen only
+  //  */
+  // updateParticleLighting() {
+  //   if (!this.lightingEnabled || this.maxParticles === 0) return;
 
-    // Cache particle arrays
-    const active = ParticleComponent.active;
-    const particleX = ParticleComponent.x;
-    const particleY = ParticleComponent.y;
-    const tint = ParticleComponent.tint;
-    const baseTint = ParticleComponent.baseTint;
-    const isItOnScreen = ParticleComponent.isItOnScreen;
+  //   // Cache particle arrays
+  //   const active = ParticleComponent.active;
+  //   const particleX = ParticleComponent.x;
+  //   const particleY = ParticleComponent.y;
+  //   const tint = ParticleComponent.tint;
+  //   const baseTint = ParticleComponent.baseTint;
+  //   const isItOnScreen = ParticleComponent.isItOnScreen;
 
-    // Cache light arrays directly (avoid object destructuring in hot path)
-    const lightX = Transform.x;
-    const lightY = Transform.y;
-    const lightIntensity = LightEmitter.lightIntensity;
-    const lightEnabled = LightEmitter.active;
-    const lightCount = this.entityCount;
+  //   // Cache light arrays directly (avoid object destructuring in hot path)
+  //   const lightX = Transform.x;
+  //   const lightY = Transform.y;
+  //   const lightIntensity = LightEmitter.lightIntensity;
+  //   const lightEnabled = LightEmitter.active;
+  //   const lightCount = this.entityCount;
 
-    const ambient = this.lightingAmbient;
-    // Max distance squared beyond which light contribution is negligible
-    // intensity / (1 + distSq) < 0.001 when distSq > intensity * 1000
-    const maxLightDistSq = 500000; // ~707 world units for typical light intensities
+  //   const ambient = this.lightingAmbient;
+  //   // Max distance squared beyond which light contribution is negligible
+  //   // intensity / (1 + distSq) < 0.001 when distSq > intensity * 1000
+  //   const maxLightDistSq = 500000; // ~707 world units for typical light intensities
 
-    // Calculate lighting for each active, on-screen particle
-    for (let i = 0; i < this.maxParticles; i++) {
-      if (!active[i]) continue;
-      // Skip off-screen particles - they won't be rendered anyway
-      if (!isItOnScreen[i]) continue;
+  //   // Calculate lighting for each active, on-screen particle
+  //   for (let i = 0; i < this.maxParticles; i++) {
+  //     if (!active[i]) continue;
+  //     // Skip off-screen particles - they won't be rendered anyway
+  //     if (!isItOnScreen[i]) continue;
 
-      const px = particleX[i];
-      const py = particleY[i];
-      let totalLight = ambient;
+  //     const px = particleX[i];
+  //     const py = particleY[i];
+  //     let totalLight = ambient;
 
-      // Inlined light calculation - no function call overhead
-      for (let j = 0; j < lightCount; j++) {
-        if (!lightEnabled[j]) continue;
+  //     // Inlined light calculation - no function call overhead
+  //     for (let j = 0; j < lightCount; j++) {
+  //       if (!lightEnabled[j]) continue;
 
-        const dx = px - lightX[j];
-        const dy = py - lightY[j];
-        const distSq = dx * dx + dy * dy;
+  //       const dx = px - lightX[j];
+  //       const dy = py - lightY[j];
+  //       const distSq = dx * dx + dy * dy;
 
-        // Early exit: skip lights too far away to contribute meaningfully
-        if (distSq > maxLightDistSq) continue;
+  //       // Early exit: skip lights too far away to contribute meaningfully
+  //       if (distSq > maxLightDistSq) continue;
 
-        // Inverse square falloff
-        totalLight +=
-          (lightIntensity[j] * this.howMuchMoreLightToParticles) / (1 + distSq);
-      }
+  //       // Inverse square falloff
+  //       totalLight +=
+  //         (lightIntensity[j] * this.howMuchMoreLightToParticles) / (1 + distSq);
+  //     }
 
-      // Apply brightness to the original particle color (baseTint)
-      tint[i] = this.applyBrightnessToColor(baseTint[i], totalLight * 3000);
-    }
-  }
+  //     // Apply brightness to the original particle color (baseTint)
+  //     tint[i] = this.applyBrightnessToColor(baseTint[i], totalLight * 3000);
+  //   }
+  // }
 
-  /**
-   * Calculate lighting tints for all visible game entities with SpriteRenderer
-   * Only updates entities that are active and on screen for performance
-   * Requires config.lighting.entityLighting = true to enable
-   * Uses precomputed squared distances from spatial worker when available
-   */
-  updateEntityLighting() {
-    if (
-      !this.entityLightingEnabled ||
-      !SpriteRenderer.tint ||
-      !SpriteRenderer.baseTint
-    ) {
-      return;
-    }
+  // /**
+  //  * Calculate lighting tints for all visible game entities with SpriteRenderer
+  //  * Only updates entities that are active and on screen for performance
+  //  * Requires config.lighting.entityLighting = true to enable
+  //  * Uses precomputed squared distances from spatial worker when available
+  //  */
+  // updateEntityLighting() {
+  //   if (
+  //     !this.entityLightingEnabled ||
+  //     !SpriteRenderer.tint ||
+  //     !SpriteRenderer.baseTint
+  //   ) {
+  //     return;
+  //   }
 
-    // Cache component arrays
-    const active = Transform.active;
-    const tint = SpriteRenderer.tint;
-    const baseTint = SpriteRenderer.baseTint;
-    const isItOnScreen = SpriteRenderer.isItOnScreen;
+  //   // Cache component arrays
+  //   const active = Transform.active;
+  //   const tint = SpriteRenderer.tint;
+  //   const baseTint = SpriteRenderer.baseTint;
+  //   const isItOnScreen = SpriteRenderer.isItOnScreen;
 
-    // Check if we can use precomputed distances from spatial worker
-    const usePrecomputedDistances =
-      this.neighborData &&
-      this.distanceData &&
-      this.config.spatial?.maxNeighbors;
+  //   // Check if we can use precomputed distances from spatial worker
+  //   const usePrecomputedDistances =
+  //     this.neighborData &&
+  //     this.distanceData &&
+  //     this.config.spatial?.maxNeighbors;
 
-    if (usePrecomputedDistances) {
-      // OPTIMIZED PATH: Iterate through LIGHTS and use their neighbors
-      // The LIGHT's visualRange determines which entities receive light
-      const lightIntensity = LightEmitter.lightIntensity;
-      const lightEnabled = LightEmitter.active;
-      const maxNeighbors = this.config.spatial.maxNeighbors;
-      const stride = 1 + maxNeighbors;
-      const ambient = this.lightingAmbient;
+  //   if (usePrecomputedDistances) {
+  //     // OPTIMIZED PATH: Iterate through LIGHTS and use their neighbors
+  //     // The LIGHT's visualRange determines which entities receive light
+  //     const lightIntensity = LightEmitter.lightIntensity;
+  //     const lightEnabled = LightEmitter.active;
+  //     const maxNeighbors = this.config.spatial.maxNeighbors;
+  //     const stride = 1 + maxNeighbors;
+  //     const ambient = this.lightingAmbient;
 
-      // Reuse or create brightness accumulator array
-      if (
-        !this.entityBrightness ||
-        this.entityBrightness.length < this.entityCount
-      ) {
-        this.entityBrightness = new Float32Array(this.entityCount);
-      }
-      const entityBrightness = this.entityBrightness;
+  //     // Reuse or create brightness accumulator array
+  //     if (
+  //       !this.entityBrightness ||
+  //       this.entityBrightness.length < this.entityCount
+  //     ) {
+  //       this.entityBrightness = new Float32Array(this.entityCount);
+  //     }
+  //     const entityBrightness = this.entityBrightness;
 
-      // Initialize all entities to ambient light
-      for (let i = 0; i < this.entityCount; i++) {
-        entityBrightness[i] = ambient;
-      }
+  //     // Initialize all entities to ambient light
+  //     for (let i = 0; i < this.entityCount; i++) {
+  //       entityBrightness[i] = ambient;
+  //     }
 
-      // For each LIGHT, add its contribution to its neighbors
-      // This uses the LIGHT's visualRange to determine reach
-      for (let lightIdx = 0; lightIdx < this.entityCount; lightIdx++) {
-        if (!lightEnabled[lightIdx]) continue;
+  //     // For each LIGHT, add its contribution to its neighbors
+  //     // This uses the LIGHT's visualRange to determine reach
+  //     for (let lightIdx = 0; lightIdx < this.entityCount; lightIdx++) {
+  //       if (!lightEnabled[lightIdx]) continue;
 
-        const intensity = lightIntensity[lightIdx];
-        if (intensity <= 0) continue;
+  //       const intensity = lightIntensity[lightIdx];
+  //       if (intensity <= 0) continue;
 
-        const offset = lightIdx * stride;
-        const neighborCount = this.neighborData[offset];
+  //       const offset = lightIdx * stride;
+  //       const neighborCount = this.neighborData[offset];
 
-        // Add this light's contribution to all its neighbors
-        for (let k = 0; k < neighborCount; k++) {
-          const neighborIdx = this.neighborData[offset + 1 + k];
-          const distSq = this.distanceData[offset + 1 + k];
+  //       // Add this light's contribution to all its neighbors
+  //       for (let k = 0; k < neighborCount; k++) {
+  //         const neighborIdx = this.neighborData[offset + 1 + k];
+  //         const distSq = this.distanceData[offset + 1 + k];
 
-          // inverse square falloff: intensity / (1 + distSq)
-          entityBrightness[neighborIdx] += intensity / (1 + distSq);
-        }
-      }
+  //         // inverse square falloff: intensity / (1 + distSq)
+  //         entityBrightness[neighborIdx] += intensity / (1 + distSq);
+  //       }
+  //     }
 
-      // Apply accumulated brightness to visible entities
-      for (let i = 0; i < this.entityCount; i++) {
-        if (!active[i] || !isItOnScreen[i]) continue;
-        //Light Emitters are always fully lit
-        if (LightEmitter.active[i] === 1) {
-          tint[i] = 0xffffff;
-          continue;
-        }
+  //     // Apply accumulated brightness to visible entities
+  //     for (let i = 0; i < this.entityCount; i++) {
+  //       if (!active[i] || !isItOnScreen[i]) continue;
+  //       //Light Emitters are always fully lit
+  //       if (LightEmitter.active[i] === 1) {
+  //         tint[i] = 0xffffff;
+  //         continue;
+  //       }
 
-        const entityBaseTint = baseTint[i];
-        if (entityBaseTint === 0) continue;
+  //       const entityBaseTint = baseTint[i];
+  //       if (entityBaseTint === 0) continue;
 
-        const brightness = entityBrightness[i];
-        tint[i] = this.applyBrightnessToColor(
-          entityBaseTint,
-          brightness * 9000
-        );
-        SpriteRenderer.renderDirty[i] = 1;
-      }
-    }
-    // else {
-    //   // FALLBACK PATH: Calculate distances manually (no spatial data available)
-    //   const entityX = Transform.x;
-    //   const entityY = Transform.y;
-    //   const lightData = this.getLightData();
+  //       const brightness = entityBrightness[i];
+  //       tint[i] = this.applyBrightnessToColor(
+  //         entityBaseTint,
+  //         brightness * 9000
+  //       );
+  //       SpriteRenderer.renderDirty[i] = 1;
+  //     }
+  //   }
+  //   // else {
+  //   //   // FALLBACK PATH: Calculate distances manually (no spatial data available)
+  //   //   const entityX = Transform.x;
+  //   //   const entityY = Transform.y;
+  //   //   const lightData = this.getLightData();
 
-    //   for (let i = 0; i < this.entityCount; i++) {
-    //     // Skip inactive or off-screen entities
-    //     if (!active[i] || !isItOnScreen[i]) continue;
+  //   //   for (let i = 0; i < this.entityCount; i++) {
+  //   //     // Skip inactive or off-screen entities
+  //   //     if (!active[i] || !isItOnScreen[i]) continue;
 
-    //     // Skip entities with uninitialized baseTint (0 = black, likely not set)
-    //     const entityBaseTint = baseTint[i];
-    //     if (entityBaseTint === 0) continue;
+  //   //     // Skip entities with uninitialized baseTint (0 = black, likely not set)
+  //   //     const entityBaseTint = baseTint[i];
+  //   //     if (entityBaseTint === 0) continue;
 
-    //     // Calculate total light at entity position (manual distance calculation)
-    //     const brightness = calculateTotalLightAtPosition(
-    //       entityX[i],
-    //       entityY[i],
-    //       lightData,
-    //       this.lightingAmbient
-    //     );
+  //   //     // Calculate total light at entity position (manual distance calculation)
+  //   //     const brightness = calculateTotalLightAtPosition(
+  //   //       entityX[i],
+  //   //       entityY[i],
+  //   //       lightData,
+  //   //       this.lightingAmbient
+  //   //     );
 
-    //     // Apply brightness to the original entity color (baseTint)
-    //     tint[i] = this.applyBrightnessToColor(
-    //       entityBaseTint,
-    //       brightness * 3000
-    //     );
-    //   }
-    // }
-  }
+  //   //     // Apply brightness to the original entity color (baseTint)
+  //   //     tint[i] = this.applyBrightnessToColor(
+  //   //       entityBaseTint,
+  //   //       brightness * 3000
+  //   //     );
+  //   //   }
+  //   // }
+  // }
 
   /**
    * Calculate shadow sprite positions for all active lights
@@ -943,16 +943,15 @@ class ParticleWorker extends AbstractWorker {
         const dirY = dy * invDist; // sin(angle)
 
         // Shadow position: at caster's feet, slightly offset in shadow direction
-        const offsetDist = -casterRadius * 0.5;
-        const posX = casterX + dirX * offsetDist;
-        const posY = casterY + dirY * offsetDist;
+        const posX = casterX + dirX * -casterRadius;
+        const posY = casterY + dirY * -casterRadius;
 
         // Shadow scale based on caster size and distance
         // Closer to light = shorter shadow, farther = longer shadow
         const rawDistRatio = dist * this.invMaxDistanceFromLight; // Pre-computed inverse
         const distRatio = rawDistRatio > 1 ? 1 : rawDistRatio;
         const lengthScale = 0.3 + distRatio * 0.9;
-        const widthScale = casterRadius * 0.1; // Use entity's shadowRadius for width
+        const widthScale = casterRadius * 0.0714; // Use entity's shadowRadius for width
 
         // Shadow alpha: stronger near light, fades with distance
 

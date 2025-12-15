@@ -1,8 +1,15 @@
 import WEED from "/src/index.js";
 
 // Destructure what we need from WEED
-const { GameObject, RigidBody, Collider, SpriteRenderer, LightEmitter, rng } =
-  WEED;
+const {
+  GameObject,
+  RigidBody,
+  Collider,
+  SpriteRenderer,
+  LightEmitter,
+  rng,
+  randomColor,
+} = WEED;
 
 export class TallLight extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
@@ -24,8 +31,12 @@ export class TallLight extends GameObject {
     this.rigidBody.static = 1; // Static body - nothing can move it
     this.setSprite("tallLight");
     this.collider.radius = 17;
-    this.lightEmitter.lightColor = 0xffffff;
-    this.lightEmitter.lightIntensity = 0.9;
+    this.lightEmitter.lightColor = randomColor({
+      min: 0xffaa00,
+      max: 0xffffff,
+    });
+
+    this.lightEmitter.lightIntensity = 10000 + rng() * 10000;
     this.lightEmitter.active = 1;
 
     // Override Boid's perception
