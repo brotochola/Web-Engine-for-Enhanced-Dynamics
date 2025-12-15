@@ -249,6 +249,7 @@
     <div class="overlay-panel" id="statsPanel">
         <div class="panel-title">⚡ Performance Stats</div>
         <p id="config">Mode: SHARED ARRAY BUFFER (Multi-Worker) - Structure of Arrays + Spatial Hash</p>
+        <p id="mainFPS" style="color: #4ade80; font-weight: bold;">Main Thread: -- FPS</p>
         <p id="spatialFPS">Spatial Worker FPS: --</p>
         <div id="logicFPSContainer"></div>
         <p id="physicsFPS">Physics Worker FPS: --</p>
@@ -369,9 +370,9 @@
                     maxLights: 100, // Maximum number of lights for the shader
                     // Shadow sprite system (calculated by particle_worker, rendered by pixi_worker)
                     shadowsEnabled: true, // Enable shadow sprite system
-                    maxShadowCastingLights: 10, // How many lights actively cast shadows
-                    maxShadowsPerLight: 50, // Closest N entities per light get shadows
-                    maxDistanceFromLight: 200, // Max world distance to cast shadow
+                    maxShadowCastingLights: 50, // How many lights actively cast shadows
+                    maxShadowsPerLight: 100, // Closest N entities per light get shadows
+                    maxDistanceFromLight: 240, // Max world distance to cast shadow
                 }
             },
             {

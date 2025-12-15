@@ -185,6 +185,15 @@ class GameEngine {
       collision: null,
     };
 
+    // Main thread FPS tracking (same technique as workers)
+    this.mainFPS = 0;
+    this.mainFPSFrameCount = 60; // Average over last 60 frames
+    this.mainFrameTimes = new Array(this.mainFPSFrameCount).fill(16.67);
+    this.mainFrameTimeIndex = 0;
+    this.mainFrameTimesSum = 16.67 * this.mainFPSFrameCount;
+    this.mainFPSReportInterval = 30; // Update UI every N frames
+    this.mainFrameNumber = 0;
+
     // Canvas
     this.canvas = null;
 
@@ -1281,6 +1290,13 @@ class GameEngine {
     }
   }
 
+  updateMainFPS() {
+    const element = document.getElementById("mainFPS");
+    if (element) {
+      element.textContent = `Main Thread: ${this.mainFPS.toFixed(2)} FPS`;
+    }
+  }
+
   updateActiveUnits(count) {
     const element = document.getElementById("activeUnits");
     if (element) {
@@ -1390,17 +1406,31 @@ class GameEngine {
   startMainLoop() {
     const loop = (currentTime) => {
       const deltaTime = currentTime - this.lastFrameTime;
+      this.lastFrameTime = currentTime;
 
-      if (deltaTime >= this.updateRate) {
-        this.update(deltaTime);
-        this.lastFrameTime = currentTime;
+      // Update game logic
+      this.update(deltaTime);
+
+      // Update main thread FPS using moving average
+      this.mainFrameNumber++;
+      this.mainFrameTimesSum -= this.mainFrameTimes[this.mainFrameTimeIndex];
+      this.mainFrameTimes[this.mainFrameTimeIndex] = deltaTime;
+      this.mainFrameTimesSum += deltaTime;
+      this.mainFrameTimeIndex =
+        (this.mainFrameTimeIndex + 1) % this.mainFPSFrameCount;
+
+      const averageFrameTime = this.mainFrameTimesSum / this.mainFPSFrameCount;
+      this.mainFPS = 1000 / averageFrameTime;
+
+      // Update UI periodically
+      if (this.mainFrameNumber % this.mainFPSReportInterval === 0) {
+        this.updateMainFPS();
       }
 
       requestAnimationFrame(loop);
     };
 
     requestAnimationFrame(loop);
-    // console.log("✅ Started main loop");
   }
 
   // Main update function (60fps)
