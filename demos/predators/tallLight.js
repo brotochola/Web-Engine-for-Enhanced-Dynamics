@@ -36,7 +36,7 @@ export class TallLight extends GameObject {
       max: 0xffffff,
     });
 
-    this.lightEmitter.lightIntensity = 10000 + rng() * 10000;
+    this.lightEmitter.lightIntensity = 20000;
     this.lightEmitter.active = 1;
 
     // Override Boid's perception

@@ -250,6 +250,7 @@
         <div class="panel-title">⚡ Performance Stats</div>
         <p id="config">Mode: SHARED ARRAY BUFFER (Multi-Worker) - Structure of Arrays + Spatial Hash</p>
         <p id="mainFPS" style="color: #4ade80; font-weight: bold;">Main Thread: -- FPS</p>
+        <p id="jobStealing" style="color: #a78bfa;">Main Thread Jobs: disabled</p>
         <p id="spatialFPS">Spatial Worker FPS: --</p>
         <div id="logicFPSContainer"></div>
         <p id="physicsFPS">Physics Worker FPS: --</p>
@@ -303,7 +304,7 @@
         const numberOfPrey = 15000;
         const numberOfPredators = 8;
         const numberOfBoids = 0;
-        const numberOfTallLights = 10;
+        const numberOfTallLights = 5;
         // Import WeedJS engine 🌿
         import WEED from '/src/index.js';
         import { Boid } from '/demos/predators/boid.js';
@@ -345,8 +346,13 @@
                 // Logic configuration
                 logic: {
                     noLimitFPS: false,
-                    numberOfLogicWorkers: 4,
+                    numberOfLogicWorkers: 3,
                     numberOfEntitiesPerJob: 250,
+                    // Main thread job stealing - main thread helps workers process entities
+                    mainThreadJobStealing: {
+                        enabled: true,      // Enable main thread to claim jobs from queue
+                        maxJobsPerFrame: 0, // 0 = unlimited, or set limit (e.g., 3-5)
+                    },
                 },
 
                 // Physics configuration
@@ -371,7 +377,7 @@
                     // Shadow sprite system (calculated by particle_worker, rendered by pixi_worker)
                     shadowsEnabled: true, // Enable shadow sprite system
                     maxShadowCastingLights: 50, // How many lights actively cast shadows
-                    maxShadowsPerLight: 100, // Closest N entities per light get shadows
+                    maxShadowsPerLight: 200, // Closest N entities per light get shadows
                     maxDistanceFromLight: 240, // Max world distance to cast shadow
                 }
             },
@@ -437,10 +443,12 @@
 
         // Update config display to show actual number of workers
         const hasParticles = gameEngine.config.particles && gameEngine.config.particles.maxParticles > 0;
+        const hasJobStealing = gameEngine.config.logic?.mainThreadJobStealing?.enabled;
         const totalWorkers = 3 + numberOfLogicWorkers + (hasParticles ? 1 : 0); // spatial + physics + renderer + N logic workers + particle
         const particleInfo = hasParticles ? ' + 1 Particle' : '';
+        const jobStealingInfo = hasJobStealing ? ' + Main Thread' : '';
         document.getElementById('config').textContent =
-            `Mode: SHARED ARRAY BUFFER (${totalWorkers} Workers: 1 Spatial + ${numberOfLogicWorkers} Logic + 1 Physics + 1 Renderer${particleInfo})`;
+            `Mode: SHARED ARRAY BUFFER (${totalWorkers} Workers: 1 Spatial + ${numberOfLogicWorkers} Logic + 1 Physics + 1 Renderer${particleInfo}${jobStealingInfo})`;
 
         // Spawning functions - using clean unified API
         window.spawnRandomTallLight = function () {
