@@ -13,6 +13,7 @@ import { setupWorkerCommunication, seededRandom } from "./utils.js";
 import { Debug } from "./Debug.js";
 import { Mouse } from "./Mouse.js";
 import { BigAtlasInspector } from "./BigAtlasInspector.js";
+import { RendererWebGpu } from "./RendererWebGpu.js";
 // Note: Particles are NOT GameObjects - they use ParticleComponent directly
 
 class GameEngine {
@@ -59,14 +60,17 @@ class GameEngine {
     // Get number of logic workers from config (default to 1 for backward compatibility)
     this.numberOfLogicWorkers = this.config.logic?.numberOfLogicWorkers || 1;
 
-    // Workers
+    // Workers (renderer moved to main thread)
     this.workers = {
       spatial: null,
       logicWorkers: [], // Array of logic workers
       physics: null,
-      renderer: null,
+      // renderer: removed - now runs on main thread as this.renderer
       particle: null, // Particle physics worker
     };
+
+    // Main thread renderer (WebGPU)
+    this.renderer = null;
 
     this.pendingPhysicsUpdates = [];
 
@@ -84,10 +88,11 @@ class GameEngine {
 
     // Worker synchronization (for two-phase initialization)
     // Dynamically create ready states for all logic workers
+    // Note: renderer removed from workers - now runs on main thread
     this.workerReadyStates = {
       spatial: false,
       physics: false,
-      renderer: false,
+      // renderer: removed - now on main thread
     };
     // Add ready states for each logic worker
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
@@ -98,8 +103,13 @@ class GameEngine {
     if (this.hasParticles) {
       this.workerReadyStates.particle = false;
     }
+    // Total workers: spatial + physics + logicWorkers + (optional particle)
+    // Renderer is no longer a worker
     this.totalWorkers =
-      3 + this.numberOfLogicWorkers + (this.hasParticles ? 1 : 0);
+      2 + this.numberOfLogicWorkers + (this.hasParticles ? 1 : 0);
+
+    // Track renderer readiness separately (it initializes async on main thread)
+    this.rendererReady = false;
 
     // Shared buffers
     this.buffers = {
@@ -139,7 +149,7 @@ class GameEngine {
     // SHADOW SPRITE SYSTEM
     // ========================================
     // Shadows are rendered as sprites in a separate ParticleContainer
-    // Buffer is written by particle_worker, read by pixi_worker
+    // Buffer is written by particle_worker, read by main thread renderer
     const lightingConfig = this.config.lighting || {};
     this.shadowsEnabled =
       lightingConfig.enabled && lightingConfig.shadowsEnabled !== false;
@@ -160,7 +170,7 @@ class GameEngine {
     // - World is divided into tiles (e.g., 256x256 pixels each)
     // - Each tile has an RGBA buffer for pixel data
     // - particle_worker stamps blood patterns into tiles when particles land
-    // - pixi_worker renders dirty tiles as textures
+    // - Main thread renderer renders dirty tiles as textures
     console.log("DEBUG: config.particle =", JSON.stringify(config.particle));
     console.log(
       "DEBUG: this.config.particle =",
@@ -577,7 +587,7 @@ class GameEngine {
     // ========================================
     // SHADOW SPRITE SYSTEM - SharedArrayBuffer Creation
     // ========================================
-    // Creates buffer for shadow sprite data (written by particle_worker, read by pixi_worker)
+    // Creates buffer for shadow sprite data (written by particle_worker, read by main thread renderer)
     // Uses ShadowCaster component schema for both entity markers AND sprite data
     if (this.shadowsEnabled && this.maxShadowSprites > 0) {
       const shadowSpriteBufferSize = ShadowCaster.getBufferSize(
@@ -596,8 +606,8 @@ class GameEngine {
     // BLOOD DECALS TILEMAP - SharedArrayBuffer Creation
     // ========================================
     // Creates two SABs:
-    // 1. bloodTilesRGBA: Stores RGBA pixel data for all tiles (write by particle_worker, read by pixi_worker)
-    // 2. bloodTilesDirty: Dirty flags per tile (set by particle_worker, cleared by pixi_worker)
+    // 1. bloodTilesRGBA: Stores RGBA pixel data for all tiles (write by particle_worker, read by main thread renderer)
+    // 2. bloodTilesDirty: Dirty flags per tile (set by particle_worker, cleared by main thread renderer)
     if (this.decalsEnabled) {
       const tileSize = this.decalsTileSize; // World units each tile covers
       const tilePixelSize = this.decalsTilePixelSize; // Actual pixel dimensions
@@ -616,12 +626,12 @@ class GameEngine {
 
       // Create SharedArrayBuffer for tile RGBA data
       // particle_worker writes blood patterns here
-      // pixi_worker reads and converts to textures
+      // Main thread renderer reads and converts to textures
       this.buffers.bloodTilesRGBA = new SharedArrayBuffer(totalTileBytes);
 
       // Create SharedArrayBuffer for dirty flags (1 byte per tile)
       // particle_worker sets flag to 1 when a tile is modified
-      // pixi_worker clears flag to 0 after updating texture
+      // Main thread renderer clears flag to 0 after updating texture
       this.buffers.bloodTilesDirty = new SharedArrayBuffer(totalTiles);
 
       // Store tile grid metadata for workers
@@ -728,7 +738,7 @@ class GameEngine {
   }
   preInitializeEntityTypeArrays() {
     // PRE-INITIALIZE entityType values to prevent race condition
-    // This ensures pixi_worker can read correct entityType values immediately
+    // This ensures renderer can read correct entityType values immediately
     // when creating sprites, even before logic_worker creates instances
     for (let i = 0; i < this.totalEntityCount; i++) {
       for (const registration of this.registeredClasses) {
@@ -901,19 +911,21 @@ class GameEngine {
   /**
    * Setup direct MessagePort communication between workers (delegates to utils.js)
    * This allows workers to communicate without going through the main thread
+   * Note: Renderer is now on main thread, so no renderer ports needed
    * @returns {Object} workerPorts - Object mapping worker names to their ports
    */
   setupWorkerCommunication() {
     // Define which workers need direct communication
+    // Note: Renderer ports removed - renderer now runs on main thread
     const connections = [
-      { from: "physics", to: "renderer" }, // Physics could send debug info to renderer
+      // { from: "physics", to: "renderer" }, // Removed - renderer on main thread
       // Add more connections as needed
     ];
 
-    // Add connection for each logic worker to renderer
-    for (let i = 0; i < this.numberOfLogicWorkers; i++) {
-      connections.push({ from: `logic${i}`, to: "renderer" });
-    }
+    // Logic worker to renderer connections removed - renderer on main thread
+    // for (let i = 0; i < this.numberOfLogicWorkers; i++) {
+    //   connections.push({ from: `logic${i}`, to: "renderer" });
+    // }
 
     // console.log("🔗 Worker communication channels established:", connections);
     return setupWorkerCommunication(connections);
@@ -945,10 +957,7 @@ class GameEngine {
       `/src/workers/physics_worker.js${cacheBust}`,
       { type: "module" }
     );
-    this.workers.renderer = new Worker(
-      `/src/workers/pixi_worker.js${cacheBust}`,
-      { type: "module" }
-    );
+    // Renderer worker removed - now runs on main thread via RendererWebGpu
 
     // Create particle worker if particles are configured
     if (this.hasParticles) {
@@ -961,7 +970,7 @@ class GameEngine {
 
     this.workers.spatial.name = "spatial";
     this.workers.physics.name = "physics";
-    this.workers.renderer.name = "renderer";
+    // this.workers.renderer.name removed - renderer on main thread
 
     // Preload assets before initializing workers
     // Extract spritesheet configs from imageUrls (or use separate config)
@@ -1040,7 +1049,7 @@ class GameEngine {
       // ========================================
       // BLOOD DECALS TILEMAP - Worker Data
       // ========================================
-      // Passed to both particle_worker (for stamping) and pixi_worker (for rendering)
+      // Passed to both particle_worker (for stamping) and main thread renderer
       decals: this.decalsEnabled
         ? {
             enabled: true,
@@ -1062,7 +1071,7 @@ class GameEngine {
       // ========================================
       // SHADOW SPRITE SYSTEM - Worker Data
       // ========================================
-      // Passed to particle_worker (for calculating) and pixi_worker (for rendering)
+      // Passed to particle_worker (for calculating) and main thread renderer
       shadows: this.shadowsEnabled
         ? {
             enabled: true,
@@ -1108,37 +1117,14 @@ class GameEngine {
       this.workers.particle.postMessage(initData);
     }
 
-    // Initialize renderer worker (transfer canvas, textures, spritesheets, and ports)
-    const offscreenCanvas = this.canvas.transferControlToOffscreen();
-
-    // Prepare transferable objects: canvas + texture ImageBitmaps + spritesheet ImageBitmaps + MessagePorts
-    const transferables = [
-      offscreenCanvas,
-      ...Object.values(this.loadedTextures),
-      ...Object.values(this.loadedSpritesheets).map(
-        (sheet) => sheet.imageBitmap
-      ),
-      ...(workerPorts.renderer ? Object.values(workerPorts.renderer) : []),
-    ];
-
-    this.workers.renderer.postMessage(
-      {
-        ...initData,
-        view: offscreenCanvas,
-        textures: this.loadedTextures, // Simple textures (empty with bigAtlas)
-        spritesheets: this.loadedSpritesheets, // Spritesheets with JSON + ImageBitmap (bigAtlas only)
-        bigAtlasProxySheets: this.bigAtlasProxySheets || {}, // Proxy sheet metadata for transparent lookups
-        workerPorts: workerPorts.renderer, // MessagePorts for direct communication
-      },
-      transferables
-    );
-
-    // Setup message handlers for all workers
+    // Setup message handlers for all workers BEFORE renderer initialization
+    // This is critical: workers may send "workerReady" messages while renderer initializes
+    // If handlers aren't set, those messages would be lost!
     const allWorkers = [
       this.workers.spatial,
       ...this.workers.logicWorkers,
       this.workers.physics,
-      this.workers.renderer,
+      // this.workers.renderer removed - now on main thread
       ...(this.hasParticles && this.workers.particle
         ? [this.workers.particle]
         : []),
@@ -1161,7 +1147,24 @@ class GameEngine {
       };
     }
 
-    // console.log("✅ Created and initialized 4 workers");
+    // Initialize main thread renderer (WebGPU)
+    // Note: Canvas is NOT transferred to offscreen - renderer runs on main thread
+    this.renderer = new RendererWebGpu();
+
+    // Initialize renderer with same data that was sent to worker
+    await this.renderer.initialize({
+      ...initData,
+      canvas: this.canvas, // Direct canvas reference (not offscreen)
+      textures: this.loadedTextures, // Simple textures (empty with bigAtlas)
+      spritesheets: this.loadedSpritesheets, // Spritesheets with JSON + ImageBitmap (bigAtlas only)
+      bigAtlasProxySheets: this.bigAtlasProxySheets || {}, // Proxy sheet metadata for transparent lookups
+    });
+
+    // Mark renderer as ready and check if we can start
+    this.rendererReady = true;
+    this.checkAllReadyAndStart();
+
+    // console.log("✅ Created and initialized workers + renderer");
   }
 
   handleMessageFromWorker(e) {
@@ -1203,13 +1206,21 @@ class GameEngine {
       this.pendingPhysicsUpdates = [];
     }
 
-    // Check if all workers are ready
-    const allReady = Object.values(this.workerReadyStates).every(
+    // Check if all workers AND renderer are ready
+    this.checkAllReadyAndStart();
+  }
+
+  /**
+   * Check if all workers AND renderer are ready, then start
+   * This handles the async nature of renderer initialization on main thread
+   */
+  checkAllReadyAndStart() {
+    const allWorkersReady = Object.values(this.workerReadyStates).every(
       (ready) => ready
     );
 
-    if (allReady) {
-      // console.log("🎮 All workers ready! Starting synchronized game loop...");
+    if (allWorkersReady && this.rendererReady) {
+      // console.log("🎮 All workers + renderer ready! Starting synchronized game loop...");
       this.startAllWorkers();
       if (this.resolveReady) this.resolveReady();
     } else {
@@ -1218,7 +1229,7 @@ class GameEngine {
         (r) => r
       ).length;
       // console.log(
-      //   `   Waiting... (${readyCount}/${this.totalWorkers} workers ready)`
+      //   `   Waiting... (${readyCount}/${this.totalWorkers} workers, renderer: ${this.rendererReady})`
       // );
     }
   }
@@ -1234,7 +1245,7 @@ class GameEngine {
       this.workers.spatial,
       ...this.workers.logicWorkers,
       this.workers.physics,
-      this.workers.renderer,
+      // this.workers.renderer removed - now on main thread
       ...(this.hasParticles && this.workers.particle
         ? [this.workers.particle]
         : []),
@@ -1244,6 +1255,11 @@ class GameEngine {
       if (worker) {
         worker.postMessage({ msg: "start" });
       }
+    }
+
+    // Start main thread renderer
+    if (this.renderer) {
+      this.renderer.start();
     }
 
     // Spawn the Mouse entity for spatial grid tracking
@@ -1474,7 +1490,7 @@ class GameEngine {
       this.workers.spatial,
       ...this.workers.logicWorkers,
       this.workers.physics,
-      this.workers.renderer,
+      // this.workers.renderer removed - now on main thread
       ...(this.hasParticles && this.workers.particle
         ? [this.workers.particle]
         : []),
@@ -1483,6 +1499,12 @@ class GameEngine {
     allWorkers.forEach((worker) => {
       if (worker) worker.terminate();
     });
+
+    // Destroy main thread renderer
+    if (this.renderer) {
+      this.renderer.destroy();
+      this.renderer = null;
+    }
 
     if (this.canvas && this.canvas.parentNode) {
       this.canvas.parentNode.removeChild(this.canvas);
@@ -1497,7 +1519,7 @@ class GameEngine {
       this.workers.spatial,
       ...this.workers.logicWorkers,
       this.workers.physics,
-      this.workers.renderer,
+      // this.workers.renderer removed - now on main thread
       ...(this.hasParticles && this.workers.particle
         ? [this.workers.particle]
         : []),
@@ -1506,6 +1528,11 @@ class GameEngine {
     allWorkers.forEach((worker) => {
       if (worker) worker.postMessage({ msg: "pause" });
     });
+
+    // Pause main thread renderer
+    if (this.renderer) {
+      this.renderer.pause();
+    }
   }
 
   resume() {
@@ -1514,7 +1541,7 @@ class GameEngine {
       this.workers.spatial,
       ...this.workers.logicWorkers,
       this.workers.physics,
-      this.workers.renderer,
+      // this.workers.renderer removed - now on main thread
       ...(this.hasParticles && this.workers.particle
         ? [this.workers.particle]
         : []),
@@ -1523,6 +1550,11 @@ class GameEngine {
     allWorkers.forEach((worker) => {
       if (worker) worker.postMessage({ msg: "resume" });
     });
+
+    // Resume main thread renderer
+    if (this.renderer) {
+      this.renderer.resume();
+    }
   }
 
   /**
