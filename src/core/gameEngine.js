@@ -149,7 +149,6 @@ class GameEngine {
     this.maxShadowsPerLight = lightingConfig.maxShadowsPerLight || 15;
     this.maxShadowSprites =
       this.maxShadowCastingLights * this.maxShadowsPerLight;
-    this.maxDistanceFromLight = lightingConfig.maxDistanceFromLight || 512;
 
     // ========================================
     // BLOOD DECALS TILEMAP SYSTEM
@@ -197,7 +196,7 @@ class GameEngine {
     this.mainFrameNumber = 0;
 
     // Main thread job stealing (helps workers by claiming jobs from shared queue)
-    // Configure via config.logic.mainThreadJobStealing: { enabled, maxJobsPerFrame }
+    // Configure via config.logic.useMainThreadAsLogicWorker and config.logic.mainThreadMaxJobsPerFrame
     this.mainThreadHelper = null; // Initialized in init() after buffers are created
 
     // Canvas
@@ -504,17 +503,15 @@ class GameEngine {
    * The main thread can participate in entity tick() processing by claiming
    * jobs from the same Atomics-based job queue used by logic workers.
    *
-   * Configure via config.logic.mainThreadJobStealing: {
-   *   enabled: boolean,      // Enable/disable (default: false)
-   *   maxJobsPerFrame: number // Max jobs per frame, 0 = unlimited (default: 0)
-   * }
+   * Configure via:
+   *   config.logic.useMainThreadAsLogicWorker: boolean  // Enable/disable (default: false)
+   *   config.logic.mainThreadMaxJobsPerFrame: number    // Max jobs per frame, 0 = unlimited (default: 0)
    */
   initMainThreadHelper() {
-    const jobStealingConfig = this.config.logic?.mainThreadJobStealing || {};
-    const enabled = jobStealingConfig.enabled ?? false;
+    const enabled = this.config.logic?.useMainThreadAsLogicWorker ?? false;
 
     if (!enabled) {
-      // console.log("🧵 MainThreadLogicHelper: Disabled (config.logic.mainThreadJobStealing.enabled = false)");
+      // console.log("🧵 MainThreadLogicHelper: Disabled (config.logic.useMainThreadAsLogicWorker = false)");
       return;
     }
 
@@ -523,7 +520,7 @@ class GameEngine {
     this.mainThreadHelper.initialize();
 
     // Configure max jobs per frame (0 = unlimited)
-    const maxJobsPerFrame = jobStealingConfig.maxJobsPerFrame ?? 0;
+    const maxJobsPerFrame = this.config.logic?.mainThreadMaxJobsPerFrame ?? 0;
     this.mainThreadHelper.setMaxJobsPerFrame(maxJobsPerFrame);
 
     console.log(
@@ -732,7 +729,7 @@ class GameEngine {
 
     // Count main thread as a worker if job stealing is enabled
     this.mainThreadJobStealingEnabled =
-      this.config.logic?.mainThreadJobStealing?.enabled ?? false;
+      this.config.logic?.useMainThreadAsLogicWorker ?? false;
     const totalWorkers = this.mainThreadJobStealingEnabled
       ? this.numberOfLogicWorkers + 1
       : this.numberOfLogicWorkers;
@@ -1121,7 +1118,6 @@ class GameEngine {
             maxShadowCastingLights: this.maxShadowCastingLights,
             maxShadowsPerLight: this.maxShadowsPerLight,
             maxShadowSprites: this.maxShadowSprites,
-            maxDistanceFromLight: this.maxDistanceFromLight,
             // SharedArrayBuffer for shadow sprite data (uses ShadowCaster schema)
             spriteData: this.buffers.shadowSpriteData,
           }
@@ -1336,7 +1332,8 @@ class GameEngine {
         element.textContent = `${baseText}: ${fps} FPS (${data.activeParticles}/${data.totalParticles} particles)`;
       } else if (id === "renderer" && data.drawCalls !== undefined) {
         // Renderer worker - show draw calls and visible counts
-        const visible = (data.visibleEntities || 0) + (data.visibleParticles || 0);
+        const visible =
+          (data.visibleEntities || 0) + (data.visibleParticles || 0);
         element.textContent = `${baseText}: ${fps} FPS (${data.drawCalls} draw calls, ${visible} visible)`;
       } else if (activeEntities !== undefined) {
         element.textContent = `${baseText}: ${fps} FPS (${activeEntities} active)`;
@@ -1760,7 +1757,7 @@ class GameEngine {
 
   /**
    * Enable or disable main thread job stealing at runtime
-   * Note: This only works if mainThreadJobStealing was enabled in config
+   * Note: This only works if useMainThreadAsLogicWorker was enabled in config
    * (otherwise the helper won't be initialized)
    * @param {boolean} enabled - Whether to enable job stealing
    */
@@ -1768,7 +1765,7 @@ class GameEngine {
     if (!this.mainThreadHelper) {
       console.warn(
         "Main thread job stealing not initialized. " +
-          "Set config.logic.mainThreadJobStealing.enabled = true to use this feature."
+          "Set config.logic.useMainThreadAsLogicWorker = true to use this feature."
       );
       return;
     }
@@ -1785,7 +1782,7 @@ class GameEngine {
     if (!this.mainThreadHelper) {
       console.warn(
         "Main thread job stealing not initialized. " +
-          "Set config.logic.mainThreadJobStealing.enabled = true to use this feature."
+          "Set config.logic.useMainThreadAsLogicWorker = true to use this feature."
       );
       return;
     }

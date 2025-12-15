@@ -83,6 +83,7 @@ export class Predator extends Boid {
 
     // Update shadow radius to match scaled collider
     this.shadowCaster.shadowRadius = this.collider.radius;
+    this.shadowCaster.height = this.collider.radius * 5;
 
     // Set spritesheet for this instance
     this.setSpritesheet("civil3");

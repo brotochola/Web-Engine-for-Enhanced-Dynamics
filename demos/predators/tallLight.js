@@ -40,7 +40,7 @@ export class TallLight extends GameObject {
     this.lightEmitter.active = 1;
 
     // Override Boid's perception
-    this.collider.visualRange = 400;
+    this.collider.visualRange = 200;
   }
 
   /**

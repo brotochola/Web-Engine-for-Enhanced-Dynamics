@@ -17,6 +17,7 @@ export class ShadowCaster extends Component {
     // === Shadow sprite fields (only used in sprite buffer) ===
     x: Float32Array, // World X position
     y: Float32Array, // World Y position
+    height: Float32Array, // World height
     rotation: Float32Array, // Rotation in radians (pointing away from light)
     scaleX: Float32Array, // Width scale
     scaleY: Float32Array, // Length scale

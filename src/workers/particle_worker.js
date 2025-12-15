@@ -104,9 +104,6 @@ class ParticleWorker extends AbstractWorker {
     this.maxShadowCastingLights = 20;
     this.maxShadowsPerLight = 15;
     this.maxShadowSprites = 0;
-    this.maxDistanceFromLight = 512;
-    this.maxDistanceFromLightSq = 512 * 512;
-    this.invMaxDistanceFromLight = 1 / 512; // Pre-computed for shadow calculations
 
     this.howMuchMoreLightToParticles = 8;
   }
@@ -261,10 +258,6 @@ class ParticleWorker extends AbstractWorker {
       this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
       this.maxShadowsPerLight = data.shadows.maxShadowsPerLight;
       this.maxShadowSprites = data.shadows.maxShadowSprites;
-      this.maxDistanceFromLight = data.shadows.maxDistanceFromLight;
-      this.maxDistanceFromLightSq =
-        this.maxDistanceFromLight * this.maxDistanceFromLight;
-      this.invMaxDistanceFromLight = 1 / this.maxDistanceFromLight;
 
       // Initialize entity-level ShadowCaster arrays (marks which entities cast shadows)
       ShadowCaster.initializeArrays(
@@ -321,7 +314,7 @@ class ParticleWorker extends AbstractWorker {
       );
 
       console.log(
-        `PARTICLE WORKER: Shadow system enabled (${this.maxShadowSprites} shadow slots, maxDist: ${this.maxDistanceFromLight})`
+        `PARTICLE WORKER: Shadow system enabled (${this.maxShadowSprites} shadow slots)`
       );
     }
   }
@@ -892,11 +885,11 @@ class ParticleWorker extends AbstractWorker {
     const lightIntensity = LightEmitter.lightIntensity;
     const shadowCasterActive = ShadowCaster.active;
     const entityShadowRadius = ShadowCaster.shadowRadius;
+    const entityShadowHeight = ShadowCaster.height;
     const isOnScreen = SpriteRenderer.isItOnScreen;
 
     const maxNeighbors = this.config.spatial.maxNeighbors;
     const stride = 1 + maxNeighbors;
-    const maxDistSq = this.maxDistanceFromLightSq;
 
     // Shadow sprite output arrays (shadowActive already cached above)
     const shadowRadius = this.shadowSpriteRadius;
@@ -946,12 +939,10 @@ class ParticleWorker extends AbstractWorker {
 
         const distSq = this.distanceData[offset + 1 + k];
 
-        // Skip if too far from light
-        if (distSq > maxDistSq) continue;
-
         const casterX = worldX[neighborIdx];
         const casterY = worldY[neighborIdx];
         const casterRadius = entityShadowRadius[neighborIdx] || 10;
+        const casterHeight = entityShadowHeight[neighborIdx] || casterRadius;
 
         // Calculate shadow properties
         const dx = casterX - lightX;
@@ -970,17 +961,19 @@ class ParticleWorker extends AbstractWorker {
         const posX = casterX + dirX * -casterRadius;
         const posY = casterY + dirY * -casterRadius;
 
-        // Shadow scale based on caster size and distance
+        // Shadow scale based on caster size, height, and distance
         // Closer to light = shorter shadow, farther = longer shadow
-        const rawDistRatio = dist * this.invMaxDistanceFromLight; // Pre-computed inverse
-        const distRatio = rawDistRatio > 1 ? 1 : rawDistRatio;
-        const lengthScale = 0.3 + distRatio * 0.9;
+        // Taller objects cast longer shadows (height factor)
+        // Use distance directly with a reasonable scaling factor (256 as reference)
+        const distRatio = dist * 0.00390625; // 1/256 pre-computed
+        const clampedDistRatio = distRatio > 1 ? 1 : distRatio;
+        const heightFactor = casterHeight * 0.025; // Normalize height: 40 units → 1.0
+        const lengthScale = (0.3 + clampedDistRatio * 0.9) * heightFactor;
         const widthScale = casterRadius * 0.0714; // Use entity's shadowRadius for width
 
         // Shadow alpha: stronger near light, fades with distance
-
         const intensityFactor = intensity > 1 ? 1 : intensity;
-        const distFade = 1 - distRatio * 0.7;
+        const distFade = 1 - clampedDistRatio * 0.7;
         const rawAlpha = intensityFactor * distFade;
         const alpha = rawAlpha > 0.7 ? 0.7 : rawAlpha;
 
