@@ -44,6 +44,7 @@ export class MainThreadLogicHelper {
     this.enabled = false; // Disabled until explicitly enabled
     this.maxJobsPerFrame = 2; // Limit jobs per frame to avoid blocking UI (0 = unlimited)
     this.isMainThreadOnlyMode = false; // True when numberOfLogicWorkers === 0
+    this.isWindowVisible = true; // Track window/tab visibility for job stealing
 
     // Performance tracking
     this.jobsProcessedThisFrame = 0;
@@ -207,6 +208,10 @@ export class MainThreadLogicHelper {
   processJobs(deltaTime, dtRatio) {
     if (!this.enabled || !this.jobQueueData) return;
 
+    // Skip job processing if window is not visible
+    // Workers will handle all jobs themselves and won't wait for us
+    if (!this.isWindowVisible && !this.isMainThreadOnlyMode) return;
+
     this.frameNumber++;
     this.jobsProcessedThisFrame = 0;
     this.entitiesProcessedThisFrame = 0;
@@ -282,10 +287,16 @@ export class MainThreadLogicHelper {
   signalFrameComplete() {
     if (!this.syncData) return;
 
-    const totalWorkers = this.syncData[2]; // Includes main thread
+    // Read the effective worker count, accounting for main thread visibility
+    // Since we're the main thread and this code is running, we're definitely active
+    // But we still need to use the same calculation as logic_worker for consistency
+    const totalWorkers = this.syncData[2]; // Base count (includes main thread if enabled)
+    const mainThreadActive = Atomics.load(this.syncData, 4);
+    const effectiveWorkers = mainThreadActive ? totalWorkers : totalWorkers - 1;
+
     const finishedCount = Atomics.add(this.syncData, 1, 1) + 1;
 
-    if (finishedCount === totalWorkers) {
+    if (finishedCount === effectiveWorkers) {
       // Last worker to finish - reset job queue for next frame
       Atomics.store(this.jobQueueData, 0, 0); // Reset job counter
       Atomics.store(this.syncData, 1, 0); // Reset finished counter
@@ -313,6 +324,17 @@ export class MainThreadLogicHelper {
     console.log(
       `🧵 MainThreadLogicHelper: ${enabled ? "ENABLED" : "DISABLED"}`
     );
+  }
+
+  /**
+   * Set window visibility state
+   * When the window/tab is hidden, the main thread won't process jobs
+   * and won't participate in frame completion signaling
+   *
+   * @param {boolean} visible - Whether the window is visible
+   */
+  setWindowVisible(visible) {
+    this.isWindowVisible = visible;
   }
 
   /**

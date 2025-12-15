@@ -372,9 +372,16 @@ class LogicWorker extends AbstractWorker {
     // Reset job queue for next frame
     // Use syncData[1] as a "workers finished" counter for this frame
     if (this.syncData && this.totalLogicWorkers > 1) {
+      // Check if main thread is active (syncData[4] = 1 means active, 0 means hidden tab)
+      // When window is hidden, requestAnimationFrame stops, so main thread won't participate
+      const mainThreadActive = Atomics.load(this.syncData, 4);
+      const effectiveWorkers = mainThreadActive
+        ? this.totalLogicWorkers
+        : this.totalLogicWorkers - 1;
+
       const finishedCount = Atomics.add(this.syncData, 1, 1) + 1;
 
-      if (finishedCount === this.totalLogicWorkers) {
+      if (finishedCount === effectiveWorkers) {
         // Last worker to finish - reset for next frame
         Atomics.store(this.jobQueueData, 0, 0); // Reset job counter
         Atomics.store(this.syncData, 1, 0); // Reset finished counter

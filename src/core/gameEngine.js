@@ -723,20 +723,22 @@ class GameEngine {
     // [1]: Worker completion counter (how many workers finished current frame)
     // [2]: Total number of logic workers (including main thread if job stealing enabled)
     // [3]: Barrier flag for Atomics.wait/notify
-    const SYNC_BUFFER_SIZE = 4 * 4;
+    // [4]: Main thread active flag (1 = active/visible, 0 = inactive/hidden tab)
+    const SYNC_BUFFER_SIZE = 5 * 4;
     this.buffers.syncData = new SharedArrayBuffer(SYNC_BUFFER_SIZE);
     const syncView = new Int32Array(this.buffers.syncData);
     syncView[0] = 0; // Initialize frame counter
     syncView[1] = 0; // Initialize completion counter
 
     // Count main thread as a worker if job stealing is enabled
-    const mainThreadJobStealingEnabled =
+    this.mainThreadJobStealingEnabled =
       this.config.logic?.mainThreadJobStealing?.enabled ?? false;
-    const totalWorkers = mainThreadJobStealingEnabled
+    const totalWorkers = this.mainThreadJobStealingEnabled
       ? this.numberOfLogicWorkers + 1
       : this.numberOfLogicWorkers;
     syncView[2] = totalWorkers; // Total workers (logic workers + main thread if enabled)
     syncView[3] = 0; // Barrier flag
+    syncView[4] = 1; // Main thread active (starts active)
 
     // Job queue buffer for dynamic work distribution
     // [0]: Current job index (atomically incremented by workers)
@@ -1446,7 +1448,46 @@ class GameEngine {
       { passive: false }
     );
 
+    // Visibility change listener for job stealing optimization
+    // When tab/window is inactive, requestAnimationFrame stops, so workers
+    // should not count on the main thread to process entities or signal completion
+    document.addEventListener("visibilitychange", () => {
+      this.handleVisibilityChange();
+    });
+
     // console.log("✅ Setup event listeners");
+  }
+
+  /**
+   * Handle visibility change (tab becomes visible/hidden)
+   * Updates syncData[4] so workers know whether to count the main thread
+   */
+  handleVisibilityChange() {
+    const isVisible = !document.hidden;
+
+    // Only relevant if main thread job stealing is enabled
+    if (!this.mainThreadJobStealingEnabled || !this.buffers.syncData) {
+      return;
+    }
+
+    const syncView = new Int32Array(this.buffers.syncData);
+
+    // Update main thread active flag atomically
+    // syncData[4]: 1 = active (visible), 0 = inactive (hidden)
+    Atomics.store(syncView, 4, isVisible ? 1 : 0);
+
+    // Also notify the MainThreadLogicHelper about visibility change
+    if (this.mainThreadHelper) {
+      this.mainThreadHelper.setWindowVisible(isVisible);
+    }
+
+    console.log(
+      `🪟 Window visibility changed: ${
+        isVisible ? "VISIBLE" : "HIDDEN"
+      } - Main thread ${
+        isVisible ? "participating in" : "excluded from"
+      } job stealing`
+    );
   }
 
   // Update keyboard state in inputData buffer
