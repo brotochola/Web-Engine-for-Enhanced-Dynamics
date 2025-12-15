@@ -138,6 +138,11 @@ class PixiRenderer extends AbstractWorker {
     this.visibleUnitsReportInterval = 500; // Report every 500ms
     this.lastVisibleUnitsReportTime = 0;
 
+    // Draw call tracking
+    this.drawCallCount = 0;
+    this.visibleEntityCount = 0;
+    this.visibleParticleCount = 0;
+
     // Debug visualization
     this.debugLayer = null; // PIXI.Graphics for debug overlays
     this.debugFlags = null; // Uint8Array view of debug flags from SharedArrayBuffer
@@ -204,6 +209,72 @@ class PixiRenderer extends AbstractWorker {
     this.shadowSpriteContainer = null; // ParticleContainer for shadow sprites
     this.shadowSprites = []; // Array of Particle objects for shadows
     this.shadowConeTexture = null; // Pre-rendered shadow cone texture (PIXI.Texture)
+  }
+
+  /**
+   * Hook into WebGL context to count draw calls per frame
+   */
+  setupDrawCallMonitoring() {
+    const gl = this.pixiApp.renderer.gl;
+    if (!gl) {
+      console.warn(
+        "PIXI WORKER: Could not access WebGL context for draw call monitoring"
+      );
+      return;
+    }
+
+    const renderer = this;
+
+    // Wrap drawArrays
+    const originalDrawArrays = gl.drawArrays.bind(gl);
+    gl.drawArrays = function (...args) {
+      renderer.drawCallCount++;
+      return originalDrawArrays(...args);
+    };
+
+    // Wrap drawElements
+    const originalDrawElements = gl.drawElements.bind(gl);
+    gl.drawElements = function (...args) {
+      renderer.drawCallCount++;
+      return originalDrawElements(...args);
+    };
+
+    // Wrap drawArraysInstanced (for instanced rendering)
+    if (gl.drawArraysInstanced) {
+      const originalDrawArraysInstanced = gl.drawArraysInstanced.bind(gl);
+      gl.drawArraysInstanced = function (...args) {
+        renderer.drawCallCount++;
+        return originalDrawArraysInstanced(...args);
+      };
+    }
+
+    // Wrap drawElementsInstanced (for instanced rendering)
+    if (gl.drawElementsInstanced) {
+      const originalDrawElementsInstanced = gl.drawElementsInstanced.bind(gl);
+      gl.drawElementsInstanced = function (...args) {
+        renderer.drawCallCount++;
+        return originalDrawElementsInstanced(...args);
+      };
+    }
+
+    console.log("PIXI WORKER: Draw call monitoring enabled");
+  }
+
+  /**
+   * Override reportFPS to include draw call count and visible entities
+   */
+  reportFPS() {
+    if (this.frameNumber % this.fpsReportInterval === 0) {
+      self.postMessage({
+        msg: "fps",
+        fps: this.currentFPS.toFixed(2),
+        drawCalls: this.drawCallCount,
+        visibleEntities: this.visibleEntityCount,
+        visibleParticles: this.visibleParticleCount,
+      });
+    }
+    // Reset draw call counter for next frame
+    this.drawCallCount = 0;
   }
 
   /**
@@ -835,6 +906,9 @@ class PixiRenderer extends AbstractWorker {
         renderDirty[i] = 0;
       }
     }
+
+    // Store visible entity count for reporting
+    this.visibleEntityCount = visibleCount;
 
     // Update particle sprites (adds to _ySortPool if Y-sorting is enabled)
     if (this.maxParticles > 0) {
@@ -1580,7 +1654,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Adds visible particles to _ySortPool for Y-sorting (GC optimized)
    */
   updateParticleSprites() {
-    if (this.maxParticles === 0) return;
+    if (this.maxParticles === 0) {
+      this.visibleParticleCount = 0;
+      return;
+    }
 
     // Cache array references
     const active = ParticleComponent.active;
@@ -1592,6 +1669,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const tint = ParticleComponent.tint;
     const textureId = ParticleComponent.textureId;
     const isItOnScreen = ParticleComponent.isItOnScreen;
+
+    let visibleParticleCount = 0;
 
     for (let i = 0; i < this.maxParticles; i++) {
       const sprite = this.particleSprites[i];
@@ -1630,6 +1709,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }
       }
 
+      // Count visible particles
+      visibleParticleCount++;
+
       // Add to Y-sort list if sorting is enabled
       // Use ground Y (y[i]) for sorting, renderY for display
       if (this.ySorting) {
@@ -1659,6 +1741,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }
       }
     }
+
+    // Store visible particle count for reporting
+    this.visibleParticleCount = visibleParticleCount;
   }
 
   /**
@@ -1920,6 +2005,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     });
     // Enable z-index based sorting on the stage
     this.pixiApp.stage.sortableChildren = true;
+
+    // Hook into WebGL context for draw call monitoring
+    this.setupDrawCallMonitoring();
+
     this.reportLog("finished initializing pixi app");
     // Load simple textures
     this.loadTextures(data.textures);

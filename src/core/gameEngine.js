@@ -1334,6 +1334,10 @@ class GameEngine {
       if (id === "particle" && data.activeParticles !== undefined) {
         // Particle worker - show active/total particles
         element.textContent = `${baseText}: ${fps} FPS (${data.activeParticles}/${data.totalParticles} particles)`;
+      } else if (id === "renderer" && data.drawCalls !== undefined) {
+        // Renderer worker - show draw calls and visible counts
+        const visible = (data.visibleEntities || 0) + (data.visibleParticles || 0);
+        element.textContent = `${baseText}: ${fps} FPS (${data.drawCalls} draw calls, ${visible} visible)`;
       } else if (activeEntities !== undefined) {
         element.textContent = `${baseText}: ${fps} FPS (${activeEntities} active)`;
       } else {
