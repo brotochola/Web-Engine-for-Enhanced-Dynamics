@@ -228,6 +228,27 @@ class ParticleWorker extends AbstractWorker {
     }
 
     // ========================================
+    // ENTITY SCREEN VISIBILITY - Initialize
+    // ========================================
+    // Initialize Transform and SpriteRenderer for screen visibility even without lighting
+    if (data.entityCount && !this.lightingEnabled) {
+      this.entityCount = data.entityCount;
+
+      if (data.buffers.componentData.Transform) {
+        Transform.initializeArrays(
+          data.buffers.componentData.Transform,
+          this.entityCount
+        );
+      }
+      if (data.buffers.componentData.SpriteRenderer) {
+        SpriteRenderer.initializeArrays(
+          data.buffers.componentData.SpriteRenderer,
+          this.entityCount
+        );
+      }
+    }
+
+    // ========================================
     // SHADOW SPRITE SYSTEM - Initialize
     // ========================================
     if (
@@ -340,6 +361,9 @@ class ParticleWorker extends AbstractWorker {
 
     // Calculate shadow sprite positions (uses same neighbor data as lighting)
     this.updateShadowSprites();
+
+    // Update screen visibility for all game entities
+    this.updateEntityScreenVisibility();
 
     // Store for FPS reporting
     this.activeParticleCount = activeCount;
@@ -986,6 +1010,58 @@ class ParticleWorker extends AbstractWorker {
     // always contains valid shadow data, eliminating the flashing issue.
     for (let i = shadowIdx; i < this.maxShadowSprites; i++) {
       shadowActive[i] = 0;
+    }
+  }
+
+  /**
+   * Update isItOnScreen property for all game entities
+   * Iterates over all entities (not using spatial grid for simplicity)
+   * Moved from spatial_worker to balance workload
+   */
+  updateEntityScreenVisibility() {
+    if (
+      !this.cameraData ||
+      this.entityCount === 0 ||
+      !SpriteRenderer.isItOnScreen
+    )
+      return;
+
+    const x = Transform.x;
+    const y = Transform.y;
+    const active = Transform.active;
+    const isItOnScreen = SpriteRenderer.isItOnScreen;
+    const screenX = SpriteRenderer.screenX;
+    const screenY = SpriteRenderer.screenY;
+    const entityCount = this.entityCount;
+
+    // Read camera data: [zoom, cameraX, cameraY]
+    const zoom = this.cameraData[0];
+    const cameraX = this.cameraData[1];
+    const cameraY = this.cameraData[2];
+
+    // Pre-calculate all bounds once
+    const cameraOffsetX = cameraX * zoom;
+    const cameraOffsetY = cameraY * zoom;
+    const marginX = this.canvasWidth * 0.15;
+    const marginY = this.canvasHeight * 0.15;
+    const minX = -marginX;
+    const maxX = this.canvasWidth + marginX;
+    const minY = -marginY;
+    const maxY = this.canvasHeight + marginY;
+
+    // Iterate over all entities
+    for (let i = 0; i < entityCount; i++) {
+      if (!active[i]) continue;
+
+      // Transform world coordinates to screen coordinates
+      const sx = x[i] * zoom - cameraOffsetX;
+      const sy = y[i] * zoom - cameraOffsetY;
+      screenX[i] = sx;
+      screenY[i] = sy;
+
+      // Check if screen position is within viewport bounds (with margin)
+      isItOnScreen[i] =
+        sx > minX && sx < maxX && sy > minY && sy < maxY ? 1 : 0;
     }
   }
 

@@ -278,59 +278,6 @@ class SpatialWorker extends AbstractWorker {
   }
 
   /**
-   * Update isItOnScreen property for all entities
-   * Optimized: only checks entities in occupied cells, pre-calculates bounds
-   */
-  updateScreenVisibility() {
-    if (!this.cameraData) return;
-
-    const x = Transform.x;
-    const y = Transform.y;
-    const isItOnScreen = SpriteRenderer.isItOnScreen;
-    const grid = this.grid;
-    const occupiedCells = this.occupiedCells;
-    const occupiedCount = this.occupiedCount;
-
-    // Read camera data: [zoom, cameraX, cameraY]
-    const zoom = this.cameraData[0];
-    const cameraX = this.cameraData[1];
-    const cameraY = this.cameraData[2];
-
-    // Pre-calculate all bounds once (factor out common multiplications)
-    const cameraOffsetX = cameraX * zoom;
-    const cameraOffsetY = cameraY * zoom;
-    const marginX = this.canvasWidth * 0.15;
-    const marginY = this.canvasHeight * 0.15;
-    const minX = -marginX;
-    const maxX = this.canvasWidth + marginX;
-    const minY = -marginY;
-    const maxY = this.canvasHeight + marginY;
-
-    // Only process entities in occupied cells (already known to be active)
-    for (let cellIdx = 0; cellIdx < occupiedCount; cellIdx++) {
-      const cell = grid[occupiedCells[cellIdx]];
-      const cellLength = cell.length;
-
-      for (let k = 0; k < cellLength; k++) {
-        const i = cell[k];
-
-        // Transform world coordinates to screen coordinates
-        const screenX = x[i] * zoom - cameraOffsetX;
-        const screenY = y[i] * zoom - cameraOffsetY;
-        SpriteRenderer.screenX[i] = screenX;
-        SpriteRenderer.screenY[i] = screenY;
-
-        // DENSE ALLOCATION: entityIndex === componentIndex
-        // Check if screen position is within viewport bounds (with margin)
-        isItOnScreen[i] =
-          screenX > minX && screenX < maxX && screenY > minY && screenY < maxY
-            ? 1
-            : 0;
-      }
-    }
-  }
-
-  /**
    * Update method called each frame (implementation of AbstractWorker.update)
    */
   update(deltaTime, dtRatio, resuming) {
@@ -343,8 +290,7 @@ class SpatialWorker extends AbstractWorker {
     this.rebuildGrid();
     this.findAllNeighbors();
 
-    // Update screen visibility for all entities every frame
-    this.updateScreenVisibility();
+    // Screen visibility is now handled by particle_worker to balance workload
   }
 }
 
