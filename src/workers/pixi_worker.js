@@ -1536,7 +1536,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         // Get visual range for this entity (from Collider component)
         const rangeVal = visualRange[i] || 200;
         const glowDiameter = rangeVal;
-        const scale = (glowDiameter * 10) / textureRadius;
+        const scale = (glowDiameter * 7) / textureRadius;
 
         // Position: entity position with height offset (light is above entity)
         sprite.x = worldX[i];
