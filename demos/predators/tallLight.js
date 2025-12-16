@@ -31,7 +31,10 @@ export class TallLight extends GameObject {
     this.rigidBody.static = 1; // Static body - nothing can move it
     this.setSprite("tallLight");
     this.collider.radius = 17;
-    this.lightEmitter.lightColor = 0xff0000;
+    this.lightEmitter.lightColor = randomColor({
+      min: 0xff0000,
+      max: 0xffffff,
+    });
 
     this.lightEmitter.height = 110;
     this.lightEmitter.lightIntensity = 20000;

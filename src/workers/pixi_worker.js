@@ -41,6 +41,7 @@ import {
   Shader,
   GlProgram,
 } from "./pixi8webworker.js";
+import { convertRGBtoBGR } from "../core/utils.js";
 
 // Create PIXI-like namespace for compatibility with existing code patterns
 const PIXI = {
@@ -1283,21 +1284,27 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     let lightIndex = 0;
 
-    for (let i = 0; i < this.entityCount; i++) {
-      if (!active[i] || !lightEnabled[i]) continue;
-      if (lightIndex >= this.maxLights) break;
+    // Iterate only over entity types that have LightEmitter component
+    // This is O(numPotentialLights) instead of O(allEntities)
+    const ranges = this.lightEmitterRanges;
+    outerLoop: for (let r = 0; r < ranges.length; r++) {
+      const range = ranges[r];
+      for (let i = range.startIndex; i < range.endIndex; i++) {
+        if (!active[i] || !lightEnabled[i]) continue;
+        if (lightIndex >= this.maxLights) break outerLoop;
 
-      const color = lightColor[i];
+        const color = lightColor[i];
 
-      lightX[lightIndex] = worldX[i];
-      lightY[lightIndex] = worldY[i];
-      lightIntensityArr[lightIndex] = lightIntensity[i]; // NO ZOOM SCALING
+        lightX[lightIndex] = worldX[i];
+        lightY[lightIndex] = worldY[i];
+        lightIntensityArr[lightIndex] = lightIntensity[i]; // NO ZOOM SCALING
 
-      lightR[lightIndex] = ((color >> 16) & 0xff) / 255;
-      lightG[lightIndex] = ((color >> 8) & 0xff) / 255;
-      lightB[lightIndex] = (color & 0xff) / 255;
+        lightR[lightIndex] = ((color >> 16) & 0xff) / 255;
+        lightG[lightIndex] = ((color >> 8) & 0xff) / 255;
+        lightB[lightIndex] = (color & 0xff) / 255;
 
-      lightIndex++;
+        lightIndex++;
+      }
     }
 
     // Update light count uniform
@@ -1432,10 +1439,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     // Create ParticleContainer with additive blend for glow effect
+    // Note: vertex: false is required for alpha to work properly in PixiJS 8
+    // Scale changes still work without vertex: true
     this.lightGlowContainer = new PIXI.ParticleContainer({
-      blendMode: "add", // Additive blend for light glow
+      blendMode: "normal-npm",
       dynamicProperties: {
-        vertex: true, // Required for scale changes
+        vertex: false, // Must be false for alpha to work in PixiJS 8
         position: true,
         rotation: false, // Glows don't rotate
         uvs: true,
@@ -1506,43 +1515,45 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Sprite pool index (maps active lights to sprite pool)
     let spriteIndex = 0;
 
-    // Iterate through all entities, same pattern as updateLighting()
-    for (let i = 0; i < this.entityCount; i++) {
-      // Skip inactive entities or entities without LightEmitter
-      // DON'T touch the sprite pool for non-light entities!
-      if (!active[i] || !lightEnabled[i]) continue;
+    // Iterate only over entity types that have LightEmitter component
+    // This is O(numPotentialLights) instead of O(allEntities)
+    const ranges = this.lightEmitterRanges;
+    outerLoop: for (let r = 0; r < ranges.length; r++) {
+      const range = ranges[r];
+      for (let i = range.startIndex; i < range.endIndex; i++) {
+        // Skip inactive entities or entities without LightEmitter active
+        if (!active[i] || !lightEnabled[i]) continue;
 
-      // Stop if we've used all sprites in pool
-      if (spriteIndex >= maxLights) break;
+        // Stop if we've used all sprites in pool
+        if (spriteIndex >= maxLights) break outerLoop;
 
-      const sprite = sprites[spriteIndex];
-      if (!sprite) {
+        const sprite = sprites[spriteIndex];
+        if (!sprite) {
+          spriteIndex++;
+          continue;
+        }
+
+        // Get visual range for this entity (from Collider component)
+        const rangeVal = visualRange[i] || 200;
+        const glowDiameter = rangeVal;
+        const scale = (glowDiameter * 10) / textureRadius;
+
+        // Position: entity position with height offset (light is above entity)
+        sprite.x = worldX[i];
+        sprite.y = worldY[i] - (lightHeight[i] || 0);
+
+        // Scale based on visualRange
+        sprite.scaleX = scale;
+        sprite.scaleY = scale;
+
+        sprite.tint = convertRGBtoBGR(lightColor[i]);
+
+        // Show this sprite (alpha controls visibility for ParticleContainer)
+        const newAlpha = lightIntensity[i] / 45000;
+        sprite.alpha = newAlpha;
+
         spriteIndex++;
-        continue;
       }
-
-      // Get visual range for this entity (from Collider component)
-      const range = visualRange[i] || 200;
-      const glowDiameter = range;
-      const scale = glowDiameter / textureRadius;
-
-      // Position: entity position with height offset (light is above entity)
-      sprite.x = worldX[i];
-      sprite.y = worldY[i] - (lightHeight[i] || 0);
-
-      // Scale based on visualRange
-      sprite.scaleX = scale;
-      sprite.scaleY = scale;
-
-      // Color from LightEmitter (PixiJS 8 Particle uses tint)
-      const color = lightColor[i] || 0xffffff;
-
-      sprite.tint = color;
-
-      // Show this sprite (alpha controls visibility for ParticleContainer)
-      sprite.alpha = (0.8 * lightIntensity[i]) / 50000;
-
-      spriteIndex++;
     }
 
     // Hide any unused sprites in the pool
@@ -1614,6 +1625,34 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Mark this entity type as having SpriteRenderer (spritesheet set per-instance)
       this.entitySpriteConfigs[entityType] = { hasSpriteRenderer: true };
+    }
+  }
+
+  /**
+   * Build list of entity index ranges that have LightEmitter component
+   * Used to optimize lighting loops - only iterate over entities that CAN have lights
+   * instead of iterating over ALL entities
+   */
+  buildLightEmitterRanges(registeredClasses) {
+    this.lightEmitterRanges = [];
+    for (const registration of registeredClasses) {
+      if (registration.count === 0) continue;
+      if (!registration.components?.includes("LightEmitter")) continue;
+
+      this.lightEmitterRanges.push({
+        startIndex: registration.startIndex,
+        endIndex: registration.startIndex + registration.count,
+      });
+    }
+
+    if (this.lightEmitterRanges.length > 0) {
+      const totalLightEntities = this.lightEmitterRanges.reduce(
+        (sum, r) => sum + (r.endIndex - r.startIndex),
+        0
+      );
+      console.log(
+        `PIXI WORKER: Light emitter ranges built (${this.lightEmitterRanges.length} entity types, ${totalLightEntities} potential lights)`
+      );
     }
   }
 
@@ -2294,6 +2333,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Build entity sprite configs from class definitions
     this.buildEntitySpriteConfigs(data.registeredClasses);
+    // Build light emitter ranges for optimized lighting loops
+    this.buildLightEmitterRanges(data.registeredClasses);
     this.reportLog("finished building entity sprite configs");
     // Create sprites for all entities
     this.createSprites();

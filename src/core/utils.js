@@ -544,7 +544,7 @@ export function createCircularGradientCanvas(radius = 100, color = 0xffffff) {
 
   // Exponential falloff for realistic light attenuation
   // Uses 2^(1-i) for smooth falloff: 1.0 → 0.5 → 0.25 → 0.125 → ...
-  const numStops = 10;
+  const numStops = 50;
   for (let i = 1; i <= numStops; i++) {
     const alpha = Math.pow(2, 1 - i);
     gradient.addColorStop(i / numStops, `rgba(${r},${g},${b},${alpha})`);
@@ -561,4 +561,11 @@ export function createCircularGradientCanvas(radius = 100, color = 0xffffff) {
   ctx.fill();
 
   return canvas;
+}
+
+export function convertRGBtoBGR(color) {
+  const colorR = (color >> 16) & 0xff;
+  const colorG = (color >> 8) & 0xff;
+  const colorB = color & 0xff;
+  return (colorB << 16) | (colorG << 8) | colorR;
 }
