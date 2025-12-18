@@ -156,8 +156,6 @@ class PhysicsWorker extends AbstractWorker {
     const vy = RigidBody.vy;
     const ax = RigidBody.ax;
     const ay = RigidBody.ay;
-    const velocityAngle = RigidBody.velocityAngle;
-    const speed = RigidBody.speed;
     const maxVel = RigidBody.maxVel;
     const radius = Collider.radius;
     const isTrigger = Collider.isTrigger;
@@ -216,20 +214,8 @@ class PhysicsWorker extends AbstractWorker {
       );
     }
 
-    // Step 3: Update derived properties (velocityAngle, speed) from positions
-    this.updateDerivedProperties(
-      active,
-      rigidBodyActive,
-      x,
-      y,
-      px,
-      py,
-      vx,
-      vy,
-      velocityAngle,
-      speed,
-      rigidBodyCount
-    );
+    // Note: Derived properties (speed, velocityAngle) are now calculated
+    // by particle_worker to balance workload across workers
   }
 
   /**
@@ -564,42 +550,6 @@ class PhysicsWorker extends AbstractWorker {
     // Write total pair count to shared buffer (index 0)
     if (collisionData) {
       collisionData[0] = pairCount;
-    }
-  }
-
-  /**
-   * Update derived properties from positions
-   * ENHANCED: Minimum speed threshold prevents rotation jitter when stationary
-   * Calculate velocity, speed, and angle from position changes
-   */
-  updateDerivedProperties(
-    active,
-    rigidBodyActive,
-    x,
-    y,
-    px,
-    py,
-    vx,
-    vy,
-    velocityAngle,
-    speed,
-    rigidBodyCount
-  ) {
-    const minSpeedForRotation = this.settings.minSpeedForRotation;
-
-    // Only process entities that have RigidBody component
-    for (let i = 0; i < rigidBodyCount; i++) {
-      if (!active[i] || !rigidBodyActive[i]) continue;
-
-      // Velocity is already stored in vx/vy from moveBallsVerlet
-      const currentSpeed = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]);
-      speed[i] = currentSpeed;
-
-      // Only update rotation if moving above minimum threshold
-      // This prevents visual jitter when entities are nearly stationary
-      if (currentSpeed > minSpeedForRotation) {
-        velocityAngle[i] = Math.atan2(vy[i], vx[i]) + Math.PI / 2;
-      }
     }
   }
 }
