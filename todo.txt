@@ -50,10 +50,10 @@
 -animation worker?
 -worker con A* y con flowfiled pathfinding
 -un worker q calcula datos extra de todos:
-  -isItOnScreen()
+
   -velocityAngle
   -linearSpeed
--steering worker? (separar la logica de las entity classes en dos workers: logic y uno nuevo?)
+
 
 // mas de un worker para lo mismo?
 
@@ -65,7 +65,6 @@
 --- SPATIAL WORKER: ---
 ------------------------------------------------------------------------------------------------
 -objetos grandes q ocupen mas de una celda
-- version con quadtree?
 - celdas no caminables
 
 

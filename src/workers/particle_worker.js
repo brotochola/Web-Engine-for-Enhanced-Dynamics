@@ -4,6 +4,7 @@
 
 import { ParticleComponent } from "../components/ParticleComponent.js";
 import { Transform } from "../components/Transform.js";
+import { RigidBody } from "../components/RigidBody.js";
 import { LightEmitter } from "../components/LightEmitter.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { ShadowCaster } from "../components/ShadowCaster.js";
@@ -16,6 +17,7 @@ import {
 // Make components globally available
 self.ParticleComponent = ParticleComponent;
 self.Transform = Transform;
+self.RigidBody = RigidBody;
 self.LightEmitter = LightEmitter;
 self.SpriteRenderer = SpriteRenderer;
 
@@ -106,6 +108,13 @@ class ParticleWorker extends AbstractWorker {
     this.maxShadowSprites = 0;
 
     this.howMuchMoreLightToParticles = 8;
+
+    // ========================================
+    // DERIVED PROPERTIES (moved from physics_worker)
+    // ========================================
+    // Minimum speed threshold for rotation updates (prevents jitter when stationary)
+    this.minSpeedForRotation = 0.1;
+    this.rigidBodyCount = 0;
   }
 
   /**
@@ -246,6 +255,25 @@ class ParticleWorker extends AbstractWorker {
     }
 
     // ========================================
+    // RIGIDBODY - Initialize for derived properties
+    // ========================================
+    // Speed and velocityAngle calculations (moved from physics_worker)
+    if (
+      data.buffers.componentData.RigidBody &&
+      data.componentPools?.RigidBody
+    ) {
+      this.rigidBodyCount = data.componentPools.RigidBody.count || 0;
+      RigidBody.initializeArrays(
+        data.buffers.componentData.RigidBody,
+        this.rigidBodyCount
+      );
+
+      // Get minSpeedForRotation from physics config
+      const physicsConfig = this.config.physics || {};
+      this.minSpeedForRotation = physicsConfig.minSpeedForRotation ?? 0.1;
+    }
+
+    // ========================================
     // SHADOW SPRITE SYSTEM - Initialize
     // ========================================
     if (
@@ -357,6 +385,9 @@ class ParticleWorker extends AbstractWorker {
 
     // Update screen visibility for all game entities
     this.updateEntityScreenVisibility();
+
+    // Update derived properties (speed, velocityAngle) for RigidBody entities
+    this.updateDerivedProperties();
 
     // Store for FPS reporting
     this.activeParticleCount = activeCount;
@@ -1053,6 +1084,41 @@ class ParticleWorker extends AbstractWorker {
       // Check if screen position is within viewport bounds (with margin)
       isItOnScreen[i] =
         sx > minX && sx < maxX && sy > minY && sy < maxY ? 1 : 0;
+    }
+  }
+
+  /**
+   * Update derived properties from positions
+   * Calculates speed and velocityAngle from velocity data
+   * Moved from physics_worker to balance workload
+   *
+   * ENHANCED: Minimum speed threshold prevents rotation jitter when stationary
+   */
+  updateDerivedProperties() {
+    if (this.rigidBodyCount === 0 || !RigidBody.vx) return;
+
+    const active = Transform.active;
+    const rigidBodyActive = RigidBody.active;
+    const vx = RigidBody.vx;
+    const vy = RigidBody.vy;
+    const velocityAngle = RigidBody.velocityAngle;
+    const speed = RigidBody.speed;
+    const rigidBodyCount = this.rigidBodyCount;
+    const minSpeedForRotation = this.minSpeedForRotation;
+
+    // Only process entities that have RigidBody component
+    for (let i = 0; i < rigidBodyCount; i++) {
+      if (!active[i] || !rigidBodyActive[i]) continue;
+
+      // Velocity is already stored in vx/vy from moveBallsVerlet
+      const currentSpeed = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]);
+      speed[i] = currentSpeed;
+
+      // Only update rotation if moving above minimum threshold
+      // This prevents visual jitter when entities are nearly stationary
+      if (currentSpeed > minSpeedForRotation) {
+        velocityAngle[i] = Math.atan2(vy[i], vx[i]) + Math.PI / 2;
+      }
     }
   }
 
