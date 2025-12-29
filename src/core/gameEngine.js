@@ -2,11 +2,19 @@
 // Manages canvas and scene lifecycle
 
 class GameEngine {
+  static states = {
+    TRANSITIONING: 0,
+    READY: 1,
+  };
   constructor(canvasConfig = {}) {
     this.canvasWidth = canvasConfig.canvasWidth || window.innerWidth;
     this.canvasHeight = canvasConfig.canvasHeight || window.innerHeight;
     this.canvas = null;
     this.currentScene = null;
+
+    // State management
+    this.state = GameEngine.states.READY;
+    this.transitionCooldown = canvasConfig.transitionCooldown || 100; // ms
 
     // Create canvas immediately
     this._createCanvas();
@@ -23,30 +31,59 @@ class GameEngine {
    * Load and initialize a new scene
    * Destroys the current scene if one exists
    * @param {Class} SceneClass - Scene class to instantiate
+   * @returns {boolean} - true if scene change accepted, false if busy
    */
   async loadScene(SceneClass) {
-    // Destroy current scene
-    if (this.currentScene) {
-      console.log(`📤 Unloading scene: ${this.currentScene.constructor.name}`);
-      await this.currentScene.destroy();
-      this.currentScene = null;
-
-      // Remove and recreate canvas (required because transferControlToOffscreen can only be called once)
-      if (this.canvas && this.canvas.parentNode) {
-        this.canvas.parentNode.removeChild(this.canvas);
-      }
-      this._createCanvas();
+    // Reject if already transitioning
+    if (this.state === GameEngine.states.TRANSITIONING) {
+      console.warn(
+        `⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️ Scene transition already in progress. Ignoring request to load ${SceneClass.name}`
+      );
+      return false;
     }
 
-    // Create and initialize new scene
-    console.log(`📥 Loading scene: ${SceneClass.name}`);
-    this.currentScene = new SceneClass(this);
+    // Set state to transitioning
+    this.state = GameEngine.states.TRANSITIONING;
 
-    // Merge canvas dimensions into scene config
-    this.currentScene.config.canvasWidth = this.canvasWidth;
-    this.currentScene.config.canvasHeight = this.canvasHeight;
+    try {
+      // Destroy current scene
+      if (this.currentScene) {
+        console.log(
+          `📤 Unloading scene: ${this.currentScene.constructor.name}`
+        );
+        await this.currentScene.destroy();
+        this.currentScene = null;
 
-    await this.currentScene.init();
+        // Remove and recreate canvas (required because transferControlToOffscreen can only be called once)
+        if (this.canvas && this.canvas.parentNode) {
+          this.canvas.parentNode.removeChild(this.canvas);
+        }
+        this._createCanvas();
+      }
+
+      // Create and initialize new scene
+      console.log(`📥 Loading scene: ${SceneClass.name}`);
+      this.currentScene = new SceneClass(this);
+
+      // Merge canvas dimensions into scene config
+      this.currentScene.config.canvasWidth = this.canvasWidth;
+      this.currentScene.config.canvasHeight = this.canvasHeight;
+
+      await this.currentScene.init();
+
+      // Add cooldown period before allowing next transition
+      await new Promise((resolve) =>
+        setTimeout(resolve, this.transitionCooldown)
+      );
+
+      // Scene loaded successfully
+      this.state = GameEngine.states.READY;
+      return true;
+    } catch (error) {
+      console.error("❌ Error loading scene:", error);
+      this.state = GameEngine.states.READY; // Reset state on error
+      throw error;
+    }
   }
 
   // Convenience methods that delegate to current scene
@@ -116,8 +153,19 @@ class GameEngine {
     return this.currentScene?.numberOfLogicWorkers;
   }
 
+  // State getters
+  get isReady() {
+    return this.state === GameEngine.states.READY;
+  }
+
+  get isTransitioning() {
+    return this.state === GameEngine.states.TRANSITIONING;
+  }
+
   // Cleanup
   async destroy() {
+    this.state = GameEngine.states.TRANSITIONING;
+
     if (this.currentScene) {
       await this.currentScene.destroy();
       this.currentScene = null;
@@ -127,6 +175,7 @@ class GameEngine {
       this.canvas.parentNode.removeChild(this.canvas);
     }
 
+    this.state = GameEngine.states.READY;
     console.log("🔴 GameEngine destroyed");
   }
 }
