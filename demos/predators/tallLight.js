@@ -39,6 +39,7 @@ export class TallLight extends GameObject {
     this.lightEmitter.height = 110;
     this.lightEmitter.lightIntensity = 20000;
     this.lightEmitter.active = 1;
+    this.lightEmitter.hasGlowSprite = 1; // TallLights show the glowing sprite
 
     // Override Boid's perception
     this.collider.visualRange = 200;

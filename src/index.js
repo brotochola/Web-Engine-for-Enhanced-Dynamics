@@ -26,12 +26,19 @@ export { MouseComponent } from "./components/MouseComponent.js";
 export { ParticleComponent } from "./components/ParticleComponent.js";
 export { LightEmitter } from "./components/LightEmitter.js";
 export { ShadowCaster } from "./components/ShadowCaster.js";
+export { FlashComponent } from "./components/FlashComponent.js";
 
 // ============================================================================
 // PARTICLES
 // ============================================================================
 // Note: Particles are NOT GameObjects - they use ParticleComponent directly
 export { ParticleEmitter } from "./core/ParticleEmitter.js";
+
+// ============================================================================
+// FLASHES
+// ============================================================================
+// Note: Flashes ARE GameObjects (auto-registered) with LightEmitter + FlashComponent
+export { Flash } from "./core/Flash.js";
 
 // ============================================================================
 // WORKERS
@@ -72,6 +79,8 @@ import { ParticleComponent } from "./components/ParticleComponent.js";
 import { ParticleEmitter } from "./core/ParticleEmitter.js";
 import { LightEmitter } from "./components/LightEmitter.js";
 import { ShadowCaster } from "./components/ShadowCaster.js";
+import { FlashComponent } from "./components/FlashComponent.js";
+import { Flash } from "./core/Flash.js";
 import { AbstractWorker } from "./workers/AbstractWorker.js";
 
 // Create the WEED namespace object (like PIXI)
@@ -95,8 +104,13 @@ const WEED = {
   ParticleComponent,
   LightEmitter,
   ShadowCaster,
+  FlashComponent,
+
   // Particles
   ParticleEmitter,
+
+  // Flashes
+  Flash,
 
   // Workers
   AbstractWorker,

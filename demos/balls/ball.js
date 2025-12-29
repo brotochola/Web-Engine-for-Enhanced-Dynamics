@@ -25,10 +25,6 @@ class Ball extends GameObject {
     this.rigidBody.minSpeed = 0; // Balls can come to rest
     this.rigidBody.friction = 0.01; // Low friction - let balls settle naturally
 
-    // Center the sprite anchor (0-1 range)
-    this.spriteRenderer.anchorX = 0.5;
-    this.spriteRenderer.anchorY = 0.5;
-
     // Set visual range for spatial queries
     const config = this.config || {};
     this.collider.visualRange = (config.spatial?.cellSize || 80) * 1.33;
@@ -69,6 +65,10 @@ class Ball extends GameObject {
     const scale = (ballRadius * 2) / actualBallSize;
     this.spriteRenderer.scaleX = scale;
     this.spriteRenderer.scaleY = scale;
+
+    // Center the sprite anchor (0-1 range)
+    this.spriteRenderer.anchorX = 0.5;
+    this.spriteRenderer.anchorY = 0.5;
 
     // Reset visual properties
     this.setAlpha(1.0);

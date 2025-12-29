@@ -9,9 +9,6 @@
 
 -getters con stats en tiempo real
 
--convertir todos los pngs en uno unico con un unico json
-
-
 
 
 
@@ -46,13 +43,9 @@
 ------------------------------------------------------------------------------------------------
 
 -render debug worker (encima del canvas q ya tenemos)
--particle System?
+
 -animation worker?
 -worker con A* y con flowfiled pathfinding
--un worker q calcula datos extra de todos:
-
-  -velocityAngle
-  -linearSpeed
 
 
 // mas de un worker para lo mismo?

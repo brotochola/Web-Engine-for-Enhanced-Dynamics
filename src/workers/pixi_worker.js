@@ -1506,6 +1506,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightEnabled = LightEmitter.active;
     const lightColor = LightEmitter.lightColor;
     const lightHeight = LightEmitter.height;
+    const hasGlowSprite = LightEmitter.hasGlowSprite;
     const visualRange = Collider.visualRange;
     const lightIntensity = LightEmitter.lightIntensity;
 
@@ -1521,8 +1522,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     outerLoop: for (let r = 0; r < ranges.length; r++) {
       const range = ranges[r];
       for (let i = range.startIndex; i < range.endIndex; i++) {
-        // Skip inactive entities or entities without LightEmitter active
-        if (!active[i] || !lightEnabled[i]) continue;
+        // Skip inactive entities, entities without LightEmitter active, or entities without glow sprite
+        if (!active[i] || !lightEnabled[i] || !hasGlowSprite[i]) continue;
 
         // Stop if we've used all sprites in pool
         if (spriteIndex >= maxLights) break outerLoop;

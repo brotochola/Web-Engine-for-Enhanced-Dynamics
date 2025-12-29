@@ -5,6 +5,7 @@ import WEED from "/src/index.js";
 import { Boid } from "./boid.js";
 import { Prey } from "./prey.js";
 import { PredatorBehavior } from "./PredatorBehavior.js";
+import { Flash } from "../../src/index.js";
 
 // Destructure what we need from WEED
 const {
@@ -14,6 +15,7 @@ const {
   getDirectionFromAngle,
   rng,
   ParticleEmitter,
+  Mouse,
 } = WEED;
 
 export class Predator extends Boid {
@@ -113,14 +115,25 @@ export class Predator extends Boid {
         // fadeOnTheFloor: 1000,
         stayOnTheFloor: true,
       });
+
+      Flash.create({
+        x: this.x,
+        y: this.y,
+        z: 30, // height
+        lifespan: 35,
+        color: 0xffffff,
+        intensity: 20000,
+      });
     }
-    // ParticleEmitter.emit({
-    //   texture: "blood",
-    //   x: this.transform.x,
-    //   y: this.transform.y,
-    //   z: this.transform.z,
-    //   scale: 1,
-    //   alpha: 1,
+
+    // // Muzzle flash when firing
+    // Flash.create({
+    //   x: this.x,
+    //   y: this.y,
+    //   z: 30, // height
+    //   lifespan: 120, // 80ms quick flash
+    //   color: 0xffaa00, // orange
+    //   intensity: 40000,
     // });
   }
 
