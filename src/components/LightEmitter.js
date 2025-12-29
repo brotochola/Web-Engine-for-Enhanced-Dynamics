@@ -6,5 +6,6 @@ export class LightEmitter extends Component {
     lightColor: Uint32Array,
     lightIntensity: Float32Array,
     height: Float32Array,
+    hasGlowSprite: Uint8Array, // 0 = no glow sprite, 1 = render glow sprite (default for static lights)
   };
 }

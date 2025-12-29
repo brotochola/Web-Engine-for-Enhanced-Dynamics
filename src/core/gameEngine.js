@@ -8,13 +8,17 @@ import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { ParticleComponent } from "../components/ParticleComponent.js";
 import { ShadowCaster } from "../components/ShadowCaster.js";
+import { FlashComponent } from "../components/FlashComponent.js";
+import { LightEmitter } from "../components/LightEmitter.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { setupWorkerCommunication, seededRandom } from "./utils.js";
 import { Debug } from "./Debug.js";
 import { Mouse } from "./Mouse.js";
+import { Flash } from "./Flash.js";
 import { BigAtlasInspector } from "./BigAtlasInspector.js";
 import { MainThreadLogicHelper } from "./MainThreadLogicHelper.js";
 // Note: Particles are NOT GameObjects - they use ParticleComponent directly
+// Note: Flashes ARE GameObjects but are auto-registered internally
 
 class GameEngine {
   static now = Date.now();
@@ -279,6 +283,15 @@ class GameEngine {
     // This happens in constructor so Mouse is always registered before user entities
     this.registerEntityClass(Mouse, 1);
     console.log(`🖱️ Mouse auto-registered at index 0`);
+
+    // Auto-register Flash if lighting is enabled and maxFlashes is configured
+    // Flash entities are used for muzzle flashes, sparks, etc.
+    this.maxFlashes = this.config.lighting?.maxFlashes || 0;
+    if (this.maxFlashes > 0) {
+      this.registerEntityClass(Flash, this.maxFlashes);
+      Flash.initialize(this.maxFlashes);
+      console.log(`⚡ Flash auto-registered: ${this.maxFlashes} flashes`);
+    }
   }
 
   /**
@@ -1122,6 +1135,19 @@ class GameEngine {
             spriteData: this.buffers.shadowSpriteData,
           }
         : null,
+
+      // ========================================
+      // FLASH SYSTEM - Worker Data
+      // ========================================
+      // Passed to particle_worker for updating flash lifetimes and intensities
+      flashes:
+        this.maxFlashes > 0
+          ? {
+              enabled: true,
+              maxFlashes: this.maxFlashes,
+              startIndex: Flash.startIndex,
+            }
+          : null,
     };
 
     // Initialize spatial worker (no ports needed for now)

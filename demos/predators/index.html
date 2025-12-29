@@ -304,7 +304,7 @@
         const numberOfPrey = 15000;
         const numberOfPredators = 8;
         const numberOfBoids = 0;
-        const numberOfTallLights = 5;
+        const numberOfTallLights = 2;
         // Import WeedJS engine 🌿
         import WEED from '/src/index.js';
         import { Boid } from '/demos/predators/boid.js';
@@ -376,6 +376,7 @@
                     shadowsEnabled: true, // Enable shadow sprite system
                     maxShadowCastingLights: 100, // How many lights actively cast shadows
                     maxShadowsPerLight: 500, // Closest N entities per light get shadows
+                    maxFlashes: 50, // Maximum number of flashes
                 }
             },
             {

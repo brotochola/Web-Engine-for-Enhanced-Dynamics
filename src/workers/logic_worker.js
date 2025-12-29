@@ -15,8 +15,10 @@ import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { ParticleComponent } from "../components/ParticleComponent.js";
+import { FlashComponent } from "../components/FlashComponent.js";
 import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
 import { ParticleEmitter } from "../core/ParticleEmitter.js";
+import { Flash } from "../core/Flash.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 
 // Make imported classes globally available for dynamic instantiation
@@ -26,9 +28,11 @@ self.RigidBody = RigidBody;
 self.Collider = Collider;
 self.SpriteRenderer = SpriteRenderer;
 self.ParticleComponent = ParticleComponent;
+self.FlashComponent = FlashComponent;
 self.Mouse = Mouse;
 self.Keyboard = Keyboard;
 self.ParticleEmitter = ParticleEmitter;
+self.Flash = Flash;
 
 // Game-specific scripts will be loaded dynamically during initialization
 
@@ -260,6 +264,20 @@ class LogicWorker extends AbstractWorker {
           componentClassMap[camelCaseName] = ComponentClass;
         }
         EntityClass._componentClassMap = componentClassMap;
+
+        // Special initialization for internal engine classes
+        // Flash needs its initialize() called with the pool size
+        if (name === "Flash" && EntityClass.initialize) {
+          EntityClass.initialize(count);
+          // Set camera data for off-screen culling
+          if (EntityClass.setCameraData && this.cameraData) {
+            EntityClass.setCameraData(
+              this.cameraData,
+              this.config.canvasWidth,
+              this.config.canvasHeight
+            );
+          }
+        }
 
         for (let i = 0; i < count; i++) {
           const index = startIndex + i;

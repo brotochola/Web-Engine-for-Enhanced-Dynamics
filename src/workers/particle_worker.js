@@ -8,6 +8,7 @@ import { RigidBody } from "../components/RigidBody.js";
 import { LightEmitter } from "../components/LightEmitter.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { ShadowCaster } from "../components/ShadowCaster.js";
+import { FlashComponent } from "../components/FlashComponent.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 import {
   calculateTotalLightAtPosition,
@@ -20,6 +21,7 @@ self.Transform = Transform;
 self.RigidBody = RigidBody;
 self.LightEmitter = LightEmitter;
 self.SpriteRenderer = SpriteRenderer;
+self.FlashComponent = FlashComponent;
 
 /**
  * ParticleWorker - Handles particle physics simulation
@@ -115,6 +117,15 @@ class ParticleWorker extends AbstractWorker {
     // Minimum speed threshold for rotation updates (prevents jitter when stationary)
     this.minSpeedForRotation = 0.1;
     this.rigidBodyCount = 0;
+
+    // ========================================
+    // FLASH SYSTEM
+    // ========================================
+    // Flashes are short-lived light sources (muzzle flashes, sparks, etc.)
+    // Updated here in particle_worker, not in logic workers
+    this.flashesEnabled = false;
+    this.maxFlashes = 0;
+    this.flashStartIndex = 0; // Entity index where flashes start
   }
 
   /**
@@ -345,6 +356,32 @@ class ParticleWorker extends AbstractWorker {
         `PARTICLE WORKER: Shadow system enabled (${this.maxShadowSprites} shadow slots)`
       );
     }
+
+    // ========================================
+    // FLASH SYSTEM - Initialize
+    // ========================================
+    if (data.flashes && data.flashes.enabled) {
+      this.flashesEnabled = true;
+      this.maxFlashes = data.flashes.maxFlashes;
+      this.flashStartIndex = data.flashes.startIndex;
+
+      // Initialize FlashComponent arrays
+      // FlashComponent is already part of componentData (auto-registered with Flash entity)
+      if (data.buffers.componentData.FlashComponent) {
+        FlashComponent.initializeArrays(
+          data.buffers.componentData.FlashComponent,
+          this.entityCount
+        );
+        console.log(
+          `PARTICLE WORKER: Flash system enabled (${this.maxFlashes} flashes, starting at index ${this.flashStartIndex})`
+        );
+      } else {
+        console.warn(
+          "PARTICLE WORKER: FlashComponent buffer not found - flashes disabled"
+        );
+        this.flashesEnabled = false;
+      }
+    }
   }
 
   /**
@@ -380,6 +417,8 @@ class ParticleWorker extends AbstractWorker {
     // Update lighting tints for all visible game entities
     // this.updateEntityLighting();
 
+    this.updateFlashes(deltaTime);
+
     // Calculate shadow sprite positions (uses same neighbor data as lighting)
     this.updateShadowSprites();
 
@@ -391,6 +430,58 @@ class ParticleWorker extends AbstractWorker {
 
     // Store for FPS reporting
     this.activeParticleCount = activeCount;
+  }
+
+  /**
+   * Update all active flashes
+   * Decreases intensity over lifespan, despawns when expired
+   * Flashes use LightEmitter for rendering - intensity decay makes them fade out
+   * @param {number} deltaTime - Frame time in milliseconds
+   */
+  updateFlashes(deltaTime) {
+    if (!this.flashesEnabled || this.maxFlashes === 0) return;
+
+    // Cache component arrays for performance
+    const flashActive = FlashComponent.active;
+    const lifespan = FlashComponent.lifespan;
+    const currentLife = FlashComponent.currentLife;
+    const initialIntensity = FlashComponent.initialIntensity;
+
+    const transformActive = Transform.active;
+    const lightActive = LightEmitter.active;
+    const lightIntensity = LightEmitter.lightIntensity;
+
+    const startIndex = this.flashStartIndex;
+    const endIndex = startIndex + this.maxFlashes;
+
+    // Update all flashes in the pool
+    for (let entityIndex = startIndex; entityIndex < endIndex; entityIndex++) {
+      // FlashComponent uses entity index directly (dense allocation)
+      if (!flashActive[entityIndex]) continue;
+      if (!transformActive[entityIndex]) continue;
+
+      // Update lifetime
+      currentLife[entityIndex] += deltaTime;
+
+      // Calculate remaining life ratio (1.0 -> 0.0)
+      const remaining = 1 - currentLife[entityIndex] / lifespan[entityIndex];
+
+      if (remaining <= 0) {
+        // Flash expired - deactivate it
+        flashActive[entityIndex] = 0;
+        lightActive[entityIndex] = 0;
+        transformActive[entityIndex] = 0;
+
+        // Note: We can't return to free list from worker
+        // The free list is managed by GameObject.spawn() in logic worker
+        // However, since Flash.create() scans for inactive slots,
+        // setting active = 0 is sufficient for reuse
+      } else {
+        // Update light intensity based on remaining life
+        // Linear fade from initialIntensity to 0
+        lightIntensity[entityIndex] = initialIntensity[entityIndex] * remaining;
+      }
+    }
   }
 
   /**
