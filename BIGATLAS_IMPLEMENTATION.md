@@ -7,16 +7,19 @@ The BigAtlas system automatically combines all game assets (individual images an
 ## Key Features
 
 ### 🎯 Transparent to Developers
+
 - Developers continue using original spritesheet and texture names
 - No code changes needed in entity classes
 - The engine handles all atlas generation and lookup internally
 
 ### 🚀 Automatic Asset Packing
+
 - Uses MaxRects bin-packing algorithm for efficient space usage
 - Configurable padding, max dimensions, and packing heuristics
 - Generates atlas on game startup (no build step required)
 
 ### 🔗 Proxy Sheet System
+
 - Original spritesheet names remain valid
 - Internal redirection to bigAtlas with prefixed animation names
 - Example: `lpc.idle_down` → `bigAtlas.lpc_idle_down`
@@ -106,6 +109,7 @@ Individual images (like `bunny.png`) are converted to single-frame animations:
 ### Modified Files
 
 1. **`src/core/SpriteSheetRegistry.js`**
+
    - Added `MaxRectsPacker` class (bin-packing algorithm)
    - Added `createBigAtlas()` method (main atlas generation)
    - Updated `getAnimationIndex()` for proxy lookups
@@ -113,6 +117,7 @@ Individual images (like `bunny.png`) are converted to single-frame animations:
    - Added helper methods: `_loadImage()`, `_loadSpritesheet()`, `registerProxy()`
 
 2. **`src/core/gameEngine.js`**
+
    - Replaced `preloadAssets()` implementation
    - Now generates bigAtlas instead of loading individual assets
    - Registers proxy sheets automatically
@@ -125,69 +130,74 @@ Individual images (like `bunny.png`) are converted to single-frame animations:
 
 ```javascript
 const bigAtlas = await SpriteSheetRegistry.createBigAtlas(assetsConfig, {
-    maxWidth: 4096,      // Maximum atlas width
-    maxHeight: 4096,     // Maximum atlas height
-    padding: 2,          // Padding between sprites (prevents bleeding)
-    heuristic: "best-short-side"  // Packing algorithm
-    // Options: "best-short-side", "best-long-side", "best-area", "bottom-left"
+  maxWidth: 4096, // Maximum atlas width
+  maxHeight: 4096, // Maximum atlas height
+  padding: 2, // Padding between sprites (prevents bleeding)
+  heuristic: "best-short-side", // Packing algorithm
+  // Options: "best-short-side", "best-long-side", "best-area", "bottom-left"
 });
 ```
 
 ## Usage Example
 
 ### Before (Multiple Textures)
+
 ```javascript
 const gameEngine = new GameEngine(config, {
-    bg: "/img/fondo.jpg",
-    bunny: "/img/bunny.png",
-    spritesheets: {
-        person: { json: "/img/person.json", png: "/img/person.png" },
-        lpc: { json: "/img/lpc.json", png: "/img/lpc.png" }
-    }
+  bg: "/img/fondo.jpg",
+  bunny: "/img/bunny.png",
+  spritesheets: {
+    person: { json: "/img/person.json", png: "/img/person.png" },
+    lpc: { json: "/img/lpc.json", png: "/img/lpc.png" },
+  },
 });
 ```
 
 ### After (Same Code, BigAtlas Generated Automatically)
+
 ```javascript
 // Exact same code - bigAtlas generated internally!
 const gameEngine = new GameEngine(config, {
-    bg: "/img/fondo.jpg",
-    bunny: "/img/bunny.png",
-    spritesheets: {
-        person: { json: "/img/person.json", png: "/img/person.png" },
-        lpc: { json: "/img/lpc.json", png: "/img/lpc.png" }
-    }
+  bg: "/img/fondo.jpg",
+  bunny: "/img/bunny.png",
+  spritesheets: {
+    person: { json: "/img/person.json", png: "/img/person.png" },
+    lpc: { json: "/img/lpc.json", png: "/img/lpc.png" },
+  },
 });
 
 // Entity classes remain unchanged:
 class Prey extends Entity {
-    static spriteConfig = {
-        spritesheet: "lpc",           // Still references "lpc"
-        defaultAnimation: "idle_down" // Original animation name
-    }
+  static spriteConfig = {
+    spritesheet: "lpc", // Still references "lpc"
+    defaultAnimation: "idle_down", // Original animation name
+  };
 }
 
 class Boid extends Entity {
-    static spriteConfig = {
-        type: "static",
-        textureName: "bunny"  // Still references "bunny"
-    }
+  static spriteConfig = {
+    type: "static",
+    textureName: "bunny", // Still references "bunny"
+  };
 }
 ```
 
 ## Performance Benefits
 
 ### Draw Call Reduction
+
 - **Before**: N draw calls (one per unique texture)
 - **After**: 1 draw call (single bigAtlas texture)
 - **Example**: 4 spritesheets + 2 images = 6 textures → 1 texture
 
 ### GPU Optimization
+
 - Single texture binding per frame
 - Better texture cache utilization
 - Reduced texture swapping overhead
 
 ### Memory Layout
+
 - Contiguous texture memory
 - Efficient texture atlas lookups
 - No texture fragmentation
@@ -204,10 +214,11 @@ http://localhost/multithreadad-game-engine/test_bigatlas.html
 Or test with the predators demo:
 
 ```bash
-http://localhost/multithreadad-game-engine/demos/predators/
+http://localhost/multithreadad-game-engine/demos/
 ```
 
 Expected console output:
+
 ```
 🎨 Creating BigAtlas from assets...
   ✅ Loaded image: bg (1920x1080)
@@ -224,9 +235,10 @@ Expected console output:
 ## Debugging
 
 ### Check Registry State
+
 ```javascript
 // In browser console:
-import { SpriteSheetRegistry } from './src/core/SpriteSheetRegistry.js';
+import { SpriteSheetRegistry } from "./src/core/SpriteSheetRegistry.js";
 
 // List all registered sheets
 SpriteSheetRegistry.getSpritesheetNames();
@@ -244,6 +256,7 @@ console.log(index); // → Animation index in bigAtlas
 ```
 
 ### Verify Atlas Generation
+
 ```javascript
 // Check bigAtlas metadata
 const bigAtlasSheet = SpriteSheetRegistry.spritesheets.get("bigAtlas");
@@ -254,6 +267,7 @@ console.log(bigAtlasSheet.meta.size); // Atlas dimensions
 ## Future Enhancements
 
 ### Potential Improvements
+
 1. **Build-time generation**: Pre-generate atlas during build for faster startup
 2. **Multiple atlases**: Automatically split into multiple atlases if exceeding size limits
 3. **Compression**: Apply texture compression (basis, etc.)
@@ -261,6 +275,7 @@ console.log(bigAtlasSheet.meta.size); // Atlas dimensions
 5. **Atlas visualization**: Debug tool to visualize atlas packing
 
 ### Advanced Features
+
 - Rotation support for better packing
 - Trim transparent pixels for space savings
 - Mipmap generation for better filtering
@@ -269,15 +284,19 @@ console.log(bigAtlasSheet.meta.size); // Atlas dimensions
 ## Troubleshooting
 
 ### Issue: "Could not fit X into atlas"
+
 **Solution**: Increase `maxWidth` or `maxHeight` in options
 
 ### Issue: "Animation not found"
+
 **Solution**: Check that spritesheet JSON has `animations` property
 
 ### Issue: Static texture not rendering
+
 **Solution**: Verify texture name matches asset config key
 
 ### Issue: Blurry sprites at atlas edges
+
 **Solution**: Increase `padding` value (default: 2)
 
 ## Notes
@@ -286,4 +305,3 @@ console.log(bigAtlasSheet.meta.size); // Atlas dimensions
 - All assets must be accessible via fetch() at startup
 - CORS headers required for cross-origin assets
 - Maximum atlas size limited by GPU (typically 4096x4096 or 8192x8192)
-

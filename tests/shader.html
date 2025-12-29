@@ -446,8 +446,8 @@
             const spriteContainer = new Container();
             container.addChild(spriteContainer);
 
-            const spritesheetTexture = await Assets.load('../demos/predators/img/civil1.png');
-            const spritesheetData = await fetch('../demos/predators/img/civil1.json').then(r => r.json());
+            const spritesheetTexture = await Assets.load('../demos/img/civil1.png');
+            const spritesheetData = await fetch('../demos/img/civil1.json').then(r => r.json());
             const spritesheet = new Spritesheet(spritesheetTexture, spritesheetData);
             await spritesheet.parse();
 
