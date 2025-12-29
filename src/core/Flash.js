@@ -7,6 +7,7 @@ import { GameObject } from "./gameObject.js";
 import { LightEmitter } from "../components/LightEmitter.js";
 import { FlashComponent } from "../components/FlashComponent.js";
 import { Transform } from "../components/Transform.js";
+import { Collider } from "../components/Collider.js";
 
 export class Flash extends GameObject {
   // Flash is an internal engine class - no user script needed
@@ -14,7 +15,7 @@ export class Flash extends GameObject {
 
   // Components: Transform (default) + LightEmitter + FlashComponent
   // No RigidBody, Collider, or SpriteRenderer needed
-  static components = [LightEmitter, FlashComponent];
+  static components = [LightEmitter, FlashComponent, Collider];
 
   // Pool tracking (set by gameEngine during auto-registration)
   static maxFlashes = 0;
@@ -200,6 +201,9 @@ export class Flash extends GameObject {
     this.flashComponent.currentLife = 0;
     this.flashComponent.initialIntensity = spawnConfig.intensity ?? 10000;
     this.flashComponent.active = 1;
+    this.collider.visualRange = Math.sqrt(this.flashComponent.initialIntensity);
+    this.collider.radius = 0;
+    this.collider.isTrigger = 1;
   }
 
   /**

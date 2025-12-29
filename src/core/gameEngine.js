@@ -151,6 +151,7 @@ class GameEngine {
       lightingConfig.enabled && lightingConfig.shadowsEnabled !== false;
     this.maxShadowCastingLights = lightingConfig.maxShadowCastingLights || 20;
     this.maxShadowsPerLight = lightingConfig.maxShadowsPerLight || 15;
+    this.maxShadowsPerEntity = lightingConfig.maxShadowsPerEntity || 0; // 0 = unlimited
     this.maxShadowSprites =
       this.maxShadowCastingLights * this.maxShadowsPerLight;
 
@@ -1130,6 +1131,7 @@ class GameEngine {
             enabled: true,
             maxShadowCastingLights: this.maxShadowCastingLights,
             maxShadowsPerLight: this.maxShadowsPerLight,
+            maxShadowsPerEntity: this.maxShadowsPerEntity,
             maxShadowSprites: this.maxShadowSprites,
             // SharedArrayBuffer for shadow sprite data (uses ShadowCaster schema)
             spriteData: this.buffers.shadowSpriteData,

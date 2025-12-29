@@ -376,6 +376,7 @@
                     shadowsEnabled: true, // Enable shadow sprite system
                     maxShadowCastingLights: 100, // How many lights actively cast shadows
                     maxShadowsPerLight: 500, // Closest N entities per light get shadows
+                    maxShadowsPerEntity: 5, // Max shadows a single entity can cast (0 = unlimited)
                     maxFlashes: 50, // Maximum number of flashes
                 }
             },
@@ -587,10 +588,7 @@
             // DEBUG: Check registry after init
             checkRegistry();
 
-            for (let i = 0; i < numberOfPredators; i++) {
-                spawnRandomPredator();
-            }
-
+            spawnRandomPredator();
             spawnBoids();
             spawnRandomTallLight();
             spawnRandomPrey();

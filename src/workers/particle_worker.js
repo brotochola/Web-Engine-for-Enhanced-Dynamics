@@ -107,7 +107,11 @@ class ParticleWorker extends AbstractWorker {
     this.shadowsEnabled = false;
     this.maxShadowCastingLights = 20;
     this.maxShadowsPerLight = 15;
+    this.maxShadowsPerEntity = 0; // 0 = unlimited
     this.maxShadowSprites = 0;
+
+    // Per-entity shadow count tracking (reused each frame)
+    this._entityShadowCounts = null;
 
     this.howMuchMoreLightToParticles = 8;
 
@@ -296,7 +300,13 @@ class ParticleWorker extends AbstractWorker {
       this.shadowsEnabled = true;
       this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
       this.maxShadowsPerLight = data.shadows.maxShadowsPerLight;
+      this.maxShadowsPerEntity = data.shadows.maxShadowsPerEntity || 0; // 0 = unlimited
       this.maxShadowSprites = data.shadows.maxShadowSprites;
+
+      // Allocate per-entity shadow count tracking array if limit is set
+      if (this.maxShadowsPerEntity > 0) {
+        this._entityShadowCounts = new Uint8Array(this.entityCount);
+      }
 
       // Initialize entity-level ShadowCaster arrays (marks which entities cast shadows)
       ShadowCaster.initializeArrays(
@@ -1022,6 +1032,15 @@ class ParticleWorker extends AbstractWorker {
     const shadowScaleY = this.shadowSpriteScaleY;
     const shadowAlpha = this.shadowSpriteAlpha;
 
+    // Per-entity shadow limit tracking
+    const maxShadowsPerEntity = this.maxShadowsPerEntity;
+    const entityShadowCounts = this._entityShadowCounts;
+
+    // Reset entity shadow counts if limit is enabled
+    if (maxShadowsPerEntity > 0 && entityShadowCounts) {
+      entityShadowCounts.fill(0);
+    }
+
     let shadowIdx = 0;
     let lightsProcessed = 0;
 
@@ -1058,6 +1077,13 @@ class ParticleWorker extends AbstractWorker {
         if (!shadowCasterActive[neighborIdx]) continue;
         if (!transformActive[neighborIdx]) continue;
         if (!isOnScreen[neighborIdx]) continue;
+
+        // Skip if entity has already cast max shadows (if limit is enabled)
+        if (
+          maxShadowsPerEntity > 0 &&
+          entityShadowCounts[neighborIdx] >= maxShadowsPerEntity
+        )
+          continue;
 
         const distSq = this.distanceData[offset + 1 + k];
 
@@ -1114,6 +1140,11 @@ class ParticleWorker extends AbstractWorker {
 
         shadowIdx++;
         shadowsForThisLight++;
+
+        // Track per-entity shadow count (if limit is enabled)
+        if (maxShadowsPerEntity > 0) {
+          entityShadowCounts[neighborIdx]++;
+        }
       }
     }
 
