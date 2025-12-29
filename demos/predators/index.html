@@ -218,6 +218,22 @@
             flex-wrap: wrap;
         }
 
+        .scene-switcher {
+            margin-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 10px;
+        }
+
+        .scene-switcher button {
+            flex: 1;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .scene-switcher button:hover {
+            transform: scale(1.05);
+        }
+
         /* Branding */
         #branding {
             position: fixed;
@@ -289,28 +305,50 @@
 
     <!-- Controls Panel -->
     <div class="overlay-panel" id="controlsPanel">
-        <div class="button-row">
+        <div class="panel-title" style="text-align: center;">🎮 Scene Controls</div>
+
+        <!-- Scene Switcher -->
+        <div class="button-row scene-switcher">
+            <button onclick="switchScene('predators')" id="predatorsSceneBtn"
+                style="background: rgba(76, 175, 80, 0.5);">🐺 Predators Scene</button>
+            <button onclick="switchScene('balls')" id="ballsSceneBtn" style="background: rgba(33, 150, 243, 0.3);">⚽
+                Balls Scene</button>
+        </div>
+
+        <!-- Universal Controls -->
+        <div class="button-row" style="margin-bottom: 10px;">
             <button onclick="gameEngine.pause()">⏸️ Pause</button>
             <button onclick="gameEngine.resume()">▶️ Resume</button>
+            <button onclick="clearAllEntities()" style="background: rgba(255, 107, 107, 0.3);">🗑️ Clear All</button>
+        </div>
+
+        <!-- Predator Scene Controls -->
+        <div id="predatorControls" class="button-row">
             <button onclick="spawnRandomPrey()">➕ Spawn Prey</button>
             <button onclick="spawnRandomPredator()">➕ Spawn Predator</button>
             <button onclick="spawnPreyAtMouse()">🎯 Prey at Mouse</button>
             <button onclick="spawnPredatorAtMouse()">🎯 Predator at Mouse</button>
-            <button onclick="clearAllEntities()" style="background: rgba(255, 107, 107, 0.3);">🗑️ Clear All</button>
+        </div>
+
+        <!-- Balls Scene Controls -->
+        <div id="ballsControls" class="button-row" style="display: none;">
+            <button onclick="spawnRandomBall()">➕ Spawn Ball</button>
+            <button onclick="spawnBallAtMouse()">🎯 Ball at Mouse</button>
+            <button onclick="spawnMultipleBalls()">➕➕ Spawn 10 Balls</button>
         </div>
     </div>
 
     <script type="module">
-        const numberOfPrey = 15000;
-        const numberOfPredators = 8;
-        const numberOfBoids = 0;
-        const numberOfTallLights = 2;
         // Import WeedJS engine 🌿
         import WEED from '/src/index.js';
+        import { PredatorScene } from '/demos/predators/scenes/PredatorScene.js';
+        import { BallsScene } from '/demos/predators/scenes/BallsScene.js';
         import { Boid } from '/demos/predators/boid.js';
         import { Prey } from '/demos/predators/prey.js';
         import { Predator } from '/demos/predators/predator.js';
         import { TallLight } from '/demos/predators/tallLight.js';
+        import { Ball } from '/demos/balls/ball.js';
+
         // Destructure what we need from WEED
         const { GameEngine, SpriteSheetRegistry } = WEED;
 
@@ -319,206 +357,176 @@
             const panel = document.getElementById(panelId);
             panel.classList.toggle('hidden');
         };
-        console.log(1)
-        const gameEngine = new GameEngine(
-            {
-                canvasWidth: window.innerWidth,
-                canvasHeight: window.innerHeight,
-                worldWidth: 5000,
-                worldHeight: 2000,
-                seed: 123456,
 
-                // Spatial hash grid configuration
-                spatial: {
-                    cellSize: 128,  // Increased to match visual range (reduces grid overhead)
-                    maxNeighbors: 1500,  // CRITICAL: Reduced from 400 to prevent O(n²) explosion
-                    noLimitFPS: true,
+        // ========================================
+        // NEW SCENE-BASED ARCHITECTURE 🎬
+        // ========================================
 
-                },
-                particle: {
-                    noLimitFPS: true,
-                    maxParticles: 50000,
-                    decals: true,
-                    decalsTileSize: 256,
-                    decalsResolution: 0.5,
-                },
+        // Create the game engine (lightweight orchestrator)
+        const game = new GameEngine({
+            canvasWidth: window.innerWidth,
+            canvasHeight: window.innerHeight
+        });
 
-                // Logic configuration
-                logic: {
-                    noLimitFPS: false,
-                    numberOfLogicWorkers: 3,
-                    numberOfEntitiesPerJob: 250,
-                    // Main thread as logic worker - main thread helps workers process entities
-                    useMainThreadAsLogicWorker: true,  // Enable main thread to claim jobs from queue
-                    mainThreadMaxJobsPerFrame: 0,      // 0 = unlimited, or set limit (e.g., 3-5)
-                },
+        // Load the Predator scene by default
+        await game.loadScene(PredatorScene);
 
-                // Physics configuration
-                physics: {
-                    subStepCount: 1,
-                    noLimitFPS: false,
-                    maxCollisionPairs: 1000000,
-                    boundaryElasticity: 0,
-                    collisionResponseStrength: 0.9,
-                    verletDamping: 0.99,
-                    gravity: { x: 0, y: 0 }
-                },
-                renderer: {
-                    noLimitFPS: false,
-                    bg: "bg",
-                    ySorting: true,
-                },
-                lighting: {
-                    enabled: true,
-                    lightingAmbient: 0,
-                    maxLights: 100, // Maximum number of lights 
-                    // Shadow sprite system (calculated by particle_worker, rendered by pixi_worker)
-                    shadowsEnabled: true, // Enable shadow sprite system
-                    maxShadowCastingLights: 100, // How many lights actively cast shadows
-                    maxShadowsPerLight: 500, // Closest N entities per light get shadows
-                    maxShadowsPerEntity: 5, // Max shadows a single entity can cast (0 = unlimited)
-                    maxFlashes: 50, // Maximum number of flashes
-                }
-            },
-            {
-                bg: "/demos/predators/img/bg.png",
-                bunny: "/demos/predators/img/bunny.png",
-                blood: "/demos/predators/img/blood.png",
-                tallLight: "/demos/predators/img/tallLight.png",
-                spritesheets: {
-                    civil1: {
-                        json: "/demos/predators/img/civil1.json",
-                        png: "/demos/predators/img/civil1.png"
-                    },
-                    civil2: {
-                        json: "/demos/predators/img/civil2.json",
-                        png: "/demos/predators/img/civil2.png"
-                    },
-                    civil3: {
-                        json: "/demos/predators/img/civil3.json",
-                        png: "/demos/predators/img/civil3.png"
-                    },
-                    civil4: {
-                        json: "/demos/predators/img/civil4.json",
-                        png: "/demos/predators/img/civil4.png"
-                    },
-                    civil5: {
-                        json: "/demos/predators/img/civil5.json",
-                        png: "/demos/predators/img/civil5.png"
-                    },
-                    civil6: {
-                        json: "/demos/predators/img/civil6.json",
-                        png: "/demos/predators/img/civil6.png"
-                    },
-                    civil7: {
-                        json: "/demos/predators/img/civil7.json",
-                        png: "/demos/predators/img/civil7.png"
-                    }
-                }
+        // Track current scene type
+        window.currentSceneType = 'predators';
+
+        // Make game and scene global for button onclick handlers
+        window.gameEngine = game.currentScene; // For backward compatibility with buttons
+        window.game = game;
+
+        // Scene switching function
+        window.switchScene = async function (sceneType) {
+            if (sceneType === window.currentSceneType) {
+                console.log(`Already in ${sceneType} scene`);
+                return;
             }
-        );
 
-        // Register entity classes - script paths auto-detected via EntityClass.scriptUrl!
-        gameEngine.registerEntityClass(Boid, numberOfBoids);
-        gameEngine.registerEntityClass(Prey, numberOfPrey);
-        gameEngine.registerEntityClass(Predator, numberOfPredators);
-        gameEngine.registerEntityClass(TallLight, numberOfTallLights);
-        // Make gameEngine global for button onclick handlers
-        window.gameEngine = gameEngine;
+            console.log(`Switching to ${sceneType} scene...`);
+
+            if (sceneType === 'predators') {
+                await game.loadScene(PredatorScene);
+                window.currentSceneType = 'predators';
+                // Show predator controls, hide balls controls
+                document.getElementById('predatorControls').style.display = 'flex';
+                document.getElementById('ballsControls').style.display = 'none';
+                // Update button styles
+                document.getElementById('predatorsSceneBtn').style.background = 'rgba(76, 175, 80, 0.5)';
+                document.getElementById('ballsSceneBtn').style.background = 'rgba(33, 150, 243, 0.3)';
+            } else if (sceneType === 'balls') {
+                await game.loadScene(BallsScene);
+                window.currentSceneType = 'balls';
+                // Show balls controls, hide predator controls
+                document.getElementById('predatorControls').style.display = 'none';
+                document.getElementById('ballsControls').style.display = 'flex';
+                // Update button styles
+                document.getElementById('predatorsSceneBtn').style.background = 'rgba(76, 175, 80, 0.3)';
+                document.getElementById('ballsSceneBtn').style.background = 'rgba(33, 150, 243, 0.5)';
+            }
+
+            // Update game engine reference
+            window.gameEngine = game.currentScene;
+
+            // Recreate FPS display for the new scene
+            updateFPSDisplay();
+
+            console.log(`✅ Switched to ${sceneType} scene successfully!`);
+        };
 
         // Add helper functions to window for easy console access
-        window.enableProfiling = (enabled = true) => gameEngine.enableProfiling(enabled);
+        window.enableProfiling = (enabled = true) => game.enableProfiling(enabled);
 
-        // Dynamically create FPS display elements for each logic worker
-        const logicFPSContainer = document.getElementById('logicFPSContainer');
-        const numberOfLogicWorkers = gameEngine.numberOfLogicWorkers;
-        for (let i = 0; i < numberOfLogicWorkers; i++) {
-            const p = document.createElement('p');
-            p.id = `logic${i}FPS`;
-            p.className = 'logicFPS';
-            p.textContent = `Logic Worker ${i} FPS: --`;
-            logicFPSContainer.appendChild(p);
-        }
+        // Function to update FPS display for current scene
+        window.updateFPSDisplay = function () {
+            const logicFPSContainer = document.getElementById('logicFPSContainer');
+            logicFPSContainer.innerHTML = ''; // Clear existing
 
-        // Update config display to show actual number of workers
-        const hasParticles = gameEngine.config.particles && gameEngine.config.particles.maxParticles > 0;
-        const hasJobStealing = gameEngine.config.logic?.mainThreadJobStealing?.enabled;
-        const totalWorkers = 3 + numberOfLogicWorkers + (hasParticles ? 1 : 0); // spatial + physics + renderer + N logic workers + particle
-        const particleInfo = hasParticles ? ' + 1 Particle' : '';
-        const jobStealingInfo = hasJobStealing ? ' + Main Thread' : '';
-        document.getElementById('config').textContent =
-            `Mode: SHARED ARRAY BUFFER (${totalWorkers} Workers: 1 Spatial + ${numberOfLogicWorkers} Logic + 1 Physics + 1 Renderer${particleInfo}${jobStealingInfo})`;
-
-        // Spawning functions - using clean unified API
-        window.spawnRandomTallLight = function () {
-            for (let i = 0; i < numberOfTallLights; i++) {
-                gameEngine.spawnEntity('TallLight', {
-                    x: gameEngine.rng() * gameEngine.config.worldWidth,
-                    y: gameEngine.rng() * gameEngine.config.worldHeight,
-                });
+            const numberOfLogicWorkers = game.currentScene.numberOfLogicWorkers;
+            for (let i = 0; i < numberOfLogicWorkers; i++) {
+                const p = document.createElement('p');
+                p.id = `logic${i}FPS`;
+                p.className = 'logicFPS';
+                p.textContent = `Logic Worker ${i} FPS: --`;
+                logicFPSContainer.appendChild(p);
             }
+
+            // Update config display to show actual number of workers
+            const hasParticles = game.config.particle && game.config.particle.maxParticles > 0;
+            const hasJobStealing = game.config.logic?.useMainThreadAsLogicWorker;
+            const totalWorkers = 3 + numberOfLogicWorkers + (hasParticles ? 1 : 0);
+            const particleInfo = hasParticles ? ' + 1 Particle' : '';
+            const jobStealingInfo = hasJobStealing ? ' + Main Thread' : '';
+            document.getElementById('config').textContent =
+                `Mode: SHARED ARRAY BUFFER (${totalWorkers} Workers: 1 Spatial + ${numberOfLogicWorkers} Logic + 1 Physics + 1 Renderer${particleInfo}${jobStealingInfo})`;
         };
 
-        // Spawning functions - using clean unified API
+        // Initialize FPS display
+        updateFPSDisplay();
+
+        // ========================================
+        // SPAWNING FUNCTIONS (delegate to scene)
+        // ========================================
+
+        // Predator Scene Functions
         window.spawnRandomPrey = function () {
-            for (let i = 0; i < numberOfPrey; i++) {
-                gameEngine.spawnEntity('Prey', {
-                    x: gameEngine.rng() * gameEngine.config.worldWidth,
-                    y: gameEngine.rng() * gameEngine.config.worldHeight,
-                    vx: 0,
-                    vy: 0
-                });
-            }
-        };
-
-        window.spawnBoids = function () {
-            for (let i = 0; i < numberOfBoids; i++) {
-                gameEngine.spawnEntity('Boid', {
-                    x: gameEngine.rng() * gameEngine.config.worldWidth,
-                    y: gameEngine.rng() * gameEngine.config.worldHeight,
-                    vx: 0,
-                    vy: 0
-                });
-            }
+            game.spawnEntity('Prey', {
+                x: game.rng() * game.config.worldWidth,
+                y: game.rng() * game.config.worldHeight,
+                vx: 0,
+                vy: 0
+            });
         };
 
         window.spawnRandomPredator = function () {
-            for (let i = 0; i < numberOfPredators; i++) {
-                gameEngine.spawnEntity('Predator', {
-                    x: gameEngine.rng() * gameEngine.config.worldWidth,
-                    y: gameEngine.rng() * gameEngine.config.worldHeight,
+            game.spawnEntity('Predator', {
+                x: game.rng() * game.config.worldWidth,
+                y: game.rng() * game.config.worldHeight,
+                vx: 0,
+                vy: 0
+            });
+        };
+
+        window.spawnPreyAtMouse = async function () {
+            const { Mouse } = await import('/src/core/Mouse.js');
+            if (Mouse.x > 0 && Mouse.y > 0) {
+                game.spawnEntity('Prey', {
+                    x: Mouse.x,
+                    y: Mouse.y,
                     vx: 0,
                     vy: 0
                 });
             }
         };
 
-        window.spawnPreyAtMouse = function () {
-            if (gameEngine.mouse && gameEngine.mouse.x > 0 && gameEngine.mouse.y > 0) {
-                gameEngine.spawnEntity('Prey', {
-                    x: gameEngine.mouse.x,
-                    y: gameEngine.mouse.y,
+        window.spawnPredatorAtMouse = async function () {
+            const { Mouse } = await import('/src/core/Mouse.js');
+            if (Mouse.x > 0 && Mouse.y > 0) {
+                game.spawnEntity('Predator', {
+                    x: Mouse.x,
+                    y: Mouse.y,
                     vx: 0,
                     vy: 0
                 });
             }
         };
 
-        window.spawnPredatorAtMouse = function () {
-            if (gameEngine.mouse && gameEngine.mouse.x > 0 && gameEngine.mouse.y > 0) {
-                gameEngine.spawnEntity('Predator', {
-                    x: gameEngine.mouse.x,
-                    y: gameEngine.mouse.y,
+        // Balls Scene Functions
+        window.spawnRandomBall = function () {
+            game.spawnEntity('Ball', {
+                x: game.rng() * game.config.worldWidth,
+                y: game.rng() * game.config.worldHeight,
+                vx: 0,
+                vy: 0
+            });
+        };
+
+        window.spawnBallAtMouse = async function () {
+            const { Mouse } = await import('/src/core/Mouse.js');
+            if (Mouse.x > 0 && Mouse.y > 0) {
+                game.spawnEntity('Ball', {
+                    x: Mouse.x,
+                    y: Mouse.y,
                     vx: 0,
                     vy: 0
                 });
             }
         };
 
+        window.spawnMultipleBalls = function () {
+            for (let i = 0; i < 10; i++) {
+                setTimeout(() => {
+                    spawnRandomBall();
+                }, i * 50);
+            }
+        };
+
+        // Universal Function
         window.clearAllEntities = function () {
             if (confirm('Clear all entities?')) {
-                // Broadcast to all logic workers
-                gameEngine.workers.logicWorkers.forEach((worker) => {
+                game.workers.logicWorkers.forEach((worker) => {
                     worker.postMessage({ msg: 'clearAll' });
                 });
             }
@@ -528,24 +536,23 @@
         setInterval(() => {
             const poolStatsEl = document.getElementById('poolStats');
             if (poolStatsEl) {
-                const boidStats = gameEngine.getPoolStats(Boid);
-                const preyStats = gameEngine.getPoolStats(Prey);
-                const predStats = gameEngine.getPoolStats(Predator);
-
-                poolStatsEl.textContent = `Pool: Boid ${boidStats.active}/${boidStats.total} | Prey ${preyStats.active}/${preyStats.total} | Predator ${predStats.active}/${predStats.total}`;
+                if (window.currentSceneType === 'predators') {
+                    const boidStats = game.getPoolStats(Boid);
+                    const preyStats = game.getPoolStats(Prey);
+                    const predStats = game.getPoolStats(Predator);
+                    poolStatsEl.textContent = `Pool: Boid ${boidStats.active}/${boidStats.total} | Prey ${preyStats.active}/${preyStats.total} | Predator ${predStats.active}/${predStats.total}`;
+                } else if (window.currentSceneType === 'balls') {
+                    const ballStats = game.getPoolStats(Ball);
+                    poolStatsEl.textContent = `Pool: Ball ${ballStats.active}/${ballStats.total}`;
+                }
             }
         }, 500);
 
         // DEBUG: Helper to check registry status
         window.checkRegistry = function () {
-            // console.log("=== SpriteSheet Registry Status ===");
             const sheets = SpriteSheetRegistry.getSpritesheetNames();
-            // console.log(`Loaded spritesheets: ${sheets.join(", ")}`);
-
             sheets.forEach(sheetName => {
                 const anims = SpriteSheetRegistry.getAnimationNames(sheetName);
-                // console.log(`\n${sheetName}: ${anims.length} animations`);
-                // console.log("First 10:", anims.slice(0, 10));
             });
         };
 
@@ -560,57 +567,28 @@
         // Setup debug keyboard shortcuts
         window.addEventListener('keydown', (e) => {
             if (e.key === '1') {
-                gameEngine.debug.showColliders(!gameEngine.debug.isEnabled(0));
+                game.debug.showColliders(!game.debug.isEnabled(0));
             } else if (e.key === '2') {
-                gameEngine.debug.showVelocity(!gameEngine.debug.isEnabled(1));
+                game.debug.showVelocity(!game.debug.isEnabled(1));
             } else if (e.key === '3') {
-                gameEngine.debug.showAcceleration(!gameEngine.debug.isEnabled(2));
+                game.debug.showAcceleration(!game.debug.isEnabled(2));
             } else if (e.key === '4') {
-                gameEngine.debug.showNeighbors(!gameEngine.debug.isEnabled(3));
+                game.debug.showNeighbors(!game.debug.isEnabled(3));
             } else if (e.key === '5') {
-                gameEngine.debug.showSpatialGrid(!gameEngine.debug.isEnabled(4));
+                game.debug.showSpatialGrid(!game.debug.isEnabled(4));
             } else if (e.key === '0') {
-                gameEngine.debug.disableAll();
+                game.debug.disableAll();
             } else if (e.key === 'h' || e.key === 'H') {
                 toggleAllPanels();
             }
         });
 
-        // Initialize and start
-        gameEngine.init().then(() => {
-            // console.log("Game initialized. Spawning entities...");
+        // Make debug API available in console
+        window.debug = game.debug;
 
-            // Make debug API available in console
-            window.debug = gameEngine.debug;
-            // console.log("💡 Debug API: Use window.debug or gameEngine.debug");
-            // console.log("   Try: debug.enableAIDebug() or debug.enablePhysicsDebug()");
-
-            // DEBUG: Check registry after init
-            checkRegistry();
-
-            spawnRandomPredator();
-            spawnBoids();
-            spawnRandomTallLight();
-            spawnRandomPrey();
-
-
-
-
-
-
-            // console.log("Spawning complete!");
-        }).catch(error => {
-            document.body.innerHTML = `
-                <div style="color: white; padding: 20px;">
-                    <h1>Error initializing game!</h1>
-                    <p>${error.message}</p>
-                    <p>You need to serve this with proper CORS headers:</p>
-                    <pre>Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: require-corp</pre>
-                    <p>Use the provided server: <code>node server/node_server.js</code></p>
-                </div>
-            `;
-        });
+        console.log("✅ Scene loaded successfully!");
+        console.log("💡 Debug API: Use window.debug or game.debug");
+        console.log("💡 Scene API: Use window.game or game.currentScene");
     </script>
 </body>
 </html>

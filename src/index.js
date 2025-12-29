@@ -7,6 +7,7 @@
 // CORE MODULES
 // ============================================================================
 export { GameEngine } from "./core/gameEngine.js";
+export { Scene } from "./core/Scene.js";
 export { GameObject, Keyboard } from "./core/gameObject.js";
 export { Component } from "./core/Component.js";
 export { Debug } from "./core/Debug.js";
@@ -61,6 +62,7 @@ export { AbstractWorker } from "./workers/AbstractWorker.js";
 // ============================================================================
 // Import everything we need for the namespace
 import { GameEngine } from "./core/gameEngine.js";
+import { Scene } from "./core/Scene.js";
 import { GameObject, Keyboard } from "./core/gameObject.js";
 import { Component } from "./core/Component.js";
 import { Debug } from "./core/Debug.js";
@@ -87,6 +89,7 @@ import { AbstractWorker } from "./workers/AbstractWorker.js";
 const WEED = {
   // Core
   GameEngine,
+  Scene,
   GameObject,
   Component,
   Debug,
