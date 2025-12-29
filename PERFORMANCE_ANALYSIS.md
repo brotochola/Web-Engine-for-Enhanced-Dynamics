@@ -114,7 +114,7 @@ Your physics worker does it RIGHT:
 
 But your game logic (Prey.tick, Predator.tick) doesn't:
 
-```52:56:demos/predators/prey.js
+```52:56:demos/prey.js
     // Override Boid's physics properties for prey behavior
     this.rigidBody.maxVel = 3;
     this.rigidBody.maxAcc = 0.1;

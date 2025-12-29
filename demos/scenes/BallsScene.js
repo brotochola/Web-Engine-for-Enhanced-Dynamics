@@ -2,7 +2,7 @@
 // Demonstrates balls with physics, gravity, and collision
 
 import { Scene } from "/src/core/Scene.js";
-import { Ball } from "/demos/balls/ball.js";
+import { Ball } from "/demos/ball.js";
 
 export class BallsScene extends Scene {
   // ========================================
@@ -59,7 +59,7 @@ export class BallsScene extends Scene {
 
   static assets = {
     textures: {
-      ball: "/demos/balls/bola.png",
+      ball: "/demos/img/bola.png",
     },
   };
 

@@ -76,39 +76,39 @@ export class PredatorScene extends Scene {
 
   static assets = {
     textures: {
-      bg: "/demos/predators/img/bg.png",
-      bunny: "/demos/predators/img/bunny.png",
-      blood: "/demos/predators/img/blood.png",
-      tallLight: "/demos/predators/img/tallLight.png",
+      bg: "/demos/img/bg.png",
+      bunny: "/demos/img/bunny.png",
+      blood: "/demos/img/blood.png",
+      tallLight: "/demos/img/tallLight.png",
     },
     spritesheets: {
       civil1: {
-        json: "/demos/predators/img/civil1.json",
-        png: "/demos/predators/img/civil1.png",
+        json: "/demos/img/civil1.json",
+        png: "/demos/img/civil1.png",
       },
       civil2: {
-        json: "/demos/predators/img/civil2.json",
-        png: "/demos/predators/img/civil2.png",
+        json: "/demos/img/civil2.json",
+        png: "/demos/img/civil2.png",
       },
       civil3: {
-        json: "/demos/predators/img/civil3.json",
-        png: "/demos/predators/img/civil3.png",
+        json: "/demos/img/civil3.json",
+        png: "/demos/img/civil3.png",
       },
       civil4: {
-        json: "/demos/predators/img/civil4.json",
-        png: "/demos/predators/img/civil4.png",
+        json: "/demos/img/civil4.json",
+        png: "/demos/img/civil4.png",
       },
       civil5: {
-        json: "/demos/predators/img/civil5.json",
-        png: "/demos/predators/img/civil5.png",
+        json: "/demos/img/civil5.json",
+        png: "/demos/img/civil5.png",
       },
       civil6: {
-        json: "/demos/predators/img/civil6.json",
-        png: "/demos/predators/img/civil6.png",
+        json: "/demos/img/civil6.json",
+        png: "/demos/img/civil6.png",
       },
       civil7: {
-        json: "/demos/predators/img/civil7.json",
-        png: "/demos/predators/img/civil7.png",
+        json: "/demos/img/civil7.json",
+        png: "/demos/img/civil7.png",
       },
     },
   };

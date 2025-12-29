@@ -79,7 +79,7 @@ weedjs/
 2. **Open in browser**:
    ```
    http://localhost:3000/demos/balls/
-   http://localhost:3000/demos/predators/
+   http://localhost:3000/demos/
    ```
 
 > **Note**: SharedArrayBuffer requires specific CORS headers. Use the provided server to ensure proper configuration.
@@ -99,7 +99,7 @@ Cross-Origin-Embedder-Policy: require-corp
 - Collision detection and response
 - Object pooling demonstration
 
-### Predators Demo (`demos/predators/`)
+### Predators Demo (`demos/`)
 
 - Boid flocking behavior
 - Predator-prey interactions

@@ -193,7 +193,7 @@ tick(dtRatio, inputData) {
 1. **Performance Test:**
 
    ```bash
-   # Open demos/predators/index.html
+   # Open demos/index.html
    # Spawn 1000 prey
    # Check FPS should be 50+ (was 4)
    ```
