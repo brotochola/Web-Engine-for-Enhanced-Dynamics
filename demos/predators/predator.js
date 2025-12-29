@@ -119,10 +119,10 @@ export class Predator extends Boid {
       Flash.create({
         x: this.x,
         y: this.y,
-        z: 30, // height
-        lifespan: 35,
+        z: 0, // height
+        lifespan: 100,
         color: 0xffffff,
-        intensity: 20000,
+        intensity: 2000,
       });
     }
 
