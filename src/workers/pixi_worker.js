@@ -1124,7 +1124,10 @@ class PixiRenderer extends AbstractWorker {
       width: this.worldWidth,
       height: this.worldHeight,
     });
-    this.backgroundSprite.tileScale.set(0.5, 0.5);
+    this.backgroundSprite.tileScale.set(
+      this.config.renderer.bgTileScale || 1,
+      this.config.renderer.bgTileScale || 1
+    );
     this.backgroundSprite.tilePosition.set(0, 0);
     this.backgroundSprite.zIndex = PixiRenderer.Z_INDICES.BACKGROUND;
     // Add background to stage directly (ParticleContainer can't hold TilingSprites)

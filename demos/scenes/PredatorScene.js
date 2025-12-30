@@ -55,6 +55,7 @@ export class PredatorScene extends WEED.Scene {
     renderer: {
       noLimitFPS: false,
       bg: "bg",
+      bgTileScale: 1,
       ySorting: true,
     },
 
