@@ -1,13 +1,13 @@
 // PredatorScene.js - Predators vs Prey gameplay scene
 // Demonstrates the new Scene-based architecture for WeedJS
 
-import { Scene } from "/src/core/Scene.js";
+import WEED from "/src/index.js";
 import { Boid } from "../boid.js";
 import { Prey } from "../prey.js";
 import { Predator } from "../predator.js";
 import { TallLight } from "../tallLight.js";
 
-export class PredatorScene extends Scene {
+export class PredatorScene extends WEED.Scene {
   // ========================================
   // STATIC SCENE CONFIGURATION
   // ========================================
