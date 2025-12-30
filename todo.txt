@@ -9,7 +9,9 @@
 
 -getters con stats en tiempo real
 
+- TWEENS - GSAP
 
+-VEC2, VEC3
 
 
 
@@ -18,21 +20,47 @@
 ------------------------------------------------------------------------------------------------
 
 
+Prey.forEach(i => {
+  Transform.x[i] += RigidBody.vx[i];
+});
 
 
+this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 
+
+spawnEntity('Prey') -> spawnEntity(Prey)
+
+ getPosition() { return { x: Transform.x[this.index], y: Transform.y[this.index] }; }
+
+ isCollidingWith(other){}
+
+
+   forEachNeighbor(callback) {
+    const count = this.neighborCount;
+    for (let i = 0; i < count; i++) {
+      const neighborIndex = this.neighbors[i];
+      const neighbor = GameObject.instances[neighborIndex];
+      const distance = this.neighborDistances[i];
+      
+      callback(neighbor, distance, neighborIndex);
+    }
+  }
+
+  this.clone(...)
 
 -------------------------------------------------------------------------------------------------
     --- SCENES ----
 ------------------------------------------------------------------------------------------------
 
 
-
--escenas donde se descargan y cargan cosas
 -Scene.tick
--Scene extends GameObject??
+-eventEmitter
 
 
+
+
+-tags: se crean los tags, se le pone uno o mas tags a las entidades, 
+se puede hacer query (pero basado en un unico array)
 
 
 
