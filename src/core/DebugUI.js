@@ -64,9 +64,15 @@ export class DebugUI {
     this.activeSpawnerType = null;
     this.eraserActive = false;
 
+    // Disable all debug flags when switching scenes
+    if (this.debugFlags) {
+      this.debugFlags.disableAll();
+    }
+
     this._updateVisualAidsState();
     this._updateScenePanel();
     this._autoGenerateEntityTools();
+    this._updateToolIndicator();
     this.start();
   }
 
@@ -238,7 +244,6 @@ export class DebugUI {
       neighbors: "showNeighbors",
       spatialGrid: "showSpatialGrid",
       aabb: "showAABB",
-      trail: "showTrail",
       entityIndices: "showEntityIndices",
     };
 
@@ -739,8 +744,7 @@ export class DebugUI {
       { key: "neighbors", label: "Neighbors", shortcut: "4" },
       { key: "spatialGrid", label: "Grid", shortcut: "5" },
       { key: "aabb", label: "AABB", shortcut: "6" },
-      { key: "trail", label: "Trails", shortcut: "7" },
-      { key: "entityIndices", label: "Indices", shortcut: "8" },
+      { key: "entityIndices", label: "Indices", shortcut: "7" },
     ];
 
     for (const aid of visualAids) {
@@ -965,17 +969,25 @@ export class DebugUI {
 
   _setupCanvasMouseHandlers() {
     // We need to attach to the canvas, but it might not exist yet
-    // So we use event delegation on the document
+    // So we use event delegation on the document with capture phase
+    // to intercept events before they reach the game's handlers
     this._canvasMouseDown = (e) => {
       if (!this.gameEngine?.canvas) return;
       if (e.target !== this.gameEngine.canvas) return;
       if (!this.activeSpawnerType && !this.eraserActive) return;
 
+      // Block the event from reaching the game's mouse handlers
+      e.stopPropagation();
+
       this.isMouseDown = true;
       this._handlePaintAction();
     };
 
-    this._canvasMouseUp = () => {
+    this._canvasMouseUp = (e) => {
+      // Only block if we were painting/erasing
+      if (this.isMouseDown && (this.activeSpawnerType || this.eraserActive)) {
+        e.stopPropagation();
+      }
       this.isMouseDown = false;
     };
 
@@ -985,12 +997,16 @@ export class DebugUI {
       if (e.target !== this.gameEngine.canvas) return;
       if (!this.activeSpawnerType && !this.eraserActive) return;
 
+      // Block the event from reaching the game's mouse handlers
+      e.stopPropagation();
+
       this._handlePaintAction();
     };
 
-    document.addEventListener("mousedown", this._canvasMouseDown);
-    document.addEventListener("mouseup", this._canvasMouseUp);
-    document.addEventListener("mousemove", this._canvasMouseMove);
+    // Use capture phase (true) to intercept events before they bubble to game handlers
+    document.addEventListener("mousedown", this._canvasMouseDown, true);
+    document.addEventListener("mouseup", this._canvasMouseUp, true);
+    document.addEventListener("mousemove", this._canvasMouseMove, true);
   }
 
   _handlePaintAction() {
@@ -1084,7 +1100,7 @@ export class DebugUI {
         this.eraserActive = false;
         this._updateToolButtonStates();
         this._updateToolIndicator();
-      } else if (key >= "1" && key <= "8") {
+      } else if (key >= "1" && key <= "7") {
         const keyMap = {
           1: "colliders",
           2: "velocity",
@@ -1092,8 +1108,7 @@ export class DebugUI {
           4: "neighbors",
           5: "spatialGrid",
           6: "aabb",
-          7: "trail",
-          8: "entityIndices",
+          7: "entityIndices",
         };
         this._toggleVisualAid(keyMap[key]);
       } else if (key === "0") {
@@ -1135,13 +1150,13 @@ export class DebugUI {
     }
 
     if (this._canvasMouseDown) {
-      document.removeEventListener("mousedown", this._canvasMouseDown);
+      document.removeEventListener("mousedown", this._canvasMouseDown, true);
     }
     if (this._canvasMouseUp) {
-      document.removeEventListener("mouseup", this._canvasMouseUp);
+      document.removeEventListener("mouseup", this._canvasMouseUp, true);
     }
     if (this._canvasMouseMove) {
-      document.removeEventListener("mousemove", this._canvasMouseMove);
+      document.removeEventListener("mousemove", this._canvasMouseMove, true);
     }
 
     if (this.container && this.container.parentNode) {
