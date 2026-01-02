@@ -5,6 +5,7 @@ import WEED from "/src/index.js";
 import { Boid } from "../boid.js";
 import { Prey } from "../prey.js";
 import { Predator } from "../predator.js";
+import { Player } from "../player.js";
 import { TallLight } from "../tallLight.js";
 
 export class PredatorScene extends WEED.Scene {
@@ -121,7 +122,8 @@ export class PredatorScene extends WEED.Scene {
   static entities = [
     [Prey, 15000],
     [Predator, 8],
-    [TallLight, 2],
+    [Player, 1],
+    [TallLight, 10],
     [Boid, 0], // Register but don't pre-allocate
   ];
 
@@ -136,12 +138,18 @@ export class PredatorScene extends WEED.Scene {
     this.numberOfPrey = 15000;
     this.numberOfPredators = 8;
     this.numberOfBoids = 0;
-    this.numberOfTallLights = 2;
+    this.numberOfTallLights = 10;
+
+    // Player reference (will be set in create())
+    this.playerEntity = null;
   }
 
   create() {
     // Spawn initial entities
     console.log("🎬 PredatorScene: Spawning entities...");
+
+    // Spawn player first
+    this.spawnPlayer();
 
     this.spawnPredators(this.numberOfPredators);
     this.spawnBoids(this.numberOfBoids);
@@ -159,6 +167,15 @@ export class PredatorScene extends WEED.Scene {
   // ========================================
   // SPAWNING HELPERS
   // ========================================
+
+  spawnPlayer() {
+    this.playerEntity = this.spawnEntity("Player", {
+      x: this.config.worldWidth / 2,
+      y: this.config.worldHeight / 2,
+      vx: 0,
+      vy: 0,
+    });
+  }
 
   spawnPrey(count) {
     for (let i = 0; i < count; i++) {

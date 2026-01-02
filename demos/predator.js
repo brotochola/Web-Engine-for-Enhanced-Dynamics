@@ -116,14 +116,14 @@ export class Predator extends Boid {
         stayOnTheFloor: true,
       });
 
-      Flash.create({
-        x: this.x,
-        y: this.y,
-        z: 0, // height
-        lifespan: 100,
-        color: 0xffffff,
-        intensity: 2000,
-      });
+      // Flash.create({
+      //   x: this.x,
+      //   y: this.y,
+      //   z: 0, // height
+      //   lifespan: 100,
+      //   color: 0xffffff,
+      //   intensity: 2000,
+      // });
     }
 
     // // Muzzle flash when firing

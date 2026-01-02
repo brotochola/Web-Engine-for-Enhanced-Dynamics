@@ -1,0 +1,207 @@
+// Player.js - Player-controlled character
+// Extends GameObject to create a WASD-controlled player entity
+
+import WEED from "/src/index.js";
+
+// Destructure what we need from WEED
+const {
+  GameObject,
+  RigidBody,
+  Collider,
+  SpriteRenderer,
+  ShadowCaster,
+  Transform,
+  Keyboard,
+  getDirectionFromAngle,
+  rng,
+  Flash,
+  LightEmitter,
+  lerp,
+} = WEED;
+
+export class Player extends GameObject {
+  // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
+  static scriptUrl = import.meta.url;
+
+  // Define components this entity uses
+  static components = [
+    RigidBody,
+    Collider,
+    SpriteRenderer,
+    ShadowCaster,
+    LightEmitter,
+  ];
+
+  /**
+   * LIFECYCLE: Configure this entity TYPE - runs ONCE per instance
+   * All components are guaranteed to be initialized at this point
+   */
+  setup() {
+    // Initialize physics properties
+    this.rigidBody.maxVel = 5; // Maximum velocity
+    this.rigidBody.maxAcc = 0.5; // Maximum acceleration
+    this.rigidBody.minSpeed = 0;
+    this.rigidBody.friction = 0.9; // Friction for smooth stopping
+
+    this.lightEmitter.lightColor = 0xffffff;
+    this.lightEmitter.lightIntensity = 2000;
+    this.lightEmitter.height = 0;
+    this.lightEmitter.active = 1;
+    this.lightEmitter.hasGlowSprite = 0;
+
+    // Initialize collider
+    this.collider.radius = 15;
+    this.collider.visualRange = 100;
+
+    // Initialize sprite renderer
+    this.spriteRenderer.scaleX = 1.5;
+    this.spriteRenderer.scaleY = 1.5;
+    this.spriteRenderer.animationSpeed = 0.15;
+
+    // Set anchor for character sprite (bottom-center for ground alignment)
+    this.spriteRenderer.anchorX = 0.5;
+    this.spriteRenderer.anchorY = 1.0;
+
+    // Initialize shadow
+    this.shadowCaster.shadowRadius = this.collider.radius;
+    this.shadowCaster.height = this.collider.radius * 5;
+
+    // Store last direction for idle animations
+    this.lastDirection = "down";
+
+    // Movement acceleration strength
+    this.moveAcceleration = 0.3;
+  }
+
+  /**
+   * LIFECYCLE: Called when player is spawned/respawned from pool
+   * Initialize THIS instance - runs EVERY spawn
+   * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
+   */
+  onSpawned(spawnConfig = {}) {
+    // Get config from instance
+    const config = this.config || {};
+
+    // Initialize Transform position
+    this.x = spawnConfig.x ?? (config.worldWidth || 800) / 2;
+    this.y = spawnConfig.y ?? (config.worldHeight || 600) / 2;
+    this.transform.rotation = 0;
+
+    // Reset physics state
+    this.rigidBody.vx = spawnConfig.vx ?? 0;
+    this.rigidBody.vy = spawnConfig.vy ?? 0;
+    this.rigidBody.ax = 0;
+    this.rigidBody.ay = 0;
+
+    // Set spritesheet and initial animation
+    this.setSpritesheet("civil1");
+    this.setAnimation("idle_down");
+    this.setAnimationSpeed(0.15);
+  }
+
+  /**
+   * LIFECYCLE: Called when player is despawned (returned to pool)
+   */
+  onDespawned() {
+    // Could save player state, etc.
+  }
+
+  /**
+   * Main update - handles WASD input and movement
+   */
+  tick(dtRatio) {
+    const i = this.index;
+
+    // Handle WASD input for movement
+    this.handleMovement(i, dtRatio);
+
+    // Update camera to follow player
+    this.updateCameraFollow(i);
+
+    // Update animation based on movement
+    this.updateAnimation(i);
+  }
+
+  /**
+   * Handle WASD keyboard input for player movement
+   * @param {number} i - Entity index
+   * @param {number} dtRatio - Delta time ratio (for frame-rate independence)
+   */
+  handleMovement(i, dtRatio) {
+    // Cache array references
+    const rbAX = RigidBody.ax;
+    const rbAY = RigidBody.ay;
+
+    // Reset acceleration
+    rbAX[i] = 0;
+    rbAY[i] = 0;
+
+    // WASD movement (applied as acceleration)
+    const moveForce = this.moveAcceleration * dtRatio;
+
+    if (Keyboard.isDown("w")) {
+      rbAY[i] -= moveForce;
+    }
+    if (Keyboard.isDown("s")) {
+      rbAY[i] += moveForce;
+    }
+    if (Keyboard.isDown("a")) {
+      rbAX[i] -= moveForce;
+    }
+    if (Keyboard.isDown("d")) {
+      rbAX[i] += moveForce;
+    }
+  }
+
+  /**
+   * Update camera to smoothly follow the player
+   * Camera data format: [zoom, x, y]
+   * @param {number} i - Entity index
+   */
+  updateCameraFollow(i) {
+    // Access camera data SharedArrayBuffer
+    const cameraData = GameObject.cameraData;
+    if (!cameraData) return;
+
+    // Get player position
+    const playerX = Transform.x[i];
+    const playerY = Transform.y[i];
+
+    // Calculate camera position to center player on screen
+    // Camera x,y represents the top-left corner of the viewport
+    const targetCameraX = playerX - this.config.canvasWidth / 2;
+    const targetCameraY = playerY - this.config.canvasHeight / 2;
+
+    // Smooth camera follow with lerp (0.1 = smoothing factor)
+    const smoothing = 0.1;
+    cameraData[1] = lerp(cameraData[1], targetCameraX, smoothing);
+    cameraData[2] = lerp(cameraData[2], targetCameraY, smoothing);
+  }
+
+  /**
+   * Update animation based on movement speed and direction
+   * @param {number} i - Entity index
+   */
+  updateAnimation(i) {
+    const speed = this.rigidBody.speed;
+    const velocityAngle = this.rigidBody.velocityAngle;
+
+    // Determine animation state based on speed
+    if (speed > 0.5) {
+      // Moving - determine direction
+      const direction = getDirectionFromAngle(velocityAngle);
+      this.lastDirection = direction;
+
+      // Choose walk or run based on speed threshold
+      const isRunning = speed > 3;
+      const animPrefix = isRunning ? "run" : "walk";
+
+      // Set animation with speed-based animation speed
+      this.setAnimation(`${animPrefix}_${direction}`);
+      this.setAnimationSpeed(speed * 0.15);
+    } else {
+      // Idle - use last facing direction
+      this.setAnimation(`idle_${this.lastDirection}`);
+    }
+  }
+}
