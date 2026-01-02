@@ -1,20 +1,34 @@
 // GameEngine.js - Lightweight scene orchestrator
-// Manages canvas and scene lifecycle
+// Manages canvas, scene lifecycle, and debug UI
+
+import { DebugUI } from "./DebugUI.js";
 
 class GameEngine {
   static states = {
     TRANSITIONING: 0,
     READY: 1,
   };
-  constructor(canvasConfig = {}) {
-    this.canvasWidth = canvasConfig.canvasWidth || window.innerWidth;
-    this.canvasHeight = canvasConfig.canvasHeight || window.innerHeight;
+
+  constructor(config = {}) {
+    this.canvasWidth = config.canvasWidth || window.innerWidth;
+    this.canvasHeight = config.canvasHeight || window.innerHeight;
     this.canvas = null;
     this.currentScene = null;
 
     // State management
     this.state = GameEngine.states.READY;
-    this.transitionCooldown = canvasConfig.transitionCooldown || 100; // ms
+    this.transitionCooldown = config.transitionCooldown || 100; // ms
+
+    // Debug UI (created if debug: true)
+    this.debugEnabled = config.debug || false;
+    this.debugUI = null;
+
+    if (this.debugEnabled) {
+      this.debugUI = new DebugUI({
+        updateInterval: config.debugUpdateInterval || 100,
+        defaultOpen: config.debugDefaultOpen || null,
+      });
+    }
 
     // Create canvas immediately
     this._createCanvas();
@@ -37,7 +51,7 @@ class GameEngine {
     // Reject if already transitioning
     if (this.state === GameEngine.states.TRANSITIONING) {
       console.warn(
-        `⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️ Scene transition already in progress. Ignoring request to load ${SceneClass.name}`
+        `⚠️ Scene transition already in progress. Ignoring request to load ${SceneClass.name}`
       );
       return false;
     }
@@ -46,6 +60,11 @@ class GameEngine {
     this.state = GameEngine.states.TRANSITIONING;
 
     try {
+      // Detach debug UI from current scene
+      if (this.debugUI && this.currentScene) {
+        this.debugUI.detach();
+      }
+
       // Destroy current scene
       if (this.currentScene) {
         console.log(
@@ -70,6 +89,11 @@ class GameEngine {
       this.currentScene.config.canvasHeight = this.canvasHeight;
 
       await this.currentScene.init();
+
+      // Attach debug UI to new scene
+      if (this.debugUI) {
+        this.debugUI.attach(this, this.currentScene);
+      }
 
       // Add cooldown period before allowing next transition
       await new Promise((resolve) =>
@@ -126,7 +150,11 @@ class GameEngine {
 
   // Getters for common scene properties
   get debug() {
-    return this.currentScene?.debug;
+    return this.currentScene?.debugFlags;
+  }
+
+  get debugFlags() {
+    return this.currentScene?.debugFlags;
   }
 
   get mouse() {
@@ -165,6 +193,12 @@ class GameEngine {
   // Cleanup
   async destroy() {
     this.state = GameEngine.states.TRANSITIONING;
+
+    // Destroy debug UI
+    if (this.debugUI) {
+      this.debugUI.destroy();
+      this.debugUI = null;
+    }
 
     if (this.currentScene) {
       await this.currentScene.destroy();

@@ -1,5 +1,5 @@
-// Debug.js - Debug overlay system for visualizing game state
-// Provides easy-to-use API for enabling/disabling debug visualizations
+// DebugFlags.js - Debug flag management for visualizing game state
+// Provides API for enabling/disabling debug visualizations via SharedArrayBuffer
 
 export const DEBUG_FLAGS = {
   SHOW_COLLIDERS: 0, // Draw collision shapes
@@ -17,10 +17,10 @@ export const DEBUG_FLAGS = {
 };
 
 /**
- * Debug - Provides API for controlling debug visualizations
+ * DebugFlags - Manages debug visualization flags
  * Works with SharedArrayBuffer to sync state across workers
  */
-export class Debug {
+export class DebugFlags {
   constructor(debugBuffer) {
     // Uint8Array view of debug flags
     this.flags = new Uint8Array(debugBuffer);
@@ -30,7 +30,7 @@ export class Debug {
       this.flags[i] = 0;
     }
 
-    // Color palette for debug rendering
+    // Color palette for debug rendering (used by renderer worker)
     this.colors = {
       collider: 0x00ff00, // Green
       trigger: 0xffff00, // Yellow
@@ -49,7 +49,6 @@ export class Debug {
    */
   showColliders(enabled = true) {
     this.flags[DEBUG_FLAGS.SHOW_COLLIDERS] = enabled ? 1 : 0;
-    console.log(`🔧 Debug: Colliders ${enabled ? "ON" : "OFF"}`);
     return this;
   }
 
@@ -58,7 +57,6 @@ export class Debug {
    */
   showVelocity(enabled = true) {
     this.flags[DEBUG_FLAGS.SHOW_VELOCITY] = enabled ? 1 : 0;
-    console.log(`🔧 Debug: Velocity vectors ${enabled ? "ON" : "OFF"}`);
     return this;
   }
 
@@ -67,7 +65,6 @@ export class Debug {
    */
   showAcceleration(enabled = true) {
     this.flags[DEBUG_FLAGS.SHOW_ACCELERATION] = enabled ? 1 : 0;
-    console.log(`🔧 Debug: Acceleration vectors ${enabled ? "ON" : "OFF"}`);
     return this;
   }
 
@@ -76,13 +73,6 @@ export class Debug {
    */
   showNeighbors(enabled = true) {
     this.flags[DEBUG_FLAGS.SHOW_NEIGHBORS] = enabled ? 1 : 0;
-    console.log(`🔧 Debug: Neighbor connections ${enabled ? "ON" : "OFF"}`);
-    if (enabled) {
-      console.log("   ℹ️ Move your mouse over entities to see their neighbors");
-      console.log(
-        "   💡 Yellow ring = selected entity, Cyan lines = neighbors"
-      );
-    }
     return this;
   }
 
@@ -91,7 +81,6 @@ export class Debug {
    */
   showSpatialGrid(enabled = true) {
     this.flags[DEBUG_FLAGS.SHOW_SPATIAL_GRID] = enabled ? 1 : 0;
-    console.log(`🔧 Debug: Spatial grid ${enabled ? "ON" : "OFF"}`);
     return this;
   }
 
@@ -100,7 +89,6 @@ export class Debug {
    */
   showEntityInfo(enabled = true) {
     this.flags[DEBUG_FLAGS.SHOW_ENTITY_INFO] = enabled ? 1 : 0;
-    console.log(`🔧 Debug: Entity info ${enabled ? "ON" : "OFF"}`);
     return this;
   }
 
@@ -109,7 +97,6 @@ export class Debug {
    */
   showAABB(enabled = true) {
     this.flags[DEBUG_FLAGS.SHOW_AABB] = enabled ? 1 : 0;
-    console.log(`🔧 Debug: AABB ${enabled ? "ON" : "OFF"}`);
     return this;
   }
 
@@ -118,7 +105,6 @@ export class Debug {
    */
   showTrail(enabled = true) {
     this.flags[DEBUG_FLAGS.SHOW_TRAIL] = enabled ? 1 : 0;
-    console.log(`🔧 Debug: Entity trails ${enabled ? "ON" : "OFF"}`);
     return this;
   }
 
@@ -127,7 +113,6 @@ export class Debug {
    */
   showFPSGraph(enabled = true) {
     this.flags[DEBUG_FLAGS.SHOW_FPS_GRAPH] = enabled ? 1 : 0;
-    console.log(`🔧 Debug: FPS graph ${enabled ? "ON" : "OFF"}`);
     return this;
   }
 
@@ -136,7 +121,6 @@ export class Debug {
    */
   showProfiler(enabled = true) {
     this.flags[DEBUG_FLAGS.SHOW_PROFILER] = enabled ? 1 : 0;
-    console.log(`🔧 Debug: Profiler ${enabled ? "ON" : "OFF"}`);
     return this;
   }
 
@@ -145,7 +129,6 @@ export class Debug {
    */
   showEntityIndices(enabled = true) {
     this.flags[DEBUG_FLAGS.SHOW_ENTITY_INDICES] = enabled ? 1 : 0;
-    console.log(`🔧 Debug: Entity indices ${enabled ? "ON" : "OFF"}`);
     return this;
   }
 
@@ -179,12 +162,11 @@ export class Debug {
     for (let i = 0; i < this.flags.length; i++) {
       this.flags[i] = 0;
     }
-    console.log("🔧 Debug: All features disabled");
     return this;
   }
 
   /**
-   * Enable common debug preset
+   * Enable common physics debug preset
    */
   enablePhysicsDebug() {
     return this.enable({

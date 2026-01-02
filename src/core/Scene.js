@@ -13,7 +13,7 @@ import { ShadowCaster } from "../components/ShadowCaster.js";
 // import { LightEmitter } from "../components/LightEmitter.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { setupWorkerCommunication, seededRandom } from "./utils.js";
-import { Debug } from "./Debug.js";
+import { DebugFlags } from "./DebugFlags.js";
 import { Mouse } from "./Mouse.js";
 import { Flash } from "./Flash.js";
 import { BigAtlasInspector } from "./BigAtlasInspector.js";
@@ -176,6 +176,24 @@ class Scene {
     this.mainFrameTimesSum = 16.67 * this.mainFPSFrameCount;
     this.mainFPSReportInterval = 30;
     this.mainFrameNumber = 0;
+
+    // Worker stats (populated by worker messages, read by DebugUI)
+    this.workerStats = {
+      spatial: { fps: 0, active: 0 },
+      logic: [], // Array for multiple logic workers
+      physics: { fps: 0, active: 0 },
+      renderer: {
+        fps: 0,
+        drawCalls: 0,
+        visibleEntities: 0,
+        visibleParticles: 0,
+      },
+      particle: { fps: 0, active: 0, total: 0 },
+    };
+    // Initialize logic worker stats
+    for (let i = 0; i < this.numberOfLogicWorkers; i++) {
+      this.workerStats.logic.push({ fps: 0, active: 0 });
+    }
 
     // Main thread job stealing
     this.mainThreadHelper = null;
@@ -572,7 +590,7 @@ class Scene {
     // Debug buffer
     const DEBUG_BUFFER_SIZE = 32;
     this.buffers.debugData = new SharedArrayBuffer(DEBUG_BUFFER_SIZE);
-    this.debug = new Debug(this.buffers.debugData);
+    this.debugFlags = new DebugFlags(this.buffers.debugData);
 
     // Synchronization buffer
     const SYNC_BUFFER_SIZE = 5 * 4;
@@ -972,7 +990,8 @@ class Scene {
 
   handleMessageFromWorker(e) {
     if (e.data.msg === "fps") {
-      this.updateFPS(
+      // Store worker stats (DebugUI will read these)
+      this._storeWorkerStats(
         e.currentTarget.name,
         e.data.fps,
         e.data.activeEntities,
@@ -1053,56 +1072,45 @@ class Scene {
     }
   }
 
-  updateFPS(id, fps, activeEntities, data = {}) {
-    const element = document.getElementById(id + "FPS");
-    if (element) {
-      const baseText = element.textContent.split(":")[0];
-      if (id === "particle" && data.activeParticles !== undefined) {
-        element.textContent = `${baseText}: ${fps} FPS (${data.activeParticles}/${data.totalParticles} particles)`;
-      } else if (id === "renderer" && data.drawCalls !== undefined) {
-        const visible =
-          (data.visibleEntities || 0) + (data.visibleParticles || 0);
-        element.textContent = `${baseText}: ${fps} FPS (${data.drawCalls} draw calls, ${visible} visible)`;
-      } else if (activeEntities !== undefined) {
-        element.textContent = `${baseText}: ${fps} FPS (${activeEntities} active)`;
-      } else {
-        element.textContent = `${baseText}: ${fps}`;
+  /**
+   * Store worker stats (called from worker messages, read by DebugUI)
+   */
+  _storeWorkerStats(id, fps, activeEntities, data = {}) {
+    // Handle logic workers (logic0, logic1, etc.)
+    if (id.startsWith("logic")) {
+      const index = parseInt(id.replace("logic", ""), 10);
+      if (this.workerStats.logic[index]) {
+        this.workerStats.logic[index] = {
+          fps,
+          active: activeEntities || 0,
+        };
       }
+      return;
     }
-  }
 
-  updateMainFPS() {
-    const element = document.getElementById("mainFPS");
-    if (element) {
-      element.textContent = `Main Thread: ${this.mainFPS.toFixed(2)} FPS`;
-    }
-    this.updateJobStealingUI();
-  }
-
-  updateJobStealingUI() {
-    const element = document.getElementById("jobStealing");
-    if (!element) return;
-
-    if (this.mainThreadHelper && this.mainThreadHelper.enabled) {
-      const stats = this.mainThreadHelper.getStats();
-      const modeLabel = stats.isMainThreadOnlyMode ? " [ONLY]" : "";
-      element.textContent = `Main Thread${modeLabel}: ${stats.entitiesThisFrame} entities (${stats.jobsThisFrame} jobs)`;
-    } else {
-      element.textContent = `Main Thread Jobs: disabled`;
-    }
-  }
-
-  updateActiveUnits(count) {
-    const element = document.getElementById("activeUnits");
-    if (element) {
-      element.textContent = `Active units: ${count} / ${this.totalEntityCount}`;
-    }
-  }
-
-  updateVisibleUnits(count) {
-    const element = document.getElementById("visibleUnits");
-    if (element) {
-      element.textContent = `Visible units: ${count} / ${this.totalEntityCount}`;
+    // Handle other workers
+    switch (id) {
+      case "spatial":
+        this.workerStats.spatial = { fps, active: activeEntities || 0 };
+        break;
+      case "physics":
+        this.workerStats.physics = { fps, active: activeEntities || 0 };
+        break;
+      case "renderer":
+        this.workerStats.renderer = {
+          fps,
+          drawCalls: data.drawCalls || 0,
+          visibleEntities: data.visibleEntities || 0,
+          visibleParticles: data.visibleParticles || 0,
+        };
+        break;
+      case "particle":
+        this.workerStats.particle = {
+          fps,
+          active: data.activeParticles || 0,
+          total: data.totalParticles || 0,
+        };
+        break;
     }
   }
 
@@ -1233,9 +1241,7 @@ class Scene {
       const averageFrameTime = this.mainFrameTimesSum / this.mainFPSFrameCount;
       this.mainFPS = 1000 / averageFrameTime;
 
-      if (this.mainFrameNumber % this.mainFPSReportInterval === 0) {
-        this.updateMainFPS();
-      }
+      // mainFPS is now read directly by DebugUI
 
       // Store the RAF ID so we can cancel it later
       this.animationFrameId = requestAnimationFrame(loop);
@@ -1255,10 +1261,7 @@ class Scene {
       this.mainThreadHelper.processJobs(deltaTime, dtRatio);
     }
 
-    this.updateVisibleUnits(
-      SpriteRenderer.isItOnScreen.filter((v) => !!v).length
-    );
-    this.updateActiveUnits(Transform.active.filter((v) => !!v).length);
+    // Visible/active units are now read directly by DebugUI from Transform/SpriteRenderer arrays
 
     // Call user's update hook
     this.update(performance.now(), deltaTime);
