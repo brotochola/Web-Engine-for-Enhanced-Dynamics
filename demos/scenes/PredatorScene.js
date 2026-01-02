@@ -39,7 +39,7 @@ export class PredatorScene extends WEED.Scene {
       numberOfLogicWorkers: 3,
       numberOfEntitiesPerJob: 250,
       useMainThreadAsLogicWorker: true,
-      mainThreadMaxJobsPerFrame: 0,
+      mainThreadMaxJobsPerFrame: 5,
     },
 
     // Physics configuration
@@ -120,7 +120,7 @@ export class PredatorScene extends WEED.Scene {
   // ========================================
 
   static entities = [
-    [Prey, 15000],
+    [Prey, 10000],
     [Predator, 8],
     [Player, 1],
     [TallLight, 10],
@@ -135,7 +135,7 @@ export class PredatorScene extends WEED.Scene {
     super(game);
 
     // Scene-specific properties
-    this.numberOfPrey = 15000;
+    this.numberOfPrey = 10000;
     this.numberOfPredators = 8;
     this.numberOfBoids = 0;
     this.numberOfTallLights = 10;

@@ -5,6 +5,7 @@ self.postMessage({
 });
 // physics_worker.js - Physics integration (velocity, position updates)
 // Now uses per-entity maxVel, maxAcc, and friction from GameObject arrays
+// Supports Circle and AABB (Box) colliders
 
 // Import engine dependencies
 import { GameObject } from "../core/gameObject.js";
@@ -16,6 +17,10 @@ import { clamp01, validatePhysicsConfig } from "../core/utils.js";
 import { rng } from "../core/utils.js";
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
 // Physics worker uses RigidBody component for physics calculations
+
+// Shape type constants (must match Collider.shapeType values)
+const SHAPE_CIRCLE = 0;
+const SHAPE_BOX = 1;
 
 /**
  * PhysicsWorker - Handles physics integration for all entities
@@ -75,25 +80,9 @@ class PhysicsWorker extends AbstractWorker {
         this.config.physics?.maxCollisionPairs ||
         this.config.maxCollisionPairs ||
         10000;
-      // console.log(
-      //   `PHYSICS WORKER: Collision callbacks enabled (max ${this.maxCollisionPairs} pairs)`
-      // );
     }
 
     this.applyPhysicsConfig(this.config.physics || {});
-
-    // console.log("PHYSICS WORKER: Using Verlet integration exclusively");
-    // console.log(
-    //   `PHYSICS WORKER: Sub-steps per frame: ${this.settings.subStepCount}`
-    // );
-
-    // console.log(
-    //   `PHYSICS WORKER: Ready to integrate ${this.entityCount} entities`
-    // );
-    // console.log(
-    //   "PHYSICS WORKER: Initialization complete, waiting for start signal..."
-    // );
-    // Note: Game loop will start when "start" message is received from main thread
   }
 
   /**
@@ -145,8 +134,8 @@ class PhysicsWorker extends AbstractWorker {
   updateVerlet(deltaTime, dtRatio) {
     // Cache array references from components
     const active = Transform.active;
-    const rigidBodyActive = RigidBody.active; // Component active flag (dense allocation)
-    const colliderActive = Collider.active; // Component active flag (dense allocation)
+    const rigidBodyActive = RigidBody.active;
+    const colliderActive = Collider.active;
     const x = Transform.x;
     const y = Transform.y;
     const rotation = Transform.rotation;
@@ -157,9 +146,14 @@ class PhysicsWorker extends AbstractWorker {
     const ax = RigidBody.ax;
     const ay = RigidBody.ay;
     const maxVel = RigidBody.maxVel;
-    const radius = Collider.radius;
-    const isTrigger = Collider.isTrigger;
     const collisionCount = RigidBody.collisionCount;
+
+    // Collider properties
+    const shapeType = Collider.shapeType;
+    const radius = Collider.radius;
+    const width = Collider.width;
+    const height = Collider.height;
+    const isTrigger = Collider.isTrigger;
 
     // Get world bounds for boundary constraints
     const worldWidth = this.config.worldWidth;
@@ -177,8 +171,8 @@ class PhysicsWorker extends AbstractWorker {
     const gx = this.settings.gravity.x || 0;
     const gy = this.settings.gravity.y || 0;
 
-    // Step 1: Move balls using Verlet integration
-    this.moveBallsVerlet(
+    // Step 1: Move entities using Verlet integration
+    this.moveEntitiesVerlet(
       active,
       rigidBodyActive,
       x,
@@ -193,7 +187,6 @@ class PhysicsWorker extends AbstractWorker {
       gx,
       gy,
       maxVel,
-      radius,
       rigidBodyCount
     );
 
@@ -205,7 +198,10 @@ class PhysicsWorker extends AbstractWorker {
         colliderActive,
         x,
         y,
+        shapeType,
         radius,
+        width,
+        height,
         isTrigger,
         collisionCount,
         worldWidth,
@@ -213,17 +209,13 @@ class PhysicsWorker extends AbstractWorker {
         rigidBodyCount
       );
     }
-
-    // Note: Derived properties (speed, velocityAngle) are now calculated
-    // by particle_worker to balance workload across workers
   }
 
   /**
-   * Move balls using Verlet integration
-   * ENHANCED: Now includes configurable damping for energy dissipation
-   * Static bodies (RigidBody.static = 1) are skipped - they don't move
+   * Move entities using Verlet integration
+   * Works for both circles and boxes - shape doesn't affect movement
    */
-  moveBallsVerlet(
+  moveEntitiesVerlet(
     active,
     rigidBodyActive,
     x,
@@ -238,73 +230,47 @@ class PhysicsWorker extends AbstractWorker {
     gx,
     gy,
     maxVel,
-    radius,
     rigidBodyCount
   ) {
     const damping = this.settings.verletDamping;
     const isStatic = RigidBody.static;
-    const friction = RigidBody.friction; // Per-entity friction
+    const friction = RigidBody.friction;
 
     const gravityScale = Math.pow(dtRatio, 2);
 
-    // Only process entities that have RigidBody component
     for (let i = 0; i < rigidBodyCount; i++) {
       if (!active[i] || !rigidBodyActive[i]) continue;
-
-      // Static bodies don't move - skip physics integration entirely
       if (isStatic[i]) continue;
 
-      // Store old position for Verlet integration
       const oldX = x[i];
       const oldY = y[i];
 
-      // Calculate implicit velocity from position history (with damping)
       let dx = (x[i] - px[i]) * damping;
       let dy = (y[i] - py[i]) * damping;
 
-      // Apply per-entity friction to reduce velocity over time (frame-rate independent)
-      // friction = 0 means no friction, friction = 1 means instant stop
       if (friction[i] > 0) {
         const frictionFactor = Math.pow(1 - Math.min(friction[i], 1), dtRatio);
         dx *= frictionFactor;
         dy *= frictionFactor;
       }
 
-      // Add forces: gravity + game logic acceleration
       dx += gravityScale * gx + ax[i] * dtRatio;
       dy += gravityScale * gy + ay[i] * dtRatio;
 
-      // Speed limiting
-      // Use entity's maxVel setting or default to a reasonable cap
       let maxSpeed = maxVel[i] > 0 ? maxVel[i] : 100;
 
-      // Adaptive speed limiting removed - it causes "crushing" behavior in stacks
-      // because it prevents the balls from pushing back against gravity strongly enough.
-      /*
-      if (collisionCount[i] >= 2) {
-        // Reduce speed inversely to collision count
-        maxSpeed = Math.max(radius[i] * (1 / collisionCount[i]), 0.5);
-      }
-      */
-
-      // Clamp velocity to prevent instability
-      //TODO: this should check the linearVelocity, not x and y
       dx = Math.max(-maxSpeed, Math.min(maxSpeed, dx));
       dy = Math.max(-maxSpeed, Math.min(maxSpeed, dy));
 
-      // Apply velocity to get new position
       x[i] = oldX + dx;
       y[i] = oldY + dy;
 
-      // Update previous position (standard Verlet)
       px[i] = oldX;
       py[i] = oldY;
 
-      // Store velocity for compatibility with rendering/game logic
       vx[i] = dx / dtRatio;
       vy[i] = dy / dtRatio;
 
-      // Clear acceleration (will be set by logic worker next frame)
       ax[i] = 0;
       ay[i] = 0;
     }
@@ -312,8 +278,7 @@ class PhysicsWorker extends AbstractWorker {
 
   /**
    * Apply constraints: boundary constraints and collision resolution
-   * ENHANCED: Now includes configurable boundary elasticity (bouncy walls)
-   * This is run multiple times per frame (sub-stepping) for stability
+   * Now handles both circles and boxes for boundary checks
    */
   applyConstraintsVerlet(
     active,
@@ -321,67 +286,74 @@ class PhysicsWorker extends AbstractWorker {
     colliderActive,
     x,
     y,
+    shapeType,
     radius,
+    width,
+    height,
     isTrigger,
     collisionCount,
     worldWidth,
     worldHeight,
     rigidBodyCount
   ) {
-    // Get previous position arrays for velocity manipulation
     const px = RigidBody.px;
     const py = RigidBody.py;
-
     const boundaryElasticity = this.settings.boundaryElasticity;
     const isStatic = RigidBody.static;
 
-    // Apply boundary constraints with bounce - only for entities with RigidBody
+    // Apply boundary constraints - shape-aware
     for (let i = 0; i < rigidBodyCount; i++) {
       if (!active[i] || !rigidBodyActive[i]) continue;
-
-      // Static bodies don't need boundary constraints (they don't move)
       if (isStatic[i]) continue;
 
-      const r = radius[i];
+      // Get entity bounds based on shape type
+      let halfW, halfH;
+      if (shapeType[i] === SHAPE_BOX) {
+        halfW = width[i] * 0.5;
+        halfH = height[i] * 0.5;
+      } else {
+        // Circle: use radius for both
+        halfW = radius[i];
+        halfH = radius[i];
+      }
 
       // Left boundary
-      if (x[i] < r) {
-        x[i] = r;
-        // Apply bounce by reversing velocity component (manipulate previous position)
+      if (x[i] < halfW) {
+        x[i] = halfW;
         px[i] = x[i] + (x[i] - px[i]) * boundaryElasticity;
       }
 
       // Right boundary
-      if (x[i] > worldWidth - r) {
-        x[i] = worldWidth - r;
+      if (x[i] > worldWidth - halfW) {
+        x[i] = worldWidth - halfW;
         px[i] = x[i] + (x[i] - px[i]) * boundaryElasticity;
       }
 
       // Top boundary
-      if (y[i] < r) {
-        y[i] = r;
+      if (y[i] < halfH) {
+        y[i] = halfH;
         py[i] = y[i] + (y[i] - py[i]) * boundaryElasticity;
       }
 
       // Bottom boundary
-      if (y[i] > worldHeight - r) {
-        y[i] = worldHeight - r;
+      if (y[i] > worldHeight - halfH) {
+        y[i] = worldHeight - halfH;
         py[i] = y[i] + (y[i] - py[i]) * boundaryElasticity;
       }
     }
 
     // Apply collision constraints using spatial grid
     if (this.neighborData) {
-      // In Verlet mode, we don't need to rely on neighborData strictly if we're just checking all pairs
-      // But that's O(N^2). We must use neighborData.
-      // If neighbors are missing, collisions are missed.
       this.resolveCollisionsVerlet(
         active,
         rigidBodyActive,
         colliderActive,
         x,
         y,
+        shapeType,
         radius,
+        width,
+        height,
         isTrigger,
         collisionCount,
         rigidBodyCount
@@ -390,12 +362,7 @@ class PhysicsWorker extends AbstractWorker {
   }
 
   /**
-   * Resolve collisions using constraint-based approach
-   * ENHANCED: Better handling of exact overlaps and configurable response strength
-   * Pushes overlapping entities apart (RopeBall style)
-   * Also records collision pairs for Unity-style callbacks (Enter/Stay/Exit)
-   *
-   * Note: Trigger colliders (isTrigger=1) detect collisions but don't apply physical response
+   * Resolve collisions - routes to appropriate handler based on shape types
    */
   resolveCollisionsVerlet(
     active,
@@ -403,162 +370,275 @@ class PhysicsWorker extends AbstractWorker {
     colliderActive,
     x,
     y,
+    shapeType,
     radius,
+    width,
+    height,
     isTrigger,
     collisionCount,
     rigidBodyCount
   ) {
     const maxNeighbors =
       this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
-
-    // Get collision response strength (0.5 = soft/bouncy, 1.0 = rigid)
     const responseStrength = this.settings.collisionResponseStrength;
+    const isStatic = RigidBody.static;
 
-    // Track collision pairs for callbacks
     let pairCount = 0;
     const collisionData = this.collisionData;
     const maxPairs = this.maxCollisionPairs;
 
-    // Process all entities for collision detection (including trigger-only entities like Mouse)
     for (let i = 0; i < this.entityCount; i++) {
-      // Skip if entity not active or doesn't have a collider
       if (!active[i] || !colliderActive[i]) continue;
 
-      // Get neighbors from spatial worker
       const offset = i * (1 + maxNeighbors);
       const neighborCount = this.neighborData ? this.neighborData[offset] : 0;
 
-      // Check collisions with each neighbor
       for (let n = 0; n < neighborCount; n++) {
         const j = this.neighborData[offset + 1 + n];
 
-        // Skip if neighbor not active or doesn't have a collider
         if (i === j || !active[j] || !colliderActive[j]) continue;
+        if (i >= j) continue; // Only process each pair once
 
-        // Only process each pair once (i < j)
-        if (i >= j) continue;
+        // Get shape types for both entities
+        const shapeI = shapeType[i];
+        const shapeJ = shapeType[j];
 
-        // Calculate distance between entities
-        const dx = x[i] - x[j];
-        const dy = y[i] - y[j];
-        const dist2 = dx * dx + dy * dy;
+        // Collision result: { collided, depth, nx, ny }
+        let result = null;
 
-        // Check for overlap
-        const minDist = radius[i] + radius[j];
-
-        // Early exit if no collision possible
-        if (dist2 >= minDist * minDist) continue;
-
-        const dist = Math.sqrt(dist2);
-
-        // Handle exact overlap (rare but possible)
-        if (dist === 0) {
-          // Check if either entity is a trigger
-          const eitherIsTrigger = isTrigger[i] || isTrigger[j];
-
-          // Only apply physical response if neither is a trigger
-          if (!eitherIsTrigger) {
-            // Check if either entity is static
-            const isStatic = RigidBody.static;
-            const iStatic = isStatic[i];
-            const jStatic = isStatic[j];
-
-            // Push in random direction
-            const angle = rng() * Math.PI * 2;
-            const separation = 0.001;
-            const cosAngle = Math.cos(angle) * separation;
-            const sinAngle = Math.sin(angle) * separation;
-
-            if (iStatic && jStatic) {
-              // Both static - no movement
-            } else if (iStatic) {
-              // i is static - only move j
-              x[j] = x[j] - cosAngle * 2;
-              y[j] = y[j] - sinAngle * 2;
-            } else if (jStatic) {
-              // j is static - only move i
-              x[i] = x[i] + cosAngle * 2;
-              y[i] = y[i] + sinAngle * 2;
-            } else {
-              // Both dynamic - move both
-              x[i] = x[i] + cosAngle;
-              y[i] = y[i] + sinAngle;
-              x[j] = x[j] - cosAngle;
-              y[j] = y[j] - sinAngle;
-            }
+        if (shapeI === SHAPE_CIRCLE && shapeJ === SHAPE_CIRCLE) {
+          // Circle vs Circle
+          result = this.testCircleCircle(
+            x[i],
+            y[i],
+            radius[i],
+            x[j],
+            y[j],
+            radius[j]
+          );
+        } else if (shapeI === SHAPE_CIRCLE && shapeJ === SHAPE_BOX) {
+          // Circle vs Box
+          result = this.testCircleAABB(
+            x[i],
+            y[i],
+            radius[i],
+            x[j],
+            y[j],
+            width[j],
+            height[j]
+          );
+        } else if (shapeI === SHAPE_BOX && shapeJ === SHAPE_CIRCLE) {
+          // Box vs Circle (swap and invert normal)
+          result = this.testCircleAABB(
+            x[j],
+            y[j],
+            radius[j],
+            x[i],
+            y[i],
+            width[i],
+            height[i]
+          );
+          if (result && result.collided) {
+            result.nx = -result.nx;
+            result.ny = -result.ny;
           }
-
-          // Only increment collision count for entities with RigidBody
-          if (i < rigidBodyCount) collisionCount[i]++;
-          if (j < rigidBodyCount) collisionCount[j]++;
-
-          // Record collision pair for callbacks (even for triggers!)
-          if (collisionData && pairCount < maxPairs) {
-            collisionData[1 + pairCount * 2] = i;
-            collisionData[1 + pairCount * 2 + 1] = j;
-            pairCount++;
-          }
-          continue;
+        } else if (shapeI === SHAPE_BOX && shapeJ === SHAPE_BOX) {
+          // Box vs Box
+          result = this.testAABBAABB(
+            x[i],
+            y[i],
+            width[i],
+            height[i],
+            x[j],
+            y[j],
+            width[j],
+            height[j]
+          );
         }
 
-        // Calculate overlap depth
-        const depth = minDist - dist;
+        if (!result || !result.collided) continue;
 
-        if (depth > 0) {
-          // Check if either entity is a trigger (no physical response, just detection)
-          const eitherIsTrigger = isTrigger[i] || isTrigger[j];
+        const eitherIsTrigger = isTrigger[i] || isTrigger[j];
 
-          // Only apply physical response if neither is a trigger
-          if (!eitherIsTrigger) {
-            // Normalize direction vector
-            const nx = dx / dist;
-            const ny = dy / dist;
+        // Apply physical response if neither is a trigger
+        if (!eitherIsTrigger) {
+          const iStatic = isStatic[i];
+          const jStatic = isStatic[j];
+          const correction = result.depth * responseStrength;
+          const nx = result.nx;
+          const ny = result.ny;
 
-            // Check if either entity is static
-            const isStatic = RigidBody.static;
-            const iStatic = isStatic[i];
-            const jStatic = isStatic[j];
-
-            // Calculate push factor with response strength
-            const correction = depth * responseStrength;
-
-            if (iStatic && jStatic) {
-              // Both static - no movement (shouldn't happen often but handle it)
-            } else if (iStatic) {
-              // i is static - only push j away (full correction)
-              x[j] -= nx * correction;
-              y[j] -= ny * correction;
-            } else if (jStatic) {
-              // j is static - only push i away (full correction)
-              x[i] += nx * correction;
-              y[i] += ny * correction;
-            } else {
-              // Both dynamic - split correction evenly between both entities
-              const halfCorrection = correction * 0.5;
-              x[i] += nx * halfCorrection;
-              y[i] += ny * halfCorrection;
-              x[j] -= nx * halfCorrection;
-              y[j] -= ny * halfCorrection;
-            }
+          if (iStatic && jStatic) {
+            // Both static - no movement
+          } else if (iStatic) {
+            // i is static - only push j away
+            x[j] -= nx * correction;
+            y[j] -= ny * correction;
+          } else if (jStatic) {
+            // j is static - only push i away
+            x[i] += nx * correction;
+            y[i] += ny * correction;
+          } else {
+            // Both dynamic - split correction
+            const halfCorrection = correction * 0.5;
+            x[i] += nx * halfCorrection;
+            y[i] += ny * halfCorrection;
+            x[j] -= nx * halfCorrection;
+            y[j] -= ny * halfCorrection;
           }
+        }
 
-          // Track collision count for adaptive speed limiting (only for entities with RigidBody)
-          if (i < rigidBodyCount) collisionCount[i]++;
-          if (j < rigidBodyCount) collisionCount[j]++;
+        // Track collision count
+        if (i < rigidBodyCount) collisionCount[i]++;
+        if (j < rigidBodyCount) collisionCount[j]++;
 
-          // Record collision pair for callbacks (even for triggers!)
-          if (collisionData && pairCount < maxPairs) {
-            collisionData[1 + pairCount * 2] = i;
-            collisionData[1 + pairCount * 2 + 1] = j;
-            pairCount++;
-          }
+        // Record collision pair for callbacks
+        if (collisionData && pairCount < maxPairs) {
+          collisionData[1 + pairCount * 2] = i;
+          collisionData[1 + pairCount * 2 + 1] = j;
+          pairCount++;
         }
       }
     }
 
-    // Write total pair count to shared buffer (index 0)
     if (collisionData) {
       collisionData[0] = pairCount;
+    }
+  }
+
+  /**
+   * Test Circle vs Circle collision
+   * @returns {{ collided: boolean, depth: number, nx: number, ny: number } | null}
+   */
+  testCircleCircle(x1, y1, r1, x2, y2, r2) {
+    const dx = x1 - x2;
+    const dy = y1 - y2;
+    const dist2 = dx * dx + dy * dy;
+    const minDist = r1 + r2;
+
+    if (dist2 >= minDist * minDist) return null;
+
+    const dist = Math.sqrt(dist2);
+
+    // Handle exact overlap
+    if (dist === 0) {
+      const angle = rng() * Math.PI * 2;
+      return {
+        collided: true,
+        depth: minDist,
+        nx: Math.cos(angle),
+        ny: Math.sin(angle),
+      };
+    }
+
+    return {
+      collided: true,
+      depth: minDist - dist,
+      nx: dx / dist,
+      ny: dy / dist,
+    };
+  }
+
+  /**
+   * Test Circle vs AABB collision
+   * @returns {{ collided: boolean, depth: number, nx: number, ny: number } | null}
+   */
+  testCircleAABB(circleX, circleY, circleR, boxX, boxY, boxW, boxH) {
+    const halfW = boxW * 0.5;
+    const halfH = boxH * 0.5;
+
+    // Find the closest point on the AABB to the circle center
+    const closestX = Math.max(boxX - halfW, Math.min(circleX, boxX + halfW));
+    const closestY = Math.max(boxY - halfH, Math.min(circleY, boxY + halfH));
+
+    // Calculate distance from circle center to closest point
+    const dx = circleX - closestX;
+    const dy = circleY - closestY;
+    const dist2 = dx * dx + dy * dy;
+
+    if (dist2 >= circleR * circleR) return null;
+
+    const dist = Math.sqrt(dist2);
+
+    // Circle center is inside the box
+    if (dist === 0) {
+      // Find which edge is closest
+      const distToLeft = circleX - (boxX - halfW);
+      const distToRight = boxX + halfW - circleX;
+      const distToTop = circleY - (boxY - halfH);
+      const distToBottom = boxY + halfH - circleY;
+
+      const minDistX = Math.min(distToLeft, distToRight);
+      const minDistY = Math.min(distToTop, distToBottom);
+
+      if (minDistX < minDistY) {
+        // Push horizontally
+        const nx = distToLeft < distToRight ? -1 : 1;
+        return {
+          collided: true,
+          depth: minDistX + circleR,
+          nx: nx,
+          ny: 0,
+        };
+      } else {
+        // Push vertically
+        const ny = distToTop < distToBottom ? -1 : 1;
+        return {
+          collided: true,
+          depth: minDistY + circleR,
+          nx: 0,
+          ny: ny,
+        };
+      }
+    }
+
+    return {
+      collided: true,
+      depth: circleR - dist,
+      nx: dx / dist,
+      ny: dy / dist,
+    };
+  }
+
+  /**
+   * Test AABB vs AABB collision
+   * @returns {{ collided: boolean, depth: number, nx: number, ny: number } | null}
+   */
+  testAABBAABB(x1, y1, w1, h1, x2, y2, w2, h2) {
+    const halfW1 = w1 * 0.5;
+    const halfH1 = h1 * 0.5;
+    const halfW2 = w2 * 0.5;
+    const halfH2 = h2 * 0.5;
+
+    // Calculate overlap on each axis
+    const dx = x1 - x2;
+    const dy = y1 - y2;
+
+    const overlapX = halfW1 + halfW2 - Math.abs(dx);
+    const overlapY = halfH1 + halfH2 - Math.abs(dy);
+
+    // No collision if no overlap on either axis
+    if (overlapX <= 0 || overlapY <= 0) return null;
+
+    // Push along axis with smallest overlap (Separating Axis Theorem)
+    if (overlapX < overlapY) {
+      // Push horizontally
+      const nx = dx > 0 ? 1 : -1;
+      return {
+        collided: true,
+        depth: overlapX,
+        nx: nx,
+        ny: 0,
+      };
+    } else {
+      // Push vertically
+      const ny = dy > 0 ? 1 : -1;
+      return {
+        collided: true,
+        depth: overlapY,
+        nx: 0,
+        ny: ny,
+      };
     }
   }
 }
