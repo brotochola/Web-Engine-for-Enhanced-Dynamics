@@ -243,6 +243,7 @@ class PhysicsWorker extends AbstractWorker {
   ) {
     const damping = this.settings.verletDamping;
     const isStatic = RigidBody.static;
+    const friction = RigidBody.friction; // Per-entity friction
 
     const gravityScale = Math.pow(dtRatio, 2);
 
@@ -260,6 +261,14 @@ class PhysicsWorker extends AbstractWorker {
       // Calculate implicit velocity from position history (with damping)
       let dx = (x[i] - px[i]) * damping;
       let dy = (y[i] - py[i]) * damping;
+
+      // Apply per-entity friction to reduce velocity over time (frame-rate independent)
+      // friction = 0 means no friction, friction = 1 means instant stop
+      if (friction[i] > 0) {
+        const frictionFactor = Math.pow(1 - Math.min(friction[i], 1), dtRatio);
+        dx *= frictionFactor;
+        dy *= frictionFactor;
+      }
 
       // Add forces: gravity + game logic acceleration
       dx += gravityScale * gx + ax[i] * dtRatio;

@@ -41,7 +41,7 @@ export class Player extends GameObject {
     this.rigidBody.maxVel = 5; // Maximum velocity
     this.rigidBody.maxAcc = 0.5; // Maximum acceleration
     this.rigidBody.minSpeed = 0;
-    this.rigidBody.friction = 0.9; // Friction for smooth stopping
+    this.rigidBody.friction = 0.03; // Friction for smooth stopping
 
     this.lightEmitter.lightColor = 0xffffff;
     this.lightEmitter.lightIntensity = 2000;

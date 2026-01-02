@@ -41,7 +41,7 @@ class Prey extends Boid {
     this.rigidBody.maxVel = 1.5 + rng() * 2;
     this.rigidBody.maxAcc = 0.07 + rng() * 0.1;
     this.rigidBody.minSpeed = 0;
-    this.rigidBody.friction = 0.05;
+    this.rigidBody.friction = 0.02;
 
     // Override Boid's perception
     this.collider.visualRange = 60 + rng() * 100; // Must be >= max collision distance (6 + 60 = 66) for collision detection to work!
@@ -63,7 +63,6 @@ class Prey extends Boid {
   defineSpritesheets() {
     // Choose random spritesheet for visual variety
     const spritesheets = [
-      "civil1",
       "civil2",
       "civil3",
       "civil4",
