@@ -93,6 +93,12 @@ export class MainThreadLogicHelper {
       Keyboard.initialize(this.inputData, this.engine.keyMap);
     }
 
+    if (buffers.cameraData) {
+      this.cameraData = new Float32Array(buffers.cameraData);
+      // Make camera data available to GameObject for direct access
+      GameObject.cameraData = this.cameraData;
+    }
+
     // Initialize component arrays (they're already created, just get views)
     this.initializeComponentArrays();
 

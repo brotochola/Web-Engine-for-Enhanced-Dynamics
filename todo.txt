@@ -72,7 +72,6 @@ se puede hacer query (pero basado en un unico array)
 
 -render debug worker (encima del canvas q ya tenemos)
 
--animation worker?
 -worker con A* y con flowfiled pathfinding
 
 

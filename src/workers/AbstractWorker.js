@@ -282,6 +282,11 @@ export class AbstractWorker {
     if (GameObject.distanceData) {
       this.distanceData = GameObject.distanceData;
     }
+
+    // Make camera data available to GameObject for direct access
+    if (this.cameraData) {
+      GameObject.cameraData = this.cameraData;
+    }
   }
 
   initSeendedRandom(seed) {

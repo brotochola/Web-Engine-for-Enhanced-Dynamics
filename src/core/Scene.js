@@ -1206,9 +1206,12 @@ class Scene {
 
   updateCameraBuffer() {
     const cam = this.views.camera;
+
+    // Read camera position from SharedArrayBuffer (updated by Player in worker)
+    this.camera.x = cam[1];
+    this.camera.y = cam[2];
+    // Zoom is still controlled by main thread
     cam[0] = this.camera.zoom;
-    cam[1] = this.camera.x;
-    cam[2] = this.camera.y;
 
     Mouse.updateWorldPosition(this.camera);
   }
@@ -1243,21 +1246,9 @@ class Scene {
 
   updateInternal(deltaTime) {
     const dtRatio = deltaTime / 16.67;
-    const moveSpeed = (-10 / this.camera.zoom) * dtRatio;
 
-    if (this.keyboard.w || this.keyboard.arrowup) {
-      this.camera.y += moveSpeed;
-    }
-    if (this.keyboard.s || this.keyboard.arrowdown) {
-      this.camera.y -= moveSpeed;
-    }
-    if (this.keyboard.a || this.keyboard.arrowleft) {
-      this.camera.x += moveSpeed;
-    }
-    if (this.keyboard.d || this.keyboard.arrowright) {
-      this.camera.x -= moveSpeed;
-    }
-
+    // Note: Camera following is now handled in Player.tick() which writes directly to cameraData SharedArrayBuffer
+    // Main thread reads from cameraData and syncs to this.camera in updateCameraBuffer()
     this.updateCameraBuffer();
 
     if (this.mainThreadHelper) {

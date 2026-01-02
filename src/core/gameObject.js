@@ -27,6 +27,9 @@ export class GameObject {
   static neighborData = null;
   static distanceData = null; // Squared distances for each neighbor
 
+  // Camera data (shared with main thread)
+  static cameraData = null; // Float32Array [zoom, x, y]
+
   // Entity type ID (auto-assigned during registration)
   // Note: entityType moved to Transform component for pure ECS architecture
   static entityType = null; // Numeric ID assigned by GameEngine
