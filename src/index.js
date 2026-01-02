@@ -10,7 +10,8 @@ export { GameEngine } from "./core/gameEngine.js";
 export { Scene } from "./core/Scene.js";
 export { GameObject, Keyboard } from "./core/gameObject.js";
 export { Component } from "./core/Component.js";
-export { Debug } from "./core/Debug.js";
+export { DebugFlags } from "./core/DebugFlags.js";
+export { DebugUI } from "./core/DebugUI.js";
 export { Mouse } from "./core/Mouse.js";
 export { SpriteSheetRegistry } from "./core/SpriteSheetRegistry.js";
 export { BigAtlasInspector } from "./core/BigAtlasInspector.js";
@@ -65,7 +66,8 @@ import { GameEngine } from "./core/gameEngine.js";
 import { Scene } from "./core/Scene.js";
 import { GameObject, Keyboard } from "./core/gameObject.js";
 import { Component } from "./core/Component.js";
-import { Debug } from "./core/Debug.js";
+import { DebugFlags } from "./core/DebugFlags.js";
+import { DebugUI } from "./core/DebugUI.js";
 import { Mouse } from "./core/Mouse.js";
 import { SpriteSheetRegistry } from "./core/SpriteSheetRegistry.js";
 import { BigAtlasInspector } from "./core/BigAtlasInspector.js";
@@ -92,7 +94,8 @@ const WEED = {
   Scene,
   GameObject,
   Component,
-  Debug,
+  DebugFlags,
+  DebugUI,
   Mouse,
   Keyboard,
   SpriteSheetRegistry,

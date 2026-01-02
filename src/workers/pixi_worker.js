@@ -15,11 +15,10 @@ import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { ParticleComponent } from "../components/ParticleComponent.js";
 import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
 import { AbstractWorker } from "./AbstractWorker.js";
-import { DEBUG_FLAGS } from "../core/Debug.js";
+import { DEBUG_FLAGS } from "../core/DebugFlags.js";
 import { Mouse } from "../core/Mouse.js";
 import { MouseComponent } from "../components/MouseComponent.js";
 import { LightEmitter } from "../components/LightEmitter.js";
-import { ShadowCaster } from "../components/ShadowCaster.js";
 
 // Import PixiJS 8 library (ES6 module with named exports)
 import {
