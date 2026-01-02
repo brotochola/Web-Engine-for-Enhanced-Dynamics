@@ -198,7 +198,7 @@ export class Player extends GameObject {
 
       // Set animation with speed-based animation speed
       this.setAnimation(`${animPrefix}_${direction}`);
-      this.setAnimationSpeed(speed * 0.15);
+      this.setAnimationSpeed(speed * 0.07);
     } else {
       // Idle - use last facing direction
       this.setAnimation(`idle_${this.lastDirection}`);

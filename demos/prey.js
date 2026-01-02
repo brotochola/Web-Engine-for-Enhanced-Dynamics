@@ -215,7 +215,7 @@ class Prey extends Boid {
 
       // Set animation and speed
       this.setAnimation(`${animPrefix}_${direction}`);
-      this.setAnimationSpeed(speed * 0.15);
+      this.setAnimationSpeed(speed * 0.07);
     } else {
       // Use idle animation in last facing direction
       this.setAnimation(`idle_${direction}`);

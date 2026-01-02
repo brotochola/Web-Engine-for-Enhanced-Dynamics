@@ -405,32 +405,74 @@ class PixiRenderer extends AbstractWorker {
     if (!Collider) return;
 
     // DENSE: use entity index directly for component access
-    const radius = Collider.radius[entityIndex];
-    if (radius === 0) return; // No collider (default value)
-
+    const shapeType = Collider.shapeType[entityIndex];
     const isTrigger = Collider.isTrigger[entityIndex];
 
-    // Debug: log a few mappings
-    if (this.frameNumber === 60 && entityIndex >= 1 && entityIndex <= 5) {
-      console.log(
-        `DEBUG: Entity ${entityIndex} -> Collider radius=${radius.toFixed(
-          2
-        )}, pos=(${posX.toFixed(0)}, ${posY.toFixed(0)})`
-      );
-    }
+    // Get offset from entity position
+    const offsetX = Collider.offsetX[entityIndex] || 0;
+    const offsetY = Collider.offsetY[entityIndex] || 0;
+    const renderX = posX + offsetX;
+    const renderY = posY + offsetY;
 
     // Choose color based on trigger status
     const color = isTrigger
       ? this.debugColors.trigger
       : this.debugColors.collider;
 
-    // PixiJS 8: draw shape first, then stroke
-    this.debugLayer.circle(posX, posY, radius);
-    this.debugLayer.stroke({
-      width: 2 / this.cameraData[0],
+    const strokeWidth = 2 / this.cameraData[0];
+    const strokeOptions = {
+      width: strokeWidth,
       color,
       alpha: 0.8,
-    });
+    };
+
+    // Render based on shape type
+    if (shapeType === 0) {
+      // Circle shape
+      const radius = Collider.radius[entityIndex];
+      if (radius === 0) return; // No collider (default value)
+
+      // Debug: log a few mappings
+      if (this.frameNumber === 60 && entityIndex >= 1 && entityIndex <= 5) {
+        console.log(
+          `DEBUG: Entity ${entityIndex} -> Collider radius=${radius.toFixed(
+            2
+          )}, pos=(${posX.toFixed(0)}, ${posY.toFixed(0)})`
+        );
+      }
+
+      // PixiJS 8: draw circle then stroke
+      this.debugLayer.circle(renderX, renderY, radius);
+      this.debugLayer.stroke(strokeOptions);
+    } else if (shapeType === 1) {
+      // Box shape
+      const width = Collider.width[entityIndex];
+      const height = Collider.height[entityIndex];
+
+      if (width === 0 || height === 0) return; // No collider (default value)
+
+      // Debug: log a few mappings
+      if (this.frameNumber === 60 && entityIndex >= 1 && entityIndex <= 5) {
+        console.log(
+          `DEBUG: Entity ${entityIndex} -> Collider box=${width.toFixed(
+            2
+          )}x${height.toFixed(2)}, pos=(${posX.toFixed(0)}, ${posY.toFixed(0)})`
+        );
+      }
+
+      // PixiJS 8: draw rectangle then stroke
+      // Draw from center (offset by half width/height)
+      const halfWidth = width / 2;
+      const halfHeight = height / 2;
+      this.debugLayer.rect(
+        renderX - halfWidth,
+        renderY - halfHeight,
+        width,
+        height
+      );
+      this.debugLayer.stroke(strokeOptions);
+    }
+    // TODO: Add polygon shape support (shapeType === 2) in the future
   }
 
   /**
