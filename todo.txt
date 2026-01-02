@@ -109,7 +109,7 @@ se puede hacer query (pero basado en un unico array)
 
 -agregar entidades q sean rectangulos y q su collider funcione
 
-
+https://github.com/kirbysayshi/pocket-physics
 ------------------------------------------------------------------------------------------------
 --- PIXI-WORKER: ---
 ------------------------------------------------------------------------------------------------
