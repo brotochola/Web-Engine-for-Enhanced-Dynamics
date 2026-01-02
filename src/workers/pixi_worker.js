@@ -557,16 +557,121 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * Render entity index number
+   * Render entity index number using 7-segment style digits
+   * Works in web worker without DOM text rendering
    */
   renderEntityIndex(entityIndex, posX, posY) {
-    // Note: Text rendering in PIXI.Graphics is not optimal
-    // For production, consider using a separate PIXI.Text pool
-    // For now, we'll draw a simple marker and developers can use console
-    // PixiJS 8: draw shape then fill
+    const zoom = this.cameraData[0];
+    const digitHeight = 10 / zoom;
+    const digitWidth = 6 / zoom;
+    const digitSpacing = 2 / zoom;
+    const lineWidth = 1.5 / zoom;
+
+    // Convert index to string and draw each digit
+    const indexStr = entityIndex.toString();
+    const totalWidth =
+      indexStr.length * digitWidth + (indexStr.length - 1) * digitSpacing;
+
+    // Start position (centered above entity)
+    let startX = posX - totalWidth / 2;
+    const startY = posY - digitHeight - 8 / zoom;
+
+    // Draw background for readability
     this.debugLayer
-      .circle(posX, posY, 2 / this.cameraData[0])
-      .fill({ color: this.debugColors.text, alpha: 0.8 });
+      .roundRect(
+        startX - 2 / zoom,
+        startY - 2 / zoom,
+        totalWidth + 4 / zoom,
+        digitHeight + 4 / zoom,
+        2 / zoom
+      )
+      .fill({ color: 0x000000, alpha: 0.7 });
+
+    // Draw each digit
+    for (let i = 0; i < indexStr.length; i++) {
+      this._drawDigit(
+        parseInt(indexStr[i]),
+        startX,
+        startY,
+        digitWidth,
+        digitHeight,
+        lineWidth
+      );
+      startX += digitWidth + digitSpacing;
+    }
+  }
+
+  /**
+   * Draw a single digit using 7-segment display style
+   * Segments: top, top-left, top-right, middle, bottom-left, bottom-right, bottom
+   */
+  _drawDigit(digit, x, y, width, height, lineWidth) {
+    // 7-segment patterns for digits 0-9
+    // [top, topLeft, topRight, middle, bottomLeft, bottomRight, bottom]
+    const segments = {
+      0: [1, 1, 1, 0, 1, 1, 1],
+      1: [0, 0, 1, 0, 0, 1, 0],
+      2: [1, 0, 1, 1, 1, 0, 1],
+      3: [1, 0, 1, 1, 0, 1, 1],
+      4: [0, 1, 1, 1, 0, 1, 0],
+      5: [1, 1, 0, 1, 0, 1, 1],
+      6: [1, 1, 0, 1, 1, 1, 1],
+      7: [1, 0, 1, 0, 0, 1, 0],
+      8: [1, 1, 1, 1, 1, 1, 1],
+      9: [1, 1, 1, 1, 0, 1, 1],
+    };
+
+    const seg = segments[digit] || segments[0];
+    const midY = y + height / 2;
+    const color = this.debugColors.text;
+    const strokeStyle = { width: lineWidth, color, alpha: 1 };
+
+    // Top horizontal
+    if (seg[0]) {
+      this.debugLayer
+        .moveTo(x, y)
+        .lineTo(x + width, y)
+        .stroke(strokeStyle);
+    }
+    // Top-left vertical
+    if (seg[1]) {
+      this.debugLayer.moveTo(x, y).lineTo(x, midY).stroke(strokeStyle);
+    }
+    // Top-right vertical
+    if (seg[2]) {
+      this.debugLayer
+        .moveTo(x + width, y)
+        .lineTo(x + width, midY)
+        .stroke(strokeStyle);
+    }
+    // Middle horizontal
+    if (seg[3]) {
+      this.debugLayer
+        .moveTo(x, midY)
+        .lineTo(x + width, midY)
+        .stroke(strokeStyle);
+    }
+    // Bottom-left vertical
+    if (seg[4]) {
+      this.debugLayer
+        .moveTo(x, midY)
+        .lineTo(x, y + height)
+        .stroke(strokeStyle);
+    }
+    // Bottom-right vertical
+    if (seg[5]) {
+      this.debugLayer
+        .moveTo(x + width, midY)
+        .lineTo(x + width, y + height)
+        .stroke(strokeStyle);
+    }
+    // Bottom horizontal
+    if (seg[6]) {
+      this.debugLayer
+        .moveTo(x, y + height)
+        .lineTo(x + width, y + height)
+        .stroke(strokeStyle);
+    }
   }
 
   /**

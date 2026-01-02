@@ -9,11 +9,10 @@ export const DEBUG_FLAGS = {
   SHOW_SPATIAL_GRID: 4, // Draw spatial hash grid
   SHOW_ENTITY_INFO: 5, // Show entity data on hover
   SHOW_AABB: 6, // Draw axis-aligned bounding boxes
-  SHOW_TRAIL: 7, // Draw entity trails
-  SHOW_FPS_GRAPH: 8, // Draw FPS history graph
-  SHOW_PROFILER: 9, // Show detailed timing breakdown
-  SHOW_ENTITY_INDICES: 10, // Show entity index numbers
-  SHOW_ACTIVE_ONLY: 11, // Only show debug for active entities
+  SHOW_FPS_GRAPH: 7, // Draw FPS history graph
+  SHOW_PROFILER: 8, // Show detailed timing breakdown
+  SHOW_ENTITY_INDICES: 9, // Show entity index numbers
+  SHOW_ACTIVE_ONLY: 10, // Only show debug for active entities
 };
 
 /**
@@ -39,7 +38,6 @@ export class DebugFlags {
       neighbor: 0x00ffff, // Cyan
       grid: 0x444444, // Gray
       aabb: 0xff8800, // Orange
-      trail: 0xffffff, // White
       text: 0xffffff, // White
     };
   }
@@ -101,14 +99,6 @@ export class DebugFlags {
   }
 
   /**
-   * Enable/disable entity trails
-   */
-  showTrail(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_TRAIL] = enabled ? 1 : 0;
-    return this;
-  }
-
-  /**
    * Enable/disable FPS graph
    */
   showFPSGraph(enabled = true) {
@@ -147,7 +137,6 @@ export class DebugFlags {
     if (options.entityInfo !== undefined)
       this.showEntityInfo(options.entityInfo);
     if (options.aabb !== undefined) this.showAABB(options.aabb);
-    if (options.trail !== undefined) this.showTrail(options.trail);
     if (options.fpsGraph !== undefined) this.showFPSGraph(options.fpsGraph);
     if (options.profiler !== undefined) this.showProfiler(options.profiler);
     if (options.entityIndices !== undefined)
@@ -218,7 +207,6 @@ export class DebugFlags {
       spatialGrid: this.isEnabled(DEBUG_FLAGS.SHOW_SPATIAL_GRID),
       entityInfo: this.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INFO),
       aabb: this.isEnabled(DEBUG_FLAGS.SHOW_AABB),
-      trail: this.isEnabled(DEBUG_FLAGS.SHOW_TRAIL),
       fpsGraph: this.isEnabled(DEBUG_FLAGS.SHOW_FPS_GRAPH),
       profiler: this.isEnabled(DEBUG_FLAGS.SHOW_PROFILER),
       entityIndices: this.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INDICES),
