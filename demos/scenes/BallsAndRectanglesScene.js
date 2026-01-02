@@ -71,7 +71,7 @@ export class BallsAndRectanglesScene extends Scene {
 
   static entities = [
     [Ball, 5000], // Pre-allocate pool for 5000 balls
-    [Box, 500], // Pre-allocate pool for 500 boxes
+    [Box, 1500], // Pre-allocate pool for 500 boxes
   ];
 
   // ========================================
@@ -83,7 +83,7 @@ export class BallsAndRectanglesScene extends Scene {
 
     // Scene-specific properties
     this.numberOfBalls = 2000;
-    this.numberOfBoxes = 200;
+    this.numberOfBoxes = 1000;
   }
 
   create() {
