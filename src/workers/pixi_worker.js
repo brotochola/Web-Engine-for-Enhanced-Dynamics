@@ -920,6 +920,13 @@ class PixiRenderer extends AbstractWorker {
 
     // Update to new spritesheet's animation
     const frames = sheet.animations[animName];
+    if (!frames || !frames[0]) {
+      console.error(
+        `PIXI: Animation "${animName}" has no frames! sheet.animations:`,
+        Object.keys(sheet.animations)
+      );
+      return;
+    }
     this.currentAnimationFrames[entityId] = frames;
     this.currentFrameIndex[entityId] = 0;
     this.frameAccumulator[entityId] = 0;
@@ -989,6 +996,45 @@ class PixiRenderer extends AbstractWorker {
 
       if (!bodySprite) continue;
 
+      // OPTIMIZATION: Only update visual properties if dirty flag is set
+      // This skips expensive operations (tint, alpha, flipping, animations) when unchanged
+      if (renderDirty[i]) {
+        // Check if spritesheet changed (per-instance override)
+        const spritesheetId = SpriteRenderer.spritesheetId;
+        if (
+          spritesheetId &&
+          this.currentSpritesheetIds &&
+          this.currentSpritesheetIds[i] !== spritesheetId[i]
+        ) {
+          this.updateEntitySpritesheet(bodySprite, i, spritesheetId[i]);
+          this.currentSpritesheetIds[i] = spritesheetId[i];
+        }
+
+        // Update body sprite visual properties
+        bodySprite.tint = tint[i];
+        bodySprite.alpha = alpha[i];
+
+        // Update animation if changed
+        this.updateSpriteAnimation(bodySprite, i, animationState[i]);
+        this.changeFrameOfSprite(bodySprite, i, deltaSeconds);
+
+        // Update animation speed (stored locally for manual animation)
+        this.animationSpeed[i] = animationSpeed[i];
+
+        // Clear dirty flag after updating
+        renderDirty[i] = 0;
+      }
+
+      // DENSE: use entity index directly for all component data
+      // PixiJS 8 Particle uses scaleX/scaleY instead of scale.x/scale.y
+      if (bodySprite.scaleX !== scaleX[i]) bodySprite.scaleX = scaleX[i];
+      if (bodySprite.scaleY !== scaleY[i]) bodySprite.scaleY = scaleY[i];
+
+      // Update anchor points (0-1 range)
+      // PixiJS 8 Particle uses anchorX/anchorY instead of anchor.x/anchor.y
+      if (bodySprite.anchorX !== anchorX[i]) bodySprite.anchorX = anchorX[i];
+      if (bodySprite.anchorY !== anchorY[i]) bodySprite.anchorY = anchorY[i];
+
       // DENSE ALLOCATION: entityIndex === componentIndex
       // Determine if sprite should be visible
       // Note: spriteActive check removed - bodySprite null check already filters entities without SpriteRenderer
@@ -1031,45 +1077,6 @@ class PixiRenderer extends AbstractWorker {
       bodySprite.x = x[i];
       bodySprite.y = y[i];
       bodySprite.rotation = rotation[i];
-
-      // DENSE: use entity index directly for all component data
-      // PixiJS 8 Particle uses scaleX/scaleY instead of scale.x/scale.y
-      if (bodySprite.scaleX !== scaleX[i]) bodySprite.scaleX = scaleX[i];
-      if (bodySprite.scaleY !== scaleY[i]) bodySprite.scaleY = scaleY[i];
-
-      // Update anchor points (0-1 range)
-      // PixiJS 8 Particle uses anchorX/anchorY instead of anchor.x/anchor.y
-      if (bodySprite.anchorX !== anchorX[i]) bodySprite.anchorX = anchorX[i];
-      if (bodySprite.anchorY !== anchorY[i]) bodySprite.anchorY = anchorY[i];
-
-      // OPTIMIZATION: Only update visual properties if dirty flag is set
-      // This skips expensive operations (tint, alpha, flipping, animations) when unchanged
-      if (renderDirty[i]) {
-        // Check if spritesheet changed (per-instance override)
-        const spritesheetId = SpriteRenderer.spritesheetId;
-        if (
-          spritesheetId &&
-          this.currentSpritesheetIds &&
-          this.currentSpritesheetIds[i] !== spritesheetId[i]
-        ) {
-          this.updateEntitySpritesheet(bodySprite, i, spritesheetId[i]);
-          this.currentSpritesheetIds[i] = spritesheetId[i];
-        }
-
-        // Update body sprite visual properties
-        bodySprite.tint = tint[i];
-        bodySprite.alpha = alpha[i];
-
-        // Update animation if changed
-        this.updateSpriteAnimation(bodySprite, i, animationState[i]);
-        this.changeFrameOfSprite(bodySprite, i, deltaSeconds);
-
-        // Update animation speed (stored locally for manual animation)
-        this.animationSpeed[i] = animationSpeed[i];
-
-        // Clear dirty flag after updating
-        renderDirty[i] = 0;
-      }
     }
 
     // Store visible entity count for reporting
@@ -1980,10 +1987,22 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     console.log(`PIXI WORKER: Creating ${this.maxParticles} particle sprites`);
 
+    // Get a default texture from bigAtlas to ensure particles share the same source
+    const bigAtlas = this.spritesheets["bigAtlas"];
+    let defaultParticleTexture = PIXI.Texture.WHITE; // Fallback
+
+    if (bigAtlas && bigAtlas.textures) {
+      const textureKeys = Object.keys(bigAtlas.textures);
+      if (textureKeys.length > 0) {
+        defaultParticleTexture = bigAtlas.textures[textureKeys[0]];
+      }
+    }
+
     for (let i = 0; i < this.maxParticles; i++) {
       // Create Particle object for ParticleContainer
+      // Use bigAtlas texture to ensure shared source with entity sprites
       const particleSprite = new PIXI.Particle({
-        texture: PIXI.Texture.WHITE, // Default texture, will be set when particle spawns
+        texture: defaultParticleTexture,
         anchorX: 0.5,
         anchorY: 0.5,
       });
@@ -2106,10 +2125,30 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Create placeholder particles for all entities with SpriteRenderer
    * Actual textures/spritesheets are set per-instance via setSpritesheet()
    * PixiJS 8: Uses Particle objects instead of Sprite for ParticleContainer
+   *
+   * IMPORTANT: All particles MUST use textures from the same source (bigAtlas)
+   * for ParticleContainer to render them properly. Using PIXI.Texture.WHITE
+   * as initial texture causes issues because it has a different source.
    */
   createSprites() {
     // Initialize spritesheet tracking array once
     this.currentSpritesheetIds = new Uint8Array(this.entityCount);
+
+    // Get a default texture from bigAtlas to use as initial texture
+    // This ensures all particles share the same texture source
+    const bigAtlas = this.spritesheets["bigAtlas"];
+    let defaultTexture = PIXI.Texture.WHITE; // Fallback
+
+    if (bigAtlas && bigAtlas.textures) {
+      // Use the first available texture from bigAtlas
+      const textureKeys = Object.keys(bigAtlas.textures);
+      if (textureKeys.length > 0) {
+        defaultTexture = bigAtlas.textures[textureKeys[0]];
+        console.log(
+          `PIXI WORKER: Using "${textureKeys[0]}" as default particle texture (from bigAtlas)`
+        );
+      }
+    }
 
     for (let i = 0; i < this.entityCount; i++) {
       const entityType = Transform.entityType[i];
@@ -2126,8 +2165,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
 
       // Create Particle object - PixiJS 8 ParticleContainer uses Particle, not Sprite
+      // Use a texture from bigAtlas to ensure all particles share the same source
       const bodySprite = new PIXI.Particle({
-        texture: PIXI.Texture.WHITE,
+        texture: defaultTexture,
         anchorX: 0.5,
         anchorY: 0.5,
       });

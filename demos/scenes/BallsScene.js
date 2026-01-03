@@ -1,9 +1,10 @@
 // BallsScene.js - Gravity and Separation Physics Demo
 // Demonstrates balls with physics, gravity, and collision
 
-import { Scene } from "/src/core/Scene.js";
 import { Ball } from "/demos/ball.js";
-import { Camera } from "/src/core/Camera.js";
+
+import WEED from "/src/index.js";
+const { Scene, Camera, Mouse } = WEED;
 
 export class BallsScene extends Scene {
   // ========================================
@@ -17,7 +18,7 @@ export class BallsScene extends Scene {
     // Spatial hash grid configuration
     spatial: {
       cellSize: 50,
-      maxNeighbors: 900,
+      maxNeighbors: 100,
       noLimitFPS: true,
     },
 
@@ -27,7 +28,7 @@ export class BallsScene extends Scene {
     },
 
     particle: {
-      noLimitFPS: true,
+      noLimitFPS: false,
       maxParticles: 0,
       decals: false,
       decalsTileSize: 256,
@@ -36,12 +37,12 @@ export class BallsScene extends Scene {
 
     // Physics configuration
     physics: {
-      subStepCount: 2,
+      subStepCount: 1,
       noLimitFPS: true,
-      maxCollisionPairs: 0,
+      maxCollisionPairs: 0, //this is to trigger the collision callbacks, not the resolve collisions
       verletDamping: 0.99,
       boundaryElasticity: 0,
-      collisionResponseStrength: 0.8,
+      collisionResponseStrength: 0.9,
       gravity: { x: 0, y: 0.5 },
     },
 
@@ -80,7 +81,7 @@ export class BallsScene extends Scene {
     super(game);
 
     // Scene-specific properties
-    this.numberOfBalls = 3000;
+    this.numberOfBalls = 5000;
 
     // Camera control settings
     this.cameraPanSpeed = 10; // Pixels per frame at zoom 1
@@ -140,7 +141,7 @@ export class BallsScene extends Scene {
 
   spawnBalls(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity("Ball", {
+      this.spawnEntity(Ball, {
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
         vx: 0,
@@ -154,7 +155,7 @@ export class BallsScene extends Scene {
   // ========================================
 
   spawnRandomBall() {
-    this.spawnEntity("Ball", {
+    this.spawnEntity(Ball, {
       x: this.rng() * this.config.worldWidth,
       y: this.rng() * this.config.worldHeight,
       vx: 0,
@@ -163,9 +164,8 @@ export class BallsScene extends Scene {
   }
 
   async spawnBallAtMouse() {
-    const { Mouse } = await import("/src/core/Mouse.js");
     if (Mouse.x > 0 && Mouse.y > 0) {
-      this.spawnEntity("Ball", {
+      this.spawnEntity(Ball, {
         x: Mouse.x,
         y: Mouse.y,
         vx: 0,

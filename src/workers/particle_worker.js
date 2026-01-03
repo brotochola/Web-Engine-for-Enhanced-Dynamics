@@ -143,22 +143,23 @@ class ParticleWorker extends AbstractWorker {
     this.canvasWidth = this.config.canvasWidth;
     this.canvasHeight = this.config.canvasHeight;
 
-    if (this.maxParticles === 0) {
-      console.warn("PARTICLE WORKER: No particles configured!");
-      return;
+    // Initialize ParticleComponent arrays from SharedArrayBuffer (only if particles are configured)
+    if (this.maxParticles > 0) {
+      if (data.buffers.componentData.ParticleComponent) {
+        ParticleComponent.initializeArrays(
+          data.buffers.componentData.ParticleComponent,
+          this.maxParticles
+        );
+        ParticleComponent.particleCount = this.maxParticles;
+      } else {
+        console.warn(
+          "PARTICLE WORKER: ParticleComponent buffer not found, particle physics disabled"
+        );
+        this.maxParticles = 0;
+      }
     }
-
-    // Initialize ParticleComponent arrays from SharedArrayBuffer
-    if (data.buffers.componentData.ParticleComponent) {
-      ParticleComponent.initializeArrays(
-        data.buffers.componentData.ParticleComponent,
-        this.maxParticles
-      );
-      ParticleComponent.particleCount = this.maxParticles;
-    } else {
-      console.error("PARTICLE WORKER: ParticleComponent buffer not found!");
-      return;
-    }
+    // Note: Worker continues initialization for other systems (lighting, shadows, flashes, etc.)
+    // even when no particles are configured
 
     // ========================================
     // BLOOD DECALS TILEMAP - Initialize SABs
@@ -1168,7 +1169,7 @@ class ParticleWorker extends AbstractWorker {
       this.entityCount === 0 ||
       !SpriteRenderer.isItOnScreen
     )
-      return;
+      return console.warn("PARTICLE WORKER: No camera data or entity count");
 
     const x = Transform.x;
     const y = Transform.y;
@@ -1212,13 +1213,13 @@ class ParticleWorker extends AbstractWorker {
     }
   }
 
-  /**
-   * Update derived properties from positions
-   * Calculates speed and velocityAngle from velocity data
-   * Moved from physics_worker to balance workload
-   *
-   * ENHANCED: Minimum speed threshold prevents rotation jitter when stationary
-   */
+  // /**
+  //  * Update derived properties from positions
+  //  * Calculates speed and velocityAngle from velocity data
+  //  * Moved from physics_worker to balance workload
+  //  *
+  //  * ENHANCED: Minimum speed threshold prevents rotation jitter when stationary
+  //  */
   updateDerivedProperties() {
     if (this.rigidBodyCount === 0 || !RigidBody.vx) return;
 
