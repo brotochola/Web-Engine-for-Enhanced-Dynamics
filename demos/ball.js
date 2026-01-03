@@ -24,47 +24,15 @@ class Ball extends GameObject {
     this.rigidBody.maxAcc = 5; // Max acceleration
     this.rigidBody.minSpeed = 0; // Balls can come to rest
     this.rigidBody.friction = 0.01; // Low friction - let balls settle naturally
+    // Set the texture for this static sprite
 
-    // Set visual range for spatial queries
     const config = this.config || {};
     this.collider.visualRange = (config.spatial?.cellSize || 80) * 1.33;
-  }
 
-  onScreenEnter() {}
-
-  onScreenExit() {}
-
-  /**
-   * LIFECYCLE: Called when ball is spawned/respawned from pool
-   * Initialize THIS instance - runs EVERY spawn
-   * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
-   */
-  onSpawned(spawnConfig = {}) {
-    // Get config from instance
-    const config = this.config || {};
-
-    // Set the texture for this static sprite
-    this.setSprite("ball");
-
-    // Initialize position using ergonomic API (automatically syncs px/py for Verlet)
-    this.x = spawnConfig.x;
-    this.y = spawnConfig.y;
     this.rotation = 0;
 
-    // Initialize RigidBody velocities and accelerations
-    this.vx = spawnConfig.vx ?? 0;
-    this.vy = spawnConfig.vy ?? 0;
     this.rigidBody.ax = 0;
     this.rigidBody.ay = 0;
-
-    // Randomize ball size for each spawn
-    const actualBallSize = 14; //png width
-    const ballRadius = Math.random() * 20 + 10;
-    this.collider.radius = ballRadius;
-
-    const scale = (ballRadius * 2) / actualBallSize;
-    this.spriteRenderer.scaleX = scale;
-    this.spriteRenderer.scaleY = scale;
 
     // Center the sprite anchor (0-1 range)
     this.spriteRenderer.anchorX = 0.5;
@@ -72,6 +40,17 @@ class Ball extends GameObject {
 
     // Reset visual properties
     this.setAlpha(1.0);
+
+    // Set the texture for this static sprite
+
+    this.setSprite("ball");
+
+    const actualBallSize = 14; //png width
+    const ballRadius = Math.random() * 20 + 10;
+    this.collider.radius = ballRadius;
+    const scale = (ballRadius * 2) / actualBallSize;
+    this.spriteRenderer.scaleX = scale;
+    this.spriteRenderer.scaleY = scale;
 
     // Random color tint for visual variety
     const colors = [
@@ -86,6 +65,19 @@ class Ball extends GameObject {
     ];
     this.myColor = colors[Math.floor(Math.random() * colors.length)];
     this.setTint(this.myColor);
+  }
+
+  onScreenEnter() {}
+
+  onScreenExit() {}
+
+  /**
+   * LIFECYCLE: Called when ball is spawned/respawned from pool
+   * Initialize THIS instance - runs EVERY spawn
+   * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
+   */
+  onSpawned(spawnConfig = {}) {
+    this.setup();
   }
 
   onCollisionEnter(otherIndex) {

@@ -531,6 +531,8 @@ export class GameObject {
 
     // Mark as NOT animated (static sprite)
     this.spriteRenderer.isAnimated = 0;
+    this.spriteRenderer.active = 1;
+    this.spriteRenderer.renderVisible = 1;
 
     // Set the sprite (as a single-frame "animation")
     this.setAnimationState(animIndex); // This calls markDirty() internally
@@ -977,9 +979,12 @@ export class GameObject {
       // CRITICAL: Initialize isItOnScreen to 1 so entity is visible immediately
       // The spatial worker will update this properly on its next frame
       instance.spriteRenderer.isItOnScreen = 1;
+      // BUGFIX: Reset animationState to -1 so renderer's change detection will trigger
+      // The renderer tracks previousAnimStates[] and skips updates when the value matches.
+      // Without this reset, respawning an entity with the same sprite would not update the texture.
+      instance.spriteRenderer.animationState = -1;
+      instance.spriteRenderer.spritesheetId = 0;
       instance.markDirty();
-      // Reset sprite state to allow onSpawned() to set it fresh
-      // NOTE: Don't reset spritesheetId/animationState here - let onSpawned() handle it
     }
 
     // Apply spawn config BEFORE activating

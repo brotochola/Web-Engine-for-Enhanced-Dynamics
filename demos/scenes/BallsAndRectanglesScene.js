@@ -84,7 +84,7 @@ export class BallsAndRectanglesScene extends Scene {
 
     // Scene-specific properties
     this.numberOfBalls = 2000;
-    this.numberOfBoxes = 1000;
+    this.numberOfBoxes = 100;
 
     // Camera control settings
     this.cameraPanSpeed = 10; // Pixels per frame at zoom 1
