@@ -1130,15 +1130,9 @@ export class DebugUI {
     }
 
     if (nearestIndex >= 0) {
-      // Get the GameObject instance and call despawn() properly
-      // This ensures the entity is returned to the free list for respawning
-      const instance = GameObject.instances[nearestIndex];
-      if (instance && instance.despawn) {
-        instance.despawn();
-      } else {
-        // Fallback: just deactivate if no instance found
-        Transform.active[nearestIndex] = 0;
-      }
+      // Despawn through the scene/worker to properly update the freeList
+      // Direct main-thread despawn would corrupt the worker's freeList
+      this.scene.despawnEntity(nearestIndex);
     }
   }
 

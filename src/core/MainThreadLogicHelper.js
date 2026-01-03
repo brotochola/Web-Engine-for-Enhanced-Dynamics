@@ -396,6 +396,29 @@ export class MainThreadLogicHelper {
   }
 
   /**
+   * Despawn a single entity by index (main-thread-only mode)
+   * Used when there are 0 logic workers
+   *
+   * @param {number} entityIndex - Index of the entity to despawn
+   */
+  despawnEntity(entityIndex) {
+    // Validate entity index
+    if (
+      entityIndex < 0 ||
+      entityIndex >= this.engine.totalEntityCount ||
+      !Transform.active[entityIndex]
+    ) {
+      return;
+    }
+
+    // Get the instance and despawn it
+    const instance = this.gameObjects[entityIndex];
+    if (instance && instance.despawn) {
+      instance.despawn();
+    }
+  }
+
+  /**
    * Despawn all entities of a specific type (main-thread-only mode)
    * Used when there are 0 logic workers
    *

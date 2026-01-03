@@ -45,23 +45,8 @@ class Scene {
       pause: false,
     };
 
-    // Apply default physics settings if not provided
-    this.config = {
-      gravity: { x: 0, y: 0 },
-      ...this.config,
-    };
-
-    this.config.physics = {
-      subStepCount: 4,
-      boundaryElasticity: 0.8,
-      collisionResponseStrength: 0.5,
-      verletDamping: 0.995,
-      minSpeedForRotation: 0.1,
-      ...(this.config.physics || {}),
-    };
-    this.config.physics.gravity = this.config.physics.gravity ||
-      this.config.gravity || { x: 0, y: 0 };
-    this.config.gravity = this.config.physics.gravity;
+    // Apply all default config values
+    this._applyConfigDefaults();
 
     // State
     this.keyboard = {};
@@ -71,9 +56,6 @@ class Scene {
       x: 0,
       y: 0,
     };
-
-    // Get number of logic workers from config
-    this.numberOfLogicWorkers = this.config.logic?.numberOfLogicWorkers ?? 1;
 
     // Workers
     this.workers = {
@@ -104,15 +86,17 @@ class Scene {
       physics: false,
       renderer: false,
     };
-    for (let i = 0; i < this.numberOfLogicWorkers; i++) {
+    const numberOfLogicWorkers = this.config.logic.numberOfLogicWorkers;
+    for (let i = 0; i < numberOfLogicWorkers; i++) {
       this.workerReadyStates[`logic${i}`] = false;
     }
-    this.hasParticles = !!(this.config.particle?.maxParticles > 0);
-    if (this.hasParticles) {
+    if (this.config.particle.maxParticles > 0) {
       this.workerReadyStates.particle = false;
     }
     this.totalWorkers =
-      3 + this.numberOfLogicWorkers + (this.hasParticles ? 1 : 0);
+      3 +
+      numberOfLogicWorkers +
+      (this.config.particle.maxParticles > 0 ? 1 : 0);
 
     // Shared buffers
     this.buffers = {
@@ -140,27 +124,6 @@ class Scene {
       Collider: { ComponentClass: Collider },
       SpriteRenderer: { ComponentClass: SpriteRenderer },
     };
-
-    // Particle pool size
-    this.maxParticles = this.config.particle?.maxParticles || 0;
-
-    // Shadow sprite system
-    const lightingConfig = this.config.lighting || {};
-    this.shadowsEnabled =
-      lightingConfig.enabled && lightingConfig.shadowsEnabled !== false;
-    this.maxShadowCastingLights = lightingConfig.maxShadowCastingLights || 20;
-    this.maxShadowsPerLight = lightingConfig.maxShadowsPerLight || 15;
-    this.maxShadowsPerEntity = lightingConfig.maxShadowsPerEntity || 0;
-    this.maxShadowSprites =
-      this.maxShadowCastingLights * this.maxShadowsPerLight;
-
-    // Blood decals tilemap system
-    this.decalsEnabled = this.config.particle?.decals || false;
-    this.decalsTileSize = this.config.particle?.decalsTileSize || 256;
-    this.decalsResolution = this.config.particle?.decalsResolution || 1.0;
-    this.decalsTilePixelSize = Math.floor(
-      this.decalsTileSize * this.decalsResolution
-    );
 
     // Typed array views
     this.views = {
@@ -278,10 +241,10 @@ class Scene {
     this.registerEntityClass(Mouse, 1);
 
     // Auto-register Flash if lighting is enabled
-    this.maxFlashes = this.config.lighting?.maxFlashes || 0;
-    if (this.maxFlashes > 0) {
-      this.registerEntityClass(Flash, this.maxFlashes);
-      Flash.initialize(this.maxFlashes);
+    const maxFlashes = this.config.lighting.maxFlashes;
+    if (maxFlashes > 0) {
+      this.registerEntityClass(Flash, maxFlashes);
+      Flash.initialize(maxFlashes);
     }
 
     // Register entities from static declaration
@@ -357,6 +320,172 @@ class Scene {
     } catch (e) {
       return url;
     }
+  }
+
+  /**
+   * Apply default values to all config sections.
+   * After this method, all config values are guaranteed to exist with sensible defaults.
+   * Access config via this.config.section.property (e.g., this.config.lighting.maxFlashes)
+   */
+  _applyConfigDefaults() {
+    // Top-level defaults
+    this.config = {
+      gravity: { x: 0, y: 0 },
+      worldWidth: 1000,
+      worldHeight: 1000,
+      canvasWidth: 800,
+      canvasHeight: 600,
+      ...this.config,
+    };
+
+    // Physics defaults
+    this.config.physics = {
+      subStepCount: 4,
+      boundaryElasticity: 0.8,
+      collisionResponseStrength: 0.5,
+      verletDamping: 0.995,
+      minSpeedForRotation: 0.1,
+      maxCollisionPairs: 10000,
+      gravity: this.config.gravity,
+      ...(this.config.physics || {}),
+    };
+    // Ensure gravity is synced
+    this.config.physics.gravity =
+      this.config.physics.gravity || this.config.gravity;
+    this.config.gravity = this.config.physics.gravity;
+
+    // Spatial defaults
+    this.config.spatial = {
+      cellSize: 128,
+      maxNeighbors: 100,
+      noLimitFPS: false,
+      ...(this.config.spatial || {}),
+    };
+
+    // Particle defaults
+    this.config.particle = {
+      maxParticles: 0,
+      noLimitFPS: false,
+      decals: false,
+      decalsTileSize: 256,
+      decalsResolution: 1.0,
+      ...(this.config.particle || {}),
+    };
+    // Compute decalsTilePixelSize
+    this.config.particle.decalsTilePixelSize = Math.floor(
+      this.config.particle.decalsTileSize *
+        this.config.particle.decalsResolution
+    );
+
+    // Logic defaults
+    this.config.logic = {
+      numberOfLogicWorkers: 1,
+      numberOfEntitiesPerJob: 250,
+      useMainThreadAsLogicWorker: false,
+      mainThreadMaxJobsPerFrame: 0,
+      noLimitFPS: false,
+      ...(this.config.logic || {}),
+    };
+
+    // Renderer defaults
+    this.config.renderer = {
+      noLimitFPS: false,
+      bg: null,
+      bgTileScale: 1,
+      ySorting: false,
+      ...(this.config.renderer || {}),
+    };
+
+    // Lighting defaults
+    this.config.lighting = {
+      enabled: false,
+      lightingAmbient: 0.3,
+      maxLights: 10,
+      shadowsEnabled: false,
+      maxShadowCastingLights: 20,
+      maxShadowsPerLight: 15,
+      maxShadowsPerEntity: 0,
+      maxFlashes: 0,
+      ...(this.config.lighting || {}),
+    };
+    // Compute maxShadowSprites
+    this.config.lighting.maxShadowSprites =
+      this.config.lighting.maxShadowCastingLights *
+      this.config.lighting.maxShadowsPerLight;
+    // Compute shadowsEnabled (requires both enabled and shadowsEnabled)
+    this.config.lighting.shadowsEnabled =
+      this.config.lighting.enabled &&
+      this.config.lighting.shadowsEnabled !== false;
+  }
+
+  // ========================================
+  // CONFIG CONVENIENCE GETTERS
+  // These provide quick access to commonly used config values
+  // ========================================
+
+  /** @returns {number} Number of logic workers */
+  get numberOfLogicWorkers() {
+    return this.config.logic.numberOfLogicWorkers;
+  }
+
+  /** @returns {boolean} Whether particles are enabled */
+  get hasParticles() {
+    return this.config.particle.maxParticles > 0;
+  }
+
+  /** @returns {number} Maximum number of particles */
+  get maxParticles() {
+    return this.config.particle.maxParticles;
+  }
+
+  /** @returns {boolean} Whether shadows are enabled */
+  get shadowsEnabled() {
+    return this.config.lighting.shadowsEnabled;
+  }
+
+  /** @returns {number} Maximum shadow-casting lights */
+  get maxShadowCastingLights() {
+    return this.config.lighting.maxShadowCastingLights;
+  }
+
+  /** @returns {number} Maximum shadows per light */
+  get maxShadowsPerLight() {
+    return this.config.lighting.maxShadowsPerLight;
+  }
+
+  /** @returns {number} Maximum shadows per entity */
+  get maxShadowsPerEntity() {
+    return this.config.lighting.maxShadowsPerEntity;
+  }
+
+  /** @returns {number} Total maximum shadow sprites */
+  get maxShadowSprites() {
+    return this.config.lighting.maxShadowSprites;
+  }
+
+  /** @returns {boolean} Whether decals are enabled */
+  get decalsEnabled() {
+    return this.config.particle.decals;
+  }
+
+  /** @returns {number} Decal tile size in world units */
+  get decalsTileSize() {
+    return this.config.particle.decalsTileSize;
+  }
+
+  /** @returns {number} Decal resolution multiplier */
+  get decalsResolution() {
+    return this.config.particle.decalsResolution;
+  }
+
+  /** @returns {number} Decal tile pixel size */
+  get decalsTilePixelSize() {
+    return this.config.particle.decalsTilePixelSize;
+  }
+
+  /** @returns {number} Maximum flash effects */
+  get maxFlashes() {
+    return this.config.lighting.maxFlashes;
   }
 
   _autoRegisterParentClasses(EntityClass) {
@@ -472,14 +601,13 @@ class Scene {
   // I'll include the essential ones inline and reference the rest
 
   initMainThreadHelper() {
-    const enabled = this.config.logic?.useMainThreadAsLogicWorker ?? false;
-    if (!enabled) return;
+    if (!this.config.logic.useMainThreadAsLogicWorker) return;
 
     this.mainThreadHelper = new MainThreadLogicHelper(this);
     this.mainThreadHelper.initialize();
-
-    const maxJobsPerFrame = this.config.logic?.mainThreadMaxJobsPerFrame ?? 0;
-    this.mainThreadHelper.setMaxJobsPerFrame(maxJobsPerFrame);
+    this.mainThreadHelper.setMaxJobsPerFrame(
+      this.config.logic.mainThreadMaxJobsPerFrame
+    );
   }
 
   createSharedBuffers() {
@@ -497,8 +625,7 @@ class Scene {
     this.buffers.gameObjectData = new SharedArrayBuffer(gameObjectBufferSize);
 
     // Neighbor data buffer
-    const maxNeighbors =
-      this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
+    const maxNeighbors = this.config.spatial.maxNeighbors;
     const NEIGHBOR_BUFFER_SIZE = this.totalEntityCount * (1 + maxNeighbors) * 4;
     this.buffers.neighborData = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
 
@@ -528,34 +655,33 @@ class Scene {
     }
 
     // ParticleComponent buffer
-    if (this.hasParticles && this.maxParticles > 0) {
-      const particleBufferSize = ParticleComponent.getBufferSize(
-        this.maxParticles
-      );
+    const maxParticles = this.config.particle.maxParticles;
+    if (maxParticles > 0) {
+      const particleBufferSize = ParticleComponent.getBufferSize(maxParticles);
       this.buffers.componentData.ParticleComponent = new SharedArrayBuffer(
         particleBufferSize
       );
       ParticleComponent.initializeArrays(
         this.buffers.componentData.ParticleComponent,
-        this.maxParticles
+        maxParticles
       );
-      ParticleComponent.particleCount = this.maxParticles;
+      ParticleComponent.particleCount = maxParticles;
     }
 
     // Shadow sprite system
-    if (this.shadowsEnabled && this.maxShadowSprites > 0) {
-      const shadowSpriteBufferSize = ShadowCaster.getBufferSize(
-        this.maxShadowSprites
-      );
+    const maxShadowSprites = this.config.lighting.maxShadowSprites;
+    if (this.config.lighting.shadowsEnabled && maxShadowSprites > 0) {
+      const shadowSpriteBufferSize =
+        ShadowCaster.getBufferSize(maxShadowSprites);
       this.buffers.shadowSpriteData = new SharedArrayBuffer(
         shadowSpriteBufferSize
       );
     }
 
     // Blood decals tilemap
-    if (this.decalsEnabled) {
-      const tileSize = this.decalsTileSize;
-      const tilePixelSize = this.decalsTilePixelSize;
+    if (this.config.particle.decals) {
+      const tileSize = this.config.particle.decalsTileSize;
+      const tilePixelSize = this.config.particle.decalsTilePixelSize;
       const worldWidth = this.config.worldWidth;
       const worldHeight = this.config.worldHeight;
 
@@ -578,10 +704,7 @@ class Scene {
     this.preInitializeEntityTypeArrays();
 
     // Collision data buffer
-    const maxCollisionPairs =
-      this.config.physics?.maxCollisionPairs ||
-      this.config.maxCollisionPairs ||
-      10000;
+    const maxCollisionPairs = this.config.physics.maxCollisionPairs;
     const COLLISION_BUFFER_SIZE = (1 + maxCollisionPairs * 2) * 4;
     this.buffers.collisionData = new SharedArrayBuffer(COLLISION_BUFFER_SIZE);
     this.views.collision = new Int32Array(this.buffers.collisionData);
@@ -622,16 +745,16 @@ class Scene {
     syncView[1] = 0;
 
     this.mainThreadJobStealingEnabled =
-      this.config.logic?.useMainThreadAsLogicWorker ?? false;
+      this.config.logic.useMainThreadAsLogicWorker;
     const totalWorkers = this.mainThreadJobStealingEnabled
-      ? this.numberOfLogicWorkers + 1
-      : this.numberOfLogicWorkers;
+      ? this.config.logic.numberOfLogicWorkers + 1
+      : this.config.logic.numberOfLogicWorkers;
     syncView[2] = totalWorkers;
     syncView[3] = 0;
     syncView[4] = 1;
 
     // Job queue buffer
-    const entitiesPerJob = this.config.logic?.numberOfEntitiesPerJob || 250;
+    const entitiesPerJob = this.config.logic.numberOfEntitiesPerJob;
     const totalJobs = Math.ceil(this.totalEntityCount / entitiesPerJob);
     const JOB_QUEUE_SIZE = (2 + totalJobs * 2) * 4;
     this.buffers.jobQueueData = new SharedArrayBuffer(JOB_QUEUE_SIZE);
@@ -728,7 +851,7 @@ class Scene {
       this.bigAtlasJson = bigAtlas.json;
 
       // Extract decal textures
-      if (this.decalsEnabled) {
+      if (this.config.particle.decals) {
         this.decalTextureData = this.extractDecalTextures(
           bigAtlas.canvas,
           bigAtlas.json
@@ -897,13 +1020,13 @@ class Scene {
       ),
       keyIndexMap: this.createKeyIndexMap(),
       spritesheetMetadata: SpriteSheetRegistry.serialize(),
-      maxParticles: this.maxParticles,
-      decals: this.decalsEnabled
+      maxParticles: this.config.particle.maxParticles,
+      decals: this.config.particle.decals
         ? {
             enabled: true,
-            tileSize: this.decalsTileSize,
-            tilePixelSize: this.decalsTilePixelSize,
-            resolution: this.decalsResolution,
+            tileSize: this.config.particle.decalsTileSize,
+            tilePixelSize: this.config.particle.decalsTilePixelSize,
+            resolution: this.config.particle.decalsResolution,
             tilesX: this.decalsTilesX,
             tilesY: this.decalsTilesY,
             totalTiles: this.decalsTotalTiles,
@@ -912,21 +1035,21 @@ class Scene {
             textures: this.decalTextureData,
           }
         : null,
-      shadows: this.shadowsEnabled
+      shadows: this.config.lighting.shadowsEnabled
         ? {
             enabled: true,
-            maxShadowCastingLights: this.maxShadowCastingLights,
-            maxShadowsPerLight: this.maxShadowsPerLight,
-            maxShadowsPerEntity: this.maxShadowsPerEntity,
-            maxShadowSprites: this.maxShadowSprites,
+            maxShadowCastingLights: this.config.lighting.maxShadowCastingLights,
+            maxShadowsPerLight: this.config.lighting.maxShadowsPerLight,
+            maxShadowsPerEntity: this.config.lighting.maxShadowsPerEntity,
+            maxShadowSprites: this.config.lighting.maxShadowSprites,
             spriteData: this.buffers.shadowSpriteData,
           }
         : null,
       flashes:
-        this.maxFlashes > 0
+        this.config.lighting.maxFlashes > 0
           ? {
               enabled: true,
-              maxFlashes: this.maxFlashes,
+              maxFlashes: this.config.lighting.maxFlashes,
               startIndex: Flash.startIndex,
             }
           : null,
@@ -1397,7 +1520,7 @@ class Scene {
 
     // Clear ParticleComponent if it exists
     if (ParticleComponent.active) {
-      for (let i = 0; i < this.maxParticles; i++) {
+      for (let i = 0; i < this.config.particle.maxParticles; i++) {
         ParticleComponent.active[i] = 0;
       }
     }
@@ -1414,7 +1537,7 @@ class Scene {
     Mouse.isButton2Down = false;
 
     // Clear Flash if it was initialized
-    if (this.maxFlashes > 0 && Flash.instances) {
+    if (this.config.lighting.maxFlashes > 0 && Flash.instances) {
       Flash.instances = [];
     }
 
@@ -1481,6 +1604,19 @@ class Scene {
       });
     } else if (this.mainThreadHelper) {
       this.mainThreadHelper.spawnEntity(className, spawnConfig);
+    }
+  }
+
+  despawnEntity(entityIndex) {
+    if (this.workers.logicWorkers && this.workers.logicWorkers.length > 0) {
+      this.workers.logicWorkers.forEach((worker) => {
+        worker.postMessage({
+          msg: "despawn",
+          entityIndex: entityIndex,
+        });
+      });
+    } else if (this.mainThreadHelper) {
+      this.mainThreadHelper.despawnEntity(entityIndex);
     }
   }
 

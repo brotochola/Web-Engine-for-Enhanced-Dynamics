@@ -662,6 +662,31 @@ class LogicWorker extends AbstractWorker {
         break;
       }
 
+      case "despawn": {
+        // Only worker 0 handles despawn to keep freeList synchronized with spawn
+        if (this.workerIndex !== 0) {
+          break;
+        }
+
+        const { entityIndex } = data;
+
+        // Validate entity index
+        if (
+          entityIndex < 0 ||
+          entityIndex >= this.entityCount ||
+          !Transform.active[entityIndex]
+        ) {
+          break;
+        }
+
+        // Get the instance and despawn it
+        const instance = this.gameObjects[entityIndex];
+        if (instance && instance.despawn) {
+          instance.despawn();
+        }
+        break;
+      }
+
       case "despawnAll": {
         // Only worker 0 handles despawnAll to keep freeList synchronized with spawn
         // (spawn also only runs on worker 0)
