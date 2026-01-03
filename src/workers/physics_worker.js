@@ -235,6 +235,7 @@ class PhysicsWorker extends AbstractWorker {
     const damping = this.settings.verletDamping;
     const isStatic = RigidBody.static;
     const friction = RigidBody.friction;
+    const maxAcc = RigidBody.maxAcc;
 
     const gravityScale = Math.pow(dtRatio, 2);
 
@@ -254,13 +255,30 @@ class PhysicsWorker extends AbstractWorker {
         dy *= frictionFactor;
       }
 
-      dx += gravityScale * gx + ax[i] * dtRatio;
-      dy += gravityScale * gy + ay[i] * dtRatio;
+      // Apply acceleration (scaled by dtRatio)
+      let accX = ax[i] * dtRatio;
+      let accY = ay[i] * dtRatio;
 
-      let maxSpeed = maxVel[i] > 0 ? maxVel[i] : 100;
+      // Limit acceleration magnitude while preserving direction
+      const accMagnitude = Math.sqrt(accX * accX + accY * accY);
+      const maxAccel = maxAcc[i];
+      if (accMagnitude > maxAccel) {
+        const accScale = maxAccel / accMagnitude;
+        accX *= accScale;
+        accY *= accScale;
+      }
 
-      dx = Math.max(-maxSpeed, Math.min(maxSpeed, dx));
-      dy = Math.max(-maxSpeed, Math.min(maxSpeed, dy));
+      dx += gravityScale * gx + accX;
+      dy += gravityScale * gy + accY;
+
+      // Limit velocity magnitude while preserving direction
+      const currentSpeed = RigidBody.speed[i];
+      const maxSpeed = maxVel[i] > 0 ? maxVel[i] : 100;
+      if (currentSpeed > maxSpeed) {
+        const velScale = maxSpeed / currentSpeed;
+        dx *= velScale;
+        dy *= velScale;
+      }
 
       x[i] = oldX + dx;
       y[i] = oldY + dy;
