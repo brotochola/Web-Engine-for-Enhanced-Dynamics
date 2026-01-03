@@ -672,6 +672,34 @@ export class GameObject {
     // Prevent double-despawn which corrupts the free list
     if (Transform.active[this.index] === 0) return;
 
+    // WORKER ROUTING: If we're in a logic worker that's not worker 0,
+    // route the despawn request to worker 0 to keep freeList synchronized
+    if (typeof self !== "undefined" && self.logicWorker) {
+      if (self.logicWorker.workerIndex !== 0) {
+        // LIFECYCLE: Call onDespawned() BEFORE deactivating
+        if (this.onDespawned) {
+          this.onDespawned();
+        }
+
+        // Immediately deactivate so entity stops being processed
+        // (the active flag is in SharedArrayBuffer, visible to all workers)
+        Transform.active[this.index] = 0;
+        if (this.rigidBody) RigidBody.active[this.index] = 0;
+        if (this.collider) Collider.active[this.index] = 0;
+        if (this.spriteRenderer) SpriteRenderer.active[this.index] = 0;
+        if (this.lightEmitter) LightEmitter.active[this.index] = 0;
+        if (this.shadowCaster) ShadowCaster.active[this.index] = 0;
+
+        // Route to worker 0 to update the freeList
+        self.logicWorker.sendDataToWorker("logic0", {
+          msg: "despawnRequest",
+          entityIndex: this.index,
+          className: this.constructor.name,
+        });
+        return;
+      }
+    }
+
     // LIFECYCLE: Call onDespawned() BEFORE deactivating
     // This allows cleanup, saving state, triggering effects, etc.
     if (this.onDespawned) {
@@ -838,7 +866,7 @@ export class GameObject {
    *
    * @param {Class} EntityClass - The entity class to spawn (e.g., Ball, Car)
    * @param {Object} spawnConfig - Initial configuration (position, velocity, etc.)
-   * @returns {GameObject|null} - The spawned entity instance, or null if pool exhausted
+   * @returns {GameObject|null} - The spawned entity instance, or null if pool exhausted or routed to worker 0
    */
   static spawn(EntityClassOrConfig, spawnConfig = {}) {
     // Support two calling conventions:
@@ -863,6 +891,20 @@ export class GameObject {
         `Cannot spawn ${EntityClass.name}: missing startIndex/totalCount metadata. Was it registered with GameEngine?`
       );
       return null;
+    }
+
+    // WORKER ROUTING: If we're in a logic worker that's not worker 0,
+    // route the spawn request to worker 0 to keep freeList synchronized
+    if (typeof self !== "undefined" && self.logicWorker) {
+      if (self.logicWorker.workerIndex !== 0) {
+        // Route to worker 0 via MessagePort
+        self.logicWorker.sendDataToWorker("logic0", {
+          msg: "spawnRequest",
+          className: EntityClass.name,
+          spawnConfig: spawnConfig,
+        });
+        return null; // Async spawn - no instance returned immediately
+      }
     }
 
     // Initialize free list if not exists (lazy init)

@@ -896,6 +896,12 @@ class Scene {
       connections.push({ from: `logic${i}`, to: "renderer" });
     }
 
+    // Connect all logic workers to logic0 for spawn/despawn routing
+    // This ensures freeList synchronization across workers
+    for (let i = 1; i < this.numberOfLogicWorkers; i++) {
+      connections.push({ from: `logic${i}`, to: "logic0" });
+    }
+
     return setupWorkerCommunication(connections);
   }
 

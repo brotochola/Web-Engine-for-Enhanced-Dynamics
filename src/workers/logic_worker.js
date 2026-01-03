@@ -687,6 +687,63 @@ class LogicWorker extends AbstractWorker {
         break;
       }
 
+      // Handle spawn requests from other logic workers (worker-to-worker message)
+      case "spawnRequest": {
+        // This should only be received by worker 0 (routed from other workers)
+        if (this.workerIndex !== 0) {
+          console.warn(
+            `LOGIC WORKER ${this.workerIndex}: Received spawnRequest but I'm not worker 0!`
+          );
+          break;
+        }
+
+        const { className, spawnConfig } = data;
+        const EntityClass = self[className];
+
+        if (!EntityClass) {
+          console.error(
+            `LOGIC WORKER ${this.workerIndex}: Cannot spawn ${className} - class not found!`
+          );
+          break;
+        }
+
+        const instance = GameObject.spawn(EntityClass, spawnConfig);
+        if (!instance) {
+          console.warn(
+            `LOGIC WORKER ${this.workerIndex}: Failed to spawn ${className} - pool exhausted!`
+          );
+        }
+        break;
+      }
+
+      // Handle despawn requests from other logic workers (worker-to-worker message)
+      case "despawnRequest": {
+        // This should only be received by worker 0 (routed from other workers)
+        if (this.workerIndex !== 0) {
+          console.warn(
+            `LOGIC WORKER ${this.workerIndex}: Received despawnRequest but I'm not worker 0!`
+          );
+          break;
+        }
+
+        const { entityIndex, className } = data;
+        const EntityClass = self[className];
+
+        if (!EntityClass) {
+          console.error(
+            `LOGIC WORKER ${this.workerIndex}: Cannot despawn ${className} - class not found!`
+          );
+          break;
+        }
+
+        // Entity is already deactivated by the requesting worker
+        // We just need to return the index to the freeList
+        if (EntityClass.freeList) {
+          EntityClass.freeList[++EntityClass.freeListTop] = entityIndex;
+        }
+        break;
+      }
+
       case "despawnAll": {
         // Only worker 0 handles despawnAll to keep freeList synchronized with spawn
         // (spawn also only runs on worker 0)
