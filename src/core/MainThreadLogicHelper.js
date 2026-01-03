@@ -434,26 +434,44 @@ export class MainThreadLogicHelper {
       console.error(
         `MainThreadLogicHelper: Cannot despawn ${className} - class not found!`
       );
+      console.error(
+        `MainThreadLogicHelper: Available classes:`,
+        this.engine.registeredClasses.map((c) => c.class?.name)
+      );
       return;
     }
 
     const EntityClass = classInfo.class;
     const entityType = EntityClass.entityType;
     let count = 0;
+    let skippedNoInstance = 0;
 
     for (let i = 0; i < this.engine.totalEntityCount; i++) {
-      if (
-        Transform.active[i] &&
-        Transform.entityType[i] === entityType &&
-        this.gameObjects[i]
-      ) {
-        this.gameObjects[i].despawn();
-        count++;
+      if (Transform.active[i] && Transform.entityType[i] === entityType) {
+        if (this.gameObjects[i]) {
+          this.gameObjects[i].despawn();
+          count++;
+        } else {
+          // Fallback: manually deactivate if no instance exists
+          Transform.active[i] = 0;
+          if (RigidBody.active && RigidBody.active[i]) RigidBody.active[i] = 0;
+          if (Collider.active && Collider.active[i]) Collider.active[i] = 0;
+          if (SpriteRenderer.active && SpriteRenderer.active[i])
+            SpriteRenderer.active[i] = 0;
+
+          // Return to free list
+          if (EntityClass.freeList) {
+            EntityClass.freeList[++EntityClass.freeListTop] = i;
+          }
+
+          skippedNoInstance++;
+          count++;
+        }
       }
     }
 
     console.log(
-      `MainThreadLogicHelper: Despawned ${count} ${className} entities`
+      `MainThreadLogicHelper: Despawned ${count} ${className} entities (${skippedNoInstance} without instances)`
     );
   }
 }
