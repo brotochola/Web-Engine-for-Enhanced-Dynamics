@@ -140,7 +140,7 @@ export class PredatorScene extends WEED.Scene {
     super(game);
 
     // Scene-specific properties
-    this.numberOfPrey = 0;
+    this.numberOfPrey = 1000;
     this.numberOfPredators = 0;
     this.numberOfBoids = 0;
     this.numberOfTallLights = 10;
