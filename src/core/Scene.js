@@ -714,11 +714,16 @@ class Scene {
     this.buffers.inputData = new SharedArrayBuffer(INPUT_BUFFER_SIZE);
     this.views.input = new Int32Array(this.buffers.inputData);
 
-    // Camera buffer
-    const CAMERA_BUFFER_SIZE = 3 * 4;
+    // Camera buffer: [zoom, x, y, followTargetX, followTargetY, targetZoom]
+    const CAMERA_BUFFER_SIZE = 6 * 4;
     this.buffers.cameraData = new SharedArrayBuffer(CAMERA_BUFFER_SIZE);
     this.views.camera = new Float32Array(this.buffers.cameraData);
     this.views.camera[0] = this.camera.zoom;
+    // Initialize follow target to NaN (indicates no target)
+    this.views.camera[3] = NaN;
+    this.views.camera[4] = NaN;
+    // Initialize target zoom to current zoom
+    this.views.camera[5] = this.camera.zoom;
 
     // Initialize Camera static class with shared buffer
     Camera.initialize(
@@ -1305,20 +1310,11 @@ class Scene {
     this._wheelHandler = (e) => {
       e.preventDefault();
 
-      const oldZoom = this.camera.zoom;
-      const newZoom = Math.max(0.1, Math.min(5, oldZoom + -e.deltaY * 0.001));
+      const currentZoom = Camera.targetZoom;
+      const newZoom = currentZoom + -e.deltaY * 0.001;
 
-      const centerX = this.config.canvasWidth / 2;
-      const centerY = this.config.canvasHeight / 2;
-
-      const worldCenterX = centerX / oldZoom + this.camera.x;
-      const worldCenterY = centerY / oldZoom + this.camera.y;
-
-      this.camera.x = worldCenterX - centerX / newZoom;
-      this.camera.y = worldCenterY - centerY / newZoom;
-      this.camera.zoom = newZoom;
-
-      this.updateCameraBuffer();
+      // Set target zoom - Camera.follow() will lerp toward it
+      Camera.setZoom(newZoom);
     };
 
     this._visibilityChangeHandler = () => {
@@ -1361,10 +1357,8 @@ class Scene {
   }
 
   updateCameraBuffer() {
-    // Sync zoom from main thread to Camera (zoom controlled by main thread)
-    Camera.zoom = this.camera.zoom;
-
-    // Sync position from Camera to this.camera (position controlled by worker/entity)
+    // Sync all camera state from Camera static class (controlled by worker/entity via follow())
+    this.camera.zoom = Camera.zoom;
     this.camera.x = Camera.x;
     this.camera.y = Camera.y;
 

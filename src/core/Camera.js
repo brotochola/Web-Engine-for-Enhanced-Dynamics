@@ -59,6 +59,14 @@ export class Camera {
     if (this._data) this._data[0] = value;
   }
 
+  static get targetZoom() {
+    return this._data ? this._data[5] : 1;
+  }
+
+  static set targetZoom(value) {
+    if (this._data) this._data[5] = value;
+  }
+
   static get x() {
     return this._data ? this._data[1] : 0;
   }
@@ -163,6 +171,7 @@ export class Camera {
 
   /**
    * Smoothly follow a target position (centers target on screen)
+   * Also lerps zoom toward targetZoom if set
    * @param {number} targetX - Target X position in world coordinates
    * @param {number} targetY - Target Y position in world coordinates
    * @param {number} [smoothing] - Optional smoothing override (0-1)
@@ -170,7 +179,24 @@ export class Camera {
   static follow(targetX, targetY, smoothing) {
     if (!this._data) return;
 
+    // Store follow target in SharedArrayBuffer for cross-thread access
+    // Buffer layout: [zoom, x, y, followTargetX, followTargetY, targetZoom]
+    this._data[3] = targetX;
+    this._data[4] = targetY;
+
     const s = smoothing ?? this._smoothing;
+
+    // Check if zoom is actively changing
+    const currentZoom = this._data[0];
+    const targetZoom = this._data[5];
+    const zoomDiff = Math.abs(targetZoom - currentZoom);
+    const isZooming = targetZoom > 0 && zoomDiff > 0.001;
+
+    // Lerp zoom toward target zoom
+    if (isZooming) {
+      this._data[0] += (targetZoom - currentZoom) * s;
+    }
+
     const zoom = this._data[0];
 
     // Calculate camera position to center target on screen (accounting for zoom)
@@ -179,12 +205,56 @@ export class Camera {
     const targetCameraX = targetX - this._canvasWidth / (2 * zoom);
     const targetCameraY = targetY - this._canvasHeight / (2 * zoom);
 
-    // Lerp to target
-    this._data[1] += (targetCameraX - this._data[1]) * s;
-    this._data[2] += (targetCameraY - this._data[2]) * s;
+    if (isZooming) {
+      // Snap position while zooming to keep target perfectly centered
+      this._data[1] = targetCameraX;
+      this._data[2] = targetCameraY;
+    } else {
+      // Lerp to target position when not zooming
+      this._data[1] += (targetCameraX - this._data[1]) * s;
+      this._data[2] += (targetCameraY - this._data[2]) * s;
+    }
 
     // Clamp to world bounds
     this._clampToWorldBounds();
+  }
+
+  /**
+   * Set target zoom level (will be lerped in follow())
+   * @param {number} targetZoom - Target zoom level (0.1 to 5)
+   */
+  static setZoom(targetZoom) {
+    if (!this._data) return;
+    this._data[5] = Math.max(0.1, Math.min(5, targetZoom));
+  }
+
+  /**
+   * Get the current follow target position (if any)
+   * Reads from SharedArrayBuffer for cross-thread access
+   * @returns {{x: number, y: number} | null} Follow target or null if not following
+   */
+  static getFollowTarget() {
+    if (!this._data) return null;
+
+    // Buffer layout: [zoom, x, y, followTargetX, followTargetY]
+    const targetX = this._data[3];
+    const targetY = this._data[4];
+
+    // NaN indicates no target set
+    if (!isNaN(targetX) && !isNaN(targetY)) {
+      return { x: targetX, y: targetY };
+    }
+    return null;
+  }
+
+  /**
+   * Clear the follow target (stops following)
+   */
+  static clearFollowTarget() {
+    if (!this._data) return;
+    // Set to NaN to indicate no target
+    this._data[3] = NaN;
+    this._data[4] = NaN;
   }
 
   /**
