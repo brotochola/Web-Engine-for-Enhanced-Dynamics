@@ -33,7 +33,7 @@ export class House extends GameObject {
     this.lightEmitter.height = 110;
     this.lightEmitter.lightIntensity = 4000;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 0; // TallLights show the glowing sprite
+    this.lightEmitter.hasGlowSprite = 0;
 
     this.collider.visualRange = 1000;
   }

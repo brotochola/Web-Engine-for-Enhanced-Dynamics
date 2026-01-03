@@ -1045,6 +1045,14 @@ class PixiRenderer extends AbstractWorker {
         if (bodySprite.visible) {
           bodySprite.visible = false;
         }
+        // BUGFIX: Reset previousAnimStates when entity becomes inactive
+        // This ensures that when the entity is respawned (recycled from pool),
+        // the renderer will detect the animation state change and update the sprite texture.
+        // Without this, respawned entities with the same sprite would skip the texture update
+        // because previousAnimStates still holds the old value from before despawn.
+        if (!active[i]) {
+          this.previousAnimStates[i] = -1;
+        }
         continue;
       }
 
@@ -2285,7 +2293,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.particleContainer = new PIXI.ParticleContainer({
       blendMode: "normal-npm",
       dynamicProperties: {
-        vertex: false,
+        vertex: true, // Must be true to allow dynamic scale changes
         position: true,
         rotation: true,
         uvs: true,

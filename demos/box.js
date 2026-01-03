@@ -24,6 +24,8 @@ class Box extends GameObject {
     this.rigidBody.maxAcc = 2; // Max acceleration
     this.rigidBody.minSpeed = 0; // Boxes can come to rest
     this.rigidBody.friction = 0.01; // Low friction - let boxes settle naturally
+
+    this.onSpawned();
   }
 
   onScreenEnter() {}
@@ -44,20 +46,16 @@ class Box extends GameObject {
     this.setSprite("box");
 
     // Initialize position using ergonomic API (automatically syncs px/py for Verlet)
-    this.x = spawnConfig.x;
-    this.y = spawnConfig.y;
+
     this.rotation = 0;
 
-    // Initialize RigidBody velocities and accelerations
-    this.vx = spawnConfig.vx ?? 0;
-    this.vy = spawnConfig.vy ?? 0;
     this.rigidBody.ax = 0;
     this.rigidBody.ay = 0;
 
     // Box dimensions - randomize size for variety
     const baseSize = 100; // The texture is 100x100
     const scaleMin = 0.5;
-    const scaleMax = 1.5;
+    const scaleMax = 4.5;
     const scaleX = Math.random() * (scaleMax - scaleMin) + scaleMin;
     const scaleY = Math.random() * (scaleMax - scaleMin) + scaleMin;
 
@@ -129,8 +127,8 @@ class Box extends GameObject {
       if (dist2 > 30000) return; // Only affect nearby boxes
 
       // Apply repulsion force
-      this.rigidBody.ax = dx * 0.15;
-      this.rigidBody.ay = dy * 0.15;
+      this.rigidBody.ax = dx; //* 0.15;
+      this.rigidBody.ay = dy; //* 0.15;
     }
   }
 }

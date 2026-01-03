@@ -1073,8 +1073,6 @@ export class DebugUI {
       this.gameEngine.spawnEntity(className, {
         x: Mouse.x + offsetX,
         y: Mouse.y + offsetY,
-        vx: 0,
-        vy: 0,
       });
     }
   }
