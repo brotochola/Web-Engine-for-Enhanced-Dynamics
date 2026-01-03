@@ -15,6 +15,10 @@ export class Mouse extends GameObject {
   // Default visual range for mouse (how far it "sees" neighbors)
   static defaultVisualRange = 150;
 
+  // Debug tool mode flag - when true, button state is consumed by DebugUI tools
+  // and should not be passed to game entities
+  static isDebugToolActive = false;
+
   // Mouse is ALWAYS registered first, so its entity index is ALWAYS 0
   // Mouse component index is also 0 (only one Mouse exists)
   // No configuration needed - just use index 0 everywhere!
