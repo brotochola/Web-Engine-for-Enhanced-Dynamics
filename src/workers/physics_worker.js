@@ -34,15 +34,8 @@ class PhysicsWorker extends AbstractWorker {
     // Physics worker is generic - doesn't need game-specific classes
     this.needsGameScripts = false;
 
-    // Runtime physics settings (filled from config)
-    this.settings = {
-      subStepCount: 4,
-      boundaryElasticity: 0.8,
-      collisionResponseStrength: 0.5,
-      verletDamping: 0.995,
-      minSpeedForRotation: 0.1,
-      gravity: { x: 0, y: 0 },
-    };
+    // Runtime physics settings (will be filled from Scene config)
+    this.settings = null;
 
     // Collision data buffer for Unity-style callbacks
     this.collisionData = null;
@@ -319,7 +312,11 @@ class PhysicsWorker extends AbstractWorker {
     const boundaryElasticity = this.settings.boundaryElasticity;
     const isStatic = RigidBody.static;
 
-    // Apply boundary constraints - shape-aware
+    // Get collider offsets for accurate boundary checks
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
+
+    // Apply boundary constraints - shape-aware with collider offsets
     for (let i = 0; i < rigidBodyCount; i++) {
       if (!active[i] || !rigidBodyActive[i]) continue;
       if (isStatic[i]) continue;
@@ -335,27 +332,31 @@ class PhysicsWorker extends AbstractWorker {
         halfH = radius[i];
       }
 
-      // Left boundary
-      if (x[i] < halfW) {
-        x[i] = halfW;
+      // Get collider offset (default to 0 if not set)
+      const offX = offsetX[i] || 0;
+      const offY = offsetY[i] || 0;
+
+      // Left boundary (collider center + offset must stay within bounds)
+      if (x[i] + offX < halfW) {
+        x[i] = halfW - offX;
         px[i] = x[i] + (x[i] - px[i]) * boundaryElasticity;
       }
 
       // Right boundary
-      if (x[i] > worldWidth - halfW) {
-        x[i] = worldWidth - halfW;
+      if (x[i] + offX > worldWidth - halfW) {
+        x[i] = worldWidth - halfW - offX;
         px[i] = x[i] + (x[i] - px[i]) * boundaryElasticity;
       }
 
       // Top boundary
-      if (y[i] < halfH) {
-        y[i] = halfH;
+      if (y[i] + offY < halfH) {
+        y[i] = halfH - offY;
         py[i] = y[i] + (y[i] - py[i]) * boundaryElasticity;
       }
 
       // Bottom boundary
-      if (y[i] > worldHeight - halfH) {
-        y[i] = worldHeight - halfH;
+      if (y[i] + offY > worldHeight - halfH) {
+        y[i] = worldHeight - halfH - offY;
         py[i] = y[i] + (y[i] - py[i]) * boundaryElasticity;
       }
     }
@@ -401,6 +402,10 @@ class PhysicsWorker extends AbstractWorker {
     const responseStrength = this.settings.collisionResponseStrength;
     const isStatic = RigidBody.static;
 
+    // Get collider offsets for accurate collision positions
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
+
     let pairCount = 0;
     const collisionData = this.collisionData;
     const maxPairs = this.maxCollisionPairs;
@@ -421,38 +426,44 @@ class PhysicsWorker extends AbstractWorker {
         const shapeI = shapeType[i];
         const shapeJ = shapeType[j];
 
+        // Calculate offset-adjusted collider positions
+        const colliderX_i = x[i] + offsetX[i];
+        const colliderY_i = y[i] + offsetY[i];
+        const colliderX_j = x[j] + offsetX[j];
+        const colliderY_j = y[j] + offsetY[j];
+
         // Collision result: { collided, depth, nx, ny }
         let result = null;
 
         if (shapeI === SHAPE_CIRCLE && shapeJ === SHAPE_CIRCLE) {
           // Circle vs Circle
           result = this.testCircleCircle(
-            x[i],
-            y[i],
+            colliderX_i,
+            colliderY_i,
             radius[i],
-            x[j],
-            y[j],
+            colliderX_j,
+            colliderY_j,
             radius[j]
           );
         } else if (shapeI === SHAPE_CIRCLE && shapeJ === SHAPE_BOX) {
           // Circle vs Box
           result = this.testCircleAABB(
-            x[i],
-            y[i],
+            colliderX_i,
+            colliderY_i,
             radius[i],
-            x[j],
-            y[j],
+            colliderX_j,
+            colliderY_j,
             width[j],
             height[j]
           );
         } else if (shapeI === SHAPE_BOX && shapeJ === SHAPE_CIRCLE) {
           // Box vs Circle (swap and invert normal)
           result = this.testCircleAABB(
-            x[j],
-            y[j],
+            colliderX_j,
+            colliderY_j,
             radius[j],
-            x[i],
-            y[i],
+            colliderX_i,
+            colliderY_i,
             width[i],
             height[i]
           );
@@ -463,12 +474,12 @@ class PhysicsWorker extends AbstractWorker {
         } else if (shapeI === SHAPE_BOX && shapeJ === SHAPE_BOX) {
           // Box vs Box
           result = this.testAABBAABB(
-            x[i],
-            y[i],
+            colliderX_i,
+            colliderY_i,
             width[i],
             height[i],
-            x[j],
-            y[j],
+            colliderX_j,
+            colliderY_j,
             width[j],
             height[j]
           );
@@ -486,23 +497,72 @@ class PhysicsWorker extends AbstractWorker {
           const nx = result.nx;
           const ny = result.ny;
 
+          // Get previous position references for Verlet correction
+          const px = RigidBody.px;
+          const py = RigidBody.py;
+          const ax = RigidBody.ax;
+          const ay = RigidBody.ay;
+          const vx = RigidBody.vx;
+          const vy = RigidBody.vy;
+
           if (iStatic && jStatic) {
             // Both static - no movement
           } else if (iStatic) {
             // i is static - only push j away
-            x[j] -= nx * correction;
-            y[j] -= ny * correction;
+            const corrX = nx * correction;
+            const corrY = ny * correction;
+            px[j] = x[j] = x[j] - corrX;
+            py[j] = y[j] = y[j] - corrY;
+
+            // Remove velocity component pointing INTO the static object
+            // nx,ny points from j toward i (into the wall), so we remove that component
+            const velDotNormal = vx[j] * nx + vy[j] * ny;
+            if (velDotNormal > 0) {
+              // Velocity is pointing into wall - remove that component
+              vx[j] -= nx * velDotNormal;
+              vy[j] -= ny * velDotNormal;
+            }
+
+            // Also remove acceleration component pointing into wall
+            const accDotNormal = ax[j] * nx + ay[j] * ny;
+            if (accDotNormal > 0) {
+              ax[j] -= nx * accDotNormal;
+              ay[j] -= ny * accDotNormal;
+            }
           } else if (jStatic) {
             // j is static - only push i away
-            x[i] += nx * correction;
-            y[i] += ny * correction;
+            const corrX = nx * correction;
+            const corrY = ny * correction;
+            px[i] = x[i] = x[i] + corrX;
+            py[i] = y[i] = y[i] + corrY;
+
+            // Remove velocity component pointing INTO the static object
+            // For this case, -nx,-ny points from i toward j (into the wall)
+            const velDotNormal = vx[i] * -nx + vy[i] * -ny;
+            if (velDotNormal > 0) {
+              vx[i] -= -nx * velDotNormal;
+              vy[i] -= -ny * velDotNormal;
+            }
+
+            // Also remove acceleration component pointing into wall
+            const accDotNormal = ax[i] * -nx + ay[i] * -ny;
+            if (accDotNormal > 0) {
+              ax[i] -= -nx * accDotNormal;
+              ay[i] -= -ny * accDotNormal;
+            }
           } else {
             // Both dynamic - split correction
-            const halfCorrection = correction * 0.5;
-            x[i] += nx * halfCorrection;
-            y[i] += ny * halfCorrection;
-            x[j] -= nx * halfCorrection;
-            y[j] -= ny * halfCorrection;
+            const halfCorrX = nx * correction * 0.5;
+            const halfCorrY = ny * correction * 0.5;
+            x[i] += halfCorrX;
+            y[i] += halfCorrY;
+            x[j] -= halfCorrX;
+            y[j] -= halfCorrY;
+            // Also update previous positions to prevent phantom velocity
+            px[i] += halfCorrX;
+            py[i] += halfCorrY;
+            px[j] -= halfCorrX;
+            py[j] -= halfCorrY;
           }
         }
 

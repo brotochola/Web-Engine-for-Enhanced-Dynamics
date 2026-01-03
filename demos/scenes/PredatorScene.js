@@ -8,6 +8,7 @@ import { Predator } from "../predator.js";
 import { Player } from "../player.js";
 import { TallLight } from "../tallLight.js";
 import { PreySpawner } from "../PreySpawner.js";
+import { House } from "../House.js";
 
 export class PredatorScene extends WEED.Scene {
   // ========================================
@@ -45,7 +46,7 @@ export class PredatorScene extends WEED.Scene {
 
     // Physics configuration
     physics: {
-      subStepCount: 1,
+      subStepCount: 2,
       noLimitFPS: false,
       maxCollisionPairs: 1000000,
       boundaryElasticity: 0,
@@ -83,6 +84,7 @@ export class PredatorScene extends WEED.Scene {
       bunny: "/demos/img/bunny.png",
       blood: "/demos/img/blood.png",
       tallLight: "/demos/img/tallLight.png",
+      house: "/demos/img/house.png",
     },
     spritesheets: {
       civil1: {
@@ -127,6 +129,7 @@ export class PredatorScene extends WEED.Scene {
     [Player, 1],
     [TallLight, 10],
     [Boid, 0], // Register but don't pre-allocate
+    [House, 20],
   ];
 
   // ========================================
@@ -137,10 +140,11 @@ export class PredatorScene extends WEED.Scene {
     super(game);
 
     // Scene-specific properties
-    this.numberOfPrey = 10000;
+    this.numberOfPrey = 1000;
     this.numberOfPredators = 8;
     this.numberOfBoids = 0;
     this.numberOfTallLights = 10;
+    this.numberOfHouses = 10;
 
     // Player reference (will be set in create())
     this.playerEntity = null;
@@ -159,7 +163,7 @@ export class PredatorScene extends WEED.Scene {
     this.spawnBoids(this.numberOfBoids);
     this.spawnLights(this.numberOfTallLights);
     this.spawnPrey(this.numberOfPrey);
-
+    this.spawnHouses(this.numberOfHouses);
     this.spawnEntity(PreySpawner, {});
 
     console.log("✅ PredatorScene: Entities spawned!");
@@ -181,6 +185,14 @@ export class PredatorScene extends WEED.Scene {
       vx: 0,
       vy: 0,
     });
+  }
+  spawnHouses(count) {
+    for (let i = 0; i < count; i++) {
+      this.spawnEntity(House, {
+        x: this.rng() * this.config.worldWidth,
+        y: this.rng() * this.config.worldHeight,
+      });
+    }
   }
 
   spawnPrey(count) {

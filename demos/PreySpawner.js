@@ -19,11 +19,11 @@ export class PreySpawner extends WEED.GameObject {
     const i = this.index;
     this.frameCount++;
 
-    if (this.frameCount % 100 === 0) {
+    if (this.frameCount % 200 === 0) {
       for (let i = 0; i < 100; i++) {
         Prey.spawn({
-          x: WEED.rng() * this.config.worldWidth,
-          y: WEED.rng() * this.config.worldHeight,
+          x: WEED.rng() * 500,
+          y: WEED.rng() * 500,
         });
       }
     }

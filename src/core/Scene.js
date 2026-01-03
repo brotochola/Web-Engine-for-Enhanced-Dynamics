@@ -19,6 +19,15 @@ import { Flash } from "./Flash.js";
 import { BigAtlasInspector } from "./BigAtlasInspector.js";
 import { MainThreadLogicHelper } from "./MainThreadLogicHelper.js";
 import { Camera } from "./Camera.js";
+import {
+  SCENE_DEFAULTS,
+  PHYSICS_DEFAULTS,
+  SPATIAL_DEFAULTS,
+  PARTICLE_DEFAULTS,
+  LOGIC_DEFAULTS,
+  RENDERER_DEFAULTS,
+  LIGHTING_DEFAULTS,
+} from "./ConfigDefaults.js";
 
 class Scene {
   // Static declarations - override these in subclasses
@@ -328,25 +337,16 @@ class Scene {
    * Access config via this.config.section.property (e.g., this.config.lighting.maxFlashes)
    */
   _applyConfigDefaults() {
-    // Top-level defaults
+    // Top-level defaults from centralized config
     this.config = {
-      gravity: { x: 0, y: 0 },
-      worldWidth: 1000,
-      worldHeight: 1000,
-      canvasWidth: 800,
-      canvasHeight: 600,
+      ...SCENE_DEFAULTS,
       ...this.config,
     };
 
-    // Physics defaults
+    // Physics defaults from centralized config
     this.config.physics = {
-      subStepCount: 4,
-      boundaryElasticity: 0.8,
-      collisionResponseStrength: 0.5,
-      verletDamping: 0.995,
-      minSpeedForRotation: 0.1,
-      maxCollisionPairs: 10000,
-      gravity: this.config.gravity,
+      ...PHYSICS_DEFAULTS,
+      gravity: this.config.gravity, // Use top-level gravity as default
       ...(this.config.physics || {}),
     };
     // Ensure gravity is synced
@@ -354,21 +354,15 @@ class Scene {
       this.config.physics.gravity || this.config.gravity;
     this.config.gravity = this.config.physics.gravity;
 
-    // Spatial defaults
+    // Spatial defaults from centralized config
     this.config.spatial = {
-      cellSize: 128,
-      maxNeighbors: 100,
-      noLimitFPS: false,
+      ...SPATIAL_DEFAULTS,
       ...(this.config.spatial || {}),
     };
 
-    // Particle defaults
+    // Particle defaults from centralized config
     this.config.particle = {
-      maxParticles: 0,
-      noLimitFPS: false,
-      decals: false,
-      decalsTileSize: 256,
-      decalsResolution: 1.0,
+      ...PARTICLE_DEFAULTS,
       ...(this.config.particle || {}),
     };
     // Compute decalsTilePixelSize
@@ -377,35 +371,21 @@ class Scene {
         this.config.particle.decalsResolution
     );
 
-    // Logic defaults
+    // Logic defaults from centralized config
     this.config.logic = {
-      numberOfLogicWorkers: 1,
-      numberOfEntitiesPerJob: 250,
-      useMainThreadAsLogicWorker: false,
-      mainThreadMaxJobsPerFrame: 0,
-      noLimitFPS: false,
+      ...LOGIC_DEFAULTS,
       ...(this.config.logic || {}),
     };
 
-    // Renderer defaults
+    // Renderer defaults from centralized config
     this.config.renderer = {
-      noLimitFPS: false,
-      bg: null,
-      bgTileScale: 1,
-      ySorting: false,
+      ...RENDERER_DEFAULTS,
       ...(this.config.renderer || {}),
     };
 
-    // Lighting defaults
+    // Lighting defaults from centralized config
     this.config.lighting = {
-      enabled: false,
-      lightingAmbient: 0.3,
-      maxLights: 10,
-      shadowsEnabled: false,
-      maxShadowCastingLights: 20,
-      maxShadowsPerLight: 15,
-      maxShadowsPerEntity: 0,
-      maxFlashes: 0,
+      ...LIGHTING_DEFAULTS,
       ...(this.config.lighting || {}),
     };
     // Compute maxShadowSprites
