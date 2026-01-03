@@ -38,7 +38,7 @@ export class PredatorScene extends WEED.Scene {
       noLimitFPS: false,
       numberOfLogicWorkers: 3,
       numberOfEntitiesPerJob: 250,
-      useMainThreadAsLogicWorker: false,
+      useMainThreadAsLogicWorker: false, //this is buggy, dont use it for now
       mainThreadMaxJobsPerFrame: 5,
     },
 
@@ -135,7 +135,7 @@ export class PredatorScene extends WEED.Scene {
     super(game);
 
     // Scene-specific properties
-    this.numberOfPrey = 20000;
+    this.numberOfPrey = 15000;
     this.numberOfPredators = 8;
     this.numberOfBoids = 0;
     this.numberOfTallLights = 10;

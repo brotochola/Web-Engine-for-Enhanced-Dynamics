@@ -171,10 +171,13 @@ export class Camera {
     if (!this._data) return;
 
     const s = smoothing ?? this._smoothing;
+    const zoom = this._data[0];
 
-    // Calculate camera position to center target on screen
-    const targetCameraX = targetX - this._canvasWidth / 2;
-    const targetCameraY = targetY - this._canvasHeight / 2;
+    // Calculate camera position to center target on screen (accounting for zoom)
+    // Formula derived from: screenCenter = (targetX - cameraX) * zoom
+    // Solving for cameraX: cameraX = targetX - screenCenter / zoom
+    const targetCameraX = targetX - this._canvasWidth / (2 * zoom);
+    const targetCameraY = targetY - this._canvasHeight / (2 * zoom);
 
     // Lerp to target
     this._data[1] += (targetCameraX - this._data[1]) * s;
@@ -192,8 +195,11 @@ export class Camera {
   static centerOn(targetX, targetY) {
     if (!this._data) return;
 
-    this._data[1] = targetX - this._canvasWidth / 2;
-    this._data[2] = targetY - this._canvasHeight / 2;
+    const zoom = this._data[0];
+
+    // Account for zoom when centering
+    this._data[1] = targetX - this._canvasWidth / (2 * zoom);
+    this._data[2] = targetY - this._canvasHeight / (2 * zoom);
 
     // Clamp to world bounds
     this._clampToWorldBounds();
