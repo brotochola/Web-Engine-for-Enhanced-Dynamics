@@ -22,11 +22,11 @@ export class PredatorScene extends WEED.Scene {
     spatial: {
       cellSize: 128,
       maxNeighbors: 1500,
-      noLimitFPS: true,
+      noLimitFPS: false,
     },
 
     particle: {
-      noLimitFPS: true,
+      noLimitFPS: false,
       maxParticles: 50000,
       decals: true,
       decalsTileSize: 256,
@@ -38,7 +38,7 @@ export class PredatorScene extends WEED.Scene {
       noLimitFPS: false,
       numberOfLogicWorkers: 3,
       numberOfEntitiesPerJob: 250,
-      useMainThreadAsLogicWorker: true,
+      useMainThreadAsLogicWorker: false,
       mainThreadMaxJobsPerFrame: 5,
     },
 
@@ -120,7 +120,7 @@ export class PredatorScene extends WEED.Scene {
   // ========================================
 
   static entities = [
-    [Prey, 10000],
+    [Prey, 20000],
     [Predator, 8],
     [Player, 1],
     [TallLight, 10],
@@ -135,7 +135,7 @@ export class PredatorScene extends WEED.Scene {
     super(game);
 
     // Scene-specific properties
-    this.numberOfPrey = 10000;
+    this.numberOfPrey = 20000;
     this.numberOfPredators = 8;
     this.numberOfBoids = 0;
     this.numberOfTallLights = 10;
