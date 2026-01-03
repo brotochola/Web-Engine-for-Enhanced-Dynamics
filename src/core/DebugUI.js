@@ -36,6 +36,7 @@ export class DebugUI {
     this.lastSpawnTime = 0;
     this.spawnThrottleMs = 50; // Minimum ms between spawns while painting
     this._toolMouseDown = false; // Track mouse button for tool mode (separate from game input)
+    this.bulkSpawnEnabled = false; // Spawn 10 at a time instead of 1
 
     // Inject styles and create UI
     this._injectStyles();
@@ -833,7 +834,8 @@ export class DebugUI {
     if (!indicator) return;
 
     if (this.activeSpawnerType) {
-      indicator.textContent = `🎨 Painting: ${this.activeSpawnerType} (click & drag to spawn)`;
+      const bulkText = this.bulkSpawnEnabled ? " ×10" : "";
+      indicator.textContent = `🎨 Painting: ${this.activeSpawnerType}${bulkText} (click & drag to spawn)`;
       indicator.className = "debug-ui-tool-indicator visible spawner";
     } else if (this.eraserActive) {
       indicator.textContent = `🧹 Eraser Active (click & drag to despawn)`;
@@ -916,6 +918,31 @@ export class DebugUI {
       "Toggle eraser (click & drag to despawn entities)";
     this.elements.eraserButton.onclick = () => this._toggleEraser();
     paintersRow.appendChild(this.elements.eraserButton);
+
+    // Divider
+    paintersRow.appendChild(this._createDivider());
+
+    // Bulk spawn checkbox
+    const bulkLabel = document.createElement("label");
+    bulkLabel.style.display = "flex";
+    bulkLabel.style.alignItems = "center";
+    bulkLabel.style.gap = "4px";
+    bulkLabel.style.color = "rgba(255, 255, 255, 0.7)";
+    bulkLabel.style.cursor = "pointer";
+    bulkLabel.style.fontSize = "10px";
+
+    this.elements.bulkSpawnCheckbox = document.createElement("input");
+    this.elements.bulkSpawnCheckbox.type = "checkbox";
+    this.elements.bulkSpawnCheckbox.checked = this.bulkSpawnEnabled;
+    this.elements.bulkSpawnCheckbox.style.cursor = "pointer";
+    this.elements.bulkSpawnCheckbox.onchange = (e) => {
+      this.bulkSpawnEnabled = e.target.checked;
+      this._updateToolIndicator();
+    };
+
+    bulkLabel.appendChild(this.elements.bulkSpawnCheckbox);
+    bulkLabel.appendChild(document.createTextNode("×10"));
+    paintersRow.appendChild(bulkLabel);
 
     container.appendChild(paintersRow);
 
@@ -1030,16 +1057,26 @@ export class DebugUI {
 
   /**
    * Spawn entity at current mouse position (uses Mouse entity 0)
+   * Spawns multiple entities in a spread pattern when bulk spawn is enabled
    */
   _spawnEntityAtMouse(className) {
     if (!this.gameEngine) return;
 
-    this.gameEngine.spawnEntity(className, {
-      x: Mouse.x,
-      y: Mouse.y,
-      vx: 0,
-      vy: 0,
-    });
+    const count = this.bulkSpawnEnabled ? 10 : 1;
+    const spreadRadius = 30; // Pixels to spread entities around mouse
+
+    for (let i = 0; i < count; i++) {
+      // Add random offset for bulk spawning to spread entities
+      const offsetX = count > 1 ? (Math.random() - 0.5) * spreadRadius * 2 : 0;
+      const offsetY = count > 1 ? (Math.random() - 0.5) * spreadRadius * 2 : 0;
+
+      this.gameEngine.spawnEntity(className, {
+        x: Mouse.x + offsetX,
+        y: Mouse.y + offsetY,
+        vx: 0,
+        vy: 0,
+      });
+    }
   }
 
   /**
