@@ -4,6 +4,7 @@
 import { DEBUG_FLAGS } from "./DebugFlags.js";
 import { Transform } from "../components/Transform.js";
 import { Mouse } from "./Mouse.js";
+import { GameObject } from "./gameObject.js";
 
 /**
  * DebugUI - Self-contained debug overlay that pulls data and updates itself
@@ -1075,8 +1076,15 @@ export class DebugUI {
     }
 
     if (nearestIndex >= 0) {
-      // Despawn the entity by setting it inactive
-      Transform.active[nearestIndex] = 0;
+      // Get the GameObject instance and call despawn() properly
+      // This ensures the entity is returned to the free list for respawning
+      const instance = GameObject.instances[nearestIndex];
+      if (instance && instance.despawn) {
+        instance.despawn();
+      } else {
+        // Fallback: just deactivate if no instance found
+        Transform.active[nearestIndex] = 0;
+      }
     }
   }
 

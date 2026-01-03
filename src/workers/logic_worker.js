@@ -670,6 +670,12 @@ class LogicWorker extends AbstractWorker {
       }
 
       case "despawnAll": {
+        // Only worker 0 handles despawnAll to keep freeList synchronized with spawn
+        // (spawn also only runs on worker 0)
+        if (this.workerIndex !== 0) {
+          break;
+        }
+
         const { className } = data;
         const EntityClass = self[className];
 
@@ -680,16 +686,11 @@ class LogicWorker extends AbstractWorker {
           return;
         }
 
-        // Despawn all entities of this type that this worker "owns" (using modulo partitioning)
+        // Despawn ALL entities of this type (no partitioning - worker 0 handles all)
         let count = 0;
         const entityType = EntityClass.entityType;
 
         for (let i = 0; i < this.entityCount; i++) {
-          // Only process entities that belong to this worker (modulo partitioning)
-          if (i % this.totalLogicWorkers !== this.workerIndex) {
-            continue;
-          }
-
           if (
             Transform.active[i] &&
             Transform.entityType[i] === entityType &&
@@ -707,15 +708,15 @@ class LogicWorker extends AbstractWorker {
       }
 
       case "clearAll": {
-        // Despawn all entities that this worker "owns" (using modulo partitioning)
+        // Only worker 0 handles clearAll to keep freeList synchronized with spawn
+        if (this.workerIndex !== 0) {
+          break;
+        }
+
+        // Despawn ALL entities (no partitioning - worker 0 handles all)
         let totalDespawned = 0;
 
         for (let i = 0; i < this.entityCount; i++) {
-          // Only process entities that belong to this worker (modulo partitioning)
-          if (i % this.totalLogicWorkers !== this.workerIndex) {
-            continue;
-          }
-
           if (Transform.active[i] && this.gameObjects[i]) {
             this.gameObjects[i].despawn();
             totalDespawned++;
