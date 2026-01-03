@@ -92,11 +92,14 @@ class SpatialWorker extends AbstractWorker {
     // Initialize spatial grid structure
     this.grid = Array.from({ length: this.totalCells }, () => []);
 
-    // Track occupied cells - worst case is all entities in different cells
-    // Use Uint16Array for better cache performance (supports up to 65535 cells)
-    this.occupiedCells = new Uint16Array(
-      Math.min(this.entityCount, this.totalCells)
-    );
+    // Track occupied cells - worst case is ALL cells occupied (when entities span multiple cells)
+    // BUGFIX: Must be totalCells, not min(entityCount, totalCells), because multi-cell
+    // entities can cause more unique occupied cells than the entity count
+    // Use Uint16Array for grids <= 65535 cells, Uint32Array for larger grids
+    this.occupiedCells =
+      this.totalCells <= 65535
+        ? new Uint16Array(this.totalCells)
+        : new Uint32Array(this.totalCells);
     this.occupiedCount = 0;
 
     // console.log(
