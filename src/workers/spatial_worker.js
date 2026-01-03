@@ -4,7 +4,7 @@ self.postMessage({
   when: Date.now(),
 });
 // Spatial Worker - Builds spatial hash grid and finds neighbors
-// Now uses per-entity visual ranges and accurate distance checking
+// OPTIMIZED: Uses flat grid, processed bitmask, and pre-computed entity data
 
 // Import engine dependencies
 import { Transform } from "../components/Transform.js";
@@ -16,6 +16,11 @@ import { AbstractWorker } from "./AbstractWorker.js";
  * SpatialWorker - Handles spatial partitioning and neighbor detection
  * Uses a spatial hash grid to efficiently find nearby entities
  * Extends AbstractWorker for common worker functionality
+ *
+ * OPTIMIZATIONS:
+ * 1. Flat grid structure (TypedArrays) - eliminates GC pressure from Array-of-Arrays
+ * 2. Processed bitmask - prevents duplicate neighbor searches for multi-cell entities
+ * 3. Pre-computed entity data - avoids redundant calculations per cell appearance
  */
 class SpatialWorker extends AbstractWorker {
   constructor(selfRef) {
@@ -24,8 +29,12 @@ class SpatialWorker extends AbstractWorker {
     // Spatial worker is generic - doesn't need game-specific classes
     this.needsGameScripts = false;
 
-    // Spatial grid structure - initialized after receiving config
-    this.grid = null;
+    // FLAT GRID STRUCTURE (replaces Array-of-Arrays)
+    // gridEntities: flat array storing entity IDs per cell
+    // gridCounts: number of entities in each cell
+    this.gridEntities = null; // Uint32Array - [cell0_ent0, cell0_ent1, ..., cell1_ent0, ...]
+    this.gridCounts = null; // Uint16Array - count per cell
+    this.maxEntitiesPerCell = 64; // Max entities that can share a cell
 
     // Grid parameters - set during initialization
     this.cellSize = 0;
@@ -36,8 +45,16 @@ class SpatialWorker extends AbstractWorker {
     this.maxNeighborsPerEntity = 0;
 
     // Track which cells are occupied - only clear these instead of all cells
-    this.occupiedCells = null; // Uint16Array - stores cell indices
+    this.occupiedCells = null; // Uint32Array - stores cell indices
     this.occupiedCount = 0;
+
+    // PROCESSED BITMASK - prevents duplicate processing of multi-cell entities
+    this.processedThisFrame = null; // Uint8Array
+
+    // PRE-COMPUTED ENTITY DATA - avoid redundant calculations
+    this.entityPosX = null; // Float32Array - collider position X
+    this.entityPosY = null; // Float32Array - collider position Y
+    this.entityHalfExtent = null; // Float32Array - max half-extent for distance checks
 
     // Update frequency (rebuild grid every N frames)
     this.spatialUpdateInterval = 2;
@@ -47,8 +64,6 @@ class SpatialWorker extends AbstractWorker {
    * Initialize spatial worker (implementation of AbstractWorker.initialize)
    */
   initialize(data) {
-    // console.log("SPATIAL WORKER: Initializing with SharedArrayBuffer");
-
     // Initialize component arrays from SharedArrayBuffers
     // These are needed for spatial queries (position, collision, visibility)
     if (data.buffers?.componentData) {
@@ -57,7 +72,6 @@ class SpatialWorker extends AbstractWorker {
           data.buffers.componentData.Transform,
           data.componentPools?.Transform?.count || this.entityCount
         );
-        // console.log(`SPATIAL WORKER: ✅ Transform initialized`);
       }
       // DENSE ALLOCATION: All components have slots for all entities
       // entityIndex === componentIndex for all components
@@ -89,48 +103,45 @@ class SpatialWorker extends AbstractWorker {
     this.canvasWidth = this.config.canvasWidth;
     this.canvasHeight = this.config.canvasHeight;
 
-    // Initialize spatial grid structure
-    this.grid = Array.from({ length: this.totalCells }, () => []);
+    // FLAT GRID STRUCTURE - single allocation, no GC pressure
+    // Each cell has maxEntitiesPerCell slots
+    this.gridEntities = new Uint32Array(
+      this.totalCells * this.maxEntitiesPerCell
+    );
+    this.gridCounts = new Uint16Array(this.totalCells);
 
-    // Track occupied cells - worst case is ALL cells occupied (when entities span multiple cells)
-    // BUGFIX: Must be totalCells, not min(entityCount, totalCells), because multi-cell
-    // entities can cause more unique occupied cells than the entity count
-    // Use Uint16Array for grids <= 65535 cells, Uint32Array for larger grids
+    // Track occupied cells - worst case is ALL cells occupied
     this.occupiedCells =
       this.totalCells <= 65535
         ? new Uint16Array(this.totalCells)
         : new Uint32Array(this.totalCells);
     this.occupiedCount = 0;
 
-    // console.log(
-    //   `SPATIAL WORKER: Grid is ${this.gridCols}x${this.gridRows} = ${this.totalCells} cells`
-    // );
-    // console.log(
-    //   `SPATIAL WORKER: Max ${this.maxNeighborsPerEntity} neighbors per entity`
-    // );
-    // console.log(
-    //   `SPATIAL WORKER: Using per-entity visual ranges with accurate distance checking`
-    // );
+    // PROCESSED BITMASK - one bit per entity to track if already processed
+    this.processedThisFrame = new Uint8Array(this.entityCount);
 
-    // console.log(
-    //   "SPATIAL WORKER: Initialization complete, waiting for start signal..."
-    // );
-    // Note: Game loop will start when "start" message is received from main thread
+    // PRE-COMPUTED ENTITY DATA - calculated once per frame in rebuildGrid
+    this.entityPosX = new Float32Array(this.entityCount);
+    this.entityPosY = new Float32Array(this.entityCount);
+    this.entityHalfExtent = new Float32Array(this.entityCount);
   }
 
   /**
    * Clear and rebuild spatial grid
-   * Optimized: only clears previously occupied cells, uses multiply instead of divide
-   * Now accounts for collider offsets when placing entities in grid cells
-   * MULTI-CELL: Entities with colliders larger than cellSize are added to ALL overlapping cells
+   * OPTIMIZED: Uses flat grid structure with TypedArrays
+   * - Zero GC pressure (no array allocations)
+   * - Cache-friendly sequential access
+   * - Pre-computes entity positions and half-extents for findAllNeighbors
    */
   rebuildGrid() {
-    const grid = this.grid;
+    const gridEntities = this.gridEntities;
+    const gridCounts = this.gridCounts;
     const occupiedCells = this.occupiedCells;
+    const maxEntitiesPerCell = this.maxEntitiesPerCell;
 
-    // Clear only cells that were occupied last frame - huge win for sparse grids
+    // Clear only cells that were occupied last frame - O(occupiedCells) not O(totalCells)
     for (let i = 0; i < this.occupiedCount; i++) {
-      grid[occupiedCells[i]].length = 0;
+      gridCounts[occupiedCells[i]] = 0;
     }
     this.occupiedCount = 0;
 
@@ -152,6 +163,11 @@ class SpatialWorker extends AbstractWorker {
     const maxRow = gridRows - 1;
     const entityCount = this.entityCount;
 
+    // Pre-computed entity data arrays
+    const entityPosX = this.entityPosX;
+    const entityPosY = this.entityPosY;
+    const entityHalfExtent = this.entityHalfExtent;
+
     // Shape type constants
     const SHAPE_CIRCLE = 0;
 
@@ -163,12 +179,15 @@ class SpatialWorker extends AbstractWorker {
       if (!active[i]) continue;
 
       // Use collider position (transform + offset) for grid placement
-      // This ensures entities with offset colliders are in the correct cells
       const posX = x[i] + (offsetX[i] || 0);
       const posY = y[i] + (offsetY[i] || 0);
 
       // Skip entities with invalid positions (NaN check via self-comparison)
       if (posX !== posX || posY !== posY) continue;
+
+      // PRE-COMPUTE: Store collider position for findAllNeighbors
+      entityPosX[i] = posX;
+      entityPosY[i] = posY;
 
       // Calculate entity's bounding box half-extents based on collider type
       let halfW = 0,
@@ -179,10 +198,13 @@ class SpatialWorker extends AbstractWorker {
           halfW = halfH = radius[i] || 0;
         } else {
           // Box: use half width/height
-          halfW = (width[i] || 0) / 2;
-          halfH = (height[i] || 0) / 2;
+          halfW = (width[i] || 0) * 0.5;
+          halfH = (height[i] || 0) * 0.5;
         }
       }
+
+      // PRE-COMPUTE: Store max half-extent for neighbor distance checks
+      entityHalfExtent[i] = halfW > halfH ? halfW : halfH;
 
       // Calculate cell range the entity's bounding box covers
       let minCol = ((posX - halfW) * invCellSize) | 0;
@@ -200,13 +222,18 @@ class SpatialWorker extends AbstractWorker {
       for (let r = minRow; r <= maxRowBB; r++) {
         for (let c = minCol; c <= maxColBB; c++) {
           const cellIndex = r * gridCols + c;
-          const cell = grid[cellIndex];
+          const count = gridCounts[cellIndex];
 
           // Track newly occupied cells (only when first entity enters)
-          if (cell.length === 0) {
+          if (count === 0) {
             occupiedCells[occupiedIdx++] = cellIndex;
           }
-          cell.push(i);
+
+          // Add entity to cell if not full
+          if (count < maxEntitiesPerCell) {
+            gridEntities[cellIndex * maxEntitiesPerCell + count] = i;
+            gridCounts[cellIndex] = count + 1;
+          }
         }
       }
     }
@@ -216,23 +243,16 @@ class SpatialWorker extends AbstractWorker {
 
   /**
    * Find neighbors for all entities using spatial grid
-   * Optimized: processes by occupied cell to improve cache locality
-   * Now accounts for collider offsets and sizes when calculating distances
-   * LARGE ENTITY FIX: Expands effective range by target entity's collider size
+   * OPTIMIZED:
+   * 1. Uses processed bitmask to skip duplicate processing of multi-cell entities
+   * 2. Uses pre-computed entity positions and half-extents
+   * 3. Flat grid access is cache-friendly
    */
   findAllNeighbors() {
     const active = Transform.active;
-    const x = Transform.x;
-    const y = Transform.y;
-    const offsetX = Collider.offsetX;
-    const offsetY = Collider.offsetY;
     const visualRange = Collider.visualRange;
-    const colliderActive = Collider.active;
-    const shapeType = Collider.shapeType;
-    const radius = Collider.radius;
-    const width = Collider.width;
-    const height = Collider.height;
-    const grid = this.grid;
+    const gridEntities = this.gridEntities;
+    const gridCounts = this.gridCounts;
     const occupiedCells = this.occupiedCells;
     const occupiedCount = this.occupiedCount;
     const neighborData = this.neighborData;
@@ -242,24 +262,37 @@ class SpatialWorker extends AbstractWorker {
     const gridRows = this.gridRows;
     const maxNeighbors = this.maxNeighborsPerEntity;
     const stride = 1 + maxNeighbors;
+    const maxEntitiesPerCell = this.maxEntitiesPerCell;
 
-    // Shape type constants
-    const SHAPE_CIRCLE = 0;
+    // Pre-computed entity data (filled in rebuildGrid)
+    const entityPosX = this.entityPosX;
+    const entityPosY = this.entityPosY;
+    const entityHalfExtent = this.entityHalfExtent;
 
-    // Process only entities in occupied cells - better cache locality
+    // PROCESSED BITMASK - clear at start of frame
+    const processed = this.processedThisFrame;
+    processed.fill(0);
+
+    // Process only entities in occupied cells
     for (let cellIdx = 0; cellIdx < occupiedCount; cellIdx++) {
       const centerCellIndex = occupiedCells[cellIdx];
-      const centerCell = grid[centerCellIndex];
-      const centerCellLen = centerCell.length;
+      const centerCellLen = gridCounts[centerCellIndex];
+      const centerCellBase = centerCellIndex * maxEntitiesPerCell;
 
       // Process each entity in this cell
       for (let e = 0; e < centerCellLen; e++) {
-        const i = centerCell[e];
+        const i = gridEntities[centerCellBase + e];
 
-        // Use collider position (transform + offset) for distance calculations
-        const myX = x[i] + (offsetX[i] || 0);
-        const myY = y[i] + (offsetY[i] || 0);
+        // BITMASK CHECK: Skip if already processed this frame
+        // This eliminates duplicate processing for multi-cell entities
+        if (processed[i]) continue;
+        processed[i] = 1;
+
+        // Use PRE-COMPUTED collider position
+        const myX = entityPosX[i];
+        const myY = entityPosY[i];
         const myVisualRange = visualRange[i];
+        const myVisualRangeSq = myVisualRange * myVisualRange;
 
         // Cell radius for neighbor search
         const cellRadius = Math.ceil(myVisualRange * invCellSize);
@@ -289,40 +322,31 @@ class SpatialWorker extends AbstractWorker {
           const rowBase = checkRow * gridCols;
 
           for (let checkCol = startCol; checkCol <= endCol; checkCol++) {
-            const cell = grid[rowBase + checkCol];
-            const cellLength = cell.length;
+            const checkCellIndex = rowBase + checkCol;
+            const cellLength = gridCounts[checkCellIndex];
 
             // Skip empty cells
             if (cellLength === 0) continue;
 
+            const cellBase = checkCellIndex * maxEntitiesPerCell;
+
             // Check all entities in this cell
             for (let k = 0; k < cellLength; k++) {
-              const j = cell[k];
+              const j = gridEntities[cellBase + k];
 
               // Skip self
               if (i === j) continue;
 
-              // Calculate squared distance using collider positions
-              const jX = x[j] + (offsetX[j] || 0);
-              const jY = y[j] + (offsetY[j] || 0);
+              // Use PRE-COMPUTED positions for distance calculation
+              const jX = entityPosX[j];
+              const jY = entityPosY[j];
               const deltaX = jX - myX;
               const deltaY = jY - myY;
               const distSq = deltaX * deltaX + deltaY * deltaY;
 
-              // Calculate the other entity's half-extent (for detecting large entities)
-              // We need to expand our visual range by their size to detect edge collisions
-              let jHalfExtent = 0;
-              if (colliderActive[j]) {
-                if (shapeType[j] === SHAPE_CIRCLE) {
-                  jHalfExtent = radius[j] || 0;
-                } else {
-                  // For boxes, use the larger dimension as the half-extent
-                  jHalfExtent = Math.max(width[j] || 0, height[j] || 0) / 2;
-                }
-              }
-
-              // Expand effective range by target's half-extent
-              // This ensures we detect large entities even when near their edge
+              // Use PRE-COMPUTED half-extent
+              // Expand effective range by target's half-extent to detect large entities
+              const jHalfExtent = entityHalfExtent[j];
               const effectiveRange = myVisualRange + jHalfExtent;
               const effectiveRangeSq = effectiveRange * effectiveRange;
 

@@ -40,6 +40,11 @@ class PhysicsWorker extends AbstractWorker {
     // Collision data buffer for Unity-style callbacks
     this.collisionData = null;
     this.maxCollisionPairs = 10000; // Default, will be set from config
+
+    // Fixed timestep accumulator for stable physics with noLimitFPS
+    // When noLimitFPS is true, we accumulate time and run physics at a fixed rate
+    this.timeAccumulator = 0;
+    this.fixedDeltaTime = 16.67; // Target: 60fps physics tick (will be divided by subStepCount)
   }
 
   /**
@@ -81,9 +86,29 @@ class PhysicsWorker extends AbstractWorker {
   /**
    * Update method called each frame (implementation of AbstractWorker.update)
    * Performs physics integration for all entities
+   *
+   * When noLimitFPS is true, uses a fixed-timestep accumulator to ensure stable physics.
+   * SubSteps divide the fixed timestep for constraint solving, not the variable frame time.
    */
   update(deltaTime, dtRatio, resuming) {
-    this.updateVerlet(deltaTime, dtRatio);
+    if (this.noLimitFPS && this.settings.subStepCount > 1) {
+      // Fixed timestep mode: accumulate time and run physics at fixed intervals
+      // This ensures subSteps work correctly regardless of actual frame rate
+      const fixedStep = this.fixedDeltaTime / this.settings.subStepCount;
+      const fixedDtRatio = fixedStep / 16.67;
+
+      // Clamp accumulated time to prevent spiral of death (max ~3 frames worth)
+      this.timeAccumulator += Math.min(deltaTime, 50);
+
+      // Run physics steps at fixed intervals
+      while (this.timeAccumulator >= fixedStep) {
+        this.updateVerletFixedStep(fixedStep, fixedDtRatio);
+        this.timeAccumulator -= fixedStep;
+      }
+    } else {
+      // Standard mode: run physics with actual deltaTime
+      this.updateVerlet(deltaTime, dtRatio);
+    }
 
     // CRITICAL: Sync RigidBody positions to Transform for rendering
     this.syncPhysicsToTransform();
@@ -202,6 +227,89 @@ class PhysicsWorker extends AbstractWorker {
         rigidBodyCount
       );
     }
+  }
+
+  /**
+   * Fixed-step Verlet update for use with accumulator (noLimitFPS mode)
+   * Runs movement + ONE constraint pass per call. The accumulator loop handles substepping.
+   * This ensures physics runs at a consistent rate regardless of actual frame rate.
+   */
+  updateVerletFixedStep(fixedDeltaTime, fixedDtRatio) {
+    // Cache array references from components
+    const active = Transform.active;
+    const rigidBodyActive = RigidBody.active;
+    const colliderActive = Collider.active;
+    const x = Transform.x;
+    const y = Transform.y;
+    const px = RigidBody.px;
+    const py = RigidBody.py;
+    const vx = RigidBody.vx;
+    const vy = RigidBody.vy;
+    const ax = RigidBody.ax;
+    const ay = RigidBody.ay;
+    const maxVel = RigidBody.maxVel;
+    const collisionCount = RigidBody.collisionCount;
+
+    // Collider properties
+    const shapeType = Collider.shapeType;
+    const radius = Collider.radius;
+    const width = Collider.width;
+    const height = Collider.height;
+    const isTrigger = Collider.isTrigger;
+
+    // Get world bounds for boundary constraints
+    const worldWidth = this.config.worldWidth;
+    const worldHeight = this.config.worldHeight;
+
+    // Get the number of entities with RigidBody
+    const rigidBodyCount = RigidBody.px?.length || 0;
+
+    // Reset collision counters (only on first substep of the frame)
+    // Note: In fixed step mode, we reset per-step to avoid accumulation issues
+    for (let i = 0; i < rigidBodyCount; i++) {
+      if (!active[i] || !rigidBodyActive[i]) continue;
+      collisionCount[i] = 0;
+    }
+
+    const gx = this.settings.gravity.x || 0;
+    const gy = this.settings.gravity.y || 0;
+
+    // Step 1: Move entities using Verlet integration with fixed timestep
+    this.moveEntitiesVerlet(
+      active,
+      rigidBodyActive,
+      x,
+      y,
+      px,
+      py,
+      vx,
+      vy,
+      ax,
+      ay,
+      fixedDtRatio,
+      gx,
+      gy,
+      maxVel,
+      rigidBodyCount
+    );
+
+    // Step 2: Apply constraints ONCE per fixed step (substepping is handled by accumulator)
+    this.applyConstraintsVerlet(
+      active,
+      rigidBodyActive,
+      colliderActive,
+      x,
+      y,
+      shapeType,
+      radius,
+      width,
+      height,
+      isTrigger,
+      collisionCount,
+      worldWidth,
+      worldHeight,
+      rigidBodyCount
+    );
   }
 
   /**
