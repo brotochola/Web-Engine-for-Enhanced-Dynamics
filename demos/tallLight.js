@@ -50,7 +50,10 @@ export class TallLight extends GameObject {
    * Initialize THIS instance - runs EVERY spawn
    * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
    */
-  onSpawned(spawnConfig = {}) {}
+  onSpawned(spawnConfig = {}) {
+    //TODO FIX
+    this.setSprite("tallLight"); //WHY???
+  }
 
   /**
    * LIFECYCLE: Called when prey is despawned (returned to pool)
