@@ -18,6 +18,7 @@ import { Mouse } from "./Mouse.js";
 import { Flash } from "./Flash.js";
 import { BigAtlasInspector } from "./BigAtlasInspector.js";
 import { MainThreadLogicHelper } from "./MainThreadLogicHelper.js";
+import { Camera } from "./Camera.js";
 
 class Scene {
   // Static declarations - override these in subclasses
@@ -586,6 +587,18 @@ class Scene {
     this.buffers.cameraData = new SharedArrayBuffer(CAMERA_BUFFER_SIZE);
     this.views.camera = new Float32Array(this.buffers.cameraData);
     this.views.camera[0] = this.camera.zoom;
+
+    // Initialize Camera static class with shared buffer
+    Camera.initialize(
+      this.views.camera,
+      this.config.canvasWidth,
+      this.config.canvasHeight
+    );
+
+    // Set world bounds for camera clamping
+    if (this.config.worldWidth && this.config.worldHeight) {
+      Camera.setWorldBounds(this.config.worldWidth, this.config.worldHeight);
+    }
 
     // Debug buffer
     const DEBUG_BUFFER_SIZE = 32;
@@ -1216,14 +1229,14 @@ class Scene {
   }
 
   updateCameraBuffer() {
-    const cam = this.views.camera;
+    // Sync zoom from main thread to Camera (zoom controlled by main thread)
+    Camera.zoom = this.camera.zoom;
 
-    // Read camera position from SharedArrayBuffer (updated by Player in worker)
-    this.camera.x = cam[1];
-    this.camera.y = cam[2];
-    // Zoom is still controlled by main thread
-    cam[0] = this.camera.zoom;
+    // Sync position from Camera to this.camera (position controlled by worker/entity)
+    this.camera.x = Camera.x;
+    this.camera.y = Camera.y;
 
+    // Update mouse world position based on camera
     Mouse.updateWorldPosition(this.camera);
   }
 

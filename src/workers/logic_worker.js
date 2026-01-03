@@ -267,16 +267,9 @@ class LogicWorker extends AbstractWorker {
 
         // Special initialization for internal engine classes
         // Flash needs its initialize() called with the pool size
+        // Note: Flash uses Camera class directly for off-screen culling
         if (name === "Flash" && EntityClass.initialize) {
           EntityClass.initialize(count);
-          // Set camera data for off-screen culling
-          if (EntityClass.setCameraData && this.cameraData) {
-            EntityClass.setCameraData(
-              this.cameraData,
-              this.config.canvasWidth,
-              this.config.canvasHeight
-            );
-          }
         }
 
         for (let i = 0; i < count; i++) {

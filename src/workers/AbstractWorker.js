@@ -3,6 +3,7 @@
 
 import { GameObject } from "../core/gameObject.js";
 import { seededRandom } from "../core/utils.js";
+import { Camera } from "../core/Camera.js";
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -257,6 +258,16 @@ export class AbstractWorker {
 
     if (data.buffers?.cameraData) {
       this.cameraData = new Float32Array(data.buffers.cameraData);
+      // Initialize Camera static class for entity code
+      Camera.initialize(
+        this.cameraData,
+        this.config.canvasWidth || 800,
+        this.config.canvasHeight || 600
+      );
+      // Set world bounds for camera clamping
+      if (this.config.worldWidth && this.config.worldHeight) {
+        Camera.setWorldBounds(this.config.worldWidth, this.config.worldHeight);
+      }
     }
 
     // Initialize neighbor data reference (redundant with GameObject but kept for clarity)
