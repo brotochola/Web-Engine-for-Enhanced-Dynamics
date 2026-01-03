@@ -1195,7 +1195,10 @@ class ParticleWorker extends AbstractWorker {
 
     // Iterate over all entities
     for (let i = 0; i < entityCount; i++) {
-      if (!active[i]) continue;
+      if (!active[i]) {
+        isItOnScreen[i] = 0;
+        continue;
+      }
 
       // Transform world coordinates to screen coordinates
       const sx = x[i] * zoom - cameraOffsetX;
