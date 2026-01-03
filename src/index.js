@@ -13,6 +13,7 @@ export { Component } from "./core/Component.js";
 export { DebugFlags } from "./core/DebugFlags.js";
 export { DebugUI } from "./core/DebugUI.js";
 export { Mouse } from "./core/Mouse.js";
+export { Camera } from "./core/Camera.js";
 export { SpriteSheetRegistry } from "./core/SpriteSheetRegistry.js";
 export { BigAtlasInspector } from "./core/BigAtlasInspector.js";
 export * from "./core/utils.js";
@@ -69,6 +70,7 @@ import { Component } from "./core/Component.js";
 import { DebugFlags } from "./core/DebugFlags.js";
 import { DebugUI } from "./core/DebugUI.js";
 import { Mouse } from "./core/Mouse.js";
+import { Camera } from "./core/Camera.js";
 import { SpriteSheetRegistry } from "./core/SpriteSheetRegistry.js";
 import { BigAtlasInspector } from "./core/BigAtlasInspector.js";
 import * as utils from "./core/utils.js";
@@ -97,6 +99,7 @@ const WEED = {
   DebugFlags,
   DebugUI,
   Mouse,
+  Camera,
   Keyboard,
   SpriteSheetRegistry,
   BigAtlasInspector,

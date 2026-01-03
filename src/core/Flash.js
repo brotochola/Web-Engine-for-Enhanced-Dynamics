@@ -8,6 +8,7 @@ import { LightEmitter } from "../components/LightEmitter.js";
 import { FlashComponent } from "../components/FlashComponent.js";
 import { Transform } from "../components/Transform.js";
 import { Collider } from "../components/Collider.js";
+import { Camera } from "./Camera.js";
 
 export class Flash extends GameObject {
   // Flash is an internal engine class - no user script needed
@@ -20,11 +21,6 @@ export class Flash extends GameObject {
   // Pool tracking (set by gameEngine during auto-registration)
   static maxFlashes = 0;
   static initialized = false;
-
-  // Camera data for off-screen culling (set by logic worker)
-  static cameraData = null;
-  static canvasWidth = 0;
-  static canvasHeight = 0;
 
   /**
    * Initialize Flash system with pool size
@@ -42,43 +38,15 @@ export class Flash extends GameObject {
   }
 
   /**
-   * Set camera data reference for off-screen culling
-   * Called by logic worker after initialization
-   * @param {Float32Array} cameraData - Camera data [zoom, x, y]
-   * @param {number} canvasWidth - Canvas width in pixels
-   * @param {number} canvasHeight - Canvas height in pixels
-   */
-  static setCameraData(cameraData, canvasWidth, canvasHeight) {
-    this.cameraData = cameraData;
-    this.canvasWidth = canvasWidth;
-    this.canvasHeight = canvasHeight;
-  }
-
-  /**
    * Check if a world position is visible on screen
+   * Uses Camera static class for viewport state
    * @param {number} worldX - World X position
    * @param {number} worldY - World Y position
    * @returns {boolean} - True if visible
    */
   static isOnScreen(worldX, worldY) {
-    if (!this.cameraData) return true; // If no camera data, assume visible
-
-    const zoom = this.cameraData[0];
-    const cameraX = this.cameraData[1];
-    const cameraY = this.cameraData[2];
-
-    // Convert world position to screen position
-    const screenX = (worldX - cameraX) * zoom;
-    const screenY = (worldY - cameraY) * zoom;
-
-    // Check if within screen bounds (with some margin for light radius)
-    const margin = 100;
-    return (
-      screenX >= -margin &&
-      screenX <= this.canvasWidth + margin &&
-      screenY >= -margin &&
-      screenY <= this.canvasHeight + margin
-    );
+    // Use Camera's isOnScreen with margin for light radius
+    return Camera.isOnScreen(worldX, worldY, 100);
   }
 
   /**

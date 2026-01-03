@@ -12,6 +12,7 @@ import { ShadowCaster } from "../components/ShadowCaster.js";
 import { LightEmitter } from "../components/LightEmitter.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import Keyboard from "./Keyboard.js";
+import { Camera } from "./Camera.js";
 import { collectComponents } from "./utils.js";
 
 /**

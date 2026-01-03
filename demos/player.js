@@ -12,11 +12,11 @@ const {
   ShadowCaster,
   Transform,
   Keyboard,
+  Camera,
   getDirectionFromAngle,
   rng,
   Flash,
   LightEmitter,
-  lerp,
 } = WEED;
 
 export class Player extends GameObject {
@@ -155,27 +155,11 @@ export class Player extends GameObject {
 
   /**
    * Update camera to smoothly follow the player
-   * Camera data format: [zoom, x, y]
    * @param {number} i - Entity index
    */
   updateCameraFollow(i) {
-    // Access camera data SharedArrayBuffer
-    const cameraData = GameObject.cameraData;
-    if (!cameraData) return;
-
-    // Get player position
-    const playerX = Transform.x[i];
-    const playerY = Transform.y[i];
-
-    // Calculate camera position to center player on screen
-    // Camera x,y represents the top-left corner of the viewport
-    const targetCameraX = playerX - this.config.canvasWidth / 2;
-    const targetCameraY = playerY - this.config.canvasHeight / 2;
-
-    // Smooth camera follow with lerp (0.1 = smoothing factor)
-    const smoothing = 0.1;
-    cameraData[1] = lerp(cameraData[1], targetCameraX, smoothing);
-    cameraData[2] = lerp(cameraData[2], targetCameraY, smoothing);
+    // Smoothly follow player position
+    Camera.follow(this.x, this.y);
   }
 
   /**
