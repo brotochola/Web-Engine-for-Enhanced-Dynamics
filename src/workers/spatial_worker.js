@@ -119,6 +119,7 @@ class SpatialWorker extends AbstractWorker {
    * Clear and rebuild spatial grid
    * Optimized: only clears previously occupied cells, uses multiply instead of divide
    * Now accounts for collider offsets when placing entities in grid cells
+   * MULTI-CELL: Entities with colliders larger than cellSize are added to ALL overlapping cells
    */
   rebuildGrid() {
     const grid = this.grid;
@@ -136,12 +137,20 @@ class SpatialWorker extends AbstractWorker {
     const y = Transform.y;
     const offsetX = Collider.offsetX;
     const offsetY = Collider.offsetY;
+    const colliderActive = Collider.active;
+    const shapeType = Collider.shapeType;
+    const radius = Collider.radius;
+    const width = Collider.width;
+    const height = Collider.height;
     const invCellSize = this.invCellSize;
     const gridCols = this.gridCols;
     const gridRows = this.gridRows;
     const maxCol = gridCols - 1;
     const maxRow = gridRows - 1;
     const entityCount = this.entityCount;
+
+    // Shape type constants
+    const SHAPE_CIRCLE = 0;
 
     let occupiedIdx = 0;
 
@@ -158,20 +167,45 @@ class SpatialWorker extends AbstractWorker {
       // Skip entities with invalid positions (NaN check via self-comparison)
       if (posX !== posX || posY !== posY) continue;
 
-      // Inline cell calculation - multiply instead of divide, avoid function call
-      // Clamp with branchless min/max using ternary (often compiled to CMOV)
-      let col = (posX * invCellSize) | 0; // Faster than Math.floor for positive numbers
-      let row = (posY * invCellSize) | 0;
-      col = col < 0 ? 0 : col > maxCol ? maxCol : col;
-      row = row < 0 ? 0 : row > maxRow ? maxRow : row;
-      const cellIndex = row * gridCols + col;
-
-      const cell = grid[cellIndex];
-      // Track newly occupied cells (only when first entity enters)
-      if (cell.length === 0) {
-        occupiedCells[occupiedIdx++] = cellIndex;
+      // Calculate entity's bounding box half-extents based on collider type
+      let halfW = 0,
+        halfH = 0;
+      if (colliderActive[i]) {
+        if (shapeType[i] === SHAPE_CIRCLE) {
+          // Circle: use radius for both dimensions
+          halfW = halfH = radius[i] || 0;
+        } else {
+          // Box: use half width/height
+          halfW = (width[i] || 0) / 2;
+          halfH = (height[i] || 0) / 2;
+        }
       }
-      cell.push(i);
+
+      // Calculate cell range the entity's bounding box covers
+      let minCol = ((posX - halfW) * invCellSize) | 0;
+      let maxColBB = ((posX + halfW) * invCellSize) | 0;
+      let minRow = ((posY - halfH) * invCellSize) | 0;
+      let maxRowBB = ((posY + halfH) * invCellSize) | 0;
+
+      // Clamp to grid bounds
+      minCol = minCol < 0 ? 0 : minCol > maxCol ? maxCol : minCol;
+      maxColBB = maxColBB < 0 ? 0 : maxColBB > maxCol ? maxCol : maxColBB;
+      minRow = minRow < 0 ? 0 : minRow > maxRow ? maxRow : minRow;
+      maxRowBB = maxRowBB < 0 ? 0 : maxRowBB > maxRow ? maxRow : maxRowBB;
+
+      // Add entity to ALL cells its bounding box overlaps
+      for (let r = minRow; r <= maxRowBB; r++) {
+        for (let c = minCol; c <= maxColBB; c++) {
+          const cellIndex = r * gridCols + c;
+          const cell = grid[cellIndex];
+
+          // Track newly occupied cells (only when first entity enters)
+          if (cell.length === 0) {
+            occupiedCells[occupiedIdx++] = cellIndex;
+          }
+          cell.push(i);
+        }
+      }
     }
 
     this.occupiedCount = occupiedIdx;
@@ -180,7 +214,8 @@ class SpatialWorker extends AbstractWorker {
   /**
    * Find neighbors for all entities using spatial grid
    * Optimized: processes by occupied cell to improve cache locality
-   * Now accounts for collider offsets when calculating distances
+   * Now accounts for collider offsets and sizes when calculating distances
+   * LARGE ENTITY FIX: Expands effective range by target entity's collider size
    */
   findAllNeighbors() {
     const active = Transform.active;
@@ -189,6 +224,11 @@ class SpatialWorker extends AbstractWorker {
     const offsetX = Collider.offsetX;
     const offsetY = Collider.offsetY;
     const visualRange = Collider.visualRange;
+    const colliderActive = Collider.active;
+    const shapeType = Collider.shapeType;
+    const radius = Collider.radius;
+    const width = Collider.width;
+    const height = Collider.height;
     const grid = this.grid;
     const occupiedCells = this.occupiedCells;
     const occupiedCount = this.occupiedCount;
@@ -199,6 +239,9 @@ class SpatialWorker extends AbstractWorker {
     const gridRows = this.gridRows;
     const maxNeighbors = this.maxNeighborsPerEntity;
     const stride = 1 + maxNeighbors;
+
+    // Shape type constants
+    const SHAPE_CIRCLE = 0;
 
     // Process only entities in occupied cells - better cache locality
     for (let cellIdx = 0; cellIdx < occupiedCount; cellIdx++) {
@@ -214,7 +257,6 @@ class SpatialWorker extends AbstractWorker {
         const myX = x[i] + (offsetX[i] || 0);
         const myY = y[i] + (offsetY[i] || 0);
         const myVisualRange = visualRange[i];
-        const visualRangeSq = myVisualRange * myVisualRange;
 
         // Cell radius for neighbor search
         const cellRadius = Math.ceil(myVisualRange * invCellSize);
@@ -264,8 +306,25 @@ class SpatialWorker extends AbstractWorker {
               const deltaY = jY - myY;
               const distSq = deltaX * deltaX + deltaY * deltaY;
 
-              // Only add if within visual range and not at same position
-              if (distSq < visualRangeSq && distSq > 0) {
+              // Calculate the other entity's half-extent (for detecting large entities)
+              // We need to expand our visual range by their size to detect edge collisions
+              let jHalfExtent = 0;
+              if (colliderActive[j]) {
+                if (shapeType[j] === SHAPE_CIRCLE) {
+                  jHalfExtent = radius[j] || 0;
+                } else {
+                  // For boxes, use the larger dimension as the half-extent
+                  jHalfExtent = Math.max(width[j] || 0, height[j] || 0) / 2;
+                }
+              }
+
+              // Expand effective range by target's half-extent
+              // This ensures we detect large entities even when near their edge
+              const effectiveRange = myVisualRange + jHalfExtent;
+              const effectiveRangeSq = effectiveRange * effectiveRange;
+
+              // Only add if within effective range and not at same position
+              if (distSq < effectiveRangeSq && distSq > 0) {
                 const writeIdx = offset + 1 + neighborCount;
                 neighborData[writeIdx] = j;
                 distanceData[writeIdx] = distSq;

@@ -15,6 +15,7 @@ import { Collider } from "../components/Collider.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 import { clamp01, validatePhysicsConfig } from "../core/utils.js";
 import { rng } from "../core/utils.js";
+import { Player } from "../../demos/player.js";
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
 // Physics worker uses RigidBody component for physics calculations
 
@@ -456,6 +457,8 @@ class PhysicsWorker extends AbstractWorker {
             width[j],
             height[j]
           );
+          if (result && Transform.entityType[i] === Player.entityType)
+            console.log(result.nx, result.ny);
         } else if (shapeI === SHAPE_BOX && shapeJ === SHAPE_CIRCLE) {
           // Box vs Circle (swap and invert normal)
           result = this.testCircleAABB(
@@ -471,6 +474,9 @@ class PhysicsWorker extends AbstractWorker {
             result.nx = -result.nx;
             result.ny = -result.ny;
           }
+
+          if (result && Transform.entityType[j] === Player.entityType)
+            console.log(result.nx, result.ny);
         } else if (shapeI === SHAPE_BOX && shapeJ === SHAPE_BOX) {
           // Box vs Box
           result = this.testAABBAABB(
