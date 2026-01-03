@@ -1048,4 +1048,81 @@ export class GameObject {
 
     return despawnedCount;
   }
+
+  /**
+   * ITERATION: Iterate over all ACTIVE entities of this class
+   * Called on the entity class itself: Prey.forEach(i => ...)
+   *
+   * This enables ECS-style direct component array access:
+   *   Prey.forEach(i => {
+   *     Transform.x[i] += RigidBody.vx[i];
+   *   });
+   *
+   * @param {Function} callback - Function called for each active entity
+   *   - callback(index) for index-only iteration
+   *   - callback(index, instance) if you need the GameObject instance
+   */
+  static forEach(callback) {
+    // Use `this` to get the calling class (e.g., Prey.forEach -> this = Prey)
+    const EntityClass = this;
+
+    // Validate EntityClass has required metadata
+    if (
+      EntityClass.startIndex === undefined ||
+      EntityClass.totalCount === undefined
+    ) {
+      console.warn(
+        `Cannot iterate ${EntityClass.name}: missing startIndex/totalCount metadata. Was it registered with GameEngine?`
+      );
+      return;
+    }
+
+    const startIndex = EntityClass.startIndex;
+    const endIndex = startIndex + EntityClass.totalCount;
+    const activeArray = Transform.active;
+    const instances = EntityClass.instances;
+
+    // Iterate over all entities of this type, skipping inactive ones
+    for (let i = startIndex; i < endIndex; i++) {
+      if (activeArray[i]) {
+        // Pass both index and instance (instance is optional for callback to use)
+        callback(i, instances[i - startIndex]);
+      }
+    }
+  }
+
+  /**
+   * ITERATION: Get count of active entities of this class
+   * Called on the entity class itself: Prey.activeCount
+   *
+   * @returns {number} Number of currently active entities
+   */
+  static get activeCount() {
+    const EntityClass = this;
+
+    if (
+      EntityClass.startIndex === undefined ||
+      EntityClass.totalCount === undefined
+    ) {
+      return 0;
+    }
+
+    // If free list exists, calculate from it (O(1))
+    if (EntityClass.hasOwnProperty("freeList")) {
+      return EntityClass.totalCount - (EntityClass.freeListTop + 1);
+    }
+
+    // Fallback: count active entities (O(n))
+    const startIndex = EntityClass.startIndex;
+    const endIndex = startIndex + EntityClass.totalCount;
+    let count = 0;
+
+    for (let i = startIndex; i < endIndex; i++) {
+      if (Transform.active[i]) {
+        count++;
+      }
+    }
+
+    return count;
+  }
 }
