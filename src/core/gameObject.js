@@ -840,7 +840,20 @@ export class GameObject {
    * @param {Object} spawnConfig - Initial configuration (position, velocity, etc.)
    * @returns {GameObject|null} - The spawned entity instance, or null if pool exhausted
    */
-  static spawn(EntityClass, spawnConfig = {}) {
+  static spawn(EntityClassOrConfig, spawnConfig = {}) {
+    // Support two calling conventions:
+    // 1. GameObject.spawn(EntityClass, config) - for dynamic class spawning
+    // 2. Prey.spawn(config) - cleaner API when calling on the class directly
+    let EntityClass;
+    if (typeof EntityClassOrConfig === "function") {
+      // Traditional: GameObject.spawn(EntityClass, config)
+      EntityClass = EntityClassOrConfig;
+    } else {
+      // New: Prey.spawn(config) - use `this` as the EntityClass
+      EntityClass = this;
+      spawnConfig = EntityClassOrConfig || {};
+    }
+
     // Validate EntityClass has required metadata
     if (
       EntityClass.startIndex === undefined ||

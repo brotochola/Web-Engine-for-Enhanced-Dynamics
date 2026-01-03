@@ -123,9 +123,9 @@ class GameEngine {
     }
   }
 
-  spawnEntity(entityName, data) {
+  spawnEntity(EntityClassOrName, data) {
     if (this.currentScene) {
-      this.currentScene.spawnEntity(entityName, data);
+      this.currentScene.spawnEntity(EntityClassOrName, data);
     }
   }
 
