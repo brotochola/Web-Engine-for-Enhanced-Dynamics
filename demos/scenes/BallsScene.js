@@ -3,6 +3,7 @@
 
 import { Scene } from "/src/core/Scene.js";
 import { Ball } from "/demos/ball.js";
+import { Camera } from "/src/core/Camera.js";
 
 export class BallsScene extends Scene {
   // ========================================
@@ -79,7 +80,12 @@ export class BallsScene extends Scene {
     super(game);
 
     // Scene-specific properties
-    this.numberOfBalls = 10000; // Start with fewer balls
+    this.numberOfBalls = 3000;
+
+    // Camera control settings
+    this.cameraPanSpeed = 10; // Pixels per frame at zoom 1
+    this.cameraFollowX = 0;
+    this.cameraFollowY = 0;
   }
 
   create() {
@@ -88,11 +94,44 @@ export class BallsScene extends Scene {
 
     this.spawnBalls(this.numberOfBalls);
 
+    // Initialize camera at world center
+    this.cameraFollowX = this.config.worldWidth / 2;
+    this.cameraFollowY = this.config.worldHeight / 2;
+    Camera.centerOn(this.cameraFollowX, this.cameraFollowY);
+
     console.log("✅ BallsScene: Balls spawned!");
   }
 
   update(time, delta) {
-    // Optional: Add scene-specific per-frame logic here
+    // Handle WASD camera panning (use this.keyboard which is the main thread keyboard state)
+    const panSpeed = this.cameraPanSpeed / Camera.zoom;
+    const kb = this.keyboard;
+
+    if (kb.w || kb.arrowup) {
+      this.cameraFollowY -= panSpeed;
+    }
+    if (kb.s || kb.arrowdown) {
+      this.cameraFollowY += panSpeed;
+    }
+    if (kb.a || kb.arrowleft) {
+      this.cameraFollowX -= panSpeed;
+    }
+    if (kb.d || kb.arrowright) {
+      this.cameraFollowX += panSpeed;
+    }
+
+    // Clamp camera target to world bounds
+    this.cameraFollowX = Math.max(
+      0,
+      Math.min(this.cameraFollowX, this.config.worldWidth)
+    );
+    this.cameraFollowY = Math.max(
+      0,
+      Math.min(this.cameraFollowY, this.config.worldHeight)
+    );
+
+    // Update camera (handles smooth following and zoom lerping)
+    Camera.follow(this.cameraFollowX, this.cameraFollowY, 0.15);
   }
 
   // ========================================
