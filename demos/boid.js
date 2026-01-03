@@ -310,7 +310,7 @@ class Boid extends GameObject {
     const dx = tX[mouseEntityIndex] - tX[i];
     const dy = tY[mouseEntityIndex] - tY[i];
 
-    const strength = 1000;
+    const strength = 10;
     rbAX[i] -= (dx / dist2) * strength * dtRatio;
     rbAY[i] -= (dy / dist2) * strength * dtRatio;
   }
