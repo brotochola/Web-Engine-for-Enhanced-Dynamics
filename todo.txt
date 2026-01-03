@@ -28,7 +28,7 @@ Prey.forEach(i => {
 this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 
 
-spawnEntity('Prey') -> spawnEntity(Prey)
+
 
  getPosition() { return { x: Transform.x[this.index], y: Transform.y[this.index] }; }
 
@@ -52,8 +52,6 @@ spawnEntity('Prey') -> spawnEntity(Prey)
     --- SCENES ----
 ------------------------------------------------------------------------------------------------
 
-
--Scene.tick
 -eventEmitter
 
 
