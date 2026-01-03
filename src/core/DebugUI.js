@@ -33,15 +33,15 @@ export class DebugUI {
     // Painter/Eraser tool state
     this.activeSpawnerType = null; // Which entity type is being painted
     this.eraserActive = false;
-    this.isMouseDown = false;
     this.lastSpawnTime = 0;
     this.spawnThrottleMs = 50; // Minimum ms between spawns while painting
+    this._toolMouseDown = false; // Track mouse button for tool mode (separate from game input)
 
     // Inject styles and create UI
     this._injectStyles();
     this._createUI();
     this._setupKeyboardShortcuts();
-    this._setupCanvasMouseHandlers();
+    this._setupToolMouseHandlers();
   }
 
   /**
@@ -64,6 +64,8 @@ export class DebugUI {
     // Reset painter tools on scene change
     this.activeSpawnerType = null;
     this.eraserActive = false;
+    this._toolMouseDown = false;
+    Mouse.isDebugToolActive = false;
 
     // Disable all debug flags when switching scenes
     if (this.debugFlags) {
@@ -84,6 +86,8 @@ export class DebugUI {
     this.stop();
     this.activeSpawnerType = null;
     this.eraserActive = false;
+    this._toolMouseDown = false;
+    Mouse.isDebugToolActive = false;
     this.scene = null;
     this.debugFlags = null;
   }
@@ -115,6 +119,22 @@ export class DebugUI {
     this._updatePerformanceSection();
     this._updateEntitiesSection();
     this._updateToolButtonStates();
+    this._updatePaintTool();
+  }
+
+  /**
+   * Poll for paint/erase tool actions
+   * Uses _toolMouseDown (tracked by DebugUI) and Mouse position (entity 0)
+   */
+  _updatePaintTool() {
+    if (!this.activeSpawnerType && !this.eraserActive) {
+      return;
+    }
+
+    // Perform paint action while mouse is held down
+    if (this._toolMouseDown && Mouse.isPresent) {
+      this._handlePaintAction();
+    }
   }
 
   // ========================================
@@ -937,6 +957,7 @@ export class DebugUI {
       this.activeSpawnerType = className;
       this.eraserActive = false;
     }
+    this._updateDebugToolFlag();
     this._updateToolButtonStates();
     this._updateToolIndicator();
   }
@@ -946,8 +967,16 @@ export class DebugUI {
     if (this.eraserActive) {
       this.activeSpawnerType = null;
     }
+    this._updateDebugToolFlag();
     this._updateToolButtonStates();
     this._updateToolIndicator();
+  }
+
+  /**
+   * Update Mouse.isDebugToolActive flag to block game input when tools are active
+   */
+  _updateDebugToolFlag() {
+    Mouse.isDebugToolActive = !!(this.activeSpawnerType || this.eraserActive);
   }
 
   _updateToolButtonStates() {
@@ -964,50 +993,25 @@ export class DebugUI {
     }
   }
 
-  // ========================================
-  // CANVAS MOUSE HANDLERS (for painting)
-  // ========================================
-
-  _setupCanvasMouseHandlers() {
-    // We need to attach to the canvas, but it might not exist yet
-    // So we use event delegation on the document with capture phase
-    // to intercept events before they reach the game's handlers
-    this._canvasMouseDown = (e) => {
-      if (!this.gameEngine?.canvas) return;
-      if (e.target !== this.gameEngine.canvas) return;
+  /**
+   * Setup mouse handlers for tool mode button tracking
+   * These track button state independently from the game's Mouse class
+   */
+  _setupToolMouseHandlers() {
+    this._onToolMouseDown = (e) => {
+      if (e.button !== 0) return; // Only track left button
       if (!this.activeSpawnerType && !this.eraserActive) return;
-
-      // Block the event from reaching the game's mouse handlers
-      e.stopPropagation();
-
-      this.isMouseDown = true;
-      this._handlePaintAction();
+      this._toolMouseDown = true;
     };
 
-    this._canvasMouseUp = (e) => {
-      // Only block if we were painting/erasing
-      if (this.isMouseDown && (this.activeSpawnerType || this.eraserActive)) {
-        e.stopPropagation();
-      }
-      this.isMouseDown = false;
+    this._onToolMouseUp = (e) => {
+      if (e.button !== 0) return;
+      this._toolMouseDown = false;
     };
 
-    this._canvasMouseMove = (e) => {
-      if (!this.isMouseDown) return;
-      if (!this.gameEngine?.canvas) return;
-      if (e.target !== this.gameEngine.canvas) return;
-      if (!this.activeSpawnerType && !this.eraserActive) return;
-
-      // Block the event from reaching the game's mouse handlers
-      e.stopPropagation();
-
-      this._handlePaintAction();
-    };
-
-    // Use capture phase (true) to intercept events before they bubble to game handlers
-    document.addEventListener("mousedown", this._canvasMouseDown, true);
-    document.addEventListener("mouseup", this._canvasMouseUp, true);
-    document.addEventListener("mousemove", this._canvasMouseMove, true);
+    // Use capture phase to get events before game handlers
+    document.addEventListener("mousedown", this._onToolMouseDown, true);
+    document.addEventListener("mouseup", this._onToolMouseUp, true);
   }
 
   _handlePaintAction() {
@@ -1025,53 +1029,66 @@ export class DebugUI {
   }
 
   /**
-   * Spawn entity at current mouse position
+   * Spawn entity at current mouse position (uses Mouse entity 0)
    */
   _spawnEntityAtMouse(className) {
     if (!this.gameEngine) return;
 
-    if (Mouse.x > 0 && Mouse.y > 0) {
-      this.gameEngine.spawnEntity(className, {
-        x: Mouse.x,
-        y: Mouse.y,
-        vx: 0,
-        vy: 0,
-      });
-    }
+    this.gameEngine.spawnEntity(className, {
+      x: Mouse.x,
+      y: Mouse.y,
+      vx: 0,
+      vy: 0,
+    });
   }
 
   /**
    * Despawn entity nearest to mouse position
+   * Uses Mouse entity's neighbor data from spatial worker for efficiency
    */
   _despawnEntityAtMouse() {
     if (!this.scene || !this.gameEngine) return;
-    if (Mouse.x <= 0 || Mouse.y <= 0) return;
 
-    const eraserRadius = 50; // Pixels
+    const eraserRadiusSq = 50 * 50; // Squared pixels for comparison with distance data
     const internalEntities = new Set(["Mouse", "Flash"]);
 
-    // Find the nearest active entity within eraser radius
-    let nearestIndex = -1;
-    let nearestDist = eraserRadius;
+    // Get Mouse's neighbors from spatial worker data (Mouse is always entity 0)
+    const neighborData = GameObject.neighborData;
+    const distanceData = GameObject.distanceData;
 
-    const total = this.scene.totalEntityCount || 0;
-    for (let i = 0; i < total; i++) {
-      if (!Transform.active[i]) continue;
+    if (!neighborData) {
+      // Fallback if neighbor data not available
+      return;
+    }
+
+    const maxNeighbors = this.scene.config?.spatial?.maxNeighbors || 100;
+    const offset = 0; // Mouse is entity 0, so offset is 0
+    const neighborCount = neighborData[offset];
+
+    if (neighborCount === 0) return;
+
+    // Find nearest neighbor within eraser radius
+    let nearestIndex = -1;
+    let nearestDistSq = eraserRadiusSq;
+
+    for (let n = 0; n < neighborCount; n++) {
+      const neighborIdx = neighborData[offset + 1 + n];
+
+      if (!Transform.active[neighborIdx]) continue;
 
       // Skip internal entities
-      const entityType = Transform.entityType[i];
+      const entityType = Transform.entityType[neighborIdx];
       const reg = this.scene.registeredClasses.find(
         (r) => r.entityType === entityType
       );
       if (reg && internalEntities.has(reg.class.name)) continue;
 
-      const dx = Transform.x[i] - Mouse.x;
-      const dy = Transform.y[i] - Mouse.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+      // Use precomputed squared distance from spatial worker
+      const distSq = distanceData ? distanceData[offset + 1 + n] : null;
 
-      if (dist < nearestDist) {
-        nearestDist = dist;
-        nearestIndex = i;
+      if (distSq !== null && distSq < nearestDistSq) {
+        nearestDistSq = distSq;
+        nearestIndex = neighborIdx;
       }
     }
 
@@ -1106,6 +1123,8 @@ export class DebugUI {
         // ESC to deselect all tools
         this.activeSpawnerType = null;
         this.eraserActive = false;
+        this._toolMouseDown = false;
+        this._updateDebugToolFlag();
         this._updateToolButtonStates();
         this._updateToolIndicator();
       } else if (key >= "1" && key <= "7") {
@@ -1157,15 +1176,15 @@ export class DebugUI {
       window.removeEventListener("keydown", this._keyHandler);
     }
 
-    if (this._canvasMouseDown) {
-      document.removeEventListener("mousedown", this._canvasMouseDown, true);
+    if (this._onToolMouseDown) {
+      document.removeEventListener("mousedown", this._onToolMouseDown, true);
     }
-    if (this._canvasMouseUp) {
-      document.removeEventListener("mouseup", this._canvasMouseUp, true);
+    if (this._onToolMouseUp) {
+      document.removeEventListener("mouseup", this._onToolMouseUp, true);
     }
-    if (this._canvasMouseMove) {
-      document.removeEventListener("mousemove", this._canvasMouseMove, true);
-    }
+
+    // Clear debug tool flag
+    Mouse.isDebugToolActive = false;
 
     if (this.container && this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);

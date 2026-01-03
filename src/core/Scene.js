@@ -1129,12 +1129,15 @@ class Scene {
     };
 
     this._mousedownHandler = (e) => {
+      // Skip button state updates when debug tool is active (DebugUI painter/eraser)
+      if (Mouse.isDebugToolActive) return;
       if (e.button == 0) Mouse.isButton0Down = true;
       if (e.button == 1) Mouse.isButton1Down = true;
       if (e.button == 2) Mouse.isButton2Down = true;
     };
 
     this._mouseupHandler = (e) => {
+      // Always process mouseup to prevent stuck button state
       if (e.button == 0) Mouse.isButton0Down = false;
       if (e.button == 1) Mouse.isButton1Down = false;
       if (e.button == 2) Mouse.isButton2Down = false;
