@@ -118,6 +118,7 @@ class SpatialWorker extends AbstractWorker {
   /**
    * Clear and rebuild spatial grid
    * Optimized: only clears previously occupied cells, uses multiply instead of divide
+   * Now accounts for collider offsets when placing entities in grid cells
    */
   rebuildGrid() {
     const grid = this.grid;
@@ -133,6 +134,8 @@ class SpatialWorker extends AbstractWorker {
     const active = Transform.active;
     const x = Transform.x;
     const y = Transform.y;
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
     const invCellSize = this.invCellSize;
     const gridCols = this.gridCols;
     const gridRows = this.gridRows;
@@ -147,9 +150,12 @@ class SpatialWorker extends AbstractWorker {
       // Skip inactive entities - they don't participate in spatial queries
       if (!active[i]) continue;
 
+      // Use collider position (transform + offset) for grid placement
+      // This ensures entities with offset colliders are in the correct cells
+      const posX = x[i] + (offsetX[i] || 0);
+      const posY = y[i] + (offsetY[i] || 0);
+
       // Skip entities with invalid positions (NaN check via self-comparison)
-      const posX = x[i];
-      const posY = y[i];
       if (posX !== posX || posY !== posY) continue;
 
       // Inline cell calculation - multiply instead of divide, avoid function call
@@ -174,11 +180,14 @@ class SpatialWorker extends AbstractWorker {
   /**
    * Find neighbors for all entities using spatial grid
    * Optimized: processes by occupied cell to improve cache locality
+   * Now accounts for collider offsets when calculating distances
    */
   findAllNeighbors() {
     const active = Transform.active;
     const x = Transform.x;
     const y = Transform.y;
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
     const visualRange = Collider.visualRange;
     const grid = this.grid;
     const occupiedCells = this.occupiedCells;
@@ -201,16 +210,16 @@ class SpatialWorker extends AbstractWorker {
       for (let e = 0; e < centerCellLen; e++) {
         const i = centerCell[e];
 
-        // Entity data (skip inactive check - already filtered in rebuildGrid)
-        const myX = x[i];
-        const myY = y[i];
+        // Use collider position (transform + offset) for distance calculations
+        const myX = x[i] + (offsetX[i] || 0);
+        const myY = y[i] + (offsetY[i] || 0);
         const myVisualRange = visualRange[i];
         const visualRangeSq = myVisualRange * myVisualRange;
 
         // Cell radius for neighbor search
         const cellRadius = Math.ceil(myVisualRange * invCellSize);
 
-        // Entity's cell coordinates
+        // Entity's cell coordinates (using collider position)
         const col = (myX * invCellSize) | 0;
         const row = (myY * invCellSize) | 0;
 
@@ -248,9 +257,11 @@ class SpatialWorker extends AbstractWorker {
               // Skip self
               if (i === j) continue;
 
-              // Calculate squared distance
-              const deltaX = x[j] - myX;
-              const deltaY = y[j] - myY;
+              // Calculate squared distance using collider positions
+              const jX = x[j] + (offsetX[j] || 0);
+              const jY = y[j] + (offsetY[j] || 0);
+              const deltaX = jX - myX;
+              const deltaY = jY - myY;
               const distSq = deltaX * deltaX + deltaY * deltaY;
 
               // Only add if within visual range and not at same position

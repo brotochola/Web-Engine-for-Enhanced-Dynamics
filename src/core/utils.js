@@ -3,6 +3,8 @@
 // Shared utility functions for the multithreaded game engine
 // ============================================================================
 
+import { PHYSICS_DEFAULTS } from "./ConfigDefaults.js";
+
 // ============================================================================
 // MATH UTILITIES
 // ============================================================================
@@ -267,35 +269,33 @@ export function setupWorkerCommunication(connections) {
  * @returns {Object} Validated and merged configuration
  */
 export function validatePhysicsConfig(currentConfig, newConfig) {
+  // Handle null/undefined currentConfig (first initialization) - use centralized defaults
+  const current = currentConfig || PHYSICS_DEFAULTS;
   return {
-    subStepCount: Math.max(
-      1,
-      newConfig.subStepCount ?? currentConfig.subStepCount
-    ),
+    subStepCount: Math.max(1, newConfig.subStepCount ?? current.subStepCount),
     boundaryElasticity: clamp01(
-      newConfig.boundaryElasticity ?? currentConfig.boundaryElasticity,
-      currentConfig.boundaryElasticity
+      newConfig.boundaryElasticity ?? current.boundaryElasticity,
+      current.boundaryElasticity
     ),
     collisionResponseStrength: clamp01(
-      newConfig.collisionResponseStrength ??
-        currentConfig.collisionResponseStrength,
-      currentConfig.collisionResponseStrength
+      newConfig.collisionResponseStrength ?? current.collisionResponseStrength,
+      current.collisionResponseStrength
     ),
     verletDamping: clamp01(
-      newConfig.verletDamping ?? currentConfig.verletDamping,
-      currentConfig.verletDamping
+      newConfig.verletDamping ?? current.verletDamping,
+      current.verletDamping
     ),
     minSpeedForRotation:
-      newConfig.minSpeedForRotation ?? currentConfig.minSpeedForRotation,
+      newConfig.minSpeedForRotation ?? current.minSpeedForRotation,
     gravity: {
       x:
         newConfig.gravity && typeof newConfig.gravity.x === "number"
           ? newConfig.gravity.x
-          : currentConfig.gravity?.x ?? 0,
+          : current.gravity?.x ?? 0,
       y:
         newConfig.gravity && typeof newConfig.gravity.y === "number"
           ? newConfig.gravity.y
-          : currentConfig.gravity?.y ?? 0,
+          : current.gravity?.y ?? 0,
     },
   };
 }
