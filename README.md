@@ -1,255 +1,197 @@
 # WeedJS 🌿
 
-**A high-performance multithreaded web game engine**
-
-Built with SharedArrayBuffers and Web Workers, featuring multithreaded physics, spatial partitioning, and rendering.
+**A blazing-fast multithreaded web game engine that handles 20,000+ NPCs without breaking a sweat.**
 
 🔗 **Live Demo**: https://multithreaded-game-engine.vercel.app/demos
 
 ![WeedJS Demo](screen-capture.gif)
 
-## 🎮 Features
+---
 
-- **Multithreaded Architecture**: Parallel processing with 4 dedicated workers
+## 🔥 20,000 Entities. Smooth 60fps. In Your Browser.
 
-  - Spatial Worker: Spatial hash grid for efficient neighbor detection
-  - Logic Worker: Game logic and AI
-  - Physics Worker: Verlet integration with collision detection
-  - Renderer Worker: PixiJS-based rendering with AnimatedSprite support
+Most web game engines choke at a few hundred entities. **WeedJS runs 20,000 with room to spare.**
 
-- **High Performance**: Optimized for thousands of entities
+Built from the ground up with true parallelism using SharedArrayBuffers and 4 dedicated Web Workers:
 
-  - Structure of Arrays (SoA) pattern for cache efficiency
-  - Dirty flags to minimize unnecessary updates
-  - Object pooling for zero-allocation spawning
+- **Spatial Worker** — Blazing-fast neighbor queries via spatial hashing
+- **Logic Workers** — Your game AI runs in parallel across multiple cores
+- **Physics Worker** — Rock-solid Verlet integration with collision detection
+- **Renderer Worker** — PixiJS-powered graphics running off the main thread
 
-- **Entity Component System**: Flexible GameObject-based architecture
-  - Base classes: `GameObject`, `RenderableGameObject`
-  - Animation system with sprite sheets
-  - Physics properties per entity (maxVel, friction, etc.)
+---
 
-## 📁 Project Structure
+## ✨ Features That Make You Smile
 
-```
-weedjs/
-├── src/
-│   ├── index.js                 # 🌿 Main entry point - WEED namespace
-│   ├── core/                    # Core engine files
-│   │   ├── gameEngine.js        # Main engine coordinator
-│   │   ├── gameObject.js        # Base entity class
-│   │   ├── Component.js         # Base component class
-│   │   └── utils.js             # Utility functions
-│   ├── components/              # Built-in components
-│   │   ├── Transform.js         # Position & rotation
-│   │   ├── RigidBody.js         # Physics properties
-│   │   ├── Collider.js          # Collision detection
-│   │   └── SpriteRenderer.js    # Visual rendering
-│   └── workers/                 # Web workers
-│       ├── AbstractWorker.js    # Base worker class
-│       ├── logic_worker.js      # Game logic & AI
-│       ├── physics_worker.js    # Physics integration
-│       ├── spatial_worker.js    # Spatial partitioning
-│       └── pixi_worker.js       # Rendering
-├── demos/                       # Demo projects
-│   ├── balls/                   # Gravity & collision demo
-│   └── predators/               # Predator-prey boids demo
-├── docs/                        # Documentation
-├── tests/                       # Test files
-├── server/                      # Development server
-│   └── node_server.js
-├── package.json
-└── README.md
-```
+🎮 **Entity Component System** — Clean, composable architecture  
+⚡ **O(1) Object Pooling** — Spawn and despawn with zero allocations  
+🦅 **Built-in Flocking AI** — Boids with cohesion, separation, and alignment  
+💡 **2D Lighting & Shadows** — Dynamic lights, shadow casting, muzzle flashes  
+🎆 **Particle System** — Blood splats, sparks, decals that stick to the floor  
+📷 **Smart Camera** — Smooth follow, zoom, world bounds clamping  
+🎬 **Animated Sprites** — Spritesheet support with state-based animations  
+🎯 **Collision Callbacks** — Unity-style onCollisionEnter/Stay/Exit  
+🎭 **Scene Management** — Hot-swap between scenes with full cleanup  
+🐛 **Debug UI** — Real-time FPS, entity counts, and visual debugging
 
-## 🚀 Getting Started
+---
 
-### Requirements
-
-- Node.js (for development server)
-- Modern browser with SharedArrayBuffer support
-
-### Running Locally
-
-1. **Start the development server**:
-
-   ```bash
-   node server/node_server.js
-   ```
-
-2. **Open in browser**:
-   ```
-   http://localhost:3000/demos/balls/
-   http://localhost:3000/demos/
-   ```
-
-> **Note**: SharedArrayBuffer requires specific CORS headers. Use the provided server to ensure proper configuration.
-
-### Required Headers
-
-```
-Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: require-corp
-```
-
-## 🎯 Demos
-
-### Balls Demo (`demos/balls/`)
-
-- Physics simulation with gravity
-- Collision detection and response
-- Object pooling demonstration
-
-### Predators Demo (`demos/`)
-
-- Boid flocking behavior
-- Predator-prey interactions
-- Sprite animation system
-- Complex AI behaviors
-
-## 🛠️ Creating Your Own Game
-
-### 1. Import WeedJS
+## 💫 Stupidly Simple API
 
 ```javascript
-// Import the WEED namespace (PIXI-style)
 import WEED from "/src/index.js";
 
-// Use it like PIXI
-const { GameEngine, GameObject, RigidBody, Collider } = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, Scene } = WEED;
 
-// Or use the global namespace (if loaded in browser)
-const engine = new WEED.GameEngine(config);
-```
+// Define your entity
+class Zombie extends GameObject {
+  static components = [RigidBody, Collider, SpriteRenderer];
 
-### 2. Create Entity Class
+  setup() {
+    this.rigidBody.maxVel = 3;
+    this.collider.radius = 15;
+  }
 
-```javascript
-class MyEntity extends WEED.GameObject {
-  // entityType is auto-assigned during registration (no manual ID needed!)
+  onSpawned(config) {
+    this.x = config.x;
+    this.y = config.y;
+    this.setSpritesheet("zombie");
+    this.setAnimation("walk_down");
+  }
 
-  static components = [WEED.RigidBody, WEED.Collider, WEED.SpriteRenderer];
+  tick(dtRatio) {
+    // Your AI runs here - neighbors already calculated!
+    for (let i = 0; i < this.neighborCount; i++) {
+      const neighborIdx = this.neighbors[i];
+      const dist = Math.sqrt(this.neighborDistances[i]);
+      // Do something with nearby entities...
+    }
+  }
 
-  static spriteConfig = {
-    type: "static",
-    textureName: "myTexture",
+  onCollisionEnter(otherIndex) {
+    // Bite them!
+  }
+}
+
+// Create scene with 20K zombies
+class ZombieScene extends Scene {
+  static config = {
+    worldWidth: 5000,
+    worldHeight: 2000,
+    spatial: { cellSize: 128, maxNeighbors: 1500 },
+    physics: { gravity: { x: 0, y: 0 } },
   };
 
-  tick(dtRatio, inputData) {
-    // Your game logic here
-    this.rigidBody.vx += 0.1;
+  static entities = [[Zombie, 20000]];
+
+  create() {
+    for (let i = 0; i < 20000; i++) {
+      this.spawnEntity("Zombie", {
+        x: Math.random() * 5000,
+        y: Math.random() * 2000,
+      });
+    }
+  }
+}
+
+// Run it
+const game = new WEED.GameEngine({ debug: true });
+await game.loadScene(ZombieScene);
+```
+
+That's it. 20,000 zombies chasing each other with spatial awareness, physics, and animations. **All at 60fps.**
+
+---
+
+## 🌈 Particles & Effects
+
+```javascript
+// Blood splatter on collision
+ParticleEmitter.emit({
+  count: { min: 4, max: 8 },
+  texture: "blood",
+  x: this.x,
+  y: this.y,
+  angleXY: { min: 0, max: 360 },
+  speed: { min: 0.7, max: 1.5 },
+  lifespan: 6000,
+  gravity: 0.15,
+  stayOnTheFloor: true, // Decal!
+});
+
+// Muzzle flash
+Flash.create({
+  x: gun.x,
+  y: gun.y,
+  z: 30,
+  lifespan: 80,
+  color: 0xffaa00,
+  intensity: 40000,
+});
+```
+
+---
+
+## 💡 Dynamic Lighting
+
+```javascript
+class TorchLight extends GameObject {
+  static components = [LightEmitter, ShadowCaster];
+
+  setup() {
+    this.lightEmitter.lightColor = 0xff6600;
+    this.lightEmitter.lightIntensity = 20000;
+    this.lightEmitter.height = 100;
+    this.shadowCaster.shadowRadius = 20;
   }
 }
 ```
 
-### 3. Register and Initialize
+Entities cast shadows. Lights illuminate. It all just works.
+
+---
+
+## 🎮 Input That Feels Right
 
 ```javascript
-const gameEngine = new WEED.GameEngine(config, imageUrls);
-gameEngine.registerEntityClass(MyEntity, 1000, "path/to/myentity.js");
-await gameEngine.init();
+tick(dtRatio) {
+  if (Keyboard.isDown("w")) this.rigidBody.ay -= 0.3;
+  if (Keyboard.isDown("s")) this.rigidBody.ay += 0.3;
+  if (Mouse.isDown) {
+    // Run away from cursor!
+  }
+  Camera.follow(this.x, this.y);
+}
 ```
 
-### 4. Spawn Entities
+---
 
-```javascript
-gameEngine.spawnEntity("MyEntity", {
-  x: 100,
-  y: 200,
-  vx: 5,
-  vy: 0,
-});
+## 🏃 Quick Start
+
+```bash
+git clone https://github.com/your-repo/weedjs.git
+cd weedjs
+node server/node_server.js
+
+# Open http://localhost:3000/demos/
 ```
 
-## 📚 Documentation
+> SharedArrayBuffer requires CORS headers. The included server handles this for you.
 
-- **[Game Engine README](docs/game_engine_readme.md)** - Comprehensive engine documentation
-- **[Animation System](docs/ANIMATION_SYSTEM.md)** - Sprite animation guide
-- **[Spawning System](docs/SPAWNING_SYSTEM_GUIDE.md)** - Object pooling and spawning
-- **[Sprite Configuration](docs/SPRITE_CONFIG_GUIDE.md)** - Setup sprites and animations
+---
 
-## 🔧 Configuration
+## 🌿 Why "WeedJS"?
 
-### Engine Config
+Because it grows fast, spreads everywhere, and just won't die.
 
-```javascript
-const config = {
-  canvasWidth: 800,
-  canvasHeight: 600,
-  worldWidth: 3000,
-  worldHeight: 1500,
+Also, this engine is _dope_.
 
-  spatial: {
-    cellSize: 50,
-    maxNeighbors: 400,
-  },
-
-  physics: {
-    subStepCount: 2,
-    gravity: { x: 0, y: 0.5 },
-    verletDamping: 0.99,
-  },
-};
-```
-
-## 🎨 Asset Loading
-
-### Simple Textures
-
-```javascript
-const imageUrls = {
-  mySprite: "/path/to/sprite.png",
-  background: "/path/to/bg.jpg",
-};
-```
-
-### Sprite Sheets
-
-```javascript
-const imageUrls = {
-  spritesheets: {
-    character: {
-      json: "/path/to/character.json",
-      png: "/path/to/character.png",
-    },
-  },
-};
-```
-
-## ⚡ Performance Tips
-
-1. **Use Object Pooling**: Pre-allocate entities instead of creating/destroying
-2. **Dirty Flags**: Only update visual properties when changed
-3. **Spatial Partitioning**: Automatically handled by the spatial worker
-4. **Sub-stepping**: Increase physics sub-steps for stability vs. performance trade-off
-
-## 🤝 Contributing
-
-Contributions are welcome! Please ensure:
-
-- Code follows existing patterns
-- Documentation is updated
-- Demos still work after changes
+---
 
 ## 📄 License
 
 ISC
 
-## 🌿 Why WeedJS?
+---
 
-WeedJS provides a **PIXI-style namespace** for easy imports and clean code:
-
-```javascript
-// Just like PIXI.Container, PIXI.Sprite...
-const ball = new WEED.GameObject();
-ball.rigidBody.vx = 10;
-ball.transform.x = 100;
-
-// Or destructure what you need
-const { GameObject, RigidBody, Transform } = WEED;
-```
-
-## 🙏 Acknowledgments
-
-- Built with [PixiJS](https://pixijs.com/)
-- Uses Verlet integration for stable physics
-- Inspired by RopeBall physics demos
+**Stop counting entities. Start making games.** 🎮

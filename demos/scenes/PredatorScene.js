@@ -7,6 +7,7 @@ import { Prey } from "../prey.js";
 import { Predator } from "../predator.js";
 import { Player } from "../player.js";
 import { TallLight } from "../tallLight.js";
+import { PreySpawner } from "../PreySpawner.js";
 
 export class PredatorScene extends WEED.Scene {
   // ========================================
@@ -120,6 +121,7 @@ export class PredatorScene extends WEED.Scene {
   // ========================================
 
   static entities = [
+    [PreySpawner, 1],
     [Prey, 20000],
     [Predator, 8],
     [Player, 1],
@@ -135,13 +137,15 @@ export class PredatorScene extends WEED.Scene {
     super(game);
 
     // Scene-specific properties
-    this.numberOfPrey = 15000;
+    this.numberOfPrey = 1500;
     this.numberOfPredators = 8;
     this.numberOfBoids = 0;
     this.numberOfTallLights = 10;
 
     // Player reference (will be set in create())
     this.playerEntity = null;
+
+    this.frameCount = 0;
   }
 
   create() {
@@ -156,6 +160,8 @@ export class PredatorScene extends WEED.Scene {
     this.spawnLights(this.numberOfTallLights);
     this.spawnPrey(this.numberOfPrey);
 
+    this.spawnEntity(PreySpawner, {});
+
     console.log("✅ PredatorScene: Entities spawned!");
   }
 
@@ -169,7 +175,7 @@ export class PredatorScene extends WEED.Scene {
   // ========================================
 
   spawnPlayer() {
-    this.playerEntity = this.spawnEntity("Player", {
+    this.playerEntity = this.spawnEntity(Player, {
       x: this.config.worldWidth / 2,
       y: this.config.worldHeight / 2,
       vx: 0,
@@ -179,7 +185,7 @@ export class PredatorScene extends WEED.Scene {
 
   spawnPrey(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity("Prey", {
+      this.spawnEntity(Prey, {
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
         vx: 0,
@@ -190,7 +196,7 @@ export class PredatorScene extends WEED.Scene {
 
   spawnPredators(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity("Predator", {
+      this.spawnEntity(Predator, {
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
         vx: 0,
@@ -201,7 +207,7 @@ export class PredatorScene extends WEED.Scene {
 
   spawnBoids(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity("Boid", {
+      this.spawnEntity(Boid, {
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
         vx: 0,
@@ -212,7 +218,7 @@ export class PredatorScene extends WEED.Scene {
 
   spawnLights(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity("TallLight", {
+      this.spawnEntity(TallLight, {
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });
@@ -235,7 +241,7 @@ export class PredatorScene extends WEED.Scene {
     // Access Mouse through the component system
     const { Mouse } = await import("/src/core/Mouse.js");
     if (Mouse.x > 0 && Mouse.y > 0) {
-      this.spawnEntity("Prey", {
+      this.spawnEntity(Prey, {
         x: Mouse.x,
         y: Mouse.y,
         vx: 0,
@@ -248,7 +254,7 @@ export class PredatorScene extends WEED.Scene {
     // Access Mouse through the component system
     const { Mouse } = await import("/src/core/Mouse.js");
     if (Mouse.x > 0 && Mouse.y > 0) {
-      this.spawnEntity("Predator", {
+      this.spawnEntity(Predator, {
         x: Mouse.x,
         y: Mouse.y,
         vx: 0,

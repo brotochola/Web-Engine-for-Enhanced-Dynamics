@@ -455,6 +455,15 @@ class Scene {
     // Override this to spawn initial entities
   }
 
+  /**
+   * Called once per frame on the main thread.
+   *
+   * Override this method in subclasses to implement per-frame scene logic.
+   * Runs after all core engine updates and before rendering.
+   *
+   * @param {number} time - The current high-resolution timestamp (ms).
+   * @param {number} delta - The time elapsed since the last frame (ms).
+   */
   update(time, delta) {
     // Override this for per-frame scene logic
   }
@@ -1455,7 +1464,13 @@ class Scene {
     });
   }
 
-  spawnEntity(className, spawnConfig = {}) {
+  spawnEntity(EntityClassOrName, spawnConfig = {}) {
+    // Accept either a class or a string name
+    const className =
+      typeof EntityClassOrName === "function"
+        ? EntityClassOrName.name
+        : EntityClassOrName;
+
     if (this.workers.logicWorkers && this.workers.logicWorkers.length > 0) {
       this.workers.logicWorkers.forEach((worker) => {
         worker.postMessage({
