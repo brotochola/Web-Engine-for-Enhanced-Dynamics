@@ -1059,27 +1059,22 @@ class PixiRenderer extends AbstractWorker {
       // Entity should be visible - count it
       visibleCount++;
 
-      // Collect for Y-sorting if enabled
-      if (this.ySorting) {
-        // Make sprite visible before adding to sort list
-        if (!bodySprite.visible) {
-          bodySprite.visible = true;
-        }
-        // GC OPTIMIZATION: Reuse pooled objects instead of allocating new ones each frame
-        const poolIdx = this._ySortPoolSize++;
-        if (!this._ySortPool[poolIdx]) {
-          this._ySortPool[poolIdx] = { entityId: 0, sprite: null, y: 0 };
-        }
-        const item = this._ySortPool[poolIdx];
-        item.entityId = i;
-        item.sprite = bodySprite;
-        item.y = y[i];
-      } else {
-        // No Y-sorting: just make sprite visible
-        if (!bodySprite.visible) {
-          bodySprite.visible = true;
-        }
+      // BUGFIX: Always collect visible sprites into the pool
+      // This ensures sprites are properly managed even when Y-sorting is disabled
+      // Make sprite visible before adding to pool
+      if (!bodySprite.visible) {
+        bodySprite.visible = true;
       }
+
+      // GC OPTIMIZATION: Reuse pooled objects instead of allocating new ones each frame
+      const poolIdx = this._ySortPoolSize++;
+      if (!this._ySortPool[poolIdx]) {
+        this._ySortPool[poolIdx] = { entityId: 0, sprite: null, y: 0 };
+      }
+      const item = this._ySortPool[poolIdx];
+      item.entityId = i;
+      item.sprite = bodySprite;
+      item.y = y[i];
 
       // Update transform (position, rotation, scale)
       bodySprite.x = x[i];
@@ -1095,30 +1090,32 @@ class PixiRenderer extends AbstractWorker {
       this.updateParticleSprites();
     }
 
-    // Second pass: Y-sort and re-add all sprites to container (only if ySorting is enabled)
+    // Second pass: Y-sort and re-add all sprites to container
+    // BUGFIX: Always rebuild the container, not just when ySorting is enabled
+    // This ensures despawned entities are properly removed from the render tree
+    const pool = this._ySortPool;
+    const poolSize = this._ySortPoolSize;
+
+    // GC OPTIMIZATION: Truncate pool to active size before sorting
+    // This allows native sort (O(n log n)) to only process active items
+    // Setting .length doesn't allocate - pool regrows lazily next frame if needed
+    pool.length = poolSize;
+
     if (this.ySorting) {
-      const pool = this._ySortPool;
-      const poolSize = this._ySortPoolSize;
-
-      // GC OPTIMIZATION: Truncate pool to active size before sorting
-      // This allows native sort (O(n log n)) to only process active items
-      // Setting .length doesn't allocate - pool regrows lazily next frame if needed
-      pool.length = poolSize;
-
       // Sort by Y position using native Timsort (O(n log n), highly optimized)
       pool.sort((a, b) => a.y - b.y);
-
-      // PixiJS 8: Clear particleChildren array and re-add in sorted order
-      this.particleContainer.particleChildren.length = 0;
-
-      // Re-add all sprites (entities + particles) in sorted order
-      for (let i = 0; i < poolSize; i++) {
-        this.particleContainer.addParticle(pool[i].sprite);
-      }
-
-      // Mark container as needing update
-      this.particleContainer.update();
     }
+
+    // PixiJS 8: Clear particleChildren array and re-add in sorted order
+    this.particleContainer.particleChildren.length = 0;
+
+    // Re-add all sprites (entities + particles) in sorted order
+    for (let i = 0; i < poolSize; i++) {
+      this.particleContainer.addParticle(pool[i].sprite);
+    }
+
+    // Mark container as needing update
+    this.particleContainer.update();
   }
 
   changeFrameOfSprite(bodySprite, i, deltaSeconds) {
@@ -2193,10 +2190,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Initialize spritesheet tracking (0 = not set yet)
       this.currentSpritesheetIds[i] = 0;
 
-      // Add particle to container if Y-sorting is disabled
-      if (!this.ySorting) {
-        this.particleContainer.addParticle(bodySprite);
-      }
+      // BUGFIX: Don't add particles during initialization
+      // Particles are now always added dynamically during updateSprites()
+      // This ensures proper cleanup when entities are despawned
     }
   }
 

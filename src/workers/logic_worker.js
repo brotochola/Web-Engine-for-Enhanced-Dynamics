@@ -758,27 +758,46 @@ class LogicWorker extends AbstractWorker {
           console.error(
             `LOGIC WORKER ${this.workerIndex}: Cannot despawn ${className} - class not found!`
           );
+          console.error(
+            `LOGIC WORKER ${this.workerIndex}: Available classes:`,
+            Object.keys(self).filter((key) => typeof self[key] === "function")
+          );
           return;
         }
 
         // Despawn ALL entities of this type (no partitioning - worker 0 handles all)
         let count = 0;
+        let skippedNoInstance = 0;
         const entityType = EntityClass.entityType;
 
         for (let i = 0; i < this.entityCount; i++) {
-          if (
-            Transform.active[i] &&
-            Transform.entityType[i] === entityType &&
-            this.gameObjects[i]
-          ) {
-            this.gameObjects[i].despawn();
-            count++;
+          if (Transform.active[i] && Transform.entityType[i] === entityType) {
+            if (this.gameObjects[i]) {
+              this.gameObjects[i].despawn();
+              count++;
+            } else {
+              // Fallback: manually deactivate if no instance exists
+              Transform.active[i] = 0;
+              if (RigidBody.active && RigidBody.active[i])
+                RigidBody.active[i] = 0;
+              if (Collider.active && Collider.active[i]) Collider.active[i] = 0;
+              if (SpriteRenderer.active && SpriteRenderer.active[i])
+                SpriteRenderer.active[i] = 0;
+
+              // Return to free list
+              if (EntityClass.freeList) {
+                EntityClass.freeList[++EntityClass.freeListTop] = i;
+              }
+
+              skippedNoInstance++;
+              count++;
+            }
           }
         }
 
-        // console.log(
-        //   `LOGIC WORKER ${this.workerIndex}: Despawned ${count} ${className} entities`
-        // );
+        console.log(
+          `LOGIC WORKER ${this.workerIndex}: Despawned ${count} ${className} entities (${skippedNoInstance} without instances)`
+        );
         break;
       }
 
