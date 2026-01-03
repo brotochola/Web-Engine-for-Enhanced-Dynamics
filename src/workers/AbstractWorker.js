@@ -301,7 +301,9 @@ export class AbstractWorker {
   }
 
   initSeendedRandom(seed) {
-    console.log("initSeendedRandom", seed);
+    if (seed == null || seed == undefined) {
+      seed = Date.now();
+    }
     self.rng = seededRandom(seed);
     // Also make it available globally without 'self.' prefix for entity code
     globalThis.rng = self.rng;

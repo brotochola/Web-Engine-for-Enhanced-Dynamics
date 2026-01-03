@@ -99,13 +99,9 @@ class Scene {
     for (let i = 0; i < numberOfLogicWorkers; i++) {
       this.workerReadyStates[`logic${i}`] = false;
     }
-    if (this.config.particle.maxParticles > 0) {
-      this.workerReadyStates.particle = false;
-    }
-    this.totalWorkers =
-      3 +
-      numberOfLogicWorkers +
-      (this.config.particle.maxParticles > 0 ? 1 : 0);
+    // Particle worker always runs - it handles lighting, shadows, visibility, etc.
+    this.workerReadyStates.particle = false;
+    this.totalWorkers = 4 + numberOfLogicWorkers; // spatial, physics, renderer, particle + logic workers
 
     // Shared buffers
     this.buffers = {
@@ -416,6 +412,14 @@ class Scene {
   /** @returns {number} Maximum number of particles */
   get maxParticles() {
     return this.config.particle.maxParticles;
+  }
+
+  /**
+   * @returns {boolean} Whether the particle worker is needed
+   * Particle worker handles more than particles: lighting, shadows, flashes, entity visibility
+   */
+  get needsParticleWorker() {
+    return true; // Always run particle worker - it handles lighting, shadows, visibility, etc.
   }
 
   /** @returns {boolean} Whether shadows are enabled */
@@ -940,19 +944,18 @@ class Scene {
       }
     );
 
-    if (this.hasParticles) {
-      this.workers.particle = new Worker(
-        `/src/workers/particle_worker.js${cacheBust}`,
-        {
-          type: "module",
-        }
-      );
-      this.workers.particle.name = "particle";
-    }
+    // Particle worker always runs - handles particles, lighting, shadows, visibility, etc.
+    this.workers.particle = new Worker(
+      `/src/workers/particle_worker.js${cacheBust}`,
+      {
+        type: "module",
+      }
+    );
 
     this.workers.spatial.name = "spatial";
     this.workers.physics.name = "physics";
     this.workers.renderer.name = "renderer";
+    this.workers.particle.name = "particle";
 
     // Preload assets
     const spritesheetConfigs = this.imageUrls.spritesheets || {};
@@ -1069,9 +1072,8 @@ class Scene {
       workerPorts.physics ? Object.values(workerPorts.physics) : []
     );
 
-    if (this.hasParticles && this.workers.particle) {
-      this.workers.particle.postMessage(initData);
-    }
+    // Particle worker always receives init data
+    this.workers.particle.postMessage(initData);
 
     // Initialize renderer
     const offscreenCanvas = this.canvas.transferControlToOffscreen();
@@ -1103,9 +1105,7 @@ class Scene {
       ...this.workers.logicWorkers,
       this.workers.physics,
       this.workers.renderer,
-      ...(this.hasParticles && this.workers.particle
-        ? [this.workers.particle]
-        : []),
+      this.workers.particle,
     ];
 
     for (let worker of allWorkers) {
@@ -1173,9 +1173,7 @@ class Scene {
       ...this.workers.logicWorkers,
       this.workers.physics,
       this.workers.renderer,
-      ...(this.hasParticles && this.workers.particle
-        ? [this.workers.particle]
-        : []),
+      this.workers.particle,
     ];
 
     for (const worker of allWorkers) {
@@ -1414,9 +1412,7 @@ class Scene {
       ...this.workers.logicWorkers,
       this.workers.physics,
       this.workers.renderer,
-      ...(this.hasParticles && this.workers.particle
-        ? [this.workers.particle]
-        : []),
+      this.workers.particle,
     ];
 
     allWorkers.forEach((worker) => {
@@ -1540,9 +1536,7 @@ class Scene {
       ...this.workers.logicWorkers,
       this.workers.physics,
       this.workers.renderer,
-      ...(this.hasParticles && this.workers.particle
-        ? [this.workers.particle]
-        : []),
+      this.workers.particle,
     ];
 
     allWorkers.forEach((worker) => {
@@ -1557,9 +1551,7 @@ class Scene {
       ...this.workers.logicWorkers,
       this.workers.physics,
       this.workers.renderer,
-      ...(this.hasParticles && this.workers.particle
-        ? [this.workers.particle]
-        : []),
+      this.workers.particle,
     ];
 
     allWorkers.forEach((worker) => {

@@ -37,12 +37,12 @@ export class BallsAndRectanglesScene extends Scene {
 
     // Physics configuration
     physics: {
-      subStepCount: 4,
+      subStepCount: 10,
       noLimitFPS: true,
-      maxCollisionPairs: 0,
+      maxCollisionPairs: 1000000,
       verletDamping: 0.99,
       boundaryElasticity: 0.3,
-      collisionResponseStrength: 0.8,
+      collisionResponseStrength: 0.9,
       gravity: { x: 0, y: 0.5 },
     },
 

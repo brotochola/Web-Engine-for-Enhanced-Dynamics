@@ -232,7 +232,7 @@ class PhysicsWorker extends AbstractWorker {
 
     const gravityScale = Math.pow(dtRatio, 2);
 
-    for (let i = 0; i < rigidBodyCount; i++) {
+    for (let i = 0; i < this.entityCount; i++) {
       if (!active[i] || !rigidBodyActive[i]) continue;
       if (isStatic[i]) continue;
 
@@ -264,14 +264,19 @@ class PhysicsWorker extends AbstractWorker {
       dx += gravityScale * gx + accX;
       dy += gravityScale * gy + accY;
 
-      // Limit velocity magnitude while preserving direction
+      // const currentSpeed = Math.sqrt(dx * dx + dy * dy);
+
       const currentSpeed = RigidBody.speed[i];
+
       const maxSpeed = maxVel[i] > 0 ? maxVel[i] : 100;
       if (currentSpeed > maxSpeed) {
         const velScale = maxSpeed / currentSpeed;
         dx *= velScale;
         dy *= velScale;
       }
+
+      // RigidBody.speed[i] = Math.sqrt(dx * dx + dy * dy);
+      // RigidBody.velocityAngle[i] = Math.atan2(dy, dx);
 
       x[i] = oldX + dx;
       y[i] = oldY + dy;
@@ -316,7 +321,29 @@ class PhysicsWorker extends AbstractWorker {
     const offsetX = Collider.offsetX;
     const offsetY = Collider.offsetY;
 
-    // Apply boundary constraints - shape-aware with collider offsets
+    // STEP 1: Apply collision constraints FIRST using spatial grid
+    // This allows entities to push each other around before boundary clamping
+    if (this.neighborData) {
+      this.resolveCollisionsVerlet(
+        active,
+        rigidBodyActive,
+        colliderActive,
+        x,
+        y,
+        shapeType,
+        radius,
+        width,
+        height,
+        isTrigger,
+        collisionCount,
+        rigidBodyCount
+      );
+    }
+
+    // STEP 2: Apply boundary constraints AFTER collisions
+    // This ensures collision resolution can't push entities outside world bounds
+    // (Previously boundaries were applied first, then collisions could push entities
+    // back into the floor, causing vibration)
     for (let i = 0; i < rigidBodyCount; i++) {
       if (!active[i] || !rigidBodyActive[i]) continue;
       if (isStatic[i]) continue;
@@ -359,24 +386,6 @@ class PhysicsWorker extends AbstractWorker {
         y[i] = worldHeight - halfH - offY;
         py[i] = y[i] + (y[i] - py[i]) * boundaryElasticity;
       }
-    }
-
-    // Apply collision constraints using spatial grid
-    if (this.neighborData) {
-      this.resolveCollisionsVerlet(
-        active,
-        rigidBodyActive,
-        colliderActive,
-        x,
-        y,
-        shapeType,
-        radius,
-        width,
-        height,
-        isTrigger,
-        collisionCount,
-        rigidBodyCount
-      );
     }
   }
 
@@ -497,72 +506,23 @@ class PhysicsWorker extends AbstractWorker {
           const nx = result.nx;
           const ny = result.ny;
 
-          // Get previous position references for Verlet correction
-          const px = RigidBody.px;
-          const py = RigidBody.py;
-          const ax = RigidBody.ax;
-          const ay = RigidBody.ay;
-          const vx = RigidBody.vx;
-          const vy = RigidBody.vy;
-
           if (iStatic && jStatic) {
             // Both static - no movement
           } else if (iStatic) {
             // i is static - only push j away
-            const corrX = nx * correction;
-            const corrY = ny * correction;
-            px[j] = x[j] = x[j] - corrX;
-            py[j] = y[j] = y[j] - corrY;
-
-            // Remove velocity component pointing INTO the static object
-            // nx,ny points from j toward i (into the wall), so we remove that component
-            const velDotNormal = vx[j] * nx + vy[j] * ny;
-            if (velDotNormal > 0) {
-              // Velocity is pointing into wall - remove that component
-              vx[j] -= nx * velDotNormal;
-              vy[j] -= ny * velDotNormal;
-            }
-
-            // Also remove acceleration component pointing into wall
-            const accDotNormal = ax[j] * nx + ay[j] * ny;
-            if (accDotNormal > 0) {
-              ax[j] -= nx * accDotNormal;
-              ay[j] -= ny * accDotNormal;
-            }
+            x[j] -= nx * correction;
+            y[j] -= ny * correction;
           } else if (jStatic) {
             // j is static - only push i away
-            const corrX = nx * correction;
-            const corrY = ny * correction;
-            px[i] = x[i] = x[i] + corrX;
-            py[i] = y[i] = y[i] + corrY;
-
-            // Remove velocity component pointing INTO the static object
-            // For this case, -nx,-ny points from i toward j (into the wall)
-            const velDotNormal = vx[i] * -nx + vy[i] * -ny;
-            if (velDotNormal > 0) {
-              vx[i] -= -nx * velDotNormal;
-              vy[i] -= -ny * velDotNormal;
-            }
-
-            // Also remove acceleration component pointing into wall
-            const accDotNormal = ax[i] * -nx + ay[i] * -ny;
-            if (accDotNormal > 0) {
-              ax[i] -= -nx * accDotNormal;
-              ay[i] -= -ny * accDotNormal;
-            }
+            x[i] += nx * correction;
+            y[i] += ny * correction;
           } else {
             // Both dynamic - split correction
-            const halfCorrX = nx * correction * 0.5;
-            const halfCorrY = ny * correction * 0.5;
-            x[i] += halfCorrX;
-            y[i] += halfCorrY;
-            x[j] -= halfCorrX;
-            y[j] -= halfCorrY;
-            // Also update previous positions to prevent phantom velocity
-            px[i] += halfCorrX;
-            py[i] += halfCorrY;
-            px[j] -= halfCorrX;
-            py[j] -= halfCorrY;
+            const halfCorrection = correction * 0.5;
+            x[i] += nx * halfCorrection;
+            y[i] += ny * halfCorrection;
+            x[j] -= nx * halfCorrection;
+            y[j] -= ny * halfCorrection;
           }
         }
 
