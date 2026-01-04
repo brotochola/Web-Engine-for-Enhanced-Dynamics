@@ -142,8 +142,9 @@ export class GameObject {
 
     // Neighbor properties (updated each frame before tick)
     this.neighborCount = 0;
-    this.neighbors = null; // Will be a TypedArray subarray
-    this.neighborDistances = null; // Will be a TypedArray subarray of squared distances
+    // this.neighbors = null; // REMOVED: Subarray allocation causes GC stutter
+    // this.neighborDistances = null; // REMOVED: GC stutter
+    this._neighborOffset = 0; // Pointer-like offset into shared buffer
 
     // Component instance cache (lazy-loaded on first access)
     this._componentCache = {};
@@ -730,6 +731,16 @@ export class GameObject {
    * @param {Int32Array} neighborData - Precomputed neighbors from spatial worker
    * @param {Float32Array} distanceData - Precomputed squared distances from spatial worker
    */
+   /**
+   * Update neighbor references for this entity
+   * Called by logic worker before tick() each frame
+   * 
+   * OPTIMIZED: No longer creates subarray views (GC free)
+   * Instead set the offset and count for use with getNeighbor()
+   *
+   * @param {Int32Array} neighborData - Precomputed neighbors from spatial worker
+   * @param {Float32Array} distanceData - Precomputed squared distances from spatial worker
+   */
   updateNeighbors(neighborData, distanceData = null) {
     // Handle both nested (main thread) and flat (worker) config structures
     const maxNeighbors =
@@ -737,28 +748,44 @@ export class GameObject {
 
     if (!neighborData || !maxNeighbors) {
       this.neighborCount = 0;
-      this.neighbors = null;
-      this.neighborDistances = null;
+      this._neighborOffset = 0;
       return;
     }
 
     // Parse neighbor data buffer: [count, id1, id2, ..., id_MAX]
-    const offset = this.index * (1 + maxNeighbors);
-    this.neighborCount = neighborData[offset];
-    this.neighbors = neighborData.subarray(
-      offset + 1,
-      offset + 1 + this.neighborCount
-    );
+    this._neighborOffset = this.index * (1 + maxNeighbors);
+    this.neighborCount = neighborData[this._neighborOffset];
+    
+    // NOTE: neighbors array is no longer created to avoid GC
+    // Use this.getNeighbor(i) instead
+  }
 
-    // Parse distance data buffer (same structure as neighborData)
-    if (distanceData) {
-      this.neighborDistances = distanceData.subarray(
-        offset + 1,
-        offset + 1 + this.neighborCount
-      );
-    } else {
-      this.neighborDistances = null;
+  /**
+   * Get neighbor index at specific position
+   * Zero-allocation replacement for this.neighbors[i]
+   * @param {number} i - Index (0 to this.neighborCount - 1)
+   * @returns {number} Entity index of the neighbor
+   */
+  getNeighbor(i) {
+    if (GameObject.neighborData) {
+       // Offset + 1 (skip count) + i
+       return GameObject.neighborData[this._neighborOffset + 1 + i];
     }
+    return -1;
+  }
+
+  /**
+   * Get neighbor distance squared at specific position
+   * Zero-allocation replacement for this.neighborDistances[i]
+   * @param {number} i - Index (0 to this.neighborCount - 1)
+   * @returns {number} Squared distance to the neighbor
+   */
+  getNeighborDistance(i) {
+    if (GameObject.distanceData) {
+       // Offset + 1 (skip count) + i
+       return GameObject.distanceData[this._neighborOffset + 1 + i];
+    }
+    return 0;
   }
 
   /**

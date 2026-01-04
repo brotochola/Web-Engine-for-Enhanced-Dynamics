@@ -834,7 +834,7 @@ export class DebugUI {
     if (!indicator) return;
 
     if (this.activeSpawnerType) {
-      const bulkText = this.bulkSpawnEnabled ? " ×10" : "";
+      const bulkText = this.bulkSpawnEnabled ? " ×50" : "";
       indicator.textContent = `🎨 Painting: ${this.activeSpawnerType}${bulkText} (click & drag to spawn)`;
       indicator.className = "debug-ui-tool-indicator visible spawner";
     } else if (this.eraserActive) {
@@ -941,7 +941,7 @@ export class DebugUI {
     };
 
     bulkLabel.appendChild(this.elements.bulkSpawnCheckbox);
-    bulkLabel.appendChild(document.createTextNode("×10"));
+    bulkLabel.appendChild(document.createTextNode("×50"));
     paintersRow.appendChild(bulkLabel);
 
     container.appendChild(paintersRow);
@@ -1062,7 +1062,7 @@ export class DebugUI {
   _spawnEntityAtMouse(className) {
     if (!this.gameEngine) return;
 
-    const count = this.bulkSpawnEnabled ? 10 : 1;
+    const count = this.bulkSpawnEnabled ? 50 : 1;
     const spreadRadius = 30; // Pixels to spread entities around mouse
 
     for (let i = 0; i < count; i++) {
