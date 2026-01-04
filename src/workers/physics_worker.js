@@ -363,7 +363,7 @@ class PhysicsWorker extends AbstractWorker {
     const friction = RigidBody.friction;
     const maxAcc = RigidBody.maxAcc;
 
-    const gravityScale = Math.pow(dtRatio, 2);
+    const gravityScale = dtRatio*dtRatio
 
     for (let i = 0; i < this.entityCount; i++) {
       if (!active[i] || !rigidBodyActive[i]) continue;
@@ -379,7 +379,7 @@ class PhysicsWorker extends AbstractWorker {
       let dy = (y[i] - py[i]) * damping * timeCorrection;
 
       if (friction[i] > 0) {
-        const frictionFactor = Math.pow(1 - Math.min(friction[i], 1), dtRatio);
+        const frictionFactor =(1 - friction[i])* dtRatio        
         dx *= frictionFactor;
         dy *= frictionFactor;
       }
