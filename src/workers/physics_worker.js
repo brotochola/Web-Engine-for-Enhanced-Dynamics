@@ -45,6 +45,9 @@ class PhysicsWorker extends AbstractWorker {
     // When noLimitFPS is true, we accumulate time and run physics at a fixed rate
     this.timeAccumulator = 0;
     this.fixedDeltaTime = 16.67; // Target: 60fps physics tick (will be divided by subStepCount)
+    
+    // Time-correction for Verlet integration (handles variable time steps)
+    this.previousDtRatio = 1.0;
   }
 
   /**
@@ -107,7 +110,7 @@ class PhysicsWorker extends AbstractWorker {
       }
     } else {
       // Standard mode: run physics with actual deltaTime
-      this.updateVerlet(deltaTime, dtRatio);
+      this.updateVerlet(deltaTime, dtRatio, resuming);
     }
 
     // CRITICAL: Sync RigidBody positions to Transform for rendering
@@ -149,7 +152,7 @@ class PhysicsWorker extends AbstractWorker {
    * Uses position-based dynamics with constraint solving
    * More stable for particle systems and large numbers of colliding objects
    */
-  updateVerlet(deltaTime, dtRatio) {
+  updateVerlet(deltaTime, dtRatio, resuming) {
     // Cache array references from components
     const active = Transform.active;
     const rigidBodyActive = RigidBody.active;
@@ -189,6 +192,19 @@ class PhysicsWorker extends AbstractWorker {
     const gx = this.settings.gravity.x || 0;
     const gy = this.settings.gravity.y || 0;
 
+    // Time correction for variable timestep (tc-verlet)
+    // Scale inertia by the ratio of current dt to previous dt
+    // If resuming from pause, reset correction to 1.0 to avoid huge jumps
+    let timeCorrection = 1.0;
+    if (!resuming && this.previousDtRatio > 0) {
+      timeCorrection = dtRatio / this.previousDtRatio;
+    }
+    
+    // Clamp correction to avoid instability with large frame drops
+    // (e.g. going from 60fps to 10fps shouldn't cause massive energy gain)
+    if (timeCorrection < 0.5) timeCorrection = 0.5;
+    if (timeCorrection > 1.5) timeCorrection = 1.5;
+
     // Step 1: Move entities using Verlet integration
     this.moveEntitiesVerlet(
       active,
@@ -202,13 +218,17 @@ class PhysicsWorker extends AbstractWorker {
       ax,
       ay,
       dtRatio,
+      timeCorrection,
       gx,
       gy,
       maxVel,
       rigidBodyCount
     );
 
-    // Step 2: Apply constraints (collisions, boundaries) with sub-stepping
+    // Save current dtRatio for next frame's correction
+    this.previousDtRatio = dtRatio;
+
+    // Step 2: Apply constraints (collisions, boundary) with sub-stepping
     for (let step = 0; step < this.settings.subStepCount; step++) {
       this.applyConstraintsVerlet(
         active,
@@ -273,6 +293,9 @@ class PhysicsWorker extends AbstractWorker {
 
     const gx = this.settings.gravity.x || 0;
     const gy = this.settings.gravity.y || 0;
+    
+    // Fixed step always has correction 1.0 because dt is constant
+    const timeCorrection = 1.0;
 
     // Step 1: Move entities using Verlet integration with fixed timestep
     this.moveEntitiesVerlet(
@@ -287,6 +310,7 @@ class PhysicsWorker extends AbstractWorker {
       ax,
       ay,
       fixedDtRatio,
+      timeCorrection,
       gx,
       gy,
       maxVel,
@@ -328,6 +352,7 @@ class PhysicsWorker extends AbstractWorker {
     ax,
     ay,
     dtRatio,
+    timeCorrection,
     gx,
     gy,
     maxVel,
@@ -347,8 +372,11 @@ class PhysicsWorker extends AbstractWorker {
       const oldX = x[i];
       const oldY = y[i];
 
-      let dx = (x[i] - px[i]) * damping;
-      let dy = (y[i] - py[i]) * damping;
+      // Verlet Integration with Time Correction
+      // dx = (current - prev) * damping * correction
+      // correction scales the inertia based on how much dt changed
+      let dx = (x[i] - px[i]) * damping * timeCorrection;
+      let dy = (y[i] - py[i]) * damping * timeCorrection;
 
       if (friction[i] > 0) {
         const frictionFactor = Math.pow(1 - Math.min(friction[i], 1), dtRatio);
@@ -362,7 +390,7 @@ class PhysicsWorker extends AbstractWorker {
 
       // Limit acceleration magnitude while preserving direction
       const accMagnitude = Math.sqrt(accX * accX + accY * accY);
-      const maxAccel = maxAcc[i];
+      const maxAccel = maxAcc[i]*dtRatio;
       if (accMagnitude > maxAccel) {
         const accScale = maxAccel / accMagnitude;
         accX *= accScale;
@@ -375,16 +403,15 @@ class PhysicsWorker extends AbstractWorker {
       // const currentSpeed = Math.sqrt(dx * dx + dy * dy);
 
       const currentSpeed = RigidBody.speed[i];
-
-      const maxSpeed = maxVel[i] > 0 ? maxVel[i] : 100;
+      const maxSpeed = maxVel[i]  * dtRatio;
+      
       if (currentSpeed > maxSpeed) {
         const velScale = maxSpeed / currentSpeed;
         dx *= velScale;
         dy *= velScale;
       }
 
-      // RigidBody.speed[i] = Math.sqrt(dx * dx + dy * dy);
-      // RigidBody.velocityAngle[i] = Math.atan2(dy, dx);
+
 
       x[i] = oldX + dx;
       y[i] = oldY + dy;

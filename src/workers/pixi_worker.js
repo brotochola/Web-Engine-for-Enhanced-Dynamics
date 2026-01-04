@@ -1077,6 +1077,8 @@ class PixiRenderer extends AbstractWorker {
       item.y = y[i];
 
       // Update transform (position, rotation, scale)
+      // bodySprite.x += (x[i]-bodySprite.x)*0.5;
+      // bodySprite.y += (y[i]-bodySprite.y)*0.5;
       bodySprite.x = x[i];
       bodySprite.y = y[i];
       bodySprite.rotation = rotation[i];
