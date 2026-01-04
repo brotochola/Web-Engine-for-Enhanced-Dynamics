@@ -353,6 +353,9 @@ class LogicWorker extends AbstractWorker {
 
           // Update neighbor references before tick
           const neighborStart = this.enableProfiling ? performance.now() : 0;
+          
+          // OPTIMIZED: updating neighbors no longer allocates subarrays (GC free)
+          // It just updates _neighborOffset and neighborCount integers
           obj.updateNeighbors(this.neighborData, this.distanceData);
 
           if (this.enableProfiling) {
@@ -360,9 +363,7 @@ class LogicWorker extends AbstractWorker {
             this.profilingStats.neighborUpdateTime +=
               neighborEnd - neighborStart;
             // Track how many neighbors this entity has
-            const neighborOffset =
-              i * (1 + (this.config.spatial?.maxNeighbors || 100));
-            totalNeighborsThisFrame += this.neighborData[neighborOffset];
+            totalNeighborsThisFrame += obj.neighborCount;
           }
 
           // Tick entity logic (no inputData parameter - use this.mouse / this.keyboard instead)

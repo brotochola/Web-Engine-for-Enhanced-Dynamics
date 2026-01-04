@@ -533,19 +533,35 @@ class PhysicsWorker extends AbstractWorker {
       const offset = i * (1 + maxNeighbors);
       const neighborCount = this.neighborData ? this.neighborData[offset] : 0;
 
+      if (neighborCount === 0) continue;
+
+      // HOISTED: Access entity 'i' properties ONCE outside the inner loop
+      const shapeI = shapeType[i];
+      const radiusI = radius[i];
+      const widthI = width[i];
+      const heightI = height[i];
+      // Hoist offsets (invariant) but NOT position (variant)
+      const offXi = offsetX[i];
+      const offYi = offsetY[i];
+      
+      // NOTE: colliderX_i / colliderY_i CANNOT be hoisted because x[i]/y[i] 
+      // change during the loop as collisions are resolved!
+
       for (let n = 0; n < neighborCount; n++) {
         const j = this.neighborData[offset + 1 + n];
 
         if (i === j || !active[j] || !colliderActive[j]) continue;
         if (i >= j) continue; // Only process each pair once
 
-        // Get shape types for both entities
-        const shapeI = shapeType[i];
+        // Get shape type for neighbor 'j'
         const shapeJ = shapeType[j];
 
         // Calculate offset-adjusted collider positions
-        const colliderX_i = x[i] + offsetX[i];
-        const colliderY_i = y[i] + offsetY[i];
+        // We MUST re-calculate i's position here because it might have moved
+        // in a previous iteration of this same loop (multi-collision)
+        const colliderX_i = x[i] + offXi;
+        const colliderY_i = y[i] + offYi;
+        
         const colliderX_j = x[j] + offsetX[j];
         const colliderY_j = y[j] + offsetY[j];
 
@@ -557,7 +573,7 @@ class PhysicsWorker extends AbstractWorker {
           result = this.testCircleCircle(
             colliderX_i,
             colliderY_i,
-            radius[i],
+            radiusI,
             colliderX_j,
             colliderY_j,
             radius[j]
@@ -567,7 +583,7 @@ class PhysicsWorker extends AbstractWorker {
           result = this.testCircleAABB(
             colliderX_i,
             colliderY_i,
-            radius[i],
+            radiusI,
             colliderX_j,
             colliderY_j,
             width[j],
@@ -581,8 +597,8 @@ class PhysicsWorker extends AbstractWorker {
             radius[j],
             colliderX_i,
             colliderY_i,
-            width[i],
-            height[i]
+            widthI,
+            heightI
           );
           if (result && result.collided) {
             result.nx = -result.nx;
@@ -593,8 +609,8 @@ class PhysicsWorker extends AbstractWorker {
           result = this.testAABBAABB(
             colliderX_i,
             colliderY_i,
-            width[i],
-            height[i],
+            widthI,
+            heightI,
             colliderX_j,
             colliderY_j,
             width[j],
