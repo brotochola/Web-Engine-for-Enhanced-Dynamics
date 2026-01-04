@@ -389,10 +389,10 @@ class PhysicsWorker extends AbstractWorker {
       let accY = ay[i] * dtRatio;
 
       // Limit acceleration magnitude while preserving direction
-      const accMagnitude = Math.sqrt(accX * accX + accY * accY);
+      const accMagnitudeSquared =accX * accX + accY * accY
       const maxAccel = maxAcc[i]*dtRatio;
-      if (accMagnitude > maxAccel) {
-        const accScale = maxAccel / accMagnitude;
+      if (accMagnitudeSquared > maxAccel**2) {
+        const accScale = maxAccel / Math.sqrt(accMagnitudeSquared);
         accX *= accScale;
         accY *= accScale;
       }
@@ -400,9 +400,9 @@ class PhysicsWorker extends AbstractWorker {
       dx += gravityScale * gx + accX;
       dy += gravityScale * gy + accY;
 
-      // const currentSpeed = Math.sqrt(dx * dx + dy * dy);
-
-      const currentSpeed = RigidBody.speed[i];
+      
+      //the particle_worker calculates this:
+      const currentSpeed = Math.sqrt(dx * dx + dy * dy);
       const maxSpeed = maxVel[i]  * dtRatio;
       
       if (currentSpeed > maxSpeed) {
