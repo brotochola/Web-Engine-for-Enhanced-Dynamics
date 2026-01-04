@@ -379,7 +379,7 @@ class PhysicsWorker extends AbstractWorker {
       let dy = (y[i] - py[i]) * damping * timeCorrection;
 
       if (friction[i] > 0) {
-        const frictionFactor =(1 - friction[i])* dtRatio        
+    const frictionFactor = Math.pow(1 - friction[i], dtRatio);    
         dx *= frictionFactor;
         dy *= frictionFactor;
       }
