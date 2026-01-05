@@ -989,7 +989,11 @@ class PixiRenderer extends AbstractWorker {
     this._ySortPoolSize = 0;
     const allEntitiesWithSpriteRenderer = this.query(this.queryConfig);
 
-    for (let i = 0; i < allEntitiesWithSpriteRenderer.length; i++) {
+    for (
+      let i = 0;
+      i < /*this.entityCount*/ allEntitiesWithSpriteRenderer.length;
+      i++
+    ) {
       const entityIndex = allEntitiesWithSpriteRenderer[i];
       const bodySprite = this.bodySprites[entityIndex];
 
@@ -1461,27 +1465,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     let lightIndex = 0;
 
-    // Iterate only over entity types that have LightEmitter component
+    // OPTIMIZATION: Use query system to iterate only entities with LightEmitter
     // This is O(numPotentialLights) instead of O(allEntities)
-    const ranges = this.lightEmitterRanges;
-    outerLoop: for (let r = 0; r < ranges.length; r++) {
-      const range = ranges[r];
-      for (let i = range.startIndex; i < range.endIndex; i++) {
-        if (!active[i] || !lightEnabled[i]) continue;
-        if (lightIndex >= this.maxLights) break outerLoop;
+    const lightEntities = this.query([LightEmitter]);
 
-        const color = lightColor[i];
+    for (let idx = 0; idx < lightEntities.length; idx++) {
+      const i = lightEntities[idx];
+      if (!active[i] || !lightEnabled[i]) continue;
+      if (lightIndex >= this.maxLights) break;
 
-        lightX[lightIndex] = worldX[i];
-        lightY[lightIndex] = worldY[i];
-        lightIntensityArr[lightIndex] = lightIntensity[i]; // NO ZOOM SCALING
+      const color = lightColor[i];
 
-        lightR[lightIndex] = ((color >> 16) & 0xff) / 255;
-        lightG[lightIndex] = ((color >> 8) & 0xff) / 255;
-        lightB[lightIndex] = (color & 0xff) / 255;
+      lightX[lightIndex] = worldX[i];
+      lightY[lightIndex] = worldY[i];
+      lightIntensityArr[lightIndex] = lightIntensity[i]; // NO ZOOM SCALING
 
-        lightIndex++;
-      }
+      lightR[lightIndex] = ((color >> 16) & 0xff) / 255;
+      lightG[lightIndex] = ((color >> 8) & 0xff) / 255;
+      lightB[lightIndex] = (color & 0xff) / 255;
+
+      lightIndex++;
     }
 
     // Update light count uniform
@@ -1693,45 +1696,44 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Sprite pool index (maps active lights to sprite pool)
     let spriteIndex = 0;
 
-    // Iterate only over entity types that have LightEmitter component
+    // OPTIMIZATION: Use query system to iterate only entities with LightEmitter
     // This is O(numPotentialLights) instead of O(allEntities)
-    const ranges = this.lightEmitterRanges;
-    outerLoop: for (let r = 0; r < ranges.length; r++) {
-      const range = ranges[r];
-      for (let i = range.startIndex; i < range.endIndex; i++) {
-        // Skip inactive entities, entities without LightEmitter active, or entities without glow sprite
-        if (!active[i] || !lightEnabled[i] || !hasGlowSprite[i]) continue;
+    const lightEntities = this.query([LightEmitter]);
 
-        // Stop if we've used all sprites in pool
-        if (spriteIndex >= maxLights) break outerLoop;
+    for (let idx = 0; idx < lightEntities.length; idx++) {
+      const i = lightEntities[idx];
+      // Skip inactive entities, entities without LightEmitter active, or entities without glow sprite
+      if (!active[i] || !lightEnabled[i] || !hasGlowSprite[i]) continue;
 
-        const sprite = sprites[spriteIndex];
-        if (!sprite) {
-          spriteIndex++;
-          continue;
-        }
+      // Stop if we've used all sprites in pool
+      if (spriteIndex >= maxLights) break;
 
-        // Get visual range for this entity (from Collider component)
-        const rangeVal = visualRange[i] || 200;
-        const glowDiameter = rangeVal;
-        const scale = (glowDiameter * 7) / textureRadius;
-
-        // Position: entity position with height offset (light is above entity)
-        sprite.x = worldX[i];
-        sprite.y = worldY[i] - (lightHeight[i] || 0);
-
-        // Scale based on visualRange
-        sprite.scaleX = scale;
-        sprite.scaleY = scale;
-
-        sprite.tint = convertRGBtoBGR(lightColor[i]);
-
-        // Show this sprite (alpha controls visibility for ParticleContainer)
-        const newAlpha = lightIntensity[i] / 45000;
-        sprite.alpha = newAlpha;
-
+      const sprite = sprites[spriteIndex];
+      if (!sprite) {
         spriteIndex++;
+        continue;
       }
+
+      // Get visual range for this entity (from Collider component)
+      const rangeVal = visualRange[i] || 200;
+      const glowDiameter = rangeVal;
+      const scale = (glowDiameter * 7) / textureRadius;
+
+      // Position: entity position with height offset (light is above entity)
+      sprite.x = worldX[i];
+      sprite.y = worldY[i] - (lightHeight[i] || 0);
+
+      // Scale based on visualRange
+      sprite.scaleX = scale;
+      sprite.scaleY = scale;
+
+      sprite.tint = convertRGBtoBGR(lightColor[i]);
+
+      // Show this sprite (alpha controls visibility for ParticleContainer)
+      const newAlpha = lightIntensity[i] / 45000;
+      sprite.alpha = newAlpha;
+
+      spriteIndex++;
     }
 
     // Hide any unused sprites in the pool
@@ -1803,34 +1805,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Mark this entity type as having SpriteRenderer (spritesheet set per-instance)
       this.entitySpriteConfigs[entityType] = { hasSpriteRenderer: true };
-    }
-  }
-
-  /**
-   * Build list of entity index ranges that have LightEmitter component
-   * Used to optimize lighting loops - only iterate over entities that CAN have lights
-   * instead of iterating over ALL entities
-   */
-  buildLightEmitterRanges(registeredClasses) {
-    this.lightEmitterRanges = [];
-    for (const registration of registeredClasses) {
-      if (registration.count === 0) continue;
-      if (!registration.components?.includes("LightEmitter")) continue;
-
-      this.lightEmitterRanges.push({
-        startIndex: registration.startIndex,
-        endIndex: registration.startIndex + registration.count,
-      });
-    }
-
-    if (this.lightEmitterRanges.length > 0) {
-      const totalLightEntities = this.lightEmitterRanges.reduce(
-        (sum, r) => sum + (r.endIndex - r.startIndex),
-        0
-      );
-      console.log(
-        `PIXI WORKER: Light emitter ranges built (${this.lightEmitterRanges.length} entity types, ${totalLightEntities} potential lights)`
-      );
     }
   }
 
@@ -2496,8 +2470,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Build entity sprite configs from class definitions
     this.buildEntitySpriteConfigs(data.registeredClasses);
-    // Build light emitter ranges for optimized lighting loops
-    this.buildLightEmitterRanges(data.registeredClasses);
+    // Query system is already initialized in AbstractWorker and handles light entity lookups
     this.reportLog("finished building entity sprite configs");
     // Create sprites for all entities
     this.createSprites();

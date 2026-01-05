@@ -1,22 +1,15 @@
 import WEED from "/src/index.js";
 
 // Destructure what we need from WEED
-const {
-  GameObject,
-  RigidBody,
-  Collider,
-  SpriteRenderer,
-  LightEmitter,
-  rng,
-  randomColor,
-} = WEED;
+const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor } =
+  WEED;
 
 export class TallLight extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
   static scriptUrl = import.meta.url;
 
   // Add PreyBehavior component for prey-specific properties
-  static components = [RigidBody, Collider, SpriteRenderer, LightEmitter];
+  static components = [Collider, SpriteRenderer, LightEmitter];
 
   // Note: ARRAY_SCHEMA removed - all data now in components (pure ECS architecture)
 
@@ -26,9 +19,9 @@ export class TallLight extends GameObject {
    */
   setup() {
     // Override Boid's physics properties for prey behavior
-    this.rigidBody.maxVel = 0;
-    this.rigidBody.maxAcc = 0;
-    this.rigidBody.static = 1; // Static body - nothing can move it
+    // this.rigidBody.maxVel = 0;
+    // this.rigidBody.maxAcc = 0;
+    // this.rigidBody.static = 1; // Static body - nothing can move it
     this.setSprite("tallLight");
     this.collider.radius = 17;
     this.lightEmitter.lightColor = randomColor({

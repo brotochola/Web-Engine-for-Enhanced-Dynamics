@@ -3,7 +3,7 @@ import WEED from "/src/index.js";
 // Destructure what we need from WEED
 const {
   GameObject,
-  RigidBody,
+
   Collider,
   SpriteRenderer,
   LightEmitter,
@@ -15,13 +15,13 @@ export class House extends GameObject {
   static scriptUrl = import.meta.url;
 
   // Add PreyBehavior component for prey-specific properties
-  static components = [RigidBody, Collider, SpriteRenderer, LightEmitter];
+  static components = [Collider, SpriteRenderer, LightEmitter];
 
   setup() {
     // Override Boid's physics properties for prey behavior
-    this.rigidBody.maxVel = 0;
-    this.rigidBody.maxAcc = 0;
-    this.rigidBody.static = 1; // Static body - nothing can move it
+    // this.rigidBody.maxVel = 0;
+    // this.rigidBody.maxAcc = 0;
+    // this.rigidBody.static = 1; // Static body - nothing can move it
     this.setSprite("house");
 
     this.collider.shapeType = 1;

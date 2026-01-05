@@ -940,7 +940,7 @@ class ParticleWorker extends AbstractWorker {
 
   /**
    * Calculate shadow sprite positions for all active lights
-   * Iterates through lights, finds nearby shadow casters, writes to shadow sprite buffer
+   * OPTIMIZED: Uses query system to iterate only entities with LightEmitter
    * Uses precomputed neighbor/distance data from spatial worker
    */
   updateShadowSprites() {
@@ -997,10 +997,20 @@ class ParticleWorker extends AbstractWorker {
     let shadowIdx = 0;
     let lightsProcessed = 0;
 
+    // OPTIMIZATION: Query only entities with LightEmitter instead of iterating all entities
+    // Dramatically reduces iterations (e.g., 10 lights vs 10,000 entities)
+    const lightEntities = this.query([LightEmitter]);
+
     // For each LIGHT, find nearby shadow casters and generate shadows
-    for (let lightIdx = 0; lightIdx < this.entityCount; lightIdx++) {
+    for (
+      let lightEntityIdx = 0;
+      lightEntityIdx < lightEntities.length;
+      lightEntityIdx++
+    ) {
       if (shadowIdx >= this.maxShadowSprites) break;
       if (lightsProcessed >= this.maxShadowCastingLights) break;
+
+      const lightIdx = lightEntities[lightEntityIdx];
       if (!lightEnabled[lightIdx]) continue;
       if (!transformActive[lightIdx]) continue;
       if (!isOnScreen[lightIdx]) continue;
@@ -1112,7 +1122,7 @@ class ParticleWorker extends AbstractWorker {
 
   /**
    * Update isItOnScreen property for all game entities
-   * Iterates over all entities (not using spatial grid for simplicity)
+   * OPTIMIZED: Uses query system to iterate only entities with SpriteRenderer
    * Moved from spatial_worker to balance workload
    */
   updateEntityScreenVisibility() {
@@ -1129,7 +1139,6 @@ class ParticleWorker extends AbstractWorker {
     const isItOnScreen = SpriteRenderer.isItOnScreen;
     const screenX = SpriteRenderer.screenX;
     const screenY = SpriteRenderer.screenY;
-    const entityCount = this.entityCount;
 
     // Read camera data: [zoom, cameraX, cameraY]
     const zoom = this.cameraData[0];
@@ -1146,8 +1155,13 @@ class ParticleWorker extends AbstractWorker {
     const minY = -marginY;
     const maxY = this.canvasHeight + marginY;
 
-    // Iterate over all entities
-    for (let i = 0; i < entityCount; i++) {
+    // OPTIMIZATION: Query only entities that have SpriteRenderer
+    // This skips non-renderable entities (triggers, invisible objects, etc.)
+    const renderableEntities = this.query([Transform, SpriteRenderer]);
+
+    for (let idx = 0; idx < renderableEntities.length; idx++) {
+      const i = renderableEntities[idx];
+
       if (!active[i]) {
         isItOnScreen[i] = 0;
         continue;
@@ -1171,6 +1185,7 @@ class ParticleWorker extends AbstractWorker {
   //  * Moved from physics_worker to balance workload
   //  *
   //  * ENHANCED: Minimum speed threshold prevents rotation jitter when stationary
+  //  * OPTIMIZED: Uses query system to iterate only entities with RigidBody
   //  */
   updateDerivedProperties() {
     if (this.rigidBodyCount === 0 || !RigidBody.vx) return;
@@ -1181,11 +1196,14 @@ class ParticleWorker extends AbstractWorker {
     const vy = RigidBody.vy;
     const velocityAngle = RigidBody.velocityAngle;
     const speed = RigidBody.speed;
-    const rigidBodyCount = this.rigidBodyCount;
     const minSpeedForRotation = this.minSpeedForRotation;
 
-    // Only process entities that have RigidBody component
-    for (let i = 0; i < rigidBodyCount; i++) {
+    // OPTIMIZATION: Query only entities that have RigidBody component
+    // This skips entities without physics (static decorations, etc.)
+    const physicsEntities = this.query([RigidBody, Transform]);
+
+    for (let idx = 0; idx < physicsEntities.length; idx++) {
+      const i = physicsEntities[idx];
       if (!active[i] || !rigidBodyActive[i]) continue;
 
       // Velocity is already stored in vx/vy from moveBallsVerlet
