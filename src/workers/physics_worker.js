@@ -626,8 +626,12 @@ class PhysicsWorker extends AbstractWorker {
 
         // Apply physical response if neither is a trigger
         if (!eitherIsTrigger) {
-          const iStatic = isStatic[i];
-          const jStatic = isStatic[j];
+          // Entities without RigidBody component should act as static
+          const iHasRigidBody = rigidBodyActive[i];
+          const jHasRigidBody = rigidBodyActive[j];
+          const iStatic = !iHasRigidBody || isStatic[i];
+          const jStatic = !jHasRigidBody || isStatic[j];
+
           const correction = result.depth * responseStrength;
           const nx = result.nx;
           const ny = result.ny;
