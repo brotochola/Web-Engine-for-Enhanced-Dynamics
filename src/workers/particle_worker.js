@@ -138,15 +138,9 @@ class ParticleWorker extends AbstractWorker {
     this.canvasWidth = this.config.canvasWidth;
     this.canvasHeight = this.config.canvasHeight;
 
-    // Initialize ParticleComponent arrays from SharedArrayBuffer (only if particles are configured)
+    // Note: ParticleComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
     if (this.maxParticles > 0) {
-      if (data.buffers.componentData.ParticleComponent) {
-        ParticleComponent.initializeArrays(
-          data.buffers.componentData.ParticleComponent,
-          this.maxParticles
-        );
-        ParticleComponent.particleCount = this.maxParticles;
-      } else {
+      if (!data.buffers.componentData.ParticleComponent) {
         console.warn(
           "PARTICLE WORKER: ParticleComponent buffer not found, particle physics disabled"
         );
@@ -210,30 +204,16 @@ class ParticleWorker extends AbstractWorker {
       this.lightingAmbient = lightingConfig.lightingAmbient ?? 0.05;
       this.entityCount = data.entityCount || 0;
 
-      // Initialize Transform arrays (need light positions)
-      Transform.initializeArrays(
-        data.buffers.componentData.Transform,
-        this.entityCount
-      );
+      // Note: Component arrays (Transform, LightEmitter, SpriteRenderer) are automatically
+      // initialized by AbstractWorker.initializeAllComponents()
 
-      // Initialize LightEmitter arrays
-      LightEmitter.initializeArrays(
-        data.buffers.componentData.LightEmitter,
-        this.entityCount
-      );
-
-      // Initialize SpriteRenderer arrays (for entity tint updates)
-      // Entity lighting is enabled by default when lighting is on
+      // Enable entity lighting by default when lighting is on
       // Can be disabled via config.lighting.entityLighting = false
       if (
         lightingConfig.entityLighting !== false &&
         data.buffers.componentData.SpriteRenderer
       ) {
         this.entityLightingEnabled = true;
-        SpriteRenderer.initializeArrays(
-          data.buffers.componentData.SpriteRenderer,
-          this.entityCount
-        );
         console.log(
           `PARTICLE WORKER: Entity lighting enabled (${this.entityCount} entities)`
         );
@@ -247,37 +227,23 @@ class ParticleWorker extends AbstractWorker {
     // ========================================
     // ENTITY SCREEN VISIBILITY - Initialize
     // ========================================
-    // Initialize Transform and SpriteRenderer for screen visibility even without lighting
+    // Store entity count for screen visibility even without lighting
     if (data.entityCount && !this.lightingEnabled) {
       this.entityCount = data.entityCount;
-
-      if (data.buffers.componentData.Transform) {
-        Transform.initializeArrays(
-          data.buffers.componentData.Transform,
-          this.entityCount
-        );
-      }
-      if (data.buffers.componentData.SpriteRenderer) {
-        SpriteRenderer.initializeArrays(
-          data.buffers.componentData.SpriteRenderer,
-          this.entityCount
-        );
-      }
+      // Note: Transform and SpriteRenderer are automatically initialized by
+      // AbstractWorker.initializeAllComponents()
     }
 
     // ========================================
-    // RIGIDBODY - Initialize for derived properties
+    // RIGIDBODY - Configure for derived properties
     // ========================================
+    // Note: RigidBody is automatically initialized by AbstractWorker.initializeAllComponents()
     // Speed and velocityAngle calculations (moved from physics_worker)
     if (
       data.buffers.componentData.RigidBody &&
       data.componentPools?.RigidBody
     ) {
       this.rigidBodyCount = data.componentPools.RigidBody.count || 0;
-      RigidBody.initializeArrays(
-        data.buffers.componentData.RigidBody,
-        this.rigidBodyCount
-      );
 
       // Get minSpeedForRotation from physics config
       const physicsConfig = this.config.physics || {};
@@ -304,11 +270,7 @@ class ParticleWorker extends AbstractWorker {
         this._entityShadowCounts = new Uint8Array(this.entityCount);
       }
 
-      // Initialize entity-level ShadowCaster arrays (marks which entities cast shadows)
-      ShadowCaster.initializeArrays(
-        data.buffers.componentData.ShadowCaster,
-        this.entityCount
-      );
+      // Note: ShadowCaster is automatically initialized by AbstractWorker.initializeAllComponents()
 
       // Create separate typed array views for shadow SPRITE data
       // Uses same schema as ShadowCaster but different buffer
@@ -371,13 +333,8 @@ class ParticleWorker extends AbstractWorker {
       this.maxFlashes = data.flashes.maxFlashes;
       this.flashStartIndex = data.flashes.startIndex;
 
-      // Initialize FlashComponent arrays
-      // FlashComponent is already part of componentData (auto-registered with Flash entity)
+      // Note: FlashComponent is automatically initialized by AbstractWorker.initializeAllComponents()
       if (data.buffers.componentData.FlashComponent) {
-        FlashComponent.initializeArrays(
-          data.buffers.componentData.FlashComponent,
-          this.entityCount
-        );
         console.log(
           `PARTICLE WORKER: Flash system enabled (${this.maxFlashes} flashes, starting at index ${this.flashStartIndex})`
         );
