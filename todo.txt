@@ -20,9 +20,6 @@
 ------------------------------------------------------------------------------------------------
 
 
-Prey.forEach(i => {
-  Transform.x[i] += RigidBody.vx[i];
-});
 
 
 this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
@@ -108,6 +105,11 @@ se puede hacer query (pero basado en un unico array)
 -agregar entidades q sean rectangulos y q su collider funcione
 
 https://github.com/kirbysayshi/pocket-physics
+
+
 ------------------------------------------------------------------------------------------------
 --- PIXI-WORKER: ---
 ------------------------------------------------------------------------------------------------
+
+-interpolar posiciones y rotaciones, segun los fps del physics
+(q esto sea una config)

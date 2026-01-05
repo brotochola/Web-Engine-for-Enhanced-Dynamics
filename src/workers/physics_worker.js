@@ -31,7 +31,7 @@ class PhysicsWorker extends AbstractWorker {
   constructor(selfRef) {
     super(selfRef);
 
-    // Physics worker is generic - doesn't need game-specific classes
+    // Physics worker doesn't create GameObject instances (but has access to all components)
     this.needsGameScripts = false;
 
     // Runtime physics settings (will be filled from Scene config)
@@ -150,7 +150,15 @@ class PhysicsWorker extends AbstractWorker {
    * More stable for particle systems and large numbers of colliding objects
    */
   updateVerlet(deltaTime, dtRatio, resuming) {
-    // Cache array references from components
+    // PERFORMANCE OPTIMIZATION: Cache TypedArray references locally
+    // These are NOT copying data - they're caching references to avoid property lookups.
+    // Each "Transform.x" access requires a property lookup. By caching the reference once,
+    // we eliminate thousands of property lookups per frame (one per entity per iteration).
+    // Local const variables are faster than "this.x" because:
+    //   1. JIT can store them in CPU registers
+    //   2. No object property chain traversal
+    //   3. Clear scope boundaries help compiler optimization
+    // DO NOT move these to instance properties (this.x) - that would be slower!
     const active = Transform.active;
     const rigidBodyActive = RigidBody.active;
     const colliderActive = Collider.active;
@@ -178,7 +186,7 @@ class PhysicsWorker extends AbstractWorker {
     const worldHeight = this.config.worldHeight;
 
     // Get the number of entities with RigidBody (not all entities have physics)
-    const rigidBodyCount = RigidBody.px?.length || 0;
+    const rigidBodyCount = this.entityCount;
 
     // Reset collision counters once per frame (used for diagnostics/tuning)
     for (let i = 0; i < rigidBodyCount; i++) {
@@ -235,7 +243,8 @@ class PhysicsWorker extends AbstractWorker {
    * This ensures physics runs at a consistent rate regardless of actual frame rate.
    */
   updateVerletFixedStep(fixedDeltaTime, fixedDtRatio) {
-    // Cache array references from components
+    // PERFORMANCE OPTIMIZATION: Cache TypedArray references (see updateVerlet for full explanation)
+    // These local consts eliminate property lookups in hot loops - DO NOT move to instance properties!
     const active = Transform.active;
     const rigidBodyActive = RigidBody.active;
     const colliderActive = Collider.active;
@@ -338,7 +347,7 @@ class PhysicsWorker extends AbstractWorker {
     const friction = RigidBody.friction;
     const maxAcc = RigidBody.maxAcc;
 
-    const gravityScale = dtRatio*dtRatio
+    const gravityScale = dtRatio * dtRatio;
 
     for (let i = 0; i < this.entityCount; i++) {
       if (!active[i] || !rigidBodyActive[i]) continue;
@@ -352,7 +361,7 @@ class PhysicsWorker extends AbstractWorker {
       let dy = (y[i] - py[i]) * damping;
 
       if (friction[i] > 0) {
-    const frictionFactor = Math.pow(1 - friction[i], dtRatio);    
+        const frictionFactor = Math.pow(1 - friction[i], dtRatio);
         dx *= frictionFactor;
         dy *= frictionFactor;
       }
@@ -377,15 +386,13 @@ class PhysicsWorker extends AbstractWorker {
       const speedSquared = dx * dx + dy * dy;
       const maxSpeed = maxVel[i] * dtRatio;
       const maxSpeedSquared = maxSpeed * maxSpeed;
-      
+
       if (speedSquared > maxSpeedSquared) {
         // Only calculate sqrt when we actually need to clamp
         const velScale = maxSpeed / Math.sqrt(speedSquared);
         dx *= velScale;
         dy *= velScale;
       }
-
-
 
       x[i] = oldX + dx;
       y[i] = oldY + dy;
@@ -544,8 +551,8 @@ class PhysicsWorker extends AbstractWorker {
       // Hoist offsets (invariant) but NOT position (variant)
       const offXi = offsetX[i];
       const offYi = offsetY[i];
-      
-      // NOTE: colliderX_i / colliderY_i CANNOT be hoisted because x[i]/y[i] 
+
+      // NOTE: colliderX_i / colliderY_i CANNOT be hoisted because x[i]/y[i]
       // change during the loop as collisions are resolved!
 
       for (let n = 0; n < neighborCount; n++) {
@@ -562,7 +569,7 @@ class PhysicsWorker extends AbstractWorker {
         // in a previous iteration of this same loop (multi-collision)
         const colliderX_i = x[i] + offXi;
         const colliderY_i = y[i] + offYi;
-        
+
         const colliderX_j = x[j] + offsetX[j];
         const colliderY_j = y[j] + offsetY[j];
 

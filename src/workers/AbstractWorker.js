@@ -2,6 +2,10 @@
 // Provides common functionality: frame timing,  FPS tracking, pause state, message handling
 
 import { GameObject } from "../core/gameObject.js";
+import Keyboard from "../core/Keyboard.js";
+import { Mouse } from "../core/Mouse.js";
+import { ParticleEmitter } from "../core/ParticleEmitter.js";
+import { Flash } from "../core/Flash.js";
 import { seededRandom } from "../core/utils.js";
 import { Camera } from "../core/Camera.js";
 
@@ -38,7 +42,8 @@ export class AbstractWorker {
     this.noLimitFPS = false; // Set to true to run as fast as possible (no RAF limiting)
     this.timeoutId = null; // Store timeout ID for clearing
 
-    // Script loading
+    // Script loading (ALL workers now load scripts and initialize components)
+    // This flag now indicates if worker needs to CREATE GameObject instances (logic workers only)
     this.needsGameScripts = true; // Override to false in generic workers (spatial, physics)
 
     // Shared buffers (common to most workers)
@@ -50,6 +55,9 @@ export class AbstractWorker {
 
     // Registered entity classes information (set during initialization)
     this.registeredClasses = [];
+
+    // Query system cache for component-based entity filtering
+    this.queryCache = null; // Will be initialized from main thread
 
     // MessagePorts for direct worker-to-worker communication
     this.workerPorts = new Map(); // Map<workerName, MessagePort>
@@ -199,18 +207,9 @@ export class AbstractWorker {
       // );
     }
 
-    // Load game-specific scripts dynamically (if this worker needs them)
-    // Some workers (spatial, physics) are generic and don't need game classes
-    // console.log(
-    //   `${this.constructor.name}: Checking script loading - needsGameScripts=${
-    //     this.needsGameScripts
-    //   }, scriptsToLoad=${data.scriptsToLoad?.length || 0}`
-    // );
-    if (
-      this.needsGameScripts &&
-      data.scriptsToLoad &&
-      data.scriptsToLoad.length > 0
-    ) {
+    // Load game-specific scripts dynamically (entity classes + custom components)
+    // ALL workers now receive entity classes for consistent component access
+    if (data.scriptsToLoad && data.scriptsToLoad.length > 0) {
       // console.log(
       //   `${this.constructor.name}: Loading ${data.scriptsToLoad.length} game scripts...`
       // );
@@ -235,10 +234,6 @@ export class AbstractWorker {
           // console.error(`Error stack:`, error.stack);
         }
       }
-    } else if (!this.needsGameScripts) {
-      //  console.log(
-      //   `${this.constructor.name}: Skipping game scripts (generic worker)`
-      // );
     }
 
     // Initialize GameObject arrays if buffer provided
@@ -282,6 +277,16 @@ export class AbstractWorker {
 
     // Store registered classes (used by logic worker and potentially others)
     this.registeredClasses = data.registeredClasses || [];
+
+    // Initialize query system for component-based entity filtering
+    if (data.queries) {
+      this.queryCache = new Map();
+      Object.entries(data.queries).forEach(([key, array]) => {
+        this.queryCache.set(key, new Int32Array(array));
+      });
+      this.reportLog(`initialized with ${this.queryCache.size} queries`);
+    }
+
     this.reportLog("finished initializing common buffers");
 
     // Keep a reference to neighbor data for easy access (already set above, but also from GameObject)
@@ -297,6 +302,80 @@ export class AbstractWorker {
     // Make camera data available to GameObject for direct access
     if (this.cameraData) {
       GameObject.cameraData = this.cameraData;
+    }
+
+    // Register core engine classes globally (GameObject, Mouse, Keyboard, etc.)
+    this.registerCoreClasses();
+
+    // Initialize ALL components (core + custom) for ALL workers
+    // Connects components to SharedArrayBuffers and makes them globally available
+    if (this.registeredClasses && this.registeredClasses.length > 0) {
+      this.initializeAllComponents(data);
+    }
+  }
+
+  /**
+   * Register core engine classes globally for all workers
+   * These are the fundamental engine classes needed across all worker types
+   */
+  registerCoreClasses() {
+    self.GameObject = GameObject;
+    self.Mouse = Mouse;
+    self.Keyboard = Keyboard;
+    self.ParticleEmitter = ParticleEmitter;
+    self.Flash = Flash;
+    self.Camera = Camera;
+
+    this.reportLog("registered core engine classes globally");
+  }
+
+  /**
+   * Initialize ALL components by collecting them from entity classes
+   * This runs in ALL workers, making all components available everywhere with SharedArrayBuffer connections
+   * Handles both core (Transform, RigidBody) and custom (FlockingBehavior, PredatorBehavior) components
+   * @param {Object} data - Initialization data containing componentPools and buffers
+   */
+  initializeAllComponents(data) {
+    if (!this.registeredClasses || this.registeredClasses.length === 0) {
+      return; // No entity classes registered
+    }
+
+    const componentClasses = new Map(); // componentName -> ComponentClass
+
+    // Collect ALL components from all registered entity classes
+    for (const classInfo of this.registeredClasses) {
+      const EntityClass = self[classInfo.name];
+      if (!EntityClass) continue;
+
+      // Use GameObject's static method to collect components (handles inheritance)
+      const components = GameObject._collectComponents(EntityClass);
+      for (const ComponentClass of components) {
+        const componentName = ComponentClass.name;
+        componentClasses.set(componentName, ComponentClass);
+      }
+    }
+
+    // Initialize all component arrays AND make them globally available
+    let initializedCount = 0;
+    for (const [componentName, ComponentClass] of componentClasses) {
+      const pool = data.componentPools?.[componentName];
+      const buffer = data.buffers?.componentData?.[componentName];
+
+      // Initialize SharedArrayBuffer connection if data is available
+      if (buffer && pool && pool.count > 0) {
+        ComponentClass.initializeArrays(buffer, pool.count);
+        initializedCount++;
+      }
+
+      // Make component globally available for dynamic lookups (even if no buffer)
+      self[componentName] = ComponentClass;
+    }
+
+    // Log initialization for debugging
+    if (componentClasses.size > 0) {
+      this.reportLog(
+        `initialized ${initializedCount}/${componentClasses.size} component classes with SharedArrayBuffers`
+      );
     }
   }
 
@@ -438,6 +517,40 @@ export class AbstractWorker {
       this.gameLoop(true);
     }
     // If using custom scheduler, it will continue calling gameLoop automatically
+  }
+
+  /**
+   * Query entities by component combination
+   * Returns indices of entities that have ALL specified components
+   *
+   * @param {Array<Component>} componentClasses - Array of component classes to query
+   * @returns {Int32Array} - Indices of matching entities
+   *
+   * @example
+   * const rigidBodies = this.query([RigidBody]);
+   * const physicsObjects = this.query([RigidBody, Collider]);
+   */
+  query(componentClasses) {
+    if (!this.queryCache) {
+      console.warn(`[${this.constructor.name}] Query system not initialized!`);
+      return new Int32Array(0);
+    }
+
+    const key = componentClasses
+      .map((CompClass) => CompClass.name)
+      .sort()
+      .join(",");
+
+    const result = this.queryCache.get(key);
+
+    if (!result) {
+      console.warn(
+        `[${this.constructor.name}] No entities found for query: ${key}`
+      );
+      return new Int32Array(0);
+    }
+
+    return result;
   }
 
   // ==========================================

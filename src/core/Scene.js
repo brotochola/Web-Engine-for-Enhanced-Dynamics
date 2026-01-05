@@ -19,6 +19,7 @@ import { Flash } from "./Flash.js";
 import { BigAtlasInspector } from "./BigAtlasInspector.js";
 import { MainThreadLogicHelper } from "./MainThreadLogicHelper.js";
 import { Camera } from "./Camera.js";
+import { QuerySystem } from "./QuerySystem.js";
 import {
   SCENE_DEFAULTS,
   PHYSICS_DEFAULTS,
@@ -74,6 +75,9 @@ class Scene {
       renderer: null,
       particle: null,
     };
+
+    // Query system for component-based entity filtering
+    this.querySystem = new QuerySystem();
 
     this.pendingPhysicsUpdates = [];
 
@@ -687,6 +691,11 @@ class Scene {
     // Pre-initialize entityType values
     this.preInitializeEntityTypeArrays();
 
+    // Build query system for fast component-based entity filtering
+    console.log('[Scene] Building query system...');
+    this.querySystem.buildQueries(this.registeredClasses);
+    console.log('[Scene] Query system ready!');
+
     // Collision data buffer
     const maxCollisionPairs = this.config.physics.maxCollisionPairs;
     const COLLISION_BUFFER_SIZE = (1 + maxCollisionPairs * 2) * 4;
@@ -1047,6 +1056,7 @@ class Scene {
               startIndex: Flash.startIndex,
             }
           : null,
+      queries: this.querySystem.serialize(), // Pre-calculated entity queries
     };
 
     // Initialize workers

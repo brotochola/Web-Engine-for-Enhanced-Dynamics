@@ -15,13 +15,8 @@ import {
   brightnessToTint,
 } from "../core/utils.js";
 
-// Make components globally available
-self.ParticleComponent = ParticleComponent;
-self.Transform = Transform;
-self.RigidBody = RigidBody;
-self.LightEmitter = LightEmitter;
-self.SpriteRenderer = SpriteRenderer;
-self.FlashComponent = FlashComponent;
+// Note: Components (Transform, RigidBody, etc.) are now registered automatically
+// by AbstractWorker.registerAllComponents() after entity classes are loaded
 
 /**
  * ParticleWorker - Handles particle physics simulation
@@ -38,7 +33,7 @@ class ParticleWorker extends AbstractWorker {
   constructor(selfRef) {
     super(selfRef);
 
-    // Particle worker doesn't need game scripts
+    // Particle worker doesn't create GameObject instances (but has access to all components)
     this.needsGameScripts = false;
 
     // Particle pool size (separate from entity system)

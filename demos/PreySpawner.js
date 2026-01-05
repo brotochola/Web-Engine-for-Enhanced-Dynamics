@@ -1,7 +1,6 @@
 import { Prey } from "./prey.js";
+import { PreyBehavior } from "./PreyBehavior.js";
 import WEED from "/src/index.js";
-
-// Destructure what we need from WEED
 
 export class PreySpawner extends WEED.GameObject {
   static scriptUrl = import.meta.url;
@@ -9,9 +8,7 @@ export class PreySpawner extends WEED.GameObject {
 
   frameCount = 0;
 
-  setup() {
-    console.log("PreySpawner setup", this.config);
-  }
+  setup() {}
   onSpawned(spawnConfig = {}) {}
   onDespawned() {}
 

@@ -358,6 +358,33 @@ export function rng() {
   return Math.random();
 }
 
+/**
+ * Query entities by component combination - wrapper that accesses globalThis.query
+ * This allows entity code to use query() which gets initialized in workers
+ * In worker context: globalThis.query is set by logic_worker, physics_worker, etc.
+ *
+ * @param {Array<Component>} componentClasses - Array of component classes to query
+ * @returns {Int32Array} - Indices of entities that have ALL specified components
+ *
+ * @example
+ * // Inside entity code (Prey.tick(), etc.):
+ * const allPredators = query([RigidBody, PredatorBehavior]);
+ * const visibleEntities = query([SpriteRenderer, Transform]);
+ *
+ * // Or via WEED namespace:
+ * import WEED from "/src/index.js";
+ * const entities = WEED.query([RigidBody, Collider]);
+ */
+export function query(componentClasses) {
+  if (typeof globalThis.query === "function") {
+    return globalThis.query(componentClasses);
+  }
+
+  // Not available in main thread context
+  console.warn("[query] Query system only available in worker context");
+  return new Int32Array(0);
+}
+
 // ============================================================================
 // LIGHTING UTILITIES
 // ============================================================================

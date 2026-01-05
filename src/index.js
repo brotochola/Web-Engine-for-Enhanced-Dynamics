@@ -44,6 +44,15 @@ export { ParticleEmitter } from "./core/ParticleEmitter.js";
 export { Flash } from "./core/Flash.js";
 
 // ============================================================================
+// QUERY SYSTEM (Worker Context Only)
+// ============================================================================
+// Note: The query() function is available globally in all workers for
+// component-based entity filtering. Use it in entity code like:
+//   const allPredators = query([RigidBody, PredatorBehavior]);
+//   const visibleEntities = query([SpriteRenderer, Transform]);
+// This is NOT available in main thread context, only in workers.
+
+// ============================================================================
 // WORKERS
 // ============================================================================
 // Note: Workers are typically loaded as separate files via new Worker()
