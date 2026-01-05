@@ -2129,21 +2129,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Initialize spritesheet tracking array once
     this.currentSpritesheetIds = new Uint8Array(this.entityCount);
 
-    // Get a default texture from bigAtlas to use as initial texture
-    // This ensures all particles share the same texture source
-    const bigAtlas = this.spritesheets["bigAtlas"];
-    let defaultTexture = PIXI.Texture.WHITE; // Fallback
-
-    if (bigAtlas && bigAtlas.textures) {
-      // Use the first available texture from bigAtlas
-      const textureKeys = Object.keys(bigAtlas.textures);
-      if (textureKeys.length > 0) {
-        defaultTexture = bigAtlas.textures[textureKeys[0]];
-        console.log(
-          `PIXI WORKER: Using "${textureKeys[0]}" as default particle texture (from bigAtlas)`
-        );
-      }
-    }
+    // Use PIXI's default white texture for particle initialization
+    const defaultTexture = PIXI.Texture.WHITE;
 
     for (let i = 0; i < this.entityCount; i++) {
       const entityType = Transform.entityType[i];
