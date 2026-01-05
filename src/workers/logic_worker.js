@@ -21,20 +21,9 @@ import { ParticleEmitter } from "../core/ParticleEmitter.js";
 import { Flash } from "../core/Flash.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 
-// Make imported classes globally available for dynamic instantiation
-self.GameObject = GameObject;
-self.Transform = Transform;
-self.RigidBody = RigidBody;
-self.Collider = Collider;
-self.SpriteRenderer = SpriteRenderer;
-self.ParticleComponent = ParticleComponent;
-self.FlashComponent = FlashComponent;
-self.Mouse = Mouse;
-self.Keyboard = Keyboard;
-self.ParticleEmitter = ParticleEmitter;
-self.Flash = Flash;
-
-// Game-specific scripts will be loaded dynamically during initialization
+// Note: Core engine classes (GameObject, Mouse, Keyboard, etc.) and components
+// (Transform, RigidBody, etc.) are now registered automatically by AbstractWorker
+// during initialization. Game-specific entity classes are loaded dynamically.
 
 /**
  * LogicWorker - Handles game logic and AI for all entities
@@ -44,7 +33,7 @@ class LogicWorker extends AbstractWorker {
   constructor(selfRef) {
     super(selfRef);
 
-    // Logic worker NEEDS game scripts (entity classes)
+    // Logic worker needs to CREATE GameObject instances (all workers get scripts/components)
     this.needsGameScripts = true;
 
     // Game objects - one per entity
@@ -164,11 +153,8 @@ class LogicWorker extends AbstractWorker {
     this.previousScreenVisibility.fill(0);
     // console.log("LOGIC WORKER: Screen visibility tracking enabled");
 
-    // Note: Game-specific scripts are loaded automatically by AbstractWorker.initializeCommonBuffers()
-    // This makes entity classes available in the worker's global scope
-
-    // Initialize ALL components (core and custom) - must be done AFTER entity classes are loaded
-    this.initializeAllComponents(data);
+    // Note: Game-specific scripts and components are loaded automatically by AbstractWorker.initializeCommonBuffers()
+    // All entity classes and components are now available in the worker's global scope with SharedArrayBuffer connections
 
     // Initialize ParticleEmitter if particles are configured
     // Particles are NOT entities - they have their own separate pool
@@ -195,39 +181,6 @@ class LogicWorker extends AbstractWorker {
     //   `LOGIC WORKER ${this.workerIndex}: Initialization complete, waiting for start signal...`
     // );
     // Note: Game loop will start when "start" message is received from main thread
-  }
-
-  /**
-   * Initialize ALL components by collecting them from entity classes
-   * This handles both core (Transform, RigidBody, etc.) and custom (Flocking, etc.) components
-   */
-  initializeAllComponents(data) {
-    // console.log("LOGIC WORKER: Initializing component arrays...");
-
-    const componentClasses = new Map(); // componentName -> ComponentClass
-
-    // Collect ALL components from all registered entity classes
-    for (const classInfo of this.registeredClasses) {
-      const EntityClass = self[classInfo.name];
-      if (!EntityClass) continue;
-
-      const components = GameObject._collectComponents(EntityClass);
-      for (const ComponentClass of components) {
-        const componentName = ComponentClass.name;
-        componentClasses.set(componentName, ComponentClass);
-      }
-    }
-
-    // Initialize all component arrays
-    for (const [componentName, ComponentClass] of componentClasses) {
-      const pool = data.componentPools[componentName];
-      const buffer = data.buffers.componentData[componentName];
-
-      if (buffer && pool && pool.count > 0) {
-        ComponentClass.initializeArrays(buffer, pool.count);
-        // console.log(`  ✅ ${componentName}: ${pool.count} slots`);
-      }
-    }
   }
 
   /**
@@ -353,7 +306,7 @@ class LogicWorker extends AbstractWorker {
 
           // Update neighbor references before tick
           const neighborStart = this.enableProfiling ? performance.now() : 0;
-          
+
           // OPTIMIZED: updating neighbors no longer allocates subarrays (GC free)
           // It just updates _neighborOffset and neighborCount integers
           obj.updateNeighbors(this.neighborData, this.distanceData);
@@ -833,3 +786,26 @@ class LogicWorker extends AbstractWorker {
 
 // Create singleton instance and setup message handler
 self.logicWorker = new LogicWorker(self);
+
+/**
+ * Global query function for component-based entity filtering
+ * Available to all entity code running in logic workers
+ * @param {Array<Component>} componentClasses - Array of component classes to query
+ * @returns {Int32Array} - Indices of matching entities
+ *
+ * @example
+ * // Inside Prey.tick() or any entity method:
+ * const allPredators = query([RigidBody, PredatorBehavior]);
+ * const visibleEntities = query([SpriteRenderer, Transform]);
+ *
+ * // Or use via WEED namespace:
+ * import WEED from "/src/index.js";
+ * const { query } = WEED;
+ */
+function query(componentClasses) {
+  return self.logicWorker.query(componentClasses);
+}
+
+// Make query available globally and in WEED namespace for entity code
+self.query = query;
+globalThis.query = query;

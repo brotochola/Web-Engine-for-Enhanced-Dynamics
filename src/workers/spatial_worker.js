@@ -26,7 +26,7 @@ class SpatialWorker extends AbstractWorker {
   constructor(selfRef) {
     super(selfRef);
 
-    // Spatial worker is generic - doesn't need game-specific classes
+    // Spatial worker doesn't create GameObject instances (but has access to all components)
     this.needsGameScripts = false;
 
     // FLAT GRID STRUCTURE (replaces Array-of-Arrays)

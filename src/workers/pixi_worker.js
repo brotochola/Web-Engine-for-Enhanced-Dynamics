@@ -62,16 +62,12 @@ const PIXI = {
   GlProgram,
 };
 
-// Make imported classes globally available for dynamic instantiation
-self.GameObject = GameObject;
-self.Transform = Transform;
-self.RigidBody = RigidBody;
-self.SpriteRenderer = SpriteRenderer;
-self.MouseComponent = MouseComponent;
-self.Mouse = Mouse;
-self.PIXI = PIXI;
+// Note: Core engine classes (GameObject, Mouse, etc.) and components
+// (Transform, RigidBody, etc.) are now registered automatically by AbstractWorker.
+// Game-specific entity classes are loaded dynamically.
 
-// Note: Game-specific scripts are loaded dynamically by AbstractWorker
+// Make PIXI namespace available globally (renderer-specific)
+self.PIXI = PIXI;
 
 // Single ParticleContainer with Y-sorting for depth
 
@@ -990,7 +986,6 @@ class PixiRenderer extends AbstractWorker {
     // Instead of creating new array + objects every frame, we reuse a pre-allocated pool
     this._ySortPoolSize = 0;
 
-    // First pass: update sprite properties and collect visible sprites
     for (let i = 0; i < this.entityCount; i++) {
       const bodySprite = this.bodySprites[i];
 
