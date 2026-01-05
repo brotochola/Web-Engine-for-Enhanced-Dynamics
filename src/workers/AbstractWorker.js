@@ -59,6 +59,7 @@ export class AbstractWorker {
 
     // Query system cache for component-based entity filtering
     this.queryCache = null; // Will be initialized from main thread
+    this.emptyQueryWarnings = new Set(); // Track empty query warnings (log once per query key)
 
     // MessagePorts for direct worker-to-worker communication
     this.workerPorts = new Map(); // Map<workerName, MessagePort>
@@ -561,9 +562,14 @@ export class AbstractWorker {
     const result = this.queryCache.get(key);
 
     if (!result) {
-      console.warn(
-        `[${this.constructor.name}] No entities found for query: ${key}`
-      );
+      // Only warn once per query key to avoid console spam
+      // Empty queries are normal at startup or in scenes without certain entity types
+      if (!this.emptyQueryWarnings.has(key)) {
+        console.warn(
+          `[${this.constructor.name}] No entities found for query: ${key} (this warning will only show once)`
+        );
+        this.emptyQueryWarnings.add(key);
+      }
       return new Int32Array(0);
     }
 

@@ -172,9 +172,11 @@ class PhysicsWorker extends AbstractWorker {
     // Get the number of entities with RigidBody (not all entities have physics)
     const rigidBodyCount = this.entityCount;
 
-    // Reset collision counters once per frame (used for diagnostics/tuning)
-    for (let i = 0; i < rigidBodyCount; i++) {
-      if (!active[i] || !rigidBodyActive[i]) continue;
+    // OPTIMIZATION: Use query system to reset collision counters only for physics entities
+    const physicsEntities = this.query([RigidBody]);
+
+    for (let idx = 0; idx < physicsEntities.length; idx++) {
+      const i = physicsEntities[idx];
       collisionCount[i] = 0;
     }
 
@@ -225,6 +227,7 @@ class PhysicsWorker extends AbstractWorker {
    * Fixed-step Verlet update for use with accumulator (noLimitFPS mode)
    * Runs movement + ONE constraint pass per call. The accumulator loop handles substepping.
    * This ensures physics runs at a consistent rate regardless of actual frame rate.
+   * OPTIMIZED: Uses query system to iterate only entities with physics components
    */
   updateVerletFixedStep(fixedDeltaTime, fixedDtRatio) {
     // PERFORMANCE OPTIMIZATION: Cache TypedArray references (see updateVerlet for full explanation)
@@ -257,10 +260,11 @@ class PhysicsWorker extends AbstractWorker {
     // Get the number of entities with RigidBody
     const rigidBodyCount = RigidBody.px?.length || 0;
 
-    // Reset collision counters (only on first substep of the frame)
+    // OPTIMIZATION: Use query system to reset collision counters only for physics entities
     // Note: In fixed step mode, we reset per-step to avoid accumulation issues
-    for (let i = 0; i < rigidBodyCount; i++) {
-      if (!active[i] || !rigidBodyActive[i]) continue;
+    const physicsEntities = this.query([RigidBody, Transform]);
+    for (let idx = 0; idx < physicsEntities.length; idx++) {
+      const i = physicsEntities[idx];
       collisionCount[i] = 0;
     }
 
@@ -308,6 +312,7 @@ class PhysicsWorker extends AbstractWorker {
   /**
    * Move entities using Verlet integration
    * Works for both circles and boxes - shape doesn't affect movement
+   * OPTIMIZED: Uses query system to iterate only entities with RigidBody
    */
   moveEntitiesVerlet(
     active,
@@ -333,7 +338,12 @@ class PhysicsWorker extends AbstractWorker {
 
     const gravityScale = dtRatio * dtRatio;
 
-    for (let i = 0; i < this.entityCount; i++) {
+    // OPTIMIZATION: Use query system to get only entities with RigidBody component
+    // This skips entities without physics (houses, decorations, etc.)
+    const physicsEntities = this.query([RigidBody, Transform]);
+
+    for (let idx = 0; idx < physicsEntities.length; idx++) {
+      const i = physicsEntities[idx];
       if (!active[i] || !rigidBodyActive[i]) continue;
       if (isStatic[i]) continue;
 
