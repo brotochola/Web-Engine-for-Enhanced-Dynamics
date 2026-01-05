@@ -8,6 +8,7 @@ import { ParticleEmitter } from "../core/ParticleEmitter.js";
 import { Flash } from "../core/Flash.js";
 import { seededRandom } from "../core/utils.js";
 import { Camera } from "../core/Camera.js";
+import { ParticleComponent } from "../components/ParticleComponent.js";
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -246,6 +247,21 @@ export class AbstractWorker {
       );
     }
 
+    // Initialize ParticleComponent arrays (separate particle pool system)
+    // Particles are NOT entities - they have their own pool with maxParticles size
+    if (data.maxParticles && data.maxParticles > 0) {
+      if (data.buffers?.componentData?.ParticleComponent) {
+        ParticleComponent.initializeArrays(
+          data.buffers.componentData.ParticleComponent,
+          data.maxParticles
+        );
+        ParticleComponent.particleCount = data.maxParticles;
+        this.reportLog(
+          `initialized ParticleComponent for ${data.maxParticles} particles`
+        );
+      }
+    }
+
     // Initialize common shared buffers using Buffer->Data naming pattern
     if (data.buffers?.inputData) {
       this.inputData = new Int32Array(data.buffers.inputData);
@@ -323,6 +339,7 @@ export class AbstractWorker {
     self.Mouse = Mouse;
     self.Keyboard = Keyboard;
     self.ParticleEmitter = ParticleEmitter;
+    self.ParticleComponent = ParticleComponent;
     self.Flash = Flash;
     self.Camera = Camera;
 

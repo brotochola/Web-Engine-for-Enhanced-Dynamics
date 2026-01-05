@@ -158,16 +158,9 @@ class LogicWorker extends AbstractWorker {
 
     // Initialize ParticleEmitter if particles are configured
     // Particles are NOT entities - they have their own separate pool
+    // Note: ParticleComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
     const maxParticles = data.maxParticles || 0;
     if (maxParticles > 0) {
-      // Initialize ParticleComponent arrays for the emitter to write to
-      if (data.buffers.componentData.ParticleComponent) {
-        ParticleComponent.initializeArrays(
-          data.buffers.componentData.ParticleComponent,
-          maxParticles
-        );
-        ParticleComponent.particleCount = maxParticles;
-      }
       ParticleEmitter.initialize(maxParticles);
     }
 

@@ -53,23 +53,7 @@ class PhysicsWorker extends AbstractWorker {
   initialize(data) {
     //console.log("PHYSICS WORKER: Initializing with component system");
 
-    // Initialize component arrays
-    Transform.initializeArrays(
-      data.buffers.componentData.Transform,
-      this.entityCount
-    );
-    if (data.buffers.componentData.RigidBody) {
-      RigidBody.initializeArrays(
-        data.buffers.componentData.RigidBody,
-        data.componentPools.RigidBody.count
-      );
-    }
-    if (data.buffers.componentData.Collider) {
-      Collider.initializeArrays(
-        data.buffers.componentData.Collider,
-        data.componentPools.Collider.count
-      );
-    }
+    // Note: Component arrays are automatically initialized by AbstractWorker.initializeAllComponents()
 
     // Initialize collision data buffer for Unity-style collision callbacks
     if (data.buffers.collisionData) {

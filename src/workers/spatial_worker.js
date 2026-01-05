@@ -64,30 +64,8 @@ class SpatialWorker extends AbstractWorker {
    * Initialize spatial worker (implementation of AbstractWorker.initialize)
    */
   initialize(data) {
-    // Initialize component arrays from SharedArrayBuffers
-    // These are needed for spatial queries (position, collision, visibility)
-    if (data.buffers?.componentData) {
-      if (data.buffers.componentData.Transform) {
-        Transform.initializeArrays(
-          data.buffers.componentData.Transform,
-          data.componentPools?.Transform?.count || this.entityCount
-        );
-      }
-      // DENSE ALLOCATION: All components have slots for all entities
-      // entityIndex === componentIndex for all components
-      if (data.buffers.componentData.Collider) {
-        Collider.initializeArrays(
-          data.buffers.componentData.Collider,
-          this.entityCount // DENSE: all entities have slots
-        );
-      }
-      if (data.buffers.componentData.SpriteRenderer) {
-        SpriteRenderer.initializeArrays(
-          data.buffers.componentData.SpriteRenderer,
-          this.entityCount // DENSE: all entities have slots
-        );
-      }
-    }
+    // Note: Component arrays are automatically initialized by AbstractWorker.initializeAllComponents()
+    // This includes Transform, Collider, SpriteRenderer, and all other components
 
     // Calculate grid parameters from config
     // Check spatial-specific config first, then fall back to root for backwards compatibility

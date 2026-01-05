@@ -2317,62 +2317,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     //   `PIXI WORKER: Background texture set to "${this.bgTextureName}"`
     // );
 
-    // Initialize component arrays from SharedArrayBuffers
-    // console.log("PIXI WORKER: Initializing component arrays...");
+    // Note: Component arrays are automatically initialized by AbstractWorker.initializeAllComponents()
+    // This includes Transform, RigidBody, MouseComponent, SpriteRenderer, and all custom components
 
-    // DENSE ALLOCATION: All components have slots for all entities
-    // entityIndex === componentIndex for all components (much simpler!)
-
-    // Transform (for positions)
-    Transform.initializeArrays(
-      data.buffers.componentData.Transform,
-      this.entityCount
-    );
-
-    // RigidBody (for rotation, velocity, acceleration)
-    if (data.buffers.componentData.RigidBody) {
-      RigidBody.initializeArrays(
-        data.buffers.componentData.RigidBody,
-        this.entityCount // DENSE: all entities have slots
-      );
-    }
-
-    // MouseComponent (for mouse input state)
-    if (data.buffers.componentData.MouseComponent) {
-      MouseComponent.initializeArrays(
-        data.buffers.componentData.MouseComponent,
-        this.entityCount // DENSE: all entities have slots
-      );
-    }
-
-    // SpriteRenderer (for visual properties)
-    if (data.buffers.componentData.SpriteRenderer) {
-      SpriteRenderer.initializeArrays(
-        data.buffers.componentData.SpriteRenderer,
-        this.entityCount // DENSE: all entities have slots
-      );
-    }
-
-    // ParticleComponent (separate from entity system)
-    // Particles have their own pool with maxParticles size
+    // Note: ParticleComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
     this.maxParticles = data.maxParticles || 0;
     if (data.buffers.componentData.ParticleComponent && this.maxParticles > 0) {
-      ParticleComponent.initializeArrays(
-        data.buffers.componentData.ParticleComponent,
-        this.maxParticles
-      );
-      ParticleComponent.particleCount = this.maxParticles;
       console.log(
         `PIXI WORKER: ParticleComponent initialized for ${this.maxParticles} particles`
       );
     }
 
-    // LightEmitter (for lighting system)
+    // Note: LightEmitter is automatically initialized by AbstractWorker.initializeAllComponents()
     if (data.buffers.componentData.LightEmitter) {
-      LightEmitter.initializeArrays(
-        data.buffers.componentData.LightEmitter,
-        this.entityCount
-      );
       console.log(
         `PIXI WORKER: LightEmitter component initialized (${this.entityCount} slots)`
       );
@@ -2507,13 +2464,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.debugLayer.zIndex = 10000; // Always on top
       this.pixiApp.stage.addChild(this.debugLayer);
 
-      // Initialize Collider component arrays for debug rendering
-      // DENSE: all entities have slots, use entityIndex directly
+      // Note: Collider component arrays are automatically initialized by
+      // AbstractWorker.initializeAllComponents()
       if (data.buffers.componentData.Collider) {
-        Collider.initializeArrays(
-          data.buffers.componentData.Collider,
-          this.entityCount // DENSE: all entities have slots
-        );
         console.log(
           `PIXI WORKER: Collider component loaded for debug rendering (${this.entityCount} slots)`
         );
