@@ -31,6 +31,15 @@ import {
 } from "./ConfigDefaults.js";
 
 class Scene {
+  // Worker index constants for FrameRate SharedArrayBuffer
+  static WORKER_INDICES = {
+    SPATIAL: 0,
+    PHYSICS: 1,
+    RENDERER: 2,
+    PARTICLE: 3,
+    LOGIC_START: 4, // Logic workers start at index 4 (logic0=4, logic1=5, etc.)
+  };
+
   // Static declarations - override these in subclasses
   static config = {};
   static assets = {};
@@ -118,6 +127,7 @@ class Scene {
       syncData: null,
       jobQueueData: null,
       debugData: null,
+      frameRateData: null, // Real-time FPS tracking per worker
       componentData: {
         Transform: null,
         RigidBody: null,
@@ -139,6 +149,7 @@ class Scene {
       input: null,
       camera: null,
       collision: null,
+      frameRate: null,
     };
 
     // Main thread FPS tracking
@@ -692,9 +703,9 @@ class Scene {
     this.preInitializeEntityTypeArrays();
 
     // Build query system for fast component-based entity filtering
-    console.log('[Scene] Building query system...');
+    console.log("[Scene] Building query system...");
     this.querySystem.buildQueries(this.registeredClasses);
-    console.log('[Scene] Query system ready!');
+    console.log("[Scene] Query system ready!");
 
     // Collision data buffer
     const maxCollisionPairs = this.config.physics.maxCollisionPairs;
@@ -734,6 +745,13 @@ class Scene {
     const DEBUG_BUFFER_SIZE = 32;
     this.buffers.debugData = new SharedArrayBuffer(DEBUG_BUFFER_SIZE);
     this.debugFlags = new DebugFlags(this.buffers.debugData);
+
+    // FrameRate buffer: stores real-time FPS for each worker
+    // Layout: [spatial_fps, physics_fps, renderer_fps, particle_fps, logic0_fps, logic1_fps, ...]
+    const maxWorkers = 4 + this.numberOfLogicWorkers; // spatial, physics, renderer, particle + logic workers
+    const FRAMERATE_BUFFER_SIZE = maxWorkers * 4; // 1 float per worker
+    this.buffers.frameRateData = new SharedArrayBuffer(FRAMERATE_BUFFER_SIZE);
+    this.views.frameRate = new Float32Array(this.buffers.frameRateData);
 
     // Synchronization buffer
     const SYNC_BUFFER_SIZE = 5 * 4;
@@ -1003,6 +1021,7 @@ class Scene {
         syncData: this.buffers.syncData,
         jobQueueData: this.buffers.jobQueueData,
         debugData: this.buffers.debugData,
+        frameRateData: this.buffers.frameRateData,
         componentData: this.buffers.componentData,
       },
       entityCount: this.totalEntityCount,
@@ -1060,14 +1079,18 @@ class Scene {
     };
 
     // Initialize workers
-    this.workers.spatial.postMessage(initData);
+    this.workers.spatial.postMessage({
+      ...initData,
+      frameRateIndex: Scene.WORKER_INDICES.SPATIAL,
+    });
 
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
       this.workers.logicWorkers[i].postMessage(
         {
           ...initData,
           workerPorts: workerPorts[`logic${i}`],
-          workerIndex: i,
+          workerIndex: i, // For logic worker job partitioning (0, 1, 2, ...)
+          frameRateIndex: Scene.WORKER_INDICES.LOGIC_START + i, // For FPS tracking (4, 5, 6, ...)
           bigAtlasProxySheets: this.bigAtlasProxySheets || {},
         },
         workerPorts[`logic${i}`] ? Object.values(workerPorts[`logic${i}`]) : []
@@ -1078,12 +1101,16 @@ class Scene {
       {
         ...initData,
         workerPorts: workerPorts.physics,
+        frameRateIndex: Scene.WORKER_INDICES.PHYSICS,
       },
       workerPorts.physics ? Object.values(workerPorts.physics) : []
     );
 
     // Particle worker always receives init data
-    this.workers.particle.postMessage(initData);
+    this.workers.particle.postMessage({
+      ...initData,
+      frameRateIndex: Scene.WORKER_INDICES.PARTICLE,
+    });
 
     // Initialize renderer
     const offscreenCanvas = this.canvas.transferControlToOffscreen();
@@ -1104,6 +1131,7 @@ class Scene {
         textures: this.loadedTextures,
         spritesheets: this.loadedSpritesheets,
         bigAtlasProxySheets: this.bigAtlasProxySheets || {},
+        frameRateIndex: Scene.WORKER_INDICES.RENDERER,
         workerPorts: workerPorts.renderer,
       },
       transferables

@@ -813,3 +813,4 @@ class PhysicsWorker extends AbstractWorker {
 
 // Create singleton instance and setup message handler
 const physicsWorker = new PhysicsWorker(self);
+self.physicsWorker = physicsWorker;

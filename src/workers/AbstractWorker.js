@@ -53,6 +53,8 @@ export class AbstractWorker {
     this.cameraData = null;
     this.neighborData = null;
     this.distanceData = null; // Squared distances for each neighbor
+    this.frameRateData = null; // Real-time FPS tracking for all workers
+    this.frameRateIndex = -1; // Index into frameRateData array (different from workerIndex used by logic workers!)
 
     // Registered entity classes information (set during initialization)
     this.registeredClasses = [];
@@ -91,6 +93,14 @@ export class AbstractWorker {
     // Calculate FPS from average frame time over last N frames
     const averageFrameTime = this.frameTimesSum / this.fpsFrameCount;
     this.currentFPS = 1000 / averageFrameTime;
+
+    // Calculate instantaneous FPS (real frame time, not moving average)
+    const instantaneousFPS = 1000 / deltaTime;
+
+    // Write instantaneous FPS to SharedArrayBuffer for cross-worker access
+    if (this.frameRateData && this.frameRateIndex >= 0) {
+      this.frameRateData[this.frameRateIndex] = instantaneousFPS;
+    }
 
     // Normalize delta time to 60fps (16.67ms per frame)
     const dtRatio = deltaTime / 16.67;
@@ -290,6 +300,17 @@ export class AbstractWorker {
     // Initialize distance data reference
     if (data.buffers?.distanceData) {
       this.distanceData = new Float32Array(data.buffers.distanceData);
+    }
+
+    // Initialize frame rate tracking buffer
+    if (data.buffers?.frameRateData) {
+      this.frameRateData = new Float32Array(data.buffers.frameRateData);
+    }
+
+    // Store frame rate buffer index for writing to frameRateData
+    // Note: This is different from workerIndex used by logic workers for job partitioning!
+    if (data.frameRateIndex !== undefined) {
+      this.frameRateIndex = data.frameRateIndex;
     }
 
     // Store registered classes (used by logic worker and potentially others)

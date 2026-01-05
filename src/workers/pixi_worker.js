@@ -96,6 +96,8 @@ class PixiRenderer extends AbstractWorker {
     // Renderer configuration options (set during initialize)
     this.ySorting = false; // Enable/disable Y-sorting for depth ordering
     this.bgTextureName = null; // Texture name to use for background
+    this.interpolation = true; // Enable/disable interpolation based on physics FPS
+    this.physicsWorkerIndex = 1; // Index of physics worker in frameRateData (Scene.WORKER_INDICES.PHYSICS)
 
     // PIXI application and rendering
     this.pixiApp = null;
@@ -989,6 +991,18 @@ class PixiRenderer extends AbstractWorker {
     this._ySortPoolSize = 0;
     const allEntitiesWithSpriteRenderer = this.query(this.queryConfig);
 
+    // Calculate interpolation alpha once before the loop (same for all sprites)
+    // When renderer FPS > physics FPS, alpha < 1.0 (smooth interpolation)
+    // When renderer FPS <= physics FPS, alpha = 1.0 (no interpolation needed)
+    let interpolationAlpha = 1.0;
+    if (this.interpolation && this.frameRateData) {
+      const physicsFPS = this.frameRateData[this.physicsWorkerIndex];
+      if (physicsFPS > 0 && this.currentFPS > physicsFPS) {
+        // Interpolation factor: higher renderer FPS = smaller steps
+        interpolationAlpha = Math.min(1.0, physicsFPS / this.currentFPS);
+      }
+    }
+
     for (
       let i = 0;
       i < /*this.entityCount*/ allEntitiesWithSpriteRenderer.length;
@@ -1079,8 +1093,11 @@ class PixiRenderer extends AbstractWorker {
 
       // BUGFIX: Always collect visible sprites into the pool
       // This ensures sprites are properly managed even when Y-sorting is disabled
+      // Check if sprite is becoming visible for the first time (or after being hidden)
+      const wasInvisible = !bodySprite.visible;
+
       // Make sprite visible before adding to pool
-      if (!bodySprite.visible) {
+      if (wasInvisible) {
         bodySprite.visible = true;
       }
 
@@ -1095,11 +1112,26 @@ class PixiRenderer extends AbstractWorker {
       item.y = y[entityIndex];
 
       // Update transform (position, rotation, scale)
-      // bodySprite.x += (x[i]-bodySprite.x)*0.5;
-      // bodySprite.y += (y[i]-bodySprite.y)*0.5;
-      bodySprite.x = x[entityIndex];
-      bodySprite.y = y[entityIndex];
-      bodySprite.rotation = rotation[entityIndex];
+
+      // // Skip interpolation if sprite just became visible (to avoid slow lerp from 0,0)
+      // // or if interpolation is disabled
+      if (this.interpolation && this.frameRateData && !wasInvisible) {
+        // Interpolate from current sprite position toward physics target
+        const targetX = x[entityIndex];
+        const targetY = y[entityIndex];
+        const targetRotation = rotation[entityIndex];
+
+        bodySprite.x += (targetX - bodySprite.x) * interpolationAlpha;
+        bodySprite.y += (targetY - bodySprite.y) * interpolationAlpha;
+        bodySprite.rotation +=
+          (targetRotation - bodySprite.rotation) * interpolationAlpha;
+      } else {
+        // No interpolation - directly set position
+        // (first frame visible, interpolation disabled, or no frameRateData)
+        bodySprite.x = x[entityIndex];
+        bodySprite.y = y[entityIndex];
+        bodySprite.rotation = rotation[entityIndex];
+      }
     }
 
     // Store visible entity count for reporting
@@ -2289,6 +2321,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       rendererConfig.ySorting !== undefined ? rendererConfig.ySorting : true;
     // console.log(
     //   `PIXI WORKER: Y-sorting ${this.ySorting ? "enabled" : "disabled"}`
+    // );
+
+    // Configure interpolation (default: true)
+    this.interpolation =
+      rendererConfig.interpolation !== undefined
+        ? rendererConfig.interpolation
+        : true;
+    // console.log(
+    //   `PIXI WORKER: Interpolation ${this.interpolation ? "enabled" : "disabled"}`
     // );
 
     // Configure background texture name (default: 'bg')
