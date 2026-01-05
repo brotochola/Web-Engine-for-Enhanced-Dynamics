@@ -72,6 +72,7 @@ export const RENDERER_DEFAULTS = {
   bg: null,
   bgTileScale: 1,
   ySorting: false,
+  interpolation: true, // Smooth rendering when renderer FPS > physics FPS
 };
 
 // ============================================================================
