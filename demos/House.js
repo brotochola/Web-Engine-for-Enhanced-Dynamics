@@ -38,7 +38,11 @@ export class House extends GameObject {
     this.collider.visualRange = 1000;
   }
 
-  onSpawned(spawnConfig = {}) {}
+  onSpawned(spawnConfig = {}) {
+    //this should not be needed, i guess:
+    //TODO: make onSpawned() also execute this.setup() by default
+    this.setSprite("house");
+  }
 
   onDespawned() {
     // Could save stats, play death effects, etc.
