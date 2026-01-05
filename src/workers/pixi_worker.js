@@ -85,6 +85,8 @@ class PixiRenderer extends AbstractWorker {
     LIGHT_GLOW: 5,
   };
 
+  queryConfig = [SpriteRenderer];
+
   constructor(selfRef) {
     super(selfRef);
 
@@ -985,55 +987,72 @@ class PixiRenderer extends AbstractWorker {
     // Reset Y-sort pool for this frame (reuse array, avoid GC pressure)
     // Instead of creating new array + objects every frame, we reuse a pre-allocated pool
     this._ySortPoolSize = 0;
+    const allEntitiesWithSpriteRenderer = this.query(this.queryConfig);
 
-    for (let i = 0; i < this.entityCount; i++) {
-      const bodySprite = this.bodySprites[i];
+    for (let i = 0; i < allEntitiesWithSpriteRenderer.length; i++) {
+      const entityIndex = allEntitiesWithSpriteRenderer[i];
+      const bodySprite = this.bodySprites[entityIndex];
 
       if (!bodySprite) continue;
 
       // OPTIMIZATION: Only update visual properties if dirty flag is set
       // This skips expensive operations (tint, alpha, flipping, animations) when unchanged
-      if (renderDirty[i]) {
+      if (renderDirty[entityIndex]) {
         // Check if spritesheet changed (per-instance override)
         const spritesheetId = SpriteRenderer.spritesheetId;
         if (
           spritesheetId &&
           this.currentSpritesheetIds &&
-          this.currentSpritesheetIds[i] !== spritesheetId[i]
+          this.currentSpritesheetIds[entityIndex] !== spritesheetId[entityIndex]
         ) {
-          this.updateEntitySpritesheet(bodySprite, i, spritesheetId[i]);
-          this.currentSpritesheetIds[i] = spritesheetId[i];
+          this.updateEntitySpritesheet(
+            bodySprite,
+            entityIndex,
+            spritesheetId[entityIndex]
+          );
+          this.currentSpritesheetIds[entityIndex] = spritesheetId[entityIndex];
         }
 
         // Update body sprite visual properties
-        bodySprite.tint = tint[i];
-        bodySprite.alpha = alpha[i];
+        bodySprite.tint = tint[entityIndex];
+        bodySprite.alpha = alpha[entityIndex];
 
         // Update animation if changed
-        this.updateSpriteAnimation(bodySprite, i, animationState[i]);
-        this.changeFrameOfSprite(bodySprite, i, deltaSeconds);
+        this.updateSpriteAnimation(
+          bodySprite,
+          entityIndex,
+          animationState[entityIndex]
+        );
+        this.changeFrameOfSprite(bodySprite, entityIndex, deltaSeconds);
 
         // Update animation speed (stored locally for manual animation)
-        this.animationSpeed[i] = animationSpeed[i];
+        this.animationSpeed[entityIndex] = animationSpeed[entityIndex];
 
         // Clear dirty flag after updating
-        renderDirty[i] = 0;
+        renderDirty[entityIndex] = 0;
       }
 
       // DENSE: use entity index directly for all component data
       // PixiJS 8 Particle uses scaleX/scaleY instead of scale.x/scale.y
-      if (bodySprite.scaleX !== scaleX[i]) bodySprite.scaleX = scaleX[i];
-      if (bodySprite.scaleY !== scaleY[i]) bodySprite.scaleY = scaleY[i];
+      if (bodySprite.scaleX !== scaleX[entityIndex])
+        bodySprite.scaleX = scaleX[entityIndex];
+      if (bodySprite.scaleY !== scaleY[entityIndex])
+        bodySprite.scaleY = scaleY[entityIndex];
 
       // Update anchor points (0-1 range)
       // PixiJS 8 Particle uses anchorX/anchorY instead of anchor.x/anchor.y
-      if (bodySprite.anchorX !== anchorX[i]) bodySprite.anchorX = anchorX[i];
-      if (bodySprite.anchorY !== anchorY[i]) bodySprite.anchorY = anchorY[i];
+      if (bodySprite.anchorX !== anchorX[entityIndex])
+        bodySprite.anchorX = anchorX[entityIndex];
+      if (bodySprite.anchorY !== anchorY[entityIndex])
+        bodySprite.anchorY = anchorY[entityIndex];
 
       // DENSE ALLOCATION: entityIndex === componentIndex
       // Determine if sprite should be visible
       // Note: spriteActive check removed - bodySprite null check already filters entities without SpriteRenderer
-      const shouldBeVisible = active[i] && renderVisible[i] && isItOnScreen[i];
+      const shouldBeVisible =
+        active[entityIndex] &&
+        renderVisible[entityIndex] &&
+        isItOnScreen[entityIndex];
 
       // Hide inactive or explicitly hidden entities
       if (!shouldBeVisible) {
@@ -1045,8 +1064,8 @@ class PixiRenderer extends AbstractWorker {
         // the renderer will detect the animation state change and update the sprite texture.
         // Without this, respawned entities with the same sprite would skip the texture update
         // because previousAnimStates still holds the old value from before despawn.
-        if (!active[i]) {
-          this.previousAnimStates[i] = -1;
+        if (!active[entityIndex]) {
+          this.previousAnimStates[entityIndex] = -1;
         }
         continue;
       }
@@ -1067,16 +1086,16 @@ class PixiRenderer extends AbstractWorker {
         this._ySortPool[poolIdx] = { entityId: 0, sprite: null, y: 0 };
       }
       const item = this._ySortPool[poolIdx];
-      item.entityId = i;
+      item.entityId = entityIndex;
       item.sprite = bodySprite;
-      item.y = y[i];
+      item.y = y[entityIndex];
 
       // Update transform (position, rotation, scale)
       // bodySprite.x += (x[i]-bodySprite.x)*0.5;
       // bodySprite.y += (y[i]-bodySprite.y)*0.5;
-      bodySprite.x = x[i];
-      bodySprite.y = y[i];
-      bodySprite.rotation = rotation[i];
+      bodySprite.x = x[entityIndex];
+      bodySprite.y = y[entityIndex];
+      bodySprite.rotation = rotation[entityIndex];
     }
 
     // Store visible entity count for reporting
