@@ -1117,14 +1117,11 @@ class PixiRenderer extends AbstractWorker {
       // // or if interpolation is disabled
       if (this.interpolation && this.frameRateData && !wasInvisible) {
         // Interpolate from current sprite position toward physics target
-        const targetX = x[entityIndex];
-        const targetY = y[entityIndex];
-        const targetRotation = rotation[entityIndex];
 
-        bodySprite.x += (targetX - bodySprite.x) * interpolationAlpha;
-        bodySprite.y += (targetY - bodySprite.y) * interpolationAlpha;
+        bodySprite.x += (x[entityIndex] - bodySprite.x) * interpolationAlpha;
+        bodySprite.y += (y[entityIndex] - bodySprite.y) * interpolationAlpha;
         bodySprite.rotation +=
-          (targetRotation - bodySprite.rotation) * interpolationAlpha;
+          (rotation[entityIndex] - bodySprite.rotation) * interpolationAlpha;
       } else {
         // No interpolation - directly set position
         // (first frame visible, interpolation disabled, or no frameRateData)
