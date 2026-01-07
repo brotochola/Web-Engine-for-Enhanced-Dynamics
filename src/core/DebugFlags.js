@@ -13,6 +13,7 @@ export const DEBUG_FLAGS = {
   SHOW_PROFILER: 8, // Show detailed timing breakdown
   SHOW_ENTITY_INDICES: 9, // Show entity index numbers
   SHOW_ACTIVE_ONLY: 10, // Only show debug for active entities
+  SHOW_SLEEPING: 11, // Show sleeping entities
 };
 
 /**
@@ -39,6 +40,7 @@ export class DebugFlags {
       grid: 0x444444, // Gray
       aabb: 0xff8800, // Orange
       text: 0xffffff, // White
+      sleeping: 0x9966ff, // Purple
     };
   }
 
@@ -123,6 +125,14 @@ export class DebugFlags {
   }
 
   /**
+   * Enable/disable sleeping entity visualization
+   */
+  showSleeping(enabled = true) {
+    this.flags[DEBUG_FLAGS.SHOW_SLEEPING] = enabled ? 1 : 0;
+    return this;
+  }
+
+  /**
    * Enable multiple debug features at once
    * @param {Object} options - { colliders: true, velocity: true, ... }
    */
@@ -141,6 +151,7 @@ export class DebugFlags {
     if (options.profiler !== undefined) this.showProfiler(options.profiler);
     if (options.entityIndices !== undefined)
       this.showEntityIndices(options.entityIndices);
+    if (options.sleeping !== undefined) this.showSleeping(options.sleeping);
     return this;
   }
 
@@ -210,6 +221,7 @@ export class DebugFlags {
       fpsGraph: this.isEnabled(DEBUG_FLAGS.SHOW_FPS_GRAPH),
       profiler: this.isEnabled(DEBUG_FLAGS.SHOW_PROFILER),
       entityIndices: this.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INDICES),
+      sleeping: this.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING),
     };
   }
 }

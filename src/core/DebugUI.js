@@ -3,6 +3,7 @@
 
 import { DEBUG_FLAGS } from "./DebugFlags.js";
 import { Transform } from "../components/Transform.js";
+import { RigidBody } from "../components/RigidBody.js";
 import { Mouse } from "./Mouse.js";
 import { GameObject } from "./gameObject.js";
 
@@ -223,6 +224,16 @@ export class DebugUI {
       this.elements.visibleCount.textContent = `Visible: ${visible}`;
     }
 
+    // Sleeping entities (from RigidBody component)
+    if (this.elements.sleepingCount && RigidBody && RigidBody.sleeping) {
+      let sleeping = 0;
+      const total = scene.totalEntityCount || 0;
+      for (let i = 0; i < total; i++) {
+        if (Transform.active[i] && RigidBody.sleeping[i]) sleeping++;
+      }
+      this.elements.sleepingCount.textContent = `Sleeping: ${sleeping}`;
+    }
+
     // Pool stats
     if (this.elements.poolStats && this.gameEngine) {
       const poolTexts = [];
@@ -269,6 +280,7 @@ export class DebugUI {
       spatialGrid: "showSpatialGrid",
       aabb: "showAABB",
       entityIndices: "showEntityIndices",
+      sleeping: "showSleeping",
     };
 
     const method = methodMap[key];
@@ -769,6 +781,7 @@ export class DebugUI {
       { key: "spatialGrid", label: "Grid", shortcut: "5" },
       { key: "aabb", label: "AABB", shortcut: "6" },
       { key: "entityIndices", label: "Indices", shortcut: "7" },
+      { key: "sleeping", label: "Sleeping", shortcut: "8" },
     ];
 
     for (const aid of visualAids) {
@@ -807,10 +820,12 @@ export class DebugUI {
 
     this.elements.activeCount = this._createStat("Active: --", "");
     this.elements.visibleCount = this._createStat("Visible: --", "");
+    this.elements.sleepingCount = this._createStat("Sleeping: --", "");
     this.elements.poolStats = this._createStat("Pools: --", "");
 
     statsRow.appendChild(this.elements.activeCount);
     statsRow.appendChild(this.elements.visibleCount);
+    statsRow.appendChild(this.elements.sleepingCount);
     statsRow.appendChild(this._createDivider());
     statsRow.appendChild(this.elements.poolStats);
 
@@ -1158,7 +1173,7 @@ export class DebugUI {
         this._updateDebugToolFlag();
         this._updateToolButtonStates();
         this._updateToolIndicator();
-      } else if (key >= "1" && key <= "7") {
+      } else if (key >= "1" && key <= "8") {
         const keyMap = {
           1: "colliders",
           2: "velocity",
@@ -1167,6 +1182,7 @@ export class DebugUI {
           5: "spatialGrid",
           6: "aabb",
           7: "entityIndices",
+          8: "sleeping",
         };
         this._toggleVisualAid(keyMap[key]);
       } else if (key === "0") {

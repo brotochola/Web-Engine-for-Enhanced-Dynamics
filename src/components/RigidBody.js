@@ -16,6 +16,10 @@ export class RigidBody extends Component {
     ax: Float32Array,
     ay: Float32Array,
 
+    sleeping: Uint8Array,
+    sleepTimer: Float32Array,
+    allowSleep: Uint8Array,
+
     // Verlet integration (for alternative physics mode)
     px: Float32Array, // Previous X position
     py: Float32Array, // Previous Y position

@@ -156,6 +156,7 @@ class PixiRenderer extends AbstractWorker {
       grid: 0x444444, // Gray
       aabb: 0xff8800, // Orange
       text: 0xffffff, // White
+      sleeping: 0x9966ff, // Purple
     };
 
     // Per-instance spritesheet tracking
@@ -387,6 +388,11 @@ class PixiRenderer extends AbstractWorker {
       // Render entity index
       if (this.debugFlags[DEBUG_FLAGS.SHOW_ENTITY_INDICES]) {
         this.renderEntityIndex(i, posX, posY);
+      }
+
+      // Render sleeping indicator
+      if (this.debugFlags[DEBUG_FLAGS.SHOW_SLEEPING]) {
+        this.renderSleepingIndicator(i, posX, posY);
       }
     }
 
@@ -671,6 +677,53 @@ class PixiRenderer extends AbstractWorker {
         .moveTo(x, y + height)
         .lineTo(x + width, y + height)
         .stroke(strokeStyle);
+    }
+  }
+
+  /**
+   * Render sleeping indicator for entities that are asleep
+   * Shows a "Zzz" symbol above sleeping entities
+   */
+  renderSleepingIndicator(entityIndex, posX, posY) {
+    if (!RigidBody || !RigidBody.sleeping) return;
+
+    // Check if entity has RigidBody and is sleeping
+    const isSleeping = RigidBody.sleeping[entityIndex];
+    if (!isSleeping) return;
+
+    const zoom = this.cameraData[0];
+    const color = this.debugColors.sleeping;
+
+    // Draw a semi-transparent circle overlay on the entity
+    const radius = Collider?.radius?.[entityIndex] || 10;
+    this.debugLayer
+      .circle(posX, posY, radius)
+      .fill({ color: color, alpha: 0.3 });
+
+    // Draw "Zzz" text above the entity
+    const zSize = 8 / zoom;
+    const zSpacing = 3 / zoom;
+    const startY = posY - radius - 5 / zoom;
+    const lineWidth = 1.5 / zoom;
+
+    // Draw three "Z"s of increasing size
+    for (let i = 0; i < 3; i++) {
+      const zHeight = zSize + (i * 2) / zoom;
+      const zWidth = zSize + (i * 2) / zoom;
+      const offsetX = posX + i * (zWidth + zSpacing);
+      const offsetY = startY - i * (zHeight + zSpacing);
+
+      // Draw Z shape
+      this.debugLayer
+        .moveTo(offsetX, offsetY)
+        .lineTo(offsetX + zWidth, offsetY)
+        .lineTo(offsetX, offsetY + zHeight)
+        .lineTo(offsetX + zWidth, offsetY + zHeight)
+        .stroke({
+          width: lineWidth,
+          color: color,
+          alpha: 0.8 - i * 0.15,
+        });
     }
   }
 

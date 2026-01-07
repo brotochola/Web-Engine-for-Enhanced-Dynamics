@@ -87,6 +87,7 @@ class Prey extends Boid {
   onSpawned(spawnConfig = {}) {
     // Call parent Boid.onSpawned() to initialize position
     super.onSpawned(spawnConfig);
+
     this.defineSpritesheets();
 
     // Set random scale and match collider to visual size
@@ -99,7 +100,7 @@ class Prey extends Boid {
     // Update shadow radius to match scaled collider
     this.shadowCaster.shadowRadius = this.collider.radius;
     this.shadowCaster.height = this.collider.radius * 5;
-
+    this.rigidBody.allowSleep = 1; // Enable sleeping for this entity
     // Reset health
     this.preyBehavior.life = 1.0;
   }

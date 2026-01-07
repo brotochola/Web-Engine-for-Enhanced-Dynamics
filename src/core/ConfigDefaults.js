@@ -27,6 +27,9 @@ export const PHYSICS_DEFAULTS = {
   minSpeedForRotation: 0.1,
   maxCollisionPairs: 10000,
   gravity: { x: 0, y: 0 },
+  minSpeedForSleeping: 0.0001,
+  minTimeToSleep: 0.5,
+  allowSleep: true,
 };
 
 // ============================================================================

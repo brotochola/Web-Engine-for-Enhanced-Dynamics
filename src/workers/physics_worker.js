@@ -93,9 +93,6 @@ class PhysicsWorker extends AbstractWorker {
       // Standard mode: run physics with actual deltaTime
       this.updateVerlet(deltaTime, dtRatio, resuming);
     }
-
-    // CRITICAL: Sync RigidBody positions to Transform for rendering
-    this.syncPhysicsToTransform();
   }
 
   /**
@@ -117,15 +114,6 @@ class PhysicsWorker extends AbstractWorker {
     if (data.msg === "updatePhysicsConfig") {
       this.applyPhysicsConfig(data.config || {});
     }
-  }
-
-  /**
-   * Sync RigidBody physics positions to Transform for rendering
-   * NOTE: No longer needed - physics now writes directly to Transform.x/y/rotation
-   */
-  syncPhysicsToTransform() {
-    // REMOVED: Transform now stores position/rotation directly
-    // Physics worker reads/writes Transform.x/y/rotation instead of RigidBody.x/y/rotation
   }
 
   /**
@@ -157,7 +145,9 @@ class PhysicsWorker extends AbstractWorker {
     const ay = RigidBody.ay;
     const maxVel = RigidBody.maxVel;
     const collisionCount = RigidBody.collisionCount;
-
+    const sleeping = RigidBody.sleeping;
+    const sleepTimer = RigidBody.sleepTimer;
+    const allowSleep = RigidBody.allowSleep;
     // Collider properties
     const shapeType = Collider.shapeType;
     const radius = Collider.radius;
@@ -335,8 +325,14 @@ class PhysicsWorker extends AbstractWorker {
     const isStatic = RigidBody.static;
     const friction = RigidBody.friction;
     const maxAcc = RigidBody.maxAcc;
-
+    const sleeping = RigidBody.sleeping;
+    const sleepTimer = RigidBody.sleepTimer;
+    const allowSleep = RigidBody.allowSleep;
     const gravityScale = dtRatio * dtRatio;
+
+    const configAllowSleep = this.config.physics.allowSleep;
+
+    const minSpeedForWakingUp = this.config.physics.minSpeedForWakingUp;
 
     // OPTIMIZATION: Use query system to get only entities with RigidBody component
     // This skips entities without physics (houses, decorations, etc.)
@@ -346,6 +342,22 @@ class PhysicsWorker extends AbstractWorker {
       const i = physicsEntities[idx];
       if (!active[i] || !rigidBodyActive[i]) continue;
       if (isStatic[i]) continue;
+
+      const isSleeping = sleeping[i];
+
+      // Apply acceleration (scaled by dtRatio)
+      let accX = ax[i] * dtRatio;
+      let accY = ay[i] * dtRatio;
+      if (
+        configAllowSleep &&
+        isSleeping &&
+        (accX > minSpeedForWakingUp || accY > minSpeedForWakingUp)
+      ) {
+        sleeping[i] = 0;
+        sleepTimer[i] = 0;
+      }
+
+      if (configAllowSleep && sleeping[i]) continue;
 
       const oldX = x[i];
       const oldY = y[i];
@@ -359,10 +371,6 @@ class PhysicsWorker extends AbstractWorker {
         dx *= frictionFactor;
         dy *= frictionFactor;
       }
-
-      // Apply acceleration (scaled by dtRatio)
-      let accX = ax[i] * dtRatio;
-      let accY = ay[i] * dtRatio;
 
       // // Limit acceleration magnitude while preserving direction
       // const accMagnitudeSquared =accX * accX + accY * accY
@@ -521,6 +529,8 @@ class PhysicsWorker extends AbstractWorker {
     const responseStrength = this.settings.collisionResponseStrength;
     const isStatic = RigidBody.static;
 
+    const configAllowSleep = this.config.physics.allowSleep;
+
     // Get collider offsets for accurate collision positions
     const offsetX = Collider.offsetX;
     const offsetY = Collider.offsetY;
@@ -528,6 +538,13 @@ class PhysicsWorker extends AbstractWorker {
     let pairCount = 0;
     const collisionData = this.collisionData;
     const maxPairs = this.maxCollisionPairs;
+    const sleeping = RigidBody.sleeping;
+    const sleepTimer = RigidBody.sleepTimer;
+    const allowSleep = RigidBody.allowSleep;
+    const vx = RigidBody.vx;
+    const vy = RigidBody.vy;
+
+    const minSpeedForWakingUp = this.config.physics.minSpeedForWakingUp;
 
     for (let i = 0; i < this.entityCount; i++) {
       if (!active[i] || !colliderActive[i]) continue;
@@ -623,6 +640,24 @@ class PhysicsWorker extends AbstractWorker {
         if (!result || !result.collided) continue;
 
         const eitherIsTrigger = isTrigger[i] || isTrigger[j];
+
+        // Wake up sleeping entities on collision
+        if (configAllowSleep) {
+          if (
+            sleeping[i] &&
+            (vx[j] > minSpeedForWakingUp || vy[j] > minSpeedForWakingUp)
+          ) {
+            sleeping[i] = 0;
+            sleepTimer[i] = 0;
+          }
+          if (
+            sleeping[j] &&
+            (vx[i] > minSpeedForWakingUp || vy[i] > minSpeedForWakingUp)
+          ) {
+            sleeping[j] = 0;
+            sleepTimer[j] = 0;
+          }
+        }
 
         // Apply physical response if neither is a trigger
         if (!eitherIsTrigger) {

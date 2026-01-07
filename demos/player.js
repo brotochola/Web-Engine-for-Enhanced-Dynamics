@@ -159,7 +159,7 @@ export class Player extends GameObject {
    */
   updateCameraFollow(i) {
     // Smoothly follow player position
-    Camera.follow(this.x, this.y);
+    Camera.follow(this.x, this.y, 0.5);
   }
 
   /**

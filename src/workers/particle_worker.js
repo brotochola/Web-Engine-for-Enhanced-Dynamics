@@ -389,7 +389,7 @@ class ParticleWorker extends AbstractWorker {
     this.updateEntityScreenVisibility();
 
     // Update derived properties (speed, velocityAngle) for RigidBody entities
-    this.updateDerivedProperties();
+    this.updateDerivedProperties(deltaTime);
 
     // Store for FPS reporting
     this.activeParticleCount = activeCount;
@@ -1186,9 +1186,15 @@ class ParticleWorker extends AbstractWorker {
   //  *
   //  * ENHANCED: Minimum speed threshold prevents rotation jitter when stationary
   //  * OPTIMIZED: Uses query system to iterate only entities with RigidBody
+  //  * @param {number} deltaTime - Frame time in milliseconds
   //  */
-  updateDerivedProperties() {
+  updateDerivedProperties(deltaTime) {
     if (this.rigidBodyCount === 0 || !RigidBody.vx) return;
+
+    const config = this.config.physics;
+    const minSpeedForSleeping = config.minSpeedForSleeping;
+    const minTimeToSleep = config.minTimeToSleep;
+    const configAllowSleep = config.allowSleep;
 
     const active = Transform.active;
     const rigidBodyActive = RigidBody.active;
@@ -1197,6 +1203,10 @@ class ParticleWorker extends AbstractWorker {
     const velocityAngle = RigidBody.velocityAngle;
     const speed = RigidBody.speed;
     const minSpeedForRotation = this.minSpeedForRotation;
+
+    const sleeping = RigidBody.sleeping;
+    const sleepTimer = RigidBody.sleepTimer;
+    const allowSleep = RigidBody.allowSleep;
 
     // OPTIMIZATION: Query only entities that have RigidBody component
     // This skips entities without physics (static decorations, etc.)
@@ -1214,6 +1224,18 @@ class ParticleWorker extends AbstractWorker {
       // This prevents visual jitter when entities are nearly stationary
       if (currentSpeed > minSpeedForRotation) {
         velocityAngle[i] = Math.atan2(vy[i], vx[i]) + Math.PI / 2;
+      }
+      if (!configAllowSleep || !allowSleep[i]) continue;
+
+      // Sleep timer implementation: gradually put slow particles to sleep
+      if (currentSpeed < minSpeedForSleeping) {
+        // Increment sleep timer while particle is slow
+        sleepTimer[i] += deltaTime;
+
+        // Only put to sleep after being slow for minimum time
+        if (sleepTimer[i] >= minTimeToSleep) {
+          sleeping[i] = 1;
+        }
       }
     }
   }
