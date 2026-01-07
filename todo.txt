@@ -1,6 +1,11 @@
 
+-------------------
+QUERY SYSTEM:
+--------------------
 
-
+las listas pregeneradas no funcionan pq pueden ser millones
+2**CantComponentes,
+Hay q hacerlas lazy con cache (guardando las listas ya hechas)
 
 
 ---------------------
@@ -29,6 +34,9 @@ COLLIDER.SHAPETYPE.RECTANGLE = 1
       GAME OBJECTS:
 ------------------------------------------------------------------------------------------------
 
+
+
+-Tener un Prey.tickAll, en lugar de this.tick() ?
 
 
 
@@ -65,7 +73,7 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 
 
 -tags: se crean los tags, se le pone uno o mas tags a las entidades, 
-se puede hacer query (pero basado en un unico array)
+
 
 
 

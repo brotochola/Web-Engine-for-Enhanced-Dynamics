@@ -303,15 +303,21 @@ class SpatialWorker extends AbstractWorker {
         }
 
         // MOVEMENT CACHE CHECK: Skip if entity hasn't moved significantly
+        // In findAllNeighbors:
         const dx = myX - prevNeighborPosX[i];
         const dy = myY - prevNeighborPosY[i];
-        const movedSq = dx * dx + dy * dy;
-        if (movedSq < RECALC_THRESHOLD_SQ && neighborCacheValid[i]) {
-          // Keep existing neighbors - they're still valid
+
+        if (
+          dx > -RECALC_THRESHOLD_SQ &&
+          dx < RECALC_THRESHOLD_SQ &&
+          dy > -RECALC_THRESHOLD_SQ &&
+          dy < RECALC_THRESHOLD_SQ &&
+          neighborCacheValid[i]
+        ) {
           continue;
         }
 
-        const myVisualRangeSq = myVisualRange * myVisualRange;
+        // const myVisualRangeSq = myVisualRange * myVisualRange;
 
         //  const cellRadius = Math.ceil(myVisualRange * invCellSize);
         // Cell radius for neighbor search (integer math faster than Math.ceil)
