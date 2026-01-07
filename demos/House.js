@@ -35,7 +35,7 @@ export class House extends GameObject {
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 0;
 
-    this.collider.visualRange = 500;
+    this.collider.visualRange = 300;
   }
 
   onSpawned(spawnConfig = {}) {
@@ -48,5 +48,10 @@ export class House extends GameObject {
     // Could save stats, play death effects, etc.
   }
 
-  tick(dtRatio) {}
+  tick(dtRatio) {
+    // Solo loggear la primera TallLight para no spamear
+    // console.log(
+    //   `House[${this.index}] neighbors: ${this.neighborCount}, visualRange: ${this.collider.visualRange}, active: ${this.collider.active}`
+    // );
+  }
 }
