@@ -23,7 +23,7 @@ export class PredatorScene extends WEED.Scene {
     // Spatial hash grid configuration
     spatial: {
       cellSize: 128,
-      maxNeighbors: 1500,
+      maxNeighbors: 2048,
       neighborRecalculationThreshold: 3, // units of movement before recalculating neighbors
       noLimitFPS: true,
     },
@@ -129,9 +129,9 @@ export class PredatorScene extends WEED.Scene {
     [Prey, 20000],
     [Predator, 8],
     [Player, 1],
-    [TallLight, 10],
     [Boid, 0], // Register but don't pre-allocate
     [House, 20],
+    [TallLight, 10],
   ];
 
   // ========================================
@@ -142,7 +142,7 @@ export class PredatorScene extends WEED.Scene {
     super(game);
 
     // Scene-specific properties
-    this.numberOfPrey = 20000;
+    this.numberOfPrey = 10000;
     this.numberOfPredators = 1;
     this.numberOfBoids = 0;
     this.numberOfTallLights = 10;

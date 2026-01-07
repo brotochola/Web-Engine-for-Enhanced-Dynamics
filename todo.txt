@@ -3,9 +3,12 @@
 QUERY SYSTEM:
 --------------------
 
-las listas pregeneradas no funcionan pq pueden ser millones
+-las listas pregeneradas no funcionan pq pueden ser millones
 2**CantComponentes,
 Hay q hacerlas lazy con cache (guardando las listas ya hechas)
+
+-tenemos start index y endindex de cada tipo de gameobject.
+y tenemos la lista de entidades q usan cada component.
 
 
 ---------------------

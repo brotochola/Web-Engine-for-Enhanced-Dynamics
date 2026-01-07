@@ -18,12 +18,8 @@ export class TallLight extends GameObject {
    * Overrides and extends Boid's setup()
    */
   setup() {
-    // Override Boid's physics properties for prey behavior
-    // this.rigidBody.maxVel = 0;
-    // this.rigidBody.maxAcc = 0;
-    // this.rigidBody.static = 1; // Static body - nothing can move it
     this.setSprite("tallLight");
-    this.collider.radius = 17;
+
     this.lightEmitter.lightColor = randomColor({
       min: 0xff0000,
       max: 0xffffff,
@@ -34,8 +30,10 @@ export class TallLight extends GameObject {
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 1; // TallLights show the glowing sprite
 
-    // Override Boid's perception
-    this.collider.visualRange = 200;
+    // Circle collider (shapeType = 0)
+    this.collider.shapeType = 0;
+    this.collider.radius = 17;
+    this.collider.visualRange = 300;
   }
 
   /**
@@ -60,5 +58,13 @@ export class TallLight extends GameObject {
    * Main update - applies boid behaviors plus predator avoidance
    * Note: this.neighbors and this.neighborCount are updated before this is called
    */
-  tick(dtRatio) {}
+  tick(dtRatio) {
+    // DEBUG: Verificar neighbors
+    // if (this.index === this.constructor.startIndex) {
+    //   // Solo loggear la primera TallLight para no spamear
+    //   console.log(
+    //     `TallLight[${this.index}] neighbors: ${this.neighborCount}, visualRange: ${this.collider.visualRange}, active: ${this.collider.active}`
+    //   );
+    // }
+  }
 }
