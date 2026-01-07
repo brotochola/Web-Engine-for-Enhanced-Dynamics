@@ -2,6 +2,7 @@
 
 
 
+
 ---------------------
  GAME ENGINE:
 -----------------------
@@ -12,6 +13,15 @@
 - TWEENS - GSAP
 
 -VEC2, VEC3
+
+-hacer constantes para todo tipo:
+COLLIDER.SHAPETYPE.RECTANGLE = 1
+
+-definir en el config de la escena que animaciones queremos para los spritesheets
+-generar mas chaboncitos
+
+
+-CAMERA: tween to follow (if we use interpolation)
 
 
 
@@ -94,6 +104,7 @@ se puede hacer query (pero basado en un unico array)
 
 
 -automaticamente agregar o sacar workers
+-decimation / prioridad / lod
 
 
 

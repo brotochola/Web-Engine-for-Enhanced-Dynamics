@@ -36,6 +36,7 @@ export const PHYSICS_DEFAULTS = {
 export const SPATIAL_DEFAULTS = {
   cellSize: 128,
   maxNeighbors: 100,
+  neighborRecalculationThreshold: 2, // units of movement before recalculating neighbors
   noLimitFPS: false,
 };
 

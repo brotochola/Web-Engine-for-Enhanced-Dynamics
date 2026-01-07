@@ -1,12 +1,12 @@
 // BallsAndRectanglesScene.js - Physics Demo with Balls and Boxes
 // Demonstrates mixed circle and rectangle collisions
 
-import { Scene } from "/src/core/Scene.js";
 import { Ball } from "/demos/ball.js";
 import { Box } from "/demos/box.js";
 import { Camera } from "/src/core/Camera.js";
+import WEED from "/src/index.js";
 
-export class BallsAndRectanglesScene extends Scene {
+export class BallsAndRectanglesScene extends WEED.Scene {
   // ========================================
   // STATIC SCENE CONFIGURATION
   // ========================================

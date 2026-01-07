@@ -731,10 +731,10 @@ export class GameObject {
    * @param {Int32Array} neighborData - Precomputed neighbors from spatial worker
    * @param {Float32Array} distanceData - Precomputed squared distances from spatial worker
    */
-   /**
+  /**
    * Update neighbor references for this entity
    * Called by logic worker before tick() each frame
-   * 
+   *
    * OPTIMIZED: No longer creates subarray views (GC free)
    * Instead set the offset and count for use with getNeighbor()
    *
@@ -755,7 +755,7 @@ export class GameObject {
     // Parse neighbor data buffer: [count, id1, id2, ..., id_MAX]
     this._neighborOffset = this.index * (1 + maxNeighbors);
     this.neighborCount = neighborData[this._neighborOffset];
-    
+
     // NOTE: neighbors array is no longer created to avoid GC
     // Use this.getNeighbor(i) instead
   }
@@ -768,8 +768,8 @@ export class GameObject {
    */
   getNeighbor(i) {
     if (GameObject.neighborData) {
-       // Offset + 1 (skip count) + i
-       return GameObject.neighborData[this._neighborOffset + 1 + i];
+      // Offset + 1 (skip count) + i
+      return GameObject.neighborData[this._neighborOffset + 1 + i];
     }
     return -1;
   }
@@ -782,8 +782,8 @@ export class GameObject {
    */
   getNeighborDistance(i) {
     if (GameObject.distanceData) {
-       // Offset + 1 (skip count) + i
-       return GameObject.distanceData[this._neighborOffset + 1 + i];
+      // Offset + 1 (skip count) + i
+      return GameObject.distanceData[this._neighborOffset + 1 + i];
     }
     return 0;
   }
@@ -945,9 +945,9 @@ export class GameObject {
 
     // Check if pool is exhausted
     if (EntityClass.freeListTop < 0) {
-      console.warn(
-        `No inactive ${EntityClass.name} available in pool! All ${EntityClass.totalCount} entities are active.`
-      );
+      // console.warn(
+      //   `No inactive ${EntityClass.name} available in pool! All ${EntityClass.totalCount} entities are active.`
+      // );
       return null;
     }
 
