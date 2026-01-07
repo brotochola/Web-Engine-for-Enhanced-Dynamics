@@ -24,7 +24,8 @@ export class PredatorScene extends WEED.Scene {
     spatial: {
       cellSize: 128,
       maxNeighbors: 1500,
-      noLimitFPS: false,
+      neighborRecalculationThreshold: 3, // units of movement before recalculating neighbors
+      noLimitFPS: true,
     },
 
     particle: {

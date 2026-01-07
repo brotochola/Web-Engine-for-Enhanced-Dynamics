@@ -35,7 +35,7 @@ export class House extends GameObject {
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 0;
 
-    this.collider.visualRange = 1000;
+    this.collider.visualRange = 500;
   }
 
   onSpawned(spawnConfig = {}) {

@@ -56,6 +56,12 @@ class SpatialWorker extends AbstractWorker {
     this.entityPosY = null; // Float32Array - collider position Y
     this.entityHalfExtent = null; // Float32Array - max half-extent for distance checks
 
+    // NEIGHBOR CACHING - skip recalculation for entities that haven't moved
+    this.prevNeighborPosX = null; // Float32Array - position when neighbors were last calculated
+    this.prevNeighborPosY = null; // Float32Array
+    this.neighborCacheValid = null; // Uint8Array - 1 if cached neighbors are still valid
+    this.NEIGHBOR_RECALC_THRESHOLD_SQ = 0; // Set from config in initialize()
+
     // Update frequency (rebuild grid every N frames)
     this.spatialUpdateInterval = 2;
   }
@@ -76,6 +82,10 @@ class SpatialWorker extends AbstractWorker {
     this.totalCells = this.gridCols * this.gridRows;
     this.maxNeighborsPerEntity =
       this.config.spatial?.maxNeighbors || this.config.maxNeighbors;
+
+    // NEIGHBOR CACHING - read threshold from config and square it for faster distance checks
+    const threshold = this.config.spatial?.neighborRecalculationThreshold ?? 2;
+    this.NEIGHBOR_RECALC_THRESHOLD_SQ = threshold * threshold;
 
     // Store viewport dimensions for screen visibility checks
     this.canvasWidth = this.config.canvasWidth;
@@ -102,6 +112,14 @@ class SpatialWorker extends AbstractWorker {
     this.entityPosX = new Float32Array(this.entityCount);
     this.entityPosY = new Float32Array(this.entityCount);
     this.entityHalfExtent = new Float32Array(this.entityCount);
+
+    // NEIGHBOR CACHING - tracks positions when neighbors were last calculated
+    this.prevNeighborPosX = new Float32Array(this.entityCount);
+    this.prevNeighborPosY = new Float32Array(this.entityCount);
+    this.neighborCacheValid = new Uint8Array(this.entityCount);
+    // Initialize with invalid positions to force first calculation
+    this.prevNeighborPosX.fill(Infinity);
+    this.prevNeighborPosY.fill(Infinity);
   }
 
   /**
@@ -247,6 +265,12 @@ class SpatialWorker extends AbstractWorker {
     const entityPosY = this.entityPosY;
     const entityHalfExtent = this.entityHalfExtent;
 
+    // NEIGHBOR CACHING - skip entities that haven't moved
+    const prevNeighborPosX = this.prevNeighborPosX;
+    const prevNeighborPosY = this.prevNeighborPosY;
+    const neighborCacheValid = this.neighborCacheValid;
+    const RECALC_THRESHOLD_SQ = this.NEIGHBOR_RECALC_THRESHOLD_SQ;
+
     // PROCESSED BITMASK - clear at start of frame
     const processed = this.processedThisFrame;
     processed.fill(0);
@@ -270,10 +294,28 @@ class SpatialWorker extends AbstractWorker {
         const myX = entityPosX[i];
         const myY = entityPosY[i];
         const myVisualRange = visualRange[i];
+
+        // Skip entities with no visual range - they don't need neighbors
+        if (myVisualRange <= 0) {
+          neighborData[i * stride] = 0;
+          distanceData[i * stride] = 0;
+          continue;
+        }
+
+        // MOVEMENT CACHE CHECK: Skip if entity hasn't moved significantly
+        const dx = myX - prevNeighborPosX[i];
+        const dy = myY - prevNeighborPosY[i];
+        const movedSq = dx * dx + dy * dy;
+        if (movedSq < RECALC_THRESHOLD_SQ && neighborCacheValid[i]) {
+          // Keep existing neighbors - they're still valid
+          continue;
+        }
+
         const myVisualRangeSq = myVisualRange * myVisualRange;
 
-        // Cell radius for neighbor search
-        const cellRadius = Math.ceil(myVisualRange * invCellSize);
+        //  const cellRadius = Math.ceil(myVisualRange * invCellSize);
+        // Cell radius for neighbor search (integer math faster than Math.ceil)
+        const cellRadius = ((myVisualRange * invCellSize) | 0) + 1;
 
         // Entity's cell coordinates (using collider position)
         const col = (myX * invCellSize) | 0;
@@ -348,6 +390,11 @@ class SpatialWorker extends AbstractWorker {
         // Store neighbor count at the beginning
         neighborData[offset] = neighborCount;
         distanceData[offset] = neighborCount;
+
+        // Update cached position - neighbors are now valid for this position
+        prevNeighborPosX[i] = myX;
+        prevNeighborPosY[i] = myY;
+        neighborCacheValid[i] = 1;
       }
     }
   }

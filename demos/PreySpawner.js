@@ -1,5 +1,4 @@
 import { Prey } from "./prey.js";
-import { PreyBehavior } from "./PreyBehavior.js";
 import WEED from "/src/index.js";
 
 export class PreySpawner extends WEED.GameObject {
