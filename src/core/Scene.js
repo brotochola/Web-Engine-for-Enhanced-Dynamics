@@ -32,12 +32,15 @@ import {
 
 class Scene {
   // Worker index constants for FrameRate SharedArrayBuffer
+  // NOTE: Spatial workers now occupy indices 0 to N-1 (where N = numberOfSpatialWorkers)
+  // Other worker indices are calculated dynamically based on numberOfSpatialWorkers
   static WORKER_INDICES = {
-    SPATIAL: 0,
-    PHYSICS: 1,
-    RENDERER: 2,
-    PARTICLE: 3,
-    LOGIC_START: 4, // Logic workers start at index 4 (logic0=4, logic1=5, etc.)
+    SPATIAL_START: 0, // First spatial worker index
+    // Dynamic indices (calculated at runtime):
+    // PHYSICS: numberOfSpatialWorkers
+    // RENDERER: numberOfSpatialWorkers + 1
+    // PARTICLE: numberOfSpatialWorkers + 2
+    // LOGIC_START: numberOfSpatialWorkers + 3
   };
 
   // Static declarations - override these in subclasses
@@ -78,7 +81,7 @@ class Scene {
 
     // Workers
     this.workers = {
-      spatial: null,
+      spatialWorkers: [], // Multiple spatial workers for parallel neighbor detection
       logicWorkers: [],
       physics: null,
       renderer: null,
@@ -104,17 +107,21 @@ class Scene {
 
     // Worker synchronization
     this.workerReadyStates = {
-      spatial: false,
       physics: false,
       renderer: false,
     };
+    // Store worker counts for use throughout constructor
+    this.numberOfSpatialWorkers = this.config.spatial.numberOfSpatialWorkers;
+    for (let i = 0; i < this.numberOfSpatialWorkers; i++) {
+      this.workerReadyStates[`spatial${i}`] = false;
+    }
     const numberOfLogicWorkers = this.config.logic.numberOfLogicWorkers;
     for (let i = 0; i < numberOfLogicWorkers; i++) {
       this.workerReadyStates[`logic${i}`] = false;
     }
     // Particle worker always runs - it handles lighting, shadows, visibility, etc.
     this.workerReadyStates.particle = false;
-    this.totalWorkers = 4 + numberOfLogicWorkers; // spatial, physics, renderer, particle + logic workers
+    this.totalWorkers = 3 + this.numberOfSpatialWorkers + numberOfLogicWorkers; // physics, renderer, particle + spatial workers + logic workers
 
     // Shared buffers
     this.buffers = {
@@ -163,7 +170,7 @@ class Scene {
 
     // Worker stats (populated by worker messages, read by DebugUI)
     this.workerStats = {
-      spatial: { fps: 0, active: 0 },
+      spatial: [], // Array for multiple spatial workers
       logic: [], // Array for multiple logic workers
       physics: { fps: 0, active: 0 },
       renderer: {
@@ -174,6 +181,10 @@ class Scene {
       },
       particle: { fps: 0, active: 0, total: 0 },
     };
+    // Initialize spatial worker stats
+    for (let i = 0; i < this.numberOfSpatialWorkers; i++) {
+      this.workerStats.spatial.push({ fps: 0, active: 0 });
+    }
     // Initialize logic worker stats
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
       this.workerStats.logic.push({ fps: 0, active: 0 });
@@ -747,8 +758,9 @@ class Scene {
     this.debugFlags = new DebugFlags(this.buffers.debugData);
 
     // FrameRate buffer: stores real-time FPS for each worker
-    // Layout: [spatial_fps, physics_fps, renderer_fps, particle_fps, logic0_fps, logic1_fps, ...]
-    const maxWorkers = 4 + this.numberOfLogicWorkers; // spatial, physics, renderer, particle + logic workers
+    // Layout: [spatial0_fps, spatial1_fps, ..., physics_fps, renderer_fps, particle_fps, logic0_fps, logic1_fps, ...]
+    const numberOfSpatialWorkers = this.config.spatial.numberOfSpatialWorkers;
+    const maxWorkers = numberOfSpatialWorkers + 3 + this.numberOfLogicWorkers; // spatial workers + physics + renderer + particle + logic workers
     const FRAMERATE_BUFFER_SIZE = maxWorkers * 4; // 1 float per worker
     this.buffers.frameRateData = new SharedArrayBuffer(FRAMERATE_BUFFER_SIZE);
     this.views.frameRate = new Float32Array(this.buffers.frameRateData);
@@ -940,12 +952,19 @@ class Scene {
     const { canvasWidth, canvasHeight, worldWidth, worldHeight } = this.config;
 
     const cacheBust = `?v=${Date.now()}`;
-    this.workers.spatial = new Worker(
-      `/src/workers/spatial_worker.js${cacheBust}`,
-      {
-        type: "module",
-      }
-    );
+
+    // Create multiple spatial workers for parallel neighbor detection
+    const numberOfSpatialWorkers = this.config.spatial.numberOfSpatialWorkers;
+    for (let i = 0; i < numberOfSpatialWorkers; i++) {
+      const spatialWorker = new Worker(
+        `/src/workers/spatial_worker.js${cacheBust}`,
+        {
+          type: "module",
+        }
+      );
+      spatialWorker.name = `spatial${i}`;
+      this.workers.spatialWorkers.push(spatialWorker);
+    }
 
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
       const logicWorker = new Worker(
@@ -979,7 +998,6 @@ class Scene {
       }
     );
 
-    this.workers.spatial.name = "spatial";
     this.workers.physics.name = "physics";
     this.workers.renderer.name = "renderer";
     this.workers.particle.name = "particle";
@@ -1079,10 +1097,23 @@ class Scene {
     };
 
     // Initialize workers
-    this.workers.spatial.postMessage({
-      ...initData,
-      frameRateIndex: Scene.WORKER_INDICES.SPATIAL,
-    });
+    // Initialize multiple spatial workers (each builds full grid, processes subset of entities)
+    // const numberOfSpatialWorkers = this.config.spatial.numberOfSpatialWorkers;
+
+    // Calculate dynamic worker indices based on numberOfSpatialWorkers
+    const PHYSICS_INDEX = numberOfSpatialWorkers;
+    const RENDERER_INDEX = numberOfSpatialWorkers + 1;
+    const PARTICLE_INDEX = numberOfSpatialWorkers + 2;
+    const LOGIC_START_INDEX = numberOfSpatialWorkers + 3;
+
+    for (let i = 0; i < numberOfSpatialWorkers; i++) {
+      this.workers.spatialWorkers[i].postMessage({
+        ...initData,
+        frameRateIndex: Scene.WORKER_INDICES.SPATIAL_START + i,
+        workerIndex: i,
+        totalSpatialWorkers: numberOfSpatialWorkers,
+      });
+    }
 
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
       this.workers.logicWorkers[i].postMessage(
@@ -1090,7 +1121,7 @@ class Scene {
           ...initData,
           workerPorts: workerPorts[`logic${i}`],
           workerIndex: i, // For logic worker job partitioning (0, 1, 2, ...)
-          frameRateIndex: Scene.WORKER_INDICES.LOGIC_START + i, // For FPS tracking (4, 5, 6, ...)
+          frameRateIndex: LOGIC_START_INDEX + i, // For FPS tracking
           bigAtlasProxySheets: this.bigAtlasProxySheets || {},
         },
         workerPorts[`logic${i}`] ? Object.values(workerPorts[`logic${i}`]) : []
@@ -1101,7 +1132,7 @@ class Scene {
       {
         ...initData,
         workerPorts: workerPorts.physics,
-        frameRateIndex: Scene.WORKER_INDICES.PHYSICS,
+        frameRateIndex: PHYSICS_INDEX,
       },
       workerPorts.physics ? Object.values(workerPorts.physics) : []
     );
@@ -1109,7 +1140,7 @@ class Scene {
     // Particle worker always receives init data
     this.workers.particle.postMessage({
       ...initData,
-      frameRateIndex: Scene.WORKER_INDICES.PARTICLE,
+      frameRateIndex: PARTICLE_INDEX,
     });
 
     // Initialize renderer
@@ -1131,7 +1162,7 @@ class Scene {
         textures: this.loadedTextures,
         spritesheets: this.loadedSpritesheets,
         bigAtlasProxySheets: this.bigAtlasProxySheets || {},
-        frameRateIndex: Scene.WORKER_INDICES.RENDERER,
+        frameRateIndex: RENDERER_INDEX,
         workerPorts: workerPorts.renderer,
       },
       transferables
@@ -1139,7 +1170,7 @@ class Scene {
 
     // Setup message handlers
     const allWorkers = [
-      this.workers.spatial,
+      ...this.workers.spatialWorkers,
       ...this.workers.logicWorkers,
       this.workers.physics,
       this.workers.renderer,
@@ -1207,7 +1238,7 @@ class Scene {
 
   startAllWorkers() {
     const allWorkers = [
-      this.workers.spatial,
+      ...this.workers.spatialWorkers,
       ...this.workers.logicWorkers,
       this.workers.physics,
       this.workers.renderer,
@@ -1248,6 +1279,18 @@ class Scene {
    * Store worker stats (called from worker messages, read by DebugUI)
    */
   _storeWorkerStats(id, fps, activeEntities, data = {}) {
+    // Handle spatial workers (spatial0, spatial1, etc.)
+    if (id.startsWith("spatial")) {
+      const index = parseInt(id.replace("spatial", ""), 10);
+      if (this.workerStats.spatial[index]) {
+        this.workerStats.spatial[index] = {
+          fps,
+          active: activeEntities || 0,
+        };
+      }
+      return;
+    }
+
     // Handle logic workers (logic0, logic1, etc.)
     if (id.startsWith("logic")) {
       const index = parseInt(id.replace("logic", ""), 10);
@@ -1262,9 +1305,6 @@ class Scene {
 
     // Handle other workers
     switch (id) {
-      case "spatial":
-        this.workerStats.spatial = { fps, active: activeEntities || 0 };
-        break;
       case "physics":
         this.workerStats.physics = { fps, active: activeEntities || 0 };
         break;
@@ -1446,7 +1486,7 @@ class Scene {
 
     // Terminate all workers
     const allWorkers = [
-      this.workers.spatial,
+      ...this.workers.spatialWorkers,
       ...this.workers.logicWorkers,
       this.workers.physics,
       this.workers.renderer,
@@ -1570,7 +1610,7 @@ class Scene {
   pause() {
     this.state.pause = true;
     const allWorkers = [
-      this.workers.spatial,
+      ...this.workers.spatialWorkers,
       ...this.workers.logicWorkers,
       this.workers.physics,
       this.workers.renderer,
@@ -1585,7 +1625,7 @@ class Scene {
   resume() {
     this.state.pause = false;
     const allWorkers = [
-      this.workers.spatial,
+      ...this.workers.spatialWorkers,
       ...this.workers.logicWorkers,
       this.workers.physics,
       this.workers.renderer,
