@@ -155,8 +155,10 @@ export class DebugUI {
     const ws = scene.workerStats;
     if (!ws) return;
 
-    if (this.elements.spatialFPS && ws.spatial) {
-      this.elements.spatialFPS.textContent = `Spatial: ${ws.spatial.fps}`;
+    // Spatial workers (dynamic count)
+    if (ws.spatial && this.elements.spatialFPS) {
+      const spatialTexts = ws.spatial.map((s, i) => `S${i}: ${s.fps}`);
+      this.elements.spatialFPS.textContent = spatialTexts.join(" | ");
     }
 
     // Logic workers (dynamic count)

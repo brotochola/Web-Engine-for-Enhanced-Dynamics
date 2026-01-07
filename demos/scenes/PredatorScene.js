@@ -24,7 +24,7 @@ export class PredatorScene extends WEED.Scene {
     spatial: {
       cellSize: 128,
       maxNeighbors: 2048,
-      neighborRecalculationThreshold: 3, // units of movement before recalculating neighbors
+      numberOfSpatialWorkers: 2, // Multiple workers for parallel neighbor detection
       noLimitFPS: true,
     },
 
@@ -142,7 +142,7 @@ export class PredatorScene extends WEED.Scene {
     super(game);
 
     // Scene-specific properties
-    this.numberOfPrey = 10000;
+    this.numberOfPrey = 20000;
     this.numberOfPredators = 1;
     this.numberOfBoids = 0;
     this.numberOfTallLights = 10;

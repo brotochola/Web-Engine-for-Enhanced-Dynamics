@@ -21,6 +21,7 @@ import { AbstractWorker } from "./AbstractWorker.js";
  * 1. Flat grid structure (TypedArrays) - eliminates GC pressure from Array-of-Arrays
  * 2. Processed bitmask - prevents duplicate neighbor searches for multi-cell entities
  * 3. Pre-computed entity data - avoids redundant calculations per cell appearance
+ * 4. SHARED GRID, SPLIT WORK: Each worker builds FULL grid but only processes its assigned entities
  */
 class SpatialWorker extends AbstractWorker {
   constructor(selfRef) {
@@ -28,6 +29,12 @@ class SpatialWorker extends AbstractWorker {
 
     // Spatial worker doesn't create GameObject instances (but has access to all components)
     this.needsGameScripts = false;
+
+    // WORKER INDEX AND ENTITY RANGE (for parallel processing)
+    this.workerIndex = 0; // Which spatial worker is this? (0, 1, 2, ...)
+    this.totalSpatialWorkers = 1; // Total number of spatial workers
+    this.entityStartIndex = 0; // First entity this worker processes
+    this.entityEndIndex = 0; // Last entity this worker processes (exclusive)
 
     // FLAT GRID STRUCTURE (replaces Array-of-Arrays)
     // gridEntities: flat array storing entity IDs per cell
@@ -67,6 +74,21 @@ class SpatialWorker extends AbstractWorker {
     // Note: Component arrays are automatically initialized by AbstractWorker.initializeAllComponents()
     // This includes Transform, Collider, SpriteRenderer, and all other components
 
+    // Set worker index and total workers for parallel processing
+    this.workerIndex = data.workerIndex || 0;
+    this.totalSpatialWorkers = data.totalSpatialWorkers || 1;
+
+    // Calculate entity range for this worker
+    // SHARED GRID, SPLIT WORK: Each worker processes a subset of entities
+    const entitiesPerWorker = Math.ceil(
+      this.entityCount / this.totalSpatialWorkers
+    );
+    this.entityStartIndex = this.workerIndex * entitiesPerWorker;
+    this.entityEndIndex = Math.min(
+      this.entityStartIndex + entitiesPerWorker,
+      this.entityCount
+    );
+
     // Calculate grid parameters from config
     // Check spatial-specific config first, then fall back to root for backwards compatibility
     this.cellSize = this.config.spatial?.cellSize || this.config.cellSize;
@@ -83,6 +105,7 @@ class SpatialWorker extends AbstractWorker {
 
     // FLAT GRID STRUCTURE - single allocation, no GC pressure
     // Each cell has maxEntitiesPerCell slots
+    // NOTE: Each worker builds the FULL grid (reads ALL entity positions)
     this.gridEntities = new Uint32Array(
       this.totalCells * this.maxEntitiesPerCell
     );
@@ -99,6 +122,7 @@ class SpatialWorker extends AbstractWorker {
     this.processedThisFrame = new Uint8Array(this.entityCount);
 
     // PRE-COMPUTED ENTITY DATA - calculated once per frame in rebuildGrid
+    // NOTE: Pre-compute for ALL entities (needed for full grid awareness)
     this.entityPosX = new Float32Array(this.entityCount);
     this.entityPosY = new Float32Array(this.entityCount);
     this.entityHalfExtent = new Float32Array(this.entityCount);
@@ -225,6 +249,7 @@ class SpatialWorker extends AbstractWorker {
    * 1. Uses processed bitmask to skip duplicate processing of multi-cell entities
    * 2. Uses pre-computed entity positions and half-extents
    * 3. Flat grid access is cache-friendly
+   * 4. SHARED GRID, SPLIT WORK: Processes only assigned entity range
    */
   findAllNeighbors() {
     const active = Transform.active;
@@ -247,6 +272,10 @@ class SpatialWorker extends AbstractWorker {
     const entityPosY = this.entityPosY;
     const entityHalfExtent = this.entityHalfExtent;
 
+    // WORKER ENTITY RANGE - only process our assigned entities
+    const entityStartIndex = this.entityStartIndex;
+    const entityEndIndex = this.entityEndIndex;
+
     // PROCESSED BITMASK - clear at start of frame
     const processed = this.processedThisFrame;
     processed.fill(0);
@@ -260,6 +289,10 @@ class SpatialWorker extends AbstractWorker {
       // Process each entity in this cell
       for (let e = 0; e < centerCellLen; e++) {
         const i = gridEntities[centerCellBase + e];
+
+        // BOUNDARY FIX: Skip if entity is not in our assigned range
+        // This is the key to solving the boundary problem!
+        if (i < entityStartIndex || i >= entityEndIndex) continue;
 
         // BITMASK CHECK: Skip if already processed this frame
         // This eliminates duplicate processing for multi-cell entities
