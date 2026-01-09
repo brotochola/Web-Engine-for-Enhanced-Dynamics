@@ -225,7 +225,8 @@ export class Camera {
    */
   static setZoom(targetZoom) {
     if (!this._data) return;
-    this._data[5] = Math.max(0.1, Math.min(5, targetZoom));
+    //TODO: make this constants
+    this._data[5] = Math.max(0.01, Math.min(50, targetZoom));
   }
 
   /**

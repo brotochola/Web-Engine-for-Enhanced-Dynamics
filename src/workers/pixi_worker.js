@@ -13,6 +13,7 @@ import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { ParticleComponent } from "../components/ParticleComponent.js";
+import { DecorationComponent } from "../components/DecorationComponent.js";
 import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 import { DEBUG_FLAGS } from "../core/DebugFlags.js";
@@ -126,6 +127,12 @@ class PixiRenderer extends AbstractWorker {
     this.particleSprites = []; // Array of particle sprites (indexed 0 to maxParticles-1)
     this.maxParticles = 0; // Number of particles in pool
     this.particleTextureCache = {}; // Cache for particle textures by textureId
+
+    // Decoration rendering (separate from entities, static sprites)
+    this.decorationSprites = []; // Array of decoration sprites (indexed 0 to maxDecorations-1)
+    this.maxDecorations = 0; // Number of decorations in pool
+    this.decorationTextureCache = {}; // Cache for decoration textures by textureId
+    this.visibleDecorationCount = 0; // Number of visible decorations
 
     // World and viewport dimensions
     this.worldWidth = 0;
@@ -1139,6 +1146,11 @@ class PixiRenderer extends AbstractWorker {
       this.updateParticleSprites();
     }
 
+    // Update decoration sprites (adds to _ySortPool if Y-sorting is enabled)
+    if (this.maxDecorations > 0) {
+      this.updateDecorationSprites();
+    }
+
     // Second pass: Y-sort and re-add all sprites to container
     // BUGFIX: Always rebuild the container, not just when ySorting is enabled
     // This ensures despawned entities are properly removed from the render tree
@@ -2146,6 +2158,152 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
+   * Create decoration sprites (separate from entity sprites)
+   * Decorations are static sprites with configurable anchor
+   */
+  createDecorationSprites() {
+    if (this.maxDecorations === 0) return;
+
+    console.log(
+      `PIXI WORKER: Creating ${this.maxDecorations} decoration sprites`
+    );
+
+    // Get a default texture from bigAtlas to ensure decorations share the same source
+    const bigAtlas = this.spritesheets["bigAtlas"];
+    let defaultDecorationTexture = PIXI.Texture.WHITE; // Fallback
+
+    if (bigAtlas && bigAtlas.textures) {
+      const textureKeys = Object.keys(bigAtlas.textures);
+      if (textureKeys.length > 0) {
+        defaultDecorationTexture = bigAtlas.textures[textureKeys[0]];
+      }
+    }
+
+    for (let i = 0; i < this.maxDecorations; i++) {
+      // Create Particle object for ParticleContainer
+      // Use bigAtlas texture to ensure shared source with entity sprites
+      const decorationSprite = new PIXI.Particle({
+        texture: defaultDecorationTexture,
+        anchorX: 0.5,
+        anchorY: 0.5,
+      });
+
+      // Start invisible (decorations are spawned by DecorationPool)
+      decorationSprite.visible = false;
+
+      this.decorationSprites[i] = decorationSprite;
+
+      // Add to container if Y-sorting is disabled
+      // (if Y-sorting is enabled, decorations are added during updateSprites)
+      if (!this.ySorting) {
+        this.particleContainer.addParticle(decorationSprite);
+      }
+    }
+
+    console.log(
+      `PIXI WORKER: Created ${this.maxDecorations} decoration sprites (separate pool)`
+    );
+  }
+
+  /**
+   * Update decoration sprites from DecorationComponent data
+   * Adds visible decorations to _ySortPool for Y-sorting (GC optimized)
+   */
+  updateDecorationSprites() {
+    if (this.maxDecorations === 0) {
+      this.visibleDecorationCount = 0;
+      return;
+    }
+
+    // Cache array references
+    const active = DecorationComponent.active;
+    const x = DecorationComponent.x;
+    const y = DecorationComponent.y;
+    const scale = DecorationComponent.scale;
+    const alpha = DecorationComponent.alpha;
+    const tint = DecorationComponent.tint;
+    const textureId = DecorationComponent.textureId;
+    const anchorX = DecorationComponent.anchorX;
+    const anchorY = DecorationComponent.anchorY;
+    const isItOnScreen = DecorationComponent.isItOnScreen;
+
+    let visibleDecorationCount = 0;
+
+    for (let i = 0; i < this.maxDecorations; i++) {
+      const sprite = this.decorationSprites[i];
+      if (!sprite) continue;
+
+      // Check if decoration is active
+      if (!active[i] || !isItOnScreen[i]) {
+        if (sprite.visible) {
+          sprite.visible = false;
+        }
+        continue;
+      }
+
+      // Update sprite properties from DecorationComponent
+      sprite.x = x[i];
+      sprite.y = y[i];
+      sprite.scaleX = scale[i];
+      sprite.scaleY = scale[i];
+      sprite.alpha = alpha[i];
+      sprite.tint = tint[i];
+      sprite.anchorX = anchorX[i];
+      sprite.anchorY = anchorY[i];
+
+      // Update texture if needed (check cache)
+      const tid = textureId[i];
+      if (tid > 0 && !this.decorationTextureCache[i + "_" + tid]) {
+        // Get texture from bigAtlas by animation index
+        const textureName = SpriteSheetRegistry.getAnimationName(
+          "bigAtlas",
+          tid
+        );
+        if (textureName && this.textures[textureName]) {
+          sprite.texture = this.textures[textureName];
+          this.decorationTextureCache[i + "_" + tid] = true;
+        }
+      }
+
+      // Count visible decorations
+      visibleDecorationCount++;
+
+      // Add to Y-sort list if sorting is enabled
+      // Use y position for sorting
+      if (this.ySorting) {
+        // Make sprite visible before adding to sort list
+        if (!sprite.visible) {
+          sprite.visible = true;
+        }
+        // GC OPTIMIZATION: Reuse pooled objects instead of allocating new ones each frame
+        const poolIdx = this._ySortPoolSize++;
+        if (!this._ySortPool[poolIdx]) {
+          this._ySortPool[poolIdx] = {
+            entityId: 0,
+            particleIndex: 0,
+            decorationIndex: 0,
+            sprite: null,
+            y: 0,
+          };
+        }
+        const item = this._ySortPool[poolIdx];
+        item.entityId = -2; // Mark as decoration (not an entity, not a particle)
+        item.decorationIndex = i;
+        item.sprite = sprite;
+        item.y = y[i]; // Sort by Y position
+      } else {
+        // Y-sorting disabled - just show the sprite
+        if (!sprite.visible) {
+          sprite.visible = true;
+        }
+      }
+    }
+
+    // Store visible decoration count for reporting
+    this.visibleDecorationCount = visibleDecorationCount;
+  }
+
+  /**
    * Create placeholder particles for all entities with SpriteRenderer
    * Actual textures/spritesheets are set per-instance via setSpritesheet()
    * PixiJS 8: Uses Particle objects instead of Sprite for ParticleContainer
@@ -2346,6 +2504,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       );
     }
 
+    // Note: DecorationComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
+    this.maxDecorations = data.maxDecorations || 0;
+    if (
+      data.buffers.componentData.DecorationComponent &&
+      this.maxDecorations > 0
+    ) {
+      console.log(
+        `PIXI WORKER: DecorationComponent initialized for ${this.maxDecorations} decorations`
+      );
+    }
+
     // Note: LightEmitter is automatically initialized by AbstractWorker.initializeAllComponents()
     if (data.buffers.componentData.LightEmitter) {
       console.log(
@@ -2503,6 +2672,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Create particle sprites (separate pool)
     this.createParticleSprites();
     this.reportLog("finished creating particle sprites");
+    // Create decoration sprites (separate pool)
+    this.createDecorationSprites();
+    this.reportLog("finished creating decoration sprites");
     console.log(
       "PIXI WORKER: Initialization complete, waiting for start signal..."
     );

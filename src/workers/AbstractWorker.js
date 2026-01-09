@@ -5,10 +5,12 @@ import { GameObject } from "../core/gameObject.js";
 import Keyboard from "../core/Keyboard.js";
 import { Mouse } from "../core/Mouse.js";
 import { ParticleEmitter } from "../core/ParticleEmitter.js";
+import { DecorationPool } from "../core/DecorationPool.js";
 import { Flash } from "../core/Flash.js";
 import { seededRandom } from "../core/utils.js";
 import { Camera } from "../core/Camera.js";
 import { ParticleComponent } from "../components/ParticleComponent.js";
+import { DecorationComponent } from "../components/DecorationComponent.js";
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -269,6 +271,22 @@ export class AbstractWorker {
         ParticleComponent.particleCount = data.maxParticles;
         this.reportLog(
           `initialized ParticleComponent for ${data.maxParticles} particles`
+        );
+      }
+    }
+
+    // Initialize DecorationComponent arrays (separate decoration pool system)
+    // Decorations are NOT entities - they have their own pool with maxDecorations size
+    if (data.maxDecorations && data.maxDecorations > 0) {
+      if (data.buffers?.componentData?.DecorationComponent) {
+        DecorationComponent.initializeArrays(
+          data.buffers.componentData.DecorationComponent,
+          data.maxDecorations
+        );
+        DecorationComponent.decorationCount = data.maxDecorations;
+        this.maxDecorations = data.maxDecorations;
+        this.reportLog(
+          `initialized DecorationComponent for ${data.maxDecorations} decorations`
         );
       }
     }

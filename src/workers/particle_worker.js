@@ -3,6 +3,7 @@
 // Particles are NOT GameObjects - they use ParticleComponent directly
 
 import { ParticleComponent } from "../components/ParticleComponent.js";
+import { DecorationComponent } from "../components/DecorationComponent.js";
 import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { LightEmitter } from "../components/LightEmitter.js";
@@ -387,6 +388,9 @@ class ParticleWorker extends AbstractWorker {
 
     // Update screen visibility for all game entities
     this.updateEntityScreenVisibility();
+
+    // Update screen visibility for all decorations
+    this.updateDecorationScreenVisibility(cameraBounds);
 
     // Update derived properties (speed, velocityAngle) for RigidBody entities
     this.updateDerivedProperties();
@@ -1176,6 +1180,69 @@ class ParticleWorker extends AbstractWorker {
       // Check if screen position is within viewport bounds (with margin)
       isItOnScreen[i] =
         sx > minX && sx < maxX && sy > minY && sy < maxY ? 1 : 0;
+    }
+  }
+
+  /**
+   * Update isItOnScreen property for all decorations
+   * Decorations are static, so we just need to check screen visibility
+   * @param {Object|null} cameraBounds - Pre-calculated camera bounds (from particle physics)
+   */
+  updateDecorationScreenVisibility(cameraBounds) {
+    if (
+      !this.maxDecorations ||
+      this.maxDecorations === 0 ||
+      !DecorationComponent.active
+    )
+      return;
+
+    const active = DecorationComponent.active;
+    const x = DecorationComponent.x;
+    const y = DecorationComponent.y;
+    const isItOnScreen = DecorationComponent.isItOnScreen;
+
+    // Use cameraBounds if provided, otherwise calculate from cameraData
+    let zoom, cameraOffsetX, cameraOffsetY, minX, maxX, minY, maxY;
+
+    if (cameraBounds) {
+      zoom = cameraBounds.zoom;
+      cameraOffsetX = cameraBounds.cameraOffsetX;
+      cameraOffsetY = cameraBounds.cameraOffsetY;
+      minX = cameraBounds.minX;
+      maxX = cameraBounds.maxX;
+      minY = cameraBounds.minY;
+      maxY = cameraBounds.maxY;
+    } else if (this.cameraData) {
+      zoom = this.cameraData[0];
+      const cameraX = this.cameraData[1];
+      const cameraY = this.cameraData[2];
+      cameraOffsetX = cameraX * zoom;
+      cameraOffsetY = cameraY * zoom;
+      const marginX = this.canvasWidth * 0.15;
+      const marginY = this.canvasHeight * 0.15;
+      minX = -marginX;
+      maxX = this.canvasWidth + marginX;
+      minY = -marginY;
+      maxY = this.canvasHeight + marginY;
+    } else {
+      return; // No camera data available
+    }
+
+    for (let i = 0; i < this.maxDecorations; i++) {
+      if (!active[i]) {
+        isItOnScreen[i] = 0;
+        continue;
+      }
+
+      // Transform world coordinates to screen coordinates
+      const screenX = x[i] * zoom - cameraOffsetX;
+      const screenY = y[i] * zoom - cameraOffsetY;
+
+      // Check if screen position is within viewport bounds (with margin)
+      isItOnScreen[i] =
+        screenX > minX && screenX < maxX && screenY > minY && screenY < maxY
+          ? 1
+          : 0;
     }
   }
 
