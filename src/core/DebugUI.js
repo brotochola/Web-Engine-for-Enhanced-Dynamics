@@ -13,6 +13,7 @@ import {
   PHYSICS_STATS,
   SPATIAL_STATS,
   LOGIC_STATS,
+  WORKER_DISPLAY_CONFIG,
   createStatsReader,
   createMultiWorkerStatsReaderArray,
 } from "../workers/workers-utils.js";
@@ -62,7 +63,7 @@ export class DebugUI {
       logic: [], // Array of smoothing objects (one per logic worker)
     };
 
-    // Inject styles and create UI
+    // Inject styles and create UI (async, but doesn't block initialization)
     this._injectStyles();
     this._createUI();
     this._setupKeyboardShortcuts();
@@ -161,6 +162,100 @@ export class DebugUI {
         sum: 3600,
       });
     }
+
+    // Create DOM elements for each worker
+    this._createWorkerStatElements();
+  }
+
+  /**
+   * Create DOM elements for each worker's stats
+   */
+  _createWorkerStatElements() {
+    const container = this.elements.workerStatsContainer;
+    if (!container) return;
+
+    // Clear existing content
+    container.innerHTML = "";
+
+    // Create table structure
+    const table = document.createElement("div");
+    table.className = "debug-ui-worker-table";
+
+    // Storage for worker stat elements
+    this.elements.workerStats = {};
+
+    // Calculate max stat count for column width distribution
+    let maxStatCount = 0;
+    for (const config of Object.values(WORKER_DISPLAY_CONFIG)) {
+      maxStatCount = Math.max(maxStatCount, config.stats.length);
+    }
+    table.setAttribute("data-stat-count", maxStatCount);
+
+    // Single workers (renderer, particle, physics)
+    const singleWorkers = ["renderer", "particle", "physics"];
+    for (const workerType of singleWorkers) {
+      if (this.workerStatViews[workerType]) {
+        const row = this._createWorkerStatRow(workerType, 0);
+        table.appendChild(row.row);
+        if (!this.elements.workerStats[workerType]) {
+          this.elements.workerStats[workerType] = [];
+        }
+        this.elements.workerStats[workerType].push(row.elements);
+      }
+    }
+
+    // Multi-workers (spatial, logic)
+    const multiWorkers = ["spatial", "logic"];
+    for (const workerType of multiWorkers) {
+      const workerViews = this.workerStatViews[workerType];
+      if (workerViews && workerViews.length > 0) {
+        this.elements.workerStats[workerType] = [];
+        for (let i = 0; i < workerViews.length; i++) {
+          const row = this._createWorkerStatRow(workerType, i);
+          table.appendChild(row.row);
+          this.elements.workerStats[workerType].push(row.elements);
+        }
+      }
+    }
+
+    container.appendChild(table);
+  }
+
+  /**
+   * Create a single worker stat row with all its stats
+   * @param {string} workerType - Type of worker (renderer, particle, etc.)
+   * @param {number} workerIndex - Index for multi-workers (0 for single workers)
+   * @returns {Object} Object with row element and elements property containing stat cells
+   */
+  _createWorkerStatRow(workerType, workerIndex) {
+    const config = WORKER_DISPLAY_CONFIG[workerType];
+    const row = document.createElement("div");
+    row.className = "debug-ui-worker-row";
+
+    const elements = {};
+
+    // Worker label (e.g., "Spatial #0:", "Render #0:")
+    const labelCell = document.createElement("div");
+    labelCell.className = `debug-ui-worker-cell label debug-ui-stat ${config.color}`;
+    const workerCount =
+      workerType === "spatial" || workerType === "logic"
+        ? this.workerStatViews[workerType].length
+        : 1;
+    const workerLabel =
+      workerCount > 1 ? `${config.label} #${workerIndex}` : config.label;
+    labelCell.textContent = `${workerLabel}:`;
+    row.appendChild(labelCell);
+
+    // Create stat elements based on config
+    for (const stat of config.stats) {
+      const statCell = document.createElement("div");
+      statCell.className = "debug-ui-worker-cell stat";
+      statCell.textContent = `${stat.label}: --`;
+      row.appendChild(statCell);
+      elements[stat.key] = statCell;
+    }
+
+    return { row, elements };
   }
 
   /**
@@ -251,73 +346,95 @@ export class DebugUI {
 
     // Main thread FPS
     if (this.elements.mainFPS && scene.mainFPS !== undefined) {
-      this.elements.mainFPS.textContent = `Main: ${scene.mainFPS.toFixed(1)}`;
-    }
-
-    // Spatial workers (read from stat buffers with smoothing)
-    if (this.workerStatViews.spatial.length > 0 && this.elements.spatialFPS) {
-      const spatialTexts = this.workerStatViews.spatial.map((view, i) => {
-        const rawFPS = view[SPATIAL_STATS.FPS];
-        const smoothedFPS = this._smoothFPS(
-          rawFPS,
-          this.fpsSmoothing.spatial[i]
-        );
-        return `S${i}: ${smoothedFPS.toFixed(0)}`;
-      });
-      this.elements.spatialFPS.textContent = spatialTexts.join(" | ");
-    }
-
-    // Logic workers (read from stat buffers with smoothing)
-    if (this.workerStatViews.logic.length > 0 && this.elements.logicFPS) {
-      const logicTexts = this.workerStatViews.logic.map((view, i) => {
-        const rawFPS = view[LOGIC_STATS.FPS];
-        const smoothedFPS = this._smoothFPS(rawFPS, this.fpsSmoothing.logic[i]);
-        return `L${i}: ${smoothedFPS.toFixed(0)}`;
-      });
-      this.elements.logicFPS.textContent = logicTexts.join(" | ");
-    }
-
-    // Physics worker
-    if (this.workerStatViews.physics && this.elements.physicsFPS) {
-      const rawFPS = this.workerStatViews.physics[PHYSICS_STATS.FPS];
-      const smoothedFPS = this._smoothFPS(rawFPS, this.fpsSmoothing.physics);
-      this.elements.physicsFPS.textContent = `Physics: ${smoothedFPS.toFixed(
-        0
-      )}`;
-    }
-
-    // Renderer worker
-    if (this.workerStatViews.renderer && this.elements.rendererFPS) {
-      const rawFPS = this.workerStatViews.renderer[RENDERER_STATS.FPS];
-      const smoothedFPS = this._smoothFPS(rawFPS, this.fpsSmoothing.renderer);
-      const drawCalls =
-        this.workerStatViews.renderer[RENDERER_STATS.DRAW_CALLS];
-      this.elements.rendererFPS.textContent = `Render: ${smoothedFPS.toFixed(
-        0
-      )} (${drawCalls} draws)`;
-    }
-
-    // Particle worker
-    if (this.workerStatViews.particle && this.elements.particleFPS) {
-      const rawFPS = this.workerStatViews.particle[PARTICLE_STATS.FPS];
-      const smoothedFPS = this._smoothFPS(rawFPS, this.fpsSmoothing.particle);
-      const active =
-        this.workerStatViews.particle[PARTICLE_STATS.ACTIVE_PARTICLES];
-      const total =
-        this.workerStatViews.particle[PARTICLE_STATS.TOTAL_PARTICLES];
-      this.elements.particleFPS.textContent = `Particle: ${smoothedFPS.toFixed(
-        0
-      )} (${active}/${total})`;
+      this.elements.mainFPS.textContent = `Main: ${scene.mainFPS.toFixed(2)}`;
     }
 
     // Job stealing stats
-    if (this.elements.jobStealing && scene.mainThreadHelper) {
+    if (
+      this.elements.jobStealing &&
+      this.elements.jobStealingRow &&
+      scene.mainThreadHelper
+    ) {
       const stats = scene.mainThreadHelper.getStats();
       if (stats && scene.mainThreadHelper.enabled) {
         this.elements.jobStealing.textContent = `Jobs: ${stats.jobsThisFrame} (${stats.entitiesThisFrame} entities)`;
-        this.elements.jobStealing.style.display = "";
+        this.elements.jobStealingRow.style.display = "";
       } else {
-        this.elements.jobStealing.style.display = "none";
+        this.elements.jobStealingRow.style.display = "none";
+      }
+    }
+
+    // Update single workers (renderer, particle, physics)
+    this._updateSingleWorkerStats("renderer", RENDERER_STATS);
+    this._updateSingleWorkerStats("particle", PARTICLE_STATS);
+    this._updateSingleWorkerStats("physics", PHYSICS_STATS);
+
+    // Update multi-workers (spatial, logic)
+    this._updateMultiWorkerStats("spatial", SPATIAL_STATS);
+    this._updateMultiWorkerStats("logic", LOGIC_STATS);
+  }
+
+  /**
+   * Update stats for a single worker
+   * @param {string} workerType - Type of worker (renderer, particle, physics)
+   * @param {Object} statsSchema - Stats schema object
+   */
+  _updateSingleWorkerStats(workerType, statsSchema) {
+    const view = this.workerStatViews[workerType];
+    if (!view) return;
+
+    const elements = this.elements.workerStats?.[workerType]?.[0];
+    if (!elements) return;
+
+    const config = WORKER_DISPLAY_CONFIG[workerType];
+
+    for (const stat of config.stats) {
+      const statIndex = statsSchema[stat.key];
+      let rawValue = view[statIndex];
+
+      // Smooth FPS values
+      if (stat.key === "FPS") {
+        rawValue = this._smoothFPS(rawValue, this.fpsSmoothing[workerType]);
+      }
+
+      const formattedValue = stat.format(rawValue);
+      elements[stat.key].textContent = `${stat.label}: ${formattedValue}`;
+    }
+  }
+
+  /**
+   * Update stats for multi-workers
+   * @param {string} workerType - Type of worker (spatial, logic)
+   * @param {Object} statsSchema - Stats schema object
+   */
+  _updateMultiWorkerStats(workerType, statsSchema) {
+    const views = this.workerStatViews[workerType];
+    if (!views || views.length === 0) return;
+
+    const workerElements = this.elements.workerStats?.[workerType];
+    if (!workerElements) return;
+
+    const config = WORKER_DISPLAY_CONFIG[workerType];
+
+    for (let i = 0; i < views.length; i++) {
+      const view = views[i];
+      const elements = workerElements[i];
+      if (!elements) continue;
+
+      for (const stat of config.stats) {
+        const statIndex = statsSchema[stat.key];
+        let rawValue = view[statIndex];
+
+        // Smooth FPS values
+        if (stat.key === "FPS") {
+          rawValue = this._smoothFPS(
+            rawValue,
+            this.fpsSmoothing[workerType][i]
+          );
+        }
+
+        const formattedValue = stat.format(rawValue);
+        elements[stat.key].textContent = `${stat.label}: ${formattedValue}`;
       }
     }
   }
@@ -462,250 +579,23 @@ export class DebugUI {
   // UI CREATION
   // ========================================
 
-  _injectStyles() {
+  async _injectStyles() {
     if (document.getElementById("debug-ui-styles")) return;
 
-    const style = document.createElement("style");
-    style.id = "debug-ui-styles";
-    style.textContent = `
-      .debug-ui {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        z-index: 10000;
-        font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
-        font-size: 14px;
-        user-select: none;
-      }
+    try {
+      // Fetch CSS file from the same directory as this module
+      const cssPath = new URL("./DebugUI.css", import.meta.url).href;
+      const response = await fetch(cssPath);
+      const cssText = await response.text();
 
-      .debug-ui-header {
-        display: flex;
-        background: rgba(15, 15, 20, 0.95);
-        backdrop-filter: blur(12px);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        height: 32px;
-      }
-
-      .debug-ui-tab {
-        padding: 0 16px;
-        height: 32px;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        color: rgba(255, 255, 255, 0.6);
-        cursor: pointer;
-        border-right: 1px solid rgba(255, 255, 255, 0.05);
-        transition: all 0.15s ease;
-      }
-
-      .debug-ui-tab:hover {
-        background: rgba(255, 255, 255, 0.05);
-        color: rgba(255, 255, 255, 0.9);
-      }
-
-      .debug-ui-tab.active {
-        background: rgba(255, 255, 255, 0.08);
-        color: #4ade80;
-      }
-
-      .debug-ui-tab .icon {
-        font-size: 12px;
-      }
-
-      .debug-ui-tab .arrow {
-        font-size: 8px;
-        transition: transform 0.2s ease;
-      }
-
-      .debug-ui-tab.active .arrow {
-        transform: rotate(180deg);
-      }
-
-      .debug-ui-spacer {
-        flex: 1;
-      }
-
-      .debug-ui-toggle {
-        padding: 0 12px;
-        color: rgba(255, 255, 255, 0.4);
-        display: flex;
-        align-items: center;
-        cursor: pointer;
-        font-size: 10px;
-      }
-
-      .debug-ui-toggle:hover {
-        color: rgba(255, 255, 255, 0.8);
-      }
-
-      .debug-ui-panel {
-        background: rgba(15, 15, 20, 0.95);
-        backdrop-filter: blur(12px);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        padding: 12px 16px;
-        display: none;
-        animation: slideDown 0.15s ease;
-      }
-
-      .debug-ui-panel.open {
-        display: block;
-      }
-
-      @keyframes slideDown {
-        from {
-          opacity: 0;
-          transform: translateY(-8px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
-      .debug-ui-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 16px;
-        align-items: center;
-      }
-
-      .debug-ui-stat {
-        color: rgba(255, 255, 255, 0.7);
-      }
-
-      .debug-ui-stat.main { color: #4ade80; }
-      .debug-ui-stat.spatial { color: #a78bfa; }
-      .debug-ui-stat.logic { color: #f87171; }
-      .debug-ui-stat.physics { color: #22d3d3; }
-      .debug-ui-stat.renderer { color: #fbbf24; }
-      .debug-ui-stat.particle { color: #fb923c; }
-      .debug-ui-stat.jobs { color: #818cf8; }
-
-      .debug-ui-btn {
-        padding: 4px 10px;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 4px;
-        color: rgba(255, 255, 255, 0.7);
-        cursor: pointer;
-        font-family: inherit;
-        font-size: 10px;
-        transition: all 0.15s ease;
-      }
-
-      .debug-ui-btn:hover {
-        background: rgba(255, 255, 255, 0.15);
-        border-color: rgba(255, 255, 255, 0.2);
-        color: white;
-      }
-
-      .debug-ui-btn.active {
-        background: rgba(74, 222, 128, 0.2);
-        border-color: rgba(74, 222, 128, 0.4);
-        color: #4ade80;
-      }
-
-      .debug-ui-btn.danger {
-        background: rgba(248, 113, 113, 0.15);
-        border-color: rgba(248, 113, 113, 0.3);
-      }
-
-      .debug-ui-btn.danger:hover {
-        background: rgba(248, 113, 113, 0.25);
-      }
-
-      .debug-ui-btn.danger.active {
-        background: rgba(248, 113, 113, 0.3);
-        border-color: rgba(248, 113, 113, 0.5);
-        color: #f87171;
-      }
-
-      .debug-ui-btn.tool {
-        background: rgba(99, 102, 241, 0.15);
-        border-color: rgba(99, 102, 241, 0.3);
-      }
-
-      .debug-ui-btn.tool:hover {
-        background: rgba(99, 102, 241, 0.25);
-      }
-
-      .debug-ui-btn.tool.active {
-        background: rgba(99, 102, 241, 0.3);
-        border-color: rgba(99, 102, 241, 0.5);
-        color: #818cf8;
-      }
-
-      .debug-ui-btn.scene-btn {
-        background: rgba(251, 191, 36, 0.15);
-        border-color: rgba(251, 191, 36, 0.3);
-      }
-
-      .debug-ui-btn.scene-btn:hover {
-        background: rgba(251, 191, 36, 0.25);
-      }
-
-      .debug-ui-btn.scene-btn.active {
-        background: rgba(251, 191, 36, 0.3);
-        border-color: rgba(251, 191, 36, 0.5);
-        color: #fbbf24;
-      }
-
-      .debug-ui-section-title {
-        color: rgba(255, 255, 255, 0.4);
-        font-size: 9px;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        margin-bottom: 8px;
-      }
-
-      .debug-ui-divider {
-        width: 1px;
-        height: 16px;
-        background: rgba(255, 255, 255, 0.1);
-        margin: 0 8px;
-      }
-
-      .debug-ui.hidden .debug-ui-header {
-        opacity: 0.3;
-      }
-
-      .debug-ui.hidden .debug-ui-panel {
-        display: none !important;
-      }
-
-      .debug-ui-tool-indicator {
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(15, 15, 20, 0.95);
-        backdrop-filter: blur(12px);
-        padding: 8px 16px;
-        border-radius: 8px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        color: rgba(255, 255, 255, 0.9);
-        font-size: 12px;
-        z-index: 10001;
-        pointer-events: none;
-        display: none;
-      }
-
-      .debug-ui-tool-indicator.visible {
-        display: block;
-      }
-
-      .debug-ui-tool-indicator.spawner {
-        border-color: rgba(99, 102, 241, 0.5);
-        color: #818cf8;
-      }
-
-      .debug-ui-tool-indicator.eraser {
-        border-color: rgba(248, 113, 113, 0.5);
-        color: #f87171;
-      }
-    `;
-    document.head.appendChild(style);
+      const style = document.createElement("style");
+      style.id = "debug-ui-styles";
+      style.textContent = cssText;
+      document.head.appendChild(style);
+    } catch (error) {
+      console.error("Failed to load DebugUI.css:", error);
+      // Fallback: continue without styles (or could inject minimal inline styles)
+    }
   }
 
   _createUI() {
@@ -901,30 +791,37 @@ export class DebugUI {
     const panel = document.createElement("div");
     panel.className = "debug-ui-panel";
 
-    const row = document.createElement("div");
-    row.className = "debug-ui-row";
+    // Container div for flexible layout
+    const container = document.createElement("div");
+    container.style.display = "flex";
+    container.style.flexDirection = "column";
+    container.style.gap = "8px";
 
-    // Create stat elements
+    // Main thread FPS row
+    const mainRow = document.createElement("div");
+    mainRow.className = "debug-ui-row";
     this.elements.mainFPS = this._createStat("Main: --", "main");
-    this.elements.spatialFPS = this._createStat("Spatial: --", "spatial");
-    this.elements.logicFPS = this._createStat("Logic: --", "logic");
-    this.elements.physicsFPS = this._createStat("Physics: --", "physics");
-    this.elements.rendererFPS = this._createStat("Render: --", "renderer");
-    this.elements.particleFPS = this._createStat("Particle: --", "particle");
+    mainRow.appendChild(this.elements.mainFPS);
+    container.appendChild(mainRow);
+
+    // Job stealing stats (shown when enabled)
+    const jobRow = document.createElement("div");
+    jobRow.className = "debug-ui-row";
     this.elements.jobStealing = this._createStat("Jobs: --", "jobs");
     this.elements.jobStealing.style.display = "none";
+    jobRow.appendChild(this.elements.jobStealing);
+    jobRow.style.display = "none";
+    this.elements.jobStealingRow = jobRow;
+    container.appendChild(jobRow);
 
-    row.appendChild(this.elements.mainFPS);
-    row.appendChild(this._createDivider());
-    row.appendChild(this.elements.spatialFPS);
-    row.appendChild(this.elements.logicFPS);
-    row.appendChild(this.elements.physicsFPS);
-    row.appendChild(this._createDivider());
-    row.appendChild(this.elements.rendererFPS);
-    row.appendChild(this.elements.particleFPS);
-    row.appendChild(this.elements.jobStealing);
+    // Container for worker stat rows (will be dynamically populated on scene attach)
+    this.elements.workerStatsContainer = document.createElement("div");
+    this.elements.workerStatsContainer.style.display = "flex";
+    this.elements.workerStatsContainer.style.flexDirection = "column";
+    this.elements.workerStatsContainer.style.gap = "4px";
+    container.appendChild(this.elements.workerStatsContainer);
 
-    panel.appendChild(row);
+    panel.appendChild(container);
     this.container.appendChild(panel);
     this.sections.performance.panel = panel;
   }

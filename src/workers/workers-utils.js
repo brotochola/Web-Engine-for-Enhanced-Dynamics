@@ -72,6 +72,73 @@ export const LOGIC_STATS = {
 };
 
 /**
+ * Display configuration for worker stats
+ * Defines which stats to show in DebugUI and how to format them
+ */
+export const WORKER_DISPLAY_CONFIG = {
+  renderer: {
+    label: "Render",
+    color: "renderer",
+    stats: [
+      { key: "FPS", label: "FPS", format: (v) => v.toFixed(2) },
+      { key: "DRAW_CALLS", label: "draws", format: (v) => v.toFixed(0) },
+      { key: "VISIBLE_ENTITIES", label: "ents", format: (v) => v.toFixed(0) },
+      { key: "VISIBLE_PARTICLES", label: "parts", format: (v) => v.toFixed(0) },
+    ],
+  },
+  particle: {
+    label: "Particle",
+    color: "particle",
+    stats: [
+      { key: "FPS", label: "FPS", format: (v) => v.toFixed(2) },
+      { key: "ACTIVE_PARTICLES", label: "active", format: (v) => v.toFixed(0) },
+      { key: "TOTAL_PARTICLES", label: "total", format: (v) => v.toFixed(0) },
+    ],
+  },
+  physics: {
+    label: "Physics",
+    color: "physics",
+    stats: [
+      { key: "FPS", label: "FPS", format: (v) => v.toFixed(2) },
+      { key: "COLLISION_CHECKS", label: "checks", format: (v) => v.toFixed(0) },
+      {
+        key: "COLLISIONS_RESOLVED",
+        label: "resolved",
+        format: (v) => v.toFixed(0),
+      },
+    ],
+  },
+  spatial: {
+    label: "Spatial",
+    color: "spatial",
+    stats: [
+      { key: "FPS", label: "FPS", format: (v) => v.toFixed(2) },
+      { key: "NEIGHBOR_CHECKS", label: "checks", format: (v) => v.toFixed(0) },
+      {
+        key: "GRID_CELLS_CHECKED",
+        label: "cells",
+        format: (v) => v.toFixed(0),
+      },
+      { key: "ENTITIES_PROCESSED", label: "ents", format: (v) => v.toFixed(0) },
+    ],
+  },
+  logic: {
+    label: "Logic",
+    color: "logic",
+    stats: [
+      { key: "FPS", label: "FPS", format: (v) => v.toFixed(2) },
+      { key: "ENTITIES_PROCESSED", label: "ents", format: (v) => v.toFixed(0) },
+      {
+        key: "SYSTEMS_EXECUTED",
+        label: "systems",
+        format: (v) => v.toFixed(0),
+      },
+      { key: "JOBS_STOLEN", label: "stolen", format: (v) => v.toFixed(0) },
+    ],
+  },
+};
+
+/**
  * Create a stats writer view for a single worker
  * @param {SharedArrayBuffer} buffer - The stats buffer
  * @param {Object} statsSchema - Schema object (e.g., RENDERER_STATS)

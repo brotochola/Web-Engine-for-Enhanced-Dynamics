@@ -28,7 +28,7 @@ export class PredatorScene extends WEED.Scene {
     spatial: {
       cellSize: 128,
       maxNeighbors: 2048,
-      numberOfSpatialWorkers: 3, // Multiple workers for parallel neighbor detection
+      numberOfSpatialWorkers: 2, // Multiple workers for parallel neighbor detection
       noLimitFPS: true,
     },
 
