@@ -130,11 +130,13 @@ class PixiRenderer extends AbstractWorker {
     this.particleTextureCache = {}; // Cache for particle textures by textureId
 
     // Decoration rendering (separate from entities, static sprites)
-    this.decorationSprites = []; // Array of decoration sprites (indexed 0 to maxDecorations-1)
+    this.decorationSprites = []; // Pool of reusable PIXI.Particle objects (not indexed by decoration)
     this.maxDecorations = 0; // Number of decorations in pool
-    this.decorationTextureCache = {}; // Cache for decoration textures by textureId
+    this.decorationSpriteTextureIds = []; // Track current textureId per sprite (for reuse validation)
     this.visibleDecorationCount = 0; // Number of visible decorations
     this.createdDecorationSpriteCount = 0; // OPTIMIZATION: Track actually created sprites (lazy creation)
+    this.decorationToSpriteMap = []; // Maps decoration index to sprite pool index (or -1 if no sprite assigned)
+    this.freeSpriteIndices = []; // Free list of available sprite indices for reuse
 
     // World and viewport dimensions
     this.worldWidth = 0;
@@ -2167,22 +2169,35 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   createDecorationSprites() {
     if (this.maxDecorations === 0) return;
 
-    // Initialize sparse array (sprites created lazily in updateDecorationSprites)
-    this.decorationSprites = new Array(this.maxDecorations).fill(null);
+    // Initialize empty sprite pool (sprites created lazily in updateDecorationSprites)
+    this.decorationSprites = [];
     this.createdDecorationSpriteCount = 0;
 
+    // Initialize mapping arrays
+    this.decorationToSpriteMap = new Array(this.maxDecorations).fill(-1);
+    this.freeSpriteIndices = [];
+
     console.log(
-      `PIXI WORKER: Decoration sprite pool initialized (${this.maxDecorations} slots, lazy creation enabled)`
+      `PIXI WORKER: Decoration sprite pool initialized (${this.maxDecorations} decoration slots, lazy sprite creation enabled)`
     );
   }
 
   /**
-   * Helper: Lazy-create a decoration sprite at the given index
-   * Called when a decoration becomes visible for the first time
+   * Helper: Get or create a decoration sprite from the reusable pool
+   * Uses free list to reuse hidden sprites before creating new ones
+   * @returns {number} Index of the sprite in decorationSprites array
    * @private
    */
-  _createDecorationSprite(index) {
-    // Get a default texture from bigAtlas to ensure decorations share the same source
+  _acquireDecorationSprite() {
+    let spriteIndex;
+
+    // Try to reuse a freed sprite first
+    if (this.freeSpriteIndices.length > 0) {
+      spriteIndex = this.freeSpriteIndices.pop();
+      return spriteIndex;
+    }
+
+    // No free sprites available - create a new one
     const bigAtlas = this.spritesheets["bigAtlas"];
     let defaultDecorationTexture = PIXI.Texture.WHITE; // Fallback
 
@@ -2203,7 +2218,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Start invisible (will be made visible by caller)
     decorationSprite.visible = false;
 
-    this.decorationSprites[index] = decorationSprite;
+    // Add to sprite pool
+    spriteIndex = this.decorationSprites.length;
+    this.decorationSprites.push(decorationSprite);
+    this.decorationSpriteTextureIds.push(0); // Initialize textureId to 0 (unset)
     this.createdDecorationSpriteCount++;
 
     // Add to container if Y-sorting is disabled
@@ -2213,16 +2231,27 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     // Log progress every 10 sprites to track lazy loading
-    if (
-      this.createdDecorationSpriteCount % 10 === 0 ||
-      this.createdDecorationSpriteCount === 1
-    ) {
+    if (this.createdDecorationSpriteCount % 10 === 0) {
       console.log(
-        `PIXI WORKER: Lazy-created decoration sprite ${this.createdDecorationSpriteCount}/${this.maxDecorations}`
+        `PIXI WORKER: Lazy-created decoration sprite #${this.createdDecorationSpriteCount} (${this.freeSpriteIndices.length} sprites in free list)`
       );
     }
 
-    return decorationSprite;
+    return spriteIndex;
+  }
+
+  /**
+   * Helper: Release a decoration sprite back to the free pool for reuse
+   * @param {number} spriteIndex - Index of sprite in decorationSprites array
+   * @private
+   */
+  _releaseDecorationSprite(spriteIndex) {
+    const sprite = this.decorationSprites[spriteIndex];
+    if (sprite) {
+      sprite.visible = false;
+      this.decorationSpriteTextureIds[spriteIndex] = 0; // Reset textureId for next use
+      this.freeSpriteIndices.push(spriteIndex);
+    }
   }
 
   /**
@@ -2256,21 +2285,27 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     let visibleDecorationCount = 0;
 
     for (let i = 0; i < this.maxDecorations; i++) {
-      // Check if decoration is active BEFORE accessing sprite
+      const spriteIndex = this.decorationToSpriteMap[i];
+
+      // Check if decoration is inactive or off-screen
       if (!active[i] || !isItOnScreen[i]) {
-        // Hide sprite if it exists (off-screen decorations keep their sprites for reuse)
-        const sprite = this.decorationSprites[i];
-        if (sprite && sprite.visible) {
-          sprite.visible = false;
+        // Release sprite back to free pool if one was assigned
+        if (spriteIndex !== -1) {
+          this._releaseDecorationSprite(spriteIndex);
+          this.decorationToSpriteMap[i] = -1;
         }
         continue;
       }
 
-      // OPTIMIZATION: Lazy-create sprite on first use
-      let sprite = this.decorationSprites[i];
-      if (!sprite) {
-        sprite = this._createDecorationSprite(i);
+      // Decoration is visible - acquire a sprite if needed
+      let actualSpriteIndex = spriteIndex;
+      if (actualSpriteIndex === -1) {
+        actualSpriteIndex = this._acquireDecorationSprite();
+        this.decorationToSpriteMap[i] = actualSpriteIndex;
       }
+
+      const sprite = this.decorationSprites[actualSpriteIndex];
+      if (!sprite) continue; // Safety check
 
       // Update sprite properties from DecorationComponent
       sprite.x = x[i];
@@ -2282,9 +2317,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       sprite.anchorX = anchorX[i];
       sprite.anchorY = anchorY[i];
 
-      // Update texture if needed (check cache)
+      // Update texture if it changed (compare with sprite's current textureId)
       const tid = textureId[i];
-      if (tid > 0 && !this.decorationTextureCache[i + "_" + tid]) {
+      if (
+        tid > 0 &&
+        this.decorationSpriteTextureIds[actualSpriteIndex] !== tid
+      ) {
         // Get texture from bigAtlas by animation index
         const textureName = SpriteSheetRegistry.getAnimationName(
           "bigAtlas",
@@ -2292,7 +2330,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         );
         if (textureName && this.textures[textureName]) {
           sprite.texture = this.textures[textureName];
-          this.decorationTextureCache[i + "_" + tid] = true;
+          this.decorationSpriteTextureIds[actualSpriteIndex] = tid; // Track sprite's current texture
         }
       }
 
