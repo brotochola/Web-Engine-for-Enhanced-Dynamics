@@ -8,7 +8,7 @@ import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { LightEmitter } from "../components/LightEmitter.js";
 import { ShadowCaster } from "../components/ShadowCaster.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
-import { collectComponents } from "./utils.js";
+import { collectComponents, cantorPair } from "./utils.js";
 import Keyboard from "./Keyboard.js";
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
@@ -830,6 +830,72 @@ export class GameObject {
   }
 
   /**
+   * ITERATION: Iterate over all neighbors of this entity
+   * ZERO ALLOCATIONS - uses getNeighbor/getNeighborDistance directly
+   *
+   * @param {Function} callback - callback(neighborInstance, distance, neighborIndex)
+   *   - neighborInstance: The neighbor's GameObject instance (or undefined if not in logic worker)
+   *   - distance: Squared distance to the neighbor
+   *   - neighborIndex: Entity index of the neighbor
+   *
+   * @example
+   *   this.forEachNeighbor((neighbor, dist, idx) => {
+   *     if (dist < 10000) { // within 100 units
+   *       neighbor.takeDamage(10);
+   *     }
+   *   });
+   */
+  forEachNeighbor(callback) {
+    const count = this.neighborCount;
+    const instances = GameObject.instances;
+    const neighborData = GameObject.neighborData;
+    const distanceData = GameObject.distanceData;
+    const offset = this._neighborOffset;
+
+    for (let i = 0; i < count; i++) {
+      const neighborIndex = neighborData[offset + 1 + i];
+      const distance = distanceData ? distanceData[offset + 1 + i] : 0;
+      const neighbor = instances ? instances[neighborIndex] : undefined;
+
+      callback(neighbor, distance, neighborIndex);
+    }
+  }
+
+  // /**
+  //  * Check if this entity is currently colliding with another entity
+  //  * Only works in logic worker context where collision tracking is available.
+  //  *
+  //  * @param {number|GameObject} other - Entity index or GameObject instance to check
+  //  * @returns {boolean} True if currently colliding, false otherwise
+  //  *
+  //  * @example
+  //  *   if (this.isCollidingWith(playerIndex)) {
+  //  *     this.takeDamage(10);
+  //  *   }
+  //  *
+  //  *   // Or with an instance:
+  //  *   if (this.isCollidingWith(player)) {
+  //  *     player.collectItem(this);
+  //  *   }
+  //  */
+  // isCollidingWith(other) {
+  //   // Get the other entity's index
+  //   const otherIndex = typeof other === "number" ? other : other.index;
+
+  //   // Access collision tracking from logic worker context
+  //   // self.logicWorker is the LogicWorker instance in logic_worker.js
+  //   const logicWorker = typeof self !== "undefined" ? self.logicWorker : null;
+  //   if (!logicWorker || !logicWorker.currentCollisions) {
+  //     return false;
+  //   }
+
+  //   // Use Cantor pairing function to generate collision key
+  //   const key = cantorPair(this.index, otherIndex);
+
+  //   return logicWorker.currentCollisions.has(key);
+  // }
+
+  /**
    * LIFECYCLE: Main update - called EVERY frame while entity is active
    * Override this in subclasses to define entity behavior
    * (AI, physics forces, animations, input handling, etc.)
@@ -1166,44 +1232,114 @@ export class GameObject {
   }
 
   /**
-   * ITERATION: Iterate over all ACTIVE entities of this class
-   * Called on the entity class itself: Prey.forEach(i => ...)
+   * ITERATION: Iterate over all ACTIVE entities of this class (index only)
+   * Called on the entity class itself: Prey.forEachActive(i => ...)
    *
-   * This enables ECS-style direct component array access:
-   *   Prey.forEach(i => {
+   * This is the FASTEST iteration method - no instance lookup, no conditionals.
+   * Uses pre-computed entityIndices typed array for cache-friendly access.
+   *
+   * @example
+   *   Prey.forEachActive(i => {
    *     Transform.x[i] += RigidBody.vx[i];
    *   });
    *
-   * @param {Function} callback - Function called for each active entity
-   *   - callback(index) for index-only iteration
-   *   - callback(index, instance) if you need the GameObject instance
+   * @param {Function} callback - callback(index) called for each active entity
    */
-  static forEach(callback) {
-    // Use `this` to get the calling class (e.g., Prey.forEach -> this = Prey)
-    const EntityClass = this;
+  static forEachActive(callback) {
+    const indices = this.entityIndices;
+    if (!indices) return;
 
-    // Validate EntityClass has required metadata
-    if (
-      EntityClass.startIndex === undefined ||
-      EntityClass.poolSize === undefined
-    ) {
-      console.warn(
-        `Cannot iterate ${EntityClass.name}: missing startIndex/poolSize metadata. Was it registered with GameEngine?`
-      );
-      return;
+    const active = Transform.active;
+    const len = indices.length;
+
+    for (let j = 0; j < len; j++) {
+      const i = indices[j];
+      if (active[i]) callback(i);
     }
+  }
 
-    const startIndex = EntityClass.startIndex;
-    const endIndex = EntityClass.endIndex;
-    const activeArray = Transform.active;
-    const instances = EntityClass.instances;
+  /**
+   * ITERATION: Iterate over ALL entities of this class (active or not)
+   * Called on the entity class itself: Prey.forEachAll(i => ...)
+   *
+   * Useful for reset/cleanup operations where you need to touch every slot.
+   * No active check - iterates the entire pool.
+   *
+   * @example
+   *   // Reset all entities of this type
+   *   Prey.forEachAll(i => {
+   *     Transform.x[i] = 0;
+   *     Transform.y[i] = 0;
+   *   });
+   *
+   * @param {Function} callback - callback(index) called for each entity
+   */
+  static forEachAll(callback) {
+    const indices = this.entityIndices;
+    if (!indices) return;
 
-    // Iterate over all entities of this type, skipping inactive ones
-    for (let i = startIndex; i < endIndex; i++) {
-      if (activeArray[i]) {
-        // Pass both index and instance (instance is optional for callback to use)
-        callback(i, instances[i - startIndex]);
+    const len = indices.length;
+    for (let j = 0; j < len; j++) {
+      callback(indices[j]);
+    }
+  }
+
+  /**
+   * ITERATION: Iterate over ACTIVE entities with instance access (LOGIC WORKER ONLY)
+   * Called on the entity class itself: Prey.forEachInstanceActive((prey, i) => ...)
+   *
+   * NOTE: Instances only exist in logic_worker.js. Use forEachActive() in other contexts.
+   * ZERO ALLOCATIONS - inline loop, no closures.
+   *
+   * @example
+   *   Prey.forEachInstanceActive((prey, i) => {
+   *     prey.flee();
+   *   });
+   *
+   * @param {Function} callback - callback(instance, index) for each active entity
+   */
+  static forEachInstanceActive(callback) {
+    const indices = this.entityIndices;
+    if (!indices) return;
+
+    const active = Transform.active;
+    const instances = this.instances;
+    const len = indices.length;
+
+    for (let j = 0; j < len; j++) {
+      const i = indices[j];
+      if (active[i]) {
+        callback(instances ? instances[j] : undefined, i);
       }
+    }
+  }
+
+  /**
+   * ITERATION: Iterate over ALL entities with instance access (LOGIC WORKER ONLY)
+   * Called on the entity class itself: Prey.forEachInstanceAll((prey, i) => ...)
+   *
+   * Useful for reset/cleanup operations where you need instance access.
+   * No active check - iterates the entire pool.
+   *
+   * NOTE: Instances only exist in logic_worker.js. Use forEachAll() in other contexts.
+   * ZERO ALLOCATIONS - inline loop, no closures.
+   *
+   * @example
+   *   Prey.forEachInstanceAll((prey, i) => {
+   *     prey.reset();
+   *   });
+   *
+   * @param {Function} callback - callback(instance, index) for each entity
+   */
+  static forEachInstanceAll(callback) {
+    const indices = this.entityIndices;
+    if (!indices) return;
+
+    const instances = this.instances;
+    const len = indices.length;
+
+    for (let j = 0; j < len; j++) {
+      callback(instances ? instances[j] : undefined, indices[j]);
     }
   }
 

@@ -22,6 +22,7 @@ import { DecorationPool } from "../core/DecorationPool.js";
 import { Flash } from "../core/Flash.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from "./workers-utils.js";
+import { cantorPair } from "../core/utils.js";
 
 // Note: Core engine classes (GameObject, Mouse, Keyboard, etc.) and components
 // (Transform, RigidBody, etc.) are now registered automatically by AbstractWorker
@@ -413,9 +414,7 @@ class LogicWorker extends AbstractWorker {
    * @returns {number} - Unique numeric key
    */
   getCollisionKey(a, b) {
-    // Cantor pairing function: maps two naturals to a unique natural
-    // key = (a + b) * (a + b + 1) / 2 + b
-    return ((a + b) * (a + b + 1)) / 2 + b;
+    return cantorPair(a, b);
   }
 
   /**

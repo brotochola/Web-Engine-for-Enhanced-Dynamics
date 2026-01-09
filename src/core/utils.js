@@ -110,6 +110,26 @@ export function distanceSq2D(x1, y1, x2, y2) {
 }
 
 /**
+ * Generate a unique numeric key for an ordered pair using Cantor pairing function
+ * Maps two natural numbers to a single unique natural number.
+ * Used for collision tracking to avoid string allocation.
+ *
+ * Note: cantorPair(a, b) !== cantorPair(b, a) - the order matters!
+ * For unordered pairs, ensure consistent ordering (e.g., always min first).
+ *
+ * @param {number} a - First number (must be non-negative integer)
+ * @param {number} b - Second number (must be non-negative integer)
+ * @returns {number} Unique numeric key
+ *
+ * @example
+ *   const key = cantorPair(entityA, entityB);
+ *   collisionSet.add(key);
+ */
+export function cantorPair(a, b) {
+  return ((a + b) * (a + b + 1)) / 2 + b;
+}
+
+/**
  * Calculate distance between two 2D points
  * @param {number} x1 - First point X
  * @param {number} y1 - First point Y
