@@ -11,6 +11,10 @@ export class DecorationPool {
   static maxDecorations = 0;
   static initialized = false;
 
+  // Shared counter for active decorations (backed by SharedArrayBuffer)
+  // Used for early-exit optimization in workers
+  static activeCount = null; // Uint32Array[1]
+
   /**
    * Initialize the decoration pool
    * Called automatically by logic worker during init
@@ -24,6 +28,15 @@ export class DecorationPool {
         maxDecorations - 1
       })`
     );
+  }
+
+  /**
+   * Initialize the shared active count buffer
+   * Called by workers to connect to the shared counter
+   * @param {SharedArrayBuffer} buffer - 4-byte buffer for active count
+   */
+  static initializeActiveCount(buffer) {
+    this.activeCount = new Uint32Array(buffer);
   }
 
   /**
@@ -97,6 +110,11 @@ export class DecorationPool {
         // Claim this slot
         active[i] = 1;
 
+        // Increment active count (for early-exit optimization in workers)
+        if (this.activeCount) {
+          this.activeCount[0]++;
+        }
+
         return i;
       }
     }
@@ -164,6 +182,11 @@ export class DecorationPool {
     DecorationComponent.active[index] = 0;
     DecorationComponent.isItOnScreen[index] = 0;
 
+    // Decrement active count
+    if (this.activeCount && this.activeCount[0] > 0) {
+      this.activeCount[0]--;
+    }
+
     return true;
   }
 
@@ -176,6 +199,11 @@ export class DecorationPool {
     for (let i = 0; i < this.maxDecorations; i++) {
       DecorationComponent.active[i] = 0;
       DecorationComponent.isItOnScreen[i] = 0;
+    }
+
+    // Reset active count
+    if (this.activeCount) {
+      this.activeCount[0] = 0;
     }
   }
 

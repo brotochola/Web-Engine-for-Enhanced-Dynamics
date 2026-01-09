@@ -5,6 +5,8 @@ import { DEBUG_FLAGS } from "./DebugFlags.js";
 import { Transform } from "../components/Transform.js";
 import { Mouse } from "./Mouse.js";
 import { GameObject } from "./gameObject.js";
+import { DecorationComponent } from "../components/DecorationComponent.js";
+import { DecorationPool } from "./DecorationPool.js";
 
 /**
  * DebugUI - Self-contained debug overlay that pulls data and updates itself
@@ -119,6 +121,7 @@ export class DebugUI {
 
     this._updatePerformanceSection();
     this._updateEntitiesSection();
+    this._updateDecorationsSection();
     this._updateToolButtonStates();
     this._updatePaintTool();
   }
@@ -237,6 +240,52 @@ export class DebugUI {
       if (poolTexts.length > 0) {
         this.elements.poolStats.textContent = poolTexts.join(" | ");
       }
+    }
+  }
+
+  // ========================================
+  // DECORATIONS SECTION
+  // ========================================
+
+  _updateDecorationsSection() {
+    const scene = this.scene;
+    if (!scene) return;
+
+    // Total decoration pool size
+    if (this.elements.decorationTotal) {
+      const total = DecorationPool.maxDecorations || 0;
+      this.elements.decorationTotal.textContent = `Total: ${total}`;
+    }
+
+    // Count active decorations
+    if (this.elements.decorationActive && DecorationComponent.active) {
+      let active = 0;
+      const total = DecorationPool.maxDecorations || 0;
+      for (let i = 0; i < total; i++) {
+        if (DecorationComponent.active[i]) active++;
+      }
+      this.elements.decorationActive.textContent = `Active: ${active}`;
+    }
+
+    // Count visible decorations (on screen)
+    if (this.elements.decorationVisible && DecorationComponent.isItOnScreen) {
+      let visible = 0;
+      const total = DecorationPool.maxDecorations || 0;
+      for (let i = 0; i < total; i++) {
+        if (
+          DecorationComponent.active[i] &&
+          DecorationComponent.isItOnScreen[i]
+        ) {
+          visible++;
+        }
+      }
+      this.elements.decorationVisible.textContent = `Visible: ${visible}`;
+    }
+
+    // PIXI sprites created (from renderer worker stats)
+    if (this.elements.decorationSprites && scene.workerStats?.renderer) {
+      const spriteCount = scene.workerStats.renderer.decorationSprites || 0;
+      this.elements.decorationSprites.textContent = `Sprites: ${spriteCount}`;
     }
   }
 
@@ -561,6 +610,10 @@ export class DebugUI {
     const entitiesTab = this._createTab("📦", "Entities", "entities");
     header.appendChild(entitiesTab);
 
+    // Decorations tab
+    const decorationsTab = this._createTab("🌿", "Decorations", "decorations");
+    header.appendChild(decorationsTab);
+
     // Spacer
     const spacer = document.createElement("div");
     spacer.className = "debug-ui-spacer";
@@ -580,6 +633,7 @@ export class DebugUI {
     this._createPerformancePanel();
     this._createVisualPanel();
     this._createEntitiesPanel();
+    this._createDecorationsPanel();
 
     // Create tool indicator (shows active tool at bottom of screen)
     this._createToolIndicator();
@@ -823,6 +877,34 @@ export class DebugUI {
 
     this.container.appendChild(panel);
     this.sections.entities.panel = panel;
+  }
+
+  _createDecorationsPanel() {
+    const panel = document.createElement("div");
+    panel.className = "debug-ui-panel";
+
+    // Stats row
+    const statsRow = document.createElement("div");
+    statsRow.className = "debug-ui-row";
+
+    this.elements.decorationTotal = this._createStat("Total: --", "");
+    this.elements.decorationActive = this._createStat("Active: --", "");
+    this.elements.decorationVisible = this._createStat("Visible: --", "");
+    this.elements.decorationSprites = this._createStat(
+      "Sprites: --",
+      "renderer"
+    );
+
+    statsRow.appendChild(this.elements.decorationTotal);
+    statsRow.appendChild(this.elements.decorationActive);
+    statsRow.appendChild(this.elements.decorationVisible);
+    statsRow.appendChild(this._createDivider());
+    statsRow.appendChild(this.elements.decorationSprites);
+
+    panel.appendChild(statsRow);
+
+    this.container.appendChild(panel);
+    this.sections.decorations.panel = panel;
   }
 
   _createToolIndicator() {

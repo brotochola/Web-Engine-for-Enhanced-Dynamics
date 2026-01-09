@@ -4,6 +4,7 @@
 
 import { ParticleComponent } from "../components/ParticleComponent.js";
 import { DecorationComponent } from "../components/DecorationComponent.js";
+import { DecorationPool } from "../core/DecorationPool.js";
 import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { LightEmitter } from "../components/LightEmitter.js";
@@ -1195,6 +1196,11 @@ class ParticleWorker extends AbstractWorker {
       !DecorationComponent.active
     )
       return;
+
+    // Early exit if no decorations are active (shared counter from DecorationPool)
+    if (DecorationPool.activeCount && DecorationPool.activeCount[0] === 0) {
+      return;
+    }
 
     const active = DecorationComponent.active;
     const x = DecorationComponent.x;

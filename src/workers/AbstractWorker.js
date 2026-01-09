@@ -289,6 +289,11 @@ export class AbstractWorker {
           `initialized DecorationComponent for ${data.maxDecorations} decorations`
         );
       }
+
+      // Initialize DecorationPool active count from shared buffer
+      if (data.decorationActiveCount) {
+        DecorationPool.initializeActiveCount(data.decorationActiveCount);
+      }
     }
 
     // Initialize common shared buffers using Buffer->Data naming pattern

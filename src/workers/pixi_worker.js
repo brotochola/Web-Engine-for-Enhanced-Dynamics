@@ -14,6 +14,7 @@ import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { ParticleComponent } from "../components/ParticleComponent.js";
 import { DecorationComponent } from "../components/DecorationComponent.js";
+import { DecorationPool } from "../core/DecorationPool.js";
 import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 import { DEBUG_FLAGS } from "../core/DebugFlags.js";
@@ -133,6 +134,7 @@ class PixiRenderer extends AbstractWorker {
     this.maxDecorations = 0; // Number of decorations in pool
     this.decorationTextureCache = {}; // Cache for decoration textures by textureId
     this.visibleDecorationCount = 0; // Number of visible decorations
+    this.createdDecorationSpriteCount = 0; // OPTIMIZATION: Track actually created sprites (lazy creation)
 
     // World and viewport dimensions
     this.worldWidth = 0;
@@ -289,6 +291,7 @@ class PixiRenderer extends AbstractWorker {
         drawCalls: this.drawCallCount,
         visibleEntities: this.visibleEntityCount,
         visibleParticles: this.visibleParticleCount,
+        decorationSprites: this.createdDecorationSpriteCount,
       });
     }
     // Reset draw call counter for next frame
@@ -2159,15 +2162,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   /**
    * Create decoration sprites (separate from entity sprites)
-   * Decorations are static sprites with configurable anchor
+   * OPTIMIZATION: Uses lazy creation - sprites are created on-demand when first needed
    */
   createDecorationSprites() {
     if (this.maxDecorations === 0) return;
 
-    console.log(
-      `PIXI WORKER: Creating ${this.maxDecorations} decoration sprites`
-    );
+    // Initialize sparse array (sprites created lazily in updateDecorationSprites)
+    this.decorationSprites = new Array(this.maxDecorations).fill(null);
+    this.createdDecorationSpriteCount = 0;
 
+    console.log(
+      `PIXI WORKER: Decoration sprite pool initialized (${this.maxDecorations} slots, lazy creation enabled)`
+    );
+  }
+
+  /**
+   * Helper: Lazy-create a decoration sprite at the given index
+   * Called when a decoration becomes visible for the first time
+   * @private
+   */
+  _createDecorationSprite(index) {
     // Get a default texture from bigAtlas to ensure decorations share the same source
     const bigAtlas = this.spritesheets["bigAtlas"];
     let defaultDecorationTexture = PIXI.Texture.WHITE; // Fallback
@@ -2179,30 +2193,36 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
     }
 
-    for (let i = 0; i < this.maxDecorations; i++) {
-      // Create Particle object for ParticleContainer
-      // Use bigAtlas texture to ensure shared source with entity sprites
-      const decorationSprite = new PIXI.Particle({
-        texture: defaultDecorationTexture,
-        anchorX: 0.5,
-        anchorY: 0.5,
-      });
+    // Create Particle object for ParticleContainer
+    const decorationSprite = new PIXI.Particle({
+      texture: defaultDecorationTexture,
+      anchorX: 0.5,
+      anchorY: 0.5,
+    });
 
-      // Start invisible (decorations are spawned by DecorationPool)
-      decorationSprite.visible = false;
+    // Start invisible (will be made visible by caller)
+    decorationSprite.visible = false;
 
-      this.decorationSprites[i] = decorationSprite;
+    this.decorationSprites[index] = decorationSprite;
+    this.createdDecorationSpriteCount++;
 
-      // Add to container if Y-sorting is disabled
-      // (if Y-sorting is enabled, decorations are added during updateSprites)
-      if (!this.ySorting) {
-        this.particleContainer.addParticle(decorationSprite);
-      }
+    // Add to container if Y-sorting is disabled
+    // (if Y-sorting is enabled, decorations are added during updateSprites)
+    if (!this.ySorting) {
+      this.particleContainer.addParticle(decorationSprite);
     }
 
-    console.log(
-      `PIXI WORKER: Created ${this.maxDecorations} decoration sprites (separate pool)`
-    );
+    // Log progress every 10 sprites to track lazy loading
+    if (
+      this.createdDecorationSpriteCount % 10 === 0 ||
+      this.createdDecorationSpriteCount === 1
+    ) {
+      console.log(
+        `PIXI WORKER: Lazy-created decoration sprite ${this.createdDecorationSpriteCount}/${this.maxDecorations}`
+      );
+    }
+
+    return decorationSprite;
   }
 
   /**
@@ -2211,6 +2231,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   updateDecorationSprites() {
     if (this.maxDecorations === 0) {
+      this.visibleDecorationCount = 0;
+      return;
+    }
+
+    // Early exit if no decorations are active (shared counter from DecorationPool)
+    if (DecorationPool.activeCount && DecorationPool.activeCount[0] === 0) {
       this.visibleDecorationCount = 0;
       return;
     }
@@ -2230,15 +2256,20 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     let visibleDecorationCount = 0;
 
     for (let i = 0; i < this.maxDecorations; i++) {
-      const sprite = this.decorationSprites[i];
-      if (!sprite) continue;
-
-      // Check if decoration is active
+      // Check if decoration is active BEFORE accessing sprite
       if (!active[i] || !isItOnScreen[i]) {
-        if (sprite.visible) {
+        // Hide sprite if it exists (off-screen decorations keep their sprites for reuse)
+        const sprite = this.decorationSprites[i];
+        if (sprite && sprite.visible) {
           sprite.visible = false;
         }
         continue;
+      }
+
+      // OPTIMIZATION: Lazy-create sprite on first use
+      let sprite = this.decorationSprites[i];
+      if (!sprite) {
+        sprite = this._createDecorationSprite(i);
       }
 
       // Update sprite properties from DecorationComponent

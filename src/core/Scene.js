@@ -710,8 +710,15 @@ class Scene {
         maxDecorations
       );
       DecorationComponent.decorationCount = maxDecorations;
+
+      // Create shared buffer for active decoration count (4 bytes for Uint32)
+      this.buffers.decorationActiveCount = new SharedArrayBuffer(4);
+      // Initialize to 0
+      new Uint32Array(this.buffers.decorationActiveCount)[0] = 0;
+
       // Initialize DecorationPool on main thread for scene-level spawning
       DecorationPool.initialize(maxDecorations);
+      DecorationPool.initializeActiveCount(this.buffers.decorationActiveCount);
     }
 
     // Shadow sprite system
@@ -1098,6 +1105,7 @@ class Scene {
       spritesheetMetadata: SpriteSheetRegistry.serialize(),
       maxParticles: this.config.particle.maxParticles,
       maxDecorations: this.config.decoration.maxDecorations,
+      decorationActiveCount: this.buffers.decorationActiveCount || null,
       decals: this.config.particle.decals
         ? {
             enabled: true,
