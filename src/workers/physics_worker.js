@@ -51,6 +51,15 @@ class PhysicsWorker extends AbstractWorker {
     this.collisionChecksThisFrame = 0;
     this.collisionsResolvedThisFrame = 0;
     this.collisionPairsThisFrame = 0;
+
+    // PERFORMANCE: Reusable collision result object to avoid GC pressure
+    // Instead of allocating thousands of objects per frame, we reuse this one
+    this.collisionResult = {
+      collided: false,
+      depth: 0,
+      nx: 0,
+      ny: 0,
+    };
   }
 
   /**
@@ -714,23 +723,23 @@ class PhysicsWorker extends AbstractWorker {
 
     const dist = Math.sqrt(dist2);
 
+    // Reuse collision result object to avoid GC pressure
+    const result = this.collisionResult;
+    result.collided = true;
+
     // Handle exact overlap
     if (dist === 0) {
       const angle = rng() * Math.PI * 2;
-      return {
-        collided: true,
-        depth: minDist,
-        nx: Math.cos(angle),
-        ny: Math.sin(angle),
-      };
+      result.depth = minDist;
+      result.nx = Math.cos(angle);
+      result.ny = Math.sin(angle);
+    } else {
+      result.depth = minDist - dist;
+      result.nx = dx / dist;
+      result.ny = dy / dist;
     }
 
-    return {
-      collided: true,
-      depth: minDist - dist,
-      nx: dx / dist,
-      ny: dy / dist,
-    };
+    return result;
   }
 
   /**
@@ -754,6 +763,10 @@ class PhysicsWorker extends AbstractWorker {
 
     const dist = Math.sqrt(dist2);
 
+    // Reuse collision result object to avoid GC pressure
+    const result = this.collisionResult;
+    result.collided = true;
+
     // Circle center is inside the box
     if (dist === 0) {
       // Find which edge is closest
@@ -767,31 +780,22 @@ class PhysicsWorker extends AbstractWorker {
 
       if (minDistX < minDistY) {
         // Push horizontally
-        const nx = distToLeft < distToRight ? -1 : 1;
-        return {
-          collided: true,
-          depth: minDistX + circleR,
-          nx: nx,
-          ny: 0,
-        };
+        result.depth = minDistX + circleR;
+        result.nx = distToLeft < distToRight ? -1 : 1;
+        result.ny = 0;
       } else {
         // Push vertically
-        const ny = distToTop < distToBottom ? -1 : 1;
-        return {
-          collided: true,
-          depth: minDistY + circleR,
-          nx: 0,
-          ny: ny,
-        };
+        result.depth = minDistY + circleR;
+        result.nx = 0;
+        result.ny = distToTop < distToBottom ? -1 : 1;
       }
+    } else {
+      result.depth = circleR - dist;
+      result.nx = dx / dist;
+      result.ny = dy / dist;
     }
 
-    return {
-      collided: true,
-      depth: circleR - dist,
-      nx: dx / dist,
-      ny: dy / dist,
-    };
+    return result;
   }
 
   /**
@@ -814,26 +818,24 @@ class PhysicsWorker extends AbstractWorker {
     // No collision if no overlap on either axis
     if (overlapX <= 0 || overlapY <= 0) return null;
 
+    // Reuse collision result object to avoid GC pressure
+    const result = this.collisionResult;
+    result.collided = true;
+
     // Push along axis with smallest overlap (Separating Axis Theorem)
     if (overlapX < overlapY) {
       // Push horizontally
-      const nx = dx > 0 ? 1 : -1;
-      return {
-        collided: true,
-        depth: overlapX,
-        nx: nx,
-        ny: 0,
-      };
+      result.depth = overlapX;
+      result.nx = dx > 0 ? 1 : -1;
+      result.ny = 0;
     } else {
       // Push vertically
-      const ny = dy > 0 ? 1 : -1;
-      return {
-        collided: true,
-        depth: overlapY,
-        nx: 0,
-        ny: ny,
-      };
+      result.depth = overlapY;
+      result.nx = 0;
+      result.ny = dy > 0 ? 1 : -1;
     }
+
+    return result;
   }
 
   /**
