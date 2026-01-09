@@ -6,7 +6,7 @@
   left: 0;
   right: 0;
   z-index: 10000;
-  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+  font-family: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
   font-size: 14px;
   user-select: none;
 }
@@ -106,13 +106,27 @@
   color: rgba(255, 255, 255, 0.7);
 }
 
-.debug-ui-stat.main { color: #4ade80; }
-.debug-ui-stat.spatial { color: #a78bfa; }
-.debug-ui-stat.logic { color: #f87171; }
-.debug-ui-stat.physics { color: #22d3d3; }
-.debug-ui-stat.renderer { color: #fbbf24; }
-.debug-ui-stat.particle { color: #fb923c; }
-.debug-ui-stat.jobs { color: #818cf8; }
+.debug-ui-stat.main {
+  color: #4ade80;
+}
+.debug-ui-stat.spatial {
+  color: #a78bfa;
+}
+.debug-ui-stat.logic {
+  color: #f87171;
+}
+.debug-ui-stat.physics {
+  color: #22d3d3;
+}
+.debug-ui-stat.renderer {
+  color: #fbbf24;
+}
+.debug-ui-stat.particle {
+  color: #fb923c;
+}
+.debug-ui-stat.jobs {
+  color: #818cf8;
+}
 
 .debug-ui-worker-table {
   display: table;
@@ -147,6 +161,7 @@
 .debug-ui-worker-cell.stat {
   color: rgba(255, 255, 255, 0.8);
   font-size: 13px;
+  opacity: 0.85;
 }
 
 /* Dynamic column widths based on number of stats */
@@ -284,4 +299,3 @@
   border-color: rgba(248, 113, 113, 0.5);
   color: #f87171;
 }
-

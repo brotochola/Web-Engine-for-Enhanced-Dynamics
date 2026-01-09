@@ -50,6 +50,7 @@ class PhysicsWorker extends AbstractWorker {
     // Stats tracking
     this.collisionChecksThisFrame = 0;
     this.collisionsResolvedThisFrame = 0;
+    this.collisionPairsThisFrame = 0;
   }
 
   /**
@@ -70,8 +71,8 @@ class PhysicsWorker extends AbstractWorker {
     if (data.buffers.collisionData) {
       this.collisionData = new Int32Array(data.buffers.collisionData);
       this.maxCollisionPairs =
-        this.config.physics?.maxCollisionPairs ||
-        this.config.maxCollisionPairs ||
+        this.config.physics?.maxCollisionPairs ??
+        this.config.maxCollisionPairs ??
         10000;
     }
 
@@ -86,6 +87,11 @@ class PhysicsWorker extends AbstractWorker {
    * SubSteps divide the fixed timestep for constraint solving, not the variable frame time.
    */
   update(deltaTime, dtRatio, resuming) {
+    // Reset stats counters once per frame (before fixed-step accumulator loop)
+    this.collisionChecksThisFrame = 0;
+    this.collisionsResolvedThisFrame = 0;
+    this.collisionPairsThisFrame = 0;
+
     if (this.noLimitFPS && this.settings.subStepCount > 1) {
       // Fixed timestep mode: accumulate time and run physics at fixed intervals
       // This ensures subSteps work correctly regardless of actual frame rate
@@ -182,10 +188,6 @@ class PhysicsWorker extends AbstractWorker {
 
     // Get the number of entities with RigidBody (not all entities have physics)
     const rigidBodyCount = this.entityCount;
-
-    // Reset stats counters for this frame
-    this.collisionChecksThisFrame = 0;
-    this.collisionsResolvedThisFrame = 0;
 
     // OPTIMIZATION: Use query system to reset collision counters only for physics entities
     const physicsEntities = this.query([RigidBody]);
@@ -693,6 +695,9 @@ class PhysicsWorker extends AbstractWorker {
     if (collisionData) {
       collisionData[0] = pairCount;
     }
+
+    // Store for stats reporting
+    this.collisionPairsThisFrame = pairCount;
   }
 
   /**
@@ -842,6 +847,7 @@ class PhysicsWorker extends AbstractWorker {
         this.collisionChecksThisFrame;
       this.stats[PHYSICS_STATS.COLLISIONS_RESOLVED] =
         this.collisionsResolvedThisFrame;
+      this.stats[PHYSICS_STATS.COLLISION_PAIRS] = this.collisionPairsThisFrame;
     }
   }
 }

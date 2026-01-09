@@ -45,6 +45,11 @@ class ParticleWorker extends AbstractWorker {
     // Active particle count for FPS reporting
     this.activeParticleCount = 0;
 
+    // Stats tracking
+    this.particlesStampedThisFrame = 0;
+    this.flashesUpdatedThisFrame = 0;
+    this.shadowsUpdatedThisFrame = 0;
+
     // ========================================
     // BLOOD DECALS TILEMAP SYSTEM
     // ========================================
@@ -370,6 +375,11 @@ class ParticleWorker extends AbstractWorker {
   update(deltaTime, dtRatio) {
     if (this.maxParticles === 0 && this.entityCount === 0) return;
 
+    // Reset stats counters for this frame
+    this.particlesStampedThisFrame = 0;
+    this.flashesUpdatedThisFrame = 0;
+    this.shadowsUpdatedThisFrame = 0;
+
     // Clear stamp collection for this frame
     this.clearParticleStampList();
 
@@ -432,11 +442,15 @@ class ParticleWorker extends AbstractWorker {
     const startIndex = this.flashStartIndex;
     const endIndex = startIndex + this.maxFlashes;
 
+    let flashesUpdated = 0;
+
     // Update all flashes in the pool
     for (let entityIndex = startIndex; entityIndex < endIndex; entityIndex++) {
       // FlashComponent uses entity index directly (dense allocation)
       if (!flashActive[entityIndex]) continue;
       if (!transformActive[entityIndex]) continue;
+
+      flashesUpdated++;
 
       // Update lifetime
       currentLife[entityIndex] += deltaTime;
@@ -460,6 +474,9 @@ class ParticleWorker extends AbstractWorker {
         lightIntensity[entityIndex] = initialIntensity[entityIndex] * remaining;
       }
     }
+
+    // Track flashes updated for stats
+    this.flashesUpdatedThisFrame = flashesUpdated;
   }
 
   /**
@@ -635,6 +652,9 @@ class ParticleWorker extends AbstractWorker {
         particleAlpha[particleIndex]
       );
     }
+
+    // Track stamped particles for stats
+    this.particlesStampedThisFrame = this.particlesToStamp.length;
   }
 
   /**
@@ -1133,6 +1153,9 @@ class ParticleWorker extends AbstractWorker {
     for (let i = shadowIdx; i < this.maxShadowSprites; i++) {
       shadowActive[i] = 0;
     }
+
+    // Track shadows updated for stats
+    this.shadowsUpdatedThisFrame = shadowIdx;
   }
 
   /**
@@ -1344,6 +1367,10 @@ class ParticleWorker extends AbstractWorker {
       this.stats[PARTICLE_STATS.FPS] = this.currentFPS;
       this.stats[PARTICLE_STATS.ACTIVE_PARTICLES] = this.activeParticleCount;
       this.stats[PARTICLE_STATS.TOTAL_PARTICLES] = this.maxParticles;
+      this.stats[PARTICLE_STATS.PARTICLES_STAMPED] =
+        this.particlesStampedThisFrame;
+      this.stats[PARTICLE_STATS.FLASHES_UPDATED] = this.flashesUpdatedThisFrame;
+      this.stats[PARTICLE_STATS.SHADOWS_UPDATED] = this.shadowsUpdatedThisFrame;
     }
   }
 }
