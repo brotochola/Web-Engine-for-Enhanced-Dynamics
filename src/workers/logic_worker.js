@@ -54,7 +54,9 @@ class LogicWorker extends AbstractWorker {
     // Performance tracking
     this.activeEntityCount = 0; // Number of active entities this worker is processing
     this.jobsProcessedThisFrame = 0; // Track jobs claimed
+    this.jobsStolenThisFrame = 0; // Track jobs stolen from queue (same as jobs processed)
     this.entitiesProcessedThisFrame = 0; // Track actual entities processed
+    this.systemsExecutedThisFrame = 0; // Track number of distinct update phases executed
     this.frameStartTime = 0; // For timing diagnostics
 
     // Detailed profiling (only tracked when enabled)
@@ -265,6 +267,12 @@ class LogicWorker extends AbstractWorker {
     this.frameStartTime = performance.now();
     let t0, t1, t2, t3, t4;
 
+    // Reset stats for this frame
+    this.jobsProcessedThisFrame = 0;
+    this.jobsStolenThisFrame = 0;
+    this.entitiesProcessedThisFrame = 0;
+    this.systemsExecutedThisFrame = 0;
+
     // Initialize Keyboard static class with input data
     // Note: Mouse position/state is now read directly from Transform/MouseComponent
     Keyboard.initialize(this.inputData, this.keyIndexMap);
@@ -276,6 +284,7 @@ class LogicWorker extends AbstractWorker {
       }
 
       this.processCollisionCallbacks();
+      this.systemsExecutedThisFrame++; // Collision system executed
 
       if (this.enableProfiling) {
         t1 = performance.now();
@@ -285,8 +294,6 @@ class LogicWorker extends AbstractWorker {
 
     // Count active entities while processing jobs
     let activeCount = 0;
-    this.jobsProcessedThisFrame = 0;
-    this.entitiesProcessedThisFrame = 0;
     let totalNeighborsThisFrame = 0;
 
     if (this.enableProfiling) {
@@ -305,6 +312,7 @@ class LogicWorker extends AbstractWorker {
       }
 
       this.jobsProcessedThisFrame++;
+      this.jobsStolenThisFrame++; // Track as stolen job
 
       // Get job range from buffer
       const jobStartIndex = this.jobQueueData[2 + jobIndex * 2];
@@ -345,6 +353,11 @@ class LogicWorker extends AbstractWorker {
           this.checkScreenVisibility(i, obj);
         }
       }
+    }
+
+    // Entity processing system executed
+    if (this.jobsProcessedThisFrame > 0) {
+      this.systemsExecutedThisFrame++; // Entity tick system executed
     }
 
     // Reset job queue for next frame
@@ -805,7 +818,8 @@ class LogicWorker extends AbstractWorker {
       this.stats[LOGIC_STATS.FPS] = this.currentFPS;
       this.stats[LOGIC_STATS.ENTITIES_PROCESSED] =
         this.entitiesProcessedThisFrame;
-      // Additional logic stats can be added here (systems executed, jobs stolen, etc.)
+      this.stats[LOGIC_STATS.SYSTEMS_EXECUTED] = this.systemsExecutedThisFrame;
+      this.stats[LOGIC_STATS.JOBS_STOLEN] = this.jobsStolenThisFrame;
     }
   }
 }

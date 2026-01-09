@@ -69,6 +69,11 @@ class SpatialWorker extends AbstractWorker {
 
     // Update frequency (rebuild grid every N frames)
     this.spatialUpdateInterval = 2;
+
+    // Stats tracking
+    this.neighborChecksThisFrame = 0;
+    this.gridCellsCheckedThisFrame = 0;
+    this.entitiesProcessedThisFrame = 0;
   }
 
   /**
@@ -292,6 +297,11 @@ class SpatialWorker extends AbstractWorker {
     const entityStartIndex = this.entityStartIndex;
     const entityEndIndex = this.entityEndIndex;
 
+    // Reset stats for this frame
+    this.neighborChecksThisFrame = 0;
+    this.gridCellsCheckedThisFrame = 0;
+    this.entitiesProcessedThisFrame = 0;
+
     // PROCESSED BITMASK - clear at start of frame
     const processed = this.processedThisFrame;
     processed.fill(0);
@@ -314,6 +324,9 @@ class SpatialWorker extends AbstractWorker {
         // This eliminates duplicate processing for multi-cell entities
         if (processed[i]) continue;
         processed[i] = 1;
+
+        // Track entity processed
+        this.entitiesProcessedThisFrame++;
 
         // Use PRE-COMPUTED collider position
         const myX = entityPosX[i];
@@ -361,6 +374,9 @@ class SpatialWorker extends AbstractWorker {
             // Skip empty cells
             if (cellLength === 0) continue;
 
+            // Track grid cell checked
+            this.gridCellsCheckedThisFrame++;
+
             const cellBase = checkCellIndex * maxEntitiesPerCell;
 
             // Check all entities in this cell
@@ -369,6 +385,9 @@ class SpatialWorker extends AbstractWorker {
 
               // Skip self
               if (i === j) continue;
+
+              // Track neighbor check
+              this.neighborChecksThisFrame++;
 
               // Use PRE-COMPUTED positions for distance calculation
               const jX = entityPosX[j];
@@ -430,7 +449,11 @@ class SpatialWorker extends AbstractWorker {
     // Write stats to SharedArrayBuffer every frame
     if (this.stats) {
       this.stats[SPATIAL_STATS.FPS] = this.currentFPS;
-      // Additional spatial stats can be added here (neighbor checks, grid cells, etc.)
+      this.stats[SPATIAL_STATS.NEIGHBOR_CHECKS] = this.neighborChecksThisFrame;
+      this.stats[SPATIAL_STATS.GRID_CELLS_CHECKED] =
+        this.gridCellsCheckedThisFrame;
+      this.stats[SPATIAL_STATS.ENTITIES_PROCESSED] =
+        this.entitiesProcessedThisFrame;
     }
   }
 }

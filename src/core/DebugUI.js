@@ -250,7 +250,7 @@ export class DebugUI {
     for (const stat of config.stats) {
       const statCell = document.createElement("div");
       statCell.className = "debug-ui-worker-cell stat";
-      statCell.textContent = `${stat.label}: --`;
+      statCell.textContent = `${stat.key}: --`;
       row.appendChild(statCell);
       elements[stat.key] = statCell;
     }
@@ -393,12 +393,12 @@ export class DebugUI {
       let rawValue = view[statIndex];
 
       // Smooth FPS values
-      if (stat.key === "FPS") {
-        rawValue = this._smoothFPS(rawValue, this.fpsSmoothing[workerType]);
-      }
+      // if (stat.key === "FPS") {
+      //   rawValue = this._smoothFPS(rawValue, this.fpsSmoothing[workerType]);
+      // }
 
       const formattedValue = stat.format(rawValue);
-      elements[stat.key].textContent = `${stat.label}: ${formattedValue}`;
+      elements[stat.key].textContent = `${stat.key}: ${formattedValue}`;
     }
   }
 
