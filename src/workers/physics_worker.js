@@ -119,9 +119,6 @@ class PhysicsWorker extends AbstractWorker {
       // Standard mode: run physics with actual deltaTime
       this.updateVerlet(deltaTime, dtRatio, resuming);
     }
-
-    // CRITICAL: Sync RigidBody positions to Transform for rendering
-    this.syncPhysicsToTransform();
   }
 
   /**
@@ -143,15 +140,6 @@ class PhysicsWorker extends AbstractWorker {
     if (data.msg === "updatePhysicsConfig") {
       this.applyPhysicsConfig(data.config || {});
     }
-  }
-
-  /**
-   * Sync RigidBody physics positions to Transform for rendering
-   * NOTE: No longer needed - physics now writes directly to Transform.x/y/rotation
-   */
-  syncPhysicsToTransform() {
-    // REMOVED: Transform now stores position/rotation directly
-    // Physics worker reads/writes Transform.x/y/rotation instead of RigidBody.x/y/rotation
   }
 
   /**
