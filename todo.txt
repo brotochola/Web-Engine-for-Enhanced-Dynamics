@@ -29,7 +29,7 @@ COLLIDER.SHAPETYPE.RECTANGLE = 1
 -generar mas chaboncitos
 
 
--CAMERA: tween to follow (if we use interpolation)
+-CAMERA: minX,maxX,minY,maxX
 
 
 

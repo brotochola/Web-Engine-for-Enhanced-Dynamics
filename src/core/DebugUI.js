@@ -191,6 +191,20 @@ export class DebugUI {
     }
     table.setAttribute("data-stat-count", maxStatCount);
 
+    // Main thread FPS row (add as first row in table)
+    const mainRow = document.createElement("div");
+    mainRow.className = "debug-ui-worker-row";
+    const mainLabel = document.createElement("div");
+    mainLabel.className = "debug-ui-worker-cell label debug-ui-stat main";
+    mainLabel.textContent = "Main:";
+    mainRow.appendChild(mainLabel);
+    const mainFpsCell = document.createElement("div");
+    mainFpsCell.className = "debug-ui-worker-cell stat";
+    mainFpsCell.textContent = "FPS: --";
+    mainRow.appendChild(mainFpsCell);
+    this.elements.mainFPS = mainFpsCell;
+    table.appendChild(mainRow);
+
     // Single workers (renderer, particle, physics)
     const singleWorkers = ["renderer", "particle", "physics"];
     for (const workerType of singleWorkers) {
@@ -249,7 +263,7 @@ export class DebugUI {
     // Create stat elements based on config
     for (const stat of config.stats) {
       const statCell = document.createElement("div");
-      statCell.className = "debug-ui-worker-cell stat";
+      statCell.className = `debug-ui-worker-cell stat debug-ui-stat ${config.color}`;
       statCell.textContent = `${stat.key}: --`;
       row.appendChild(statCell);
       elements[stat.key] = statCell;
@@ -274,6 +288,17 @@ export class DebugUI {
     smoothing.index = (smoothing.index + 1) % smoothing.values.length;
     // Return average
     return smoothing.sum / smoothing.values.length;
+  }
+
+  /**
+   * Format a number with underscore thousand separators
+   * @param {number} num - Number to format
+   * @returns {string} Formatted number (e.g., "1_000_000")
+   */
+  _formatNumber(num) {
+    if (num === null || num === undefined || isNaN(num)) return "--";
+    const rounded = Math.round(num);
+    return rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, "_");
   }
 
   /**
@@ -344,9 +369,12 @@ export class DebugUI {
     const scene = this.scene;
     if (!scene || !this.workerStatViews) return;
 
+    // Update summary counts
+    this._updatePerformanceSummary();
+
     // Main thread FPS
     if (this.elements.mainFPS && scene.mainFPS !== undefined) {
-      this.elements.mainFPS.textContent = `Main: ${scene.mainFPS.toFixed(2)}`;
+      this.elements.mainFPS.textContent = `FPS: ${scene.mainFPS.toFixed(2)}`;
     }
 
     // Job stealing stats
@@ -357,7 +385,9 @@ export class DebugUI {
     ) {
       const stats = scene.mainThreadHelper.getStats();
       if (stats && scene.mainThreadHelper.enabled) {
-        this.elements.jobStealing.textContent = `Jobs: ${stats.jobsThisFrame} (${stats.entitiesThisFrame} entities)`;
+        this.elements.jobStealing.textContent = `Jobs: ${this._formatNumber(
+          stats.jobsThisFrame
+        )} (${this._formatNumber(stats.entitiesThisFrame)} entities)`;
         this.elements.jobStealingRow.style.display = "";
       } else {
         this.elements.jobStealingRow.style.display = "none";
@@ -372,6 +402,114 @@ export class DebugUI {
     // Update multi-workers (spatial, logic)
     this._updateMultiWorkerStats("spatial", SPATIAL_STATS);
     this._updateMultiWorkerStats("logic", LOGIC_STATS);
+  }
+
+  /**
+   * Update the performance summary section with entity/particle/decoration counts
+   */
+  _updatePerformanceSummary() {
+    const scene = this.scene;
+    if (!scene) return;
+
+    // GameObjects
+    if (Transform.active) {
+      let activeGO = 0;
+      const totalGO = scene.totalEntityCount || 0;
+      for (let i = 0; i < totalGO; i++) {
+        if (Transform.active[i]) activeGO++;
+      }
+      const visibleGO = this.workerStatViews?.renderer
+        ? this.workerStatViews.renderer[RENDERER_STATS.VISIBLE_ENTITIES] || 0
+        : 0;
+
+      if (this.elements.perfGameObjects) {
+        this.elements.perfGameObjects.textContent = `GameObjects: ${this._formatNumber(
+          activeGO
+        )} / ${this._formatNumber(totalGO)} (👁 ${this._formatNumber(
+          visibleGO
+        )})`;
+      }
+    }
+
+    // Particles (from particle worker stats)
+    if (this.workerStatViews?.particle) {
+      const activeP =
+        this.workerStatViews.particle[PARTICLE_STATS.ACTIVE_PARTICLES] || 0;
+      const visibleP =
+        this.workerStatViews.renderer?.[RENDERER_STATS.VISIBLE_PARTICLES] || 0;
+      const totalP =
+        this.workerStatViews.particle[PARTICLE_STATS.TOTAL_PARTICLES] || 0;
+
+      if (this.elements.perfParticles) {
+        this.elements.perfParticles.textContent = `Particles: ${this._formatNumber(
+          activeP
+        )} / ${this._formatNumber(totalP)} (👁 ${this._formatNumber(visibleP)})`;
+      }
+    }
+
+    // Decorations
+    if (DecorationComponent.active) {
+      let activeD = 0;
+      let visibleD = 0;
+      const totalD = DecorationPool.maxDecorations || 0;
+
+      for (let i = 0; i < totalD; i++) {
+        if (DecorationComponent.active[i]) {
+          activeD++;
+          if (DecorationComponent.isItOnScreen?.[i]) {
+            visibleD++;
+          }
+        }
+      }
+
+      const spritesD = this.workerStatViews?.renderer
+        ? this.workerStatViews.renderer[RENDERER_STATS.DECORATION_SPRITES] || 0
+        : 0;
+
+      if (this.elements.perfDecorations) {
+        this.elements.perfDecorations.textContent = `Decorations: ${this._formatNumber(
+          activeD
+        )} / ${this._formatNumber(totalD)} (👁 ${this._formatNumber(
+          visibleD
+        )}) [Sprites: ${this._formatNumber(spritesD)}]`;
+      }
+    }
+
+    // Flash entities
+    if (Transform.active && Transform.entityType) {
+      // Find Flash entity type
+      const flashReg = scene.registeredClasses?.find(
+        (r) => r.class.name === "Flash"
+      );
+
+      if (flashReg) {
+        let activeF = 0;
+        let visibleF = 0;
+        let totalF = 0;
+
+        const totalEntities = scene.totalEntityCount || 0;
+
+        for (let i = 0; i < totalEntities; i++) {
+          if (Transform.entityType[i] === flashReg.entityType) {
+            totalF++;
+            if (Transform.active[i]) {
+              activeF++;
+              // Check if visible (rough approximation - Flash entities on screen)
+              // You may need to adjust this based on your visibility logic
+              visibleF++;
+            }
+          }
+        }
+
+        if (this.elements.perfFlash) {
+          this.elements.perfFlash.textContent = `Flash: ${this._formatNumber(
+            activeF
+          )} / ${this._formatNumber(totalF)} (👁 ${this._formatNumber(
+            visibleF
+          )})`;
+        }
+      }
+    }
   }
 
   /**
@@ -393,9 +531,9 @@ export class DebugUI {
       let rawValue = view[statIndex];
 
       // Smooth FPS values
-      // if (stat.key === "FPS") {
-      //   rawValue = this._smoothFPS(rawValue, this.fpsSmoothing[workerType]);
-      // }
+      if (stat.key === "FPS") {
+        rawValue = this._smoothFPS(rawValue, this.fpsSmoothing[workerType]);
+      }
 
       const formattedValue = stat.format(rawValue);
       elements[stat.key].textContent = `${stat.key}: ${formattedValue}`;
@@ -454,7 +592,9 @@ export class DebugUI {
       for (let i = 0; i < total; i++) {
         if (Transform.active[i]) active++;
       }
-      this.elements.activeCount.textContent = `Active: ${active}/${total}`;
+      this.elements.activeCount.textContent = `Active: ${this._formatNumber(
+        active
+      )}/${this._formatNumber(total)}`;
     }
 
     // Visible units (from renderer stats)
@@ -462,7 +602,9 @@ export class DebugUI {
       const visible =
         (scene.workerStats.renderer.visibleEntities || 0) +
         (scene.workerStats.renderer.visibleParticles || 0);
-      this.elements.visibleCount.textContent = `Visible: ${visible}`;
+      this.elements.visibleCount.textContent = `Visible: ${this._formatNumber(
+        visible
+      )}`;
     }
 
     // Pool stats
@@ -473,7 +615,11 @@ export class DebugUI {
         if (internalEntities.has(reg.class.name)) continue;
         const stats = this.gameEngine.getPoolStats(reg.class);
         if (stats && stats.total > 0) {
-          poolTexts.push(`${reg.class.name}: ${stats.active}/${stats.total}`);
+          poolTexts.push(
+            `${reg.class.name}: ${this._formatNumber(
+              stats.active
+            )}/${this._formatNumber(stats.total)}`
+          );
         }
       }
       if (poolTexts.length > 0) {
@@ -493,7 +639,9 @@ export class DebugUI {
     // Total decoration pool size
     if (this.elements.decorationTotal) {
       const total = DecorationPool.maxDecorations || 0;
-      this.elements.decorationTotal.textContent = `Total: ${total}`;
+      this.elements.decorationTotal.textContent = `Total: ${this._formatNumber(
+        total
+      )}`;
     }
 
     // Count active decorations
@@ -503,7 +651,9 @@ export class DebugUI {
       for (let i = 0; i < total; i++) {
         if (DecorationComponent.active[i]) active++;
       }
-      this.elements.decorationActive.textContent = `Active: ${active}`;
+      this.elements.decorationActive.textContent = `Active: ${this._formatNumber(
+        active
+      )}`;
     }
 
     // Count visible decorations (on screen)
@@ -518,14 +668,18 @@ export class DebugUI {
           visible++;
         }
       }
-      this.elements.decorationVisible.textContent = `Visible: ${visible}`;
+      this.elements.decorationVisible.textContent = `Visible: ${this._formatNumber(
+        visible
+      )}`;
     }
 
     // PIXI sprites created (from renderer worker stat buffer)
     if (this.elements.decorationSprites && this.workerStatViews?.renderer) {
       const spriteCount =
         this.workerStatViews.renderer[RENDERER_STATS.DECORATION_SPRITES];
-      this.elements.decorationSprites.textContent = `Sprites: ${spriteCount}`;
+      this.elements.decorationSprites.textContent = `Sprites: ${this._formatNumber(
+        spriteCount
+      )}`;
     }
   }
 
@@ -795,24 +949,83 @@ export class DebugUI {
     const container = document.createElement("div");
     container.style.display = "flex";
     container.style.flexDirection = "column";
-    container.style.gap = "8px";
+    container.style.gap = "12px";
 
-    // Main thread FPS row
-    const mainRow = document.createElement("div");
-    mainRow.className = "debug-ui-row";
-    this.elements.mainFPS = this._createStat("Main: --", "main");
-    mainRow.appendChild(this.elements.mainFPS);
-    container.appendChild(mainRow);
+    // Summary section for entity counts
+    const summarySection = document.createElement("div");
+    summarySection.className = "debug-ui-performance-summary";
+    summarySection.style.display = "flex";
+    summarySection.style.flexDirection = "column";
+    summarySection.style.gap = "4px";
+    summarySection.style.padding = "8px";
+    summarySection.style.backgroundColor = "rgba(0, 0, 0, 0.3)";
+    summarySection.style.borderRadius = "4px";
+
+    // All pool stats on ONE row with different colors
+    const poolStatsRow = document.createElement("div");
+    poolStatsRow.className = "debug-ui-row";
+    poolStatsRow.style.justifyContent = "flex-start";
+    poolStatsRow.style.gap = "16px";
+
+    // Pools Stats title (inline with data)
+    const poolStatsTitle = document.createElement("span");
+    poolStatsTitle.className = "debug-ui-stat";
+    poolStatsTitle.style.fontWeight = "bold";
+    poolStatsTitle.style.color = "rgba(255, 255, 255, 0.9)";
+    poolStatsTitle.textContent = "Pools Stats:";
+    poolStatsRow.appendChild(poolStatsTitle);
+
+    // GameObjects (main green color)
+    this.elements.perfGameObjects = document.createElement("span");
+    this.elements.perfGameObjects.className = "debug-ui-stat";
+    this.elements.perfGameObjects.style.color = "#4ade80";
+    this.elements.perfGameObjects.textContent = "GameObjects: -- / -- (👁 --)";
+    poolStatsRow.appendChild(this.elements.perfGameObjects);
+
+    // Particles (particle orange color)
+    this.elements.perfParticles = document.createElement("span");
+    this.elements.perfParticles.className = "debug-ui-stat";
+    this.elements.perfParticles.style.color = "#fb923c";
+    this.elements.perfParticles.textContent = "Particles: -- / -- (👁 --)";
+    poolStatsRow.appendChild(this.elements.perfParticles);
+
+    // Decorations (nature green-cyan color)
+    this.elements.perfDecorations = document.createElement("span");
+    this.elements.perfDecorations.className = "debug-ui-stat";
+    this.elements.perfDecorations.style.color = "#34d399";
+    this.elements.perfDecorations.textContent =
+      "Decorations: -- / -- (👁 --) [Sprites: --]";
+    poolStatsRow.appendChild(this.elements.perfDecorations);
+
+    // Flash (bright yellow color)
+    this.elements.perfFlash = document.createElement("span");
+    this.elements.perfFlash.className = "debug-ui-stat";
+    this.elements.perfFlash.style.color = "#fbbf24";
+    this.elements.perfFlash.textContent = "Flash: -- / -- (👁 --)";
+    poolStatsRow.appendChild(this.elements.perfFlash);
+
+    summarySection.appendChild(poolStatsRow);
+    container.appendChild(summarySection);
 
     // Job stealing stats (shown when enabled)
     const jobRow = document.createElement("div");
     jobRow.className = "debug-ui-row";
     this.elements.jobStealing = this._createStat("Jobs: --", "jobs");
-    this.elements.jobStealing.style.display = "none";
     jobRow.appendChild(this.elements.jobStealing);
     jobRow.style.display = "none";
     this.elements.jobStealingRow = jobRow;
     container.appendChild(jobRow);
+
+    // Worker Stats Title
+    const workerStatsTitle = document.createElement("div");
+    workerStatsTitle.className = "debug-ui-stat";
+    workerStatsTitle.style.fontWeight = "bold";
+    workerStatsTitle.style.fontSize = "12px";
+    workerStatsTitle.style.marginTop = "8px";
+    workerStatsTitle.style.marginBottom = "4px";
+    workerStatsTitle.style.color = "rgba(255, 255, 255, 0.9)";
+    workerStatsTitle.textContent = "Worker Stats";
+    container.appendChild(workerStatsTitle);
 
     // Container for worker stat rows (will be dynamically populated on scene attach)
     this.elements.workerStatsContainer = document.createElement("div");

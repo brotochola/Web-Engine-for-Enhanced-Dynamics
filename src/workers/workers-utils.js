@@ -2,6 +2,17 @@
 // Single source of truth for stat buffer layouts across all workers
 
 /**
+ * Format a number with underscore thousand separators
+ * @param {number} num - Number to format
+ * @returns {string} Formatted number (e.g., "1_000_000")
+ */
+function formatNumber(num) {
+  if (num === null || num === undefined || isNaN(num)) return "--";
+  const rounded = Math.round(num);
+  return rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, "_");
+}
+
+/**
  * Renderer Worker Stats Schema
  * Single renderer worker with draw call and visibility metrics
  */
@@ -25,6 +36,9 @@ export const PARTICLE_STATS = {
   FPS: 0,
   ACTIVE_PARTICLES: 1,
   TOTAL_PARTICLES: 2,
+  PARTICLES_STAMPED: 3,
+  FLASHES_UPDATED: 4,
+  SHADOWS_UPDATED: 5,
   // Reserve space for future stats
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
@@ -38,6 +52,7 @@ export const PHYSICS_STATS = {
   FPS: 0,
   COLLISION_CHECKS: 1,
   COLLISIONS_RESOLVED: 2,
+  COLLISION_PAIRS: 3,
   // Reserve space for future stats
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
@@ -81,14 +96,14 @@ export const WORKER_DISPLAY_CONFIG = {
     color: "renderer",
     stats: [
       { key: "FPS", format: (v) => v.toFixed(2) },
-      { key: "DRAW_CALLS", format: (v) => v.toFixed(0) },
+      { key: "DRAW_CALLS", format: (v) => formatNumber(v) },
       {
         key: "VISIBLE_ENTITIES",
-        format: (v) => v.toFixed(0),
+        format: (v) => formatNumber(v),
       },
       {
         key: "VISIBLE_PARTICLES",
-        format: (v) => v.toFixed(0),
+        format: (v) => formatNumber(v),
       },
     ],
   },
@@ -98,12 +113,16 @@ export const WORKER_DISPLAY_CONFIG = {
     stats: [
       { key: "FPS", format: (v) => v.toFixed(2) },
       {
-        key: "ACTIVE_PARTICLES",
-        format: (v) => v.toFixed(0),
+        key: "PARTICLES_STAMPED",
+        format: (v) => formatNumber(v),
       },
       {
-        key: "TOTAL_PARTICLES",
-        format: (v) => v.toFixed(0),
+        key: "FLASHES_UPDATED",
+        format: (v) => formatNumber(v),
+      },
+      {
+        key: "SHADOWS_UPDATED",
+        format: (v) => formatNumber(v),
       },
     ],
   },
@@ -114,11 +133,15 @@ export const WORKER_DISPLAY_CONFIG = {
       { key: "FPS", format: (v) => v.toFixed(2) },
       {
         key: "COLLISION_CHECKS",
-        format: (v) => v.toFixed(0),
+        format: (v) => formatNumber(v),
       },
       {
         key: "COLLISIONS_RESOLVED",
-        format: (v) => v.toFixed(0),
+        format: (v) => formatNumber(v),
+      },
+      {
+        key: "COLLISION_PAIRS",
+        format: (v) => formatNumber(v),
       },
     ],
   },
@@ -129,15 +152,15 @@ export const WORKER_DISPLAY_CONFIG = {
       { key: "FPS", format: (v) => v.toFixed(2) },
       {
         key: "NEIGHBOR_CHECKS",
-        format: (v) => v.toFixed(0),
+        format: (v) => formatNumber(v),
       },
       {
         key: "GRID_CELLS_CHECKED",
-        format: (v) => v.toFixed(0),
+        format: (v) => formatNumber(v),
       },
       {
         key: "ENTITIES_PROCESSED",
-        format: (v) => v.toFixed(0),
+        format: (v) => formatNumber(v),
       },
     ],
   },
@@ -148,13 +171,8 @@ export const WORKER_DISPLAY_CONFIG = {
       { key: "FPS", format: (v) => v.toFixed(2) },
       {
         key: "ENTITIES_PROCESSED",
-        format: (v) => v.toFixed(0),
+        format: (v) => formatNumber(v),
       },
-      {
-        key: "SYSTEMS_EXECUTED",
-        format: (v) => v.toFixed(0),
-      },
-      { key: "JOBS_STOLEN", format: (v) => v.toFixed(0) },
     ],
   },
 };
