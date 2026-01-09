@@ -84,6 +84,11 @@ class PixiParticlePool {
     this.freeIndices = []; // Stack of available particle indices
     this.createdCount = 0; // Total particles created (for stats)
     this.defaultTexture = null; // Default texture for new particles
+
+    // Deferred allocation tracking (allocate during idle frames)
+    this.newParticlesThisFrame = 0; // Particles created this frame
+    this.accumulatedNewParticles = 0; // Total demand across frames
+    this.framesSinceLastAcquire = 0; // Idle frame counter
   }
 
   /**
@@ -116,6 +121,11 @@ class PixiParticlePool {
       particle.anchorX = 0.5;
       particle.anchorY = 0.5;
 
+      // CRITICAL: Reset texture to default to prevent texture bleeding between entities
+      if (this.defaultTexture) {
+        particle.texture = this.defaultTexture;
+      }
+
       return { particle, index: particleIndex };
     }
 
@@ -132,6 +142,10 @@ class PixiParticlePool {
     particleIndex = this.particles.length;
     this.particles.push(particle);
     this.createdCount++;
+
+    // Track that we created a particle THIS FRAME
+    this.newParticlesThisFrame++;
+    this.framesSinceLastAcquire = 0;
 
     return { particle, index: particleIndex };
   }
@@ -158,6 +172,54 @@ class PixiParticlePool {
 
     // Add to free list
     this.freeIndices.push(particleIndex);
+  }
+
+  /**
+   * Called once per frame after all sprite updates
+   * Detects idle frames and triggers deferred pre-allocation
+   */
+  endFrame() {
+    if (this.newParticlesThisFrame > 0) {
+      // Active frame - accumulate demand
+      this.accumulatedNewParticles += this.newParticlesThisFrame;
+      this.newParticlesThisFrame = 0;
+      this.framesSinceLastAcquire = 0;
+    } else {
+      // Idle frame - no new particles were acquired
+      this.framesSinceLastAcquire++;
+
+      // First idle frame after demand - pre-allocate based on accumulated demand
+      if (
+        this.framesSinceLastAcquire === 1 &&
+        this.accumulatedNewParticles > 0
+      ) {
+        const extraCount = Math.ceil(this.accumulatedNewParticles * 0.1);
+        this.preallocate(extraCount);
+        this.accumulatedNewParticles = 0; // Reset accumulator
+      }
+    }
+  }
+
+  /**
+   * Pre-allocate particles into the free pool (batch operation during idle frames)
+   * @param {number} count - Number of particles to pre-allocate
+   */
+  preallocate(count) {
+    const texture = this.defaultTexture || PIXI.Texture.WHITE;
+
+    for (let i = 0; i < count; i++) {
+      const particle = new PIXI.Particle({
+        texture,
+        anchorX: 0.5,
+        anchorY: 0.5,
+      });
+      particle.visible = false;
+
+      const index = this.particles.length;
+      this.particles.push(particle);
+      this.freeIndices.push(index); // Add to free pool immediately
+      this.createdCount++;
+    }
   }
 
   /**
@@ -1255,11 +1317,14 @@ class PixiRenderer extends AbstractWorker {
           this.bodySprites[entityIndex] = null;
           this.bodySpritePoolIndices[entityIndex] = -1;
 
+          // CRITICAL: Always reset spritesheet tracking when sprite is released
+          // This forces texture update when entity gets a new sprite from pool
+          this.currentSpritesheetIds[entityIndex] = 0;
+
           // Only reset animation state if entity despawned (not just off-screen)
           // This preserves animation state when entity goes off-screen temporarily
           if (!active[entityIndex]) {
             this.previousAnimStates[entityIndex] = -1;
-            this.currentSpritesheetIds[entityIndex] = 0;
             this.currentAnimationFrames[entityIndex] = [];
           }
         }
@@ -1405,6 +1470,9 @@ class PixiRenderer extends AbstractWorker {
     if (this.debugLayer) {
       this.renderDebugOverlays();
     }
+
+    // Let particle pool handle deferred pre-allocation during idle frames
+    this.particlePool.endFrame();
   }
 
   /**
