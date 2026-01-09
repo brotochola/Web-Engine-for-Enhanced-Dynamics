@@ -46,6 +46,10 @@ class PhysicsWorker extends AbstractWorker {
     // When noLimitFPS is true, we accumulate time and run physics at a fixed rate
     this.timeAccumulator = 0;
     this.fixedDeltaTime = 16.67; // Target: 60fps physics tick (will be divided by subStepCount)
+
+    // Stats tracking
+    this.collisionChecksThisFrame = 0;
+    this.collisionsResolvedThisFrame = 0;
   }
 
   /**
@@ -178,6 +182,10 @@ class PhysicsWorker extends AbstractWorker {
 
     // Get the number of entities with RigidBody (not all entities have physics)
     const rigidBodyCount = this.entityCount;
+
+    // Reset stats counters for this frame
+    this.collisionChecksThisFrame = 0;
+    this.collisionsResolvedThisFrame = 0;
 
     // OPTIMIZATION: Use query system to reset collision counters only for physics entities
     const physicsEntities = this.query([RigidBody]);
@@ -562,6 +570,9 @@ class PhysicsWorker extends AbstractWorker {
         if (i === j || !active[j] || !colliderActive[j]) continue;
         if (i >= j) continue; // Only process each pair once
 
+        // Track collision check
+        this.collisionChecksThisFrame++;
+
         // Get shape type for neighbor 'j'
         const shapeJ = shapeType[j];
 
@@ -628,6 +639,9 @@ class PhysicsWorker extends AbstractWorker {
         }
 
         if (!result || !result.collided) continue;
+
+        // Track collision resolved
+        this.collisionsResolvedThisFrame++;
 
         const eitherIsTrigger = isTrigger[i] || isTrigger[j];
 
@@ -824,7 +838,10 @@ class PhysicsWorker extends AbstractWorker {
     // Write stats to SharedArrayBuffer every frame
     if (this.stats) {
       this.stats[PHYSICS_STATS.FPS] = this.currentFPS;
-      // Additional physics stats can be added here (collision checks, etc.)
+      this.stats[PHYSICS_STATS.COLLISION_CHECKS] =
+        this.collisionChecksThisFrame;
+      this.stats[PHYSICS_STATS.COLLISIONS_RESOLVED] =
+        this.collisionsResolvedThisFrame;
     }
   }
 }
