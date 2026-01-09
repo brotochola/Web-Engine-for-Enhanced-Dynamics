@@ -17,7 +17,7 @@ export { Keyboard, SpriteSheetRegistry };
 export class GameObject {
   // Entity class metadata (for spawning system)
   static startIndex = 0; // Starting index in arrays for this entity type
-  static totalCount = 0; // Total allocated entities of this type
+  static poolSize = 0; // Allocated count for this entity type
 
   // Component composition - define which components this entity type has
   // Override in subclasses, e.g.: static components = [RigidBody, Collider, SpriteRenderer]
@@ -35,7 +35,7 @@ export class GameObject {
   static entityType = null; // Numeric ID assigned by GameEngine
 
   static sharedBuffer = null; // For entity metadata (deprecated - kept for backward compat)
-  static entityCount = 0;
+  static globalEntityCount = 0;
 
   static instances = [];
 
@@ -60,7 +60,7 @@ export class GameObject {
     distanceBuffer = null
   ) {
     this.sharedBuffer = buffer;
-    this.entityCount = count;
+    this.globalEntityCount = count;
 
     // NOTE: entityType moved to Transform component - no longer using this buffer
     // Kept for backward compatibility with neighbor data initialization
@@ -893,7 +893,7 @@ export class GameObject {
    * @param {Class} EntityClass - The entity class to initialize
    */
   static initializeFreeList(EntityClass) {
-    const count = EntityClass.totalCount;
+    const count = EntityClass.poolSize;
     const startIndex = EntityClass.startIndex;
 
     // Create free list stack (LIFO - last written index is first to spawn)
@@ -955,10 +955,10 @@ export class GameObject {
     // Validate EntityClass has required metadata
     if (
       EntityClass.startIndex === undefined ||
-      EntityClass.totalCount === undefined
+      EntityClass.poolSize === undefined
     ) {
       console.error(
-        `Cannot spawn ${EntityClass.name}: missing startIndex/totalCount metadata. Was it registered with GameEngine?`
+        `Cannot spawn ${EntityClass.name}: missing startIndex/poolSize metadata. Was it registered with GameEngine?`
       );
       return null;
     }
@@ -987,7 +987,7 @@ export class GameObject {
     // Check if pool is exhausted
     if (EntityClass.freeListTop < 0) {
       // console.warn(
-      //   `No inactive ${EntityClass.name} available in pool! All ${EntityClass.totalCount} entities are active.`
+      //   `No inactive ${EntityClass.name} available in pool! All ${EntityClass.poolSize} entities are active.`
       // );
       return null;
     }
@@ -1091,7 +1091,7 @@ export class GameObject {
   static getPoolStats(EntityClass) {
     if (
       EntityClass.startIndex === undefined ||
-      EntityClass.totalCount === undefined
+      EntityClass.poolSize === undefined
     ) {
       return { total: 0, active: 0, available: 0 };
     }
@@ -1100,18 +1100,18 @@ export class GameObject {
     if (EntityClass.freeList) {
       const available = EntityClass.freeListTop + 1;
       return {
-        total: EntityClass.totalCount,
-        active: EntityClass.totalCount - available,
+        total: EntityClass.poolSize,
+        active: EntityClass.poolSize - available,
         available: available,
       };
     }
 
     // Fallback to linear search if free list not initialized
     const startIndex = EntityClass.startIndex;
-    const total = EntityClass.totalCount;
+    const total = EntityClass.poolSize;
     let activeCount = 0;
 
-    for (let i = startIndex; i < startIndex + total; i++) {
+    for (let i = startIndex; i < EntityClass.endIndex; i++) {
       if (Transform.active[i]) {
         activeCount++;
       }
@@ -1133,13 +1133,13 @@ export class GameObject {
   static despawnAll(EntityClass) {
     if (
       EntityClass.startIndex === undefined ||
-      EntityClass.totalCount === undefined
+      EntityClass.poolSize === undefined
     ) {
       return 0;
     }
 
     const startIndex = EntityClass.startIndex;
-    const endIndex = startIndex + EntityClass.totalCount;
+    const endIndex = EntityClass.endIndex;
     let despawnedCount = 0;
 
     for (let i = startIndex; i < endIndex; i++) {
@@ -1185,16 +1185,16 @@ export class GameObject {
     // Validate EntityClass has required metadata
     if (
       EntityClass.startIndex === undefined ||
-      EntityClass.totalCount === undefined
+      EntityClass.poolSize === undefined
     ) {
       console.warn(
-        `Cannot iterate ${EntityClass.name}: missing startIndex/totalCount metadata. Was it registered with GameEngine?`
+        `Cannot iterate ${EntityClass.name}: missing startIndex/poolSize metadata. Was it registered with GameEngine?`
       );
       return;
     }
 
     const startIndex = EntityClass.startIndex;
-    const endIndex = startIndex + EntityClass.totalCount;
+    const endIndex = EntityClass.endIndex;
     const activeArray = Transform.active;
     const instances = EntityClass.instances;
 
@@ -1218,19 +1218,19 @@ export class GameObject {
 
     if (
       EntityClass.startIndex === undefined ||
-      EntityClass.totalCount === undefined
+      EntityClass.poolSize === undefined
     ) {
       return 0;
     }
 
     // If free list exists, calculate from it (O(1))
     if (EntityClass.hasOwnProperty("freeList")) {
-      return EntityClass.totalCount - (EntityClass.freeListTop + 1);
+      return EntityClass.poolSize - (EntityClass.freeListTop + 1);
     }
 
     // Fallback: count active entities (O(n))
     const startIndex = EntityClass.startIndex;
-    const endIndex = startIndex + EntityClass.totalCount;
+    const endIndex = EntityClass.endIndex;
     let count = 0;
 
     for (let i = startIndex; i < endIndex; i++) {

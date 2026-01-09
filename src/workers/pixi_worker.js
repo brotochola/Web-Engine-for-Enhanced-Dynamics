@@ -559,7 +559,7 @@ class PixiRenderer extends AbstractWorker {
 
     // Render per-entity debug visualizations
     // DENSE ALLOCATION: entityIndex === componentIndex for all components
-    for (let i = 0; i < this.entityCount; i++) {
+    for (let i = 0; i < this.globalEntityCount; i++) {
       if (!active[i]) continue;
 
       // DENSE: use entity index directly for component access
@@ -1204,7 +1204,7 @@ class PixiRenderer extends AbstractWorker {
 
     for (
       let i = 0;
-      i < /*this.entityCount*/ allEntitiesWithSpriteRenderer.length;
+      i < /*this.globalEntityCount*/ allEntitiesWithSpriteRenderer.length;
       i++
     ) {
       const entityIndex = allEntitiesWithSpriteRenderer[i];
@@ -2090,7 +2090,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   buildEntitySpriteConfigs(registeredClasses) {
     // Track which entity types have SpriteRenderer (they need placeholder sprites)
     for (const registration of registeredClasses) {
-      if (registration.count === 0) continue;
+      if (registration.poolSize === 0) continue;
       if (!registration.components?.includes("SpriteRenderer")) continue;
 
       const entityType = registration.entityType;
@@ -2562,21 +2562,23 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   createSprites() {
     // Initialize sprite tracking arrays
-    this.bodySprites = new Array(this.entityCount).fill(null);
-    this.bodySpritePoolIndices = new Int32Array(this.entityCount).fill(-1);
-    this.currentSpritesheetIds = new Uint8Array(this.entityCount);
+    this.bodySprites = new Array(this.globalEntityCount).fill(null);
+    this.bodySpritePoolIndices = new Int32Array(this.globalEntityCount).fill(
+      -1
+    );
+    this.currentSpritesheetIds = new Uint8Array(this.globalEntityCount);
 
     // Initialize animation tracking typed arrays
-    this.previousAnimStates = new Int16Array(this.entityCount).fill(-1);
-    this.currentFrameIndex = new Uint16Array(this.entityCount);
-    this.frameAccumulator = new Float32Array(this.entityCount);
-    this.animationSpeed = new Float32Array(this.entityCount);
-    this.currentAnimationFrames = new Array(this.entityCount)
+    this.previousAnimStates = new Int16Array(this.globalEntityCount).fill(-1);
+    this.currentFrameIndex = new Uint16Array(this.globalEntityCount);
+    this.frameAccumulator = new Float32Array(this.globalEntityCount);
+    this.animationSpeed = new Float32Array(this.globalEntityCount);
+    this.currentAnimationFrames = new Array(this.globalEntityCount)
       .fill(null)
       .map(() => []);
 
     console.log(
-      `PIXI WORKER: Entity sprite system initialized (${this.entityCount} slots, using central particle pool)`
+      `PIXI WORKER: Entity sprite system initialized (${this.globalEntityCount} slots, using central particle pool)`
     );
   }
 
@@ -2747,7 +2749,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Note: LightEmitter is automatically initialized by AbstractWorker.initializeAllComponents()
     if (data.buffers.componentData.LightEmitter) {
       console.log(
-        `PIXI WORKER: LightEmitter component initialized (${this.entityCount} slots)`
+        `PIXI WORKER: LightEmitter component initialized (${this.globalEntityCount} slots)`
       );
     }
 
@@ -2884,7 +2886,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // AbstractWorker.initializeAllComponents()
       if (data.buffers.componentData.Collider) {
         console.log(
-          `PIXI WORKER: Collider component loaded for debug rendering (${this.entityCount} slots)`
+          `PIXI WORKER: Collider component loaded for debug rendering (${this.globalEntityCount} slots)`
         );
       }
 
@@ -2909,7 +2911,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       "PIXI WORKER: Initialization complete, waiting for start signal..."
     );
     console.log(
-      `PIXI WORKER: Centralized particle pool ready (entities: ${this.entityCount} slots, particles: ${this.maxParticles} slots, decorations: ${this.maxDecorations} slots)`
+      `PIXI WORKER: Centralized particle pool ready (entities: ${this.globalEntityCount} slots, particles: ${this.maxParticles} slots, decorations: ${this.maxDecorations} slots)`
     );
 
     // Note: Game loop will start when "start" message is received from main thread

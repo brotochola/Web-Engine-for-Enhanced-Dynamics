@@ -162,7 +162,7 @@ class LogicWorker extends AbstractWorker {
     }
 
     // Initialize screen visibility tracking array
-    this.previousScreenVisibility = new Uint8Array(data.entityCount);
+    this.previousScreenVisibility = new Uint8Array(data.globalEntityCount);
     // Initialize to 0 (off-screen) - first frame will trigger onScreenEnter for visible entities
     this.previousScreenVisibility.fill(0);
     // console.log("LOGIC WORKER: Screen visibility tracking enabled");
@@ -190,7 +190,7 @@ class LogicWorker extends AbstractWorker {
     this.createGameObjectInstances();
 
     // console.log(
-    //   `LOGIC WORKER ${this.workerIndex}: Total ${this.entityCount} GameObjects ready (job-based processing)`
+    //   `LOGIC WORKER ${this.workerIndex}: Total ${this.globalEntityCount} GameObjects ready (job-based processing)`
     // );
     // console.log(
     //   `LOGIC WORKER ${this.workerIndex}: Initialization complete, waiting for start signal...`
@@ -204,15 +204,22 @@ class LogicWorker extends AbstractWorker {
    */
   createGameObjectInstances() {
     for (const classInfo of this.registeredClasses) {
-      const { name, count, startIndex, entityType } = classInfo;
+      const { name, poolSize, startIndex, endIndex, entityType } = classInfo;
 
       const EntityClass = self[name]; // Get class by name from global scope
 
       if (EntityClass) {
         // Store metadata for spawning system
         EntityClass.startIndex = startIndex;
-        EntityClass.totalCount = count;
+        EntityClass.poolSize = poolSize;
+        EntityClass.endIndex = endIndex;
         EntityClass.entityType = entityType; // Auto-assigned entity type ID
+
+        // Pre-computed typed array of all entity indices for this class
+        EntityClass.entityIndices = new Int32Array(poolSize);
+        for (let j = 0; j < poolSize; j++) {
+          EntityClass.entityIndices[j] = startIndex + j;
+        }
 
         // CRITICAL: Initialize instances array for THIS class (not inherited from GameObject)
         // Without this, all entity types share GameObject.instances causing spawn bugs
@@ -237,10 +244,10 @@ class LogicWorker extends AbstractWorker {
         // Flash needs its initialize() called with the pool size
         // Note: Flash uses Camera class directly for off-screen culling
         if (name === "Flash" && EntityClass.initialize) {
-          EntityClass.initialize(count);
+          EntityClass.initialize(poolSize);
         }
 
-        for (let i = 0; i < count; i++) {
+        for (let i = 0; i < poolSize; i++) {
           const index = startIndex + i;
 
           // DENSE ALLOCATION: entityIndex === componentIndex for all components
@@ -653,7 +660,7 @@ class LogicWorker extends AbstractWorker {
         // Validate entity index
         if (
           entityIndex < 0 ||
-          entityIndex >= this.entityCount ||
+          entityIndex >= this.globalEntityCount ||
           !Transform.active[entityIndex]
         ) {
           break;
@@ -750,7 +757,7 @@ class LogicWorker extends AbstractWorker {
         let skippedNoInstance = 0;
         const entityType = EntityClass.entityType;
 
-        for (let i = 0; i < this.entityCount; i++) {
+        for (let i = 0; i < this.globalEntityCount; i++) {
           if (Transform.active[i] && Transform.entityType[i] === entityType) {
             if (this.gameObjects[i]) {
               this.gameObjects[i].despawn();
@@ -790,7 +797,7 @@ class LogicWorker extends AbstractWorker {
         // Despawn ALL entities (no partitioning - worker 0 handles all)
         let totalDespawned = 0;
 
-        for (let i = 0; i < this.entityCount; i++) {
+        for (let i = 0; i < this.globalEntityCount; i++) {
           if (Transform.active[i] && this.gameObjects[i]) {
             this.gameObjects[i].despawn();
             totalDespawned++;

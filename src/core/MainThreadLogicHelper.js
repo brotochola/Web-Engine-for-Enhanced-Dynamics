@@ -147,6 +147,9 @@ export class MainThreadLogicHelper {
         ComponentClass.initializeArrays(buffer, pool.count || totalEntityCount);
       }
     }
+
+    // Store component classes for potential future use
+    this.componentClasses = componentClasses;
   }
 
   /**
@@ -167,8 +170,15 @@ export class MainThreadLogicHelper {
 
       // Store metadata for spawning system (already done by GameEngine, but ensure it's set)
       EntityClass.startIndex = startIndex;
-      EntityClass.totalCount = count;
+      EntityClass.poolSize = count;
+      EntityClass.endIndex = startIndex + count;
       EntityClass.entityType = entityType;
+
+      // Pre-computed typed array of all entity indices for this class
+      EntityClass.entityIndices = new Int32Array(count);
+      for (let j = 0; j < count; j++) {
+        EntityClass.entityIndices[j] = startIndex + j;
+      }
 
       // Ensure instances array exists
       if (!EntityClass.hasOwnProperty("instances")) {
