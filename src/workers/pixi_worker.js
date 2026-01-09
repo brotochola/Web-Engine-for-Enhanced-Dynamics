@@ -89,6 +89,9 @@ class PixiParticlePool {
     this.newParticlesThisFrame = 0; // Particles created this frame
     this.accumulatedNewParticles = 0; // Total demand across frames
     this.framesSinceLastAcquire = 0; // Idle frame counter
+
+    // PERFORMANCE: Reusable acquire result object to avoid GC pressure
+    this._acquireResult = { particle: null, index: -1 };
   }
 
   /**
@@ -105,11 +108,12 @@ class PixiParticlePool {
    */
   acquire() {
     let particleIndex;
+    let particle;
 
     // Try to reuse a freed particle first
     if (this.freeIndices.length > 0) {
       particleIndex = this.freeIndices.pop();
-      const particle = this.particles[particleIndex];
+      particle = this.particles[particleIndex];
 
       // Reset particle to default visible state (caller will set actual values)
       particle.visible = false; // Caller makes it visible when ready
@@ -125,29 +129,30 @@ class PixiParticlePool {
       if (this.defaultTexture) {
         particle.texture = this.defaultTexture;
       }
+    } else {
+      // No free particles available - create a new one
+      const texture = this.defaultTexture || PIXI.Texture.WHITE;
+      particle = new PIXI.Particle({
+        texture,
+        anchorX: 0.5,
+        anchorY: 0.5,
+      });
 
-      return { particle, index: particleIndex };
+      particle.visible = false; // Start hidden
+
+      particleIndex = this.particles.length;
+      this.particles.push(particle);
+      this.createdCount++;
+
+      // Track that we created a particle THIS FRAME
+      this.newParticlesThisFrame++;
+      this.framesSinceLastAcquire = 0;
     }
 
-    // No free particles available - create a new one
-    const texture = this.defaultTexture || PIXI.Texture.WHITE;
-    const particle = new PIXI.Particle({
-      texture,
-      anchorX: 0.5,
-      anchorY: 0.5,
-    });
-
-    particle.visible = false; // Start hidden
-
-    particleIndex = this.particles.length;
-    this.particles.push(particle);
-    this.createdCount++;
-
-    // Track that we created a particle THIS FRAME
-    this.newParticlesThisFrame++;
-    this.framesSinceLastAcquire = 0;
-
-    return { particle, index: particleIndex };
+    // Reuse result object to avoid GC pressure
+    this._acquireResult.particle = particle;
+    this._acquireResult.index = particleIndex;
+    return this._acquireResult;
   }
 
   /**

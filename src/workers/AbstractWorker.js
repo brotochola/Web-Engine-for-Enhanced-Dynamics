@@ -67,6 +67,14 @@ export class AbstractWorker {
     // Bind methods
     this.gameLoop = this.gameLoop.bind(this);
     this.handleMessage = this.handleMessage.bind(this);
+
+    // PERFORMANCE: Reusable timing object to avoid GC pressure
+    // This is returned by updateFrameTiming() every frame on every worker
+    this._timing = {
+      deltaTime: 0,
+      dtRatio: 1,
+    };
+
     this.reportLog("finished constructor");
   }
 
@@ -91,7 +99,11 @@ export class AbstractWorker {
     // Normalize delta time to 60fps (16.67ms per frame)
     const dtRatio = deltaTime / 16.67;
 
-    return { deltaTime, dtRatio };
+    // Reuse timing object to avoid GC pressure
+    this._timing.deltaTime = deltaTime;
+    this._timing.dtRatio = dtRatio;
+
+    return this._timing;
   }
 
   /**
