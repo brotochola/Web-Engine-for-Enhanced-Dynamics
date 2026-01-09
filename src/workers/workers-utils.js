@@ -19,10 +19,10 @@ function formatNumber(num) {
 export const RENDERER_STATS = {
   FPS: 0,
   DRAW_CALLS: 1,
-  VISIBLE_ENTITIES: 2,
-  VISIBLE_PARTICLES: 3,
-  DECORATION_SPRITES: 4,
-  VISIBLE_DECORATIONS: 5,
+  VISIBLE_SPRITES: 2, // Total visible sprites (entities + particles + decorations)
+  SPRITES_CREATED: 3, // Total PIXI.Particle objects created (from centralized pool)
+  DECORATION_SPRITES: 4, // For DebugUI decoration stats (same as SPRITES_CREATED)
+  VISIBLE_DECORATIONS: 5, // For DebugUI decoration stats
   // Reserve space for future stats
   STRIDE_FLOATS: 16, // 64 bytes = 1 cache line
   BUFFER_SIZE: 16 * 4, // 64 bytes
@@ -98,11 +98,11 @@ export const WORKER_DISPLAY_CONFIG = {
       { key: "FPS", format: (v) => v.toFixed(2) },
       { key: "DRAW_CALLS", format: (v) => formatNumber(v) },
       {
-        key: "VISIBLE_ENTITIES",
+        key: "SPRITES_CREATED",
         format: (v) => formatNumber(v),
       },
       {
-        key: "VISIBLE_PARTICLES",
+        key: "VISIBLE_SPRITES",
         format: (v) => formatNumber(v),
       },
     ],

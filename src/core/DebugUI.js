@@ -462,16 +462,10 @@ export class DebugUI {
         }
       }
 
-      const spritesD = this.workerStatViews?.renderer
-        ? this.workerStatViews.renderer[RENDERER_STATS.DECORATION_SPRITES] || 0
-        : 0;
-
       if (this.elements.perfDecorations) {
         this.elements.perfDecorations.textContent = `Decorations: ${this._formatNumber(
           activeD
-        )} / ${this._formatNumber(totalD)} (👁 ${this._formatNumber(
-          visibleD
-        )}) [Sprites: ${this._formatNumber(spritesD)}]`;
+        )} / ${this._formatNumber(totalD)} (👁 ${this._formatNumber(visibleD)})`;
       }
     }
 
@@ -993,8 +987,7 @@ export class DebugUI {
     this.elements.perfDecorations = document.createElement("span");
     this.elements.perfDecorations.className = "debug-ui-stat";
     this.elements.perfDecorations.style.color = "#34d399";
-    this.elements.perfDecorations.textContent =
-      "Decorations: -- / -- (👁 --) [Sprites: --]";
+    this.elements.perfDecorations.textContent = "Decorations: -- / -- (👁 --)";
     poolStatsRow.appendChild(this.elements.perfDecorations);
 
     // Flash (bright yellow color)
