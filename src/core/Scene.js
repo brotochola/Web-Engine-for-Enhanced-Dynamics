@@ -32,6 +32,13 @@ import {
   RENDERER_DEFAULTS,
   LIGHTING_DEFAULTS,
 } from "./ConfigDefaults.js";
+import {
+  RENDERER_STATS,
+  PARTICLE_STATS,
+  PHYSICS_STATS,
+  SPATIAL_STATS,
+  LOGIC_STATS,
+} from "../workers/workers-utils.js";
 
 class Scene {
   // Worker index constants for FrameRate SharedArrayBuffer
@@ -144,6 +151,12 @@ class Scene {
         Collider: null,
         SpriteRenderer: null,
       },
+      // Worker stat buffers (strided SharedArrayBuffers for detailed metrics)
+      rendererStats: null,
+      particleStats: null,
+      physicsStats: null,
+      spatialStats: null,
+      logicStats: null,
     };
 
     // Component pool tracking
@@ -808,6 +821,24 @@ class Scene {
     this.buffers.frameRateData = new SharedArrayBuffer(FRAMERATE_BUFFER_SIZE);
     this.views.frameRate = new Float32Array(this.buffers.frameRateData);
 
+    // Worker stat buffers: detailed metrics for each worker type
+    // Each buffer uses strided layout for cache-line isolation (64 bytes per worker)
+    this.buffers.rendererStats = new SharedArrayBuffer(
+      RENDERER_STATS.BUFFER_SIZE
+    );
+    this.buffers.particleStats = new SharedArrayBuffer(
+      PARTICLE_STATS.BUFFER_SIZE
+    );
+    this.buffers.physicsStats = new SharedArrayBuffer(
+      PHYSICS_STATS.BUFFER_SIZE
+    );
+    this.buffers.spatialStats = new SharedArrayBuffer(
+      SPATIAL_STATS.BUFFER_SIZE_PER_WORKER * numberOfSpatialWorkers
+    );
+    this.buffers.logicStats = new SharedArrayBuffer(
+      LOGIC_STATS.BUFFER_SIZE_PER_WORKER * this.numberOfLogicWorkers
+    );
+
     // Synchronization buffer
     const SYNC_BUFFER_SIZE = 5 * 4;
     this.buffers.syncData = new SharedArrayBuffer(SYNC_BUFFER_SIZE);
@@ -1084,6 +1115,12 @@ class Scene {
         debugData: this.buffers.debugData,
         frameRateData: this.buffers.frameRateData,
         componentData: this.buffers.componentData,
+        // Worker stat buffers (detailed metrics)
+        rendererStats: this.buffers.rendererStats,
+        particleStats: this.buffers.particleStats,
+        physicsStats: this.buffers.physicsStats,
+        spatialStats: this.buffers.spatialStats,
+        logicStats: this.buffers.logicStats,
       },
       entityCount: this.totalEntityCount,
       config: this.config,

@@ -7,6 +7,15 @@ import { Mouse } from "./Mouse.js";
 import { GameObject } from "./gameObject.js";
 import { DecorationComponent } from "../components/DecorationComponent.js";
 import { DecorationPool } from "./DecorationPool.js";
+import {
+  RENDERER_STATS,
+  PARTICLE_STATS,
+  PHYSICS_STATS,
+  SPATIAL_STATS,
+  LOGIC_STATS,
+  createStatsReader,
+  createMultiWorkerStatsReaderArray,
+} from "../workers/workers-utils.js";
 
 /**
  * DebugUI - Self-contained debug overlay that pulls data and updates itself
@@ -39,6 +48,19 @@ export class DebugUI {
     this.spawnThrottleMs = 50; // Minimum ms between spawns while painting
     this._toolMouseDown = false; // Track mouse button for tool mode (separate from game input)
     this.bulkSpawnEnabled = false; // Spawn 10 at a time instead of 1
+
+    // Worker stat views (created when scene attaches)
+    this.workerStatViews = null;
+
+    // FPS smoothing (60-frame moving average, calculated in DebugUI)
+    this.fpsSmoothing = {
+      frameCount: 60,
+      renderer: { values: new Array(60).fill(60), index: 0, sum: 3600 },
+      particle: { values: new Array(60).fill(60), index: 0, sum: 3600 },
+      physics: { values: new Array(60).fill(60), index: 0, sum: 3600 },
+      spatial: [], // Array of smoothing objects (one per spatial worker)
+      logic: [], // Array of smoothing objects (one per logic worker)
+    };
 
     // Inject styles and create UI
     this._injectStyles();
@@ -75,11 +97,88 @@ export class DebugUI {
       this.debugFlags.disableAll();
     }
 
+    // Create stat buffer views for reading worker metrics
+    this._createStatViews();
+
     this._updateVisualAidsState();
     this._updateScenePanel();
     this._autoGenerateEntityTools();
     this._updateToolIndicator();
     this.start();
+  }
+
+  /**
+   * Create stat buffer views for reading worker metrics
+   */
+  _createStatViews() {
+    if (!this.scene || !this.scene.buffers) return;
+
+    const buffers = this.scene.buffers;
+    const spatialWorkerCount = this.scene.config.spatial.numberOfSpatialWorkers;
+    const logicWorkerCount = this.scene.numberOfLogicWorkers;
+
+    this.workerStatViews = {
+      renderer: buffers.rendererStats
+        ? createStatsReader(buffers.rendererStats, RENDERER_STATS)
+        : null,
+      particle: buffers.particleStats
+        ? createStatsReader(buffers.particleStats, PARTICLE_STATS)
+        : null,
+      physics: buffers.physicsStats
+        ? createStatsReader(buffers.physicsStats, PHYSICS_STATS)
+        : null,
+      spatial: buffers.spatialStats
+        ? createMultiWorkerStatsReaderArray(
+            buffers.spatialStats,
+            SPATIAL_STATS,
+            spatialWorkerCount
+          )
+        : [],
+      logic: buffers.logicStats
+        ? createMultiWorkerStatsReaderArray(
+            buffers.logicStats,
+            LOGIC_STATS,
+            logicWorkerCount
+          )
+        : [],
+    };
+
+    // Initialize FPS smoothing arrays for multi-worker types
+    this.fpsSmoothing.spatial = [];
+    for (let i = 0; i < spatialWorkerCount; i++) {
+      this.fpsSmoothing.spatial.push({
+        values: new Array(60).fill(60),
+        index: 0,
+        sum: 3600,
+      });
+    }
+
+    this.fpsSmoothing.logic = [];
+    for (let i = 0; i < logicWorkerCount; i++) {
+      this.fpsSmoothing.logic.push({
+        values: new Array(60).fill(60),
+        index: 0,
+        sum: 3600,
+      });
+    }
+  }
+
+  /**
+   * Smooth FPS using 60-frame moving average
+   * @param {number} rawFPS - Instantaneous FPS from worker
+   * @param {Object} smoothing - Smoothing state object
+   * @returns {number} Smoothed FPS
+   */
+  _smoothFPS(rawFPS, smoothing) {
+    // Remove oldest value from sum
+    smoothing.sum -= smoothing.values[smoothing.index];
+    // Add new value
+    smoothing.values[smoothing.index] = rawFPS;
+    smoothing.sum += rawFPS;
+    // Move to next index (circular buffer)
+    smoothing.index = (smoothing.index + 1) % smoothing.values.length;
+    // Return average
+    return smoothing.sum / smoothing.values.length;
   }
 
   /**
@@ -91,6 +190,7 @@ export class DebugUI {
     this.eraserActive = false;
     this._toolMouseDown = false;
     Mouse.isDebugToolActive = false;
+    this.workerStatViews = null;
     this.scene = null;
     this.debugFlags = null;
   }
@@ -147,45 +247,67 @@ export class DebugUI {
 
   _updatePerformanceSection() {
     const scene = this.scene;
-    if (!scene) return;
+    if (!scene || !this.workerStatViews) return;
 
     // Main thread FPS
     if (this.elements.mainFPS && scene.mainFPS !== undefined) {
       this.elements.mainFPS.textContent = `Main: ${scene.mainFPS.toFixed(1)}`;
     }
 
-    // Worker stats from scene.workerStats
-    const ws = scene.workerStats;
-    if (!ws) return;
-
-    // Spatial workers (dynamic count)
-    if (ws.spatial && this.elements.spatialFPS) {
-      const spatialTexts = ws.spatial.map((s, i) => `S${i}: ${s.fps}`);
+    // Spatial workers (read from stat buffers with smoothing)
+    if (this.workerStatViews.spatial.length > 0 && this.elements.spatialFPS) {
+      const spatialTexts = this.workerStatViews.spatial.map((view, i) => {
+        const rawFPS = view[SPATIAL_STATS.FPS];
+        const smoothedFPS = this._smoothFPS(
+          rawFPS,
+          this.fpsSmoothing.spatial[i]
+        );
+        return `S${i}: ${smoothedFPS.toFixed(0)}`;
+      });
       this.elements.spatialFPS.textContent = spatialTexts.join(" | ");
     }
 
-    // Logic workers (dynamic count)
-    if (ws.logic && this.elements.logicFPS) {
-      const logicTexts = ws.logic.map((l, i) => `L${i}: ${l.fps}`);
+    // Logic workers (read from stat buffers with smoothing)
+    if (this.workerStatViews.logic.length > 0 && this.elements.logicFPS) {
+      const logicTexts = this.workerStatViews.logic.map((view, i) => {
+        const rawFPS = view[LOGIC_STATS.FPS];
+        const smoothedFPS = this._smoothFPS(rawFPS, this.fpsSmoothing.logic[i]);
+        return `L${i}: ${smoothedFPS.toFixed(0)}`;
+      });
       this.elements.logicFPS.textContent = logicTexts.join(" | ");
     }
 
-    if (this.elements.physicsFPS && ws.physics) {
-      this.elements.physicsFPS.textContent = `Physics: ${ws.physics.fps}`;
+    // Physics worker
+    if (this.workerStatViews.physics && this.elements.physicsFPS) {
+      const rawFPS = this.workerStatViews.physics[PHYSICS_STATS.FPS];
+      const smoothedFPS = this._smoothFPS(rawFPS, this.fpsSmoothing.physics);
+      this.elements.physicsFPS.textContent = `Physics: ${smoothedFPS.toFixed(
+        0
+      )}`;
     }
 
-    if (this.elements.rendererFPS && ws.renderer) {
-      const r = ws.renderer;
-      this.elements.rendererFPS.textContent = `Render: ${r.fps} (${
-        r.drawCalls || 0
-      } draws)`;
+    // Renderer worker
+    if (this.workerStatViews.renderer && this.elements.rendererFPS) {
+      const rawFPS = this.workerStatViews.renderer[RENDERER_STATS.FPS];
+      const smoothedFPS = this._smoothFPS(rawFPS, this.fpsSmoothing.renderer);
+      const drawCalls =
+        this.workerStatViews.renderer[RENDERER_STATS.DRAW_CALLS];
+      this.elements.rendererFPS.textContent = `Render: ${smoothedFPS.toFixed(
+        0
+      )} (${drawCalls} draws)`;
     }
 
-    if (this.elements.particleFPS && ws.particle) {
-      const p = ws.particle;
-      this.elements.particleFPS.textContent = `Particle: ${p.fps} (${
-        p.active || 0
-      }/${p.total || 0})`;
+    // Particle worker
+    if (this.workerStatViews.particle && this.elements.particleFPS) {
+      const rawFPS = this.workerStatViews.particle[PARTICLE_STATS.FPS];
+      const smoothedFPS = this._smoothFPS(rawFPS, this.fpsSmoothing.particle);
+      const active =
+        this.workerStatViews.particle[PARTICLE_STATS.ACTIVE_PARTICLES];
+      const total =
+        this.workerStatViews.particle[PARTICLE_STATS.TOTAL_PARTICLES];
+      this.elements.particleFPS.textContent = `Particle: ${smoothedFPS.toFixed(
+        0
+      )} (${active}/${total})`;
     }
 
     // Job stealing stats
@@ -282,9 +404,10 @@ export class DebugUI {
       this.elements.decorationVisible.textContent = `Visible: ${visible}`;
     }
 
-    // PIXI sprites created (from renderer worker stats)
-    if (this.elements.decorationSprites && scene.workerStats?.renderer) {
-      const spriteCount = scene.workerStats.renderer.decorationSprites || 0;
+    // PIXI sprites created (from renderer worker stat buffer)
+    if (this.elements.decorationSprites && this.workerStatViews?.renderer) {
+      const spriteCount =
+        this.workerStatViews.renderer[RENDERER_STATS.DECORATION_SPRITES];
       this.elements.decorationSprites.textContent = `Sprites: ${spriteCount}`;
     }
   }

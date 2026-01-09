@@ -11,6 +11,10 @@ import { Transform } from "../components/Transform.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { AbstractWorker } from "./AbstractWorker.js";
+import {
+  SPATIAL_STATS,
+  createMultiWorkerStatsWriter,
+} from "./workers-utils.js";
 
 /**
  * SpatialWorker - Handles spatial partitioning and neighbor detection
@@ -77,6 +81,18 @@ class SpatialWorker extends AbstractWorker {
     // Set worker index and total workers for parallel processing
     this.workerIndex = data.workerIndex || 0;
     this.totalSpatialWorkers = data.totalSpatialWorkers || 1;
+
+    // Initialize stats buffer for writing metrics (strided access for multi-worker)
+    if (data.buffers.spatialStats) {
+      this.stats = createMultiWorkerStatsWriter(
+        data.buffers.spatialStats,
+        SPATIAL_STATS,
+        this.workerIndex
+      );
+      console.log(
+        `SPATIAL WORKER ${this.workerIndex}: Stats buffer initialized`
+      );
+    }
 
     // Calculate entity range for this worker
     // SHARED GRID, SPLIT WORK: Each worker processes a subset of entities
@@ -405,6 +421,17 @@ class SpatialWorker extends AbstractWorker {
     this.findAllNeighbors();
 
     // Screen visibility is now handled by particle_worker to balance workload
+  }
+
+  /**
+   * Override reportFPS to write stats to SharedArrayBuffer
+   */
+  reportFPS() {
+    // Write stats to SharedArrayBuffer every frame
+    if (this.stats) {
+      this.stats[SPATIAL_STATS.FPS] = this.currentFPS;
+      // Additional spatial stats can be added here (neighbor checks, grid cells, etc.)
+    }
   }
 }
 

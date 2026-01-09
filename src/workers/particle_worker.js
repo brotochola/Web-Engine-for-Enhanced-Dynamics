@@ -16,6 +16,7 @@ import {
   calculateTotalLightAtPosition,
   brightnessToTint,
 } from "../core/utils.js";
+import { PARTICLE_STATS, createStatsWriter } from "./workers-utils.js";
 
 // Note: Components (Transform, RigidBody, etc.) are now registered automatically
 // by AbstractWorker.registerAllComponents() after entity classes are loaded
@@ -133,6 +134,15 @@ class ParticleWorker extends AbstractWorker {
    * Initialize the particle worker
    */
   async initialize(data) {
+    // Initialize stats buffer for writing metrics
+    if (data.buffers.particleStats) {
+      this.stats = createStatsWriter(
+        data.buffers.particleStats,
+        PARTICLE_STATS
+      );
+      console.log("PARTICLE WORKER: Stats buffer initialized");
+    }
+
     // Get max particles from config (passed from gameEngine)
     this.maxParticles = data.maxParticles || 0;
 
@@ -1326,16 +1336,14 @@ class ParticleWorker extends AbstractWorker {
   }
 
   /**
-   * Override reportFPS to include active/total particle count
+   * Override reportFPS to write stats to SharedArrayBuffer
    */
   reportFPS() {
-    if (this.frameNumber % this.fpsReportInterval === 0) {
-      self.postMessage({
-        msg: "fps",
-        fps: this.currentFPS.toFixed(2),
-        activeParticles: this.activeParticleCount,
-        totalParticles: this.maxParticles,
-      });
+    // Write stats to SharedArrayBuffer every frame
+    if (this.stats) {
+      this.stats[PARTICLE_STATS.FPS] = this.currentFPS;
+      this.stats[PARTICLE_STATS.ACTIVE_PARTICLES] = this.activeParticleCount;
+      this.stats[PARTICLE_STATS.TOTAL_PARTICLES] = this.maxParticles;
     }
   }
 }
