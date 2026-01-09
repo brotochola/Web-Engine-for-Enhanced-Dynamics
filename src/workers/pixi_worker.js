@@ -116,13 +116,13 @@ class PixiRenderer extends AbstractWorker {
     // this.containers = []; // Array of PIXI containers (one per entity)
     this.bodySprites = []; // Array of main body sprites (now regular Sprite, not AnimatedSprite)
     this.entitySpriteConfigs = {}; // Store sprite config per entityType
-    this.previousAnimStates = []; // Track previous animation state per entity
+    this.previousAnimStates = null; // Int16Array - Track previous animation state per entity (-1 = unset, initialized in createSprites)
 
     // Manual animation tracking (for regular Sprites)
     this.currentAnimationFrames = []; // Array of texture arrays (one per entity)
-    this.currentFrameIndex = []; // Current frame index in animation
-    this.frameAccumulator = []; // Time accumulator for frame advancement
-    this.animationSpeed = []; // Animation speed per entity (frames per second)
+    this.currentFrameIndex = null; // Uint16Array - Current frame index in animation (initialized in createSprites)
+    this.frameAccumulator = null; // Float32Array - Time accumulator for frame advancement (initialized in createSprites)
+    this.animationSpeed = null; // Float32Array - Animation speed per entity (frames per second) (initialized in createSprites)
 
     // Particle rendering (separate from entities)
     this.particleSprites = []; // Array of particle sprites (indexed 0 to maxParticles-1)
@@ -132,11 +132,12 @@ class PixiRenderer extends AbstractWorker {
     // Decoration rendering (separate from entities, static sprites)
     this.decorationSprites = []; // Pool of reusable PIXI.Particle objects (not indexed by decoration)
     this.maxDecorations = 0; // Number of decorations in pool
-    this.decorationSpriteTextureIds = []; // Track current textureId per sprite (for reuse validation)
+    this.decorationSpriteTextureIds = null; // Uint16Array - Track current textureId per sprite (for reuse validation) (initialized in createDecorationSprites)
     this.visibleDecorationCount = 0; // Number of visible decorations
     this.createdDecorationSpriteCount = 0; // OPTIMIZATION: Track actually created sprites (lazy creation)
-    this.decorationToSpriteMap = []; // Maps decoration index to sprite pool index (or -1 if no sprite assigned)
-    this.freeSpriteIndices = []; // Free list of available sprite indices for reuse
+    this.decorationToSpriteMap = null; // Int32Array - Maps decoration index to sprite pool index (or -1 if no sprite assigned) (initialized in createDecorationSprites)
+    this.freeSpriteIndices = null; // Int32Array - Free list of available sprite indices for reuse (initialized in createDecorationSprites)
+    this.freeSpriteIndicesCount = 0; // Write pointer for freeSpriteIndices array
 
     // World and viewport dimensions
     this.worldWidth = 0;
@@ -2173,9 +2174,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.decorationSprites = [];
     this.createdDecorationSpriteCount = 0;
 
-    // Initialize mapping arrays
-    this.decorationToSpriteMap = new Array(this.maxDecorations).fill(-1);
-    this.freeSpriteIndices = [];
+    // Initialize typed arrays for decoration tracking
+    this.decorationSpriteTextureIds = new Uint16Array(this.maxDecorations);
+    this.decorationToSpriteMap = new Int32Array(this.maxDecorations).fill(-1);
+    this.freeSpriteIndices = new Int32Array(this.maxDecorations);
+    this.freeSpriteIndicesCount = 0; // Write pointer for free list
 
     console.log(
       `PIXI WORKER: Decoration sprite pool initialized (${this.maxDecorations} decoration slots, lazy sprite creation enabled)`
@@ -2192,8 +2195,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     let spriteIndex;
 
     // Try to reuse a freed sprite first
-    if (this.freeSpriteIndices.length > 0) {
-      spriteIndex = this.freeSpriteIndices.pop();
+    if (this.freeSpriteIndicesCount > 0) {
+      this.freeSpriteIndicesCount--;
+      spriteIndex = this.freeSpriteIndices[this.freeSpriteIndicesCount];
       return spriteIndex;
     }
 
@@ -2221,7 +2225,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Add to sprite pool
     spriteIndex = this.decorationSprites.length;
     this.decorationSprites.push(decorationSprite);
-    this.decorationSpriteTextureIds.push(0); // Initialize textureId to 0 (unset)
+    this.decorationSpriteTextureIds[spriteIndex] = 0; // Initialize textureId to 0 (unset)
     this.createdDecorationSpriteCount++;
 
     // Add to container if Y-sorting is disabled
@@ -2233,7 +2237,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Log progress every 10 sprites to track lazy loading
     if (this.createdDecorationSpriteCount % 10 === 0) {
       console.log(
-        `PIXI WORKER: Lazy-created decoration sprite #${this.createdDecorationSpriteCount} (${this.freeSpriteIndices.length} sprites in free list)`
+        `PIXI WORKER: Lazy-created decoration sprite #${this.createdDecorationSpriteCount} (${this.freeSpriteIndicesCount} sprites in free list)`
       );
     }
 
@@ -2250,7 +2254,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (sprite) {
       sprite.visible = false;
       this.decorationSpriteTextureIds[spriteIndex] = 0; // Reset textureId for next use
-      this.freeSpriteIndices.push(spriteIndex);
+      this.freeSpriteIndices[this.freeSpriteIndicesCount] = spriteIndex;
+      this.freeSpriteIndicesCount++;
     }
   }
 
@@ -2385,6 +2390,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Initialize spritesheet tracking array once
     this.currentSpritesheetIds = new Uint8Array(this.entityCount);
 
+    // Initialize animation tracking typed arrays
+    this.previousAnimStates = new Int16Array(this.entityCount).fill(-1);
+    this.currentFrameIndex = new Uint16Array(this.entityCount);
+    this.frameAccumulator = new Float32Array(this.entityCount);
+    this.animationSpeed = new Float32Array(this.entityCount);
+
     // Use PIXI's default white texture for particle initialization
     const defaultTexture = PIXI.Texture.WHITE;
 
@@ -2396,9 +2407,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (!config || !config.hasSpriteRenderer) {
         this.bodySprites[i] = null;
         this.currentAnimationFrames[i] = [];
-        this.currentFrameIndex[i] = 0;
-        this.frameAccumulator[i] = 0;
-        this.animationSpeed[i] = 0;
+        // currentFrameIndex, frameAccumulator, animationSpeed already initialized to 0 in typed arrays
         continue;
       }
 
@@ -2412,13 +2421,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Store references
       this.bodySprites[i] = bodySprite;
-      this.previousAnimStates[i] = -1;
+      // previousAnimStates already initialized to -1 in typed array
 
       // Initialize animation tracking
       this.currentAnimationFrames[i] = [];
-      this.currentFrameIndex[i] = 0;
-      this.frameAccumulator[i] = 0;
-      this.animationSpeed[i] = 0;
+      // currentFrameIndex, frameAccumulator, animationSpeed already initialized to 0 in typed arrays
 
       // Initialize spritesheet tracking (0 = not set yet)
       this.currentSpritesheetIds[i] = 0;
