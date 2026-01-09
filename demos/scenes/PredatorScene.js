@@ -9,6 +9,9 @@ import { Player } from "../player.js";
 import { TallLight } from "../tallLight.js";
 import { PreySpawner } from "../PreySpawner.js";
 import { House } from "../House.js";
+// Grass now uses DecorationPool instead of GameObject
+
+const { DecorationPool } = WEED;
 
 export class PredatorScene extends WEED.Scene {
   // ========================================
@@ -16,15 +19,15 @@ export class PredatorScene extends WEED.Scene {
   // ========================================
 
   static config = {
-    worldWidth: 5000,
-    worldHeight: 2000,
+    worldWidth: 10240,
+    worldHeight: 7680,
     seed: 123456,
 
     // Spatial hash grid configuration
     spatial: {
       cellSize: 128,
       maxNeighbors: 2048,
-      numberOfSpatialWorkers: 2, // Multiple workers for parallel neighbor detection
+      numberOfSpatialWorkers: 3, // Multiple workers for parallel neighbor detection
       noLimitFPS: true,
     },
 
@@ -34,6 +37,10 @@ export class PredatorScene extends WEED.Scene {
       decals: true,
       decalsTileSize: 256,
       decalsResolution: 0.5,
+    },
+
+    decoration: {
+      maxDecorations: 100000, // Grass, bushes, rocks, etc.
     },
 
     // Logic configuration
@@ -87,6 +94,15 @@ export class PredatorScene extends WEED.Scene {
       blood: "/demos/img/blood.png",
       tallLight: "/demos/img/tallLight.png",
       house: "/demos/img/house.png",
+      grass1: "/demos/img/g1.png",
+      grass2: "/demos/img/g2.png",
+      grass3: "/demos/img/g3.png",
+      grass4: "/demos/img/g4.png",
+      grass5: "/demos/img/g5.png",
+      grass6: "/demos/img/g6.png",
+      grass7: "/demos/img/g7.png",
+      grass8: "/demos/img/g8.png",
+      grass9: "/demos/img/g9.png",
     },
     spritesheets: {
       civil1: {
@@ -131,7 +147,8 @@ export class PredatorScene extends WEED.Scene {
     [Player, 1],
     [Boid, 0], // Register but don't pre-allocate
     [House, 20],
-    [TallLight, 10],
+    [TallLight, 100],
+    // Grass now uses DecorationPool instead of GameObject
   ];
 
   // ========================================
@@ -145,8 +162,9 @@ export class PredatorScene extends WEED.Scene {
     this.numberOfPrey = 20000;
     this.numberOfPredators = 1;
     this.numberOfBoids = 0;
-    this.numberOfTallLights = 10;
+    this.numberOfTallLights = 100;
     this.numberOfHouses = 10;
+    this.numberOfGrass = 10000;
 
     // Player reference (will be set in create())
     this.playerEntity = null;
@@ -166,6 +184,7 @@ export class PredatorScene extends WEED.Scene {
     this.spawnLights(this.numberOfTallLights);
     this.spawnPrey(this.numberOfPrey);
     this.spawnHouses(this.numberOfHouses);
+    this.spawnGrass(this.numberOfGrass);
     this.spawnEntity(PreySpawner, {});
 
     console.log("✅ PredatorScene: Entities spawned!");
@@ -239,6 +258,21 @@ export class PredatorScene extends WEED.Scene {
     }
   }
 
+  spawnGrass(count) {
+    console.log("Spawning grass...");
+    // Spawn grass using DecorationPool (lightweight, no GameObject overhead)
+    for (let i = 0; i < count; i++) {
+      const grassType = Math.floor(this.rng() * 9) + 1; // grass1 to grass9
+      DecorationPool.spawn({
+        x: this.rng() * this.config.worldWidth,
+        y: this.rng() * this.config.worldHeight,
+        texture: "grass" + grassType,
+        scale: 0.8 + this.rng() * 0.4, // 0.8 to 1.2
+        anchorX: 0.5,
+        anchorY: 1.0, // Bottom anchor for grass
+      });
+    }
+  }
   // ========================================
   // PUBLIC SPAWNING METHODS (for UI buttons)
   // ========================================

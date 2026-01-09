@@ -18,6 +18,7 @@ import { ParticleComponent } from "../components/ParticleComponent.js";
 import { FlashComponent } from "../components/FlashComponent.js";
 import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
 import { ParticleEmitter } from "../core/ParticleEmitter.js";
+import { DecorationPool } from "../core/DecorationPool.js";
 import { Flash } from "../core/Flash.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 
@@ -162,6 +163,14 @@ class LogicWorker extends AbstractWorker {
     const maxParticles = data.maxParticles || 0;
     if (maxParticles > 0) {
       ParticleEmitter.initialize(maxParticles);
+    }
+
+    // Initialize DecorationPool if decorations are configured
+    // Decorations are NOT entities - they have their own separate pool
+    // Note: DecorationComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
+    const maxDecorations = data.maxDecorations || 0;
+    if (maxDecorations > 0) {
+      DecorationPool.initialize(maxDecorations);
     }
 
     // Create GameObject instances

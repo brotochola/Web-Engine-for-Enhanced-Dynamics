@@ -538,6 +538,13 @@ export class GameObject {
     // Set the sprite (as a single-frame "animation")
     this.setAnimationState(animIndex); // This calls markDirty() internally
   }
+  setAnchor(anchorX, anchorY) {
+    if (this.spriteRenderer) {
+      this.spriteRenderer.anchorX = anchorX;
+      this.spriteRenderer.anchorY = anchorY;
+      this.markDirty();
+    }
+  }
 
   setAnimationSpeed(speed) {
     if (this.spriteRenderer && this.spriteRenderer.animationSpeed !== speed) {
@@ -786,6 +793,40 @@ export class GameObject {
       return GameObject.distanceData[this._neighborOffset + 1 + i];
     }
     return 0;
+  }
+
+  /**
+   * Get all neighbor IDs as an array
+   * @returns {number[]} Array of neighbor entity indices
+   */
+  getAllNeighborIds() {
+    const neighbors = [];
+    const count = this.neighborCount;
+    const neighborData = GameObject.neighborData;
+    const neighborOffset = this._neighborOffset;
+    for (let i = 0; i < count; i++) {
+      neighbors.push(neighborData[neighborOffset + 1 + i]);
+    }
+    return neighbors;
+  }
+
+  /**
+   * Get all neighbor instances as an array
+   * @returns {GameObject[]} Array of neighbor GameObject instances
+   */
+  getAllNeighborInstances() {
+    const neighbors = [];
+
+    const entities = GameObject.instances;
+
+    const neighBourEntities = this.getAllNeighborIds();
+    for (let i = 0; i < neighBourEntities.length; i++) {
+      const neighborId = neighBourEntities[i];
+      if (neighborId >= 0 && neighborId < entities.length) {
+        neighbors.push(entities[neighborId]);
+      }
+    }
+    return neighbors;
   }
 
   /**

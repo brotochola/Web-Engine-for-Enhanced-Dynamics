@@ -27,6 +27,7 @@ export { Collider } from "./components/Collider.js";
 export { SpriteRenderer } from "./components/SpriteRenderer.js";
 export { MouseComponent } from "./components/MouseComponent.js";
 export { ParticleComponent } from "./components/ParticleComponent.js";
+export { DecorationComponent } from "./components/DecorationComponent.js";
 export { LightEmitter } from "./components/LightEmitter.js";
 export { ShadowCaster } from "./components/ShadowCaster.js";
 export { FlashComponent } from "./components/FlashComponent.js";
@@ -36,6 +37,12 @@ export { FlashComponent } from "./components/FlashComponent.js";
 // ============================================================================
 // Note: Particles are NOT GameObjects - they use ParticleComponent directly
 export { ParticleEmitter } from "./core/ParticleEmitter.js";
+
+// ============================================================================
+// DECORATIONS
+// ============================================================================
+// Note: Decorations are NOT GameObjects - they use DecorationComponent directly
+export { DecorationPool } from "./core/DecorationPool.js";
 
 // ============================================================================
 // FLASHES
@@ -92,6 +99,8 @@ import { MouseComponent } from "./components/MouseComponent.js";
 import { ParticleComponent } from "./components/ParticleComponent.js";
 
 import { ParticleEmitter } from "./core/ParticleEmitter.js";
+import { DecorationPool } from "./core/DecorationPool.js";
+import { DecorationComponent } from "./components/DecorationComponent.js";
 import { LightEmitter } from "./components/LightEmitter.js";
 import { ShadowCaster } from "./components/ShadowCaster.js";
 import { FlashComponent } from "./components/FlashComponent.js";
@@ -126,6 +135,10 @@ const WEED = {
 
   // Particles
   ParticleEmitter,
+
+  // Decorations
+  DecorationPool,
+  DecorationComponent,
 
   // Flashes
   Flash,

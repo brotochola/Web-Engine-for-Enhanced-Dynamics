@@ -8,6 +8,8 @@ import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { ParticleComponent } from "../components/ParticleComponent.js";
+import { DecorationComponent } from "../components/DecorationComponent.js";
+import { DecorationPool } from "./DecorationPool.js";
 import { ShadowCaster } from "../components/ShadowCaster.js";
 // import { FlashComponent } from "../components/FlashComponent.js";
 // import { LightEmitter } from "../components/LightEmitter.js";
@@ -25,6 +27,7 @@ import {
   PHYSICS_DEFAULTS,
   SPATIAL_DEFAULTS,
   PARTICLE_DEFAULTS,
+  DECORATION_DEFAULTS,
   LOGIC_DEFAULTS,
   RENDERER_DEFAULTS,
   LIGHTING_DEFAULTS,
@@ -393,6 +396,12 @@ class Scene {
         this.config.particle.decalsResolution
     );
 
+    // Decoration defaults from centralized config
+    this.config.decoration = {
+      ...DECORATION_DEFAULTS,
+      ...(this.config.decoration || {}),
+    };
+
     // Logic defaults from centralized config
     this.config.logic = {
       ...LOGIC_DEFAULTS,
@@ -438,6 +447,16 @@ class Scene {
   /** @returns {number} Maximum number of particles */
   get maxParticles() {
     return this.config.particle.maxParticles;
+  }
+
+  /** @returns {boolean} Whether decorations are enabled */
+  get hasDecorations() {
+    return this.config.decoration.maxDecorations > 0;
+  }
+
+  /** @returns {number} Maximum number of decorations */
+  get maxDecorations() {
+    return this.config.decoration.maxDecorations;
   }
 
   /**
@@ -676,6 +695,23 @@ class Scene {
         maxParticles
       );
       ParticleComponent.particleCount = maxParticles;
+    }
+
+    // DecorationComponent buffer
+    const maxDecorations = this.config.decoration.maxDecorations;
+    if (maxDecorations > 0) {
+      const decorationBufferSize =
+        DecorationComponent.getBufferSize(maxDecorations);
+      this.buffers.componentData.DecorationComponent = new SharedArrayBuffer(
+        decorationBufferSize
+      );
+      DecorationComponent.initializeArrays(
+        this.buffers.componentData.DecorationComponent,
+        maxDecorations
+      );
+      DecorationComponent.decorationCount = maxDecorations;
+      // Initialize DecorationPool on main thread for scene-level spawning
+      DecorationPool.initialize(maxDecorations);
     }
 
     // Shadow sprite system
@@ -1061,6 +1097,7 @@ class Scene {
       keyIndexMap: this.createKeyIndexMap(),
       spritesheetMetadata: SpriteSheetRegistry.serialize(),
       maxParticles: this.config.particle.maxParticles,
+      maxDecorations: this.config.decoration.maxDecorations,
       decals: this.config.particle.decals
         ? {
             enabled: true,
@@ -1576,6 +1613,13 @@ class Scene {
     if (ParticleComponent.active) {
       for (let i = 0; i < this.config.particle.maxParticles; i++) {
         ParticleComponent.active[i] = 0;
+      }
+    }
+
+    // Clear DecorationComponent if it exists
+    if (DecorationComponent.active) {
+      for (let i = 0; i < this.config.decoration.maxDecorations; i++) {
+        DecorationComponent.active[i] = 0;
       }
     }
 

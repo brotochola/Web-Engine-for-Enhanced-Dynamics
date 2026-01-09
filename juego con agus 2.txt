@@ -1,0 +1,203 @@
+the chaos machine
+
+es una serie. sos un productor
+cada run es un capítulo
+ponés plata para generar caos y que unos ricachones fantasmas te den más guita para generar más caos
+
+------
+chaboncitos 2
+
+1-empezas con 1 chabon y 0 pesos
+2-lo manejas, salis al mapa, conseguis guita, moris de toq
+3-mercado: compras chaboncitos y mejoras, etc
+4-segunda partida: empezas con mas chaboncitos, o mas rapidos o lo q sea
+5-looteas mas
+
+
+
+-----
+
+mapa grande random
+controlás un grupo
+se mueven hacia donde clickeás
+la única acción es clickear
+podés clickear en:
+ -objetos looteables -> ganar dinero
+ -reclutador de gente -> más chaboncitos (temporales de la ronda) -> de alguna manera es difícil liberarlos o te implica pelear
+ -enemigos -> atacar -> ganar dinero
+
+hay edificios para que te pongas detrás y te protejas de los disparos
+
+todo el tiempo spawnean enemigos fuera de la pantalla
+
+chaboncitos tienen características. podés hacerlos más fuertes, más rápidos, más resistentes
+
+
+en la tienda podés mejorarlos o añadir chaboncitos con los que empezar
+poder mejorar a los npcs para ganar más plata por loot o 
+
+hay guerra de pandillas (the warriors) si hacés que unos enemigos te corran y se crucen con otros se pelean entre ellos
+"zonas", spawnean de un equipo según la zona
+
+----
+
+gameobjects       
+    -spawner
+    -escenografia       
+        no interactiva:
+            -piedra
+            -arbol
+            -casa            
+        si interactiva:            
+            -safe house
+    -accionable/self-destruct:
+            -minas explosivas
+            -itemRecurso:
+                -...recursos
+    -looteable
+        -personas
+            -soldados propios
+            -enemigos
+                -N tipos (uno es policia)
+            -civiles
+        -objetos
+            -auto estacionado
+            -cajero automatico
+            -tacho de basura
+            
+       
+
+
+
+-------------------------------------------------
+
+COMPONENTES:
+    * Looteable: cantPlata, cantAmetralladoras, cantPistolas, cantPalos, cantArmaduras, vida
+    * Spawner: ratioPolicias, ratioEnemigos, tipoDeEnemigo
+    
+
+
+
+
+---------------------------------------------------
+
+------- 
+desglose de clases:
+-----
+
+class User{
+    ...recursos:number,
+    recursosParaComprarDesbloqueados:{...recursos:boolean}
+    multiplicadores:{}
+}
+
+
+
+* heredan de gameObject:
+
+class Spawner{
+    ratioPolicias (segun la looteable.queTantoSumaAlSpawnRateDePolicias sube, si matas civiles sube),
+    ratioEnemigos,
+    tipoDeEnemigoDeLaZona,
+    x,y (el mas cercano a la camara funciona, los demas no)
+
+    
+}
+class Persona {
+     armadura, arma, resistencia (daño q le hacen), daño, rangoDeVision, rangoDeViolencia
+}
+
+class SoldadosPropios{
+    velocidadDeLooteo, 
+}
+class civil{}
+class enemigo{ 
+    tipo 
+}
+class ElementoInteractivo{}
+class Looteable{
+    plataQueDan, vida, queTantoSumaAlSpawnRateDePolicias
+}
+class MinaExplosiva{
+    poder explosion ,
+    radio
+}
+class SafeHouse{
+    onClick(){
+
+    }
+}
+class Drop{
+    tipo, cantidad    
+}
+
+
+
+
+
+
+-----
+
+
+recursos:
+    -plata
+    -ametralladoras
+    -armadura
+    -pistolas
+    -palos    
+    -chaboncitos
+
+
+mecanicas:
+    -la primera vez que conseguis un palo, desbloqueas comprar palos antes de empezar
+    -las ametralladoras, etc de los chabones q mueren, se pierden.
+    
+
+
+mercado:
+    -chaboncitos
+    -powerups:
+        empezar con 10
+        empezar con 30
+        +10% ataque
+        +10% velocidad
+        +10% vida
+        +10% ganancia por loot
+        +10% de cantidad de objetos looteables
+        +10% velocidad de lootea
+        -10% cooldown disparos
+        +10% rango de vision
+    desbloqueos:
+        -palo (al comprar este power up desbloquea la compra de palos en el mercado)
+        -pistola 
+        -...recursos
+
+
+
+-------
+flow desde que abrís el juego:
+-menu:
+    -continuar partida
+    -partida nueva
+    -salir
+
+partida:
+    -preparar para salir
+    -mercado
+    -salir de la partida
+
+preparacion:
+    -gastar para ir armado
+    -gastar para mas chabones
+    -gastar para armadura
+    -entrar a jugar
+    ITEMS DE LA PANTALLA:
+        -
+
+-mercado:
+    -gastar para desbloquear mejoras permanentes
+    -volver
+
+
+---- estructura de clases:
+class Persona

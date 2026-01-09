@@ -53,6 +53,14 @@ export const PARTICLE_DEFAULTS = {
 };
 
 // ============================================================================
+// DECORATION DEFAULTS
+// ============================================================================
+
+export const DECORATION_DEFAULTS = {
+  maxDecorations: 0, // Number of static decorations (grass, rocks, etc.)
+};
+
+// ============================================================================
 // LOGIC DEFAULTS
 // ============================================================================
 
@@ -100,6 +108,7 @@ export const CONFIG_DEFAULTS = {
   physics: PHYSICS_DEFAULTS,
   spatial: SPATIAL_DEFAULTS,
   particle: PARTICLE_DEFAULTS,
+  decoration: DECORATION_DEFAULTS,
   logic: LOGIC_DEFAULTS,
   renderer: RENDERER_DEFAULTS,
   lighting: LIGHTING_DEFAULTS,
