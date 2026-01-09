@@ -22,6 +22,7 @@ export class PredatorScene extends WEED.Scene {
     worldWidth: 10240,
     worldHeight: 7680,
     seed: 123456,
+    debugUpdateInterval: 100,
 
     // Spatial hash grid configuration
     spatial: {
@@ -32,15 +33,15 @@ export class PredatorScene extends WEED.Scene {
     },
 
     particle: {
-      noLimitFPS: false,
-      maxParticles: 50000,
+      noLimitFPS: true,
+      maxParticles: 20000,
       decals: true,
       decalsTileSize: 256,
       decalsResolution: 0.5,
     },
 
     decoration: {
-      maxDecorations: 100000, // Grass, bushes, rocks, etc.
+      maxDecorations: 50000, // Grass, bushes, rocks, etc.
     },
 
     // Logic configuration
@@ -164,7 +165,7 @@ export class PredatorScene extends WEED.Scene {
     this.numberOfBoids = 0;
     this.numberOfTallLights = 100;
     this.numberOfHouses = 10;
-    this.numberOfGrass = 10000;
+    this.numberOfGrass = 50000;
 
     // Player reference (will be set in create())
     this.playerEntity = null;
@@ -268,6 +269,7 @@ export class PredatorScene extends WEED.Scene {
         y: this.rng() * this.config.worldHeight,
         texture: "grass" + grassType,
         scale: 0.8 + this.rng() * 0.4, // 0.8 to 1.2
+        alpha: 0.77,
         anchorX: 0.5,
         anchorY: 1.0, // Bottom anchor for grass
       });
