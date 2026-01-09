@@ -434,7 +434,7 @@ export class DebugUI {
         }
 
         const formattedValue = stat.format(rawValue);
-        elements[stat.key].textContent = `${stat.label}: ${formattedValue}`;
+        elements[stat.key].textContent = `${stat.key}: ${formattedValue}`;
       }
     }
   }
