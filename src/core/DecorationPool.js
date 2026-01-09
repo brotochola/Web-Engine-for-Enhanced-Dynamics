@@ -115,17 +115,6 @@ export class DecorationPool {
           this.activeCount[0]++;
         }
 
-        // DEBUG: Log first few spawns
-        if (this.activeCount && this.activeCount[0] <= 5) {
-          console.log(
-            `🌿 DecorationPool.spawn #${this.activeCount[0]}: index=${i}, x=${x[
-              i
-            ].toFixed(0)}, y=${y[i].toFixed(0)}, texture=${
-              config.texture
-            }, isItOnScreen=${isItOnScreen[i]}`
-          );
-        }
-
         return i;
       }
     }

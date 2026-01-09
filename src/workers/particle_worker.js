@@ -1267,54 +1267,6 @@ class ParticleWorker extends AbstractWorker {
       return; // No camera data available
     }
 
-    // DEBUG: Log culling info on first few frames
-    if (!this._decorationCullingLogged || this.frameNumber < 10) {
-      let onScreenCount = 0;
-      let totalActive = 0;
-      for (let i = 0; i < this.maxDecorations; i++) {
-        if (active[i]) {
-          totalActive++;
-          const screenX = x[i] * zoom - cameraOffsetX;
-          const screenY = y[i] * zoom - cameraOffsetY;
-          const wasOnScreen = isItOnScreen[i];
-          const willBeOnScreen =
-            screenX > minX && screenX < maxX && screenY > minY && screenY < maxY
-              ? 1
-              : 0;
-          if (willBeOnScreen) onScreenCount++;
-
-          // Log first decoration as example
-          if (i === 0 && active[i]) {
-            console.log(
-              `📹 PARTICLE WORKER Culling (frame ${this.frameNumber}):`,
-              {
-                decorationIndex: i,
-                worldPos: { x: x[i].toFixed(0), y: y[i].toFixed(0) },
-                screenPos: { x: screenX.toFixed(0), y: screenY.toFixed(0) },
-                camera: {
-                  zoom,
-                  cameraX: this.cameraData[1].toFixed(0),
-                  cameraY: this.cameraData[2].toFixed(0),
-                },
-                viewport: {
-                  minX: minX.toFixed(0),
-                  maxX: maxX.toFixed(0),
-                  minY: minY.toFixed(0),
-                  maxY: maxY.toFixed(0),
-                },
-                wasOnScreen,
-                willBeOnScreen,
-              }
-            );
-          }
-        }
-      }
-      console.log(
-        `📹 PARTICLE WORKER Culling summary (frame ${this.frameNumber}): ${onScreenCount}/${totalActive} decorations on screen`
-      );
-      if (this.frameNumber >= 9) this._decorationCullingLogged = true;
-    }
-
     for (let i = 0; i < this.maxDecorations; i++) {
       if (!active[i]) {
         isItOnScreen[i] = 0;

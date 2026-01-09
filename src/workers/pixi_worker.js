@@ -395,30 +395,25 @@ class PixiRenderer extends AbstractWorker {
     if (this.stats) {
       this.stats[RENDERER_STATS.FPS] = this.currentFPS;
       this.stats[RENDERER_STATS.DRAW_CALLS] = this.drawCallCount;
-      this.stats[RENDERER_STATS.VISIBLE_ENTITIES] = this.visibleEntityCount;
-      this.stats[RENDERER_STATS.VISIBLE_PARTICLES] = this.visibleParticleCount;
-      // Use centralized pool stats instead of per-system counts
+
+      // Total visible sprites = entities + particles + decorations
+      const totalVisibleSprites =
+        this.visibleEntityCount +
+        this.visibleParticleCount +
+        this.visibleDecorationCount;
+
+      // SPRITES_CREATED = total PIXI.Particle objects created (from centralized pool)
+      this.stats[RENDERER_STATS.SPRITES_CREATED] =
+        this.particlePool.createdCount;
+
+      // VISIBLE_SPRITES = sprites currently visible on screen
+      this.stats[RENDERER_STATS.VISIBLE_SPRITES] = totalVisibleSprites;
+
+      // Keep decoration stats for DebugUI (reuse same values)
       this.stats[RENDERER_STATS.DECORATION_SPRITES] =
         this.particlePool.createdCount;
       this.stats[RENDERER_STATS.VISIBLE_DECORATIONS] =
         this.visibleDecorationCount;
-    }
-
-    // Log pool stats every 5 seconds for debugging
-    if (!this._lastPoolStatsLog) this._lastPoolStatsLog = 0;
-    const now = Date.now();
-    if (now - this._lastPoolStatsLog > 5000) {
-      const poolStats = this.particlePool.getStats();
-      console.log(
-        `🎯 PIXI POOL: Created ${poolStats.created} | In Use ${
-          poolStats.inUse
-        } | Free ${poolStats.free} | Peak Usage: ${Math.max(
-          poolStats.inUse,
-          this._peakPoolUsage || 0
-        )} | visibleDecorationCount=${this.visibleDecorationCount}`
-      );
-      this._peakPoolUsage = Math.max(poolStats.inUse, this._peakPoolUsage || 0);
-      this._lastPoolStatsLog = now;
     }
 
     // Reset draw call counter for next frame
@@ -1149,14 +1144,20 @@ class PixiRenderer extends AbstractWorker {
       let bodySprite = this.bodySprites[entityIndex];
       const poolIndex = this.bodySpritePoolIndices[entityIndex];
 
-      // Skip entities without sprite (null check) or off-screen/inactive entities
-      // This implements lazy creation - sprites are only created when entity is visible
+      // ========================================
+      // LAZY SPRITE CREATION (Memory Optimization)
+      // ========================================
+      // Sprites are only created when entities become visible on screen.
+      // This saves memory by not allocating PIXI.Particle objects for:
+      // - Inactive entities (in pool but not spawned)
+      // - Active but off-screen entities (outside camera viewport)
+      // The centralized particle pool handles reuse across all sprite types.
       const shouldHaveSprite =
         active[entityIndex] &&
         renderVisible[entityIndex] &&
         isItOnScreen[entityIndex];
 
-      // LAZY CREATION: Acquire sprite from pool ONLY when entity becomes visible
+      // Acquire sprite from central pool when entity becomes visible
       if (!bodySprite && shouldHaveSprite) {
         const entityType = Transform.entityType[entityIndex];
         const config = this.entitySpriteConfigs[entityType];
@@ -1181,7 +1182,7 @@ class PixiRenderer extends AbstractWorker {
         renderDirty[entityIndex] = 1;
       }
 
-      // If entity doesn't have sprite and shouldn't have one, skip it
+      // Skip entities without sprites (either not visible or no SpriteRenderer)
       if (!bodySprite) {
         continue;
       }
@@ -1237,15 +1238,17 @@ class PixiRenderer extends AbstractWorker {
       if (bodySprite.anchorY !== anchorY[entityIndex])
         bodySprite.anchorY = anchorY[entityIndex];
 
-      // DENSE ALLOCATION: entityIndex === componentIndex
-      // Determine if sprite should be visible
+      // ========================================
+      // SPRITE LIFECYCLE MANAGEMENT
+      // ========================================
+      // Release sprites back to pool when entities go off-screen or despawn.
+      // This allows the same PIXI.Particle to be reused for different entities.
       const shouldBeVisible =
         active[entityIndex] &&
         renderVisible[entityIndex] &&
         isItOnScreen[entityIndex];
 
-      // Release sprite when entity is inactive OR off-screen
-      // This frees sprites for entities that despawned or went off-screen
+      // Release sprite when entity despawns OR goes off-screen
       if (!active[entityIndex] || !isItOnScreen[entityIndex]) {
         if (bodySprite && this.bodySpritePoolIndices[entityIndex] !== -1) {
           this.particlePool.release(this.bodySpritePoolIndices[entityIndex]);
@@ -1253,6 +1256,7 @@ class PixiRenderer extends AbstractWorker {
           this.bodySpritePoolIndices[entityIndex] = -1;
 
           // Only reset animation state if entity despawned (not just off-screen)
+          // This preserves animation state when entity goes off-screen temporarily
           if (!active[entityIndex]) {
             this.previousAnimStates[entityIndex] = -1;
             this.currentSpritesheetIds[entityIndex] = 0;
@@ -2239,9 +2243,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       let sprite = this.particleSprites[i];
       const poolIndex = this.particleSpritePoolIndices[i];
 
-      // Check if particle is inactive or off-screen
+      // ========================================
+      // LAZY SPRITE CREATION & RELEASE
+      // ========================================
+      // Particle effects use the same centralized pool as entities and decorations.
+      // Sprites are acquired when particles spawn, released when they despawn or go off-screen.
+
+      // Release sprite when particle despawns or goes off-screen
       if (!active[i] || !isItOnScreen[i]) {
-        // Release sprite back to central pool if one was assigned
         if (sprite && poolIndex !== -1) {
           this.particlePool.release(poolIndex);
           this.particleSprites[i] = null;
@@ -2252,7 +2261,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         continue;
       }
 
-      // Particle is active and on screen - acquire sprite if needed
+      // Acquire sprite from central pool when particle becomes active and visible
       if (!sprite) {
         const { particle, index } = this.particlePool.acquire();
         sprite = particle;
@@ -2376,33 +2385,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     let visibleDecorationCount = 0;
 
-    // DEBUG: Count decorations by state (only on first few frames)
-    if (!this._decorationDebugLogged || this.frameNumber < 10) {
-      let activeCount = 0;
-      let onScreenCount = 0;
-      let withSpriteCount = 0;
-      for (let i = 0; i < this.maxDecorations; i++) {
-        if (active[i]) activeCount++;
-        if (isItOnScreen[i]) onScreenCount++;
-        if (this.decorationSprites[i]) withSpriteCount++;
-      }
-      console.log(`🎨 PIXI DECORATION DEBUG (frame ${this.frameNumber}):`, {
-        totalSlots: this.maxDecorations,
-        active: activeCount,
-        markedOnScreen: onScreenCount,
-        withSprite: withSpriteCount,
-        poolStats: this.particlePool.getStats(),
-      });
-      if (this.frameNumber >= 9) this._decorationDebugLogged = true;
-    }
-
     for (let i = 0; i < this.maxDecorations; i++) {
       const sprite = this.decorationSprites[i];
       const poolIndex = this.decorationSpritePoolIndices[i];
 
-      // Check if decoration is inactive or off-screen
+      // ========================================
+      // LAZY SPRITE CREATION & RELEASE
+      // ========================================
+      // Decorations use the same centralized pool as entities and particles.
+      // Sprites are acquired when decorations become visible, released when off-screen.
+
+      // Release sprite when decoration despawns or goes off-screen
       if (!active[i] || !isItOnScreen[i]) {
-        // Release sprite back to central pool if one was assigned
         if (sprite && poolIndex !== -1) {
           this.particlePool.release(poolIndex);
           this.decorationSprites[i] = null;
@@ -2412,7 +2406,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         continue;
       }
 
-      // Decoration is visible - acquire a sprite if needed
+      // Acquire sprite from central pool when decoration becomes visible
       let actualSprite = sprite;
       if (!actualSprite) {
         const { particle, index } = this.particlePool.acquire();
