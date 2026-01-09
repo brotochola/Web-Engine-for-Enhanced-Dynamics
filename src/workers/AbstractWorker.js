@@ -1,7 +1,7 @@
 // AbstractWorker.js - Base class for all game engine workers
 // Provides common functionality: frame timing,  FPS tracking, pause state, message handling
 
-import { GameObject } from "../core/gameObject.js";
+import { GameObject, SpriteSheetRegistry } from "../core/gameObject.js";
 import Keyboard from "../core/Keyboard.js";
 import { Mouse } from "../core/Mouse.js";
 import { ParticleEmitter } from "../core/ParticleEmitter.js";
@@ -328,13 +328,21 @@ export class AbstractWorker {
     // Store registered classes (used by logic worker and potentially others)
     this.registeredClasses = data.registeredClasses || [];
 
-    // Initialize query system for component-based entity filtering
+    // Initialize query system for component-based entity filtering (lazy approach)
     if (data.queries) {
       this.queryCache = new Map();
-      Object.entries(data.queries).forEach(([key, array]) => {
-        this.queryCache.set(key, new Int32Array(array));
-      });
-      this.reportLog(`initialized with ${this.queryCache.size} queries`);
+      this.queryMetadata = data.queries.metadata || [];
+
+      // Load pre-computed queries from main thread (if any)
+      if (data.queries.cache) {
+        Object.entries(data.queries.cache).forEach(([key, array]) => {
+          this.queryCache.set(key, new Int32Array(array));
+        });
+      }
+
+      this.reportLog(
+        `initialized with ${this.queryCache.size} cached queries, ${this.queryMetadata.length} entity classes`
+      );
     }
 
     this.reportLog("finished initializing common buffers");
@@ -376,6 +384,7 @@ export class AbstractWorker {
     self.ParticleComponent = ParticleComponent;
     self.Flash = Flash;
     self.Camera = Camera;
+    self.SpriteSheetRegistry = SpriteSheetRegistry;
 
     this.reportLog("registered core engine classes globally");
   }
@@ -411,6 +420,11 @@ export class AbstractWorker {
     for (const [componentName, ComponentClass] of componentClasses) {
       const pool = data.componentPools?.[componentName];
       const buffer = data.buffers?.componentData?.[componentName];
+
+      // Assign componentId ID from pool data (similar to entityType)
+      if (pool && pool.componentId !== undefined) {
+        ComponentClass.componentId = pool.componentId;
+      }
 
       // Initialize SharedArrayBuffer connection if data is available
       if (buffer && pool && pool.count > 0) {
@@ -571,7 +585,7 @@ export class AbstractWorker {
   }
 
   /**
-   * Query entities by component combination
+   * Query entities by component combination (lazy computation)
    * Returns indices of entities that have ALL specified components
    *
    * @param {Array<Component>} componentClasses - Array of component classes to query
@@ -592,21 +606,59 @@ export class AbstractWorker {
       .sort()
       .join(",");
 
-    const result = this.queryCache.get(key);
+    // Check cache first
+    let result = this.queryCache.get(key);
 
     if (!result) {
-      // Only warn once per query key to avoid console spam
-      // Empty queries are normal at startup or in scenes without certain entity types
-      if (!this.emptyQueryWarnings.has(key)) {
-        console.warn(
-          `[${this.constructor.name}] No entities found for query: ${key} (this warning will only show once)`
-        );
-        this.emptyQueryWarnings.add(key);
+      // Compute on-demand
+
+      result = this._computeQuery(componentClasses);
+
+      this.queryCache.set(key, result);
+
+      if (result.length === 0) {
+        // Only warn once per query key to avoid console spam
+        if (!this.emptyQueryWarnings.has(key)) {
+          this.emptyQueryWarnings.add(key);
+        }
       }
-      return new Int32Array(0);
+    } else {
     }
 
     return result;
+  }
+
+  /**
+   * Compute a query by checking which entities have all required components
+   * @private
+   * @param {Array<Component>} componentClasses - Array of component classes
+   * @returns {Int32Array} - Indices of matching entities
+   */
+  _computeQuery(componentClasses) {
+    const componentNames = componentClasses.map((c) => c.name);
+    const componentNameSet = new Set(componentNames);
+    const matchingIndices = [];
+
+    // Check each entity class metadata
+    for (const metadata of this.queryMetadata) {
+      // Check if this entity class has all required components
+      const hasAllComponents = [...componentNameSet].every((name) =>
+        metadata.componentNames.includes(name)
+      );
+
+      if (hasAllComponents) {
+        // Add all entity indices of this class
+        for (
+          let i = metadata.startIndex;
+          i < metadata.startIndex + metadata.count;
+          i++
+        ) {
+          matchingIndices.push(i);
+        }
+      }
+    }
+
+    return new Int32Array(matchingIndices);
   }
 
   // ==========================================
