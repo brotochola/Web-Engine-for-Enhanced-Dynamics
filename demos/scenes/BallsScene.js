@@ -12,8 +12,8 @@ export class BallsScene extends Scene {
   // ========================================
 
   static config = {
-    worldWidth: 9000,
-    worldHeight: 4000,
+    worldWidth: 4000,
+    worldHeight: 5000,
 
     // Spatial hash grid configuration
     spatial: {
@@ -42,7 +42,7 @@ export class BallsScene extends Scene {
       maxCollisionPairs: 10000000, //this is to trigger the collision callbacks, not the resolve collisions
       verletDamping: 0.9999,
       boundaryElasticity: 0,
-      collisionResponseStrength: 0.9,
+      collisionResponseStrength: 0.15,
       gravity: { x: 0, y: 0.5 },
     },
 
