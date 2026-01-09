@@ -40,7 +40,7 @@ export class BallsScene extends Scene {
       subStepCount: 3, // Subdivide each 60fps frame into 4 constraint-solving passes
       noLimitFPS: true, // Run physics as fast as possible (uses fixed-timestep accumulator)
       maxCollisionPairs: 10000000, //this is to trigger the collision callbacks, not the resolve collisions
-      verletDamping: 0.99,
+      verletDamping: 0.9999,
       boundaryElasticity: 0,
       collisionResponseStrength: 0.9,
       gravity: { x: 0, y: 0.5 },
