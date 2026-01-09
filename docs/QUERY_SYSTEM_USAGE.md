@@ -4,7 +4,7 @@ The Query System allows you to efficiently find entities based on their componen
 
 ## 🎯 Overview
 
-The query system is **pre-calculated** at scene initialization and provides O(1) lookups for any component combination.
+The query system uses a **lazy computation** approach where queries are calculated on-demand and cached for future use. This avoids the exponential growth of pre-computing all possible component combinations (2^n - 1).
 
 ## 📝 Usage in Entity Code
 
@@ -74,9 +74,10 @@ class MyWorker extends AbstractWorker {
 
 ## ⚡ Performance
 
-- **Build time**: Happens once at scene initialization
-- **Query time**: ~1-2 nanoseconds (Map lookup)
-- **Memory**: ~4 bytes per entity per combination
+- **Initialization**: Stores metadata only (no pre-computation)
+- **First query**: Computed on-demand (~microseconds for typical entity counts)
+- **Cached query**: ~1-2 nanoseconds (Map lookup)
+- **Memory**: Only stores queries that are actually used
 - **Returns**: `Int32Array` of entity indices
 
 ## 📊 Query Results
@@ -172,14 +173,16 @@ class Predator extends Boid {
 
 ## 🚀 Architecture
 
-1. **Main Thread**: `QuerySystem` builds all combinations at scene load
-2. **Serialization**: Cache sent to all workers
-3. **Workers**: `AbstractWorker` initializes cache automatically
+1. **Main Thread**: `QuerySystem` stores entity metadata at scene load (no pre-computation)
+2. **Serialization**: Metadata and any computed queries sent to all workers
+3. **Workers**: `AbstractWorker` initializes with metadata and computes queries on-demand
 4. **Entity Code**: Access via global `query()` function or `WEED.query()`
+5. **Lazy Computation**: First query computes and caches results, subsequent queries use cache
 
 ## 📌 Notes
 
-- Query results are **cached** - same components always return same results
+- Query results are **cached** - first query computes, subsequent queries are O(1)
+- Only queries that are actually used are computed and stored in memory
 - Queries return entity **indices**, not entity objects
 - Use component static arrays to access data: `RigidBody.x[index]`
 - Available in **all workers** (logic, physics, pixi, particle, spatial)

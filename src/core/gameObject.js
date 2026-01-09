@@ -10,9 +10,9 @@ import { ShadowCaster } from "../components/ShadowCaster.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { collectComponents } from "./utils.js";
 import Keyboard from "./Keyboard.js";
-self.SpriteSheetRegistry = SpriteSheetRegistry;
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
-export { Keyboard };
+// Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
+export { Keyboard, SpriteSheetRegistry };
 
 export class GameObject {
   // Entity class metadata (for spawning system)

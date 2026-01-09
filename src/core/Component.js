@@ -5,6 +5,7 @@ export class Component {
   // Shared memory buffer for this component type
   static sharedBuffer = null;
   static entityCount = 0;
+  static componentId = null;
 
   // Array schema - defines all shared arrays and their types
   // Must be overridden in subclasses

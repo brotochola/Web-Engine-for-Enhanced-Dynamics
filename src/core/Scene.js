@@ -159,13 +159,22 @@ class Scene {
       logicStats: null,
     };
 
-    // Component pool tracking
+    // Component type ID tracking (similar to entityType)
+    this.nextComponentId = 0;
+
+    // Component pool tracking - assign componentId IDs to core components
     this.componentPools = {
       Transform: { ComponentClass: Transform },
       RigidBody: { ComponentClass: RigidBody },
       Collider: { ComponentClass: Collider },
       SpriteRenderer: { ComponentClass: SpriteRenderer },
     };
+
+    // Assign componentId IDs to core components
+    Transform.componentId = this.nextComponentId++;
+    RigidBody.componentId = this.nextComponentId++;
+    Collider.componentId = this.nextComponentId++;
+    SpriteRenderer.componentId = this.nextComponentId++;
 
     // Typed array views
     this.views = {
@@ -330,13 +339,17 @@ class Scene {
     const entityTypeId = this.registeredClasses.length;
     EntityClass.entityType = entityTypeId;
 
-    // Register custom components
+    // Register custom components and assign componentId IDs
     for (const ComponentClass of components) {
       const componentName = ComponentClass.name;
       if (!this.componentPools[componentName]) {
         this.componentPools[componentName] = {
           ComponentClass: ComponentClass,
         };
+        // Assign unique componentId ID (similar to entityType)
+        if (ComponentClass.componentId === undefined) {
+          ComponentClass.componentId = this.nextComponentId++;
+        }
       }
     }
 
@@ -1135,7 +1148,10 @@ class Scene {
       componentPools: Object.fromEntries(
         Object.entries(this.componentPools).map(([name, pool]) => [
           name,
-          { count: this.totalEntityCount },
+          {
+            count: this.totalEntityCount,
+            componentId: pool.ComponentClass.componentId,
+          },
         ])
       ),
       keyIndexMap: this.createKeyIndexMap(),

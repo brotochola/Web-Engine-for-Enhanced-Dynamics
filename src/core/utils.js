@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { PHYSICS_DEFAULTS } from "./ConfigDefaults.js";
+import { GameObject } from "./gameObject.js";
 
 // ============================================================================
 // MATH UTILITIES
@@ -198,7 +199,11 @@ export function getParentClasses(childClass) {
  * @param {Class} DefaultComponent - Default component to always include (e.g., Transform)
  * @returns {Array<Component>} Array of unique component classes
  */
-export function collectComponents(EntityClass, BaseClass, DefaultComponent) {
+export function collectComponents(
+  EntityClass,
+  BaseClass = GameObject,
+  DefaultComponent
+) {
   const components = new Set();
   let currentClass = EntityClass;
 
