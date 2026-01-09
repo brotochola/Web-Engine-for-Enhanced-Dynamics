@@ -1044,9 +1044,10 @@ export class GameObject {
       instance.spriteRenderer.anchorX = 0.5;
       instance.spriteRenderer.anchorY = 1.0;
       instance.setVisible(true);
-      // CRITICAL: Initialize isItOnScreen to 1 so entity is visible immediately
-      // The spatial worker will update this properly on its next frame
-      instance.spriteRenderer.isItOnScreen = 1;
+      // OPTIMIZATION: Initialize isItOnScreen to 0 (off-screen) like decorations
+      // The spatial/particle worker will update this properly based on camera culling
+      // This prevents eagerly creating sprites for entities that aren't visible yet
+      instance.spriteRenderer.isItOnScreen = 0;
       // BUGFIX: Reset animationState to -1 so renderer's change detection will trigger
       // The renderer tracks previousAnimStates[] and skips updates when the value matches.
       // Without this reset, respawning an entity with the same sprite would not update the texture.

@@ -75,6 +75,104 @@ self.PIXI = PIXI;
 // Single ParticleContainer with Y-sorting for depth
 
 /**
+ * Centralized pool for PIXI.Particle objects
+ * All sprites (entities, decorations, particles) share the same pool for maximum reuse
+ */
+class PixiParticlePool {
+  constructor() {
+    this.particles = []; // Array of all created PIXI.Particle objects
+    this.freeIndices = []; // Stack of available particle indices
+    this.createdCount = 0; // Total particles created (for stats)
+    this.defaultTexture = null; // Default texture for new particles
+  }
+
+  /**
+   * Set the default texture for newly created particles
+   * Must be from bigAtlas to ensure all particles share the same source
+   */
+  setDefaultTexture(texture) {
+    this.defaultTexture = texture;
+  }
+
+  /**
+   * Get a particle from the pool (reuse free one or create new)
+   * @returns {{ particle: PIXI.Particle, index: number }}
+   */
+  acquire() {
+    let particleIndex;
+
+    // Try to reuse a freed particle first
+    if (this.freeIndices.length > 0) {
+      particleIndex = this.freeIndices.pop();
+      const particle = this.particles[particleIndex];
+
+      // Reset particle to default visible state (caller will set actual values)
+      particle.visible = false; // Caller makes it visible when ready
+      particle.alpha = 1;
+      particle.scaleX = 1;
+      particle.scaleY = 1;
+      particle.tint = 0xffffff;
+      particle.rotation = 0;
+      particle.anchorX = 0.5;
+      particle.anchorY = 0.5;
+
+      return { particle, index: particleIndex };
+    }
+
+    // No free particles available - create a new one
+    const texture = this.defaultTexture || PIXI.Texture.WHITE;
+    const particle = new PIXI.Particle({
+      texture,
+      anchorX: 0.5,
+      anchorY: 0.5,
+    });
+
+    particle.visible = false; // Start hidden
+
+    particleIndex = this.particles.length;
+    this.particles.push(particle);
+    this.createdCount++;
+
+    return { particle, index: particleIndex };
+  }
+
+  /**
+   * Return a particle to the pool for reuse
+   * @param {number} particleIndex - Index of particle in particles array
+   */
+  release(particleIndex) {
+    if (particleIndex < 0 || particleIndex >= this.particles.length) return;
+
+    const particle = this.particles[particleIndex];
+    if (!particle) return;
+
+    // Hide particle and reset state for reuse
+    particle.visible = false;
+    particle.alpha = 1;
+    particle.scaleX = 1;
+    particle.scaleY = 1;
+    particle.tint = 0xffffff;
+    particle.x = 0;
+    particle.y = 0;
+    particle.rotation = 0;
+
+    // Add to free list
+    this.freeIndices.push(particleIndex);
+  }
+
+  /**
+   * Get current pool statistics
+   */
+  getStats() {
+    return {
+      created: this.createdCount,
+      free: this.freeIndices.length,
+      inUse: this.createdCount - this.freeIndices.length,
+    };
+  }
+}
+
+/**
  * PixiRenderer - Manages rendering of game objects using PixiJS in a web worker
  * Extends AbstractWorker for common worker functionality
  */
@@ -113,9 +211,16 @@ class PixiRenderer extends AbstractWorker {
     this.textures = {}; // Store simple PIXI textures by name
     this.spritesheets = {}; // Store loaded spritesheets by name
 
+    // ========================================
+    // CENTRALIZED PARTICLE POOL
+    // ========================================
+    // All sprites (entities, decorations, particles) share the same pool
+    this.particlePool = new PixiParticlePool();
+
     // Entity rendering
     // this.containers = []; // Array of PIXI containers (one per entity)
-    this.bodySprites = []; // Array of main body sprites (now regular Sprite, not AnimatedSprite)
+    this.bodySprites = []; // Array of PIXI.Particle references (indexed by entityIndex, null if not spawned)
+    this.bodySpritePoolIndices = null; // Int32Array - Maps entityIndex to pool index (or -1 if no sprite)
     this.entitySpriteConfigs = {}; // Store sprite config per entityType
     this.previousAnimStates = null; // Int16Array - Track previous animation state per entity (-1 = unset, initialized in createSprites)
 
@@ -126,19 +231,17 @@ class PixiRenderer extends AbstractWorker {
     this.animationSpeed = null; // Float32Array - Animation speed per entity (frames per second) (initialized in createSprites)
 
     // Particle rendering (separate from entities)
-    this.particleSprites = []; // Array of particle sprites (indexed 0 to maxParticles-1)
-    this.maxParticles = 0; // Number of particles in pool
+    this.particleSprites = []; // Array of PIXI.Particle references (indexed 0 to maxParticles-1, null if not active)
+    this.particleSpritePoolIndices = null; // Int32Array - Maps particle index to pool index (or -1 if no sprite)
+    this.maxParticles = 0; // Number of particle slots
     this.particleTextureCache = {}; // Cache for particle textures by textureId
 
     // Decoration rendering (separate from entities, static sprites)
-    this.decorationSprites = []; // Pool of reusable PIXI.Particle objects (not indexed by decoration)
-    this.maxDecorations = 0; // Number of decorations in pool
-    this.decorationSpriteTextureIds = null; // Uint16Array - Track current textureId per sprite (for reuse validation) (initialized in createDecorationSprites)
+    this.decorationSprites = []; // Array of PIXI.Particle references (indexed by decoration, null if not spawned)
+    this.decorationSpritePoolIndices = null; // Int32Array - Maps decoration index to pool index (or -1 if no sprite)
+    this.decorationSpriteTextureIds = null; // Uint16Array - Track current textureId per decoration (for texture change detection)
+    this.maxDecorations = 0; // Number of decoration slots
     this.visibleDecorationCount = 0; // Number of visible decorations
-    this.createdDecorationSpriteCount = 0; // OPTIMIZATION: Track actually created sprites (lazy creation)
-    this.decorationToSpriteMap = null; // Int32Array - Maps decoration index to sprite pool index (or -1 if no sprite assigned) (initialized in createDecorationSprites)
-    this.freeSpriteIndices = null; // Int32Array - Free list of available sprite indices for reuse (initialized in createDecorationSprites)
-    this.freeSpriteIndicesCount = 0; // Write pointer for freeSpriteIndices array
 
     // World and viewport dimensions
     this.worldWidth = 0;
@@ -294,11 +397,30 @@ class PixiRenderer extends AbstractWorker {
       this.stats[RENDERER_STATS.DRAW_CALLS] = this.drawCallCount;
       this.stats[RENDERER_STATS.VISIBLE_ENTITIES] = this.visibleEntityCount;
       this.stats[RENDERER_STATS.VISIBLE_PARTICLES] = this.visibleParticleCount;
+      // Use centralized pool stats instead of per-system counts
       this.stats[RENDERER_STATS.DECORATION_SPRITES] =
-        this.createdDecorationSpriteCount;
+        this.particlePool.createdCount;
       this.stats[RENDERER_STATS.VISIBLE_DECORATIONS] =
         this.visibleDecorationCount;
     }
+
+    // Log pool stats every 5 seconds for debugging
+    if (!this._lastPoolStatsLog) this._lastPoolStatsLog = 0;
+    const now = Date.now();
+    if (now - this._lastPoolStatsLog > 5000) {
+      const poolStats = this.particlePool.getStats();
+      console.log(
+        `🎯 PIXI POOL: Created ${poolStats.created} | In Use ${
+          poolStats.inUse
+        } | Free ${poolStats.free} | Peak Usage: ${Math.max(
+          poolStats.inUse,
+          this._peakPoolUsage || 0
+        )} | visibleDecorationCount=${this.visibleDecorationCount}`
+      );
+      this._peakPoolUsage = Math.max(poolStats.inUse, this._peakPoolUsage || 0);
+      this._lastPoolStatsLog = now;
+    }
+
     // Reset draw call counter for next frame
     this.drawCallCount = 0;
   }
@@ -1024,9 +1146,45 @@ class PixiRenderer extends AbstractWorker {
       i++
     ) {
       const entityIndex = allEntitiesWithSpriteRenderer[i];
-      const bodySprite = this.bodySprites[entityIndex];
+      let bodySprite = this.bodySprites[entityIndex];
+      const poolIndex = this.bodySpritePoolIndices[entityIndex];
 
-      if (!bodySprite) continue;
+      // Skip entities without sprite (null check) or off-screen/inactive entities
+      // This implements lazy creation - sprites are only created when entity is visible
+      const shouldHaveSprite =
+        active[entityIndex] &&
+        renderVisible[entityIndex] &&
+        isItOnScreen[entityIndex];
+
+      // LAZY CREATION: Acquire sprite from pool ONLY when entity becomes visible
+      if (!bodySprite && shouldHaveSprite) {
+        const entityType = Transform.entityType[entityIndex];
+        const config = this.entitySpriteConfigs[entityType];
+
+        // Skip entities without SpriteRenderer (e.g., Mouse entity)
+        if (!config || !config.hasSpriteRenderer) {
+          continue;
+        }
+
+        // Entity has SpriteRenderer and is visible - acquire sprite from pool
+        const { particle, index } = this.particlePool.acquire();
+        bodySprite = particle;
+        this.bodySprites[entityIndex] = particle;
+        this.bodySpritePoolIndices[entityIndex] = index;
+
+        // Add to container if Y-sorting is disabled
+        if (!this.ySorting) {
+          this.particleContainer.addParticle(particle);
+        }
+
+        // Mark as needing sprite setup (texture, animation, etc)
+        renderDirty[entityIndex] = 1;
+      }
+
+      // If entity doesn't have sprite and shouldn't have one, skip it
+      if (!bodySprite) {
+        continue;
+      }
 
       // OPTIMIZATION: Only update visual properties if dirty flag is set
       // This skips expensive operations (tint, alpha, flipping, animations) when unchanged
@@ -1081,24 +1239,33 @@ class PixiRenderer extends AbstractWorker {
 
       // DENSE ALLOCATION: entityIndex === componentIndex
       // Determine if sprite should be visible
-      // Note: spriteActive check removed - bodySprite null check already filters entities without SpriteRenderer
       const shouldBeVisible =
         active[entityIndex] &&
         renderVisible[entityIndex] &&
         isItOnScreen[entityIndex];
 
-      // Hide inactive or explicitly hidden entities
-      if (!shouldBeVisible) {
+      // Release sprite when entity is inactive OR off-screen
+      // This frees sprites for entities that despawned or went off-screen
+      if (!active[entityIndex] || !isItOnScreen[entityIndex]) {
+        if (bodySprite && this.bodySpritePoolIndices[entityIndex] !== -1) {
+          this.particlePool.release(this.bodySpritePoolIndices[entityIndex]);
+          this.bodySprites[entityIndex] = null;
+          this.bodySpritePoolIndices[entityIndex] = -1;
+
+          // Only reset animation state if entity despawned (not just off-screen)
+          if (!active[entityIndex]) {
+            this.previousAnimStates[entityIndex] = -1;
+            this.currentSpritesheetIds[entityIndex] = 0;
+            this.currentAnimationFrames[entityIndex] = [];
+          }
+        }
+        continue;
+      }
+
+      // Hide explicitly hidden entities (renderVisible=false, but keep sprite allocated)
+      if (!renderVisible[entityIndex]) {
         if (bodySprite.visible) {
           bodySprite.visible = false;
-        }
-        // BUGFIX: Reset previousAnimStates when entity becomes inactive
-        // This ensures that when the entity is respawned (recycled from pool),
-        // the renderer will detect the animation state change and update the sprite texture.
-        // Without this, respawned entities with the same sprite would skip the texture update
-        // because previousAnimStates still holds the old value from before despawn.
-        if (!active[entityIndex]) {
-          this.previousAnimStates[entityIndex] = -1;
         }
         continue;
       }
@@ -1941,6 +2108,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           for (const [frameName, texture] of Object.entries(frameTextures)) {
             this.textures[frameName] = texture;
           }
+
+          // Initialize particle pool with a texture from bigAtlas
+          const textureKeys = Object.keys(frameTextures);
+          if (textureKeys.length > 0) {
+            this.particlePool.setDefaultTexture(frameTextures[textureKeys[0]]);
+          }
+
           console.log(
             `✅ BigAtlas loaded: ${
               Object.keys(frameTextures).length
@@ -2023,48 +2197,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * Create particle sprites (separate from entity sprites)
-   * Particles are static sprites with fixed anchor (0.5, 0.5)
+   * Initialize particle sprite tracking arrays
+   * OPTIMIZATION: Sprites are acquired lazily from central pool when particles spawn
    */
   createParticleSprites() {
     if (this.maxParticles === 0) return;
 
-    console.log(`PIXI WORKER: Creating ${this.maxParticles} particle sprites`);
-
-    // Get a default texture from bigAtlas to ensure particles share the same source
-    const bigAtlas = this.spritesheets["bigAtlas"];
-    let defaultParticleTexture = PIXI.Texture.WHITE; // Fallback
-
-    if (bigAtlas && bigAtlas.textures) {
-      const textureKeys = Object.keys(bigAtlas.textures);
-      if (textureKeys.length > 0) {
-        defaultParticleTexture = bigAtlas.textures[textureKeys[0]];
-      }
-    }
-
-    for (let i = 0; i < this.maxParticles; i++) {
-      // Create Particle object for ParticleContainer
-      // Use bigAtlas texture to ensure shared source with entity sprites
-      const particleSprite = new PIXI.Particle({
-        texture: defaultParticleTexture,
-        anchorX: 0.5,
-        anchorY: 0.5,
-      });
-
-      // Start invisible (particles are spawned by ParticleEmitter)
-      particleSprite.visible = false;
-
-      this.particleSprites[i] = particleSprite;
-
-      // Add to container if Y-sorting is disabled
-      // (if Y-sorting is enabled, particles are added during updateSprites)
-      if (!this.ySorting) {
-        this.particleContainer.addParticle(particleSprite);
-      }
-    }
+    // Initialize particle tracking arrays
+    this.particleSprites = new Array(this.maxParticles).fill(null);
+    this.particleSpritePoolIndices = new Int32Array(this.maxParticles).fill(-1);
 
     console.log(
-      `PIXI WORKER: Created ${this.maxParticles} particle sprites (separate pool)`
+      `PIXI WORKER: Particle system initialized (${this.maxParticles} slots, using central particle pool)`
     );
   }
 
@@ -2092,15 +2236,33 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     let visibleParticleCount = 0;
 
     for (let i = 0; i < this.maxParticles; i++) {
-      const sprite = this.particleSprites[i];
-      if (!sprite) continue;
+      let sprite = this.particleSprites[i];
+      const poolIndex = this.particleSpritePoolIndices[i];
 
-      // Check if particle is active
+      // Check if particle is inactive or off-screen
       if (!active[i] || !isItOnScreen[i]) {
-        if (sprite.visible) {
-          sprite.visible = false;
+        // Release sprite back to central pool if one was assigned
+        if (sprite && poolIndex !== -1) {
+          this.particlePool.release(poolIndex);
+          this.particleSprites[i] = null;
+          this.particleSpritePoolIndices[i] = -1;
+          // Clear texture cache for this particle
+          delete this.particleTextureCache[i + "_" + textureId[i]];
         }
         continue;
+      }
+
+      // Particle is active and on screen - acquire sprite if needed
+      if (!sprite) {
+        const { particle, index } = this.particlePool.acquire();
+        sprite = particle;
+        this.particleSprites[i] = particle;
+        this.particleSpritePoolIndices[i] = index;
+
+        // Add to container if Y-sorting is disabled
+        if (!this.ySorting) {
+          this.particleContainer.addParticle(particle);
+        }
       }
 
       // Calculate render Y (ground Y + height offset)
@@ -2167,91 +2329,21 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   /**
    * Create decoration sprites (separate from entity sprites)
-   * OPTIMIZATION: Uses lazy creation - sprites are created on-demand when first needed
+   * OPTIMIZATION: Uses lazy creation - sprites are acquired from central pool when needed
    */
   createDecorationSprites() {
     if (this.maxDecorations === 0) return;
 
-    // Initialize empty sprite pool (sprites created lazily in updateDecorationSprites)
-    this.decorationSprites = [];
-    this.createdDecorationSpriteCount = 0;
-
-    // Initialize typed arrays for decoration tracking
+    // Initialize arrays for decoration tracking
+    this.decorationSprites = new Array(this.maxDecorations).fill(null);
+    this.decorationSpritePoolIndices = new Int32Array(this.maxDecorations).fill(
+      -1
+    );
     this.decorationSpriteTextureIds = new Uint16Array(this.maxDecorations);
-    this.decorationToSpriteMap = new Int32Array(this.maxDecorations).fill(-1);
-    this.freeSpriteIndices = new Int32Array(this.maxDecorations);
-    this.freeSpriteIndicesCount = 0; // Write pointer for free list
 
     console.log(
-      `PIXI WORKER: Decoration sprite pool initialized (${this.maxDecorations} decoration slots, lazy sprite creation enabled)`
+      `PIXI WORKER: Decoration system initialized (${this.maxDecorations} slots, using central particle pool)`
     );
-  }
-
-  /**
-   * Helper: Get or create a decoration sprite from the reusable pool
-   * Uses free list to reuse hidden sprites before creating new ones
-   * @returns {number} Index of the sprite in decorationSprites array
-   * @private
-   */
-  _acquireDecorationSprite() {
-    let spriteIndex;
-
-    // Try to reuse a freed sprite first
-    if (this.freeSpriteIndicesCount > 0) {
-      this.freeSpriteIndicesCount--;
-      spriteIndex = this.freeSpriteIndices[this.freeSpriteIndicesCount];
-      return spriteIndex;
-    }
-
-    // No free sprites available - create a new one
-    const bigAtlas = this.spritesheets["bigAtlas"];
-    let defaultDecorationTexture = PIXI.Texture.WHITE; // Fallback
-
-    if (bigAtlas && bigAtlas.textures) {
-      const textureKeys = Object.keys(bigAtlas.textures);
-      if (textureKeys.length > 0) {
-        defaultDecorationTexture = bigAtlas.textures[textureKeys[0]];
-      }
-    }
-
-    // Create Particle object for ParticleContainer
-    const decorationSprite = new PIXI.Particle({
-      texture: defaultDecorationTexture,
-      anchorX: 0.5,
-      anchorY: 0.5,
-    });
-
-    // Start invisible (will be made visible by caller)
-    decorationSprite.visible = false;
-
-    // Add to sprite pool
-    spriteIndex = this.decorationSprites.length;
-    this.decorationSprites.push(decorationSprite);
-    this.decorationSpriteTextureIds[spriteIndex] = 0; // Initialize textureId to 0 (unset)
-    this.createdDecorationSpriteCount++;
-
-    // Add to container if Y-sorting is disabled
-    // (if Y-sorting is enabled, decorations are added during updateSprites)
-    if (!this.ySorting) {
-      this.particleContainer.addParticle(decorationSprite);
-    }
-
-    return spriteIndex;
-  }
-
-  /**
-   * Helper: Release a decoration sprite back to the free pool for reuse
-   * @param {number} spriteIndex - Index of sprite in decorationSprites array
-   * @private
-   */
-  _releaseDecorationSprite(spriteIndex) {
-    const sprite = this.decorationSprites[spriteIndex];
-    if (sprite) {
-      sprite.visible = false;
-      this.decorationSpriteTextureIds[spriteIndex] = 0; // Reset textureId for next use
-      this.freeSpriteIndices[this.freeSpriteIndicesCount] = spriteIndex;
-      this.freeSpriteIndicesCount++;
-    }
   }
 
   /**
@@ -2284,53 +2376,78 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     let visibleDecorationCount = 0;
 
+    // DEBUG: Count decorations by state (only on first few frames)
+    if (!this._decorationDebugLogged || this.frameNumber < 10) {
+      let activeCount = 0;
+      let onScreenCount = 0;
+      let withSpriteCount = 0;
+      for (let i = 0; i < this.maxDecorations; i++) {
+        if (active[i]) activeCount++;
+        if (isItOnScreen[i]) onScreenCount++;
+        if (this.decorationSprites[i]) withSpriteCount++;
+      }
+      console.log(`🎨 PIXI DECORATION DEBUG (frame ${this.frameNumber}):`, {
+        totalSlots: this.maxDecorations,
+        active: activeCount,
+        markedOnScreen: onScreenCount,
+        withSprite: withSpriteCount,
+        poolStats: this.particlePool.getStats(),
+      });
+      if (this.frameNumber >= 9) this._decorationDebugLogged = true;
+    }
+
     for (let i = 0; i < this.maxDecorations; i++) {
-      const spriteIndex = this.decorationToSpriteMap[i];
+      const sprite = this.decorationSprites[i];
+      const poolIndex = this.decorationSpritePoolIndices[i];
 
       // Check if decoration is inactive or off-screen
       if (!active[i] || !isItOnScreen[i]) {
-        // Release sprite back to free pool if one was assigned
-        if (spriteIndex !== -1) {
-          this._releaseDecorationSprite(spriteIndex);
-          this.decorationToSpriteMap[i] = -1;
+        // Release sprite back to central pool if one was assigned
+        if (sprite && poolIndex !== -1) {
+          this.particlePool.release(poolIndex);
+          this.decorationSprites[i] = null;
+          this.decorationSpritePoolIndices[i] = -1;
+          this.decorationSpriteTextureIds[i] = 0;
         }
         continue;
       }
 
       // Decoration is visible - acquire a sprite if needed
-      let actualSpriteIndex = spriteIndex;
-      if (actualSpriteIndex === -1) {
-        actualSpriteIndex = this._acquireDecorationSprite();
-        this.decorationToSpriteMap[i] = actualSpriteIndex;
+      let actualSprite = sprite;
+      if (!actualSprite) {
+        const { particle, index } = this.particlePool.acquire();
+        actualSprite = particle;
+        this.decorationSprites[i] = particle;
+        this.decorationSpritePoolIndices[i] = index;
+        this.decorationSpriteTextureIds[i] = 0; // Reset texture tracking
+
+        // Add to container if Y-sorting is disabled
+        if (!this.ySorting) {
+          this.particleContainer.addParticle(particle);
+        }
       }
 
-      const sprite = this.decorationSprites[actualSpriteIndex];
-      if (!sprite) continue; // Safety check
-
       // Update sprite properties from DecorationComponent
-      sprite.x = x[i];
-      sprite.y = y[i];
-      sprite.scaleX = scale[i];
-      sprite.scaleY = scale[i];
-      sprite.alpha = alpha[i];
-      sprite.tint = tint[i];
-      sprite.anchorX = anchorX[i];
-      sprite.anchorY = anchorY[i];
+      actualSprite.x = x[i];
+      actualSprite.y = y[i];
+      actualSprite.scaleX = scale[i];
+      actualSprite.scaleY = scale[i];
+      actualSprite.alpha = alpha[i];
+      actualSprite.tint = tint[i];
+      actualSprite.anchorX = anchorX[i];
+      actualSprite.anchorY = anchorY[i];
 
-      // Update texture if it changed (compare with sprite's current textureId)
+      // Update texture if it changed
       const tid = textureId[i];
-      if (
-        tid > 0 &&
-        this.decorationSpriteTextureIds[actualSpriteIndex] !== tid
-      ) {
+      if (tid > 0 && this.decorationSpriteTextureIds[i] !== tid) {
         // Get texture from bigAtlas by animation index
         const textureName = SpriteSheetRegistry.getAnimationName(
           "bigAtlas",
           tid
         );
         if (textureName && this.textures[textureName]) {
-          sprite.texture = this.textures[textureName];
-          this.decorationSpriteTextureIds[actualSpriteIndex] = tid; // Track sprite's current texture
+          actualSprite.texture = this.textures[textureName];
+          this.decorationSpriteTextureIds[i] = tid; // Track decoration's current texture
         }
       }
 
@@ -2338,11 +2455,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       visibleDecorationCount++;
 
       // Add to Y-sort list if sorting is enabled
-      // Use y position for sorting
       if (this.ySorting) {
         // Make sprite visible before adding to sort list
-        if (!sprite.visible) {
-          sprite.visible = true;
+        if (!actualSprite.visible) {
+          actualSprite.visible = true;
         }
         // GC OPTIMIZATION: Reuse pooled objects instead of allocating new ones each frame
         const poolIdx = this._ySortPoolSize++;
@@ -2358,12 +2474,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         const item = this._ySortPool[poolIdx];
         item.entityId = -2; // Mark as decoration (not an entity, not a particle)
         item.decorationIndex = i;
-        item.sprite = sprite;
+        item.sprite = actualSprite;
         item.y = y[i]; // Sort by Y position
       } else {
         // Y-sorting disabled - just show the sprite
-        if (!sprite.visible) {
-          sprite.visible = true;
+        if (!actualSprite.visible) {
+          actualSprite.visible = true;
         }
       }
     }
@@ -2373,16 +2489,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * Create placeholder particles for all entities with SpriteRenderer
-   * Actual textures/spritesheets are set per-instance via setSpritesheet()
-   * PixiJS 8: Uses Particle objects instead of Sprite for ParticleContainer
-   *
-   * IMPORTANT: All particles MUST use textures from the same source (bigAtlas)
-   * for ParticleContainer to render them properly. Using PIXI.Texture.WHITE
-   * as initial texture causes issues because it has a different source.
+   * Initialize entity sprite tracking arrays
+   * OPTIMIZATION: Sprites are now acquired lazily from central pool when entities spawn
+   * This saves memory for unused entity slots
    */
   createSprites() {
-    // Initialize spritesheet tracking array once
+    // Initialize sprite tracking arrays
+    this.bodySprites = new Array(this.entityCount).fill(null);
+    this.bodySpritePoolIndices = new Int32Array(this.entityCount).fill(-1);
     this.currentSpritesheetIds = new Uint8Array(this.entityCount);
 
     // Initialize animation tracking typed arrays
@@ -2390,45 +2504,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.currentFrameIndex = new Uint16Array(this.entityCount);
     this.frameAccumulator = new Float32Array(this.entityCount);
     this.animationSpeed = new Float32Array(this.entityCount);
+    this.currentAnimationFrames = new Array(this.entityCount)
+      .fill(null)
+      .map(() => []);
 
-    // Use PIXI's default white texture for particle initialization
-    const defaultTexture = PIXI.Texture.WHITE;
-
-    for (let i = 0; i < this.entityCount; i++) {
-      const entityType = Transform.entityType[i];
-      const config = this.entitySpriteConfigs[entityType];
-
-      // Skip entities without SpriteRenderer (e.g., Mouse entity for spatial tracking)
-      if (!config || !config.hasSpriteRenderer) {
-        this.bodySprites[i] = null;
-        this.currentAnimationFrames[i] = [];
-        // currentFrameIndex, frameAccumulator, animationSpeed already initialized to 0 in typed arrays
-        continue;
-      }
-
-      // Create Particle object - PixiJS 8 ParticleContainer uses Particle, not Sprite
-      // Use a texture from bigAtlas to ensure all particles share the same source
-      const bodySprite = new PIXI.Particle({
-        texture: defaultTexture,
-        anchorX: 0.5,
-        anchorY: 0.5,
-      });
-
-      // Store references
-      this.bodySprites[i] = bodySprite;
-      // previousAnimStates already initialized to -1 in typed array
-
-      // Initialize animation tracking
-      this.currentAnimationFrames[i] = [];
-      // currentFrameIndex, frameAccumulator, animationSpeed already initialized to 0 in typed arrays
-
-      // Initialize spritesheet tracking (0 = not set yet)
-      this.currentSpritesheetIds[i] = 0;
-
-      // BUGFIX: Don't add particles during initialization
-      // Particles are now always added dynamically during updateSprites()
-      // This ensures proper cleanup when entities are despawned
-    }
+    console.log(
+      `PIXI WORKER: Entity sprite system initialized (${this.entityCount} slots, using central particle pool)`
+    );
   }
 
   /**
@@ -2755,9 +2837,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Create decoration sprites (separate pool)
     this.createDecorationSprites();
     this.reportLog("finished creating decoration sprites");
+
     console.log(
       "PIXI WORKER: Initialization complete, waiting for start signal..."
     );
+    console.log(
+      `PIXI WORKER: Centralized particle pool ready (entities: ${this.entityCount} slots, particles: ${this.maxParticles} slots, decorations: ${this.maxDecorations} slots)`
+    );
+
     // Note: Game loop will start when "start" message is received from main thread
   }
 
