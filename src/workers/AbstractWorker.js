@@ -28,13 +28,9 @@ export class AbstractWorker {
     this.frameNumber = 0;
     this.lastFrameTime = performance.now();
     this.currentFPS = 0;
-    this.fpsReportInterval = 30; // Report FPS every N frames
 
-    // Moving average FPS calculation
-    this.fpsFrameCount = 60; // Average over last 60 frames
-    this.frameTimes = new Array(this.fpsFrameCount).fill(16.67); // Pre-fill with 60fps baseline
-    this.frameTimeIndex = 0;
-    this.frameTimesSum = 16.67 * this.fpsFrameCount;
+    // Stats buffer for writing detailed metrics (set during initialization)
+    this.stats = null; // Float32Array view into worker's stat buffer
 
     // State
     this.isPaused = true;
@@ -75,7 +71,7 @@ export class AbstractWorker {
   }
 
   /**
-   * Calculate delta time and update FPS using moving average
+   * Calculate delta time and update FPS
    * @returns {Object} - { deltaTime, dtRatio }
    */
   updateFrameTiming() {
@@ -83,23 +79,11 @@ export class AbstractWorker {
     const deltaTime = now - this.lastFrameTime;
     this.lastFrameTime = now;
 
-    // Update moving average FPS calculation
-    // Remove oldest frame time from sum
-    this.frameTimesSum -= this.frameTimes[this.frameTimeIndex];
-    // Add new frame time
-    this.frameTimes[this.frameTimeIndex] = deltaTime;
-    this.frameTimesSum += deltaTime;
-    // Move to next index (circular buffer)
-    this.frameTimeIndex = (this.frameTimeIndex + 1) % this.fpsFrameCount;
-
-    // Calculate FPS from average frame time over last N frames
-    const averageFrameTime = this.frameTimesSum / this.fpsFrameCount;
-    this.currentFPS = 1000 / averageFrameTime;
-
-    // Calculate instantaneous FPS (real frame time, not moving average)
+    // Calculate instantaneous FPS
     const instantaneousFPS = 1000 / deltaTime;
+    this.currentFPS = instantaneousFPS;
 
-    // Write instantaneous FPS to SharedArrayBuffer for cross-worker access
+    // Write instantaneous FPS to legacy frameRateData buffer (for backwards compatibility)
     if (this.frameRateData && this.frameRateIndex >= 0) {
       this.frameRateData[this.frameRateIndex] = instantaneousFPS;
     }
@@ -111,19 +95,12 @@ export class AbstractWorker {
   }
 
   /**
-   * Report FPS to main thread
+   * Report FPS to main thread (DEPRECATED - now using stat buffers)
+   * Subclasses can override this to write additional stats to their stat buffer
    */
   reportFPS() {
-    if (this.frameNumber % this.fpsReportInterval === 0) {
-      const message = { msg: "fps", fps: this.currentFPS.toFixed(2) };
-
-      // Include active entity count if available (for logic workers)
-      if (this.activeEntityCount !== undefined) {
-        message.activeEntities = this.activeEntityCount;
-      }
-
-      self.postMessage(message);
-    }
+    // Base implementation does nothing - stats are written directly to SharedArrayBuffer
+    // Subclasses override this to write their specific stats
   }
 
   reportLog(message) {

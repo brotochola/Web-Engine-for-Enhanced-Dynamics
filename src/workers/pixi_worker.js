@@ -21,6 +21,7 @@ import { DEBUG_FLAGS } from "../core/DebugFlags.js";
 import { Mouse } from "../core/Mouse.js";
 import { MouseComponent } from "../components/MouseComponent.js";
 import { LightEmitter } from "../components/LightEmitter.js";
+import { RENDERER_STATS, createStatsWriter } from "./workers-utils.js";
 
 // Import PixiJS 8 library (ES6 module with named exports)
 import {
@@ -284,18 +285,19 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * Override reportFPS to include draw call count and visible entities
+   * Override reportFPS to write stats to SharedArrayBuffer
    */
   reportFPS() {
-    if (this.frameNumber % this.fpsReportInterval === 0) {
-      self.postMessage({
-        msg: "fps",
-        fps: this.currentFPS.toFixed(2),
-        drawCalls: this.drawCallCount,
-        visibleEntities: this.visibleEntityCount,
-        visibleParticles: this.visibleParticleCount,
-        decorationSprites: this.createdDecorationSpriteCount,
-      });
+    // Write stats to SharedArrayBuffer every frame (no throttling needed - it's just memory writes)
+    if (this.stats) {
+      this.stats[RENDERER_STATS.FPS] = this.currentFPS;
+      this.stats[RENDERER_STATS.DRAW_CALLS] = this.drawCallCount;
+      this.stats[RENDERER_STATS.VISIBLE_ENTITIES] = this.visibleEntityCount;
+      this.stats[RENDERER_STATS.VISIBLE_PARTICLES] = this.visibleParticleCount;
+      this.stats[RENDERER_STATS.DECORATION_SPRITES] =
+        this.createdDecorationSpriteCount;
+      this.stats[RENDERER_STATS.VISIBLE_DECORATIONS] =
+        this.visibleDecorationCount;
     }
     // Reset draw call counter for next frame
     this.drawCallCount = 0;
@@ -2234,13 +2236,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.particleContainer.addParticle(decorationSprite);
     }
 
-    // Log progress every 10 sprites to track lazy loading
-    if (this.createdDecorationSpriteCount % 10 === 0) {
-      console.log(
-        `PIXI WORKER: Lazy-created decoration sprite #${this.createdDecorationSpriteCount} (${this.freeSpriteIndicesCount} sprites in free list)`
-      );
-    }
-
     return spriteIndex;
   }
 
@@ -2516,6 +2511,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   async initialize(data) {
     // console.log("PIXI WORKER: Initializing with component system", data);
+
+    // Initialize stats buffer for writing metrics
+    if (data.buffers.rendererStats) {
+      this.stats = createStatsWriter(
+        data.buffers.rendererStats,
+        RENDERER_STATS
+      );
+      console.log("PIXI WORKER: Stats buffer initialized");
+    }
 
     // Store viewport and world dimensions from config
     this.worldWidth = data.config.worldWidth;

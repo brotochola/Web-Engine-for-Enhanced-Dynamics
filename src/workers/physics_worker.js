@@ -13,6 +13,7 @@ import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { AbstractWorker } from "./AbstractWorker.js";
+import { PHYSICS_STATS, createStatsWriter } from "./workers-utils.js";
 import { clamp01, validatePhysicsConfig } from "../core/utils.js";
 import { rng } from "../core/utils.js";
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
@@ -52,6 +53,12 @@ class PhysicsWorker extends AbstractWorker {
    */
   initialize(data) {
     //console.log("PHYSICS WORKER: Initializing with component system");
+
+    // Initialize stats buffer for writing metrics
+    if (data.buffers.physicsStats) {
+      this.stats = createStatsWriter(data.buffers.physicsStats, PHYSICS_STATS);
+      console.log("PHYSICS WORKER: Stats buffer initialized");
+    }
 
     // Note: Component arrays are automatically initialized by AbstractWorker.initializeAllComponents()
 
@@ -807,6 +814,17 @@ class PhysicsWorker extends AbstractWorker {
         nx: 0,
         ny: ny,
       };
+    }
+  }
+
+  /**
+   * Override reportFPS to write stats to SharedArrayBuffer
+   */
+  reportFPS() {
+    // Write stats to SharedArrayBuffer every frame
+    if (this.stats) {
+      this.stats[PHYSICS_STATS.FPS] = this.currentFPS;
+      // Additional physics stats can be added here (collision checks, etc.)
     }
   }
 }

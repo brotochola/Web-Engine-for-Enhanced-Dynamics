@@ -21,6 +21,7 @@ import { ParticleEmitter } from "../core/ParticleEmitter.js";
 import { DecorationPool } from "../core/DecorationPool.js";
 import { Flash } from "../core/Flash.js";
 import { AbstractWorker } from "./AbstractWorker.js";
+import { LOGIC_STATS, createMultiWorkerStatsWriter } from "./workers-utils.js";
 
 // Note: Core engine classes (GameObject, Mouse, Keyboard, etc.) and components
 // (Transform, RigidBody, etc.) are now registered automatically by AbstractWorker
@@ -92,6 +93,16 @@ class LogicWorker extends AbstractWorker {
   initialize(data) {
     // Set worker index for identification
     this.workerIndex = data.workerIndex || 0;
+
+    // Initialize stats buffer for writing metrics (strided access for multi-worker)
+    if (data.buffers.logicStats) {
+      this.stats = createMultiWorkerStatsWriter(
+        data.buffers.logicStats,
+        LOGIC_STATS,
+        this.workerIndex
+      );
+      console.log(`LOGIC WORKER ${this.workerIndex}: Stats buffer initialized`);
+    }
 
     // Store key index mapping for Keyboard class
     this.keyIndexMap = data.keyIndexMap || {};
@@ -782,6 +793,19 @@ class LogicWorker extends AbstractWorker {
       default:
         // Unknown message - ignore or log
         break;
+    }
+  }
+
+  /**
+   * Override reportFPS to write stats to SharedArrayBuffer
+   */
+  reportFPS() {
+    // Write stats to SharedArrayBuffer every frame
+    if (this.stats) {
+      this.stats[LOGIC_STATS.FPS] = this.currentFPS;
+      this.stats[LOGIC_STATS.ENTITIES_PROCESSED] =
+        this.entitiesProcessedThisFrame;
+      // Additional logic stats can be added here (systems executed, jobs stolen, etc.)
     }
   }
 }
