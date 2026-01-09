@@ -7,7 +7,14 @@ import { Mouse } from "../core/Mouse.js";
 import { ParticleEmitter } from "../core/ParticleEmitter.js";
 import { DecorationPool } from "../core/DecorationPool.js";
 import { Flash } from "../core/Flash.js";
-import { seededRandom } from "../core/utils.js";
+import {
+  seededRandom,
+  loadEntityScripts,
+  collectAllComponentsFromClasses,
+  initializeComponentViews,
+  exposeComponentsGlobally,
+  exposeEntityClassesGlobally,
+} from "../core/utils.js";
 import { Camera } from "../core/Camera.js";
 import { ParticleComponent } from "../components/ParticleComponent.js";
 import { DecorationComponent } from "../components/DecorationComponent.js";
@@ -34,7 +41,7 @@ export class AbstractWorker {
 
     // State
     this.isPaused = true;
-    this.entityCount = 0;
+    this.globalEntityCount = 0;
 
     // Scheduling
     this.usesCustomScheduler = false; // Override in subclass if using custom scheduler
@@ -190,7 +197,7 @@ export class AbstractWorker {
     //   `${this.constructor.name}: initializeCommonBuffers called, needsGameScripts=${this.needsGameScripts}`
     // );
     this.reportLog("initializing common buffers");
-    this.entityCount = data.entityCount;
+    this.globalEntityCount = data.globalEntityCount;
 
     // Store config for worker access
     this.config = data.config || {};
@@ -212,38 +219,16 @@ export class AbstractWorker {
 
     // Load game-specific scripts dynamically (entity classes + custom components)
     // ALL workers now receive entity classes for consistent component access
+    // Uses the unified loadEntityScripts function from utils.js (auto-detects worker context)
     if (data.scriptsToLoad && data.scriptsToLoad.length > 0) {
-      // console.log(
-      //   `${this.constructor.name}: Loading ${data.scriptsToLoad.length} game scripts...`
-      // );
-
-      // Use dynamic import() for ES6 modules (async/await)
-      for (const scriptPath of data.scriptsToLoad) {
-        try {
-          const module = await import(scriptPath);
-          // Make the exported class(es) available globally in worker
-          Object.keys(module).forEach((key) => {
-            self[key] = module[key];
-            // console.log(
-            //   `${this.constructor.name}: ✓ Registered ${key} from ${scriptPath}`
-            // );
-          });
-          // console.log(`${this.constructor.name}: ✓ Loaded ${scriptPath}`);
-        } catch (error) {
-          // console.error(
-          //   `${this.constructor.name}: ✗ Failed to load ${scriptPath}:`,
-          //   error
-          // );
-          // console.error(`Error stack:`, error.stack);
-        }
-      }
+      await loadEntityScripts(data.scriptsToLoad);
     }
 
     // Initialize GameObject arrays if buffer provided
     if (data.buffers?.gameObjectData) {
       GameObject.initializeArrays(
         data.buffers.gameObjectData,
-        this.entityCount,
+        this.globalEntityCount,
         data.buffers.neighborData, // Automatically initialize neighbor data
         data.buffers.distanceData // Automatically initialize distance data
       );
@@ -400,41 +385,22 @@ export class AbstractWorker {
       return; // No entity classes registered
     }
 
-    const componentClasses = new Map(); // componentName -> ComponentClass
-
     // Collect ALL components from all registered entity classes
-    for (const classInfo of this.registeredClasses) {
-      const EntityClass = self[classInfo.name];
-      if (!EntityClass) continue;
+    const componentClasses = collectAllComponentsFromClasses(
+      this.registeredClasses,
+      self
+    );
 
-      // Use GameObject's static method to collect components (handles inheritance)
-      const components = GameObject._collectComponents(EntityClass);
-      for (const ComponentClass of components) {
-        const componentName = ComponentClass.name;
-        componentClasses.set(componentName, ComponentClass);
-      }
-    }
+    // Initialize component views from SharedArrayBuffers
+    const initializedCount = initializeComponentViews(
+      componentClasses,
+      data.buffers?.componentData,
+      data.componentPools,
+      data.totalEntityCount
+    );
 
-    // Initialize all component arrays AND make them globally available
-    let initializedCount = 0;
-    for (const [componentName, ComponentClass] of componentClasses) {
-      const pool = data.componentPools?.[componentName];
-      const buffer = data.buffers?.componentData?.[componentName];
-
-      // Assign componentId ID from pool data (similar to entityType)
-      if (pool && pool.componentId !== undefined) {
-        ComponentClass.componentId = pool.componentId;
-      }
-
-      // Initialize SharedArrayBuffer connection if data is available
-      if (buffer && pool && pool.count > 0) {
-        ComponentClass.initializeArrays(buffer, pool.count);
-        initializedCount++;
-      }
-
-      // Make component globally available for dynamic lookups (even if no buffer)
-      self[componentName] = ComponentClass;
-    }
+    // Make all components globally available for dynamic lookups
+    exposeComponentsGlobally(componentClasses, self);
 
     // Log initialization for debugging
     if (componentClasses.size > 0) {
@@ -648,11 +614,7 @@ export class AbstractWorker {
 
       if (hasAllComponents) {
         // Add all entity indices of this class
-        for (
-          let i = metadata.startIndex;
-          i < metadata.startIndex + metadata.count;
-          i++
-        ) {
+        for (let i = metadata.startIndex; i < metadata.endIndex; i++) {
           matchingIndices.push(i);
         }
       }

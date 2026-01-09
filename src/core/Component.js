@@ -4,7 +4,7 @@
 export class Component {
   // Shared memory buffer for this component type
   static sharedBuffer = null;
-  static entityCount = 0;
+  static globalEntityCount = 0;
   static componentId = null;
 
   // Array schema - defines all shared arrays and their types
@@ -20,7 +20,7 @@ export class Component {
    */
   static initializeArrays(buffer, count) {
     this.sharedBuffer = buffer;
-    this.entityCount = count;
+    this.globalEntityCount = count;
 
     let offset = 0;
 

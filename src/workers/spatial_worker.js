@@ -102,12 +102,12 @@ class SpatialWorker extends AbstractWorker {
     // Calculate entity range for this worker
     // SHARED GRID, SPLIT WORK: Each worker processes a subset of entities
     const entitiesPerWorker = Math.ceil(
-      this.entityCount / this.totalSpatialWorkers
+      this.globalEntityCount / this.totalSpatialWorkers
     );
     this.entityStartIndex = this.workerIndex * entitiesPerWorker;
     this.entityEndIndex = Math.min(
       this.entityStartIndex + entitiesPerWorker,
-      this.entityCount
+      this.globalEntityCount
     );
 
     // Calculate grid parameters from config
@@ -140,13 +140,13 @@ class SpatialWorker extends AbstractWorker {
     this.occupiedCount = 0;
 
     // PROCESSED BITMASK - one bit per entity to track if already processed
-    this.processedThisFrame = new Uint8Array(this.entityCount);
+    this.processedThisFrame = new Uint8Array(this.globalEntityCount);
 
     // PRE-COMPUTED ENTITY DATA - calculated once per frame in rebuildGrid
     // NOTE: Pre-compute for ALL entities (needed for full grid awareness)
-    this.entityPosX = new Float32Array(this.entityCount);
-    this.entityPosY = new Float32Array(this.entityCount);
-    this.entityHalfExtent = new Float32Array(this.entityCount);
+    this.entityPosX = new Float32Array(this.globalEntityCount);
+    this.entityPosY = new Float32Array(this.globalEntityCount);
+    this.entityHalfExtent = new Float32Array(this.globalEntityCount);
   }
 
   /**
@@ -184,7 +184,7 @@ class SpatialWorker extends AbstractWorker {
     const gridRows = this.gridRows;
     const maxCol = gridCols - 1;
     const maxRow = gridRows - 1;
-    const entityCount = this.entityCount;
+    const entityCount = this.globalEntityCount;
 
     // Pre-computed entity data arrays
     const entityPosX = this.entityPosX;

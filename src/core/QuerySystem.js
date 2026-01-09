@@ -24,14 +24,14 @@ export class QuerySystem {
 
     /**
      * Metadata about registered entity classes for lazy query computation
-     * Array of { entityType, components: [ComponentClass, ...], startIndex, count }
+     * Array of { entityType, components: [ComponentClass, ...], startIndex, endIndex, poolSize }
      */
     this.entityMetadata = [];
   }
 
   /**
    * Build metadata from registered classes (lazy approach - no pre-computation)
-   * @param {Array} registeredClasses - Array of {class, count, startIndex, entityType}
+   * @param {Array} registeredClasses - Array of {class, poolSize, startIndex, entityType}
    */
   buildQueries(registeredClasses) {
     // Store metadata for each entity class
@@ -54,7 +54,8 @@ export class QuerySystem {
           className: EntityClass.name,
           components,
           startIndex,
-          count,
+          endIndex: startIndex + count,
+          poolSize: count,
         };
       }
     );
@@ -120,11 +121,7 @@ export class QuerySystem {
 
       if (hasAllComponents) {
         // Add all entity indices of this class
-        for (
-          let i = metadata.startIndex;
-          i < metadata.startIndex + metadata.count;
-          i++
-        ) {
+        for (let i = metadata.startIndex; i < metadata.endIndex; i++) {
           matchingIndices.push(i);
         }
       }
@@ -174,7 +171,8 @@ export class QuerySystem {
         componentNames: meta.components.map((c) => c.name),
         componentIds: meta.components.map((c) => c.componentId),
         startIndex: meta.startIndex,
-        count: meta.count,
+        endIndex: meta.endIndex,
+        poolSize: meta.poolSize,
       })),
     };
 
@@ -192,7 +190,7 @@ export class QuerySystem {
    */
   _logStatistics() {
     const totalEntities = this.entityMetadata.reduce(
-      (sum, meta) => sum + meta.count,
+      (sum, meta) => sum + meta.poolSize,
       0
     );
 
@@ -276,11 +274,7 @@ export function createQueryFunction(queriesData) {
 
       if (hasAllComponents) {
         // Add all entity indices of this class
-        for (
-          let i = metadata.startIndex;
-          i < metadata.startIndex + metadata.count;
-          i++
-        ) {
+        for (let i = metadata.startIndex; i < metadata.endIndex; i++) {
           matchingIndices.push(i);
         }
       }

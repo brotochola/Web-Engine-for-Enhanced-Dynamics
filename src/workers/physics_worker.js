@@ -184,12 +184,13 @@ class PhysicsWorker extends AbstractWorker {
     const worldHeight = this.config.worldHeight;
 
     // Get the number of entities with RigidBody (not all entities have physics)
-    const rigidBodyCount = this.entityCount;
+    // const rigidBodyCount = this.globalEntityCount;
 
     // OPTIMIZATION: Use query system to reset collision counters only for physics entities
     const physicsEntities = this.query([RigidBody]);
+    const rigidBodyCount = physicsEntities.length;
 
-    for (let idx = 0; idx < physicsEntities.length; idx++) {
+    for (let idx = 0; idx < rigidBodyCount; idx++) {
       const i = physicsEntities[idx];
       collisionCount[i] = 0;
     }
@@ -272,12 +273,13 @@ class PhysicsWorker extends AbstractWorker {
     const worldHeight = this.config.worldHeight;
 
     // Get the number of entities with RigidBody
-    const rigidBodyCount = RigidBody.px?.length || 0;
+    // const rigidBodyCount = RigidBody.px?.length || 0;
 
     // OPTIMIZATION: Use query system to reset collision counters only for physics entities
     // Note: In fixed step mode, we reset per-step to avoid accumulation issues
     const physicsEntities = this.query([RigidBody, Transform]);
-    for (let idx = 0; idx < physicsEntities.length; idx++) {
+    const rigidBodyCount = physicsEntities.length;
+    for (let idx = 0; idx < rigidBodyCount; idx++) {
       const i = physicsEntities[idx];
       collisionCount[i] = 0;
     }
@@ -342,13 +344,12 @@ class PhysicsWorker extends AbstractWorker {
     dtRatio,
     gx,
     gy,
-    maxVel,
-    rigidBodyCount
+    maxVel
   ) {
     const damping = this.settings.verletDamping;
     const isStatic = RigidBody.static;
     const friction = RigidBody.friction;
-    const maxAcc = RigidBody.maxAcc;
+    // const maxAcc = RigidBody.maxAcc;
 
     const gravityScale = dtRatio * dtRatio;
 
@@ -543,7 +544,7 @@ class PhysicsWorker extends AbstractWorker {
     const collisionData = this.collisionData;
     const maxPairs = this.maxCollisionPairs;
 
-    for (let i = 0; i < this.entityCount; i++) {
+    for (let i = 0; i < this.globalEntityCount; i++) {
       if (!active[i] || !colliderActive[i]) continue;
 
       const offset = i * (1 + maxNeighbors);

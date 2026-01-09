@@ -14,7 +14,15 @@ import { ShadowCaster } from "../components/ShadowCaster.js";
 // import { FlashComponent } from "../components/FlashComponent.js";
 // import { LightEmitter } from "../components/LightEmitter.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
-import { setupWorkerCommunication, seededRandom } from "./utils.js";
+import {
+  setupWorkerCommunication,
+  seededRandom,
+  loadEntityScripts,
+  collectAllComponentsFromClasses,
+  initializeComponentViews,
+  exposeComponentsGlobally,
+  exposeEntityClassesGlobally,
+} from "./utils.js";
 import { DebugFlags } from "./DebugFlags.js";
 import { Mouse } from "./Mouse.js";
 import { Flash } from "./Flash.js";
@@ -370,7 +378,15 @@ class Scene {
     }
 
     EntityClass.startIndex = startIndex;
-    EntityClass.totalCount = count;
+    EntityClass.poolSize = count;
+    EntityClass.endIndex = startIndex + count;
+
+    // Pre-computed typed array of all entity indices for this class
+    // Enables zero-allocation iteration: Prey.entityIndices.forEach(...)
+    EntityClass.entityIndices = new Int32Array(count);
+    for (let i = 0; i < count; i++) {
+      EntityClass.entityIndices[i] = startIndex + i;
+    }
   }
 
   _urlToPath(url) {
@@ -585,8 +601,8 @@ class Scene {
         if (!ParentClass.hasOwnProperty("sharedBuffer")) {
           ParentClass.sharedBuffer = null;
         }
-        if (!ParentClass.hasOwnProperty("entityCount")) {
-          ParentClass.entityCount = 0;
+        if (!ParentClass.hasOwnProperty("poolSize")) {
+          ParentClass.poolSize = 0;
         }
         if (!ParentClass.hasOwnProperty("instances")) {
           ParentClass.instances = [];
@@ -603,6 +619,9 @@ class Scene {
     if (typeof SharedArrayBuffer === "undefined") {
       throw new Error("SharedArrayBuffer not available! Check CORS headers.");
     }
+
+    // Load entity scripts dynamically in main thread (like workers do)
+    await this.loadEntityScriptsInMainThread();
 
     // Create shared buffers
     this.createSharedBuffers();
@@ -628,10 +647,84 @@ class Scene {
     // Initialize main thread helper
     this.initMainThreadHelper();
 
+    // Expose scene and component references globally for console access
+    this.exposeGlobalReferences();
+
     console.log(`✅ Scene ${this.constructor.name}: Initialized!`);
+    console.log(
+      `💡 Debug tip: Use 'scene', 'game', component classes, and entity classes from console`
+    );
 
     // Call user's create() hook
     this.create();
+  }
+
+  /**
+   * Load entity scripts dynamically in main thread
+   * Uses the unified loadEntityScripts function (auto-detects window context)
+   */
+  async loadEntityScriptsInMainThread() {
+    const scriptsToLoad = [];
+
+    // Collect script paths from registered entity classes
+    for (const classInfo of this.registeredClasses) {
+      if (classInfo.scriptPath) {
+        scriptsToLoad.push(classInfo.scriptPath);
+      }
+    }
+
+    if (scriptsToLoad.length > 0) {
+      await loadEntityScripts(scriptsToLoad);
+    }
+  }
+
+  /**
+   * Expose all components and entity classes globally for console access
+   * Makes it possible to access SharedArrayBuffer views and iterate entities
+   */
+  exposeGlobalReferences() {
+    // Expose scene and game
+    window.scene = this;
+    window.game = this.game;
+
+    // Collect all components from all registered entity classes
+    const componentMap = collectAllComponentsFromClasses(
+      this.registeredClasses,
+      window
+    );
+
+    // Initialize component views from SharedArrayBuffers (ensures all custom components are connected)
+    const initializedCount = initializeComponentViews(
+      componentMap,
+      this.buffers.componentData,
+      this.componentPools,
+      this.totalEntityCount
+    );
+
+    // Expose all components globally (both core and custom)
+    exposeComponentsGlobally(componentMap, window);
+
+    // Expose all registered entity classes
+    const exposedEntities = exposeEntityClassesGlobally(
+      this.registeredClasses,
+      window
+    );
+
+    // Expose core classes that might not be in componentMap (system classes)
+    window.GameObject = GameObject;
+    window.Camera = Camera;
+    window.SpriteSheetRegistry = SpriteSheetRegistry;
+    window.Mouse = Mouse;
+    window.Flash = Flash;
+
+    console.log(
+      `🌍 Exposed ${exposedEntities.length} entity classes and ${componentMap.size} components globally (${initializedCount} with SAB views)`
+    );
+    if (exposedEntities.length > 0) {
+      console.log(
+        `💡 Try: ${exposedEntities[0]}.forEach(i => console.log(i)) or RigidBody.vx[0]`
+      );
+    }
   }
 
   // User lifecycle hooks - override these in subclasses
@@ -1135,13 +1228,14 @@ class Scene {
         spatialStats: this.buffers.spatialStats,
         logicStats: this.buffers.logicStats,
       },
-      entityCount: this.totalEntityCount,
+      globalEntityCount: this.totalEntityCount,
       config: this.config,
       scriptsToLoad: scriptsToLoad,
       registeredClasses: this.registeredClasses.map((r) => ({
         name: r.class.name,
-        count: r.count,
+        poolSize: r.count,
         startIndex: r.startIndex,
+        endIndex: r.startIndex + r.count,
         entityType: r.entityType,
         components: r.components.map((c) => c.name),
       })),
@@ -1633,8 +1727,8 @@ class Scene {
       if (EntityClass.instances) {
         EntityClass.instances = [];
       }
-      if (EntityClass.entityCount !== undefined) {
-        EntityClass.entityCount = 0;
+      if (EntityClass.poolSize !== undefined) {
+        EntityClass.poolSize = 0;
       }
     }
 
@@ -1789,15 +1883,15 @@ class Scene {
   }
 
   getPoolStats(EntityClass) {
-    if (!EntityClass.startIndex || !EntityClass.totalCount) {
+    if (!EntityClass.startIndex || !EntityClass.poolSize) {
       return { total: 0, active: 0, available: 0 };
     }
 
     const startIndex = EntityClass.startIndex;
-    const total = EntityClass.totalCount;
+    const total = EntityClass.poolSize;
     let activeCount = 0;
 
-    for (let i = startIndex; i < startIndex + total; i++) {
+    for (let i = startIndex; i < EntityClass.endIndex; i++) {
       if (Transform.active[i]) {
         activeCount++;
       }

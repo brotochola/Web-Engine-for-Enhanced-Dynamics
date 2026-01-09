@@ -602,6 +602,182 @@ export function convertRGBtoBGR(color) {
   return (colorB << 16) | (colorG << 8) | colorR;
 }
 
+/**
+ * Load entity scripts dynamically and register them globally
+ * Unified function used by both main thread and workers
+ *
+ * @param {Array<string>} scriptsToLoad - Array of script paths to load
+ * @param {Object} globalContext - Global context to register classes (window for main thread, self for workers)
+ * @param {boolean} verbose - Whether to log detailed information (optional)
+ * @returns {Promise<Object>} - Object mapping class names to classes
+ */
+export async function loadEntityScripts(
+  scriptsToLoad,
+  globalContext = null,
+  verbose = null
+) {
+  const loadedClasses = {};
+
+  if (!scriptsToLoad || scriptsToLoad.length === 0) {
+    return loadedClasses;
+  }
+
+  // Auto-detect context if not provided
+  if (!globalContext) {
+    globalContext = typeof window !== "undefined" ? window : self;
+  }
+
+  // Auto-detect verbosity if not specified (verbose in main thread, quiet in workers)
+  if (verbose === null) {
+    verbose = typeof window !== "undefined";
+  }
+
+  const contextName = typeof window !== "undefined" ? "Main Thread" : "Worker";
+
+  if (verbose) {
+    console.log(
+      `📦 ${contextName}: Loading ${scriptsToLoad.length} entity scripts...`
+    );
+  }
+
+  for (const scriptPath of scriptsToLoad) {
+    try {
+      const module = await import(scriptPath);
+
+      // Make the exported class(es) available globally
+      Object.keys(module).forEach((key) => {
+        globalContext[key] = module[key];
+        loadedClasses[key] = module[key];
+        if (verbose) {
+          console.log(`  ✓ Registered ${key} from ${scriptPath}`);
+        }
+      });
+    } catch (error) {
+      console.error(`  ✗ ${contextName}: Failed to load ${scriptPath}:`, error);
+      console.error(`Error stack:`, error.stack);
+    }
+  }
+
+  if (verbose) {
+    console.log(
+      `✅ ${contextName}: Loaded ${
+        Object.keys(loadedClasses).length
+      } entity classes globally`
+    );
+  }
+
+  return loadedClasses;
+}
+
+// ============================================================================
+// COMPONENT & ENTITY INITIALIZATION UTILITIES
+// These functions unify component/entity initialization between Scene and Workers
+// ============================================================================
+
+/**
+ * Collect all unique component classes from an array of registered entity classes
+ * Works in both main thread (Scene) and workers
+ *
+ * @param {Array} registeredClasses - Array of { class, name, ... } objects
+ * @param {Object} globalRef - Global reference (window or self) to look up classes by name
+ * @returns {Map<string, Class>} Map of componentName -> ComponentClass
+ */
+export function collectAllComponentsFromClasses(registeredClasses, globalRef) {
+  const componentClasses = new Map();
+
+  if (!registeredClasses || registeredClasses.length === 0) {
+    return componentClasses;
+  }
+
+  for (const classInfo of registeredClasses) {
+    // Get EntityClass - either directly from classInfo.class or from global reference
+    const EntityClass = classInfo.class || globalRef[classInfo.name];
+    if (!EntityClass) continue;
+
+    // Use GameObject's static method to collect components (handles inheritance)
+    const components = GameObject._collectComponents(EntityClass);
+    for (const ComponentClass of components) {
+      componentClasses.set(ComponentClass.name, ComponentClass);
+    }
+  }
+
+  return componentClasses;
+}
+
+/**
+ * Initialize component array views from SharedArrayBuffers
+ * Creates typed array views over SABs for each component
+ *
+ * @param {Map<string, Class>} componentMap - Map of componentName -> ComponentClass
+ * @param {Object} componentBuffers - Object containing SABs: { componentName: SharedArrayBuffer }
+ * @param {Object} componentPools - Object containing pool info: { componentName: { count, componentId } }
+ * @param {number} defaultEntityCount - Default entity count if pool.count is not set
+ * @returns {number} Number of components successfully initialized
+ */
+export function initializeComponentViews(
+  componentMap,
+  componentBuffers,
+  componentPools,
+  defaultEntityCount
+) {
+  let initializedCount = 0;
+
+  for (const [componentName, ComponentClass] of componentMap) {
+    const pool = componentPools?.[componentName];
+    const buffer = componentBuffers?.[componentName];
+
+    // Assign componentId from pool data
+    if (pool && pool.componentId !== undefined) {
+      ComponentClass.componentId = pool.componentId;
+    }
+
+    // Initialize SharedArrayBuffer connection if data is available
+    if (buffer) {
+      const count = pool?.count || defaultEntityCount;
+      if (count > 0) {
+        ComponentClass.initializeArrays(buffer, count);
+        initializedCount++;
+      }
+    }
+  }
+
+  return initializedCount;
+}
+
+/**
+ * Expose component classes globally for easy access
+ *
+ * @param {Map<string, Class>} componentMap - Map of componentName -> ComponentClass
+ * @param {Object} globalRef - Global reference (window or self)
+ */
+export function exposeComponentsGlobally(componentMap, globalRef) {
+  for (const [componentName, ComponentClass] of componentMap) {
+    globalRef[componentName] = ComponentClass;
+  }
+}
+
+/**
+ * Expose entity classes globally for easy access
+ *
+ * @param {Array} registeredClasses - Array of { class, name, ... } objects
+ * @param {Object} globalRef - Global reference (window or self)
+ * @returns {Array<string>} Array of exposed class names
+ */
+export function exposeEntityClassesGlobally(registeredClasses, globalRef) {
+  const exposedNames = [];
+
+  for (const classInfo of registeredClasses) {
+    const EntityClass = classInfo.class || globalRef[classInfo.name];
+    if (!EntityClass) continue;
+
+    const className = EntityClass.name;
+    globalRef[className] = EntityClass;
+    exposedNames.push(className);
+  }
+
+  return exposedNames;
+}
+
 export function printLogo() {
   console.log(
     `%c

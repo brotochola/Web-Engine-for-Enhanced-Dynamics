@@ -133,5 +133,4 @@ https://github.com/kirbysayshi/pocket-physics
 --- PIXI-WORKER: ---
 ------------------------------------------------------------------------------------------------
 
--interpolar posiciones y rotaciones, segun los fps del physics
-(q esto sea una config)
+-las sombras proyectadas a veces estan dobles. el pool de sombras funciona mal

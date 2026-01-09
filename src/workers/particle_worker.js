@@ -86,7 +86,7 @@ class ParticleWorker extends AbstractWorker {
     this.lightingEnabled = false;
     this.entityLightingEnabled = false; // Separate flag for entity tint updates
     this.lightingAmbient = 0.05; // Base ambient light level
-    this.entityCount = 0; // Number of game entities (for iterating lights)
+    this.globalEntityCount = 0; // Number of game entities (for iterating lights)
 
     // ========================================
     // GC OPTIMIZATION: Cached objects
@@ -219,7 +219,7 @@ class ParticleWorker extends AbstractWorker {
     ) {
       this.lightingEnabled = true;
       this.lightingAmbient = lightingConfig.lightingAmbient ?? 0.05;
-      this.entityCount = data.entityCount || 0;
+      this.globalEntityCount = data.globalEntityCount || 0;
 
       // Note: Component arrays (Transform, LightEmitter, SpriteRenderer) are automatically
       // initialized by AbstractWorker.initializeAllComponents()
@@ -232,12 +232,12 @@ class ParticleWorker extends AbstractWorker {
       ) {
         this.entityLightingEnabled = true;
         console.log(
-          `PARTICLE WORKER: Entity lighting enabled (${this.entityCount} entities)`
+          `PARTICLE WORKER: Entity lighting enabled (${this.globalEntityCount} entities)`
         );
       }
 
       console.log(
-        `PARTICLE WORKER: Lighting enabled (ambient: ${this.lightingAmbient}, entities: ${this.entityCount})`
+        `PARTICLE WORKER: Lighting enabled (ambient: ${this.lightingAmbient}, entities: ${this.globalEntityCount})`
       );
     }
 
@@ -245,8 +245,8 @@ class ParticleWorker extends AbstractWorker {
     // ENTITY SCREEN VISIBILITY - Initialize
     // ========================================
     // Store entity count for screen visibility even without lighting
-    if (data.entityCount && !this.lightingEnabled) {
-      this.entityCount = data.entityCount;
+    if (data.globalEntityCount && !this.lightingEnabled) {
+      this.globalEntityCount = data.globalEntityCount;
       // Note: Transform and SpriteRenderer are automatically initialized by
       // AbstractWorker.initializeAllComponents()
     }
@@ -284,7 +284,7 @@ class ParticleWorker extends AbstractWorker {
 
       // Allocate per-entity shadow count tracking array if limit is set
       if (this.maxShadowsPerEntity > 0) {
-        this._entityShadowCounts = new Uint8Array(this.entityCount);
+        this._entityShadowCounts = new Uint8Array(this.globalEntityCount);
       }
 
       // Note: ShadowCaster is automatically initialized by AbstractWorker.initializeAllComponents()
@@ -373,7 +373,7 @@ class ParticleWorker extends AbstractWorker {
    * This batching improves cache locality for SAB writes.
    */
   update(deltaTime, dtRatio) {
-    if (this.maxParticles === 0 && this.entityCount === 0) return;
+    if (this.maxParticles === 0 && this.globalEntityCount === 0) return;
 
     // Reset stats counters for this frame
     this.particlesStampedThisFrame = 0;
@@ -813,7 +813,7 @@ class ParticleWorker extends AbstractWorker {
   //   const lightY = Transform.y;
   //   const lightIntensity = LightEmitter.lightIntensity;
   //   const lightEnabled = LightEmitter.active;
-  //   const lightCount = this.entityCount;
+  //   const lightCount = this.globalEntityCount;
 
   //   const ambient = this.lightingAmbient;
   //   // Max distance squared beyond which light contribution is negligible
@@ -890,20 +890,20 @@ class ParticleWorker extends AbstractWorker {
   //     // Reuse or create brightness accumulator array
   //     if (
   //       !this.entityBrightness ||
-  //       this.entityBrightness.length < this.entityCount
+  //       this.entityBrightness.length < this.globalEntityCount
   //     ) {
-  //       this.entityBrightness = new Float32Array(this.entityCount);
+  //       this.entityBrightness = new Float32Array(this.globalEntityCount);
   //     }
   //     const entityBrightness = this.entityBrightness;
 
   //     // Initialize all entities to ambient light
-  //     for (let i = 0; i < this.entityCount; i++) {
+  //     for (let i = 0; i < this.globalEntityCount; i++) {
   //       entityBrightness[i] = ambient;
   //     }
 
   //     // For each LIGHT, add its contribution to its neighbors
   //     // This uses the LIGHT's visualRange to determine reach
-  //     for (let lightIdx = 0; lightIdx < this.entityCount; lightIdx++) {
+  //     for (let lightIdx = 0; lightIdx < this.globalEntityCount; lightIdx++) {
   //       if (!lightEnabled[lightIdx]) continue;
 
   //       const intensity = lightIntensity[lightIdx];
@@ -923,7 +923,7 @@ class ParticleWorker extends AbstractWorker {
   //     }
 
   //     // Apply accumulated brightness to visible entities
-  //     for (let i = 0; i < this.entityCount; i++) {
+  //     for (let i = 0; i < this.globalEntityCount; i++) {
   //       if (!active[i] || !isItOnScreen[i]) continue;
   //       //Light Emitters are always fully lit
   //       if (LightEmitter.active[i] === 1) {
@@ -948,7 +948,7 @@ class ParticleWorker extends AbstractWorker {
   //   //   const entityY = Transform.y;
   //   //   const lightData = this.getLightData();
 
-  //   //   for (let i = 0; i < this.entityCount; i++) {
+  //   //   for (let i = 0; i < this.globalEntityCount; i++) {
   //   //     // Skip inactive or off-screen entities
   //   //     if (!active[i] || !isItOnScreen[i]) continue;
 
@@ -1166,7 +1166,7 @@ class ParticleWorker extends AbstractWorker {
   updateEntityScreenVisibility() {
     if (
       !this.cameraData ||
-      this.entityCount === 0 ||
+      this.globalEntityCount === 0 ||
       !SpriteRenderer.isItOnScreen
     )
       return console.warn("PARTICLE WORKER: No camera data or entity count");
@@ -1335,7 +1335,7 @@ class ParticleWorker extends AbstractWorker {
       lightY: Transform.y,
       lightIntensity: LightEmitter.lightIntensity,
       lightEnabled: LightEmitter.active,
-      lightCount: this.entityCount,
+      lightCount: this.globalEntityCount,
     };
   }
 
