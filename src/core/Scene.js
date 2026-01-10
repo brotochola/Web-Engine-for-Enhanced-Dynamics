@@ -2037,6 +2037,18 @@ class Scene {
       return;
     }
 
+    // Check if the tilemap asset exists
+    if (!this.loadedTilemaps || !this.loadedTilemaps[tilemapId]) {
+      const availableTilemaps = this.loadedTilemaps
+        ? Object.keys(this.loadedTilemaps)
+        : [];
+      console.error(
+        `Tilemap "${tilemapId}" not found. ` +
+          `Available tilemaps: [${availableTilemaps.join(", ") || "none"}]`
+      );
+      return;
+    }
+
     this.workers.renderer.postMessage({
       msg: "setBackground",
       type: "tilemap",
