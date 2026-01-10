@@ -3,6 +3,7 @@ self.postMessage({
   message: "js loaded",
   when: Date.now(),
 });
+
 // pixi_worker.js - Rendering worker using PixiJS with AnimatedSprite support
 // Reads GameObject arrays and renders sprites with animations
 
@@ -42,8 +43,22 @@ import {
   Mesh,
   Shader,
   GlProgram,
+  extensions,
 } from "./pixi8webworker.js";
 import { convertRGBtoBGR } from "../core/utils.js";
+// Import @pixi/tilemap for efficient tilemap rendering (modified to import from pixi8webworker.js)
+import {
+  CompositeTilemap,
+  TilemapPipe,
+  settings as tilemapSettings,
+} from "../lib/pixi-tilemap-module.js";
+
+// Enable 32-bit indices for large tilemaps (>16K tiles)
+// Without this, only ~16,383 tiles can be rendered due to 16-bit index limit
+tilemapSettings.use32bitIndex = true;
+
+// Register @pixi/tilemap extension
+extensions.add(TilemapPipe);
 
 // Create PIXI-like namespace for compatibility with existing code patterns
 const PIXI = {
@@ -277,6 +292,8 @@ class PixiRenderer extends AbstractWorker {
     // Texture and spritesheet storage
     this.textures = {}; // Store simple PIXI textures by name
     this.spritesheets = {}; // Store loaded spritesheets by name
+    this.tilemaps = {}; // Store loaded tilemap data (Tiled JSON + tileset texture)
+    this.currentTilemap = null; // Currently active tilemap background
 
     // ========================================
     // CENTRALIZED PARTICLE POOL
@@ -505,6 +522,13 @@ class PixiRenderer extends AbstractWorker {
       this.backgroundSprite.scale.set(zoom);
       this.backgroundSprite.x = -cameraX * zoom;
       this.backgroundSprite.y = -cameraY * zoom;
+    }
+
+    // Apply camera state to tilemap background
+    if (this.currentTilemap) {
+      this.currentTilemap.scale.set(zoom);
+      this.currentTilemap.x = -cameraX * zoom;
+      this.currentTilemap.y = -cameraY * zoom;
     }
 
     // Apply camera state to decal tile container
@@ -2274,6 +2298,39 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
+   * Load tilemaps from transferred data (Tiled JSON + tileset ImageBitmap)
+   */
+  loadTilemaps(tilemapsData) {
+    if (!tilemapsData || Object.keys(tilemapsData).length === 0) {
+      return;
+    }
+
+    console.log(
+      `PIXI WORKER: Loading ${Object.keys(tilemapsData).length} tilemaps...`
+    );
+
+    for (const [tilemapId, tilemapData] of Object.entries(tilemapsData)) {
+      try {
+        // Create PIXI Texture from transferred ImageBitmap
+        const source = new PIXI.ImageSource({
+          resource: tilemapData.tilesetBitmap,
+        });
+        const tilesetTexture = new PIXI.Texture({ source });
+
+        // Store tilemap data with PIXI texture
+        this.tilemaps[tilemapId] = {
+          data: tilemapData.data,
+          tilesetTexture: tilesetTexture,
+        };
+
+        console.log(`  ✅ Loaded tilemap: ${tilemapId}`);
+      } catch (error) {
+        console.error(`  ❌ Failed to load tilemap "${tilemapId}":`, error);
+      }
+    }
+  }
+
+  /**
    * Initialize particle sprite tracking arrays
    * OPTIMIZATION: Sprites are acquired lazily from central pool when particles spawn
    */
@@ -2638,11 +2695,295 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   handleCustomMessage(data) {
     const { msg } = data;
+    console.log(`PIXI WORKER: handleCustomMessage called with msg: ${msg}`);
 
     // Handle old-style messages if they still arrive via main thread
     if (msg === "toRenderer") {
       this.handleSpriteCommand(data);
+    } else if (msg === "setBackground") {
+      this.handleSetBackground(data);
+    } else {
+      console.log(`PIXI WORKER: Unhandled message type: ${msg}`);
     }
+  }
+
+  /**
+   * Handle background change requests from Scene
+   * Supports: static, tiling, tilemap, or none
+   */
+  handleSetBackground(data) {
+    console.log(`PIXI WORKER: handleSetBackground called with:`, data);
+    const { type, textureId, tileScale, tilemapId, options } = data;
+
+    // Remove existing background if any
+    if (this.backgroundSprite) {
+      console.log(`PIXI WORKER: Removing existing backgroundSprite`);
+      this.pixiApp.stage.removeChild(this.backgroundSprite);
+      this.backgroundSprite.destroy();
+      this.backgroundSprite = null;
+    }
+
+    // Remove existing tilemap if any
+    if (this.currentTilemap) {
+      console.log(`PIXI WORKER: Removing existing tilemap`);
+      this.pixiApp.stage.removeChild(this.currentTilemap);
+      this.currentTilemap.destroy();
+      this.currentTilemap = null;
+    }
+
+    // Create new background based on type
+    console.log(`PIXI WORKER: Creating background of type: ${type}`);
+    switch (type) {
+      case "static":
+        this.createStaticBackground(textureId);
+        break;
+      case "tiling":
+        this.createTilingBackground(textureId, tileScale);
+        break;
+      case "tilemap":
+        this.createTilemapBackground(tilemapId, options);
+        break;
+      case "none":
+        // No background
+        console.log(`PIXI WORKER: No background`);
+        break;
+      default:
+        console.warn(`PIXI WORKER: Unknown background type: ${type}`);
+    }
+  }
+
+  /**
+   * Create a static background (simple Sprite, does not tile)
+   */
+  createStaticBackground(textureId) {
+    const texture = this.textures[textureId];
+    if (!texture) {
+      console.warn(
+        `PIXI WORKER: Texture "${textureId}" not found for static background`
+      );
+      return;
+    }
+
+    this.backgroundSprite = new PIXI.Sprite(texture);
+    this.backgroundSprite.width = this.worldWidth;
+    this.backgroundSprite.height = this.worldHeight;
+    this.backgroundSprite.zIndex = PixiRenderer.Z_INDICES.BACKGROUND;
+    this.pixiApp.stage.addChild(this.backgroundSprite);
+
+    console.log(`PIXI WORKER: Static background set to "${textureId}"`);
+  }
+
+  /**
+   * Create a tiling background (TilingSprite - repeats pattern)
+   */
+  createTilingBackground(textureId, tileScale = 1) {
+    const texture = this.textures[textureId];
+    if (!texture) {
+      console.warn(
+        `PIXI WORKER: Texture "${textureId}" not found for tiling background`
+      );
+      return;
+    }
+
+    this.backgroundSprite = new PIXI.TilingSprite({
+      texture: texture,
+      width: this.worldWidth,
+      height: this.worldHeight,
+    });
+    this.backgroundSprite.tileScale.set(tileScale, tileScale);
+    this.backgroundSprite.tilePosition.set(0, 0);
+    this.backgroundSprite.zIndex = PixiRenderer.Z_INDICES.BACKGROUND;
+    this.pixiApp.stage.addChild(this.backgroundSprite);
+
+    console.log(
+      `PIXI WORKER: Tiling background set to "${textureId}" (scale: ${tileScale})`
+    );
+  }
+
+  /**
+   * Create a tilemap background using @pixi/tilemap (Tiled editor format)
+   * Parses Tiled JSON and renders tiles with automatic culling
+   */
+  createTilemapBackground(tilemapId, options = {}) {
+    console.log(
+      `PIXI WORKER: createTilemapBackground called with "${tilemapId}"`
+    );
+    console.log(`PIXI WORKER: Available tilemaps:`, Object.keys(this.tilemaps));
+
+    const tilemapData = this.tilemaps[tilemapId];
+    if (!tilemapData) {
+      console.warn(
+        `PIXI WORKER: Tilemap "${tilemapId}" not found in loaded tilemaps`
+      );
+      return;
+    }
+
+    const { data, tilesetTexture } = tilemapData;
+    console.log(`PIXI WORKER: Tilemap data:`, data);
+    console.log(`PIXI WORKER: Tileset texture:`, tilesetTexture);
+
+    // Create CompositeTilemap instance with tileset texture
+    // NOTE: CompositeTilemap.tileset() expects an ARRAY of textures, not a single texture!
+    console.log(`PIXI WORKER: Creating CompositeTilemap instance...`);
+    this.currentTilemap = new CompositeTilemap([tilesetTexture]);
+    console.log(
+      `PIXI WORKER: CompositeTilemap instance created:`,
+      this.currentTilemap
+    );
+
+    // Parse Tiled JSON and populate tilemap
+    console.log(`PIXI WORKER: Parsing Tiled JSON...`);
+    this.parseTiledJSON(this.currentTilemap, data, options);
+
+    // Set z-index and add to stage
+    this.currentTilemap.zIndex = PixiRenderer.Z_INDICES.BACKGROUND;
+    this.pixiApp.stage.addChild(this.currentTilemap);
+
+    // Debug: Check tilemap children and bounds
+    console.log(
+      `PIXI WORKER: CompositeTilemap has ${this.currentTilemap.children.length} child tilemaps`
+    );
+    if (this.currentTilemap.children.length > 0) {
+      const child = this.currentTilemap.children[0];
+      console.log(
+        `PIXI WORKER: First child tilemap has ${
+          child.pointsBuf ? child.pointsBuf.length : 0
+        } point buffer entries`
+      );
+    }
+
+    console.log(
+      `PIXI WORKER: Tilemap background set to "${tilemapId}" and added to stage`
+    );
+  }
+
+  /**
+   * Parse Tiled JSON format and populate tilemap with tiles
+   * Supports: orthogonal tilemaps, multiple layers, tile rotation
+   */
+  parseTiledJSON(tilemap, tiledData, options = {}) {
+    const tileWidth = tiledData.tilewidth;
+    const tileHeight = tiledData.tileheight;
+    const mapWidth = tiledData.width;
+    const mapHeight = tiledData.height;
+
+    // Get tileset info (assumes single tileset for now)
+    const tileset = tiledData.tilesets && tiledData.tilesets[0];
+    if (!tileset) {
+      console.error("PIXI WORKER: No tileset found in Tiled JSON");
+      return;
+    }
+
+    const tilesetColumns = tileset.columns || 1;
+    const firstGid = tileset.firstgid || 1;
+
+    // Filter layers to render (if specified in options)
+    const layersToRender = options.layers || null;
+
+    // Process each layer
+    for (const layer of tiledData.layers) {
+      // Skip non-tilelayer types (objectgroup, imagelayer, etc)
+      if (layer.type !== "tilelayer") continue;
+
+      // Skip if layers filter is specified and this layer is not in it
+      if (layersToRender && !layersToRender.includes(layer.name)) continue;
+
+      // Skip invisible layers
+      if (layer.visible === false) continue;
+
+      const layerData = layer.data;
+      if (!layerData || layerData.length === 0) continue;
+
+      console.log(
+        `PIXI WORKER: Processing layer "${layer.name}" with ${
+          layerData.length
+        } tiles (expected ${mapWidth * mapHeight})`
+      );
+
+      let tilesAdded = 0;
+
+      // Iterate through each tile in the layer
+      for (let y = 0; y < mapHeight; y++) {
+        for (let x = 0; x < mapWidth; x++) {
+          const tileIndex = y * mapWidth + x;
+          let gid = layerData[tileIndex];
+
+          // 0 = empty tile
+          if (gid === 0) continue;
+
+          // Handle tile flipping flags (highest 3 bits)
+          const FLIPPED_HORIZONTALLY_FLAG = 0x80000000;
+          const FLIPPED_VERTICALLY_FLAG = 0x40000000;
+          const FLIPPED_DIAGONALLY_FLAG = 0x20000000;
+
+          const flippedH = (gid & FLIPPED_HORIZONTALLY_FLAG) !== 0;
+          const flippedV = (gid & FLIPPED_VERTICALLY_FLAG) !== 0;
+          const flippedD = (gid & FLIPPED_DIAGONALLY_FLAG) !== 0;
+
+          // Clear flags to get actual tile ID
+          gid =
+            gid &
+            ~(
+              FLIPPED_HORIZONTALLY_FLAG |
+              FLIPPED_VERTICALLY_FLAG |
+              FLIPPED_DIAGONALLY_FLAG
+            );
+
+          // Convert GID to local tile index (0-based)
+          const tileId = gid - firstGid;
+          if (tileId < 0) continue;
+
+          // Calculate tile position in world coordinates
+          const worldX = x * tileWidth;
+          const worldY = y * tileHeight;
+
+          // Calculate tile UV coordinates in tileset
+          const tileCol = tileId % tilesetColumns;
+          const tileRow = Math.floor(tileId / tilesetColumns);
+          const u = tileCol * tileWidth;
+          const v = tileRow * tileHeight;
+
+          // Calculate rotation based on flip flags
+          let rotation = 0;
+          if (flippedD) {
+            rotation = flippedH ? 6 : 4; // Diagonal flip
+          } else if (flippedH && flippedV) {
+            rotation = 4; // 180 degrees
+          } else if (flippedH) {
+            rotation = 6; // Horizontal flip
+          } else if (flippedV) {
+            rotation = 2; // Vertical flip
+          }
+
+          // Add tile to tilemap
+          tilemap.tile(0, worldX, worldY, {
+            u: u,
+            v: v,
+            tileWidth: tileWidth,
+            tileHeight: tileHeight,
+            rotate: rotation,
+            alpha: layer.opacity !== undefined ? layer.opacity : 1,
+          });
+          tilesAdded++;
+        }
+      }
+
+      console.log(
+        `PIXI WORKER: Layer "${
+          layer.name
+        }" - added ${tilesAdded} tiles, last tile at (${
+          (mapWidth - 1) * tileWidth
+        }, ${(mapHeight - 1) * tileHeight})`
+      );
+    }
+
+    // Calculate total tilemap dimensions in world pixels
+    const totalWidth = mapWidth * tileWidth;
+    const totalHeight = mapHeight * tileHeight;
+
+    console.log(
+      `PIXI WORKER: Parsed Tiled JSON - ${mapWidth}x${mapHeight} tiles (${tileWidth}x${tileHeight}px) = ${totalWidth}x${totalHeight}px total`
+    );
   }
 
   /**
@@ -2790,8 +3131,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.loadSpritesheets(data.spritesheets, data.bigAtlasProxySheets);
     this.reportLog("finished loading spritesheets");
 
-    // Create background
-    this.createBackground();
+    // Load tilemaps (Tiled JSON + tileset textures)
+    this.loadTilemaps(data.tilemaps);
+    this.reportLog("finished loading tilemaps");
+
+    // Create background (legacy - kept for backwards compatibility if bg is set in config)
+    if (this.bgTextureName) {
+      this.createBackground();
+    }
 
     // ========================================
     // decal DECALS TILEMAP - Initialize

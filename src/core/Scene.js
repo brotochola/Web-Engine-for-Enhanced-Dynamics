@@ -1007,6 +1007,7 @@ class Scene {
   async preloadAssets(imageUrls, spritesheetConfigs = {}) {
     this.loadedTextures = {};
     this.loadedSpritesheets = {};
+    this.loadedTilemaps = {}; // Store loaded tilemap data
 
     console.log("🎨 Generating BigAtlas from all assets...");
 
@@ -1080,6 +1081,48 @@ class Scene {
     } catch (error) {
       console.error("❌ Failed to generate BigAtlas:", error);
       throw error;
+    }
+
+    // Load tilemaps (Tiled JSON + tileset images)
+    if (imageUrls.tilemaps) {
+      console.log(
+        `🗺️ Loading ${Object.keys(imageUrls.tilemaps).length} tilemaps...`
+      );
+
+      for (const [tilemapId, tilemapConfig] of Object.entries(
+        imageUrls.tilemaps
+      )) {
+        try {
+          // Load Tiled JSON file
+          const jsonResponse = await fetch(tilemapConfig.json);
+          if (!jsonResponse.ok) {
+            throw new Error(
+              `Failed to load tilemap JSON: ${tilemapConfig.json}`
+            );
+          }
+          const tilemapData = await jsonResponse.json();
+
+          // Load tileset image
+          const tilesetResponse = await fetch(tilemapConfig.png);
+          if (!tilesetResponse.ok) {
+            throw new Error(
+              `Failed to load tileset image: ${tilemapConfig.png}`
+            );
+          }
+          const tilesetBlob = await tilesetResponse.blob();
+          const tilesetBitmap = await createImageBitmap(tilesetBlob);
+
+          // Store loaded tilemap data
+          this.loadedTilemaps[tilemapId] = {
+            data: tilemapData,
+            tilesetBitmap: tilesetBitmap,
+          };
+
+          console.log(`  ✅ Loaded tilemap: ${tilemapId}`);
+        } catch (error) {
+          console.error(`❌ Failed to load tilemap "${tilemapId}":`, error);
+        }
+      }
     }
   }
 
@@ -1344,6 +1387,9 @@ class Scene {
       ...Object.values(this.loadedSpritesheets).map(
         (sheet) => sheet.imageBitmap
       ),
+      ...Object.values(this.loadedTilemaps || {}).map(
+        (tilemap) => tilemap.tilesetBitmap
+      ),
       ...(workerPorts.renderer ? Object.values(workerPorts.renderer) : []),
     ];
 
@@ -1353,6 +1399,7 @@ class Scene {
         view: offscreenCanvas,
         textures: this.loadedTextures,
         spritesheets: this.loadedSpritesheets,
+        tilemaps: this.loadedTilemaps || {}, // Pass loaded tilemap data
         bigAtlasProxySheets: this.bigAtlasProxySheets || {},
         frameRateIndex: RENDERER_INDEX,
         workerPorts: workerPorts.renderer,
@@ -1937,6 +1984,80 @@ class Scene {
       return;
     }
     this.mainThreadHelper.setMaxJobsPerFrame(max);
+  }
+
+  // ========================================
+  // BACKGROUND CONTROL METHODS
+  // ========================================
+
+  /**
+   * Set a static background (simple Sprite, does not tile)
+   * @param {string} textureId - ID of texture in assets.textures
+   */
+  setStaticBackground(textureId) {
+    if (!this.workers.renderer) {
+      console.warn("Renderer worker not initialized");
+      return;
+    }
+
+    this.workers.renderer.postMessage({
+      msg: "setBackground",
+      type: "static",
+      textureId: textureId,
+    });
+  }
+
+  /**
+   * Set a tiling background (TilingSprite - repeats pattern)
+   * @param {string} textureId - ID of texture in assets.textures
+   * @param {number} tileScale - Scale of tiles (default: 1)
+   */
+  setTilingBackground(textureId, tileScale = 1) {
+    if (!this.workers.renderer) {
+      console.warn("Renderer worker not initialized");
+      return;
+    }
+
+    this.workers.renderer.postMessage({
+      msg: "setBackground",
+      type: "tiling",
+      textureId: textureId,
+      tileScale: tileScale,
+    });
+  }
+
+  /**
+   * Set a tilemap background (@pixi/tilemap - varied tiles from Tiled editor)
+   * @param {string} tilemapId - ID of tilemap in assets.tilemaps
+   * @param {object} options - Options: { layers: [...], scale: 1 }
+   */
+  setTilemapBackground(tilemapId, options = {}) {
+    if (!this.workers.renderer) {
+      console.warn("Renderer worker not initialized");
+      return;
+    }
+
+    this.workers.renderer.postMessage({
+      msg: "setBackground",
+      type: "tilemap",
+      tilemapId: tilemapId,
+      options: options,
+    });
+  }
+
+  /**
+   * Remove the current background
+   */
+  clearBackground() {
+    if (!this.workers.renderer) {
+      console.warn("Renderer worker not initialized");
+      return;
+    }
+
+    this.workers.renderer.postMessage({
+      msg: "setBackground",
+      type: "none",
+    });
   }
 }
 

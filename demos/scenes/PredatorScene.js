@@ -66,8 +66,6 @@ export class PredatorScene extends WEED.Scene {
 
     renderer: {
       noLimitFPS: true,
-      bg: "bg",
-      bgTileScale: 3,
       ySorting: true,
       interpolation: true,
     },
@@ -135,6 +133,12 @@ export class PredatorScene extends WEED.Scene {
         png: "/demos/img/civil7.png",
       },
     },
+    tilemaps: {
+      predatorsBG: {
+        json: "/demos/img/tilemap/t.json",
+        png: "/demos/img/tilemap/t.png",
+      },
+    },
   };
 
   // ========================================
@@ -174,6 +178,9 @@ export class PredatorScene extends WEED.Scene {
   }
 
   create() {
+    // Set tilemap background
+    this.setTilemapBackground("predatorsBG");
+
     // Spawn initial entities
     console.log("🎬 PredatorScene: Spawning entities...");
 

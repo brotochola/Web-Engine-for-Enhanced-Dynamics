@@ -46,6 +46,8 @@
             canvasHeight: window.innerHeight,
             debug: true  // Enable debug UI
         });
+        // Make game global for console access
+        window.game = game;
 
         // Register available scenes with DebugUI for scene switching
         if (game.debugUI) {
@@ -59,8 +61,7 @@
         // Load the Predator scene by default
         await game.loadScene(PredatorScene);
 
-        // Make game global for console access
-        window.game = game;
+
 
         console.log("✅ Scene loaded successfully!");
         console.log("💡 Debug UI: Press [H] to toggle, number keys for visual aids");
