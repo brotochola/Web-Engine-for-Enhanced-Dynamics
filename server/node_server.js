@@ -66,6 +66,7 @@ const server = http.createServer((req, res) => {
         "Content-Type": mimeType,
         "Cross-Origin-Opener-Policy": "same-origin",
         "Cross-Origin-Embedder-Policy": "require-corp",
+        "Cross-Origin-Resource-Policy": "cross-origin", // Allow COEP to load resources
         "Access-Control-Allow-Origin": "*",
         // Disable caching for JavaScript files (especially workers)
         "Cache-Control":

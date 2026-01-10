@@ -3,10 +3,6 @@
 QUERY SYSTEM:
 --------------------
 
--las listas pregeneradas no funcionan pq pueden ser millones
-2**CantComponentes,
-Hay q hacerlas lazy con cache (guardando las listas ya hechas)
-
 -tenemos start index y endindex de cada tipo de gameobject.
 y tenemos la lista de entidades q usan cada component.
 
@@ -48,7 +44,7 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 
 
 
- getPosition() { return { x: Transform.x[this.index], y: Transform.y[this.index] }; }
+ 
 
  isCollidingWith(other){}
 
@@ -71,12 +67,7 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 ------------------------------------------------------------------------------------------------
 
 -eventEmitter
-
-
-
-
 -tags: se crean los tags, se le pone uno o mas tags a las entidades, 
-
 
 
 
@@ -86,12 +77,10 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 -- NEW WORKERS --
 ------------------------------------------------------------------------------------------------
 
--render debug worker (encima del canvas q ya tenemos)
 
 -worker con A* y con flowfiled pathfinding
 
 
-// mas de un worker para lo mismo?
 
 
 
@@ -100,7 +89,6 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 ------------------------------------------------------------------------------------------------
 --- SPATIAL WORKER: ---
 ------------------------------------------------------------------------------------------------
--objetos grandes q ocupen mas de una celda
 - celdas no caminables
 
 
@@ -124,9 +112,6 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 --- PHYSICS WORKER: ---
 ------------------------------------------------------------------------------------------------
 
--agregar entidades q sean rectangulos y q su collider funcione
-
-https://github.com/kirbysayshi/pocket-physics
 
 
 ------------------------------------------------------------------------------------------------
