@@ -16,6 +16,7 @@
 import { Component } from "./Component.js";
 
 export class FSM extends Component {
+  static isFSM = true;
   // ==========================================
   // SoA STORAGE (per-entity arrays)
   // ==========================================
@@ -43,6 +44,9 @@ export class FSM extends Component {
 
   // Array of state classes indexed by state number (built from states map)
   static _stateArray = null;
+
+  // Array of state names indexed by state number (built from states map)
+  static _stateNames = null;
 
   // Map of state name -> state index (for fast lookups)
   static _stateNameToIndex = null;
@@ -87,6 +91,7 @@ export class FSM extends Component {
 
     // Build state array and name->index map
     this._stateArray = [];
+    this._stateNames = [];
     this._stateNameToIndex = new Map();
 
     for (let index = 0; index < stateEntries.length; index++) {
@@ -100,6 +105,7 @@ export class FSM extends Component {
 
       // Store in array for index-based access
       this._stateArray[index] = StateClass;
+      this._stateNames[index] = name;
 
       // Store name->index mapping
       this._stateNameToIndex.set(name, index);
@@ -134,7 +140,7 @@ export class FSM extends Component {
     // Process pending state transition (from previous tick's changeState() call)
     const pending = FSMClass.nextState[i];
     if (pending >= 0) {
-      this._executeTransition(i, pending, owner, FSMClass);
+      FSMClass._executeTransition(i, pending, owner);
     }
 
     // Get current state class
@@ -164,18 +170,19 @@ export class FSM extends Component {
 
   /**
    * Execute a state transition
+   * @static
    * @private
    */
-  _executeTransition(i, newStateIndex, owner, FSMClass) {
-    const oldStateIndex = FSMClass.state[i];
+  static _executeTransition(i, newStateIndex, owner) {
+    const oldStateIndex = this.state[i];
 
     // Get state classes
-    const OldState = FSMClass._stateArray[oldStateIndex];
-    const NewState = FSMClass._stateArray[newStateIndex];
+    const OldState = this._stateArray[oldStateIndex];
+    const NewState = this._stateArray[newStateIndex];
 
-    // Get state names for callbacks
-    const oldStateName = FSMClass.getStateName(i);
-    const newStateName = FSMClass._getStateNameByIndex(newStateIndex);
+    // Get state names for callbacks (O(1) lookups)
+    const oldStateName = this._stateNames[oldStateIndex] || null;
+    const newStateName = this._stateNames[newStateIndex] || null;
 
     // Call onExit on old state (pass next state name)
     if (OldState && OldState.onExit) {
@@ -183,9 +190,9 @@ export class FSM extends Component {
     }
 
     // Update state
-    FSMClass.state[i] = newStateIndex;
-    FSMClass.time[i] = 0; // Reset time in state
-    FSMClass.nextState[i] = -1; // Clear pending transition
+    this.state[i] = newStateIndex;
+    this.time[i] = 0; // Reset time in state
+    this.nextState[i] = -1; // Clear pending transition
 
     // Call onEnter on new state (pass previous state name)
     if (NewState && NewState.onEnter) {
@@ -203,8 +210,8 @@ export class FSM extends Component {
    * @returns {string|null} Current state name
    */
   static getStateName(i) {
-    if (!this._stateArray) return null;
-    return this._getStateNameByIndex(this.state[i]);
+    if (!this._stateNames) return null;
+    return this._stateNames[this.state[i]] || null;
   }
 
   /**
@@ -214,14 +221,8 @@ export class FSM extends Component {
    * @returns {string|null} State name
    */
   static _getStateNameByIndex(stateIndex) {
-    if (!this._stateNameToIndex) return null;
-
-    for (const [name, index] of this._stateNameToIndex.entries()) {
-      if (index === stateIndex) {
-        return name;
-      }
-    }
-    return null;
+    if (!this._stateNames) return null;
+    return this._stateNames[stateIndex] || null;
   }
 
   /**
@@ -242,10 +243,7 @@ export class FSM extends Component {
    * @param {GameObject} owner - The entity instance
    */
   static forceChangeState(i, StateClass, owner) {
-    // Create a temporary instance-like object to call _executeTransition
-    const tempInstance = { index: i, constructor: this };
-    tempInstance._executeTransition = FSM.prototype._executeTransition;
-    tempInstance._executeTransition(i, StateClass.stateIndex, owner, this);
+    this._executeTransition(i, StateClass.stateIndex, owner);
   }
 
   /**

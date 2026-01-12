@@ -78,9 +78,6 @@ export class PersonWithFSM extends GameObject {
     this.collider.radius = 10 * scale;
     this.shadowCaster.shadowRadius = this.collider.radius;
     this.shadowCaster.height = this.collider.radius * 5;
-
-    // Initialize FSM - calls onEnter for initial state
-    CivilianBehaviorFSM.initializeEntity(this.index, this);
   }
 
   /**
