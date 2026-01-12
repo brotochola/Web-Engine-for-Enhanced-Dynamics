@@ -126,6 +126,7 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 --- SPATIAL WORKER: ---
 ------------------------------------------------------------------------------------------------
 - celdas no caminables
+-tengo 10k preys, todas inactivas, y 20k PersonWithFSM, como los workers se dividen por id, hay uno laburando a full y otro re tranca
 
 
 
