@@ -133,6 +133,13 @@ class ParticleWorker extends AbstractWorker {
     this.flashesEnabled = false;
     this.maxFlashes = 0;
     this.flashStartIndex = 0; // Entity index where flashes start
+
+    // ========================================
+    // ACTIVE ENTITIES LIST (for spatial worker load balancing)
+    // ========================================
+    // SharedArrayBuffer tracking which entities are active
+    // Built each frame by particle_worker, consumed by spatial_workers
+    this.activeEntitiesBuffer = null; // Uint32Array view
   }
 
   /**
@@ -362,6 +369,41 @@ class ParticleWorker extends AbstractWorker {
         this.flashesEnabled = false;
       }
     }
+
+    // ========================================
+    // ACTIVE ENTITIES LIST - Initialize
+    // ========================================
+    if (data.buffers.activeEntitiesData) {
+      this.activeEntitiesBuffer = new Uint32Array(
+        data.buffers.activeEntitiesData
+      );
+      console.log(
+        `PARTICLE WORKER: Active entities buffer initialized (${this.globalEntityCount} max entities)`
+      );
+    }
+  }
+
+  /**
+   * Build compact list of active entities for spatial worker load balancing
+   * Scans Transform.active[] and writes indices to activeEntitiesBuffer
+   * Called at start of each frame before spatial workers process
+   */
+  buildActiveEntityList() {
+    if (!this.activeEntitiesBuffer) return;
+
+    const active = Transform.active;
+    const buffer = this.activeEntitiesBuffer;
+    let writeIdx = 1; // Start at index 1 (index 0 is for count)
+
+    // Scan all entities and collect active indices
+    for (let i = 0; i < this.globalEntityCount; i++) {
+      if (active[i]) {
+        buffer[writeIdx++] = i;
+      }
+    }
+
+    // Write count at index 0
+    buffer[0] = writeIdx - 1;
   }
 
   /**
@@ -374,6 +416,9 @@ class ParticleWorker extends AbstractWorker {
    */
   update(deltaTime, dtRatio) {
     if (this.maxParticles === 0 && this.globalEntityCount === 0) return;
+
+    // Build active entity list FIRST - spatial workers need this to split work evenly
+    this.buildActiveEntityList();
 
     // Reset stats counters for this frame
     this.particlesStampedThisFrame = 0;
@@ -409,12 +454,11 @@ class ParticleWorker extends AbstractWorker {
 
     // Update screen visibility for all game entities
     this.updateEntityScreenVisibility();
+    // Update derived properties (speed, velocityAngle) for RigidBody entities
+    this.updateDerivedProperties();
 
     // Update screen visibility for all decorations
     this.updateDecorationScreenVisibility(cameraBounds);
-
-    // Update derived properties (speed, velocityAngle) for RigidBody entities
-    this.updateDerivedProperties();
 
     // Store for FPS reporting
     this.activeParticleCount = activeCount;

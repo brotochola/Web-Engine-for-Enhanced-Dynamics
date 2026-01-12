@@ -1,3 +1,5 @@
+-- borrar todo lo de this.enableProfiling
+
 -------- 
 Debugger:
 ---------

@@ -148,7 +148,7 @@ export class PredatorScene extends WEED.Scene {
 
   static entities = [
     [PreySpawner, 1],
-    [Prey, 0],
+    [Prey, 20000],
     [Predator, 8],
     [Player, 1],
     [Boid, 0], // Register but don't pre-allocate

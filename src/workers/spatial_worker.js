@@ -37,8 +37,12 @@ class SpatialWorker extends AbstractWorker {
     // WORKER INDEX AND ENTITY RANGE (for parallel processing)
     this.workerIndex = 0; // Which spatial worker is this? (0, 1, 2, ...)
     this.totalSpatialWorkers = 1; // Total number of spatial workers
-    this.entityStartIndex = 0; // First entity this worker processes
-    this.entityEndIndex = 0; // Last entity this worker processes (exclusive)
+    this.activeEntityStartIndex = 0; // First index in active entity list this worker processes
+    this.activeEntityEndIndex = 0; // Last index in active entity list this worker processes (exclusive)
+
+    // ACTIVE ENTITIES LIST (for load-balanced processing)
+    // Built by particle_worker each frame, consumed by spatial_workers
+    this.activeEntitiesBuffer = null; // Uint32Array view [count, idx0, idx1, ...]
 
     // FLAT GRID STRUCTURE (replaces Array-of-Arrays)
     // gridEntities: flat array storing entity IDs per cell
@@ -99,16 +103,18 @@ class SpatialWorker extends AbstractWorker {
       );
     }
 
-    // Calculate entity range for this worker
-    // SHARED GRID, SPLIT WORK: Each worker processes a subset of entities
-    const entitiesPerWorker = Math.ceil(
-      this.globalEntityCount / this.totalSpatialWorkers
-    );
-    this.entityStartIndex = this.workerIndex * entitiesPerWorker;
-    this.entityEndIndex = Math.min(
-      this.entityStartIndex + entitiesPerWorker,
-      this.globalEntityCount
-    );
+    // Initialize active entities buffer for load-balanced processing
+    if (data.buffers.activeEntitiesData) {
+      this.activeEntitiesBuffer = new Uint32Array(
+        data.buffers.activeEntitiesData
+      );
+      console.log(
+        `SPATIAL WORKER ${this.workerIndex}: Active entities buffer initialized`
+      );
+    }
+
+    // Note: Active entity range is calculated dynamically each frame in findAllNeighbors()
+    // based on the current active entity count from activeEntitiesBuffer[0]
 
     // Calculate grid parameters from config
     // Check spatial-specific config first, then fall back to root for backwards compatibility
@@ -270,15 +276,13 @@ class SpatialWorker extends AbstractWorker {
    * 1. Uses processed bitmask to skip duplicate processing of multi-cell entities
    * 2. Uses pre-computed entity positions and half-extents
    * 3. Flat grid access is cache-friendly
-   * 4. SHARED GRID, SPLIT WORK: Processes only assigned entity range
+   * 4. LOAD BALANCED: Processes slice of active entity list for even distribution
    */
   findAllNeighbors() {
     const active = Transform.active;
     const visualRange = Collider.visualRange;
     const gridEntities = this.gridEntities;
     const gridCounts = this.gridCounts;
-    const occupiedCells = this.occupiedCells;
-    const occupiedCount = this.occupiedCount;
     const neighborData = this.neighborData;
     const distanceData = this.distanceData;
     const invCellSize = this.invCellSize;
@@ -293,136 +297,141 @@ class SpatialWorker extends AbstractWorker {
     const entityPosY = this.entityPosY;
     const entityHalfExtent = this.entityHalfExtent;
 
-    // WORKER ENTITY RANGE - only process our assigned entities
-    const entityStartIndex = this.entityStartIndex;
-    const entityEndIndex = this.entityEndIndex;
+    // ACTIVE ENTITY LIST - read current count and calculate our slice
+    const activeEntitiesBuffer = this.activeEntitiesBuffer;
+    const totalActiveEntities = activeEntitiesBuffer
+      ? activeEntitiesBuffer[0]
+      : 0;
+
+    // Calculate which slice of active entities this worker processes
+    const activePerWorker = Math.ceil(
+      totalActiveEntities / this.totalSpatialWorkers
+    );
+    const activeStartIdx = this.workerIndex * activePerWorker;
+    const activeEndIdx = Math.min(
+      activeStartIdx + activePerWorker,
+      totalActiveEntities
+    );
 
     // Reset stats for this frame
     this.neighborChecksThisFrame = 0;
     this.gridCellsCheckedThisFrame = 0;
     this.entitiesProcessedThisFrame = 0;
 
-    // PROCESSED BITMASK - clear at start of frame
-    const processed = this.processedThisFrame;
-    processed.fill(0);
+    // Early exit if no active entities or no work for this worker
+    if (totalActiveEntities === 0 || activeStartIdx >= totalActiveEntities) {
+      return;
+    }
 
-    // Process only entities in occupied cells
-    for (let cellIdx = 0; cellIdx < occupiedCount; cellIdx++) {
-      const centerCellIndex = occupiedCells[cellIdx];
-      const centerCellLen = gridCounts[centerCellIndex];
-      const centerCellBase = centerCellIndex * maxEntitiesPerCell;
+    // Process only our assigned slice of active entities
+    for (
+      let activeIdx = activeStartIdx;
+      activeIdx < activeEndIdx;
+      activeIdx++
+    ) {
+      // Get actual entity index from active list (offset by 1 since count is at index 0)
+      const i = activeEntitiesBuffer[1 + activeIdx];
 
-      // Process each entity in this cell
-      for (let e = 0; e < centerCellLen; e++) {
-        const i = gridEntities[centerCellBase + e];
+      // Sanity check - should not happen if particle_worker built list correctly
+      if (!active[i]) continue;
 
-        // BOUNDARY FIX: Skip if entity is not in our assigned range
-        // This is the key to solving the boundary problem!
-        if (i < entityStartIndex || i >= entityEndIndex) continue;
+      // Track entity processed
+      this.entitiesProcessedThisFrame++;
 
-        // BITMASK CHECK: Skip if already processed this frame
-        // This eliminates duplicate processing for multi-cell entities
-        if (processed[i]) continue;
-        processed[i] = 1;
+      // Use PRE-COMPUTED collider position
+      const myX = entityPosX[i];
+      const myY = entityPosY[i];
+      const myVisualRange = visualRange[i];
 
-        // Track entity processed
-        this.entitiesProcessedThisFrame++;
+      // Skip entities with no visual range - they don't need neighbors
+      if (myVisualRange <= 0) {
+        neighborData[i * stride] = 0;
+        distanceData[i * stride] = 0;
+        continue;
+      }
 
-        // Use PRE-COMPUTED collider position
-        const myX = entityPosX[i];
-        const myY = entityPosY[i];
-        const myVisualRange = visualRange[i];
+      // Cell radius for neighbor search (integer math faster than Math.ceil)
+      const cellRadius = ((myVisualRange * invCellSize) | 0) + 1;
 
-        // Skip entities with no visual range - they don't need neighbors
-        if (myVisualRange <= 0) {
-          neighborData[i * stride] = 0;
-          distanceData[i * stride] = 0;
-          continue;
-        }
+      // Entity's cell coordinates (using collider position)
+      const col = (myX * invCellSize) | 0;
+      const row = (myY * invCellSize) | 0;
 
-        // Cell radius for neighbor search (integer math faster than Math.ceil)
-        const cellRadius = ((myVisualRange * invCellSize) | 0) + 1;
+      // Buffer offset for this entity's neighbor list
+      const offset = i * stride;
+      let neighborCount = 0;
 
-        // Entity's cell coordinates (using collider position)
-        const col = (myX * invCellSize) | 0;
-        const row = (myY * invCellSize) | 0;
+      // Pre-calculate row bounds (avoid repeated bound checks)
+      const rowMin = row - cellRadius;
+      const rowMax = row + cellRadius;
+      const colMin = col - cellRadius;
+      const colMax = col + cellRadius;
 
-        // Buffer offset for this entity's neighbor list
-        const offset = i * stride;
-        let neighborCount = 0;
+      // Clamp bounds once
+      const startRow = rowMin < 0 ? 0 : rowMin;
+      const endRow = rowMax >= gridRows ? gridRows - 1 : rowMax;
+      const startCol = colMin < 0 ? 0 : colMin;
+      const endCol = colMax >= gridCols ? gridCols - 1 : colMax;
 
-        // Pre-calculate row bounds (avoid repeated bound checks)
-        const rowMin = row - cellRadius;
-        const rowMax = row + cellRadius;
-        const colMin = col - cellRadius;
-        const colMax = col + cellRadius;
+      // Check grid cells within cellRadius
+      for (let checkRow = startRow; checkRow <= endRow; checkRow++) {
+        const rowBase = checkRow * gridCols;
 
-        // Clamp bounds once
-        const startRow = rowMin < 0 ? 0 : rowMin;
-        const endRow = rowMax >= gridRows ? gridRows - 1 : rowMax;
-        const startCol = colMin < 0 ? 0 : colMin;
-        const endCol = colMax >= gridCols ? gridCols - 1 : colMax;
+        for (let checkCol = startCol; checkCol <= endCol; checkCol++) {
+          const checkCellIndex = rowBase + checkCol;
+          const cellLength = gridCounts[checkCellIndex];
 
-        // Check grid cells within cellRadius
-        for (let checkRow = startRow; checkRow <= endRow; checkRow++) {
-          const rowBase = checkRow * gridCols;
+          // Skip empty cells
+          if (cellLength === 0) continue;
 
-          for (let checkCol = startCol; checkCol <= endCol; checkCol++) {
-            const checkCellIndex = rowBase + checkCol;
-            const cellLength = gridCounts[checkCellIndex];
+          // Track grid cell checked
+          this.gridCellsCheckedThisFrame++;
 
-            // Skip empty cells
-            if (cellLength === 0) continue;
+          const cellBase = checkCellIndex * maxEntitiesPerCell;
 
-            // Track grid cell checked
-            this.gridCellsCheckedThisFrame++;
+          // Check all entities in this cell
+          for (let k = 0; k < cellLength; k++) {
+            const j = gridEntities[cellBase + k];
 
-            const cellBase = checkCellIndex * maxEntitiesPerCell;
+            // Skip self
+            if (i === j) continue;
 
-            // Check all entities in this cell
-            for (let k = 0; k < cellLength; k++) {
-              const j = gridEntities[cellBase + k];
+            // Track neighbor check
+            this.neighborChecksThisFrame++;
 
-              // Skip self
-              if (i === j) continue;
+            // Use PRE-COMPUTED positions for distance calculation
+            const jX = entityPosX[j];
+            const jY = entityPosY[j];
+            const deltaX = jX - myX;
+            const deltaY = jY - myY;
+            const distSq = deltaX * deltaX + deltaY * deltaY;
 
-              // Track neighbor check
-              this.neighborChecksThisFrame++;
+            // Use PRE-COMPUTED half-extent
+            // Expand effective range by target's half-extent to detect large entities
+            const jHalfExtent = entityHalfExtent[j];
+            const effectiveRange = myVisualRange + jHalfExtent;
+            const effectiveRangeSq = effectiveRange * effectiveRange;
 
-              // Use PRE-COMPUTED positions for distance calculation
-              const jX = entityPosX[j];
-              const jY = entityPosY[j];
-              const deltaX = jX - myX;
-              const deltaY = jY - myY;
-              const distSq = deltaX * deltaX + deltaY * deltaY;
+            // Only add if within effective range and not at same position
+            if (distSq < effectiveRangeSq && distSq > 0) {
+              const writeIdx = offset + 1 + neighborCount;
+              neighborData[writeIdx] = j;
+              distanceData[writeIdx] = distSq;
+              neighborCount++;
 
-              // Use PRE-COMPUTED half-extent
-              // Expand effective range by target's half-extent to detect large entities
-              const jHalfExtent = entityHalfExtent[j];
-              const effectiveRange = myVisualRange + jHalfExtent;
-              const effectiveRangeSq = effectiveRange * effectiveRange;
-
-              // Only add if within effective range and not at same position
-              if (distSq < effectiveRangeSq && distSq > 0) {
-                const writeIdx = offset + 1 + neighborCount;
-                neighborData[writeIdx] = j;
-                distanceData[writeIdx] = distSq;
-                neighborCount++;
-
-                // Stop if we've hit the neighbor limit
-                if (neighborCount >= maxNeighbors) break;
-              }
+              // Stop if we've hit the neighbor limit
+              if (neighborCount >= maxNeighbors) break;
             }
-
-            if (neighborCount >= maxNeighbors) break;
           }
+
           if (neighborCount >= maxNeighbors) break;
         }
-
-        // Store neighbor count at the beginning
-        neighborData[offset] = neighborCount;
-        distanceData[offset] = neighborCount;
+        if (neighborCount >= maxNeighbors) break;
       }
+
+      // Store neighbor count at the beginning
+      neighborData[offset] = neighborCount;
+      distanceData[offset] = neighborCount;
     }
   }
 

@@ -147,6 +147,7 @@ class Scene {
       neighborData: null,
       distanceData: null,
       collisionData: null,
+      activeEntitiesData: null, // Active entity list for spatial worker load balancing
       inputData: null,
       cameraData: null,
       syncData: null,
@@ -887,6 +888,14 @@ class Scene {
     this.views.collision = new Int32Array(this.buffers.collisionData);
     this.views.collision[0] = 0;
 
+    // Active entities buffer - tracks which entities are active for spatial worker load balancing
+    // Layout: [count, entityIdx0, entityIdx1, ...]
+    // Particle worker builds this list each frame, spatial workers consume it to split work evenly
+    const ACTIVE_ENTITIES_BUFFER_SIZE = (1 + this.totalEntityCount) * 4; // count + indices (Uint32)
+    this.buffers.activeEntitiesData = new SharedArrayBuffer(
+      ACTIVE_ENTITIES_BUFFER_SIZE
+    );
+
     const INPUT_BUFFER_SIZE = this.inputBufferSize * 4;
     this.buffers.inputData = new SharedArrayBuffer(INPUT_BUFFER_SIZE);
     this.views.input = new Int32Array(this.buffers.inputData);
@@ -1257,6 +1266,7 @@ class Scene {
         neighborData: this.buffers.neighborData,
         distanceData: this.buffers.distanceData,
         collisionData: this.buffers.collisionData,
+        activeEntitiesData: this.buffers.activeEntitiesData,
         inputData: this.buffers.inputData,
         cameraData: this.buffers.cameraData,
         syncData: this.buffers.syncData,
