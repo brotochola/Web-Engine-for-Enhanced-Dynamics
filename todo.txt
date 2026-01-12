@@ -1,3 +1,11 @@
+-------- 
+Debugger:
+---------
+-debug para las luces
+-clase Debug con cosas tipo:
+	Debug.highlightCell(cellID)
+	Debug.drawText(entity.x, entity.y, fsm.state)
+
 
 -------------------
 QUERY SYSTEM:
@@ -7,9 +15,37 @@ QUERY SYSTEM:
 y tenemos la lista de entidades q usan cada component.
 
 
+-----
+FSM
+------
+
+class WEED.FSM extends component{}
+class FSMEnemigos extends WEED.FSM{}
+class EstadoIdleEnemigo extends WEED.FSMState{}
+
+
+
+
+
+-----
+RAY CAST
+--------
+
+
+(en logic workers)
+
+Ray.cast(xFrom,yFrom,xTo,yTo,maxDist){
+const cellFrom=getCell(xFrom,yFrom)
+const entities=getEntitiesFromCell(cellFrom)
+}
+
+
+
 ---------------------
  GAME ENGINE:
 -----------------------
+
+
 
 
 -getters con stats en tiempo real
