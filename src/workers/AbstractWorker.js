@@ -58,6 +58,7 @@ export class AbstractWorker {
     this.cameraData = null;
     this.neighborData = null;
     this.distanceData = null; // Squared distances for each neighbor
+    this.activeEntitiesData = null; // Compact list of active entity indices [count, idx0, idx1, ...]
     this.frameRateData = null; // Real-time FPS tracking for all workers
     this.frameRateIndex = -1; // Index into frameRateData array (different from workerIndex used by logic workers!)
 
@@ -297,6 +298,15 @@ export class AbstractWorker {
     // Initialize distance data reference
     if (data.buffers?.distanceData) {
       this.distanceData = new Float32Array(data.buffers.distanceData);
+    }
+
+    // Initialize active entities list (for load-balanced processing)
+    // Layout: [count, entityIdx0, entityIdx1, ...]
+    // Built by particle_worker, consumed by all workers that need to iterate active entities
+    if (data.buffers?.activeEntitiesData) {
+      this.activeEntitiesData = new Uint32Array(
+        data.buffers.activeEntitiesData
+      );
     }
 
     // Initialize frame rate tracking buffer
@@ -548,6 +558,40 @@ export class AbstractWorker {
       this.gameLoop(true);
     }
     // If using custom scheduler, it will continue calling gameLoop automatically
+  }
+
+  /**
+   * Get the count of active entities (built by particle_worker each frame)
+   * @returns {number} - Number of active entities
+   */
+  getActiveEntityCount() {
+    return this.activeEntitiesData ? this.activeEntitiesData[0] : 0;
+  }
+
+  /**
+   * Get an active entity index by its position in the active list
+   * @param {number} activeIndex - Index in the active list (0 to count-1)
+   * @returns {number} - Actual entity index, or -1 if invalid
+   */
+  getActiveEntityIndex(activeIndex) {
+    if (!this.activeEntitiesData) return -1;
+    const count = this.activeEntitiesData[0];
+    if (activeIndex < 0 || activeIndex >= count) return -1;
+    return this.activeEntitiesData[1 + activeIndex];
+  }
+
+  /**
+   * Iterate through all active entities with a callback
+   * More convenient than manual loop: forEachActiveEntity((entityIndex) => { ... })
+   * @param {Function} callback - Function called for each active entity (receives entity index)
+   */
+  forEachActiveEntity(callback) {
+    if (!this.activeEntitiesData) return;
+    const count = this.activeEntitiesData[0];
+    for (let i = 0; i < count; i++) {
+      const entityIndex = this.activeEntitiesData[1 + i];
+      callback(entityIndex);
+    }
   }
 
   /**
