@@ -10,6 +10,8 @@ export { GameEngine } from "./core/gameEngine.js";
 export { Scene } from "./core/Scene.js";
 export { GameObject, Keyboard } from "./core/gameObject.js";
 export { Component } from "./core/Component.js";
+export { FSM } from "./core/FSM.js";
+export { FSMState } from "./core/FSMState.js";
 export { DebugFlags } from "./core/DebugFlags.js";
 export { DebugUI } from "./core/DebugUI.js";
 export { Mouse } from "./core/Mouse.js";
@@ -83,6 +85,8 @@ import { GameEngine } from "./core/gameEngine.js";
 import { Scene } from "./core/Scene.js";
 import { GameObject, Keyboard } from "./core/gameObject.js";
 import { Component } from "./core/Component.js";
+import { FSM } from "./core/FSM.js";
+import { FSMState } from "./core/FSMState.js";
 import { DebugFlags } from "./core/DebugFlags.js";
 import { DebugUI } from "./core/DebugUI.js";
 import { Mouse } from "./core/Mouse.js";
@@ -114,6 +118,8 @@ const WEED = {
   Scene,
   GameObject,
   Component,
+  FSM,
+  FSMState,
   DebugFlags,
   DebugUI,
   Mouse,
