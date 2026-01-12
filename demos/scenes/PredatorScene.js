@@ -9,6 +9,7 @@ import { Player } from "../player.js";
 import { TallLight } from "../tallLight.js";
 import { PreySpawner } from "../PreySpawner.js";
 import { House } from "../House.js";
+import { PersonWithFSM } from "../PersonWithFSM.js";
 // Grass now uses DecorationPool instead of GameObject
 
 const { DecorationPool } = WEED;
@@ -153,6 +154,7 @@ export class PredatorScene extends WEED.Scene {
     [Boid, 0], // Register but don't pre-allocate
     [House, 20],
     [TallLight, 100],
+    [PersonWithFSM, 5000], // FSM-based civilians
     // Grass now uses DecorationPool instead of GameObject
   ];
 
@@ -164,12 +166,13 @@ export class PredatorScene extends WEED.Scene {
     super(game);
 
     // Scene-specific properties
-    this.numberOfPrey = 10000;
+    this.numberOfPrey = 0;
     this.numberOfPredators = 1;
     this.numberOfBoids = 0;
     this.numberOfTallLights = 100;
     this.numberOfHouses = 10;
     this.numberOfGrass = 10000;
+    this.numberOfPersonsWithFSM = 3500; // FSM-based civilians
 
     // Player reference (will be set in create())
     this.playerEntity = null;
@@ -193,6 +196,7 @@ export class PredatorScene extends WEED.Scene {
     this.spawnPrey(this.numberOfPrey);
     this.spawnHouses(this.numberOfHouses);
     this.spawnGrass(this.numberOfGrass);
+    this.spawnPersonsWithFSM(this.numberOfPersonsWithFSM);
     this.spawnEntity(PreySpawner, {});
 
     console.log("✅ PredatorScene: Entities spawned!");
@@ -260,6 +264,15 @@ export class PredatorScene extends WEED.Scene {
   spawnLights(count) {
     for (let i = 0; i < count; i++) {
       this.spawnEntity(TallLight, {
+        x: this.rng() * this.config.worldWidth,
+        y: this.rng() * this.config.worldHeight,
+      });
+    }
+  }
+
+  spawnPersonsWithFSM(count) {
+    for (let i = 0; i < count; i++) {
+      this.spawnEntity(PersonWithFSM, {
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });
