@@ -134,12 +134,7 @@ class ParticleWorker extends AbstractWorker {
     this.maxFlashes = 0;
     this.flashStartIndex = 0; // Entity index where flashes start
 
-    // ========================================
-    // ACTIVE ENTITIES LIST (for spatial worker load balancing)
-    // ========================================
-    // SharedArrayBuffer tracking which entities are active
-    // Built each frame by particle_worker, consumed by spatial_workers
-    this.activeEntitiesBuffer = null; // Uint32Array view
+    // Note: activeEntitiesData is now initialized in AbstractWorker.initializeCommonBuffers
   }
 
   /**
@@ -370,32 +365,27 @@ class ParticleWorker extends AbstractWorker {
       }
     }
 
-    // ========================================
-    // ACTIVE ENTITIES LIST - Initialize
-    // ========================================
-    if (data.buffers.activeEntitiesData) {
-      this.activeEntitiesBuffer = new Uint32Array(
-        data.buffers.activeEntitiesData
-      );
-      console.log(
-        `PARTICLE WORKER: Active entities buffer initialized (${this.globalEntityCount} max entities)`
-      );
-    }
+    // Note: activeEntitiesData is initialized in AbstractWorker.initializeCommonBuffers
   }
 
   /**
-   * Build compact list of active entities for spatial worker load balancing
-   * Scans Transform.active[] and writes indices to activeEntitiesBuffer
-   * Called at start of each frame before spatial workers process
+   * Build compact list of active entities for load-balanced processing
+   * Scans Transform.active[] and writes indices to activeEntitiesData (shared with all workers)
+   * Called at start of each frame before other workers process entities
+   *
+   * NOTE: The list is already naturally sorted because we scan indices 0->N
+   * If entities are sparse (e.g., every 8th entity active), cache locality is still
+   * good within contiguous blocks, but there may be gaps between entity types.
    */
   buildActiveEntityList() {
-    if (!this.activeEntitiesBuffer) return;
+    if (!this.activeEntitiesData) return;
 
     const active = Transform.active;
-    const buffer = this.activeEntitiesBuffer;
+    const buffer = this.activeEntitiesData;
     let writeIdx = 1; // Start at index 1 (index 0 is for count)
 
     // Scan all entities and collect active indices
+    // This naturally produces a sorted list since we iterate 0->globalEntityCount
     for (let i = 0; i < this.globalEntityCount; i++) {
       if (active[i]) {
         buffer[writeIdx++] = i;
@@ -404,6 +394,11 @@ class ParticleWorker extends AbstractWorker {
 
     // Write count at index 0
     buffer[0] = writeIdx - 1;
+
+    // PERFORMANCE NOTE: List is already sorted by entity index (0, 1, 2, ...)
+    // This provides good cache locality for sequential entity pools.
+    // If you see poor cache performance, consider entity pool compaction
+    // or spatial sorting (sort by grid cell) for better locality.
   }
 
   /**

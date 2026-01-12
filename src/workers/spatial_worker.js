@@ -37,12 +37,8 @@ class SpatialWorker extends AbstractWorker {
     // WORKER INDEX AND ENTITY RANGE (for parallel processing)
     this.workerIndex = 0; // Which spatial worker is this? (0, 1, 2, ...)
     this.totalSpatialWorkers = 1; // Total number of spatial workers
-    this.activeEntityStartIndex = 0; // First index in active entity list this worker processes
-    this.activeEntityEndIndex = 0; // Last index in active entity list this worker processes (exclusive)
 
-    // ACTIVE ENTITIES LIST (for load-balanced processing)
-    // Built by particle_worker each frame, consumed by spatial_workers
-    this.activeEntitiesBuffer = null; // Uint32Array view [count, idx0, idx1, ...]
+    // Note: activeEntitiesData is now initialized in AbstractWorker.initializeCommonBuffers
 
     // FLAT GRID STRUCTURE (replaces Array-of-Arrays)
     // gridEntities: flat array storing entity IDs per cell
@@ -103,18 +99,9 @@ class SpatialWorker extends AbstractWorker {
       );
     }
 
-    // Initialize active entities buffer for load-balanced processing
-    if (data.buffers.activeEntitiesData) {
-      this.activeEntitiesBuffer = new Uint32Array(
-        data.buffers.activeEntitiesData
-      );
-      console.log(
-        `SPATIAL WORKER ${this.workerIndex}: Active entities buffer initialized`
-      );
-    }
-
-    // Note: Active entity range is calculated dynamically each frame in findAllNeighbors()
-    // based on the current active entity count from activeEntitiesBuffer[0]
+    // Note: activeEntitiesData is initialized in AbstractWorker.initializeCommonBuffers
+    // Active entity range is calculated dynamically each frame in findAllNeighbors()
+    // based on the current active entity count from activeEntitiesData[0]
 
     // Calculate grid parameters from config
     // Check spatial-specific config first, then fall back to root for backwards compatibility
@@ -175,7 +162,6 @@ class SpatialWorker extends AbstractWorker {
     this.occupiedCount = 0;
 
     // Cache frequently accessed values
-    const active = Transform.active;
     const x = Transform.x;
     const y = Transform.y;
     const offsetX = Collider.offsetX;
@@ -190,7 +176,6 @@ class SpatialWorker extends AbstractWorker {
     const gridRows = this.gridRows;
     const maxCol = gridCols - 1;
     const maxRow = gridRows - 1;
-    const entityCount = this.globalEntityCount;
 
     // Pre-computed entity data arrays
     const entityPosX = this.entityPosX;
@@ -202,10 +187,14 @@ class SpatialWorker extends AbstractWorker {
 
     let occupiedIdx = 0;
 
-    // Insert only active entities into grid
-    for (let i = 0; i < entityCount; i++) {
-      // Skip inactive entities - they don't participate in spatial queries
-      if (!active[i]) continue;
+    // OPTIMIZED: Use active entity list instead of iterating all entities
+    // This eliminates the need to check active[i] for every entity
+    const activeEntitiesData = this.activeEntitiesData;
+    const totalActiveEntities = activeEntitiesData ? activeEntitiesData[0] : 0;
+
+    // Insert only active entities into grid (iterate active list)
+    for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
+      const i = activeEntitiesData[1 + activeIdx];
 
       // Use collider position (transform + offset) for grid placement
       const posX = x[i] + (offsetX[i] || 0);
@@ -298,10 +287,8 @@ class SpatialWorker extends AbstractWorker {
     const entityHalfExtent = this.entityHalfExtent;
 
     // ACTIVE ENTITY LIST - read current count and calculate our slice
-    const activeEntitiesBuffer = this.activeEntitiesBuffer;
-    const totalActiveEntities = activeEntitiesBuffer
-      ? activeEntitiesBuffer[0]
-      : 0;
+    const activeEntitiesData = this.activeEntitiesData;
+    const totalActiveEntities = activeEntitiesData ? activeEntitiesData[0] : 0;
 
     // Calculate which slice of active entities this worker processes
     const activePerWorker = Math.ceil(
@@ -330,7 +317,7 @@ class SpatialWorker extends AbstractWorker {
       activeIdx++
     ) {
       // Get actual entity index from active list (offset by 1 since count is at index 0)
-      const i = activeEntitiesBuffer[1 + activeIdx];
+      const i = activeEntitiesData[1 + activeIdx];
 
       // Sanity check - should not happen if particle_worker built list correctly
       if (!active[i]) continue;

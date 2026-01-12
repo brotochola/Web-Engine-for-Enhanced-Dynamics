@@ -154,7 +154,7 @@ export class PredatorScene extends WEED.Scene {
     [Boid, 0], // Register but don't pre-allocate
     [House, 20],
     [TallLight, 100],
-    [PersonWithFSM, 20000], // FSM-based civilians
+    [PersonWithFSM, 0], // FSM-based civilians
     // Grass now uses DecorationPool instead of GameObject
   ];
 
@@ -166,13 +166,13 @@ export class PredatorScene extends WEED.Scene {
     super(game);
 
     // Scene-specific properties
-    this.numberOfPrey = 0;
+    this.numberOfPrey = 10000;
     this.numberOfPredators = 1;
     this.numberOfBoids = 0;
     this.numberOfTallLights = 100;
     this.numberOfHouses = 10;
     this.numberOfGrass = 10000;
-    this.numberOfPersonsWithFSM = 20000; // FSM-based civilians
+    this.numberOfPersonsWithFSM = 0; // FSM-based civilians
 
     // Player reference (will be set in create())
     this.playerEntity = null;
