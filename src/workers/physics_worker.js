@@ -13,6 +13,7 @@ import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
 import { Collider } from "../components/Collider.js";
 import { AbstractWorker } from "./AbstractWorker.js";
+import { Grid } from "../core/Grid.js";
 import { PHYSICS_STATS, createStatsWriter } from "./workers-utils.js";
 import { clamp01, validatePhysicsConfig } from "../core/utils.js";
 import { rng } from "../core/utils.js";
@@ -531,8 +532,6 @@ class PhysicsWorker extends AbstractWorker {
     collisionCount,
     rigidBodyCount
   ) {
-    const maxNeighbors =
-      this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
     const responseStrength = this.settings.collisionResponseStrength;
     const isStatic = RigidBody.static;
 
@@ -547,8 +546,8 @@ class PhysicsWorker extends AbstractWorker {
     for (let i = 0; i < this.globalEntityCount; i++) {
       if (!active[i] || !colliderActive[i]) continue;
 
-      const offset = i * (1 + maxNeighbors);
-      const neighborCount = this.neighborData ? this.neighborData[offset] : 0;
+      // Use Grid class for neighbor data access
+      const neighborCount = Grid.getNeighborCount(i);
 
       if (neighborCount === 0) continue;
 
@@ -565,7 +564,7 @@ class PhysicsWorker extends AbstractWorker {
       // change during the loop as collisions are resolved!
 
       for (let n = 0; n < neighborCount; n++) {
-        const j = this.neighborData[offset + 1 + n];
+        const j = Grid.getNeighbor(i, n);
 
         if (i === j || !active[j] || !colliderActive[j]) continue;
         if (i >= j) continue; // Only process each pair once

@@ -323,9 +323,9 @@ class LogicWorker extends AbstractWorker {
           activeCount++;
           this.entitiesProcessedThisFrame++;
 
-          // OPTIMIZED: updating neighbors no longer allocates subarrays (GC free)
-          // It just updates _neighborOffset and neighborCount integers
-          obj.updateNeighbors(this.neighborData, this.distanceData);
+          // OPTIMIZED: updating neighbors now uses Grid class (GC free)
+          // It just updates neighborCount from Grid
+          obj.updateNeighbors();
 
           // Tick entity logic (no inputData parameter - use this.mouse / this.keyboard instead)
           obj.tick(dtRatio);

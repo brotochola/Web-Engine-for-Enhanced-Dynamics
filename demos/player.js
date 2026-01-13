@@ -12,7 +12,9 @@ const {
   ShadowCaster,
   Transform,
   Keyboard,
+  Mouse,
   Camera,
+  Ray,
   getDirectionFromAngle,
   rng,
   Flash,
@@ -73,6 +75,19 @@ export class Player extends GameObject {
     this.moveAcceleration = 0.3;
   }
 
+  shoot(x, y) {
+    // Raycast from player position to target
+    const hitEntityIndex = Ray.cast(
+      this.x,
+      this.y,
+      x,
+      y,
+      1500 // max distance
+    );
+
+    console.log(hitEntityIndex);
+  }
+
   /**
    * LIFECYCLE: Called when player is spawned/respawned from pool
    * Initialize THIS instance - runs EVERY spawn
@@ -120,6 +135,9 @@ export class Player extends GameObject {
 
     // Update animation based on movement
     this.updateAnimation(i);
+
+    // Handle shooting with left mouse button
+    Mouse.isButton0Down && this.shoot(Mouse.x, Mouse.y);
   }
 
   /**

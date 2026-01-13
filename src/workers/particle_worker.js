@@ -12,6 +12,7 @@ import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { ShadowCaster } from "../components/ShadowCaster.js";
 import { FlashComponent } from "../components/FlashComponent.js";
 import { AbstractWorker } from "./AbstractWorker.js";
+import { Grid } from "../core/Grid.js";
 import {
   calculateTotalLightAtPosition,
   brightnessToTint,
@@ -415,6 +416,8 @@ class ParticleWorker extends AbstractWorker {
    */
   update(deltaTime, dtRatio) {
     if (this.maxParticles === 0 && this.globalEntityCount === 0) return;
+
+    // Note: Debug raycast clearing is now handled by pixi_worker at start of render frame
 
     // Build active entity list FIRST - spatial workers need this to split work evenly
     this.buildActiveEntityList();
@@ -1020,18 +1023,16 @@ class ParticleWorker extends AbstractWorker {
   /**
    * Calculate shadow sprite positions for all active lights
    * OPTIMIZED: Uses query system to iterate only entities with LightEmitter
-   * Uses precomputed neighbor/distance data from spatial worker
+   * Uses precomputed neighbor/distance data from Grid (spatial worker)
    */
   updateShadowSprites() {
     if (!this.shadowsEnabled || !this.shadowSpriteActive) return;
 
     const shadowActive = this.shadowSpriteActive;
 
-    // Check if we have precomputed distances from spatial worker
+    // Check if we have precomputed distances from Grid (spatial worker)
     const usePrecomputedDistances =
-      this.neighborData &&
-      this.distanceData &&
-      this.config.spatial?.maxNeighbors;
+      Grid.neighborData && Grid.distanceData && Grid.maxNeighbors > 0;
 
     if (!usePrecomputedDistances) {
       // Clear all slots only when no data available
@@ -1051,9 +1052,6 @@ class ParticleWorker extends AbstractWorker {
     const entityShadowRadius = ShadowCaster.shadowRadius;
     const entityShadowHeight = ShadowCaster.height;
     const isOnScreen = SpriteRenderer.isItOnScreen;
-
-    const maxNeighbors = this.config.spatial.maxNeighbors;
-    const stride = 1 + maxNeighbors;
 
     // Shadow sprite output arrays (shadowActive already cached above)
     const shadowRadius = this.shadowSpriteRadius;
@@ -1102,9 +1100,8 @@ class ParticleWorker extends AbstractWorker {
       const lightX = worldX[lightIdx];
       const lightY = worldY[lightIdx];
 
-      // Get neighbors of this light (entities within its visualRange)
-      const offset = lightIdx * stride;
-      const neighborCount = this.neighborData[offset];
+      // Get neighbors of this light using Grid (entities within its visualRange)
+      const neighborCount = Grid.getNeighborCount(lightIdx);
 
       let shadowsForThisLight = 0;
 
@@ -1113,7 +1110,7 @@ class ParticleWorker extends AbstractWorker {
         if (shadowsForThisLight >= this.maxShadowsPerLight) break;
         if (shadowIdx >= this.maxShadowSprites) break;
 
-        const neighborIdx = this.neighborData[offset + 1 + k];
+        const neighborIdx = Grid.getNeighbor(lightIdx, k);
 
         // Skip if not a shadow caster
         if (!shadowCasterActive[neighborIdx]) continue;
@@ -1127,7 +1124,7 @@ class ParticleWorker extends AbstractWorker {
         )
           continue;
 
-        const distSq = this.distanceData[offset + 1 + k];
+        const distSq = Grid.getNeighborDistanceSq(lightIdx, k);
 
         const casterX = worldX[neighborIdx];
         const casterY = worldY[neighborIdx];

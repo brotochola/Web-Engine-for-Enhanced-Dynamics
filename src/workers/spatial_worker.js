@@ -11,6 +11,7 @@ import { Transform } from "../components/Transform.js";
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { AbstractWorker } from "./AbstractWorker.js";
+import { Grid } from "../core/Grid.js";
 import {
   SPATIAL_STATS,
   createMultiWorkerStatsWriter,
@@ -103,13 +104,15 @@ class SpatialWorker extends AbstractWorker {
     // Active entity range is calculated dynamically each frame in findAllNeighbors()
     // based on the current active entity count from activeEntitiesData[0]
 
-    // Calculate grid parameters from config
-    // Check spatial-specific config first, then fall back to root for backwards compatibility
-    this.cellSize = this.config.spatial?.cellSize || this.config.cellSize;
-    this.invCellSize = 1 / this.cellSize; // Pre-compute for faster multiply vs divide
-    this.gridCols = Math.ceil(this.config.worldWidth / this.cellSize);
-    this.gridRows = Math.ceil(this.config.worldHeight / this.cellSize);
-    this.totalCells = this.gridCols * this.gridRows;
+    // Get grid metadata from main thread
+    const gridMetadata = data.gridMetadata;
+    this.cellSize = gridMetadata.cellSize;
+    this.invCellSize = gridMetadata.invCellSize;
+    this.gridCols = gridMetadata.gridCols;
+    this.gridRows = gridMetadata.gridRows;
+    this.totalCells = gridMetadata.totalCells;
+    this.maxEntitiesPerCell = gridMetadata.maxEntitiesPerCell;
+
     this.maxNeighborsPerEntity =
       this.config.spatial?.maxNeighbors || this.config.maxNeighbors;
 
@@ -117,29 +120,30 @@ class SpatialWorker extends AbstractWorker {
     this.canvasWidth = this.config.canvasWidth;
     this.canvasHeight = this.config.canvasHeight;
 
-    // FLAT GRID STRUCTURE - single allocation, no GC pressure
-    // Each cell has maxEntitiesPerCell slots
-    // NOTE: Each worker builds the FULL grid (reads ALL entity positions)
-    this.gridEntities = new Uint32Array(
-      this.totalCells * this.maxEntitiesPerCell
-    );
-    this.gridCounts = new Uint16Array(this.totalCells);
+    // SHARED GRID STRUCTURE - use SharedArrayBuffers from main thread
+    // All workers write to same grid (spatial worker 0 writes, others read for raycasting)
+    this.gridEntities = new Uint32Array(data.buffers.gridEntities);
+    this.gridCounts = new Uint16Array(data.buffers.gridCounts);
 
-    // Track occupied cells - worst case is ALL cells occupied
+    // Track occupied cells - worst case is ALL cells occupied (local to each worker)
     this.occupiedCells =
       this.totalCells <= 65535
         ? new Uint16Array(this.totalCells)
         : new Uint32Array(this.totalCells);
     this.occupiedCount = 0;
 
-    // PROCESSED BITMASK - one bit per entity to track if already processed
+    // PROCESSED BITMASK - one bit per entity to track if already processed (local to each worker)
     this.processedThisFrame = new Uint8Array(this.globalEntityCount);
 
-    // PRE-COMPUTED ENTITY DATA - calculated once per frame in rebuildGrid
+    // PRE-COMPUTED ENTITY DATA - calculated once per frame in rebuildGrid (local to each worker)
     // NOTE: Pre-compute for ALL entities (needed for full grid awareness)
     this.entityPosX = new Float32Array(this.globalEntityCount);
     this.entityPosY = new Float32Array(this.globalEntityCount);
     this.entityHalfExtent = new Float32Array(this.globalEntityCount);
+
+    console.log(
+      `SPATIAL WORKER ${this.workerIndex}: Grid initialized with ${this.totalCells} cells (${this.gridCols}x${this.gridRows})`
+    );
   }
 
   /**
@@ -148,12 +152,14 @@ class SpatialWorker extends AbstractWorker {
    * - Zero GC pressure (no array allocations)
    * - Cache-friendly sequential access
    * - Pre-computes entity positions and half-extents for findAllNeighbors
+   * - Uses Grid class for unified grid data access
    */
   rebuildGrid() {
-    const gridEntities = this.gridEntities;
-    const gridCounts = this.gridCounts;
+    // Use Grid class for grid data access
+    const gridEntities = Grid.gridEntities;
+    const gridCounts = Grid.gridCounts;
     const occupiedCells = this.occupiedCells;
-    const maxEntitiesPerCell = this.maxEntitiesPerCell;
+    const maxEntitiesPerCell = Grid.maxEntitiesPerCell;
 
     // Clear only cells that were occupied last frame - O(occupiedCells) not O(totalCells)
     for (let i = 0; i < this.occupiedCount; i++) {
@@ -171,9 +177,9 @@ class SpatialWorker extends AbstractWorker {
     const radius = Collider.radius;
     const width = Collider.width;
     const height = Collider.height;
-    const invCellSize = this.invCellSize;
-    const gridCols = this.gridCols;
-    const gridRows = this.gridRows;
+    const invCellSize = Grid.invCellSize;
+    const gridCols = Grid.gridCols;
+    const gridRows = Grid.gridRows;
     const maxCol = gridCols - 1;
     const maxRow = gridRows - 1;
 
@@ -266,20 +272,23 @@ class SpatialWorker extends AbstractWorker {
    * 2. Uses pre-computed entity positions and half-extents
    * 3. Flat grid access is cache-friendly
    * 4. LOAD BALANCED: Processes slice of active entity list for even distribution
+   * 5. Uses Grid class for unified neighbor data access
    */
   findAllNeighbors() {
     const active = Transform.active;
     const visualRange = Collider.visualRange;
-    const gridEntities = this.gridEntities;
-    const gridCounts = this.gridCounts;
-    const neighborData = this.neighborData;
-    const distanceData = this.distanceData;
-    const invCellSize = this.invCellSize;
-    const gridCols = this.gridCols;
-    const gridRows = this.gridRows;
-    const maxNeighbors = this.maxNeighborsPerEntity;
-    const stride = 1 + maxNeighbors;
-    const maxEntitiesPerCell = this.maxEntitiesPerCell;
+
+    // Use Grid class for spatial and neighbor data access
+    const gridEntities = Grid.gridEntities;
+    const gridCounts = Grid.gridCounts;
+    const neighborData = Grid.neighborData;
+    const distanceData = Grid.distanceData;
+    const invCellSize = Grid.invCellSize;
+    const gridCols = Grid.gridCols;
+    const gridRows = Grid.gridRows;
+    const maxNeighbors = Grid.maxNeighbors;
+    const stride = Grid._stride;
+    const maxEntitiesPerCell = Grid.maxEntitiesPerCell;
 
     // Pre-computed entity data (filled in rebuildGrid)
     const entityPosX = this.entityPosX;
@@ -332,8 +341,7 @@ class SpatialWorker extends AbstractWorker {
 
       // Skip entities with no visual range - they don't need neighbors
       if (myVisualRange <= 0) {
-        neighborData[i * stride] = 0;
-        distanceData[i * stride] = 0;
+        Grid.setNeighborCount(i, 0);
         continue;
       }
 
@@ -344,8 +352,8 @@ class SpatialWorker extends AbstractWorker {
       const col = (myX * invCellSize) | 0;
       const row = (myY * invCellSize) | 0;
 
-      // Buffer offset for this entity's neighbor list
-      const offset = i * stride;
+      // Buffer offset for this entity's neighbor list (for direct array access in hot loop)
+      const offset = Grid.getNeighborOffset(i);
       let neighborCount = 0;
 
       // Pre-calculate row bounds (avoid repeated bound checks)
@@ -401,6 +409,7 @@ class SpatialWorker extends AbstractWorker {
 
             // Only add if within effective range and not at same position
             if (distSq < effectiveRangeSq && distSq > 0) {
+              // Direct array write for performance in hot loop
               const writeIdx = offset + 1 + neighborCount;
               neighborData[writeIdx] = j;
               distanceData[writeIdx] = distSq;
@@ -416,9 +425,8 @@ class SpatialWorker extends AbstractWorker {
         if (neighborCount >= maxNeighbors) break;
       }
 
-      // Store neighbor count at the beginning
-      neighborData[offset] = neighborCount;
-      distanceData[offset] = neighborCount;
+      // Store neighbor count using Grid method
+      Grid.setNeighborCount(i, neighborCount);
     }
   }
 
