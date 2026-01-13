@@ -27,6 +27,9 @@ export class Ray {
   static debugBuffer = null; // Float32Array - stores raycast visualization data
   static maxDebugRaycasts = 100;
 
+  // GC Optimization: Reusable object for _checkCellEntities result
+  static _tempResult = { entityIndex: -1, distance: Infinity };
+
   /**
    * Initialize Ray system with debug buffers
    * Grid data is accessed via Grid class (initialized separately by AbstractWorker)
@@ -144,7 +147,8 @@ export class Ray {
       ) {
         // Get entities in this cell
         const cellIndex = currentCellY * gridCols + currentCellX;
-        const result = Ray._checkCellEntities(
+        // Optimization: _checkCellEntities mutates static _tempResult to avoid GC
+        Ray._checkCellEntities(
           cellIndex,
           xFrom,
           yFrom,
@@ -154,6 +158,8 @@ export class Ray {
           closestDist
         );
 
+        const result = Ray._tempResult;
+        
         if (result.entityIndex !== -1) {
           closestHit = result.entityIndex;
           closestDist = result.distance;
@@ -202,7 +208,7 @@ export class Ray {
 
   /**
    * Check all entities in a cell for ray collision
-   * Returns entity index and distance, or -1 if no hit
+   * Mutates Ray._tempResult with entity index and distance, or {-1, Infinity} if no hit
    * @private
    */
   static _checkCellEntities(
@@ -214,9 +220,13 @@ export class Ray {
     rayLength,
     currentClosest
   ) {
+    // Reset temp result
+    Ray._tempResult.entityIndex = -1;
+    Ray._tempResult.distance = Infinity;
+
     const count = Grid.getCellEntityCount(cellIndex);
     if (count === 0) {
-      return { entityIndex: -1, distance: Infinity };
+      return;
     }
 
     const cellBase = Grid.getCellBase(cellIndex);
@@ -278,7 +288,8 @@ export class Ray {
       }
     }
 
-    return { entityIndex: closestIndex, distance: closestDist };
+    Ray._tempResult.entityIndex = closestIndex;
+    Ray._tempResult.distance = closestDist;
   }
 
   /**

@@ -24,7 +24,7 @@ import { MouseComponent } from "../components/MouseComponent.js";
 import { LightEmitter } from "../components/LightEmitter.js";
 import { Grid } from "../core/Grid.js";
 import { Ray } from "../core/Ray.js";
-import { drawLine, drawCircle, drawCross } from "../core/utils.js";
+import { drawLine, drawCircle, drawCross, sortByY } from "../core/utils.js";
 import { RENDERER_STATS, createStatsWriter } from "./workers-utils.js";
 
 // Import PixiJS 8 library (ES6 module with named exports)
@@ -55,6 +55,8 @@ import {
   TilemapPipe,
   settings as tilemapSettings,
 } from "../lib/pixi-tilemap-module.js";
+
+
 
 // Enable 32-bit indices for large tilemaps (>16K tiles)
 // Without this, only ~16,383 tiles can be rendered due to 16-bit index limit
@@ -587,8 +589,16 @@ class PixiRenderer extends AbstractWorker {
     }
 
     // Render per-entity debug visualizations
-    // DENSE ALLOCATION: entityIndex === componentIndex for all components
-    for (let i = 0; i < this.globalEntityCount; i++) {
+    // OPTIMIZED: Iterate only ACTIVE entities for debug rendering
+    // Avoids checking 100k entities when only a few hundred are active
+    const activeEntitiesData = this.activeEntitiesData;
+    const count = activeEntitiesData ? activeEntitiesData[0] : 0;
+
+    for (let j = 0; j < count; j++) {
+      // activeEntitiesData layout: [count, idx0, idx1, ...]
+      const i = activeEntitiesData[1 + j];
+      
+      // Double check active state (redundant but safe)
       if (!active[i]) continue;
 
       // DENSE: use entity index directly for component access
@@ -1568,7 +1578,8 @@ class PixiRenderer extends AbstractWorker {
 
     if (this.ySorting) {
       // Sort by Y position using native Timsort (O(n log n), highly optimized)
-      pool.sort((a, b) => a.y - b.y);
+      // OPTIMIZED: Use pre-defined comparator to avoid closure allocation
+      pool.sort(sortByY);
     }
 
     // PixiJS 8: Clear particleChildren array and re-add in sorted order
