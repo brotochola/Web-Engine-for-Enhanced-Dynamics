@@ -155,6 +155,7 @@ class ParticleWorker extends AbstractWorker {
     this.entityPosX = null; // Pre-computed entity positions for spatial_workers
     this.entityPosY = null;
     this.entityHalfExtent = null; // Pre-computed half-extents for neighbor checks
+    this.gridSyncData = null; // Atomics sync buffer for coordinating with spatial_workers
 
     // Note: activeEntitiesData is now initialized in AbstractWorker.initializeCommonBuffers
   }
@@ -415,6 +416,11 @@ class ParticleWorker extends AbstractWorker {
       this.entityPosY = new Float32Array(data.buffers.entityPosY);
       this.entityHalfExtent = new Float32Array(data.buffers.entityHalfExtent);
 
+      // Grid synchronization - Atomics to prevent spatial workers reading during rebuild
+      if (data.buffers.gridSyncData) {
+        this.gridSyncData = new Int32Array(data.buffers.gridSyncData);
+      }
+
       console.log(
         `PARTICLE WORKER: Grid rebuilding enabled (${totalCells} cells, ${this.globalEntityCount} entities)`
       );
@@ -599,7 +605,17 @@ class ParticleWorker extends AbstractWorker {
     this.buildActiveEntityList();
 
     // Rebuild spatial grid (uses active entity list) - spatial_workers will read this
+    // ATOMICS: Signal spatial workers that grid is being rebuilt (prevents reading during clear)
+    if (this.gridSyncData) {
+      Atomics.store(this.gridSyncData, 0, 0); // 0 = rebuilding
+    }
+    const gridStart = performance.now();
     this.rebuildGrid();
+    const gridEnd = performance.now();
+    if (this.gridSyncData) {
+      Atomics.store(this.gridSyncData, 0, 1); // 1 = ready
+      Atomics.notify(this.gridSyncData, 0, Infinity); // Wake all waiting spatial workers
+    }
 
     // Reset stats counters for this frame
     this.particlesStampedThisFrame = 0;

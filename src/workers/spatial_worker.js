@@ -65,13 +65,16 @@ class SpatialWorker extends AbstractWorker {
     this.occupiedCells = null; // Uint32Array - stores cell indices
     this.occupiedCount = 0;
 
-    // PROCESSED BITMASK - prevents duplicate processing of multi-cell entities
-    this.processedThisFrame = null; // Uint8Array
+    // PROCESSED MARKER - O(1) duplicate detection for multi-cell entities
+    this.processedThisFrame = null; // Int32Array
 
     // PRE-COMPUTED ENTITY DATA - avoid redundant calculations
     this.entityPosX = null; // Float32Array - collider position X (from particle_worker)
     this.entityPosY = null; // Float32Array - collider position Y (from particle_worker)
     this.entityHalfExtent = null; // Float32Array - max half-extent (from particle_worker)
+
+    // GRID SYNC - Atomics for coordinating with particle_worker's grid rebuild
+    this.gridSyncData = null; // Int32Array for Atomics.wait
 
     // Stats tracking
     this.neighborChecksThisFrame = 0;
@@ -96,9 +99,6 @@ class SpatialWorker extends AbstractWorker {
         data.buffers.spatialStats,
         SPATIAL_STATS,
         this.workerIndex
-      );
-      console.log(
-        `SPATIAL WORKER ${this.workerIndex}: Stats buffer initialized`
       );
     }
 
@@ -152,9 +152,10 @@ class SpatialWorker extends AbstractWorker {
     // Initialize to -1 (no entity has processed any other entity yet)
     this.processedThisFrame.fill(-1);
 
-    console.log(
-      `SPATIAL WORKER ${this.workerIndex}: Grid initialized with ${this.totalCells} cells (${this.gridCols}x${this.gridRows})`
-    );
+    // GRID SYNC - Atomics to wait for particle_worker to finish grid rebuild
+    if (data.buffers.gridSyncData) {
+      this.gridSyncData = new Int32Array(data.buffers.gridSyncData);
+    }
   }
 
   /**
@@ -173,8 +174,9 @@ class SpatialWorker extends AbstractWorker {
     // Use Grid class for spatial and neighbor data access
     const gridEntities = Grid.gridEntities;
     const gridCounts = Grid.gridCounts;
-    const neighborData = Grid.neighborData;
-    const distanceData = Grid.distanceData;
+    // DOUBLE BUFFERING: Get write buffer dynamically (opposite of current read buffer)
+    const neighborData = Grid._neighborDataWrite;
+    const distanceData = Grid._distanceDataWrite;
     const invCellSize = Grid.invCellSize;
     const gridCols = Grid.gridCols;
     const gridRows = Grid.gridRows;
@@ -342,9 +344,28 @@ class SpatialWorker extends AbstractWorker {
     // Mouse position is now written directly to Transform by main thread
     // No special syncing needed - spatial grid will see current position
 
+    // ATOMICS: Wait for particle_worker to finish rebuilding grid
+    // This prevents reading during the grid clear phase (which would give 0 neighbors)
+    if (this.gridSyncData) {
+      // Wait indefinitely - particle_worker ALWAYS finishes in ~1.6ms, so timeout not needed
+      // "not-equal" means: wait while value is 0 (rebuilding), wake when it becomes 1 (ready)
+      const result = Atomics.wait(this.gridSyncData, 0, 0);
+      // result: "ok" = woken by notify, "not-equal" = already ready (grid was ready before we checked)
+      // Both are fine - we just proceed to read the grid
+      if (result === "timed-out") {
+        console.error(
+          `SPATIAL WORKER ${this.workerIndex}: Atomics.wait timed out - this should never happen!`
+        );
+      }
+    }
+
     // Grid is now rebuilt by particle_worker (has spare capacity)
     // We just read the shared grid and compute neighbors for our entity slice
     this.findAllNeighbors();
+
+    // DOUBLE BUFFER SWAP: Signal that this worker finished computing neighbors
+    // The last worker to finish will swap read/write buffers
+    Grid.signalSpatialWorkerFinished();
 
     // Screen visibility is now handled by particle_worker to balance workload
   }

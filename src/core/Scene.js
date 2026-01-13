@@ -760,19 +760,36 @@ class Scene {
     );
     this.buffers.gameObjectData = new SharedArrayBuffer(gameObjectBufferSize);
 
-    // Neighbor data buffer
+    // DOUBLE BUFFERING: Neighbor data buffers (A and B)
+    // Spatial workers write to one buffer while logic/physics read from the other
+    // This eliminates race conditions and allows one-frame-lag neighbor data (negligible for gameplay)
     const maxNeighbors = this.config.spatial.maxNeighbors;
     const NEIGHBOR_BUFFER_SIZE = this.totalEntityCount * (1 + maxNeighbors) * 4;
-    this.buffers.neighborData = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
+    this.buffers.neighborDataA = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
+    this.buffers.neighborDataB = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
 
     const DISTANCE_BUFFER_SIZE = this.totalEntityCount * (1 + maxNeighbors) * 4;
-    this.buffers.distanceData = new SharedArrayBuffer(DISTANCE_BUFFER_SIZE);
+    this.buffers.distanceDataA = new SharedArrayBuffer(DISTANCE_BUFFER_SIZE);
+    this.buffers.distanceDataB = new SharedArrayBuffer(DISTANCE_BUFFER_SIZE);
+
+    // Neighbor synchronization buffer for double buffering
+    // [0] = currentReadBuffer (0 or 1) - which buffer logic/physics should read from
+    // [1] = spatialWorkersFinished (0 to numberOfSpatialWorkers) - counter for workers that finished
+    // [2] = totalSpatialWorkers - constant for comparison
+    const numberOfSpatialWorkers =
+      this.config.spatial.numberOfSpatialWorkers || 1;
+    const NEIGHBOR_SYNC_SIZE = 12; // Int32Array with 3 elements
+    this.buffers.neighborSyncData = new SharedArrayBuffer(NEIGHBOR_SYNC_SIZE);
+    const neighborSyncView = new Int32Array(this.buffers.neighborSyncData);
+    neighborSyncView[0] = 0; // Start reading from buffer A
+    neighborSyncView[1] = 0; // No workers finished yet
+    neighborSyncView[2] = numberOfSpatialWorkers; // Store total worker count
 
     GameObject.initializeArrays(
       this.buffers.gameObjectData,
       this.totalEntityCount,
-      this.buffers.neighborData,
-      this.buffers.distanceData
+      this.buffers.neighborDataA, // Start with A as read buffer
+      this.buffers.distanceDataA
     );
 
     // Create Component buffers
@@ -925,8 +942,8 @@ class Scene {
 
     // FrameRate buffer: stores real-time FPS for each worker
     // Layout: [spatial0_fps, spatial1_fps, ..., physics_fps, renderer_fps, particle_fps, logic0_fps, logic1_fps, ...]
-    const numberOfSpatialWorkers = this.config.spatial.numberOfSpatialWorkers;
-    const maxWorkers = numberOfSpatialWorkers + 3 + this.numberOfLogicWorkers; // spatial workers + physics + renderer + particle + logic workers
+    const numSpatialWorkers = this.config.spatial.numberOfSpatialWorkers;
+    const maxWorkers = numSpatialWorkers + 3 + this.numberOfLogicWorkers; // spatial workers + physics + renderer + particle + logic workers
     const FRAMERATE_BUFFER_SIZE = maxWorkers * 4; // 1 float per worker
     this.buffers.frameRateData = new SharedArrayBuffer(FRAMERATE_BUFFER_SIZE);
     this.views.frameRate = new Float32Array(this.buffers.frameRateData);
@@ -955,6 +972,14 @@ class Scene {
     this.buffers.entityPosX = new SharedArrayBuffer(ENTITY_POS_SIZE);
     this.buffers.entityPosY = new SharedArrayBuffer(ENTITY_POS_SIZE);
     this.buffers.entityHalfExtent = new SharedArrayBuffer(ENTITY_POS_SIZE);
+
+    // Grid synchronization: prevents spatial workers from reading during grid rebuild
+    // Layout: [gridReadyFlag (0=rebuilding, 1=ready)]
+    // particle_worker sets flag and notifies, spatial_workers wait if needed
+    const GRID_SYNC_SIZE = 4; // Int32Array with 1 element
+    this.buffers.gridSyncData = new SharedArrayBuffer(GRID_SYNC_SIZE);
+    const gridSyncView = new Int32Array(this.buffers.gridSyncData);
+    gridSyncView[0] = 1; // Start as ready (first frame)
 
     // Store grid metadata for workers
     this.gridMetadata = {
@@ -1293,8 +1318,12 @@ class Scene {
       msg: "init",
       buffers: {
         gameObjectData: this.buffers.gameObjectData,
-        neighborData: this.buffers.neighborData,
-        distanceData: this.buffers.distanceData,
+        // DOUBLE BUFFERED neighbor data
+        neighborDataA: this.buffers.neighborDataA,
+        neighborDataB: this.buffers.neighborDataB,
+        distanceDataA: this.buffers.distanceDataA,
+        distanceDataB: this.buffers.distanceDataB,
+        neighborSyncData: this.buffers.neighborSyncData,
         collisionData: this.buffers.collisionData,
         activeEntitiesData: this.buffers.activeEntitiesData,
         inputData: this.buffers.inputData,
@@ -1311,6 +1340,7 @@ class Scene {
         entityPosX: this.buffers.entityPosX,
         entityPosY: this.buffers.entityPosY,
         entityHalfExtent: this.buffers.entityHalfExtent,
+        gridSyncData: this.buffers.gridSyncData,
         // Worker stat buffers (detailed metrics)
         rendererStats: this.buffers.rendererStats,
         particleStats: this.buffers.particleStats,

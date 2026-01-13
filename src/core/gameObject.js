@@ -817,8 +817,15 @@ export class GameObject {
    */
   getAllNeighborIds() {
     const count = this.neighborCount;
-    const neighborData = GameObject.neighborData;
+    // Use instance property (correctly points to current read buffer in double buffering)
+    const neighborData = this._neighborData;
     const neighborOffset = this._neighborOffset;
+
+    // Safety check - return empty array if neighbor data not initialized
+    if (!neighborData) {
+      return new Int32Array(0);
+    }
+
     // Return a typed array view (zero-copy slice of the neighbor buffer)
     // Note: Int32Array elements are 4 bytes each
     return new Int32Array(
@@ -836,8 +843,14 @@ export class GameObject {
     const count = this.neighborCount;
     const neighbors = new Array(count);
     const entities = GameObject.instances;
-    const neighborData = GameObject.neighborData;
+    // Use instance property (correctly points to current read buffer in double buffering)
+    const neighborData = this._neighborData;
     const neighborOffset = this._neighborOffset;
+
+    // Safety check - return empty array if neighbor data not initialized
+    if (!neighborData) {
+      return [];
+    }
 
     let validCount = 0;
     for (let i = 0; i < count; i++) {
