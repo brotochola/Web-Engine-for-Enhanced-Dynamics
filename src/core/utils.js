@@ -43,6 +43,215 @@ export function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
+// ============================================================================
+// RAY INTERSECTION UTILITIES
+// Pure geometric functions - no object allocation, return distance or -1
+// ============================================================================
+
+/**
+ * Ray-Circle intersection test
+ * Returns distance to hit point, or -1 if no hit
+ *
+ * @param {number} rayX - Ray origin X
+ * @param {number} rayY - Ray origin Y
+ * @param {number} dirX - Normalized ray direction X
+ * @param {number} dirY - Normalized ray direction Y
+ * @param {number} circleX - Circle center X
+ * @param {number} circleY - Circle center Y
+ * @param {number} radius - Circle radius
+ * @param {number} maxDist - Maximum ray distance
+ * @returns {number} Distance to intersection, or -1 if no hit
+ */
+export function rayCircleIntersect(
+  rayX,
+  rayY,
+  dirX,
+  dirY,
+  circleX,
+  circleY,
+  radius,
+  maxDist
+) {
+  // Vector from ray origin to circle center
+  const toCircleX = circleX - rayX;
+  const toCircleY = circleY - rayY;
+
+  // Project circle center onto ray
+  const projection = toCircleX * dirX + toCircleY * dirY;
+
+  // If projection is negative, circle is behind ray
+  if (projection < 0) {
+    return -1;
+  }
+
+  // Find closest point on ray to circle center
+  const closestX = rayX + dirX * projection;
+  const closestY = rayY + dirY * projection;
+
+  // Distance from closest point to circle center
+  const distX = circleX - closestX;
+  const distY = circleY - closestY;
+  const distSq = distX * distX + distY * distY;
+  const radiusSq = radius * radius;
+
+  // Check if ray intersects circle
+  if (distSq > radiusSq) {
+    return -1;
+  }
+
+  // Calculate intersection distance
+  const halfChord = Math.sqrt(radiusSq - distSq);
+  const distance = projection - halfChord;
+
+  // Check if within max distance and not behind ray origin
+  if (distance > maxDist || distance < 0) {
+    return -1;
+  }
+
+  return distance;
+}
+
+/**
+ * Ray-Circle hit test (fast path when distance not needed)
+ * Returns true if ray hits circle, false otherwise
+ *
+ * @param {number} rayX - Ray origin X
+ * @param {number} rayY - Ray origin Y
+ * @param {number} dirX - Normalized ray direction X
+ * @param {number} dirY - Normalized ray direction Y
+ * @param {number} circleX - Circle center X
+ * @param {number} circleY - Circle center Y
+ * @param {number} radius - Circle radius
+ * @param {number} maxDist - Maximum ray distance
+ * @returns {boolean} True if hit, false otherwise
+ */
+export function rayCircleHit(
+  rayX,
+  rayY,
+  dirX,
+  dirY,
+  circleX,
+  circleY,
+  radius,
+  maxDist
+) {
+  return (
+    rayCircleIntersect(
+      rayX,
+      rayY,
+      dirX,
+      dirY,
+      circleX,
+      circleY,
+      radius,
+      maxDist
+    ) >= 0
+  );
+}
+
+/**
+ * Ray-Box (AABB) intersection test
+ * Returns distance to hit point, or -1 if no hit
+ *
+ * @param {number} rayX - Ray origin X
+ * @param {number} rayY - Ray origin Y
+ * @param {number} dirX - Normalized ray direction X
+ * @param {number} dirY - Normalized ray direction Y
+ * @param {number} boxX - Box center X
+ * @param {number} boxY - Box center Y
+ * @param {number} width - Box width
+ * @param {number} height - Box height
+ * @param {number} maxDist - Maximum ray distance
+ * @returns {number} Distance to intersection, or -1 if no hit
+ */
+export function rayBoxIntersect(
+  rayX,
+  rayY,
+  dirX,
+  dirY,
+  boxX,
+  boxY,
+  width,
+  height,
+  maxDist
+) {
+  // Box bounds (assuming center-aligned)
+  const halfW = width * 0.5;
+  const halfH = height * 0.5;
+  const minX = boxX - halfW;
+  const maxX = boxX + halfW;
+  const minY = boxY - halfH;
+  const maxY = boxY + halfH;
+
+  // Compute intersection distances for each axis
+  const invDirX = dirX !== 0 ? 1 / dirX : Infinity;
+  const invDirY = dirY !== 0 ? 1 / dirY : Infinity;
+
+  const t1 = (minX - rayX) * invDirX;
+  const t2 = (maxX - rayX) * invDirX;
+  const t3 = (minY - rayY) * invDirY;
+  const t4 = (maxY - rayY) * invDirY;
+
+  const tmin = Math.max(Math.min(t1, t2), Math.min(t3, t4));
+  const tmax = Math.min(Math.max(t1, t2), Math.max(t3, t4));
+
+  // No intersection if tmax < 0 or tmin > tmax
+  if (tmax < 0 || tmin > tmax) {
+    return -1;
+  }
+
+  // Distance to intersection
+  const distance = tmin >= 0 ? tmin : tmax;
+
+  // Check if within max distance and not behind ray origin
+  if (distance > maxDist || distance < 0) {
+    return -1;
+  }
+
+  return distance;
+}
+
+/**
+ * Ray-Box hit test (fast path when distance not needed)
+ * Returns true if ray hits box, false otherwise
+ *
+ * @param {number} rayX - Ray origin X
+ * @param {number} rayY - Ray origin Y
+ * @param {number} dirX - Normalized ray direction X
+ * @param {number} dirY - Normalized ray direction Y
+ * @param {number} boxX - Box center X
+ * @param {number} boxY - Box center Y
+ * @param {number} width - Box width
+ * @param {number} height - Box height
+ * @param {number} maxDist - Maximum ray distance
+ * @returns {boolean} True if hit, false otherwise
+ */
+export function rayBoxHit(
+  rayX,
+  rayY,
+  dirX,
+  dirY,
+  boxX,
+  boxY,
+  width,
+  height,
+  maxDist
+) {
+  return (
+    rayBoxIntersect(
+      rayX,
+      rayY,
+      dirX,
+      dirY,
+      boxX,
+      boxY,
+      width,
+      height,
+      maxDist
+    ) >= 0
+  );
+}
+
 /**
  * Resolve a value that can be a number or { min, max } range
  * @param {number|{min:number, max:number}} value - Value or range
@@ -796,6 +1005,146 @@ export function exposeEntityClassesGlobally(registeredClasses, globalRef) {
   }
 
   return exposedNames;
+}
+
+// ============================================================================
+// DEBUG DRAWING UTILITIES
+// Helper functions for debug visualization in PixiJS
+// ============================================================================
+
+/**
+ * Draw a debug line on a PIXI Graphics layer
+ * Can optionally draw a dashed "remainder" portion after a hit point
+ *
+ * @param {PIXI.Graphics} graphics - The Graphics layer to draw on
+ * @param {Object} options - Drawing options:
+ *   - startX, startY: Line start position
+ *   - endX, endY: Line end position
+ *   - color: Line color (hex, e.g. 0x00ff00)
+ *   - alpha: Line alpha (0-1)
+ *   - width: Line width (will be scaled by zoom)
+ *   - zoom: Camera zoom level (for consistent line width)
+ *   - dashed: If true, draw as dashed line
+ *   - dashLength: Length of each dash (default 10)
+ */
+export function drawLine(graphics, options) {
+  const {
+    startX,
+    startY,
+    endX,
+    endY,
+    color = 0xffffff,
+    alpha = 1.0,
+    width = 1,
+    zoom = 1,
+    dashed = false,
+    dashLength = 10,
+  } = options;
+
+  const scaledWidth = width / zoom;
+
+  if (!dashed) {
+    // Solid line
+    graphics
+      .moveTo(startX, startY)
+      .lineTo(endX, endY)
+      .stroke({ width: scaledWidth, color, alpha });
+  } else {
+    // Dashed line
+    const dx = endX - startX;
+    const dy = endY - startY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const segments = Math.ceil(dist / dashLength);
+    const stepX = dx / segments;
+    const stepY = dy / segments;
+
+    for (let s = 0; s < segments; s += 2) {
+      const x1 = startX + stepX * s;
+      const y1 = startY + stepY * s;
+      const x2 = startX + stepX * Math.min(s + 1, segments);
+      const y2 = startY + stepY * Math.min(s + 1, segments);
+
+      graphics
+        .moveTo(x1, y1)
+        .lineTo(x2, y2)
+        .stroke({ width: scaledWidth, color, alpha });
+    }
+  }
+}
+
+/**
+ * Draw a debug circle on a PIXI Graphics layer
+ *
+ * @param {PIXI.Graphics} graphics - The Graphics layer to draw on
+ * @param {Object} options - Drawing options:
+ *   - x, y: Circle center position
+ *   - radius: Circle radius
+ *   - color: Fill/stroke color (hex)
+ *   - alpha: Alpha (0-1)
+ *   - zoom: Camera zoom level (for consistent size)
+ *   - fill: If true, fill the circle (default true)
+ *   - stroke: If true, stroke the circle (default false)
+ *   - strokeWidth: Stroke width (default 1)
+ */
+export function drawCircle(graphics, options) {
+  const {
+    x,
+    y,
+    radius,
+    color = 0xffffff,
+    alpha = 1.0,
+    zoom = 1,
+    fill = true,
+    stroke = false,
+    strokeWidth = 1,
+  } = options;
+
+  const scaledRadius = radius / zoom;
+
+  graphics.circle(x, y, scaledRadius);
+
+  if (fill) {
+    graphics.fill({ color, alpha });
+  }
+  if (stroke) {
+    graphics.stroke({ width: strokeWidth / zoom, color, alpha });
+  }
+}
+
+/**
+ * Draw a debug cross marker on a PIXI Graphics layer
+ *
+ * @param {PIXI.Graphics} graphics - The Graphics layer to draw on
+ * @param {Object} options - Drawing options:
+ *   - x, y: Cross center position
+ *   - size: Cross arm length
+ *   - color: Line color (hex)
+ *   - alpha: Alpha (0-1)
+ *   - width: Line width
+ *   - zoom: Camera zoom level
+ */
+export function drawCross(graphics, options) {
+  const {
+    x,
+    y,
+    size = 8,
+    color = 0xffffff,
+    alpha = 1.0,
+    width = 2,
+    zoom = 1,
+  } = options;
+
+  const scaledSize = size / zoom;
+  const scaledWidth = width / zoom;
+
+  graphics
+    .moveTo(x - scaledSize, y)
+    .lineTo(x + scaledSize, y)
+    .stroke({ width: scaledWidth, color, alpha });
+  graphics
+    .moveTo(x, y - scaledSize)
+    .lineTo(x, y + scaledSize)
+    .stroke({ width: scaledWidth, color, alpha });
 }
 
 export function printLogo() {

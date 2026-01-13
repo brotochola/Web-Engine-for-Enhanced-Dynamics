@@ -689,6 +689,7 @@ export class DebugUI {
       spatialGrid: "showSpatialGrid",
       aabb: "showAABB",
       entityIndices: "showEntityIndices",
+      raycasts: "showRaycasts",
     };
 
     const method = methodMap[key];
@@ -1032,6 +1033,7 @@ export class DebugUI {
       { key: "spatialGrid", label: "Grid", shortcut: "5" },
       { key: "aabb", label: "AABB", shortcut: "6" },
       { key: "entityIndices", label: "Indices", shortcut: "7" },
+      { key: "raycasts", label: "Raycasts", shortcut: "8" },
     ];
 
     for (const aid of visualAids) {

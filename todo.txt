@@ -21,10 +21,6 @@ y tenemos la lista de entidades q usan cada component.
 FSM
 ------
 
-class WEED.FSM extends component{}
-class FSMEnemigos extends WEED.FSM{}
-class EstadoIdleEnemigo extends WEED.FSMState{}
-
 
 
 
@@ -33,13 +29,6 @@ class EstadoIdleEnemigo extends WEED.FSMState{}
 RAY CAST
 --------
 
-
-(en logic workers)
-
-Ray.cast(xFrom,yFrom,xTo,yTo,maxDist){
-const cellFrom=getCell(xFrom,yFrom)
-const entities=getEntitiesFromCell(cellFrom)
-}
 
 
 

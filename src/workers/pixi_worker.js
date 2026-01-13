@@ -22,6 +22,9 @@ import { DEBUG_FLAGS } from "../core/DebugFlags.js";
 import { Mouse } from "../core/Mouse.js";
 import { MouseComponent } from "../components/MouseComponent.js";
 import { LightEmitter } from "../components/LightEmitter.js";
+import { Grid } from "../core/Grid.js";
+import { Ray } from "../core/Ray.js";
+import { drawLine, drawCircle, drawCross } from "../core/utils.js";
 import { RENDERER_STATS, createStatsWriter } from "./workers-utils.js";
 
 // Import PixiJS 8 library (ES6 module with named exports)
@@ -347,6 +350,8 @@ class PixiRenderer extends AbstractWorker {
     // Debug visualization
     this.debugLayer = null; // PIXI.Graphics for debug overlays
     this.debugFlags = null; // Uint8Array view of debug flags from SharedArrayBuffer
+    this.raycastDebugBuffer = null; // Float32Array - raycast visualization data
+    this.maxDebugRaycasts = 100; // Maximum raycasts to render
     this.debugColors = {
       collider: 0x00ff00, // Green
       trigger: 0xffff00, // Yellow
@@ -616,6 +621,11 @@ class PixiRenderer extends AbstractWorker {
     // Render neighbor connections (after all entities to avoid occlusion)
     if (this.debugFlags[DEBUG_FLAGS.SHOW_NEIGHBORS]) {
       this.renderNeighborConnections();
+    }
+
+    // Render raycasts (after all entities)
+    if (this.debugFlags[DEBUG_FLAGS.SHOW_RAYCASTS]) {
+      this.renderRaycasts();
     }
   }
 
@@ -898,11 +908,12 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * Render neighbor connections (requires neighbor data from spatial worker)
+   * Render neighbor connections (requires neighbor data from Grid)
    * INTERACTIVE: Only shows neighbors for the entity closest to the mouse
+   * Uses Grid class for unified neighbor data access
    */
   renderNeighborConnections() {
-    if (!GameObject.neighborData) return;
+    if (!Grid.neighborData) return;
 
     // Get mouse position from input buffer (world coordinates)
     const mouseX = Mouse.x;
@@ -915,19 +926,17 @@ class PixiRenderer extends AbstractWorker {
     const active = Transform.active;
     const x = Transform.x;
     const y = Transform.y;
-    const maxNeighbors = this.config.spatial?.maxNeighbors || 100;
 
     // Mouse is always at entity index 0
     // Get the Mouse's neighbors to find the closest entity to the mouse
-    const mouseOffset = 0 * (1 + maxNeighbors);
-    const mouseNeighborCount = GameObject.neighborData[mouseOffset];
+    const mouseNeighborCount = Grid.getNeighborCount(0);
 
     // Find the entity closest to the mouse from its neighbor list
     let closestEntity = -1;
     let closestDist2 = Infinity;
 
     for (let n = 0; n < mouseNeighborCount; n++) {
-      const neighborIndex = GameObject.neighborData[mouseOffset + 1 + n];
+      const neighborIndex = Grid.getNeighbor(0, n);
       if (!active[neighborIndex]) continue;
 
       const dx = x[neighborIndex] - mouseX;
@@ -945,46 +954,158 @@ class PixiRenderer extends AbstractWorker {
 
     const myX = x[closestEntity];
     const myY = y[closestEntity];
+    const zoom = this.cameraData[0];
 
     // Highlight the selected entity with a bright ring
     // DENSE: use entity index directly for component access
     const highlightRadius = Collider.radius[closestEntity] * 1.5 || 10;
     this.debugLayer
       .circle(myX, myY, highlightRadius)
-      .stroke({ width: 3 / this.cameraData[0], color: 0xffff00, alpha: 1.0 });
+      .stroke({ width: 3 / zoom, color: 0xffff00, alpha: 1.0 });
 
-    const offset = closestEntity * (1 + maxNeighbors);
-    const neighborCount = GameObject.neighborData[offset];
+    const neighborCount = Grid.getNeighborCount(closestEntity);
 
     // Draw all neighbors for this entity (no limit needed since it's just one entity)
     for (let n = 0; n < neighborCount; n++) {
-      const neighborIndex = GameObject.neighborData[offset + 1 + n];
+      const neighborIndex = Grid.getNeighbor(closestEntity, n);
       if (!active[neighborIndex]) continue;
 
       const neighborX = x[neighborIndex];
       const neighborY = y[neighborIndex];
 
-      // Draw the line connection
-      this.debugLayer
-        .moveTo(myX, myY)
-        .lineTo(neighborX, neighborY)
-        .stroke({
-          width: 2 / this.cameraData[0],
-          color: this.debugColors.neighbor,
-          alpha: 0.7,
-        });
+      // Draw the line connection using drawLine utility
+      drawLine(this.debugLayer, {
+        startX: myX,
+        startY: myY,
+        endX: neighborX,
+        endY: neighborY,
+        color: this.debugColors.neighbor,
+        alpha: 0.7,
+        width: 2,
+        zoom,
+      });
 
       // Draw a small circle on the neighbor
-      this.debugLayer
-        .circle(neighborX, neighborY, 3 / this.cameraData[0])
-        .fill({ color: this.debugColors.neighbor, alpha: 0.5 });
+      drawCircle(this.debugLayer, {
+        x: neighborX,
+        y: neighborY,
+        radius: 3,
+        color: this.debugColors.neighbor,
+        alpha: 0.5,
+        zoom,
+      });
     }
 
-    // Draw entity info text (index and neighbor count)
-    // Note: We'll use a simple marker for now, full text rendering would need PIXI.Text pool
-    this.debugLayer
-      .circle(myX, myY - 20 / this.cameraData[0], 4 / this.cameraData[0])
-      .fill({ color: 0xffffff, alpha: 0.9 });
+    // Draw entity info marker
+    drawCircle(this.debugLayer, {
+      x: myX,
+      y: myY - 20 / zoom,
+      radius: 4,
+      color: 0xffffff,
+      alpha: 0.9,
+      zoom,
+    });
+  }
+
+  /**
+   * Render raycasts from debug buffer
+   * Uses drawLine, drawCircle, drawCross utilities for consistent debug rendering
+   */
+  renderRaycasts() {
+    if (!this.raycastDebugBuffer) return;
+
+    // Get count of raycasts to render
+    const count = Math.min(
+      this.raycastDebugBuffer[0],
+      this.maxDebugRaycasts || 100
+    );
+
+    if (count === 0) return;
+
+    const zoom = this.cameraData[0];
+
+    // Render each raycast
+    for (let i = 0; i < count; i++) {
+      const offset = 1 + i * 7;
+      const startX = this.raycastDebugBuffer[offset];
+      const startY = this.raycastDebugBuffer[offset + 1];
+      const endX = this.raycastDebugBuffer[offset + 2];
+      const endY = this.raycastDebugBuffer[offset + 3];
+      const hitX = this.raycastDebugBuffer[offset + 4];
+      const hitY = this.raycastDebugBuffer[offset + 5];
+      const didHit = this.raycastDebugBuffer[offset + 6] === 1;
+
+      if (didHit) {
+        // Hit: Draw line to hit point in green
+        drawLine(this.debugLayer, {
+          startX,
+          startY,
+          endX: hitX,
+          endY: hitY,
+          color: 0x00ff00,
+          alpha: 0.8,
+          width: 2,
+          zoom,
+        });
+
+        // Draw dashed line from hit to end in red
+        drawLine(this.debugLayer, {
+          startX: hitX,
+          startY: hitY,
+          endX,
+          endY,
+          color: 0xff0000,
+          alpha: 0.4,
+          width: 1,
+          zoom,
+          dashed: true,
+          dashLength: 10,
+        });
+
+        // Draw hit point circle
+        drawCircle(this.debugLayer, {
+          x: hitX,
+          y: hitY,
+          radius: 4,
+          color: 0xff0000,
+          alpha: 1.0,
+          zoom,
+        });
+
+        // Draw impact cross
+        drawCross(this.debugLayer, {
+          x: hitX,
+          y: hitY,
+          size: 8,
+          color: 0xffffff,
+          alpha: 1.0,
+          width: 2,
+          zoom,
+        });
+      } else {
+        // Miss: Draw full line in yellow/orange
+        drawLine(this.debugLayer, {
+          startX,
+          startY,
+          endX,
+          endY,
+          color: 0xffaa00,
+          alpha: 0.5,
+          width: 1,
+          zoom,
+        });
+      }
+
+      // Draw start point
+      drawCircle(this.debugLayer, {
+        x: startX,
+        y: startY,
+        radius: 3,
+        color: 0x00ffff,
+        alpha: 0.8,
+        zoom,
+      });
+    }
   }
 
   /**
@@ -1479,6 +1600,10 @@ class PixiRenderer extends AbstractWorker {
    * Update method called each frame (implementation of AbstractWorker.update)
    */
   update(deltaTime, dtRatio, resuming) {
+    // Clear debug raycasts from previous frame (at start of render frame)
+    // This ensures raycasts are displayed for exactly one frame
+    Ray.clearDebugRaycasts();
+
     this.updateCameraTransform();
 
     // Update decal decal tiles (check for dirty tiles from particle_worker)
@@ -3228,6 +3353,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.debugLayer = new PIXI.Graphics();
       this.debugLayer.zIndex = 10000; // Always on top
       this.pixiApp.stage.addChild(this.debugLayer);
+
+      // Initialize raycast debug buffer
+      if (data.buffers.raycastDebugData) {
+        this.raycastDebugBuffer = new Float32Array(
+          data.buffers.raycastDebugData
+        );
+        this.maxDebugRaycasts = data.maxDebugRaycasts || 100;
+        console.log(
+          `PIXI WORKER: Raycast debug buffer initialized (max ${this.maxDebugRaycasts} raycasts)`
+        );
+      }
 
       // Note: Collider component arrays are automatically initialized by
       // AbstractWorker.initializeAllComponents()

@@ -152,6 +152,7 @@ class Scene {
       syncData: null,
       jobQueueData: null,
       debugData: null,
+      raycastDebugData: null, // Raycast visualization data
       frameRateData: null, // Real-time FPS tracking per worker
       componentData: {
         Transform: null,
@@ -159,6 +160,9 @@ class Scene {
         Collider: null,
         SpriteRenderer: null,
       },
+      // Spatial grid buffers (for raycasting)
+      gridEntities: null,
+      gridCounts: null,
       // Worker stat buffers (strided SharedArrayBuffers for detailed metrics)
       rendererStats: null,
       particleStats: null,
@@ -911,6 +915,14 @@ class Scene {
     this.buffers.debugData = new SharedArrayBuffer(DEBUG_BUFFER_SIZE);
     this.debugFlags = new DebugFlags(this.buffers.debugData);
 
+    // Raycast debug buffer - stores recent raycasts for visualization
+    // Layout: [count, ray0_startX, ray0_startY, ray0_endX, ray0_endY, ray0_hitX, ray0_hitY, ray0_hit, ray1_...]
+    // 1 + maxRaycasts * 7 floats (startX, startY, endX, endY, hitX, hitY, hit)
+    const maxDebugRaycasts = 100;
+    const RAYCAST_DEBUG_SIZE = (1 + maxDebugRaycasts * 7) * 4; // Float32Array
+    this.buffers.raycastDebugData = new SharedArrayBuffer(RAYCAST_DEBUG_SIZE);
+    this.maxDebugRaycasts = maxDebugRaycasts;
+
     // FrameRate buffer: stores real-time FPS for each worker
     // Layout: [spatial0_fps, spatial1_fps, ..., physics_fps, renderer_fps, particle_fps, logic0_fps, logic1_fps, ...]
     const numberOfSpatialWorkers = this.config.spatial.numberOfSpatialWorkers;
@@ -918,6 +930,36 @@ class Scene {
     const FRAMERATE_BUFFER_SIZE = maxWorkers * 4; // 1 float per worker
     this.buffers.frameRateData = new SharedArrayBuffer(FRAMERATE_BUFFER_SIZE);
     this.views.frameRate = new Float32Array(this.buffers.frameRateData);
+
+    // Spatial Grid buffers - shared across all workers for raycasting
+    // Calculate grid dimensions
+    const cellSize = this.config.spatial?.cellSize || this.config.cellSize;
+    const gridCols = Math.ceil(this.config.worldWidth / cellSize);
+    const gridRows = Math.ceil(this.config.worldHeight / cellSize);
+    const totalCells = gridCols * gridRows;
+    const maxEntitiesPerCell = 64; // Must match spatial_worker.js
+
+    // gridEntities: flat array storing entity IDs per cell
+    const GRID_ENTITIES_SIZE = totalCells * maxEntitiesPerCell * 4; // Uint32Array
+    this.buffers.gridEntities = new SharedArrayBuffer(GRID_ENTITIES_SIZE);
+
+    // gridCounts: number of entities in each cell
+    const GRID_COUNTS_SIZE = totalCells * 2; // Uint16Array
+    this.buffers.gridCounts = new SharedArrayBuffer(GRID_COUNTS_SIZE);
+
+    // Store grid metadata for workers
+    this.gridMetadata = {
+      cellSize,
+      invCellSize: 1 / cellSize,
+      gridCols,
+      gridRows,
+      totalCells,
+      maxEntitiesPerCell,
+    };
+
+    console.log(
+      `[Scene] Spatial grid: ${gridCols}x${gridRows} cells (${totalCells} total), ${cellSize}px cell size`
+    );
 
     // Worker stat buffers: detailed metrics for each worker type
     // Each buffer uses strided layout for cache-line isolation (64 bytes per worker)
@@ -1251,8 +1293,12 @@ class Scene {
         syncData: this.buffers.syncData,
         jobQueueData: this.buffers.jobQueueData,
         debugData: this.buffers.debugData,
+        raycastDebugData: this.buffers.raycastDebugData,
         frameRateData: this.buffers.frameRateData,
         componentData: this.buffers.componentData,
+        // Spatial grid buffers (for raycasting)
+        gridEntities: this.buffers.gridEntities,
+        gridCounts: this.buffers.gridCounts,
         // Worker stat buffers (detailed metrics)
         rendererStats: this.buffers.rendererStats,
         particleStats: this.buffers.particleStats,
@@ -1262,6 +1308,8 @@ class Scene {
       },
       globalEntityCount: this.totalEntityCount,
       config: this.config,
+      gridMetadata: this.gridMetadata,
+      maxDebugRaycasts: this.maxDebugRaycasts,
       scriptsToLoad: scriptsToLoad,
       registeredClasses: this.registeredClasses.map((r) => ({
         name: r.class.name,

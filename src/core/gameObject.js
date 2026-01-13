@@ -735,47 +735,49 @@ export class GameObject {
    * Update neighbor references for this entity
    * Called by logic worker before tick() each frame
    *
-   * @param {Int32Array} neighborData - Precomputed neighbors from spatial worker
-   * @param {Float32Array} distanceData - Precomputed squared distances from spatial worker
+   * @param {Int32Array} neighborData - Precomputed neighbors from spatial worker (deprecated, uses Grid)
+   * @param {Float32Array} distanceData - Precomputed squared distances from spatial worker (deprecated, uses Grid)
    */
   /**
    * Update neighbor references for this entity
    * Called by logic worker before tick() each frame
    *
-   * OPTIMIZED: No longer creates subarray views (GC free)
-   * Instead set the offset and count for use with getNeighbor()
-   *
-   * @param {Int32Array} neighborData - Precomputed neighbors from spatial worker
-   * @param {Float32Array} distanceData - Precomputed squared distances from spatial worker
+   * OPTIMIZED: Uses Grid class for neighbor access (GC free)
+   * Updates neighborCount from Grid for this entity
    */
-  updateNeighbors(neighborData, distanceData = null) {
-    // Handle both nested (main thread) and flat (worker) config structures
-    const maxNeighbors =
-      this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
-
-    if (!neighborData || !maxNeighbors) {
-      this.neighborCount = 0;
-      this._neighborOffset = 0;
+  updateNeighbors() {
+    // Use Grid class if available (preferred)
+    if (typeof Grid !== "undefined" && Grid.neighborData) {
+      this.neighborCount = Grid.getNeighborCount(this.index);
       return;
     }
 
-    // Parse neighbor data buffer: [count, id1, id2, ..., id_MAX]
-    this._neighborOffset = this.index * (1 + maxNeighbors);
-    this.neighborCount = neighborData[this._neighborOffset];
+    // Fallback to legacy static arrays if Grid not available
+    if (GameObject.neighborData) {
+      const maxNeighbors =
+        this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
+      this._neighborOffset = this.index * (1 + maxNeighbors);
+      this.neighborCount = GameObject.neighborData[this._neighborOffset];
+      return;
+    }
 
-    // NOTE: neighbors array is no longer created to avoid GC
-    // Use this.getNeighbor(i) instead
+    this.neighborCount = 0;
   }
 
   /**
    * Get neighbor index at specific position
    * Zero-allocation replacement for this.neighbors[i]
+   * Uses Grid class for unified access
    * @param {number} i - Index (0 to this.neighborCount - 1)
    * @returns {number} Entity index of the neighbor
    */
   getNeighbor(i) {
+    // Use Grid class if available (preferred)
+    if (typeof Grid !== "undefined" && Grid.neighborData) {
+      return Grid.getNeighbor(this.index, i);
+    }
+    // Fallback to legacy static arrays
     if (GameObject.neighborData) {
-      // Offset + 1 (skip count) + i
       return GameObject.neighborData[this._neighborOffset + 1 + i];
     }
     return -1;
@@ -784,12 +786,17 @@ export class GameObject {
   /**
    * Get neighbor distance squared at specific position
    * Zero-allocation replacement for this.neighborDistances[i]
+   * Uses Grid class for unified access
    * @param {number} i - Index (0 to this.neighborCount - 1)
    * @returns {number} Squared distance to the neighbor
    */
   getNeighborDistance(i) {
+    // Use Grid class if available (preferred)
+    if (typeof Grid !== "undefined" && Grid.distanceData) {
+      return Grid.getNeighborDistanceSq(this.index, i);
+    }
+    // Fallback to legacy static arrays
     if (GameObject.distanceData) {
-      // Offset + 1 (skip count) + i
       return GameObject.distanceData[this._neighborOffset + 1 + i];
     }
     return 0;

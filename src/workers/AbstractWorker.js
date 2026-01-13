@@ -16,6 +16,8 @@ import {
   exposeEntityClassesGlobally,
 } from "../core/utils.js";
 import { Camera } from "../core/Camera.js";
+import { Ray } from "../core/Ray.js";
+import { Grid } from "../core/Grid.js";
 import { ParticleComponent } from "../components/ParticleComponent.js";
 import { DecorationComponent } from "../components/DecorationComponent.js";
 
@@ -365,6 +367,41 @@ export class AbstractWorker {
     if (this.registeredClasses && this.registeredClasses.length > 0) {
       this.initializeAllComponents(data);
     }
+
+    // Initialize Grid system with grid buffers and neighbor data
+    // Grid is the unified spatial data access point for all workers
+    if (
+      data.buffers?.gridEntities &&
+      data.buffers?.gridCounts &&
+      data.gridMetadata
+    ) {
+      const maxNeighbors =
+        this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
+
+      Grid.initialize(
+        {
+          gridEntities: data.buffers.gridEntities,
+          gridCounts: data.buffers.gridCounts,
+          neighborData: data.buffers.neighborData,
+          distanceData: data.buffers.distanceData,
+        },
+        {
+          ...data.gridMetadata,
+          maxNeighbors: maxNeighbors,
+        }
+      );
+      this.reportLog("Grid system initialized with spatial data and neighbors");
+    }
+
+    // Initialize Ray system with debug buffers (uses Grid for spatial data)
+    if (data.buffers?.debugData || data.buffers?.raycastDebugData) {
+      Ray.initialize(
+        data.buffers.debugData, // Debug flags
+        data.buffers.raycastDebugData, // Debug raycast buffer
+        data.maxDebugRaycasts || 100
+      );
+      this.reportLog("Ray system initialized with debug support");
+    }
   }
 
   /**
@@ -375,6 +412,8 @@ export class AbstractWorker {
     self.GameObject = GameObject;
     self.Mouse = Mouse;
     self.Keyboard = Keyboard;
+    self.Ray = Ray;
+    self.Grid = Grid;
     self.ParticleEmitter = ParticleEmitter;
     self.ParticleComponent = ParticleComponent;
     self.Flash = Flash;
