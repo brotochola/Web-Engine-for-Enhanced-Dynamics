@@ -339,9 +339,14 @@ class SpatialWorker extends AbstractWorker {
       const myY = entityPosY[i];
       const myVisualRange = visualRange[i];
 
+      // Buffer offset for this entity's neighbor list (calculate once, used for both zero and full writes)
+      const offset = i * stride;
+
       // Skip entities with no visual range - they don't need neighbors
       if (myVisualRange <= 0) {
-        Grid.setNeighborCount(i, 0);
+        // Direct array write (no method call overhead)
+        neighborData[offset] = 0;
+        distanceData[offset] = 0;
         continue;
       }
 
@@ -352,8 +357,6 @@ class SpatialWorker extends AbstractWorker {
       const col = (myX * invCellSize) | 0;
       const row = (myY * invCellSize) | 0;
 
-      // Buffer offset for this entity's neighbor list (for direct array access in hot loop)
-      const offset = Grid.getNeighborOffset(i);
       let neighborCount = 0;
 
       // Pre-calculate row bounds (avoid repeated bound checks)
@@ -425,8 +428,9 @@ class SpatialWorker extends AbstractWorker {
         if (neighborCount >= maxNeighbors) break;
       }
 
-      // Store neighbor count using Grid method
-      Grid.setNeighborCount(i, neighborCount);
+      // Store neighbor count using direct array access (no method call overhead)
+      neighborData[offset] = neighborCount;
+      distanceData[offset] = neighborCount;
     }
   }
 
