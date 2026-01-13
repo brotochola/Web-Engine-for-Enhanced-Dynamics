@@ -172,7 +172,7 @@ export class PredatorScene extends WEED.Scene {
     this.numberOfTallLights = 100;
     this.numberOfHouses = 10;
     this.numberOfGrass = 10000;
-    this.numberOfPersonsWithFSM = 0; // FSM-based civilians
+    this.numberOfPersonsWithFSM = 10000; // FSM-based civilians
 
     // Player reference (will be set in create())
     this.playerEntity = null;
