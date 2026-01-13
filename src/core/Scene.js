@@ -27,7 +27,6 @@ import { DebugFlags } from "./DebugFlags.js";
 import { Mouse } from "./Mouse.js";
 import { Flash } from "./Flash.js";
 import { BigAtlasInspector } from "./BigAtlasInspector.js";
-import { MainThreadLogicHelper } from "./MainThreadLogicHelper.js";
 import { Camera } from "./Camera.js";
 import { QuerySystem } from "./QuerySystem.js";
 import {
@@ -223,9 +222,6 @@ class Scene {
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
       this.workerStats.logic.push({ fps: 0, active: 0 });
     }
-
-    // Main thread job stealing
-    this.mainThreadHelper = null;
 
     // Canvas - now provided by GameEngine
     this.canvas = game.canvas;
@@ -645,9 +641,6 @@ class Scene {
     // Wait for all workers to be ready
     await this.readyPromise;
 
-    // Initialize main thread helper
-    this.initMainThreadHelper();
-
     // Expose scene and component references globally for console access
     this.exposeGlobalReferences();
 
@@ -748,16 +741,6 @@ class Scene {
 
   // ... (rest of the methods from GameEngine.js - kept exactly the same)
   // I'll include the essential ones inline and reference the rest
-
-  initMainThreadHelper() {
-    if (!this.config.logic.useMainThreadAsLogicWorker) return;
-
-    this.mainThreadHelper = new MainThreadLogicHelper(this);
-    this.mainThreadHelper.initialize();
-    this.mainThreadHelper.setMaxJobsPerFrame(
-      this.config.logic.mainThreadMaxJobsPerFrame
-    );
-  }
 
   createSharedBuffers() {
     // Verify Mouse is at index 0
@@ -961,11 +944,7 @@ class Scene {
     syncView[0] = 0;
     syncView[1] = 0;
 
-    this.mainThreadJobStealingEnabled =
-      this.config.logic.useMainThreadAsLogicWorker;
-    const totalWorkers = this.mainThreadJobStealingEnabled
-      ? this.config.logic.numberOfLogicWorkers + 1
-      : this.config.logic.numberOfLogicWorkers;
+    const totalWorkers = this.config.logic.numberOfLogicWorkers;
     syncView[2] = totalWorkers;
     syncView[3] = 0;
     syncView[4] = 1;
@@ -1628,10 +1607,6 @@ class Scene {
       Camera.setZoom(newZoom);
     };
 
-    this._visibilityChangeHandler = () => {
-      this.handleVisibilityChange();
-    };
-
     window.addEventListener("keydown", this._keydownHandler);
     window.addEventListener("keyup", this._keyupHandler);
     this.canvas.addEventListener("mousedown", this._mousedownHandler);
@@ -1639,25 +1614,6 @@ class Scene {
     this.canvas.addEventListener("mousemove", this._mousemoveHandler);
     this.canvas.addEventListener("mouseleave", this._mouseleaveHandler);
     window.addEventListener("wheel", this._wheelHandler, { passive: false });
-    document.addEventListener(
-      "visibilitychange",
-      this._visibilityChangeHandler
-    );
-  }
-
-  handleVisibilityChange() {
-    const isVisible = !document.hidden;
-
-    if (!this.mainThreadJobStealingEnabled || !this.buffers.syncData) {
-      return;
-    }
-
-    const syncView = new Int32Array(this.buffers.syncData);
-    Atomics.store(syncView, 4, isVisible ? 1 : 0);
-
-    if (this.mainThreadHelper) {
-      this.mainThreadHelper.setWindowVisible(isVisible);
-    }
   }
 
   updateKeyboardBuffer() {
@@ -1709,10 +1665,6 @@ class Scene {
     // Note: Camera following is now handled in Player.tick() which writes directly to cameraData SharedArrayBuffer
     // Main thread reads from cameraData and syncs to this.camera in updateCameraBuffer()
     this.updateCameraBuffer();
-
-    if (this.mainThreadHelper) {
-      this.mainThreadHelper.processJobs(deltaTime, dtRatio);
-    }
 
     // Visible/active units are now read directly by DebugUI from Transform/SpriteRenderer arrays
 
@@ -1767,12 +1719,6 @@ class Scene {
     }
     if (this._wheelHandler) {
       window.removeEventListener("wheel", this._wheelHandler);
-    }
-    if (this._visibilityChangeHandler) {
-      document.removeEventListener(
-        "visibilitychange",
-        this._visibilityChangeHandler
-      );
     }
 
     // Clear keyboard state
@@ -1833,11 +1779,6 @@ class Scene {
       for (let i = 0; i < this.config.decoration.maxDecorations; i++) {
         DecorationComponent.active[i] = 0;
       }
-    }
-
-    // Clean up main thread helper
-    if (this.mainThreadHelper) {
-      this.mainThreadHelper = null;
     }
 
     // Reset Mouse state
@@ -1908,8 +1849,6 @@ class Scene {
           spawnConfig: spawnConfig,
         });
       });
-    } else if (this.mainThreadHelper) {
-      this.mainThreadHelper.spawnEntity(className, spawnConfig);
     }
   }
 
@@ -1921,8 +1860,6 @@ class Scene {
           entityIndex: entityIndex,
         });
       });
-    } else if (this.mainThreadHelper) {
-      this.mainThreadHelper.despawnEntity(entityIndex);
     }
   }
 
@@ -1934,8 +1871,6 @@ class Scene {
           className: className,
         });
       });
-    } else if (this.mainThreadHelper) {
-      this.mainThreadHelper.despawnAllEntities(className);
     }
   }
 
@@ -1959,27 +1894,6 @@ class Scene {
       active: activeCount,
       available: total - activeCount,
     };
-  }
-
-  getJobStealingStats() {
-    if (!this.mainThreadHelper) return null;
-    return this.mainThreadHelper.getStats();
-  }
-
-  setJobStealingEnabled(enabled) {
-    if (!this.mainThreadHelper) {
-      console.warn("Main thread job stealing not initialized.");
-      return;
-    }
-    this.mainThreadHelper.setEnabled(enabled);
-  }
-
-  setJobStealingMaxJobsPerFrame(max) {
-    if (!this.mainThreadHelper) {
-      console.warn("Main thread job stealing not initialized.");
-      return;
-    }
-    this.mainThreadHelper.setMaxJobsPerFrame(max);
   }
 
   // ========================================

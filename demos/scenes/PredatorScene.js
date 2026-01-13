@@ -50,8 +50,6 @@ export class PredatorScene extends WEED.Scene {
       noLimitFPS: false,
       numberOfLogicWorkers: 3,
       numberOfEntitiesPerJob: 250,
-      useMainThreadAsLogicWorker: false, //this is buggy, dont use it for now
-      mainThreadMaxJobsPerFrame: 0,
     },
 
     // Physics configuration
