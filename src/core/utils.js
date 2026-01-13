@@ -1200,3 +1200,14 @@ export function printLogo() {
        font-weight: 100;`
   );
 }
+
+/**
+ * Comparator for Y-sorting entities (e.g. for depth sorting in rendering)
+ * Usage: array.sort(sortByY)
+ * @param {Object} a - First object { y: number }
+ * @param {Object} b - Second object { y: number }
+ * @returns {number} Difference in Y
+ */
+export function sortByY(a, b) {
+  return a.y - b.y;
+}

@@ -216,6 +216,10 @@ class SpatialWorker extends AbstractWorker {
       return;
     }
 
+    // CRITICAL FIX: Reset processedThisFrame marker for this frame
+    // We use fill(-1) because entities use their index (which can be 0) as marker
+    processedThisFrame.fill(-1);
+
     // Process only our assigned slice of active entities
     for (
       let activeIdx = activeStartIdx;
