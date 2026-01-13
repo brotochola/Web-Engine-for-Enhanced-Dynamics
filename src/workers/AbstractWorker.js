@@ -368,13 +368,12 @@ export class AbstractWorker {
       this.initializeAllComponents(data);
     }
 
-    // Initialize Grid system with grid buffers and neighbor data
+    // Initialize Grid system with shared buffers and metadata
     // Grid is the unified spatial data access point for all workers
-    if (
-      data.buffers?.gridEntities &&
-      data.buffers?.gridCounts &&
-      data.gridMetadata
-    ) {
+    // ARCHITECTURE: particle_worker writes grid, all others read
+    // - gridEntities/gridCounts: SHARED, written by particle_worker
+    // - neighborData/distanceData: SHARED, written by spatial_workers
+    if (data.gridMetadata && data.buffers?.gridEntities) {
       const maxNeighbors =
         this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
 
@@ -390,7 +389,7 @@ export class AbstractWorker {
           maxNeighbors: maxNeighbors,
         }
       );
-      this.reportLog("Grid system initialized with spatial data and neighbors");
+      this.reportLog("Grid system initialized with shared spatial data");
     }
 
     // Initialize Ray system with debug buffers (uses Grid for spatial data)
