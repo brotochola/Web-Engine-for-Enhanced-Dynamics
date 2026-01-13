@@ -581,20 +581,6 @@ export class AbstractWorker {
   }
 
   /**
-   * Iterate through all active entities with a callback
-   * More convenient than manual loop: forEachActiveEntity((entityIndex) => { ... })
-   * @param {Function} callback - Function called for each active entity (receives entity index)
-   */
-  forEachActiveEntity(callback) {
-    if (!this.activeEntitiesData) return;
-    const count = this.activeEntitiesData[0];
-    for (let i = 0; i < count; i++) {
-      const entityIndex = this.activeEntitiesData[1 + i];
-      callback(entityIndex);
-    }
-  }
-
-  /**
    * Query entities by component combination (lazy computation)
    * Returns indices of entities that have ALL specified components
    *

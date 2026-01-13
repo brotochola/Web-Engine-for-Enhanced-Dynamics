@@ -1,4 +1,3 @@
---ver todos los  "= []" y entender si vale la pena pasarlo a typed
 
 -------- 
 Debugger:
@@ -7,6 +6,7 @@ Debugger:
 -clase Debug con cosas tipo:
 	Debug.highlightCell(cellID)
 	Debug.drawText(entity.x, entity.y, fsm.state)
+-cartelito encima de cada gameobject y q diga la info
 
 
 -------------------
