@@ -7,6 +7,7 @@ import { DecorationComponent } from "../components/DecorationComponent.js";
 import { DecorationPool } from "../core/DecorationPool.js";
 import { Transform } from "../components/Transform.js";
 import { RigidBody } from "../components/RigidBody.js";
+import { Collider } from "../components/Collider.js";
 import { LightEmitter } from "../components/LightEmitter.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { ShadowCaster } from "../components/ShadowCaster.js";
@@ -118,6 +119,14 @@ class ParticleWorker extends AbstractWorker {
     // Per-entity shadow count tracking (reused each frame)
     this._entityShadowCounts = null;
 
+    // ========================================
+    // STABLE SHADOW SLOT ASSIGNMENT
+    // ========================================
+    // Maps (light, entity) pairs to shadow slots for stable assignment
+    // This prevents flickering and allows proper interpolation in pixi_worker
+    this._shadowPairToSlot = new Map(); // Key: "lightIdx-entityIdx", Value: slot index
+    this._usedSlotsThisFrame = null; // Set of slots used this frame
+
     this.howMuchMoreLightToParticles = 8;
 
     // ========================================
@@ -135,6 +144,17 @@ class ParticleWorker extends AbstractWorker {
     this.flashesEnabled = false;
     this.maxFlashes = 0;
     this.flashStartIndex = 0; // Entity index where flashes start
+
+    // ========================================
+    // SPATIAL GRID REBUILDING
+    // ========================================
+    // Grid rebuilding moved to particle_worker for load balancing
+    // particle_worker has spare capacity, spatial_workers are bottlenecked
+    this.occupiedCells = null; // Track occupied grid cells for efficient clearing
+    this.occupiedCount = 0;
+    this.entityPosX = null; // Pre-computed entity positions for spatial_workers
+    this.entityPosY = null;
+    this.entityHalfExtent = null; // Pre-computed half-extents for neighbor checks
 
     // Note: activeEntitiesData is now initialized in AbstractWorker.initializeCommonBuffers
   }
@@ -343,6 +363,11 @@ class ParticleWorker extends AbstractWorker {
         float32Offset + floatCount * 24,
         floatCount
       );
+      this.shadowSpriteEntityIdx = new Int32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 28,
+        floatCount
+      );
 
       console.log(
         `PARTICLE WORKER: Shadow system enabled (${this.maxShadowSprites} shadow slots)`
@@ -368,6 +393,31 @@ class ParticleWorker extends AbstractWorker {
         );
         this.flashesEnabled = false;
       }
+    }
+
+    // ========================================
+    // SPATIAL GRID REBUILDING - Initialize arrays
+    // ========================================
+    if (data.gridMetadata && data.buffers.entityPosX) {
+      const totalCells = data.gridMetadata.totalCells;
+      const maxEntitiesPerCell = data.gridMetadata.maxEntitiesPerCell;
+
+      // Track occupied cells - worst case is ALL cells occupied (local array)
+      this.occupiedCells =
+        totalCells <= 65535
+          ? new Uint16Array(totalCells)
+          : new Uint32Array(totalCells);
+      this.occupiedCount = 0;
+
+      // Pre-computed entity data - SHARED arrays written here, read by spatial_workers
+      // NOTE: Pre-compute for ALL entities (spatial workers need full grid awareness)
+      this.entityPosX = new Float32Array(data.buffers.entityPosX);
+      this.entityPosY = new Float32Array(data.buffers.entityPosY);
+      this.entityHalfExtent = new Float32Array(data.buffers.entityHalfExtent);
+
+      console.log(
+        `PARTICLE WORKER: Grid rebuilding enabled (${totalCells} cells, ${this.globalEntityCount} entities)`
+      );
     }
 
     // Note: activeEntitiesData is initialized in AbstractWorker.initializeCommonBuffers
@@ -407,6 +457,132 @@ class ParticleWorker extends AbstractWorker {
   }
 
   /**
+   * Rebuild spatial grid (moved from spatial_worker for load balancing)
+   * ARCHITECTURE: particle_worker has spare capacity (125 FPS), spatial_workers are bottlenecked (40 FPS)
+   * Grid rebuild takes ~1.6ms, freeing spatial_workers to focus on neighbor detection (~33ms)
+   *
+   * OPTIMIZED: Uses flat grid structure with TypedArrays
+   * - Zero GC pressure (no array allocations)
+   * - Cache-friendly sequential access
+   * - Pre-computes entity positions and half-extents for spatial_workers to use
+   * - Only clears occupied cells (not entire grid)
+   *
+   * NOTE: Writes to SHARED grid buffer, read by spatial_workers and raycasting
+   */
+  rebuildGrid() {
+    if (!this.occupiedCells) return; // Grid not initialized
+
+    // Use Grid class for shared grid data access
+    const gridEntities = Grid.gridEntities;
+    const gridCounts = Grid.gridCounts;
+    const occupiedCells = this.occupiedCells;
+    const maxEntitiesPerCell = Grid.maxEntitiesPerCell;
+
+    // Clear only cells that were occupied last frame - O(occupiedCells) not O(totalCells)
+    for (let i = 0; i < this.occupiedCount; i++) {
+      gridCounts[occupiedCells[i]] = 0;
+    }
+    this.occupiedCount = 0;
+
+    // Cache frequently accessed values
+    const x = Transform.x;
+    const y = Transform.y;
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
+    const colliderActive = Collider.active;
+    const shapeType = Collider.shapeType;
+    const radius = Collider.radius;
+    const width = Collider.width;
+    const height = Collider.height;
+    const invCellSize = Grid.invCellSize;
+    const gridCols = Grid.gridCols;
+    const gridRows = Grid.gridRows;
+    const maxCol = gridCols - 1;
+    const maxRow = gridRows - 1;
+
+    // Pre-computed entity data arrays (for spatial_workers to use)
+    const entityPosX = this.entityPosX;
+    const entityPosY = this.entityPosY;
+    const entityHalfExtent = this.entityHalfExtent;
+
+    // Shape type constants
+    const SHAPE_CIRCLE = 0;
+
+    let occupiedIdx = 0;
+
+    // OPTIMIZED: Use active entity list (already built by buildActiveEntityList)
+    // This eliminates the need to check active[i] for every entity
+    const activeEntitiesData = this.activeEntitiesData;
+    const totalActiveEntities = activeEntitiesData ? activeEntitiesData[0] : 0;
+
+    // Insert only active entities into grid (iterate active list)
+    for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
+      const i = activeEntitiesData[1 + activeIdx];
+
+      // Use collider position (transform + offset) for grid placement
+      const posX = x[i] + (offsetX[i] || 0);
+      const posY = y[i] + (offsetY[i] || 0);
+
+      // Skip entities with invalid positions (NaN check via self-comparison)
+      if (posX !== posX || posY !== posY) continue;
+
+      // PRE-COMPUTE: Store collider position for spatial_workers to use
+      entityPosX[i] = posX;
+      entityPosY[i] = posY;
+
+      // Calculate entity's bounding box half-extents based on collider type
+      let halfW = 0,
+        halfH = 0;
+      if (colliderActive[i]) {
+        if (shapeType[i] === SHAPE_CIRCLE) {
+          // Circle: use radius for both dimensions
+          halfW = halfH = radius[i] || 0;
+        } else {
+          // Box: use half width/height
+          halfW = (width[i] || 0) * 0.5;
+          halfH = (height[i] || 0) * 0.5;
+        }
+      }
+
+      // PRE-COMPUTE: Store max half-extent for neighbor distance checks
+      entityHalfExtent[i] = halfW > halfH ? halfW : halfH;
+
+      // Calculate cell range the entity's bounding box covers
+      let minCol = ((posX - halfW) * invCellSize) | 0;
+      let maxColBB = ((posX + halfW) * invCellSize) | 0;
+      let minRow = ((posY - halfH) * invCellSize) | 0;
+      let maxRowBB = ((posY + halfH) * invCellSize) | 0;
+
+      // Clamp to grid bounds
+      minCol = minCol < 0 ? 0 : minCol > maxCol ? maxCol : minCol;
+      maxColBB = maxColBB < 0 ? 0 : maxColBB > maxCol ? maxCol : maxColBB;
+      minRow = minRow < 0 ? 0 : minRow > maxRow ? maxRow : minRow;
+      maxRowBB = maxRowBB < 0 ? 0 : maxRowBB > maxRow ? maxRow : maxRowBB;
+
+      // Add entity to ALL cells its bounding box overlaps
+      for (let r = minRow; r <= maxRowBB; r++) {
+        for (let c = minCol; c <= maxColBB; c++) {
+          const cellIndex = r * gridCols + c;
+          const count = gridCounts[cellIndex];
+
+          // Track newly occupied cells (only when first entity enters)
+          if (count === 0) {
+            occupiedCells[occupiedIdx++] = cellIndex;
+          }
+
+          // Add entity to cell if not full
+          if (count < maxEntitiesPerCell) {
+            gridEntities[cellIndex * maxEntitiesPerCell + count] = i;
+            gridCounts[cellIndex] = count + 1;
+          }
+        }
+      }
+    }
+
+    this.occupiedCount = occupiedIdx;
+  }
+
+  /**
    * Update all active particles
    * Called every frame by the game loop
    *
@@ -421,6 +597,9 @@ class ParticleWorker extends AbstractWorker {
 
     // Build active entity list FIRST - spatial workers need this to split work evenly
     this.buildActiveEntityList();
+
+    // Rebuild spatial grid (uses active entity list) - spatial_workers will read this
+    this.rebuildGrid();
 
     // Reset stats counters for this frame
     this.particlesStampedThisFrame = 0;
@@ -1021,24 +1200,25 @@ class ParticleWorker extends AbstractWorker {
   // }
 
   /**
-   * Update shadow sprites using SEQUENTIAL SLOTS
-   * Iterate lights, find shadow casters, write to sequential slots.
+   * Update shadow sprites using STABLE SLOT ASSIGNMENT
+   * Each (light, entity) pair keeps the same slot across frames for smooth interpolation.
+   * Slots are only reassigned when pairs change.
    */
   updateShadowSprites() {
     if (!this.shadowsEnabled || !this.shadowSpriteActive) return;
 
     const shadowActive = this.shadowSpriteActive;
-
-    // Clear ALL slots at the START of each frame
-    for (let i = 0; i < this.maxShadowSprites; i++) {
-      shadowActive[i] = 0;
-    }
+    const maxSprites = this.maxShadowSprites;
 
     // Check if we have precomputed distances from Grid (spatial worker)
     const neighborData = Grid.neighborData;
     const distanceData = Grid.distanceData;
     if (!neighborData || !distanceData || Grid.maxNeighbors <= 0) {
-      return; // No spatial data yet
+      // No spatial data - deactivate all shadows
+      for (let i = 0; i < maxSprites; i++) {
+        shadowActive[i] = 0;
+      }
+      return;
     }
 
     const stride = Grid._stride;
@@ -1062,6 +1242,7 @@ class ParticleWorker extends AbstractWorker {
     const shadowScaleX = this.shadowSpriteScaleX;
     const shadowScaleY = this.shadowSpriteScaleY;
     const shadowAlpha = this.shadowSpriteAlpha;
+    const shadowEntityIdx = this.shadowSpriteEntityIdx;
 
     // Per-entity shadow limit tracking
     const maxShadowsPerEntity = this.maxShadowsPerEntity;
@@ -1072,14 +1253,23 @@ class ParticleWorker extends AbstractWorker {
       entityShadowCounts.fill(0);
     }
 
-    // Track (lightIdx, casterIdx) pairs to skip duplicates
-    // (Spatial grid may still have edge-case duplicates during worker sync)
-    if (!this._shadowPairs) {
-      this._shadowPairs = new Set();
-    }
-    this._shadowPairs.clear();
+    // ========================================
+    // STABLE SLOT ASSIGNMENT
+    // ========================================
+    // Keep previous frame's slot assignments for reuse
+    const pairToSlot = this._shadowPairToSlot;
 
-    let shadowIdx = 0;
+    // Initialize used slots tracking (reuse Set to avoid GC)
+    if (!this._usedSlotsThisFrame) {
+      this._usedSlotsThisFrame = new Set();
+    }
+    const usedSlots = this._usedSlotsThisFrame;
+    usedSlots.clear();
+
+    // Track pairs processed this frame (for cleanup)
+    const pairsThisFrame = new Set();
+
+    let shadowCount = 0;
     let lightsProcessed = 0;
 
     // Query only entities with LightEmitter
@@ -1091,7 +1281,7 @@ class ParticleWorker extends AbstractWorker {
       lightEntityIdx < lightEntities.length;
       lightEntityIdx++
     ) {
-      if (shadowIdx >= this.maxShadowSprites) break;
+      if (shadowCount >= maxSprites) break;
       if (lightsProcessed >= this.maxShadowCastingLights) break;
 
       const lightIdx = lightEntities[lightEntityIdx];
@@ -1116,7 +1306,7 @@ class ParticleWorker extends AbstractWorker {
       // Process neighbors, create shadows for shadow casters
       for (let k = 0; k < neighborCount; k++) {
         if (shadowsForThisLight >= this.maxShadowsPerLight) break;
-        if (shadowIdx >= this.maxShadowSprites) break;
+        if (shadowCount >= maxSprites) break;
 
         const neighborIdx = neighborData[offset + 1 + k];
 
@@ -1125,11 +1315,12 @@ class ParticleWorker extends AbstractWorker {
         if (!transformActive[neighborIdx]) continue;
         if (!isOnScreen[neighborIdx]) continue;
 
-        // Skip duplicate (light, caster) pairs within this frame
-        // This can happen if spatial grid has edge-case duplicates during worker sync
+        // Create stable pair key for this (light, entity) combination
         const pairKey = `${lightIdx}-${neighborIdx}`;
-        if (this._shadowPairs.has(pairKey)) continue;
-        this._shadowPairs.add(pairKey);
+
+        // Skip duplicate pairs within this frame
+        if (pairsThisFrame.has(pairKey)) continue;
+        pairsThisFrame.add(pairKey);
 
         // Skip if entity has already cast max shadows (if limit is enabled)
         if (
@@ -1141,6 +1332,32 @@ class ParticleWorker extends AbstractWorker {
         const distSq = distanceData[offset + 1 + k];
         // Skip if light is at caster position (avoid division by zero)
         if (distSq < 1) continue;
+
+        // ========================================
+        // GET OR ASSIGN STABLE SLOT
+        // ========================================
+        let slotIdx;
+        if (pairToSlot.has(pairKey)) {
+          // Reuse existing slot for this (light, entity) pair
+          slotIdx = pairToSlot.get(pairKey);
+        } else {
+          // Find a free slot (one not used this frame and not assigned to active pair)
+          slotIdx = -1;
+          for (let s = 0; s < maxSprites; s++) {
+            if (!usedSlots.has(s)) {
+              slotIdx = s;
+              break;
+            }
+          }
+          if (slotIdx === -1) break; // No free slots available
+
+          // Assign this slot to the pair
+          pairToSlot.set(pairKey, slotIdx);
+        }
+
+        // Mark slot as used this frame
+        usedSlots.add(slotIdx);
+
         const casterX = worldX[neighborIdx];
         const casterY = worldY[neighborIdx];
         const casterRadius = entityShadowRadius[neighborIdx] || 10;
@@ -1173,17 +1390,18 @@ class ParticleWorker extends AbstractWorker {
         // Angle from light to caster
         const angle = Math.atan2(dy, dx);
 
-        // Write shadow data to sequential slot
-        shadowActive[shadowIdx] = 1;
-        shadowRadius[shadowIdx] = casterRadius;
-        shadowX[shadowIdx] = posX;
-        shadowY[shadowIdx] = posY;
-        shadowRotation[shadowIdx] = angle - 1.5707963267948966; // PI/2 as constant
-        shadowScaleX[shadowIdx] = widthScale;
-        shadowScaleY[shadowIdx] = lengthScale;
-        shadowAlpha[shadowIdx] = alpha;
+        // Write shadow data to the STABLE slot
+        shadowActive[slotIdx] = 1;
+        shadowRadius[slotIdx] = casterRadius;
+        shadowX[slotIdx] = posX;
+        shadowY[slotIdx] = posY;
+        shadowRotation[slotIdx] = angle - 1.5707963267948966; // PI/2 as constant
+        shadowScaleX[slotIdx] = widthScale;
+        shadowScaleY[slotIdx] = lengthScale;
+        shadowAlpha[slotIdx] = alpha;
+        shadowEntityIdx[slotIdx] = neighborIdx; // Track which entity owns this shadow
 
-        shadowIdx++;
+        shadowCount++;
         shadowsForThisLight++;
 
         // Track per-entity shadow count (if limit is enabled)
@@ -1193,8 +1411,25 @@ class ParticleWorker extends AbstractWorker {
       }
     }
 
+    // ========================================
+    // CLEANUP: Deactivate unused slots and remove stale pairs
+    // ========================================
+    // Deactivate any slots that weren't used this frame
+    for (let i = 0; i < maxSprites; i++) {
+      if (!usedSlots.has(i) && shadowActive[i]) {
+        shadowActive[i] = 0;
+      }
+    }
+
+    // Remove stale pairs from the map (pairs that weren't processed this frame)
+    for (const pairKey of pairToSlot.keys()) {
+      if (!pairsThisFrame.has(pairKey)) {
+        pairToSlot.delete(pairKey);
+      }
+    }
+
     // Track shadows updated for stats
-    this.shadowsUpdatedThisFrame = shadowIdx;
+    this.shadowsUpdatedThisFrame = shadowCount;
   }
 
   /**

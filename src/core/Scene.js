@@ -931,8 +931,10 @@ class Scene {
     this.buffers.frameRateData = new SharedArrayBuffer(FRAMERATE_BUFFER_SIZE);
     this.views.frameRate = new Float32Array(this.buffers.frameRateData);
 
-    // Spatial Grid buffers - shared across all workers for raycasting
-    // Calculate grid dimensions
+    // Spatial Grid - SHARED buffer written by particle_worker, read by all others
+    // ARCHITECTURE: particle_worker rebuilds grid once per frame (has spare capacity)
+    // spatial_workers read grid to compute neighbors (load balanced)
+    // logic/physics workers read grid for raycasting (Ray.cast)
     const cellSize = this.config.spatial?.cellSize || this.config.cellSize;
     const gridCols = Math.ceil(this.config.worldWidth / cellSize);
     const gridRows = Math.ceil(this.config.worldHeight / cellSize);
@@ -947,6 +949,13 @@ class Scene {
     const GRID_COUNTS_SIZE = totalCells * 2; // Uint16Array
     this.buffers.gridCounts = new SharedArrayBuffer(GRID_COUNTS_SIZE);
 
+    // Pre-computed entity data: written by particle_worker during grid rebuild, read by spatial_workers
+    // These values are computed once and reused by all spatial workers for neighbor detection
+    const ENTITY_POS_SIZE = this.totalEntityCount * 4; // Float32Array
+    this.buffers.entityPosX = new SharedArrayBuffer(ENTITY_POS_SIZE);
+    this.buffers.entityPosY = new SharedArrayBuffer(ENTITY_POS_SIZE);
+    this.buffers.entityHalfExtent = new SharedArrayBuffer(ENTITY_POS_SIZE);
+
     // Store grid metadata for workers
     this.gridMetadata = {
       cellSize,
@@ -958,7 +967,7 @@ class Scene {
     };
 
     console.log(
-      `[Scene] Spatial grid: ${gridCols}x${gridRows} cells (${totalCells} total), ${cellSize}px cell size`
+      `[Scene] Spatial grid: ${gridCols}x${gridRows} cells (${totalCells} total), ${cellSize}px cell size (shared, built by particle_worker)`
     );
 
     // Worker stat buffers: detailed metrics for each worker type
@@ -1296,9 +1305,12 @@ class Scene {
         raycastDebugData: this.buffers.raycastDebugData,
         frameRateData: this.buffers.frameRateData,
         componentData: this.buffers.componentData,
-        // Spatial grid buffers (for raycasting)
+        // Spatial grid buffers (shared, written by particle_worker, read by all)
         gridEntities: this.buffers.gridEntities,
         gridCounts: this.buffers.gridCounts,
+        entityPosX: this.buffers.entityPosX,
+        entityPosY: this.buffers.entityPosY,
+        entityHalfExtent: this.buffers.entityHalfExtent,
         // Worker stat buffers (detailed metrics)
         rendererStats: this.buffers.rendererStats,
         particleStats: this.buffers.particleStats,

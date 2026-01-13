@@ -22,6 +22,7 @@ export class ShadowCaster extends Component {
     scaleX: Float32Array, // Width scale
     scaleY: Float32Array, // Length scale
     alpha: Float32Array, // Opacity (fades with distance from light)
+    entityIdx: Int32Array, // Entity index that owns this shadow (for interpolation tracking)
   };
 
   // Static pool tracking (set during initialization)

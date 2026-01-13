@@ -1524,11 +1524,15 @@ class PixiRenderer extends AbstractWorker {
       // // or if interpolation is disabled
       if (this.interpolation && this.frameRateData && !wasInvisible) {
         // Interpolate from current sprite position toward physics target
-
         bodySprite.x += (x[entityIndex] - bodySprite.x) * interpolationAlpha;
         bodySprite.y += (y[entityIndex] - bodySprite.y) * interpolationAlpha;
-        bodySprite.rotation +=
-          (rotation[entityIndex] - bodySprite.rotation) * interpolationAlpha;
+
+        // Handle rotation interpolation with angle wrapping
+        // Normalize angle difference to [-PI, PI] to avoid going the long way
+        let angleDiff = rotation[entityIndex] - bodySprite.rotation;
+        if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+        else if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+        bodySprite.rotation += angleDiff * interpolationAlpha;
       } else {
         // No interpolation - directly set position
         // (first frame visible, interpolation disabled, or no frameRateData)
@@ -2202,6 +2206,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Update shadow sprites from shadow sprite buffer
    * Reads positions/rotations/scales calculated by particle_worker
    * Shadows use world coordinates; container moves with camera
+   * Uses interpolation for smooth movement when renderer FPS > physics FPS
+   * Detects ownership changes via entity index and skips interpolation for those
    */
   updateShadowSprites() {
     if (!this.shadowSpritesEnabled || !this.shadowSpriteActive) return;
@@ -2217,24 +2223,70 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const scaleX = this.shadowSpriteScaleX;
     const scaleY = this.shadowSpriteScaleY;
     const alpha = this.shadowSpriteAlpha;
+    const entityIdx = this.shadowSpriteEntityIdx;
+    const prevEntityIdx = this._shadowPrevEntityIdx;
 
-    // THEN: Only show shadows that are active AND on screen
+    // Calculate interpolation alpha (same logic as entity sprites)
+    let interpolationAlpha = 1.0;
+    if (this.interpolation && this.frameRateData) {
+      const physicsFPS = this.frameRateData[this.physicsWorkerIndex];
+      if (physicsFPS > 0 && this.currentFPS > physicsFPS) {
+        interpolationAlpha = Math.min(1.0, physicsFPS / this.currentFPS);
+      }
+    }
+
     for (let i = 0; i < maxSprites; i++) {
       const sprite = sprites[i];
       if (!sprite) continue;
+
+      // Hide inactive shadows and reset ownership tracking
       if (!active[i]) {
         sprite.alpha = 0;
+        prevEntityIdx[i] = -1; // Reset so next activation doesn't interpolate
         continue;
       }
 
-      // Update sprite from buffer data (world coordinates)
-      // sprite.visible = true;
-      sprite.x = x[i];
-      sprite.y = y[i];
-      sprite.rotation = rotation[i];
-      sprite.scaleX = scaleX[i];
-      sprite.scaleY = scaleY[i];
-      sprite.alpha = alpha[i];
+      // Check if shadow just became visible (to avoid lerping from 0,0)
+      const wasInvisible = sprite.alpha === 0;
+
+      // Check if shadow ownership changed (different entity now owns this slot)
+      const currentEntity = entityIdx[i];
+      const ownerChanged = prevEntityIdx[i] !== currentEntity;
+
+      // Update ownership tracking for next frame
+      prevEntityIdx[i] = currentEntity;
+
+      // Only interpolate if: interpolation enabled, was visible, AND same owner
+      if (
+        this.interpolation &&
+        this.frameRateData &&
+        !wasInvisible &&
+        !ownerChanged
+      ) {
+        // Interpolate from current sprite position toward physics target
+        sprite.x += (x[i] - sprite.x) * interpolationAlpha;
+        sprite.y += (y[i] - sprite.y) * interpolationAlpha;
+
+        // Handle rotation interpolation with angle wrapping
+        // Normalize angle difference to [-PI, PI] to avoid going the long way
+        let angleDiff = rotation[i] - sprite.rotation;
+        if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+        else if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+        sprite.rotation += angleDiff * interpolationAlpha;
+
+        sprite.scaleX += (scaleX[i] - sprite.scaleX) * interpolationAlpha;
+        sprite.scaleY += (scaleY[i] - sprite.scaleY) * interpolationAlpha;
+        sprite.alpha += (alpha[i] - sprite.alpha) * interpolationAlpha;
+      } else {
+        // No interpolation - directly set values
+        // (first frame visible, interpolation disabled, owner changed, or no frameRateData)
+        sprite.x = x[i];
+        sprite.y = y[i];
+        sprite.rotation = rotation[i];
+        sprite.scaleX = scaleX[i];
+        sprite.scaleY = scaleY[i];
+        sprite.alpha = alpha[i];
+      }
     }
   }
 
@@ -3459,6 +3511,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         data.shadows.spriteData,
         float32Offset + floatCount * 24,
         floatCount
+      );
+      this.shadowSpriteEntityIdx = new Int32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 28,
+        floatCount
+      );
+
+      // Track previous entity indices for interpolation (detect ownership changes)
+      // -1 means no previous owner (first frame or was inactive)
+      this._shadowPrevEntityIdx = new Int32Array(this.maxShadowSprites).fill(
+        -1
       );
 
       // Create shadow sprite container and texture
