@@ -31,7 +31,7 @@ export class Player extends GameObject {
     Collider,
     SpriteRenderer,
     ShadowCaster,
-    LightEmitter,
+    // LightEmitter,
   ];
 
   /**
@@ -45,11 +45,13 @@ export class Player extends GameObject {
     this.rigidBody.minSpeed = 0;
     this.rigidBody.friction = 0.03; // Friction for smooth stopping
 
-    this.lightEmitter.lightColor = 0xffffff;
-    this.lightEmitter.lightIntensity = 2000;
-    this.lightEmitter.height = 0;
-    this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 0;
+    if (this.lightEmitter) {
+      this.lightEmitter.lightColor = 0xffffff;
+      this.lightEmitter.lightIntensity = 2000;
+      this.lightEmitter.height = 0;
+      this.lightEmitter.active = 1;
+      this.lightEmitter.hasGlowSprite = 0;
+    }
 
     // Initialize collider
     this.collider.radius = 15;
@@ -76,6 +78,7 @@ export class Player extends GameObject {
   }
 
   shoot(x, y) {
+    if (Math.random() > 0.1) return;
     // Raycast from player position to target
     const hitEntityIndex = Ray.cast(
       this.x,
@@ -85,7 +88,16 @@ export class Player extends GameObject {
       1500 // max distance
     );
 
-    console.log(hitEntityIndex);
+    Flash.create({
+      x: this.x,
+      y: this.y,
+      z: 30, // height
+      lifespan: 50,
+      color: 0xffaa00, // orange
+      intensity: 4000,
+    });
+
+    console.log("hit", hitEntityIndex);
   }
 
   /**
