@@ -157,12 +157,6 @@ class GameEngine {
     return { total: 0, active: 0, available: 0 };
   }
 
-  enableProfiling(enabled = true) {
-    if (this.currentScene) {
-      this.currentScene.enableProfiling(enabled);
-    }
-  }
-
   // Getters for common scene properties
   get debug() {
     return this.currentScene?.debugFlags;
