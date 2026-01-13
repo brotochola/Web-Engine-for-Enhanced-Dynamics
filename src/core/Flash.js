@@ -14,8 +14,9 @@ export class Flash extends GameObject {
   // Flash is an internal engine class - no user script needed
   static scriptUrl = null;
 
-  // Components: Transform (default) + LightEmitter + FlashComponent
-  // No RigidBody, Collider, or SpriteRenderer needed
+  // Components: Transform (default) + LightEmitter + FlashComponent + Collider
+  // Collider with 0 radius is needed for spatial grid (shadow casting)
+  // No RigidBody or SpriteRenderer needed
   static components = [LightEmitter, FlashComponent, Collider];
 
   // Pool tracking (set by gameEngine during auto-registration)
@@ -169,8 +170,11 @@ export class Flash extends GameObject {
     this.flashComponent.currentLife = 0;
     this.flashComponent.initialIntensity = spawnConfig.intensity ?? 10000;
     this.flashComponent.active = 1;
+
+    // Set collider for spatial grid (needed for shadow casting via neighbor system)
+    this.collider.active = 1;
+    this.collider.radius = 0; // 0 radius - just need to be in the grid
     this.collider.visualRange = Math.sqrt(this.flashComponent.initialIntensity);
-    this.collider.radius = 0;
     this.collider.isTrigger = 1;
   }
 
@@ -178,9 +182,10 @@ export class Flash extends GameObject {
    * LIFECYCLE: Called when flash is despawned
    */
   onDespawned() {
-    // Turn off light
+    // Turn off light and collider
     this.lightEmitter.active = 0;
     this.flashComponent.active = 0;
+    this.collider.active = 0;
   }
 
   // Note: tick() is NOT used - flash updates happen in particle_worker.updateFlashes()

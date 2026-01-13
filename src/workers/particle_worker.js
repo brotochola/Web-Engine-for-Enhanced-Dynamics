@@ -1303,6 +1303,7 @@ class ParticleWorker extends AbstractWorker {
     const entityShadowRadius = ShadowCaster.shadowRadius;
     const entityShadowHeight = ShadowCaster.height;
     const isOnScreen = SpriteRenderer.isItOnScreen;
+    const flashActive = FlashComponent.active; // For checking if entity is a flash
 
     // Shadow sprite output arrays
     const shadowRadius = this.shadowSpriteRadius;
@@ -1357,7 +1358,12 @@ class ParticleWorker extends AbstractWorker {
       const lightIdx = lightEntities[lightEntityIdx];
       if (!lightEnabled[lightIdx]) continue;
       if (!transformActive[lightIdx]) continue;
-      if (!isOnScreen[lightIdx]) continue;
+      
+      // Check if light is on screen
+      // Flashes are always on screen (we don't spawn them off-screen and they're short-lived)
+      // Regular entities use SpriteRenderer.isItOnScreen
+      const isFlash = flashActive[lightIdx] === 1;
+      if (!isFlash && !isOnScreen[lightIdx]) continue;
 
       const intensity = lightIntensity[lightIdx];
       if (intensity <= 0) continue;
@@ -1368,6 +1374,7 @@ class ParticleWorker extends AbstractWorker {
       const lightY = worldY[lightIdx];
 
       // Get neighbors of this light using cached Grid arrays
+      // Flashes now have colliders (0 radius) so they appear in the grid
       const offset = lightIdx * stride;
       const neighborCount = neighborData[offset];
 
