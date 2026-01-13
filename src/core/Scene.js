@@ -462,7 +462,7 @@ class Scene {
       ...LIGHTING_DEFAULTS,
       ...(this.config.lighting || {}),
     };
-    // Compute maxShadowSprites
+    // Compute maxShadowSprites based on light count and shadows per light
     this.config.lighting.maxShadowSprites =
       this.config.lighting.maxShadowCastingLights *
       this.config.lighting.maxShadowsPerLight;

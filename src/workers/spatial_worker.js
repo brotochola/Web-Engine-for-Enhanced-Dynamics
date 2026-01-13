@@ -397,6 +397,18 @@ class SpatialWorker extends AbstractWorker {
             // Track neighbor check
             this.neighborChecksThisFrame++;
 
+            // DUPLICATE CHECK: Multi-cell entities appear in multiple cells
+            // Check if we already added this entity as a neighbor
+            // Linear search is fast for small maxNeighbors (typically 15-50)
+            let isDuplicate = false;
+            for (let n = 0; n < neighborCount; n++) {
+              if (neighborData[offset + 1 + n] === j) {
+                isDuplicate = true;
+                break;
+              }
+            }
+            if (isDuplicate) continue;
+
             // Use PRE-COMPUTED positions for distance calculation
             const jX = entityPosX[j];
             const jY = entityPosY[j];
@@ -441,9 +453,11 @@ class SpatialWorker extends AbstractWorker {
     // Mouse position is now written directly to Transform by main thread
     // No special syncing needed - spatial grid will see current position
 
-    // Rebuild spatial grid and find neighbors every frame for physics stability!
-    // Was previously skipping frames which causes physics objects to "pass through" each other
-    // if they move fast enough to cross cells in the skipped frames.
+    // All workers rebuild the grid every frame.
+    // This causes duplicate entity entries (same entity added by multiple workers),
+    // but that's handled by the deduplication check in findAllNeighbors().
+    // The alternative (single builder) doesn't work with async workers because
+    // other workers would read stale/empty grids.
     this.rebuildGrid();
     this.findAllNeighbors();
 

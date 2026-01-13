@@ -76,7 +76,7 @@ export class PredatorScene extends WEED.Scene {
       shadowsEnabled: true,
       maxShadowCastingLights: 100,
       maxShadowsPerLight: 500,
-      maxShadowsPerEntity: 5,
+      maxShadowsPerEntity: 3,
       maxFlashes: 50,
     },
   };
