@@ -67,8 +67,7 @@ export const DECORATION_DEFAULTS = {
 export const LOGIC_DEFAULTS = {
   numberOfLogicWorkers: 1,
   numberOfEntitiesPerJob: 250,
-  useMainThreadAsLogicWorker: false,
-  mainThreadMaxJobsPerFrame: 0,
+
   noLimitFPS: false,
 };
 

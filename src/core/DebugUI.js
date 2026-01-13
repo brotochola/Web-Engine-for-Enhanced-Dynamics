@@ -377,23 +377,6 @@ export class DebugUI {
       this.elements.mainFPS.textContent = `FPS: ${scene.mainFPS.toFixed(2)}`;
     }
 
-    // Job stealing stats
-    if (
-      this.elements.jobStealing &&
-      this.elements.jobStealingRow &&
-      scene.mainThreadHelper
-    ) {
-      const stats = scene.mainThreadHelper.getStats();
-      if (stats && scene.mainThreadHelper.enabled) {
-        this.elements.jobStealing.textContent = `Jobs: ${this._formatNumber(
-          stats.jobsThisFrame
-        )} (${this._formatNumber(stats.entitiesThisFrame)} entities)`;
-        this.elements.jobStealingRow.style.display = "";
-      } else {
-        this.elements.jobStealingRow.style.display = "none";
-      }
-    }
-
     // Update single workers (renderer, particle, physics)
     this._updateSingleWorkerStats("renderer", RENDERER_STATS);
     this._updateSingleWorkerStats("particle", PARTICLE_STATS);
