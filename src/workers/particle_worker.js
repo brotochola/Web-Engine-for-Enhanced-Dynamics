@@ -1042,6 +1042,11 @@ class ParticleWorker extends AbstractWorker {
       return;
     }
 
+    // PERFORMANCE: Cache Grid arrays locally to avoid method call overhead
+    const neighborData = Grid.neighborData;
+    const distanceData = Grid.distanceData;
+    const stride = Grid._stride;
+
     // Cache component arrays (entity data)
     const transformActive = Transform.active;
     const worldX = Transform.x;
@@ -1100,8 +1105,9 @@ class ParticleWorker extends AbstractWorker {
       const lightX = worldX[lightIdx];
       const lightY = worldY[lightIdx];
 
-      // Get neighbors of this light using Grid (entities within its visualRange)
-      const neighborCount = Grid.getNeighborCount(lightIdx);
+      // Get neighbors of this light using cached Grid arrays (direct access, no method overhead)
+      const offset = lightIdx * stride;
+      const neighborCount = neighborData[offset];
 
       let shadowsForThisLight = 0;
 
@@ -1110,7 +1116,7 @@ class ParticleWorker extends AbstractWorker {
         if (shadowsForThisLight >= this.maxShadowsPerLight) break;
         if (shadowIdx >= this.maxShadowSprites) break;
 
-        const neighborIdx = Grid.getNeighbor(lightIdx, k);
+        const neighborIdx = neighborData[offset + 1 + k];
 
         // Skip if not a shadow caster
         if (!shadowCasterActive[neighborIdx]) continue;
@@ -1124,7 +1130,7 @@ class ParticleWorker extends AbstractWorker {
         )
           continue;
 
-        const distSq = Grid.getNeighborDistanceSq(lightIdx, k);
+        const distSq = distanceData[offset + 1 + k];
 
         const casterX = worldX[neighborIdx];
         const casterY = worldY[neighborIdx];

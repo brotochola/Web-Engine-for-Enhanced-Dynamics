@@ -21,6 +21,7 @@ import { ParticleEmitter } from "../core/ParticleEmitter.js";
 import { DecorationPool } from "../core/DecorationPool.js";
 import { Flash } from "../core/Flash.js";
 import { AbstractWorker } from "./AbstractWorker.js";
+import { Grid } from "../core/Grid.js";
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from "./workers-utils.js";
 import { cantorPair } from "../core/utils.js";
 
@@ -287,6 +288,11 @@ class LogicWorker extends AbstractWorker {
       ? this.activeEntitiesData[0]
       : 0;
 
+    // PERFORMANCE: Cache Grid arrays once to avoid property lookups per entity
+    const neighborData = Grid.neighborData;
+    const distanceData = Grid.distanceData;
+    const stride = Grid._stride;
+
     // Job-based processing: atomically claim jobs until none remain
     // Jobs are now ranges in the active entity list, not entity index ranges
     while (true) {
@@ -323,9 +329,9 @@ class LogicWorker extends AbstractWorker {
           activeCount++;
           this.entitiesProcessedThisFrame++;
 
-          // OPTIMIZED: updating neighbors now uses Grid class (GC free)
-          // It just updates neighborCount from Grid
-          obj.updateNeighbors();
+          // OPTIMIZED: updating neighbors uses cached Grid arrays (GC free)
+          // Pass cached arrays to avoid property lookups per entity
+          obj.updateNeighbors(neighborData, distanceData, stride);
 
           // Tick entity logic (no inputData parameter - use this.mouse / this.keyboard instead)
           obj.tick(dtRatio);

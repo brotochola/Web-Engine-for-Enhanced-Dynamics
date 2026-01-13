@@ -543,11 +543,16 @@ class PhysicsWorker extends AbstractWorker {
     const collisionData = this.collisionData;
     const maxPairs = this.maxCollisionPairs;
 
+    // PERFORMANCE: Cache Grid arrays locally to avoid method call overhead in hot loop
+    const neighborData = Grid.neighborData;
+    const stride = Grid._stride;
+
     for (let i = 0; i < this.globalEntityCount; i++) {
       if (!active[i] || !colliderActive[i]) continue;
 
-      // Use Grid class for neighbor data access
-      const neighborCount = Grid.getNeighborCount(i);
+      // Direct array access (no method call overhead)
+      const offset = i * stride;
+      const neighborCount = neighborData[offset];
 
       if (neighborCount === 0) continue;
 
@@ -564,7 +569,7 @@ class PhysicsWorker extends AbstractWorker {
       // change during the loop as collisions are resolved!
 
       for (let n = 0; n < neighborCount; n++) {
-        const j = Grid.getNeighbor(i, n);
+        const j = neighborData[offset + 1 + n];
 
         if (i === j || !active[j] || !colliderActive[j]) continue;
         if (i >= j) continue; // Only process each pair once

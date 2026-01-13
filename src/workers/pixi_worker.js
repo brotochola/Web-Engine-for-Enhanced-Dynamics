@@ -910,7 +910,7 @@ class PixiRenderer extends AbstractWorker {
   /**
    * Render neighbor connections (requires neighbor data from Grid)
    * INTERACTIVE: Only shows neighbors for the entity closest to the mouse
-   * Uses Grid class for unified neighbor data access
+   * Uses cached Grid arrays for performance
    */
   renderNeighborConnections() {
     if (!Grid.neighborData) return;
@@ -923,20 +923,25 @@ class PixiRenderer extends AbstractWorker {
     // If no mouse, don't render anything
     if (!mousePresent) return;
 
+    // PERFORMANCE: Cache Grid arrays locally
+    const neighborData = Grid.neighborData;
+    const stride = Grid._stride;
+
     const active = Transform.active;
     const x = Transform.x;
     const y = Transform.y;
 
     // Mouse is always at entity index 0
     // Get the Mouse's neighbors to find the closest entity to the mouse
-    const mouseNeighborCount = Grid.getNeighborCount(0);
+    const mouseOffset = 0;
+    const mouseNeighborCount = neighborData[mouseOffset];
 
     // Find the entity closest to the mouse from its neighbor list
     let closestEntity = -1;
     let closestDist2 = Infinity;
 
     for (let n = 0; n < mouseNeighborCount; n++) {
-      const neighborIndex = Grid.getNeighbor(0, n);
+      const neighborIndex = neighborData[mouseOffset + 1 + n];
       if (!active[neighborIndex]) continue;
 
       const dx = x[neighborIndex] - mouseX;
@@ -963,11 +968,12 @@ class PixiRenderer extends AbstractWorker {
       .circle(myX, myY, highlightRadius)
       .stroke({ width: 3 / zoom, color: 0xffff00, alpha: 1.0 });
 
-    const neighborCount = Grid.getNeighborCount(closestEntity);
+    const offset = closestEntity * stride;
+    const neighborCount = neighborData[offset];
 
     // Draw all neighbors for this entity (no limit needed since it's just one entity)
     for (let n = 0; n < neighborCount; n++) {
-      const neighborIndex = Grid.getNeighbor(closestEntity, n);
+      const neighborIndex = neighborData[offset + 1 + n];
       if (!active[neighborIndex]) continue;
 
       const neighborX = x[neighborIndex];
