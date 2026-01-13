@@ -293,13 +293,16 @@ export class AbstractWorker {
     }
 
     // Initialize neighbor data reference (redundant with GameObject but kept for clarity)
-    if (data.buffers?.neighborData) {
-      this.neighborData = new Int32Array(data.buffers.neighborData);
+    // DOUBLE BUFFERING: neighborData now comes from Grid's dynamic getters
+    // We set this.neighborData to neighborDataA initially for backwards compatibility
+    if (data.buffers?.neighborDataA) {
+      this.neighborData = new Int32Array(data.buffers.neighborDataA);
     }
 
     // Initialize distance data reference
-    if (data.buffers?.distanceData) {
-      this.distanceData = new Float32Array(data.buffers.distanceData);
+    // DOUBLE BUFFERING: distanceData now comes from Grid's dynamic getters
+    if (data.buffers?.distanceDataA) {
+      this.distanceData = new Float32Array(data.buffers.distanceDataA);
     }
 
     // Initialize active entities list (for load-balanced processing)
@@ -345,6 +348,8 @@ export class AbstractWorker {
     this.reportLog("finished initializing common buffers");
 
     // Keep a reference to neighbor data for easy access (already set above, but also from GameObject)
+    // NOTE: With double buffering, these will point to the initial read buffer (A)
+    // Workers should prefer Grid.neighborData getter for dynamic access to current read buffer
     if (GameObject.neighborData) {
       this.neighborData = GameObject.neighborData;
     }
@@ -372,7 +377,7 @@ export class AbstractWorker {
     // Grid is the unified spatial data access point for all workers
     // ARCHITECTURE: particle_worker writes grid, all others read
     // - gridEntities/gridCounts: SHARED, written by particle_worker
-    // - neighborData/distanceData: SHARED, written by spatial_workers
+    // - neighborData/distanceData: DOUBLE BUFFERED, written by spatial_workers, read by logic/physics
     if (data.gridMetadata && data.buffers?.gridEntities) {
       const maxNeighbors =
         this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
@@ -381,15 +386,20 @@ export class AbstractWorker {
         {
           gridEntities: data.buffers.gridEntities,
           gridCounts: data.buffers.gridCounts,
-          neighborData: data.buffers.neighborData,
-          distanceData: data.buffers.distanceData,
+          neighborDataA: data.buffers.neighborDataA,
+          neighborDataB: data.buffers.neighborDataB,
+          distanceDataA: data.buffers.distanceDataA,
+          distanceDataB: data.buffers.distanceDataB,
+          neighborSyncData: data.buffers.neighborSyncData,
         },
         {
           ...data.gridMetadata,
           maxNeighbors: maxNeighbors,
         }
       );
-      this.reportLog("Grid system initialized with shared spatial data");
+      this.reportLog(
+        "Grid system initialized with double-buffered neighbor data"
+      );
     }
 
     // Initialize Ray system with debug buffers (uses Grid for spatial data)
