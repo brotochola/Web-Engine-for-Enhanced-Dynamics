@@ -180,6 +180,9 @@ class PhysicsWorker extends AbstractWorker {
     const height = Collider.height;
     const isTrigger = Collider.isTrigger;
 
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
+
     // Get world bounds for boundary constraints
     const worldWidth = this.config.worldWidth;
     const worldHeight = this.config.worldHeight;
@@ -226,6 +229,8 @@ class PhysicsWorker extends AbstractWorker {
         colliderActive,
         x,
         y,
+        offsetX,
+        offsetY,
         shapeType,
         radius,
         width,
@@ -268,6 +273,8 @@ class PhysicsWorker extends AbstractWorker {
     const width = Collider.width;
     const height = Collider.height;
     const isTrigger = Collider.isTrigger;
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
 
     // Get world bounds for boundary constraints
     const worldWidth = this.config.worldWidth;
@@ -314,6 +321,8 @@ class PhysicsWorker extends AbstractWorker {
       colliderActive,
       x,
       y,
+      offsetX,
+      offsetY,
       shapeType,
       radius,
       width,
@@ -428,6 +437,8 @@ class PhysicsWorker extends AbstractWorker {
     colliderActive,
     x,
     y,
+    offsetX,
+    offsetY,
     shapeType,
     radius,
     width,
@@ -443,10 +454,6 @@ class PhysicsWorker extends AbstractWorker {
     const boundaryElasticity = this.settings.boundaryElasticity;
     const isStatic = RigidBody.static;
 
-    // Get collider offsets for accurate boundary checks
-    const offsetX = Collider.offsetX;
-    const offsetY = Collider.offsetY;
-
     // STEP 1: Apply collision constraints FIRST using spatial grid
     // This allows entities to push each other around before boundary clamping
     if (this.neighborData) {
@@ -456,6 +463,8 @@ class PhysicsWorker extends AbstractWorker {
         colliderActive,
         x,
         y,
+        offsetX,
+        offsetY,
         shapeType,
         radius,
         width,
@@ -524,6 +533,8 @@ class PhysicsWorker extends AbstractWorker {
     colliderActive,
     x,
     y,
+    offsetX,
+    offsetY,
     shapeType,
     radius,
     width,
@@ -534,10 +545,6 @@ class PhysicsWorker extends AbstractWorker {
   ) {
     const responseStrength = this.settings.collisionResponseStrength;
     const isStatic = RigidBody.static;
-
-    // Get collider offsets for accurate collision positions
-    const offsetX = Collider.offsetX;
-    const offsetY = Collider.offsetY;
 
     let pairCount = 0;
     const collisionData = this.collisionData;

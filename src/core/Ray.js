@@ -231,6 +231,18 @@ export class Ray {
 
     const cellBase = Grid.getCellBase(cellIndex);
     const gridEntities = Grid.gridEntities;
+    
+    // CACHE: Component arrays to avoid property lookups in loop
+    const active = Transform.active;
+    const colliderActive = Collider.active;
+    const tx = Transform.x;
+    const ty = Transform.y;
+    const cOffsetX = Collider.offsetX;
+    const cOffsetY = Collider.offsetY;
+    const cRadius = Collider.radius;
+    const cWidth = Collider.width;
+    const cHeight = Collider.height;
+    const cShapeParams = Collider.shapeType;
 
     let closestIndex = -1;
     let closestDist = currentClosest;
@@ -240,21 +252,21 @@ export class Ray {
       const entityIndex = gridEntities[cellBase + i];
 
       // Skip inactive entities
-      if (!Transform.active[entityIndex]) continue;
-      if (!Collider.active[entityIndex]) continue;
+      if (!active[entityIndex]) continue;
+      if (!colliderActive[entityIndex]) continue;
 
       // Get entity collider position
       const entityX =
-        Transform.x[entityIndex] + (Collider.offsetX[entityIndex] || 0);
+        tx[entityIndex] + (cOffsetX[entityIndex] || 0);
       const entityY =
-        Transform.y[entityIndex] + (Collider.offsetY[entityIndex] || 0);
-      const shapeType = Collider.shapeType[entityIndex];
+        ty[entityIndex] + (cOffsetY[entityIndex] || 0);
+      const shapeType = cShapeParams[entityIndex];
 
       let distance = -1;
 
       // Check collision based on shape type using utils functions
       if (shapeType === Ray.SHAPE_CIRCLE) {
-        const radius = Collider.radius[entityIndex];
+        const radius = cRadius[entityIndex];
         distance = rayCircleIntersect(
           rayX,
           rayY,
@@ -266,8 +278,8 @@ export class Ray {
           rayLength
         );
       } else if (shapeType === Ray.SHAPE_BOX) {
-        const width = Collider.width[entityIndex];
-        const height = Collider.height[entityIndex];
+        const width = cWidth[entityIndex];
+        const height = cHeight[entityIndex];
         distance = rayBoxIntersect(
           rayX,
           rayY,
