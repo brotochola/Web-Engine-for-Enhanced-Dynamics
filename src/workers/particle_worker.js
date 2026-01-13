@@ -1021,30 +1021,26 @@ class ParticleWorker extends AbstractWorker {
   // }
 
   /**
-   * Calculate shadow sprite positions for all active lights
-   * OPTIMIZED: Uses query system to iterate only entities with LightEmitter
-   * Uses precomputed neighbor/distance data from Grid (spatial worker)
+   * Update shadow sprites using SEQUENTIAL SLOTS
+   * Iterate lights, find shadow casters, write to sequential slots.
    */
   updateShadowSprites() {
     if (!this.shadowsEnabled || !this.shadowSpriteActive) return;
 
     const shadowActive = this.shadowSpriteActive;
 
-    // Check if we have precomputed distances from Grid (spatial worker)
-    const usePrecomputedDistances =
-      Grid.neighborData && Grid.distanceData && Grid.maxNeighbors > 0;
-
-    if (!usePrecomputedDistances) {
-      // Clear all slots only when no data available
-      for (let i = 0; i < this.maxShadowSprites; i++) {
-        shadowActive[i] = 0;
-      }
-      return;
+    // Clear ALL slots at the START of each frame
+    for (let i = 0; i < this.maxShadowSprites; i++) {
+      shadowActive[i] = 0;
     }
 
-    // PERFORMANCE: Cache Grid arrays locally to avoid method call overhead
+    // Check if we have precomputed distances from Grid (spatial worker)
     const neighborData = Grid.neighborData;
     const distanceData = Grid.distanceData;
+    if (!neighborData || !distanceData || Grid.maxNeighbors <= 0) {
+      return; // No spatial data yet
+    }
+
     const stride = Grid._stride;
 
     // Cache component arrays (entity data)
@@ -1058,7 +1054,7 @@ class ParticleWorker extends AbstractWorker {
     const entityShadowHeight = ShadowCaster.height;
     const isOnScreen = SpriteRenderer.isItOnScreen;
 
-    // Shadow sprite output arrays (shadowActive already cached above)
+    // Shadow sprite output arrays
     const shadowRadius = this.shadowSpriteRadius;
     const shadowX = this.shadowSpriteX;
     const shadowY = this.shadowSpriteY;
@@ -1076,11 +1072,17 @@ class ParticleWorker extends AbstractWorker {
       entityShadowCounts.fill(0);
     }
 
+    // Track (lightIdx, casterIdx) pairs to skip duplicates
+    // (Spatial grid may still have edge-case duplicates during worker sync)
+    if (!this._shadowPairs) {
+      this._shadowPairs = new Set();
+    }
+    this._shadowPairs.clear();
+
     let shadowIdx = 0;
     let lightsProcessed = 0;
 
-    // OPTIMIZATION: Query only entities with LightEmitter instead of iterating all entities
-    // Dramatically reduces iterations (e.g., 10 lights vs 10,000 entities)
+    // Query only entities with LightEmitter
     const lightEntities = this.query([LightEmitter]);
 
     // For each LIGHT, find nearby shadow casters and generate shadows
@@ -1105,7 +1107,7 @@ class ParticleWorker extends AbstractWorker {
       const lightX = worldX[lightIdx];
       const lightY = worldY[lightIdx];
 
-      // Get neighbors of this light using cached Grid arrays (direct access, no method overhead)
+      // Get neighbors of this light using cached Grid arrays
       const offset = lightIdx * stride;
       const neighborCount = neighborData[offset];
 
@@ -1123,6 +1125,12 @@ class ParticleWorker extends AbstractWorker {
         if (!transformActive[neighborIdx]) continue;
         if (!isOnScreen[neighborIdx]) continue;
 
+        // Skip duplicate (light, caster) pairs within this frame
+        // This can happen if spatial grid has edge-case duplicates during worker sync
+        const pairKey = `${lightIdx}-${neighborIdx}`;
+        if (this._shadowPairs.has(pairKey)) continue;
+        this._shadowPairs.add(pairKey);
+
         // Skip if entity has already cast max shadows (if limit is enabled)
         if (
           maxShadowsPerEntity > 0 &&
@@ -1131,7 +1139,8 @@ class ParticleWorker extends AbstractWorker {
           continue;
 
         const distSq = distanceData[offset + 1 + k];
-
+        // Skip if light is at caster position (avoid division by zero)
+        if (distSq < 1) continue;
         const casterX = worldX[neighborIdx];
         const casterY = worldY[neighborIdx];
         const casterRadius = entityShadowRadius[neighborIdx] || 10;
@@ -1141,9 +1150,6 @@ class ParticleWorker extends AbstractWorker {
         const dx = casterX - lightX;
         const dy = casterY - lightY;
         const dist = Math.sqrt(distSq);
-
-        // Skip if light is at caster position (avoid division by zero)
-        if (dist < 1) continue;
 
         // Use normalized direction instead of trig functions (faster)
         const invDist = 1 / dist;
@@ -1155,9 +1161,6 @@ class ParticleWorker extends AbstractWorker {
         const posY = casterY + dirY * -casterRadius;
 
         // Shadow scale based on caster size, height, and distance
-        // Closer to light = shorter shadow, farther = longer shadow
-        // Taller objects cast longer shadows (height factor)
-        // Use distance directly with a reasonable scaling factor (256 as reference)
         const distRatio = dist * 0.00390625; // 1/256 pre-computed
         const clampedDistRatio = distRatio > 1 ? 1 : distRatio;
         const heightFactor = casterHeight * 0.025; // Normalize height: 40 units → 1.0
@@ -1165,15 +1168,12 @@ class ParticleWorker extends AbstractWorker {
         const widthScale = casterRadius * 0.0714; // Use entity's shadowRadius for width
 
         // Shadow alpha: stronger near light, fades with distance
-
         const alpha = intensity / (distSq * 2);
 
-        // Angle from light to caster (still need atan2 for rotation, but only once per shadow)
+        // Angle from light to caster
         const angle = Math.atan2(dy, dx);
 
-        // Write shadow data
-        // FIXED: angle - PI/2 to make shadow point AWAY from light
-        // (texture points down by default, we rotate to point in angle direction)
+        // Write shadow data to sequential slot
         shadowActive[shadowIdx] = 1;
         shadowRadius[shadowIdx] = casterRadius;
         shadowX[shadowIdx] = posX;
@@ -1191,14 +1191,6 @@ class ParticleWorker extends AbstractWorker {
           entityShadowCounts[neighborIdx]++;
         }
       }
-    }
-
-    // RACE CONDITION FIX: Clear only UNUSED slots at the END
-    // This prevents pixi_worker from reading a "cleared" buffer while we're still writing.
-    // By clearing only the remaining slots AFTER writing active shadows, the buffer
-    // always contains valid shadow data, eliminating the flashing issue.
-    for (let i = shadowIdx; i < this.maxShadowSprites; i++) {
-      shadowActive[i] = 0;
     }
 
     // Track shadows updated for stats
