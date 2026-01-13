@@ -647,7 +647,11 @@ export class AbstractWorker {
   _computeQuery(componentClasses) {
     const componentNames = componentClasses.map((c) => c.name);
     const componentNameSet = new Set(componentNames);
-    const matchingIndices = [];
+
+    // Pre-allocate array with max possible size (all entities)
+    const maxSize = this.queryMetadata.reduce((sum, m) => sum + m.poolSize, 0);
+    const matchingIndices = new Int32Array(maxSize);
+    let count = 0;
 
     // Check each entity class metadata
     for (const metadata of this.queryMetadata) {
@@ -659,12 +663,13 @@ export class AbstractWorker {
       if (hasAllComponents) {
         // Add all entity indices of this class
         for (let i = metadata.startIndex; i < metadata.endIndex; i++) {
-          matchingIndices.push(i);
+          matchingIndices[count++] = i;
         }
       }
     }
 
-    return new Int32Array(matchingIndices);
+    // Return a subarray view with only the used portion (zero-copy)
+    return matchingIndices.subarray(0, count);
   }
 
   // ==========================================

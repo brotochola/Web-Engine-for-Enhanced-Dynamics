@@ -69,7 +69,8 @@ class ParticleWorker extends AbstractWorker {
 
     // Reusable array to collect particles that need stamping this frame
     // Cleared each frame, populated during physics, processed after physics
-    this.particlesToStamp = [];
+    this.particlesToStamp = null; // Initialized after maxParticles is known
+    this.particlesToStampCount = 0;
 
     // ========================================
     // DECAL TEXTURE DATA
@@ -164,6 +165,9 @@ class ParticleWorker extends AbstractWorker {
           "PARTICLE WORKER: ParticleComponent buffer not found, particle physics disabled"
         );
         this.maxParticles = 0;
+      } else {
+        // Initialize typed array for particle stamping (performance optimization)
+        this.particlesToStamp = new Uint16Array(this.maxParticles);
       }
     }
     // Note: Worker continues initialization for other systems (lighting, shadows, flashes, etc.)
@@ -523,7 +527,7 @@ class ParticleWorker extends AbstractWorker {
    * Reuses array to avoid allocations
    */
   clearParticleStampList() {
-    this.particlesToStamp.length = 0;
+    this.particlesToStampCount = 0;
   }
 
   /**
@@ -624,7 +628,7 @@ class ParticleWorker extends AbstractWorker {
         // If stayOnTheFloor is enabled, collect particle for stamping
         if (stayOnTheFloor[i]) {
           if (this.decalsEnabled) {
-            this.particlesToStamp.push(i);
+            this.particlesToStamp[this.particlesToStampCount++] = i;
           }
           active[i] = 0;
           activeCount--;
@@ -672,7 +676,7 @@ class ParticleWorker extends AbstractWorker {
    * Batching improves cache locality for tile writes
    */
   stampCollectedParticles() {
-    if (this.particlesToStamp.length === 0 || !this.decalsEnabled) return;
+    if (this.particlesToStampCount === 0 || !this.decalsEnabled) return;
 
     const particleX = ParticleComponent.x;
     const particleY = ParticleComponent.y;
@@ -681,7 +685,8 @@ class ParticleWorker extends AbstractWorker {
     const particleTextureId = ParticleComponent.textureId;
     const particleAlpha = ParticleComponent.alpha;
 
-    for (const particleIndex of this.particlesToStamp) {
+    for (let i = 0; i < this.particlesToStampCount; i++) {
+      const particleIndex = this.particlesToStamp[i];
       this.stampParticleToTile(
         particleX[particleIndex],
         particleY[particleIndex],
@@ -693,7 +698,7 @@ class ParticleWorker extends AbstractWorker {
     }
 
     // Track stamped particles for stats
-    this.particlesStampedThisFrame = this.particlesToStamp.length;
+    this.particlesStampedThisFrame = this.particlesToStampCount;
   }
 
   /**

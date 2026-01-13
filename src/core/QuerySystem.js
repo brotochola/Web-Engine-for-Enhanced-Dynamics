@@ -107,7 +107,11 @@ export class QuerySystem {
     const requiredIds = new Set(
       componentClasses.map((c) => this._getComponentId(c))
     );
-    const matchingIndices = [];
+
+    // Pre-allocate array with max possible size (all entities)
+    const maxSize = this.entityMetadata.reduce((sum, m) => sum + m.poolSize, 0);
+    const matchingIndices = new Int32Array(maxSize);
+    let count = 0;
 
     // Check each entity class metadata
     for (const metadata of this.entityMetadata) {
@@ -122,12 +126,13 @@ export class QuerySystem {
       if (hasAllComponents) {
         // Add all entity indices of this class
         for (let i = metadata.startIndex; i < metadata.endIndex; i++) {
-          matchingIndices.push(i);
+          matchingIndices[count++] = i;
         }
       }
     }
 
-    return new Int32Array(matchingIndices);
+    // Return a subarray view with only the used portion (zero-copy)
+    return matchingIndices.subarray(0, count);
   }
 
   /**
@@ -262,8 +267,12 @@ export function createQueryFunction(queriesData) {
    * @private
    */
   function computeQuery(componentIds) {
-    const matchingIndices = [];
     const componentIdSet = new Set(componentIds);
+
+    // Pre-allocate array with max possible size (all entities)
+    const maxSize = entityMetadata.reduce((sum, m) => sum + m.poolSize, 0);
+    const matchingIndices = new Int32Array(maxSize);
+    let count = 0;
 
     // Check each entity class metadata
     for (const metadata of entityMetadata) {
@@ -275,12 +284,13 @@ export function createQueryFunction(queriesData) {
       if (hasAllComponents) {
         // Add all entity indices of this class
         for (let i = metadata.startIndex; i < metadata.endIndex; i++) {
-          matchingIndices.push(i);
+          matchingIndices[count++] = i;
         }
       }
     }
 
-    return new Int32Array(matchingIndices);
+    // Return a subarray view with only the used portion (zero-copy)
+    return matchingIndices.subarray(0, count);
   }
 
   // Return the query function

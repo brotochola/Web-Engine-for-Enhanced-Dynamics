@@ -797,17 +797,19 @@ export class GameObject {
 
   /**
    * Get all neighbor IDs as an array
-   * @returns {number[]} Array of neighbor entity indices
+   * @returns {Int32Array} Typed array of neighbor entity indices (view into internal buffer)
    */
   getAllNeighborIds() {
-    const neighbors = [];
     const count = this.neighborCount;
     const neighborData = GameObject.neighborData;
     const neighborOffset = this._neighborOffset;
-    for (let i = 0; i < count; i++) {
-      neighbors.push(neighborData[neighborOffset + 1 + i]);
-    }
-    return neighbors;
+    // Return a typed array view (zero-copy slice of the neighbor buffer)
+    // Note: Int32Array elements are 4 bytes each
+    return new Int32Array(
+      neighborData.buffer,
+      neighborData.byteOffset + (neighborOffset + 1) * 4,
+      count
+    );
   }
 
   /**
@@ -815,17 +817,25 @@ export class GameObject {
    * @returns {GameObject[]} Array of neighbor GameObject instances
    */
   getAllNeighborInstances() {
-    const neighbors = [];
-
+    const count = this.neighborCount;
+    const neighbors = new Array(count);
     const entities = GameObject.instances;
+    const neighborData = GameObject.neighborData;
+    const neighborOffset = this._neighborOffset;
 
-    const neighBourEntities = this.getAllNeighborIds();
-    for (let i = 0; i < neighBourEntities.length; i++) {
-      const neighborId = neighBourEntities[i];
+    let validCount = 0;
+    for (let i = 0; i < count; i++) {
+      const neighborId = neighborData[neighborOffset + 1 + i];
       if (neighborId >= 0 && neighborId < entities.length) {
-        neighbors.push(entities[neighborId]);
+        neighbors[validCount++] = entities[neighborId];
       }
     }
+
+    // Trim array if some neighbors were invalid
+    if (validCount < count) {
+      neighbors.length = validCount;
+    }
+
     return neighbors;
   }
 
