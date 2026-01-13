@@ -822,6 +822,26 @@ class ParticleWorker extends AbstractWorker {
     const activeIndices = this.activeParticleIndices;
     const count = this.activeParticleCount;
 
+    // Hoist camera bounds properties to avoid object lookups in loop
+    let camZoom = 1;
+    let camOffX = 0;
+    let camOffY = 0;
+    let camMinX = 0;
+    let camMaxX = 0;
+    let camMinY = 0;
+    let camMaxY = 0;
+    const hasCamera = !!cameraBounds;
+
+    if (hasCamera) {
+      camZoom = cameraBounds.zoom;
+      camOffX = cameraBounds.cameraOffsetX;
+      camOffY = cameraBounds.cameraOffsetY;
+      camMinX = cameraBounds.minX;
+      camMaxX = cameraBounds.maxX;
+      camMinY = cameraBounds.minY;
+      camMaxY = cameraBounds.maxY;
+    }
+
     for (let idx = 0; idx < count; idx++) {
       const i = activeIndices[idx];
 
@@ -836,7 +856,6 @@ class ParticleWorker extends AbstractWorker {
       // Check if particle expired
       if (currentLife[i] >= lifespan[i]) {
         active[i] = 0;
-        activeCount--; // Function returns current active count, this is loosely tracked relative to list start
         continue;
       }
 
@@ -862,7 +881,8 @@ class ParticleWorker extends AbstractWorker {
             this.particlesToStamp[this.particlesToStampCount++] = i;
           }
           active[i] = 0;
-          activeCount--;
+          // Note: we don't decrement activeCount here because it's just a return value
+          // and the list index iteration continues. The particle is marked inactive.
           continue;
         }
 
@@ -878,25 +898,26 @@ class ParticleWorker extends AbstractWorker {
 
           if (alpha[i] <= 0) {
             active[i] = 0;
-            activeCount--;
             continue;
           }
         }
       }
 
       // Update screen visibility for this particle
-      if (cameraBounds) {
-        const screenX = x[i] * cameraBounds.zoom - cameraBounds.cameraOffsetX;
-        const screenY = y[i] * cameraBounds.zoom - cameraBounds.cameraOffsetY;
+      if (hasCamera) {
+        const screenX = x[i] * camZoom - camOffX;
+        const screenY = y[i] * camZoom - camOffY;
 
         isItOnScreen[i] =
-          screenX > cameraBounds.minX &&
-          screenX < cameraBounds.maxX &&
-          screenY > cameraBounds.minY &&
-          screenY < cameraBounds.maxY
+          screenX > camMinX &&
+          screenX < camMaxX &&
+          screenY > camMinY &&
+          screenY < camMaxY
             ? 1
             : 0;
       }
+      
+      activeCount++;
     }
 
     return activeCount;
