@@ -308,7 +308,14 @@ class LogicWorker extends AbstractWorker {
       t2 = performance.now();
     }
 
+    // OPTIMIZED: Use activeEntitiesData to skip inactive entities entirely
+    // particle_worker builds this list at the start of each frame
+    const totalActiveEntities = this.activeEntitiesData
+      ? this.activeEntitiesData[0]
+      : 0;
+
     // Job-based processing: atomically claim jobs until none remain
+    // Jobs are now ranges in the active entity list, not entity index ranges
     while (true) {
       // Atomically claim the next job
       const jobIndex = Atomics.add(this.jobQueueData, 0, 1);
@@ -322,14 +329,24 @@ class LogicWorker extends AbstractWorker {
       this.jobsProcessedThisFrame++;
       this.jobsStolenThisFrame++; // Track as stolen job
 
-      // Get job range from buffer
+      // Get job range from buffer (these are indices into the active entity list)
       const jobStartIndex = this.jobQueueData[2 + jobIndex * 2];
       const jobEndIndex = this.jobQueueData[2 + jobIndex * 2 + 1];
 
-      // Process all entities in this job's range
-      for (let i = jobStartIndex; i < jobEndIndex; i++) {
-        if (this.gameObjects[i] && Transform.active[i]) {
-          const obj = this.gameObjects[i];
+      // Clamp job range to actual active entity count
+      const actualEndIndex = Math.min(jobEndIndex, totalActiveEntities);
+
+      // Process all active entities in this job's range
+      for (
+        let activeIdx = jobStartIndex;
+        activeIdx < actualEndIndex;
+        activeIdx++
+      ) {
+        // Get actual entity index from active list (one extra indirection)
+        const entityIndex = this.activeEntitiesData[1 + activeIdx];
+        const obj = this.gameObjects[entityIndex];
+
+        if (obj) {
           activeCount++;
           this.entitiesProcessedThisFrame++;
 
@@ -358,7 +375,7 @@ class LogicWorker extends AbstractWorker {
           }
 
           // Check for screen visibility changes and call lifecycle methods
-          this.checkScreenVisibility(i, obj);
+          this.checkScreenVisibility(entityIndex, obj);
         }
       }
     }
@@ -752,12 +769,18 @@ class LogicWorker extends AbstractWorker {
         }
 
         // Despawn ALL entities of this type (no partitioning - worker 0 handles all)
+        // OPTIMIZED: Use activeEntitiesData to skip inactive entities
         let count = 0;
         let skippedNoInstance = 0;
         const entityType = EntityClass.entityType;
+        const totalActiveEntities = this.activeEntitiesData
+          ? this.activeEntitiesData[0]
+          : 0;
 
-        for (let i = 0; i < this.globalEntityCount; i++) {
-          if (Transform.active[i] && Transform.entityType[i] === entityType) {
+        // Only iterate through active entities, not the entire pool
+        for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
+          const i = this.activeEntitiesData[1 + activeIdx];
+          if (Transform.entityType[i] === entityType) {
             if (this.gameObjects[i]) {
               this.gameObjects[i].despawn();
               count++;
@@ -794,10 +817,16 @@ class LogicWorker extends AbstractWorker {
         }
 
         // Despawn ALL entities (no partitioning - worker 0 handles all)
+        // OPTIMIZED: Use activeEntitiesData to skip inactive entities
         let totalDespawned = 0;
+        const totalActiveEntities = this.activeEntitiesData
+          ? this.activeEntitiesData[0]
+          : 0;
 
-        for (let i = 0; i < this.globalEntityCount; i++) {
-          if (Transform.active[i] && this.gameObjects[i]) {
+        // Only iterate through active entities, not the entire pool
+        for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
+          const i = this.activeEntitiesData[1 + activeIdx];
+          if (this.gameObjects[i]) {
             this.gameObjects[i].despawn();
             totalDespawned++;
           }

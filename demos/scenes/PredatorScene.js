@@ -154,7 +154,7 @@ export class PredatorScene extends WEED.Scene {
     [Boid, 0], // Register but don't pre-allocate
     [House, 20],
     [TallLight, 100],
-    [PersonWithFSM, 0], // FSM-based civilians
+    [PersonWithFSM, 20000], // FSM-based civilians
     // Grass now uses DecorationPool instead of GameObject
   ];
 

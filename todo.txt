@@ -1,3 +1,4 @@
+--ver todos los  "= []" y entender si vale la pena pasarlo a typed
 -- borrar todo lo de this.enableProfiling
 
 -------- 
