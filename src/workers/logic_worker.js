@@ -60,18 +60,6 @@ class LogicWorker extends AbstractWorker {
     this.systemsExecutedThisFrame = 0; // Track number of distinct update phases executed
     this.frameStartTime = 0; // For timing diagnostics
 
-    // Detailed profiling (only tracked when enabled)
-    this.enableProfiling = false; // Set to true to enable detailed profiling
-    this.profilingStats = {
-      collisionTime: 0,
-      jobProcessingTime: 0,
-      neighborUpdateTime: 0,
-      tickTime: 0,
-      totalFrameTime: 0,
-      totalNeighborsProcessed: 0,
-    };
-    this.profileReportInterval = 120; // Report every N frames
-
     // Collision tracking (Unity-style Enter/Stay/Exit)
     this.collisionData = null; // SharedArrayBuffer for collision pairs from physics worker
 
@@ -273,7 +261,6 @@ class LogicWorker extends AbstractWorker {
    */
   update(deltaTime, dtRatio, resuming) {
     this.frameStartTime = performance.now();
-    let t0, t1, t2, t3, t4;
 
     // Reset stats for this frame
     this.jobsProcessedThisFrame = 0;
@@ -287,26 +274,12 @@ class LogicWorker extends AbstractWorker {
 
     // Process collision callbacks BEFORE entity logic (Unity-style)
     if (this.collisionData) {
-      if (this.enableProfiling) {
-        t0 = performance.now();
-      }
-
       this.processCollisionCallbacks();
       this.systemsExecutedThisFrame++; // Collision system executed
-
-      if (this.enableProfiling) {
-        t1 = performance.now();
-        this.profilingStats.collisionTime += t1 - t0;
-      }
     }
 
     // Count active entities while processing jobs
     let activeCount = 0;
-    let totalNeighborsThisFrame = 0;
-
-    if (this.enableProfiling) {
-      t2 = performance.now();
-    }
 
     // OPTIMIZED: Use activeEntitiesData to skip inactive entities entirely
     // particle_worker builds this list at the start of each frame
@@ -350,29 +323,12 @@ class LogicWorker extends AbstractWorker {
           activeCount++;
           this.entitiesProcessedThisFrame++;
 
-          // Update neighbor references before tick
-          const neighborStart = this.enableProfiling ? performance.now() : 0;
-
           // OPTIMIZED: updating neighbors no longer allocates subarrays (GC free)
           // It just updates _neighborOffset and neighborCount integers
           obj.updateNeighbors(this.neighborData, this.distanceData);
 
-          if (this.enableProfiling) {
-            const neighborEnd = performance.now();
-            this.profilingStats.neighborUpdateTime +=
-              neighborEnd - neighborStart;
-            // Track how many neighbors this entity has
-            totalNeighborsThisFrame += obj.neighborCount;
-          }
-
           // Tick entity logic (no inputData parameter - use this.mouse / this.keyboard instead)
-          const tickStart = this.enableProfiling ? performance.now() : 0;
           obj.tick(dtRatio);
-
-          if (this.enableProfiling) {
-            const tickEnd = performance.now();
-            this.profilingStats.tickTime += tickEnd - tickStart;
-          }
 
           // Check for screen visibility changes and call lifecycle methods
           this.checkScreenVisibility(entityIndex, obj);
@@ -405,18 +361,6 @@ class LogicWorker extends AbstractWorker {
     } else if (this.totalLogicWorkers === 1) {
       // Single worker mode - just reset directly
       Atomics.store(this.jobQueueData, 0, 0);
-    }
-
-    if (this.enableProfiling) {
-      t3 = performance.now();
-      this.profilingStats.jobProcessingTime += t3 - t2;
-      this.profilingStats.totalNeighborsProcessed += totalNeighborsThisFrame;
-      this.profilingStats.totalFrameTime += t3 - t0;
-
-      // Report profiling stats periodically
-      if (this.frameNumber % this.profileReportInterval === 0) {
-        this.reportProfilingStats(totalNeighborsThisFrame);
-      }
     }
 
     // Store active count for FPS reporting
@@ -568,60 +512,6 @@ class LogicWorker extends AbstractWorker {
   }
 
   /**
-   * Report detailed profiling statistics
-   */
-  reportProfilingStats(neighborsThisFrame) {
-    const frames = this.profileReportInterval;
-    const avgFrameTime = this.profilingStats.totalFrameTime / frames;
-    const avgCollisionTime = this.profilingStats.collisionTime / frames;
-    const avgJobProcessingTime = this.profilingStats.jobProcessingTime / frames;
-    const avgNeighborUpdateTime =
-      this.profilingStats.neighborUpdateTime / frames;
-    const avgTickTime = this.profilingStats.tickTime / frames;
-    const avgNeighborsPerFrame =
-      this.profilingStats.totalNeighborsProcessed / frames;
-
-    console.log(
-      `\n📊 LOGIC WORKER ${this.workerIndex} PROFILING (avg over ${frames} frames):\n` +
-        `  Total frame time: ${avgFrameTime.toFixed(2)}ms\n` +
-        `    ├─ Collision cbs:     ${avgCollisionTime.toFixed(2)}ms (${(
-          (avgCollisionTime / avgFrameTime) *
-          100
-        ).toFixed(1)}%)\n` +
-        `    └─ Job processing:    ${avgJobProcessingTime.toFixed(2)}ms (${(
-          (avgJobProcessingTime / avgFrameTime) *
-          100
-        ).toFixed(1)}%)\n` +
-        `        ├─ Neighbor update: ${avgNeighborUpdateTime.toFixed(2)}ms (${(
-          (avgNeighborUpdateTime / avgJobProcessingTime) *
-          100
-        ).toFixed(1)}%)\n` +
-        `        └─ Entity tick():   ${avgTickTime.toFixed(2)}ms (${(
-          (avgTickTime / avgJobProcessingTime) *
-          100
-        ).toFixed(1)}%)\n` +
-        `  Work distribution:\n` +
-        `    - Jobs/frame:      ${this.jobsProcessedThisFrame.toFixed(1)}\n` +
-        `    - Entities/frame:  ${this.entitiesProcessedThisFrame.toFixed(
-          0
-        )}\n` +
-        `    - Neighbors/frame: ${avgNeighborsPerFrame.toFixed(0)}\n` +
-        `    - μs/entity:       ${(
-          (avgFrameTime / this.entitiesProcessedThisFrame) *
-          1000
-        ).toFixed(1)}μs`
-    );
-
-    // Reset stats for next interval
-    this.profilingStats.collisionTime = 0;
-    this.profilingStats.jobProcessingTime = 0;
-    this.profilingStats.neighborUpdateTime = 0;
-    this.profilingStats.tickTime = 0;
-    this.profilingStats.totalFrameTime = 0;
-    this.profilingStats.totalNeighborsProcessed = 0;
-  }
-
-  /**
    * Handle custom messages from main thread or other workers
    * Implements spawning and despawning commands
    */
@@ -629,16 +519,6 @@ class LogicWorker extends AbstractWorker {
     const { msg } = data;
 
     switch (msg) {
-      case "enableProfiling": {
-        this.enableProfiling = data.enabled !== undefined ? data.enabled : true;
-        console.log(
-          `LOGIC WORKER ${this.workerIndex}: Profiling ${
-            this.enableProfiling ? "ENABLED" : "DISABLED"
-          }`
-        );
-        break;
-      }
-
       case "spawn": {
         // Only worker 0 handles spawn messages to avoid race conditions
         // All workers receive the broadcast, but only worker 0 actually spawns

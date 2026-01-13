@@ -1961,20 +1961,6 @@ class Scene {
     };
   }
 
-  enableProfiling(enabled = true) {
-    if (!this.workers.logicWorkers || this.workers.logicWorkers.length === 0) {
-      console.error("Logic workers not initialized");
-      return;
-    }
-
-    this.workers.logicWorkers.forEach((worker) => {
-      worker.postMessage({
-        msg: "enableProfiling",
-        enabled: enabled,
-      });
-    });
-  }
-
   getJobStealingStats() {
     if (!this.mainThreadHelper) return null;
     return this.mainThreadHelper.getStats();
