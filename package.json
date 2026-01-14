@@ -1,8 +1,20 @@
 {
-  "name": "multithreadad-game-engine",
-  "version": "0.0.2",
-  "description": "https://multithreaded-game-engine.vercel.app/",
-  "main": "server/node_server.js",
+  "name": "@weed.js/engine",
+  "version": "0.1.0",
+  "description": "A blazing-fast multithreaded web game engine that handles 20,000+ NPCs without breaking a sweat",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./core/*": "./src/core/*.js",
+    "./components/*": "./src/components/*.js",
+    "./workers/*": "./src/workers/*.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "directories": {
     "lib": "src",
     "test": "tests",
@@ -11,7 +23,28 @@
   "scripts": {
     "dev": "node server/node_server.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "keywords": [
+    "game-engine",
+    "webgl",
+    "multithreaded",
+    "ecs",
+    "entity-component-system",
+    "pixijs",
+    "web-worker",
+    "game-development",
+    "2d",
+    "physics",
+    "rendering",
+    "performance"
+  ],
+  "author": "Facundo Saiegh",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/weedjs.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/weedjs/issues"
+  },
+  "homepage": "https://multithreaded-game-engine.vercel.app/"
 }
