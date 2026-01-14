@@ -4,9 +4,9 @@
  * Enables Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy.
  */
 
-const http = require("http");
-const fs = require("fs");
-const path = require("path");
+import http from "http";
+import fs from "fs";
+import path from "path";
 
 const PORT = 8000;
 
@@ -81,9 +81,23 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log("🚀 Server running at http://localhost:" + PORT + "/");
-  console.log("📁 Serving files from: " + process.cwd());
-  console.log("✅ SharedArrayBuffer enabled (COOP & COEP headers set)");
-  console.log("Press Ctrl+C to stop\n");
-});
+const startServer = (port) => {
+  server.listen(port, () => {
+    console.log("🚀 Server running at http://localhost:" + port + "/");
+    console.log("📁 Serving files from: " + process.cwd());
+    console.log("✅ SharedArrayBuffer enabled (COOP & COEP headers set)");
+    console.log("Press Ctrl+C to stop\n");
+  });
+
+  server.on("error", (e) => {
+    if (e.code === "EADDRINUSE") {
+      console.log(`⚠️ Port ${port} is in use, trying ${port + 1}...`);
+      server.close(); // Ensure previous attempt is cleaned up
+      startServer(port + 1);
+    } else {
+      console.error("❌ Server error:", e);
+    }
+  });
+};
+
+startServer(PORT);

@@ -299,6 +299,7 @@ class PixiRenderer extends AbstractWorker {
     this.spritesheets = {}; // Store loaded spritesheets by name
     this.tilemaps = {}; // Store loaded tilemap data (Tiled JSON + tileset texture)
     this.currentTilemap = null; // Currently active tilemap background
+    this.tilemapScale = { x: 1, y: 1 }; // Base scale for tilemap (renders at scan * zoom)
 
     // ========================================
     // CENTRALIZED PARTICLE POOL
@@ -533,7 +534,10 @@ class PixiRenderer extends AbstractWorker {
 
     // Apply camera state to tilemap background
     if (this.currentTilemap) {
-      this.currentTilemap.scale.set(zoom);
+      this.currentTilemap.scale.set(
+        zoom * this.tilemapScale.x,
+        zoom * this.tilemapScale.y
+      );
       this.currentTilemap.x = -cameraX * zoom;
       this.currentTilemap.y = -cameraY * zoom;
     }
@@ -3025,13 +3029,38 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.currentTilemap
     );
 
-    // Parse Tiled JSON and populate tilemap
-    console.log(`PIXI WORKER: Parsing Tiled JSON...`);
+    // Parse scale option
+    if (options.scale !== undefined) {
+      if (typeof options.scale === "number") {
+        this.tilemapScale = { x: options.scale, y: options.scale };
+      } else if (
+        typeof options.scale === "object" &&
+        options.scale.x !== undefined
+      ) {
+        this.tilemapScale = {
+          x: options.scale.x,
+          y: options.scale.y !== undefined ? options.scale.y : options.scale.x,
+        };
+      }
+    } else {
+      this.tilemapScale = { x: 1, y: 1 };
+    }
+
+    console.log(
+      `PIXI WORKER: Parsing Tiled JSON... (Base scale: ${this.tilemapScale.x}x${this.tilemapScale.y})`
+    );
     this.parseTiledJSON(this.currentTilemap, data, options);
 
     // Set z-index and add to stage
     this.currentTilemap.zIndex = PixiRenderer.Z_INDICES.BACKGROUND;
     this.pixiApp.stage.addChild(this.currentTilemap);
+
+    // Apply initial scale immediately
+    this.currentTilemap.scale.set(
+      this.cameraData ? this.cameraData[0] * this.tilemapScale.x : this.tilemapScale.x,
+      this.cameraData ? this.cameraData[0] * this.tilemapScale.y : this.tilemapScale.y
+    );
+
 
     // Debug: Check tilemap children and bounds
     console.log(
