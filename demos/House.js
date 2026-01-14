@@ -22,26 +22,27 @@ export class House extends GameObject {
     // this.rigidBody.maxVel = 0;
     // this.rigidBody.maxAcc = 0;
     // this.rigidBody.static = 1; // Static body - nothing can move it
-    this.setSprite("house");
+    this.setSprite("house" + (Math.random() > 0.5 ? 1 : 2));
 
     this.collider.shapeType = 1;
-    this.collider.width = 200;
-    this.collider.height = 120;
+    this.collider.width = 186;
+    this.collider.height = 110;
     this.collider.offsetY = -50;
-    this.lightEmitter.lightColor = 0xffff00;
+    this.lightEmitter.lightColor = 0xffffaa;
 
     this.lightEmitter.height = 110;
     this.lightEmitter.lightIntensity = 4000;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 0;
+    // this.setScale(0.57, 0.57);
 
     this.collider.visualRange = 300;
   }
 
   onSpawned(spawnConfig = {}) {
+    this.setup();
     //this should not be needed, i guess:
     //TODO: make onSpawned() also execute this.setup() by default
-    this.setSprite("house");
   }
 
   onDespawned() {

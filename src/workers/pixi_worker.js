@@ -2195,7 +2195,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       sprite.tint = convertRGBtoBGR(lightColor[i]);
 
       // Show this sprite (alpha controls visibility for ParticleContainer)
-      const newAlpha = lightIntensity[i] / 45000;
+      const newAlpha = lightIntensity[i] / 100000;
       sprite.alpha = newAlpha;
 
       spriteIndex++;
@@ -2286,12 +2286,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         sprite.x += (x[i] - sprite.x) * interpolationAlpha;
         sprite.y += (y[i] - sprite.y) * interpolationAlpha;
 
+        //WE DO NOT INTERPOLATE ROTATION, IT IS BUGGY
+
         // Handle rotation interpolation with angle wrapping
         // Normalize angle difference to [-PI, PI] to avoid going the long way
-        let angleDiff = rotation[i] - sprite.rotation;
-        if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
-        else if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
-        sprite.rotation += angleDiff * interpolationAlpha;
+        // let angleDiff = rotation[i] - sprite.rotation;
+        // if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+        // else if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+        sprite.rotation = rotation[i]; // angleDiff * interpolationAlpha;
 
         sprite.scaleX += (scaleX[i] - sprite.scaleX) * interpolationAlpha;
         sprite.scaleY += (scaleY[i] - sprite.scaleY) * interpolationAlpha;
