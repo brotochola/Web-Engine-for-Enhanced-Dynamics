@@ -1,6 +1,6 @@
 {
   "name": "@weed.js/engine",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "A blazing-fast multithreaded web game engine that handles 20,000+ NPCs without breaking a sweat",
   "type": "module",
   "main": "src/index.js",
@@ -25,6 +25,8 @@
   },
   "keywords": [
     "game-engine",
+    "web-game-engine",
+    "html5-game-engine",
     "webgl",
     "multithreaded",
     "ecs",
@@ -41,10 +43,10 @@
   "license": "ISC",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/weedjs.git"
+    "url": "https://github.com/brotochola/MultithreadedGameEngine.git"
   },
   "bugs": {
-    "url": "https://github.com/your-username/weedjs/issues"
+    "url": "https://github.com/brotochola/MultithreadedGameEngine/issues"
   },
-  "homepage": "https://multithreaded-game-engine.vercel.app/"
+  "homepage": "https://multithreaded-game-engine.vercel.app/demos"
 }
