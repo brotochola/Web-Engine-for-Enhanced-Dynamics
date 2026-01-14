@@ -959,12 +959,15 @@ class Scene {
     const maxEntitiesPerCell = 64; // Must match spatial_worker.js
 
     // gridEntities: flat array storing entity IDs per cell
+    // DOUBLE BUFFERED: particle_worker builds one while spatial_worker reads the other
     const GRID_ENTITIES_SIZE = totalCells * maxEntitiesPerCell * 4; // Uint32Array
-    this.buffers.gridEntities = new SharedArrayBuffer(GRID_ENTITIES_SIZE);
+    this.buffers.gridEntitiesA = new SharedArrayBuffer(GRID_ENTITIES_SIZE);
+    this.buffers.gridEntitiesB = new SharedArrayBuffer(GRID_ENTITIES_SIZE);
 
     // gridCounts: number of entities in each cell
     const GRID_COUNTS_SIZE = totalCells * 2; // Uint16Array
-    this.buffers.gridCounts = new SharedArrayBuffer(GRID_COUNTS_SIZE);
+    this.buffers.gridCountsA = new SharedArrayBuffer(GRID_COUNTS_SIZE);
+    this.buffers.gridCountsB = new SharedArrayBuffer(GRID_COUNTS_SIZE);
 
     // Pre-computed entity data: written by particle_worker during grid rebuild, read by spatial_workers
     // These values are computed once and reused by all spatial workers for neighbor detection
@@ -974,12 +977,14 @@ class Scene {
     this.buffers.entityHalfExtent = new SharedArrayBuffer(ENTITY_POS_SIZE);
 
     // Grid synchronization: prevents spatial workers from reading during grid rebuild
-    // Layout: [gridReadyFlag (0=rebuilding, 1=ready)]
-    // particle_worker sets flag and notifies, spatial_workers wait if needed
-    const GRID_SYNC_SIZE = 4; // Int32Array with 1 element
+    // Layout: 
+    // [0] = rebuildFlag (0=rebuilding, 1=ready)
+    // [1] = currentReadGrid (0=A, 1=B)
+    const GRID_SYNC_SIZE = 8; // Int32Array with 2 elements
     this.buffers.gridSyncData = new SharedArrayBuffer(GRID_SYNC_SIZE);
     const gridSyncView = new Int32Array(this.buffers.gridSyncData);
-    gridSyncView[0] = 1; // Start as ready (first frame)
+    gridSyncView[0] = 1; // Start as ready
+    gridSyncView[1] = 0; // Start reading from A
 
     // Store grid metadata for workers
     this.gridMetadata = {
@@ -1335,8 +1340,11 @@ class Scene {
         frameRateData: this.buffers.frameRateData,
         componentData: this.buffers.componentData,
         // Spatial grid buffers (shared, written by particle_worker, read by all)
-        gridEntities: this.buffers.gridEntities,
-        gridCounts: this.buffers.gridCounts,
+        // DOUBLE BUFFERED: allows atomic swap of entire grid structure
+        gridEntitiesA: this.buffers.gridEntitiesA,
+        gridEntitiesB: this.buffers.gridEntitiesB,
+        gridCountsA: this.buffers.gridCountsA,
+        gridCountsB: this.buffers.gridCountsB,
         entityPosX: this.buffers.entityPosX,
         entityPosY: this.buffers.entityPosY,
         entityHalfExtent: this.buffers.entityHalfExtent,

@@ -376,16 +376,19 @@ export class AbstractWorker {
     // Initialize Grid system with shared buffers and metadata
     // Grid is the unified spatial data access point for all workers
     // ARCHITECTURE: particle_worker writes grid, all others read
-    // - gridEntities/gridCounts: SHARED, written by particle_worker
+    // - gridEntities/gridCounts: DOUBLE BUFFERED, written by particle_worker
     // - neighborData/distanceData: DOUBLE BUFFERED, written by spatial_workers, read by logic/physics
-    if (data.gridMetadata && data.buffers?.gridEntities) {
+    if (data.gridMetadata && (data.buffers?.gridEntities || data.buffers?.gridEntitiesA)) {
       const maxNeighbors =
         this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
 
       Grid.initialize(
         {
-          gridEntities: data.buffers.gridEntities,
-          gridCounts: data.buffers.gridCounts,
+          gridEntitiesA: data.buffers.gridEntitiesA,
+          gridEntitiesB: data.buffers.gridEntitiesB,
+          gridCountsA: data.buffers.gridCountsA,
+          gridCountsB: data.buffers.gridCountsB,
+          gridSyncData: data.buffers.gridSyncData,
           neighborDataA: data.buffers.neighborDataA,
           neighborDataB: data.buffers.neighborDataB,
           distanceDataA: data.buffers.distanceDataA,

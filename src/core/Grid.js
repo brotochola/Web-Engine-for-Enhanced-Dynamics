@@ -28,9 +28,59 @@ import { Collider } from "../components/Collider.js";
  *   }
  */
 export class Grid {
-  // ===== GRID DATA (SAB views) =====
-  static gridEntities = null; // Uint32Array - entity IDs per cell
-  static gridCounts = null; // Uint16Array - count per cell
+  // ===== GRID DATA - DOUBLE BUFFERED (SAB views) =====
+  static gridEntitiesA = null; // Uint32Array - Buffer A
+  static gridEntitiesB = null; // Uint32Array - Buffer B
+  static gridCountsA = null; // Uint16Array - Buffer A
+  static gridCountsB = null; // Uint16Array - Buffer B
+
+  // GRID SYNCHRONIZATION
+  static gridSyncData = null; // Int32Array - [rebuildFlag, currentReadGrid]
+
+  static get gridEntities() {
+    if (!Grid.gridSyncData || !Grid.gridEntitiesA) return Grid.gridEntitiesA;
+    try {
+      const readGrid = Atomics.load(Grid.gridSyncData, 1);
+      return readGrid === 0 ? Grid.gridEntitiesA : Grid.gridEntitiesB;
+    } catch (e) {
+      console.error("[Grid] Error in gridEntities getter:", e);
+      return Grid.gridEntitiesA;
+    }
+  }
+
+  static get gridCounts() {
+    if (!Grid.gridSyncData || !Grid.gridCountsA) return Grid.gridCountsA;
+    try {
+      const readGrid = Atomics.load(Grid.gridSyncData, 1);
+      return readGrid === 0 ? Grid.gridCountsA : Grid.gridCountsB;
+    } catch (e) {
+      console.error("[Grid] Error in gridCounts getter:", e);
+      return Grid.gridCountsA;
+    }
+  }
+
+  // INTERNAL: Get write grid (opposite of read grid)
+  static get _gridEntitiesWrite() {
+    if (!Grid.gridSyncData || !Grid.gridEntitiesA) return Grid.gridEntitiesA;
+    try {
+      const readGrid = Atomics.load(Grid.gridSyncData, 1);
+      return readGrid === 0 ? Grid.gridEntitiesB : Grid.gridEntitiesA;
+    } catch (e) {
+      console.error("[Grid] Error in _gridEntitiesWrite getter:", e);
+      return Grid.gridEntitiesA;
+    }
+  }
+
+  static get _gridCountsWrite() {
+    if (!Grid.gridSyncData || !Grid.gridCountsA) return Grid.gridCountsA;
+    try {
+      const readGrid = Atomics.load(Grid.gridSyncData, 1);
+      return readGrid === 0 ? Grid.gridCountsB : Grid.gridCountsA;
+    } catch (e) {
+      console.error("[Grid] Error in _gridCountsWrite getter:", e);
+      return Grid.gridCountsA;
+    }
+  }
 
   // ===== NEIGHBOR DATA - DOUBLE BUFFERED (SAB views) =====
   // Store both buffers - dynamically select which to read/write based on sync flag
@@ -120,13 +170,24 @@ export class Grid {
    *   - cellSize, invCellSize, gridCols, gridRows, totalCells, maxEntitiesPerCell, maxNeighbors
    */
   static initialize(buffers, metadata) {
-    // Grid buffers
-    if (buffers.gridEntities) {
-      Grid.gridEntities = new Uint32Array(buffers.gridEntities);
-    }
-    if (buffers.gridCounts) {
-      Grid.gridCounts = new Uint16Array(buffers.gridCounts);
-    }
+    // Double-buffered grid data
+    Grid.gridEntitiesA = buffers.gridEntitiesA
+      ? new Uint32Array(buffers.gridEntitiesA)
+      : null;
+    Grid.gridEntitiesB = buffers.gridEntitiesB
+      ? new Uint32Array(buffers.gridEntitiesB)
+      : null;
+    Grid.gridCountsA = buffers.gridCountsA
+      ? new Uint16Array(buffers.gridCountsA)
+      : null;
+    Grid.gridCountsB = buffers.gridCountsB
+      ? new Uint16Array(buffers.gridCountsB)
+      : null;
+
+    // Grid synchronization buffer
+    Grid.gridSyncData = buffers.gridSyncData
+      ? new Int32Array(buffers.gridSyncData)
+      : null;
 
     // Double-buffered neighbor data
     // Store both buffers A and B
@@ -320,5 +381,17 @@ export class Grid {
     }
 
     return false; // Not the last worker
+  }
+
+  /**
+   * Swap the grid read/write buffers
+   * Called by particle_worker after rebuilding the grid
+   */
+  static swapGridBuffers() {
+    if (!Grid.gridSyncData) return;
+
+    const currentReadGrid = Atomics.load(Grid.gridSyncData, 1);
+    const newReadGrid = 1 - currentReadGrid;
+    Atomics.store(Grid.gridSyncData, 1, newReadGrid);
   }
 }

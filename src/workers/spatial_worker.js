@@ -172,9 +172,10 @@ class SpatialWorker extends AbstractWorker {
     const visualRange = Collider.visualRange;
 
     // Use Grid class for spatial and neighbor data access
+    // DOUBLE BUFFERING: Always read from the stable read-only grid buffer
+    // and write to the current write-only neighbor buffer.
     const gridEntities = Grid.gridEntities;
     const gridCounts = Grid.gridCounts;
-    // DOUBLE BUFFERING: Get write buffer dynamically (opposite of current read buffer)
     const neighborData = Grid._neighborDataWrite;
     const distanceData = Grid._distanceDataWrite;
     const invCellSize = Grid.invCellSize;
