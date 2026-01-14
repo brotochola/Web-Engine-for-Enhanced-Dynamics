@@ -78,7 +78,7 @@ export class Player extends GameObject {
   }
 
   shoot(x, y) {
-    if (Math.random() > 0.1) return;
+    if (Math.random() > 0.5) return;
     // Raycast from player position to target
     const hitEntityIndex = Ray.cast(
       this.x,
@@ -92,7 +92,7 @@ export class Player extends GameObject {
       x: this.x,
       y: this.y,
       z: 30, // height
-      lifespan: 50,
+      lifespan: 17,
       color: 0xffaa00, // orange
       intensity: 40000,
     });
@@ -121,7 +121,7 @@ export class Player extends GameObject {
     this.rigidBody.ay = 0;
 
     // Set spritesheet and initial animation
-    this.setSpritesheet("civil1");
+    this.setSpritesheet("poli");
     this.setAnimation("idle_down");
     this.setAnimationSpeed(0.15);
   }

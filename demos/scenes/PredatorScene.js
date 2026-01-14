@@ -28,7 +28,7 @@ export class PredatorScene extends WEED.Scene {
     // Spatial hash grid configuration
     spatial: {
       cellSize: 128,
-      maxNeighbors: 2048,
+      maxNeighbors: 512,
       numberOfSpatialWorkers: 2, // Multiple workers for parallel neighbor detection
       noLimitFPS: true,
     },
@@ -76,7 +76,7 @@ export class PredatorScene extends WEED.Scene {
       shadowsEnabled: true,
       maxShadowCastingLights: 100,
       maxShadowsPerLight: 500,
-      maxShadowsPerEntity: 3,
+      maxShadowsPerEntity: 6,
       maxFlashes: 50,
     },
   };
@@ -91,7 +91,8 @@ export class PredatorScene extends WEED.Scene {
       bunny: "/demos/img/bunny.png",
       blood: "/demos/img/blood.png",
       tallLight: "/demos/img/tallLight.png",
-      house: "/demos/img/house.png",
+      house1: "/demos/img/house1.png",
+      house2: "/demos/img/house2.png",
       grass1: "/demos/img/g1.png",
       grass2: "/demos/img/g2.png",
       grass3: "/demos/img/g3.png",
@@ -108,28 +109,36 @@ export class PredatorScene extends WEED.Scene {
         png: "/demos/img/civil1.png",
       },
       civil2: {
-        json: "/demos/img/civil2.json",
+        json: "/demos/img/civil1.json",
         png: "/demos/img/civil2.png",
       },
       civil3: {
-        json: "/demos/img/civil3.json",
+        json: "/demos/img/civil1.json",
         png: "/demos/img/civil3.png",
       },
       civil4: {
-        json: "/demos/img/civil4.json",
+        json: "/demos/img/civil1.json",
         png: "/demos/img/civil4.png",
       },
       civil5: {
-        json: "/demos/img/civil5.json",
+        json: "/demos/img/civil1.json",
         png: "/demos/img/civil5.png",
       },
       civil6: {
-        json: "/demos/img/civil6.json",
+        json: "/demos/img/civil1.json",
         png: "/demos/img/civil6.png",
       },
       civil7: {
-        json: "/demos/img/civil7.json",
+        json: "/demos/img/civil1.json",
         png: "/demos/img/civil7.png",
+      },
+      poli: {
+        json: "/demos/img/civil1.json",
+        png: "/demos/img/poli.png",
+      },
+      fuego: {
+        json: "/demos/img/fuego/fuego.json",
+        png: "/demos/img/fuego/fuego.png",
       },
     },
     tilemaps: {
@@ -149,8 +158,7 @@ export class PredatorScene extends WEED.Scene {
     [Prey, 20000],
     [Predator, 8],
     [Player, 1],
-    [Boid, 0], // Register but don't pre-allocate
-    [House, 20],
+    [House, 100],
     [TallLight, 100],
     [PersonWithFSM, 20000], // FSM-based civilians
     // Grass now uses DecorationPool instead of GameObject
@@ -164,13 +172,13 @@ export class PredatorScene extends WEED.Scene {
     super(game);
 
     // Scene-specific properties
-    this.numberOfPrey = 10000;
+    this.numberOfPrey = 1000;
     this.numberOfPredators = 1;
     this.numberOfBoids = 0;
-    this.numberOfTallLights = 100;
+    this.numberOfTallLights = 10;
     this.numberOfHouses = 10;
     this.numberOfGrass = 10000;
-    this.numberOfPersonsWithFSM = 10000; // FSM-based civilians
+    this.numberOfPersonsWithFSM = 1000; // FSM-based civilians
 
     // Player reference (will be set in create())
     this.playerEntity = null;
@@ -181,7 +189,6 @@ export class PredatorScene extends WEED.Scene {
   create() {
     // Set tilemap background
     this.setTilemapBackground("predatorsBG", { scale: 2 });
-    
 
     // Spawn initial entities
     console.log("🎬 PredatorScene: Spawning entities...");
