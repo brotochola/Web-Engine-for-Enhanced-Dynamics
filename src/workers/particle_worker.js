@@ -124,8 +124,9 @@ class ParticleWorker extends AbstractWorker {
     // ========================================
     // Maps (light, entity) pairs to shadow slots for stable assignment
     // This prevents flickering and allows proper interpolation in pixi_worker
-    this._shadowPairToSlot = new Map(); // Key: "lightIdx-entityIdx", Value: slot index
-    this._usedSlotsThisFrame = null; // Set of slots used this frame
+    this._shadowPairToSlot = new Map(); // Key: "lightIdx-neighborIdx", Value: slot index
+    this._shadowSlotToPair = new Map(); // Key: slot index, Value: "lightIdx-neighborIdx"
+    this._usedSlotsThisFrame = new Set(); // Set of slots used this frame
 
     this.howMuchMoreLightToParticles = 8;
 
@@ -190,7 +191,7 @@ class ParticleWorker extends AbstractWorker {
       } else {
         // Initialize typed array for particle stamping (performance optimization)
         this.particlesToStamp = new Uint16Array(this.maxParticles);
-        
+
         // OPTIMIZATION: Track active particles to avoid scanning inactive ones
         this.activeParticleIndices = new Int32Array(this.maxParticles);
       }
@@ -502,16 +503,24 @@ class ParticleWorker extends AbstractWorker {
   rebuildGrid() {
     if (!this.occupiedCells) return; // Grid not initialized
 
-    // Use Grid class for shared grid data access
-    const gridEntities = Grid.gridEntities;
-    const gridCounts = Grid.gridCounts;
+    // DOUBLE BUFFERING: Always write to the write-only grid buffer
+    // This allows spatial_workers to read the previous stable grid while we rebuild
+    const gridEntities = Grid._gridEntitiesWrite;
+    const gridCounts = Grid._gridCountsWrite;
+
+    if (!gridEntities || !gridCounts) return;
+
     const occupiedCells = this.occupiedCells;
     const maxEntitiesPerCell = Grid.maxEntitiesPerCell;
+    const gridCols = Grid.gridCols;
+    const gridRows = Grid.gridRows;
 
-    // Clear only cells that were occupied last frame - O(occupiedCells) not O(totalCells)
-    for (let i = 0; i < this.occupiedCount; i++) {
-      gridCounts[occupiedCells[i]] = 0;
-    }
+    if (gridCols <= 0) return;
+
+    // Safety: Clear the entire counts buffer for the write-target.
+    // With double-buffering, we can't easily use the 'occupiedCells' optimization
+    // without tracking two sets of occupied cells. Full clear is fast and safe.
+    gridCounts.fill(0);
     this.occupiedCount = 0;
 
     // Cache frequently accessed values
@@ -525,8 +534,6 @@ class ParticleWorker extends AbstractWorker {
     const width = Collider.width;
     const height = Collider.height;
     const invCellSize = Grid.invCellSize;
-    const gridCols = Grid.gridCols;
-    const gridRows = Grid.gridRows;
     const maxCol = gridCols - 1;
     const maxRow = gridRows - 1;
 
@@ -537,8 +544,6 @@ class ParticleWorker extends AbstractWorker {
 
     // Shape type constants
     const SHAPE_CIRCLE = 0;
-
-    let occupiedIdx = 0;
 
     // OPTIMIZED: Use active entity list (already built by buildActiveEntityList)
     // This eliminates the need to check active[i] for every entity
@@ -595,11 +600,6 @@ class ParticleWorker extends AbstractWorker {
           const cellIndex = r * gridCols + c;
           const count = gridCounts[cellIndex];
 
-          // Track newly occupied cells (only when first entity enters)
-          if (count === 0) {
-            occupiedCells[occupiedIdx++] = cellIndex;
-          }
-
           // Add entity to cell if not full
           if (count < maxEntitiesPerCell) {
             gridEntities[cellIndex * maxEntitiesPerCell + count] = i;
@@ -608,8 +608,6 @@ class ParticleWorker extends AbstractWorker {
         }
       }
     }
-
-    this.occupiedCount = occupiedIdx;
   }
 
   /**
@@ -625,24 +623,28 @@ class ParticleWorker extends AbstractWorker {
 
     // Note: Debug raycast clearing is now handled by pixi_worker at start of render frame
 
-    // Build active entity list FIRST - spatial workers need this to split work evenly
-    this.buildActiveEntityList();
-    
-    // Build active particle list - optimize physics by skipping inactive particles
-    this.buildActiveParticleList();
-
     // Rebuild spatial grid (uses active entity list) - spatial_workers will read this
-    // ATOMICS: Signal spatial workers that grid is being rebuilt (prevents reading during clear)
+    // ATOMICS: Signal spatial workers that grid (and active list) is being rebuilt
     if (this.gridSyncData) {
       Atomics.store(this.gridSyncData, 0, 0); // 0 = rebuilding
     }
-    const gridStart = performance.now();
+
+    // Build active entity list FIRST - spatial workers need this to split work evenly
+    this.buildActiveEntityList();
+
+    // Rebuild spatial grid (uses active entity list)
     this.rebuildGrid();
-    const gridEnd = performance.now();
+
+    // DOUBLE BUFFER SWAP: Make the newly built grid available for reading
+    Grid.swapGridBuffers();
+
     if (this.gridSyncData) {
       Atomics.store(this.gridSyncData, 0, 1); // 1 = ready
       Atomics.notify(this.gridSyncData, 0, Infinity); // Wake all waiting spatial workers
     }
+
+    // Build active particle list - optimize physics by skipping inactive particles
+    this.buildActiveParticleList();
 
     // Reset stats counters for this frame
     this.particlesStampedThisFrame = 0;
@@ -673,11 +675,12 @@ class ParticleWorker extends AbstractWorker {
 
     this.updateFlashes(deltaTime);
 
+    // Update screen visibility for all game entities BEFORE shadows
+    this.updateEntityScreenVisibility();
+
     // Calculate shadow sprite positions (uses same neighbor data as lighting)
     this.updateShadowSprites();
 
-    // Update screen visibility for all game entities
-    this.updateEntityScreenVisibility();
     // Update derived properties (speed, velocityAngle) for RigidBody entities
     this.updateDerivedProperties();
 
@@ -846,10 +849,10 @@ class ParticleWorker extends AbstractWorker {
       const i = activeIndices[idx];
 
       // Note: active[i] check is redundant since list only contains active particles
-      // but we keep it implicitly by how list is built. 
+      // but we keep it implicitly by how list is built.
       // Need to be careful: if particle dies during this loop, active[i] becomes 0
       // but subsequent logic handles it by 'continue' or just setting active=0.
-      
+
       // Update lifetime
       currentLife[i] += deltaTime;
 
@@ -916,7 +919,7 @@ class ParticleWorker extends AbstractWorker {
             ? 1
             : 0;
       }
-      
+
       activeCount++;
     }
 
@@ -1086,189 +1089,6 @@ class ParticleWorker extends AbstractWorker {
     this.bloodTilesDirty[tileIndex] = 1;
   }
 
-  // /**
-  //  * Calculate lighting tints for all active particles
-  //  * Uses inverse square falloff: brightness = ambient + Σ(intensity / d²)
-  //  * Multiplies original particle tint by brightness to preserve color
-  //  *
-  //  * OPTIMIZED: Inlined light calculation, distance culling, on-screen only
-  //  */
-  // updateParticleLighting() {
-  //   if (!this.lightingEnabled || this.maxParticles === 0) return;
-
-  //   // Cache particle arrays
-  //   const active = ParticleComponent.active;
-  //   const particleX = ParticleComponent.x;
-  //   const particleY = ParticleComponent.y;
-  //   const tint = ParticleComponent.tint;
-  //   const baseTint = ParticleComponent.baseTint;
-  //   const isItOnScreen = ParticleComponent.isItOnScreen;
-
-  //   // Cache light arrays directly (avoid object destructuring in hot path)
-  //   const lightX = Transform.x;
-  //   const lightY = Transform.y;
-  //   const lightIntensity = LightEmitter.lightIntensity;
-  //   const lightEnabled = LightEmitter.active;
-  //   const lightCount = this.globalEntityCount;
-
-  //   const ambient = this.lightingAmbient;
-  //   // Max distance squared beyond which light contribution is negligible
-  //   // intensity / (1 + distSq) < 0.001 when distSq > intensity * 1000
-  //   const maxLightDistSq = 500000; // ~707 world units for typical light intensities
-
-  //   // Calculate lighting for each active, on-screen particle
-  //   for (let i = 0; i < this.maxParticles; i++) {
-  //     if (!active[i]) continue;
-  //     // Skip off-screen particles - they won't be rendered anyway
-  //     if (!isItOnScreen[i]) continue;
-
-  //     const px = particleX[i];
-  //     const py = particleY[i];
-  //     let totalLight = ambient;
-
-  //     // Inlined light calculation - no function call overhead
-  //     for (let j = 0; j < lightCount; j++) {
-  //       if (!lightEnabled[j]) continue;
-
-  //       const dx = px - lightX[j];
-  //       const dy = py - lightY[j];
-  //       const distSq = dx * dx + dy * dy;
-
-  //       // Early exit: skip lights too far away to contribute meaningfully
-  //       if (distSq > maxLightDistSq) continue;
-
-  //       // Inverse square falloff
-  //       totalLight +=
-  //         (lightIntensity[j] * this.howMuchMoreLightToParticles) / (1 + distSq);
-  //     }
-
-  //     // Apply brightness to the original particle color (baseTint)
-  //     tint[i] = this.applyBrightnessToColor(baseTint[i], totalLight * 3000);
-  //   }
-  // }
-
-  // /**
-  //  * Calculate lighting tints for all visible game entities with SpriteRenderer
-  //  * Only updates entities that are active and on screen for performance
-  //  * Requires config.lighting.entityLighting = true to enable
-  //  * Uses precomputed squared distances from spatial worker when available
-  //  */
-  // updateEntityLighting() {
-  //   if (
-  //     !this.entityLightingEnabled ||
-  //     !SpriteRenderer.tint ||
-  //     !SpriteRenderer.baseTint
-  //   ) {
-  //     return;
-  //   }
-
-  //   // Cache component arrays
-  //   const active = Transform.active;
-  //   const tint = SpriteRenderer.tint;
-  //   const baseTint = SpriteRenderer.baseTint;
-  //   const isItOnScreen = SpriteRenderer.isItOnScreen;
-
-  //   // Check if we can use precomputed distances from spatial worker
-  //   const usePrecomputedDistances =
-  //     this.neighborData &&
-  //     this.distanceData &&
-  //     this.config.spatial?.maxNeighbors;
-
-  //   if (usePrecomputedDistances) {
-  //     // OPTIMIZED PATH: Iterate through LIGHTS and use their neighbors
-  //     // The LIGHT's visualRange determines which entities receive light
-  //     const lightIntensity = LightEmitter.lightIntensity;
-  //     const lightEnabled = LightEmitter.active;
-  //     const maxNeighbors = this.config.spatial.maxNeighbors;
-  //     const stride = 1 + maxNeighbors;
-  //     const ambient = this.lightingAmbient;
-
-  //     // Reuse or create brightness accumulator array
-  //     if (
-  //       !this.entityBrightness ||
-  //       this.entityBrightness.length < this.globalEntityCount
-  //     ) {
-  //       this.entityBrightness = new Float32Array(this.globalEntityCount);
-  //     }
-  //     const entityBrightness = this.entityBrightness;
-
-  //     // Initialize all entities to ambient light
-  //     for (let i = 0; i < this.globalEntityCount; i++) {
-  //       entityBrightness[i] = ambient;
-  //     }
-
-  //     // For each LIGHT, add its contribution to its neighbors
-  //     // This uses the LIGHT's visualRange to determine reach
-  //     for (let lightIdx = 0; lightIdx < this.globalEntityCount; lightIdx++) {
-  //       if (!lightEnabled[lightIdx]) continue;
-
-  //       const intensity = lightIntensity[lightIdx];
-  //       if (intensity <= 0) continue;
-
-  //       const offset = lightIdx * stride;
-  //       const neighborCount = this.neighborData[offset];
-
-  //       // Add this light's contribution to all its neighbors
-  //       for (let k = 0; k < neighborCount; k++) {
-  //         const neighborIdx = this.neighborData[offset + 1 + k];
-  //         const distSq = this.distanceData[offset + 1 + k];
-
-  //         // inverse square falloff: intensity / (1 + distSq)
-  //         entityBrightness[neighborIdx] += intensity / (1 + distSq);
-  //       }
-  //     }
-
-  //     // Apply accumulated brightness to visible entities
-  //     for (let i = 0; i < this.globalEntityCount; i++) {
-  //       if (!active[i] || !isItOnScreen[i]) continue;
-  //       //Light Emitters are always fully lit
-  //       if (LightEmitter.active[i] === 1) {
-  //         tint[i] = 0xffffff;
-  //         continue;
-  //       }
-
-  //       const entityBaseTint = baseTint[i];
-  //       if (entityBaseTint === 0) continue;
-
-  //       const brightness = entityBrightness[i];
-  //       tint[i] = this.applyBrightnessToColor(
-  //         entityBaseTint,
-  //         brightness * 9000
-  //       );
-  //       SpriteRenderer.renderDirty[i] = 1;
-  //     }
-  //   }
-  //   // else {
-  //   //   // FALLBACK PATH: Calculate distances manually (no spatial data available)
-  //   //   const entityX = Transform.x;
-  //   //   const entityY = Transform.y;
-  //   //   const lightData = this.getLightData();
-
-  //   //   for (let i = 0; i < this.globalEntityCount; i++) {
-  //   //     // Skip inactive or off-screen entities
-  //   //     if (!active[i] || !isItOnScreen[i]) continue;
-
-  //   //     // Skip entities with uninitialized baseTint (0 = black, likely not set)
-  //   //     const entityBaseTint = baseTint[i];
-  //   //     if (entityBaseTint === 0) continue;
-
-  //   //     // Calculate total light at entity position (manual distance calculation)
-  //   //     const brightness = calculateTotalLightAtPosition(
-  //   //       entityX[i],
-  //   //       entityY[i],
-  //   //       lightData,
-  //   //       this.lightingAmbient
-  //   //     );
-
-  //   //     // Apply brightness to the original entity color (baseTint)
-  //   //     tint[i] = this.applyBrightnessToColor(
-  //   //       entityBaseTint,
-  //   //       brightness * 3000
-  //   //     );
-  //   //   }
-  //   // }
-  // }
-
   /**
    * Update shadow sprites using STABLE SLOT ASSIGNMENT
    * Each (light, entity) pair keeps the same slot across frames for smooth interpolation.
@@ -1280,10 +1100,14 @@ class ParticleWorker extends AbstractWorker {
     const shadowActive = this.shadowSpriteActive;
     const maxSprites = this.maxShadowSprites;
 
-    // Check if we have precomputed distances from Grid (spatial worker)
+    // Cache Grid data and metadata once per call to avoid repeated Atomics.load calls
+    // and potential race conditions if the buffer swaps mid-loop.
     const neighborData = Grid.neighborData;
     const distanceData = Grid.distanceData;
-    if (!neighborData || !distanceData || Grid.maxNeighbors <= 0) {
+    const stride = Grid._stride;
+
+    // Check if we have precomputed distances from Grid (spatial worker)
+    if (!neighborData || Grid.maxNeighbors <= 0) {
       // No spatial data - deactivate all shadows
       for (let i = 0; i < maxSprites; i++) {
         shadowActive[i] = 0;
@@ -1291,19 +1115,17 @@ class ParticleWorker extends AbstractWorker {
       return;
     }
 
-    const stride = Grid._stride;
-
     // Cache component arrays (entity data)
-    const transformActive = Transform.active;
     const worldX = Transform.x;
     const worldY = Transform.y;
+    const transformActive = Transform.active;
     const lightEnabled = LightEmitter.active;
     const lightIntensity = LightEmitter.lightIntensity;
     const shadowCasterActive = ShadowCaster.active;
     const entityShadowRadius = ShadowCaster.shadowRadius;
     const entityShadowHeight = ShadowCaster.height;
     const isOnScreen = SpriteRenderer.isItOnScreen;
-    const flashActive = FlashComponent.active; // For checking if entity is a flash
+    const flashActive = FlashComponent.active;
 
     // Shadow sprite output arrays
     const shadowRadius = this.shadowSpriteRadius;
@@ -1318,26 +1140,23 @@ class ParticleWorker extends AbstractWorker {
     // Per-entity shadow limit tracking
     const maxShadowsPerEntity = this.maxShadowsPerEntity;
     const entityShadowCounts = this._entityShadowCounts;
-
-    // Reset entity shadow counts if limit is enabled
     if (maxShadowsPerEntity > 0 && entityShadowCounts) {
       entityShadowCounts.fill(0);
     }
 
     // ========================================
-    // STABLE SLOT ASSIGNMENT
+    // STABLE SLOT ASSIGNMENT PREP
     // ========================================
-    // Keep previous frame's slot assignments for reuse
     const pairToSlot = this._shadowPairToSlot;
-
-    // Initialize used slots tracking (reuse Set to avoid GC)
-    if (!this._usedSlotsThisFrame) {
-      this._usedSlotsThisFrame = new Set();
-    }
+    const slotToPair = this._shadowSlotToPair;
     const usedSlots = this._usedSlotsThisFrame;
     usedSlots.clear();
 
-    // Track pairs processed this frame (for cleanup)
+    // Track which slots are currently "owned" by pairs from previous frame
+    // We will avoid using these for NEW pairs until we're sure the owner is gone
+    const ownedSlots = new Set(pairToSlot.values());
+
+    // Track pairs processed this frame
     const pairsThisFrame = new Set();
 
     let shadowCount = 0;
@@ -1347,21 +1166,14 @@ class ParticleWorker extends AbstractWorker {
     const lightEntities = this.query([LightEmitter]);
 
     // For each LIGHT, find nearby shadow casters and generate shadows
-    for (
-      let lightEntityIdx = 0;
-      lightEntityIdx < lightEntities.length;
-      lightEntityIdx++
-    ) {
+    for (let i = 0; i < lightEntities.length; i++) {
       if (shadowCount >= maxSprites) break;
       if (lightsProcessed >= this.maxShadowCastingLights) break;
 
-      const lightIdx = lightEntities[lightEntityIdx];
-      if (!lightEnabled[lightIdx]) continue;
-      if (!transformActive[lightIdx]) continue;
-      
-      // Check if light is on screen
-      // Flashes are always on screen (we don't spawn them off-screen and they're short-lived)
-      // Regular entities use SpriteRenderer.isItOnScreen
+      const lightIdx = lightEntities[i];
+      if (!lightEnabled[lightIdx] || !transformActive[lightIdx]) continue;
+
+      // Check if light is on screen (with margin)
       const isFlash = flashActive[lightIdx] === 1;
       if (!isFlash && !isOnScreen[lightIdx]) continue;
 
@@ -1373,33 +1185,33 @@ class ParticleWorker extends AbstractWorker {
       const lightX = worldX[lightIdx];
       const lightY = worldY[lightIdx];
 
-      // Get neighbors of this light using cached Grid arrays
-      // Flashes now have colliders (0 radius) so they appear in the grid
+      // Get neighbors of this light using direct buffer access (safer and much faster)
       const offset = lightIdx * stride;
-      const neighborCount = neighborData[offset];
-
+      const neighborCountForLight = neighborData[offset];
       let shadowsForThisLight = 0;
 
-      // Process neighbors, create shadows for shadow casters
-      for (let k = 0; k < neighborCount; k++) {
+      for (let k = 0; k < neighborCountForLight; k++) {
         if (shadowsForThisLight >= this.maxShadowsPerLight) break;
         if (shadowCount >= maxSprites) break;
 
         const neighborIdx = neighborData[offset + 1 + k];
 
-        // Skip if not a shadow caster
-        if (!shadowCasterActive[neighborIdx]) continue;
-        if (!transformActive[neighborIdx]) continue;
+        // Skip if not a shadow caster or inactive
+        if (!shadowCasterActive[neighborIdx] || !transformActive[neighborIdx])
+          continue;
+
+        // Shadow casters should be considered if they are anywhere near the screen
+        // isOnScreen already includes a 15% margin
         if (!isOnScreen[neighborIdx]) continue;
 
-        // Create stable pair key for this (light, entity) combination
+        // Create stable pair key
         const pairKey = `${lightIdx}-${neighborIdx}`;
 
-        // Skip duplicate pairs within this frame
+        // Skip duplicate pairs (shouldn't happen with Grid but good for safety)
         if (pairsThisFrame.has(pairKey)) continue;
         pairsThisFrame.add(pairKey);
 
-        // Skip if entity has already cast max shadows (if limit is enabled)
+        // Per-entity shadow limit
         if (
           maxShadowsPerEntity > 0 &&
           entityShadowCounts[neighborIdx] >= maxShadowsPerEntity
@@ -1407,101 +1219,117 @@ class ParticleWorker extends AbstractWorker {
           continue;
 
         const distSq = distanceData[offset + 1 + k];
-        // Skip if light is at caster position (avoid division by zero)
-        if (distSq < 1) continue;
+        if (distSq < 1) continue; // Avoid division by zero
 
         // ========================================
         // GET OR ASSIGN STABLE SLOT
         // ========================================
-        let slotIdx;
+        let slotIdx = -1;
         if (pairToSlot.has(pairKey)) {
-          // Reuse existing slot for this (light, entity) pair
           slotIdx = pairToSlot.get(pairKey);
         } else {
-          // Find a free slot (one not used this frame and not assigned to active pair)
-          slotIdx = -1;
+          // Find a free slot: not used this frame AND not owned by any pair
           for (let s = 0; s < maxSprites; s++) {
-            if (!usedSlots.has(s)) {
+            if (!usedSlots.has(s) && !ownedSlots.has(s)) {
               slotIdx = s;
               break;
             }
           }
-          if (slotIdx === -1) break; // No free slots available
 
-          // Assign this slot to the pair
+          // Fallback: If no truly free slots, take ANY slot not used this frame
+          if (slotIdx === -1) {
+            for (let s = 0; s < maxSprites; s++) {
+              if (!usedSlots.has(s)) {
+                slotIdx = s;
+                // If this slot was owned by someone else, we must evict them
+                const oldPairKey = slotToPair.get(slotIdx);
+                if (oldPairKey) {
+                  pairToSlot.delete(oldPairKey);
+                }
+                break;
+              }
+            }
+          }
+
+          if (slotIdx === -1) break; // Still no slots? Limit reached.
+
+          // Assign new slot
           pairToSlot.set(pairKey, slotIdx);
+          slotToPair.set(slotIdx, pairKey);
         }
 
-        // Mark slot as used this frame
+        // Mark slot as used
         usedSlots.add(slotIdx);
 
+        // Calculate shadow properties
         const casterX = worldX[neighborIdx];
         const casterY = worldY[neighborIdx];
         const casterRadius = entityShadowRadius[neighborIdx] || 10;
         const casterHeight = entityShadowHeight[neighborIdx] || casterRadius;
 
-        // Calculate shadow properties
         const dx = casterX - lightX;
         const dy = casterY - lightY;
         const dist = Math.sqrt(distSq);
-
-        // Use normalized direction instead of trig functions (faster)
         const invDist = 1 / dist;
-        const dirX = dx * invDist; // cos(angle)
-        const dirY = dy * invDist; // sin(angle)
+        const dirX = dx * invDist;
+        const dirY = dy * invDist;
 
-        // Shadow position: at caster's feet, slightly offset in shadow direction
+        // Shadow position
         const posX = casterX + dirX * -casterRadius;
         const posY = casterY + dirY * -casterRadius;
 
-        // Shadow scale based on caster size, height, and distance
-        const distRatio = dist * 0.00390625; // 1/256 pre-computed
+        // Shadow scale
+        const distRatio = dist * 0.00390625; // 1/256
         const clampedDistRatio = distRatio > 1 ? 1 : distRatio;
-        const heightFactor = casterHeight * 0.025; // Normalize height: 40 units → 1.0
+        const heightFactor = casterHeight * 0.025; // Normalizes 40 units to 1.0
         const lengthScale = (0.3 + clampedDistRatio * 0.9) * heightFactor;
-        const widthScale = casterRadius * 0.0714; // Use entity's shadowRadius for width
+        const widthScale = casterRadius * 0.0714;
 
-        // Shadow alpha: stronger near light, fades with distance
+        // Alpha and Angle
         const alpha = intensity / (distSq * 2);
-
-        // Angle from light to caster
         const angle = Math.atan2(dy, dx);
 
-        // Write shadow data to the STABLE slot
+        // Write shadow data
         shadowActive[slotIdx] = 1;
         shadowRadius[slotIdx] = casterRadius;
         shadowX[slotIdx] = posX;
         shadowY[slotIdx] = posY;
-        shadowRotation[slotIdx] = angle - 1.5707963267948966; // PI/2 as constant
+        shadowRotation[slotIdx] = angle - 1.5707963267948966; // PI/2
         shadowScaleX[slotIdx] = widthScale;
         shadowScaleY[slotIdx] = lengthScale;
         shadowAlpha[slotIdx] = alpha;
-        shadowEntityIdx[slotIdx] = neighborIdx; // Track which entity owns this shadow
+        shadowEntityIdx[slotIdx] = neighborIdx;
 
         shadowCount++;
         shadowsForThisLight++;
+        if (maxShadowsPerEntity > 0) entityShadowCounts[neighborIdx]++;
+      }
+    }
 
-        // Track per-entity shadow count (if limit is enabled)
-        if (maxShadowsPerEntity > 0) {
-          entityShadowCounts[neighborIdx]++;
+    // ========================================
+    // CLEANUP
+    // ========================================
+    // Deactivate unused slots and remove stale mappings
+    for (let i = 0; i < maxSprites; i++) {
+      if (!usedSlots.has(i)) {
+        if (shadowActive[i]) {
+          shadowActive[i] = 0;
+          const stalePairKey = slotToPair.get(i);
+          if (stalePairKey) {
+            pairToSlot.delete(stalePairKey);
+            slotToPair.delete(i);
+          }
         }
       }
     }
 
-    // ========================================
-    // CLEANUP: Deactivate unused slots and remove stale pairs
-    // ========================================
-    // Deactivate any slots that weren't used this frame
-    for (let i = 0; i < maxSprites; i++) {
-      if (!usedSlots.has(i) && shadowActive[i]) {
-        shadowActive[i] = 0;
-      }
-    }
-
-    // Remove stale pairs from the map (pairs that weren't processed this frame)
-    for (const pairKey of pairToSlot.keys()) {
-      if (!pairsThisFrame.has(pairKey)) {
-        pairToSlot.delete(pairKey);
+    // Final sweep for any pairs that weren't processed but somehow stayed in map
+    if (pairToSlot.size > usedSlots.size) {
+      for (const [key, slot] of pairToSlot.entries()) {
+        if (!pairsThisFrame.has(key)) {
+          pairToSlot.delete(key);
+          slotToPair.delete(slot);
+        }
       }
     }
 
@@ -1723,6 +1551,23 @@ class ParticleWorker extends AbstractWorker {
       this.stats[PARTICLE_STATS.FLASHES_UPDATED] = this.flashesUpdatedThisFrame;
       this.stats[PARTICLE_STATS.SHADOWS_UPDATED] = this.shadowsUpdatedThisFrame;
     }
+  }
+  getNumberOfShadows() {
+    const shadowCasters = this.query([ShadowCaster]);
+    const ret = new Int32Array(shadowCasters.length);
+    let count = 0;
+    for (let i = 0; i < shadowCasters.length; i++) {
+      const entityIdx = shadowCasters[i];
+      if (
+        ShadowCaster.active[entityIdx] &&
+        SpriteRenderer.active[entityIdx] &&
+        SpriteRenderer.isItOnScreen[entityIdx]
+      ) {
+        ret[count] = entityIdx;
+        count++;
+      }
+    }
+    return ret.subarray(0, count);
   }
 }
 

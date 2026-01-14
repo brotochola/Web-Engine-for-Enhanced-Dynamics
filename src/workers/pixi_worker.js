@@ -56,8 +56,6 @@ import {
   settings as tilemapSettings,
 } from "../lib/pixi-tilemap-module.js";
 
-
-
 // Enable 32-bit indices for large tilemaps (>16K tiles)
 // Without this, only ~16,383 tiles can be rendered due to 16-bit index limit
 tilemapSettings.use32bitIndex = true;
@@ -601,7 +599,7 @@ class PixiRenderer extends AbstractWorker {
     for (let j = 0; j < count; j++) {
       // activeEntitiesData layout: [count, idx0, idx1, ...]
       const i = activeEntitiesData[1 + j];
-      
+
       // Double check active state (redundant but safe)
       if (!active[i]) continue;
 
@@ -2256,6 +2254,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Hide inactive shadows and reset ownership tracking
       if (!active[i]) {
+        // if (sprite.alpha !== 0) {
+        //    console.log(`PIXI WORKER: Shadow slot ${i} deactivated (was alpha ${sprite.alpha})`);
+        // }
         sprite.alpha = 0;
         prevEntityIdx[i] = -1; // Reset so next activation doesn't interpolate
         continue;
@@ -2263,6 +2264,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Check if shadow just became visible (to avoid lerping from 0,0)
       const wasInvisible = sprite.alpha === 0;
+      // if (wasInvisible) {
+      //    console.log(`PIXI WORKER: Shadow slot ${i} ACTIVATED for entity ${entityIdx[i]}`);
+      // }
 
       // Check if shadow ownership changed (different entity now owns this slot)
       const currentEntity = entityIdx[i];
@@ -3057,10 +3061,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Apply initial scale immediately
     this.currentTilemap.scale.set(
-      this.cameraData ? this.cameraData[0] * this.tilemapScale.x : this.tilemapScale.x,
-      this.cameraData ? this.cameraData[0] * this.tilemapScale.y : this.tilemapScale.y
+      this.cameraData
+        ? this.cameraData[0] * this.tilemapScale.x
+        : this.tilemapScale.x,
+      this.cameraData
+        ? this.cameraData[0] * this.tilemapScale.y
+        : this.tilemapScale.y
     );
-
 
     // Debug: Check tilemap children and bounds
     console.log(
