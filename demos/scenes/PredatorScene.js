@@ -180,7 +180,8 @@ export class PredatorScene extends WEED.Scene {
 
   create() {
     // Set tilemap background
-    this.setTilemapBackground("predatorsBG");
+    this.setTilemapBackground("predatorsBG", { scale: 2 });
+    
 
     // Spawn initial entities
     console.log("🎬 PredatorScene: Spawning entities...");
