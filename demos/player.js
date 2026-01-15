@@ -89,9 +89,9 @@ export class Player extends GameObject {
     );
 
     Flash.create({
-      x: this.x,
-      y: this.y,
-      z: 30, // height
+      x: this.x + (this.vx > 0 ? 35 : -35),
+      y: this.y - 35,
+      z: 0, // height
       lifespan: 17,
       color: 0xffbb11, // orange
       intensity: 25000,

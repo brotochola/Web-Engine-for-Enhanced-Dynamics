@@ -1989,6 +1989,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightEnabled = LightEmitter.active;
     const lightColor = LightEmitter.lightColor;
     const lightIntensity = LightEmitter.lightIntensity;
+    const lightHeight = LightEmitter.height;
 
     const zoom = this._renderZoom;
     const cameraX = this._renderCameraX;
@@ -2042,7 +2043,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Use sprite position if available (it's already interpolated)
       const sprite = this.bodySprites[i];
       const x = sprite ? sprite.x : worldX[i];
-      const y = sprite ? sprite.y : worldY[i];
+      const y = (sprite ? sprite.y : worldY[i]) - (lightHeight[i] || 0);
       const intensity = lightIntensity[i];
 
       // Viewport culling: Only include lights that actually affect the visible screen
@@ -2085,8 +2086,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Always use world coordinates for lights (shader converts screen to world)
       // sprite.x/y are in container space (already transformed), so we use worldX/worldY
+      // Apply height offset to position light above the entity
       lightX[i] = worldX[entityIndex];
-      lightY[i] = worldY[entityIndex];
+      lightY[i] = worldY[entityIndex] - (lightHeight[entityIndex] || 0);
       lightIntensityArr[i] = lightIntensity[entityIndex]; // NO ZOOM SCALING
 
       const { r, g, b } = extractRGBNormalized(color);
@@ -2293,7 +2295,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const worldY = Transform.y;
     const lightEnabled = LightEmitter.active;
     const lightColor = LightEmitter.lightColor;
-    const lightHeight = LightEmitter.height;
+    const glowHeightOffset = LightEmitter.glowHeightOffset;
     const hasGlowSprite = LightEmitter.hasGlowSprite;
     const visualRange = Collider.visualRange;
     const lightIntensity = LightEmitter.lightIntensity;
@@ -2341,7 +2343,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Use sprite position if available (already interpolated)
       const bodySprite = this.bodySprites[i];
       const x = bodySprite ? bodySprite.x : worldX[i];
-      const y = (bodySprite ? bodySprite.y : worldY[i]) - (lightHeight[i] || 0);
+      const y =
+        (bodySprite ? bodySprite.y : worldY[i]) - (glowHeightOffset[i] || 0);
       const intensity = lightIntensity[i];
 
       // Viewport culling: Only include lights that actually affect the visible screen
@@ -2410,7 +2413,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       sprite.x = bodySprite ? bodySprite.x : worldX[entityIndex];
       sprite.y =
         (bodySprite ? bodySprite.y : worldY[entityIndex]) -
-        (lightHeight[entityIndex] || 0);
+        (glowHeightOffset[entityIndex] || 0);
 
       // Scale based on visualRange
       sprite.scaleX = scale;

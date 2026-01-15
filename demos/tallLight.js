@@ -25,7 +25,8 @@ export class TallLight extends GameObject {
       max: 0xffffff,
     });
 
-    this.lightEmitter.height = 110;
+    this.lightEmitter.height = 0;
+    this.lightEmitter.glowHeightOffset = 110;
     this.lightEmitter.lightIntensity = 20000;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 1; // TallLights show the glowing sprite
