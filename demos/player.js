@@ -93,8 +93,8 @@ export class Player extends GameObject {
       y: this.y,
       z: 30, // height
       lifespan: 17,
-      color: 0xffaa00, // orange
-      intensity: 40000,
+      color: 0xffbb11, // orange
+      intensity: 25000,
     });
 
     console.log("hit", hitEntityIndex);

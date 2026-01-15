@@ -163,7 +163,7 @@ export class Flash extends GameObject {
     this.lightEmitter.lightColor = spawnConfig.color ?? 0xffffff;
     this.lightEmitter.lightIntensity = spawnConfig.intensity ?? 10000;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 0; // Flashes don't render a glow sprite
+    this.lightEmitter.hasGlowSprite = 1; // Flashes don't render a glow sprite
 
     // Set flash component properties
     this.flashComponent.lifespan = spawnConfig.lifespan ?? 100;

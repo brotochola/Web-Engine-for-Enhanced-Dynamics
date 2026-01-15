@@ -1211,3 +1211,96 @@ export function printLogo() {
 export function sortByY(a, b) {
   return a.y - b.y;
 }
+
+/**
+ * Draw a single digit using 7-segment display style
+ * Segments: top, top-left, top-right, middle, bottom-left, bottom-right, bottom
+ *
+ * @param {PIXI.Graphics} graphics - The Graphics layer to draw on
+ * @param {number} digit - The digit to draw (0-9)
+ * @param {number} x - X position
+ * @param {number} y - Y position
+ * @param {number} width - Digit width
+ * @param {number} height - Digit height
+ * @param {number} lineWidth - Line width
+ * @param {number} color - Line color (hex, default: 0xffffff)
+ */
+export function drawDigit(
+  graphics,
+  digit,
+  x,
+  y,
+  width,
+  height,
+  lineWidth,
+  color = 0xffffff
+) {
+  // 7-segment patterns for digits 0-9
+  // [top, topLeft, topRight, middle, bottomLeft, bottomRight, bottom]
+  const segments = {
+    0: [1, 1, 1, 0, 1, 1, 1],
+    1: [0, 0, 1, 0, 0, 1, 0],
+    2: [1, 0, 1, 1, 1, 0, 1],
+    3: [1, 0, 1, 1, 0, 1, 1],
+    4: [0, 1, 1, 1, 0, 1, 0],
+    5: [1, 1, 0, 1, 0, 1, 1],
+    6: [1, 1, 0, 1, 1, 1, 1],
+    7: [1, 0, 1, 0, 0, 1, 0],
+    8: [1, 1, 1, 1, 1, 1, 1],
+    9: [1, 1, 1, 1, 0, 1, 1],
+  };
+
+  const seg = segments[digit] || segments[0];
+  const midY = y + height / 2;
+  const strokeStyle = { width: lineWidth, color, alpha: 1 };
+
+  // Top horizontal
+  if (seg[0]) {
+    graphics.moveTo(x, y).lineTo(x + width, y).stroke(strokeStyle);
+  }
+  // Top-left vertical
+  if (seg[1]) {
+    graphics.moveTo(x, y).lineTo(x, midY).stroke(strokeStyle);
+  }
+  // Top-right vertical
+  if (seg[2]) {
+    graphics.moveTo(x + width, y).lineTo(x + width, midY).stroke(strokeStyle);
+  }
+  // Middle horizontal
+  if (seg[3]) {
+    graphics.moveTo(x, midY).lineTo(x + width, midY).stroke(strokeStyle);
+  }
+  // Bottom-left vertical
+  if (seg[4]) {
+    graphics.moveTo(x, midY).lineTo(x, y + height).stroke(strokeStyle);
+  }
+  // Bottom-right vertical
+  if (seg[5]) {
+    graphics
+      .moveTo(x + width, midY)
+      .lineTo(x + width, y + height)
+      .stroke(strokeStyle);
+  }
+  // Bottom horizontal
+  if (seg[6]) {
+    graphics
+      .moveTo(x, y + height)
+      .lineTo(x + width, y + height)
+      .stroke(strokeStyle);
+  }
+}
+
+/**
+ * Helper to set nested properties (supports dot notation)
+ * @param {Object} obj - The object to set the property on
+ * @param {string} path - Dot-separated path to the property (e.g., "scale.x")
+ * @param {*} value - The value to set
+ */
+export function setNestedProperty(obj, path, value) {
+  const keys = path.split(".");
+  const lastKey = keys.pop();
+  const target = keys.reduce((o, k) => o?.[k], obj);
+  if (target && lastKey) {
+    target[lastKey] = value;
+  }
+}
