@@ -15,6 +15,26 @@ import { Barrel } from "../barrel.js";
 
 const { DecorationPool } = WEED;
 
+const excludedLPCAnimations = [
+  "spellcast_up",
+  "spellcast_left",
+  "spellcast_down",
+  "spellcast_right",
+  "thrust_up",
+  "thrust_left",
+  "thrust_down",
+  "thrust_right",
+  "slash_up",
+  "slash_left",
+  "slash_down",
+  "slash_right",
+  "climb",
+  "emote_up",
+  "emote_left",
+  "emote_down",
+  "emote_right",
+];
+
 export class PredatorScene extends WEED.Scene {
   // ========================================
   // STATIC SCENE CONFIGURATION
@@ -114,34 +134,42 @@ export class PredatorScene extends WEED.Scene {
       civil1: {
         json: "/demos/img/civil1.json",
         png: "/demos/img/civil1.png",
+        excludeAnimations: excludedLPCAnimations,
       },
       civil2: {
         json: "/demos/img/civil1.json",
         png: "/demos/img/civil2.png",
+        excludeAnimations: excludedLPCAnimations,
       },
       civil3: {
         json: "/demos/img/civil1.json",
         png: "/demos/img/civil3.png",
+        excludeAnimations: excludedLPCAnimations,
       },
       civil4: {
         json: "/demos/img/civil1.json",
         png: "/demos/img/civil4.png",
+        excludeAnimations: excludedLPCAnimations,
       },
       civil5: {
         json: "/demos/img/civil1.json",
         png: "/demos/img/civil5.png",
+        excludeAnimations: excludedLPCAnimations,
       },
       civil6: {
         json: "/demos/img/civil1.json",
         png: "/demos/img/civil6.png",
+        excludeAnimations: excludedLPCAnimations,
       },
       civil7: {
         json: "/demos/img/civil1.json",
         png: "/demos/img/civil7.png",
+        excludeAnimations: excludedLPCAnimations,
       },
       poli: {
         json: "/demos/img/civil1.json",
         png: "/demos/img/poli.png",
+        excludeAnimations: excludedLPCAnimations,
       },
       fuego: {
         json: "/demos/img/fuego/fuego.json",
