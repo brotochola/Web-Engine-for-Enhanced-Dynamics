@@ -2192,7 +2192,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const shadowSprite = new PIXI.Particle({
         texture: defaultTexture,
         anchorX: 0.5, // Center horizontally
-        anchorY: 0.0, // Anchor at top - shadow extends downward from entity position
+        anchorY: 1.0, // Anchor at top - shadow extends downward from entity position
       });
 
       shadowSprite.alpha = 0; // Start invisible (won't render until activated)
