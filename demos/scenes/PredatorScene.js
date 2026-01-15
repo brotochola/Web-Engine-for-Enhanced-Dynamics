@@ -88,7 +88,7 @@ export class PredatorScene extends WEED.Scene {
       noLimitFPS: true,
       ySorting: true,
       interpolation: true,
-      cullingRatio: 0.3,
+      cullingRatio: 0.33,
     },
 
     lighting: {
@@ -99,8 +99,9 @@ export class PredatorScene extends WEED.Scene {
       maxShadowCastingLights: 100,
       maxShadowsPerLight: 500,
       maxShadowsPerEntity: 6,
+      maxShadowSprites: 1000,
       maxFlashes: 50,
-      resolution: 0.1,
+      resolution: 0.25,
     },
   };
 

@@ -977,7 +977,7 @@ class Scene {
     this.buffers.entityHalfExtent = new SharedArrayBuffer(ENTITY_POS_SIZE);
 
     // Grid synchronization: prevents spatial workers from reading during grid rebuild
-    // Layout: 
+    // Layout:
     // [0] = rebuildFlag (0=rebuilding, 1=ready)
     // [1] = currentReadGrid (0=A, 1=B)
     const GRID_SYNC_SIZE = 8; // Int32Array with 2 elements
