@@ -17,6 +17,9 @@ import { Grid } from "../core/Grid.js";
 import {
   calculateTotalLightAtPosition,
   brightnessToTint,
+  extractRGB,
+  calculateSpeed,
+  calculateVelocityAngle,
 } from "../core/utils.js";
 import { PARTICLE_STATS, createStatsWriter } from "./workers-utils.js";
 
@@ -1011,9 +1014,7 @@ class ParticleWorker extends AbstractWorker {
     const startY = localY - halfHeight;
 
     // Extract RGB from tint (0xRRGGBB)
-    const tintR = (tint >> 16) & 0xff;
-    const tintG = (tint >> 8) & 0xff;
-    const tintB = tint & 0xff;
+    const { r: tintR, g: tintG, b: tintB } = extractRGB(tint);
 
     // Cache frequently accessed values
     const tilePixelSize = this.decalsTilePixelSize;
@@ -1509,13 +1510,13 @@ class ParticleWorker extends AbstractWorker {
       if (!active[i] || !rigidBodyActive[i]) continue;
 
       // Velocity is already stored in vx/vy from moveBallsVerlet
-      const currentSpeed = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]);
+      const currentSpeed = calculateSpeed(vx[i], vy[i]);
       speed[i] = currentSpeed;
 
       // Only update rotation if moving above minimum threshold
       // This prevents visual jitter when entities are nearly stationary
       if (currentSpeed > minSpeedForRotation) {
-        velocityAngle[i] = Math.atan2(vy[i], vx[i]) + Math.PI / 2;
+        velocityAngle[i] = calculateVelocityAngle(vx[i], vy[i]);
       }
     }
   }
@@ -1547,9 +1548,10 @@ class ParticleWorker extends AbstractWorker {
     const b = brightness > 1.0 ? 1.0 : brightness;
 
     // Extract RGB and apply brightness using bitwise truncation (faster than Math.round)
-    const litR = (((color >> 16) & 0xff) * b) | 0;
-    const litG = (((color >> 8) & 0xff) * b) | 0;
-    const litB = ((color & 0xff) * b) | 0;
+    const { r, g, b: blue } = extractRGB(color);
+    const litR = (r * b) | 0;
+    const litG = (g * b) | 0;
+    const litB = (blue * b) | 0;
 
     return (litR << 16) | (litG << 8) | litB;
   }

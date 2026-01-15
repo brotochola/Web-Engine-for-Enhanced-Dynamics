@@ -22,6 +22,7 @@ import {
   initializeComponentViews,
   exposeComponentsGlobally,
   exposeEntityClassesGlobally,
+  urlToPath,
 } from "./utils.js";
 import { DebugFlags } from "./DebugFlags.js";
 import { Mouse } from "./Mouse.js";
@@ -324,7 +325,7 @@ class Scene {
   registerEntityClass(EntityClass, count, scriptPath = null) {
     // Auto-detect script path
     if (!scriptPath && EntityClass.scriptUrl) {
-      scriptPath = this._urlToPath(EntityClass.scriptUrl);
+      scriptPath = urlToPath(EntityClass.scriptUrl);
     }
 
     // Auto-detect and register parent classes
@@ -387,15 +388,6 @@ class Scene {
     EntityClass.entityIndices = new Int32Array(count);
     for (let i = 0; i < count; i++) {
       EntityClass.entityIndices[i] = startIndex + i;
-    }
-  }
-
-  _urlToPath(url) {
-    try {
-      const urlObj = new URL(url);
-      return urlObj.pathname;
-    } catch (e) {
-      return url;
     }
   }
 
