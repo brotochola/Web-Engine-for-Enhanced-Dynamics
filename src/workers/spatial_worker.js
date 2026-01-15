@@ -217,9 +217,11 @@ class SpatialWorker extends AbstractWorker {
       return;
     }
 
-    // CRITICAL FIX: Reset processedThisFrame marker for this frame
-    // We use fill(-1) because entities use their index (which can be 0) as marker
-    processedThisFrame.fill(-1);
+    // OPTIMIZATION: processedThisFrame doesn't need per-frame reset!
+    // Each entity uses its own unique index as marker (line 306: processedThisFrame[j] = i)
+    // Old markers from previous frames won't match current entity i, so no false positives
+    // Only initialized once in initialize() with fill(-1) to handle entity index 0
+    // processedThisFrame.fill(-1); // REMOVED: Expensive and unnecessary!
 
     // Process only our assigned slice of active entities
     for (
