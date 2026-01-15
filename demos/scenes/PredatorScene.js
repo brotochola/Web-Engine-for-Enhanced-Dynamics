@@ -211,13 +211,13 @@ export class PredatorScene extends WEED.Scene {
     super(game);
 
     // Scene-specific properties
-    this.numberOfPrey = 1000;
+    this.numberOfPrey = 10000;
     this.numberOfPredators = 1;
     this.numberOfBoids = 0;
-    this.numberOfTallLights = 100;
-    this.numberOfHouses = 10;
+    this.numberOfTallLights = 200;
+    this.numberOfHouses = 100;
     this.numberOfGrass = 10000;
-    this.numberOfPersonsWithFSM = 1000; // FSM-based civilians
+    this.numberOfPersonsWithFSM = 5000; // FSM-based civilians
     this.numberOfTrees = 1000;
     this.numberOfBarrels = 100;
     // Player reference (will be set in create())
