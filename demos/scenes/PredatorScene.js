@@ -11,6 +11,7 @@ import { PreySpawner } from "../PreySpawner.js";
 import { House } from "../House.js";
 import { PersonWithFSM } from "../PersonWithFSM.js";
 import { Tree } from "../tree.js";
+import { Barrel } from "../barrel.js";
 
 const { DecorationPool } = WEED;
 
@@ -105,6 +106,9 @@ export class PredatorScene extends WEED.Scene {
       grass9: "/demos/img/g9.png",
       tree1: "/demos/img/tree1.png",
       tree2: "/demos/img/tree2.png",
+      barrel1: "/demos/img/barrel1.png",
+      barrel2: "/demos/img/barrel2.png",
+      barrel3: "/demos/img/barrel3.png",
     },
     spritesheets: {
       civil1: {
@@ -165,6 +169,7 @@ export class PredatorScene extends WEED.Scene {
     [TallLight, 300],
     [PersonWithFSM, 20000], // FSM-based civilians
     [Tree, 1000],
+    [Barrel, 100],
     // Grass now uses DecorationPool instead of GameObject
   ];
 
@@ -184,6 +189,7 @@ export class PredatorScene extends WEED.Scene {
     this.numberOfGrass = 10000;
     this.numberOfPersonsWithFSM = 1000; // FSM-based civilians
     this.numberOfTrees = 1000;
+    this.numberOfBarrels = 100;
     // Player reference (will be set in create())
     this.playerEntity = null;
 
@@ -209,6 +215,7 @@ export class PredatorScene extends WEED.Scene {
     this.spawnPersonsWithFSM(this.numberOfPersonsWithFSM);
     this.spawnEntity(PreySpawner, {});
     this.spawnTrees(this.numberOfTrees);
+    this.spawnBarrels(this.numberOfBarrels);
     console.log("✅ PredatorScene: Entities spawned!");
   }
 
@@ -267,6 +274,14 @@ export class PredatorScene extends WEED.Scene {
         y: this.rng() * this.config.worldHeight,
         vx: 0,
         vy: 0,
+      });
+    }
+  }
+  spawnBarrels(count) {
+    for (let i = 0; i < count; i++) {
+      this.spawnEntity(Barrel, {
+        x: this.rng() * this.config.worldWidth,
+        y: this.rng() * this.config.worldHeight,
       });
     }
   }

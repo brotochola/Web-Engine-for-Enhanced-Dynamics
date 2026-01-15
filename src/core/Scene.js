@@ -1536,7 +1536,69 @@ class Scene {
       });
     } else if (e.data.msg === "workerReady") {
       this.handleWorkerReady(e.currentTarget.name);
+    } else if (e.data.msg === "error") {
+      const { title, message, stack } = e.data;
+      const workerName = e.currentTarget.name;
+
+      // Log to console with full details
+      console.error(
+        `❌ FATAL ERROR in [${workerName}] worker:\n${title}\n${message}\n${
+          stack || ""
+        }`
+      );
+
+      // Show a visible error message on the page
+      this._showFatalErrorMessage(workerName, title, message);
     }
+  }
+
+  _showFatalErrorMessage(workerName, title, message) {
+    // Check if error overlay already exists
+    let overlay = document.getElementById("fatal-error-overlay");
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = "fatal-error-overlay";
+      overlay.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        right: 20px;
+        background: rgba(255, 0, 0, 0.9);
+        color: white;
+        padding: 20px;
+        border-radius: 8px;
+        z-index: 10000;
+        font-family: monospace;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        border: 2px solid white;
+      `;
+      document.body.appendChild(overlay);
+    }
+
+    const errorHtml = `
+      <h2 style="margin-top: 0; border-bottom: 1px solid white; padding-bottom: 10px;">
+        ⚠️ Engine Error: ${title}
+      </h2>
+      <p><strong>Worker:</strong> ${workerName}</p>
+      <p><strong>Message:</strong> ${message}</p>
+      <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.3); margin: 15px 0;">
+      <p style="font-size: 0.9em; opacity: 0.8;">
+        The game engine has encountered a fatal error and may have stopped rendering.
+        Check the browser console for more details.
+      </p>
+      <button onclick="location.reload()" style="
+        background: white;
+        color: red;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+        margin-top: 10px;
+      ">Reload Page</button>
+    `;
+
+    overlay.innerHTML = errorHtml;
   }
 
   handleWorkerReady(workerName) {

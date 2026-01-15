@@ -47,6 +47,7 @@ import {
   Shader,
   GlProgram,
   extensions,
+  RendererType,
 } from "./pixi8webworker.js";
 import { convertRGBtoBGR } from "../core/utils.js";
 // Import @pixi/tilemap for efficient tilemap rendering (modified to import from pixi8webworker.js)
@@ -81,6 +82,7 @@ const PIXI = {
   Mesh,
   Shader,
   GlProgram,
+  RendererType,
 };
 
 // Note: Core engine classes (GameObject, Mouse, etc.) and components
@@ -435,6 +437,37 @@ class PixiRenderer extends AbstractWorker {
   /**
    * Hook into WebGL context to count draw calls per frame
    */
+  setupWebGLHooks() {
+    this.setupDrawCallMonitoring();
+
+    const gl = this.pixiApp.renderer.gl;
+    if (gl && gl.canvas) {
+      gl.canvas.addEventListener(
+        "webglcontextlost",
+        (e) => {
+          e.preventDefault();
+          this.reportError(
+            "WebGL Context Lost",
+            new Error(
+              "The GPU context was lost. This usually happens due to GPU driver crashes or excessive resource usage."
+            )
+          );
+        },
+        false
+      );
+
+      gl.canvas.addEventListener(
+        "webglcontextrestored",
+        () => {
+          this.reportLog("WebGL context restored");
+          // In a real engine we might need to reload textures here,
+          // but PIXI often handles some of this.
+        },
+        false
+      );
+    }
+  }
+
   setupDrawCallMonitoring() {
     const gl = this.pixiApp.renderer.gl;
     if (!gl) {
@@ -1324,6 +1357,9 @@ class PixiRenderer extends AbstractWorker {
    * @param {number} deltaTime - Time elapsed since last frame in milliseconds
    */
   updateSprites(deltaTime) {
+    // Guard against uninitialized state
+    if (!this.bodySpritePoolIndices) return;
+
     // Cache array references for performance
     const active = Transform.active;
     const x = Transform.x;
@@ -3446,22 +3482,43 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     // Create PIXI application (PixiJS 8 uses async init)
-    this.pixiApp = new PIXI.Application();
-    await this.pixiApp.init({
-      width: this.canvasWidth,
-      height: this.canvasHeight,
-      resolution: 1,
-      canvas: this.canvasView, // v8 uses 'canvas' instead of 'view'
-      backgroundColor: 0x000000,
-      // Performance optimizations
-      powerPreference: "high-performance",
-      preference: "webgl", // Force WebGL for worker compatibility
-    });
+    try {
+      this.pixiApp = new PIXI.Application();
+      await this.pixiApp.init({
+        width: this.canvasWidth,
+        height: this.canvasHeight,
+        resolution: 1,
+        canvas: this.canvasView, // v8 uses 'canvas' instead of 'view'
+        backgroundColor: 0x000000,
+        // Performance optimizations
+        powerPreference: "high-performance",
+        preference: "webgl", // Force WebGL for worker compatibility
+      });
+
+      // Check if renderer was successfully created
+      if (!this.pixiApp.renderer) {
+        throw new Error(
+          "PIXI.Application.init() succeeded but renderer is null"
+        );
+      }
+
+      // Check for WebGL context
+      if (
+        this.pixiApp.renderer.type === PIXI.RendererType.WEBGL &&
+        !this.pixiApp.renderer.gl
+      ) {
+        throw new Error("WebGL context initialization failed (gl is null)");
+      }
+    } catch (error) {
+      this.reportError("PIXI Initialization Failed", error);
+      return;
+    }
+
     // Enable z-index based sorting on the stage
     this.pixiApp.stage.sortableChildren = true;
 
-    // Hook into WebGL context for draw call monitoring
-    this.setupDrawCallMonitoring();
+    // Hook into WebGL context for draw call monitoring and context loss
+    this.setupWebGLHooks();
 
     this.reportLog("finished initializing pixi app");
     // Load simple textures

@@ -1265,7 +1265,13 @@ class ParticleWorker extends AbstractWorker {
         // Calculate shadow properties
         const casterX = worldX[neighborIdx];
         const casterY = worldY[neighborIdx];
-        const casterRadius = entityShadowRadius[neighborIdx] || 10;
+        let casterRadius = entityShadowRadius[neighborIdx];
+
+        // Guard against NaN or zero radius
+        if (isNaN(casterRadius) || casterRadius <= 0) {
+          casterRadius = 10;
+        }
+
         const casterHeight = entityShadowHeight[neighborIdx] || casterRadius;
 
         const dx = casterX - lightX;
@@ -1287,8 +1293,15 @@ class ParticleWorker extends AbstractWorker {
         const widthScale = casterRadius * 0.0714;
 
         // Alpha and Angle
-        const alpha = intensity / (distSq * 2);
+        let alpha = intensity / (distSq * 2);
         const angle = Math.atan2(dy, dx);
+
+        // Guard against NaN
+        if (isNaN(alpha)) alpha = 0;
+        if (isNaN(posX) || isNaN(posY)) {
+          shadowActive[slotIdx] = 0;
+          continue;
+        }
 
         // Write shadow data
         shadowActive[slotIdx] = 1;
