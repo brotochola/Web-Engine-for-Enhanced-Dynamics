@@ -180,6 +180,7 @@ class ParticleWorker extends AbstractWorker {
     // Store viewport dimensions for screen visibility checks
     this.canvasWidth = this.config.canvasWidth;
     this.canvasHeight = this.config.canvasHeight;
+    this.cullingRatio = this.config.renderer?.cullingRatio ?? 0.1;
 
     // Note: ParticleComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
     if (this.maxParticles > 0) {
@@ -774,8 +775,8 @@ class ParticleWorker extends AbstractWorker {
     // Pre-calculate all bounds once
     const cameraOffsetX = cameraX * zoom;
     const cameraOffsetY = cameraY * zoom;
-    const marginX = this.canvasWidth * 0.15;
-    const marginY = this.canvasHeight * 0.15;
+    const marginX = this.canvasWidth * this.cullingRatio;
+    const marginY = this.canvasHeight * this.cullingRatio;
 
     // GC OPTIMIZATION: Reuse cached object instead of creating new one each frame
     const bounds = this._cameraBounds;
@@ -1365,8 +1366,8 @@ class ParticleWorker extends AbstractWorker {
     // Pre-calculate all bounds once
     const cameraOffsetX = cameraX * zoom;
     const cameraOffsetY = cameraY * zoom;
-    const marginX = this.canvasWidth * 0.15;
-    const marginY = this.canvasHeight * 0.15;
+    const marginX = this.canvasWidth * this.cullingRatio;
+    const marginY = this.canvasHeight * this.cullingRatio;
     const minX = -marginX;
     const maxX = this.canvasWidth + marginX;
     const minY = -marginY;
@@ -1436,8 +1437,8 @@ class ParticleWorker extends AbstractWorker {
       const cameraY = this.cameraData[2];
       cameraOffsetX = cameraX * zoom;
       cameraOffsetY = cameraY * zoom;
-      const marginX = this.canvasWidth * 0.15;
-      const marginY = this.canvasHeight * 0.15;
+      const marginX = this.canvasWidth * this.cullingRatio;
+      const marginY = this.canvasHeight * this.cullingRatio;
       minX = -marginX;
       maxX = this.canvasWidth + marginX;
       minY = -marginY;

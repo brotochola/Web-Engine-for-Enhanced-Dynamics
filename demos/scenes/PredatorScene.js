@@ -10,7 +10,7 @@ import { TallLight } from "../tallLight.js";
 import { PreySpawner } from "../PreySpawner.js";
 import { House } from "../House.js";
 import { PersonWithFSM } from "../PersonWithFSM.js";
-// Grass now uses DecorationPool instead of GameObject
+import { Tree } from "../tree.js";
 
 const { DecorationPool } = WEED;
 
@@ -67,6 +67,7 @@ export class PredatorScene extends WEED.Scene {
       noLimitFPS: true,
       ySorting: true,
       interpolation: true,
+      cullingRatio: 0.3,
     },
 
     lighting: {
@@ -102,6 +103,8 @@ export class PredatorScene extends WEED.Scene {
       grass7: "/demos/img/g7.png",
       grass8: "/demos/img/g8.png",
       grass9: "/demos/img/g9.png",
+      tree1: "/demos/img/tree1.png",
+      tree2: "/demos/img/tree2.png",
     },
     spritesheets: {
       civil1: {
@@ -159,8 +162,9 @@ export class PredatorScene extends WEED.Scene {
     [Predator, 8],
     [Player, 1],
     [House, 100],
-    [TallLight, 100],
+    [TallLight, 300],
     [PersonWithFSM, 20000], // FSM-based civilians
+    [Tree, 1000],
     // Grass now uses DecorationPool instead of GameObject
   ];
 
@@ -175,11 +179,11 @@ export class PredatorScene extends WEED.Scene {
     this.numberOfPrey = 1000;
     this.numberOfPredators = 1;
     this.numberOfBoids = 0;
-    this.numberOfTallLights = 10;
+    this.numberOfTallLights = 100;
     this.numberOfHouses = 10;
     this.numberOfGrass = 10000;
     this.numberOfPersonsWithFSM = 1000; // FSM-based civilians
-
+    this.numberOfTrees = 1000;
     // Player reference (will be set in create())
     this.playerEntity = null;
 
@@ -204,7 +208,7 @@ export class PredatorScene extends WEED.Scene {
     this.spawnGrass(this.numberOfGrass);
     this.spawnPersonsWithFSM(this.numberOfPersonsWithFSM);
     this.spawnEntity(PreySpawner, {});
-
+    this.spawnTrees(this.numberOfTrees);
     console.log("✅ PredatorScene: Entities spawned!");
   }
 
@@ -298,6 +302,15 @@ export class PredatorScene extends WEED.Scene {
         alpha: 0.5 + rng() * 0.5,
         anchorX: 0.5,
         anchorY: 1.0, // Bottom anchor for grass
+      });
+    }
+  }
+
+  spawnTrees(count) {
+    for (let i = 0; i < count; i++) {
+      this.spawnEntity(Tree, {
+        x: this.rng() * this.config.worldWidth,
+        y: this.rng() * this.config.worldHeight,
       });
     }
   }
