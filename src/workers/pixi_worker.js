@@ -429,9 +429,6 @@ class PixiRenderer extends AbstractWorker {
     this.shadowSpriteContainer = null; // ParticleContainer for shadow sprites
     this.shadowSprites = []; // Array of Particle objects for shadows
     this.shadowConeTexture = null; // Pre-rendered shadow cone texture (PIXI.Texture)
-    this.shadowResolution = 1.0; // Resolution multiplier for shadows
-    this.shadowRT = null; // RenderTexture for low-res shadows
-    this.shadowDisplaySprite = null; // Sprite to display the shadowRT on stage
 
     // Reusable render-state for interpolation
     this._renderCameraX = 0;
@@ -1724,23 +1721,10 @@ class PixiRenderer extends AbstractWorker {
     // ========================================
     // LOW-RES OFF-SCREEN RENDERING
     // ========================================
-    // Render shadows and lighting to lower-resolution textures if configured.
+    // Render lighting to lower-resolution texture if configured.
     // This significantly improves performance on GPU-bound systems.
 
-    // 1. Render low-res shadows
-    if (this.shadowRT && this.shadowSpriteContainer) {
-      this._shadowTransform
-        .identity()
-        .scale(this.shadowResolution, this.shadowResolution);
-      this.pixiApp.renderer.render({
-        container: this.shadowSpriteContainer,
-        target: this.shadowRT,
-        transform: this._shadowTransform,
-        clear: true,
-      });
-    }
-
-    // 2. Render low-res lighting
+    // Render low-res lighting
     if (this.lightingRT && this.lightingMesh) {
       this.pixiApp.renderer.render({
         container: this.lightingMesh,
@@ -2231,7 +2215,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // 2. Create ParticleContainer for shadows
     // ========================================
     this.shadowSpriteContainer = new PIXI.ParticleContainer({
-      blendMode: this.shadowResolution < 1.0 ? "normal-npm" : "multiply",
+      blendMode: "multiply",
       dynamicProperties: {
         vertex: true, // Required for scale changes
         position: true,
@@ -3172,17 +3156,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
     }
 
-    // Resize shadow RenderTexture
-    if (this.shadowRT) {
-      this.shadowRT.resize(
-        width * this.shadowResolution,
-        height * this.shadowResolution
-      );
-      if (this.shadowDisplaySprite) {
-        this.shadowDisplaySprite.scale.set(1.0 / this.shadowResolution);
-      }
-    }
-
     console.log(`PIXI WORKER: Resized to ${width}x${height}`);
   }
 
@@ -3811,7 +3784,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (data.shadows && data.shadows.enabled && data.shadows.spriteData) {
       this.shadowSpritesEnabled = true;
       this.maxShadowSprites = data.shadows.maxShadowSprites;
-      this.shadowResolution = data.shadows.resolution || 1.0;
 
       // Create typed array views for shadow sprite data (uses ShadowCaster schema)
       this.shadowSpriteActive = new Uint8Array(
@@ -3874,26 +3846,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Create shadow sprite container and texture
       this.createShadowSpriteSystem();
 
-      // Handle low-res shadows via RenderTexture
-      if (this.shadowResolution < 1.0) {
-        this.shadowRT = PIXI.RenderTexture.create({
-          width: this.canvasWidth * this.shadowResolution,
-          height: this.canvasHeight * this.shadowResolution,
-        });
-        this.shadowDisplaySprite = new PIXI.Sprite(this.shadowRT);
-        this.shadowDisplaySprite.scale.set(1.0 / this.shadowResolution);
-        this.shadowDisplaySprite.blendMode = "multiply";
-        this.shadowDisplaySprite.zIndex = PixiRenderer.Z_INDICES.CASTED_SHADOWS;
-        this.pixiApp.stage.addChild(this.shadowDisplaySprite);
-
-        console.log(
-          `PIXI WORKER: Shadow RenderTexture created (${this.shadowRT.width}x${this.shadowRT.height})`
-        );
-      } else {
-        // Add shadow container to stage directly (zIndex handles ordering)
-        this.shadowSpriteContainer.blendMode = "multiply";
-        this.pixiApp.stage.addChild(this.shadowSpriteContainer);
-      }
+      // Add shadow container to stage directly (zIndex handles ordering)
+      this.shadowSpriteContainer.blendMode = "multiply";
+      this.pixiApp.stage.addChild(this.shadowSpriteContainer);
 
       console.log(
         `PIXI WORKER: Shadow sprites enabled (${this.maxShadowSprites} sprites)`

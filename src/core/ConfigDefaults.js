@@ -94,6 +94,7 @@ export const LIGHTING_DEFAULTS = {
   maxShadowCastingLights: 20,
   maxShadowsPerLight: 15,
   maxShadowsPerEntity: 0,
+  maxShadowSprites: 1000,
   maxFlashes: 0,
   resolution: 0.25,
 };
