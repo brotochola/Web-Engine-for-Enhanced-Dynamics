@@ -223,6 +223,8 @@ class SpatialWorker extends AbstractWorker {
     // Only initialized once in initialize() with fill(-1) to handle entity index 0
     // processedThisFrame.fill(-1); // REMOVED: Expensive and unnecessary!
 
+    processedThisFrame.fill(-1);
+
     // Process only our assigned slice of active entities
     for (
       let activeIdx = activeStartIdx;
