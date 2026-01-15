@@ -535,6 +535,38 @@ export function validatePhysicsConfig(currentConfig, newConfig) {
 }
 
 /**
+ * Normalize an angle to [0, 2*PI] range
+ * @param {number} angle - Angle in radians (can be any value)
+ * @returns {number} Normalized angle in [0, 2*PI]
+ */
+export function normalizeAngle(angle) {
+  const TWO_PI = Math.PI * 2;
+  // Use modulo for efficiency, handle negative angles
+  angle = angle % TWO_PI;
+  if (angle < 0) {
+    angle += TWO_PI;
+  }
+  return angle;
+}
+
+/**
+ * Normalize the difference between two angles to [-PI, PI] range
+ * Useful for interpolation to avoid taking the long way around the circle
+ * @param {number} angle1 - First angle in radians
+ * @param {number} angle2 - Second angle in radians
+ * @returns {number} Normalized angle difference in [-PI, PI]
+ */
+export function normalizeAngleDifference(angle1, angle2) {
+  let diff = angle2 - angle1;
+  if (diff > Math.PI) {
+    diff -= 2 * Math.PI;
+  } else if (diff < -Math.PI) {
+    diff += 2 * Math.PI;
+  }
+  return diff;
+}
+
+/**
  * Convert angle (radians) to cardinal direction string
  * @param {number} angle - Angle from RigidBody.velocityAngle (already has +PI/2 offset for rotation)
  * @returns {string} One of: "right", "down", "left", "up"
@@ -548,7 +580,7 @@ export function getDirectionFromAngle(angle) {
   // Moving UP: velocityAngle = 0 (or 2*PI)
 
   // Normalize angle to [0, 2*PI]
-  const normalizedAngle = angle < 0 ? angle + Math.PI * 2 : angle;
+  const normalizedAngle = normalizeAngle(angle);
   const PI = Math.PI;
   const PI_4 = PI / 4;
 

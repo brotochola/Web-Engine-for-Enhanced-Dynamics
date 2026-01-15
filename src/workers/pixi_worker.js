@@ -31,6 +31,7 @@ import {
   sortByY,
   drawDigit,
   setNestedProperty,
+  normalizeAngleDifference,
 } from "../core/utils.js";
 import { RENDERER_STATS, createStatsWriter } from "./workers-utils.js";
 
@@ -1518,9 +1519,10 @@ class PixiRenderer extends AbstractWorker {
 
         // Handle rotation interpolation with angle wrapping
         // Normalize angle difference to [-PI, PI] to avoid going the long way
-        let angleDiff = rotation[entityIndex] - bodySprite.rotation;
-        if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
-        else if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+        const angleDiff = normalizeAngleDifference(
+          bodySprite.rotation,
+          rotation[entityIndex]
+        );
         bodySprite.rotation += angleDiff * interpolationAlpha;
       } else {
         // No interpolation - directly set position
@@ -3512,7 +3514,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       `PIXI WORKER: Parsed Tiled JSON - ${mapWidth}x${mapHeight} tiles (${tileWidth}x${tileHeight}px) = ${totalWidth}x${totalHeight}px total`
     );
   }
-
 
   /**
    * Initialize the PIXI renderer with provided data
