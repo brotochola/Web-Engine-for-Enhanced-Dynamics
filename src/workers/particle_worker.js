@@ -1282,8 +1282,8 @@ class ParticleWorker extends AbstractWorker {
         const dirY = dy * invDist;
 
         // Shadow position
-        const posX = casterX + dirX * -casterRadius;
-        const posY = casterY + dirY * -casterRadius;
+        const posX = casterX + dirX * -casterRadius + dx;
+        const posY = casterY + dirY * -casterRadius + dy;
 
         // Shadow scale
         const distRatio = dist * 0.00390625; // 1/256

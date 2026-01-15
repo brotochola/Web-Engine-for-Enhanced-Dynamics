@@ -2440,16 +2440,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Cache array references (from SharedArrayBuffer views)
     const active = this.shadowSpriteActive;
+    const x = this.shadowSpriteX;
+    const y = this.shadowSpriteY;
     const rotation = this.shadowSpriteRotation;
     const scaleX = this.shadowSpriteScaleX;
     const scaleY = this.shadowSpriteScaleY;
     const alpha = this.shadowSpriteAlpha;
     const entityIdx = this.shadowSpriteEntityIdx;
     const prevEntityIdx = this._shadowPrevEntityIdx;
-
-    // Cache Transform arrays for entity position lookup
-    const transformX = Transform.x;
-    const transformY = Transform.y;
 
     for (let i = 0; i < maxSprites; i++) {
       const sprite = sprites[i];
@@ -2479,37 +2477,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       prevEntityIdx[i] = currentEntity;
 
       // ========================================
-      // GET ENTITY POSITION FOR SHADOW PLACEMENT
-      // ========================================
-      // Shadow should be positioned AT the entity, not between entity and light.
-      // Use body sprite position if available (already interpolated), otherwise Transform.
-      let entityX, entityY;
-      let bodySprite = null;
-
-      if (currentEntity >= 0 && currentEntity < this.bodySprites.length) {
-        bodySprite = this.bodySprites[currentEntity];
-        if (bodySprite && bodySprite.visible) {
-          // Use interpolated body sprite position
-          entityX = bodySprite.x;
-          entityY = bodySprite.y;
-        } else {
-          // Fallback to Transform position
-          entityX = transformX[currentEntity];
-          entityY = transformY[currentEntity];
-        }
-      } else {
-        // Invalid entity index - skip this shadow
-        sprite.visible = false;
-        sprite.alpha = 0;
-        continue;
-      }
-
-      // ========================================
       // MIRROR TEXTURE FROM PARENT ENTITY
       // ========================================
       // Get the parent entity's body sprite and copy its texture
-      if (bodySprite && bodySprite.texture) {
-        sprite.texture = bodySprite.texture;
+      if (currentEntity >= 0 && currentEntity < this.bodySprites.length) {
+        const bodySprite = this.bodySprites[currentEntity];
+        if (bodySprite && bodySprite.texture) {
+          sprite.texture = bodySprite.texture;
+        }
       }
       // FALLBACK: If no body sprite texture available yet, keep current texture
       // (will be updated when body sprite gets created/visible)
@@ -2522,9 +2497,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Only interpolate if: interpolation enabled, was visible, AND same owner
       if (interpolationAlpha < 1.0 && !wasInvisible && !ownerChanged) {
-        // Interpolate from current sprite position toward entity position
-        sprite.x += (entityX - sprite.x) * interpolationAlpha;
-        sprite.y += (entityY - sprite.y) * interpolationAlpha;
+        // Interpolate from current sprite position toward buffer position (from particle_worker)
+        sprite.x += (x[i] - sprite.x) * interpolationAlpha;
+        sprite.y += (y[i] - sprite.y) * interpolationAlpha;
 
         sprite.rotation = shadowRotation;
 
@@ -2532,10 +2507,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         sprite.scaleY += (scaleY[i] - sprite.scaleY) * interpolationAlpha;
         sprite.alpha += (alpha[i] - sprite.alpha) * interpolationAlpha;
       } else {
-        // No interpolation - directly set values
-        // (first frame visible, interpolation disabled, owner changed, or no frameRateData)
-        sprite.x = entityX;
-        sprite.y = entityY;
+        // No interpolation - directly set values from buffer (calculated by particle_worker)
+        sprite.x = x[i];
+        sprite.y = y[i];
         sprite.rotation = shadowRotation;
         sprite.scaleX = scaleX[i];
         sprite.scaleY = scaleY[i];
