@@ -1282,8 +1282,8 @@ class ParticleWorker extends AbstractWorker {
         const dirY = dy * invDist;
 
         // Shadow position
-        const posX = casterX + dirX * -casterRadius + dx;
-        const posY = casterY + dirY * -casterRadius + dy;
+        const posX = casterX; //+ dirX * -casterRadius + dx;
+        const posY = casterY; //+ dirY * -casterRadius + dy;
 
         // Shadow scale
         const distRatio = dist * 0.00390625; // 1/256
@@ -1293,7 +1293,7 @@ class ParticleWorker extends AbstractWorker {
         const widthScale = casterRadius * 0.0714;
 
         // Alpha and Angle
-        let alpha = intensity / (distSq * 2);
+        let alpha = (intensity / (distSq * 2)) * 0.5;
         const angle = Math.atan2(dy, dx);
 
         // Guard against NaN
