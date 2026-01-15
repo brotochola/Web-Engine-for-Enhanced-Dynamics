@@ -15,7 +15,15 @@ import { Collider } from "../components/Collider.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 import { Grid } from "../core/Grid.js";
 import { PHYSICS_STATS, createStatsWriter } from "./workers-utils.js";
-import { clamp01, validatePhysicsConfig } from "../core/utils.js";
+import {
+  clamp01,
+  validatePhysicsConfig,
+  closestPointOnAABB,
+  clampVelocity,
+  testCircleCircleCollision,
+  testCircleAABBCollision,
+  testAABBAABBCollision,
+} from "../core/utils.js";
 import { rng } from "../core/utils.js";
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
 // Physics worker uses RigidBody component for physics calculations
@@ -407,10 +415,10 @@ class PhysicsWorker extends AbstractWorker {
       const maxSpeedSquared = maxSpeed * maxSpeed;
 
       if (speedSquared > maxSpeedSquared) {
-        // Only calculate sqrt when we actually need to clamp
-        const velScale = maxSpeed / Math.sqrt(speedSquared);
-        dx *= velScale;
-        dy *= velScale;
+        // Clamp velocity to max speed
+        const clamped = clampVelocity(dx, dy, maxSpeed);
+        dx = clamped.vx;
+        dy = clamped.vy;
       }
 
       x[i] = oldX + dx;
@@ -714,32 +722,9 @@ class PhysicsWorker extends AbstractWorker {
    * @returns {{ collided: boolean, depth: number, nx: number, ny: number } | null}
    */
   testCircleCircle(x1, y1, r1, x2, y2, r2) {
-    const dx = x1 - x2;
-    const dy = y1 - y2;
-    const dist2 = dx * dx + dy * dy;
-    const minDist = r1 + r2;
-
-    if (dist2 >= minDist * minDist) return null;
-
-    const dist = Math.sqrt(dist2);
-
     // Reuse collision result object to avoid GC pressure
     const result = this.collisionResult;
-    result.collided = true;
-
-    // Handle exact overlap
-    if (dist === 0) {
-      const angle = rng() * Math.PI * 2;
-      result.depth = minDist;
-      result.nx = Math.cos(angle);
-      result.ny = Math.sin(angle);
-    } else {
-      result.depth = minDist - dist;
-      result.nx = dx / dist;
-      result.ny = dy / dist;
-    }
-
-    return result;
+    return testCircleCircleCollision(x1, y1, r1, x2, y2, r2, result);
   }
 
   /**
@@ -747,55 +732,18 @@ class PhysicsWorker extends AbstractWorker {
    * @returns {{ collided: boolean, depth: number, nx: number, ny: number } | null}
    */
   testCircleAABB(circleX, circleY, circleR, boxX, boxY, boxW, boxH) {
-    const halfW = boxW * 0.5;
-    const halfH = boxH * 0.5;
-
-    // Find the closest point on the AABB to the circle center
-    const closestX = Math.max(boxX - halfW, Math.min(circleX, boxX + halfW));
-    const closestY = Math.max(boxY - halfH, Math.min(circleY, boxY + halfH));
-
-    // Calculate distance from circle center to closest point
-    const dx = circleX - closestX;
-    const dy = circleY - closestY;
-    const dist2 = dx * dx + dy * dy;
-
-    if (dist2 >= circleR * circleR) return null;
-
-    const dist = Math.sqrt(dist2);
-
     // Reuse collision result object to avoid GC pressure
     const result = this.collisionResult;
-    result.collided = true;
-
-    // Circle center is inside the box
-    if (dist === 0) {
-      // Find which edge is closest
-      const distToLeft = circleX - (boxX - halfW);
-      const distToRight = boxX + halfW - circleX;
-      const distToTop = circleY - (boxY - halfH);
-      const distToBottom = boxY + halfH - circleY;
-
-      const minDistX = Math.min(distToLeft, distToRight);
-      const minDistY = Math.min(distToTop, distToBottom);
-
-      if (minDistX < minDistY) {
-        // Push horizontally
-        result.depth = minDistX + circleR;
-        result.nx = distToLeft < distToRight ? -1 : 1;
-        result.ny = 0;
-      } else {
-        // Push vertically
-        result.depth = minDistY + circleR;
-        result.nx = 0;
-        result.ny = distToTop < distToBottom ? -1 : 1;
-      }
-    } else {
-      result.depth = circleR - dist;
-      result.nx = dx / dist;
-      result.ny = dy / dist;
-    }
-
-    return result;
+    return testCircleAABBCollision(
+      circleX,
+      circleY,
+      circleR,
+      boxX,
+      boxY,
+      boxW,
+      boxH,
+      result
+    );
   }
 
   /**
@@ -803,39 +751,9 @@ class PhysicsWorker extends AbstractWorker {
    * @returns {{ collided: boolean, depth: number, nx: number, ny: number } | null}
    */
   testAABBAABB(x1, y1, w1, h1, x2, y2, w2, h2) {
-    const halfW1 = w1 * 0.5;
-    const halfH1 = h1 * 0.5;
-    const halfW2 = w2 * 0.5;
-    const halfH2 = h2 * 0.5;
-
-    // Calculate overlap on each axis
-    const dx = x1 - x2;
-    const dy = y1 - y2;
-
-    const overlapX = halfW1 + halfW2 - Math.abs(dx);
-    const overlapY = halfH1 + halfH2 - Math.abs(dy);
-
-    // No collision if no overlap on either axis
-    if (overlapX <= 0 || overlapY <= 0) return null;
-
     // Reuse collision result object to avoid GC pressure
     const result = this.collisionResult;
-    result.collided = true;
-
-    // Push along axis with smallest overlap (Separating Axis Theorem)
-    if (overlapX < overlapY) {
-      // Push horizontally
-      result.depth = overlapX;
-      result.nx = dx > 0 ? 1 : -1;
-      result.ny = 0;
-    } else {
-      // Push vertically
-      result.depth = overlapY;
-      result.nx = 0;
-      result.ny = dy > 0 ? 1 : -1;
-    }
-
-    return result;
+    return testAABBAABBCollision(x1, y1, w1, h1, x2, y2, w2, h2, result);
   }
 
   /**

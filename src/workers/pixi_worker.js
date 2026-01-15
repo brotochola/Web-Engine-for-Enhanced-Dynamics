@@ -32,6 +32,7 @@ import {
   drawDigit,
   setNestedProperty,
   normalizeAngleDifference,
+  extractRGBNormalized,
 } from "../core/utils.js";
 import { RENDERER_STATS, createStatsWriter } from "./workers-utils.js";
 
@@ -2088,9 +2089,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       lightY[i] = worldY[entityIndex];
       lightIntensityArr[i] = lightIntensity[entityIndex]; // NO ZOOM SCALING
 
-      lightR[i] = ((color >> 16) & 0xff) / 255;
-      lightG[i] = ((color >> 8) & 0xff) / 255;
-      lightB[i] = (color & 0xff) / 255;
+      const { r, g, b } = extractRGBNormalized(color);
+      lightR[i] = r;
+      lightG[i] = g;
+      lightB[i] = b;
 
       lightIndex++;
     }

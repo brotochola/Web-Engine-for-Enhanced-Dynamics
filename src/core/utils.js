@@ -351,6 +351,220 @@ export function distance2D(x1, y1, x2, y2) {
 }
 
 // ============================================================================
+// COLLISION/GEOMETRY UTILITIES
+// ============================================================================
+
+/**
+ * Find the closest point on an AABB (Axis-Aligned Bounding Box) to a given point
+ * @param {number} pointX - Point X coordinate
+ * @param {number} pointY - Point Y coordinate
+ * @param {number} boxX - Box center X
+ * @param {number} boxY - Box center Y
+ * @param {number} boxW - Box width
+ * @param {number} boxH - Box height
+ * @returns {Object} Closest point {x, y} on the AABB
+ */
+export function closestPointOnAABB(pointX, pointY, boxX, boxY, boxW, boxH) {
+  const halfW = boxW * 0.5;
+  const halfH = boxH * 0.5;
+  return {
+    x: Math.max(boxX - halfW, Math.min(pointX, boxX + halfW)),
+    y: Math.max(boxY - halfH, Math.min(pointY, boxY + halfH)),
+  };
+}
+
+/**
+ * Clamp velocity vector to a maximum speed
+ * @param {number} vx - Velocity X component
+ * @param {number} vy - Velocity Y component
+ * @param {number} maxSpeed - Maximum speed (magnitude)
+ * @returns {Object} Clamped velocity {vx, vy}
+ */
+export function clampVelocity(vx, vy, maxSpeed) {
+  const speedSquared = vx * vx + vy * vy;
+  const maxSpeedSquared = maxSpeed * maxSpeed;
+
+  if (speedSquared > maxSpeedSquared) {
+    const velScale = maxSpeed / Math.sqrt(speedSquared);
+    return {
+      vx: vx * velScale,
+      vy: vy * velScale,
+    };
+  }
+
+  return { vx, vy };
+}
+
+/**
+ * Test Circle vs Circle collision
+ * Mutates the result object to avoid GC pressure (reuse same object in hot loops)
+ * @param {number} x1 - First circle center X
+ * @param {number} y1 - First circle center Y
+ * @param {number} r1 - First circle radius
+ * @param {number} x2 - Second circle center X
+ * @param {number} y2 - Second circle center Y
+ * @param {number} r2 - Second circle radius
+ * @param {Object} result - Result object to mutate {collided, depth, nx, ny}
+ * @returns {Object|null} Result object if collision, null if no collision
+ */
+export function testCircleCircleCollision(x1, y1, r1, x2, y2, r2, result) {
+  const dx = x1 - x2;
+  const dy = y1 - y2;
+  const dist2 = dx * dx + dy * dy;
+  const minDist = r1 + r2;
+
+  if (dist2 >= minDist * minDist) return null;
+
+  const dist = Math.sqrt(dist2);
+
+  // Mutate result object to avoid GC pressure
+  result.collided = true;
+
+  // Handle exact overlap
+  if (dist === 0) {
+    // Use random angle for exact overlap
+    // rng() is available globally in workers, fallback to Math.random
+    const rngFn =
+      typeof globalThis !== "undefined" && typeof globalThis.rng === "function"
+        ? globalThis.rng
+        : Math.random;
+    const angle = rngFn() * Math.PI * 2;
+    result.depth = minDist;
+    result.nx = Math.cos(angle);
+    result.ny = Math.sin(angle);
+  } else {
+    result.depth = minDist - dist;
+    result.nx = dx / dist;
+    result.ny = dy / dist;
+  }
+
+  return result;
+}
+
+/**
+ * Test Circle vs AABB collision
+ * Mutates the result object to avoid GC pressure (reuse same object in hot loops)
+ * @param {number} circleX - Circle center X
+ * @param {number} circleY - Circle center Y
+ * @param {number} circleR - Circle radius
+ * @param {number} boxX - Box center X
+ * @param {number} boxY - Box center Y
+ * @param {number} boxW - Box width
+ * @param {number} boxH - Box height
+ * @param {Object} result - Result object to mutate {collided, depth, nx, ny}
+ * @returns {Object|null} Result object if collision, null if no collision
+ */
+export function testCircleAABBCollision(
+  circleX,
+  circleY,
+  circleR,
+  boxX,
+  boxY,
+  boxW,
+  boxH,
+  result
+) {
+  const halfW = boxW * 0.5;
+  const halfH = boxH * 0.5;
+
+  // Find the closest point on the AABB to the circle center
+  const closest = closestPointOnAABB(circleX, circleY, boxX, boxY, boxW, boxH);
+  const closestX = closest.x;
+  const closestY = closest.y;
+
+  // Calculate distance from circle center to closest point
+  const dx = circleX - closestX;
+  const dy = circleY - closestY;
+  const dist2 = dx * dx + dy * dy;
+
+  if (dist2 >= circleR * circleR) return null;
+
+  const dist = Math.sqrt(dist2);
+
+  // Mutate result object to avoid GC pressure
+  result.collided = true;
+
+  // Circle center is inside the box
+  if (dist === 0) {
+    // Find which edge is closest
+    const distToLeft = circleX - (boxX - halfW);
+    const distToRight = boxX + halfW - circleX;
+    const distToTop = circleY - (boxY - halfH);
+    const distToBottom = boxY + halfH - circleY;
+
+    const minDistX = Math.min(distToLeft, distToRight);
+    const minDistY = Math.min(distToTop, distToBottom);
+
+    if (minDistX < minDistY) {
+      // Push horizontally
+      result.depth = minDistX + circleR;
+      result.nx = distToLeft < distToRight ? -1 : 1;
+      result.ny = 0;
+    } else {
+      // Push vertically
+      result.depth = minDistY + circleR;
+      result.nx = 0;
+      result.ny = distToTop < distToBottom ? -1 : 1;
+    }
+  } else {
+    result.depth = circleR - dist;
+    result.nx = dx / dist;
+    result.ny = dy / dist;
+  }
+
+  return result;
+}
+
+/**
+ * Test AABB vs AABB collision
+ * Mutates the result object to avoid GC pressure (reuse same object in hot loops)
+ * @param {number} x1 - First box center X
+ * @param {number} y1 - First box center Y
+ * @param {number} w1 - First box width
+ * @param {number} h1 - First box height
+ * @param {number} x2 - Second box center X
+ * @param {number} y2 - Second box center Y
+ * @param {number} w2 - Second box width
+ * @param {number} h2 - Second box height
+ * @param {Object} result - Result object to mutate {collided, depth, nx, ny}
+ * @returns {Object|null} Result object if collision, null if no collision
+ */
+export function testAABBAABBCollision(x1, y1, w1, h1, x2, y2, w2, h2, result) {
+  const halfW1 = w1 * 0.5;
+  const halfH1 = h1 * 0.5;
+  const halfW2 = w2 * 0.5;
+  const halfH2 = h2 * 0.5;
+
+  // Calculate overlap on each axis
+  const dx = x1 - x2;
+  const dy = y1 - y2;
+
+  const overlapX = halfW1 + halfW2 - Math.abs(dx);
+  const overlapY = halfH1 + halfH2 - Math.abs(dy);
+
+  // No collision if no overlap on either axis
+  if (overlapX <= 0 || overlapY <= 0) return null;
+
+  // Mutate result object to avoid GC pressure
+  result.collided = true;
+
+  // Push along axis with smallest overlap (Separating Axis Theorem)
+  if (overlapX < overlapY) {
+    // Push horizontally
+    result.depth = overlapX;
+    result.nx = dx > 0 ? 1 : -1;
+    result.ny = 0;
+  } else {
+    // Push vertically
+    result.depth = overlapY;
+    result.nx = 0;
+    result.ny = dy > 0 ? 1 : -1;
+  }
+
+  return result;
+}
+
+// ============================================================================
 // SPATIAL/GRID UTILITIES
 // ============================================================================
 
@@ -856,11 +1070,63 @@ export function createCircularGradientCanvas(radius = 100, color = 0xffffff) {
   return canvas;
 }
 
+/**
+ * Extract RGB components from a color value (0xRRGGBB format)
+ * @param {number} color - Color in 0xRRGGBB format
+ * @returns {Object} Object with r, g, b properties (0-255)
+ */
+export function extractRGB(color) {
+  return {
+    r: (color >> 16) & 0xff,
+    g: (color >> 8) & 0xff,
+    b: color & 0xff,
+  };
+}
+
+/**
+ * Extract RGB components from a color value and return as normalized values [0-1]
+ * @param {number} color - Color in 0xRRGGBB format
+ * @returns {Object} Object with r, g, b properties (0.0-1.0)
+ */
+export function extractRGBNormalized(color) {
+  return {
+    r: ((color >> 16) & 0xff) / 255,
+    g: ((color >> 8) & 0xff) / 255,
+    b: (color & 0xff) / 255,
+  };
+}
+
+/**
+ * Convert RGB to BGR (swaps red and blue channels)
+ * @param {number} color - Color in 0xRRGGBB format
+ * @returns {number} Color in 0xBBGGRR format
+ */
 export function convertRGBtoBGR(color) {
   const colorR = (color >> 16) & 0xff;
   const colorG = (color >> 8) & 0xff;
   const colorB = color & 0xff;
   return (colorB << 16) | (colorG << 8) | colorR;
+}
+
+/**
+ * Calculate speed from velocity components
+ * @param {number} vx - Velocity X component
+ * @param {number} vy - Velocity Y component
+ * @returns {number} Speed (magnitude of velocity vector)
+ */
+export function calculateSpeed(vx, vy) {
+  return Math.sqrt(vx * vx + vy * vy);
+}
+
+/**
+ * Calculate velocity angle for sprite rotation
+ * Returns angle in radians, adjusted for sprite rotation (adds PI/2)
+ * @param {number} vx - Velocity X component
+ * @param {number} vy - Velocity Y component
+ * @returns {number} Angle in radians [0, 2*PI] for sprite rotation
+ */
+export function calculateVelocityAngle(vx, vy) {
+  return Math.atan2(vy, vx) + Math.PI / 2;
 }
 
 /**
@@ -1037,6 +1303,26 @@ export function exposeEntityClassesGlobally(registeredClasses, globalRef) {
   }
 
   return exposedNames;
+}
+
+// ============================================================================
+// URL/PATH UTILITIES
+// ============================================================================
+
+/**
+ * Convert a URL to a file path (extracts pathname)
+ * Useful for converting script URLs to file paths
+ * @param {string} url - Full URL or path string
+ * @returns {string} Pathname portion of URL, or original string if URL parsing fails
+ */
+export function urlToPath(url) {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.pathname;
+  } catch (e) {
+    // If URL parsing fails (e.g., already a path), return as-is
+    return url;
+  }
 }
 
 // ============================================================================
@@ -1288,7 +1574,10 @@ export function drawDigit(
 
   // Top horizontal
   if (seg[0]) {
-    graphics.moveTo(x, y).lineTo(x + width, y).stroke(strokeStyle);
+    graphics
+      .moveTo(x, y)
+      .lineTo(x + width, y)
+      .stroke(strokeStyle);
   }
   // Top-left vertical
   if (seg[1]) {
@@ -1296,15 +1585,24 @@ export function drawDigit(
   }
   // Top-right vertical
   if (seg[2]) {
-    graphics.moveTo(x + width, y).lineTo(x + width, midY).stroke(strokeStyle);
+    graphics
+      .moveTo(x + width, y)
+      .lineTo(x + width, midY)
+      .stroke(strokeStyle);
   }
   // Middle horizontal
   if (seg[3]) {
-    graphics.moveTo(x, midY).lineTo(x + width, midY).stroke(strokeStyle);
+    graphics
+      .moveTo(x, midY)
+      .lineTo(x + width, midY)
+      .stroke(strokeStyle);
   }
   // Bottom-left vertical
   if (seg[4]) {
-    graphics.moveTo(x, midY).lineTo(x, y + height).stroke(strokeStyle);
+    graphics
+      .moveTo(x, midY)
+      .lineTo(x, y + height)
+      .stroke(strokeStyle);
   }
   // Bottom-right vertical
   if (seg[5]) {
