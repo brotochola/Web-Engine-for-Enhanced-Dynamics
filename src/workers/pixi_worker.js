@@ -41,6 +41,7 @@ import {
   Ticker,
   ParticleContainer,
   Particle,
+  Matrix,
   // Shader/Mesh for lighting system
   Geometry,
   Mesh,
@@ -48,6 +49,7 @@ import {
   GlProgram,
   extensions,
   RendererType,
+  RenderTexture,
 } from "./pixi8webworker.js";
 import { convertRGBtoBGR } from "../core/utils.js";
 // Import @pixi/tilemap for efficient tilemap rendering (modified to import from pixi8webworker.js)
@@ -78,11 +80,13 @@ const PIXI = {
   Ticker,
   ParticleContainer,
   Particle,
+  Matrix,
   Geometry,
   Mesh,
   Shader,
   GlProgram,
   RendererType,
+  RenderTexture,
 };
 
 // Note: Core engine classes (GameObject, Mouse, etc.) and components
@@ -407,6 +411,9 @@ class PixiRenderer extends AbstractWorker {
     this.lightingShader = null; // Shader instance for updating uniforms
     this.lightingAmbient = 0.05; // Ambient light level (0-1), read from config
     this.maxLights = 128; // Maximum number of lights (default: 128), read from config
+    this.lightingResolution = 1.0; // Resolution multiplier for lighting (e.g. 0.5 for half res)
+    this.lightingRT = null; // RenderTexture for low-res lighting
+    this.lightingDisplaySprite = null; // Sprite to display the lightingRT on stage
 
     // Reusable pool for light sorting (GC optimization)
     this._lightPool = [];
@@ -422,6 +429,19 @@ class PixiRenderer extends AbstractWorker {
     this.shadowSpriteContainer = null; // ParticleContainer for shadow sprites
     this.shadowSprites = []; // Array of Particle objects for shadows
     this.shadowConeTexture = null; // Pre-rendered shadow cone texture (PIXI.Texture)
+    this.shadowResolution = 1.0; // Resolution multiplier for shadows
+    this.shadowRT = null; // RenderTexture for low-res shadows
+    this.shadowDisplaySprite = null; // Sprite to display the shadowRT on stage
+
+    // Reusable render-state for interpolation
+    this._renderCameraX = 0;
+    this._renderCameraY = 0;
+    this._renderZoom = 1.0;
+    this._cameraInitialized = false;
+
+    // Reusable matrices for low-res rendering
+    this._shadowTransform = new PIXI.Matrix();
+    this._lightingTransform = new PIXI.Matrix(); // NDC mesh doesn't really need it but good to have
 
     // ========================================
     // LIGHT GLOW SPRITE SYSTEM
@@ -551,9 +571,9 @@ class PixiRenderer extends AbstractWorker {
    * Update camera transform on particle container, background, and decal tiles
    */
   updateCameraTransform() {
-    const zoom = this.cameraData[0];
-    const cameraX = this.cameraData[1];
-    const cameraY = this.cameraData[2];
+    const zoom = this._renderZoom;
+    const cameraX = this._renderCameraX;
+    const cameraY = this._renderCameraY;
 
     // Apply camera state to particle container
     this.particleContainer.scale.set(zoom);
@@ -1355,8 +1375,9 @@ class PixiRenderer extends AbstractWorker {
    * Update all sprite positions, visibility, and properties from SharedArrayBuffer
    * Uses dirty flags to skip unnecessary visual property updates
    * @param {number} deltaTime - Time elapsed since last frame in milliseconds
+   * @param {number} interpolationAlpha - Interpolation factor for smooth movement
    */
-  updateSprites(deltaTime) {
+  updateSprites(deltaTime, interpolationAlpha) {
     // Guard against uninitialized state
     if (!this.bodySpritePoolIndices) return;
 
@@ -1392,18 +1413,6 @@ class PixiRenderer extends AbstractWorker {
     // Instead of creating new array + objects every frame, we reuse a pre-allocated pool
     this._ySortPoolSize = 0;
     const allEntitiesWithSpriteRenderer = this.query(this.queryConfig);
-
-    // Calculate interpolation alpha once before the loop (same for all sprites)
-    // When renderer FPS > physics FPS, alpha < 1.0 (smooth interpolation)
-    // When renderer FPS <= physics FPS, alpha = 1.0 (no interpolation needed)
-    let interpolationAlpha = 1.0;
-    if (this.interpolation && this.frameRateData) {
-      const physicsFPS = this.frameRateData[this.physicsWorkerIndex];
-      if (physicsFPS > 0 && this.currentFPS > physicsFPS) {
-        // Interpolation factor: higher renderer FPS = smaller steps
-        interpolationAlpha = Math.min(1.0, physicsFPS / this.currentFPS);
-      }
-    }
 
     for (
       let i = 0;
@@ -1667,21 +1676,78 @@ class PixiRenderer extends AbstractWorker {
     // This ensures raycasts are displayed for exactly one frame
     Ray.clearDebugRaycasts();
 
+    // Calculate interpolation alpha for smooth movement
+    // When renderer FPS > physics FPS, alpha < 1.0 (smooth interpolation)
+    let interpolationAlpha = 1.0;
+    if (this.interpolation && this.frameRateData) {
+      const physicsFPS = this.frameRateData[this.physicsWorkerIndex] || 60;
+      if (physicsFPS > 0 && this.currentFPS > physicsFPS) {
+        interpolationAlpha = Math.min(1.0, physicsFPS / this.currentFPS);
+      }
+    }
+
+    // Interpolate camera state for smooth background and lighting movement
+    const targetZoom = this.cameraData[0];
+    const targetCamX = this.cameraData[1];
+    const targetCamY = this.cameraData[2];
+
+    // Initialize or interpolate
+    if (!this._cameraInitialized) {
+      this._renderCameraX = targetCamX;
+      this._renderCameraY = targetCamY;
+      this._renderZoom = targetZoom;
+      this._cameraInitialized = true;
+    } else {
+      this._renderCameraX +=
+        (targetCamX - this._renderCameraX) * interpolationAlpha;
+      this._renderCameraY +=
+        (targetCamY - this._renderCameraY) * interpolationAlpha;
+      this._renderZoom += (targetZoom - this._renderZoom) * interpolationAlpha;
+    }
+
     this.updateCameraTransform();
 
     // Update decal decal tiles (check for dirty tiles from particle_worker)
     this.updateDecalTiles();
 
     // Update lighting shader uniforms from LightEmitter components
-    this.updateLighting();
+    this.updateLighting(interpolationAlpha);
 
     // Update shadow sprites from ShadowSprite buffer (calculated by particle_worker)
-    this.updateShadowSprites();
+    this.updateShadowSprites(interpolationAlpha);
 
     // Update light glow sprites from LightEmitter component arrays
-    this.updateLightGlowSprites();
+    this.updateLightGlowSprites(interpolationAlpha);
 
-    this.updateSprites(deltaTime);
+    this.updateSprites(deltaTime, interpolationAlpha);
+
+    // ========================================
+    // LOW-RES OFF-SCREEN RENDERING
+    // ========================================
+    // Render shadows and lighting to lower-resolution textures if configured.
+    // This significantly improves performance on GPU-bound systems.
+
+    // 1. Render low-res shadows
+    if (this.shadowRT && this.shadowSpriteContainer) {
+      this._shadowTransform
+        .identity()
+        .scale(this.shadowResolution, this.shadowResolution);
+      this.pixiApp.renderer.render({
+        container: this.shadowSpriteContainer,
+        target: this.shadowRT,
+        transform: this._shadowTransform,
+        clear: true,
+      });
+    }
+
+    // 2. Render low-res lighting
+    if (this.lightingRT && this.lightingMesh) {
+      this.pixiApp.renderer.render({
+        container: this.lightingMesh,
+        target: this.lightingRT,
+        clear: true,
+      });
+    }
 
     // Render debug overlays (only if debug system is enabled)
     if (this.debugLayer) {
@@ -1859,9 +1925,17 @@ LIGHTING SYSTEM SETUP
           uCameraPos: { value: new Float32Array([0, 0]), type: "vec2<f32>" },
           uZoom: { value: 1.0, type: "f32" },
           uViewport: {
+            value: new Float32Array([
+              this.canvasWidth * this.lightingResolution,
+              this.canvasHeight * this.lightingResolution,
+            ]),
+            type: "vec2<f32>",
+          },
+          uFullCanvasSize: {
             value: new Float32Array([this.canvasWidth, this.canvasHeight]),
             type: "vec2<f32>",
           },
+          uInvResolution: { value: 1.0 / this.lightingResolution, type: "f32" },
 
           uLightX: { value: this._lightX, type: "f32", size: maxLights },
           uLightY: { value: this._lightY, type: "f32", size: maxLights },
@@ -1883,10 +1957,29 @@ LIGHTING SYSTEM SETUP
       geometry,
       shader: this.lightingShader,
     });
-    this.lightingMesh.blendMode = "multiply";
-    this.lightingMesh.zIndex = PixiRenderer.Z_INDICES.LIGHTING;
 
-    this.pixiApp.stage.addChild(this.lightingMesh);
+    // Handle low-res lighting via RenderTexture
+    if (this.lightingResolution < 1.0) {
+      this.lightingRT = PIXI.RenderTexture.create({
+        width: this.canvasWidth * this.lightingResolution,
+        height: this.canvasHeight * this.lightingResolution,
+      });
+      this.lightingDisplaySprite = new PIXI.Sprite(this.lightingRT);
+      this.lightingDisplaySprite.anchor.set(0, 0); // Ensure top-left anchor
+      this.lightingDisplaySprite.position.set(0, 0); // Position at top-left of screen
+      this.lightingDisplaySprite.scale.set(1.0 / this.lightingResolution);
+      this.lightingDisplaySprite.blendMode = "multiply";
+      this.lightingDisplaySprite.zIndex = PixiRenderer.Z_INDICES.LIGHTING;
+      this.pixiApp.stage.addChild(this.lightingDisplaySprite);
+
+      console.log(
+        `PIXI WORKER: Lighting RenderTexture created (${this.lightingRT.width}x${this.lightingRT.height})`
+      );
+    } else {
+      this.lightingMesh.blendMode = "multiply";
+      this.lightingMesh.zIndex = PixiRenderer.Z_INDICES.LIGHTING;
+      this.pixiApp.stage.addChild(this.lightingMesh);
+    }
   }
 
   buildFragmentShaderBasic() {
@@ -1896,6 +1989,7 @@ LIGHTING SYSTEM SETUP
     uniform vec2 uCameraPos;
     uniform float uZoom;
     uniform vec2 uViewport;
+    uniform vec2 uFullCanvasSize;
     
     uniform float uLightX[${this.maxLights}];
     uniform float uLightY[${this.maxLights}];
@@ -1907,9 +2001,14 @@ LIGHTING SYSTEM SETUP
     uniform float uAmbient;
     
     void main() {
-      // Convert fragment to WORLD SPACE
-      // gl_FragCoord.y is 0 at bottom, but game Y is 0 at top - flip it
-      vec2 screenPos = vec2(gl_FragCoord.x, uViewport.y - gl_FragCoord.y);
+      // Use normalized coordinates (0 to 1) to avoid resolution-scaling ambiguity.
+      vec2 normCoord = gl_FragCoord.xy / uViewport;
+      
+      // Map normalized coordinates back to full-screen pixels.
+      // When rendering to RenderTexture, PixiJS 8 may have already flipped Y coordinates.
+      // We test without the Y-flip first to see if that fixes the coordinate issue.
+      vec2 screenPos = normCoord * uFullCanvasSize;
+      
       vec2 fragWorld = (screenPos / uZoom) + uCameraPos;
       
       vec3 totalLight = vec3(uAmbient);
@@ -1939,7 +2038,7 @@ LIGHTING SYSTEM SETUP
 UPDATE LIGHTING (NO ZOOM SCALING)
 ===================== */
 
-  updateLighting() {
+  updateLighting(interpolationAlpha) {
     if (!this.lightingEnabled || !this.lightingShader) return;
 
     const uniformGroup = this.lightingShader.resources.uniforms;
@@ -1951,11 +2050,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightColor = LightEmitter.lightColor;
     const lightIntensity = LightEmitter.lightIntensity;
 
-    const zoom = this.cameraData[0];
-    const cameraX = this.cameraData[1];
-    const cameraY = this.cameraData[2];
+    const zoom = this._renderZoom;
+    const cameraX = this._renderCameraX;
+    const cameraY = this._renderCameraY;
 
-    // Calculate viewport bounds for culling
+    // Calculate viewport bounds for culling (using interpolated camera)
     const viewWidth = this.canvasWidth / zoom;
     const viewHeight = this.canvasHeight / zoom;
     const viewRight = cameraX + viewWidth;
@@ -1969,6 +2068,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     uniformGroup.uniforms.uCameraPos[0] = cameraX;
     uniformGroup.uniforms.uCameraPos[1] = cameraY;
     uniformGroup.uniforms.uZoom = zoom;
+
+    // Update viewport uniform every frame (handles resizes and resolution changes)
+    uniformGroup.uniforms.uViewport[0] =
+      this.canvasWidth * this.lightingResolution;
+    uniformGroup.uniforms.uViewport[1] =
+      this.canvasHeight * this.lightingResolution;
+
+    uniformGroup.uniforms.uFullCanvasSize[0] = this.canvasWidth;
+    uniformGroup.uniforms.uFullCanvasSize[1] = this.canvasHeight;
 
     // Use pre-allocated Float32Arrays for light data
     const lightX = this._lightX;
@@ -1991,8 +2099,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const i = lightEntities[idx];
       if (!active[i] || !lightEnabled[i]) continue;
 
-      const x = worldX[i];
-      const y = worldY[i];
+      // Use sprite position if available (it's already interpolated)
+      const sprite = this.bodySprites[i];
+      const x = sprite ? sprite.x : worldX[i];
+      const y = sprite ? sprite.y : worldY[i];
       const intensity = lightIntensity[i];
 
       // Viewport culling: Only include lights that actually affect the visible screen
@@ -2033,6 +2143,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const entityIndex = visibleLights[i].entityId;
       const color = lightColor[entityIndex];
 
+      // Always use world coordinates for lights (shader converts screen to world)
+      // sprite.x/y are in container space (already transformed), so we use worldX/worldY
       lightX[i] = worldX[entityIndex];
       lightY[i] = worldY[entityIndex];
       lightIntensityArr[i] = lightIntensity[entityIndex]; // NO ZOOM SCALING
@@ -2119,7 +2231,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // 2. Create ParticleContainer for shadows
     // ========================================
     this.shadowSpriteContainer = new PIXI.ParticleContainer({
-      blendMode: "multiply", // Normal blend (semi-transparent black overlays)
+      blendMode: this.shadowResolution < 1.0 ? "normal-npm" : "multiply",
       dynamicProperties: {
         vertex: true, // Required for scale changes
         position: true,
@@ -2230,7 +2342,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Iterates through entities with LightEmitter, maps to sprite pool (maxLights)
    * Same iteration pattern as updateLighting() for consistency
    */
-  updateLightGlowSprites() {
+  updateLightGlowSprites(interpolationAlpha) {
     if (!this.lightGlowEnabled || !this.lightGlowContainer) return;
 
     const sprites = this.lightGlowSprites;
@@ -2247,9 +2359,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const visualRange = Collider.visualRange;
     const lightIntensity = LightEmitter.lightIntensity;
 
-    const zoom = this.cameraData[0];
-    const cameraX = this.cameraData[1];
-    const cameraY = this.cameraData[2];
+    const zoom = this._renderZoom;
+    const cameraX = this._renderCameraX;
+    const cameraY = this._renderCameraY;
 
     // Calculate viewport bounds for culling
     const viewWidth = this.canvasWidth / zoom;
@@ -2279,8 +2391,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Skip inactive entities, entities without LightEmitter active, or entities without glow sprite
       if (!active[i] || !lightEnabled[i] || !hasGlowSprite[i]) continue;
 
-      const x = worldX[i];
-      const y = worldY[i] - (lightHeight[i] || 0);
+      // Use sprite position if available (already interpolated)
+      const bodySprite = this.bodySprites[i];
+      const x = bodySprite ? bodySprite.x : worldX[i];
+      const y = (bodySprite ? bodySprite.y : worldY[i]) - (lightHeight[i] || 0);
       const intensity = lightIntensity[i];
 
       // Viewport culling: Only include lights that actually affect the visible screen
@@ -2324,14 +2438,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         continue;
       }
 
+      const bodySprite = this.bodySprites[entityIndex];
+
       // Get visual range for this entity (from Collider component)
       const rangeVal = visualRange[entityIndex] || 200;
       const glowDiameter = rangeVal;
       const scale = (glowDiameter * 7) / textureRadius;
 
       // Position: entity position with height offset (light is above entity)
-      sprite.x = worldX[entityIndex];
-      sprite.y = worldY[entityIndex] - (lightHeight[entityIndex] || 0);
+      sprite.x = bodySprite ? bodySprite.x : worldX[entityIndex];
+      sprite.y =
+        (bodySprite ? bodySprite.y : worldY[entityIndex]) -
+        (lightHeight[entityIndex] || 0);
 
       // Scale based on visualRange
       sprite.scaleX = scale;
@@ -2367,7 +2485,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Uses interpolation for smooth movement when renderer FPS > physics FPS
    * Detects ownership changes via entity index and skips interpolation for those
    */
-  updateShadowSprites() {
+  updateShadowSprites(interpolationAlpha) {
     if (!this.shadowSpritesEnabled || !this.shadowSpriteActive) return;
 
     const sprites = this.shadowSprites;
@@ -2384,24 +2502,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const entityIdx = this.shadowSpriteEntityIdx;
     const prevEntityIdx = this._shadowPrevEntityIdx;
 
-    // Calculate interpolation alpha (same logic as entity sprites)
-    let interpolationAlpha = 1.0;
-    if (this.interpolation && this.frameRateData) {
-      const physicsFPS = this.frameRateData[this.physicsWorkerIndex];
-      if (physicsFPS > 0 && this.currentFPS > physicsFPS) {
-        interpolationAlpha = Math.min(1.0, physicsFPS / this.currentFPS);
-      }
-    }
-
     for (let i = 0; i < maxSprites; i++) {
       const sprite = sprites[i];
       if (!sprite) continue;
 
       // Hide inactive shadows and reset ownership tracking
       if (!active[i]) {
-        // if (sprite.alpha !== 0) {
-        //    console.log(`PIXI WORKER: Shadow slot ${i} deactivated (was alpha ${sprite.alpha})`);
-        // }
         sprite.alpha = 0;
         prevEntityIdx[i] = -1; // Reset so next activation doesn't interpolate
         continue;
@@ -2409,9 +2515,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Check if shadow just became visible (to avoid lerping from 0,0)
       const wasInvisible = sprite.alpha === 0;
-      // if (wasInvisible) {
-      //    console.log(`PIXI WORKER: Shadow slot ${i} ACTIVATED for entity ${entityIdx[i]}`);
-      // }
 
       // Check if shadow ownership changed (different entity now owns this slot)
       const currentEntity = entityIdx[i];
@@ -2421,23 +2524,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       prevEntityIdx[i] = currentEntity;
 
       // Only interpolate if: interpolation enabled, was visible, AND same owner
-      if (
-        this.interpolation &&
-        this.frameRateData &&
-        !wasInvisible &&
-        !ownerChanged
-      ) {
+      if (interpolationAlpha < 1.0 && !wasInvisible && !ownerChanged) {
         // Interpolate from current sprite position toward physics target
         sprite.x += (x[i] - sprite.x) * interpolationAlpha;
         sprite.y += (y[i] - sprite.y) * interpolationAlpha;
 
-        //WE DO NOT INTERPOLATE ROTATION, IT IS BUGGY
-
-        // Handle rotation interpolation with angle wrapping
-        // Normalize angle difference to [-PI, PI] to avoid going the long way
-        // let angleDiff = rotation[i] - sprite.rotation;
-        // if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
-        // else if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
         sprite.rotation = rotation[i]; // angleDiff * interpolationAlpha;
 
         sprite.scaleX += (scaleX[i] - sprite.scaleX) * interpolationAlpha;
@@ -3051,9 +3142,48 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.handleSpriteCommand(data);
     } else if (msg === "setBackground") {
       this.handleSetBackground(data);
+    } else if (msg === "resize") {
+      this.handleResize(data);
     } else {
       console.log(`PIXI WORKER: Unhandled message type: ${msg}`);
     }
+  }
+
+  /**
+   * Handle canvas resize messages
+   */
+  handleResize(data) {
+    const { width, height } = data;
+    this.canvasWidth = width;
+    this.canvasHeight = height;
+
+    if (this.pixiApp) {
+      this.pixiApp.renderer.resize(width, height);
+    }
+
+    // Resize lighting RenderTexture
+    if (this.lightingRT) {
+      this.lightingRT.resize(
+        width * this.lightingResolution,
+        height * this.lightingResolution
+      );
+      if (this.lightingDisplaySprite) {
+        this.lightingDisplaySprite.scale.set(1.0 / this.lightingResolution);
+      }
+    }
+
+    // Resize shadow RenderTexture
+    if (this.shadowRT) {
+      this.shadowRT.resize(
+        width * this.shadowResolution,
+        height * this.shadowResolution
+      );
+      if (this.shadowDisplaySprite) {
+        this.shadowDisplaySprite.scale.set(1.0 / this.shadowResolution);
+      }
+    }
+
+    console.log(`PIXI WORKER: Resized to ${width}x${height}`);
   }
 
   /**
@@ -3585,6 +3715,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightingConfig = this.config.lighting || {};
     if (lightingConfig.enabled && data.buffers.componentData.LightEmitter) {
       this.lightingEnabled = true;
+      this.lightingResolution = lightingConfig.resolution || 1.0;
       this.lightingAmbient =
         lightingConfig.lightingAmbient !== undefined
           ? lightingConfig.lightingAmbient
@@ -3597,7 +3728,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.createLightingSystem();
 
       console.log(
-        `PIXI WORKER: Lighting system enabled (ambient: ${this.lightingAmbient}, maxLights: ${this.maxLights})`
+        `PIXI WORKER: Lighting system enabled (ambient: ${this.lightingAmbient}, maxLights: ${this.maxLights}, resolution: ${this.lightingResolution})`
       );
 
       // ========================================
@@ -3680,6 +3811,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (data.shadows && data.shadows.enabled && data.shadows.spriteData) {
       this.shadowSpritesEnabled = true;
       this.maxShadowSprites = data.shadows.maxShadowSprites;
+      this.shadowResolution = data.shadows.resolution || 1.0;
 
       // Create typed array views for shadow sprite data (uses ShadowCaster schema)
       this.shadowSpriteActive = new Uint8Array(
@@ -3742,8 +3874,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Create shadow sprite container and texture
       this.createShadowSpriteSystem();
 
-      // Add shadow container to stage (zIndex handles ordering)
-      this.pixiApp.stage.addChild(this.shadowSpriteContainer);
+      // Handle low-res shadows via RenderTexture
+      if (this.shadowResolution < 1.0) {
+        this.shadowRT = PIXI.RenderTexture.create({
+          width: this.canvasWidth * this.shadowResolution,
+          height: this.canvasHeight * this.shadowResolution,
+        });
+        this.shadowDisplaySprite = new PIXI.Sprite(this.shadowRT);
+        this.shadowDisplaySprite.scale.set(1.0 / this.shadowResolution);
+        this.shadowDisplaySprite.blendMode = "multiply";
+        this.shadowDisplaySprite.zIndex = PixiRenderer.Z_INDICES.CASTED_SHADOWS;
+        this.pixiApp.stage.addChild(this.shadowDisplaySprite);
+
+        console.log(
+          `PIXI WORKER: Shadow RenderTexture created (${this.shadowRT.width}x${this.shadowRT.height})`
+        );
+      } else {
+        // Add shadow container to stage directly (zIndex handles ordering)
+        this.shadowSpriteContainer.blendMode = "multiply";
+        this.pixiApp.stage.addChild(this.shadowSpriteContainer);
+      }
 
       console.log(
         `PIXI WORKER: Shadow sprites enabled (${this.maxShadowSprites} sprites)`
