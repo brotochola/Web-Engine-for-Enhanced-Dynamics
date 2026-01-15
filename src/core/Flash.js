@@ -124,7 +124,8 @@ export class Flash extends GameObject {
         instance.onSpawned({
           x: config.x,
           y: config.y,
-          z: config.z ?? 50,
+          z: config.z ?? 0,
+          glowHeightOffset: config.z ?? 0,
           lifespan: config.lifespan ?? 100,
           color: config.color ?? 0xffffff,
           intensity: config.intensity ?? 10000,
@@ -159,7 +160,8 @@ export class Flash extends GameObject {
     this.y = spawnConfig.y ?? 0;
 
     // Set light emitter properties
-    this.lightEmitter.height = spawnConfig.z ?? 50;
+    this.lightEmitter.height = spawnConfig.z ?? 0;
+    this.lightEmitter.glowHeightOffset = spawnConfig.glowHeightOffset ?? 0;
     this.lightEmitter.lightColor = spawnConfig.color ?? 0xffffff;
     this.lightEmitter.lightIntensity = spawnConfig.intensity ?? 10000;
     this.lightEmitter.active = 1;

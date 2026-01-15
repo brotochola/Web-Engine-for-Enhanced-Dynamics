@@ -30,7 +30,7 @@ export class House extends GameObject {
     this.collider.offsetY = -50;
     this.lightEmitter.lightColor = 0xffffaa;
 
-    this.lightEmitter.height = 400;
+    this.lightEmitter.height = 100;
     this.lightEmitter.lightIntensity = 4000;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 0;
