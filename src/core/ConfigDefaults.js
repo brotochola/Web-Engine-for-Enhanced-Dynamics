@@ -77,10 +77,9 @@ export const LOGIC_DEFAULTS = {
 
 export const RENDERER_DEFAULTS = {
   noLimitFPS: false,
-  bg: null,
-  bgTileScale: 1,
   ySorting: false,
   interpolation: true, // Smooth rendering when renderer FPS > physics FPS
+  cullingRatio: 0.1,
 };
 
 // ============================================================================
