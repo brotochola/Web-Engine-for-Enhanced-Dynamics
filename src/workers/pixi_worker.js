@@ -24,7 +24,14 @@ import { MouseComponent } from "../components/MouseComponent.js";
 import { LightEmitter } from "../components/LightEmitter.js";
 import { Grid } from "../core/Grid.js";
 import { Ray } from "../core/Ray.js";
-import { drawLine, drawCircle, drawCross, sortByY } from "../core/utils.js";
+import {
+  drawLine,
+  drawCircle,
+  drawCross,
+  sortByY,
+  drawDigit,
+  setNestedProperty,
+} from "../core/utils.js";
 import { RENDERER_STATS, createStatsWriter } from "./workers-utils.js";
 
 // Import PixiJS 8 library (ES6 module with named exports)
@@ -359,6 +366,7 @@ class PixiRenderer extends AbstractWorker {
     this.debugFlags = null; // Uint8Array view of debug flags from SharedArrayBuffer
     this.raycastDebugBuffer = null; // Float32Array - raycast visualization data
     this.maxDebugRaycasts = 100; // Maximum raycasts to render
+    this.frameCount = 0; // Frame counter for clearing debug raycasts every 3 frames
     this.debugColors = {
       collider: 0x00ff00, // Green
       trigger: 0xffff00, // Yellow
@@ -882,88 +890,17 @@ class PixiRenderer extends AbstractWorker {
 
     // Draw each digit
     for (let i = 0; i < indexStr.length; i++) {
-      this._drawDigit(
+      drawDigit(
+        this.debugLayer,
         parseInt(indexStr[i]),
         startX,
         startY,
         digitWidth,
         digitHeight,
-        lineWidth
+        lineWidth,
+        this.debugColors.text
       );
       startX += digitWidth + digitSpacing;
-    }
-  }
-
-  /**
-   * Draw a single digit using 7-segment display style
-   * Segments: top, top-left, top-right, middle, bottom-left, bottom-right, bottom
-   */
-  _drawDigit(digit, x, y, width, height, lineWidth) {
-    // 7-segment patterns for digits 0-9
-    // [top, topLeft, topRight, middle, bottomLeft, bottomRight, bottom]
-    const segments = {
-      0: [1, 1, 1, 0, 1, 1, 1],
-      1: [0, 0, 1, 0, 0, 1, 0],
-      2: [1, 0, 1, 1, 1, 0, 1],
-      3: [1, 0, 1, 1, 0, 1, 1],
-      4: [0, 1, 1, 1, 0, 1, 0],
-      5: [1, 1, 0, 1, 0, 1, 1],
-      6: [1, 1, 0, 1, 1, 1, 1],
-      7: [1, 0, 1, 0, 0, 1, 0],
-      8: [1, 1, 1, 1, 1, 1, 1],
-      9: [1, 1, 1, 1, 0, 1, 1],
-    };
-
-    const seg = segments[digit] || segments[0];
-    const midY = y + height / 2;
-    const color = this.debugColors.text;
-    const strokeStyle = { width: lineWidth, color, alpha: 1 };
-
-    // Top horizontal
-    if (seg[0]) {
-      this.debugLayer
-        .moveTo(x, y)
-        .lineTo(x + width, y)
-        .stroke(strokeStyle);
-    }
-    // Top-left vertical
-    if (seg[1]) {
-      this.debugLayer.moveTo(x, y).lineTo(x, midY).stroke(strokeStyle);
-    }
-    // Top-right vertical
-    if (seg[2]) {
-      this.debugLayer
-        .moveTo(x + width, y)
-        .lineTo(x + width, midY)
-        .stroke(strokeStyle);
-    }
-    // Middle horizontal
-    if (seg[3]) {
-      this.debugLayer
-        .moveTo(x, midY)
-        .lineTo(x + width, midY)
-        .stroke(strokeStyle);
-    }
-    // Bottom-left vertical
-    if (seg[4]) {
-      this.debugLayer
-        .moveTo(x, midY)
-        .lineTo(x, y + height)
-        .stroke(strokeStyle);
-    }
-    // Bottom-right vertical
-    if (seg[5]) {
-      this.debugLayer
-        .moveTo(x + width, midY)
-        .lineTo(x + width, y + height)
-        .stroke(strokeStyle);
-    }
-    // Bottom horizontal
-    if (seg[6]) {
-      this.debugLayer
-        .moveTo(x, y + height)
-        .lineTo(x + width, y + height)
-        .stroke(strokeStyle);
     }
   }
 
@@ -1681,9 +1618,13 @@ class PixiRenderer extends AbstractWorker {
    * Update method called each frame (implementation of AbstractWorker.update)
    */
   update(deltaTime, dtRatio, resuming) {
-    // Clear debug raycasts from previous frame (at start of render frame)
-    // This ensures raycasts are displayed for exactly one frame
-    Ray.clearDebugRaycasts();
+    // Increment frame counter
+    this.frameCount++;
+
+    // Clear debug raycasts every 3 frames (allows raycasts to persist for 2-3 frames)
+    if (this.frameCount % 3 === 0) {
+      Ray.clearDebugRaycasts();
+    }
 
     // Calculate interpolation alpha for smooth movement
     // When renderer FPS > physics FPS, alpha < 1.0 (smooth interpolation)
@@ -3192,7 +3133,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     switch (cmd) {
       case "setProp":
         // Set nested property
-        this.setNestedProperty(sprite, prop, value);
+        setNestedProperty(sprite, prop, value);
         break;
 
       case "callMethod":
@@ -3206,7 +3147,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         // Batch set properties
         if (set) {
           Object.entries(set).forEach(([key, val]) => {
-            this.setNestedProperty(sprite, key, val);
+            setNestedProperty(sprite, key, val);
           });
         }
         // Batch call methods
@@ -3572,17 +3513,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     );
   }
 
-  /**
-   * Helper to set nested properties (supports dot notation)
-   */
-  setNestedProperty(obj, path, value) {
-    const keys = path.split(".");
-    const lastKey = keys.pop();
-    const target = keys.reduce((o, k) => o?.[k], obj);
-    if (target && lastKey) {
-      target[lastKey] = value;
-    }
-  }
 
   /**
    * Initialize the PIXI renderer with provided data
