@@ -622,8 +622,8 @@ class SpriteSheetRegistry {
   static async createBigAtlas(
     assetsConfig,
     options = {
-      maxWidth: 2048,
-      maxHeight: 2048,
+      maxWidth: 4096,
+      maxHeight: 4096,
       padding: 2,
       heuristic: "best-short-side",
     }
@@ -845,6 +845,14 @@ class SpriteSheetRegistry {
       imgData.rect = rect;
       actualWidth = Math.max(actualWidth, rect.x + rect.width);
       actualHeight = Math.max(actualHeight, rect.y + rect.height);
+    }
+
+    // Warn if atlas is too large for many mobile devices/GPUs
+    if (actualWidth > 4096 || actualHeight > 4096) {
+      console.warn(
+        `⚠️ BigAtlas dimensions (${actualWidth}x${actualHeight}) exceed 4096x4096. ` +
+          `This may cause performance issues or fail to render on some mobile devices or older GPUs.`
+      );
     }
 
     // Create canvas and draw packed atlas

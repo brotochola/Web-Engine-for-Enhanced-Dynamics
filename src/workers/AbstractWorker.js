@@ -29,8 +29,11 @@ export class AbstractWorker {
   constructor(selfRef) {
     this.self = selfRef;
 
+    // Message queue to ensure sequential processing of async messages
+    this._messageQueue = Promise.resolve();
+
     this.self.onmessage = (e) => {
-      this.handleMessage(e);
+      this._messageQueue = this._messageQueue.then(() => this.handleMessage(e));
     };
 
     // Frame timing and FPS tracking
@@ -127,6 +130,17 @@ export class AbstractWorker {
 
   reportLog(message) {
     self.postMessage({ msg: "log", message, when: Date.now() });
+  }
+
+  reportError(title, error) {
+    console.error(`❌ [${this.constructor.name}] ${title}:`, error);
+    self.postMessage({
+      msg: "error",
+      title,
+      message: error?.message || String(error),
+      stack: error?.stack,
+      when: Date.now(),
+    });
   }
 
   /**
@@ -378,7 +392,10 @@ export class AbstractWorker {
     // ARCHITECTURE: particle_worker writes grid, all others read
     // - gridEntities/gridCounts: DOUBLE BUFFERED, written by particle_worker
     // - neighborData/distanceData: DOUBLE BUFFERED, written by spatial_workers, read by logic/physics
-    if (data.gridMetadata && (data.buffers?.gridEntities || data.buffers?.gridEntitiesA)) {
+    if (
+      data.gridMetadata &&
+      (data.buffers?.gridEntities || data.buffers?.gridEntitiesA)
+    ) {
       const maxNeighbors =
         this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
 
@@ -493,7 +510,7 @@ export class AbstractWorker {
         this.isPaused = true; // Keep paused until "start" message
         await this.initializeCommonBuffers(e.data);
         this.initializeWorkerPorts(e.data.workerPorts); // Initialize direct worker communication
-        this.initialize(e.data);
+        await this.initialize(e.data);
         // After initialization, signal ready to main thread
         this.reportReady();
         break;
@@ -718,7 +735,7 @@ export class AbstractWorker {
    * @abstract
    * @param {Object} data - Initialization data
    */
-  initialize(data) {
+  async initialize(data) {
     throw new Error("initialize() must be implemented by subclass");
   }
 
