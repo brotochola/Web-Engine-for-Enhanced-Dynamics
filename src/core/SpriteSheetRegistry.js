@@ -676,6 +676,27 @@ class SpriteSheetRegistry {
         spritesheetPromises.push(
           this._loadSpritesheet(sheetName, config).then((sheetData) => {
             const { img, jsonData } = sheetData;
+            const excluded = config.excludeAnimations || [];
+
+            // 1. Determine which animations and frames are actually needed
+            const requiredFrames = new Set();
+            const animationsToProcess = [];
+
+            if (jsonData.animations) {
+              Object.entries(jsonData.animations).forEach(
+                ([animName, frameList]) => {
+                  if (excluded.includes(animName)) return;
+
+                  animationsToProcess.push({ animName, frameList });
+                  frameList.forEach((f) => requiredFrames.add(f));
+                }
+              );
+            } else {
+              // If no animations defined, keep all frames
+              Object.keys(jsonData.frames).forEach((f) =>
+                requiredFrames.add(f)
+              );
+            }
 
             // Create proxy sheet entry with its own index space
             proxySheets[sheetName] = {
@@ -686,9 +707,12 @@ class SpriteSheetRegistry {
               indexToName: {}, // Each proxy has its own animation index space
             };
 
-            // Extract frames from this spritesheet
+            // 2. Extract ONLY required frames from this spritesheet
             Object.entries(jsonData.frames).forEach(
               ([frameName, frameData]) => {
+                // Skip if this frame isn't used by any included animation
+                if (!requiredFrames.has(frameName)) return;
+
                 const prefixedName = `${sheetName}_${frameName}`;
                 const frame = frameData.frame;
 
@@ -728,34 +752,30 @@ class SpriteSheetRegistry {
               }
             );
 
-            // Map animations with prefixed names
-            if (jsonData.animations) {
-              let proxyIndex = 0; // Each proxy sheet has its own index space starting at 0
-              Object.entries(jsonData.animations).forEach(
-                ([animName, frameList]) => {
-                  const prefixedAnimName = `${sheetName}_${animName}`;
-                  animations[prefixedAnimName] = frameList.map(
-                    (f) => `${sheetName}_${f}`
-                  );
-
-                  // Store in proxy for transparent lookup
-                  proxySheets[sheetName].animations[animName] = {
-                    originalName: animName,
-                    prefixedName: prefixedAnimName,
-                    index: proxyIndex, // Proxy-specific index
-                  };
-
-                  // Build proxy's own indexToName mapping
-                  proxySheets[sheetName].indexToName[proxyIndex] = animName;
-                  proxyIndex++;
-                }
+            // 3. Map included animations with prefixed names
+            let proxyIndex = 0; // Each proxy sheet has its own index space starting at 0
+            animationsToProcess.forEach(({ animName, frameList }) => {
+              const prefixedAnimName = `${sheetName}_${animName}`;
+              animations[prefixedAnimName] = frameList.map(
+                (f) => `${sheetName}_${f}`
               );
-            }
+
+              // Store in proxy for transparent lookup
+              proxySheets[sheetName].animations[animName] = {
+                originalName: animName,
+                prefixedName: prefixedAnimName,
+                index: proxyIndex, // Proxy-specific index
+              };
+
+              // Build proxy's own indexToName mapping
+              proxySheets[sheetName].indexToName[proxyIndex] = animName;
+              proxyIndex++;
+            });
 
             console.log(
-              `  ✅ Loaded spritesheet: ${sheetName} (${
+              `  ✅ Loaded spritesheet: ${sheetName} (${requiredFrames.size}/${
                 Object.keys(jsonData.frames).length
-              } frames, ${
+              } frames, ${animationsToProcess.length}/${
                 Object.keys(jsonData.animations || {}).length
               } animations)`
             );
