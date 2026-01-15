@@ -159,7 +159,7 @@ export class Ray {
         );
 
         const result = Ray._tempResult;
-        
+
         if (result.entityIndex !== -1) {
           closestHit = result.entityIndex;
           closestDist = result.distance;
@@ -194,7 +194,7 @@ export class Ray {
     }
 
     // If we found a hit, we already logged debug data
-    if (closestHit !== -1) {
+    if (closestHit !== -1 && closestDist !== 0) {
       return closestHit;
     }
 
@@ -231,7 +231,7 @@ export class Ray {
 
     const cellBase = Grid.getCellBase(cellIndex);
     const gridEntities = Grid.gridEntities;
-    
+
     // CACHE: Component arrays to avoid property lookups in loop
     const active = Transform.active;
     const colliderActive = Collider.active;
@@ -256,10 +256,8 @@ export class Ray {
       if (!colliderActive[entityIndex]) continue;
 
       // Get entity collider position
-      const entityX =
-        tx[entityIndex] + (cOffsetX[entityIndex] || 0);
-      const entityY =
-        ty[entityIndex] + (cOffsetY[entityIndex] || 0);
+      const entityX = tx[entityIndex] + (cOffsetX[entityIndex] || 0);
+      const entityY = ty[entityIndex] + (cOffsetY[entityIndex] || 0);
       const shapeType = cShapeParams[entityIndex];
 
       let distance = -1;
