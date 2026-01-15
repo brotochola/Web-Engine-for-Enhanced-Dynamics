@@ -350,6 +350,26 @@ export function distance2D(x1, y1, x2, y2) {
   return Math.sqrt(distanceSq2D(x1, y1, x2, y2));
 }
 
+/**
+ * Apply brightness multiplier to a color while preserving hue
+ * OPTIMIZED: Uses bitwise ops instead of Math.round for speed
+ * @param {number} color - Original color in 0xRRGGBB format
+ * @param {number} brightness - Brightness multiplier (0 to 1+)
+ * @returns {number} Lit color in 0xRRGGBB format
+ */
+export function applyBrightnessToColor(color, brightness) {
+  // Clamp brightness to prevent over-saturation (branchless would be even faster but less readable)
+  const b = brightness > 1.0 ? 1.0 : brightness;
+
+  // Extract RGB and apply brightness using bitwise truncation (faster than Math.round)
+  const { r, g, b: blue } = extractRGB(color);
+  const litR = (r * b) | 0;
+  const litG = (g * b) | 0;
+  const litB = (blue * b) | 0;
+
+  return (litR << 16) | (litG << 8) | litB;
+}
+
 // ============================================================================
 // COLLISION/GEOMETRY UTILITIES
 // ============================================================================
