@@ -53,29 +53,39 @@ export class Explosion extends GameObject {
     this.lightEmitter.hasGlowSprite = 1;
     this.setAlpha(0.6 + Math.random() * 0.2);
 
-    this.baseAnimationSpeed = Math.random() * 0.5 + 0.7;
-    this.setAnimationSpeed(this.baseAnimationSpeed);
+    // Fixed 15fps animation speed (0.25 = 15/60, assuming 60fps base)
+    const animationFPS = 15;
+    this.setAnimationSpeed(animationFPS / 60);
 
-    // Calculate total lifespan based on frame count and animation speed
-    // Frame duration = 1 / (animationSpeed * 60) seconds
-    // Lifespan = frameCount * frameDuration
-    this.lifespan = this.frameCount / (this.baseAnimationSpeed * 60)*1000; 
-    console.log("lifespan", this.lifespan);// in seconds
+    // Lifespan in ms: frameCount / fps * 1000
+    // explosion1: 10 frames / 15fps = 666.67ms
+    // explosion2: 12 frames / 15fps = 800ms
+    this.lifespan = (this.frameCount / animationFPS) * 1000;
     this.elapsedTime = 0;
+    this._justSpawned = true; // Flag to ensure clean state on first tick
   }
 
   onSpawned(spawnConfig = {}) {
     this.setup();
+    console.log("onSpawned explosion", this.index);
     //this should not be needed, i guess:
     //TODO: make onSpawned() also execute this.setup() by default
   }
 
   tick(dtRatio, deltaTime, accumulatedTime, frameNumber) {
-    // Accumulate elapsed time using actual deltaTime (ms), convert to seconds
-    this.elapsedTime += deltaTime / 1000;
+    // Reset on first tick after spawn to handle pooled object reuse
+    if (this._justSpawned) {
+      this.elapsedTime = 0;
+      this._justSpawned = false;
+    }
+    
+    // Accumulate elapsed time in milliseconds (deltaTime is already in ms)
+    this.elapsedTime += deltaTime;
 
     // Calculate progress (0 to 1)
     const progress = Math.min(this.elapsedTime / this.lifespan, 1);
+console.log(this, this.index)
+    console.log(this.index,"dtRatio", dtRatio,"deltaTime", deltaTime,"accumulatedTime", accumulatedTime,"frameNumber", frameNumber,"progress", progress,"elapsedTime", this.elapsedTime,"lifespan", this.lifespan);
 
     // Use sine curve for smooth interpolation: 0 → 1 (at 50%) → 0
     const factor = Math.sin(progress * Math.PI);
@@ -102,6 +112,7 @@ export class Explosion extends GameObject {
 
     // Despawn when animation is complete
     if (progress >= 1) {
+        console.log("despawning explosion", progress);
       this.despawn();
       return;
     }
@@ -125,11 +136,12 @@ export class Explosion extends GameObject {
       rotation: { min: 0, max: 360 },
       vz: -Math.random() * 2 - 2,
       gravity: 0.6,
-      lifespan: { min: 200, max: 500 },
-      scale: 0.25,
+      lifespan: { min: 100, max: 300 },
+      scale: {min:0.25,max:0.5},
       texture: "square",
       tint: randomColor({ min: 0x00ffff, max: 0x00bbff }),
       alpha: { min: 0.8, max: 1 },
+      stayOnTheFloor:false
     });
   }
 
