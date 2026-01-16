@@ -25,6 +25,10 @@ export class SpriteRenderer extends Component {
     anchorX: Float32Array, // Separate X anchor
     anchorY: Float32Array, // Separate Y anchor
 
+    // Original sprite dimensions (unscaled) - set when sprite/animation changes
+    originalWidth: Uint16Array, // Original frame width in pixels
+    originalHeight: Uint16Array, // Original frame height in pixels
+
     // Rendering options
 
     zOffset: Float32Array,
@@ -39,4 +43,22 @@ export class SpriteRenderer extends Component {
     screenX: Float32Array,
     screenY: Float32Array,
   };
+
+  /**
+   * Get the original (unscaled) width of the current sprite/animation frame
+   * Zero-allocation - reads directly from typed array
+   * @returns {number} Original width in pixels
+   */
+  get getOriginalWidth() {
+    return SpriteRenderer.originalWidth[this.index];
+  }
+
+  /**
+   * Get the original (unscaled) height of the current sprite/animation frame
+   * Zero-allocation - reads directly from typed array
+   * @returns {number} Original height in pixels
+   */
+  get getOriginalHeight() {
+    return SpriteRenderer.originalHeight[this.index];
+  }
 }

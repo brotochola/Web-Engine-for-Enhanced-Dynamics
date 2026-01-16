@@ -22,6 +22,10 @@ class SpriteSheetRegistry {
   // Main registry: Map<sheetName, metadata>
   static spritesheets = new Map();
 
+  // Frame dimensions cache: Map<sheetName, Map<frameName, {w, h}>>
+  // Used for zero-allocation dimension lookups
+  static frameDimensions = new Map();
+
   // Spritesheet ID mapping for SharedArrayBuffer storage
   // We can't store strings in SharedArrayBuffer, so we use numeric IDs
   static spritesheetNames = [""]; // Index 0 = empty/default (use class spriteconfig)
@@ -56,6 +60,18 @@ class SpriteSheetRegistry {
 
       indexToName[currentIndex] = animName;
       currentIndex++;
+    }
+
+    // Store frame dimensions for zero-allocation lookups
+    if (jsonData.frames) {
+      const frameDims = new Map();
+      for (const [frameName, frameData] of Object.entries(jsonData.frames)) {
+        // Use sourceSize if available (original dimensions), otherwise use frame size
+        const w = frameData.sourceSize?.w ?? frameData.frame?.w ?? 0;
+        const h = frameData.sourceSize?.h ?? frameData.frame?.h ?? 0;
+        frameDims.set(frameName, { w, h });
+      }
+      this.frameDimensions.set(name, frameDims);
     }
 
     const metadata = {
@@ -213,6 +229,71 @@ class SpriteSheetRegistry {
   }
 
   /**
+   * Get frame dimensions for an animation (uses first frame)
+   * Zero-allocation lookup - returns cached dimensions
+   *
+   * @param {string} sheetName - Spritesheet name (e.g., "bigAtlas", "civil1")
+   * @param {string} animName - Animation name (e.g., "bunny", "walk_right")
+   * @returns {{w: number, h: number} | null} Frame dimensions or null if not found
+   */
+  static getFrameDimensions(sheetName, animName) {
+    const sheet = this.spritesheets.get(sheetName);
+    if (!sheet) return null;
+
+    // For proxy sheets, look up in bigAtlas with prefixed name
+    let targetSheet = sheetName;
+    let targetAnimName = animName;
+
+    if (sheet.isProxy) {
+      targetSheet = "bigAtlas";
+      targetAnimName = `${sheetName}_${animName}`;
+    }
+
+    // Get animation data to find first frame name
+    const targetSheetData = this.spritesheets.get(targetSheet);
+    if (!targetSheetData) return null;
+
+    const animData = targetSheetData.animations[targetAnimName];
+    if (!animData || !animData.frames || animData.frames.length === 0)
+      return null;
+
+    // Get dimensions of first frame
+    const firstFrameName = animData.frames[0];
+    const frameDims = this.frameDimensions.get(targetSheet);
+    if (!frameDims) return null;
+
+    return frameDims.get(firstFrameName) || null;
+  }
+
+  /**
+   * Get frame dimensions by spritesheet ID and animation index
+   * Optimized for hot-path access from typed array data
+   *
+   * @param {number} spritesheetId - Spritesheet ID (from SpriteRenderer.spritesheetId)
+   * @param {number} animIndex - Animation index (from SpriteRenderer.animationState)
+   * @returns {{w: number, h: number} | null} Frame dimensions or null if not found
+   */
+  static getFrameDimensionsById(spritesheetId, animIndex) {
+    const sheetName = this.getSpritesheetName(spritesheetId);
+    if (!sheetName) return null;
+
+    const sheet = this.spritesheets.get(sheetName);
+    if (!sheet) return null;
+
+    // Get animation name from index
+    let animName;
+    if (sheet.isProxy) {
+      animName = sheet.indexToName?.[animIndex];
+    } else {
+      animName = sheet.indexToName[animIndex];
+    }
+
+    if (!animName) return null;
+
+    return this.getFrameDimensions(sheetName, animName);
+  }
+
+  /**
    * Serialize registry for workers (convert to plain objects)
    * Workers can't use Map instances, so we convert to plain objects
    * NOTE: Proxy sheets are NOT serialized - they're reconstructed in workers
@@ -225,6 +306,8 @@ class SpriteSheetRegistry {
       // Include spritesheet ID mappings for per-instance switching
       spritesheetNames: this.spritesheetNames,
       spritesheetNameToId: Object.fromEntries(this.spritesheetNameToId),
+      // Include frame dimensions for zero-allocation lookups
+      frameDimensions: {},
     };
 
     for (const [name, sheet] of this.spritesheets) {
@@ -240,6 +323,11 @@ class SpriteSheetRegistry {
       };
     }
 
+    // Serialize frame dimensions (Map → Object)
+    for (const [sheetName, frameDims] of this.frameDimensions) {
+      serialized.frameDimensions[sheetName] = Object.fromEntries(frameDims);
+    }
+
     return serialized;
   }
 
@@ -251,6 +339,7 @@ class SpriteSheetRegistry {
    */
   static deserialize(serialized) {
     this.spritesheets.clear();
+    this.frameDimensions.clear();
 
     // Restore spritesheet ID mappings
     if (serialized.spritesheetNames) {
@@ -266,6 +355,15 @@ class SpriteSheetRegistry {
     const sheets = serialized.spritesheets || serialized;
     for (const [name, sheet] of Object.entries(sheets)) {
       this.spritesheets.set(name, sheet);
+    }
+
+    // Restore frame dimensions (Object → Map)
+    if (serialized.frameDimensions) {
+      for (const [sheetName, dims] of Object.entries(
+        serialized.frameDimensions
+      )) {
+        this.frameDimensions.set(sheetName, new Map(Object.entries(dims)));
+      }
     }
 
     console.log(

@@ -30,7 +30,7 @@ export class Rock extends GameObject {
     this.collider.visualRange = 0;
 
     this.shadowCaster.shadowRadius = this.collider.radius;
-    this.shadowCaster.height = this.collider.radius * 2;
+    this.shadowCaster.height = this.collider.radius * 3;
   }
 
   onSpawned(spawnConfig = {}) {
