@@ -319,6 +319,50 @@ export function distanceSq2D(x1, y1, x2, y2) {
 }
 
 /**
+ * Normalize a 2D direction vector (make it unit length)
+ * Mutates the result object to avoid GC pressure
+ *
+ * @param {number} dx - X component
+ * @param {number} dy - Y component
+ * @param {Object} result - Result object to mutate {x, y, length}
+ * @returns {Object} The result object with normalized x, y and original length
+ *
+ * @example
+ *   const dir = { x: 0, y: 0, length: 0 };
+ *   normalizeDirection(targetX - sourceX, targetY - sourceY, dir);
+ *   // dir.x and dir.y are now unit length, dir.length has original magnitude
+ */
+export function normalizeDirection(dx, dy, result) {
+  const length = Math.sqrt(dx * dx + dy * dy);
+  result.length = length;
+
+  if (length === 0) {
+    result.x = 0;
+    result.y = 0;
+  } else {
+    result.x = dx / length;
+    result.y = dy / length;
+  }
+
+  return result;
+}
+
+/**
+ * Get normalized direction from point A to point B
+ * Convenience wrapper for normalizeDirection
+ *
+ * @param {number} x1 - Source X
+ * @param {number} y1 - Source Y
+ * @param {number} x2 - Target X
+ * @param {number} y2 - Target Y
+ * @param {Object} result - Result object to mutate {x, y, length}
+ * @returns {Object} The result object
+ */
+export function directionTo(x1, y1, x2, y2, result) {
+  return normalizeDirection(x2 - x1, y2 - y1, result);
+}
+
+/**
  * Generate a unique numeric key for an ordered pair using Cantor pairing function
  * Maps two natural numbers to a single unique natural number.
  * Used for collision tracking to avoid string allocation.
