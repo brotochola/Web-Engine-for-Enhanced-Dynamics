@@ -12,24 +12,25 @@ const {
   ShadowCaster,
 } = WEED;
 
-export class Tree extends GameObject {
+export class Rock extends GameObject {
   static scriptUrl = import.meta.url;
 
   // Add PreyBehavior component for prey-specific properties
   static components = [Collider, SpriteRenderer, ShadowCaster];
 
   setup() {
-    this.setSprite("tree" + (Math.random() > 0.5 ? 1 : 2));
+    this.setSprite("rock" + Math.floor(Math.random() * 4 + 1));
     this.scale = Math.random() * 0.5 + 1;
     this.setScale(Math.random() > 0.5 ? this.scale : -this.scale, this.scale);
 
     this.collider.shapeType = 0;
-    this.collider.radius = 12 * this.scale;
+    this.collider.radius = 22 * this.scale;
+    this.collider.offsetY = -this.collider.radius;
 
     this.collider.visualRange = 0;
 
-    this.shadowCaster.shadowRadius = this.collider.radius * 2;
-    this.shadowCaster.height = 120 * this.scale;
+    this.shadowCaster.shadowRadius = this.collider.radius;
+    this.shadowCaster.height = this.collider.radius * 2;
   }
 
   onSpawned(spawnConfig = {}) {
