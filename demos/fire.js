@@ -37,6 +37,7 @@ export class Fire extends GameObject {
     this.lightEmitter.height = 0;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 1;
+    this.setAlpha(0.8+Math.random()*0.2)
     this.setSpritesheet("fire");
     this.setAnimation("fire");
     this.baseAnimationSpeed = Math.random() * 0.5 + 0.7;
@@ -137,19 +138,23 @@ export class Fire extends GameObject {
   emitSmoke() {
     if (Math.random() > 0.3) return;
     ParticleEmitter.emit({
-      count: Math.floor(Math.random() * 3) + 1,
+      count: Math.floor(Math.random() * 2) + 1,
       x: this.x,
-      y: this.y - 10,
+      y: this.y ,
       angleXY: { min: 0, max: 360 },
       speed: { min: 0, max: 1 },
-      vz: -Math.random(),
-      gravity: -Math.random() * 0.1,
-      z: -this.radius + Math.random() * this.radius,
-      lifespan: { min: 500, max: 1000 },
-      scale: { min: 6, max: 9 },
-      texture: "_lightGradient",
+      vz: -Math.random()*2-2,
+      gravity: 0,
+      rotation: { min: 0, max: 360 },
+      flipX: Math.random() > 0.5,
+      flipY: Math.random() > 0.5,
+      z: -this.radius*2 - Math.random() * this.radius*2,
+      lifespan: { min: 500, max: 2000 },
+      scale: { min: 1, max: 3 },
+      texture: "smoke",
       tint: randomColor({ min: 0xaaaaaa, max: 0x666666 }),
       alpha: { min: 0.15, max: 0.3 },
+      tweenToAlpha0: true,
     });
   }
 }

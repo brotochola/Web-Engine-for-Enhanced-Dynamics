@@ -2853,6 +2853,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const tint = ParticleComponent.tint;
     const textureId = ParticleComponent.textureId;
     const isItOnScreen = ParticleComponent.isItOnScreen;
+    const rotation = ParticleComponent.rotation;
+    const flipX = ParticleComponent.flipX;
+    const flipY = ParticleComponent.flipY;
 
     let visibleParticleCount = 0;
 
@@ -2897,8 +2900,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Update sprite properties from ParticleComponent
       sprite.x = x[i];
       sprite.y = renderY;
-      sprite.scaleX = scale[i];
-      sprite.scaleY = scale[i];
+      sprite.scaleX = flipX[i] ? -scale[i] : scale[i];
+      sprite.scaleY = flipY[i] ? -scale[i] : scale[i];
+      sprite.rotation = rotation[i];
       sprite.alpha = alpha[i];
       sprite.tint = tint[i];
 

@@ -822,6 +822,7 @@ class ParticleWorker extends AbstractWorker {
     const initialAlpha = ParticleComponent.initialAlpha;
     const isItOnScreen = ParticleComponent.isItOnScreen;
     const stayOnTheFloor = ParticleComponent.stayOnTheFloor;
+    const tweenToAlpha0 = ParticleComponent.tweenToAlpha0;
 
     let activeCount = 0;
 
@@ -864,6 +865,12 @@ class ParticleWorker extends AbstractWorker {
       if (currentLife[i] >= lifespan[i]) {
         active[i] = 0;
         continue;
+      }
+
+      // Alpha tweening: linearly fade from initial alpha to 0 over lifespan
+      if (tweenToAlpha0[i]) {
+        const lifeProgress = currentLife[i] / lifespan[i];
+        alpha[i] = initialAlpha[i] * (1 - lifeProgress);
       }
 
       // Apply gravity to vertical velocity (z-axis)
