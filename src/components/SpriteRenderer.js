@@ -2,6 +2,7 @@
 // Handles animation, tinting, transparency, and sprite effects
 
 import { Component } from "../core/Component.js";
+import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
 
 export class SpriteRenderer extends Component {
   // Array schema - defines all rendering properties
@@ -25,10 +26,6 @@ export class SpriteRenderer extends Component {
     anchorX: Float32Array, // Separate X anchor
     anchorY: Float32Array, // Separate Y anchor
 
-    // Original sprite dimensions (unscaled) - set when sprite/animation changes
-    originalWidth: Uint16Array, // Original frame width in pixels
-    originalHeight: Uint16Array, // Original frame height in pixels
-
     // Rendering options
 
     zOffset: Float32Array,
@@ -46,19 +43,31 @@ export class SpriteRenderer extends Component {
 
   /**
    * Get the original (unscaled) width of the current sprite/animation frame
-   * Zero-allocation - reads directly from typed array
-   * @returns {number} Original width in pixels
+   * Looks up dimensions from SpriteSheetRegistry (single source of truth)
+   * @returns {number} Original width in pixels, or 0 if not found
    */
-  get getOriginalWidth() {
-    return SpriteRenderer.originalWidth[this.index];
+  get originalWidth() {
+    const spritesheetId = SpriteRenderer.spritesheetId[this.index];
+    const animIndex = SpriteRenderer.animationState[this.index];
+    const dims = SpriteSheetRegistry.getFrameDimensionsById(
+      spritesheetId,
+      animIndex
+    );
+    return dims ? dims.w : 0;
   }
 
   /**
    * Get the original (unscaled) height of the current sprite/animation frame
-   * Zero-allocation - reads directly from typed array
-   * @returns {number} Original height in pixels
+   * Looks up dimensions from SpriteSheetRegistry (single source of truth)
+   * @returns {number} Original height in pixels, or 0 if not found
    */
-  get getOriginalHeight() {
-    return SpriteRenderer.originalHeight[this.index];
+  get originalHeight() {
+    const spritesheetId = SpriteRenderer.spritesheetId[this.index];
+    const animIndex = SpriteRenderer.animationState[this.index];
+    const dims = SpriteSheetRegistry.getFrameDimensionsById(
+      spritesheetId,
+      animIndex
+    );
+    return dims ? dims.h : 0;
   }
 }
