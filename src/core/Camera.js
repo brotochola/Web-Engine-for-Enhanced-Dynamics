@@ -84,6 +84,48 @@ export class Camera {
   }
 
   // ============================================
+  // VIEWPORT BOUNDS (read-only getters)
+  // ============================================
+
+  /** Left edge of viewport in world coordinates */
+  static get minX() {
+    return this._data ? this._data[1] : 0;
+  }
+
+  /** Right edge of viewport in world coordinates */
+  static get maxX() {
+    const zoom = this._data ? this._data[0] : 1;
+    const cameraX = this._data ? this._data[1] : 0;
+    return cameraX + this._canvasWidth / zoom;
+  }
+
+  /** Top edge of viewport in world coordinates */
+  static get minY() {
+    return this._data ? this._data[2] : 0;
+  }
+
+  /** Bottom edge of viewport in world coordinates */
+  static get maxY() {
+    const zoom = this._data ? this._data[0] : 1;
+    const cameraY = this._data ? this._data[2] : 0;
+    return cameraY + this._canvasHeight / zoom;
+  }
+
+  /** Center X of viewport in world coordinates */
+  static get centerX() {
+    const zoom = this._data ? this._data[0] : 1;
+    const cameraX = this._data ? this._data[1] : 0;
+    return cameraX + this._canvasWidth / (2 * zoom);
+  }
+
+  /** Center Y of viewport in world coordinates */
+  static get centerY() {
+    const zoom = this._data ? this._data[0] : 1;
+    const cameraY = this._data ? this._data[2] : 0;
+    return cameraY + this._canvasHeight / (2 * zoom);
+  }
+
+  // ============================================
   // CANVAS DIMENSIONS
   // ============================================
 

@@ -1,5 +1,3 @@
-Ray.cast se supone q toma xDEsde,yDesde,xHasta,xHasta, distancia maxima) y te dice q entidad choco primero (si disparas en una direccion concreta).
-Pero deberia hacer q tmb pueda evaluar tipo Si trazo una linea desde esta entidad hasta tal otra entidad, le llega el tiro? o hay algo en el medio?
 
 
 -------------
@@ -81,7 +79,6 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 
  
 
- isCollidingWith(other){}
 
 
 

@@ -40,8 +40,14 @@ export class GameObject {
 
   static instances = [];
 
-  static getByIndex(index) {
-    return this.instances[index];
+  get active() {
+    return Transform.active[this.index];
+  }
+  set active(value) {
+    Transform.active[this.index] = value;
+  }
+  static get(entityIndex) {
+    return this.instances[entityIndex];
   }
 
   /**
@@ -1412,12 +1418,6 @@ export class GameObject {
     for (let j = 0; j < len; j++) {
       callback(instances ? instances[j] : undefined, indices[j]);
     }
-  }
-  get active() {
-    return Transform.active[this.index];
-  }
-  set active(value) {
-    Transform.active[this.index] = value;
   }
 
   /**
