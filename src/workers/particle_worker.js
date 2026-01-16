@@ -1549,6 +1549,10 @@ class ParticleWorker extends AbstractWorker {
         this.particlesStampedThisFrame;
       this.stats[PARTICLE_STATS.FLASHES_UPDATED] = this.flashesUpdatedThisFrame;
       this.stats[PARTICLE_STATS.SHADOWS_UPDATED] = this.shadowsUpdatedThisFrame;
+      this.stats[PARTICLE_STATS.ACTIVE_ENTITIES] = this.activeEntityList
+        ? this.activeEntityList.length
+        : 0;
+      this.stats[PARTICLE_STATS.TOTAL_ENTITIES] = this.globalEntityCount || 0;
     }
   }
   getNumberOfShadows() {

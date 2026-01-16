@@ -567,6 +567,15 @@ class PixiRenderer extends AbstractWorker {
         this.particlePool.createdCount;
       this.stats[RENDERER_STATS.VISIBLE_DECORATIONS] =
         this.visibleDecorationCount;
+
+      // NEW: Separate counts for entities and particles
+      this.stats[RENDERER_STATS.VISIBLE_ENTITIES] = this.visibleEntityCount;
+      this.stats[RENDERER_STATS.VISIBLE_PARTICLES] = this.visibleParticleCount;
+
+      // Active decorations count (from shared counter)
+      this.stats[RENDERER_STATS.ACTIVE_DECORATIONS] = DecorationPool.activeCount
+        ? DecorationPool.activeCount[0]
+        : 0;
     }
 
     // Reset draw call counter for next frame
