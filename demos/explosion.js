@@ -1,16 +1,8 @@
-import WEED from "/src/index.js";
-import { ExplosionComponent } from "./ExplosionComponent.js";
+import WEED from '/src/index.js';
+import { ExplosionComponent } from './ExplosionComponent.js';
 
 // Destructure what we need from WEED
-const {
-  GameObject,
-  Collider,
-  SpriteRenderer,
-  LightEmitter,
-  rng,
-  randomColor,
-  ShadowCaster,
-} = WEED;
+const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, ShadowCaster } = WEED;
 
 export class Explosion extends GameObject {
   static scriptUrl = import.meta.url;
@@ -20,14 +12,14 @@ export class Explosion extends GameObject {
 
   setup() {
     const ec = this.explosionComponent;
-    
+
     ec.baseScale = 2;
     this.setScale(Math.random() > 0.5 ? ec.baseScale : -ec.baseScale, ec.baseScale);
 
-    this.setSpritesheet("explosions");
+    this.setSpritesheet('explosions');
     // explosion1 has 10 frames, explosion2 has 12 frames
     const animationType = Math.floor(Math.random() * 2) + 1;
-    this.setAnimation("explosion" + animationType);
+    this.setAnimation('explosion' + animationType);
     ec.frameCount = animationType === 1 ? 10 : 12;
 
     ec.originalWidth = this.spriteRenderer.originalWidth;
@@ -47,8 +39,7 @@ export class Explosion extends GameObject {
       max: 0xff9900,
     });
     this.lightEmitter.lightIntensity = 0; // Start at 0
-    this.lightEmitter.glowHeightOffset =
-      this.collider.radius * 0.5 * ec.baseScale;
+    this.lightEmitter.glowHeightOffset = this.collider.radius * 0.5 * ec.baseScale;
 
     this.lightEmitter.height = 0;
     this.lightEmitter.active = 1;
@@ -56,7 +47,7 @@ export class Explosion extends GameObject {
     this.setAlpha(0.6 + Math.random() * 0.2);
 
     // Animation at 30fps (animationSpeed is relative to 60fps base, so 30fps = 0.5)
-    const animationFPS = 30;
+    const animationFPS = 40;
     this.setAnimationSpeed(animationFPS / 60);
 
     // Lifespan in ms: frameCount / fps * 1000
@@ -69,20 +60,20 @@ export class Explosion extends GameObject {
 
   onSpawned(spawnConfig = {}) {
     this.setup();
-    console.log("onSpawned explosion", this.index);
+
     //this should not be needed, i guess:
     //TODO: make onSpawned() also execute this.setup() by default
   }
 
   tick(dtRatio, deltaTime, accumulatedTime, frameNumber) {
     const ec = this.explosionComponent;
-    
+
     // Reset on first tick after spawn to handle pooled object reuse
     if (ec.justSpawned) {
       ec.elapsedTime = 0;
       ec.justSpawned = 0;
     }
-    
+
     // Accumulate elapsed time in milliseconds (deltaTime is already in ms)
     ec.elapsedTime += deltaTime;
 
@@ -109,13 +100,20 @@ export class Explosion extends GameObject {
     this.lightEmitter.lightIntensity = ec.wantedIntensity * factor;
 
     // Update glow height offset based on current radius
-    this.lightEmitter.glowHeightOffset =
-      this.collider.radius * 0.5 * ec.baseScale;
+    this.lightEmitter.glowHeightOffset = this.collider.radius * 0.5 * ec.baseScale;
+
+    
 
     // Despawn when animation is complete
+
     if (progress >= 1) {
-      console.log("despawning explosion", progress);
+      GameObject.spawn(Fire, {
+        x: this.x,
+        y: this.y,
+        scale: this.explosionComponent.baseScale * 0.5,
+      });
       this.despawn();
+
       return;
     }
 
@@ -140,10 +138,10 @@ export class Explosion extends GameObject {
       gravity: 0.6,
       lifespan: { min: 100, max: 300 },
       scale: { min: 0.25, max: 0.5 },
-      texture: "square",
+      texture: 'square',
       tint: randomColor({ min: 0x00ffff, max: 0x00bbff }),
       alpha: { min: 0.8, max: 1 },
-      stayOnTheFloor: false
+      stayOnTheFloor: false,
     });
   }
 
@@ -164,7 +162,7 @@ export class Explosion extends GameObject {
       z: -radius * 2 - Math.random() * radius * 2,
       lifespan: { min: 500, max: 2000 },
       scale: { min: 1, max: 3 },
-      texture: "smoke",
+      texture: 'smoke',
       tint: randomColor({ min: 0xaaaaaa, max: 0x666666 }),
       alpha: { min: 0.15, max: 0.3 },
       tweenToAlpha0: true,

@@ -48,5 +48,8 @@
   "bugs": {
     "url": "https://github.com/brotochola/MultithreadedGameEngine/issues"
   },
-  "homepage": "https://multithreaded-game-engine.vercel.app/demos"
+  "homepage": "https://multithreaded-game-engine.vercel.app/demos",
+  "devDependencies": {
+    "prettier": "^3.8.0"
+  }
 }

@@ -1,3 +1,4 @@
+import { FireComponent } from "./FireComponent";
 import WEED from "/src/index.js";
 
 // Destructure what we need from WEED
@@ -16,10 +17,11 @@ export class Fire extends GameObject {
   static scriptUrl = import.meta.url;
 
   // Add PreyBehavior component for prey-specific properties
-  static components = [Collider, SpriteRenderer, LightEmitter];
+  static components = [Collider, SpriteRenderer, LightEmitter, FireComponent];
 
-  setup() {
+  setup(spawnConfig) {
     this.scale = Math.random() * 0.5 + 1;
+    if(spawnConfig && spawnConfig.scale) this.scale = spawnConfig.scale;
     this.setScale(Math.random() > 0.5 ? this.scale : -this.scale, this.scale);
     this.flipped = Math.random() > 0.5;
     this.collider.shapeType = 0;
@@ -56,7 +58,7 @@ export class Fire extends GameObject {
   }
 
   onSpawned(spawnConfig = {}) {
-    this.setup();
+    this.setup(spawnConfig);
     //this should not be needed, i guess:
     //TODO: make onSpawned() also execute this.setup() by default
   }
@@ -110,13 +112,14 @@ export class Fire extends GameObject {
       this.baseAnimationSpeed //+ Math.sin(t * 0.001 + this.index) * 0.1
     );
     // Mark dirty to keep animation advancing
+    const radius = this.collider.radius;
     this.markDirty();
-    this.emitSparks();
-    this.emitSmoke();
+    this.emitSparks(radius);
+    this.emitSmoke(radius);
   }
 
-  emitSparks() {
-    const radius = this.collider.radius;
+  emitSparks(radius) {
+   
     if (Math.random() > 0.4) return;
     ParticleEmitter.emit({
       count: Math.floor(Math.random() * 3) + 1,
@@ -135,7 +138,7 @@ export class Fire extends GameObject {
     });
   }
 
-  emitSmoke() {
+  emitSmoke(radius) {
     if (Math.random() > 0.3) return;
     ParticleEmitter.emit({
       count: Math.floor(Math.random() * 2) + 1,
@@ -148,9 +151,9 @@ export class Fire extends GameObject {
       rotation: { min: 0, max: 360 },
       flipX: Math.random() > 0.5,
       flipY: Math.random() > 0.5,
-      z: -this.radius*2 - Math.random() * this.radius*2,
+      z: -radius*2 - Math.random() * radius*2,
       lifespan: { min: 500, max: 2000 },
-      scale: { min: 1, max: 3 },
+      scale: { min: this.scale, max: this.scale*3 },
       texture: "smoke",
       tint: randomColor({ min: 0xaaaaaa, max: 0x666666 }),
       alpha: { min: 0.15, max: 0.3 },
