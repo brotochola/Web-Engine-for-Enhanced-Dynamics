@@ -138,6 +138,7 @@ export class PredatorScene extends WEED.Scene {
       barrel2: "/demos/img/barrel2.png",
       barrel3: "/demos/img/barrel3.png",
       square: "/demos/img/10_10_square.png",
+      smoke: "/demos/img/smoke.png",
     },
     spritesheets: {
       civil1: {

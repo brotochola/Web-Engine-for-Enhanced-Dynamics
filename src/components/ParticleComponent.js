@@ -33,6 +33,9 @@ export class ParticleComponent extends Component {
     tint: Uint32Array, // Color tint (0xRRGGBB) - modified by lighting
     baseTint: Uint32Array, // Original color set by emitter (preserved for lighting calculation)
     textureId: Uint16Array, // Index into texture atlas (NOT spritesheetId)
+    rotation: Float32Array, // Rotation in radians
+    flipX: Uint8Array, // 0 = normal, 1 = flip horizontally
+    flipY: Uint8Array, // 0 = normal, 1 = flip vertically
 
     // === Floor behavior ===
     fadeOnTheFloor: Uint16Array, // Time in ms to fade out when on floor (0 = no fade)
@@ -43,6 +46,10 @@ export class ParticleComponent extends Component {
     // When stayOnTheFloor=1, particle will stamp a decal on the tilemap when hitting floor
     // The particle is then immediately despawned (no fade animation)
     stayOnTheFloor: Uint8Array, // 0 = normal behavior, 1 = stamp decal on floor hit
+
+    // === Alpha Tweening ===
+    // When tweenToAlpha0=1, particle alpha linearly fades from initialAlpha to 0 over its lifespan
+    tweenToAlpha0: Uint8Array, // 0 = no tween, 1 = fade to alpha 0 over lifespan
 
     // === Visibility ===
     isItOnScreen: Uint8Array, // 0 = not on screen, 1 = on screen

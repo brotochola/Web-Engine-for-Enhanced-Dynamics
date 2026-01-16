@@ -112,6 +112,10 @@ export class ParticleEmitter {
     const timeOnFloor = ParticleComponent.timeOnFloor;
     const initialAlpha = ParticleComponent.initialAlpha;
     const stayOnTheFloor = ParticleComponent.stayOnTheFloor;
+    const tweenToAlpha0 = ParticleComponent.tweenToAlpha0;
+    const rotation = ParticleComponent.rotation;
+    const flipX = ParticleComponent.flipX;
+    const flipY = ParticleComponent.flipY;
 
     // Scan for inactive particles (indices 0 to maxParticles-1)
     for (let i = 0; i < this.maxParticles && spawned < count; i++) {
@@ -156,9 +160,18 @@ export class ParticleEmitter {
         tint[i] = particleColor;
         baseTint[i] = particleColor; // Store original color for lighting calculation
         particleTextureId[i] = textureId;
+        
+        // Rotation (convert degrees to radians) and flipping
+        const rotationDeg = randomRange(config.rotation, 0);
+        rotation[i] = (rotationDeg * Math.PI) / 180;
+        flipX[i] = config.flipX ? 1 : 0;
+        flipY[i] = config.flipY ? 1 : 0;
         fadeOnTheFloor[i] = config.fadeOnTheFloor ?? 0;
         timeOnFloor[i] = 0;
-        initialAlpha[i] = 0;
+        
+        // Alpha tweening: fade from initial alpha to 0 over lifespan
+        tweenToAlpha0[i] = config.tweenToAlpha0 ? 1 : 0;
+        initialAlpha[i] = config.tweenToAlpha0 ? alpha[i] : 0;
 
         // Blood decal system: if true, particle stamps decal on floor hit and despawns
         stayOnTheFloor[i] = config.stayOnTheFloor ? 1 : 0;
