@@ -40,12 +40,6 @@ export class GameObject {
 
   static instances = [];
 
-  get active() {
-    return Transform.active[this.index];
-  }
-  set active(value) {
-    Transform.active[this.index] = value;
-  }
   static get(entityIndex) {
     return this.instances[entityIndex];
   }
@@ -230,6 +224,28 @@ export class GameObject {
     this.prototype._componentAccessorsCreated = true;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PROPERTY ACCESSORS (GETTERS & SETTERS)
+  // Grouped by component: Transform → RigidBody → SpriteRenderer → Collider
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // TRANSFORM PROPERTIES
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /** Active state - whether entity is spawned and processing */
+  get active() {
+    return Transform.active[this.index];
+  }
+  set active(value) {
+    Transform.active[this.index] = value;
+  }
+
+  /** Entity type ID (read-only, set during registration) */
+  get entityType() {
+    return Transform.entityType[this.index];
+  }
+
   /**
    * Position X - forwards to Transform
    * NOTE: Setting position also updates RigidBody.px to prevent Verlet velocity
@@ -237,11 +253,8 @@ export class GameObject {
   get x() {
     return Transform.x[this.index];
   }
-
   set x(value) {
     Transform.x[this.index] = value;
-    // Sync previous position for Verlet integration (prevents unwanted velocity)
-    // DENSE: use this.index directly for all component access
     if (this._hasComponents.RigidBody) {
       RigidBody.px[this.index] = value;
     }
@@ -254,125 +267,379 @@ export class GameObject {
   get y() {
     return Transform.y[this.index];
   }
-
   set y(value) {
     Transform.y[this.index] = value;
-    // Sync previous position for Verlet integration (prevents unwanted velocity)
-    // DENSE: use this.index directly for all component access
     if (this._hasComponents.RigidBody) {
       RigidBody.py[this.index] = value;
     }
   }
 
-  /**
-   * Rotation - forwards to Transform
-   */
+  /** Rotation in radians */
   get rotation() {
     return Transform.rotation[this.index];
   }
-
   set rotation(value) {
     Transform.rotation[this.index] = value;
   }
 
-  /**
-   * Velocity X - forwards to RigidBody (if entity has one)
-   * DENSE: use this.index directly for component access
-   */
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RIGIDBODY PROPERTIES
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /** Velocity X - returns 0 if entity has no RigidBody */
   get vx() {
     if (!this._hasComponents.RigidBody) return 0;
     return RigidBody.vx[this.index];
   }
-
   set vx(value) {
     if (this._hasComponents.RigidBody) {
       RigidBody.vx[this.index] = value;
+      // Sync previous position for Verlet: physics computes velocity as (x - px)
+      RigidBody.px[this.index] = Transform.x[this.index] - value;
     }
   }
 
-  /**
-   * Velocity Y - forwards to RigidBody (if entity has one)
-   * DENSE: use this.index directly for component access
-   */
+  /** Velocity Y - returns 0 if entity has no RigidBody */
   get vy() {
     if (!this._hasComponents.RigidBody) return 0;
     return RigidBody.vy[this.index];
   }
-
   set vy(value) {
     if (this._hasComponents.RigidBody) {
       RigidBody.vy[this.index] = value;
+      // Sync previous position for Verlet: physics computes velocity as (y - py)
+      RigidBody.py[this.index] = Transform.y[this.index] - value;
     }
   }
 
-  get entityType() {
-    return Transform.entityType[this.index];
+  /** Speed (magnitude of velocity) - read-only, computed by physics worker */
+  get speed() {
+    if (!this._hasComponents.RigidBody) return 0;
+    return RigidBody.speed[this.index];
   }
 
-  // Component accessors are now dynamically created in _createComponentAccessors()
-  // No need for hardcoded getters - works for both core and custom components!
+  /** Velocity angle in radians - read-only, computed by physics worker */
+  get velocityAngle() {
+    if (!this._hasComponents.RigidBody) return 0;
+    return RigidBody.velocityAngle[this.index];
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // SPRITERENDERER PROPERTIES
+  // Setters mark dirty for re-rendering. Both setter and method provided.
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /** Alpha (opacity) 0-1 */
+  get alpha() {
+    if (!this._hasComponents.SpriteRenderer) return 1;
+    return SpriteRenderer.alpha[this.index];
+  }
+  set alpha(value) {
+    if (!this._hasComponents.SpriteRenderer) return;
+    if (SpriteRenderer.alpha[this.index] !== value) {
+      SpriteRenderer.alpha[this.index] = value;
+      SpriteRenderer.renderDirty[this.index] = 1;
+    }
+  }
+
+  /** Tint color (0xRRGGBB) */
+  get tint() {
+    if (!this._hasComponents.SpriteRenderer) return 0xffffff;
+    return SpriteRenderer.tint[this.index];
+  }
+  set tint(value) {
+    if (!this._hasComponents.SpriteRenderer) return;
+    SpriteRenderer.baseTint[this.index] = value;
+    if (SpriteRenderer.tint[this.index] !== value) {
+      SpriteRenderer.tint[this.index] = value;
+      SpriteRenderer.renderDirty[this.index] = 1;
+    }
+  }
+
+  /** Visibility flag */
+  get visible() {
+    if (!this._hasComponents.SpriteRenderer) return false;
+    return SpriteRenderer.renderVisible[this.index] === 1;
+  }
+  set visible(value) {
+    if (!this._hasComponents.SpriteRenderer) return;
+    const v = value ? 1 : 0;
+    if (SpriteRenderer.renderVisible[this.index] !== v) {
+      SpriteRenderer.renderVisible[this.index] = v;
+      SpriteRenderer.renderDirty[this.index] = 1;
+    }
+  }
+
+  /** Scale X */
+  get scaleX() {
+    if (!this._hasComponents.SpriteRenderer) return 1;
+    return SpriteRenderer.scaleX[this.index];
+  }
+  set scaleX(value) {
+    if (!this._hasComponents.SpriteRenderer) return;
+    if (SpriteRenderer.scaleX[this.index] !== value) {
+      SpriteRenderer.scaleX[this.index] = value;
+      SpriteRenderer.renderDirty[this.index] = 1;
+    }
+  }
+
+  /** Scale Y */
+  get scaleY() {
+    if (!this._hasComponents.SpriteRenderer) return 1;
+    return SpriteRenderer.scaleY[this.index];
+  }
+  set scaleY(value) {
+    if (!this._hasComponents.SpriteRenderer) return;
+    if (SpriteRenderer.scaleY[this.index] !== value) {
+      SpriteRenderer.scaleY[this.index] = value;
+      SpriteRenderer.renderDirty[this.index] = 1;
+    }
+  }
+
+  /** Is entity currently on screen? Read-only, set by culling system */
+  get isOnScreen() {
+    if (!this._hasComponents.SpriteRenderer) return false;
+    return SpriteRenderer.isItOnScreen[this.index] === 1;
+  }
+
+  /** Anchor X (0-1, 0.5 = center) - read-only, use setAnchor() */
+  get anchorX() {
+    if (!this._hasComponents.SpriteRenderer) return 0.5;
+    return SpriteRenderer.anchorX[this.index];
+  }
+
+  /** Anchor Y (0-1, 1.0 = bottom) - read-only, use setAnchor() */
+  get anchorY() {
+    if (!this._hasComponents.SpriteRenderer) return 1.0;
+    return SpriteRenderer.anchorY[this.index];
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // COLLIDER PROPERTIES
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /** Collision radius - read-only, set via this.collider.radius */
+  get radius() {
+    if (!this._hasComponents.Collider) return 0;
+    return Collider.radius[this.index];
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // METHODS - RENDERING (mark dirty)
+  // Methods duplicate setter logic for zero-overhead when using method syntax
+  // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Helper method for SpriteRenderer - mark as dirty
+   * Mark sprite as needing re-render
    */
   markDirty() {
-    if (this.spriteRenderer) {
-      this.spriteRenderer.renderDirty = 1;
+    if (this._hasComponents.SpriteRenderer) {
+      SpriteRenderer.renderDirty[this.index] = 1;
     }
   }
 
   /**
-   * Helper setters for SpriteRenderer compatibility
+   * Set alpha (opacity)
+   * @param {number} value - Alpha 0-1
+   * @returns {this} For chaining
    */
-  setTint(tint) {
-    if (this.spriteRenderer) {
-      // Always update baseTint (the original color for lighting calculations)
-      this.spriteRenderer.baseTint = tint;
-      // Only update tint and mark dirty if value actually changed
-      if (this.spriteRenderer.tint !== tint) {
-        this.spriteRenderer.tint = tint;
-        this.markDirty();
-      }
+  setAlpha(value) {
+    if (!this._hasComponents.SpriteRenderer) return this;
+    if (SpriteRenderer.alpha[this.index] !== value) {
+      SpriteRenderer.alpha[this.index] = value;
+      SpriteRenderer.renderDirty[this.index] = 1;
     }
+    return this;
   }
 
-  setAlpha(alpha) {
-    if (this.spriteRenderer && this.spriteRenderer.alpha !== alpha) {
-      this.spriteRenderer.alpha = alpha;
-      this.markDirty();
+  /**
+   * Set tint color
+   * @param {number} value - Color as 0xRRGGBB
+   * @returns {this} For chaining
+   */
+  setTint(value) {
+    if (!this._hasComponents.SpriteRenderer) return this;
+    SpriteRenderer.baseTint[this.index] = value;
+    if (SpriteRenderer.tint[this.index] !== value) {
+      SpriteRenderer.tint[this.index] = value;
+      SpriteRenderer.renderDirty[this.index] = 1;
     }
+    return this;
   }
 
-  setScale(scaleX, scaleY) {
-    if (!this.spriteRenderer) return;
+  /**
+   * Set visibility
+   * @param {boolean} value - Visible or not
+   * @returns {this} For chaining
+   */
+  setVisible(value) {
+    if (!this._hasComponents.SpriteRenderer) return this;
+    const v = value ? 1 : 0;
+    if (SpriteRenderer.renderVisible[this.index] !== v) {
+      SpriteRenderer.renderVisible[this.index] = v;
+      SpriteRenderer.renderDirty[this.index] = 1;
+    }
+    return this;
+  }
 
+  /**
+   * Set scale (uniform or non-uniform)
+   * @param {number} x - Scale X
+   * @param {number} [y] - Scale Y (defaults to x for uniform scale)
+   * @returns {this} For chaining
+   */
+  setScale(x, y) {
+    if (!this._hasComponents.SpriteRenderer) return this;
+    const yVal = y !== undefined ? y : x;
     let changed = false;
-    if (this.spriteRenderer.scaleX !== scaleX) {
-      this.spriteRenderer.scaleX = scaleX;
+    if (SpriteRenderer.scaleX[this.index] !== x) {
+      SpriteRenderer.scaleX[this.index] = x;
       changed = true;
     }
-    if (scaleY !== undefined && this.spriteRenderer.scaleY !== scaleY) {
-      this.spriteRenderer.scaleY = scaleY;
+    if (SpriteRenderer.scaleY[this.index] !== yVal) {
+      SpriteRenderer.scaleY[this.index] = yVal;
       changed = true;
     }
-    if (changed) this.markDirty();
-  }
-
-  setVisible(visible) {
-    if (
-      this.spriteRenderer &&
-      this.spriteRenderer.renderVisible !== (visible ? 1 : 0)
-    ) {
-      this.spriteRenderer.renderVisible = visible ? 1 : 0;
-      this.markDirty();
+    if (changed) {
+      SpriteRenderer.renderDirty[this.index] = 1;
     }
+    return this;
   }
 
+  /**
+   * Set anchor point
+   * @param {number} x - Anchor X (0-1)
+   * @param {number} y - Anchor Y (0-1)
+   * @returns {this} For chaining
+   */
+  setAnchor(x, y) {
+    if (!this._hasComponents.SpriteRenderer) return this;
+    SpriteRenderer.anchorX[this.index] = x;
+    SpriteRenderer.anchorY[this.index] = y;
+    SpriteRenderer.renderDirty[this.index] = 1;
+    return this;
+  }
+
+  /**
+   * Set animation state index
+   * @param {number} state - Animation state index
+   * @returns {this} For chaining
+   */
   setAnimationState(state) {
-    if (this.spriteRenderer && this.spriteRenderer.animationState !== state) {
-      this.spriteRenderer.animationState = state;
-      this.markDirty();
+    if (!this._hasComponents.SpriteRenderer) return this;
+    if (SpriteRenderer.animationState[this.index] !== state) {
+      SpriteRenderer.animationState[this.index] = state;
+      SpriteRenderer.renderDirty[this.index] = 1;
     }
+    return this;
+  }
+
+  /**
+   * Set animation speed multiplier
+   * @param {number} speed - Animation speed (1.0 = normal)
+   * @returns {this} For chaining
+   */
+  setAnimationSpeed(speed) {
+    if (!this._hasComponents.SpriteRenderer) return this;
+    if (SpriteRenderer.animationSpeed[this.index] !== speed) {
+      SpriteRenderer.animationSpeed[this.index] = speed;
+      SpriteRenderer.renderDirty[this.index] = 1;
+    }
+    return this;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // METHODS - PHYSICS (batch operations)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Set position (batch update, syncs previous position for Verlet)
+   * @param {number} x - Position X
+   * @param {number} y - Position Y
+   * @returns {this} For chaining
+   */
+  setPosition(x, y) {
+    Transform.x[this.index] = x;
+    Transform.y[this.index] = y;
+    if (this._hasComponents.RigidBody) {
+      RigidBody.px[this.index] = x;
+      RigidBody.py[this.index] = y;
+    }
+    return this;
+  }
+
+  /**
+   * Set velocity (absolute)
+   * Syncs previous position for Verlet integration (physics computes vel from x - px)
+   * @param {number} vx - Velocity X
+   * @param {number} vy - Velocity Y
+   * @returns {this} For chaining
+   */
+  setVelocity(vx, vy) {
+    if (this._hasComponents.RigidBody) {
+      const i = this.index;
+      RigidBody.vx[i] = vx;
+      RigidBody.vy[i] = vy;
+      // Sync previous position for Verlet: physics computes velocity as (pos - prev)
+      RigidBody.px[i] = Transform.x[i] - vx;
+      RigidBody.py[i] = Transform.y[i] - vy;
+    }
+    return this;
+  }
+
+  /**
+   * Add to velocity (additive)
+   * Syncs previous position for Verlet integration
+   * @param {number} dvx - Velocity X to add
+   * @param {number} dvy - Velocity Y to add
+   * @returns {this} For chaining
+   */
+  addVelocity(dvx, dvy) {
+    if (this._hasComponents.RigidBody) {
+      const i = this.index;
+      const newVx = RigidBody.vx[i] + dvx;
+      const newVy = RigidBody.vy[i] + dvy;
+      RigidBody.vx[i] = newVx;
+      RigidBody.vy[i] = newVy;
+      // Sync previous position for Verlet
+      RigidBody.px[i] = Transform.x[i] - newVx;
+      RigidBody.py[i] = Transform.y[i] - newVy;
+    }
+    return this;
+  }
+
+  /**
+   * Scale velocity (multiplicative) - useful for friction/drag
+   * Syncs previous position for Verlet integration
+   * @param {number} factor - Multiplier (0.95 = 5% friction)
+   * @returns {this} For chaining
+   */
+  scaleVelocity(factor) {
+    if (this._hasComponents.RigidBody) {
+      const i = this.index;
+      const newVx = RigidBody.vx[i] * factor;
+      const newVy = RigidBody.vy[i] * factor;
+      RigidBody.vx[i] = newVx;
+      RigidBody.vy[i] = newVy;
+      // Sync previous position for Verlet
+      RigidBody.px[i] = Transform.x[i] - newVx;
+      RigidBody.py[i] = Transform.y[i] - newVy;
+    }
+    return this;
+  }
+
+  /**
+   * Add acceleration (additive) - applied by physics integration
+   * @param {number} x - Acceleration X
+   * @param {number} y - Acceleration Y
+   * @returns {this} For chaining
+   */
+  addAcceleration(x, y) {
+    if (this._hasComponents.RigidBody) {
+      RigidBody.ax[this.index] += x;
+      RigidBody.ay[this.index] += y;
+    }
+    return this;
   }
 
   /**
@@ -545,21 +812,6 @@ export class GameObject {
     // Set the sprite (as a single-frame "animation")
     this.setAnimationState(animIndex); // This calls markDirty() internally
   }
-  setAnchor(anchorX, anchorY) {
-    if (this.spriteRenderer) {
-      this.spriteRenderer.anchorX = anchorX;
-      this.spriteRenderer.anchorY = anchorY;
-      this.markDirty();
-    }
-  }
-
-  setAnimationSpeed(speed) {
-    if (this.spriteRenderer && this.spriteRenderer.animationSpeed !== speed) {
-      this.spriteRenderer.animationSpeed = speed;
-      this.markDirty();
-    }
-  }
-
   /**
    * Helper method to send sprite property changes to renderer
    */
@@ -679,17 +931,6 @@ export class GameObject {
    */
   onScreenExit() {
     // Override in subclasses
-  }
-
-  /**
-   * Add acceleration to the entity
-   * @param {number} x - Acceleration in the x direction
-   * @param {number} y - Acceleration in the y direction
-   */
-  addAcceleration(x, y) {
-    if (!this._hasComponents.RigidBody) return;
-    RigidBody.ax[this.index] += x;
-    RigidBody.ay[this.index] += y;
   }
 
   /**
