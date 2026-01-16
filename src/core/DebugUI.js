@@ -410,8 +410,8 @@ export class DebugUI {
     if (!this.scene) return;
 
     // DEBUG: Set to true to completely skip all updates (test if DebugUI is the bottleneck)
-    const SKIP_ALL_UPDATES = true;
-    if (SKIP_ALL_UPDATES) return;
+    // const SKIP_ALL_UPDATES = true;
+    // if (SKIP_ALL_UPDATES) return;
 
     // DEBUG: Uncomment to profile tick time
     // const t0 = performance.now();
