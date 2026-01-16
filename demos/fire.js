@@ -21,7 +21,7 @@ export class Fire extends GameObject {
   setup() {
     this.scale = Math.random() * 0.5 + 1;
     this.setScale(Math.random() > 0.5 ? this.scale : -this.scale, this.scale);
-
+    this.flipped = Math.random() > 0.5;
     this.collider.shapeType = 0;
     this.collider.radius = 40 * this.scale;
 
@@ -39,6 +39,9 @@ export class Fire extends GameObject {
     this.lightEmitter.hasGlowSprite = 1;
     this.setSpritesheet("fire");
     this.setAnimation("fire");
+    this.baseAnimationSpeed = Math.random() * 0.5 + 0.7;
+
+    this.setAnimationSpeed(this.baseAnimationSpeed);
 
     // Fire flicker parameters - random phase offsets so fires don't sync
     this.time = Math.random() * 1000;
@@ -97,8 +100,56 @@ export class Fire extends GameObject {
     const color = (r << 16) | (g << 8) | b;
     LightEmitter.lightColor[this.index] = color;
 
-    this.setAnimationSpeed(Math.random() * 0.5 + 0.7);
+    if (Math.random() < 0.002) {
+      this.flipped = !this.flipped;
+    }
+    // this.setScale(this.flipped ? this.scale : -this.scale, scaleY);
+
+    this.setAnimationSpeed(
+      this.baseAnimationSpeed //+ Math.sin(t * 0.001 + this.index) * 0.1
+    );
     // Mark dirty to keep animation advancing
     this.markDirty();
+    this.emitSparks();
+    this.emitSmoke();
+  }
+
+  emitSparks() {
+    const radius = this.collider.radius;
+    if (Math.random() > 0.4) return;
+    ParticleEmitter.emit({
+      count: Math.floor(Math.random() * 3) + 1,
+      x: this.x + (Math.random() * radius - radius * 0.5),
+      y: this.y + (Math.random() * radius - radius * 0.5),
+      z: -radius - Math.random() * radius,
+      angleXY: { min: 0, max: 360 },
+      speed: { min: 0, max: 1 },
+      vz: -Math.random() * 2 - 2,
+      gravity: -0.1,
+      lifespan: { min: 200, max: 500 },
+      scale: 0.25,
+      texture: "square",
+      tint: randomColor({ min: 0x00ffff, max: 0x00bbff }),
+      alpha: { min: 0.8, max: 1 },
+    });
+  }
+
+  emitSmoke() {
+    if (Math.random() > 0.3) return;
+    ParticleEmitter.emit({
+      count: Math.floor(Math.random() * 3) + 1,
+      x: this.x,
+      y: this.y - 10,
+      angleXY: { min: 0, max: 360 },
+      speed: { min: 0, max: 1 },
+      vz: -Math.random(),
+      gravity: -Math.random() * 0.1,
+      z: -this.radius + Math.random() * this.radius,
+      lifespan: { min: 1000, max: 2000 },
+      scale: { min: 6, max: 9 },
+      texture: "_lightGradient",
+      tint: randomColor({ min: 0xaaaaaa, max: 0x666666 }),
+      alpha: { min: 0.15, max: 0.3 },
+    });
   }
 }
