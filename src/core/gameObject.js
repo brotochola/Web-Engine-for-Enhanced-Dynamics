@@ -750,6 +750,16 @@ export class GameObject {
       GameObject._globalAnimationCache[cacheKey] = animIndex;
     }
 
+    // Set original dimensions (zero-allocation lookup)
+    const dims = SpriteSheetRegistry.getFrameDimensions(
+      spritesheet,
+      animationName
+    );
+    if (dims) {
+      this.spriteRenderer.originalWidth = dims.w;
+      this.spriteRenderer.originalHeight = dims.h;
+    }
+
     // Set the animation
     this.setAnimationState(animIndex);
   }
@@ -808,6 +818,13 @@ export class GameObject {
     this.spriteRenderer.isAnimated = 0;
     this.spriteRenderer.active = 1;
     this.spriteRenderer.renderVisible = 1;
+
+    // Set original dimensions (zero-allocation lookup)
+    const dims = SpriteSheetRegistry.getFrameDimensions(sheetName, spriteName);
+    if (dims) {
+      this.spriteRenderer.originalWidth = dims.w;
+      this.spriteRenderer.originalHeight = dims.h;
+    }
 
     // Set the sprite (as a single-frame "animation")
     this.setAnimationState(animIndex); // This calls markDirty() internally
@@ -1654,6 +1671,7 @@ export class GameObject {
     if (!indices) return;
 
     const instances = this.instances;
+
     const len = indices.length;
 
     for (let j = 0; j < len; j++) {

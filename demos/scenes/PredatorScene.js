@@ -13,6 +13,7 @@ import { PersonWithFSM } from "../PersonWithFSM.js";
 import { Tree } from "../tree.js";
 import { Barrel } from "../barrel.js";
 import { Rock } from "../rock.js";
+import { Fire } from "../fire.js";
 
 const { DecorationPool } = WEED;
 
@@ -178,7 +179,7 @@ export class PredatorScene extends WEED.Scene {
         png: "/demos/img/poli.png",
         excludeAnimations: excludedLPCAnimations,
       },
-      fuego: {
+      fire: {
         json: "/demos/img/fuego/fuego.json",
         png: "/demos/img/fuego/fuego.png",
       },
@@ -206,6 +207,7 @@ export class PredatorScene extends WEED.Scene {
     [Tree, 1000],
     [Barrel, 100],
     [Rock, 1000],
+    [Fire, 100],
     // Grass now uses DecorationPool instead of GameObject
   ];
 
