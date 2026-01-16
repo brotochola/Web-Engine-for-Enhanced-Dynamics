@@ -6,7 +6,7 @@ Pero deberia hacer q tmb pueda evaluar tipo Si trazo una linea desde esta entida
 Lighting:
 ----------------------
 
-white light beats colored lights! (in the shader)
+
 
 -las sombras proyectadas deberian ser parte del sistema de iluminacion general:
   -meter en una render texture por orden: luz, sus sombras, otra luz, sus sombras, etc

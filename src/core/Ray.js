@@ -11,11 +11,26 @@ import { DEBUG_FLAGS } from "./DebugFlags.js";
 /**
  * Ray - Static class for raycasting against entities in the spatial grid
  *
- * Usage:
- *   const hitEntityIndex = Ray.cast(fromX, fromY, toX, toY, maxDistance);
- *   if (hitEntityIndex !== -1) {
- *     // Ray hit entity at index hitEntityIndex
+ * Methods:
+ *   - cast(x1, y1, x2, y2, maxDist)         → entityIndex or -1
+ *   - castWithInfo(x1, y1, x2, y2, maxDist) → { hit, entityIndex, distance, hitX, hitY }
+ *   - castAll(x1, y1, x2, y2, maxDist, max) → Array<{ entityIndex, distance, hitX, hitY }>
+ *   - linecast(x1, y1, x2, y2, exclude)     → { blocked, entityIndex, distance }
+ *   - linecastBetweenEntities(a, b)         → { blocked, entityIndex, distance }
+ *   - hasLineOfSight(a, b)                  → boolean (true if clear)
+ *
+ * @example Basic raycast
+ *   const hit = Ray.cast(player.x, player.y, mouseX, mouseY);
+ *   if (hit !== -1) damageEntity(hit);
+ *
+ * @example Line of sight check
+ *   if (Ray.hasLineOfSight(enemy, player)) {
+ *     enemy.shoot(player);
  *   }
+ *
+ * @example Penetrating shot
+ *   const hits = Ray.castAll(gun.x, gun.y, targetX, targetY);
+ *   hits.forEach(h => spawnBulletHole(h.hitX, h.hitY));
  */
 export class Ray {
   // Shape type constants (must match Collider.js)
@@ -27,8 +42,21 @@ export class Ray {
   static debugBuffer = null; // Float32Array - stores raycast visualization data
   static maxDebugRaycasts = 100;
 
-  // GC Optimization: Reusable object for _checkCellEntities result
+  // GC Optimization: Reusable objects to avoid GC pressure
   static _tempResult = { entityIndex: -1, distance: Infinity };
+  static _tempHitInfo = {
+    hit: false,
+    entityIndex: -1,
+    distance: Infinity,
+    hitX: 0,
+    hitY: 0,
+  };
+  static _tempLinecastResult = {
+    blocked: false,
+    entityIndex: -1,
+    distance: Infinity,
+  };
+  static _tempHitsArray = []; // Reusable array for castAll
 
   /**
    * Initialize Ray system with debug buffers
@@ -207,6 +235,530 @@ export class Ray {
   }
 
   /**
+   * Cast a ray and return detailed hit information
+   * Like cast() but returns hit point coordinates and distance
+   *
+   * @param {number} xFrom - Ray start X
+   * @param {number} yFrom - Ray start Y
+   * @param {number} xTo - Ray end X
+   * @param {number} yTo - Ray end Y
+   * @param {number} maxDist - Maximum ray distance (optional)
+   * @returns {Object} { hit: boolean, entityIndex: number, distance: number, hitX: number, hitY: number }
+   *
+   * @example
+   *   const result = Ray.castWithInfo(player.x, player.y, targetX, targetY);
+   *   if (result.hit) {
+   *     spawnBulletHole(result.hitX, result.hitY);
+   *     damageEntity(result.entityIndex);
+   *   }
+   */
+  static castWithInfo(xFrom, yFrom, xTo, yTo, maxDist = Infinity) {
+    // Reset temp result
+    const info = Ray._tempHitInfo;
+    info.hit = false;
+    info.entityIndex = -1;
+    info.distance = Infinity;
+    info.hitX = xTo;
+    info.hitY = yTo;
+
+    // Calculate ray direction and length
+    const dx = xTo - xFrom;
+    const dy = yTo - yFrom;
+    const rayLength = Math.sqrt(dx * dx + dy * dy);
+
+    // Early exit if ray is too short or too long
+    if (rayLength === 0 || rayLength > maxDist) {
+      if (Ray._isDebugEnabled()) {
+        Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, xTo, yTo, false);
+      }
+      return info;
+    }
+
+    // Normalize direction
+    const dirX = dx / rayLength;
+    const dirY = dy / rayLength;
+
+    // Use internal traversal
+    const result = Ray._traverseGrid(
+      xFrom,
+      yFrom,
+      xTo,
+      yTo,
+      dirX,
+      dirY,
+      rayLength,
+      maxDist
+    );
+
+    if (result.entityIndex !== -1) {
+      info.hit = true;
+      info.entityIndex = result.entityIndex;
+      info.distance = result.distance;
+      info.hitX = xFrom + dirX * result.distance;
+      info.hitY = yFrom + dirY * result.distance;
+
+      if (Ray._isDebugEnabled()) {
+        Ray._addDebugRaycast(
+          xFrom,
+          yFrom,
+          xTo,
+          yTo,
+          info.hitX,
+          info.hitY,
+          true
+        );
+      }
+    } else {
+      if (Ray._isDebugEnabled()) {
+        Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, xTo, yTo, false);
+      }
+    }
+
+    return info;
+  }
+
+  /**
+   * Check if there's a clear line of sight between two points
+   * Returns true if BLOCKED (something in the way), false if clear
+   *
+   * @param {number} x1 - Start point X
+   * @param {number} y1 - Start point Y
+   * @param {number} x2 - End point X
+   * @param {number} y2 - End point Y
+   * @param {Set<number>|Array<number>} excludeEntities - Optional entity indices to ignore
+   * @returns {Object} { blocked: boolean, entityIndex: number (-1 if clear), distance: number }
+   *
+   * @example
+   *   // Check if enemy can shoot player
+   *   const los = Ray.linecast(enemy.x, enemy.y, player.x, player.y);
+   *   if (!los.blocked) {
+   *     // Clear shot!
+   *     enemy.shoot(player);
+   *   }
+   */
+  static linecast(x1, y1, x2, y2, excludeEntities = null) {
+    const result = Ray._tempLinecastResult;
+    result.blocked = false;
+    result.entityIndex = -1;
+    result.distance = Infinity;
+
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const rayLength = Math.sqrt(dx * dx + dy * dy);
+
+    if (rayLength === 0) {
+      return result;
+    }
+
+    const dirX = dx / rayLength;
+    const dirY = dy / rayLength;
+
+    // Use traversal with exclusion set
+    const hitResult = Ray._traverseGrid(
+      x1,
+      y1,
+      x2,
+      y2,
+      dirX,
+      dirY,
+      rayLength,
+      rayLength,
+      excludeEntities
+    );
+
+    if (hitResult.entityIndex !== -1) {
+      result.blocked = true;
+      result.entityIndex = hitResult.entityIndex;
+      result.distance = hitResult.distance;
+    }
+
+    return result;
+  }
+
+  /**
+   * Check if there's a clear line of sight between two entities
+   * Automatically excludes both entities from the check
+   *
+   * @param {number} entityIndexA - First entity index
+   * @param {number} entityIndexB - Second entity index
+   * @returns {Object} { blocked: boolean, entityIndex: number (-1 if clear), distance: number }
+   *
+   * @example
+   *   // Can predator see prey?
+   *   const los = Ray.linecastBetweenEntities(predatorIdx, preyIdx);
+   *   if (!los.blocked) {
+   *     // Predator has line of sight to prey
+   *     predator.chase(preyIdx);
+   *   }
+   */
+  static linecastBetweenEntities(entityIndexA, entityIndexB) {
+    // Get positions of both entities
+    const x1 = Transform.x[entityIndexA];
+    const y1 = Transform.y[entityIndexA];
+    const x2 = Transform.x[entityIndexB];
+    const y2 = Transform.y[entityIndexB];
+
+    // Create exclusion set with both entities
+    const exclude = new Set([entityIndexA, entityIndexB]);
+
+    return Ray.linecast(x1, y1, x2, y2, exclude);
+  }
+
+  /**
+   * Check if entity A has clear line of sight to entity B
+   * Convenience method that returns just a boolean
+   *
+   * @param {number} entityIndexA - Source entity index
+   * @param {number} entityIndexB - Target entity index
+   * @returns {boolean} true if clear line of sight, false if blocked
+   */
+  static hasLineOfSight(entityIndexA, entityIndexB) {
+    return !Ray.linecastBetweenEntities(entityIndexA, entityIndexB).blocked;
+  }
+
+  /**
+   * Cast a ray and return ALL entities hit along the path (not just the first)
+   * Useful for penetrating shots, showing bullet holes on all surfaces, etc.
+   *
+   * @param {number} xFrom - Ray start X
+   * @param {number} yFrom - Ray start Y
+   * @param {number} xTo - Ray end X
+   * @param {number} yTo - Ray end Y
+   * @param {number} maxDist - Maximum ray distance (optional)
+   * @param {number} maxHits - Maximum number of hits to return (default: 10)
+   * @returns {Array<{entityIndex: number, distance: number, hitX: number, hitY: number}>}
+   *
+   * @example
+   *   // Penetrating railgun shot
+   *   const hits = Ray.castAll(gun.x, gun.y, targetX, targetY, Infinity, 5);
+   *   for (const hit of hits) {
+   *     damageEntity(hit.entityIndex, railgunDamage * (1 - hit.distance / maxRange));
+   *     spawnBulletHole(hit.hitX, hit.hitY);
+   *   }
+   */
+  static castAll(xFrom, yFrom, xTo, yTo, maxDist = Infinity, maxHits = 10) {
+    // Clear and reuse the temp array
+    Ray._tempHitsArray.length = 0;
+
+    const dx = xTo - xFrom;
+    const dy = yTo - yFrom;
+    const rayLength = Math.sqrt(dx * dx + dy * dy);
+
+    if (rayLength === 0 || rayLength > maxDist) {
+      return Ray._tempHitsArray;
+    }
+
+    const dirX = dx / rayLength;
+    const dirY = dy / rayLength;
+
+    // Get grid params
+    const invCellSize = Grid.invCellSize;
+    const gridCols = Grid.gridCols;
+    const gridRows = Grid.gridRows;
+    const cellSize = Grid.cellSize;
+
+    // Collect all hits across the entire ray path
+    const checkedEntities = new Set();
+    const allHits = [];
+
+    // DDA setup
+    const startCellX = Math.floor(xFrom * invCellSize);
+    const startCellY = Math.floor(yFrom * invCellSize);
+    const endCellX = Math.floor(xTo * invCellSize);
+    const endCellY = Math.floor(yTo * invCellSize);
+
+    const stepX = dirX >= 0 ? 1 : -1;
+    const stepY = dirY >= 0 ? 1 : -1;
+
+    let tMaxX, tMaxY;
+    if (dirX !== 0) {
+      const nextBoundaryX =
+        (stepX > 0
+          ? Math.floor(xFrom * invCellSize) + 1
+          : Math.ceil(xFrom * invCellSize) - 1) * cellSize;
+      tMaxX = Math.abs((nextBoundaryX - xFrom) / dirX);
+    } else {
+      tMaxX = Infinity;
+    }
+
+    if (dirY !== 0) {
+      const nextBoundaryY =
+        (stepY > 0
+          ? Math.floor(yFrom * invCellSize) + 1
+          : Math.ceil(yFrom * invCellSize) - 1) * cellSize;
+      tMaxY = Math.abs((nextBoundaryY - yFrom) / dirY);
+    } else {
+      tMaxY = Infinity;
+    }
+
+    const tDeltaX = dirX !== 0 ? cellSize / Math.abs(dirX) : Infinity;
+    const tDeltaY = dirY !== 0 ? cellSize / Math.abs(dirY) : Infinity;
+
+    let currentCellX = startCellX;
+    let currentCellY = startCellY;
+    const maxSteps = gridCols + gridRows;
+    let steps = 0;
+
+    // Traverse all cells
+    while (steps++ < maxSteps) {
+      if (
+        currentCellX >= 0 &&
+        currentCellX < gridCols &&
+        currentCellY >= 0 &&
+        currentCellY < gridRows
+      ) {
+        const cellIndex = currentCellY * gridCols + currentCellX;
+
+        // Check all entities in this cell
+        Ray._collectCellHits(
+          cellIndex,
+          xFrom,
+          yFrom,
+          dirX,
+          dirY,
+          rayLength,
+          checkedEntities,
+          allHits
+        );
+      }
+
+      if (currentCellX === endCellX && currentCellY === endCellY) {
+        break;
+      }
+
+      if (tMaxX < tMaxY) {
+        currentCellX += stepX;
+        tMaxX += tDeltaX;
+      } else {
+        currentCellY += stepY;
+        tMaxY += tDeltaY;
+      }
+    }
+
+    // Sort by distance and limit results
+    allHits.sort((a, b) => a.distance - b.distance);
+
+    // Copy to output array (limited by maxHits)
+    const count = Math.min(allHits.length, maxHits);
+    for (let i = 0; i < count; i++) {
+      const hit = allHits[i];
+      Ray._tempHitsArray.push({
+        entityIndex: hit.entityIndex,
+        distance: hit.distance,
+        hitX: xFrom + dirX * hit.distance,
+        hitY: yFrom + dirY * hit.distance,
+      });
+    }
+
+    // Debug visualization for first hit
+    if (Ray._isDebugEnabled()) {
+      if (Ray._tempHitsArray.length > 0) {
+        const firstHit = Ray._tempHitsArray[0];
+        Ray._addDebugRaycast(
+          xFrom,
+          yFrom,
+          xTo,
+          yTo,
+          firstHit.hitX,
+          firstHit.hitY,
+          true
+        );
+      } else {
+        Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, xTo, yTo, false);
+      }
+    }
+
+    return Ray._tempHitsArray;
+  }
+
+  /**
+   * Internal: Traverse grid and find first hit
+   * Shared logic for cast, castWithInfo, linecast
+   * @private
+   */
+  static _traverseGrid(
+    xFrom,
+    yFrom,
+    xTo,
+    yTo,
+    dirX,
+    dirY,
+    rayLength,
+    maxDist,
+    excludeEntities = null
+  ) {
+    const invCellSize = Grid.invCellSize;
+    const gridCols = Grid.gridCols;
+    const gridRows = Grid.gridRows;
+    const cellSize = Grid.cellSize;
+
+    const startCellX = Math.floor(xFrom * invCellSize);
+    const startCellY = Math.floor(yFrom * invCellSize);
+    const endCellX = Math.floor(xTo * invCellSize);
+    const endCellY = Math.floor(yTo * invCellSize);
+
+    const stepX = dirX >= 0 ? 1 : -1;
+    const stepY = dirY >= 0 ? 1 : -1;
+
+    let tMaxX, tMaxY;
+    if (dirX !== 0) {
+      const nextBoundaryX =
+        (stepX > 0
+          ? Math.floor(xFrom * invCellSize) + 1
+          : Math.ceil(xFrom * invCellSize) - 1) * cellSize;
+      tMaxX = Math.abs((nextBoundaryX - xFrom) / dirX);
+    } else {
+      tMaxX = Infinity;
+    }
+
+    if (dirY !== 0) {
+      const nextBoundaryY =
+        (stepY > 0
+          ? Math.floor(yFrom * invCellSize) + 1
+          : Math.ceil(yFrom * invCellSize) - 1) * cellSize;
+      tMaxY = Math.abs((nextBoundaryY - yFrom) / dirY);
+    } else {
+      tMaxY = Infinity;
+    }
+
+    const tDeltaX = dirX !== 0 ? cellSize / Math.abs(dirX) : Infinity;
+    const tDeltaY = dirY !== 0 ? cellSize / Math.abs(dirY) : Infinity;
+
+    let currentCellX = startCellX;
+    let currentCellY = startCellY;
+
+    let closestHit = -1;
+    let closestDist = maxDist;
+
+    const maxSteps = gridCols + gridRows;
+    let steps = 0;
+
+    while (steps++ < maxSteps) {
+      if (
+        currentCellX >= 0 &&
+        currentCellX < gridCols &&
+        currentCellY >= 0 &&
+        currentCellY < gridRows
+      ) {
+        const cellIndex = currentCellY * gridCols + currentCellX;
+
+        Ray._checkCellEntities(
+          cellIndex,
+          xFrom,
+          yFrom,
+          dirX,
+          dirY,
+          rayLength,
+          closestDist,
+          excludeEntities
+        );
+
+        const result = Ray._tempResult;
+
+        if (result.entityIndex !== -1) {
+          closestHit = result.entityIndex;
+          closestDist = result.distance;
+        }
+      }
+
+      if (currentCellX === endCellX && currentCellY === endCellY) {
+        break;
+      }
+
+      if (tMaxX < tMaxY) {
+        currentCellX += stepX;
+        tMaxX += tDeltaX;
+      } else {
+        currentCellY += stepY;
+        tMaxY += tDeltaY;
+      }
+    }
+
+    return { entityIndex: closestHit, distance: closestDist };
+  }
+
+  /**
+   * Internal: Collect ALL hits in a cell (for castAll)
+   * @private
+   */
+  static _collectCellHits(
+    cellIndex,
+    rayX,
+    rayY,
+    dirX,
+    dirY,
+    rayLength,
+    checkedEntities,
+    allHits
+  ) {
+    const count = Grid.getCellEntityCount(cellIndex);
+    if (count === 0) return;
+
+    const cellBase = Grid.getCellBase(cellIndex);
+    const gridEntities = Grid.gridEntities;
+
+    const active = Transform.active;
+    const colliderActive = Collider.active;
+    const tx = Transform.x;
+    const ty = Transform.y;
+    const cOffsetX = Collider.offsetX;
+    const cOffsetY = Collider.offsetY;
+    const cRadius = Collider.radius;
+    const cWidth = Collider.width;
+    const cHeight = Collider.height;
+    const cShapeParams = Collider.shapeType;
+
+    for (let i = 0; i < count; i++) {
+      const entityIndex = gridEntities[cellBase + i];
+
+      // Skip already checked entities (may appear in multiple cells)
+      if (checkedEntities.has(entityIndex)) continue;
+      checkedEntities.add(entityIndex);
+
+      if (!active[entityIndex]) continue;
+      if (!colliderActive[entityIndex]) continue;
+
+      const entityX = tx[entityIndex] + (cOffsetX[entityIndex] || 0);
+      const entityY = ty[entityIndex] + (cOffsetY[entityIndex] || 0);
+      const shapeType = cShapeParams[entityIndex];
+
+      let distance = -1;
+
+      if (shapeType === Ray.SHAPE_CIRCLE) {
+        const radius = cRadius[entityIndex];
+        distance = rayCircleIntersect(
+          rayX,
+          rayY,
+          dirX,
+          dirY,
+          entityX,
+          entityY,
+          radius,
+          rayLength
+        );
+      } else if (shapeType === Ray.SHAPE_BOX) {
+        const width = cWidth[entityIndex];
+        const height = cHeight[entityIndex];
+        distance = rayBoxIntersect(
+          rayX,
+          rayY,
+          dirX,
+          dirY,
+          entityX,
+          entityY,
+          width,
+          height,
+          rayLength
+        );
+      }
+
+      if (distance >= 0) {
+        allHits.push({ entityIndex, distance });
+      }
+    }
+  }
+
+  /**
    * Check all entities in a cell for ray collision
    * Mutates Ray._tempResult with entity index and distance, or {-1, Infinity} if no hit
    * @private
@@ -218,7 +770,8 @@ export class Ray {
     dirX,
     dirY,
     rayLength,
-    currentClosest
+    currentClosest,
+    excludeEntities = null
   ) {
     // Reset temp result
     Ray._tempResult.entityIndex = -1;
@@ -250,6 +803,15 @@ export class Ray {
     // Check all entities in this cell
     for (let i = 0; i < count; i++) {
       const entityIndex = gridEntities[cellBase + i];
+
+      // Skip excluded entities (for linecast between entities)
+      if (excludeEntities) {
+        if (excludeEntities instanceof Set) {
+          if (excludeEntities.has(entityIndex)) continue;
+        } else if (Array.isArray(excludeEntities)) {
+          if (excludeEntities.includes(entityIndex)) continue;
+        }
+      }
 
       // Skip inactive entities
       if (!active[entityIndex]) continue;
