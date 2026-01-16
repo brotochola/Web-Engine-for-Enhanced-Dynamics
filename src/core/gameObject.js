@@ -861,7 +861,7 @@ export class GameObject {
   /**
    * Get all neighbor IDs as an array
    * @returns {Int32Array} Typed array of neighbor entity indices (view into internal buffer)
-   * 
+   *
    * NOTE: Uses Grid.neighborData (live getter) to always read from the current stable
    * read buffer. This is safe for debugging/inspection from Chrome console.
    * For hot-path access during tick(), use getNeighborId(i) which uses cached pointers.
@@ -873,7 +873,7 @@ export class GameObject {
     if (!neighborData) {
       return new Int32Array(0);
     }
-    
+
     const stride = Grid._stride;
     const neighborOffset = this.index * stride;
     const count = neighborData[neighborOffset]; // Read count from current read buffer
@@ -890,7 +890,7 @@ export class GameObject {
   /**
    * Get all neighbor instances as an array
    * @returns {GameObject[]} Array of neighbor GameObject instances
-   * 
+   *
    * NOTE: Uses Grid.neighborData (live getter) to always read from the current stable
    * read buffer. This is safe for debugging/inspection from Chrome console.
    */
@@ -900,11 +900,11 @@ export class GameObject {
     if (!neighborData) {
       return [];
     }
-    
+
     const stride = Grid._stride;
     const neighborOffset = this.index * stride;
     const count = neighborData[neighborOffset]; // Read count from current read buffer
-    
+
     const neighbors = new Array(count);
     const entities = GameObject.instances;
 
@@ -1412,6 +1412,12 @@ export class GameObject {
     for (let j = 0; j < len; j++) {
       callback(instances ? instances[j] : undefined, indices[j]);
     }
+  }
+  get active() {
+    return Transform.active[this.index];
+  }
+  set active(value) {
+    Transform.active[this.index] = value;
   }
 
   /**
