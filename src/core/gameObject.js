@@ -8,6 +8,7 @@ import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { LightEmitter } from "../components/LightEmitter.js";
 import { ShadowCaster } from "../components/ShadowCaster.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
+import { Grid } from "./Grid.js";
 import { collectComponents, cantorPair } from "./utils.js";
 import Keyboard from "./Keyboard.js";
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
@@ -675,6 +676,52 @@ export class GameObject {
   }
 
   /**
+   * Add acceleration to the entity
+   * @param {number} x - Acceleration in the x direction
+   * @param {number} y - Acceleration in the y direction
+   */
+  addAcceleration(x, y) {
+    if (!this._hasComponents.RigidBody) return;
+    RigidBody.ax[this.index] += x;
+    RigidBody.ay[this.index] += y;
+  }
+
+  /**
+   * Check if this entity is currently colliding with another entity
+   * Only works in logic worker context where collision tracking is available.
+   *
+   * @param {number|GameObject} other - Entity index or GameObject instance to check
+   * @returns {boolean} True if currently colliding, false otherwise
+   *
+   * @example
+   *   if (this.isCollidingWith(playerIndex)) {
+   *     this.takeDamage(10);
+   *   }
+   *
+   *   // Or with an instance:
+   *   if (this.isCollidingWith(player)) {
+   *     player.collectItem(this);
+   *   }
+   */
+  isCollidingWith(other) {
+    // Get the other entity's index
+    const otherIndex = typeof other === "number" ? other : other.index;
+
+    // Access collision tracking from logic worker context
+    // self.logicWorker is the LogicWorker instance in logic_worker.js
+    const logicWorker = typeof self !== "undefined" ? self.logicWorker : null;
+    if (!logicWorker || !logicWorker.currentCollisions) {
+      return false;
+    }
+
+    // Use Cantor pairing function to generate collision key
+    // Note: Both directions (A,B) and (B,A) are stored in currentCollisions
+    const key = cantorPair(this.index, otherIndex);
+
+    return logicWorker.currentCollisions.has(key);
+  }
+
+  /**
    * Despawn this entity (return it to the inactive pool)
    * This is the proper way to deactivate an entity
    */
@@ -814,17 +861,22 @@ export class GameObject {
   /**
    * Get all neighbor IDs as an array
    * @returns {Int32Array} Typed array of neighbor entity indices (view into internal buffer)
+   * 
+   * NOTE: Uses Grid.neighborData (live getter) to always read from the current stable
+   * read buffer. This is safe for debugging/inspection from Chrome console.
+   * For hot-path access during tick(), use getNeighborId(i) which uses cached pointers.
    */
   getAllNeighborIds() {
-    const count = this.neighborCount;
-    // Use instance property (correctly points to current read buffer in double buffering)
-    const neighborData = this._neighborData;
-    const neighborOffset = this._neighborOffset;
-
-    // Safety check - return empty array if neighbor data not initialized
+    // Use Grid.neighborData getter (not cached this._neighborData) to get current read buffer
+    // This ensures we always read stable data, even when called from Chrome console
+    const neighborData = Grid.neighborData;
     if (!neighborData) {
       return new Int32Array(0);
     }
+    
+    const stride = Grid._stride;
+    const neighborOffset = this.index * stride;
+    const count = neighborData[neighborOffset]; // Read count from current read buffer
 
     // Return a typed array view (zero-copy slice of the neighbor buffer)
     // Note: Int32Array elements are 4 bytes each
@@ -838,19 +890,23 @@ export class GameObject {
   /**
    * Get all neighbor instances as an array
    * @returns {GameObject[]} Array of neighbor GameObject instances
+   * 
+   * NOTE: Uses Grid.neighborData (live getter) to always read from the current stable
+   * read buffer. This is safe for debugging/inspection from Chrome console.
    */
   getAllNeighborInstances() {
-    const count = this.neighborCount;
-    const neighbors = new Array(count);
-    const entities = GameObject.instances;
-    // Use instance property (correctly points to current read buffer in double buffering)
-    const neighborData = this._neighborData;
-    const neighborOffset = this._neighborOffset;
-
-    // Safety check - return empty array if neighbor data not initialized
+    // Use Grid.neighborData getter (not cached this._neighborData) to get current read buffer
+    const neighborData = Grid.neighborData;
     if (!neighborData) {
       return [];
     }
+    
+    const stride = Grid._stride;
+    const neighborOffset = this.index * stride;
+    const count = neighborData[neighborOffset]; // Read count from current read buffer
+    
+    const neighbors = new Array(count);
+    const entities = GameObject.instances;
 
     let validCount = 0;
     for (let i = 0; i < count; i++) {
@@ -899,40 +955,6 @@ export class GameObject {
       callback(neighbor, distance, neighborIndex);
     }
   }
-
-  // /**
-  //  * Check if this entity is currently colliding with another entity
-  //  * Only works in logic worker context where collision tracking is available.
-  //  *
-  //  * @param {number|GameObject} other - Entity index or GameObject instance to check
-  //  * @returns {boolean} True if currently colliding, false otherwise
-  //  *
-  //  * @example
-  //  *   if (this.isCollidingWith(playerIndex)) {
-  //  *     this.takeDamage(10);
-  //  *   }
-  //  *
-  //  *   // Or with an instance:
-  //  *   if (this.isCollidingWith(player)) {
-  //  *     player.collectItem(this);
-  //  *   }
-  //  */
-  // isCollidingWith(other) {
-  //   // Get the other entity's index
-  //   const otherIndex = typeof other === "number" ? other : other.index;
-
-  //   // Access collision tracking from logic worker context
-  //   // self.logicWorker is the LogicWorker instance in logic_worker.js
-  //   const logicWorker = typeof self !== "undefined" ? self.logicWorker : null;
-  //   if (!logicWorker || !logicWorker.currentCollisions) {
-  //     return false;
-  //   }
-
-  //   // Use Cantor pairing function to generate collision key
-  //   const key = cantorPair(this.index, otherIndex);
-
-  //   return logicWorker.currentCollisions.has(key);
-  // }
 
   /**
    * LIFECYCLE: Main update - called EVERY frame while entity is active
