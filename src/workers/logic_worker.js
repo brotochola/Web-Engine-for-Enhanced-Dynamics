@@ -333,8 +333,9 @@ class LogicWorker extends AbstractWorker {
           // Pass cached arrays to avoid property lookups per entity
           obj.updateNeighbors(neighborData, distanceData, stride);
 
-          // Tick entity logic (no inputData parameter - use this.mouse / this.keyboard instead)
-          obj.tick(dtRatio);
+          // Tick entity logic with full timing info
+          // dtRatio: normalized to 60fps (1.0 = 16.67ms), deltaTime: actual ms, accumulatedTime: total seconds, frameNumber
+          obj.tick(dtRatio, deltaTime, this.accumulatedTime, this.frameNumber);
 
           // Check for screen visibility changes and call lifecycle methods
           this.checkScreenVisibility(entityIndex, obj);

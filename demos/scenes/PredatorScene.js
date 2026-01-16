@@ -14,6 +14,7 @@ import { Tree } from "../tree.js";
 import { Barrel } from "../barrel.js";
 import { Rock } from "../rock.js";
 import { Fire } from "../fire.js";
+import { Explosion } from "../explosion.js";
 
 const { DecorationPool } = WEED;
 
@@ -185,6 +186,10 @@ export class PredatorScene extends WEED.Scene {
         json: "/demos/img/fuego/fuego.json",
         png: "/demos/img/fuego/fuego.png",
       },
+      explosions: {
+        json: "/demos/img/explosions/explosions.json",
+        png: "/demos/img/explosions/explosions.png",
+      },
     },
     tilemaps: {
       predatorsBG: {
@@ -210,6 +215,7 @@ export class PredatorScene extends WEED.Scene {
     [Barrel, 100],
     [Rock, 1000],
     [Fire, 100],
+    [Explosion, 100],
     // Grass now uses DecorationPool instead of GameObject
   ];
 
