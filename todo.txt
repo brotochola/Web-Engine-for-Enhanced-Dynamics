@@ -84,16 +84,6 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
  isCollidingWith(other){}
 
 
-   forEachNeighbor(callback) {
-    const count = this.neighborCount;
-    for (let i = 0; i < count; i++) {
-      const neighborIndex = this.neighbors[i];
-      const neighbor = GameObject.instances[neighborIndex];
-      const distance = this.neighborDistances[i];
-      
-      callback(neighbor, distance, neighborIndex);
-    }
-  }
 
   this.clone(...)
 
@@ -159,4 +149,4 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 ------------------------------------
 ---- Particle Worker
 ------------------------------------
--flashes no hacen sombras, hay q agregarle una propiedad isOnScreen al componente FlashComponent
+
