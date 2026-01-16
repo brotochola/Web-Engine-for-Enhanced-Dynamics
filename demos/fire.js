@@ -37,7 +37,7 @@ export class Fire extends GameObject {
     this.lightEmitter.height = 0;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 1;
-    this.setAlpha(0.8+Math.random()*0.2)
+    this.setAlpha(0.6+Math.random()*0.2)
     this.setSpritesheet("fire");
     this.setAnimation("fire");
     this.baseAnimationSpeed = Math.random() * 0.5 + 0.7;
