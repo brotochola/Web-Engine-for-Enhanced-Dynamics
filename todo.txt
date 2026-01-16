@@ -54,11 +54,10 @@ FSM
 -hacer constantes para todo tipo:
 COLLIDER.SHAPETYPE.RECTANGLE = 1
 
--definir en el config de la escena que animaciones queremos para los spritesheets
 -generar mas chaboncitos
 
 
--CAMERA: minX,maxX,minY,maxX
+
 
 
 
