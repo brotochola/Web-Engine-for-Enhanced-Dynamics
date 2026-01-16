@@ -23,6 +23,9 @@ export const RENDERER_STATS = {
   SPRITES_CREATED: 3, // Total PIXI.Particle objects created (from centralized pool)
   DECORATION_SPRITES: 4, // For DebugUI decoration stats (same as SPRITES_CREATED)
   VISIBLE_DECORATIONS: 5, // For DebugUI decoration stats
+  VISIBLE_ENTITIES: 6, // Visible GameObjects (not particles/decorations)
+  VISIBLE_PARTICLES: 7, // Visible particles only
+  ACTIVE_DECORATIONS: 8, // Active decorations (from DecorationComponent.active loop)
   // Reserve space for future stats
   STRIDE_FLOATS: 16, // 64 bytes = 1 cache line
   BUFFER_SIZE: 16 * 4, // 64 bytes
@@ -39,6 +42,8 @@ export const PARTICLE_STATS = {
   PARTICLES_STAMPED: 3,
   FLASHES_UPDATED: 4,
   SHADOWS_UPDATED: 5,
+  ACTIVE_ENTITIES: 6, // Active GameObjects (from buildActiveEntityList)
+  TOTAL_ENTITIES: 7, // Total entity pool size
   // Reserve space for future stats
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,

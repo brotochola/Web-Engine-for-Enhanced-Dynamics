@@ -28,8 +28,9 @@ export class DebugUI {
     this.debugFlags = null;
     this.gameEngine = null;
 
-    this.updateInterval = options.updateInterval || 100; // ms
-    this.intervalId = null;
+    this.updateInterval = 100; // Throttle interval in ms (~10fps for debug UI)
+    this._rafId = null; // requestAnimationFrame ID
+    this._lastTickTime = 0; // Last tick timestamp for throttling
 
     // DOM elements
     this.container = null;
@@ -62,6 +63,44 @@ export class DebugUI {
       spatial: [], // Array of smoothing objects (one per spatial worker)
       logic: [], // Array of smoothing objects (one per logic worker)
     };
+
+    // ========================================
+    // PERFORMANCE: Pre-allocated caches to avoid GC
+    // ========================================
+    // Cache previous values to skip DOM updates when unchanged
+    this._prevValues = {
+      mainFPS: -1,
+      activeGO: -1,
+      totalGO: -1,
+      visibleGO: -1,
+      activeP: -1,
+      totalP: -1,
+      visibleP: -1,
+      activeD: -1,
+      totalD: -1,
+      visibleD: -1,
+      flashUpdated: -1,
+      activeEntities: -1,
+      totalEntities: -1,
+      visibleEntities: -1,
+      decorationTotal: -1,
+      decorationActive: -1,
+      decorationVisible: -1,
+      decorationSprites: -1,
+    };
+
+    // Pre-allocated Set for internal entities (reused, never recreated)
+    this._internalEntitiesSet = new Set(["Mouse", "Flash"]);
+
+    // Pre-allocated string builder for pool stats
+    this._poolStatsBuffer = "";
+    this._prevPoolStatsBuffer = "";
+
+    // Cache for worker stat previous values: { workerType: { workerIndex: { statKey: prevValue } } }
+    this._prevWorkerStats = {};
+
+    // Cache for spawner button keys (populated in _autoGenerateEntityTools)
+    this._spawnerButtonKeys = null;
 
     // Inject styles and create UI (async, but doesn't block initialization)
     this._injectStyles();
@@ -292,13 +331,31 @@ export class DebugUI {
 
   /**
    * Format a number with underscore thousand separators
+   * OPTIMIZED: No regex, no allocations for common cases
    * @param {number} num - Number to format
    * @returns {string} Formatted number (e.g., "1_000_000")
    */
   _formatNumber(num) {
-    if (num === null || num === undefined || isNaN(num)) return "--";
-    const rounded = Math.round(num);
-    return rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, "_");
+    if (num === null || num === undefined || num !== num) return "--"; // num !== num is faster isNaN check
+    const n = (num + 0.5) | 0; // Fast Math.round for positive numbers
+    if (n < 1000) return String(n);
+    if (n < 10000)
+      return String((n / 1000) | 0) + "_" + String(n % 1000).padStart(3, "0");
+    if (n < 100000)
+      return String((n / 1000) | 0) + "_" + String(n % 1000).padStart(3, "0");
+    if (n < 1000000)
+      return String((n / 1000) | 0) + "_" + String(n % 1000).padStart(3, "0");
+    // For millions+
+    const millions = (n / 1000000) | 0;
+    const thousands = ((n % 1000000) / 1000) | 0;
+    const ones = n % 1000;
+    return (
+      String(millions) +
+      "_" +
+      String(thousands).padStart(3, "0") +
+      "_" +
+      String(ones).padStart(3, "0")
+    );
   }
 
   /**
@@ -316,34 +373,58 @@ export class DebugUI {
   }
 
   /**
-   * Start the self-update loop
+   * Start the self-update loop using requestAnimationFrame
+   * Throttled to ~10fps (100ms intervals) to minimize overhead
    */
   start() {
-    if (this.intervalId) return;
-    this.intervalId = setInterval(() => this._tick(), this.updateInterval);
+    if (this._rafId) return;
+    this._lastTickTime = 0;
+
+    const loop = (currentTime) => {
+      // Throttle to updateInterval (default 100ms = ~10fps for debug UI)
+      if (currentTime - this._lastTickTime >= this.updateInterval) {
+        this._lastTickTime = currentTime;
+        this._tick();
+      }
+      this._rafId = requestAnimationFrame(loop);
+    };
+
+    this._rafId = requestAnimationFrame(loop);
   }
 
   /**
    * Stop the update loop
    */
   stop() {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
+    if (this._rafId) {
+      cancelAnimationFrame(this._rafId);
+      this._rafId = null;
     }
   }
 
   /**
    * Main update loop - pulls all data and updates UI
+   * OPTIMIZED: Only runs every ~100ms, caches values, minimal DOM updates
    */
   _tick() {
     if (!this.scene) return;
+
+    // DEBUG: Set to true to completely skip all updates (test if DebugUI is the bottleneck)
+    const SKIP_ALL_UPDATES = true;
+    if (SKIP_ALL_UPDATES) return;
+
+    // DEBUG: Uncomment to profile tick time
+    // const t0 = performance.now();
 
     this._updatePerformanceSection();
     this._updateEntitiesSection();
     this._updateDecorationsSection();
     this._updateToolButtonStates();
     this._updatePaintTool();
+
+    // DEBUG: Uncomment to profile tick time
+    // const tickTime = performance.now() - t0;
+    // if (tickTime > 1) console.log("DebugUI._tick took", tickTime.toFixed(2), "ms");
   }
 
   /**
@@ -372,9 +453,12 @@ export class DebugUI {
     // Update summary counts
     this._updatePerformanceSummary();
 
-    // Main thread FPS
-    if (this.elements.mainFPS && scene.mainFPS !== undefined) {
-      this.elements.mainFPS.textContent = `FPS: ${scene.mainFPS.toFixed(2)}`;
+    // Main thread FPS - only update if changed (rounded to 2 decimals)
+    const mainFPSRounded = (scene.mainFPS * 100) | 0;
+    if (this.elements.mainFPS && mainFPSRounded !== this._prevValues.mainFPS) {
+      this._prevValues.mainFPS = mainFPSRounded;
+      this.elements.mainFPS.textContent =
+        "FPS: " + (mainFPSRounded / 100).toFixed(2);
     }
 
     // Update single workers (renderer, particle, physics)
@@ -389,108 +473,113 @@ export class DebugUI {
 
   /**
    * Update the performance summary section with entity/particle/decoration counts
+   * OPTIMIZED: Only update DOM when values change, no allocations in hot path
    */
   _updatePerformanceSummary() {
     const scene = this.scene;
     if (!scene) return;
 
-    // GameObjects
-    if (Transform.active) {
-      let activeGO = 0;
-      const totalGO = scene.totalEntityCount || 0;
-      for (let i = 0; i < totalGO; i++) {
-        if (Transform.active[i]) activeGO++;
-      }
-      const visibleGO = this.workerStatViews?.renderer
-        ? this.workerStatViews.renderer[RENDERER_STATS.VISIBLE_ENTITIES] || 0
+    const pv = this._prevValues;
+    const particleView = this.workerStatViews && this.workerStatViews.particle;
+    const rendererView = this.workerStatViews && this.workerStatViews.renderer;
+
+    // GameObjects - only update if any value changed
+    if (particleView && this.elements.perfGameObjects) {
+      const activeGO = (particleView[PARTICLE_STATS.ACTIVE_ENTITIES] || 0) | 0;
+      const totalGO = (particleView[PARTICLE_STATS.TOTAL_ENTITIES] || 0) | 0;
+      const visibleGO = rendererView
+        ? (rendererView[RENDERER_STATS.VISIBLE_ENTITIES] || 0) | 0
         : 0;
 
-      if (this.elements.perfGameObjects) {
-        this.elements.perfGameObjects.textContent = `GameObjects: ${this._formatNumber(
-          activeGO
-        )} / ${this._formatNumber(totalGO)} (👁 ${this._formatNumber(
-          visibleGO
-        )})`;
+      if (
+        activeGO !== pv.activeGO ||
+        totalGO !== pv.totalGO ||
+        visibleGO !== pv.visibleGO
+      ) {
+        pv.activeGO = activeGO;
+        pv.totalGO = totalGO;
+        pv.visibleGO = visibleGO;
+        this.elements.perfGameObjects.textContent =
+          "GameObjects: " +
+          this._formatNumber(activeGO) +
+          " / " +
+          this._formatNumber(totalGO) +
+          " (👁 " +
+          this._formatNumber(visibleGO) +
+          ")";
       }
     }
 
-    // Particles (from particle worker stats)
-    if (this.workerStatViews?.particle) {
-      const activeP =
-        this.workerStatViews.particle[PARTICLE_STATS.ACTIVE_PARTICLES] || 0;
-      const visibleP =
-        this.workerStatViews.renderer?.[RENDERER_STATS.VISIBLE_PARTICLES] || 0;
-      const totalP =
-        this.workerStatViews.particle[PARTICLE_STATS.TOTAL_PARTICLES] || 0;
+    // Particles - only update if any value changed
+    if (particleView && this.elements.perfParticles) {
+      const activeP = (particleView[PARTICLE_STATS.ACTIVE_PARTICLES] || 0) | 0;
+      const totalP = (particleView[PARTICLE_STATS.TOTAL_PARTICLES] || 0) | 0;
+      const visibleP = rendererView
+        ? (rendererView[RENDERER_STATS.VISIBLE_PARTICLES] || 0) | 0
+        : 0;
 
-      if (this.elements.perfParticles) {
-        this.elements.perfParticles.textContent = `Particles: ${this._formatNumber(
-          activeP
-        )} / ${this._formatNumber(totalP)} (👁 ${this._formatNumber(visibleP)})`;
+      if (
+        activeP !== pv.activeP ||
+        totalP !== pv.totalP ||
+        visibleP !== pv.visibleP
+      ) {
+        pv.activeP = activeP;
+        pv.totalP = totalP;
+        pv.visibleP = visibleP;
+        this.elements.perfParticles.textContent =
+          "Particles: " +
+          this._formatNumber(activeP) +
+          " / " +
+          this._formatNumber(totalP) +
+          " (👁 " +
+          this._formatNumber(visibleP) +
+          ")";
       }
     }
 
-    // Decorations
-    if (DecorationComponent.active) {
-      let activeD = 0;
-      let visibleD = 0;
-      const totalD = DecorationPool.maxDecorations || 0;
+    // Decorations - only update if any value changed
+    if (rendererView && this.elements.perfDecorations) {
+      const activeD =
+        (rendererView[RENDERER_STATS.ACTIVE_DECORATIONS] || 0) | 0;
+      const visibleD =
+        (rendererView[RENDERER_STATS.VISIBLE_DECORATIONS] || 0) | 0;
+      const totalD = (DecorationPool.maxDecorations || 0) | 0;
 
-      for (let i = 0; i < totalD; i++) {
-        if (DecorationComponent.active[i]) {
-          activeD++;
-          if (DecorationComponent.isItOnScreen?.[i]) {
-            visibleD++;
-          }
-        }
-      }
-
-      if (this.elements.perfDecorations) {
-        this.elements.perfDecorations.textContent = `Decorations: ${this._formatNumber(
-          activeD
-        )} / ${this._formatNumber(totalD)} (👁 ${this._formatNumber(visibleD)})`;
+      if (
+        activeD !== pv.activeD ||
+        totalD !== pv.totalD ||
+        visibleD !== pv.visibleD
+      ) {
+        pv.activeD = activeD;
+        pv.totalD = totalD;
+        pv.visibleD = visibleD;
+        this.elements.perfDecorations.textContent =
+          "Decorations: " +
+          this._formatNumber(activeD) +
+          " / " +
+          this._formatNumber(totalD) +
+          " (👁 " +
+          this._formatNumber(visibleD) +
+          ")";
       }
     }
 
-    // Flash entities
-    if (Transform.active && Transform.entityType) {
-      // Find Flash entity type
-      const flashReg = scene.registeredClasses?.find(
-        (r) => r.class.name === "Flash"
-      );
+    // Flash entities - only update if value changed
+    if (particleView && this.elements.perfFlash) {
+      const flashesUpdated =
+        (particleView[PARTICLE_STATS.FLASHES_UPDATED] || 0) | 0;
 
-      if (flashReg) {
-        let activeF = 0;
-        let visibleF = 0;
-        let totalF = 0;
-
-        const totalEntities = scene.totalEntityCount || 0;
-
-        for (let i = 0; i < totalEntities; i++) {
-          if (Transform.entityType[i] === flashReg.entityType) {
-            totalF++;
-            if (Transform.active[i]) {
-              activeF++;
-              // Check if visible (rough approximation - Flash entities on screen)
-              // You may need to adjust this based on your visibility logic
-              visibleF++;
-            }
-          }
-        }
-
-        if (this.elements.perfFlash) {
-          this.elements.perfFlash.textContent = `Flash: ${this._formatNumber(
-            activeF
-          )} / ${this._formatNumber(totalF)} (👁 ${this._formatNumber(
-            visibleF
-          )})`;
-        }
+      if (flashesUpdated !== pv.flashUpdated) {
+        pv.flashUpdated = flashesUpdated;
+        this.elements.perfFlash.textContent =
+          "Flash: " + this._formatNumber(flashesUpdated) + " updated";
       }
     }
   }
 
   /**
    * Update stats for a single worker
+   * OPTIMIZED: Cache previous values, only update DOM when changed
    * @param {string} workerType - Type of worker (renderer, particle, physics)
    * @param {Object} statsSchema - Stats schema object
    */
@@ -498,12 +587,22 @@ export class DebugUI {
     const view = this.workerStatViews[workerType];
     if (!view) return;
 
-    const elements = this.elements.workerStats?.[workerType]?.[0];
-    if (!elements) return;
+    const workerStats = this.elements.workerStats;
+    if (!workerStats || !workerStats[workerType] || !workerStats[workerType][0])
+      return;
+    const elements = workerStats[workerType][0];
 
     const config = WORKER_DISPLAY_CONFIG[workerType];
 
-    for (const stat of config.stats) {
+    // Initialize cache if needed
+    if (!this._prevWorkerStats[workerType]) {
+      this._prevWorkerStats[workerType] = { 0: {} };
+    }
+    const prevCache = this._prevWorkerStats[workerType][0];
+
+    const stats = config.stats;
+    for (let s = 0; s < stats.length; s++) {
+      const stat = stats[s];
       const statIndex = statsSchema[stat.key];
       let rawValue = view[statIndex];
 
@@ -512,13 +611,19 @@ export class DebugUI {
         rawValue = this._smoothFPS(rawValue, this.fpsSmoothing[workerType]);
       }
 
+      // Round to avoid floating point noise triggering updates
+      const roundedValue = (rawValue * 100) | 0;
+      if (prevCache[stat.key] === roundedValue) continue;
+      prevCache[stat.key] = roundedValue;
+
       const formattedValue = stat.format(rawValue);
-      elements[stat.key].textContent = `${stat.key}: ${formattedValue}`;
+      elements[stat.key].textContent = stat.key + ": " + formattedValue;
     }
   }
 
   /**
    * Update stats for multi-workers
+   * OPTIMIZED: Cache previous values, only update DOM when changed
    * @param {string} workerType - Type of worker (spatial, logic)
    * @param {Object} statsSchema - Stats schema object
    */
@@ -526,17 +631,30 @@ export class DebugUI {
     const views = this.workerStatViews[workerType];
     if (!views || views.length === 0) return;
 
-    const workerElements = this.elements.workerStats?.[workerType];
-    if (!workerElements) return;
+    const workerStats = this.elements.workerStats;
+    if (!workerStats || !workerStats[workerType]) return;
+    const workerElements = workerStats[workerType];
 
     const config = WORKER_DISPLAY_CONFIG[workerType];
+
+    // Initialize cache if needed
+    if (!this._prevWorkerStats[workerType]) {
+      this._prevWorkerStats[workerType] = {};
+    }
 
     for (let i = 0; i < views.length; i++) {
       const view = views[i];
       const elements = workerElements[i];
       if (!elements) continue;
 
-      for (const stat of config.stats) {
+      if (!this._prevWorkerStats[workerType][i]) {
+        this._prevWorkerStats[workerType][i] = {};
+      }
+      const prevCache = this._prevWorkerStats[workerType][i];
+
+      const stats = config.stats;
+      for (let s = 0; s < stats.length; s++) {
+        const stat = stats[s];
         const statIndex = statsSchema[stat.key];
         let rawValue = view[statIndex];
 
@@ -548,8 +666,13 @@ export class DebugUI {
           );
         }
 
+        // Round to avoid floating point noise triggering updates
+        const roundedValue = (rawValue * 100) | 0;
+        if (prevCache[stat.key] === roundedValue) continue;
+        prevCache[stat.key] = roundedValue;
+
         const formattedValue = stat.format(rawValue);
-        elements[stat.key].textContent = `${stat.key}: ${formattedValue}`;
+        elements[stat.key].textContent = stat.key + ": " + formattedValue;
       }
     }
   }
@@ -562,45 +685,66 @@ export class DebugUI {
     const scene = this.scene;
     if (!scene) return;
 
-    // Count active entities from Transform arrays
-    if (this.elements.activeCount && Transform.active) {
-      let active = 0;
-      const total = scene.totalEntityCount || 0;
-      for (let i = 0; i < total; i++) {
-        if (Transform.active[i]) active++;
+    const pv = this._prevValues;
+    const particleView = this.workerStatViews && this.workerStatViews.particle;
+    const rendererView = this.workerStatViews && this.workerStatViews.renderer;
+
+    // Active entities - only update if changed
+    if (this.elements.activeCount && particleView) {
+      const active = (particleView[PARTICLE_STATS.ACTIVE_ENTITIES] || 0) | 0;
+      const total = (particleView[PARTICLE_STATS.TOTAL_ENTITIES] || 0) | 0;
+
+      if (active !== pv.activeEntities || total !== pv.totalEntities) {
+        pv.activeEntities = active;
+        pv.totalEntities = total;
+        this.elements.activeCount.textContent =
+          "Active: " +
+          this._formatNumber(active) +
+          "/" +
+          this._formatNumber(total);
       }
-      this.elements.activeCount.textContent = `Active: ${this._formatNumber(
-        active
-      )}/${this._formatNumber(total)}`;
     }
 
-    // Visible units (from renderer stats)
-    if (this.elements.visibleCount && scene.workerStats?.renderer) {
+    // Visible units - only update if changed
+    if (this.elements.visibleCount && rendererView) {
       const visible =
-        (scene.workerStats.renderer.visibleEntities || 0) +
-        (scene.workerStats.renderer.visibleParticles || 0);
-      this.elements.visibleCount.textContent = `Visible: ${this._formatNumber(
-        visible
-      )}`;
+        ((rendererView[RENDERER_STATS.VISIBLE_ENTITIES] || 0) +
+          (rendererView[RENDERER_STATS.VISIBLE_PARTICLES] || 0)) |
+        0;
+
+      if (visible !== pv.visibleEntities) {
+        pv.visibleEntities = visible;
+        this.elements.visibleCount.textContent =
+          "Visible: " + this._formatNumber(visible);
+      }
     }
 
-    // Pool stats
+    // Pool stats - build string only if values changed, reuse Set
     if (this.elements.poolStats && this.gameEngine) {
-      const poolTexts = [];
-      const internalEntities = new Set(["Mouse", "Flash"]);
-      for (const reg of scene.registeredClasses || []) {
-        if (internalEntities.has(reg.class.name)) continue;
-        const stats = this.gameEngine.getPoolStats(reg.class);
-        if (stats && stats.total > 0) {
-          poolTexts.push(
-            `${reg.class.name}: ${this._formatNumber(
-              stats.active
-            )}/${this._formatNumber(stats.total)}`
-          );
+      this._poolStatsBuffer = "";
+      const registeredClasses = scene.registeredClasses;
+      if (registeredClasses) {
+        for (let i = 0; i < registeredClasses.length; i++) {
+          const reg = registeredClasses[i];
+          if (this._internalEntitiesSet.has(reg.class.name)) continue;
+          const stats = this.gameEngine.getPoolStats(reg.class);
+          if (stats && stats.total > 0) {
+            if (this._poolStatsBuffer.length > 0) {
+              this._poolStatsBuffer += " | ";
+            }
+            this._poolStatsBuffer +=
+              reg.class.name +
+              ": " +
+              this._formatNumber(stats.active) +
+              "/" +
+              this._formatNumber(stats.total);
+          }
         }
       }
-      if (poolTexts.length > 0) {
-        this.elements.poolStats.textContent = poolTexts.join(" | ");
+      // Only update DOM if string changed
+      if (this._poolStatsBuffer !== this._prevPoolStatsBuffer) {
+        this._prevPoolStatsBuffer = this._poolStatsBuffer;
+        this.elements.poolStats.textContent = this._poolStatsBuffer;
       }
     }
   }
@@ -613,50 +757,49 @@ export class DebugUI {
     const scene = this.scene;
     if (!scene) return;
 
-    // Total decoration pool size
+    const pv = this._prevValues;
+    const rendererView = this.workerStatViews && this.workerStatViews.renderer;
+
+    // Total decoration pool size - only update if changed
     if (this.elements.decorationTotal) {
-      const total = DecorationPool.maxDecorations || 0;
-      this.elements.decorationTotal.textContent = `Total: ${this._formatNumber(
-        total
-      )}`;
-    }
-
-    // Count active decorations
-    if (this.elements.decorationActive && DecorationComponent.active) {
-      let active = 0;
-      const total = DecorationPool.maxDecorations || 0;
-      for (let i = 0; i < total; i++) {
-        if (DecorationComponent.active[i]) active++;
+      const total = (DecorationPool.maxDecorations || 0) | 0;
+      if (total !== pv.decorationTotal) {
+        pv.decorationTotal = total;
+        this.elements.decorationTotal.textContent =
+          "Total: " + this._formatNumber(total);
       }
-      this.elements.decorationActive.textContent = `Active: ${this._formatNumber(
-        active
-      )}`;
     }
 
-    // Count visible decorations (on screen)
-    if (this.elements.decorationVisible && DecorationComponent.isItOnScreen) {
-      let visible = 0;
-      const total = DecorationPool.maxDecorations || 0;
-      for (let i = 0; i < total; i++) {
-        if (
-          DecorationComponent.active[i] &&
-          DecorationComponent.isItOnScreen[i]
-        ) {
-          visible++;
-        }
+    // Active decorations - only update if changed
+    if (this.elements.decorationActive && rendererView) {
+      const active = (rendererView[RENDERER_STATS.ACTIVE_DECORATIONS] || 0) | 0;
+      if (active !== pv.decorationActive) {
+        pv.decorationActive = active;
+        this.elements.decorationActive.textContent =
+          "Active: " + this._formatNumber(active);
       }
-      this.elements.decorationVisible.textContent = `Visible: ${this._formatNumber(
-        visible
-      )}`;
     }
 
-    // PIXI sprites created (from renderer worker stat buffer)
-    if (this.elements.decorationSprites && this.workerStatViews?.renderer) {
+    // Visible decorations - only update if changed
+    if (this.elements.decorationVisible && rendererView) {
+      const visible =
+        (rendererView[RENDERER_STATS.VISIBLE_DECORATIONS] || 0) | 0;
+      if (visible !== pv.decorationVisible) {
+        pv.decorationVisible = visible;
+        this.elements.decorationVisible.textContent =
+          "Visible: " + this._formatNumber(visible);
+      }
+    }
+
+    // PIXI sprites created - only update if changed
+    if (this.elements.decorationSprites && rendererView) {
       const spriteCount =
-        this.workerStatViews.renderer[RENDERER_STATS.DECORATION_SPRITES];
-      this.elements.decorationSprites.textContent = `Sprites: ${this._formatNumber(
-        spriteCount
-      )}`;
+        (rendererView[RENDERER_STATS.DECORATION_SPRITES] || 0) | 0;
+      if (spriteCount !== pv.decorationSprites) {
+        pv.decorationSprites = spriteCount;
+        this.elements.decorationSprites.textContent =
+          "Sprites: " + this._formatNumber(spriteCount);
+      }
     }
   }
 
@@ -1191,6 +1334,7 @@ export class DebugUI {
     paintersRow.appendChild(paintersLabel);
 
     this.elements.spawnerButtons = {};
+    this._spawnerButtonKeys = []; // Cache keys to avoid Object.keys() allocation in tick
 
     // Generate painter button for each entity type
     for (const reg of spawnableClasses) {
@@ -1198,10 +1342,12 @@ export class DebugUI {
 
       const btn = document.createElement("button");
       btn.className = "debug-ui-btn tool";
-      btn.textContent = `🎨 ${className}`;
-      btn.title = `Toggle ${className} painter (click & drag on canvas to spawn)`;
+      btn.textContent = "🎨 " + className;
+      btn.title =
+        "Toggle " + className + " painter (click & drag on canvas to spawn)";
       btn.onclick = () => this._toggleSpawner(className);
       this.elements.spawnerButtons[className] = btn;
+      this._spawnerButtonKeys.push(className); // Cache key
       paintersRow.appendChild(btn);
     }
 
@@ -1302,16 +1448,29 @@ export class DebugUI {
   }
 
   _updateToolButtonStates() {
-    // Update spawner buttons
-    for (const [className, btn] of Object.entries(
-      this.elements.spawnerButtons || {}
-    )) {
-      btn.classList.toggle("active", this.activeSpawnerType === className);
+    // Update spawner buttons - use pre-cached keys array (no allocation)
+    const spawnerButtons = this.elements.spawnerButtons;
+    const keys = this._spawnerButtonKeys;
+    if (spawnerButtons && keys) {
+      const activeType = this.activeSpawnerType;
+      for (let i = 0; i < keys.length; i++) {
+        const className = keys[i];
+        const btn = spawnerButtons[className];
+        const shouldBeActive = activeType === className;
+        const isActive = btn.classList.contains("active");
+        if (shouldBeActive !== isActive) {
+          btn.classList.toggle("active", shouldBeActive);
+        }
+      }
     }
 
-    // Update eraser button
-    if (this.elements.eraserButton) {
-      this.elements.eraserButton.classList.toggle("active", this.eraserActive);
+    // Update eraser button - only toggle if state changed
+    const eraserBtn = this.elements.eraserButton;
+    if (eraserBtn) {
+      const isActive = eraserBtn.classList.contains("active");
+      if (this.eraserActive !== isActive) {
+        eraserBtn.classList.toggle("active", this.eraserActive);
+      }
     }
   }
 

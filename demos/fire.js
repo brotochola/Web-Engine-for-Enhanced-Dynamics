@@ -145,7 +145,7 @@ export class Fire extends GameObject {
       vz: -Math.random(),
       gravity: -Math.random() * 0.1,
       z: -this.radius + Math.random() * this.radius,
-      lifespan: { min: 1000, max: 2000 },
+      lifespan: { min: 500, max: 1000 },
       scale: { min: 6, max: 9 },
       texture: "_lightGradient",
       tint: randomColor({ min: 0xaaaaaa, max: 0x666666 }),
