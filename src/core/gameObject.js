@@ -1211,19 +1211,27 @@ export class GameObject {
    * Note: this.neighbors and this.neighborCount are updated before this is called
    * Input is available via this.mouse and this.keyboard
    *
-   * @param {number} dtRatio - Delta time ratio (1.0 = 16.67ms frame)
+   * @param {number} dtRatio - Delta time ratio normalized to 60fps (1.0 = 16.67ms frame)
+   * @param {number} deltaTime - Actual time since last frame in milliseconds
+   * @param {number} accumulatedTime - Total time elapsed since game start in seconds
+   * @param {number} frameNumber - Current frame number (starts at 1)
    *
    * Example:
-   *   tick(dtRatio) {
-   *     if (this.mouse.isDown) {
-   *       this.runAwayFromMouse();
-   *     }
-   *     if (this.keyboard.w) {
-   *       this.moveUp();
-   *     }
+   *   tick(dtRatio, deltaTime, accumulatedTime, frameNumber) {
+   *     // Use dtRatio for frame-rate independent movement
+   *     this.x += this.speed * dtRatio;
+   *
+   *     // Use deltaTime (ms) for precise timing calculations
+   *     this.elapsedMs += deltaTime;
+   *
+   *     // Use accumulatedTime (seconds) for animations synced to game time
+   *     this.alpha = Math.sin(accumulatedTime * 2) * 0.5 + 0.5;
+   *
+   *     // Use frameNumber for frame-based logic
+   *     if (frameNumber % 60 === 0) this.doSomethingEverySecond();
    *   }
    */
-  tick(dtRatio) {
+  tick(dtRatio, deltaTime, accumulatedTime, frameNumber) {
     // Override in subclasses
   }
 

@@ -39,6 +39,7 @@ export class AbstractWorker {
     // Frame timing and FPS tracking
     this.frameNumber = 0;
     this.lastFrameTime = performance.now();
+    this.accumulatedTime = 0; // Total time elapsed since start (in seconds)
     this.currentFPS = 0;
 
     // Stats buffer for writing detailed metrics (set during initialization)
@@ -111,6 +112,9 @@ export class AbstractWorker {
 
     // Normalize delta time to 60fps (16.67ms per frame)
     const dtRatio = deltaTime / 16.67;
+
+    // Accumulate total time in seconds
+    this.accumulatedTime += deltaTime / 1000;
 
     // Reuse timing object to avoid GC pressure
     this._timing.deltaTime = deltaTime;
