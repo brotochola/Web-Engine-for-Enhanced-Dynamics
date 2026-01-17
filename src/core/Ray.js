@@ -57,6 +57,9 @@ export class Ray {
     distance: Infinity,
   };
   static _tempHitsArray = []; // Reusable array for castAll
+  static _tempAllHitsArray = []; // Reusable array for castAll internal hits
+  static _tempAllHitsCount = 0; // Reused counter to avoid allocations
+  static _checkedEntities = new Set(); // Reused Set for castAll
 
   /**
    * Initialize Ray system with debug buffers
@@ -427,6 +430,7 @@ export class Ray {
    * @param {number} maxDist - Maximum ray distance (optional)
    * @param {number} maxHits - Maximum number of hits to return (default: 10)
    * @returns {Array<{entityIndex: number, distance: number, hitX: number, hitY: number}>}
+   *   Note: returned array and hit objects are reused on the next call.
    *
    * @example
    *   // Penetrating railgun shot
@@ -439,6 +443,9 @@ export class Ray {
   static castAll(xFrom, yFrom, xTo, yTo, maxDist = Infinity, maxHits = 10) {
     // Clear and reuse the temp array
     Ray._tempHitsArray.length = 0;
+    Ray._tempAllHitsArray.length = 0;
+    Ray._tempAllHitsCount = 0;
+    Ray._checkedEntities.clear();
 
     const dx = xTo - xFrom;
     const dy = yTo - yFrom;
@@ -458,8 +465,8 @@ export class Ray {
     const cellSize = Grid.cellSize;
 
     // Collect all hits across the entire ray path
-    const checkedEntities = new Set();
-    const allHits = [];
+    const checkedEntities = Ray._checkedEntities;
+    const allHits = Ray._tempAllHitsArray;
 
     // DDA setup
     const startCellX = Math.floor(xFrom * invCellSize);
@@ -535,20 +542,31 @@ export class Ray {
       }
     }
 
-    // Sort by distance and limit results
+    // Finalize hit list and sort by distance
+    allHits.length = Ray._tempAllHitsCount;
     allHits.sort((a, b) => a.distance - b.distance);
 
     // Copy to output array (limited by maxHits)
     const count = Math.min(allHits.length, maxHits);
+    const outHits = Ray._tempHitsArray;
     for (let i = 0; i < count; i++) {
       const hit = allHits[i];
-      Ray._tempHitsArray.push({
-        entityIndex: hit.entityIndex,
-        distance: hit.distance,
-        hitX: xFrom + dirX * hit.distance,
-        hitY: yFrom + dirY * hit.distance,
-      });
+      let out = outHits[i];
+      if (!out) {
+        out = {
+          entityIndex: -1,
+          distance: 0,
+          hitX: 0,
+          hitY: 0,
+        };
+        outHits[i] = out;
+      }
+      out.entityIndex = hit.entityIndex;
+      out.distance = hit.distance;
+      out.hitX = xFrom + dirX * hit.distance;
+      out.hitY = yFrom + dirY * hit.distance;
     }
+    outHits.length = count;
 
     // Debug visualization for first hit
     if (Ray._isDebugEnabled()) {
@@ -753,7 +771,14 @@ export class Ray {
       }
 
       if (distance >= 0) {
-        allHits.push({ entityIndex, distance });
+        const hitIndex = Ray._tempAllHitsCount++;
+        let hit = allHits[hitIndex];
+        if (!hit) {
+          hit = { entityIndex: -1, distance: 0 };
+          allHits[hitIndex] = hit;
+        }
+        hit.entityIndex = entityIndex;
+        hit.distance = distance;
       }
     }
   }
