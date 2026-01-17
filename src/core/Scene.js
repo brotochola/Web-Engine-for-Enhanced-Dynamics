@@ -968,15 +968,15 @@ class Scene {
     this.buffers.entityPosY = new SharedArrayBuffer(ENTITY_POS_SIZE);
     this.buffers.entityHalfExtent = new SharedArrayBuffer(ENTITY_POS_SIZE);
 
-    // Grid synchronization: prevents spatial workers from reading during grid rebuild
+    // Grid synchronization: buffer selection for double-buffering
     // Layout:
-    // [0] = rebuildFlag (0=rebuilding, 1=ready)
-    // [1] = currentReadGrid (0=A, 1=B)
+    // [0] = unused (was rebuildFlag, removed for overlapped execution optimization)
+    // [1] = currentReadGrid (0=A, 1=B) - which buffer spatial workers read from
     const GRID_SYNC_SIZE = 8; // Int32Array with 2 elements
     this.buffers.gridSyncData = new SharedArrayBuffer(GRID_SYNC_SIZE);
     const gridSyncView = new Int32Array(this.buffers.gridSyncData);
-    gridSyncView[0] = 1; // Start as ready
-    gridSyncView[1] = 0; // Start reading from A
+    gridSyncView[0] = 0; // Unused - kept for buffer alignment
+    gridSyncView[1] = 0; // Start reading from buffer A
 
     // Store grid metadata for workers
     this.gridMetadata = {

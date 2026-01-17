@@ -160,7 +160,7 @@ class ParticleWorker extends AbstractWorker {
     this.entityPosX = null; // Pre-computed entity positions for spatial_workers
     this.entityPosY = null;
     this.entityHalfExtent = null; // Pre-computed half-extents for neighbor checks
-    this.gridSyncData = null; // Atomics sync buffer for coordinating with spatial_workers
+    // Note: Grid sync handled via Grid.swapGridBuffers() - no local reference needed
 
     // Note: activeEntitiesData is now initialized in AbstractWorker.initializeCommonBuffers
   }
@@ -425,10 +425,8 @@ class ParticleWorker extends AbstractWorker {
       this.entityPosY = new Float32Array(data.buffers.entityPosY);
       this.entityHalfExtent = new Float32Array(data.buffers.entityHalfExtent);
 
-      // Grid synchronization - Atomics to prevent spatial workers reading during rebuild
-      if (data.buffers.gridSyncData) {
-        this.gridSyncData = new Int32Array(data.buffers.gridSyncData);
-      }
+      // Note: Grid synchronization handled by Grid class via swapGridBuffers()
+      // Spatial workers read from stable buffer - no Atomics.wait needed
 
       console.log(
         `PARTICLE WORKER: Grid rebuilding enabled (${totalCells} cells, ${this.globalEntityCount} entities)`
@@ -628,25 +626,17 @@ class ParticleWorker extends AbstractWorker {
 
     // Note: Debug raycast clearing is now handled by pixi_worker at start of render frame
 
-    // Rebuild spatial grid (uses active entity list) - spatial_workers will read this
-    // ATOMICS: Signal spatial workers that grid (and active list) is being rebuilt
-    if (this.gridSyncData) {
-      Atomics.store(this.gridSyncData, 0, 0); // 0 = rebuilding
-    }
-
     // Build active entity list FIRST - spatial workers need this to split work evenly
     this.buildActiveEntityList();
 
-    // Rebuild spatial grid (uses active entity list)
+    // Rebuild spatial grid into WRITE buffer
+    // OVERLAPPED EXECUTION: Spatial workers read from the stable READ buffer
+    // simultaneously while we rebuild into the write buffer. No synchronization needed!
     this.rebuildGrid();
 
     // DOUBLE BUFFER SWAP: Make the newly built grid available for reading
+    // After this atomic swap, spatial workers will see the new grid on next frame
     Grid.swapGridBuffers();
-
-    if (this.gridSyncData) {
-      Atomics.store(this.gridSyncData, 0, 1); // 1 = ready
-      Atomics.notify(this.gridSyncData, 0, Infinity); // Wake all waiting spatial workers
-    }
 
     // Build active particle list - optimize physics by skipping inactive particles
     this.buildActiveParticleList();
