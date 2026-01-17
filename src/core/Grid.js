@@ -383,9 +383,59 @@ export class Grid {
     return false; // Not the last worker
   }
 
+  // ===== OVERLAPPED GRID EXECUTION =====
+  // gridSyncData layout:
+  //   [0] = rebuild status (0=rebuilding, 1=ready) - LEGACY, kept for compatibility
+  //   [1] = current read grid index (0=A, 1=B)
+  //   [2] = spatial workers reading count (how many are currently reading the grid)
+  //   [3] = frame generation counter (increments each frame to detect stale reads)
+
+  /**
+   * Signal that a spatial worker is starting to read the grid
+   * Called at the START of spatial_worker.update() - NON-BLOCKING
+   * Returns immediately, allowing overlapped execution with grid rebuild
+   */
+  static signalGridReadStart() {
+    if (!Grid.gridSyncData) return;
+    // Atomically increment readers count
+    Atomics.add(Grid.gridSyncData, 2, 1);
+  }
+
+  /**
+   * Signal that a spatial worker has finished reading the grid
+   * Called at the END of spatial_worker.update()
+   * Wakes particle_worker if it's waiting for all readers to finish
+   */
+  static signalGridReadEnd() {
+    if (!Grid.gridSyncData) return;
+    // Atomically decrement readers count
+    const readersLeft = Atomics.sub(Grid.gridSyncData, 2, 1) - 1;
+    // If no more readers, notify particle_worker (if it's waiting)
+    if (readersLeft === 0) {
+      Atomics.notify(Grid.gridSyncData, 2, 1);
+    }
+  }
+
+  /**
+   * Wait for all spatial workers to finish reading the current grid
+   * Called by particle_worker BEFORE swapping grid buffers
+   * This ensures no spatial worker is reading the buffer we're about to write to
+   */
+  static waitForGridReadersToFinish() {
+    if (!Grid.gridSyncData) return;
+    // Wait while readers count > 0
+    // "not-equal" condition means: wait while value equals the expected value
+    // So we wait while readersCount === currentValue (non-zero)
+    while (Atomics.load(Grid.gridSyncData, 2) > 0) {
+      // Wait for readers to finish (will be woken by signalGridReadEnd)
+      Atomics.wait(Grid.gridSyncData, 2, Atomics.load(Grid.gridSyncData, 2), 10);
+    }
+  }
+
   /**
    * Swap the grid read/write buffers
    * Called by particle_worker after rebuilding the grid
+   * IMPORTANT: Call waitForGridReadersToFinish() BEFORE this!
    */
   static swapGridBuffers() {
     if (!Grid.gridSyncData) return;

@@ -2395,8 +2395,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         `🔍 PIXI WORKER: updateLightGlowSprites() - Rendering ${countToRender} lights (${visibleLights.length} visible, maxLights: ${maxLights})`
       );
       console.log(
-        `   Container visible: ${this.lightGlowContainer.visible}, alpha: ${
-          this.lightGlowContainer.alpha
+        `   Container visible: ${this.lightGlowContainer.visible}, alpha: ${this.lightGlowContainer.alpha
         }, children: ${this.lightGlowContainer.children?.length || "N/A"}`
       );
       this._lightGlowFirstUpdateLogged = true;
@@ -2438,10 +2437,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Log first sprite update details (one-time)
       if (i === 0 && !this._lightGlowSpriteUpdateLogged) {
         console.log(
-          `🔍 PIXI WORKER: First light glow sprite update - entityIndex: ${entityIndex}, x: ${
-            sprite.x
-          }, y: ${
-            sprite.y
+          `🔍 PIXI WORKER: First light glow sprite update - entityIndex: ${entityIndex}, x: ${sprite.x
+          }, y: ${sprite.y
           }, scale: ${scale}, alpha: ${newAlpha}, tint: 0x${sprite.tint.toString(
             16
           )}`
@@ -2675,8 +2672,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           }
 
           console.log(
-            `✅ BigAtlas loaded: ${
-              Object.keys(frameTextures).length
+            `✅ BigAtlas loaded: ${Object.keys(frameTextures).length
             } frames available as textures`
           );
 
@@ -2774,8 +2770,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         SpriteSheetRegistry.registerProxy(proxyName, proxyData);
 
         console.log(
-          `  ✅ Proxy "${proxyName}": ${
-            Object.keys(proxyAnimations).length
+          `  ✅ Proxy "${proxyName}": ${Object.keys(proxyAnimations).length
           } animations`
         );
       }
@@ -3393,8 +3388,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this.currentTilemap.children.length > 0) {
       const child = this.currentTilemap.children[0];
       console.log(
-        `PIXI WORKER: First child tilemap has ${
-          child.pointsBuf ? child.pointsBuf.length : 0
+        `PIXI WORKER: First child tilemap has ${child.pointsBuf ? child.pointsBuf.length : 0
         } point buffer entries`
       );
     }
@@ -3442,8 +3436,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (!layerData || layerData.length === 0) continue;
 
       console.log(
-        `PIXI WORKER: Processing layer "${layer.name}" with ${
-          layerData.length
+        `PIXI WORKER: Processing layer "${layer.name}" with ${layerData.length
         } tiles (expected ${mapWidth * mapHeight})`
       );
 
@@ -3516,10 +3509,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
 
       console.log(
-        `PIXI WORKER: Layer "${
-          layer.name
-        }" - added ${tilesAdded} tiles, last tile at (${
-          (mapWidth - 1) * tileWidth
+        `PIXI WORKER: Layer "${layer.name
+        }" - added ${tilesAdded} tiles, last tile at (${(mapWidth - 1) * tileWidth
         }, ${(mapHeight - 1) * tileHeight})`
       );
     }

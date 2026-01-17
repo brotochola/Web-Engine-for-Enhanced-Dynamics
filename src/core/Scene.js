@@ -968,15 +968,17 @@ class Scene {
     this.buffers.entityPosY = new SharedArrayBuffer(ENTITY_POS_SIZE);
     this.buffers.entityHalfExtent = new SharedArrayBuffer(ENTITY_POS_SIZE);
 
-    // Grid synchronization: prevents spatial workers from reading during grid rebuild
+    // Grid synchronization: enables overlapped execution between particle_worker and spatial_workers
     // Layout:
-    // [0] = rebuildFlag (0=rebuilding, 1=ready)
+    // [0] = rebuildFlag (0=rebuilding, 1=ready) - LEGACY, kept for compatibility
     // [1] = currentReadGrid (0=A, 1=B)
-    const GRID_SYNC_SIZE = 8; // Int32Array with 2 elements
+    // [2] = spatialReadersCount (how many spatial workers are currently reading the grid)
+    const GRID_SYNC_SIZE = 12; // Int32Array with 3 elements
     this.buffers.gridSyncData = new SharedArrayBuffer(GRID_SYNC_SIZE);
     const gridSyncView = new Int32Array(this.buffers.gridSyncData);
     gridSyncView[0] = 1; // Start as ready
     gridSyncView[1] = 0; // Start reading from A
+    gridSyncView[2] = 0; // No readers initially
 
     // Store grid metadata for workers
     this.gridMetadata = {

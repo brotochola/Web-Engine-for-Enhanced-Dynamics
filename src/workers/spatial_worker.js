@@ -346,29 +346,34 @@ class SpatialWorker extends AbstractWorker {
 
   /**
    * Update method called each frame (implementation of AbstractWorker.update)
+   * 
+   * OVERLAPPED EXECUTION OPTIMIZATION:
+   * Instead of blocking and waiting for particle_worker to finish rebuilding the grid,
+   * spatial workers immediately start processing using the PREVIOUS frame's grid.
+   * This allows parallel execution:
+   *   - Spatial workers: read previous grid, compute neighbors
+   *   - Particle worker: rebuild new grid into write buffer (in parallel!)
+   * 
+   * The double-buffering ensures spatial workers always read from a stable, complete grid
+   * while particle_worker writes to the other buffer.
    */
   update(deltaTime, dtRatio, resuming) {
     // Mouse position is now written directly to Transform by main thread
     // No special syncing needed - spatial grid will see current position
 
-    // ATOMICS: Wait for particle_worker to finish rebuilding grid
-    // This prevents reading during the grid clear phase (which would give 0 neighbors)
-    if (this.gridSyncData) {
-      // Wait indefinitely - particle_worker ALWAYS finishes in ~1.6ms, so timeout not needed
-      // "not-equal" means: wait while value is 0 (rebuilding), wake when it becomes 1 (ready)
-      const result = Atomics.wait(this.gridSyncData, 0, 0);
-      // result: "ok" = woken by notify, "not-equal" = already ready (grid was ready before we checked)
-      // Both are fine - we just proceed to read the grid
-      if (result === "timed-out") {
-        console.error(
-          `SPATIAL WORKER ${this.workerIndex}: Atomics.wait timed out - this should never happen!`
-        );
-      }
-    }
+    // OVERLAPPED EXECUTION: Signal that we're starting to read the grid
+    // This is NON-BLOCKING - we use the current read buffer (previous frame's grid)
+    // while particle_worker may be rebuilding the write buffer in parallel
+    Grid.signalGridReadStart();
 
-    // Grid is now rebuilt by particle_worker (has spare capacity)
-    // We just read the shared grid and compute neighbors for our entity slice
+    // Grid is double-buffered - we read from the stable read buffer
+    // (previous frame's complete grid) while particle_worker writes to write buffer
+    // No waiting needed! This eliminates the synchronization bottleneck.
     this.findAllNeighbors();
+
+    // Signal that we're done reading the grid
+    // This allows particle_worker to safely swap buffers once all readers finish
+    Grid.signalGridReadEnd();
 
     // DOUBLE BUFFER SWAP: Signal that this worker finished computing neighbors
     // The last worker to finish will swap read/write buffers
