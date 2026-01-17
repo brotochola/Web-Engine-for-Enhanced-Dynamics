@@ -20,6 +20,7 @@ import {
   extractRGB,
   calculateSpeed,
   calculateVelocityAngle,
+  cantorPair,
 } from "../core/utils.js";
 import { PARTICLE_STATS, createStatsWriter } from "./workers-utils.js";
 
@@ -924,9 +925,9 @@ class ParticleWorker extends AbstractWorker {
 
         isItOnScreen[i] =
           screenX > camMinX &&
-          screenX < camMaxX &&
-          screenY > camMinY &&
-          screenY < camMaxY
+            screenX < camMaxX &&
+            screenY > camMinY &&
+            screenY < camMaxY
             ? 1
             : 0;
       }
@@ -1214,7 +1215,7 @@ class ParticleWorker extends AbstractWorker {
         if (!isOnScreen[neighborIdx]) continue;
 
         // Create stable pair key
-        const pairKey = `${lightIdx}-${neighborIdx}`;
+        const pairKey = cantorPair(lightIdx, neighborIdx);
 
         // Skip duplicate pairs (shouldn't happen with Grid but good for safety)
         if (pairsThisFrame.has(pairKey)) continue;

@@ -1,0 +1,34 @@
+⚠️ Potential Flaws & Optimization Opportunities
+1. Grid Synchronization Bottleneck
+// spatial_worker.js - BLOCKING waitconst result = Atomics.wait(this.gridSyncData, 0, 0);
+Problem: Spatial workers block waiting for particle_worker to finish grid rebuilding.
+Fix: Consider overlapped execution – spatial workers could process neighbors from the previous frame's grid while particle_worker builds the new grid.
+
+2. processedThisFrame Array Reset
+// spatial_worker.js:224processedThisFrame.fill(-1);
+Problem: Fills entire array every frame (O(n) for all entities), even when only a small fraction are active.
+Fix: Track processed entities in a separate sparse set and clear only used entries.
+3. Shadow Pair Key String Allocation
+// particle_worker.js:1217const pairKey = `${lightIdx}-${neighborIdx}`;
+Problem: String template literals create garbage in a hot loop.
+Fix: Use cantorPair() like you do for collision tracking:
+const pairKey = cantorPair(lightIdx, neighborIdx);
+4. castAll Allocates New Objects
+// Ray.js:545Ray._tempHitsArray.push({  entityIndex: hit.entityIndex,  distance: hit.distance,  hitX: xFrom + dirX * hit.distance,  hitY: yFrom + dirY * hit.distance,});
+Problem: Creates new objects every call.
+Fix: Pre-allocate a pool of hit result objects.
+5. linecastBetweenEntities Creates Set Every Call
+// Ray.js:402const exclude = new Set([entityIndexA, entityIndexB]);
+Problem: Allocates a new Set for every line-of-sight check.
+Fix: Reuse a static exclusion set or use a simple array check since it's always 2 elements.
+6. Missing Entity Pooling in Decorations
+Decorations use a separate pool but don't have the same interleaved spawning optimization as entities.
+7. Neighbor Data Redundancy
+Both neighborData[offset] and distanceData[offset] store the neighbor count:
+neighborData[offset] = neighborCount;distanceData[offset] = neighborCount; // Redundant!
+8. No Collision Layer System
+Currently all colliders interact with all colliders. Games like "They Are Billions" need collision layers (e.g., projectiles only hit enemies).
+Suggested: Add Collider.layer and Collider.mask bitmasks.
+9. Fixed Timestep Could Be More Robust
+// physics_worker.js:120this.timeAccumulator += Math.min(deltaTime, 50);
+The 50ms cap is good, but consider exposing this as a config option for debugging purposes.
