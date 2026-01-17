@@ -1640,6 +1640,25 @@ export class GameObject {
     }
   }
 
+
+
+  static getAllActiveInstances() {
+    const indices = this.entityIndices;
+    if (!indices) return;
+
+    const active = Transform.active;
+    const instances = this.instances;
+    const len = indices.length;
+    const activeInstances = [];
+    for (let j = 0; j < len; j++) {
+      const i = indices[j];
+      if (active[i]) {
+        activeInstances.push(instances ? instances[j] : undefined);
+      }
+    }
+    return activeInstances;
+  }
+
   /**
    * ITERATION: Iterate over ALL entities with instance access (LOGIC WORKER ONLY)
    * Called on the entity class itself: Prey.forEachInstanceAll((prey, i) => ...)

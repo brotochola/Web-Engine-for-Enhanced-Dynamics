@@ -114,7 +114,7 @@ export class AbstractWorker {
     const dtRatio = deltaTime / 16.67;
 
     // Accumulate total time in seconds
-    this.accumulatedTime += deltaTime / 1000;
+    this.accumulatedTime += deltaTime 
 
     // Reuse timing object to avoid GC pressure
     this._timing.deltaTime = deltaTime;
