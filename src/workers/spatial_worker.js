@@ -73,8 +73,8 @@ class SpatialWorker extends AbstractWorker {
     this.entityPosY = null; // Float32Array - collider position Y (from particle_worker)
     this.entityHalfExtent = null; // Float32Array - max half-extent (from particle_worker)
 
-    // GRID SYNC - Atomics for coordinating with particle_worker's grid rebuild
-    this.gridSyncData = null; // Int32Array for Atomics.wait
+    // Note: Grid synchronization is handled via Grid class double-buffering
+    // No local gridSyncData needed - spatial workers read from stable Grid.gridEntities
 
     // Stats tracking
     this.neighborChecksThisFrame = 0;
@@ -152,10 +152,8 @@ class SpatialWorker extends AbstractWorker {
     // Initialize to -1 (no entity has processed any other entity yet)
     this.processedThisFrame.fill(-1);
 
-    // GRID SYNC - Atomics to wait for particle_worker to finish grid rebuild
-    if (data.buffers.gridSyncData) {
-      this.gridSyncData = new Int32Array(data.buffers.gridSyncData);
-    }
+    // Note: gridSyncData is handled by Grid class for buffer selection
+    // Spatial workers no longer need to wait - they read from stable read buffer
   }
 
   /**
@@ -351,23 +349,19 @@ class SpatialWorker extends AbstractWorker {
     // Mouse position is now written directly to Transform by main thread
     // No special syncing needed - spatial grid will see current position
 
-    // ATOMICS: Wait for particle_worker to finish rebuilding grid
-    // This prevents reading during the grid clear phase (which would give 0 neighbors)
-    if (this.gridSyncData) {
-      // Wait indefinitely - particle_worker ALWAYS finishes in ~1.6ms, so timeout not needed
-      // "not-equal" means: wait while value is 0 (rebuilding), wake when it becomes 1 (ready)
-      const result = Atomics.wait(this.gridSyncData, 0, 0);
-      // result: "ok" = woken by notify, "not-equal" = already ready (grid was ready before we checked)
-      // Both are fine - we just proceed to read the grid
-      if (result === "timed-out") {
-        console.error(
-          `SPATIAL WORKER ${this.workerIndex}: Atomics.wait timed out - this should never happen!`
-        );
-      }
-    }
+    // OVERLAPPED EXECUTION OPTIMIZATION:
+    // Grid is double-buffered - we read from the stable READ buffer while
+    // particle_worker rebuilds into the WRITE buffer. This eliminates the
+    // ~1.6ms blocking wait that was here before.
+    //
+    // Trade-off: 1 frame latency in neighbor data (negligible for gameplay)
+    // The read buffer always contains the previous frame's complete grid.
+    //
+    // First frame handling: If grid is empty (frame 0), findAllNeighbors()
+    // gracefully handles it by returning 0 neighbors for all entities.
 
-    // Grid is now rebuilt by particle_worker (has spare capacity)
-    // We just read the shared grid and compute neighbors for our entity slice
+    // Grid is rebuilt by particle_worker (has spare capacity)
+    // We read the stable read-only grid and compute neighbors for our entity slice
     this.findAllNeighbors();
 
     // DOUBLE BUFFER SWAP: Signal that this worker finished computing neighbors

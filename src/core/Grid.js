@@ -35,7 +35,9 @@ export class Grid {
   static gridCountsB = null; // Uint16Array - Buffer B
 
   // GRID SYNCHRONIZATION
-  static gridSyncData = null; // Int32Array - [rebuildFlag, currentReadGrid]
+  // gridSyncData[0] = unused (was rebuildFlag for Atomics.wait, removed for overlapped execution)
+  // gridSyncData[1] = currentReadGrid (0=A, 1=B)
+  static gridSyncData = null; // Int32Array - buffer selection for double-buffering
 
   static get gridEntities() {
     if (!Grid.gridSyncData || !Grid.gridEntitiesA) return Grid.gridEntitiesA;
