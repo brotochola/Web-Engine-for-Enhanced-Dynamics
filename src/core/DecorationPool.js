@@ -11,6 +11,10 @@ export class DecorationPool {
   static maxDecorations = 0;
   static initialized = false;
 
+  // Free list for O(1) allocation (like GameObject spawning system)
+  static freeList = null; // Int32Array - stack of free indices
+  static freeListTop = -1; // Top of stack (-1 = empty)
+
   // Shared counter for active decorations (backed by SharedArrayBuffer)
   // Used for early-exit optimization in workers
   static activeCount = null; // Uint32Array[1]
@@ -23,9 +27,16 @@ export class DecorationPool {
   static initialize(maxDecorations) {
     this.maxDecorations = maxDecorations;
     this.initialized = true;
+
+    // Initialize free list with all indices (LIFO stack)
+    this.freeList = new Int32Array(maxDecorations);
+    for (let i = 0; i < maxDecorations; i++) {
+      this.freeList[i] = i;
+    }
+    this.freeListTop = maxDecorations - 1;
+
     console.log(
-      `DecorationPool: Initialized with ${maxDecorations} decorations (indices 0-${
-        maxDecorations - 1
+      `DecorationPool: Initialized with ${maxDecorations} decorations (indices 0-${maxDecorations - 1
       })`
     );
   }
@@ -70,6 +81,15 @@ export class DecorationPool {
       return -1;
     }
 
+    // Check if pool is exhausted (O(1) check)
+    if (this.freeListTop < 0) {
+      console.warn("DecorationPool: No free slots available");
+      return -1;
+    }
+
+    // Pop index from free list (O(1))
+    const i = this.freeList[this.freeListTop--];
+
     // Resolve texture name to textureId (frame index in bigAtlas)
     let textureId = 0;
     if (config.texture) {
@@ -78,7 +98,6 @@ export class DecorationPool {
     }
 
     // Cache array references for performance
-    const active = DecorationComponent.active;
     const x = DecorationComponent.x;
     const y = DecorationComponent.y;
     const scale = DecorationComponent.scale;
@@ -89,39 +108,30 @@ export class DecorationPool {
     const decorationTextureId = DecorationComponent.textureId;
     const isItOnScreen = DecorationComponent.isItOnScreen;
 
-    // Scan for inactive decoration slot
-    for (let i = 0; i < this.maxDecorations; i++) {
-      if (active[i] === 0) {
-        // Position
-        x[i] = randomRange(config.x);
-        y[i] = randomRange(config.y);
+    // Position
+    x[i] = randomRange(config.x);
+    y[i] = randomRange(config.y);
 
-        // Visual properties
-        scale[i] = randomRange(config.scale, 1);
-        alpha[i] = randomRange(config.alpha, 1);
-        tint[i] = config.tint ?? 0xffffff;
-        anchorX[i] = config.anchorX ?? 0.5;
-        anchorY[i] = config.anchorY ?? 1;
-        decorationTextureId[i] = textureId;
+    // Visual properties
+    scale[i] = randomRange(config.scale, 1);
+    alpha[i] = randomRange(config.alpha, 1);
+    tint[i] = config.tint ?? 0xffffff;
+    anchorX[i] = config.anchorX ?? 0.5;
+    anchorY[i] = config.anchorY ?? 1;
+    decorationTextureId[i] = textureId;
 
-        // Initially off-screen (will be updated by culling)
-        isItOnScreen[i] = 0;
+    // Initially off-screen (will be updated by culling)
+    isItOnScreen[i] = 0;
 
-        // Claim this slot
-        active[i] = 1;
+    // Claim this slot
+    DecorationComponent.active[i] = 1;
 
-        // Increment active count (for early-exit optimization in workers)
-        if (this.activeCount) {
-          this.activeCount[0]++;
-        }
-
-        return i;
-      }
+    // Increment active count (for early-exit optimization in workers)
+    if (this.activeCount) {
+      this.activeCount[0]++;
     }
 
-    // Pool is full
-    console.warn("DecorationPool: No free slots available");
-    return -1;
+    return i;
   }
 
   /**
@@ -182,6 +192,9 @@ export class DecorationPool {
     DecorationComponent.active[index] = 0;
     DecorationComponent.isItOnScreen[index] = 0;
 
+    // Push index back to free list (O(1))
+    this.freeList[++this.freeListTop] = index;
+
     // Decrement active count
     if (this.activeCount && this.activeCount[0] > 0) {
       this.activeCount[0]--;
@@ -200,6 +213,12 @@ export class DecorationPool {
       DecorationComponent.active[i] = 0;
       DecorationComponent.isItOnScreen[i] = 0;
     }
+
+    // Reset free list to full (all indices available)
+    for (let i = 0; i < this.maxDecorations; i++) {
+      this.freeList[i] = i;
+    }
+    this.freeListTop = this.maxDecorations - 1;
 
     // Reset active count
     if (this.activeCount) {
