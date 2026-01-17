@@ -45,8 +45,6 @@ FSM
 
 
 
--getters con stats en tiempo real
-
 - TWEENS - GSAP
 
 -VEC2, VEC3
@@ -65,7 +63,7 @@ COLLIDER.SHAPETYPE.RECTANGLE = 1
       GAME OBJECTS:
 ------------------------------------------------------------------------------------------------
 
--en el update(dt,totalTime,framecount)
+
 
 
 -Tener un Prey.tickAll, en lugar de this.tick() ?

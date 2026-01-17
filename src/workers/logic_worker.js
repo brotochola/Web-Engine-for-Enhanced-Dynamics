@@ -334,7 +334,7 @@ class LogicWorker extends AbstractWorker {
           obj.updateNeighbors(neighborData, distanceData, stride);
 
           // Tick entity logic with full timing info
-          // dtRatio: normalized to 60fps (1.0 = 16.67ms), deltaTime: actual ms, accumulatedTime: total seconds, frameNumber
+          // dtRatio: normalized to 60fps (1.0 = 16.67ms), deltaTime: actual ms, accumulatedTime: total ms, frameNumber
           obj.tick(dtRatio, deltaTime, this.accumulatedTime, this.frameNumber);
 
           // Check for screen visibility changes and call lifecycle methods

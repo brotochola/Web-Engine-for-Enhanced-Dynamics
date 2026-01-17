@@ -1,4 +1,4 @@
-import { FireComponent } from "./FireComponent";
+import { FireComponent } from "./FireComponent.js";
 import WEED from "/src/index.js";
 
 // Destructure what we need from WEED
@@ -11,22 +11,28 @@ const {
   rng,
   randomColor,
   ShadowCaster,
+  SpriteSheetRegistry,
 } = WEED;
 
 export class Fire extends GameObject {
   static scriptUrl = import.meta.url;
 
-  // Add PreyBehavior component for prey-specific properties
+  // Add FireComponent for fire-specific properties
   static components = [Collider, SpriteRenderer, LightEmitter, FireComponent];
 
   setup(spawnConfig) {
-    this.scale = Math.random() * 0.5 + 1;
-    if(spawnConfig && spawnConfig.scale) this.scale = spawnConfig.scale;
-    this.setScale(Math.random() > 0.5 ? this.scale : -this.scale, this.scale);
-    this.flipped = Math.random() > 0.5;
-    this.collider.shapeType = 0;
-    this.collider.radius = 40 * this.scale;
 
+    this.fireComponent.baseScale = Math.random() * 0.5 + 1;
+    
+    if (spawnConfig && spawnConfig.scale)  this.fireComponent.baseScale  = spawnConfig.scale;
+    const scale= this.fireComponent.baseScale 
+    this.setScale(Math.random() > 0.5 ? scale : -scale, scale);
+    this.fireComponent.flipped = Math.random() > 0.5;
+    this.collider.shapeType = 0;
+    
+    // Store initial radius for fade calculations
+    
+    Collider.radius[this.index] =  FireComponent.baseRadius[this.index] = 40 *  scale 
     this.collider.visualRange = 400;
 
     this.lightEmitter.lightColor = randomColor({
@@ -35,94 +41,115 @@ export class Fire extends GameObject {
     });
     this.lightEmitter.lightIntensity = 10000;
     this.lightEmitter.glowHeightOffset =
-      this.collider.radius * 0.5 * this.scale;
+      this.collider.radius * 0.5 *  scale ;
     this.lightEmitter.height = 0;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 1;
-    this.setAlpha(0.6+Math.random()*0.2)
+    this.setAlpha(0.6 + Math.random() * 0.2);
+  
     this.setSpritesheet("fire");
     this.setAnimation("fire");
-    this.baseAnimationSpeed = Math.random() * 0.5 + 0.7;
 
-    this.setAnimationSpeed(this.baseAnimationSpeed);
+    // Initialize FireComponent properties
+    this.fireComponent.baseAnimationSpeed = 1
+    this.fireComponent.lifespan = spawnConfig?.lifespan ?? 8000 + Math.random() * 10000; // 2-3 seconds default
+    this.fireComponent.elapsedTime = 0;
+    
+    this.fireComponent.baseIntensity = 8000;
+    this.fireComponent.intensityVariation = 4000;
 
-    // Fire flicker parameters - random phase offsets so fires don't sync
-    this.time = Math.random() * 1000;
-    this.phaseOffset1 = Math.random() * Math.PI * 2;
-    this.phaseOffset2 = Math.random() * Math.PI * 2;
-    this.phaseOffset3 = Math.random() * Math.PI * 2;
-
-    // Base values for intensity and color
-    this.baseIntensity = 8000;
-    this.intensityVariation = 4000;
+    // Set fixed animation speed
+    this.setAnimationSpeed(this.fireComponent.baseAnimationSpeed);
   }
 
   onSpawned(spawnConfig = {}) {
     this.setup(spawnConfig);
-    //this should not be needed, i guess:
-    //TODO: make onSpawned() also execute this.setup() by default
   }
 
-  tick(dt) {
-    this.time += dt;
-    const t = this.time;
-
-    // Multiple sine waves at different frequencies for organic flicker
-    // Primary slow wave (breathing effect)
-    const wave1 = Math.sin(t * 2 + this.phaseOffset1) * 0.3;
-    // Secondary faster wave (flicker)
-    const wave2 = Math.sin(t * 7 + this.phaseOffset2) * 0.2;
-    // Tertiary rapid wave (shimmer)
-    const wave3 = Math.sin(t * 13 + this.phaseOffset3) * 0.5;
-    // Random noise for unpredictability
-    const noise = (rng() - 0.5) * 0.3;
-
-    // Combine all waves: ranges roughly from -0.9 to +0.9, centered at 0
-    const flicker = wave1 + wave2 + wave3 + noise;
-
-    // Calculate intensity: base + variation * flicker (clamped positive)
-    const intensity = this.baseIntensity + this.intensityVariation * flicker;
-    LightEmitter.lightIntensity[this.index] = Math.max(3000, intensity);
-
-    // Color variation - shift between orange, yellow, and red-orange
-    // Use different wave combo for color to feel independent
-    const colorWave =
-      Math.sin(t * 3 + this.phaseOffset1) * 0.5 +
-      Math.sin(t * 8 + this.phaseOffset2) * 0.3 +
-      (rng() - 0.5) * 0.2;
-
-    // Interpolate between fire colors based on wave
-    // Base: orange (0xFF6600), peaks: yellow (0xFFAA00), dips: red-orange (0xFF3300)
-    const normalized = (colorWave + 1) / 2; // 0 to 1
-
-    // RGB interpolation for fire colors
-    const r = 255;
-    const g = Math.floor(40 + normalized * 130); // 40-170 (more orange to yellow)
-    const b = Math.floor(normalized * 30); // 0-30 (slight blue tint at peak)
-
-    const color = (r << 16) | (g << 8) | b;
-    LightEmitter.lightColor[this.index] = color;
-
-    if (Math.random() < 0.002) {
-      this.flipped = !this.flipped;
+  tick(dt, deltaTime) {
+    const fc = this.fireComponent;
+    
+    // Update elapsed time (dt comes in ms)
+    fc.elapsedTime += deltaTime;
+    
+    // Calculate life progress (0 = just spawned, 1 = end of life)
+    const lifeProgress = Math.min(fc.elapsedTime / fc.lifespan, 1);
+    
+    
+    
+    // Fade from the start: fadeFactor goes from 1 to 0 linearly
+    const fadeFactor = 1 - lifeProgress;
+    
+    // Despawn when life is over
+    if (lifeProgress >= 1) {
+      this.despawn();
+      return;
     }
-    // this.setScale(this.flipped ? this.scale : -this.scale, scaleY);
 
-    this.setAnimationSpeed(
-      this.baseAnimationSpeed //+ Math.sin(t * 0.001 + this.index) * 0.1
-    );
+    // Convert elapsed time from ms to seconds for wave calculations
+    const t = fc.elapsedTime * 0.001;
+
+  
+
+
+    // Calculate intensity with fade factor and flickering
+    const baseIntensity = fc.baseIntensity * fadeFactor;
+    const intensityVariation = fc.intensityVariation * fadeFactor;
+    
+    // Add flickering with multiple sine waves and random noise
+    const flicker1 = Math.sin(t * 8) * 0.15;
+    const flicker2 = Math.sin(t * 12.5) * 0.1;
+    const randomFlicker = (Math.random() - 0.5) * 0.2;
+    const totalFlicker = 1 + flicker1 + flicker2 + randomFlicker;
+    
+    const intensity = (baseIntensity + intensityVariation) * totalFlicker;
+    const radius= Collider.radius
+    LightEmitter.lightIntensity[this.index] = Math.max(500, intensity);
+
+    // Update radius based on fade factor
+    radius[this.index] = FireComponent.baseRadius[this.index] * fadeFactor;
+
+    
+    
+    // Update scale based on fade factor (visual shrinking) with flickering
+    const currentScale =  this.fireComponent.baseScale  * fadeFactor;
+    if(Math.random() < 0.01) {
+      fc.flipped = !fc.flipped;
+    }
+    
+    // Add flickering to scaleY with multiple waves
+    const scaleFlicker1 = Math.sin(t * 6) * 0.08;
+    const scaleFlicker2 = Math.sin(t * 10.3) * 0.05;
+    const scaleRandomFlicker = (Math.random() - 0.5) * 0.06;
+    const scaleYModulation = 1 + scaleFlicker1 + scaleFlicker2 + scaleRandomFlicker;
+    
+    const scaleX = fc.flipped ? currentScale : -currentScale;
+    this.setScale(scaleX, currentScale * scaleYModulation);
+    
+    // Update alpha based on fade factor
+    this.setAlpha(0.9 * fadeFactor);
+    
+    // Update glow height offset based on current radius
+    this.lightEmitter.glowHeightOffset = radius[this.index] * 0.5 *  this.fireComponent.baseScale ;
+
+
+    
     // Mark dirty to keep animation advancing
-    const radius = this.collider.radius;
-    this.markDirty();
-    this.emitSparks(radius);
-    this.emitSmoke(radius);
+    const myRadius = radius[this.index]
+       // Reduce particle emission as fire dies
+    this.emitSparks(myRadius, fadeFactor);
+    this.emitSmoke(myRadius, fadeFactor);
+
+    // this.markDirty();
+    
+ 
   }
 
-  emitSparks(radius) {
-   
-    if (Math.random() > 0.4) return;
+  emitSparks(radius, fadeFactor = 1) {
+    // Reduce spark frequency as fire dies
+    if (Math.random() > 0.4 * fadeFactor) return;
     ParticleEmitter.emit({
-      count: Math.floor(Math.random() * 3) + 1,
+      count: Math.floor(Math.random() * 3 * fadeFactor) + 1,
       x: this.x + (Math.random() * radius - radius * 0.5),
       y: this.y + (Math.random() * radius - radius * 0.5),
       z: -radius - Math.random() * radius,
@@ -131,32 +158,33 @@ export class Fire extends GameObject {
       vz: -Math.random() * 2 - 2,
       gravity: -0.1,
       lifespan: { min: 200, max: 500 },
-      scale: 0.25,
+      scale: 0.25 * fadeFactor,
       texture: "square",
       tint: randomColor({ min: 0x00ffff, max: 0x00bbff }),
-      alpha: { min: 0.8, max: 1 },
+      alpha: { min: 0.8 * fadeFactor, max: 1 * fadeFactor },
     });
   }
 
-  emitSmoke(radius) {
-    if (Math.random() > 0.3) return;
+  emitSmoke(radius, fadeFactor = 1) {
+    // Reduce smoke frequency as fire dies
+    if (Math.random() > 0.3 * fadeFactor) return;
     ParticleEmitter.emit({
-      count: Math.floor(Math.random() * 2) + 1,
+      count: Math.floor(Math.random() * 2 * fadeFactor) + 1,
       x: this.x,
-      y: this.y ,
+      y: this.y,
       angleXY: { min: 0, max: 360 },
       speed: { min: 0, max: 1 },
-      vz: -Math.random()*2-2,
+      vz: -Math.random() * 2 - 2,
       gravity: 0,
       rotation: { min: 0, max: 360 },
       flipX: Math.random() > 0.5,
       flipY: Math.random() > 0.5,
-      z: -radius*2 - Math.random() * radius*2,
+      z: -radius * 2 - Math.random() * radius * 2,
       lifespan: { min: 500, max: 2000 },
-      scale: { min: this.scale, max: this.scale*3 },
+      scale: { min:  this.fireComponent.baseScale  * fadeFactor, max:  this.fireComponent.baseScale  * 3 * fadeFactor },
       texture: "smoke",
       tint: randomColor({ min: 0xaaaaaa, max: 0x666666 }),
-      alpha: { min: 0.15, max: 0.3 },
+      alpha: { min: 0.15 * fadeFactor, max: 0.3 * fadeFactor },
       tweenToAlpha0: true,
     });
   }

@@ -12,9 +12,10 @@ export class FireComponent extends Component {
     elapsedTime: Uint16Array, // Time alive so far in ms
     baseAnimationSpeed: Float32Array, // Base animation speed
     baseIntensity: Float32Array, // Base intensity
+    baseRadius: Float32Array, // Base radius
+    baseScale: Float32Array, // Base scale
     intensityVariation: Float32Array, // Intensity variation
-    phaseOffset1: Float32Array, // Phase offset 1
-    phaseOffset2: Float32Array, // Phase offset 2
-    phaseOffset3: Float32Array, // Phase offset 3
+    flipped: Uint8Array, // Flipped
+   
   };
 }
