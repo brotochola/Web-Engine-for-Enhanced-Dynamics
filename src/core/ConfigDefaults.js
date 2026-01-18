@@ -4,6 +4,26 @@
  */
 
 // ============================================================================
+// ENUMS
+// ============================================================================
+
+/**
+ * Shape types for Collider component
+ * @readonly
+ * @enum {number}
+ */
+export const ShapeType = Object.freeze({
+  /** Circle collider - uses radius property */
+  Circle: 0,
+  /** Box/rectangle collider - uses width and height properties */
+  Box: 1,
+  /** Polygon collider - uses custom vertices (future) */
+  Polygon: 2,
+});
+
+
+
+// ============================================================================
 // TOP-LEVEL DEFAULTS
 // ============================================================================
 

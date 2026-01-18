@@ -2,7 +2,7 @@ import WEED from '/src/index.js';
 import { ExplosionComponent } from './ExplosionComponent.js';
 
 // Destructure what we need from WEED
-const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, ShadowCaster } = WEED;
+const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, ShadowCaster, ShapeType } = WEED;
 
 export class Explosion extends GameObject {
   static scriptUrl = import.meta.url;
@@ -29,7 +29,7 @@ export class Explosion extends GameObject {
     ec.maxRadius = ec.originalWidth * ec.baseScale * 0.5;
 
     ec.flipped = Math.random() > 0.5 ? 1 : 0;
-    this.collider.shapeType = 0;
+    this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 1; // Start at 1px
 
     this.collider.visualRange = 400;

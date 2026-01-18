@@ -12,6 +12,7 @@ const {
   randomColor,
   ShadowCaster,
   SpriteSheetRegistry,
+  ShapeType,
 } = WEED;
 
 export class Fire extends GameObject {
@@ -28,7 +29,7 @@ export class Fire extends GameObject {
     const scale= this.fireComponent.baseScale 
     this.setScale(Math.random() > 0.5 ? scale : -scale, scale);
     this.fireComponent.flipped = Math.random() > 0.5;
-    this.collider.shapeType = 0;
+    this.collider.shapeType = ShapeType.Circle;
     
     // Store initial radius for fade calculations
     
