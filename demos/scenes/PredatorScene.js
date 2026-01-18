@@ -66,7 +66,7 @@ export class PredatorScene extends WEED.Scene {
     },
 
     decoration: {
-      maxDecorations: 15000, // Non-interactive decorations like grass
+      maxDecorations: 10000, // Non-interactive decorations like grass
     },
 
     // Logic configuration
@@ -128,11 +128,6 @@ export class PredatorScene extends WEED.Scene {
       grass2: "/demos/img/g2.png",
       grass3: "/demos/img/g3.png",
       grass4: "/demos/img/g4.png",
-      grass5: "/demos/img/g5.png",
-      grass6: "/demos/img/g6.png",
-      grass7: "/demos/img/g7.png",
-      grass8: "/demos/img/g8.png",
-      grass9: "/demos/img/g9.png",
       tree1: "/demos/img/tree1.png",
       tree2: "/demos/img/tree2.png",
       barrel1: "/demos/img/barrel1.png",
@@ -364,13 +359,14 @@ export class PredatorScene extends WEED.Scene {
     console.log("Spawning grass...");
     // Spawn grass using DecorationPool (lightweight, no GameObject overhead)
     for (let i = 0; i < count; i++) {
-      const grassType = Math.floor(this.rng() * 9) + 1; // grass1 to grass9
+      const scale = 0.75 + this.rng() * 0.5
+      const grassType = Math.floor(this.rng() * 4) + 1; // grass1 to grass9
       DecorationPool.spawn({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
         texture: "grass" + grassType,
-        scale: 0.6 + this.rng() * 0.4, // 0.8 to 1.2
-        alpha: 0.5 + rng() * 0.5,
+        scale: scale,
+        alpha: 0.7 + this.rng() * 0.3,
         anchorX: 0.5,
         anchorY: 1.0, // Bottom anchor for grass
       });
