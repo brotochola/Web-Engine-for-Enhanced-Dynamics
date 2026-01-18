@@ -1727,3 +1727,150 @@ export function setNestedProperty(obj, path, value) {
     target[lastKey] = value;
   }
 }
+
+// ============================================================================
+// COLOR UTILITIES (for Debug UI)
+// ============================================================================
+
+/**
+ * Generate a deterministic hash from a string
+ * Uses djb2 algorithm - fast and good distribution
+ * @param {string} str - Input string
+ * @returns {number} 32-bit hash value
+ */
+export function stringToHash(str) {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
+  }
+  return hash >>> 0; // Convert to unsigned 32-bit
+}
+
+/**
+ * Convert a hash to a pastel color (HSL with high lightness, medium saturation)
+ * Returns CSS color string for use in HTML elements
+ * @param {number} hash - Hash value
+ * @returns {string} CSS HSL color string
+ */
+export function hashToPastelColorCSS(hash) {
+  const hue = hash % 360;
+  const saturation = 50 + (hash % 20); // 50-70%
+  const lightness = 70 + (hash % 15); // 70-85%
+  return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+}
+
+/**
+ * Convert a hash to a pastel color as hex number (for canvas/PIXI rendering)
+ * @param {number} hash - Hash value
+ * @returns {number} Hex color (0xRRGGBB)
+ */
+export function hashToPastelColorHex(hash) {
+  const hue = hash % 360;
+  const saturation = 0.6; // 60%
+  const lightness = 0.75; // 75%
+  return hslToHex(hue, saturation, lightness);
+}
+
+/**
+ * Convert HSL to hex color
+ * @param {number} h - Hue (0-360)
+ * @param {number} s - Saturation (0-1)
+ * @param {number} l - Lightness (0-1)
+ * @returns {number} Hex color (0xRRGGBB)
+ */
+export function hslToHex(h, s, l) {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+
+  let r = 0, g = 0, b = 0;
+  if (h < 60) { r = c; g = x; b = 0; }
+  else if (h < 120) { r = x; g = c; b = 0; }
+  else if (h < 180) { r = 0; g = c; b = x; }
+  else if (h < 240) { r = 0; g = x; b = c; }
+  else if (h < 300) { r = x; g = 0; b = c; }
+  else { r = c; g = 0; b = x; }
+
+  const ri = ((r + m) * 255) | 0;
+  const gi = ((g + m) * 255) | 0;
+  const bi = ((b + m) * 255) | 0;
+
+  return (ri << 16) | (gi << 8) | bi;
+}
+
+/**
+ * Predefined colors for core components (consistent, visually distinct)
+ * Custom components will get auto-generated pastel colors based on their name
+ */
+export const COMPONENT_COLORS = {
+  // Core components - carefully chosen for visual distinction
+  Transform: { css: "hsl(120, 60%, 75%)", hex: 0x8fbc8f }, // Soft green
+  RigidBody: { css: "hsl(210, 70%, 75%)", hex: 0x87ceeb }, // Sky blue
+  Collider: { css: "hsl(45, 80%, 70%)", hex: 0xf4d03f }, // Golden yellow
+  SpriteRenderer: { css: "hsl(280, 60%, 75%)", hex: 0xb19cd9 }, // Soft purple
+  LightEmitter: { css: "hsl(30, 80%, 70%)", hex: 0xf5a962 }, // Warm orange
+  ShadowCaster: { css: "hsl(0, 0%, 65%)", hex: 0xa8a8a8 }, // Gray
+};
+
+/**
+ * Get color for a component (core or custom)
+ * Core components use predefined colors, custom components get deterministic pastel colors
+ * @param {string} componentName - Name of the component
+ * @returns {{ css: string, hex: number }} Color object with CSS and hex values
+ */
+export function getComponentColor(componentName) {
+  // Return predefined color for core components
+  if (COMPONENT_COLORS[componentName]) {
+    return COMPONENT_COLORS[componentName];
+  }
+
+  // Generate deterministic pastel color for custom components
+  const hash = stringToHash(componentName);
+  return {
+    css: hashToPastelColorCSS(hash),
+    hex: hashToPastelColorHex(hash),
+  };
+}
+
+/**
+ * Get all property names from a component's ARRAY_SCHEMA
+ * Filters out 'active' since it's internal
+ * @param {Object} ComponentClass - Component class with ARRAY_SCHEMA
+ * @returns {string[]} Array of property names
+ */
+export function getComponentPropertyNames(ComponentClass) {
+  if (!ComponentClass || !ComponentClass.ARRAY_SCHEMA) {
+    return [];
+  }
+  return Object.keys(ComponentClass.ARRAY_SCHEMA).filter(key => key !== 'active');
+}
+
+/**
+ * Format a component property value for display
+ * Handles different types: numbers (with precision), hex colors, etc.
+ * @param {string} propName - Property name (for type detection)
+ * @param {*} value - Raw value
+ * @returns {string} Formatted string
+ */
+export function formatComponentValue(propName, value) {
+  if (value === undefined || value === null) return "N/A";
+
+  // Detect color properties (tint, baseTint, color)
+  const isColor = propName.toLowerCase().includes('tint') ||
+    propName.toLowerCase().includes('color');
+  if (isColor && typeof value === 'number') {
+    return "0x" + value.toString(16).toUpperCase().padStart(6, '0');
+  }
+
+  // Format numbers with appropriate precision
+  if (typeof value === 'number') {
+    // Integer check: if it's very close to an integer, display as integer
+    if (Number.isInteger(value) || Math.abs(value - Math.round(value)) < 0.0001) {
+      return String(Math.round(value));
+    }
+    // Float: show 2 decimal places
+    return value.toFixed(2);
+  }
+
+  return String(value);
+}

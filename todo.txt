@@ -12,10 +12,11 @@ Lighting:
 -------- 
 Debugger:
 ---------
--debug para las luces
+
 -clase Debug con cosas tipo:
 	Debug.highlightCell(cellID)
 	Debug.drawText(entity.x, entity.y, fsm.state)
+  
 -cartelito encima de cada gameobject y q diga la info
 
 
