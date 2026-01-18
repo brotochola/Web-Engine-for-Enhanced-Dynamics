@@ -14,7 +14,12 @@ export const DEBUG_FLAGS = {
   SHOW_ENTITY_INDICES: 9, // Show entity index numbers
   SHOW_ACTIVE_ONLY: 10, // Only show debug for active entities
   SHOW_RAYCASTS: 11, // Draw raycasts with hit points
+  SHOW_SELECTED_ENTITY: 12, // Draw bounding box around selected entity
 };
+
+// Selected entity index storage (offset in debug buffer after flags)
+// Layout: [flags 0-15] [selectedEntityIndex at offset 16-19 as Int32]
+export const DEBUG_SELECTED_ENTITY_OFFSET = 16;
 
 /**
  * DebugFlags - Manages debug visualization flags
@@ -128,6 +133,47 @@ export class DebugFlags {
    */
   showRaycasts(enabled = true) {
     this.flags[DEBUG_FLAGS.SHOW_RAYCASTS] = enabled ? 1 : 0;
+    return this;
+  }
+
+  /**
+   * Enable/disable selected entity bounding box
+   */
+  showSelectedEntity(enabled = true) {
+    this.flags[DEBUG_FLAGS.SHOW_SELECTED_ENTITY] = enabled ? 1 : 0;
+    return this;
+  }
+
+  /**
+   * Set the selected entity index (writes to shared buffer)
+   * @param {number} entityIndex - Entity index or -1 for no selection
+   */
+  setSelectedEntity(entityIndex) {
+    // Store as Int32 at offset 16 in the buffer
+    const view = new Int32Array(this.flags.buffer, DEBUG_SELECTED_ENTITY_OFFSET, 1);
+    view[0] = entityIndex;
+    // Auto-enable the flag when selecting
+    if (entityIndex >= 0) {
+      this.flags[DEBUG_FLAGS.SHOW_SELECTED_ENTITY] = 1;
+    }
+    return this;
+  }
+
+  /**
+   * Get the selected entity index (reads from shared buffer)
+   * @returns {number} Entity index or -1 for no selection
+   */
+  getSelectedEntity() {
+    const view = new Int32Array(this.flags.buffer, DEBUG_SELECTED_ENTITY_OFFSET, 1);
+    return view[0];
+  }
+
+  /**
+   * Clear selected entity
+   */
+  clearSelectedEntity() {
+    this.setSelectedEntity(-1);
+    this.flags[DEBUG_FLAGS.SHOW_SELECTED_ENTITY] = 0;
     return this;
   }
 

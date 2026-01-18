@@ -299,3 +299,26 @@
   border-color: rgba(248, 113, 113, 0.5);
   color: #f87171;
 }
+
+.debug-ui-tool-indicator.inspector {
+  border-color: rgba(255, 200, 100, 0.5);
+  color: #ffc864;
+}
+
+/* Inspector Panel Scrollbar */
+.debug-ui-inspector-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.debug-ui-inspector-panel::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.debug-ui-inspector-panel::-webkit-scrollbar-thumb {
+  background: rgba(255, 200, 100, 0.3);
+  border-radius: 3px;
+}
+
+.debug-ui-inspector-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 200, 100, 0.5);
+}

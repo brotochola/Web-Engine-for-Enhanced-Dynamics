@@ -428,7 +428,7 @@ class Scene {
     // Compute decalsTilePixelSize
     this.config.particle.decalsTilePixelSize = Math.floor(
       this.config.particle.decalsTileSize *
-        this.config.particle.decalsResolution
+      this.config.particle.decalsResolution
     );
 
     // Decoration defaults from centralized config
@@ -920,9 +920,12 @@ class Scene {
     }
 
     // Debug buffer
+    // Layout: [flags 0-15 as Uint8] [selectedEntityIndex at 16-19 as Int32]
     const DEBUG_BUFFER_SIZE = 32;
     this.buffers.debugData = new SharedArrayBuffer(DEBUG_BUFFER_SIZE);
     this.debugFlags = new DebugFlags(this.buffers.debugData);
+    // Initialize selected entity to -1 (no selection)
+    this.debugFlags.setSelectedEntity(-1);
 
     // Raycast debug buffer - stores recent raycasts for visualization
     // Layout: [count, ray0_startX, ray0_startY, ray0_endX, ray0_endY, ray0_hitX, ray0_hitY, ray0_hit, ray1_...]
@@ -1377,35 +1380,35 @@ class Scene {
       decorationActiveCount: this.buffers.decorationActiveCount || null,
       decals: this.config.particle.decals
         ? {
-            enabled: true,
-            tileSize: this.config.particle.decalsTileSize,
-            tilePixelSize: this.config.particle.decalsTilePixelSize,
-            resolution: this.config.particle.decalsResolution,
-            tilesX: this.decalsTilesX,
-            tilesY: this.decalsTilesY,
-            totalTiles: this.decalsTotalTiles,
-            tilesRGBA: this.buffers.bloodTilesRGBA,
-            tilesDirty: this.buffers.bloodTilesDirty,
-            textures: this.decalTextureData,
-          }
+          enabled: true,
+          tileSize: this.config.particle.decalsTileSize,
+          tilePixelSize: this.config.particle.decalsTilePixelSize,
+          resolution: this.config.particle.decalsResolution,
+          tilesX: this.decalsTilesX,
+          tilesY: this.decalsTilesY,
+          totalTiles: this.decalsTotalTiles,
+          tilesRGBA: this.buffers.bloodTilesRGBA,
+          tilesDirty: this.buffers.bloodTilesDirty,
+          textures: this.decalTextureData,
+        }
         : null,
       shadows: this.config.lighting.shadowsEnabled
         ? {
-            enabled: true,
-            maxShadowCastingLights: this.config.lighting.maxShadowCastingLights,
-            maxShadowsPerLight: this.config.lighting.maxShadowsPerLight,
-            maxShadowsPerEntity: this.config.lighting.maxShadowsPerEntity,
-            maxShadowSprites: this.config.lighting.maxShadowSprites,
-            spriteData: this.buffers.shadowSpriteData,
-          }
+          enabled: true,
+          maxShadowCastingLights: this.config.lighting.maxShadowCastingLights,
+          maxShadowsPerLight: this.config.lighting.maxShadowsPerLight,
+          maxShadowsPerEntity: this.config.lighting.maxShadowsPerEntity,
+          maxShadowSprites: this.config.lighting.maxShadowSprites,
+          spriteData: this.buffers.shadowSpriteData,
+        }
         : null,
       flashes:
         this.config.lighting.maxFlashes > 0
           ? {
-              enabled: true,
-              maxFlashes: this.config.lighting.maxFlashes,
-              startIndex: Flash.startIndex,
-            }
+            enabled: true,
+            maxFlashes: this.config.lighting.maxFlashes,
+            startIndex: Flash.startIndex,
+          }
           : null,
       queries: this.querySystem.serialize(), // Pre-calculated entity queries
     };
@@ -1534,8 +1537,7 @@ class Scene {
 
       // Log to console with full details
       console.error(
-        `❌ FATAL ERROR in [${workerName}] worker:\n${title}\n${message}\n${
-          stack || ""
+        `❌ FATAL ERROR in [${workerName}] worker:\n${title}\n${message}\n${stack || ""
         }`
       );
 
@@ -2106,7 +2108,7 @@ class Scene {
         : [];
       console.error(
         `Tilemap "${tilemapId}" not found. ` +
-          `Available tilemaps: [${availableTilemaps.join(", ") || "none"}]`
+        `Available tilemaps: [${availableTilemaps.join(", ") || "none"}]`
       );
       return;
     }

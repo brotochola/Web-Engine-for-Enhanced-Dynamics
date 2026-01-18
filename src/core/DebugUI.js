@@ -3,6 +3,9 @@
 
 import { DEBUG_FLAGS } from "./DebugFlags.js";
 import { Transform } from "../components/Transform.js";
+import { RigidBody } from "../components/RigidBody.js";
+import { Collider } from "../components/Collider.js";
+import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { Mouse } from "./Mouse.js";
 import { GameObject } from "./gameObject.js";
 import { DecorationComponent } from "../components/DecorationComponent.js";
@@ -17,7 +20,12 @@ import {
   createStatsReader,
   createMultiWorkerStatsReaderArray,
 } from "../workers/workers-utils.js";
-import { formatNumber } from "./utils.js";
+import {
+  formatNumber,
+  getComponentColor,
+  getComponentPropertyNames,
+  formatComponentValue,
+} from "./utils.js";
 import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from "./ConfigDefaults.js";
 
 /**
@@ -52,6 +60,12 @@ export class DebugUI {
     this.spawnThrottleMs = 50; // Minimum ms between spawns while painting
     this._toolMouseDown = false; // Track mouse button for tool mode (separate from game input)
     this.bulkSpawnEnabled = false; // Spawn 10 at a time instead of 1
+
+    // Entity Inspector state
+    this.inspectorActive = false; // Is inspect mode enabled
+    this.selectedEntityIndex = -1; // Currently selected entity (-1 = none)
+    this._inspectorPanelVisible = false; // Is the inspector panel currently showing
+    this._prevInspectorValues = {}; // Cache previous values to avoid DOM updates
 
     // Worker stat views (created when scene attaches)
     this.workerStatViews = null;
@@ -134,6 +148,12 @@ export class DebugUI {
     this._toolMouseDown = false;
     Mouse.isDebugToolActive = false;
 
+    // Reset inspector on scene change
+    this.inspectorActive = false;
+    this.selectedEntityIndex = -1;
+    this._prevInspectorValues = {};
+    this._hideInspectorPanel();
+
     // Disable all debug flags when switching scenes
     if (this.debugFlags) {
       this.debugFlags.disableAll();
@@ -147,6 +167,7 @@ export class DebugUI {
     this._autoGenerateEntityTools();
     this._updateLayersAvailability();
     this._updateToolIndicator();
+    this._updateInspectorButtonState();
     this.start();
   }
 
@@ -395,6 +416,7 @@ export class DebugUI {
     this._updateDecorationsSection();
     this._updateToolButtonStates();
     this._updatePaintTool();
+    this._updateInspectorValues();
 
     // DEBUG: Uncomment to profile tick time
     // const tickTime = performance.now() - t0;
@@ -1179,6 +1201,17 @@ export class DebugUI {
     };
     row.appendChild(disableBtn);
 
+    // Divider
+    row.appendChild(this._createDivider());
+
+    // Entity Inspector button
+    this.elements.inspectorBtn = document.createElement("button");
+    this.elements.inspectorBtn.className = "debug-ui-btn tool";
+    this.elements.inspectorBtn.textContent = "[I] Inspect";
+    this.elements.inspectorBtn.title = "Click on an entity to inspect its components";
+    this.elements.inspectorBtn.onclick = () => this._toggleInspector();
+    row.appendChild(this.elements.inspectorBtn);
+
     panel.appendChild(row);
     this.container.appendChild(panel);
     this.sections.visual.panel = panel;
@@ -1511,8 +1544,415 @@ export class DebugUI {
     } else if (this.eraserActive) {
       indicator.textContent = `🧹 Eraser Active (click & drag to despawn)`;
       indicator.className = "debug-ui-tool-indicator visible eraser";
+    } else if (this.inspectorActive) {
+      indicator.textContent = `🔍 Inspector Active (click on an entity to inspect)`;
+      indicator.className = "debug-ui-tool-indicator visible inspector";
     } else {
       indicator.className = "debug-ui-tool-indicator";
+    }
+  }
+
+  // ========================================
+  // ENTITY INSPECTOR
+  // ========================================
+
+  /**
+   * Create the inspector panel (hidden by default)
+   */
+  _createInspectorPanel() {
+    const panel = document.createElement("div");
+    panel.className = "debug-ui-inspector-panel";
+    panel.style.cssText = `
+      position: fixed;
+      left: 0;
+      top: 78px;
+      width: 320px;
+      max-height: calc(100vh - 60px);
+      background: rgba(15, 15, 20, 0.95);
+      border-right: 2px solid rgba(255, 200, 100, 0.5);
+      border-bottom: 2px solid rgba(255, 200, 100, 0.3);
+      border-radius: 0 0 8px 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: none;
+      flex-direction: column;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      z-index: 10001;
+      box-shadow: 4px 4px 12px rgba(0, 0, 0, 0.5);
+    `;
+
+    // Header
+    const header = document.createElement("div");
+    header.style.cssText = `
+      padding: 10px 12px;
+      background: linear-gradient(135deg, rgba(255, 200, 100, 0.2), rgba(255, 150, 50, 0.1));
+      border-bottom: 1px solid rgba(255, 200, 100, 0.3);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    `;
+
+    const title = document.createElement("span");
+    title.style.cssText = `
+      font-weight: bold;
+      font-size: 12px;
+      color: #ffc864;
+    `;
+    title.textContent = "🔍 Entity Inspector";
+    header.appendChild(title);
+
+    // Close button
+    const closeBtn = document.createElement("button");
+    closeBtn.style.cssText = `
+      background: rgba(255, 100, 100, 0.3);
+      border: 1px solid rgba(255, 100, 100, 0.5);
+      color: #ff8888;
+      padding: 2px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    `;
+    closeBtn.textContent = "✕ Close";
+    closeBtn.onclick = () => this._clearSelection();
+    header.appendChild(closeBtn);
+
+    panel.appendChild(header);
+
+    // Entity info header
+    this.elements.inspectorEntityInfo = document.createElement("div");
+    this.elements.inspectorEntityInfo.style.cssText = `
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.3);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      color: #aaa;
+    `;
+    panel.appendChild(this.elements.inspectorEntityInfo);
+
+    // Components container
+    this.elements.inspectorComponentsContainer = document.createElement("div");
+    this.elements.inspectorComponentsContainer.style.cssText = `
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    `;
+    panel.appendChild(this.elements.inspectorComponentsContainer);
+
+    document.body.appendChild(panel);
+    this.elements.inspectorPanel = panel;
+  }
+
+  /**
+   * Toggle inspector mode on/off
+   */
+  _toggleInspector() {
+    this.inspectorActive = !this.inspectorActive;
+
+    // Deactivate other tools when inspector is activated
+    if (this.inspectorActive) {
+      this.activeSpawnerType = null;
+      this.eraserActive = false;
+    }
+
+    this._updateDebugToolFlag();
+    this._updateToolButtonStates();
+    this._updateToolIndicator();
+    this._updateInspectorButtonState();
+  }
+
+  /**
+   * Update inspector button visual state
+   */
+  _updateInspectorButtonState() {
+    if (this.elements.inspectorBtn) {
+      this.elements.inspectorBtn.classList.toggle("active", this.inspectorActive);
+    }
+  }
+
+  /**
+   * Select an entity at the current mouse position
+   */
+  _selectEntityAtMouse() {
+    if (!this.scene || !this.inspectorActive) return;
+
+    const eraserRadiusSq = 100 * 100; // 100px selection radius
+    const internalEntities = this._internalEntitiesSet;
+
+    // Get Mouse's neighbors from spatial worker data (Mouse is always entity 0)
+    const neighborData = GameObject.neighborData;
+    const distanceData = GameObject.distanceData;
+
+    if (!neighborData) return;
+
+    const maxNeighbors = this.scene.config?.spatial?.maxNeighbors || 100;
+    const offset = 0; // Mouse is entity 0
+    const neighborCount = neighborData[offset];
+
+    if (neighborCount === 0) {
+      this._clearSelection();
+      return;
+    }
+
+    // Find nearest neighbor within selection radius
+    let nearestIndex = -1;
+    let nearestDistSq = eraserRadiusSq;
+
+    for (let n = 0; n < neighborCount; n++) {
+      const neighborIdx = neighborData[offset + 1 + n];
+
+      if (!Transform.active[neighborIdx]) continue;
+
+      // Skip internal entities
+      const entityType = Transform.entityType[neighborIdx];
+      const reg = this.scene.registeredClasses.find(
+        (r) => r.entityType === entityType
+      );
+      if (reg && internalEntities.has(reg.class.name)) continue;
+
+      // Use precomputed squared distance
+      const distSq = distanceData ? distanceData[offset + 1 + n] : null;
+
+      if (distSq !== null && distSq < nearestDistSq) {
+        nearestDistSq = distSq;
+        nearestIndex = neighborIdx;
+      }
+    }
+
+    if (nearestIndex >= 0) {
+      this._selectEntity(nearestIndex);
+    } else {
+      this._clearSelection();
+    }
+  }
+
+  /**
+   * Select a specific entity by index
+   * @param {number} entityIndex - Entity index to select
+   */
+  _selectEntity(entityIndex) {
+    this.selectedEntityIndex = entityIndex;
+
+    // Update debug flags to notify renderer
+    if (this.debugFlags) {
+      this.debugFlags.setSelectedEntity(entityIndex);
+    }
+
+    // Show and populate inspector panel
+    this._showInspectorPanel();
+    this._populateInspectorPanel();
+  }
+
+  /**
+   * Clear entity selection
+   */
+  _clearSelection() {
+    this.selectedEntityIndex = -1;
+    this._prevInspectorValues = {};
+
+    // Update debug flags
+    if (this.debugFlags) {
+      this.debugFlags.clearSelectedEntity();
+    }
+
+    // Hide inspector panel
+    this._hideInspectorPanel();
+  }
+
+  /**
+   * Show the inspector panel
+   */
+  _showInspectorPanel() {
+    if (!this.elements.inspectorPanel) {
+      this._createInspectorPanel();
+    }
+    this.elements.inspectorPanel.style.display = "flex";
+    this._inspectorPanelVisible = true;
+  }
+
+  /**
+   * Hide the inspector panel
+   */
+  _hideInspectorPanel() {
+    if (this.elements.inspectorPanel) {
+      this.elements.inspectorPanel.style.display = "none";
+    }
+    this._inspectorPanelVisible = false;
+  }
+
+  /**
+   * Populate the inspector panel with component data
+   * Called once when an entity is selected
+   */
+  _populateInspectorPanel() {
+    if (this.selectedEntityIndex < 0 || !this.scene) return;
+
+    const entityIndex = this.selectedEntityIndex;
+    const entityType = Transform.entityType[entityIndex];
+
+    // Find the registered class info
+    const regInfo = this.scene.registeredClasses.find(
+      (r) => r.entityType === entityType
+    );
+
+    // Update entity info header
+    const infoEl = this.elements.inspectorEntityInfo;
+    if (infoEl) {
+      const className = regInfo ? regInfo.class.name : "Unknown";
+      infoEl.innerHTML = `
+        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+          <span style="color: #fff; font-weight: bold;">${className}</span>
+          <span style="color: #888;">Index: ${entityIndex}</span>
+        </div>
+        <div style="color: #666; font-size: 12px;">Type ID: ${entityType}</div>
+      `;
+    }
+
+    // Get components for this entity type
+    const components = regInfo ? regInfo.components : [Transform];
+    const container = this.elements.inspectorComponentsContainer;
+    if (!container) return;
+
+    container.innerHTML = "";
+    this.elements.inspectorComponentRows = {};
+
+    // Create section for each component
+    for (const ComponentClass of components) {
+      const componentName = ComponentClass.name;
+      const color = getComponentColor(componentName);
+
+      // Component section
+      const section = document.createElement("div");
+      section.style.cssText = `
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid ${color.css};
+        border-left: 3px solid ${color.css};
+        border-radius: 4px;
+        overflow: hidden;
+      `;
+
+      // Component header
+      const header = document.createElement("div");
+      header.style.cssText = `
+        padding: 6px 8px;
+        background: linear-gradient(90deg, ${color.css}22, transparent);
+        color: ${color.css};
+        font-weight: bold;
+        font-size: 11px;
+        border-bottom: 1px solid ${color.css}44;
+      `;
+      header.textContent = componentName;
+      section.appendChild(header);
+
+      // Properties table
+      const propsContainer = document.createElement("div");
+      propsContainer.style.cssText = `
+        padding: 4px 0;
+      `;
+
+      const propNames = getComponentPropertyNames(ComponentClass);
+      this.elements.inspectorComponentRows[componentName] = {};
+
+      for (const propName of propNames) {
+        const row = document.createElement("div");
+        row.style.cssText = `
+          display: flex;
+          justify-content: space-between;
+          padding: 2px 8px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        `;
+
+        const label = document.createElement("span");
+        label.style.cssText = `color: #888; font-size: 12px;`;
+        label.textContent = propName;
+        row.appendChild(label);
+
+        const value = document.createElement("span");
+        value.style.cssText = `color: #fff; font-size: 12px; font-family: monospace;`;
+        value.textContent = "--";
+        row.appendChild(value);
+
+        propsContainer.appendChild(row);
+
+        // Store reference for updates
+        this.elements.inspectorComponentRows[componentName][propName] = value;
+      }
+
+      section.appendChild(propsContainer);
+      container.appendChild(section);
+    }
+
+    // Initial update
+    this._updateInspectorValues();
+  }
+
+  /**
+   * Update inspector panel values (called every tick)
+   * OPTIMIZED: Only updates DOM when values change
+   */
+  _updateInspectorValues() {
+    if (this.selectedEntityIndex < 0 || !this._inspectorPanelVisible) return;
+
+    const entityIndex = this.selectedEntityIndex;
+
+    // Check if entity was despawned
+    if (!Transform.active[entityIndex]) {
+      this._clearSelection();
+      return;
+    }
+
+    const rows = this.elements.inspectorComponentRows;
+    if (!rows) return;
+
+    // Core components with their static arrays
+    const coreComponents = {
+      Transform: Transform,
+      RigidBody: RigidBody,
+      Collider: Collider,
+      SpriteRenderer: SpriteRenderer,
+    };
+
+    // Get registered class info for custom components
+    const entityType = Transform.entityType[entityIndex];
+    const regInfo = this.scene?.registeredClasses?.find(
+      (r) => r.entityType === entityType
+    );
+    const components = regInfo ? regInfo.components : [Transform];
+
+    // Update each component's values
+    for (const ComponentClass of components) {
+      const componentName = ComponentClass.name;
+      const componentRows = rows[componentName];
+      if (!componentRows) continue;
+
+      // Get the static arrays for this component
+      const schema = ComponentClass.ARRAY_SCHEMA;
+      if (!schema) continue;
+
+      // Initialize previous values cache for this component
+      if (!this._prevInspectorValues[componentName]) {
+        this._prevInspectorValues[componentName] = {};
+      }
+      const prevCache = this._prevInspectorValues[componentName];
+
+      for (const propName of Object.keys(componentRows)) {
+        const arr = ComponentClass[propName];
+        if (!arr || arr[entityIndex] === undefined) continue;
+
+        const value = arr[entityIndex];
+
+        // Skip update if value hasn't changed (use rounded comparison for floats)
+        const roundedValue = typeof value === 'number' ? (value * 1000) | 0 : value;
+        if (prevCache[propName] === roundedValue) continue;
+        prevCache[propName] = roundedValue;
+
+        // Format and update DOM
+        const formatted = formatComponentValue(propName, value);
+        componentRows[propName].textContent = formatted;
+      }
     }
   }
 
@@ -1654,30 +2094,34 @@ export class DebugUI {
     if (this.activeSpawnerType === className) {
       this.activeSpawnerType = null;
     } else {
-      // Activate this spawner, deactivate eraser
+      // Activate this spawner, deactivate eraser and inspector
       this.activeSpawnerType = className;
       this.eraserActive = false;
+      this.inspectorActive = false;
     }
     this._updateDebugToolFlag();
     this._updateToolButtonStates();
     this._updateToolIndicator();
+    this._updateInspectorButtonState();
   }
 
   _toggleEraser() {
     this.eraserActive = !this.eraserActive;
     if (this.eraserActive) {
       this.activeSpawnerType = null;
+      this.inspectorActive = false;
     }
     this._updateDebugToolFlag();
     this._updateToolButtonStates();
     this._updateToolIndicator();
+    this._updateInspectorButtonState();
   }
 
   /**
    * Update Mouse.isDebugToolActive flag to block game input when tools are active
    */
   _updateDebugToolFlag() {
-    Mouse.isDebugToolActive = !!(this.activeSpawnerType || this.eraserActive);
+    Mouse.isDebugToolActive = !!(this.activeSpawnerType || this.eraserActive || this.inspectorActive);
   }
 
   _updateToolButtonStates() {
@@ -1714,6 +2158,18 @@ export class DebugUI {
   _setupToolMouseHandlers() {
     this._onToolMouseDown = (e) => {
       if (e.button !== 0) return; // Only track left button
+
+      // Ignore clicks on debug UI elements (header, panels, inspector, etc.)
+      if (this.container?.contains(e.target)) return;
+      if (this.elements.inspectorPanel?.contains(e.target)) return;
+      if (this.elements.toolIndicator?.contains(e.target)) return;
+
+      // Handle inspector click (single click to select)
+      if (this.inspectorActive) {
+        this._selectEntityAtMouse();
+        return;
+      }
+
       if (!this.activeSpawnerType && !this.eraserActive) return;
       this._toolMouseDown = true;
     };
@@ -1836,13 +2292,19 @@ export class DebugUI {
       if (key === "h") {
         this.toggle();
       } else if (key === "escape") {
-        // ESC to deselect all tools
+        // ESC to deselect all tools and clear selection
         this.activeSpawnerType = null;
         this.eraserActive = false;
+        this.inspectorActive = false;
         this._toolMouseDown = false;
+        this._clearSelection();
         this._updateDebugToolFlag();
         this._updateToolButtonStates();
         this._updateToolIndicator();
+        this._updateInspectorButtonState();
+      } else if (key === "i") {
+        // Toggle inspector mode
+        this._toggleInspector();
       } else if (key >= "1" && key <= "7") {
         const keyMap = {
           1: "colliders",

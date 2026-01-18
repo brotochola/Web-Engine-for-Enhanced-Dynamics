@@ -361,6 +361,7 @@ class PixiRenderer extends AbstractWorker {
     // Debug visualization
     this.debugLayer = null; // PIXI.Graphics for debug overlays
     this.debugFlags = null; // Uint8Array view of debug flags from SharedArrayBuffer
+    this.selectedEntityView = null; // Int32Array view for selected entity index
     this.raycastDebugBuffer = null; // Float32Array - raycast visualization data
     this.maxDebugRaycasts = 100; // Maximum raycasts to render
     this.frameCount = 0; // Frame counter for clearing debug raycasts every 3 frames
@@ -373,6 +374,7 @@ class PixiRenderer extends AbstractWorker {
       grid: 0x444444, // Gray
       aabb: 0xff8800, // Orange
       text: 0xffffff, // White
+      selected: 0xffc864, // Golden yellow for selected entity
     };
 
     // Per-instance spritesheet tracking
@@ -709,6 +711,101 @@ class PixiRenderer extends AbstractWorker {
     // Render raycasts (after all entities)
     if (this.debugFlags[DEBUG_FLAGS.SHOW_RAYCASTS]) {
       this.renderRaycasts();
+    }
+
+    // Render selected entity bounding box (always on top)
+    if (this.debugFlags[DEBUG_FLAGS.SHOW_SELECTED_ENTITY] && this.selectedEntityView) {
+      const selectedIdx = this.selectedEntityView[0];
+      if (selectedIdx >= 0 && active[selectedIdx]) {
+        this.renderSelectedEntityBoundingBox(selectedIdx, x[selectedIdx], y[selectedIdx]);
+      }
+    }
+  }
+
+  /**
+   * Render bounding box around selected entity
+   * Uses sprite dimensions from SpriteRenderer
+   * @param {number} entityIndex - Entity index
+   * @param {number} posX - Entity X position
+   * @param {number} posY - Entity Y position
+   */
+  renderSelectedEntityBoundingBox(entityIndex, posX, posY) {
+    const zoom = this.cameraData[0];
+
+    // Get sprite dimensions from SpriteSheetRegistry
+    const spritesheetId = SpriteRenderer.spritesheetId[entityIndex];
+    const animIndex = SpriteRenderer.animationState[entityIndex];
+    const scaleX = SpriteRenderer.scaleX[entityIndex] || 1;
+    const scaleY = SpriteRenderer.scaleY[entityIndex] || 1;
+    const anchorX = SpriteRenderer.anchorX[entityIndex];
+    const anchorY = SpriteRenderer.anchorY[entityIndex];
+
+    // Get frame dimensions from registry
+    const dims = SpriteSheetRegistry.getFrameDimensionsById(spritesheetId, animIndex);
+    if (!dims) return;
+
+    const width = dims.w * Math.abs(scaleX);
+    const height = dims.h * Math.abs(scaleY);
+
+    // Calculate bounding box corners based on anchor
+    const left = posX - width * anchorX;
+    const top = posY - height * anchorY;
+
+    // Draw bounding box with golden color
+    const strokeOptions = {
+      width: 2 / zoom,
+      color: this.debugColors.selected,
+      alpha: 1.0,
+    };
+
+    // Main bounding box
+    this.debugLayer.rect(left, top, width, height);
+    this.debugLayer.stroke(strokeOptions);
+
+    // Corner markers for visibility
+    const cornerSize = 6 / zoom;
+    const corners = [
+      [left, top], // Top-left
+      [left + width, top], // Top-right
+      [left, top + height], // Bottom-left
+      [left + width, top + height], // Bottom-right
+    ];
+
+    for (const [cx, cy] of corners) {
+      this.debugLayer.circle(cx, cy, cornerSize);
+      this.debugLayer.fill({ color: this.debugColors.selected, alpha: 0.8 });
+    }
+
+    // Entity index label above the box
+    const labelY = top - 12 / zoom;
+    const indexStr = String(entityIndex);
+    const digitWidth = 6 / zoom;
+    const digitHeight = 10 / zoom;
+    const labelWidth = indexStr.length * (digitWidth + 2 / zoom);
+    const labelX = posX - labelWidth / 2;
+
+    // Background for label
+    this.debugLayer.roundRect(
+      labelX - 4 / zoom,
+      labelY - 2 / zoom,
+      labelWidth + 8 / zoom,
+      digitHeight + 4 / zoom,
+      3 / zoom
+    );
+    this.debugLayer.fill({ color: this.debugColors.selected, alpha: 0.9 });
+
+    // Draw index digits
+    for (let i = 0; i < indexStr.length; i++) {
+      drawDigit(
+        this.debugLayer,
+        parseInt(indexStr[i]),
+        labelX + i * (digitWidth + 2 / zoom),
+        labelY,
+        digitWidth,
+        digitHeight,
+        1 / zoom,
+        0x000000 // Black text on golden background
+      );
     }
   }
 
@@ -4031,6 +4128,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Initialize debug visualization system
     if (data.buffers.debugData) {
       this.debugFlags = new Uint8Array(data.buffers.debugData);
+      // Create Int32 view for selected entity index at offset 16
+      this.selectedEntityView = new Int32Array(data.buffers.debugData, 16, 1);
       this.debugLayer = new PIXI.Graphics();
       this.debugLayer.zIndex = 10000; // Always on top
       this.pixiApp.stage.addChild(this.debugLayer);
