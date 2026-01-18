@@ -14,6 +14,7 @@ export { FSM } from "./core/FSM.js";
 export { FSMState } from "./core/FSMState.js";
 export { DebugFlags } from "./core/DebugFlags.js";
 export { DebugUI } from "./core/DebugUI.js";
+export { ShapeType } from "./core/ConfigDefaults.js";
 export { Mouse } from "./core/Mouse.js";
 export { Camera } from "./core/Camera.js";
 export { Ray } from "./core/Ray.js";
@@ -112,6 +113,7 @@ import { ShadowCaster } from "./components/ShadowCaster.js";
 import { FlashComponent } from "./components/FlashComponent.js";
 import { Flash } from "./core/Flash.js";
 import { AbstractWorker } from "./workers/AbstractWorker.js";
+import { ShapeType } from "./core/ConfigDefaults.js";
 
 // Create the WEED namespace object (like PIXI)
 const WEED = {
@@ -157,6 +159,10 @@ const WEED = {
 
   // Utils (spread all utility functions)
   ...utils,
+
+  // Enums
+  ShapeType,
+
 
   // Version
   VERSION: "1.0.0",

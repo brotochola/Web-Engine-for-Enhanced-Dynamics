@@ -9,6 +9,7 @@ const {
   LightEmitter,
   rng,
   randomColor,
+  ShapeType,
 } = WEED;
 
 export class House extends GameObject {
@@ -24,7 +25,7 @@ export class House extends GameObject {
     // this.rigidBody.static = 1; // Static body - nothing can move it
     this.setSprite("house" + (Math.random() > 0.5 ? 1 : 2));
 
-    this.collider.shapeType = 1;
+    this.collider.shapeType = ShapeType.Box;
     this.collider.width = 186;
     this.collider.height = 110;
     this.collider.offsetY = -50;

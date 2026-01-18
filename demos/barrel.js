@@ -9,6 +9,7 @@ const {
 
   ShadowCaster,
   RigidBody,
+  ShapeType,
 } = WEED;
 
 export class Barrel extends GameObject {
@@ -25,7 +26,7 @@ export class Barrel extends GameObject {
 
     this.setScale(Math.random() > 0.5 ? 1 : 1);
 
-    this.collider.shapeType = 0;
+    this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 10;
 
     this.collider.visualRange = 50;

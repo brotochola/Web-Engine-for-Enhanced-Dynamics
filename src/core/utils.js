@@ -11,6 +11,36 @@ import { GameObject } from "./gameObject.js";
 // ============================================================================
 
 /**
+ * Format a number with underscore thousand separators
+ * OPTIMIZED: No regex, no allocations for common cases
+ * @param {number} num - Number to format
+ * @param {string} fallback - Fallback string for invalid numbers (default: "--")
+ * @returns {string} Formatted number (e.g., "1_000_000")
+ */
+export function formatNumber(num, fallback = "--") {
+  if (num === null || num === undefined || num !== num) return fallback; // num !== num is faster isNaN check
+  const n = (num + 0.5) | 0; // Fast Math.round for positive numbers
+  if (n < 1000) return String(n);
+  if (n < 10000)
+    return String((n / 1000) | 0) + "_" + String(n % 1000).padStart(3, "0");
+  if (n < 100000)
+    return String((n / 1000) | 0) + "_" + String(n % 1000).padStart(3, "0");
+  if (n < 1000000)
+    return String((n / 1000) | 0) + "_" + String(n % 1000).padStart(3, "0");
+  // For millions+
+  const millions = (n / 1000000) | 0;
+  const thousands = ((n % 1000000) / 1000) | 0;
+  const ones = n % 1000;
+  return (
+    String(millions) +
+    "_" +
+    String(thousands).padStart(3, "0") +
+    "_" +
+    String(ones).padStart(3, "0")
+  );
+}
+
+/**
  * Clamp a value between 0 and 1
  * @param {number} value - The value to clamp
  * @param {number} fallback - Fallback value if input is invalid
@@ -1251,8 +1281,7 @@ export async function loadEntityScripts(
 
   if (verbose) {
     console.log(
-      `✅ ${contextName}: Loaded ${
-        Object.keys(loadedClasses).length
+      `✅ ${contextName}: Loaded ${Object.keys(loadedClasses).length
       } entity classes globally`
     );
   }

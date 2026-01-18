@@ -660,9 +660,9 @@ export class GameObject {
     if (!SpriteSheetRegistry.spritesheets.has(spritesheetName)) {
       console.error(
         `❌ ${this.constructor.name}: Spritesheet "${spritesheetName}" not found. ` +
-          `Available: ${Array.from(
-            SpriteSheetRegistry.spritesheets.keys()
-          ).join(", ")}`
+        `Available: ${Array.from(
+          SpriteSheetRegistry.spritesheets.keys()
+        ).join(", ")}`
       );
       return;
     }
@@ -703,7 +703,7 @@ export class GameObject {
     if (!spritesheetId || spritesheetId === 0) {
       console.error(
         `❌ ${this.constructor.name}: Call setSpritesheet() before setAnimation(). ` +
-          `Or use setSprite() for static sprites.`
+        `Or use setSprite() for static sprites.`
       );
       return;
     }
@@ -739,9 +739,8 @@ export class GameObject {
 
         console.error(
           `❌ ${this.constructor.name}: Animation "${animationName}" not found in "${spritesheet}". ` +
-            `Available: ${availableAnims.slice(0, 10).join(", ")}${
-              availableAnims.length > 10 ? "..." : ""
-            }`
+          `Available: ${availableAnims.slice(0, 10).join(", ")}${availableAnims.length > 10 ? "..." : ""
+          }`
         );
         return;
       }
@@ -787,7 +786,7 @@ export class GameObject {
         // Sprite not found
         console.error(
           `❌ ${this.constructor.name}: Sprite "${spriteName}" not found in bigAtlas. ` +
-            `Make sure it's included in your assets config.`
+          `Make sure it's included in your assets config.`
         );
         return;
       }

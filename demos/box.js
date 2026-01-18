@@ -1,7 +1,7 @@
 import WEED from "/src/index.js";
 
 // Destructure what we need from WEED
-const { GameObject, Keyboard, Mouse, RigidBody, Collider, SpriteRenderer } =
+const { GameObject, Keyboard, Mouse, RigidBody, Collider, SpriteRenderer, ShapeType } =
   WEED;
 
 class Box extends GameObject {
@@ -28,9 +28,9 @@ class Box extends GameObject {
     this.onSpawned();
   }
 
-  onScreenEnter() {}
+  onScreenEnter() { }
 
-  onScreenExit() {}
+  onScreenExit() { }
 
   /**
    * LIFECYCLE: Called when box is spawned/respawned from pool
@@ -62,8 +62,8 @@ class Box extends GameObject {
     const boxWidth = baseSize * scaleX;
     const boxHeight = baseSize * scaleY;
 
-    // Set collider shape type to Box (1)
-    this.collider.shapeType = 1; // 0=Circle, 1=Box
+    // Set collider shape type to Box
+    this.collider.shapeType = ShapeType.Box;
     this.collider.width = boxWidth;
     this.collider.height = boxHeight;
     this.collider.radius = 0; // Not used for boxes, but clear it

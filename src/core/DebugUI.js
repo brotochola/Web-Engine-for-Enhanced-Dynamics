@@ -17,6 +17,7 @@ import {
   createStatsReader,
   createMultiWorkerStatsReaderArray,
 } from "../workers/workers-utils.js";
+import { formatNumber } from "./utils.js";
 
 /**
  * DebugUI - Self-contained debug overlay that pulls data and updates itself
@@ -169,17 +170,17 @@ export class DebugUI {
         : null,
       spatial: buffers.spatialStats
         ? createMultiWorkerStatsReaderArray(
-            buffers.spatialStats,
-            SPATIAL_STATS,
-            spatialWorkerCount
-          )
+          buffers.spatialStats,
+          SPATIAL_STATS,
+          spatialWorkerCount
+        )
         : [],
       logic: buffers.logicStats
         ? createMultiWorkerStatsReaderArray(
-            buffers.logicStats,
-            LOGIC_STATS,
-            logicWorkerCount
-          )
+          buffers.logicStats,
+          LOGIC_STATS,
+          logicWorkerCount
+        )
         : [],
     };
 
@@ -330,35 +331,6 @@ export class DebugUI {
   }
 
   /**
-   * Format a number with underscore thousand separators
-   * OPTIMIZED: No regex, no allocations for common cases
-   * @param {number} num - Number to format
-   * @returns {string} Formatted number (e.g., "1_000_000")
-   */
-  _formatNumber(num) {
-    if (num === null || num === undefined || num !== num) return "--"; // num !== num is faster isNaN check
-    const n = (num + 0.5) | 0; // Fast Math.round for positive numbers
-    if (n < 1000) return String(n);
-    if (n < 10000)
-      return String((n / 1000) | 0) + "_" + String(n % 1000).padStart(3, "0");
-    if (n < 100000)
-      return String((n / 1000) | 0) + "_" + String(n % 1000).padStart(3, "0");
-    if (n < 1000000)
-      return String((n / 1000) | 0) + "_" + String(n % 1000).padStart(3, "0");
-    // For millions+
-    const millions = (n / 1000000) | 0;
-    const thousands = ((n % 1000000) / 1000) | 0;
-    const ones = n % 1000;
-    return (
-      String(millions) +
-      "_" +
-      String(thousands).padStart(3, "0") +
-      "_" +
-      String(ones).padStart(3, "0")
-    );
-  }
-
-  /**
    * Detach from scene (called by GameEngine before scene unloads)
    */
   detach() {
@@ -501,11 +473,11 @@ export class DebugUI {
         pv.visibleGO = visibleGO;
         this.elements.perfGameObjects.textContent =
           "GameObjects: " +
-          this._formatNumber(activeGO) +
+          formatNumber(activeGO) +
           " / " +
-          this._formatNumber(totalGO) +
+          formatNumber(totalGO) +
           " (👁 " +
-          this._formatNumber(visibleGO) +
+          formatNumber(visibleGO) +
           ")";
       }
     }
@@ -528,11 +500,11 @@ export class DebugUI {
         pv.visibleP = visibleP;
         this.elements.perfParticles.textContent =
           "Particles: " +
-          this._formatNumber(activeP) +
+          formatNumber(activeP) +
           " / " +
-          this._formatNumber(totalP) +
+          formatNumber(totalP) +
           " (👁 " +
-          this._formatNumber(visibleP) +
+          formatNumber(visibleP) +
           ")";
       }
     }
@@ -555,11 +527,11 @@ export class DebugUI {
         pv.visibleD = visibleD;
         this.elements.perfDecorations.textContent =
           "Decorations: " +
-          this._formatNumber(activeD) +
+          formatNumber(activeD) +
           " / " +
-          this._formatNumber(totalD) +
+          formatNumber(totalD) +
           " (👁 " +
-          this._formatNumber(visibleD) +
+          formatNumber(visibleD) +
           ")";
       }
     }
@@ -572,7 +544,7 @@ export class DebugUI {
       if (flashesUpdated !== pv.flashUpdated) {
         pv.flashUpdated = flashesUpdated;
         this.elements.perfFlash.textContent =
-          "Flash: " + this._formatNumber(flashesUpdated) + " updated";
+          "Flash: " + formatNumber(flashesUpdated) + " updated";
       }
     }
   }
@@ -699,9 +671,9 @@ export class DebugUI {
         pv.totalEntities = total;
         this.elements.activeCount.textContent =
           "Active: " +
-          this._formatNumber(active) +
+          formatNumber(active) +
           "/" +
-          this._formatNumber(total);
+          formatNumber(total);
       }
     }
 
@@ -715,7 +687,7 @@ export class DebugUI {
       if (visible !== pv.visibleEntities) {
         pv.visibleEntities = visible;
         this.elements.visibleCount.textContent =
-          "Visible: " + this._formatNumber(visible);
+          "Visible: " + formatNumber(visible);
       }
     }
 
@@ -735,9 +707,9 @@ export class DebugUI {
             this._poolStatsBuffer +=
               reg.class.name +
               ": " +
-              this._formatNumber(stats.active) +
+              formatNumber(stats.active) +
               "/" +
-              this._formatNumber(stats.total);
+              formatNumber(stats.total);
           }
         }
       }
@@ -766,7 +738,7 @@ export class DebugUI {
       if (total !== pv.decorationTotal) {
         pv.decorationTotal = total;
         this.elements.decorationTotal.textContent =
-          "Total: " + this._formatNumber(total);
+          "Total: " + formatNumber(total);
       }
     }
 
@@ -776,7 +748,7 @@ export class DebugUI {
       if (active !== pv.decorationActive) {
         pv.decorationActive = active;
         this.elements.decorationActive.textContent =
-          "Active: " + this._formatNumber(active);
+          "Active: " + formatNumber(active);
       }
     }
 
@@ -787,7 +759,7 @@ export class DebugUI {
       if (visible !== pv.decorationVisible) {
         pv.decorationVisible = visible;
         this.elements.decorationVisible.textContent =
-          "Visible: " + this._formatNumber(visible);
+          "Visible: " + formatNumber(visible);
       }
     }
 
@@ -798,7 +770,7 @@ export class DebugUI {
       if (spriteCount !== pv.decorationSprites) {
         pv.decorationSprites = spriteCount;
         this.elements.decorationSprites.textContent =
-          "Sprites: " + this._formatNumber(spriteCount);
+          "Sprites: " + formatNumber(spriteCount);
       }
     }
   }
@@ -839,10 +811,10 @@ export class DebugUI {
     if (method && this.debugFlags[method]) {
       const currentState = this.debugFlags.isEnabled(
         DEBUG_FLAGS[
-          `SHOW_${key
-            .toUpperCase()
-            .replace("GRID", "_GRID")
-            .replace("INDICES", "_INDICES")}`
+        `SHOW_${key
+          .toUpperCase()
+          .replace("GRID", "_GRID")
+          .replace("INDICES", "_INDICES")}`
         ]
       );
       this.debugFlags[method](!currentState);

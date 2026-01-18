@@ -10,6 +10,7 @@ const {
   rng,
   randomColor,
   ShadowCaster,
+  ShapeType,
 } = WEED;
 
 export class Rock extends GameObject {
@@ -23,7 +24,7 @@ export class Rock extends GameObject {
     this.scale = Math.random() * 0.5 + 1;
     this.setScale(Math.random() > 0.5 ? this.scale : -this.scale, this.scale);
 
-    this.collider.shapeType = 0;
+    this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 22 * this.scale;
     this.collider.offsetY = -this.collider.radius;
 

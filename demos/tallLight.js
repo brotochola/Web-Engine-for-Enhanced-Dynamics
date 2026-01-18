@@ -1,7 +1,7 @@
 import WEED from "/src/index.js";
 
 // Destructure what we need from WEED
-const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor } =
+const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, ShapeType } =
   WEED;
 
 export class TallLight extends GameObject {
@@ -31,8 +31,8 @@ export class TallLight extends GameObject {
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 1; // TallLights show the glowing sprite
 
-    // Circle collider (shapeType = 0)
-    this.collider.shapeType = 0;
+    // Circle collider
+    this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 17;
     this.collider.visualRange = 300;
   }
