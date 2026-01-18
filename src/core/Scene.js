@@ -42,6 +42,7 @@ import {
   NAVIGATION_DEFAULTS,
 } from "./ConfigDefaults.js";
 import { NavGrid } from "./NavGrid.js";
+import { Grid } from "./Grid.js";
 import {
   RENDERER_STATS,
   PARTICLE_STATS,
@@ -1051,6 +1052,32 @@ class Scene {
       totalCells,
       maxEntitiesPerCell,
     };
+
+    // Initialize Grid on main thread for DebugUI visualization
+    // This allows DebugUI to read neighbor data and render debug overlays
+    Grid.initialize(
+      {
+        gridEntitiesA: this.buffers.gridEntitiesA,
+        gridEntitiesB: this.buffers.gridEntitiesB,
+        gridCountsA: this.buffers.gridCountsA,
+        gridCountsB: this.buffers.gridCountsB,
+        gridSyncData: this.buffers.gridSyncData,
+        neighborDataA: this.buffers.neighborDataA,
+        neighborDataB: this.buffers.neighborDataB,
+        distanceDataA: this.buffers.distanceDataA,
+        distanceDataB: this.buffers.distanceDataB,
+        neighborSyncData: this.buffers.neighborSyncData,
+      },
+      {
+        cellSize,
+        invCellSize: 1 / cellSize,
+        gridCols,
+        gridRows,
+        totalCells,
+        maxEntitiesPerCell,
+        maxNeighbors,
+      }
+    );
 
     console.log(
       `[Scene] Spatial grid: ${gridCols}x${gridRows} cells (${totalCells} total), ${cellSize}px cell size (shared, built by particle_worker)`

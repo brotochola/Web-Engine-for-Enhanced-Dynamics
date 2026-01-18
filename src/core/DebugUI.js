@@ -29,6 +29,7 @@ import {
 } from "./utils.js";
 import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from "./ConfigDefaults.js";
 import { NavGrid, DIR_TO_VEC } from "./NavGrid.js";
+import { Grid } from "./Grid.js";
 
 /**
  * DebugUI - Self-contained debug overlay that pulls data and updates itself
@@ -73,9 +74,12 @@ export class DebugUI {
     this._selectedFlowfieldSlot = -1; // Currently selected flowfield for visualization
     this._selectedPathSlot = -1; // Currently selected path for visualization
     this._showWalkabilityGrid = false; // Show walkable/blocked cells
-    this._navVisualizationCanvas = null; // Canvas overlay for nav visualization
-    this._navVisualizationCtx = null;
-    this._navRafId = null; // Separate RAF loop for smooth nav rendering
+
+    // Unified debug canvas (replaces _navVisualizationCanvas)
+    // Renders all debug overlays: colliders, velocity, neighbors, raycasts, nav, etc.
+    this._debugCanvas = null;
+    this._debugCtx = null;
+    this._debugRafId = null; // RAF loop for smooth debug rendering
 
     // Worker stat views (created when scene attaches)
     this.workerStatViews = null;
@@ -372,8 +376,8 @@ export class DebugUI {
    */
   detach() {
     this.stop();
-    this._stopNavVisualizationLoop();
-    this._clearNavCanvas();
+    this._stopDebugVisualizationLoop();
+    this._clearDebugCanvas();
     this.activeSpawnerType = null;
     this.eraserActive = false;
     this._toolMouseDown = false;
@@ -440,30 +444,31 @@ export class DebugUI {
   }
 
   /**
-   * Start the nav visualization RAF loop (runs at 60fps for smooth camera tracking)
+   * Start the debug visualization RAF loop (runs at 60fps for smooth camera tracking)
+   * Handles all debug overlays: colliders, velocity, neighbors, raycasts, nav, etc.
    */
-  _startNavVisualizationLoop() {
-    if (this._navRafId) return; // Already running
+  _startDebugVisualizationLoop() {
+    if (this._debugRafId) return; // Already running
 
     const loop = () => {
-      if (this._hasActiveNavVisualization()) {
-        this._renderNavVisualization();
-        this._navRafId = requestAnimationFrame(loop);
+      if (this._hasActiveDebugVisualization()) {
+        this._renderDebugVisualization();
+        this._debugRafId = requestAnimationFrame(loop);
       } else {
-        this._navRafId = null;
+        this._debugRafId = null;
       }
     };
 
-    this._navRafId = requestAnimationFrame(loop);
+    this._debugRafId = requestAnimationFrame(loop);
   }
 
   /**
-   * Stop the nav visualization RAF loop
+   * Stop the debug visualization RAF loop
    */
-  _stopNavVisualizationLoop() {
-    if (this._navRafId) {
-      cancelAnimationFrame(this._navRafId);
-      this._navRafId = null;
+  _stopDebugVisualizationLoop() {
+    if (this._debugRafId) {
+      cancelAnimationFrame(this._debugRafId);
+      this._debugRafId = null;
     }
   }
 
@@ -888,6 +893,14 @@ export class DebugUI {
       );
       this.debugFlags[method](!currentState);
       this._updateVisualAidsState();
+
+      // Start or stop debug visualization loop based on active state
+      if (this._hasActiveDebugVisualization()) {
+        this._startDebugVisualizationLoop();
+      } else {
+        this._stopDebugVisualizationLoop();
+        this._clearDebugCanvas();
+      }
     }
   }
 
@@ -1669,11 +1682,11 @@ export class DebugUI {
       walkabilityBtn.textContent = this._showWalkabilityGrid ? "🗺️ Hide Grid" : "🗺️ Show Grid";
 
       // Start/stop RAF loop based on active visualization
-      if (this._hasActiveNavVisualization()) {
-        this._startNavVisualizationLoop();
+      if (this._hasActiveDebugVisualization()) {
+        this._startDebugVisualizationLoop();
       } else {
-        this._stopNavVisualizationLoop();
-        this._clearNavCanvas();
+        this._stopDebugVisualizationLoop();
+        this._clearDebugCanvas();
       }
     };
     controlsRow.appendChild(walkabilityBtn);
@@ -1802,11 +1815,11 @@ export class DebugUI {
     }
 
     // Start/stop RAF loop based on active visualization
-    if (this._hasActiveNavVisualization()) {
-      this._startNavVisualizationLoop();
+    if (this._hasActiveDebugVisualization()) {
+      this._startDebugVisualizationLoop();
     } else {
-      this._stopNavVisualizationLoop();
-      this._clearNavCanvas();
+      this._stopDebugVisualizationLoop();
+      this._clearDebugCanvas();
     }
 
     // Refresh lists to update selection state
@@ -1825,23 +1838,23 @@ export class DebugUI {
     }
 
     // Start/stop RAF loop based on active visualization
-    if (this._hasActiveNavVisualization()) {
-      this._startNavVisualizationLoop();
+    if (this._hasActiveDebugVisualization()) {
+      this._startDebugVisualizationLoop();
     } else {
-      this._stopNavVisualizationLoop();
-      this._clearNavCanvas();
+      this._stopDebugVisualizationLoop();
+      this._clearDebugCanvas();
     }
 
     // Refresh lists to update selection state
     this._refreshNavigationLists();
   }
 
-  _ensureNavCanvas() {
-    if (this._navVisualizationCanvas) return;
+  _ensureDebugCanvas() {
+    if (this._debugCanvas) return;
 
-    // Create canvas overlay for navigation visualization
+    // Create canvas overlay for all debug visualizations
     const canvas = document.createElement("canvas");
-    canvas.id = "nav-visualization-canvas";
+    canvas.id = "debug-visualization-canvas";
     canvas.style.cssText = `
       position: fixed;
       top: 0;
@@ -1857,18 +1870,17 @@ export class DebugUI {
     canvas.height = window.innerHeight;
 
     document.body.appendChild(canvas);
-    this._navVisualizationCanvas = canvas;
-    this._navVisualizationCtx = canvas.getContext("2d");
+    this._debugCanvas = canvas;
+    this._debugCtx = canvas.getContext("2d");
 
     // Handle resize
-    window.addEventListener("resize", () => {
-      if (this._navVisualizationCanvas) {
-        this._navVisualizationCanvas.width = window.innerWidth;
-        this._navVisualizationCanvas.height = window.innerHeight;
-        // Re-render current visualization
-        this._renderNavVisualization();
+    this._resizeHandler = () => {
+      if (this._debugCanvas) {
+        this._debugCanvas.width = window.innerWidth;
+        this._debugCanvas.height = window.innerHeight;
       }
-    });
+    };
+    window.addEventListener("resize", this._resizeHandler);
   }
 
   _clearNavVisualization() {
@@ -1876,31 +1888,31 @@ export class DebugUI {
     this._selectedPathSlot = -1;
     this._showWalkabilityGrid = false;
 
-    // Stop the RAF loop
-    this._stopNavVisualizationLoop();
-
     // Reset walkability button state
     if (this.elements.navWalkabilityBtn) {
       this.elements.navWalkabilityBtn.classList.remove("active");
       this.elements.navWalkabilityBtn.textContent = "🗺️ Show Grid";
     }
 
-    // Clear the canvas
-    this._clearNavCanvas();
-
     // Refresh lists to clear selection state
     this._refreshNavigationLists();
+
+    // Check if we should stop the debug loop (if no other debug flags active)
+    if (!this._hasActiveDebugVisualization()) {
+      this._stopDebugVisualizationLoop();
+      this._clearDebugCanvas();
+    }
   }
 
   /**
-   * Clear the nav visualization canvas
+   * Clear the debug visualization canvas
    */
-  _clearNavCanvas() {
-    if (this._navVisualizationCtx && this._navVisualizationCanvas) {
-      this._navVisualizationCtx.clearRect(
+  _clearDebugCanvas() {
+    if (this._debugCtx && this._debugCanvas) {
+      this._debugCtx.clearRect(
         0, 0,
-        this._navVisualizationCanvas.width,
-        this._navVisualizationCanvas.height
+        this._debugCanvas.width,
+        this._debugCanvas.height
       );
     }
   }
@@ -1915,27 +1927,49 @@ export class DebugUI {
   }
 
   /**
-   * Unified render method - renders in correct order:
-   * 1. Walkability grid (bottom)
-   * 2. Flowfield arrows
-   * 3. Path lines (top)
+   * Check if any debug visualization is active (nav + entity debug overlays)
    */
-  _renderNavVisualization() {
-    if (!this._hasActiveNavVisualization()) {
-      // Clear canvas if nothing to show
-      if (this._navVisualizationCtx && this._navVisualizationCanvas) {
-        this._navVisualizationCtx.clearRect(
-          0, 0,
-          this._navVisualizationCanvas.width,
-          this._navVisualizationCanvas.height
-        );
-      }
+  _hasActiveDebugVisualization() {
+    // Check nav visualizations
+    if (this._hasActiveNavVisualization()) return true;
+
+    // Check entity debug flags
+    if (!this.debugFlags) return false;
+
+    return (
+      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_COLLIDERS) ||
+      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_VELOCITY) ||
+      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_ACCELERATION) ||
+      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INDICES) ||
+      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_NEIGHBORS) ||
+      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SPATIAL_GRID) ||
+      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_RAYCASTS) ||
+      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SELECTED_ENTITY)
+    );
+  }
+
+  /**
+   * Unified render method - renders all debug overlays in correct order:
+   * 1. Spatial grid (bottom)
+   * 2. Nav walkability grid
+   * 3. Flowfield arrows
+   * 4. Path lines
+   * 5. Colliders
+   * 6. Velocity/acceleration vectors
+   * 7. Neighbor connections
+   * 8. Raycasts
+   * 9. Entity indices
+   * 10. Selected entity (top)
+   */
+  _renderDebugVisualization() {
+    if (!this._hasActiveDebugVisualization()) {
+      this._clearDebugCanvas();
       return;
     }
 
-    this._ensureNavCanvas();
-    const ctx = this._navVisualizationCtx;
-    const canvas = this._navVisualizationCanvas;
+    this._ensureDebugCanvas();
+    const ctx = this._debugCtx;
+    const canvas = this._debugCanvas;
 
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1944,19 +1978,61 @@ export class DebugUI {
     const camera = this.scene?.camera || { x: 0, y: 0 };
     const zoom = this.scene?.camera?.zoom || 1;
 
-    // 1. Draw walkability grid first (bottom layer)
+    const flags = this.debugFlags;
+
+    // 1. Draw spatial grid first (bottom layer)
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SPATIAL_GRID)) {
+      this._drawSpatialGrid(ctx, canvas, camera, zoom);
+    }
+
+    // 2. Draw nav walkability grid
     if (this._showWalkabilityGrid) {
       this._drawWalkabilityGrid(ctx, canvas, camera, zoom);
     }
 
-    // 2. Draw flowfield arrows
+    // 3. Draw flowfield arrows
     if (this._selectedFlowfieldSlot >= 0) {
       this._drawFlowfield(ctx, canvas, camera, zoom, this._selectedFlowfieldSlot);
     }
 
-    // 3. Draw path (top layer)
+    // 4. Draw path
     if (this._selectedPathSlot >= 0) {
       this._drawPath(ctx, canvas, camera, zoom, this._selectedPathSlot);
+    }
+
+    // 5. Draw colliders
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_COLLIDERS)) {
+      this._drawColliders(ctx, canvas, camera, zoom);
+    }
+
+    // 6. Draw velocity vectors
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_VELOCITY)) {
+      this._drawVelocityVectors(ctx, canvas, camera, zoom);
+    }
+
+    // 7. Draw acceleration vectors
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_ACCELERATION)) {
+      this._drawAccelerationVectors(ctx, canvas, camera, zoom);
+    }
+
+    // 8. Draw neighbor connections
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_NEIGHBORS)) {
+      this._drawNeighborConnections(ctx, canvas, camera, zoom);
+    }
+
+    // 9. Draw raycasts
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_RAYCASTS)) {
+      this._drawRaycasts(ctx, canvas, camera, zoom);
+    }
+
+    // 10. Draw entity indices
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INDICES)) {
+      this._drawEntityIndices(ctx, canvas, camera, zoom);
+    }
+
+    // 11. Draw selected entity bounding box (always on top)
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SELECTED_ENTITY)) {
+      this._drawSelectedEntity(ctx, canvas, camera, zoom);
     }
   }
 
@@ -2162,6 +2238,540 @@ export class DebugUI {
       ctx.lineWidth = 1;
       ctx.stroke();
     }
+  }
+
+  // ========================================
+  // ENTITY DEBUG DRAWING METHODS
+  // ========================================
+
+  /**
+   * Draw spatial grid lines
+   * Shows the grid cells used for spatial partitioning
+   */
+  _drawSpatialGrid(ctx, canvas, camera, zoom) {
+    if (!Grid.cellSize) return;
+
+    const cellSize = Grid.cellSize;
+    const gridCols = Grid.gridCols;
+    const gridRows = Grid.gridRows;
+    const worldWidth = gridCols * cellSize;
+    const worldHeight = gridRows * cellSize;
+
+    // Calculate visible cell range
+    const startCellX = Math.max(0, Math.floor(camera.x / cellSize));
+    const startCellY = Math.max(0, Math.floor(camera.y / cellSize));
+    const endCellX = Math.min(gridCols, Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1);
+    const endCellY = Math.min(gridRows, Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1);
+
+    // Calculate world bounds for visible area
+    const worldStartX = startCellX * cellSize;
+    const worldStartY = startCellY * cellSize;
+    const worldEndX = Math.min(endCellX * cellSize, worldWidth);
+    const worldEndY = Math.min(endCellY * cellSize, worldHeight);
+
+    ctx.strokeStyle = "rgba(255, 255, 0, 0.2)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+
+    // Vertical lines
+    for (let x = startCellX; x <= endCellX; x++) {
+      const sx = (x * cellSize - camera.x) * zoom;
+      const sy1 = (worldStartY - camera.y) * zoom;
+      const sy2 = (worldEndY - camera.y) * zoom;
+      ctx.moveTo(sx, sy1);
+      ctx.lineTo(sx, sy2);
+    }
+
+    // Horizontal lines
+    for (let y = startCellY; y <= endCellY; y++) {
+      const sy = (y * cellSize - camera.y) * zoom;
+      const sx1 = (worldStartX - camera.x) * zoom;
+      const sx2 = (worldEndX - camera.x) * zoom;
+      ctx.moveTo(sx1, sy);
+      ctx.lineTo(sx2, sy);
+    }
+
+    ctx.stroke();
+  }
+
+  /**
+   * Draw colliders for all active entities on screen
+   * Circles = green, Boxes = green, Triggers = yellow
+   */
+  _drawColliders(ctx, canvas, camera, zoom) {
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
+    const isOnScreen = SpriteRenderer.isItOnScreen;
+
+    const shapeType = Collider.shapeType;
+    const isTrigger = Collider.isTrigger;
+    const radius = Collider.radius;
+    const width = Collider.width;
+    const height = Collider.height;
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
+
+    ctx.lineWidth = 2 //* zoom;
+
+    for (let i = 0; i < Transform.active.length; i++) {
+      if (!active[i] || !isOnScreen[i]) continue;
+
+      const posX = x[i] + (offsetX?.[i] || 0);
+      const posY = y[i] + (offsetY?.[i] || 0);
+
+      // Transform to screen coords
+      const sx = (posX - camera.x) * zoom;
+      const sy = (posY - camera.y) * zoom;
+
+      // Choose color based on trigger status
+      ctx.strokeStyle = isTrigger[i] ? "rgba(255, 255, 0, 0.8)" : "rgba(0, 255, 0, 0.8)";
+
+      if (shapeType[i] === 0) {
+        // Circle shape
+        const r = radius[i];
+        if (r === 0) continue;
+
+        ctx.beginPath();
+        ctx.arc(sx, sy, r * zoom, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (shapeType[i] === 1) {
+        // Box shape
+        const w = width[i];
+        const h = height[i];
+        if (w === 0 || h === 0) continue;
+
+        const halfW = (w / 2) * zoom;
+        const halfH = (h / 2) * zoom;
+        ctx.strokeRect(sx - halfW, sy - halfH, w * zoom, h * zoom);
+      }
+    }
+  }
+
+  /**
+   * Draw velocity vectors for all active entities
+   * Blue arrows showing direction and magnitude of movement
+   */
+  _drawVelocityVectors(ctx, canvas, camera, zoom) {
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
+    const isOnScreen = SpriteRenderer.isItOnScreen;
+
+    const vx = RigidBody.vx;
+    const vy = RigidBody.vy;
+
+    ctx.strokeStyle = "rgba(0, 136, 255, 0.9)";
+    ctx.lineWidth = 2 / zoom;
+
+    const scale = 10; // Scale factor for visualization
+
+    for (let i = 0; i < Transform.active.length; i++) {
+      if (!active[i] || !isOnScreen[i]) continue;
+
+      const velX = vx[i];
+      const velY = vy[i];
+
+      // Skip if velocity is too small
+      if (Math.abs(velX) < 0.01 && Math.abs(velY) < 0.01) continue;
+
+      const posX = x[i];
+      const posY = y[i];
+
+      // Transform to screen coords
+      const sx = (posX - camera.x) * zoom;
+      const sy = (posY - camera.y) * zoom;
+      const endX = sx + velX * scale * zoom;
+      const endY = sy + velY * scale * zoom;
+
+      // Draw line
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+
+      // Draw arrowhead
+      const angle = Math.atan2(velY, velX);
+      const arrowSize = 5 * zoom;
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(
+        endX - arrowSize * Math.cos(angle - Math.PI / 6),
+        endY - arrowSize * Math.sin(angle - Math.PI / 6)
+      );
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(
+        endX - arrowSize * Math.cos(angle + Math.PI / 6),
+        endY - arrowSize * Math.sin(angle + Math.PI / 6)
+      );
+      ctx.stroke();
+    }
+  }
+
+  /**
+   * Draw acceleration vectors for all active entities
+   * Red arrows showing direction and magnitude of acceleration
+   */
+  _drawAccelerationVectors(ctx, canvas, camera, zoom) {
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
+    const isOnScreen = SpriteRenderer.isItOnScreen;
+
+    const ax = RigidBody.ax;
+    const ay = RigidBody.ay;
+
+    ctx.strokeStyle = "rgba(255, 0, 68, 0.9)";
+    ctx.lineWidth = 2 / zoom;
+
+    const scale = 50; // Scale factor for visualization (acceleration is smaller)
+
+    for (let i = 0; i < Transform.active.length; i++) {
+      if (!active[i] || !isOnScreen[i]) continue;
+
+      const accX = ax[i];
+      const accY = ay[i];
+
+      // Skip if acceleration is too small
+      if (Math.abs(accX) < 0.01 && Math.abs(accY) < 0.01) continue;
+
+      const posX = x[i];
+      const posY = y[i];
+
+      // Transform to screen coords
+      const sx = (posX - camera.x) * zoom;
+      const sy = (posY - camera.y) * zoom;
+      const endX = sx + accX * scale * zoom;
+      const endY = sy + accY * scale * zoom;
+
+      // Draw line
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+
+      // Draw arrowhead
+      const angle = Math.atan2(accY, accX);
+      const arrowSize = 5 * zoom;
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(
+        endX - arrowSize * Math.cos(angle - Math.PI / 6),
+        endY - arrowSize * Math.sin(angle - Math.PI / 6)
+      );
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(
+        endX - arrowSize * Math.cos(angle + Math.PI / 6),
+        endY - arrowSize * Math.sin(angle + Math.PI / 6)
+      );
+      ctx.stroke();
+    }
+  }
+
+  /**
+   * Draw neighbor connections for entity closest to mouse
+   * Cyan lines connecting entity to its spatial neighbors
+   */
+  _drawNeighborConnections(ctx, canvas, camera, zoom) {
+    if (!Grid.neighborData) return;
+
+    // Get mouse position from Mouse static class
+    const mouseX = Mouse.x;
+    const mouseY = Mouse.y;
+    const mousePresent = Mouse.isPresent;
+
+    if (!mousePresent) return;
+
+    const neighborData = Grid.neighborData;
+    const stride = Grid._stride;
+
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
+
+    // Mouse is always at entity index 0
+    // Get the Mouse's neighbors to find the closest entity to the mouse
+    const mouseOffset = 0;
+    const mouseNeighborCount = neighborData[mouseOffset];
+
+    // Find the entity closest to the mouse from its neighbor list
+    let closestEntity = -1;
+    let closestDist2 = Infinity;
+
+    for (let n = 0; n < mouseNeighborCount; n++) {
+      const neighborIndex = neighborData[mouseOffset + 1 + n];
+      if (!active[neighborIndex]) continue;
+
+      const dx = x[neighborIndex] - mouseX;
+      const dy = y[neighborIndex] - mouseY;
+      const dist2 = dx * dx + dy * dy;
+
+      if (dist2 < closestDist2) {
+        closestDist2 = dist2;
+        closestEntity = neighborIndex;
+      }
+    }
+
+    if (closestEntity === -1) return;
+
+    const myX = x[closestEntity];
+    const myY = y[closestEntity];
+
+    // Transform to screen coords
+    const mySx = (myX - camera.x) * zoom;
+    const mySy = (myY - camera.y) * zoom;
+
+    // Highlight the selected entity with a bright ring
+    const highlightRadius = (Collider.radius[closestEntity] * 1.5 || 10) * zoom;
+    ctx.strokeStyle = "rgba(255, 255, 0, 1.0)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(mySx, mySy, highlightRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Draw neighbor connections
+    const offset = closestEntity * stride;
+    const neighborCount = neighborData[offset];
+
+    ctx.strokeStyle = "rgba(0, 255, 255, 0.7)";
+    ctx.lineWidth = 2;
+
+    for (let n = 0; n < neighborCount; n++) {
+      const neighborIndex = neighborData[offset + 1 + n];
+      if (!active[neighborIndex]) continue;
+
+      const neighborX = x[neighborIndex];
+      const neighborY = y[neighborIndex];
+
+      const neighborSx = (neighborX - camera.x) * zoom;
+      const neighborSy = (neighborY - camera.y) * zoom;
+
+      // Draw line
+      ctx.beginPath();
+      ctx.moveTo(mySx, mySy);
+      ctx.lineTo(neighborSx, neighborSy);
+      ctx.stroke();
+
+      // Draw small circle on neighbor
+      ctx.fillStyle = "rgba(0, 255, 255, 0.5)";
+      ctx.beginPath();
+      ctx.arc(neighborSx, neighborSy, 3 * zoom, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Draw entity info marker
+    ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+    ctx.beginPath();
+    ctx.arc(mySx, mySy - 20, 4 * zoom, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /**
+   * Draw raycasts from debug buffer
+   * Green = hit, Yellow/Orange = miss
+   */
+  _drawRaycasts(ctx, canvas, camera, zoom) {
+    const raycastBuffer = this.scene?.buffers?.raycastDebugData;
+    if (!raycastBuffer) return;
+
+    const raycastView = new Float32Array(raycastBuffer);
+    const count = Math.min(raycastView[0], this.scene?.maxDebugRaycasts || 100);
+
+    if (count === 0) return;
+
+    for (let i = 0; i < count; i++) {
+      const offset = 1 + i * 7;
+      const startX = raycastView[offset];
+      const startY = raycastView[offset + 1];
+      const endX = raycastView[offset + 2];
+      const endY = raycastView[offset + 3];
+      const hitX = raycastView[offset + 4];
+      const hitY = raycastView[offset + 5];
+      const didHit = raycastView[offset + 6] === 1;
+
+      // Transform to screen coords
+      const sStartX = (startX - camera.x) * zoom;
+      const sStartY = (startY - camera.y) * zoom;
+      const sEndX = (endX - camera.x) * zoom;
+      const sEndY = (endY - camera.y) * zoom;
+      const sHitX = (hitX - camera.x) * zoom;
+      const sHitY = (hitY - camera.y) * zoom;
+
+      if (didHit) {
+        // Hit: Draw line to hit point in green
+        ctx.strokeStyle = "rgba(0, 255, 0, 0.8)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(sStartX, sStartY);
+        ctx.lineTo(sHitX, sHitY);
+        ctx.stroke();
+
+        // Draw dashed line from hit to end in red
+        ctx.strokeStyle = "rgba(255, 0, 0, 0.4)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(sHitX, sHitY);
+        ctx.lineTo(sEndX, sEndY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Draw hit point circle
+        ctx.fillStyle = "rgba(255, 0, 0, 1.0)";
+        ctx.beginPath();
+        ctx.arc(sHitX, sHitY, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw impact cross
+        ctx.strokeStyle = "rgba(255, 255, 255, 1.0)";
+        ctx.lineWidth = 2;
+        const crossSize = 8;
+        ctx.beginPath();
+        ctx.moveTo(sHitX - crossSize, sHitY);
+        ctx.lineTo(sHitX + crossSize, sHitY);
+        ctx.moveTo(sHitX, sHitY - crossSize);
+        ctx.lineTo(sHitX, sHitY + crossSize);
+        ctx.stroke();
+      } else {
+        // Miss: Draw full line in yellow/orange
+        ctx.strokeStyle = "rgba(255, 170, 0, 0.5)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(sStartX, sStartY);
+        ctx.lineTo(sEndX, sEndY);
+        ctx.stroke();
+      }
+
+      // Draw start point
+      ctx.fillStyle = "rgba(0, 255, 255, 0.8)";
+      ctx.beginPath();
+      ctx.arc(sStartX, sStartY, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  /**
+   * Draw entity indices above each entity
+   * White text on dark background
+   */
+  _drawEntityIndices(ctx, canvas, camera, zoom) {
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
+    const isOnScreen = SpriteRenderer.isItOnScreen;
+
+    ctx.font = `${Math.max(10, 12 / zoom)}px monospace`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+
+    for (let i = 0; i < Transform.active.length; i++) {
+      if (!active[i] || !isOnScreen[i]) continue;
+
+      const posX = x[i];
+      const posY = y[i];
+
+      // Transform to screen coords
+      const sx = (posX - camera.x) * zoom;
+      const sy = (posY - camera.y) * zoom - 15;
+
+      const text = String(i);
+      const metrics = ctx.measureText(text);
+      const padding = 2;
+
+      // Draw background
+      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      ctx.fillRect(
+        sx - metrics.width / 2 - padding,
+        sy - 12,
+        metrics.width + padding * 2,
+        14
+      );
+
+      // Draw text
+      ctx.fillStyle = "rgba(255, 255, 255, 1.0)";
+      ctx.fillText(text, sx, sy);
+    }
+  }
+
+  /**
+   * Draw bounding box around selected entity
+   * Golden yellow box with corner markers
+   */
+  _drawSelectedEntity(ctx, canvas, camera, zoom) {
+    const selectedIdx = this.debugFlags?.getSelectedEntity?.() ?? -1;
+    if (selectedIdx < 0 || !Transform.active[selectedIdx]) return;
+
+    const posX = Transform.x[selectedIdx];
+    const posY = Transform.y[selectedIdx];
+
+    // Get sprite dimensions from Collider (approximation)
+    const radius = Collider.radius[selectedIdx];
+    const width = Collider.width[selectedIdx] || radius * 2 || 20;
+    const height = Collider.height[selectedIdx] || radius * 2 || 20;
+
+    const scaleX = SpriteRenderer.scaleX?.[selectedIdx] || 1;
+    const scaleY = SpriteRenderer.scaleY?.[selectedIdx] || 1;
+    const anchorX = SpriteRenderer.anchorX?.[selectedIdx] || 0.5;
+    const anchorY = SpriteRenderer.anchorY?.[selectedIdx] || 0.5;
+
+    const w = width * Math.abs(scaleX);
+    const h = height * Math.abs(scaleY);
+
+    // Calculate bounding box corners
+    const left = posX - w * anchorX;
+    const top = posY - h * anchorY;
+
+    // Transform to screen coords
+    const sLeft = (left - camera.x) * zoom;
+    const sTop = (top - camera.y) * zoom;
+    const sWidth = w * zoom;
+    const sHeight = h * zoom;
+
+    // Draw bounding box
+    ctx.strokeStyle = "rgba(255, 200, 100, 1.0)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sLeft, sTop, sWidth, sHeight);
+
+    // Draw corner markers
+    const cornerSize = 6;
+    ctx.fillStyle = "rgba(255, 200, 100, 0.8)";
+    const corners = [
+      [sLeft, sTop],
+      [sLeft + sWidth, sTop],
+      [sLeft, sTop + sHeight],
+      [sLeft + sWidth, sTop + sHeight],
+    ];
+
+    for (const [cx, cy] of corners) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, cornerSize, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Draw entity index label above the box
+    const sx = (posX - camera.x) * zoom;
+    const labelY = sTop - 15;
+    const text = String(selectedIdx);
+
+    ctx.font = "12px monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+
+    const metrics = ctx.measureText(text);
+    const padding = 4;
+
+    // Draw label background
+    ctx.fillStyle = "rgba(255, 200, 100, 0.9)";
+    ctx.fillRect(
+      sx - metrics.width / 2 - padding,
+      labelY - 12,
+      metrics.width + padding * 2,
+      16
+    );
+
+    // Draw label text
+    ctx.fillStyle = "rgba(0, 0, 0, 1.0)";
+    ctx.fillText(text, sx, labelY);
   }
 
   _createToolIndicator() {
