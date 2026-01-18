@@ -17,15 +17,12 @@ Debugger:
 	Debug.highlightCell(cellID)
 	Debug.drawText(entity.x, entity.y, fsm.state)
   
--cartelito encima de cada gameobject y q diga la info
 
 
 -------------------
 QUERY SYSTEM:
 --------------------
 
--tenemos start index y endindex de cada tipo de gameobject.
-y tenemos la lista de entidades q usan cada component.
 
 
 -----
