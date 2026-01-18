@@ -430,14 +430,23 @@ class PixiRenderer extends AbstractWorker {
     this._lightPoolSize = 0;
 
     // ========================================
-    // SPRITE-BASED SHADOW SYSTEM
+    // RENDER-TEXTURE SHADOW SYSTEM
     // ========================================
-    // Shadows are rendered as sprites in the MAIN ParticleContainer (added first, render behind)
-    // Shadow positions are calculated by particle_worker, read from ShadowSprite buffer
-    // Shadows mirror the texture of their parent entity (from BigAtlas) with black tint + low alpha
+    // Shadows are rendered to a RenderTexture with interleaved light gradients
+    // For each light: render light gradient (white/colored), then shadows (black)
+    // Later lights' gradients overwrite earlier shadows, creating realistic light interaction
+    // The final texture is applied with MULTIPLY blend to darken the scene
     this.shadowSpritesEnabled = false;
     this.maxShadowSprites = 0;
     this.shadowSprites = []; // Array of Particle objects for shadows
+    this.shadowLightSprites = []; // Array of Particle objects for light gradients (one per light)
+
+    // RenderTexture-based shadow compositing
+    this.shadowRT = null; // RenderTexture for shadow compositing
+    this.shadowParticleContainer = null; // ParticleContainer for lights + shadows
+    this.shadowDisplaySprite = null; // Sprite to display shadowRT with multiply blend
+    this.shadowResolution = 1.0; // Resolution multiplier for shadow RT
+    this.shadowBackgroundSprite = null; // White square covering screen (first particle = white bg)
 
     // Reusable render-state for interpolation
     this._renderCameraX = 0;
@@ -1576,25 +1585,10 @@ class PixiRenderer extends AbstractWorker {
     // PixiJS 8: Clear particleChildren array and re-add in sorted order
     this.particleContainer.particleChildren.length = 0;
 
-    // CRITICAL: Re-add shadow sprites FIRST (they render behind everything)
-    // Only iterate through active shadows using the active buffer for performance
-    if (
-      this.shadowSpritesEnabled &&
-      this.shadowSprites.length > 0 &&
-      this.shadowSpriteActive
-    ) {
-      const shadowActive = this.shadowSpriteActive;
-      const maxShadows = this.maxShadowSprites;
-      for (let i = 0; i < maxShadows; i++) {
-        if (!shadowActive[i]) continue; // Skip inactive shadows
-        const shadowSprite = this.shadowSprites[i];
-        if (shadowSprite) {
-          this.particleContainer.addParticle(shadowSprite);
-        }
-      }
-    }
+    // Note: Shadows are now rendered separately via shadowRT system (RenderTexture-based)
+    // They are no longer added to the main particleContainer
 
-    // Re-add all sprites (entities + particles) in Y-sorted order (render on top of shadows)
+    // Re-add all sprites (entities + particles) in Y-sorted order
     for (let i = 0; i < poolSize; i++) {
       this.particleContainer.addParticle(pool[i].sprite);
     }
@@ -1675,7 +1669,8 @@ class PixiRenderer extends AbstractWorker {
     // Update lighting shader uniforms from LightEmitter components
     this.updateLighting(interpolationAlpha);
 
-    // Update shadow sprites from ShadowSprite buffer (calculated by particle_worker)
+    // Update shadow RenderTexture with interleaved lights + shadows
+    // This renders lights and shadows to shadowRT, which is displayed via shadowDisplaySprite (multiply blend)
     this.updateShadowSprites(interpolationAlpha);
 
     // Update light glow sprites from LightEmitter component arrays
@@ -2113,59 +2108,135 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * Create the shadow sprite system:
-   * Shadows now share the main ParticleContainer and use BigAtlas textures
-   * They are added to the container FIRST (render behind body sprites)
-   * Each shadow mirrors its parent entity's texture with black tint + low alpha
+   * Create the RenderTexture-based shadow system:
+   * 1. Create shadowRT (RenderTexture) - cleared to white each frame
+   * 2. Create shadowParticleContainer - holds light gradients + shadows
+   * 3. Create shadowDisplaySprite - displays shadowRT with multiply blend
+   *
+   * Rendering order per frame:
+   * - Clear shadowRT to white
+   * - For each light: add light gradient (white/colored), then its shadows (black)
+   * - Render shadowParticleContainer to shadowRT
+   * - shadowDisplaySprite (multiply) darkens the scene where shadows exist
    */
   createShadowSpriteSystem() {
-    // Shadows will be created after BigAtlas is loaded
-    // No separate container or texture needed - uses main particleContainer + BigAtlas
+    // Read shadow resolution from config (default 1.0)
+    this.shadowResolution = this.config.lighting?.shadowResolution || 1.0;
+
+    // Create RenderTexture for shadow compositing
+    // Cleared to white each frame (white = no darkening when multiplied)
+    this.shadowRT = PIXI.RenderTexture.create({
+      width: this.canvasWidth * this.shadowResolution,
+      height: this.canvasHeight * this.shadowResolution,
+    });
+
+    // Create ParticleContainer for lights + shadows
+    // Uses normal blend internally - the multiply happens on shadowDisplaySprite
+    this.shadowParticleContainer = new PIXI.ParticleContainer({
+      blendMode: "normal-npm",
+      dynamicProperties: {
+        vertex: true,
+        position: true,
+        rotation: true,
+        uvs: true,
+        color: true,
+        alpha: true,
+      },
+    });
+
+    // Create display sprite to show shadowRT with multiply blend
+    this.shadowDisplaySprite = new PIXI.Sprite(this.shadowRT);
+    this.shadowDisplaySprite.anchor.set(0, 0);
+    this.shadowDisplaySprite.position.set(0, 0);
+    this.shadowDisplaySprite.scale.set(1.0 / this.shadowResolution);
+    this.shadowDisplaySprite.blendMode = "multiply";
+    this.shadowDisplaySprite.zIndex = PixiRenderer.Z_INDICES.CASTED_SHADOWS;
+
+    // Add to stage
+    this.pixiApp.stage.addChild(this.shadowDisplaySprite);
+
     console.log(
-      `PIXI WORKER: Shadow sprite system initialized (${this.maxShadowSprites} shadow slots)`
+      `PIXI WORKER: Shadow RenderTexture system initialized (${this.maxShadowSprites} shadow slots, ${this.shadowRT.width}x${this.shadowRT.height} RT)`
     );
   }
 
   /**
-   * Create pool of shadow Particle objects
-   * Shadows are added to main particleContainer FIRST (render behind bodies)
-   * Start with no texture - will be set when first entity texture is copied
+   * Create pool of shadow and light gradient Particle objects
+   * All sprites go into shadowParticleContainer (rendered to shadowRT)
+   *
+   * Rendering order:
+   * 1. White background sprite (ensures white = no darkening base)
+   * 2. For each light: light gradient (white/colored), then shadows (black)
+   *
+   * Light gradients: white circles that "brighten" the shadow map
+   * Shadows: black sprites that darken the shadow map
    */
   createShadowSprites() {
-    if (!this.particleContainer) {
+    if (!this.shadowParticleContainer) {
       console.warn(
-        "PIXI WORKER: Cannot create shadow sprites - particleContainer not ready"
+        "PIXI WORKER: Cannot create shadow sprites - shadowParticleContainer not ready"
       );
       return;
     }
 
-    // Get a texture from the particle pool (it uses atlas textures)
-    // This ensures shadows use the same texture source as body sprites
+    // Get textures
     const defaultTexture =
       this.particlePool.defaultTexture || PIXI.Texture.EMPTY;
+    const lightGradientTexture =
+      this.textures["_lightGradient"] || PIXI.Texture.WHITE;
 
+    // Create white background sprite (covers entire shadowRT)
+    // This ensures the base is white (no darkening when multiplied)
+    // Uses _white texture from BigAtlas (8x8 white square)
+    const whiteTexture = this.textures["_white"] || PIXI.Texture.WHITE;
+    this.shadowBackgroundSprite = new PIXI.Particle({
+      texture: whiteTexture,
+      anchorX: 0,
+      anchorY: 0,
+    });
+    this.shadowBackgroundSprite.tint = 0xffffff;
+    this.shadowBackgroundSprite.alpha = 1.0;
+    // Size will be set each frame in updateShadowSprites to match shadowRT dimensions
+
+    // Create light gradient sprites (one per maxLights)
+    // These are rendered BEFORE shadows to "illuminate" the shadow map
+    for (let i = 0; i < this.maxLights; i++) {
+      const lightSprite = new PIXI.Particle({
+        texture: lightGradientTexture,
+        anchorX: 0.5,
+        anchorY: 0.5,
+      });
+
+      lightSprite.alpha = 0; // Start invisible
+      lightSprite.tint = 0xffffff; // White by default (will be set to light color)
+      lightSprite.visible = true;
+      lightSprite.x = -10000; // Off-screen when not in use
+      lightSprite.y = -10000;
+
+      this.shadowLightSprites[i] = lightSprite;
+      // Note: NOT added to container yet - added dynamically during updateShadowSprites
+    }
+
+    // Create shadow sprites (one per maxShadowSprites)
     for (let i = 0; i < this.maxShadowSprites; i++) {
       const shadowSprite = new PIXI.Particle({
         texture: defaultTexture,
-        anchorX: 0.5, // Center horizontally
-        anchorY: 1.0, // Anchor at top - shadow extends downward from entity position
+        anchorX: 0.5,
+        anchorY: 1.0, // Anchor at top - shadow extends downward
       });
 
-      shadowSprite.alpha = 0; // Start invisible (won't render until activated)
+      shadowSprite.alpha = 0; // Start invisible
       shadowSprite.tint = 0x000000; // Black tint for shadows
-      shadowSprite.visible = false; // Hidden until activated
+      shadowSprite.visible = true;
+      shadowSprite.x = -10000; // Off-screen when not in use
+      shadowSprite.y = -10000;
 
       this.shadowSprites[i] = shadowSprite;
-
-      // Add shadow sprites to MAIN container FIRST (they render behind body sprites)
-      this.particleContainer.addParticle(shadowSprite);
+      // Note: NOT added to container yet - added dynamically during updateShadowSprites
     }
 
     console.log(
-      `PIXI WORKER: Created ${this.maxShadowSprites} shadow sprites (using main container)`
-    );
-    console.log(
-      `PIXI WORKER: Shadow sprites added to particleContainer, particles in container: ${this.particleContainer.children.length}`
+      `PIXI WORKER: Created ${this.maxLights} light gradient sprites + ${this.maxShadowSprites} shadow sprites`
     );
   }
 
@@ -2395,8 +2466,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         `🔍 PIXI WORKER: updateLightGlowSprites() - Rendering ${countToRender} lights (${visibleLights.length} visible, maxLights: ${maxLights})`
       );
       console.log(
-        `   Container visible: ${this.lightGlowContainer.visible}, alpha: ${
-          this.lightGlowContainer.alpha
+        `   Container visible: ${this.lightGlowContainer.visible}, alpha: ${this.lightGlowContainer.alpha
         }, children: ${this.lightGlowContainer.children?.length || "N/A"}`
       );
       this._lightGlowFirstUpdateLogged = true;
@@ -2438,10 +2508,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Log first sprite update details (one-time)
       if (i === 0 && !this._lightGlowSpriteUpdateLogged) {
         console.log(
-          `🔍 PIXI WORKER: First light glow sprite update - entityIndex: ${entityIndex}, x: ${
-            sprite.x
-          }, y: ${
-            sprite.y
+          `🔍 PIXI WORKER: First light glow sprite update - entityIndex: ${entityIndex}, x: ${sprite.x
+          }, y: ${sprite.y
           }, scale: ${scale}, alpha: ${newAlpha}, tint: 0x${sprite.tint.toString(
             16
           )}`
@@ -2470,99 +2538,198 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * Update shadow sprites from shadow sprite buffer
-   * Reads positions/rotations/scales calculated by particle_worker
-   * Shadows use world coordinates; container moves with camera
-   * Uses interpolation for smooth movement when renderer FPS > physics FPS
-   * Detects ownership changes via entity index and skips interpolation for those
+   * Update shadow sprites using RenderTexture-based interleaved rendering
    *
-   * NEW: Shadows now mirror their parent entity's texture from BigAtlas
-   * Each shadow gets the same texture as its entity's body sprite, with black tint + low alpha
+   * For each light: render light gradient (white/colored), then its shadows (black)
+   * Later lights' gradients overwrite earlier shadows, creating realistic light interaction
+   * The final texture is applied with MULTIPLY blend to darken the scene
+   *
+   * Rendering happens in SCREEN SPACE (shadowRT coordinates)
    */
   updateShadowSprites(interpolationAlpha) {
     if (!this.shadowSpritesEnabled || !this.shadowSpriteActive) return;
+    if (!this.shadowParticleContainer || !this.shadowRT) return;
 
-    const sprites = this.shadowSprites;
-    const maxSprites = this.maxShadowSprites;
+    const shadowSprites = this.shadowSprites;
+    const lightSprites = this.shadowLightSprites;
+    const maxShadows = this.maxShadowSprites;
+    const maxLights = this.maxLights;
 
-    // Cache array references (from SharedArrayBuffer views)
-    const active = this.shadowSpriteActive;
-    const x = this.shadowSpriteX;
-    const y = this.shadowSpriteY;
-    const rotation = this.shadowSpriteRotation;
-    const scaleX = this.shadowSpriteScaleX;
-    const scaleY = this.shadowSpriteScaleY;
-    const alpha = this.shadowSpriteAlpha;
-    const entityIdx = this.shadowSpriteEntityIdx;
+    // Cache shadow buffer arrays
+    const shadowActive = this.shadowSpriteActive;
+    const shadowX = this.shadowSpriteX;
+    const shadowY = this.shadowSpriteY;
+    const shadowRotation = this.shadowSpriteRotation;
+    const shadowScaleX = this.shadowSpriteScaleX;
+    const shadowScaleY = this.shadowSpriteScaleY;
+    const shadowAlpha = this.shadowSpriteAlpha;
+    const shadowEntityIdx = this.shadowSpriteEntityIdx;
+    const shadowLightIdx = this.shadowSpriteLightIdx;
     const prevEntityIdx = this._shadowPrevEntityIdx;
 
-    for (let i = 0; i < maxSprites; i++) {
-      const sprite = sprites[i];
-      if (!sprite) continue;
+    // Cache light component arrays
+    const transformActive = Transform.active;
+    const worldX = Transform.x;
+    const worldY = Transform.y;
+    const lightEnabled = LightEmitter.active;
+    const lightColor = LightEmitter.lightColor;
+    const lightIntensity = LightEmitter.lightIntensity;
+    const lightHeight = LightEmitter.height;
 
-      // Hide inactive shadows and reset ownership tracking
-      if (!active[i]) {
-        sprite.visible = false;
-        sprite.alpha = 0;
-        prevEntityIdx[i] = -1; // Reset so next activation doesn't interpolate
-        continue;
+    // Camera transform for world-to-screen conversion
+    const zoom = this._renderZoom;
+    const cameraX = this._renderCameraX;
+    const cameraY = this._renderCameraY;
+    const resolution = this.shadowResolution;
+
+    // ========================================
+    // STEP 1: Group shadows by light index
+    // ========================================
+    // Create a map: lightIdx -> array of shadow indices
+    if (!this._shadowsByLight) {
+      this._shadowsByLight = new Map();
+    }
+    const shadowsByLight = this._shadowsByLight;
+    shadowsByLight.clear();
+
+    // Also track which lights have active shadows (for ordering)
+    if (!this._activeLightIndices) {
+      this._activeLightIndices = [];
+    }
+    const activeLightIndices = this._activeLightIndices;
+    activeLightIndices.length = 0;
+
+    let activeShadowCount = 0;
+    for (let i = 0; i < maxShadows; i++) {
+      if (!shadowActive[i]) continue;
+      activeShadowCount++;
+
+      const lightIdx = shadowLightIdx[i];
+      if (lightIdx < 0) continue;
+
+      if (!shadowsByLight.has(lightIdx)) {
+        shadowsByLight.set(lightIdx, []);
+        activeLightIndices.push(lightIdx);
       }
+      shadowsByLight.get(lightIdx).push(i);
+    }
 
-      // Ensure shadow is visible
-      if (!sprite.visible) {
-        sprite.visible = true;
-      }
 
-      // Check if shadow just became visible (to avoid lerping from 0,0)
-      const wasInvisible = sprite.alpha === 0;
 
-      // Check if shadow ownership changed (different entity now owns this slot)
-      const currentEntity = entityIdx[i];
-      const ownerChanged = prevEntityIdx[i] !== currentEntity;
+    // ========================================
+    // STEP 2: Clear particle container and rebuild
+    // ========================================
+    this.shadowParticleContainer.particleChildren.length = 0;
 
-      // Update ownership tracking for next frame
-      prevEntityIdx[i] = currentEntity;
+    // // Add white background sprite FIRST (ensures white base = no darkening)
+    // if (this.shadowBackgroundSprite) {
+    //   // Size to cover entire shadowRT
+    //   this.shadowBackgroundSprite.x = 0;
+    //   this.shadowBackgroundSprite.y = 0;
+    //   this.shadowBackgroundSprite.scaleX = this.shadowRT.width;
+    //   this.shadowBackgroundSprite.scaleY = this.shadowRT.height;
+    //   this.shadowParticleContainer.addParticle(this.shadowBackgroundSprite);
+    // }
 
-      // ========================================
-      // MIRROR TEXTURE FROM PARENT ENTITY
-      // ========================================
-      // Get the parent entity's body sprite and copy its texture
-      if (currentEntity >= 0 && currentEntity < this.bodySprites.length) {
-        const bodySprite = this.bodySprites[currentEntity];
-        if (bodySprite && bodySprite.texture) {
-          sprite.texture = bodySprite.texture;
+    // Gradient texture base size (200px diameter = radius 100)
+    const gradientTextureRadius = 100;
+
+    let lightSpriteIndex = 0;
+
+    // ========================================
+    // STEP 3: For each light, add gradient then shadows
+    // ========================================
+    for (let li = 0; li < activeLightIndices.length; li++) {
+      if (lightSpriteIndex >= maxLights) break;
+
+      const lightIdx = activeLightIndices[li];
+      if (!transformActive[lightIdx] || !lightEnabled[lightIdx]) continue;
+
+      const shadowIndices = shadowsByLight.get(lightIdx);
+      if (!shadowIndices || shadowIndices.length === 0) continue;
+
+
+
+      // --- Add shadows for this light ---
+      for (let si = 0; si < shadowIndices.length; si++) {
+        const shadowIdx = shadowIndices[si];
+        const sprite = shadowSprites[shadowIdx];
+        if (!sprite) continue;
+
+        // Get shadow world position
+        const sx = shadowX[shadowIdx];
+        const sy = shadowY[shadowIdx];
+
+        // Convert to screen space
+        const screenSX = (sx - cameraX) * zoom * resolution;
+        const screenSY = (sy - cameraY) * zoom * resolution;
+
+        // Update sprite properties
+        sprite.x = screenSX;
+        sprite.y = screenSY;
+        sprite.rotation = shadowRotation[shadowIdx] + Math.PI; // Point away from light
+        sprite.scaleX = shadowScaleX[shadowIdx] * zoom * resolution;
+        sprite.scaleY = shadowScaleY[shadowIdx] * zoom * resolution;
+        sprite.alpha = shadowAlpha[shadowIdx];
+        sprite.tint = 0x000000; // Black for shadows
+
+        // Mirror texture from parent entity
+        const currentEntity = shadowEntityIdx[shadowIdx];
+        if (currentEntity >= 0 && currentEntity < this.bodySprites.length) {
+          const bodySprite = this.bodySprites[currentEntity];
+          if (bodySprite && bodySprite.texture) {
+            sprite.texture = bodySprite.texture;
+          }
         }
+
+        // Update ownership tracking
+        prevEntityIdx[shadowIdx] = currentEntity;
+
+        this.shadowParticleContainer.addParticle(sprite);
       }
-      // FALLBACK: If no body sprite texture available yet, keep current texture
-      // (will be updated when body sprite gets created/visible)
 
-      // Keep shadow tinted black (set during creation, but ensure it stays)
-      sprite.tint = 0x000000;
 
-      // Shadow rotation points away from the light (rotation buffer has angle toward light)
-      const shadowRotation = rotation[i] + Math.PI;
+      // --- Add light gradient sprite ---
+      const lightSprite = lightSprites[lightSpriteIndex];
+      if (lightSprite) {
+        // Light position in screen space
+        const lx = worldX[lightIdx];
+        const ly = worldY[lightIdx] - (lightHeight[lightIdx] || 0);
+        const screenLX = (lx - cameraX) * zoom * resolution;
+        const screenLY = (ly - cameraY) * zoom * resolution;
 
-      // Only interpolate if: interpolation enabled, was visible, AND same owner
-      if (interpolationAlpha < 1.0 && !wasInvisible && !ownerChanged) {
-        // Interpolate from current sprite position toward buffer position (from particle_worker)
-        sprite.x += (x[i] - sprite.x) * interpolationAlpha;
-        sprite.y += (y[i] - sprite.y) * interpolationAlpha;
+        // Light gradient size based on intensity
+        // Using similar formula to lighting shader: influence radius = 10 * sqrt(intensity)
+        const intensity = lightIntensity[lightIdx];
+        const influenceRadius = 10 * Math.sqrt(intensity);
+        const gradientScale =
+          ((influenceRadius * zoom * resolution) / gradientTextureRadius) *
+          3;
 
-        sprite.rotation = shadowRotation;
+        lightSprite.x = screenLX;
+        lightSprite.y = screenLY;
+        lightSprite.scaleX = gradientScale
+        lightSprite.scaleY = gradientScale
+        lightSprite.tint = 0xffffff;
+        lightSprite.alpha = intensity / 50000
 
-        sprite.scaleX += (scaleX[i] - sprite.scaleX) * interpolationAlpha;
-        sprite.scaleY += (scaleY[i] - sprite.scaleY) * interpolationAlpha;
-        sprite.alpha += (alpha[i] - sprite.alpha) * interpolationAlpha;
-      } else {
-        // No interpolation - directly set values from buffer (calculated by particle_worker)
-        sprite.x = x[i];
-        sprite.y = y[i];
-        sprite.rotation = shadowRotation;
-        sprite.scaleX = scaleX[i];
-        sprite.scaleY = scaleY[i];
-        sprite.alpha = alpha[i];
+        this.shadowParticleContainer.addParticle(lightSprite);
+        lightSpriteIndex++;
       }
     }
+
+    // Update the container
+    this.shadowParticleContainer.update();
+
+    // ========================================
+    // STEP 4: Render to shadowRT
+    // ========================================
+    // White background is provided by shadowBackgroundSprite (first particle)
+    this.pixiApp.renderer.render({
+      container: this.shadowParticleContainer,
+      target: this.shadowRT,
+      clear: true,
+    });
   }
 
   /**
@@ -2675,8 +2842,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           }
 
           console.log(
-            `✅ BigAtlas loaded: ${
-              Object.keys(frameTextures).length
+            `✅ BigAtlas loaded: ${Object.keys(frameTextures).length
             } frames available as textures`
           );
 
@@ -2704,8 +2870,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           }
 
           // Create shadow sprites now that BigAtlas is loaded
-          // Shadows are added to particleContainer FIRST (render behind body sprites)
-          if (this.shadowSpritesEnabled && this.shadowSprites.length === 0) {
+          // Shadows are rendered via shadowRT system (RenderTexture-based)
+          if (
+            this.shadowSpritesEnabled &&
+            this.shadowSprites.length === 0 &&
+            this.shadowParticleContainer
+          ) {
             this.createShadowSprites();
           }
         }
@@ -2774,8 +2944,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         SpriteSheetRegistry.registerProxy(proxyName, proxyData);
 
         console.log(
-          `  ✅ Proxy "${proxyName}": ${
-            Object.keys(proxyAnimations).length
+          `  ✅ Proxy "${proxyName}": ${Object.keys(proxyAnimations).length
           } animations`
         );
       }
@@ -3223,6 +3392,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
     }
 
+    // Resize shadow RenderTexture
+    if (this.shadowRT) {
+      this.shadowRT.resize(
+        width * this.shadowResolution,
+        height * this.shadowResolution
+      );
+      if (this.shadowDisplaySprite) {
+        this.shadowDisplaySprite.scale.set(1.0 / this.shadowResolution);
+      }
+    }
+
     console.log(`PIXI WORKER: Resized to ${width}x${height}`);
   }
 
@@ -3393,8 +3573,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this.currentTilemap.children.length > 0) {
       const child = this.currentTilemap.children[0];
       console.log(
-        `PIXI WORKER: First child tilemap has ${
-          child.pointsBuf ? child.pointsBuf.length : 0
+        `PIXI WORKER: First child tilemap has ${child.pointsBuf ? child.pointsBuf.length : 0
         } point buffer entries`
       );
     }
@@ -3442,8 +3621,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (!layerData || layerData.length === 0) continue;
 
       console.log(
-        `PIXI WORKER: Processing layer "${layer.name}" with ${
-          layerData.length
+        `PIXI WORKER: Processing layer "${layer.name}" with ${layerData.length
         } tiles (expected ${mapWidth * mapHeight})`
       );
 
@@ -3516,10 +3694,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
 
       console.log(
-        `PIXI WORKER: Layer "${
-          layer.name
-        }" - added ${tilesAdded} tiles, last tile at (${
-          (mapWidth - 1) * tileWidth
+        `PIXI WORKER: Layer "${layer.name
+        }" - added ${tilesAdded} tiles, last tile at (${(mapWidth - 1) * tileWidth
         }, ${(mapHeight - 1) * tileHeight})`
       );
     }
@@ -3863,6 +4039,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const float32Offset = Math.ceil(this.maxShadowSprites / 4) * 4;
       const floatCount = this.maxShadowSprites;
 
+      // Buffer layout matches ShadowCaster.ARRAY_SCHEMA order:
+      // active(Uint8), shadowRadius, x, y, height, rotation, scaleX, scaleY, alpha, entityIdx, lightIdx
       this.shadowSpriteRadius = new Float32Array(
         data.shadows.spriteData,
         float32Offset,
@@ -3878,29 +4056,35 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         float32Offset + floatCount * 8,
         floatCount
       );
+      // height is at offset 12 but not used for sprite buffer (skipped)
       this.shadowSpriteRotation = new Float32Array(
         data.shadows.spriteData,
-        float32Offset + floatCount * 12,
+        float32Offset + floatCount * 16, // After height (12 + 4)
         floatCount
       );
       this.shadowSpriteScaleX = new Float32Array(
         data.shadows.spriteData,
-        float32Offset + floatCount * 16,
+        float32Offset + floatCount * 20,
         floatCount
       );
       this.shadowSpriteScaleY = new Float32Array(
         data.shadows.spriteData,
-        float32Offset + floatCount * 20,
+        float32Offset + floatCount * 24,
         floatCount
       );
       this.shadowSpriteAlpha = new Float32Array(
         data.shadows.spriteData,
-        float32Offset + floatCount * 24,
+        float32Offset + floatCount * 28,
         floatCount
       );
       this.shadowSpriteEntityIdx = new Int32Array(
         data.shadows.spriteData,
-        float32Offset + floatCount * 28,
+        float32Offset + floatCount * 32,
+        floatCount
+      );
+      this.shadowSpriteLightIdx = new Int32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 36,
         floatCount
       );
 
@@ -3910,12 +4094,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         -1
       );
 
-      // Create shadow sprite system (shadows will be added to main particleContainer)
+      // Create shadow RenderTexture system (shadows rendered separately via shadowRT)
       this.createShadowSpriteSystem();
 
-      // IMPORTANT: Create shadow sprites immediately if particleContainer exists
+      // IMPORTANT: Create shadow sprites immediately if shadowParticleContainer exists
       // (BigAtlas may load later or might not be used)
-      if (this.particleContainer && this.shadowSprites.length === 0) {
+      if (this.shadowParticleContainer && this.shadowSprites.length === 0) {
         console.log(
           "PIXI WORKER: Creating shadow sprites immediately (no BigAtlas wait)"
         );
