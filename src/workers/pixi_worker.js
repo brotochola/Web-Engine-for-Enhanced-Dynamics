@@ -371,7 +371,7 @@ class PixiRenderer extends AbstractWorker {
       velocity: 0x0088ff, // Blue
       acceleration: 0xff0044, // Red
       neighbor: 0x00ffff, // Cyan
-      grid: 0x444444, // Gray
+      grid: 0xffff00,
       aabb: 0xff8800, // Orange
       text: 0xffffff, // White
       selected: 0xffc864, // Golden yellow for selected entity
@@ -645,9 +645,10 @@ class PixiRenderer extends AbstractWorker {
     this.debugLayer.clear();
 
     // Apply camera transform to debug layer so it moves with the world
-    const zoom = this.cameraData[0];
-    const cameraX = this.cameraData[1];
-    const cameraY = this.cameraData[2];
+    // Use interpolated camera values to match sprite positions exactly
+    const zoom = this._renderZoom;
+    const cameraX = this._renderCameraX;
+    const cameraY = this._renderCameraY;
     this.debugLayer.scale.set(zoom);
     this.debugLayer.x = -cameraX * zoom;
     this.debugLayer.y = -cameraY * zoom;

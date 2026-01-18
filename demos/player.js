@@ -82,7 +82,7 @@ export class Player extends GameObject {
     // Raycast from player position to target
     const hitEntityIndex = Ray.cast(
       this.x,
-      this.y,
+      this.y - 25,
       x,
       y,
       1500 // max distance
