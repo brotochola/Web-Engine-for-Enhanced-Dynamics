@@ -24,6 +24,7 @@ import { MouseComponent } from "../components/MouseComponent.js";
 import { LightEmitter } from "../components/LightEmitter.js";
 import { Grid } from "../core/Grid.js";
 import { Ray } from "../core/Ray.js";
+import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from "../core/ConfigDefaults.js";
 import {
   drawLine,
   drawCircle,
@@ -277,14 +278,8 @@ class PixiParticlePool {
  * Extends AbstractWorker for common worker functionality
  */
 class PixiRenderer extends AbstractWorker {
-  static Z_INDICES = {
-    BACKGROUND: 0,
-    DECALS: 1,
-    CASTED_SHADOWS: 2,
-    ENTITIES: 3,
-    LIGHTING: 4,
-    LIGHT_GLOW: 5,
-  };
+  // Z_INDICES imported from ConfigDefaults.js for centralized layer ordering
+  static Z_INDICES = Z_INDICES;
 
   queryConfig = [SpriteRenderer];
 
@@ -1912,7 +1907,7 @@ LIGHTING SYSTEM SETUP
       this.lightingDisplaySprite.anchor.set(0, 0); // Ensure top-left anchor
       this.lightingDisplaySprite.position.set(0, 0); // Position at top-left of screen
       this.lightingDisplaySprite.scale.set(1.0 / this.lightingResolution);
-      this.lightingDisplaySprite.blendMode = "multiply";
+      this.lightingDisplaySprite.blendMode = LAYER_DEFAULT_BLEND_MODES.LIGHTING;
       this.lightingDisplaySprite.zIndex = PixiRenderer.Z_INDICES.LIGHTING;
       this.pixiApp.stage.addChild(this.lightingDisplaySprite);
 
@@ -1920,7 +1915,7 @@ LIGHTING SYSTEM SETUP
         `PIXI WORKER: Lighting RenderTexture created (${this.lightingRT.width}x${this.lightingRT.height})`
       );
     } else {
-      this.lightingMesh.blendMode = "multiply";
+      this.lightingMesh.blendMode = LAYER_DEFAULT_BLEND_MODES.LIGHTING;
       this.lightingMesh.zIndex = PixiRenderer.Z_INDICES.LIGHTING;
       this.pixiApp.stage.addChild(this.lightingMesh);
     }
@@ -2149,7 +2144,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.shadowDisplaySprite.anchor.set(0, 0);
     this.shadowDisplaySprite.position.set(0, 0);
     this.shadowDisplaySprite.scale.set(1.0 / this.shadowResolution);
-    this.shadowDisplaySprite.blendMode = "multiply";
+    this.shadowDisplaySprite.blendMode = LAYER_DEFAULT_BLEND_MODES.CASTED_SHADOWS;
     this.shadowDisplaySprite.zIndex = PixiRenderer.Z_INDICES.CASTED_SHADOWS;
 
     // Add to stage
@@ -2276,7 +2271,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Scale changes still work without vertex: true
     // Use "add" blend mode for additive light glow effect
     this.lightGlowContainer = new PIXI.ParticleContainer({
-      blendMode: "add",
+      blendMode: LAYER_DEFAULT_BLEND_MODES.LIGHT_GLOW,
       dynamicProperties: {
         vertex: true,
         position: true,
@@ -2363,6 +2358,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }
         this._lightGlowWarningLogged = true;
       }
+      return;
+    }
+
+    // Skip updates when container is invisible to prevent WebGL buffer desync
+    // ParticleContainer doesn't sync vertex buffers when hidden, causing GL_INVALID_OPERATION
+    // errors when made visible again if sprite properties were modified while hidden
+    if (!this.lightGlowContainer.visible) {
       return;
     }
 
@@ -3364,9 +3366,50 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.handleSetBackground(data);
     } else if (msg === "resize") {
       this.handleResize(data);
+    } else if (msg === "setLayerProps") {
+      this.handleSetLayerProps(data);
     } else {
       console.log(`PIXI WORKER: Unhandled message type: ${msg}`);
     }
+  }
+
+  /**
+   * Handle layer property changes from debug UI
+   * @param {Object} data - { layer: string, visible?: boolean, alpha?: number, blendMode?: string, zIndex?: number }
+   */
+  handleSetLayerProps(data) {
+    const { layer, visible, alpha, blendMode, zIndex } = data;
+
+    const displayObject = this.layerRefs?.[layer];
+    if (!displayObject) {
+      // Layer doesn't exist in current scene config - silently ignore
+      return;
+    }
+
+    // Apply visibility
+    if (visible !== undefined) {
+      displayObject.visible = visible;
+    }
+
+    // Apply alpha
+    if (alpha !== undefined) {
+      displayObject.alpha = Math.max(0, Math.min(1, alpha));
+    }
+
+    // Apply blend mode
+    if (blendMode !== undefined) {
+      // Pass through directly - PIXI supports these blend modes
+      displayObject.blendMode = blendMode;
+    }
+
+    // Apply z-index
+    if (zIndex !== undefined) {
+      displayObject.zIndex = zIndex;
+      // Re-sort stage children after z-index change
+      this.pixiApp.stage.sortChildren();
+    }
+
+    console.log(`PIXI WORKER: Layer "${layer}" updated:`, { visible, alpha, blendMode, zIndex });
   }
 
   /**
@@ -3448,6 +3491,24 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         break;
       default:
         console.warn(`PIXI WORKER: Unknown background type: ${type}`);
+    }
+
+    // Update layer refs after background change
+    this._updateBackgroundLayerRef();
+  }
+
+  /**
+   * Update the BACKGROUND layer reference after background changes
+   */
+  _updateBackgroundLayerRef() {
+    if (!this.layerRefs) return;
+
+    if (this.currentTilemap) {
+      this.layerRefs.BACKGROUND = this.currentTilemap;
+    } else if (this.backgroundSprite) {
+      this.layerRefs.BACKGROUND = this.backgroundSprite;
+    } else {
+      delete this.layerRefs.BACKGROUND;
     }
   }
 
@@ -3734,7 +3795,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Create ParticleContainer with dynamic properties for sprites
     // PixiJS 8 ParticleContainer API
     this.particleContainer = new PIXI.ParticleContainer({
-      blendMode: "normal-npm",
+      blendMode: LAYER_DEFAULT_BLEND_MODES.ENTITIES,
       dynamicProperties: {
         vertex: true, // Must be true to allow dynamic scale changes
         position: true,
@@ -4010,6 +4071,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.createDecorationSprites();
     this.reportLog("finished creating decoration sprites");
 
+    // ========================================
+    // LAYER REFERENCES MAP - For debug UI control
+    // ========================================
+    this.buildLayerRefsMap();
+
     console.log(
       "PIXI WORKER: Initialization complete, waiting for start signal..."
     );
@@ -4018,6 +4084,52 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     );
 
     // Note: Game loop will start when "start" message is received from main thread
+  }
+
+  /**
+   * Build a map of layer name -> PIXI display object for debug UI control
+   * Called after all layers are initialized
+   */
+  buildLayerRefsMap() {
+    this.layerRefs = {};
+
+    // BACKGROUND layer
+    if (this.backgroundSprite) {
+      this.layerRefs.BACKGROUND = this.backgroundSprite;
+    }
+    if (this.currentTilemap) {
+      this.layerRefs.BACKGROUND = this.currentTilemap;
+    }
+
+    // DECALS layer
+    if (this.decalTileContainer) {
+      this.layerRefs.DECALS = this.decalTileContainer;
+    }
+
+    // CASTED_SHADOWS layer
+    if (this.shadowDisplaySprite) {
+      this.layerRefs.CASTED_SHADOWS = this.shadowDisplaySprite;
+    }
+
+    // ENTITIES layer (particle container)
+    if (this.particleContainer) {
+      this.layerRefs.ENTITIES = this.particleContainer;
+    }
+
+    // LIGHTING layer
+    if (this.lightingDisplaySprite) {
+      this.layerRefs.LIGHTING = this.lightingDisplaySprite;
+    } else if (this.lightingMesh) {
+      this.layerRefs.LIGHTING = this.lightingMesh;
+    }
+
+    // LIGHT_GLOW layer
+    if (this.lightGlowContainer) {
+      this.layerRefs.LIGHT_GLOW = this.lightGlowContainer;
+    }
+
+    const layerNames = Object.keys(this.layerRefs);
+    console.log(`PIXI WORKER: Layer refs map built (${layerNames.length} layers: ${layerNames.join(", ")})`);
   }
 
   createCastedShadowsSystem(data) {
