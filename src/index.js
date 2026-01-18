@@ -18,6 +18,7 @@ export { ShapeType } from "./core/ConfigDefaults.js";
 export { Mouse } from "./core/Mouse.js";
 export { Camera } from "./core/Camera.js";
 export { Ray } from "./core/Ray.js";
+export { NavGrid } from "./core/NavGrid.js";
 export { SpriteSheetRegistry } from "./core/SpriteSheetRegistry.js";
 export { BigAtlasInspector } from "./core/BigAtlasInspector.js";
 export * from "./core/utils.js";
@@ -94,6 +95,7 @@ import { DebugUI } from "./core/DebugUI.js";
 import { Mouse } from "./core/Mouse.js";
 import { Camera } from "./core/Camera.js";
 import { Ray } from "./core/Ray.js";
+import { NavGrid } from "./core/NavGrid.js";
 import { SpriteSheetRegistry } from "./core/SpriteSheetRegistry.js";
 import { BigAtlasInspector } from "./core/BigAtlasInspector.js";
 import * as utils from "./core/utils.js";
@@ -129,6 +131,7 @@ const WEED = {
   Mouse,
   Camera,
   Ray,
+  NavGrid,
   Keyboard,
   SpriteSheetRegistry,
   BigAtlasInspector,

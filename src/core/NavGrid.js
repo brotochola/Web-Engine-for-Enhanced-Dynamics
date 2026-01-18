@@ -1,0 +1,976 @@
+// NavGrid.js - Navigation grid for pathfinding (flowfields and A*)
+// Used by logic workers to query navigation, nav worker to compute paths
+//
+// Architecture:
+// - SAB contains: grid metadata, walkability, flowfield cache, path cache
+// - Logic workers: READ-ONLY (query vectors/positions, request calculations)
+// - Nav worker: READ + WRITE (computes flowfields/paths, writes results)
+//
+// All methods are designed to be:
+// - Non-blocking (return fallback if data not ready)
+// - Zero-allocation in hot paths (use out parameters)
+// - Frame-coherent (data doesn't change mid-frame)
+
+/**
+ * Flowfield slot status values
+ */
+const FLOWFIELD_STATUS = {
+    EMPTY: 0,
+    COMPUTING: 1,
+    READY: 2,
+};
+
+/**
+ * Path slot status values
+ */
+const PATH_STATUS = {
+    EMPTY: 0,
+    COMPUTING: 1,
+    READY: 2,
+};
+
+/**
+ * Direction encoding for flowfields
+ * 8 directions + no movement = 9 values (fits in 4 bits)
+ */
+const DIRECTION = {
+    NONE: 0,
+    N: 1,   // (0, -1)
+    NE: 2,  // (1, -1)
+    E: 3,   // (1, 0)
+    SE: 4,  // (1, 1)
+    S: 5,   // (0, 1)
+    SW: 6,  // (-1, 1)
+    W: 7,   // (-1, 0)
+    NW: 8,  // (-1, -1)
+};
+
+/**
+ * Direction to dx/dy lookup table
+ */
+const DIR_TO_VEC = [
+    [0, 0],   // NONE
+    [0, -1],  // N
+    [1, -1],  // NE
+    [1, 0],   // E
+    [1, 1],   // SE
+    [0, 1],   // S
+    [-1, 1],  // SW
+    [-1, 0],  // W
+    [-1, -1], // NW
+];
+
+/**
+ * NavGrid - Navigation grid for pathfinding
+ *
+ * Provides:
+ * - Flowfield pathfinding (for masses of entities going to same target)
+ * - A* pathfinding (for individual path queries)
+ * - Grid utilities (walkability checks, cell conversions)
+ *
+ * Usage pattern:
+ * - Call requestVector() or getNextAStarPosition() every frame
+ * - If data not ready, returns fallback (0,0 or current position)
+ * - Nav worker computes in background, next frame will have data
+ */
+export class NavGrid {
+    // =========================================================
+    // Static state (shared across all instances in a worker)
+    // =========================================================
+
+    static _initialized = false;
+
+    // SAB views
+    static _sab = null;
+    static _headerView = null;      // Uint32Array for header
+    static _walkability = null;     // Uint8Array for walkability grid
+    static _flowfieldHeaders = null; // Flowfield slot headers
+    static _flowfieldData = null;   // Flowfield direction data
+    static _pathHeaders = null;     // Path slot headers  
+    static _pathData = null;        // Path cell data
+
+    // Cached metadata (read once from header)
+    static _version = 0;
+    static _gridWidth = 0;
+    static _gridHeight = 0;
+    static _cellSize = 0;
+    static _totalCells = 0;
+    static _maxFlowfields = 0;
+    static _maxPaths = 0;
+    static _maxPathLength = 0;
+
+    // World bounds (for coordinate conversions)
+    static _worldWidth = 0;
+    static _worldHeight = 0;
+
+    // Communication port to nav worker (set by logic workers)
+    static _navWorkerPort = null;
+
+    // Request deduplication (avoid spamming nav worker)
+    static _pendingFlowfieldRequests = new Set();
+    static _pendingPathRequests = new Set();
+
+    // Frame tracking for LRU
+    static _currentFrame = 0;
+
+    // =========================================================
+    // Byte offsets in the SAB (calculated in initialize)
+    // =========================================================
+
+    static _HEADER_SIZE = 32;  // bytes (8 x Uint32)
+    static _FLOWFIELD_HEADER_SIZE = 12; // bytes per slot (targetCell, lastUsedFrame, status)
+    static _PATH_HEADER_SIZE = 20; // bytes per slot (fromCell, toCell, lastUsedFrame, length, status + padding)
+
+    // Offsets (set in initialize based on grid size)
+    static _walkabilityOffset = 0;
+    static _flowfieldHeadersOffset = 0;
+    static _flowfieldDataOffset = 0;
+    static _pathHeadersOffset = 0;
+    static _pathDataOffset = 0;
+
+    // =========================================================
+    // Initialization
+    // =========================================================
+
+    /**
+     * Calculate the total SAB size needed for navigation data
+     * @param {Object} config - Navigation config
+     * @param {number} gridWidth - Grid width in cells
+     * @param {number} gridHeight - Grid height in cells
+     * @returns {number} - Total bytes needed
+     */
+    static calculateSABSize(config, gridWidth, gridHeight) {
+        const totalCells = gridWidth * gridHeight;
+        const { maxFlowfields, maxPaths, maxPathLength } = config;
+
+        const headerSize = this._HEADER_SIZE;
+        const walkabilitySize = totalCells;  // 1 byte per cell
+
+        // Flowfield: header (12 bytes) + data (1 byte direction per cell)
+        const flowfieldSlotSize = this._FLOWFIELD_HEADER_SIZE + totalCells;
+        const flowfieldsSize = maxFlowfields * flowfieldSlotSize;
+
+        // Path: header (20 bytes) + data (4 bytes per cell * maxPathLength)
+        const pathSlotSize = this._PATH_HEADER_SIZE + (maxPathLength * 4);
+        const pathsSize = maxPaths * pathSlotSize;
+
+        // Align to 4 bytes
+        return Math.ceil((headerSize + walkabilitySize + flowfieldsSize + pathsSize) / 4) * 4;
+    }
+
+    /**
+     * Initialize NavGrid with SharedArrayBuffer
+     * @param {SharedArrayBuffer} sab - The navigation SAB
+     * @param {Object} metadata - Grid metadata from Scene
+     */
+    static initialize(sab, metadata) {
+        if (!sab) {
+            console.warn("[NavGrid] No SAB provided, navigation disabled");
+            return;
+        }
+
+        this._sab = sab;
+        this._worldWidth = metadata.worldWidth || 1000;
+        this._worldHeight = metadata.worldHeight || 1000;
+
+        // Read header
+        this._headerView = new Uint32Array(sab, 0, 8);
+        this._version = this._headerView[0];
+        this._gridWidth = this._headerView[1];
+        this._gridHeight = this._headerView[2];
+        this._cellSize = this._headerView[3];
+        this._totalCells = this._headerView[4];
+        this._maxFlowfields = this._headerView[5];
+        this._maxPaths = this._headerView[6];
+        this._maxPathLength = this._headerView[7];
+
+        // Calculate offsets
+        this._walkabilityOffset = this._HEADER_SIZE;
+        this._flowfieldHeadersOffset = this._walkabilityOffset + this._totalCells;
+
+        const flowfieldSlotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+        this._flowfieldDataOffset = this._flowfieldHeadersOffset + (this._maxFlowfields * this._FLOWFIELD_HEADER_SIZE);
+
+        const totalFlowfieldSize = this._maxFlowfields * flowfieldSlotSize;
+        this._pathHeadersOffset = this._flowfieldHeadersOffset + totalFlowfieldSize;
+
+        const pathSlotSize = this._PATH_HEADER_SIZE + (this._maxPathLength * 4);
+        this._pathDataOffset = this._pathHeadersOffset + (this._maxPaths * this._PATH_HEADER_SIZE);
+
+        // Create views
+        this._walkability = new Uint8Array(sab, this._walkabilityOffset, this._totalCells);
+
+        // Flowfield views - we'll access these dynamically per slot
+        // Path views - we'll access these dynamically per slot
+
+        this._initialized = true;
+    }
+
+    /**
+     * Set the MessagePort for communication with nav worker
+     * Called by logic workers during initialization
+     * @param {MessagePort} port - Port to nav worker
+     */
+    static setNavWorkerPort(port) {
+        this._navWorkerPort = port;
+    }
+
+    // =========================================================
+    // HOT Queries (per frame, O(1))
+    // =========================================================
+
+    /**
+     * Get movement vector from flowfield pathfinding
+     *
+     * @param {number} cx - Current world X position
+     * @param {number} cy - Current world Y position
+     * @param {number} tx - Target world X position
+     * @param {number} ty - Target world Y position
+     * @param {Object} outVec - Output vector {x, y} to fill
+     *
+     * If flowfield exists: outVec = normalized direction vector
+     * If flowfield not ready: outVec = {x: 0, y: 0}, requests calculation
+     */
+    static requestVector(cx, cy, tx, ty, outVec) {
+        if (!this._initialized) {
+            outVec.x = 0;
+            outVec.y = 0;
+            return;
+        }
+
+        // Convert target to cell
+        const targetCell = this.getCellAt(tx, ty);
+        if (targetCell < 0 || targetCell >= this._totalCells) {
+            outVec.x = 0;
+            outVec.y = 0;
+            return;
+        }
+
+        // Convert current position to cell
+        const currentCell = this.getCellAt(cx, cy);
+        if (currentCell < 0 || currentCell >= this._totalCells) {
+            outVec.x = 0;
+            outVec.y = 0;
+            return;
+        }
+
+        // Already at target?
+        if (currentCell === targetCell) {
+            outVec.x = 0;
+            outVec.y = 0;
+            return;
+        }
+
+        // Find flowfield slot for this target
+        const slotIndex = this._findFlowfieldSlot(targetCell);
+
+        if (slotIndex >= 0) {
+            // Flowfield exists - sample direction
+            const direction = this._sampleFlowfield(slotIndex, currentCell);
+            const vec = DIR_TO_VEC[direction];
+            outVec.x = vec[0];
+            outVec.y = vec[1];
+            // Note: LRU is handled by nav_worker when it receives requests
+        } else {
+            // Flowfield not ready - return zero and request
+            outVec.x = 0;
+            outVec.y = 0;
+            this._requestFlowfield(targetCell);
+        }
+    }
+
+    /**
+     * Get next position from A* pathfinding
+     *
+     * @param {number} fromX - Current world X position
+     * @param {number} fromY - Current world Y position
+     * @param {number} toX - Target world X position
+     * @param {number} toY - Target world Y position
+     * @param {Object} outPos - Output position {x, y} to fill
+     *
+     * If path exists: outPos = center of next cell in path
+     * If path not ready: outPos = current position, requests calculation
+     */
+    static getNextAStarPosition(fromX, fromY, toX, toY, outPos) {
+        if (!this._initialized) {
+            outPos.x = fromX;
+            outPos.y = fromY;
+            return;
+        }
+
+        const fromCell = this.getCellAt(fromX, fromY);
+        const toCell = this.getCellAt(toX, toY);
+
+        if (fromCell < 0 || toCell < 0 || fromCell === toCell) {
+            outPos.x = fromX;
+            outPos.y = fromY;
+            return;
+        }
+
+        // Find path slot
+        const slotIndex = this._findPathSlot(fromCell, toCell);
+
+        if (slotIndex >= 0) {
+            // Path exists - get next cell
+            const nextCell = this._getPathNextCell(slotIndex, fromCell);
+            if (nextCell >= 0) {
+                this.getCellCenter(nextCell, outPos);
+                // Note: LRU is handled by nav_worker when it receives requests
+                return;
+            }
+        }
+
+        // Path not ready - return current position and request
+        outPos.x = fromX;
+        outPos.y = fromY;
+        this._requestPath(fromCell, toCell);
+    }
+
+    // =========================================================
+    // COLD Queries (planning, debug, AI)
+    // =========================================================
+
+    /**
+     * Get complete A* path between two positions
+     *
+     * @param {number} fromX - Start world X position
+     * @param {number} fromY - Start world Y position
+     * @param {number} toX - End world X position
+     * @param {number} toY - End world Y position
+     * @param {Array} outPath - Array to fill with {x, y} positions
+     *
+     * If path cached: fills outPath with cell centers
+     * If not cached: outPath.length = 0, requests calculation
+     */
+    static getPathAStar(fromX, fromY, toX, toY, outPath) {
+        outPath.length = 0;
+
+        if (!this._initialized) {
+            return;
+        }
+
+        const fromCell = this.getCellAt(fromX, fromY);
+        const toCell = this.getCellAt(toX, toY);
+
+        if (fromCell < 0 || toCell < 0) {
+            return;
+        }
+
+        if (fromCell === toCell) {
+            // Already at destination
+            return;
+        }
+
+        const slotIndex = this._findPathSlot(fromCell, toCell);
+
+        if (slotIndex >= 0) {
+            // Path exists - copy to outPath
+            this._copyPathToArray(slotIndex, outPath);
+            // Note: LRU is handled by nav_worker when it receives requests
+        } else {
+            // Request calculation
+            this._requestPath(fromCell, toCell);
+        }
+    }
+
+    // =========================================================
+    // Grid Utilities
+    // =========================================================
+
+    /**
+     * Get cell ID from world position
+     * @param {number} x - World X position
+     * @param {number} y - World Y position
+     * @returns {number} - Cell ID, or -1 if out of bounds
+     */
+    static getCellAt(x, y) {
+        if (!this._initialized) return -1;
+
+        const cellX = Math.floor(x / this._cellSize);
+        const cellY = Math.floor(y / this._cellSize);
+
+        if (cellX < 0 || cellX >= this._gridWidth || cellY < 0 || cellY >= this._gridHeight) {
+            return -1;
+        }
+
+        return cellY * this._gridWidth + cellX;
+    }
+
+    /**
+     * Check if a cell is walkable
+     * @param {number} cellId - Cell ID
+     * @returns {boolean} - True if walkable
+     */
+    static isCellWalkable(cellId) {
+        if (!this._initialized || cellId < 0 || cellId >= this._totalCells) {
+            return false;
+        }
+        return this._walkability[cellId] > 0;
+    }
+
+    /**
+     * Check if a world position is walkable
+     * @param {number} x - World X position
+     * @param {number} y - World Y position
+     * @returns {boolean} - True if walkable
+     */
+    static isPositionWalkable(x, y) {
+        return this.isCellWalkable(this.getCellAt(x, y));
+    }
+
+    /**
+     * Get world position of cell center
+     * @param {number} cellId - Cell ID
+     * @param {Object} outPos - Output position {x, y} to fill
+     */
+    static getCellCenter(cellId, outPos) {
+        if (!this._initialized || cellId < 0 || cellId >= this._totalCells) {
+            outPos.x = 0;
+            outPos.y = 0;
+            return;
+        }
+
+        const cellX = cellId % this._gridWidth;
+        const cellY = Math.floor(cellId / this._gridWidth);
+
+        outPos.x = (cellX + 0.5) * this._cellSize;
+        outPos.y = (cellY + 0.5) * this._cellSize;
+    }
+
+    /**
+     * Get grid dimensions
+     * @returns {Object} - {width, height, cellSize, totalCells}
+     */
+    static getGridInfo() {
+        return {
+            width: this._gridWidth,
+            height: this._gridHeight,
+            cellSize: this._cellSize,
+            totalCells: this._totalCells,
+        };
+    }
+
+    // =========================================================
+    // Mutation / Rebuild (NOT hot path - only nav worker)
+    // =========================================================
+
+    /**
+     * Write header to SAB (called by Scene during setup)
+     * @param {SharedArrayBuffer} sab - The SAB to write to
+     * @param {Object} config - Navigation config
+     * @param {number} gridWidth - Grid width in cells
+     * @param {number} gridHeight - Grid height in cells
+     */
+    static writeHeader(sab, config, gridWidth, gridHeight) {
+        const header = new Uint32Array(sab, 0, 8);
+        header[0] = 1; // version
+        header[1] = gridWidth;
+        header[2] = gridHeight;
+        header[3] = config.cellSize;
+        header[4] = gridWidth * gridHeight; // totalCells
+        header[5] = config.maxFlowfields;
+        header[6] = config.maxPaths;
+        header[7] = config.maxPathLength;
+    }
+
+    /**
+     * Set walkability for a cell (called by nav worker during rebuild)
+     * @param {number} cellId - Cell ID
+     * @param {number} walkable - 0 = blocked, 1+ = walkable (cost)
+     */
+    static setWalkability(cellId, walkable) {
+        if (this._initialized && cellId >= 0 && cellId < this._totalCells) {
+            this._walkability[cellId] = walkable;
+        }
+    }
+
+    /**
+     * Get walkability array reference (for nav worker bulk updates)
+     * @returns {Uint8Array} - Walkability array
+     */
+    static getWalkabilityArray() {
+        return this._walkability;
+    }
+
+    /**
+     * Invalidate all caches (called after rebuild)
+     */
+    static invalidate() {
+        if (!this._initialized) return;
+
+        // Increment version
+        Atomics.add(this._headerView, 0, 1);
+
+        // Clear all flowfield slots
+        for (let i = 0; i < this._maxFlowfields; i++) {
+            this._clearFlowfieldSlot(i);
+        }
+
+        // Clear all path slots
+        for (let i = 0; i < this._maxPaths; i++) {
+            this._clearPathSlot(i);
+        }
+    }
+
+    // =========================================================
+    // Internal - Flowfield slot management
+    // =========================================================
+
+    /**
+     * Find flowfield slot for a target cell
+     * @returns {number} - Slot index, or -1 if not found
+     */
+    static _findFlowfieldSlot(targetCell) {
+        const headerOffset = this._flowfieldHeadersOffset;
+        const headerSize = this._FLOWFIELD_HEADER_SIZE;
+
+        for (let i = 0; i < this._maxFlowfields; i++) {
+            const offset = headerOffset + (i * headerSize);
+            const view = new Uint32Array(this._sab, offset, 3);
+
+            if (view[0] === targetCell && view[2] === FLOWFIELD_STATUS.READY) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Sample flowfield direction at a cell
+     */
+    static _sampleFlowfield(slotIndex, currentCell) {
+        const flowfieldSlotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+        const dataOffset = this._flowfieldHeadersOffset + (slotIndex * flowfieldSlotSize) + this._FLOWFIELD_HEADER_SIZE;
+        const data = new Uint8Array(this._sab, dataOffset, this._totalCells);
+        return data[currentCell];
+    }
+
+    /**
+     * Update LRU timestamp for flowfield slot
+     */
+    static _touchFlowfieldSlot(slotIndex) {
+        const headerOffset = this._flowfieldHeadersOffset + (slotIndex * this._FLOWFIELD_HEADER_SIZE);
+        const view = new Uint32Array(this._sab, headerOffset, 3);
+        view[1] = this._currentFrame; // lastUsedFrame
+    }
+
+    /**
+     * Clear a flowfield slot
+     */
+    static _clearFlowfieldSlot(slotIndex) {
+        const headerOffset = this._flowfieldHeadersOffset + (slotIndex * this._FLOWFIELD_HEADER_SIZE);
+        const view = new Uint32Array(this._sab, headerOffset, 3);
+        view[0] = 0xFFFFFFFF; // targetCell = invalid
+        view[1] = 0;          // lastUsedFrame
+        view[2] = FLOWFIELD_STATUS.EMPTY;
+    }
+
+    /**
+     * Request flowfield calculation from nav worker
+     * @private
+     */
+    static _requestFlowfield(targetCell) {
+        if (!this._navWorkerPort) return;
+        if (this._pendingFlowfieldRequests.has(targetCell)) return;
+
+        this._pendingFlowfieldRequests.add(targetCell);
+        this._navWorkerPort.postMessage({
+            type: "REQUEST_FLOWFIELD",
+            targetCell,
+        });
+    }
+
+    // =========================================================
+    // Internal - Path slot management
+    // =========================================================
+
+    /**
+     * Find path slot for from/to cells
+     * @returns {number} - Slot index, or -1 if not found
+     */
+    static _findPathSlot(fromCell, toCell) {
+        const headerOffset = this._pathHeadersOffset;
+        const headerSize = this._PATH_HEADER_SIZE;
+
+        for (let i = 0; i < this._maxPaths; i++) {
+            const offset = headerOffset + (i * headerSize);
+            const view = new Uint32Array(this._sab, offset, 5);
+
+            if (view[0] === fromCell && view[1] === toCell && view[4] === PATH_STATUS.READY) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Get next cell in path after currentCell
+     */
+    static _getPathNextCell(slotIndex, currentCell) {
+        const headerOffset = this._pathHeadersOffset + (slotIndex * this._PATH_HEADER_SIZE);
+        const headerView = new Uint32Array(this._sab, headerOffset, 5);
+        const pathLength = headerView[3];
+
+        if (pathLength === 0) return -1;
+
+        const pathSlotSize = this._PATH_HEADER_SIZE + (this._maxPathLength * 4);
+        const dataOffset = this._pathHeadersOffset + (slotIndex * pathSlotSize) + this._PATH_HEADER_SIZE;
+        const pathData = new Uint32Array(this._sab, dataOffset, pathLength);
+
+        // Find current cell in path and return next
+        for (let i = 0; i < pathLength - 1; i++) {
+            if (pathData[i] === currentCell) {
+                return pathData[i + 1];
+            }
+        }
+
+        // If not found in path or at end, return first cell
+        return pathData[0];
+    }
+
+    /**
+     * Copy path to output array
+     */
+    static _copyPathToArray(slotIndex, outPath) {
+        const headerOffset = this._pathHeadersOffset + (slotIndex * this._PATH_HEADER_SIZE);
+        const headerView = new Uint32Array(this._sab, headerOffset, 5);
+        const pathLength = headerView[3];
+
+        if (pathLength === 0) return;
+
+        const pathSlotSize = this._PATH_HEADER_SIZE + (this._maxPathLength * 4);
+        const dataOffset = this._pathHeadersOffset + (slotIndex * pathSlotSize) + this._PATH_HEADER_SIZE;
+        const pathData = new Uint32Array(this._sab, dataOffset, pathLength);
+
+        const pos = { x: 0, y: 0 };
+        for (let i = 0; i < pathLength; i++) {
+            this.getCellCenter(pathData[i], pos);
+            outPath.push({ x: pos.x, y: pos.y });
+        }
+    }
+
+    /**
+     * Update LRU timestamp for path slot
+     */
+    static _touchPathSlot(slotIndex) {
+        const headerOffset = this._pathHeadersOffset + (slotIndex * this._PATH_HEADER_SIZE);
+        const view = new Uint32Array(this._sab, headerOffset, 5);
+        view[2] = this._currentFrame; // lastUsedFrame
+    }
+
+    /**
+     * Clear a path slot
+     */
+    static _clearPathSlot(slotIndex) {
+        const headerOffset = this._pathHeadersOffset + (slotIndex * this._PATH_HEADER_SIZE);
+        const view = new Uint32Array(this._sab, headerOffset, 5);
+        view[0] = 0xFFFFFFFF; // fromCell = invalid
+        view[1] = 0xFFFFFFFF; // toCell = invalid
+        view[2] = 0;          // lastUsedFrame
+        view[3] = 0;          // length
+        view[4] = PATH_STATUS.EMPTY;
+    }
+
+    /**
+     * Request path calculation from nav worker
+     * @private
+     */
+    static _requestPath(fromCell, toCell) {
+        if (!this._navWorkerPort) return;
+
+        const key = `${fromCell}_${toCell}`;
+        if (this._pendingPathRequests.has(key)) return;
+
+        this._pendingPathRequests.add(key);
+        this._navWorkerPort.postMessage({
+            type: "REQUEST_PATH",
+            fromCell,
+            toCell,
+        });
+    }
+
+    // =========================================================
+    // Nav Worker specific methods (for writing results)
+    // =========================================================
+
+    /**
+     * Find or allocate a flowfield slot (nav worker only)
+     * Uses LRU eviction if all slots are full
+     * @returns {number} - Slot index
+     */
+    static allocateFlowfieldSlot(targetCell) {
+        const headerOffset = this._flowfieldHeadersOffset;
+        const headerSize = this._FLOWFIELD_HEADER_SIZE;
+
+        let emptySlot = -1;
+        let lruSlot = 0;
+        let lruFrame = Infinity;
+
+        for (let i = 0; i < this._maxFlowfields; i++) {
+            const offset = headerOffset + (i * headerSize);
+            const view = new Uint32Array(this._sab, offset, 3);
+
+            // Already exists for this target?
+            if (view[0] === targetCell) {
+                return i;
+            }
+
+            // Empty slot?
+            if (view[2] === FLOWFIELD_STATUS.EMPTY && emptySlot < 0) {
+                emptySlot = i;
+            }
+
+            // Track LRU
+            if (view[1] < lruFrame) {
+                lruFrame = view[1];
+                lruSlot = i;
+            }
+        }
+
+        // Use empty slot if available, otherwise evict LRU
+        const slot = emptySlot >= 0 ? emptySlot : lruSlot;
+
+        // Initialize slot header
+        const offset = headerOffset + (slot * headerSize);
+        const view = new Uint32Array(this._sab, offset, 3);
+        view[0] = targetCell;
+        view[1] = this._currentFrame;
+        view[2] = FLOWFIELD_STATUS.COMPUTING;
+
+        return slot;
+    }
+
+    /**
+     * Write flowfield data and mark as ready (nav worker only)
+     */
+    static writeFlowfieldData(slotIndex, directions) {
+        const flowfieldSlotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+        const dataOffset = this._flowfieldHeadersOffset + (slotIndex * flowfieldSlotSize) + this._FLOWFIELD_HEADER_SIZE;
+        const data = new Uint8Array(this._sab, dataOffset, this._totalCells);
+
+        // Copy direction data
+        data.set(directions);
+
+        // Mark as ready
+        const headerOffset = this._flowfieldHeadersOffset + (slotIndex * this._FLOWFIELD_HEADER_SIZE);
+        const view = new Uint32Array(this._sab, headerOffset, 3);
+        view[2] = FLOWFIELD_STATUS.READY;
+    }
+
+    /**
+     * Find or allocate a path slot (nav worker only)
+     * Uses LRU eviction if all slots are full
+     * @returns {number} - Slot index
+     */
+    static allocatePathSlot(fromCell, toCell) {
+        const headerOffset = this._pathHeadersOffset;
+        const headerSize = this._PATH_HEADER_SIZE;
+
+        let emptySlot = -1;
+        let lruSlot = 0;
+        let lruFrame = Infinity;
+
+        for (let i = 0; i < this._maxPaths; i++) {
+            const offset = headerOffset + (i * headerSize);
+            const view = new Uint32Array(this._sab, offset, 5);
+
+            // Already exists for this path?
+            if (view[0] === fromCell && view[1] === toCell) {
+                return i;
+            }
+
+            // Empty slot?
+            if (view[4] === PATH_STATUS.EMPTY && emptySlot < 0) {
+                emptySlot = i;
+            }
+
+            // Track LRU
+            if (view[2] < lruFrame) {
+                lruFrame = view[2];
+                lruSlot = i;
+            }
+        }
+
+        // Use empty slot if available, otherwise evict LRU
+        const slot = emptySlot >= 0 ? emptySlot : lruSlot;
+
+        // Initialize slot header
+        const offset = headerOffset + (slot * headerSize);
+        const view = new Uint32Array(this._sab, offset, 5);
+        view[0] = fromCell;
+        view[1] = toCell;
+        view[2] = this._currentFrame;
+        view[3] = 0; // length
+        view[4] = PATH_STATUS.COMPUTING;
+
+        return slot;
+    }
+
+    /**
+     * Write path data and mark as ready (nav worker only)
+     */
+    static writePathData(slotIndex, pathCells) {
+        const headerOffset = this._pathHeadersOffset + (slotIndex * this._PATH_HEADER_SIZE);
+        const headerView = new Uint32Array(this._sab, headerOffset, 5);
+
+        // Clamp path length
+        const pathLength = Math.min(pathCells.length, this._maxPathLength);
+        headerView[3] = pathLength;
+
+        // Write path data
+        if (pathLength > 0) {
+            const pathSlotSize = this._PATH_HEADER_SIZE + (this._maxPathLength * 4);
+            const dataOffset = this._pathHeadersOffset + (slotIndex * pathSlotSize) + this._PATH_HEADER_SIZE;
+            const pathData = new Uint32Array(this._sab, dataOffset, pathLength);
+
+            for (let i = 0; i < pathLength; i++) {
+                pathData[i] = pathCells[i];
+            }
+        }
+
+        // Mark as ready
+        headerView[4] = PATH_STATUS.READY;
+    }
+
+    // =========================================================
+    // Debug / Visualization methods (for DebugUI)
+    // =========================================================
+
+    /**
+     * Get list of all cached flowfields for debug display
+     * @returns {Array} Array of {slotIndex, targetCell, targetX, targetY, lastUsedFrame}
+     */
+    static getCachedFlowfieldsList() {
+        if (!this._initialized) return [];
+
+        const result = [];
+        const headerOffset = this._flowfieldHeadersOffset;
+        const headerSize = this._FLOWFIELD_HEADER_SIZE;
+
+        for (let i = 0; i < this._maxFlowfields; i++) {
+            const offset = headerOffset + (i * headerSize);
+            const view = new Uint32Array(this._sab, offset, 3);
+            const status = view[2];
+
+            if (status === FLOWFIELD_STATUS.READY) {
+                const targetCell = view[0];
+                const lastUsedFrame = view[1];
+                const targetX = (targetCell % this._gridWidth) * this._cellSize + this._cellSize / 2;
+                const targetY = Math.floor(targetCell / this._gridWidth) * this._cellSize + this._cellSize / 2;
+
+                result.push({
+                    slotIndex: i,
+                    targetCell,
+                    targetX: Math.round(targetX),
+                    targetY: Math.round(targetY),
+                    lastUsedFrame,
+                });
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Get list of all cached paths for debug display
+     * @returns {Array} Array of {slotIndex, fromCell, toCell, fromX, fromY, toX, toY, length, lastUsedFrame}
+     */
+    static getCachedPathsList() {
+        if (!this._initialized) return [];
+
+        const result = [];
+        const headerOffset = this._pathHeadersOffset;
+        const headerSize = this._PATH_HEADER_SIZE;
+
+        for (let i = 0; i < this._maxPaths; i++) {
+            const offset = headerOffset + (i * headerSize);
+            const view = new Uint32Array(this._sab, offset, 5);
+            const status = view[4];
+
+            if (status === PATH_STATUS.READY) {
+                const fromCell = view[0];
+                const toCell = view[1];
+                const lastUsedFrame = view[2];
+                const length = view[3];
+
+                const fromX = (fromCell % this._gridWidth) * this._cellSize + this._cellSize / 2;
+                const fromY = Math.floor(fromCell / this._gridWidth) * this._cellSize + this._cellSize / 2;
+                const toX = (toCell % this._gridWidth) * this._cellSize + this._cellSize / 2;
+                const toY = Math.floor(toCell / this._gridWidth) * this._cellSize + this._cellSize / 2;
+
+                result.push({
+                    slotIndex: i,
+                    fromCell,
+                    toCell,
+                    fromX: Math.round(fromX),
+                    fromY: Math.round(fromY),
+                    toX: Math.round(toX),
+                    toY: Math.round(toY),
+                    length,
+                    lastUsedFrame,
+                });
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Get flowfield data for visualization
+     * @param {number} slotIndex - Slot index
+     * @returns {Object|null} {targetCell, directions: Uint8Array} or null
+     */
+    static getFlowfieldForVisualization(slotIndex) {
+        if (!this._initialized || slotIndex < 0 || slotIndex >= this._maxFlowfields) return null;
+
+        const headerOffset = this._flowfieldHeadersOffset + (slotIndex * this._FLOWFIELD_HEADER_SIZE);
+        const headerView = new Uint32Array(this._sab, headerOffset, 3);
+
+        if (headerView[2] !== FLOWFIELD_STATUS.READY) return null;
+
+        const flowfieldSlotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+        const dataOffset = this._flowfieldHeadersOffset + (slotIndex * flowfieldSlotSize) + this._FLOWFIELD_HEADER_SIZE;
+
+        return {
+            targetCell: headerView[0],
+            directions: new Uint8Array(this._sab, dataOffset, this._totalCells),
+            gridWidth: this._gridWidth,
+            gridHeight: this._gridHeight,
+            cellSize: this._cellSize,
+        };
+    }
+
+    /**
+     * Get path data for visualization
+     * @param {number} slotIndex - Slot index
+     * @returns {Array|null} Array of {x, y} world positions or null
+     */
+    static getPathForVisualization(slotIndex) {
+        if (!this._initialized || slotIndex < 0 || slotIndex >= this._maxPaths) return null;
+
+        const headerOffset = this._pathHeadersOffset + (slotIndex * this._PATH_HEADER_SIZE);
+        const headerView = new Uint32Array(this._sab, headerOffset, 5);
+
+        if (headerView[4] !== PATH_STATUS.READY) return null;
+
+        const pathLength = headerView[3];
+        if (pathLength === 0) return [];
+
+        const pathSlotSize = this._PATH_HEADER_SIZE + (this._maxPathLength * 4);
+        const dataOffset = this._pathHeadersOffset + (slotIndex * pathSlotSize) + this._PATH_HEADER_SIZE;
+        const pathData = new Uint32Array(this._sab, dataOffset, pathLength);
+
+        const result = [];
+        for (let i = 0; i < pathLength; i++) {
+            const cell = pathData[i];
+            const x = (cell % this._gridWidth) * this._cellSize + this._cellSize / 2;
+            const y = Math.floor(cell / this._gridWidth) * this._cellSize + this._cellSize / 2;
+            result.push({ x, y });
+        }
+
+        return result;
+    }
+}
+
+// Export constants for external use
+export { FLOWFIELD_STATUS, PATH_STATUS, DIRECTION, DIR_TO_VEC };

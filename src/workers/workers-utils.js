@@ -92,6 +92,25 @@ export const LOGIC_STATS = {
 };
 
 /**
+ * Navigation Worker Stats Schema
+ * Single navigation worker with pathfinding metrics
+ */
+export const NAVIGATION_STATS = {
+  FPS: 0,
+  FLOWFIELDS_COMPUTED: 1,    // Flowfields calculated this frame
+  PATHS_COMPUTED: 2,          // A* paths calculated this frame
+  FLOWFIELDS_CACHED: 3,       // Total flowfields in cache
+  PATHS_CACHED: 4,            // Total A* paths in cache
+  PENDING_FLOWFIELDS: 5,      // Flowfield requests waiting
+  PENDING_PATHS: 6,           // Path requests waiting
+  GRID_WIDTH: 7,              // Grid dimensions for reference
+  GRID_HEIGHT: 8,
+  // Reserve space for future stats
+  STRIDE_FLOATS: 16,
+  BUFFER_SIZE: 16 * 4,
+};
+
+/**
  * Display configuration for worker stats
  * Defines which stats to show in DebugUI and how to format them
  */
@@ -177,6 +196,33 @@ export const WORKER_DISPLAY_CONFIG = {
       {
         key: "ENTITIES_PROCESSED",
         format: (v) => formatNumber(v),
+      },
+    ],
+  },
+  navigation: {
+    label: "NavGrid",
+    color: "navigation",
+    stats: [
+      { key: "FPS", format: (v) => v.toFixed(2) },
+      {
+        key: "FLOWFIELDS_COMPUTED",
+        format: (v) => formatNumber(v),
+        label: "FF/frame",
+      },
+      {
+        key: "PATHS_COMPUTED",
+        format: (v) => formatNumber(v),
+        label: "A*/frame",
+      },
+      {
+        key: "FLOWFIELDS_CACHED",
+        format: (v) => formatNumber(v),
+        label: "FF cached",
+      },
+      {
+        key: "PATHS_CACHED",
+        format: (v) => formatNumber(v),
+        label: "A* cached",
       },
     ],
   },

@@ -124,6 +124,9 @@
 .debug-ui-stat.particle {
   color: #fb923c;
 }
+.debug-ui-stat.navigation {
+  color: #14b8a6; /* teal for navigation */
+}
 .debug-ui-stat.jobs {
   color: #818cf8;
 }
@@ -321,4 +324,118 @@
 
 .debug-ui-inspector-panel::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 200, 100, 0.5);
+}
+
+/* Navigation Panel Styles */
+.debug-ui-nav-panel {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.debug-ui-nav-columns {
+  display: flex;
+  gap: 16px;
+}
+
+.debug-ui-nav-column {
+  flex: 1;
+  min-width: 0;
+}
+
+.debug-ui-nav-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.debug-ui-nav-header .count {
+  background: rgba(20, 184, 166, 0.3);
+  color: #14b8a6;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.debug-ui-nav-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.debug-ui-nav-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.debug-ui-nav-list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.debug-ui-nav-list::-webkit-scrollbar-thumb {
+  background: rgba(20, 184, 166, 0.3);
+  border-radius: 3px;
+}
+
+.debug-ui-nav-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(20, 184, 166, 0.5);
+}
+
+.debug-ui-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  transition: background 0.1s ease;
+}
+
+.debug-ui-nav-item:last-child {
+  border-bottom: none;
+}
+
+.debug-ui-nav-item:hover {
+  background: rgba(20, 184, 166, 0.1);
+}
+
+.debug-ui-nav-item.selected {
+  background: rgba(20, 184, 166, 0.2);
+  color: #14b8a6;
+}
+
+.debug-ui-nav-item .slot {
+  color: #14b8a6;
+  font-weight: 600;
+  min-width: 24px;
+}
+
+.debug-ui-nav-item .target,
+.debug-ui-nav-item .path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug-ui-nav-item .length {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 9px;
+}
+
+.debug-ui-nav-empty {
+  padding: 16px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  font-style: italic;
 }
