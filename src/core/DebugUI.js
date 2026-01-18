@@ -75,9 +75,7 @@ export class DebugUI {
     this._showWalkabilityGrid = false; // Show walkable/blocked cells
     this._navVisualizationCanvas = null; // Canvas overlay for nav visualization
     this._navVisualizationCtx = null;
-    this._lastCameraX = 0; // Track camera for re-rendering
-    this._lastCameraY = 0;
-    this._lastCameraZoom = 1;
+    this._navRafId = null; // Separate RAF loop for smooth nav rendering
 
     // Worker stat views (created when scene attaches)
     this.workerStatViews = null;
@@ -374,6 +372,8 @@ export class DebugUI {
    */
   detach() {
     this.stop();
+    this._stopNavVisualizationLoop();
+    this._clearNavCanvas();
     this.activeSpawnerType = null;
     this.eraserActive = false;
     this._toolMouseDown = false;
@@ -433,7 +433,6 @@ export class DebugUI {
     this._updateToolButtonStates();
     this._updatePaintTool();
     this._updateInspectorValues();
-    this._updateNavVisualization();
 
     // DEBUG: Uncomment to profile tick time
     // const tickTime = performance.now() - t0;
@@ -441,25 +440,30 @@ export class DebugUI {
   }
 
   /**
-   * Update nav visualization if camera has moved
+   * Start the nav visualization RAF loop (runs at 60fps for smooth camera tracking)
    */
-  _updateNavVisualization() {
-    // Skip if no active visualization
-    if (!this._hasActiveNavVisualization()) return;
+  _startNavVisualizationLoop() {
+    if (this._navRafId) return; // Already running
 
-    // Check if camera has moved
-    const camera = this.scene?.camera;
-    if (!camera) return;
+    const loop = () => {
+      if (this._hasActiveNavVisualization()) {
+        this._renderNavVisualization();
+        this._navRafId = requestAnimationFrame(loop);
+      } else {
+        this._navRafId = null;
+      }
+    };
 
-    const cameraX = camera.x;
-    const cameraY = camera.y;
-    const cameraZoom = camera.zoom || 1;
+    this._navRafId = requestAnimationFrame(loop);
+  }
 
-    // Re-render if camera position or zoom changed
-    if (cameraX !== this._lastCameraX ||
-      cameraY !== this._lastCameraY ||
-      cameraZoom !== this._lastCameraZoom) {
-      this._renderNavVisualization();
+  /**
+   * Stop the nav visualization RAF loop
+   */
+  _stopNavVisualizationLoop() {
+    if (this._navRafId) {
+      cancelAnimationFrame(this._navRafId);
+      this._navRafId = null;
     }
   }
 
@@ -1663,7 +1667,14 @@ export class DebugUI {
       this._showWalkabilityGrid = !this._showWalkabilityGrid;
       walkabilityBtn.classList.toggle("active", this._showWalkabilityGrid);
       walkabilityBtn.textContent = this._showWalkabilityGrid ? "🗺️ Hide Grid" : "🗺️ Show Grid";
-      this._renderNavVisualization();
+
+      // Start/stop RAF loop based on active visualization
+      if (this._hasActiveNavVisualization()) {
+        this._startNavVisualizationLoop();
+      } else {
+        this._stopNavVisualizationLoop();
+        this._clearNavCanvas();
+      }
     };
     controlsRow.appendChild(walkabilityBtn);
     this.elements.navWalkabilityBtn = walkabilityBtn;
@@ -1790,8 +1801,13 @@ export class DebugUI {
       this._selectedFlowfieldSlot = slotIndex;
     }
 
-    // Re-render visualization
-    this._renderNavVisualization();
+    // Start/stop RAF loop based on active visualization
+    if (this._hasActiveNavVisualization()) {
+      this._startNavVisualizationLoop();
+    } else {
+      this._stopNavVisualizationLoop();
+      this._clearNavCanvas();
+    }
 
     // Refresh lists to update selection state
     this._refreshNavigationLists();
@@ -1808,8 +1824,13 @@ export class DebugUI {
       this._selectedPathSlot = slotIndex;
     }
 
-    // Re-render visualization
-    this._renderNavVisualization();
+    // Start/stop RAF loop based on active visualization
+    if (this._hasActiveNavVisualization()) {
+      this._startNavVisualizationLoop();
+    } else {
+      this._stopNavVisualizationLoop();
+      this._clearNavCanvas();
+    }
 
     // Refresh lists to update selection state
     this._refreshNavigationLists();
@@ -1855,12 +1876,26 @@ export class DebugUI {
     this._selectedPathSlot = -1;
     this._showWalkabilityGrid = false;
 
+    // Stop the RAF loop
+    this._stopNavVisualizationLoop();
+
     // Reset walkability button state
     if (this.elements.navWalkabilityBtn) {
       this.elements.navWalkabilityBtn.classList.remove("active");
       this.elements.navWalkabilityBtn.textContent = "🗺️ Show Grid";
     }
 
+    // Clear the canvas
+    this._clearNavCanvas();
+
+    // Refresh lists to clear selection state
+    this._refreshNavigationLists();
+  }
+
+  /**
+   * Clear the nav visualization canvas
+   */
+  _clearNavCanvas() {
     if (this._navVisualizationCtx && this._navVisualizationCanvas) {
       this._navVisualizationCtx.clearRect(
         0, 0,
@@ -1868,9 +1903,6 @@ export class DebugUI {
         this._navVisualizationCanvas.height
       );
     }
-
-    // Refresh lists to clear selection state
-    this._refreshNavigationLists();
   }
 
   /**
@@ -1908,14 +1940,9 @@ export class DebugUI {
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Get camera
+    // Get camera (runs at 60fps now, so always use current camera position)
     const camera = this.scene?.camera || { x: 0, y: 0 };
     const zoom = this.scene?.camera?.zoom || 1;
-
-    // Update last camera position
-    this._lastCameraX = camera.x;
-    this._lastCameraY = camera.y;
-    this._lastCameraZoom = zoom;
 
     // 1. Draw walkability grid first (bottom layer)
     if (this._showWalkabilityGrid) {
@@ -1934,7 +1961,8 @@ export class DebugUI {
   }
 
   /**
-   * Draw walkability grid showing blocked/walkable cells
+   * Draw walkability grid showing blocked cells and grid lines
+   * Optimized: draws continuous lines + only blocked cells
    */
   _drawWalkabilityGrid(ctx, canvas, camera, zoom) {
     if (!NavGrid._initialized) return;
@@ -1954,32 +1982,51 @@ export class DebugUI {
     const endCellX = Math.min(gridWidth, Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1);
     const endCellY = Math.min(gridHeight, Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1);
 
-    // Draw cells
+    // Calculate world bounds for visible area
+    const worldStartX = startCellX * cellSize;
+    const worldStartY = startCellY * cellSize;
+    const worldEndX = endCellX * cellSize;
+    const worldEndY = endCellY * cellSize;
+
+    // 1. Draw only blocked (unwalkable) cells
+    ctx.fillStyle = "rgba(255, 50, 50, 0.5)";
     for (let y = startCellY; y < endCellY; y++) {
       for (let x = startCellX; x < endCellX; x++) {
         const cellIndex = y * gridWidth + x;
-        const isWalkable = walkability[cellIndex] > 0;
-
-        // World to screen coords
-        const sx = (x * cellSize - camera.x) * zoom;
-        const sy = (y * cellSize - camera.y) * zoom;
-
-        if (isWalkable) {
-          // Walkable - subtle green tint
-          ctx.fillStyle = "rgba(100, 255, 100, 0.1)";
-        } else {
-          // Blocked - red
-          ctx.fillStyle = "rgba(255, 50, 50, 0.4)";
+        if (walkability[cellIndex] === 0) {
+          // Blocked cell - draw it
+          const sx = (x * cellSize - camera.x) * zoom;
+          const sy = (y * cellSize - camera.y) * zoom;
+          ctx.fillRect(sx, sy, cellSizeScreen, cellSizeScreen);
         }
-
-        ctx.fillRect(sx, sy, cellSizeScreen, cellSizeScreen);
-
-        // Draw grid lines
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(sx, sy, cellSizeScreen, cellSizeScreen);
       }
     }
+
+    // 2. Draw grid lines as continuous lines (much faster than individual rects)
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+
+    // Vertical lines
+    for (let x = startCellX; x <= endCellX; x++) {
+      const sx = (x * cellSize - camera.x) * zoom;
+      const sy1 = (worldStartY - camera.y) * zoom;
+      const sy2 = (worldEndY - camera.y) * zoom;
+      ctx.moveTo(sx, sy1);
+      ctx.lineTo(sx, sy2);
+    }
+
+    // Horizontal lines
+    for (let y = startCellY; y <= endCellY; y++) {
+      const sy = (y * cellSize - camera.y) * zoom;
+      const sx1 = (worldStartX - camera.x) * zoom;
+      const sx2 = (worldEndX - camera.x) * zoom;
+      ctx.moveTo(sx1, sy);
+      ctx.lineTo(sx2, sy);
+    }
+
+    // Single stroke call for all lines
+    ctx.stroke();
   }
 
   /**
