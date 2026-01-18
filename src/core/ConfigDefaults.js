@@ -21,6 +21,48 @@ export const ShapeType = Object.freeze({
   Polygon: 2,
 });
 
+/**
+ * Z-index values for rendering layers
+ * Used by PixiRenderer and DebugUI for layer ordering
+ * @readonly
+ * @enum {number}
+ */
+export const Z_INDICES = Object.freeze({
+  /** Background layer (tilemap or texture) */
+  BACKGROUND: 0,
+  /** Decals layer (blood, footprints, etc.) */
+  DECALS: 1,
+  /** Casted shadows from entities */
+  CASTED_SHADOWS: 2,
+  /** Main entities layer (sprites, particles) */
+  ENTITIES: 3,
+  /** Lighting overlay layer */
+  LIGHTING: 4,
+  /** Light glow effects layer */
+  LIGHT_GLOW: 5,
+});
+
+/**
+ * Default blend modes for each rendering layer
+ * Used by PixiRenderer during initialization and DebugUI for displaying current values
+ * @readonly
+ * @enum {string}
+ */
+export const LAYER_DEFAULT_BLEND_MODES = Object.freeze({
+  /** Background layer - normal blend */
+  BACKGROUND: "normal",
+  /** Decals layer - normal blend */
+  DECALS: "normal",
+  /** Casted shadows - multiply to darken scene */
+  CASTED_SHADOWS: "multiply",
+  /** Entities layer - normal-npm (non-premultiplied alpha for ParticleContainer) */
+  ENTITIES: "normal-npm",
+  /** Lighting overlay - multiply to darken unlit areas */
+  LIGHTING: "multiply",
+  /** Light glow effects - additive for glow effect */
+  LIGHT_GLOW: "add",
+});
+
 
 
 // ============================================================================

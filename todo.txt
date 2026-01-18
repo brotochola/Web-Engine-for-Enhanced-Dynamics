@@ -6,8 +6,6 @@ Lighting:
 
 
 
--las sombras proyectadas deberian ser parte del sistema de iluminacion general:
-  -meter en una render texture por orden: luz, sus sombras, otra luz, sus sombras, etc
 
 
 
@@ -49,8 +47,7 @@ FSM
 
 -VEC2, VEC3
 
--hacer constantes para todo tipo:
-COLLIDER.SHAPETYPE.RECTANGLE = 1
+
 
 -generar mas chaboncitos
 

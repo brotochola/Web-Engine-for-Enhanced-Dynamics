@@ -18,6 +18,7 @@ import {
   createMultiWorkerStatsReaderArray,
 } from "../workers/workers-utils.js";
 import { formatNumber } from "./utils.js";
+import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from "./ConfigDefaults.js";
 
 /**
  * DebugUI - Self-contained debug overlay that pulls data and updates itself
@@ -144,6 +145,7 @@ export class DebugUI {
     this._updateVisualAidsState();
     this._updateScenePanel();
     this._autoGenerateEntityTools();
+    this._updateLayersAvailability();
     this._updateToolIndicator();
     this.start();
   }
@@ -874,6 +876,10 @@ export class DebugUI {
     const decorationsTab = this._createTab("🌿", "Decorations", "decorations");
     header.appendChild(decorationsTab);
 
+    // Layers tab (NEW)
+    const layersTab = this._createTab("📚", "Layers", "layers");
+    header.appendChild(layersTab);
+
     // Spacer
     const spacer = document.createElement("div");
     spacer.className = "debug-ui-spacer";
@@ -894,6 +900,7 @@ export class DebugUI {
     this._createVisualPanel();
     this._createEntitiesPanel();
     this._createDecorationsPanel();
+    this._createLayersPanel();
 
     // Create tool indicator (shows active tool at bottom of screen)
     this._createToolIndicator();
@@ -1231,6 +1238,260 @@ export class DebugUI {
 
     this.container.appendChild(panel);
     this.sections.decorations.panel = panel;
+  }
+
+  // ========================================
+  // LAYERS PANEL
+  // ========================================
+
+  _createLayersPanel() {
+    const panel = document.createElement("div");
+    panel.className = "debug-ui-panel";
+
+    // Layer names from Z_INDICES enum (imported from ConfigDefaults)
+    const layerNames = Object.keys(Z_INDICES);
+
+    // Store layer control elements for potential updates
+    this.elements.layerControls = {};
+    this.elements.layerRows = {};
+
+    // Create a row for each layer
+    for (const layerName of layerNames) {
+      const row = document.createElement("div");
+      row.className = "debug-ui-row";
+      row.style.gap = "12px";
+      row.style.alignItems = "center";
+      row.style.marginBottom = "6px";
+
+      // Layer name label
+      const label = document.createElement("span");
+      label.className = "debug-ui-stat";
+      label.style.minWidth = "120px";
+      label.style.fontWeight = "bold";
+      label.textContent = layerName;
+      row.appendChild(label);
+
+      // Visibility checkbox
+      const visibleLabel = document.createElement("label");
+      visibleLabel.style.display = "flex";
+      visibleLabel.style.alignItems = "center";
+      visibleLabel.style.gap = "4px";
+      visibleLabel.style.cursor = "pointer";
+      visibleLabel.style.fontSize = "10px";
+      visibleLabel.style.color = "rgba(255, 255, 255, 0.7)";
+
+      const visibleCheckbox = document.createElement("input");
+      visibleCheckbox.type = "checkbox";
+      visibleCheckbox.checked = true;
+      visibleCheckbox.style.cursor = "pointer";
+      visibleCheckbox.onchange = () => this._setLayerProp(layerName, "visible", visibleCheckbox.checked);
+
+      visibleLabel.appendChild(visibleCheckbox);
+      visibleLabel.appendChild(document.createTextNode("Visible"));
+      row.appendChild(visibleLabel);
+
+      // Alpha slider
+      const alphaContainer = document.createElement("div");
+      alphaContainer.style.display = "flex";
+      alphaContainer.style.alignItems = "center";
+      alphaContainer.style.gap = "4px";
+
+      const alphaLabel = document.createElement("span");
+      alphaLabel.style.fontSize = "10px";
+      alphaLabel.style.color = "rgba(255, 255, 255, 0.7)";
+      alphaLabel.textContent = "Alpha:";
+      alphaContainer.appendChild(alphaLabel);
+
+      const alphaSlider = document.createElement("input");
+      alphaSlider.type = "range";
+      alphaSlider.min = "0";
+      alphaSlider.max = "100";
+      alphaSlider.value = "100";
+      alphaSlider.style.width = "80px";
+      alphaSlider.style.cursor = "pointer";
+      alphaSlider.oninput = () => {
+        alphaValue.textContent = alphaSlider.value + "%";
+        this._setLayerProp(layerName, "alpha", parseInt(alphaSlider.value) / 100);
+      };
+      alphaContainer.appendChild(alphaSlider);
+
+      const alphaValue = document.createElement("span");
+      alphaValue.style.fontSize = "10px";
+      alphaValue.style.color = "rgba(255, 255, 255, 0.7)";
+      alphaValue.style.minWidth = "35px";
+      alphaValue.textContent = "100%";
+      alphaContainer.appendChild(alphaValue);
+
+      row.appendChild(alphaContainer);
+
+      // Blend mode dropdown
+      const blendContainer = document.createElement("div");
+      blendContainer.style.display = "flex";
+      blendContainer.style.alignItems = "center";
+      blendContainer.style.gap = "4px";
+
+      const blendLabel = document.createElement("span");
+      blendLabel.style.fontSize = "10px";
+      blendLabel.style.color = "rgba(255, 255, 255, 0.7)";
+      blendLabel.textContent = "Blend:";
+      blendContainer.appendChild(blendLabel);
+
+      const blendSelect = document.createElement("select");
+      blendSelect.style.fontSize = "10px";
+      blendSelect.style.padding = "2px 4px";
+      blendSelect.style.cursor = "pointer";
+      blendSelect.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+      blendSelect.style.color = "white";
+      blendSelect.style.border = "1px solid rgba(255, 255, 255, 0.3)";
+      blendSelect.style.borderRadius = "3px";
+
+      // PIXI blend modes - npm = non-premultiplied alpha (multiply-npm doesn't exist)
+      const blendModes = ["normal", "normal-npm", "add", "add-npm", "multiply", "screen", "screen-npm", "erase"];
+      for (const mode of blendModes) {
+        const option = document.createElement("option");
+        option.value = mode;
+        option.textContent = mode;
+        blendSelect.appendChild(option);
+      }
+      // Set default value from LAYER_DEFAULT_BLEND_MODES enum
+      blendSelect.value = LAYER_DEFAULT_BLEND_MODES[layerName] || "normal";
+      blendSelect.onchange = () => this._setLayerProp(layerName, "blendMode", blendSelect.value);
+      blendContainer.appendChild(blendSelect);
+
+      row.appendChild(blendContainer);
+
+      // Z-Index input
+      const zIndexContainer = document.createElement("div");
+      zIndexContainer.style.display = "flex";
+      zIndexContainer.style.alignItems = "center";
+      zIndexContainer.style.gap = "4px";
+
+      const zIndexLabel = document.createElement("span");
+      zIndexLabel.style.fontSize = "10px";
+      zIndexLabel.style.color = "rgba(255, 255, 255, 0.7)";
+      zIndexLabel.textContent = "Z:";
+      zIndexContainer.appendChild(zIndexLabel);
+
+      const zIndexInput = document.createElement("input");
+      zIndexInput.type = "number";
+      zIndexInput.value = Z_INDICES[layerName];
+      zIndexInput.style.width = "50px";
+      zIndexInput.style.fontSize = "10px";
+      zIndexInput.style.padding = "2px 4px";
+      zIndexInput.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+      zIndexInput.style.color = "white";
+      zIndexInput.style.border = "1px solid rgba(255, 255, 255, 0.3)";
+      zIndexInput.style.borderRadius = "3px";
+      zIndexInput.onchange = () => this._setLayerProp(layerName, "zIndex", parseInt(zIndexInput.value));
+      zIndexContainer.appendChild(zIndexInput);
+
+      row.appendChild(zIndexContainer);
+
+      panel.appendChild(row);
+
+      // Store references
+      this.elements.layerControls[layerName] = {
+        visible: visibleCheckbox,
+        alpha: alphaSlider,
+        alphaValue: alphaValue,
+        blendMode: blendSelect,
+        zIndex: zIndexInput,
+      };
+      this.elements.layerRows[layerName] = row;
+    }
+
+    this.container.appendChild(panel);
+    this.sections.layers.panel = panel;
+  }
+
+  /**
+   * Update layer controls availability based on scene config
+   * Called when scene is attached
+   */
+  _updateLayersAvailability() {
+    if (!this.scene || !this.elements.layerRows) return;
+
+    const config = this.scene.config;
+    const availableLayers = this._getAvailableLayers(config);
+
+    for (const [layerName, row] of Object.entries(this.elements.layerRows)) {
+      const isAvailable = availableLayers.has(layerName);
+      const controls = this.elements.layerControls[layerName];
+
+      if (isAvailable) {
+        row.style.opacity = "1";
+        row.style.pointerEvents = "auto";
+        controls.visible.disabled = false;
+        controls.alpha.disabled = false;
+        controls.blendMode.disabled = false;
+        controls.zIndex.disabled = false;
+      } else {
+        row.style.opacity = "0.4";
+        row.style.pointerEvents = "none";
+        controls.visible.disabled = true;
+        controls.alpha.disabled = true;
+        controls.blendMode.disabled = true;
+        controls.zIndex.disabled = true;
+      }
+    }
+  }
+
+  /**
+   * Determine which layers are available based on scene config
+   * @param {Object} config - Scene configuration
+   * @returns {Set<string>} Set of available layer names
+   */
+  _getAvailableLayers(config) {
+    const available = new Set();
+
+    // ENTITIES is always available
+    available.add("ENTITIES");
+
+    // BACKGROUND - check if scene has tilemap or background texture
+    // Note: We can't easily know this from config alone, so we assume it's available
+    // if the scene has loaded any tilemaps or has a bgTextureName in renderer config
+    if (this.scene.loadedTilemaps && Object.keys(this.scene.loadedTilemaps).length > 0) {
+      available.add("BACKGROUND");
+    }
+    if (config.renderer?.bgTextureName) {
+      available.add("BACKGROUND");
+    }
+
+    // DECALS - check particle.decals config
+    if (config.particle?.decals) {
+      available.add("DECALS");
+    }
+
+    // LIGHTING related layers
+    if (config.lighting?.enabled) {
+      available.add("LIGHTING");
+      available.add("LIGHT_GLOW");
+
+      // CASTED_SHADOWS - only if shadows are enabled within lighting
+      if (config.lighting?.shadowsEnabled) {
+        available.add("CASTED_SHADOWS");
+      }
+    }
+
+    return available;
+  }
+
+  /**
+   * Send layer property change to renderer worker
+   */
+  _setLayerProp(layer, prop, value) {
+    if (!this.scene || !this.scene.workers || !this.scene.workers.renderer) {
+      console.warn("DebugUI: Cannot set layer prop, renderer worker not available");
+      return;
+    }
+
+    const message = {
+      msg: "setLayerProps",
+      layer: layer,
+    };
+    message[prop] = value;
+
+    this.scene.workers.renderer.postMessage(message);
   }
 
   _createToolIndicator() {
