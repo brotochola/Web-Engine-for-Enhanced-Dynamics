@@ -106,6 +106,14 @@ export class PredatorScene extends WEED.Scene {
       maxFlashes: 50,
       resolution: 0.25,
     },
+
+    navigation: {
+      enabled: true,
+      cellSize: 64,
+      maxFlowfields: 16,
+      maxPaths: 64,
+      maxPathLength: 128,
+    },
   };
 
   // ========================================

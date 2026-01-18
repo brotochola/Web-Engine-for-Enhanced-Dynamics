@@ -39,13 +39,16 @@ import {
   LOGIC_DEFAULTS,
   RENDERER_DEFAULTS,
   LIGHTING_DEFAULTS,
+  NAVIGATION_DEFAULTS,
 } from "./ConfigDefaults.js";
+import { NavGrid } from "./NavGrid.js";
 import {
   RENDERER_STATS,
   PARTICLE_STATS,
   PHYSICS_STATS,
   SPATIAL_STATS,
   LOGIC_STATS,
+  NAVIGATION_STATS,
 } from "../workers/workers-utils.js";
 
 class Scene {
@@ -104,6 +107,7 @@ class Scene {
       physics: null,
       renderer: null,
       particle: null,
+      navigation: null, // Dedicated pathfinding worker (if navigation.enabled)
     };
 
     // Query system for component-based entity filtering
@@ -139,7 +143,13 @@ class Scene {
     }
     // Particle worker always runs - it handles lighting, shadows, visibility, etc.
     this.workerReadyStates.particle = false;
-    this.totalWorkers = 3 + this.numberOfSpatialWorkers + numberOfLogicWorkers; // physics, renderer, particle + spatial workers + logic workers
+
+    // Navigation worker (if pathfinding enabled)
+    if (this.config.navigation.enabled) {
+      this.workerReadyStates.navigation = false;
+    }
+
+    this.totalWorkers = 3 + this.numberOfSpatialWorkers + numberOfLogicWorkers + (this.config.navigation.enabled ? 1 : 0);
 
     // Shared buffers
     this.buffers = {
@@ -462,6 +472,12 @@ class Scene {
     this.config.lighting.shadowsEnabled =
       this.config.lighting.enabled &&
       this.config.lighting.shadowsEnabled !== false;
+
+    // Navigation defaults from centralized config
+    this.config.navigation = {
+      ...NAVIGATION_DEFAULTS,
+      ...(this.config.navigation || {}),
+    };
   }
 
   // ========================================
@@ -550,6 +566,11 @@ class Scene {
   /** @returns {number} Maximum flash effects */
   get maxFlashes() {
     return this.config.lighting.maxFlashes;
+  }
+
+  /** @returns {boolean} Whether navigation/pathfinding is enabled */
+  get navigationEnabled() {
+    return this.config.navigation.enabled;
   }
 
   _autoRegisterParentClasses(EntityClass) {
@@ -869,6 +890,46 @@ class Scene {
       this.decalsTotalTiles = totalTiles;
     }
 
+    // Navigation buffer (for pathfinding)
+    if (this.config.navigation.enabled) {
+      const navConfig = this.config.navigation;
+      const { worldWidth, worldHeight } = this.config;
+
+      // Calculate grid dimensions
+      const gridWidth = Math.ceil(worldWidth / navConfig.cellSize);
+      const gridHeight = Math.ceil(worldHeight / navConfig.cellSize);
+
+      // Calculate SAB size and create buffer
+      const navBufferSize = NavGrid.calculateSABSize(navConfig, gridWidth, gridHeight);
+      this.buffers.navigationData = new SharedArrayBuffer(navBufferSize);
+
+      // Write header
+      NavGrid.writeHeader(this.buffers.navigationData, navConfig, gridWidth, gridHeight);
+
+      // Initialize walkability to all walkable (nav worker will rebuild from static entities)
+      const walkabilityOffset = 32; // After header
+      const walkabilityArray = new Uint8Array(this.buffers.navigationData, walkabilityOffset, gridWidth * gridHeight);
+      walkabilityArray.fill(1);
+
+      // Store grid metadata for workers
+      this.navigationMetadata = {
+        gridWidth,
+        gridHeight,
+        cellSize: navConfig.cellSize,
+        maxFlowfields: navConfig.maxFlowfields,
+        maxPaths: navConfig.maxPaths,
+        maxPathLength: navConfig.maxPathLength,
+      };
+
+      // Initialize NavGrid on main thread for DebugUI visualization
+      NavGrid.initialize(this.buffers.navigationData, {
+        worldWidth,
+        worldHeight,
+      });
+
+      console.log(`[Scene] Navigation grid: ${gridWidth}x${gridHeight} cells (${navBufferSize} bytes)`);
+    }
+
     // Pre-initialize entityType values
     this.preInitializeEntityTypeArrays();
 
@@ -1012,6 +1073,13 @@ class Scene {
     this.buffers.logicStats = new SharedArrayBuffer(
       LOGIC_STATS.BUFFER_SIZE_PER_WORKER * this.numberOfLogicWorkers
     );
+
+    // Navigation stats buffer (if navigation enabled)
+    if (this.config.navigation.enabled) {
+      this.buffers.navigationStats = new SharedArrayBuffer(
+        NAVIGATION_STATS.BUFFER_SIZE
+      );
+    }
 
     // Synchronization buffer
     const SYNC_BUFFER_SIZE = 5 * 4;
@@ -1232,6 +1300,14 @@ class Scene {
       connections.push({ from: `logic${i}`, to: "logic0" });
     }
 
+    // Connect all logic workers to navigation worker (if enabled)
+    // Logic workers send pathfinding requests, nav worker computes and writes to SAB
+    if (this.config.navigation.enabled) {
+      for (let i = 0; i < this.numberOfLogicWorkers; i++) {
+        connections.push({ from: `logic${i}`, to: "navigation" });
+      }
+    }
+
     return setupWorkerCommunication(connections);
   }
 
@@ -1288,6 +1364,17 @@ class Scene {
     this.workers.physics.name = "physics";
     this.workers.renderer.name = "renderer";
     this.workers.particle.name = "particle";
+
+    // Navigation worker (if pathfinding enabled)
+    if (this.config.navigation.enabled) {
+      this.workers.navigation = new Worker(
+        `/src/workers/nav_worker.js${cacheBust}`,
+        {
+          type: "module",
+        }
+      );
+      this.workers.navigation.name = "navigation";
+    }
 
     // Preload assets
     const spritesheetConfigs = this.imageUrls.spritesheets || {};
@@ -1350,6 +1437,9 @@ class Scene {
         physicsStats: this.buffers.physicsStats,
         spatialStats: this.buffers.spatialStats,
         logicStats: this.buffers.logicStats,
+        // Navigation buffers (if pathfinding enabled)
+        navigationData: this.buffers.navigationData || null,
+        navigationStats: this.buffers.navigationStats || null,
       },
       globalEntityCount: this.totalEntityCount,
       config: this.config,
@@ -1460,6 +1550,19 @@ class Scene {
       frameRateIndex: PARTICLE_INDEX,
     });
 
+    // Navigation worker (if pathfinding enabled)
+    if (this.config.navigation.enabled && this.workers.navigation) {
+      const NAV_INDEX = LOGIC_START_INDEX + this.numberOfLogicWorkers;
+      this.workers.navigation.postMessage(
+        {
+          ...initData,
+          workerPorts: workerPorts.navigation,
+          frameRateIndex: NAV_INDEX,
+        },
+        workerPorts.navigation ? Object.values(workerPorts.navigation) : []
+      );
+    }
+
     // Initialize renderer
     const offscreenCanvas = this.canvas.transferControlToOffscreen();
 
@@ -1496,6 +1599,7 @@ class Scene {
       this.workers.physics,
       this.workers.renderer,
       this.workers.particle,
+      ...(this.workers.navigation ? [this.workers.navigation] : []),
     ];
 
     for (let worker of allWorkers) {
@@ -1625,6 +1729,7 @@ class Scene {
       this.workers.physics,
       this.workers.renderer,
       this.workers.particle,
+      this.workers.navigation, // Navigation worker (if enabled)
     ];
 
     for (const worker of allWorkers) {

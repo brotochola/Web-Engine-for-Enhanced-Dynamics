@@ -18,6 +18,7 @@ import {
 import { Camera } from "../core/Camera.js";
 import { Ray } from "../core/Ray.js";
 import { Grid } from "../core/Grid.js";
+import { NavGrid } from "../core/NavGrid.js";
 import { ParticleComponent } from "../components/ParticleComponent.js";
 import { DecorationComponent } from "../components/DecorationComponent.js";
 
@@ -114,7 +115,7 @@ export class AbstractWorker {
     const dtRatio = deltaTime / 16.67;
 
     // Accumulate total time in seconds
-    this.accumulatedTime += deltaTime 
+    this.accumulatedTime += deltaTime
 
     // Reuse timing object to avoid GC pressure
     this._timing.deltaTime = deltaTime;
@@ -435,6 +436,17 @@ export class AbstractWorker {
       );
       this.reportLog("Ray system initialized with debug support");
     }
+
+    // Initialize NavGrid system (if navigation enabled)
+    // Navigation buffer is shared across all workers
+    // Logic workers read flowfields/paths, nav worker writes them
+    if (data.buffers?.navigationData && data.config?.navigation?.enabled) {
+      NavGrid.initialize(data.buffers.navigationData, {
+        worldWidth: data.config.worldWidth,
+        worldHeight: data.config.worldHeight,
+      });
+      this.reportLog("NavGrid initialized for pathfinding");
+    }
   }
 
   /**
@@ -447,6 +459,7 @@ export class AbstractWorker {
     self.Keyboard = Keyboard;
     self.Ray = Ray;
     self.Grid = Grid;
+    self.NavGrid = NavGrid;
     self.ParticleEmitter = ParticleEmitter;
     self.ParticleComponent = ParticleComponent;
     self.Flash = Flash;
@@ -565,6 +578,12 @@ export class AbstractWorker {
         this.handleWorkerMessage(workerName, e.data);
       };
     });
+
+    // If this worker has a port to the navigation worker, configure NavGrid to use it
+    // Logic workers use this to send pathfinding requests to the nav worker
+    if (this.workerPorts.has("navigation")) {
+      NavGrid.setNavWorkerPort(this.workerPorts.get("navigation"));
+    }
 
     // console.log(
     //   `${this.constructor.name}: Connected to workers:`,

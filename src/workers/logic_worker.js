@@ -111,8 +111,7 @@ class LogicWorker extends AbstractWorker {
           SpriteSheetRegistry.registerProxy(sheetName, proxyData);
         }
         console.log(
-          `LOGIC WORKER ${this.workerIndex}: Registered ${
-            Object.keys(data.bigAtlasProxySheets).length
+          `LOGIC WORKER ${this.workerIndex}: Registered ${Object.keys(data.bigAtlasProxySheets).length
           } proxy sheets`
         );
       }

@@ -16,6 +16,7 @@ import {
   PHYSICS_STATS,
   SPATIAL_STATS,
   LOGIC_STATS,
+  NAVIGATION_STATS,
   WORKER_DISPLAY_CONFIG,
   createStatsReader,
   createMultiWorkerStatsReaderArray,
@@ -27,6 +28,7 @@ import {
   formatComponentValue,
 } from "./utils.js";
 import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from "./ConfigDefaults.js";
+import { NavGrid, DIR_TO_VEC } from "./NavGrid.js";
 
 /**
  * DebugUI - Self-contained debug overlay that pulls data and updates itself
@@ -67,6 +69,16 @@ export class DebugUI {
     this._inspectorPanelVisible = false; // Is the inspector panel currently showing
     this._prevInspectorValues = {}; // Cache previous values to avoid DOM updates
 
+    // Navigation debug state
+    this._selectedFlowfieldSlot = -1; // Currently selected flowfield for visualization
+    this._selectedPathSlot = -1; // Currently selected path for visualization
+    this._showWalkabilityGrid = false; // Show walkable/blocked cells
+    this._navVisualizationCanvas = null; // Canvas overlay for nav visualization
+    this._navVisualizationCtx = null;
+    this._lastCameraX = 0; // Track camera for re-rendering
+    this._lastCameraY = 0;
+    this._lastCameraZoom = 1;
+
     // Worker stat views (created when scene attaches)
     this.workerStatViews = null;
 
@@ -76,6 +88,7 @@ export class DebugUI {
       renderer: { values: new Array(60).fill(60), index: 0, sum: 3600 },
       particle: { values: new Array(60).fill(60), index: 0, sum: 3600 },
       physics: { values: new Array(60).fill(60), index: 0, sum: 3600 },
+      navigation: { values: new Array(60).fill(60), index: 0, sum: 3600 },
       spatial: [], // Array of smoothing objects (one per spatial worker)
       logic: [], // Array of smoothing objects (one per logic worker)
     };
@@ -205,6 +218,9 @@ export class DebugUI {
           logicWorkerCount
         )
         : [],
+      navigation: buffers.navigationStats
+        ? createStatsReader(buffers.navigationStats, NAVIGATION_STATS)
+        : null,
     };
 
     // Initialize FPS smoothing arrays for multi-worker types
@@ -268,8 +284,8 @@ export class DebugUI {
     this.elements.mainFPS = mainFpsCell;
     table.appendChild(mainRow);
 
-    // Single workers (renderer, particle, physics)
-    const singleWorkers = ["renderer", "particle", "physics"];
+    // Single workers (renderer, particle, physics, navigation)
+    const singleWorkers = ["renderer", "particle", "physics", "navigation"];
     for (const workerType of singleWorkers) {
       if (this.workerStatViews[workerType]) {
         const row = this._createWorkerStatRow(workerType, 0);
@@ -417,10 +433,34 @@ export class DebugUI {
     this._updateToolButtonStates();
     this._updatePaintTool();
     this._updateInspectorValues();
+    this._updateNavVisualization();
 
     // DEBUG: Uncomment to profile tick time
     // const tickTime = performance.now() - t0;
     // if (tickTime > 1) console.log("DebugUI._tick took", tickTime.toFixed(2), "ms");
+  }
+
+  /**
+   * Update nav visualization if camera has moved
+   */
+  _updateNavVisualization() {
+    // Skip if no active visualization
+    if (!this._hasActiveNavVisualization()) return;
+
+    // Check if camera has moved
+    const camera = this.scene?.camera;
+    if (!camera) return;
+
+    const cameraX = camera.x;
+    const cameraY = camera.y;
+    const cameraZoom = camera.zoom || 1;
+
+    // Re-render if camera position or zoom changed
+    if (cameraX !== this._lastCameraX ||
+      cameraY !== this._lastCameraY ||
+      cameraZoom !== this._lastCameraZoom) {
+      this._renderNavVisualization();
+    }
   }
 
   /**
@@ -457,10 +497,11 @@ export class DebugUI {
         "FPS: " + (mainFPSRounded / 100).toFixed(2);
     }
 
-    // Update single workers (renderer, particle, physics)
+    // Update single workers (renderer, particle, physics, navigation)
     this._updateSingleWorkerStats("renderer", RENDERER_STATS);
     this._updateSingleWorkerStats("particle", PARTICLE_STATS);
     this._updateSingleWorkerStats("physics", PHYSICS_STATS);
+    this._updateSingleWorkerStats("navigation", NAVIGATION_STATS);
 
     // Update multi-workers (spatial, logic)
     this._updateMultiWorkerStats("spatial", SPATIAL_STATS);
@@ -902,6 +943,10 @@ export class DebugUI {
     const layersTab = this._createTab("📚", "Layers", "layers");
     header.appendChild(layersTab);
 
+    // Navigation tab (NEW)
+    const navTab = this._createTab("🧭", "Nav", "navigation");
+    header.appendChild(navTab);
+
     // Spacer
     const spacer = document.createElement("div");
     spacer.className = "debug-ui-spacer";
@@ -923,6 +968,7 @@ export class DebugUI {
     this._createEntitiesPanel();
     this._createDecorationsPanel();
     this._createLayersPanel();
+    this._createNavigationPanel();
 
     // Create tool indicator (shows active tool at bottom of screen)
     this._createToolIndicator();
@@ -955,8 +1001,18 @@ export class DebugUI {
       if (this.sections[sectionId].panel) {
         this.sections[sectionId].panel.classList.add("open");
       }
+
+      // Auto-refresh navigation lists when opening nav panel
+      if (sectionId === "navigation") {
+        this._refreshNavigationLists();
+      }
     } else {
       this.openSection = null;
+
+      // Clear navigation visualization when closing nav panel
+      if (sectionId === "navigation") {
+        this._clearNavVisualization();
+      }
     }
   }
 
@@ -1525,6 +1581,540 @@ export class DebugUI {
     message[prop] = value;
 
     this.scene.workers.renderer.postMessage(message);
+  }
+
+  // ========================================
+  // NAVIGATION PANEL
+  // ========================================
+
+  _createNavigationPanel() {
+    const panel = document.createElement("div");
+    panel.className = "debug-ui-panel debug-ui-nav-panel";
+
+    // Header row with refresh button
+    const headerRow = document.createElement("div");
+    headerRow.className = "debug-ui-row";
+    headerRow.style.marginBottom = "8px";
+    headerRow.style.justifyContent = "space-between";
+
+    const title = document.createElement("span");
+    title.className = "debug-ui-stat";
+    title.style.fontWeight = "bold";
+    title.textContent = "Navigation Cache";
+    headerRow.appendChild(title);
+
+    const refreshBtn = document.createElement("button");
+    refreshBtn.className = "debug-ui-btn";
+    refreshBtn.textContent = "🔄 Refresh";
+    refreshBtn.onclick = () => this._refreshNavigationLists();
+    headerRow.appendChild(refreshBtn);
+
+    panel.appendChild(headerRow);
+
+    // Two-column layout for flowfields and paths
+    const columnsContainer = document.createElement("div");
+    columnsContainer.className = "debug-ui-nav-columns";
+
+    // Flowfields column
+    const flowfieldsCol = document.createElement("div");
+    flowfieldsCol.className = "debug-ui-nav-column";
+
+    const ffHeader = document.createElement("div");
+    ffHeader.className = "debug-ui-nav-header";
+    ffHeader.innerHTML = "<span>🎯 Flowfields</span><span class='count' id='nav-ff-count'>0</span>";
+    flowfieldsCol.appendChild(ffHeader);
+
+    const ffList = document.createElement("div");
+    ffList.className = "debug-ui-nav-list";
+    ffList.id = "nav-flowfields-list";
+    flowfieldsCol.appendChild(ffList);
+
+    columnsContainer.appendChild(flowfieldsCol);
+
+    // Paths column
+    const pathsCol = document.createElement("div");
+    pathsCol.className = "debug-ui-nav-column";
+
+    const pathHeader = document.createElement("div");
+    pathHeader.className = "debug-ui-nav-header";
+    pathHeader.innerHTML = "<span>📍 A* Paths</span><span class='count' id='nav-path-count'>0</span>";
+    pathsCol.appendChild(pathHeader);
+
+    const pathList = document.createElement("div");
+    pathList.className = "debug-ui-nav-list";
+    pathList.id = "nav-paths-list";
+    pathsCol.appendChild(pathList);
+
+    columnsContainer.appendChild(pathsCol);
+
+    panel.appendChild(columnsContainer);
+
+    // Control buttons row
+    const controlsRow = document.createElement("div");
+    controlsRow.className = "debug-ui-row";
+    controlsRow.style.marginTop = "8px";
+    controlsRow.style.gap = "8px";
+
+    // Show walkability grid toggle
+    const walkabilityBtn = document.createElement("button");
+    walkabilityBtn.className = "debug-ui-btn";
+    walkabilityBtn.textContent = "🗺️ Show Grid";
+    walkabilityBtn.onclick = () => {
+      this._showWalkabilityGrid = !this._showWalkabilityGrid;
+      walkabilityBtn.classList.toggle("active", this._showWalkabilityGrid);
+      walkabilityBtn.textContent = this._showWalkabilityGrid ? "🗺️ Hide Grid" : "🗺️ Show Grid";
+      this._renderNavVisualization();
+    };
+    controlsRow.appendChild(walkabilityBtn);
+    this.elements.navWalkabilityBtn = walkabilityBtn;
+
+    // Clear visualization button
+    const clearBtn = document.createElement("button");
+    clearBtn.className = "debug-ui-btn";
+    clearBtn.textContent = "❌ Clear All";
+    clearBtn.onclick = () => this._clearNavVisualization();
+    controlsRow.appendChild(clearBtn);
+
+    panel.appendChild(controlsRow);
+
+    // Store references
+    this.elements.navFlowfieldsList = ffList;
+    this.elements.navPathsList = pathList;
+    this.elements.navFFCount = document.getElementById("nav-ff-count");
+    this.elements.navPathCount = document.getElementById("nav-path-count");
+
+    this.container.appendChild(panel);
+    this.sections.navigation.panel = panel;
+  }
+
+  /**
+   * Refresh navigation lists with current cached data
+   */
+  _refreshNavigationLists() {
+    if (!NavGrid._initialized) {
+      this._showNavMessage("NavGrid not initialized");
+      return;
+    }
+
+    // Get cached flowfields
+    const flowfields = NavGrid.getCachedFlowfieldsList();
+    const paths = NavGrid.getCachedPathsList();
+
+    // Update counts
+    const ffCountEl = document.getElementById("nav-ff-count");
+    const pathCountEl = document.getElementById("nav-path-count");
+    if (ffCountEl) ffCountEl.textContent = flowfields.length;
+    if (pathCountEl) pathCountEl.textContent = paths.length;
+
+    // Render flowfields list
+    this._renderFlowfieldsList(flowfields);
+
+    // Render paths list
+    this._renderPathsList(paths);
+  }
+
+  _showNavMessage(msg) {
+    if (this.elements.navFlowfieldsList) {
+      this.elements.navFlowfieldsList.innerHTML = `<div class="debug-ui-nav-empty">${msg}</div>`;
+    }
+    if (this.elements.navPathsList) {
+      this.elements.navPathsList.innerHTML = `<div class="debug-ui-nav-empty">${msg}</div>`;
+    }
+  }
+
+  _renderFlowfieldsList(flowfields) {
+    const container = this.elements.navFlowfieldsList;
+    if (!container) return;
+
+    container.innerHTML = "";
+
+    if (flowfields.length === 0) {
+      container.innerHTML = '<div class="debug-ui-nav-empty">No cached flowfields</div>';
+      return;
+    }
+
+    for (const ff of flowfields) {
+      const item = document.createElement("div");
+      item.className = "debug-ui-nav-item";
+      if (this._selectedFlowfieldSlot === ff.slotIndex) {
+        item.classList.add("selected");
+      }
+
+      item.innerHTML = `
+        <span class="slot">#${ff.slotIndex}</span>
+        <span class="target">→ (${ff.targetX}, ${ff.targetY})</span>
+      `;
+
+      item.onclick = () => this._selectFlowfield(ff.slotIndex);
+      container.appendChild(item);
+    }
+  }
+
+  _renderPathsList(paths) {
+    const container = this.elements.navPathsList;
+    if (!container) return;
+
+    container.innerHTML = "";
+
+    if (paths.length === 0) {
+      container.innerHTML = '<div class="debug-ui-nav-empty">No cached paths</div>';
+      return;
+    }
+
+    for (const path of paths) {
+      const item = document.createElement("div");
+      item.className = "debug-ui-nav-item";
+      if (this._selectedPathSlot === path.slotIndex) {
+        item.classList.add("selected");
+      }
+
+      item.innerHTML = `
+        <span class="slot">#${path.slotIndex}</span>
+        <span class="path">(${path.fromX},${path.fromY}) → (${path.toX},${path.toY})</span>
+        <span class="length">[${path.length}]</span>
+      `;
+
+      item.onclick = () => this._selectPath(path.slotIndex);
+      container.appendChild(item);
+    }
+  }
+
+  _selectFlowfield(slotIndex) {
+    // Deselect path
+    this._selectedPathSlot = -1;
+
+    // Toggle selection
+    if (this._selectedFlowfieldSlot === slotIndex) {
+      this._selectedFlowfieldSlot = -1;
+    } else {
+      this._selectedFlowfieldSlot = slotIndex;
+    }
+
+    // Re-render visualization
+    this._renderNavVisualization();
+
+    // Refresh lists to update selection state
+    this._refreshNavigationLists();
+  }
+
+  _selectPath(slotIndex) {
+    // Deselect flowfield
+    this._selectedFlowfieldSlot = -1;
+
+    // Toggle selection
+    if (this._selectedPathSlot === slotIndex) {
+      this._selectedPathSlot = -1;
+    } else {
+      this._selectedPathSlot = slotIndex;
+    }
+
+    // Re-render visualization
+    this._renderNavVisualization();
+
+    // Refresh lists to update selection state
+    this._refreshNavigationLists();
+  }
+
+  _ensureNavCanvas() {
+    if (this._navVisualizationCanvas) return;
+
+    // Create canvas overlay for navigation visualization
+    const canvas = document.createElement("canvas");
+    canvas.id = "nav-visualization-canvas";
+    canvas.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 9998;
+    `;
+
+    // Set actual canvas dimensions
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    document.body.appendChild(canvas);
+    this._navVisualizationCanvas = canvas;
+    this._navVisualizationCtx = canvas.getContext("2d");
+
+    // Handle resize
+    window.addEventListener("resize", () => {
+      if (this._navVisualizationCanvas) {
+        this._navVisualizationCanvas.width = window.innerWidth;
+        this._navVisualizationCanvas.height = window.innerHeight;
+        // Re-render current visualization
+        this._renderNavVisualization();
+      }
+    });
+  }
+
+  _clearNavVisualization() {
+    this._selectedFlowfieldSlot = -1;
+    this._selectedPathSlot = -1;
+    this._showWalkabilityGrid = false;
+
+    // Reset walkability button state
+    if (this.elements.navWalkabilityBtn) {
+      this.elements.navWalkabilityBtn.classList.remove("active");
+      this.elements.navWalkabilityBtn.textContent = "🗺️ Show Grid";
+    }
+
+    if (this._navVisualizationCtx && this._navVisualizationCanvas) {
+      this._navVisualizationCtx.clearRect(
+        0, 0,
+        this._navVisualizationCanvas.width,
+        this._navVisualizationCanvas.height
+      );
+    }
+
+    // Refresh lists to clear selection state
+    this._refreshNavigationLists();
+  }
+
+  /**
+   * Check if any nav visualization is active
+   */
+  _hasActiveNavVisualization() {
+    return this._showWalkabilityGrid ||
+      this._selectedFlowfieldSlot >= 0 ||
+      this._selectedPathSlot >= 0;
+  }
+
+  /**
+   * Unified render method - renders in correct order:
+   * 1. Walkability grid (bottom)
+   * 2. Flowfield arrows
+   * 3. Path lines (top)
+   */
+  _renderNavVisualization() {
+    if (!this._hasActiveNavVisualization()) {
+      // Clear canvas if nothing to show
+      if (this._navVisualizationCtx && this._navVisualizationCanvas) {
+        this._navVisualizationCtx.clearRect(
+          0, 0,
+          this._navVisualizationCanvas.width,
+          this._navVisualizationCanvas.height
+        );
+      }
+      return;
+    }
+
+    this._ensureNavCanvas();
+    const ctx = this._navVisualizationCtx;
+    const canvas = this._navVisualizationCanvas;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Get camera
+    const camera = this.scene?.camera || { x: 0, y: 0 };
+    const zoom = this.scene?.camera?.zoom || 1;
+
+    // Update last camera position
+    this._lastCameraX = camera.x;
+    this._lastCameraY = camera.y;
+    this._lastCameraZoom = zoom;
+
+    // 1. Draw walkability grid first (bottom layer)
+    if (this._showWalkabilityGrid) {
+      this._drawWalkabilityGrid(ctx, canvas, camera, zoom);
+    }
+
+    // 2. Draw flowfield arrows
+    if (this._selectedFlowfieldSlot >= 0) {
+      this._drawFlowfield(ctx, canvas, camera, zoom, this._selectedFlowfieldSlot);
+    }
+
+    // 3. Draw path (top layer)
+    if (this._selectedPathSlot >= 0) {
+      this._drawPath(ctx, canvas, camera, zoom, this._selectedPathSlot);
+    }
+  }
+
+  /**
+   * Draw walkability grid showing blocked/walkable cells
+   */
+  _drawWalkabilityGrid(ctx, canvas, camera, zoom) {
+    if (!NavGrid._initialized) return;
+
+    const gridWidth = NavGrid._gridWidth;
+    const gridHeight = NavGrid._gridHeight;
+    const cellSize = NavGrid._cellSize;
+    const walkability = NavGrid._walkability;
+
+    if (!walkability) return;
+
+    const cellSizeScreen = cellSize * zoom;
+
+    // Calculate visible cell range
+    const startCellX = Math.max(0, Math.floor(camera.x / cellSize));
+    const startCellY = Math.max(0, Math.floor(camera.y / cellSize));
+    const endCellX = Math.min(gridWidth, Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1);
+    const endCellY = Math.min(gridHeight, Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1);
+
+    // Draw cells
+    for (let y = startCellY; y < endCellY; y++) {
+      for (let x = startCellX; x < endCellX; x++) {
+        const cellIndex = y * gridWidth + x;
+        const isWalkable = walkability[cellIndex] > 0;
+
+        // World to screen coords
+        const sx = (x * cellSize - camera.x) * zoom;
+        const sy = (y * cellSize - camera.y) * zoom;
+
+        if (isWalkable) {
+          // Walkable - subtle green tint
+          ctx.fillStyle = "rgba(100, 255, 100, 0.1)";
+        } else {
+          // Blocked - red
+          ctx.fillStyle = "rgba(255, 50, 50, 0.4)";
+        }
+
+        ctx.fillRect(sx, sy, cellSizeScreen, cellSizeScreen);
+
+        // Draw grid lines
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(sx, sy, cellSizeScreen, cellSizeScreen);
+      }
+    }
+  }
+
+  /**
+   * Draw flowfield arrows (extracted from _visualizeFlowfield)
+   */
+  _drawFlowfield(ctx, canvas, camera, zoom, slotIndex) {
+    const ffData = NavGrid.getFlowfieldForVisualization(slotIndex);
+    if (!ffData) return;
+
+    const { directions, gridWidth, gridHeight, cellSize, targetCell } = ffData;
+
+    // Calculate target position
+    const targetX = (targetCell % gridWidth) * cellSize + cellSize / 2;
+    const targetY = Math.floor(targetCell / gridWidth) * cellSize + cellSize / 2;
+
+    // Draw arrows for each cell (skip if direction is NONE)
+    ctx.strokeStyle = "rgba(0, 200, 255, 0.7)";
+    ctx.lineWidth = 1.5;
+
+    const arrowLen = cellSize * 0.35 * zoom;
+
+    // Calculate visible cell range for optimization
+    const startCellX = Math.max(0, Math.floor(camera.x / cellSize) - 1);
+    const startCellY = Math.max(0, Math.floor(camera.y / cellSize) - 1);
+    const endCellX = Math.min(gridWidth, Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1);
+    const endCellY = Math.min(gridHeight, Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1);
+
+    for (let y = startCellY; y < endCellY; y++) {
+      for (let x = startCellX; x < endCellX; x++) {
+        const cellIndex = y * gridWidth + x;
+        const dir = directions[cellIndex];
+
+        if (dir === 0) continue; // NONE
+
+        // Cell center in world coords
+        const wx = x * cellSize + cellSize / 2;
+        const wy = y * cellSize + cellSize / 2;
+
+        // Transform to screen coords
+        const sx = (wx - camera.x) * zoom;
+        const sy = (wy - camera.y) * zoom;
+
+        // Get direction vector
+        const [dx, dy] = DIR_TO_VEC[dir];
+
+        // Draw arrow line
+        ctx.beginPath();
+        ctx.moveTo(sx - dx * arrowLen * 0.5, sy - dy * arrowLen * 0.5);
+        ctx.lineTo(sx + dx * arrowLen * 0.5, sy + dy * arrowLen * 0.5);
+        ctx.stroke();
+
+        // Arrow head
+        const headLen = arrowLen * 0.4;
+        const angle = Math.atan2(dy, dx);
+        ctx.beginPath();
+        ctx.moveTo(sx + dx * arrowLen * 0.5, sy + dy * arrowLen * 0.5);
+        ctx.lineTo(
+          sx + dx * arrowLen * 0.5 - headLen * Math.cos(angle - Math.PI / 6),
+          sy + dy * arrowLen * 0.5 - headLen * Math.sin(angle - Math.PI / 6)
+        );
+        ctx.moveTo(sx + dx * arrowLen * 0.5, sy + dy * arrowLen * 0.5);
+        ctx.lineTo(
+          sx + dx * arrowLen * 0.5 - headLen * Math.cos(angle + Math.PI / 6),
+          sy + dy * arrowLen * 0.5 - headLen * Math.sin(angle + Math.PI / 6)
+        );
+        ctx.stroke();
+      }
+    }
+
+    // Draw target marker
+    const targetSx = (targetX - camera.x) * zoom;
+    const targetSy = (targetY - camera.y) * zoom;
+
+    ctx.fillStyle = "rgba(255, 100, 100, 0.9)";
+    ctx.beginPath();
+    ctx.arc(targetSx, targetSy, 8 * zoom, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  /**
+   * Draw path line and waypoints (extracted from _visualizePath)
+   */
+  _drawPath(ctx, canvas, camera, zoom, slotIndex) {
+    const pathPoints = NavGrid.getPathForVisualization(slotIndex);
+    if (!pathPoints || pathPoints.length === 0) return;
+
+    // Draw path line
+    ctx.strokeStyle = "rgba(255, 200, 0, 0.9)";
+    ctx.lineWidth = 3 * zoom;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    ctx.beginPath();
+    for (let i = 0; i < pathPoints.length; i++) {
+      const p = pathPoints[i];
+      const sx = (p.x - camera.x) * zoom;
+      const sy = (p.y - camera.y) * zoom;
+
+      if (i === 0) {
+        ctx.moveTo(sx, sy);
+      } else {
+        ctx.lineTo(sx, sy);
+      }
+    }
+    ctx.stroke();
+
+    // Draw waypoint markers
+    for (let i = 0; i < pathPoints.length; i++) {
+      const p = pathPoints[i];
+      const sx = (p.x - camera.x) * zoom;
+      const sy = (p.y - camera.y) * zoom;
+
+      // Start = green, End = red, Middle = yellow
+      if (i === 0) {
+        ctx.fillStyle = "rgba(100, 255, 100, 0.9)";
+      } else if (i === pathPoints.length - 1) {
+        ctx.fillStyle = "rgba(255, 100, 100, 0.9)";
+      } else {
+        ctx.fillStyle = "rgba(255, 200, 0, 0.7)";
+      }
+
+      const radius = (i === 0 || i === pathPoints.length - 1) ? 6 * zoom : 4 * zoom;
+
+      ctx.beginPath();
+      ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
   }
 
   _createToolIndicator() {

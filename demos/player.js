@@ -15,6 +15,7 @@ const {
   Mouse,
   Camera,
   Ray,
+  NavGrid,
   getDirectionFromAngle,
   rng,
   Flash,
@@ -76,6 +77,35 @@ export class Player extends GameObject {
     // Movement acceleration strength
     this.moveAcceleration = 0.3;
   }
+  // Reusable vectors (zero GC)
+  _flowVec = { x: 0, y: 0 };
+  _nextPos = { x: 0, y: 0 };
+  _pathArray = [];
+
+  /**
+   * Test pathfinding - call from tick() to test NavGrid functionality
+   * Demonstrates the zero-GC pattern: pass pre-created objects for results
+   * Delete this method when done testing
+   */
+  testPathFinding() {
+    // IMPORTANT: Must pass pre-created objects, NOT null!
+    // NavGrid methods write INTO these objects (zero GC pattern)
+
+    // Flowfield: for masses of agents going to same target
+    const flowResult = { x: 0, y: 0 };
+    NavGrid.requestVector(this.x, this.y, Mouse.x, Mouse.y, flowResult);
+    // flowResult now contains direction vector (normalized or 0,0 if not ready)
+
+    // A* next position: for single agent path following
+    const nextPos = { x: 0, y: 0 };
+    NavGrid.getNextAStarPosition(this.x, this.y, Mouse.x, Mouse.y, nextPos);
+    // nextPos now contains next cell center to move to
+
+    // A* full path: for planning, debugging, or UI display
+    const pathArray = [];
+    NavGrid.getPathAStar(this.x, this.y, Mouse.x, Mouse.y, pathArray);
+    // pathArray now contains [{x,y}, ...] of all waypoints
+  }
 
   shoot(x, y) {
     if (Math.random() > 0.5) return;
@@ -96,8 +126,6 @@ export class Player extends GameObject {
       color: 0xffbb11, // orange
       intensity: 25000,
     });
-
-    console.log("hit", hitEntityIndex);
   }
 
   /**
@@ -139,8 +167,13 @@ export class Player extends GameObject {
   tick(dtRatio) {
     const i = this.index;
 
-    // Handle WASD input for movement
-    this.handleMovement(i, dtRatio);
+    // TEST: Hold SPACE to use pathfinding instead of WASD
+    if (Keyboard.isDown(" ")) {
+      this.testPathFinding();
+    } else {
+      // Handle WASD input for movement
+      this.handleMovement(i, dtRatio);
+    }
 
     // Update camera to follow player
     this.updateCameraFollow(i);
