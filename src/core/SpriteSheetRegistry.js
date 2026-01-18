@@ -117,10 +117,10 @@ class SpriteSheetRegistry {
         const suggestions = this._findSimilar(animName, available).slice(0, 3);
         console.error(
           `❌ Animation "${animName}" not found in "${sheetName}"\n` +
-            `   Available animations: ${available.length}\n` +
-            (suggestions.length > 0
-              ? `   Did you mean: ${suggestions.join(", ")}?`
-              : "")
+          `   Available animations: ${available.length}\n` +
+          (suggestions.length > 0
+            ? `   Did you mean: ${suggestions.join(", ")}?`
+            : "")
         );
         return undefined;
       }
@@ -137,10 +137,10 @@ class SpriteSheetRegistry {
       const suggestions = this._findSimilar(animName, available).slice(0, 3);
       console.error(
         `❌ Animation "${animName}" not found in "${sheetName}"\n` +
-          `   Available animations: ${available.length}\n` +
-          (suggestions.length > 0
-            ? `   Did you mean: ${suggestions.join(", ")}?`
-            : "")
+        `   Available animations: ${available.length}\n` +
+        (suggestions.length > 0
+          ? `   Did you mean: ${suggestions.join(", ")}?`
+          : "")
       );
       return undefined;
     }
@@ -450,7 +450,7 @@ class SpriteSheetRegistry {
     if (!this.spritesheets.has(spritesheet)) {
       console.error(
         `❌ ${entityName}: Unknown spritesheet "${spritesheet}"\n` +
-          `   Available: ${this.getSpritesheetNames().join(", ")}`
+        `   Available: ${this.getSpritesheetNames().join(", ")}`
       );
       return false;
     }
@@ -458,7 +458,7 @@ class SpriteSheetRegistry {
     if (defaultAnimation && !this.hasAnimation(spritesheet, defaultAnimation)) {
       console.error(
         `❌ ${entityName}: Invalid defaultAnimation "${defaultAnimation}"\n` +
-          `   Available: ${this.getAnimationNames(spritesheet).join(", ")}`
+        `   Available: ${this.getAnimationNames(spritesheet).join(", ")}`
       );
       return false;
     }
@@ -871,10 +871,8 @@ class SpriteSheetRegistry {
             });
 
             console.log(
-              `  ✅ Loaded spritesheet: ${sheetName} (${requiredFrames.size}/${
-                Object.keys(jsonData.frames).length
-              } frames, ${animationsToProcess.length}/${
-                Object.keys(jsonData.animations || {}).length
+              `  ✅ Loaded spritesheet: ${sheetName} (${requiredFrames.size}/${Object.keys(jsonData.frames).length
+              } frames, ${animationsToProcess.length}/${Object.keys(jsonData.animations || {}).length
               } animations)`
             );
           })
@@ -904,6 +902,26 @@ class SpriteSheetRegistry {
     console.log(
       `  ✅ Generated built-in: _lightGradient (${lightGradientCanvas.width}x${lightGradientCanvas.height})`
     );
+
+    // White square (8x8 solid white - used as default/background texture)
+    const whiteSquareCanvas = document.createElement("canvas");
+    whiteSquareCanvas.width = 8;
+    whiteSquareCanvas.height = 8;
+    const whiteCtx = whiteSquareCanvas.getContext("2d");
+    whiteCtx.fillStyle = "#ffffff";
+    whiteCtx.fillRect(0, 0, 8, 8);
+    imagesToPack.push({
+      name: "_white",
+      img: whiteSquareCanvas,
+      width: 8,
+      height: 8,
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth: 8,
+      sourceHeight: 8,
+    });
+    animations["_white"] = ["_white"];
+    console.log(`  ✅ Generated built-in: _white (8x8)`);
 
     // Sort images by size (largest first) for better packing
     imagesToPack.sort(
@@ -969,7 +987,7 @@ class SpriteSheetRegistry {
     if (actualWidth > 4096 || actualHeight > 4096) {
       console.warn(
         `⚠️ BigAtlas dimensions (${actualWidth}x${actualHeight}) exceed 4096x4096. ` +
-          `This may cause performance issues or fail to render on some mobile devices or older GPUs.`
+        `This may cause performance issues or fail to render on some mobile devices or older GPUs.`
       );
     }
 
@@ -1014,8 +1032,7 @@ class SpriteSheetRegistry {
     }
 
     console.log(
-      `✅ BigAtlas created: ${actualWidth}x${actualHeight} with ${
-        Object.keys(frames).length
+      `✅ BigAtlas created: ${actualWidth}x${actualHeight} with ${Object.keys(frames).length
       } frames, ${Object.keys(animations).length} animations`
     );
 

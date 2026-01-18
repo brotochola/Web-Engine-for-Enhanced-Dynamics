@@ -338,6 +338,8 @@ class ParticleWorker extends AbstractWorker {
       const float32Offset = Math.ceil(this.maxShadowSprites / 4) * 4;
       const floatCount = this.maxShadowSprites;
 
+      // Buffer layout matches ShadowCaster.ARRAY_SCHEMA order:
+      // active(Uint8), shadowRadius, x, y, height, rotation, scaleX, scaleY, alpha, entityIdx, lightIdx
       this.shadowSpriteRadius = new Float32Array(
         data.shadows.spriteData,
         float32Offset,
@@ -353,29 +355,35 @@ class ParticleWorker extends AbstractWorker {
         float32Offset + floatCount * 8,
         floatCount
       );
+      // height is at offset 12 but not used for sprite buffer (skipped)
       this.shadowSpriteRotation = new Float32Array(
         data.shadows.spriteData,
-        float32Offset + floatCount * 12,
+        float32Offset + floatCount * 16, // After height (12 + 4)
         floatCount
       );
       this.shadowSpriteScaleX = new Float32Array(
         data.shadows.spriteData,
-        float32Offset + floatCount * 16,
+        float32Offset + floatCount * 20,
         floatCount
       );
       this.shadowSpriteScaleY = new Float32Array(
         data.shadows.spriteData,
-        float32Offset + floatCount * 20,
+        float32Offset + floatCount * 24,
         floatCount
       );
       this.shadowSpriteAlpha = new Float32Array(
         data.shadows.spriteData,
-        float32Offset + floatCount * 24,
+        float32Offset + floatCount * 28,
         floatCount
       );
       this.shadowSpriteEntityIdx = new Int32Array(
         data.shadows.spriteData,
-        float32Offset + floatCount * 28,
+        float32Offset + floatCount * 32,
+        floatCount
+      );
+      this.shadowSpriteLightIdx = new Int32Array(
+        data.shadows.spriteData,
+        float32Offset + floatCount * 36,
         floatCount
       );
 
@@ -1136,6 +1144,7 @@ class ParticleWorker extends AbstractWorker {
     const shadowScaleY = this.shadowSpriteScaleY;
     const shadowAlpha = this.shadowSpriteAlpha;
     const shadowEntityIdx = this.shadowSpriteEntityIdx;
+    const shadowLightIdx = this.shadowSpriteLightIdx;
 
     // Per-entity shadow limit tracking
     const maxShadowsPerEntity = this.maxShadowsPerEntity;
@@ -1315,6 +1324,7 @@ class ParticleWorker extends AbstractWorker {
         shadowScaleY[slotIdx] = lengthScale;
         shadowAlpha[slotIdx] = alpha;
         shadowEntityIdx[slotIdx] = neighborIdx;
+        shadowLightIdx[slotIdx] = lightIdx;
 
         shadowCount++;
         shadowsForThisLight++;
