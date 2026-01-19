@@ -52,6 +52,17 @@ export function clamp01(value, fallback) {
 }
 
 /**
+ * Clamp a value between 0 and 1 (fast path - no type checking)
+ * OPTIMIZED: Assumes value is already a number, uses ternary instead of Math.min/max
+ * Use this in hot loops where you know the input is always a valid number
+ * @param {number} value - The value to clamp (must be a number)
+ * @returns {number} Clamped value
+ */
+export function clamp01Fast(value) {
+  return value < 0 ? 0 : value > 1 ? 1 : value;
+}
+
+/**
  * Clamp a value between min and max
  * @param {number} value - The value to clamp
  * @param {number} min - Minimum value
@@ -105,6 +116,14 @@ export function rayCircleIntersect(
   // Vector from ray origin to circle center
   const toCircleX = circleX - rayX;
   const toCircleY = circleY - rayY;
+
+  // OPTIMIZATION: Early exit if circle is too far to possibly intersect
+  // This avoids the more expensive projection/sqrt calculations for distant objects
+  const distToCircleSq = toCircleX * toCircleX + toCircleY * toCircleY;
+  const maxPossibleDist = maxDist + radius;
+  if (distToCircleSq > maxPossibleDist * maxPossibleDist) {
+    return -1;
+  }
 
   // Project circle center onto ray
   const projection = toCircleX * dirX + toCircleY * dirY;
@@ -378,6 +397,27 @@ export function normalizeDirection(dx, dy, result) {
 }
 
 /**
+ * Normalize a 2D direction vector - FAST version (no zero-length check)
+ * OPTIMIZED: Skips the zero-length check for cases where you KNOW the vector is non-zero
+ * Use this in hot paths where division by zero is impossible (e.g., after distance check)
+ *
+ * WARNING: Will produce NaN/Infinity if dx=dy=0. Only use when you're certain length > 0
+ *
+ * @param {number} dx - X component (must not be zero if dy is also zero)
+ * @param {number} dy - Y component (must not be zero if dx is also zero)
+ * @param {Object} result - Result object to mutate {x, y, length}
+ * @returns {Object} The result object with normalized x, y and original length
+ */
+export function normalizeDirectionFast(dx, dy, result) {
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const invLength = 1 / length; // Single division, two multiplications (faster)
+  result.length = length;
+  result.x = dx * invLength;
+  result.y = dy * invLength;
+  return result;
+}
+
+/**
  * Get normalized direction from point A to point B
  * Convenience wrapper for normalizeDirection
  *
@@ -425,21 +465,58 @@ export function distance2D(x1, y1, x2, y2) {
 }
 
 /**
+ * Check if distance between two points is within a range
+ * OPTIMIZED: Uses squared distance comparison to avoid sqrt
+ * This is faster than: distance2D(x1, y1, x2, y2) <= range
+ *
+ * @param {number} x1 - First point X
+ * @param {number} y1 - First point Y
+ * @param {number} x2 - Second point X
+ * @param {number} y2 - Second point Y
+ * @param {number} range - Maximum distance to check
+ * @returns {boolean} True if distance <= range
+ */
+export function isWithinRange(x1, y1, x2, y2, range) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  return dx * dx + dy * dy <= range * range;
+}
+
+/**
+ * Check if distance between two points is within a range (squared version)
+ * OPTIMIZED: When you already have rangeSq precomputed (e.g., in a loop)
+ *
+ * @param {number} x1 - First point X
+ * @param {number} y1 - First point Y
+ * @param {number} x2 - Second point X
+ * @param {number} y2 - Second point Y
+ * @param {number} rangeSq - Maximum distance SQUARED to check
+ * @returns {boolean} True if distanceSq <= rangeSq
+ */
+export function isWithinRangeSq(x1, y1, x2, y2, rangeSq) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  return dx * dx + dy * dy <= rangeSq;
+}
+
+/**
  * Apply brightness multiplier to a color while preserving hue
- * OPTIMIZED: Uses bitwise ops instead of Math.round for speed
+ * OPTIMIZED: Inlines RGB extraction to avoid function call + object allocation
+ * Uses bitwise ops instead of Math.round for speed
  * @param {number} color - Original color in 0xRRGGBB format
  * @param {number} brightness - Brightness multiplier (0 to 1+)
  * @returns {number} Lit color in 0xRRGGBB format
  */
 export function applyBrightnessToColor(color, brightness) {
-  // Clamp brightness to prevent over-saturation (branchless would be even faster but less readable)
+  // Clamp brightness to prevent over-saturation
   const b = brightness > 1.0 ? 1.0 : brightness;
 
-  // Extract RGB and apply brightness using bitwise truncation (faster than Math.round)
-  const { r, g, b: blue } = extractRGB(color);
-  const litR = (r * b) | 0;
-  const litG = (g * b) | 0;
-  const litB = (blue * b) | 0;
+  // OPTIMIZED: Inline RGB extraction instead of calling extractRGB()
+  // This avoids both the function call overhead and object allocation
+  // Bitwise truncation (| 0) is faster than Math.round
+  const litR = (((color >> 16) & 0xff) * b) | 0;
+  const litG = (((color >> 8) & 0xff) * b) | 0;
+  const litB = ((color & 0xff) * b) | 0;
 
   return (litR << 16) | (litG << 8) | litB;
 }
@@ -448,8 +525,34 @@ export function applyBrightnessToColor(color, brightness) {
 // COLLISION/GEOMETRY UTILITIES
 // ============================================================================
 
+// ============================================================================
+// PRE-ALLOCATED RESULT OBJECTS (for zero-GC hot paths)
+// These can be reused across frames to avoid garbage collection pressure.
+// WARNING: Not thread-safe - use separate instances per worker if needed.
+//
+// Usage example:
+//   import { testCircleCircleCollision, _collisionResult } from './utils.js';
+//
+//   // In hot loop - zero allocations per iteration
+//   for (const entity of entities) {
+//     if (testCircleCircleCollision(x1, y1, r1, x2, y2, r2, _collisionResult)) {
+//       // use _collisionResult.depth, _collisionResult.nx, etc.
+//     }
+//   }
+//
+// For multi-threaded scenarios, create your own result objects:
+//   const myResult = { collided: false, depth: 0, nx: 0, ny: 0 };
+// ============================================================================
+export const _collisionResult = { collided: false, depth: 0, nx: 0, ny: 0 };
+export const _directionResult = { x: 0, y: 0, length: 0 };
+export const _velocityResult = { vx: 0, vy: 0 };
+export const _cellResult = { col: 0, row: 0 };
+export const _pointResult = { x: 0, y: 0 };
+export const _rgbResult = { r: 0, g: 0, b: 0 };
+
 /**
  * Find the closest point on an AABB (Axis-Aligned Bounding Box) to a given point
+ * NOTE: Allocates a new object - use closestPointOnAABBMut() in hot paths
  * @param {number} pointX - Point X coordinate
  * @param {number} pointY - Point Y coordinate
  * @param {number} boxX - Box center X
@@ -468,7 +571,28 @@ export function closestPointOnAABB(pointX, pointY, boxX, boxY, boxW, boxH) {
 }
 
 /**
+ * Find the closest point on an AABB - ZERO ALLOCATION version
+ * OPTIMIZED: Mutates result object instead of allocating
+ * @param {number} pointX - Point X coordinate
+ * @param {number} pointY - Point Y coordinate
+ * @param {number} boxX - Box center X
+ * @param {number} boxY - Box center Y
+ * @param {number} boxW - Box width
+ * @param {number} boxH - Box height
+ * @param {Object} result - Result object to mutate {x, y}
+ * @returns {Object} The result object with closest point
+ */
+export function closestPointOnAABBMut(pointX, pointY, boxX, boxY, boxW, boxH, result) {
+  const halfW = boxW * 0.5;
+  const halfH = boxH * 0.5;
+  result.x = Math.max(boxX - halfW, Math.min(pointX, boxX + halfW));
+  result.y = Math.max(boxY - halfH, Math.min(pointY, boxY + halfH));
+  return result;
+}
+
+/**
  * Clamp velocity vector to a maximum speed
+ * NOTE: Allocates a new object - use clampVelocityMut() in hot paths
  * @param {number} vx - Velocity X component
  * @param {number} vy - Velocity Y component
  * @param {number} maxSpeed - Maximum speed (magnitude)
@@ -487,6 +611,31 @@ export function clampVelocity(vx, vy, maxSpeed) {
   }
 
   return { vx, vy };
+}
+
+/**
+ * Clamp velocity vector to a maximum speed - ZERO ALLOCATION version
+ * OPTIMIZED: Mutates result object instead of allocating
+ * @param {number} vx - Velocity X component
+ * @param {number} vy - Velocity Y component
+ * @param {number} maxSpeed - Maximum speed (magnitude)
+ * @param {Object} result - Result object to mutate {vx, vy}
+ * @returns {Object} The result object with clamped velocity
+ */
+export function clampVelocityMut(vx, vy, maxSpeed, result) {
+  const speedSquared = vx * vx + vy * vy;
+  const maxSpeedSquared = maxSpeed * maxSpeed;
+
+  if (speedSquared > maxSpeedSquared) {
+    const velScale = maxSpeed / Math.sqrt(speedSquared);
+    result.vx = vx * velScale;
+    result.vy = vy * velScale;
+  } else {
+    result.vx = vx;
+    result.vy = vy;
+  }
+
+  return result;
 }
 
 /**
@@ -537,6 +686,7 @@ export function testCircleCircleCollision(x1, y1, r1, x2, y2, r2, result) {
 
 /**
  * Test Circle vs AABB collision
+ * OPTIMIZED: Inlines closest point calculation to avoid function call + allocation
  * Mutates the result object to avoid GC pressure (reuse same object in hot loops)
  * @param {number} circleX - Circle center X
  * @param {number} circleY - Circle center Y
@@ -561,10 +711,14 @@ export function testCircleAABBCollision(
   const halfW = boxW * 0.5;
   const halfH = boxH * 0.5;
 
-  // Find the closest point on the AABB to the circle center
-  const closest = closestPointOnAABB(circleX, circleY, boxX, boxY, boxW, boxH);
-  const closestX = closest.x;
-  const closestY = closest.y;
+  // OPTIMIZED: Inline closest point calculation instead of calling closestPointOnAABB()
+  // This avoids both the function call overhead and object allocation
+  const minX = boxX - halfW;
+  const maxX = boxX + halfW;
+  const minY = boxY - halfH;
+  const maxY = boxY + halfH;
+  const closestX = circleX < minX ? minX : circleX > maxX ? maxX : circleX;
+  const closestY = circleY < minY ? minY : circleY > maxY ? maxY : circleY;
 
   // Calculate distance from circle center to closest point
   const dx = circleX - closestX;
@@ -581,13 +735,13 @@ export function testCircleAABBCollision(
   // Circle center is inside the box
   if (dist === 0) {
     // Find which edge is closest
-    const distToLeft = circleX - (boxX - halfW);
-    const distToRight = boxX + halfW - circleX;
-    const distToTop = circleY - (boxY - halfH);
-    const distToBottom = boxY + halfH - circleY;
+    const distToLeft = circleX - minX;
+    const distToRight = maxX - circleX;
+    const distToTop = circleY - minY;
+    const distToBottom = maxY - circleY;
 
-    const minDistX = Math.min(distToLeft, distToRight);
-    const minDistY = Math.min(distToTop, distToBottom);
+    const minDistX = distToLeft < distToRight ? distToLeft : distToRight;
+    const minDistY = distToTop < distToBottom ? distToTop : distToBottom;
 
     if (minDistX < minDistY) {
       // Push horizontally
@@ -684,6 +838,7 @@ export function getCellIndex(x, y, cellSize, gridCols, gridRows) {
 
 /**
  * Get grid cell coordinates from world position
+ * NOTE: Allocates a new object - use getCellCoordsMut() in hot paths
  * @param {number} x - World X position
  * @param {number} y - World Y position
  * @param {number} cellSize - Size of each grid cell
@@ -699,6 +854,28 @@ export function getCellCoords(x, y, cellSize, gridCols, gridRows) {
     col: Math.max(0, Math.min(gridCols - 1, col)),
     row: Math.max(0, Math.min(gridRows - 1, row)),
   };
+}
+
+/**
+ * Get grid cell coordinates from world position - ZERO ALLOCATION version
+ * OPTIMIZED: Mutates result object instead of allocating
+ * @param {number} x - World X position
+ * @param {number} y - World Y position
+ * @param {number} cellSize - Size of each grid cell
+ * @param {number} gridCols - Number of grid columns
+ * @param {number} gridRows - Number of grid rows
+ * @param {Object} result - Result object to mutate {col, row}
+ * @returns {Object} The result object with grid coordinates
+ */
+export function getCellCoordsMut(x, y, cellSize, gridCols, gridRows, result) {
+  const col = Math.floor(x / cellSize);
+  const row = Math.floor(y / cellSize);
+
+  // Use ternary instead of Math.max/min for micro-optimization
+  result.col = col < 0 ? 0 : col >= gridCols ? gridCols - 1 : col;
+  result.row = row < 0 ? 0 : row >= gridRows ? gridRows - 1 : row;
+
+  return result;
 }
 
 // ============================================================================
@@ -872,6 +1049,25 @@ export function normalizeAngleDifference(angle1, angle2) {
     diff += 2 * Math.PI;
   }
   return diff;
+}
+
+/**
+ * Linear interpolation between two angles (handles wrap-around)
+ * OPTIMIZED: Takes the shortest path around the circle
+ * @param {number} a - Start angle in radians
+ * @param {number} b - End angle in radians
+ * @param {number} t - Interpolation factor (0-1)
+ * @returns {number} Interpolated angle in radians
+ */
+export function lerpAngle(a, b, t) {
+  // Normalize the difference to take the shortest path
+  let diff = b - a;
+  if (diff > Math.PI) {
+    diff -= 2 * Math.PI;
+  } else if (diff < -Math.PI) {
+    diff += 2 * Math.PI;
+  }
+  return a + diff * t;
 }
 
 /**
@@ -1166,6 +1362,7 @@ export function createCircularGradientCanvas(radius = 100, color = 0xffffff) {
 
 /**
  * Extract RGB components from a color value (0xRRGGBB format)
+ * NOTE: Allocates a new object - use extractRGBMut() in hot paths
  * @param {number} color - Color in 0xRRGGBB format
  * @returns {Object} Object with r, g, b properties (0-255)
  */
@@ -1178,7 +1375,22 @@ export function extractRGB(color) {
 }
 
 /**
+ * Extract RGB components from a color value - ZERO ALLOCATION version
+ * OPTIMIZED: Mutates result object instead of allocating
+ * @param {number} color - Color in 0xRRGGBB format
+ * @param {Object} result - Result object to mutate {r, g, b}
+ * @returns {Object} The result object with r, g, b properties (0-255)
+ */
+export function extractRGBMut(color, result) {
+  result.r = (color >> 16) & 0xff;
+  result.g = (color >> 8) & 0xff;
+  result.b = color & 0xff;
+  return result;
+}
+
+/**
  * Extract RGB components from a color value and return as normalized values [0-1]
+ * NOTE: Allocates a new object - use extractRGBNormalizedMut() in hot paths
  * @param {number} color - Color in 0xRRGGBB format
  * @returns {Object} Object with r, g, b properties (0.0-1.0)
  */
@@ -1188,6 +1400,20 @@ export function extractRGBNormalized(color) {
     g: ((color >> 8) & 0xff) / 255,
     b: (color & 0xff) / 255,
   };
+}
+
+/**
+ * Extract RGB components as normalized values [0-1] - ZERO ALLOCATION version
+ * OPTIMIZED: Mutates result object instead of allocating
+ * @param {number} color - Color in 0xRRGGBB format
+ * @param {Object} result - Result object to mutate {r, g, b}
+ * @returns {Object} The result object with r, g, b properties (0.0-1.0)
+ */
+export function extractRGBNormalizedMut(color, result) {
+  result.r = ((color >> 16) & 0xff) / 255;
+  result.g = ((color >> 8) & 0xff) / 255;
+  result.b = (color & 0xff) / 255;
+  return result;
 }
 
 /**
@@ -1621,111 +1847,6 @@ export function printLogo() {
  */
 export function sortByY(a, b) {
   return a.y - b.y;
-}
-
-/**
- * Draw a single digit using 7-segment display style
- * Segments: top, top-left, top-right, middle, bottom-left, bottom-right, bottom
- *
- * @param {PIXI.Graphics} graphics - The Graphics layer to draw on
- * @param {number} digit - The digit to draw (0-9)
- * @param {number} x - X position
- * @param {number} y - Y position
- * @param {number} width - Digit width
- * @param {number} height - Digit height
- * @param {number} lineWidth - Line width
- * @param {number} color - Line color (hex, default: 0xffffff)
- */
-export function drawDigit(
-  graphics,
-  digit,
-  x,
-  y,
-  width,
-  height,
-  lineWidth,
-  color = 0xffffff
-) {
-  // 7-segment patterns for digits 0-9
-  // [top, topLeft, topRight, middle, bottomLeft, bottomRight, bottom]
-  const segments = {
-    0: [1, 1, 1, 0, 1, 1, 1],
-    1: [0, 0, 1, 0, 0, 1, 0],
-    2: [1, 0, 1, 1, 1, 0, 1],
-    3: [1, 0, 1, 1, 0, 1, 1],
-    4: [0, 1, 1, 1, 0, 1, 0],
-    5: [1, 1, 0, 1, 0, 1, 1],
-    6: [1, 1, 0, 1, 1, 1, 1],
-    7: [1, 0, 1, 0, 0, 1, 0],
-    8: [1, 1, 1, 1, 1, 1, 1],
-    9: [1, 1, 1, 1, 0, 1, 1],
-  };
-
-  const seg = segments[digit] || segments[0];
-  const midY = y + height / 2;
-  const strokeStyle = { width: lineWidth, color, alpha: 1 };
-
-  // Top horizontal
-  if (seg[0]) {
-    graphics
-      .moveTo(x, y)
-      .lineTo(x + width, y)
-      .stroke(strokeStyle);
-  }
-  // Top-left vertical
-  if (seg[1]) {
-    graphics.moveTo(x, y).lineTo(x, midY).stroke(strokeStyle);
-  }
-  // Top-right vertical
-  if (seg[2]) {
-    graphics
-      .moveTo(x + width, y)
-      .lineTo(x + width, midY)
-      .stroke(strokeStyle);
-  }
-  // Middle horizontal
-  if (seg[3]) {
-    graphics
-      .moveTo(x, midY)
-      .lineTo(x + width, midY)
-      .stroke(strokeStyle);
-  }
-  // Bottom-left vertical
-  if (seg[4]) {
-    graphics
-      .moveTo(x, midY)
-      .lineTo(x, y + height)
-      .stroke(strokeStyle);
-  }
-  // Bottom-right vertical
-  if (seg[5]) {
-    graphics
-      .moveTo(x + width, midY)
-      .lineTo(x + width, y + height)
-      .stroke(strokeStyle);
-  }
-  // Bottom horizontal
-  if (seg[6]) {
-    graphics
-      .moveTo(x, y + height)
-      .lineTo(x + width, y + height)
-      .stroke(strokeStyle);
-  }
-}
-
-/**
- * Helper to set nested properties (supports dot notation)
- * @param {Object} obj - The object to set the property on
- * @param {string} path - Dot-separated path to the property (e.g., "scale.x")
- * @param {*} value - The value to set
- */
-export function setNestedProperty(obj, path, value) {
-  const keys = path.split(".");
-  const lastKey = keys.pop();
-  const target = keys.reduce((o, k) => o?.[k], obj);
-  if (target && lastKey) {
-    target[lastKey] = value;
-  }
 }
 
 // ============================================================================

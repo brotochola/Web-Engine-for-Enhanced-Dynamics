@@ -27,7 +27,6 @@ import { Grid } from "../core/Grid.js";
 import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from "../core/ConfigDefaults.js";
 import {
   sortByY,
-  setNestedProperty,
   normalizeAngleDifference,
   extractRGBNormalized,
 } from "../core/utils.js";
@@ -2745,56 +2744,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     console.log(
       `PIXI WORKER: Entity sprite system initialized (${this.globalEntityCount} slots, using central particle pool)`
     );
-  }
-
-  /**
-   * Handle messages from other workers (via MessagePort)
-   * This receives sprite commands directly from logic worker
-   */
-  handleWorkerMessage(fromWorker, data) {
-    if (fromWorker === "logic" || fromWorker === "physics") {
-      this.handleSpriteCommand(data);
-    }
-  }
-
-  /**
-   * Handle sprite commands from logic worker
-   * Commands: setProp, callMethod, batchUpdate
-   */
-  handleSpriteCommand(data) {
-    const { cmd, entityId, prop, value, method, args, set, call } = data;
-
-    const sprite = this.bodySprites[entityId];
-    if (!sprite) return;
-
-    switch (cmd) {
-      case "setProp":
-        // Set nested property
-        setNestedProperty(sprite, prop, value);
-        break;
-
-      case "callMethod":
-        // Call method on sprite
-        if (typeof sprite[method] === "function") {
-          sprite[method](...args);
-        }
-        break;
-
-      case "batchUpdate":
-        // Batch set properties
-        if (set) {
-          Object.entries(set).forEach(([key, val]) => {
-            setNestedProperty(sprite, key, val);
-          });
-        }
-        // Batch call methods
-        if (call && call.method) {
-          if (typeof sprite[call.method] === "function") {
-            sprite[call.method](...(call.args || []));
-          }
-        }
-        break;
-    }
   }
 
   /**
