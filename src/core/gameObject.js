@@ -587,6 +587,21 @@ export class GameObject {
     return this;
   }
 
+
+
+  accelerateTowards(x, y, acc) {
+    if (!this._hasComponents.RigidBody) return this;
+    const i = this.index;
+    const dx = x - Transform.x[i];
+    const dy = y - Transform.y[i];
+    const distSq = dx * dx + dy * dy;
+    if (distSq > 0) {
+      const invDist = acc / Math.sqrt(distSq);
+      return this.addAcceleration(dx * invDist, dy * invDist);
+    }
+    return this;
+  }
+
   /**
    * Add to velocity (additive)
    * Syncs previous position for Verlet integration

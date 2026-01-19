@@ -60,8 +60,7 @@ FSM
 
 
 -no usar this.propiedadComunDeOOP=1.. estos valores pueden cambiar entre workers, si hay mas de un
-logic_worker.. Quiza vale la pena tener setters para "todo lo demas", y los logic_workers se avisan
-de la asignacion de propiedades, asi estan sync
+logic_worker..
 
 
 -getAllPropertiesFromAllComponents(): para asi poder clonar
