@@ -608,7 +608,8 @@ class NavWorker extends AbstractWorker {
         walkability.fill(1);
 
         // Mark cells occupied by static entities as blocked
-        for (const entity of staticEntities) {
+        for (let i = 0; i < staticEntities.length; i++) {
+            const entity = staticEntities[i];
             const { x, y, width, height } = entity;
 
             // Calculate cell range
