@@ -59,9 +59,20 @@ FSM
 ------------------------------------------------------------------------------------------------
 
 
+-no usar this.propiedadComunDeOOP=1.. estos valores pueden cambiar entre workers, si hay mas de un
+logic_worker.. Quiza vale la pena tener setters para "todo lo demas", y los logic_workers se avisan
+de la asignacion de propiedades, asi estan sync
 
 
--Tener un Prey.tickAll, en lugar de this.tick() ?
+-getAllPropertiesFromAllComponents(): para asi poder clonar
+-this.constructor.spawnCloneFromInstance(this)
+-this.constructor.spawnCloneFromEntity(this.index)
+
+
+
+
+-Tener un Prey.tickAll, en lugar de this.tick() ? 
+TENER AMBOS! y se puede desde tickall llamar a sistemas, q tmb son metodos estaticos.
 
 
 
@@ -75,7 +86,7 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 
 
 
-  this.clone(...)
+ 
 
 -------------------------------------------------------------------------------------------------
     --- SCENES ----
@@ -88,14 +99,6 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 
 
 
-------------------------------------------------------------------------------------------------
--- NEW WORKERS --
-------------------------------------------------------------------------------------------------
-
-
--worker con A* y con flowfiled pathfinding
-
-
 
 
 
@@ -104,10 +107,13 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 ------------------------------------------------------------------------------------------------
 --- SPATIAL WORKER: ---
 ------------------------------------------------------------------------------------------------
-- celdas no caminables
 
 
+------------------------------------------------------------------------------------------------
+--- NAV WORKER: ---
+------------------------------------------------------------------------------------------------
 
+-rebuild NavGrid
 
 
 
@@ -139,4 +145,10 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 ------------------------------------
 ---- Particle Worker
 ------------------------------------
+
+
+
+
+----------------------------
+Componente Weapon: {type, cooldown, fireRate, damage, maxDistanceMelee, maxDistanceRanged, rangedDamage, meleeDamage}
 

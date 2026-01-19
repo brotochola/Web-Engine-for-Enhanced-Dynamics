@@ -47,13 +47,7 @@ export class SpriteRenderer extends Component {
    * @returns {number} Original width in pixels, or 0 if not found
    */
   get originalWidth() {
-    const spritesheetId = SpriteRenderer.spritesheetId[this.index];
-    const animIndex = SpriteRenderer.animationState[this.index];
-    const dims = SpriteSheetRegistry.getFrameDimensionsById(
-      spritesheetId,
-      animIndex
-    );
-    return dims ? dims.w : 0;
+    return SpriteRenderer.getOriginalWidth(this.index);
   }
 
   /**
@@ -62,8 +56,32 @@ export class SpriteRenderer extends Component {
    * @returns {number} Original height in pixels, or 0 if not found
    */
   get originalHeight() {
-    const spritesheetId = SpriteRenderer.spritesheetId[this.index];
-    const animIndex = SpriteRenderer.animationState[this.index];
+    return SpriteRenderer.getOriginalHeight(this.index);
+  }
+
+  /**
+   * Static method to get original (unscaled) width by entity index
+   * @param {number} entityIndex - Entity index to look up
+   * @returns {number} Original width in pixels, or 0 if not found
+   */
+  static getOriginalWidth(entityIndex) {
+    const spritesheetId = SpriteRenderer.spritesheetId[entityIndex];
+    const animIndex = SpriteRenderer.animationState[entityIndex];
+    const dims = SpriteSheetRegistry.getFrameDimensionsById(
+      spritesheetId,
+      animIndex
+    );
+    return dims ? dims.w : 0;
+  }
+
+  /**
+   * Static method to get original (unscaled) height by entity index
+   * @param {number} entityIndex - Entity index to look up
+   * @returns {number} Original height in pixels, or 0 if not found
+   */
+  static getOriginalHeight(entityIndex) {
+    const spritesheetId = SpriteRenderer.spritesheetId[entityIndex];
+    const animIndex = SpriteRenderer.animationState[entityIndex];
     const dims = SpriteSheetRegistry.getFrameDimensionsById(
       spritesheetId,
       animIndex

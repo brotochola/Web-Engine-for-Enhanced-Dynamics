@@ -2699,15 +2699,15 @@ export class DebugUI {
    */
   _drawSelectedEntity(ctx, canvas, camera, zoom) {
     const selectedIdx = this.debugFlags?.getSelectedEntity?.() ?? -1;
+
     if (selectedIdx < 0 || !Transform.active[selectedIdx]) return;
 
     const posX = Transform.x[selectedIdx];
     const posY = Transform.y[selectedIdx];
 
-    // Get sprite dimensions from Collider (approximation)
-    const radius = Collider.radius[selectedIdx];
-    const width = Collider.width[selectedIdx] || radius * 2 || 20;
-    const height = Collider.height[selectedIdx] || radius * 2 || 20;
+    // Get sprite dimensions from SpriteRenderer (original unscaled size)
+    const width = SpriteRenderer.getOriginalWidth(selectedIdx) || 20;
+    const height = SpriteRenderer.getOriginalHeight(selectedIdx) || 20;
 
     const scaleX = SpriteRenderer.scaleX?.[selectedIdx] || 1;
     const scaleY = SpriteRenderer.scaleY?.[selectedIdx] || 1;
@@ -2988,6 +2988,9 @@ export class DebugUI {
       this.debugFlags.setSelectedEntity(entityIndex);
     }
 
+    // Start visualization loop for bounding box
+    this._startDebugVisualizationLoop();
+
     // Show and populate inspector panel
     this._showInspectorPanel();
     this._populateInspectorPanel();
@@ -3003,6 +3006,12 @@ export class DebugUI {
     // Update debug flags
     if (this.debugFlags) {
       this.debugFlags.clearSelectedEntity();
+    }
+
+    // Stop visualization loop if no other visualizations active
+    if (!this._hasActiveDebugVisualization()) {
+      this._stopDebugVisualizationLoop();
+      this._clearDebugCanvas();
     }
 
     // Hide inspector panel
