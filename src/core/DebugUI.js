@@ -2814,7 +2814,7 @@ export class DebugUI {
       left: 0;
       top: 78px;
       width: 320px;
-      max-height: calc(100vh - 60px);
+      max-height: calc(100vh - 200px);
       background: rgba(15, 15, 20, 0.95);
       border-right: 2px solid rgba(255, 200, 100, 0.5);
       border-bottom: 2px solid rgba(255, 200, 100, 0.3);
