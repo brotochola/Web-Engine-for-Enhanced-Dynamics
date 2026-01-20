@@ -150,16 +150,6 @@ class ParticleWorker extends AbstractWorker {
     this.maxFlashes = 0;
     this.flashStartIndex = 0; // Entity index where flashes start
 
-    // ========================================
-    // PRE-COMPUTED ENTITY DATA (Shared with Spatial Workers)
-    // ========================================
-    // NOTE: Grid rebuilding now handled by spatial workers using row-based partitioning.
-    // These position buffers are shared - spatial workers write during grid rebuild,
-    // then use them for neighbor distance calculations.
-    this.entityPosX = null;   // Float32Array - collider X position
-    this.entityPosY = null;   // Float32Array - collider Y position
-    this.entityHalfExtent = null; // Float32Array - max half-extent for distance checks
-
     // Note: activeEntitiesData is now initialized in AbstractWorker.initializeCommonBuffers
   }
 
@@ -409,22 +399,6 @@ class ParticleWorker extends AbstractWorker {
         );
         this.flashesEnabled = false;
       }
-    }
-
-    // ========================================
-    // PRE-COMPUTED ENTITY DATA - Initialize shared buffers
-    // ========================================
-    // NOTE: Grid rebuilding is now handled by spatial workers (row-based partitioning).
-    // We still keep references to the shared position buffers for potential future use
-    // (e.g., if particle_worker needs to read entity positions for lighting/shadows).
-    if (data.buffers.entityPosX) {
-      this.entityPosX = new Float32Array(data.buffers.entityPosX);
-      this.entityPosY = new Float32Array(data.buffers.entityPosY);
-      this.entityHalfExtent = new Float32Array(data.buffers.entityHalfExtent);
-
-      console.log(
-        `PARTICLE WORKER: Entity position buffers initialized (${this.globalEntityCount} entities)`
-      );
     }
 
     // Note: activeEntitiesData is initialized in AbstractWorker.initializeCommonBuffers
