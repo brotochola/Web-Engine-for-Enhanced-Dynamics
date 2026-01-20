@@ -232,9 +232,11 @@ export class NavGrid {
      * If flowfield not ready: outVec = {x: 0, y: 0}, requests calculation
      */
     static requestVector(cx, cy, tx, ty, outVec) {
+
         if (!this._initialized) {
             outVec.x = 0;
             outVec.y = 0;
+            console.log("NavGrid not initialized");
             return;
         }
 
@@ -243,6 +245,7 @@ export class NavGrid {
         if (targetCell < 0 || targetCell >= this._totalCells) {
             outVec.x = 0;
             outVec.y = 0;
+            console.log("Target cell out of bounds");
             return;
         }
 
@@ -251,6 +254,7 @@ export class NavGrid {
         if (currentCell < 0 || currentCell >= this._totalCells) {
             outVec.x = 0;
             outVec.y = 0;
+            console.log("Current cell out of bounds");
             return;
         }
 
@@ -258,6 +262,7 @@ export class NavGrid {
         if (currentCell === targetCell) {
             outVec.x = 0;
             outVec.y = 0;
+            console.log("Already at target");
             return;
         }
 
@@ -490,6 +495,22 @@ export class NavGrid {
      */
     static getWalkabilityArray() {
         return this._walkability;
+    }
+
+    /**
+ * Request nav worker to rebuild walkability from entity indices
+ * Can be called from any worker that has NavGrid initialized
+ * @param {number[]} entityIndices - Array of entity indices to mark as obstacles
+ */
+    static updateNavGrid(entityIndices) {
+        if (!this._navWorkerPort) {
+            console.warn("NavGrid: No nav worker port set, cannot update grid");
+            return;
+        }
+        this._navWorkerPort.postMessage({
+            type: "REBUILD_FROM_INDICES",
+            entityIndices
+        });
     }
 
     /**

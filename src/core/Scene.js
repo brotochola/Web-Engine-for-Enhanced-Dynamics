@@ -953,6 +953,8 @@ class Scene {
     this.buffers.activeEntitiesData = new SharedArrayBuffer(
       ACTIVE_ENTITIES_BUFFER_SIZE
     );
+    // Make active entities list accessible from main thread via GameObject.getAllActive()
+    GameObject.activeEntitiesData = new Uint32Array(this.buffers.activeEntitiesData);
 
     const INPUT_BUFFER_SIZE = this.inputBufferSize * 4;
     this.buffers.inputData = new SharedArrayBuffer(INPUT_BUFFER_SIZE);

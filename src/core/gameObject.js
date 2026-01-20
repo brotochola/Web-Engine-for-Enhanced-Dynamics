@@ -28,6 +28,10 @@ export class GameObject {
   static neighborData = null;
   static distanceData = null; // Squared distances for each neighbor
 
+  // Active entities list (built by particle_worker each frame)
+  // Layout: [count, entityIdx0, entityIdx1, ...]
+  static activeEntitiesData = null;
+
   // Camera data (shared with main thread)
   static cameraData = null; // Float32Array [zoom, x, y]
 
@@ -840,32 +844,8 @@ export class GameObject {
     }
   }
 
-  /**
-   * Helper method to call sprite methods
-   */
-  callSpriteMethod(method, args = []) {
-    if (this.logicWorker) {
-      this.logicWorker.sendDataToWorker("renderer", {
-        cmd: "callMethod",
-        entityId: this.index,
-        method: method,
-        args: args,
-      });
-    }
-  }
 
-  /**
-   * Helper method to batch multiple sprite updates
-   */
-  updateSprite(updates) {
-    if (this.logicWorker) {
-      this.logicWorker.sendDataToWorker("renderer", {
-        cmd: "batchUpdate",
-        entityId: this.index,
-        ...updates,
-      });
-    }
-  }
+
 
   /**
    * LIFECYCLE: Called at the END of constructor - runs ONCE per entity lifetime
@@ -1653,6 +1633,84 @@ export class GameObject {
       }
     }
   }
+
+
+  static getAllActiveIndices() {
+    const indices = this.entityIndices;
+    if (!indices) return null;
+
+    const active = Transform.active;
+    const len = indices.length;
+    const activeIndices = new Uint32Array(len); // Pre-allocate max size
+    let count = 0;
+
+    for (let j = 0; j < len; j++) {
+      const idx = indices[j];
+      if (active[idx]) {
+        activeIndices[count++] = idx;
+      }
+    }
+
+    return activeIndices.subarray(0, count); // Return view of used portion
+  }
+
+  /**
+   * Get active entity indices from the pre-built activeEntitiesData buffer.
+   * 
+   * When called on GameObject: returns ALL active entities.
+   * When called on a subclass (e.g., Tree.getAllActive()): returns only active entities of that type.
+   * 
+   * @returns {Uint32Array|number[]} Active entity indices (sorted ascending)
+   * 
+   * PERFORMANCE NOTE: Hybrid approach for optimal performance:
+   * - O(1) when called on GameObject (subarray view, no allocation)
+   * - Small pools (<100): iteration (lower overhead)
+   * - Large pools (>=100): binary search (better scaling)
+   */
+  static getAllActive() {
+    const data = GameObject.activeEntitiesData;
+    if (!data) return null;
+    const totalCount = data[0];
+    if (totalCount === 0) return data.subarray(1, 1);
+
+    // If called on GameObject itself, return all active entities
+    if (this === GameObject) {
+      return data.subarray(1, 1 + totalCount);
+    }
+
+    // Called on a subclass - use hybrid approach based on pool size
+    const poolSize = this.poolSize;
+
+    // For small pools, simple iteration is faster (less overhead)
+    if (poolSize < 100) {
+      return this.getAllActiveIndices();
+    }
+
+    // For large pools, binary search scales better
+    const startIndex = this.startIndex;
+    const endIndex = startIndex + poolSize;
+
+    // Binary search to find first index >= startIndex
+    let lo = 1, hi = 1 + totalCount;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (data[mid] < startIndex) lo = mid + 1;
+      else hi = mid;
+    }
+    const first = lo;
+
+    // Binary search to find first index >= endIndex
+    hi = 1 + totalCount;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (data[mid] < endIndex) lo = mid + 1;
+      else hi = mid;
+    }
+    const last = lo;
+
+    return data.subarray(first, last);
+  }
+
 
 
 

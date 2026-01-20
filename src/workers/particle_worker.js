@@ -511,7 +511,7 @@ class ParticleWorker extends AbstractWorker {
    *
    * NOTE: Writes to SHARED grid buffer, read by spatial_workers and raycasting
    */
-  rebuildGrid() {
+  rebuildSpatialGrid() {
     if (!this.occupiedCells) return; // Grid not initialized
 
     // DOUBLE BUFFERING: Always write to the write-only grid buffer
@@ -640,7 +640,7 @@ class ParticleWorker extends AbstractWorker {
     // Rebuild spatial grid into WRITE buffer
     // OVERLAPPED EXECUTION: Spatial workers read from the stable READ buffer
     // simultaneously while we rebuild into the write buffer. No synchronization needed!
-    this.rebuildGrid();
+    this.rebuildSpatialGrid();
 
     // DOUBLE BUFFER SWAP: Make the newly built grid available for reading
     // After this atomic swap, spatial workers will see the new grid on next frame
