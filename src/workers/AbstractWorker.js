@@ -331,6 +331,8 @@ export class AbstractWorker {
       this.activeEntitiesData = new Uint32Array(
         data.buffers.activeEntitiesData
       );
+      // Also set on GameObject for static access via GameObject.getAllActive()
+      GameObject.activeEntitiesData = this.activeEntitiesData;
     }
 
     // Initialize frame rate tracking buffer

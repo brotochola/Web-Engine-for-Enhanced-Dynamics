@@ -16,6 +16,7 @@ self.postMessage({
 import { AbstractWorker } from "./AbstractWorker.js";
 import { NavGrid, DIRECTION } from "../core/NavGrid.js";
 import { NAVIGATION_STATS, createStatsWriter } from "./workers-utils.js";
+import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult } from "../core/ColliderUtils.js";
 
 /**
  * NavScratch - Reusable buffers for pathfinding algorithms
@@ -217,6 +218,12 @@ class NavWorker extends AbstractWorker {
             case "REBUILD": {
                 // Rebuild walkability grid from static entities
                 this.rebuildWalkability(data.staticEntities || []);
+                break;
+            }
+
+            case "REBUILD_FROM_INDICES": {
+                // Rebuild walkability grid from entity indices (reads from component SABs)
+                this.rebuildWalkabilityFromIndices(data.entityIndices || []);
                 break;
             }
         }
@@ -636,6 +643,60 @@ class NavWorker extends AbstractWorker {
         this.cachedPathsCount = 0;
 
         this.reportLog(`rebuilt walkability grid, ${staticEntities.length} static entities`);
+    }
+
+    /**
+     * Rebuild walkability grid from entity indices
+     * Reads positions from Transform component and sizes from Collider component
+     * Handles both circle and box colliders via ColliderUtils
+     * Called when entities change (NOT hot path)
+     */
+    rebuildWalkabilityFromIndices(entityIndices) {
+        if (!this.scratch) return;
+
+        const walkability = NavGrid.getWalkabilityArray();
+        const cellSize = NavGrid._cellSize;
+        const gridWidth = this.gridWidth;
+        const gridHeight = this.gridHeight;
+
+        // Pre-compute invariants outside loop (performance)
+        const invCellSize = 1 / cellSize;
+        const maxCol = gridWidth - 1;
+        const maxRow = gridHeight - 1;
+
+        // Start with all cells walkable
+        walkability.fill(1);
+
+        // Mark cells occupied by entities as blocked
+        for (let i = 0; i < entityIndices.length; i++) {
+            const idx = entityIndices[i];
+
+            // Get collider bounds (handles circles, boxes, and offsets)
+            getColliderBounds(idx, _boundsResult);
+
+            // Calculate cell range covered by this collider
+            getCellRange(
+                _boundsResult.posX, _boundsResult.posY,
+                _boundsResult.halfW, _boundsResult.halfH,
+                invCellSize, maxCol, maxRow, _cellRangeResult
+            );
+
+            // Mark all cells in range as blocked
+            for (let row = _cellRangeResult.minRow; row <= _cellRangeResult.maxRow; row++) {
+                for (let col = _cellRangeResult.minCol; col <= _cellRangeResult.maxCol; col++) {
+                    walkability[row * gridWidth + col] = 0; // blocked
+                }
+            }
+        }
+
+        // Invalidate all cached paths and flowfields
+        NavGrid.invalidate();
+
+        // Reset cache counters
+        this.cachedFlowfieldsCount = 0;
+        this.cachedPathsCount = 0;
+
+        this.reportLog(`rebuilt walkability from ${entityIndices.length} entity indices`);
     }
 
     /**

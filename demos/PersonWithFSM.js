@@ -3,6 +3,8 @@
 
 import WEED from "/src/index.js";
 import { CivilianBehaviorFSM } from "./CivilianBehaviorFSM.js";
+import { NavGrid } from "../src/core/NavGrid.js";
+import { Mouse } from "../src/core/Mouse.js";
 
 const {
   GameObject,
@@ -80,9 +82,22 @@ export class PersonWithFSM extends GameObject {
     // Update the FSM - handles state transitions and calls onUpdate
     this.civilianBehaviorFSM.tick(dt, this);
 
+    let vec = { x: 0, y: 0 };
+
+    NavGrid.requestVector(this.x, this.y, 10000, 7000, vec);
+
+    this.addAcceleration(vec.x, vec.y);
+
     // Keep within world bounds
     this.keepWithinBounds(dt);
     this.updateAnimation();
+  }
+  calculateAStarToMouse() {
+    const path = [];
+    NavGrid.getPathAStar(this.x, this.y, Mouse.x, Mouse.y, path);
+    console.log("path", path);
+    return path;
+
   }
 
   updateAnimation() {

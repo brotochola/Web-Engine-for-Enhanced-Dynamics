@@ -108,6 +108,7 @@ export class PredatorScene extends WEED.Scene {
     },
 
     navigation: {
+      noLimitFPS: true,
       enabled: true,
       cellSize: 64,
       maxFlowfields: 16,
