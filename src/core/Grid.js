@@ -1,56 +1,62 @@
+// =============================================================================
 // Grid.js - Row-Based Spatial Grid with Deterministic Memory Layout
-// 
-// ARCHITECTURE: Each spatial worker owns specific grid rows (cellY % workerCount === workerId)
-// - No double buffering needed for grid (row ownership eliminates races)
-// - No Atomics, no locks, no coordination between workers
+// =============================================================================
+//
+// ARCHITECTURE: Pure row-based partitioning with ZERO synchronization
+// - Grid: Single buffer, each spatial worker owns specific rows
+// - Neighbors: Single buffer, each spatial worker writes neighbors for its entities
+// - No double buffering, no Atomics, no locks, no coordination
 // - Fixed memory layout like Excel spreadsheet - 100% deterministic
-// - Neighbor data still uses double buffering for clean reads by logic workers
+// - Accepts stale data by design (imperceptible, filtered by distance checks)
 //
 // MEMORY LAYOUT:
-// SpatialGridSAB: Fixed cells with [count, pad, entities[MAX_ENTITIES_PER_CELL]]
-// NeighborsSAB:   Fixed per-entity with [count, pad, neighbors[MAX_NEIGHBORS]]
-// DistancesSAB:   Fixed per-entity with [dist2[MAX_NEIGHBORS]]
+// SpatialGridSAB: Fixed cells with [count:Uint8, pad:3, entities[MAX_ENTITIES_PER_CELL]:Uint32]
+// NeighborsSAB:   Fixed per-entity with [count:Uint16, pad:2, neighbors[MAX_NEIGHBORS]:Uint32]
+// DistancesSAB:   Fixed per-entity with [dist2[MAX_NEIGHBORS]:Float32]
+//
+// WHY NO DOUBLE BUFFERING FOR NEIGHBORS?
+// - "Torn reads" only mix current + recent-frame data (never garbage)
+// - All neighbor entries are valid entity IDs (deterministic memory)
+// - Distance checks filter out-of-range entities anyway
+// - Transform.active[] check handles despawned entities
+// - Same guarantees as 1-frame latency, simpler implementation
+//
+// =============================================================================
 
 import { Transform } from "../components/Transform.js";
 import { Collider } from "../components/Collider.js";
 
-// ============================================================================
+// =============================================================================
 // CONSTANTS - Must match across all workers
-// ============================================================================
-const MAX_ENTITIES_PER_CELL = 16;  // Max entities that can occupy a single cell
+// =============================================================================
+const MAX_ENTITIES_PER_CELL = 16;  // Max entities per grid cell
 const MAX_NEIGHBORS = 500;         // Max neighbors per entity
 
 // Cell byte layout: 4 bytes (count + pad) + MAX_ENTITIES_PER_CELL * 4 bytes
 const CELL_BYTE_SIZE = 4 + MAX_ENTITIES_PER_CELL * 4; // 68 bytes
 
-// Neighbor byte layout per entity: 4 bytes (count + pad) + MAX_NEIGHBORS * 4 bytes
-const NEIGHBOR_STRIDE = 1 + MAX_NEIGHBORS; // In Uint32 elements (count + neighbors)
+// Neighbor stride: count + MAX_NEIGHBORS (in Uint32/Float32 elements)
+const NEIGHBOR_STRIDE = 1 + MAX_NEIGHBORS;
 
 /**
  * Grid - Static class for row-based spatial partitioning
  * 
  * ROW OWNERSHIP MODEL:
  * - Worker i owns all cells where: cellY % totalWorkers === workerId
- * - Each worker rebuilds its own rows from scratch each frame
- * - Each worker computes neighbors only for entities in its rows
- * - Workers can READ any cell (for 3x3 neighbor search) but only WRITE to owned rows
+ * - Each worker rebuilds its own rows and computes neighbors for entities in those rows
+ * - Workers can READ any cell/neighbor but only WRITE to owned data
+ * - No synchronization needed - row ownership prevents all races
  *
  * Usage:
- *   // Get cell index from world position
+ *   // Cell queries
  *   const cellIdx = Grid.getCellIndex(worldX, worldY);
- *   
- *   // Get entities in a cell
  *   const count = Grid.getCellCount(cellIdx);
- *   for (let i = 0; i < count; i++) {
- *     const entityId = Grid.getCellEntity(cellIdx, i);
- *   }
+ *   const entityId = Grid.getCellEntity(cellIdx, k);
  *   
- *   // Get neighbors for an entity (from double-buffered read buffer)
+ *   // Neighbor queries (single buffer - always current/recent data)
  *   const neighborCount = Grid.getNeighborCount(entityId);
- *   for (let k = 0; k < neighborCount; k++) {
- *     const neighborId = Grid.getNeighbor(entityId, k);
- *     const distSq = Grid.getNeighborDistanceSq(entityId, k);
- *   }
+ *   const neighborId = Grid.getNeighbor(entityId, k);
+ *   const distSq = Grid.getNeighborDistanceSq(entityId, k);
  */
 export class Grid {
   // ===== GRID METADATA =====
@@ -65,45 +71,34 @@ export class Grid {
   // ===== SPATIAL GRID DATA (Single Buffer - Row Ownership) =====
   // Layout per cell: [count:Uint8, pad:3bytes, entities[16]:Uint32]
   static _gridBuffer = null;    // SharedArrayBuffer
-  static _gridCounts = null;    // Uint8Array - count per cell
-  static _gridEntities = null;  // Uint32Array - entity IDs (offset 4 per cell)
+  static _gridCounts = null;    // Uint8Array view - count at byte 0 of each cell
+  static _gridEntities = null;  // Uint32Array view - entities starting at byte 4
 
-  // ===== NEIGHBOR DATA (Double Buffered for Clean Reads) =====
-  // Layout per entity: [count:Uint16, pad:2bytes, neighbors[MAX_NEIGHBORS]:Uint32]
-  static _neighborBufferA = null;
-  static _neighborBufferB = null;
-  static _neighborDataA = null;  // Int32Array
-  static _neighborDataB = null;  // Int32Array
+  // ===== NEIGHBOR DATA (Single Buffer - Row Ownership) =====
+  // Layout per entity: [count:Int32, neighbors[MAX_NEIGHBORS]:Int32]
+  static _neighborBuffer = null;   // SharedArrayBuffer
+  static _neighborData = null;     // Int32Array view
 
-  // Layout per entity: [dist2[MAX_NEIGHBORS]:Float32]
-  static _distanceBufferA = null;
-  static _distanceBufferB = null;
-  static _distanceDataA = null;  // Float32Array
-  static _distanceDataB = null;  // Float32Array
-
-  // ===== SYNCHRONIZATION =====
-  // [0] = currentReadBuffer (0=A, 1=B)
-  // [1] = workersFinished counter
-  // [2] = totalWorkers
-  static _syncBuffer = null;
-  static _syncData = null;       // Int32Array
+  // Layout per entity: [dist2[MAX_NEIGHBORS]:Float32]  
+  static _distanceBuffer = null;   // SharedArrayBuffer
+  static _distanceData = null;     // Float32Array view
 
   // Internal stride for neighbor arrays
   static _stride = NEIGHBOR_STRIDE;
 
-  // ===== INITIALIZATION =====
+  // =============================================================================
+  // INITIALIZATION
+  // =============================================================================
 
   /**
    * Initialize Grid with SharedArrayBuffers and metadata
    * Called once per worker during initialization
    * 
    * @param {Object} buffers - SharedArrayBuffers:
-   *   - gridBuffer: Single buffer for spatial grid
-   *   - neighborBufferA/B: Double-buffered neighbor indices
-   *   - distanceBufferA/B: Double-buffered neighbor distances
-   *   - syncBuffer: Synchronization data
-   * @param {Object} metadata - Grid configuration:
-   *   - cellSize, gridWidth, gridHeight, maxNeighbors
+   *   - gridBuffer: Spatial grid cells
+   *   - neighborBuffer: Neighbor indices per entity
+   *   - distanceBuffer: Neighbor distances per entity
+   * @param {Object} metadata - Grid configuration
    */
   static initialize(buffers, metadata) {
     // Store metadata
@@ -118,68 +113,45 @@ export class Grid {
     // ===== SPATIAL GRID (Single Buffer) =====
     if (buffers.gridBuffer) {
       Grid._gridBuffer = buffers.gridBuffer;
-      // Count array: 1 byte per cell at offset 0 of each cell
       Grid._gridCounts = new Uint8Array(buffers.gridBuffer);
-      // Entity array: Uint32 starting at byte 4 of each cell
       Grid._gridEntities = new Uint32Array(buffers.gridBuffer);
     }
 
-    // ===== NEIGHBOR DATA (Double Buffered) =====
-    if (buffers.neighborBufferA) {
-      Grid._neighborBufferA = buffers.neighborBufferA;
-      Grid._neighborDataA = new Int32Array(buffers.neighborBufferA);
-    }
-    if (buffers.neighborBufferB) {
-      Grid._neighborBufferB = buffers.neighborBufferB;
-      Grid._neighborDataB = new Int32Array(buffers.neighborBufferB);
+    // ===== NEIGHBOR DATA (Single Buffer) =====
+    if (buffers.neighborBuffer) {
+      Grid._neighborBuffer = buffers.neighborBuffer;
+      Grid._neighborData = new Int32Array(buffers.neighborBuffer);
     }
 
-    // ===== DISTANCE DATA (Double Buffered) =====
-    if (buffers.distanceBufferA) {
-      Grid._distanceBufferA = buffers.distanceBufferA;
-      Grid._distanceDataA = new Float32Array(buffers.distanceBufferA);
-    }
-    if (buffers.distanceBufferB) {
-      Grid._distanceBufferB = buffers.distanceBufferB;
-      Grid._distanceDataB = new Float32Array(buffers.distanceBufferB);
+    // ===== DISTANCE DATA (Single Buffer) =====
+    if (buffers.distanceBuffer) {
+      Grid._distanceBuffer = buffers.distanceBuffer;
+      Grid._distanceData = new Float32Array(buffers.distanceBuffer);
     }
 
-    // ===== SYNCHRONIZATION =====
-    if (buffers.syncBuffer) {
-      Grid._syncBuffer = buffers.syncBuffer;
-      Grid._syncData = new Int32Array(buffers.syncBuffer);
+    // Legacy compatibility: accept old buffer names during transition
+    if (buffers.neighborBufferA && !Grid._neighborBuffer) {
+      Grid._neighborBuffer = buffers.neighborBufferA;
+      Grid._neighborData = new Int32Array(buffers.neighborBufferA);
     }
-
-    // Legacy support: also accept old buffer names for backwards compatibility during transition
-    if (buffers.gridEntitiesA && !Grid._gridBuffer) {
-      // Old system - create views for backwards compatibility
-      Grid._gridBuffer = buffers.gridEntitiesA;
-      Grid._gridCounts = buffers.gridCountsA ? new Uint16Array(buffers.gridCountsA) : null;
-      Grid._gridEntities = new Uint32Array(buffers.gridEntitiesA);
+    if (buffers.distanceBufferA && !Grid._distanceBuffer) {
+      Grid._distanceBuffer = buffers.distanceBufferA;
+      Grid._distanceData = new Float32Array(buffers.distanceBufferA);
     }
-    if (buffers.neighborDataA && !Grid._neighborBufferA) {
-      Grid._neighborBufferA = buffers.neighborDataA;
-      Grid._neighborDataA = new Int32Array(buffers.neighborDataA);
+    // Also accept even older names
+    if (buffers.neighborDataA && !Grid._neighborBuffer) {
+      Grid._neighborBuffer = buffers.neighborDataA;
+      Grid._neighborData = new Int32Array(buffers.neighborDataA);
     }
-    if (buffers.neighborDataB && !Grid._neighborBufferB) {
-      Grid._neighborBufferB = buffers.neighborDataB;
-      Grid._neighborDataB = new Int32Array(buffers.neighborDataB);
-    }
-    if (buffers.distanceDataA && !Grid._distanceBufferA) {
-      Grid._distanceBufferA = buffers.distanceDataA;
-      Grid._distanceDataA = new Float32Array(buffers.distanceDataA);
-    }
-    if (buffers.distanceDataB && !Grid._distanceBufferB) {
-      Grid._distanceBufferB = buffers.distanceDataB;
-      Grid._distanceDataB = new Float32Array(buffers.distanceDataB);
-    }
-    if (buffers.neighborSyncData && !Grid._syncBuffer) {
-      Grid._syncBuffer = buffers.neighborSyncData;
-      Grid._syncData = new Int32Array(buffers.neighborSyncData);
+    if (buffers.distanceDataA && !Grid._distanceBuffer) {
+      Grid._distanceBuffer = buffers.distanceDataA;
+      Grid._distanceData = new Float32Array(buffers.distanceDataA);
     }
   }
 
-  // ===== CELL ACCESS (Read from Single Grid Buffer) =====
+  // =============================================================================
+  // CELL ACCESS (Read from Single Grid Buffer)
+  // =============================================================================
 
   /**
    * Get cell index from world position
@@ -217,8 +189,6 @@ export class Grid {
    */
   static getCellCount(cellIndex) {
     if (!Grid._gridCounts || cellIndex < 0 || cellIndex >= Grid.totalCells) return 0;
-
-    // For new layout: count is at byte offset = cellIndex * CELL_BYTE_SIZE
     const byteOffset = cellIndex * CELL_BYTE_SIZE;
     return Grid._gridCounts[byteOffset];
   }
@@ -231,15 +201,13 @@ export class Grid {
    */
   static getCellEntity(cellIndex, k) {
     if (!Grid._gridEntities) return 0;
-
     // Entity array starts at byte 4 of each cell
-    // Uint32 index = (cellIndex * CELL_BYTE_SIZE + 4) / 4 + k
     const uint32Offset = ((cellIndex * CELL_BYTE_SIZE) >> 2) + 1 + k;
     return Grid._gridEntities[uint32Offset];
   }
 
   /**
-   * Get base byte offset for a cell (for direct buffer access in hot loops)
+   * Get base byte offset for a cell
    * @param {number} cellIndex - Cell index
    * @returns {number} Byte offset into grid buffer
    */
@@ -248,7 +216,7 @@ export class Grid {
   }
 
   /**
-   * Get entity count in a cell (alias for getCellCount for Ray.js compatibility)
+   * Get entity count in a cell (alias for Ray.js compatibility)
    * @param {number} cellIndex - Cell index
    * @returns {number} Entity count
    */
@@ -257,24 +225,22 @@ export class Grid {
   }
 
   /**
-   * Get base index for cell entities in gridEntities array (for Ray.js compatibility)
-   * NOTE: This returns a Uint32 index offset, not a byte offset
-   * Use with: gridEntities[cellBase + i]
+   * Get base Uint32 index for cell entities (for Ray.js compatibility)
    * @param {number} cellIndex - Cell index
    * @returns {number} Base Uint32 index into gridEntities
    */
   static getCellBase(cellIndex) {
-    // Entity data starts at byte 4 of each cell (after count + padding)
-    // Uint32 index = (byteOffset + 4) / 4 = byteOffset/4 + 1
     const byteOffset = cellIndex * CELL_BYTE_SIZE;
     return (byteOffset >> 2) + 1;
   }
 
-  // ===== CELL WRITE (Only to Owned Rows) =====
+  // =============================================================================
+  // CELL WRITE (Only to Owned Rows)
+  // =============================================================================
 
   /**
-   * Clear a cell's entity count (call before rebuilding)
-   * IMPORTANT: Only call this for cells you own (cellRow % totalWorkers === workerId)
+   * Clear a cell's entity count
+   * IMPORTANT: Only call for cells you own (cellRow % totalWorkers === workerId)
    * @param {number} cellIndex - Cell index
    */
   static clearCell(cellIndex) {
@@ -285,7 +251,7 @@ export class Grid {
 
   /**
    * Add an entity to a cell
-   * IMPORTANT: Only call this for cells you own
+   * IMPORTANT: Only call for cells you own
    * @param {number} cellIndex - Cell index
    * @param {number} entityId - Entity ID to add
    * @returns {boolean} True if added, false if cell is full
@@ -298,7 +264,6 @@ export class Grid {
 
     if (count >= MAX_ENTITIES_PER_CELL) return false;
 
-    // Entity array starts at byte 4 (Uint32 index 1)
     const uint32Offset = (byteOffset >> 2) + 1 + count;
     Grid._gridEntities[uint32Offset] = entityId;
     Grid._gridCounts[byteOffset] = count + 1;
@@ -306,82 +271,60 @@ export class Grid {
     return true;
   }
 
-  // ===== NEIGHBOR DATA ACCESS (Double Buffered - Read from Current Read Buffer) =====
+  // =============================================================================
+  // NEIGHBOR DATA ACCESS (Single Buffer - Direct Read/Write)
+  // =============================================================================
 
   /**
-   * Get current read buffer for neighbors (dynamic getter)
+   * Get the neighbor data array (single buffer, always current)
+   * Use Grid.neighborData in performance-critical loops
    */
   static get neighborData() {
-    if (!Grid._syncData || !Grid._neighborDataA) return Grid._neighborDataA;
-    const readBuffer = Atomics.load(Grid._syncData, 0);
-    return readBuffer === 0 ? Grid._neighborDataA : Grid._neighborDataB;
+    return Grid._neighborData;
   }
 
   /**
-   * Get current read buffer for distances (dynamic getter)
+   * Get the distance data array (single buffer, always current)
+   * Use Grid.distanceData in performance-critical loops
    */
   static get distanceData() {
-    if (!Grid._syncData || !Grid._distanceDataA) return Grid._distanceDataA;
-    const readBuffer = Atomics.load(Grid._syncData, 0);
-    return readBuffer === 0 ? Grid._distanceDataA : Grid._distanceDataB;
+    return Grid._distanceData;
   }
 
   /**
-   * Get current write buffer for neighbors (opposite of read)
-   */
-  static get _neighborDataWrite() {
-    if (!Grid._syncData || !Grid._neighborDataA) return Grid._neighborDataA;
-    const readBuffer = Atomics.load(Grid._syncData, 0);
-    return readBuffer === 0 ? Grid._neighborDataB : Grid._neighborDataA;
-  }
-
-  /**
-   * Get current write buffer for distances (opposite of read)
-   */
-  static get _distanceDataWrite() {
-    if (!Grid._syncData || !Grid._distanceDataA) return Grid._distanceDataA;
-    const readBuffer = Atomics.load(Grid._syncData, 0);
-    return readBuffer === 0 ? Grid._distanceDataB : Grid._distanceDataA;
-  }
-
-  /**
-   * Get neighbor count for an entity (reads from current read buffer)
+   * Get neighbor count for an entity
    * @param {number} entityId - Entity index
    * @returns {number} Number of neighbors
    */
   static getNeighborCount(entityId) {
-    const data = Grid.neighborData;
-    if (!data) return 0;
-    return data[entityId * Grid._stride];
+    if (!Grid._neighborData) return 0;
+    return Grid._neighborData[entityId * Grid._stride];
   }
 
   /**
-   * Get neighbor entity ID at index k (reads from current read buffer)
+   * Get neighbor entity ID at index k
    * @param {number} entityId - Entity index
    * @param {number} k - Neighbor index (0 to count-1)
    * @returns {number} Neighbor entity ID
    */
   static getNeighbor(entityId, k) {
-    const data = Grid.neighborData;
-    if (!data) return 0;
-    return data[entityId * Grid._stride + 1 + k];
+    if (!Grid._neighborData) return 0;
+    return Grid._neighborData[entityId * Grid._stride + 1 + k];
   }
 
   /**
-   * Get squared distance to neighbor at index k (reads from current read buffer)
+   * Get squared distance to neighbor at index k
    * @param {number} entityId - Entity index
    * @param {number} k - Neighbor index (0 to count-1)
    * @returns {number} Squared distance
    */
   static getNeighborDistanceSq(entityId, k) {
-    const data = Grid.distanceData;
-    if (!data) return 0;
-    return data[entityId * Grid._stride + 1 + k];
+    if (!Grid._distanceData) return 0;
+    return Grid._distanceData[entityId * Grid._stride + 1 + k];
   }
 
   /**
    * Get offset into neighbor/distance arrays for an entity
-   * Use this for direct array access in performance-critical loops
    * @param {number} entityId - Entity index
    * @returns {number} Offset into arrays
    */
@@ -389,69 +332,40 @@ export class Grid {
     return entityId * Grid._stride;
   }
 
-  // ===== NEIGHBOR DATA WRITE (Only for Entities You Own) =====
+  // =============================================================================
+  // NEIGHBOR DATA WRITE (Only for Entities You Own)
+  // =============================================================================
 
   /**
-   * Set neighbor count for an entity (writes to current write buffer)
+   * Set neighbor count for an entity
    * IMPORTANT: Only call for entities in cells you own
    * @param {number} entityId - Entity index
    * @param {number} count - Number of neighbors
    */
   static setNeighborCount(entityId, count) {
-    const neighborData = Grid._neighborDataWrite;
-    const distanceData = Grid._distanceDataWrite;
-    if (!neighborData) return;
-
+    if (!Grid._neighborData) return;
     const offset = entityId * Grid._stride;
-    neighborData[offset] = count;
-    if (distanceData) distanceData[offset] = count;
+    Grid._neighborData[offset] = count;
+    if (Grid._distanceData) Grid._distanceData[offset] = count;
   }
 
   /**
-   * Set neighbor data at index k (writes to current write buffer)
+   * Set neighbor data at index k
    * @param {number} entityId - Entity index
    * @param {number} k - Neighbor index
    * @param {number} neighborId - Neighbor entity ID
    * @param {number} distSq - Squared distance to neighbor
    */
   static setNeighbor(entityId, k, neighborId, distSq) {
-    const neighborData = Grid._neighborDataWrite;
-    const distanceData = Grid._distanceDataWrite;
-    if (!neighborData) return;
-
+    if (!Grid._neighborData) return;
     const idx = entityId * Grid._stride + 1 + k;
-    neighborData[idx] = neighborId;
-    if (distanceData) distanceData[idx] = distSq;
+    Grid._neighborData[idx] = neighborId;
+    if (Grid._distanceData) Grid._distanceData[idx] = distSq;
   }
 
-  // ===== SYNCHRONIZATION =====
-
-  /**
-   * Signal that a spatial worker has finished computing neighbors
-   * The LAST worker to finish will swap the read/write buffers
-   * @returns {boolean} True if this worker performed the swap
-   */
-  static signalSpatialWorkerFinished() {
-    if (!Grid._syncData) return false;
-
-    // Atomically increment finished counter
-    const finishedCount = Atomics.add(Grid._syncData, 1, 1) + 1;
-    const totalWorkers = Atomics.load(Grid._syncData, 2);
-
-    // Last worker to finish swaps buffers
-    if (finishedCount === totalWorkers) {
-      const currentReadBuffer = Atomics.load(Grid._syncData, 0);
-      const newReadBuffer = 1 - currentReadBuffer;
-      Atomics.store(Grid._syncData, 0, newReadBuffer);
-
-      // Reset finished counter for next frame
-      Atomics.store(Grid._syncData, 1, 0);
-
-      return true;
-    }
-
-    return false;
-  }
+  // =============================================================================
+  // ROW OWNERSHIP UTILITIES
+  // =============================================================================
 
   /**
    * Check if a row belongs to a specific worker
@@ -478,30 +392,23 @@ export class Grid {
     return rows;
   }
 
-  // ===== LEGACY COMPATIBILITY =====
-  // These properties maintain backwards compatibility with old double-buffered grid code
+  // =============================================================================
+  // LEGACY COMPATIBILITY
+  // =============================================================================
 
-  static get gridEntities() {
-    return Grid._gridEntities;
-  }
+  // These maintain backwards compatibility with old code
+  static get gridEntities() { return Grid._gridEntities; }
+  static get gridCounts() { return Grid._gridCounts; }
+  static get gridCols() { return Grid.gridWidth; }
+  static get gridRows() { return Grid.gridHeight; }
 
-  static get gridCounts() {
-    return Grid._gridCounts;
-  }
+  // Legacy double-buffer getters (now just return single buffer)
+  static get _neighborDataWrite() { return Grid._neighborData; }
+  static get _distanceDataWrite() { return Grid._distanceData; }
 
-  static get gridCols() {
-    return Grid.gridWidth;
-  }
-
-  static get gridRows() {
-    return Grid.gridHeight;
-  }
-
-  // Legacy: swapGridBuffers is no longer needed (row ownership eliminates races)
-  // Kept as no-op for backwards compatibility
-  static swapGridBuffers() {
-    // No-op: Grid is now single-buffered with row ownership
-  }
+  // Legacy swap functions (now no-ops)
+  static swapGridBuffers() { /* No-op: single buffer */ }
+  static signalSpatialWorkerFinished() { return true; /* No-op: no synchronization */ }
 }
 
 // Export constants for use by other modules
