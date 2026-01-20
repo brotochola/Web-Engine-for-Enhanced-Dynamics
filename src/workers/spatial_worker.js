@@ -31,7 +31,7 @@ self.postMessage({
 import { Transform } from "../components/Transform.js";
 import { Collider } from "../components/Collider.js";
 import { AbstractWorker } from "./AbstractWorker.js";
-import { Grid, MAX_ENTITIES_PER_CELL, MAX_NEIGHBORS, CELL_BYTE_SIZE } from "../core/Grid.js";
+import { Grid } from "../core/Grid.js";
 import { SPATIAL_STATS, createMultiWorkerStatsWriter } from "./workers-utils.js";
 
 /**
@@ -71,6 +71,10 @@ class SpatialWorker extends AbstractWorker {
     // O(1) duplicate detection for multi-cell entities
     // processedThisFrame[j] = entityId means entity "entityId" already processed entity "j"
     this.processedMarker = null; // Int32Array
+
+    // Local cell counts for race-free grid rebuilding
+    // We build counts locally, then copy to grid at the end (avoids mid-clear races)
+    this._localCellCounts = null; // Uint8Array(totalCells)
 
     // Performance stats
     this.entitiesProcessedThisFrame = 0;
@@ -133,6 +137,9 @@ class SpatialWorker extends AbstractWorker {
     this.processedMarker = new Int32Array(this.globalEntityCount);
     this.processedMarker.fill(-1);
 
+    // Initialize local cell counts array for race-free grid rebuilding
+    this._localCellCounts = new Uint8Array(this.totalCells);
+
     console.log(
       `SPATIAL WORKER ${this.workerId}: Initialized with ${this.ownedRowCount} rows ` +
       `(rows ${this.ownedRows[0]} to ${this.ownedRows[this.ownedRowCount - 1]} step ${this.totalSpatialWorkers})`
@@ -162,11 +169,15 @@ class SpatialWorker extends AbstractWorker {
   }
 
   /**
-   * STEP 1: Rebuild owned rows of the spatial grid
+   * STEP 1: Rebuild owned rows of the spatial grid (RACE-FREE)
    * 
-   * - Clears all cells in owned rows
-   * - Inserts ALL active entities, but only to cells in owned rows
-   * - Pre-computes entity positions for neighbor detection
+   * STRATEGY: Build counts locally, then copy to grid at the end.
+   * This ensures gridCounts is never 0 during rebuild - other workers
+   * reading cells either see old data or new final data, never mid-clear.
+   * 
+   * - Phase 1: Clear LOCAL counts (not grid counts!)
+   * - Phase 2: Insert entities using local counts, write entity data to grid
+   * - Phase 3: Copy local counts to gridCounts (single atomic-ish write per cell)
    * 
    * IMPORTANT: We iterate ALL entities because an entity at any position
    * might belong to one of our rows. But we only write to our owned cells.
@@ -201,27 +212,28 @@ class SpatialWorker extends AbstractWorker {
     const maxCol = gridWidth - 1;
     const maxRow = gridHeight - 1;
 
-    // =========================================================================
-    // PHASE 1: Clear all cells in owned rows
-    // =========================================================================
     const ownedRows = this.ownedRows;
     const ownedRowCount = this.ownedRowCount;
+
+    // =========================================================================
+    // PHASE 1: Clear LOCAL counts only (not grid counts!)
+    // Grid counts remain unchanged - other workers can safely read them
+    // =========================================================================
+    const localCounts = this._localCellCounts;
 
     for (let r = 0; r < ownedRowCount; r++) {
       const row = ownedRows[r];
       const rowBase = row * gridWidth;
 
       for (let col = 0; col < gridWidth; col++) {
-        const cellIndex = rowBase + col;
-        const byteOffset = cellIndex * CELL_BYTE_SIZE;
-        gridCounts[byteOffset] = 0;  // Clear cell count
+        localCounts[rowBase + col] = 0;
       }
     }
 
     // =========================================================================
     // PHASE 2: Insert all active entities into owned cells
+    // Use local counts for indexing, write entity data directly to grid
     // =========================================================================
-    // Use active entity list for efficiency (built by particle_worker)
     const activeEntitiesData = this.activeEntitiesData;
     const totalActiveEntities = activeEntitiesData ? activeEntitiesData[0] : 0;
 
@@ -272,30 +284,48 @@ class SpatialWorker extends AbstractWorker {
 
         for (let col = minCol; col <= maxColBB; col++) {
           const cellIndex = rowBase + col;
-          const byteOffset = cellIndex * CELL_BYTE_SIZE;
-          const count = gridCounts[byteOffset];
+          const localCount = localCounts[cellIndex];
 
           // Add entity if cell not full
-          if (count < MAX_ENTITIES_PER_CELL) {
-            // Entity data starts at byte 4 (Uint32 index 1 relative to cell)
-            const uint32Offset = (byteOffset >> 2) + 1 + count;
+          if (localCount < Grid.maxEntitiesPerCell) {
+            // Write entity data to grid immediately (overwrites old data)
+            const byteOffset = cellIndex * Grid.cellByteSize;
+            const uint32Offset = (byteOffset >> 2) + 1 + localCount;
             gridEntities[uint32Offset] = i;
-            gridCounts[byteOffset] = count + 1;
+            localCounts[cellIndex] = localCount + 1;
           }
         }
+      }
+    }
+
+    // =========================================================================
+    // PHASE 3: Copy local counts to grid (single write per cell)
+    // This is the ONLY time we modify gridCounts - with final values
+    // Readers see either old count or new count, never 0 mid-clear
+    // =========================================================================
+    for (let r = 0; r < ownedRowCount; r++) {
+      const row = ownedRows[r];
+      const rowBase = row * gridWidth;
+
+      for (let col = 0; col < gridWidth; col++) {
+        const cellIndex = rowBase + col;
+        const byteOffset = cellIndex * Grid.cellByteSize;
+        gridCounts[byteOffset] = localCounts[cellIndex];
       }
     }
   }
 
   /**
-   * STEP 2: Find neighbors for all entities in owned cells
+   * STEP 2: Find neighbors for all entities owned by this worker
    * 
    * - Iterates through all owned cells
-   * - For each entity in an owned cell, searches 3x3 neighborhood
-   * - Writes neighbors to double-buffered neighbor array
+   * - For each entity, checks if this worker owns it (based on entity's home row)
+   * - Only processes entities whose center Y falls in a row owned by this worker
+   * - Searches 3x3+ neighborhood (can read ANY cell) and writes neighbor data
    * 
-   * IMPORTANT: We can READ any cell (3x3 search), but only compute
-   * neighbors for entities that are in our owned cells.
+   * ENTITY OWNERSHIP: Each entity is owned by exactly ONE worker based on its
+   * "home row" (the row containing its center Y position). This prevents race
+   * conditions when entities span multiple rows due to their bounding box.
    */
   findNeighborsForOwnedEntities() {
     const visualRange = Collider.visualRange;
@@ -306,6 +336,8 @@ class SpatialWorker extends AbstractWorker {
     const invCellSize = this.invCellSize;
     const maxNeighbors = Grid.maxNeighbors;
     const stride = Grid._stride;
+    const totalSpatialWorkers = this.totalSpatialWorkers;
+    const workerId = this.workerId;
 
     const entityPosX = this.entityPosX;
     const entityPosY = this.entityPosY;
@@ -319,12 +351,15 @@ class SpatialWorker extends AbstractWorker {
     const gridCounts = Grid._gridCounts;
     const gridEntities = Grid._gridEntities;
 
-    // O(1) duplicate detection
+    // O(1) duplicate detection for neighbor search (prevents counting same neighbor twice)
     const processedMarker = this.processedMarker;
     processedMarker.fill(-1);  // Reset markers each frame
 
     const ownedRows = this.ownedRows;
     const ownedRowCount = this.ownedRowCount;
+
+    // Clamp helpers for home row calculation
+    const maxRow = gridHeight - 1;
 
     // =========================================================================
     // Iterate through all owned cells
@@ -335,7 +370,7 @@ class SpatialWorker extends AbstractWorker {
 
       for (let col = 0; col < gridWidth; col++) {
         const cellIndex = rowBase + col;
-        const byteOffset = cellIndex * CELL_BYTE_SIZE;
+        const byteOffset = cellIndex * Grid.cellByteSize;
         const cellCount = gridCounts[byteOffset];
 
         // Skip empty cells
@@ -350,10 +385,23 @@ class SpatialWorker extends AbstractWorker {
           // Sanity check (shouldn't happen but safety)
           if (!active[entityA]) continue;
 
+          // =====================================================================
+          // ENTITY OWNERSHIP CHECK: Only process if this worker owns entity's home row
+          // This prevents race conditions when entities span multiple rows
+          // Home row = row containing entity's center Y position
+          // =====================================================================
+          const myY = entityPosY[entityA];
+          let homeRow = (myY * invCellSize) | 0;
+          // Clamp to grid bounds
+          homeRow = homeRow < 0 ? 0 : homeRow > maxRow ? maxRow : homeRow;
+
+          // Skip if another worker owns this entity's home row
+          if (homeRow % totalSpatialWorkers !== workerId) continue;
+
           this.entitiesProcessedThisFrame++;
 
           const myX = entityPosX[entityA];
-          const myY = entityPosY[entityA];
+          // myY already read above for home row calculation
           const myVisualRange = visualRange[entityA];
 
           // Neighbor write offset
@@ -392,7 +440,7 @@ class SpatialWorker extends AbstractWorker {
 
             for (let checkCol = clampedStartCol; checkCol <= clampedEndCol; checkCol++) {
               const checkCellIndex = checkRowBase + checkCol;
-              const checkByteOffset = checkCellIndex * CELL_BYTE_SIZE;
+              const checkByteOffset = checkCellIndex * Grid.cellByteSize;
               const checkCellCount = gridCounts[checkByteOffset];
 
               if (checkCellCount === 0) continue;

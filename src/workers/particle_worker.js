@@ -1022,14 +1022,20 @@ class ParticleWorker extends AbstractWorker {
       if (lightsProcessed >= this.maxShadowCastingLights) break;
 
       const lightIdx = lightEntities[i];
-      if (!lightEnabled[lightIdx] || !transformActive[lightIdx]) continue;
+      if (!lightEnabled[lightIdx] || !transformActive[lightIdx]) {
+        continue;
+      }
 
       // Check if light is on screen (with margin)
       const isFlash = flashActive[lightIdx] === 1;
-      if (!isFlash && !isOnScreen[lightIdx]) continue;
+      if (!isFlash && !isOnScreen[lightIdx]) {
+        continue;
+      }
 
       const intensity = lightIntensity[lightIdx];
-      if (intensity <= 0) continue;
+      if (intensity <= 0) {
+        continue;
+      }
 
       lightsProcessed++;
 
@@ -1048,29 +1054,37 @@ class ParticleWorker extends AbstractWorker {
         const neighborIdx = neighborData[offset + 1 + k];
 
         // Skip if not a shadow caster or inactive
-        if (!shadowCasterActive[neighborIdx] || !transformActive[neighborIdx])
+        if (!shadowCasterActive[neighborIdx] || !transformActive[neighborIdx]) {
           continue;
+        }
 
         // Shadow casters should be considered if they are anywhere near the screen
         // isOnScreen already includes a 15% margin
-        if (!isOnScreen[neighborIdx]) continue;
+        if (!isOnScreen[neighborIdx]) {
+          continue;
+        }
 
         // Create stable pair key
         const pairKey = cantorPair(lightIdx, neighborIdx);
 
         // Skip duplicate pairs (shouldn't happen with Grid but good for safety)
-        if (pairsThisFrame.has(pairKey)) continue;
+        if (pairsThisFrame.has(pairKey)) {
+          continue;
+        }
         pairsThisFrame.add(pairKey);
 
         // Per-entity shadow limit
         if (
           maxShadowsPerEntity > 0 &&
           entityShadowCounts[neighborIdx] >= maxShadowsPerEntity
-        )
+        ) {
           continue;
+        }
 
         const distSq = distanceData[offset + 1 + k];
-        if (distSq < 1) continue; // Avoid division by zero
+        if (distSq < 1) {
+          continue; // Avoid division by zero
+        }
 
         // ========================================
         // GET OR ASSIGN STABLE SLOT
