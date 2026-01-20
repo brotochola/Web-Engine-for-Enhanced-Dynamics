@@ -728,6 +728,8 @@ class Scene {
     window.SpriteSheetRegistry = SpriteSheetRegistry;
     window.Mouse = Mouse;
     window.Flash = Flash;
+    window.NavGrid = NavGrid;
+    window.Grid = Grid;
 
     console.log(
       `🌍 Exposed ${exposedEntities.length} entity classes and ${componentMap.size} components globally (${initializedCount} with SAB views)`
@@ -1582,14 +1584,30 @@ class Scene {
     // Navigation worker (if pathfinding enabled)
     if (this.config.navigation.enabled && this.workers.navigation) {
       const NAV_INDEX = LOGIC_START_INDEX + this.numberOfLogicWorkers;
+
+      // Create a MessageChannel for main thread ↔ nav worker communication
+      const mainToNavChannel = new MessageChannel();
+
+      // Keep port1 for main thread, send port2 to nav worker
+      const mainThreadNavPort = mainToNavChannel.port1;
+      const navWorkerPort = mainToNavChannel.port2;
+
+      // Add the main thread port to nav worker's ports
+      const navPorts = workerPorts.navigation || {};
+      navPorts.mainThread = navWorkerPort;
+
       this.workers.navigation.postMessage(
         {
           ...initData,
-          workerPorts: workerPorts.navigation,
+          workerPorts: navPorts,
           frameRateIndex: NAV_INDEX,
         },
-        workerPorts.navigation ? Object.values(workerPorts.navigation) : []
+        Object.values(navPorts)
       );
+
+      // Set up the main thread's NavGrid port for sending requests
+      NavGrid.setNavWorkerPort(mainThreadNavPort);
+      mainThreadNavPort.start(); // Required to start receiving messages
     }
 
     // Initialize renderer

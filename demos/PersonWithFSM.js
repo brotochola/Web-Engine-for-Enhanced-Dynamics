@@ -84,9 +84,9 @@ export class PersonWithFSM extends GameObject {
 
     let vec = { x: 0, y: 0 };
 
-    NavGrid.requestVector(this.x, this.y, 10000, 7000, vec);
+    // NavGrid.requestVector(this.x, this.y, 10000, 7000, vec);
 
-    this.addAcceleration(vec.x, vec.y);
+    // this.addAcceleration(vec.x, vec.y);
 
     // Keep within world bounds
     this.keepWithinBounds(dt);
