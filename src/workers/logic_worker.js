@@ -287,7 +287,9 @@ class LogicWorker extends AbstractWorker {
       ? this.activeEntitiesData[0]
       : 0;
 
-    // PERFORMANCE: Cache Grid arrays once to avoid property lookups per entity
+    // PERFORMANCE: Cache stable Grid arrays once per frame
+    // Grid.neighborData/distanceData return the STABLE buffers (quadruple-buffered)
+    // These never change mid-frame - safe to cache and use directly
     const neighborData = Grid.neighborData;
     const distanceData = Grid.distanceData;
     const stride = Grid._stride;

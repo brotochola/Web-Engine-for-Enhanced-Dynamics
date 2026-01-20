@@ -28,120 +28,77 @@ import { Collider } from "../components/Collider.js";
  *   }
  */
 export class Grid {
-  // ===== GRID DATA - DOUBLE BUFFERED (SAB views) =====
-  static gridEntitiesA = null; // Uint32Array - Buffer A
-  static gridEntitiesB = null; // Uint32Array - Buffer B
-  static gridCountsA = null; // Uint16Array - Buffer A
-  static gridCountsB = null; // Uint16Array - Buffer B
+  // ===== GRID DATA - SINGLE BUFFER (row-partitioned across spatial_workers) =====
+  // Each spatial_worker owns rows where (row % numWorkers == workerIndex)
+  // No double-buffering needed - workers write to non-overlapping rows
+  static gridEntities = null; // Uint32Array - entity IDs per cell
+  static gridCounts = null; // Uint16Array - entity count per cell
 
-  // GRID SYNCHRONIZATION
-  // gridSyncData[0] = unused (was rebuildFlag for Atomics.wait, removed for overlapped execution)
-  // gridSyncData[1] = currentReadGrid (0=A, 1=B)
-  static gridSyncData = null; // Int32Array - buffer selection for double-buffering
+  // ===== NEIGHBOR DATA - QUADRUPLE BUFFERED =====
+  // A/B: Spatial workers ping-pong write buffers
+  // StableA/StableB: Consumer read buffers (double-stable pattern)
+  // This eliminates ALL race conditions: consumers never read from a buffer being written
+  static neighborDataA = null; // Int32Array - Buffer A (spatial write)
+  static neighborDataB = null; // Int32Array - Buffer B (spatial write)
+  static distanceDataA = null; // Float32Array - Buffer A (spatial write)
+  static distanceDataB = null; // Float32Array - Buffer B (spatial write)
 
-  static get gridEntities() {
-    if (!Grid.gridSyncData || !Grid.gridEntitiesA) return Grid.gridEntitiesA;
-    try {
-      const readGrid = Atomics.load(Grid.gridSyncData, 1);
-      return readGrid === 0 ? Grid.gridEntitiesA : Grid.gridEntitiesB;
-    } catch (e) {
-      console.error("[Grid] Error in gridEntities getter:", e);
-      return Grid.gridEntitiesA;
-    }
-  }
-
-  static get gridCounts() {
-    if (!Grid.gridSyncData || !Grid.gridCountsA) return Grid.gridCountsA;
-    try {
-      const readGrid = Atomics.load(Grid.gridSyncData, 1);
-      return readGrid === 0 ? Grid.gridCountsA : Grid.gridCountsB;
-    } catch (e) {
-      console.error("[Grid] Error in gridCounts getter:", e);
-      return Grid.gridCountsA;
-    }
-  }
-
-  // INTERNAL: Get write grid (opposite of read grid)
-  static get _gridEntitiesWrite() {
-    if (!Grid.gridSyncData || !Grid.gridEntitiesA) return Grid.gridEntitiesA;
-    try {
-      const readGrid = Atomics.load(Grid.gridSyncData, 1);
-      return readGrid === 0 ? Grid.gridEntitiesB : Grid.gridEntitiesA;
-    } catch (e) {
-      console.error("[Grid] Error in _gridEntitiesWrite getter:", e);
-      return Grid.gridEntitiesA;
-    }
-  }
-
-  static get _gridCountsWrite() {
-    if (!Grid.gridSyncData || !Grid.gridCountsA) return Grid.gridCountsA;
-    try {
-      const readGrid = Atomics.load(Grid.gridSyncData, 1);
-      return readGrid === 0 ? Grid.gridCountsB : Grid.gridCountsA;
-    } catch (e) {
-      console.error("[Grid] Error in _gridCountsWrite getter:", e);
-      return Grid.gridCountsA;
-    }
-  }
-
-  // ===== NEIGHBOR DATA - DOUBLE BUFFERED (SAB views) =====
-  // Store both buffers - dynamically select which to read/write based on sync flag
-  static neighborDataA = null; // Int32Array - Buffer A
-  static neighborDataB = null; // Int32Array - Buffer B
-  static distanceDataA = null; // Float32Array - Buffer A
-  static distanceDataB = null; // Float32Array - Buffer B
+  // DOUBLE STABLE BUFFERS - One is read by consumers, other receives copy
+  // When copy completes, an atomic flag swap makes the other buffer active
+  static neighborDataStableA = null; // Int32Array - stable buffer A
+  static neighborDataStableB = null; // Int32Array - stable buffer B
+  static distanceDataStableA = null; // Float32Array - stable buffer A
+  static distanceDataStableB = null; // Float32Array - stable buffer B
 
   // SYNCHRONIZATION - for buffer swapping
-  static neighborSyncData = null; // Int32Array - [currentReadBuffer, workersFinished, totalWorkers]
+  // [0] = currentWriteBuffer (0=A, 1=B) - which A/B buffer spatial workers write to
+  // [1] = workersFinishedA - counter for buffer A
+  // [2] = workersFinishedB - counter for buffer B
+  // [3] = totalSpatialWorkers
+  // [4] = currentStableRead (0=StableA, 1=StableB) - which stable buffer consumers read from
+  static neighborSyncData = null; // Int32Array
 
-  // LEGACY GETTERS - dynamically return correct buffer based on sync flag
+  // ===== STABLE READ ACCESS (for logic/particle workers) =====
+  // Dynamic getters select the correct stable buffer based on sync flag
+  // Consumers should cache the result once per frame for performance
+
+  /**
+   * Get the stable neighbor data array for reading
+   * Returns the stable buffer NOT being written to (atomic swap ensures consistency)
+   * @returns {Int32Array} Stable neighbor data (never changes mid-frame)
+   */
   static get neighborData() {
-    if (!Grid.neighborSyncData || !Grid.neighborDataA)
-      return Grid.neighborDataA;
-    try {
-      const readBuffer = Atomics.load(Grid.neighborSyncData, 0);
-      return readBuffer === 0 ? Grid.neighborDataA : Grid.neighborDataB;
-    } catch (e) {
-      console.error("[Grid] Error in neighborData getter:", e);
-      return Grid.neighborDataA;
-    }
+    if (!Grid.neighborSyncData) return Grid.neighborDataStableA;
+    const stableRead = Atomics.load(Grid.neighborSyncData, 4);
+    return stableRead === 0 ? Grid.neighborDataStableA : Grid.neighborDataStableB;
   }
 
+  /**
+   * Get the stable distance data array for reading
+   * Returns the stable buffer NOT being written to (atomic swap ensures consistency)
+   * @returns {Float32Array} Stable distance data (never changes mid-frame)
+   */
   static get distanceData() {
-    if (!Grid.neighborSyncData || !Grid.distanceDataA)
-      return Grid.distanceDataA;
-    try {
-      const readBuffer = Atomics.load(Grid.neighborSyncData, 0);
-      return readBuffer === 0 ? Grid.distanceDataA : Grid.distanceDataB;
-    } catch (e) {
-      console.error("[Grid] Error in distanceData getter:", e);
-      return Grid.distanceDataA;
-    }
+    if (!Grid.neighborSyncData) return Grid.distanceDataStableA;
+    const stableRead = Atomics.load(Grid.neighborSyncData, 4);
+    return stableRead === 0 ? Grid.distanceDataStableA : Grid.distanceDataStableB;
   }
 
-  // INTERNAL: Get write buffer (opposite of read buffer)
+  // ===== WRITE BUFFER ACCESS (for spatial_worker only) =====
+  // Spatial workers write to A or B based on sync flag
+
   static get _neighborDataWrite() {
     if (!Grid.neighborSyncData || !Grid.neighborDataA)
       return Grid.neighborDataA;
-    try {
-      const readBuffer = Atomics.load(Grid.neighborSyncData, 0);
-      return readBuffer === 0 ? Grid.neighborDataB : Grid.neighborDataA;
-    } catch (e) {
-      console.error("[Grid] Error in _neighborDataWrite getter:", e);
-      return Grid.neighborDataA;
-    }
+    const writeBuffer = Atomics.load(Grid.neighborSyncData, 0);
+    return writeBuffer === 0 ? Grid.neighborDataA : Grid.neighborDataB;
   }
 
   static get _distanceDataWrite() {
     if (!Grid.neighborSyncData || !Grid.distanceDataA)
       return Grid.distanceDataA;
-    try {
-      const readBuffer = Atomics.load(Grid.neighborSyncData, 0);
-      return readBuffer === 0 ? Grid.distanceDataB : Grid.distanceDataA;
-    } catch (e) {
-      console.error("[Grid] Error in _distanceDataWrite getter:", e);
-      return Grid.distanceDataA;
-    }
+    const writeBuffer = Atomics.load(Grid.neighborSyncData, 0);
+    return writeBuffer === 0 ? Grid.distanceDataA : Grid.distanceDataB;
   }
 
   // ===== GRID METADATA =====
@@ -172,29 +129,17 @@ export class Grid {
    *   - cellSize, invCellSize, gridCols, gridRows, totalCells, maxEntitiesPerCell, maxNeighbors
    */
   static initialize(buffers, metadata) {
-    // Double-buffered grid data
-    Grid.gridEntitiesA = buffers.gridEntitiesA
-      ? new Uint32Array(buffers.gridEntitiesA)
+    // Single grid buffer (row-partitioned across spatial_workers)
+    Grid.gridEntities = buffers.gridEntities
+      ? new Uint32Array(buffers.gridEntities)
       : null;
-    Grid.gridEntitiesB = buffers.gridEntitiesB
-      ? new Uint32Array(buffers.gridEntitiesB)
-      : null;
-    Grid.gridCountsA = buffers.gridCountsA
-      ? new Uint16Array(buffers.gridCountsA)
-      : null;
-    Grid.gridCountsB = buffers.gridCountsB
-      ? new Uint16Array(buffers.gridCountsB)
+    Grid.gridCounts = buffers.gridCounts
+      ? new Uint16Array(buffers.gridCounts)
       : null;
 
-    // Grid synchronization buffer
-    Grid.gridSyncData = buffers.gridSyncData
-      ? new Int32Array(buffers.gridSyncData)
-      : null;
-
-    // Double-buffered neighbor data
-    // Store both buffers A and B
-    // All workers dynamically select correct buffer based on neighborSyncData[0]
-    // This ensures all workers automatically see buffer swaps without local pointer updates
+    // Quadruple-buffered neighbor data
+    // A/B: Spatial workers write (ping-pong)
+    // StableA/StableB: Consumers read (double-stable with atomic swap)
     Grid.neighborDataA = buffers.neighborDataA
       ? new Int32Array(buffers.neighborDataA)
       : null;
@@ -208,7 +153,27 @@ export class Grid {
       ? new Float32Array(buffers.distanceDataB)
       : null;
 
-    // Synchronization buffer for double buffering
+    // Double stable buffers - consumers read from one while copy happens to other
+    // Atomic swap of read index ensures consumers never read during copy
+    Grid.neighborDataStableA = buffers.neighborDataStableA
+      ? new Int32Array(buffers.neighborDataStableA)
+      : null;
+    Grid.neighborDataStableB = buffers.neighborDataStableB
+      ? new Int32Array(buffers.neighborDataStableB)
+      : null;
+    Grid.distanceDataStableA = buffers.distanceDataStableA
+      ? new Float32Array(buffers.distanceDataStableA)
+      : null;
+    Grid.distanceDataStableB = buffers.distanceDataStableB
+      ? new Float32Array(buffers.distanceDataStableB)
+      : null;
+
+    // Synchronization buffer for spatial worker coordination
+    // [0] = currentWriteBuffer (0=A, 1=B) - which buffer spatial workers write to
+    // [1] = workersFinishedA - counter for buffer A
+    // [2] = workersFinishedB - counter for buffer B
+    // [3] = totalWorkers - total spatial workers
+    // [4] = currentStableRead (0=StableA, 1=StableB) - which stable buffer consumers read
     Grid.neighborSyncData = buffers.neighborSyncData
       ? new Int32Array(buffers.neighborSyncData)
       : null;
@@ -353,47 +318,106 @@ export class Grid {
     distanceDataWrite[idx] = distSq;
   }
 
-  // ===== DOUBLE BUFFER SWAP (for spatial_worker) =====
+  // ===== TRIPLE BUFFER SWAP (for spatial_worker) =====
+
+  /**
+   * Get the current write buffer index
+   * Spatial workers should call this at the START of their frame and remember the value
+   * @returns {number} 0 for buffer A, 1 for buffer B
+   */
+  static getCurrentWriteBuffer() {
+    if (!Grid.neighborSyncData) return 0;
+    return Atomics.load(Grid.neighborSyncData, 0);
+  }
+
+  /**
+   * Reset all neighbor sync counters
+   * Called when resuming from background/throttled state to ensure clean slate
+   * This prevents corrupted counter states from causing flickering
+   */
+  static resetNeighborSyncCounters() {
+    if (!Grid.neighborSyncData) return;
+    // Reset both buffer counters to 0
+    Atomics.store(Grid.neighborSyncData, 1, 0); // workersFinishedA
+    Atomics.store(Grid.neighborSyncData, 2, 0); // workersFinishedB
+  }
 
   /**
    * Signal that this spatial worker has finished computing neighbors
-   * The LAST worker to finish will swap the read/write buffers
-   * Called by spatial workers at the end of their update cycle
-   * @returns {boolean} True if this worker performed the swap (was last to finish)
+   * Uses per-buffer counters to handle workers running at different speeds
+   *
+   * DOUBLE-STABLE PATTERN:
+   * 1. Copy completed write buffer → INACTIVE stable buffer
+   * 2. Atomically swap which stable buffer consumers read from
+   * 3. Toggle write buffer for next frame
+   * This ensures consumers NEVER read from a buffer being written to.
+   *
+   * @param {number} bufferIndex - Which buffer this worker wrote to (0=A, 1=B)
+   *                               MUST be the value from getCurrentWriteBuffer() at frame start
+   * @returns {boolean} True if this worker performed the copy+swap (was last to finish this buffer)
    */
-  static signalSpatialWorkerFinished() {
+  static signalSpatialWorkerFinished(bufferIndex) {
     if (!Grid.neighborSyncData) return false;
 
-    // Atomically increment the finished counter
-    const finishedCount = Atomics.add(Grid.neighborSyncData, 1, 1) + 1;
-    const totalWorkers = Atomics.load(Grid.neighborSyncData, 2);
+    // Per-buffer counter indices: [1] = buffer A counter, [2] = buffer B counter
+    const counterIndex = 1 + bufferIndex;
+    const totalWorkers = Atomics.load(Grid.neighborSyncData, 3);
 
-    // If this is the last worker to finish, swap buffers
-    if (finishedCount === totalWorkers) {
-      // Swap the read buffer index (0 <-> 1)
-      // All workers will automatically see this change via dynamic getters
-      const currentReadBuffer = Atomics.load(Grid.neighborSyncData, 0);
-      const newReadBuffer = 1 - currentReadBuffer;
-      Atomics.store(Grid.neighborSyncData, 0, newReadBuffer);
-
-      // Reset the finished counter for next frame
-      Atomics.store(Grid.neighborSyncData, 1, 0);
-
-      return true; // This worker performed the swap
+    // SAFETY CHECK: If counter is already >= totalWorkers, it's corrupted (e.g., from
+    // background tab issues). Reset it before proceeding to prevent permanent deadlock.
+    const currentCount = Atomics.load(Grid.neighborSyncData, counterIndex);
+    if (currentCount >= totalWorkers) {
+      Atomics.store(Grid.neighborSyncData, counterIndex, 0);
     }
 
-    return false; // Not the last worker
+    // Atomically increment THIS buffer's finished counter
+    const finishedCount = Atomics.add(Grid.neighborSyncData, counterIndex, 1) + 1;
+
+    // If all workers finished writing to THIS buffer, copy to inactive stable and swap
+    if (finishedCount === totalWorkers) {
+      // Get which stable buffer consumers are currently reading from
+      const currentStableRead = Atomics.load(Grid.neighborSyncData, 4);
+
+      // COPY: Write buffer → INACTIVE stable buffer (the one NOT being read)
+      // Consumers continue reading from the active stable buffer during this copy
+      // TypedArray.set() uses optimized memcpy - very fast (~1-2ms for 8MB)
+      if (currentStableRead === 0) {
+        // Consumers reading StableA, so copy to StableB
+        if (bufferIndex === 0) {
+          Grid.neighborDataStableB.set(Grid.neighborDataA);
+          Grid.distanceDataStableB.set(Grid.distanceDataA);
+        } else {
+          Grid.neighborDataStableB.set(Grid.neighborDataB);
+          Grid.distanceDataStableB.set(Grid.distanceDataB);
+        }
+      } else {
+        // Consumers reading StableB, so copy to StableA
+        if (bufferIndex === 0) {
+          Grid.neighborDataStableA.set(Grid.neighborDataA);
+          Grid.distanceDataStableA.set(Grid.distanceDataA);
+        } else {
+          Grid.neighborDataStableA.set(Grid.neighborDataB);
+          Grid.distanceDataStableA.set(Grid.distanceDataB);
+        }
+      }
+
+      // ATOMIC SWAP: Toggle which stable buffer consumers read from
+      // After this atomic store, consumers will start reading from the newly copied buffer
+      const newStableRead = 1 - currentStableRead;
+      Atomics.store(Grid.neighborSyncData, 4, newStableRead);
+
+      // Reset THIS write buffer's counter (ready for next time it's used)
+      Atomics.store(Grid.neighborSyncData, counterIndex, 0);
+
+      // SWAP: Toggle write buffer for next frame
+      // New writers will write to the OTHER buffer
+      const newWriteBuffer = 1 - bufferIndex;
+      Atomics.store(Grid.neighborSyncData, 0, newWriteBuffer);
+
+      return true; // This worker performed the copy+swap
+    }
+
+    return false; // Not the last worker for this buffer
   }
 
-  /**
-   * Swap the grid read/write buffers
-   * Called by particle_worker after rebuilding the grid
-   */
-  static swapGridBuffers() {
-    if (!Grid.gridSyncData) return;
-
-    const currentReadGrid = Atomics.load(Grid.gridSyncData, 1);
-    const newReadGrid = 1 - currentReadGrid;
-    Atomics.store(Grid.gridSyncData, 1, newReadGrid);
-  }
 }

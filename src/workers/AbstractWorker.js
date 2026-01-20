@@ -396,28 +396,28 @@ export class AbstractWorker {
 
     // Initialize Grid system with shared buffers and metadata
     // Grid is the unified spatial data access point for all workers
-    // ARCHITECTURE: particle_worker writes grid, all others read
-    // - gridEntities/gridCounts: DOUBLE BUFFERED, written by particle_worker
-    // - neighborData/distanceData: DOUBLE BUFFERED, written by spatial_workers, read by logic/physics
-    if (
-      data.gridMetadata &&
-      (data.buffers?.gridEntities || data.buffers?.gridEntitiesA)
-    ) {
+    // ARCHITECTURE: spatial_workers build and use grid (row-partitioned)
+    // - gridEntities/gridCounts: SINGLE BUFFER, partitioned by rows across spatial_workers
+    // - neighborData/distanceData: QUADRUPLE BUFFERED (A/B for writes, StableA/B for reads)
+    if (data.gridMetadata && data.buffers?.gridEntities) {
       const maxNeighbors =
         this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
 
       Grid.initialize(
         {
-          gridEntitiesA: data.buffers.gridEntitiesA,
-          gridEntitiesB: data.buffers.gridEntitiesB,
-          gridCountsA: data.buffers.gridCountsA,
-          gridCountsB: data.buffers.gridCountsB,
-          gridSyncData: data.buffers.gridSyncData,
+          // Single grid buffer (row-partitioned)
+          gridEntities: data.buffers.gridEntities,
+          gridCounts: data.buffers.gridCounts,
+          // Neighbor data (quadruple-buffered)
           neighborDataA: data.buffers.neighborDataA,
           neighborDataB: data.buffers.neighborDataB,
           distanceDataA: data.buffers.distanceDataA,
           distanceDataB: data.buffers.distanceDataB,
           neighborSyncData: data.buffers.neighborSyncData,
+          neighborDataStableA: data.buffers.neighborDataStableA,
+          neighborDataStableB: data.buffers.neighborDataStableB,
+          distanceDataStableA: data.buffers.distanceDataStableA,
+          distanceDataStableB: data.buffers.distanceDataStableB,
         },
         {
           ...data.gridMetadata,
@@ -425,7 +425,7 @@ export class AbstractWorker {
         }
       );
       this.reportLog(
-        "Grid system initialized with double-buffered neighbor data"
+        "Grid system initialized (row-partitioned grid, quadruple-buffered neighbors)"
       );
     }
 

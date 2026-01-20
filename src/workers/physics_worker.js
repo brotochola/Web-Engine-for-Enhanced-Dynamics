@@ -558,7 +558,8 @@ class PhysicsWorker extends AbstractWorker {
     const collisionData = this.collisionData;
     const maxPairs = this.maxCollisionPairs;
 
-    // PERFORMANCE: Cache Grid arrays locally to avoid method call overhead in hot loop
+    // PERFORMANCE: Cache stable Grid arrays once per frame
+    // Grid.neighborData returns the STABLE buffer (quadruple-buffered) - never changes mid-frame
     const neighborData = Grid.neighborData;
     const stride = Grid._stride;
 

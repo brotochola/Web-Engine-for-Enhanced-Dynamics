@@ -135,6 +135,7 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 
 
 
+
 ------------------------------------------------------------------------------------------------
 --- PIXI-WORKER: ---
 ------------------------------------------------------------------------------------------------
@@ -145,7 +146,8 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 ---- Particle Worker
 ------------------------------------
 
-
+-RigidBody.sleeping[entityIndex]
+  para spatial hashing optimizacion
 
 
 ----------------------------

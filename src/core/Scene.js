@@ -776,30 +776,44 @@ class Scene {
     );
     this.buffers.gameObjectData = new SharedArrayBuffer(gameObjectBufferSize);
 
-    // DOUBLE BUFFERING: Neighbor data buffers (A and B)
-    // Spatial workers write to one buffer while logic/physics read from the other
-    // This eliminates race conditions and allows one-frame-lag neighbor data (negligible for gameplay)
+    // TRIPLE BUFFERING: Neighbor data buffers (A, B for spatial workers + Stable for consumers)
+    // QUADRUPLE BUFFERING for neighbor data:
+    // - A/B: Spatial workers ping-pong write buffers
+    // - StableA/StableB: Consumer read buffers (double-stable pattern)
+    // When spatial workers finish writing to A or B, they copy to the INACTIVE stable buffer,
+    // then atomically swap which stable buffer consumers read from.
+    // This ensures consumers NEVER read from a buffer being written to.
     const maxNeighbors = this.config.spatial.maxNeighbors;
     const NEIGHBOR_BUFFER_SIZE = this.totalEntityCount * (1 + maxNeighbors) * 4;
     this.buffers.neighborDataA = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
     this.buffers.neighborDataB = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
+    // Double stable buffers - consumers read from one while copy happens to other
+    this.buffers.neighborDataStableA = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
+    this.buffers.neighborDataStableB = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
 
     const DISTANCE_BUFFER_SIZE = this.totalEntityCount * (1 + maxNeighbors) * 4;
     this.buffers.distanceDataA = new SharedArrayBuffer(DISTANCE_BUFFER_SIZE);
     this.buffers.distanceDataB = new SharedArrayBuffer(DISTANCE_BUFFER_SIZE);
+    // Double stable buffers for distances
+    this.buffers.distanceDataStableA = new SharedArrayBuffer(DISTANCE_BUFFER_SIZE);
+    this.buffers.distanceDataStableB = new SharedArrayBuffer(DISTANCE_BUFFER_SIZE);
 
-    // Neighbor synchronization buffer for double buffering
-    // [0] = currentReadBuffer (0 or 1) - which buffer logic/physics should read from
-    // [1] = spatialWorkersFinished (0 to numberOfSpatialWorkers) - counter for workers that finished
-    // [2] = totalSpatialWorkers - constant for comparison
+    // Neighbor synchronization buffer for quadruple buffering
+    // [0] = currentWriteBuffer (0=A, 1=B) - which buffer spatial workers write to
+    // [1] = workersFinishedA - counter for workers that finished writing to buffer A
+    // [2] = workersFinishedB - counter for workers that finished writing to buffer B
+    // [3] = totalSpatialWorkers - constant for comparison
+    // [4] = currentStableRead (0=StableA, 1=StableB) - which stable buffer consumers read from
     const numberOfSpatialWorkers =
       this.config.spatial.numberOfSpatialWorkers || 1;
-    const NEIGHBOR_SYNC_SIZE = 12; // Int32Array with 3 elements
+    const NEIGHBOR_SYNC_SIZE = 20; // Int32Array with 5 elements
     this.buffers.neighborSyncData = new SharedArrayBuffer(NEIGHBOR_SYNC_SIZE);
     const neighborSyncView = new Int32Array(this.buffers.neighborSyncData);
-    neighborSyncView[0] = 0; // Start reading from buffer A
-    neighborSyncView[1] = 0; // No workers finished yet
-    neighborSyncView[2] = numberOfSpatialWorkers; // Store total worker count
+    neighborSyncView[0] = 0; // Start writing to buffer A
+    neighborSyncView[1] = 0; // No workers finished buffer A yet
+    neighborSyncView[2] = 0; // No workers finished buffer B yet
+    neighborSyncView[3] = numberOfSpatialWorkers; // Store total worker count
+    neighborSyncView[4] = 0; // Start reading from StableA
 
     GameObject.initializeArrays(
       this.buffers.gameObjectData,
@@ -1009,43 +1023,23 @@ class Scene {
     this.buffers.frameRateData = new SharedArrayBuffer(FRAMERATE_BUFFER_SIZE);
     this.views.frameRate = new Float32Array(this.buffers.frameRateData);
 
-    // Spatial Grid - SHARED buffer written by particle_worker, read by all others
-    // ARCHITECTURE: particle_worker rebuilds grid once per frame (has spare capacity)
-    // spatial_workers read grid to compute neighbors (load balanced)
-    // logic/physics workers read grid for raycasting (Ray.cast)
+    // Spatial Grid - SINGLE SHARED buffer, partitioned by rows across spatial_workers
+    // ARCHITECTURE: Each spatial_worker builds AND uses its own rows
+    // Worker N owns rows where (row % numWorkers == N)
+    // No double-buffering needed - workers write to non-overlapping rows
     const cellSize = this.config.spatial?.cellSize || this.config.cellSize;
     const gridCols = Math.ceil(this.config.worldWidth / cellSize);
     const gridRows = Math.ceil(this.config.worldHeight / cellSize);
     const totalCells = gridCols * gridRows;
     const maxEntitiesPerCell = 64; // Must match spatial_worker.js
 
-    // gridEntities: flat array storing entity IDs per cell
-    // DOUBLE BUFFERED: particle_worker builds one while spatial_worker reads the other
+    // gridEntities: flat array storing entity IDs per cell (SINGLE BUFFER)
     const GRID_ENTITIES_SIZE = totalCells * maxEntitiesPerCell * 4; // Uint32Array
-    this.buffers.gridEntitiesA = new SharedArrayBuffer(GRID_ENTITIES_SIZE);
-    this.buffers.gridEntitiesB = new SharedArrayBuffer(GRID_ENTITIES_SIZE);
+    this.buffers.gridEntities = new SharedArrayBuffer(GRID_ENTITIES_SIZE);
 
-    // gridCounts: number of entities in each cell
+    // gridCounts: number of entities in each cell (SINGLE BUFFER)
     const GRID_COUNTS_SIZE = totalCells * 2; // Uint16Array
-    this.buffers.gridCountsA = new SharedArrayBuffer(GRID_COUNTS_SIZE);
-    this.buffers.gridCountsB = new SharedArrayBuffer(GRID_COUNTS_SIZE);
-
-    // Pre-computed entity data: written by particle_worker during grid rebuild, read by spatial_workers
-    // These values are computed once and reused by all spatial workers for neighbor detection
-    const ENTITY_POS_SIZE = this.totalEntityCount * 4; // Float32Array
-    this.buffers.entityPosX = new SharedArrayBuffer(ENTITY_POS_SIZE);
-    this.buffers.entityPosY = new SharedArrayBuffer(ENTITY_POS_SIZE);
-    this.buffers.entityHalfExtent = new SharedArrayBuffer(ENTITY_POS_SIZE);
-
-    // Grid synchronization: buffer selection for double-buffering
-    // Layout:
-    // [0] = unused (was rebuildFlag, removed for overlapped execution optimization)
-    // [1] = currentReadGrid (0=A, 1=B) - which buffer spatial workers read from
-    const GRID_SYNC_SIZE = 8; // Int32Array with 2 elements
-    this.buffers.gridSyncData = new SharedArrayBuffer(GRID_SYNC_SIZE);
-    const gridSyncView = new Int32Array(this.buffers.gridSyncData);
-    gridSyncView[0] = 0; // Unused - kept for buffer alignment
-    gridSyncView[1] = 0; // Start reading from buffer A
+    this.buffers.gridCounts = new SharedArrayBuffer(GRID_COUNTS_SIZE)
 
     // Store grid metadata for workers
     this.gridMetadata = {
@@ -1061,16 +1055,19 @@ class Scene {
     // This allows DebugUI to read neighbor data and render debug overlays
     Grid.initialize(
       {
-        gridEntitiesA: this.buffers.gridEntitiesA,
-        gridEntitiesB: this.buffers.gridEntitiesB,
-        gridCountsA: this.buffers.gridCountsA,
-        gridCountsB: this.buffers.gridCountsB,
-        gridSyncData: this.buffers.gridSyncData,
+        // Single grid buffer (row-partitioned across spatial_workers)
+        gridEntities: this.buffers.gridEntities,
+        gridCounts: this.buffers.gridCounts,
+        // Neighbor data (still quadruple-buffered for consumer reads)
         neighborDataA: this.buffers.neighborDataA,
         neighborDataB: this.buffers.neighborDataB,
         distanceDataA: this.buffers.distanceDataA,
         distanceDataB: this.buffers.distanceDataB,
         neighborSyncData: this.buffers.neighborSyncData,
+        neighborDataStableA: this.buffers.neighborDataStableA,
+        neighborDataStableB: this.buffers.neighborDataStableB,
+        distanceDataStableA: this.buffers.distanceDataStableA,
+        distanceDataStableB: this.buffers.distanceDataStableB,
       },
       {
         cellSize,
@@ -1084,7 +1081,7 @@ class Scene {
     );
 
     console.log(
-      `[Scene] Spatial grid: ${gridCols}x${gridRows} cells (${totalCells} total), ${cellSize}px cell size (shared, built by particle_worker)`
+      `[Scene] Spatial grid: ${gridCols}x${gridRows} cells (${totalCells} total), ${cellSize}px cell size (row-partitioned across spatial_workers)`
     );
 
     // Worker stat buffers: detailed metrics for each worker type
@@ -1436,12 +1433,17 @@ class Scene {
       msg: "init",
       buffers: {
         gameObjectData: this.buffers.gameObjectData,
-        // DOUBLE BUFFERED neighbor data
+        // QUADRUPLE BUFFERED neighbor data (A/B for spatial workers, StableA/B for consumers)
         neighborDataA: this.buffers.neighborDataA,
         neighborDataB: this.buffers.neighborDataB,
         distanceDataA: this.buffers.distanceDataA,
         distanceDataB: this.buffers.distanceDataB,
         neighborSyncData: this.buffers.neighborSyncData,
+        // Double stable buffers - consumers read from one while copy happens to other
+        neighborDataStableA: this.buffers.neighborDataStableA,
+        neighborDataStableB: this.buffers.neighborDataStableB,
+        distanceDataStableA: this.buffers.distanceDataStableA,
+        distanceDataStableB: this.buffers.distanceDataStableB,
         collisionData: this.buffers.collisionData,
         activeEntitiesData: this.buffers.activeEntitiesData,
         inputData: this.buffers.inputData,
@@ -1452,16 +1454,9 @@ class Scene {
         raycastDebugData: this.buffers.raycastDebugData,
         frameRateData: this.buffers.frameRateData,
         componentData: this.buffers.componentData,
-        // Spatial grid buffers (shared, written by particle_worker, read by all)
-        // DOUBLE BUFFERED: allows atomic swap of entire grid structure
-        gridEntitiesA: this.buffers.gridEntitiesA,
-        gridEntitiesB: this.buffers.gridEntitiesB,
-        gridCountsA: this.buffers.gridCountsA,
-        gridCountsB: this.buffers.gridCountsB,
-        entityPosX: this.buffers.entityPosX,
-        entityPosY: this.buffers.entityPosY,
-        entityHalfExtent: this.buffers.entityHalfExtent,
-        gridSyncData: this.buffers.gridSyncData,
+        // Spatial grid buffer (SINGLE, row-partitioned across spatial_workers)
+        gridEntities: this.buffers.gridEntities,
+        gridCounts: this.buffers.gridCounts,
         // Worker stat buffers (detailed metrics)
         rendererStats: this.buffers.rendererStats,
         particleStats: this.buffers.particleStats,
