@@ -27,16 +27,11 @@ import { Transform } from "../components/Transform.js";
 import { Collider } from "../components/Collider.js";
 
 // =============================================================================
-// CONSTANTS - Must match across all workers
+// CONSTANTS - Configurable via scene (defaults shown)
 // =============================================================================
-const MAX_ENTITIES_PER_CELL = 16;  // Max entities per grid cell
-const MAX_NEIGHBORS = 500;         // Max neighbors per entity
-
-// Cell byte layout: 4 bytes (count + pad) + MAX_ENTITIES_PER_CELL * 4 bytes
-const CELL_BYTE_SIZE = 4 + MAX_ENTITIES_PER_CELL * 4; // 68 bytes
-
-// Neighbor stride: count + MAX_NEIGHBORS (in Uint32/Float32 elements)
-const NEIGHBOR_STRIDE = 1 + MAX_NEIGHBORS;
+// These are defaults - actual values come from metadata.maxEntitiesPerCell and metadata.maxNeighbors
+const DEFAULT_MAX_ENTITIES_PER_CELL = 16;  // Max entities per grid cell
+const DEFAULT_MAX_NEIGHBORS = 500;         // Max neighbors per entity
 
 /**
  * Grid - Static class for row-based spatial partitioning
@@ -65,8 +60,12 @@ export class Grid {
   static gridWidth = 0;         // Number of columns
   static gridHeight = 0;        // Number of rows
   static totalCells = 0;
-  static maxEntitiesPerCell = MAX_ENTITIES_PER_CELL;
-  static maxNeighbors = MAX_NEIGHBORS;
+  static maxEntitiesPerCell = DEFAULT_MAX_ENTITIES_PER_CELL;  // Configured from scene
+  static maxNeighbors = DEFAULT_MAX_NEIGHBORS;                // Configured from scene
+
+  // Computed from maxEntitiesPerCell (set during initialize)
+  static cellByteSize = 0;      // Bytes per cell
+  static neighborStride = 0;    // Elements per entity in neighbor arrays
 
   // ===== SPATIAL GRID DATA (Single Buffer - Row Ownership) =====
   // Layout per cell: [count:Uint8, pad:3bytes, entities[16]:Uint32]
@@ -83,8 +82,8 @@ export class Grid {
   static _distanceBuffer = null;   // SharedArrayBuffer
   static _distanceData = null;     // Float32Array view
 
-  // Internal stride for neighbor arrays
-  static _stride = NEIGHBOR_STRIDE;
+  // Internal stride for neighbor arrays (computed as 1 + maxNeighbors during initialize)
+  static _stride = 1 + DEFAULT_MAX_NEIGHBORS;
 
   // =============================================================================
   // INITIALIZATION
@@ -101,14 +100,21 @@ export class Grid {
    * @param {Object} metadata - Grid configuration
    */
   static initialize(buffers, metadata) {
-    // Store metadata
+    // Store metadata - read from scene configuration
     Grid.cellSize = metadata.cellSize || 128;
     Grid.invCellSize = 1 / Grid.cellSize;
     Grid.gridWidth = metadata.gridWidth || metadata.gridCols || 0;
     Grid.gridHeight = metadata.gridHeight || metadata.gridRows || 0;
     Grid.totalCells = Grid.gridWidth * Grid.gridHeight;
-    Grid.maxNeighbors = metadata.maxNeighbors || MAX_NEIGHBORS;
-    Grid._stride = 1 + Grid.maxNeighbors;
+
+    // Configure spatial limits from scene
+    Grid.maxNeighbors = metadata.maxNeighbors || DEFAULT_MAX_NEIGHBORS;
+    Grid.maxEntitiesPerCell = metadata.maxEntitiesPerCell || DEFAULT_MAX_ENTITIES_PER_CELL;
+
+    // Compute derived values
+    Grid.cellByteSize = 4 + Grid.maxEntitiesPerCell * 4;
+    Grid.neighborStride = 1 + Grid.maxNeighbors;
+    Grid._stride = Grid.neighborStride;
 
     // ===== SPATIAL GRID (Single Buffer) =====
     if (buffers.gridBuffer) {
@@ -185,11 +191,11 @@ export class Grid {
   /**
    * Get number of entities in a cell
    * @param {number} cellIndex - Cell index
-   * @returns {number} Entity count (0-MAX_ENTITIES_PER_CELL)
+   * @returns {number} Entity count (0-maxEntitiesPerCell)
    */
   static getCellCount(cellIndex) {
     if (!Grid._gridCounts || cellIndex < 0 || cellIndex >= Grid.totalCells) return 0;
-    const byteOffset = cellIndex * CELL_BYTE_SIZE;
+    const byteOffset = cellIndex * Grid.cellByteSize;
     return Grid._gridCounts[byteOffset];
   }
 
@@ -202,7 +208,7 @@ export class Grid {
   static getCellEntity(cellIndex, k) {
     if (!Grid._gridEntities) return 0;
     // Entity array starts at byte 4 of each cell
-    const uint32Offset = ((cellIndex * CELL_BYTE_SIZE) >> 2) + 1 + k;
+    const uint32Offset = ((cellIndex * Grid.cellByteSize) >> 2) + 1 + k;
     return Grid._gridEntities[uint32Offset];
   }
 
@@ -212,7 +218,7 @@ export class Grid {
    * @returns {number} Byte offset into grid buffer
    */
   static getCellByteOffset(cellIndex) {
-    return cellIndex * CELL_BYTE_SIZE;
+    return cellIndex * Grid.cellByteSize;
   }
 
   /**
@@ -230,7 +236,7 @@ export class Grid {
    * @returns {number} Base Uint32 index into gridEntities
    */
   static getCellBase(cellIndex) {
-    const byteOffset = cellIndex * CELL_BYTE_SIZE;
+    const byteOffset = cellIndex * Grid.cellByteSize;
     return (byteOffset >> 2) + 1;
   }
 
@@ -245,7 +251,7 @@ export class Grid {
    */
   static clearCell(cellIndex) {
     if (!Grid._gridCounts) return;
-    const byteOffset = cellIndex * CELL_BYTE_SIZE;
+    const byteOffset = cellIndex * Grid.cellByteSize;
     Grid._gridCounts[byteOffset] = 0;
   }
 
@@ -259,10 +265,10 @@ export class Grid {
   static addEntityToCell(cellIndex, entityId) {
     if (!Grid._gridCounts || !Grid._gridEntities) return false;
 
-    const byteOffset = cellIndex * CELL_BYTE_SIZE;
+    const byteOffset = cellIndex * Grid.cellByteSize;
     const count = Grid._gridCounts[byteOffset];
 
-    if (count >= MAX_ENTITIES_PER_CELL) return false;
+    if (count >= Grid.maxEntitiesPerCell) return false;
 
     const uint32Offset = (byteOffset >> 2) + 1 + count;
     Grid._gridEntities[uint32Offset] = entityId;
@@ -411,5 +417,5 @@ export class Grid {
   static signalSpatialWorkerFinished() { return true; /* No-op: no synchronization */ }
 }
 
-// Export constants for use by other modules
-export { MAX_ENTITIES_PER_CELL, MAX_NEIGHBORS, CELL_BYTE_SIZE, NEIGHBOR_STRIDE };
+// Export default constants for use by other modules (actual values configured via Grid.initialize)
+export { DEFAULT_MAX_ENTITIES_PER_CELL, DEFAULT_MAX_NEIGHBORS };

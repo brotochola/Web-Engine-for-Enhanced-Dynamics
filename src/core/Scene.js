@@ -1019,10 +1019,10 @@ class Scene {
     const gridCols = Math.ceil(this.config.worldWidth / cellSize);
     const gridRows = Math.ceil(this.config.worldHeight / cellSize);
     const totalCells = gridCols * gridRows;
-    const maxEntitiesPerCell = 16; // Fixed - matches Grid.js MAX_ENTITIES_PER_CELL
+    const maxEntitiesPerCell = this.config.spatial.maxEntitiesPerCell; // Read from scene config
 
     // Cell byte size: 4 bytes (count + pad) + maxEntitiesPerCell * 4 bytes
-    const CELL_BYTE_SIZE = 4 + maxEntitiesPerCell * 4; // 68 bytes
+    const CELL_BYTE_SIZE = 4 + maxEntitiesPerCell * 4;
 
     // SINGLE BUFFER: Row ownership eliminates need for double buffering
     const GRID_BUFFER_SIZE = totalCells * CELL_BYTE_SIZE;

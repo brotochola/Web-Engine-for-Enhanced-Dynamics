@@ -92,13 +92,14 @@ export const PHYSICS_DEFAULTS = {
 };
 
 // ============================================================================
-// SPATIAL DEFAULTS
+// SPATIAL DEFAULTS (Spatial Hashing Grid)
 // ============================================================================
 
 export const SPATIAL_DEFAULTS = {
-  cellSize: 128,
-  maxNeighbors: 100,
-  numberOfSpatialWorkers: 1, // Number of parallel spatial workers for neighbor detection
+  cellSize: 128,              // Grid cell size in world units
+  maxNeighbors: 500,          // Max neighbors per entity (must match Grid.js MAX_NEIGHBORS)
+  maxEntitiesPerCell: 16,     // Max entities per grid cell (must match Grid.js MAX_ENTITIES_PER_CELL)
+  numberOfSpatialWorkers: 1,  // Number of parallel spatial workers for neighbor detection
   noLimitFPS: false,
 };
 
