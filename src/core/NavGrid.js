@@ -107,8 +107,10 @@ export class NavGrid {
     static _navWorkerPort = null;
 
     // Request deduplication (avoid spamming nav worker)
-    static _pendingFlowfieldRequests = new Set();
-    static _pendingPathRequests = new Set();
+    // Maps store targetCell/key -> version when request was made
+    // Allows re-requesting after grid invalidation (version changes)
+    static _pendingFlowfieldRequests = new Map();
+    static _pendingPathRequests = new Map();
 
     // Frame tracking for LRU
     static _currentFrame = 0;
@@ -236,7 +238,6 @@ export class NavGrid {
         if (!this._initialized) {
             outVec.x = 0;
             outVec.y = 0;
-            console.log("NavGrid not initialized");
             return;
         }
 
@@ -245,7 +246,6 @@ export class NavGrid {
         if (targetCell < 0 || targetCell >= this._totalCells) {
             outVec.x = 0;
             outVec.y = 0;
-            console.log("Target cell out of bounds");
             return;
         }
 
@@ -254,7 +254,6 @@ export class NavGrid {
         if (currentCell < 0 || currentCell >= this._totalCells) {
             outVec.x = 0;
             outVec.y = 0;
-            console.log("Current cell out of bounds");
             return;
         }
 
@@ -262,7 +261,7 @@ export class NavGrid {
         if (currentCell === targetCell) {
             outVec.x = 0;
             outVec.y = 0;
-            console.log("Already at target");
+
             return;
         }
 
@@ -507,6 +506,11 @@ export class NavGrid {
             console.warn("NavGrid: No nav worker port set, cannot update grid");
             return;
         }
+
+        // Clear pending requests - they'll be re-requested with new version after rebuild
+        this._pendingFlowfieldRequests.clear();
+        this._pendingPathRequests.clear();
+
         this._navWorkerPort.postMessage({
             type: "REBUILD_FROM_INDICES",
             entityIndices
@@ -592,9 +596,16 @@ export class NavGrid {
      */
     static _requestFlowfield(targetCell) {
         if (!this._navWorkerPort) return;
-        if (this._pendingFlowfieldRequests.has(targetCell)) return;
 
-        this._pendingFlowfieldRequests.add(targetCell);
+        // Get current version from SAB header
+        const currentVersion = Atomics.load(this._headerView, 0);
+        const pendingVersion = this._pendingFlowfieldRequests.get(targetCell);
+
+        // Skip if we already have a pending request from this version
+        if (pendingVersion === currentVersion) return;
+
+        // Send new request (either no pending, or version changed after invalidate)
+        this._pendingFlowfieldRequests.set(targetCell, currentVersion);
         this._navWorkerPort.postMessage({
             type: "REQUEST_FLOWFIELD",
             targetCell,
@@ -700,9 +711,16 @@ export class NavGrid {
         if (!this._navWorkerPort) return;
 
         const key = `${fromCell}_${toCell}`;
-        if (this._pendingPathRequests.has(key)) return;
 
-        this._pendingPathRequests.add(key);
+        // Get current version from SAB header
+        const currentVersion = Atomics.load(this._headerView, 0);
+        const pendingVersion = this._pendingPathRequests.get(key);
+
+        // Skip if we already have a pending request from this version
+        if (pendingVersion === currentVersion) return;
+
+        // Send new request (either no pending, or version changed after invalidate)
+        this._pendingPathRequests.set(key, currentVersion);
         this._navWorkerPort.postMessage({
             type: "REQUEST_PATH",
             fromCell,
