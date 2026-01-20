@@ -1,391 +1,466 @@
+// =============================================================================
+// SPATIAL WORKER - Row-Based Partitioned Spatial Hashing & Neighbor Detection
+// =============================================================================
+//
+// ARCHITECTURE: Each spatial worker owns specific grid rows (cellY % workerCount === workerId)
+// - No double buffering for grid (row ownership eliminates races)
+// - No Atomics, no locks, no coordination for grid writes
+// - Each worker rebuilds its own rows AND computes neighbors for entities in those rows
+// - Workers can READ any cell but only WRITE to owned rows
+//
+// FLOW PER FRAME:
+// 1. Clear all cells in owned rows
+// 2. Insert ALL active entities into grid (only to owned rows)
+// 3. For each entity in owned rows: find neighbors using 3x3 cell search
+// 4. Signal completion (last worker swaps neighbor read/write buffers)
+//
+// MEMORY MODEL:
+// - Grid: Single buffer, row ownership prevents races
+// - Neighbors: Double buffered (A/B) for clean reads by logic workers
+// - Accepts stale data by design (1 frame latency is imperceptible)
+//
+// =============================================================================
+
 self.postMessage({
   msg: "log",
-  message: "js loaded",
+  message: "spatial_worker.js loaded (row-based partitioning)",
   when: Date.now(),
 });
-// Spatial Worker - Builds spatial hash grid and finds neighbors
-// OPTIMIZED: Uses flat grid, processed bitmask, and pre-computed entity data
 
-// Import engine dependencies
 import { Transform } from "../components/Transform.js";
 import { Collider } from "../components/Collider.js";
-import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { AbstractWorker } from "./AbstractWorker.js";
-import { Grid } from "../core/Grid.js";
-import {
-  SPATIAL_STATS,
-  createMultiWorkerStatsWriter,
-} from "./workers-utils.js";
+import { Grid, MAX_ENTITIES_PER_CELL, MAX_NEIGHBORS, CELL_BYTE_SIZE } from "../core/Grid.js";
+import { SPATIAL_STATS, createMultiWorkerStatsWriter } from "./workers-utils.js";
 
 /**
- * SpatialWorker - Handles neighbor detection using spatial hash grid
- * Extends AbstractWorker for common worker functionality
- *
- * ARCHITECTURE:
- * - Grid is rebuilt by particle_worker (has spare capacity ~125 FPS)
- * - Spatial workers read shared grid and compute neighbors (bottlenecked at ~40 FPS)
- * - Load balancing: moved 1.6ms grid rebuild to idle worker, freeing spatial workers
- *
- * OPTIMIZATIONS:
- * 1. Flat grid structure (TypedArrays) - eliminates GC pressure from Array-of-Arrays
- * 2. Pre-computed entity data from particle_worker - avoids redundant calculations
- * 3. Load-balanced entity slicing - each worker processes subset of active entities
- * 4. Single grid writer - no race conditions, grid available for raycasting
- * 5. O(1) duplicate detection - uses entity ID as marker (not O(n) linear search!)
+ * SpatialWorker - Row-based spatial hashing and neighbor detection
+ * 
+ * KEY INSIGHT: By partitioning grid rows across workers, we eliminate ALL
+ * race conditions without any synchronization overhead. Each worker is the
+ * sole owner of its rows - no other worker can write to them.
  */
 class SpatialWorker extends AbstractWorker {
   constructor(selfRef) {
     super(selfRef);
 
-    // Spatial worker doesn't create GameObject instances (but has access to all components)
+    // Spatial worker doesn't create GameObject instances
     this.needsGameScripts = false;
 
-    // WORKER INDEX AND ENTITY RANGE (for parallel processing)
-    this.workerIndex = 0; // Which spatial worker is this? (0, 1, 2, ...)
-    this.totalSpatialWorkers = 1; // Total number of spatial workers
+    // Worker identity for row ownership
+    this.workerId = 0;
+    this.totalSpatialWorkers = 1;
 
-    // Note: activeEntitiesData is now initialized in AbstractWorker.initializeCommonBuffers
-
-    // FLAT GRID STRUCTURE (replaces Array-of-Arrays)
-    // gridEntities: flat array storing entity IDs per cell
-    // gridCounts: number of entities in each cell
-    this.gridEntities = null; // Uint32Array - [cell0_ent0, cell0_ent1, ..., cell1_ent0, ...]
-    this.gridCounts = null; // Uint16Array - count per cell
-    this.maxEntitiesPerCell = 64; // Max entities that can share a cell
-
-    // Grid parameters - set during initialization
+    // Grid parameters (set during initialization)
     this.cellSize = 0;
-    this.invCellSize = 0; // 1/cellSize - multiply instead of divide
-    this.gridCols = 0;
-    this.gridRows = 0;
+    this.invCellSize = 0;
+    this.gridWidth = 0;
+    this.gridHeight = 0;
     this.totalCells = 0;
-    this.maxNeighborsPerEntity = 0;
 
-    // Track which cells are occupied - only clear these instead of all cells
-    this.occupiedCells = null; // Uint32Array - stores cell indices
-    this.occupiedCount = 0;
+    // Pre-computed owned rows for this worker
+    this.ownedRows = null;  // Int32Array of row indices
+    this.ownedRowCount = 0;
 
-    // PROCESSED MARKER - O(1) duplicate detection for multi-cell entities
-    this.processedThisFrame = null; // Int32Array
+    // Pre-computed entity positions (shared buffer from particle_worker or computed locally)
+    this.entityPosX = null;   // Float32Array
+    this.entityPosY = null;   // Float32Array
+    this.entityHalfExtent = null; // Float32Array
 
-    // PRE-COMPUTED ENTITY DATA - avoid redundant calculations
-    this.entityPosX = null; // Float32Array - collider position X (from particle_worker)
-    this.entityPosY = null; // Float32Array - collider position Y (from particle_worker)
-    this.entityHalfExtent = null; // Float32Array - max half-extent (from particle_worker)
+    // O(1) duplicate detection for multi-cell entities
+    // processedThisFrame[j] = entityId means entity "entityId" already processed entity "j"
+    this.processedMarker = null; // Int32Array
 
-    // Note: Grid synchronization is handled via Grid class double-buffering
-    // No local gridSyncData needed - spatial workers read from stable Grid.gridEntities
-
-    // Stats tracking
-    this.neighborChecksThisFrame = 0;
-    this.gridCellsCheckedThisFrame = 0;
+    // Performance stats
     this.entitiesProcessedThisFrame = 0;
+    this.neighborsFoundThisFrame = 0;
+    this.cellsCheckedThisFrame = 0;
   }
 
   /**
-   * Initialize spatial worker (implementation of AbstractWorker.initialize)
+   * Initialize spatial worker
+   * @param {Object} data - Initialization data from main thread
    */
   initialize(data) {
-    // Note: Component arrays are automatically initialized by AbstractWorker.initializeAllComponents()
-    // This includes Transform, Collider, SpriteRenderer, and all other components
-
-    // Set worker index and total workers for parallel processing
-    this.workerIndex = data.workerIndex || 0;
+    // Set worker identity
+    this.workerId = data.workerIndex || 0;
     this.totalSpatialWorkers = data.totalSpatialWorkers || 1;
 
-    // Initialize stats buffer for writing metrics (strided access for multi-worker)
+    // Initialize stats buffer
     if (data.buffers.spatialStats) {
       this.stats = createMultiWorkerStatsWriter(
         data.buffers.spatialStats,
         SPATIAL_STATS,
-        this.workerIndex
+        this.workerId
       );
     }
 
-    // Note: activeEntitiesData is initialized in AbstractWorker.initializeCommonBuffers
-    // Active entity range is calculated dynamically each frame in findAllNeighbors()
-    // based on the current active entity count from activeEntitiesData[0]
-
-    // Get grid metadata from main thread
+    // Get grid metadata
     const gridMetadata = data.gridMetadata;
     this.cellSize = gridMetadata.cellSize;
     this.invCellSize = gridMetadata.invCellSize;
-    this.gridCols = gridMetadata.gridCols;
-    this.gridRows = gridMetadata.gridRows;
+    this.gridWidth = gridMetadata.gridCols;
+    this.gridHeight = gridMetadata.gridRows;
     this.totalCells = gridMetadata.totalCells;
-    this.maxEntitiesPerCell = gridMetadata.maxEntitiesPerCell;
 
-    this.maxNeighborsPerEntity =
-      this.config.spatial?.maxNeighbors || this.config.maxNeighbors;
-
-    // Store viewport dimensions for screen visibility checks
+    // Store viewport for screen checks
     this.canvasWidth = this.config.canvasWidth;
     this.canvasHeight = this.config.canvasHeight;
 
-    // SHARED GRID STRUCTURE - written by particle_worker, read by spatial_workers
-    // No race conditions since particle_worker is the single writer
-    // Grid data is used for both neighbor detection and raycasting
+    // Pre-compute owned rows: worker i owns rows where row % totalWorkers === workerId
+    const ownedRows = [];
+    for (let row = this.workerId; row < this.gridHeight; row += this.totalSpatialWorkers) {
+      ownedRows.push(row);
+    }
+    this.ownedRows = new Int32Array(ownedRows);
+    this.ownedRowCount = ownedRows.length;
 
-    // NOTE: Grid arrays are set in AbstractWorker.initializeCommonBuffers via Grid.initialize
-    // We just verify they're available here
-
-    // PRE-COMPUTED ENTITY DATA - written by particle_worker, read by spatial_workers
-    // These SHARED arrays contain positions and half-extents computed during grid rebuild
+    // Initialize pre-computed entity position buffers
+    // These are SHARED buffers - we compute them during grid rebuild
     if (data.buffers.entityPosX) {
       this.entityPosX = new Float32Array(data.buffers.entityPosX);
       this.entityPosY = new Float32Array(data.buffers.entityPosY);
       this.entityHalfExtent = new Float32Array(data.buffers.entityHalfExtent);
     } else {
-      console.warn(
-        "SPATIAL WORKER: Pre-computed entity data not available - performance may be degraded"
-      );
-      // Fallback: allocate local arrays (will need to compute ourselves)
+      // Fallback: allocate local arrays
       this.entityPosX = new Float32Array(this.globalEntityCount);
       this.entityPosY = new Float32Array(this.globalEntityCount);
       this.entityHalfExtent = new Float32Array(this.globalEntityCount);
     }
 
-    // PROCESSED MARKER - O(1) duplicate detection for multi-cell entities
-    // Each entity uses its own index as a marker value (no cleanup needed!)
-    // processedThisFrame[j] = i means entity i already found entity j as a neighbor
-    this.processedThisFrame = new Int32Array(this.globalEntityCount);
-    // Initialize to -1 (no entity has processed any other entity yet)
-    this.processedThisFrame.fill(-1);
+    // Initialize duplicate detection marker
+    this.processedMarker = new Int32Array(this.globalEntityCount);
+    this.processedMarker.fill(-1);
 
-    // Note: gridSyncData is handled by Grid class for buffer selection
-    // Spatial workers no longer need to wait - they read from stable read buffer
+    console.log(
+      `SPATIAL WORKER ${this.workerId}: Initialized with ${this.ownedRowCount} rows ` +
+      `(rows ${this.ownedRows[0]} to ${this.ownedRows[this.ownedRowCount - 1]} step ${this.totalSpatialWorkers})`
+    );
   }
 
   /**
-   * Find neighbors for all entities using spatial grid
-   * OPTIMIZED:
-   * 1. O(1) duplicate detection using processedThisFrame marker (not O(n) linear search!)
-   * 2. Uses pre-computed entity positions and half-extents from particle_worker
-   * 3. Flat grid access is cache-friendly
-   * 4. LOAD BALANCED: Processes slice of active entity list for even distribution
-   * 5. Uses Grid class for unified neighbor data access
+   * Main update - called each frame
+   * Rebuilds owned grid rows and computes neighbors for entities in those rows
    */
-  findAllNeighbors() {
+  update(deltaTime, dtRatio, resuming) {
+    // Reset stats
+    this.entitiesProcessedThisFrame = 0;
+    this.neighborsFoundThisFrame = 0;
+    this.cellsCheckedThisFrame = 0;
+
+    // STEP 1: Rebuild grid (only owned rows)
+    this.rebuildOwnedRows();
+
+    // STEP 2: Find neighbors (only for entities in owned rows)
+    this.findNeighborsForOwnedEntities();
+
+    // STEP 3: Signal completion - last worker swaps neighbor buffers
+    Grid.signalSpatialWorkerFinished();
+  }
+
+  /**
+   * STEP 1: Rebuild owned rows of the spatial grid
+   * 
+   * - Clears all cells in owned rows
+   * - Inserts ALL active entities, but only to cells in owned rows
+   * - Pre-computes entity positions for neighbor detection
+   * 
+   * IMPORTANT: We iterate ALL entities because an entity at any position
+   * might belong to one of our rows. But we only write to our owned cells.
+   */
+  rebuildOwnedRows() {
     const active = Transform.active;
-    const visualRange = Collider.visualRange;
+    const x = Transform.x;
+    const y = Transform.y;
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
+    const colliderActive = Collider.active;
+    const shapeType = Collider.shapeType;
+    const radius = Collider.radius;
+    const width = Collider.width;
+    const height = Collider.height;
 
-    // Use Grid class for spatial and neighbor data access
-    // DOUBLE BUFFERING: Always read from the stable read-only grid buffer
-    // and write to the current write-only neighbor buffer.
-    const gridEntities = Grid.gridEntities;
-    const gridCounts = Grid.gridCounts;
-    const neighborData = Grid._neighborDataWrite;
-    const distanceData = Grid._distanceDataWrite;
-    const invCellSize = Grid.invCellSize;
-    const gridCols = Grid.gridCols;
-    const gridRows = Grid.gridRows;
-    const maxNeighbors = Grid.maxNeighbors;
-    const stride = Grid._stride;
-    const maxEntitiesPerCell = Grid.maxEntitiesPerCell;
+    const gridWidth = this.gridWidth;
+    const gridHeight = this.gridHeight;
+    const invCellSize = this.invCellSize;
+    const totalSpatialWorkers = this.totalSpatialWorkers;
+    const workerId = this.workerId;
 
-    // Pre-computed entity data (filled in rebuildGrid by particle_worker)
     const entityPosX = this.entityPosX;
     const entityPosY = this.entityPosY;
     const entityHalfExtent = this.entityHalfExtent;
 
-    // O(1) duplicate detection marker (local to each worker)
-    const processedThisFrame = this.processedThisFrame;
+    // Direct buffer access for grid (avoid Grid.addEntityToCell overhead in hot loop)
+    const gridCounts = Grid._gridCounts;
+    const gridEntities = Grid._gridEntities;
 
-    // ACTIVE ENTITY LIST - read current count and calculate our slice
+    const SHAPE_CIRCLE = 0;
+    const maxCol = gridWidth - 1;
+    const maxRow = gridHeight - 1;
+
+    // =========================================================================
+    // PHASE 1: Clear all cells in owned rows
+    // =========================================================================
+    const ownedRows = this.ownedRows;
+    const ownedRowCount = this.ownedRowCount;
+
+    for (let r = 0; r < ownedRowCount; r++) {
+      const row = ownedRows[r];
+      const rowBase = row * gridWidth;
+
+      for (let col = 0; col < gridWidth; col++) {
+        const cellIndex = rowBase + col;
+        const byteOffset = cellIndex * CELL_BYTE_SIZE;
+        gridCounts[byteOffset] = 0;  // Clear cell count
+      }
+    }
+
+    // =========================================================================
+    // PHASE 2: Insert all active entities into owned cells
+    // =========================================================================
+    // Use active entity list for efficiency (built by particle_worker)
     const activeEntitiesData = this.activeEntitiesData;
     const totalActiveEntities = activeEntitiesData ? activeEntitiesData[0] : 0;
 
-    // Calculate which slice of active entities this worker processes
-    const activePerWorker = Math.ceil(
-      totalActiveEntities / this.totalSpatialWorkers
-    );
-    const activeStartIdx = this.workerIndex * activePerWorker;
-    const activeEndIdx = Math.min(
-      activeStartIdx + activePerWorker,
-      totalActiveEntities
-    );
-
-    // Reset stats for this frame
-    this.neighborChecksThisFrame = 0;
-    this.gridCellsCheckedThisFrame = 0;
-    this.entitiesProcessedThisFrame = 0;
-
-    // Early exit if no active entities or no work for this worker
-    if (totalActiveEntities === 0 || activeStartIdx >= totalActiveEntities) {
-      return;
-    }
-
-    // Reset processed markers for this frame
-    // NOTE: The "marker optimization" (using entity ID as marker to avoid reset) doesn't work
-    // because the same entity ID is used across frames, causing false "already processed" matches.
-    // This fill(-1) is required for correctness.
-    processedThisFrame.fill(-1);
-
-    // Process only our assigned slice of active entities
-    for (
-      let activeIdx = activeStartIdx;
-      activeIdx < activeEndIdx;
-      activeIdx++
-    ) {
-      // Get actual entity index from active list (offset by 1 since count is at index 0)
+    for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
       const i = activeEntitiesData[1 + activeIdx];
 
-      // Sanity check - should not happen if particle_worker built list correctly
-      if (!active[i]) continue;
+      // Calculate collider position
+      const posX = x[i] + (offsetX[i] || 0);
+      const posY = y[i] + (offsetY[i] || 0);
 
-      // Track entity processed
-      this.entitiesProcessedThisFrame++;
+      // Skip invalid positions (NaN check via self-comparison)
+      if (posX !== posX || posY !== posY) continue;
 
-      // Use PRE-COMPUTED collider position
-      const myX = entityPosX[i];
-      const myY = entityPosY[i];
-      const myVisualRange = visualRange[i];
+      // Store pre-computed position for neighbor detection
+      entityPosX[i] = posX;
+      entityPosY[i] = posY;
 
-      // Buffer offset for this entity's neighbor list (calculate once, used for both zero and full writes)
-      const offset = i * stride;
-
-      // Skip entities with no visual range - they don't need neighbors
-      if (myVisualRange <= 0) {
-        // Direct array write (no method call overhead)
-        neighborData[offset] = 0;
-        distanceData[offset] = 0;
-        continue;
-      }
-
-      // Cell radius for neighbor search (integer math faster than Math.ceil)
-      const cellRadius = ((myVisualRange * invCellSize) | 0) + 1;
-
-      // Entity's cell coordinates (using collider position)
-      const col = (myX * invCellSize) | 0;
-      const row = (myY * invCellSize) | 0;
-
-      let neighborCount = 0;
-
-      // Pre-calculate row bounds (avoid repeated bound checks)
-      const rowMin = row - cellRadius;
-      const rowMax = row + cellRadius;
-      const colMin = col - cellRadius;
-      const colMax = col + cellRadius;
-
-      // Clamp bounds once
-      const startRow = rowMin < 0 ? 0 : rowMin;
-      const endRow = rowMax >= gridRows ? gridRows - 1 : rowMax;
-      const startCol = colMin < 0 ? 0 : colMin;
-      const endCol = colMax >= gridCols ? gridCols - 1 : colMax;
-
-      // Check grid cells within cellRadius
-      for (let checkRow = startRow; checkRow <= endRow; checkRow++) {
-        const rowBase = checkRow * gridCols;
-
-        for (let checkCol = startCol; checkCol <= endCol; checkCol++) {
-          const checkCellIndex = rowBase + checkCol;
-          const cellLength = gridCounts[checkCellIndex];
-
-          // Skip empty cells
-          if (cellLength === 0) continue;
-
-          // Track grid cell checked
-          this.gridCellsCheckedThisFrame++;
-
-          const cellBase = checkCellIndex * maxEntitiesPerCell;
-
-          // Check all entities in this cell
-          for (let k = 0; k < cellLength; k++) {
-            const j = gridEntities[cellBase + k];
-
-            // Skip self
-            if (i === j) continue;
-
-            // Track neighbor check
-            this.neighborChecksThisFrame++;
-
-            // O(1) DUPLICATE CHECK: Multi-cell entities appear in multiple cells
-            // Use entity i's index as marker: if processedThisFrame[j] === i, already processed
-            // No cleanup needed - each entity uses its own ID as the marker value
-            if (processedThisFrame[j] === i) continue;
-            processedThisFrame[j] = i; // Mark j as processed by entity i
-
-            // Use PRE-COMPUTED positions for distance calculation
-            const jX = entityPosX[j];
-            const jY = entityPosY[j];
-            const deltaX = jX - myX;
-            const deltaY = jY - myY;
-            const distSq = deltaX * deltaX + deltaY * deltaY;
-
-            // Use PRE-COMPUTED half-extent
-            // Expand effective range by target's half-extent to detect large entities
-            const jHalfExtent = entityHalfExtent[j];
-            const effectiveRange = myVisualRange + jHalfExtent;
-            const effectiveRangeSq = effectiveRange * effectiveRange;
-
-            // Only add if within effective range and not at same position
-            if (distSq < effectiveRangeSq && distSq > 0) {
-              // Direct array write for performance in hot loop
-              const writeIdx = offset + 1 + neighborCount;
-              neighborData[writeIdx] = j;
-              distanceData[writeIdx] = distSq;
-              neighborCount++;
-
-              // Stop if we've hit the neighbor limit
-              if (neighborCount >= maxNeighbors) break;
-            }
-          }
-
-          if (neighborCount >= maxNeighbors) break;
+      // Calculate half-extent based on collider type
+      let halfW = 0, halfH = 0;
+      if (colliderActive[i]) {
+        if (shapeType[i] === SHAPE_CIRCLE) {
+          halfW = halfH = radius[i] || 0;
+        } else {
+          halfW = (width[i] || 0) * 0.5;
+          halfH = (height[i] || 0) * 0.5;
         }
-        if (neighborCount >= maxNeighbors) break;
       }
+      entityHalfExtent[i] = halfW > halfH ? halfW : halfH;
 
-      // Store neighbor count using direct array access (no method call overhead)
-      neighborData[offset] = neighborCount;
-      distanceData[offset] = neighborCount;
+      // Calculate cell range this entity's bounding box covers
+      let minCol = ((posX - halfW) * invCellSize) | 0;
+      let maxColBB = ((posX + halfW) * invCellSize) | 0;
+      let minRow = ((posY - halfH) * invCellSize) | 0;
+      let maxRowBB = ((posY + halfH) * invCellSize) | 0;
+
+      // Clamp to grid bounds
+      minCol = minCol < 0 ? 0 : minCol > maxCol ? maxCol : minCol;
+      maxColBB = maxColBB < 0 ? 0 : maxColBB > maxCol ? maxCol : maxColBB;
+      minRow = minRow < 0 ? 0 : minRow > maxRow ? maxRow : minRow;
+      maxRowBB = maxRowBB < 0 ? 0 : maxRowBB > maxRow ? maxRow : maxRowBB;
+
+      // Insert entity into ALL cells it overlaps, but only if we own that row
+      for (let row = minRow; row <= maxRowBB; row++) {
+        // ROW OWNERSHIP CHECK: Only write to rows we own
+        if (row % totalSpatialWorkers !== workerId) continue;
+
+        const rowBase = row * gridWidth;
+
+        for (let col = minCol; col <= maxColBB; col++) {
+          const cellIndex = rowBase + col;
+          const byteOffset = cellIndex * CELL_BYTE_SIZE;
+          const count = gridCounts[byteOffset];
+
+          // Add entity if cell not full
+          if (count < MAX_ENTITIES_PER_CELL) {
+            // Entity data starts at byte 4 (Uint32 index 1 relative to cell)
+            const uint32Offset = (byteOffset >> 2) + 1 + count;
+            gridEntities[uint32Offset] = i;
+            gridCounts[byteOffset] = count + 1;
+          }
+        }
+      }
     }
   }
 
   /**
-   * Update method called each frame (implementation of AbstractWorker.update)
+   * STEP 2: Find neighbors for all entities in owned cells
+   * 
+   * - Iterates through all owned cells
+   * - For each entity in an owned cell, searches 3x3 neighborhood
+   * - Writes neighbors to double-buffered neighbor array
+   * 
+   * IMPORTANT: We can READ any cell (3x3 search), but only compute
+   * neighbors for entities that are in our owned cells.
    */
-  update(deltaTime, dtRatio, resuming) {
-    // Mouse position is now written directly to Transform by main thread
-    // No special syncing needed - spatial grid will see current position
+  findNeighborsForOwnedEntities() {
+    const visualRange = Collider.visualRange;
+    const active = Transform.active;
 
-    // OVERLAPPED EXECUTION OPTIMIZATION:
-    // Grid is double-buffered - we read from the stable READ buffer while
-    // particle_worker rebuilds into the WRITE buffer. This eliminates the
-    // ~1.6ms blocking wait that was here before.
-    //
-    // Trade-off: 1 frame latency in neighbor data (negligible for gameplay)
-    // The read buffer always contains the previous frame's complete grid.
-    //
-    // First frame handling: If grid is empty (frame 0), findAllNeighbors()
-    // gracefully handles it by returning 0 neighbors for all entities.
+    const gridWidth = this.gridWidth;
+    const gridHeight = this.gridHeight;
+    const invCellSize = this.invCellSize;
+    const maxNeighbors = Grid.maxNeighbors;
+    const stride = Grid._stride;
 
-    // Grid is rebuilt by particle_worker (has spare capacity)
-    // We read the stable read-only grid and compute neighbors for our entity slice
-    this.findAllNeighbors();
+    const entityPosX = this.entityPosX;
+    const entityPosY = this.entityPosY;
+    const entityHalfExtent = this.entityHalfExtent;
 
-    // DOUBLE BUFFER SWAP: Signal that this worker finished computing neighbors
-    // The last worker to finish will swap read/write buffers
-    Grid.signalSpatialWorkerFinished();
+    // Get write buffers for this frame
+    const neighborData = Grid._neighborDataWrite;
+    const distanceData = Grid._distanceDataWrite;
 
-    // Screen visibility is now handled by particle_worker to balance workload
+    // Direct grid buffer access
+    const gridCounts = Grid._gridCounts;
+    const gridEntities = Grid._gridEntities;
+
+    // O(1) duplicate detection
+    const processedMarker = this.processedMarker;
+    processedMarker.fill(-1);  // Reset markers each frame
+
+    const ownedRows = this.ownedRows;
+    const ownedRowCount = this.ownedRowCount;
+
+    // =========================================================================
+    // Iterate through all owned cells
+    // =========================================================================
+    for (let r = 0; r < ownedRowCount; r++) {
+      const row = ownedRows[r];
+      const rowBase = row * gridWidth;
+
+      for (let col = 0; col < gridWidth; col++) {
+        const cellIndex = rowBase + col;
+        const byteOffset = cellIndex * CELL_BYTE_SIZE;
+        const cellCount = gridCounts[byteOffset];
+
+        // Skip empty cells
+        if (cellCount === 0) continue;
+
+        // Process each entity in this cell
+        const cellEntityBase = (byteOffset >> 2) + 1;
+
+        for (let k = 0; k < cellCount; k++) {
+          const entityA = gridEntities[cellEntityBase + k];
+
+          // Sanity check (shouldn't happen but safety)
+          if (!active[entityA]) continue;
+
+          this.entitiesProcessedThisFrame++;
+
+          const myX = entityPosX[entityA];
+          const myY = entityPosY[entityA];
+          const myVisualRange = visualRange[entityA];
+
+          // Neighbor write offset
+          const neighborOffset = entityA * stride;
+
+          // Skip entities with no visual range
+          if (myVisualRange <= 0) {
+            neighborData[neighborOffset] = 0;
+            if (distanceData) distanceData[neighborOffset] = 0;
+            continue;
+          }
+
+          // Calculate cell search radius
+          const cellRadius = ((myVisualRange * invCellSize) | 0) + 1;
+
+          // Search bounds (3x3 or larger based on visual range)
+          const startRow = row - cellRadius;
+          const endRow = row + cellRadius;
+          const startCol = col - cellRadius;
+          const endCol = col + cellRadius;
+
+          // Clamp bounds
+          const clampedStartRow = startRow < 0 ? 0 : startRow;
+          const clampedEndRow = endRow >= gridHeight ? gridHeight - 1 : endRow;
+          const clampedStartCol = startCol < 0 ? 0 : startCol;
+          const clampedEndCol = endCol >= gridWidth ? gridWidth - 1 : endCol;
+
+          let neighborCount = 0;
+          const visualRangeSq = myVisualRange * myVisualRange;
+
+          // =================================================================
+          // Search neighboring cells (can read ANY cell, not just owned ones)
+          // =================================================================
+          for (let checkRow = clampedStartRow; checkRow <= clampedEndRow; checkRow++) {
+            const checkRowBase = checkRow * gridWidth;
+
+            for (let checkCol = clampedStartCol; checkCol <= clampedEndCol; checkCol++) {
+              const checkCellIndex = checkRowBase + checkCol;
+              const checkByteOffset = checkCellIndex * CELL_BYTE_SIZE;
+              const checkCellCount = gridCounts[checkByteOffset];
+
+              if (checkCellCount === 0) continue;
+
+              this.cellsCheckedThisFrame++;
+
+              const checkEntityBase = (checkByteOffset >> 2) + 1;
+
+              // Check all entities in this cell
+              for (let j = 0; j < checkCellCount; j++) {
+                const entityB = gridEntities[checkEntityBase + j];
+
+                // Skip self
+                if (entityA === entityB) continue;
+
+                // O(1) duplicate check: multi-cell entities appear in multiple cells
+                if (processedMarker[entityB] === entityA) continue;
+                processedMarker[entityB] = entityA;
+
+                // Calculate squared distance
+                const bX = entityPosX[entityB];
+                const bY = entityPosY[entityB];
+                const dx = bX - myX;
+                const dy = bY - myY;
+                const distSq = dx * dx + dy * dy;
+
+                // Expand effective range by target's half-extent
+                const bHalfExtent = entityHalfExtent[entityB];
+                const effectiveRange = myVisualRange + bHalfExtent;
+                const effectiveRangeSq = effectiveRange * effectiveRange;
+
+                // Check if within range and not at exact same position
+                if (distSq < effectiveRangeSq && distSq > 0) {
+                  // Write neighbor data
+                  const writeIdx = neighborOffset + 1 + neighborCount;
+                  neighborData[writeIdx] = entityB;
+                  if (distanceData) distanceData[writeIdx] = distSq;
+
+                  neighborCount++;
+                  this.neighborsFoundThisFrame++;
+
+                  // Stop at neighbor limit
+                  if (neighborCount >= maxNeighbors) break;
+                }
+              }
+
+              if (neighborCount >= maxNeighbors) break;
+            }
+            if (neighborCount >= maxNeighbors) break;
+          }
+
+          // Write neighbor count
+          neighborData[neighborOffset] = neighborCount;
+          if (distanceData) distanceData[neighborOffset] = neighborCount;
+        }
+      }
+    }
   }
 
   /**
-   * Override reportFPS to write stats to SharedArrayBuffer
+   * Report FPS and stats to SharedArrayBuffer
    */
   reportFPS() {
-    // Write stats to SharedArrayBuffer every frame
     if (this.stats) {
       this.stats[SPATIAL_STATS.FPS] = this.currentFPS;
-      this.stats[SPATIAL_STATS.NEIGHBOR_CHECKS] = this.neighborChecksThisFrame;
-      this.stats[SPATIAL_STATS.GRID_CELLS_CHECKED] =
-        this.gridCellsCheckedThisFrame;
-      this.stats[SPATIAL_STATS.ENTITIES_PROCESSED] =
-        this.entitiesProcessedThisFrame;
+      this.stats[SPATIAL_STATS.ENTITIES_PROCESSED] = this.entitiesProcessedThisFrame;
+      this.stats[SPATIAL_STATS.NEIGHBOR_CHECKS] = this.neighborsFoundThisFrame;
+      this.stats[SPATIAL_STATS.GRID_CELLS_CHECKED] = this.cellsCheckedThisFrame;
     }
   }
 }
 
-// Create singleton instance and setup message handler
+// Create singleton instance
 const spatialWorker = new SpatialWorker(self);

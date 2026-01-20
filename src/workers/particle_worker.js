@@ -151,16 +151,14 @@ class ParticleWorker extends AbstractWorker {
     this.flashStartIndex = 0; // Entity index where flashes start
 
     // ========================================
-    // SPATIAL GRID REBUILDING
+    // PRE-COMPUTED ENTITY DATA (Shared with Spatial Workers)
     // ========================================
-    // Grid rebuilding moved to particle_worker for load balancing
-    // particle_worker has spare capacity, spatial_workers are bottlenecked
-    this.occupiedCells = null; // Track occupied grid cells for efficient clearing
-    this.occupiedCount = 0;
-    this.entityPosX = null; // Pre-computed entity positions for spatial_workers
-    this.entityPosY = null;
-    this.entityHalfExtent = null; // Pre-computed half-extents for neighbor checks
-    // Note: Grid sync handled via Grid.swapGridBuffers() - no local reference needed
+    // NOTE: Grid rebuilding now handled by spatial workers using row-based partitioning.
+    // These position buffers are shared - spatial workers write during grid rebuild,
+    // then use them for neighbor distance calculations.
+    this.entityPosX = null;   // Float32Array - collider X position
+    this.entityPosY = null;   // Float32Array - collider Y position
+    this.entityHalfExtent = null; // Float32Array - max half-extent for distance checks
 
     // Note: activeEntitiesData is now initialized in AbstractWorker.initializeCommonBuffers
   }
@@ -414,30 +412,18 @@ class ParticleWorker extends AbstractWorker {
     }
 
     // ========================================
-    // SPATIAL GRID REBUILDING - Initialize arrays
+    // PRE-COMPUTED ENTITY DATA - Initialize shared buffers
     // ========================================
-    if (data.gridMetadata && data.buffers.entityPosX) {
-      const totalCells = data.gridMetadata.totalCells;
-      const maxEntitiesPerCell = data.gridMetadata.maxEntitiesPerCell;
-
-      // Track occupied cells - worst case is ALL cells occupied (local array)
-      this.occupiedCells =
-        totalCells <= 65535
-          ? new Uint16Array(totalCells)
-          : new Uint32Array(totalCells);
-      this.occupiedCount = 0;
-
-      // Pre-computed entity data - SHARED arrays written here, read by spatial_workers
-      // NOTE: Pre-compute for ALL entities (spatial workers need full grid awareness)
+    // NOTE: Grid rebuilding is now handled by spatial workers (row-based partitioning).
+    // We still keep references to the shared position buffers for potential future use
+    // (e.g., if particle_worker needs to read entity positions for lighting/shadows).
+    if (data.buffers.entityPosX) {
       this.entityPosX = new Float32Array(data.buffers.entityPosX);
       this.entityPosY = new Float32Array(data.buffers.entityPosY);
       this.entityHalfExtent = new Float32Array(data.buffers.entityHalfExtent);
 
-      // Note: Grid synchronization handled by Grid class via swapGridBuffers()
-      // Spatial workers read from stable buffer - no Atomics.wait needed
-
       console.log(
-        `PARTICLE WORKER: Grid rebuilding enabled (${totalCells} cells, ${this.globalEntityCount} entities)`
+        `PARTICLE WORKER: Entity position buffers initialized (${this.globalEntityCount} entities)`
       );
     }
 
@@ -498,128 +484,10 @@ class ParticleWorker extends AbstractWorker {
     this.activeParticleCount = count;
   }
 
-  /**
-   * Rebuild spatial grid (moved from spatial_worker for load balancing)
-   * ARCHITECTURE: particle_worker has spare capacity (125 FPS), spatial_workers are bottlenecked (40 FPS)
-   * Grid rebuild takes ~1.6ms, freeing spatial_workers to focus on neighbor detection (~33ms)
-   *
-   * OPTIMIZED: Uses flat grid structure with TypedArrays
-   * - Zero GC pressure (no array allocations)
-   * - Cache-friendly sequential access
-   * - Pre-computes entity positions and half-extents for spatial_workers to use
-   * - Only clears occupied cells (not entire grid)
-   *
-   * NOTE: Writes to SHARED grid buffer, read by spatial_workers and raycasting
-   */
-  rebuildSpatialGrid() {
-    if (!this.occupiedCells) return; // Grid not initialized
-
-    // DOUBLE BUFFERING: Always write to the write-only grid buffer
-    // This allows spatial_workers to read the previous stable grid while we rebuild
-    const gridEntities = Grid._gridEntitiesWrite;
-    const gridCounts = Grid._gridCountsWrite;
-
-    if (!gridEntities || !gridCounts) return;
-
-    const occupiedCells = this.occupiedCells;
-    const maxEntitiesPerCell = Grid.maxEntitiesPerCell;
-    const gridCols = Grid.gridCols;
-    const gridRows = Grid.gridRows;
-
-    if (gridCols <= 0) return;
-
-    // Safety: Clear the entire counts buffer for the write-target.
-    // With double-buffering, we can't easily use the 'occupiedCells' optimization
-    // without tracking two sets of occupied cells. Full clear is fast and safe.
-    gridCounts.fill(0);
-    this.occupiedCount = 0;
-
-    // Cache frequently accessed values
-    const x = Transform.x;
-    const y = Transform.y;
-    const offsetX = Collider.offsetX;
-    const offsetY = Collider.offsetY;
-    const colliderActive = Collider.active;
-    const shapeType = Collider.shapeType;
-    const radius = Collider.radius;
-    const width = Collider.width;
-    const height = Collider.height;
-    const invCellSize = Grid.invCellSize;
-    const maxCol = gridCols - 1;
-    const maxRow = gridRows - 1;
-
-    // Pre-computed entity data arrays (for spatial_workers to use)
-    const entityPosX = this.entityPosX;
-    const entityPosY = this.entityPosY;
-    const entityHalfExtent = this.entityHalfExtent;
-
-    // Shape type constants
-    const SHAPE_CIRCLE = 0;
-
-    // OPTIMIZED: Use active entity list (already built by buildActiveEntityList)
-    // This eliminates the need to check active[i] for every entity
-    const activeEntitiesData = this.activeEntitiesData;
-    const totalActiveEntities = activeEntitiesData ? activeEntitiesData[0] : 0;
-
-    // Insert only active entities into grid (iterate active list)
-    for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
-      const i = activeEntitiesData[1 + activeIdx];
-
-      // Use collider position (transform + offset) for grid placement
-      const posX = x[i] + (offsetX[i] || 0);
-      const posY = y[i] + (offsetY[i] || 0);
-
-      // Skip entities with invalid positions (NaN check via self-comparison)
-      if (posX !== posX || posY !== posY) continue;
-
-      // PRE-COMPUTE: Store collider position for spatial_workers to use
-      entityPosX[i] = posX;
-      entityPosY[i] = posY;
-
-      // Calculate entity's bounding box half-extents based on collider type
-      let halfW = 0,
-        halfH = 0;
-      if (colliderActive[i]) {
-        if (shapeType[i] === SHAPE_CIRCLE) {
-          // Circle: use radius for both dimensions
-          halfW = halfH = radius[i] || 0;
-        } else {
-          // Box: use half width/height
-          halfW = (width[i] || 0) * 0.5;
-          halfH = (height[i] || 0) * 0.5;
-        }
-      }
-
-      // PRE-COMPUTE: Store max half-extent for neighbor distance checks
-      entityHalfExtent[i] = halfW > halfH ? halfW : halfH;
-
-      // Calculate cell range the entity's bounding box covers
-      let minCol = ((posX - halfW) * invCellSize) | 0;
-      let maxColBB = ((posX + halfW) * invCellSize) | 0;
-      let minRow = ((posY - halfH) * invCellSize) | 0;
-      let maxRowBB = ((posY + halfH) * invCellSize) | 0;
-
-      // Clamp to grid bounds
-      minCol = minCol < 0 ? 0 : minCol > maxCol ? maxCol : minCol;
-      maxColBB = maxColBB < 0 ? 0 : maxColBB > maxCol ? maxCol : maxColBB;
-      minRow = minRow < 0 ? 0 : minRow > maxRow ? maxRow : minRow;
-      maxRowBB = maxRowBB < 0 ? 0 : maxRowBB > maxRow ? maxRow : maxRowBB;
-
-      // Add entity to ALL cells its bounding box overlaps
-      for (let r = minRow; r <= maxRowBB; r++) {
-        for (let c = minCol; c <= maxColBB; c++) {
-          const cellIndex = r * gridCols + c;
-          const count = gridCounts[cellIndex];
-
-          // Add entity to cell if not full
-          if (count < maxEntitiesPerCell) {
-            gridEntities[cellIndex * maxEntitiesPerCell + count] = i;
-            gridCounts[cellIndex] = count + 1;
-          }
-        }
-      }
-    }
-  }
+  // NOTE: rebuildSpatialGrid() removed - now handled by spatial workers using row-based partitioning
+  // Each spatial worker owns specific rows (cellY % workerCount === workerId) and rebuilds only its own rows.
+  // This eliminates all race conditions without synchronization overhead.
+  // See spatial_worker.js rebuildOwnedRows() for the new implementation.
 
   /**
    * Update all active particles
@@ -628,6 +496,11 @@ class ParticleWorker extends AbstractWorker {
    * BLOOD DECALS: Particles with stayOnTheFloor=1 are collected during
    * the physics loop, then stamped all at once after the loop finishes.
    * This batching improves cache locality for SAB writes.
+   * 
+   * NOTE: Grid rebuilding is now handled by spatial workers using row-based partitioning.
+   * Each spatial worker owns specific rows (cellY % workerCount === workerId) and
+   * rebuilds only its own rows. This eliminates all race conditions without any
+   * synchronization overhead.
    */
   update(deltaTime, dtRatio) {
     if (this.maxParticles === 0 && this.globalEntityCount === 0) return;
@@ -637,14 +510,9 @@ class ParticleWorker extends AbstractWorker {
     // Build active entity list FIRST - spatial workers need this to split work evenly
     this.buildActiveEntityList();
 
-    // Rebuild spatial grid into WRITE buffer
-    // OVERLAPPED EXECUTION: Spatial workers read from the stable READ buffer
-    // simultaneously while we rebuild into the write buffer. No synchronization needed!
-    this.rebuildSpatialGrid();
-
-    // DOUBLE BUFFER SWAP: Make the newly built grid available for reading
-    // After this atomic swap, spatial workers will see the new grid on next frame
-    Grid.swapGridBuffers();
+    // NOTE: Grid rebuilding moved to spatial workers (row-based partitioning)
+    // Each spatial worker now rebuilds its own rows, eliminating race conditions
+    // without any synchronization. See spatial_worker.js rebuildOwnedRows().
 
     // Build active particle list - optimize physics by skipping inactive particles
     this.buildActiveParticleList();
