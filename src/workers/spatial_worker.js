@@ -3,21 +3,22 @@
 // =============================================================================
 //
 // ARCHITECTURE: Each spatial worker owns specific grid rows (cellY % workerCount === workerId)
-// - No double buffering for grid (row ownership eliminates races)
-// - No Atomics, no locks, no coordination for grid writes
+// - No double buffering (neither grid nor neighbors)
+// - No Atomics, no locks, no coordination, no synchronization
 // - Each worker rebuilds its own rows AND computes neighbors for entities in those rows
-// - Workers can READ any cell but only WRITE to owned rows
+// - Workers can READ any cell but only WRITE to owned rows/entities
 //
 // FLOW PER FRAME:
 // 1. Clear all cells in owned rows
 // 2. Insert ALL active entities into grid (only to owned rows)
 // 3. For each entity in owned rows: find neighbors using 3x3 cell search
-// 4. Signal completion (last worker swaps neighbor read/write buffers)
 //
-// MEMORY MODEL:
+// MEMORY MODEL (100% deterministic, zero synchronization):
 // - Grid: Single buffer, row ownership prevents races
-// - Neighbors: Double buffered (A/B) for clean reads by logic workers
-// - Accepts stale data by design (1 frame latency is imperceptible)
+// - Neighbors: Single buffer, row ownership prevents races
+// - "Torn reads" by logic workers just mix current + recent data (never garbage)
+// - Distance checks filter any out-of-range neighbors
+// - Transform.active[] check handles despawned entities
 //
 // =============================================================================
 
@@ -154,8 +155,10 @@ class SpatialWorker extends AbstractWorker {
     // STEP 2: Find neighbors (only for entities in owned rows)
     this.findNeighborsForOwnedEntities();
 
-    // STEP 3: Signal completion - last worker swaps neighbor buffers
-    Grid.signalSpatialWorkerFinished();
+    // No synchronization needed - row ownership eliminates all races.
+    // Grid and neighbor data are single-buffered. "Torn reads" by logic workers
+    // just mix current + recent data (never garbage), and distance checks filter
+    // any out-of-range neighbors.
   }
 
   /**
@@ -308,9 +311,9 @@ class SpatialWorker extends AbstractWorker {
     const entityPosY = this.entityPosY;
     const entityHalfExtent = this.entityHalfExtent;
 
-    // Get write buffers for this frame
-    const neighborData = Grid._neighborDataWrite;
-    const distanceData = Grid._distanceDataWrite;
+    // Single buffer - direct access (row ownership eliminates races)
+    const neighborData = Grid.neighborData;
+    const distanceData = Grid.distanceData;
 
     // Direct grid buffer access
     const gridCounts = Grid._gridCounts;

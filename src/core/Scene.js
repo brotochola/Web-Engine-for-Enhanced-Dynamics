@@ -776,36 +776,30 @@ class Scene {
     );
     this.buffers.gameObjectData = new SharedArrayBuffer(gameObjectBufferSize);
 
-    // DOUBLE BUFFERING: Neighbor data buffers (A and B)
-    // Spatial workers write to one buffer while logic/physics read from the other
-    // This eliminates race conditions and allows one-frame-lag neighbor data (negligible for gameplay)
+    // ==========================================================================
+    // NEIGHBOR DATA - Single Buffer (No Double Buffering)
+    // ==========================================================================
+    // Row ownership eliminates races: each spatial worker only writes neighbors
+    // for entities in its owned rows. "Torn reads" just mix current + recent data
+    // (never garbage), and distance checks filter any out-of-range neighbors.
+    //
+    // Layout per entity: [count:Int32, neighbors[MAX_NEIGHBORS]:Int32]
     const maxNeighbors = this.config.spatial.maxNeighbors;
     const NEIGHBOR_BUFFER_SIZE = this.totalEntityCount * (1 + maxNeighbors) * 4;
-    this.buffers.neighborDataA = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
-    this.buffers.neighborDataB = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
+    this.buffers.neighborData = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
 
+    // Layout per entity: [dist2[MAX_NEIGHBORS]:Float32]
     const DISTANCE_BUFFER_SIZE = this.totalEntityCount * (1 + maxNeighbors) * 4;
-    this.buffers.distanceDataA = new SharedArrayBuffer(DISTANCE_BUFFER_SIZE);
-    this.buffers.distanceDataB = new SharedArrayBuffer(DISTANCE_BUFFER_SIZE);
+    this.buffers.distanceData = new SharedArrayBuffer(DISTANCE_BUFFER_SIZE);
 
-    // Neighbor synchronization buffer for double buffering
-    // [0] = currentReadBuffer (0 or 1) - which buffer logic/physics should read from
-    // [1] = spatialWorkersFinished (0 to numberOfSpatialWorkers) - counter for workers that finished
-    // [2] = totalSpatialWorkers - constant for comparison
-    const numberOfSpatialWorkers =
-      this.config.spatial.numberOfSpatialWorkers || 1;
-    const NEIGHBOR_SYNC_SIZE = 12; // Int32Array with 3 elements
-    this.buffers.neighborSyncData = new SharedArrayBuffer(NEIGHBOR_SYNC_SIZE);
-    const neighborSyncView = new Int32Array(this.buffers.neighborSyncData);
-    neighborSyncView[0] = 0; // Start reading from buffer A
-    neighborSyncView[1] = 0; // No workers finished yet
-    neighborSyncView[2] = numberOfSpatialWorkers; // Store total worker count
+    // Number of spatial workers (used for stats buffer sizing)
+    const numberOfSpatialWorkers = this.config.spatial.numberOfSpatialWorkers || 1;
 
     GameObject.initializeArrays(
       this.buffers.gameObjectData,
       this.totalEntityCount,
-      this.buffers.neighborDataA, // Start with A as read buffer
-      this.buffers.distanceDataA
+      this.buffers.neighborData,
+      this.buffers.distanceData
     );
 
     // Create Component buffers
@@ -1055,11 +1049,8 @@ class Scene {
     Grid.initialize(
       {
         gridBuffer: this.buffers.gridBuffer,
-        neighborBufferA: this.buffers.neighborDataA,
-        neighborBufferB: this.buffers.neighborDataB,
-        distanceBufferA: this.buffers.distanceDataA,
-        distanceBufferB: this.buffers.distanceDataB,
-        syncBuffer: this.buffers.neighborSyncData,
+        neighborBuffer: this.buffers.neighborData,
+        distanceBuffer: this.buffers.distanceData,
       },
       {
         cellSize,
@@ -1426,12 +1417,11 @@ class Scene {
       msg: "init",
       buffers: {
         gameObjectData: this.buffers.gameObjectData,
-        // DOUBLE BUFFERED neighbor data (still needed for clean reads by logic workers)
-        neighborDataA: this.buffers.neighborDataA,
-        neighborDataB: this.buffers.neighborDataB,
-        distanceDataA: this.buffers.distanceDataA,
-        distanceDataB: this.buffers.distanceDataB,
-        neighborSyncData: this.buffers.neighborSyncData,
+        // Neighbor data: SINGLE BUFFER (row ownership eliminates races)
+        // "Torn reads" mix current + recent data (never garbage)
+        // Distance checks filter any out-of-range neighbors
+        neighborData: this.buffers.neighborData,
+        distanceData: this.buffers.distanceData,
         collisionData: this.buffers.collisionData,
         activeEntitiesData: this.buffers.activeEntitiesData,
         inputData: this.buffers.inputData,
@@ -1443,13 +1433,11 @@ class Scene {
         frameRateData: this.buffers.frameRateData,
         componentData: this.buffers.componentData,
         // Spatial grid: SINGLE BUFFER with row-based partitioning
-        // Each spatial worker owns specific rows (cellY % workerCount === workerId)
-        // No double buffering needed - row ownership eliminates races
         gridBuffer: this.buffers.gridBuffer,
         entityPosX: this.buffers.entityPosX,
         entityPosY: this.buffers.entityPosY,
         entityHalfExtent: this.buffers.entityHalfExtent,
-        // Worker stat buffers (detailed metrics)
+        // Worker stat buffers
         rendererStats: this.buffers.rendererStats,
         particleStats: this.buffers.particleStats,
         physicsStats: this.buffers.physicsStats,

@@ -311,17 +311,14 @@ export class AbstractWorker {
       }
     }
 
-    // Initialize neighbor data reference (redundant with GameObject but kept for clarity)
-    // DOUBLE BUFFERING: neighborData now comes from Grid's dynamic getters
-    // We set this.neighborData to neighborDataA initially for backwards compatibility
-    if (data.buffers?.neighborDataA) {
-      this.neighborData = new Int32Array(data.buffers.neighborDataA);
+    // Initialize neighbor data reference (single buffer - row ownership eliminates races)
+    if (data.buffers?.neighborData) {
+      this.neighborData = new Int32Array(data.buffers.neighborData);
     }
 
-    // Initialize distance data reference
-    // DOUBLE BUFFERING: distanceData now comes from Grid's dynamic getters
-    if (data.buffers?.distanceDataA) {
-      this.distanceData = new Float32Array(data.buffers.distanceDataA);
+    // Initialize distance data reference (single buffer)
+    if (data.buffers?.distanceData) {
+      this.distanceData = new Float32Array(data.buffers.distanceData);
     }
 
     // Initialize active entities list (for load-balanced processing)
@@ -397,23 +394,18 @@ export class AbstractWorker {
     // Initialize Grid system with shared buffers and metadata
     // ARCHITECTURE: Row-based partitioned spatial grid
     // - gridBuffer: SINGLE buffer, each spatial worker owns specific rows
-    // - neighborData/distanceData: DOUBLE BUFFERED, written by spatial_workers, read by logic/physics
+    // - neighborData/distanceData: SINGLE buffer, row ownership eliminates races
     // Row ownership: worker i owns rows where (cellY % totalWorkers === workerId)
-    // This eliminates all race conditions without any synchronization overhead.
+    // No double buffering, no Atomics, no locks - pure deterministic memory.
     if (data.gridMetadata && data.buffers?.gridBuffer) {
       const maxNeighbors =
         this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
 
       Grid.initialize(
         {
-          // Single grid buffer (row-based partitioning - no double buffering needed)
           gridBuffer: data.buffers.gridBuffer,
-          // Double-buffered neighbor data (for clean reads by logic workers)
-          neighborBufferA: data.buffers.neighborDataA,
-          neighborBufferB: data.buffers.neighborDataB,
-          distanceBufferA: data.buffers.distanceDataA,
-          distanceBufferB: data.buffers.distanceDataB,
-          syncBuffer: data.buffers.neighborSyncData,
+          neighborBuffer: data.buffers.neighborData,
+          distanceBuffer: data.buffers.distanceData,
         },
         {
           ...data.gridMetadata,
@@ -421,7 +413,7 @@ export class AbstractWorker {
         }
       );
       this.reportLog(
-        "Grid system initialized (row-based partitioning, double-buffered neighbors)"
+        "Grid system initialized (row-based partitioning, single buffers)"
       );
     }
 
