@@ -398,19 +398,14 @@ export class AbstractWorker {
     // Row ownership: worker i owns rows where (cellY % totalWorkers === workerId)
     // No double buffering, no Atomics, no locks - pure deterministic memory.
     if (data.gridMetadata && data.buffers?.gridBuffer) {
-      const maxNeighbors =
-        this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
-
+      // Use gridMetadata directly - it now includes maxNeighbors and maxEntitiesPerCell from scene config
       Grid.initialize(
         {
           gridBuffer: data.buffers.gridBuffer,
           neighborBuffer: data.buffers.neighborData,
           distanceBuffer: data.buffers.distanceData,
         },
-        {
-          ...data.gridMetadata,
-          maxNeighbors: maxNeighbors,
-        }
+        data.gridMetadata
       );
       this.reportLog(
         "Grid system initialized (row-based partitioning, single buffers)"

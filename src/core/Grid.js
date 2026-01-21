@@ -30,8 +30,8 @@ import { Collider } from "../components/Collider.js";
 // CONSTANTS - Configurable via scene (defaults shown)
 // =============================================================================
 // These are defaults - actual values come from metadata.maxEntitiesPerCell and metadata.maxNeighbors
-const DEFAULT_MAX_ENTITIES_PER_CELL = 16;  // Max entities per grid cell
-const DEFAULT_MAX_NEIGHBORS = 500;         // Max neighbors per entity
+const DEFAULT_MAX_ENTITIES_PER_CELL = 64;  // Max entities per grid cell (matches ConfigDefaults.js)
+const DEFAULT_MAX_NEIGHBORS = 500;         // Max neighbors per entity (matches ConfigDefaults.js)
 
 /**
  * Grid - Static class for row-based spatial partitioning
