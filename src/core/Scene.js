@@ -1043,6 +1043,7 @@ class Scene {
       gridRows,
       totalCells,
       maxEntitiesPerCell,
+      maxNeighbors, // Include maxNeighbors from scene config
     };
 
     // Initialize Grid on main thread for DebugUI visualization
