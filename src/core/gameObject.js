@@ -428,6 +428,11 @@ export class GameObject {
     return Collider.radius[this.index];
   }
 
+  set radius(value) {
+    if (!this._hasComponents.Collider) return;
+    Collider.radius[this.index] = value;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // METHODS - RENDERING (mark dirty)
   // Methods duplicate setter logic for zero-overhead when using method syntax
