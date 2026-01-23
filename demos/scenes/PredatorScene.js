@@ -203,9 +203,9 @@ export class PredatorScene extends WEED.Scene {
       },
     },
     tilemaps: {
-      predatorsBG: {
-        json: "/demos/img/tilemap/t.json",
-        png: "/demos/img/tilemap/t.png",
+      myTilemap: {
+        json: "/demos/img/tilemap/2.json",
+        png: "/demos/img/tilemap/2.png",
       },
     },
   };
@@ -216,7 +216,7 @@ export class PredatorScene extends WEED.Scene {
 
   static entities = [
     [PreySpawner, 1],
-    [Prey, 20000],
+    [Prey, 2000],
     [Predator, 8],
     [Player, 1],
     [House, 100],
@@ -239,8 +239,7 @@ export class PredatorScene extends WEED.Scene {
   constructor(game) {
     super(game);
 
-    // Scene-specific properties
-    this.numberOfPrey = 10000;
+
     this.numberOfPredators = 1;
     this.numberOfBoids = 0;
     this.numberOfTallLights = 200;
@@ -258,7 +257,7 @@ export class PredatorScene extends WEED.Scene {
 
   create() {
     // Set tilemap background
-    this.setTilemapBackground("predatorsBG", { scale: 2 });
+    this.setTilemapBackground("myTilemap", { scale: 1 });
 
     // Spawn initial entities
     console.log("🎬 PredatorScene: Spawning entities...");
@@ -269,7 +268,7 @@ export class PredatorScene extends WEED.Scene {
     this.spawnPredators(this.numberOfPredators);
     this.spawnBoids(this.numberOfBoids);
     this.spawnLights(this.numberOfTallLights);
-    // this.spawnPrey(this.numberOfPrey);
+    // this.spawnPrey(1000);
     this.spawnHouses(this.numberOfHouses);
     this.spawnGrass(this.numberOfGrass);
     this.spawnPersonsWithFSM(this.numberOfPersonsWithFSM);
