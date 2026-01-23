@@ -8,9 +8,9 @@ self.postMessage({
 // Reads GameObject arrays and renders sprites with animations
 
 // Import engine dependencies
-import { GameObject } from "../core/gameObject.js";
+
 import { Transform } from "../components/Transform.js";
-import { RigidBody } from "../components/RigidBody.js";
+
 import { Collider } from "../components/Collider.js";
 import { SpriteRenderer } from "../components/SpriteRenderer.js";
 import { ParticleComponent } from "../components/ParticleComponent.js";
@@ -18,12 +18,11 @@ import { DecorationComponent } from "../components/DecorationComponent.js";
 import { DecorationPool } from "../core/DecorationPool.js";
 import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
 import { AbstractWorker } from "./AbstractWorker.js";
-// Note: DEBUG_FLAGS removed - debug rendering moved to DebugUI on main thread
-import { Mouse } from "../core/Mouse.js";
-import { MouseComponent } from "../components/MouseComponent.js";
+
+
 import { LightEmitter } from "../components/LightEmitter.js";
-import { Grid } from "../core/Grid.js";
-// Note: Ray import removed - raycast debug rendering moved to DebugUI on main thread
+
+
 import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from "../core/ConfigDefaults.js";
 import {
   sortByY,
@@ -3062,24 +3061,35 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Filter layers to render (if specified in options)
     const layersToRender = options.layers || null;
 
+
+
+
     // Process each layer
+    let layerIndex = 0;
     for (const layer of tiledData.layers) {
+      layerIndex++;
+
       // Skip non-tilelayer types (objectgroup, imagelayer, etc)
-      if (layer.type !== "tilelayer") continue;
+      if (layer.type !== "tilelayer") {
+        continue;
+      }
 
       // Skip if layers filter is specified and this layer is not in it
-      if (layersToRender && !layersToRender.includes(layer.name)) continue;
+      if (layersToRender && !layersToRender.includes(layer.name)) {
+        continue;
+      }
 
       // Skip invisible layers
-      if (layer.visible === false) continue;
+      if (layer.visible === false) {
+        continue;
+      }
 
       const layerData = layer.data;
-      if (!layerData || layerData.length === 0) continue;
+      if (!layerData || layerData.length === 0) {
+        continue;
+      }
 
-      console.log(
-        `PIXI WORKER: Processing layer "${layer.name}" with ${layerData.length
-        } tiles (expected ${mapWidth * mapHeight})`
-      );
+
 
       let tilesAdded = 0;
 
@@ -3125,15 +3135,27 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           const v = tileRow * tileHeight;
 
           // Calculate rotation based on flip flags
+          // Tiled uses: H = horizontal flip, V = vertical flip, D = diagonal (90° base)
+          // PIXI groupD8 rotation values:
+          // 0 = none, 2 = 90° CW, 4 = 180°, 6 = 90° CCW (270° CW)
+          // 8 = vertical flip, 10 = 90° CW + V flip, 12 = horizontal flip, 14 = 90° CCW + H flip
           let rotation = 0;
           if (flippedD) {
-            rotation = flippedH ? 6 : 4; // Diagonal flip
+            if (flippedH && flippedV) {
+              rotation = 2; // D + H + V = 90° clockwise
+            } else if (flippedH) {
+              rotation = 6; // D + H = 90° counter-clockwise (270° CW)
+            } else if (flippedV) {
+              rotation = 2; // D + V = 90° clockwise  
+            } else {
+              rotation = 6; // D only = 90° counter-clockwise
+            }
           } else if (flippedH && flippedV) {
-            rotation = 4; // 180 degrees
+            rotation = 4; // H + V = 180 degrees
           } else if (flippedH) {
-            rotation = 6; // Horizontal flip
+            rotation = 12; // Horizontal flip (mirror)
           } else if (flippedV) {
-            rotation = 2; // Vertical flip
+            rotation = 8; // Vertical flip (mirror)
           }
 
           // Add tile to tilemap
@@ -3151,14 +3173,23 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       console.log(
         `PIXI WORKER: Layer "${layer.name
-        }" - added ${tilesAdded} tiles, last tile at (${(mapWidth - 1) * tileWidth
-        }, ${(mapHeight - 1) * tileHeight})`
+        }" - added ${tilesAdded} non-empty tiles out of ${layerData.length} total tiles`
       );
     }
 
     // Calculate total tilemap dimensions in world pixels
     const totalWidth = mapWidth * tileWidth;
     const totalHeight = mapHeight * tileHeight;
+
+    // Log buffer stats for debugging
+    if (tilemap.children && tilemap.children[0]) {
+      const child = tilemap.children[0];
+      const pointsBufLength = child.pointsBuf ? child.pointsBuf.length : 0;
+      const tilesInBuffer = pointsBufLength / 14; // 14 values per tile
+      console.log(
+        `PIXI WORKER: Total tiles in buffer: ${tilesInBuffer} (pointsBuf length: ${pointsBufLength})`
+      );
+    }
 
     console.log(
       `PIXI WORKER: Parsed Tiled JSON - ${mapWidth}x${mapHeight} tiles (${tileWidth}x${tileHeight}px) = ${totalWidth}x${totalHeight}px total`
