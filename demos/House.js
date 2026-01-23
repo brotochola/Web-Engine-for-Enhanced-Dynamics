@@ -45,6 +45,7 @@ export class House extends GameObject {
   }
 
   onSpawned(spawnConfig = {}) {
+
     this.setup();
     //this should not be needed, i guess:
     //TODO: make onSpawned() also execute this.setup() by default

@@ -219,7 +219,7 @@ export class PredatorScene extends WEED.Scene {
     [Prey, 2000],
     [Predator, 8],
     [Player, 1],
-    [House, 100],
+    [House, 1000],
     [TallLight, 300],
     [PersonWithFSM, 20000], // FSM-based civilians
     [Tree, 1000],
@@ -269,19 +269,56 @@ export class PredatorScene extends WEED.Scene {
     this.spawnBoids(this.numberOfBoids);
     this.spawnLights(this.numberOfTallLights);
     // this.spawnPrey(1000);
-    this.spawnHouses(this.numberOfHouses);
+    // this.spawnHouses(this.numberOfHouses);
     this.spawnGrass(this.numberOfGrass);
     this.spawnPersonsWithFSM(this.numberOfPersonsWithFSM);
     this.spawnEntity(PreySpawner, {});
-    this.spawnTrees(this.numberOfTrees);
+    // this.spawnTrees(this.numberOfTrees);
     this.spawnBarrels(this.numberOfBarrels);
-    this.spawnRocks(this.numberOfRocks);
+    // this.spawnRocks(this.numberOfRocks);
     this.spawnMySoldiers(100);
     this.spawnDestination();
-    this.createNavGridForTheFlowField()
+    this.spawnRocksTreesAndHouses();
+
 
 
   }
+
+  spawnRocksTreesAndHouses() {
+    fetch("/demos/trees_and_rocks.json")
+      .then(response => response.json())
+      .then(data => {
+        data.rocks.forEach(rock => {
+          this.spawnEntity(Rock, {
+            x: rock.x,
+            y: rock.y,
+            radius: rock.radius,
+          });
+        });
+        data.trees.forEach(tree => {
+          this.spawnEntity(Tree, {
+            x: tree.x,
+            y: tree.y,
+            radius: tree.radius,
+          });
+        });
+        data.houses.forEach(house => {
+          this.spawnEntity(House, {
+            x: house.x,
+            y: house.y,
+            width: house.width,
+            height: house.height,
+          });
+        });
+        this.createNavGridForTheFlowField()
+      });
+    // this.spawnRocks(this.numberOfRocks);
+    // this.spawnTrees(this.numberOfTrees);
+    // this.spawnHouses(this.numberOfHouses);
+
+
+  }
+
   createNavGridForTheFlowField() {
     NavGrid.updateNavGrid([...Array.from(Tree.entityIndices), ...Array.from(Tree.entityIndices), ...Array.from(Rock.entityIndices), ...Array.from(House.entityIndices)])
   }
