@@ -5,6 +5,7 @@ import WEED from "/src/index.js";
 import { CivilianBehaviorFSM } from "./CivilianBehaviorFSM.js";
 import { NavGrid } from "../src/core/NavGrid.js";
 import { Mouse } from "../src/core/Mouse.js";
+import { randomColor } from "../src/core/utils.js";
 
 const {
   GameObject,
@@ -57,15 +58,27 @@ export class PersonWithFSM extends GameObject {
     this.lastDirection = "down";
   }
 
+  getRandomTint() {
+    let r = 0.8 + rng() * 0.2;
+    let g = 0.8 + rng() * 0.2;
+    let b = 0.8 + rng() * 0.2;
+
+    return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
+
+  }
+
   /**
    * LIFECYCLE: Called when spawned - runs EVERY spawn
    */
   onSpawned(spawnConfig = {}) {
+
     // Random spritesheet for variety
     const spritesheets = ["civil5", "civil6", "civil7"];
     const randomSheet = spritesheets[Math.floor(rng() * spritesheets.length)];
     this.setSpritesheet(randomSheet);
     this.setAnimation("idle_down");
+
+    this.setTint(this.getRandomTint());
 
     // Random scale
     const scale = 0.8 + rng() * 0.4;
