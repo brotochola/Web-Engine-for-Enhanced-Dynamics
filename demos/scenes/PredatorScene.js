@@ -15,6 +15,9 @@ import { Barrel } from "../barrel.js";
 import { Rock } from "../rock.js";
 import { Fire } from "../fire.js";
 import { Explosion } from "../explosion.js";
+import { MySoldier } from "../MySoldier.js";
+import { Destination } from "../destination.js";
+import { NavGrid } from "../../src/core/NavGrid.js";
 
 const { DecorationPool } = WEED;
 
@@ -134,6 +137,8 @@ export class PredatorScene extends WEED.Scene {
       tallLight: "/demos/img/tallLight.png",
       house1: "/demos/img/house1.png",
       house2: "/demos/img/house2.png",
+      house3: "/demos/img/house3.png",
+      house4: "/demos/img/house4.png",
       grass1: "/demos/img/g1.png",
       grass2: "/demos/img/g2.png",
       grass3: "/demos/img/g3.png",
@@ -145,6 +150,7 @@ export class PredatorScene extends WEED.Scene {
       barrel3: "/demos/img/barrel3.png",
       square: "/demos/img/10_10_square.png",
       smoke: "/demos/img/smoke.png",
+      target: "/demos/img/target.png",
     },
     spritesheets: {
       civil1: {
@@ -221,6 +227,8 @@ export class PredatorScene extends WEED.Scene {
     [Rock, 1000],
     [Fire, 100],
     [Explosion, 100],
+    [MySoldier, 100],
+    [Destination, 1],
     // Grass now uses DecorationPool instead of GameObject
   ];
 
@@ -261,7 +269,7 @@ export class PredatorScene extends WEED.Scene {
     this.spawnPredators(this.numberOfPredators);
     this.spawnBoids(this.numberOfBoids);
     this.spawnLights(this.numberOfTallLights);
-    this.spawnPrey(this.numberOfPrey);
+    // this.spawnPrey(this.numberOfPrey);
     this.spawnHouses(this.numberOfHouses);
     this.spawnGrass(this.numberOfGrass);
     this.spawnPersonsWithFSM(this.numberOfPersonsWithFSM);
@@ -269,7 +277,14 @@ export class PredatorScene extends WEED.Scene {
     this.spawnTrees(this.numberOfTrees);
     this.spawnBarrels(this.numberOfBarrels);
     this.spawnRocks(this.numberOfRocks);
-    console.log("✅ PredatorScene: Entities spawned!");
+    this.spawnMySoldiers(100);
+    this.spawnDestination();
+    this.createNavGridForTheFlowField()
+
+
+  }
+  createNavGridForTheFlowField() {
+    NavGrid.updateNavGrid([...Array.from(Tree.entityIndices), ...Array.from(Tree.entityIndices), ...Array.from(Rock.entityIndices), ...Array.from(House.entityIndices)])
   }
 
   update(time, delta) {
@@ -309,6 +324,15 @@ export class PredatorScene extends WEED.Scene {
     }
   }
 
+  spawnDestination() {
+
+    this.spawnEntity(Destination, {
+      x: 0,
+      y: 0,
+    });
+
+  }
+
   spawnPredators(count) {
     for (let i = 0; i < count; i++) {
       this.spawnEntity(Predator, {
@@ -335,6 +359,14 @@ export class PredatorScene extends WEED.Scene {
       this.spawnEntity(Barrel, {
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
+      });
+    }
+  }
+  spawnMySoldiers(count) {
+    for (let i = 0; i < count; i++) {
+      this.spawnEntity(MySoldier, {
+        x: this.config.worldWidth / 2 + rng() * 200,
+        y: this.config.worldHeight / 2 + rng() * 200,
       });
     }
   }

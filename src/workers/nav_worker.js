@@ -402,6 +402,43 @@ class NavWorker extends AbstractWorker {
             }
         }
 
+        // Second pass: make unwalkable tiles point towards nearest walkable neighbor
+        // This helps entities escape if they somehow end up inside obstacles
+        const dirMap = [DIRECTION.N, DIRECTION.NE, DIRECTION.E, DIRECTION.SE,
+                        DIRECTION.S, DIRECTION.SW, DIRECTION.W, DIRECTION.NW];
+        
+        for (let cell = 0; cell < totalCells; cell++) {
+            if (walkability[cell] !== 0) continue; // Skip walkable cells
+            
+            const cellX = cell % gridWidth;
+            const cellY = Math.floor(cell / gridWidth);
+            
+            let bestDir = DIRECTION.NONE;
+            let bestDist = 65535;
+            
+            // Find the walkable neighbor with lowest distance to target
+            for (let dir = 0; dir < 8; dir++) {
+                const nx = cellX + dx[dir];
+                const ny = cellY + dy[dir];
+                
+                // Bounds check
+                if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= this.gridHeight) continue;
+                
+                const neighbor = ny * gridWidth + nx;
+                
+                // Only consider walkable neighbors
+                if (walkability[neighbor] === 0) continue;
+                
+                // Check if this neighbor has a better (lower) distance to target
+                if (scratch.distance[neighbor] < bestDist) {
+                    bestDist = scratch.distance[neighbor];
+                    bestDir = dirMap[dir]; // Point towards this neighbor
+                }
+            }
+            
+            scratch.direction[cell] = bestDir;
+        }
+
         // Allocate slot and write results
         const slot = NavGrid.allocateFlowfieldSlot(targetCell);
         NavGrid.writeFlowfieldData(slot, scratch.direction);

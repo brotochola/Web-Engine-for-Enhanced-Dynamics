@@ -886,7 +886,7 @@ class PixiRenderer extends AbstractWorker {
         }
 
         // Update body sprite visual properties
-        bodySprite.tint = tint[entityIndex];
+        bodySprite.tint = convertRGBtoBGR(tint[entityIndex])
         bodySprite.alpha = alpha[entityIndex];
 
         // Update animation if changed
