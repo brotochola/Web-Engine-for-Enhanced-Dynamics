@@ -55,7 +55,6 @@ export class Person extends Lootable {
         this.shadowCaster.shadowRadius = 10;
         this.shadowCaster.height = 50;
 
-
     }
 
     getRandomTint() {
@@ -71,7 +70,7 @@ export class Person extends Lootable {
      * LIFECYCLE: Called when spawned - runs EVERY spawn
      */
     onSpawned(spawnConfig = {}) {
-
+        this.setup()
 
         // this.setSpritesheet("poli");
         // this.setAnimation("idle_down");
@@ -90,31 +89,14 @@ export class Person extends Lootable {
         this.lootableComponent.resistance = 0.5
         this.lootableComponent.dropMoney = 100
 
-
-
-
         this.setScale(scale, scale);
     }
 
-    /**
-     * LIFECYCLE: Main update loop
-     */
     tick(dtRatio) {
-
         super.tick(dtRatio);
-
         this.keepWithinBounds(dtRatio);
-
-
-
         this.updateAnimation();
-
-
     }
-
-
-
-
 
     updateAnimation() {
         // Cache array references for reading
@@ -123,9 +105,7 @@ export class Person extends Lootable {
 
         const speed = this.rigidBody.speed;
 
-
         const direction = getDirectionFromAngle(velocityAngle);
-
 
         if (speed > 0.1) {
             // Choose walk or run based on speed threshold

@@ -50,6 +50,7 @@
   },
   "homepage": "https://multithreaded-game-engine.vercel.app/demos",
   "devDependencies": {
+    "eslint": "^9.39.2",
     "prettier": "^3.8.0"
   }
 }

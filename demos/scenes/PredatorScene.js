@@ -9,7 +9,7 @@ import { Player } from "../gameObjects/player.js";
 import { TallLight } from "../gameObjects/tallLight.js";
 import { PreySpawner } from "../gameObjects/preySpawner.js";
 import { House } from "../gameObjects/house.js";
-import { PersonWithFSM } from "../gameObjects/personWithFSM.js";
+
 import { Tree } from "../gameObjects/tree.js";
 import { Barrel } from "../gameObjects/barrel.js";
 import { Rock } from "../gameObjects/rock.js";
@@ -22,6 +22,7 @@ import { DropMoney } from "../gameObjects/dropMoney.js";
 import { DropAk47 } from "../gameObjects/dropAk47.js";
 import { DropShotgun } from "../gameObjects/dropShotgun.js";
 import { DropPistol } from "../gameObjects/dropPistol.js";
+import { Civilian } from "../gameObjects/civilian.js";
 
 const { DecorationPool } = WEED;
 
@@ -157,8 +158,6 @@ export class PredatorScene extends WEED.Scene {
       pistol: "/demos/img/drops/pistol.png",
       ak47: "/demos/img/drops/ak47.png",
       shotgun: "/demos/img/drops/shotgun.png",
-
-
     },
     spritesheets: {
       civil1: {
@@ -229,7 +228,7 @@ export class PredatorScene extends WEED.Scene {
     [Player, 1],
     [House, 2000],
     [TallLight, 300],
-    [PersonWithFSM, 20000], // FSM-based civilians
+    [Civilian, 20000], // FSM-based civilians
     [Tree, 5000],
     [Barrel, 100],
     [Rock, 5000],
@@ -250,7 +249,6 @@ export class PredatorScene extends WEED.Scene {
 
   constructor(game) {
     super(game);
-
 
     this.numberOfPredators = 1;
     this.numberOfBoids = 0;
@@ -292,8 +290,6 @@ export class PredatorScene extends WEED.Scene {
     this.spawnDestination();
     this.spawnRocksTreesAndHouses();
 
-
-
   }
 
   spawnRocksTreesAndHouses() {
@@ -328,7 +324,6 @@ export class PredatorScene extends WEED.Scene {
     // this.spawnRocks(this.numberOfRocks);
     // this.spawnTrees(this.numberOfTrees);
     // this.spawnHouses(this.numberOfHouses);
-
 
   }
 

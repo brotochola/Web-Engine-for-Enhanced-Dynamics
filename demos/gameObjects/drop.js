@@ -40,7 +40,7 @@ export class Drop extends GameObject {
 
         setTimeout(() => {
             this.collider.isTrigger = 1;
-        }, 200)
+        }, 1000)
 
     }
 
