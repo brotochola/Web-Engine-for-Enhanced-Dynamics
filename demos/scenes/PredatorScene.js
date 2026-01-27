@@ -2,21 +2,21 @@
 // Demonstrates the new Scene-based architecture for WeedJS
 
 import WEED from "/src/index.js";
-import { Boid } from "../boid.js";
-import { Prey } from "../prey.js";
-import { Predator } from "../predator.js";
-import { Player } from "../player.js";
-import { TallLight } from "../tallLight.js";
-import { PreySpawner } from "../PreySpawner.js";
-import { House } from "../House.js";
-import { PersonWithFSM } from "../PersonWithFSM.js";
-import { Tree } from "../tree.js";
-import { Barrel } from "../barrel.js";
-import { Rock } from "../rock.js";
-import { Fire } from "../fire.js";
-import { Explosion } from "../explosion.js";
-import { MySoldier } from "../MySoldier.js";
-import { Destination } from "../destination.js";
+import { Boid } from "../gameObjects/boid.js";
+import { Prey } from "../gameObjects/prey.js";
+import { Predator } from "../gameObjects/predator.js";
+import { Player } from "../gameObjects/player.js";
+import { TallLight } from "../gameObjects/tallLight.js";
+import { PreySpawner } from "../gameObjects/preySpawner.js";
+import { House } from "../gameObjects/house.js";
+import { PersonWithFSM } from "../gameObjects/personWithFSM.js";
+import { Tree } from "../gameObjects/tree.js";
+import { Barrel } from "../gameObjects/barrel.js";
+import { Rock } from "../gameObjects/rock.js";
+import { Fire } from "../gameObjects/fire.js";
+import { Explosion } from "../gameObjects/explosion.js";
+import { MySoldier } from "../gameObjects/mySoldier.js";
+import { Destination } from "../gameObjects/destination.js";
 import { NavGrid } from "../../src/core/NavGrid.js";
 
 const { DecorationPool } = WEED;
@@ -227,7 +227,7 @@ export class PredatorScene extends WEED.Scene {
     [Rock, 5000],
     [Fire, 100],
     [Explosion, 100],
-    [MySoldier, 100],
+    [MySoldier, 1000],
     [Destination, 1],
     // Grass now uses DecorationPool instead of GameObject
   ];
@@ -271,12 +271,12 @@ export class PredatorScene extends WEED.Scene {
     // this.spawnPrey(1000);
     // this.spawnHouses(this.numberOfHouses);
     this.spawnGrass(this.numberOfGrass);
-    this.spawnPersonsWithFSM(this.numberOfPersonsWithFSM);
+    this.spawnPersonsWithFSM(10000);
     this.spawnEntity(PreySpawner, {});
     // this.spawnTrees(this.numberOfTrees);
     this.spawnBarrels(this.numberOfBarrels);
     // this.spawnRocks(this.numberOfRocks);
-    this.spawnMySoldiers(100);
+    this.spawnMySoldiers(1000);
     this.spawnDestination();
     this.spawnRocksTreesAndHouses();
 
@@ -321,7 +321,7 @@ export class PredatorScene extends WEED.Scene {
   }
 
   createNavGridForTheFlowField() {
-    NavGrid.updateNavGrid([...Array.from(Tree.entityIndices), ...Array.from(Tree.entityIndices), ...Array.from(Rock.entityIndices), ...Array.from(House.entityIndices)])
+    NavGrid.updateNavGrid([...Array.from(Rock.entityIndices), ...Array.from(House.entityIndices)])
   }
 
   update(time, delta) {

@@ -2,11 +2,10 @@
 // Demonstrates civilian behavior with IDLE and FLEEING states
 
 import WEED from "/src/index.js";
-import { CivilianBehaviorFSM } from "./CivilianBehaviorFSM.js";
-import { NavGrid } from "../src/core/NavGrid.js";
-import { Mouse } from "../src/core/Mouse.js";
-import { randomColor } from "../src/core/utils.js";
-import { Destination } from "./destination.js";
+
+import { NavGrid } from "../../src/core/NavGrid.js";
+
+import { Destination } from "../gameObjects/destination.js";
 
 const {
     GameObject,
