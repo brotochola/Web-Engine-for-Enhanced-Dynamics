@@ -19,6 +19,9 @@ import { MySoldier } from "../gameObjects/mySoldier.js";
 import { Destination } from "../gameObjects/destination.js";
 import { NavGrid } from "../../src/core/NavGrid.js";
 import { DropMoney } from "../gameObjects/dropMoney.js";
+import { DropAk47 } from "../gameObjects/dropAk47.js";
+import { DropShotgun } from "../gameObjects/dropShotgun.js";
+import { DropPistol } from "../gameObjects/dropPistol.js";
 
 const { DecorationPool } = WEED;
 
@@ -237,6 +240,9 @@ export class PredatorScene extends WEED.Scene {
     [MySoldier, 1000],
     [Destination, 1],
     [DropMoney, 1000],
+    [DropAk47, 1000],
+    [DropPistol, 1000],
+    [DropShotgun, 1000],
     // Grass now uses DecorationPool instead of GameObject
   ];
 

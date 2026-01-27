@@ -7,6 +7,7 @@ import { SpriteRenderer } from "../../src/components/SpriteRenderer.js";
 import { Collider } from "../../src/components/Collider.js";
 import { Drop, DROP_TYPES } from "./drop.js";
 import { DropComponent } from "../components/dropComponent.js";
+import { ShadowCaster } from "../../src/index.js";
 
 const {
     GameObject
@@ -14,7 +15,7 @@ const {
 
 
 
-export class DropMoney extends Drop {
+export class DropPistol extends Drop {
 
     static scriptUrl = import.meta.url;
 
@@ -26,19 +27,20 @@ export class DropMoney extends Drop {
 
     onSpawned(config) {
         super.onSpawned(config);
-
-        this.dropComponent.type = DROP_TYPES.MONEY;
-        this.dropComponent.amount = config.amount;
+        this.dropComponent.type = DROP_TYPES.PISTOL;
+        this.dropComponent.amount = 1
 
 
 
         this.setScale(0.2, 0.2)
-        this.setSprite("money");
+        this.setSprite("pistol");
+
 
 
 
 
     }
+
 
 
 
