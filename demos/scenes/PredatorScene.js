@@ -141,8 +141,6 @@ export class PredatorScene extends WEED.Scene {
       tallLight: "/demos/img/tallLight.png",
       house1: "/demos/img/house1.png",
       house2: "/demos/img/house2.png",
-      house3: "/demos/img/house3.png",
-      house4: "/demos/img/house4.png",
       grass1: "/demos/img/g1.png",
       grass2: "/demos/img/g2.png",
       grass3: "/demos/img/g3.png",
