@@ -14,6 +14,9 @@ class MouseComponent extends Component {
 
     // Presence flag (1 = mouse is over canvas, 0 = mouse left canvas)
     isPresent: Uint8Array,
+
+    // Wheel delta (accumulated per frame, reset after each frame)
+    wheel: Float32Array,
   };
 }
 

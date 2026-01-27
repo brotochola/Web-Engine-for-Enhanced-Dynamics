@@ -5,7 +5,6 @@ import WEED from "/src/index.js";
 
 import { Mouse } from "../../src/core/Mouse.js";
 
-
 const {
     GameObject,
 
@@ -29,7 +28,6 @@ export class Destination extends GameObject {
      */
     setup() {
 
-
         // Collision/perception
         this.collider.radius = 100;
         this.collider.visualRange = 0
@@ -43,10 +41,7 @@ export class Destination extends GameObject {
 
     }
 
-
-
     onSpawned(spawnConfig = {}) {
-
 
         this.setup()
     }
@@ -62,7 +57,5 @@ export class Destination extends GameObject {
         }
 
     }
-
-
 
 }

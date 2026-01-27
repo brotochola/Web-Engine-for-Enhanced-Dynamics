@@ -26,13 +26,10 @@ export class MySoldier extends Person {
         ...Person.components,
     ];
 
-
     setup() {
         super.setup();
 
     }
-
-
 
     /**
      * LIFECYCLE: Called when spawned - runs EVERY spawn
@@ -43,14 +40,9 @@ export class MySoldier extends Person {
         this.setSpritesheet("poli");
         this.setAnimation("idle_down");
 
-
         this.lootableComponent.health = 1
         this.lootableComponent.resistance = 0.6
         this.lootableComponent.dropMoney = 100
-
-
-
-
 
     }
 
@@ -60,9 +52,6 @@ export class MySoldier extends Person {
     tick(dtRatio) {
 
         super.tick(dtRatio);
-
-
-
 
         const destinationInstance = Destination.get(0)
 
@@ -74,7 +63,6 @@ export class MySoldier extends Person {
         // console.log(this.index, vec)
         this.addAcceleration(vec.x, vec.y);
 
-
     }
     onCollisionStay(other) {
 
@@ -83,6 +71,5 @@ export class MySoldier extends Person {
         Destination.get(0).y = -1
 
     }
-
 
 }

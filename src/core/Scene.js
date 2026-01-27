@@ -1015,7 +1015,7 @@ class Scene {
     // - No double buffering for grid (row ownership eliminates races)
     // - No Atomics needed for grid writes
     // - Each worker rebuilds its own rows and computes neighbors for entities in those rows
-    // 
+    //
     // MEMORY LAYOUT PER CELL:
     // [count: Uint8, pad: 3 bytes, entities[MAX_ENTITIES_PER_CELL]: Uint32]
     // Total: 4 + 16*4 = 68 bytes per cell
@@ -1887,11 +1887,8 @@ class Scene {
     this._wheelHandler = (e) => {
       e.preventDefault();
 
-      const currentZoom = Camera.targetZoom;
-      const newZoom = currentZoom + -e.deltaY * 0.001;
-
-      // Set target zoom - Camera.follow() will lerp toward it
-      Camera.setZoom(newZoom);
+      // Accumulate wheel delta for this frame (devs read Mouse.wheel in tick)
+      Mouse.wheel += e.deltaY;
     };
 
     window.addEventListener("keydown", this._keydownHandler);
@@ -1957,6 +1954,9 @@ class Scene {
 
     // Call user's update hook
     this.update(performance.now(), deltaTime);
+
+    // Reset per-frame input state (after update so devs can read it)
+    Mouse.wheel = 0;
   }
 
   createKeyIndexMap() {

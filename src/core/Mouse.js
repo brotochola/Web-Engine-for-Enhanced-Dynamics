@@ -84,6 +84,18 @@ export class Mouse extends GameObject {
   }
 
   // ============================================
+  // WHEEL - accumulated delta per frame
+  // ============================================
+
+  static get wheel() {
+    return MouseComponent.wheel[0];
+  }
+
+  static set wheel(value) {
+    MouseComponent.wheel[0] = value;
+  }
+
+  // ============================================
   // ALIASES (getters only)
   // ============================================
 
