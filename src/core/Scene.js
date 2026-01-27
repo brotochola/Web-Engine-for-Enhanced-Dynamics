@@ -604,12 +604,17 @@ class Scene {
         const entityTypeId = this.registeredClasses.length;
         ParentClass.entityType = entityTypeId;
 
+        // Auto-detect script path from parent class (for worker script loading)
+        const parentScriptPath = ParentClass.scriptUrl
+          ? urlToPath(ParentClass.scriptUrl)
+          : null;
+
         this.registeredClasses.push({
           class: ParentClass,
           count: 0,
           startIndex: startIndex,
           entityType: entityTypeId,
-          scriptPath: null,
+          scriptPath: parentScriptPath,
           components: parentComponents,
         });
 
