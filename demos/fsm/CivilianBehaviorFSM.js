@@ -4,6 +4,7 @@
 import WEED from "/src/index.js";
 
 import { Player } from "../gameObjects/player.js";
+import { MySoldier } from "../gameObjects/mySoldier.js";
 
 const { FSM, FSMState, Transform, RigidBody } = WEED;
 
@@ -16,13 +17,15 @@ class IdleCivilianBehaviorState extends FSMState {
 
   static onUpdate(owner, i, dt) {
     // Check if any neighbor is a predator
-    const predatorType = Player.entityType;
+    const playerEntityType = Player.entityType;
+    const mySoldierEntityType = MySoldier.entityType;
     const neighborCount = owner.neighborCount;
 
     for (let n = 0; n < neighborCount; n++) {
       const neighborIndex = owner.getNeighbor(n);
-      if (Transform.entityType[neighborIndex] === predatorType) {
-        // Predator detected! Flee!
+      const neighBorEntityType = Transform.entityType[neighborIndex];
+      if (neighBorEntityType === playerEntityType || neighBorEntityType === mySoldierEntityType) {
+        // Player or my soldier detected! Flee!
         this.fsm.changeState(i, this.fsm.states.FLEEING);
         return;
       }
@@ -40,7 +43,9 @@ class FleeingCivilianBehaviorState extends FSMState {
   }
 
   static onUpdate(owner, i, dt) {
-    const predatorType = Player.entityType;
+    const playerEntityType = Player.entityType;
+
+    const mySoldierEntityType = MySoldier.entityType;
     const neighborCount = owner.neighborCount;
 
     // Accumulate flee direction from all visible predators
@@ -54,7 +59,8 @@ class FleeingCivilianBehaviorState extends FSMState {
     for (let n = 0; n < neighborCount; n++) {
       const neighborIndex = owner.getNeighbor(n);
 
-      if (Transform.entityType[neighborIndex] === predatorType) {
+      const neighBorEntityType = Transform.entityType[neighborIndex];
+      if (neighBorEntityType === playerEntityType || neighBorEntityType === mySoldierEntityType) {
         // Calculate direction away from predator
         const dx = myX - Transform.x[neighborIndex];
         const dy = myY - Transform.y[neighborIndex];

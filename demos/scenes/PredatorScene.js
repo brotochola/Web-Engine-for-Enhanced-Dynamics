@@ -5,7 +5,7 @@ import WEED from "/src/index.js";
 import { Boid } from "../gameObjects/boid.js";
 import { Prey } from "../gameObjects/prey.js";
 import { Predator } from "../gameObjects/predator.js";
-import { Player } from "../gameObjects/player.js";
+// import { Player } from "../gameObjects/player.js";
 import { TallLight } from "../gameObjects/tallLight.js";
 import { PreySpawner } from "../gameObjects/preySpawner.js";
 import { House } from "../gameObjects/house.js";
@@ -23,6 +23,7 @@ import { DropAk47 } from "../gameObjects/dropAk47.js";
 import { DropShotgun } from "../gameObjects/dropShotgun.js";
 import { DropPistol } from "../gameObjects/dropPistol.js";
 import { Civilian } from "../gameObjects/civilian.js";
+import { CameraController } from "../gameObjects/cameraController.js";
 
 const { DecorationPool } = WEED;
 
@@ -222,10 +223,10 @@ export class PredatorScene extends WEED.Scene {
   // ========================================
 
   static entities = [
-    [PreySpawner, 1],
+    // [PreySpawner, 1],
     [Prey, 2000],
     [Predator, 8],
-    [Player, 1],
+    // [Player, 1],
     [House, 2000],
     [TallLight, 300],
     [Civilian, 20000], // FSM-based civilians
@@ -240,6 +241,7 @@ export class PredatorScene extends WEED.Scene {
     [DropAk47, 1000],
     [DropPistol, 1000],
     [DropShotgun, 1000],
+    [CameraController, 1],
     // Grass now uses DecorationPool instead of GameObject
   ];
 
@@ -255,12 +257,12 @@ export class PredatorScene extends WEED.Scene {
     this.numberOfTallLights = 200;
     this.numberOfHouses = 100;
     this.numberOfGrass = 10000;
-    this.numberOfPersonsWithFSM = 5000; // FSM-based civilians
+
     this.numberOfTrees = 1000;
     this.numberOfBarrels = 100;
     this.numberOfRocks = 1000;
-    // Player reference (will be set in create())
-    this.playerEntity = null;
+
+    // this.playerEntity = null;
 
     this.frameCount = 0;
   }
@@ -273,7 +275,7 @@ export class PredatorScene extends WEED.Scene {
     console.log("🎬 PredatorScene: Spawning entities...");
 
     // Spawn player first
-    this.spawnPlayer();
+    // this.spawnPlayer();
 
     this.spawnPredators(this.numberOfPredators);
     this.spawnBoids(this.numberOfBoids);
@@ -281,8 +283,10 @@ export class PredatorScene extends WEED.Scene {
     // this.spawnPrey(1000);
     // this.spawnHouses(this.numberOfHouses);
     this.spawnGrass(this.numberOfGrass);
-    this.spawnPersonsWithFSM(10000);
-    this.spawnEntity(PreySpawner, {});
+    this.spawnCivilians(10000);
+    // this.spawnEntity(PreySpawner, {});
+
+    this.spawnEntity(CameraController, {});
     // this.spawnTrees(this.numberOfTrees);
     this.spawnBarrels(this.numberOfBarrels);
     // this.spawnRocks(this.numberOfRocks);
@@ -340,14 +344,14 @@ export class PredatorScene extends WEED.Scene {
   // SPAWNING HELPERS
   // ========================================
 
-  spawnPlayer() {
-    this.playerEntity = this.spawnEntity(Player, {
-      x: this.config.worldWidth / 2,
-      y: this.config.worldHeight / 2,
-      vx: 0,
-      vy: 0,
-    });
-  }
+  // spawnPlayer() {
+  //   this.playerEntity = this.spawnEntity(Player, {
+  //     x: this.config.worldWidth / 2,
+  //     y: this.config.worldHeight / 2,
+  //     vx: 0,
+  //     vy: 0,
+  //   });
+  // }
   spawnHouses(count) {
     for (let i = 0; i < count; i++) {
       this.spawnEntity(House, {
@@ -432,9 +436,9 @@ export class PredatorScene extends WEED.Scene {
     }
   }
 
-  spawnPersonsWithFSM(count) {
+  spawnCivilians(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity(PersonWithFSM, {
+      this.spawnEntity(Civilian, {
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
       });
