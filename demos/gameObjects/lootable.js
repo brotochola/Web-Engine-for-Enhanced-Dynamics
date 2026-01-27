@@ -1,17 +1,15 @@
-// PersonWithFSM.js - Example entity using the FSM system
-// Demonstrates civilian behavior with IDLE and FLEEING states
+
 
 import WEED from "/src/index.js";
-import { NavGrid } from "../src/core/NavGrid.js";
 
-import { Destination } from "./destination.js";
 import { LootableComponent } from "../components/LootableComponent.js";
+import { DropMoney } from "./dropMoney.js";
 
 const {
     GameObject,
 } = WEED;
 
-export class Looteable extends GameObject {
+export class Lootable extends GameObject {
     // Auto-detected by GameEngine
     static scriptUrl = import.meta.url;
 
@@ -22,13 +20,29 @@ export class Looteable extends GameObject {
 
     tick(dtRatio) {
         const myHealth = LootableComponent.health[this.index];
-        if (myHealth <= 0) {
-            this.die()
-        }
+
+        if (myHealth <= 0) this.die()
+    }
+
+    recieveDamage(damage) {
+        const resistance = LootableComponent.resistance[this.index];
+        LootableComponent.health[this.index] -= damage * (1 - resistance);
+
 
     }
 
     die() {
+
+        const amountOfMoney = LootableComponent.dropMoney[this.index];
+        if (amountOfMoney > 0) {
+            DropMoney.spawn({
+                amount: amountOfMoney,
+                x: this.x,
+                y: this.y,
+                vx: this.vx,
+                vy: this.vy
+            })
+        }
 
         this.despawn()
     }

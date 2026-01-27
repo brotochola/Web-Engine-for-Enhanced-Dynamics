@@ -6,6 +6,7 @@ import WEED from "/src/index.js";
 import { NavGrid } from "../../src/core/NavGrid.js";
 
 import { Destination } from "../gameObjects/destination.js";
+import { Lootable } from "./lootable.js";
 
 const {
     GameObject,
@@ -18,12 +19,13 @@ const {
     getDirectionFromAngle,
 } = WEED;
 
-export class MySoldier extends GameObject {
+export class MySoldier extends Lootable {
     // Auto-detected by GameEngine
     static scriptUrl = import.meta.url;
 
     // Components: basic physics + rendering + our FSM
     static components = [
+        ...Lootable.components,
         RigidBody,
         Collider,
         SpriteRenderer,
@@ -79,10 +81,19 @@ export class MySoldier extends GameObject {
 
         // Random scale
         const scale = 0.8 + rng() * 0.4;
-        this.setScale(scale, scale);
+
         this.collider.radius = 10 * scale;
         this.shadowCaster.shadowRadius = this.collider.radius;
         this.shadowCaster.height = this.collider.radius * 5;
+
+        this.lootableComponent.health = 1
+        this.lootableComponent.resistance = 0.5
+        this.lootableComponent.dropMoney = 100
+
+
+
+
+        this.setScale(scale, scale);
     }
 
     /**
@@ -90,6 +101,7 @@ export class MySoldier extends GameObject {
      */
     tick(dtRatio) {
 
+        super.tick(dtRatio);
 
         this.keepWithinBounds(dtRatio);
         this.updateAnimation();
