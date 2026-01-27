@@ -39,8 +39,6 @@ export class Lootable extends GameObject {
                 amount: amountOfMoney,
                 x: this.x,
                 y: this.y,
-                vx: this.vx,
-                vy: this.vy
             })
         }
 

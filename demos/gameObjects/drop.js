@@ -29,6 +29,31 @@ export class Drop extends GameObject {
         Collider,
     ];
 
+    onSpawned(config) {
+        this.dropComponent.amount = config.amount;
+
+        this.collider.radius = 10
+        this.collider.isTrigger = 0;
+        this.collider.visualRange = 0
+
+
+
+        setTimeout(() => {
+            this.collider.isTrigger = 1;
+        }, 200)
+
+    }
+
+    onCollisionEnter(other) {
+
+
+        const entityType = Transform.entityType[other];
+        if (entityType === Player.entityType || entityType === MySoldier.entityType) {
+            console.log(this.dropComponent.type, "grabbed", this.dropComponent.amount);
+            this.despawn()
+
+        }
+    }
 
 
 

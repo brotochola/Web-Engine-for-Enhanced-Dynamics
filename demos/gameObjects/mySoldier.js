@@ -129,6 +129,8 @@ export class MySoldier extends Lootable {
     }
 
 
+
+
     updateAnimation() {
         // Cache array references for reading
 
