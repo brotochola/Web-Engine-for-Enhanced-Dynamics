@@ -28,7 +28,7 @@ export class DropMoney extends Drop {
         super.onSpawned(config);
 
         this.dropComponent.type = DROP_TYPES.MONEY;
-        this.dropComponent.amount = config.amount;
+        this.dropComponent.amount = config.amount || 100;
 
 
 
