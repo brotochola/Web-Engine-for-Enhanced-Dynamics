@@ -18,6 +18,7 @@ import { Explosion } from "../gameObjects/explosion.js";
 import { MySoldier } from "../gameObjects/mySoldier.js";
 import { Destination } from "../gameObjects/destination.js";
 import { NavGrid } from "../../src/core/NavGrid.js";
+import { DropMoney } from "../gameObjects/dropMoney.js";
 
 const { DecorationPool } = WEED;
 
@@ -151,6 +152,12 @@ export class PredatorScene extends WEED.Scene {
       square: "/demos/img/10_10_square.png",
       smoke: "/demos/img/smoke.png",
       target: "/demos/img/target.png",
+      money: "/demos/img/drops/money.png",
+      pistol: "/demos/img/drops/pistol.png",
+      ak47: "/demos/img/drops/ak47.png",
+      shotgun: "/demos/img/drops/shotgun.png",
+
+
     },
     spritesheets: {
       civil1: {
@@ -229,6 +236,7 @@ export class PredatorScene extends WEED.Scene {
     [Explosion, 100],
     [MySoldier, 1000],
     [Destination, 1],
+    [DropMoney, 1000],
     // Grass now uses DecorationPool instead of GameObject
   ];
 
