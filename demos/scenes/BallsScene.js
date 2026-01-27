@@ -1,7 +1,7 @@
 // BallsScene.js - Gravity and Separation Physics Demo
 // Demonstrates balls with physics, gravity, and collision
 
-import { Ball } from "/demos/ball.js";
+import { Ball } from "/demos/gameObjects/ball.js";
 
 import WEED from "/src/index.js";
 const { Scene, Camera, Mouse } = WEED;

@@ -2,10 +2,10 @@
 // Extends Boid to inherit flocking behavior
 
 import WEED from "/src/index.js";
-import { Boid } from "./boid.js";
-import { Prey } from "./prey.js";
-import { PredatorBehavior } from "./PredatorBehavior.js";
-import { Flash } from "../../src/index.js";
+import { Boid } from "../gameObjects/boid.js";
+import { Prey } from "../gameObjects/prey.js";
+import { PredatorBehavior } from "../components/predatorBehavior.js";
+
 
 // Destructure what we need from WEED
 const {

@@ -1,5 +1,5 @@
 import WEED from '/src/index.js';
-import { ExplosionComponent } from './ExplosionComponent.js';
+import { ExplosionComponent } from '../components/explosionComponent.js';
 
 // Destructure what we need from WEED
 const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, ShadowCaster, ShapeType } = WEED;
@@ -102,7 +102,7 @@ export class Explosion extends GameObject {
     // Update glow height offset based on current radius
     this.lightEmitter.glowHeightOffset = this.collider.radius * 0.5 * ec.baseScale;
 
-    
+
 
     // Despawn when animation is complete
 

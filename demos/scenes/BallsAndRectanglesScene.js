@@ -1,8 +1,8 @@
 // BallsAndRectanglesScene.js - Physics Demo with Balls and Boxes
 // Demonstrates mixed circle and rectangle collisions
 
-import { Ball } from "/demos/ball.js";
-import { Box } from "/demos/box.js";
+import { Ball } from "/demos/gameObjects/ball.js";
+import { Box } from "/demos/gameObjects/box.js";
 import { Camera } from "/src/core/Camera.js";
 import WEED from "/src/index.js";
 

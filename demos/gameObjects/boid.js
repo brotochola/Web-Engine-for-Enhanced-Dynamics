@@ -2,7 +2,7 @@
 // Extends GameObject to implement the classic boids algorithm
 
 import WEED from "/src/index.js";
-import { Flocking } from "./Flocking.js";
+import { Flocking } from "../components/flocking.js";
 
 // Destructure what we need from WEED
 const {

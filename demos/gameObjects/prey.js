@@ -2,9 +2,9 @@
 // Extends Boid to implement prey-specific behaviors
 
 import WEED from "/src/index.js";
-import { Boid } from "./boid.js";
-import { Predator } from "./predator.js";
-import { PreyBehavior } from "./PreyBehavior.js";
+import { Boid } from "../gameObjects/boid.js";
+import { Predator } from "../gameObjects/predator.js";
+import { PreyBehavior } from "../components/preyBehavior.js";
 
 // Destructure what we need from WEED
 const { GameObject, RigidBody, getDirectionFromAngle, rng } = WEED;
