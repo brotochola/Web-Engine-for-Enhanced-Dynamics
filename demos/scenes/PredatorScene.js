@@ -219,12 +219,12 @@ export class PredatorScene extends WEED.Scene {
     [Prey, 2000],
     [Predator, 8],
     [Player, 1],
-    [House, 1000],
+    [House, 2000],
     [TallLight, 300],
     [PersonWithFSM, 20000], // FSM-based civilians
-    [Tree, 1000],
+    [Tree, 5000],
     [Barrel, 100],
-    [Rock, 1000],
+    [Rock, 5000],
     [Fire, 100],
     [Explosion, 100],
     [MySoldier, 100],
@@ -302,7 +302,8 @@ export class PredatorScene extends WEED.Scene {
             radius: tree.radius,
           });
         });
-        data.houses.forEach(house => {
+        data.houses.forEach((house, i) => {
+          if (i % 2 == 0) return
           this.spawnEntity(House, {
             x: house.x,
             y: house.y,
@@ -310,7 +311,7 @@ export class PredatorScene extends WEED.Scene {
             height: house.height,
           });
         });
-        this.createNavGridForTheFlowField()
+        setTimeout(() => this.createNavGridForTheFlowField(), 500)
       });
     // this.spawnRocks(this.numberOfRocks);
     // this.spawnTrees(this.numberOfTrees);
