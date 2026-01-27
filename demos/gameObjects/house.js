@@ -23,24 +23,24 @@ export class House extends GameObject {
     // this.rigidBody.maxVel = 0;
     // this.rigidBody.maxAcc = 0;
     // this.rigidBody.static = 1; // Static body - nothing can move it
-    const type = Math.random() > 0.5 ? 3 : 4;
+    const type = Math.random() > 0.5 ? 1 : 2;
     this.setSprite("house" + type);
 
     this.collider.shapeType = ShapeType.Box;
-    this.collider.width = type === 3 ? 150 : 200;
+    this.collider.width = 180
     this.collider.height = 110;
     this.collider.offsetY = -50;
-    this.collider.offsetX = 50;
+    this.collider.offsetX = 0;
     this.lightEmitter.lightColor = 0xffffaa;
 
     this.lightEmitter.height = 100;
     this.lightEmitter.lightIntensity = 4000;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 0;
-    // this.setScale(0.57, 0.57);
 
 
-    this.setScale(1.5, 1.5)
+
+    this.setScale(1, 1)
     this.collider.visualRange = 300;
   }
 
