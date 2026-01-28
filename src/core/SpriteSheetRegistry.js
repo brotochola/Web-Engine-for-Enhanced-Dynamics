@@ -1256,18 +1256,22 @@ class SpriteSheetRegistry {
    * getDecalTextureId("civil1_hurt_5") // Returns frame-specific textureId
    */
   static getDecalTextureId(textureName) {
-    // First, try looking up as a specific frame name (e.g., "poli_hurt_5")
-    // This is checked first to avoid error logging when getAnimationIndex fails for frame names
-    if (this.decalFrameNameToId && this.decalFrameNameToId[textureName] !== undefined) {
-      return this.decalFrameNameToId[textureName];
-    }
-
-    // Fallback: try looking up as an animation name (e.g., "blood")
-    // For animations, this returns the animation index which stamps the first frame
+    // IMPORTANT: Check animation names FIRST!
+    // Animation indices (0 to N-1) work for both:
+    // - Particle rendering (pixi_worker uses getAnimationName to look up texture)
+    // - Decal stamping (particle_worker has first frame data at same indices)
+    // Frame IDs (N+) only work for decal stamping, NOT for particle rendering!
     const bigAtlas = this.spritesheets.get("bigAtlas");
     if (bigAtlas && bigAtlas.animations[textureName]) {
       const anim = bigAtlas.animations[textureName];
       return anim.index;
+    }
+
+    // Fallback: try looking up as a specific frame name (e.g., "civil1_hurt_5")
+    // This is for stamping specific animation frames as decals
+    // WARNING: These IDs only work for decal stamping, NOT for particle sprite rendering!
+    if (this.decalFrameNameToId && this.decalFrameNameToId[textureName] !== undefined) {
+      return this.decalFrameNameToId[textureName];
     }
 
     // Not found
