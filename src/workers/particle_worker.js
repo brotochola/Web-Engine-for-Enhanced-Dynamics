@@ -21,6 +21,10 @@ import {
   calculateSpeed,
   calculateVelocityAngle,
   cantorPair,
+  calculateDecalTileBounds,
+  calculateTileClipRegion,
+  _decalTileBounds,
+  _tileClipRegion,
 } from "../core/utils.js";
 import { PARTICLE_STATS, createStatsWriter } from "./workers-utils.js";
 
@@ -470,7 +474,7 @@ class ParticleWorker extends AbstractWorker {
    * BLOOD DECALS: Particles with stayOnTheFloor=1 are collected during
    * the physics loop, then stamped all at once after the loop finishes.
    * This batching improves cache locality for SAB writes.
-   * 
+   *
    * NOTE: Grid rebuilding is now handled by spatial workers using row-based partitioning.
    * Each spatial worker owns specific rows (cellY % workerCount === workerId) and
    * rebuilds only its own rows. This eliminates all race conditions without any
@@ -788,7 +792,8 @@ class ParticleWorker extends AbstractWorker {
     const particleX = ParticleComponent.x;
     const particleY = ParticleComponent.y;
     const particleTint = ParticleComponent.tint;
-    const particleScale = ParticleComponent.scale;
+    const particleScaleX = ParticleComponent.scaleX;
+    const particleScaleY = ParticleComponent.scaleY;
     const particleTextureId = ParticleComponent.textureId;
     const particleAlpha = ParticleComponent.alpha;
 
@@ -798,7 +803,8 @@ class ParticleWorker extends AbstractWorker {
         particleX[particleIndex],
         particleY[particleIndex],
         particleTint[particleIndex],
-        particleScale[particleIndex],
+        particleScaleX[particleIndex],
+        particleScaleY[particleIndex],
         particleTextureId[particleIndex],
         particleAlpha[particleIndex]
       );
@@ -810,15 +816,17 @@ class ParticleWorker extends AbstractWorker {
 
   /**
    * Stamp a particle's texture onto the blood decal tilemap
+   * Supports multi-tile stamping for decals larger than tile size
    *
    * @param {number} worldX - World X position of the particle
    * @param {number} worldY - World Y position of the particle
    * @param {number} tint - Color tint (0xRRGGBB)
-   * @param {number} scale - Particle scale (affects stamp size)
+   * @param {number} scaleX - Particle horizontal scale (affects stamp width)
+   * @param {number} scaleY - Particle vertical scale (affects stamp height)
    * @param {number} textureId - Index into decalTextures map
    * @param {number} alpha - Particle alpha at time of stamping (0-1)
    */
-  stampParticleToTile(worldX, worldY, tint, scale, textureId, alpha) {
+  stampParticleToTile(worldX, worldY, tint, scaleX, scaleY, textureId, alpha) {
     // Get texture data for this particle
     const texture = this.decalTextures[textureId];
 
@@ -827,116 +835,137 @@ class ParticleWorker extends AbstractWorker {
       return;
     }
 
-    // Calculate which tile this particle is on (bitwise floor for positive values)
-    const tileX = (worldX / this.decalsTileSize) | 0;
-    const tileY = (worldY / this.decalsTileSize) | 0;
-
-    // Bounds check - particle outside world
-    if (
-      tileX < 0 ||
-      tileX >= this.decalsTilesX ||
-      tileY < 0 ||
-      tileY >= this.decalsTilesY
-    ) {
-      return;
-    }
-
-    const tileIndex = tileX + tileY * this.decalsTilesX;
-
-    // Calculate local position within tile in PIXEL coordinates
-    // World position % tileSize gives world-space local pos, then scale by resolution
-    const localX = ((worldX % this.decalsTileSize) * this.decalsResolution) | 0;
-    const localY = ((worldY % this.decalsTileSize) * this.decalsResolution) | 0;
-
-    // Calculate scaled texture dimensions (also scaled by resolution)
-    // Using | 0 + 1 as a fast ceil for positive numbers
-    const scaledWidth =
-      (texture.width * scale * this.decalsResolution + 0.999) | 0;
-    const scaledHeight =
-      (texture.height * scale * this.decalsResolution + 0.999) | 0;
-
-    // Calculate stamp bounds (centered on localX, localY)
-    const halfWidth = (scaledWidth / 2) | 0;
-    const halfHeight = (scaledHeight / 2) | 0;
-    const startX = localX - halfWidth;
-    const startY = localY - halfHeight;
-
-    // Extract RGB from tint (0xRRGGBB)
-    const { r: tintR, g: tintG, b: tintB } = extractRGB(tint);
-
     // Cache frequently accessed values
+    const tileSize = this.decalsTileSize;
     const tilePixelSize = this.decalsTilePixelSize;
+    const tilesX = this.decalsTilesX;
+    const tilesY = this.decalsTilesY;
     const bloodTiles = this.bloodTilesRGBA;
     const textureRgba = texture.rgba;
     const texWidth = texture.width;
     const texHeight = texture.height;
 
-    // Tile byte offset in the big RGBA buffer
-    const tileByteOffset = tileIndex * tilePixelSize * tilePixelSize * 4;
+    // Calculate scaled texture dimensions in world units
+    const scaledWidthWorld = texture.width * scaleX;
+    const scaledHeightWorld = texture.height * scaleY;
+    const halfWidthWorld = scaledWidthWorld / 2;
+    const halfHeightWorld = scaledHeightWorld / 2;
 
-    // Pre-calculate inverse dimensions for UV mapping (avoid division in loop)
-    const invScaledWidth = texWidth / scaledWidth;
-    const invScaledHeight = texHeight / scaledHeight;
+    // Calculate scaled dimensions in pixels (for UV sampling)
+    const resolution = this.decalsResolution;
+    const scaledWidthPixels = (scaledWidthWorld * resolution + 0.999) | 0;
+    const scaledHeightPixels = (scaledHeightWorld * resolution + 0.999) | 0;
 
-    // Stamp texture pixels onto tile
-    // Uses simple nearest-neighbor scaling for performance
-    for (let dy = 0; dy < scaledHeight; dy++) {
-      const tilePixelY = startY + dy;
-      // Skip entire row if outside tile bounds
-      if (tilePixelY < 0 || tilePixelY >= tilePixelSize) continue;
+    // Calculate which tiles this decal touches
+    calculateDecalTileBounds(
+      worldX, worldY, halfWidthWorld, halfHeightWorld,
+      tileSize, tilesX, tilesY, _decalTileBounds
+    );
 
-      // Pre-calculate source Y and row offsets
-      const srcY = (dy * invScaledHeight) | 0;
-      const srcRowOffset = srcY * texWidth;
-      const dstRowOffset = tileByteOffset + tilePixelY * tilePixelSize * 4;
-
-      for (let dx = 0; dx < scaledWidth; dx++) {
-        const tilePixelX = startX + dx;
-        // Skip pixels outside tile bounds
-        if (tilePixelX < 0 || tilePixelX >= tilePixelSize) continue;
-
-        // Sample from source texture (nearest-neighbor)
-        const srcX = (dx * invScaledWidth) | 0;
-        const srcOffset = (srcRowOffset + srcX) * 4;
-
-        // Apply particle alpha to texture alpha
-        const srcA = textureRgba[srcOffset + 3] * alpha;
-
-        // Skip fully transparent pixels
-        if (srcA < 1) continue;
-
-        // Get source RGB
-        const srcR = textureRgba[srcOffset];
-        const srcG = textureRgba[srcOffset + 1];
-        const srcB = textureRgba[srcOffset + 2];
-
-        // Calculate destination offset in tile buffer
-        const dstOffset = dstRowOffset + tilePixelX * 4;
-
-        // Apply tint to source color (multiply blend) - use bitwise for speed
-        const finalR = ((srcR * tintR) / 255) | 0;
-        const finalG = ((srcG * tintG) / 255) | 0;
-        const finalB = ((srcB * tintB) / 255) | 0;
-
-        // Alpha blending with existing tile content
-        const srcAlphaNorm = srcA / 255;
-        const invSrcAlpha = 1 - srcAlphaNorm;
-
-        // Blend colors (bitwise truncation)
-        bloodTiles[dstOffset] =
-          (finalR * srcAlphaNorm + bloodTiles[dstOffset] * invSrcAlpha) | 0;
-        bloodTiles[dstOffset + 1] =
-          (finalG * srcAlphaNorm + bloodTiles[dstOffset + 1] * invSrcAlpha) | 0;
-        bloodTiles[dstOffset + 2] =
-          (finalB * srcAlphaNorm + bloodTiles[dstOffset + 2] * invSrcAlpha) | 0;
-        // Alpha: combine using "over" operator
-        bloodTiles[dstOffset + 3] =
-          (srcA + bloodTiles[dstOffset + 3] * invSrcAlpha) | 0;
-      }
+    if (!_decalTileBounds.valid) {
+      return; // Decal is completely outside world bounds
     }
 
-    // Mark tile as dirty so pixi_worker updates its texture
-    this.bloodTilesDirty[tileIndex] = 1;
+    // Extract RGB from tint (0xRRGGBB) - do once, not per-tile
+    const tintR = (tint >> 16) & 0xff;
+    const tintG = (tint >> 8) & 0xff;
+    const tintB = tint & 0xff;
+
+    // Pre-calculate UV mapping constants
+    const invScaledWidth = texWidth / scaledWidthPixels;
+    const invScaledHeight = texHeight / scaledHeightPixels;
+
+    // Iterate over all affected tiles
+    for (let ty = _decalTileBounds.minTileY; ty <= _decalTileBounds.maxTileY; ty++) {
+      for (let tx = _decalTileBounds.minTileX; tx <= _decalTileBounds.maxTileX; tx++) {
+        // Calculate clip region for this tile
+        calculateTileClipRegion(
+          worldX, worldY, halfWidthWorld, halfHeightWorld,
+          tx, ty, tileSize, tilePixelSize,
+          texWidth, texHeight, scaledWidthPixels, scaledHeightPixels,
+          _tileClipRegion
+        );
+
+        if (!_tileClipRegion.valid) continue;
+
+        const tileIndex = tx + ty * tilesX;
+        const tileByteOffset = tileIndex * tilePixelSize * tilePixelSize * 4;
+
+        // Destination pixel bounds (clamped to tile)
+        const dstStartX = _tileClipRegion.dstStartX;
+        const dstStartY = _tileClipRegion.dstStartY;
+        const dstEndX = _tileClipRegion.dstEndX;
+        const dstEndY = _tileClipRegion.dstEndY;
+
+        // Source texture offset (where to start sampling in scaled coordinates)
+        const srcOffsetX = _tileClipRegion.srcOffsetX;
+        const srcOffsetY = _tileClipRegion.srcOffsetY;
+        const uvScaleX = _tileClipRegion.uvScaleX;
+        const uvScaleY = _tileClipRegion.uvScaleY;
+
+        // Stamp only the clipped region - no wasted iterations!
+        for (let dstY = dstStartY; dstY < dstEndY; dstY++) {
+          // Calculate source Y in scaled texture coordinates
+          const srcScaledY = srcOffsetY + (dstY - dstStartY) * uvScaleY;
+          const srcY = (srcScaledY * invScaledHeight) | 0;
+
+          // Bounds check source Y
+          if (srcY < 0 || srcY >= texHeight) continue;
+
+          const srcRowOffset = srcY * texWidth;
+          const dstRowOffset = tileByteOffset + dstY * tilePixelSize * 4;
+
+          for (let dstX = dstStartX; dstX < dstEndX; dstX++) {
+            // Calculate source X in scaled texture coordinates
+            const srcScaledX = srcOffsetX + (dstX - dstStartX) * uvScaleX;
+            const srcX = (srcScaledX * invScaledWidth) | 0;
+
+            // Bounds check source X
+            if (srcX < 0 || srcX >= texWidth) continue;
+
+            // Sample from source texture (nearest-neighbor)
+            const srcOffset = (srcRowOffset + srcX) * 4;
+
+            // Apply particle alpha to texture alpha
+            const srcA = textureRgba[srcOffset + 3] * alpha;
+
+            // Skip fully transparent pixels
+            if (srcA < 1) continue;
+
+            // Get source RGB
+            const srcR = textureRgba[srcOffset];
+            const srcG = textureRgba[srcOffset + 1];
+            const srcB = textureRgba[srcOffset + 2];
+
+            // Calculate destination offset in tile buffer
+            const dstOffset = dstRowOffset + dstX * 4;
+
+            // Apply tint to source color (multiply blend) - use bitwise for speed
+            const finalR = ((srcR * tintR) / 255) | 0;
+            const finalG = ((srcG * tintG) / 255) | 0;
+            const finalB = ((srcB * tintB) / 255) | 0;
+
+            // Alpha blending with existing tile content
+            const srcAlphaNorm = srcA / 255;
+            const invSrcAlpha = 1 - srcAlphaNorm;
+
+            // Blend colors (bitwise truncation)
+            bloodTiles[dstOffset] =
+              (finalR * srcAlphaNorm + bloodTiles[dstOffset] * invSrcAlpha) | 0;
+            bloodTiles[dstOffset + 1] =
+              (finalG * srcAlphaNorm + bloodTiles[dstOffset + 1] * invSrcAlpha) | 0;
+            bloodTiles[dstOffset + 2] =
+              (finalB * srcAlphaNorm + bloodTiles[dstOffset + 2] * invSrcAlpha) | 0;
+            // Alpha: combine using "over" operator
+            bloodTiles[dstOffset + 3] =
+              (srcA + bloodTiles[dstOffset + 3] * invSrcAlpha) | 0;
+          }
+        }
+
+        // Mark tile as dirty so pixi_worker updates its texture
+        this.bloodTilesDirty[tileIndex] = 1;
+      }
+    }
   }
 
   /**

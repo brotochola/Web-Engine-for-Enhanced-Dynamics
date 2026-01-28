@@ -1,5 +1,6 @@
 import WEED from '/src/index.js';
 import { ExplosionComponent } from '../components/explosionComponent.js';
+import { ParticleEmitter } from '../../src/index.js';
 
 // Destructure what we need from WEED
 const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, ShadowCaster, ShapeType } = WEED;
@@ -61,8 +62,8 @@ export class Explosion extends GameObject {
   onSpawned(spawnConfig = {}) {
     this.setup();
 
-    //this should not be needed, i guess:
-    //TODO: make onSpawned() also execute this.setup() by default
+    setTimeout(()=>this.stampDecalToFloor(),100)
+
   }
 
   tick(dtRatio, deltaTime, accumulatedTime, frameNumber) {
@@ -120,6 +121,19 @@ export class Explosion extends GameObject {
     this.emitSparks();
     this.emitSmoke();
     this.applyDamage()
+
+  }
+
+  stampDecalToFloor(){
+    ParticleEmitter.stampDecal({
+      texture: "explosion_decal",
+      x: this.x, y: this.y,
+      alpha:0.5,
+      scaleY:0.33,
+      scaleX:0.5,
+      flipX:Math.random() > 0.5,
+      flipY:Math.random() > 0.5,
+    });
   }
 
   applyDamage(){
