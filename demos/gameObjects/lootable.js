@@ -1,5 +1,3 @@
-
-
 import WEED from "/src/index.js";
 
 import { LootableComponent } from "../components/LootableComponent.js";
@@ -17,7 +15,6 @@ export class Lootable extends GameObject {
         LootableComponent,
     ];
 
-
     tick(dtRatio) {
         const myHealth = LootableComponent.health[this.index];
 
@@ -27,7 +24,6 @@ export class Lootable extends GameObject {
     recieveDamage(damage) {
         const resistance = LootableComponent.resistance[this.index];
         LootableComponent.health[this.index] -= damage * (1 - resistance);
-
 
     }
 

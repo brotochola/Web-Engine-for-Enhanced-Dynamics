@@ -1,7 +1,4 @@
-
-
 import WEED from "/src/index.js";
-
 
 import { SpriteRenderer } from "../../src/components/SpriteRenderer.js";
 import { Collider } from "../../src/components/Collider.js";
@@ -9,7 +6,6 @@ import { Collider } from "../../src/components/Collider.js";
 const {
     GameObject
 } = WEED;
-
 
 export const DROP_TYPES = {
     MONEY: 0,
@@ -19,7 +15,6 @@ export const DROP_TYPES = {
     SHOTGUN: 4,
     ARMOR: 4
 }
-
 
 export class Drop extends GameObject {
     static scriptUrl = import.meta.url;
@@ -36,8 +31,6 @@ export class Drop extends GameObject {
         this.collider.isTrigger = 0;
         this.collider.visualRange = 0
 
-
-
         setTimeout(() => {
             this.collider.isTrigger = 1;
         }, 1000)
@@ -46,15 +39,12 @@ export class Drop extends GameObject {
 
     onCollisionEnter(other) {
 
-
         const entityType = Transform.entityType[other];
-        if (entityType === Player.entityType || entityType === MySoldier.entityType) {
+        if (entityType === MySoldier.entityType) {
             console.log(this.dropComponent.type, "grabbed", this.dropComponent.amount);
             this.despawn()
 
         }
     }
-
-
 
 }

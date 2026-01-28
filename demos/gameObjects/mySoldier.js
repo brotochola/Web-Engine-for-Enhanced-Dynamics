@@ -18,22 +18,12 @@ const {
 } = WEED;
 
 export class MySoldier extends Person {
-    // Auto-detected by GameEngine
     static scriptUrl = import.meta.url;
 
-    // Components: basic physics + rendering + our FSM
     static components = [
         ...Person.components,
     ];
 
-    setup() {
-        super.setup();
-
-    }
-
-    /**
-     * LIFECYCLE: Called when spawned - runs EVERY spawn
-     */
     onSpawned(spawnConfig = {}) {
         super.onSpawned(spawnConfig);
 
@@ -44,6 +34,8 @@ export class MySoldier extends Person {
         this.lootableComponent.resistance = 0.6
         this.lootableComponent.dropMoney = 100
 
+        this.personComponent.groupingForce = 3
+
     }
 
     /**
@@ -53,22 +45,29 @@ export class MySoldier extends Person {
 
         super.tick(dtRatio);
 
-        const destinationInstance = Destination.get(0)
+        this.groupWithMyTeam()
 
-        if (!destinationInstance) return
-        if (destinationInstance.x == -1 || destinationInstance.y == -1) return
+        const destinationIndex = Destination.getAllActiveIndices()[0]
+        if (isNaN(destinationIndex)) return
+
+        const destinationX = Transform.x[destinationIndex]
+        const destinationY = Transform.y[destinationIndex]
+
+        if (destinationX == -1 || destinationY == -1) return
 
         let vec = { x: 0, y: 0 };
-        NavGrid.requestVector(this.x, this.y, destinationInstance.x, destinationInstance.y, vec);
+        NavGrid.requestVector(this.x, this.y, destinationX, destinationY, vec);
         // console.log(this.index, vec)
         this.addAcceleration(vec.x, vec.y);
+
+        // go to my homies:
 
     }
     onCollisionStay(other) {
 
-        if (Transform.entityType[other] != Destination.entityType) return
-        Destination.get(0).x = -1
-        Destination.get(0).y = -1
+        // if (Transform.entityType[other] != Destination.entityType) return
+        // Destination.get(0).x = -1
+        // Destination.get(0).y = -1
 
     }
 
