@@ -182,7 +182,7 @@ class Boid extends GameObject {
 
       // Use pre-calculated squared distance from spatial worker (OPTIMIZATION!)
       // This eliminates duplicate distance calculations between spatial & logic workers
-      const dist2 = this.getNeighborDistance(n);
+      const dist2 = this.getNeighborDistanceSq(n);
 
       // Calculate delta using direct array access
       const dx = tX[j] - myX;
@@ -298,7 +298,7 @@ class Boid extends GameObject {
     if (mouseNeighborPos === -1) return;
 
     // Now use the pre-calculated distance from the spatial worker
-    const dist2 = this.getNeighborDistance(mouseNeighborPos);
+    const dist2 = this.getNeighborDistanceSq(mouseNeighborPos);
     if (!dist2 || dist2 === 0) return;
 
     // Cache array references

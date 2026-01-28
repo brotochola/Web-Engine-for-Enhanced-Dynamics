@@ -14,5 +14,8 @@ export class PersonComponent extends Component {
         minSquaredDistanceToGroup: Uint16Array,
         squaredDistanceToGroup: Float32Array,
         groupingForce: Float32Array,
+        separationForce: Float32Array,
+        separateX: Float32Array,
+        separateY: Float32Array,
     };
 }

@@ -81,7 +81,7 @@ export class Person extends Lootable {
         this.setTint(this.getRandomTint());
 
         // Random scale
-        const scale = 0.8 + rng() * 0.4;
+        const scale = 0.9 + rng() * 0.2;
         this.setScale(scale, scale);
 
         this.collider.radius = 10 * scale;
@@ -102,53 +102,89 @@ export class Person extends Lootable {
         this.updateAnimation();
     }
 
-    updateMyTeamsAvaragePosition() {
-
+    updateTeamData() {
         const neighborCount = this.neighborCount;
+        const myX = this.x;
+        const myY = this.y;
+        const radius = this.collider.radius;
+        const separationRadius = 3 * radius;
+        const separationRadiusSq = separationRadius * separationRadius;
 
         let myTeamAvgX = 0;
         let myTeamAvgY = 0;
         let myTeamMemberCount = 0;
+        let separateX = 0;
+        let separateY = 0;
 
         for (let n = 0; n < neighborCount; n++) {
-          const neighborIndex = this.getNeighbor(n);
+            const neighborIndex = this.getNeighbor(n);
+            if (Transform.entityType[neighborIndex] !== this.entityType) continue;
 
-          const neighborEntityType = Transform.entityType[neighborIndex];
-          if (neighborEntityType !== this.entityType) continue
-          myTeamAvgX += Transform.x[neighborIndex];
-          myTeamAvgY += Transform.y[neighborIndex];
-          myTeamMemberCount++
+            const nx = Transform.x[neighborIndex];
+            const ny = Transform.y[neighborIndex];
 
+            // Cohesion: accumulate for average
+            myTeamAvgX += nx;
+            myTeamAvgY += ny;
+            myTeamMemberCount++;
+
+            // Separation: check if too close
+            const dx = myX - nx;
+            const dy = myY - ny;
+            const distSq = dx * dx + dy * dy;
+
+            if (distSq < separationRadiusSq && distSq > 0) {
+                const dist = Math.sqrt(distSq);
+                const strength = (separationRadius - dist) / separationRadius;
+                separateX += (dx / dist) * strength;
+                separateY += (dy / dist) * strength;
+            }
         }
+
+        const i = this.index;
+        PersonComponent.separateX[i] = separateX;
+        PersonComponent.separateY[i] = separateY;
 
         if (myTeamMemberCount > 0) {
             myTeamAvgX /= myTeamMemberCount;
             myTeamAvgY /= myTeamMemberCount;
-            PersonComponent.myTeamAvgX[this.index] = myTeamAvgX;
-            PersonComponent.myTeamAvgY[this.index] = myTeamAvgY;
-            PersonComponent.numberOfTeamMembersICanSee[this.index] = myTeamMemberCount;
-            PersonComponent.squaredDistanceToGroup[this.index] = Math.pow(myTeamAvgX - this.x, 2) + Math.pow(myTeamAvgY - this.y, 2);
-        }else{
-            PersonComponent.myTeamAvgX[this.index] = -1
-            PersonComponent.myTeamAvgY[this.index] = -1
-            PersonComponent.numberOfTeamMembersICanSee[this.index] = 0
-            PersonComponent.squaredDistanceToGroup[this.index]=-1
+            PersonComponent.myTeamAvgX[i] = myTeamAvgX;
+            PersonComponent.myTeamAvgY[i] = myTeamAvgY;
+            PersonComponent.numberOfTeamMembersICanSee[i] = myTeamMemberCount;
+            PersonComponent.squaredDistanceToGroup[i] = (myTeamAvgX - myX) ** 2 + (myTeamAvgY - myY) ** 2;
+        } else {
+            PersonComponent.myTeamAvgX[i] = -1;
+            PersonComponent.myTeamAvgY[i] = -1;
+            PersonComponent.numberOfTeamMembersICanSee[i] = 0;
+            PersonComponent.squaredDistanceToGroup[i] = -1;
         }
     }
 
-    groupWithMyTeam(){
-        this.updateMyTeamsAvaragePosition()
-        if(PersonComponent.numberOfTeamMembersICanSee[this.index] == 0) return
+    groupWithMyTeam() {
+        this.updateTeamData();
+        if (PersonComponent.numberOfTeamMembersICanSee[this.index] == 0) return;
 
-        const dist=PersonComponent.squaredDistanceToGroup[this.index]
-        const minDist=PersonComponent.minSquaredDistanceToGroup[this.index]
-        const groupingForce=PersonComponent.groupingForce[this.index]
+        const dist = PersonComponent.squaredDistanceToGroup[this.index];
+        const minDist = PersonComponent.minSquaredDistanceToGroup[this.index];
+        const groupingForce = PersonComponent.groupingForce[this.index];
 
-        if(groupingForce == 0) return
-        if (dist < minDist) return
+        if (groupingForce == 0) return;
+        if (dist < minDist) return;
 
-        this.accelerateTowards(PersonComponent.myTeamAvgX[this.index], PersonComponent.myTeamAvgY[this.index], groupingForce)
+        this.accelerateTowards(PersonComponent.myTeamAvgX[this.index], PersonComponent.myTeamAvgY[this.index], groupingForce);
+    }
 
+    separateFromTeam() {
+        const separationForce = PersonComponent.separationForce[this.index];
+        if (separationForce == 0) return;
+
+        const separateX = PersonComponent.separateX[this.index];
+        const separateY = PersonComponent.separateY[this.index];
+
+        if (separateX !== 0 || separateY !== 0) {
+            RigidBody.ax[this.index] += separateX * separationForce;
+            RigidBody.ay[this.index] += separateY * separationForce;
+        }
     }
 
     updateAnimation() {

@@ -235,7 +235,7 @@ export class PredatorScene extends WEED.Scene {
     [Rock, 5000],
     [Fire, 100],
     [Explosion, 100],
-    [MySoldier, 1000],
+    [MySoldier, 10000],
     [Destination, 1],
     [DropMoney, 1000],
     [DropAk47, 1000],
