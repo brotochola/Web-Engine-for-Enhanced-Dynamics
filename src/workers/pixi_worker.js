@@ -2547,13 +2547,20 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const tid = textureId[i];
       if (tid >= 0 && !this.particleTextureCache[i + "_" + tid]) {
         // Get texture from bigAtlas by animation index
+        // Particles use the first frame of the animation (they don't animate)
         const textureName = SpriteSheetRegistry.getAnimationName(
           "bigAtlas",
           tid
         );
-        if (textureName && this.textures[textureName]) {
-          sprite.texture = this.textures[textureName];
-          this.particleTextureCache[i + "_" + tid] = true;
+
+        if (textureName) {
+          // Look up in animations array (contains PIXI.Texture objects)
+          // this.textures contains frame names, not animation names
+          const bigAtlas = this.spritesheets["bigAtlas"];
+          if (bigAtlas && bigAtlas.animations[textureName] && bigAtlas.animations[textureName][0]) {
+            sprite.texture = bigAtlas.animations[textureName][0];
+            this.particleTextureCache[i + "_" + tid] = true;
+          }
         }
       }
 
