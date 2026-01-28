@@ -23,7 +23,7 @@ import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult } from
  * Single set per nav worker, reused across all calculations
  */
 class NavScratch {
-    constructor(totalCells, maxPathLength) {
+    constructor(totalCells, maxPathLength, gridWidth, gridHeight) {
         // Common buffers
         this.visited = new Uint8Array(totalCells);
         this.stamp = new Uint32Array(totalCells);
@@ -34,8 +34,10 @@ class NavScratch {
         this.direction = new Uint8Array(totalCells); // Output directions
 
         // Bucket queue for O(1) Dijkstra
-        // Max distance is ~sqrt(totalCells) * 1.414 for diagonal, capped at 65535
-        this.maxDistance = Math.min(65535, Math.ceil(Math.sqrt(totalCells) * 2));
+        // Max distance must cover worst case: traversing entire grid diagonally
+        // Cost is 10 for cardinal, 14 for diagonal moves
+        // Worst case: (gridWidth + gridHeight) * 14 (diagonal cost)
+        this.maxDistance = Math.min(65535, (gridWidth + gridHeight) * 14);
         this.bucketQueue = new Array(this.maxDistance + 1);
         for (let i = 0; i <= this.maxDistance; i++) {
             this.bucketQueue[i] = [];
@@ -164,7 +166,9 @@ class NavWorker extends AbstractWorker {
             // Create scratch buffers
             this.scratch = new NavScratch(
                 this.totalCells,
-                navConfig.maxPathLength || 128
+                navConfig.maxPathLength || 128,
+                this.gridWidth,
+                this.gridHeight
             );
 
             this.reportLog(
