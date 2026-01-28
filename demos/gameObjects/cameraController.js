@@ -18,8 +18,6 @@ export class CameraController extends WEED.GameObject {
 
     if (mySoldierIndices.length === 0) return;
 
-    // Initialize with first soldier's position
-
     let minX = 9999;
     let minY = 9999;
     let maxX = 0;

@@ -7,6 +7,7 @@ import { NavGrid } from "../../src/core/NavGrid.js";
 
 import { Destination } from "../gameObjects/destination.js";
 import { Lootable } from "./lootable.js";
+import { PersonComponent } from "../components/personComponent.js";
 
 const {
 
@@ -23,13 +24,13 @@ export class Person extends Lootable {
 
     static scriptUrl = import.meta.url;
 
-    // Components: basic physics + rendering + our FSM
     static components = [
         ...Lootable.components,
         RigidBody,
         Collider,
         SpriteRenderer,
         ShadowCaster,
+        PersonComponent,
     ];
 
     /**
@@ -54,6 +55,8 @@ export class Person extends Lootable {
         // Shadow
         this.shadowCaster.shadowRadius = 10;
         this.shadowCaster.height = 50;
+
+        this.personComponent.minSquaredDistanceToGroup = 100**2;
 
     }
 
@@ -95,7 +98,57 @@ export class Person extends Lootable {
     tick(dtRatio) {
         super.tick(dtRatio);
         this.keepWithinBounds(dtRatio);
+
         this.updateAnimation();
+    }
+
+    updateMyTeamsAvaragePosition() {
+
+        const neighborCount = this.neighborCount;
+
+        let myTeamAvgX = 0;
+        let myTeamAvgY = 0;
+        let myTeamMemberCount = 0;
+
+        for (let n = 0; n < neighborCount; n++) {
+          const neighborIndex = this.getNeighbor(n);
+
+          const neighborEntityType = Transform.entityType[neighborIndex];
+          if (neighborEntityType !== this.entityType) continue
+          myTeamAvgX += Transform.x[neighborIndex];
+          myTeamAvgY += Transform.y[neighborIndex];
+          myTeamMemberCount++
+
+        }
+
+        if (myTeamMemberCount > 0) {
+            myTeamAvgX /= myTeamMemberCount;
+            myTeamAvgY /= myTeamMemberCount;
+            PersonComponent.myTeamAvgX[this.index] = myTeamAvgX;
+            PersonComponent.myTeamAvgY[this.index] = myTeamAvgY;
+            PersonComponent.numberOfTeamMembersICanSee[this.index] = myTeamMemberCount;
+            PersonComponent.squaredDistanceToGroup[this.index] = Math.pow(myTeamAvgX - this.x, 2) + Math.pow(myTeamAvgY - this.y, 2);
+        }else{
+            PersonComponent.myTeamAvgX[this.index] = -1
+            PersonComponent.myTeamAvgY[this.index] = -1
+            PersonComponent.numberOfTeamMembersICanSee[this.index] = 0
+            PersonComponent.squaredDistanceToGroup[this.index]=-1
+        }
+    }
+
+    groupWithMyTeam(){
+        this.updateMyTeamsAvaragePosition()
+        if(PersonComponent.numberOfTeamMembersICanSee[this.index] == 0) return
+
+        const dist=PersonComponent.squaredDistanceToGroup[this.index]
+        const minDist=PersonComponent.minSquaredDistanceToGroup[this.index]
+        const groupingForce=PersonComponent.groupingForce[this.index]
+
+        if(groupingForce == 0) return
+        if (dist < minDist) return
+
+        this.accelerateTowards(PersonComponent.myTeamAvgX[this.index], PersonComponent.myTeamAvgY[this.index], groupingForce)
+
     }
 
     updateAnimation() {

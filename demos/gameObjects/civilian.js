@@ -22,21 +22,17 @@ export class Civilian extends Person {
     this.setSpritesheet(randomSheet);
     this.setAnimation("idle_down");
 
+    this.personComponent.groupingForce = 1;
+
   }
 
   tick(dt) {
     // Update the FSM - handles state transitions and calls onUpdate
+    super.tick(dt);
     this.civilianBehaviorFSM.tick(dt, this);
 
-    // let vec = { x: 0, y: 0 };
+    this.groupWithMyTeam()
 
-    // NavGrid.requestVector(this.x, this.y, 10000, 7000, vec);
-
-    // this.addAcceleration(vec.x, vec.y);
-
-    // Keep within world bounds
-    this.keepWithinBounds(dt);
-    this.updateAnimation();
   }
   // calculateAStarToMouse() {
   //   const path = [];

@@ -596,8 +596,6 @@ export class GameObject {
     return this;
   }
 
-
-
   accelerateTowards(x, y, acc) {
     if (!this._hasComponents.RigidBody) return this;
     const i = this.index;
@@ -848,9 +846,6 @@ export class GameObject {
       });
     }
   }
-
-
-
 
   /**
    * LIFECYCLE: Called at the END of constructor - runs ONCE per entity lifetime
@@ -1639,7 +1634,6 @@ export class GameObject {
     }
   }
 
-
   static getAllActiveIndices() {
     const indices = this.entityIndices;
     if (!indices) return null;
@@ -1661,12 +1655,12 @@ export class GameObject {
 
   /**
    * Get active entity indices from the pre-built activeEntitiesData buffer.
-   * 
+   *
    * When called on GameObject: returns ALL active entities.
    * When called on a subclass (e.g., Tree.getAllActive()): returns only active entities of that type.
-   * 
+   *
    * @returns {Uint32Array|number[]} Active entity indices (sorted ascending)
-   * 
+   *
    * PERFORMANCE NOTE: Hybrid approach for optimal performance:
    * - O(1) when called on GameObject (subarray view, no allocation)
    * - Small pools (<100): iteration (lower overhead)
@@ -1715,9 +1709,6 @@ export class GameObject {
 
     return data.subarray(first, last);
   }
-
-
-
 
   static getAllActiveInstances() {
     const indices = this.entityIndices;
