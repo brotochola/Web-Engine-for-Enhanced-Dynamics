@@ -333,7 +333,7 @@ export class PredatorScene extends WEED.Scene {
   }
 
   createNavGridForTheFlowField() {
-    NavGrid.updateNavGrid([ ...Array.from(House.getAllActive()), ...Array.from(Fire.getAllActive())])
+    NavGrid.updateNavGrid([ ...Array.from(House.getAllActiveIndices()), ...Array.from(House.getAllActiveIndices())])
   }
 
   update(time, delta) {

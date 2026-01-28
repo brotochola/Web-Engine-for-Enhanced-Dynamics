@@ -15,12 +15,13 @@ export class Civilian extends Person {
   ];
 
   onSpawned(spawnConfig = {}) {
-    super.onSpawned(spawnConfig);
     // Random spritesheet for variety
     const spritesheets = ["civil5", "civil6", "civil7"];
     const randomSheet = spritesheets[Math.floor(rng() * spritesheets.length)];
     this.setSpritesheet(randomSheet);
     this.setAnimation("idle_down");
+
+    super.onSpawned(spawnConfig);
 
     this.personComponent.groupingForce = 1;
 

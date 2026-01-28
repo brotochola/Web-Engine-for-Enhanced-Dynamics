@@ -26,10 +26,11 @@ export class MySoldier extends Person {
     ];
 
     onSpawned(spawnConfig = {}) {
-        super.onSpawned(spawnConfig);
-
+        // Set spritesheet and animation before super.onSpawned()
         this.setSpritesheet("poli");
         this.setAnimation("idle_down");
+
+        super.onSpawned(spawnConfig);
 
         this.lootableComponent.health = 1
         this.lootableComponent.resistance = 0.6

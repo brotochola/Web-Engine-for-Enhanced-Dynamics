@@ -1639,6 +1639,22 @@ export class GameObject {
     }
   }
 
+  static getFirstActiveIndex(){
+    const indices = this.entityIndices;
+    if (!indices) return null;
+
+    const active = Transform.active;
+    const len = indices.length;
+
+    for (let j = 0; j < len; j++) {
+      const idx = indices[j];
+      if (active[idx]) {
+        return idx;
+      }
+    }
+    return null;
+  }
+
   static getAllActiveIndices() {
     const indices = this.entityIndices;
     if (!indices) return null;

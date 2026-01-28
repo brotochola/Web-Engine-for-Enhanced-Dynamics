@@ -39,6 +39,9 @@ function getLocomotionCycleDuration(speed, multiplier) {
 
 class IdleState extends FSMState {
     static onEnter(owner, i, fromState) {
+        // Skip animation if no spritesheet set yet (FSM auto-init runs before onSpawned)
+        if (!owner.spriteRenderer?.spritesheetId) return;
+
         const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || "down";
         owner.setAnimation(`idle_${facingDir}`);
         owner.setAnimationSpeed(WALK_ANIMATION_MULTIPLIER);
