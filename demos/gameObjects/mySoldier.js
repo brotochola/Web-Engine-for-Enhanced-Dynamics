@@ -58,7 +58,8 @@ export class MySoldier extends Person {
         let vec = { x: 0, y: 0 };
         NavGrid.requestVector(this.x, this.y, destinationX, destinationY, vec);
         // console.log(this.index, vec)
-        this.addAcceleration(vec.x*0.1, vec.y*0.1);
+        const howMuchDoIWantToFollowTheMouse=0.1
+        this.addAcceleration(vec.x*howMuchDoIWantToFollowTheMouse, vec.y*howMuchDoIWantToFollowTheMouse);
 
         // go to my homies:
 
