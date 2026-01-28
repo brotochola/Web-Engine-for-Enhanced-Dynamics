@@ -41,7 +41,7 @@ export { FlashComponent } from "./components/FlashComponent.js";
 // PARTICLES
 // ============================================================================
 // Note: Particles are NOT GameObjects - they use ParticleComponent directly
-export { ParticleEmitter } from "./core/ParticleEmitter.js";
+export { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from "./core/ParticleEmitter.js";
 
 // ============================================================================
 // DECORATIONS
@@ -107,7 +107,7 @@ import { SpriteRenderer } from "./components/SpriteRenderer.js";
 import { MouseComponent } from "./components/MouseComponent.js";
 import { ParticleComponent } from "./components/ParticleComponent.js";
 
-import { ParticleEmitter } from "./core/ParticleEmitter.js";
+import { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from "./core/ParticleEmitter.js";
 import { DecorationPool } from "./core/DecorationPool.js";
 import { DecorationComponent } from "./components/DecorationComponent.js";
 import { LightEmitter } from "./components/LightEmitter.js";
@@ -149,6 +149,7 @@ const WEED = {
 
   // Particles
   ParticleEmitter,
+  DECAL_STAMPS_BLEND_MODE,
 
   // Decorations
   DecorationPool,
@@ -165,7 +166,6 @@ const WEED = {
 
   // Enums
   ShapeType,
-
 
   // Version
   VERSION: "1.0.0",
