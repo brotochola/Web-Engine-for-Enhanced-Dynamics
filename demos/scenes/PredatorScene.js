@@ -332,7 +332,7 @@ export class PredatorScene extends WEED.Scene {
   }
 
   createNavGridForTheFlowField() {
-    NavGrid.updateNavGrid([...Array.from(Rock.entityIndices), ...Array.from(House.entityIndices)])
+    NavGrid.updateNavGrid([ ...Array.from(House.entityIndices)])
   }
 
   update(time, delta) {

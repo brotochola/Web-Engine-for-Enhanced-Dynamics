@@ -38,16 +38,19 @@ export class CameraController extends WEED.GameObject {
     const centerX = minX + (maxX - minX) / 2;
     const centerY = minY + (maxY - minY) / 2;
 
-    // Calculate zoom to fit all soldiers with padding
-    const padding = 150; // Extra space around soldiers
-    const spreadX = (maxX - minX) + padding * 2;
-    const spreadY = (maxY - minY) + padding * 2;
+    // Calculate zoom to fit all soldiers with padding (percentage of screen)
+    const paddingWidthPercent = 0.2;  // 20% on each side
+    const paddingHeightPercent = 0.15; // 15% on each side
+    const paddingX = Camera.canvasWidth * paddingWidthPercent;
+    const paddingY = Camera.canvasHeight * paddingHeightPercent;
+    const spreadX = (maxX - minX) + paddingX * 2;
+    const spreadY = (maxY - minY) + paddingY * 2;
 
     // Calculate zoom so the spread fits in the viewport
     // Lower zoom = more world visible, higher zoom = zoomed in
     const zoomX = Camera.canvasWidth / spreadX;
     const zoomY = Camera.canvasHeight / spreadY;
-    const zoom = Math.min(zoomX, zoomY, 2); // Cap at 2x zoom (don't zoom in too much)
+    const zoom = Math.min(zoomX, zoomY, 1); // Cap at 2x zoom (don't zoom in too much)
 
     // Set target zoom (will be lerped smoothly)
     Camera.setZoom(zoom);
@@ -55,16 +58,5 @@ export class CameraController extends WEED.GameObject {
     // Follow the center of all soldiers
     Camera.follow(centerX, centerY);
 
-  //   const i = this.index;
-  //   this.frameCount++;
-
-  //   if (this.frameCount % 200 === 0) {
-  //     for (let i = 0; i < 10; i++) {
-  //       Prey.spawn({
-  //         x: WEED.rng() * 500,
-  //         y: WEED.rng() * 500,
-  //       });
-  //     }
-  //   }
   }
 }
