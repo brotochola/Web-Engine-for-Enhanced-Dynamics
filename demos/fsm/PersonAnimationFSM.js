@@ -5,7 +5,7 @@ import WEED from "/src/index.js";
 import { PersonComponent, DIRECTION_NAMES } from "../components/personComponent.js";
 import { LootableComponent } from "../components/lootableComponent.js";
 
-const { FSM, FSMState, RigidBody, getDirectionFromAngle } = WEED;
+const { FSM, FSMState, RigidBody, getDirectionFromAngle, SpriteSheetRegistry } = WEED;
 
 // Animation durations in ms (frames * (1000 / (speed * 60)))
 // Assumes animation speed of 0.2 for actions
@@ -50,6 +50,7 @@ class IdleState extends FSMState {
     static onUpdate(owner, i, dt) {
         // Check for death first (highest priority)
         if (LootableComponent.health[i] <= 0) {
+            console.log(`[IdleState ${i}] Health <= 0, changing to DYING`);
             this.fsm.changeState(i, this.fsm.states.DYING);
             return;
         }
@@ -272,15 +273,21 @@ class HurtState extends FSMState {
 // ==========================================
 
 class DyingState extends FSMState {
+    // Death animation speed (slower for dramatic effect)
+    static DYING_ANIM_SPEED = 0.2;
+    // Duration = frames * ms per frame = 6 * (1000 / (speed * 60))
+    // At speed 0.15: 6 * (1000 / 9) = 667ms
+    static DYING_DURATION_MS = (HURT_FRAMES -1)* (1000 / (DyingState.DYING_ANIM_SPEED * 60))
+
     static onEnter(owner, i, fromState) {
-        // Use hurt animation for death (no dedicated die animation)
+        // Use hurt animation for death (no direction variant)
         owner.setAnimation("hurt");
-        owner.setAnimationSpeed(ACTION_ANIM_SPEED * 0.5); // Slower for dramatic effect
+        owner.setAnimationSpeed(DyingState.DYING_ANIM_SPEED);
     }
 
     static onUpdate(owner, i, dt) {
         // Animation complete? Transition to DEAD
-        if (this.fsm.time[i] >= HURT_DURATION_MS * 2) {
+        if (this.fsm.time[i] >= DyingState.DYING_DURATION_MS) {
             this.fsm.changeState(i, this.fsm.states.DEAD);
         }
     }

@@ -561,6 +561,7 @@ class PhysicsWorker extends AbstractWorker {
     // PERFORMANCE: Cache Grid arrays locally to avoid method call overhead in hot loop
     const neighborData = Grid.neighborData;
     const stride = Grid._stride;
+    const visualRange = Collider.visualRange;
 
     for (let i = 0; i < this.globalEntityCount; i++) {
       if (!active[i] || !colliderActive[i]) continue;
@@ -587,7 +588,8 @@ class PhysicsWorker extends AbstractWorker {
         const j = neighborData[offset + 1 + n];
 
         if (i === j || !active[j] || !colliderActive[j]) continue;
-        if (i >= j) continue; // Only process each pair once
+        // Only process each pair once, but always process if j can't see (static obstacle with visualRange=0)
+        if (i >= j && visualRange[j] > 0) continue;
 
         // Track collision check
         this.collisionChecksThisFrame++;
