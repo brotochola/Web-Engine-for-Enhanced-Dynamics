@@ -1,5 +1,5 @@
 import WEED from "/src/index.js";
-import { CivilianBehaviorFSM } from "../fsm/aacivilianBehaviorFSM.js";
+import { CivilianBehaviorFSM } from "../fsm/civilianBehaviorFSM.js";
 import { Person } from "./person.js";
 
 const {
