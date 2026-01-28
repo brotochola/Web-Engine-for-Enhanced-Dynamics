@@ -19,9 +19,7 @@ import { DecorationPool } from "../core/DecorationPool.js";
 import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
 import { AbstractWorker } from "./AbstractWorker.js";
 
-
 import { LightEmitter } from "../components/LightEmitter.js";
-
 
 import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from "../core/ConfigDefaults.js";
 import {
@@ -1368,12 +1366,12 @@ LIGHTING SYSTEM SETUP
   buildFragmentShaderBasic() {
     return `
     precision mediump float;
-    
+
     uniform vec2 uCameraPos;
     uniform float uZoom;
     uniform vec2 uViewport;
     uniform vec2 uFullCanvasSize;
-    
+
     uniform float uLightX[${this.maxLights}];
     uniform float uLightY[${this.maxLights}];
     uniform float uLightIntensity[${this.maxLights}];
@@ -1382,35 +1380,35 @@ LIGHTING SYSTEM SETUP
     uniform float uLightB[${this.maxLights}];
     uniform int uLightCount;
     uniform float uAmbient;
-    
+
     void main() {
       // Use normalized coordinates (0 to 1) to avoid resolution-scaling ambiguity.
       vec2 normCoord = gl_FragCoord.xy / uViewport;
-      
+
       // Map normalized coordinates back to full-screen pixels.
       // When rendering to RenderTexture, PixiJS 8 may have already flipped Y coordinates.
       // We test without the Y-flip first to see if that fixes the coordinate issue.
       vec2 screenPos = normCoord * uFullCanvasSize;
-      
+
       vec2 fragWorld = (screenPos / uZoom) + uCameraPos;
-      
+
       vec3 totalLight = vec3(uAmbient);
-      
+
       for (int i = 0; i < ${this.maxLights}; i++) {
         if (i >= uLightCount) break;
-        
+
         vec2 lightWorld = vec2(uLightX[i], uLightY[i]);
         float intensity = uLightIntensity[i];
         vec3 color = vec3(uLightR[i], uLightG[i], uLightB[i]);
-        
+
         float d = length(fragWorld - lightWorld);
         // Formula: intensity / (intensity + d²) → caps at 1.0 when d=0, falls off with distance
         // Higher intensity = light reaches farther, but max brightness is always 1.0
         float attenuation = intensity / (intensity + d*d);
-        
+
         totalLight += color * attenuation;
       }
-      
+
       totalLight = min(totalLight, vec3(1.0));
       gl_FragColor = vec4(totalLight, 1.0);
     }
@@ -2060,8 +2058,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       shadowsByLight.get(lightIdx).push(i);
     }
 
-
-
     // ========================================
     // STEP 2: Clear particle container and rebuild
     // ========================================
@@ -2093,8 +2089,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       const shadowIndices = shadowsByLight.get(lightIdx);
       if (!shadowIndices || shadowIndices.length === 0) continue;
-
-
 
       // --- Add shadows for this light ---
       for (let si = 0; si < shadowIndices.length; si++) {
@@ -2133,7 +2127,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
         this.shadowParticleContainer.addParticle(sprite);
       }
-
 
       // --- Add light gradient sprite ---
       const lightSprite = lightSprites[lightSpriteIndex];
@@ -2281,10 +2274,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             this.textures[frameName] = texture;
           }
 
-          // Initialize particle pool with a texture from bigAtlas
-          const textureKeys = Object.keys(frameTextures);
-          if (textureKeys.length > 0) {
-            this.particlePool.setDefaultTexture(frameTextures[textureKeys[0]]);
+          // Initialize particle pool with default texture (_white square)
+          // Using _white ensures particles without explicit textures show a neutral default
+          // rather than whatever happens to be first in the atlas (which depends on packing order)
+          if (frameTextures["_white"]) {
+            this.particlePool.setDefaultTexture(frameTextures["_white"]);
+          } else {
+            const textureKeys = Object.keys(frameTextures);
+            if (textureKeys.length > 0) {
+              this.particlePool.setDefaultTexture(frameTextures[textureKeys[0]]);
+            }
           }
 
           console.log(
@@ -2522,8 +2521,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       sprite.tint = tint[i];
 
       // Update texture if needed (check cache)
+      // Note: tid >= 0 is valid (0 is a valid animation index), only skip for unset (-1 or undefined)
       const tid = textureId[i];
-      if (tid > 0 && !this.particleTextureCache[i + "_" + tid]) {
+      if (tid >= 0 && !this.particleTextureCache[i + "_" + tid]) {
         // Get texture from bigAtlas by animation index
         const textureName = SpriteSheetRegistry.getAnimationName(
           "bigAtlas",
@@ -2668,8 +2668,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       actualSprite.anchorY = anchorY[i];
 
       // Update texture if it changed
+      // Note: tid >= 0 is valid (0 is a valid animation index)
       const tid = textureId[i];
-      if (tid > 0 && this.decorationSpriteTextureIds[i] !== tid) {
+      if (tid >= 0 && this.decorationSpriteTextureIds[i] !== tid) {
         // Get texture from bigAtlas by animation index
         const textureName = SpriteSheetRegistry.getAnimationName(
           "bigAtlas",
@@ -3061,9 +3062,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Filter layers to render (if specified in options)
     const layersToRender = options.layers || null;
 
-
-
-
     // Process each layer
     let layerIndex = 0;
     for (const layer of tiledData.layers) {
@@ -3088,8 +3086,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (!layerData || layerData.length === 0) {
         continue;
       }
-
-
 
       let tilesAdded = 0;
 
@@ -3146,7 +3142,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             } else if (flippedH) {
               rotation = 6; // D + H = 90° counter-clockwise (270° CW)
             } else if (flippedV) {
-              rotation = 2; // D + V = 90° clockwise  
+              rotation = 2; // D + V = 90° clockwise
             } else {
               rotation = 6; // D only = 90° counter-clockwise
             }
