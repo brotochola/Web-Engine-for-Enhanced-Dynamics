@@ -31,6 +31,10 @@ class SpriteSheetRegistry {
   static spritesheetNames = [""]; // Index 0 = empty/default (use class spriteconfig)
   static spritesheetNameToId = new Map(); // Map<string, number>
 
+  // Decal frame name → textureId mapping for stamping specific frames
+  // Set by Scene.extractDecalTextures(), used by ParticleEmitter
+  static decalFrameNameToId = null; // Map<string, number>
+
   /**
    * Register a spritesheet and build animation index
    * Called once per spritesheet during asset loading
@@ -308,6 +312,8 @@ class SpriteSheetRegistry {
       spritesheetNameToId: Object.fromEntries(this.spritesheetNameToId),
       // Include frame dimensions for zero-allocation lookups
       frameDimensions: {},
+      // Include decal frame mapping for stamping specific frames
+      decalFrameNameToId: this.decalFrameNameToId,
     };
 
     for (const [name, sheet] of this.spritesheets) {
@@ -364,6 +370,11 @@ class SpriteSheetRegistry {
       )) {
         this.frameDimensions.set(sheetName, new Map(Object.entries(dims)));
       }
+    }
+
+    // Restore decal frame mapping for stamping specific frames
+    if (serialized.decalFrameNameToId) {
+      this.decalFrameNameToId = serialized.decalFrameNameToId;
     }
 
     console.log(
@@ -1022,6 +1033,8 @@ class SpriteSheetRegistry {
       },
     };
 
+    console.log("#### frames",frames)
+
     // Register individual texture names as spritesheet IDs
     // This allows setSpritesheet("ball") to work for static textures
     const individualTextures = [];
@@ -1087,6 +1100,179 @@ class SpriteSheetRegistry {
     this.registerSpritesheetId(sheetName);
 
     console.log(`  🔗 Registered proxy sheet: ${sheetName} → bigAtlas`);
+  }
+
+  /**
+   * Get the bigAtlas frame name for a specific spritesheet animation frame
+   * Useful for stamping decals of entity sprites
+   *
+   * @param {string} sheetName - Spritesheet name (e.g., "civil1")
+   * @param {string} animName - Animation name (e.g., "hurt", "walk_down")
+   * @param {number} [frameIndex=0] - Frame index within the animation (0 = first, -1 = last)
+   * @returns {string|null} BigAtlas frame name (e.g., "civil1_hurt_5") or null if not found
+   *
+   * @example
+   * // Get first frame of hurt animation
+   * SpriteSheetRegistry.getBigAtlasFrameName("civil1", "hurt", 0)
+   * // Returns: "civil1_hurt_0"
+   *
+   * @example
+   * // Get last frame of hurt animation (for death pose)
+   * SpriteSheetRegistry.getBigAtlasFrameName("civil1", "hurt", -1)
+   * // Returns: "civil1_hurt_5" (or whatever the last frame is)
+   */
+  static getBigAtlasFrameName(sheetName, animName, frameIndex = 0) {
+    const sheet = this.spritesheets.get(sheetName);
+    const bigAtlas = this.spritesheets.get("bigAtlas");
+
+    // If no bigAtlas, we can't look up frames
+    if (!bigAtlas) return null;
+
+    // Determine the prefixed animation name
+    // For proxy sheets: use the stored prefixedName
+    // For missing sheets (in workers): construct using naming convention
+    let prefixedAnimName;
+
+    if (sheet?.isProxy) {
+      const animInfo = sheet.animations[animName];
+      if (!animInfo) return null;
+      prefixedAnimName = animInfo.prefixedName;
+    } else if (!sheet && sheetName !== "bigAtlas") {
+      // Sheet not found (likely in a worker where proxy sheets aren't serialized)
+      // Use the known naming convention: {sheetName}_{animName}
+      prefixedAnimName = `${sheetName}_${animName}`;
+    } else if (sheetName === "bigAtlas") {
+      // For bigAtlas itself, use the animName directly
+      prefixedAnimName = animName;
+    } else {
+      // Regular non-proxy sheet - shouldn't happen often
+      prefixedAnimName = animName;
+    }
+
+    // Look up the animation in bigAtlas
+    const bigAtlasAnim = bigAtlas.animations[prefixedAnimName];
+    if (!bigAtlasAnim || !bigAtlasAnim.frames || bigAtlasAnim.frames.length === 0) {
+      return null;
+    }
+
+    // Handle negative index (from end)
+    const frames = bigAtlasAnim.frames;
+    const actualIndex = frameIndex < 0 ? frames.length + frameIndex : frameIndex;
+
+    if (actualIndex < 0 || actualIndex >= frames.length) return null;
+
+    return frames[actualIndex];
+  }
+
+  /**
+   * Get the bigAtlas animation name for a proxy spritesheet animation
+   * Useful for particle/decal systems that need the prefixed name
+   *
+   * @param {string} sheetName - Spritesheet name (e.g., "civil1")
+   * @param {string} animName - Animation name (e.g., "hurt")
+   * @returns {string|null} BigAtlas animation name (e.g., "civil1_hurt") or null if not found
+   *
+   * @example
+   * SpriteSheetRegistry.getBigAtlasAnimName("civil1", "hurt")
+   * // Returns: "civil1_hurt"
+   */
+  static getBigAtlasAnimName(sheetName, animName) {
+    const sheet = this.spritesheets.get(sheetName);
+    const bigAtlas = this.spritesheets.get("bigAtlas");
+
+    if (sheet?.isProxy) {
+      const animInfo = sheet.animations[animName];
+      return animInfo?.prefixedName || null;
+    }
+
+    // For bigAtlas itself, just return the animName
+    if (sheetName === "bigAtlas") {
+      return bigAtlas?.animations[animName] ? animName : null;
+    }
+
+    // Sheet not found (likely in a worker) - use naming convention
+    if (!sheet && bigAtlas) {
+      const prefixedName = `${sheetName}_${animName}`;
+      return bigAtlas.animations[prefixedName] ? prefixedName : null;
+    }
+
+    return null;
+  }
+
+  /**
+   * Get frame count for an animation
+   *
+   * @param {string} sheetName - Spritesheet name
+   * @param {string} animName - Animation name
+   * @returns {number} Number of frames, or 0 if not found
+   */
+  static getAnimationFrameCount(sheetName, animName) {
+    const sheet = this.spritesheets.get(sheetName);
+    const bigAtlas = this.spritesheets.get("bigAtlas");
+
+    if (sheet?.isProxy) {
+      const animInfo = sheet.animations[animName];
+      if (!animInfo) return 0;
+
+      if (!bigAtlas) return 0;
+
+      const bigAtlasAnim = bigAtlas.animations[animInfo.prefixedName];
+      return bigAtlasAnim?.frames?.length || 0;
+    }
+
+    // Sheet not found (likely in a worker) - use naming convention
+    if (!sheet && bigAtlas) {
+      const prefixedName = `${sheetName}_${animName}`;
+      const bigAtlasAnim = bigAtlas.animations[prefixedName];
+      return bigAtlasAnim?.frames?.length || 0;
+    }
+
+    return sheet?.animations[animName]?.frameCount || 0;
+  }
+
+  /**
+   * Set the decal frame name → textureId mapping
+   * Called by Scene.extractDecalTextures() after building the mapping
+   *
+   * @param {Object} mapping - Object mapping frame names to textureIds
+   */
+  static setDecalFrameMapping(mapping) {
+    this.decalFrameNameToId = mapping;
+  }
+
+  /**
+   * Get textureId for a decal texture by name
+   * Supports both animation names and individual frame names
+   *
+   * @param {string} textureName - Animation name OR frame name (e.g., "blood", "civil1_hurt_5")
+   * @returns {number} TextureId for the decal system, or 0 if not found
+   *
+   * @example
+   * // Animation name (stamps first frame)
+   * getDecalTextureId("blood") // Returns animation index
+   *
+   * @example
+   * // Specific frame name (stamps exact frame)
+   * getDecalTextureId("civil1_hurt_5") // Returns frame-specific textureId
+   */
+  static getDecalTextureId(textureName) {
+    // First, try looking up as a specific frame name (e.g., "poli_hurt_5")
+    // This is checked first to avoid error logging when getAnimationIndex fails for frame names
+    if (this.decalFrameNameToId && this.decalFrameNameToId[textureName] !== undefined) {
+      return this.decalFrameNameToId[textureName];
+    }
+
+    // Fallback: try looking up as an animation name (e.g., "blood")
+    // For animations, this returns the animation index which stamps the first frame
+    const bigAtlas = this.spritesheets.get("bigAtlas");
+    if (bigAtlas && bigAtlas.animations[textureName]) {
+      const anim = bigAtlas.animations[textureName];
+      return anim.index;
+    }
+
+    // Not found
+    console.warn(`Decal texture "${textureName}" not found in animations or frames`);
+    return 0;
   }
 }
 
