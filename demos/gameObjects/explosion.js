@@ -32,7 +32,7 @@ export class Explosion extends GameObject {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 1; // Start at 1px
 
-    this.collider.visualRange = 400;
+    this.collider.visualRange = 250;
 
     this.lightEmitter.lightColor = randomColor({
       min: 0xffff00,
@@ -102,8 +102,6 @@ export class Explosion extends GameObject {
     // Update glow height offset based on current radius
     this.lightEmitter.glowHeightOffset = this.collider.radius * 0.5 * ec.baseScale;
 
-
-
     // Despawn when animation is complete
 
     if (progress >= 1) {
@@ -121,6 +119,22 @@ export class Explosion extends GameObject {
     this.markDirty();
     this.emitSparks();
     this.emitSmoke();
+    this.applyDamage()
+  }
+
+  applyDamage(){
+    this.explosionComponent.wantedIntensity
+    for(let i=0;i<this.neighborCount;i++){
+      const neighbor=this.getNeighbor(i)
+      if(neighbor==-1) continue
+      const neighborInstance=GameObject.get(neighbor)
+      if(neighborInstance==null) continue
+      if(!neighborInstance.recieveDamage) continue
+      const distSq=this.getNeighborDistanceSq(i)
+      const damage=(this.explosionComponent.wantedIntensity/((distSq*50)))
+
+      neighborInstance.recieveDamage(damage)
+    }
   }
 
   emitSparks() {

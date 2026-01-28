@@ -76,8 +76,6 @@ export class Fire extends GameObject {
     // Calculate life progress (0 = just spawned, 1 = end of life)
     const lifeProgress = Math.min(fc.elapsedTime / fc.lifespan, 1);
 
-
-
     // Fade from the start: fadeFactor goes from 1 to 0 linearly
     const fadeFactor = 1 - lifeProgress;
 
@@ -89,9 +87,6 @@ export class Fire extends GameObject {
 
     // Convert elapsed time from ms to seconds for wave calculations
     const t = fc.elapsedTime * 0.001;
-
-
-
 
     // Calculate intensity with fade factor and flickering
     const baseIntensity = fc.baseIntensity * fadeFactor;
@@ -109,8 +104,6 @@ export class Fire extends GameObject {
 
     // Update radius based on fade factor
     radius[this.index] = FireComponent.baseRadius[this.index] * fadeFactor;
-
-
 
     // Update scale based on fade factor (visual shrinking) with flickering
     const currentScale = this.fireComponent.baseScale * fadeFactor;
@@ -133,8 +126,6 @@ export class Fire extends GameObject {
     // Update glow height offset based on current radius
     this.lightEmitter.glowHeightOffset = radius[this.index] * 0.5 * this.fireComponent.baseScale;
 
-
-
     // Mark dirty to keep animation advancing
     const myRadius = radius[this.index]
     // Reduce particle emission as fire dies
@@ -142,7 +133,6 @@ export class Fire extends GameObject {
     this.emitSmoke(myRadius, fadeFactor);
 
     // this.markDirty();
-
 
   }
 
