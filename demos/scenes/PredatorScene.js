@@ -159,6 +159,7 @@ export class PredatorScene extends WEED.Scene {
       pistol: "/demos/img/drops/pistol.png",
       ak47: "/demos/img/drops/ak47.png",
       shotgun: "/demos/img/drops/shotgun.png",
+      explosion_decal: "/demos/img/explosion_decal.png",
     },
     spritesheets: {
       civil1: {

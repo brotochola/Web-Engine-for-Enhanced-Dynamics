@@ -1787,31 +1787,31 @@ export function drawCross(graphics, options) {
 export function printLogo() {
   console.log(
     `%c
-  +%                                           :  
-  *@             .                            +@- 
-  #@            #@                             @# 
-  #@            @%     -***:   :*@@@@@-        %% 
-  @%            @#   :%@#*@@  +@%=:::@*        #% 
-  @*      :    :@+  .@@. =@+ +@+   .#@-    ..  %% 
-  @*     =@+   =@   @@  *@#  @@ .-*@@-   -%@@#-@* 
-  @*    .@@=   @%  -@+-@@=   @@@@@#=    +@#:-%@@- 
-  @#    =@@=  =@:  @@%@*    +@-:.      -@+   .@@: 
-  %%   .@@@= .@%  .@@+.   : *@.        *@.    %@. 
+  +%                                           :
+  *@             .                            +@-
+  #@            #@                             @#
+  #@            @%     -***:   :*@@@@@-        %%
+  @%            @#   :%@#*@@  +@%=:::@*        #%
+  @*      :    :@+  .@@. =@+ +@+   .#@-    ..  %%
+  @*     =@+   =@   @@  *@#  @@ .-*@@-   -%@@#-@*
+  @*    .@@=   @%  -@+-@@=   @@@@@#=    +@#:-%@@-
+  @#    =@@=  =@:  @@%@*    +@-:.      -@+   .@@:
+  %%   .@@@= .@%  .@@+.   : *@.        *@.    %@.
   *@  .%@+@= #@:  :@.    =@##@.      =+*@.    %@::
   -@%*@@:.@@%@-   .@*-=*@@* :@:   .=%@*:@@=:.:@@@%
-   :**+.  :+*:     =%@@#=    %@%%@@@+.  .+@@@@%*- 
-                      :+=     :==-:         .     
-                 :=*#@@@+   =#%@@@@%              
-             =+#@@@@+-.    @@*=----.              
-            :%#+-..@%     @@.                     
-                   +@:    @@                      
-                    @@    @@-.   ..:.             
-                    :@:   .#@@@@@@@@@             
-                     @%      .:::=@@:             
-              .%=    @%      -=*@@#:              
-               +@@*-:@@   -%@@%#=.                
-                 =#@@%-   =*-                     
- 
+   :**+.  :+*:     =%@@#=    %@%%@@@+.  .+@@@@%*-
+                      :+=     :==-:         .
+                 :=*#@@@+   =#%@@@@%
+             =+#@@@@+-.    @@*=----.
+            :%#+-..@%     @@.
+                   +@:    @@
+                    @@    @@-.   ..:.
+                    :@:   .#@@@@@@@@@
+                     @%      .:::=@@:
+              .%=    @%      -=*@@#:
+               +@@*-:@@   -%@@%#=.
+                 =#@@%-   =*-
+
 %c
 🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿
 🌿🏵️🌿🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌿🏵️🌿
@@ -1824,16 +1824,16 @@ export function printLogo() {
 🌿🏵️🌿🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌺🌿🏵️🌿
 🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿
   `,
-    `font-family: monospace; 
-       font-size: 12px; 
+    `font-family: monospace;
+       font-size: 12px;
        background: linear-gradient(135deg, #0f0 0%, #ff4 25%, #0f0 50%, #ff0 75%, #0f0 100%);
        -webkit-background-clip: text;
        -webkit-text-fill-color: transparent;
        background-clip: text;
        font-weight: 100;`,
 
-    `font-family: monospace; 
-       font-size: 10px;   
+    `font-family: monospace;
+       font-size: 10px;
        font-weight: 100;`
   );
 }
@@ -1965,6 +1965,152 @@ export function getComponentPropertyNames(ComponentClass) {
   }
   return Object.keys(ComponentClass.ARRAY_SCHEMA).filter(key => key !== 'active');
 }
+
+// ============================================================================
+// DECAL/TILE STAMPING UTILITIES
+// Pure functions for calculating tile regions when stamping decals
+// ============================================================================
+
+/**
+ * Calculate which tiles a decal touches based on its world-space bounding box
+ * Returns tile index bounds (inclusive) for iteration
+ *
+ * @param {number} worldX - Decal center X in world coordinates
+ * @param {number} worldY - Decal center Y in world coordinates
+ * @param {number} halfWidth - Half of the decal's width in world units
+ * @param {number} halfHeight - Half of the decal's height in world units
+ * @param {number} tileSize - Size of each tile in world units
+ * @param {number} tilesX - Total number of tiles horizontally
+ * @param {number} tilesY - Total number of tiles vertically
+ * @param {Object} result - Result object to mutate {minTileX, maxTileX, minTileY, maxTileY, valid}
+ * @returns {Object} The result object with tile bounds
+ */
+export function calculateDecalTileBounds(
+  worldX, worldY, halfWidth, halfHeight,
+  tileSize, tilesX, tilesY, result
+) {
+  // Calculate world-space bounding box
+  const minWorldX = worldX - halfWidth;
+  const maxWorldX = worldX + halfWidth;
+  const minWorldY = worldY - halfHeight;
+  const maxWorldY = worldY + halfHeight;
+
+  // Convert to tile indices (floor for min, floor for max since we want inclusive)
+  let minTileX = (minWorldX / tileSize) | 0;
+  let maxTileX = (maxWorldX / tileSize) | 0;
+  let minTileY = (minWorldY / tileSize) | 0;
+  let maxTileY = (maxWorldY / tileSize) | 0;
+
+  // Clamp to valid tile range
+  minTileX = minTileX < 0 ? 0 : minTileX;
+  maxTileX = maxTileX >= tilesX ? tilesX - 1 : maxTileX;
+  minTileY = minTileY < 0 ? 0 : minTileY;
+  maxTileY = maxTileY >= tilesY ? tilesY - 1 : maxTileY;
+
+  // Check if any valid tiles remain after clamping
+  result.minTileX = minTileX;
+  result.maxTileX = maxTileX;
+  result.minTileY = minTileY;
+  result.maxTileY = maxTileY;
+  result.valid = minTileX <= maxTileX && minTileY <= maxTileY;
+
+  return result;
+}
+
+/**
+ * Calculate the clip region for stamping a decal onto a specific tile
+ * Returns the pixel ranges to iterate over (both source texture and destination tile)
+ *
+ * This function calculates the intersection between the decal's bounding box
+ * and the tile's bounding box, returning only the pixels that need to be processed.
+ *
+ * @param {number} worldX - Decal center X in world coordinates
+ * @param {number} worldY - Decal center Y in world coordinates
+ * @param {number} halfWidthWorld - Half of decal width in world units
+ * @param {number} halfHeightWorld - Half of decal height in world units
+ * @param {number} tileX - Tile X index
+ * @param {number} tileY - Tile Y index
+ * @param {number} tileSize - Tile size in world units
+ * @param {number} tilePixelSize - Tile size in pixels
+ * @param {number} texWidth - Source texture width in pixels
+ * @param {number} texHeight - Source texture height in pixels
+ * @param {number} scaledWidth - Scaled decal width in pixels
+ * @param {number} scaledHeight - Scaled decal height in pixels
+ * @param {Object} result - Result object to mutate
+ * @returns {Object} Result with: dstStartX, dstStartY, dstEndX, dstEndY, srcOffsetX, srcOffsetY, valid
+ */
+export function calculateTileClipRegion(
+  worldX, worldY, halfWidthWorld, halfHeightWorld,
+  tileX, tileY, tileSize, tilePixelSize,
+  texWidth, texHeight, scaledWidth, scaledHeight,
+  result
+) {
+  // Tile bounds in world space
+  const tileMinWorldX = tileX * tileSize;
+  const tileMaxWorldX = (tileX + 1) * tileSize;
+  const tileMinWorldY = tileY * tileSize;
+  const tileMaxWorldY = (tileY + 1) * tileSize;
+
+  // Decal bounds in world space
+  const decalMinWorldX = worldX - halfWidthWorld;
+  const decalMaxWorldX = worldX + halfWidthWorld;
+  const decalMinWorldY = worldY - halfHeightWorld;
+  const decalMaxWorldY = worldY + halfHeightWorld;
+
+  // Calculate intersection in world space
+  const clipMinWorldX = decalMinWorldX > tileMinWorldX ? decalMinWorldX : tileMinWorldX;
+  const clipMaxWorldX = decalMaxWorldX < tileMaxWorldX ? decalMaxWorldX : tileMaxWorldX;
+  const clipMinWorldY = decalMinWorldY > tileMinWorldY ? decalMinWorldY : tileMinWorldY;
+  const clipMaxWorldY = decalMaxWorldY < tileMaxWorldY ? decalMaxWorldY : tileMaxWorldY;
+
+  // Check for valid intersection
+  if (clipMinWorldX >= clipMaxWorldX || clipMinWorldY >= clipMaxWorldY) {
+    result.valid = false;
+    return result;
+  }
+
+  // Convert world-to-pixel ratio
+  const worldToPixel = tilePixelSize / tileSize;
+
+  // Destination (tile) pixel coordinates
+  result.dstStartX = ((clipMinWorldX - tileMinWorldX) * worldToPixel) | 0;
+  result.dstStartY = ((clipMinWorldY - tileMinWorldY) * worldToPixel) | 0;
+  result.dstEndX = ((clipMaxWorldX - tileMinWorldX) * worldToPixel) | 0;
+  result.dstEndY = ((clipMaxWorldY - tileMinWorldY) * worldToPixel) | 0;
+
+  // Source texture UV offset (where to start sampling in the scaled decal)
+  // This is the offset from the decal's top-left corner to the clip region's top-left
+  const decalWidthWorld = halfWidthWorld * 2;
+  const decalHeightWorld = halfHeightWorld * 2;
+
+  result.srcOffsetX = ((clipMinWorldX - decalMinWorldX) / decalWidthWorld) * scaledWidth;
+  result.srcOffsetY = ((clipMinWorldY - decalMinWorldY) / decalHeightWorld) * scaledHeight;
+
+  // Dimensions to iterate (in pixels)
+  result.clipWidth = result.dstEndX - result.dstStartX;
+  result.clipHeight = result.dstEndY - result.dstStartY;
+
+  // UV scale factors for sampling (scaled texture pixels per destination pixel)
+  result.uvScaleX = scaledWidth / (decalWidthWorld * worldToPixel);
+  result.uvScaleY = scaledHeight / (decalHeightWorld * worldToPixel);
+
+  result.valid = true;
+  return result;
+}
+
+// Pre-allocated result objects for decal utilities (zero GC in hot paths)
+export const _decalTileBounds = {
+  minTileX: 0, maxTileX: 0, minTileY: 0, maxTileY: 0, valid: false
+};
+export const _tileClipRegion = {
+  dstStartX: 0, dstStartY: 0, dstEndX: 0, dstEndY: 0,
+  srcOffsetX: 0, srcOffsetY: 0, clipWidth: 0, clipHeight: 0,
+  uvScaleX: 1, uvScaleY: 1, valid: false
+};
+
+// ============================================================================
+// DEBUG UI / FORMATTING UTILITIES
+// ============================================================================
 
 /**
  * Format a component property value for display

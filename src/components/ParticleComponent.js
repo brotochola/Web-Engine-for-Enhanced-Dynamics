@@ -28,7 +28,8 @@ export class ParticleComponent extends Component {
     gravity: Float32Array, // Per-particle gravity strength
 
     // === Visuals (simplified - static sprites only) ===
-    scale: Float32Array, // Uniform scale (particles don't need scaleX/Y)
+    scaleX: Float32Array, // Horizontal scale
+    scaleY: Float32Array, // Vertical scale
     alpha: Float32Array, // Opacity (0-1)
     tint: Uint32Array, // Color tint (0xRRGGBB) - modified by lighting
     baseTint: Uint32Array, // Original color set by emitter (preserved for lighting calculation)

@@ -20,6 +20,9 @@ export class Camera {
   static _worldWidth = Infinity;
   static _worldHeight = Infinity;
 
+  // Zoom limits
+  static _maxZoom = 50;
+
   // Smoothing factor for camera follow (0-1, lower = smoother)
   static _smoothing = 0.1;
 
@@ -56,7 +59,10 @@ export class Camera {
   }
 
   static set zoom(value) {
-    if (this._data) this._data[0] = value;
+    if (this._data) {
+      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, value));
+      this._clampToWorldBounds();
+    }
   }
 
   static get targetZoom() {
@@ -64,7 +70,9 @@ export class Camera {
   }
 
   static set targetZoom(value) {
-    if (this._data) this._data[5] = value;
+    if (this._data) {
+      this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, value));
+    }
   }
 
   static get x() {
@@ -135,6 +143,14 @@ export class Camera {
 
   static set canvasWidth(value) {
     this._canvasWidth = value;
+    // Re-clamp zoom and position since minZoom may have changed
+    if (this._data) {
+      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[0]));
+      if (this._data[5] > 0) {
+        this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[5]));
+      }
+      this._clampToWorldBounds();
+    }
   }
 
   static get canvasHeight() {
@@ -143,6 +159,14 @@ export class Camera {
 
   static set canvasHeight(value) {
     this._canvasHeight = value;
+    // Re-clamp zoom and position since minZoom may have changed
+    if (this._data) {
+      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[0]));
+      if (this._data[5] > 0) {
+        this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[5]));
+      }
+      this._clampToWorldBounds();
+    }
   }
 
   // ============================================
@@ -155,6 +179,14 @@ export class Camera {
 
   static set worldWidth(value) {
     this._worldWidth = value;
+    // Re-clamp zoom and position since minZoom may have changed
+    if (this._data) {
+      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[0]));
+      if (this._data[5] > 0) {
+        this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[5]));
+      }
+      this._clampToWorldBounds();
+    }
   }
 
   static get worldHeight() {
@@ -163,6 +195,14 @@ export class Camera {
 
   static set worldHeight(value) {
     this._worldHeight = value;
+    // Re-clamp zoom and position since minZoom may have changed
+    if (this._data) {
+      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[0]));
+      if (this._data[5] > 0) {
+        this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[5]));
+      }
+      this._clampToWorldBounds();
+    }
   }
 
   /**
@@ -173,6 +213,15 @@ export class Camera {
   static setWorldBounds(width, height) {
     this._worldWidth = width;
     this._worldHeight = height;
+
+    // Re-clamp zoom and position with new bounds
+    if (this._data) {
+      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[0]));
+      if (this._data[5] > 0) {
+        this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[5]));
+      }
+      this._clampToWorldBounds();
+    }
   }
 
   // ============================================
@@ -185,6 +234,36 @@ export class Camera {
 
   static set smoothing(value) {
     this._smoothing = Math.max(0, Math.min(1, value));
+  }
+
+  // ============================================
+  // ZOOM LIMITS
+  // ============================================
+
+  /**
+   * Get minimum zoom to prevent showing void areas beyond world bounds
+   * Ensures viewport never exceeds world dimensions
+   * @returns {number} Minimum allowed zoom level
+   */
+  static get minZoom() {
+    // If world bounds aren't set, allow any zoom
+    if (this._worldWidth === Infinity || this._worldHeight === Infinity) {
+      return 0.01;
+    }
+
+    // minZoom = max(canvasWidth / worldWidth, canvasHeight / worldHeight)
+    const minZoomForWidth = this._canvasWidth / this._worldWidth;
+    const minZoomForHeight = this._canvasHeight / this._worldHeight;
+
+    return Math.max(minZoomForWidth, minZoomForHeight, 0.01);
+  }
+
+  static get maxZoom() {
+    return this._maxZoom;
+  }
+
+  static set maxZoom(value) {
+    this._maxZoom = value;
   }
 
   // ============================================
@@ -236,7 +315,8 @@ export class Camera {
 
     // Lerp zoom toward target zoom
     if (isZooming) {
-      this._data[0] += (targetZoom - currentZoom) * s;
+      const newZoom = currentZoom + (targetZoom - currentZoom) * s;
+      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, newZoom));
     }
 
     const zoom = this._data[0];
@@ -263,12 +343,11 @@ export class Camera {
 
   /**
    * Set target zoom level (will be lerped in follow())
-   * @param {number} targetZoom - Target zoom level (0.1 to 5)
+   * @param {number} targetZoom - Target zoom level
    */
   static setZoom(targetZoom) {
     if (!this._data) return;
-    //TODO: make this constants
-    this._data[5] = Math.max(0.01, Math.min(50, targetZoom));
+    this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, targetZoom));
   }
 
   /**

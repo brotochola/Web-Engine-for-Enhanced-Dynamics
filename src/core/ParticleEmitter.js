@@ -75,6 +75,45 @@ export class ParticleEmitter {
    *   texture: "spark",
    * });
    */
+  /**
+   * Stamp a decal directly onto the floor tilemap
+   * Convenience wrapper that creates an "instant stamp" particle
+   *
+   * @param {Object} config - Decal configuration
+   * @param {number|{min,max}} config.x - X position or range
+   * @param {number|{min,max}} config.y - Y position or range
+   * @param {string} config.texture - Texture name (from bigAtlas)
+   * @param {number|{min,max}} [config.scale=1] - Scale or range
+   * @param {number|{min,max}} [config.alpha=1] - Alpha (opacity) or range
+   * @param {number|{min,max}} [config.tint=0xFFFFFF] - Color tint or range
+   * @param {number|{min,max}} [config.rotation=0] - Rotation in degrees or range
+   * @param {number} [config.count=1] - Number of decals to stamp
+   * @returns {number} - Number of decals actually spawned
+   *
+   * @example
+   * // Stamp a burn mark at explosion location
+   * ParticleEmitter.stampDecal({
+   *   x: this.x,
+   *   y: this.y,
+   *   texture: "burn_mark",
+   *   scale: { min: 0.8, max: 1.2 },
+   *   rotation: { min: 0, max: 360 },
+   *   alpha: 0.9,
+   * });
+   */
+  static stampDecal(config) {
+    return this.emit({
+      ...config,
+      z: 0,
+      lifespan:100,
+      stayOnTheFloor: true,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      gravity: 1,
+    });
+  }
+
   static emit(config) {
     if (!this.initialized) {
       console.warn("ParticleEmitter.emit() called before initialization");
@@ -103,7 +142,8 @@ export class ParticleEmitter {
     const lifespan = ParticleComponent.lifespan;
     const currentLife = ParticleComponent.currentLife;
     const gravity = ParticleComponent.gravity;
-    const scale = ParticleComponent.scale;
+    const scaleX = ParticleComponent.scaleX;
+    const scaleY = ParticleComponent.scaleY;
     const alpha = ParticleComponent.alpha;
     const tint = ParticleComponent.tint;
     const baseTint = ParticleComponent.baseTint;
@@ -154,13 +194,16 @@ export class ParticleEmitter {
         gravity[i] = config.gravity ?? 0.15;
 
         // Visual properties
-        scale[i] = randomRange(config.scale, 1);
+        // Support both uniform scale and independent scaleX/scaleY
+        const uniformScale = randomRange(config.scale, 1);
+        scaleX[i] = config.scaleX !== undefined ? randomRange(config.scaleX, uniformScale) : uniformScale;
+        scaleY[i] = config.scaleY !== undefined ? randomRange(config.scaleY, uniformScale) : uniformScale;
         alpha[i] = randomRange(config.alpha, 1);
         const particleColor = randomColor(config.tint);
         tint[i] = particleColor;
         baseTint[i] = particleColor; // Store original color for lighting calculation
         particleTextureId[i] = textureId;
-        
+
         // Rotation (convert degrees to radians) and flipping
         const rotationDeg = randomRange(config.rotation, 0);
         rotation[i] = (rotationDeg * Math.PI) / 180;
@@ -168,7 +211,7 @@ export class ParticleEmitter {
         flipY[i] = config.flipY ? 1 : 0;
         fadeOnTheFloor[i] = config.fadeOnTheFloor ?? 0;
         timeOnFloor[i] = 0;
-        
+
         // Alpha tweening: fade from initial alpha to 0 over lifespan
         tweenToAlpha0[i] = config.tweenToAlpha0 ? 1 : 0;
         initialAlpha[i] = config.tweenToAlpha0 ? alpha[i] : 0;
