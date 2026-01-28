@@ -1931,6 +1931,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const rangeVal = visualRange[entityIndex] || 200;
       const glowDiameter = rangeVal;
       const scale = (glowDiameter * 3) / textureRadius;
+      const newAlpha = lightIntensity[entityIndex] / 1000000;
+
+      // Skip glow sprites that are too small or too dim to be visible
+      if (scale < 0.1 || newAlpha < 0.001) {
+        sprite.alpha = 0;
+        sprite.visible = false;
+        spriteIndex++;
+        continue;
+      }
 
       // Position: entity position with height offset (light is above entity)
       sprite.x = bodySprite ? bodySprite.x : worldX[entityIndex];
@@ -1945,7 +1954,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       sprite.tint = convertRGBtoBGR(lightColor[entityIndex]);
 
       // Show this sprite (alpha controls visibility for ParticleContainer)
-      const newAlpha = lightIntensity[entityIndex] / 1000000;
       sprite.alpha = newAlpha;
       sprite.visible = true; // Ensure sprite is visible
 

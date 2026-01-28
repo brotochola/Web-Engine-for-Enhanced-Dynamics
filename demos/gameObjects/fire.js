@@ -100,10 +100,13 @@ export class Fire extends GameObject {
 
     const intensity = (baseIntensity + intensityVariation) * totalFlicker;
     const radius = Collider.radius
-    LightEmitter.lightIntensity[this.index] = Math.max(500, intensity);
+    LightEmitter.lightIntensity[this.index] = Math.max(500, intensity)*fadeFactor;
 
     // Update radius based on fade factor
     radius[this.index] = FireComponent.baseRadius[this.index] * fadeFactor;
+
+    // Update visual range so glow sprite shrinks with the fire
+    Collider.visualRange[this.index] = 400 * fadeFactor;
 
     // Update scale based on fade factor (visual shrinking) with flickering
     const currentScale = this.fireComponent.baseScale * fadeFactor;
