@@ -8,6 +8,7 @@ import { NavGrid } from "../../src/core/NavGrid.js";
 import { Destination } from "../gameObjects/destination.js";
 import { Lootable } from "./lootable.js";
 import { PersonComponent } from "../components/personComponent.js";
+import { ParticleEmitter } from "../../src/index.js";
 
 const {
 
@@ -93,6 +94,31 @@ export class Person extends Lootable {
         this.lootableComponent.dropMoney = 100
 
         this.setScale(scale, scale);
+    }
+
+    recieveDamage(damage) {
+       super.recieveDamage(damage)
+
+       if(damage<0.1) return
+
+       ParticleEmitter.emit({
+        count: Math.floor(damage*10),
+        texture: "blood",
+        x: this.x,
+        y: this.y,
+        z: -30,
+        angleXY: { min: 0, max: 360 },
+        speed: { min: 0.7, max: 1.66 },
+        vz: { min: -4, max: 0 },
+        lifespan: 2000,
+        gravity: 0.15,
+        scale: { min: 0.1, max: 0.2 },
+        alpha: { min: 0.4, max: 0.9 },
+        tint: { min: 0xaaaaaa, max: 0xffffff },
+        // fadeOnTheFloor: 1000,
+        stayOnTheFloor: true,
+      });
+
     }
 
     tick(dtRatio) {
