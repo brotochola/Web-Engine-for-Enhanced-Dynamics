@@ -52,7 +52,14 @@ import {
   extensions,
   RendererType,
   RenderTexture,
+  // Web Worker adapter - REQUIRED for PixiJS 8 in workers
+  DOMAdapter,
+  WebWorkerAdapter,
 } from "./pixi8webworker.js";
+
+// CRITICAL: Set the WebWorkerAdapter BEFORE any PixiJS operations
+// This enables OffscreenCanvas and WebGL support in web workers
+DOMAdapter.set(WebWorkerAdapter);
 import { convertRGBtoBGR } from "../core/utils.js";
 // Import @pixi/tilemap for efficient tilemap rendering (modified to import from pixi8webworker.js)
 import {
@@ -892,7 +899,6 @@ class PixiRenderer extends AbstractWorker {
           entityIndex,
           animationState[entityIndex]
         );
-        this.changeFrameOfSprite(bodySprite, entityIndex, deltaSeconds);
 
         // Update animation speed (stored locally for manual animation)
         this.animationSpeed[entityIndex] = animationSpeed[entityIndex];
@@ -900,6 +906,9 @@ class PixiRenderer extends AbstractWorker {
         // Clear dirty flag after updating
         renderDirty[entityIndex] = 0;
       }
+
+      // ALWAYS advance animation frames (not just when dirty!)
+      this.changeFrameOfSprite(bodySprite, entityIndex, deltaSeconds);
 
       // DENSE: use entity index directly for all component data
       // PixiJS 8 Particle uses scaleX/scaleY instead of scale.x/scale.y

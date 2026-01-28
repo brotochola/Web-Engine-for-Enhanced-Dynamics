@@ -25,7 +25,7 @@ export class PersonComponent extends Component {
         separationForce: Float32Array,
         separateX: Float32Array,
         separateY: Float32Array,
-
+        dead: Uint8Array, // 0 = alive, 1 = dead
         // Animation state
         facingDirection: Uint8Array, // 0=up, 1=left, 2=down, 3=right
     };

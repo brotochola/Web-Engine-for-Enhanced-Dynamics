@@ -16,7 +16,6 @@ const {
 export class Rock extends GameObject {
   static scriptUrl = import.meta.url;
 
-  // Add PreyBehavior component for prey-specific properties
   static components = [Collider, SpriteRenderer, ShadowCaster];
 
   setup() {

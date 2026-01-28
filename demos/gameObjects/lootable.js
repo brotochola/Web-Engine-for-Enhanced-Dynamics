@@ -33,8 +33,8 @@ export class Lootable extends GameObject {
         if (amountOfMoney > 0) {
             DropMoney.spawn({
                 amount: amountOfMoney,
-                x: this.x,
-                y: this.y,
+                x: this.x+Math.random()*this.radius*4-this.radius*2,
+                y: this.y+Math.random()*this.radius*4-this.radius*2,
             })
         }
 

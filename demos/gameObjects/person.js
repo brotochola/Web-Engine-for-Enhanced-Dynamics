@@ -96,6 +96,9 @@ export class Person extends Lootable {
         // Initialize facing direction (default: down)
         PersonComponent.facingDirection[this.index] = DIRECTION_DOWN;
 
+        // Reset dead flag (entity indices are reused)
+        PersonComponent.dead[this.index] = 0;
+
         // Initialize animation FSM
         PersonAnimationFSM.initializeEntity(this.index, this);
 
@@ -103,15 +106,18 @@ export class Person extends Lootable {
     }
 
     recieveDamage(damage) {
+        // Don't process damage if already dead
+        if (PersonComponent.dead[this.index] === 1) return;
+
         super.recieveDamage(damage);
 
         if (damage < 0.1) return;
 
-        // Trigger hurt animation (if not already dying)
-        if (!PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.DYING) &&
-            !PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.DEAD)) {
-            PersonAnimationFSM.changeState(this.index, PersonAnimationFSM.states.HURT);
-        }
+        // // Trigger hurt animation immediately (if not already dying)
+        // if (!PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.DYING) &&
+        //     !PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.DEAD)) {
+        //     PersonAnimationFSM.forceChangeState(this.index, PersonAnimationFSM.states.HURT, this);
+        // }
 
         ParticleEmitter.emit({
             count: Math.floor(damage * 10),
@@ -132,11 +138,32 @@ export class Person extends Lootable {
     }
 
     tick(dtRatio) {
-        super.tick(dtRatio);
+        const isDead = PersonComponent.dead[this.index] === 1;
+        const animBefore = SpriteRenderer.animationState[this.index];
+
+        // Skip Lootable.tick() if already dead (prevents re-triggering die())
+        if (!isDead) {
+            super.tick(dtRatio);
+        }
+
         this.keepWithinBounds(dtRatio);
+
+        const animAfterDie = SpriteRenderer.animationState[this.index];
 
         // Animation FSM handles all animation state
         this.personAnimationFSM.tick(dtRatio, this);
+
+        const animAfterFSM = SpriteRenderer.animationState[this.index];
+
+        // Debug: track animation state changes for dying entities
+        if (isDead && animBefore !== animAfterFSM) {
+            console.log(`[Person ${this.index}] DYING - Anim changed! Before:${animBefore} AfterDie:${animAfterDie} AfterFSM:${animAfterFSM}`);
+        }
+
+        // Check if dying animation finished (FSM transitioned to DEAD)
+        if (PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.DEAD)) {
+            this.onDeathAnimationComplete();
+        }
     }
 
     updateTeamData() {
@@ -230,9 +257,10 @@ export class Person extends Lootable {
 
     /**
      * Trigger shoot animation
-     * @returns {boolean} True if action started, false if busy
+     * @returns {boolean} True if action started, false if busy or dead
      */
     shoot() {
+        if (PersonComponent.dead[this.index] === 1) return false;
         if (this.isPerformingAction()) return false;
         PersonAnimationFSM.changeState(this.index, PersonAnimationFSM.states.SHOOTING);
         return true;
@@ -240,9 +268,10 @@ export class Person extends Lootable {
 
     /**
      * Trigger punch animation
-     * @returns {boolean} True if action started, false if busy
+     * @returns {boolean} True if action started, false if busy or dead
      */
     punch() {
+        if (PersonComponent.dead[this.index] === 1) return false;
         if (this.isPerformingAction()) return false;
         PersonAnimationFSM.changeState(this.index, PersonAnimationFSM.states.PUNCHING);
         return true;
@@ -250,9 +279,10 @@ export class Person extends Lootable {
 
     /**
      * Trigger stick hit animation
-     * @returns {boolean} True if action started, false if busy
+     * @returns {boolean} True if action started, false if busy or dead
      */
     hitWithStick() {
+        if (PersonComponent.dead[this.index] === 1) return false;
         if (this.isPerformingAction()) return false;
         PersonAnimationFSM.changeState(this.index, PersonAnimationFSM.states.STICK_HIT);
         return true;
@@ -307,10 +337,13 @@ export class Person extends Lootable {
     }
 
     die() {
-        // 1. Call super.die() to spawn drops
-        super.die();
+        // Already dead? Don't trigger again
+        if (PersonComponent.dead[this.index] === 1) return;
+        this.rigidBody.friction=0.5
+        // Mark as dead immediately - prevents firing and other actions
+        PersonComponent.dead[this.index] = 1;
 
-        // 2. Emit blood particles
+        // Emit blood particles
         ParticleEmitter.emit({
             count: Math.floor(10 + Math.random() * 5),
             texture: "blood",
@@ -328,14 +361,19 @@ export class Person extends Lootable {
             stayOnTheFloor: true,
         });
 
-        // 3. Change animation state to dying (plays hurt animation slower)
-        PersonAnimationFSM.changeState(this.index, PersonAnimationFSM.states.DYING);
+        // Start dying animation IMMEDIATELY - forceChangeState executes transition now
+        // (changeState only queues for next tick, which can cause animation issues)
+        console.log(`[Person ${this.index}] die() called, forcing DYING state. AnimState BEFORE:`, SpriteRenderer.animationState[this.index]);
+        PersonAnimationFSM.forceChangeState(this.index, PersonAnimationFSM.states.DYING, this);
+        console.log(`[Person ${this.index}] After forceChangeState, FSM state:`, PersonAnimationFSM.getStateName(this.index), `AnimState AFTER:`, SpriteRenderer.animationState[this.index]);
+    }
 
-        // 4. When animation finishes, stamp body on floor and despawn
-        // DYING duration: HURT_FRAMES * (1000 / (ACTION_ANIM_SPEED * 0.5 * 60)) ≈ 1000ms
-        const deathAnimDuration = 1000;
-
-        // Capture current visual state for stamping
+    /**
+     * Called when the DYING animation finishes (FSM enters DEAD state)
+     * Stamps corpse decal, spawns loot, and despawns entity
+     */
+    onDeathAnimationComplete() {
+        // Get visual state for stamping
         const stampX = this.x;
         const stampY = this.y;
         const stampScale = this.spriteRenderer.scaleX;
@@ -345,32 +383,28 @@ export class Person extends Lootable {
         const spritesheetId = this.spriteRenderer.spritesheetId;
         const spritesheetName = SpriteSheetRegistry.getSpritesheetName(spritesheetId);
 
-        // Get the facing direction for directional animations
-        const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[this.index]] || "down";
-
         // Get the last frame of the hurt animation for stamping the dead body
-        // Try directional animation first (e.g., "hurt_down"), fall back to non-directional "hurt"
-        // frameIndex -1 = last frame
-        const bodyTexture =  SpriteSheetRegistry.getBigAtlasFrameName(
+        const bodyTexture = SpriteSheetRegistry.getBigAtlasFrameName(
             spritesheetName,
-            "hurt",  // Fall back to non-directional
-            -1
-        )
+            "hurt",
+            -1  // Last frame
+        );
 
-            // Stamp the body texture on the floor (last frame of hurt = death pose)
-            // This leaves a visual "corpse" without keeping the entity alive
-            ParticleEmitter.stampDecal({
-                texture: bodyTexture,
-                x: stampX,
-                y: stampY,
-                scaleX: stampScale,
-                scaleY: stampScale,
-                tint: stampTint,
-                alpha: 0.9,
-            });
+        // Stamp the body texture on the floor as a decal
+        ParticleEmitter.stampDecal({
+            texture: bodyTexture,
+            x: stampX,
+            y: stampY,
+            scaleX: stampScale,
+            scaleY: stampScale,
+            tint: stampTint,
+            alpha: 0.9,
+        });
 
-            // 5. Despawn the entity - body remains as decal on floor
-            this.despawn();
+        // Spawn loot drops (from Lootable.die())
+        super.die();
 
+        // Remove the entity
+        this.despawn();
     }
 }
