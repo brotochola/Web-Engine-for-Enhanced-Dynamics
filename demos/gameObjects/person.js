@@ -264,8 +264,11 @@ export class Person extends Lootable {
      */
     isPerformingAction() {
         const state = PersonAnimationFSM.state[this.index];
-        const locomotionIndex = PersonAnimationFSM.states.LOCOMOTION.stateIndex;
-        return state !== locomotionIndex;
+        const idleIndex = PersonAnimationFSM.states.IDLE.stateIndex;
+        const walkingIndex = PersonAnimationFSM.states.WALKING.stateIndex;
+        const runningIndex = PersonAnimationFSM.states.RUNNING.stateIndex;
+        // Not performing action if in any locomotion state
+        return state !== idleIndex && state !== walkingIndex && state !== runningIndex;
     }
 
     /**
