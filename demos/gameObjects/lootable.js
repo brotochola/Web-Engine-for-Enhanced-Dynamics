@@ -1,6 +1,6 @@
 import WEED from "/src/index.js";
 
-import { LootableComponent } from "../components/LootableComponent.js";
+import { LootableComponent } from "../components/lootableComponent.js";
 import { DropMoney } from "./dropMoney.js";
 
 const {
