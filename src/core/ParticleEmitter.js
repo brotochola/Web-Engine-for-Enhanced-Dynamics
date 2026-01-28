@@ -6,6 +6,11 @@ import { ParticleComponent } from "../components/ParticleComponent.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { randomRange, randomColor } from "./utils.js";
 
+export const DECAL_STAMPS_BLEND_MODE ={
+  normal:0,
+  multiply:1
+}
+
 export class ParticleEmitter {
   // Particle pool size (set during initialization)
   static maxParticles = 0;
@@ -156,6 +161,7 @@ export class ParticleEmitter {
     const rotation = ParticleComponent.rotation;
     const flipX = ParticleComponent.flipX;
     const flipY = ParticleComponent.flipY;
+    const blendMode = ParticleComponent.blendMode;
 
     // Scan for inactive particles (indices 0 to maxParticles-1)
     for (let i = 0; i < this.maxParticles && spawned < count; i++) {
@@ -218,6 +224,9 @@ export class ParticleEmitter {
 
         // Blood decal system: if true, particle stamps decal on floor hit and despawns
         stayOnTheFloor[i] = config.stayOnTheFloor ? 1 : 0;
+
+        // Decal blend mode: 0 = normal (alpha over), 1 = multiply
+        blendMode[i] = config.blendMode ?? DECAL_STAMPS_BLEND_MODE.normal;
 
         spawned++;
         // Claim this particle

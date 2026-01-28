@@ -1,6 +1,7 @@
 import WEED from '/src/index.js';
 import { ExplosionComponent } from '../components/explosionComponent.js';
-import { ParticleEmitter } from '../../src/index.js';
+
+const { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } = WEED
 
 // Destructure what we need from WEED
 const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, ShadowCaster, ShapeType } = WEED;
@@ -129,10 +130,11 @@ export class Explosion extends GameObject {
       texture: "explosion_decal",
       x: this.x, y: this.y,
       alpha:0.5,
-      scaleY:0.33,
-      scaleX:0.5,
+      scaleY:0.28+Math.random()*0.1,
+      scaleX:0.4+Math.random()*0.2,
       flipX:Math.random() > 0.5,
       flipY:Math.random() > 0.5,
+      blendMode:DECAL_STAMPS_BLEND_MODE.multiply,
     });
   }
 

@@ -54,6 +54,11 @@ export class ParticleComponent extends Component {
 
     // === Visibility ===
     isItOnScreen: Uint8Array, // 0 = not on screen, 1 = on screen
+
+    // === Decal Blend Mode ===
+    // Used when stayOnTheFloor=1 to determine how decal is blended onto tilemap
+    // 0 = normal (alpha over), 1 = multiply (darkens underlying pixels)
+    blendMode: Uint8Array,
     // Note: Anchor is always 0.5, 0.5 for particles (centered)
     // Note: No animation support - particles are static sprites
   };
