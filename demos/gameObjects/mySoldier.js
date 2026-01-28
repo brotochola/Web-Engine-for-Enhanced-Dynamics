@@ -8,6 +8,7 @@ import { NavGrid } from "../../src/core/NavGrid.js";
 import { Destination } from "../gameObjects/destination.js";
 
 import { Person } from "./person.js";
+import { distanceSq2D } from "../../src/index.js";
 
 const {
     RigidBody,
@@ -35,7 +36,7 @@ export class MySoldier extends Person {
         this.lootableComponent.dropMoney = 100
 
         this.personComponent.groupingForce = 3
-
+        this.personComponent.separationForce = 3
     }
 
     /**
@@ -46,18 +47,27 @@ export class MySoldier extends Person {
         super.tick(dtRatio);
 
         this.groupWithMyTeam()
+        this.separateFromTeam()
 
         const destinationIndex = Destination.getAllActiveIndices()[0]
         if (isNaN(destinationIndex)) return
 
         const destinationX = Transform.x[destinationIndex]
         const destinationY = Transform.y[destinationIndex]
-
+        //no target
         if (destinationX == -1 || destinationY == -1) return
 
+        //check distance
+        const distSquaredToDestination=distanceSq2D(this.x, this.y, destinationX, destinationY)
+
+        const distanceSquaredToStopGoing= (0.4*MySoldier.activeCount)**2
+
+        if (distSquaredToDestination < distanceSquaredToStopGoing) return
+
+        //get the vector from the flowfield
         let vec = { x: 0, y: 0 };
         NavGrid.requestVector(this.x, this.y, destinationX, destinationY, vec);
-        // console.log(this.index, vec)
+
         const howMuchDoIWantToFollowTheMouse=0.1
         this.addAcceleration(vec.x*howMuchDoIWantToFollowTheMouse, vec.y*howMuchDoIWantToFollowTheMouse);
 

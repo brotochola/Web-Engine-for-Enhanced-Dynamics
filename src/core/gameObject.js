@@ -1084,10 +1084,15 @@ export class GameObject {
    * Get neighbor distance squared at specific position
    * Zero-allocation replacement for this.neighborDistances[i]
    * Uses direct array access for performance (Grid data cached in updateNeighbors)
+   *
+   * WARNING: This distance is calculated from COLLIDER positions (Transform + Collider.offset).
+   * If you need to compute direction vectors (dx/dy), calculate distSq manually from the same
+   * positions you use for dx/dy, otherwise the unit vector will be incorrect.
+   *
    * @param {number} i - Index (0 to this.neighborCount - 1)
-   * @returns {number} Squared distance to the neighbor
+   * @returns {number} Squared distance to the neighbor (based on collider positions)
    */
-  getNeighborDistance(i) {
+  getNeighborDistanceSq(i) {
     // Direct array access using cached offset (no method call overhead)
     if (this._distanceData) {
       return this._distanceData[this._neighborOffset + 1 + i];
