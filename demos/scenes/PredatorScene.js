@@ -413,8 +413,8 @@ export class PredatorScene extends WEED.Scene {
   spawnMySoldiers(count) {
     for (let i = 0; i < count; i++) {
       this.spawnEntity(MySoldier, {
-        x: this.config.worldWidth / 2 + rng() * 200,
-        y: this.config.worldHeight / 2 + rng() * 200,
+        x: this.config.worldWidth / 2 + rng() * count,
+        y: this.config.worldHeight / 2 + rng() * count,
       });
     }
   }

@@ -39,8 +39,8 @@ export class CameraController extends WEED.GameObject {
     const centerY = minY + (maxY - minY) / 2;
 
     // Calculate zoom to fit all soldiers with padding (percentage of screen)
-    const paddingWidthPercent = 0.2;  // 20% on each side
-    const paddingHeightPercent = 0.15; // 15% on each side
+    const paddingWidthPercent = 0.25;  // 20% on each side
+    const paddingHeightPercent = 0.25; // 15% on each side
     const paddingX = Camera.canvasWidth * paddingWidthPercent;
     const paddingY = Camera.canvasHeight * paddingHeightPercent;
     const spreadX = (maxX - minX) + paddingX * 2;
