@@ -1934,9 +1934,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const newAlpha = lightIntensity[entityIndex] / 1000000;
 
       // Skip glow sprites that are too small or too dim to be visible
+      // Move off-screen to prevent ParticleContainer rendering artifacts
       if (scale < 0.1 || newAlpha < 0.001) {
         sprite.alpha = 0;
-        sprite.visible = false;
+        sprite.scaleX = 0;
+        sprite.scaleY = 0;
+        sprite.x = -10000;
+        sprite.y = -10000;
         spriteIndex++;
         continue;
       }
