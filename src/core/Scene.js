@@ -1281,6 +1281,8 @@ class Scene {
     const textures = {};
     const animationNames = Object.keys(atlasJson.animations);
 
+    // First pass: Extract first frame of each animation (for animation-based stamping)
+    // textureId 0 to animationNames.length-1 = animation first frames
     for (let textureId = 0; textureId < animationNames.length; textureId++) {
       const animName = animationNames[textureId];
       const frameList = atlasJson.animations[animName];
@@ -1301,6 +1303,39 @@ class Scene {
         rgba: imageData.data.buffer,
       };
     }
+
+    // Second pass: Extract ALL individual frames (for frame-specific stamping)
+    // This allows stamping any specific frame like "civil1_hurt_5" (last frame of hurt)
+    // textureIds start after animation count, using negative offsets from frame index
+    const frameNames = Object.keys(atlasJson.frames);
+    const frameNameToId = {};
+
+    // Build frame name → textureId mapping
+    // We store frames with textureIds starting at animationNames.length
+    let frameTextureId = animationNames.length;
+
+    for (const frameName of frameNames) {
+      const frameData = atlasJson.frames[frameName];
+      if (!frameData) continue;
+
+      const frame = frameData.frame;
+      const imageData = ctx.getImageData(frame.x, frame.y, frame.w, frame.h);
+
+      textures[frameTextureId] = {
+        width: frame.w,
+        height: frame.h,
+        rgba: imageData.data.buffer,
+      };
+
+      frameNameToId[frameName] = frameTextureId;
+      frameTextureId++;
+    }
+
+    // Store the frame mapping for lookup by ParticleEmitter
+    this.decalFrameNameToId = frameNameToId;
+    SpriteSheetRegistry.setDecalFrameMapping(frameNameToId);
+
+    console.log(`📍 Extracted ${animationNames.length} animation textures + ${frameNames.length} frame textures for decals`);
 
     return textures;
   }

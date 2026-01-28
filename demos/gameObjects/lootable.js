@@ -38,7 +38,7 @@ export class Lootable extends GameObject {
             })
         }
 
-        this.despawn()
+        // this.despawn()
     }
 
 }

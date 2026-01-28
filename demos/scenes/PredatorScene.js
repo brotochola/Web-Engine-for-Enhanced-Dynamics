@@ -36,10 +36,10 @@ const excludedLPCAnimations = [
   "thrust_left",
   "thrust_down",
   "thrust_right",
-  "slash_up",
-  "slash_left",
-  "slash_down",
-  "slash_right",
+  // "slash_up",
+  // "slash_left",
+  // "slash_down",
+  // "slash_right",
   "climb",
   "emote_up",
   "emote_left",
@@ -333,7 +333,7 @@ export class PredatorScene extends WEED.Scene {
   }
 
   createNavGridForTheFlowField() {
-    NavGrid.updateNavGrid([ ...Array.from(House.entityIndices)])
+    NavGrid.updateNavGrid([ ...Array.from(House.getAllActive()), ...Array.from(Fire.getAllActive())])
   }
 
   update(time, delta) {

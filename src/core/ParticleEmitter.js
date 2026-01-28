@@ -128,12 +128,11 @@ export class ParticleEmitter {
     const count = Math.round(randomRange(config.count, 1));
     let spawned = 0;
 
-    // Resolve texture name to textureId (frame index in bigAtlas)
+    // Resolve texture name to textureId
+    // Supports both animation names (e.g., "blood") and specific frame names (e.g., "civil1_hurt_5")
     let textureId = 0;
     if (config.texture) {
-      // Get frame index from bigAtlas
-      textureId =
-        SpriteSheetRegistry.getAnimationIndex("bigAtlas", config.texture) ?? 0;
+      textureId = SpriteSheetRegistry.getDecalTextureId(config.texture);
     }
 
     // Cache array references for performance
