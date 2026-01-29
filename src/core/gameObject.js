@@ -775,24 +775,96 @@ export class GameObject {
     this.setAnimationState(animIndex);
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STATIC SPRITE METHODS
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Use setSprite() to display a STATIC (non-animated) texture on an entity.
+  // This is different from setSpritesheet() + setAnimation() which is for animated sprites.
+  //
+  // WHAT CAN BE DISPLAYED:
+  // 1. Static textures from assets.textures: "rock1", "blood", "smoke"
+  // 2. Prefixed animation names: "civil1_hurt" (displays first frame)
+  // 3. Specific animation frames: "civil1_hurt_5" (displays exact frame)
+  // 4. Resolved frame names: Use helper params (spritesheet, animation, frameIndex)
+  //
+  // All of these are entries in the bigAtlas - they're treated uniformly.
+  // ═══════════════════════════════════════════════════════════════════════════
+
   /**
-   * Set a STATIC sprite (single frame, non-animated)
-   * Searches in bigAtlas.frames
+   * Set the sprite for this entity (for STATIC/non-animated display).
    *
-   * PERFORMANCE: Uses global cache to avoid repeated lookups
+   * USAGE PATTERNS:
    *
-   * @param {string} spriteName - Sprite/frame name (e.g., "bunny", "bg")
+   * 1. Static texture (from assets.textures):
+   *    ```js
+   *    this.setSprite("rock1");
+   *    this.setSprite("blood");
+   *    ```
+   *
+   * 2. Specific frame by name (if you know the exact frame name):
+   *    ```js
+   *    this.setSprite("civil1_hurt_5");  // Last frame of hurt animation
+   *    ```
+   *
+   * 3. Specific frame by parameters (recommended for animation frames):
+   *    ```js
+   *    this.setSprite("civil1", "hurt", -1);  // -1 = last frame
+   *    this.setSprite("civil1", "walk_down", 0);  // 0 = first frame
+   *    ```
+   *
+   * PERFORMANCE: Uses global cache to avoid repeated lookups.
+   * String resolution happens ONCE per unique sprite, then cached.
+   *
+   * @param {string} spriteNameOrSheet - Sprite/frame name OR spritesheet name (if using params)
+   * @param {string} [animation] - Animation name (only when using spritesheet param)
+   * @param {number} [frameIndex=0] - Frame index within animation (0 = first, -1 = last)
+   * @returns {this} For chaining
    *
    * @example
-   * this.setSprite("bunny");  // For static sprites
+   * // Static texture
+   * this.setSprite("rock1");
+   *
+   * @example
+   * // Specific frame of an animation (for dead body decal, etc.)
+   * this.setSprite("civil1", "hurt", -1);  // Last frame of hurt animation
+   *
+   * @example
+   * // Direct frame name (if you already have it)
+   * this.setSprite("civil1_hurt_5");
    */
-  setSprite(spriteName) {
-    if (!this.spriteRenderer) return;
+  setSprite(spriteNameOrSheet, animation, frameIndex) {
+    if (!this.spriteRenderer) return this;
+
+    // Resolve the sprite name based on which parameters were provided
+    let spriteName;
+
+    if (animation !== undefined) {
+      // Parameters provided: (spritesheet, animation, frameIndex)
+      // Resolve to the actual frame name in bigAtlas
+      spriteName = SpriteSheetRegistry.getFrameName(
+        spriteNameOrSheet,
+        animation,
+        frameIndex ?? 0
+      );
+
+      if (!spriteName) {
+        console.error(
+          `❌ ${this.constructor.name}: Could not resolve frame for ` +
+          `spritesheet="${spriteNameOrSheet}", animation="${animation}", frameIndex=${frameIndex ?? 0}`
+        );
+        return this;
+      }
+    } else {
+      // Single parameter: direct sprite/frame name
+      spriteName = spriteNameOrSheet;
+    }
 
     // Static sprites use bigAtlas directly
     const sheetName = "bigAtlas";
 
     // PERFORMANCE: Global cache keyed by "bigAtlas:spriteName"
+    // Avoids repeated registry lookups for the same sprite
     if (!GameObject._globalAnimationCache) {
       GameObject._globalAnimationCache = {};
     }
@@ -805,15 +877,15 @@ export class GameObject {
       animIndex = SpriteSheetRegistry.getAnimationIndex(sheetName, spriteName);
 
       if (animIndex === undefined) {
-        // Sprite not found
+        // Sprite not found - provide helpful error message
         console.error(
           `❌ ${this.constructor.name}: Sprite "${spriteName}" not found in bigAtlas. ` +
-          `Make sure it's included in your assets config.`
+          `Make sure it's included in your assets config (textures or spritesheets).`
         );
-        return;
+        return this;
       }
 
-      // Cache it globally
+      // Cache it globally for future use
       GameObject._globalAnimationCache[cacheKey] = animIndex;
     }
 
@@ -821,17 +893,19 @@ export class GameObject {
     const bigAtlasId = SpriteSheetRegistry.getSpritesheetId("bigAtlas");
     if (bigAtlasId === 0) {
       console.error(`❌ ${this.constructor.name}: bigAtlas not loaded yet`);
-      return;
+      return this;
     }
     this.spriteRenderer.spritesheetId = bigAtlasId;
 
-    // Mark as NOT animated (static sprite)
+    // Mark as NOT animated (static sprite - displays single frame)
     this.spriteRenderer.isAnimated = 0;
     this.spriteRenderer.active = 1;
     this.spriteRenderer.renderVisible = 1;
 
     // Set the sprite (as a single-frame "animation")
     this.setAnimationState(animIndex); // This calls markDirty() internally
+
+    return this;
   }
   /**
    * Helper method to send sprite property changes to renderer

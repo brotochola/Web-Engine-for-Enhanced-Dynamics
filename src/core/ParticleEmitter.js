@@ -1,14 +1,39 @@
 // ParticleEmitter.js - Static API for emitting particles
 // Used by game entities to spawn visual particle effects
 // Particles are NOT GameObjects - they use ParticleComponent directly
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// TEXTURE SPECIFICATION
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Particles and decals can use ANY texture from the bigAtlas:
+//
+// 1. Static textures (from assets.textures):
+//    emit({ texture: "blood" })
+//    emit({ texture: "smoke" })
+//
+// 2. Prefixed animation names (uses first frame):
+//    emit({ texture: "civil1_hurt" })
+//    emit({ texture: "fire_burn" })
+//
+// 3. Specific frame names:
+//    emit({ texture: "civil1_hurt_5" })
+//    stampDecal({ texture: "civil1_hurt_5" })
+//
+// 4. Helper syntax for animation frames (recommended):
+//    emit({ spritesheet: "civil1", animation: "hurt", frame: -1 })
+//    stampDecal({ spritesheet: "civil1", animation: "hurt", frame: -1 })
+//
+// The helper syntax resolves to the frame name automatically.
+// ═══════════════════════════════════════════════════════════════════════════
 
 import { ParticleComponent } from "../components/ParticleComponent.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { randomRange, randomColor } from "./utils.js";
 
-export const DECAL_STAMPS_BLEND_MODE ={
-  normal:0,
-  multiply:1
+export const DECAL_STAMPS_BLEND_MODE = {
+  normal: 0,
+  multiply: 1
 }
 
 export class ParticleEmitter {
@@ -32,7 +57,11 @@ export class ParticleEmitter {
   }
 
   /**
-   * Emit particles with the given configuration
+   * Emit particles with the given configuration.
+   *
+   * TEXTURE OPTIONS:
+   * - Use `texture` for direct texture/frame names
+   * - Use `spritesheet` + `animation` + `frame` to specify an animation frame
    *
    * @param {Object} config - Particle emission configuration
    * @param {number} [config.count=1] - Number of particles to emit
@@ -46,7 +75,13 @@ export class ParticleEmitter {
    * @param {number|{min,max}} [config.vz=0] - Z velocity or range
    * @param {number|{min,max}} [config.lifespan=1000] - Lifetime in ms or range
    * @param {number} [config.gravity=0.15] - Gravity strength
-   * @param {string} config.texture - Texture name (from bigAtlas)
+   * @param {string} [config.texture] - Texture name (from bigAtlas). Can be:
+   *   - Static texture: "blood", "smoke"
+   *   - Prefixed animation: "civil1_hurt" (uses first frame)
+   *   - Specific frame: "civil1_hurt_5"
+   * @param {string} [config.spritesheet] - Spritesheet name for frame resolution (e.g., "civil1")
+   * @param {string} [config.animation] - Animation name for frame resolution (e.g., "hurt")
+   * @param {number} [config.frame=0] - Frame index within animation (0 = first, -1 = last)
    * @param {number|{min,max}} [config.tint=0xFFFFFF] - Color tint or range (RGB channels interpolated separately)
    * @param {number|{min,max}} [config.scale=1] - Scale or range
    * @param {number|{min,max}} [config.alpha=1] - Alpha (opacity) or range
@@ -55,40 +90,49 @@ export class ParticleEmitter {
    * @returns {number} - Number of particles actually spawned
    *
    * @example
-   * // Polar mode (recommended for circular spread)
+   * // Using direct texture name
    * ParticleEmitter.emit({
    *   count: 10,
    *   x: this.x,
    *   y: this.y,
-   *   z: -30,
-   *   angleXY: { min: 0, max: 360 },  // full circle
-   *   speed: { min: 1, max: 3 },
-   *   vz: { min: -3, max: -1 },
-   *   lifespan: { min: 800, max: 1200 },
-   *   gravity: 0.15,
    *   texture: "blood",
+   *   angleXY: { min: 0, max: 360 },
+   *   speed: { min: 1, max: 3 },
    * });
    *
    * @example
-   * // Cartesian mode (square distribution)
+   * // Using spritesheet + animation + frame (for specific animation frame)
    * ParticleEmitter.emit({
-   *   count: 10,
+   *   count: 1,
    *   x: this.x,
    *   y: this.y,
-   *   vx: { min: -2, max: 2 },
-   *   vy: { min: -1, max: 1 },
-   *   texture: "spark",
+   *   spritesheet: "civil1",
+   *   animation: "hurt",
+   *   frame: -1,  // Last frame of hurt animation
+   *   stayOnTheFloor: true,  // Stamp as decal
    * });
    */
   /**
-   * Stamp a decal directly onto the floor tilemap
-   * Convenience wrapper that creates an "instant stamp" particle
+   * Stamp a decal directly onto the floor tilemap.
+   * Convenience wrapper that creates an "instant stamp" particle.
+   *
+   * TEXTURE OPTIONS:
+   * - Use `texture` for direct texture/frame names
+   * - Use `spritesheet` + `animation` + `frame` to specify an animation frame
    *
    * @param {Object} config - Decal configuration
    * @param {number|{min,max}} config.x - X position or range
    * @param {number|{min,max}} config.y - Y position or range
-   * @param {string} config.texture - Texture name (from bigAtlas)
+   * @param {string} [config.texture] - Texture name (from bigAtlas). Can be:
+   *   - Static texture: "blood", "burn_mark"
+   *   - Prefixed animation: "civil1_hurt" (uses first frame)
+   *   - Specific frame: "civil1_hurt_5"
+   * @param {string} [config.spritesheet] - Spritesheet name for frame resolution (e.g., "civil1")
+   * @param {string} [config.animation] - Animation name for frame resolution (e.g., "hurt")
+   * @param {number} [config.frame=0] - Frame index within animation (0 = first, -1 = last)
    * @param {number|{min,max}} [config.scale=1] - Scale or range
+   * @param {number|{min,max}} [config.scaleX] - X scale (overrides scale if provided)
+   * @param {number|{min,max}} [config.scaleY] - Y scale (overrides scale if provided)
    * @param {number|{min,max}} [config.alpha=1] - Alpha (opacity) or range
    * @param {number|{min,max}} [config.tint=0xFFFFFF] - Color tint or range
    * @param {number|{min,max}} [config.rotation=0] - Rotation in degrees or range
@@ -96,7 +140,7 @@ export class ParticleEmitter {
    * @returns {number} - Number of decals actually spawned
    *
    * @example
-   * // Stamp a burn mark at explosion location
+   * // Stamp a static texture
    * ParticleEmitter.stampDecal({
    *   x: this.x,
    *   y: this.y,
@@ -105,12 +149,25 @@ export class ParticleEmitter {
    *   rotation: { min: 0, max: 360 },
    *   alpha: 0.9,
    * });
+   *
+   * @example
+   * // Stamp the last frame of an animation (e.g., dead body)
+   * ParticleEmitter.stampDecal({
+   *   x: this.x,
+   *   y: this.y,
+   *   spritesheet: "civil1",
+   *   animation: "hurt",
+   *   frame: -1,  // Last frame
+   *   scaleX: this.spriteRenderer.scaleX,
+   *   scaleY: this.spriteRenderer.scaleY,
+   *   tint: this.spriteRenderer.baseTint,
+   * });
    */
   static stampDecal(config) {
     return this.emit({
       ...config,
       z: 0,
-      lifespan:100,
+      lifespan: 100,
       stayOnTheFloor: true,
       vx: 0,
       vy: 0,
@@ -128,11 +185,42 @@ export class ParticleEmitter {
     const count = Math.round(randomRange(config.count, 1));
     let spawned = 0;
 
-    // Resolve texture name to textureId
-    // Supports both animation names (e.g., "blood") and specific frame names (e.g., "civil1_hurt_5")
+    // ═══════════════════════════════════════════════════════════════════════
+    // TEXTURE RESOLUTION
+    // ═══════════════════════════════════════════════════════════════════════
+    // Two ways to specify a texture:
+    //
+    // 1. Direct name (config.texture):
+    //    - "blood" → static texture
+    //    - "civil1_hurt" → prefixed animation (first frame)
+    //    - "civil1_hurt_5" → specific frame name
+    //
+    // 2. Helper params (config.spritesheet + config.animation + config.frame):
+    //    - { spritesheet: "civil1", animation: "hurt", frame: -1 }
+    //    - Resolves to "civil1_hurt_5" (last frame)
+    // ═══════════════════════════════════════════════════════════════════════
     let textureId = 0;
-    if (config.texture) {
-      textureId = SpriteSheetRegistry.getDecalTextureId(config.texture);
+    let textureName = config.texture;
+
+    // If helper params provided, resolve to frame name first
+    if (config.spritesheet && config.animation !== undefined) {
+      textureName = SpriteSheetRegistry.getFrameName(
+        config.spritesheet,
+        config.animation,
+        config.frame ?? 0
+      );
+
+      if (!textureName) {
+        console.warn(
+          `ParticleEmitter.emit: Could not resolve frame for ` +
+          `spritesheet="${config.spritesheet}", animation="${config.animation}", frame=${config.frame ?? 0}`
+        );
+      }
+    }
+
+    // Resolve texture name to numeric ID
+    if (textureName) {
+      textureId = SpriteSheetRegistry.getTextureId(textureName);
     }
 
     // Cache array references for performance

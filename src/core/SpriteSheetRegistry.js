@@ -1102,66 +1102,111 @@ class SpriteSheetRegistry {
     console.log(`  🔗 Registered proxy sheet: ${sheetName} → bigAtlas`);
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FRAME NAME RESOLUTION
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // These methods help resolve human-readable identifiers to bigAtlas frame names.
+  //
+  // NAMING CONVENTION IN BIGATLAS:
+  // - Static textures (from assets.textures): Keep original name
+  //   e.g., "rock1", "blood", "smoke"
+  //
+  // - Spritesheet frames: Prefixed with spritesheet name
+  //   e.g., "civil1_walk_down_0", "civil1_hurt_5", "fire_burn_3"
+  //
+  // - Spritesheet animations: Prefixed with spritesheet name
+  //   e.g., "civil1_walk_down" (animation containing frames civil1_walk_down_0, _1, _2...)
+  //
+  // USAGE SCENARIOS:
+  // 1. Static sprite: setSprite("rock1") → uses "rock1" animation (1 frame)
+  // 2. Specific frame: setSprite("civil1", "hurt", -1) → resolves to "civil1_hurt_5"
+  // 3. Decal stamp: stampDecal({ texture: "civil1_hurt_5" }) → stamps that exact frame
+  // ═══════════════════════════════════════════════════════════════════════════
+
   /**
-   * Get the bigAtlas frame name for a specific spritesheet animation frame
-   * Useful for stamping decals of entity sprites
+   * Get the bigAtlas frame name for a specific animation frame.
+   * This is the PRIMARY method for resolving (spritesheet, animation, frameIndex) to a frame name.
    *
-   * @param {string} sheetName - Spritesheet name (e.g., "civil1")
-   * @param {string} animName - Animation name (e.g., "hurt", "walk_down")
-   * @param {number} [frameIndex=0] - Frame index within the animation (0 = first, -1 = last)
+   * HOW IT WORKS:
+   * 1. Looks up the spritesheet (proxy or direct)
+   * 2. Resolves the animation name to the prefixed bigAtlas animation name
+   * 3. Gets the specific frame from that animation's frame list
+   *
+   * @param {string} sheetName - Spritesheet name (e.g., "civil1", "fire", "bigAtlas")
+   * @param {string} animName - Animation name (e.g., "hurt", "walk_down", "burn")
+   * @param {number} [frameIndex=0] - Frame index within animation (0 = first, -1 = last)
    * @returns {string|null} BigAtlas frame name (e.g., "civil1_hurt_5") or null if not found
    *
    * @example
    * // Get first frame of hurt animation
-   * SpriteSheetRegistry.getBigAtlasFrameName("civil1", "hurt", 0)
-   * // Returns: "civil1_hurt_0"
+   * getFrameName("civil1", "hurt", 0)    // → "civil1_hurt_0"
    *
    * @example
-   * // Get last frame of hurt animation (for death pose)
-   * SpriteSheetRegistry.getBigAtlasFrameName("civil1", "hurt", -1)
-   * // Returns: "civil1_hurt_5" (or whatever the last frame is)
+   * // Get last frame of hurt animation (for death pose decal)
+   * getFrameName("civil1", "hurt", -1)   // → "civil1_hurt_5"
+   *
+   * @example
+   * // Get frame from a static texture "animation" (1 frame)
+   * getFrameName("bigAtlas", "blood", 0) // → "blood"
    */
-  static getBigAtlasFrameName(sheetName, animName, frameIndex = 0) {
-    const sheet = this.spritesheets.get(sheetName);
+  static getFrameName(sheetName, animName, frameIndex = 0) {
     const bigAtlas = this.spritesheets.get("bigAtlas");
 
-    // If no bigAtlas, we can't look up frames
-    if (!bigAtlas) return null;
-
-    // Determine the prefixed animation name
-    // For proxy sheets: use the stored prefixedName
-    // For missing sheets (in workers): construct using naming convention
-    let prefixedAnimName;
-
-    if (sheet?.isProxy) {
-      const animInfo = sheet.animations[animName];
-      if (!animInfo) return null;
-      prefixedAnimName = animInfo.prefixedName;
-    } else if (!sheet && sheetName !== "bigAtlas") {
-      // Sheet not found (likely in a worker where proxy sheets aren't serialized)
-      // Use the known naming convention: {sheetName}_{animName}
-      prefixedAnimName = `${sheetName}_${animName}`;
-    } else if (sheetName === "bigAtlas") {
-      // For bigAtlas itself, use the animName directly
-      prefixedAnimName = animName;
-    } else {
-      // Regular non-proxy sheet - shouldn't happen often
-      prefixedAnimName = animName;
-    }
-
-    // Look up the animation in bigAtlas
-    const bigAtlasAnim = bigAtlas.animations[prefixedAnimName];
-    if (!bigAtlasAnim || !bigAtlasAnim.frames || bigAtlasAnim.frames.length === 0) {
+    // BigAtlas must be loaded for any frame lookups
+    if (!bigAtlas) {
+      console.warn(`getFrameName: bigAtlas not loaded yet`);
       return null;
     }
 
-    // Handle negative index (from end)
+    // Step 1: Resolve the prefixed animation name in bigAtlas
+    // The naming convention depends on whether it's a proxy sheet or bigAtlas itself
+    const sheet = this.spritesheets.get(sheetName);
+    let prefixedAnimName;
+
+    if (sheetName === "bigAtlas") {
+      // For bigAtlas itself, animation names are not prefixed
+      prefixedAnimName = animName;
+    } else if (sheet?.isProxy) {
+      // Proxy sheets store the prefixed name in their animation info
+      const animInfo = sheet.animations[animName];
+      if (!animInfo) {
+        console.warn(`getFrameName: Animation "${animName}" not found in proxy sheet "${sheetName}"`);
+        return null;
+      }
+      prefixedAnimName = animInfo.prefixedName;
+    } else {
+      // Sheet not found (common in workers where proxies aren't serialized)
+      // Use the naming convention: {sheetName}_{animName}
+      prefixedAnimName = `${sheetName}_${animName}`;
+    }
+
+    // Step 2: Look up the animation in bigAtlas
+    const bigAtlasAnim = bigAtlas.animations[prefixedAnimName];
+    if (!bigAtlasAnim || !bigAtlasAnim.frames || bigAtlasAnim.frames.length === 0) {
+      console.warn(`getFrameName: Animation "${prefixedAnimName}" not found in bigAtlas`);
+      return null;
+    }
+
+    // Step 3: Resolve frame index (supports negative indexing from end)
     const frames = bigAtlasAnim.frames;
     const actualIndex = frameIndex < 0 ? frames.length + frameIndex : frameIndex;
 
-    if (actualIndex < 0 || actualIndex >= frames.length) return null;
+    if (actualIndex < 0 || actualIndex >= frames.length) {
+      console.warn(`getFrameName: Frame index ${frameIndex} out of range for "${prefixedAnimName}" (has ${frames.length} frames)`);
+      return null;
+    }
 
     return frames[actualIndex];
+  }
+
+  /**
+   * DEPRECATED: Use getFrameName() instead.
+   * Kept for backwards compatibility.
+   * @deprecated
+   */
+  static getBigAtlasFrameName(sheetName, animName, frameIndex = 0) {
+    return this.getFrameName(sheetName, animName, frameIndex);
   }
 
   /**
@@ -1240,43 +1285,77 @@ class SpriteSheetRegistry {
     this.decalFrameNameToId = mapping;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TEXTURE ID RESOLUTION
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // The particle/decal system uses numeric textureIds internally for performance.
+  // These methods convert human-readable names to those IDs.
+  //
+  // ID RANGES:
+  // - 0 to (totalAnimations-1): Animation indices - work for BOTH particles AND decals
+  // - totalAnimations and above: Individual frame IDs - work ONLY for decal stamping
+  //
+  // WHY THE DISTINCTION?
+  // - Animated particles need animation indices (pixi_worker plays the animation)
+  // - Decals can use specific frames (stamped once, no animation needed)
+  // ═══════════════════════════════════════════════════════════════════════════
+
   /**
-   * Get textureId for a decal texture by name
-   * Supports both animation names and individual frame names
+   * Get textureId for a texture by name.
+   * Supports animation names, prefixed animation names, and individual frame names.
    *
-   * @param {string} textureName - Animation name OR frame name (e.g., "blood", "civil1_hurt_5")
-   * @returns {number} TextureId for the decal system, or 0 if not found
+   * RESOLUTION ORDER:
+   * 1. Check if it's a bigAtlas animation name (e.g., "blood", "civil1_hurt")
+   *    → Returns animation index (works for particles AND decals)
+   * 2. Check if it's a specific frame name (e.g., "civil1_hurt_5")
+   *    → Returns frame-specific ID (works ONLY for decals)
+   *
+   * @param {string} textureName - Texture identifier. Can be:
+   *   - Animation name: "blood", "smoke" (static textures)
+   *   - Prefixed animation: "civil1_hurt", "fire_burn" (spritesheet animations)
+   *   - Specific frame: "civil1_hurt_5" (individual frame from animation)
+   * @returns {number} TextureId for the rendering system, or 0 if not found
    *
    * @example
-   * // Animation name (stamps first frame)
-   * getDecalTextureId("blood") // Returns animation index
+   * // Static texture (1-frame animation)
+   * getTextureId("blood")           // → animation index for "blood"
    *
    * @example
-   * // Specific frame name (stamps exact frame)
-   * getDecalTextureId("civil1_hurt_5") // Returns frame-specific textureId
+   * // Spritesheet animation (first frame used)
+   * getTextureId("civil1_hurt")     // → animation index for "civil1_hurt"
+   *
+   * @example
+   * // Specific frame (for decals only!)
+   * getTextureId("civil1_hurt_5")   // → frame-specific ID (decal stamping only)
    */
-  static getDecalTextureId(textureName) {
-    // IMPORTANT: Check animation names FIRST!
-    // Animation indices (0 to N-1) work for both:
-    // - Particle rendering (pixi_worker uses getAnimationName to look up texture)
-    // - Decal stamping (particle_worker has first frame data at same indices)
-    // Frame IDs (N+) only work for decal stamping, NOT for particle rendering!
+  static getTextureId(textureName) {
     const bigAtlas = this.spritesheets.get("bigAtlas");
+
+    // Priority 1: Check animation names
+    // Animation indices work for both particle rendering and decal stamping
     if (bigAtlas && bigAtlas.animations[textureName]) {
-      const anim = bigAtlas.animations[textureName];
-      return anim.index;
+      return bigAtlas.animations[textureName].index;
     }
 
-    // Fallback: try looking up as a specific frame name (e.g., "civil1_hurt_5")
-    // This is for stamping specific animation frames as decals
-    // WARNING: These IDs only work for decal stamping, NOT for particle sprite rendering!
+    // Priority 2: Check specific frame names
+    // Frame IDs only work for decal stamping (not animated particles)
     if (this.decalFrameNameToId && this.decalFrameNameToId[textureName] !== undefined) {
       return this.decalFrameNameToId[textureName];
     }
 
     // Not found
-    console.warn(`Decal texture "${textureName}" not found in animations or frames`);
+    console.warn(`getTextureId: "${textureName}" not found in animations or frames`);
     return 0;
+  }
+
+  /**
+   * DEPRECATED: Use getTextureId() instead.
+   * Kept for backwards compatibility.
+   * @deprecated
+   */
+  static getDecalTextureId(textureName) {
+    return this.getTextureId(textureName);
   }
 }
 

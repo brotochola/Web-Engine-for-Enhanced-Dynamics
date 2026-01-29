@@ -42,7 +42,7 @@ export class House extends GameObject {
     this.setScale(1, 1)
     this.collider.visualRange = 300;
 
-    this.shadowCaster.height =   this.collider.height
+    this.shadowCaster.height =   this.collider.height*0.5
   }
 
   onSpawned(spawnConfig = {}) {
