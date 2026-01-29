@@ -373,31 +373,21 @@ export class Person extends Lootable {
      * Stamps corpse decal, spawns loot, and despawns entity
      */
     onDeathAnimationComplete() {
-        // Get visual state for stamping
-        const stampX = this.x;
-        const stampY = this.y;
-        const stampScale = this.spriteRenderer.scaleX;
-        const stampTint = this.spriteRenderer.baseTint;
-
         // Get the spritesheet name this person uses (e.g., "civil1")
         const spritesheetId = this.spriteRenderer.spritesheetId;
         const spritesheetName = SpriteSheetRegistry.getSpritesheetName(spritesheetId);
 
-        // Get the last frame of the hurt animation for stamping the dead body
-        const bodyTexture = SpriteSheetRegistry.getBigAtlasFrameName(
-            spritesheetName,
-            "hurt",
-            -1  // Last frame
-        );
-
-        // Stamp the body texture on the floor as a decal
+        // Stamp the last frame of the hurt animation as a dead body decal
+        // Using the new helper params: (spritesheet, animation, frame)
         ParticleEmitter.stampDecal({
-            texture: bodyTexture,
-            x: stampX,
-            y: stampY,
-            scaleX: stampScale,
-            scaleY: stampScale,
-            tint: stampTint,
+            spritesheet: spritesheetName,
+            animation: "hurt",
+            frame: -1,  // Last frame = death pose
+            x: this.x,
+            y: this.y,
+            scaleX: this.spriteRenderer.scaleX,
+            scaleY: this.spriteRenderer.scaleY,
+            tint: this.spriteRenderer.baseTint,
             alpha: 0.9,
         });
 

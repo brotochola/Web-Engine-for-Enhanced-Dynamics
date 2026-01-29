@@ -36,6 +36,8 @@ export class Destination extends GameObject {
         // Sprite setup
         this.spriteRenderer.anchorX = 0.5;
         this.spriteRenderer.anchorY = 0.5;
+        this.x=this.config.worldWidth*0.5
+        this.y=this.config.worldHeight*0.5
 
         this.setSprite("target");
 
