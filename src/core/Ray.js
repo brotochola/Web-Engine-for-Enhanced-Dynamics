@@ -116,8 +116,8 @@ export class Ray {
 
     // Get grid data from Grid class
     const invCellSize = Grid.invCellSize;
-    const gridCols = Grid.gridCols;
-    const gridRows = Grid.gridRows;
+    const gridCols = Grid.gridWidth;
+    const gridRows = Grid.gridHeight;
     const cellSize = Grid.cellSize;
 
     // DDA traversal - find all cells the ray passes through
@@ -460,8 +460,8 @@ export class Ray {
 
     // Get grid params
     const invCellSize = Grid.invCellSize;
-    const gridCols = Grid.gridCols;
-    const gridRows = Grid.gridRows;
+    const gridCols = Grid.gridWidth;
+    const gridRows = Grid.gridHeight;
     const cellSize = Grid.cellSize;
 
     // Collect all hits across the entire ray path
@@ -606,8 +606,8 @@ export class Ray {
     excludeEntities = null
   ) {
     const invCellSize = Grid.invCellSize;
-    const gridCols = Grid.gridCols;
-    const gridRows = Grid.gridRows;
+    const gridCols = Grid.gridWidth;
+    const gridRows = Grid.gridHeight;
     const cellSize = Grid.cellSize;
 
     const startCellX = Math.floor(xFrom * invCellSize);
@@ -713,7 +713,7 @@ export class Ray {
     if (count === 0) return;
 
     const cellBase = Grid.getCellBase(cellIndex);
-    const gridEntities = Grid.gridEntities;
+    const gridEntities = Grid._gridEntities;
 
     const active = Transform.active;
     const colliderActive = Collider.active;
@@ -808,7 +808,7 @@ export class Ray {
     }
 
     const cellBase = Grid.getCellBase(cellIndex);
-    const gridEntities = Grid.gridEntities;
+    const gridEntities = Grid._gridEntities;
 
     // CACHE: Component arrays to avoid property lookups in loop
     const active = Transform.active;

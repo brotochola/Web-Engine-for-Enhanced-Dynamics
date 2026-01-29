@@ -35,7 +35,7 @@ const DEFAULT_MAX_NEIGHBORS = 500;         // Max neighbors per entity (matches 
 
 /**
  * Grid - Static class for row-based spatial partitioning
- * 
+ *
  * ROW OWNERSHIP MODEL:
  * - Worker i owns all cells where: cellY % totalWorkers === workerId
  * - Each worker rebuilds its own rows and computes neighbors for entities in those rows
@@ -47,7 +47,7 @@ const DEFAULT_MAX_NEIGHBORS = 500;         // Max neighbors per entity (matches 
  *   const cellIdx = Grid.getCellIndex(worldX, worldY);
  *   const count = Grid.getCellCount(cellIdx);
  *   const entityId = Grid.getCellEntity(cellIdx, k);
- *   
+ *
  *   // Neighbor queries (single buffer - always current/recent data)
  *   const neighborCount = Grid.getNeighborCount(entityId);
  *   const neighborId = Grid.getNeighbor(entityId, k);
@@ -78,7 +78,7 @@ export class Grid {
   static _neighborBuffer = null;   // SharedArrayBuffer
   static _neighborData = null;     // Int32Array view
 
-  // Layout per entity: [dist2[MAX_NEIGHBORS]:Float32]  
+  // Layout per entity: [dist2[MAX_NEIGHBORS]:Float32]
   static _distanceBuffer = null;   // SharedArrayBuffer
   static _distanceData = null;     // Float32Array view
 
@@ -92,7 +92,7 @@ export class Grid {
   /**
    * Initialize Grid with SharedArrayBuffers and metadata
    * Called once per worker during initialization
-   * 
+   *
    * @param {Object} buffers - SharedArrayBuffers:
    *   - gridBuffer: Spatial grid cells
    *   - neighborBuffer: Neighbor indices per entity
@@ -135,24 +135,6 @@ export class Grid {
       Grid._distanceData = new Float32Array(buffers.distanceBuffer);
     }
 
-    // Legacy compatibility: accept old buffer names during transition
-    if (buffers.neighborBufferA && !Grid._neighborBuffer) {
-      Grid._neighborBuffer = buffers.neighborBufferA;
-      Grid._neighborData = new Int32Array(buffers.neighborBufferA);
-    }
-    if (buffers.distanceBufferA && !Grid._distanceBuffer) {
-      Grid._distanceBuffer = buffers.distanceBufferA;
-      Grid._distanceData = new Float32Array(buffers.distanceBufferA);
-    }
-    // Also accept even older names
-    if (buffers.neighborDataA && !Grid._neighborBuffer) {
-      Grid._neighborBuffer = buffers.neighborDataA;
-      Grid._neighborData = new Int32Array(buffers.neighborDataA);
-    }
-    if (buffers.distanceDataA && !Grid._distanceBuffer) {
-      Grid._distanceBuffer = buffers.distanceDataA;
-      Grid._distanceData = new Float32Array(buffers.distanceDataA);
-    }
   }
 
   // =============================================================================
@@ -398,23 +380,6 @@ export class Grid {
     return rows;
   }
 
-  // =============================================================================
-  // LEGACY COMPATIBILITY
-  // =============================================================================
-
-  // These maintain backwards compatibility with old code
-  static get gridEntities() { return Grid._gridEntities; }
-  static get gridCounts() { return Grid._gridCounts; }
-  static get gridCols() { return Grid.gridWidth; }
-  static get gridRows() { return Grid.gridHeight; }
-
-  // Legacy double-buffer getters (now just return single buffer)
-  static get _neighborDataWrite() { return Grid._neighborData; }
-  static get _distanceDataWrite() { return Grid._distanceData; }
-
-  // Legacy swap functions (now no-ops)
-  static swapGridBuffers() { /* No-op: single buffer */ }
-  static signalSpatialWorkerFinished() { return true; /* No-op: no synchronization */ }
 }
 
 // Export default constants for use by other modules (actual values configured via Grid.initialize)

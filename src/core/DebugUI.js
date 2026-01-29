@@ -2246,8 +2246,8 @@ export class DebugUI {
     if (!Grid.cellSize) return;
 
     const cellSize = Grid.cellSize;
-    const gridCols = Grid.gridCols;
-    const gridRows = Grid.gridRows;
+    const gridCols = Grid.gridWidth;
+    const gridRows = Grid.gridHeight;
     const worldWidth = gridCols * cellSize;
     const worldHeight = gridRows * cellSize;
 
