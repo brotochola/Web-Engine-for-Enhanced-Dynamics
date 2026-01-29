@@ -9,14 +9,14 @@ Lighting:
 
 
 
--------- 
+--------
 Debugger:
 ---------
 
 -clase Debug con cosas tipo:
 	Debug.highlightCell(cellID)
 	Debug.drawText(entity.x, entity.y, fsm.state)
-  
+
 
 
 -------------------
@@ -38,7 +38,7 @@ FSM
  GAME ENGINE:
 -----------------------
 
-
+- revisar GC y performance en tiempo real de cada worker.
 
 
 - TWEENS - GSAP
@@ -70,29 +70,28 @@ logic_worker..
 
 
 
--Tener un Prey.tickAll, en lugar de this.tick() ? 
+-Tener un Prey.tickAll, en lugar de this.tick() ?
 TENER AMBOS! y se puede desde tickall llamar a sistemas, q tmb son metodos estaticos.
 
 
 
-this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 
 
 
 
- 
 
 
 
 
- 
+
+
 
 -------------------------------------------------------------------------------------------------
     --- SCENES ----
 ------------------------------------------------------------------------------------------------
 
 -eventEmitter
--tags: se crean los tags, se le pone uno o mas tags a las entidades, 
+-tags: se crean los tags, se le pone uno o mas tags a las entidades,
 
 
 
@@ -139,6 +138,12 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 --- PIXI-WORKER: ---
 ------------------------------------------------------------------------------------------------
 
+-ver todo el tema de getTexture,
+ y como se guardan las animaciones en el bigatlas
+
+ -revisar performance del gpu
+
+
 
 
 ------------------------------------
@@ -150,4 +155,3 @@ this.accelerateTowards(closestPrey, this.huntFactor * dtRatio);
 
 ----------------------------
 Componente Weapon: {type, cooldown, fireRate, damage, maxDistanceMelee, maxDistanceRanged, rangedDamage, meleeDamage}
-
