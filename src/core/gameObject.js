@@ -39,7 +39,6 @@ export class GameObject {
   // Note: entityType moved to Transform component for pure ECS architecture
   static entityType = null; // Numeric ID assigned by GameEngine
 
-  static sharedBuffer = null; // For entity metadata (deprecated - kept for backward compat)
   static globalEntityCount = 0;
 
   static instances = [];
@@ -49,14 +48,12 @@ export class GameObject {
   }
 
   /**
-   * Initialize entity metadata from SharedArrayBuffer
-   * DEPRECATED: Entity metadata now stored in components (Transform.entityType)
-   * Kept for backward compatibility with neighbor data initialization
+   * Initialize GameObject static arrays and neighbor data buffers
    *
-   * @param {SharedArrayBuffer} buffer - Unused (deprecated)
+   * @param {SharedArrayBuffer} buffer - Unused (kept for API compatibility)
    * @param {number} count - Total number of entities
-   * @param {SharedArrayBuffer} [neighborBuffer] - Optional neighbor data buffer
-   * @param {SharedArrayBuffer} [distanceBuffer] - Optional distance data buffer
+   * @param {SharedArrayBuffer} [neighborBuffer] - Neighbor data buffer from spatial worker
+   * @param {SharedArrayBuffer} [distanceBuffer] - Distance data buffer from spatial worker
    */
   static initializeArrays(
     buffer,
@@ -64,11 +61,7 @@ export class GameObject {
     neighborBuffer = null,
     distanceBuffer = null
   ) {
-    this.sharedBuffer = buffer;
     this.globalEntityCount = count;
-
-    // NOTE: entityType moved to Transform component - no longer using this buffer
-    // Kept for backward compatibility with neighbor data initialization
 
     // Initialize neighbor data if provided
     if (neighborBuffer) {
@@ -82,14 +75,11 @@ export class GameObject {
   }
 
   /**
-   * Calculate buffer size needed for entity metadata
-   * DEPRECATED: Returns 0 since metadata moved to components
+   * Calculate buffer size needed for GameObject metadata
    * @param {number} count - Number of entities
-   * @returns {number} Buffer size in bytes (always 0 now)
+   * @returns {number} Buffer size in bytes (0 - no dedicated buffer needed)
    */
   static getBufferSize(count) {
-    // Entity metadata moved to components (Transform.entityType)
-    // No separate buffer needed anymore
     return 0;
   }
 
@@ -1119,7 +1109,7 @@ export class GameObject {
       return;
     }
 
-    // Fallback to legacy static arrays if no params passed
+    // Fallback to static arrays if no params passed
     if (GameObject.neighborData) {
       this._neighborData = GameObject.neighborData;
       this._distanceData = GameObject.distanceData;
@@ -1147,7 +1137,7 @@ export class GameObject {
     if (this._neighborData) {
       return this._neighborData[this._neighborOffset + 1 + i];
     }
-    // Fallback to legacy static arrays
+    // Fallback to static arrays
     if (GameObject.neighborData) {
       return GameObject.neighborData[this._neighborOffset + 1 + i];
     }
@@ -1171,7 +1161,7 @@ export class GameObject {
     if (this._distanceData) {
       return this._distanceData[this._neighborOffset + 1 + i];
     }
-    // Fallback to legacy static arrays
+    // Fallback to static arrays
     if (GameObject.distanceData) {
       return GameObject.distanceData[this._neighborOffset + 1 + i];
     }

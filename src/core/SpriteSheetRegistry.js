@@ -1201,15 +1201,6 @@ class SpriteSheetRegistry {
   }
 
   /**
-   * DEPRECATED: Use getFrameName() instead.
-   * Kept for backwards compatibility.
-   * @deprecated
-   */
-  static getBigAtlasFrameName(sheetName, animName, frameIndex = 0) {
-    return this.getFrameName(sheetName, animName, frameIndex);
-  }
-
-  /**
    * Get the bigAtlas animation name for a proxy spritesheet animation
    * Useful for particle/decal systems that need the prefixed name
    *
@@ -1347,15 +1338,6 @@ class SpriteSheetRegistry {
     // Not found
     console.warn(`getTextureId: "${textureName}" not found in animations or frames`);
     return 0;
-  }
-
-  /**
-   * DEPRECATED: Use getTextureId() instead.
-   * Kept for backwards compatibility.
-   * @deprecated
-   */
-  static getDecalTextureId(textureName) {
-    return this.getTextureId(textureName);
   }
 }
 
