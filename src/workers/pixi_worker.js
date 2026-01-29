@@ -290,7 +290,6 @@ class PixiRenderer extends AbstractWorker {
 
     // Renderer configuration options (set during initialize)
     this.ySorting = false; // Enable/disable Y-sorting for depth ordering
-    this.bgTextureName = null; // Texture name to use for background
     this.interpolation = true; // Enable/disable interpolation based on physics FPS
     this.physicsWorkerIndex = 1; // Index of physics worker in frameRateData (Scene.WORKER_INDICES.PHYSICS)
 
@@ -1245,33 +1244,6 @@ class PixiRenderer extends AbstractWorker {
     }
   }
 
-  /**
-   * Create tiling background sprite
-   * Note: Background is added to stage, not ParticleContainer (which only supports simple sprites)
-   */
-  createBackground() {
-    const bgTexture = this.textures[this.bgTextureName];
-
-    if (!bgTexture) {
-      console.warn(`Background texture "${this.bgTextureName}" not found`);
-      return;
-    }
-
-    // PixiJS 8: TilingSprite uses options object
-    this.backgroundSprite = new PIXI.TilingSprite({
-      texture: bgTexture,
-      width: this.worldWidth,
-      height: this.worldHeight,
-    });
-    this.backgroundSprite.tileScale.set(
-      this.config.renderer.bgTileScale || 1,
-      this.config.renderer.bgTileScale || 1
-    );
-    this.backgroundSprite.tilePosition.set(0, 0);
-    this.backgroundSprite.zIndex = PixiRenderer.Z_INDICES.BACKGROUND;
-    // Add background to stage directly (ParticleContainer can't hold TilingSprites)
-    this.pixiApp.stage.addChild(this.backgroundSprite);
-  }
   /* =====================
 LIGHTING SYSTEM SETUP
 ===================== */
@@ -3282,12 +3254,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     //   `PIXI WORKER: Interpolation ${this.interpolation ? "enabled" : "disabled"}`
     // );
 
-    // Configure background texture name (default: 'bg')
-    this.bgTextureName = rendererConfig.bg; //|| "bg";
-    // console.log(
-    //   `PIXI WORKER: Background texture set to "${this.bgTextureName}"`
-    // );
-
     // Note: Component arrays are automatically initialized by AbstractWorker.initializeAllComponents()
     // This includes Transform, RigidBody, MouseComponent, SpriteRenderer, and all custom components
 
@@ -3378,11 +3344,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Load tilemaps (Tiled JSON + tileset textures)
     this.loadTilemaps(data.tilemaps);
     this.reportLog("finished loading tilemaps");
-
-    // Create background (legacy - kept for backwards compatibility if bg is set in config)
-    if (this.bgTextureName) {
-      this.createBackground();
-    }
 
     // ========================================
     // decal DECALS TILEMAP - Initialize

@@ -1553,15 +1553,9 @@ export class DebugUI {
     // ENTITIES is always available
     available.add("ENTITIES");
 
-    // BACKGROUND - check if scene has tilemap or background texture
-    // Note: We can't easily know this from config alone, so we assume it's available
-    // if the scene has loaded any tilemaps or has a bgTextureName in renderer config
-    if (this.scene.loadedTilemaps && Object.keys(this.scene.loadedTilemaps).length > 0) {
-      available.add("BACKGROUND");
-    }
-    if (config.renderer?.bgTextureName) {
-      available.add("BACKGROUND");
-    }
+    // BACKGROUND - always available since it can be set dynamically via
+    // setStaticBackground(), setTilingBackground(), or setTilemapBackground()
+    available.add("BACKGROUND");
 
     // DECALS - check particle.decals config
     if (config.particle?.decals) {
