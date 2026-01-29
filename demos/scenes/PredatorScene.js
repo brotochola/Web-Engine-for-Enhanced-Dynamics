@@ -63,7 +63,7 @@ export class PredatorScene extends WEED.Scene {
       cellSize: 128,
       maxNeighbors: 800,
       maxEntitiesPerCell: 64, //this is very important!!
-      numberOfSpatialWorkers: 2, // Multiple workers for parallel neighbor detection
+      numberOfSpatialWorkers: 4, // Multiple workers for parallel neighbor detection
       noLimitFPS: true,
     },
 
@@ -224,8 +224,8 @@ export class PredatorScene extends WEED.Scene {
 
   static entities = [
     // [PreySpawner, 1],
-    [Prey, 2000],
-    [Predator, 8],
+    // [Prey, 2000],
+    // [Predator, 8],
     // [Player, 1],
     [House, 2000],
     [TallLight, 300],
@@ -252,8 +252,6 @@ export class PredatorScene extends WEED.Scene {
   constructor(game) {
     super(game);
 
-    this.numberOfPredators = 1;
-    this.numberOfBoids = 0;
     this.numberOfTallLights = 200;
     this.numberOfHouses = 100;
     this.numberOfGrass = 10000;
@@ -277,8 +275,6 @@ export class PredatorScene extends WEED.Scene {
     // Spawn player first
     // this.spawnPlayer();
 
-    this.spawnPredators(this.numberOfPredators);
-    this.spawnBoids(this.numberOfBoids);
     this.spawnLights(this.numberOfTallLights);
     // this.spawnPrey(1000);
     // this.spawnHouses(this.numberOfHouses);

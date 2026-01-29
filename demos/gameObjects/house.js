@@ -1,3 +1,4 @@
+import { ShadowCaster } from "../../src/components/ShadowCaster.js";
 import WEED from "/src/index.js";
 
 // Destructure what we need from WEED
@@ -16,7 +17,7 @@ export class House extends GameObject {
   static scriptUrl = import.meta.url;
 
   // Add PreyBehavior component for prey-specific properties
-  static components = [Collider, SpriteRenderer, LightEmitter];
+  static components = [Collider, SpriteRenderer, LightEmitter, ShadowCaster];
 
   setup() {
     // Override Boid's physics properties for prey behavior
@@ -38,10 +39,10 @@ export class House extends GameObject {
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 0;
 
-
-
     this.setScale(1, 1)
     this.collider.visualRange = 300;
+
+    this.shadowCaster.height =   this.collider.height
   }
 
   onSpawned(spawnConfig = {}) {

@@ -26,6 +26,7 @@ const RUN_SPEED_THRESHOLD = 2;
 const WALK_SPEED_THRESHOLD = 0.1
 const RUN_ANIMATION_MULTIPLIER=0.15
 const WALK_ANIMATION_MULTIPLIER=0.2
+const IDLE_ANIMATION_MULTIPLIER=0.05
 
 // Helper to calculate locomotion cycle duration based on current speed
 function getLocomotionCycleDuration(speed, multiplier) {
@@ -44,7 +45,7 @@ class IdleState extends FSMState {
 
         const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || "down";
         owner.setAnimation(`idle_${facingDir}`);
-        owner.setAnimationSpeed(WALK_ANIMATION_MULTIPLIER);
+        owner.setAnimationSpeed(IDLE_ANIMATION_MULTIPLIER);
     }
 
     static onUpdate(owner, i, dt) {
