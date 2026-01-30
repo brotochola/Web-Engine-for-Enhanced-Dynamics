@@ -7,9 +7,10 @@ import { NavGrid } from "../../src/core/NavGrid.js";
 
 import { Destination } from "../gameObjects/destination.js";
 import { Lootable } from "./lootable.js";
+import { LootableComponent } from "../components/lootableComponent.js";
 import { PersonComponent, DIRECTION_DOWN, DIRECTION_NAMES } from "../components/personComponent.js";
 import { PersonAnimationFSM } from "../fsm/PersonAnimationFSM.js";
-import { ParticleEmitter, SpriteSheetRegistry } from "../../src/index.js";
+import { ParticleEmitter, SpriteSheetRegistry, Ray, Flash, getDirectionFromAngle } from "../../src/index.js";
 
 const {
     RigidBody,
@@ -33,6 +34,14 @@ export class Person extends Lootable {
         PersonComponent,
         PersonAnimationFSM,
     ];
+
+    // ==========================================
+    // WEAPON DEFINITIONS - damage, cooldown (ms), range (px)
+    // ==========================================
+    static WEAPONS = {
+        PISTOL: { damage: 0.66, cooldown: 200, range: 180, rangeSq: 180 **2 },
+        MACHINE_GUN: { damage: 10, cooldown: 1, range: 500, rangeSq: 500**2 },
+    };
 
     setup() {
         // Physics properties
@@ -94,6 +103,9 @@ export class Person extends Lootable {
 
         // Reset dead flag (entity indices are reused)
         PersonComponent.dead[this.index] = 0;
+
+        // Reset shot cooldown (so recycled entities can fire immediately)
+        PersonComponent.lastShotTime[this.index] = 0;
 
         this.setScale(scale, scale);
     }
@@ -245,17 +257,87 @@ export class Person extends Lootable {
     }
 
     // ==========================================
+    // WEAPON HELPERS - Check inventory and get best weapon
+    // ==========================================
+
+    /**
+     * Check if this person has any ranged weapon
+     * @returns {boolean} True if has pistol or machine gun
+     */
+    hasGun() {
+        const i = this.index;
+        return LootableComponent.dropPistol[i] > 0 || LootableComponent.dropMachineGun[i] > 0;
+    }
+
+    /**
+     * Get the best weapon this person has (machine gun > pistol > null)
+     * @returns {Object|null} Weapon definition from Person.WEAPONS or null if unarmed
+     */
+    getBestWeapon() {
+        const i = this.index;
+        if (LootableComponent.dropMachineGun[i] > 0) return Person.WEAPONS.MACHINE_GUN;
+        if (LootableComponent.dropPistol[i] > 0) return Person.WEAPONS.PISTOL;
+        return null;
+    }
+
+    /**
+     * Check if weapon cooldown has elapsed (ready to fire)
+     * Uses performance.now() for frame-rate independent timing
+     * @param {Object} weapon - Weapon definition from Person.WEAPONS
+     * @returns {boolean} True if can fire
+     */
+    canFire(weapon) {
+        const lastShot = PersonComponent.lastShotTime[this.index];
+        return (performance.now() - lastShot) >= weapon.cooldown;
+    }
+
+    // ==========================================
     // ACTION TRIGGERS - Call these to trigger animations
     // ==========================================
 
     /**
-     * Trigger shoot animation
-     * @returns {boolean} True if action started, false if busy or dead
+     * Trigger shoot at target entity
+     * @param {number} targetEntityIndex - Entity index to shoot at
+     * @returns {boolean} True if shot fired, false if on cooldown/busy/dead/no weapon
      */
-    shoot() {
+    shoot(targetEntityIndex) {
         if (PersonComponent.dead[this.index] === 1) return false;
         if (this.isPerformingAction()) return false;
+
+        const weapon = this.getBestWeapon();
+        if (!weapon) return false;
+
+        // Check cooldown
+        if (!this.canFire(weapon)) return false;
+
+        // Face the target
+        const targetX = Transform.x[targetEntityIndex];
+        const targetY = Transform.y[targetEntityIndex];
+        const angle = Math.atan2(targetY - this.y, targetX - this.x);
+        const direction = getDirectionFromAngle(angle);
+        const dirIndex = DIRECTION_NAMES.indexOf(direction);
+        if (dirIndex >= 0) {
+            PersonComponent.facingDirection[this.index] = dirIndex;
+        }
+
+        // Record shot time
+        PersonComponent.lastShotTime[this.index] = performance.now();
+
+        // Trigger shoot animation
         PersonAnimationFSM.changeState(this.index, PersonAnimationFSM.states.SHOOTING);
+
+        // Muzzle flash
+        const flashOffsetX = (direction === "right") ? 20 : (direction === "left") ? -20 : 0;
+        const flashOffsetY = (direction === "down") ? 10 : -25;
+        Flash.create({
+            x: this.x + flashOffsetX,
+            y: this.y + flashOffsetY,
+            z: 0,
+            lifespan: 12,
+            color: 0xffaa00,
+            intensity: 15000,
+        });
+
         return true;
     }
 

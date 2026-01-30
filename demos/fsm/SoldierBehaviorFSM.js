@@ -1,5 +1,5 @@
 // SoldierBehaviorFSM.js - FSM component for soldier behavior
-// States: IDLE, GOING_TO_DESTINATION, GOING_TO_ENEMY, CLOSE_ATTACKING
+// States: IDLE, GOING_TO_DESTINATION, GOING_TO_ENEMY, CLOSE_ATTACKING, RANGED_ATTACKING
 
 import WEED from "/src/index.js";
 
@@ -7,31 +7,59 @@ import { Civilian } from "../gameObjects/civilian.js";
 import { Destination } from "../gameObjects/destination.js";
 import { NavGrid } from "../../src/core/NavGrid.js";
 import { PersonComponent, DIRECTION_NAMES } from "../components/personComponent.js";
-import { distanceSq2D } from "../../src/index.js";
+import { distanceSq2D, Ray } from "../../src/index.js";
 
 const { FSM, FSMState, Transform, RigidBody, GameObject, getDirectionFromAngle } = WEED;
 
 // ==========================================
-// HELPER: Find closest civilian in neighbors
+// HELPER: Find closest civilian in neighbors (zero-allocation)
 // ==========================================
+
+// Static result object - reused every call, no GC pressure
+const _closestResult = { index: -1, distSq: Infinity };
 
 function findClosestCivilian(owner) {
   const civilianType = Civilian.entityType;
-  let closestIndex = -1;
-  let closestDistSq = Infinity;
+  _closestResult.index = -1;
+  _closestResult.distSq = Infinity;
 
   for (let n = 0; n < owner.neighborCount; n++) {
     const neighborIndex = owner.getNeighbor(n);
     if (Transform.entityType[neighborIndex] !== civilianType) continue;
 
     const distSq = owner.getNeighborDistanceSq(n);
-    if (distSq < closestDistSq) {
-      closestDistSq = distSq;
-      closestIndex = neighborIndex;
+    if (distSq < _closestResult.distSq) {
+      _closestResult.distSq = distSq;
+      _closestResult.index = neighborIndex;
     }
   }
 
-  return closestIndex === -1 ? null : { index: closestIndex, distSq: closestDistSq };
+  return _closestResult.index === -1 ? null : _closestResult;
+}
+
+// ==========================================
+// HELPER: Check if soldier can shoot target (has weapon, in range, clear LOS)
+// ==========================================
+
+function canShootTarget(owner, targetIndex, targetDistSq) {
+  // Must have a gun
+  if (!owner.hasGun()) return false;
+
+  const weapon = owner.getBestWeapon();
+
+  // Must be in weapon range
+  if (targetDistSq > weapon.rangeSq) return false;
+
+  // Must have clear line of sight (not blocked, or blocked by non-friendly)
+  const los = Ray.getLineOfSightInfo(owner.index, targetIndex);
+
+  if (los.blocked) {
+    // Check if blocker is a friendly (same entityType) - don't shoot through friendlies
+    const blockerType = Transform.entityType[los.entityIndex];
+    if (blockerType === owner.entityType) return false;
+  }
+
+  return true;
 }
 
 // ==========================================
@@ -61,17 +89,25 @@ class IdleSoldierState extends FSMState {
     // Priority 2: Scan for civilians
     const closest = findClosestCivilian(owner);
     if (closest) {
+      // Priority A: Can we shoot? (has gun, in range, clear LOS)
+      if (canShootTarget(owner, closest.index, closest.distSq)) {
+        this.fsm.changeState(i, this.fsm.states.RANGED_ATTACKING);
+        return;
+      }
+
+      // Priority B: Close enough to punch?
       const punchRangeSq = owner.constructor.punchRangeSq;
       if (closest.distSq <= punchRangeSq) {
         this.fsm.changeState(i, this.fsm.states.CLOSE_ATTACKING);
-      } else {
-        this.fsm.changeState(i, this.fsm.states.GOING_TO_ENEMY);
+        return;
       }
-    }else{
+
+      // Priority C: Chase the target
+      this.fsm.changeState(i, this.fsm.states.GOING_TO_ENEMY);
+    } else {
       owner.groupWithMyTeam();
       owner.separateFromTeam();
     }
-
   }
 }
 
@@ -129,9 +165,15 @@ class GoingToEnemyState extends FSMState {
     owner.groupWithMyTeam();
     owner.separateFromTeam();
 
+    // Priority A: Can we shoot? (has gun, in range, clear LOS)
+    if (canShootTarget(owner, closest.index, closest.distSq)) {
+      this.fsm.changeState(i, this.fsm.states.RANGED_ATTACKING);
+      return;
+    }
+
     const punchRangeSq = owner.constructor.punchRangeSq;
 
-    // Close enough to attack?
+    // Priority B: Close enough to punch?
     if (closest.distSq <= punchRangeSq) {
       this.fsm.changeState(i, this.fsm.states.CLOSE_ATTACKING);
       return;
@@ -149,6 +191,48 @@ class GoingToEnemyState extends FSMState {
       const chaseStrength = 0.15;
       RigidBody.ax[i] += (dx / dist) * chaseStrength;
       RigidBody.ay[i] += (dy / dist) * chaseStrength;
+    }
+  }
+}
+
+// ==========================================
+// RANGED_ATTACKING STATE - Shooting civilians
+// ==========================================
+
+class RangedAttackingState extends FSMState {
+  static onEnter(owner, i, fromState) {}
+
+  static onUpdate(owner, i, dt) {
+    const closest = findClosestCivilian(owner);
+
+    // No target
+    if (!closest) {
+      this.fsm.changeState(i, this.fsm.states.IDLE);
+      return;
+    }
+
+    // Can we still shoot this target?
+    if (!canShootTarget(owner, closest.index, closest.distSq)) {
+      // Lost LOS or out of range - decide what to do
+      const punchRangeSq = owner.constructor.punchRangeSq;
+      if (closest.distSq <= punchRangeSq) {
+        this.fsm.changeState(i, this.fsm.states.CLOSE_ATTACKING);
+      } else {
+        this.fsm.changeState(i, this.fsm.states.GOING_TO_ENEMY);
+      }
+      return;
+    }
+
+    // Try to shoot (handles cooldown, animation, muzzle flash)
+    const shotFired = owner.shoot(closest.index);
+
+    // If shot was fired, deal damage
+    if (shotFired) {
+      const weapon = owner.getBestWeapon();
+      const target = GameObject.get(closest.index);
+      if (target && target.recieveDamage) {
+        target.recieveDamage(weapon.damage);
+      }
     }
   }
 }
@@ -210,6 +294,7 @@ export class SoldierBehaviorFSM extends FSM {
     IDLE: IdleSoldierState,
     GOING_TO_DESTINATION: GoingToDestinationState,
     GOING_TO_ENEMY: GoingToEnemyState,
+    RANGED_ATTACKING: RangedAttackingState,
     CLOSE_ATTACKING: CloseAttackingState,
   };
 

@@ -28,5 +28,7 @@ export class PersonComponent extends Component {
         dead: Uint8Array, // 0 = alive, 1 = dead
         // Animation state
         facingDirection: Uint8Array, // 0=up, 1=left, 2=down, 3=right
+        // Shooting state
+        lastShotTime: Float32Array, // Game tick when last shot was fired (for cooldown)
     };
 }
