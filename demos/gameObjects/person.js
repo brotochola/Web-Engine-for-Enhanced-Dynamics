@@ -34,9 +34,6 @@ export class Person extends Lootable {
         PersonAnimationFSM,
     ];
 
-    /**
-     * LIFECYCLE: Configure entity TYPE properties - runs ONCE per instance
-     */
     setup() {
         // Physics properties
         this.rigidBody.maxVel = 3;
@@ -57,6 +54,7 @@ export class Person extends Lootable {
         this.shadowCaster.shadowRadius = 10;
         this.shadowCaster.height = 50;
 
+        //people's defaults
         this.personComponent.minSquaredDistanceToGroup = 100**2;
 
     }
@@ -74,8 +72,6 @@ export class Person extends Lootable {
      * LIFECYCLE: Called when spawned - runs EVERY spawn
      */
     onSpawned(spawnConfig = {}) {
-        this.setup()
-
         // this.setSpritesheet("poli");
         // this.setAnimation("idle_down");
 

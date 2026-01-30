@@ -61,10 +61,7 @@ export class Explosion extends GameObject {
   }
 
   onSpawned(spawnConfig = {}) {
-    this.setup();
-
     setTimeout(()=>this.stampDecalToFloor(),100)
-
   }
 
   tick(dtRatio, deltaTime, accumulatedTime, frameNumber) {
