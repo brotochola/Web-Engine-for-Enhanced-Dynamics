@@ -4,6 +4,7 @@
 import WEED from "/src/index.js";
 
 import { Mouse } from "../../src/core/Mouse.js";
+import { containerRadius } from "../../src/index.js";
 
 const {
     GameObject,
@@ -56,6 +57,7 @@ export class Destination extends GameObject {
             // this.destinationComponent.haveMyGuysArrived = 0;
             this.x = Mouse.x
             this.y = Mouse.y
+            this.collider.radius = containerRadius(MySoldier.activeCount, 10,1.5);
         }
 
     }
