@@ -67,7 +67,11 @@ class IdleSoldierState extends FSMState {
       } else {
         this.fsm.changeState(i, this.fsm.states.GOING_TO_ENEMY);
       }
+    }else{
+      owner.groupWithMyTeam();
+      owner.separateFromTeam();
     }
+
   }
 }
 
@@ -86,6 +90,9 @@ class GoingToDestinationState extends FSMState {
       this.fsm.changeState(i, this.fsm.states.IDLE);
       return;
     }
+
+    owner.groupWithMyTeam();
+    owner.separateFromTeam();
 
     // Check if reached destination
     const distSqToDest = distanceSq2D(owner.x, owner.y, dest.x, dest.y);
@@ -118,6 +125,9 @@ class GoingToEnemyState extends FSMState {
       this.fsm.changeState(i, this.fsm.states.IDLE);
       return;
     }
+
+    owner.groupWithMyTeam();
+    owner.separateFromTeam();
 
     const punchRangeSq = owner.constructor.punchRangeSq;
 
