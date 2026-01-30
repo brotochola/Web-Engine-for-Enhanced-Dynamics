@@ -638,6 +638,83 @@ export function clampVelocityMut(vx, vy, maxSpeed, result) {
   return result;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// MASS COMPUTATION UTILITIES
+// Used by Collider component to auto-compute mass when radius/width/height change.
+// Mass is derived from collider area (2D surface), enabling mass-weighted physics.
+//
+// Why area-based mass?
+// - Simple and intuitive: bigger objects = more mass
+// - Works well for 2D games where "volume" isn't meaningful
+// - Easily computed from existing collider dimensions
+//
+// How it's used in physics (physics_worker.js):
+// - invMass (inverse mass) determines how much an object moves when hit
+// - Light objects (high invMass) bounce off heavy objects
+// - Heavy objects (low invMass) barely move when hit by light objects
+// - Static objects have invMass = 0 (infinite mass, never move)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Compute mass from circle radius (area = π * r²)
+ * @param {number} radius - Circle radius
+ * @returns {number} Mass value (area in square units)
+ */
+export function computeCircleMass(radius) {
+  return Math.PI * radius * radius;
+}
+
+/**
+ * Compute mass from box dimensions (area = width * height)
+ * @param {number} width - Box width
+ * @param {number} height - Box height
+ * @returns {number} Mass value (area in square units)
+ */
+export function computeBoxMass(width, height) {
+  return width * height;
+}
+
+/**
+ * Update RigidBody mass arrays from circle radius
+ * Called by Collider.radius setter to auto-compute mass when radius changes.
+ *
+ * @param {number} index - Entity index in component arrays
+ * @param {number} radius - Circle radius
+ * @param {Object} RigidBody - RigidBody component class with mass/invMass arrays
+ *
+ * @example
+ *   // In Collider.js radius setter:
+ *   updateMassFromCircle(this.index, value, RigidBody);
+ */
+export function updateMassFromCircle(index, radius, RigidBody) {
+  if (radius > 0) {
+    const mass = Math.PI * radius * radius;
+    RigidBody.mass[index] = mass;
+    RigidBody.invMass[index] = 1 / mass;
+  }
+}
+
+/**
+ * Update RigidBody mass arrays from box dimensions
+ * Called by Collider.width/height setters to auto-compute mass when size changes.
+ *
+ * @param {number} index - Entity index in component arrays
+ * @param {number} width - Box width
+ * @param {number} height - Box height
+ * @param {Object} RigidBody - RigidBody component class with mass/invMass arrays
+ *
+ * @example
+ *   // In Collider.js width setter:
+ *   updateMassFromBox(this.index, value, existingHeight, RigidBody);
+ */
+export function updateMassFromBox(index, width, height, RigidBody) {
+  if (width > 0 && height > 0) {
+    const mass = width * height;
+    RigidBody.mass[index] = mass;
+    RigidBody.invMass[index] = 1 / mass;
+  }
+}
+
 /**
  * Test Circle vs Circle collision
  * Mutates the result object to avoid GC pressure (reuse same object in hot loops)

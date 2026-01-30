@@ -553,6 +553,7 @@ class PhysicsWorker extends AbstractWorker {
   ) {
     const responseStrength = this.settings.collisionResponseStrength;
     const isStatic = RigidBody.static;
+    const invMass = RigidBody.invMass;
 
     let pairCount = 0;
     const collisionData = this.collisionData;
@@ -678,24 +679,24 @@ class PhysicsWorker extends AbstractWorker {
           const nx = result.nx;
           const ny = result.ny;
 
-          if (iStatic && jStatic) {
-            // Both static - no movement
-          } else if (iStatic) {
-            // i is static - only push j away
-            x[j] -= nx * correction;
-            y[j] -= ny * correction;
-          } else if (jStatic) {
-            // j is static - only push i away
-            x[i] += nx * correction;
-            y[i] += ny * correction;
-          } else {
-            // Both dynamic - split correction
-            const halfCorrection = correction * 0.5;
-            x[i] += nx * halfCorrection;
-            y[i] += ny * halfCorrection;
-            x[j] -= nx * halfCorrection;
-            y[j] -= ny * halfCorrection;
+          // Mass-weighted collision response:
+          // Lighter objects move more, heavier objects move less
+          // Static objects have invMass = 0 (infinite mass)
+          const invMassI = iStatic ? 0 : (invMass[i] || 1);
+          const invMassJ = jStatic ? 0 : (invMass[j] || 1);
+          const totalInvMass = invMassI + invMassJ;
+
+          if (totalInvMass > 0) {
+            // Distribute correction based on inverse mass ratio
+            const corrI = correction * (invMassI / totalInvMass);
+            const corrJ = correction * (invMassJ / totalInvMass);
+
+            x[i] += nx * corrI;
+            y[i] += ny * corrI;
+            x[j] -= nx * corrJ;
+            y[j] -= ny * corrJ;
           }
+          // If totalInvMass === 0, both are static/infinite mass - no movement
         }
 
         // Track collision count
