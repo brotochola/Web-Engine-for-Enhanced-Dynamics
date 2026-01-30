@@ -82,8 +82,9 @@ export class PredatorScene extends WEED.Scene {
     // Logic configuration
     logic: {
       noLimitFPS: false,
-      numberOfLogicWorkers: 3,
+      numberOfLogicWorkers: 2,
       numberOfEntitiesPerJob: 250,
+      staggeredUpdates: true, // Enable tick decimation (entities tick based on their tickInterval)
     },
 
     // Physics configuration
@@ -286,9 +287,9 @@ export class PredatorScene extends WEED.Scene {
     // this.spawnTrees(this.numberOfTrees);
     this.spawnBarrels(this.numberOfBarrels);
     // this.spawnRocks(this.numberOfRocks);
-    this.spawnMySoldiers(1000);
+    this.spawnMySoldiers(100);
     this.spawnDestination();
-    this.spawnRocksTreesAndHouses();
+    // this.spawnRocksTreesAndHouses();
 
   }
 

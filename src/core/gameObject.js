@@ -29,6 +29,10 @@ export class GameObject {
   // Override in subclasses, e.g.: static components = [RigidBody, Collider, SpriteRenderer]
   static components = []; // By default, only Transform (added automatically)
 
+  // Tick decimation - override in subclasses to reduce tick frequency
+  // tickInterval = 10 means entity ticks every 10 frames (spread across frames via index offset)
+  static tickInterval = 1; // Default: tick every frame (no decimation)
+
   // Neighbor data (from spatial worker)
   static neighborData = null;
   static distanceData = null; // Squared distances for each neighbor
@@ -36,6 +40,10 @@ export class GameObject {
   // Active entities list (built by particle_worker each frame)
   // Layout: [count, entityIdx0, entityIdx1, ...]
   static activeEntitiesData = null;
+
+  // Tick decimation countdown (Uint8Array, one byte per entity)
+  // Decremented each frame; entity ticks when it reaches 0, then resets to tickInterval
+  static nextTick = null;
 
   // Camera data (shared with main thread)
   static cameraData = null; // Float32Array [zoom, x, y]
@@ -59,12 +67,14 @@ export class GameObject {
    * @param {number} count - Total number of entities
    * @param {SharedArrayBuffer} [neighborBuffer] - Neighbor data buffer from spatial worker
    * @param {SharedArrayBuffer} [distanceBuffer] - Distance data buffer from spatial worker
+   * @param {SharedArrayBuffer} [nextTickBuffer] - Tick decimation countdown buffer (1 byte per entity)
    */
   static initializeArrays(
     buffer,
     count,
     neighborBuffer = null,
-    distanceBuffer = null
+    distanceBuffer = null,
+    nextTickBuffer = null
   ) {
     this.globalEntityCount = count;
 
@@ -76,6 +86,11 @@ export class GameObject {
     // Initialize distance data if provided
     if (distanceBuffer) {
       this.distanceData = new Float32Array(distanceBuffer);
+    }
+
+    // Initialize tick decimation buffer if provided (staggeredUpdates enabled)
+    if (nextTickBuffer) {
+      this.nextTick = new Uint8Array(nextTickBuffer);
     }
   }
 
@@ -1566,6 +1581,18 @@ export class GameObject {
       const ComponentClass = entityComponentMap[name];
       if (ComponentClass && ComponentClass.isFSM) {
         ComponentClass.initializeEntity(i, instance);
+      }
+    }
+
+    // Initialize tick decimation countdown (if staggeredUpdates enabled)
+    // Stagger entities across frames using index offset: (index % tickInterval) + 1
+    // This spreads the load so not all entities tick on the same frame
+    if (GameObject.nextTick) {
+      const tickInterval = EntityClass.tickInterval || 1;
+      if (tickInterval > 1) {
+        GameObject.nextTick[i] = (i % tickInterval) + 1;
+      } else {
+        GameObject.nextTick[i] = 1; // No decimation: always tick
       }
     }
 

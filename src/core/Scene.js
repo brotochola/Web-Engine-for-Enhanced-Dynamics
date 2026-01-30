@@ -800,11 +800,18 @@ class Scene {
     // Number of spatial workers (used for stats buffer sizing)
     const numberOfSpatialWorkers = this.config.spatial.numberOfSpatialWorkers || 1;
 
+    // Create tick decimation buffer if staggeredUpdates is enabled
+    // Layout: 1 byte per entity (Uint8Array) - countdown until next tick
+    if (this.config.logic.staggeredUpdates) {
+      this.buffers.nextTickData = new SharedArrayBuffer(this.totalEntityCount);
+    }
+
     GameObject.initializeArrays(
       this.buffers.gameObjectData,
       this.totalEntityCount,
       this.buffers.neighborData,
-      this.buffers.distanceData
+      this.buffers.distanceData,
+      this.buffers.nextTickData || null
     );
 
     // Create Component buffers
@@ -1487,6 +1494,8 @@ class Scene {
         // Navigation buffers (if pathfinding enabled)
         navigationData: this.buffers.navigationData || null,
         navigationStats: this.buffers.navigationStats || null,
+        // Tick decimation buffer (if staggeredUpdates enabled)
+        nextTickData: this.buffers.nextTickData || null,
       },
       globalEntityCount: this.totalEntityCount,
       config: this.config,

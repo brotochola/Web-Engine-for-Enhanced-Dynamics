@@ -8,6 +8,7 @@ const {
 
 export class Civilian extends Person {
   static scriptUrl = import.meta.url;
+  static tickInterval = 8; // Tick every 10 frames (staggered across entities)
 
   static components = [
     ...Person.components,

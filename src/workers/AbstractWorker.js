@@ -254,7 +254,8 @@ export class AbstractWorker {
         data.buffers.gameObjectData,
         this.globalEntityCount,
         data.buffers.neighborData, // Automatically initialize neighbor data
-        data.buffers.distanceData // Automatically initialize distance data
+        data.buffers.distanceData, // Automatically initialize distance data
+        data.buffers.nextTickData // Tick decimation buffer (if staggeredUpdates enabled)
       );
     }
 
