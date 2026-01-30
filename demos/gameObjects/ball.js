@@ -77,7 +77,6 @@ class Ball extends GameObject {
    * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
    */
   onSpawned(spawnConfig = {}) {
-    this.setup();
   }
 
   onCollisionEnter(otherIndex) {

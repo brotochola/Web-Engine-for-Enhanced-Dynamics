@@ -1448,61 +1448,56 @@ export class GameObject {
       return null;
     }
 
-    // Reset component values and set component active flags
-    if (instance.rigidBody) {
-      instance.rigidBody.active = 1; // Mark component as active for this entity
-      instance.rigidBody.ax = 0;
-      instance.rigidBody.ay = 0;
-      instance.rigidBody.vx = 0;
-      instance.rigidBody.vy = 0;
-      instance.rigidBody.speed = 0;
-      instance.rigidBody.velocityAngle = 0;
-      instance.rigidBody.px = 0;
-      instance.rigidBody.py = 0;
+    // Reset component values to sensible defaults using direct array access (faster)
+    // Check _hasComponents which is set in constructor based on entity's component list
+    const has = instance._hasComponents;
+
+    if (has.RigidBody) {
+      RigidBody.active[i] = 1;
+      RigidBody.ax[i] = 0;
+      RigidBody.ay[i] = 0;
+      RigidBody.vx[i] = 0;
+      RigidBody.vy[i] = 0;
+      RigidBody.speed[i] = 0;
+      RigidBody.velocityAngle[i] = 0;
+      RigidBody.px[i] = 0;
+      RigidBody.py[i] = 0;
     }
 
-    if (instance.transform) {
-      instance.transform.x = 0;
-      instance.transform.y = 0;
-      instance.transform.rotation = 0;
+    // Transform is always present
+    Transform.x[i] = 0;
+    Transform.y[i] = 0;
+    Transform.rotation[i] = 0;
+
+    if (has.Collider) {
+      Collider.active[i] = 1;
     }
 
-    if (instance.collider) {
-      instance.collider.active = 1; // Mark component as active for this entity
+    if (has.LightEmitter) {
+      LightEmitter.active[i] = 1;
     }
 
-    if (instance.lightEmitter) {
-      instance.lightEmitter.active = 1; // Mark component as active for this entity
+    if (has.ShadowCaster) {
+      ShadowCaster.active[i] = 1;
     }
 
-    if (instance.shadowCaster) {
-      instance.shadowCaster.active = 1; // Mark component as active for this entity
+    if (has.SpriteRenderer) {
+      SpriteRenderer.active[i] = 1;
+      SpriteRenderer.tint[i] = 0xffffff;
+      SpriteRenderer.baseTint[i] = 0xffffff;
+      SpriteRenderer.alpha[i] = 1.0;
+      SpriteRenderer.scaleX[i] = 1;
+      SpriteRenderer.scaleY[i] = 1;
+      SpriteRenderer.anchorX[i] = 0.5;
+      SpriteRenderer.anchorY[i] = 1.0;
+      SpriteRenderer.renderVisible[i] = 1;
+      SpriteRenderer.isItOnScreen[i] = 0;
+      SpriteRenderer.animationState[i] = -1;
+      SpriteRenderer.spritesheetId[i] = 0;
+      SpriteRenderer.renderDirty[i] = 1;
     }
 
-    if (instance.spriteRenderer) {
-      instance.spriteRenderer.active = 1; // Mark component as active for this entity
-      // Initialize both tint and baseTint to white (for lighting system)
-      instance.spriteRenderer.tint = 0xffffff;
-      instance.spriteRenderer.baseTint = 0xffffff;
-      instance.setAlpha(1.0);
-      instance.setScale(1, 1); // Default scale to 1 (Float32Array defaults to 0, making sprite invisible)
-      instance.spriteRenderer.anchorX = 0.5;
-      instance.spriteRenderer.anchorY = 1.0;
-      instance.setVisible(true);
-      // OPTIMIZATION: Initialize isItOnScreen to 0 (off-screen) like decorations
-      // The spatial/particle worker will update this properly based on camera culling
-      // This prevents eagerly creating sprites for entities that aren't visible yet
-      instance.spriteRenderer.isItOnScreen = 0;
-      // BUGFIX: Reset animationState to -1 so renderer's change detection will trigger
-      // The renderer tracks previousAnimStates[] and skips updates when the value matches.
-      // Without this reset, respawning an entity with the same sprite would not update the texture.
-      instance.spriteRenderer.animationState = -1;
-      instance.spriteRenderer.spritesheetId = 0;
-      instance.markDirty();
-    }
-
-    // Apply spawn config BEFORE activating
-    // Uses clean property names: x, y, vx, vy, rotation, etc.
+    // Apply spawn config (x, y, vx, vy, rotation, etc.)
     for (const key in spawnConfig) {
       if (instance[key] !== undefined) {
         instance[key] = spawnConfig[key];
@@ -1510,13 +1505,19 @@ export class GameObject {
     }
 
     // Initialize previous positions for Verlet integration
-    if (instance.rigidBody && instance.transform) {
-      instance.rigidBody.px = instance.transform.x - instance.rigidBody.vx;
-      instance.rigidBody.py = instance.transform.y - instance.rigidBody.vy;
+    if (has.RigidBody) {
+      RigidBody.px[i] = Transform.x[i] - RigidBody.vx[i];
+      RigidBody.py[i] = Transform.y[i] - RigidBody.vy[i];
     }
 
-    // LIFECYCLE: Call onSpawned() BEFORE FSM init and activating
-    // This allows entity to initialize instance state based on spawn config
+    // LIFECYCLE: Call setup() to restore TYPE-level config after defaults were applied
+    // setup() defines "what this entity type IS" (physics params, collision, render config)
+    if (instance.setup) {
+      instance.setup();
+    }
+
+    // LIFECYCLE: Call onSpawned() for INSTANCE-level initialization
+    // onSpawned() defines "this specific instance" (position, random variations, health)
     if (instance.onSpawned) {
       instance.onSpawned(spawnConfig);
     }

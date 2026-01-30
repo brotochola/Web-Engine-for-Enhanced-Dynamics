@@ -45,8 +45,6 @@ export class Destination extends GameObject {
     }
 
     onSpawned(spawnConfig = {}) {
-
-        this.setup()
     }
 
     /**
