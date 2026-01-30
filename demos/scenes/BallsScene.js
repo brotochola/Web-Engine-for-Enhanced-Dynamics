@@ -17,8 +17,9 @@ export class BallsScene extends Scene {
 
     // Spatial hash grid configuration
     spatial: {
-      cellSize: 50,
-      maxNeighbors: 100,
+      numberOfSpatialWorkers: 2,
+      cellSize: 100,
+      maxNeighbors: 512,
       noLimitFPS: true,
     },
 
@@ -39,10 +40,10 @@ export class BallsScene extends Scene {
     physics: {
       subStepCount: 3, // Subdivide each 60fps frame into 4 constraint-solving passes
       noLimitFPS: true, // Run physics as fast as possible (uses fixed-timestep accumulator)
-      maxCollisionPairs: 10000000, //this is to trigger the collision callbacks, not the resolve collisions
+      maxCollisionPairs: 100000, //this is to trigger the collision callbacks, not the resolve collisions
       verletDamping: 0.9999,
       boundaryElasticity: 0,
-      collisionResponseStrength: 0.15,
+      collisionResponseStrength: 0.7,
       gravity: { x: 0, y: 0.5 },
     },
 
@@ -133,6 +134,8 @@ export class BallsScene extends Scene {
 
     // Update camera (handles smooth following and zoom lerping)
     Camera.follow(this.cameraFollowX, this.cameraFollowY, 0.15);
+
+    Camera.setZoom(Camera.zoom*(1-Mouse.wheel*0.001));
   }
 
   // ========================================

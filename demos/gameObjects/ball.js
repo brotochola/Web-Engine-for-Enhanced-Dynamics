@@ -27,7 +27,6 @@ class Ball extends GameObject {
     // Set the texture for this static sprite
 
     const config = this.config || {};
-    this.collider.visualRange = (config.spatial?.cellSize || 80) * 1.33;
 
     this.rotation = 0;
 
@@ -48,6 +47,9 @@ class Ball extends GameObject {
     const actualBallSize = 14; //png width
     const ballRadius = Math.random() * 20 + 10;
     this.collider.radius = ballRadius;
+
+    this.collider.visualRange = ballRadius*3
+
     const scale = (ballRadius * 2) / actualBallSize;
     this.spriteRenderer.scaleX = scale;
     this.spriteRenderer.scaleY = scale;
