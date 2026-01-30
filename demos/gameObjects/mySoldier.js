@@ -37,9 +37,6 @@ export class MySoldier extends Person {
         this.personComponent.separationForce = 3;
 
         this.collider.visualRange = 200
-
-        // Initialize behavior FSM
-        SoldierBehaviorFSM.initializeEntity(this.index, this);
     }
 
     /**
