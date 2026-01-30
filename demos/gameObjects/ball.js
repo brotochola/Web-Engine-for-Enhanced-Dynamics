@@ -46,9 +46,9 @@ class Ball extends GameObject {
 
     const actualBallSize = 14; //png width
     const ballRadius = Math.random() * 20 + 10;
-    this.collider.radius = ballRadius;
+    this.collider.radius = ballRadius; // Mass auto-computed from area (π * r²)
 
-    this.collider.visualRange = ballRadius*3
+    this.collider.visualRange = ballRadius * 3;
 
     const scale = (ballRadius * 2) / actualBallSize;
     this.spriteRenderer.scaleX = scale;

@@ -43,7 +43,7 @@ export class BallsScene extends Scene {
       maxCollisionPairs: 100000, //this is to trigger the collision callbacks, not the resolve collisions
       verletDamping: 0.9999,
       boundaryElasticity: 0,
-      collisionResponseStrength: 0.7,
+      collisionResponseStrength: 0.66,
       gravity: { x: 0, y: 0.5 },
     },
 

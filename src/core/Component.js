@@ -1,5 +1,29 @@
 // Component.js - Base class for all ECS components
 // Provides shared array functionality via Structure of Arrays (SoA)
+//
+// CUSTOM GETTERS/SETTERS:
+// Subclasses can define custom getters/setters for any property in ARRAY_SCHEMA.
+// These custom accessors will be preserved and NOT overwritten by auto-generation.
+//
+// Example - Adding a custom setter to Collider that auto-computes mass:
+//
+//   class Collider extends Component {
+//     static ARRAY_SCHEMA = { radius: Float32Array, ... };
+//
+//     // Custom setter - auto-generates when _createInstanceProperties() runs
+//     get radius() { return Collider.radius[this.index]; }
+//     set radius(value) {
+//       Collider.radius[this.index] = value;
+//       // Custom logic: also update RigidBody mass
+//       if (RigidBody.active[this.index]) {
+//         updateMassFromCircle(this.index, value, RigidBody);
+//       }
+//     }
+//   }
+//
+// The custom radius getter/setter will be detected and preserved by
+// _createInstanceProperties(), while other properties (offsetX, offsetY, etc.)
+// will still get auto-generated accessors.
 
 export class Component {
   // Shared memory buffer for this component type
@@ -45,6 +69,7 @@ export class Component {
   /**
    * Automatically create instance getters/setters from ARRAY_SCHEMA
    * This makes component instances have properties that forward to static arrays
+   * Skips properties that already have custom getters/setters defined in subclasses
    */
   static _createInstanceProperties() {
     const ComponentClass = this;
@@ -53,6 +78,12 @@ export class Component {
     if (ComponentClass.prototype._propertiesCreated) return;
 
     Object.entries(ComponentClass.ARRAY_SCHEMA).forEach(([name, type]) => {
+      // Skip if custom getter/setter already defined in subclass
+      // This allows components like Collider to have custom setters (e.g., auto-compute mass)
+      if (Object.getOwnPropertyDescriptor(ComponentClass.prototype, name)) {
+        return;
+      }
+
       Object.defineProperty(ComponentClass.prototype, name, {
         get() {
           return ComponentClass[name][this.index];

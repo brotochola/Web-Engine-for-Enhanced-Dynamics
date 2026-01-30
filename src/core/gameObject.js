@@ -9,7 +9,12 @@ import { LightEmitter } from "../components/LightEmitter.js";
 import { ShadowCaster } from "../components/ShadowCaster.js";
 import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
 import { Grid } from "./Grid.js";
-import { collectComponents, cantorPair } from "./utils.js";
+import {
+  collectComponents,
+  cantorPair,
+  updateMassFromCircle,
+  updateMassFromBox,
+} from "./utils.js";
 import Keyboard from "./Keyboard.js";
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
@@ -412,7 +417,7 @@ export class GameObject {
   // COLLIDER PROPERTIES
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /** Collision radius - read-only, set via this.collider.radius */
+  /** Collision radius - also auto-computes mass from area (π * r²) */
   get radius() {
     if (!this._hasComponents.Collider) return 0;
     return Collider.radius[this.index];
@@ -421,6 +426,37 @@ export class GameObject {
   set radius(value) {
     if (!this._hasComponents.Collider) return;
     Collider.radius[this.index] = value;
+    if (this._hasComponents.RigidBody) {
+      updateMassFromCircle(this.index, value, RigidBody);
+    }
+  }
+
+  /** Collider width - also auto-computes mass from area (width * height) */
+  get width() {
+    if (!this._hasComponents.Collider) return 0;
+    return Collider.width[this.index];
+  }
+  set width(value) {
+    if (!this._hasComponents.Collider) return;
+    Collider.width[this.index] = value;
+    if (this._hasComponents.RigidBody) {
+      const h = Collider.height[this.index] || 1;
+      updateMassFromBox(this.index, value, h, RigidBody);
+    }
+  }
+
+  /** Collider height - also auto-computes mass from area (width * height) */
+  get height() {
+    if (!this._hasComponents.Collider) return 0;
+    return Collider.height[this.index];
+  }
+  set height(value) {
+    if (!this._hasComponents.Collider) return;
+    Collider.height[this.index] = value;
+    if (this._hasComponents.RigidBody) {
+      const w = Collider.width[this.index] || 1;
+      updateMassFromBox(this.index, w, value, RigidBody);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
