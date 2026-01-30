@@ -39,7 +39,7 @@ export class Person extends Lootable {
         this.rigidBody.maxVel = 3;
         this.rigidBody.maxAcc = 0.15;
         this.rigidBody.minSpeed = 0;
-        this.rigidBody.friction = 0.05;
+        this.rigidBody.friction = 0.005;
 
         // Collision/perception
         this.collider.radius = 10;

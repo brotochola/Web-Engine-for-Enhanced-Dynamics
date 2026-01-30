@@ -332,9 +332,35 @@ class LogicWorker extends AbstractWorker {
           // Pass cached arrays to avoid property lookups per entity
           obj.updateNeighbors(neighborData, distanceData, stride);
 
+          // TICK DECIMATION: Skip tick if countdown hasn't reached 0
+          // Entities with tickInterval > 1 only tick every N frames (staggered by index)
+          // Cost: ~3 cycles (decrement + compare + branch) vs ~20 cycles for modulo
+          let tickInterval = 1;
+          if (GameObject.nextTick) {
+            tickInterval = obj.constructor.tickInterval || 1;
+            if (tickInterval > 1) {
+              if (--GameObject.nextTick[entityIndex] > 0) {
+                // Skip tick, but still check screen visibility
+                this.checkScreenVisibility(entityIndex, obj);
+                continue;
+              }
+              // Reset countdown for next cycle
+              GameObject.nextTick[entityIndex] = tickInterval;
+            }
+          }
+
           // Tick entity logic with full timing info
           // dtRatio: normalized to 60fps (1.0 = 16.67ms), deltaTime: actual ms, accumulatedTime: total ms, frameNumber
           obj.tick(dtRatio, deltaTime, this.accumulatedTime, this.frameNumber);
+
+          // ACCELERATION SCALING: Compensate for tick decimation
+          // If entity ticks every N frames, scale acceleration by N so physics
+          // integrates the same total impulse. Without this, entities with
+          // tickInterval > 1 would move N times slower.
+          if (tickInterval > 1) {
+            RigidBody.ax[entityIndex] *= tickInterval;
+            RigidBody.ay[entityIndex] *= tickInterval;
+          }
 
           // Check for screen visibility changes and call lifecycle methods
           this.checkScreenVisibility(entityIndex, obj);
