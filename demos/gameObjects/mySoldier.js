@@ -61,7 +61,7 @@ export class MySoldier extends Person {
         //check distance
         const distSquaredToDestination=distanceSq2D(this.x, this.y, destinationX, destinationY)
 
-        const distanceSquaredToStopGoing= (0.66*MySoldier.activeCount)**2
+        const distanceSquaredToStopGoing= Destination.get(0).collider.radius**2
 
         if (distSquaredToDestination < distanceSquaredToStopGoing) return
 

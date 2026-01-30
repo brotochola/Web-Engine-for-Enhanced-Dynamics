@@ -2141,3 +2141,22 @@ export function formatComponentValue(propName, value) {
 
   return String(value);
 }
+
+ /**
+* Computes an approximate radius of a container circle
+* that can fit N circles of radius R.
+*
+* Uses an area-based approximation with a safety margin.
+* Suitable for real-time simulations and games.
+*
+* @param {number} N - Number of circles to fit (N >= 0)
+* @param {number} R - Radius of each circle (R > 0)
+* @param {number} [margin=1.05] - Safety margin multiplier
+* @returns {number} Radius of the container circle
+*/
+export function containerRadius(N, R, margin = 1.05) {
+ if (N <= 0) return 0;
+ if (N === 1) return R;
+
+ return R * Math.sqrt(N) * margin;
+}
