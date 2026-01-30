@@ -99,9 +99,6 @@ export class Person extends Lootable {
         // Reset dead flag (entity indices are reused)
         PersonComponent.dead[this.index] = 0;
 
-        // Initialize animation FSM
-        PersonAnimationFSM.initializeEntity(this.index, this);
-
         this.setScale(scale, scale);
     }
 

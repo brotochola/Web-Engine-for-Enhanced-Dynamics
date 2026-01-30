@@ -1515,20 +1515,21 @@ export class GameObject {
       instance.rigidBody.py = instance.transform.y - instance.rigidBody.vy;
     }
 
-    // AUTOMATION: Automatically initialize any FSM components
-    // This allows developers to skip manual initialization in onSpawned()
+    // LIFECYCLE: Call onSpawned() BEFORE FSM init and activating
+    // This allows entity to initialize instance state based on spawn config
+    if (instance.onSpawned) {
+      instance.onSpawned(spawnConfig);
+    }
+
+    // AUTOMATION: Automatically initialize any FSM components AFTER onSpawned()
+    // This ensures FSM's onEnter() has access to fully configured entity state
+    // Developers don't need to manually call initializeEntity() anymore
     const entityComponentMap = EntityClass._componentClassMap || {};
     for (const name in entityComponentMap) {
       const ComponentClass = entityComponentMap[name];
       if (ComponentClass && ComponentClass.isFSM) {
         ComponentClass.initializeEntity(i, instance);
       }
-    }
-
-    // LIFECYCLE: Call onSpawned() BEFORE activating
-    // This allows entity to initialize instance state based on spawn config
-    if (instance.onSpawned) {
-      instance.onSpawned(spawnConfig);
     }
 
     // NOW activate the entity

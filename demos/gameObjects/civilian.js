@@ -25,7 +25,6 @@ export class Civilian extends Person {
 
     this.personComponent.groupingForce = 1;
     this.collider.visualRange = 100;
-
   }
 
   tick(dt) {
