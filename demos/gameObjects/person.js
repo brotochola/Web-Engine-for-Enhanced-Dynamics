@@ -46,7 +46,7 @@ export class Person extends Lootable {
 
         // Collision/perception
         this.collider.radius = 10;
-        this.collider.visualRange = 150; // How far they can see predators
+        this.collider.visualRange = 150;
 
         // Sprite setup
         this.spriteRenderer.anchorX = 0.5;

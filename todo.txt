@@ -153,5 +153,11 @@ TENER AMBOS! y se puede desde tickall llamar a sistemas, q tmb son metodos estat
 
 
 
+
+
+
 ----------------------------
-Componente Weapon: {type, cooldown, fireRate, damage, maxDistanceMelee, maxDistanceRanged, rangedDamage, meleeDamage}
+--- GAME OBJECT
+----------------------------
+
+* cuando spawneamos cosas q no sea colisionando con otras

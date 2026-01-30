@@ -24,6 +24,7 @@ export class Civilian extends Person {
     super.onSpawned(spawnConfig);
 
     this.personComponent.groupingForce = 1;
+    this.collider.visualRange = 100;
 
   }
 
