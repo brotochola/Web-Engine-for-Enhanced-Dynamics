@@ -1719,6 +1719,12 @@ export class GameObject {
     return null;
   }
 
+  static getFirstActiveInstance(){
+    const index = this.getFirstActiveIndex();
+    if (index === null) return null;
+    return this.instances[index - this.startIndex];
+  }
+
   static getAllActiveIndices() {
     const indices = this.entityIndices;
     if (!indices) return null;
