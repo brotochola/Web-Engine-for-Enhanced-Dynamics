@@ -35,8 +35,8 @@ export class MySoldier extends Person {
         this.lootableComponent.resistance = 0.6;
         this.lootableComponent.dropMoney = 100;
 
-        this.personComponent.groupingForce = 3;
-        this.personComponent.separationForce = 3;
+        this.personComponent.groupingForce = 0.6;
+        this.personComponent.separationForce = 0.33;
 
         this.collider.visualRange = 200
     }
