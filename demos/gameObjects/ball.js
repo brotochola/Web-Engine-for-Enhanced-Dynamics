@@ -20,10 +20,10 @@ class Ball extends GameObject {
    */
   setup() {
     // Configure RigidBody physics properties (same for all balls)
-    this.rigidBody.maxVel = 1220; // Max velocity
+    this.rigidBody.maxVel = 300; // Max velocity
     this.rigidBody.maxAcc = 10; // Max acceleration
     this.rigidBody.minSpeed = 0; // Balls can come to rest
-    this.rigidBody.friction = 0.0001; // Low friction - let balls settle naturally
+    this.rigidBody.friction = 0.001; // Low friction - let balls settle naturally
     // Set the texture for this static sprite
 
     const config = this.config || {};
