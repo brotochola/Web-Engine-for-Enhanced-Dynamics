@@ -394,6 +394,9 @@ export class Ray {
    *     predator.chase(preyIdx);
    *   }
    */
+  // Static reusable Set for zero-allocation linecast between entities
+  static _excludeSet = new Set();
+
   static linecastBetweenEntities(entityIndexA, entityIndexB) {
     // Get positions of both entities
     const x1 = Transform.x[entityIndexA];
@@ -401,10 +404,12 @@ export class Ray {
     const x2 = Transform.x[entityIndexB];
     const y2 = Transform.y[entityIndexB];
 
-    // Create exclusion set with both entities
-    const exclude = new Set([entityIndexA, entityIndexB]);
+    // Reuse static Set - clear and repopulate (zero allocation)
+    Ray._excludeSet.clear();
+    Ray._excludeSet.add(entityIndexA);
+    Ray._excludeSet.add(entityIndexB);
 
-    return Ray.linecast(x1, y1, x2, y2, exclude);
+    return Ray.linecast(x1, y1, x2, y2, Ray._excludeSet);
   }
 
   /**
@@ -417,6 +422,18 @@ export class Ray {
    */
   static hasLineOfSight(entityIndexA, entityIndexB) {
     return !Ray.linecastBetweenEntities(entityIndexA, entityIndexB).blocked;
+  }
+
+  /**
+   * Check line of sight and return blocker info (zero-allocation)
+   * Useful when you need to know WHAT blocked the line of sight
+   *
+   * @param {number} entityIndexA - Source entity index
+   * @param {number} entityIndexB - Target entity index
+   * @returns {Object} { blocked: boolean, entityIndex: number (-1 if clear), distance: number }
+   */
+  static getLineOfSightInfo(entityIndexA, entityIndexB) {
+    return Ray.linecastBetweenEntities(entityIndexA, entityIndexB);
   }
 
   /**
