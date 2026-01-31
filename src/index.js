@@ -30,7 +30,6 @@ export { Transform } from './components/Transform.js';
 export { RigidBody } from './components/RigidBody.js';
 export { Collider } from './components/Collider.js';
 export { SpriteRenderer } from './components/SpriteRenderer.js';
-export { MouseComponent } from './components/MouseComponent.js';
 export { ParticleComponent } from './components/ParticleComponent.js';
 export { DecorationComponent } from './components/DecorationComponent.js';
 export { LightEmitter } from './components/LightEmitter.js';
@@ -104,7 +103,6 @@ import { Transform } from './components/Transform.js';
 import { RigidBody } from './components/RigidBody.js';
 import { Collider } from './components/Collider.js';
 import { SpriteRenderer } from './components/SpriteRenderer.js';
-import { MouseComponent } from './components/MouseComponent.js';
 import { ParticleComponent } from './components/ParticleComponent.js';
 
 import { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/ParticleEmitter.js';
@@ -141,7 +139,6 @@ const WEED = {
   RigidBody,
   Collider,
   SpriteRenderer,
-  MouseComponent,
   ParticleComponent,
   LightEmitter,
   ShadowCaster,

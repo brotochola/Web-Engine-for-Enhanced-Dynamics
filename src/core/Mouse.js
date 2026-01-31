@@ -1,50 +1,81 @@
-// Mouse.js - Mouse entity with Transform for spatial tracking
-// Extends GameObject so it can be tracked in the spatial grid
-// Position is written directly to Transform by main thread
-// Button state is stored in MouseComponent (SharedArrayBuffer)
+// Mouse.js - Static mouse input interface
+// Pure utility class like Camera and Keyboard - NOT a GameObject
+// Zero allocations, direct SharedArrayBuffer access
 
-import { GameObject } from './gameObject.js';
-import { Transform } from '../components/Transform.js';
-import { Collider } from '../components/Collider.js';
-import { MouseComponent } from '../components/MouseComponent.js';
-
-export class Mouse extends GameObject {
-  // entityType auto-assigned during registration (Mouse is always registered first, so gets ID 0)
-  static components = [Collider, MouseComponent]; // Collider for spatial queries, MouseComponent for input state
-
-  // Default visual range for mouse (how far it "sees" neighbors)
-  static defaultVisualRange = 150;
-
-  // Debug tool mode flag - when true, button state is consumed by DebugUI tools
-  // and should not be passed to game entities
-  static isDebugToolActive = false;
-
-  // Mouse is ALWAYS registered first, so its entity index is ALWAYS 0
-  // Mouse component index is also 0 (only one Mouse exists)
-  // No configuration needed - just use index 0 everywhere!
+/**
+ * Static Mouse class for cross-worker mouse state access
+ * Mouse data is stored in a SharedArrayBuffer:
+ * [x, y, button0, button1, button2, isPresent, wheel]
+ *
+ * NOT an entity - does not participate in spatial grid or neighbor detection.
+ * For spatial queries near mouse, use Grid.getEntitiesInRadius(Mouse.x, Mouse.y, radius)
+ */
+export class Mouse {
+  // SharedArrayBuffer view: Float32Array [x, y, button0, button1, button2, isPresent, wheel]
+  // Using Float32 for all to keep alignment simple and avoid multiple views
+  static _data = null;
 
   // Canvas position for world coordinate calculation (main thread only)
   static _canvasX = 0;
   static _canvasY = 0;
+
+  // Debug tool mode flag - when true, button state is consumed by DebugUI tools
+  static isDebugToolActive = false;
+
+  // Buffer layout indices (compile-time constants for zero-overhead access)
+  static _X = 0;
+  static _Y = 1;
+  static _BUTTON0 = 2;
+  static _BUTTON1 = 3;
+  static _BUTTON2 = 4;
+  static _IS_PRESENT = 5;
+  static _WHEEL = 6;
+
+  // Buffer size in bytes (7 Float32 values = 28 bytes)
+  static BUFFER_SIZE = 7 * 4;
+
+  // ============================================
+  // INITIALIZATION
+  // ============================================
+
+  /**
+   * Initialize mouse with shared data buffer
+   * @param {SharedArrayBuffer|Float32Array} buffer - SharedArrayBuffer or Float32Array view
+   */
+  static initialize(buffer) {
+    if (buffer instanceof SharedArrayBuffer) {
+      this._data = new Float32Array(buffer);
+    } else {
+      this._data = buffer;
+    }
+  }
+
+  /**
+   * Check if mouse is initialized
+   * @returns {boolean}
+   */
+  static get isInitialized() {
+    return this._data !== null;
+  }
 
   // ============================================
   // POSITION - getters and setters
   // ============================================
 
   static get x() {
-    return Transform.x[0];
+    return this._data ? this._data[0] : 0;
   }
 
   static set x(value) {
-    Transform.x[0] = value;
+    if (this._data) this._data[0] = value;
   }
 
   static get y() {
-    return Transform.y[0];
+    return this._data ? this._data[1] : 0;
   }
 
   static set y(value) {
-    Transform.y[0] = value;
+    if (this._data) this._data[1] = value;
   }
 
   // ============================================
@@ -52,35 +83,35 @@ export class Mouse extends GameObject {
   // ============================================
 
   static get isButton0Down() {
-    return MouseComponent.button0Down[0] === 1;
+    return this._data ? this._data[2] === 1 : false;
   }
 
   static set isButton0Down(value) {
-    MouseComponent.button0Down[0] = value ? 1 : 0;
+    if (this._data) this._data[2] = value ? 1 : 0;
   }
 
   static get isButton1Down() {
-    return MouseComponent.button1Down[0] === 1;
+    return this._data ? this._data[3] === 1 : false;
   }
 
   static set isButton1Down(value) {
-    MouseComponent.button1Down[0] = value ? 1 : 0;
+    if (this._data) this._data[3] = value ? 1 : 0;
   }
 
   static get isButton2Down() {
-    return MouseComponent.button2Down[0] === 1;
+    return this._data ? this._data[4] === 1 : false;
   }
 
   static set isButton2Down(value) {
-    MouseComponent.button2Down[0] = value ? 1 : 0;
+    if (this._data) this._data[4] = value ? 1 : 0;
   }
 
   static get isPresent() {
-    return MouseComponent.isPresent[0] === 1;
+    return this._data ? this._data[5] === 1 : false;
   }
 
   static set isPresent(value) {
-    MouseComponent.isPresent[0] = value ? 1 : 0;
+    if (this._data) this._data[5] = value ? 1 : 0;
   }
 
   // ============================================
@@ -88,11 +119,11 @@ export class Mouse extends GameObject {
   // ============================================
 
   static get wheel() {
-    return MouseComponent.wheel[0];
+    return this._data ? this._data[6] : 0;
   }
 
   static set wheel(value) {
-    MouseComponent.wheel[0] = value;
+    if (this._data) this._data[6] = value;
   }
 
   // ============================================
@@ -129,9 +160,9 @@ export class Mouse extends GameObject {
    * @param {Object} camera - Camera object with zoom, x, y
    */
   static updateWorldPosition(camera) {
-    if (this._canvasX !== undefined) {
-      this.x = this._canvasX / camera.zoom + camera.x;
-      this.y = this._canvasY / camera.zoom + camera.y;
+    if (this._data && this._canvasX !== undefined) {
+      this._data[0] = this._canvasX / camera.zoom + camera.x;
+      this._data[1] = this._canvasY / camera.zoom + camera.y;
     }
   }
 
@@ -145,45 +176,5 @@ export class Mouse extends GameObject {
     this._canvasX = canvasX;
     this._canvasY = canvasY;
     this.updateWorldPosition(camera);
-  }
-
-  // ============================================
-  // INSTANCE METHODS (for worker-side access)
-  // ============================================
-
-  // Setup - configure collider for spatial queries
-  setup() {
-    if (this.collider) {
-      this.collider.visualRange = Mouse.defaultVisualRange;
-      this.collider.radius = 0;
-      this.collider.isTrigger = 1; // Trigger only - no physical push, just detection
-    }
-  }
-
-  // Instance getters for convenience (read from components)
-  get isButton0Down() {
-    return this.mouseComponent ? this.mouseComponent.button0Down === 1 : false;
-  }
-
-  get isButton1Down() {
-    return this.mouseComponent ? this.mouseComponent.button1Down === 1 : false;
-  }
-
-  get isButton2Down() {
-    return this.mouseComponent ? this.mouseComponent.button2Down === 1 : false;
-  }
-
-  get isPresent() {
-    return this.mouseComponent ? this.mouseComponent.isPresent === 1 : false;
-  }
-
-  get isDown() {
-    return this.isButton0Down;
-  }
-
-  // tick() is optional - position is updated by main thread directly
-  tick(dtRatio) {
-    // console.log(this.neighborCount);
-    // Mouse position is already updated by main thread writing to Transform
   }
 }

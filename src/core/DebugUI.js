@@ -121,7 +121,7 @@ export class DebugUI {
     };
 
     // Pre-allocated Set for internal entities (reused, never recreated)
-    this._internalEntitiesSet = new Set(['Mouse', 'Flash']);
+    this._internalEntitiesSet = new Set(['Flash']);
 
     // Pre-allocated string builder for pool stats
     this._poolStatsBuffer = '';
@@ -833,7 +833,7 @@ export class DebugUI {
     if (method && this.debugFlags[method]) {
       const currentState = this.debugFlags.isEnabled(
         DEBUG_FLAGS[
-          `SHOW_${key.toUpperCase().replace('GRID', '_GRID').replace('INDICES', '_INDICES')}`
+        `SHOW_${key.toUpperCase().replace('GRID', '_GRID').replace('INDICES', '_INDICES')}`
         ]
       );
       this.debugFlags[method](!currentState);
@@ -2437,9 +2437,8 @@ export class DebugUI {
     // Get mouse position from Mouse static class
     const mouseX = Mouse.x;
     const mouseY = Mouse.y;
-    const mousePresent = Mouse.isPresent;
 
-    if (!mousePresent) return;
+    if (!Mouse.isPresent) return;
 
     const neighborData = Grid.neighborData;
     const stride = Grid._stride;
@@ -2448,26 +2447,23 @@ export class DebugUI {
     const x = Transform.x;
     const y = Transform.y;
 
-    // Mouse is always at entity index 0
-    // Get the Mouse's neighbors to find the closest entity to the mouse
-    const mouseOffset = 0;
-    const mouseNeighborCount = neighborData[mouseOffset];
+    // Find entity closest to mouse using Grid spatial query
+    const { count, entities } = Grid.getEntitiesInRadius(mouseX, mouseY, 150);
 
-    // Find the entity closest to the mouse from its neighbor list
     let closestEntity = -1;
     let closestDist2 = Infinity;
 
-    for (let n = 0; n < mouseNeighborCount; n++) {
-      const neighborIndex = neighborData[mouseOffset + 1 + n];
-      if (!active[neighborIndex]) continue;
+    for (let i = 0; i < count; i++) {
+      const entityId = entities[i];
+      if (!active[entityId]) continue;
 
-      const dx = x[neighborIndex] - mouseX;
-      const dy = y[neighborIndex] - mouseY;
+      const dx = x[entityId] - mouseX;
+      const dy = y[entityId] - mouseY;
       const dist2 = dx * dx + dy * dy;
 
       if (dist2 < closestDist2) {
         closestDist2 = dist2;
-        closestEntity = neighborIndex;
+        closestEntity = entityId;
       }
     }
 
@@ -2488,7 +2484,7 @@ export class DebugUI {
     ctx.arc(mySx, mySy, highlightRadius, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Draw neighbor connections
+    // Draw neighbor connections using the entity's actual neighbor data
     const offset = closestEntity * stride;
     const neighborCount = neighborData[offset];
 
@@ -2871,48 +2867,40 @@ export class DebugUI {
 
   /**
    * Select an entity at the current mouse position
+   * Uses Grid spatial query for efficiency
    */
   _selectEntityAtMouse() {
     if (!this.scene || !this.inspectorActive) return;
 
-    const eraserRadiusSq = 100 * 100; // 100px selection radius
-    const internalEntities = this._internalEntitiesSet;
+    const selectRadius = 100;
+    const { count, entities } = Grid.getEntitiesInRadius(Mouse.x, Mouse.y, selectRadius);
 
-    // Get Mouse's neighbors from spatial worker data (Mouse is always entity 0)
-    const neighborData = GameObject.neighborData;
-    const distanceData = GameObject.distanceData;
-
-    if (!neighborData) return;
-
-    const maxNeighbors = this.scene.config?.spatial?.maxNeighbors || 100;
-    const offset = 0; // Mouse is entity 0
-    const neighborCount = neighborData[offset];
-
-    if (neighborCount === 0) {
+    if (count === 0) {
       this._clearSelection();
       return;
     }
 
-    // Find nearest neighbor within selection radius
+    // Find nearest entity, skipping internal entities
     let nearestIndex = -1;
-    let nearestDistSq = eraserRadiusSq;
+    let nearestDistSq = selectRadius * selectRadius;
 
-    for (let n = 0; n < neighborCount; n++) {
-      const neighborIdx = neighborData[offset + 1 + n];
+    for (let i = 0; i < count; i++) {
+      const entityId = entities[i];
+      if (!Transform.active[entityId]) continue;
 
-      if (!Transform.active[neighborIdx]) continue;
-
-      // Skip internal entities
-      const entityType = Transform.entityType[neighborIdx];
+      // Skip internal entities (Flash)
+      const entityType = Transform.entityType[entityId];
       const reg = this.scene.registeredClasses.find((r) => r.entityType === entityType);
-      if (reg && internalEntities.has(reg.class.name)) continue;
+      if (reg && this._internalEntitiesSet.has(reg.class.name)) continue;
 
-      // Use precomputed squared distance
-      const distSq = distanceData ? distanceData[offset + 1 + n] : null;
+      // Distance check
+      const dx = Transform.x[entityId] - Mouse.x;
+      const dy = Transform.y[entityId] - Mouse.y;
+      const distSq = dx * dx + dy * dy;
 
-      if (distSq !== null && distSq < nearestDistSq) {
+      if (distSq < nearestDistSq) {
         nearestDistSq = distSq;
-        nearestIndex = neighborIdx;
+        nearestIndex = entityId;
       }
     }
 
@@ -3423,55 +3411,40 @@ export class DebugUI {
 
   /**
    * Despawn entity nearest to mouse position
-   * Uses Mouse entity's neighbor data from spatial worker for efficiency
+   * Uses Grid spatial query for efficiency
    */
   _despawnEntityAtMouse() {
     if (!this.scene || !this.gameEngine) return;
 
-    const eraserRadiusSq = 50 * 50; // Squared pixels for comparison with distance data
-    const internalEntities = new Set(['Mouse', 'Flash']);
+    const eraserRadius = 50;
+    const { count, entities } = Grid.getEntitiesInRadius(Mouse.x, Mouse.y, eraserRadius);
+    if (count === 0) return;
 
-    // Get Mouse's neighbors from spatial worker data (Mouse is always entity 0)
-    const neighborData = GameObject.neighborData;
-    const distanceData = GameObject.distanceData;
-
-    if (!neighborData) {
-      // Fallback if neighbor data not available
-      return;
-    }
-
-    const maxNeighbors = this.scene.config?.spatial?.maxNeighbors || 100;
-    const offset = 0; // Mouse is entity 0, so offset is 0
-    const neighborCount = neighborData[offset];
-
-    if (neighborCount === 0) return;
-
-    // Find nearest neighbor within eraser radius
+    // Find nearest entity, skipping internal entities
     let nearestIndex = -1;
-    let nearestDistSq = eraserRadiusSq;
+    let nearestDistSq = eraserRadius * eraserRadius;
 
-    for (let n = 0; n < neighborCount; n++) {
-      const neighborIdx = neighborData[offset + 1 + n];
+    for (let i = 0; i < count; i++) {
+      const entityId = entities[i];
+      if (!Transform.active[entityId]) continue;
 
-      if (!Transform.active[neighborIdx]) continue;
-
-      // Skip internal entities
-      const entityType = Transform.entityType[neighborIdx];
+      // Skip internal entities (Flash)
+      const entityType = Transform.entityType[entityId];
       const reg = this.scene.registeredClasses.find((r) => r.entityType === entityType);
-      if (reg && internalEntities.has(reg.class.name)) continue;
+      if (reg && this._internalEntitiesSet.has(reg.class.name)) continue;
 
-      // Use precomputed squared distance from spatial worker
-      const distSq = distanceData ? distanceData[offset + 1 + n] : null;
+      // Distance check
+      const dx = Transform.x[entityId] - Mouse.x;
+      const dy = Transform.y[entityId] - Mouse.y;
+      const distSq = dx * dx + dy * dy;
 
-      if (distSq !== null && distSq < nearestDistSq) {
+      if (distSq < nearestDistSq) {
         nearestDistSq = distSq;
-        nearestIndex = neighborIdx;
+        nearestIndex = entityId;
       }
     }
 
     if (nearestIndex >= 0) {
-      // Despawn through the scene/worker to properly update the freeList
-      // Direct main-thread despawn would corrupt the worker's freeList
       this.scene.despawnEntity(nearestIndex);
     }
   }

@@ -109,8 +109,7 @@ class LogicWorker extends AbstractWorker {
           SpriteSheetRegistry.registerProxy(sheetName, proxyData);
         }
         console.log(
-          `LOGIC WORKER ${this.workerIndex}: Registered ${
-            Object.keys(data.bigAtlasProxySheets).length
+          `LOGIC WORKER ${this.workerIndex}: Registered ${Object.keys(data.bigAtlasProxySheets).length
           } proxy sheets`
         );
       }
@@ -267,7 +266,7 @@ class LogicWorker extends AbstractWorker {
     this.systemsExecutedThisFrame = 0;
 
     // Initialize Keyboard static class with input data
-    // Note: Mouse position/state is now read directly from Transform/MouseComponent
+    // Note: Mouse position/state is read from Mouse static class (SharedArrayBuffer)
     Keyboard.initialize(this.inputData, this.keyIndexMap);
 
     // Process collision callbacks BEFORE entity logic (Unity-style)
