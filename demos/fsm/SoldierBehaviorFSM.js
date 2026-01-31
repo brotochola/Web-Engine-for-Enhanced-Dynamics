@@ -53,15 +53,11 @@ function canShootTarget(owner, targetIndex, targetDistSq) {
   if (targetDistSq > weapon.rangeSq) return false;
 
   // Must have clear line of sight (not blocked, or blocked by non-friendly)
-  const los = Ray.getLineOfSightInfo(owner.index, targetIndex);
+  const los = Ray.hasLineOfSight(owner.index, targetIndex);
 
-  if (los.blocked) {
-    // Check if blocker is a friendly (same entityType) - don't shoot through friendlies
-    const blockerType = Transform.entityType[los.entityIndex];
-    if (blockerType === owner.entityType) return false;
-  }
+  // Ray._addDebugRaycast(owner.x, owner.y, Transform.x[targetIndex], Transform.y[targetIndex], Transform.x[targetIndex], Transform.y[targetIndex], los.blocked);
 
-  return true;
+  return los;
 }
 
 // ==========================================
@@ -77,7 +73,7 @@ function getDestination() {
 // ==========================================
 
 class IdleSoldierState extends FSMState {
-  static onEnter(owner, i, fromState) {}
+  static onEnter(owner, i, fromState) { }
 
   static onUpdate(owner, i, dt) {
     // Priority 1: Check for destination
@@ -91,7 +87,8 @@ class IdleSoldierState extends FSMState {
     const closest = findClosestCivilian(owner);
     if (closest) {
       // Priority A: Can we shoot? (has gun, in range, clear LOS)
-      if (canShootTarget(owner, closest.index, closest.distSq)) {
+      const los = canShootTarget(owner, closest.index, closest.distSq);
+      if (los) {
         this.fsm.changeState(i, this.fsm.states.RANGED_ATTACKING);
         return;
       }
@@ -117,7 +114,7 @@ class IdleSoldierState extends FSMState {
 // ==========================================
 
 class GoingToDestinationState extends FSMState {
-  static onEnter(owner, i, fromState) {}
+  static onEnter(owner, i, fromState) { }
 
   static onUpdate(owner, i, dt) {
     const dest = getDestination();
@@ -152,7 +149,7 @@ class GoingToDestinationState extends FSMState {
 // ==========================================
 
 class GoingToEnemyState extends FSMState {
-  static onEnter(owner, i, fromState) {}
+  static onEnter(owner, i, fromState) { }
 
   static onUpdate(owner, i, dt) {
     const closest = findClosestCivilian(owner);
@@ -162,12 +159,12 @@ class GoingToEnemyState extends FSMState {
       this.fsm.changeState(i, this.fsm.states.IDLE);
       return;
     }
-
+    const targetIndex = closest.index;
     owner.groupWithMyTeam();
     owner.separateFromTeam();
 
     // Priority A: Can we shoot? (has gun, in range, clear LOS)
-    if (canShootTarget(owner, closest.index, closest.distSq)) {
+    if (canShootTarget(owner, targetIndex, closest.distSq)) {
       this.fsm.changeState(i, this.fsm.states.RANGED_ATTACKING);
       return;
     }
@@ -180,18 +177,32 @@ class GoingToEnemyState extends FSMState {
       return;
     }
 
-    // Chase toward closest civilian
+    const canIGoDirectly = Ray.hasLineOfSight(owner.index, targetIndex);
     const targetX = Transform.x[closest.index];
     const targetY = Transform.y[closest.index];
+    const ownerX = Transform.x[owner.index];
+    const ownerY = Transform.y[owner.index];
+    const chaseStrength = 0.15;
 
-    const dx = targetX - owner.x;
-    const dy = targetY - owner.y;
-    const dist = Math.sqrt(closest.distSq);
+    if (canIGoDirectly) {
 
-    if (dist > 0) {
-      const chaseStrength = 0.15;
-      RigidBody.ax[i] += (dx / dist) * chaseStrength;
-      RigidBody.ay[i] += (dy / dist) * chaseStrength;
+      // Chase toward closest civilian
+
+      const dx = targetX - ownerX
+      const dy = targetY - ownerY
+      const dist = Math.sqrt(closest.distSq);
+
+      if (dist > 0) {
+
+        RigidBody.ax[i] += (dx / dist) * chaseStrength;
+        RigidBody.ay[i] += (dy / dist) * chaseStrength;
+      }
+    }
+    else {
+      // Follow flowfield toward victim
+      let vec = { x: 0, y: 0 };
+      NavGrid.requestVector(ownerX, ownerY, targetX, targetY, vec);
+      owner.addAcceleration(vec.x * chaseStrength, vec.y * chaseStrength);
     }
   }
 }
@@ -201,7 +212,7 @@ class GoingToEnemyState extends FSMState {
 // ==========================================
 
 class RangedAttackingState extends FSMState {
-  static onEnter(owner, i, fromState) {}
+  static onEnter(owner, i, fromState) { }
 
   static onUpdate(owner, i, dt) {
     const closest = findClosestCivilian(owner);
@@ -243,7 +254,7 @@ class RangedAttackingState extends FSMState {
 // ==========================================
 
 class CloseAttackingState extends FSMState {
-  static onEnter(owner, i, fromState) {}
+  static onEnter(owner, i, fromState) { }
 
   static onUpdate(owner, i, dt) {
     const closest = findClosestCivilian(owner);

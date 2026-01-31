@@ -334,9 +334,12 @@ export class PredatorScene extends WEED.Scene {
     ]);
   }
 
-  update(time, delta) {
-    // Optional: Add scene-specific per-frame logic here
-    // For example, spawning waves of enemies, checking win conditions, etc.
+  update(dtRatio, deltaTime, accumulatedTime, frameNumber) {
+
+    // console.log(dtRatio, deltaTime, accumulatedTime, frameNumber)
+    if (frameNumber % 300 === 0) {
+      this.createNavGridForTheFlowField()
+    }
   }
 
   // ========================================

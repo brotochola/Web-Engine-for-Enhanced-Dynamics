@@ -733,10 +733,12 @@ class Scene {
    * Override this method in subclasses to implement per-frame scene logic.
    * Runs after all core engine updates and before rendering.
    *
-   * @param {number} time - The current high-resolution timestamp (ms).
-   * @param {number} delta - The time elapsed since the last frame (ms).
+   * @param {number} dtRatio - The delta time ratio normalized to 60fps (1.0 = 16.67ms frame).
+   * @param {number} deltaTime - The time elapsed since the last frame (ms).
+   * @param {number} accumulatedTime - The total time elapsed since the game started (ms).
+   * @param {number} frameNumber - The current frame number
    */
-  update(time, delta) {
+  update(dtRatio, deltaTime, accumulatedTime, frameNumber) {
     // Override this for per-frame scene logic
   }
 
@@ -1042,7 +1044,7 @@ class Scene {
 
     console.log(
       `[Scene] Spatial grid: ${gridCols}x${gridRows} cells (${totalCells} total), ` +
-        `${cellSize}px cell size, ${GRID_BUFFER_SIZE} bytes (row-based partitioning)`
+      `${cellSize}px cell size, ${GRID_BUFFER_SIZE} bytes (row-based partitioning)`
     );
 
     // Worker stat buffers: detailed metrics for each worker type
@@ -1445,35 +1447,35 @@ class Scene {
       decorationActiveCount: this.buffers.decorationActiveCount || null,
       decals: this.config.particle.decals
         ? {
-            enabled: true,
-            tileSize: this.config.particle.decalsTileSize,
-            tilePixelSize: this.config.particle.decalsTilePixelSize,
-            resolution: this.config.particle.decalsResolution,
-            tilesX: this.decalsTilesX,
-            tilesY: this.decalsTilesY,
-            totalTiles: this.decalsTotalTiles,
-            tilesRGBA: this.buffers.bloodTilesRGBA,
-            tilesDirty: this.buffers.bloodTilesDirty,
-            textures: this.decalTextureData,
-          }
+          enabled: true,
+          tileSize: this.config.particle.decalsTileSize,
+          tilePixelSize: this.config.particle.decalsTilePixelSize,
+          resolution: this.config.particle.decalsResolution,
+          tilesX: this.decalsTilesX,
+          tilesY: this.decalsTilesY,
+          totalTiles: this.decalsTotalTiles,
+          tilesRGBA: this.buffers.bloodTilesRGBA,
+          tilesDirty: this.buffers.bloodTilesDirty,
+          textures: this.decalTextureData,
+        }
         : null,
       shadows: this.config.lighting.shadowsEnabled
         ? {
-            enabled: true,
-            maxShadowCastingLights: this.config.lighting.maxShadowCastingLights,
-            maxShadowsPerLight: this.config.lighting.maxShadowsPerLight,
-            maxShadowsPerEntity: this.config.lighting.maxShadowsPerEntity,
-            maxShadowSprites: this.config.lighting.maxShadowSprites,
-            spriteData: this.buffers.shadowSpriteData,
-          }
+          enabled: true,
+          maxShadowCastingLights: this.config.lighting.maxShadowCastingLights,
+          maxShadowsPerLight: this.config.lighting.maxShadowsPerLight,
+          maxShadowsPerEntity: this.config.lighting.maxShadowsPerEntity,
+          maxShadowSprites: this.config.lighting.maxShadowSprites,
+          spriteData: this.buffers.shadowSpriteData,
+        }
         : null,
       flashes:
         this.config.lighting.maxFlashes > 0
           ? {
-              enabled: true,
-              maxFlashes: this.config.lighting.maxFlashes,
-              startIndex: Flash.startIndex,
-            }
+            enabled: true,
+            maxFlashes: this.config.lighting.maxFlashes,
+            startIndex: Flash.startIndex,
+          }
           : null,
       queries: this.querySystem.serialize(), // Pre-calculated entity queries
     };
@@ -1895,7 +1897,7 @@ class Scene {
     // Visible/active units are now read directly by DebugUI from Transform/SpriteRenderer arrays
 
     // Call user's update hook
-    this.update(performance.now(), deltaTime);
+    this.update(dtRatio, deltaTime, performance.now(), this.mainFrameNumber);
 
     // Reset per-frame input state (after update so devs can read it)
     Mouse.wheel = 0;
@@ -2179,7 +2181,7 @@ class Scene {
       const availableTilemaps = this.loadedTilemaps ? Object.keys(this.loadedTilemaps) : [];
       console.error(
         `Tilemap "${tilemapId}" not found. ` +
-          `Available tilemaps: [${availableTilemaps.join(', ') || 'none'}]`
+        `Available tilemaps: [${availableTilemaps.join(', ') || 'none'}]`
       );
       return;
     }

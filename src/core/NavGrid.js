@@ -1,15 +1,69 @@
 // NavGrid.js - Navigation grid for pathfinding (flowfields and A*)
-// Used by logic workers to query navigation, nav worker to compute paths
 //
-// Architecture:
-// - SAB contains: grid metadata, walkability, flowfield cache, path cache
-// - Logic workers: READ-ONLY (query vectors/positions, request calculations)
-// - Nav worker: READ + WRITE (computes flowfields/paths, writes results)
+// ============================================================================
+// FLOWFIELD SYSTEM OVERVIEW
+// ============================================================================
 //
-// All methods are designed to be:
-// - Non-blocking (return fallback if data not ready)
-// - Zero-allocation in hot paths (use out parameters)
-// - Frame-coherent (data doesn't change mid-frame)
+// Flowfields provide efficient pathfinding for MANY entities going to the SAME target.
+// Instead of computing individual paths, we compute ONE flowfield per target that
+// ALL entities can sample from.
+//
+// How it works:
+// 1. Entity calls NavGrid.requestVector(myX, myY, targetX, targetY, outVec)
+// 2. If flowfield for targetCell exists → returns direction vector immediately
+// 3. If flowfield doesn't exist → returns (0,0), sends request to nav_worker
+// 4. Nav_worker computes flowfield using Dijkstra's algorithm
+// 5. Next frame, entity gets the direction vector
+//
+// Key concepts:
+// - targetCell: The destination cell (world position → grid cell)
+// - Flowfield: A grid where each cell stores a direction pointing toward the target
+// - Slot: Flowfields are cached in slots (default 16 slots, LRU eviction)
+//
+// ============================================================================
+// MEMORY LAYOUT (SharedArrayBuffer)
+// ============================================================================
+//
+// The navigation SAB is laid out as:
+//
+// [HEADER (32 bytes)]
+//   - version (u32)      : Incremented on invalidation
+//   - gridWidth (u32)    : Grid width in cells
+//   - gridHeight (u32)   : Grid height in cells
+//   - cellSize (u32)     : Pixels per cell
+//   - totalCells (u32)   : gridWidth * gridHeight
+//   - maxFlowfields (u32): Number of flowfield slots
+//   - maxPaths (u32)     : Number of A* path slots
+//   - maxPathLength (u32): Max cells per path
+//
+// [WALKABILITY (totalCells bytes)]
+//   - 1 byte per cell: 0 = blocked, 1+ = walkable
+//
+// [FLOWFIELD SLOTS (interleaved)]
+//   For each slot:
+//   - Header (12 bytes): targetCell (u32), lastUsedFrame (u32), status (u32)
+//   - Data (totalCells bytes): direction per cell (1 byte each)
+//
+// [PATH SLOTS]
+//   For each slot:
+//   - Header (20 bytes): fromCell, toCell, lastUsedFrame, length, status
+//   - Data (maxPathLength * 4 bytes): cell indices
+//
+// ============================================================================
+// MULTI-WORKER ARCHITECTURE
+// ============================================================================
+//
+// - Main thread: Initializes SAB, can read for debug visualization
+// - Logic workers: READ-ONLY - call requestVector(), receive directions
+// - Nav worker: READ+WRITE - computes flowfields, writes to SAB
+//
+// Communication flow:
+// 1. Logic worker calls requestVector() → flowfield not found
+// 2. Logic worker sends REQUEST_FLOWFIELD message to nav_worker via MessagePort
+// 3. Nav_worker computes Dijkstra, writes to slot, sets status = READY
+// 4. Next frame, logic worker finds flowfield and samples direction
+//
+// ============================================================================
 
 /**
  * Flowfield slot status values
@@ -225,14 +279,23 @@ export class NavGrid {
   /**
    * Get movement vector from flowfield pathfinding
    *
+   * This is the main API for flowfield navigation. Call every frame for each
+   * entity that needs pathfinding. The system handles caching automatically.
+   *
    * @param {number} cx - Current world X position
    * @param {number} cy - Current world Y position
    * @param {number} tx - Target world X position
    * @param {number} ty - Target world Y position
    * @param {Object} outVec - Output vector {x, y} to fill
    *
-   * If flowfield exists: outVec = normalized direction vector
+   * If flowfield exists: outVec = normalized direction vector (-1, 0, or 1 per axis)
    * If flowfield not ready: outVec = {x: 0, y: 0}, requests calculation
+   *
+   * @example
+   * const vec = { x: 0, y: 0 };
+   * NavGrid.requestVector(entity.x, entity.y, target.x, target.y, vec);
+   * entity.vx += vec.x * speed;
+   * entity.vy += vec.y * speed;
    */
   static requestVector(cx, cy, tx, ty, outVec) {
     if (!this._initialized) {
@@ -241,7 +304,7 @@ export class NavGrid {
       return;
     }
 
-    // Convert target to cell
+    // Convert target to cell - flowfields are keyed by target cell
     const targetCell = this.getCellAt(tx, ty);
     if (targetCell < 0 || targetCell >= this._totalCells) {
       outVec.x = 0;
@@ -249,7 +312,7 @@ export class NavGrid {
       return;
     }
 
-    // Convert current position to cell
+    // Convert current position to cell - used to sample the flowfield
     const currentCell = this.getCellAt(cx, cy);
     if (currentCell < 0 || currentCell >= this._totalCells) {
       outVec.x = 0;
@@ -261,7 +324,6 @@ export class NavGrid {
     if (currentCell === targetCell) {
       outVec.x = 0;
       outVec.y = 0;
-
       return;
     }
 
@@ -269,14 +331,14 @@ export class NavGrid {
     const slotIndex = this._findFlowfieldSlot(targetCell);
 
     if (slotIndex >= 0) {
-      // Flowfield exists - sample direction
+      // Flowfield exists - sample direction at our current cell
       const direction = this._sampleFlowfield(slotIndex, currentCell);
       const vec = DIR_TO_VEC[direction];
       outVec.x = vec[0];
       outVec.y = vec[1];
       // Note: LRU is handled by nav_worker when it receives requests
     } else {
-      // Flowfield not ready - return zero and request
+      // Flowfield not ready - return zero and request computation
       outVec.x = 0;
       outVec.y = 0;
       this._requestFlowfield(targetCell);
@@ -498,7 +560,9 @@ export class NavGrid {
 
   /**
    * Request nav worker to rebuild walkability from entity indices
-   * Can be called from any worker that has NavGrid initialized
+   * Can be called from any worker that has NavGrid initialized.
+   * This invalidates ALL cached flowfields and paths.
+   *
    * @param {number[]} entityIndices - Array of entity indices to mark as obstacles
    */
   static updateNavGrid(entityIndices) {
@@ -543,16 +607,23 @@ export class NavGrid {
 
   /**
    * Find flowfield slot for a target cell
+   *
+   * Flowfield slots use an INTERLEAVED memory layout:
+   * [slot0 header][slot0 data][slot1 header][slot1 data]...
+   *
+   * Each slot = FLOWFIELD_HEADER_SIZE (12 bytes) + totalCells (1 byte per cell)
+   *
+   * @param {number} targetCell - The destination cell to find flowfield for
    * @returns {number} - Slot index, or -1 if not found
    */
   static _findFlowfieldSlot(targetCell) {
-    const headerOffset = this._flowfieldHeadersOffset;
-    const headerSize = this._FLOWFIELD_HEADER_SIZE;
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
 
     for (let i = 0; i < this._maxFlowfields; i++) {
-      const offset = headerOffset + i * headerSize;
+      const offset = this._flowfieldHeadersOffset + i * slotSize;
       const view = new Uint32Array(this._sab, offset, 3);
 
+      // Check if this slot targets our cell and is ready
       if (view[0] === targetCell && view[2] === FLOWFIELD_STATUS.READY) {
         return i;
       }
@@ -562,11 +633,15 @@ export class NavGrid {
 
   /**
    * Sample flowfield direction at a cell
+   *
+   * @param {number} slotIndex - Which flowfield slot to sample
+   * @param {number} currentCell - The cell to get direction for
+   * @returns {number} - Direction enum value (DIRECTION.N, DIRECTION.SE, etc.)
    */
   static _sampleFlowfield(slotIndex, currentCell) {
-    const flowfieldSlotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
     const dataOffset =
-      this._flowfieldHeadersOffset + slotIndex * flowfieldSlotSize + this._FLOWFIELD_HEADER_SIZE;
+      this._flowfieldHeadersOffset + slotIndex * slotSize + this._FLOWFIELD_HEADER_SIZE;
     const data = new Uint8Array(this._sab, dataOffset, this._totalCells);
     return data[currentCell];
   }
@@ -575,7 +650,8 @@ export class NavGrid {
    * Update LRU timestamp for flowfield slot
    */
   static _touchFlowfieldSlot(slotIndex) {
-    const headerOffset = this._flowfieldHeadersOffset + slotIndex * this._FLOWFIELD_HEADER_SIZE;
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+    const headerOffset = this._flowfieldHeadersOffset + slotIndex * slotSize;
     const view = new Uint32Array(this._sab, headerOffset, 3);
     view[1] = this._currentFrame; // lastUsedFrame
   }
@@ -584,7 +660,8 @@ export class NavGrid {
    * Clear a flowfield slot
    */
   static _clearFlowfieldSlot(slotIndex) {
-    const headerOffset = this._flowfieldHeadersOffset + slotIndex * this._FLOWFIELD_HEADER_SIZE;
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+    const headerOffset = this._flowfieldHeadersOffset + slotIndex * slotSize;
     const view = new Uint32Array(this._sab, headerOffset, 3);
     view[0] = 0xffffffff; // targetCell = invalid
     view[1] = 0; // lastUsedFrame
@@ -593,6 +670,12 @@ export class NavGrid {
 
   /**
    * Request flowfield calculation from nav worker
+   *
+   * Uses version-based deduplication to avoid spamming requests.
+   * If a request was already made for this targetCell in the current
+   * version, we skip. After invalidate() bumps the version, requests
+   * will be sent again.
+   *
    * @private
    */
   static _requestFlowfield(targetCell) {
@@ -735,33 +818,38 @@ export class NavGrid {
 
   /**
    * Find or allocate a flowfield slot (nav worker only)
-   * Uses LRU eviction if all slots are full
+   *
+   * Allocation strategy:
+   * 1. If flowfield for targetCell already exists → return that slot
+   * 2. If empty slot available → use first empty slot
+   * 3. Otherwise → evict least recently used (LRU) slot
+   *
+   * @param {number} targetCell - Destination cell for the flowfield
    * @returns {number} - Slot index
    */
   static allocateFlowfieldSlot(targetCell) {
-    const headerOffset = this._flowfieldHeadersOffset;
-    const headerSize = this._FLOWFIELD_HEADER_SIZE;
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
 
     let emptySlot = -1;
     let lruSlot = 0;
     let lruFrame = Infinity;
 
     for (let i = 0; i < this._maxFlowfields; i++) {
-      const offset = headerOffset + i * headerSize;
+      const offset = this._flowfieldHeadersOffset + i * slotSize;
       const view = new Uint32Array(this._sab, offset, 3);
 
-      // Already exists for this target?
+      // Already exists for this target? Reuse the slot.
       if (view[0] === targetCell) {
         return i;
       }
 
-      // Empty slot?
+      // Empty slot? Remember the first one.
       if (view[2] === FLOWFIELD_STATUS.EMPTY && emptySlot < 0) {
         emptySlot = i;
       }
 
-      // Track LRU
-      if (view[1] < lruFrame) {
+      // Track LRU (only for non-empty slots)
+      if (view[2] !== FLOWFIELD_STATUS.EMPTY && view[1] < lruFrame) {
         lruFrame = view[1];
         lruSlot = i;
       }
@@ -771,7 +859,7 @@ export class NavGrid {
     const slot = emptySlot >= 0 ? emptySlot : lruSlot;
 
     // Initialize slot header
-    const offset = headerOffset + slot * headerSize;
+    const offset = this._flowfieldHeadersOffset + slot * slotSize;
     const view = new Uint32Array(this._sab, offset, 3);
     view[0] = targetCell;
     view[1] = this._currentFrame;
@@ -782,18 +870,21 @@ export class NavGrid {
 
   /**
    * Write flowfield data and mark as ready (nav worker only)
+   *
+   * @param {number} slotIndex - Slot to write to
+   * @param {Uint8Array} directions - Direction data (1 byte per cell)
    */
   static writeFlowfieldData(slotIndex, directions) {
-    const flowfieldSlotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
     const dataOffset =
-      this._flowfieldHeadersOffset + slotIndex * flowfieldSlotSize + this._FLOWFIELD_HEADER_SIZE;
+      this._flowfieldHeadersOffset + slotIndex * slotSize + this._FLOWFIELD_HEADER_SIZE;
     const data = new Uint8Array(this._sab, dataOffset, this._totalCells);
 
     // Copy direction data
     data.set(directions);
 
-    // Mark as ready
-    const headerOffset = this._flowfieldHeadersOffset + slotIndex * this._FLOWFIELD_HEADER_SIZE;
+    // Mark as ready (header is at start of slot)
+    const headerOffset = this._flowfieldHeadersOffset + slotIndex * slotSize;
     const view = new Uint32Array(this._sab, headerOffset, 3);
     view[2] = FLOWFIELD_STATUS.READY;
   }
@@ -886,11 +977,10 @@ export class NavGrid {
     if (!this._initialized) return [];
 
     const result = [];
-    const headerOffset = this._flowfieldHeadersOffset;
-    const headerSize = this._FLOWFIELD_HEADER_SIZE;
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
 
     for (let i = 0; i < this._maxFlowfields; i++) {
-      const offset = headerOffset + i * headerSize;
+      const offset = this._flowfieldHeadersOffset + i * slotSize;
       const view = new Uint32Array(this._sab, offset, 3);
       const status = view[2];
 
@@ -966,14 +1056,13 @@ export class NavGrid {
   static getFlowfieldForVisualization(slotIndex) {
     if (!this._initialized || slotIndex < 0 || slotIndex >= this._maxFlowfields) return null;
 
-    const headerOffset = this._flowfieldHeadersOffset + slotIndex * this._FLOWFIELD_HEADER_SIZE;
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+    const headerOffset = this._flowfieldHeadersOffset + slotIndex * slotSize;
     const headerView = new Uint32Array(this._sab, headerOffset, 3);
 
     if (headerView[2] !== FLOWFIELD_STATUS.READY) return null;
 
-    const flowfieldSlotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
-    const dataOffset =
-      this._flowfieldHeadersOffset + slotIndex * flowfieldSlotSize + this._FLOWFIELD_HEADER_SIZE;
+    const dataOffset = headerOffset + this._FLOWFIELD_HEADER_SIZE;
 
     return {
       targetCell: headerView[0],
