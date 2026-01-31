@@ -6,7 +6,7 @@
   left: 0;
   right: 0;
   z-index: 10000;
-  font-family: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
   font-size: 14px;
   user-select: none;
 }
@@ -168,15 +168,15 @@
 }
 
 /* Dynamic column widths based on number of stats */
-.debug-ui-worker-table[data-stat-count="3"] .debug-ui-worker-cell.stat {
+.debug-ui-worker-table[data-stat-count='3'] .debug-ui-worker-cell.stat {
   width: 28.33%;
 }
 
-.debug-ui-worker-table[data-stat-count="4"] .debug-ui-worker-cell.stat {
+.debug-ui-worker-table[data-stat-count='4'] .debug-ui-worker-cell.stat {
   width: 21.25%;
 }
 
-.debug-ui-worker-table[data-stat-count="5"] .debug-ui-worker-cell.stat {
+.debug-ui-worker-table[data-stat-count='5'] .debug-ui-worker-cell.stat {
   width: 17%;
 }
 

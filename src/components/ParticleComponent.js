@@ -3,7 +3,7 @@
 // This component contains ALL data needed for particles (position, velocity, visuals)
 // Particles are static sprites with fixed anchor (0.5, 0.5) - no animation support
 
-import { Component } from "../core/Component.js";
+import { Component } from '../core/Component.js';
 
 export class ParticleComponent extends Component {
   static ARRAY_SCHEMA = {

@@ -13,7 +13,7 @@
 //     tick(dt) { this.enemyBehaviourFSM.tick(dt, this); }
 //   }
 
-import { Component } from "./Component.js";
+import { Component } from './Component.js';
 
 export class FSM extends Component {
   static isFSM = true;
@@ -83,7 +83,7 @@ export class FSM extends Component {
    */
   static _linkStates() {
     // Skip if already linked for this specific class
-    if (this.hasOwnProperty("_statesLinked") && this._statesLinked) {
+    if (this.hasOwnProperty('_statesLinked') && this._statesLinked) {
       return;
     }
 

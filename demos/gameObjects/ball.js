@@ -1,8 +1,7 @@
-import WEED from "/src/index.js";
+import WEED from '/src/index.js';
 
 // Destructure what we need from WEED
-const { GameObject, Keyboard, Mouse, RigidBody, Collider, SpriteRenderer } =
-  WEED;
+const { GameObject, Keyboard, Mouse, RigidBody, Collider, SpriteRenderer } = WEED;
 
 class Ball extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
@@ -42,7 +41,7 @@ class Ball extends GameObject {
 
     // Set the texture for this static sprite
 
-    this.setSprite("ball");
+    this.setSprite('ball');
 
     const actualBallSize = 14; //png width
     const ballRadius = Math.random() * 20 + 10;
@@ -78,8 +77,7 @@ class Ball extends GameObject {
    * Initialize THIS instance - runs EVERY spawn
    * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
    */
-  onSpawned(spawnConfig = {}) {
-  }
+  onSpawned(spawnConfig = {}) {}
 
   onCollisionEnter(otherIndex) {
     // this.setTint(0xff0000);

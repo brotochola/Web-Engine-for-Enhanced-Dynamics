@@ -1,6 +1,6 @@
-import { MySoldier } from "./mySoldier.js";
+import { MySoldier } from './mySoldier.js';
 
-import WEED from "/src/index.js";
+import WEED from '/src/index.js';
 const { Camera, Mouse } = WEED;
 export class CameraController extends WEED.GameObject {
   static scriptUrl = import.meta.url;
@@ -13,7 +13,6 @@ export class CameraController extends WEED.GameObject {
   onDespawned() {}
 
   tick(dtRatio) {
-
     const mySoldierIndices = MySoldier.getAllActiveIndices();
 
     if (mySoldierIndices.length === 0) return;
@@ -25,13 +24,13 @@ export class CameraController extends WEED.GameObject {
 
     // Find bounding box of all soldiers
     for (let i = 1; i < mySoldierIndices.length; i++) {
-        const idx=mySoldierIndices[i]
-        const x=Transform.x[idx]
-        const y=Transform.y[idx]
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x);
-        maxY = Math.max(maxY, y);
+      const idx = mySoldierIndices[i];
+      const x = Transform.x[idx];
+      const y = Transform.y[idx];
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
     }
 
     // Calculate center of all soldiers
@@ -39,12 +38,12 @@ export class CameraController extends WEED.GameObject {
     const centerY = minY + (maxY - minY) / 2;
 
     // Calculate zoom to fit all soldiers with padding (percentage of screen)
-    const paddingWidthPercent = 0.25;  // 20% on each side
+    const paddingWidthPercent = 0.25; // 20% on each side
     const paddingHeightPercent = 0.25; // 15% on each side
     const paddingX = Camera.canvasWidth * paddingWidthPercent;
     const paddingY = Camera.canvasHeight * paddingHeightPercent;
-    const spreadX = (maxX - minX) + paddingX * 2;
-    const spreadY = (maxY - minY) + paddingY * 2;
+    const spreadX = maxX - minX + paddingX * 2;
+    const spreadY = maxY - minY + paddingY * 2;
 
     // Calculate zoom so the spread fits in the viewport
     // Lower zoom = more world visible, higher zoom = zoomed in
@@ -57,6 +56,5 @@ export class CameraController extends WEED.GameObject {
 
     // Follow the center of all soldiers
     Camera.follow(centerX, centerY);
-
   }
 }

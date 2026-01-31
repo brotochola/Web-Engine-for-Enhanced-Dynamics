@@ -1,7 +1,7 @@
 // PredatorBehavior.js - Predator-specific behavior component
 // Handles prey hunting behavior
 
-import WEED from "../../src/index.js";
+import WEED from '../../src/index.js';
 const { Component } = WEED;
 
 export class PredatorBehavior extends Component {

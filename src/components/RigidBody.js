@@ -2,7 +2,7 @@
 // Handles velocity, acceleration, mass, and physics properties
 // Position and rotation are stored in Transform component
 
-import { Component } from "../core/Component.js";
+import { Component } from '../core/Component.js';
 
 export class RigidBody extends Component {
   // Array schema - defines all physics properties

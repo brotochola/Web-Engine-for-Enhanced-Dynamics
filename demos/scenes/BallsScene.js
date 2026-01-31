@@ -1,9 +1,9 @@
 // BallsScene.js - Gravity and Separation Physics Demo
 // Demonstrates balls with physics, gravity, and collision
 
-import { Ball } from "/demos/gameObjects/ball.js";
+import { Ball } from '/demos/gameObjects/ball.js';
 
-import WEED from "/src/index.js";
+import WEED from '/src/index.js';
 const { Scene, Camera, Mouse } = WEED;
 
 export class BallsScene extends Scene {
@@ -62,7 +62,7 @@ export class BallsScene extends Scene {
 
   static assets = {
     textures: {
-      ball: "/demos/img/bola.png",
+      ball: '/demos/img/bola.png',
     },
   };
 
@@ -92,7 +92,7 @@ export class BallsScene extends Scene {
 
   create() {
     // Spawn initial entities
-    console.log("🎬 BallsScene: Spawning balls...");
+    console.log('🎬 BallsScene: Spawning balls...');
 
     this.spawnBalls(this.numberOfBalls);
 
@@ -101,7 +101,7 @@ export class BallsScene extends Scene {
     this.cameraFollowY = this.config.worldHeight / 2;
     Camera.centerOn(this.cameraFollowX, this.cameraFollowY);
 
-    console.log("✅ BallsScene: Balls spawned!");
+    console.log('✅ BallsScene: Balls spawned!');
   }
 
   update(time, delta) {
@@ -123,19 +123,13 @@ export class BallsScene extends Scene {
     }
 
     // Clamp camera target to world bounds
-    this.cameraFollowX = Math.max(
-      0,
-      Math.min(this.cameraFollowX, this.config.worldWidth)
-    );
-    this.cameraFollowY = Math.max(
-      0,
-      Math.min(this.cameraFollowY, this.config.worldHeight)
-    );
+    this.cameraFollowX = Math.max(0, Math.min(this.cameraFollowX, this.config.worldWidth));
+    this.cameraFollowY = Math.max(0, Math.min(this.cameraFollowY, this.config.worldHeight));
 
     // Update camera (handles smooth following and zoom lerping)
     Camera.follow(this.cameraFollowX, this.cameraFollowY, 0.15);
 
-    Camera.setZoom(Camera.zoom*(1-Mouse.wheel*0.001));
+    Camera.setZoom(Camera.zoom * (1 - Mouse.wheel * 0.001));
   }
 
   // ========================================
@@ -186,10 +180,10 @@ export class BallsScene extends Scene {
   }
 
   clearAllEntities() {
-    if (confirm("Clear all balls?")) {
+    if (confirm('Clear all balls?')) {
       // Broadcast to all logic workers
       this.workers.logicWorkers.forEach((worker) => {
-        worker.postMessage({ msg: "clearAll" });
+        worker.postMessage({ msg: 'clearAll' });
       });
     }
   }

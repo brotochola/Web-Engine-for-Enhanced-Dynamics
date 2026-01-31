@@ -1,8 +1,7 @@
-import WEED from "/src/index.js";
+import WEED from '/src/index.js';
 
 // Destructure what we need from WEED
-const { GameObject, Keyboard, Mouse, RigidBody, Collider, SpriteRenderer, ShapeType } =
-  WEED;
+const { GameObject, Keyboard, Mouse, RigidBody, Collider, SpriteRenderer, ShapeType } = WEED;
 
 class Box extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
@@ -28,9 +27,9 @@ class Box extends GameObject {
     this.onSpawned();
   }
 
-  onScreenEnter() { }
+  onScreenEnter() {}
 
-  onScreenExit() { }
+  onScreenExit() {}
 
   /**
    * LIFECYCLE: Called when box is spawned/respawned from pool
@@ -43,7 +42,7 @@ class Box extends GameObject {
     const cellSize = config.spatial?.cellSize || 80;
 
     // Set the texture for this sprite
-    this.setSprite("box");
+    this.setSprite('box');
 
     // Initialize position using ergonomic API (automatically syncs px/py for Verlet)
 

@@ -1,7 +1,7 @@
 // PreyBehavior.js - Prey-specific behavior component
 // Handles predator avoidance and health/life tracking
 
-import WEED from "../../src/index.js";
+import WEED from '../../src/index.js';
 const { Component } = WEED;
 
 export class PreyBehavior extends Component {

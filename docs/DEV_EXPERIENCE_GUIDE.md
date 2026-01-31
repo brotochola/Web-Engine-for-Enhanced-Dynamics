@@ -7,7 +7,7 @@
 Here's the **absolute minimum** code needed to create a custom entity:
 
 ```javascript
-import WEED from "/src/index.js";
+import WEED from '/src/index.js';
 const { GameObject, RigidBody } = WEED;
 
 class MyEntity extends GameObject {
@@ -54,7 +54,7 @@ static scriptUrl = import.meta.url;
 gameEngine.registerEntityClass(Ball, 1000);
 
 // Without scriptUrl (manual path) 😓
-gameEngine.registerEntityClass(Ball, 1000, "/demos/balls/ball.js");
+gameEngine.registerEntityClass(Ball, 1000, '/demos/balls/ball.js');
 ```
 
 **Recommendation:** Always include it! It's one line that saves you from tracking file paths.
@@ -73,7 +73,7 @@ The engine handles this internally:
 
 ```javascript
 // In gameEngine.js - automatically done for you
-if (!EntityClass.hasOwnProperty("instances")) {
+if (!EntityClass.hasOwnProperty('instances')) {
   EntityClass.instances = [];
 }
 ```
@@ -133,7 +133,7 @@ export function captureScriptUrl(EntityClass, scriptUrl) {
 }
 
 // Your entity file
-import { captureScriptUrl } from "./entityHelper.js";
+import { captureScriptUrl } from './entityHelper.js';
 
 class Ball extends GameObject {
   static components = [RigidBody];
@@ -163,9 +163,9 @@ export async function registerEntities(engine, entities) {
 }
 
 // Usage in your game
-import { registerEntities } from "./gameSetup.js";
-import { Ball } from "./ball.js";
-import { Player } from "./player.js";
+import { registerEntities } from './gameSetup.js';
+import { Ball } from './ball.js';
+import { Player } from './player.js';
 
 await registerEntities(engine, [
   [Ball, 1000, import.meta.url],
@@ -182,7 +182,7 @@ await registerEntities(engine, [
 For the **best developer experience**, use this pattern:
 
 ```javascript
-import WEED from "/src/index.js";
+import WEED from '/src/index.js';
 const { GameObject, RigidBody, Collider, SpriteRenderer } = WEED;
 
 class MyEntity extends GameObject {
@@ -240,7 +240,7 @@ class Ball extends GameObject {
 
 // Build tool injects this
 class Ball extends GameObject {
-  static scriptUrl = "/demos/balls/ball.js"; // Auto-injected
+  static scriptUrl = '/demos/balls/ball.js'; // Auto-injected
   static components = [RigidBody];
 }
 ```

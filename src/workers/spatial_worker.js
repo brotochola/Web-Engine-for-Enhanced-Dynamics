@@ -23,20 +23,20 @@
 // =============================================================================
 
 self.postMessage({
-  msg: "log",
-  message: "spatial_worker.js loaded (row-based partitioning)",
+  msg: 'log',
+  message: 'spatial_worker.js loaded (row-based partitioning)',
   when: Date.now(),
 });
 
-import { Transform } from "../components/Transform.js";
-import { Collider } from "../components/Collider.js";
-import { AbstractWorker } from "./AbstractWorker.js";
-import { Grid } from "../core/Grid.js";
-import { SPATIAL_STATS, createMultiWorkerStatsWriter } from "./workers-utils.js";
+import { Transform } from '../components/Transform.js';
+import { Collider } from '../components/Collider.js';
+import { AbstractWorker } from './AbstractWorker.js';
+import { Grid } from '../core/Grid.js';
+import { SPATIAL_STATS, createMultiWorkerStatsWriter } from './workers-utils.js';
 
 /**
  * SpatialWorker - Row-based spatial hashing and neighbor detection
- * 
+ *
  * KEY INSIGHT: By partitioning grid rows across workers, we eliminate ALL
  * race conditions without any synchronization overhead. Each worker is the
  * sole owner of its rows - no other worker can write to them.
@@ -60,12 +60,12 @@ class SpatialWorker extends AbstractWorker {
     this.totalCells = 0;
 
     // Pre-computed owned rows for this worker
-    this.ownedRows = null;  // Int32Array of row indices
+    this.ownedRows = null; // Int32Array of row indices
     this.ownedRowCount = 0;
 
     // Pre-computed entity positions (shared buffer from particle_worker or computed locally)
-    this.entityPosX = null;   // Float32Array
-    this.entityPosY = null;   // Float32Array
+    this.entityPosX = null; // Float32Array
+    this.entityPosY = null; // Float32Array
     this.entityHalfExtent = null; // Float32Array
 
     // O(1) duplicate detection for multi-cell entities
@@ -142,7 +142,7 @@ class SpatialWorker extends AbstractWorker {
 
     console.log(
       `SPATIAL WORKER ${this.workerId}: Initialized with ${this.ownedRowCount} rows ` +
-      `(rows ${this.ownedRows[0]} to ${this.ownedRows[this.ownedRowCount - 1]} step ${this.totalSpatialWorkers})`
+        `(rows ${this.ownedRows[0]} to ${this.ownedRows[this.ownedRowCount - 1]} step ${this.totalSpatialWorkers})`
     );
   }
 
@@ -170,15 +170,15 @@ class SpatialWorker extends AbstractWorker {
 
   /**
    * STEP 1: Rebuild owned rows of the spatial grid (RACE-FREE)
-   * 
+   *
    * STRATEGY: Build counts locally, then copy to grid at the end.
    * This ensures gridCounts is never 0 during rebuild - other workers
    * reading cells either see old data or new final data, never mid-clear.
-   * 
+   *
    * - Phase 1: Clear LOCAL counts (not grid counts!)
    * - Phase 2: Insert entities using local counts, write entity data to grid
    * - Phase 3: Copy local counts to gridCounts (single atomic-ish write per cell)
-   * 
+   *
    * IMPORTANT: We iterate ALL entities because an entity at any position
    * might belong to one of our rows. But we only write to our owned cells.
    */
@@ -252,7 +252,8 @@ class SpatialWorker extends AbstractWorker {
       entityPosY[i] = posY;
 
       // Calculate half-extent based on collider type
-      let halfW = 0, halfH = 0;
+      let halfW = 0,
+        halfH = 0;
       if (colliderActive[i]) {
         if (shapeType[i] === SHAPE_CIRCLE) {
           halfW = halfH = radius[i] || 0;
@@ -317,12 +318,12 @@ class SpatialWorker extends AbstractWorker {
 
   /**
    * STEP 2: Find neighbors for all entities owned by this worker
-   * 
+   *
    * - Iterates through all owned cells
    * - For each entity, checks if this worker owns it (based on entity's home row)
    * - Only processes entities whose center Y falls in a row owned by this worker
    * - Searches 3x3+ neighborhood (can read ANY cell) and writes neighbor data
-   * 
+   *
    * ENTITY OWNERSHIP: Each entity is owned by exactly ONE worker based on its
    * "home row" (the row containing its center Y position). This prevents race
    * conditions when entities span multiple rows due to their bounding box.
@@ -353,7 +354,7 @@ class SpatialWorker extends AbstractWorker {
 
     // O(1) duplicate detection for neighbor search (prevents counting same neighbor twice)
     const processedMarker = this.processedMarker;
-    processedMarker.fill(-1);  // Reset markers each frame
+    processedMarker.fill(-1); // Reset markers each frame
 
     const ownedRows = this.ownedRows;
     const ownedRowCount = this.ownedRowCount;

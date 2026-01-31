@@ -1,21 +1,14 @@
 // Predator.js - Predator that flocks with other predators and hunts prey
 // Extends Boid to inherit flocking behavior
 
-import WEED from "/src/index.js";
-import { Boid } from "../gameObjects/boid.js";
-import { Prey } from "../gameObjects/prey.js";
-import { PredatorBehavior } from "../components/predatorBehavior.js";
+import WEED from '/src/index.js';
+import { Boid } from '../gameObjects/boid.js';
+import { Prey } from '../gameObjects/prey.js';
+import { PredatorBehavior } from '../components/predatorBehavior.js';
 
 // Destructure what we need from WEED
-const {
-  GameObject,
-  RigidBody,
-  Transform,
-  getDirectionFromAngle,
-  rng,
-  ParticleEmitter,
-  Mouse,
-} = WEED;
+const { GameObject, RigidBody, Transform, getDirectionFromAngle, rng, ParticleEmitter, Mouse } =
+  WEED;
 
 export class Predator extends Boid {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
@@ -87,8 +80,8 @@ export class Predator extends Boid {
     this.shadowCaster.height = this.collider.radius * 5;
 
     // Set spritesheet for this instance
-    this.setSpritesheet("civil3");
-    this.setAnimation("idle_down");
+    this.setSpritesheet('civil3');
+    this.setAnimation('idle_down');
     this.setAnimationSpeed(0.15);
   }
 
@@ -99,7 +92,7 @@ export class Predator extends Boid {
       // console.log("Predator: onCollisionStay", otherObject);
       ParticleEmitter.emit({
         count: { min: 4, max: 8 },
-        texture: "blood",
+        texture: 'blood',
         x: otherObject.x,
         y: otherObject.y,
         z: -30,
@@ -181,15 +174,7 @@ export class Predator extends Boid {
    * HOOK: Process each neighbor - called by Boid.applyFlockingBehaviors()
    * Finds closest prey during the same loop that does flocking
    */
-  processNeighbor(
-    neighborIndex,
-    neighborType,
-    dx,
-    dy,
-    dist2,
-    isSameType,
-    context
-  ) {
+  processNeighbor(neighborIndex, neighborType, dx, dy, dist2, isSameType, context) {
     // Track closest prey
     if (neighborType === Prey.entityType && dist2 < context.closestDist2) {
       context.closestDist2 = dist2;
@@ -250,10 +235,10 @@ export class Predator extends Boid {
 
       // Choose walk or run based on speed threshold (predators run faster)
       const isRunning = speed > 2.5; // Higher threshold for predator running
-      const animPrefix = isRunning ? "run" : "walk";
+      const animPrefix = isRunning ? 'run' : 'walk';
 
       // Store last direction for idle state
-      if (!this.lastDirection) this.lastDirection = "down";
+      if (!this.lastDirection) this.lastDirection = 'down';
       this.lastDirection = direction;
 
       // Set animation with speed-based animation speed
@@ -261,7 +246,7 @@ export class Predator extends Boid {
       this.setAnimationSpeed(speed * 0.08);
     } else {
       // Use idle animation in last facing direction
-      const direction = this.lastDirection || "down";
+      const direction = this.lastDirection || 'down';
       this.setAnimation(`idle_${direction}`);
     }
   }

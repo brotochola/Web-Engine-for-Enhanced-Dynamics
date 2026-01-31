@@ -184,18 +184,14 @@ export class DebugFlags {
   enable(options = {}) {
     if (options.colliders !== undefined) this.showColliders(options.colliders);
     if (options.velocity !== undefined) this.showVelocity(options.velocity);
-    if (options.acceleration !== undefined)
-      this.showAcceleration(options.acceleration);
+    if (options.acceleration !== undefined) this.showAcceleration(options.acceleration);
     if (options.neighbors !== undefined) this.showNeighbors(options.neighbors);
-    if (options.spatialGrid !== undefined)
-      this.showSpatialGrid(options.spatialGrid);
-    if (options.entityInfo !== undefined)
-      this.showEntityInfo(options.entityInfo);
+    if (options.spatialGrid !== undefined) this.showSpatialGrid(options.spatialGrid);
+    if (options.entityInfo !== undefined) this.showEntityInfo(options.entityInfo);
     if (options.aabb !== undefined) this.showAABB(options.aabb);
     if (options.fpsGraph !== undefined) this.showFPSGraph(options.fpsGraph);
     if (options.profiler !== undefined) this.showProfiler(options.profiler);
-    if (options.entityIndices !== undefined)
-      this.showEntityIndices(options.entityIndices);
+    if (options.entityIndices !== undefined) this.showEntityIndices(options.entityIndices);
     return this;
   }
 

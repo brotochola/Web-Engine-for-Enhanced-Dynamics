@@ -2,7 +2,7 @@
 // Provides string→index mapping for animations without runtime overhead
 // String lookups happen ONCE at setup, game loop uses fast numeric indices
 
-import { createCircularGradientCanvas } from "./utils.js";
+import { createCircularGradientCanvas } from './utils.js';
 
 /**
  * SpriteSheetRegistry - Manages spritesheet metadata and animation lookups
@@ -28,7 +28,7 @@ class SpriteSheetRegistry {
 
   // Spritesheet ID mapping for SharedArrayBuffer storage
   // We can't store strings in SharedArrayBuffer, so we use numeric IDs
-  static spritesheetNames = [""]; // Index 0 = empty/default (use class spriteconfig)
+  static spritesheetNames = ['']; // Index 0 = empty/default (use class spriteconfig)
   static spritesheetNameToId = new Map(); // Map<string, number>
 
   // Decal frame name → textureId mapping for stamping specific frames
@@ -44,9 +44,7 @@ class SpriteSheetRegistry {
    */
   static register(name, jsonData) {
     if (!jsonData.animations) {
-      console.error(
-        `❌ Invalid spritesheet "${name}": missing "animations" property`
-      );
+      console.error(`❌ Invalid spritesheet "${name}": missing "animations" property`);
       return;
     }
 
@@ -91,9 +89,7 @@ class SpriteSheetRegistry {
     // Auto-register spritesheet ID for per-instance switching
     this.registerSpritesheetId(name);
 
-    console.log(
-      `✅ Registered spritesheet "${name}": ${currentIndex} animations`
-    );
+    console.log(`✅ Registered spritesheet "${name}": ${currentIndex} animations`);
   }
 
   /**
@@ -121,10 +117,8 @@ class SpriteSheetRegistry {
         const suggestions = this._findSimilar(animName, available).slice(0, 3);
         console.error(
           `❌ Animation "${animName}" not found in "${sheetName}"\n` +
-          `   Available animations: ${available.length}\n` +
-          (suggestions.length > 0
-            ? `   Did you mean: ${suggestions.join(", ")}?`
-            : "")
+            `   Available animations: ${available.length}\n` +
+            (suggestions.length > 0 ? `   Did you mean: ${suggestions.join(', ')}?` : '')
         );
         return undefined;
       }
@@ -141,10 +135,8 @@ class SpriteSheetRegistry {
       const suggestions = this._findSimilar(animName, available).slice(0, 3);
       console.error(
         `❌ Animation "${animName}" not found in "${sheetName}"\n` +
-        `   Available animations: ${available.length}\n` +
-        (suggestions.length > 0
-          ? `   Did you mean: ${suggestions.join(", ")}?`
-          : "")
+          `   Available animations: ${available.length}\n` +
+          (suggestions.length > 0 ? `   Did you mean: ${suggestions.join(', ')}?` : '')
       );
       return undefined;
     }
@@ -249,7 +241,7 @@ class SpriteSheetRegistry {
     let targetAnimName = animName;
 
     if (sheet.isProxy) {
-      targetSheet = "bigAtlas";
+      targetSheet = 'bigAtlas';
       targetAnimName = `${sheetName}_${animName}`;
     }
 
@@ -258,8 +250,7 @@ class SpriteSheetRegistry {
     if (!targetSheetData) return null;
 
     const animData = targetSheetData.animations[targetAnimName];
-    if (!animData || !animData.frames || animData.frames.length === 0)
-      return null;
+    if (!animData || !animData.frames || animData.frames.length === 0) return null;
 
     // Get dimensions of first frame
     const firstFrameName = animData.frames[0];
@@ -352,9 +343,7 @@ class SpriteSheetRegistry {
       this.spritesheetNames = serialized.spritesheetNames;
     }
     if (serialized.spritesheetNameToId) {
-      this.spritesheetNameToId = new Map(
-        Object.entries(serialized.spritesheetNameToId)
-      );
+      this.spritesheetNameToId = new Map(Object.entries(serialized.spritesheetNameToId));
     }
 
     // Restore spritesheets
@@ -365,9 +354,7 @@ class SpriteSheetRegistry {
 
     // Restore frame dimensions (Object → Map)
     if (serialized.frameDimensions) {
-      for (const [sheetName, dims] of Object.entries(
-        serialized.frameDimensions
-      )) {
+      for (const [sheetName, dims] of Object.entries(serialized.frameDimensions)) {
         this.frameDimensions.set(sheetName, new Map(Object.entries(dims)));
       }
     }
@@ -377,9 +364,7 @@ class SpriteSheetRegistry {
       this.decalFrameNameToId = serialized.decalFrameNameToId;
     }
 
-    console.log(
-      `✅ Deserialized ${this.spritesheets.size} spritesheets in worker`
-    );
+    console.log(`✅ Deserialized ${this.spritesheets.size} spritesheets in worker`);
   }
 
   /**
@@ -452,16 +437,14 @@ class SpriteSheetRegistry {
     const { spritesheet, defaultAnimation } = spriteConfig;
 
     if (!spritesheet) {
-      console.error(
-        `❌ ${entityName}: spriteConfig missing "spritesheet" property`
-      );
+      console.error(`❌ ${entityName}: spriteConfig missing "spritesheet" property`);
       return false;
     }
 
     if (!this.spritesheets.has(spritesheet)) {
       console.error(
         `❌ ${entityName}: Unknown spritesheet "${spritesheet}"\n` +
-        `   Available: ${this.getSpritesheetNames().join(", ")}`
+          `   Available: ${this.getSpritesheetNames().join(', ')}`
       );
       return false;
     }
@@ -469,7 +452,7 @@ class SpriteSheetRegistry {
     if (defaultAnimation && !this.hasAnimation(spritesheet, defaultAnimation)) {
       console.error(
         `❌ ${entityName}: Invalid defaultAnimation "${defaultAnimation}"\n` +
-        `   Available: ${this.getAnimationNames(spritesheet).join(", ")}`
+          `   Available: ${this.getAnimationNames(spritesheet).join(', ')}`
       );
       return false;
     }
@@ -502,9 +485,7 @@ class SpriteSheetRegistry {
 
     const id = this.spritesheetNames.length;
     if (id > 255) {
-      console.error(
-        `❌ Too many spritesheets (max 255). Cannot register "${name}"`
-      );
+      console.error(`❌ Too many spritesheets (max 255). Cannot register "${name}"`);
       return 0;
     }
 
@@ -553,7 +534,7 @@ class SpriteSheetRegistry {
       this.usedRects = [];
     }
 
-    insert(width, height, heuristic = "best-short-side") {
+    insert(width, height, heuristic = 'best-short-side') {
       width += this.padding * 2;
       height += this.padding * 2;
 
@@ -565,34 +546,22 @@ class SpriteSheetRegistry {
         if (freeRect.width >= width && freeRect.height >= height) {
           let score, secondaryScore;
 
-          if (heuristic === "best-short-side") {
+          if (heuristic === 'best-short-side') {
             score = Math.min(freeRect.width - width, freeRect.height - height);
-            secondaryScore = Math.max(
-              freeRect.width - width,
-              freeRect.height - height
-            );
-          } else if (heuristic === "best-long-side") {
+            secondaryScore = Math.max(freeRect.width - width, freeRect.height - height);
+          } else if (heuristic === 'best-long-side') {
             score = Math.max(freeRect.width - width, freeRect.height - height);
-            secondaryScore = Math.min(
-              freeRect.width - width,
-              freeRect.height - height
-            );
-          } else if (heuristic === "best-area") {
+            secondaryScore = Math.min(freeRect.width - width, freeRect.height - height);
+          } else if (heuristic === 'best-area') {
             score = freeRect.width * freeRect.height - width * height;
-            secondaryScore = Math.min(
-              freeRect.width - width,
-              freeRect.height - height
-            );
+            secondaryScore = Math.min(freeRect.width - width, freeRect.height - height);
           } else {
             // bottom-left
             score = freeRect.y;
             secondaryScore = freeRect.x;
           }
 
-          if (
-            score < bestScore ||
-            (score === bestScore && secondaryScore < bestSecondaryScore)
-          ) {
+          if (score < bestScore || (score === bestScore && secondaryScore < bestSecondaryScore)) {
             bestRect = { x: freeRect.x, y: freeRect.y, width, height };
             bestScore = score;
             bestSecondaryScore = secondaryScore;
@@ -637,14 +606,8 @@ class SpriteSheetRegistry {
         return false;
       }
 
-      if (
-        usedNode.x < freeNode.x + freeNode.width &&
-        usedNode.x + usedNode.width > freeNode.x
-      ) {
-        if (
-          usedNode.y > freeNode.y &&
-          usedNode.y < freeNode.y + freeNode.height
-        ) {
+      if (usedNode.x < freeNode.x + freeNode.width && usedNode.x + usedNode.width > freeNode.x) {
+        if (usedNode.y > freeNode.y && usedNode.y < freeNode.y + freeNode.height) {
           let newNode = { ...freeNode };
           newNode.height = usedNode.y - newNode.y;
           this.freeRects.push(newNode);
@@ -653,20 +616,13 @@ class SpriteSheetRegistry {
         if (usedNode.y + usedNode.height < freeNode.y + freeNode.height) {
           let newNode = { ...freeNode };
           newNode.y = usedNode.y + usedNode.height;
-          newNode.height =
-            freeNode.y + freeNode.height - (usedNode.y + usedNode.height);
+          newNode.height = freeNode.y + freeNode.height - (usedNode.y + usedNode.height);
           this.freeRects.push(newNode);
         }
       }
 
-      if (
-        usedNode.y < freeNode.y + freeNode.height &&
-        usedNode.y + usedNode.height > freeNode.y
-      ) {
-        if (
-          usedNode.x > freeNode.x &&
-          usedNode.x < freeNode.x + freeNode.width
-        ) {
+      if (usedNode.y < freeNode.y + freeNode.height && usedNode.y + usedNode.height > freeNode.y) {
+        if (usedNode.x > freeNode.x && usedNode.x < freeNode.x + freeNode.width) {
           let newNode = { ...freeNode };
           newNode.width = usedNode.x - newNode.x;
           this.freeRects.push(newNode);
@@ -675,8 +631,7 @@ class SpriteSheetRegistry {
         if (usedNode.x + usedNode.width < freeNode.x + freeNode.width) {
           let newNode = { ...freeNode };
           newNode.x = usedNode.x + usedNode.width;
-          newNode.width =
-            freeNode.x + freeNode.width - (usedNode.x + usedNode.width);
+          newNode.width = freeNode.x + freeNode.width - (usedNode.x + usedNode.width);
           this.freeRects.push(newNode);
         }
       }
@@ -734,10 +689,10 @@ class SpriteSheetRegistry {
       maxWidth: 4096,
       maxHeight: 4096,
       padding: 2,
-      heuristic: "best-short-side",
+      heuristic: 'best-short-side',
     }
   ) {
-    console.log("🎨 Creating BigAtlas from assets...");
+    console.log('🎨 Creating BigAtlas from assets...');
 
     const { maxWidth, maxHeight, padding, heuristic } = options;
     const packer = new this.MaxRectsPacker(maxWidth, maxHeight, padding);
@@ -750,7 +705,7 @@ class SpriteSheetRegistry {
     // Load individual images (these become single-frame "animations")
     const individualImagePromises = [];
     for (const [name, url] of Object.entries(assetsConfig)) {
-      if (name === "spritesheets" || typeof url !== "string") continue;
+      if (name === 'spritesheets' || typeof url !== 'string') continue;
 
       individualImagePromises.push(
         this._loadImage(url).then((img) => {
@@ -769,9 +724,7 @@ class SpriteSheetRegistry {
           // This allows static textures to be referenced consistently
           animations[name] = [name];
 
-          console.log(
-            `  ✅ Loaded image: ${name} (${img.width}x${img.height})`
-          );
+          console.log(`  ✅ Loaded image: ${name} (${img.width}x${img.height})`);
         })
       );
     }
@@ -779,9 +732,7 @@ class SpriteSheetRegistry {
     // Load spritesheets
     const spritesheetPromises = [];
     if (assetsConfig.spritesheets) {
-      for (const [sheetName, config] of Object.entries(
-        assetsConfig.spritesheets
-      )) {
+      for (const [sheetName, config] of Object.entries(assetsConfig.spritesheets)) {
         spritesheetPromises.push(
           this._loadSpritesheet(sheetName, config).then((sheetData) => {
             const { img, jsonData } = sheetData;
@@ -792,82 +743,64 @@ class SpriteSheetRegistry {
             const animationsToProcess = [];
 
             if (jsonData.animations) {
-              Object.entries(jsonData.animations).forEach(
-                ([animName, frameList]) => {
-                  if (excluded.includes(animName)) return;
+              Object.entries(jsonData.animations).forEach(([animName, frameList]) => {
+                if (excluded.includes(animName)) return;
 
-                  animationsToProcess.push({ animName, frameList });
-                  frameList.forEach((f) => requiredFrames.add(f));
-                }
-              );
+                animationsToProcess.push({ animName, frameList });
+                frameList.forEach((f) => requiredFrames.add(f));
+              });
             } else {
               // If no animations defined, keep all frames
-              Object.keys(jsonData.frames).forEach((f) =>
-                requiredFrames.add(f)
-              );
+              Object.keys(jsonData.frames).forEach((f) => requiredFrames.add(f));
             }
 
             // Create proxy sheet entry with its own index space
             proxySheets[sheetName] = {
               isProxy: true,
-              targetSheet: "bigAtlas",
+              targetSheet: 'bigAtlas',
               prefix: `${sheetName}_`,
               animations: {},
               indexToName: {}, // Each proxy has its own animation index space
             };
 
             // 2. Extract ONLY required frames from this spritesheet
-            Object.entries(jsonData.frames).forEach(
-              ([frameName, frameData]) => {
-                // Skip if this frame isn't used by any included animation
-                if (!requiredFrames.has(frameName)) return;
+            Object.entries(jsonData.frames).forEach(([frameName, frameData]) => {
+              // Skip if this frame isn't used by any included animation
+              if (!requiredFrames.has(frameName)) return;
 
-                const prefixedName = `${sheetName}_${frameName}`;
-                const frame = frameData.frame;
+              const prefixedName = `${sheetName}_${frameName}`;
+              const frame = frameData.frame;
 
-                // Create canvas to extract this frame
-                const frameCanvas = document.createElement("canvas");
-                frameCanvas.width = frame.w;
-                frameCanvas.height = frame.h;
-                const frameCtx = frameCanvas.getContext("2d");
+              // Create canvas to extract this frame
+              const frameCanvas = document.createElement('canvas');
+              frameCanvas.width = frame.w;
+              frameCanvas.height = frame.h;
+              const frameCtx = frameCanvas.getContext('2d');
 
-                frameCtx.drawImage(
-                  img,
-                  frame.x,
-                  frame.y,
-                  frame.w,
-                  frame.h,
-                  0,
-                  0,
-                  frame.w,
-                  frame.h
-                );
+              frameCtx.drawImage(img, frame.x, frame.y, frame.w, frame.h, 0, 0, frame.w, frame.h);
 
-                // Convert to image for packing
-                const frameImg = new Image();
-                frameImg.src = frameCanvas.toDataURL();
+              // Convert to image for packing
+              const frameImg = new Image();
+              frameImg.src = frameCanvas.toDataURL();
 
-                imagesToPack.push({
-                  name: prefixedName,
-                  img: frameImg,
-                  width: frame.w,
-                  height: frame.h,
-                  sourceX: frameData.spriteSourceSize?.x || 0,
-                  sourceY: frameData.spriteSourceSize?.y || 0,
-                  sourceWidth: frameData.sourceSize?.w || frame.w,
-                  sourceHeight: frameData.sourceSize?.h || frame.h,
-                  pivot: frameData.pivot,
-                });
-              }
-            );
+              imagesToPack.push({
+                name: prefixedName,
+                img: frameImg,
+                width: frame.w,
+                height: frame.h,
+                sourceX: frameData.spriteSourceSize?.x || 0,
+                sourceY: frameData.spriteSourceSize?.y || 0,
+                sourceWidth: frameData.sourceSize?.w || frame.w,
+                sourceHeight: frameData.sourceSize?.h || frame.h,
+                pivot: frameData.pivot,
+              });
+            });
 
             // 3. Map included animations with prefixed names
             let proxyIndex = 0; // Each proxy sheet has its own index space starting at 0
             animationsToProcess.forEach(({ animName, frameList }) => {
               const prefixedAnimName = `${sheetName}_${animName}`;
-              animations[prefixedAnimName] = frameList.map(
-                (f) => `${sheetName}_${f}`
-              );
+              animations[prefixedAnimName] = frameList.map((f) => `${sheetName}_${f}`);
 
               // Store in proxy for transparent lookup
               proxySheets[sheetName].animations[animName] = {
@@ -882,8 +815,10 @@ class SpriteSheetRegistry {
             });
 
             console.log(
-              `  ✅ Loaded spritesheet: ${sheetName} (${requiredFrames.size}/${Object.keys(jsonData.frames).length
-              } frames, ${animationsToProcess.length}/${Object.keys(jsonData.animations || {}).length
+              `  ✅ Loaded spritesheet: ${sheetName} (${requiredFrames.size}/${
+                Object.keys(jsonData.frames).length
+              } frames, ${animationsToProcess.length}/${
+                Object.keys(jsonData.animations || {}).length
               } animations)`
             );
           })
@@ -900,7 +835,7 @@ class SpriteSheetRegistry {
     // Light glow gradient (200px diameter white radial gradient)
     const lightGradientCanvas = createCircularGradientCanvas(100, 0xffffff);
     imagesToPack.push({
-      name: "_lightGradient",
+      name: '_lightGradient',
       img: lightGradientCanvas,
       width: lightGradientCanvas.width,
       height: lightGradientCanvas.height,
@@ -909,20 +844,20 @@ class SpriteSheetRegistry {
       sourceWidth: lightGradientCanvas.width,
       sourceHeight: lightGradientCanvas.height,
     });
-    animations["_lightGradient"] = ["_lightGradient"];
+    animations['_lightGradient'] = ['_lightGradient'];
     console.log(
       `  ✅ Generated built-in: _lightGradient (${lightGradientCanvas.width}x${lightGradientCanvas.height})`
     );
 
     // White square (8x8 solid white - used as default/background texture)
-    const whiteSquareCanvas = document.createElement("canvas");
+    const whiteSquareCanvas = document.createElement('canvas');
     whiteSquareCanvas.width = 8;
     whiteSquareCanvas.height = 8;
-    const whiteCtx = whiteSquareCanvas.getContext("2d");
-    whiteCtx.fillStyle = "#ffffff";
+    const whiteCtx = whiteSquareCanvas.getContext('2d');
+    whiteCtx.fillStyle = '#ffffff';
     whiteCtx.fillRect(0, 0, 8, 8);
     imagesToPack.push({
-      name: "_white",
+      name: '_white',
       img: whiteSquareCanvas,
       width: 8,
       height: 8,
@@ -931,13 +866,11 @@ class SpriteSheetRegistry {
       sourceWidth: 8,
       sourceHeight: 8,
     });
-    animations["_white"] = ["_white"];
+    animations['_white'] = ['_white'];
     console.log(`  ✅ Generated built-in: _white (8x8)`);
 
     // Sort images by size (largest first) for better packing
-    imagesToPack.sort(
-      (a, b) => Math.max(b.width, b.height) - Math.max(a.width, a.height)
-    );
+    imagesToPack.sort((a, b) => Math.max(b.width, b.height) - Math.max(a.width, a.height));
 
     // Wait for all frame images to be ready
     // Note: Canvas elements are always "complete" (no loading needed)
@@ -998,15 +931,15 @@ class SpriteSheetRegistry {
     if (actualWidth > 4096 || actualHeight > 4096) {
       console.warn(
         `⚠️ BigAtlas dimensions (${actualWidth}x${actualHeight}) exceed 4096x4096. ` +
-        `This may cause performance issues or fail to render on some mobile devices or older GPUs.`
+          `This may cause performance issues or fail to render on some mobile devices or older GPUs.`
       );
     }
 
     // Create canvas and draw packed atlas
-    const canvas = document.createElement("canvas");
+    const canvas = document.createElement('canvas');
     canvas.width = actualWidth;
     canvas.height = actualHeight;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext('2d');
 
     ctx.clearRect(0, 0, actualWidth, actualHeight);
 
@@ -1026,26 +959,27 @@ class SpriteSheetRegistry {
       frames: frames,
       animations: animations,
       meta: {
-        image: "bigAtlas.png",
-        format: "RGBA8888",
+        image: 'bigAtlas.png',
+        format: 'RGBA8888',
         size: { w: actualWidth, h: actualHeight },
         scale: 1,
       },
     };
 
-    console.log("#### frames",frames)
+    console.log('#### frames', frames);
 
     // Register individual texture names as spritesheet IDs
     // This allows setSpritesheet("ball") to work for static textures
     const individualTextures = [];
     for (const [name, url] of Object.entries(assetsConfig)) {
-      if (name === "spritesheets" || typeof url !== "string") continue;
+      if (name === 'spritesheets' || typeof url !== 'string') continue;
       this.registerSpritesheetId(name);
       individualTextures.push(name);
     }
 
     console.log(
-      `✅ BigAtlas created: ${actualWidth}x${actualHeight} with ${Object.keys(frames).length
+      `✅ BigAtlas created: ${actualWidth}x${actualHeight} with ${
+        Object.keys(frames).length
       } frames, ${Object.keys(animations).length} animations`
     );
 
@@ -1064,7 +998,7 @@ class SpriteSheetRegistry {
   static async _loadImage(url) {
     return new Promise((resolve, reject) => {
       const img = new Image();
-      img.crossOrigin = "anonymous";
+      img.crossOrigin = 'anonymous';
       img.onload = () => resolve(img);
       img.onerror = reject;
       img.src = url;
@@ -1077,9 +1011,7 @@ class SpriteSheetRegistry {
    */
   static async _loadSpritesheet(name, config) {
     if (!config.json || !config.png) {
-      throw new Error(
-        `Invalid spritesheet config for "${name}": missing json or png`
-      );
+      throw new Error(`Invalid spritesheet config for "${name}": missing json or png`);
     }
 
     const jsonResponse = await fetch(config.json);
@@ -1151,7 +1083,7 @@ class SpriteSheetRegistry {
    * getFrameName("bigAtlas", "blood", 0) // → "blood"
    */
   static getFrameName(sheetName, animName, frameIndex = 0) {
-    const bigAtlas = this.spritesheets.get("bigAtlas");
+    const bigAtlas = this.spritesheets.get('bigAtlas');
 
     // BigAtlas must be loaded for any frame lookups
     if (!bigAtlas) {
@@ -1164,14 +1096,16 @@ class SpriteSheetRegistry {
     const sheet = this.spritesheets.get(sheetName);
     let prefixedAnimName;
 
-    if (sheetName === "bigAtlas") {
+    if (sheetName === 'bigAtlas') {
       // For bigAtlas itself, animation names are not prefixed
       prefixedAnimName = animName;
     } else if (sheet?.isProxy) {
       // Proxy sheets store the prefixed name in their animation info
       const animInfo = sheet.animations[animName];
       if (!animInfo) {
-        console.warn(`getFrameName: Animation "${animName}" not found in proxy sheet "${sheetName}"`);
+        console.warn(
+          `getFrameName: Animation "${animName}" not found in proxy sheet "${sheetName}"`
+        );
         return null;
       }
       prefixedAnimName = animInfo.prefixedName;
@@ -1193,7 +1127,9 @@ class SpriteSheetRegistry {
     const actualIndex = frameIndex < 0 ? frames.length + frameIndex : frameIndex;
 
     if (actualIndex < 0 || actualIndex >= frames.length) {
-      console.warn(`getFrameName: Frame index ${frameIndex} out of range for "${prefixedAnimName}" (has ${frames.length} frames)`);
+      console.warn(
+        `getFrameName: Frame index ${frameIndex} out of range for "${prefixedAnimName}" (has ${frames.length} frames)`
+      );
       return null;
     }
 
@@ -1214,7 +1150,7 @@ class SpriteSheetRegistry {
    */
   static getBigAtlasAnimName(sheetName, animName) {
     const sheet = this.spritesheets.get(sheetName);
-    const bigAtlas = this.spritesheets.get("bigAtlas");
+    const bigAtlas = this.spritesheets.get('bigAtlas');
 
     if (sheet?.isProxy) {
       const animInfo = sheet.animations[animName];
@@ -1222,7 +1158,7 @@ class SpriteSheetRegistry {
     }
 
     // For bigAtlas itself, just return the animName
-    if (sheetName === "bigAtlas") {
+    if (sheetName === 'bigAtlas') {
       return bigAtlas?.animations[animName] ? animName : null;
     }
 
@@ -1244,7 +1180,7 @@ class SpriteSheetRegistry {
    */
   static getAnimationFrameCount(sheetName, animName) {
     const sheet = this.spritesheets.get(sheetName);
-    const bigAtlas = this.spritesheets.get("bigAtlas");
+    const bigAtlas = this.spritesheets.get('bigAtlas');
 
     if (sheet?.isProxy) {
       const animInfo = sheet.animations[animName];
@@ -1321,7 +1257,7 @@ class SpriteSheetRegistry {
    * getTextureId("civil1_hurt_5")   // → frame-specific ID (decal stamping only)
    */
   static getTextureId(textureName) {
-    const bigAtlas = this.spritesheets.get("bigAtlas");
+    const bigAtlas = this.spritesheets.get('bigAtlas');
 
     // Priority 1: Check animation names
     // Animation indices work for both particle rendering and decal stamping

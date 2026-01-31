@@ -2,7 +2,7 @@
 // Flashes are short-lived light sources that fade out over their lifespan
 // Used with LightEmitter component for rendering
 
-import { Component } from "../core/Component.js";
+import { Component } from '../core/Component.js';
 
 export class FlashComponent extends Component {
   static ARRAY_SCHEMA = {

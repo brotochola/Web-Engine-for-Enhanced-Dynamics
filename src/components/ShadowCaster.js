@@ -6,7 +6,7 @@
 // Both buffers use the same schema. Entity markers only use active/shadowRadius.
 // Shadow sprites use all fields (x, y, rotation, scales, alpha).
 
-import { Component } from "../core/Component.js";
+import { Component } from '../core/Component.js';
 
 export class ShadowCaster extends Component {
   static ARRAY_SCHEMA = {

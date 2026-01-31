@@ -3,8 +3,8 @@
 // Shared utility functions for the multithreaded game engine
 // ============================================================================
 
-import { PHYSICS_DEFAULTS } from "./ConfigDefaults.js";
-import { GameObject } from "./gameObject.js";
+import { PHYSICS_DEFAULTS } from './ConfigDefaults.js';
+import { GameObject } from './gameObject.js';
 
 // ============================================================================
 // MATH UTILITIES
@@ -17,26 +17,23 @@ import { GameObject } from "./gameObject.js";
  * @param {string} fallback - Fallback string for invalid numbers (default: "--")
  * @returns {string} Formatted number (e.g., "1_000_000")
  */
-export function formatNumber(num, fallback = "--") {
+export function formatNumber(num, fallback = '--') {
   if (num === null || num === undefined || num !== num) return fallback; // num !== num is faster isNaN check
   const n = (num + 0.5) | 0; // Fast Math.round for positive numbers
   if (n < 1000) return String(n);
-  if (n < 10000)
-    return String((n / 1000) | 0) + "_" + String(n % 1000).padStart(3, "0");
-  if (n < 100000)
-    return String((n / 1000) | 0) + "_" + String(n % 1000).padStart(3, "0");
-  if (n < 1000000)
-    return String((n / 1000) | 0) + "_" + String(n % 1000).padStart(3, "0");
+  if (n < 10000) return String((n / 1000) | 0) + '_' + String(n % 1000).padStart(3, '0');
+  if (n < 100000) return String((n / 1000) | 0) + '_' + String(n % 1000).padStart(3, '0');
+  if (n < 1000000) return String((n / 1000) | 0) + '_' + String(n % 1000).padStart(3, '0');
   // For millions+
   const millions = (n / 1000000) | 0;
   const thousands = ((n % 1000000) / 1000) | 0;
   const ones = n % 1000;
   return (
     String(millions) +
-    "_" +
-    String(thousands).padStart(3, "0") +
-    "_" +
-    String(ones).padStart(3, "0")
+    '_' +
+    String(thousands).padStart(3, '0') +
+    '_' +
+    String(ones).padStart(3, '0')
   );
 }
 
@@ -47,7 +44,7 @@ export function formatNumber(num, fallback = "--") {
  * @returns {number} Clamped value
  */
 export function clamp01(value, fallback) {
-  if (typeof value !== "number") return fallback;
+  if (typeof value !== 'number') return fallback;
   return Math.max(0, Math.min(1, value));
 }
 
@@ -103,16 +100,7 @@ export function lerp(a, b, t) {
  * @param {number} maxDist - Maximum ray distance
  * @returns {number} Distance to intersection, or -1 if no hit
  */
-export function rayCircleIntersect(
-  rayX,
-  rayY,
-  dirX,
-  dirY,
-  circleX,
-  circleY,
-  radius,
-  maxDist
-) {
+export function rayCircleIntersect(rayX, rayY, dirX, dirY, circleX, circleY, radius, maxDist) {
   // Vector from ray origin to circle center
   const toCircleX = circleX - rayX;
   const toCircleY = circleY - rayY;
@@ -174,28 +162,8 @@ export function rayCircleIntersect(
  * @param {number} maxDist - Maximum ray distance
  * @returns {boolean} True if hit, false otherwise
  */
-export function rayCircleHit(
-  rayX,
-  rayY,
-  dirX,
-  dirY,
-  circleX,
-  circleY,
-  radius,
-  maxDist
-) {
-  return (
-    rayCircleIntersect(
-      rayX,
-      rayY,
-      dirX,
-      dirY,
-      circleX,
-      circleY,
-      radius,
-      maxDist
-    ) >= 0
-  );
+export function rayCircleHit(rayX, rayY, dirX, dirY, circleX, circleY, radius, maxDist) {
+  return rayCircleIntersect(rayX, rayY, dirX, dirY, circleX, circleY, radius, maxDist) >= 0;
 }
 
 /**
@@ -213,17 +181,7 @@ export function rayCircleHit(
  * @param {number} maxDist - Maximum ray distance
  * @returns {number} Distance to intersection, or -1 if no hit
  */
-export function rayBoxIntersect(
-  rayX,
-  rayY,
-  dirX,
-  dirY,
-  boxX,
-  boxY,
-  width,
-  height,
-  maxDist
-) {
+export function rayBoxIntersect(rayX, rayY, dirX, dirY, boxX, boxY, width, height, maxDist) {
   // Box bounds (assuming center-aligned)
   const halfW = width * 0.5;
   const halfH = height * 0.5;
@@ -275,30 +233,8 @@ export function rayBoxIntersect(
  * @param {number} maxDist - Maximum ray distance
  * @returns {boolean} True if hit, false otherwise
  */
-export function rayBoxHit(
-  rayX,
-  rayY,
-  dirX,
-  dirY,
-  boxX,
-  boxY,
-  width,
-  height,
-  maxDist
-) {
-  return (
-    rayBoxIntersect(
-      rayX,
-      rayY,
-      dirX,
-      dirY,
-      boxX,
-      boxY,
-      width,
-      height,
-      maxDist
-    ) >= 0
-  );
+export function rayBoxHit(rayX, rayY, dirX, dirY, boxX, boxY, width, height, maxDist) {
+  return rayBoxIntersect(rayX, rayY, dirX, dirY, boxX, boxY, width, height, maxDist) >= 0;
 }
 
 /**
@@ -309,7 +245,7 @@ export function rayBoxHit(
  */
 export function randomRange(value, defaultVal = 0) {
   if (value === undefined || value === null) return defaultVal;
-  if (typeof value === "number") return value;
+  if (typeof value === 'number') return value;
   // { min, max } object - return random value in range
   const min = value.min ?? defaultVal;
   const max = value.max ?? defaultVal;
@@ -325,7 +261,7 @@ export function randomRange(value, defaultVal = 0) {
  */
 export function randomColor(value, defaultVal = 0xffffff) {
   if (value === undefined || value === null) return defaultVal;
-  if (typeof value === "number") return value;
+  if (typeof value === 'number') return value;
 
   // { min, max } object - interpolate each RGB channel separately
   const minColor = value.min ?? defaultVal;
@@ -745,7 +681,7 @@ export function testCircleCircleCollision(x1, y1, r1, x2, y2, r2, result) {
     // Use random angle for exact overlap
     // rng() is available globally in workers, fallback to Math.random
     const rngFn =
-      typeof globalThis !== "undefined" && typeof globalThis.rng === "function"
+      typeof globalThis !== 'undefined' && typeof globalThis.rng === 'function'
         ? globalThis.rng
         : Math.random;
     const angle = rngFn() * Math.PI * 2;
@@ -775,16 +711,7 @@ export function testCircleCircleCollision(x1, y1, r1, x2, y2, r2, result) {
  * @param {Object} result - Result object to mutate {collided, depth, nx, ny}
  * @returns {Object|null} Result object if collision, null if no collision
  */
-export function testCircleAABBCollision(
-  circleX,
-  circleY,
-  circleR,
-  boxX,
-  boxY,
-  boxW,
-  boxH,
-  result
-) {
+export function testCircleAABBCollision(circleX, circleY, circleR, boxX, boxY, boxW, boxH, result) {
   const halfW = boxW * 0.5;
   const halfH = boxH * 0.5;
 
@@ -990,20 +917,12 @@ export function getParentClasses(childClass) {
  * @param {Class} DefaultComponent - Default component to always include (e.g., Transform)
  * @returns {Array<Component>} Array of unique component classes
  */
-export function collectComponents(
-  EntityClass,
-  BaseClass = GameObject,
-  DefaultComponent
-) {
+export function collectComponents(EntityClass, BaseClass = GameObject, DefaultComponent) {
   const components = new Set();
   let currentClass = EntityClass;
 
   // Walk up the prototype chain
-  while (
-    currentClass &&
-    currentClass !== Object &&
-    currentClass !== BaseClass
-  ) {
+  while (currentClass && currentClass !== Object && currentClass !== BaseClass) {
     if (currentClass.components && Array.isArray(currentClass.components)) {
       currentClass.components.forEach((c) => components.add(c));
     }
@@ -1077,21 +996,17 @@ export function validatePhysicsConfig(currentConfig, newConfig) {
       newConfig.collisionResponseStrength ?? current.collisionResponseStrength,
       current.collisionResponseStrength
     ),
-    verletDamping: clamp01(
-      newConfig.verletDamping ?? current.verletDamping,
-      current.verletDamping
-    ),
-    minSpeedForRotation:
-      newConfig.minSpeedForRotation ?? current.minSpeedForRotation,
+    verletDamping: clamp01(newConfig.verletDamping ?? current.verletDamping, current.verletDamping),
+    minSpeedForRotation: newConfig.minSpeedForRotation ?? current.minSpeedForRotation,
     gravity: {
       x:
-        newConfig.gravity && typeof newConfig.gravity.x === "number"
+        newConfig.gravity && typeof newConfig.gravity.x === 'number'
           ? newConfig.gravity.x
-          : current.gravity?.x ?? 0,
+          : (current.gravity?.x ?? 0),
       y:
-        newConfig.gravity && typeof newConfig.gravity.y === "number"
+        newConfig.gravity && typeof newConfig.gravity.y === 'number'
           ? newConfig.gravity.y
-          : current.gravity?.y ?? 0,
+          : (current.gravity?.y ?? 0),
     },
   };
 }
@@ -1167,13 +1082,13 @@ export function getDirectionFromAngle(angle) {
 
   // Map velocityAngle to cardinal directions (accounting for +PI/2 offset)
   if (normalizedAngle < PI_4 || normalizedAngle >= (PI * 7) / 4) {
-    return "up"; // 315° to 45° (North)
+    return 'up'; // 315° to 45° (North)
   } else if (normalizedAngle < (PI * 3) / 4) {
-    return "right"; // 45° to 135° (East)
+    return 'right'; // 45° to 135° (East)
   } else if (normalizedAngle < (PI * 5) / 4) {
-    return "down"; // 135° to 225° (South)
+    return 'down'; // 135° to 225° (South)
   } else {
-    return "left"; // 225° to 315° (West)
+    return 'left'; // 225° to 315° (West)
   }
 }
 
@@ -1196,12 +1111,12 @@ export function seededRandom(seed) {
  * @returns {number} Random number between 0 and 1
  */
 export function rng() {
-  if (typeof globalThis.rng === "function") {
+  if (typeof globalThis.rng === 'function') {
     return globalThis.rng();
   }
 
   // Fallback to Math.random if not initialized (shouldn't happen in worker context)
-  console.warn("rng() called before initialization, using Math.random()");
+  console.warn('rng() called before initialization, using Math.random()');
   return Math.random();
 }
 
@@ -1223,12 +1138,12 @@ export function rng() {
  * const entities = WEED.query([RigidBody, Collider]);
  */
 export function query(componentClasses) {
-  if (typeof globalThis.query === "function") {
+  if (typeof globalThis.query === 'function') {
     return globalThis.query(componentClasses);
   }
 
   // Not available in main thread context
-  console.warn("[query] Query system only available in worker context");
+  console.warn('[query] Query system only available in worker context');
   return new Int32Array(0);
 }
 
@@ -1278,8 +1193,7 @@ export function calculateTotalLightAtPosition(
 ) {
   let totalLight = ambient;
 
-  const { lightX, lightY, lightIntensity, lightEnabled, lightCount } =
-    lightData;
+  const { lightX, lightY, lightIntensity, lightEnabled, lightCount } = lightData;
 
   for (let i = 0; i < lightCount; i++) {
     if (!lightEnabled[i]) continue;
@@ -1334,10 +1248,7 @@ export function calculateLightFromNeighbors(
     // Use precomputed squared distance
     const distSq = distanceData[offset + 1 + k];
 
-    totalLight += calculateLightAttenuation(
-      lightIntensity[neighborIdx],
-      distSq
-    );
+    totalLight += calculateLightAttenuation(lightIntensity[neighborIdx], distSq);
   }
 
   return Math.min(totalLight, maxLight);
@@ -1395,8 +1306,8 @@ export function brightnessToColoredTint(brightness, baseColor = 0xffffff) {
  */
 export function createCircularGradientCanvas(radius = 100, color = 0xffffff) {
   radius = Math.round(radius);
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d");
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
   const size = radius * 2;
   canvas.width = size;
   canvas.height = size;
@@ -1425,7 +1336,7 @@ export function createCircularGradientCanvas(radius = 100, color = 0xffffff) {
   }
 
   // Fill with transparent background first
-  ctx.fillStyle = "transparent";
+  ctx.fillStyle = 'transparent';
   ctx.fillRect(0, 0, size, size);
 
   // Draw the gradient circle
@@ -1535,11 +1446,7 @@ export function calculateVelocityAngle(vx, vy) {
  * @param {boolean} verbose - Whether to log detailed information (optional)
  * @returns {Promise<Object>} - Object mapping class names to classes
  */
-export async function loadEntityScripts(
-  scriptsToLoad,
-  globalContext = null,
-  verbose = null
-) {
+export async function loadEntityScripts(scriptsToLoad, globalContext = null, verbose = null) {
   const loadedClasses = {};
 
   if (!scriptsToLoad || scriptsToLoad.length === 0) {
@@ -1548,20 +1455,18 @@ export async function loadEntityScripts(
 
   // Auto-detect context if not provided
   if (!globalContext) {
-    globalContext = typeof window !== "undefined" ? window : self;
+    globalContext = typeof window !== 'undefined' ? window : self;
   }
 
   // Auto-detect verbosity if not specified (verbose in main thread, quiet in workers)
   if (verbose === null) {
-    verbose = typeof window !== "undefined";
+    verbose = typeof window !== 'undefined';
   }
 
-  const contextName = typeof window !== "undefined" ? "Main Thread" : "Worker";
+  const contextName = typeof window !== 'undefined' ? 'Main Thread' : 'Worker';
 
   if (verbose) {
-    console.log(
-      `📦 ${contextName}: Loading ${scriptsToLoad.length} entity scripts...`
-    );
+    console.log(`📦 ${contextName}: Loading ${scriptsToLoad.length} entity scripts...`);
   }
 
   for (const scriptPath of scriptsToLoad) {
@@ -1584,8 +1489,7 @@ export async function loadEntityScripts(
 
   if (verbose) {
     console.log(
-      `✅ ${contextName}: Loaded ${Object.keys(loadedClasses).length
-      } entity classes globally`
+      `✅ ${contextName}: Loaded ${Object.keys(loadedClasses).length} entity classes globally`
     );
   }
 
@@ -1759,10 +1663,7 @@ export function drawLine(graphics, options) {
 
   if (!dashed) {
     // Solid line
-    graphics
-      .moveTo(startX, startY)
-      .lineTo(endX, endY)
-      .stroke({ width: scaledWidth, color, alpha });
+    graphics.moveTo(startX, startY).lineTo(endX, endY).stroke({ width: scaledWidth, color, alpha });
   } else {
     // Dashed line
     const dx = endX - startX;
@@ -1778,10 +1679,7 @@ export function drawLine(graphics, options) {
       const x2 = startX + stepX * Math.min(s + 1, segments);
       const y2 = startY + stepY * Math.min(s + 1, segments);
 
-      graphics
-        .moveTo(x1, y1)
-        .lineTo(x2, y2)
-        .stroke({ width: scaledWidth, color, alpha });
+      graphics.moveTo(x1, y1).lineTo(x2, y2).stroke({ width: scaledWidth, color, alpha });
     }
   }
 }
@@ -1838,15 +1736,7 @@ export function drawCircle(graphics, options) {
  *   - zoom: Camera zoom level
  */
 export function drawCross(graphics, options) {
-  const {
-    x,
-    y,
-    size = 8,
-    color = 0xffffff,
-    alpha = 1.0,
-    width = 2,
-    zoom = 1,
-  } = options;
+  const { x, y, size = 8, color = 0xffffff, alpha = 1.0, width = 2, zoom = 1 } = options;
 
   const scaledSize = size / zoom;
   const scaledWidth = width / zoom;
@@ -1981,13 +1871,34 @@ export function hslToHex(h, s, l) {
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
   const m = l - c / 2;
 
-  let r = 0, g = 0, b = 0;
-  if (h < 60) { r = c; g = x; b = 0; }
-  else if (h < 120) { r = x; g = c; b = 0; }
-  else if (h < 180) { r = 0; g = c; b = x; }
-  else if (h < 240) { r = 0; g = x; b = c; }
-  else if (h < 300) { r = x; g = 0; b = c; }
-  else { r = c; g = 0; b = x; }
+  let r = 0,
+    g = 0,
+    b = 0;
+  if (h < 60) {
+    r = c;
+    g = x;
+    b = 0;
+  } else if (h < 120) {
+    r = x;
+    g = c;
+    b = 0;
+  } else if (h < 180) {
+    r = 0;
+    g = c;
+    b = x;
+  } else if (h < 240) {
+    r = 0;
+    g = x;
+    b = c;
+  } else if (h < 300) {
+    r = x;
+    g = 0;
+    b = c;
+  } else {
+    r = c;
+    g = 0;
+    b = x;
+  }
 
   const ri = ((r + m) * 255) | 0;
   const gi = ((g + m) * 255) | 0;
@@ -2002,12 +1913,12 @@ export function hslToHex(h, s, l) {
  */
 export const COMPONENT_COLORS = {
   // Core components - carefully chosen for visual distinction
-  Transform: { css: "hsl(120, 60%, 75%)", hex: 0x8fbc8f }, // Soft green
-  RigidBody: { css: "hsl(210, 70%, 75%)", hex: 0x87ceeb }, // Sky blue
-  Collider: { css: "hsl(45, 80%, 70%)", hex: 0xf4d03f }, // Golden yellow
-  SpriteRenderer: { css: "hsl(280, 60%, 75%)", hex: 0xb19cd9 }, // Soft purple
-  LightEmitter: { css: "hsl(30, 80%, 70%)", hex: 0xf5a962 }, // Warm orange
-  ShadowCaster: { css: "hsl(0, 0%, 65%)", hex: 0xa8a8a8 }, // Gray
+  Transform: { css: 'hsl(120, 60%, 75%)', hex: 0x8fbc8f }, // Soft green
+  RigidBody: { css: 'hsl(210, 70%, 75%)', hex: 0x87ceeb }, // Sky blue
+  Collider: { css: 'hsl(45, 80%, 70%)', hex: 0xf4d03f }, // Golden yellow
+  SpriteRenderer: { css: 'hsl(280, 60%, 75%)', hex: 0xb19cd9 }, // Soft purple
+  LightEmitter: { css: 'hsl(30, 80%, 70%)', hex: 0xf5a962 }, // Warm orange
+  ShadowCaster: { css: 'hsl(0, 0%, 65%)', hex: 0xa8a8a8 }, // Gray
 };
 
 /**
@@ -2040,7 +1951,7 @@ export function getComponentPropertyNames(ComponentClass) {
   if (!ComponentClass || !ComponentClass.ARRAY_SCHEMA) {
     return [];
   }
-  return Object.keys(ComponentClass.ARRAY_SCHEMA).filter(key => key !== 'active');
+  return Object.keys(ComponentClass.ARRAY_SCHEMA).filter((key) => key !== 'active');
 }
 
 // ============================================================================
@@ -2063,8 +1974,14 @@ export function getComponentPropertyNames(ComponentClass) {
  * @returns {Object} The result object with tile bounds
  */
 export function calculateDecalTileBounds(
-  worldX, worldY, halfWidth, halfHeight,
-  tileSize, tilesX, tilesY, result
+  worldX,
+  worldY,
+  halfWidth,
+  halfHeight,
+  tileSize,
+  tilesX,
+  tilesY,
+  result
 ) {
   // Calculate world-space bounding box
   const minWorldX = worldX - halfWidth;
@@ -2117,9 +2034,18 @@ export function calculateDecalTileBounds(
  * @returns {Object} Result with: dstStartX, dstStartY, dstEndX, dstEndY, srcOffsetX, srcOffsetY, valid
  */
 export function calculateTileClipRegion(
-  worldX, worldY, halfWidthWorld, halfHeightWorld,
-  tileX, tileY, tileSize, tilePixelSize,
-  texWidth, texHeight, scaledWidth, scaledHeight,
+  worldX,
+  worldY,
+  halfWidthWorld,
+  halfHeightWorld,
+  tileX,
+  tileY,
+  tileSize,
+  tilePixelSize,
+  texWidth,
+  texHeight,
+  scaledWidth,
+  scaledHeight,
   result
 ) {
   // Tile bounds in world space
@@ -2177,12 +2103,24 @@ export function calculateTileClipRegion(
 
 // Pre-allocated result objects for decal utilities (zero GC in hot paths)
 export const _decalTileBounds = {
-  minTileX: 0, maxTileX: 0, minTileY: 0, maxTileY: 0, valid: false
+  minTileX: 0,
+  maxTileX: 0,
+  minTileY: 0,
+  maxTileY: 0,
+  valid: false,
 };
 export const _tileClipRegion = {
-  dstStartX: 0, dstStartY: 0, dstEndX: 0, dstEndY: 0,
-  srcOffsetX: 0, srcOffsetY: 0, clipWidth: 0, clipHeight: 0,
-  uvScaleX: 1, uvScaleY: 1, valid: false
+  dstStartX: 0,
+  dstStartY: 0,
+  dstEndX: 0,
+  dstEndY: 0,
+  srcOffsetX: 0,
+  srcOffsetY: 0,
+  clipWidth: 0,
+  clipHeight: 0,
+  uvScaleX: 1,
+  uvScaleY: 1,
+  valid: false,
 };
 
 // ============================================================================
@@ -2197,13 +2135,13 @@ export const _tileClipRegion = {
  * @returns {string} Formatted string
  */
 export function formatComponentValue(propName, value) {
-  if (value === undefined || value === null) return "N/A";
+  if (value === undefined || value === null) return 'N/A';
 
   // Detect color properties (tint, baseTint, color)
-  const isColor = propName.toLowerCase().includes('tint') ||
-    propName.toLowerCase().includes('color');
+  const isColor =
+    propName.toLowerCase().includes('tint') || propName.toLowerCase().includes('color');
   if (isColor && typeof value === 'number') {
-    return "0x" + value.toString(16).toUpperCase().padStart(6, '0');
+    return '0x' + value.toString(16).toUpperCase().padStart(6, '0');
   }
 
   // Format numbers with appropriate precision
@@ -2219,21 +2157,21 @@ export function formatComponentValue(propName, value) {
   return String(value);
 }
 
- /**
-* Computes an approximate radius of a container circle
-* that can fit N circles of radius R.
-*
-* Uses an area-based approximation with a safety margin.
-* Suitable for real-time simulations and games.
-*
-* @param {number} N - Number of circles to fit (N >= 0)
-* @param {number} R - Radius of each circle (R > 0)
-* @param {number} [margin=1.05] - Safety margin multiplier
-* @returns {number} Radius of the container circle
-*/
+/**
+ * Computes an approximate radius of a container circle
+ * that can fit N circles of radius R.
+ *
+ * Uses an area-based approximation with a safety margin.
+ * Suitable for real-time simulations and games.
+ *
+ * @param {number} N - Number of circles to fit (N >= 0)
+ * @param {number} R - Radius of each circle (R > 0)
+ * @param {number} [margin=1.05] - Safety margin multiplier
+ * @returns {number} Radius of the container circle
+ */
 export function containerRadius(N, R, margin = 1.05) {
- if (N <= 0) return 0;
- if (N === 1) return R;
+  if (N <= 0) return 0;
+  if (N === 1) return R;
 
- return R * Math.sqrt(N) * margin;
+  return R * Math.sqrt(N) * margin;
 }

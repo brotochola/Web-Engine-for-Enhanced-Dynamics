@@ -17,12 +17,9 @@
 //   this.collider.radius = 20;  // mass = π * 20² ≈ 1257
 //   this.collider.width = 100;  // mass = 100 * height
 
-import { Component } from "../core/Component.js";
-import { RigidBody } from "./RigidBody.js";
-import {
-  updateMassFromCircle,
-  updateMassFromBox,
-} from "../core/utils.js";
+import { Component } from '../core/Component.js';
+import { RigidBody } from './RigidBody.js';
+import { updateMassFromCircle, updateMassFromBox } from '../core/utils.js';
 
 class Collider extends Component {
   // Array schema - defines all collision properties

@@ -1,5 +1,5 @@
-import { FireComponent } from "../components/fireComponent.js";
-import WEED from "/src/index.js";
+import { FireComponent } from '../components/fireComponent.js';
+import WEED from '/src/index.js';
 
 // Destructure what we need from WEED
 const {
@@ -22,18 +22,17 @@ export class Fire extends GameObject {
   static components = [Collider, SpriteRenderer, LightEmitter, FireComponent];
 
   setup(spawnConfig) {
-
     this.fireComponent.baseScale = Math.random() * 0.5 + 1;
 
     if (spawnConfig && spawnConfig.scale) this.fireComponent.baseScale = spawnConfig.scale;
-    const scale = this.fireComponent.baseScale
+    const scale = this.fireComponent.baseScale;
     this.setScale(Math.random() > 0.5 ? scale : -scale, scale);
     this.fireComponent.flipped = Math.random() > 0.5;
     this.collider.shapeType = ShapeType.Circle;
 
     // Store initial radius for fade calculations
 
-    Collider.radius[this.index] = FireComponent.baseRadius[this.index] = 40 * scale
+    Collider.radius[this.index] = FireComponent.baseRadius[this.index] = 40 * scale;
     this.collider.visualRange = 400;
 
     this.lightEmitter.lightColor = randomColor({
@@ -41,18 +40,17 @@ export class Fire extends GameObject {
       max: 0xff9900,
     });
     this.lightEmitter.lightIntensity = 10000;
-    this.lightEmitter.glowHeightOffset =
-      this.collider.radius * 0.5 * scale;
+    this.lightEmitter.glowHeightOffset = this.collider.radius * 0.5 * scale;
     this.lightEmitter.height = 0;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 1;
     this.setAlpha(0.6 + Math.random() * 0.2);
 
-    this.setSpritesheet("fire");
-    this.setAnimation("fire");
+    this.setSpritesheet('fire');
+    this.setAnimation('fire');
 
     // Initialize FireComponent properties
-    this.fireComponent.baseAnimationSpeed = 1
+    this.fireComponent.baseAnimationSpeed = 1;
     this.fireComponent.lifespan = spawnConfig?.lifespan ?? 8000 + Math.random() * 10000; // 2-3 seconds default
     this.fireComponent.elapsedTime = 0;
 
@@ -99,8 +97,8 @@ export class Fire extends GameObject {
     const totalFlicker = 1 + flicker1 + flicker2 + randomFlicker;
 
     const intensity = (baseIntensity + intensityVariation) * totalFlicker;
-    const radius = Collider.radius
-    LightEmitter.lightIntensity[this.index] = Math.max(500, intensity)*fadeFactor;
+    const radius = Collider.radius;
+    LightEmitter.lightIntensity[this.index] = Math.max(500, intensity) * fadeFactor;
 
     // Update radius based on fade factor
     radius[this.index] = FireComponent.baseRadius[this.index] * fadeFactor;
@@ -130,13 +128,12 @@ export class Fire extends GameObject {
     this.lightEmitter.glowHeightOffset = radius[this.index] * 0.5 * this.fireComponent.baseScale;
 
     // Mark dirty to keep animation advancing
-    const myRadius = radius[this.index]
+    const myRadius = radius[this.index];
     // Reduce particle emission as fire dies
     this.emitSparks(myRadius, fadeFactor);
     this.emitSmoke(myRadius, fadeFactor);
 
     // this.markDirty();
-
   }
 
   emitSparks(radius, fadeFactor = 1) {
@@ -153,7 +150,7 @@ export class Fire extends GameObject {
       gravity: -0.1,
       lifespan: { min: 200, max: 500 },
       scale: 0.25 * fadeFactor,
-      texture: "square",
+      texture: 'square',
       tint: randomColor({ min: 0x00ffff, max: 0x00bbff }),
       alpha: { min: 0.8 * fadeFactor, max: 1 * fadeFactor },
     });
@@ -175,8 +172,11 @@ export class Fire extends GameObject {
       flipY: Math.random() > 0.5,
       z: -radius * 2 - Math.random() * radius * 2,
       lifespan: { min: 500, max: 2000 },
-      scale: { min: this.fireComponent.baseScale * fadeFactor, max: this.fireComponent.baseScale * 3 * fadeFactor },
-      texture: "smoke",
+      scale: {
+        min: this.fireComponent.baseScale * fadeFactor,
+        max: this.fireComponent.baseScale * 3 * fadeFactor,
+      },
+      texture: 'smoke',
       tint: randomColor({ min: 0xaaaaaa, max: 0x666666 }),
       alpha: { min: 0.15 * fadeFactor, max: 0.3 * fadeFactor },
       tweenToAlpha0: true,

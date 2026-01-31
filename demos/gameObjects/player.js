@@ -1,7 +1,7 @@
 // Player.js - Player-controlled character
 // Extends GameObject to create a WASD-controlled player entity
 
-import WEED from "/src/index.js";
+import WEED from '/src/index.js';
 
 // Destructure what we need from WEED
 const {
@@ -72,7 +72,7 @@ export class Player extends GameObject {
     this.shadowCaster.height = this.collider.radius * 5;
 
     // Store last direction for idle animations
-    this.lastDirection = "down";
+    this.lastDirection = 'down';
 
     // Movement acceleration strength
     this.moveAcceleration = 0.3;
@@ -149,8 +149,8 @@ export class Player extends GameObject {
     this.rigidBody.ay = 0;
 
     // Set spritesheet and initial animation
-    this.setSpritesheet("poli");
-    this.setAnimation("idle_down");
+    this.setSpritesheet('poli');
+    this.setAnimation('idle_down');
     this.setAnimationSpeed(0.15);
   }
 
@@ -168,7 +168,7 @@ export class Player extends GameObject {
     const i = this.index;
 
     // TEST: Hold SPACE to use pathfinding instead of WASD
-    if (Keyboard.isDown(" ")) {
+    if (Keyboard.isDown(' ')) {
       this.testPathFinding();
     } else {
       // Handle WASD input for movement
@@ -202,16 +202,16 @@ export class Player extends GameObject {
     // WASD movement (applied as acceleration)
     const moveForce = this.moveAcceleration * dtRatio;
 
-    if (Keyboard.isDown("w")) {
+    if (Keyboard.isDown('w')) {
       rbAY[i] -= moveForce;
     }
-    if (Keyboard.isDown("s")) {
+    if (Keyboard.isDown('s')) {
       rbAY[i] += moveForce;
     }
-    if (Keyboard.isDown("a")) {
+    if (Keyboard.isDown('a')) {
       rbAX[i] -= moveForce;
     }
-    if (Keyboard.isDown("d")) {
+    if (Keyboard.isDown('d')) {
       rbAX[i] += moveForce;
     }
   }
@@ -241,7 +241,7 @@ export class Player extends GameObject {
 
       // Choose walk or run based on speed threshold
       const isRunning = speed > 3;
-      const animPrefix = isRunning ? "run" : "walk";
+      const animPrefix = isRunning ? 'run' : 'walk';
 
       // Set animation with speed-based animation speed
       this.setAnimation(`${animPrefix}_${direction}`);

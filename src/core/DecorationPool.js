@@ -2,9 +2,9 @@
 // Used by game code to place static visual elements (grass, rocks, bushes, etc.)
 // Decorations are NOT GameObjects - they use DecorationComponent directly
 
-import { DecorationComponent } from "../components/DecorationComponent.js";
-import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
-import { randomRange } from "./utils.js";
+import { DecorationComponent } from '../components/DecorationComponent.js';
+import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
+import { randomRange } from './utils.js';
 
 export class DecorationPool {
   // Pool size (set during initialization)
@@ -36,7 +36,8 @@ export class DecorationPool {
     this.freeListTop = maxDecorations - 1;
 
     console.log(
-      `DecorationPool: Initialized with ${maxDecorations} decorations (indices 0-${maxDecorations - 1
+      `DecorationPool: Initialized with ${maxDecorations} decorations (indices 0-${
+        maxDecorations - 1
       })`
     );
   }
@@ -77,13 +78,13 @@ export class DecorationPool {
    */
   static spawn(config) {
     if (!this.initialized) {
-      console.warn("DecorationPool.spawn() called before initialization");
+      console.warn('DecorationPool.spawn() called before initialization');
       return -1;
     }
 
     // Check if pool is exhausted (O(1) check)
     if (this.freeListTop < 0) {
-      console.warn("DecorationPool: No free slots available");
+      console.warn('DecorationPool: No free slots available');
       return -1;
     }
 
@@ -93,8 +94,7 @@ export class DecorationPool {
     // Resolve texture name to textureId (frame index in bigAtlas)
     let textureId = 0;
     if (config.texture) {
-      textureId =
-        SpriteSheetRegistry.getAnimationIndex("bigAtlas", config.texture) ?? 0;
+      textureId = SpriteSheetRegistry.getAnimationIndex('bigAtlas', config.texture) ?? 0;
     }
 
     // Cache array references for performance
@@ -175,7 +175,7 @@ export class DecorationPool {
    */
   static despawn(index) {
     if (!this.initialized) {
-      console.warn("DecorationPool.despawn() called before initialization");
+      console.warn('DecorationPool.despawn() called before initialization');
       return false;
     }
 

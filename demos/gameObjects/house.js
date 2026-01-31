@@ -1,5 +1,5 @@
-import { ShadowCaster } from "../../src/components/ShadowCaster.js";
-import WEED from "/src/index.js";
+import { ShadowCaster } from '../../src/components/ShadowCaster.js';
+import WEED from '/src/index.js';
 
 // Destructure what we need from WEED
 const {
@@ -25,10 +25,10 @@ export class House extends GameObject {
     // this.rigidBody.maxAcc = 0;
     // this.rigidBody.static = 1; // Static body - nothing can move it
     const type = Math.random() > 0.5 ? 1 : 2;
-    this.setSprite("house" + type);
+    this.setSprite('house' + type);
 
     this.collider.shapeType = ShapeType.Box;
-    this.collider.width = 180
+    this.collider.width = 180;
     this.collider.height = 110;
     this.collider.offsetY = -50;
     this.collider.offsetX = 0;
@@ -39,14 +39,13 @@ export class House extends GameObject {
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 0;
 
-    this.setScale(1, 1)
+    this.setScale(1, 1);
     this.collider.visualRange = 300;
 
-    this.shadowCaster.height =   this.collider.height*0.5
+    this.shadowCaster.height = this.collider.height * 0.5;
   }
 
-  onSpawned(spawnConfig = {}) {
-  }
+  onSpawned(spawnConfig = {}) {}
 
   onDespawned() {
     // Could save stats, play death effects, etc.

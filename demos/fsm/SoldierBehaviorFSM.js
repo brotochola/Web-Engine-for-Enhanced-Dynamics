@@ -1,13 +1,14 @@
 // SoldierBehaviorFSM.js - FSM component for soldier behavior
 // States: IDLE, GOING_TO_DESTINATION, GOING_TO_ENEMY, CLOSE_ATTACKING, RANGED_ATTACKING
 
-import WEED from "/src/index.js";
+import WEED from '/src/index.js';
 
-import { Civilian } from "../gameObjects/civilian.js";
-import { Destination } from "../gameObjects/destination.js";
-import { NavGrid } from "../../src/core/NavGrid.js";
-import { PersonComponent, DIRECTION_NAMES } from "../components/personComponent.js";
-import { distanceSq2D, Ray } from "../../src/index.js";
+import { Civilian } from '../gameObjects/civilian.js';
+import { Destination } from '../gameObjects/destination.js';
+import { NavGrid } from '../../src/core/NavGrid.js';
+import { PersonComponent, DIRECTION_NAMES } from '../components/personComponent.js';
+import { distanceSq2D, Ray } from '../../src/index.js';
+import { LootableComponent } from '../components/lootableComponent.js';
 
 const { FSM, FSMState, Transform, RigidBody, GameObject, getDirectionFromAngle } = WEED;
 
@@ -26,6 +27,7 @@ function findClosestCivilian(owner) {
   for (let n = 0; n < owner.neighborCount; n++) {
     const neighborIndex = owner.getNeighbor(n);
     if (Transform.entityType[neighborIndex] !== civilianType) continue;
+    if (LootableComponent.health[neighborIndex] <= 0) continue;
 
     const distSq = owner.getNeighborDistanceSq(n);
     if (distSq < _closestResult.distSq) {
@@ -67,8 +69,7 @@ function canShootTarget(owner, targetIndex, targetDistSq) {
 // ==========================================
 
 function getDestination() {
- return Destination.getFirstActiveInstance();
-
+  return Destination.getFirstActiveInstance();
 }
 
 // ==========================================
@@ -132,7 +133,7 @@ class GoingToDestinationState extends FSMState {
 
     // Check if reached destination
     const distSqToDest = distanceSq2D(owner.x, owner.y, dest.x, dest.y);
-    if (distSqToDest < dest.collider.radius**2) {
+    if (distSqToDest < dest.collider.radius ** 2) {
       this.fsm.changeState(i, this.fsm.states.IDLE);
       return;
     }

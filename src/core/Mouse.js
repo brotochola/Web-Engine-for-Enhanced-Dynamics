@@ -3,10 +3,10 @@
 // Position is written directly to Transform by main thread
 // Button state is stored in MouseComponent (SharedArrayBuffer)
 
-import { GameObject } from "./gameObject.js";
-import { Transform } from "../components/Transform.js";
-import { Collider } from "../components/Collider.js";
-import { MouseComponent } from "../components/MouseComponent.js";
+import { GameObject } from './gameObject.js';
+import { Transform } from '../components/Transform.js';
+import { Collider } from '../components/Collider.js';
+import { MouseComponent } from '../components/MouseComponent.js';
 
 export class Mouse extends GameObject {
   // entityType auto-assigned during registration (Mouse is always registered first, so gets ID 0)

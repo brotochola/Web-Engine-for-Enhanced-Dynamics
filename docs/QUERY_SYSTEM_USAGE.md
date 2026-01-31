@@ -30,7 +30,7 @@ class Predator extends Boid {
 ### Method 2: Via WEED Namespace
 
 ```javascript
-import WEED from "/src/index.js";
+import WEED from '/src/index.js';
 
 const { query, RigidBody, Collider } = WEED;
 
@@ -45,7 +45,7 @@ class MyEntity extends WEED.GameObject {
 ### Method 3: Direct WEED Call
 
 ```javascript
-import WEED from "/src/index.js";
+import WEED from '/src/index.js';
 
 class MyEntity extends WEED.GameObject {
   tick(dtRatio) {

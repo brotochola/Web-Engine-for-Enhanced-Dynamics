@@ -1,4 +1,4 @@
-import WEED from "/src/index.js";
+import WEED from '/src/index.js';
 
 // Destructure what we need from WEED
 const {
@@ -19,7 +19,7 @@ export class Rock extends GameObject {
   static components = [Collider, SpriteRenderer, ShadowCaster];
 
   setup() {
-    this.setSprite("rock" + Math.floor(Math.random() * 4 + 1));
+    this.setSprite('rock' + Math.floor(Math.random() * 4 + 1));
     this.scale = Math.random() * 0.5 + 1;
     this.setScale(Math.random() > 0.5 ? this.scale : -this.scale, this.scale);
 
@@ -33,6 +33,5 @@ export class Rock extends GameObject {
     this.shadowCaster.height = this.collider.radius * 3;
   }
 
-  onSpawned(spawnConfig = {}) {
-  }
+  onSpawned(spawnConfig = {}) {}
 }

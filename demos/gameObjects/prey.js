@@ -1,10 +1,10 @@
 // Prey.js - Boid that tries to survive by avoiding predators
 // Extends Boid to implement prey-specific behaviors
 
-import WEED from "/src/index.js";
-import { Boid } from "../gameObjects/boid.js";
-import { Predator } from "../gameObjects/predator.js";
-import { PreyBehavior } from "../components/preyBehavior.js";
+import WEED from '/src/index.js';
+import { Boid } from '../gameObjects/boid.js';
+import { Predator } from '../gameObjects/predator.js';
+import { PreyBehavior } from '../components/preyBehavior.js';
 
 // Destructure what we need from WEED
 const { GameObject, RigidBody, getDirectionFromAngle, rng } = WEED;
@@ -62,13 +62,13 @@ class Prey extends Boid {
 
   defineSpritesheets() {
     // Choose random spritesheet for visual variety
-    const spritesheets = ["civil2", "civil3", "civil4"];
+    const spritesheets = ['civil2', 'civil3', 'civil4'];
 
     const randomSheet = spritesheets[Math.floor(rng() * spritesheets.length)];
 
     // Set the spritesheet for THIS instance
     this.setSpritesheet(randomSheet);
-    this.setAnimation("idle_down");
+    this.setAnimation('idle_down');
     this.setAnimationSpeed(0.15);
   }
 
@@ -143,15 +143,7 @@ class Prey extends Boid {
    * HOOK: Process each neighbor - called by Boid.applyFlockingBehaviors()
    * Accumulates flee forces from all predators during the same loop that does flocking
    */
-  processNeighbor(
-    neighborIndex,
-    neighborType,
-    dx,
-    dy,
-    dist2,
-    isSameType,
-    context
-  ) {
+  processNeighbor(neighborIndex, neighborType, dx, dy, dist2, isSameType, context) {
     // Flee from predators (inverse square law for panic effect)
     if (neighborType === Predator.entityType && dist2 > 0) {
       context.fleeX += -dx / dist2; // Flee away from predator
@@ -171,10 +163,8 @@ class Prey extends Boid {
       const rbAX = RigidBody.ax;
       const rbAY = RigidBody.ay;
 
-      rbAX[i] +=
-        context.fleeX * this.preyBehavior.predatorAvoidFactor * dtRatio;
-      rbAY[i] +=
-        context.fleeY * this.preyBehavior.predatorAvoidFactor * dtRatio;
+      rbAX[i] += context.fleeX * this.preyBehavior.predatorAvoidFactor * dtRatio;
+      rbAY[i] += context.fleeY * this.preyBehavior.predatorAvoidFactor * dtRatio;
       return true;
     }
     return false;
@@ -204,7 +194,7 @@ class Prey extends Boid {
     if (speed > 0.1) {
       // Choose walk or run based on speed threshold
       const isRunning = speed > 2;
-      const animPrefix = isRunning ? "run" : "walk";
+      const animPrefix = isRunning ? 'run' : 'walk';
 
       // Set animation and speed
       this.setAnimation(`${animPrefix}_${direction}`);

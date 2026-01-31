@@ -1,8 +1,8 @@
 // GameEngine.js - Lightweight scene orchestrator
 // Manages canvas, scene lifecycle, and debug UI
 
-import { DebugUI } from "./DebugUI.js";
-import { printLogo } from "./utils.js";
+import { DebugUI } from './DebugUI.js';
+import { printLogo } from './utils.js';
 
 class GameEngine {
   static states = {
@@ -50,7 +50,7 @@ class GameEngine {
   // }
 
   _createCanvas() {
-    this.canvas = document.createElement("canvas");
+    this.canvas = document.createElement('canvas');
     this.canvas.width = this.canvasWidth;
     this.canvas.height = this.canvasHeight;
     document.body.appendChild(this.canvas);
@@ -82,9 +82,7 @@ class GameEngine {
 
       // Destroy current scene
       if (this.currentScene) {
-        console.log(
-          `📤 Unloading scene: ${this.currentScene.constructor.name}`
-        );
+        console.log(`📤 Unloading scene: ${this.currentScene.constructor.name}`);
         await this.currentScene.destroy();
         this.currentScene = null;
 
@@ -111,15 +109,13 @@ class GameEngine {
       }
 
       // Add cooldown period before allowing next transition
-      await new Promise((resolve) =>
-        setTimeout(resolve, this.transitionCooldown)
-      );
+      await new Promise((resolve) => setTimeout(resolve, this.transitionCooldown));
 
       // Scene loaded successfully
       this.state = GameEngine.states.READY;
       return true;
     } catch (error) {
-      console.error("❌ Error loading scene:", error);
+      console.error('❌ Error loading scene:', error);
       this.state = GameEngine.states.READY; // Reset state on error
       throw error;
     }
@@ -219,7 +215,7 @@ class GameEngine {
     }
 
     this.state = GameEngine.states.READY;
-    console.log("🔴 GameEngine destroyed");
+    console.log('🔴 GameEngine destroyed');
   }
 }
 

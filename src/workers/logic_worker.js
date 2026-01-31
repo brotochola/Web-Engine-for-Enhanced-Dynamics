@@ -1,29 +1,29 @@
 self.postMessage({
-  msg: "log",
-  message: "js loaded",
+  msg: 'log',
+  message: 'js loaded',
   when: Date.now(),
 });
 // logic_worker.js - Calculates game logic using GameObject pattern
 // This worker runs independently, calculating accelerations for all entities
 
 // Import engine dependencies
-import { GameObject } from "../core/gameObject.js";
-import { Mouse } from "../core/Mouse.js";
-import Keyboard from "../core/Keyboard.js";
-import { Transform } from "../components/Transform.js";
-import { RigidBody } from "../components/RigidBody.js";
-import { Collider } from "../components/Collider.js";
-import { SpriteRenderer } from "../components/SpriteRenderer.js";
-import { ParticleComponent } from "../components/ParticleComponent.js";
-import { FlashComponent } from "../components/FlashComponent.js";
-import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
-import { ParticleEmitter } from "../core/ParticleEmitter.js";
-import { DecorationPool } from "../core/DecorationPool.js";
-import { Flash } from "../core/Flash.js";
-import { AbstractWorker } from "./AbstractWorker.js";
-import { Grid } from "../core/Grid.js";
-import { LOGIC_STATS, createMultiWorkerStatsWriter } from "./workers-utils.js";
-import { cantorPair } from "../core/utils.js";
+import { GameObject } from '../core/gameObject.js';
+import { Mouse } from '../core/Mouse.js';
+import Keyboard from '../core/Keyboard.js';
+import { Transform } from '../components/Transform.js';
+import { RigidBody } from '../components/RigidBody.js';
+import { Collider } from '../components/Collider.js';
+import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { ParticleComponent } from '../components/ParticleComponent.js';
+import { FlashComponent } from '../components/FlashComponent.js';
+import { SpriteSheetRegistry } from '../core/SpriteSheetRegistry.js';
+import { ParticleEmitter } from '../core/ParticleEmitter.js';
+import { DecorationPool } from '../core/DecorationPool.js';
+import { Flash } from '../core/Flash.js';
+import { AbstractWorker } from './AbstractWorker.js';
+import { Grid } from '../core/Grid.js';
+import { LOGIC_STATS, createMultiWorkerStatsWriter } from './workers-utils.js';
+import { cantorPair } from '../core/utils.js';
 
 // Note: Core engine classes (GameObject, Mouse, Keyboard, etc.) and components
 // (Transform, RigidBody, etc.) are now registered automatically by AbstractWorker
@@ -105,13 +105,12 @@ class LogicWorker extends AbstractWorker {
 
       // Register proxy sheets for transparent lookups
       if (data.bigAtlasProxySheets) {
-        for (const [sheetName, proxyData] of Object.entries(
-          data.bigAtlasProxySheets
-        )) {
+        for (const [sheetName, proxyData] of Object.entries(data.bigAtlasProxySheets)) {
           SpriteSheetRegistry.registerProxy(sheetName, proxyData);
         }
         console.log(
-          `LOGIC WORKER ${this.workerIndex}: Registered ${Object.keys(data.bigAtlasProxySheets).length
+          `LOGIC WORKER ${this.workerIndex}: Registered ${
+            Object.keys(data.bigAtlasProxySheets).length
           } proxy sheets`
         );
       }
@@ -147,7 +146,7 @@ class LogicWorker extends AbstractWorker {
     // Initialize collision buffer
     if (data.buffers.collisionData) {
       this.collisionData = new Int32Array(data.buffers.collisionData);
-      console.log("LOGIC WORKER: Collision callbacks enabled");
+      console.log('LOGIC WORKER: Collision callbacks enabled');
     }
 
     // Initialize screen visibility tracking array
@@ -212,7 +211,7 @@ class LogicWorker extends AbstractWorker {
 
         // CRITICAL: Initialize instances array for THIS class (not inherited from GameObject)
         // Without this, all entity types share GameObject.instances causing spawn bugs
-        if (!EntityClass.hasOwnProperty("instances")) {
+        if (!EntityClass.hasOwnProperty('instances')) {
           EntityClass.instances = [];
         }
 
@@ -223,8 +222,7 @@ class LogicWorker extends AbstractWorker {
 
         for (const ComponentClass of components) {
           const componentName = ComponentClass.name;
-          const camelCaseName =
-            componentName.charAt(0).toLowerCase() + componentName.slice(1);
+          const camelCaseName = componentName.charAt(0).toLowerCase() + componentName.slice(1);
           componentClassMap[camelCaseName] = ComponentClass;
         }
         EntityClass._componentClassMap = componentClassMap;
@@ -232,7 +230,7 @@ class LogicWorker extends AbstractWorker {
         // Special initialization for internal engine classes
         // Flash needs its initialize() called with the pool size
         // Note: Flash uses Camera class directly for off-screen culling
-        if (name === "Flash" && EntityClass.initialize) {
+        if (name === 'Flash' && EntityClass.initialize) {
           EntityClass.initialize(poolSize);
         }
 
@@ -283,9 +281,7 @@ class LogicWorker extends AbstractWorker {
 
     // OPTIMIZED: Use activeEntitiesData to skip inactive entities entirely
     // particle_worker builds this list at the start of each frame
-    const totalActiveEntities = this.activeEntitiesData
-      ? this.activeEntitiesData[0]
-      : 0;
+    const totalActiveEntities = this.activeEntitiesData ? this.activeEntitiesData[0] : 0;
 
     // PERFORMANCE: Cache Grid arrays once to avoid property lookups per entity
     const neighborData = Grid.neighborData;
@@ -315,11 +311,7 @@ class LogicWorker extends AbstractWorker {
       const actualEndIndex = Math.min(jobEndIndex, totalActiveEntities);
 
       // Process all active entities in this job's range
-      for (
-        let activeIdx = jobStartIndex;
-        activeIdx < actualEndIndex;
-        activeIdx++
-      ) {
+      for (let activeIdx = jobStartIndex; activeIdx < actualEndIndex; activeIdx++) {
         // Get actual entity index from active list (one extra indirection)
         const entityIndex = this.activeEntitiesData[1 + activeIdx];
         const obj = this.gameObjects[entityIndex];
@@ -544,7 +536,7 @@ class LogicWorker extends AbstractWorker {
     const { msg } = data;
 
     switch (msg) {
-      case "spawn": {
+      case 'spawn': {
         // Only worker 0 handles spawn messages to avoid race conditions
         // All workers receive the broadcast, but only worker 0 actually spawns
         if (this.workerIndex !== 0) {
@@ -570,7 +562,7 @@ class LogicWorker extends AbstractWorker {
         break;
       }
 
-      case "despawn": {
+      case 'despawn': {
         // Only worker 0 handles despawn to keep freeList synchronized with spawn
         if (this.workerIndex !== 0) {
           break;
@@ -596,7 +588,7 @@ class LogicWorker extends AbstractWorker {
       }
 
       // Handle spawn requests from other logic workers (worker-to-worker message)
-      case "spawnRequest": {
+      case 'spawnRequest': {
         // This should only be received by worker 0 (routed from other workers)
         if (this.workerIndex !== 0) {
           console.warn(
@@ -625,7 +617,7 @@ class LogicWorker extends AbstractWorker {
       }
 
       // Handle despawn requests from other logic workers (worker-to-worker message)
-      case "despawnRequest": {
+      case 'despawnRequest': {
         // This should only be received by worker 0 (routed from other workers)
         if (this.workerIndex !== 0) {
           console.warn(
@@ -652,7 +644,7 @@ class LogicWorker extends AbstractWorker {
         break;
       }
 
-      case "despawnAll": {
+      case 'despawnAll': {
         // Only worker 0 handles despawnAll to keep freeList synchronized with spawn
         // (spawn also only runs on worker 0)
         if (this.workerIndex !== 0) {
@@ -668,7 +660,7 @@ class LogicWorker extends AbstractWorker {
           );
           console.error(
             `LOGIC WORKER ${this.workerIndex}: Available classes:`,
-            Object.keys(self).filter((key) => typeof self[key] === "function")
+            Object.keys(self).filter((key) => typeof self[key] === 'function')
           );
           return;
         }
@@ -678,9 +670,7 @@ class LogicWorker extends AbstractWorker {
         let count = 0;
         let skippedNoInstance = 0;
         const entityType = EntityClass.entityType;
-        const totalActiveEntities = this.activeEntitiesData
-          ? this.activeEntitiesData[0]
-          : 0;
+        const totalActiveEntities = this.activeEntitiesData ? this.activeEntitiesData[0] : 0;
 
         // Only iterate through active entities, not the entire pool
         for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
@@ -692,11 +682,9 @@ class LogicWorker extends AbstractWorker {
             } else {
               // Fallback: manually deactivate if no instance exists
               Transform.active[i] = 0;
-              if (RigidBody.active && RigidBody.active[i])
-                RigidBody.active[i] = 0;
+              if (RigidBody.active && RigidBody.active[i]) RigidBody.active[i] = 0;
               if (Collider.active && Collider.active[i]) Collider.active[i] = 0;
-              if (SpriteRenderer.active && SpriteRenderer.active[i])
-                SpriteRenderer.active[i] = 0;
+              if (SpriteRenderer.active && SpriteRenderer.active[i]) SpriteRenderer.active[i] = 0;
 
               // Return to free list
               if (EntityClass.freeList) {
@@ -715,7 +703,7 @@ class LogicWorker extends AbstractWorker {
         break;
       }
 
-      case "clearAll": {
+      case 'clearAll': {
         // Only worker 0 handles clearAll to keep freeList synchronized with spawn
         if (this.workerIndex !== 0) {
           break;
@@ -724,9 +712,7 @@ class LogicWorker extends AbstractWorker {
         // Despawn ALL entities (no partitioning - worker 0 handles all)
         // OPTIMIZED: Use activeEntitiesData to skip inactive entities
         let totalDespawned = 0;
-        const totalActiveEntities = this.activeEntitiesData
-          ? this.activeEntitiesData[0]
-          : 0;
+        const totalActiveEntities = this.activeEntitiesData ? this.activeEntitiesData[0] : 0;
 
         // Only iterate through active entities, not the entire pool
         for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
@@ -756,8 +742,7 @@ class LogicWorker extends AbstractWorker {
     // Write stats to SharedArrayBuffer every frame
     if (this.stats) {
       this.stats[LOGIC_STATS.FPS] = this.currentFPS;
-      this.stats[LOGIC_STATS.ENTITIES_PROCESSED] =
-        this.entitiesProcessedThisFrame;
+      this.stats[LOGIC_STATS.ENTITIES_PROCESSED] = this.entitiesProcessedThisFrame;
       this.stats[LOGIC_STATS.SYSTEMS_EXECUTED] = this.systemsExecutedThisFrame;
       this.stats[LOGIC_STATS.JOBS_STOLEN] = this.jobsStolenThisFrame;
     }

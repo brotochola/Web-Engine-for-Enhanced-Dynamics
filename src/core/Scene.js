@@ -2,18 +2,18 @@
 // Handles workers, SharedArrayBuffers, entity registration, and scene lifecycle
 // This was previously GameEngine.js - renamed to better reflect its role
 
-import { GameObject } from "./gameObject.js";
-import { Transform } from "../components/Transform.js";
-import { RigidBody } from "../components/RigidBody.js";
-import { Collider } from "../components/Collider.js";
-import { SpriteRenderer } from "../components/SpriteRenderer.js";
-import { ParticleComponent } from "../components/ParticleComponent.js";
-import { DecorationComponent } from "../components/DecorationComponent.js";
-import { DecorationPool } from "./DecorationPool.js";
-import { ShadowCaster } from "../components/ShadowCaster.js";
+import { GameObject } from './gameObject.js';
+import { Transform } from '../components/Transform.js';
+import { RigidBody } from '../components/RigidBody.js';
+import { Collider } from '../components/Collider.js';
+import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { ParticleComponent } from '../components/ParticleComponent.js';
+import { DecorationComponent } from '../components/DecorationComponent.js';
+import { DecorationPool } from './DecorationPool.js';
+import { ShadowCaster } from '../components/ShadowCaster.js';
 // import { FlashComponent } from "../components/FlashComponent.js";
 // import { LightEmitter } from "../components/LightEmitter.js";
-import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
+import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import {
   setupWorkerCommunication,
   seededRandom,
@@ -23,13 +23,13 @@ import {
   exposeComponentsGlobally,
   exposeEntityClassesGlobally,
   urlToPath,
-} from "./utils.js";
-import { DebugFlags } from "./DebugFlags.js";
-import { Mouse } from "./Mouse.js";
-import { Flash } from "./Flash.js";
-import { BigAtlasInspector } from "./BigAtlasInspector.js";
-import { Camera } from "./Camera.js";
-import { QuerySystem } from "./QuerySystem.js";
+} from './utils.js';
+import { DebugFlags } from './DebugFlags.js';
+import { Mouse } from './Mouse.js';
+import { Flash } from './Flash.js';
+import { BigAtlasInspector } from './BigAtlasInspector.js';
+import { Camera } from './Camera.js';
+import { QuerySystem } from './QuerySystem.js';
 import {
   SCENE_DEFAULTS,
   PHYSICS_DEFAULTS,
@@ -40,9 +40,9 @@ import {
   RENDERER_DEFAULTS,
   LIGHTING_DEFAULTS,
   NAVIGATION_DEFAULTS,
-} from "./ConfigDefaults.js";
-import { NavGrid } from "./NavGrid.js";
-import { Grid } from "./Grid.js";
+} from './ConfigDefaults.js';
+import { NavGrid } from './NavGrid.js';
+import { Grid } from './Grid.js';
 import {
   RENDERER_STATS,
   PARTICLE_STATS,
@@ -50,7 +50,7 @@ import {
   SPATIAL_STATS,
   LOGIC_STATS,
   NAVIGATION_STATS,
-} from "../workers/workers-utils.js";
+} from '../workers/workers-utils.js';
 
 class Scene {
   // Worker index constants for FrameRate SharedArrayBuffer
@@ -150,7 +150,11 @@ class Scene {
       this.workerReadyStates.navigation = false;
     }
 
-    this.totalWorkers = 3 + this.numberOfSpatialWorkers + numberOfLogicWorkers + (this.config.navigation.enabled ? 1 : 0);
+    this.totalWorkers =
+      3 +
+      this.numberOfSpatialWorkers +
+      numberOfLogicWorkers +
+      (this.config.navigation.enabled ? 1 : 0);
 
     // Shared buffers
     this.buffers = {
@@ -262,22 +266,22 @@ class Scene {
     }
 
     // Special keys
-    this.keyMap[" "] = keyIndex++;
-    this.keyMap["enter"] = keyIndex++;
-    this.keyMap["escape"] = keyIndex++;
-    this.keyMap["tab"] = keyIndex++;
-    this.keyMap["backspace"] = keyIndex++;
-    this.keyMap["delete"] = keyIndex++;
-    this.keyMap["shift"] = keyIndex++;
-    this.keyMap["control"] = keyIndex++;
-    this.keyMap["alt"] = keyIndex++;
-    this.keyMap["meta"] = keyIndex++;
+    this.keyMap[' '] = keyIndex++;
+    this.keyMap['enter'] = keyIndex++;
+    this.keyMap['escape'] = keyIndex++;
+    this.keyMap['tab'] = keyIndex++;
+    this.keyMap['backspace'] = keyIndex++;
+    this.keyMap['delete'] = keyIndex++;
+    this.keyMap['shift'] = keyIndex++;
+    this.keyMap['control'] = keyIndex++;
+    this.keyMap['alt'] = keyIndex++;
+    this.keyMap['meta'] = keyIndex++;
 
     // Arrow keys
-    this.keyMap["arrowup"] = keyIndex++;
-    this.keyMap["arrowdown"] = keyIndex++;
-    this.keyMap["arrowleft"] = keyIndex++;
-    this.keyMap["arrowright"] = keyIndex++;
+    this.keyMap['arrowup'] = keyIndex++;
+    this.keyMap['arrowdown'] = keyIndex++;
+    this.keyMap['arrowleft'] = keyIndex++;
+    this.keyMap['arrowright'] = keyIndex++;
 
     // Function keys F1-F12
     for (let i = 1; i <= 12; i++) {
@@ -285,19 +289,7 @@ class Scene {
     }
 
     // Punctuation
-    const punctuation = [
-      "-",
-      "=",
-      "[",
-      "]",
-      "\\",
-      ";",
-      "'",
-      ",",
-      ".",
-      "/",
-      "`",
-    ];
+    const punctuation = ['-', '=', '[', ']', '\\', ';', "'", ',', '.', '/', '`'];
     punctuation.forEach((char) => {
       this.keyMap[char] = keyIndex++;
     });
@@ -350,9 +342,7 @@ class Scene {
       (r) => r.class === EntityClass || r.class.name === EntityClass.name
     );
     if (existing) {
-      console.warn(
-        `⚠️ ${EntityClass.name} is already registered. Skipping duplicate.`
-      );
+      console.warn(`⚠️ ${EntityClass.name} is already registered. Skipping duplicate.`);
       return;
     }
 
@@ -386,7 +376,7 @@ class Scene {
     this.totalEntityCount += count;
 
     // Auto-initialize static properties
-    if (!EntityClass.hasOwnProperty("instances")) {
+    if (!EntityClass.hasOwnProperty('instances')) {
       EntityClass.instances = [];
     }
 
@@ -421,8 +411,7 @@ class Scene {
       ...(this.config.physics || {}),
     };
     // Ensure gravity is synced
-    this.config.physics.gravity =
-      this.config.physics.gravity || this.config.gravity;
+    this.config.physics.gravity = this.config.physics.gravity || this.config.gravity;
     this.config.gravity = this.config.physics.gravity;
 
     // Spatial defaults from centralized config
@@ -438,8 +427,7 @@ class Scene {
     };
     // Compute decalsTilePixelSize
     this.config.particle.decalsTilePixelSize = Math.floor(
-      this.config.particle.decalsTileSize *
-      this.config.particle.decalsResolution
+      this.config.particle.decalsTileSize * this.config.particle.decalsResolution
     );
 
     // Decoration defaults from centralized config
@@ -467,12 +455,10 @@ class Scene {
     };
     // Compute maxShadowSprites based on light count and shadows per light
     this.config.lighting.maxShadowSprites =
-      this.config.lighting.maxShadowCastingLights *
-      this.config.lighting.maxShadowsPerLight;
+      this.config.lighting.maxShadowCastingLights * this.config.lighting.maxShadowsPerLight;
     // Compute shadowsEnabled (requires both enabled and shadowsEnabled)
     this.config.lighting.shadowsEnabled =
-      this.config.lighting.enabled &&
-      this.config.lighting.shadowsEnabled !== false;
+      this.config.lighting.enabled && this.config.lighting.shadowsEnabled !== false;
 
     // Navigation defaults from centralized config
     this.config.navigation = {
@@ -605,9 +591,7 @@ class Scene {
         ParentClass.entityType = entityTypeId;
 
         // Auto-detect script path from parent class (for worker script loading)
-        const parentScriptPath = ParentClass.scriptUrl
-          ? urlToPath(ParentClass.scriptUrl)
-          : null;
+        const parentScriptPath = ParentClass.scriptUrl ? urlToPath(ParentClass.scriptUrl) : null;
 
         this.registeredClasses.push({
           class: ParentClass,
@@ -618,13 +602,13 @@ class Scene {
           components: parentComponents,
         });
 
-        if (!ParentClass.hasOwnProperty("sharedBuffer")) {
+        if (!ParentClass.hasOwnProperty('sharedBuffer')) {
           ParentClass.sharedBuffer = null;
         }
-        if (!ParentClass.hasOwnProperty("poolSize")) {
+        if (!ParentClass.hasOwnProperty('poolSize')) {
           ParentClass.poolSize = 0;
         }
-        if (!ParentClass.hasOwnProperty("instances")) {
+        if (!ParentClass.hasOwnProperty('instances')) {
           ParentClass.instances = [];
         }
       }
@@ -636,8 +620,8 @@ class Scene {
     console.log(`🎬 Scene ${this.constructor.name}: Initializing...`);
 
     // Check SharedArrayBuffer support
-    if (typeof SharedArrayBuffer === "undefined") {
-      throw new Error("SharedArrayBuffer not available! Check CORS headers.");
+    if (typeof SharedArrayBuffer === 'undefined') {
+      throw new Error('SharedArrayBuffer not available! Check CORS headers.');
     }
 
     // Load entity scripts dynamically in main thread (like workers do)
@@ -656,7 +640,7 @@ class Scene {
     this.startMainLoop();
 
     // Update entity count display
-    const numberBoidsElement = document.getElementById("numberBoids");
+    const numberBoidsElement = document.getElementById('numberBoids');
     if (numberBoidsElement) {
       numberBoidsElement.textContent = `Number of entities: ${this.totalEntityCount}`;
     }
@@ -705,10 +689,7 @@ class Scene {
     window.game = this.game;
 
     // Collect all components from all registered entity classes
-    const componentMap = collectAllComponentsFromClasses(
-      this.registeredClasses,
-      window
-    );
+    const componentMap = collectAllComponentsFromClasses(this.registeredClasses, window);
 
     // Initialize component views from SharedArrayBuffers (ensures all custom components are connected)
     const initializedCount = initializeComponentViews(
@@ -722,10 +703,7 @@ class Scene {
     exposeComponentsGlobally(componentMap, window);
 
     // Expose all registered entity classes
-    const exposedEntities = exposeEntityClassesGlobally(
-      this.registeredClasses,
-      window
-    );
+    const exposedEntities = exposeEntityClassesGlobally(this.registeredClasses, window);
 
     // Expose core classes that might not be in componentMap (system classes)
     window.GameObject = GameObject;
@@ -740,9 +718,7 @@ class Scene {
       `🌍 Exposed ${exposedEntities.length} entity classes and ${componentMap.size} components globally (${initializedCount} with SAB views)`
     );
     if (exposedEntities.length > 0) {
-      console.log(
-        `💡 Try: ${exposedEntities[0]}.forEach(i => console.log(i)) or RigidBody.vx[0]`
-      );
+      console.log(`💡 Try: ${exposedEntities[0]}.forEach(i => console.log(i)) or RigidBody.vx[0]`);
     }
   }
 
@@ -776,9 +752,7 @@ class Scene {
     }
 
     // GameObject entity metadata buffer
-    const gameObjectBufferSize = GameObject.getBufferSize(
-      this.totalEntityCount
-    );
+    const gameObjectBufferSize = GameObject.getBufferSize(this.totalEntityCount);
     this.buffers.gameObjectData = new SharedArrayBuffer(gameObjectBufferSize);
 
     // ==========================================================================
@@ -819,9 +793,7 @@ class Scene {
       if (pool.ComponentClass) {
         const ComponentClass = pool.ComponentClass;
         const bufferSize = ComponentClass.getBufferSize(this.totalEntityCount);
-        this.buffers.componentData[componentName] = new SharedArrayBuffer(
-          bufferSize
-        );
+        this.buffers.componentData[componentName] = new SharedArrayBuffer(bufferSize);
         ComponentClass.initializeArrays(
           this.buffers.componentData[componentName],
           this.totalEntityCount
@@ -833,9 +805,7 @@ class Scene {
     const maxParticles = this.config.particle.maxParticles;
     if (maxParticles > 0) {
       const particleBufferSize = ParticleComponent.getBufferSize(maxParticles);
-      this.buffers.componentData.ParticleComponent = new SharedArrayBuffer(
-        particleBufferSize
-      );
+      this.buffers.componentData.ParticleComponent = new SharedArrayBuffer(particleBufferSize);
       ParticleComponent.initializeArrays(
         this.buffers.componentData.ParticleComponent,
         maxParticles
@@ -846,11 +816,8 @@ class Scene {
     // DecorationComponent buffer
     const maxDecorations = this.config.decoration.maxDecorations;
     if (maxDecorations > 0) {
-      const decorationBufferSize =
-        DecorationComponent.getBufferSize(maxDecorations);
-      this.buffers.componentData.DecorationComponent = new SharedArrayBuffer(
-        decorationBufferSize
-      );
+      const decorationBufferSize = DecorationComponent.getBufferSize(maxDecorations);
+      this.buffers.componentData.DecorationComponent = new SharedArrayBuffer(decorationBufferSize);
       DecorationComponent.initializeArrays(
         this.buffers.componentData.DecorationComponent,
         maxDecorations
@@ -870,11 +837,8 @@ class Scene {
     // Shadow sprite system
     const maxShadowSprites = this.config.lighting.maxShadowSprites;
     if (this.config.lighting.shadowsEnabled && maxShadowSprites > 0) {
-      const shadowSpriteBufferSize =
-        ShadowCaster.getBufferSize(maxShadowSprites);
-      this.buffers.shadowSpriteData = new SharedArrayBuffer(
-        shadowSpriteBufferSize
-      );
+      const shadowSpriteBufferSize = ShadowCaster.getBufferSize(maxShadowSprites);
+      this.buffers.shadowSpriteData = new SharedArrayBuffer(shadowSpriteBufferSize);
     }
 
     // Blood decals tilemap
@@ -917,7 +881,11 @@ class Scene {
 
       // Initialize walkability to all walkable (nav worker will rebuild from static entities)
       const walkabilityOffset = 32; // After header
-      const walkabilityArray = new Uint8Array(this.buffers.navigationData, walkabilityOffset, gridWidth * gridHeight);
+      const walkabilityArray = new Uint8Array(
+        this.buffers.navigationData,
+        walkabilityOffset,
+        gridWidth * gridHeight
+      );
       walkabilityArray.fill(1);
 
       // Store grid metadata for workers
@@ -936,16 +904,18 @@ class Scene {
         worldHeight,
       });
 
-      console.log(`[Scene] Navigation grid: ${gridWidth}x${gridHeight} cells (${navBufferSize} bytes)`);
+      console.log(
+        `[Scene] Navigation grid: ${gridWidth}x${gridHeight} cells (${navBufferSize} bytes)`
+      );
     }
 
     // Pre-initialize entityType values
     this.preInitializeEntityTypeArrays();
 
     // Build query system for fast component-based entity filtering
-    console.log("[Scene] Building query system...");
+    console.log('[Scene] Building query system...');
     this.querySystem.buildQueries(this.registeredClasses);
-    console.log("[Scene] Query system ready!");
+    console.log('[Scene] Query system ready!');
 
     // Collision data buffer
     const maxCollisionPairs = this.config.physics.maxCollisionPairs;
@@ -958,9 +928,7 @@ class Scene {
     // Layout: [count, entityIdx0, entityIdx1, ...]
     // Particle worker builds this list each frame, spatial workers consume it to split work evenly
     const ACTIVE_ENTITIES_BUFFER_SIZE = (1 + this.totalEntityCount) * 4; // count + indices (Uint32)
-    this.buffers.activeEntitiesData = new SharedArrayBuffer(
-      ACTIVE_ENTITIES_BUFFER_SIZE
-    );
+    this.buffers.activeEntitiesData = new SharedArrayBuffer(ACTIVE_ENTITIES_BUFFER_SIZE);
     // Make active entities list accessible from main thread via GameObject.getAllActive()
     GameObject.activeEntitiesData = new Uint32Array(this.buffers.activeEntitiesData);
 
@@ -980,11 +948,7 @@ class Scene {
     this.views.camera[5] = this.camera.zoom;
 
     // Initialize Camera static class with shared buffer
-    Camera.initialize(
-      this.views.camera,
-      this.config.canvasWidth,
-      this.config.canvasHeight
-    );
+    Camera.initialize(this.views.camera, this.config.canvasWidth, this.config.canvasHeight);
 
     // Set world bounds for camera clamping
     if (this.config.worldWidth && this.config.worldHeight) {
@@ -1078,20 +1042,14 @@ class Scene {
 
     console.log(
       `[Scene] Spatial grid: ${gridCols}x${gridRows} cells (${totalCells} total), ` +
-      `${cellSize}px cell size, ${GRID_BUFFER_SIZE} bytes (row-based partitioning)`
+        `${cellSize}px cell size, ${GRID_BUFFER_SIZE} bytes (row-based partitioning)`
     );
 
     // Worker stat buffers: detailed metrics for each worker type
     // Each buffer uses strided layout for cache-line isolation (64 bytes per worker)
-    this.buffers.rendererStats = new SharedArrayBuffer(
-      RENDERER_STATS.BUFFER_SIZE
-    );
-    this.buffers.particleStats = new SharedArrayBuffer(
-      PARTICLE_STATS.BUFFER_SIZE
-    );
-    this.buffers.physicsStats = new SharedArrayBuffer(
-      PHYSICS_STATS.BUFFER_SIZE
-    );
+    this.buffers.rendererStats = new SharedArrayBuffer(RENDERER_STATS.BUFFER_SIZE);
+    this.buffers.particleStats = new SharedArrayBuffer(PARTICLE_STATS.BUFFER_SIZE);
+    this.buffers.physicsStats = new SharedArrayBuffer(PHYSICS_STATS.BUFFER_SIZE);
     this.buffers.spatialStats = new SharedArrayBuffer(
       SPATIAL_STATS.BUFFER_SIZE_PER_WORKER * numberOfSpatialWorkers
     );
@@ -1101,9 +1059,7 @@ class Scene {
 
     // Navigation stats buffer (if navigation enabled)
     if (this.config.navigation.enabled) {
-      this.buffers.navigationStats = new SharedArrayBuffer(
-        NAVIGATION_STATS.BUFFER_SIZE
-      );
+      this.buffers.navigationStats = new SharedArrayBuffer(NAVIGATION_STATS.BUFFER_SIZE);
     }
 
     // Synchronization buffer
@@ -1129,19 +1085,14 @@ class Scene {
 
     for (let i = 0; i < totalJobs; i++) {
       const startIndex = i * entitiesPerJob;
-      const endIndex = Math.min(
-        (i + 1) * entitiesPerJob,
-        this.totalEntityCount
-      );
+      const endIndex = Math.min((i + 1) * entitiesPerJob, this.totalEntityCount);
       jobQueueView[2 + i * 2] = startIndex;
       jobQueueView[2 + i * 2 + 1] = endIndex;
     }
 
     // Center camera on world
-    const worldCenterX =
-      this.config.worldWidth / 2 - this.config.canvasWidth / 2;
-    const worldCenterY =
-      this.config.worldHeight / 2 - this.config.canvasHeight / 2;
+    const worldCenterX = this.config.worldWidth / 2 - this.config.canvasWidth / 2;
+    const worldCenterY = this.config.worldHeight / 2 - this.config.canvasHeight / 2;
     this.camera.x = worldCenterX;
     this.camera.y = worldCenterY;
 
@@ -1166,7 +1117,7 @@ class Scene {
     this.loadedSpritesheets = {};
     this.loadedTilemaps = {}; // Store loaded tilemap data
 
-    console.log("🎨 Generating BigAtlas from all assets...");
+    console.log('🎨 Generating BigAtlas from all assets...');
 
     // Transform new format to old format expected by createBigAtlas
     // New format: { textures: {...}, spritesheets: {...} }
@@ -1184,31 +1135,26 @@ class Scene {
     }
 
     // If imageUrls is already in old format (no textures/spritesheets keys), use as-is
-    const assetsToLoad =
-      imageUrls.textures || imageUrls.spritesheets
-        ? flattenedAssets
-        : imageUrls;
+    const assetsToLoad = imageUrls.textures || imageUrls.spritesheets ? flattenedAssets : imageUrls;
 
     try {
       const bigAtlas = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, {
         maxWidth: 4096,
         maxHeight: 4096,
         padding: 2,
-        heuristic: "best-short-side",
+        heuristic: 'best-short-side',
       });
 
       const imageBitmap = await createImageBitmap(bigAtlas.canvas);
 
-      this.loadedSpritesheets["bigAtlas"] = {
+      this.loadedSpritesheets['bigAtlas'] = {
         json: bigAtlas.json,
         imageBitmap: imageBitmap,
       };
 
-      SpriteSheetRegistry.register("bigAtlas", bigAtlas.json);
+      SpriteSheetRegistry.register('bigAtlas', bigAtlas.json);
 
-      for (const [sheetName, proxyData] of Object.entries(
-        bigAtlas.proxySheets
-      )) {
+      for (const [sheetName, proxyData] of Object.entries(bigAtlas.proxySheets)) {
         SpriteSheetRegistry.registerProxy(sheetName, proxyData);
       }
 
@@ -1218,15 +1164,12 @@ class Scene {
 
       // Extract decal textures
       if (this.config.particle.decals) {
-        this.decalTextureData = this.extractDecalTextures(
-          bigAtlas.canvas,
-          bigAtlas.json
-        );
+        this.decalTextureData = this.extractDecalTextures(bigAtlas.canvas, bigAtlas.json);
       }
 
       // Make helper functions available globally
       window.downloadBigAtlas = () => {
-        const link = document.createElement("a");
+        const link = document.createElement('a');
         link.download = `bigAtlas_${bigAtlas.json.meta.size.w}x${bigAtlas.json.meta.size.h}.png`;
         link.href = this.bigAtlasCanvas.toDataURL();
         link.click();
@@ -1236,35 +1179,27 @@ class Scene {
         BigAtlasInspector.show(this.bigAtlasCanvas, this.bigAtlasJson);
       };
     } catch (error) {
-      console.error("❌ Failed to generate BigAtlas:", error);
+      console.error('❌ Failed to generate BigAtlas:', error);
       throw error;
     }
 
     // Load tilemaps (Tiled JSON + tileset images)
     if (imageUrls.tilemaps) {
-      console.log(
-        `🗺️ Loading ${Object.keys(imageUrls.tilemaps).length} tilemaps...`
-      );
+      console.log(`🗺️ Loading ${Object.keys(imageUrls.tilemaps).length} tilemaps...`);
 
-      for (const [tilemapId, tilemapConfig] of Object.entries(
-        imageUrls.tilemaps
-      )) {
+      for (const [tilemapId, tilemapConfig] of Object.entries(imageUrls.tilemaps)) {
         try {
           // Load Tiled JSON file
           const jsonResponse = await fetch(tilemapConfig.json);
           if (!jsonResponse.ok) {
-            throw new Error(
-              `Failed to load tilemap JSON: ${tilemapConfig.json}`
-            );
+            throw new Error(`Failed to load tilemap JSON: ${tilemapConfig.json}`);
           }
           const tilemapData = await jsonResponse.json();
 
           // Load tileset image
           const tilesetResponse = await fetch(tilemapConfig.png);
           if (!tilesetResponse.ok) {
-            throw new Error(
-              `Failed to load tileset image: ${tilemapConfig.png}`
-            );
+            throw new Error(`Failed to load tileset image: ${tilemapConfig.png}`);
           }
           const tilesetBlob = await tilesetResponse.blob();
           const tilesetBitmap = await createImageBitmap(tilesetBlob);
@@ -1284,7 +1219,7 @@ class Scene {
   }
 
   extractDecalTextures(atlasCanvas, atlasJson) {
-    const ctx = atlasCanvas.getContext("2d");
+    const ctx = atlasCanvas.getContext('2d');
     const textures = {};
     const animationNames = Object.keys(atlasJson.animations);
 
@@ -1342,29 +1277,31 @@ class Scene {
     this.decalFrameNameToId = frameNameToId;
     SpriteSheetRegistry.setDecalFrameMapping(frameNameToId);
 
-    console.log(`📍 Extracted ${animationNames.length} animation textures + ${frameNames.length} frame textures for decals`);
+    console.log(
+      `📍 Extracted ${animationNames.length} animation textures + ${frameNames.length} frame textures for decals`
+    );
 
     return textures;
   }
 
   setupWorkerCommunication() {
-    const connections = [{ from: "physics", to: "renderer" }];
+    const connections = [{ from: 'physics', to: 'renderer' }];
 
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
-      connections.push({ from: `logic${i}`, to: "renderer" });
+      connections.push({ from: `logic${i}`, to: 'renderer' });
     }
 
     // Connect all logic workers to logic0 for spawn/despawn routing
     // This ensures freeList synchronization across workers
     for (let i = 1; i < this.numberOfLogicWorkers; i++) {
-      connections.push({ from: `logic${i}`, to: "logic0" });
+      connections.push({ from: `logic${i}`, to: 'logic0' });
     }
 
     // Connect all logic workers to navigation worker (if enabled)
     // Logic workers send pathfinding requests, nav worker computes and writes to SAB
     if (this.config.navigation.enabled) {
       for (let i = 0; i < this.numberOfLogicWorkers; i++) {
-        connections.push({ from: `logic${i}`, to: "navigation" });
+        connections.push({ from: `logic${i}`, to: 'navigation' });
       }
     }
 
@@ -1379,61 +1316,43 @@ class Scene {
     // Create multiple spatial workers for parallel neighbor detection
     const numberOfSpatialWorkers = this.config.spatial.numberOfSpatialWorkers;
     for (let i = 0; i < numberOfSpatialWorkers; i++) {
-      const spatialWorker = new Worker(
-        `/src/workers/spatial_worker.js${cacheBust}`,
-        {
-          type: "module",
-        }
-      );
+      const spatialWorker = new Worker(`/src/workers/spatial_worker.js${cacheBust}`, {
+        type: 'module',
+      });
       spatialWorker.name = `spatial${i}`;
       this.workers.spatialWorkers.push(spatialWorker);
     }
 
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
-      const logicWorker = new Worker(
-        `/src/workers/logic_worker.js${cacheBust}`,
-        {
-          type: "module",
-        }
-      );
+      const logicWorker = new Worker(`/src/workers/logic_worker.js${cacheBust}`, {
+        type: 'module',
+      });
       logicWorker.name = `logic${i}`;
       this.workers.logicWorkers.push(logicWorker);
     }
 
-    this.workers.physics = new Worker(
-      `/src/workers/physics_worker.js${cacheBust}`,
-      {
-        type: "module",
-      }
-    );
-    this.workers.renderer = new Worker(
-      `/src/workers/pixi_worker.js${cacheBust}`,
-      {
-        type: "module",
-      }
-    );
+    this.workers.physics = new Worker(`/src/workers/physics_worker.js${cacheBust}`, {
+      type: 'module',
+    });
+    this.workers.renderer = new Worker(`/src/workers/pixi_worker.js${cacheBust}`, {
+      type: 'module',
+    });
 
     // Particle worker always runs - handles particles, lighting, shadows, visibility, etc.
-    this.workers.particle = new Worker(
-      `/src/workers/particle_worker.js${cacheBust}`,
-      {
-        type: "module",
-      }
-    );
+    this.workers.particle = new Worker(`/src/workers/particle_worker.js${cacheBust}`, {
+      type: 'module',
+    });
 
-    this.workers.physics.name = "physics";
-    this.workers.renderer.name = "renderer";
-    this.workers.particle.name = "particle";
+    this.workers.physics.name = 'physics';
+    this.workers.renderer.name = 'renderer';
+    this.workers.particle.name = 'particle';
 
     // Navigation worker (if pathfinding enabled)
     if (this.config.navigation.enabled) {
-      this.workers.navigation = new Worker(
-        `/src/workers/nav_worker.js${cacheBust}`,
-        {
-          type: "module",
-        }
-      );
-      this.workers.navigation.name = "navigation";
+      this.workers.navigation = new Worker(`/src/workers/nav_worker.js${cacheBust}`, {
+        type: 'module',
+      });
+      this.workers.navigation.name = 'navigation';
     }
 
     // Preload assets
@@ -1447,10 +1366,10 @@ class Scene {
           .map((r) => r.scriptPath)
           .filter((path) => path !== null && path !== undefined)
           .map((path) => {
-            if (path.startsWith("/") || path.startsWith("http")) {
+            if (path.startsWith('/') || path.startsWith('http')) {
               return path;
             }
-            if (path.startsWith("../")) {
+            if (path.startsWith('../')) {
               return path;
             }
             return `../${path}`;
@@ -1462,7 +1381,7 @@ class Scene {
 
     // Create initialization data
     const initData = {
-      msg: "init",
+      msg: 'init',
       buffers: {
         gameObjectData: this.buffers.gameObjectData,
         // Neighbor data: SINGLE BUFFER (row ownership eliminates races)
@@ -1526,35 +1445,35 @@ class Scene {
       decorationActiveCount: this.buffers.decorationActiveCount || null,
       decals: this.config.particle.decals
         ? {
-          enabled: true,
-          tileSize: this.config.particle.decalsTileSize,
-          tilePixelSize: this.config.particle.decalsTilePixelSize,
-          resolution: this.config.particle.decalsResolution,
-          tilesX: this.decalsTilesX,
-          tilesY: this.decalsTilesY,
-          totalTiles: this.decalsTotalTiles,
-          tilesRGBA: this.buffers.bloodTilesRGBA,
-          tilesDirty: this.buffers.bloodTilesDirty,
-          textures: this.decalTextureData,
-        }
+            enabled: true,
+            tileSize: this.config.particle.decalsTileSize,
+            tilePixelSize: this.config.particle.decalsTilePixelSize,
+            resolution: this.config.particle.decalsResolution,
+            tilesX: this.decalsTilesX,
+            tilesY: this.decalsTilesY,
+            totalTiles: this.decalsTotalTiles,
+            tilesRGBA: this.buffers.bloodTilesRGBA,
+            tilesDirty: this.buffers.bloodTilesDirty,
+            textures: this.decalTextureData,
+          }
         : null,
       shadows: this.config.lighting.shadowsEnabled
         ? {
-          enabled: true,
-          maxShadowCastingLights: this.config.lighting.maxShadowCastingLights,
-          maxShadowsPerLight: this.config.lighting.maxShadowsPerLight,
-          maxShadowsPerEntity: this.config.lighting.maxShadowsPerEntity,
-          maxShadowSprites: this.config.lighting.maxShadowSprites,
-          spriteData: this.buffers.shadowSpriteData,
-        }
+            enabled: true,
+            maxShadowCastingLights: this.config.lighting.maxShadowCastingLights,
+            maxShadowsPerLight: this.config.lighting.maxShadowsPerLight,
+            maxShadowsPerEntity: this.config.lighting.maxShadowsPerEntity,
+            maxShadowSprites: this.config.lighting.maxShadowSprites,
+            spriteData: this.buffers.shadowSpriteData,
+          }
         : null,
       flashes:
         this.config.lighting.maxFlashes > 0
           ? {
-            enabled: true,
-            maxFlashes: this.config.lighting.maxFlashes,
-            startIndex: Flash.startIndex,
-          }
+              enabled: true,
+              maxFlashes: this.config.lighting.maxFlashes,
+              startIndex: Flash.startIndex,
+            }
           : null,
       queries: this.querySystem.serialize(), // Pre-calculated entity queries
     };
@@ -1641,12 +1560,8 @@ class Scene {
     const transferables = [
       offscreenCanvas,
       ...Object.values(this.loadedTextures),
-      ...Object.values(this.loadedSpritesheets).map(
-        (sheet) => sheet.imageBitmap
-      ),
-      ...Object.values(this.loadedTilemaps || {}).map(
-        (tilemap) => tilemap.tilesetBitmap
-      ),
+      ...Object.values(this.loadedSpritesheets).map((sheet) => sheet.imageBitmap),
+      ...Object.values(this.loadedTilemaps || {}).map((tilemap) => tilemap.tilesetBitmap),
       ...(workerPorts.renderer ? Object.values(workerPorts.renderer) : []),
     ];
 
@@ -1691,30 +1606,24 @@ class Scene {
   }
 
   handleMessageFromWorker(e) {
-    if (e.data.msg === "fps") {
+    if (e.data.msg === 'fps') {
       // Store worker stats (DebugUI will read these)
-      this._storeWorkerStats(
-        e.currentTarget.name,
-        e.data.fps,
-        e.data.activeEntities,
-        e.data
-      );
-    } else if (e.data.msg === "log") {
+      this._storeWorkerStats(e.currentTarget.name, e.data.fps, e.data.activeEntities, e.data);
+    } else if (e.data.msg === 'log') {
       this.log.push({
         worker: e.currentTarget.name,
         message: e.data.message,
         when: e.data.when - Scene.now,
       });
-    } else if (e.data.msg === "workerReady") {
+    } else if (e.data.msg === 'workerReady') {
       this.handleWorkerReady(e.currentTarget.name);
-    } else if (e.data.msg === "error") {
+    } else if (e.data.msg === 'error') {
       const { title, message, stack } = e.data;
       const workerName = e.currentTarget.name;
 
       // Log to console with full details
       console.error(
-        `❌ FATAL ERROR in [${workerName}] worker:\n${title}\n${message}\n${stack || ""
-        }`
+        `❌ FATAL ERROR in [${workerName}] worker:\n${title}\n${message}\n${stack || ''}`
       );
 
       // Show a visible error message on the page
@@ -1724,10 +1633,10 @@ class Scene {
 
   _showFatalErrorMessage(workerName, title, message) {
     // Check if error overlay already exists
-    let overlay = document.getElementById("fatal-error-overlay");
+    let overlay = document.getElementById('fatal-error-overlay');
     if (!overlay) {
-      overlay = document.createElement("div");
-      overlay.id = "fatal-error-overlay";
+      overlay = document.createElement('div');
+      overlay.id = 'fatal-error-overlay';
       overlay.style.cssText = `
         position: fixed;
         top: 20px;
@@ -1774,19 +1683,17 @@ class Scene {
   handleWorkerReady(workerName) {
     this.workerReadyStates[workerName] = true;
 
-    if (workerName === "physics" && this.pendingPhysicsUpdates.length) {
+    if (workerName === 'physics' && this.pendingPhysicsUpdates.length) {
       this.pendingPhysicsUpdates.forEach((update) => {
         this.workers.physics.postMessage({
-          msg: "updatePhysicsConfig",
+          msg: 'updatePhysicsConfig',
           config: update,
         });
       });
       this.pendingPhysicsUpdates = [];
     }
 
-    const allReady = Object.values(this.workerReadyStates).every(
-      (ready) => ready
-    );
+    const allReady = Object.values(this.workerReadyStates).every((ready) => ready);
 
     if (allReady) {
       this.startAllWorkers();
@@ -1806,27 +1713,23 @@ class Scene {
 
     for (const worker of allWorkers) {
       if (worker) {
-        worker.postMessage({ msg: "start" });
+        worker.postMessage({ msg: 'start' });
       }
     }
 
     // Spawn the Mouse entity
-    this.spawnEntity("Mouse", {});
+    this.spawnEntity('Mouse', {});
   }
 
   updatePhysicsConfig(partialConfig = {}) {
-    if (!partialConfig || typeof partialConfig !== "object") return;
+    if (!partialConfig || typeof partialConfig !== 'object') return;
 
     Object.assign(this.config.physics, partialConfig);
     const updatePayload = { ...partialConfig };
 
-    if (
-      this.workers.physics &&
-      this.workerReadyStates &&
-      this.workerReadyStates.physics
-    ) {
+    if (this.workers.physics && this.workerReadyStates && this.workerReadyStates.physics) {
       this.workers.physics.postMessage({
-        msg: "updatePhysicsConfig",
+        msg: 'updatePhysicsConfig',
         config: updatePayload,
       });
     } else {
@@ -1839,8 +1742,8 @@ class Scene {
    */
   _storeWorkerStats(id, fps, activeEntities, data = {}) {
     // Handle spatial workers (spatial0, spatial1, etc.)
-    if (id.startsWith("spatial")) {
-      const index = parseInt(id.replace("spatial", ""), 10);
+    if (id.startsWith('spatial')) {
+      const index = parseInt(id.replace('spatial', ''), 10);
       if (this.workerStats.spatial[index]) {
         this.workerStats.spatial[index] = {
           fps,
@@ -1851,8 +1754,8 @@ class Scene {
     }
 
     // Handle logic workers (logic0, logic1, etc.)
-    if (id.startsWith("logic")) {
-      const index = parseInt(id.replace("logic", ""), 10);
+    if (id.startsWith('logic')) {
+      const index = parseInt(id.replace('logic', ''), 10);
       if (this.workerStats.logic[index]) {
         this.workerStats.logic[index] = {
           fps,
@@ -1864,10 +1767,10 @@ class Scene {
 
     // Handle other workers
     switch (id) {
-      case "physics":
+      case 'physics':
         this.workerStats.physics = { fps, active: activeEntities || 0 };
         break;
-      case "renderer":
+      case 'renderer':
         this.workerStats.renderer = {
           fps,
           drawCalls: data.drawCalls || 0,
@@ -1875,7 +1778,7 @@ class Scene {
           visibleParticles: data.visibleParticles || 0,
         };
         break;
-      case "particle":
+      case 'particle':
         this.workerStats.particle = {
           fps,
           active: data.activeParticles || 0,
@@ -1917,11 +1820,7 @@ class Scene {
     this._mousemoveHandler = (e) => {
       const rect = this.canvas.getBoundingClientRect();
       Mouse.isPresent = true;
-      Mouse.setCanvasPosition(
-        e.clientX - rect.left,
-        e.clientY - rect.top,
-        this.camera
-      );
+      Mouse.setCanvasPosition(e.clientX - rect.left, e.clientY - rect.top, this.camera);
     };
 
     this._mouseleaveHandler = () => {
@@ -1935,13 +1834,13 @@ class Scene {
       Mouse.wheel += e.deltaY;
     };
 
-    window.addEventListener("keydown", this._keydownHandler);
-    window.addEventListener("keyup", this._keyupHandler);
-    this.canvas.addEventListener("mousedown", this._mousedownHandler);
-    this.canvas.addEventListener("mouseup", this._mouseupHandler);
-    this.canvas.addEventListener("mousemove", this._mousemoveHandler);
-    this.canvas.addEventListener("mouseleave", this._mouseleaveHandler);
-    window.addEventListener("wheel", this._wheelHandler, { passive: false });
+    window.addEventListener('keydown', this._keydownHandler);
+    window.addEventListener('keyup', this._keyupHandler);
+    this.canvas.addEventListener('mousedown', this._mousedownHandler);
+    this.canvas.addEventListener('mouseup', this._mouseupHandler);
+    this.canvas.addEventListener('mousemove', this._mousemoveHandler);
+    this.canvas.addEventListener('mouseleave', this._mouseleaveHandler);
+    window.addEventListener('wheel', this._wheelHandler, { passive: false });
   }
 
   updateKeyboardBuffer() {
@@ -1972,8 +1871,7 @@ class Scene {
       this.mainFrameTimesSum -= this.mainFrameTimes[this.mainFrameTimeIndex];
       this.mainFrameTimes[this.mainFrameTimeIndex] = deltaTime;
       this.mainFrameTimesSum += deltaTime;
-      this.mainFrameTimeIndex =
-        (this.mainFrameTimeIndex + 1) % this.mainFPSFrameCount;
+      this.mainFrameTimeIndex = (this.mainFrameTimeIndex + 1) % this.mainFPSFrameCount;
 
       const averageFrameTime = this.mainFrameTimesSum / this.mainFPSFrameCount;
       this.mainFPS = 1000 / averageFrameTime;
@@ -2031,25 +1929,25 @@ class Scene {
 
     // Remove event listeners
     if (this._keydownHandler) {
-      window.removeEventListener("keydown", this._keydownHandler);
+      window.removeEventListener('keydown', this._keydownHandler);
     }
     if (this._keyupHandler) {
-      window.removeEventListener("keyup", this._keyupHandler);
+      window.removeEventListener('keyup', this._keyupHandler);
     }
     if (this._mousedownHandler) {
-      this.canvas.removeEventListener("mousedown", this._mousedownHandler);
+      this.canvas.removeEventListener('mousedown', this._mousedownHandler);
     }
     if (this._mouseupHandler) {
-      this.canvas.removeEventListener("mouseup", this._mouseupHandler);
+      this.canvas.removeEventListener('mouseup', this._mouseupHandler);
     }
     if (this._mousemoveHandler) {
-      this.canvas.removeEventListener("mousemove", this._mousemoveHandler);
+      this.canvas.removeEventListener('mousemove', this._mousemoveHandler);
     }
     if (this._mouseleaveHandler) {
-      this.canvas.removeEventListener("mouseleave", this._mouseleaveHandler);
+      this.canvas.removeEventListener('mouseleave', this._mouseleaveHandler);
     }
     if (this._wheelHandler) {
-      window.removeEventListener("wheel", this._wheelHandler);
+      window.removeEventListener('wheel', this._wheelHandler);
     }
 
     // Clear keyboard state
@@ -2146,7 +2044,7 @@ class Scene {
     ];
 
     allWorkers.forEach((worker) => {
-      if (worker) worker.postMessage({ msg: "pause" });
+      if (worker) worker.postMessage({ msg: 'pause' });
     });
   }
 
@@ -2161,21 +2059,19 @@ class Scene {
     ];
 
     allWorkers.forEach((worker) => {
-      if (worker) worker.postMessage({ msg: "resume" });
+      if (worker) worker.postMessage({ msg: 'resume' });
     });
   }
 
   spawnEntity(EntityClassOrName, spawnConfig = {}) {
     // Accept either a class or a string name
     const className =
-      typeof EntityClassOrName === "function"
-        ? EntityClassOrName.name
-        : EntityClassOrName;
+      typeof EntityClassOrName === 'function' ? EntityClassOrName.name : EntityClassOrName;
 
     if (this.workers.logicWorkers && this.workers.logicWorkers.length > 0) {
       this.workers.logicWorkers.forEach((worker) => {
         worker.postMessage({
-          msg: "spawn",
+          msg: 'spawn',
           className: className,
           spawnConfig: spawnConfig,
         });
@@ -2187,7 +2083,7 @@ class Scene {
     if (this.workers.logicWorkers && this.workers.logicWorkers.length > 0) {
       this.workers.logicWorkers.forEach((worker) => {
         worker.postMessage({
-          msg: "despawn",
+          msg: 'despawn',
           entityIndex: entityIndex,
         });
       });
@@ -2198,7 +2094,7 @@ class Scene {
     if (this.workers.logicWorkers && this.workers.logicWorkers.length > 0) {
       this.workers.logicWorkers.forEach((worker) => {
         worker.postMessage({
-          msg: "despawnAll",
+          msg: 'despawnAll',
           className: className,
         });
       });
@@ -2237,13 +2133,13 @@ class Scene {
    */
   setStaticBackground(textureId) {
     if (!this.workers.renderer) {
-      console.warn("Renderer worker not initialized");
+      console.warn('Renderer worker not initialized');
       return;
     }
 
     this.workers.renderer.postMessage({
-      msg: "setBackground",
-      type: "static",
+      msg: 'setBackground',
+      type: 'static',
       textureId: textureId,
     });
   }
@@ -2255,13 +2151,13 @@ class Scene {
    */
   setTilingBackground(textureId, tileScale = 1) {
     if (!this.workers.renderer) {
-      console.warn("Renderer worker not initialized");
+      console.warn('Renderer worker not initialized');
       return;
     }
 
     this.workers.renderer.postMessage({
-      msg: "setBackground",
-      type: "tiling",
+      msg: 'setBackground',
+      type: 'tiling',
       textureId: textureId,
       tileScale: tileScale,
     });
@@ -2274,25 +2170,23 @@ class Scene {
    */
   setTilemapBackground(tilemapId, options = {}) {
     if (!this.workers.renderer) {
-      console.warn("Renderer worker not initialized");
+      console.warn('Renderer worker not initialized');
       return;
     }
 
     // Check if the tilemap asset exists
     if (!this.loadedTilemaps || !this.loadedTilemaps[tilemapId]) {
-      const availableTilemaps = this.loadedTilemaps
-        ? Object.keys(this.loadedTilemaps)
-        : [];
+      const availableTilemaps = this.loadedTilemaps ? Object.keys(this.loadedTilemaps) : [];
       console.error(
         `Tilemap "${tilemapId}" not found. ` +
-        `Available tilemaps: [${availableTilemaps.join(", ") || "none"}]`
+          `Available tilemaps: [${availableTilemaps.join(', ') || 'none'}]`
       );
       return;
     }
 
     this.workers.renderer.postMessage({
-      msg: "setBackground",
-      type: "tilemap",
+      msg: 'setBackground',
+      type: 'tilemap',
       tilemapId: tilemapId,
       options: options,
     });
@@ -2303,13 +2197,13 @@ class Scene {
    */
   clearBackground() {
     if (!this.workers.renderer) {
-      console.warn("Renderer worker not initialized");
+      console.warn('Renderer worker not initialized');
       return;
     }
 
     this.workers.renderer.postMessage({
-      msg: "setBackground",
-      type: "none",
+      msg: 'setBackground',
+      type: 'none',
     });
   }
 }

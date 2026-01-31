@@ -50,17 +50,17 @@ const KeyboardProxy = new Proxy(Keyboard, {
     }
 
     // Handle key property access (e.g., Keyboard.a, Keyboard.Tab, Keyboard.SPACE)
-    if (typeof prop === "string") {
+    if (typeof prop === 'string') {
       const normalizedKey = prop.toLowerCase();
 
       // Special case mappings for common keys
       const specialKeys = {
-        space: " ",
-        spacebar: " ",
-        ctrl: "control",
-        ctl: "control",
-        alt: "alt",
-        return: "enter",
+        space: ' ',
+        spacebar: ' ',
+        ctrl: 'control',
+        ctl: 'control',
+        alt: 'alt',
+        return: 'enter',
       };
 
       const keyName = specialKeys[normalizedKey] || normalizedKey;

@@ -27,14 +27,14 @@
 // The helper syntax resolves to the frame name automatically.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { ParticleComponent } from "../components/ParticleComponent.js";
-import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
-import { randomRange, randomColor } from "./utils.js";
+import { ParticleComponent } from '../components/ParticleComponent.js';
+import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
+import { randomRange, randomColor } from './utils.js';
 
 export const DECAL_STAMPS_BLEND_MODE = {
   normal: 0,
-  multiply: 1
-}
+  multiply: 1,
+};
 
 export class ParticleEmitter {
   // Particle pool size (set during initialization)
@@ -50,9 +50,7 @@ export class ParticleEmitter {
     this.maxParticles = maxParticles;
     this.initialized = true;
     console.log(
-      `ParticleEmitter: Initialized with ${maxParticles} particles (indices 0-${
-        maxParticles - 1
-      })`
+      `ParticleEmitter: Initialized with ${maxParticles} particles (indices 0-${maxParticles - 1})`
     );
   }
 
@@ -178,7 +176,7 @@ export class ParticleEmitter {
 
   static emit(config) {
     if (!this.initialized) {
-      console.warn("ParticleEmitter.emit() called before initialization");
+      console.warn('ParticleEmitter.emit() called before initialization');
       return 0;
     }
 
@@ -213,7 +211,7 @@ export class ParticleEmitter {
       if (!textureName) {
         console.warn(
           `ParticleEmitter.emit: Could not resolve frame for ` +
-          `spritesheet="${config.spritesheet}", animation="${config.animation}", frame=${config.frame ?? 0}`
+            `spritesheet="${config.spritesheet}", animation="${config.animation}", frame=${config.frame ?? 0}`
         );
       }
     }
@@ -289,8 +287,10 @@ export class ParticleEmitter {
         // Visual properties
         // Support both uniform scale and independent scaleX/scaleY
         const uniformScale = randomRange(config.scale, 1);
-        scaleX[i] = config.scaleX !== undefined ? randomRange(config.scaleX, uniformScale) : uniformScale;
-        scaleY[i] = config.scaleY !== undefined ? randomRange(config.scaleY, uniformScale) : uniformScale;
+        scaleX[i] =
+          config.scaleX !== undefined ? randomRange(config.scaleX, uniformScale) : uniformScale;
+        scaleY[i] =
+          config.scaleY !== undefined ? randomRange(config.scaleY, uniformScale) : uniformScale;
         alpha[i] = randomRange(config.alpha, 1);
         const particleColor = randomColor(config.tint);
         tint[i] = particleColor;
