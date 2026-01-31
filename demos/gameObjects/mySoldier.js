@@ -5,6 +5,7 @@ import WEED from '/src/index.js';
 
 import { Person } from './person.js';
 import { SoldierBehaviorFSM } from '../fsm/SoldierBehaviorFSM.js';
+import { PersonAnimationFSM } from '../fsm/PersonAnimationFSM.js';
 
 const { Transform } = WEED;
 
@@ -31,8 +32,8 @@ export class MySoldier extends Person {
     this.lootableComponent.dropMoney = 100;
     this.lootableComponent.dropMachineGun = 1;
 
-    this.personComponent.groupingForce = 0.6;
-    this.personComponent.separationForce = 0.33;
+    this.personComponent.groupingForce = 0.33;
+    this.personComponent.separationForce = 0.2;
 
     this.collider.visualRange = 500;
   }
@@ -56,6 +57,7 @@ export class MySoldier extends Person {
   }
 
   startFollowingDestination() {
-    SoldierBehaviorFSM.forceChangeState(this.index, SoldierBehaviorFSM.states.GOING_TO_DESTINATION);
+    this.soldierBehaviorFSM.forceChangeState(SoldierBehaviorFSM.states.GOING_TO_DESTINATION);
+    this.personAnimationFSM.changeState(PersonAnimationFSM.states.IDLE);
   }
 }

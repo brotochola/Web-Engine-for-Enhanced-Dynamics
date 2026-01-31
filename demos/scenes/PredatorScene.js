@@ -230,13 +230,13 @@ export class PredatorScene extends WEED.Scene {
     // [Player, 1],
     [House, 2000],
     [TallLight, 300],
-    [Civilian, 20000], // FSM-based civilians
+    [Civilian, 2000], // FSM-based civilians
     [Tree, 5000],
     [Barrel, 100],
     [Rock, 5000],
     [Fire, 100],
     [Explosion, 100],
-    [MySoldier, 10000],
+    [MySoldier, 1000],
     [Destination, 1],
     [DropMoney, 1000],
     [DropAk47, 1000],

@@ -13,6 +13,7 @@ export class SpriteRenderer extends Component {
     animationState: Uint8Array, // Current animation index (0-255)
     animationFrame: Uint16Array, // Current frame within the animation
     animationSpeed: Float32Array, // Playback speed multiplier (1.0 = normal)
+    loop: Uint8Array, // 0 = no loop, 1 = loop
     isAnimated: Uint8Array, // 0 = static sprite (single frame), 1 = animated sprite (multi-frame)
     spritesheetId: Uint8Array, // Which spritesheet to use (civil1, civil2, bunny, etc.) - proxies to bigAtlas
 

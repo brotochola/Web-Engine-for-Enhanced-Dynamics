@@ -134,6 +134,7 @@ export class FSM extends Component {
    * @param {GameObject} owner - The entity instance (stateless accessor)
    */
   tick(dt, owner) {
+    if (!owner) return console.warn("FSM.tick called without owner", this.constructor.name);
     const i = this.index;
     const FSMClass = this.constructor;
 
@@ -152,12 +153,12 @@ export class FSM extends Component {
       FSMClass.time[i] += dt * 16.67;
 
       // Call state's onUpdate
-      CurrentState.onUpdate(owner, i, dt);
+      CurrentState.onUpdate(owner, i, dt, FSMClass.time[i]);
     }
   }
 
   /**
-   * Request a state transition (applied once per tick)
+   * Request a state transition (applied once per tick) - STATIC version
    * Call this from state's onUpdate: this.fsm.changeState(i, this.fsm.states.CHASE)
    *
    * @param {number} i - Entity index
@@ -169,11 +170,26 @@ export class FSM extends Component {
   }
 
   /**
+   * Request a state transition (applied once per tick) - INSTANCE version
+   * Usage: this.personAnimationFSM.changeState(PersonAnimationFSM.states.IDLE)
+   * @param {typeof FSMState} StateClass - Target state class (from FSMClass.states.X)
+   */
+  changeState(StateClass) {
+    // Queue the transition (will be processed at start of next tick)
+    this.constructor.nextState[this.index] = StateClass.stateIndex;
+  }
+
+  /**
    * Execute a state transition
    * @static
    * @private
    */
   static _executeTransition(i, newStateIndex, owner) {
+    if (!owner) {
+      console.trace("whattt")
+      debugger;
+      return //console.warn("FSM._executeTransition called without owner", this.constructor.name);
+    }
     const oldStateIndex = this.state[i];
 
     // Get state classes
@@ -236,7 +252,7 @@ export class FSM extends Component {
   }
 
   /**
-   * Force immediate state change (skips pending queue)
+   * Force immediate state change (skips pending queue) - STATIC version
    * Use sparingly - prefer changeState() for controlled transitions
    * @param {number} i - Entity index
    * @param {typeof FSMState} StateClass - Target state class (from this.fsm.states.X)
@@ -244,6 +260,15 @@ export class FSM extends Component {
    */
   static forceChangeState(i, StateClass, owner) {
     this._executeTransition(i, StateClass.stateIndex, owner);
+  }
+
+  /**
+   * Force immediate state change (skips pending queue) - INSTANCE version
+   * Usage: this.personAnimationFSM.forceChangeState(PersonAnimationFSM.states.SHOOTING)
+   * @param {typeof FSMState} StateClass - Target state class (from FSMClass.states.X)
+   */
+  forceChangeState(StateClass) {
+    this.constructor._executeTransition(this.index, StateClass.stateIndex, this.owner);
   }
 
   /**
