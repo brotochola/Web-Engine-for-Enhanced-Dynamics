@@ -29,6 +29,9 @@ function findClosestCivilian(owner) {
     if (Transform.entityType[neighborIndex] !== civilianType) continue;
     if (LootableComponent.health[neighborIndex] <= 0) continue;
 
+    // Skip civilians without direct line of sight
+    if (!Ray.hasLineOfSight(owner.index, neighborIndex)) continue;
+
     const distSq = owner.getNeighborDistanceSq(n);
     if (distSq < _closestResult.distSq) {
       _closestResult.distSq = distSq;
@@ -50,14 +53,8 @@ function canShootTarget(owner, targetIndex, targetDistSq) {
   const weapon = owner.getBestWeapon();
 
   // Must be in weapon range
-  if (targetDistSq > weapon.rangeSq) return false;
+  return targetDistSq > weapon.rangeSq
 
-  // Must have clear line of sight (not blocked, or blocked by non-friendly)
-  const los = Ray.hasLineOfSight(owner.index, targetIndex);
-
-  // Ray._addDebugRaycast(owner.x, owner.y, Transform.x[targetIndex], Transform.y[targetIndex], Transform.x[targetIndex], Transform.y[targetIndex], los.blocked);
-
-  return los;
 }
 
 // ==========================================
@@ -76,19 +73,13 @@ class IdleSoldierState extends FSMState {
   static onEnter(owner, i, fromState) { }
 
   static onUpdate(owner, i, dt) {
-    // Priority 1: Check for destination
-    // const dest = getDestination();
-    // if (dest) {
-    //   this.fsm.changeState(i, this.fsm.states.GOING_TO_DESTINATION);
-    //   return;
-    // }
 
     // Priority 2: Scan for civilians
     const closest = findClosestCivilian(owner);
     if (closest) {
-      // Priority A: Can we shoot? (has gun, in range, clear LOS)
-      const los = canShootTarget(owner, closest.index, closest.distSq);
-      if (los) {
+      // Priority A: Can we shoot? (has gun, in range)
+      const canShoot = canShootTarget(owner, closest.index, closest.distSq);
+      if (canShoot) {
         this.fsm.changeState(i, this.fsm.states.RANGED_ATTACKING);
         return;
       }
@@ -177,34 +168,24 @@ class GoingToEnemyState extends FSMState {
       return;
     }
 
-    const canIGoDirectly = Ray.hasLineOfSight(owner.index, targetIndex);
     const targetX = Transform.x[closest.index];
     const targetY = Transform.y[closest.index];
     const ownerX = Transform.x[owner.index];
     const ownerY = Transform.y[owner.index];
     const chaseStrength = 0.15;
 
-    if (canIGoDirectly) {
+    // Chase toward closest civilian
 
-      // Chase toward closest civilian
+    const dx = targetX - ownerX
+    const dy = targetY - ownerY
+    const dist = Math.sqrt(closest.distSq);
 
-      const dx = targetX - ownerX
-      const dy = targetY - ownerY
-      const dist = Math.sqrt(closest.distSq);
-
-      if (dist > 0) {
-
-        RigidBody.ax[i] += (dx / dist) * chaseStrength;
-        RigidBody.ay[i] += (dy / dist) * chaseStrength;
-      }
-    }
-    else {
-      // Follow flowfield toward victim
-      let vec = { x: 0, y: 0 };
-      NavGrid.requestVector(ownerX, ownerY, targetX, targetY, vec);
-      owner.addAcceleration(vec.x * chaseStrength, vec.y * chaseStrength);
+    if (dist > 0) {
+      RigidBody.ax[i] += (dx / dist) * chaseStrength;
+      RigidBody.ay[i] += (dy / dist) * chaseStrength;
     }
   }
+
 }
 
 // ==========================================
