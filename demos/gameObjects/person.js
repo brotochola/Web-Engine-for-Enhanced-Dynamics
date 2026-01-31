@@ -23,6 +23,7 @@ const { RigidBody, Collider, SpriteRenderer, ShadowCaster, Transform, rng } = WE
 
 export class Person extends Lootable {
   static scriptUrl = import.meta.url;
+  static defaultFriction = 0.005;
 
   static components = [
     ...Lootable.components,
@@ -47,7 +48,7 @@ export class Person extends Lootable {
     this.rigidBody.maxVel = 3;
     this.rigidBody.maxAcc = 0.15;
     this.rigidBody.minSpeed = 0;
-    this.rigidBody.friction = 0.005;
+    this.rigidBody.friction = Person.defaultFriction;
 
     // Collision/perception
     this.collider.radius = 10;
@@ -317,6 +318,8 @@ export class Person extends Lootable {
     // Check cooldown
     if (!this.canFire(weapon)) return false;
 
+    this.rigidBody.friction = 0.5;
+
     // Face the target
     const targetX = Transform.x[targetEntityIndex];
     const targetY = Transform.y[targetEntityIndex];
@@ -352,6 +355,7 @@ export class Person extends Lootable {
         color: 0xffaa00,
         intensity: 15000,
       });
+      this.rigidBody.friction = Person.defaultFriction;
     }, 30)
 
     return true;
