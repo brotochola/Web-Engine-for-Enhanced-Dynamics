@@ -2,7 +2,7 @@
 // Stores button states and presence flag for the Mouse entity
 // This allows mouse state to be shared across all workers via SharedArrayBuffer
 
-import { Component } from "../core/Component.js";
+import { Component } from '../core/Component.js';
 
 class MouseComponent extends Component {
   // Array schema - defines all mouse input properties

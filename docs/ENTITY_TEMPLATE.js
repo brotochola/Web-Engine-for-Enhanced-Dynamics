@@ -1,7 +1,7 @@
 // Entity Template - Copy this file to create new entities quickly! 🌿
 // Replace "MyEntity" with your entity name
 
-import WEED from "/src/index.js";
+import WEED from '/src/index.js';
 
 // Destructure the components you need
 const { GameObject, RigidBody, Collider, SpriteRenderer } = WEED;
@@ -80,7 +80,7 @@ class MyEntity extends GameObject {
     const i = this.index;
 
     // Example: Apply keyboard input
-    if (WEED.Keyboard.isPressed("ArrowUp")) {
+    if (WEED.Keyboard.isPressed('ArrowUp')) {
       RigidBody.ay[i] -= 0.5 * dtRatio;
     }
 
@@ -105,4 +105,3 @@ class MyEntity extends GameObject {
 
 // Export your entity
 export { MyEntity };
-

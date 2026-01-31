@@ -1,15 +1,15 @@
 // DebugUI.js - Minimalist debug overlay with self-updating display
 // Creates a header bar with expandable sections for Scene, Performance, Visual Aids, and Entities
 
-import { DEBUG_FLAGS } from "./DebugFlags.js";
-import { Transform } from "../components/Transform.js";
-import { RigidBody } from "../components/RigidBody.js";
-import { Collider } from "../components/Collider.js";
-import { SpriteRenderer } from "../components/SpriteRenderer.js";
-import { Mouse } from "./Mouse.js";
-import { GameObject } from "./gameObject.js";
-import { DecorationComponent } from "../components/DecorationComponent.js";
-import { DecorationPool } from "./DecorationPool.js";
+import { DEBUG_FLAGS } from './DebugFlags.js';
+import { Transform } from '../components/Transform.js';
+import { RigidBody } from '../components/RigidBody.js';
+import { Collider } from '../components/Collider.js';
+import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { Mouse } from './Mouse.js';
+import { GameObject } from './gameObject.js';
+import { DecorationComponent } from '../components/DecorationComponent.js';
+import { DecorationPool } from './DecorationPool.js';
 import {
   RENDERER_STATS,
   PARTICLE_STATS,
@@ -20,16 +20,16 @@ import {
   WORKER_DISPLAY_CONFIG,
   createStatsReader,
   createMultiWorkerStatsReaderArray,
-} from "../workers/workers-utils.js";
+} from '../workers/workers-utils.js';
 import {
   formatNumber,
   getComponentColor,
   getComponentPropertyNames,
   formatComponentValue,
-} from "./utils.js";
-import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from "./ConfigDefaults.js";
-import { NavGrid, DIR_TO_VEC } from "./NavGrid.js";
-import { Grid } from "./Grid.js";
+} from './utils.js';
+import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from './ConfigDefaults.js';
+import { NavGrid, DIR_TO_VEC } from './NavGrid.js';
+import { Grid } from './Grid.js';
 
 /**
  * DebugUI - Self-contained debug overlay that pulls data and updates itself
@@ -121,11 +121,11 @@ export class DebugUI {
     };
 
     // Pre-allocated Set for internal entities (reused, never recreated)
-    this._internalEntitiesSet = new Set(["Mouse", "Flash"]);
+    this._internalEntitiesSet = new Set(['Mouse', 'Flash']);
 
     // Pre-allocated string builder for pool stats
-    this._poolStatsBuffer = "";
-    this._prevPoolStatsBuffer = "";
+    this._poolStatsBuffer = '';
+    this._prevPoolStatsBuffer = '';
 
     // Cache for worker stat previous values: { workerType: { workerIndex: { statKey: prevValue } } }
     this._prevWorkerStats = {};
@@ -203,22 +203,12 @@ export class DebugUI {
       particle: buffers.particleStats
         ? createStatsReader(buffers.particleStats, PARTICLE_STATS)
         : null,
-      physics: buffers.physicsStats
-        ? createStatsReader(buffers.physicsStats, PHYSICS_STATS)
-        : null,
+      physics: buffers.physicsStats ? createStatsReader(buffers.physicsStats, PHYSICS_STATS) : null,
       spatial: buffers.spatialStats
-        ? createMultiWorkerStatsReaderArray(
-          buffers.spatialStats,
-          SPATIAL_STATS,
-          spatialWorkerCount
-        )
+        ? createMultiWorkerStatsReaderArray(buffers.spatialStats, SPATIAL_STATS, spatialWorkerCount)
         : [],
       logic: buffers.logicStats
-        ? createMultiWorkerStatsReaderArray(
-          buffers.logicStats,
-          LOGIC_STATS,
-          logicWorkerCount
-        )
+        ? createMultiWorkerStatsReaderArray(buffers.logicStats, LOGIC_STATS, logicWorkerCount)
         : [],
       navigation: buffers.navigationStats
         ? createStatsReader(buffers.navigationStats, NAVIGATION_STATS)
@@ -256,11 +246,11 @@ export class DebugUI {
     if (!container) return;
 
     // Clear existing content
-    container.innerHTML = "";
+    container.innerHTML = '';
 
     // Create table structure
-    const table = document.createElement("div");
-    table.className = "debug-ui-worker-table";
+    const table = document.createElement('div');
+    table.className = 'debug-ui-worker-table';
 
     // Storage for worker stat elements
     this.elements.workerStats = {};
@@ -270,24 +260,24 @@ export class DebugUI {
     for (const config of Object.values(WORKER_DISPLAY_CONFIG)) {
       maxStatCount = Math.max(maxStatCount, config.stats.length);
     }
-    table.setAttribute("data-stat-count", maxStatCount);
+    table.setAttribute('data-stat-count', maxStatCount);
 
     // Main thread FPS row (add as first row in table)
-    const mainRow = document.createElement("div");
-    mainRow.className = "debug-ui-worker-row";
-    const mainLabel = document.createElement("div");
-    mainLabel.className = "debug-ui-worker-cell label debug-ui-stat main";
-    mainLabel.textContent = "Main:";
+    const mainRow = document.createElement('div');
+    mainRow.className = 'debug-ui-worker-row';
+    const mainLabel = document.createElement('div');
+    mainLabel.className = 'debug-ui-worker-cell label debug-ui-stat main';
+    mainLabel.textContent = 'Main:';
     mainRow.appendChild(mainLabel);
-    const mainFpsCell = document.createElement("div");
-    mainFpsCell.className = "debug-ui-worker-cell stat";
-    mainFpsCell.textContent = "FPS: --";
+    const mainFpsCell = document.createElement('div');
+    mainFpsCell.className = 'debug-ui-worker-cell stat';
+    mainFpsCell.textContent = 'FPS: --';
     mainRow.appendChild(mainFpsCell);
     this.elements.mainFPS = mainFpsCell;
     table.appendChild(mainRow);
 
     // Single workers (renderer, particle, physics, navigation)
-    const singleWorkers = ["renderer", "particle", "physics", "navigation"];
+    const singleWorkers = ['renderer', 'particle', 'physics', 'navigation'];
     for (const workerType of singleWorkers) {
       if (this.workerStatViews[workerType]) {
         const row = this._createWorkerStatRow(workerType, 0);
@@ -300,7 +290,7 @@ export class DebugUI {
     }
 
     // Multi-workers (spatial, logic)
-    const multiWorkers = ["spatial", "logic"];
+    const multiWorkers = ['spatial', 'logic'];
     for (const workerType of multiWorkers) {
       const workerViews = this.workerStatViews[workerType];
       if (workerViews && workerViews.length > 0) {
@@ -324,26 +314,25 @@ export class DebugUI {
    */
   _createWorkerStatRow(workerType, workerIndex) {
     const config = WORKER_DISPLAY_CONFIG[workerType];
-    const row = document.createElement("div");
-    row.className = "debug-ui-worker-row";
+    const row = document.createElement('div');
+    row.className = 'debug-ui-worker-row';
 
     const elements = {};
 
     // Worker label (e.g., "Spatial #0:", "Render #0:")
-    const labelCell = document.createElement("div");
+    const labelCell = document.createElement('div');
     labelCell.className = `debug-ui-worker-cell label debug-ui-stat ${config.color}`;
     const workerCount =
-      workerType === "spatial" || workerType === "logic"
+      workerType === 'spatial' || workerType === 'logic'
         ? this.workerStatViews[workerType].length
         : 1;
-    const workerLabel =
-      workerCount > 1 ? `${config.label} #${workerIndex}` : config.label;
+    const workerLabel = workerCount > 1 ? `${config.label} #${workerIndex}` : config.label;
     labelCell.textContent = `${workerLabel}:`;
     row.appendChild(labelCell);
 
     // Create stat elements based on config
     for (const stat of config.stats) {
-      const statCell = document.createElement("div");
+      const statCell = document.createElement('div');
       statCell.className = `debug-ui-worker-cell stat debug-ui-stat ${config.color}`;
       statCell.textContent = `${stat.key}: --`;
       row.appendChild(statCell);
@@ -502,19 +491,18 @@ export class DebugUI {
     const mainFPSRounded = (scene.mainFPS * 100) | 0;
     if (this.elements.mainFPS && mainFPSRounded !== this._prevValues.mainFPS) {
       this._prevValues.mainFPS = mainFPSRounded;
-      this.elements.mainFPS.textContent =
-        "FPS: " + (mainFPSRounded / 100).toFixed(2);
+      this.elements.mainFPS.textContent = 'FPS: ' + (mainFPSRounded / 100).toFixed(2);
     }
 
     // Update single workers (renderer, particle, physics, navigation)
-    this._updateSingleWorkerStats("renderer", RENDERER_STATS);
-    this._updateSingleWorkerStats("particle", PARTICLE_STATS);
-    this._updateSingleWorkerStats("physics", PHYSICS_STATS);
-    this._updateSingleWorkerStats("navigation", NAVIGATION_STATS);
+    this._updateSingleWorkerStats('renderer', RENDERER_STATS);
+    this._updateSingleWorkerStats('particle', PARTICLE_STATS);
+    this._updateSingleWorkerStats('physics', PHYSICS_STATS);
+    this._updateSingleWorkerStats('navigation', NAVIGATION_STATS);
 
     // Update multi-workers (spatial, logic)
-    this._updateMultiWorkerStats("spatial", SPATIAL_STATS);
-    this._updateMultiWorkerStats("logic", LOGIC_STATS);
+    this._updateMultiWorkerStats('spatial', SPATIAL_STATS);
+    this._updateMultiWorkerStats('logic', LOGIC_STATS);
   }
 
   /**
@@ -533,26 +521,20 @@ export class DebugUI {
     if (particleView && this.elements.perfGameObjects) {
       const activeGO = (particleView[PARTICLE_STATS.ACTIVE_ENTITIES] || 0) | 0;
       const totalGO = (particleView[PARTICLE_STATS.TOTAL_ENTITIES] || 0) | 0;
-      const visibleGO = rendererView
-        ? (rendererView[RENDERER_STATS.VISIBLE_ENTITIES] || 0) | 0
-        : 0;
+      const visibleGO = rendererView ? (rendererView[RENDERER_STATS.VISIBLE_ENTITIES] || 0) | 0 : 0;
 
-      if (
-        activeGO !== pv.activeGO ||
-        totalGO !== pv.totalGO ||
-        visibleGO !== pv.visibleGO
-      ) {
+      if (activeGO !== pv.activeGO || totalGO !== pv.totalGO || visibleGO !== pv.visibleGO) {
         pv.activeGO = activeGO;
         pv.totalGO = totalGO;
         pv.visibleGO = visibleGO;
         this.elements.perfGameObjects.textContent =
-          "GameObjects: " +
+          'GameObjects: ' +
           formatNumber(activeGO) +
-          " / " +
+          ' / ' +
           formatNumber(totalGO) +
-          " (👁 " +
+          ' (👁 ' +
           formatNumber(visibleGO) +
-          ")";
+          ')';
       }
     }
 
@@ -560,65 +542,51 @@ export class DebugUI {
     if (particleView && this.elements.perfParticles) {
       const activeP = (particleView[PARTICLE_STATS.ACTIVE_PARTICLES] || 0) | 0;
       const totalP = (particleView[PARTICLE_STATS.TOTAL_PARTICLES] || 0) | 0;
-      const visibleP = rendererView
-        ? (rendererView[RENDERER_STATS.VISIBLE_PARTICLES] || 0) | 0
-        : 0;
+      const visibleP = rendererView ? (rendererView[RENDERER_STATS.VISIBLE_PARTICLES] || 0) | 0 : 0;
 
-      if (
-        activeP !== pv.activeP ||
-        totalP !== pv.totalP ||
-        visibleP !== pv.visibleP
-      ) {
+      if (activeP !== pv.activeP || totalP !== pv.totalP || visibleP !== pv.visibleP) {
         pv.activeP = activeP;
         pv.totalP = totalP;
         pv.visibleP = visibleP;
         this.elements.perfParticles.textContent =
-          "Particles: " +
+          'Particles: ' +
           formatNumber(activeP) +
-          " / " +
+          ' / ' +
           formatNumber(totalP) +
-          " (👁 " +
+          ' (👁 ' +
           formatNumber(visibleP) +
-          ")";
+          ')';
       }
     }
 
     // Decorations - only update if any value changed
     if (rendererView && this.elements.perfDecorations) {
-      const activeD =
-        (rendererView[RENDERER_STATS.ACTIVE_DECORATIONS] || 0) | 0;
-      const visibleD =
-        (rendererView[RENDERER_STATS.VISIBLE_DECORATIONS] || 0) | 0;
+      const activeD = (rendererView[RENDERER_STATS.ACTIVE_DECORATIONS] || 0) | 0;
+      const visibleD = (rendererView[RENDERER_STATS.VISIBLE_DECORATIONS] || 0) | 0;
       const totalD = (DecorationPool.maxDecorations || 0) | 0;
 
-      if (
-        activeD !== pv.activeD ||
-        totalD !== pv.totalD ||
-        visibleD !== pv.visibleD
-      ) {
+      if (activeD !== pv.activeD || totalD !== pv.totalD || visibleD !== pv.visibleD) {
         pv.activeD = activeD;
         pv.totalD = totalD;
         pv.visibleD = visibleD;
         this.elements.perfDecorations.textContent =
-          "Decorations: " +
+          'Decorations: ' +
           formatNumber(activeD) +
-          " / " +
+          ' / ' +
           formatNumber(totalD) +
-          " (👁 " +
+          ' (👁 ' +
           formatNumber(visibleD) +
-          ")";
+          ')';
       }
     }
 
     // Flash entities - only update if value changed
     if (particleView && this.elements.perfFlash) {
-      const flashesUpdated =
-        (particleView[PARTICLE_STATS.FLASHES_UPDATED] || 0) | 0;
+      const flashesUpdated = (particleView[PARTICLE_STATS.FLASHES_UPDATED] || 0) | 0;
 
       if (flashesUpdated !== pv.flashUpdated) {
         pv.flashUpdated = flashesUpdated;
-        this.elements.perfFlash.textContent =
-          "Flash: " + formatNumber(flashesUpdated) + " updated";
+        this.elements.perfFlash.textContent = 'Flash: ' + formatNumber(flashesUpdated) + ' updated';
       }
     }
   }
@@ -634,8 +602,7 @@ export class DebugUI {
     if (!view) return;
 
     const workerStats = this.elements.workerStats;
-    if (!workerStats || !workerStats[workerType] || !workerStats[workerType][0])
-      return;
+    if (!workerStats || !workerStats[workerType] || !workerStats[workerType][0]) return;
     const elements = workerStats[workerType][0];
 
     const config = WORKER_DISPLAY_CONFIG[workerType];
@@ -653,7 +620,7 @@ export class DebugUI {
       let rawValue = view[statIndex];
 
       // Smooth FPS values
-      if (stat.key === "FPS") {
+      if (stat.key === 'FPS') {
         rawValue = this._smoothFPS(rawValue, this.fpsSmoothing[workerType]);
       }
 
@@ -663,7 +630,7 @@ export class DebugUI {
       prevCache[stat.key] = roundedValue;
 
       const formattedValue = stat.format(rawValue);
-      elements[stat.key].textContent = stat.key + ": " + formattedValue;
+      elements[stat.key].textContent = stat.key + ': ' + formattedValue;
     }
   }
 
@@ -705,11 +672,8 @@ export class DebugUI {
         let rawValue = view[statIndex];
 
         // Smooth FPS values
-        if (stat.key === "FPS") {
-          rawValue = this._smoothFPS(
-            rawValue,
-            this.fpsSmoothing[workerType][i]
-          );
+        if (stat.key === 'FPS') {
+          rawValue = this._smoothFPS(rawValue, this.fpsSmoothing[workerType][i]);
         }
 
         // Round to avoid floating point noise triggering updates
@@ -718,7 +682,7 @@ export class DebugUI {
         prevCache[stat.key] = roundedValue;
 
         const formattedValue = stat.format(rawValue);
-        elements[stat.key].textContent = stat.key + ": " + formattedValue;
+        elements[stat.key].textContent = stat.key + ': ' + formattedValue;
       }
     }
   }
@@ -744,10 +708,7 @@ export class DebugUI {
         pv.activeEntities = active;
         pv.totalEntities = total;
         this.elements.activeCount.textContent =
-          "Active: " +
-          formatNumber(active) +
-          "/" +
-          formatNumber(total);
+          'Active: ' + formatNumber(active) + '/' + formatNumber(total);
       }
     }
 
@@ -760,14 +721,13 @@ export class DebugUI {
 
       if (visible !== pv.visibleEntities) {
         pv.visibleEntities = visible;
-        this.elements.visibleCount.textContent =
-          "Visible: " + formatNumber(visible);
+        this.elements.visibleCount.textContent = 'Visible: ' + formatNumber(visible);
       }
     }
 
     // Pool stats - build string only if values changed, reuse Set
     if (this.elements.poolStats && this.gameEngine) {
-      this._poolStatsBuffer = "";
+      this._poolStatsBuffer = '';
       const registeredClasses = scene.registeredClasses;
       if (registeredClasses) {
         for (let i = 0; i < registeredClasses.length; i++) {
@@ -776,14 +736,10 @@ export class DebugUI {
           const stats = this.gameEngine.getPoolStats(reg.class);
           if (stats && stats.total > 0) {
             if (this._poolStatsBuffer.length > 0) {
-              this._poolStatsBuffer += " | ";
+              this._poolStatsBuffer += ' | ';
             }
             this._poolStatsBuffer +=
-              reg.class.name +
-              ": " +
-              formatNumber(stats.active) +
-              "/" +
-              formatNumber(stats.total);
+              reg.class.name + ': ' + formatNumber(stats.active) + '/' + formatNumber(stats.total);
           }
         }
       }
@@ -811,8 +767,7 @@ export class DebugUI {
       const total = (DecorationPool.maxDecorations || 0) | 0;
       if (total !== pv.decorationTotal) {
         pv.decorationTotal = total;
-        this.elements.decorationTotal.textContent =
-          "Total: " + formatNumber(total);
+        this.elements.decorationTotal.textContent = 'Total: ' + formatNumber(total);
       }
     }
 
@@ -821,30 +776,25 @@ export class DebugUI {
       const active = (rendererView[RENDERER_STATS.ACTIVE_DECORATIONS] || 0) | 0;
       if (active !== pv.decorationActive) {
         pv.decorationActive = active;
-        this.elements.decorationActive.textContent =
-          "Active: " + formatNumber(active);
+        this.elements.decorationActive.textContent = 'Active: ' + formatNumber(active);
       }
     }
 
     // Visible decorations - only update if changed
     if (this.elements.decorationVisible && rendererView) {
-      const visible =
-        (rendererView[RENDERER_STATS.VISIBLE_DECORATIONS] || 0) | 0;
+      const visible = (rendererView[RENDERER_STATS.VISIBLE_DECORATIONS] || 0) | 0;
       if (visible !== pv.decorationVisible) {
         pv.decorationVisible = visible;
-        this.elements.decorationVisible.textContent =
-          "Visible: " + formatNumber(visible);
+        this.elements.decorationVisible.textContent = 'Visible: ' + formatNumber(visible);
       }
     }
 
     // PIXI sprites created - only update if changed
     if (this.elements.decorationSprites && rendererView) {
-      const spriteCount =
-        (rendererView[RENDERER_STATS.DECORATION_SPRITES] || 0) | 0;
+      const spriteCount = (rendererView[RENDERER_STATS.DECORATION_SPRITES] || 0) | 0;
       if (spriteCount !== pv.decorationSprites) {
         pv.decorationSprites = spriteCount;
-        this.elements.decorationSprites.textContent =
-          "Sprites: " + formatNumber(spriteCount);
+        this.elements.decorationSprites.textContent = 'Sprites: ' + formatNumber(spriteCount);
       }
     }
   }
@@ -858,11 +808,9 @@ export class DebugUI {
 
     // Update toggle button states
     const state = this.debugFlags.getState();
-    for (const [key, btn] of Object.entries(
-      this.elements.visualToggles || {}
-    )) {
+    for (const [key, btn] of Object.entries(this.elements.visualToggles || {})) {
       if (btn && state[key] !== undefined) {
-        btn.classList.toggle("active", state[key]);
+        btn.classList.toggle('active', state[key]);
       }
     }
   }
@@ -871,24 +819,21 @@ export class DebugUI {
     if (!this.debugFlags) return;
 
     const methodMap = {
-      colliders: "showColliders",
-      velocity: "showVelocity",
-      acceleration: "showAcceleration",
-      neighbors: "showNeighbors",
-      spatialGrid: "showSpatialGrid",
-      aabb: "showAABB",
-      entityIndices: "showEntityIndices",
-      raycasts: "showRaycasts",
+      colliders: 'showColliders',
+      velocity: 'showVelocity',
+      acceleration: 'showAcceleration',
+      neighbors: 'showNeighbors',
+      spatialGrid: 'showSpatialGrid',
+      aabb: 'showAABB',
+      entityIndices: 'showEntityIndices',
+      raycasts: 'showRaycasts',
     };
 
     const method = methodMap[key];
     if (method && this.debugFlags[method]) {
       const currentState = this.debugFlags.isEnabled(
         DEBUG_FLAGS[
-        `SHOW_${key
-          .toUpperCase()
-          .replace("GRID", "_GRID")
-          .replace("INDICES", "_INDICES")}`
+          `SHOW_${key.toUpperCase().replace('GRID', '_GRID').replace('INDICES', '_INDICES')}`
         ]
       );
       this.debugFlags[method](!currentState);
@@ -909,70 +854,70 @@ export class DebugUI {
   // ========================================
 
   async _injectStyles() {
-    if (document.getElementById("debug-ui-styles")) return;
+    if (document.getElementById('debug-ui-styles')) return;
 
     try {
       // Fetch CSS file from the same directory as this module
-      const cssPath = new URL("./DebugUI.css", import.meta.url).href;
+      const cssPath = new URL('./DebugUI.css', import.meta.url).href;
       const response = await fetch(cssPath);
       const cssText = await response.text();
 
-      const style = document.createElement("style");
-      style.id = "debug-ui-styles";
+      const style = document.createElement('style');
+      style.id = 'debug-ui-styles';
       style.textContent = cssText;
       document.head.appendChild(style);
     } catch (error) {
-      console.error("Failed to load DebugUI.css:", error);
+      console.error('Failed to load DebugUI.css:', error);
       // Fallback: continue without styles (or could inject minimal inline styles)
     }
   }
 
   _createUI() {
     // Main container
-    this.container = document.createElement("div");
-    this.container.className = "debug-ui";
+    this.container = document.createElement('div');
+    this.container.className = 'debug-ui';
 
     // Header bar
-    const header = document.createElement("div");
-    header.className = "debug-ui-header";
+    const header = document.createElement('div');
+    header.className = 'debug-ui-header';
 
     // Scene tab (NEW)
-    const sceneTab = this._createTab("🎬", "Scene", "scene");
+    const sceneTab = this._createTab('🎬', 'Scene', 'scene');
     header.appendChild(sceneTab);
 
     // Performance tab
-    const perfTab = this._createTab("⚡", "Performance", "performance");
+    const perfTab = this._createTab('⚡', 'Performance', 'performance');
     header.appendChild(perfTab);
 
     // Visual Aids tab
-    const visualTab = this._createTab("👁", "Visual", "visual");
+    const visualTab = this._createTab('👁', 'Visual', 'visual');
     header.appendChild(visualTab);
 
     // Entities tab
-    const entitiesTab = this._createTab("📦", "Entities", "entities");
+    const entitiesTab = this._createTab('📦', 'Entities', 'entities');
     header.appendChild(entitiesTab);
 
     // Decorations tab
-    const decorationsTab = this._createTab("🌿", "Decorations", "decorations");
+    const decorationsTab = this._createTab('🌿', 'Decorations', 'decorations');
     header.appendChild(decorationsTab);
 
     // Layers tab (NEW)
-    const layersTab = this._createTab("📚", "Layers", "layers");
+    const layersTab = this._createTab('📚', 'Layers', 'layers');
     header.appendChild(layersTab);
 
     // Navigation tab (NEW)
-    const navTab = this._createTab("🧭", "Nav", "navigation");
+    const navTab = this._createTab('🧭', 'Nav', 'navigation');
     header.appendChild(navTab);
 
     // Spacer
-    const spacer = document.createElement("div");
-    spacer.className = "debug-ui-spacer";
+    const spacer = document.createElement('div');
+    spacer.className = 'debug-ui-spacer';
     header.appendChild(spacer);
 
     // Toggle visibility hint
-    const toggle = document.createElement("div");
-    toggle.className = "debug-ui-toggle";
-    toggle.textContent = "[H] Toggle";
+    const toggle = document.createElement('div');
+    toggle.className = 'debug-ui-toggle';
+    toggle.textContent = '[H] Toggle';
     toggle.onclick = () => this.toggle();
     header.appendChild(toggle);
 
@@ -994,8 +939,8 @@ export class DebugUI {
   }
 
   _createTab(icon, label, sectionId) {
-    const tab = document.createElement("div");
-    tab.className = "debug-ui-tab";
+    const tab = document.createElement('div');
+    tab.className = 'debug-ui-tab';
     tab.innerHTML = `<span class="icon">${icon}</span><span>${label}</span><span class="arrow">▼</span>`;
     tab.onclick = () => this._toggleSection(sectionId);
     this.sections[sectionId] = { tab };
@@ -1007,27 +952,27 @@ export class DebugUI {
 
     // Close all sections
     for (const [id, section] of Object.entries(this.sections)) {
-      section.tab.classList.remove("active");
-      if (section.panel) section.panel.classList.remove("open");
+      section.tab.classList.remove('active');
+      if (section.panel) section.panel.classList.remove('open');
     }
 
     // Open clicked section (unless it was already open)
     if (!wasOpen) {
       this.openSection = sectionId;
-      this.sections[sectionId].tab.classList.add("active");
+      this.sections[sectionId].tab.classList.add('active');
       if (this.sections[sectionId].panel) {
-        this.sections[sectionId].panel.classList.add("open");
+        this.sections[sectionId].panel.classList.add('open');
       }
 
       // Auto-refresh navigation lists when opening nav panel
-      if (sectionId === "navigation") {
+      if (sectionId === 'navigation') {
         this._refreshNavigationLists();
       }
     } else {
       this.openSection = null;
 
       // Clear navigation visualization when closing nav panel
-      if (sectionId === "navigation") {
+      if (sectionId === 'navigation') {
         this._clearNavVisualization();
       }
     }
@@ -1038,31 +983,31 @@ export class DebugUI {
   // ========================================
 
   _createScenePanel() {
-    const panel = document.createElement("div");
-    panel.className = "debug-ui-panel";
+    const panel = document.createElement('div');
+    panel.className = 'debug-ui-panel';
 
     // Scene buttons container
-    this.elements.sceneSwitchContainer = document.createElement("div");
-    this.elements.sceneSwitchContainer.className = "debug-ui-row";
-    this.elements.sceneSwitchContainer.style.gap = "8px";
+    this.elements.sceneSwitchContainer = document.createElement('div');
+    this.elements.sceneSwitchContainer.className = 'debug-ui-row';
+    this.elements.sceneSwitchContainer.style.gap = '8px';
     panel.appendChild(this.elements.sceneSwitchContainer);
 
     // Controls row (pause/resume)
-    const controlsRow = document.createElement("div");
-    controlsRow.className = "debug-ui-row";
-    controlsRow.style.marginTop = "8px";
-    controlsRow.style.gap = "8px";
+    const controlsRow = document.createElement('div');
+    controlsRow.className = 'debug-ui-row';
+    controlsRow.style.marginTop = '8px';
+    controlsRow.style.gap = '8px';
 
     // Label
-    const controlsLabel = document.createElement("span");
-    controlsLabel.className = "debug-ui-stat";
-    controlsLabel.textContent = "Controls:";
+    const controlsLabel = document.createElement('span');
+    controlsLabel.className = 'debug-ui-stat';
+    controlsLabel.textContent = 'Controls:';
     controlsRow.appendChild(controlsLabel);
 
     // Pause button
-    this.elements.pauseBtn = document.createElement("button");
-    this.elements.pauseBtn.className = "debug-ui-btn";
-    this.elements.pauseBtn.textContent = "⏸ Pause";
+    this.elements.pauseBtn = document.createElement('button');
+    this.elements.pauseBtn.className = 'debug-ui-btn';
+    this.elements.pauseBtn.textContent = '⏸ Pause';
     this.elements.pauseBtn.onclick = () => {
       if (this.gameEngine) {
         this.gameEngine.pause();
@@ -1072,9 +1017,9 @@ export class DebugUI {
     controlsRow.appendChild(this.elements.pauseBtn);
 
     // Resume button
-    this.elements.resumeBtn = document.createElement("button");
-    this.elements.resumeBtn.className = "debug-ui-btn";
-    this.elements.resumeBtn.textContent = "▶ Play";
+    this.elements.resumeBtn = document.createElement('button');
+    this.elements.resumeBtn.className = 'debug-ui-btn';
+    this.elements.resumeBtn.textContent = '▶ Play';
     this.elements.resumeBtn.onclick = () => {
       if (this.gameEngine) {
         this.gameEngine.resume();
@@ -1093,23 +1038,23 @@ export class DebugUI {
     const container = this.elements.sceneSwitchContainer;
     if (!container) return;
 
-    container.innerHTML = "";
+    container.innerHTML = '';
 
     // Label
-    const label = document.createElement("span");
-    label.className = "debug-ui-stat";
-    label.textContent = "Scene:";
+    const label = document.createElement('span');
+    label.className = 'debug-ui-stat';
+    label.textContent = 'Scene:';
     container.appendChild(label);
 
     // Add scene buttons
     for (const sceneConfig of this.registeredScenes) {
-      const btn = document.createElement("button");
-      btn.className = "debug-ui-btn scene-btn";
+      const btn = document.createElement('button');
+      btn.className = 'debug-ui-btn scene-btn';
       btn.textContent = sceneConfig.name;
 
       // Mark current scene as active
       if (this.scene && this.scene.constructor === sceneConfig.class) {
-        btn.classList.add("active");
+        btn.classList.add('active');
       }
 
       btn.onclick = async () => {
@@ -1129,103 +1074,103 @@ export class DebugUI {
 
     const isPaused = this.scene.state?.pause;
     if (this.elements.pauseBtn) {
-      this.elements.pauseBtn.classList.toggle("active", isPaused);
+      this.elements.pauseBtn.classList.toggle('active', isPaused);
     }
     if (this.elements.resumeBtn) {
-      this.elements.resumeBtn.classList.toggle("active", !isPaused);
+      this.elements.resumeBtn.classList.toggle('active', !isPaused);
     }
   }
 
   _createPerformancePanel() {
-    const panel = document.createElement("div");
-    panel.className = "debug-ui-panel";
+    const panel = document.createElement('div');
+    panel.className = 'debug-ui-panel';
 
     // Container div for flexible layout
-    const container = document.createElement("div");
-    container.style.display = "flex";
-    container.style.flexDirection = "column";
-    container.style.gap = "12px";
+    const container = document.createElement('div');
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
+    container.style.gap = '12px';
 
     // Summary section for entity counts
-    const summarySection = document.createElement("div");
-    summarySection.className = "debug-ui-performance-summary";
-    summarySection.style.display = "flex";
-    summarySection.style.flexDirection = "column";
-    summarySection.style.gap = "4px";
-    summarySection.style.padding = "8px";
-    summarySection.style.backgroundColor = "rgba(0, 0, 0, 0.3)";
-    summarySection.style.borderRadius = "4px";
+    const summarySection = document.createElement('div');
+    summarySection.className = 'debug-ui-performance-summary';
+    summarySection.style.display = 'flex';
+    summarySection.style.flexDirection = 'column';
+    summarySection.style.gap = '4px';
+    summarySection.style.padding = '8px';
+    summarySection.style.backgroundColor = 'rgba(0, 0, 0, 0.3)';
+    summarySection.style.borderRadius = '4px';
 
     // All pool stats on ONE row with different colors
-    const poolStatsRow = document.createElement("div");
-    poolStatsRow.className = "debug-ui-row";
-    poolStatsRow.style.justifyContent = "flex-start";
-    poolStatsRow.style.gap = "16px";
+    const poolStatsRow = document.createElement('div');
+    poolStatsRow.className = 'debug-ui-row';
+    poolStatsRow.style.justifyContent = 'flex-start';
+    poolStatsRow.style.gap = '16px';
 
     // Pools Stats title (inline with data)
-    const poolStatsTitle = document.createElement("span");
-    poolStatsTitle.className = "debug-ui-stat";
-    poolStatsTitle.style.fontWeight = "bold";
-    poolStatsTitle.style.color = "rgba(255, 255, 255, 0.9)";
-    poolStatsTitle.textContent = "Pools Stats:";
+    const poolStatsTitle = document.createElement('span');
+    poolStatsTitle.className = 'debug-ui-stat';
+    poolStatsTitle.style.fontWeight = 'bold';
+    poolStatsTitle.style.color = 'rgba(255, 255, 255, 0.9)';
+    poolStatsTitle.textContent = 'Pools Stats:';
     poolStatsRow.appendChild(poolStatsTitle);
 
     // GameObjects (main green color)
-    this.elements.perfGameObjects = document.createElement("span");
-    this.elements.perfGameObjects.className = "debug-ui-stat";
-    this.elements.perfGameObjects.style.color = "#4ade80";
-    this.elements.perfGameObjects.textContent = "GameObjects: -- / -- (👁 --)";
+    this.elements.perfGameObjects = document.createElement('span');
+    this.elements.perfGameObjects.className = 'debug-ui-stat';
+    this.elements.perfGameObjects.style.color = '#4ade80';
+    this.elements.perfGameObjects.textContent = 'GameObjects: -- / -- (👁 --)';
     poolStatsRow.appendChild(this.elements.perfGameObjects);
 
     // Particles (particle orange color)
-    this.elements.perfParticles = document.createElement("span");
-    this.elements.perfParticles.className = "debug-ui-stat";
-    this.elements.perfParticles.style.color = "#fb923c";
-    this.elements.perfParticles.textContent = "Particles: -- / -- (👁 --)";
+    this.elements.perfParticles = document.createElement('span');
+    this.elements.perfParticles.className = 'debug-ui-stat';
+    this.elements.perfParticles.style.color = '#fb923c';
+    this.elements.perfParticles.textContent = 'Particles: -- / -- (👁 --)';
     poolStatsRow.appendChild(this.elements.perfParticles);
 
     // Decorations (nature green-cyan color)
-    this.elements.perfDecorations = document.createElement("span");
-    this.elements.perfDecorations.className = "debug-ui-stat";
-    this.elements.perfDecorations.style.color = "#34d399";
-    this.elements.perfDecorations.textContent = "Decorations: -- / -- (👁 --)";
+    this.elements.perfDecorations = document.createElement('span');
+    this.elements.perfDecorations.className = 'debug-ui-stat';
+    this.elements.perfDecorations.style.color = '#34d399';
+    this.elements.perfDecorations.textContent = 'Decorations: -- / -- (👁 --)';
     poolStatsRow.appendChild(this.elements.perfDecorations);
 
     // Flash (bright yellow color)
-    this.elements.perfFlash = document.createElement("span");
-    this.elements.perfFlash.className = "debug-ui-stat";
-    this.elements.perfFlash.style.color = "#fbbf24";
-    this.elements.perfFlash.textContent = "Flash: -- / -- (👁 --)";
+    this.elements.perfFlash = document.createElement('span');
+    this.elements.perfFlash.className = 'debug-ui-stat';
+    this.elements.perfFlash.style.color = '#fbbf24';
+    this.elements.perfFlash.textContent = 'Flash: -- / -- (👁 --)';
     poolStatsRow.appendChild(this.elements.perfFlash);
 
     summarySection.appendChild(poolStatsRow);
     container.appendChild(summarySection);
 
     // Job stealing stats (shown when enabled)
-    const jobRow = document.createElement("div");
-    jobRow.className = "debug-ui-row";
-    this.elements.jobStealing = this._createStat("Jobs: --", "jobs");
+    const jobRow = document.createElement('div');
+    jobRow.className = 'debug-ui-row';
+    this.elements.jobStealing = this._createStat('Jobs: --', 'jobs');
     jobRow.appendChild(this.elements.jobStealing);
-    jobRow.style.display = "none";
+    jobRow.style.display = 'none';
     this.elements.jobStealingRow = jobRow;
     container.appendChild(jobRow);
 
     // Worker Stats Title
-    const workerStatsTitle = document.createElement("div");
-    workerStatsTitle.className = "debug-ui-stat";
-    workerStatsTitle.style.fontWeight = "bold";
-    workerStatsTitle.style.fontSize = "12px";
-    workerStatsTitle.style.marginTop = "8px";
-    workerStatsTitle.style.marginBottom = "4px";
-    workerStatsTitle.style.color = "rgba(255, 255, 255, 0.9)";
-    workerStatsTitle.textContent = "Worker Stats";
+    const workerStatsTitle = document.createElement('div');
+    workerStatsTitle.className = 'debug-ui-stat';
+    workerStatsTitle.style.fontWeight = 'bold';
+    workerStatsTitle.style.fontSize = '12px';
+    workerStatsTitle.style.marginTop = '8px';
+    workerStatsTitle.style.marginBottom = '4px';
+    workerStatsTitle.style.color = 'rgba(255, 255, 255, 0.9)';
+    workerStatsTitle.textContent = 'Worker Stats';
     container.appendChild(workerStatsTitle);
 
     // Container for worker stat rows (will be dynamically populated on scene attach)
-    this.elements.workerStatsContainer = document.createElement("div");
-    this.elements.workerStatsContainer.style.display = "flex";
-    this.elements.workerStatsContainer.style.flexDirection = "column";
-    this.elements.workerStatsContainer.style.gap = "4px";
+    this.elements.workerStatsContainer = document.createElement('div');
+    this.elements.workerStatsContainer.style.display = 'flex';
+    this.elements.workerStatsContainer.style.flexDirection = 'column';
+    this.elements.workerStatsContainer.style.gap = '4px';
     container.appendChild(this.elements.workerStatsContainer);
 
     panel.appendChild(container);
@@ -1234,28 +1179,28 @@ export class DebugUI {
   }
 
   _createVisualPanel() {
-    const panel = document.createElement("div");
-    panel.className = "debug-ui-panel";
+    const panel = document.createElement('div');
+    panel.className = 'debug-ui-panel';
 
-    const row = document.createElement("div");
-    row.className = "debug-ui-row";
+    const row = document.createElement('div');
+    row.className = 'debug-ui-row';
 
     this.elements.visualToggles = {};
 
     const visualAids = [
-      { key: "colliders", label: "Colliders", shortcut: "1" },
-      { key: "velocity", label: "Velocity", shortcut: "2" },
-      { key: "acceleration", label: "Accel", shortcut: "3" },
-      { key: "neighbors", label: "Neighbors", shortcut: "4" },
-      { key: "spatialGrid", label: "Grid", shortcut: "5" },
-      { key: "aabb", label: "AABB", shortcut: "6" },
-      { key: "entityIndices", label: "Indices", shortcut: "7" },
-      { key: "raycasts", label: "Raycasts", shortcut: "8" },
+      { key: 'colliders', label: 'Colliders', shortcut: '1' },
+      { key: 'velocity', label: 'Velocity', shortcut: '2' },
+      { key: 'acceleration', label: 'Accel', shortcut: '3' },
+      { key: 'neighbors', label: 'Neighbors', shortcut: '4' },
+      { key: 'spatialGrid', label: 'Grid', shortcut: '5' },
+      { key: 'aabb', label: 'AABB', shortcut: '6' },
+      { key: 'entityIndices', label: 'Indices', shortcut: '7' },
+      { key: 'raycasts', label: 'Raycasts', shortcut: '8' },
     ];
 
     for (const aid of visualAids) {
-      const btn = document.createElement("button");
-      btn.className = "debug-ui-btn";
+      const btn = document.createElement('button');
+      btn.className = 'debug-ui-btn';
       btn.textContent = `[${aid.shortcut}] ${aid.label}`;
       btn.onclick = () => this._toggleVisualAid(aid.key);
       this.elements.visualToggles[aid.key] = btn;
@@ -1263,9 +1208,9 @@ export class DebugUI {
     }
 
     // Disable all button
-    const disableBtn = document.createElement("button");
-    disableBtn.className = "debug-ui-btn danger";
-    disableBtn.textContent = "[0] Off";
+    const disableBtn = document.createElement('button');
+    disableBtn.className = 'debug-ui-btn danger';
+    disableBtn.textContent = '[0] Off';
     disableBtn.onclick = () => {
       if (this.debugFlags) {
         this.debugFlags.disableAll();
@@ -1278,10 +1223,10 @@ export class DebugUI {
     row.appendChild(this._createDivider());
 
     // Entity Inspector button
-    this.elements.inspectorBtn = document.createElement("button");
-    this.elements.inspectorBtn.className = "debug-ui-btn tool";
-    this.elements.inspectorBtn.textContent = "[I] Inspect";
-    this.elements.inspectorBtn.title = "Click on an entity to inspect its components";
+    this.elements.inspectorBtn = document.createElement('button');
+    this.elements.inspectorBtn.className = 'debug-ui-btn tool';
+    this.elements.inspectorBtn.textContent = '[I] Inspect';
+    this.elements.inspectorBtn.title = 'Click on an entity to inspect its components';
     this.elements.inspectorBtn.onclick = () => this._toggleInspector();
     row.appendChild(this.elements.inspectorBtn);
 
@@ -1291,16 +1236,16 @@ export class DebugUI {
   }
 
   _createEntitiesPanel() {
-    const panel = document.createElement("div");
-    panel.className = "debug-ui-panel";
+    const panel = document.createElement('div');
+    panel.className = 'debug-ui-panel';
 
     // Stats row
-    const statsRow = document.createElement("div");
-    statsRow.className = "debug-ui-row";
+    const statsRow = document.createElement('div');
+    statsRow.className = 'debug-ui-row';
 
-    this.elements.activeCount = this._createStat("Active: --", "");
-    this.elements.visibleCount = this._createStat("Visible: --", "");
-    this.elements.poolStats = this._createStat("Pools: --", "");
+    this.elements.activeCount = this._createStat('Active: --', '');
+    this.elements.visibleCount = this._createStat('Visible: --', '');
+    this.elements.poolStats = this._createStat('Pools: --', '');
 
     statsRow.appendChild(this.elements.activeCount);
     statsRow.appendChild(this.elements.visibleCount);
@@ -1310,8 +1255,8 @@ export class DebugUI {
     panel.appendChild(statsRow);
 
     // Tools container (populated per-scene)
-    this.elements.entityToolsContainer = document.createElement("div");
-    this.elements.entityToolsContainer.style.marginTop = "8px";
+    this.elements.entityToolsContainer = document.createElement('div');
+    this.elements.entityToolsContainer.style.marginTop = '8px';
     panel.appendChild(this.elements.entityToolsContainer);
 
     this.container.appendChild(panel);
@@ -1319,20 +1264,17 @@ export class DebugUI {
   }
 
   _createDecorationsPanel() {
-    const panel = document.createElement("div");
-    panel.className = "debug-ui-panel";
+    const panel = document.createElement('div');
+    panel.className = 'debug-ui-panel';
 
     // Stats row
-    const statsRow = document.createElement("div");
-    statsRow.className = "debug-ui-row";
+    const statsRow = document.createElement('div');
+    statsRow.className = 'debug-ui-row';
 
-    this.elements.decorationTotal = this._createStat("Total: --", "");
-    this.elements.decorationActive = this._createStat("Active: --", "");
-    this.elements.decorationVisible = this._createStat("Visible: --", "");
-    this.elements.decorationSprites = this._createStat(
-      "Sprites: --",
-      "renderer"
-    );
+    this.elements.decorationTotal = this._createStat('Total: --', '');
+    this.elements.decorationActive = this._createStat('Active: --', '');
+    this.elements.decorationVisible = this._createStat('Visible: --', '');
+    this.elements.decorationSprites = this._createStat('Sprites: --', 'renderer');
 
     statsRow.appendChild(this.elements.decorationTotal);
     statsRow.appendChild(this.elements.decorationActive);
@@ -1351,8 +1293,8 @@ export class DebugUI {
   // ========================================
 
   _createLayersPanel() {
-    const panel = document.createElement("div");
-    panel.className = "debug-ui-panel";
+    const panel = document.createElement('div');
+    panel.className = 'debug-ui-panel';
 
     // Layer names from Z_INDICES enum (imported from ConfigDefaults)
     const layerNames = Object.keys(Z_INDICES);
@@ -1363,132 +1305,143 @@ export class DebugUI {
 
     // Create a row for each layer
     for (const layerName of layerNames) {
-      const row = document.createElement("div");
-      row.className = "debug-ui-row";
-      row.style.gap = "12px";
-      row.style.alignItems = "center";
-      row.style.marginBottom = "6px";
+      const row = document.createElement('div');
+      row.className = 'debug-ui-row';
+      row.style.gap = '12px';
+      row.style.alignItems = 'center';
+      row.style.marginBottom = '6px';
 
       // Layer name label
-      const label = document.createElement("span");
-      label.className = "debug-ui-stat";
-      label.style.minWidth = "120px";
-      label.style.fontWeight = "bold";
+      const label = document.createElement('span');
+      label.className = 'debug-ui-stat';
+      label.style.minWidth = '120px';
+      label.style.fontWeight = 'bold';
       label.textContent = layerName;
       row.appendChild(label);
 
       // Visibility checkbox
-      const visibleLabel = document.createElement("label");
-      visibleLabel.style.display = "flex";
-      visibleLabel.style.alignItems = "center";
-      visibleLabel.style.gap = "4px";
-      visibleLabel.style.cursor = "pointer";
-      visibleLabel.style.fontSize = "10px";
-      visibleLabel.style.color = "rgba(255, 255, 255, 0.7)";
+      const visibleLabel = document.createElement('label');
+      visibleLabel.style.display = 'flex';
+      visibleLabel.style.alignItems = 'center';
+      visibleLabel.style.gap = '4px';
+      visibleLabel.style.cursor = 'pointer';
+      visibleLabel.style.fontSize = '10px';
+      visibleLabel.style.color = 'rgba(255, 255, 255, 0.7)';
 
-      const visibleCheckbox = document.createElement("input");
-      visibleCheckbox.type = "checkbox";
+      const visibleCheckbox = document.createElement('input');
+      visibleCheckbox.type = 'checkbox';
       visibleCheckbox.checked = true;
-      visibleCheckbox.style.cursor = "pointer";
-      visibleCheckbox.onchange = () => this._setLayerProp(layerName, "visible", visibleCheckbox.checked);
+      visibleCheckbox.style.cursor = 'pointer';
+      visibleCheckbox.onchange = () =>
+        this._setLayerProp(layerName, 'visible', visibleCheckbox.checked);
 
       visibleLabel.appendChild(visibleCheckbox);
-      visibleLabel.appendChild(document.createTextNode("Visible"));
+      visibleLabel.appendChild(document.createTextNode('Visible'));
       row.appendChild(visibleLabel);
 
       // Alpha slider
-      const alphaContainer = document.createElement("div");
-      alphaContainer.style.display = "flex";
-      alphaContainer.style.alignItems = "center";
-      alphaContainer.style.gap = "4px";
+      const alphaContainer = document.createElement('div');
+      alphaContainer.style.display = 'flex';
+      alphaContainer.style.alignItems = 'center';
+      alphaContainer.style.gap = '4px';
 
-      const alphaLabel = document.createElement("span");
-      alphaLabel.style.fontSize = "10px";
-      alphaLabel.style.color = "rgba(255, 255, 255, 0.7)";
-      alphaLabel.textContent = "Alpha:";
+      const alphaLabel = document.createElement('span');
+      alphaLabel.style.fontSize = '10px';
+      alphaLabel.style.color = 'rgba(255, 255, 255, 0.7)';
+      alphaLabel.textContent = 'Alpha:';
       alphaContainer.appendChild(alphaLabel);
 
-      const alphaSlider = document.createElement("input");
-      alphaSlider.type = "range";
-      alphaSlider.min = "0";
-      alphaSlider.max = "100";
-      alphaSlider.value = "100";
-      alphaSlider.style.width = "80px";
-      alphaSlider.style.cursor = "pointer";
+      const alphaSlider = document.createElement('input');
+      alphaSlider.type = 'range';
+      alphaSlider.min = '0';
+      alphaSlider.max = '100';
+      alphaSlider.value = '100';
+      alphaSlider.style.width = '80px';
+      alphaSlider.style.cursor = 'pointer';
       alphaSlider.oninput = () => {
-        alphaValue.textContent = alphaSlider.value + "%";
-        this._setLayerProp(layerName, "alpha", parseInt(alphaSlider.value) / 100);
+        alphaValue.textContent = alphaSlider.value + '%';
+        this._setLayerProp(layerName, 'alpha', parseInt(alphaSlider.value) / 100);
       };
       alphaContainer.appendChild(alphaSlider);
 
-      const alphaValue = document.createElement("span");
-      alphaValue.style.fontSize = "10px";
-      alphaValue.style.color = "rgba(255, 255, 255, 0.7)";
-      alphaValue.style.minWidth = "35px";
-      alphaValue.textContent = "100%";
+      const alphaValue = document.createElement('span');
+      alphaValue.style.fontSize = '10px';
+      alphaValue.style.color = 'rgba(255, 255, 255, 0.7)';
+      alphaValue.style.minWidth = '35px';
+      alphaValue.textContent = '100%';
       alphaContainer.appendChild(alphaValue);
 
       row.appendChild(alphaContainer);
 
       // Blend mode dropdown
-      const blendContainer = document.createElement("div");
-      blendContainer.style.display = "flex";
-      blendContainer.style.alignItems = "center";
-      blendContainer.style.gap = "4px";
+      const blendContainer = document.createElement('div');
+      blendContainer.style.display = 'flex';
+      blendContainer.style.alignItems = 'center';
+      blendContainer.style.gap = '4px';
 
-      const blendLabel = document.createElement("span");
-      blendLabel.style.fontSize = "10px";
-      blendLabel.style.color = "rgba(255, 255, 255, 0.7)";
-      blendLabel.textContent = "Blend:";
+      const blendLabel = document.createElement('span');
+      blendLabel.style.fontSize = '10px';
+      blendLabel.style.color = 'rgba(255, 255, 255, 0.7)';
+      blendLabel.textContent = 'Blend:';
       blendContainer.appendChild(blendLabel);
 
-      const blendSelect = document.createElement("select");
-      blendSelect.style.fontSize = "10px";
-      blendSelect.style.padding = "2px 4px";
-      blendSelect.style.cursor = "pointer";
-      blendSelect.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
-      blendSelect.style.color = "white";
-      blendSelect.style.border = "1px solid rgba(255, 255, 255, 0.3)";
-      blendSelect.style.borderRadius = "3px";
+      const blendSelect = document.createElement('select');
+      blendSelect.style.fontSize = '10px';
+      blendSelect.style.padding = '2px 4px';
+      blendSelect.style.cursor = 'pointer';
+      blendSelect.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+      blendSelect.style.color = 'white';
+      blendSelect.style.border = '1px solid rgba(255, 255, 255, 0.3)';
+      blendSelect.style.borderRadius = '3px';
 
       // PIXI blend modes - npm = non-premultiplied alpha (multiply-npm doesn't exist)
-      const blendModes = ["normal", "normal-npm", "add", "add-npm", "multiply", "screen", "screen-npm", "erase"];
+      const blendModes = [
+        'normal',
+        'normal-npm',
+        'add',
+        'add-npm',
+        'multiply',
+        'screen',
+        'screen-npm',
+        'erase',
+      ];
       for (const mode of blendModes) {
-        const option = document.createElement("option");
+        const option = document.createElement('option');
         option.value = mode;
         option.textContent = mode;
         blendSelect.appendChild(option);
       }
       // Set default value from LAYER_DEFAULT_BLEND_MODES enum
-      blendSelect.value = LAYER_DEFAULT_BLEND_MODES[layerName] || "normal";
-      blendSelect.onchange = () => this._setLayerProp(layerName, "blendMode", blendSelect.value);
+      blendSelect.value = LAYER_DEFAULT_BLEND_MODES[layerName] || 'normal';
+      blendSelect.onchange = () => this._setLayerProp(layerName, 'blendMode', blendSelect.value);
       blendContainer.appendChild(blendSelect);
 
       row.appendChild(blendContainer);
 
       // Z-Index input
-      const zIndexContainer = document.createElement("div");
-      zIndexContainer.style.display = "flex";
-      zIndexContainer.style.alignItems = "center";
-      zIndexContainer.style.gap = "4px";
+      const zIndexContainer = document.createElement('div');
+      zIndexContainer.style.display = 'flex';
+      zIndexContainer.style.alignItems = 'center';
+      zIndexContainer.style.gap = '4px';
 
-      const zIndexLabel = document.createElement("span");
-      zIndexLabel.style.fontSize = "10px";
-      zIndexLabel.style.color = "rgba(255, 255, 255, 0.7)";
-      zIndexLabel.textContent = "Z:";
+      const zIndexLabel = document.createElement('span');
+      zIndexLabel.style.fontSize = '10px';
+      zIndexLabel.style.color = 'rgba(255, 255, 255, 0.7)';
+      zIndexLabel.textContent = 'Z:';
       zIndexContainer.appendChild(zIndexLabel);
 
-      const zIndexInput = document.createElement("input");
-      zIndexInput.type = "number";
+      const zIndexInput = document.createElement('input');
+      zIndexInput.type = 'number';
       zIndexInput.value = Z_INDICES[layerName];
-      zIndexInput.style.width = "50px";
-      zIndexInput.style.fontSize = "10px";
-      zIndexInput.style.padding = "2px 4px";
-      zIndexInput.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
-      zIndexInput.style.color = "white";
-      zIndexInput.style.border = "1px solid rgba(255, 255, 255, 0.3)";
-      zIndexInput.style.borderRadius = "3px";
-      zIndexInput.onchange = () => this._setLayerProp(layerName, "zIndex", parseInt(zIndexInput.value));
+      zIndexInput.style.width = '50px';
+      zIndexInput.style.fontSize = '10px';
+      zIndexInput.style.padding = '2px 4px';
+      zIndexInput.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+      zIndexInput.style.color = 'white';
+      zIndexInput.style.border = '1px solid rgba(255, 255, 255, 0.3)';
+      zIndexInput.style.borderRadius = '3px';
+      zIndexInput.onchange = () =>
+        this._setLayerProp(layerName, 'zIndex', parseInt(zIndexInput.value));
       zIndexContainer.appendChild(zIndexInput);
 
       row.appendChild(zIndexContainer);
@@ -1525,15 +1478,15 @@ export class DebugUI {
       const controls = this.elements.layerControls[layerName];
 
       if (isAvailable) {
-        row.style.opacity = "1";
-        row.style.pointerEvents = "auto";
+        row.style.opacity = '1';
+        row.style.pointerEvents = 'auto';
         controls.visible.disabled = false;
         controls.alpha.disabled = false;
         controls.blendMode.disabled = false;
         controls.zIndex.disabled = false;
       } else {
-        row.style.opacity = "0.4";
-        row.style.pointerEvents = "none";
+        row.style.opacity = '0.4';
+        row.style.pointerEvents = 'none';
         controls.visible.disabled = true;
         controls.alpha.disabled = true;
         controls.blendMode.disabled = true;
@@ -1551,25 +1504,25 @@ export class DebugUI {
     const available = new Set();
 
     // ENTITIES is always available
-    available.add("ENTITIES");
+    available.add('ENTITIES');
 
     // BACKGROUND - always available since it can be set dynamically via
     // setStaticBackground(), setTilingBackground(), or setTilemapBackground()
-    available.add("BACKGROUND");
+    available.add('BACKGROUND');
 
     // DECALS - check particle.decals config
     if (config.particle?.decals) {
-      available.add("DECALS");
+      available.add('DECALS');
     }
 
     // LIGHTING related layers
     if (config.lighting?.enabled) {
-      available.add("LIGHTING");
-      available.add("LIGHT_GLOW");
+      available.add('LIGHTING');
+      available.add('LIGHT_GLOW');
 
       // CASTED_SHADOWS - only if shadows are enabled within lighting
       if (config.lighting?.shadowsEnabled) {
-        available.add("CASTED_SHADOWS");
+        available.add('CASTED_SHADOWS');
       }
     }
 
@@ -1581,12 +1534,12 @@ export class DebugUI {
    */
   _setLayerProp(layer, prop, value) {
     if (!this.scene || !this.scene.workers || !this.scene.workers.renderer) {
-      console.warn("DebugUI: Cannot set layer prop, renderer worker not available");
+      console.warn('DebugUI: Cannot set layer prop, renderer worker not available');
       return;
     }
 
     const message = {
-      msg: "setLayerProps",
+      msg: 'setLayerProps',
       layer: layer,
     };
     message[prop] = value;
@@ -1599,61 +1552,62 @@ export class DebugUI {
   // ========================================
 
   _createNavigationPanel() {
-    const panel = document.createElement("div");
-    panel.className = "debug-ui-panel debug-ui-nav-panel";
+    const panel = document.createElement('div');
+    panel.className = 'debug-ui-panel debug-ui-nav-panel';
 
     // Header row with refresh button
-    const headerRow = document.createElement("div");
-    headerRow.className = "debug-ui-row";
-    headerRow.style.marginBottom = "8px";
-    headerRow.style.justifyContent = "space-between";
+    const headerRow = document.createElement('div');
+    headerRow.className = 'debug-ui-row';
+    headerRow.style.marginBottom = '8px';
+    headerRow.style.justifyContent = 'space-between';
 
-    const title = document.createElement("span");
-    title.className = "debug-ui-stat";
-    title.style.fontWeight = "bold";
-    title.textContent = "Navigation Cache";
+    const title = document.createElement('span');
+    title.className = 'debug-ui-stat';
+    title.style.fontWeight = 'bold';
+    title.textContent = 'Navigation Cache';
     headerRow.appendChild(title);
 
-    const refreshBtn = document.createElement("button");
-    refreshBtn.className = "debug-ui-btn";
-    refreshBtn.textContent = "🔄 Refresh";
+    const refreshBtn = document.createElement('button');
+    refreshBtn.className = 'debug-ui-btn';
+    refreshBtn.textContent = '🔄 Refresh';
     refreshBtn.onclick = () => this._refreshNavigationLists();
     headerRow.appendChild(refreshBtn);
 
     panel.appendChild(headerRow);
 
     // Two-column layout for flowfields and paths
-    const columnsContainer = document.createElement("div");
-    columnsContainer.className = "debug-ui-nav-columns";
+    const columnsContainer = document.createElement('div');
+    columnsContainer.className = 'debug-ui-nav-columns';
 
     // Flowfields column
-    const flowfieldsCol = document.createElement("div");
-    flowfieldsCol.className = "debug-ui-nav-column";
+    const flowfieldsCol = document.createElement('div');
+    flowfieldsCol.className = 'debug-ui-nav-column';
 
-    const ffHeader = document.createElement("div");
-    ffHeader.className = "debug-ui-nav-header";
+    const ffHeader = document.createElement('div');
+    ffHeader.className = 'debug-ui-nav-header';
     ffHeader.innerHTML = "<span>🎯 Flowfields</span><span class='count' id='nav-ff-count'>0</span>";
     flowfieldsCol.appendChild(ffHeader);
 
-    const ffList = document.createElement("div");
-    ffList.className = "debug-ui-nav-list";
-    ffList.id = "nav-flowfields-list";
+    const ffList = document.createElement('div');
+    ffList.className = 'debug-ui-nav-list';
+    ffList.id = 'nav-flowfields-list';
     flowfieldsCol.appendChild(ffList);
 
     columnsContainer.appendChild(flowfieldsCol);
 
     // Paths column
-    const pathsCol = document.createElement("div");
-    pathsCol.className = "debug-ui-nav-column";
+    const pathsCol = document.createElement('div');
+    pathsCol.className = 'debug-ui-nav-column';
 
-    const pathHeader = document.createElement("div");
-    pathHeader.className = "debug-ui-nav-header";
-    pathHeader.innerHTML = "<span>📍 A* Paths</span><span class='count' id='nav-path-count'>0</span>";
+    const pathHeader = document.createElement('div');
+    pathHeader.className = 'debug-ui-nav-header';
+    pathHeader.innerHTML =
+      "<span>📍 A* Paths</span><span class='count' id='nav-path-count'>0</span>";
     pathsCol.appendChild(pathHeader);
 
-    const pathList = document.createElement("div");
-    pathList.className = "debug-ui-nav-list";
-    pathList.id = "nav-paths-list";
+    const pathList = document.createElement('div');
+    pathList.className = 'debug-ui-nav-list';
+    pathList.id = 'nav-paths-list';
     pathsCol.appendChild(pathList);
 
     columnsContainer.appendChild(pathsCol);
@@ -1661,19 +1615,19 @@ export class DebugUI {
     panel.appendChild(columnsContainer);
 
     // Control buttons row
-    const controlsRow = document.createElement("div");
-    controlsRow.className = "debug-ui-row";
-    controlsRow.style.marginTop = "8px";
-    controlsRow.style.gap = "8px";
+    const controlsRow = document.createElement('div');
+    controlsRow.className = 'debug-ui-row';
+    controlsRow.style.marginTop = '8px';
+    controlsRow.style.gap = '8px';
 
     // Show walkability grid toggle
-    const walkabilityBtn = document.createElement("button");
-    walkabilityBtn.className = "debug-ui-btn";
-    walkabilityBtn.textContent = "🗺️ Show Grid";
+    const walkabilityBtn = document.createElement('button');
+    walkabilityBtn.className = 'debug-ui-btn';
+    walkabilityBtn.textContent = '🗺️ Show Grid';
     walkabilityBtn.onclick = () => {
       this._showWalkabilityGrid = !this._showWalkabilityGrid;
-      walkabilityBtn.classList.toggle("active", this._showWalkabilityGrid);
-      walkabilityBtn.textContent = this._showWalkabilityGrid ? "🗺️ Hide Grid" : "🗺️ Show Grid";
+      walkabilityBtn.classList.toggle('active', this._showWalkabilityGrid);
+      walkabilityBtn.textContent = this._showWalkabilityGrid ? '🗺️ Hide Grid' : '🗺️ Show Grid';
 
       // Start/stop RAF loop based on active visualization
       if (this._hasActiveDebugVisualization()) {
@@ -1687,9 +1641,9 @@ export class DebugUI {
     this.elements.navWalkabilityBtn = walkabilityBtn;
 
     // Clear visualization button
-    const clearBtn = document.createElement("button");
-    clearBtn.className = "debug-ui-btn";
-    clearBtn.textContent = "❌ Clear All";
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'debug-ui-btn';
+    clearBtn.textContent = '❌ Clear All';
     clearBtn.onclick = () => this._clearNavVisualization();
     controlsRow.appendChild(clearBtn);
 
@@ -1698,8 +1652,8 @@ export class DebugUI {
     // Store references
     this.elements.navFlowfieldsList = ffList;
     this.elements.navPathsList = pathList;
-    this.elements.navFFCount = document.getElementById("nav-ff-count");
-    this.elements.navPathCount = document.getElementById("nav-path-count");
+    this.elements.navFFCount = document.getElementById('nav-ff-count');
+    this.elements.navPathCount = document.getElementById('nav-path-count');
 
     this.container.appendChild(panel);
     this.sections.navigation.panel = panel;
@@ -1710,7 +1664,7 @@ export class DebugUI {
    */
   _refreshNavigationLists() {
     if (!NavGrid._initialized) {
-      this._showNavMessage("NavGrid not initialized");
+      this._showNavMessage('NavGrid not initialized');
       return;
     }
 
@@ -1719,8 +1673,8 @@ export class DebugUI {
     const paths = NavGrid.getCachedPathsList();
 
     // Update counts
-    const ffCountEl = document.getElementById("nav-ff-count");
-    const pathCountEl = document.getElementById("nav-path-count");
+    const ffCountEl = document.getElementById('nav-ff-count');
+    const pathCountEl = document.getElementById('nav-path-count');
     if (ffCountEl) ffCountEl.textContent = flowfields.length;
     if (pathCountEl) pathCountEl.textContent = paths.length;
 
@@ -1744,7 +1698,7 @@ export class DebugUI {
     const container = this.elements.navFlowfieldsList;
     if (!container) return;
 
-    container.innerHTML = "";
+    container.innerHTML = '';
 
     if (flowfields.length === 0) {
       container.innerHTML = '<div class="debug-ui-nav-empty">No cached flowfields</div>';
@@ -1752,10 +1706,10 @@ export class DebugUI {
     }
 
     for (const ff of flowfields) {
-      const item = document.createElement("div");
-      item.className = "debug-ui-nav-item";
+      const item = document.createElement('div');
+      item.className = 'debug-ui-nav-item';
       if (this._selectedFlowfieldSlot === ff.slotIndex) {
-        item.classList.add("selected");
+        item.classList.add('selected');
       }
 
       item.innerHTML = `
@@ -1772,7 +1726,7 @@ export class DebugUI {
     const container = this.elements.navPathsList;
     if (!container) return;
 
-    container.innerHTML = "";
+    container.innerHTML = '';
 
     if (paths.length === 0) {
       container.innerHTML = '<div class="debug-ui-nav-empty">No cached paths</div>';
@@ -1780,10 +1734,10 @@ export class DebugUI {
     }
 
     for (const path of paths) {
-      const item = document.createElement("div");
-      item.className = "debug-ui-nav-item";
+      const item = document.createElement('div');
+      item.className = 'debug-ui-nav-item';
       if (this._selectedPathSlot === path.slotIndex) {
-        item.classList.add("selected");
+        item.classList.add('selected');
       }
 
       item.innerHTML = `
@@ -1847,8 +1801,8 @@ export class DebugUI {
     if (this._debugCanvas) return;
 
     // Create canvas overlay for all debug visualizations
-    const canvas = document.createElement("canvas");
-    canvas.id = "debug-visualization-canvas";
+    const canvas = document.createElement('canvas');
+    canvas.id = 'debug-visualization-canvas';
     canvas.style.cssText = `
       position: fixed;
       top: 0;
@@ -1865,7 +1819,7 @@ export class DebugUI {
 
     document.body.appendChild(canvas);
     this._debugCanvas = canvas;
-    this._debugCtx = canvas.getContext("2d");
+    this._debugCtx = canvas.getContext('2d');
 
     // Handle resize
     this._resizeHandler = () => {
@@ -1874,7 +1828,7 @@ export class DebugUI {
         this._debugCanvas.height = window.innerHeight;
       }
     };
-    window.addEventListener("resize", this._resizeHandler);
+    window.addEventListener('resize', this._resizeHandler);
   }
 
   _clearNavVisualization() {
@@ -1884,8 +1838,8 @@ export class DebugUI {
 
     // Reset walkability button state
     if (this.elements.navWalkabilityBtn) {
-      this.elements.navWalkabilityBtn.classList.remove("active");
-      this.elements.navWalkabilityBtn.textContent = "🗺️ Show Grid";
+      this.elements.navWalkabilityBtn.classList.remove('active');
+      this.elements.navWalkabilityBtn.textContent = '🗺️ Show Grid';
     }
 
     // Refresh lists to clear selection state
@@ -1903,11 +1857,7 @@ export class DebugUI {
    */
   _clearDebugCanvas() {
     if (this._debugCtx && this._debugCanvas) {
-      this._debugCtx.clearRect(
-        0, 0,
-        this._debugCanvas.width,
-        this._debugCanvas.height
-      );
+      this._debugCtx.clearRect(0, 0, this._debugCanvas.width, this._debugCanvas.height);
     }
   }
 
@@ -1915,9 +1865,9 @@ export class DebugUI {
    * Check if any nav visualization is active
    */
   _hasActiveNavVisualization() {
-    return this._showWalkabilityGrid ||
-      this._selectedFlowfieldSlot >= 0 ||
-      this._selectedPathSlot >= 0;
+    return (
+      this._showWalkabilityGrid || this._selectedFlowfieldSlot >= 0 || this._selectedPathSlot >= 0
+    );
   }
 
   /**
@@ -2049,8 +1999,14 @@ export class DebugUI {
     // Calculate visible cell range
     const startCellX = Math.max(0, Math.floor(camera.x / cellSize));
     const startCellY = Math.max(0, Math.floor(camera.y / cellSize));
-    const endCellX = Math.min(gridWidth, Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1);
-    const endCellY = Math.min(gridHeight, Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1);
+    const endCellX = Math.min(
+      gridWidth,
+      Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1
+    );
+    const endCellY = Math.min(
+      gridHeight,
+      Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1
+    );
 
     // Calculate world bounds for visible area
     const worldStartX = startCellX * cellSize;
@@ -2059,7 +2015,7 @@ export class DebugUI {
     const worldEndY = endCellY * cellSize;
 
     // 1. Draw only blocked (unwalkable) cells
-    ctx.fillStyle = "rgba(255, 50, 50, 0.5)";
+    ctx.fillStyle = 'rgba(255, 50, 50, 0.5)';
     for (let y = startCellY; y < endCellY; y++) {
       for (let x = startCellX; x < endCellX; x++) {
         const cellIndex = y * gridWidth + x;
@@ -2073,7 +2029,7 @@ export class DebugUI {
     }
 
     // 2. Draw grid lines as continuous lines (much faster than individual rects)
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     ctx.lineWidth = 1;
     ctx.beginPath();
 
@@ -2113,7 +2069,7 @@ export class DebugUI {
     const targetY = Math.floor(targetCell / gridWidth) * cellSize + cellSize / 2;
 
     // Draw arrows for each cell (skip if direction is NONE)
-    ctx.strokeStyle = "rgba(0, 200, 255, 0.7)";
+    ctx.strokeStyle = 'rgba(0, 200, 255, 0.7)';
     ctx.lineWidth = 1.5;
 
     const arrowLen = cellSize * 0.35 * zoom;
@@ -2121,8 +2077,14 @@ export class DebugUI {
     // Calculate visible cell range for optimization
     const startCellX = Math.max(0, Math.floor(camera.x / cellSize) - 1);
     const startCellY = Math.max(0, Math.floor(camera.y / cellSize) - 1);
-    const endCellX = Math.min(gridWidth, Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1);
-    const endCellY = Math.min(gridHeight, Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1);
+    const endCellX = Math.min(
+      gridWidth,
+      Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1
+    );
+    const endCellY = Math.min(
+      gridHeight,
+      Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1
+    );
 
     for (let y = startCellY; y < endCellY; y++) {
       for (let x = startCellX; x < endCellX; x++) {
@@ -2170,12 +2132,12 @@ export class DebugUI {
     const targetSx = (targetX - camera.x) * zoom;
     const targetSy = (targetY - camera.y) * zoom;
 
-    ctx.fillStyle = "rgba(255, 100, 100, 0.9)";
+    ctx.fillStyle = 'rgba(255, 100, 100, 0.9)';
     ctx.beginPath();
     ctx.arc(targetSx, targetSy, 8 * zoom, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = "white";
+    ctx.strokeStyle = 'white';
     ctx.lineWidth = 2;
     ctx.stroke();
   }
@@ -2188,10 +2150,10 @@ export class DebugUI {
     if (!pathPoints || pathPoints.length === 0) return;
 
     // Draw path line
-    ctx.strokeStyle = "rgba(255, 200, 0, 0.9)";
+    ctx.strokeStyle = 'rgba(255, 200, 0, 0.9)';
     ctx.lineWidth = 3 * zoom;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
     ctx.beginPath();
     for (let i = 0; i < pathPoints.length; i++) {
@@ -2215,20 +2177,20 @@ export class DebugUI {
 
       // Start = green, End = red, Middle = yellow
       if (i === 0) {
-        ctx.fillStyle = "rgba(100, 255, 100, 0.9)";
+        ctx.fillStyle = 'rgba(100, 255, 100, 0.9)';
       } else if (i === pathPoints.length - 1) {
-        ctx.fillStyle = "rgba(255, 100, 100, 0.9)";
+        ctx.fillStyle = 'rgba(255, 100, 100, 0.9)';
       } else {
-        ctx.fillStyle = "rgba(255, 200, 0, 0.7)";
+        ctx.fillStyle = 'rgba(255, 200, 0, 0.7)';
       }
 
-      const radius = (i === 0 || i === pathPoints.length - 1) ? 6 * zoom : 4 * zoom;
+      const radius = i === 0 || i === pathPoints.length - 1 ? 6 * zoom : 4 * zoom;
 
       ctx.beginPath();
       ctx.arc(sx, sy, radius, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.strokeStyle = "white";
+      ctx.strokeStyle = 'white';
       ctx.lineWidth = 1;
       ctx.stroke();
     }
@@ -2255,7 +2217,10 @@ export class DebugUI {
     const startCellX = Math.max(0, Math.floor(camera.x / cellSize));
     const startCellY = Math.max(0, Math.floor(camera.y / cellSize));
     const endCellX = Math.min(gridCols, Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1);
-    const endCellY = Math.min(gridRows, Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1);
+    const endCellY = Math.min(
+      gridRows,
+      Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1
+    );
 
     // Calculate world bounds for visible area
     const worldStartX = startCellX * cellSize;
@@ -2263,7 +2228,7 @@ export class DebugUI {
     const worldEndX = Math.min(endCellX * cellSize, worldWidth);
     const worldEndY = Math.min(endCellY * cellSize, worldHeight);
 
-    ctx.strokeStyle = "rgba(255, 255, 0, 0.2)";
+    ctx.strokeStyle = 'rgba(255, 255, 0, 0.2)';
     ctx.lineWidth = 1;
     ctx.beginPath();
 
@@ -2306,7 +2271,7 @@ export class DebugUI {
     const offsetX = Collider.offsetX;
     const offsetY = Collider.offsetY;
 
-    ctx.lineWidth = 2 //* zoom;
+    ctx.lineWidth = 2; //* zoom;
 
     for (let i = 0; i < Transform.active.length; i++) {
       if (!active[i] || !isOnScreen[i]) continue;
@@ -2319,7 +2284,7 @@ export class DebugUI {
       const sy = (posY - camera.y) * zoom;
 
       // Choose color based on trigger status
-      ctx.strokeStyle = isTrigger[i] ? "rgba(255, 255, 0, 0.8)" : "rgba(0, 255, 0, 0.8)";
+      ctx.strokeStyle = isTrigger[i] ? 'rgba(255, 255, 0, 0.8)' : 'rgba(0, 255, 0, 0.8)';
 
       if (shapeType[i] === 0) {
         // Circle shape
@@ -2355,7 +2320,7 @@ export class DebugUI {
     const vx = RigidBody.vx;
     const vy = RigidBody.vy;
 
-    ctx.strokeStyle = "rgba(0, 136, 255, 0.9)";
+    ctx.strokeStyle = 'rgba(0, 136, 255, 0.9)';
     ctx.lineWidth = 2 / zoom;
 
     const scale = 10; // Scale factor for visualization
@@ -2415,7 +2380,7 @@ export class DebugUI {
     const ax = RigidBody.ax;
     const ay = RigidBody.ay;
 
-    ctx.strokeStyle = "rgba(255, 0, 68, 0.9)";
+    ctx.strokeStyle = 'rgba(255, 0, 68, 0.9)';
     ctx.lineWidth = 2 / zoom;
 
     const scale = 50; // Scale factor for visualization (acceleration is smaller)
@@ -2517,7 +2482,7 @@ export class DebugUI {
 
     // Highlight the selected entity with a bright ring
     const highlightRadius = (Collider.radius[closestEntity] * 1.5 || 10) * zoom;
-    ctx.strokeStyle = "rgba(255, 255, 0, 1.0)";
+    ctx.strokeStyle = 'rgba(255, 255, 0, 1.0)';
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.arc(mySx, mySy, highlightRadius, 0, Math.PI * 2);
@@ -2527,7 +2492,7 @@ export class DebugUI {
     const offset = closestEntity * stride;
     const neighborCount = neighborData[offset];
 
-    ctx.strokeStyle = "rgba(0, 255, 255, 0.7)";
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.7)';
     ctx.lineWidth = 2;
 
     for (let n = 0; n < neighborCount; n++) {
@@ -2547,14 +2512,14 @@ export class DebugUI {
       ctx.stroke();
 
       // Draw small circle on neighbor
-      ctx.fillStyle = "rgba(0, 255, 255, 0.5)";
+      ctx.fillStyle = 'rgba(0, 255, 255, 0.5)';
       ctx.beginPath();
       ctx.arc(neighborSx, neighborSy, 3 * zoom, 0, Math.PI * 2);
       ctx.fill();
     }
 
     // Draw entity info marker
-    ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
     ctx.beginPath();
     ctx.arc(mySx, mySy - 20, 4 * zoom, 0, Math.PI * 2);
     ctx.fill();
@@ -2593,7 +2558,7 @@ export class DebugUI {
 
       if (didHit) {
         // Hit: Draw line to hit point in green
-        ctx.strokeStyle = "rgba(0, 255, 0, 0.8)";
+        ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(sStartX, sStartY);
@@ -2601,7 +2566,7 @@ export class DebugUI {
         ctx.stroke();
 
         // Draw dashed line from hit to end in red
-        ctx.strokeStyle = "rgba(255, 0, 0, 0.4)";
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.4)';
         ctx.lineWidth = 1;
         ctx.setLineDash([5, 5]);
         ctx.beginPath();
@@ -2611,13 +2576,13 @@ export class DebugUI {
         ctx.setLineDash([]);
 
         // Draw hit point circle
-        ctx.fillStyle = "rgba(255, 0, 0, 1.0)";
+        ctx.fillStyle = 'rgba(255, 0, 0, 1.0)';
         ctx.beginPath();
         ctx.arc(sHitX, sHitY, 4, 0, Math.PI * 2);
         ctx.fill();
 
         // Draw impact cross
-        ctx.strokeStyle = "rgba(255, 255, 255, 1.0)";
+        ctx.strokeStyle = 'rgba(255, 255, 255, 1.0)';
         ctx.lineWidth = 2;
         const crossSize = 8;
         ctx.beginPath();
@@ -2628,7 +2593,7 @@ export class DebugUI {
         ctx.stroke();
       } else {
         // Miss: Draw full line in yellow/orange
-        ctx.strokeStyle = "rgba(255, 170, 0, 0.5)";
+        ctx.strokeStyle = 'rgba(255, 170, 0, 0.5)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(sStartX, sStartY);
@@ -2637,7 +2602,7 @@ export class DebugUI {
       }
 
       // Draw start point
-      ctx.fillStyle = "rgba(0, 255, 255, 0.8)";
+      ctx.fillStyle = 'rgba(0, 255, 255, 0.8)';
       ctx.beginPath();
       ctx.arc(sStartX, sStartY, 3, 0, Math.PI * 2);
       ctx.fill();
@@ -2655,8 +2620,8 @@ export class DebugUI {
     const isOnScreen = SpriteRenderer.isItOnScreen;
 
     ctx.font = `${Math.max(10, 12 / zoom)}px monospace`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "bottom";
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
 
     for (let i = 0; i < Transform.active.length; i++) {
       if (!active[i] || !isOnScreen[i]) continue;
@@ -2673,16 +2638,11 @@ export class DebugUI {
       const padding = 2;
 
       // Draw background
-      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-      ctx.fillRect(
-        sx - metrics.width / 2 - padding,
-        sy - 12,
-        metrics.width + padding * 2,
-        14
-      );
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillRect(sx - metrics.width / 2 - padding, sy - 12, metrics.width + padding * 2, 14);
 
       // Draw text
-      ctx.fillStyle = "rgba(255, 255, 255, 1.0)";
+      ctx.fillStyle = 'rgba(255, 255, 255, 1.0)';
       ctx.fillText(text, sx, sy);
     }
   }
@@ -2722,13 +2682,13 @@ export class DebugUI {
     const sHeight = h * zoom;
 
     // Draw bounding box
-    ctx.strokeStyle = "rgba(255, 200, 100, 1.0)";
+    ctx.strokeStyle = 'rgba(255, 200, 100, 1.0)';
     ctx.lineWidth = 2;
     ctx.strokeRect(sLeft, sTop, sWidth, sHeight);
 
     // Draw corner markers
     const cornerSize = 6;
-    ctx.fillStyle = "rgba(255, 200, 100, 0.8)";
+    ctx.fillStyle = 'rgba(255, 200, 100, 0.8)';
     const corners = [
       [sLeft, sTop],
       [sLeft + sWidth, sTop],
@@ -2747,30 +2707,25 @@ export class DebugUI {
     const labelY = sTop - 15;
     const text = String(selectedIdx);
 
-    ctx.font = "12px monospace";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "bottom";
+    ctx.font = '12px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
 
     const metrics = ctx.measureText(text);
     const padding = 4;
 
     // Draw label background
-    ctx.fillStyle = "rgba(255, 200, 100, 0.9)";
-    ctx.fillRect(
-      sx - metrics.width / 2 - padding,
-      labelY - 12,
-      metrics.width + padding * 2,
-      16
-    );
+    ctx.fillStyle = 'rgba(255, 200, 100, 0.9)';
+    ctx.fillRect(sx - metrics.width / 2 - padding, labelY - 12, metrics.width + padding * 2, 16);
 
     // Draw label text
-    ctx.fillStyle = "rgba(0, 0, 0, 1.0)";
+    ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
     ctx.fillText(text, sx, labelY);
   }
 
   _createToolIndicator() {
-    this.elements.toolIndicator = document.createElement("div");
-    this.elements.toolIndicator.className = "debug-ui-tool-indicator";
+    this.elements.toolIndicator = document.createElement('div');
+    this.elements.toolIndicator.className = 'debug-ui-tool-indicator';
     document.body.appendChild(this.elements.toolIndicator);
   }
 
@@ -2779,17 +2734,17 @@ export class DebugUI {
     if (!indicator) return;
 
     if (this.activeSpawnerType) {
-      const bulkText = this.bulkSpawnEnabled ? " ×50" : "";
+      const bulkText = this.bulkSpawnEnabled ? ' ×50' : '';
       indicator.textContent = `🎨 Painting: ${this.activeSpawnerType}${bulkText} (click & drag to spawn)`;
-      indicator.className = "debug-ui-tool-indicator visible spawner";
+      indicator.className = 'debug-ui-tool-indicator visible spawner';
     } else if (this.eraserActive) {
       indicator.textContent = `🧹 Eraser Active (click & drag to despawn)`;
-      indicator.className = "debug-ui-tool-indicator visible eraser";
+      indicator.className = 'debug-ui-tool-indicator visible eraser';
     } else if (this.inspectorActive) {
       indicator.textContent = `🔍 Inspector Active (click on an entity to inspect)`;
-      indicator.className = "debug-ui-tool-indicator visible inspector";
+      indicator.className = 'debug-ui-tool-indicator visible inspector';
     } else {
-      indicator.className = "debug-ui-tool-indicator";
+      indicator.className = 'debug-ui-tool-indicator';
     }
   }
 
@@ -2801,8 +2756,8 @@ export class DebugUI {
    * Create the inspector panel (hidden by default)
    */
   _createInspectorPanel() {
-    const panel = document.createElement("div");
-    panel.className = "debug-ui-inspector-panel";
+    const panel = document.createElement('div');
+    panel.className = 'debug-ui-inspector-panel';
     panel.style.cssText = `
       position: fixed;
       left: 0;
@@ -2824,7 +2779,7 @@ export class DebugUI {
     `;
 
     // Header
-    const header = document.createElement("div");
+    const header = document.createElement('div');
     header.style.cssText = `
       padding: 10px 12px;
       background: linear-gradient(135deg, rgba(255, 200, 100, 0.2), rgba(255, 150, 50, 0.1));
@@ -2837,17 +2792,17 @@ export class DebugUI {
       z-index: 1;
     `;
 
-    const title = document.createElement("span");
+    const title = document.createElement('span');
     title.style.cssText = `
       font-weight: bold;
       font-size: 12px;
       color: #ffc864;
     `;
-    title.textContent = "🔍 Entity Inspector";
+    title.textContent = '🔍 Entity Inspector';
     header.appendChild(title);
 
     // Close button
-    const closeBtn = document.createElement("button");
+    const closeBtn = document.createElement('button');
     closeBtn.style.cssText = `
       background: rgba(255, 100, 100, 0.3);
       border: 1px solid rgba(255, 100, 100, 0.5);
@@ -2857,14 +2812,14 @@ export class DebugUI {
       cursor: pointer;
       font-size: 12px;
     `;
-    closeBtn.textContent = "✕ Close";
+    closeBtn.textContent = '✕ Close';
     closeBtn.onclick = () => this._clearSelection();
     header.appendChild(closeBtn);
 
     panel.appendChild(header);
 
     // Entity info header
-    this.elements.inspectorEntityInfo = document.createElement("div");
+    this.elements.inspectorEntityInfo = document.createElement('div');
     this.elements.inspectorEntityInfo.style.cssText = `
       padding: 8px 12px;
       background: rgba(0, 0, 0, 0.3);
@@ -2874,7 +2829,7 @@ export class DebugUI {
     panel.appendChild(this.elements.inspectorEntityInfo);
 
     // Components container
-    this.elements.inspectorComponentsContainer = document.createElement("div");
+    this.elements.inspectorComponentsContainer = document.createElement('div');
     this.elements.inspectorComponentsContainer.style.cssText = `
       padding: 8px;
       display: flex;
@@ -2910,7 +2865,7 @@ export class DebugUI {
    */
   _updateInspectorButtonState() {
     if (this.elements.inspectorBtn) {
-      this.elements.inspectorBtn.classList.toggle("active", this.inspectorActive);
+      this.elements.inspectorBtn.classList.toggle('active', this.inspectorActive);
     }
   }
 
@@ -2949,9 +2904,7 @@ export class DebugUI {
 
       // Skip internal entities
       const entityType = Transform.entityType[neighborIdx];
-      const reg = this.scene.registeredClasses.find(
-        (r) => r.entityType === entityType
-      );
+      const reg = this.scene.registeredClasses.find((r) => r.entityType === entityType);
       if (reg && internalEntities.has(reg.class.name)) continue;
 
       // Use precomputed squared distance
@@ -3019,7 +2972,7 @@ export class DebugUI {
     if (!this.elements.inspectorPanel) {
       this._createInspectorPanel();
     }
-    this.elements.inspectorPanel.style.display = "flex";
+    this.elements.inspectorPanel.style.display = 'flex';
     this._inspectorPanelVisible = true;
   }
 
@@ -3028,7 +2981,7 @@ export class DebugUI {
    */
   _hideInspectorPanel() {
     if (this.elements.inspectorPanel) {
-      this.elements.inspectorPanel.style.display = "none";
+      this.elements.inspectorPanel.style.display = 'none';
     }
     this._inspectorPanelVisible = false;
   }
@@ -3044,14 +2997,12 @@ export class DebugUI {
     const entityType = Transform.entityType[entityIndex];
 
     // Find the registered class info
-    const regInfo = this.scene.registeredClasses.find(
-      (r) => r.entityType === entityType
-    );
+    const regInfo = this.scene.registeredClasses.find((r) => r.entityType === entityType);
 
     // Update entity info header
     const infoEl = this.elements.inspectorEntityInfo;
     if (infoEl) {
-      const className = regInfo ? regInfo.class.name : "Unknown";
+      const className = regInfo ? regInfo.class.name : 'Unknown';
       infoEl.innerHTML = `
         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
           <span style="color: #fff; font-weight: bold;">${className}</span>
@@ -3066,7 +3017,7 @@ export class DebugUI {
     const container = this.elements.inspectorComponentsContainer;
     if (!container) return;
 
-    container.innerHTML = "";
+    container.innerHTML = '';
     this.elements.inspectorComponentRows = {};
 
     // Create section for each component
@@ -3075,7 +3026,7 @@ export class DebugUI {
       const color = getComponentColor(componentName);
 
       // Component section
-      const section = document.createElement("div");
+      const section = document.createElement('div');
       section.style.cssText = `
         background: rgba(0, 0, 0, 0.3);
         border: 1px solid ${color.css};
@@ -3085,7 +3036,7 @@ export class DebugUI {
       `;
 
       // Component header
-      const header = document.createElement("div");
+      const header = document.createElement('div');
       header.style.cssText = `
         padding: 6px 8px;
         background: linear-gradient(90deg, ${color.css}22, transparent);
@@ -3098,7 +3049,7 @@ export class DebugUI {
       section.appendChild(header);
 
       // Properties table
-      const propsContainer = document.createElement("div");
+      const propsContainer = document.createElement('div');
       propsContainer.style.cssText = `
         padding: 4px 0;
       `;
@@ -3107,7 +3058,7 @@ export class DebugUI {
       this.elements.inspectorComponentRows[componentName] = {};
 
       for (const propName of propNames) {
-        const row = document.createElement("div");
+        const row = document.createElement('div');
         row.style.cssText = `
           display: flex;
           justify-content: space-between;
@@ -3115,14 +3066,14 @@ export class DebugUI {
           border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         `;
 
-        const label = document.createElement("span");
+        const label = document.createElement('span');
         label.style.cssText = `color: #888; font-size: 12px;`;
         label.textContent = propName;
         row.appendChild(label);
 
-        const value = document.createElement("span");
+        const value = document.createElement('span');
         value.style.cssText = `color: #fff; font-size: 12px; font-family: monospace;`;
-        value.textContent = "--";
+        value.textContent = '--';
         row.appendChild(value);
 
         propsContainer.appendChild(row);
@@ -3167,9 +3118,7 @@ export class DebugUI {
 
     // Get registered class info for custom components
     const entityType = Transform.entityType[entityIndex];
-    const regInfo = this.scene?.registeredClasses?.find(
-      (r) => r.entityType === entityType
-    );
+    const regInfo = this.scene?.registeredClasses?.find((r) => r.entityType === entityType);
     const components = regInfo ? regInfo.components : [Transform];
 
     // Update each component's values
@@ -3207,15 +3156,15 @@ export class DebugUI {
   }
 
   _createStat(text, className) {
-    const span = document.createElement("span");
+    const span = document.createElement('span');
     span.className = `debug-ui-stat ${className}`;
     span.textContent = text;
     return span;
   }
 
   _createDivider() {
-    const div = document.createElement("div");
-    div.className = "debug-ui-divider";
+    const div = document.createElement('div');
+    div.className = 'debug-ui-divider';
     return div;
   }
 
@@ -3232,10 +3181,10 @@ export class DebugUI {
     const container = this.elements.entityToolsContainer;
     if (!container) return;
 
-    container.innerHTML = "";
+    container.innerHTML = '';
 
     // Internal entity types that shouldn't have tools
-    const internalEntities = new Set(["Mouse", "Flash"]);
+    const internalEntities = new Set(['Mouse', 'Flash']);
 
     // Get spawnable entity classes from the scene
     const spawnableClasses = (this.scene.registeredClasses || []).filter(
@@ -3245,15 +3194,15 @@ export class DebugUI {
     if (spawnableClasses.length === 0) return;
 
     // Painter tools row
-    const paintersRow = document.createElement("div");
-    paintersRow.className = "debug-ui-row";
-    paintersRow.style.gap = "8px";
-    paintersRow.style.flexWrap = "wrap";
+    const paintersRow = document.createElement('div');
+    paintersRow.className = 'debug-ui-row';
+    paintersRow.style.gap = '8px';
+    paintersRow.style.flexWrap = 'wrap';
 
     // Label
-    const paintersLabel = document.createElement("span");
-    paintersLabel.className = "debug-ui-stat";
-    paintersLabel.textContent = "Paint:";
+    const paintersLabel = document.createElement('span');
+    paintersLabel.className = 'debug-ui-stat';
+    paintersLabel.textContent = 'Paint:';
     paintersRow.appendChild(paintersLabel);
 
     this.elements.spawnerButtons = {};
@@ -3263,11 +3212,10 @@ export class DebugUI {
     for (const reg of spawnableClasses) {
       const className = reg.class.name;
 
-      const btn = document.createElement("button");
-      btn.className = "debug-ui-btn tool";
-      btn.textContent = "🎨 " + className;
-      btn.title =
-        "Toggle " + className + " painter (click & drag on canvas to spawn)";
+      const btn = document.createElement('button');
+      btn.className = 'debug-ui-btn tool';
+      btn.textContent = '🎨 ' + className;
+      btn.title = 'Toggle ' + className + ' painter (click & drag on canvas to spawn)';
       btn.onclick = () => this._toggleSpawner(className);
       this.elements.spawnerButtons[className] = btn;
       this._spawnerButtonKeys.push(className); // Cache key
@@ -3275,11 +3223,10 @@ export class DebugUI {
     }
 
     // Eraser button
-    this.elements.eraserButton = document.createElement("button");
-    this.elements.eraserButton.className = "debug-ui-btn danger";
-    this.elements.eraserButton.textContent = "🧹 Eraser";
-    this.elements.eraserButton.title =
-      "Toggle eraser (click & drag to despawn entities)";
+    this.elements.eraserButton = document.createElement('button');
+    this.elements.eraserButton.className = 'debug-ui-btn danger';
+    this.elements.eraserButton.textContent = '🧹 Eraser';
+    this.elements.eraserButton.title = 'Toggle eraser (click & drag to despawn entities)';
     this.elements.eraserButton.onclick = () => this._toggleEraser();
     paintersRow.appendChild(this.elements.eraserButton);
 
@@ -3287,45 +3234,45 @@ export class DebugUI {
     paintersRow.appendChild(this._createDivider());
 
     // Bulk spawn checkbox
-    const bulkLabel = document.createElement("label");
-    bulkLabel.style.display = "flex";
-    bulkLabel.style.alignItems = "center";
-    bulkLabel.style.gap = "4px";
-    bulkLabel.style.color = "rgba(255, 255, 255, 0.7)";
-    bulkLabel.style.cursor = "pointer";
-    bulkLabel.style.fontSize = "10px";
+    const bulkLabel = document.createElement('label');
+    bulkLabel.style.display = 'flex';
+    bulkLabel.style.alignItems = 'center';
+    bulkLabel.style.gap = '4px';
+    bulkLabel.style.color = 'rgba(255, 255, 255, 0.7)';
+    bulkLabel.style.cursor = 'pointer';
+    bulkLabel.style.fontSize = '10px';
 
-    this.elements.bulkSpawnCheckbox = document.createElement("input");
-    this.elements.bulkSpawnCheckbox.type = "checkbox";
+    this.elements.bulkSpawnCheckbox = document.createElement('input');
+    this.elements.bulkSpawnCheckbox.type = 'checkbox';
     this.elements.bulkSpawnCheckbox.checked = this.bulkSpawnEnabled;
-    this.elements.bulkSpawnCheckbox.style.cursor = "pointer";
+    this.elements.bulkSpawnCheckbox.style.cursor = 'pointer';
     this.elements.bulkSpawnCheckbox.onchange = (e) => {
       this.bulkSpawnEnabled = e.target.checked;
       this._updateToolIndicator();
     };
 
     bulkLabel.appendChild(this.elements.bulkSpawnCheckbox);
-    bulkLabel.appendChild(document.createTextNode("×50"));
+    bulkLabel.appendChild(document.createTextNode('×50'));
     paintersRow.appendChild(bulkLabel);
 
     container.appendChild(paintersRow);
 
     // Clear all row
-    const clearRow = document.createElement("div");
-    clearRow.className = "debug-ui-row";
-    clearRow.style.marginTop = "8px";
-    clearRow.style.gap = "8px";
+    const clearRow = document.createElement('div');
+    clearRow.className = 'debug-ui-row';
+    clearRow.style.marginTop = '8px';
+    clearRow.style.gap = '8px';
 
-    const clearLabel = document.createElement("span");
-    clearLabel.className = "debug-ui-stat";
-    clearLabel.textContent = "Clear:";
+    const clearLabel = document.createElement('span');
+    clearLabel.className = 'debug-ui-stat';
+    clearLabel.textContent = 'Clear:';
     clearRow.appendChild(clearLabel);
 
     // Clear buttons for each entity type
     for (const reg of spawnableClasses) {
       const className = reg.class.name;
-      const clearBtn = document.createElement("button");
-      clearBtn.className = "debug-ui-btn danger";
+      const clearBtn = document.createElement('button');
+      clearBtn.className = 'debug-ui-btn danger';
       clearBtn.textContent = `🗑 ${className}`;
       clearBtn.title = `Despawn all ${className} entities`;
       clearBtn.onclick = () => {
@@ -3371,7 +3318,11 @@ export class DebugUI {
    * Update Mouse.isDebugToolActive flag to block game input when tools are active
    */
   _updateDebugToolFlag() {
-    Mouse.isDebugToolActive = !!(this.activeSpawnerType || this.eraserActive || this.inspectorActive);
+    Mouse.isDebugToolActive = !!(
+      this.activeSpawnerType ||
+      this.eraserActive ||
+      this.inspectorActive
+    );
   }
 
   _updateToolButtonStates() {
@@ -3384,9 +3335,9 @@ export class DebugUI {
         const className = keys[i];
         const btn = spawnerButtons[className];
         const shouldBeActive = activeType === className;
-        const isActive = btn.classList.contains("active");
+        const isActive = btn.classList.contains('active');
         if (shouldBeActive !== isActive) {
-          btn.classList.toggle("active", shouldBeActive);
+          btn.classList.toggle('active', shouldBeActive);
         }
       }
     }
@@ -3394,9 +3345,9 @@ export class DebugUI {
     // Update eraser button - only toggle if state changed
     const eraserBtn = this.elements.eraserButton;
     if (eraserBtn) {
-      const isActive = eraserBtn.classList.contains("active");
+      const isActive = eraserBtn.classList.contains('active');
       if (this.eraserActive !== isActive) {
-        eraserBtn.classList.toggle("active", this.eraserActive);
+        eraserBtn.classList.toggle('active', this.eraserActive);
       }
     }
   }
@@ -3430,8 +3381,8 @@ export class DebugUI {
     };
 
     // Use capture phase to get events before game handlers
-    document.addEventListener("mousedown", this._onToolMouseDown, true);
-    document.addEventListener("mouseup", this._onToolMouseUp, true);
+    document.addEventListener('mousedown', this._onToolMouseDown, true);
+    document.addEventListener('mouseup', this._onToolMouseUp, true);
   }
 
   _handlePaintAction() {
@@ -3478,7 +3429,7 @@ export class DebugUI {
     if (!this.scene || !this.gameEngine) return;
 
     const eraserRadiusSq = 50 * 50; // Squared pixels for comparison with distance data
-    const internalEntities = new Set(["Mouse", "Flash"]);
+    const internalEntities = new Set(['Mouse', 'Flash']);
 
     // Get Mouse's neighbors from spatial worker data (Mouse is always entity 0)
     const neighborData = GameObject.neighborData;
@@ -3506,9 +3457,7 @@ export class DebugUI {
 
       // Skip internal entities
       const entityType = Transform.entityType[neighborIdx];
-      const reg = this.scene.registeredClasses.find(
-        (r) => r.entityType === entityType
-      );
+      const reg = this.scene.registeredClasses.find((r) => r.entityType === entityType);
       if (reg && internalEntities.has(reg.class.name)) continue;
 
       // Use precomputed squared distance from spatial worker
@@ -3534,14 +3483,13 @@ export class DebugUI {
   _setupKeyboardShortcuts() {
     this._keyHandler = (e) => {
       // Ignore if typing in input
-      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")
-        return;
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
       const key = e.key.toLowerCase();
 
-      if (key === "h") {
+      if (key === 'h') {
         this.toggle();
-      } else if (key === "escape") {
+      } else if (key === 'escape') {
         // ESC to deselect all tools and clear selection
         this.activeSpawnerType = null;
         this.eraserActive = false;
@@ -3552,21 +3500,21 @@ export class DebugUI {
         this._updateToolButtonStates();
         this._updateToolIndicator();
         this._updateInspectorButtonState();
-      } else if (key === "i") {
+      } else if (key === 'i') {
         // Toggle inspector mode
         this._toggleInspector();
-      } else if (key >= "1" && key <= "7") {
+      } else if (key >= '1' && key <= '7') {
         const keyMap = {
-          1: "colliders",
-          2: "velocity",
-          3: "acceleration",
-          4: "neighbors",
-          5: "spatialGrid",
-          6: "aabb",
-          7: "entityIndices",
+          1: 'colliders',
+          2: 'velocity',
+          3: 'acceleration',
+          4: 'neighbors',
+          5: 'spatialGrid',
+          6: 'aabb',
+          7: 'entityIndices',
         };
         this._toggleVisualAid(keyMap[key]);
-      } else if (key === "0") {
+      } else if (key === '0') {
         if (this.debugFlags) {
           this.debugFlags.disableAll();
           this._updateVisualAidsState();
@@ -3574,7 +3522,7 @@ export class DebugUI {
       }
     };
 
-    window.addEventListener("keydown", this._keyHandler);
+    window.addEventListener('keydown', this._keyHandler);
   }
 
   // ========================================
@@ -3582,15 +3530,15 @@ export class DebugUI {
   // ========================================
 
   toggle() {
-    this.container.classList.toggle("hidden");
+    this.container.classList.toggle('hidden');
   }
 
   show() {
-    this.container.classList.remove("hidden");
+    this.container.classList.remove('hidden');
   }
 
   hide() {
-    this.container.classList.add("hidden");
+    this.container.classList.add('hidden');
   }
 
   // ========================================
@@ -3601,14 +3549,14 @@ export class DebugUI {
     this.stop();
 
     if (this._keyHandler) {
-      window.removeEventListener("keydown", this._keyHandler);
+      window.removeEventListener('keydown', this._keyHandler);
     }
 
     if (this._onToolMouseDown) {
-      document.removeEventListener("mousedown", this._onToolMouseDown, true);
+      document.removeEventListener('mousedown', this._onToolMouseDown, true);
     }
     if (this._onToolMouseUp) {
-      document.removeEventListener("mouseup", this._onToolMouseUp, true);
+      document.removeEventListener('mouseup', this._onToolMouseUp, true);
     }
 
     // Clear debug tool flag
@@ -3619,12 +3567,10 @@ export class DebugUI {
     }
 
     if (this.elements.toolIndicator && this.elements.toolIndicator.parentNode) {
-      this.elements.toolIndicator.parentNode.removeChild(
-        this.elements.toolIndicator
-      );
+      this.elements.toolIndicator.parentNode.removeChild(this.elements.toolIndicator);
     }
 
-    const styles = document.getElementById("debug-ui-styles");
+    const styles = document.getElementById('debug-ui-styles');
     if (styles) {
       styles.parentNode.removeChild(styles);
     }

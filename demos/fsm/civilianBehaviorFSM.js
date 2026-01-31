@@ -1,10 +1,10 @@
 // CivilianBehaviorFSM.js - FSM component for civilian behavior
 // States: IDLE (do nothing) and FLEEING (run away from predators)
 
-import WEED from "/src/index.js";
+import WEED from '/src/index.js';
 
-import { Player } from "../gameObjects/player.js";
-import { MySoldier } from "../gameObjects/mySoldier.js";
+import { Player } from '../gameObjects/player.js';
+import { MySoldier } from '../gameObjects/mySoldier.js';
 
 const { FSM, FSMState, Transform, RigidBody } = WEED;
 
@@ -13,7 +13,7 @@ const { FSM, FSMState, Transform, RigidBody } = WEED;
 // ==========================================
 
 class IdleCivilianBehaviorState extends FSMState {
-  static onEnter(owner, i, fromState) { }
+  static onEnter(owner, i, fromState) {}
 
   static onUpdate(owner, i, dt) {
     // Check if any neighbor is a predator
@@ -30,6 +30,7 @@ class IdleCivilianBehaviorState extends FSMState {
         return;
       }
     }
+    owner.groupWithMyTeam();
   }
 }
 

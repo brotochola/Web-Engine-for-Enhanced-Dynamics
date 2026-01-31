@@ -21,7 +21,9 @@
     "doc": "docs"
   },
   "scripts": {
-    "dev": "node server/node_server.js"
+    "dev": "node server/node_server.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "keywords": [
     "game-engine",

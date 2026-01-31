@@ -3,12 +3,12 @@
 // They fade out over their lifespan and auto-despawn when expired
 // Update logic runs in particle_worker (not logic workers)
 
-import { GameObject } from "./gameObject.js";
-import { LightEmitter } from "../components/LightEmitter.js";
-import { FlashComponent } from "../components/FlashComponent.js";
-import { Transform } from "../components/Transform.js";
-import { Collider } from "../components/Collider.js";
-import { Camera } from "./Camera.js";
+import { GameObject } from './gameObject.js';
+import { LightEmitter } from '../components/LightEmitter.js';
+import { FlashComponent } from '../components/FlashComponent.js';
+import { Transform } from '../components/Transform.js';
+import { Collider } from '../components/Collider.js';
+import { Camera } from './Camera.js';
 
 export class Flash extends GameObject {
   // Flash is an internal engine class - no user script needed
@@ -91,7 +91,7 @@ export class Flash extends GameObject {
    */
   static create(config) {
     if (!this.initialized) {
-      console.warn("Flash.create() called before initialization");
+      console.warn('Flash.create() called before initialization');
       return null;
     }
 

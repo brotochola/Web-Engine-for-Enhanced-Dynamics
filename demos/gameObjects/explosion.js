@@ -1,10 +1,19 @@
 import WEED from '/src/index.js';
 import { ExplosionComponent } from '../components/explosionComponent.js';
 
-const { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } = WEED
+const { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } = WEED;
 
 // Destructure what we need from WEED
-const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, ShadowCaster, ShapeType } = WEED;
+const {
+  GameObject,
+  Collider,
+  SpriteRenderer,
+  LightEmitter,
+  rng,
+  randomColor,
+  ShadowCaster,
+  ShapeType,
+} = WEED;
 
 export class Explosion extends GameObject {
   static scriptUrl = import.meta.url;
@@ -61,7 +70,7 @@ export class Explosion extends GameObject {
   }
 
   onSpawned(spawnConfig = {}) {
-    setTimeout(()=>this.stampDecalToFloor(),100)
+    setTimeout(() => this.stampDecalToFloor(), 100);
   }
 
   tick(dtRatio, deltaTime, accumulatedTime, frameNumber) {
@@ -118,35 +127,35 @@ export class Explosion extends GameObject {
     this.markDirty();
     this.emitSparks();
     this.emitSmoke();
-    this.applyDamage()
-
+    this.applyDamage();
   }
 
-  stampDecalToFloor(){
+  stampDecalToFloor() {
     ParticleEmitter.stampDecal({
-      texture: "explosion_decal",
-      x: this.x, y: this.y,
-      alpha:0.5,
-      scaleY:0.28+Math.random()*0.1,
-      scaleX:0.4+Math.random()*0.2,
-      flipX:Math.random() > 0.5,
-      flipY:Math.random() > 0.5,
-      blendMode:DECAL_STAMPS_BLEND_MODE.multiply,
+      texture: 'explosion_decal',
+      x: this.x,
+      y: this.y,
+      alpha: 0.5,
+      scaleY: 0.28 + Math.random() * 0.1,
+      scaleX: 0.4 + Math.random() * 0.2,
+      flipX: Math.random() > 0.5,
+      flipY: Math.random() > 0.5,
+      blendMode: DECAL_STAMPS_BLEND_MODE.multiply,
     });
   }
 
-  applyDamage(){
-    this.explosionComponent.wantedIntensity
-    for(let i=0;i<this.neighborCount;i++){
-      const neighbor=this.getNeighbor(i)
-      if(neighbor==-1) continue
-      const neighborInstance=GameObject.get(neighbor)
-      if(neighborInstance==null) continue
-      if(!neighborInstance.recieveDamage) continue
-      const distSq=this.getNeighborDistanceSq(i)
-      const damage=(this.explosionComponent.wantedIntensity/((distSq*50)))
+  applyDamage() {
+    this.explosionComponent.wantedIntensity;
+    for (let i = 0; i < this.neighborCount; i++) {
+      const neighbor = this.getNeighbor(i);
+      if (neighbor == -1) continue;
+      const neighborInstance = GameObject.get(neighbor);
+      if (neighborInstance == null) continue;
+      if (!neighborInstance.recieveDamage) continue;
+      const distSq = this.getNeighborDistanceSq(i);
+      const damage = this.explosionComponent.wantedIntensity / (distSq * 50);
 
-      neighborInstance.recieveDamage(damage)
+      neighborInstance.recieveDamage(damage);
     }
   }
 

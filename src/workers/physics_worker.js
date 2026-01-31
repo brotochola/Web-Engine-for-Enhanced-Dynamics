@@ -1,6 +1,6 @@
 self.postMessage({
-  msg: "log",
-  message: "js loaded",
+  msg: 'log',
+  message: 'js loaded',
   when: Date.now(),
 });
 // physics_worker.js - Physics integration (velocity, position updates)
@@ -8,13 +8,13 @@ self.postMessage({
 // Supports Circle and AABB (Box) colliders
 
 // Import engine dependencies
-import { GameObject } from "../core/gameObject.js";
-import { Transform } from "../components/Transform.js";
-import { RigidBody } from "../components/RigidBody.js";
-import { Collider } from "../components/Collider.js";
-import { AbstractWorker } from "./AbstractWorker.js";
-import { Grid } from "../core/Grid.js";
-import { PHYSICS_STATS, createStatsWriter } from "./workers-utils.js";
+import { GameObject } from '../core/gameObject.js';
+import { Transform } from '../components/Transform.js';
+import { RigidBody } from '../components/RigidBody.js';
+import { Collider } from '../components/Collider.js';
+import { AbstractWorker } from './AbstractWorker.js';
+import { Grid } from '../core/Grid.js';
+import { PHYSICS_STATS, createStatsWriter } from './workers-utils.js';
 import {
   clamp01,
   validatePhysicsConfig,
@@ -23,8 +23,8 @@ import {
   testCircleCircleCollision,
   testCircleAABBCollision,
   testAABBAABBCollision,
-} from "../core/utils.js";
-import { rng } from "../core/utils.js";
+} from '../core/utils.js';
+import { rng } from '../core/utils.js';
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
 // Physics worker uses RigidBody component for physics calculations
 
@@ -80,7 +80,7 @@ class PhysicsWorker extends AbstractWorker {
     // Initialize stats buffer for writing metrics
     if (data.buffers.physicsStats) {
       this.stats = createStatsWriter(data.buffers.physicsStats, PHYSICS_STATS);
-      console.log("PHYSICS WORKER: Stats buffer initialized");
+      console.log('PHYSICS WORKER: Stats buffer initialized');
     }
 
     // Note: Component arrays are automatically initialized by AbstractWorker.initializeAllComponents()
@@ -89,9 +89,7 @@ class PhysicsWorker extends AbstractWorker {
     if (data.buffers.collisionData) {
       this.collisionData = new Int32Array(data.buffers.collisionData);
       this.maxCollisionPairs =
-        this.config.physics?.maxCollisionPairs ??
-        this.config.maxCollisionPairs ??
-        10000;
+        this.config.physics?.maxCollisionPairs ?? this.config.maxCollisionPairs ?? 10000;
     }
 
     this.applyPhysicsConfig(this.config.physics || {});
@@ -146,7 +144,7 @@ class PhysicsWorker extends AbstractWorker {
   }
 
   handleCustomMessage(data) {
-    if (data.msg === "updatePhysicsConfig") {
+    if (data.msg === 'updatePhysicsConfig') {
       this.applyPhysicsConfig(data.config || {});
     }
   }
@@ -682,8 +680,8 @@ class PhysicsWorker extends AbstractWorker {
           // Mass-weighted collision response:
           // Lighter objects move more, heavier objects move less
           // Static objects have invMass = 0 (infinite mass)
-          const invMassI = iStatic ? 0 : (invMass[i] || 1);
-          const invMassJ = jStatic ? 0 : (invMass[j] || 1);
+          const invMassI = iStatic ? 0 : invMass[i] || 1;
+          const invMassJ = jStatic ? 0 : invMass[j] || 1;
           const totalInvMass = invMassI + invMassJ;
 
           if (totalInvMass > 0) {
@@ -737,16 +735,7 @@ class PhysicsWorker extends AbstractWorker {
   testCircleAABB(circleX, circleY, circleR, boxX, boxY, boxW, boxH) {
     // Reuse collision result object to avoid GC pressure
     const result = this.collisionResult;
-    return testCircleAABBCollision(
-      circleX,
-      circleY,
-      circleR,
-      boxX,
-      boxY,
-      boxW,
-      boxH,
-      result
-    );
+    return testCircleAABBCollision(circleX, circleY, circleR, boxX, boxY, boxW, boxH, result);
   }
 
   /**
@@ -766,10 +755,8 @@ class PhysicsWorker extends AbstractWorker {
     // Write stats to SharedArrayBuffer every frame
     if (this.stats) {
       this.stats[PHYSICS_STATS.FPS] = this.currentFPS;
-      this.stats[PHYSICS_STATS.COLLISION_CHECKS] =
-        this.collisionChecksThisFrame;
-      this.stats[PHYSICS_STATS.COLLISIONS_RESOLVED] =
-        this.collisionsResolvedThisFrame;
+      this.stats[PHYSICS_STATS.COLLISION_CHECKS] = this.collisionChecksThisFrame;
+      this.stats[PHYSICS_STATS.COLLISIONS_RESOLVED] = this.collisionsResolvedThisFrame;
       this.stats[PHYSICS_STATS.COLLISION_PAIRS] = this.collisionPairsThisFrame;
     }
   }

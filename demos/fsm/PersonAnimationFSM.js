@@ -1,37 +1,39 @@
 // PersonAnimationFSM.js - FSM for person animation states
 // Handles locomotion (idle/walk/run) and action animations (shoot, melee, hurt, die)
 
-import WEED from "/src/index.js";
-import { PersonComponent, DIRECTION_NAMES } from "../components/personComponent.js";
-import { LootableComponent } from "../components/lootableComponent.js";
+import WEED from '/src/index.js';
+import { PersonComponent, DIRECTION_NAMES } from '../components/personComponent.js';
+import { LootableComponent } from '../components/lootableComponent.js';
 
-const { FSM, FSMState, RigidBody, getDirectionFromAngle, SpriteSheetRegistry } = WEED;
+const { FSM, FSMState, RigidBody, getDirectionFromAngle } = WEED;
 
-// Animation durations in ms (frames * (1000 / (speed * 60)))
-// Assumes animation speed of 0.2 for actions
 const ACTION_ANIM_SPEED = 0.2;
+const NATURAL_DURATION = 16.667;
 const SHOOT_FRAMES = 13;
-const SLASH_FRAMES = 6;      // For punch
-const STICK_FRAMES = 13;     // 1h_slash for stick hit
+const SLASH_FRAMES = 6; // For punch
+const STICK_FRAMES = 13; // 1h_slash for stick hit
 const HURT_FRAMES = 6;
 const LOCOMOTION_FRAMES = 8; // Walk/run cycle frames
 
-const SHOOT_DURATION_MS = SHOOT_FRAMES * (1000 / (ACTION_ANIM_SPEED * 60));  // ~1083ms
-const SLASH_DURATION_MS = SLASH_FRAMES * (1000 / (ACTION_ANIM_SPEED * 60));  // ~500ms
-const STICK_DURATION_MS = STICK_FRAMES * (1000 / (ACTION_ANIM_SPEED * 60));  // ~1083ms
-const HURT_DURATION_MS = HURT_FRAMES * (1000 / (ACTION_ANIM_SPEED * 60));    // ~500ms
+const SHOOT_DURATION_MS = ACTION_ANIM_SPEED * SHOOT_FRAMES * NATURAL_DURATION; // ~1083ms
+const SLASH_DURATION_MS = ACTION_ANIM_SPEED * SLASH_FRAMES * NATURAL_DURATION; // ~500ms
+const STICK_DURATION_MS = ACTION_ANIM_SPEED * STICK_FRAMES * NATURAL_DURATION; // ~1083ms
+const HURT_DURATION_MS = ACTION_ANIM_SPEED * HURT_FRAMES * NATURAL_DURATION; // ~500ms
+
+const DYING_ANIM_SPEED = 0.2;
+const DYING_DURATION_MS = DYING_ANIM_SPEED * HURT_FRAMES * NATURAL_DURATION;
 
 // Speed threshold for running vs walking
 const RUN_SPEED_THRESHOLD = 2;
-const WALK_SPEED_THRESHOLD = 0.1
-const RUN_ANIMATION_MULTIPLIER=0.15
-const WALK_ANIMATION_MULTIPLIER=0.2
-const IDLE_ANIMATION_MULTIPLIER=0.05
+const WALK_SPEED_THRESHOLD = 0.1;
+const RUN_ANIMATION_MULTIPLIER = 0.15;
+const WALK_ANIMATION_MULTIPLIER = 0.2;
+const IDLE_ANIMATION_MULTIPLIER = 0.05;
 
 // Helper to calculate locomotion cycle duration based on current speed
 function getLocomotionCycleDuration(speed, multiplier) {
-    const animSpeed = speed * multiplier;
-    return LOCOMOTION_FRAMES * (1000 / (animSpeed * 60));
+  const animSpeed = speed * multiplier;
+  return LOCOMOTION_FRAMES * (1000 / (animSpeed * 60));
 }
 
 // ==========================================
@@ -39,33 +41,33 @@ function getLocomotionCycleDuration(speed, multiplier) {
 // ==========================================
 
 class IdleState extends FSMState {
-    static onEnter(owner, i, fromState) {
-        // Skip animation if no spritesheet set yet (FSM auto-init runs before onSpawned)
-        if (!owner.spriteRenderer?.spritesheetId) return;
+  static onEnter(owner, i, fromState) {
+    // Skip animation if no spritesheet set yet (FSM auto-init runs before onSpawned)
+    if (!owner.spriteRenderer?.spritesheetId) return;
 
-        const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || "down";
-        owner.setAnimation(`idle_${facingDir}`);
-        owner.setAnimationSpeed(IDLE_ANIMATION_MULTIPLIER);
+    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
+    owner.setAnimation(`idle_${facingDir}`);
+    owner.setAnimationSpeed(IDLE_ANIMATION_MULTIPLIER);
+  }
+
+  static onUpdate(owner, i, dt) {
+    // Check for death first (highest priority)
+    if (LootableComponent.health[i] <= 0) {
+      console.log(`[IdleState ${i}] Health <= 0, changing to DYING`);
+      this.fsm.changeState(i, this.fsm.states.DYING);
+      return;
     }
 
-    static onUpdate(owner, i, dt) {
-        // Check for death first (highest priority)
-        if (LootableComponent.health[i] <= 0) {
-            console.log(`[IdleState ${i}] Health <= 0, changing to DYING`);
-            this.fsm.changeState(i, this.fsm.states.DYING);
-            return;
-        }
+    const speed = RigidBody.speed[i];
 
-        const speed = RigidBody.speed[i];
-
-        if (speed > WALK_SPEED_THRESHOLD) {
-            this.fsm.changeState(i, this.fsm.states.WALKING);
-        }
-
-        // Update idle animation if facing direction changed
-        const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || "down";
-        owner.setAnimation(`idle_${facingDir}`);
+    if (speed > WALK_SPEED_THRESHOLD) {
+      this.fsm.changeState(i, this.fsm.states.WALKING);
     }
+
+    // Update idle animation if facing direction changed
+    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
+    owner.setAnimation(`idle_${facingDir}`);
+  }
 }
 
 // ==========================================
@@ -73,50 +75,50 @@ class IdleState extends FSMState {
 // ==========================================
 
 class WalkingState extends FSMState {
-    static onEnter(owner, i, fromState) {
-        const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || "down";
-        owner.setAnimation(`walk_${facingDir}`);
-        owner.setAnimationSpeed(RigidBody.speed[i] * WALK_ANIMATION_MULTIPLIER);
+  static onEnter(owner, i, fromState) {
+    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
+    owner.setAnimation(`walk_${facingDir}`);
+    owner.setAnimationSpeed(RigidBody.speed[i] * WALK_ANIMATION_MULTIPLIER);
+  }
+
+  static onUpdate(owner, i, dt) {
+    // Check for death first (highest priority)
+    if (LootableComponent.health[i] <= 0) {
+      this.fsm.changeState(i, this.fsm.states.DYING);
+      return;
     }
 
-    static onUpdate(owner, i, dt) {
-        // Check for death first (highest priority)
-        if (LootableComponent.health[i] <= 0) {
-            this.fsm.changeState(i, this.fsm.states.DYING);
-            return;
-        }
+    const velocityAngle = RigidBody.velocityAngle[i];
+    const speed = RigidBody.speed[i];
 
-        const velocityAngle = RigidBody.velocityAngle[i];
-        const speed = RigidBody.speed[i];
-
-        // Update facing direction from velocity
-        if (speed > WALK_SPEED_THRESHOLD) {
-            const direction = getDirectionFromAngle(velocityAngle);
-            const dirIndex = DIRECTION_NAMES.indexOf(direction);
-            if (dirIndex >= 0) {
-                PersonComponent.facingDirection[i] = dirIndex;
-            }
-        }
-
-        // Update animation
-        const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || "down";
-        owner.setAnimation(`walk_${facingDir}`);
-        owner.setAnimationSpeed(speed * WALK_ANIMATION_MULTIPLIER);
-
-        // Stopped moving? -> Idle immediately
-        if (speed <= WALK_SPEED_THRESHOLD) {
-            this.fsm.changeState(i, this.fsm.states.IDLE);
-            return;
-        }
-
-        // Want to run? Wait for one walk cycle to complete
-        if (speed > RUN_SPEED_THRESHOLD) {
-            const cycleDuration = getLocomotionCycleDuration(speed, WALK_ANIMATION_MULTIPLIER);
-            if (this.fsm.time[i] >= cycleDuration) {
-                this.fsm.changeState(i, this.fsm.states.RUNNING);
-            }
-        }
+    // Update facing direction from velocity
+    if (speed > WALK_SPEED_THRESHOLD) {
+      const direction = getDirectionFromAngle(velocityAngle);
+      const dirIndex = DIRECTION_NAMES.indexOf(direction);
+      if (dirIndex >= 0) {
+        PersonComponent.facingDirection[i] = dirIndex;
+      }
     }
+
+    // Update animation
+    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
+    owner.setAnimation(`walk_${facingDir}`);
+    owner.setAnimationSpeed(speed * WALK_ANIMATION_MULTIPLIER);
+
+    // Stopped moving? -> Idle immediately
+    if (speed <= WALK_SPEED_THRESHOLD) {
+      this.fsm.changeState(i, this.fsm.states.IDLE);
+      return;
+    }
+
+    // Want to run? Wait for one walk cycle to complete
+    if (speed > RUN_SPEED_THRESHOLD) {
+      const cycleDuration = getLocomotionCycleDuration(speed, WALK_ANIMATION_MULTIPLIER);
+      if (this.fsm.time[i] >= cycleDuration) {
+        this.fsm.changeState(i, this.fsm.states.RUNNING);
+      }
+    }
+  }
 }
 
 // ==========================================
@@ -124,50 +126,50 @@ class WalkingState extends FSMState {
 // ==========================================
 
 class RunningState extends FSMState {
-    static onEnter(owner, i, fromState) {
-        const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || "down";
-        owner.setAnimation(`run_${facingDir}`);
-        owner.setAnimationSpeed(RigidBody.speed[i] * RUN_ANIMATION_MULTIPLIER);
+  static onEnter(owner, i, fromState) {
+    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
+    owner.setAnimation(`run_${facingDir}`);
+    owner.setAnimationSpeed(RigidBody.speed[i] * RUN_ANIMATION_MULTIPLIER);
+  }
+
+  static onUpdate(owner, i, dt) {
+    // Check for death first (highest priority)
+    if (LootableComponent.health[i] <= 0) {
+      this.fsm.changeState(i, this.fsm.states.DYING);
+      return;
     }
 
-    static onUpdate(owner, i, dt) {
-        // Check for death first (highest priority)
-        if (LootableComponent.health[i] <= 0) {
-            this.fsm.changeState(i, this.fsm.states.DYING);
-            return;
-        }
+    const velocityAngle = RigidBody.velocityAngle[i];
+    const speed = RigidBody.speed[i];
 
-        const velocityAngle = RigidBody.velocityAngle[i];
-        const speed = RigidBody.speed[i];
-
-        // Update facing direction from velocity
-        if (speed > WALK_SPEED_THRESHOLD) {
-            const direction = getDirectionFromAngle(velocityAngle);
-            const dirIndex = DIRECTION_NAMES.indexOf(direction);
-            if (dirIndex >= 0) {
-                PersonComponent.facingDirection[i] = dirIndex;
-            }
-        }
-
-        // Update animation
-        const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || "down";
-        owner.setAnimation(`run_${facingDir}`);
-        owner.setAnimationSpeed(speed * RUN_ANIMATION_MULTIPLIER);
-
-        // Stopped moving? -> Idle immediately
-        if (speed <= WALK_SPEED_THRESHOLD) {
-            this.fsm.changeState(i, this.fsm.states.IDLE);
-            return;
-        }
-
-        // Want to walk? Wait for one run cycle to complete
-        if (speed <= RUN_SPEED_THRESHOLD) {
-            const cycleDuration = getLocomotionCycleDuration(speed, RUN_ANIMATION_MULTIPLIER);
-            if (this.fsm.time[i] >= cycleDuration) {
-                this.fsm.changeState(i, this.fsm.states.WALKING);
-            }
-        }
+    // Update facing direction from velocity
+    if (speed > WALK_SPEED_THRESHOLD) {
+      const direction = getDirectionFromAngle(velocityAngle);
+      const dirIndex = DIRECTION_NAMES.indexOf(direction);
+      if (dirIndex >= 0) {
+        PersonComponent.facingDirection[i] = dirIndex;
+      }
     }
+
+    // Update animation
+    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
+    owner.setAnimation(`run_${facingDir}`);
+    owner.setAnimationSpeed(speed * RUN_ANIMATION_MULTIPLIER);
+
+    // Stopped moving? -> Idle immediately
+    if (speed <= WALK_SPEED_THRESHOLD) {
+      this.fsm.changeState(i, this.fsm.states.IDLE);
+      return;
+    }
+
+    // Want to walk? Wait for one run cycle to complete
+    if (speed <= RUN_SPEED_THRESHOLD) {
+      const cycleDuration = getLocomotionCycleDuration(speed, RUN_ANIMATION_MULTIPLIER);
+      if (this.fsm.time[i] >= cycleDuration) {
+        this.fsm.changeState(i, this.fsm.states.WALKING);
+      }
+    }
+  }
 }
 
 // ==========================================
@@ -175,24 +177,24 @@ class RunningState extends FSMState {
 // ==========================================
 
 class ShootingState extends FSMState {
-    static onEnter(owner, i, fromState) {
-        const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || "down";
-        owner.setAnimation(`shoot_${facingDir}`);
-        owner.setAnimationSpeed(ACTION_ANIM_SPEED);
+  static onEnter(owner, i, fromState) {
+    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
+    owner.setAnimation(`shoot_${facingDir}`);
+    owner.setAnimationSpeed(ACTION_ANIM_SPEED);
+  }
+
+  static onUpdate(owner, i, dt) {
+    // Death interrupts
+    if (LootableComponent.health[i] <= 0) {
+      this.fsm.changeState(i, this.fsm.states.DYING);
+      return;
     }
 
-    static onUpdate(owner, i, dt) {
-        // Death interrupts
-        if (LootableComponent.health[i] <= 0) {
-            this.fsm.changeState(i, this.fsm.states.DYING);
-            return;
-        }
-
-        // Animation complete?
-        if (this.fsm.time[i] >= SHOOT_DURATION_MS) {
-            this.fsm.changeState(i, this.fsm.states.IDLE);
-        }
+    // Animation complete?
+    if (this.fsm.time[i] >= SHOOT_DURATION_MS) {
+      this.fsm.changeState(i, this.fsm.states.IDLE);
     }
+  }
 }
 
 // ==========================================
@@ -200,24 +202,24 @@ class ShootingState extends FSMState {
 // ==========================================
 
 class PunchingState extends FSMState {
-    static onEnter(owner, i, fromState) {
-        const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || "down";
-        owner.setAnimation(`slash_${facingDir}`);
-        owner.setAnimationSpeed(ACTION_ANIM_SPEED);
+  static onEnter(owner, i, fromState) {
+    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
+    owner.setAnimation(`slash_${facingDir}`);
+    owner.setAnimationSpeed(ACTION_ANIM_SPEED);
+  }
+
+  static onUpdate(owner, i, dt) {
+    // Death interrupts
+    if (LootableComponent.health[i] <= 0) {
+      this.fsm.changeState(i, this.fsm.states.DYING);
+      return;
     }
 
-    static onUpdate(owner, i, dt) {
-        // Death interrupts
-        if (LootableComponent.health[i] <= 0) {
-            this.fsm.changeState(i, this.fsm.states.DYING);
-            return;
-        }
-
-        // Animation complete?
-        if (this.fsm.time[i] >= SLASH_DURATION_MS) {
-            this.fsm.changeState(i, this.fsm.states.IDLE);
-        }
+    // Animation complete?
+    if (this.fsm.time[i] >= SLASH_DURATION_MS) {
+      this.fsm.changeState(i, this.fsm.states.IDLE);
     }
+  }
 }
 
 // ==========================================
@@ -225,24 +227,24 @@ class PunchingState extends FSMState {
 // ==========================================
 
 class StickHitState extends FSMState {
-    static onEnter(owner, i, fromState) {
-        const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || "down";
-        owner.setAnimation(`1h_slash_${facingDir}`);
-        owner.setAnimationSpeed(ACTION_ANIM_SPEED);
+  static onEnter(owner, i, fromState) {
+    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
+    owner.setAnimation(`1h_slash_${facingDir}`);
+    owner.setAnimationSpeed(ACTION_ANIM_SPEED);
+  }
+
+  static onUpdate(owner, i, dt) {
+    // Death interrupts
+    if (LootableComponent.health[i] <= 0) {
+      this.fsm.changeState(i, this.fsm.states.DYING);
+      return;
     }
 
-    static onUpdate(owner, i, dt) {
-        // Death interrupts
-        if (LootableComponent.health[i] <= 0) {
-            this.fsm.changeState(i, this.fsm.states.DYING);
-            return;
-        }
-
-        // Animation complete?
-        if (this.fsm.time[i] >= STICK_DURATION_MS) {
-            this.fsm.changeState(i, this.fsm.states.IDLE);
-        }
+    // Animation complete?
+    if (this.fsm.time[i] >= STICK_DURATION_MS) {
+      this.fsm.changeState(i, this.fsm.states.IDLE);
     }
+  }
 }
 
 // ==========================================
@@ -250,23 +252,23 @@ class StickHitState extends FSMState {
 // ==========================================
 
 class HurtState extends FSMState {
-    static onEnter(owner, i, fromState) {
-        owner.setAnimation("hurt"); // No direction for hurt
-        owner.setAnimationSpeed(ACTION_ANIM_SPEED);
+  static onEnter(owner, i, fromState) {
+    owner.setAnimation('hurt'); // No direction for hurt
+    owner.setAnimationSpeed(ACTION_ANIM_SPEED);
+  }
+
+  static onUpdate(owner, i, dt) {
+    // Death during hurt
+    if (LootableComponent.health[i] <= 0) {
+      this.fsm.changeState(i, this.fsm.states.DYING);
+      return;
     }
 
-    static onUpdate(owner, i, dt) {
-        // Death during hurt
-        if (LootableComponent.health[i] <= 0) {
-            this.fsm.changeState(i, this.fsm.states.DYING);
-            return;
-        }
-
-        // Animation complete?
-        if (this.fsm.time[i] >= HURT_DURATION_MS) {
-            this.fsm.changeState(i, this.fsm.states.IDLE);
-        }
+    // Animation complete?
+    if (this.fsm.time[i] >= HURT_DURATION_MS) {
+      this.fsm.changeState(i, this.fsm.states.IDLE);
     }
+  }
 }
 
 // ==========================================
@@ -274,24 +276,27 @@ class HurtState extends FSMState {
 // ==========================================
 
 class DyingState extends FSMState {
-    // Death animation speed (slower for dramatic effect)
-    static DYING_ANIM_SPEED = 0.2;
-    // Duration = frames * ms per frame = 6 * (1000 / (speed * 60))
-    // At speed 0.15: 6 * (1000 / 9) = 667ms
-    static DYING_DURATION_MS = (HURT_FRAMES -1)* (1000 / (DyingState.DYING_ANIM_SPEED * 60))
+  // Death animation speed (slower for dramatic effect)
+  // static DYING_ANIM_SPEED = 0.2;
+  // Duration = frames * ms per frame = 6 * (1000 / (speed * 60))
+  // At speed 0.15: 6 * (1000 / 9) = 667ms
+  // static DYING_DURATION_MS = 100//(HURT_FRAMES -1)* (1000 / (DyingState.DYING_ANIM_SPEED * 60))
 
-    static onEnter(owner, i, fromState) {
-        // Use hurt animation for death (no direction variant)
-        owner.setAnimation("hurt");
-        owner.setAnimationSpeed(DyingState.DYING_ANIM_SPEED);
-    }
+  static onEnter(owner, i, fromState) {
+    console.log('on enter', DYING_DURATION_MS);
 
-    static onUpdate(owner, i, dt) {
-        // Animation complete? Transition to DEAD
-        if (this.fsm.time[i] >= DyingState.DYING_DURATION_MS) {
-            this.fsm.changeState(i, this.fsm.states.DEAD);
-        }
+    // Use hurt animation for death (no direction variant)
+    owner.setAnimation('hurt');
+    owner.setAnimationSpeed(DYING_ANIM_SPEED);
+  }
+
+  static onUpdate(owner, i, dt) {
+    // Animation complete? Transition to DEAD
+    console.log('on update dying', this.fsm.time[i], DYING_DURATION_MS);
+    if (this.fsm.time[i] >= DYING_DURATION_MS) {
+      this.fsm.changeState(i, this.fsm.states.DEAD);
     }
+  }
 }
 
 // ==========================================
@@ -299,14 +304,15 @@ class DyingState extends FSMState {
 // ==========================================
 
 class DeadState extends FSMState {
-    static onEnter(owner, i, fromState) {
-        // Stop on final frame, fade out
-        owner.setAnimationSpeed(0);
-    }
+  static onEnter(owner, i, fromState) {
+    // Stop on final frame, fade out
+    owner.setAnimationSpeed(0);
+    owner.onDeathAnimationComplete();
+  }
 
-    static onUpdate(owner, i, dt) {
-        // Do nothing - Lootable.tick() handles despawn via die()
-    }
+  static onUpdate(owner, i, dt) {
+    // Do nothing - Lootable.tick() handles despawn via die()
+  }
 }
 
 // ==========================================
@@ -314,17 +320,17 @@ class DeadState extends FSMState {
 // ==========================================
 
 export class PersonAnimationFSM extends FSM {
-    static states = {
-        IDLE: IdleState,
-        WALKING: WalkingState,
-        RUNNING: RunningState,
-        SHOOTING: ShootingState,
-        PUNCHING: PunchingState,
-        STICK_HIT: StickHitState,
-        HURT: HurtState,
-        DYING: DyingState,
-        DEAD: DeadState,
-    };
+  static states = {
+    IDLE: IdleState,
+    WALKING: WalkingState,
+    RUNNING: RunningState,
+    SHOOTING: ShootingState,
+    PUNCHING: PunchingState,
+    STICK_HIT: StickHitState,
+    HURT: HurtState,
+    DYING: DyingState,
+    DEAD: DeadState,
+  };
 
-    static initial = this.states.IDLE;
+  static initial = this.states.IDLE;
 }

@@ -9,9 +9,9 @@
  *   const visibleEntities = query([SpriteRenderer, Transform]);
  */
 
-import { collectComponents } from "./utils.js";
-import { Transform } from "../components/Transform.js";
-import { GameObject } from "./gameObject.js";
+import { collectComponents } from './utils.js';
+import { Transform } from '../components/Transform.js';
+import { GameObject } from './gameObject.js';
 
 export class QuerySystem {
   constructor() {
@@ -39,14 +39,10 @@ export class QuerySystem {
       ({ class: EntityClass, count, startIndex, entityType }) => {
         // CRITICAL: Use collectComponents to get ALL components including Transform
         // This matches GameObject's component collection logic
-        const components = Array.from(
-          collectComponents(EntityClass, GameObject, Transform)
-        );
+        const components = Array.from(collectComponents(EntityClass, GameObject, Transform));
 
         if (!components || components.length === 0) {
-          console.warn(
-            `[QuerySystem] Class ${EntityClass.name} has no components!`
-          );
+          console.warn(`[QuerySystem] Class ${EntityClass.name} has no components!`);
         }
 
         return {
@@ -104,9 +100,7 @@ export class QuerySystem {
    */
   _computeQuery(componentClasses) {
     // Use numeric IDs instead of string comparison
-    const requiredIds = new Set(
-      componentClasses.map((c) => this._getComponentId(c))
-    );
+    const requiredIds = new Set(componentClasses.map((c) => this._getComponentId(c)));
 
     // Pre-allocate array with max possible size (all entities)
     const maxSize = this.entityMetadata.reduce((sum, m) => sum + m.poolSize, 0);
@@ -116,12 +110,8 @@ export class QuerySystem {
     // Check each entity class metadata
     for (const metadata of this.entityMetadata) {
       // Check if this entity class has all required components (by ID)
-      const entityComponentIds = metadata.components.map((c) =>
-        this._getComponentId(c)
-      );
-      const hasAllComponents = [...requiredIds].every((id) =>
-        entityComponentIds.includes(id)
-      );
+      const entityComponentIds = metadata.components.map((c) => this._getComponentId(c));
+      const hasAllComponents = [...requiredIds].every((id) => entityComponentIds.includes(id));
 
       if (hasAllComponents) {
         // Add all entity indices of this class
@@ -150,9 +140,7 @@ export class QuerySystem {
    */
   _generateKey(componentClasses) {
     // Get IDs and sort in-place (numeric sort)
-    const ids = componentClasses
-      .map((c) => this._getComponentId(c))
-      .sort((a, b) => a - b);
+    const ids = componentClasses.map((c) => this._getComponentId(c)).sort((a, b) => a - b);
 
     // Generate hash from sorted IDs using polynomial rolling hash
     let hash = 0;
@@ -194,25 +182,19 @@ export class QuerySystem {
    * @private
    */
   _logStatistics() {
-    const totalEntities = this.entityMetadata.reduce(
-      (sum, meta) => sum + meta.poolSize,
-      0
-    );
+    const totalEntities = this.entityMetadata.reduce((sum, meta) => sum + meta.poolSize, 0);
 
     // Calculate potential combinations (2^n - 1 for each entity class)
-    const totalPossibleCombinations = this.entityMetadata.reduce(
-      (sum, meta) => {
-        const n = meta.components.length;
-        const combinations = Math.pow(2, n) - 1;
-        return sum + combinations;
-      },
-      0
-    );
+    const totalPossibleCombinations = this.entityMetadata.reduce((sum, meta) => {
+      const n = meta.components.length;
+      const combinations = Math.pow(2, n) - 1;
+      return sum + combinations;
+    }, 0);
 
     if (this.cache.size > 0) {
       const stats = {
-        largestQuery: { key: "", size: 0 },
-        smallestQuery: { key: "", size: Infinity },
+        largestQuery: { key: '', size: 0 },
+        smallestQuery: { key: '', size: Infinity },
       };
 
       this.cache.forEach((indices, key) => {
@@ -277,9 +259,7 @@ export function createQueryFunction(queriesData) {
     // Check each entity class metadata
     for (const metadata of entityMetadata) {
       // Check if this entity class has all required components (by ID)
-      const hasAllComponents = componentIds.every((id) =>
-        metadata.componentIds.includes(id)
-      );
+      const hasAllComponents = componentIds.every((id) => metadata.componentIds.includes(id));
 
       if (hasAllComponents) {
         // Add all entity indices of this class
@@ -296,9 +276,7 @@ export function createQueryFunction(queriesData) {
   // Return the query function
   return function query(componentClasses) {
     // Use pre-assigned componentId IDs from component classes
-    const componentIds = componentClasses.map(
-      (CompClass) => CompClass.componentId
-    );
+    const componentIds = componentClasses.map((CompClass) => CompClass.componentId);
 
     // Generate numeric key
     const key = generateKey(componentIds);

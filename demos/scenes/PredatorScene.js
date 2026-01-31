@@ -1,50 +1,50 @@
 // PredatorScene.js - Predators vs Prey gameplay scene
 // Demonstrates the new Scene-based architecture for WeedJS
 
-import WEED from "/src/index.js";
-import { Boid } from "../gameObjects/boid.js";
-import { Prey } from "../gameObjects/prey.js";
-import { Predator } from "../gameObjects/predator.js";
+import WEED from '/src/index.js';
+import { Boid } from '../gameObjects/boid.js';
+import { Prey } from '../gameObjects/prey.js';
+import { Predator } from '../gameObjects/predator.js';
 // import { Player } from "../gameObjects/player.js";
-import { TallLight } from "../gameObjects/tallLight.js";
-import { PreySpawner } from "../gameObjects/preySpawner.js";
-import { House } from "../gameObjects/house.js";
+import { TallLight } from '../gameObjects/tallLight.js';
+import { PreySpawner } from '../gameObjects/preySpawner.js';
+import { House } from '../gameObjects/house.js';
 
-import { Tree } from "../gameObjects/tree.js";
-import { Barrel } from "../gameObjects/barrel.js";
-import { Rock } from "../gameObjects/rock.js";
-import { Fire } from "../gameObjects/fire.js";
-import { Explosion } from "../gameObjects/explosion.js";
-import { MySoldier } from "../gameObjects/mySoldier.js";
-import { Destination } from "../gameObjects/destination.js";
-import { NavGrid } from "../../src/core/NavGrid.js";
-import { DropMoney } from "../gameObjects/dropMoney.js";
-import { DropAk47 } from "../gameObjects/dropAk47.js";
-import { DropShotgun } from "../gameObjects/dropShotgun.js";
-import { DropPistol } from "../gameObjects/dropPistol.js";
-import { Civilian } from "../gameObjects/civilian.js";
-import { CameraController } from "../gameObjects/cameraController.js";
+import { Tree } from '../gameObjects/tree.js';
+import { Barrel } from '../gameObjects/barrel.js';
+import { Rock } from '../gameObjects/rock.js';
+import { Fire } from '../gameObjects/fire.js';
+import { Explosion } from '../gameObjects/explosion.js';
+import { MySoldier } from '../gameObjects/mySoldier.js';
+import { Destination } from '../gameObjects/destination.js';
+import { NavGrid } from '../../src/core/NavGrid.js';
+import { DropMoney } from '../gameObjects/dropMoney.js';
+import { DropAk47 } from '../gameObjects/dropAk47.js';
+import { DropShotgun } from '../gameObjects/dropShotgun.js';
+import { DropPistol } from '../gameObjects/dropPistol.js';
+import { Civilian } from '../gameObjects/civilian.js';
+import { CameraController } from '../gameObjects/cameraController.js';
 
 const { DecorationPool } = WEED;
 
 const excludedLPCAnimations = [
-  "spellcast_up",
-  "spellcast_left",
-  "spellcast_down",
-  "spellcast_right",
-  "thrust_up",
-  "thrust_left",
-  "thrust_down",
-  "thrust_right",
+  'spellcast_up',
+  'spellcast_left',
+  'spellcast_down',
+  'spellcast_right',
+  'thrust_up',
+  'thrust_left',
+  'thrust_down',
+  'thrust_right',
   // "slash_up",
   // "slash_left",
   // "slash_down",
   // "slash_right",
-  "climb",
-  "emote_up",
-  "emote_left",
-  "emote_down",
-  "emote_right",
+  'climb',
+  'emote_up',
+  'emote_left',
+  'emote_down',
+  'emote_right',
 ];
 
 export class PredatorScene extends WEED.Scene {
@@ -134,87 +134,87 @@ export class PredatorScene extends WEED.Scene {
 
   static assets = {
     textures: {
-      rock1: "/demos/img/rock1.png",
-      rock2: "/demos/img/rock2.png",
-      rock3: "/demos/img/rock3.png",
-      rock4: "/demos/img/rock4.png",
-      bg: "/demos/img/bg.png",
-      blood: "/demos/img/blood.png",
-      tallLight: "/demos/img/tallLight.png",
-      house1: "/demos/img/house1.png",
-      house2: "/demos/img/house2.png",
-      grass1: "/demos/img/g1.png",
-      grass2: "/demos/img/g2.png",
-      grass3: "/demos/img/g3.png",
-      grass4: "/demos/img/g4.png",
-      tree1: "/demos/img/tree1.png",
-      tree2: "/demos/img/tree2.png",
-      barrel1: "/demos/img/barrel1.png",
-      barrel2: "/demos/img/barrel2.png",
-      barrel3: "/demos/img/barrel3.png",
-      square: "/demos/img/10_10_square.png",
-      smoke: "/demos/img/smoke.png",
-      target: "/demos/img/target.png",
-      money: "/demos/img/drops/money.png",
-      pistol: "/demos/img/drops/pistol.png",
-      ak47: "/demos/img/drops/ak47.png",
-      shotgun: "/demos/img/drops/shotgun.png",
-      explosion_decal: "/demos/img/explosion_decal.png",
+      rock1: '/demos/img/rock1.png',
+      rock2: '/demos/img/rock2.png',
+      rock3: '/demos/img/rock3.png',
+      rock4: '/demos/img/rock4.png',
+      bg: '/demos/img/bg.png',
+      blood: '/demos/img/blood.png',
+      tallLight: '/demos/img/tallLight.png',
+      house1: '/demos/img/house1.png',
+      house2: '/demos/img/house2.png',
+      grass1: '/demos/img/g1.png',
+      grass2: '/demos/img/g2.png',
+      grass3: '/demos/img/g3.png',
+      grass4: '/demos/img/g4.png',
+      tree1: '/demos/img/tree1.png',
+      tree2: '/demos/img/tree2.png',
+      barrel1: '/demos/img/barrel1.png',
+      barrel2: '/demos/img/barrel2.png',
+      barrel3: '/demos/img/barrel3.png',
+      square: '/demos/img/10_10_square.png',
+      smoke: '/demos/img/smoke.png',
+      target: '/demos/img/target.png',
+      money: '/demos/img/drops/money.png',
+      pistol: '/demos/img/drops/pistol.png',
+      ak47: '/demos/img/drops/ak47.png',
+      shotgun: '/demos/img/drops/shotgun.png',
+      explosion_decal: '/demos/img/explosion_decal.png',
     },
     spritesheets: {
       civil1: {
-        json: "/demos/img/civil1.json",
-        png: "/demos/img/civil1.png",
+        json: '/demos/img/civil1.json',
+        png: '/demos/img/civil1.png',
         excludeAnimations: excludedLPCAnimations,
       },
       civil2: {
-        json: "/demos/img/civil1.json",
-        png: "/demos/img/civil2.png",
+        json: '/demos/img/civil1.json',
+        png: '/demos/img/civil2.png',
         excludeAnimations: excludedLPCAnimations,
       },
       civil3: {
-        json: "/demos/img/civil1.json",
-        png: "/demos/img/civil3.png",
+        json: '/demos/img/civil1.json',
+        png: '/demos/img/civil3.png',
         excludeAnimations: excludedLPCAnimations,
       },
       civil4: {
-        json: "/demos/img/civil1.json",
-        png: "/demos/img/civil4.png",
+        json: '/demos/img/civil1.json',
+        png: '/demos/img/civil4.png',
         excludeAnimations: excludedLPCAnimations,
       },
       civil5: {
-        json: "/demos/img/civil1.json",
-        png: "/demos/img/civil5.png",
+        json: '/demos/img/civil1.json',
+        png: '/demos/img/civil5.png',
         excludeAnimations: excludedLPCAnimations,
       },
       civil6: {
-        json: "/demos/img/civil1.json",
-        png: "/demos/img/civil6.png",
+        json: '/demos/img/civil1.json',
+        png: '/demos/img/civil6.png',
         excludeAnimations: excludedLPCAnimations,
       },
       civil7: {
-        json: "/demos/img/civil1.json",
-        png: "/demos/img/civil7.png",
+        json: '/demos/img/civil1.json',
+        png: '/demos/img/civil7.png',
         excludeAnimations: excludedLPCAnimations,
       },
       poli: {
-        json: "/demos/img/civil1.json",
-        png: "/demos/img/poli.png",
+        json: '/demos/img/civil1.json',
+        png: '/demos/img/poli.png',
         excludeAnimations: excludedLPCAnimations,
       },
       fire: {
-        json: "/demos/img/fuego/fuego.json",
-        png: "/demos/img/fuego/fuego.png",
+        json: '/demos/img/fuego/fuego.json',
+        png: '/demos/img/fuego/fuego.png',
       },
       explosions: {
-        json: "/demos/img/explosions/explosions.json",
-        png: "/demos/img/explosions/explosions.png",
+        json: '/demos/img/explosions/explosions.json',
+        png: '/demos/img/explosions/explosions.png',
       },
     },
     tilemaps: {
       myTilemap: {
-        json: "/demos/img/tilemap/2.json",
-        png: "/demos/img/tilemap/2.png",
+        json: '/demos/img/tilemap/2.json',
+        png: '/demos/img/tilemap/2.png',
       },
     },
   };
@@ -268,10 +268,10 @@ export class PredatorScene extends WEED.Scene {
 
   create() {
     // Set tilemap background
-    this.setTilemapBackground("myTilemap", { scale: 1 });
+    this.setTilemapBackground('myTilemap', { scale: 1 });
 
     // Spawn initial entities
-    console.log("🎬 PredatorScene: Spawning entities...");
+    console.log('🎬 PredatorScene: Spawning entities...');
 
     // Spawn player first
     // this.spawnPlayer();
@@ -280,31 +280,30 @@ export class PredatorScene extends WEED.Scene {
     // this.spawnPrey(1000);
     // this.spawnHouses(this.numberOfHouses);
     this.spawnGrass(this.numberOfGrass);
-    this.spawnCivilians(10000);
+    this.spawnCivilians(1000);
     // this.spawnEntity(PreySpawner, {});
 
     this.spawnEntity(CameraController, {});
     // this.spawnTrees(this.numberOfTrees);
     this.spawnBarrels(this.numberOfBarrels);
     // this.spawnRocks(this.numberOfRocks);
-    this.spawnMySoldiers(100);
+    this.spawnMySoldiers(2);
     this.spawnDestination();
     // this.spawnRocksTreesAndHouses();
-
   }
 
   spawnRocksTreesAndHouses() {
-    fetch("/demos/trees_and_rocks.json")
-      .then(response => response.json())
-      .then(data => {
-        data.rocks.forEach(rock => {
+    fetch('/demos/trees_and_rocks.json')
+      .then((response) => response.json())
+      .then((data) => {
+        data.rocks.forEach((rock) => {
           this.spawnEntity(Rock, {
             x: rock.x,
             y: rock.y,
             radius: rock.radius,
           });
         });
-        data.trees.forEach(tree => {
+        data.trees.forEach((tree) => {
           this.spawnEntity(Tree, {
             x: tree.x,
             y: tree.y,
@@ -312,7 +311,7 @@ export class PredatorScene extends WEED.Scene {
           });
         });
         data.houses.forEach((house, i) => {
-          if (i % 2 == 0) return
+          if (i % 2 == 0) return;
           this.spawnEntity(House, {
             x: house.x,
             y: house.y,
@@ -320,16 +319,19 @@ export class PredatorScene extends WEED.Scene {
             height: house.height,
           });
         });
-        setTimeout(() => this.createNavGridForTheFlowField(), 500)
+        setTimeout(() => this.createNavGridForTheFlowField(), 500);
       });
     // this.spawnRocks(this.numberOfRocks);
     // this.spawnTrees(this.numberOfTrees);
     // this.spawnHouses(this.numberOfHouses);
-
   }
 
   createNavGridForTheFlowField() {
-    NavGrid.updateNavGrid([ ...Array.from(House.getAllActiveIndices()), ...Array.from(House.getAllActiveIndices()),...Array.from(Rock.getAllActiveIndices())])
+    NavGrid.updateNavGrid([
+      ...Array.from(House.getAllActiveIndices()),
+      ...Array.from(House.getAllActiveIndices()),
+      ...Array.from(Rock.getAllActiveIndices()),
+    ]);
   }
 
   update(time, delta) {
@@ -370,12 +372,10 @@ export class PredatorScene extends WEED.Scene {
   }
 
   spawnDestination() {
-
     this.spawnEntity(Destination, {
       x: 0,
       y: 0,
     });
-
   }
 
   spawnPredators(count) {
@@ -436,22 +436,22 @@ export class PredatorScene extends WEED.Scene {
   spawnCivilians(count) {
     for (let i = 0; i < count; i++) {
       this.spawnEntity(Civilian, {
-        x: this.rng() * this.config.worldWidth,
-        y: this.rng() * this.config.worldHeight,
+        x: this.config.worldWidth / 2 + rng() * count,
+        y: this.config.worldHeight / 2 + rng() * count,
       });
     }
   }
 
   spawnGrass(count) {
-    console.log("Spawning grass...");
+    console.log('Spawning grass...');
     // Spawn grass using DecorationPool (lightweight, no GameObject overhead)
     for (let i = 0; i < count; i++) {
-      const scale = 0.75 + this.rng() * 0.5
+      const scale = 0.75 + this.rng() * 0.5;
       const grassType = Math.floor(this.rng() * 4) + 1; // grass1 to grass9
       DecorationPool.spawn({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
-        texture: "grass" + grassType,
+        texture: 'grass' + grassType,
         scale: scale,
         alpha: 0.7 + this.rng() * 0.3,
         anchorX: 0.5,
@@ -482,7 +482,7 @@ export class PredatorScene extends WEED.Scene {
 
   async spawnPreyAtMouse() {
     // Access Mouse through the component system
-    const { Mouse } = await import("/src/core/Mouse.js");
+    const { Mouse } = await import('/src/core/Mouse.js');
     if (Mouse.x > 0 && Mouse.y > 0) {
       this.spawnEntity(Prey, {
         x: Mouse.x,
@@ -495,7 +495,7 @@ export class PredatorScene extends WEED.Scene {
 
   async spawnPredatorAtMouse() {
     // Access Mouse through the component system
-    const { Mouse } = await import("/src/core/Mouse.js");
+    const { Mouse } = await import('/src/core/Mouse.js');
     if (Mouse.x > 0 && Mouse.y > 0) {
       this.spawnEntity(Predator, {
         x: Mouse.x,
@@ -507,10 +507,10 @@ export class PredatorScene extends WEED.Scene {
   }
 
   clearAllEntities() {
-    if (confirm("Clear all entities?")) {
+    if (confirm('Clear all entities?')) {
       // Broadcast to all logic workers
       this.workers.logicWorkers.forEach((worker) => {
-        worker.postMessage({ msg: "clearAll" });
+        worker.postMessage({ msg: 'clearAll' });
       });
     }
   }

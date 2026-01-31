@@ -1,21 +1,16 @@
 // GameObject.js - Base class for all game entities using component composition
 // Entities are composed of components (Transform, RigidBody, Collider, etc.)
 
-import { Transform } from "../components/Transform.js";
-import { RigidBody } from "../components/RigidBody.js";
-import { Collider } from "../components/Collider.js";
-import { SpriteRenderer } from "../components/SpriteRenderer.js";
-import { LightEmitter } from "../components/LightEmitter.js";
-import { ShadowCaster } from "../components/ShadowCaster.js";
-import { SpriteSheetRegistry } from "./SpriteSheetRegistry.js";
-import { Grid } from "./Grid.js";
-import {
-  collectComponents,
-  cantorPair,
-  updateMassFromCircle,
-  updateMassFromBox,
-} from "./utils.js";
-import Keyboard from "./Keyboard.js";
+import { Transform } from '../components/Transform.js';
+import { RigidBody } from '../components/RigidBody.js';
+import { Collider } from '../components/Collider.js';
+import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { LightEmitter } from '../components/LightEmitter.js';
+import { ShadowCaster } from '../components/ShadowCaster.js';
+import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
+import { Grid } from './Grid.js';
+import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox } from './utils.js';
+import Keyboard from './Keyboard.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry };
@@ -133,11 +128,7 @@ export class GameObject {
     // Store which components this entity TYPE has (for validation)
     // Keys are stored in BOTH PascalCase and camelCase for easy lookup
     this._hasComponents = {};
-    const entityComponents = collectComponents(
-      this.constructor,
-      GameObject,
-      Transform
-    );
+    const entityComponents = collectComponents(this.constructor, GameObject, Transform);
     for (const ComponentClass of entityComponents) {
       const name = ComponentClass.name;
       const camelCaseName = name.charAt(0).toLowerCase() + name.slice(1);
@@ -181,7 +172,7 @@ export class GameObject {
    */
   static _ensureComponentAccessors() {
     // Skip if already created for THIS SPECIFIC class (not inherited from parent)
-    if (this.prototype.hasOwnProperty("_componentAccessorsCreated")) {
+    if (this.prototype.hasOwnProperty('_componentAccessorsCreated')) {
       return;
     }
 
@@ -203,8 +194,7 @@ export class GameObject {
         continue;
       }
 
-      const ComponentClass =
-        entityComponentMap[componentName] || coreComponents[componentName];
+      const ComponentClass = entityComponentMap[componentName] || coreComponents[componentName];
 
       if (!ComponentClass) {
         continue;
@@ -723,9 +713,7 @@ export class GameObject {
     if (!SpriteSheetRegistry.spritesheets.has(spritesheetName)) {
       console.error(
         `❌ ${this.constructor.name}: Spritesheet "${spritesheetName}" not found. ` +
-        `Available: ${Array.from(
-          SpriteSheetRegistry.spritesheets.keys()
-        ).join(", ")}`
+          `Available: ${Array.from(SpriteSheetRegistry.spritesheets.keys()).join(', ')}`
       );
       return;
     }
@@ -733,9 +721,7 @@ export class GameObject {
     // Store which spritesheet to use (proxy sheet like civil1, civil2, etc.)
     const spritesheetId = SpriteSheetRegistry.getSpritesheetId(spritesheetName);
     if (spritesheetId === 0) {
-      console.error(
-        `${this.constructor.name}: Spritesheet "${spritesheetName}" not registered`
-      );
+      console.error(`${this.constructor.name}: Spritesheet "${spritesheetName}" not registered`);
       return;
     }
     this.spriteRenderer.spritesheetId = spritesheetId;
@@ -766,16 +752,14 @@ export class GameObject {
     if (!spritesheetId || spritesheetId === 0) {
       console.error(
         `❌ ${this.constructor.name}: Call setSpritesheet() before setAnimation(). ` +
-        `Or use setSprite() for static sprites.`
+          `Or use setSprite() for static sprites.`
       );
       return;
     }
 
     const spritesheet = SpriteSheetRegistry.getSpritesheetName(spritesheetId);
     if (!spritesheet) {
-      console.error(
-        `❌ ${this.constructor.name}: Invalid spritesheetId ${spritesheetId}`
-      );
+      console.error(`❌ ${this.constructor.name}: Invalid spritesheetId ${spritesheetId}`);
       return;
     }
 
@@ -789,10 +773,7 @@ export class GameObject {
 
     if (animIndex === undefined) {
       // First time this animation is used - look it up via proxy
-      animIndex = SpriteSheetRegistry.getAnimationIndex(
-        spritesheet,
-        animationName
-      );
+      animIndex = SpriteSheetRegistry.getAnimationIndex(spritesheet, animationName);
 
       if (animIndex === undefined) {
         // Animation not found
@@ -802,8 +783,9 @@ export class GameObject {
 
         console.error(
           `❌ ${this.constructor.name}: Animation "${animationName}" not found in "${spritesheet}". ` +
-          `Available: ${availableAnims.slice(0, 10).join(", ")}${availableAnims.length > 10 ? "..." : ""
-          }`
+            `Available: ${availableAnims.slice(0, 10).join(', ')}${
+              availableAnims.length > 10 ? '...' : ''
+            }`
         );
         return;
       }
@@ -883,16 +865,12 @@ export class GameObject {
     if (animation !== undefined) {
       // Parameters provided: (spritesheet, animation, frameIndex)
       // Resolve to the actual frame name in bigAtlas
-      spriteName = SpriteSheetRegistry.getFrameName(
-        spriteNameOrSheet,
-        animation,
-        frameIndex ?? 0
-      );
+      spriteName = SpriteSheetRegistry.getFrameName(spriteNameOrSheet, animation, frameIndex ?? 0);
 
       if (!spriteName) {
         console.error(
           `❌ ${this.constructor.name}: Could not resolve frame for ` +
-          `spritesheet="${spriteNameOrSheet}", animation="${animation}", frameIndex=${frameIndex ?? 0}`
+            `spritesheet="${spriteNameOrSheet}", animation="${animation}", frameIndex=${frameIndex ?? 0}`
         );
         return this;
       }
@@ -902,7 +880,7 @@ export class GameObject {
     }
 
     // Static sprites use bigAtlas directly
-    const sheetName = "bigAtlas";
+    const sheetName = 'bigAtlas';
 
     // PERFORMANCE: Global cache keyed by "bigAtlas:spriteName"
     // Avoids repeated registry lookups for the same sprite
@@ -921,7 +899,7 @@ export class GameObject {
         // Sprite not found - provide helpful error message
         console.error(
           `❌ ${this.constructor.name}: Sprite "${spriteName}" not found in bigAtlas. ` +
-          `Make sure it's included in your assets config (textures or spritesheets).`
+            `Make sure it's included in your assets config (textures or spritesheets).`
         );
         return this;
       }
@@ -931,7 +909,7 @@ export class GameObject {
     }
 
     // Store which spritesheet to use (bigAtlas for static sprites)
-    const bigAtlasId = SpriteSheetRegistry.getSpritesheetId("bigAtlas");
+    const bigAtlasId = SpriteSheetRegistry.getSpritesheetId('bigAtlas');
     if (bigAtlasId === 0) {
       console.error(`❌ ${this.constructor.name}: bigAtlas not loaded yet`);
       return this;
@@ -953,8 +931,8 @@ export class GameObject {
    */
   setSpriteProp(prop, value) {
     if (this.logicWorker) {
-      this.logicWorker.sendDataToWorker("renderer", {
-        cmd: "setProp",
+      this.logicWorker.sendDataToWorker('renderer', {
+        cmd: 'setProp',
         entityId: this.index,
         prop: prop,
         value: value,
@@ -1061,11 +1039,11 @@ export class GameObject {
    */
   isCollidingWith(other) {
     // Get the other entity's index
-    const otherIndex = typeof other === "number" ? other : other.index;
+    const otherIndex = typeof other === 'number' ? other : other.index;
 
     // Access collision tracking from logic worker context
     // self.logicWorker is the LogicWorker instance in logic_worker.js
-    const logicWorker = typeof self !== "undefined" ? self.logicWorker : null;
+    const logicWorker = typeof self !== 'undefined' ? self.logicWorker : null;
     if (!logicWorker || !logicWorker.currentCollisions) {
       return false;
     }
@@ -1087,7 +1065,7 @@ export class GameObject {
 
     // WORKER ROUTING: If we're in a logic worker that's not worker 0,
     // route the despawn request to worker 0 to keep freeList synchronized
-    if (typeof self !== "undefined" && self.logicWorker) {
+    if (typeof self !== 'undefined' && self.logicWorker) {
       if (self.logicWorker.workerIndex !== 0) {
         // LIFECYCLE: Call onDespawned() BEFORE deactivating
         if (this.onDespawned) {
@@ -1104,8 +1082,8 @@ export class GameObject {
         if (this.shadowCaster) ShadowCaster.active[this.index] = 0;
 
         // Route to worker 0 to update the freeList
-        self.logicWorker.sendDataToWorker("logic0", {
-          msg: "despawnRequest",
+        self.logicWorker.sendDataToWorker('logic0', {
+          msg: 'despawnRequest',
           entityIndex: this.index,
           className: this.constructor.name,
         });
@@ -1164,8 +1142,7 @@ export class GameObject {
     if (GameObject.neighborData) {
       this._neighborData = GameObject.neighborData;
       this._distanceData = GameObject.distanceData;
-      const maxNeighbors =
-        this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
+      const maxNeighbors = this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
       this._neighborOffset = this.index * (1 + maxNeighbors);
       this.neighborCount = this._neighborData[this._neighborOffset];
       return;
@@ -1439,7 +1416,7 @@ export class GameObject {
     // 1. GameObject.spawn(EntityClass, config) - for dynamic class spawning
     // 2. Prey.spawn(config) - cleaner API when calling on the class directly
     let EntityClass;
-    if (typeof EntityClassOrConfig === "function") {
+    if (typeof EntityClassOrConfig === 'function') {
       // Traditional: GameObject.spawn(EntityClass, config)
       EntityClass = EntityClassOrConfig;
     } else {
@@ -1449,10 +1426,7 @@ export class GameObject {
     }
 
     // Validate EntityClass has required metadata
-    if (
-      EntityClass.startIndex === undefined ||
-      EntityClass.poolSize === undefined
-    ) {
+    if (EntityClass.startIndex === undefined || EntityClass.poolSize === undefined) {
       console.error(
         `Cannot spawn ${EntityClass.name}: missing startIndex/poolSize metadata. Was it registered with GameEngine?`
       );
@@ -1461,11 +1435,11 @@ export class GameObject {
 
     // WORKER ROUTING: If we're in a logic worker that's not worker 0,
     // route the spawn request to worker 0 to keep freeList synchronized
-    if (typeof self !== "undefined" && self.logicWorker) {
+    if (typeof self !== 'undefined' && self.logicWorker) {
       if (self.logicWorker.workerIndex !== 0) {
         // Route to worker 0 via MessagePort
-        self.logicWorker.sendDataToWorker("logic0", {
-          msg: "spawnRequest",
+        self.logicWorker.sendDataToWorker('logic0', {
+          msg: 'spawnRequest',
           className: EntityClass.name,
           spawnConfig: spawnConfig,
         });
@@ -1476,7 +1450,7 @@ export class GameObject {
     // Initialize free list if not exists (lazy init)
     // BUGFIX: Use hasOwnProperty to prevent inheriting parent class's freeList
     // (e.g., Prey extends Boid - Prey should have its own freeList, not inherit Boid's)
-    if (!EntityClass.hasOwnProperty("freeList")) {
+    if (!EntityClass.hasOwnProperty('freeList')) {
       GameObject.initializeFreeList(EntityClass);
     }
 
@@ -1609,10 +1583,7 @@ export class GameObject {
    * @returns {Object} - { total, active, available }
    */
   static getPoolStats(EntityClass) {
-    if (
-      EntityClass.startIndex === undefined ||
-      EntityClass.poolSize === undefined
-    ) {
+    if (EntityClass.startIndex === undefined || EntityClass.poolSize === undefined) {
       return { total: 0, active: 0, available: 0 };
     }
 
@@ -1651,10 +1622,7 @@ export class GameObject {
    * @returns {number} - Number of entities despawned
    */
   static despawnAll(EntityClass) {
-    if (
-      EntityClass.startIndex === undefined ||
-      EntityClass.poolSize === undefined
-    ) {
+    if (EntityClass.startIndex === undefined || EntityClass.poolSize === undefined) {
       return 0;
     }
 
@@ -1768,7 +1736,7 @@ export class GameObject {
     }
   }
 
-  static getFirstActiveIndex(){
+  static getFirstActiveIndex() {
     const indices = this.entityIndices;
     if (!indices) return null;
 
@@ -1784,7 +1752,7 @@ export class GameObject {
     return null;
   }
 
-  static getFirstActiveInstance(){
+  static getFirstActiveInstance() {
     const index = this.getFirstActiveIndex();
     if (index === null) return null;
     return this.instances[index - this.startIndex];
@@ -1846,7 +1814,8 @@ export class GameObject {
     const endIndex = startIndex + poolSize;
 
     // Binary search to find first index >= startIndex
-    let lo = 1, hi = 1 + totalCount;
+    let lo = 1,
+      hi = 1 + totalCount;
     while (lo < hi) {
       const mid = (lo + hi) >>> 1;
       if (data[mid] < startIndex) lo = mid + 1;
@@ -1922,15 +1891,12 @@ export class GameObject {
   static get activeCount() {
     const EntityClass = this;
 
-    if (
-      EntityClass.startIndex === undefined ||
-      EntityClass.poolSize === undefined
-    ) {
+    if (EntityClass.startIndex === undefined || EntityClass.poolSize === undefined) {
       return 0;
     }
 
     // If free list exists, calculate from it (O(1))
-    if (EntityClass.hasOwnProperty("freeList")) {
+    if (EntityClass.hasOwnProperty('freeList')) {
       return EntityClass.poolSize - (EntityClass.freeListTop + 1);
     }
 

@@ -23,15 +23,15 @@
 //
 // =============================================================================
 
-import { Transform } from "../components/Transform.js";
-import { Collider } from "../components/Collider.js";
+import { Transform } from '../components/Transform.js';
+import { Collider } from '../components/Collider.js';
 
 // =============================================================================
 // CONSTANTS - Configurable via scene (defaults shown)
 // =============================================================================
 // These are defaults - actual values come from metadata.maxEntitiesPerCell and metadata.maxNeighbors
-const DEFAULT_MAX_ENTITIES_PER_CELL = 64;  // Max entities per grid cell (matches ConfigDefaults.js)
-const DEFAULT_MAX_NEIGHBORS = 500;         // Max neighbors per entity (matches ConfigDefaults.js)
+const DEFAULT_MAX_ENTITIES_PER_CELL = 64; // Max entities per grid cell (matches ConfigDefaults.js)
+const DEFAULT_MAX_NEIGHBORS = 500; // Max neighbors per entity (matches ConfigDefaults.js)
 
 /**
  * Grid - Static class for row-based spatial partitioning
@@ -56,31 +56,31 @@ const DEFAULT_MAX_NEIGHBORS = 500;         // Max neighbors per entity (matches 
 export class Grid {
   // ===== GRID METADATA =====
   static cellSize = 0;
-  static invCellSize = 0;       // 1/cellSize for fast division
-  static gridWidth = 0;         // Number of columns
-  static gridHeight = 0;        // Number of rows
+  static invCellSize = 0; // 1/cellSize for fast division
+  static gridWidth = 0; // Number of columns
+  static gridHeight = 0; // Number of rows
   static totalCells = 0;
-  static maxEntitiesPerCell = DEFAULT_MAX_ENTITIES_PER_CELL;  // Configured from scene
-  static maxNeighbors = DEFAULT_MAX_NEIGHBORS;                // Configured from scene
+  static maxEntitiesPerCell = DEFAULT_MAX_ENTITIES_PER_CELL; // Configured from scene
+  static maxNeighbors = DEFAULT_MAX_NEIGHBORS; // Configured from scene
 
   // Computed from maxEntitiesPerCell (set during initialize)
-  static cellByteSize = 0;      // Bytes per cell
-  static neighborStride = 0;    // Elements per entity in neighbor arrays
+  static cellByteSize = 0; // Bytes per cell
+  static neighborStride = 0; // Elements per entity in neighbor arrays
 
   // ===== SPATIAL GRID DATA (Single Buffer - Row Ownership) =====
   // Layout per cell: [count:Uint8, pad:3bytes, entities[16]:Uint32]
-  static _gridBuffer = null;    // SharedArrayBuffer
-  static _gridCounts = null;    // Uint8Array view - count at byte 0 of each cell
-  static _gridEntities = null;  // Uint32Array view - entities starting at byte 4
+  static _gridBuffer = null; // SharedArrayBuffer
+  static _gridCounts = null; // Uint8Array view - count at byte 0 of each cell
+  static _gridEntities = null; // Uint32Array view - entities starting at byte 4
 
   // ===== NEIGHBOR DATA (Single Buffer - Row Ownership) =====
   // Layout per entity: [count:Int32, neighbors[MAX_NEIGHBORS]:Int32]
-  static _neighborBuffer = null;   // SharedArrayBuffer
-  static _neighborData = null;     // Int32Array view
+  static _neighborBuffer = null; // SharedArrayBuffer
+  static _neighborData = null; // Int32Array view
 
   // Layout per entity: [dist2[MAX_NEIGHBORS]:Float32]
-  static _distanceBuffer = null;   // SharedArrayBuffer
-  static _distanceData = null;     // Float32Array view
+  static _distanceBuffer = null; // SharedArrayBuffer
+  static _distanceData = null; // Float32Array view
 
   // Internal stride for neighbor arrays (computed as 1 + maxNeighbors during initialize)
   static _stride = 1 + DEFAULT_MAX_NEIGHBORS;
@@ -134,7 +134,6 @@ export class Grid {
       Grid._distanceBuffer = buffers.distanceBuffer;
       Grid._distanceData = new Float32Array(buffers.distanceBuffer);
     }
-
   }
 
   // =============================================================================
@@ -166,7 +165,7 @@ export class Grid {
   static getCellCoords(cellIndex) {
     return {
       col: cellIndex % Grid.gridWidth,
-      row: (cellIndex / Grid.gridWidth) | 0
+      row: (cellIndex / Grid.gridWidth) | 0,
     };
   }
 
@@ -379,7 +378,6 @@ export class Grid {
     }
     return rows;
   }
-
 }
 
 // Export default constants for use by other modules (actual values configured via Grid.initialize)

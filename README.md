@@ -39,7 +39,7 @@ Built from the ground up with true parallelism using SharedArrayBuffers and 4 de
 ## 💫 Stupidly Simple API
 
 ```javascript
-import WEED from "/src/index.js";
+import WEED from '/src/index.js';
 
 const { GameObject, RigidBody, Collider, SpriteRenderer, Scene } = WEED;
 
@@ -55,8 +55,8 @@ class Zombie extends GameObject {
   onSpawned(config) {
     this.x = config.x;
     this.y = config.y;
-    this.setSpritesheet("zombie");
-    this.setAnimation("walk_down");
+    this.setSpritesheet('zombie');
+    this.setAnimation('walk_down');
   }
 
   tick(dtRatio) {
@@ -86,7 +86,7 @@ class ZombieScene extends Scene {
 
   create() {
     for (let i = 0; i < 20000; i++) {
-      this.spawnEntity("Zombie", {
+      this.spawnEntity('Zombie', {
         x: Math.random() * 5000,
         y: Math.random() * 2000,
       });
@@ -109,7 +109,7 @@ That's it. 20,000 zombies chasing each other with spatial awareness, physics, an
 // Blood splatter on collision
 ParticleEmitter.emit({
   count: { min: 4, max: 8 },
-  texture: "blood",
+  texture: 'blood',
   x: this.x,
   y: this.y,
   angleXY: { min: 0, max: 360 },

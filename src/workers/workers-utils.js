@@ -7,9 +7,9 @@
  * @returns {string} Formatted number (e.g., "1_000_000")
  */
 function formatNumber(num) {
-  if (num === null || num === undefined || isNaN(num)) return "--";
+  if (num === null || num === undefined || isNaN(num)) return '--';
   const rounded = Math.round(num);
-  return rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, "_");
+  return rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '_');
 }
 
 /**
@@ -97,13 +97,13 @@ export const LOGIC_STATS = {
  */
 export const NAVIGATION_STATS = {
   FPS: 0,
-  FLOWFIELDS_COMPUTED: 1,    // Flowfields calculated this frame
-  PATHS_COMPUTED: 2,          // A* paths calculated this frame
-  FLOWFIELDS_CACHED: 3,       // Total flowfields in cache
-  PATHS_CACHED: 4,            // Total A* paths in cache
-  PENDING_FLOWFIELDS: 5,      // Flowfield requests waiting
-  PENDING_PATHS: 6,           // Path requests waiting
-  GRID_WIDTH: 7,              // Grid dimensions for reference
+  FLOWFIELDS_COMPUTED: 1, // Flowfields calculated this frame
+  PATHS_COMPUTED: 2, // A* paths calculated this frame
+  FLOWFIELDS_CACHED: 3, // Total flowfields in cache
+  PATHS_CACHED: 4, // Total A* paths in cache
+  PENDING_FLOWFIELDS: 5, // Flowfield requests waiting
+  PENDING_PATHS: 6, // Path requests waiting
+  GRID_WIDTH: 7, // Grid dimensions for reference
   GRID_HEIGHT: 8,
   // Reserve space for future stats
   STRIDE_FLOATS: 16,
@@ -116,113 +116,113 @@ export const NAVIGATION_STATS = {
  */
 export const WORKER_DISPLAY_CONFIG = {
   renderer: {
-    label: "Render",
-    color: "renderer",
+    label: 'Render',
+    color: 'renderer',
     stats: [
-      { key: "FPS", format: (v) => v.toFixed(2) },
-      { key: "DRAW_CALLS", format: (v) => formatNumber(v) },
+      { key: 'FPS', format: (v) => v.toFixed(2) },
+      { key: 'DRAW_CALLS', format: (v) => formatNumber(v) },
       {
-        key: "SPRITES_CREATED",
+        key: 'SPRITES_CREATED',
         format: (v) => formatNumber(v),
       },
       {
-        key: "VISIBLE_SPRITES",
+        key: 'VISIBLE_SPRITES',
         format: (v) => formatNumber(v),
       },
     ],
   },
   particle: {
-    label: "Particle",
-    color: "particle",
+    label: 'Particle',
+    color: 'particle',
     stats: [
-      { key: "FPS", format: (v) => v.toFixed(2) },
+      { key: 'FPS', format: (v) => v.toFixed(2) },
       {
-        key: "PARTICLES_STAMPED",
+        key: 'PARTICLES_STAMPED',
         format: (v) => formatNumber(v),
       },
       {
-        key: "FLASHES_UPDATED",
+        key: 'FLASHES_UPDATED',
         format: (v) => formatNumber(v),
       },
       {
-        key: "SHADOWS_UPDATED",
+        key: 'SHADOWS_UPDATED',
         format: (v) => formatNumber(v),
       },
     ],
   },
   physics: {
-    label: "Physics",
-    color: "physics",
+    label: 'Physics',
+    color: 'physics',
     stats: [
-      { key: "FPS", format: (v) => v.toFixed(2) },
+      { key: 'FPS', format: (v) => v.toFixed(2) },
       {
-        key: "COLLISION_CHECKS",
+        key: 'COLLISION_CHECKS',
         format: (v) => formatNumber(v),
       },
       {
-        key: "COLLISIONS_RESOLVED",
+        key: 'COLLISIONS_RESOLVED',
         format: (v) => formatNumber(v),
       },
       {
-        key: "COLLISION_PAIRS",
+        key: 'COLLISION_PAIRS',
         format: (v) => formatNumber(v),
       },
     ],
   },
   spatial: {
-    label: "Spatial",
-    color: "spatial",
+    label: 'Spatial',
+    color: 'spatial',
     stats: [
-      { key: "FPS", format: (v) => v.toFixed(2) },
+      { key: 'FPS', format: (v) => v.toFixed(2) },
       {
-        key: "NEIGHBOR_CHECKS",
+        key: 'NEIGHBOR_CHECKS',
         format: (v) => formatNumber(v),
       },
       {
-        key: "GRID_CELLS_CHECKED",
+        key: 'GRID_CELLS_CHECKED',
         format: (v) => formatNumber(v),
       },
       {
-        key: "ENTITIES_PROCESSED",
+        key: 'ENTITIES_PROCESSED',
         format: (v) => formatNumber(v),
       },
     ],
   },
   logic: {
-    label: "Logic",
-    color: "logic",
+    label: 'Logic',
+    color: 'logic',
     stats: [
-      { key: "FPS", format: (v) => v.toFixed(2) },
+      { key: 'FPS', format: (v) => v.toFixed(2) },
       {
-        key: "ENTITIES_PROCESSED",
+        key: 'ENTITIES_PROCESSED',
         format: (v) => formatNumber(v),
       },
     ],
   },
   navigation: {
-    label: "NavGrid",
-    color: "navigation",
+    label: 'NavGrid',
+    color: 'navigation',
     stats: [
-      { key: "FPS", format: (v) => v.toFixed(2) },
+      { key: 'FPS', format: (v) => v.toFixed(2) },
       {
-        key: "FLOWFIELDS_COMPUTED",
+        key: 'FLOWFIELDS_COMPUTED',
         format: (v) => formatNumber(v),
-        label: "FF/frame",
+        label: 'FF/frame',
       },
       {
-        key: "PATHS_COMPUTED",
+        key: 'PATHS_COMPUTED',
         format: (v) => formatNumber(v),
-        label: "A*/frame",
+        label: 'A*/frame',
       },
       {
-        key: "FLOWFIELDS_CACHED",
+        key: 'FLOWFIELDS_CACHED',
         format: (v) => formatNumber(v),
-        label: "FF cached",
+        label: 'FF cached',
       },
       {
-        key: "PATHS_CACHED",
+        key: 'PATHS_CACHED',
         format: (v) => formatNumber(v),
-        label: "A* cached",
+        label: 'A* cached',
       },
     ],
   },
@@ -261,11 +261,7 @@ export function createMultiWorkerStatsWriter(buffer, statsSchema, workerIndex) {
  * @param {number} workerCount - Number of workers
  * @returns {Float32Array[]} Array of typed array views for reading stats
  */
-export function createMultiWorkerStatsReaderArray(
-  buffer,
-  statsSchema,
-  workerCount
-) {
+export function createMultiWorkerStatsReaderArray(buffer, statsSchema, workerCount) {
   const views = [];
   for (let i = 0; i < workerCount; i++) {
     const offset = i * statsSchema.STRIDE_FLOATS;

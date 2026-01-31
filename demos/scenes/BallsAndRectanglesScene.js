@@ -1,10 +1,10 @@
 // BallsAndRectanglesScene.js - Physics Demo with Balls and Boxes
 // Demonstrates mixed circle and rectangle collisions
 
-import { Ball } from "/demos/gameObjects/ball.js";
-import { Box } from "/demos/gameObjects/box.js";
-import { Camera } from "/src/core/Camera.js";
-import WEED from "/src/index.js";
+import { Ball } from '/demos/gameObjects/ball.js';
+import { Box } from '/demos/gameObjects/box.js';
+import { Camera } from '/src/core/Camera.js';
+import WEED from '/src/index.js';
 
 export class BallsAndRectanglesScene extends WEED.Scene {
   // ========================================
@@ -61,8 +61,8 @@ export class BallsAndRectanglesScene extends WEED.Scene {
 
   static assets = {
     textures: {
-      ball: "/demos/img/bola.png",
-      box: "/demos/img/box_100_100.png",
+      ball: '/demos/img/bola.png',
+      box: '/demos/img/box_100_100.png',
     },
   };
 
@@ -94,7 +94,7 @@ export class BallsAndRectanglesScene extends WEED.Scene {
 
   create() {
     // Spawn initial entities
-    console.log("🎬 BallsAndRectanglesScene: Spawning entities...");
+    console.log('🎬 BallsAndRectanglesScene: Spawning entities...');
 
     this.spawnBalls(this.numberOfBalls);
     this.spawnBoxes(this.numberOfBoxes);
@@ -128,14 +128,8 @@ export class BallsAndRectanglesScene extends WEED.Scene {
     }
 
     // Clamp camera target to world bounds
-    this.cameraFollowX = Math.max(
-      0,
-      Math.min(this.cameraFollowX, this.config.worldWidth)
-    );
-    this.cameraFollowY = Math.max(
-      0,
-      Math.min(this.cameraFollowY, this.config.worldHeight)
-    );
+    this.cameraFollowX = Math.max(0, Math.min(this.cameraFollowX, this.config.worldWidth));
+    this.cameraFollowY = Math.max(0, Math.min(this.cameraFollowY, this.config.worldHeight));
 
     // Update camera (handles smooth following and zoom lerping)
     Camera.follow(this.cameraFollowX, this.cameraFollowY, 0.15);
@@ -147,7 +141,7 @@ export class BallsAndRectanglesScene extends WEED.Scene {
 
   spawnBalls(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity("Ball", {
+      this.spawnEntity('Ball', {
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
         vx: 0,
@@ -158,7 +152,7 @@ export class BallsAndRectanglesScene extends WEED.Scene {
 
   spawnBoxes(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity("Box", {
+      this.spawnEntity('Box', {
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
         vx: 0,
@@ -172,7 +166,7 @@ export class BallsAndRectanglesScene extends WEED.Scene {
   // ========================================
 
   spawnRandomBall() {
-    this.spawnEntity("Ball", {
+    this.spawnEntity('Ball', {
       x: this.rng() * this.config.worldWidth,
       y: this.rng() * this.config.worldHeight,
       vx: 0,
@@ -181,7 +175,7 @@ export class BallsAndRectanglesScene extends WEED.Scene {
   }
 
   spawnRandomBox() {
-    this.spawnEntity("Box", {
+    this.spawnEntity('Box', {
       x: this.rng() * this.config.worldWidth,
       y: this.rng() * this.config.worldHeight,
       vx: 0,
@@ -190,9 +184,9 @@ export class BallsAndRectanglesScene extends WEED.Scene {
   }
 
   async spawnBallAtMouse() {
-    const { Mouse } = await import("/src/core/Mouse.js");
+    const { Mouse } = await import('/src/core/Mouse.js');
     if (Mouse.x > 0 && Mouse.y > 0) {
-      this.spawnEntity("Ball", {
+      this.spawnEntity('Ball', {
         x: Mouse.x,
         y: Mouse.y,
         vx: 0,
@@ -202,9 +196,9 @@ export class BallsAndRectanglesScene extends WEED.Scene {
   }
 
   async spawnBoxAtMouse() {
-    const { Mouse } = await import("/src/core/Mouse.js");
+    const { Mouse } = await import('/src/core/Mouse.js');
     if (Mouse.x > 0 && Mouse.y > 0) {
-      this.spawnEntity("Box", {
+      this.spawnEntity('Box', {
         x: Mouse.x,
         y: Mouse.y,
         vx: 0,
@@ -230,10 +224,10 @@ export class BallsAndRectanglesScene extends WEED.Scene {
   }
 
   clearAllEntities() {
-    if (confirm("Clear all entities?")) {
+    if (confirm('Clear all entities?')) {
       // Broadcast to all logic workers
       this.workers.logicWorkers.forEach((worker) => {
-        worker.postMessage({ msg: "clearAll" });
+        worker.postMessage({ msg: 'clearAll' });
       });
     }
   }

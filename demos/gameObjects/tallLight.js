@@ -1,8 +1,7 @@
-import WEED from "/src/index.js";
+import WEED from '/src/index.js';
 
 // Destructure what we need from WEED
-const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, ShapeType } =
-  WEED;
+const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, ShapeType } = WEED;
 
 export class TallLight extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
@@ -18,7 +17,7 @@ export class TallLight extends GameObject {
    * Overrides and extends Boid's setup()
    */
   setup() {
-    this.setSprite("tallLight");
+    this.setSprite('tallLight');
 
     this.lightEmitter.lightColor = randomColor({
       min: 0xff0000,
@@ -44,7 +43,7 @@ export class TallLight extends GameObject {
    */
   onSpawned(spawnConfig = {}) {
     //TODO FIX
-    this.setSprite("tallLight"); //WHY???
+    this.setSprite('tallLight'); //WHY???
   }
 
   /**

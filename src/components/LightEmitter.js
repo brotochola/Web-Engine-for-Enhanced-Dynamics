@@ -1,4 +1,4 @@
-import { Component } from "../core/Component.js";
+import { Component } from '../core/Component.js';
 
 export class LightEmitter extends Component {
   static ARRAY_SCHEMA = {

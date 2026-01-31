@@ -1,12 +1,12 @@
 // AbstractWorker.js - Base class for all game engine workers
 // Provides common functionality: frame timing,  FPS tracking, pause state, message handling
 
-import { GameObject, SpriteSheetRegistry } from "../core/gameObject.js";
-import Keyboard from "../core/Keyboard.js";
-import { Mouse } from "../core/Mouse.js";
-import { ParticleEmitter } from "../core/ParticleEmitter.js";
-import { DecorationPool } from "../core/DecorationPool.js";
-import { Flash } from "../core/Flash.js";
+import { GameObject, SpriteSheetRegistry } from '../core/gameObject.js';
+import Keyboard from '../core/Keyboard.js';
+import { Mouse } from '../core/Mouse.js';
+import { ParticleEmitter } from '../core/ParticleEmitter.js';
+import { DecorationPool } from '../core/DecorationPool.js';
+import { Flash } from '../core/Flash.js';
 import {
   seededRandom,
   loadEntityScripts,
@@ -14,13 +14,13 @@ import {
   initializeComponentViews,
   exposeComponentsGlobally,
   exposeEntityClassesGlobally,
-} from "../core/utils.js";
-import { Camera } from "../core/Camera.js";
-import { Ray } from "../core/Ray.js";
-import { Grid } from "../core/Grid.js";
-import { NavGrid } from "../core/NavGrid.js";
-import { ParticleComponent } from "../components/ParticleComponent.js";
-import { DecorationComponent } from "../components/DecorationComponent.js";
+} from '../core/utils.js';
+import { Camera } from '../core/Camera.js';
+import { Ray } from '../core/Ray.js';
+import { Grid } from '../core/Grid.js';
+import { NavGrid } from '../core/NavGrid.js';
+import { ParticleComponent } from '../components/ParticleComponent.js';
+import { DecorationComponent } from '../components/DecorationComponent.js';
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -90,7 +90,7 @@ export class AbstractWorker {
       dtRatio: 1,
     };
 
-    this.reportLog("finished constructor");
+    this.reportLog('finished constructor');
   }
 
   /**
@@ -117,7 +117,7 @@ export class AbstractWorker {
     const dtRatio = deltaTime / 16.67;
 
     // Accumulate total time in seconds
-    this.accumulatedTime += deltaTime
+    this.accumulatedTime += deltaTime;
 
     // Reuse timing object to avoid GC pressure
     this._timing.deltaTime = deltaTime;
@@ -136,13 +136,13 @@ export class AbstractWorker {
   }
 
   reportLog(message) {
-    self.postMessage({ msg: "log", message, when: Date.now() });
+    self.postMessage({ msg: 'log', message, when: Date.now() });
   }
 
   reportError(title, error) {
     console.error(`❌ [${this.constructor.name}] ${title}:`, error);
     self.postMessage({
-      msg: "error",
+      msg: 'error',
       title,
       message: error?.message || String(error),
       stack: error?.stack,
@@ -192,7 +192,7 @@ export class AbstractWorker {
    * Start the game loop (call this from initialize())
    */
   startGameLoop() {
-    this.reportLog("starting game loop");
+    this.reportLog('starting game loop');
     this.isPaused = false;
     this.lastFrameTime = performance.now(); // Reset timing
 
@@ -220,7 +220,7 @@ export class AbstractWorker {
     // console.log(
     //   `${this.constructor.name}: initializeCommonBuffers called, needsGameScripts=${this.needsGameScripts}`
     // );
-    this.reportLog("initializing common buffers");
+    this.reportLog('initializing common buffers');
     this.globalEntityCount = data.globalEntityCount;
 
     // Store config for worker access
@@ -228,9 +228,7 @@ export class AbstractWorker {
 
     // Check if this worker should run with unlimited FPS (no RAF limiting)
     // Each worker type can have its own noLimitFPS setting in its nested config
-    const workerType = this.constructor.name
-      .replace("Worker", "")
-      .toLowerCase();
+    const workerType = this.constructor.name.replace('Worker', '').toLowerCase();
 
     // Check nested config first, then fall back to root level
     const workerConfig = this.config[workerType] || {};
@@ -268,9 +266,7 @@ export class AbstractWorker {
           data.maxParticles
         );
         ParticleComponent.particleCount = data.maxParticles;
-        this.reportLog(
-          `initialized ParticleComponent for ${data.maxParticles} particles`
-        );
+        this.reportLog(`initialized ParticleComponent for ${data.maxParticles} particles`);
       }
     }
 
@@ -284,9 +280,7 @@ export class AbstractWorker {
         );
         DecorationComponent.decorationCount = data.maxDecorations;
         this.maxDecorations = data.maxDecorations;
-        this.reportLog(
-          `initialized DecorationComponent for ${data.maxDecorations} decorations`
-        );
+        this.reportLog(`initialized DecorationComponent for ${data.maxDecorations} decorations`);
       }
 
       // Initialize DecorationPool active count from shared buffer
@@ -328,9 +322,7 @@ export class AbstractWorker {
     // Layout: [count, entityIdx0, entityIdx1, ...]
     // Built by particle_worker, consumed by all workers that need to iterate active entities
     if (data.buffers?.activeEntitiesData) {
-      this.activeEntitiesData = new Uint32Array(
-        data.buffers.activeEntitiesData
-      );
+      this.activeEntitiesData = new Uint32Array(data.buffers.activeEntitiesData);
       // Also set on GameObject for static access via GameObject.getAllActive()
       GameObject.activeEntitiesData = this.activeEntitiesData;
     }
@@ -366,7 +358,7 @@ export class AbstractWorker {
       );
     }
 
-    this.reportLog("finished initializing common buffers");
+    this.reportLog('finished initializing common buffers');
 
     // Keep a reference to neighbor data for easy access (already set above, but also from GameObject)
     // NOTE: With double buffering, these will point to the initial read buffer (A)
@@ -410,9 +402,7 @@ export class AbstractWorker {
         },
         data.gridMetadata
       );
-      this.reportLog(
-        "Grid system initialized (row-based partitioning, single buffers)"
-      );
+      this.reportLog('Grid system initialized (row-based partitioning, single buffers)');
     }
 
     // Initialize Ray system with debug buffers (uses Grid for spatial data)
@@ -422,7 +412,7 @@ export class AbstractWorker {
         data.buffers.raycastDebugData, // Debug raycast buffer
         data.maxDebugRaycasts || 100
       );
-      this.reportLog("Ray system initialized with debug support");
+      this.reportLog('Ray system initialized with debug support');
     }
 
     // Initialize NavGrid system (if navigation enabled)
@@ -433,7 +423,7 @@ export class AbstractWorker {
         worldWidth: data.config.worldWidth,
         worldHeight: data.config.worldHeight,
       });
-      this.reportLog("NavGrid initialized for pathfinding");
+      this.reportLog('NavGrid initialized for pathfinding');
     }
   }
 
@@ -454,7 +444,7 @@ export class AbstractWorker {
     self.Camera = Camera;
     self.SpriteSheetRegistry = SpriteSheetRegistry;
 
-    this.reportLog("registered core engine classes globally");
+    this.reportLog('registered core engine classes globally');
   }
 
   /**
@@ -469,10 +459,7 @@ export class AbstractWorker {
     }
 
     // Collect ALL components from all registered entity classes
-    const componentClasses = collectAllComponentsFromClasses(
-      this.registeredClasses,
-      self
-    );
+    const componentClasses = collectAllComponentsFromClasses(this.registeredClasses, self);
 
     // Initialize component views from SharedArrayBuffers
     const initializedCount = initializeComponentViews(
@@ -510,7 +497,7 @@ export class AbstractWorker {
     const { msg } = e.data;
 
     switch (msg) {
-      case "init":
+      case 'init':
         this.initSeendedRandom(e.data.config.seed);
         this.isPaused = true; // Keep paused until "start" message
         await this.initializeCommonBuffers(e.data);
@@ -520,17 +507,17 @@ export class AbstractWorker {
         this.reportReady();
         break;
 
-      case "start":
+      case 'start':
         // All workers are ready, start the game loop
-        this.reportLog("received start signal, beginning game loop");
+        this.reportLog('received start signal, beginning game loop');
         this.startGameLoop();
         break;
 
-      case "pause":
+      case 'pause':
         this.pause();
         break;
 
-      case "resume":
+      case 'resume':
         this.resume();
         break;
 
@@ -545,8 +532,8 @@ export class AbstractWorker {
    * Called automatically after initialization completes
    */
   reportReady() {
-    this.reportLog("initialization complete, signaling ready");
-    self.postMessage({ msg: "workerReady", worker: this.constructor.name });
+    this.reportLog('initialization complete, signaling ready');
+    self.postMessage({ msg: 'workerReady', worker: this.constructor.name });
   }
 
   /**
@@ -555,7 +542,7 @@ export class AbstractWorker {
    * @param {Object} ports - Object mapping worker names to MessagePorts
    */
   initializeWorkerPorts(ports) {
-    this.reportLog("initializing worker ports");
+    this.reportLog('initializing worker ports');
     if (!ports) return;
 
     Object.entries(ports).forEach(([workerName, port]) => {
@@ -569,8 +556,8 @@ export class AbstractWorker {
 
     // If this worker has a port to the navigation worker, configure NavGrid to use it
     // Logic workers use this to send pathfinding requests to the nav worker
-    if (this.workerPorts.has("navigation")) {
-      NavGrid.setNavWorkerPort(this.workerPorts.get("navigation"));
+    if (this.workerPorts.has('navigation')) {
+      NavGrid.setNavWorkerPort(this.workerPorts.get('navigation'));
     }
 
     // console.log(
@@ -679,7 +666,7 @@ export class AbstractWorker {
     const key = componentClasses
       .map((CompClass) => CompClass.name)
       .sort()
-      .join(",");
+      .join(',');
 
     // Check cache first
     let result = this.queryCache.get(key);
@@ -747,7 +734,7 @@ export class AbstractWorker {
    * @param {Object} data - Initialization data
    */
   async initialize(data) {
-    throw new Error("initialize() must be implemented by subclass");
+    throw new Error('initialize() must be implemented by subclass');
   }
 
   /**
@@ -758,7 +745,7 @@ export class AbstractWorker {
    * @param {boolean} resuming - Whether we're resuming from pause
    */
   update(deltaTime, dtRatio, resuming) {
-    throw new Error("update() must be implemented by subclass");
+    throw new Error('update() must be implemented by subclass');
   }
 
   /**

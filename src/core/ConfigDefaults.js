@@ -50,17 +50,17 @@ export const Z_INDICES = Object.freeze({
  */
 export const LAYER_DEFAULT_BLEND_MODES = Object.freeze({
   /** Background layer - normal blend */
-  BACKGROUND: "normal",
+  BACKGROUND: 'normal',
   /** Decals layer - normal blend */
-  DECALS: "normal",
+  DECALS: 'normal',
   /** Casted shadows - multiply to darken scene */
-  CASTED_SHADOWS: "multiply",
+  CASTED_SHADOWS: 'multiply',
   /** Entities layer - normal-npm (non-premultiplied alpha for ParticleContainer) */
-  ENTITIES: "normal-npm",
+  ENTITIES: 'normal-npm',
   /** Lighting overlay - multiply to darken unlit areas */
-  LIGHTING: "multiply",
+  LIGHTING: 'multiply',
   /** Light glow effects - additive for glow effect */
-  LIGHT_GLOW: "add",
+  LIGHT_GLOW: 'add',
 });
 
 // ============================================================================
@@ -94,10 +94,10 @@ export const PHYSICS_DEFAULTS = {
 // ============================================================================
 
 export const SPATIAL_DEFAULTS = {
-  cellSize: 128,              // Grid cell size in world units
-  maxNeighbors: 500,          // Max neighbors per entity (passed to Grid via gridMetadata)
-  maxEntitiesPerCell: 64,     // Max entities per grid cell (passed to Grid via gridMetadata)
-  numberOfSpatialWorkers: 1,  // Number of parallel spatial workers for neighbor detection
+  cellSize: 128, // Grid cell size in world units
+  maxNeighbors: 500, // Max neighbors per entity (passed to Grid via gridMetadata)
+  maxEntitiesPerCell: 64, // Max entities per grid cell (passed to Grid via gridMetadata)
+  numberOfSpatialWorkers: 1, // Number of parallel spatial workers for neighbor detection
   noLimitFPS: false,
 };
 
@@ -166,12 +166,12 @@ export const LIGHTING_DEFAULTS = {
 // ============================================================================
 
 export const NAVIGATION_DEFAULTS = {
-  enabled: false,            // Must be explicitly enabled
-  cellSize: 32,              // Pixels per navigation cell
-  maxFlowfields: 16,         // How many distinct flowfield targets to cache
-  maxPaths: 64,              // How many A* paths to cache
-  maxPathLength: 128,        // Maximum cells per path
-  noLimitFPS: true,          // Nav worker runs as fast as possible by default
+  enabled: false, // Must be explicitly enabled
+  cellSize: 32, // Pixels per navigation cell
+  maxFlowfields: 16, // How many distinct flowfield targets to cache
+  maxPaths: 64, // How many A* paths to cache
+  maxPathLength: 128, // Maximum cells per path
+  noLimitFPS: true, // Nav worker runs as fast as possible by default
 };
 
 // ============================================================================

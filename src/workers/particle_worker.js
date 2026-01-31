@@ -2,18 +2,18 @@
 // Updates particle positions, applies gravity, handles lifetime
 // Particles are NOT GameObjects - they use ParticleComponent directly
 
-import { ParticleComponent } from "../components/ParticleComponent.js";
-import { DecorationComponent } from "../components/DecorationComponent.js";
-import { DecorationPool } from "../core/DecorationPool.js";
-import { Transform } from "../components/Transform.js";
-import { RigidBody } from "../components/RigidBody.js";
-import { Collider } from "../components/Collider.js";
-import { LightEmitter } from "../components/LightEmitter.js";
-import { SpriteRenderer } from "../components/SpriteRenderer.js";
-import { ShadowCaster } from "../components/ShadowCaster.js";
-import { FlashComponent } from "../components/FlashComponent.js";
-import { AbstractWorker } from "./AbstractWorker.js";
-import { Grid } from "../core/Grid.js";
+import { ParticleComponent } from '../components/ParticleComponent.js';
+import { DecorationComponent } from '../components/DecorationComponent.js';
+import { DecorationPool } from '../core/DecorationPool.js';
+import { Transform } from '../components/Transform.js';
+import { RigidBody } from '../components/RigidBody.js';
+import { Collider } from '../components/Collider.js';
+import { LightEmitter } from '../components/LightEmitter.js';
+import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { ShadowCaster } from '../components/ShadowCaster.js';
+import { FlashComponent } from '../components/FlashComponent.js';
+import { AbstractWorker } from './AbstractWorker.js';
+import { Grid } from '../core/Grid.js';
 import {
   calculateTotalLightAtPosition,
   brightnessToTint,
@@ -25,8 +25,8 @@ import {
   calculateTileClipRegion,
   _decalTileBounds,
   _tileClipRegion,
-} from "../core/utils.js";
-import { PARTICLE_STATS, createStatsWriter } from "./workers-utils.js";
+} from '../core/utils.js';
+import { PARTICLE_STATS, createStatsWriter } from './workers-utils.js';
 
 // Note: Components (Transform, RigidBody, etc.) are now registered automatically
 // by AbstractWorker.registerAllComponents() after entity classes are loaded
@@ -163,11 +163,8 @@ class ParticleWorker extends AbstractWorker {
   async initialize(data) {
     // Initialize stats buffer for writing metrics
     if (data.buffers.particleStats) {
-      this.stats = createStatsWriter(
-        data.buffers.particleStats,
-        PARTICLE_STATS
-      );
-      console.log("PARTICLE WORKER: Stats buffer initialized");
+      this.stats = createStatsWriter(data.buffers.particleStats, PARTICLE_STATS);
+      console.log('PARTICLE WORKER: Stats buffer initialized');
     }
 
     // Get max particles from config (passed from gameEngine)
@@ -182,7 +179,7 @@ class ParticleWorker extends AbstractWorker {
     if (this.maxParticles > 0) {
       if (!data.buffers.componentData.ParticleComponent) {
         console.warn(
-          "PARTICLE WORKER: ParticleComponent buffer not found, particle physics disabled"
+          'PARTICLE WORKER: ParticleComponent buffer not found, particle physics disabled'
         );
         this.maxParticles = 0;
       } else {
@@ -217,9 +214,7 @@ class ParticleWorker extends AbstractWorker {
       // Store texture pixel data for stamping
       // Each entry: { width, height, rgba: Uint8ClampedArray }
       if (data.decals.textures) {
-        for (const [textureId, textureData] of Object.entries(
-          data.decals.textures
-        )) {
+        for (const [textureId, textureData] of Object.entries(data.decals.textures)) {
           this.decalTextures[textureId] = {
             width: textureData.width,
             height: textureData.height,
@@ -227,10 +222,10 @@ class ParticleWorker extends AbstractWorker {
           };
         }
       } else {
-        console.warn("PARTICLE WORKER: No decal textures provided!");
+        console.warn('PARTICLE WORKER: No decal textures provided!');
       }
     } else {
-      console.warn("PARTICLE WORKER: Blood decals NOT enabled!", {
+      console.warn('PARTICLE WORKER: Blood decals NOT enabled!', {
         decals: data.decals,
         hasDecals: !!data.decals,
         enabled: data.decals?.enabled,
@@ -255,10 +250,7 @@ class ParticleWorker extends AbstractWorker {
 
       // Enable entity lighting by default when lighting is on
       // Can be disabled via config.lighting.entityLighting = false
-      if (
-        lightingConfig.entityLighting !== false &&
-        data.buffers.componentData.SpriteRenderer
-      ) {
+      if (lightingConfig.entityLighting !== false && data.buffers.componentData.SpriteRenderer) {
         this.entityLightingEnabled = true;
         console.log(
           `PARTICLE WORKER: Entity lighting enabled (${this.globalEntityCount} entities)`
@@ -285,10 +277,7 @@ class ParticleWorker extends AbstractWorker {
     // ========================================
     // Note: RigidBody is automatically initialized by AbstractWorker.initializeAllComponents()
     // Speed and velocityAngle calculations (moved from physics_worker)
-    if (
-      data.buffers.componentData.RigidBody &&
-      data.componentPools?.RigidBody
-    ) {
+    if (data.buffers.componentData.RigidBody && data.componentPools?.RigidBody) {
       this.rigidBodyCount = data.componentPools.RigidBody.count || 0;
 
       // Get minSpeedForRotation from physics config
@@ -320,11 +309,7 @@ class ParticleWorker extends AbstractWorker {
 
       // Create separate typed array views for shadow SPRITE data
       // Uses same schema as ShadowCaster but different buffer
-      this.shadowSpriteActive = new Uint8Array(
-        data.shadows.spriteData,
-        0,
-        this.maxShadowSprites
-      );
+      this.shadowSpriteActive = new Uint8Array(data.shadows.spriteData, 0, this.maxShadowSprites);
 
       // Calculate offsets for Float32 arrays (after Uint8 active array, aligned to 4 bytes)
       const float32Offset = Math.ceil(this.maxShadowSprites / 4) * 4;
@@ -379,9 +364,7 @@ class ParticleWorker extends AbstractWorker {
         floatCount
       );
 
-      console.log(
-        `PARTICLE WORKER: Shadow system enabled (${this.maxShadowSprites} shadow slots)`
-      );
+      console.log(`PARTICLE WORKER: Shadow system enabled (${this.maxShadowSprites} shadow slots)`);
     }
 
     // ========================================
@@ -398,9 +381,7 @@ class ParticleWorker extends AbstractWorker {
           `PARTICLE WORKER: Flash system enabled (${this.maxFlashes} flashes, starting at index ${this.flashStartIndex})`
         );
       } else {
-        console.warn(
-          "PARTICLE WORKER: FlashComponent buffer not found - flashes disabled"
-        );
+        console.warn('PARTICLE WORKER: FlashComponent buffer not found - flashes disabled');
         this.flashesEnabled = false;
       }
     }
@@ -507,11 +488,7 @@ class ParticleWorker extends AbstractWorker {
     const cameraBounds = this.calculateCameraBounds();
 
     // Run particle physics and collect particles to stamp
-    const activeCount = this.updateParticlePhysics(
-      deltaTime,
-      dtRatio,
-      cameraBounds
-    );
+    const activeCount = this.updateParticlePhysics(deltaTime, dtRatio, cameraBounds);
 
     // Stamp collected particles onto blood decal tiles
     this.stampCollectedParticles();
@@ -768,12 +745,7 @@ class ParticleWorker extends AbstractWorker {
         const screenY = y[i] * camZoom - camOffY;
 
         isItOnScreen[i] =
-          screenX > camMinX &&
-            screenX < camMaxX &&
-            screenY > camMinY &&
-            screenY < camMaxY
-            ? 1
-            : 0;
+          screenX > camMinX && screenX < camMaxX && screenY > camMinY && screenY < camMaxY ? 1 : 0;
       }
 
       activeCount++;
@@ -877,8 +849,14 @@ class ParticleWorker extends AbstractWorker {
 
     // Calculate which tiles this decal touches
     calculateDecalTileBounds(
-      worldX, worldY, halfWidthWorld, halfHeightWorld,
-      tileSize, tilesX, tilesY, _decalTileBounds
+      worldX,
+      worldY,
+      halfWidthWorld,
+      halfHeightWorld,
+      tileSize,
+      tilesX,
+      tilesY,
+      _decalTileBounds
     );
 
     if (!_decalTileBounds.valid) {
@@ -899,9 +877,18 @@ class ParticleWorker extends AbstractWorker {
       for (let tx = _decalTileBounds.minTileX; tx <= _decalTileBounds.maxTileX; tx++) {
         // Calculate clip region for this tile
         calculateTileClipRegion(
-          worldX, worldY, halfWidthWorld, halfHeightWorld,
-          tx, ty, tileSize, tilePixelSize,
-          texWidth, texHeight, scaledWidthPixels, scaledHeightPixels,
+          worldX,
+          worldY,
+          halfWidthWorld,
+          halfHeightWorld,
+          tx,
+          ty,
+          tileSize,
+          tilePixelSize,
+          texWidth,
+          texHeight,
+          scaledWidthPixels,
+          scaledHeightPixels,
           _tileClipRegion
         );
 
@@ -976,8 +963,7 @@ class ParticleWorker extends AbstractWorker {
             bloodTiles[dstOffset + 2] =
               (finalB * srcAlphaNorm + bloodTiles[dstOffset + 2] * invSrcAlpha) | 0;
             // Alpha: combine using "over" operator
-            bloodTiles[dstOffset + 3] =
-              (srcA + bloodTiles[dstOffset + 3] * invSrcAlpha) | 0;
+            bloodTiles[dstOffset + 3] = (srcA + bloodTiles[dstOffset + 3] * invSrcAlpha) | 0;
           }
         }
 
@@ -1032,8 +1018,14 @@ class ParticleWorker extends AbstractWorker {
 
     // Calculate which tiles this decal touches
     calculateDecalTileBounds(
-      worldX, worldY, halfWidthWorld, halfHeightWorld,
-      tileSize, tilesX, tilesY, _decalTileBounds
+      worldX,
+      worldY,
+      halfWidthWorld,
+      halfHeightWorld,
+      tileSize,
+      tilesX,
+      tilesY,
+      _decalTileBounds
     );
 
     if (!_decalTileBounds.valid) {
@@ -1054,9 +1046,18 @@ class ParticleWorker extends AbstractWorker {
       for (let tx = _decalTileBounds.minTileX; tx <= _decalTileBounds.maxTileX; tx++) {
         // Calculate clip region for this tile
         calculateTileClipRegion(
-          worldX, worldY, halfWidthWorld, halfHeightWorld,
-          tx, ty, tileSize, tilePixelSize,
-          texWidth, texHeight, scaledWidthPixels, scaledHeightPixels,
+          worldX,
+          worldY,
+          halfWidthWorld,
+          halfHeightWorld,
+          tx,
+          ty,
+          tileSize,
+          tilePixelSize,
+          texWidth,
+          texHeight,
+          scaledWidthPixels,
+          scaledHeightPixels,
           _tileClipRegion
         );
 
@@ -1287,10 +1288,7 @@ class ParticleWorker extends AbstractWorker {
         pairsThisFrame.add(pairKey);
 
         // Per-entity shadow limit
-        if (
-          maxShadowsPerEntity > 0 &&
-          entityShadowCounts[neighborIdx] >= maxShadowsPerEntity
-        ) {
+        if (maxShadowsPerEntity > 0 && entityShadowCounts[neighborIdx] >= maxShadowsPerEntity) {
           continue;
         }
 
@@ -1438,12 +1436,8 @@ class ParticleWorker extends AbstractWorker {
    * Moved from spatial_worker to balance workload
    */
   updateEntityScreenVisibility() {
-    if (
-      !this.cameraData ||
-      this.globalEntityCount === 0 ||
-      !SpriteRenderer.isItOnScreen
-    )
-      return console.warn("PARTICLE WORKER: No camera data or entity count");
+    if (!this.cameraData || this.globalEntityCount === 0 || !SpriteRenderer.isItOnScreen)
+      return console.warn('PARTICLE WORKER: No camera data or entity count');
 
     const x = Transform.x;
     const y = Transform.y;
@@ -1486,8 +1480,7 @@ class ParticleWorker extends AbstractWorker {
       screenY[i] = sy;
 
       // Check if screen position is within viewport bounds (with margin)
-      isItOnScreen[i] =
-        sx > minX && sx < maxX && sy > minY && sy < maxY ? 1 : 0;
+      isItOnScreen[i] = sx > minX && sx < maxX && sy > minY && sy < maxY ? 1 : 0;
     }
   }
 
@@ -1497,12 +1490,7 @@ class ParticleWorker extends AbstractWorker {
    * @param {Object|null} cameraBounds - Pre-calculated camera bounds (from particle physics)
    */
   updateDecorationScreenVisibility(cameraBounds) {
-    if (
-      !this.maxDecorations ||
-      this.maxDecorations === 0 ||
-      !DecorationComponent.active
-    )
-      return;
+    if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
 
     // Early exit if no decorations are active (shared counter from DecorationPool)
     if (DecorationPool.activeCount && DecorationPool.activeCount[0] === 0) {
@@ -1553,9 +1541,7 @@ class ParticleWorker extends AbstractWorker {
 
       // Check if screen position is within viewport bounds (with margin)
       isItOnScreen[i] =
-        screenX > minX && screenX < maxX && screenY > minY && screenY < maxY
-          ? 1
-          : 0;
+        screenX > minX && screenX < maxX && screenY > minY && screenY < maxY ? 1 : 0;
     }
   }
 
@@ -1622,8 +1608,7 @@ class ParticleWorker extends AbstractWorker {
       this.stats[PARTICLE_STATS.FPS] = this.currentFPS;
       this.stats[PARTICLE_STATS.ACTIVE_PARTICLES] = this.activeParticleCount;
       this.stats[PARTICLE_STATS.TOTAL_PARTICLES] = this.maxParticles;
-      this.stats[PARTICLE_STATS.PARTICLES_STAMPED] =
-        this.particlesStampedThisFrame;
+      this.stats[PARTICLE_STATS.PARTICLES_STAMPED] = this.particlesStampedThisFrame;
       this.stats[PARTICLE_STATS.FLASHES_UPDATED] = this.flashesUpdatedThisFrame;
       this.stats[PARTICLE_STATS.SHADOWS_UPDATED] = this.shadowsUpdatedThisFrame;
       this.stats[PARTICLE_STATS.ACTIVE_ENTITIES] = this.activeEntityList

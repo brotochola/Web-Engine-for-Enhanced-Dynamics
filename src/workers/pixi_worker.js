@@ -1,6 +1,6 @@
 self.postMessage({
-  msg: "log",
-  message: "js loaded",
+  msg: 'log',
+  message: 'js loaded',
   when: Date.now(),
 });
 
@@ -9,25 +9,21 @@ self.postMessage({
 
 // Import engine dependencies
 
-import { Transform } from "../components/Transform.js";
+import { Transform } from '../components/Transform.js';
 
-import { Collider } from "../components/Collider.js";
-import { SpriteRenderer } from "../components/SpriteRenderer.js";
-import { ParticleComponent } from "../components/ParticleComponent.js";
-import { DecorationComponent } from "../components/DecorationComponent.js";
-import { DecorationPool } from "../core/DecorationPool.js";
-import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
-import { AbstractWorker } from "./AbstractWorker.js";
+import { Collider } from '../components/Collider.js';
+import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { ParticleComponent } from '../components/ParticleComponent.js';
+import { DecorationComponent } from '../components/DecorationComponent.js';
+import { DecorationPool } from '../core/DecorationPool.js';
+import { SpriteSheetRegistry } from '../core/SpriteSheetRegistry.js';
+import { AbstractWorker } from './AbstractWorker.js';
 
-import { LightEmitter } from "../components/LightEmitter.js";
+import { LightEmitter } from '../components/LightEmitter.js';
 
-import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from "../core/ConfigDefaults.js";
-import {
-  sortByY,
-  normalizeAngleDifference,
-  extractRGBNormalized,
-} from "../core/utils.js";
-import { RENDERER_STATS, createStatsWriter } from "./workers-utils.js";
+import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from '../core/ConfigDefaults.js';
+import { sortByY, normalizeAngleDifference, extractRGBNormalized } from '../core/utils.js';
+import { RENDERER_STATS, createStatsWriter } from './workers-utils.js';
 
 // Import PixiJS 8 library (ES6 module with named exports)
 import {
@@ -55,18 +51,18 @@ import {
   // Web Worker adapter - REQUIRED for PixiJS 8 in workers
   DOMAdapter,
   WebWorkerAdapter,
-} from "./pixi8webworker.js";
+} from './pixi8webworker.js';
 
 // CRITICAL: Set the WebWorkerAdapter BEFORE any PixiJS operations
 // This enables OffscreenCanvas and WebGL support in web workers
 DOMAdapter.set(WebWorkerAdapter);
-import { convertRGBtoBGR } from "../core/utils.js";
+import { convertRGBtoBGR } from '../core/utils.js';
 // Import @pixi/tilemap for efficient tilemap rendering (modified to import from pixi8webworker.js)
 import {
   CompositeTilemap,
   TilemapPipe,
   settings as tilemapSettings,
-} from "../lib/pixi-tilemap-module.js";
+} from '../lib/pixi-tilemap-module.js';
 
 // Enable 32-bit indices for large tilemaps (>16K tiles)
 // Without this, only ~16,383 tiles can be rendered due to 16-bit index limit
@@ -227,10 +223,7 @@ class PixiParticlePool {
       this.framesSinceLastAcquire++;
 
       // First idle frame after demand - pre-allocate based on accumulated demand
-      if (
-        this.framesSinceLastAcquire === 1 &&
-        this.accumulatedNewParticles > 0
-      ) {
+      if (this.framesSinceLastAcquire === 1 && this.accumulatedNewParticles > 0) {
         const extraCount = Math.ceil(this.accumulatedNewParticles * 0.1);
         this.preallocate(extraCount);
         this.accumulatedNewParticles = 0; // Reset accumulator
@@ -454,13 +447,13 @@ class PixiRenderer extends AbstractWorker {
     const gl = this.pixiApp.renderer.gl;
     if (gl && gl.canvas) {
       gl.canvas.addEventListener(
-        "webglcontextlost",
+        'webglcontextlost',
         (e) => {
           e.preventDefault();
           this.reportError(
-            "WebGL Context Lost",
+            'WebGL Context Lost',
             new Error(
-              "The GPU context was lost. This usually happens due to GPU driver crashes or excessive resource usage."
+              'The GPU context was lost. This usually happens due to GPU driver crashes or excessive resource usage.'
             )
           );
         },
@@ -468,9 +461,9 @@ class PixiRenderer extends AbstractWorker {
       );
 
       gl.canvas.addEventListener(
-        "webglcontextrestored",
+        'webglcontextrestored',
         () => {
-          this.reportLog("WebGL context restored");
+          this.reportLog('WebGL context restored');
           // In a real engine we might need to reload textures here,
           // but PIXI often handles some of this.
         },
@@ -482,9 +475,7 @@ class PixiRenderer extends AbstractWorker {
   setupDrawCallMonitoring() {
     const gl = this.pixiApp.renderer.gl;
     if (!gl) {
-      console.warn(
-        "PIXI WORKER: Could not access WebGL context for draw call monitoring"
-      );
+      console.warn('PIXI WORKER: Could not access WebGL context for draw call monitoring');
       return;
     }
 
@@ -522,7 +513,7 @@ class PixiRenderer extends AbstractWorker {
       };
     }
 
-    console.log("PIXI WORKER: Draw call monitoring enabled");
+    console.log('PIXI WORKER: Draw call monitoring enabled');
   }
 
   /**
@@ -536,22 +527,17 @@ class PixiRenderer extends AbstractWorker {
 
       // Total visible sprites = entities + particles + decorations
       const totalVisibleSprites =
-        this.visibleEntityCount +
-        this.visibleParticleCount +
-        this.visibleDecorationCount;
+        this.visibleEntityCount + this.visibleParticleCount + this.visibleDecorationCount;
 
       // SPRITES_CREATED = total PIXI.Particle objects created (from centralized pool)
-      this.stats[RENDERER_STATS.SPRITES_CREATED] =
-        this.particlePool.createdCount;
+      this.stats[RENDERER_STATS.SPRITES_CREATED] = this.particlePool.createdCount;
 
       // VISIBLE_SPRITES = sprites currently visible on screen
       this.stats[RENDERER_STATS.VISIBLE_SPRITES] = totalVisibleSprites;
 
       // Keep decoration stats for DebugUI (reuse same values)
-      this.stats[RENDERER_STATS.DECORATION_SPRITES] =
-        this.particlePool.createdCount;
-      this.stats[RENDERER_STATS.VISIBLE_DECORATIONS] =
-        this.visibleDecorationCount;
+      this.stats[RENDERER_STATS.DECORATION_SPRITES] = this.particlePool.createdCount;
+      this.stats[RENDERER_STATS.VISIBLE_DECORATIONS] = this.visibleDecorationCount;
 
       // NEW: Separate counts for entities and particles
       this.stats[RENDERER_STATS.VISIBLE_ENTITIES] = this.visibleEntityCount;
@@ -589,10 +575,7 @@ class PixiRenderer extends AbstractWorker {
 
     // Apply camera state to tilemap background
     if (this.currentTilemap) {
-      this.currentTilemap.scale.set(
-        zoom * this.tilemapScale.x,
-        zoom * this.tilemapScale.y
-      );
+      this.currentTilemap.scale.set(zoom * this.tilemapScale.x, zoom * this.tilemapScale.y);
       this.currentTilemap.x = -cameraX * zoom;
       this.currentTilemap.y = -cameraY * zoom;
     }
@@ -678,9 +661,7 @@ class PixiRenderer extends AbstractWorker {
 
     const targetName = SpriteSheetRegistry.getSpritesheetName(newSpritesheetId);
     if (!targetName) {
-      console.warn(
-        `Invalid spritesheetId ${newSpritesheetId} for entity ${entityId}`
-      );
+      console.warn(`Invalid spritesheetId ${newSpritesheetId} for entity ${entityId}`);
       return;
     }
 
@@ -712,23 +693,16 @@ class PixiRenderer extends AbstractWorker {
 
     let animName = null;
     if (oldSpritesheetId > 0) {
-      const oldSheetName =
-        SpriteSheetRegistry.getSpritesheetName(oldSpritesheetId);
+      const oldSheetName = SpriteSheetRegistry.getSpritesheetName(oldSpritesheetId);
       if (oldSheetName) {
-        animName = SpriteSheetRegistry.getAnimationName(
-          oldSheetName,
-          currentAnimState
-        );
+        animName = SpriteSheetRegistry.getAnimationName(oldSheetName, currentAnimState);
       }
     }
 
     // BUGFIX: If oldSpritesheetId is 0 (first time setting sprite), try to get animation name from NEW sheet
     // This respects the animationState that was set by logic worker's setSprite()
     if (!animName) {
-      animName = SpriteSheetRegistry.getAnimationName(
-        sheetName,
-        currentAnimState
-      );
+      animName = SpriteSheetRegistry.getAnimationName(sheetName, currentAnimState);
     }
 
     // If no animation name resolved, or it doesn't exist in new sheet, use first animation
@@ -818,11 +792,7 @@ class PixiRenderer extends AbstractWorker {
     this._ySortPoolSize = 0;
     const allEntitiesWithSpriteRenderer = this.query(this.queryConfig);
 
-    for (
-      let i = 0;
-      i < /*this.globalEntityCount*/ allEntitiesWithSpriteRenderer.length;
-      i++
-    ) {
+    for (let i = 0; i < /*this.globalEntityCount*/ allEntitiesWithSpriteRenderer.length; i++) {
       const entityIndex = allEntitiesWithSpriteRenderer[i];
       let bodySprite = this.bodySprites[entityIndex];
       const poolIndex = this.bodySpritePoolIndices[entityIndex];
@@ -836,9 +806,7 @@ class PixiRenderer extends AbstractWorker {
       // - Active but off-screen entities (outside camera viewport)
       // The centralized particle pool handles reuse across all sprite types.
       const shouldHaveSprite =
-        active[entityIndex] &&
-        renderVisible[entityIndex] &&
-        isItOnScreen[entityIndex];
+        active[entityIndex] && renderVisible[entityIndex] && isItOnScreen[entityIndex];
 
       // Acquire sprite from central pool when entity becomes visible
       if (!bodySprite && shouldHaveSprite) {
@@ -880,24 +848,16 @@ class PixiRenderer extends AbstractWorker {
           this.currentSpritesheetIds &&
           this.currentSpritesheetIds[entityIndex] !== spritesheetId[entityIndex]
         ) {
-          this.updateEntitySpritesheet(
-            bodySprite,
-            entityIndex,
-            spritesheetId[entityIndex]
-          );
+          this.updateEntitySpritesheet(bodySprite, entityIndex, spritesheetId[entityIndex]);
           this.currentSpritesheetIds[entityIndex] = spritesheetId[entityIndex];
         }
 
         // Update body sprite visual properties
-        bodySprite.tint = convertRGBtoBGR(tint[entityIndex])
+        bodySprite.tint = convertRGBtoBGR(tint[entityIndex]);
         bodySprite.alpha = alpha[entityIndex];
 
         // Update animation if changed
-        this.updateSpriteAnimation(
-          bodySprite,
-          entityIndex,
-          animationState[entityIndex]
-        );
+        this.updateSpriteAnimation(bodySprite, entityIndex, animationState[entityIndex]);
 
         // Update animation speed (stored locally for manual animation)
         this.animationSpeed[entityIndex] = animationSpeed[entityIndex];
@@ -911,17 +871,13 @@ class PixiRenderer extends AbstractWorker {
 
       // DENSE: use entity index directly for all component data
       // PixiJS 8 Particle uses scaleX/scaleY instead of scale.x/scale.y
-      if (bodySprite.scaleX !== scaleX[entityIndex])
-        bodySprite.scaleX = scaleX[entityIndex];
-      if (bodySprite.scaleY !== scaleY[entityIndex])
-        bodySprite.scaleY = scaleY[entityIndex];
+      if (bodySprite.scaleX !== scaleX[entityIndex]) bodySprite.scaleX = scaleX[entityIndex];
+      if (bodySprite.scaleY !== scaleY[entityIndex]) bodySprite.scaleY = scaleY[entityIndex];
 
       // Update anchor points (0-1 range)
       // PixiJS 8 Particle uses anchorX/anchorY instead of anchor.x/anchor.y
-      if (bodySprite.anchorX !== anchorX[entityIndex])
-        bodySprite.anchorX = anchorX[entityIndex];
-      if (bodySprite.anchorY !== anchorY[entityIndex])
-        bodySprite.anchorY = anchorY[entityIndex];
+      if (bodySprite.anchorX !== anchorX[entityIndex]) bodySprite.anchorX = anchorX[entityIndex];
+      if (bodySprite.anchorY !== anchorY[entityIndex]) bodySprite.anchorY = anchorY[entityIndex];
 
       // ========================================
       // SPRITE LIFECYCLE MANAGEMENT
@@ -929,9 +885,7 @@ class PixiRenderer extends AbstractWorker {
       // Release sprites back to pool when entities go off-screen or despawn.
       // This allows the same PIXI.Particle to be reused for different entities.
       const shouldBeVisible =
-        active[entityIndex] &&
-        renderVisible[entityIndex] &&
-        isItOnScreen[entityIndex];
+        active[entityIndex] && renderVisible[entityIndex] && isItOnScreen[entityIndex];
 
       // Release sprite when entity despawns OR goes off-screen
       if (!active[entityIndex] || !isItOnScreen[entityIndex]) {
@@ -996,10 +950,7 @@ class PixiRenderer extends AbstractWorker {
 
         // Handle rotation interpolation with angle wrapping
         // Normalize angle difference to [-PI, PI] to avoid going the long way
-        const angleDiff = normalizeAngleDifference(
-          bodySprite.rotation,
-          rotation[entityIndex]
-        );
+        const angleDiff = normalizeAngleDifference(bodySprite.rotation, rotation[entityIndex]);
         bodySprite.rotation += angleDiff * interpolationAlpha;
       } else {
         // No interpolation - directly set position
@@ -1069,8 +1020,7 @@ class PixiRenderer extends AbstractWorker {
       // Advance frames if enough time has passed
       if (this.frameAccumulator[i] >= frameDuration) {
         this.frameAccumulator[i] -= frameDuration;
-        this.currentFrameIndex[i] =
-          (this.currentFrameIndex[i] + 1) % frames.length;
+        this.currentFrameIndex[i] = (this.currentFrameIndex[i] + 1) % frames.length;
 
         // Update sprite texture
         bodySprite.texture = frames[this.currentFrameIndex[i]];
@@ -1104,10 +1054,8 @@ class PixiRenderer extends AbstractWorker {
       this._renderZoom = targetZoom;
       this._cameraInitialized = true;
     } else {
-      this._renderCameraX +=
-        (targetCamX - this._renderCameraX) * interpolationAlpha;
-      this._renderCameraY +=
-        (targetCamY - this._renderCameraY) * interpolationAlpha;
+      this._renderCameraX += (targetCamX - this._renderCameraX) * interpolationAlpha;
+      this._renderCameraY += (targetCamY - this._renderCameraY) * interpolationAlpha;
       this._renderZoom += (targetZoom - this._renderZoom) * interpolationAlpha;
     }
 
@@ -1192,9 +1140,7 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
-    console.log(
-      `PIXI WORKER: Created ${this.decalsTotalTiles} decal tile sprites`
-    );
+    console.log(`PIXI WORKER: Created ${this.decalsTotalTiles} decal tile sprites`);
   }
 
   /**
@@ -1284,33 +1230,33 @@ LIGHTING SYSTEM SETUP
       glProgram,
       resources: {
         uniforms: {
-          uCameraPos: { value: new Float32Array([0, 0]), type: "vec2<f32>" },
-          uZoom: { value: 1.0, type: "f32" },
+          uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
+          uZoom: { value: 1.0, type: 'f32' },
           uViewport: {
             value: new Float32Array([
               this.canvasWidth * this.lightingResolution,
               this.canvasHeight * this.lightingResolution,
             ]),
-            type: "vec2<f32>",
+            type: 'vec2<f32>',
           },
           uFullCanvasSize: {
             value: new Float32Array([this.canvasWidth, this.canvasHeight]),
-            type: "vec2<f32>",
+            type: 'vec2<f32>',
           },
-          uInvResolution: { value: 1.0 / this.lightingResolution, type: "f32" },
+          uInvResolution: { value: 1.0 / this.lightingResolution, type: 'f32' },
 
-          uLightX: { value: this._lightX, type: "f32", size: maxLights },
-          uLightY: { value: this._lightY, type: "f32", size: maxLights },
+          uLightX: { value: this._lightX, type: 'f32', size: maxLights },
+          uLightY: { value: this._lightY, type: 'f32', size: maxLights },
           uLightIntensity: {
             value: this._lightIntensity,
-            type: "f32",
+            type: 'f32',
             size: maxLights,
           },
-          uLightR: { value: this._lightR, type: "f32", size: maxLights },
-          uLightG: { value: this._lightG, type: "f32", size: maxLights },
-          uLightB: { value: this._lightB, type: "f32", size: maxLights },
-          uLightCount: { value: 0, type: "i32" },
-          uAmbient: { value: this.lightingAmbient, type: "f32" },
+          uLightR: { value: this._lightR, type: 'f32', size: maxLights },
+          uLightG: { value: this._lightG, type: 'f32', size: maxLights },
+          uLightB: { value: this._lightB, type: 'f32', size: maxLights },
+          uLightCount: { value: 0, type: 'i32' },
+          uAmbient: { value: this.lightingAmbient, type: 'f32' },
         },
       },
     });
@@ -1433,10 +1379,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     uniformGroup.uniforms.uZoom = zoom;
 
     // Update viewport uniform every frame (handles resizes and resolution changes)
-    uniformGroup.uniforms.uViewport[0] =
-      this.canvasWidth * this.lightingResolution;
-    uniformGroup.uniforms.uViewport[1] =
-      this.canvasHeight * this.lightingResolution;
+    uniformGroup.uniforms.uViewport[0] = this.canvasWidth * this.lightingResolution;
+    uniformGroup.uniforms.uViewport[1] = this.canvasHeight * this.lightingResolution;
 
     uniformGroup.uniforms.uFullCanvasSize[0] = this.canvasWidth;
     uniformGroup.uniforms.uFullCanvasSize[1] = this.canvasHeight;
@@ -1551,7 +1495,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Create ParticleContainer for lights + shadows
     // Uses normal blend internally - the multiply happens on shadowDisplaySprite
     this.shadowParticleContainer = new PIXI.ParticleContainer({
-      blendMode: "normal-npm",
+      blendMode: 'normal-npm',
       dynamicProperties: {
         vertex: true,
         position: true,
@@ -1591,22 +1535,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   createShadowSprites() {
     if (!this.shadowParticleContainer) {
-      console.warn(
-        "PIXI WORKER: Cannot create shadow sprites - shadowParticleContainer not ready"
-      );
+      console.warn('PIXI WORKER: Cannot create shadow sprites - shadowParticleContainer not ready');
       return;
     }
 
     // Get textures
-    const defaultTexture =
-      this.particlePool.defaultTexture || PIXI.Texture.EMPTY;
-    const lightGradientTexture =
-      this.textures["_lightGradient"] || PIXI.Texture.WHITE;
+    const defaultTexture = this.particlePool.defaultTexture || PIXI.Texture.EMPTY;
+    const lightGradientTexture = this.textures['_lightGradient'] || PIXI.Texture.WHITE;
 
     // Create white background sprite (covers entire shadowRT)
     // This ensures the base is white (no darkening when multiplied)
     // Uses _white texture from BigAtlas (8x8 white square)
-    const whiteTexture = this.textures["_white"] || PIXI.Texture.WHITE;
+    const whiteTexture = this.textures['_white'] || PIXI.Texture.WHITE;
     this.shadowBackgroundSprite = new PIXI.Particle({
       texture: whiteTexture,
       anchorX: 0,
@@ -1673,15 +1613,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     console.log(
       `🔍 PIXI WORKER: createLightGlowSystem() called. Checking for _lightGradient texture...`
     );
-    console.log(
-      `   Total textures available: ${Object.keys(this.textures).length}`
-    );
-    console.log(
-      `   _lightGradient in textures: ${"_lightGradient" in this.textures}`
-    );
-    this.lightGlowTexture = this.textures["_lightGradient"];
+    console.log(`   Total textures available: ${Object.keys(this.textures).length}`);
+    console.log(`   _lightGradient in textures: ${'_lightGradient' in this.textures}`);
+    this.lightGlowTexture = this.textures['_lightGradient'];
     if (!this.lightGlowTexture) {
-      console.warn("PIXI WORKER: _lightGradient texture not found in BigAtlas");
+      console.warn('PIXI WORKER: _lightGradient texture not found in BigAtlas');
       console.warn(
         `   Available texture keys (first 30):`,
         Object.keys(this.textures).slice(0, 30)
@@ -1848,8 +1784,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Use sprite position if available (already interpolated)
       const bodySprite = this.bodySprites[i];
       const x = bodySprite ? bodySprite.x : worldX[i];
-      const y =
-        (bodySprite ? bodySprite.y : worldY[i]) - (glowHeightOffset[i] || 0);
+      const y = (bodySprite ? bodySprite.y : worldY[i]) - (glowHeightOffset[i] || 0);
       const intensity = lightIntensity[i];
 
       // Viewport culling: Only include lights that actually affect the visible screen
@@ -1891,8 +1826,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         `🔍 PIXI WORKER: updateLightGlowSprites() - Rendering ${countToRender} lights (${visibleLights.length} visible, maxLights: ${maxLights})`
       );
       console.log(
-        `   Container visible: ${this.lightGlowContainer.visible}, alpha: ${this.lightGlowContainer.alpha
-        }, children: ${this.lightGlowContainer.children?.length || "N/A"}`
+        `   Container visible: ${this.lightGlowContainer.visible}, alpha: ${
+          this.lightGlowContainer.alpha
+        }, children: ${this.lightGlowContainer.children?.length || 'N/A'}`
       );
       this._lightGlowFirstUpdateLogged = true;
     }
@@ -1929,8 +1865,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Position: entity position with height offset (light is above entity)
       sprite.x = bodySprite ? bodySprite.x : worldX[entityIndex];
       sprite.y =
-        (bodySprite ? bodySprite.y : worldY[entityIndex]) -
-        (glowHeightOffset[entityIndex] || 0);
+        (bodySprite ? bodySprite.y : worldY[entityIndex]) - (glowHeightOffset[entityIndex] || 0);
 
       // Scale based on visualRange
       sprite.scaleX = scale;
@@ -1945,9 +1880,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Log first sprite update details (one-time)
       if (i === 0 && !this._lightGlowSpriteUpdateLogged) {
         console.log(
-          `🔍 PIXI WORKER: First light glow sprite update - entityIndex: ${entityIndex}, x: ${sprite.x
-          }, y: ${sprite.y
-          }, scale: ${scale}, alpha: ${newAlpha}, tint: 0x${sprite.tint.toString(
+          `🔍 PIXI WORKER: First light glow sprite update - entityIndex: ${entityIndex}, x: ${
+            sprite.x
+          }, y: ${sprite.y}, scale: ${scale}, alpha: ${newAlpha}, tint: 0x${sprite.tint.toString(
             16
           )}`
         );
@@ -2134,16 +2069,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         // Using similar formula to lighting shader: influence radius = 10 * sqrt(intensity)
         const intensity = lightIntensity[lightIdx];
         const influenceRadius = 10 * Math.sqrt(intensity);
-        const gradientScale =
-          ((influenceRadius * zoom * resolution) / gradientTextureRadius) *
-          3;
+        const gradientScale = ((influenceRadius * zoom * resolution) / gradientTextureRadius) * 3;
 
         lightSprite.x = screenLX;
         lightSprite.y = screenLY;
-        lightSprite.scaleX = gradientScale
-        lightSprite.scaleY = gradientScale
+        lightSprite.scaleX = gradientScale;
+        lightSprite.scaleY = gradientScale;
         lightSprite.tint = 0xffffff;
-        lightSprite.alpha = intensity / 50000
+        lightSprite.alpha = intensity / 50000;
 
         this.shadowParticleContainer.addParticle(lightSprite);
         lightSpriteIndex++;
@@ -2172,10 +2105,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Track which entity types have SpriteRenderer (they need placeholder sprites)
     for (const registration of registeredClasses) {
       if (registration.poolSize === 0) continue;
-      if (!registration.components?.includes("SpriteRenderer")) continue;
+      if (!registration.components?.includes('SpriteRenderer')) continue;
 
       const entityType = registration.entityType;
-      if (entityType === undefined || typeof entityType !== "number") continue;
+      if (entityType === undefined || typeof entityType !== 'number') continue;
 
       // Mark this entity type as having SpriteRenderer (spritesheet set per-instance)
       this.entitySpriteConfigs[entityType] = { hasSpriteRenderer: true };
@@ -2244,12 +2177,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         // Manually build animation arrays
         const animations = {};
         if (jsonData.animations) {
-          for (const [animName, frameNames] of Object.entries(
-            jsonData.animations
-          )) {
-            animations[animName] = frameNames.map(
-              (frameName) => frameTextures[frameName]
-            );
+          for (const [animName, frameNames] of Object.entries(jsonData.animations)) {
+            animations[animName] = frameNames.map((frameName) => frameTextures[frameName]);
           }
         }
 
@@ -2262,7 +2191,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
         // BIGATLAST SUPPORT: If this is the bigAtlas, also populate this.textures
         // This allows static textures (like "bunny") to be accessed directly
-        if (name === "bigAtlas") {
+        if (name === 'bigAtlas') {
           for (const [frameName, texture] of Object.entries(frameTextures)) {
             this.textures[frameName] = texture;
           }
@@ -2270,8 +2199,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           // Initialize particle pool with default texture (_white square)
           // Using _white ensures particles without explicit textures show a neutral default
           // rather than whatever happens to be first in the atlas (which depends on packing order)
-          if (frameTextures["_white"]) {
-            this.particlePool.setDefaultTexture(frameTextures["_white"]);
+          if (frameTextures['_white']) {
+            this.particlePool.setDefaultTexture(frameTextures['_white']);
           } else {
             const textureKeys = Object.keys(frameTextures);
             if (textureKeys.length > 0) {
@@ -2280,29 +2209,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           }
 
           console.log(
-            `✅ BigAtlas loaded: ${Object.keys(frameTextures).length
-            } frames available as textures`
+            `✅ BigAtlas loaded: ${Object.keys(frameTextures).length} frames available as textures`
           );
 
           // DEBUG: Check if _lightGradient texture is available
-          if (this.textures["_lightGradient"]) {
-            console.log(
-              `✅ PIXI WORKER: _lightGradient texture found in BigAtlas textures`
-            );
+          if (this.textures['_lightGradient']) {
+            console.log(`✅ PIXI WORKER: _lightGradient texture found in BigAtlas textures`);
           } else {
-            console.warn(
-              `⚠️ PIXI WORKER: _lightGradient texture NOT found in BigAtlas textures`
-            );
-            console.log(
-              `   Available texture keys (first 20):`,
-              textureKeys.slice(0, 20)
-            );
+            console.warn(`⚠️ PIXI WORKER: _lightGradient texture NOT found in BigAtlas textures`);
+            console.log(`   Available texture keys (first 20):`, textureKeys.slice(0, 20));
             console.log(
               `   Looking for textures with "light" or "gradient" in name:`,
               textureKeys.filter(
-                (k) =>
-                  k.toLowerCase().includes("light") ||
-                  k.toLowerCase().includes("gradient")
+                (k) => k.toLowerCase().includes('light') || k.toLowerCase().includes('gradient')
               )
             );
           }
@@ -2330,13 +2249,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Create proxy spritesheet entries that redirect to bigAtlas
     if (proxySheets && Object.keys(proxySheets).length > 0) {
-      console.log(
-        `🔗 Creating ${Object.keys(proxySheets).length} proxy spritesheets...`
-      );
+      console.log(`🔗 Creating ${Object.keys(proxySheets).length} proxy spritesheets...`);
 
-      const bigAtlas = this.spritesheets["bigAtlas"];
+      const bigAtlas = this.spritesheets['bigAtlas'];
       if (!bigAtlas) {
-        console.error("❌ Cannot create proxy sheets: bigAtlas not loaded!");
+        console.error('❌ Cannot create proxy sheets: bigAtlas not loaded!');
         return;
       }
 
@@ -2347,9 +2264,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         const proxyAnimations = {};
         const proxyTextures = {};
 
-        for (const [animName, animInfo] of Object.entries(
-          proxyData.animations
-        )) {
+        for (const [animName, animInfo] of Object.entries(proxyData.animations)) {
           const prefixedName = animInfo.prefixedName;
           if (bigAtlas.animations[prefixedName]) {
             // Map unprefixed name to bigAtlas animation
@@ -2375,16 +2290,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           animations: proxyAnimations,
           source: bigAtlas.source, // PixiJS 8: uses source instead of baseTexture
           isProxy: true,
-          targetSheet: "bigAtlas",
+          targetSheet: 'bigAtlas',
         };
 
         // Also register in SpriteSheetRegistry (for animation lookups)
         SpriteSheetRegistry.registerProxy(proxyName, proxyData);
 
-        console.log(
-          `  ✅ Proxy "${proxyName}": ${Object.keys(proxyAnimations).length
-          } animations`
-        );
+        console.log(`  ✅ Proxy "${proxyName}": ${Object.keys(proxyAnimations).length} animations`);
       }
     }
 
@@ -2399,9 +2311,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       return;
     }
 
-    console.log(
-      `PIXI WORKER: Loading ${Object.keys(tilemapsData).length} tilemaps...`
-    );
+    console.log(`PIXI WORKER: Loading ${Object.keys(tilemapsData).length} tilemaps...`);
 
     for (const [tilemapId, tilemapData] of Object.entries(tilemapsData)) {
       try {
@@ -2484,7 +2394,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           this.particleSprites[i] = null;
           this.particleSpritePoolIndices[i] = -1;
           // Clear texture cache for this particle
-          delete this.particleTextureCache[i + "_" + textureId[i]];
+          delete this.particleTextureCache[i + '_' + textureId[i]];
         }
         continue;
       }
@@ -2517,21 +2427,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Update texture if needed (check cache)
       // Note: tid >= 0 is valid (0 is a valid animation index), only skip for unset (-1 or undefined)
       const tid = textureId[i];
-      if (tid >= 0 && !this.particleTextureCache[i + "_" + tid]) {
+      if (tid >= 0 && !this.particleTextureCache[i + '_' + tid]) {
         // Get texture from bigAtlas by animation index
         // Particles use the first frame of the animation (they don't animate)
-        const textureName = SpriteSheetRegistry.getAnimationName(
-          "bigAtlas",
-          tid
-        );
+        const textureName = SpriteSheetRegistry.getAnimationName('bigAtlas', tid);
 
         if (textureName) {
           // Look up in animations array (contains PIXI.Texture objects)
           // this.textures contains frame names, not animation names
-          const bigAtlas = this.spritesheets["bigAtlas"];
+          const bigAtlas = this.spritesheets['bigAtlas'];
           if (bigAtlas && bigAtlas.animations[textureName] && bigAtlas.animations[textureName][0]) {
             sprite.texture = bigAtlas.animations[textureName][0];
-            this.particleTextureCache[i + "_" + tid] = true;
+            this.particleTextureCache[i + '_' + tid] = true;
           }
         }
       }
@@ -2582,9 +2489,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Initialize arrays for decoration tracking
     this.decorationSprites = new Array(this.maxDecorations).fill(null);
-    this.decorationSpritePoolIndices = new Int32Array(this.maxDecorations).fill(
-      -1
-    );
+    this.decorationSpritePoolIndices = new Int32Array(this.maxDecorations).fill(-1);
     this.decorationSpriteTextureIds = new Uint16Array(this.maxDecorations);
 
     console.log(
@@ -2673,10 +2578,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const tid = textureId[i];
       if (tid >= 0 && this.decorationSpriteTextureIds[i] !== tid) {
         // Get texture from bigAtlas by animation index
-        const textureName = SpriteSheetRegistry.getAnimationName(
-          "bigAtlas",
-          tid
-        );
+        const textureName = SpriteSheetRegistry.getAnimationName('bigAtlas', tid);
         if (textureName && this.textures[textureName]) {
           actualSprite.texture = this.textures[textureName];
           this.decorationSpriteTextureIds[i] = tid; // Track decoration's current texture
@@ -2728,9 +2630,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   createSprites() {
     // Initialize sprite tracking arrays
     this.bodySprites = new Array(this.globalEntityCount).fill(null);
-    this.bodySpritePoolIndices = new Int32Array(this.globalEntityCount).fill(
-      -1
-    );
+    this.bodySpritePoolIndices = new Int32Array(this.globalEntityCount).fill(-1);
     this.currentSpritesheetIds = new Uint8Array(this.globalEntityCount);
 
     // Initialize animation tracking typed arrays
@@ -2738,9 +2638,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.currentFrameIndex = new Uint16Array(this.globalEntityCount);
     this.frameAccumulator = new Float32Array(this.globalEntityCount);
     this.animationSpeed = new Float32Array(this.globalEntityCount);
-    this.currentAnimationFrames = new Array(this.globalEntityCount)
-      .fill(null)
-      .map(() => []);
+    this.currentAnimationFrames = new Array(this.globalEntityCount).fill(null).map(() => []);
 
     console.log(
       `PIXI WORKER: Entity sprite system initialized (${this.globalEntityCount} slots, using central particle pool)`
@@ -2756,13 +2654,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     console.log(`PIXI WORKER: handleCustomMessage called with msg: ${msg}`);
 
     // Handle old-style messages if they still arrive via main thread
-    if (msg === "toRenderer") {
+    if (msg === 'toRenderer') {
       this.handleSpriteCommand(data);
-    } else if (msg === "setBackground") {
+    } else if (msg === 'setBackground') {
       this.handleSetBackground(data);
-    } else if (msg === "resize") {
+    } else if (msg === 'resize') {
       this.handleResize(data);
-    } else if (msg === "setLayerProps") {
+    } else if (msg === 'setLayerProps') {
       this.handleSetLayerProps(data);
     } else {
       console.log(`PIXI WORKER: Unhandled message type: ${msg}`);
@@ -2822,10 +2720,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Resize lighting RenderTexture
     if (this.lightingRT) {
-      this.lightingRT.resize(
-        width * this.lightingResolution,
-        height * this.lightingResolution
-      );
+      this.lightingRT.resize(width * this.lightingResolution, height * this.lightingResolution);
       if (this.lightingDisplaySprite) {
         this.lightingDisplaySprite.scale.set(1.0 / this.lightingResolution);
       }
@@ -2833,10 +2728,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Resize shadow RenderTexture
     if (this.shadowRT) {
-      this.shadowRT.resize(
-        width * this.shadowResolution,
-        height * this.shadowResolution
-      );
+      this.shadowRT.resize(width * this.shadowResolution, height * this.shadowResolution);
       if (this.shadowDisplaySprite) {
         this.shadowDisplaySprite.scale.set(1.0 / this.shadowResolution);
       }
@@ -2872,16 +2764,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Create new background based on type
     console.log(`PIXI WORKER: Creating background of type: ${type}`);
     switch (type) {
-      case "static":
+      case 'static':
         this.createStaticBackground(textureId);
         break;
-      case "tiling":
+      case 'tiling':
         this.createTilingBackground(textureId, tileScale);
         break;
-      case "tilemap":
+      case 'tilemap':
         this.createTilemapBackground(tilemapId, options);
         break;
-      case "none":
+      case 'none':
         // No background
         console.log(`PIXI WORKER: No background`);
         break;
@@ -2914,9 +2806,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   createStaticBackground(textureId) {
     const texture = this.textures[textureId];
     if (!texture) {
-      console.warn(
-        `PIXI WORKER: Texture "${textureId}" not found for static background`
-      );
+      console.warn(`PIXI WORKER: Texture "${textureId}" not found for static background`);
       return;
     }
 
@@ -2935,9 +2825,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   createTilingBackground(textureId, tileScale = 1) {
     const texture = this.textures[textureId];
     if (!texture) {
-      console.warn(
-        `PIXI WORKER: Texture "${textureId}" not found for tiling background`
-      );
+      console.warn(`PIXI WORKER: Texture "${textureId}" not found for tiling background`);
       return;
     }
 
@@ -2951,9 +2839,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.backgroundSprite.zIndex = PixiRenderer.Z_INDICES.BACKGROUND;
     this.pixiApp.stage.addChild(this.backgroundSprite);
 
-    console.log(
-      `PIXI WORKER: Tiling background set to "${textureId}" (scale: ${tileScale})`
-    );
+    console.log(`PIXI WORKER: Tiling background set to "${textureId}" (scale: ${tileScale})`);
   }
 
   /**
@@ -2961,16 +2847,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Parses Tiled JSON and renders tiles with automatic culling
    */
   createTilemapBackground(tilemapId, options = {}) {
-    console.log(
-      `PIXI WORKER: createTilemapBackground called with "${tilemapId}"`
-    );
+    console.log(`PIXI WORKER: createTilemapBackground called with "${tilemapId}"`);
     console.log(`PIXI WORKER: Available tilemaps:`, Object.keys(this.tilemaps));
 
     const tilemapData = this.tilemaps[tilemapId];
     if (!tilemapData) {
-      console.warn(
-        `PIXI WORKER: Tilemap "${tilemapId}" not found in loaded tilemaps`
-      );
+      console.warn(`PIXI WORKER: Tilemap "${tilemapId}" not found in loaded tilemaps`);
       return;
     }
 
@@ -2982,19 +2864,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // NOTE: CompositeTilemap.tileset() expects an ARRAY of textures, not a single texture!
     console.log(`PIXI WORKER: Creating CompositeTilemap instance...`);
     this.currentTilemap = new CompositeTilemap([tilesetTexture]);
-    console.log(
-      `PIXI WORKER: CompositeTilemap instance created:`,
-      this.currentTilemap
-    );
+    console.log(`PIXI WORKER: CompositeTilemap instance created:`, this.currentTilemap);
 
     // Parse scale option
     if (options.scale !== undefined) {
-      if (typeof options.scale === "number") {
+      if (typeof options.scale === 'number') {
         this.tilemapScale = { x: options.scale, y: options.scale };
-      } else if (
-        typeof options.scale === "object" &&
-        options.scale.x !== undefined
-      ) {
+      } else if (typeof options.scale === 'object' && options.scale.x !== undefined) {
         this.tilemapScale = {
           x: options.scale.x,
           y: options.scale.y !== undefined ? options.scale.y : options.scale.x,
@@ -3015,12 +2891,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Apply initial scale immediately
     this.currentTilemap.scale.set(
-      this.cameraData
-        ? this.cameraData[0] * this.tilemapScale.x
-        : this.tilemapScale.x,
-      this.cameraData
-        ? this.cameraData[0] * this.tilemapScale.y
-        : this.tilemapScale.y
+      this.cameraData ? this.cameraData[0] * this.tilemapScale.x : this.tilemapScale.x,
+      this.cameraData ? this.cameraData[0] * this.tilemapScale.y : this.tilemapScale.y
     );
 
     // Debug: Check tilemap children and bounds
@@ -3030,14 +2902,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this.currentTilemap.children.length > 0) {
       const child = this.currentTilemap.children[0];
       console.log(
-        `PIXI WORKER: First child tilemap has ${child.pointsBuf ? child.pointsBuf.length : 0
+        `PIXI WORKER: First child tilemap has ${
+          child.pointsBuf ? child.pointsBuf.length : 0
         } point buffer entries`
       );
     }
 
-    console.log(
-      `PIXI WORKER: Tilemap background set to "${tilemapId}" and added to stage`
-    );
+    console.log(`PIXI WORKER: Tilemap background set to "${tilemapId}" and added to stage`);
   }
 
   /**
@@ -3053,7 +2924,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Get tileset info (assumes single tileset for now)
     const tileset = tiledData.tilesets && tiledData.tilesets[0];
     if (!tileset) {
-      console.error("PIXI WORKER: No tileset found in Tiled JSON");
+      console.error('PIXI WORKER: No tileset found in Tiled JSON');
       return;
     }
 
@@ -3069,7 +2940,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       layerIndex++;
 
       // Skip non-tilelayer types (objectgroup, imagelayer, etc)
-      if (layer.type !== "tilelayer") {
+      if (layer.type !== 'tilelayer') {
         continue;
       }
 
@@ -3110,12 +2981,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
           // Clear flags to get actual tile ID
           gid =
-            gid &
-            ~(
-              FLIPPED_HORIZONTALLY_FLAG |
-              FLIPPED_VERTICALLY_FLAG |
-              FLIPPED_DIAGONALLY_FLAG
-            );
+            gid & ~(FLIPPED_HORIZONTALLY_FLAG | FLIPPED_VERTICALLY_FLAG | FLIPPED_DIAGONALLY_FLAG);
 
           // Convert GID to local tile index (0-based)
           const tileId = gid - firstGid;
@@ -3169,7 +3035,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
 
       console.log(
-        `PIXI WORKER: Layer "${layer.name
+        `PIXI WORKER: Layer "${
+          layer.name
         }" - added ${tilesAdded} non-empty tiles out of ${layerData.length} total tiles`
       );
     }
@@ -3201,11 +3068,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Initialize stats buffer for writing metrics
     if (data.buffers.rendererStats) {
-      this.stats = createStatsWriter(
-        data.buffers.rendererStats,
-        RENDERER_STATS
-      );
-      console.log("PIXI WORKER: Stats buffer initialized");
+      this.stats = createStatsWriter(data.buffers.rendererStats, RENDERER_STATS);
+      console.log('PIXI WORKER: Stats buffer initialized');
     }
 
     // Store viewport and world dimensions from config
@@ -3239,17 +3103,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     // Configure Y-sorting (default: true)
-    this.ySorting =
-      rendererConfig.ySorting !== undefined ? rendererConfig.ySorting : true;
+    this.ySorting = rendererConfig.ySorting !== undefined ? rendererConfig.ySorting : true;
     // console.log(
     //   `PIXI WORKER: Y-sorting ${this.ySorting ? "enabled" : "disabled"}`
     // );
 
     // Configure interpolation (default: true)
     this.interpolation =
-      rendererConfig.interpolation !== undefined
-        ? rendererConfig.interpolation
-        : true;
+      rendererConfig.interpolation !== undefined ? rendererConfig.interpolation : true;
     // console.log(
     //   `PIXI WORKER: Interpolation ${this.interpolation ? "enabled" : "disabled"}`
     // );
@@ -3260,17 +3121,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Note: ParticleComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
     this.maxParticles = data.maxParticles || 0;
     if (data.buffers.componentData.ParticleComponent && this.maxParticles > 0) {
-      console.log(
-        `PIXI WORKER: ParticleComponent initialized for ${this.maxParticles} particles`
-      );
+      console.log(`PIXI WORKER: ParticleComponent initialized for ${this.maxParticles} particles`);
     }
 
     // Note: DecorationComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
     this.maxDecorations = data.maxDecorations || 0;
-    if (
-      data.buffers.componentData.DecorationComponent &&
-      this.maxDecorations > 0
-    ) {
+    if (data.buffers.componentData.DecorationComponent && this.maxDecorations > 0) {
       console.log(
         `PIXI WORKER: DecorationComponent initialized for ${this.maxDecorations} decorations`
       );
@@ -3303,26 +3159,21 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         canvas: this.canvasView, // v8 uses 'canvas' instead of 'view'
         backgroundColor: 0x000000,
         // Performance optimizations
-        powerPreference: "high-performance",
-        preference: "webgl", // Force WebGL for worker compatibility
+        powerPreference: 'high-performance',
+        preference: 'webgl', // Force WebGL for worker compatibility
       });
 
       // Check if renderer was successfully created
       if (!this.pixiApp.renderer) {
-        throw new Error(
-          "PIXI.Application.init() succeeded but renderer is null"
-        );
+        throw new Error('PIXI.Application.init() succeeded but renderer is null');
       }
 
       // Check for WebGL context
-      if (
-        this.pixiApp.renderer.type === PIXI.RendererType.WEBGL &&
-        !this.pixiApp.renderer.gl
-      ) {
-        throw new Error("WebGL context initialization failed (gl is null)");
+      if (this.pixiApp.renderer.type === PIXI.RendererType.WEBGL && !this.pixiApp.renderer.gl) {
+        throw new Error('WebGL context initialization failed (gl is null)');
       }
     } catch (error) {
-      this.reportError("PIXI Initialization Failed", error);
+      this.reportError('PIXI Initialization Failed', error);
       return;
     }
 
@@ -3332,18 +3183,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Hook into WebGL context for draw call monitoring and context loss
     this.setupWebGLHooks();
 
-    this.reportLog("finished initializing pixi app");
+    this.reportLog('finished initializing pixi app');
     // Load simple textures
     this.loadTextures(data.textures);
-    this.reportLog("finished loading textures");
+    this.reportLog('finished loading textures');
 
     // Load spritesheets (synchronous now - manually parsed)
     this.loadSpritesheets(data.spritesheets, data.bigAtlasProxySheets);
-    this.reportLog("finished loading spritesheets");
+    this.reportLog('finished loading spritesheets');
 
     // Load tilemaps (Tiled JSON + tileset textures)
     this.loadTilemaps(data.tilemaps);
-    this.reportLog("finished loading tilemaps");
+    this.reportLog('finished loading tilemaps');
 
     // ========================================
     // decal DECALS TILEMAP - Initialize
@@ -3394,11 +3245,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.lightingEnabled = true;
       this.lightingResolution = lightingConfig.resolution || 1.0;
       this.lightingAmbient =
-        lightingConfig.lightingAmbient !== undefined
-          ? lightingConfig.lightingAmbient
-          : 0.05;
-      this.maxLights =
-        lightingConfig.maxLights !== undefined ? lightingConfig.maxLights : 128;
+        lightingConfig.lightingAmbient !== undefined ? lightingConfig.lightingAmbient : 0.05;
+      this.maxLights = lightingConfig.maxLights !== undefined ? lightingConfig.maxLights : 128;
 
       // Create lighting mesh (full-screen quad with multiply blend)
       // Shadows are now sprites, not in shader
@@ -3426,9 +3274,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this.pixiApp.stage.addChild(this.lightGlowContainer);
 
         // Verify container is on stage
-        const isOnStage = this.pixiApp.stage.children.includes(
-          this.lightGlowContainer
-        );
+        const isOnStage = this.pixiApp.stage.children.includes(this.lightGlowContainer);
         console.log(
           `✅ PIXI WORKER: Light glow system enabled (${this.maxLights} sprites, container added to stage: ${isOnStage}, stage children: ${this.pixiApp.stage.children.length})`
         );
@@ -3446,25 +3292,23 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Build entity sprite configs from class definitions
     this.buildEntitySpriteConfigs(data.registeredClasses);
     // Query system is already initialized in AbstractWorker and handles light entity lookups
-    this.reportLog("finished building entity sprite configs");
+    this.reportLog('finished building entity sprite configs');
     // Create sprites for all entities
     this.createSprites();
-    this.reportLog("finished creating sprites");
+    this.reportLog('finished creating sprites');
     // Create particle sprites (separate pool)
     this.createParticleSprites();
-    this.reportLog("finished creating particle sprites");
+    this.reportLog('finished creating particle sprites');
     // Create decoration sprites (separate pool)
     this.createDecorationSprites();
-    this.reportLog("finished creating decoration sprites");
+    this.reportLog('finished creating decoration sprites');
 
     // ========================================
     // LAYER REFERENCES MAP - For debug UI control
     // ========================================
     this.buildLayerRefsMap();
 
-    console.log(
-      "PIXI WORKER: Initialization complete, waiting for start signal..."
-    );
+    console.log('PIXI WORKER: Initialization complete, waiting for start signal...');
     console.log(
       `PIXI WORKER: Centralized particle pool ready (entities: ${this.globalEntityCount} slots, particles: ${this.maxParticles} slots, decorations: ${this.maxDecorations} slots)`
     );
@@ -3515,7 +3359,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     const layerNames = Object.keys(this.layerRefs);
-    console.log(`PIXI WORKER: Layer refs map built (${layerNames.length} layers: ${layerNames.join(", ")})`);
+    console.log(
+      `PIXI WORKER: Layer refs map built (${layerNames.length} layers: ${layerNames.join(', ')})`
+    );
   }
 
   createCastedShadowsSystem(data) {
@@ -3527,11 +3373,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.maxShadowSprites = data.shadows.maxShadowSprites;
 
       // Create typed array views for shadow sprite data (uses ShadowCaster schema)
-      this.shadowSpriteActive = new Uint8Array(
-        data.shadows.spriteData,
-        0,
-        this.maxShadowSprites
-      );
+      this.shadowSpriteActive = new Uint8Array(data.shadows.spriteData, 0, this.maxShadowSprites);
 
       // Calculate offsets for Float32 arrays (after Uint8 active array, aligned to 4 bytes)
       const float32Offset = Math.ceil(this.maxShadowSprites / 4) * 4;
@@ -3588,9 +3430,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Track previous entity indices for interpolation (detect ownership changes)
       // -1 means no previous owner (first frame or was inactive)
-      this._shadowPrevEntityIdx = new Int32Array(this.maxShadowSprites).fill(
-        -1
-      );
+      this._shadowPrevEntityIdx = new Int32Array(this.maxShadowSprites).fill(-1);
 
       // Create shadow RenderTexture system (shadows rendered separately via shadowRT)
       this.createShadowSpriteSystem();
@@ -3598,15 +3438,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // IMPORTANT: Create shadow sprites immediately if shadowParticleContainer exists
       // (BigAtlas may load later or might not be used)
       if (this.shadowParticleContainer && this.shadowSprites.length === 0) {
-        console.log(
-          "PIXI WORKER: Creating shadow sprites immediately (no BigAtlas wait)"
-        );
+        console.log('PIXI WORKER: Creating shadow sprites immediately (no BigAtlas wait)');
         this.createShadowSprites();
       }
 
-      console.log(
-        `PIXI WORKER: Shadow sprites enabled (${this.maxShadowSprites} sprites)`
-      );
+      console.log(`PIXI WORKER: Shadow sprites enabled (${this.maxShadowSprites} sprites)`);
     }
   }
 }

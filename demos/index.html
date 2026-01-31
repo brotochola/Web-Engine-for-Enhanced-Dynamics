@@ -1,71 +1,69 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
+  <head>
     <meta charset="UTF-8" />
     <title>Predators Demo - Multithreaded Game Engine</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
 
-        body {
-            margin: 0;
-            overflow: hidden;
-            background: #000;
-        }
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #000;
+      }
 
-        canvas {
-            display: block;
-            width: 100vw;
-            height: 100vh;
-            position: fixed;
-            top: 0;
-            left: 0;
-        }
+      canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        position: fixed;
+        top: 0;
+        left: 0;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <script type="module">
-        // Import WeedJS engine 🌿
-        import WEED from '/src/index.js';
-        import { PredatorScene } from '/demos/scenes/PredatorScene.js';
-        import { BallsScene } from '/demos/scenes/BallsScene.js';
-        import { BallsAndRectanglesScene } from '/demos/scenes/BallsAndRectanglesScene.js';
+      // Import WeedJS engine 🌿
+      import WEED from '/src/index.js';
+      import { PredatorScene } from '/demos/scenes/PredatorScene.js';
+      import { BallsScene } from '/demos/scenes/BallsScene.js';
+      import { BallsAndRectanglesScene } from '/demos/scenes/BallsAndRectanglesScene.js';
 
-        // Destructure what we need from WEED
-        const { GameEngine } = WEED;
+      // Destructure what we need from WEED
+      const { GameEngine } = WEED;
 
-        // ========================================
-        // GAME ENGINE SETUP
-        // ========================================
+      // ========================================
+      // GAME ENGINE SETUP
+      // ========================================
 
-        const game = new GameEngine({
-            canvasWidth: window.innerWidth,
-            canvasHeight: window.innerHeight,
-            debug: true  // Enable debug UI
-        });
-        // Make game global for console access
-        window.game = game;
+      const game = new GameEngine({
+        canvasWidth: window.innerWidth,
+        canvasHeight: window.innerHeight,
+        debug: true, // Enable debug UI
+      });
+      // Make game global for console access
+      window.game = game;
 
-        // Register available scenes with DebugUI for scene switching
-        if (game.debugUI) {
-            game.debugUI.registerScenes([
-                { name: '🐺 Predators', class: PredatorScene },
-                { name: '⚽ Balls', class: BallsScene },
-                { name: '📦 Boxes', class: BallsAndRectanglesScene }
-            ]);
-        }
+      // Register available scenes with DebugUI for scene switching
+      if (game.debugUI) {
+        game.debugUI.registerScenes([
+          { name: '🐺 Predators', class: PredatorScene },
+          { name: '⚽ Balls', class: BallsScene },
+          { name: '📦 Boxes', class: BallsAndRectanglesScene },
+        ]);
+      }
 
-        // Load the Predator scene by default
-        await game.loadScene(PredatorScene);
+      // Load the Predator scene by default
+      await game.loadScene(PredatorScene);
 
-
-
-        console.log("✅ Scene loaded successfully!");
-        console.log("💡 Debug UI: Press [H] to toggle, number keys for visual aids");
-        console.log("💡 Console: window.game for engine access");
+      console.log('✅ Scene loaded successfully!');
+      console.log('💡 Debug UI: Press [H] to toggle, number keys for visual aids');
+      console.log('💡 Console: window.game for engine access');
     </script>
-</body>
+  </body>
 </html>

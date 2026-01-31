@@ -18,7 +18,7 @@ class BigAtlasInspector {
     }
 
     // Create overlay panel
-    this.panel = document.createElement("div");
+    this.panel = document.createElement('div');
     this.panel.style.cssText = `
       position: fixed;
       top: 50%;
@@ -36,7 +36,7 @@ class BigAtlasInspector {
     `;
 
     // Create header
-    const header = document.createElement("div");
+    const header = document.createElement('div');
     header.style.cssText = `
       display: flex;
       justify-content: space-between;
@@ -46,12 +46,12 @@ class BigAtlasInspector {
       border-bottom: 2px solid #eee;
     `;
 
-    const title = document.createElement("h2");
-    title.textContent = "🎨 BigAtlas Inspector";
-    title.style.margin = "0";
+    const title = document.createElement('h2');
+    title.textContent = '🎨 BigAtlas Inspector';
+    title.style.margin = '0';
 
-    const closeBtn = document.createElement("button");
-    closeBtn.textContent = "✕ Close";
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕ Close';
     closeBtn.style.cssText = `
       padding: 8px 16px;
       background: #f44336;
@@ -67,7 +67,7 @@ class BigAtlasInspector {
     header.appendChild(closeBtn);
 
     // Create info panel
-    const info = document.createElement("div");
+    const info = document.createElement('div');
     info.style.cssText = `
       background: #f5f5f5;
       padding: 15px;
@@ -89,7 +89,7 @@ class BigAtlasInspector {
     `;
 
     // Create controls
-    const controls = document.createElement("div");
+    const controls = document.createElement('div');
     controls.style.cssText = `
       margin-bottom: 15px;
       display: flex;
@@ -97,8 +97,8 @@ class BigAtlasInspector {
       flex-wrap: wrap;
     `;
 
-    const downloadBtn = document.createElement("button");
-    downloadBtn.textContent = "📥 Download PNG";
+    const downloadBtn = document.createElement('button');
+    downloadBtn.textContent = '📥 Download PNG';
     downloadBtn.style.cssText = `
       padding: 8px 16px;
       background: #4CAF50;
@@ -108,14 +108,14 @@ class BigAtlasInspector {
       cursor: pointer;
     `;
     downloadBtn.onclick = () => {
-      const link = document.createElement("a");
+      const link = document.createElement('a');
       link.download = `bigAtlas_${w}x${h}.png`;
       link.href = atlasCanvas.toDataURL();
       link.click();
     };
 
-    const downloadJsonBtn = document.createElement("button");
-    downloadJsonBtn.textContent = "📄 Download JSON";
+    const downloadJsonBtn = document.createElement('button');
+    downloadJsonBtn.textContent = '📄 Download JSON';
     downloadJsonBtn.style.cssText = `
       padding: 8px 16px;
       background: #2196F3;
@@ -126,16 +126,16 @@ class BigAtlasInspector {
     `;
     downloadJsonBtn.onclick = () => {
       const blob = new Blob([JSON.stringify(atlasJson, null, 2)], {
-        type: "application/json",
+        type: 'application/json',
       });
-      const link = document.createElement("a");
+      const link = document.createElement('a');
       link.download = `bigAtlas.json`;
       link.href = URL.createObjectURL(blob);
       link.click();
     };
 
-    const toggleGridBtn = document.createElement("button");
-    toggleGridBtn.textContent = "🔲 Toggle Frame Borders";
+    const toggleGridBtn = document.createElement('button');
+    toggleGridBtn.textContent = '🔲 Toggle Frame Borders';
     toggleGridBtn.style.cssText = `
       padding: 8px 16px;
       background: #FF9800;
@@ -150,7 +150,7 @@ class BigAtlasInspector {
     controls.appendChild(toggleGridBtn);
 
     // Create canvas container
-    const canvasContainer = document.createElement("div");
+    const canvasContainer = document.createElement('div');
     canvasContainer.style.cssText = `
       position: relative;
       overflow: auto;
@@ -161,14 +161,14 @@ class BigAtlasInspector {
     `;
 
     // Clone the canvas for display
-    const displayCanvas = document.createElement("canvas");
+    const displayCanvas = document.createElement('canvas');
     displayCanvas.width = atlasCanvas.width;
     displayCanvas.height = atlasCanvas.height;
-    const ctx = displayCanvas.getContext("2d");
+    const ctx = displayCanvas.getContext('2d');
     ctx.drawImage(atlasCanvas, 0, 0);
 
     // Overlay canvas for frame borders
-    const overlayCanvas = document.createElement("canvas");
+    const overlayCanvas = document.createElement('canvas');
     overlayCanvas.width = atlasCanvas.width;
     overlayCanvas.height = atlasCanvas.height;
     overlayCanvas.style.cssText = `
@@ -180,11 +180,11 @@ class BigAtlasInspector {
 
     let showFrames = false;
     const drawFrameOverlays = () => {
-      const overlayCtx = overlayCanvas.getContext("2d");
+      const overlayCtx = overlayCanvas.getContext('2d');
       overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
       if (showFrames) {
-        overlayCtx.strokeStyle = "rgba(255, 0, 0, 0.5)";
+        overlayCtx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
         overlayCtx.lineWidth = 1;
 
         for (const [frameName, frameData] of Object.entries(atlasJson.frames)) {

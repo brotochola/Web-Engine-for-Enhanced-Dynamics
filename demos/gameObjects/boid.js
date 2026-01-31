@@ -1,32 +1,18 @@
 // Boid.js - Flocking behavior implementation
 // Extends GameObject to implement the classic boids algorithm
 
-import WEED from "/src/index.js";
-import { Flocking } from "../components/flocking.js";
+import WEED from '/src/index.js';
+import { Flocking } from '../components/flocking.js';
 
 // Destructure what we need from WEED
-const {
-  GameObject,
-  RigidBody,
-  Collider,
-  SpriteRenderer,
-  Mouse,
-  Transform,
-  ShadowCaster,
-} = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, Mouse, Transform, ShadowCaster } = WEED;
 
 class Boid extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
   static scriptUrl = import.meta.url;
 
   // Define components this entity uses (including custom Flocking component)
-  static components = [
-    RigidBody,
-    Collider,
-    SpriteRenderer,
-    Flocking,
-    ShadowCaster,
-  ];
+  static components = [RigidBody, Collider, SpriteRenderer, Flocking, ShadowCaster];
 
   // Note: Flocking behavior properties are now in the Flocking component
   // (protectedRange, centeringFactor, avoidFactor, matchingFactor, turnFactor, margin)
@@ -97,7 +83,7 @@ class Boid extends GameObject {
     this.rigidBody.ay = 0;
 
     // Initialize sprite (bunny is a static image in bigAtlas)
-    this.setSprite("bunny");
+    this.setSprite('bunny');
   }
 
   /**
@@ -149,8 +135,7 @@ class Boid extends GameObject {
     const myEntityType = entityTypes[i];
     const myX = tX[i];
     const myY = tY[i];
-    const protectedRange2 =
-      this.flocking.protectedRange * this.flocking.protectedRange;
+    const protectedRange2 = this.flocking.protectedRange * this.flocking.protectedRange;
 
     // Cohesion accumulators (same type only)
     let centerX = 0;
@@ -206,15 +191,7 @@ class Boid extends GameObject {
       }
 
       // HOOK: Allow subclasses to process this neighbor (e.g., hunt prey, flee predators)
-      this.processNeighbor(
-        j,
-        neighborType,
-        dx,
-        dy,
-        dist2,
-        isSameType,
-        neighborContext
-      );
+      this.processNeighbor(j, neighborType, dx, dy, dist2, isSameType, neighborContext);
     }
 
     // Apply cohesion force
@@ -262,15 +239,7 @@ class Boid extends GameObject {
    * @param {boolean} isSameType - Whether neighbor is same entity type
    * @param {Object} context - Context object to accumulate data
    */
-  processNeighbor(
-    neighborIndex,
-    neighborType,
-    dx,
-    dy,
-    dist2,
-    isSameType,
-    context
-  ) {
+  processNeighbor(neighborIndex, neighborType, dx, dy, dist2, isSameType, context) {
     // Default: do nothing (base Boid doesn't need extra logic)
   }
 
@@ -332,12 +301,10 @@ class Boid extends GameObject {
     const worldHeight = this.config.worldHeight || 600;
 
     if (x < this.flocking.margin) rbAX[i] += this.flocking.turnFactor * dtRatio;
-    if (x > worldWidth - this.flocking.margin)
-      rbAX[i] -= this.flocking.turnFactor * dtRatio;
+    if (x > worldWidth - this.flocking.margin) rbAX[i] -= this.flocking.turnFactor * dtRatio;
 
     if (y < this.flocking.margin) rbAY[i] += this.flocking.turnFactor * dtRatio;
-    if (y > worldHeight - this.flocking.margin)
-      rbAY[i] -= this.flocking.turnFactor * dtRatio;
+    if (y > worldHeight - this.flocking.margin) rbAY[i] -= this.flocking.turnFactor * dtRatio;
   }
 }
 

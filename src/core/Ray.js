@@ -2,11 +2,11 @@
 // Uses DDA (Digital Differential Analyzer) to traverse only cells the ray passes through
 // Now uses Grid class for spatial data and utils for geometric intersections
 
-import { Transform } from "../components/Transform.js";
-import { Collider } from "../components/Collider.js";
-import { Grid } from "./Grid.js";
-import { rayCircleIntersect, rayBoxIntersect } from "./utils.js";
-import { DEBUG_FLAGS } from "./DebugFlags.js";
+import { Transform } from '../components/Transform.js';
+import { Collider } from '../components/Collider.js';
+import { Grid } from './Grid.js';
+import { rayCircleIntersect, rayBoxIntersect } from './utils.js';
+import { DEBUG_FLAGS } from './DebugFlags.js';
 
 /**
  * Ray - Static class for raycasting against entities in the spatial grid
@@ -69,11 +69,7 @@ export class Ray {
    * @param {SharedArrayBuffer} debugBuffer - Raycast visualization buffer
    * @param {number} maxDebugRaycasts - Max raycasts to store for debug
    */
-  static initialize(
-    debugFlagsBuffer = null,
-    debugBuffer = null,
-    maxDebugRaycasts = 100
-  ) {
+  static initialize(debugFlagsBuffer = null, debugBuffer = null, maxDebugRaycasts = 100) {
     // Debug visualization
     if (debugFlagsBuffer) {
       Ray.debugFlags = new Uint8Array(debugFlagsBuffer);
@@ -134,9 +130,8 @@ export class Ray {
     let tMaxX, tMaxY;
     if (dirX !== 0) {
       const nextBoundaryX =
-        (stepX > 0
-          ? Math.floor(xFrom * invCellSize) + 1
-          : Math.ceil(xFrom * invCellSize) - 1) * cellSize;
+        (stepX > 0 ? Math.floor(xFrom * invCellSize) + 1 : Math.ceil(xFrom * invCellSize) - 1) *
+        cellSize;
       tMaxX = Math.abs((nextBoundaryX - xFrom) / dirX);
     } else {
       tMaxX = Infinity;
@@ -144,9 +139,8 @@ export class Ray {
 
     if (dirY !== 0) {
       const nextBoundaryY =
-        (stepY > 0
-          ? Math.floor(yFrom * invCellSize) + 1
-          : Math.ceil(yFrom * invCellSize) - 1) * cellSize;
+        (stepY > 0 ? Math.floor(yFrom * invCellSize) + 1 : Math.ceil(yFrom * invCellSize) - 1) *
+        cellSize;
       tMaxY = Math.abs((nextBoundaryY - yFrom) / dirY);
     } else {
       tMaxY = Infinity;
@@ -179,15 +173,7 @@ export class Ray {
         // Get entities in this cell
         const cellIndex = currentCellY * gridCols + currentCellX;
         // Optimization: _checkCellEntities mutates static _tempResult to avoid GC
-        Ray._checkCellEntities(
-          cellIndex,
-          xFrom,
-          yFrom,
-          dirX,
-          dirY,
-          rayLength,
-          closestDist
-        );
+        Ray._checkCellEntities(cellIndex, xFrom, yFrom, dirX, dirY, rayLength, closestDist);
 
         const result = Ray._tempResult;
 
@@ -282,16 +268,7 @@ export class Ray {
     const dirY = dy / rayLength;
 
     // Use internal traversal
-    const result = Ray._traverseGrid(
-      xFrom,
-      yFrom,
-      xTo,
-      yTo,
-      dirX,
-      dirY,
-      rayLength,
-      maxDist
-    );
+    const result = Ray._traverseGrid(xFrom, yFrom, xTo, yTo, dirX, dirY, rayLength, maxDist);
 
     if (result.entityIndex !== -1) {
       info.hit = true;
@@ -301,15 +278,7 @@ export class Ray {
       info.hitY = yFrom + dirY * result.distance;
 
       if (Ray._isDebugEnabled()) {
-        Ray._addDebugRaycast(
-          xFrom,
-          yFrom,
-          xTo,
-          yTo,
-          info.hitX,
-          info.hitY,
-          true
-        );
+        Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, info.hitX, info.hitY, true);
       }
     } else {
       if (Ray._isDebugEnabled()) {
@@ -497,9 +466,8 @@ export class Ray {
     let tMaxX, tMaxY;
     if (dirX !== 0) {
       const nextBoundaryX =
-        (stepX > 0
-          ? Math.floor(xFrom * invCellSize) + 1
-          : Math.ceil(xFrom * invCellSize) - 1) * cellSize;
+        (stepX > 0 ? Math.floor(xFrom * invCellSize) + 1 : Math.ceil(xFrom * invCellSize) - 1) *
+        cellSize;
       tMaxX = Math.abs((nextBoundaryX - xFrom) / dirX);
     } else {
       tMaxX = Infinity;
@@ -507,9 +475,8 @@ export class Ray {
 
     if (dirY !== 0) {
       const nextBoundaryY =
-        (stepY > 0
-          ? Math.floor(yFrom * invCellSize) + 1
-          : Math.ceil(yFrom * invCellSize) - 1) * cellSize;
+        (stepY > 0 ? Math.floor(yFrom * invCellSize) + 1 : Math.ceil(yFrom * invCellSize) - 1) *
+        cellSize;
       tMaxY = Math.abs((nextBoundaryY - yFrom) / dirY);
     } else {
       tMaxY = Infinity;
@@ -589,15 +556,7 @@ export class Ray {
     if (Ray._isDebugEnabled()) {
       if (Ray._tempHitsArray.length > 0) {
         const firstHit = Ray._tempHitsArray[0];
-        Ray._addDebugRaycast(
-          xFrom,
-          yFrom,
-          xTo,
-          yTo,
-          firstHit.hitX,
-          firstHit.hitY,
-          true
-        );
+        Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, firstHit.hitX, firstHit.hitY, true);
       } else {
         Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, xTo, yTo, false);
       }
@@ -638,9 +597,8 @@ export class Ray {
     let tMaxX, tMaxY;
     if (dirX !== 0) {
       const nextBoundaryX =
-        (stepX > 0
-          ? Math.floor(xFrom * invCellSize) + 1
-          : Math.ceil(xFrom * invCellSize) - 1) * cellSize;
+        (stepX > 0 ? Math.floor(xFrom * invCellSize) + 1 : Math.ceil(xFrom * invCellSize) - 1) *
+        cellSize;
       tMaxX = Math.abs((nextBoundaryX - xFrom) / dirX);
     } else {
       tMaxX = Infinity;
@@ -648,9 +606,8 @@ export class Ray {
 
     if (dirY !== 0) {
       const nextBoundaryY =
-        (stepY > 0
-          ? Math.floor(yFrom * invCellSize) + 1
-          : Math.ceil(yFrom * invCellSize) - 1) * cellSize;
+        (stepY > 0 ? Math.floor(yFrom * invCellSize) + 1 : Math.ceil(yFrom * invCellSize) - 1) *
+        cellSize;
       tMaxY = Math.abs((nextBoundaryY - yFrom) / dirY);
     } else {
       tMaxY = Infinity;
@@ -716,16 +673,7 @@ export class Ray {
    * Internal: Collect ALL hits in a cell (for castAll)
    * @private
    */
-  static _collectCellHits(
-    cellIndex,
-    rayX,
-    rayY,
-    dirX,
-    dirY,
-    rayLength,
-    checkedEntities,
-    allHits
-  ) {
+  static _collectCellHits(cellIndex, rayX, rayY, dirX, dirY, rayLength, checkedEntities, allHits) {
     const count = Grid.getCellEntityCount(cellIndex);
     if (count === 0) return;
 
@@ -761,16 +709,7 @@ export class Ray {
 
       if (shapeType === Ray.SHAPE_CIRCLE) {
         const radius = cRadius[entityIndex];
-        distance = rayCircleIntersect(
-          rayX,
-          rayY,
-          dirX,
-          dirY,
-          entityX,
-          entityY,
-          radius,
-          rayLength
-        );
+        distance = rayCircleIntersect(rayX, rayY, dirX, dirY, entityX, entityY, radius, rayLength);
       } else if (shapeType === Ray.SHAPE_BOX) {
         const width = cWidth[entityIndex];
         const height = cHeight[entityIndex];
@@ -869,16 +808,7 @@ export class Ray {
       // Check collision based on shape type using utils functions
       if (shapeType === Ray.SHAPE_CIRCLE) {
         const radius = cRadius[entityIndex];
-        distance = rayCircleIntersect(
-          rayX,
-          rayY,
-          dirX,
-          dirY,
-          entityX,
-          entityY,
-          radius,
-          rayLength
-        );
+        distance = rayCircleIntersect(rayX, rayY, dirX, dirY, entityX, entityY, radius, rayLength);
       } else if (shapeType === Ray.SHAPE_BOX) {
         const width = cWidth[entityIndex];
         const height = cHeight[entityIndex];

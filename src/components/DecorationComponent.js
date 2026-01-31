@@ -3,7 +3,7 @@
 // This component contains ALL data needed for static decorations (position, visuals)
 // Decorations are static sprites with configurable anchor - no animation, no physics, no lighting
 
-import { Component } from "../core/Component.js";
+import { Component } from '../core/Component.js';
 
 export class DecorationComponent extends Component {
   static ARRAY_SCHEMA = {

@@ -1,8 +1,8 @@
 // SpriteRenderer.js - Rendering component for visual appearance
 // Handles animation, tinting, transparency, and sprite effects
 
-import { Component } from "../core/Component.js";
-import { SpriteSheetRegistry } from "../core/SpriteSheetRegistry.js";
+import { Component } from '../core/Component.js';
+import { SpriteSheetRegistry } from '../core/SpriteSheetRegistry.js';
 
 export class SpriteRenderer extends Component {
   // Array schema - defines all rendering properties
@@ -67,10 +67,7 @@ export class SpriteRenderer extends Component {
   static getOriginalWidth(entityIndex) {
     const spritesheetId = SpriteRenderer.spritesheetId[entityIndex];
     const animIndex = SpriteRenderer.animationState[entityIndex];
-    const dims = SpriteSheetRegistry.getFrameDimensionsById(
-      spritesheetId,
-      animIndex
-    );
+    const dims = SpriteSheetRegistry.getFrameDimensionsById(spritesheetId, animIndex);
     return dims ? dims.w : 0;
   }
 
@@ -82,10 +79,7 @@ export class SpriteRenderer extends Component {
   static getOriginalHeight(entityIndex) {
     const spritesheetId = SpriteRenderer.spritesheetId[entityIndex];
     const animIndex = SpriteRenderer.animationState[entityIndex];
-    const dims = SpriteSheetRegistry.getFrameDimensionsById(
-      spritesheetId,
-      animIndex
-    );
+    const dims = SpriteSheetRegistry.getFrameDimensionsById(spritesheetId, animIndex);
     return dims ? dims.h : 0;
   }
 }
