@@ -24,8 +24,8 @@ export const STICK_DURATION_MS = (STICK_FRAMES * NATURAL_DURATION) / ACTION_ANIM
 export const DYING_DURATION_MS = (HURT_FRAMES * NATURAL_DURATION) / DYING_ANIM_SPEED;
 
 // Speed threshold for running vs walking
-const RUN_SPEED_THRESHOLD = 1.78;
-const WALK_SPEED_THRESHOLD = 0.1;
+const RUN_SPEED_THRESHOLD = 1.75;
+const WALK_SPEED_THRESHOLD = 0.066;
 const RUN_ANIMATION_MULTIPLIER = 0.12;
 const WALK_ANIMATION_MULTIPLIER = 0.166;
 const IDLE_ANIMATION_MULTIPLIER = 0.05;
@@ -107,10 +107,10 @@ class WalkingState extends FSMState {
 
     // Want to run? Wait for one walk cycle to complete
     if (speed > RUN_SPEED_THRESHOLD) {
-      const cycleDuration = WALK_CYCLE_FRAMES * (1000 / (speed * WALK_ANIMATION_MULTIPLIER * 60));
-      if (this.fsm.time[i] >= cycleDuration) {
-        this.fsm.changeState(i, this.fsm.states.RUNNING);
-      }
+      // const cycleDuration = WALK_CYCLE_FRAMES * (1000 / (speed * WALK_ANIMATION_MULTIPLIER * 60));
+      // if (this.fsm.time[i] >= cycleDuration) {
+      this.fsm.changeState(i, this.fsm.states.RUNNING);
+      // }
     }
   }
 }
@@ -136,7 +136,7 @@ class RunningState extends FSMState {
     const velocityAngle = RigidBody.velocityAngle[i];
     const speed = RigidBody.speed[i];
 
-    // Update facing direction from velocity
+    // Update animation
 
     const direction = getDirectionFromAngle(velocityAngle);
     const dirIndex = DIRECTION_NAMES.indexOf(direction);
@@ -144,17 +144,15 @@ class RunningState extends FSMState {
       PersonComponent.facingDirection[i] = dirIndex;
     }
 
-    // Update animation
-    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
-    owner.setAnimation(`run_${facingDir}`);
+    owner.setAnimation(`run_${direction}`);
     owner.setAnimationSpeed(speed * RUN_ANIMATION_MULTIPLIER);
 
     // Want to walk? Wait for one run cycle to complete
-    if (speed <= RUN_SPEED_THRESHOLD) {
-      const cycleDuration = RUN_CYCLE_FRAMES * (1000 / (speed * RUN_ANIMATION_MULTIPLIER * 60));
-      if (this.fsm.time[i] >= cycleDuration) {
-        this.fsm.changeState(i, this.fsm.states.WALKING);
-      }
+    if (speed < RUN_SPEED_THRESHOLD) {
+      // const cycleDuration = RUN_CYCLE_FRAMES * (1000 / (speed * RUN_ANIMATION_MULTIPLIER * 60));
+      // if (this.fsm.time[i] >= cycleDuration) {
+      this.fsm.changeState(i, this.fsm.states.WALKING);
+      // }
     }
   }
 }
@@ -174,7 +172,7 @@ class ShootingState extends FSMState {
   static onUpdate(owner, i, dt) {
 
     // Animation complete?
-    console.log("& shooting animation", i, this.fsm.time[i], SHOOT_DURATION_MS, performance.now())
+
     if (this.fsm.time[i] >= SHOOT_DURATION_MS) {
       this.fsm.changeState(i, this.fsm.states.IDLE);
     }
