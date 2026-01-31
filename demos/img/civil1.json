@@ -2973,81 +2973,123 @@
     "shoot_up": [
       "shoot_up_0",
       "shoot_up_1",
-      "shoot_up_2",
-      "shoot_up_3",
-      "shoot_up_4",
-      "shoot_up_5",
-      "shoot_up_6",
-      "shoot_up_7",
-      "shoot_up_8",
-      "shoot_up_9",
-      "shoot_up_10",
-      "shoot_up_11",
-      "shoot_up_12"
+      "shoot_up_2"
     ],
     "shoot_left": [
       "shoot_left_0",
       "shoot_left_1",
-      "shoot_left_2",
-      "shoot_left_3",
-      "shoot_left_4",
-      "shoot_left_5",
-      "shoot_left_6",
-      "shoot_left_7",
-      "shoot_left_8",
-      "shoot_left_9",
-      "shoot_left_10",
-      "shoot_left_11",
-      "shoot_left_12"
+      "shoot_left_2"
     ],
     "shoot_down": [
       "shoot_down_0",
       "shoot_down_1",
-      "shoot_down_2",
-      "shoot_down_3",
-      "shoot_down_4",
-      "shoot_down_5",
-      "shoot_down_6",
-      "shoot_down_7",
-      "shoot_down_8",
-      "shoot_down_9",
-      "shoot_down_10",
-      "shoot_down_11",
-      "shoot_down_12"
+      "shoot_down_2"
     ],
     "shoot_right": [
       "shoot_right_0",
       "shoot_right_1",
-      "shoot_right_2",
-      "shoot_right_3",
-      "shoot_right_4",
-      "shoot_right_5",
-      "shoot_right_6",
-      "shoot_right_7",
-      "shoot_right_8",
-      "shoot_right_9",
-      "shoot_right_10",
-      "shoot_right_11",
-      "shoot_right_12"
+      "shoot_right_2"
     ],
-    "hurt": ["hurt_0", "hurt_1", "hurt_2", "hurt_3", "hurt_4", "hurt_5"],
-    "climb": ["climb_0", "climb_1", "climb_2", "climb_3", "climb_4", "climb_5"],
-    "idle_up": ["idle_up_0", "idle_up_1"],
-    "idle_left": ["idle_left_0", "idle_left_1"],
-    "idle_down": ["idle_down_0", "idle_down_1"],
-    "idle_right": ["idle_right_0", "idle_right_1"],
-    "jump_up": ["jump_up_0", "jump_up_1", "jump_up_2", "jump_up_3", "jump_up_4"],
-    "jump_left": ["jump_left_0", "jump_left_1", "jump_left_2", "jump_left_3", "jump_left_4"],
-    "jump_down": ["jump_down_0", "jump_down_1", "jump_down_2", "jump_down_3", "jump_down_4"],
-    "jump_right": ["jump_right_0", "jump_right_1", "jump_right_2", "jump_right_3", "jump_right_4"],
-    "sit_up": ["sit_up_0", "sit_up_1", "sit_up_2"],
-    "sit_left": ["sit_left_0", "sit_left_1", "sit_left_2"],
-    "sit_down": ["sit_down_0", "sit_down_1", "sit_down_2"],
-    "sit_right": ["sit_right_0", "sit_right_1", "sit_right_2"],
-    "emote_up": ["emote_up_0", "emote_up_1", "emote_up_2"],
-    "emote_left": ["emote_left_0", "emote_left_1", "emote_left_2"],
-    "emote_down": ["emote_down_0", "emote_down_1", "emote_down_2"],
-    "emote_right": ["emote_right_0", "emote_right_1", "emote_right_2"],
+    "hurt": [
+      "hurt_0",
+      "hurt_1",
+      "hurt_2",
+      "hurt_3",
+      "hurt_4",
+      "hurt_5"
+    ],
+    "climb": [
+      "climb_0",
+      "climb_1",
+      "climb_2",
+      "climb_3",
+      "climb_4",
+      "climb_5"
+    ],
+    "idle_up": [
+      "idle_up_0",
+      "idle_up_1"
+    ],
+    "idle_left": [
+      "idle_left_0",
+      "idle_left_1"
+    ],
+    "idle_down": [
+      "idle_down_0",
+      "idle_down_1"
+    ],
+    "idle_right": [
+      "idle_right_0",
+      "idle_right_1"
+    ],
+    "jump_up": [
+      "jump_up_0",
+      "jump_up_1",
+      "jump_up_2",
+      "jump_up_3",
+      "jump_up_4"
+    ],
+    "jump_left": [
+      "jump_left_0",
+      "jump_left_1",
+      "jump_left_2",
+      "jump_left_3",
+      "jump_left_4"
+    ],
+    "jump_down": [
+      "jump_down_0",
+      "jump_down_1",
+      "jump_down_2",
+      "jump_down_3",
+      "jump_down_4"
+    ],
+    "jump_right": [
+      "jump_right_0",
+      "jump_right_1",
+      "jump_right_2",
+      "jump_right_3",
+      "jump_right_4"
+    ],
+    "sit_up": [
+      "sit_up_0",
+      "sit_up_1",
+      "sit_up_2"
+    ],
+    "sit_left": [
+      "sit_left_0",
+      "sit_left_1",
+      "sit_left_2"
+    ],
+    "sit_down": [
+      "sit_down_0",
+      "sit_down_1",
+      "sit_down_2"
+    ],
+    "sit_right": [
+      "sit_right_0",
+      "sit_right_1",
+      "sit_right_2"
+    ],
+    "emote_up": [
+      "emote_up_0",
+      "emote_up_1",
+      "emote_up_2"
+    ],
+    "emote_left": [
+      "emote_left_0",
+      "emote_left_1",
+      "emote_left_2"
+    ],
+    "emote_down": [
+      "emote_down_0",
+      "emote_down_1",
+      "emote_down_2"
+    ],
+    "emote_right": [
+      "emote_right_0",
+      "emote_right_1",
+      "emote_right_2"
+    ],
     "run_up": [
       "run_up_0",
       "run_up_1",
@@ -3088,10 +3130,22 @@
       "run_right_6",
       "run_right_7"
     ],
-    "combat_up": ["combat_up_0", "combat_up_1"],
-    "combat_left": ["combat_left_0", "combat_left_1"],
-    "combat_down": ["combat_down_0", "combat_down_1"],
-    "combat_right": ["combat_right_0", "combat_right_1"],
+    "combat_up": [
+      "combat_up_0",
+      "combat_up_1"
+    ],
+    "combat_left": [
+      "combat_left_0",
+      "combat_left_1"
+    ],
+    "combat_down": [
+      "combat_down_0",
+      "combat_down_1"
+    ],
+    "combat_right": [
+      "combat_right_0",
+      "combat_right_1"
+    ],
     "1h_slash_up": [
       "1h_slash_up_0",
       "1h_slash_up_1",

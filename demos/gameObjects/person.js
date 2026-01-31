@@ -107,7 +107,7 @@ export class Person extends Lootable {
   }
 
   recieveDamage(damage) {
-    console.log('recieveDamage', this.index, damage, this.lootableComponent.health);
+    // console.log('recieveDamage', this.index, damage, this.lootableComponent.health);
     // Don't process damage if already dead
     if (PersonComponent.dead[this.index] === 1) return;
 
@@ -122,7 +122,7 @@ export class Person extends Lootable {
     // }
 
     ParticleEmitter.emit({
-      count: Math.floor(damage * (Math.random()*5+3)),
+      count: Math.floor(damage * (Math.random() * 5 + 3)),
       texture: 'blood',
       x: this.x,
       y: this.y,
@@ -175,6 +175,7 @@ export class Person extends Lootable {
     const radius = this.collider.radius;
     const separationRadius = 3 * radius;
     const separationRadiusSq = separationRadius * separationRadius;
+    const myIndex = this.index;
 
     let myTeamAvgX = 0;
     let myTeamAvgY = 0;
@@ -184,12 +185,16 @@ export class Person extends Lootable {
 
     for (let n = 0; n < neighborCount; n++) {
       const neighborIndex = this.getNeighbor(n);
+      // Skip if not same entity type
       if (Transform.entityType[neighborIndex] !== this.entityType) continue;
+      // Skip if no line of sight to neighbor
+      if (!Ray.hasLineOfSight(myIndex, neighborIndex)) continue
 
       const nx = Transform.x[neighborIndex];
       const ny = Transform.y[neighborIndex];
 
       // Cohesion: accumulate for average
+
       myTeamAvgX += nx;
       myTeamAvgY += ny;
       myTeamMemberCount++;
@@ -310,6 +315,8 @@ export class Person extends Lootable {
 
     // Check cooldown
     if (!this.canFire(weapon)) return false;
+
+    console.log('shoot', this.index, targetEntityIndex);
 
     // Face the target
     const targetX = Transform.x[targetEntityIndex];

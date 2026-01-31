@@ -9,32 +9,27 @@ const { FSM, FSMState, RigidBody, getDirectionFromAngle } = WEED;
 
 const ACTION_ANIM_SPEED = 0.2;
 const NATURAL_DURATION = 16.667;
-const SHOOT_FRAMES = 13;
+const SHOOT_FRAMES = 3;
 const SLASH_FRAMES = 6; // For punch
 const STICK_FRAMES = 13; // 1h_slash for stick hit
 const HURT_FRAMES = 6;
-const LOCOMOTION_FRAMES = 8; // Walk/run cycle frames
+const WALK_CYCLE_FRAMES = 9; // Walk cycle frames
+const RUN_CYCLE_FRAMES = 8; // Run cycle frames
 
-const SHOOT_DURATION_MS = ACTION_ANIM_SPEED * SHOOT_FRAMES * NATURAL_DURATION; // ~1083ms
-const SLASH_DURATION_MS = ACTION_ANIM_SPEED * SLASH_FRAMES * NATURAL_DURATION; // ~500ms
-const STICK_DURATION_MS = ACTION_ANIM_SPEED * STICK_FRAMES * NATURAL_DURATION; // ~1083ms
-const HURT_DURATION_MS = ACTION_ANIM_SPEED * HURT_FRAMES * NATURAL_DURATION; // ~500ms
+const SHOOT_DURATION_MS = ACTION_ANIM_SPEED * SHOOT_FRAMES * NATURAL_DURATION;
+const SLASH_DURATION_MS = ACTION_ANIM_SPEED * SLASH_FRAMES * NATURAL_DURATION;
+const STICK_DURATION_MS = ACTION_ANIM_SPEED * STICK_FRAMES * NATURAL_DURATION;
+const HURT_DURATION_MS = ACTION_ANIM_SPEED * HURT_FRAMES * NATURAL_DURATION;
 
 const DYING_ANIM_SPEED = 0.2;
 const DYING_DURATION_MS = DYING_ANIM_SPEED * HURT_FRAMES * NATURAL_DURATION;
 
 // Speed threshold for running vs walking
-const RUN_SPEED_THRESHOLD = 2;
+const RUN_SPEED_THRESHOLD = 1.78;
 const WALK_SPEED_THRESHOLD = 0.1;
-const RUN_ANIMATION_MULTIPLIER = 0.15;
-const WALK_ANIMATION_MULTIPLIER = 0.2;
+const RUN_ANIMATION_MULTIPLIER = 0.12;
+const WALK_ANIMATION_MULTIPLIER = 0.166;
 const IDLE_ANIMATION_MULTIPLIER = 0.05;
-
-// Helper to calculate locomotion cycle duration based on current speed
-function getLocomotionCycleDuration(speed, multiplier) {
-  const animSpeed = speed * multiplier;
-  return LOCOMOTION_FRAMES * (1000 / (animSpeed * 60));
-}
 
 // ==========================================
 // IDLE STATE - standing still
@@ -53,7 +48,7 @@ class IdleState extends FSMState {
   static onUpdate(owner, i, dt) {
     // Check for death first (highest priority)
     if (LootableComponent.health[i] <= 0) {
-      console.log(`[IdleState ${i}] Health <= 0, changing to DYING`);
+
       this.fsm.changeState(i, this.fsm.states.DYING);
       return;
     }
@@ -113,7 +108,7 @@ class WalkingState extends FSMState {
 
     // Want to run? Wait for one walk cycle to complete
     if (speed > RUN_SPEED_THRESHOLD) {
-      const cycleDuration = getLocomotionCycleDuration(speed, WALK_ANIMATION_MULTIPLIER);
+      const cycleDuration = WALK_CYCLE_FRAMES * (1000 / (speed * WALK_ANIMATION_MULTIPLIER * 60));
       if (this.fsm.time[i] >= cycleDuration) {
         this.fsm.changeState(i, this.fsm.states.RUNNING);
       }
@@ -156,15 +151,9 @@ class RunningState extends FSMState {
     owner.setAnimation(`run_${facingDir}`);
     owner.setAnimationSpeed(speed * RUN_ANIMATION_MULTIPLIER);
 
-    // Stopped moving? -> Idle immediately
-    if (speed <= WALK_SPEED_THRESHOLD) {
-      this.fsm.changeState(i, this.fsm.states.IDLE);
-      return;
-    }
-
     // Want to walk? Wait for one run cycle to complete
     if (speed <= RUN_SPEED_THRESHOLD) {
-      const cycleDuration = getLocomotionCycleDuration(speed, RUN_ANIMATION_MULTIPLIER);
+      const cycleDuration = RUN_CYCLE_FRAMES * (1000 / (speed * RUN_ANIMATION_MULTIPLIER * 60));
       if (this.fsm.time[i] >= cycleDuration) {
         this.fsm.changeState(i, this.fsm.states.WALKING);
       }
@@ -283,7 +272,6 @@ class DyingState extends FSMState {
   // static DYING_DURATION_MS = 100//(HURT_FRAMES -1)* (1000 / (DyingState.DYING_ANIM_SPEED * 60))
 
   static onEnter(owner, i, fromState) {
-    console.log('on enter', DYING_DURATION_MS);
 
     // Use hurt animation for death (no direction variant)
     owner.setAnimation('hurt');
@@ -292,7 +280,7 @@ class DyingState extends FSMState {
 
   static onUpdate(owner, i, dt) {
     // Animation complete? Transition to DEAD
-    console.log('on update dying', this.fsm.time[i], DYING_DURATION_MS);
+
     if (this.fsm.time[i] >= DYING_DURATION_MS) {
       this.fsm.changeState(i, this.fsm.states.DEAD);
     }

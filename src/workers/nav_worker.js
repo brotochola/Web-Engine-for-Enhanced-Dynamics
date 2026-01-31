@@ -5,13 +5,45 @@ self.postMessage({
 });
 
 // nav_worker.js - Dedicated navigation worker for pathfinding calculations
-// Handles flowfield and A* computations in background
 //
-// Architecture:
-// - Receives requests from logic workers via MessagePort
-// - Computes flowfields (Dijkstra) and A* paths
-// - Writes results to shared NavGrid SAB
-// - Logic workers read results next frame
+// ============================================================================
+// OVERVIEW
+// ============================================================================
+//
+// The nav_worker handles all pathfinding computations in a dedicated thread:
+// - Flowfield computation (Dijkstra's algorithm)
+// - A* path computation
+// - Walkability grid management
+//
+// This keeps the main thread and logic workers responsive while pathfinding
+// calculations happen in the background.
+//
+// ============================================================================
+// FLOWFIELD COMPUTATION
+// ============================================================================
+//
+// Flowfields use Dijkstra's algorithm with a bucket queue for O(V) complexity:
+//
+// 1. Start at target cell with distance 0
+// 2. Expand outward, calculating distance to each reachable cell
+// 3. For each cell, store the direction that leads toward the target
+// 4. Result: Every walkable cell knows which direction leads to the target
+//
+// The bucket queue optimization:
+// - Instead of a priority queue (O(log n) per operation)
+// - Use array of buckets indexed by distance (O(1) per operation)
+// - Works because edge weights are small integers (10 or 14)
+//
+// ============================================================================
+// SLOT MANAGEMENT
+// ============================================================================
+//
+// Computed flowfields are stored in slots in the SharedArrayBuffer:
+// - Default: 16 flowfield slots, 64 path slots
+// - LRU eviction when slots are full
+// - Slots are keyed by targetCell (flowfields) or fromCell+toCell (paths)
+//
+// ============================================================================
 
 import { AbstractWorker } from './AbstractWorker.js';
 import { NavGrid, DIRECTION } from '../core/NavGrid.js';
@@ -25,7 +57,10 @@ import {
 
 /**
  * NavScratch - Reusable buffers for pathfinding algorithms
- * Single set per nav worker, reused across all calculations
+ *
+ * Using scratch buffers avoids allocation during pathfinding,
+ * which would cause GC pauses. One set per nav worker, reused
+ * across all calculations.
  */
 class NavScratch {
   constructor(totalCells, maxPathLength, gridWidth, gridHeight) {
@@ -62,6 +97,9 @@ class NavScratch {
 
   /**
    * Reset for new calculation using stamp technique (O(1) reset)
+   *
+   * Instead of clearing the visited array (O(n)), we increment a stamp.
+   * A cell is "visited" if its stamp matches the current stamp.
    */
   reset() {
     this.currentStamp++;
@@ -186,7 +224,12 @@ class NavWorker extends AbstractWorker {
 
   /**
    * Handle messages from other workers via MessagePort
-   * Receives pathfinding requests from logic workers
+   *
+   * Message types:
+   * - REQUEST_FLOWFIELD: Compute flowfield for targetCell
+   * - REQUEST_PATH: Compute A* path from fromCell to toCell
+   * - REBUILD: Rebuild walkability from static entity list
+   * - REBUILD_FROM_INDICES: Rebuild walkability from entity indices
    */
   handleWorkerMessage(fromWorker, data) {
     const { type } = data;
@@ -200,7 +243,7 @@ class NavWorker extends AbstractWorker {
           if (existingSlot >= 0) {
             this._updateFlowfieldLRU(existingSlot);
           } else {
-            // Queue for computation
+            // Queue for computation (Set deduplicates)
             this.flowfieldRequests.add(targetCell);
           }
         }
@@ -220,7 +263,7 @@ class NavWorker extends AbstractWorker {
           if (existingSlot >= 0) {
             this._updatePathLRU(existingSlot);
           } else {
-            // Queue for computation (deduplicates via Map key)
+            // Queue for computation (Map key deduplicates)
             const key = `${fromCell}_${toCell}`;
             this.pathRequests.set(key, { fromCell, toCell });
           }
@@ -247,12 +290,11 @@ class NavWorker extends AbstractWorker {
    */
   _findExistingFlowfieldSlot(targetCell) {
     const sab = NavGrid._sab;
-    const headerOffset = NavGrid._flowfieldHeadersOffset;
-    const headerSize = NavGrid._FLOWFIELD_HEADER_SIZE;
+    const slotSize = NavGrid._FLOWFIELD_HEADER_SIZE + NavGrid._totalCells;
     const maxFlowfields = NavGrid._maxFlowfields;
 
     for (let i = 0; i < maxFlowfields; i++) {
-      const offset = headerOffset + i * headerSize;
+      const offset = NavGrid._flowfieldHeadersOffset + i * slotSize;
       const view = new Uint32Array(sab, offset, 3);
       if (view[0] === targetCell && view[2] === 2) {
         // 2 = READY
@@ -267,8 +309,8 @@ class NavWorker extends AbstractWorker {
    */
   _updateFlowfieldLRU(slotIndex) {
     const sab = NavGrid._sab;
-    const headerOffset =
-      NavGrid._flowfieldHeadersOffset + slotIndex * NavGrid._FLOWFIELD_HEADER_SIZE;
+    const slotSize = NavGrid._FLOWFIELD_HEADER_SIZE + NavGrid._totalCells;
+    const headerOffset = NavGrid._flowfieldHeadersOffset + slotIndex * slotSize;
     const view = new Uint32Array(sab, headerOffset, 3);
     view[1] = this.frameNumber;
   }
@@ -305,7 +347,7 @@ class NavWorker extends AbstractWorker {
 
   /**
    * Update method called each frame
-   * Processes queued pathfinding requests in batches
+   * Processes queued pathfinding requests
    */
   update(deltaTime, dtRatio, resuming) {
     if (!this.scratch) return;
@@ -337,12 +379,21 @@ class NavWorker extends AbstractWorker {
 
   /**
    * Compute a flowfield using Dijkstra's algorithm with bucket queue
-   * O(V) time complexity thanks to bucket queue
+   *
+   * Algorithm:
+   * 1. Initialize target cell with distance 0
+   * 2. Use bucket queue (array indexed by distance) for O(1) operations
+   * 3. For each cell, propagate to neighbors with cost 10 (cardinal) or 14 (diagonal)
+   * 4. Store direction pointing TOWARD target (opposite of propagation direction)
+   * 5. Second pass: Make blocked cells point to nearest walkable neighbor
+   *
+   * Time complexity: O(V) where V = number of cells
+   * Space complexity: O(V) for scratch buffers
+   *
+   * @param {number} targetCell - Destination cell for the flowfield
    */
   computeFlowfield(targetCell) {
-    // Check if we'll use an empty slot (vs evicting an existing one)
-    // If empty slot available: count++ after write
-    // If evicting: net 0 change (remove one, add one)
+    // Track whether we'll use an empty slot (for cache count tracking)
     const willUseEmptySlot = this._hasEmptyFlowfieldSlot();
 
     const scratch = this.scratch;
@@ -366,6 +417,9 @@ class NavWorker extends AbstractWorker {
     const dx = [0, 1, 1, 1, 0, -1, -1, -1];
     const dy = [-1, -1, 0, 1, 1, 1, 0, -1];
     const cost = [10, 14, 10, 14, 10, 14, 10, 14]; // 10 = cardinal, 14 = diagonal (~sqrt(2)*10)
+
+    // When we propagate FROM a cell TO a neighbor, the neighbor should point BACK
+    // So if we go North (dy=-1), the neighbor should point South to reach target
     const oppositeDir = [
       DIRECTION.S,
       DIRECTION.SW,
@@ -475,7 +529,7 @@ class NavWorker extends AbstractWorker {
     const slot = NavGrid.allocateFlowfieldSlot(targetCell);
     NavGrid.writeFlowfieldData(slot, scratch.direction);
 
-    // Increment count only if we used an empty slot (not eviction)
+    // Update cache count
     if (willUseEmptySlot) {
       this.cachedFlowfieldsCount++;
     }
@@ -483,9 +537,14 @@ class NavWorker extends AbstractWorker {
 
   /**
    * Compute A* path between two cells
+   *
+   * Uses octile distance heuristic for 8-directional movement.
+   * Binary heap for efficient open set operations.
+   *
+   * @param {number} fromCell - Starting cell
+   * @param {number} toCell - Destination cell
    */
   computePath(fromCell, toCell) {
-    // Check if we'll use an empty slot (vs evicting an existing one)
     const willUseEmptySlot = this._hasEmptyPathSlot();
 
     const scratch = this.scratch;
@@ -553,14 +612,14 @@ class NavWorker extends AbstractWorker {
           if (
             left < scratch.heapSize &&
             scratch.heapFCost[scratch.heapCell[left]] <
-              scratch.heapFCost[scratch.heapCell[smallest]]
+            scratch.heapFCost[scratch.heapCell[smallest]]
           ) {
             smallest = left;
           }
           if (
             right < scratch.heapSize &&
             scratch.heapFCost[scratch.heapCell[right]] <
-              scratch.heapFCost[scratch.heapCell[smallest]]
+            scratch.heapFCost[scratch.heapCell[smallest]]
           ) {
             smallest = right;
           }
@@ -668,7 +727,7 @@ class NavWorker extends AbstractWorker {
 
     NavGrid.writePathData(slot, pathCells);
 
-    // Increment count only if we used an empty slot (not eviction)
+    // Update cache count
     if (willUseEmptySlot) {
       this.cachedPathsCount++;
     }
@@ -677,6 +736,8 @@ class NavWorker extends AbstractWorker {
   /**
    * Rebuild walkability grid from static entities
    * Called when scene changes (NOT hot path)
+   *
+   * @param {Array} staticEntities - Array of {x, y, width, height}
    */
   rebuildWalkability(staticEntities) {
     if (!this.scratch) return;
@@ -722,9 +783,11 @@ class NavWorker extends AbstractWorker {
 
   /**
    * Rebuild walkability grid from entity indices
-   * Reads positions from Transform component and sizes from Collider component
-   * Handles both circle and box colliders via ColliderUtils
-   * Called when entities change (NOT hot path)
+   *
+   * Reads positions from Transform component and sizes from Collider component.
+   * Handles both circle and box colliders via ColliderUtils.
+   *
+   * @param {number[]} entityIndices - Array of entity indices to mark as obstacles
    */
   rebuildWalkabilityFromIndices(entityIndices) {
     if (!this.scratch) return;
@@ -781,17 +844,15 @@ class NavWorker extends AbstractWorker {
 
   /**
    * Check if there's an empty flowfield slot available
-   * Used to determine if we'll add to cache (empty slot) vs evict (no empty)
    */
   _hasEmptyFlowfieldSlot() {
     if (!NavGrid._initialized) return false;
 
     const sab = NavGrid._sab;
-    const headerOffset = NavGrid._flowfieldHeadersOffset;
-    const headerSize = NavGrid._FLOWFIELD_HEADER_SIZE;
+    const slotSize = NavGrid._FLOWFIELD_HEADER_SIZE + NavGrid._totalCells;
 
     for (let i = 0; i < this.maxFlowfields; i++) {
-      const offset = headerOffset + i * headerSize;
+      const offset = NavGrid._flowfieldHeadersOffset + i * slotSize;
       const view = new Uint32Array(sab, offset, 3);
       if (view[2] === 0) return true; // 0 = EMPTY
     }
