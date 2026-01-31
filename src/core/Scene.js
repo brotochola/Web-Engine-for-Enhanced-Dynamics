@@ -306,9 +306,6 @@ class Scene {
       this.resolveReady = resolve;
     });
 
-    // CRITICAL: Auto-register Mouse FIRST
-    this.registerEntityClass(Mouse, 1);
-
     // Auto-register Flash if lighting is enabled
     const maxFlashes = this.config.lighting.maxFlashes;
     if (maxFlashes > 0) {
@@ -746,12 +743,9 @@ class Scene {
   // I'll include the essential ones inline and reference the rest
 
   createSharedBuffers() {
-    // Verify Mouse is at index 0
-    if (Mouse.startIndex !== 0) {
-      throw new Error(
-        `INTERNAL ERROR: Mouse should be at index 0 but got startIndex=${Mouse.startIndex}`
-      );
-    }
+    // Mouse buffer: [x, y, button0, button1, button2, isPresent, wheel] - 7 Float32 values
+    this.buffers.mouseData = new SharedArrayBuffer(Mouse.BUFFER_SIZE);
+    Mouse.initialize(this.buffers.mouseData);
 
     // GameObject entity metadata buffer
     const gameObjectBufferSize = GameObject.getBufferSize(this.totalEntityCount);
@@ -1417,6 +1411,8 @@ class Scene {
         navigationStats: this.buffers.navigationStats || null,
         // Tick decimation buffer (if staggeredUpdates enabled)
         nextTickData: this.buffers.nextTickData || null,
+        // Mouse input buffer (x, y, buttons, presence, wheel)
+        mouseData: this.buffers.mouseData,
       },
       globalEntityCount: this.totalEntityCount,
       config: this.config,
@@ -1718,9 +1714,6 @@ class Scene {
         worker.postMessage({ msg: 'start' });
       }
     }
-
-    // Spawn the Mouse entity
-    this.spawnEntity('Mouse', {});
   }
 
   updatePhysicsConfig(partialConfig = {}) {

@@ -3120,7 +3120,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // );
 
     // Note: Component arrays are automatically initialized by AbstractWorker.initializeAllComponents()
-    // This includes Transform, RigidBody, MouseComponent, SpriteRenderer, and all custom components
+    // This includes Transform, RigidBody, SpriteRenderer, and all custom components
 
     // Note: ParticleComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
     this.maxParticles = data.maxParticles || 0;

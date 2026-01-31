@@ -308,6 +308,11 @@ export class AbstractWorker {
       }
     }
 
+    // Initialize Mouse static class (input state shared across workers)
+    if (data.buffers?.mouseData) {
+      Mouse.initialize(data.buffers.mouseData);
+    }
+
     // Initialize neighbor data reference (single buffer - row ownership eliminates races)
     if (data.buffers?.neighborData) {
       this.neighborData = new Int32Array(data.buffers.neighborData);

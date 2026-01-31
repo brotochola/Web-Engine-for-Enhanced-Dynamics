@@ -351,6 +351,127 @@ export class Grid {
   }
 
   // =============================================================================
+  // SPATIAL QUERIES
+  // =============================================================================
+
+  /**
+   * Find all active entities within a radius of a point
+   * Zero-allocation: reuses pre-allocated results array
+   * @param {number} x - World X position
+   * @param {number} y - World Y position
+   * @param {number} radius - Search radius in world units
+   * @param {Uint32Array|null} resultsBuffer - Pre-allocated buffer for results (optional)
+   * @returns {{count: number, entities: Uint32Array}} Count and entities array
+   */
+  static _queryResults = new Uint32Array(256); // Pre-allocated results buffer
+  static _queryResultCount = 0;
+
+  static getEntitiesInRadius(x, y, radius) {
+    const results = Grid._queryResults;
+    let count = 0;
+    const maxResults = results.length;
+    const radiusSq = radius * radius;
+
+    // Get grid bounds to check
+    const cellRadius = Math.ceil(radius * Grid.invCellSize);
+    const centerCol = (x * Grid.invCellSize) | 0;
+    const centerRow = (y * Grid.invCellSize) | 0;
+
+    const startCol = Math.max(0, centerCol - cellRadius);
+    const endCol = Math.min(Grid.gridWidth - 1, centerCol + cellRadius);
+    const startRow = Math.max(0, centerRow - cellRadius);
+    const endRow = Math.min(Grid.gridHeight - 1, centerRow + cellRadius);
+
+    // Import Transform for active check (avoid circular dep by checking existence)
+    const transformX = Transform?.x;
+    const transformY = Transform?.y;
+    const transformActive = Transform?.active;
+    if (!transformX || !transformY || !transformActive) {
+      Grid._queryResultCount = 0;
+      return { count: 0, entities: results };
+    }
+
+    // Track processed entities to avoid duplicates (entities can span multiple cells)
+    // Use a simple Set since we're in main thread and this is called infrequently
+    const processed = Grid._processedSet || (Grid._processedSet = new Set());
+    processed.clear();
+
+    // Iterate cells
+    for (let row = startRow; row <= endRow; row++) {
+      for (let col = startCol; col <= endCol; col++) {
+        const cellIndex = row * Grid.gridWidth + col;
+        const cellCount = Grid.getCellCount(cellIndex);
+
+        for (let k = 0; k < cellCount; k++) {
+          const entityId = Grid.getCellEntity(cellIndex, k);
+
+          // Skip if already processed or inactive
+          if (processed.has(entityId)) continue;
+          if (!transformActive[entityId]) continue;
+          processed.add(entityId);
+
+          // Distance check
+          const ex = transformX[entityId];
+          const ey = transformY[entityId];
+          const dx = ex - x;
+          const dy = ey - y;
+          const distSq = dx * dx + dy * dy;
+
+          if (distSq <= radiusSq) {
+            if (count < maxResults) {
+              results[count++] = entityId;
+            }
+          }
+        }
+      }
+    }
+
+    Grid._queryResultCount = count;
+    return { count, entities: results };
+  }
+
+  /**
+   * Find the nearest entity to a point within a radius
+   * @param {number} x - World X position
+   * @param {number} y - World Y position
+   * @param {number} radius - Max search radius
+   * @param {Set<string>|null} excludeTypes - Set of entity class names to exclude (optional)
+   * @returns {{entityId: number, distSq: number}|null} Nearest entity or null
+   */
+  static getNearestEntity(x, y, radius, excludeTypes = null) {
+    const { count, entities } = Grid.getEntitiesInRadius(x, y, radius);
+    if (count === 0) return null;
+
+    const transformX = Transform?.x;
+    const transformY = Transform?.y;
+    const entityType = Transform?.entityType;
+    if (!transformX || !transformY) return null;
+
+    let nearestId = -1;
+    let nearestDistSq = radius * radius;
+
+    for (let i = 0; i < count; i++) {
+      const entityId = entities[i];
+
+      // Optional type filtering (for DebugUI to skip internal entities)
+      if (excludeTypes && entityType) {
+        // This requires registeredClasses lookup - caller should handle filtering
+      }
+
+      const dx = transformX[entityId] - x;
+      const dy = transformY[entityId] - y;
+      const distSq = dx * dx + dy * dy;
+
+      if (distSq < nearestDistSq) {
+        nearestDistSq = distSq;
+        nearestId = entityId;
+      }
+    }
+
+    return nearestId >= 0 ? { entityId: nearestId, distSq: nearestDistSq } : null;
+  }
+
+  // =============================================================================
   // ROW OWNERSHIP UTILITIES
   // =============================================================================
 
