@@ -2,7 +2,7 @@
 // States: IDLE, GOING_TO_DESTINATION, GOING_TO_ENEMY, CLOSE_ATTACKING, RANGED_ATTACKING
 
 import WEED from '/src/index.js';
-import { SHOOT_DURATION_MS } from './PersonAnimationFSM.js';
+import { SHOOT_DURATION_MS, WALK_SPEED_THRESHOLD } from './PersonAnimationFSM.js';
 import { Civilian } from '../gameObjects/civilian.js';
 import { Destination } from '../gameObjects/destination.js';
 import { NavGrid } from '../../src/core/NavGrid.js';
@@ -126,7 +126,9 @@ class IdleSoldierState extends FSMState {
     // No enemies - flock with team
     owner.groupWithMyTeam();
     owner.separateFromTeam();
+
   }
+
 }
 
 // ==========================================
@@ -243,7 +245,6 @@ class RangedAttackingState extends FSMState {
     owner.shoot(targetIndex);
 
     if (totalTime > SHOOT_DURATION_MS) {
-      console.log("finished shooting", i, totalTime, performance.now())
       this.fsm.changeState(i, this.fsm.states.IDLE);
     }
   }
