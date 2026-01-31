@@ -216,6 +216,7 @@ export class GameObject {
           // DENSE ALLOCATION: entityIndex === componentIndex
           // Create and cache the component instance using entity index directly
           const instance = new ComponentClass(this.index);
+          instance.owner = this; // Store owner reference for instance methods
           this._componentCache[componentName] = instance;
           return instance;
         },
@@ -713,7 +714,7 @@ export class GameObject {
     if (!SpriteSheetRegistry.spritesheets.has(spritesheetName)) {
       console.error(
         `❌ ${this.constructor.name}: Spritesheet "${spritesheetName}" not found. ` +
-          `Available: ${Array.from(SpriteSheetRegistry.spritesheets.keys()).join(', ')}`
+        `Available: ${Array.from(SpriteSheetRegistry.spritesheets.keys()).join(', ')}`
       );
       return;
     }
@@ -744,7 +745,7 @@ export class GameObject {
    * this.setSpritesheet("civil1");
    * this.setAnimation("walk_right");  // Uses civil1's walk_right animation
    */
-  setAnimation(animationName) {
+  setAnimation(animationName, loop = true) {
     if (!this.spriteRenderer) return;
 
     // Get which spritesheet is currently set
@@ -752,7 +753,7 @@ export class GameObject {
     if (!spritesheetId || spritesheetId === 0) {
       console.error(
         `❌ ${this.constructor.name}: Call setSpritesheet() before setAnimation(). ` +
-          `Or use setSprite() for static sprites.`
+        `Or use setSprite() for static sprites.`
       );
       return;
     }
@@ -783,9 +784,8 @@ export class GameObject {
 
         console.error(
           `❌ ${this.constructor.name}: Animation "${animationName}" not found in "${spritesheet}". ` +
-            `Available: ${availableAnims.slice(0, 10).join(', ')}${
-              availableAnims.length > 10 ? '...' : ''
-            }`
+          `Available: ${availableAnims.slice(0, 10).join(', ')}${availableAnims.length > 10 ? '...' : ''
+          }`
         );
         return;
       }
@@ -794,8 +794,20 @@ export class GameObject {
       GameObject._globalAnimationCache[cacheKey] = animIndex;
     }
 
-    // Set the animation
+    // Set the animation and loop flag
     this.setAnimationState(animIndex);
+    SpriteRenderer.loop[this.index] = loop ? 1 : 0;
+  }
+
+  /**
+   * Set animation loop behavior
+   * @param {boolean} loop - Whether the animation should loop (true) or play once (false)
+   * @returns {this} For chaining
+   */
+  setAnimationLoop(loop) {
+    if (!this._hasComponents.SpriteRenderer) return this;
+    SpriteRenderer.loop[this.index] = loop ? 1 : 0;
+    return this;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -870,7 +882,7 @@ export class GameObject {
       if (!spriteName) {
         console.error(
           `❌ ${this.constructor.name}: Could not resolve frame for ` +
-            `spritesheet="${spriteNameOrSheet}", animation="${animation}", frameIndex=${frameIndex ?? 0}`
+          `spritesheet="${spriteNameOrSheet}", animation="${animation}", frameIndex=${frameIndex ?? 0}`
         );
         return this;
       }
@@ -899,7 +911,7 @@ export class GameObject {
         // Sprite not found - provide helpful error message
         console.error(
           `❌ ${this.constructor.name}: Sprite "${spriteName}" not found in bigAtlas. ` +
-            `Make sure it's included in your assets config (textures or spritesheets).`
+          `Make sure it's included in your assets config (textures or spritesheets).`
         );
         return this;
       }
@@ -1519,6 +1531,7 @@ export class GameObject {
       SpriteRenderer.isItOnScreen[i] = 0;
       SpriteRenderer.animationState[i] = -1;
       SpriteRenderer.spritesheetId[i] = 0;
+      SpriteRenderer.loop[i] = 1; // Default: animations loop
       SpriteRenderer.renderDirty[i] = 1;
     }
 

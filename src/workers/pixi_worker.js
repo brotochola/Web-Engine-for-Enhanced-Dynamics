@@ -1020,10 +1020,18 @@ class PixiRenderer extends AbstractWorker {
       // Advance frames if enough time has passed
       if (this.frameAccumulator[i] >= frameDuration) {
         this.frameAccumulator[i] -= frameDuration;
-        this.currentFrameIndex[i] = (this.currentFrameIndex[i] + 1) % frames.length;
 
-        // Update sprite texture
-        bodySprite.texture = frames[this.currentFrameIndex[i]];
+        const currentFrame = this.currentFrameIndex[i];
+        const isLastFrame = currentFrame >= frames.length - 1;
+        const shouldLoop = SpriteRenderer.loop[i] === 1;
+
+        // Only advance if looping OR not at last frame
+        if (shouldLoop || !isLastFrame) {
+          this.currentFrameIndex[i] = (currentFrame + 1) % frames.length;
+          // Update sprite texture
+          bodySprite.texture = frames[this.currentFrameIndex[i]];
+        }
+        // If non-looping and at last frame, stay there (do nothing)
       }
     }
   }
@@ -1826,8 +1834,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         `🔍 PIXI WORKER: updateLightGlowSprites() - Rendering ${countToRender} lights (${visibleLights.length} visible, maxLights: ${maxLights})`
       );
       console.log(
-        `   Container visible: ${this.lightGlowContainer.visible}, alpha: ${
-          this.lightGlowContainer.alpha
+        `   Container visible: ${this.lightGlowContainer.visible}, alpha: ${this.lightGlowContainer.alpha
         }, children: ${this.lightGlowContainer.children?.length || 'N/A'}`
       );
       this._lightGlowFirstUpdateLogged = true;
@@ -1880,8 +1887,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Log first sprite update details (one-time)
       if (i === 0 && !this._lightGlowSpriteUpdateLogged) {
         console.log(
-          `🔍 PIXI WORKER: First light glow sprite update - entityIndex: ${entityIndex}, x: ${
-            sprite.x
+          `🔍 PIXI WORKER: First light glow sprite update - entityIndex: ${entityIndex}, x: ${sprite.x
           }, y: ${sprite.y}, scale: ${scale}, alpha: ${newAlpha}, tint: 0x${sprite.tint.toString(
             16
           )}`
@@ -2902,8 +2908,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this.currentTilemap.children.length > 0) {
       const child = this.currentTilemap.children[0];
       console.log(
-        `PIXI WORKER: First child tilemap has ${
-          child.pointsBuf ? child.pointsBuf.length : 0
+        `PIXI WORKER: First child tilemap has ${child.pointsBuf ? child.pointsBuf.length : 0
         } point buffer entries`
       );
     }
@@ -3035,8 +3040,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
 
       console.log(
-        `PIXI WORKER: Layer "${
-          layer.name
+        `PIXI WORKER: Layer "${layer.name
         }" - added ${tilesAdded} non-empty tiles out of ${layerData.length} total tiles`
       );
     }

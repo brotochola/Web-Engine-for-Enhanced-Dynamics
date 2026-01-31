@@ -7,22 +7,21 @@ import { LootableComponent } from '../components/lootableComponent.js';
 
 const { FSM, FSMState, RigidBody, getDirectionFromAngle } = WEED;
 
-const ACTION_ANIM_SPEED = 0.2;
+const ACTION_ANIM_SPEED = 0.25;
+const DYING_ANIM_SPEED = 0.5;
 const NATURAL_DURATION = 16.667;
-const SHOOT_FRAMES = 3;
+const SHOOT_FRAMES = 4;
 const SLASH_FRAMES = 6; // For punch
 const STICK_FRAMES = 13; // 1h_slash for stick hit
 const HURT_FRAMES = 6;
 const WALK_CYCLE_FRAMES = 9; // Walk cycle frames
 const RUN_CYCLE_FRAMES = 8; // Run cycle frames
 
-const SHOOT_DURATION_MS = ACTION_ANIM_SPEED * SHOOT_FRAMES * NATURAL_DURATION;
-const SLASH_DURATION_MS = ACTION_ANIM_SPEED * SLASH_FRAMES * NATURAL_DURATION;
-const STICK_DURATION_MS = ACTION_ANIM_SPEED * STICK_FRAMES * NATURAL_DURATION;
-const HURT_DURATION_MS = ACTION_ANIM_SPEED * HURT_FRAMES * NATURAL_DURATION;
-
-const DYING_ANIM_SPEED = 0.2;
-const DYING_DURATION_MS = DYING_ANIM_SPEED * HURT_FRAMES * NATURAL_DURATION;
+export const SHOOT_DURATION_MS = (SHOOT_FRAMES * NATURAL_DURATION) / ACTION_ANIM_SPEED
+export const SLASH_DURATION_MS = (SLASH_FRAMES * NATURAL_DURATION) / ACTION_ANIM_SPEED;
+export const STICK_DURATION_MS = (STICK_FRAMES * NATURAL_DURATION) / ACTION_ANIM_SPEED;
+// const HURT_DURATION_MS = (2 * NATURAL_DURATION) / ACTION_ANIM_SPEED;
+export const DYING_DURATION_MS = (HURT_FRAMES * NATURAL_DURATION) / DYING_ANIM_SPEED;
 
 // Speed threshold for running vs walking
 const RUN_SPEED_THRESHOLD = 1.78;
@@ -138,12 +137,11 @@ class RunningState extends FSMState {
     const speed = RigidBody.speed[i];
 
     // Update facing direction from velocity
-    if (speed > WALK_SPEED_THRESHOLD) {
-      const direction = getDirectionFromAngle(velocityAngle);
-      const dirIndex = DIRECTION_NAMES.indexOf(direction);
-      if (dirIndex >= 0) {
-        PersonComponent.facingDirection[i] = dirIndex;
-      }
+
+    const direction = getDirectionFromAngle(velocityAngle);
+    const dirIndex = DIRECTION_NAMES.indexOf(direction);
+    if (dirIndex >= 0) {
+      PersonComponent.facingDirection[i] = dirIndex;
     }
 
     // Update animation
@@ -167,19 +165,16 @@ class RunningState extends FSMState {
 
 class ShootingState extends FSMState {
   static onEnter(owner, i, fromState) {
+    if (!owner) return console.warn("ShootingState.onEnter called without owner", this.constructor.name);
     const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
-    owner.setAnimation(`shoot_${facingDir}`);
+    owner.setAnimation(`shoot_${facingDir}`, false);
     owner.setAnimationSpeed(ACTION_ANIM_SPEED);
   }
 
   static onUpdate(owner, i, dt) {
-    // Death interrupts
-    if (LootableComponent.health[i] <= 0) {
-      this.fsm.changeState(i, this.fsm.states.DYING);
-      return;
-    }
 
     // Animation complete?
+    console.log("& shooting animation", i, this.fsm.time[i], SHOOT_DURATION_MS, performance.now())
     if (this.fsm.time[i] >= SHOOT_DURATION_MS) {
       this.fsm.changeState(i, this.fsm.states.IDLE);
     }
@@ -272,9 +267,8 @@ class DyingState extends FSMState {
   // static DYING_DURATION_MS = 100//(HURT_FRAMES -1)* (1000 / (DyingState.DYING_ANIM_SPEED * 60))
 
   static onEnter(owner, i, fromState) {
-
-    // Use hurt animation for death (no direction variant)
-    owner.setAnimation('hurt');
+    // Use hurt animation for death (no direction variant) - don't loop
+    owner.setAnimation('hurt', false);
     owner.setAnimationSpeed(DYING_ANIM_SPEED);
   }
 

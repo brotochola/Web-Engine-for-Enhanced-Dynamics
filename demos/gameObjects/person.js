@@ -16,6 +16,7 @@ import {
   Ray,
   Flash,
   getDirectionFromAngle,
+  GameObject,
 } from '../../src/index.js';
 
 const { RigidBody, Collider, SpriteRenderer, ShadowCaster, Transform, rng } = WEED;
@@ -62,7 +63,7 @@ export class Person extends Lootable {
     this.shadowCaster.height = 50;
 
     //people's defaults
-    this.personComponent.minSquaredDistanceToGroup = 100 ** 2;
+    this.personComponent.minSquaredDistanceToGroup = 140 ** 2;
   }
 
   getRandomTint() {
@@ -92,7 +93,7 @@ export class Person extends Lootable {
 
     this.lootableComponent.health = 1;
     this.lootableComponent.resistance = 0.5;
-    this.lootableComponent.dropMoney = 100;
+    this.lootableComponent.dropMoney = 0//100;
 
     // Initialize facing direction (default: down)
     PersonComponent.facingDirection[this.index] = DIRECTION_DOWN;
@@ -316,8 +317,6 @@ export class Person extends Lootable {
     // Check cooldown
     if (!this.canFire(weapon)) return false;
 
-    console.log('shoot', this.index, targetEntityIndex);
-
     // Face the target
     const targetX = Transform.x[targetEntityIndex];
     const targetY = Transform.y[targetEntityIndex];
@@ -332,19 +331,28 @@ export class Person extends Lootable {
     PersonComponent.lastShotTime[this.index] = performance.now();
 
     // Trigger shoot animation
-    PersonAnimationFSM.changeState(this.index, PersonAnimationFSM.states.SHOOTING);
+    this.personAnimationFSM.forceChangeState(PersonAnimationFSM.states.SHOOTING);
 
     // Muzzle flash
     const flashOffsetX = direction === 'right' ? 20 : direction === 'left' ? -20 : 0;
     const flashOffsetY = direction === 'down' ? 10 : -25;
-    Flash.create({
-      x: this.x + flashOffsetX,
-      y: this.y + flashOffsetY,
-      z: 0,
-      lifespan: 12,
-      color: 0xffaa00,
-      intensity: 15000,
-    });
+
+    //Deal Damage
+    const target = GameObject.get(targetEntityIndex);
+    if (target && target.recieveDamage) {
+      target.recieveDamage(weapon.damage);
+    }
+
+    setTimeout(() => {
+      Flash.create({
+        x: this.x + flashOffsetX,
+        y: this.y + flashOffsetY,
+        z: 0,
+        lifespan: 18,
+        color: 0xffaa00,
+        intensity: 15000,
+      });
+    }, 30)
 
     return true;
   }
@@ -389,6 +397,8 @@ export class Person extends Lootable {
    * @returns {boolean} True if in DEAD state
    */
   isDead() {
+    if (PersonComponent.dead[this.index] === 1) return true;
+    if (LootableComponent.health[this.index] <= 0) return true;
     return PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.DEAD);
   }
 
@@ -422,7 +432,7 @@ export class Person extends Lootable {
   die() {
     // Already dead? Don't trigger again
     if (PersonComponent.dead[this.index] === 1) return;
-    this.rigidBody.friction = 0.5;
+    this.rigidBody.friction = 0.9;
     // Mark as dead immediately - prevents firing and other actions
     PersonComponent.dead[this.index] = 1;
 
@@ -447,7 +457,7 @@ export class Person extends Lootable {
     // Start dying animation IMMEDIATELY - forceChangeState executes transition now
     // (changeState only queues for next tick, which can cause animation issues)
     // console.log(`[Person ${this.index}] die() called, forcing DYING state. AnimState BEFORE:`, SpriteRenderer.animationState[this.index]);
-    PersonAnimationFSM.forceChangeState(this.index, PersonAnimationFSM.states.DYING, this);
+    this.personAnimationFSM.forceChangeState(PersonAnimationFSM.states.DYING);
     // console.log(`[Person ${this.index}] After forceChangeState, FSM state:`, PersonAnimationFSM.getStateName(this.index), `AnimState AFTER:`, SpriteRenderer.animationState[this.index]);
   }
 
@@ -467,11 +477,11 @@ export class Person extends Lootable {
       animation: 'hurt',
       frame: -1, // Last frame = death pose
       x: this.x,
-      y: this.y,
+      y: this.y - 32,
       scaleX: this.spriteRenderer.scaleX,
       scaleY: this.spriteRenderer.scaleY,
       tint: this.spriteRenderer.baseTint,
-      alpha: 0.9,
+      alpha: 1,
     });
 
     // Spawn loot drops (from Lootable.die())
