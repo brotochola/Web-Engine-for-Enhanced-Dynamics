@@ -138,8 +138,6 @@ class ParticleWorker extends AbstractWorker {
     this._ownedSlots = new Set(); // Reusable Set for tracking owned slots (avoids allocation each frame)
     this._pairsThisFrame = new Set(); // Reusable Set for tracking pairs processed this frame (avoids allocation each frame)
 
-    this.howMuchMoreLightToParticles = 8;
-
     // ========================================
     // DERIVED PROPERTIES (moved from physics_worker)
     // ========================================

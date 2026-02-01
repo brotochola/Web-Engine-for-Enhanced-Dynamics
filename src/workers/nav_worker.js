@@ -164,6 +164,9 @@ class NavWorker extends AbstractWorker {
     // Cache counters (avoid iterating all slots to count)
     this.cachedFlowfieldsCount = 0;
     this.cachedPathsCount = 0;
+
+    // GC OPTIMIZATION: Reusable array for path results (avoids allocation per path)
+    this._pathCellsArray = [];
   }
 
   /**
@@ -719,8 +722,9 @@ class NavWorker extends AbstractWorker {
     // Allocate slot and write results
     const slot = NavGrid.allocatePathSlot(fromCell, toCell);
 
-    // Create a properly sized array for the path
-    const pathCells = [];
+    // GC OPTIMIZATION: Reuse array instead of creating new one each path
+    const pathCells = this._pathCellsArray;
+    pathCells.length = 0; // Clear but keep allocated
     for (let i = 0; i < pathLength; i++) {
       pathCells.push(scratch.pathResult[i]);
     }
