@@ -63,7 +63,7 @@ export class PredatorScene extends WEED.Scene {
       cellSize: 128,
       maxNeighbors: 1024,
       maxEntitiesPerCell: 64, //this is very important!!
-      numberOfSpatialWorkers: 4, // Multiple workers for parallel neighbor detection
+      numberOfSpatialWorkers: 2, // Multiple workers for parallel neighbor detection
       noLimitFPS: true,
     },
 
@@ -116,7 +116,7 @@ export class PredatorScene extends WEED.Scene {
       maxShadowsPerLight: 500,
       maxShadowsPerEntity: 10,
       maxShadowSprites: 1000,
-      maxFlashes: 50,
+      maxFlashes: 1024,
       resolution: 0.25,
     },
 
@@ -232,7 +232,7 @@ export class PredatorScene extends WEED.Scene {
     // [Player, 1],
     [House, 2000],
     [TallLight, 300],
-    [Civilian, 2000], // FSM-based civilians
+    [Civilian, 10000], // FSM-based civilians
     [Tree, 5000],
     [Barrel, 100],
     [Rock, 5000],
@@ -282,14 +282,14 @@ export class PredatorScene extends WEED.Scene {
     // this.spawnPrey(1000);
     // this.spawnHouses(this.numberOfHouses);
     this.spawnGrass(this.numberOfGrass);
-    this.spawnCivilians(1000);
+    this.spawnCivilians(10000);
     // this.spawnEntity(PreySpawner, {});
 
     this.spawnEntity(CameraController, {});
     // this.spawnTrees(this.numberOfTrees);
     this.spawnBarrels(this.numberOfBarrels);
     // this.spawnRocks(this.numberOfRocks);
-    this.spawnMySoldiers(2);
+    this.spawnMySoldiers(1000);
     this.spawnDestination();
     // this.spawnRocksTreesAndHouses();
   }
