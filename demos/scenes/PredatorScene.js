@@ -61,7 +61,7 @@ export class PredatorScene extends WEED.Scene {
     // Spatial hash grid configuration
     spatial: {
       cellSize: 128,
-      maxNeighbors: 800,
+      maxNeighbors: 1024,
       maxEntitiesPerCell: 64, //this is very important!!
       numberOfSpatialWorkers: 4, // Multiple workers for parallel neighbor detection
       noLimitFPS: true,

@@ -35,7 +35,7 @@ export class MySoldier extends Person {
     this.personComponent.groupingForce = 0.33;
     this.personComponent.separationForce = 0.2;
 
-    this.collider.visualRange = 500;
+    this.collider.visualRange = 250;
   }
 
   /**

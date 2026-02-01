@@ -123,9 +123,10 @@ class IdleSoldierState extends FSMState {
       return;
     }
 
-    // No enemies - flock with team
-    owner.groupWithMyTeam();
-    owner.separateFromTeam();
+    // // No enemies - flock with team
+    // owner.updateTeamData();
+    // owner.groupWithMyTeam();
+    // owner.separateFromTeam();
 
   }
 
@@ -146,8 +147,9 @@ class GoingToDestinationState extends FSMState {
       return;
     }
 
-    owner.groupWithMyTeam();
-    owner.separateFromTeam();
+    // owner.updateTeamData();
+    // owner.groupWithMyTeam();
+    // owner.separateFromTeam();
 
     // Check if reached destination
     const distSqToDest = distanceSq2D(owner.x, owner.y, dest.x, dest.y);
@@ -197,8 +199,8 @@ class GoingToEnemyState extends FSMState {
       }
 
       // Chase toward stored target
-      owner.groupWithMyTeam();
-      owner.separateFromTeam();
+      // owner.groupWithMyTeam();
+      // owner.separateFromTeam();
 
       const chaseStrength = 0.15;
       const dist = Math.sqrt(distSq);
