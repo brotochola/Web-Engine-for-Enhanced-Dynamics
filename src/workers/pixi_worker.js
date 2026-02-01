@@ -1448,8 +1448,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     // Sort visible lights by distance (closest first)
-    // Slice to only sort active items and avoid sorting thousands of empty slots
-    const visibleLights = this._lightPool.slice(0, this._lightPoolSize);
+    // GC OPTIMIZATION: Truncate pool to active size before sorting (avoids slice allocation)
+    // Setting .length doesn't allocate - pool regrows lazily next frame if needed
+    const visibleLights = this._lightPool;
+    visibleLights.length = this._lightPoolSize;
     visibleLights.sort((a, b) => a.distSq - b.distSq);
 
     const countToRender = Math.min(visibleLights.length, this.maxLights);
@@ -1823,7 +1825,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     // Sort visible lights by distance (closest first)
-    const visibleLights = this._lightPool.slice(0, this._lightPoolSize);
+    // GC OPTIMIZATION: Truncate pool to active size (avoids slice allocation)
+    // Setting .length doesn't allocate - pool regrows lazily next frame if needed
+    const visibleLights = this._lightPool;
+    visibleLights.length = this._lightPoolSize;
     // visibleLights.sort((a, b) => a.distSq - b.distSq);
 
     const countToRender = Math.min(visibleLights.length, maxLights);

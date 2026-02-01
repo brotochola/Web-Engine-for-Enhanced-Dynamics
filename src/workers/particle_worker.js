@@ -135,6 +135,8 @@ class ParticleWorker extends AbstractWorker {
     this._shadowPairToSlot = new Map(); // Key: "lightIdx-neighborIdx", Value: slot index
     this._shadowSlotToPair = new Map(); // Key: slot index, Value: "lightIdx-neighborIdx"
     this._usedSlotsThisFrame = new Set(); // Set of slots used this frame
+    this._ownedSlots = new Set(); // Reusable Set for tracking owned slots (avoids allocation each frame)
+    this._pairsThisFrame = new Set(); // Reusable Set for tracking pairs processed this frame (avoids allocation each frame)
 
     this.howMuchMoreLightToParticles = 8;
 
@@ -1219,10 +1221,17 @@ class ParticleWorker extends AbstractWorker {
 
     // Track which slots are currently "owned" by pairs from previous frame
     // We will avoid using these for NEW pairs until we're sure the owner is gone
-    const ownedSlots = new Set(pairToSlot.values());
+    // REUSE: Clear and repopulate to avoid allocation each frame
+    const ownedSlots = this._ownedSlots;
+    ownedSlots.clear();
+    for (const slot of pairToSlot.values()) {
+      ownedSlots.add(slot);
+    }
 
     // Track pairs processed this frame
-    const pairsThisFrame = new Set();
+    // REUSE: Clear to avoid allocation each frame
+    const pairsThisFrame = this._pairsThisFrame;
+    pairsThisFrame.clear();
 
     let shadowCount = 0;
     let lightsProcessed = 0;
