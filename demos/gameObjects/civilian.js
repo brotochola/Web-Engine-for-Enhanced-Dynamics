@@ -10,6 +10,9 @@ export class Civilian extends Person {
 
   static components = [...Person.components, CivilianBehaviorFSM];
 
+  // Flocking behavior (override Person defaults)
+  static groupingForce = 1;
+
   onSpawned(spawnConfig = {}) {
     // Random spritesheet for variety
     const spritesheets = ['civil5', 'civil6', 'civil7'];
@@ -19,7 +22,7 @@ export class Civilian extends Person {
 
     super.onSpawned(spawnConfig);
 
-    this.personComponent.groupingForce = 1;
+    // groupingForce now uses static class property (Civilian.groupingForce)
     this.collider.visualRange = 100;
   }
 

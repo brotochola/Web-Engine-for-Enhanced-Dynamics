@@ -30,6 +30,14 @@ export class Person extends Lootable {
   static punchRangeSq = 30 ** 2; // Distance to start punching
   static punchDamage = 0.3; // Damage per punch
 
+  // Flocking behavior (static - same for all Person instances)
+  static minSquaredDistanceToGroup = 140 ** 2;
+  static groupingForce = 0; // Default: no grouping (subclasses override)
+  static separationForce = 0; // Default: no separation (subclasses override)
+
+  // Damage resistance (static - same for all Person instances)
+  static resistance = 0.5;
+
   static components = [
     ...Lootable.components,
     RigidBody,
@@ -68,8 +76,7 @@ export class Person extends Lootable {
     this.shadowCaster.shadowRadius = 10;
     this.shadowCaster.height = 50;
 
-    //people's defaults
-    this.personComponent.minSquaredDistanceToGroup = 140 ** 2;
+    // Flocking and resistance now use static class properties (no per-entity arrays needed)
   }
 
   getRandomTint() {
@@ -98,7 +105,7 @@ export class Person extends Lootable {
     this.shadowCaster.height = this.collider.radius * 5;
 
     this.lootableComponent.health = 1;
-    this.lootableComponent.resistance = 0.5;
+    // resistance now uses static class property (Person.resistance)
     this.lootableComponent.dropMoney = 0//100;
 
     // Initialize facing direction (default: down)
@@ -247,8 +254,8 @@ export class Person extends Lootable {
     if (PersonComponent.numberOfTeamMembersICanSee[this.index] == 0) return;
 
     const dist = PersonComponent.squaredDistanceToGroup[this.index];
-    const minDist = PersonComponent.minSquaredDistanceToGroup[this.index];
-    const groupingForce = PersonComponent.groupingForce[this.index];
+    const minDist = this.constructor.minSquaredDistanceToGroup;
+    const groupingForce = this.constructor.groupingForce;
 
     if (groupingForce == 0) return;
     if (dist < minDist) return;
@@ -261,7 +268,7 @@ export class Person extends Lootable {
   }
 
   separateFromTeam() {
-    const separationForce = PersonComponent.separationForce[this.index];
+    const separationForce = this.constructor.separationForce;
     if (separationForce == 0) return;
 
     const separateX = PersonComponent.separateX[this.index];

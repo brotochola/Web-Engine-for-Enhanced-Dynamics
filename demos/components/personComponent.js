@@ -18,10 +18,8 @@ export class PersonComponent extends Component {
     myTeamAvgY: Float32Array,
     numberOfTeamMembersICanSee: Uint8Array,
     team: Uint8Array,
-    minSquaredDistanceToGroup: Uint16Array,
+    // minSquaredDistanceToGroup, groupingForce, separationForce moved to static class properties
     squaredDistanceToGroup: Float32Array,
-    groupingForce: Float32Array,
-    separationForce: Float32Array,
     separateX: Float32Array,
     separateY: Float32Array,
     dead: Uint8Array, // 0 = alive, 1 = dead

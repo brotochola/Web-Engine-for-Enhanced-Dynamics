@@ -18,7 +18,7 @@ export class Lootable extends GameObject {
   }
 
   recieveDamage(damage) {
-    const resistance = LootableComponent.resistance[this.index];
+    const resistance = this.constructor.resistance;
     LootableComponent.health[this.index] -= damage * (1 - resistance);
 
   }
