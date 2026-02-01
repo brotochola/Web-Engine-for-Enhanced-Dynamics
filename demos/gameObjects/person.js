@@ -9,7 +9,7 @@ import { Destination } from '../gameObjects/destination.js';
 import { Lootable } from './lootable.js';
 import { LootableComponent } from '../components/lootableComponent.js';
 import { PersonComponent, DIRECTION_DOWN, DIRECTION_NAMES } from '../components/personComponent.js';
-import { PersonAnimationFSM } from '../fsm/PersonAnimationFSM.js';
+import { PersonAnimationFSM, WALK_SPEED_THRESHOLD } from '../fsm/PersonAnimationFSM.js';
 import {
   ParticleEmitter,
   SpriteSheetRegistry,
@@ -148,7 +148,7 @@ export class Person extends Lootable {
 
   tick(dtRatio) {
     const isDead = PersonComponent.dead[this.index] === 1;
-    const animBefore = SpriteRenderer.animationState[this.index];
+    // const animBefore = SpriteRenderer.animationState[this.index];
 
     // Skip Lootable.tick() if already dead (prevents re-triggering die())
     if (!isDead) {
@@ -157,12 +157,16 @@ export class Person extends Lootable {
 
     this.keepWithinBounds(dtRatio);
 
-    const animAfterDie = SpriteRenderer.animationState[this.index];
+    if (RigidBody.speed[this.index] < 0.166) {
+      this.setVelocity(0, 0);
+    }
+
+    // const animAfterDie = SpriteRenderer.animationState[this.index];
 
     // Animation FSM handles all animation state
     this.personAnimationFSM.tick(dtRatio, this);
 
-    const animAfterFSM = SpriteRenderer.animationState[this.index];
+    // const animAfterFSM = SpriteRenderer.animationState[this.index];
 
     // Debug: track animation state changes for dying entities
     // if (isDead && animBefore !== animAfterFSM) {
@@ -195,7 +199,7 @@ export class Person extends Lootable {
       // Skip if not same entity type
       if (Transform.entityType[neighborIndex] !== this.entityType) continue;
       // Skip if no line of sight to neighbor
-      if (!Ray.hasLineOfSight(myIndex, neighborIndex)) continue
+      // if (!Ray.hasLineOfSight(myIndex, neighborIndex)) continue
 
       const nx = Transform.x[neighborIndex];
       const ny = Transform.y[neighborIndex];
@@ -212,10 +216,10 @@ export class Person extends Lootable {
       const distSq = dx * dx + dy * dy;
 
       if (distSq < separationRadiusSq && distSq > 0) {
-        const dist = Math.sqrt(distSq);
-        const strength = (separationRadius - dist) / separationRadius;
-        separateX += (dx / dist) * strength;
-        separateY += (dy / dist) * strength;
+        // const dist = Math.sqrt(distSq);
+        const strength = (separationRadiusSq - distSq) / separationRadiusSq;
+        separateX += (dx / distSq) * strength;
+        separateY += (dy / distSq) * strength;
       }
     }
 
@@ -239,7 +243,7 @@ export class Person extends Lootable {
   }
 
   groupWithMyTeam() {
-    this.updateTeamData();
+
     if (PersonComponent.numberOfTeamMembersICanSee[this.index] == 0) return;
 
     const dist = PersonComponent.squaredDistanceToGroup[this.index];
@@ -323,7 +327,9 @@ export class Person extends Lootable {
     // Check cooldown
     if (!this.canFire(weapon)) return false;
 
-    this.rigidBody.friction = 0.5;
+    this.setVelocity(this.vx * 0.5, this.vy * 0.5);
+
+    // this.rigidBody.friction = 0.5;
 
     // Face the target
     const targetX = Transform.x[targetEntityIndex];
@@ -361,7 +367,7 @@ export class Person extends Lootable {
         color: 0xffaa00,
         intensity: 15000,
       });
-      this.rigidBody.friction = Person.defaultFriction;
+
     }, 30)
 
     return true;

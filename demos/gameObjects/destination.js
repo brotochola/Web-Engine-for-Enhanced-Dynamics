@@ -48,7 +48,7 @@ export class Destination extends GameObject {
       // this.destinationComponent.haveMyGuysArrived = 0;
       this.x = Mouse.x;
       this.y = Mouse.y;
-      this.collider.radius = containerRadius(MySoldier.activeCount, 10, 1.5) + 20;
+      this.collider.radius = containerRadius(MySoldier.activeCount, 10, 1.25) + 20;
       const allActiveSoldiers = MySoldier.getAllActiveInstances();
       for (const soldier of allActiveSoldiers) {
         soldier.startFollowingDestination();

@@ -13,7 +13,7 @@ const { FSM, FSMState, Transform, RigidBody } = WEED;
 // ==========================================
 
 class IdleCivilianBehaviorState extends FSMState {
-  static onEnter(owner, i, fromState) {}
+  static onEnter(owner, i, fromState) { }
 
   static onUpdate(owner, i, dt) {
     // Check if any neighbor is a predator
@@ -30,7 +30,8 @@ class IdleCivilianBehaviorState extends FSMState {
         return;
       }
     }
-    owner.groupWithMyTeam();
+    // owner.updateTeamData();
+    // owner.groupWithMyTeam();
   }
 }
 
