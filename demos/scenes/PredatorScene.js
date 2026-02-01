@@ -103,6 +103,8 @@ export class PredatorScene extends WEED.Scene {
       ySorting: true,
       interpolation: true,
       cullingRatio: 0.33,
+      startFadingDecorationsAtZoom: 0.5,
+      hideDecorationsAtZoom: 0.25,
     },
 
     lighting: {

@@ -21,7 +21,7 @@ import { AbstractWorker } from './AbstractWorker.js';
 
 import { LightEmitter } from '../components/LightEmitter.js';
 
-import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from '../core/ConfigDefaults.js';
+import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES, RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
 import { sortByY, normalizeAngleDifference, extractRGBNormalized } from '../core/utils.js';
 import { RENDERER_STATS, createStatsWriter } from './workers-utils.js';
 
@@ -2519,6 +2519,30 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       return;
     }
 
+    // ========================================
+    // ZOOM-BASED CULLING & ALPHA INTERPOLATION
+    // ========================================
+    // At low zoom levels, decorations become too small to see and cause performance issues.
+    // - zoom < hideZoom: Skip rendering entirely (early exit)
+    // - hideZoom <= zoom < fadeStartZoom: Fade out (interpolate alpha from 0.0 to 1.0)
+    // - zoom >= fadeStartZoom: Full alpha (no culling)
+    const zoom = this._renderZoom;
+    const hideZoom = this.decorationHideZoom;
+    const fadeStartZoom = this.decorationFadeStartZoom;
+    let alphaMultiplier = 1.0;
+
+    if (zoom < hideZoom) {
+      // Too zoomed out - skip all decorations (zero allocation early exit)
+      this.visibleDecorationCount = 0;
+      return;
+    } else if (zoom < fadeStartZoom) {
+      // Fade out range: interpolate from 0.0 (at hideZoom) to 1.0 (at fadeStartZoom)
+      // Formula: (zoom - hideZoom) / (fadeStartZoom - hideZoom)
+      const fadeRange = fadeStartZoom - hideZoom;
+      alphaMultiplier = (zoom - hideZoom) / fadeRange;
+    }
+    // else zoom >= fadeStartZoom: alphaMultiplier = 1.0 (already set)
+
     // Cache array references
     const active = DecorationComponent.active;
     const x = DecorationComponent.x;
@@ -2574,7 +2598,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       actualSprite.y = y[i];
       actualSprite.scaleX = scale[i];
       actualSprite.scaleY = scale[i];
-      actualSprite.alpha = alpha[i];
+      // Apply zoom-based alpha multiplier (fade out at low zoom)
+      actualSprite.alpha = alpha[i] * alphaMultiplier;
       actualSprite.tint = tint[i];
       actualSprite.anchorX = anchorX[i];
       actualSprite.anchorY = anchorY[i];
@@ -3118,6 +3143,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // console.log(
     //   `PIXI WORKER: Interpolation ${this.interpolation ? "enabled" : "disabled"}`
     // );
+
+    // Configure decoration zoom culling thresholds
+    this.decorationFadeStartZoom =
+      rendererConfig.startFadingDecorationsAtZoom !== undefined
+        ? rendererConfig.startFadingDecorationsAtZoom
+        : RENDERER_DEFAULTS.startFadingDecorationsAtZoom;
+    this.decorationHideZoom =
+      rendererConfig.hideDecorationsAtZoom !== undefined
+        ? rendererConfig.hideDecorationsAtZoom
+        : RENDERER_DEFAULTS.hideDecorationsAtZoom;
 
     // Note: Component arrays are automatically initialized by AbstractWorker.initializeAllComponents()
     // This includes Transform, RigidBody, SpriteRenderer, and all custom components
