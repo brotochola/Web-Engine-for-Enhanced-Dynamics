@@ -73,6 +73,10 @@ class LogicWorker extends AbstractWorker {
     // Collision pair cache for reverse lookups (key -> [entityA, entityB])
     this.collisionPairCache = new Map(); // Only for exit events
 
+    // GC OPTIMIZATION: Reusable array pool for collision pairs (avoids allocation per collision)
+    this._collisionPairPool = []; // Pool of [entityA, entityB] arrays for reuse
+    this._collisionPairPoolSize = 0;
+
     // Screen visibility tracking (for onScreenEnter/Exit lifecycle methods)
     // Track previous frame's visibility state to detect transitions
     this.previousScreenVisibility = new Uint8Array(0); // Will be sized in initialize()
@@ -435,8 +439,28 @@ class LogicWorker extends AbstractWorker {
 
       // Cache the pair for potential exit events (only if new)
       if (!this.previousCollisions.has(keyAB)) {
-        this.collisionPairCache.set(keyAB, [entityA, entityB]);
-        this.collisionPairCache.set(keyBA, [entityB, entityA]);
+        // GC OPTIMIZATION: Reuse arrays from pool instead of allocating new ones
+        let pairAB = this._collisionPairPool[this._collisionPairPoolSize];
+        if (!pairAB) {
+          pairAB = [0, 0];
+          this._collisionPairPool[this._collisionPairPoolSize] = pairAB;
+        }
+        this._collisionPairPoolSize++;
+        pairAB[0] = entityA;
+        pairAB[1] = entityB;
+
+        // Create reverse pair (BA) - reuse from pool
+        let pairBA = this._collisionPairPool[this._collisionPairPoolSize];
+        if (!pairBA) {
+          pairBA = [0, 0];
+          this._collisionPairPool[this._collisionPairPoolSize] = pairBA;
+        }
+        this._collisionPairPoolSize++;
+        pairBA[0] = entityB;
+        pairBA[1] = entityA;
+
+        this.collisionPairCache.set(keyAB, pairAB);
+        this.collisionPairCache.set(keyBA, pairBA);
       }
 
       // Determine if this is a new collision or continuing
@@ -497,6 +521,9 @@ class LogicWorker extends AbstractWorker {
     const temp = this.previousCollisions;
     this.previousCollisions = this.currentCollisions;
     this.currentCollisions = temp;
+
+    // GC OPTIMIZATION: Reset collision pair pool for next frame (arrays stay allocated)
+    this._collisionPairPoolSize = 0;
   }
 
   /**
