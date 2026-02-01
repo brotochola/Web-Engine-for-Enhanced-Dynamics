@@ -2175,3 +2175,41 @@ export function containerRadius(N, R, margin = 1.05) {
 
   return R * Math.sqrt(N) * margin;
 }
+
+// Symmetrical Algorithm: Circle centered at center of (0,0) cell
+/**
+ * Generate a circle pattern of cell offsets for neighbor search
+ * Returns Int32Array with format [dr, dc, dr, dc, ...] for efficient iteration
+ * @param {number} cellRadius - Radius in cells (0, 1, 2, 3, ...)
+ * @param {number} cellSize - Size of each cell in world units
+ * @returns {Int32Array} Pattern array with [dr, dc, dr, dc, ...] pairs
+ */
+export function generateSymmetricalCirclePattern(cellRadius, cellSize) {
+  const pattern = [];
+  const radius = cellRadius * cellSize;
+  const radiusSq = radius ** 2;
+
+  // Circle is centered at the center of the (0,0) cell
+  const centerX = cellSize / 2;
+  const centerY = cellSize / 2;
+
+  for (let dr = -cellRadius; dr <= cellRadius; dr++) {
+    for (let dc = -cellRadius; dc <= cellRadius; dc++) {
+      const left = dc * cellSize, right = (dc + 1) * cellSize;
+      const top = dr * cellSize, bottom = (dr + 1) * cellSize;
+
+      // Find closest point on cell boundary to circle center
+      const closestX = Math.max(left, Math.min(centerX, right));
+      const closestY = Math.max(top, Math.min(centerY, bottom));
+
+      const dx = closestX - centerX;
+      const dy = closestY - centerY;
+      const closestDistSq = dx ** 2 + dy ** 2;
+
+      if (closestDistSq <= radiusSq) {
+        pattern.push(dr, dc); // Store as [dr, dc] pairs
+      }
+    }
+  }
+  return new Int32Array(pattern);
+}
