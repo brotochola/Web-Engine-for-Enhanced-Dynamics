@@ -142,7 +142,7 @@ class SpatialWorker extends AbstractWorker {
 
     console.log(
       `SPATIAL WORKER ${this.workerId}: Initialized with ${this.ownedRowCount} rows ` +
-        `(rows ${this.ownedRows[0]} to ${this.ownedRows[this.ownedRowCount - 1]} step ${this.totalSpatialWorkers})`
+      `(rows ${this.ownedRows[0]} to ${this.ownedRows[this.ownedRowCount - 1]} step ${this.totalSpatialWorkers})`
     );
   }
 
@@ -431,7 +431,6 @@ class SpatialWorker extends AbstractWorker {
           const clampedEndCol = endCol >= gridWidth ? gridWidth - 1 : endCol;
 
           let neighborCount = 0;
-          const visualRangeSq = myVisualRange * myVisualRange;
 
           // =================================================================
           // Search neighboring cells (can read ANY cell, not just owned ones)
