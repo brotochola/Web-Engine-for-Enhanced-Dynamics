@@ -385,6 +385,11 @@ class LogicWorker extends AbstractWorker {
 
     // Store active count for FPS reporting
     this.activeEntityCount = activeCount;
+
+    // Update previous mouse values for next frame
+    // This allows entities to access Mouse.prevX, Mouse.prevY, Mouse.prevButton0 in their tick() methods
+    Mouse.updatePreviousValues();
+
   }
 
   /**
