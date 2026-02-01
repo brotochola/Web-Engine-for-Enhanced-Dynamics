@@ -259,27 +259,8 @@ class CloseAttackingState extends FSMState {
     const targetIndex = PersonComponent.closestEnemyIndex[i];
     if (targetIndex < 0) return;
 
-    // Face the target
-    const targetX = Transform.x[targetIndex];
-    const targetY = Transform.y[targetIndex];
-    const angle = Math.atan2(targetY - owner.y, targetX - owner.x);
-    const direction = getDirectionFromAngle(angle);
-    const dirIndex = DIRECTION_NAMES.indexOf(direction);
-    if (dirIndex >= 0) {
-      PersonComponent.facingDirection[i] = dirIndex;
-    }
+    owner.punch(targetIndex);
 
-    // Try to punch
-    const punchStarted = owner.punch();
-
-    // Deal damage if punch started
-    if (punchStarted) {
-      const target = GameObject.get(targetIndex);
-      if (target && target.recieveDamage) {
-        const damage = owner.constructor.punchDamage;
-        target.recieveDamage(damage);
-      }
-    }
   }
 
   static onUpdate(owner, i, dt) {

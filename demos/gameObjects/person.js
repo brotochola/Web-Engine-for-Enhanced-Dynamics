@@ -21,9 +21,14 @@ import {
 
 const { RigidBody, Collider, SpriteRenderer, ShadowCaster, Transform, rng } = WEED;
 
+const HALF_PI = Math.PI / 2;
+
 export class Person extends Lootable {
   static scriptUrl = import.meta.url;
   static defaultFriction = 0.005;
+
+  static punchRangeSq = 30 ** 2; // Distance to start punching
+  static punchDamage = 0.3; // Damage per punch
 
   static components = [
     ...Lootable.components,
@@ -133,7 +138,7 @@ export class Person extends Lootable {
       speed: { min: 0.7, max: 1.66 },
       vz: { min: -4, max: 0 },
       lifespan: 2000,
-      gravity: 0.15,
+      gravity: 0.22,
       scale: { min: 0.1, max: 0.2 },
       alpha: { min: 0.4, max: 0.9 },
       tint: { min: 0xaaaaaa, max: 0xffffff },
@@ -323,8 +328,9 @@ export class Person extends Lootable {
     // Face the target
     const targetX = Transform.x[targetEntityIndex];
     const targetY = Transform.y[targetEntityIndex];
-    const angle = Math.atan2(targetY - this.y, targetX - this.x);
+    const angle = Math.atan2(targetY - this.y, targetX - this.x) + HALF_PI;
     const direction = getDirectionFromAngle(angle);
+
     const dirIndex = DIRECTION_NAMES.indexOf(direction);
     if (dirIndex >= 0) {
       PersonComponent.facingDirection[this.index] = dirIndex;
@@ -365,10 +371,28 @@ export class Person extends Lootable {
    * Trigger punch animation
    * @returns {boolean} True if action started, false if busy or dead
    */
-  punch() {
+  punch(targetEntityIndex) {
+    if (targetEntityIndex < 0) return false;
     if (PersonComponent.dead[this.index] === 1) return false;
     if (this.isPerformingAction()) return false;
     PersonAnimationFSM.changeState(this.index, PersonAnimationFSM.states.PUNCHING);
+
+    // Face the target
+    const targetX = Transform.x[targetEntityIndex];
+    const targetY = Transform.y[targetEntityIndex];
+    const angle = Math.atan2(targetY - this.y, targetX - this.x) + HALF_PI;
+    const direction = getDirectionFromAngle(angle);
+    const dirIndex = DIRECTION_NAMES.indexOf(direction);
+    if (dirIndex >= 0) {
+      PersonComponent.facingDirection[this.index] = dirIndex;
+    }
+
+    const target = GameObject.get(targetEntityIndex);
+    if (target && target.recieveDamage) {
+      const damage = this.constructor.punchDamage;
+      target.recieveDamage(damage);
+    }
+
     return true;
   }
 
@@ -446,9 +470,9 @@ export class Person extends Lootable {
       texture: 'blood',
       x: this.x,
       y: this.y,
-      z: -30,
+      z: -10,
       angleXY: { min: 0, max: 360 },
-      speed: { min: 0.7, max: 1.66 },
+      speed: { min: 0.7, max: 2 },
       vz: { min: -4, max: 0 },
       lifespan: 2000,
       gravity: 0.15,
