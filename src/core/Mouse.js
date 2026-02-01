@@ -19,6 +19,15 @@ export class Mouse {
   static _canvasX = 0;
   static _canvasY = 0;
 
+  // Previous frame values (updated by logic worker at end of each frame)
+  static _prevX = 0;
+  static _prevY = 0;
+  static _prevButton0 = 0;
+  static _prevButton1 = 0;
+  static _prevButton2 = 0;
+  static _prevIsPresent = 0;
+  static _prevWheel = 0;
+
   // Debug tool mode flag - when true, button state is consumed by DebugUI tools
   static isDebugToolActive = false;
 
@@ -148,6 +157,75 @@ export class Mouse {
 
   static get isRightButtonDown() {
     return this.isButton2Down;
+  }
+
+  // ============================================
+  // PREVIOUS FRAME VALUES - getters
+  // ============================================
+
+  static get prevX() {
+    return this._prevX;
+  }
+
+  static get prevY() {
+    return this._prevY;
+  }
+
+  static get prevButton0() {
+    return this._prevButton0 === 1;
+  }
+
+  static get prevButton1() {
+    return this._prevButton1 === 1;
+  }
+
+  static get prevButton2() {
+    return this._prevButton2 === 1;
+  }
+
+  static get prevIsPresent() {
+    return this._prevIsPresent === 1;
+  }
+
+  static get prevWheel() {
+    return this._prevWheel;
+  }
+
+  // Convenience aliases for previous values (matching current value aliases)
+  static get prevIsDown() {
+    return this.prevButton0;
+  }
+
+  static get prevLeftButtonDown() {
+    return this.prevButton0;
+  }
+
+  static get prevMiddleButtonDown() {
+    return this.prevButton1;
+  }
+
+  static get prevRightButtonDown() {
+    return this.prevButton2;
+  }
+
+  static get prevIsInWorld() {
+    return this.prevIsPresent;
+  }
+
+  /**
+   * Update previous frame values (called by logic worker at end of each frame)
+   * This allows entities to access previous mouse state in their tick() methods
+   */
+  static updatePreviousValues() {
+    if (this._data) {
+      this._prevX = this._data[0];
+      this._prevY = this._data[1];
+      this._prevButton0 = this._data[2];
+      this._prevButton1 = this._data[3];
+      this._prevButton2 = this._data[4];
+      this._prevIsPresent = this._data[5];
+      this._prevWheel = this._data[6];
+    }
   }
 
   // ============================================
