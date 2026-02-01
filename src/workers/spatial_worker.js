@@ -11,7 +11,7 @@
 // FLOW PER FRAME:
 // 1. Clear all cells in owned rows
 // 2. Insert ALL active entities into grid (only to owned rows)
-// 3. For each entity in owned rows: find neighbors using 3x3 cell search
+// 3. For each entity in owned rows: find neighbors using precomputed circle patterns
 //
 // MEMORY MODEL (100% deterministic, zero synchronization):
 // - Grid: Single buffer, row ownership prevents races
@@ -33,6 +33,7 @@ import { Collider } from '../components/Collider.js';
 import { AbstractWorker } from './AbstractWorker.js';
 import { Grid } from '../core/Grid.js';
 import { SPATIAL_STATS, createMultiWorkerStatsWriter } from './workers-utils.js';
+import { generateSymmetricalCirclePattern } from '../core/utils.js';
 
 /**
  * SpatialWorker - Row-based spatial hashing and neighbor detection
@@ -75,6 +76,16 @@ class SpatialWorker extends AbstractWorker {
     // Local cell counts for race-free grid rebuilding
     // We build counts locally, then copy to grid at the end (avoids mid-clear races)
     this._localCellCounts = null; // Uint8Array(totalCells)
+
+    // Precomputed circle patterns: cellRadius -> Int32Array of [dr, dc, dr, dc, ...]
+    this._circlePatterns = new Map();
+    // Pattern lengths cache: cellRadius -> length (number of cell pairs)
+    this._patternLengths = new Map();
+
+    // Cached neighbor cells: (cellIndex * MAX_CELL_RADIUS + cellRadius) -> Uint16Array of neighbor cell indices
+    // Uint16Array since cell indices are always positive and < 65535
+    this._cellNeighborCache = new Map();
+    this._maxCellRadius = 12; // Support visual ranges up to ~1500px with cellSize=128
 
     // Performance stats
     this.entitiesProcessedThisFrame = 0;
@@ -140,10 +151,89 @@ class SpatialWorker extends AbstractWorker {
     // Initialize local cell counts array for race-free grid rebuilding
     this._localCellCounts = new Uint8Array(this.totalCells);
 
+    // Precompute circle patterns for all possible cellRadius values (0 to maxCellRadius)
+    this._precomputeCirclePatterns();
+
     console.log(
       `SPATIAL WORKER ${this.workerId}: Initialized with ${this.ownedRowCount} rows ` +
-      `(rows ${this.ownedRows[0]} to ${this.ownedRows[this.ownedRowCount - 1]} step ${this.totalSpatialWorkers})`
+      `(rows ${this.ownedRows[0]} to ${this.ownedRows[this.ownedRowCount - 1]} step ${this.totalSpatialWorkers}), ` +
+      `precomputed ${this._circlePatterns.size} circle patterns`
     );
+  }
+
+  /**
+   * Precompute circle patterns for all possible cellRadius values
+   * Called once during initialization
+   */
+  _precomputeCirclePatterns() {
+    for (let cellRadius = 0; cellRadius <= this._maxCellRadius; cellRadius++) {
+      const pattern = generateSymmetricalCirclePattern(cellRadius, this.cellSize);
+      this._circlePatterns.set(cellRadius, pattern);
+      // Cache pattern length (number of cell pairs, so pattern.length / 2)
+      this._patternLengths.set(cellRadius, pattern.length >> 1);
+    }
+  }
+
+  /**
+   * Get circle pattern for a specific cellRadius
+   * @param {number} cellRadius - Radius in cells
+   * @returns {Int32Array} Pattern array with [dr, dc, dr, dc, ...] pairs
+   */
+  _getCirclePattern(cellRadius) {
+    // Clamp to max supported radius
+    const clampedRadius = cellRadius > this._maxCellRadius ? this._maxCellRadius : cellRadius;
+    return this._circlePatterns.get(clampedRadius) || this._circlePatterns.get(0);
+  }
+
+  /**
+   * Get cached neighbor cells for a cell+radius combination, or generate and cache it
+   * @param {number} cellIndex - Source cell index
+   * @param {number} cellRadius - Search radius in cells
+   * @param {number} centerRow - Center row of the entity's cell
+   * @param {number} centerCol - Center column of the entity's cell
+   * @returns {Uint16Array} Array of neighbor cell indices (Uint16 since cell indices < 65535)
+   */
+  _getNeighborCells(cellIndex, cellRadius, centerRow, centerCol) {
+    // Cache key: cellIndex * MAX_RADIUS + cellRadius
+    const cacheKey = cellIndex * (this._maxCellRadius + 1) + cellRadius;
+
+    // Check cache
+    if (this._cellNeighborCache.has(cacheKey)) {
+      return this._cellNeighborCache.get(cacheKey);
+    }
+
+    // Generate neighbor cells from pattern
+    const pattern = this._getCirclePattern(cellRadius);
+    const patternLength = pattern.length;
+    const maxNeighborCells = this._patternLengths.get(cellRadius) || (patternLength >> 1);
+
+    // Pre-allocate array (worst case: all cells in pattern are valid)
+    const neighborCells = new Uint16Array(maxNeighborCells);
+    let count = 0;
+
+    const gridWidth = this.gridWidth;
+    const gridHeight = this.gridHeight;
+
+    for (let i = 0; i < patternLength; i += 2) {
+      const dr = pattern[i];
+      const dc = pattern[i + 1];
+
+      const checkRow = centerRow + dr;
+      const checkCol = centerCol + dc;
+
+      // Bounds check (optimized: check both axes in single condition)
+      if (checkRow >= 0 && checkRow < gridHeight && checkCol >= 0 && checkCol < gridWidth) {
+        neighborCells[count++] = checkRow * gridWidth + checkCol;
+      }
+    }
+
+    // Return subarray if we didn't use full allocation (creates view, no copy)
+    const result = count === maxNeighborCells
+      ? neighborCells
+      : neighborCells.subarray(0, count);
+
+    this._cellNeighborCache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -415,80 +505,76 @@ class SpatialWorker extends AbstractWorker {
             continue;
           }
 
-          // Calculate cell search radius
-          const cellRadius = ((myVisualRange * invCellSize) | 0) + 1;
+          // Calculate cell search radius (use Math.ceil for conservative pattern matching)
+          const cellRadius = Math.ceil(myVisualRange * invCellSize);
 
-          // Search bounds (3x3 or larger based on visual range)
-          const startRow = row - cellRadius;
-          const endRow = row + cellRadius;
-          const startCol = col - cellRadius;
-          const endCol = col + cellRadius;
+          // Calculate entity's actual cell position (based on center, not storage cell)
+          let homeCol = (myX * invCellSize) | 0;
+          const maxCol = gridWidth - 1;
+          homeCol = homeCol < 0 ? 0 : homeCol > maxCol ? maxCol : homeCol;
+          const entityCellIndex = homeRow * gridWidth + homeCol;
 
-          // Clamp bounds
-          const clampedStartRow = startRow < 0 ? 0 : startRow;
-          const clampedEndRow = endRow >= gridHeight ? gridHeight - 1 : endRow;
-          const clampedStartCol = startCol < 0 ? 0 : startCol;
-          const clampedEndCol = endCol >= gridWidth ? gridWidth - 1 : endCol;
+          // Get neighbor cells using precomputed circle pattern (cached per cell+radius)
+          const neighborCells = this._getNeighborCells(entityCellIndex, cellRadius, homeRow, homeCol);
+          const neighborCellsLength = neighborCells.length;
 
           let neighborCount = 0;
 
           // =================================================================
-          // Search neighboring cells (can read ANY cell, not just owned ones)
+          // Search neighboring cells using circle pattern (can read ANY cell)
           // =================================================================
-          for (let checkRow = clampedStartRow; checkRow <= clampedEndRow; checkRow++) {
-            const checkRowBase = checkRow * gridWidth;
+          for (let i = 0; i < neighborCellsLength; i++) {
+            const checkCellIndex = neighborCells[i];
+            const checkByteOffset = checkCellIndex * Grid.cellByteSize;
+            const checkCellCount = gridCounts[checkByteOffset];
 
-            for (let checkCol = clampedStartCol; checkCol <= clampedEndCol; checkCol++) {
-              const checkCellIndex = checkRowBase + checkCol;
-              const checkByteOffset = checkCellIndex * Grid.cellByteSize;
-              const checkCellCount = gridCounts[checkByteOffset];
+            if (checkCellCount === 0) continue;
 
-              if (checkCellCount === 0) continue;
+            this.cellsCheckedThisFrame++;
 
-              this.cellsCheckedThisFrame++;
+            const checkEntityBase = (checkByteOffset >> 2) + 1;
 
-              const checkEntityBase = (checkByteOffset >> 2) + 1;
+            // Check all entities in this cell
+            for (let j = 0; j < checkCellCount; j++) {
+              const entityB = gridEntities[checkEntityBase + j];
 
-              // Check all entities in this cell
-              for (let j = 0; j < checkCellCount; j++) {
-                const entityB = gridEntities[checkEntityBase + j];
+              // Skip self
+              if (entityA === entityB) continue;
 
-                // Skip self
-                if (entityA === entityB) continue;
+              // O(1) duplicate check: multi-cell entities appear in multiple cells
+              if (processedMarker[entityB] === entityA) continue;
+              processedMarker[entityB] = entityA;
 
-                // O(1) duplicate check: multi-cell entities appear in multiple cells
-                if (processedMarker[entityB] === entityA) continue;
-                processedMarker[entityB] = entityA;
+              // Calculate squared distance (optimized: single read of positions)
+              const bX = entityPosX[entityB];
+              const bY = entityPosY[entityB];
+              const dx = bX - myX;
+              const dy = bY - myY;
+              const distSq = dx * dx + dy * dy;
 
-                // Calculate squared distance
-                const bX = entityPosX[entityB];
-                const bY = entityPosY[entityB];
-                const dx = bX - myX;
-                const dy = bY - myY;
-                const distSq = dx * dx + dy * dy;
+              // Early rejection: if distSq is 0, skip (same position)
+              if (distSq === 0) continue;
 
-                // Expand effective range by target's half-extent
-                const bHalfExtent = entityHalfExtent[entityB];
-                const effectiveRange = myVisualRange + bHalfExtent;
-                const effectiveRangeSq = effectiveRange * effectiveRange;
+              // Expand effective range by target's half-extent
+              const bHalfExtent = entityHalfExtent[entityB];
+              const effectiveRange = myVisualRange + bHalfExtent;
+              const effectiveRangeSq = effectiveRange * effectiveRange;
 
-                // Check if within range and not at exact same position
-                if (distSq < effectiveRangeSq && distSq > 0) {
-                  // Write neighbor data
-                  const writeIdx = neighborOffset + 1 + neighborCount;
-                  neighborData[writeIdx] = entityB;
-                  if (distanceData) distanceData[writeIdx] = distSq;
+              // Check if within range
+              if (distSq < effectiveRangeSq) {
+                // Write neighbor data
+                const writeIdx = neighborOffset + 1 + neighborCount;
+                neighborData[writeIdx] = entityB;
+                if (distanceData) distanceData[writeIdx] = distSq;
 
-                  neighborCount++;
-                  this.neighborsFoundThisFrame++;
+                neighborCount++;
+                this.neighborsFoundThisFrame++;
 
-                  // Stop at neighbor limit
-                  if (neighborCount >= maxNeighbors) break;
-                }
+                // Stop at neighbor limit
+                if (neighborCount >= maxNeighbors) break;
               }
-
-              if (neighborCount >= maxNeighbors) break;
             }
+
             if (neighborCount >= maxNeighbors) break;
           }
 
@@ -515,3 +601,4 @@ class SpatialWorker extends AbstractWorker {
 
 // Create singleton instance
 const spatialWorker = new SpatialWorker(self);
+self.spatialWorker = spatialWorker;
