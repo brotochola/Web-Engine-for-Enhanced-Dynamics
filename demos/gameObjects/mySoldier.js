@@ -18,6 +18,13 @@ export class MySoldier extends Person {
   static punchRangeSq = 35 ** 2; // Distance to start punching
   static punchDamage = 0.4; // Damage per punch
 
+  // Flocking behavior (override Person defaults)
+  static groupingForce = 0.33;
+  static separationForce = 0.2;
+
+  // Damage resistance (override Person default)
+  static resistance = 0.6;
+
   static components = [...Person.components, SoldierBehaviorFSM];
 
   onSpawned(spawnConfig = {}) {
@@ -28,12 +35,11 @@ export class MySoldier extends Person {
     super.onSpawned(spawnConfig);
 
     this.lootableComponent.health = 1;
-    this.lootableComponent.resistance = 0.6;
+    // resistance now uses static class property (MySoldier.resistance)
     this.lootableComponent.dropMoney = 100;
     this.lootableComponent.dropMachineGun = 1;
 
-    this.personComponent.groupingForce = 0.33;
-    this.personComponent.separationForce = 0.2;
+    // groupingForce and separationForce now use static class properties (MySoldier.groupingForce, MySoldier.separationForce)
 
     this.collider.visualRange = 250;
   }

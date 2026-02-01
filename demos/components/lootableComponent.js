@@ -6,7 +6,7 @@ import { Component } from '/src/core/Component.js';
 export class LootableComponent extends Component {
   static ARRAY_SCHEMA = {
     health: Float32Array,
-    resistance: Float32Array,
+    // resistance moved to static class property
     dropMoney: Float32Array,
     dropPistol: Float32Array,
     dropMachineGun: Float32Array,
