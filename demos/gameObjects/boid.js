@@ -162,7 +162,6 @@ class Boid extends GameObject {
       const j = this.getNeighbor(n);
 
       const neighborType = entityTypes[j];
-      if (Mouse.entityType == neighborType) continue;
       const isSameType = neighborType === myEntityType;
 
       // Use pre-calculated squared distance from spatial worker (OPTIMIZATION!)
@@ -245,30 +244,10 @@ class Boid extends GameObject {
 
   /**
    * Avoid the mouse cursor
-   * CACHE-FRIENDLY: Direct array access
+   * Uses Mouse static class directly (not an entity)
    */
   avoidMouse(i, dtRatio) {
-    if (!Mouse.x) return;
-    if (!Mouse.isDown) return;
-
-    // Mouse is always at entity index 0
-    const mouseEntityIndex = 0;
-
-    // Find mouse in neighbors array
-    let mouseNeighborPos = -1;
-    for (let n = 0; n < this.neighborCount; n++) {
-      if (this.getNeighbor(n) === mouseEntityIndex) {
-        mouseNeighborPos = n;
-        break;
-      }
-    }
-
-    // Mouse is not a neighbor (too far away)
-    if (mouseNeighborPos === -1) return;
-
-    // Now use the pre-calculated distance from the spatial worker
-    const dist2 = this.getNeighborDistanceSq(mouseNeighborPos);
-    if (!dist2 || dist2 === 0) return;
+    if (!Mouse.isDown || !Mouse.isPresent) return;
 
     // Cache array references
     const tX = Transform.x;
@@ -276,8 +255,14 @@ class Boid extends GameObject {
     const rbAX = RigidBody.ax;
     const rbAY = RigidBody.ay;
 
-    const dx = tX[mouseEntityIndex] - tX[i];
-    const dy = tY[mouseEntityIndex] - tY[i];
+    // Calculate distance to mouse
+    const dx = Mouse.x - tX[i];
+    const dy = Mouse.y - tY[i];
+    const dist2 = dx * dx + dy * dy;
+
+    // Only avoid if within range
+    const avoidRange2 = 10000; // 100px squared
+    if (dist2 > avoidRange2 || dist2 === 0) return;
 
     const strength = 10;
     rbAX[i] -= (dx / dist2) * strength * dtRatio;

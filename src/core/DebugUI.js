@@ -463,7 +463,7 @@ export class DebugUI {
 
   /**
    * Poll for paint/erase tool actions
-   * Uses _toolMouseDown (tracked by DebugUI) and Mouse position (entity 0)
+   * Uses _toolMouseDown (tracked by DebugUI) and Mouse position
    */
   _updatePaintTool() {
     if (!this.activeSpawnerType && !this.eraserActive) {
@@ -3388,7 +3388,7 @@ export class DebugUI {
   }
 
   /**
-   * Spawn entity at current mouse position (uses Mouse entity 0)
+   * Spawn entity at current mouse position
    * Spawns multiple entities in a spread pattern when bulk spawn is enabled
    */
   _spawnEntityAtMouse(className) {
