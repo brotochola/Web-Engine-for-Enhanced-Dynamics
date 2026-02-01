@@ -113,6 +113,9 @@ class ParticleWorker extends AbstractWorker {
       maxY: 0,
     };
 
+    // Reusable grid query result to avoid per-frame allocations
+    this._gridQueryResult = null;
+
     // ========================================
     // SHADOW SPRITE SYSTEM
     // ========================================
@@ -1439,10 +1442,11 @@ class ParticleWorker extends AbstractWorker {
 
   /**
    * Update isItOnScreen property for all game entities
-   * OPTIMIZED: Uses query system to iterate only entities with SpriteRenderer
+   * OPTIMIZED: Uses spatial grid to only check entities in visible cells
    * Moved from spatial_worker to balance workload
    */
   updateEntityScreenVisibility() {
+
     if (!this.cameraData || this.globalEntityCount === 0 || !SpriteRenderer.isItOnScreen)
       return console.warn('PARTICLE WORKER: No camera data or entity count');
 
@@ -1452,31 +1456,51 @@ class ParticleWorker extends AbstractWorker {
     const isItOnScreen = SpriteRenderer.isItOnScreen;
     const screenX = SpriteRenderer.screenX;
     const screenY = SpriteRenderer.screenY;
+    const spriteRendererActive = SpriteRenderer.active;
 
     // Read camera data: [zoom, cameraX, cameraY]
     const zoom = this.cameraData[0];
     const cameraX = this.cameraData[1];
     const cameraY = this.cameraData[2];
 
-    // Pre-calculate all bounds once
+    // Pre-calculate screen bounds (with culling margin)
     const cameraOffsetX = cameraX * zoom;
     const cameraOffsetY = cameraY * zoom;
     const marginX = this.canvasWidth * this.cullingRatio;
     const marginY = this.canvasHeight * this.cullingRatio;
-    const minX = -marginX;
-    const maxX = this.canvasWidth + marginX;
-    const minY = -marginY;
-    const maxY = this.canvasHeight + marginY;
+    const screenMinX = -marginX;
+    const screenMaxX = this.canvasWidth + marginX;
+    const screenMinY = -marginY;
+    const screenMaxY = this.canvasHeight + marginY;
 
-    // OPTIMIZATION: Query only entities that have SpriteRenderer
-    // This skips non-renderable entities (triggers, invisible objects, etc.)
-    const renderableEntities = this.query([Transform, SpriteRenderer]);
+    // Convert screen bounds to world bounds for grid query
+    // Formula: screenX = worldX * zoom - cameraOffsetX
+    // Therefore: worldX = (screenX + cameraOffsetX) / zoom
+    const invZoom = 1 / zoom;
+    const worldMinX = (screenMinX + cameraOffsetX) * invZoom;
+    const worldMaxX = (screenMaxX + cameraOffsetX) * invZoom;
+    const worldMinY = (screenMinY + cameraOffsetY) * invZoom;
+    const worldMaxY = (screenMaxY + cameraOffsetY) * invZoom;
 
-    for (let idx = 0; idx < renderableEntities.length; idx++) {
-      const i = renderableEntities[idx];
+    // OPTIMIZATION: Query grid for entities in visible world rectangle
+    // This only checks entities in cells that intersect the viewport
+    // Reuse cached result object to avoid allocation
+    this._gridQueryResult = Grid.getEntitiesInRect(worldMinX, worldMinY, worldMaxX, worldMaxY);
 
+    // Iterate only entities in visible cells (access properties directly to avoid variable allocation)
+    for (let idx = 0; idx < this._gridQueryResult.count; idx++) {
+      const i = this._gridQueryResult.entities[idx];
+
+      // Skip inactive entities
       if (!active[i]) {
-        isItOnScreen[i] = 0;
+        if (isItOnScreen[i] !== 0) {
+          isItOnScreen[i] = 0;
+        }
+        continue;
+      }
+
+      // Skip entities without SpriteRenderer (grid contains all entities, not just renderable)
+      if (!spriteRendererActive || !spriteRendererActive[i]) {
         continue;
       }
 
@@ -1487,8 +1511,9 @@ class ParticleWorker extends AbstractWorker {
       screenY[i] = sy;
 
       // Check if screen position is within viewport bounds (with margin)
-      isItOnScreen[i] = sx > minX && sx < maxX && sy > minY && sy < maxY ? 1 : 0;
+      isItOnScreen[i] = sx > screenMinX && sx < screenMaxX && sy > screenMinY && sy < screenMaxY ? 1 : 0;
     }
+
   }
 
   /**
