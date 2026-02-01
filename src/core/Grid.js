@@ -360,11 +360,15 @@ export class Grid {
    * @param {number} x - World X position
    * @param {number} y - World Y position
    * @param {number} radius - Search radius in world units
-   * @param {Uint32Array|null} resultsBuffer - Pre-allocated buffer for results (optional)
-   * @returns {{count: number, entities: Uint32Array}} Count and entities array
+   * @param {Uint16Array|null} resultsBuffer - Pre-allocated buffer for results (optional)
+   * @returns {{count: number, entities: Uint16Array}} Count and entities array
    */
-  static _queryResults = new Uint32Array(256); // Pre-allocated results buffer
+  static _queryResults = new Uint16Array(2048); // Pre-allocated results buffer (Uint16 since entity IDs < 65536)
   static _queryResultCount = 0;
+
+  // Zero-GC marker array for deduplication (lazy-initialized)
+  static _markerArray = null; // Int32Array for marking processed entities
+  static _markerCounter = 1; // Increments each query to avoid clearing array
 
   static getEntitiesInRadius(x, y, radius) {
     const results = Grid._queryResults;
@@ -418,6 +422,105 @@ export class Grid {
           const distSq = dx * dx + dy * dy;
 
           if (distSq <= radiusSq) {
+            if (count < maxResults) {
+              results[count++] = entityId;
+            }
+          }
+        }
+      }
+    }
+
+    Grid._queryResultCount = count;
+    return { count, entities: results };
+  }
+
+  /**
+   * Find all active entities within a rectangular region
+   * Zero-allocation: reuses pre-allocated results array and marker array
+   * @param {number} minX - Minimum X world coordinate
+   * @param {number} minY - Minimum Y world coordinate
+   * @param {number} maxX - Maximum X world coordinate
+   * @param {number} maxY - Maximum Y world coordinate
+   * @returns {{count: number, entities: Uint16Array}} Count and entities array
+   */
+  static getEntitiesInRect(minX, minY, maxX, maxY) {
+    const results = Grid._queryResults;
+    let count = 0;
+    const maxResults = results.length;
+
+    // Clamp and convert to cell coordinates
+    const startCol = Math.max(0, (minX * Grid.invCellSize) | 0);
+    const endCol = Math.min(Grid.gridWidth - 1, (maxX * Grid.invCellSize) | 0);
+    const startRow = Math.max(0, (minY * Grid.invCellSize) | 0);
+    const endRow = Math.min(Grid.gridHeight - 1, (maxY * Grid.invCellSize) | 0);
+
+    // Early exit if no cells to check
+    if (startCol > endCol || startRow > endRow) {
+      Grid._queryResultCount = 0;
+      return { count: 0, entities: results };
+    }
+
+    // Import Transform for active check (avoid circular dep by checking existence)
+    const transformX = Transform?.x;
+    const transformY = Transform?.y;
+    const transformActive = Transform?.active;
+    if (!transformX || !transformY || !transformActive) {
+      Grid._queryResultCount = 0;
+      return { count: 0, entities: results };
+    }
+
+    // Lazy-initialize marker array (zero-GC deduplication)
+    // Size it to match Transform array length if available, otherwise use large default
+    if (!Grid._markerArray) {
+      const arrayLength = transformX?.length || 65536;
+      Grid._markerArray = new Int32Array(arrayLength);
+      Grid._markerArray.fill(0);
+    }
+
+    // Increment marker counter (wraps at 2^31, but that's 2 billion queries)
+    const currentMarker = ++Grid._markerCounter;
+    if (Grid._markerCounter >= 2147483647) {
+      Grid._markerCounter = 1;
+      // If counter wrapped, we need to clear array (rare, but handle it)
+      Grid._markerArray.fill(0);
+    }
+
+    const markerArray = Grid._markerArray;
+    const gridCounts = Grid._gridCounts;
+    const gridEntities = Grid._gridEntities;
+    const cellByteSize = Grid.cellByteSize;
+    const gridWidth = Grid.gridWidth;
+
+    // Iterate cells in rectangular region
+    for (let row = startRow; row <= endRow; row++) {
+      const rowBase = row * gridWidth;
+
+      for (let col = startCol; col <= endCol; col++) {
+        const cellIndex = rowBase + col;
+        const byteOffset = cellIndex * cellByteSize;
+        const cellCount = gridCounts[byteOffset];
+
+        // Skip empty cells
+        if (cellCount === 0) continue;
+
+        // Direct buffer access for performance
+        const cellEntityBase = (byteOffset >> 2) + 1;
+
+        for (let k = 0; k < cellCount; k++) {
+          const entityId = gridEntities[cellEntityBase + k];
+
+          // Skip if already processed this query (zero-GC marker check)
+          if (markerArray[entityId] === currentMarker) continue;
+          markerArray[entityId] = currentMarker;
+
+          // Skip inactive entities
+          if (!transformActive[entityId]) continue;
+
+          // Check if entity position is within rectangle bounds
+          const ex = transformX[entityId];
+          const ey = transformY[entityId];
+
+          if (ex >= minX && ex <= maxX && ey >= minY && ey <= maxY) {
             if (count < maxResults) {
               results[count++] = entityId;
             }
