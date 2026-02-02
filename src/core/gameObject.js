@@ -1142,9 +1142,9 @@ export class GameObject {
    */
   updateNeighbors(neighborData, distanceData, stride) {
     // Fast path: arrays passed directly from caller (logic_worker caches them once)
+    // distanceData parameter is deprecated (no longer used, kept for API compatibility)
     if (neighborData) {
       this._neighborData = neighborData;
-      this._distanceData = distanceData;
       this._neighborOffset = this.index * stride;
       this.neighborCount = neighborData[this._neighborOffset];
       return;
@@ -1153,7 +1153,6 @@ export class GameObject {
     // Fallback to static arrays if no params passed
     if (GameObject.neighborData) {
       this._neighborData = GameObject.neighborData;
-      this._distanceData = GameObject.distanceData;
       const maxNeighbors = this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
       this._neighborOffset = this.index * (1 + maxNeighbors);
       this.neighborCount = this._neighborData[this._neighborOffset];
@@ -1161,7 +1160,6 @@ export class GameObject {
     }
 
     this._neighborData = null;
-    this._distanceData = null;
     this.neighborCount = 0;
   }
 
@@ -1186,8 +1184,7 @@ export class GameObject {
 
   /**
    * Get neighbor distance squared at specific position
-   * Zero-allocation replacement for this.neighborDistances[i]
-   * Uses direct array access for performance (Grid data cached in updateNeighbors)
+   * Calculates distance on-the-fly from collider positions
    *
    * WARNING: This distance is calculated from COLLIDER positions (Transform + Collider.offset).
    * If you need to compute direction vectors (dx/dy), calculate distSq manually from the same
@@ -1197,15 +1194,17 @@ export class GameObject {
    * @returns {number} Squared distance to the neighbor (based on collider positions)
    */
   getNeighborDistanceSq(i) {
-    // Direct array access using cached offset (no method call overhead)
-    if (this._distanceData) {
-      return this._distanceData[this._neighborOffset + 1 + i];
-    }
-    // Fallback to static arrays
-    if (GameObject.distanceData) {
-      return GameObject.distanceData[this._neighborOffset + 1 + i];
-    }
-    return 0;
+    const neighborIdx = this.getNeighbor(i);
+    if (neighborIdx < 0) return 0;
+
+    // Calculate distance on-the-fly (collider positions)
+    const myX = Transform.x[this.index] + (Collider.offsetX[this.index] || 0);
+    const myY = Transform.y[this.index] + (Collider.offsetY[this.index] || 0);
+    const neighborX = Transform.x[neighborIdx] + (Collider.offsetX[neighborIdx] || 0);
+    const neighborY = Transform.y[neighborIdx] + (Collider.offsetY[neighborIdx] || 0);
+    const dx = neighborX - myX;
+    const dy = neighborY - myY;
+    return dx * dx + dy * dy;
   }
 
   /**

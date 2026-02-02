@@ -503,13 +503,19 @@ export class AbstractWorker {
 
     switch (msg) {
       case 'init':
+        console.log(`[${this.constructor.name}] Received 'init' message, starting initialization...`);
         this.initSeendedRandom(e.data.config.seed);
         this.isPaused = true; // Keep paused until "start" message
+        console.log(`[${this.constructor.name}] Initializing common buffers...`);
         await this.initializeCommonBuffers(e.data);
+        console.log(`[${this.constructor.name}] Common buffers initialized, setting up worker ports...`);
         this.initializeWorkerPorts(e.data.workerPorts); // Initialize direct worker communication
+        console.log(`[${this.constructor.name}] Worker ports initialized, calling worker-specific initialize()...`);
         await this.initialize(e.data);
+        console.log(`[${this.constructor.name}] Worker-specific initialize() completed, calling reportReady()...`);
         // After initialization, signal ready to main thread
         this.reportReady();
+        console.log(`[${this.constructor.name}] reportReady() called, waiting for 'start' message...`);
         break;
 
       case 'start':
@@ -538,6 +544,7 @@ export class AbstractWorker {
    */
   reportReady() {
     this.reportLog('initialization complete, signaling ready');
+    console.log(`${this.constructor.name}: Sending workerReady message`);
     self.postMessage({ msg: 'workerReady', worker: this.constructor.name });
   }
 

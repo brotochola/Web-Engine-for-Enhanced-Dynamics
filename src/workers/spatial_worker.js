@@ -154,11 +154,21 @@ class SpatialWorker extends AbstractWorker {
     // Precompute circle patterns for all possible cellRadius values (0 to maxCellRadius)
     this._precomputeCirclePatterns();
 
-    console.log(
-      `SPATIAL WORKER ${this.workerId}: Initialized with ${this.ownedRowCount} rows ` +
-      `(rows ${this.ownedRows[0]} to ${this.ownedRows[this.ownedRowCount - 1]} step ${this.totalSpatialWorkers}), ` +
-      `precomputed ${this._circlePatterns.size} circle patterns`
-    );
+    if (this.ownedRowCount > 0) {
+      console.log(
+        `SPATIAL WORKER ${this.workerId}: Initialized with ${this.ownedRowCount} rows ` +
+        `(rows ${this.ownedRows[0]} to ${this.ownedRows[this.ownedRowCount - 1]} step ${this.totalSpatialWorkers}), ` +
+        `precomputed ${this._circlePatterns.size} circle patterns`
+      );
+    } else {
+      console.log(
+        `SPATIAL WORKER ${this.workerId}: Initialized with 0 rows, ` +
+        `precomputed ${this._circlePatterns.size} circle patterns`
+      );
+    }
+
+    // Log that initialize() is completing (reportReady() will be called by AbstractWorker)
+    this.reportLog('initialize() method completed successfully');
   }
 
   /**
@@ -166,6 +176,11 @@ class SpatialWorker extends AbstractWorker {
    * Called once during initialization
    */
   _precomputeCirclePatterns() {
+    if (!this.cellSize || this.cellSize <= 0) {
+      console.error(`SPATIAL WORKER ${this.workerId}: Invalid cellSize: ${this.cellSize}`);
+      return;
+    }
+
     for (let cellRadius = 0; cellRadius <= this._maxCellRadius; cellRadius++) {
       const pattern = generateSymmetricalCirclePattern(cellRadius, this.cellSize);
       this._circlePatterns.set(cellRadius, pattern);
@@ -436,7 +451,6 @@ class SpatialWorker extends AbstractWorker {
 
     // Single buffer - direct access (row ownership eliminates races)
     const neighborData = Grid.neighborData;
-    const distanceData = Grid.distanceData;
 
     // Direct grid buffer access
     const gridCounts = Grid._gridCounts;
@@ -501,7 +515,6 @@ class SpatialWorker extends AbstractWorker {
           // Skip entities with no visual range
           if (myVisualRange <= 0) {
             neighborData[neighborOffset] = 0;
-            if (distanceData) distanceData[neighborOffset] = 0;
             continue;
           }
 
@@ -545,7 +558,7 @@ class SpatialWorker extends AbstractWorker {
               if (processedMarker[entityB] === entityA) continue;
               processedMarker[entityB] = entityA;
 
-              // Calculate squared distance (optimized: single read of positions)
+              // Calculate squared distance for range check only (not stored)
               const bX = entityPosX[entityB];
               const bY = entityPosY[entityB];
               const dx = bX - myX;
@@ -562,10 +575,9 @@ class SpatialWorker extends AbstractWorker {
 
               // Check if within range
               if (distSq < effectiveRangeSq) {
-                // Write neighbor data
+                // Write neighbor data (distance not stored - calculated on-demand by consumers)
                 const writeIdx = neighborOffset + 1 + neighborCount;
                 neighborData[writeIdx] = entityB;
-                if (distanceData) distanceData[writeIdx] = distSq;
 
                 neighborCount++;
                 this.neighborsFoundThisFrame++;
@@ -580,7 +592,6 @@ class SpatialWorker extends AbstractWorker {
 
           // Write neighbor count
           neighborData[neighborOffset] = neighborCount;
-          if (distanceData) distanceData[neighborOffset] = neighborCount;
         }
       }
     }

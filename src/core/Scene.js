@@ -620,21 +620,32 @@ class Scene {
     if (typeof SharedArrayBuffer === 'undefined') {
       throw new Error('SharedArrayBuffer not available! Check CORS headers.');
     }
+    console.log(`[Scene] ✅ SharedArrayBuffer support confirmed`);
 
     // Load entity scripts dynamically in main thread (like workers do)
+    console.log(`[Scene] 📜 Loading entity scripts in main thread...`);
     await this.loadEntityScriptsInMainThread();
+    console.log(`[Scene] ✅ Entity scripts loaded`);
 
     // Create shared buffers
+    console.log(`[Scene] 🗄️ Creating shared buffers...`);
     this.createSharedBuffers();
+    console.log(`[Scene] ✅ Shared buffers created`);
 
     // Create workers
+    console.log(`[Scene] 👷 Creating workers...`);
     await this.createWorkers();
+    console.log(`[Scene] ✅ Workers created, waiting for ready signals...`);
 
     // Setup event listeners
+    console.log(`[Scene] 🎧 Setting up event listeners...`);
     this.setupEventListeners();
+    console.log(`[Scene] ✅ Event listeners set up`);
 
     // Start main loop
+    console.log(`[Scene] 🔄 Starting main loop...`);
     this.startMainLoop();
+    console.log(`[Scene] ✅ Main loop started`);
 
     // Update entity count display
     const numberBoidsElement = document.getElementById('numberBoids');
@@ -642,10 +653,17 @@ class Scene {
       numberBoidsElement.textContent = `Number of entities: ${this.totalEntityCount}`;
     }
 
+    // Log current worker ready states
+    console.log(`[Scene] ⏳ Waiting for workers to be ready...`);
+    console.log(`[Scene] Current worker ready states:`, { ...this.workerReadyStates });
+    console.log(`[Scene] Total workers expected: ${this.totalWorkers}`);
+
     // Wait for all workers to be ready
     await this.readyPromise;
+    console.log(`[Scene] ✅ All workers are ready!`);
 
     // Expose scene and component references globally for console access
+    console.log(`[Scene] 🌍 Exposing global references...`);
     this.exposeGlobalReferences();
 
     console.log(`✅ Scene ${this.constructor.name}: Initialized!`);
@@ -654,7 +672,9 @@ class Scene {
     );
 
     // Call user's create() hook
+    console.log(`[Scene] 🎨 Calling user's create() hook...`);
     this.create();
+    console.log(`[Scene] ✅ User's create() hook completed`);
   }
 
   /**
@@ -1486,7 +1506,9 @@ class Scene {
     const PARTICLE_INDEX = numberOfSpatialWorkers + 2;
     const LOGIC_START_INDEX = numberOfSpatialWorkers + 3;
 
+    console.log(`[Scene] 📤 Sending init messages to workers...`);
     for (let i = 0; i < numberOfSpatialWorkers; i++) {
+      console.log(`[Scene]   → Initializing spatial worker ${i}...`);
       this.workers.spatialWorkers[i].postMessage({
         ...initData,
         frameRateIndex: Scene.WORKER_INDICES.SPATIAL_START + i,
@@ -1496,6 +1518,7 @@ class Scene {
     }
 
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
+      console.log(`[Scene]   → Initializing logic worker ${i}...`);
       this.workers.logicWorkers[i].postMessage(
         {
           ...initData,
@@ -1508,6 +1531,7 @@ class Scene {
       );
     }
 
+    console.log(`[Scene]   → Initializing physics worker...`);
     this.workers.physics.postMessage(
       {
         ...initData,
@@ -1518,6 +1542,7 @@ class Scene {
     );
 
     // Particle worker always receives init data
+    console.log(`[Scene]   → Initializing particle worker...`);
     this.workers.particle.postMessage({
       ...initData,
       frameRateIndex: PARTICLE_INDEX,
@@ -1525,6 +1550,7 @@ class Scene {
 
     // Navigation worker (if pathfinding enabled)
     if (this.config.navigation.enabled && this.workers.navigation) {
+      console.log(`[Scene]   → Initializing navigation worker...`);
       const NAV_INDEX = LOGIC_START_INDEX + this.numberOfLogicWorkers;
 
       // Create a MessageChannel for main thread ↔ nav worker communication
@@ -1553,6 +1579,7 @@ class Scene {
     }
 
     // Initialize renderer
+    console.log(`[Scene]   → Initializing renderer worker...`);
     const offscreenCanvas = this.canvas.transferControlToOffscreen();
 
     const transferables = [
@@ -1576,6 +1603,7 @@ class Scene {
       },
       transferables
     );
+    console.log(`[Scene] ✅ All init messages sent to workers`);
 
     // Setup message handlers
     const allWorkers = [
@@ -1587,7 +1615,9 @@ class Scene {
       ...(this.workers.navigation ? [this.workers.navigation] : []),
     ];
 
+    console.log(`[Scene] 📨 Setting up message handlers for ${allWorkers.length} workers...`);
     for (let worker of allWorkers) {
+      console.log(`[Scene]   → Setting up handlers for ${worker.name}`);
       worker.onmessage = (e) => {
         this.handleMessageFromWorker(e);
       };
@@ -1601,6 +1631,7 @@ class Scene {
         );
       };
     }
+    console.log(`[Scene] ✅ Message handlers set up`);
   }
 
   handleMessageFromWorker(e) {
@@ -1614,6 +1645,7 @@ class Scene {
         when: e.data.when - Scene.now,
       });
     } else if (e.data.msg === 'workerReady') {
+      console.log(`[Scene] 📬 Received 'workerReady' message from ${e.currentTarget.name}`);
       this.handleWorkerReady(e.currentTarget.name);
     } else if (e.data.msg === 'error') {
       const { title, message, stack } = e.data;
@@ -1626,6 +1658,9 @@ class Scene {
 
       // Show a visible error message on the page
       this._showFatalErrorMessage(workerName, title, message);
+    } else {
+      // Log unexpected messages for debugging
+      console.log(`[Scene] 📨 Received message from ${e.currentTarget.name}:`, e.data.msg, e.data);
     }
   }
 
@@ -1679,9 +1714,11 @@ class Scene {
   }
 
   handleWorkerReady(workerName) {
+    console.log(`[Scene] ✅ Worker "${workerName}" is ready!`);
     this.workerReadyStates[workerName] = true;
 
     if (workerName === 'physics' && this.pendingPhysicsUpdates.length) {
+      console.log(`[Scene] 📤 Sending ${this.pendingPhysicsUpdates.length} pending physics updates...`);
       this.pendingPhysicsUpdates.forEach((update) => {
         this.workers.physics.postMessage({
           msg: 'updatePhysicsConfig',
@@ -1691,11 +1728,28 @@ class Scene {
       this.pendingPhysicsUpdates = [];
     }
 
+    // Log current ready states
+    const readyCount = Object.values(this.workerReadyStates).filter((ready) => ready).length;
+    const totalWorkers = Object.keys(this.workerReadyStates).length;
+    console.log(`[Scene] 📊 Workers ready: ${readyCount}/${totalWorkers}`);
+
+    // Log which workers are still waiting
+    const waitingWorkers = Object.entries(this.workerReadyStates)
+      .filter(([name, ready]) => !ready)
+      .map(([name]) => name);
+    if (waitingWorkers.length > 0) {
+      console.log(`[Scene] ⏳ Still waiting for: ${waitingWorkers.join(', ')}`);
+    }
+
     const allReady = Object.values(this.workerReadyStates).every((ready) => ready);
 
     if (allReady) {
+      console.log(`[Scene] 🎉 All workers are ready! Starting all workers...`);
       this.startAllWorkers();
-      if (this.resolveReady) this.resolveReady();
+      if (this.resolveReady) {
+        console.log(`[Scene] ✅ Resolving ready promise`);
+        this.resolveReady();
+      }
     }
   }
 
@@ -1709,11 +1763,14 @@ class Scene {
       this.workers.navigation, // Navigation worker (if enabled)
     ];
 
+    console.log(`[Scene] 🚀 Starting ${allWorkers.filter(w => w).length} workers...`);
     for (const worker of allWorkers) {
       if (worker) {
+        console.log(`[Scene]   → Sending 'start' message to ${worker.name}`);
         worker.postMessage({ msg: 'start' });
       }
     }
+    console.log(`[Scene] ✅ All start messages sent`);
   }
 
   updatePhysicsConfig(partialConfig = {}) {

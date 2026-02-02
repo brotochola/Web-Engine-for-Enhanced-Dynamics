@@ -10,7 +10,7 @@ import { PersonComponent, DIRECTION_NAMES } from '../components/personComponent.
 import { distanceSq2D, Ray } from '../../src/index.js';
 import { LootableComponent } from '../components/lootableComponent.js';
 
-const { FSM, FSMState, Transform, RigidBody, GameObject, getDirectionFromAngle } = WEED;
+const { FSM, FSMState, Transform, RigidBody, GameObject, Collider, getDirectionFromAngle } = WEED;
 
 // ==========================================
 // REUSABLE OBJECTS - Zero allocation
@@ -28,13 +28,23 @@ function findClosestCivilian(owner) {
   _closestResult.index = -1;
   _closestResult.distSq = Infinity;
 
+  // Get owner's collider position (Transform + Collider.offset)
+  const ownerX = Transform.x[owner.index] + (Collider.offsetX[owner.index] || 0);
+  const ownerY = Transform.y[owner.index] + (Collider.offsetY[owner.index] || 0);
+
   for (let n = 0; n < owner.neighborCount; n++) {
     const neighborIndex = owner.getNeighbor(n);
     if (Transform.entityType[neighborIndex] !== civilianType) continue;
     if (LootableComponent.health[neighborIndex] <= 0) continue;
     if (!Ray.hasLineOfSight(owner.index, neighborIndex)) continue;
 
-    const distSq = owner.getNeighborDistanceSq(n);
+    // Calculate distance on-the-fly (collider positions)
+    const neighborX = Transform.x[neighborIndex] + (Collider.offsetX[neighborIndex] || 0);
+    const neighborY = Transform.y[neighborIndex] + (Collider.offsetY[neighborIndex] || 0);
+    const dx = neighborX - ownerX;
+    const dy = neighborY - ownerY;
+    const distSq = dx * dx + dy * dy;
+
     if (distSq < _closestResult.distSq) {
       _closestResult.distSq = distSq;
       _closestResult.index = neighborIndex;

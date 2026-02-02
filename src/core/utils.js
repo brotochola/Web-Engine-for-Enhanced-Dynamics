@@ -1209,17 +1209,19 @@ export function calculateTotalLightAtPosition(
 }
 
 /**
- * Calculate total light for an entity using precomputed neighbor distances
- * Uses the spatial worker's distanceData to avoid recalculating distances
+ * Calculate total light for an entity using neighbor distances calculated on-the-fly
  * Only considers neighbors (lights within visualRange), so this is an optimization
  * for dense scenes where lights are typically nearby entities
  *
  * @param {number} entityIndex - The entity's index
  * @param {Int32Array} neighborData - Neighbor indices buffer from spatial worker
- * @param {Float32Array} distanceData - Precomputed squared distances from spatial worker
  * @param {Float32Array} lightIntensity - Light intensity per entity
  * @param {Uint8Array} lightEnabled - Light enabled flags per entity
  * @param {number} stride - Neighbor buffer stride (1 + maxNeighbors)
+ * @param {Float32Array} transformX - Transform.x array
+ * @param {Float32Array} transformY - Transform.y array
+ * @param {Float32Array} colliderOffsetX - Collider.offsetX array
+ * @param {Float32Array} colliderOffsetY - Collider.offsetY array
  * @param {number} ambient - Ambient light level (0-1)
  * @param {number} maxLight - Maximum light value (default: 1.5)
  * @returns {number} Total light level (clamped to maxLight)
@@ -1227,10 +1229,13 @@ export function calculateTotalLightAtPosition(
 export function calculateLightFromNeighbors(
   entityIndex,
   neighborData,
-  distanceData,
   lightIntensity,
   lightEnabled,
   stride,
+  transformX,
+  transformY,
+  colliderOffsetX,
+  colliderOffsetY,
   ambient = 0.05,
   maxLight = 1.5
 ) {
@@ -1239,14 +1244,22 @@ export function calculateLightFromNeighbors(
   const offset = entityIndex * stride;
   const neighborCount = neighborData[offset];
 
+  // Get entity's collider position
+  const entityX = transformX[entityIndex] + (colliderOffsetX[entityIndex] || 0);
+  const entityY = transformY[entityIndex] + (colliderOffsetY[entityIndex] || 0);
+
   for (let k = 0; k < neighborCount; k++) {
     const neighborIdx = neighborData[offset + 1 + k];
 
     // Skip if this neighbor is not a light
     if (!lightEnabled[neighborIdx]) continue;
 
-    // Use precomputed squared distance
-    const distSq = distanceData[offset + 1 + k];
+    // Calculate squared distance on-the-fly (collider positions)
+    const neighborX = transformX[neighborIdx] + (colliderOffsetX[neighborIdx] || 0);
+    const neighborY = transformY[neighborIdx] + (colliderOffsetY[neighborIdx] || 0);
+    const dx = neighborX - entityX;
+    const dy = neighborY - entityY;
+    const distSq = dx * dx + dy * dy;
 
     totalLight += calculateLightAttenuation(lightIntensity[neighborIdx], distSq);
   }

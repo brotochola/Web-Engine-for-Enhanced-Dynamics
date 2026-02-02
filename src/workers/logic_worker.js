@@ -288,7 +288,6 @@ class LogicWorker extends AbstractWorker {
 
     // PERFORMANCE: Cache Grid arrays once to avoid property lookups per entity
     const neighborData = Grid.neighborData;
-    const distanceData = Grid.distanceData;
     const stride = Grid._stride;
 
     // Job-based processing: atomically claim jobs until none remain
@@ -325,7 +324,7 @@ class LogicWorker extends AbstractWorker {
 
           // OPTIMIZED: updating neighbors uses cached Grid arrays (GC free)
           // Pass cached arrays to avoid property lookups per entity
-          obj.updateNeighbors(neighborData, distanceData, stride);
+          obj.updateNeighbors(neighborData, null, stride);
 
           // TICK DECIMATION: Skip tick if countdown hasn't reached 0
           // Entities with tickInterval > 1 only tick every N frames (staggered by index)
