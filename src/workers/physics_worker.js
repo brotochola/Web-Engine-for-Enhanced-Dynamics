@@ -366,6 +366,12 @@ class PhysicsWorker extends AbstractWorker {
     const damping = this.settings.verletDamping;
     const isStatic = RigidBody.static;
     const friction = RigidBody.friction;
+    const sleeping = RigidBody.sleeping;
+
+    const sleepThreshold = this.config.physics.sleepThreshold;
+    const wakeUpThreshold = this.config.physics.wakeUpThreshold;
+    const stillnessTime = RigidBody.stillnessTime;
+
     // const maxAcc = RigidBody.maxAcc;
 
     const gravityScale = dtRatio * dtRatio;
@@ -378,23 +384,59 @@ class PhysicsWorker extends AbstractWorker {
       const i = physicsEntities[idx];
       if (!active[i] || !rigidBodyActive[i]) continue;
       if (isStatic[i]) continue;
+      // SLEEPING OPTIMIZATION: Skip physics integration for sleeping entities
+
+      // Apply acceleration (scaled by dtRatio)
+      let accX = ax[i] * dtRatio;
+      let accY = ay[i] * dtRatio;
+
+      //wake up
+      if (accX > wakeUpThreshold || accY > wakeUpThreshold) {
+        sleeping[i] = 0;
+        stillnessTime[i] = 0;
+      }
+
+      if (sleeping[i]) {
+        // CRITICAL: Keep px/py in sync with x/y for sleeping entities
+        // Even though we skip physics integration, the position can still be
+        // modified by collisions or boundary constraints. If px/py become
+        // out of sync, Verlet integration will produce NaN when the entity wakes up.
+        // Always sync px/py with x/y to maintain Verlet relationship
+        px[i] = x[i];
+        py[i] = y[i];
+        continue;
+      }
 
       const oldX = x[i];
       const oldY = y[i];
 
+      // DEFENSIVE: Validate px/py before using in Verlet integration
+      // If px/py are NaN, initialize them from current position and velocity
+      if (isNaN(px[i]) || isNaN(py[i])) {
+        px[i] = x[i] - (vx[i] || 0) * dtRatio;
+        py[i] = y[i] - (vy[i] || 0) * dtRatio;
+      }
+
       // Verlet Integration
       let dx = (x[i] - px[i]) * damping;
       let dy = (y[i] - py[i]) * damping;
+
+      // DEFENSIVE: Check for NaN in dx/dy before continuing
+      // This can happen if px/py were corrupted or not properly initialized
+      if (isNaN(dx) || isNaN(dy)) {
+        // Recover by initializing px/py from current position
+        // This handles edge cases where entity state was corrupted
+        px[i] = x[i];
+        py[i] = y[i];
+        dx = 0;
+        dy = 0;
+      }
 
       if (friction[i] > 0) {
         const frictionFactor = Math.pow(1 - friction[i], dtRatio);
         dx *= frictionFactor;
         dy *= frictionFactor;
       }
-
-      // Apply acceleration (scaled by dtRatio)
-      let accX = ax[i] * dtRatio;
-      let accY = ay[i] * dtRatio;
 
       // // Limit acceleration magnitude while preserving direction
       // const accMagnitudeSquared =accX * accX + accY * accY
@@ -407,6 +449,10 @@ class PhysicsWorker extends AbstractWorker {
 
       dx += gravityScale * gx + accX;
       dy += gravityScale * gy + accY;
+
+      // DEFENSIVE: Final check for NaN before updating position
+      if (isNaN(dx)) dx = 0;
+      if (isNaN(dy)) dy = 0;
 
       // Velocity clamping using squared comparison (avoids sqrt for most entities)
       const speedSquared = distanceSq2D(0, 0, dx, dy);
@@ -422,6 +468,14 @@ class PhysicsWorker extends AbstractWorker {
 
       x[i] = oldX + dx;
       y[i] = oldY + dy;
+
+      // DEFENSIVE: Final validation - if position is still NaN, reset to previous position
+      if (isNaN(x[i]) || isNaN(y[i])) {
+        x[i] = oldX;
+        y[i] = oldY;
+        px[i] = oldX;
+        py[i] = oldY;
+      }
 
       px[i] = oldX;
       py[i] = oldY;
@@ -508,25 +562,45 @@ class PhysicsWorker extends AbstractWorker {
       // Left boundary (collider center + offset must stay within bounds)
       if (x[i] + offX < halfW) {
         x[i] = halfW - offX;
-        px[i] = x[i] + (x[i] - px[i]) * boundaryElasticity;
+        // DEFENSIVE: Validate px before using in calculation to prevent NaN propagation
+        if (!isNaN(px[i])) {
+          px[i] = x[i] + (x[i] - px[i]) * boundaryElasticity;
+        } else {
+          px[i] = x[i];
+        }
       }
 
       // Right boundary
       if (x[i] + offX > worldWidth - halfW) {
         x[i] = worldWidth - halfW - offX;
-        px[i] = x[i] + (x[i] - px[i]) * boundaryElasticity;
+        // DEFENSIVE: Validate px before using in calculation to prevent NaN propagation
+        if (!isNaN(px[i])) {
+          px[i] = x[i] + (x[i] - px[i]) * boundaryElasticity;
+        } else {
+          px[i] = x[i];
+        }
       }
 
       // Top boundary
       if (y[i] + offY < halfH) {
         y[i] = halfH - offY;
-        py[i] = y[i] + (y[i] - py[i]) * boundaryElasticity;
+        // DEFENSIVE: Validate py before using in calculation to prevent NaN propagation
+        if (!isNaN(py[i])) {
+          py[i] = y[i] + (y[i] - py[i]) * boundaryElasticity;
+        } else {
+          py[i] = y[i];
+        }
       }
 
       // Bottom boundary
       if (y[i] + offY > worldHeight - halfH) {
         y[i] = worldHeight - halfH - offY;
-        py[i] = y[i] + (y[i] - py[i]) * boundaryElasticity;
+        // DEFENSIVE: Validate py before using in calculation to prevent NaN propagation
+        if (!isNaN(py[i])) {
+          py[i] = y[i] + (y[i] - py[i]) * boundaryElasticity;
+        } else {
+          py[i] = y[i];
+        }
       }
     }
   }
@@ -663,6 +737,18 @@ class PhysicsWorker extends AbstractWorker {
 
         // Track collision resolved
         this.collisionsResolvedThisFrame++;
+
+        // SLEEPING OPTIMIZATION: Wake entities on collision
+        // If either entity is sleeping, wake it up (collision means something is happening)
+        const sleeping = RigidBody.sleeping;
+        // if (rigidBodyActive[i] && sleeping[i]) {
+        //   sleeping[i] = 0;
+        //   RigidBody.stillnessTime[i] = 0;
+        // }
+        if (rigidBodyActive[j] && sleeping[j]) {
+          sleeping[j] = 0;
+          RigidBody.stillnessTime[j] = 0;
+        }
 
         const eitherIsTrigger = isTrigger[i] || isTrigger[j];
 

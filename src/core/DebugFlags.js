@@ -15,6 +15,7 @@ export const DEBUG_FLAGS = {
   SHOW_ACTIVE_ONLY: 10, // Only show debug for active entities
   SHOW_RAYCASTS: 11, // Draw raycasts with hit points
   SHOW_SELECTED_ENTITY: 12, // Draw bounding box around selected entity
+  SHOW_SLEEPING_ENTITIES: 13, // Highlight sleeping entities
 };
 
 // Selected entity index storage (offset in debug buffer after flags)
@@ -145,6 +146,14 @@ export class DebugFlags {
   }
 
   /**
+   * Enable/disable sleeping entities visualization
+   */
+  showSleepingEntities(enabled = true) {
+    this.flags[DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES] = enabled ? 1 : 0;
+    return this;
+  }
+
+  /**
    * Set the selected entity index (writes to shared buffer)
    * @param {number} entityIndex - Entity index or -1 for no selection
    */
@@ -192,6 +201,7 @@ export class DebugFlags {
     if (options.fpsGraph !== undefined) this.showFPSGraph(options.fpsGraph);
     if (options.profiler !== undefined) this.showProfiler(options.profiler);
     if (options.entityIndices !== undefined) this.showEntityIndices(options.entityIndices);
+    if (options.sleepingEntities !== undefined) this.showSleepingEntities(options.sleepingEntities);
     return this;
   }
 
@@ -262,6 +272,7 @@ export class DebugFlags {
       profiler: this.isEnabled(DEBUG_FLAGS.SHOW_PROFILER),
       entityIndices: this.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INDICES),
       raycasts: this.isEnabled(DEBUG_FLAGS.SHOW_RAYCASTS),
+      sleepingEntities: this.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES),
     };
   }
 }

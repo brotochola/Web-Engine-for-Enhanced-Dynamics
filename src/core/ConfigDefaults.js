@@ -87,6 +87,10 @@ export const PHYSICS_DEFAULTS = {
   minSpeedForRotation: 0.1,
   maxCollisionPairs: 10000,
   gravity: { x: 0, y: 0 },
+  // Sleeping optimization
+  sleepThreshold: 0.1, // Speed threshold below which entity is considered still (units/frame)
+  wakeUpThreshold: 0.05, // Speed threshold above which entity is considered moving (units/frame)
+  sleepDuration: 30, // Frames of stillness required before sleeping (0.5 seconds at 60fps)
 };
 
 // ============================================================================

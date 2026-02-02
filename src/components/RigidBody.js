@@ -44,5 +44,9 @@ export class RigidBody extends Component {
     velocityAngle: Float32Array,
     speed: Float32Array,
     collisionCount: Uint8Array, // Number of collisions this frame
+
+    // Sleeping optimization
+    sleeping: Uint8Array, // 0 = awake, 1 = sleeping (skips physics integration)
+    stillnessTime: Float32Array, // Time entity has been still (in frames or seconds)
   };
 }
