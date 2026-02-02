@@ -134,9 +134,9 @@ class IdleSoldierState extends FSMState {
     }
 
     // // No enemies - flock with team
-    // owner.updateTeamData();
+    owner.updateTeamData();
     // owner.groupWithMyTeam();
-    // owner.separateFromTeam();
+    owner.separateFromTeam();
 
   }
 
@@ -158,7 +158,7 @@ class GoingToDestinationState extends FSMState {
     }
 
     // owner.updateTeamData();
-    // owner.groupWithMyTeam();
+    // // owner.groupWithMyTeam();
     // owner.separateFromTeam();
 
     // Check if reached destination

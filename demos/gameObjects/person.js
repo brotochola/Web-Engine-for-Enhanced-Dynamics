@@ -34,7 +34,8 @@ export class Person extends Lootable {
   static minSquaredDistanceToGroup = 140 ** 2;
   static groupingForce = 0; // Default: no grouping (subclasses override)
   static separationForce = 0; // Default: no separation (subclasses override)
-
+  static separationRadius = 30;
+  static separationRadiusSq = this.separationRadius * this.separationRadius;
   // Damage resistance (static - same for all Person instances)
   static resistance = 0.5;
 
@@ -190,10 +191,8 @@ export class Person extends Lootable {
     const neighborCount = this.neighborCount;
     const myX = this.x;
     const myY = this.y;
-    const radius = this.collider.radius;
-    const separationRadius = 3 * radius;
-    const separationRadiusSq = separationRadius * separationRadius;
-    const myIndex = this.index;
+
+    const separationRadiusSq = this.constructor.separationRadiusSq;
 
     let myTeamAvgX = 0;
     let myTeamAvgY = 0;
