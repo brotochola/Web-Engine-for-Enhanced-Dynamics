@@ -296,7 +296,7 @@ export class PredatorScene extends WEED.Scene {
     // this.spawnTrees(this.numberOfTrees);
     this.spawnBarrels(this.numberOfBarrels);
     // this.spawnRocks(this.numberOfRocks);
-    this.spawnMySoldiers(2500);
+    this.spawnMySoldiers(250);
     this.spawnDestination();
     // this.spawnRocksTreesAndHouses();
   }
@@ -476,6 +476,9 @@ export class PredatorScene extends WEED.Scene {
         alpha: 0.7 + this.rng() * 0.3,
         anchorX: 0.5,
         anchorY: 1.0, // Bottom anchor for grass
+        sway: true,
+        swayAmplitude: 0.05 + Math.random() * 0.05,
+        swayFrequency: 1 + Math.random(),
       });
     }
   }

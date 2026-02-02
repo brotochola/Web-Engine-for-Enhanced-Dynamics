@@ -24,6 +24,11 @@ export class DecorationComponent extends Component {
 
     // === Visibility ===
     isItOnScreen: Uint8Array, // 0 = not on screen, 1 = on screen (set by culling)
+
+    // === Sway Animation ===
+    sway: Uint8Array, // 0 = no sway, 1 = sway enabled
+    swayAmplitude: Float32Array, // Rotation amplitude in radians (e.g., 0.025 ≈ 1.4°)
+    swayFrequency: Float32Array, // Speed multiplier (1.0 = normal, 0.5 = slow, 2.0 = fast)
   };
 
   // Static pool tracking (set during initialization)

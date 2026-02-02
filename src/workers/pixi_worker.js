@@ -427,6 +427,9 @@ class PixiRenderer extends AbstractWorker {
     this._shadowTransform = new PIXI.Matrix();
     this._lightingTransform = new PIXI.Matrix(); // NDC mesh doesn't really need it but good to have
 
+    // Decoration sway animation (grass/foliage movement)
+    this.swayTime = 0;
+
     // ========================================
     // LIGHT GLOW SPRITE SYSTEM
     // ========================================
@@ -1040,6 +1043,9 @@ class PixiRenderer extends AbstractWorker {
    * Update method called each frame (implementation of AbstractWorker.update)
    */
   update(deltaTime, dtRatio, resuming) {
+    // Accumulate time for decoration sway animation
+    this.swayTime += deltaTime;
+
     // Calculate interpolation alpha for smooth movement
     // When renderer FPS > physics FPS, alpha < 1.0 (smooth interpolation)
     let interpolationAlpha = 1.0;
@@ -2562,6 +2568,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const anchorY = DecorationComponent.anchorY;
     const isItOnScreen = DecorationComponent.isItOnScreen;
 
+    // Precompute sway base angle once per frame (not per decoration)
+    this._swayBaseAngle = this.swayTime * 0.002;
+
+    // Sway animation arrays
+    const sway = DecorationComponent.sway;
+    const swayAmplitude = DecorationComponent.swayAmplitude;
+    const swayFrequency = DecorationComponent.swayFrequency;
+
     let visibleDecorationCount = 0;
 
     for (let i = 0; i < this.maxDecorations; i++) {
@@ -2610,6 +2624,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       actualSprite.tint = tint[i];
       actualSprite.anchorX = anchorX[i];
       actualSprite.anchorY = anchorY[i];
+
+      // Sway animation: sine oscillation with per-decoration phase offset
+      // Only apply if sway is enabled for this decoration
+      if (sway[i]) {
+        actualSprite.rotation =
+          Math.sin(this._swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
+      } else {
+        actualSprite.rotation = 0;
+      }
 
       // Update texture if it changed
       // Note: tid >= 0 is valid (0 is a valid animation index)
