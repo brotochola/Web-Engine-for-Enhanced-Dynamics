@@ -684,19 +684,22 @@ class PhysicsWorker extends AbstractWorker {
         // Track collision resolved
         this.collisionsResolvedThisFrame++;
 
+        const eitherIsTrigger = isTrigger[i] || isTrigger[j];
+
         // SLEEPING OPTIMIZATION: Wake entities on collision
         // If either entity is sleeping, wake it up (collision means something is happening)
+        // NOTE: Do NOT wake up entities if either is a trigger (triggers are for events only)
         // Note: iSleeping and jSleeping are already computed above
-        if (iHasRigidBody && iSleeping) {
-          sleeping[i] = 0;
-          RigidBody.stillnessTime[i] = 0;
+        if (!eitherIsTrigger) {
+          if (iHasRigidBody && iSleeping) {
+            sleeping[i] = 0;
+            RigidBody.stillnessTime[i] = 0;
+          }
+          if (jHasRigidBody && jSleeping) {
+            sleeping[j] = 0;
+            RigidBody.stillnessTime[j] = 0;
+          }
         }
-        if (jHasRigidBody && jSleeping) {
-          sleeping[j] = 0;
-          RigidBody.stillnessTime[j] = 0;
-        }
-
-        const eitherIsTrigger = isTrigger[i] || isTrigger[j];
 
         // Apply physical response if neither is a trigger
         if (!eitherIsTrigger) {
