@@ -352,6 +352,26 @@ export function normalizeDirectionFast(dx, dy, result) {
 }
 
 /**
+ * Normalize a 2D direction vector using pre-calculated squared distance
+ * OPTIMIZED: Avoids recalculating dx² + dy² when you already have distSq
+ * Use this when you already have distSq from distanceSq2D or inline calculation
+ *
+ * @param {number} dx - X component
+ * @param {number} dy - Y component
+ * @param {number} distSq - Pre-calculated squared distance (dx² + dy²)
+ * @param {Object} result - Result object to mutate {x, y, length}
+ * @returns {Object} The result object with normalized x, y and original length
+ */
+export function normalizeDirectionFromDistSq(dx, dy, distSq, result) {
+  const length = Math.sqrt(distSq);
+  const invLength = 1 / length; // Single division, two multiplications (faster)
+  result.length = length;
+  result.x = dx * invLength;
+  result.y = dy * invLength;
+  return result;
+}
+
+/**
  * Get normalized direction from point A to point B
  * Convenience wrapper for normalizeDirection
  *

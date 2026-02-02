@@ -633,7 +633,7 @@ export class GameObject {
     const i = this.index;
     const dx = x - Transform.x[i];
     const dy = y - Transform.y[i];
-    const distSq = distanceSq2D(Transform.x[i], Transform.y[i], x, y);
+    const distSq = dx * dx + dy * dy; // OPTIMIZED: Inline calculation (already have dx, dy)
     if (distSq > 0) {
       const invDist = acc / Math.sqrt(distSq);
       return this.addAcceleration(dx * invDist, dy * invDist);

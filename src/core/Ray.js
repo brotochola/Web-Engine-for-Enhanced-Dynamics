@@ -95,16 +95,19 @@ export class Ray {
     // Calculate ray direction and length
     const dx = xTo - xFrom;
     const dy = yTo - yFrom;
-    const rayLength = Math.sqrt(dx * dx + dy * dy);
+    const distSq = dx * dx + dy * dy; // OPTIMIZED: Calculate distSq first for early exit check
 
-    // Early exit if ray is too short or too long
-    if (rayLength === 0 || rayLength > maxDist) {
+    // Early exit if ray is too short or too long (avoid sqrt if possible)
+    if (distSq === 0 || (maxDist !== Infinity && distSq > maxDist * maxDist)) {
       // Still log debug data for miss
       if (Ray._isDebugEnabled()) {
         Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, xTo, yTo, false);
       }
       return -1;
     }
+
+    // Calculate length only if we pass the early exit (OPTIMIZED: avoid sqrt in early exit path)
+    const rayLength = Math.sqrt(distSq);
 
     // Normalize direction
     const dirX = dx / rayLength;
@@ -253,15 +256,18 @@ export class Ray {
     // Calculate ray direction and length
     const dx = xTo - xFrom;
     const dy = yTo - yFrom;
-    const rayLength = Math.sqrt(dx * dx + dy * dy);
+    const distSq = dx * dx + dy * dy; // OPTIMIZED: Calculate distSq first for early exit check
 
-    // Early exit if ray is too short or too long
-    if (rayLength === 0 || rayLength > maxDist) {
+    // Early exit if ray is too short or too long (avoid sqrt if possible)
+    if (distSq === 0 || (maxDist !== Infinity && distSq > maxDist * maxDist)) {
       if (Ray._isDebugEnabled()) {
         Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, xTo, yTo, false);
       }
       return info;
     }
+
+    // Calculate length only if we pass the early exit (OPTIMIZED: avoid sqrt in early exit path)
+    const rayLength = Math.sqrt(distSq);
 
     // Normalize direction
     const dirX = dx / rayLength;
@@ -316,11 +322,14 @@ export class Ray {
 
     const dx = x2 - x1;
     const dy = y2 - y1;
-    const rayLength = Math.sqrt(dx * dx + dy * dy);
+    const distSq = dx * dx + dy * dy; // OPTIMIZED: Calculate distSq first
 
-    if (rayLength === 0) {
+    if (distSq === 0) {
       return result;
     }
+
+    // Calculate length only if we pass the early exit (OPTIMIZED: avoid sqrt in early exit path)
+    const rayLength = Math.sqrt(distSq);
 
     const dirX = dx / rayLength;
     const dirY = dy / rayLength;
@@ -435,11 +444,15 @@ export class Ray {
 
     const dx = xTo - xFrom;
     const dy = yTo - yFrom;
-    const rayLength = Math.sqrt(dx * dx + dy * dy);
+    const distSq = dx * dx + dy * dy; // OPTIMIZED: Calculate distSq first for early exit check
 
-    if (rayLength === 0 || rayLength > maxDist) {
+    // Early exit if ray is too short or too long (avoid sqrt if possible)
+    if (distSq === 0 || (maxDist !== Infinity && distSq > maxDist * maxDist)) {
       return Ray._tempHitsArray;
     }
+
+    // Calculate length only if we pass the early exit (OPTIMIZED: avoid sqrt in early exit path)
+    const rayLength = Math.sqrt(distSq);
 
     const dirX = dx / rayLength;
     const dirY = dy / rayLength;
