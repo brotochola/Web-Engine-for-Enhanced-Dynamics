@@ -97,6 +97,9 @@ export class PredatorScene extends WEED.Scene {
       collisionResponseStrength: 0.9,
       verletDamping: 0.99,
       gravity: { x: 0, y: 0 },
+      sleepThreshold: 0.133,
+      wakeUpThreshold: 0.2,
+      sleepDuration: 20,
     },
 
     renderer: {
