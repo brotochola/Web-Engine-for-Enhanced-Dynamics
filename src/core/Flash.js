@@ -32,8 +32,7 @@ export class Flash extends GameObject {
     this.maxFlashes = maxFlashes;
     this.initialized = true;
     console.log(
-      `⚡ Flash: Initialized with ${maxFlashes} flashes (indices ${
-        this.startIndex
+      `⚡ Flash: Initialized with ${maxFlashes} flashes (indices ${this.startIndex
       }-${this.startIndex + maxFlashes - 1})`
     );
   }
@@ -170,13 +169,15 @@ export class Flash extends GameObject {
     // Set flash component properties
     this.flashComponent.lifespan = spawnConfig.lifespan ?? 100;
     this.flashComponent.currentLife = 0;
-    this.flashComponent.initialIntensity = spawnConfig.intensity ?? 10000;
+    const intensity = spawnConfig.intensity ?? 10000;
+    this.flashComponent.initialIntensity = intensity;
     this.flashComponent.active = 1;
 
     // Set collider for spatial grid (needed for shadow casting via neighbor system)
     this.collider.active = 1;
     this.collider.radius = 0; // 0 radius - just need to be in the grid
-    this.collider.visualRange = Math.sqrt(this.flashComponent.initialIntensity);
+    // OPTIMIZED: Calculate sqrt once when intensity is set, not every frame
+    this.collider.visualRange = Math.sqrt(intensity);
     this.collider.isTrigger = 1;
   }
 

@@ -577,6 +577,7 @@ class ParticleWorker extends AbstractWorker {
     const transformActive = Transform.active;
     const lightActive = LightEmitter.active;
     const lightIntensity = LightEmitter.lightIntensity;
+    const squaredLightIntensity = LightEmitter.squaredLightIntensity; // OPTIMIZED: Pre-calculated sqrt(intensity)
 
     const startIndex = this.flashStartIndex;
     const endIndex = startIndex + this.maxFlashes;
@@ -610,7 +611,10 @@ class ParticleWorker extends AbstractWorker {
       } else {
         // Update light intensity based on remaining life
         // Linear fade from initialIntensity to 0
-        lightIntensity[entityIndex] = initialIntensity[entityIndex] * remaining;
+        const newIntensity = initialIntensity[entityIndex] * remaining;
+        lightIntensity[entityIndex] = newIntensity;
+        // OPTIMIZED: Also update cached sqrt(intensity) to avoid recalculating every frame
+        squaredLightIntensity[entityIndex] = Math.sqrt(newIntensity);
       }
     }
 
@@ -1406,8 +1410,11 @@ class ParticleWorker extends AbstractWorker {
 
         const casterHeight = entityShadowHeight[neighborIdx] || casterRadius;
 
-        const lightDx = casterX - lightX;
-        const lightDy = casterY - lightY;
+        // BUGFIX: Use collider positions for direction vector to match distSq calculation
+        // distSq is calculated from collider positions (lightXWithOffset, neighborX)
+        // so lightDx/lightDy must also use collider positions for correct normalization
+        const lightDx = neighborX - lightXWithOffset;
+        const lightDy = neighborY - lightYWithOffset;
         const dist = Math.sqrt(distSq);
         const invDist = 1 / dist;
         const dirX = lightDx * invDist;
