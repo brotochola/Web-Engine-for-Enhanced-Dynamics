@@ -44,6 +44,7 @@ class PhysicsWorker extends AbstractWorker {
 
     // Physics worker doesn't create GameObject instances (but has access to all components)
     this.needsGameScripts = false;
+    this.rigidBodyCount = 0
 
     // Runtime physics settings (will be filled from Scene config)
     this.settings = null;
@@ -108,6 +109,11 @@ class PhysicsWorker extends AbstractWorker {
     this.collisionChecksThisFrame = 0;
     this.collisionsResolvedThisFrame = 0;
     this.collisionPairsThisFrame = 0;
+
+    // OPTIMIZATION: Cache query results per frame to avoid repeated calls
+    // These queries are cached by the query system, but accessing them once is still faster
+    this._cachedPhysicsEntities = null;
+    this._cachedColliderEntities = null;
 
     if (this.noLimitFPS && this.settings.subStepCount > 1) {
       // Fixed timestep mode: accumulate time and run physics at fixed intervals
@@ -190,18 +196,22 @@ class PhysicsWorker extends AbstractWorker {
     const offsetX = Collider.offsetX;
     const offsetY = Collider.offsetY;
 
-    // Get world bounds for boundary constraints
-    const worldWidth = this.config.worldWidth;
-    const worldHeight = this.config.worldHeight;
+    // // Get world bounds for boundary constraints
+    // const worldWidth = this.config.worldWidth;
+    // const worldHeight = this.config.worldHeight;
 
     // Get the number of entities with RigidBody (not all entities have physics)
     // const rigidBodyCount = this.globalEntityCount;
 
     // OPTIMIZATION: Use query system to reset collision counters only for physics entities
-    const physicsEntities = this.query([RigidBody]);
-    const rigidBodyCount = physicsEntities.length;
+    // Cache query result to avoid repeated calls in the same frame
+    if (!this._cachedPhysicsEntities) {
+      this._cachedPhysicsEntities = this.query([RigidBody]);
+    }
+    const physicsEntities = this._cachedPhysicsEntities;
+    this.rigidBodyCount = physicsEntities.length;
 
-    for (let idx = 0; idx < rigidBodyCount; idx++) {
+    for (let idx = 0; idx < this.rigidBodyCount; idx++) {
       const i = physicsEntities[idx];
       collisionCount[i] = 0;
     }
@@ -224,13 +234,12 @@ class PhysicsWorker extends AbstractWorker {
       dtRatio,
       gx,
       gy,
-      maxVel,
-      rigidBodyCount
+      maxVel
     );
 
     // Step 2: Apply constraints (collisions, boundary) with sub-stepping
     for (let step = 0; step < this.settings.subStepCount; step++) {
-      this.applyConstraintsVerlet(
+      this.resolveCollisionsVerlet(
         active,
         rigidBodyActive,
         colliderActive,
@@ -243,11 +252,26 @@ class PhysicsWorker extends AbstractWorker {
         width,
         height,
         isTrigger,
-        collisionCount,
-        worldWidth,
-        worldHeight,
-        rigidBodyCount
+        collisionCount
       );
+      // this.applyConstraintsVerlet(
+      //   active,
+      //   rigidBodyActive,
+      //   colliderActive,
+      //   x,
+      //   y,
+      //   offsetX,
+      //   offsetY,
+      //   shapeType,
+      //   radius,
+      //   width,
+      //   height,
+      //   isTrigger,
+      //   collisionCount,
+      //   worldWidth,
+      //   worldHeight,
+      //   rigidBodyCount
+      // );
     }
   }
 
@@ -283,16 +307,20 @@ class PhysicsWorker extends AbstractWorker {
     const offsetX = Collider.offsetX;
     const offsetY = Collider.offsetY;
 
-    // Get world bounds for boundary constraints
-    const worldWidth = this.config.worldWidth;
-    const worldHeight = this.config.worldHeight;
+    // // Get world bounds for boundary constraints
+    // const worldWidth = this.config.worldWidth;
+    // const worldHeight = this.config.worldHeight;
 
     // Get the number of entities with RigidBody
     // const rigidBodyCount = RigidBody.px?.length || 0;
 
     // OPTIMIZATION: Use query system to reset collision counters only for physics entities
     // Note: In fixed step mode, we reset per-step to avoid accumulation issues
-    const physicsEntities = this.query([RigidBody, Transform]);
+    // Cache query result to avoid repeated calls in the same frame
+    if (!this._cachedPhysicsEntities) {
+      this._cachedPhysicsEntities = this.query([RigidBody]);
+    }
+    const physicsEntities = this._cachedPhysicsEntities;
     const rigidBodyCount = physicsEntities.length;
     for (let idx = 0; idx < rigidBodyCount; idx++) {
       const i = physicsEntities[idx];
@@ -317,12 +345,11 @@ class PhysicsWorker extends AbstractWorker {
       fixedDtRatio,
       gx,
       gy,
-      maxVel,
-      rigidBodyCount
+      maxVel
     );
 
     // Step 2: Apply constraints ONCE per fixed step (substepping is handled by accumulator)
-    this.applyConstraintsVerlet(
+    this.resolveCollisionsVerlet(
       active,
       rigidBodyActive,
       colliderActive,
@@ -335,11 +362,9 @@ class PhysicsWorker extends AbstractWorker {
       width,
       height,
       isTrigger,
-      collisionCount,
-      worldWidth,
-      worldHeight,
-      rigidBodyCount
+      collisionCount
     );
+
   }
 
   /**
@@ -378,7 +403,7 @@ class PhysicsWorker extends AbstractWorker {
 
     // OPTIMIZATION: Use query system to get only entities with RigidBody component
     // This skips entities without physics (houses, decorations, etc.)
-    const physicsEntities = this.query([RigidBody, Transform]);
+    const physicsEntities = this.query([RigidBody]);
 
     for (let idx = 0; idx < physicsEntities.length; idx++) {
       const i = physicsEntities[idx];
@@ -489,123 +514,6 @@ class PhysicsWorker extends AbstractWorker {
   }
 
   /**
-   * Apply constraints: boundary constraints and collision resolution
-   * Now handles both circles and boxes for boundary checks
-   */
-  applyConstraintsVerlet(
-    active,
-    rigidBodyActive,
-    colliderActive,
-    x,
-    y,
-    offsetX,
-    offsetY,
-    shapeType,
-    radius,
-    width,
-    height,
-    isTrigger,
-    collisionCount,
-    worldWidth,
-    worldHeight,
-    rigidBodyCount
-  ) {
-    const px = RigidBody.px;
-    const py = RigidBody.py;
-    const boundaryElasticity = this.settings.boundaryElasticity;
-    const isStatic = RigidBody.static;
-
-    // STEP 1: Apply collision constraints FIRST using spatial grid
-    // This allows entities to push each other around before boundary clamping
-    if (this.neighborData) {
-      this.resolveCollisionsVerlet(
-        active,
-        rigidBodyActive,
-        colliderActive,
-        x,
-        y,
-        offsetX,
-        offsetY,
-        shapeType,
-        radius,
-        width,
-        height,
-        isTrigger,
-        collisionCount,
-        rigidBodyCount
-      );
-    }
-
-    // STEP 2: Apply boundary constraints AFTER collisions
-    // This ensures collision resolution can't push entities outside world bounds
-    // (Previously boundaries were applied first, then collisions could push entities
-    // back into the floor, causing vibration)
-    for (let i = 0; i < rigidBodyCount; i++) {
-      if (!active[i] || !rigidBodyActive[i]) continue;
-      if (isStatic[i]) continue;
-
-      // Get entity bounds based on shape type
-      let halfW, halfH;
-      if (shapeType[i] === SHAPE_BOX) {
-        halfW = width[i] * 0.5;
-        halfH = height[i] * 0.5;
-      } else {
-        // Circle: use radius for both
-        halfW = radius[i];
-        halfH = radius[i];
-      }
-
-      // Get collider offset (default to 0 if not set)
-      const offX = offsetX[i] || 0;
-      const offY = offsetY[i] || 0;
-
-      // Left boundary (collider center + offset must stay within bounds)
-      if (x[i] + offX < halfW) {
-        x[i] = halfW - offX;
-        // DEFENSIVE: Validate px before using in calculation to prevent NaN propagation
-        if (!isNaN(px[i])) {
-          px[i] = x[i] + (x[i] - px[i]) * boundaryElasticity;
-        } else {
-          px[i] = x[i];
-        }
-      }
-
-      // Right boundary
-      if (x[i] + offX > worldWidth - halfW) {
-        x[i] = worldWidth - halfW - offX;
-        // DEFENSIVE: Validate px before using in calculation to prevent NaN propagation
-        if (!isNaN(px[i])) {
-          px[i] = x[i] + (x[i] - px[i]) * boundaryElasticity;
-        } else {
-          px[i] = x[i];
-        }
-      }
-
-      // Top boundary
-      if (y[i] + offY < halfH) {
-        y[i] = halfH - offY;
-        // DEFENSIVE: Validate py before using in calculation to prevent NaN propagation
-        if (!isNaN(py[i])) {
-          py[i] = y[i] + (y[i] - py[i]) * boundaryElasticity;
-        } else {
-          py[i] = y[i];
-        }
-      }
-
-      // Bottom boundary
-      if (y[i] + offY > worldHeight - halfH) {
-        y[i] = worldHeight - halfH - offY;
-        // DEFENSIVE: Validate py before using in calculation to prevent NaN propagation
-        if (!isNaN(py[i])) {
-          py[i] = y[i] + (y[i] - py[i]) * boundaryElasticity;
-        } else {
-          py[i] = y[i];
-        }
-      }
-    }
-  }
-
-  /**
    * Resolve collisions - routes to appropriate handler based on shape types
    */
   resolveCollisionsVerlet(
@@ -621,8 +529,7 @@ class PhysicsWorker extends AbstractWorker {
     width,
     height,
     isTrigger,
-    collisionCount,
-    rigidBodyCount
+    collisionCount
   ) {
     const responseStrength = this.settings.collisionResponseStrength;
     const isStatic = RigidBody.static;
@@ -637,7 +544,23 @@ class PhysicsWorker extends AbstractWorker {
     const stride = Grid._stride;
     const visualRange = Collider.visualRange;
 
-    for (let i = 0; i < this.globalEntityCount; i++) {
+    const rigidBodyCount = this.rigidBodyCount;
+
+    // OPTIMIZATION: Query for entities with Collider component instead of iterating all entities
+    // Cache query result to avoid repeated calls in the same frame
+    if (!this._cachedColliderEntities) {
+      this._cachedColliderEntities = this.query([Collider]);
+    }
+    const colliderEntities = this._cachedColliderEntities;
+    const colliderCount = colliderEntities.length;
+
+    // Cache sleeping array reference for performance
+    const sleeping = RigidBody.sleeping;
+
+    for (let idx = 0; idx < colliderCount; idx++) {
+      const i = colliderEntities[idx];
+      //If the Entity is sleeping, skip the collision resolution :D
+      //This is a key performance optimization
       if (!active[i] || !colliderActive[i]) continue;
 
       // Direct array access (no method call overhead)
@@ -658,12 +581,35 @@ class PhysicsWorker extends AbstractWorker {
       // NOTE: colliderX_i / colliderY_i CANNOT be hoisted because x[i]/y[i]
       // change during the loop as collisions are resolved!
 
+      // OPTIMIZATION: Cache entity i's static and sleeping state outside the loop
+      const iHasRigidBody = rigidBodyActive[i];
+      const iStatic = !iHasRigidBody || isStatic[i];
+      const iSleeping = iHasRigidBody && sleeping[i];
+
       for (let n = 0; n < neighborCount; n++) {
         const j = neighborData[offset + 1 + n];
 
         if (i === j || !active[j] || !colliderActive[j]) continue;
         // Only process each pair once, but always process if j can't see (static obstacle with visualRange=0)
         if (i >= j && visualRange[j] > 0) continue;
+
+        // OPTIMIZATION: Skip collision checks between two static entities
+        // Static entities never move, so collisions between them are already resolved and won't change
+        const jHasRigidBody = rigidBodyActive[j];
+        const jStatic = !jHasRigidBody || isStatic[j];
+        if (iStatic && jStatic) {
+          // Both are static - skip collision check entirely
+          continue;
+        }
+
+        // OPTIMIZATION: Skip collision checks between two sleeping entities
+        // Sleeping entities won't move, so no collision resolution needed
+        // However, we still need to check sleeping vs awake to wake them up
+        const jSleeping = jHasRigidBody && sleeping[j];
+        if (iSleeping && jSleeping) {
+          // Both are sleeping - skip collision check (they won't move)
+          continue;
+        }
 
         // Track collision check
         this.collisionChecksThisFrame++;
@@ -740,12 +686,12 @@ class PhysicsWorker extends AbstractWorker {
 
         // SLEEPING OPTIMIZATION: Wake entities on collision
         // If either entity is sleeping, wake it up (collision means something is happening)
-        const sleeping = RigidBody.sleeping;
-        // if (rigidBodyActive[i] && sleeping[i]) {
-        //   sleeping[i] = 0;
-        //   RigidBody.stillnessTime[i] = 0;
-        // }
-        if (rigidBodyActive[j] && sleeping[j]) {
+        // Note: iSleeping and jSleeping are already computed above
+        if (iHasRigidBody && iSleeping) {
+          sleeping[i] = 0;
+          RigidBody.stillnessTime[i] = 0;
+        }
+        if (jHasRigidBody && jSleeping) {
           sleeping[j] = 0;
           RigidBody.stillnessTime[j] = 0;
         }
@@ -754,11 +700,8 @@ class PhysicsWorker extends AbstractWorker {
 
         // Apply physical response if neither is a trigger
         if (!eitherIsTrigger) {
-          // Entities without RigidBody component should act as static
-          const iHasRigidBody = rigidBodyActive[i];
-          const jHasRigidBody = rigidBodyActive[j];
-          const iStatic = !iHasRigidBody || isStatic[i];
-          const jStatic = !jHasRigidBody || isStatic[j];
+          // OPTIMIZATION: iStatic and jStatic are already computed above
+          // No need to recompute them here
 
           const correction = result.depth * responseStrength;
           const nx = result.nx;

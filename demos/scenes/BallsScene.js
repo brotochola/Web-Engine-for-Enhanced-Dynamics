@@ -2,6 +2,7 @@
 // Demonstrates balls with physics, gravity, and collision
 
 import { Ball } from '/demos/gameObjects/ball.js';
+import { Floor } from '/demos/gameObjects/floor.js';
 
 import WEED from '/src/index.js';
 const { Scene, Camera, Mouse } = WEED;
@@ -45,6 +46,9 @@ export class BallsScene extends Scene {
       boundaryElasticity: 0,
       collisionResponseStrength: 0.66,
       gravity: { x: 0, y: 0.5 },
+      sleepThreshold: 0.5,
+      wakeUpThreshold: 0.5,
+      sleepDuration: 10,
     },
 
     renderer: {
@@ -72,6 +76,7 @@ export class BallsScene extends Scene {
 
   static entities = [
     [Ball, 10000], // Pre-allocate pool for 10000 balls
+    [Floor, 10], // Pre-allocate pool for floor and walls
   ];
 
   // ========================================
@@ -91,6 +96,10 @@ export class BallsScene extends Scene {
   }
 
   create() {
+    // Spawn floor and walls first (static colliders)
+    console.log('🎬 BallsScene: Spawning floor and walls...');
+    this.spawnFloorAndWalls();
+
     // Spawn initial entities
     console.log('🎬 BallsScene: Spawning balls...');
 
@@ -135,6 +144,44 @@ export class BallsScene extends Scene {
   // ========================================
   // SPAWNING HELPERS
   // ========================================
+
+  spawnFloorAndWalls() {
+    const wallThickness = 100; // Thickness of walls and floor
+    const worldWidth = this.config.worldWidth;
+    const worldHeight = this.config.worldHeight;
+
+    // Floor - at the bottom
+    this.spawnEntity(Floor, {
+      x: worldWidth / 2,
+      y: worldHeight - wallThickness / 2 - wallThickness * 3,
+      width: worldWidth,
+      height: wallThickness,
+    });
+
+    // Top wall
+    this.spawnEntity(Floor, {
+      x: worldWidth / 2,
+      y: wallThickness / 2,
+      width: worldWidth,
+      height: wallThickness,
+    });
+
+    // Left wall
+    this.spawnEntity(Floor, {
+      x: wallThickness / 2,
+      y: worldHeight / 2,
+      width: wallThickness,
+      height: worldHeight,
+    });
+
+    // Right wall
+    this.spawnEntity(Floor, {
+      x: worldWidth - wallThickness / 2,
+      y: worldHeight / 2,
+      width: wallThickness,
+      height: worldHeight,
+    });
+  }
 
   spawnBalls(count) {
     for (let i = 0; i < count; i++) {
