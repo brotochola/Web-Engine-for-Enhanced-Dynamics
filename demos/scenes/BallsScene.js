@@ -146,7 +146,7 @@ export class BallsScene extends Scene {
   // ========================================
 
   spawnFloorAndWalls() {
-    const wallThickness = 100; // Thickness of walls and floor
+    const wallThickness = 150; // Thickness of walls and floor
     const worldWidth = this.config.worldWidth;
     const worldHeight = this.config.worldHeight;
 
@@ -185,12 +185,15 @@ export class BallsScene extends Scene {
 
   spawnBalls(count) {
     for (let i = 0; i < count; i++) {
-      this.spawnEntity(Ball, {
-        x: this.rng() * this.config.worldWidth,
-        y: this.rng() * this.config.worldHeight,
-        vx: 0,
-        vy: 0,
-      });
+      setTimeout(() => {
+        this.spawnEntity(Ball, {
+          x: 0.2 * this.config.worldWidth + this.rng() * this.config.worldWidth * 0.6,
+          y: 0.2 * this.config.worldHeight + this.rng() * this.config.worldHeight * 0.6,
+          vx: 0,
+          vy: 0,
+        });
+      }, i)
+
     }
   }
 

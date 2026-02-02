@@ -1,3 +1,15 @@
+[2:58 a.m., 1/2/2026] Facundo: Neighbours como linked list
+
+[4:06 a.m., 1/2/2026] Facundo: Pool de instancias por clase? Ya q no guardan datos...
+
+[4:28 a.m., 1/2/2026] Facundo: Mover decorations por gpu?
+
+
+--------------
+
+
+
+
 
 
 -------------
@@ -107,6 +119,8 @@ TENER AMBOS! y se puede desde tickall llamar a sistemas, q tmb son metodos estat
 ------------------------------------------------------------------------------------------------
 
 
+- Si el spatial worker ya tiene la forma q dan las celdas vecinas, segun visual_range.. podriamos no calcular las distancias cuadradas (esto da re mejora de fps); el tema es que son mas vecinos para el physics. Podriamos hacer q el algoritmo "generateSymmetricalCirclePattern" agarre solo a las celdas q estan totalmente dentro del circulo, incrementar el visual range de las entidades... pero igual daba errores y el physics iba mas lento (q calcular distSq en el spatial)
+
 ------------------------------------------------------------------------------------------------
 --- NAV WORKER: ---
 ------------------------------------------------------------------------------------------------
@@ -131,6 +145,10 @@ TENER AMBOS! y se puede desde tickall llamar a sistemas, q tmb son metodos estat
 ------------------------------------------------------------------------------------------------
 --- PHYSICS WORKER: ---
 ------------------------------------------------------------------------------------------------
+
+
+Estoy chequeando colisiones contra todos los vecinos!
+no solo contra los q podrian colisionar! eso es broadPhase!
 
 
 
