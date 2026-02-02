@@ -561,6 +561,9 @@ class ParticleWorker extends AbstractWorker {
     // Update derived properties (speed, velocityAngle) for RigidBody entities
     this.updateDerivedProperties();
 
+    // Update cell sleeping states based on entity sleeping/static states
+    this.updateCellSleepingStates();
+
     // Update screen visibility for all decorations
     this.updateDecorationScreenVisibility(cameraBounds);
 
@@ -1716,6 +1719,111 @@ class ParticleWorker extends AbstractWorker {
       lightEnabled: LightEmitter.active,
       lightCount: this.globalEntityCount,
     };
+  }
+
+  /**
+   * Update cell sleeping states based on entity sleeping/static states
+   *
+   * PERFORMANCE OPTIMIZED:
+   * - Only checks cells that have entities (skips empty cells)
+   * - Uses direct buffer access for maximum speed
+   * - Caches component array references to avoid property lookups
+   * - Early exit when any awake entity is found
+   *
+   * LOGIC:
+   * - A cell is sleeping if ALL entities in it are either:
+   *   1. Have RigidBody and are sleeping (RigidBody.sleeping === 1)
+   *   2. Have RigidBody and are static (RigidBody.static === 1)
+   *   3. Have Collider but no RigidBody (static decorations - count as sleeping)
+   * - A cell is awake if ANY entity is:
+   *   1. Has RigidBody and is not sleeping and not static
+   *   2. Doesn't have RigidBody or Collider (treat as awake)
+   * - Empty cells are marked as awake (0)
+   */
+  updateCellSleepingStates() {
+    // Early exit if cell sleeping buffer not initialized
+    if (!Grid.cellSleepingData || Grid.totalCells === 0) return;
+
+    // PERFORMANCE: Cache component array references locally to avoid property lookups
+    // These are NOT copying data - they're caching references for faster access
+    const transformActive = Transform.active;
+    const rigidBodyActive = RigidBody.active;
+    const colliderActive = Collider.active;
+    const rigidBodySleeping = RigidBody.sleeping;
+    const rigidBodyStatic = RigidBody.static;
+
+    // PERFORMANCE: Cache grid arrays for direct access
+    // Note: Accessing private static properties directly for maximum performance
+    // These are safe to access as they're initialized before this method is called
+    const gridCounts = Grid._gridCounts;
+    const gridEntities = Grid._gridEntities;
+    const cellSleepingData = Grid.cellSleepingData;
+    const cellByteSize = Grid.cellByteSize;
+    const totalCells = Grid.totalCells;
+
+    // PERFORMANCE: Early exit if grid arrays not initialized
+    if (!gridCounts || !gridEntities) return;
+
+    // Iterate through all cells
+    for (let cellIndex = 0; cellIndex < totalCells; cellIndex++) {
+      // PERFORMANCE: Direct buffer access - calculate byte offset once
+      const byteOffset = cellIndex * cellByteSize;
+      const cellCount = gridCounts[byteOffset];
+
+      // PERFORMANCE: Skip empty cells (mark as awake, but don't write if already 0)
+      if (cellCount === 0) {
+        // Only write if not already awake (avoid unnecessary writes)
+        if (cellSleepingData[cellIndex] !== 0) {
+          cellSleepingData[cellIndex] = 0;
+        }
+        continue;
+      }
+
+      // PERFORMANCE: Direct buffer access for entity list
+      const cellEntityBase = (byteOffset >> 2) + 1; // Uint32 offset after count
+
+      // Check all entities in this cell
+      let allEntitiesSleeping = true;
+
+      for (let k = 0; k < cellCount; k++) {
+        const entityId = gridEntities[cellEntityBase + k];
+
+        // Skip inactive entities (they don't affect sleeping state)
+        if (!transformActive[entityId]) continue;
+
+        // Check if entity has RigidBody component
+        // NOTE: active arrays are Uint8, so check for === 1 explicitly
+        const hasRigidBody = rigidBodyActive && rigidBodyActive[entityId] === 1;
+        const hasCollider = colliderActive && colliderActive[entityId] === 1;
+
+        if (hasRigidBody) {
+          // Entity has RigidBody - check sleeping and static states
+          const isSleeping = rigidBodySleeping && rigidBodySleeping[entityId] === 1;
+          const isStatic = rigidBodyStatic && rigidBodyStatic[entityId] === 1;
+
+          // If entity is awake (not sleeping and not static), cell is awake
+          if (!isSleeping && !isStatic) {
+            allEntitiesSleeping = false;
+            break; // PERFORMANCE: Early exit - no need to check remaining entities
+          }
+        } else if (hasCollider) {
+          // Entity has Collider but no RigidBody (static decoration)
+          // Count as sleeping for cell sleeping calculation
+          // Continue checking other entities
+        } else {
+          // Entity has neither RigidBody nor Collider
+          // Treat as awake - cell must be awake
+          allEntitiesSleeping = false;
+          break; // PERFORMANCE: Early exit
+        }
+      }
+
+      // Write sleeping state (only if changed to avoid unnecessary writes)
+      const newSleepingState = allEntitiesSleeping ? 1 : 0;
+      if (cellSleepingData[cellIndex] !== newSleepingState) {
+        cellSleepingData[cellIndex] = newSleepingState;
+      }
+    }
   }
 
   /**

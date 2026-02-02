@@ -11,7 +11,7 @@ class Floor extends GameObject {
     static instances = []; // Instance tracking for this class
 
     // Define components this entity uses
-    static components = [RigidBody, Collider, SpriteRenderer];
+    static components = [Collider, SpriteRenderer];
 
     /**
      * LIFECYCLE: Configure this entity TYPE - runs ONCE per instance
@@ -19,7 +19,7 @@ class Floor extends GameObject {
      */
     setup() {
         // Floor is static - it doesn't move
-        this.rigidBody.static = 1;
+        // this.rigidBody.static = 1;
 
         // Set collider shape type to Box
         this.collider.shapeType = ShapeType.Box;

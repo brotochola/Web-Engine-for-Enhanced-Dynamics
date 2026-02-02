@@ -1020,6 +1020,13 @@ class Scene {
     const GRID_BUFFER_SIZE = totalCells * CELL_BYTE_SIZE;
     this.buffers.gridBuffer = new SharedArrayBuffer(GRID_BUFFER_SIZE);
 
+    // CELL SLEEPING STATE BUFFER: Tracks sleeping state per cell (0=awake, 1=sleeping)
+    // Written by particle_worker after physics updates, read by other workers for optimization
+    // Layout: One Uint8 per cell (0 = awake, 1 = sleeping)
+    // A cell is sleeping if ALL entities in it are either sleeping or static
+    const CELL_SLEEPING_BUFFER_SIZE = totalCells * 1; // 1 byte per cell
+    this.buffers.cellSleepingBuffer = new SharedArrayBuffer(CELL_SLEEPING_BUFFER_SIZE);
+
     // Pre-computed entity data: written by spatial workers during grid rebuild
     // Shared across all spatial workers for neighbor distance calculations
     const ENTITY_POS_SIZE = this.totalEntityCount * 4; // Float32Array
@@ -1044,6 +1051,7 @@ class Scene {
         gridBuffer: this.buffers.gridBuffer,
         neighborBuffer: this.buffers.neighborData,
         distanceBuffer: this.buffers.distanceData,
+        cellSleepingBuffer: this.buffers.cellSleepingBuffer,
       },
       {
         cellSize,
@@ -1417,6 +1425,8 @@ class Scene {
         componentData: this.buffers.componentData,
         // Spatial grid: SINGLE BUFFER with row-based partitioning
         gridBuffer: this.buffers.gridBuffer,
+        // Cell sleeping state buffer: written by particle_worker, read by all workers
+        cellSleepingBuffer: this.buffers.cellSleepingBuffer,
         entityPosX: this.buffers.entityPosX,
         entityPosY: this.buffers.entityPosY,
         entityHalfExtent: this.buffers.entityHalfExtent,
