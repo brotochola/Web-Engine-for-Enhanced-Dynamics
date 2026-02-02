@@ -2560,7 +2560,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const active = DecorationComponent.active;
     const x = DecorationComponent.x;
     const y = DecorationComponent.y;
-    const scale = DecorationComponent.scale;
+    const scaleX = DecorationComponent.scaleX;
+    const scaleY = DecorationComponent.scaleY;
+    const rotation = DecorationComponent.rotation;
     const alpha = DecorationComponent.alpha;
     const tint = DecorationComponent.tint;
     const textureId = DecorationComponent.textureId;
@@ -2617,21 +2619,20 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Update sprite properties from DecorationComponent
       actualSprite.x = x[i];
       actualSprite.y = y[i];
-      actualSprite.scaleX = scale[i];
-      actualSprite.scaleY = scale[i];
+      actualSprite.scaleX = scaleX[i];
+      actualSprite.scaleY = scaleY[i];
       // Apply zoom-based alpha multiplier (fade out at low zoom)
       actualSprite.alpha = alpha[i] * alphaMultiplier;
       actualSprite.tint = tint[i];
       actualSprite.anchorX = anchorX[i];
       actualSprite.anchorY = anchorY[i];
 
-      // Sway animation: sine oscillation with per-decoration phase offset
-      // Only apply if sway is enabled for this decoration
+      // Rotation: base rotation + sway animation (if enabled)
       if (sway[i]) {
         actualSprite.rotation =
-          Math.sin(this._swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
+          rotation[i] + Math.sin(this._swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
       } else {
-        actualSprite.rotation = 0;
+        actualSprite.rotation = rotation[i];
       }
 
       // Update texture if it changed

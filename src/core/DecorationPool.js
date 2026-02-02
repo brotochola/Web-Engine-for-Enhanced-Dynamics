@@ -57,7 +57,9 @@ export class DecorationPool {
    * @param {number|{min,max}} config.x - X position or range
    * @param {number|{min,max}} config.y - Y position or range
    * @param {string} config.texture - Texture name (from bigAtlas)
-   * @param {number|{min,max}} [config.scale=1] - Scale or range
+   * @param {number|{min,max}} [config.scaleX=1] - Scale X or range
+   * @param {number|{min,max}} [config.scaleY=1] - Scale Y or range
+   * @param {number} [config.rotation=0] - Rotation in radians
    * @param {number|{min,max}} [config.alpha=1] - Alpha (opacity) or range
    * @param {number} [config.tint=0xFFFFFF] - Color tint (0xRRGGBB)
    * @param {number} [config.anchorX=0.5] - Anchor X (0-1)
@@ -73,7 +75,8 @@ export class DecorationPool {
    *   x: rng() * worldWidth,
    *   y: rng() * worldHeight,
    *   texture: "grass3",
-   *   scale: { min: 0.8, max: 1.2 },
+   *   scaleX: { min: 0.8, max: 1.2 },
+   *   scaleY: { min: 0.8, max: 1.2 },
    *   anchorX: 0.5,
    *   anchorY: 1.0,
    * });
@@ -102,7 +105,9 @@ export class DecorationPool {
     // Cache array references for performance
     const x = DecorationComponent.x;
     const y = DecorationComponent.y;
-    const scale = DecorationComponent.scale;
+    const scaleX = DecorationComponent.scaleX;
+    const scaleY = DecorationComponent.scaleY;
+    const rotation = DecorationComponent.rotation;
     const alpha = DecorationComponent.alpha;
     const tint = DecorationComponent.tint;
     const anchorX = DecorationComponent.anchorX;
@@ -118,7 +123,10 @@ export class DecorationPool {
     y[i] = randomRange(config.y);
 
     // Visual properties
-    scale[i] = randomRange(config.scale, 1);
+    scaleX[i] = randomRange(config.scaleX, 1);
+    scaleY[i] = randomRange(config.scaleY, 1);
+
+    rotation[i] = config.rotation ?? 0;
     alpha[i] = randomRange(config.alpha, 1);
     tint[i] = config.tint ?? 0xffffff;
     anchorX[i] = config.anchorX ?? 0.5;
