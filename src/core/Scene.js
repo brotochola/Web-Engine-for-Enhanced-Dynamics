@@ -2258,6 +2258,111 @@ class Scene {
       type: 'none',
     });
   }
+
+  /**
+   * Get the total size of all SharedArrayBuffers used by the scene
+   * @param {boolean} includeBreakdown - If true, returns an object with total and breakdown by category
+   * @returns {number|object} Total size in bytes, or object with {total, breakdown} if includeBreakdown is true
+   */
+  getSharedBufferSize(includeBreakdown = false) {
+    if (!this.buffers) {
+      return includeBreakdown ? { total: 0, breakdown: {} } : 0;
+    }
+
+    let total = 0;
+    const breakdown = {};
+
+    // Helper to safely get buffer size
+    const getBufferSize = (buffer) => {
+      if (!buffer || !(buffer instanceof SharedArrayBuffer)) return 0;
+      return buffer.byteLength;
+    };
+
+    // Core entity buffers
+    breakdown.gameObjectData = getBufferSize(this.buffers.gameObjectData);
+    breakdown.neighborData = getBufferSize(this.buffers.neighborData);
+    breakdown.distanceData = getBufferSize(this.buffers.distanceData);
+    breakdown.collisionData = getBufferSize(this.buffers.collisionData);
+    breakdown.activeEntitiesData = getBufferSize(this.buffers.activeEntitiesData);
+
+    // Input and camera buffers
+    breakdown.inputData = getBufferSize(this.buffers.inputData);
+    breakdown.cameraData = getBufferSize(this.buffers.cameraData);
+    breakdown.mouseData = getBufferSize(this.buffers.mouseData);
+
+    // Synchronization and job queue buffers
+    breakdown.syncData = getBufferSize(this.buffers.syncData);
+    breakdown.jobQueueData = getBufferSize(this.buffers.jobQueueData);
+
+    // Debug buffers
+    breakdown.debugData = getBufferSize(this.buffers.debugData);
+    breakdown.raycastDebugData = getBufferSize(this.buffers.raycastDebugData);
+    breakdown.frameRateData = getBufferSize(this.buffers.frameRateData);
+
+    // Component buffers (nested object)
+    breakdown.componentData = {};
+    let componentDataTotal = 0;
+    if (this.buffers.componentData) {
+      for (const [componentName, componentBuffer] of Object.entries(this.buffers.componentData)) {
+        const size = getBufferSize(componentBuffer);
+        breakdown.componentData[componentName] = size;
+        componentDataTotal += size;
+      }
+    }
+    breakdown.componentDataTotal = componentDataTotal;
+
+    // Spatial grid buffers
+    breakdown.gridBuffer = getBufferSize(this.buffers.gridBuffer);
+    breakdown.entityPosX = getBufferSize(this.buffers.entityPosX);
+    breakdown.entityPosY = getBufferSize(this.buffers.entityPosY);
+    breakdown.entityHalfExtent = getBufferSize(this.buffers.entityHalfExtent);
+
+    // Worker stat buffers
+    breakdown.rendererStats = getBufferSize(this.buffers.rendererStats);
+    breakdown.particleStats = getBufferSize(this.buffers.particleStats);
+    breakdown.physicsStats = getBufferSize(this.buffers.physicsStats);
+    breakdown.spatialStats = getBufferSize(this.buffers.spatialStats);
+    breakdown.logicStats = getBufferSize(this.buffers.logicStats);
+
+    // Optional buffers
+    breakdown.nextTickData = getBufferSize(this.buffers.nextTickData);
+    breakdown.shadowSpriteData = getBufferSize(this.buffers.shadowSpriteData);
+    breakdown.bloodTilesRGBA = getBufferSize(this.buffers.bloodTilesRGBA);
+    breakdown.bloodTilesDirty = getBufferSize(this.buffers.bloodTilesDirty);
+    breakdown.navigationData = getBufferSize(this.buffers.navigationData);
+    breakdown.navigationStats = getBufferSize(this.buffers.navigationStats);
+    breakdown.decorationActiveCount = getBufferSize(this.buffers.decorationActiveCount);
+
+    // Calculate total
+    for (const value of Object.values(breakdown)) {
+      if (typeof value === 'number') {
+        total += value;
+      }
+    }
+
+    if (includeBreakdown) {
+      return {
+        total,
+        breakdown,
+        // Human-readable format
+        totalFormatted: this._formatBytes(total),
+      };
+    }
+
+    return total;
+  }
+
+  /**
+   * Format bytes to human-readable string
+   * @private
+   */
+  _formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+  }
 }
 
 export { Scene };

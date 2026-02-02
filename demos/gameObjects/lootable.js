@@ -2,13 +2,14 @@ import WEED from '/src/index.js';
 
 import { LootableComponent } from '../components/lootableComponent.js';
 import { DropMoney } from './dropMoney.js';
+import { randomColor } from '../../src/index.js';
 
 const { GameObject } = WEED;
 
 export class Lootable extends GameObject {
   // Auto-detected by GameEngine
   static scriptUrl = import.meta.url;
-
+  static resistance = 0.1
   static components = [LootableComponent];
 
   tick(dtRatio) {
@@ -34,5 +35,26 @@ export class Lootable extends GameObject {
     }
 
     // this.despawn()
+  }
+
+  emitSparks() {
+    const radius = this.collider.radius;
+    ParticleEmitter.emit({
+      count: Math.floor(Math.random() * radius) + radius * 0.5,
+      x: this.x + (Math.random() * radius - radius * 0.5),
+      y: this.y + (Math.random() * radius - radius * 0.5),
+      z: -radius - Math.random() * radius,
+      angleXY: { min: 0, max: 360 },
+      speed: { min: radius * 0.1, max: radius * 0.2 },
+      rotation: { min: 0, max: 360 },
+      vz: -Math.random() * 2 - 2,
+      gravity: 0.6,
+      lifespan: { min: 100, max: 300 },
+      scale: { min: 0.25, max: 0.5 },
+      texture: 'square',
+      tint: randomColor({ min: 0x00ffff, max: 0x00bbff }),
+      alpha: { min: 0.8, max: 1 },
+      stayOnTheFloor: false,
+    });
   }
 }
