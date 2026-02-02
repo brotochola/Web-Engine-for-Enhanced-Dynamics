@@ -32,7 +32,13 @@ import { Transform } from '../components/Transform.js';
 import { Collider } from '../components/Collider.js';
 import { AbstractWorker } from './AbstractWorker.js';
 import { Grid } from '../core/Grid.js';
-import { SPATIAL_STATS, createMultiWorkerStatsWriter } from './workers-utils.js';
+import {
+  SPATIAL_STATS,
+  createMultiWorkerStatsWriter,
+  getEntityCellRange,
+  areAllEntityCellsSleeping,
+  getEntityHomeCellIndex,
+} from './workers-utils.js';
 import { generateSymmetricalCirclePattern, distanceSq2D } from '../core/utils.js';
 
 /**
@@ -86,6 +92,10 @@ class SpatialWorker extends AbstractWorker {
     // Uint16Array since cell indices are always positive and < 65535
     this._cellNeighborCache = new Map();
     this._maxCellRadius = 12; // Support visual ranges up to ~1500px with cellSize=128
+
+    // Reusable scratch arrays for zero-allocation cell range calculations
+    // Layout: [minCol, maxCol, minRow, maxRow]
+    this._cellRangeScratch = new Int32Array(4);
 
     // Performance stats
     this.entitiesProcessedThisFrame = 0;
@@ -450,6 +460,9 @@ class SpatialWorker extends AbstractWorker {
     const gridCounts = Grid._gridCounts;
     const gridEntities = Grid._gridEntities;
 
+    // Cell sleeping state buffer (read-only, written by particle_worker)
+    const cellSleepingData = Grid.cellSleepingData;
+
     // O(1) duplicate detection for neighbor search (prevents counting same neighbor twice)
     const processedMarker = this.processedMarker;
     processedMarker.fill(-1); // Reset markers each frame
@@ -459,6 +472,9 @@ class SpatialWorker extends AbstractWorker {
 
     // Clamp helpers for home row calculation
     const maxRow = gridHeight - 1;
+
+    // Reusable scratch array for cell range calculations (zero allocation)
+    const cellRangeScratch = this._cellRangeScratch;
 
     // =========================================================================
     // Iterate through all owned cells
@@ -512,6 +528,36 @@ class SpatialWorker extends AbstractWorker {
             continue;
           }
 
+          // Calculate entity's half-extent for cell range calculation
+          const myHalfExtent = entityHalfExtent[entityA];
+          const myHalfW = myHalfExtent;
+          const myHalfH = myHalfExtent;
+
+          // Calculate which cells this entity spans (for sleeping cell optimization)
+          const hasValidCellRange = getEntityCellRange(
+            myX,
+            myY,
+            myHalfW,
+            myHalfH,
+            invCellSize,
+            gridWidth,
+            gridHeight,
+            cellRangeScratch
+          );
+
+          // Check if all cells entity spans are sleeping (only if cell sleeping data is available)
+          const allCellsSleeping =
+            cellSleepingData &&
+            hasValidCellRange &&
+            areAllEntityCellsSleeping(
+              cellRangeScratch[0], // minCol
+              cellRangeScratch[1], // maxCol
+              cellRangeScratch[2], // minRow
+              cellRangeScratch[3], // maxRow
+              gridWidth,
+              cellSleepingData
+            );
+
           // Calculate cell search radius (use Math.ceil for conservative pattern matching)
           const cellRadius = Math.ceil(myVisualRange * invCellSize);
 
@@ -525,61 +571,166 @@ class SpatialWorker extends AbstractWorker {
           const neighborCells = this._getNeighborCells(entityCellIndex, cellRadius, homeRow, homeCol);
           const neighborCellsLength = neighborCells.length;
 
+          // =================================================================
+          // OPTIMIZATION: Read-Modify-Write pattern for sleeping entities
+          // =================================================================
+          // If entity is in all sleeping cells:
+          // - Read previous frame's neighbor list
+          // - Keep neighbors from sleeping cells (they haven't moved)
+          // - Update neighbors from awake cells (they might have moved)
+          // =================================================================
           let neighborCount = 0;
 
-          // =================================================================
-          // Search neighboring cells using circle pattern (can read ANY cell)
-          // =================================================================
-          for (let i = 0; i < neighborCellsLength; i++) {
-            const checkCellIndex = neighborCells[i];
-            const checkByteOffset = checkCellIndex * Grid.cellByteSize;
-            const checkCellCount = gridCounts[checkByteOffset];
+          if (allCellsSleeping && cellSleepingData) {
+            // =============================================================
+            // SLEEPING ENTITY PATH: Selective neighbor update
+            // =============================================================
+            // Read previous frame's neighbor list
+            const previousNeighborCount = neighborData[neighborOffset];
+            const previousNeighborBase = neighborOffset + 1;
 
-            if (checkCellCount === 0) continue;
+            // Temporary array to build new neighbor list (reuse processedMarker for tracking)
+            // We'll write directly to neighborData, but need to track which neighbors we've added
+            // Use processedMarker to mark neighbors we've already added (entityB -> entityA means added)
 
-            this.cellsCheckedThisFrame++;
+            // First pass: Keep neighbors from sleeping cells
+            for (let prevIdx = 0; prevIdx < previousNeighborCount && neighborCount < maxNeighbors; prevIdx++) {
+              const prevNeighborId = neighborData[previousNeighborBase + prevIdx];
 
-            const checkEntityBase = (checkByteOffset >> 2) + 1;
+              // Skip if neighbor is inactive (despawned)
+              if (!active[prevNeighborId]) continue;
 
-            // Check all entities in this cell
-            for (let j = 0; j < checkCellCount; j++) {
-              const entityB = gridEntities[checkEntityBase + j];
+              // Get neighbor's home cell to check if it's sleeping
+              const neighborX = entityPosX[prevNeighborId];
+              const neighborY = entityPosY[prevNeighborId];
+              const neighborHomeCell = getEntityHomeCellIndex(
+                neighborX,
+                neighborY,
+                invCellSize,
+                gridWidth,
+                gridHeight
+              );
 
-              // Skip self
-              if (entityA === entityB) continue;
-
-              // O(1) duplicate check: multi-cell entities appear in multiple cells
-              if (processedMarker[entityB] === entityA) continue;
-              processedMarker[entityB] = entityA;
-
-              // Calculate squared distance for range check only (not stored)
-              const bX = entityPosX[entityB];
-              const bY = entityPosY[entityB];
-              const distSq = distanceSq2D(myX, myY, bX, bY);
-
-              // Early rejection: if distSq is 0, skip (same position)
-              if (distSq === 0) continue;
-
-              // Expand effective range by target's half-extent
-              const bHalfExtent = entityHalfExtent[entityB];
-              const effectiveRange = myVisualRange + bHalfExtent;
-              const effectiveRangeSq = effectiveRange * effectiveRange;
-
-              // Check if within range
-              if (distSq < effectiveRangeSq) {
-                // Write neighbor data (distance not stored - calculated on-demand by consumers)
-                const writeIdx = neighborOffset + 1 + neighborCount;
-                neighborData[writeIdx] = entityB;
-
+              // If neighbor's home cell is sleeping, keep it from previous frame
+              if (neighborHomeCell >= 0 && cellSleepingData[neighborHomeCell] === 1) {
+                // Mark as processed and add to new list
+                processedMarker[prevNeighborId] = entityA;
+                neighborData[neighborOffset + 1 + neighborCount] = prevNeighborId;
                 neighborCount++;
-                this.neighborsFoundThisFrame++;
-
-                // Stop at neighbor limit
-                if (neighborCount >= maxNeighbors) break;
               }
             }
 
-            if (neighborCount >= maxNeighbors) break;
+            // Second pass: Add/update neighbors from awake cells
+            for (let i = 0; i < neighborCellsLength; i++) {
+              const checkCellIndex = neighborCells[i];
+              const checkByteOffset = checkCellIndex * Grid.cellByteSize;
+              const checkCellCount = gridCounts[checkByteOffset];
+
+              if (checkCellCount === 0) continue;
+
+              // Skip neighbor cells that are sleeping (we already kept those from previous frame)
+              if (cellSleepingData[checkCellIndex] === 1) continue;
+
+              this.cellsCheckedThisFrame++;
+
+              const checkEntityBase = (checkByteOffset >> 2) + 1;
+
+              // Check all entities in this awake cell
+              for (let j = 0; j < checkCellCount; j++) {
+                const entityB = gridEntities[checkEntityBase + j];
+
+                // Skip self
+                if (entityA === entityB) continue;
+
+                // Skip if already added (from previous frame's sleeping neighbors)
+                if (processedMarker[entityB] === entityA) continue;
+                processedMarker[entityB] = entityA;
+
+                // Calculate squared distance for range check
+                const bX = entityPosX[entityB];
+                const bY = entityPosY[entityB];
+                const distSq = distanceSq2D(myX, myY, bX, bY);
+
+                // Early rejection: if distSq is 0, skip (same position)
+                if (distSq === 0) continue;
+
+                // Expand effective range by target's half-extent
+                const bHalfExtent = entityHalfExtent[entityB];
+                const effectiveRange = myVisualRange + bHalfExtent;
+                const effectiveRangeSq = effectiveRange * effectiveRange;
+
+                // Check if within range
+                if (distSq < effectiveRangeSq) {
+                  // Write neighbor data
+                  const writeIdx = neighborOffset + 1 + neighborCount;
+                  neighborData[writeIdx] = entityB;
+
+                  neighborCount++;
+                  this.neighborsFoundThisFrame++;
+
+                  // Stop at neighbor limit
+                  if (neighborCount >= maxNeighbors) break;
+                }
+              }
+
+              if (neighborCount >= maxNeighbors) break;
+            }
+          } else {
+            // =============================================================
+            // AWAKE ENTITY PATH: Full neighbor detection
+            // =============================================================
+            // Entity is in at least one awake cell, do full neighbor detection
+            for (let i = 0; i < neighborCellsLength; i++) {
+              const checkCellIndex = neighborCells[i];
+              const checkByteOffset = checkCellIndex * Grid.cellByteSize;
+              const checkCellCount = gridCounts[checkByteOffset];
+
+              if (checkCellCount === 0) continue;
+
+              this.cellsCheckedThisFrame++;
+
+              const checkEntityBase = (checkByteOffset >> 2) + 1;
+
+              // Check all entities in this cell
+              for (let j = 0; j < checkCellCount; j++) {
+                const entityB = gridEntities[checkEntityBase + j];
+
+                // Skip self
+                if (entityA === entityB) continue;
+
+                // O(1) duplicate check: multi-cell entities appear in multiple cells
+                if (processedMarker[entityB] === entityA) continue;
+                processedMarker[entityB] = entityA;
+
+                // Calculate squared distance for range check only (not stored)
+                const bX = entityPosX[entityB];
+                const bY = entityPosY[entityB];
+                const distSq = distanceSq2D(myX, myY, bX, bY);
+
+                // Early rejection: if distSq is 0, skip (same position)
+                if (distSq === 0) continue;
+
+                // Expand effective range by target's half-extent
+                const bHalfExtent = entityHalfExtent[entityB];
+                const effectiveRange = myVisualRange + bHalfExtent;
+                const effectiveRangeSq = effectiveRange * effectiveRange;
+
+                // Check if within range
+                if (distSq < effectiveRangeSq) {
+                  // Write neighbor data (distance not stored - calculated on-demand by consumers)
+                  const writeIdx = neighborOffset + 1 + neighborCount;
+                  neighborData[writeIdx] = entityB;
+
+                  neighborCount++;
+                  this.neighborsFoundThisFrame++;
+
+                  // Stop at neighbor limit
+                  if (neighborCount >= maxNeighbors) break;
+                }
+              }
+
+              if (neighborCount >= maxNeighbors) break;
+            }
           }
 
           // Write neighbor count
