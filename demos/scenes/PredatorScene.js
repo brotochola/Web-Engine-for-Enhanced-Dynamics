@@ -472,7 +472,8 @@ export class PredatorScene extends WEED.Scene {
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
         texture: 'grass' + grassType,
-        scale: scale,
+        scaleX: scale,
+        scaleY: scale,
         alpha: 0.7 + this.rng() * 0.3,
         anchorX: 0.5,
         anchorY: 1.0, // Bottom anchor for grass

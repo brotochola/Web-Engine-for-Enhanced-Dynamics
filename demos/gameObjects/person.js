@@ -17,6 +17,7 @@ import {
   Flash,
   getDirectionFromAngle,
   GameObject,
+  DecorationPool,
 } from '../../src/index.js';
 
 const { RigidBody, Collider, SpriteRenderer, ShadowCaster, Transform, rng } = WEED;
@@ -334,12 +335,42 @@ export class Person extends Lootable {
 
     this.setVelocity(this.vx * 0.5, this.vy * 0.5);
 
-    // this.rigidBody.friction = 0.5;
-
     // Face the target
     const targetX = Transform.x[targetEntityIndex];
     const targetY = Transform.y[targetEntityIndex];
+    const distance = Math.sqrt(PersonComponent.closestEnemyDistanceSq[this.index])
+
     const angle = Math.atan2(targetY - this.y, targetX - this.x) + HALF_PI;
+
+    // Calculate distance from shooter to target
+    const dx = targetX - this.x;
+    const dy = targetY - this.y;
+    // const distance = Math.sqrt(dx * dx + dy * dy);
+
+    // Spawn white line decoration from shooter to target
+    // _white texture is 8x8, so:
+    // - scaleX = distance / 8 (stretch horizontally to distance)
+    // - scaleY = 2 / 8 = 0.25 (make it 2px high)
+    // - rotation = angle to target (without HALF_PI offset for horizontal line)
+    // - anchorX = 0 (line starts at shooter position)
+    // - anchorY = 0.5 (center vertically)
+    const lineAngle = Math.atan2(dy, dx); // Angle for horizontal line (no HALF_PI offset)
+    const decorationIndex = DecorationPool.spawn({
+      x: this.x,
+      y: this.y - 30,
+      texture: '_white',
+      scaleX: distance / 8, // Stretch 8px texture to distance pixels
+      scaleY: 0.25, // Make it 2px high (2/8 = 0.25)
+      rotation: lineAngle,
+      alpha: 0.5,
+      anchorX: 0, // Start at shooter position
+      anchorY: 0.5, // Center vertically
+    });
+    setTimeout(() => {
+      DecorationPool.despawn(decorationIndex);
+    }, 50);
+
+    // this.rigidBody.friction = 0.5;
     const direction = getDirectionFromAngle(angle);
 
     const dirIndex = DIRECTION_NAMES.indexOf(direction);
@@ -371,6 +402,7 @@ export class Person extends Lootable {
         lifespan: 18,
         color: 0xffaa00,
         intensity: 15000,
+        hasGlowSprite: 0,
       });
 
     }, 30)

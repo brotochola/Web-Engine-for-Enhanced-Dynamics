@@ -16,7 +16,9 @@ export class DecorationComponent extends Component {
 
     // === Visuals ===
     textureId: Uint16Array, // Index into texture atlas (bigAtlas animation index)
-    scale: Float32Array, // Uniform scale
+    scaleX: Float32Array, // Scale X
+    scaleY: Float32Array, // Scale Y
+    rotation: Float32Array, // Base rotation in radians (sway animation adds to this)
     alpha: Float32Array, // Opacity (0-1)
     tint: Uint32Array, // Color tint (0xRRGGBB)
     anchorX: Float32Array, // Anchor X (0-1, default 0.5)
