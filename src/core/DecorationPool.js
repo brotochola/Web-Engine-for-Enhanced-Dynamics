@@ -36,8 +36,7 @@ export class DecorationPool {
     this.freeListTop = maxDecorations - 1;
 
     console.log(
-      `DecorationPool: Initialized with ${maxDecorations} decorations (indices 0-${
-        maxDecorations - 1
+      `DecorationPool: Initialized with ${maxDecorations} decorations (indices 0-${maxDecorations - 1
       })`
     );
   }
@@ -63,6 +62,9 @@ export class DecorationPool {
    * @param {number} [config.tint=0xFFFFFF] - Color tint (0xRRGGBB)
    * @param {number} [config.anchorX=0.5] - Anchor X (0-1)
    * @param {number} [config.anchorY=0.5] - Anchor Y (0-1)
+   * @param {boolean} [config.sway=false] - Enable sway animation
+   * @param {number} [config.swayAmplitude=0.025] - Sway rotation in radians (~1.4°)
+   * @param {number} [config.swayFrequency=1.0] - Sway speed multiplier
    * @returns {number} - Index of spawned decoration, or -1 if pool is full
    *
    * @example
@@ -107,6 +109,9 @@ export class DecorationPool {
     const anchorY = DecorationComponent.anchorY;
     const decorationTextureId = DecorationComponent.textureId;
     const isItOnScreen = DecorationComponent.isItOnScreen;
+    const sway = DecorationComponent.sway;
+    const swayAmplitude = DecorationComponent.swayAmplitude;
+    const swayFrequency = DecorationComponent.swayFrequency;
 
     // Position
     x[i] = randomRange(config.x);
@@ -119,6 +124,11 @@ export class DecorationPool {
     anchorX[i] = config.anchorX ?? 0.5;
     anchorY[i] = config.anchorY ?? 1;
     decorationTextureId[i] = textureId;
+
+    // Sway animation
+    sway[i] = config.sway ? 1 : 0;
+    swayAmplitude[i] = config.swayAmplitude ?? 0.025;
+    swayFrequency[i] = config.swayFrequency ?? 1.0;
 
     // Initially off-screen (will be updated by culling)
     isItOnScreen[i] = 0;
