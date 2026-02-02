@@ -1543,17 +1543,28 @@ class ParticleWorker extends AbstractWorker {
     // Formula: screenX = worldX * zoom - cameraOffsetX
     // Therefore: worldX = (screenX + cameraOffsetX) / zoom
     const invZoom = 1 / zoom;
-    const worldMinX = (screenMinX + cameraOffsetX) * invZoom;
-    const worldMaxX = (screenMaxX + cameraOffsetX) * invZoom;
-    const worldMinY = (screenMinY + cameraOffsetY) * invZoom;
-    const worldMaxY = (screenMaxY + cameraOffsetY) * invZoom;
+
+    // Add safety margin for large entities that span multiple cells
+    // Entities are registered in ALL cells they occupy (based on collider bounds)
+    // If ANY of those cells is in this query rect, the entity will be found
+    // We add 2 cells margin to handle entities up to ~4 cells wide/tall
+    const cellMargin = Grid.cellSize * 2;
+    const worldMinX = (screenMinX + cameraOffsetX) * invZoom - cellMargin;
+    const worldMaxX = (screenMaxX + cameraOffsetX) * invZoom + cellMargin;
+    const worldMinY = (screenMinY + cameraOffsetY) * invZoom - cellMargin;
+    const worldMaxY = (screenMaxY + cameraOffsetY) * invZoom + cellMargin;
+
+    // Verify Grid is initialized - fail loudly if not
+    if (Grid.cellSize <= 0 || Grid.gridWidth <= 0) {
+      console.error(`[PARTICLE_WORKER] Grid NOT initialized! cellSize=${Grid.cellSize}, gridWidth=${Grid.gridWidth}`);
+      return;
+    }
 
     // OPTIMIZATION: Query grid for entities in visible world rectangle
     // This only checks entities in cells that intersect the viewport
-    // Reuse cached result object to avoid allocation
     this._gridQueryResult = Grid.getEntitiesInRect(worldMinX, worldMinY, worldMaxX, worldMaxY);
 
-    // Iterate only entities in visible cells (access properties directly to avoid variable allocation)
+    // Iterate only entities in visible cells
     for (let idx = 0; idx < this._gridQueryResult.count; idx++) {
       const i = this._gridQueryResult.entities[idx];
 
@@ -1565,7 +1576,7 @@ class ParticleWorker extends AbstractWorker {
         continue;
       }
 
-      // Skip entities without SpriteRenderer (grid contains all entities, not just renderable)
+      // Skip entities without SpriteRenderer
       if (!spriteRendererActive || !spriteRendererActive[i]) {
         continue;
       }
@@ -1577,7 +1588,7 @@ class ParticleWorker extends AbstractWorker {
       screenY[i] = sy;
 
       // Check if screen position is within viewport bounds (with margin)
-      isItOnScreen[i] = sx > screenMinX && sx < screenMaxX && sy > screenMinY && sy < screenMaxY ? 1 : 0;
+      isItOnScreen[i] = sx >= screenMinX && sx <= screenMaxX && sy >= screenMinY && sy <= screenMaxY ? 1 : 0;
     }
 
   }

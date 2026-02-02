@@ -391,7 +391,7 @@ export class Grid {
    * @param {Uint16Array|null} resultsBuffer - Pre-allocated buffer for results (optional)
    * @returns {{count: number, entities: Uint16Array}} Count and entities array
    */
-  static _queryResults = new Uint16Array(4096); // Pre-allocated results buffer (Uint16 since entity IDs < 65536)
+  static _queryResults = new Uint16Array(16384); // Pre-allocated results buffer (Uint16 since entity IDs < 65536)
   static _queryResultCount = 0;
 
   // Zero-GC marker array for deduplication (lazy-initialized)
