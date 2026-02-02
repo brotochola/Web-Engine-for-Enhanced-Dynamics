@@ -24,6 +24,7 @@ import { DropShotgun } from '../gameObjects/dropShotgun.js';
 import { DropPistol } from '../gameObjects/dropPistol.js';
 import { Civilian } from '../gameObjects/civilian.js';
 import { CameraController } from '../gameObjects/cameraController.js';
+import { Trash } from '../gameObjects/trash.js';
 
 const { DecorationPool } = WEED;
 
@@ -136,6 +137,7 @@ export class PredatorScene extends WEED.Scene {
 
   static assets = {
     textures: {
+      trash: '/demos/img/trash.png',
       rock1: '/demos/img/rock1.png',
       rock2: '/demos/img/rock2.png',
       rock3: '/demos/img/rock3.png',
@@ -245,6 +247,7 @@ export class PredatorScene extends WEED.Scene {
     [DropPistol, 1000],
     [DropShotgun, 1000],
     [CameraController, 1],
+    [Trash, 100]
     // Grass now uses DecorationPool instead of GameObject
   ];
 
@@ -283,6 +286,7 @@ export class PredatorScene extends WEED.Scene {
     // this.spawnHouses(this.numberOfHouses);
     this.spawnGrass(this.numberOfGrass);
     this.spawnCivilians(10000);
+    this.spawnTrash(100);
     // this.spawnEntity(PreySpawner, {});
 
     this.spawnEntity(CameraController, {});
@@ -294,6 +298,14 @@ export class PredatorScene extends WEED.Scene {
     // this.spawnRocksTreesAndHouses();
   }
 
+  spawnTrash(count) {
+    for (let i = 0; i < count; i++) {
+      this.spawnEntity(Trash, {
+        x: this.rng() * this.config.worldWidth,
+        y: this.rng() * this.config.worldHeight,
+      });
+    }
+  }
   spawnRocksTreesAndHouses() {
     fetch('/demos/trees_and_rocks.json')
       .then((response) => response.json())
