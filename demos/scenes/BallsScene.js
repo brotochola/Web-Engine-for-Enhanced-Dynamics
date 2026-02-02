@@ -76,7 +76,7 @@ export class BallsScene extends Scene {
 
   static entities = [
     [Ball, 10000], // Pre-allocate pool for 10000 balls
-    [Floor, 10], // Pre-allocate pool for floor and walls
+    [Floor, 1000], // Pre-allocate pool for floor and walls
   ];
 
   // ========================================

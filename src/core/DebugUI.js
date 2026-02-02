@@ -829,14 +829,17 @@ export class DebugUI {
       entityIndices: 'showEntityIndices',
       raycasts: 'showRaycasts',
       sleepingEntities: 'showSleepingEntities',
+      sleepingCells: 'showSleepingCells',
     };
 
     const method = methodMap[key];
     if (method && this.debugFlags[method]) {
-      // Handle special case for sleepingEntities
+      // Handle special cases for flag names
       let flagName = `SHOW_${key.toUpperCase().replace('GRID', '_GRID').replace('INDICES', '_INDICES')}`;
       if (key === 'sleepingEntities') {
         flagName = 'SHOW_SLEEPING_ENTITIES';
+      } else if (key === 'sleepingCells') {
+        flagName = 'SHOW_SLEEPING_CELLS';
       }
       const currentState = this.debugFlags.isEnabled(DEBUG_FLAGS[flagName]);
       this.debugFlags[method](!currentState);
@@ -1200,6 +1203,7 @@ export class DebugUI {
       { key: 'entityIndices', label: 'Indices', shortcut: '7' },
       { key: 'raycasts', label: 'Raycasts', shortcut: '8' },
       { key: 'sleepingEntities', label: 'Sleeping', shortcut: '9' },
+      { key: 'sleepingCells', label: 'Sleep Cells', shortcut: 'S' },
     ];
 
     for (const aid of visualAids) {
@@ -1893,6 +1897,7 @@ export class DebugUI {
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SPATIAL_GRID) ||
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_RAYCASTS) ||
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES) ||
+      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_CELLS) ||
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SELECTED_ENTITY)
     );
   }
@@ -1932,6 +1937,11 @@ export class DebugUI {
     // 1. Draw spatial grid first (bottom layer)
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SPATIAL_GRID)) {
       this._drawSpatialGrid(ctx, canvas, camera, zoom);
+    }
+
+    // 1.5. Draw sleeping cells (after grid, before other overlays)
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_CELLS)) {
+      this._drawSleepingCells(ctx, canvas, camera, zoom);
     }
 
     // 2. Draw nav walkability grid
@@ -2209,6 +2219,73 @@ export class DebugUI {
   // ========================================
   // ENTITY DEBUG DRAWING METHODS
   // ========================================
+
+  /**
+   * Draw sleeping cells - highlights grid cells that are currently sleeping
+   * Cyan/blue semi-transparent overlay to distinguish from other debug visualizations
+   * A cell is sleeping if ALL entities in it are either sleeping or static
+   */
+  _drawSleepingCells(ctx, canvas, camera, zoom) {
+    // Early exit if cell sleeping buffer not initialized
+    if (!Grid.cellSleepingData || !Grid.cellSize) return;
+
+    const cellSize = Grid.cellSize;
+    const gridCols = Grid.gridWidth;
+    const gridRows = Grid.gridHeight;
+    const cellSleepingData = Grid.cellSleepingData;
+
+    // Calculate visible cell range for optimization
+    const startCellX = Math.max(0, Math.floor(camera.x / cellSize));
+    const startCellY = Math.max(0, Math.floor(camera.y / cellSize));
+    const endCellX = Math.min(gridCols, Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1);
+    const endCellY = Math.min(
+      gridRows,
+      Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1
+    );
+
+    // Cyan/blue color for sleeping cells (distinct from sleeping entities which are magenta)
+    ctx.fillStyle = 'rgba(0, 200, 255, 0.3)';
+    const cellSizeScreen = cellSize * zoom;
+
+    // Draw only sleeping cells (value === 1)
+    for (let row = startCellY; row < endCellY; row++) {
+      for (let col = startCellX; col < endCellX; col++) {
+        const cellIndex = row * gridCols + col;
+
+        // Check if cell is sleeping
+        if (cellSleepingData[cellIndex] === 1) {
+          // Calculate cell world position
+          const worldX = col * cellSize;
+          const worldY = row * cellSize;
+
+          // Transform to screen coordinates
+          const screenX = (worldX - camera.x) * zoom;
+          const screenY = (worldY - camera.y) * zoom;
+
+          // Draw filled rectangle for sleeping cell
+          ctx.fillRect(screenX, screenY, cellSizeScreen, cellSizeScreen);
+        }
+      }
+    }
+
+    // Optional: Draw border around sleeping cells for better visibility
+    ctx.strokeStyle = 'rgba(0, 200, 255, 0.6)';
+    ctx.lineWidth = 1;
+    for (let row = startCellY; row < endCellY; row++) {
+      for (let col = startCellX; col < endCellX; col++) {
+        const cellIndex = row * gridCols + col;
+
+        if (cellSleepingData[cellIndex] === 1) {
+          const worldX = col * cellSize;
+          const worldY = row * cellSize;
+          const screenX = (worldX - camera.x) * zoom;
+          const screenY = (worldY - camera.y) * zoom;
+
+          ctx.strokeRect(screenX, screenY, cellSizeScreen, cellSizeScreen);
+        }
+      }
+    }
+  }
 
   /**
    * Draw spatial grid lines
@@ -3563,6 +3640,9 @@ export class DebugUI {
           9: 'sleepingEntities',
         };
         this._toggleVisualAid(keyMap[key]);
+      } else if (key === 's') {
+        // Toggle sleeping cells visualization
+        this._toggleVisualAid('sleepingCells');
       } else if (key === '0') {
         if (this.debugFlags) {
           this.debugFlags.disableAll();

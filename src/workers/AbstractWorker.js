@@ -395,6 +395,7 @@ export class AbstractWorker {
     // ARCHITECTURE: Row-based partitioned spatial grid
     // - gridBuffer: SINGLE buffer, each spatial worker owns specific rows
     // - neighborData/distanceData: SINGLE buffer, row ownership eliminates races
+    // - cellSleepingBuffer: SINGLE buffer, written by particle_worker, read by all
     // Row ownership: worker i owns rows where (cellY % totalWorkers === workerId)
     // No double buffering, no Atomics, no locks - pure deterministic memory.
     if (data.gridMetadata && data.buffers?.gridBuffer) {
@@ -404,6 +405,7 @@ export class AbstractWorker {
           gridBuffer: data.buffers.gridBuffer,
           neighborBuffer: data.buffers.neighborData,
           distanceBuffer: data.buffers.distanceData,
+          cellSleepingBuffer: data.buffers.cellSleepingBuffer,
         },
         data.gridMetadata
       );

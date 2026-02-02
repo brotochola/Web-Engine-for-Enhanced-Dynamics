@@ -83,6 +83,13 @@ export class Grid {
   static _distanceBuffer = null; // SharedArrayBuffer
   static _distanceData = null; // Float32Array view
 
+  // ===== CELL SLEEPING STATE (Single Buffer - Written by particle_worker) =====
+  // Layout: One Uint8 per cell (0 = awake, 1 = sleeping)
+  // A cell is sleeping if ALL entities in it are either sleeping or static
+  // Written by particle_worker, read by all workers for optimization
+  static _cellSleepingBuffer = null; // SharedArrayBuffer
+  static _cellSleepingData = null; // Uint8Array view
+
   // Internal stride for neighbor arrays (computed as 1 + maxNeighbors during initialize)
   static _stride = 1 + DEFAULT_MAX_NEIGHBORS;
 
@@ -98,6 +105,7 @@ export class Grid {
    *   - gridBuffer: Spatial grid cells
    *   - neighborBuffer: Neighbor indices per entity
    *   - distanceBuffer: Neighbor distances per entity
+   *   - cellSleepingBuffer: Cell sleeping state (optional)
    * @param {Object} metadata - Grid configuration
    */
   static initialize(buffers, metadata) {
@@ -134,6 +142,14 @@ export class Grid {
     if (buffers.distanceBuffer) {
       Grid._distanceBuffer = buffers.distanceBuffer;
       Grid._distanceData = new Float32Array(buffers.distanceBuffer);
+    }
+
+    // ===== CELL SLEEPING STATE (Single Buffer) =====
+    if (buffers.cellSleepingBuffer) {
+      Grid._cellSleepingBuffer = buffers.cellSleepingBuffer;
+      Grid._cellSleepingData = new Uint8Array(buffers.cellSleepingBuffer);
+      // Initialize all cells as awake (0)
+      Grid._cellSleepingData.fill(0);
     }
   }
 
@@ -609,6 +625,93 @@ export class Grid {
       rows.push(row);
     }
     return rows;
+  }
+
+  // =============================================================================
+  // CELL SLEEPING STATE ACCESS (Written by particle_worker, Read by all workers)
+  // =============================================================================
+
+  /**
+   * Get the cell sleeping state array (direct access for performance)
+   * Use Grid.cellSleepingData in performance-critical loops
+   * @returns {Uint8Array|null} Cell sleeping state array (0=awake, 1=sleeping)
+   */
+  static get cellSleepingData() {
+    return Grid._cellSleepingData;
+  }
+
+  /**
+   * Get sleeping state of a cell
+   * @param {number} cellIndex - Cell index
+   * @returns {number} 0 = awake, 1 = sleeping, 0 if buffer not initialized
+   */
+  static getCellSleeping(cellIndex) {
+    if (!Grid._cellSleepingData || cellIndex < 0 || cellIndex >= Grid.totalCells) return 0;
+    return Grid._cellSleepingData[cellIndex];
+  }
+
+  /**
+   * Set sleeping state of a cell
+   * IMPORTANT: Only particle_worker should write to this buffer
+   * @param {number} cellIndex - Cell index
+   * @param {number} sleeping - 0 = awake, 1 = sleeping
+   */
+  static setCellSleeping(cellIndex, sleeping) {
+    if (!Grid._cellSleepingData || cellIndex < 0 || cellIndex >= Grid.totalCells) return;
+    Grid._cellSleepingData[cellIndex] = sleeping ? 1 : 0;
+  }
+
+  /**
+   * Get statistics about cell sleeping states
+   * Useful for debugging and monitoring from Chrome DevTools
+   * @returns {Object} Statistics object with counts and percentages
+   */
+  static getCellSleepingStats() {
+    if (!Grid._cellSleepingData || Grid.totalCells === 0) {
+      return {
+        totalCells: 0,
+        sleepingCells: 0,
+        awakeCells: 0,
+        sleepingPercentage: 0,
+        awakePercentage: 0,
+      };
+    }
+
+    let sleepingCount = 0;
+    const totalCells = Grid.totalCells;
+
+    // Count sleeping cells (value === 1)
+    for (let i = 0; i < totalCells; i++) {
+      if (Grid._cellSleepingData[i] === 1) {
+        sleepingCount++;
+      }
+    }
+
+    const awakeCount = totalCells - sleepingCount;
+    const sleepingPercentage = totalCells > 0 ? (sleepingCount / totalCells) * 100 : 0;
+    const awakePercentage = totalCells > 0 ? (awakeCount / totalCells) * 100 : 0;
+
+    return {
+      totalCells,
+      sleepingCells: sleepingCount,
+      awakeCells: awakeCount,
+      sleepingPercentage: sleepingPercentage.toFixed(2),
+      awakePercentage: awakePercentage.toFixed(2),
+    };
+  }
+
+  /**
+   * Get the count of sleeping cells (quick access for console)
+   * @returns {number} Number of sleeping cells
+   */
+  static getSleepingCellCount() {
+    if (!Grid._cellSleepingData || Grid.totalCells === 0) return 0;
+
+    let count = 0;
+    for (let i = 0; i < Grid.totalCells; i++) {
+      if (Grid._cellSleepingData[i] === 1) count++;
+    }
+    return count;
   }
 }
 

@@ -16,6 +16,7 @@ export const DEBUG_FLAGS = {
   SHOW_RAYCASTS: 11, // Draw raycasts with hit points
   SHOW_SELECTED_ENTITY: 12, // Draw bounding box around selected entity
   SHOW_SLEEPING_ENTITIES: 13, // Highlight sleeping entities
+  SHOW_SLEEPING_CELLS: 14, // Highlight sleeping grid cells
 };
 
 // Selected entity index storage (offset in debug buffer after flags)
@@ -154,6 +155,14 @@ export class DebugFlags {
   }
 
   /**
+   * Enable/disable sleeping cells visualization
+   */
+  showSleepingCells(enabled = true) {
+    this.flags[DEBUG_FLAGS.SHOW_SLEEPING_CELLS] = enabled ? 1 : 0;
+    return this;
+  }
+
+  /**
    * Set the selected entity index (writes to shared buffer)
    * @param {number} entityIndex - Entity index or -1 for no selection
    */
@@ -202,6 +211,7 @@ export class DebugFlags {
     if (options.profiler !== undefined) this.showProfiler(options.profiler);
     if (options.entityIndices !== undefined) this.showEntityIndices(options.entityIndices);
     if (options.sleepingEntities !== undefined) this.showSleepingEntities(options.sleepingEntities);
+    if (options.sleepingCells !== undefined) this.showSleepingCells(options.sleepingCells);
     return this;
   }
 
@@ -273,6 +283,7 @@ export class DebugFlags {
       entityIndices: this.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INDICES),
       raycasts: this.isEnabled(DEBUG_FLAGS.SHOW_RAYCASTS),
       sleepingEntities: this.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES),
+      sleepingCells: this.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_CELLS),
     };
   }
 }
