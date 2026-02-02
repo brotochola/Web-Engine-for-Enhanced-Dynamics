@@ -21,6 +21,9 @@ export class MySoldier extends Person {
   // Flocking behavior (override Person defaults)
   static groupingForce = 0.33;
   static separationForce = 10;
+  static chaseStrength = 20;
+
+  static followDestinationStrength = 0.1;
 
   // Damage resistance (override Person default)
   static resistance = 0.6;

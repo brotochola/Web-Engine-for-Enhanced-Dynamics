@@ -22,7 +22,7 @@ import { AbstractWorker } from './AbstractWorker.js';
 import { LightEmitter } from '../components/LightEmitter.js';
 
 import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES, RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
-import { sortByY, normalizeAngleDifference, extractRGBNormalized } from '../core/utils.js';
+import { sortByY, normalizeAngleDifference, extractRGBNormalized, distanceSq2D } from '../core/utils.js';
 import { RENDERER_STATS, createStatsWriter } from './workers-utils.js';
 
 // Import PixiJS 8 library (ES6 module with named exports)
@@ -1442,9 +1442,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       item.entityId = i;
 
       // Distance squared to camera center (for prioritization)
-      const dx = x - viewCenterX;
-      const dy = y - viewCenterY;
-      item.distSq = dx * dx + dy * dy;
+      item.distSq = distanceSq2D(viewCenterX, viewCenterY, x, y);
     }
 
     // Sort visible lights by distance (closest first)
@@ -1819,9 +1817,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       item.entityId = i;
 
       // Distance squared to camera center (for prioritization)
-      const dx = x - viewCenterX;
-      const dy = y - viewCenterY;
-      item.distSq = dx * dx + dy * dy;
+      item.distSq = distanceSq2D(viewCenterX, viewCenterY, x, y);
     }
 
     // Sort visible lights by distance (closest first)

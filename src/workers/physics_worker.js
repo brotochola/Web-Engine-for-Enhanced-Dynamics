@@ -23,6 +23,7 @@ import {
   testCircleCircleCollision,
   testCircleAABBCollision,
   testAABBAABBCollision,
+  distanceSq2D,
 } from '../core/utils.js';
 import { rng } from '../core/utils.js';
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
@@ -408,7 +409,7 @@ class PhysicsWorker extends AbstractWorker {
       dy += gravityScale * gy + accY;
 
       // Velocity clamping using squared comparison (avoids sqrt for most entities)
-      const speedSquared = dx * dx + dy * dy;
+      const speedSquared = distanceSq2D(0, 0, dx, dy);
       const maxSpeed = maxVel[i] * dtRatio;
       const maxSpeedSquared = maxSpeed * maxSpeed;
 

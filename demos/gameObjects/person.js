@@ -222,7 +222,6 @@ export class Person extends Lootable {
       const distSq = dx * dx + dy * dy;
 
       if (distSq < separationRadiusSq && distSq > 0) {
-        // const dist = Math.sqrt(distSq);
         const strength = (separationRadiusSq - distSq) / separationRadiusSq;
         separateX += (dx / distSq) * strength;
         separateY += (dy / distSq) * strength;

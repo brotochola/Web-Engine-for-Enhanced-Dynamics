@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vector Normalization Benchmark</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+
+        .container {
+            background: #2a2a2a;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            color: #4CAF50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            color: #b0b0b0;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        input,
+        button {
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #444;
+            background: #333;
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        .results {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .result-card {
+            background: #333;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #4CAF50;
+        }
+
+        .result-card.method2 {
+            border-left-color: #2196F3;
+        }
+
+        .result-card h3 {
+            margin-top: 0;
+            color: #4CAF50;
+        }
+
+        .result-card.method2 h3 {
+            color: #2196F3;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #444;
+        }
+
+        .metric:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            color: #b0b0b0;
+        }
+
+        .metric-value {
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .winner {
+            background: #1b5e20;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+
+        .progress {
+            width: 100%;
+            height: 30px;
+            background: #444;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #45a049);
+            width: 0%;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Vector Normalization Benchmark</h1>
+
+        <div class="controls">
+            <div class="control-group">
+                <label>Número de vectores:</label>
+                <input type="number" id="vectorCount" value="1000000" min="10000" step="10000">
+            </div>
+            <div class="control-group">
+                <label>Duración (segundos):</label>
+                <input type="number" id="duration" value="5" min="1" max="60">
+            </div>
+            <div class="control-group">
+                <label>Chase Strength:</label>
+                <input type="number" id="chaseStrength" value="0.5" step="0.1">
+            </div>
+            <div class="control-group">
+                <button id="startBtn" onclick="startBenchmark()">Iniciar Benchmark</button>
+            </div>
+        </div>
+
+        <div class="progress" id="progressContainer" style="display: none;">
+            <div class="progress-bar" id="progressBar">0%</div>
+        </div>
+
+        <div class="results" id="results" style="display: none;">
+            <div class="result-card">
+                <h3>Método 1: División por distancia²</h3>
+                <div class="metric">
+                    <span class="metric-label">FPS promedio:</span>
+                    <span class="metric-value" id="fps1">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Iteraciones totales:</span>
+                    <span class="metric-value" id="iterations1">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Tiempo por frame (ms):</span>
+                    <span class="metric-value" id="frameTime1">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Vectores procesados:</span>
+                    <span class="metric-value" id="vectors1">-</span>
+                </div>
+            </div>
+
+            <div class="result-card method2">
+                <h3>Método 2: Normalización con sqrt</h3>
+                <div class="metric">
+                    <span class="metric-label">FPS promedio:</span>
+                    <span class="metric-value" id="fps2">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Iteraciones totales:</span>
+                    <span class="metric-value" id="iterations2">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Tiempo por frame (ms):</span>
+                    <span class="metric-value" id="frameTime2">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Vectores procesados:</span>
+                    <span class="metric-value" id="vectors2">-</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="winner" style="display: none;"></div>
+    </div>
+
+    <script>
+        let worker1, worker2;
+        let results1 = null, results2 = null;
+
+        function startBenchmark() {
+            const vectorCount = parseInt(document.getElementById('vectorCount').value);
+            const duration = parseInt(document.getElementById('duration').value);
+            const chaseStrength = parseFloat(document.getElementById('chaseStrength').value);
+
+            // Reset
+            results1 = null;
+            results2 = null;
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('winner').style.display = 'none';
+            document.getElementById('progressContainer').style.display = 'block';
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('progressBar').textContent = '0%';
+            document.getElementById('startBtn').disabled = true;
+
+            // Terminar workers anteriores si existen
+            if (worker1) worker1.terminate();
+            if (worker2) worker2.terminate();
+
+            // Crear workers
+            const workerCode1 = `
+                let iterations = 0;
+                let startTime, endTime;
+
+                self.onmessage = function(e) {
+                    const { vectorCount, duration, chaseStrength } = e.data;
+
+                    // Crear typed arrays
+                    const x = new Float32Array(vectorCount);
+                    const y = new Float32Array(vectorCount);
+                    const targetX = new Float32Array(vectorCount);
+                    const targetY = new Float32Array(vectorCount);
+                    const ax = new Float32Array(vectorCount);
+                    const ay = new Float32Array(vectorCount);
+
+                    // Generar vectores random
+                    for (let i = 0; i < vectorCount; i++) {
+                        x[i] = Math.random() * 1000 - 500;
+                        y[i] = Math.random() * 1000 - 500;
+                        targetX[i] = Math.random() * 1000 - 500;
+                        targetY[i] = Math.random() * 1000 - 500;
+                    }
+
+                    startTime = performance.now();
+                    const endTarget = startTime + (duration * 1000);
+
+                    // Benchmark loop
+                    while (performance.now() < endTarget) {
+                        for (let i = 0; i < vectorCount; i++) {
+                            const dx = targetX[i] - x[i];
+                            const dy = targetY[i] - y[i];
+                            const distSq = dx * dx + dy * dy;
+
+                            if (distSq > 0) {
+                                ax[i] += (dx / distSq) * chaseStrength;
+                                ay[i] += (dy / distSq) * chaseStrength;
+                            }
+                        }
+                        iterations++;
+
+                        // Reportar progreso
+                        if (iterations % 10 === 0) {
+                            const progress = ((performance.now() - startTime) / (duration * 1000)) * 50;
+                            self.postMessage({ type: 'progress', progress });
+                        }
+                    }
+
+                    endTime = performance.now();
+                    const totalTime = (endTime - startTime) / 1000;
+                    const fps = iterations / totalTime;
+                    const avgFrameTime = (totalTime / iterations) * 1000;
+
+                    self.postMessage({
+                        type: 'result',
+                        fps: fps.toFixed(2),
+                        iterations,
+                        avgFrameTime: avgFrameTime.toFixed(3),
+                        vectorsProcessed: (iterations * vectorCount).toLocaleString()
+                    });
+                };
+            `;
+
+            const workerCode2 = `
+                let iterations = 0;
+                let startTime, endTime;
+
+                self.onmessage = function(e) {
+                    const { vectorCount, duration, chaseStrength } = e.data;
+
+                    // Crear typed arrays
+                    const x = new Float32Array(vectorCount);
+                    const y = new Float32Array(vectorCount);
+                    const targetX = new Float32Array(vectorCount);
+                    const targetY = new Float32Array(vectorCount);
+                    const ax = new Float32Array(vectorCount);
+                    const ay = new Float32Array(vectorCount);
+
+                    // Generar vectores random
+                    for (let i = 0; i < vectorCount; i++) {
+                        x[i] = Math.random() * 1000 - 500;
+                        y[i] = Math.random() * 1000 - 500;
+                        targetX[i] = Math.random() * 1000 - 500;
+                        targetY[i] = Math.random() * 1000 - 500;
+                    }
+
+                    startTime = performance.now();
+                    const endTarget = startTime + (duration * 1000);
+
+                    // Benchmark loop
+                    while (performance.now() < endTarget) {
+                        for (let i = 0; i < vectorCount; i++) {
+                            const dx = targetX[i] - x[i];
+                            const dy = targetY[i] - y[i];
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+
+                            if (dist > 0) {
+                                const normX = dx / dist;
+                                const normY = dy / dist;
+                                ax[i] += normX * chaseStrength;
+                                ay[i] += normY * chaseStrength;
+                            }
+                        }
+                        iterations++;
+
+                        // Reportar progreso
+                        if (iterations % 10 === 0) {
+                            const progress = 50 + ((performance.now() - startTime) / (duration * 1000)) * 50;
+                            self.postMessage({ type: 'progress', progress });
+                        }
+                    }
+
+                    endTime = performance.now();
+                    const totalTime = (endTime - startTime) / 1000;
+                    const fps = iterations / totalTime;
+                    const avgFrameTime = (totalTime / iterations) * 1000;
+
+                    self.postMessage({
+                        type: 'result',
+                        fps: fps.toFixed(2),
+                        iterations,
+                        avgFrameTime: avgFrameTime.toFixed(3),
+                        vectorsProcessed: (iterations * vectorCount).toLocaleString()
+                    });
+                };
+            `;
+
+            const blob1 = new Blob([workerCode1], { type: 'application/javascript' });
+            const blob2 = new Blob([workerCode2], { type: 'application/javascript' });
+
+            worker1 = new Worker(URL.createObjectURL(blob1));
+            worker2 = new Worker(URL.createObjectURL(blob2));
+
+            worker1.onmessage = function (e) {
+                if (e.data.type === 'progress') {
+                    updateProgress(e.data.progress);
+                } else if (e.data.type === 'result') {
+                    results1 = e.data;
+                    checkCompletion();
+                }
+            };
+
+            worker2.onmessage = function (e) {
+                if (e.data.type === 'progress') {
+                    updateProgress(e.data.progress);
+                } else if (e.data.type === 'result') {
+                    results2 = e.data;
+                    checkCompletion();
+                }
+            };
+
+            // Iniciar workers
+            worker1.postMessage({ vectorCount, duration, chaseStrength });
+            worker2.postMessage({ vectorCount, duration, chaseStrength });
+        }
+
+        function updateProgress(progress) {
+            const progressBar = document.getElementById('progressBar');
+            const rounded = Math.min(100, Math.round(progress));
+            progressBar.style.width = rounded + '%';
+            progressBar.textContent = rounded + '%';
+        }
+
+        function checkCompletion() {
+            if (results1 && results2) {
+                displayResults();
+            }
+        }
+
+        function displayResults() {
+            document.getElementById('progressContainer').style.display = 'none';
+            document.getElementById('results').style.display = 'grid';
+
+            // Mostrar resultados método 1
+            document.getElementById('fps1').textContent = results1.fps;
+            document.getElementById('iterations1').textContent = results1.iterations.toLocaleString();
+            document.getElementById('frameTime1').textContent = results1.avgFrameTime;
+            document.getElementById('vectors1').textContent = results1.vectorsProcessed;
+
+            // Mostrar resultados método 2
+            document.getElementById('fps2').textContent = results2.fps;
+            document.getElementById('iterations2').textContent = results2.iterations.toLocaleString();
+            document.getElementById('frameTime2').textContent = results2.avgFrameTime;
+            document.getElementById('vectors2').textContent = results2.vectorsProcessed;
+
+            // Determinar ganador
+            const fps1 = parseFloat(results1.fps);
+            const fps2 = parseFloat(results2.fps);
+            const winner = document.getElementById('winner');
+            winner.style.display = 'block';
+
+            if (fps1 > fps2) {
+                const diff = ((fps1 - fps2) / fps2 * 100).toFixed(1);
+                winner.innerHTML = `🏆 GANADOR: División por distancia² (${diff}% más rápido)`;
+            } else {
+                const diff = ((fps2 - fps1) / fps1 * 100).toFixed(1);
+                winner.innerHTML = `🏆 GANADOR: Normalización con sqrt (${diff}% más rápido)`;
+            }
+
+            document.getElementById('startBtn').disabled = false;
+        }
+    </script>
+</body>
+</html>

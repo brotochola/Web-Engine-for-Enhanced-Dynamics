@@ -171,7 +171,7 @@ class GoingToDestinationState extends FSMState {
     // Follow flowfield toward destination
     NavGrid.requestVector(owner.x, owner.y, dest.x, dest.y, _navVec);
 
-    const followStrength = 0.1;
+    const followStrength = owner.constructor.followDestinationStrength;
     owner.addAcceleration(_navVec.x * followStrength, _navVec.y * followStrength);
   }
 }
@@ -212,13 +212,12 @@ class GoingToEnemyState extends FSMState {
       // owner.groupWithMyTeam();
       // owner.separateFromTeam();
 
-      const chaseStrength = 0.15;
-      const dist = Math.sqrt(distSq);
-      if (dist > 0) {
+      const chaseStrength = owner.constructor.chaseStrength;
+      if (distSq > 0) {
         const dx = targetX - owner.x;
         const dy = targetY - owner.y;
-        RigidBody.ax[i] += (dx / dist) * chaseStrength;
-        RigidBody.ay[i] += (dy / dist) * chaseStrength;
+        RigidBody.ax[i] += (dx / distSq) * chaseStrength;
+        RigidBody.ay[i] += (dy / distSq) * chaseStrength;
       }
       return;
     }
