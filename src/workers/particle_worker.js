@@ -586,7 +586,7 @@ class ParticleWorker extends AbstractWorker {
     const transformActive = Transform.active;
     const lightActive = LightEmitter.active;
     const lightIntensity = LightEmitter.lightIntensity;
-    const squaredLightIntensity = LightEmitter.squaredLightIntensity; // OPTIMIZED: Pre-calculated sqrt(intensity)
+    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity; // OPTIMIZED: Pre-calculated sqrt(intensity)
 
     const startIndex = this.flashStartIndex;
     const endIndex = startIndex + this.maxFlashes;
@@ -623,7 +623,7 @@ class ParticleWorker extends AbstractWorker {
         const newIntensity = initialIntensity[entityIndex] * remaining;
         lightIntensity[entityIndex] = newIntensity;
         // OPTIMIZED: Also update cached sqrt(intensity) to avoid recalculating every frame
-        squaredLightIntensity[entityIndex] = Math.sqrt(newIntensity);
+        sqrtLightIntensity[entityIndex] = Math.sqrt(newIntensity);
       }
     }
 

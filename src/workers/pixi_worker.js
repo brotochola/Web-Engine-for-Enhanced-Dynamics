@@ -1365,7 +1365,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightEnabled = LightEmitter.active;
     const lightColor = LightEmitter.lightColor;
     const lightIntensity = LightEmitter.lightIntensity;
-    const squaredLightIntensity = LightEmitter.squaredLightIntensity; // OPTIMIZED: Pre-calculated sqrt(intensity)
+    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity; // OPTIMIZED: Pre-calculated sqrt(intensity)
     const lightHeight = LightEmitter.height;
 
     const zoom = this._renderZoom;
@@ -1424,7 +1424,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Viewport culling: Only include lights that actually affect the visible screen
       // Attenuation formula: I / (I + d^2). At d = 10 * sqrt(I), attenuation is ~0.01
       // OPTIMIZED: Use pre-calculated sqrt(intensity) from LightEmitter setter
-      const influenceRadius = 10 * squaredLightIntensity[i];
+      const influenceRadius = 10 * sqrtLightIntensity[i];
 
       if (
         x + influenceRadius < cameraX ||
@@ -1750,7 +1750,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const hasGlowSprite = LightEmitter.hasGlowSprite;
     const visualRange = Collider.visualRange;
     const lightIntensity = LightEmitter.lightIntensity;
-    const squaredLightIntensity = LightEmitter.squaredLightIntensity; // OPTIMIZED: Pre-calculated sqrt(intensity)
+    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity; // OPTIMIZED: Pre-calculated sqrt(intensity)
 
     const zoom = this._renderZoom;
     const cameraX = this._renderCameraX;
@@ -1801,7 +1801,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Viewport culling: Only include lights that actually affect the visible screen
       // Use roughly same logic as updateLighting for consistency
       // OPTIMIZED: Use pre-calculated sqrt(intensity) from LightEmitter setter
-      const influenceRadius = 10 * squaredLightIntensity[i];
+      const influenceRadius = 10 * sqrtLightIntensity[i];
 
       if (
         x + influenceRadius < cameraX ||
@@ -1957,7 +1957,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightEnabled = LightEmitter.active;
     const lightColor = LightEmitter.lightColor;
     const lightIntensity = LightEmitter.lightIntensity;
-    const squaredLightIntensity = LightEmitter.squaredLightIntensity; // OPTIMIZED: Pre-calculated sqrt(intensity)
+    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity; // OPTIMIZED: Pre-calculated sqrt(intensity)
     const lightHeight = LightEmitter.height;
 
     // Camera transform for world-to-screen conversion
@@ -2081,7 +2081,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         // Using similar formula to lighting shader: influence radius = 10 * sqrt(intensity)
         const intensity = lightIntensity[lightIdx];
         // OPTIMIZED: Use pre-calculated sqrt(intensity) from LightEmitter setter
-        const influenceRadius = 10 * squaredLightIntensity[lightIdx];
+        const influenceRadius = 10 * sqrtLightIntensity[lightIdx];
         const gradientScale = ((influenceRadius * zoom * resolution) / gradientTextureRadius) * 3;
 
         lightSprite.x = screenLX;

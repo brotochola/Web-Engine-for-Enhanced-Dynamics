@@ -1551,6 +1551,36 @@ export class GameObject {
       instance.setup();
     }
 
+    // Ensure mass is calculated after setup() if it's still 0 and entity is not static
+    // This handles cases where collider properties were set but mass wasn't calculated
+    if (has.RigidBody && has.Collider && RigidBody.active[i] && Collider.active[i]) {
+      const isStatic = RigidBody.static[i];
+      const currentMass = RigidBody.mass[i];
+
+      // If mass is 0 and entity is not static, recalculate from collider
+      if (!isStatic && currentMass === 0) {
+        const shapeType = Collider.shapeType[i];
+        if (shapeType === 0) {
+          // Circle
+          const radius = Collider.radius[i];
+          if (radius > 0) {
+            updateMassFromCircle(i, radius, RigidBody);
+          }
+        } else if (shapeType === 1) {
+          // Box
+          const width = Collider.width[i];
+          const height = Collider.height[i];
+          if (width > 0 && height > 0) {
+            updateMassFromBox(i, width, height, RigidBody);
+          }
+        }
+      }
+      // If static, ensure invMass is 0
+      else if (isStatic) {
+        RigidBody.invMass[i] = 0;
+      }
+    }
+
     // LIFECYCLE: Call onSpawned() for INSTANCE-level initialization
     // onSpawned() defines "this specific instance" (position, random variations, health)
     if (instance.onSpawned) {
