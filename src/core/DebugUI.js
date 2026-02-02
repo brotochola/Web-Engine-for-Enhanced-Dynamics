@@ -26,6 +26,7 @@ import {
   getComponentColor,
   getComponentPropertyNames,
   formatComponentValue,
+  distanceSq2D,
 } from './utils.js';
 import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from './ConfigDefaults.js';
 import { NavGrid, DIR_TO_VEC } from './NavGrid.js';
@@ -2457,9 +2458,7 @@ export class DebugUI {
       const entityId = entities[i];
       if (!active[entityId]) continue;
 
-      const dx = x[entityId] - mouseX;
-      const dy = y[entityId] - mouseY;
-      const dist2 = dx * dx + dy * dy;
+      const dist2 = distanceSq2D(mouseX, mouseY, x[entityId], y[entityId]);
 
       if (dist2 < closestDist2) {
         closestDist2 = dist2;
@@ -2894,9 +2893,7 @@ export class DebugUI {
       if (reg && this._internalEntitiesSet.has(reg.class.name)) continue;
 
       // Distance check
-      const dx = Transform.x[entityId] - Mouse.x;
-      const dy = Transform.y[entityId] - Mouse.y;
-      const distSq = dx * dx + dy * dy;
+      const distSq = distanceSq2D(Mouse.x, Mouse.y, Transform.x[entityId], Transform.y[entityId]);
 
       if (distSq < nearestDistSq) {
         nearestDistSq = distSq;
@@ -3434,9 +3431,7 @@ export class DebugUI {
       if (reg && this._internalEntitiesSet.has(reg.class.name)) continue;
 
       // Distance check
-      const dx = Transform.x[entityId] - Mouse.x;
-      const dy = Transform.y[entityId] - Mouse.y;
-      const distSq = dx * dx + dy * dy;
+      const distSq = distanceSq2D(Mouse.x, Mouse.y, Transform.x[entityId], Transform.y[entityId]);
 
       if (distSq < nearestDistSq) {
         nearestDistSq = distSq;

@@ -25,6 +25,7 @@
 
 import { Transform } from '../components/Transform.js';
 import { Collider } from '../components/Collider.js';
+import { distanceSq2D } from './utils.js';
 
 // =============================================================================
 // CONSTANTS - Configurable via scene (defaults shown)
@@ -318,9 +319,7 @@ export class Grid {
     const entityY = Transform.y[entityId] + (Collider.offsetY?.[entityId] || 0);
     const neighborX = Transform.x[neighborId] + (Collider.offsetX?.[neighborId] || 0);
     const neighborY = Transform.y[neighborId] + (Collider.offsetY?.[neighborId] || 0);
-    const dx = neighborX - entityX;
-    const dy = neighborY - entityY;
-    return dx * dx + dy * dy;
+    return distanceSq2D(entityX, entityY, neighborX, neighborY);
   }
 
   /**
@@ -430,9 +429,7 @@ export class Grid {
           // Distance check
           const ex = transformX[entityId];
           const ey = transformY[entityId];
-          const dx = ex - x;
-          const dy = ey - y;
-          const distSq = dx * dx + dy * dy;
+          const distSq = distanceSq2D(x, y, ex, ey);
 
           if (distSq <= radiusSq) {
             if (count < maxResults) {
@@ -574,9 +571,7 @@ export class Grid {
         // This requires registeredClasses lookup - caller should handle filtering
       }
 
-      const dx = transformX[entityId] - x;
-      const dy = transformY[entityId] - y;
-      const distSq = dx * dx + dy * dy;
+      const distSq = distanceSq2D(x, y, transformX[entityId], transformY[entityId]);
 
       if (distSq < nearestDistSq) {
         nearestDistSq = distSq;

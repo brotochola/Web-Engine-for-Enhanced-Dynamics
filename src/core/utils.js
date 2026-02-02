@@ -298,9 +298,7 @@ export function randomColor(value, defaultVal = 0xffffff) {
  * @returns {number} Squared distance
  */
 export function distanceSq2D(x1, y1, x2, y2) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  return dx * dx + dy * dy;
+  return (x2 - x1) ** 2 + (y2 - y1) ** 2;
 }
 
 /**
@@ -413,9 +411,7 @@ export function distance2D(x1, y1, x2, y2) {
  * @returns {boolean} True if distance <= range
  */
 export function isWithinRange(x1, y1, x2, y2, range) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  return dx * dx + dy * dy <= range * range;
+  return distanceSq2D(x1, y1, x2, y2) <= range * range;
 }
 
 /**
@@ -430,9 +426,7 @@ export function isWithinRange(x1, y1, x2, y2, range) {
  * @returns {boolean} True if distanceSq <= rangeSq
  */
 export function isWithinRangeSq(x1, y1, x2, y2, rangeSq) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  return dx * dx + dy * dy <= rangeSq;
+  return distanceSq2D(x1, y1, x2, y2) <= rangeSq;
 }
 
 /**
@@ -666,7 +660,7 @@ export function updateMassFromBox(index, width, height, RigidBody) {
 export function testCircleCircleCollision(x1, y1, r1, x2, y2, r2, result) {
   const dx = x1 - x2;
   const dy = y1 - y2;
-  const dist2 = dx * dx + dy * dy;
+  const dist2 = distanceSq2D(x1, y1, x2, y2);
   const minDist = r1 + r2;
 
   if (dist2 >= minDist * minDist) return null;
@@ -727,7 +721,7 @@ export function testCircleAABBCollision(circleX, circleY, circleR, boxX, boxY, b
   // Calculate distance from circle center to closest point
   const dx = circleX - closestX;
   const dy = circleY - closestY;
-  const dist2 = dx * dx + dy * dy;
+  const dist2 = distanceSq2D(circleX, circleY, closestX, closestY);
 
   if (dist2 >= circleR * circleR) return null;
 
@@ -1198,9 +1192,7 @@ export function calculateTotalLightAtPosition(
   for (let i = 0; i < lightCount; i++) {
     if (!lightEnabled[i]) continue;
 
-    const dx = targetX - lightX[i];
-    const dy = targetY - lightY[i];
-    const distSq = dx * dx + dy * dy;
+    const distSq = distanceSq2D(targetX, targetY, lightX[i], lightY[i]);
 
     totalLight += calculateLightAttenuation(lightIntensity[i], distSq);
   }
@@ -1257,9 +1249,7 @@ export function calculateLightFromNeighbors(
     // Calculate squared distance on-the-fly (collider positions)
     const neighborX = transformX[neighborIdx] + (colliderOffsetX[neighborIdx] || 0);
     const neighborY = transformY[neighborIdx] + (colliderOffsetY[neighborIdx] || 0);
-    const dx = neighborX - entityX;
-    const dy = neighborY - entityY;
-    const distSq = dx * dx + dy * dy;
+    const distSq = distanceSq2D(entityX, entityY, neighborX, neighborY);
 
     totalLight += calculateLightAttenuation(lightIntensity[neighborIdx], distSq);
   }

@@ -25,6 +25,7 @@ import {
   calculateTileClipRegion,
   _decalTileBounds,
   _tileClipRegion,
+  distanceSq2D,
 } from '../core/utils.js';
 import { PARTICLE_STATS, createStatsWriter } from './workers-utils.js';
 
@@ -1347,7 +1348,7 @@ class ParticleWorker extends AbstractWorker {
         const neighborY = Transform.y[neighborIdx] + (Collider.offsetY[neighborIdx] || 0);
         const dx = neighborX - lightXWithOffset;
         const dy = neighborY - lightYWithOffset;
-        const distSq = dx * dx + dy * dy;
+        const distSq = distanceSq2D(lightXWithOffset, lightYWithOffset, neighborX, neighborY);
 
         if (distSq < 1) {
           continue; // Avoid division by zero

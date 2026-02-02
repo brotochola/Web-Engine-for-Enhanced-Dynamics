@@ -9,7 +9,7 @@ import { LightEmitter } from '../components/LightEmitter.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { Grid } from './Grid.js';
-import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox } from './utils.js';
+import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox, distanceSq2D } from './utils.js';
 import Keyboard from './Keyboard.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
@@ -633,7 +633,7 @@ export class GameObject {
     const i = this.index;
     const dx = x - Transform.x[i];
     const dy = y - Transform.y[i];
-    const distSq = dx * dx + dy * dy;
+    const distSq = distanceSq2D(Transform.x[i], Transform.y[i], x, y);
     if (distSq > 0) {
       const invDist = acc / Math.sqrt(distSq);
       return this.addAcceleration(dx * invDist, dy * invDist);
@@ -1202,9 +1202,7 @@ export class GameObject {
     const myY = Transform.y[this.index] + (Collider.offsetY[this.index] || 0);
     const neighborX = Transform.x[neighborIdx] + (Collider.offsetX[neighborIdx] || 0);
     const neighborY = Transform.y[neighborIdx] + (Collider.offsetY[neighborIdx] || 0);
-    const dx = neighborX - myX;
-    const dy = neighborY - myY;
-    return dx * dx + dy * dy;
+    return distanceSq2D(myX, myY, neighborX, neighborY);
   }
 
   /**

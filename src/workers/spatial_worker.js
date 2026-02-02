@@ -33,7 +33,7 @@ import { Collider } from '../components/Collider.js';
 import { AbstractWorker } from './AbstractWorker.js';
 import { Grid } from '../core/Grid.js';
 import { SPATIAL_STATS, createMultiWorkerStatsWriter } from './workers-utils.js';
-import { generateSymmetricalCirclePattern } from '../core/utils.js';
+import { generateSymmetricalCirclePattern, distanceSq2D } from '../core/utils.js';
 
 /**
  * SpatialWorker - Row-based spatial hashing and neighbor detection
@@ -561,9 +561,7 @@ class SpatialWorker extends AbstractWorker {
               // Calculate squared distance for range check only (not stored)
               const bX = entityPosX[entityB];
               const bY = entityPosY[entityB];
-              const dx = bX - myX;
-              const dy = bY - myY;
-              const distSq = dx * dx + dy * dy;
+              const distSq = distanceSq2D(myX, myY, bX, bY);
 
               // Early rejection: if distSq is 0, skip (same position)
               if (distSq === 0) continue;
