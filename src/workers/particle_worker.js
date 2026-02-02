@@ -150,6 +150,13 @@ class ParticleWorker extends AbstractWorker {
     this.rigidBodyCount = 0;
 
     // ========================================
+    // SLEEPING OPTIMIZATION
+    // ========================================
+    // Entities below sleepThreshold speed for sleepDuration frames will be put to sleep
+    this.sleepThreshold = 0.1; // Speed threshold (units/frame)
+    this.sleepDuration = 30; // Frames of stillness required (0.5 seconds at 60fps)
+
+    // ========================================
     // FLASH SYSTEM
     // ========================================
     // Flashes are short-lived light sources (muzzle flashes, sparks, etc.)
@@ -303,9 +310,11 @@ class ParticleWorker extends AbstractWorker {
     if (data.buffers.componentData.RigidBody && data.componentPools?.RigidBody) {
       this.rigidBodyCount = data.componentPools.RigidBody.count || 0;
 
-      // Get minSpeedForRotation from physics config
+      // Get physics config values
       const physicsConfig = this.config.physics || {};
       this.minSpeedForRotation = physicsConfig.minSpeedForRotation ?? 0.1;
+      this.sleepThreshold = physicsConfig.sleepThreshold ?? 0.1;
+      this.sleepDuration = physicsConfig.sleepDuration ?? 30;
     }
 
     // ========================================
@@ -1649,6 +1658,11 @@ class ParticleWorker extends AbstractWorker {
     const velocityAngle = RigidBody.velocityAngle;
     const speed = RigidBody.speed;
     const minSpeedForRotation = this.minSpeedForRotation;
+    const sleepThreshold = this.sleepThreshold;
+    const sleepDuration = this.sleepDuration;
+    const sleeping = RigidBody.sleeping;
+    const stillnessTime = RigidBody.stillnessTime;
+    const isStatic = RigidBody.static;
 
     // OPTIMIZATION: Query only entities that have RigidBody component
     // This skips entities without physics (static decorations, etc.)
@@ -1658,9 +1672,28 @@ class ParticleWorker extends AbstractWorker {
       const i = physicsEntities[idx];
       if (!active[i] || !rigidBodyActive[i]) continue;
 
+      // Skip static entities (they're always "sleeping" but don't need sleep tracking)
+      if (isStatic[i]) continue;
+
       // Velocity is already stored in vx/vy from moveBallsVerlet
       const currentSpeed = calculateSpeed(vx[i], vy[i]);
       speed[i] = currentSpeed;
+
+      // SLEEPING DETECTION: Track stillness and put entities to sleep
+      if (currentSpeed < sleepThreshold) {
+        // Entity is still - increment stillness timer
+        stillnessTime[i]++;
+
+        // Put to sleep if still for long enough
+        if (stillnessTime[i] >= sleepDuration) {
+          sleeping[i] = 1;
+        }
+      }
+      else {
+        // Entity is moving - wake it up and reset timer
+        sleeping[i] = 0;
+        stillnessTime[i] = 0;
+      }
 
       // Only update rotation if moving above minimum threshold
       // This prevents visual jitter when entities are nearly stationary

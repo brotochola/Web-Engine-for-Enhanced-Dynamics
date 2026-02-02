@@ -298,6 +298,7 @@ export class NavGrid {
    * entity.vy += vec.y * speed;
    */
   static requestVector(cx, cy, tx, ty, outVec) {
+
     if (!this._initialized) {
       outVec.x = 0;
       outVec.y = 0;
@@ -334,6 +335,7 @@ export class NavGrid {
       // Flowfield exists - sample direction at our current cell
       const direction = this._sampleFlowfield(slotIndex, currentCell);
       const vec = DIR_TO_VEC[direction];
+
       outVec.x = vec[0];
       outVec.y = vec[1];
       // Note: LRU is handled by nav_worker when it receives requests

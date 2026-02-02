@@ -147,7 +147,10 @@ class IdleSoldierState extends FSMState {
 // ==========================================
 
 class GoingToDestinationState extends FSMState {
-  static onEnter(owner, i, fromState) { }
+  static onEnter(owner, i, fromState) {
+    RigidBody.sleeping[i] = 0;
+    RigidBody.stillnessTime[i] = 0;
+  }
 
   static onUpdate(owner, i, dt) {
     const dest = getDestination();

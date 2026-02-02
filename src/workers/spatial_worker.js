@@ -137,13 +137,7 @@ class SpatialWorker extends AbstractWorker {
       this.entityPosX = new Float32Array(data.buffers.entityPosX);
       this.entityPosY = new Float32Array(data.buffers.entityPosY);
       this.entityHalfExtent = new Float32Array(data.buffers.entityHalfExtent);
-    } else {
-      // Fallback: allocate local arrays
-      this.entityPosX = new Float32Array(this.globalEntityCount);
-      this.entityPosY = new Float32Array(this.globalEntityCount);
-      this.entityHalfExtent = new Float32Array(this.globalEntityCount);
     }
-
     // Initialize duplicate detection marker
     this.processedMarker = new Int32Array(this.globalEntityCount);
     this.processedMarker.fill(-1);

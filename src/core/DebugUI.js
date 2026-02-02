@@ -828,15 +828,17 @@ export class DebugUI {
       aabb: 'showAABB',
       entityIndices: 'showEntityIndices',
       raycasts: 'showRaycasts',
+      sleepingEntities: 'showSleepingEntities',
     };
 
     const method = methodMap[key];
     if (method && this.debugFlags[method]) {
-      const currentState = this.debugFlags.isEnabled(
-        DEBUG_FLAGS[
-        `SHOW_${key.toUpperCase().replace('GRID', '_GRID').replace('INDICES', '_INDICES')}`
-        ]
-      );
+      // Handle special case for sleepingEntities
+      let flagName = `SHOW_${key.toUpperCase().replace('GRID', '_GRID').replace('INDICES', '_INDICES')}`;
+      if (key === 'sleepingEntities') {
+        flagName = 'SHOW_SLEEPING_ENTITIES';
+      }
+      const currentState = this.debugFlags.isEnabled(DEBUG_FLAGS[flagName]);
       this.debugFlags[method](!currentState);
       this._updateVisualAidsState();
 
@@ -1197,6 +1199,7 @@ export class DebugUI {
       { key: 'aabb', label: 'AABB', shortcut: '6' },
       { key: 'entityIndices', label: 'Indices', shortcut: '7' },
       { key: 'raycasts', label: 'Raycasts', shortcut: '8' },
+      { key: 'sleepingEntities', label: 'Sleeping', shortcut: '9' },
     ];
 
     for (const aid of visualAids) {
@@ -1889,6 +1892,7 @@ export class DebugUI {
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_NEIGHBORS) ||
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SPATIAL_GRID) ||
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_RAYCASTS) ||
+      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES) ||
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SELECTED_ENTITY)
     );
   }
@@ -1975,7 +1979,12 @@ export class DebugUI {
       this._drawEntityIndices(ctx, canvas, camera, zoom);
     }
 
-    // 11. Draw selected entity bounding box (always on top)
+    // 11. Draw sleeping entities
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES)) {
+      this._drawSleepingEntities(ctx, canvas, camera, zoom);
+    }
+
+    // 12. Draw selected entity bounding box (always on top)
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SELECTED_ENTITY)) {
       this._drawSelectedEntity(ctx, canvas, camera, zoom);
     }
@@ -2425,6 +2434,76 @@ export class DebugUI {
         endY - arrowSize * Math.sin(angle + Math.PI / 6)
       );
       ctx.stroke();
+    }
+  }
+
+  /**
+   * Draw sleeping entities - highlights entities that are currently sleeping
+   * Purple/magenta outline to distinguish from other debug visualizations
+   */
+  _drawSleepingEntities(ctx, canvas, camera, zoom) {
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
+    const isOnScreen = SpriteRenderer.isItOnScreen;
+    const rigidBodyActive = RigidBody.active;
+    const sleeping = RigidBody.sleeping;
+
+    // Check if sleeping array exists (may not be initialized in older scenes)
+    if (!sleeping) return;
+
+    const shapeType = Collider.shapeType;
+    const radius = Collider.radius;
+    const width = Collider.width;
+    const height = Collider.height;
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
+
+    // Purple/magenta color for sleeping entities
+    ctx.strokeStyle = 'rgba(255, 0, 255, 0.8)';
+    ctx.fillStyle = 'rgba(255, 0, 255, 0.2)';
+    ctx.lineWidth = 3 / zoom;
+
+    for (let i = 0; i < Transform.active.length; i++) {
+      if (!active[i] || !isOnScreen[i]) continue;
+      if (!rigidBodyActive[i]) continue;
+      if (!sleeping[i]) continue; // Only draw sleeping entities
+
+      const posX = x[i] + (offsetX?.[i] || 0);
+      const posY = y[i] + (offsetY?.[i] || 0);
+
+      // Transform to screen coords
+      const sx = (posX - camera.x) * zoom;
+      const sy = (posY - camera.y) * zoom;
+
+      // Draw based on collider shape (if available) or use default circle
+      if (shapeType && shapeType[i] === 0) {
+        // Circle shape
+        const r = radius?.[i] || 10;
+        if (r === 0) continue;
+
+        ctx.beginPath();
+        ctx.arc(sx, sy, r * zoom, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      } else if (shapeType && shapeType[i] === 1) {
+        // Box shape
+        const w = width?.[i] || 20;
+        const h = height?.[i] || 20;
+        if (w === 0 || h === 0) continue;
+
+        const halfW = (w / 2) * zoom;
+        const halfH = (h / 2) * zoom;
+        ctx.fillRect(sx - halfW, sy - halfH, w * zoom, h * zoom);
+        ctx.strokeRect(sx - halfW, sy - halfH, w * zoom, h * zoom);
+      } else {
+        // Default: draw a circle if no collider shape
+        const defaultRadius = 10 * zoom;
+        ctx.beginPath();
+        ctx.arc(sx, sy, defaultRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
     }
   }
 
@@ -3471,7 +3550,7 @@ export class DebugUI {
       } else if (key === 'i') {
         // Toggle inspector mode
         this._toggleInspector();
-      } else if (key >= '1' && key <= '7') {
+      } else if (key >= '1' && key <= '9') {
         const keyMap = {
           1: 'colliders',
           2: 'velocity',
@@ -3480,6 +3559,8 @@ export class DebugUI {
           5: 'spatialGrid',
           6: 'aabb',
           7: 'entityIndices',
+          8: 'raycasts',
+          9: 'sleepingEntities',
         };
         this._toggleVisualAid(keyMap[key]);
       } else if (key === '0') {

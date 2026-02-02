@@ -42,6 +42,8 @@ class IdleCivilianBehaviorState extends FSMState {
 class FleeingCivilianBehaviorState extends FSMState {
   static onEnter(owner, i, fromState) {
     // Will set run animation in onUpdate based on direction
+    RigidBody.sleeping[i] = 0;
+    RigidBody.stillnessTime[i] = 0;
   }
 
   static onUpdate(owner, i, dt) {
