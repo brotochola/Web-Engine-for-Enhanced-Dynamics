@@ -164,34 +164,44 @@ class ParticleWorker extends AbstractWorker {
    * Initialize the particle worker
    */
   async initialize(data) {
+    console.log('[PARTICLE WORKER] Starting initialize()...');
+
     // Initialize stats buffer for writing metrics
     if (data.buffers.particleStats) {
       this.stats = createStatsWriter(data.buffers.particleStats, PARTICLE_STATS);
-      console.log('PARTICLE WORKER: Stats buffer initialized');
+      console.log('[PARTICLE WORKER] Stats buffer initialized');
+    } else {
+      console.warn('[PARTICLE WORKER] No particleStats buffer provided');
     }
 
     // Get max particles from config (passed from gameEngine)
     this.maxParticles = data.maxParticles || 0;
+    console.log(`[PARTICLE WORKER] Max particles: ${this.maxParticles}`);
 
     // Store viewport dimensions for screen visibility checks
     this.canvasWidth = this.config.canvasWidth;
     this.canvasHeight = this.config.canvasHeight;
     this.cullingRatio = this.config.renderer?.cullingRatio ?? 0.1;
+    console.log(`[PARTICLE WORKER] Canvas: ${this.canvasWidth}x${this.canvasHeight}, cullingRatio: ${this.cullingRatio}`);
 
     // Note: ParticleComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
     if (this.maxParticles > 0) {
       if (!data.buffers.componentData.ParticleComponent) {
         console.warn(
-          'PARTICLE WORKER: ParticleComponent buffer not found, particle physics disabled'
+          '[PARTICLE WORKER] ParticleComponent buffer not found, particle physics disabled'
         );
         this.maxParticles = 0;
       } else {
+        console.log('[PARTICLE WORKER] Initializing particle arrays...');
         // Initialize typed array for particle stamping (performance optimization)
         this.particlesToStamp = new Uint16Array(this.maxParticles);
 
         // OPTIMIZATION: Track active particles to avoid scanning inactive ones
         this.activeParticleIndices = new Int32Array(this.maxParticles);
+        console.log('[PARTICLE WORKER] Particle arrays initialized');
       }
+    } else {
+      console.log('[PARTICLE WORKER] No particles configured, skipping particle initialization');
     }
     // Note: Worker continues initialization for other systems (lighting, shadows, flashes, etc.)
     // even when no particles are configured
@@ -199,8 +209,13 @@ class ParticleWorker extends AbstractWorker {
     // ========================================
     // BLOOD DECALS TILEMAP - Initialize SABs
     // ========================================
+    console.log('[PARTICLE WORKER] Checking decals configuration...', {
+      hasDecals: !!data.decals,
+      enabled: data.decals?.enabled
+    });
 
     if (data.decals && data.decals.enabled) {
+      console.log('[PARTICLE WORKER] Initializing decals system...');
       this.decalsEnabled = true;
       this.decalsTileSize = data.decals.tileSize; // World units per tile
       this.decalsTilePixelSize = data.decals.tilePixelSize; // Actual texture pixels
@@ -217,6 +232,8 @@ class ParticleWorker extends AbstractWorker {
       // Store texture pixel data for stamping
       // Each entry: { width, height, rgba: Uint8ClampedArray }
       if (data.decals.textures) {
+        const textureCount = Object.keys(data.decals.textures).length;
+        console.log(`[PARTICLE WORKER] Loading ${textureCount} decal textures...`);
         for (const [textureId, textureData] of Object.entries(data.decals.textures)) {
           this.decalTextures[textureId] = {
             width: textureData.width,
@@ -224,26 +241,26 @@ class ParticleWorker extends AbstractWorker {
             rgba: new Uint8ClampedArray(textureData.rgba),
           };
         }
+        console.log(`[PARTICLE WORKER] Decal textures loaded: ${Object.keys(this.decalTextures).length}`);
       } else {
-        console.warn('PARTICLE WORKER: No decal textures provided!');
+        console.warn('[PARTICLE WORKER] No decal textures provided!');
       }
+      console.log('[PARTICLE WORKER] Decals system initialized');
     } else {
-      console.warn('PARTICLE WORKER: Blood decals NOT enabled!', {
-        decals: data.decals,
-        hasDecals: !!data.decals,
-        enabled: data.decals?.enabled,
-      });
+      console.log('[PARTICLE WORKER] Blood decals NOT enabled');
     }
 
     // ========================================
     // PARTICLE LIGHTING - Initialize
     // ========================================
+    console.log('[PARTICLE WORKER] Checking lighting configuration...');
     const lightingConfig = this.config.lighting || {};
     if (
       lightingConfig.enabled &&
       data.buffers.componentData.LightEmitter &&
       data.buffers.componentData.Transform
     ) {
+      console.log('[PARTICLE WORKER] Initializing lighting system...');
       this.lightingEnabled = true;
       this.lightingAmbient = lightingConfig.lightingAmbient ?? 0.05;
       this.globalEntityCount = data.globalEntityCount || 0;
@@ -256,13 +273,15 @@ class ParticleWorker extends AbstractWorker {
       if (lightingConfig.entityLighting !== false && data.buffers.componentData.SpriteRenderer) {
         this.entityLightingEnabled = true;
         console.log(
-          `PARTICLE WORKER: Entity lighting enabled (${this.globalEntityCount} entities)`
+          `[PARTICLE WORKER] Entity lighting enabled (${this.globalEntityCount} entities)`
         );
       }
 
       console.log(
-        `PARTICLE WORKER: Lighting enabled (ambient: ${this.lightingAmbient}, entities: ${this.globalEntityCount})`
+        `[PARTICLE WORKER] Lighting enabled (ambient: ${this.lightingAmbient}, entities: ${this.globalEntityCount})`
       );
+    } else {
+      console.log('[PARTICLE WORKER] Lighting not enabled or missing buffers');
     }
 
     // ========================================
@@ -291,12 +310,20 @@ class ParticleWorker extends AbstractWorker {
     // ========================================
     // SHADOW SPRITE SYSTEM - Initialize
     // ========================================
+    console.log('[PARTICLE WORKER] Checking shadows configuration...', {
+      hasShadows: !!data.shadows,
+      enabled: data.shadows?.enabled,
+      hasSpriteData: !!data.shadows?.spriteData,
+      hasShadowCaster: !!data.buffers.componentData.ShadowCaster
+    });
+
     if (
       data.shadows &&
       data.shadows.enabled &&
       data.shadows.spriteData &&
       data.buffers.componentData.ShadowCaster
     ) {
+      console.log('[PARTICLE WORKER] Initializing shadow system...');
       this.shadowsEnabled = true;
       this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
       this.maxShadowsPerLight = data.shadows.maxShadowsPerLight;
@@ -367,13 +394,21 @@ class ParticleWorker extends AbstractWorker {
         floatCount
       );
 
-      console.log(`PARTICLE WORKER: Shadow system enabled (${this.maxShadowSprites} shadow slots)`);
+      console.log(`[PARTICLE WORKER] Shadow system enabled (${this.maxShadowSprites} shadow slots)`);
+    } else {
+      console.log('[PARTICLE WORKER] Shadows not enabled or missing buffers');
     }
 
     // ========================================
     // FLASH SYSTEM - Initialize
     // ========================================
+    console.log('[PARTICLE WORKER] Checking flashes configuration...', {
+      hasFlashes: !!data.flashes,
+      enabled: data.flashes?.enabled
+    });
+
     if (data.flashes && data.flashes.enabled) {
+      console.log('[PARTICLE WORKER] Initializing flash system...');
       this.flashesEnabled = true;
       this.maxFlashes = data.flashes.maxFlashes;
       this.flashStartIndex = data.flashes.startIndex;
@@ -381,15 +416,18 @@ class ParticleWorker extends AbstractWorker {
       // Note: FlashComponent is automatically initialized by AbstractWorker.initializeAllComponents()
       if (data.buffers.componentData.FlashComponent) {
         console.log(
-          `PARTICLE WORKER: Flash system enabled (${this.maxFlashes} flashes, starting at index ${this.flashStartIndex})`
+          `[PARTICLE WORKER] Flash system enabled (${this.maxFlashes} flashes, starting at index ${this.flashStartIndex})`
         );
       } else {
-        console.warn('PARTICLE WORKER: FlashComponent buffer not found - flashes disabled');
+        console.warn('[PARTICLE WORKER] FlashComponent buffer not found - flashes disabled');
         this.flashesEnabled = false;
       }
+    } else {
+      console.log('[PARTICLE WORKER] Flashes not enabled');
     }
 
     // Note: activeEntitiesData is initialized in AbstractWorker.initializeCommonBuffers
+    console.log('[PARTICLE WORKER] ✅ Initialize() completed successfully!');
   }
 
   /**
@@ -1170,7 +1208,6 @@ class ParticleWorker extends AbstractWorker {
     // Cache Grid data and metadata once per call to avoid repeated Atomics.load calls
     // and potential race conditions if the buffer swaps mid-loop.
     const neighborData = Grid.neighborData;
-    const distanceData = Grid.distanceData;
     const stride = Grid._stride;
 
     // Check if we have precomputed distances from Grid (spatial worker)
@@ -1302,7 +1339,16 @@ class ParticleWorker extends AbstractWorker {
           continue;
         }
 
-        const distSq = distanceData[offset + 1 + k];
+        // Calculate distance on-the-fly (collider positions)
+        // Distance from light to shadow caster (neighbor)
+        const lightXWithOffset = Transform.x[lightIdx] + (Collider.offsetX[lightIdx] || 0);
+        const lightYWithOffset = Transform.y[lightIdx] + (Collider.offsetY[lightIdx] || 0);
+        const neighborX = Transform.x[neighborIdx] + (Collider.offsetX[neighborIdx] || 0);
+        const neighborY = Transform.y[neighborIdx] + (Collider.offsetY[neighborIdx] || 0);
+        const dx = neighborX - lightXWithOffset;
+        const dy = neighborY - lightYWithOffset;
+        const distSq = dx * dx + dy * dy;
+
         if (distSq < 1) {
           continue; // Avoid division by zero
         }
@@ -1359,12 +1405,12 @@ class ParticleWorker extends AbstractWorker {
 
         const casterHeight = entityShadowHeight[neighborIdx] || casterRadius;
 
-        const dx = casterX - lightX;
-        const dy = casterY - lightY;
+        const lightDx = casterX - lightX;
+        const lightDy = casterY - lightY;
         const dist = Math.sqrt(distSq);
         const invDist = 1 / dist;
-        const dirX = dx * invDist;
-        const dirY = dy * invDist;
+        const dirX = lightDx * invDist;
+        const dirY = lightDy * invDist;
 
         // Shadow position
         const posX = casterX - dirX * casterRadius * 0.5;

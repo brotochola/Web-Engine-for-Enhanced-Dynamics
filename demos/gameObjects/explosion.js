@@ -152,7 +152,16 @@ export class Explosion extends GameObject {
       const neighborInstance = GameObject.get(neighbor);
       if (neighborInstance == null) continue;
       if (!neighborInstance.recieveDamage) continue;
-      const distSq = this.getNeighborDistanceSq(i);
+
+      // Calculate distance on-the-fly (collider positions)
+      const myX = Transform.x[this.index] + (Collider.offsetX[this.index] || 0);
+      const myY = Transform.y[this.index] + (Collider.offsetY[this.index] || 0);
+      const neighborX = Transform.x[neighbor] + (Collider.offsetX[neighbor] || 0);
+      const neighborY = Transform.y[neighbor] + (Collider.offsetY[neighbor] || 0);
+      const dx = neighborX - myX;
+      const dy = neighborY - myY;
+      const distSq = dx * dx + dy * dy;
+
       const damage = this.explosionComponent.wantedIntensity / (distSq * 50);
 
       neighborInstance.recieveDamage(damage);
