@@ -64,6 +64,7 @@ export class Flash extends GameObject {
    * @param {number} [config.lifespan=100] - Duration in milliseconds
    * @param {number} [config.color=0xFFFFFF] - Light color (0xRRGGBB)
    * @param {number} [config.intensity=10000] - Initial light intensity
+   * @param {number} [config.hasGlowSprite=1] - Whether to render glow sprite (0 = no, 1 = yes)
    * @returns {Flash|null} - The created flash instance, or null if pool exhausted
    *
    * @example
@@ -128,6 +129,7 @@ export class Flash extends GameObject {
           lifespan: config.lifespan ?? 100,
           color: config.color ?? 0xffffff,
           intensity: config.intensity ?? 10000,
+          hasGlowSprite: config.hasGlowSprite ?? 1,
         });
 
         return instance;
@@ -164,7 +166,7 @@ export class Flash extends GameObject {
     this.lightEmitter.lightColor = spawnConfig.color ?? 0xffffff;
     this.lightEmitter.lightIntensity = spawnConfig.intensity ?? 10000;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 1; // Flashes don't render a glow sprite
+    this.lightEmitter.hasGlowSprite = spawnConfig.hasGlowSprite ?? 1;
 
     // Set flash component properties
     this.flashComponent.lifespan = spawnConfig.lifespan ?? 100;

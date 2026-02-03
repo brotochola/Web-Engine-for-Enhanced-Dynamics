@@ -2560,6 +2560,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const active = DecorationComponent.active;
     const x = DecorationComponent.x;
     const y = DecorationComponent.y;
+    const offsetX = DecorationComponent.offsetX;
+    const offsetY = DecorationComponent.offsetY;
     const scaleX = DecorationComponent.scaleX;
     const scaleY = DecorationComponent.scaleY;
     const rotation = DecorationComponent.rotation;
@@ -2617,8 +2619,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
 
       // Update sprite properties from DecorationComponent
-      actualSprite.x = x[i];
-      actualSprite.y = y[i];
+      actualSprite.x = x[i] + offsetX[i];
+      actualSprite.y = y[i] + offsetY[i];
       actualSprite.scaleX = scaleX[i];
       actualSprite.scaleY = scaleY[i];
       // Apply zoom-based alpha multiplier (fade out at low zoom)
@@ -2671,7 +2673,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         item.entityId = -2; // Mark as decoration (not an entity, not a particle)
         item.decorationIndex = i;
         item.sprite = actualSprite;
-        item.y = y[i]; // Sort by Y position
+        item.y = y[i]; // Sort by base Y position only (offsetY only affects visual position, not sorting)
       } else {
         // Y-sorting disabled - just show the sprite
         if (!actualSprite.visible) {

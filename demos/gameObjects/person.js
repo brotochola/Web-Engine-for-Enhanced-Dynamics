@@ -355,20 +355,6 @@ export class Person extends Lootable {
     // - anchorX = 0 (line starts at shooter position)
     // - anchorY = 0.5 (center vertically)
     const lineAngle = Math.atan2(dy, dx); // Angle for horizontal line (no HALF_PI offset)
-    const decorationIndex = DecorationPool.spawn({
-      x: this.x,
-      y: this.y - 30,
-      texture: '_white',
-      scaleX: distance / 8, // Stretch 8px texture to distance pixels
-      scaleY: 0.25, // Make it 2px high (2/8 = 0.25)
-      rotation: lineAngle,
-      alpha: 0.5,
-      anchorX: 0, // Start at shooter position
-      anchorY: 0.5, // Center vertically
-    });
-    setTimeout(() => {
-      DecorationPool.despawn(decorationIndex);
-    }, 50);
 
     // this.rigidBody.friction = 0.5;
     const direction = getDirectionFromAngle(angle);
@@ -384,9 +370,33 @@ export class Person extends Lootable {
     // Trigger shoot animation
     this.personAnimationFSM.forceChangeState(PersonAnimationFSM.states.SHOOTING);
 
-    // Muzzle flash
-    const flashOffsetX = direction === 'right' ? 20 : direction === 'left' ? -20 : 0;
-    const flashOffsetY = direction === 'down' ? 10 : -25;
+    // Muzzle flash position and rotation based on direction
+    let flashOffsetX = 0;
+    let flashOffsetY = 0;
+    let muzzleRotation = 0;
+
+    switch (direction) {
+      case 'right':
+        flashOffsetX = 20;
+        flashOffsetY = -30;
+        muzzleRotation = 0; // 0 degrees
+        break;
+      case 'down':
+        flashOffsetX = 0;
+        flashOffsetY = -20;
+        muzzleRotation = Math.PI / 2; // 90 degrees
+        break;
+      case 'left':
+        flashOffsetX = -20;
+        flashOffsetY = -30;
+        muzzleRotation = Math.PI; // 180 degrees
+        break;
+      case 'up':
+        flashOffsetX = 0;
+        flashOffsetY = -45;
+        muzzleRotation = -Math.PI / 2; // 270 degrees (or -90 degrees)
+        break;
+    }
 
     //Deal Damage
     const target = GameObject.get(targetEntityIndex);
@@ -394,7 +404,44 @@ export class Person extends Lootable {
       target.recieveDamage(weapon.damage);
     }
 
+    const howMuchTimeToWaitUntilFire = 100
+
     setTimeout(() => {
+
+      //little fire: muzzle effect
+      // Sprite renders at gun height (y + offsetY), but sorts at ground level (y)
+      const muzzleIndex = DecorationPool.spawn({
+        x: this.x + flashOffsetX,
+        y: this.y + 1, // Base Y position for sorting (ground level)
+        texture: "muzzle" + Math.floor(Math.random() * 3 + 1),
+        scaleX: 1,
+        scaleY: 1,
+        rotation: muzzleRotation,
+        alpha: 0.9,
+        anchorX: 0, // Start at shooter position
+        anchorY: 0.5, // Center vertically
+        offsetY: flashOffsetY, // Visual offset to gun height (negative value moves sprite up)
+      });
+
+      //line
+      const decorationIndex = DecorationPool.spawn({
+        x: this.x + flashOffsetX,
+        y: this.y - 1, // Base Y position for sorting (ground level)
+        texture: '_white',
+        scaleX: distance / 8, // Stretch 8px texture to distance pixels
+        scaleY: 0.25, // Make it 2px high (2/8 = 0.25)
+        rotation: lineAngle,
+        alpha: 0.5,
+        anchorX: 0, // Start at shooter position
+        anchorY: 0.5, // Center vertically
+        offsetY: flashOffsetY, // Visual offset to gun height (negative value moves sprite up)
+      });
+      setTimeout(() => {
+        DecorationPool.despawn(decorationIndex);
+        DecorationPool.despawn(muzzleIndex);
+      }, 50);
+
+      //create flash!
       Flash.create({
         x: this.x + flashOffsetX,
         y: this.y + flashOffsetY,
@@ -405,7 +452,7 @@ export class Person extends Lootable {
         hasGlowSprite: 0,
       });
 
-    }, 30)
+    }, howMuchTimeToWaitUntilFire)
 
     return true;
   }

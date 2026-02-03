@@ -140,6 +140,9 @@ export class PredatorScene extends WEED.Scene {
 
   static assets = {
     textures: {
+      muzzle1: '/demos/img/muzzle1.png',
+      muzzle2: '/demos/img/muzzle2.png',
+      muzzle3: '/demos/img/muzzle3.png',
       trash: '/demos/img/trash.png',
       rock1: '/demos/img/rock1.png',
       rock2: '/demos/img/rock2.png',
