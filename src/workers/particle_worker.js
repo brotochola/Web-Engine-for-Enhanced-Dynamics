@@ -702,6 +702,7 @@ class ParticleWorker extends AbstractWorker {
     const initialAlpha = ParticleComponent.initialAlpha;
     const isItOnScreen = ParticleComponent.isItOnScreen;
     const stayOnTheFloor = ParticleComponent.stayOnTheFloor;
+    const despawnOnGroundContact = ParticleComponent.despawnOnGroundContact;
     const tweenToAlpha0 = ParticleComponent.tweenToAlpha0;
 
     let activeCount = 0;
@@ -768,6 +769,12 @@ class ParticleWorker extends AbstractWorker {
         vx[i] = 0;
         vy[i] = 0;
         vz[i] = 0;
+
+        // If despawnOnGroundContact is enabled, despawn immediately (no decal)
+        if (despawnOnGroundContact[i]) {
+          active[i] = 0;
+          continue;
+        }
 
         // If stayOnTheFloor is enabled, collect particle for stamping
         if (stayOnTheFloor[i]) {

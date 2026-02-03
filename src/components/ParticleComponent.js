@@ -48,6 +48,10 @@ export class ParticleComponent extends Component {
     // The particle is then immediately despawned (no fade animation)
     stayOnTheFloor: Uint8Array, // 0 = normal behavior, 1 = stamp decal on floor hit
 
+    // === Ground Despawn ===
+    // When despawnOnGroundContact=1, particle will despawn immediately when touching the ground (no decal stamping)
+    despawnOnGroundContact: Uint8Array, // 0 = normal behavior, 1 = despawn on ground contact
+
     // === Alpha Tweening ===
     // When tweenToAlpha0=1, particle alpha linearly fades from initialAlpha to 0 over its lifespan
     tweenToAlpha0: Uint8Array, // 0 = no tween, 1 = fade to alpha 0 over lifespan
