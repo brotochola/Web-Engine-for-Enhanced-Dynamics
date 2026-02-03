@@ -18,6 +18,7 @@ import {
   getDirectionFromAngle,
   GameObject,
   DecorationPool,
+  randomColor,
 } from '../../src/index.js';
 
 const { RigidBody, Collider, SpriteRenderer, ShadowCaster, Transform, rng } = WEED;
@@ -452,9 +453,36 @@ export class Person extends Lootable {
         hasGlowSprite: 0,
       });
 
+      this.shootingSparks(lineAngle, this.x + flashOffsetX, this.y + flashOffsetY)
+
     }, howMuchTimeToWaitUntilFire)
 
     return true;
+  }
+
+  shootingSparks(shootAngle, muzzleX, muzzleY) {
+    // Convert angle from radians to degrees for ParticleEmitter (which uses degrees)
+    const angleDeg = (shootAngle * 180) / Math.PI;
+    // Shotgun spread: 35 degree cone
+    const spreadDeg = 10;
+
+    ParticleEmitter.emit({
+      count: Math.floor(Math.random() * 20) + 40,
+      x: muzzleX,
+      y: muzzleY + 30,
+      z: -30,
+      angleXY: { min: angleDeg - spreadDeg / 2, max: angleDeg + spreadDeg / 2 },
+      speed: { min: 0.1, max: 20 },
+      rotation: { min: 0, max: 360 },
+      vz: { min: -1, max: 5 }, // Some sparks fly up, others fall
+      gravity: 0.4,
+      lifespan: { min: 33, max: 100 },
+      scale: { min: 0.2, max: 0.3 },
+      texture: 'square',
+      tint: randomColor({ min: 0x00ffff, max: 0xffffff }),
+      alpha: { min: 0.5, max: 0.8 },
+      despawnOnGroundContact: true, // Despawn immediately when particles touch the ground
+    });
   }
 
   /**

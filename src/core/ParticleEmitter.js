@@ -85,6 +85,7 @@ export class ParticleEmitter {
    * @param {number|{min,max}} [config.alpha=1] - Alpha (opacity) or range
    * @param {number} [config.fadeOnTheFloor=0] - Time in ms to fade out particles when they hit the floor
    * @param {boolean} [config.stayOnTheFloor=false] - If true, particle stamps a decal on floor and despawns immediately
+   * @param {boolean} [config.despawnOnGroundContact=false] - If true, particle despawns immediately when touching the ground (no decal stamping)
    * @returns {number} - Number of particles actually spawned
    *
    * @example
@@ -211,7 +212,7 @@ export class ParticleEmitter {
       if (!textureName) {
         console.warn(
           `ParticleEmitter.emit: Could not resolve frame for ` +
-            `spritesheet="${config.spritesheet}", animation="${config.animation}", frame=${config.frame ?? 0}`
+          `spritesheet="${config.spritesheet}", animation="${config.animation}", frame=${config.frame ?? 0}`
         );
       }
     }
@@ -242,6 +243,7 @@ export class ParticleEmitter {
     const timeOnFloor = ParticleComponent.timeOnFloor;
     const initialAlpha = ParticleComponent.initialAlpha;
     const stayOnTheFloor = ParticleComponent.stayOnTheFloor;
+    const despawnOnGroundContact = ParticleComponent.despawnOnGroundContact;
     const tweenToAlpha0 = ParticleComponent.tweenToAlpha0;
     const rotation = ParticleComponent.rotation;
     const flipX = ParticleComponent.flipX;
@@ -311,6 +313,9 @@ export class ParticleEmitter {
 
         // Blood decal system: if true, particle stamps decal on floor hit and despawns
         stayOnTheFloor[i] = config.stayOnTheFloor ? 1 : 0;
+
+        // Ground despawn: if true, particle despawns immediately on ground contact (no decal)
+        despawnOnGroundContact[i] = config.despawnOnGroundContact ? 1 : 0;
 
         // Decal blend mode: 0 = normal (alpha over), 1 = multiply
         blendMode[i] = config.blendMode ?? DECAL_STAMPS_BLEND_MODE.normal;
