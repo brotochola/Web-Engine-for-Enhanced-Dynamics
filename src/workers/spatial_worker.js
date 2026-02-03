@@ -128,15 +128,20 @@ class SpatialWorker extends AbstractWorker {
     this.gridWidth = gridMetadata.gridCols;
     this.gridHeight = gridMetadata.gridRows;
     this.totalCells = gridMetadata.totalCells;
+    this.rowsPerBlock = gridMetadata.rowsPerBlock || 1; // Default to 1 (interleaved)
 
     // Store viewport for screen checks
     this.canvasWidth = this.config.canvasWidth;
     this.canvasHeight = this.config.canvasHeight;
 
-    // Pre-compute owned rows: worker i owns rows where row % totalWorkers === workerId
+    // Pre-compute owned rows using block-based partitioning
+    // Worker i owns rows where floor(row / rowsPerBlock) % totalWorkers === workerId
     const ownedRows = [];
-    for (let row = this.workerId; row < this.gridHeight; row += this.totalSpatialWorkers) {
-      ownedRows.push(row);
+    for (let row = 0; row < this.gridHeight; row++) {
+      const blockIndex = (row / this.rowsPerBlock) | 0;
+      if (blockIndex % this.totalSpatialWorkers === this.workerId) {
+        ownedRows.push(row);
+      }
     }
     this.ownedRows = new Int32Array(ownedRows);
     this.ownedRowCount = ownedRows.length;
@@ -388,7 +393,9 @@ class SpatialWorker extends AbstractWorker {
       // Insert entity into ALL cells it overlaps, but only if we own that row
       for (let row = minRow; row <= maxRowBB; row++) {
         // ROW OWNERSHIP CHECK: Only write to rows we own
-        if (row % totalSpatialWorkers !== workerId) continue;
+        // Block-based partitioning: floor(row / rowsPerBlock) % totalWorkers === workerId
+        const blockIndex = (row / this.rowsPerBlock) | 0;
+        if (blockIndex % totalSpatialWorkers !== workerId) continue;
 
         const rowBase = row * gridWidth;
 
@@ -511,7 +518,8 @@ class SpatialWorker extends AbstractWorker {
           homeRow = homeRow < 0 ? 0 : homeRow > maxRow ? maxRow : homeRow;
 
           // Skip if another worker owns this entity's home row
-          if (homeRow % totalSpatialWorkers !== workerId) continue;
+          const homeBlockIndex = (homeRow / this.rowsPerBlock) | 0;
+          if (homeBlockIndex % totalSpatialWorkers !== workerId) continue;
 
           this.entitiesProcessedThisFrame++;
 

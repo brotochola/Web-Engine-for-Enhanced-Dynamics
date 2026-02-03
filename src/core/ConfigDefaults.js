@@ -102,6 +102,7 @@ export const SPATIAL_DEFAULTS = {
   maxNeighbors: 500, // Max neighbors per entity (passed to Grid via gridMetadata)
   maxEntitiesPerCell: 64, // Max entities per grid cell (passed to Grid via gridMetadata)
   numberOfSpatialWorkers: 1, // Number of parallel spatial workers for neighbor detection
+  rowsPerBlock: 2,
   noLimitFPS: false,
 };
 
