@@ -63,6 +63,7 @@ export class Grid {
   static totalCells = 0;
   static maxEntitiesPerCell = DEFAULT_MAX_ENTITIES_PER_CELL; // Configured from scene
   static maxNeighbors = DEFAULT_MAX_NEIGHBORS; // Configured from scene
+  static rowsPerBlock = 1; // Default to 1 (interleaved)
 
   // Computed from maxEntitiesPerCell (set during initialize)
   static cellByteSize = 0; // Bytes per cell
@@ -119,6 +120,7 @@ export class Grid {
     // Configure spatial limits from scene
     Grid.maxNeighbors = metadata.maxNeighbors || DEFAULT_MAX_NEIGHBORS;
     Grid.maxEntitiesPerCell = metadata.maxEntitiesPerCell || DEFAULT_MAX_ENTITIES_PER_CELL;
+    Grid.rowsPerBlock = metadata.rowsPerBlock || 1;
 
     // Compute derived values
     Grid.cellByteSize = 4 + Grid.maxEntitiesPerCell * 4;
@@ -610,7 +612,8 @@ export class Grid {
    * @returns {boolean} True if this worker owns this row
    */
   static isRowOwnedBy(row, workerId, totalWorkers) {
-    return row % totalWorkers === workerId;
+    const blockIndex = (row / Grid.rowsPerBlock) | 0;
+    return blockIndex % totalWorkers === workerId;
   }
 
   /**
@@ -621,8 +624,11 @@ export class Grid {
    */
   static getOwnedRows(workerId, totalWorkers) {
     const rows = [];
-    for (let row = workerId; row < Grid.gridHeight; row += totalWorkers) {
-      rows.push(row);
+    for (let row = 0; row < Grid.gridHeight; row++) {
+      const blockIndex = (row / Grid.rowsPerBlock) | 0;
+      if (blockIndex % totalWorkers === workerId) {
+        rows.push(row);
+      }
     }
     return rows;
   }

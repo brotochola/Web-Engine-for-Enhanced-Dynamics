@@ -1077,6 +1077,7 @@ class Scene {
       totalCells,
       maxEntitiesPerCell,
       maxNeighbors, // Include maxNeighbors from scene config
+      rowsPerBlock: this.config.spatial.rowsPerBlock, // Add this
     };
 
     // Initialize Grid on main thread for DebugUI visualization
@@ -1095,6 +1096,7 @@ class Scene {
         totalCells,
         maxEntitiesPerCell,
         maxNeighbors,
+        rowsPerBlock: this.config.spatial.rowsPerBlock,
       }
     );
 

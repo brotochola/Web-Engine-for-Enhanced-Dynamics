@@ -1,8 +1,8 @@
 Mejoras:
 
 1. El Grid Espacial: Localidad de Datos En Grid.js usas un layout de memoria determinista. Esto es brillante para la sincronización entre workers. Optimización de Rendimiento: Actualmente, el índice del grid parece ser lineal simple (y * width + x). Sugerencia: Considera usar Z-Order Curves (Morton Code) para el indexado de celdas. Esto mejora la localidad de caché, ya que las celdas que están cerca en el espacio 2D también estarán cerca en la memoria del SharedArrayBuffer. Esto acelera dramáticamente las consultas de vecinos y raycasts.
-2.queries: cuando una entidad se activa o desactiva (Transform.active), guardar esto, para poder saber de antemano quienes estan activos y quienes no.
-3.Juntar esto con los queries, con bitwise
+
+
 4.testear EntityClass.tickAll vs instance.tick()
 5.pixi worker: hacer y-sort de un array uint16.. no de un array de obj
 6-re ver todos los momentos q se usa postMessage
