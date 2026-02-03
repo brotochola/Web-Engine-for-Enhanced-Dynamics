@@ -401,9 +401,9 @@ class PhysicsWorker extends AbstractWorker {
 
     const gravityScale = dtRatio * dtRatio;
 
-    // OPTIMIZATION: Use queryActiveEntities to get only active entities with RigidBody component
-    // This skips inactive entities and those without physics (houses, decorations, etc.)
-    const physicsEntities = this.queryActiveEntities([RigidBody]);
+    // Use cached query result from updateVerlet/updateVerletFixedStep
+    // This avoids redundant queryActiveEntities calls per frame
+    const physicsEntities = this._cachedPhysicsEntities;
 
     for (let idx = 0; idx < physicsEntities.length; idx++) {
       const i = physicsEntities[idx];
