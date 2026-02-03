@@ -1390,8 +1390,8 @@ class ParticleWorker extends AbstractWorker {
     let shadowCount = 0;
     let lightsProcessed = 0;
 
-    // Query only entities with LightEmitter
-    const lightEntities = this.query([LightEmitter]);
+    // OPTIMIZED: Query only active entities with LightEmitter
+    const lightEntities = this.queryActiveEntities([LightEmitter]);
 
     // For each LIGHT, find nearby shadow casters and generate shadows
     for (let i = 0; i < lightEntities.length; i++) {
@@ -1399,7 +1399,8 @@ class ParticleWorker extends AbstractWorker {
       if (lightsProcessed >= this.maxShadowCastingLights) break;
 
       const lightIdx = lightEntities[i];
-      if (!lightEnabled[lightIdx] || !transformActive[lightIdx]) {
+      // Note: transformActive check no longer needed - queryActiveEntities already filters
+      if (!lightEnabled[lightIdx]) {
         continue;
       }
 
@@ -1777,13 +1778,14 @@ class ParticleWorker extends AbstractWorker {
     const stillnessTime = RigidBody.stillnessTime;
     const isStatic = RigidBody.static;
 
-    // OPTIMIZATION: Query only entities that have RigidBody component
-    // This skips entities without physics (static decorations, etc.)
-    const physicsEntities = this.query([RigidBody, Transform]);
+    // OPTIMIZATION: Query only active entities that have RigidBody component
+    // This skips inactive entities and those without physics (static decorations, etc.)
+    const physicsEntities = this.queryActiveEntities([RigidBody]);
 
     for (let idx = 0; idx < physicsEntities.length; idx++) {
       const i = physicsEntities[idx];
-      if (!active[i] || !rigidBodyActive[i]) continue;
+      // Note: active[i] check no longer needed - queryActiveEntities already filters
+      if (!rigidBodyActive[i]) continue;
 
       // Skip static entities (they're always "sleeping" but don't need sleep tracking)
       if (isStatic[i]) continue;
@@ -1955,11 +1957,13 @@ class ParticleWorker extends AbstractWorker {
     }
   }
   getNumberOfShadows() {
-    const shadowCasters = this.query([ShadowCaster]);
+    // OPTIMIZED: Query only active entities with ShadowCaster
+    const shadowCasters = this.queryActiveEntities([ShadowCaster]);
     const ret = new Int32Array(shadowCasters.length);
     let count = 0;
     for (let i = 0; i < shadowCasters.length; i++) {
       const entityIdx = shadowCasters[i];
+      // Note: Transform.active check no longer needed - queryActiveEntities already filters
       if (
         ShadowCaster.active[entityIdx] &&
         SpriteRenderer.active[entityIdx] &&
