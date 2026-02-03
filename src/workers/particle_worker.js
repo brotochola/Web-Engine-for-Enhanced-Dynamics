@@ -474,6 +474,95 @@ class ParticleWorker extends AbstractWorker {
   }
 
   /**
+   * Populate pre-computed query result buffers with active entity indices
+   * Uses binary search on the already-sorted activeEntitiesData to find
+   * active entities within each entity type's index range.
+   *
+   * Called after buildActiveEntityList() so activeEntitiesData is fresh.
+   */
+  populateQueryResults() {
+    // Check if query system is initialized with SABs
+    if (!this._queryResultViews || !this._precomputedQueries || !this._queryEntityMetadata) {
+      return;
+    }
+
+    const activeData = this.activeEntitiesData;
+    if (!activeData) return;
+
+    const totalActive = activeData[0];
+    if (totalActive === 0) {
+      // No active entities - clear all result buffers
+      for (let q = 0; q < this._queryResultViews.length; q++) {
+        this._queryResultViews[q][0] = 0;
+      }
+      return;
+    }
+
+    // For each pre-computed query, find active entities from matching types
+    for (let q = 0; q < this._precomputedQueries.length; q++) {
+      const query = this._precomputedQueries[q];
+      const resultView = this._queryResultViews[q];
+      let resultCount = 0;
+
+      // Bit-scan typeMask to iterate matching entity types
+      let typeMask = query.typeMask;
+      while (typeMask !== 0n) {
+        // Find lowest set bit (trailing zeros)
+        const typeIndex = this._countTrailingZeros(typeMask);
+        const meta = this._queryEntityMetadata[typeIndex];
+
+        // Binary search activeEntitiesData for indices in [startIndex, endIndex)
+        const start = meta.startIndex;
+        const end = meta.endIndex;
+
+        // Find first index >= start
+        let lo = 1;
+        let hi = 1 + totalActive;
+        while (lo < hi) {
+          const mid = (lo + hi) >>> 1;
+          if (activeData[mid] < start) lo = mid + 1;
+          else hi = mid;
+        }
+        const first = lo;
+
+        // Find first index >= end
+        hi = 1 + totalActive;
+        while (lo < hi) {
+          const mid = (lo + hi) >>> 1;
+          if (activeData[mid] < end) lo = mid + 1;
+          else hi = mid;
+        }
+        const last = lo;
+
+        // Copy matching indices to result buffer
+        for (let i = first; i < last; i++) {
+          resultView[1 + resultCount++] = activeData[i];
+        }
+
+        // Clear lowest set bit
+        typeMask &= typeMask - 1n;
+      }
+
+      // Write count at index 0
+      resultView[0] = resultCount;
+    }
+  }
+
+  /**
+   * Count trailing zeros in BigInt (position of lowest set bit)
+   * @private
+   */
+  _countTrailingZeros(n) {
+    if (n === 0n) return 64;
+    let count = 0;
+    while ((n & 1n) === 0n) {
+      n >>= 1n;
+      count++;
+    }
+    return count;
+  }
+
+  /**
    * Build compact list of active particles
    * Scans ParticleComponent.active[] and writes indices to local activeParticleIndices
    * Avoiding the scan in updateParticlePhysics allows skipping inactive particles efficiently
@@ -519,6 +608,9 @@ class ParticleWorker extends AbstractWorker {
 
     // Build active entity list FIRST - spatial workers need this to split work evenly
     this.buildActiveEntityList();
+
+    // Populate query results SECOND - all workers can now use queryActiveEntities()
+    this.populateQueryResults();
 
     // NOTE: Grid rebuilding moved to spatial workers (row-based partitioning)
     // Each spatial worker now rebuilds its own rows, eliminating race conditions

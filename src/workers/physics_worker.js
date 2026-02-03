@@ -203,10 +203,10 @@ class PhysicsWorker extends AbstractWorker {
     // Get the number of entities with RigidBody (not all entities have physics)
     // const rigidBodyCount = this.globalEntityCount;
 
-    // OPTIMIZATION: Use query system to reset collision counters only for physics entities
+    // OPTIMIZATION: Use queryActiveEntities to reset collision counters only for active physics entities
     // Cache query result to avoid repeated calls in the same frame
     if (!this._cachedPhysicsEntities) {
-      this._cachedPhysicsEntities = this.query([RigidBody]);
+      this._cachedPhysicsEntities = this.queryActiveEntities([RigidBody]);
     }
     const physicsEntities = this._cachedPhysicsEntities;
     this.rigidBodyCount = physicsEntities.length;
@@ -314,11 +314,11 @@ class PhysicsWorker extends AbstractWorker {
     // Get the number of entities with RigidBody
     // const rigidBodyCount = RigidBody.px?.length || 0;
 
-    // OPTIMIZATION: Use query system to reset collision counters only for physics entities
+    // OPTIMIZATION: Use queryActiveEntities to reset collision counters only for active physics entities
     // Note: In fixed step mode, we reset per-step to avoid accumulation issues
     // Cache query result to avoid repeated calls in the same frame
     if (!this._cachedPhysicsEntities) {
-      this._cachedPhysicsEntities = this.query([RigidBody]);
+      this._cachedPhysicsEntities = this.queryActiveEntities([RigidBody]);
     }
     const physicsEntities = this._cachedPhysicsEntities;
     const rigidBodyCount = physicsEntities.length;
@@ -401,13 +401,14 @@ class PhysicsWorker extends AbstractWorker {
 
     const gravityScale = dtRatio * dtRatio;
 
-    // OPTIMIZATION: Use query system to get only entities with RigidBody component
-    // This skips entities without physics (houses, decorations, etc.)
-    const physicsEntities = this.query([RigidBody]);
+    // OPTIMIZATION: Use queryActiveEntities to get only active entities with RigidBody component
+    // This skips inactive entities and those without physics (houses, decorations, etc.)
+    const physicsEntities = this.queryActiveEntities([RigidBody]);
 
     for (let idx = 0; idx < physicsEntities.length; idx++) {
       const i = physicsEntities[idx];
-      if (!active[i] || !rigidBodyActive[i]) continue;
+      // Note: active[i] check no longer needed - queryActiveEntities already filters
+      if (!rigidBodyActive[i]) continue;
       if (isStatic[i]) continue;
       // SLEEPING OPTIMIZATION: Skip physics integration for sleeping entities
 
@@ -546,10 +547,10 @@ class PhysicsWorker extends AbstractWorker {
 
     const rigidBodyCount = this.rigidBodyCount;
 
-    // OPTIMIZATION: Query for entities with Collider component instead of iterating all entities
+    // OPTIMIZATION: Query for active entities with Collider component instead of iterating all entities
     // Cache query result to avoid repeated calls in the same frame
     if (!this._cachedColliderEntities) {
-      this._cachedColliderEntities = this.query([Collider]);
+      this._cachedColliderEntities = this.queryActiveEntities([Collider]);
     }
     const colliderEntities = this._cachedColliderEntities;
     const colliderCount = colliderEntities.length;
@@ -559,9 +560,9 @@ class PhysicsWorker extends AbstractWorker {
 
     for (let idx = 0; idx < colliderCount; idx++) {
       const i = colliderEntities[idx];
-      //If the Entity is sleeping, skip the collision resolution :D
-      //This is a key performance optimization
-      if (!active[i] || !colliderActive[i]) continue;
+      // Note: active[i] check no longer needed - queryActiveEntities already filters
+      // If the Entity's collider is disabled, skip collision resolution
+      if (!colliderActive[i]) continue;
 
       // Direct array access (no method call overhead)
       const offset = i * stride;

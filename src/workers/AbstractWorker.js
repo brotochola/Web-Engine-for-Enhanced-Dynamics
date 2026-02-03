@@ -21,6 +21,7 @@ import { Grid } from '../core/Grid.js';
 import { NavGrid } from '../core/NavGrid.js';
 import { ParticleComponent } from '../components/ParticleComponent.js';
 import { DecorationComponent } from '../components/DecorationComponent.js';
+import { createWorkerQueryFunctions } from '../core/QuerySystem.js';
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -346,12 +347,39 @@ export class AbstractWorker {
     // Store registered classes (used by logic worker and potentially others)
     this.registeredClasses = data.registeredClasses || [];
 
-    // Initialize query system for component-based entity filtering (lazy approach)
-    if (data.queries) {
+    // Initialize query system for component-based entity filtering (SAB-based)
+    if (data.queries && data.buffers?.queryEntityMetadata) {
+      // Create worker query functions using SAB-backed data
+      const queryFunctions = createWorkerQueryFunctions(
+        data.queries,
+        {
+          entityMetadataSAB: data.buffers.queryEntityMetadata,
+          queryCacheSAB: data.buffers.queryCache,
+          queryResultsSAB: data.buffers.queryResults,
+        },
+        this.activeEntitiesData
+      );
+
+      // Store query functions for use in this worker
+      this._queryFn = queryFunctions.query;
+      this._queryActiveEntitiesFn = queryFunctions.queryActiveEntities;
+
+      // Store internals for particle_worker to populate results
+      this._queryResultViews = queryFunctions._queryResultViews;
+      this._precomputedQueries = queryFunctions._precomputedQueries;
+      this._queryEntityMetadata = queryFunctions._entityMetadata;
+
+      // Legacy support: keep queryMetadata for backwards compatibility
+      this.queryMetadata = data.queries.metadata || [];
+
+      this.reportLog(
+        `initialized query system with ${this._precomputedQueries?.length || 0} pre-computed queries, ${this.queryMetadata.length} entity types`
+      );
+    } else if (data.queries) {
+      // Fallback for workers that don't receive SABs (backwards compatibility)
       this.queryCache = new Map();
       this.queryMetadata = data.queries.metadata || [];
 
-      // Load pre-computed queries from main thread (if any)
       if (data.queries.cache) {
         Object.entries(data.queries.cache).forEach(([key, array]) => {
           this.queryCache.set(key, new Int32Array(array));
@@ -359,7 +387,7 @@ export class AbstractWorker {
       }
 
       this.reportLog(
-        `initialized with ${this.queryCache.size} cached queries, ${this.queryMetadata.length} entity classes`
+        `initialized query system (legacy mode) with ${this.queryCache?.size || 0} cached queries`
       );
     }
 
@@ -661,17 +689,23 @@ export class AbstractWorker {
   }
 
   /**
-   * Query entities by component combination (lazy computation)
-   * Returns indices of entities that have ALL specified components
+   * Query entities by component combination
+   * Returns indices of ALL entities that have ALL specified components (regardless of active state)
    *
    * @param {Array<Component>} componentClasses - Array of component classes to query
-   * @returns {Int32Array} - Indices of matching entities
+   * @returns {Uint16Array} - Indices of matching entities (may be shared, do not modify)
    *
    * @example
    * const rigidBodies = this.query([RigidBody]);
    * const physicsObjects = this.query([RigidBody, Collider]);
    */
   query(componentClasses) {
+    // Use new SAB-based query function if available
+    if (this._queryFn) {
+      return this._queryFn(componentClasses);
+    }
+
+    // Fallback to legacy implementation
     if (!this.queryCache) {
       console.warn(`[${this.constructor.name}] Query system not initialized!`);
       return new Int32Array(0);
@@ -682,30 +716,61 @@ export class AbstractWorker {
       .sort()
       .join(',');
 
-    // Check cache first
     let result = this.queryCache.get(key);
 
     if (!result) {
-      // Compute on-demand
-
       result = this._computeQuery(componentClasses);
-
       this.queryCache.set(key, result);
-
-      if (result.length === 0) {
-        // Only warn once per query key to avoid console spam
-        if (!this.emptyQueryWarnings.has(key)) {
-          this.emptyQueryWarnings.add(key);
-        }
-      }
-    } else {
     }
 
     return result;
   }
 
   /**
-   * Compute a query by checking which entities have all required components
+   * Query for ACTIVE entities with specified components
+   * Returns view into pre-populated SAB (updated each frame by particle_worker)
+   *
+   * @param {Array<Component>} componentClasses - Array of component classes to query
+   * @returns {Uint16Array} - Active entity indices (view into SAB, do not modify)
+   *
+   * @example
+   * const activeLights = this.queryActiveEntities([LightEmitter]);
+   * const activePhysics = this.queryActiveEntities([RigidBody, Collider]);
+   */
+  queryActiveEntities(componentClasses) {
+    // Use SAB-based query function if available
+    if (this._queryActiveEntitiesFn) {
+      return this._queryActiveEntitiesFn(componentClasses);
+    }
+
+    // Fallback: filter query results by active state (slower)
+    const allEntities = this.query(componentClasses);
+    if (!allEntities || allEntities.length === 0) {
+      return new Uint16Array(0);
+    }
+
+    // Use activeEntitiesData if available for efficient active check
+    if (this.activeEntitiesData) {
+      const result = new Uint16Array(allEntities.length);
+      let count = 0;
+      const Transform = self.Transform;
+
+      for (let i = 0; i < allEntities.length; i++) {
+        const idx = allEntities[i];
+        if (Transform && Transform.active[idx]) {
+          result[count++] = idx;
+        }
+      }
+
+      return result.subarray(0, count);
+    }
+
+    console.warn(`[${this.constructor.name}] queryActiveEntities fallback - no activeEntitiesData`);
+    return new Uint16Array(0);
+  }
+
+  /**
+   * Compute a query by checking which entities have all required components (legacy)
    * @private
    * @param {Array<Component>} componentClasses - Array of component classes
    * @returns {Int32Array} - Indices of matching entities
@@ -714,27 +779,22 @@ export class AbstractWorker {
     const componentNames = componentClasses.map((c) => c.name);
     const componentNameSet = new Set(componentNames);
 
-    // Pre-allocate array with max possible size (all entities)
     const maxSize = this.queryMetadata.reduce((sum, m) => sum + m.poolSize, 0);
     const matchingIndices = new Int32Array(maxSize);
     let count = 0;
 
-    // Check each entity class metadata
     for (const metadata of this.queryMetadata) {
-      // Check if this entity class has all required components
       const hasAllComponents = [...componentNameSet].every((name) =>
         metadata.componentNames.includes(name)
       );
 
       if (hasAllComponents) {
-        // Add all entity indices of this class
         for (let i = metadata.startIndex; i < metadata.endIndex; i++) {
           matchingIndices[count++] = i;
         }
       }
     }
 
-    // Return a subarray view with only the used portion (zero-copy)
     return matchingIndices.subarray(0, count);
   }
 
