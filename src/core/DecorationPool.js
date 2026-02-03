@@ -64,6 +64,8 @@ export class DecorationPool {
    * @param {number} [config.tint=0xFFFFFF] - Color tint (0xRRGGBB)
    * @param {number} [config.anchorX=0.5] - Anchor X (0-1)
    * @param {number} [config.anchorY=0.5] - Anchor Y (0-1)
+   * @param {number} [config.offsetX=0] - Offset X for depth sorting (sprite renders at x, sorts at x+offsetX)
+   * @param {number} [config.offsetY=0] - Offset Y for depth sorting (sprite renders at y, sorts at y+offsetY)
    * @param {boolean} [config.sway=false] - Enable sway animation
    * @param {number} [config.swayAmplitude=0.025] - Sway rotation in radians (~1.4°)
    * @param {number} [config.swayFrequency=1.0] - Sway speed multiplier
@@ -105,6 +107,8 @@ export class DecorationPool {
     // Cache array references for performance
     const x = DecorationComponent.x;
     const y = DecorationComponent.y;
+    const offsetX = DecorationComponent.offsetX;
+    const offsetY = DecorationComponent.offsetY;
     const scaleX = DecorationComponent.scaleX;
     const scaleY = DecorationComponent.scaleY;
     const rotation = DecorationComponent.rotation;
@@ -121,6 +125,10 @@ export class DecorationPool {
     // Position
     x[i] = randomRange(config.x);
     y[i] = randomRange(config.y);
+
+    // Offset for depth sorting (defaults to 0)
+    offsetX[i] = config.offsetX ?? 0;
+    offsetY[i] = config.offsetY ?? 0;
 
     // Visual properties
     scaleX[i] = randomRange(config.scaleX, 1);
