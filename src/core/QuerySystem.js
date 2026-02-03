@@ -787,6 +787,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
 
   /**
    * Query for ALL entities with specified components
+   * including inactive entities
    */
   function query(componentClasses) {
     const queryMask = generateQueryMask(componentClasses);
