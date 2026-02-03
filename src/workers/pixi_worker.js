@@ -793,9 +793,10 @@ class PixiRenderer extends AbstractWorker {
     // Reset Y-sort pool for this frame (reuse array, avoid GC pressure)
     // Instead of creating new array + objects every frame, we reuse a pre-allocated pool
     this._ySortPoolSize = 0;
-    const allEntitiesWithSpriteRenderer = this.query(this.queryConfig);
+    // OPTIMIZED: queryActiveEntities returns only active (spawned) entities with SpriteRenderer
+    const allEntitiesWithSpriteRenderer = this.queryActiveEntities(this.queryConfig);
 
-    for (let i = 0; i < /*this.globalEntityCount*/ allEntitiesWithSpriteRenderer.length; i++) {
+    for (let i = 0; i < allEntitiesWithSpriteRenderer.length; i++) {
       const entityIndex = allEntitiesWithSpriteRenderer[i];
       let bodySprite = this.bodySprites[entityIndex];
       const poolIndex = this.bodySpritePoolIndices[entityIndex];
@@ -809,7 +810,7 @@ class PixiRenderer extends AbstractWorker {
       // - Active but off-screen entities (outside camera viewport)
       // The centralized particle pool handles reuse across all sprite types.
       const shouldHaveSprite =
-        active[entityIndex] && renderVisible[entityIndex] && isItOnScreen[entityIndex];
+        renderVisible[entityIndex] && isItOnScreen[entityIndex];
 
       // Acquire sprite from central pool when entity becomes visible
       if (!bodySprite && shouldHaveSprite) {
@@ -1410,16 +1411,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     let lightIndex = 0;
 
-    // OPTIMIZATION: Use query system to iterate only entities with LightEmitter
-    // This is O(numPotentialLights) instead of O(allEntities)
-    const lightEntities = this.query([LightEmitter]);
+    // OPTIMIZATION: Use queryActiveEntities to iterate only active entities with LightEmitter
+    // This is O(numActiveLights) instead of O(allEntities)
+    const lightEntities = this.queryActiveEntities([LightEmitter]);
 
     // Reset light pool for this frame (reuse objects to avoid GC)
     this._lightPoolSize = 0;
 
     for (let idx = 0; idx < lightEntities.length; idx++) {
       const i = lightEntities[idx];
-      if (!active[i] || !lightEnabled[i]) continue;
+      // Note: active[i] check no longer needed - queryActiveEntities already filters
+      if (!lightEnabled[i]) continue;
 
       // Use sprite position if available (it's already interpolated)
       const sprite = this.bodySprites[i];
@@ -1778,14 +1780,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Sprite pool index (maps active lights to sprite pool)
     let spriteIndex = 0;
 
-    // OPTIMIZATION: Use query system to iterate only entities with LightEmitter
-    // This is O(numPotentialLights) instead of O(allEntities)
-    const lightEntities = this.query([LightEmitter]);
+    // OPTIMIZATION: Use queryActiveEntities to iterate only active entities with LightEmitter
+    // This is O(numActiveLights) instead of O(allEntities)
+    const lightEntities = this.queryActiveEntities([LightEmitter]);
 
     // Log first successful update (one-time)
     if (!this._lightGlowUpdateLogged) {
       console.log(
-        `✅ PIXI WORKER: updateLightGlowSprites() running successfully. Found ${lightEntities.length} entities with LightEmitter component`
+        `✅ PIXI WORKER: updateLightGlowSprites() running successfully. Found ${lightEntities.length} active entities with LightEmitter component`
       );
       this._lightGlowUpdateLogged = true;
     }
@@ -1795,8 +1797,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     for (let idx = 0; idx < lightEntities.length; idx++) {
       const i = lightEntities[idx];
-      // Skip inactive entities, entities without LightEmitter active, or entities without glow sprite
-      if (!active[i] || !lightEnabled[i] || !hasGlowSprite[i]) continue;
+      // Note: active[i] check no longer needed - queryActiveEntities already filters
+      // Skip entities without LightEmitter active or without glow sprite
+      if (!lightEnabled[i] || !hasGlowSprite[i]) continue;
 
       // Use sprite position if available (already interpolated)
       const bodySprite = this.bodySprites[i];

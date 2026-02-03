@@ -11,8 +11,8 @@ import { ParticleComponent } from '../components/ParticleComponent.js';
 import { DecorationComponent } from '../components/DecorationComponent.js';
 import { DecorationPool } from './DecorationPool.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
-// import { FlashComponent } from "../components/FlashComponent.js";
-// import { LightEmitter } from "../components/LightEmitter.js";
+import { FlashComponent } from '../components/FlashComponent.js';
+import { LightEmitter } from '../components/LightEmitter.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import {
   setupWorkerCommunication,
@@ -185,24 +185,34 @@ class Scene {
       physicsStats: null,
       spatialStats: null,
       logicStats: null,
+      // Query system SABs (for component-based entity queries)
+      queryEntityMetadata: null,
+      queryCache: null,
+      queryResults: null,
     };
 
     // Component type ID tracking (similar to entityType)
     this.nextComponentId = 0;
 
-    // Component pool tracking - assign componentId IDs to core components
+    // Component pool tracking - assign componentId IDs to core and engine components
     this.componentPools = {
       Transform: { ComponentClass: Transform },
       RigidBody: { ComponentClass: RigidBody },
       Collider: { ComponentClass: Collider },
       SpriteRenderer: { ComponentClass: SpriteRenderer },
+      LightEmitter: { ComponentClass: LightEmitter },
+      ShadowCaster: { ComponentClass: ShadowCaster },
+      FlashComponent: { ComponentClass: FlashComponent },
     };
 
-    // Assign componentId IDs to core components
+    // Assign componentId IDs to core and engine components
     Transform.componentId = this.nextComponentId++;
     RigidBody.componentId = this.nextComponentId++;
     Collider.componentId = this.nextComponentId++;
     SpriteRenderer.componentId = this.nextComponentId++;
+    LightEmitter.componentId = this.nextComponentId++;
+    ShadowCaster.componentId = this.nextComponentId++;
+    FlashComponent.componentId = this.nextComponentId++;
 
     // Typed array views
     this.views = {
@@ -355,7 +365,8 @@ class Scene {
           ComponentClass: ComponentClass,
         };
         // Assign unique componentId ID (similar to entityType)
-        if (ComponentClass.componentId === undefined) {
+        // Check for null, undefined, or non-number
+        if (ComponentClass.componentId == null || typeof ComponentClass.componentId !== 'number') {
           ComponentClass.componentId = this.nextComponentId++;
         }
       }
@@ -581,6 +592,11 @@ class Scene {
             this.componentPools[componentName] = {
               ComponentClass: ComponentClass,
             };
+            // Assign unique componentId ID (similar to entityType)
+            // Check for null, undefined, or non-number
+            if (ComponentClass.componentId == null || typeof ComponentClass.componentId !== 'number') {
+              ComponentClass.componentId = this.nextComponentId++;
+            }
           }
         }
 
@@ -931,6 +947,24 @@ class Scene {
     // Build query system for fast component-based entity filtering
     console.log('[Scene] Building query system...');
     this.querySystem.buildQueries(this.registeredClasses);
+
+    // Define pre-computed queries for engine components
+    this.querySystem.definePrecomputedQueries({
+      Transform,
+      RigidBody,
+      Collider,
+      SpriteRenderer,
+      LightEmitter,
+      ShadowCaster,
+      FlashComponent,
+    });
+
+    // Create query system SABs
+    const querySABs = this.querySystem.createSharedBuffers();
+    this.buffers.queryEntityMetadata = querySABs.entityMetadataSAB;
+    this.buffers.queryCache = querySABs.queryCacheSAB;
+    this.buffers.queryResults = querySABs.queryResultsSAB;
+
     console.log('[Scene] Query system ready!');
 
     // Collision data buffer
@@ -1443,6 +1477,10 @@ class Scene {
         nextTickData: this.buffers.nextTickData || null,
         // Mouse input buffer (x, y, buttons, presence, wheel)
         mouseData: this.buffers.mouseData,
+        // Query system SABs (for component-based entity queries)
+        queryEntityMetadata: this.buffers.queryEntityMetadata,
+        queryCache: this.buffers.queryCache,
+        queryResults: this.buffers.queryResults,
       },
       globalEntityCount: this.totalEntityCount,
       config: this.config,
