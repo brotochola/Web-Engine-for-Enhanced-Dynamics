@@ -794,13 +794,15 @@ class Scene {
     // for entities in its owned rows. "Torn reads" just mix current + recent data
     // (never garbage), and distance checks filter any out-of-range neighbors.
     //
-    // Layout per entity: [count:Int32, neighbors[MAX_NEIGHBORS]:Int32]
+    // Layout per entity: [totalCount:Int32, collisionCount:Int32, neighbors[MAX_NEIGHBORS]:Int32]
+    // Neighbors are partitioned: collision candidates first, then visual-only neighbors
+    // Physics only iterates collisionCount, logic iterates totalCount
     const maxNeighbors = this.config.spatial.maxNeighbors;
-    const NEIGHBOR_BUFFER_SIZE = this.totalEntityCount * (1 + maxNeighbors) * 4;
+    const NEIGHBOR_BUFFER_SIZE = this.totalEntityCount * (2 + maxNeighbors) * 4;
     this.buffers.neighborData = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
 
     // Layout per entity: [dist2[MAX_NEIGHBORS]:Float32]
-    const DISTANCE_BUFFER_SIZE = this.totalEntityCount * (1 + maxNeighbors) * 4;
+    const DISTANCE_BUFFER_SIZE = this.totalEntityCount * (2 + maxNeighbors) * 4;
     this.buffers.distanceData = new SharedArrayBuffer(DISTANCE_BUFFER_SIZE);
 
     // Number of spatial workers (used for stats buffer sizing)

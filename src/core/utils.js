@@ -1261,7 +1261,7 @@ export function calculateLightFromNeighbors(
   const entityY = transformY[entityIndex] + (colliderOffsetY[entityIndex] || 0);
 
   for (let k = 0; k < neighborCount; k++) {
-    const neighborIdx = neighborData[offset + 1 + k];
+    const neighborIdx = neighborData[offset + 2 + k];
 
     // Skip if this neighbor is not a light
     if (!lightEnabled[neighborIdx]) continue;

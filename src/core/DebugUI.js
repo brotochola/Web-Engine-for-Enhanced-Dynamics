@@ -2647,7 +2647,7 @@ export class DebugUI {
     ctx.lineWidth = 2;
 
     for (let n = 0; n < neighborCount; n++) {
-      const neighborIndex = neighborData[offset + 1 + n];
+      const neighborIndex = neighborData[offset + 2 + n];
       if (!active[neighborIndex]) continue;
 
       const neighborX = x[neighborIndex];

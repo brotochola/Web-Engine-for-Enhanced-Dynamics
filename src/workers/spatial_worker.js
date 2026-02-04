@@ -79,6 +79,15 @@ class SpatialWorker extends AbstractWorker {
     // processedThisFrame[j] = entityId means entity "entityId" already processed entity "j"
     this.processedMarker = null; // Int32Array
 
+    // Scratch array for visual-only neighbors (partitioned after collision candidates)
+    // Pre-allocated to avoid per-frame allocation
+    this._visualOnlyBuffer = null; // Int32Array
+    this._visualOnlyCount = 0;
+
+    // Collision buffer: extra distance added to collision range to account for entity movement
+    // between spatial worker and physics worker (roughly half a cell size worth of movement)
+    this._collisionBuffer = 0;
+
     // Local cell counts for race-free grid rebuilding
     // We build counts locally, then copy to grid at the end (avoids mid-clear races)
     this._localCellCounts = null; // Uint8Array(totalCells)
@@ -156,6 +165,13 @@ class SpatialWorker extends AbstractWorker {
     // Initialize duplicate detection marker
     this.processedMarker = new Int32Array(this.globalEntityCount);
     this.processedMarker.fill(-1);
+
+    // Initialize visual-only buffer (max size = maxNeighbors)
+    const maxNeighbors = Grid.maxNeighbors || 500;
+    this._visualOnlyBuffer = new Int32Array(maxNeighbors);
+
+    // Collision buffer: half cell size provides good coverage for entity movement
+    this._collisionBuffer = this.cellSize * 0.5;
 
     // Initialize local cell counts array for race-free grid rebuilding
     this._localCellCounts = new Uint8Array(this.totalCells);
@@ -532,7 +548,8 @@ class SpatialWorker extends AbstractWorker {
 
           // Skip entities with no visual range
           if (myVisualRange <= 0) {
-            neighborData[neighborOffset] = 0;
+            neighborData[neighborOffset] = 0;     // totalCount
+            neighborData[neighborOffset + 1] = 0; // collisionCount
             continue;
           }
 
@@ -589,105 +606,22 @@ class SpatialWorker extends AbstractWorker {
           // =================================================================
           let neighborCount = 0;
 
-          if (allCellsSleeping && cellSleepingData) {
-            // =============================================================
-            // SLEEPING ENTITY PATH: Selective neighbor update
-            // =============================================================
-            // Read previous frame's neighbor list
-            const previousNeighborCount = neighborData[neighborOffset];
-            const previousNeighborBase = neighborOffset + 1;
-
-            // Temporary array to build new neighbor list (reuse processedMarker for tracking)
-            // We'll write directly to neighborData, but need to track which neighbors we've added
-            // Use processedMarker to mark neighbors we've already added (entityB -> entityA means added)
-
-            // First pass: Keep neighbors from sleeping cells
-            for (let prevIdx = 0; prevIdx < previousNeighborCount && neighborCount < maxNeighbors; prevIdx++) {
-              const prevNeighborId = neighborData[previousNeighborBase + prevIdx];
-
-              // Skip if neighbor is inactive (despawned)
-              if (!active[prevNeighborId]) continue;
-
-              // Get neighbor's home cell to check if it's sleeping
-              const neighborX = entityPosX[prevNeighborId];
-              const neighborY = entityPosY[prevNeighborId];
-              const neighborHomeCell = getEntityHomeCellIndex(
-                neighborX,
-                neighborY,
-                invCellSize,
-                gridWidth,
-                gridHeight
-              );
-
-              // If neighbor's home cell is sleeping, keep it from previous frame
-              if (neighborHomeCell >= 0 && cellSleepingData[neighborHomeCell] === 1) {
-                // Mark as processed and add to new list
-                processedMarker[prevNeighborId] = entityA;
-                neighborData[neighborOffset + 1 + neighborCount] = prevNeighborId;
-                neighborCount++;
-              }
-            }
-
-            // Second pass: Add/update neighbors from awake cells
-            for (let i = 0; i < neighborCellsLength; i++) {
-              const checkCellIndex = neighborCells[i];
-              const checkByteOffset = checkCellIndex * Grid.cellByteSize;
-              const checkCellCount = gridCounts[checkByteOffset];
-
-              if (checkCellCount === 0) continue;
-
-              // Skip neighbor cells that are sleeping (we already kept those from previous frame)
-              if (cellSleepingData[checkCellIndex] === 1) continue;
-
-              this.cellsCheckedThisFrame++;
-
-              const checkEntityBase = (checkByteOffset >> 2) + 1;
-
-              // Check all entities in this awake cell
-              for (let j = 0; j < checkCellCount; j++) {
-                const entityB = gridEntities[checkEntityBase + j];
-
-                // Skip self
-                if (entityA === entityB) continue;
-
-                // Skip if already added (from previous frame's sleeping neighbors)
-                if (processedMarker[entityB] === entityA) continue;
-                processedMarker[entityB] = entityA;
-
-                // Calculate squared distance for range check
-                const bX = entityPosX[entityB];
-                const bY = entityPosY[entityB];
-                const distSq = distanceSq2D(myX, myY, bX, bY);
-
-                // Early rejection: if distSq is 0, skip (same position)
-                if (distSq === 0) continue;
-
-                // Expand effective range by target's half-extent
-                const bHalfExtent = entityHalfExtent[entityB];
-                const effectiveRange = myVisualRange + bHalfExtent;
-                const effectiveRangeSq = effectiveRange * effectiveRange;
-
-                // Check if within range
-                if (distSq < effectiveRangeSq) {
-                  // Write neighbor data
-                  const writeIdx = neighborOffset + 1 + neighborCount;
-                  neighborData[writeIdx] = entityB;
-
-                  neighborCount++;
-                  this.neighborsFoundThisFrame++;
-
-                  // Stop at neighbor limit
-                  if (neighborCount >= maxNeighbors) break;
-                }
-              }
-
-              if (neighborCount >= maxNeighbors) break;
-            }
+          // NOTE: Sleeping entity optimization temporarily disabled for neighbor partitioning
+          // TODO: Re-enable with proper collision candidate partitioning support
+          if (false && allCellsSleeping && cellSleepingData) {
+            // DISABLED - Using AWAKE path for all entities to ensure correct partitioning
           } else {
             // =============================================================
-            // AWAKE ENTITY PATH: Full neighbor detection
+            // AWAKE ENTITY PATH: Full neighbor detection with PARTITIONING
             // =============================================================
-            // Entity is in at least one awake cell, do full neighbor detection
+            // Partition neighbors into: collision candidates (first) + visual-only (after)
+            // Physics only iterates collision candidates, logic iterates all
+            // =============================================================
+            let collisionCount = 0;
+            let visualOnlyCount = 0;
+            const visualOnlyBuffer = this._visualOnlyBuffer;
+            const collisionBuffer = this._collisionBuffer;
+
             for (let i = 0; i < neighborCellsLength; i++) {
               const checkCellIndex = neighborCells[i];
               const checkByteOffset = checkCellIndex * Grid.cellByteSize;
@@ -710,7 +644,7 @@ class SpatialWorker extends AbstractWorker {
                 if (processedMarker[entityB] === entityA) continue;
                 processedMarker[entityB] = entityA;
 
-                // Calculate squared distance for range check only (not stored)
+                // Calculate squared distance for range check
                 const bX = entityPosX[entityB];
                 const bY = entityPosY[entityB];
                 const distSq = distanceSq2D(myX, myY, bX, bY);
@@ -723,26 +657,48 @@ class SpatialWorker extends AbstractWorker {
                 const effectiveRange = myVisualRange + bHalfExtent;
                 const effectiveRangeSq = effectiveRange * effectiveRange;
 
-                // Check if within range
+                // Check if within visual range
                 if (distSq < effectiveRangeSq) {
-                  // Write neighbor data (distance not stored - calculated on-demand by consumers)
-                  const writeIdx = neighborOffset + 1 + neighborCount;
-                  neighborData[writeIdx] = entityB;
+                  // Check if within collision range (smaller, for physics)
+                  // Collision range = sum of half-extents + buffer for entity movement
+                  const collisionRange = myHalfExtent + bHalfExtent + collisionBuffer;
+                  const collisionRangeSq = collisionRange * collisionRange;
 
-                  neighborCount++;
-                  this.neighborsFoundThisFrame++;
+                  if (distSq < collisionRangeSq) {
+                    // COLLISION CANDIDATE: Write directly to neighborData (first section)
+                    if (collisionCount < maxNeighbors) {
+                      neighborData[neighborOffset + 2 + collisionCount] = entityB;
+                      collisionCount++;
+                      this.neighborsFoundThisFrame++;
+                    }
+                  } else {
+                    // VISUAL-ONLY: Buffer for later (will be written after collision candidates)
+                    if (collisionCount + visualOnlyCount < maxNeighbors) {
+                      visualOnlyBuffer[visualOnlyCount] = entityB;
+                      visualOnlyCount++;
+                      this.neighborsFoundThisFrame++;
+                    }
+                  }
 
-                  // Stop at neighbor limit
-                  if (neighborCount >= maxNeighbors) break;
+                  // Stop if we've hit the neighbor limit
+                  if (collisionCount + visualOnlyCount >= maxNeighbors) break;
                 }
               }
 
-              if (neighborCount >= maxNeighbors) break;
+              if (collisionCount + visualOnlyCount >= maxNeighbors) break;
             }
-          }
 
-          // Write neighbor count
-          neighborData[neighborOffset] = neighborCount;
+            // Copy visual-only neighbors to after collision candidates
+            for (let i = 0; i < visualOnlyCount; i++) {
+              neighborData[neighborOffset + 2 + collisionCount + i] = visualOnlyBuffer[i];
+            }
+
+            neighborCount = collisionCount + visualOnlyCount;
+
+            // Write counts: [totalCount, collisionCount, neighbors...]
+            neighborData[neighborOffset] = neighborCount;
+            neighborData[neighborOffset + 1] = collisionCount;
+          }
         }
       }
     }
