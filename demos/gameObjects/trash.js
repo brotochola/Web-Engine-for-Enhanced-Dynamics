@@ -1,3 +1,4 @@
+import { RigidBody } from '../../src/index.js';
 import { LootableComponent } from '../components/lootableComponent.js';
 import { Lootable } from './lootable.js';
 import WEED from '/src/index.js';
@@ -17,7 +18,7 @@ const {
 
 export class Trash extends Lootable {
     static scriptUrl = import.meta.url;
-    static components = [Collider, SpriteRenderer, ShadowCaster, LootableComponent];
+    static components = [RigidBody, Collider, SpriteRenderer, ShadowCaster, LootableComponent];
 
     static resistance = 0.5
 
@@ -26,9 +27,10 @@ export class Trash extends Lootable {
         this.setScale(Math.random() > 0.5 ? 1 : -1, 1);
 
         this.collider.shapeType = ShapeType.Circle;
+        this.rigidBody.friction = 0.8;
         this.collider.radius = 30
 
-        this.collider.visualRange = 0;
+        this.collider.visualRange = this.collider.radius * 2
         this.collider.offsetY = -15;
 
         this.shadowCaster.shadowRadius = this.collider.radius * 2;

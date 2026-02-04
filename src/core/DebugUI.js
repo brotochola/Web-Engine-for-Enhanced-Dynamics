@@ -824,6 +824,7 @@ export class DebugUI {
       velocity: 'showVelocity',
       acceleration: 'showAcceleration',
       neighbors: 'showNeighbors',
+      collisionCandidates: 'showCollisionCandidates',
       spatialGrid: 'showSpatialGrid',
       aabb: 'showAABB',
       entityIndices: 'showEntityIndices',
@@ -840,6 +841,8 @@ export class DebugUI {
         flagName = 'SHOW_SLEEPING_ENTITIES';
       } else if (key === 'sleepingCells') {
         flagName = 'SHOW_SLEEPING_CELLS';
+      } else if (key === 'collisionCandidates') {
+        flagName = 'SHOW_COLLISION_CANDIDATES';
       }
       const currentState = this.debugFlags.isEnabled(DEBUG_FLAGS[flagName]);
       this.debugFlags[method](!currentState);
@@ -1198,6 +1201,7 @@ export class DebugUI {
       { key: 'velocity', label: 'Velocity', shortcut: '2' },
       { key: 'acceleration', label: 'Accel', shortcut: '3' },
       { key: 'neighbors', label: 'Neighbors', shortcut: '4' },
+      { key: 'collisionCandidates', label: 'Collision', shortcut: 'C' },
       { key: 'spatialGrid', label: 'Grid', shortcut: '5' },
       { key: 'aabb', label: 'AABB', shortcut: '6' },
       { key: 'entityIndices', label: 'Indices', shortcut: '7' },
@@ -1894,6 +1898,7 @@ export class DebugUI {
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_ACCELERATION) ||
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INDICES) ||
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_NEIGHBORS) ||
+      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_COLLISION_CANDIDATES) ||
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SPATIAL_GRID) ||
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_RAYCASTS) ||
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES) ||
@@ -1977,6 +1982,11 @@ export class DebugUI {
     // 8. Draw neighbor connections
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_NEIGHBORS)) {
       this._drawNeighborConnections(ctx, canvas, camera, zoom);
+    }
+
+    // 8.5. Draw collision candidate connections
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_COLLISION_CANDIDATES)) {
+      this._drawCollisionCandidateConnections(ctx, canvas, camera, zoom);
     }
 
     // 9. Draw raycasts
@@ -2674,6 +2684,97 @@ export class DebugUI {
     ctx.beginPath();
     ctx.arc(mySx, mySy - 20, 4 * zoom, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  /**
+   * Draw collision candidate connections for entity closest to mouse
+   * Orange lines connecting entity to its collision candidates (physics-relevant neighbors)
+   */
+  _drawCollisionCandidateConnections(ctx, canvas, camera, zoom) {
+    if (!Grid.neighborData) return;
+
+    // Get mouse position from Mouse static class
+    const mouseX = Mouse.x;
+    const mouseY = Mouse.y;
+
+    if (!Mouse.isPresent) return;
+
+    const neighborData = Grid.neighborData;
+    const stride = Grid._stride;
+
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
+
+    // Find entity closest to mouse using Grid spatial query
+    const { count, entities } = Grid.getEntitiesInRadius(mouseX, mouseY, 150);
+
+    let closestEntity = -1;
+    let closestDist2 = Infinity;
+
+    for (let i = 0; i < count; i++) {
+      const entityId = entities[i];
+      if (!active[entityId]) continue;
+
+      const dist2 = distanceSq2D(mouseX, mouseY, x[entityId], y[entityId]);
+
+      if (dist2 < closestDist2) {
+        closestDist2 = dist2;
+        closestEntity = entityId;
+      }
+    }
+
+    if (closestEntity === -1) return;
+
+    const myX = x[closestEntity];
+    const myY = y[closestEntity];
+
+    // Transform to screen coords
+    const mySx = (myX - camera.x) * zoom;
+    const mySy = (myY - camera.y) * zoom;
+
+    // Highlight the selected entity with a bright ring
+    const highlightRadius = (Collider.radius[closestEntity] * 1.5 || 10) * zoom;
+    ctx.strokeStyle = 'rgba(255, 140, 0, 1.0)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(mySx, mySy, highlightRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Draw collision candidate connections using the entity's actual neighbor data
+    const offset = closestEntity * stride;
+    const collisionCandidateCount = neighborData[offset + 1]; // Collision candidates count is at offset + 1
+
+    ctx.strokeStyle = 'rgba(255, 100, 0, 0.8)';
+    ctx.lineWidth = 2;
+
+    for (let n = 0; n < collisionCandidateCount; n++) {
+      const candidateIndex = neighborData[offset + 2 + n];
+      if (!active[candidateIndex]) continue;
+
+      const candidateX = x[candidateIndex];
+      const candidateY = y[candidateIndex];
+
+      const candidateSx = (candidateX - camera.x) * zoom;
+      const candidateSy = (candidateY - camera.y) * zoom;
+
+      // Draw line
+      ctx.beginPath();
+      ctx.moveTo(mySx, mySy);
+      ctx.lineTo(candidateSx, candidateSy);
+      ctx.stroke();
+
+      // Draw small circle on candidate
+      ctx.fillStyle = 'rgba(255, 100, 0, 0.6)';
+      ctx.beginPath();
+      ctx.arc(candidateSx, candidateSy, 4 * zoom, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Draw entity info marker with count
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.font = `${12 * zoom}px monospace`;
+    ctx.fillText(`${collisionCandidateCount} candidates`, mySx + 10, mySy - 10);
   }
 
   /**
@@ -3643,6 +3744,9 @@ export class DebugUI {
       } else if (key === 's') {
         // Toggle sleeping cells visualization
         this._toggleVisualAid('sleepingCells');
+      } else if (key === 'c') {
+        // Toggle collision candidates visualization
+        this._toggleVisualAid('collisionCandidates');
       } else if (key === '0') {
         if (this.debugFlags) {
           this.debugFlags.disableAll();
