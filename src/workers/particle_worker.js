@@ -1429,7 +1429,7 @@ class ParticleWorker extends AbstractWorker {
         if (shadowsForThisLight >= this.maxShadowsPerLight) break;
         if (shadowCount >= maxSprites) break;
 
-        const neighborIdx = neighborData[offset + 1 + k];
+        const neighborIdx = neighborData[offset + 2 + k];
 
         // Skip if not a shadow caster or inactive
         if (!shadowCasterActive[neighborIdx] || !transformActive[neighborIdx]) {

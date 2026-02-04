@@ -11,7 +11,9 @@
 //
 // MEMORY LAYOUT:
 // SpatialGridSAB: Fixed cells with [count:Uint8, pad:3, entities[MAX_ENTITIES_PER_CELL]:Uint32]
-// NeighborsSAB:   Fixed per-entity with [count:Uint16, pad:2, neighbors[MAX_NEIGHBORS]:Uint32]
+// NeighborsSAB:   Fixed per-entity with [totalCount:Int32, collisionCount:Int32, neighbors[MAX_NEIGHBORS]:Int32]
+//                 Neighbors are partitioned: [collision candidates..., visual-only neighbors...]
+//                 Physics only iterates collisionCount, logic iterates totalCount
 // DistancesSAB:   Fixed per-entity with [dist2[MAX_NEIGHBORS]:Float32]
 //
 // WHY NO DOUBLE BUFFERING FOR NEIGHBORS?
@@ -76,7 +78,8 @@ export class Grid {
   static _gridEntities = null; // Uint32Array view - entities starting at byte 4
 
   // ===== NEIGHBOR DATA (Single Buffer - Row Ownership) =====
-  // Layout per entity: [count:Int32, neighbors[MAX_NEIGHBORS]:Int32]
+  // Layout per entity: [totalCount:Int32, collisionCount:Int32, neighbors[MAX_NEIGHBORS]:Int32]
+  // Neighbors are partitioned: collision candidates first (for physics), then visual-only (for logic)
   static _neighborBuffer = null; // SharedArrayBuffer
   static _neighborData = null; // Int32Array view
 
@@ -91,8 +94,9 @@ export class Grid {
   static _cellSleepingBuffer = null; // SharedArrayBuffer
   static _cellSleepingData = null; // Uint8Array view
 
-  // Internal stride for neighbor arrays (computed as 1 + maxNeighbors during initialize)
-  static _stride = 1 + DEFAULT_MAX_NEIGHBORS;
+  // Internal stride for neighbor arrays (computed as 2 + maxNeighbors during initialize)
+  // Layout: [totalCount, collisionCount, neighbor0, neighbor1, ...]
+  static _stride = 2 + DEFAULT_MAX_NEIGHBORS;
 
   // =============================================================================
   // INITIALIZATION
@@ -124,7 +128,8 @@ export class Grid {
 
     // Compute derived values
     Grid.cellByteSize = 4 + Grid.maxEntitiesPerCell * 4;
-    Grid.neighborStride = 1 + Grid.maxNeighbors;
+    // Stride = 2 (totalCount + collisionCount) + maxNeighbors
+    Grid.neighborStride = 2 + Grid.maxNeighbors;
     Grid._stride = Grid.neighborStride;
 
     // ===== SPATIAL GRID (Single Buffer) =====
@@ -298,9 +303,9 @@ export class Grid {
   }
 
   /**
-   * Get neighbor count for an entity
+   * Get total neighbor count for an entity (all neighbors within visual range)
    * @param {number} entityId - Entity index
-   * @returns {number} Number of neighbors
+   * @returns {number} Total number of neighbors
    */
   static getNeighborCount(entityId) {
     if (!Grid._neighborData) return 0;
@@ -308,14 +313,26 @@ export class Grid {
   }
 
   /**
+   * Get collision candidate count for an entity (neighbors within collision range)
+   * Physics should only iterate these; they appear first in the neighbor list.
+   * @param {number} entityId - Entity index
+   * @returns {number} Number of collision candidates
+   */
+  static getCollisionCandidateCount(entityId) {
+    if (!Grid._neighborData) return 0;
+    return Grid._neighborData[entityId * Grid._stride + 1];
+  }
+
+  /**
    * Get neighbor entity ID at index k
+   * Note: Collision candidates are stored first (indices 0 to collisionCount-1)
    * @param {number} entityId - Entity index
    * @param {number} k - Neighbor index (0 to count-1)
    * @returns {number} Neighbor entity ID
    */
   static getNeighbor(entityId, k) {
     if (!Grid._neighborData) return 0;
-    return Grid._neighborData[entityId * Grid._stride + 1 + k];
+    return Grid._neighborData[entityId * Grid._stride + 2 + k];
   }
 
   /**
@@ -354,28 +371,40 @@ export class Grid {
   // =============================================================================
 
   /**
-   * Set neighbor count for an entity
+   * Set total neighbor count for an entity
    * IMPORTANT: Only call for entities in cells you own
    * @param {number} entityId - Entity index
-   * @param {number} count - Number of neighbors
+   * @param {number} count - Total number of neighbors
    */
   static setNeighborCount(entityId, count) {
     if (!Grid._neighborData) return;
     const offset = entityId * Grid._stride;
     Grid._neighborData[offset] = count;
-    if (Grid._distanceData) Grid._distanceData[offset] = count;
+  }
+
+  /**
+   * Set collision candidate count for an entity
+   * IMPORTANT: Only call for entities in cells you own
+   * @param {number} entityId - Entity index
+   * @param {number} count - Number of collision candidates (stored first in neighbor list)
+   */
+  static setCollisionCandidateCount(entityId, count) {
+    if (!Grid._neighborData) return;
+    const offset = entityId * Grid._stride;
+    Grid._neighborData[offset + 1] = count;
   }
 
   /**
    * Set neighbor data at index k
+   * Note: Collision candidates should be written first (indices 0 to collisionCount-1)
    * @param {number} entityId - Entity index
    * @param {number} k - Neighbor index
    * @param {number} neighborId - Neighbor entity ID
-   * @param {number} distSq - Squared distance to neighbor
+   * @param {number} distSq - Squared distance to neighbor (optional, for distance buffer)
    */
   static setNeighbor(entityId, k, neighborId, distSq) {
     if (!Grid._neighborData) return;
-    const idx = entityId * Grid._stride + 1 + k;
+    const idx = entityId * Grid._stride + 2 + k;
     Grid._neighborData[idx] = neighborId;
     if (Grid._distanceData) Grid._distanceData[idx] = distSq;
   }

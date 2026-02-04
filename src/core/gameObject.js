@@ -1295,8 +1295,8 @@ export class GameObject {
     const offset = this._neighborOffset;
 
     for (let i = 0; i < count; i++) {
-      const neighborIndex = neighborData[offset + 1 + i];
-      const distance = distanceData ? distanceData[offset + 1 + i] : 0;
+      const neighborIndex = neighborData[offset + 2 + i];
+      const distance = distanceData ? distanceData[offset + 2 + i] : 0;
       const neighbor = instances ? instances[neighborIndex] : undefined;
 
       callback(neighbor, distance, neighborIndex);
