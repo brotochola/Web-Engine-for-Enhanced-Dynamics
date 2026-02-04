@@ -19,11 +19,9 @@ import {
   clamp01,
   validatePhysicsConfig,
   closestPointOnAABB,
-  clampVelocity,
   testCircleCircleCollision,
   testCircleAABBCollision,
   testAABBAABBCollision,
-  distanceSq2D,
 } from '../core/utils.js';
 import { rng } from '../core/utils.js';
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
@@ -481,15 +479,16 @@ class PhysicsWorker extends AbstractWorker {
       if (isNaN(dy)) dy = 0;
 
       // Velocity clamping using squared comparison (avoids sqrt for most entities)
-      const speedSquared = distanceSq2D(0, 0, dx, dy);
+      // OPTIMIZED: Inline calculation to avoid function call overhead
+      const speedSquared = dx * dx + dy * dy;
       const maxSpeed = maxVel[i] * dtRatio;
       const maxSpeedSquared = maxSpeed * maxSpeed;
 
       if (speedSquared > maxSpeedSquared) {
-        // Clamp velocity to max speed
-        const clamped = clampVelocity(dx, dy, maxSpeed);
-        dx = clamped.vx;
-        dy = clamped.vy;
+        // OPTIMIZED: Inline clamp to avoid object allocation
+        const velScale = maxSpeed / Math.sqrt(speedSquared);
+        dx *= velScale;
+        dy *= velScale;
       }
 
       x[i] = oldX + dx;

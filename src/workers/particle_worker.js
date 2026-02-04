@@ -25,7 +25,6 @@ import {
   calculateTileClipRegion,
   _decalTileBounds,
   _tileClipRegion,
-  distanceSq2D,
 } from '../core/utils.js';
 import { PARTICLE_STATS, createStatsWriter } from './workers-utils.js';
 
@@ -1464,7 +1463,8 @@ class ParticleWorker extends AbstractWorker {
         const neighborY = Transform.y[neighborIdx] + (Collider.offsetY[neighborIdx] || 0);
         const dx = neighborX - lightXWithOffset;
         const dy = neighborY - lightYWithOffset;
-        const distSq = distanceSq2D(lightXWithOffset, lightYWithOffset, neighborX, neighborY);
+        // OPTIMIZED: Inline since dx/dy are already calculated
+        const distSq = dx * dx + dy * dy;
 
         if (distSq < 1) {
           continue; // Avoid division by zero
@@ -1816,21 +1816,6 @@ class ParticleWorker extends AbstractWorker {
         velocityAngle[i] = calculateVelocityAngle(vx[i], vy[i]);
       }
     }
-  }
-
-  /**
-   * Get light data object for lighting calculations
-   * Caches array references for reuse between particle and entity lighting
-   * @returns {Object} Light data with arrays for positions, intensities, and enabled flags
-   */
-  getLightData() {
-    return {
-      lightX: Transform.x,
-      lightY: Transform.y,
-      lightIntensity: LightEmitter.lightIntensity,
-      lightEnabled: LightEmitter.active,
-      lightCount: this.globalEntityCount,
-    };
   }
 
   /**
