@@ -39,7 +39,7 @@ import {
   areAllEntityCellsSleeping,
   getEntityHomeCellIndex,
 } from './workers-utils.js';
-import { generateSymmetricalCirclePattern, distanceSq2D } from '../core/utils.js';
+import { generateSymmetricalCirclePattern } from '../core/utils.js';
 
 /**
  * SpatialWorker - Row-based spatial hashing and neighbor detection
@@ -646,9 +646,12 @@ class SpatialWorker extends AbstractWorker {
                 processedMarker[entityB] = entityA;
 
                 // Calculate squared distance for range check
+                // OPTIMIZED: Inline to avoid function call overhead in hot loop
                 const bX = entityPosX[entityB];
                 const bY = entityPosY[entityB];
-                const distSq = distanceSq2D(myX, myY, bX, bY);
+                const dxAB = bX - myX;
+                const dyAB = bY - myY;
+                const distSq = dxAB * dxAB + dyAB * dyAB;
 
                 // Early rejection: if distSq is 0, skip (same position)
                 if (distSq === 0) continue;

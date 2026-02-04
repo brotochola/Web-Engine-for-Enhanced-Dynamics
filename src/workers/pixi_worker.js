@@ -22,7 +22,12 @@ import { AbstractWorker } from './AbstractWorker.js';
 import { LightEmitter } from '../components/LightEmitter.js';
 
 import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES, RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
-import { sortByY, normalizeAngleDifference, extractRGBNormalized, distanceSq2D } from '../core/utils.js';
+import { sortByY, normalizeAngleDifference, extractRGBNormalizedMut } from '../core/utils.js';
+
+// OPTIMIZED: Pre-defined comparator function for light sorting (avoids closure allocation per frame)
+function sortByDistSq(a, b) {
+  return a.distSq - b.distSq;
+}
 import { RENDERER_STATS, createStatsWriter } from './workers-utils.js';
 
 // Import PixiJS 8 library (ES6 module with named exports)
@@ -422,6 +427,9 @@ class PixiRenderer extends AbstractWorker {
     this._renderCameraY = 0;
     this._renderZoom = 1.0;
     this._cameraInitialized = false;
+
+    // OPTIMIZED: Preallocated RGB object to avoid allocation per light per frame
+    this._rgbResult = { r: 0, g: 0, b: 0 };
 
     // Reusable matrices for low-res rendering
     this._shadowTransform = new PIXI.Matrix();
@@ -1452,7 +1460,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       item.entityId = i;
 
       // Distance squared to camera center (for prioritization)
-      item.distSq = distanceSq2D(viewCenterX, viewCenterY, x, y);
+      // OPTIMIZED: Inline calculation to avoid function call overhead
+      const dxLight = x - viewCenterX;
+      const dyLight = y - viewCenterY;
+      item.distSq = dxLight * dxLight + dyLight * dyLight;
     }
 
     // Sort visible lights by distance (closest first)
@@ -1460,9 +1471,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Setting .length doesn't allocate - pool regrows lazily next frame if needed
     const visibleLights = this._lightPool;
     visibleLights.length = this._lightPoolSize;
-    visibleLights.sort((a, b) => a.distSq - b.distSq);
+    // OPTIMIZED: Use pre-defined comparator to avoid closure allocation per frame
+    visibleLights.sort(sortByDistSq);
 
     const countToRender = Math.min(visibleLights.length, this.maxLights);
+
+    // OPTIMIZED: Reuse preallocated RGB object to avoid allocation per light
+    const rgb = this._rgbResult;
 
     for (let i = 0; i < countToRender; i++) {
       const entityIndex = visibleLights[i].entityId;
@@ -1475,10 +1490,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       lightY[i] = worldY[entityIndex] - (lightHeight[entityIndex] || 0);
       lightIntensityArr[i] = lightIntensity[entityIndex]; // NO ZOOM SCALING
 
-      const { r, g, b } = extractRGBNormalized(color);
-      lightR[i] = r;
-      lightG[i] = g;
-      lightB[i] = b;
+      extractRGBNormalizedMut(color, rgb);
+      lightR[i] = rgb.r;
+      lightG[i] = rgb.g;
+      lightB[i] = rgb.b;
 
       lightIndex++;
     }
@@ -1830,7 +1845,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       item.entityId = i;
 
       // Distance squared to camera center (for prioritization)
-      item.distSq = distanceSq2D(viewCenterX, viewCenterY, x, y);
+      // OPTIMIZED: Inline calculation to avoid function call overhead
+      const dxGlow = x - viewCenterX;
+      const dyGlow = y - viewCenterY;
+      item.distSq = dxGlow * dxGlow + dyGlow * dyGlow;
     }
 
     // Sort visible lights by distance (closest first)
@@ -1838,7 +1856,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Setting .length doesn't allocate - pool regrows lazily next frame if needed
     const visibleLights = this._lightPool;
     visibleLights.length = this._lightPoolSize;
-    // visibleLights.sort((a, b) => a.distSq - b.distSq);
+    // visibleLights.sort(sortByDistSq);
 
     const countToRender = Math.min(visibleLights.length, maxLights);
 
