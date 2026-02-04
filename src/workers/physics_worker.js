@@ -532,6 +532,7 @@ class PhysicsWorker extends AbstractWorker {
     isTrigger,
     collisionCount
   ) {
+
     const responseStrength = this.settings.collisionResponseStrength;
     const isStatic = RigidBody.static;
     const invMass = RigidBody.invMass;
