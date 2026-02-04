@@ -170,8 +170,9 @@ class SpatialWorker extends AbstractWorker {
     const maxNeighbors = Grid.maxNeighbors || 500;
     this._visualOnlyBuffer = new Int32Array(maxNeighbors);
 
-    // Collision buffer: half cell size provides good coverage for entity movement
-    this._collisionBuffer = this.cellSize * 0.5;
+    // Collision buffer: extra distance for entity movement between spatial and physics
+    const collisionMargin = this.config.spatial?.collisionCandidateSearchMargin ?? 0.125;
+    this._collisionBuffer = this.cellSize * collisionMargin;
 
     // Initialize local cell counts array for race-free grid rebuilding
     this._localCellCounts = new Uint8Array(this.totalCells);
