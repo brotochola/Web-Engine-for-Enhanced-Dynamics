@@ -2208,7 +2208,7 @@ export function containerRadius(N, R, margin = 1.05) {
  * @returns {Int32Array} Pattern array with [dr, dc, dr, dc, ...] pairs
  */
 export function generateSymmetricalCirclePattern(cellRadius, cellSize) {
-  const pattern = [];
+  const cells = [];
   const radius = cellRadius * cellSize;
   const radiusSq = radius ** 2;
 
@@ -2230,9 +2230,24 @@ export function generateSymmetricalCirclePattern(cellRadius, cellSize) {
       const closestDistSq = dx ** 2 + dy ** 2;
 
       if (closestDistSq <= radiusSq) {
-        pattern.push(dr, dc); // Store as [dr, dc] pairs
+        // Store cell with its distance squared for sorting
+        // Use cell center distance for sorting (spiral outward from center)
+        const cellCenterDistSq = dr * dr + dc * dc;
+        cells.push({ dr, dc, distSq: cellCenterDistSq });
       }
     }
   }
-  return new Int32Array(pattern);
+
+  // Sort cells by distance from center (spiral pattern: closest cells first)
+  // This makes neighbor lists approximately distance-sorted at zero runtime cost
+  cells.sort((a, b) => a.distSq - b.distSq);
+
+  // Flatten to [dr, dc, dr, dc, ...] format
+  const pattern = new Int32Array(cells.length * 2);
+  for (let i = 0; i < cells.length; i++) {
+    pattern[i * 2] = cells[i].dr;
+    pattern[i * 2 + 1] = cells[i].dc;
+  }
+
+  return pattern;
 }
