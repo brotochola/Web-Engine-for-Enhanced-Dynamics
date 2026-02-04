@@ -56,7 +56,7 @@ export class Person extends Lootable {
   // ==========================================
   static WEAPONS = {
     PISTOL: { damage: 0.66, cooldown: 200, range: 180, rangeSq: 180 ** 2 },
-    MACHINE_GUN: { damage: 10, cooldown: 1, range: 500, rangeSq: 500 ** 2 },
+    MACHINE_GUN: { damage: 0.2, cooldown: 100, range: 500, rangeSq: 500 ** 2 },
   };
 
   setup() {

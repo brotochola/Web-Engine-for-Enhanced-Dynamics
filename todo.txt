@@ -1,6 +1,12 @@
 Mejoras:
 
+ Las decoraciones y sus onthescreen, las hace el particle worker??
+ Segun la direccion de la velocidad ponerle un offset al pattern del spatial worker
+ Usar pos futura...?
+re computar entidades activas en spawn y despawn!
+ver de usar uint16 donde se pueda
 
+decorations con container!
 
 
 4.testear EntityClass.tickAll vs instance.tick()
