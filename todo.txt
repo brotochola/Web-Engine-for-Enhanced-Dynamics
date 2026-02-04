@@ -4,10 +4,28 @@ Mejoras:
 
 
 4.testear EntityClass.tickAll vs instance.tick()
-5.pixi worker: hacer y-sort de un array uint16.. no de un array de obj
+
 6-re ver todos los momentos q se usa postMessage
 7-poolsize variable, automatico.. no tener limite para la cantidad de gameobjects de tipo tal
 8-const { x, y } = Transform.getValues();
+
+
+Worker Optimizations: Batch messages in AbstractWorker.js; merge workers (e.g., spatial + physics) for fewer context switches; prioritize nav/path queues in nav_worker.js.
+Rendering Pipeline: Add dirty flags in SpriteRenderer.js to skip unchanged sprites; cache sorted lights/entities in pixi_worker.js; use dirty rects for blood decals in tilemaps.
+Physics/Collisions: Implement sweep-and-prune broad-phase in physics_worker.js; precompute masses at spawn in Collider.js/RigidBody.js.
+Spatial Hashing: Dynamic row reassignment for load-balancing in spatial_worker.js; spiral search for large neighbor radii in Grid.js.
+Particles/Lights: Active lists to skip inactive particles in particle_worker.js; light grid for O(1) influence lookups.
+Navigation: Dynamic bucket resizing in nav_worker.js; usage-based cache eviction.
+Math/Utils: Mutate params in utils.js (e.g., getCellRange()); inline hot functions like distanceSq2D().
+ECS Queries: Cache per-frame results in QuerySystem.js; typed queries with TS generics.
+Dead Code Cleanup: Remove unused like NAVIGATION_DEFAULTS.noLimitFPS; inline wrappers in ColliderUtils.js; optional bundle BigAtlasInspector.js.
+Redundant Calcs: Precompute sin/cos in logic workers; debounce setters in Collider.js.
+Cache Locality: Align arrays to 64-byte in SAB views; local copies for hot worker data.
+GC Pressure: Reuse pools for query results in QuerySystem.js; globals for temp objects in pixi_worker.js.
+GPU Usage: Implement instancing for particles/shadows in pixi_worker.js (Pixi Mesh + WebGL2); dynamic resolution for shadows; WebGPU exploration.
+Dev Experience: CLI for scenes; auto-register components; Phaser-like API (e.g., add.entity()); hot reload for workers; JSDoc/TS for IntelliSense; simple mode config.
+Mobile/Battery: Low-power mode (reduce FPS); throttle rendering with Battery API; minimize SAB accesses; mobile configs (lower maxParticles/shadows).
+Marketing/Docs: Benchmarks vs. Phaser/Excalibur/Kaboom; side-by-side demos; TS defs; benchmark repo for 20k entities.
 
 
 
@@ -16,6 +34,9 @@ Mejoras:
 
 
 --------------
+- DECORATIONS
+---------------
+q puedan tener container (=entitityID)
 
 
 

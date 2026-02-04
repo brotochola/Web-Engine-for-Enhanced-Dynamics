@@ -320,24 +320,15 @@ export class Grid {
 
   /**
    * Get squared distance to neighbor at index k
-   * Calculates distance on-the-fly from collider positions
+   * Reads pre-computed distance from spatial worker (stored in distanceData buffer)
    * @param {number} entityId - Entity index
    * @param {number} k - Neighbor index (0 to count-1)
-   * @returns {number} Squared distance
+   * @returns {number} Squared distance (pre-computed by spatial worker)
    */
   static getNeighborDistanceSq(entityId, k) {
-    const neighborId = Grid.getNeighbor(entityId, k);
-    if (neighborId < 0) return 0;
-
-    // Transform and Collider are imported at top of file
-    if (!Transform || !Transform.x || !Transform.y) return 0;
-
-    // Calculate distance on-the-fly (collider positions)
-    const entityX = Transform.x[entityId] + (Collider.offsetX?.[entityId] || 0);
-    const entityY = Transform.y[entityId] + (Collider.offsetY?.[entityId] || 0);
-    const neighborX = Transform.x[neighborId] + (Collider.offsetX?.[neighborId] || 0);
-    const neighborY = Transform.y[neighborId] + (Collider.offsetY?.[neighborId] || 0);
-    return distanceSq2D(entityX, entityY, neighborX, neighborY);
+    if (!Grid._distanceData) return 0;
+    const idx = entityId * Grid._stride + 1 + k;
+    return Grid._distanceData[idx];
   }
 
   /**

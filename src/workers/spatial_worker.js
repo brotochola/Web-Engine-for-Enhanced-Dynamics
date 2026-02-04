@@ -462,6 +462,7 @@ class SpatialWorker extends AbstractWorker {
 
     // Single buffer - direct access (row ownership eliminates races)
     const neighborData = Grid.neighborData;
+    const distanceData = Grid.distanceData;
 
     // Direct grid buffer access
     const gridCounts = Grid._gridCounts;
@@ -623,7 +624,10 @@ class SpatialWorker extends AbstractWorker {
               if (neighborHomeCell >= 0 && cellSleepingData[neighborHomeCell] === 1) {
                 // Mark as processed and add to new list
                 processedMarker[prevNeighborId] = entityA;
-                neighborData[neighborOffset + 1 + neighborCount] = prevNeighborId;
+                const writeIdx = neighborOffset + 1 + neighborCount;
+                neighborData[writeIdx] = prevNeighborId;
+                // Copy distance from previous position (both entities sleeping = distance unchanged)
+                distanceData[writeIdx] = distanceData[previousNeighborBase + prevIdx];
                 neighborCount++;
               }
             }
@@ -669,9 +673,10 @@ class SpatialWorker extends AbstractWorker {
 
                 // Check if within range
                 if (distSq < effectiveRangeSq) {
-                  // Write neighbor data
+                  // Write neighbor data and distance
                   const writeIdx = neighborOffset + 1 + neighborCount;
                   neighborData[writeIdx] = entityB;
+                  distanceData[writeIdx] = distSq;
 
                   neighborCount++;
                   this.neighborsFoundThisFrame++;
@@ -725,9 +730,10 @@ class SpatialWorker extends AbstractWorker {
 
                 // Check if within range
                 if (distSq < effectiveRangeSq) {
-                  // Write neighbor data (distance not stored - calculated on-demand by consumers)
+                  // Write neighbor data and pre-computed distance squared
                   const writeIdx = neighborOffset + 1 + neighborCount;
                   neighborData[writeIdx] = entityB;
+                  distanceData[writeIdx] = distSq;
 
                   neighborCount++;
                   this.neighborsFoundThisFrame++;

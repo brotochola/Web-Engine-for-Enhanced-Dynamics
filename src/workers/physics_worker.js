@@ -543,6 +543,7 @@ class PhysicsWorker extends AbstractWorker {
 
     // PERFORMANCE: Cache Grid arrays locally to avoid method call overhead in hot loop
     const neighborData = Grid.neighborData;
+    const distanceData = Grid.distanceData;
     const stride = Grid._stride;
     const visualRange = Collider.visualRange;
 
@@ -613,11 +614,32 @@ class PhysicsWorker extends AbstractWorker {
           continue;
         }
 
-        // Track collision check
-        this.collisionChecksThisFrame++;
-
         // Get shape type for neighbor 'j'
         const shapeJ = shapeType[j];
+
+        // OPTIMIZATION: Early rejection using pre-computed distances from spatial worker
+        // Skip expensive collision tests if entities are clearly too far apart
+        // Note: distSq is center-to-center distance computed by spatial worker
+        const precomputedDistSq = distanceData[offset + 1 + n];
+        if (shapeI === SHAPE_CIRCLE && shapeJ === SHAPE_CIRCLE) {
+          // Circle-Circle: Fast exact rejection - if centers are farther than sum of radii, no collision
+          const sumRadii = radiusI + radius[j];
+          if (precomputedDistSq > sumRadii * sumRadii) {
+            continue;
+          }
+        } else {
+          // Box involved: Conservative rejection using bounding extents
+          // halfExtentI = max(radiusI, widthI/2, heightI/2), same for J
+          const halfExtentI = shapeI === SHAPE_CIRCLE ? radiusI : (widthI > heightI ? widthI * 0.5 : heightI * 0.5);
+          const halfExtentJ = shapeJ === SHAPE_CIRCLE ? radius[j] : (width[j] > height[j] ? width[j] * 0.5 : height[j] * 0.5);
+          const maxCollisionDist = halfExtentI + halfExtentJ;
+          if (precomputedDistSq > maxCollisionDist * maxCollisionDist) {
+            continue;
+          }
+        }
+
+        // Track collision check (only for pairs that pass early rejection)
+        this.collisionChecksThisFrame++;
 
         // Calculate offset-adjusted collider positions
         // We MUST re-calculate i's position here because it might have moved
