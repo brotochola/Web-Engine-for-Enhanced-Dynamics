@@ -62,6 +62,7 @@ class PhysicsWorker extends AbstractWorker {
     this.collisionChecksThisFrame = 0;
     this.collisionsResolvedThisFrame = 0;
     this.collisionPairsThisFrame = 0;
+    this.earlyBreaksThisFrame = 0; // Spiral optimization: early neighbor loop breaks
 
     // PERFORMANCE: Reusable collision result object to avoid GC pressure
     // Instead of allocating thousands of objects per frame, we reuse this one
@@ -109,6 +110,7 @@ class PhysicsWorker extends AbstractWorker {
     this.collisionChecksThisFrame = 0;
     this.collisionsResolvedThisFrame = 0;
     this.collisionPairsThisFrame = 0;
+    this.earlyBreaksThisFrame = 0;
 
     // OPTIMIZATION: Cache query results per frame to avoid repeated calls
     // These queries are cached by the query system, but accessing them once is still faster
@@ -588,6 +590,11 @@ class PhysicsWorker extends AbstractWorker {
       const iStatic = !iHasRigidBody || isStatic[i];
       const iSleeping = iHasRigidBody && sleeping[i];
 
+      // EARLY BREAK OPTIMIZATION: Track consecutive far neighbors for circle-circle
+      // Since neighbors are spiral-sorted (closest cells first), consecutive far neighbors
+      // suggest remaining neighbors are unlikely to collide. Uses 4x safety margin for entity movement.
+      let consecutiveFarCount = 0;
+
       for (let n = 0; n < neighborCount; n++) {
         const j = neighborData[offset + 1 + n];
 
@@ -613,9 +620,6 @@ class PhysicsWorker extends AbstractWorker {
           continue;
         }
 
-        // Track collision check
-        this.collisionChecksThisFrame++;
-
         // Get shape type for neighbor 'j'
         const shapeJ = shapeType[j];
 
@@ -632,16 +636,45 @@ class PhysicsWorker extends AbstractWorker {
         let result = null;
 
         if (shapeI === SHAPE_CIRCLE && shapeJ === SHAPE_CIRCLE) {
-          // Circle vs Circle
-          result = this.testCircleCircle(
-            colliderX_i,
-            colliderY_i,
-            radiusI,
-            colliderX_j,
-            colliderY_j,
-            radius[j]
-          );
+          // OPTIMIZED Circle vs Circle: Inline distance check to enable early break
+          // Avoids function call overhead and enables spiral-based early termination
+          const dx = colliderX_i - colliderX_j;
+          const dy = colliderY_i - colliderY_j;
+          const distSq = dx * dx + dy * dy;
+          const radiusJ = radius[j];
+          const sumRadii = radiusI + radiusJ;
+          const sumRadiiSq = sumRadii * sumRadii;
+
+          if (distSq >= sumRadiiSq) {
+            // No collision - check if we should early break
+            // If distance is 4x beyond collision range, count as "far"
+            // (4x margin accounts for entity movement since spatial worker)
+            if (distSq > sumRadiiSq * 16) { // 4x distance = 16x squared
+              consecutiveFarCount++;
+              // After 3 consecutive far neighbors, break (spiral ordering = farther ones even less likely)
+              if (consecutiveFarCount >= 3) {
+                this.earlyBreaksThisFrame++;
+                break;
+              }
+            }
+            continue;
+          }
+
+          // Collision detected - reset far counter and compute response
+          consecutiveFarCount = 0;
+          this.collisionChecksThisFrame++;
+
+          // Compute penetration depth and normal (reuse collisionResult object)
+          const dist = Math.sqrt(distSq);
+          result = this.collisionResult;
+          result.collided = true;
+          result.depth = sumRadii - dist;
+          const invDist = 1 / dist;
+          result.nx = dx * invDist;
+          result.ny = dy * invDist;
         } else if (shapeI === SHAPE_CIRCLE && shapeJ === SHAPE_BOX) {
+          // Track collision check for non-circle-circle
+          this.collisionChecksThisFrame++;
           // Circle vs Box
           result = this.testCircleAABB(
             colliderX_i,
@@ -653,6 +686,8 @@ class PhysicsWorker extends AbstractWorker {
             height[j]
           );
         } else if (shapeI === SHAPE_BOX && shapeJ === SHAPE_CIRCLE) {
+          // Track collision check for non-circle-circle
+          this.collisionChecksThisFrame++;
           // Box vs Circle (swap and invert normal)
           result = this.testCircleAABB(
             colliderX_j,
@@ -668,6 +703,8 @@ class PhysicsWorker extends AbstractWorker {
             result.ny = -result.ny;
           }
         } else if (shapeI === SHAPE_BOX && shapeJ === SHAPE_BOX) {
+          // Track collision check for non-circle-circle
+          this.collisionChecksThisFrame++;
           // Box vs Box
           result = this.testAABBAABB(
             colliderX_i,
@@ -793,6 +830,7 @@ class PhysicsWorker extends AbstractWorker {
       this.stats[PHYSICS_STATS.COLLISION_CHECKS] = this.collisionChecksThisFrame;
       this.stats[PHYSICS_STATS.COLLISIONS_RESOLVED] = this.collisionsResolvedThisFrame;
       this.stats[PHYSICS_STATS.COLLISION_PAIRS] = this.collisionPairsThisFrame;
+      this.stats[PHYSICS_STATS.EARLY_BREAKS] = this.earlyBreaksThisFrame;
     }
   }
 }

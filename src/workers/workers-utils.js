@@ -58,6 +58,7 @@ export const PHYSICS_STATS = {
   COLLISION_CHECKS: 1,
   COLLISIONS_RESOLVED: 2,
   COLLISION_PAIRS: 3,
+  EARLY_BREAKS: 4, // Spiral optimization: early breaks when neighbors are far
   // Reserve space for future stats
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
