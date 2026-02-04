@@ -10,7 +10,7 @@ Mejoras:
 
 -morton z sort para spatial hash
 -pixi: dirty para todo
--sweep-and-prune broad-phase
+
 
 
 
