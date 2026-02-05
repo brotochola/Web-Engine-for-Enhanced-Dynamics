@@ -28,9 +28,8 @@ decorations con container!
 --------------
 
 -en el map maker, exportar por layers
--map maker: elegir el color de todas las rutas
+
 -map maker: agregar pasto y faroles, y autos, y tachos de basura
--map mapker, reorganise modules and give them colors
 -en el autotiler agarrar por layer
 
 

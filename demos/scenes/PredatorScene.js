@@ -127,7 +127,7 @@ export class PredatorScene extends WEED.Scene {
     navigation: {
       noLimitFPS: true,
       enabled: true,
-      cellSize: 64,
+      cellSize: 48,
       maxFlowfields: 16,
       maxPaths: 64,
       maxPathLength: 128,
@@ -504,11 +504,11 @@ export class PredatorScene extends WEED.Scene {
 
     // Find the "pasto" layer
     const pastoLayer = tilemapData.layers.find(
-      layer => layer.name === 'pasto' && layer.type === 'tilelayer'
+      layer => layer.name === 'green_grass' && layer.type === 'tilelayer'
     );
 
     if (!pastoLayer || !pastoLayer.data) {
-      console.warn('Layer "pasto" not found, grass will spawn everywhere');
+      console.warn('Layer "green_grass" not found, grass will spawn everywhere');
       return null;
     }
 
