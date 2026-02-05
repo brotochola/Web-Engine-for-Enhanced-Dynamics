@@ -104,7 +104,7 @@ export const SPATIAL_DEFAULTS = {
   numberOfSpatialWorkers: 1, // Number of parallel spatial workers for neighbor detection
   rowsPerBlock: 2,
   noLimitFPS: false,
-  collisionCandidateSearchMargin: 0.125,// Extra distance added to collision range to account for entity movement between spatial worker and physics worker
+  collisionCandidateSearchMargin: 0.25,// Extra distance added to collision range to account for entity movement between spatial worker and physics worker
 };
 
 // ============================================================================
