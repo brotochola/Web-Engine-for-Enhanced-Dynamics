@@ -54,14 +54,14 @@ export class PredatorScene extends WEED.Scene {
   // ========================================
 
   static config = {
-    worldWidth: 10240,
-    worldHeight: 7680,
+    worldWidth: 10000,
+    worldHeight: 5000,
     seed: 123456,
     debugUpdateInterval: 100,
 
     // Spatial hash grid configuration
     spatial: {
-      cellSize: 128,
+      cellSize: 96,
       maxNeighbors: 1024,
       maxEntitiesPerCell: 64, //this is very important!!
       numberOfSpatialWorkers: 3, // Multiple workers for parallel neighbor detection
@@ -285,7 +285,7 @@ export class PredatorScene extends WEED.Scene {
     this.setTilemapBackground('myTilemap', { scale: 1 });
 
     // Spawn initial entities
-    console.log('🎬 PredatorScene: Spawning entities...');
+    // console.log('🎬 PredatorScene: Spawning entities...');
 
     // Spawn player first
     // this.spawnPlayer();
@@ -293,7 +293,7 @@ export class PredatorScene extends WEED.Scene {
     this.spawnLights(this.numberOfTallLights);
     // this.spawnPrey(1000);
     // this.spawnHouses(this.numberOfHouses);
-    this.spawnGrass(40000);
+    this.spawnGrass(20000);
     this.spawnCivilians(10000);
     this.spawnTrash(100);
     // this.spawnEntity(PreySpawner, {});
@@ -304,7 +304,7 @@ export class PredatorScene extends WEED.Scene {
     // this.spawnRocks(this.numberOfRocks);
     this.spawnMySoldiers(250);
     this.spawnDestination();
-    // this.spawnRocksTreesAndHouses();
+    this.spawnRocksTreesAndHouses();
   }
 
   spawnTrash(count) {
@@ -338,8 +338,6 @@ export class PredatorScene extends WEED.Scene {
           this.spawnEntity(House, {
             x: house.x,
             y: house.y,
-            width: house.width,
-            height: house.height,
           });
         });
         setTimeout(() => this.createNavGridForTheFlowField(), 500);

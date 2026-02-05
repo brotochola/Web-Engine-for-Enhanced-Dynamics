@@ -294,7 +294,7 @@ class NavWorker extends AbstractWorker {
    */
   _findExistingFlowfieldSlot(targetCell) {
     const sab = NavGrid._sab;
-    const slotSize = NavGrid._FLOWFIELD_HEADER_SIZE + NavGrid._totalCells * 2;
+    const slotSize = NavGrid._flowfieldSlotSize;
     const maxFlowfields = NavGrid._maxFlowfields;
 
     for (let i = 0; i < maxFlowfields; i++) {
@@ -313,7 +313,7 @@ class NavWorker extends AbstractWorker {
    */
   _updateFlowfieldLRU(slotIndex) {
     const sab = NavGrid._sab;
-    const slotSize = NavGrid._FLOWFIELD_HEADER_SIZE + NavGrid._totalCells * 2;
+    const slotSize = NavGrid._flowfieldSlotSize;
     const headerOffset = NavGrid._flowfieldHeadersOffset + slotIndex * slotSize;
     const view = new Uint32Array(sab, headerOffset, 3);
     view[1] = this.frameNumber;
@@ -543,11 +543,21 @@ class NavWorker extends AbstractWorker {
       for (let x = 0; x < gridWidth; x++) {
         const cell = y * gridWidth + x;
         const outIdx = cell * 2;
+        const dir = scratch.direction[cell];
 
         // Skip if original cell has no direction (unreachable)
-        if (scratch.direction[cell] === DIRECTION.NONE) {
+        if (dir === DIRECTION.NONE) {
           smoothed[outIdx] = 0;
           smoothed[outIdx + 1] = 0;
+          continue;
+        }
+
+        // Unwalkable cells keep their original direction (don't average them)
+        // but they DO count when averaging walkable neighbors
+        if (walkability[cell] === 0) {
+          const vec = DIR_TO_VEC[dir];
+          smoothed[outIdx] = Math.round(vec[0] * 127);
+          smoothed[outIdx + 1] = Math.round(vec[1] * 127);
           continue;
         }
 
@@ -555,14 +565,14 @@ class NavWorker extends AbstractWorker {
         let sumY = 0;
         let count = 0;
 
-        // 3x3 kernel - sum all neighbor vectors
+        // 3x3 kernel - sum all neighbor vectors (including unwalkable cells)
         for (let ny = y - 1; ny <= y + 1; ny++) {
           for (let nx = x - 1; nx <= x + 1; nx++) {
             if (nx >= 0 && nx < gridWidth && ny >= 0 && ny < this.gridHeight) {
               const neighbor = ny * gridWidth + nx;
-              const dir = scratch.direction[neighbor];
-              if (dir !== DIRECTION.NONE) {
-                const vec = DIR_TO_VEC[dir];
+              const neighborDir = scratch.direction[neighbor];
+              if (neighborDir !== DIRECTION.NONE) {
+                const vec = DIR_TO_VEC[neighborDir];
                 sumX += vec[0];
                 sumY += vec[1];
                 count++;
@@ -911,7 +921,7 @@ class NavWorker extends AbstractWorker {
     if (!NavGrid._initialized) return false;
 
     const sab = NavGrid._sab;
-    const slotSize = NavGrid._FLOWFIELD_HEADER_SIZE + NavGrid._totalCells * 2;
+    const slotSize = NavGrid._flowfieldSlotSize;
 
     for (let i = 0; i < this.maxFlowfields; i++) {
       const offset = NavGrid._flowfieldHeadersOffset + i * slotSize;
