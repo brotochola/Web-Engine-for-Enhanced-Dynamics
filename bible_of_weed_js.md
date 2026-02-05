@@ -34,6 +34,9 @@
     * Features: Sway animation (wind), depth sorting offsets, auto-culling
     * Use for: Grass, rocks, debris
 
+* Particles:
+
+
 * ParticleSystem:
     * NOT GameObjects (separate optimized pool)
     * Static sprites (no animation support)

@@ -902,10 +902,10 @@ class PixiRenderer extends AbstractWorker {
 
       // Release sprite when entity despawns OR goes off-screen
       if (!active[entityIndex] || !isItOnScreen[entityIndex]) {
-        if (bodySprite && this.bodySpritePoolIndices[entityIndex] !== -1) {
+        if (bodySprite && this.bodySpritePoolIndices[entityIndex] !== 0xFFFF) {
           this.particlePool.release(this.bodySpritePoolIndices[entityIndex]);
           this.bodySprites[entityIndex] = null;
-          this.bodySpritePoolIndices[entityIndex] = -1;
+          this.bodySpritePoolIndices[entityIndex] = 0xFFFF;
 
           // CRITICAL: Always reset spritesheet tracking when sprite is released
           // This forces texture update when entity gets a new sprite from pool
@@ -2384,7 +2384,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Initialize particle tracking arrays
     this.particleSprites = new Array(this.maxParticles).fill(null);
-    this.particleSpritePoolIndices = new Int32Array(this.maxParticles).fill(-1);
+    this.particleSpritePoolIndices = new Uint16Array(this.maxParticles).fill(0xFFFF);
 
     console.log(
       `PIXI WORKER: Particle system initialized (${this.maxParticles} slots, using central particle pool)`
@@ -2430,10 +2430,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Release sprite when particle despawns or goes off-screen
       if (!active[i] || !isItOnScreen[i]) {
-        if (sprite && poolIndex !== -1) {
+        if (sprite && poolIndex !== 0xFFFF) {
           this.particlePool.release(poolIndex);
           this.particleSprites[i] = null;
-          this.particleSpritePoolIndices[i] = -1;
+          this.particleSpritePoolIndices[i] = 0xFFFF;
           // Clear texture cache for this particle
           delete this.particleTextureCache[i + '_' + textureId[i]];
         }
@@ -2530,7 +2530,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Initialize arrays for decoration tracking
     this.decorationSprites = new Array(this.maxDecorations).fill(null);
-    this.decorationSpritePoolIndices = new Int32Array(this.maxDecorations).fill(-1);
+    this.decorationSpritePoolIndices = new Uint16Array(this.maxDecorations).fill(0xFFFF);
     this.decorationSpriteTextureIds = new Uint16Array(this.maxDecorations);
 
     console.log(
@@ -2616,10 +2616,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Release sprite when decoration despawns or goes off-screen
       if (!active[i] || !isItOnScreen[i]) {
-        if (sprite && poolIndex !== -1) {
+        if (sprite && poolIndex !== 0xFFFF) {
           this.particlePool.release(poolIndex);
           this.decorationSprites[i] = null;
-          this.decorationSpritePoolIndices[i] = -1;
+          this.decorationSpritePoolIndices[i] = 0xFFFF;
           this.decorationSpriteTextureIds[i] = 0;
         }
         continue;
@@ -2716,7 +2716,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   createSprites() {
     // Initialize sprite tracking arrays
     this.bodySprites = new Array(this.globalEntityCount).fill(null);
-    this.bodySpritePoolIndices = new Int32Array(this.globalEntityCount).fill(-1);
+    this.bodySpritePoolIndices = new Uint16Array(this.globalEntityCount).fill(0xFFFF);
     this.currentSpritesheetIds = new Uint8Array(this.globalEntityCount);
 
     // Initialize animation tracking typed arrays
@@ -3511,12 +3511,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         float32Offset + floatCount * 28,
         floatCount
       );
-      this.shadowSpriteEntityIdx = new Int32Array(
+      this.shadowSpriteEntityIdx = new Uint16Array(
         data.shadows.spriteData,
         float32Offset + floatCount * 32,
         floatCount
       );
-      this.shadowSpriteLightIdx = new Int32Array(
+      this.shadowSpriteLightIdx = new Uint16Array(
         data.shadows.spriteData,
         float32Offset + floatCount * 36,
         floatCount
@@ -3524,7 +3524,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Track previous entity indices for interpolation (detect ownership changes)
       // -1 means no previous owner (first frame or was inactive)
-      this._shadowPrevEntityIdx = new Int32Array(this.maxShadowSprites).fill(-1);
+      this._shadowPrevEntityIdx = new Uint16Array(this.maxShadowSprites).fill(0xFFFF);
 
       // Create shadow RenderTexture system (shadows rendered separately via shadowRT)
       this.createShadowSpriteSystem();

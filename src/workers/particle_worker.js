@@ -204,7 +204,7 @@ class ParticleWorker extends AbstractWorker {
         this.particlesToStamp = new Uint16Array(this.maxParticles);
 
         // OPTIMIZATION: Track active particles to avoid scanning inactive ones
-        this.activeParticleIndices = new Int32Array(this.maxParticles);
+        this.activeParticleIndices = new Uint16Array(this.maxParticles);
         console.log('[PARTICLE WORKER] Particle arrays initialized');
       }
     } else {
@@ -392,12 +392,12 @@ class ParticleWorker extends AbstractWorker {
         float32Offset + floatCount * 28,
         floatCount
       );
-      this.shadowSpriteEntityIdx = new Int32Array(
+      this.shadowSpriteEntityIdx = new Uint16Array(
         data.shadows.spriteData,
         float32Offset + floatCount * 32,
         floatCount
       );
-      this.shadowSpriteLightIdx = new Int32Array(
+      this.shadowSpriteLightIdx = new Uint16Array(
         data.shadows.spriteData,
         float32Offset + floatCount * 36,
         floatCount
@@ -1944,7 +1944,7 @@ class ParticleWorker extends AbstractWorker {
   getNumberOfShadows() {
     // OPTIMIZED: Query only active entities with ShadowCaster
     const shadowCasters = this.queryActiveEntities([ShadowCaster]);
-    const ret = new Int32Array(shadowCasters.length);
+    const ret = new Uint16Array(shadowCasters.length);
     let count = 0;
     for (let i = 0; i < shadowCasters.length; i++) {
       const entityIdx = shadowCasters[i];
