@@ -394,7 +394,7 @@ class Scene {
 
     // Pre-computed typed array of all entity indices for this class
     // Enables zero-allocation iteration: Prey.entityIndices.forEach(...)
-    EntityClass.entityIndices = new Int32Array(count);
+    EntityClass.entityIndices = new Uint16Array(count);
     for (let i = 0; i < count; i++) {
       EntityClass.entityIndices[i] = startIndex + i;
     }

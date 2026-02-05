@@ -1381,7 +1381,7 @@ export class GameObject {
     const startIndex = EntityClass.startIndex;
 
     // Create free list stack (LIFO - last written index is first to spawn)
-    EntityClass.freeList = new Int32Array(count);
+    EntityClass.freeList = new Uint16Array(count);
     EntityClass.freeListTop = count - 1;
 
     // INTERLEAVED SPAWNING: Scatter entity indices to reduce multi-core cache contention

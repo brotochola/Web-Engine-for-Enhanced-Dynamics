@@ -29,7 +29,7 @@ export class DecorationPool {
     this.initialized = true;
 
     // Initialize free list with all indices (LIFO stack)
-    this.freeList = new Int32Array(maxDecorations);
+    this.freeList = new Uint16Array(maxDecorations);
     for (let i = 0; i < maxDecorations; i++) {
       this.freeList[i] = i;
     }
