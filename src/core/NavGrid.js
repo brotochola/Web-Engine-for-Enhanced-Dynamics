@@ -202,8 +202,8 @@ export class NavGrid {
     const headerSize = this._HEADER_SIZE;
     const walkabilitySize = totalCells; // 1 byte per cell
 
-    // Flowfield: header (12 bytes) + data (1 byte direction per cell)
-    const flowfieldSlotSize = this._FLOWFIELD_HEADER_SIZE + totalCells;
+    // Flowfield: header (12 bytes) + data (2 bytes per cell: X and Y as Int8)
+    const flowfieldSlotSize = this._FLOWFIELD_HEADER_SIZE + totalCells * 2;
     const flowfieldsSize = maxFlowfields * flowfieldSlotSize;
 
     // Path: header (20 bytes) + data (4 bytes per cell * maxPathLength)
@@ -244,7 +244,7 @@ export class NavGrid {
     this._walkabilityOffset = this._HEADER_SIZE;
     this._flowfieldHeadersOffset = this._walkabilityOffset + this._totalCells;
 
-    const flowfieldSlotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+    const flowfieldSlotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells * 2;
     this._flowfieldDataOffset =
       this._flowfieldHeadersOffset + this._maxFlowfields * this._FLOWFIELD_HEADER_SIZE;
 
@@ -332,12 +332,8 @@ export class NavGrid {
     const slotIndex = this._findFlowfieldSlot(targetCell);
 
     if (slotIndex >= 0) {
-      // Flowfield exists - sample direction at our current cell
-      const direction = this._sampleFlowfield(slotIndex, currentCell);
-      const vec = DIR_TO_VEC[direction];
-
-      outVec.x = vec[0];
-      outVec.y = vec[1];
+      // Flowfield exists - sample vector at our current cell
+      this._sampleFlowfield(slotIndex, currentCell, outVec);
       // Note: LRU is handled by nav_worker when it receives requests
     } else {
       // Flowfield not ready - return zero and request computation
@@ -619,7 +615,7 @@ export class NavGrid {
    * @returns {number} - Slot index, or -1 if not found
    */
   static _findFlowfieldSlot(targetCell) {
-    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells * 2;
 
     for (let i = 0; i < this._maxFlowfields; i++) {
       const offset = this._flowfieldHeadersOffset + i * slotSize;
@@ -634,25 +630,29 @@ export class NavGrid {
   }
 
   /**
-   * Sample flowfield direction at a cell
+   * Sample flowfield vector at a cell
    *
    * @param {number} slotIndex - Which flowfield slot to sample
    * @param {number} currentCell - The cell to get direction for
-   * @returns {number} - Direction enum value (DIRECTION.N, DIRECTION.SE, etc.)
+   * @param {Object} outVec - Output vector {x, y} to fill with float values
    */
-  static _sampleFlowfield(slotIndex, currentCell) {
-    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+  static _sampleFlowfield(slotIndex, currentCell, outVec) {
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells * 2;
     const dataOffset =
       this._flowfieldHeadersOffset + slotIndex * slotSize + this._FLOWFIELD_HEADER_SIZE;
-    const data = new Uint8Array(this._sab, dataOffset, this._totalCells);
-    return data[currentCell];
+    // Data is stored as Int8: 2 bytes per cell (X, Y), normalized to [-127, 127]
+    const data = new Int8Array(this._sab, dataOffset, this._totalCells * 2);
+    const idx = currentCell * 2;
+    // Convert from Int8 [-127, 127] to float [-1, 1]
+    outVec.x = data[idx] / 127;
+    outVec.y = data[idx + 1] / 127;
   }
 
   /**
    * Update LRU timestamp for flowfield slot
    */
   static _touchFlowfieldSlot(slotIndex) {
-    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells * 2;
     const headerOffset = this._flowfieldHeadersOffset + slotIndex * slotSize;
     const view = new Uint32Array(this._sab, headerOffset, 3);
     view[1] = this._currentFrame; // lastUsedFrame
@@ -662,7 +662,7 @@ export class NavGrid {
    * Clear a flowfield slot
    */
   static _clearFlowfieldSlot(slotIndex) {
-    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells * 2;
     const headerOffset = this._flowfieldHeadersOffset + slotIndex * slotSize;
     const view = new Uint32Array(this._sab, headerOffset, 3);
     view[0] = 0xffffffff; // targetCell = invalid
@@ -830,7 +830,7 @@ export class NavGrid {
    * @returns {number} - Slot index
    */
   static allocateFlowfieldSlot(targetCell) {
-    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells * 2;
 
     let emptySlot = -1;
     let lruSlot = 0;
@@ -874,16 +874,16 @@ export class NavGrid {
    * Write flowfield data and mark as ready (nav worker only)
    *
    * @param {number} slotIndex - Slot to write to
-   * @param {Uint8Array} directions - Direction data (1 byte per cell)
+   * @param {Int8Array} vectors - Vector data (2 bytes per cell: X, Y as Int8)
    */
-  static writeFlowfieldData(slotIndex, directions) {
-    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+  static writeFlowfieldData(slotIndex, vectors) {
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells * 2;
     const dataOffset =
       this._flowfieldHeadersOffset + slotIndex * slotSize + this._FLOWFIELD_HEADER_SIZE;
-    const data = new Uint8Array(this._sab, dataOffset, this._totalCells);
+    const data = new Int8Array(this._sab, dataOffset, this._totalCells * 2);
 
-    // Copy direction data
-    data.set(directions);
+    // Copy vector data
+    data.set(vectors);
 
     // Mark as ready (header is at start of slot)
     const headerOffset = this._flowfieldHeadersOffset + slotIndex * slotSize;
@@ -979,7 +979,7 @@ export class NavGrid {
     if (!this._initialized) return [];
 
     const result = [];
-    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells * 2;
 
     for (let i = 0; i < this._maxFlowfields; i++) {
       const offset = this._flowfieldHeadersOffset + i * slotSize;
@@ -1053,12 +1053,12 @@ export class NavGrid {
   /**
    * Get flowfield data for visualization
    * @param {number} slotIndex - Slot index
-   * @returns {Object|null} {targetCell, directions: Uint8Array} or null
+   * @returns {Object|null} {targetCell, vectors: Int8Array (2 per cell)} or null
    */
   static getFlowfieldForVisualization(slotIndex) {
     if (!this._initialized || slotIndex < 0 || slotIndex >= this._maxFlowfields) return null;
 
-    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells;
+    const slotSize = this._FLOWFIELD_HEADER_SIZE + this._totalCells * 2;
     const headerOffset = this._flowfieldHeadersOffset + slotIndex * slotSize;
     const headerView = new Uint32Array(this._sab, headerOffset, 3);
 
@@ -1068,7 +1068,7 @@ export class NavGrid {
 
     return {
       targetCell: headerView[0],
-      directions: new Uint8Array(this._sab, dataOffset, this._totalCells),
+      vectors: new Int8Array(this._sab, dataOffset, this._totalCells * 2),
       gridWidth: this._gridWidth,
       gridHeight: this._gridHeight,
       cellSize: this._cellSize,

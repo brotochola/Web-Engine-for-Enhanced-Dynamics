@@ -192,9 +192,17 @@ class GoingToEnemyState extends FSMState {
     // 1. Try to use stored target first
     if (isStoredTargetValid(owner, i)) {
       const targetIndex = PersonComponent.closestEnemyIndex[i];
+
       const targetX = Transform.x[targetIndex];
       const targetY = Transform.y[targetIndex];
       const distSq = distanceSq2D(owner.x, owner.y, targetX, targetY);
+
+      //todo: optimizar esto
+      const destinationInstance = Destination.getFirstActiveInstance()
+      if (distanceSq2D(owner.x, owner.y, destinationInstance.x, destinationInstance.y) > 600 ** 2) {
+        this.fsm.changeState(i, this.fsm.states.GOING_TO_DESTINATION);
+        return
+      }
 
       // Update stored distance
       PersonComponent.closestEnemyDistanceSq[i] = distSq;
