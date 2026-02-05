@@ -850,8 +850,9 @@ class PixiRenderer extends AbstractWorker {
         continue;
       }
 
-      // OPTIMIZATION: Only update visual properties if dirty flag is set
-      // This skips expensive operations (tint, alpha, flipping, animations) when unchanged
+      // DIRTY FLAG: Only for EXPENSIVE operations (spritesheet/animation changes)
+      // Plain Particle properties (tint, alpha, scale, anchor) are written every frame
+      // without checks - PixiJS 8 Particle has no setters, so write cost ≈ read cost
       if (renderDirty[entityIndex]) {
         // Check if spritesheet changed (per-instance override)
         const spritesheetId = SpriteRenderer.spritesheetId;
@@ -863,10 +864,6 @@ class PixiRenderer extends AbstractWorker {
           this.updateEntitySpritesheet(bodySprite, entityIndex, spritesheetId[entityIndex]);
           this.currentSpritesheetIds[entityIndex] = spritesheetId[entityIndex];
         }
-
-        // Update body sprite visual properties
-        bodySprite.tint = convertRGBtoBGR(tint[entityIndex]);
-        bodySprite.alpha = alpha[entityIndex];
 
         // Update animation if changed
         this.updateSpriteAnimation(bodySprite, entityIndex, animationState[entityIndex]);
@@ -881,23 +878,21 @@ class PixiRenderer extends AbstractWorker {
       // ALWAYS advance animation frames (not just when dirty!)
       this.changeFrameOfSprite(bodySprite, entityIndex, deltaSeconds);
 
-      // DENSE: use entity index directly for all component data
-      // PixiJS 8 Particle uses scaleX/scaleY instead of scale.x/scale.y
-      if (bodySprite.scaleX !== scaleX[entityIndex]) bodySprite.scaleX = scaleX[entityIndex];
-      if (bodySprite.scaleY !== scaleY[entityIndex]) bodySprite.scaleY = scaleY[entityIndex];
-
-      // Update anchor points (0-1 range)
-      // PixiJS 8 Particle uses anchorX/anchorY instead of anchor.x/anchor.y
-      if (bodySprite.anchorX !== anchorX[entityIndex]) bodySprite.anchorX = anchorX[entityIndex];
-      if (bodySprite.anchorY !== anchorY[entityIndex]) bodySprite.anchorY = anchorY[entityIndex];
+      // PLAIN PARTICLE PROPERTIES: Write every frame without checks
+      // PixiJS 8 Particle properties are plain data fields (no setters/side effects)
+      // Cost of comparison ≈ cost of write, and writes avoid branch misprediction
+      bodySprite.tint = convertRGBtoBGR(tint[entityIndex]);
+      bodySprite.alpha = alpha[entityIndex];
+      bodySprite.scaleX = scaleX[entityIndex];
+      bodySprite.scaleY = scaleY[entityIndex];
+      bodySprite.anchorX = anchorX[entityIndex];
+      bodySprite.anchorY = anchorY[entityIndex];
 
       // ========================================
       // SPRITE LIFECYCLE MANAGEMENT
       // ========================================
       // Release sprites back to pool when entities go off-screen or despawn.
       // This allows the same PIXI.Particle to be reused for different entities.
-      const shouldBeVisible =
-        active[entityIndex] && renderVisible[entityIndex] && isItOnScreen[entityIndex];
 
       // Release sprite when entity despawns OR goes off-screen
       if (!active[entityIndex] || !isItOnScreen[entityIndex]) {

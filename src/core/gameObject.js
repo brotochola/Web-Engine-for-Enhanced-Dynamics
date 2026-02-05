@@ -343,7 +343,7 @@ export class GameObject {
     if (!this._hasComponents.SpriteRenderer) return;
     if (SpriteRenderer.alpha[this.index] !== value) {
       SpriteRenderer.alpha[this.index] = value;
-      SpriteRenderer.renderDirty[this.index] = 1;
+      // SpriteRenderer.renderDirty[this.index] = 1;
     }
   }
 
@@ -357,7 +357,7 @@ export class GameObject {
     SpriteRenderer.baseTint[this.index] = value;
     if (SpriteRenderer.tint[this.index] !== value) {
       SpriteRenderer.tint[this.index] = value;
-      SpriteRenderer.renderDirty[this.index] = 1;
+      // SpriteRenderer.renderDirty[this.index] = 1;
     }
   }
 
@@ -371,7 +371,7 @@ export class GameObject {
     const v = value ? 1 : 0;
     if (SpriteRenderer.renderVisible[this.index] !== v) {
       SpriteRenderer.renderVisible[this.index] = v;
-      SpriteRenderer.renderDirty[this.index] = 1;
+      // SpriteRenderer.renderDirty[this.index] = 1;
     }
   }
 
@@ -384,7 +384,7 @@ export class GameObject {
     if (!this._hasComponents.SpriteRenderer) return;
     if (SpriteRenderer.scaleX[this.index] !== value) {
       SpriteRenderer.scaleX[this.index] = value;
-      SpriteRenderer.renderDirty[this.index] = 1;
+      // SpriteRenderer.renderDirty[this.index] = 1;
     }
   }
 
@@ -397,7 +397,7 @@ export class GameObject {
     if (!this._hasComponents.SpriteRenderer) return;
     if (SpriteRenderer.scaleY[this.index] !== value) {
       SpriteRenderer.scaleY[this.index] = value;
-      SpriteRenderer.renderDirty[this.index] = 1;
+      // SpriteRenderer.renderDirty[this.index] = 1;
     }
   }
 
@@ -488,7 +488,7 @@ export class GameObject {
     if (!this._hasComponents.SpriteRenderer) return this;
     if (SpriteRenderer.alpha[this.index] !== value) {
       SpriteRenderer.alpha[this.index] = value;
-      SpriteRenderer.renderDirty[this.index] = 1;
+      // SpriteRenderer.renderDirty[this.index] = 1;
     }
     return this;
   }
@@ -503,7 +503,7 @@ export class GameObject {
     SpriteRenderer.baseTint[this.index] = value;
     if (SpriteRenderer.tint[this.index] !== value) {
       SpriteRenderer.tint[this.index] = value;
-      SpriteRenderer.renderDirty[this.index] = 1;
+      // SpriteRenderer.renderDirty[this.index] = 1;
     }
     return this;
   }
@@ -518,7 +518,7 @@ export class GameObject {
     const v = value ? 1 : 0;
     if (SpriteRenderer.renderVisible[this.index] !== v) {
       SpriteRenderer.renderVisible[this.index] = v;
-      SpriteRenderer.renderDirty[this.index] = 1;
+      // SpriteRenderer.renderDirty[this.index] = 1;
     }
     return this;
   }
@@ -532,18 +532,18 @@ export class GameObject {
   setScale(x, y) {
     if (!this._hasComponents.SpriteRenderer) return this;
     const yVal = y !== undefined ? y : x;
-    let changed = false;
+    // let changed = false;
     if (SpriteRenderer.scaleX[this.index] !== x) {
       SpriteRenderer.scaleX[this.index] = x;
-      changed = true;
+      // changed = true;
     }
     if (SpriteRenderer.scaleY[this.index] !== yVal) {
       SpriteRenderer.scaleY[this.index] = yVal;
-      changed = true;
+      // changed = true;
     }
-    if (changed) {
-      SpriteRenderer.renderDirty[this.index] = 1;
-    }
+    // if (changed) {
+    //   SpriteRenderer.renderDirty[this.index] = 1;
+    // }
     return this;
   }
 
@@ -557,7 +557,7 @@ export class GameObject {
     if (!this._hasComponents.SpriteRenderer) return this;
     SpriteRenderer.anchorX[this.index] = x;
     SpriteRenderer.anchorY[this.index] = y;
-    SpriteRenderer.renderDirty[this.index] = 1;
+    // SpriteRenderer.renderDirty[this.index] = 1;
     return this;
   }
 
