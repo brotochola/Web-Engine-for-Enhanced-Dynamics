@@ -4,7 +4,7 @@
 
 import { DecorationComponent } from '../components/DecorationComponent.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
-import { randomRange } from './utils.js';
+import { randomRange, convertRGBtoBGR } from './utils.js';
 
 export class DecorationPool {
   // Pool size (set during initialization)
@@ -136,7 +136,7 @@ export class DecorationPool {
 
     rotation[i] = config.rotation ?? 0;
     alpha[i] = randomRange(config.alpha, 1);
-    tint[i] = config.tint ?? 0xffffff;
+    tint[i] = convertRGBtoBGR(config.tint ?? 0xffffff); // Convert RGB→BGR for PixiJS
     anchorX[i] = config.anchorX ?? 0.5;
     anchorY[i] = config.anchorY ?? 1;
     decorationTextureId[i] = textureId;

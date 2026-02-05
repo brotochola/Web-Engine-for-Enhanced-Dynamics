@@ -865,7 +865,8 @@ class PixiRenderer extends AbstractWorker {
         }
 
         // Update body sprite visual properties
-        bodySprite.tint = convertRGBtoBGR(tint[entityIndex]);
+        // Note: tint is already stored as BGR (converted at setter time in gameObject.js)
+        bodySprite.tint = tint[entityIndex];
         bodySprite.alpha = alpha[entityIndex];
 
         // Update animation if changed

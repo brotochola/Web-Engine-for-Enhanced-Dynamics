@@ -15,7 +15,7 @@ decorations con container!
 8-const { x, y } = Transform.getValues();
 
 
--pixi: dirty para todo
+
 
 
 
