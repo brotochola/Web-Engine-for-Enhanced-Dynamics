@@ -14,7 +14,7 @@ decorations con container!
 7-poolsize variable, automatico.. no tener limite para la cantidad de gameobjects de tipo tal
 8-const { x, y } = Transform.getValues();
 
--morton z sort para spatial hash
+
 -pixi: dirty para todo
 
 

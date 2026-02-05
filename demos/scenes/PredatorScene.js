@@ -354,7 +354,32 @@ export class PredatorScene extends WEED.Scene {
     ]);
   }
 
+  printFPS() {
+    const smoothing = this.game.debugUI?.fpsSmoothing;
+    if (!smoothing) {
+      console.log('DebugUI not available');
+      return;
+    }
+
+    const getSmoothedFPS = (s) => (s.sum / s.values.length).toFixed(2);
+
+    // Log all worker FPS (smoothed, same as DebugUI)
+    console.log('=== Worker FPS (averaged) ===');
+    for (let i = 0; i < smoothing.spatial.length; i++) {
+      console.log(`Spatial ${i}: ${getSmoothedFPS(smoothing.spatial[i])} FPS`);
+    }
+    console.log(`Physics: ${getSmoothedFPS(smoothing.physics)} FPS`);
+    console.log(`Renderer: ${getSmoothedFPS(smoothing.renderer)} FPS`);
+    console.log(`Particle: ${getSmoothedFPS(smoothing.particle)} FPS`);
+    for (let i = 0; i < smoothing.logic.length; i++) {
+      console.log(`Logic ${i}: ${getSmoothedFPS(smoothing.logic[i])} FPS`);
+    }
+  }
+
   update(dtRatio, deltaTime, accumulatedTime, frameNumber) {
+    if (frameNumber % (60 * 10) === 0) {
+      this.printFPS()
+    }
 
     // console.log(dtRatio, deltaTime, accumulatedTime, frameNumber)
     if (frameNumber % 300 === 0) {
