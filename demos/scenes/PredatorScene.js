@@ -77,7 +77,7 @@ export class PredatorScene extends WEED.Scene {
     },
 
     decoration: {
-      maxDecorations: 10000, // Non-interactive decorations like grass
+      maxDecorations: 40000, // Non-interactive decorations like grass
     },
 
     // Logic configuration
@@ -157,6 +157,10 @@ export class PredatorScene extends WEED.Scene {
       grass2: '/demos/img/g2.png',
       grass3: '/demos/img/g3.png',
       grass4: '/demos/img/g4.png',
+      grass5: '/demos/img/g5.png',
+      grass6: '/demos/img/g6.png',
+      grass7: '/demos/img/g7.png',
+      grass8: '/demos/img/g8.png',
       tree1: '/demos/img/tree1.png',
       tree2: '/demos/img/tree2.png',
       barrel1: '/demos/img/barrel1.png',
@@ -266,7 +270,6 @@ export class PredatorScene extends WEED.Scene {
 
     this.numberOfTallLights = 200;
     this.numberOfHouses = 100;
-    this.numberOfGrass = 10000;
 
     this.numberOfTrees = 1000;
     this.numberOfBarrels = 100;
@@ -290,7 +293,7 @@ export class PredatorScene extends WEED.Scene {
     this.spawnLights(this.numberOfTallLights);
     // this.spawnPrey(1000);
     // this.spawnHouses(this.numberOfHouses);
-    this.spawnGrass(this.numberOfGrass);
+    this.spawnGrass(40000);
     this.spawnCivilians(10000);
     this.spawnTrash(100);
     // this.spawnEntity(PreySpawner, {});
@@ -494,8 +497,8 @@ export class PredatorScene extends WEED.Scene {
     console.log('Spawning grass...');
     // Spawn grass using DecorationPool (lightweight, no GameObject overhead)
     for (let i = 0; i < count; i++) {
-      const scale = 0.75 + this.rng() * 0.5;
-      const grassType = Math.floor(this.rng() * 4) + 1; // grass1 to grass9
+      const scale = 0.2 + this.rng() * 0.1;
+      const grassType = Math.floor(this.rng() * 8) + 1; // grass1 to grass9
       DecorationPool.spawn({
         x: this.rng() * this.config.worldWidth,
         y: this.rng() * this.config.worldHeight,
@@ -506,8 +509,8 @@ export class PredatorScene extends WEED.Scene {
         anchorX: 0.5,
         anchorY: 1.0, // Bottom anchor for grass
         sway: true,
-        swayAmplitude: 0.05 + Math.random() * 0.05,
-        swayFrequency: 1 + Math.random(),
+        swayAmplitude: 0.05 + Math.random() * 0.03,
+        swayFrequency: 1 + Math.random() * 2,
       });
     }
   }
