@@ -35,6 +35,14 @@
     * Use for: Grass, rocks, debris
 
 * Particles:
+    * Spawn via `ParticleEmitter.emit({...})`
+    * High performance, short-lived visual effects
+    * Supports ranges for random variation (e.g. `speed: {min: 5, max: 10}`)
+    * Physics: Gravity, Z-axis (height), bouncing/sliding not supported
+    * `staysOnTheFloor: true` to make them stamp on the floor as decals
+
+* Decals:
+    * `ParticleEmitter.stampDecal()` for permanent floor marks
 
 
 * ParticleSystem:
