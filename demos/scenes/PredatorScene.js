@@ -61,9 +61,9 @@ export class PredatorScene extends WEED.Scene {
 
     // Spatial hash grid configuration
     spatial: {
-      cellSize: 96,
+      cellSize: 128,
       maxNeighbors: 1024,
-      maxEntitiesPerCell: 64, //this is very important!!
+      maxEntitiesPerCell: 32, //this is very important!!
       numberOfSpatialWorkers: 3, // Multiple workers for parallel neighbor detection
       noLimitFPS: true,
     },
@@ -491,15 +491,80 @@ export class PredatorScene extends WEED.Scene {
     }
   }
 
+  /**
+   * Pre-compute valid grass spawn positions from the "pasto" tilemap layer
+   * Only positions where the layer has non-zero tile values are valid
+   */
+  computeGrassPositions() {
+    const tilemapData = this.loadedTilemaps['myTilemap']?.data;
+    if (!tilemapData) {
+      console.warn('Tilemap not loaded, grass will spawn everywhere');
+      return null;
+    }
+
+    // Find the "pasto" layer
+    const pastoLayer = tilemapData.layers.find(
+      layer => layer.name === 'pasto' && layer.type === 'tilelayer'
+    );
+
+    if (!pastoLayer || !pastoLayer.data) {
+      console.warn('Layer "pasto" not found, grass will spawn everywhere');
+      return null;
+    }
+
+    const tileWidth = tilemapData.tilewidth;
+    const tileHeight = tilemapData.tileheight;
+    const mapWidth = tilemapData.width;
+    const mapHeight = tilemapData.height;
+
+    // Collect all valid tile positions (where tile value != 0)
+    const validPositions = [];
+    for (let tileY = 0; tileY < mapHeight; tileY++) {
+      for (let tileX = 0; tileX < mapWidth; tileX++) {
+        const index = tileY * mapWidth + tileX;
+        if (pastoLayer.data[index] !== 0) {
+          // Store the world position (center of tile)
+          validPositions.push({
+            x: tileX * tileWidth + tileWidth / 2,
+            y: tileY * tileHeight + tileHeight / 2,
+            tileWidth,
+            tileHeight,
+          });
+        }
+      }
+    }
+
+    console.log(`Found ${validPositions.length} valid grass tiles in "pasto" layer`);
+    return validPositions;
+  }
+
   spawnGrass(count) {
     console.log('Spawning grass...');
+
+    // Get valid positions from the "pasto" layer
+    const validPositions = this.computeGrassPositions();
+
     // Spawn grass using DecorationPool (lightweight, no GameObject overhead)
     for (let i = 0; i < count; i++) {
+      let x, y;
+
+      if (validPositions && validPositions.length > 0) {
+        // Pick a random valid tile and randomize position within it
+        const tile = validPositions[Math.floor(this.rng() * validPositions.length)];
+        // Random position within the tile bounds
+        x = tile.x + (this.rng() - 0.5) * tile.tileWidth;
+        y = tile.y + (this.rng() - 0.5) * tile.tileHeight;
+      } else {
+        // Fallback: spawn anywhere
+        x = this.rng() * this.config.worldWidth;
+        y = this.rng() * this.config.worldHeight;
+      }
+
       const scale = 0.2 + this.rng() * 0.1;
       const grassType = Math.floor(this.rng() * 8) + 1; // grass1 to grass9
       DecorationPool.spawn({
-        x: this.rng() * this.config.worldWidth,
-        y: this.rng() * this.config.worldHeight,
+        x,
+        y,
         texture: 'grass' + grassType,
         scaleX: scale,
         scaleY: scale,
