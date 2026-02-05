@@ -479,7 +479,7 @@ export class Person extends Lootable {
       lifespan: { min: 33, max: 100 },
       scale: { min: 0.2, max: 0.3 },
       texture: 'square',
-      tint: randomColor({ min: 0x00ffff, max: 0xffffff }),
+      tint: randomColor({ min: 0xffff00, max: 0xffffff }),
       alpha: { min: 0.5, max: 0.8 },
       despawnOnGroundContact: true, // Despawn immediately when particles touch the ground
     });

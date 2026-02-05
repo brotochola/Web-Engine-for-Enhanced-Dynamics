@@ -9,7 +9,7 @@ import { LightEmitter } from '../components/LightEmitter.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { Grid } from './Grid.js';
-import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox, distanceSq2D } from './utils.js';
+import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox, distanceSq2D, convertRGBtoBGR } from './utils.js';
 import Keyboard from './Keyboard.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
@@ -350,13 +350,14 @@ export class GameObject {
   /** Tint color (0xRRGGBB) */
   get tint() {
     if (!this._hasComponents.SpriteRenderer) return 0xffffff;
-    return SpriteRenderer.tint[this.index];
+    return SpriteRenderer.baseTint[this.index]; // Return user-facing RGB value
   }
   set tint(value) {
     if (!this._hasComponents.SpriteRenderer) return;
-    SpriteRenderer.baseTint[this.index] = value;
-    if (SpriteRenderer.tint[this.index] !== value) {
-      SpriteRenderer.tint[this.index] = value;
+    SpriteRenderer.baseTint[this.index] = value; // Store RGB for lighting/user access
+    const bgrValue = convertRGBtoBGR(value); // Convert RGB→BGR for PixiJS
+    if (SpriteRenderer.tint[this.index] !== bgrValue) {
+      SpriteRenderer.tint[this.index] = bgrValue;
       SpriteRenderer.renderDirty[this.index] = 1;
     }
   }
@@ -500,9 +501,10 @@ export class GameObject {
    */
   setTint(value) {
     if (!this._hasComponents.SpriteRenderer) return this;
-    SpriteRenderer.baseTint[this.index] = value;
-    if (SpriteRenderer.tint[this.index] !== value) {
-      SpriteRenderer.tint[this.index] = value;
+    SpriteRenderer.baseTint[this.index] = value; // Store RGB for lighting/user access
+    const bgrValue = convertRGBtoBGR(value); // Convert RGB→BGR for PixiJS
+    if (SpriteRenderer.tint[this.index] !== bgrValue) {
+      SpriteRenderer.tint[this.index] = bgrValue;
       SpriteRenderer.renderDirty[this.index] = 1;
     }
     return this;
