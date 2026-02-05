@@ -29,7 +29,7 @@ import {
   distanceSq2D,
 } from './utils.js';
 import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from './ConfigDefaults.js';
-import { NavGrid, DIR_TO_VEC } from './NavGrid.js';
+import { NavGrid } from './NavGrid.js';
 import { Grid } from './Grid.js';
 
 /**
@@ -2092,13 +2092,13 @@ export class DebugUI {
     const ffData = NavGrid.getFlowfieldForVisualization(slotIndex);
     if (!ffData) return;
 
-    const { directions, gridWidth, gridHeight, cellSize, targetCell } = ffData;
+    const { vectors, gridWidth, gridHeight, cellSize, targetCell } = ffData;
 
     // Calculate target position
     const targetX = (targetCell % gridWidth) * cellSize + cellSize / 2;
     const targetY = Math.floor(targetCell / gridWidth) * cellSize + cellSize / 2;
 
-    // Draw arrows for each cell (skip if direction is NONE)
+    // Draw arrows for each cell (skip if vector is zero)
     ctx.strokeStyle = 'rgba(0, 200, 255, 0.7)';
     ctx.lineWidth = 1.5;
 
@@ -2119,9 +2119,17 @@ export class DebugUI {
     for (let y = startCellY; y < endCellY; y++) {
       for (let x = startCellX; x < endCellX; x++) {
         const cellIndex = y * gridWidth + x;
-        const dir = directions[cellIndex];
+        const vecIdx = cellIndex * 2;
 
-        if (dir === 0) continue; // NONE
+        // Get vector components (Int8 normalized to [-127, 127])
+        const vx = vectors[vecIdx];
+        const vy = vectors[vecIdx + 1];
+
+        if (vx === 0 && vy === 0) continue; // No direction
+
+        // Convert from Int8 to float [-1, 1]
+        const dx = vx / 127;
+        const dy = vy / 127;
 
         // Cell center in world coords
         const wx = x * cellSize + cellSize / 2;
@@ -2130,9 +2138,6 @@ export class DebugUI {
         // Transform to screen coords
         const sx = (wx - camera.x) * zoom;
         const sy = (wy - camera.y) * zoom;
-
-        // Get direction vector
-        const [dx, dy] = DIR_TO_VEC[dir];
 
         // Draw arrow line
         ctx.beginPath();

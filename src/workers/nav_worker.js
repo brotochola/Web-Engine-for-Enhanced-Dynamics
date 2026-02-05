@@ -46,7 +46,7 @@ self.postMessage({
 // ============================================================================
 
 import { AbstractWorker } from './AbstractWorker.js';
-import { NavGrid, DIRECTION } from '../core/NavGrid.js';
+import { NavGrid, DIRECTION, DIR_TO_VEC } from '../core/NavGrid.js';
 import { NAVIGATION_STATS, createStatsWriter } from './workers-utils.js';
 import {
   getColliderBounds,
@@ -71,7 +71,8 @@ class NavScratch {
 
     // Flowfield (Dijkstra) buffers
     this.distance = new Uint16Array(totalCells);
-    this.direction = new Uint8Array(totalCells); // Output directions
+    this.direction = new Uint8Array(totalCells); // Output directions (discrete, for Dijkstra pass)
+    this.smoothedVectors = new Int8Array(totalCells * 2); // Smoothed vectors (X, Y as Int8)
 
     // Bucket queue for O(1) Dijkstra
     // Max distance must cover worst case: traversing entire grid diagonally
@@ -293,7 +294,7 @@ class NavWorker extends AbstractWorker {
    */
   _findExistingFlowfieldSlot(targetCell) {
     const sab = NavGrid._sab;
-    const slotSize = NavGrid._FLOWFIELD_HEADER_SIZE + NavGrid._totalCells;
+    const slotSize = NavGrid._FLOWFIELD_HEADER_SIZE + NavGrid._totalCells * 2;
     const maxFlowfields = NavGrid._maxFlowfields;
 
     for (let i = 0; i < maxFlowfields; i++) {
@@ -312,7 +313,7 @@ class NavWorker extends AbstractWorker {
    */
   _updateFlowfieldLRU(slotIndex) {
     const sab = NavGrid._sab;
-    const slotSize = NavGrid._FLOWFIELD_HEADER_SIZE + NavGrid._totalCells;
+    const slotSize = NavGrid._FLOWFIELD_HEADER_SIZE + NavGrid._totalCells * 2;
     const headerOffset = NavGrid._flowfieldHeadersOffset + slotIndex * slotSize;
     const view = new Uint32Array(sab, headerOffset, 3);
     view[1] = this.frameNumber;
@@ -528,9 +529,66 @@ class NavWorker extends AbstractWorker {
       scratch.direction[cell] = bestDir;
     }
 
+    // Third pass: Smoothing
+    // Average each vector with its 8 neighbors to get continuous float vectors
+
+    // Safety check for hot-reload scenarios where scratch might be stale
+    if (!scratch.smoothedVectors) {
+      scratch.smoothedVectors = new Int8Array(this.totalCells * 2);
+    }
+
+    const smoothed = scratch.smoothedVectors;
+
+    for (let y = 0; y < this.gridHeight; y++) {
+      for (let x = 0; x < gridWidth; x++) {
+        const cell = y * gridWidth + x;
+        const outIdx = cell * 2;
+
+        // Skip if original cell has no direction (unreachable)
+        if (scratch.direction[cell] === DIRECTION.NONE) {
+          smoothed[outIdx] = 0;
+          smoothed[outIdx + 1] = 0;
+          continue;
+        }
+
+        let sumX = 0;
+        let sumY = 0;
+        let count = 0;
+
+        // 3x3 kernel - sum all neighbor vectors
+        for (let ny = y - 1; ny <= y + 1; ny++) {
+          for (let nx = x - 1; nx <= x + 1; nx++) {
+            if (nx >= 0 && nx < gridWidth && ny >= 0 && ny < this.gridHeight) {
+              const neighbor = ny * gridWidth + nx;
+              const dir = scratch.direction[neighbor];
+              if (dir !== DIRECTION.NONE) {
+                const vec = DIR_TO_VEC[dir];
+                sumX += vec[0];
+                sumY += vec[1];
+                count++;
+              }
+            }
+          }
+        }
+
+        if (count > 0) {
+          // Average the vector (sum / count) - this gives float values in [-1, 1]
+          const avgX = sumX / count;
+          const avgY = sumY / count;
+
+          // Store as Int8 scaled by 127 (so -1.0 -> -127, 1.0 -> 127)
+          smoothed[outIdx] = Math.round(avgX * 127);
+          smoothed[outIdx + 1] = Math.round(avgY * 127);
+        } else {
+          smoothed[outIdx] = 0;
+          smoothed[outIdx + 1] = 0;
+        }
+      }
+    }
+
     // Allocate slot and write results
     const slot = NavGrid.allocateFlowfieldSlot(targetCell);
-    NavGrid.writeFlowfieldData(slot, scratch.direction);
+    NavGrid.writeFlowfieldData(slot, smoothed);
 
     // Update cache count
     if (willUseEmptySlot) {
@@ -853,7 +911,7 @@ class NavWorker extends AbstractWorker {
     if (!NavGrid._initialized) return false;
 
     const sab = NavGrid._sab;
-    const slotSize = NavGrid._FLOWFIELD_HEADER_SIZE + NavGrid._totalCells;
+    const slotSize = NavGrid._FLOWFIELD_HEADER_SIZE + NavGrid._totalCells * 2;
 
     for (let i = 0; i < this.maxFlowfields; i++) {
       const offset = NavGrid._flowfieldHeadersOffset + i * slotSize;
