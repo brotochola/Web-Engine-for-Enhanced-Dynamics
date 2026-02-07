@@ -18,6 +18,7 @@ import { Explosion } from '../gameObjects/explosion.js';
 import { MySoldier } from '../gameObjects/mySoldier.js';
 import { Destination } from '../gameObjects/destination.js';
 import { NavGrid } from '../../src/core/NavGrid.js';
+import { containerRadius } from '../../src/core/utils.js';
 import { DropMoney } from '../gameObjects/dropMoney.js';
 import { DropAk47 } from '../gameObjects/dropAk47.js';
 import { DropShotgun } from '../gameObjects/dropShotgun.js';
@@ -82,8 +83,8 @@ export class PredatorScene extends WEED.Scene {
 
     // Logic configuration
     logic: {
-      noLimitFPS: false,
-      numberOfLogicWorkers: 2,
+      noLimitFPS: true,
+      numberOfLogicWorkers: 1,
       numberOfEntitiesPerJob: 250,
       staggeredUpdates: true, // Enable tick decimation (entities tick based on their tickInterval)
     },
@@ -250,7 +251,7 @@ export class PredatorScene extends WEED.Scene {
     [Rock, 5000],
     [Fire, 100],
     [Explosion, 100],
-    [MySoldier, 5000],
+    [MySoldier, 10000],
     [Destination, 1],
     [DropMoney, 1000],
     [DropAk47, 1000],
@@ -302,7 +303,7 @@ export class PredatorScene extends WEED.Scene {
     // this.spawnTrees(this.numberOfTrees);
     this.spawnBarrels(this.numberOfBarrels);
     // this.spawnRocks(this.numberOfRocks);
-    this.spawnMySoldiers(250);
+    this.spawnMySoldiers(2500);
     this.spawnDestination();
     this.spawnRocksTreesAndHouses();
   }
@@ -458,11 +459,18 @@ export class PredatorScene extends WEED.Scene {
       });
     }
   }
-  spawnMySoldiers(count) {
+  spawnMySoldiers(count, soldierRadius = 10) {
+    const centerX = this.config.worldWidth / 2;
+    const centerY = this.config.worldHeight / 2;
+    const spawnRadius = containerRadius(count, soldierRadius);
+
     for (let i = 0; i < count; i++) {
+      // Uniform random distribution within a circle
+      const angle = this.rng() * 2 * Math.PI;
+      const r = Math.sqrt(this.rng()) * spawnRadius;
       this.spawnEntity(MySoldier, {
-        x: this.config.worldWidth / 2 + rng() * count,
-        y: this.config.worldHeight / 2 + rng() * count,
+        x: centerX + r * Math.cos(angle),
+        y: centerY + r * Math.sin(angle),
       });
     }
   }

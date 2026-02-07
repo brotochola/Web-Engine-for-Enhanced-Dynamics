@@ -179,6 +179,10 @@ class LogicWorker extends AbstractWorker {
     // Create GameObject instances
     this.createGameObjectInstances();
 
+    // Initialize Keyboard static class with input data (once, not every frame)
+    // Note: Mouse position/state is read from Mouse static class (SharedArrayBuffer)
+    Keyboard.initialize(this.inputData, this.keyIndexMap);
+
     // console.log(
     //   `LOGIC WORKER ${this.workerIndex}: Total ${this.globalEntityCount} GameObjects ready (job-based processing)`
     // );
@@ -267,10 +271,6 @@ class LogicWorker extends AbstractWorker {
     this.jobsStolenThisFrame = 0;
     this.entitiesProcessedThisFrame = 0;
     this.systemsExecutedThisFrame = 0;
-
-    // Initialize Keyboard static class with input data
-    // Note: Mouse position/state is read from Mouse static class (SharedArrayBuffer)
-    Keyboard.initialize(this.inputData, this.keyIndexMap);
 
     // Process collision callbacks BEFORE entity logic (Unity-style)
     if (this.collisionData) {
