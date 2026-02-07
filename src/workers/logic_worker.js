@@ -41,7 +41,7 @@ class LogicWorker extends AbstractWorker {
     this.needsGameScripts = true;
 
     // Game objects - one per entity
-    this.gameObjects = [];
+    this.gameObjects = new Array(this.globalEntityCount).fill(null);
 
     // Worker identification
     this.workerIndex = 0; // Which worker am I? (0, 1, 2, ...)
