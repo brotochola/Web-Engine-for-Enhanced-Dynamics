@@ -170,20 +170,6 @@ Now I have the full picture. Here's my thorough analysis:
 
 
 
-### 1.2 — `collisionPairCache` is a `Map` That Grows
-
-```74:74:src/workers/logic_worker.js
-    this.collisionPairCache = new Map(); // Only for exit events
-```
-
-Line 466-467 calls `this.collisionPairCache.set(keyAB, pairAB)` for every new collision. Line 520 calls `.delete(prevKey)` for exited collisions. This Map grows and shrinks every frame. While the `_collisionPairPool` reuses the `[entityA, entityB]` arrays (good), the Map itself:
-
-- Allocates internal hash table entries per `.set()`
-- `.delete()` marks entries as deleted but doesn't shrink the table
-- Over time, this can lead to **hash table bloat** with many deleted entries
-
-**Impact:** Moderate. For scenes with constant collision churn (hundreds of collisions entering/exiting), this creates steady GC pressure from the Map internals.
-
 ### 1.3 — Destructuring in Hot Path
 
 ```503:503:src/workers/logic_worker.js
