@@ -87,9 +87,6 @@ export class BallsScene extends Scene {
   constructor(game) {
     super(game);
 
-    // Scene-specific properties
-    this.numberOfBalls = 5000;
-
     // Camera control settings
     this.cameraPanSpeed = 10; // Pixels per frame at zoom 1
     this.cameraFollowX = 0;
@@ -104,7 +101,7 @@ export class BallsScene extends Scene {
     // Spawn initial entities
     console.log('🎬 BallsScene: Spawning balls...');
 
-    this.spawnBalls(this.numberOfBalls);
+    this.spawnBalls(9000);
 
     // Initialize camera at world center
     this.cameraFollowX = this.config.worldWidth / 2;
