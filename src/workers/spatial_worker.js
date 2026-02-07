@@ -30,7 +30,6 @@ self.postMessage({
 
 import { Transform } from '../components/Transform.js';
 import { Collider } from '../components/Collider.js';
-import { RigidBody } from '../components/RigidBody.js';
 import { AbstractWorker } from './AbstractWorker.js';
 import { Grid } from '../core/Grid.js';
 import {
@@ -464,9 +463,6 @@ class SpatialWorker extends AbstractWorker {
   findNeighborsForOwnedEntities() {
     const visualRange = Collider.visualRange;
     const active = Transform.active;
-    const rigidBodyActive = RigidBody.active;
-    const rigidBodySleeping = RigidBody.sleeping;
-    const frameNumber = this.frameNumber;
 
     const gridWidth = this.gridWidth;
     const gridHeight = this.gridHeight;
@@ -553,23 +549,10 @@ class SpatialWorker extends AbstractWorker {
             continue;
           }
 
-          // =================================================================
-          // SLEEPING OPTIMIZATION: Reduced scan frequency for sleeping entities
-          // =================================================================
-          // Sleeping entities update neighbors every 4 frames instead of every frame.
-          // This is safe because:
-          // 1. Sleeping entities aren't moving
-          // 2. Physics already skips sleeping-to-sleeping collision resolution
-          // 3. Even if we miss a frame, we catch up quickly (max 4 frame delay)
-          // Stagger by entity ID to spread load evenly across frames.
-          // =================================================================
-          const entitySleeping = rigidBodyActive[entityA] && rigidBodySleeping[entityA];
-          if (entitySleeping && ((frameNumber + entityA) & 3) !== 0) {
-            // Skip this frame for sleeping entity - keep previous neighbor data
-            // (neighborData already contains last frame's neighbors)
-            this.sleepingEntitiesSkipped = (this.sleepingEntitiesSkipped || 0) + 1;
-            continue;
-          }
+          // NOTE: Sleeping optimization removed - stale RigidBody data from entity pooling
+          // caused false positives (entities without RigidBody were incorrectly detected
+          // as sleeping because their slot had old data from a previous entity).
+          // TODO: Re-enable once component data is properly cleared on entity despawn.
 
           // Calculate cell search radius (bitwise ceiling - avoids Math.ceil overhead in hot path)
           // Using (x | 0) + 1 always rounds up, may add one extra cell ring but negligible impact
