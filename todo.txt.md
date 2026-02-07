@@ -152,17 +152,7 @@ Lines 628-628
               const checkByteOffset = checkCellIndex * Grid.cellByteSize;
 Grid.cellByteSize is a static property. In a hot inner loop, V8 must resolve Grid (a class reference) → look up cellByteSize (a static property on the class constructor object). This is accessed multiple times per entity per cell. The outer function hoists Grid._gridCounts and Grid._gridEntities to locals, but Grid.cellByteSize is not hoisted.
 Same issue at line 512-513 in the outer loop. Should be: const cellByteSize = Grid.cellByteSize; at the top of the function.
-6. SUMMARY: PRIORITY RANKING
-Priority	Issue	Impact	Effort
-🔴 HIGH	rebuildOwnedRows computes positions for ALL entities redundantly across workers	O(N×W) wasted work + false sharing	Medium
-🔴 HIGH	Dead sleeping-cell computation (lines 558-585) runs every entity every frame	~30 lines of wasted computation per entity	Trivial (delete or guard)
-🟡 MED	entityPosX/Y separate arrays → 2 cache misses per neighbor candidate	Poor cache locality in hottest loop	Medium (interleave)
-🟡 MED	this.rowsPerBlock, Grid.cellByteSize, stats counters not hoisted to locals	Repeated property lookups in hot loops	Trivial
-🟡 MED	Row ownership check via division+modulo instead of lookup table	Branch + math in inner loop	Trivial
-🟢 LOW	_cellNeighborCache Map grows unboundedly	Slow memory growth	Low
-🟢 LOW	Math.ceil per entity	Minor; could use bitwise trick	Trivial
-🟢 LOW	Visual-only buffer double-write	Bounded by maxNeighbors, ~2KB	Not worth changing
-The biggest win would be ensuring positions are computed once (by one worker) and then read-only by spatial workers, eliminating both the redundant computation and the false-sharing cache-line bouncing. The easiest win is removing the dead sleeping-cell detection code path, which currently computes two helper function calls per entity for no reason.
+6
 
 
 --
@@ -178,20 +168,7 @@ Now I have the full picture. Here's my thorough analysis:
 
 ## 1. GC PRESSURE & OBJECT ALLOCATION
 
-### 1.1 — Collision Tracking Uses `Set` With Numeric Keys (Good, But…)
 
-```70:71:src/workers/logic_worker.js
-    this.previousCollisions = new Set(); // Track collisions from last frame (numeric keys)
-    this.currentCollisions = new Set(); // Track collisions in current frame (numeric keys)
-```
-
-Using numeric keys via `cantorPair()` instead of string concatenation is a solid improvement — no string allocation per collision. However, `Set` still has overhead:
-
-- **`Set.add()` / `Set.has()`** on numbers: V8 can optimize Sets of small integers (SMIs, ≤ 2^31), but `cantorPair(a, b) = (a+b)*(a+b+1)/2 + b` produces huge numbers quickly. For entities 5000 and 5001: `cantorPair(5000, 5001) = 50,015,001`. These exceed SMI range on 32-bit V8 representations, causing them to be stored as **heap numbers** (boxed doubles), which allocates an object per insertion.
-- **`Set.clear()`** at line 423 runs every frame. For a set with thousands of entries, this iterates and marks every slot for GC.
-- **Two sets** means double the cost.
-
-**Better approach:** Use a flat `Int32Array` or `Uint32Array` as a hash set, or use the same marker-counter trick you use in Grid's `getEntitiesInRect()` (increment a generation counter, no clearing needed). Since collision pair IDs can be mapped to entity pairs via ordered indexing, a bitfield or marker array would be zero-GC.
 
 ### 1.2 — `collisionPairCache` is a `Map` That Grows
 
