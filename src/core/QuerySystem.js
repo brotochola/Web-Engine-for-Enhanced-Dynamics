@@ -662,7 +662,7 @@ export class QuerySystem {
  *
  * @param {Object} queryData - Serialized query data from main thread
  * @param {Object} buffers - SAB references { entityMetadataSAB, queryCacheSAB, queryResultsSAB }
- * @param {Uint32Array} activeEntitiesData - Reference to active entities SAB
+ * @param {Uint16Array} activeEntitiesData - Reference to active entities SAB
  * @returns {Object} - { query, queryActiveEntities }
  */
 export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesData) {

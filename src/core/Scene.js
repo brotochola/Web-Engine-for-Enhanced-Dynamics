@@ -1002,11 +1002,30 @@ class Scene {
 
     // Active entities buffer - tracks which entities are active for spatial worker load balancing
     // Layout: [count, entityIdx0, entityIdx1, ...]
-    // Particle worker builds this list each frame, spatial workers consume it to split work evenly
-    const ACTIVE_ENTITIES_BUFFER_SIZE = (1 + this.totalEntityCount) * 4; // count + indices (Uint32)
+    // Now maintained incrementally by spawn/despawn instead of rebuilt each frame
+    // Uses Uint16 since max entities = 65535 (fits in 16 bits)
+    const ACTIVE_ENTITIES_BUFFER_SIZE = (1 + this.totalEntityCount) * 2; // count + indices (Uint16)
     this.buffers.activeEntitiesData = new SharedArrayBuffer(ACTIVE_ENTITIES_BUFFER_SIZE);
     // Make active entities list accessible from main thread via GameObject.getAllActive()
-    GameObject.activeEntitiesData = new Uint32Array(this.buffers.activeEntitiesData);
+    GameObject.activeEntitiesData = new Uint16Array(this.buffers.activeEntitiesData);
+
+    // Per-type active entity lists - one SAB per entity type for O(1) type-specific queries
+    // Layout: [count, entityIdx0, entityIdx1, ...] (same as global activeEntitiesData)
+    // Maintained incrementally by spawn/despawn
+    // Uses Uint16 since max entities = 65535 (fits in 16 bits)
+    this.buffers.perTypeActiveLists = {};
+    for (const registration of this.registeredClasses) {
+      const typeName = registration.class.name;
+      const poolSize = registration.count;
+      // Each type needs: 1 count + poolSize indices, as Uint16
+      const bufferSize = (1 + poolSize) * 2;
+      this.buffers.perTypeActiveLists[typeName] = new SharedArrayBuffer(bufferSize);
+
+      // Also attach view to EntityClass on main thread for getAllActive() access
+      const EntityClass = registration.class;
+      EntityClass._activeList = new Uint16Array(this.buffers.perTypeActiveLists[typeName]);
+      EntityClass._activeList[0] = 0; // Initialize count to 0
+    }
 
     const INPUT_BUFFER_SIZE = this.inputBufferSize * 4;
     this.buffers.inputData = new SharedArrayBuffer(INPUT_BUFFER_SIZE);
@@ -1509,6 +1528,8 @@ class Scene {
         queryEntityMetadata: this.buffers.queryEntityMetadata,
         queryCache: this.buffers.queryCache,
         queryResults: this.buffers.queryResults,
+        // Per-type active entity lists (for O(1) type-specific queries)
+        perTypeActiveLists: this.buffers.perTypeActiveLists,
       },
       globalEntityCount: this.totalEntityCount,
       config: this.config,
@@ -2109,6 +2130,27 @@ class Scene {
     if (GameObject.active) {
       for (let i = 0; i < this.totalEntityCount; i++) {
         GameObject.active[i] = 0;
+      }
+    }
+
+    // Clear activeEntitiesData buffer (incremental active entity management)
+    if (GameObject.activeEntitiesData) {
+      GameObject.activeEntitiesData[0] = 0; // Set count to 0
+    }
+
+    // Clear all query result buffers (incremental active entity management)
+    if (this.querySystem && this.querySystem.queryResultViews) {
+      for (const view of this.querySystem.queryResultViews) {
+        view[0] = 0; // Set count to 0 for each query buffer
+      }
+    }
+
+    // Clear per-type active lists (incremental active entity management)
+    if (this.buffers.perTypeActiveLists) {
+      for (const typeName in this.buffers.perTypeActiveLists) {
+        const sab = this.buffers.perTypeActiveLists[typeName];
+        const view = new Uint16Array(sab);
+        view[0] = 0; // Set count to 0 for each type
       }
     }
 

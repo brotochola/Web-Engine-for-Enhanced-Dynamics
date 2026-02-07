@@ -98,6 +98,146 @@ export class GameObject {
     return 0;
   }
 
+  // ===========================================================================
+  // INCREMENTAL ACTIVE ENTITY MANAGEMENT
+  // These methods maintain activeEntitiesData and query buffers incrementally
+  // on spawn/despawn instead of rebuilding every frame (O(1) vs O(N))
+  // ===========================================================================
+
+  /**
+   * Add an entity to activeEntitiesData (unsorted append)
+   * Called from spawn() after entity activation
+   * @param {number} entityIndex - The entity index to add
+   */
+  static _addToActiveEntities(entityIndex) {
+    const data = this.activeEntitiesData;
+    if (!data) return;
+
+    // Append to end: increment count, write at new position
+    const count = data[0];
+    data[count + 1] = entityIndex;
+    data[0] = count + 1;
+  }
+
+  /**
+   * Remove an entity from activeEntitiesData (swap-remove, O(n) find)
+   * Called from despawn() before entity deactivation
+   * @param {number} entityIndex - The entity index to remove
+   */
+  static _removeFromActiveEntities(entityIndex) {
+    const data = this.activeEntitiesData;
+    if (!data) return;
+
+    const count = data[0];
+    if (count === 0) return;
+
+    // Find the entity in the list (linear scan)
+    for (let i = 1; i <= count; i++) {
+      if (data[i] === entityIndex) {
+        // Swap with last element and decrement count
+        data[i] = data[count];
+        data[0] = count - 1;
+        return;
+      }
+    }
+  }
+
+  /**
+   * Add an entity to all matching precomputed query buffers
+   * Called from spawn() after entity activation
+   * @param {number} entityIndex - The entity index to add
+   * @param {number} entityType - The entity's type ID
+   */
+  static _addToMatchingQueries(entityIndex, entityType) {
+    // Access query system from worker context
+    const worker = typeof self !== 'undefined' ? self.logicWorker : null;
+    if (!worker || !worker._queryResultViews || !worker._precomputedQueries || !worker._queryEntityMetadata) {
+      return;
+    }
+
+    const entityMeta = worker._queryEntityMetadata[entityType];
+    if (!entityMeta) return;
+
+    const componentMask = entityMeta.componentMask;
+
+    // Check each precomputed query
+    for (let q = 0; q < worker._precomputedQueries.length; q++) {
+      const query = worker._precomputedQueries[q];
+
+      // Entity matches query if it has ALL required components
+      if ((componentMask & query.queryMask) === query.queryMask) {
+        const resultView = worker._queryResultViews[q];
+        const count = resultView[0];
+
+        // Append to query result buffer
+        resultView[count + 1] = entityIndex;
+        resultView[0] = count + 1;
+      }
+    }
+  }
+
+  /**
+   * Remove an entity from all matching precomputed query buffers
+   * Called from despawn() before entity deactivation
+   * @param {number} entityIndex - The entity index to remove
+   * @param {number} entityType - The entity's type ID
+   */
+  static _removeFromMatchingQueries(entityIndex, entityType) {
+    // Access query system from worker context
+    const worker = typeof self !== 'undefined' ? self.logicWorker : null;
+    if (!worker || !worker._queryResultViews || !worker._precomputedQueries || !worker._queryEntityMetadata) {
+      return;
+    }
+
+    const entityMeta = worker._queryEntityMetadata[entityType];
+    if (!entityMeta) return;
+
+    const componentMask = entityMeta.componentMask;
+
+    // Check each precomputed query
+    for (let q = 0; q < worker._precomputedQueries.length; q++) {
+      const query = worker._precomputedQueries[q];
+
+      // Entity matches query if it has ALL required components
+      if ((componentMask & query.queryMask) === query.queryMask) {
+        const resultView = worker._queryResultViews[q];
+        const count = resultView[0];
+
+        // Find and swap-remove from query result buffer
+        for (let i = 1; i <= count; i++) {
+          if (resultView[i] === entityIndex) {
+            resultView[i] = resultView[count];
+            resultView[0] = count - 1;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Remove an entity from its type's active list (swap-remove)
+   * Called from despawn() before entity deactivation
+   * @param {Class} EntityClass - The entity's class
+   * @param {number} entityIndex - The entity index to remove
+   */
+  static _removeFromTypeActiveList(EntityClass, entityIndex) {
+    const typeList = EntityClass._activeList;
+    if (!typeList) return;
+
+    const count = typeList[0];
+    if (count === 0) return;
+
+    // Find and swap-remove
+    for (let i = 1; i <= count; i++) {
+      if (typeList[i] === entityIndex) {
+        typeList[i] = typeList[count];
+        typeList[0] = count - 1;
+        return;
+      }
+    }
+  }
+
   /**
    * Collect all components from class hierarchy (delegates to utils.js)
    * Walks up the prototype chain and collects all unique components
@@ -1078,6 +1218,9 @@ export class GameObject {
     // Prevent double-despawn which corrupts the free list
     if (Transform.active[this.index] === 0) return;
 
+    const EntityClass = this.constructor;
+    const entityType = EntityClass.entityType;
+
     // WORKER ROUTING: If we're in a logic worker that's not worker 0,
     // route the despawn request to worker 0 to keep freeList synchronized
     if (typeof self !== 'undefined' && self.logicWorker) {
@@ -1086,6 +1229,12 @@ export class GameObject {
         if (this.onDespawned) {
           this.onDespawned();
         }
+
+        // INCREMENTAL UPDATE: Remove from query buffers and per-type list BEFORE deactivating
+        // This is safe even from non-logic0 workers since the buffers are in SAB
+        GameObject._removeFromMatchingQueries(this.index, entityType);
+        GameObject._removeFromActiveEntities(this.index);
+        GameObject._removeFromTypeActiveList(EntityClass, this.index);
 
         // Immediately deactivate so entity stops being processed
         // (the active flag is in SharedArrayBuffer, visible to all workers)
@@ -1112,6 +1261,12 @@ export class GameObject {
       this.onDespawned();
     }
 
+    // INCREMENTAL UPDATE: Remove from query buffers and per-type list BEFORE deactivating
+    // This replaces the O(N) per-frame rebuild with O(1) per-despawn updates
+    GameObject._removeFromMatchingQueries(this.index, entityType);
+    GameObject._removeFromActiveEntities(this.index);
+    GameObject._removeFromTypeActiveList(EntityClass, this.index);
+
     // Deactivate all component active flags
     Transform.active[this.index] = 0;
     if (this.rigidBody) RigidBody.active[this.index] = 0;
@@ -1121,7 +1276,6 @@ export class GameObject {
     if (this.shadowCaster) ShadowCaster.active[this.index] = 0;
 
     // Return to free list if exists (O(1))
-    const EntityClass = this.constructor;
     if (EntityClass.freeList) {
       EntityClass.freeList[++EntityClass.freeListTop] = this.index;
     }
@@ -1616,6 +1770,19 @@ export class GameObject {
     // NOW activate the entity
     Transform.active[i] = 1;
 
+    // INCREMENTAL UPDATE: Add to activeEntitiesData, query buffers, and per-type list
+    // This replaces the O(N) per-frame rebuild with O(1) per-spawn updates
+    GameObject._addToActiveEntities(i);
+    GameObject._addToMatchingQueries(i, EntityClass.entityType);
+
+    // Add to per-type active list for O(1) getAllActive() on subclasses
+    const typeList = EntityClass._activeList;
+    if (typeList) {
+      const count = typeList[0];
+      typeList[count + 1] = i;
+      typeList[0] = count + 1;
+    }
+
     return instance;
   }
 
@@ -1671,6 +1838,7 @@ export class GameObject {
 
     const startIndex = EntityClass.startIndex;
     const endIndex = EntityClass.endIndex;
+    const entityType = EntityClass.entityType;
     let despawnedCount = 0;
 
     for (let i = startIndex; i < endIndex; i++) {
@@ -1680,7 +1848,11 @@ export class GameObject {
           instance.despawn();
           despawnedCount++;
         } else {
-          // Manual despawn if instance missing
+          // Manual despawn if instance missing - also update all active lists
+          GameObject._removeFromMatchingQueries(i, entityType);
+          GameObject._removeFromActiveEntities(i);
+          GameObject._removeFromTypeActiveList(EntityClass, i);
+
           Transform.active[i] = 0;
 
           // Return to free list if exists
@@ -1801,81 +1973,29 @@ export class GameObject {
     return this.instances[index - this.startIndex];
   }
 
-  static getAllActiveIndices() {
-    const indices = this.entityIndices;
-    if (!indices) return null;
-
-    const active = Transform.active;
-    const len = indices.length;
-    const activeIndices = new Uint32Array(len); // Pre-allocate max size
-    let count = 0;
-
-    for (let j = 0; j < len; j++) {
-      const idx = indices[j];
-      if (active[idx]) {
-        activeIndices[count++] = idx;
-      }
-    }
-
-    return activeIndices.subarray(0, count); // Return view of used portion
-  }
-
   /**
-   * Get active entity indices from the pre-built activeEntitiesData buffer.
+   * Get active entity indices for this entity type.
    *
-   * When called on GameObject: returns ALL active entities.
-   * When called on a subclass (e.g., Tree.getAllActive()): returns only active entities of that type.
+   * When called on GameObject: returns ALL active entities from global list.
+   * When called on a subclass (e.g., Prey.getAllActive()): returns per-type active list.
    *
-   * @returns {Uint32Array|number[]} Active entity indices (sorted ascending)
+   * @returns {Uint16Array} Active entity indices (view into SAB, do not modify)
    *
-   * PERFORMANCE NOTE: Hybrid approach for optimal performance:
-   * - O(1) when called on GameObject (subarray view, no allocation)
-   * - Small pools (<100): iteration (lower overhead)
-   * - Large pools (>=100): binary search (better scaling)
+   * Performance: O(1) - returns subarray view into pre-maintained SAB
    */
   static getAllActive() {
-    const data = GameObject.activeEntitiesData;
-    if (!data) return null;
-    const totalCount = data[0];
-    if (totalCount === 0) return data.subarray(1, 1);
-
-    // If called on GameObject itself, return all active entities
+    // If called on GameObject itself, return all active entities from global list
     if (this === GameObject) {
+      const data = GameObject.activeEntitiesData;
+      if (!data) return null;
+      const totalCount = data[0];
       return data.subarray(1, 1 + totalCount);
     }
 
-    // Called on a subclass - use hybrid approach based on pool size
-    const poolSize = this.poolSize;
-
-    // For small pools, simple iteration is faster (less overhead)
-    if (poolSize < 100) {
-      return this.getAllActiveIndices();
-    }
-
-    // For large pools, binary search scales better
-    const startIndex = this.startIndex;
-    const endIndex = startIndex + poolSize;
-
-    // Binary search to find first index >= startIndex
-    let lo = 1,
-      hi = 1 + totalCount;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      if (data[mid] < startIndex) lo = mid + 1;
-      else hi = mid;
-    }
-    const first = lo;
-
-    // Binary search to find first index >= endIndex
-    hi = 1 + totalCount;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      if (data[mid] < endIndex) lo = mid + 1;
-      else hi = mid;
-    }
-    const last = lo;
-
-    return data.subarray(first, last);
+    // Called on a subclass - return per-type active list
+    const typeList = this._activeList;
+    const count = typeList[0];
+    return typeList.subarray(1, 1 + count);
   }
 
   static getAllActiveInstances() {

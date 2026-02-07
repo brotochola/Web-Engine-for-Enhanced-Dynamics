@@ -718,6 +718,11 @@ class LogicWorker extends AbstractWorker {
               count++;
             } else {
               // Fallback: manually deactivate if no instance exists
+              // Also update all active lists (incremental active entity management)
+              GameObject._removeFromMatchingQueries(i, entityType);
+              GameObject._removeFromActiveEntities(i);
+              GameObject._removeFromTypeActiveList(EntityClass, i);
+
               Transform.active[i] = 0;
               if (RigidBody.active && RigidBody.active[i]) RigidBody.active[i] = 0;
               if (Collider.active && Collider.active[i]) Collider.active[i] = 0;

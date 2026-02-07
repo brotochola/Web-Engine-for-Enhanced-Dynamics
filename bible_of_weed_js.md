@@ -5,6 +5,7 @@
 
 * Entities:
     * max 65535 (Uint16)
+    * max 256 entity types (GameObject classes)
     * are just indices (integers)
     * defined by their components
 
@@ -21,7 +22,7 @@
 
 * Query System:
     * `query([CompA, CompB])` -> all matching entities
-    * `queryActiveEntities(...)` -> only active matching entities
+    * `queryActiveEntities([CompA, CompB])` -> only active matching entities
 
 * Grid & Spatial:
     * Row-based partitioning (no locks needed)
@@ -31,7 +32,7 @@
 * Decorations:
     * NOT GameObjects (separate optimized pool)
     * Static sprites (no physics/logic)
-    * Features: Sway animation (wind), depth sorting offsets, auto-culling
+    * Features: Sway animation (wind)
     * Use for: Grass, rocks, debris
 
 * Particles:

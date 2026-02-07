@@ -614,11 +614,12 @@ class ParticleWorker extends AbstractWorker {
 
     // Note: Debug raycast clearing is now handled by pixi_worker at start of render frame
 
-    // Build active entity list FIRST - spatial workers need this to split work evenly
-    this.buildActiveEntityList();
-
-    // Populate query results SECOND - all workers can now use queryActiveEntities()
-    this.populateQueryResults();
+    // OPTIMIZATION: Active entity list and query results are now maintained incrementally
+    // by spawn() and despawn() in gameObject.js. This eliminates the O(N) per-frame scan.
+    // The old buildActiveEntityList() and populateQueryResults() calls are no longer needed.
+    //
+    // See: GameObject._addToActiveEntities(), GameObject._removeFromActiveEntities(),
+    //      GameObject._addToMatchingQueries(), GameObject._removeFromMatchingQueries()
 
     // NOTE: Grid rebuilding moved to spatial workers (row-based partitioning)
     // Each spatial worker now rebuilds its own rows, eliminating race conditions

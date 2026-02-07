@@ -8,12 +8,12 @@ export class CameraController extends WEED.GameObject {
 
   frameCount = 0;
 
-  setup() {}
-  onSpawned(spawnConfig = {}) {}
-  onDespawned() {}
+  setup() { }
+  onSpawned(spawnConfig = {}) { }
+  onDespawned() { }
 
   tick(dtRatio) {
-    const mySoldierIndices = MySoldier.getAllActiveIndices();
+    const mySoldierIndices = MySoldier.getAllActive();
 
     if (mySoldierIndices.length === 0) return;
 

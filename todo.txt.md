@@ -80,20 +80,6 @@ The entire engine relies on SharedArrayBuffers without Atomics (by design — "a
 
 
 
-### 4.3 — Per-Frame Active Entity List Rebuild
-
-`buildActiveEntityList()` scans **all** `globalEntityCount` entities every frame to build the compact active list. For 10K entities where 8K are active, this is a full linear scan. The list is consumed by spatial workers, physics, and logic workers.
-
-**Recommendation:** Maintain the active list incrementally: when an entity spawns, append it; when it despawns, swap-remove it. This turns an O(N) per-frame scan into O(1) amortized per spawn/despawn. The sorted property can be maintained with an insertion sort (entities spawn in order anyway).
-
-### 4.4 — Cache Locality: Struct-of-Arrays is Correct, But Stride is Large
-
-The engine uses SoA layout (separate typed arrays for x, y, vx, vy, etc.), which is ideal for SIMD and sequential processing. However, the neighbor data stride is `2 + maxNeighbors` (default 502 Int32s = **2008 bytes per entity**). For 10K entities, that's ~19MB of neighbor data. When iterating collision candidates, the inner loop accesses `neighborData[offset + 2 + n]` with stride 2008, meaning each entity's neighbors start on a different cache line — but within one entity's list, access is sequential and cache-friendly.
-
-The bigger concern is that `maxNeighbors = 500` is a very high default. Most entities probably have <50 neighbors. The fixed-size layout wastes memory for sparse scenarios.
-
-**Recommendation:** Consider a more compact neighbor representation for the common case, or at minimum, make the default lower and let scenes opt into higher limits.
-
 ### 4.5 — Worker Initialization is Fully Serial
 
 In `createWorkers()`, all workers receive init messages sequentially, then `await this.preloadAssets(...)` blocks before any worker can start. The `readyPromise` pattern waits for ALL workers before starting ANY of them.

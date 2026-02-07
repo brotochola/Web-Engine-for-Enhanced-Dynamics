@@ -334,11 +334,18 @@ export class AbstractWorker {
 
     // Initialize active entities list (for load-balanced processing)
     // Layout: [count, entityIdx0, entityIdx1, ...]
-    // Built by particle_worker, consumed by all workers that need to iterate active entities
+    // Maintained incrementally by spawn/despawn, consumed by all workers
+    // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     if (data.buffers?.activeEntitiesData) {
-      this.activeEntitiesData = new Uint32Array(data.buffers.activeEntitiesData);
+      this.activeEntitiesData = new Uint16Array(data.buffers.activeEntitiesData);
       // Also set on GameObject for static access via GameObject.getAllActive()
       GameObject.activeEntitiesData = this.activeEntitiesData;
+    }
+
+    // Per-type active entity lists (SABs for O(1) type-specific queries)
+    // These are attached to EntityClass in createGameObjectInstances()
+    if (data.buffers?.perTypeActiveLists) {
+      this.perTypeActiveLists = data.buffers.perTypeActiveLists;
     }
 
     // Initialize frame rate tracking buffer
@@ -425,6 +432,19 @@ export class AbstractWorker {
     // Connects components to SharedArrayBuffers and makes them globally available
     if (this.registeredClasses && this.registeredClasses.length > 0) {
       this.initializeAllComponents(data);
+    }
+
+    // Attach per-type active list views to EntityClasses
+    // Now that scripts are loaded and components initialized, EntityClasses are on self
+    // This gives ALL workers access to EntityClass._activeList for O(1) getAllActive()
+    if (this.perTypeActiveLists && this.registeredClasses) {
+      for (const registration of this.registeredClasses) {
+        const EntityClass = self[registration.name];
+        const sab = this.perTypeActiveLists[registration.name];
+        if (EntityClass && sab) {
+          EntityClass._activeList = new Uint16Array(sab);
+        }
+      }
     }
 
     // Initialize Grid system with shared buffers and metadata
