@@ -7,37 +7,14 @@
 
 
 
-### 1.5 — Sleeping Wake-Up Bug Risk
-
-Lines 418-421: The wake-up threshold check `accX > wakeUpThreshold || accY > wakeUpThreshold` uses raw (possibly negative) acceleration values. A large negative acceleration like `accX = -10` won't trigger wake-up. This should be `Math.abs(accX) > wakeUpThreshold || Math.abs(accY) > wakeUpThreshold`, or better, compare squared magnitude against squared threshold to avoid `Math.abs`.
-
-
-
-
 
 
 ---
 
 ## 2. PARTICLE WORKER (`particle_worker.js`)
 
-### 2.1 — Particle Worker is a God Object
 
-The particle worker is responsible for:
-- Building active entity lists
-- Populating query results
-- Particle physics simulation
-- Blood decal stamping (2 blend modes)
-- Flash lifetime updates
-- Entity screen visibility
-- Decoration screen visibility
-- Shadow sprite calculation (stable slot assignment)
-- Derived property computation (speed, velocityAngle)
-- Cell sleeping state computation
-- Building active particle lists
 
-That's **12 distinct responsibilities** in a single class, totaling ~1967 lines. This is the most loaded worker in the system and creates a **serial bottleneck** — none of these tasks can run in parallel because they all execute sequentially in a single `update()` call.
-
-**Recommendation:** Consider splitting `updateShadowSprites`, `updateDerivedProperties`, and `updateCellSleepingStates` into the physics worker or a separate "post-physics" worker. These are logically physics-adjacent and don't depend on particle state.
 
 ### 2.2 — Shadow System: Map/Set GC Pressure
 

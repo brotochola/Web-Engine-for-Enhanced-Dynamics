@@ -136,10 +136,10 @@ class ParticleWorker extends AbstractWorker {
     // ========================================
     // Maps (light, entity) pairs to shadow slots for stable assignment
     // This prevents flickering and allows proper interpolation in pixi_worker
-    this._shadowPairToSlot = new Map(); // Key: "lightIdx-neighborIdx", Value: slot index
-    this._shadowSlotToPair = new Map(); // Key: slot index, Value: "lightIdx-neighborIdx"
-    this._usedSlotsThisFrame = new Set(); // Set of slots used this frame
-    this._ownedSlots = new Set(); // Reusable Set for tracking owned slots (avoids allocation each frame)
+    this._shadowPairToSlot = new Map(); // Key: cantorPair(lightIdx, neighborIdx), Value: slot index
+    this._shadowSlotToPair = null; // Int32Array[maxShadowSprites] - direct lookup by slot, -1 = empty
+    this._usedSlotsThisFrame = null; // Uint8Array bitmap - 1 if slot used this frame
+    this._ownedSlots = null; // Uint8Array bitmap - 1 if slot owned by a pair from previous frame
     this._pairsThisFrame = new Set(); // Reusable Set for tracking pairs processed this frame (avoids allocation each frame)
 
     // ========================================
@@ -339,6 +339,13 @@ class ParticleWorker extends AbstractWorker {
       this.maxShadowsPerLight = data.shadows.maxShadowsPerLight;
       this.maxShadowsPerEntity = data.shadows.maxShadowsPerEntity || 0; // 0 = unlimited
       this.maxShadowSprites = data.shadows.maxShadowSprites;
+
+      // GC OPTIMIZATION: Use typed arrays instead of Map/Set for slot tracking
+      // These are O(1) access with zero hashing overhead
+      this._usedSlotsThisFrame = new Uint8Array(this.maxShadowSprites);
+      this._ownedSlots = new Uint8Array(this.maxShadowSprites);
+      this._shadowSlotToPair = new Int32Array(this.maxShadowSprites);
+      this._shadowSlotToPair.fill(-1); // -1 indicates empty slot
 
       // Allocate per-entity shadow count tracking array if limit is set
       if (this.maxShadowsPerEntity > 0) {
@@ -1371,15 +1378,15 @@ class ParticleWorker extends AbstractWorker {
     const pairToSlot = this._shadowPairToSlot;
     const slotToPair = this._shadowSlotToPair;
     const usedSlots = this._usedSlotsThisFrame;
-    usedSlots.clear();
+    usedSlots.fill(0); // Clear bitmap
 
     // Track which slots are currently "owned" by pairs from previous frame
     // We will avoid using these for NEW pairs until we're sure the owner is gone
-    // REUSE: Clear and repopulate to avoid allocation each frame
+    // GC OPTIMIZATION: Use typed array bitmap instead of Set
     const ownedSlots = this._ownedSlots;
-    ownedSlots.clear();
-    for (const slot of pairToSlot.values()) {
-      ownedSlots.add(slot);
+    // Populate ownedSlots from slotToPair (slot is owned if it has a valid pair)
+    for (let s = 0; s < maxSprites; s++) {
+      ownedSlots[s] = slotToPair[s] !== -1 ? 1 : 0;
     }
 
     // Track pairs processed this frame
@@ -1480,7 +1487,7 @@ class ParticleWorker extends AbstractWorker {
         } else {
           // Find a free slot: not used this frame AND not owned by any pair
           for (let s = 0; s < maxSprites; s++) {
-            if (!usedSlots.has(s) && !ownedSlots.has(s)) {
+            if (usedSlots[s] === 0 && ownedSlots[s] === 0) {
               slotIdx = s;
               break;
             }
@@ -1489,11 +1496,11 @@ class ParticleWorker extends AbstractWorker {
           // Fallback: If no truly free slots, take ANY slot not used this frame
           if (slotIdx === -1) {
             for (let s = 0; s < maxSprites; s++) {
-              if (!usedSlots.has(s)) {
+              if (usedSlots[s] === 0) {
                 slotIdx = s;
                 // If this slot was owned by someone else, we must evict them
-                const oldPairKey = slotToPair.get(slotIdx);
-                if (oldPairKey) {
+                const oldPairKey = slotToPair[slotIdx];
+                if (oldPairKey !== -1) {
                   pairToSlot.delete(oldPairKey);
                 }
                 break;
@@ -1505,11 +1512,11 @@ class ParticleWorker extends AbstractWorker {
 
           // Assign new slot
           pairToSlot.set(pairKey, slotIdx);
-          slotToPair.set(slotIdx, pairKey);
+          slotToPair[slotIdx] = pairKey;
         }
 
         // Mark slot as used
-        usedSlots.add(slotIdx);
+        usedSlots[slotIdx] = 1;
 
         // Calculate shadow properties
         const casterX = worldX[neighborIdx];
@@ -1581,24 +1588,24 @@ class ParticleWorker extends AbstractWorker {
     // ========================================
     // Deactivate unused slots and remove stale mappings
     for (let i = 0; i < maxSprites; i++) {
-      if (!usedSlots.has(i)) {
+      if (usedSlots[i] === 0) {
         if (shadowActive[i]) {
           shadowActive[i] = 0;
-          const stalePairKey = slotToPair.get(i);
-          if (stalePairKey) {
+          const stalePairKey = slotToPair[i];
+          if (stalePairKey !== -1) {
             pairToSlot.delete(stalePairKey);
-            slotToPair.delete(i);
+            slotToPair[i] = -1;
           }
         }
       }
     }
 
     // Final sweep for any pairs that weren't processed but somehow stayed in map
-    if (pairToSlot.size > usedSlots.size) {
+    if (pairToSlot.size > shadowCount) {
       for (const [key, slot] of pairToSlot.entries()) {
         if (!pairsThisFrame.has(key)) {
           pairToSlot.delete(key);
-          slotToPair.delete(slot);
+          slotToPair[slot] = -1;
         }
       }
     }
