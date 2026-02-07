@@ -107,17 +107,8 @@ Lines 696-698
             for (let i = 0; i < visualOnlyCount; i++) {              neighborData[neighborOffset + 2 + collisionCount + i] = visualOnlyBuffer[i];            }
 Visual-only neighbors are first written to a scratch buffer, then copied to neighborData. This is a two-pass write: once to _visualOnlyBuffer, once to neighborData.
 Alternative: Write collision candidates left-to-right and visual-only right-to-left within the same neighborData range, then swap the right-to-left portion. Or use a cursor that tracks the "collision end" and writes visual-only starting from maxNeighbors - 1 downward, then compact. Though honestly the current approach is clean and the copy is bounded by maxNeighbors (500 ints = 2KB), so this is a minor concern.
-3. CACHE LOCALITY & DATA ACCESS PATTERNS
-3.1 — Random Access into entityPosX/Y During Neighbor Search
-spatial_worker.js
-Lines 650-654
-                const bX = entityPosX[entityB];                const bY = entityPosY[entityB];                const dxAB = bX - myX;                const dyAB = bY - myY;                const distSq = dxAB * dxAB + dyAB * dyAB;
-entityB is an arbitrary entity ID — the access pattern into entityPosX[entityB] and entityPosY[entityB] is essentially random. Two separate arrays mean two cache misses for each candidate neighbor.
-Better: Interleave positions into a single Float32Array with [x0, y0, x1, y1, ...] layout. Then entityPosXY[entityB * 2] and entityPosXY[entityB * 2 + 1] are in the same cache line. This is a classic SoA → AoS trade-off for the position data specifically, where the access pattern is always "read X and Y together."
 
 
-3.2 — entityHalfExtent is a Third Array
-After reading entityPosX[entityB] and entityPosY[entityB], line 660 reads entityHalfExtent[entityB] — a third random-access cache miss for each candidate. If positions were interleaved as [x, y, halfExtent, pad] (stride 4, 16 bytes = one cache line per entity), all three values would be in a single cache line fetch.
 3.3 — Grid Buffer Access Pattern
 spatial_worker.js
 Lines 628-629
@@ -142,8 +133,8 @@ Lines 592-593
           let homeCol = (myX * invCellSize) | 0;          const maxCol = gridWidth - 1;
 maxCol is declared as a const inside the innermost loop body, shadowing any potential outer maxCol. This is fine functionally, but it's recomputed (gridWidth - 1) for every entity. Should be hoisted outside the loop.
 5. DEV EXPERIENCE
-5.1 — Dead Code & TODO Debt
-The sleeping entity optimization (lines 600-613) is disabled with if (false && ...) and a TODO comment. But all the infrastructure to detect sleeping cells is still computed — getEntityCellRange, areAllEntityCellsSleeping, the cellRangeScratch scratch array. This makes the code harder to read and maintain because a developer can't tell if this sleeping detection code is actually used or just dead weight.
+
+
 5.2 — Stats Counter Overhead
 spatial_worker.js
 Lines 541-541
