@@ -70,7 +70,8 @@ class FleeingCivilianBehaviorState extends FSMState {
         const dy = myY - Transform.y[neighborIndex];
         const dist2 = dx * dx + dy * dy;
 
-        if (dist2 > 0) {
+        // Guard: dist2 must be > 1 to avoid division producing Infinity
+        if (dist2 > 1) {
           // Inverse square for panic effect (closer = stronger flee)
           fleeX += dx / dist2;
           fleeY += dy / dist2;
@@ -87,8 +88,10 @@ class FleeingCivilianBehaviorState extends FSMState {
 
     // Apply flee acceleration
     const fleeFactor = 50; // How strongly to flee
-    RigidBody.ax[i] += fleeX * fleeFactor * dt;
-    RigidBody.ay[i] += fleeY * fleeFactor * dt;
+    owner.addAcceleration(
+      fleeX * fleeFactor * dt,
+      fleeY * fleeFactor * dt
+    );
   }
 
   static onExit(owner, i, toState) {

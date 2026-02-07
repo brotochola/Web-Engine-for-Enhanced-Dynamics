@@ -1,58 +1,20 @@
 6.2.26:
 
-Let me read the particle worker fully and examine some key dependencies to give a thorough analysis.
 
-[3 tools called]
 
-Now let me look at the QuerySystem and some utility functions to complete the picture:
 
-[2 tools called]
 
-Now I have the full picture. Here's a comprehensive engineering analysis:
 
----
 
-# Engineering Analysis: Physics Worker, Particle Worker, and Scene.js
-
-## 1. PHYSICS WORKER (`physics_worker.js`)
-
-### 1.1 — GC Pressure & Object Allocation
-
-**Good:** The reusable `this.collisionResult` object avoids allocating thousands of collision result objects per frame. The `_timing` object in AbstractWorker is also reused.
-
-**Issue: `queryActiveEntities` fallback path allocates every frame.** In `AbstractWorker.queryActiveEntities()`, the fallback path (lines 748-765) creates a `new Uint16Array(allEntities.length)` and returns a `.subarray()` every frame. Even the SAB-based fast path returns `view.subarray(1, 1 + count)` — while `subarray` is cheap (no data copy), it creates a new typed array *view* object every call. In hot loops that call `queryActiveEntities` per-frame, this generates GC-visible objects.
-
-**Recommendation:** Cache the subarray result per query per frame. Since `_cachedPhysicsEntities` and `_cachedColliderEntities` already do this at the physics worker level, this is mostly mitigated here — but the pattern should be enforced engine-wide.
-
-### 1.2 — Collision Detection: Redundant Pair Processing
-
-**Issue:** The `i >= j && visualRange[j] > 0` check (line 599) for pair deduplication is fragile and semantically overloaded. It mixes collision culling with neighbor visibility semantics. If `visualRange[j] === 0` (e.g., a static wall), the pair `(i, j)` AND `(j, i)` can both be processed, potentially double-resolving collisions.
-
-**Recommendation:** Use canonical pair ordering (`i < j` always) and handle static obstacles with a separate "one-sided collision" flag instead of overloading visualRange.
-
-### 1.3 — Branch Prediction & Loop Structure
-
-The inner collision loop (lines 594-748) has many branches: `i === j`, `!active[j]`, `!colliderActive[j]`, `i >= j`, both-static check, both-sleeping check, shape dispatch (4 branches), `result.collided`, `isTrigger`, etc. That's **11+ branches per pair per frame**.
-
-**Recommendation:** Consider sorting neighbors by shape type so the inner loop can use a single shape-pair handler (e.g., all circle-circle first, then circle-box). This improves branch prediction hit rates significantly on modern CPUs.
-
-### 1.4 — Missing SIMD / Batch Processing for Verlet Integration
-
-`moveEntitiesVerlet` (lines 373-513) processes entities one at a time with scalar math. The loop body is pure arithmetic on typed arrays — a perfect candidate for **manual loop unrolling** (process 4 entities per iteration) or eventual WASM/SIMD acceleration. Currently, the JIT can't vectorize due to the branching (`if sleeping`, `if isStatic`, `if NaN`).
-
-**Recommendation:** Split into two passes: (1) filter active non-static non-sleeping entities into a compact index list, (2) run a branchless Verlet kernel on that list. The filtering pass runs once; the integration pass has zero branches and is SIMD-friendly.
 
 ### 1.5 — Sleeping Wake-Up Bug Risk
 
 Lines 418-421: The wake-up threshold check `accX > wakeUpThreshold || accY > wakeUpThreshold` uses raw (possibly negative) acceleration values. A large negative acceleration like `accX = -10` won't trigger wake-up. This should be `Math.abs(accX) > wakeUpThreshold || Math.abs(accY) > wakeUpThreshold`, or better, compare squared magnitude against squared threshold to avoid `Math.abs`.
 
-### 1.6 — `Math.pow` in Hot Loop
 
-Line 460: `Math.pow(1 - friction[i], dtRatio)` is called per-entity per-frame. `Math.pow` with a float exponent is expensive (~50ns). For friction close to 0, a linear approximation `1 - friction[i] * dtRatio` is valid and ~10x faster. Even `Math.exp(-friction[i] * dtRatio)` is more numerically stable than `pow`.
 
-### 1.7 — Commented-Out Code
 
-Lines 255-273 have a large commented-out `applyConstraintsVerlet` block, and lines 465-472 have commented-out acceleration clamping. This adds cognitive load. Either ship it or remove it — commented code rots.
+
 
 ---
 

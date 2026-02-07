@@ -485,8 +485,8 @@ export class PredatorScene extends WEED.Scene {
   spawnCivilians(count) {
     for (let i = 0; i < count; i++) {
       this.spawnEntity(Civilian, {
-        x: this.config.worldWidth / 2 + rng() * count,
-        y: this.config.worldHeight / 2 + rng() * count,
+        x: this.config.worldWidth * rng(),
+        y: this.config.worldHeight * rng(),
       });
     }
   }

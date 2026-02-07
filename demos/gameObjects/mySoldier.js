@@ -66,7 +66,7 @@ export class MySoldier extends Person {
   }
 
   startFollowingDestination() {
-    this.soldierBehaviorFSM.forceChangeState(SoldierBehaviorFSM.states.GOING_TO_DESTINATION);
+    this.soldierBehaviorFSM.changeState(SoldierBehaviorFSM.states.GOING_TO_DESTINATION);
     this.personAnimationFSM.changeState(PersonAnimationFSM.states.IDLE);
   }
 }

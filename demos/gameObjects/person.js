@@ -62,7 +62,7 @@ export class Person extends Lootable {
   setup() {
     // Physics properties
     this.rigidBody.maxVel = 3;
-    this.rigidBody.maxAcc = 0.15;
+    this.rigidBody.maxAcc = 0.5;
     this.rigidBody.minSpeed = 0;
     this.rigidBody.friction = Person.defaultFriction;
 
@@ -223,7 +223,9 @@ export class Person extends Lootable {
       const dy = myY - ny;
       const distSq = dx * dx + dy * dy;
 
-      if (distSq < separationRadiusSq && distSq > 0) {
+      // Guard: distSq must be > 1 to avoid division producing huge/Infinity values
+      // (entities at same position would have distSq ≈ 0, causing Infinity)
+      if (distSq < separationRadiusSq && distSq > 1) {
         const strength = (separationRadiusSq - distSq) / separationRadiusSq;
         separateX += (dx / distSq) * strength;
         separateY += (dy / distSq) * strength;
@@ -274,10 +276,13 @@ export class Person extends Lootable {
     const separateX = PersonComponent.separateX[this.index];
     const separateY = PersonComponent.separateY[this.index];
 
-    if (separateX !== 0 || separateY !== 0) {
-      RigidBody.ax[this.index] += separateX * separationForce;
-      RigidBody.ay[this.index] += separateY * separationForce;
-    }
+    if (separateX == 0 && separateY == 0) return
+
+    this.addAcceleration(
+      separateX * separationForce,
+      separateY * separationForce
+    );
+
   }
 
   // ==========================================
@@ -562,16 +567,16 @@ export class Person extends Lootable {
     const worldHeight = this.config.worldHeight || 1000;
 
     if (x < margin) {
-      RigidBody.ax[i] += turnFactor * dtRatio;
+      this.addAcceleration(turnFactor * dtRatio, 0);
     }
     if (x > worldWidth - margin) {
-      RigidBody.ax[i] -= turnFactor * dtRatio;
+      this.addAcceleration(-turnFactor * dtRatio, 0);
     }
     if (y < margin) {
-      RigidBody.ay[i] += turnFactor * dtRatio;
+      this.addAcceleration(0, turnFactor * dtRatio);
     }
     if (y > worldHeight - margin) {
-      RigidBody.ay[i] -= turnFactor * dtRatio;
+      this.addAcceleration(0, -turnFactor * dtRatio);
     }
   }
 
