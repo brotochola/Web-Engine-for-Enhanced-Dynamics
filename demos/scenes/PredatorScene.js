@@ -349,9 +349,11 @@ export class PredatorScene extends WEED.Scene {
 
   createNavGridForTheFlowField() {
     NavGrid.updateNavGrid([
-      ...Array.from(House.getAllActiveIndices()),
-      ...Array.from(House.getAllActiveIndices()),
-      ...Array.from(Rock.getAllActiveIndices()),
+      ...Tree.getAllActive(),
+      ...House.getAllActive(),
+      ...Rock.getAllActive(),
+      ...Trash.getAllActive(),
+      ...Fire.getAllActive(),
     ]);
   }
 
