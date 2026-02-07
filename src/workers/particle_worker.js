@@ -580,7 +580,7 @@ class ParticleWorker extends AbstractWorker {
   /**
    * Build compact list of active particles
    * Scans ParticleComponent.active[] and writes indices to local activeParticleIndices
-   * Avoiding the scan in updateParticlePhysics allows skipping inactive particles efficiently
+   * OPTIMIZED: Early-exit when we've found all active particles (derived from free list)
    */
   buildActiveParticleList() {
     if (this.maxParticles === 0) return;
@@ -589,7 +589,13 @@ class ParticleWorker extends AbstractWorker {
     const indices = this.activeParticleIndices;
     let count = 0;
 
-    for (let i = 0; i < this.maxParticles; i++) {
+    // Calculate expected active count from free list: active = total - free
+    // freeListTop is the number of free slots available
+    const freeListTop = ParticleEmitter.freeListTop;
+    const expectedActive = freeListTop ? this.maxParticles - freeListTop[0] : this.maxParticles;
+
+    // Early exit once we've found all active particles
+    for (let i = 0; i < this.maxParticles && count < expectedActive; i++) {
       if (active[i]) {
         indices[count++] = i;
       }
