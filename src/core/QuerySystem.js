@@ -717,6 +717,14 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
     return new Uint16Array(buffers.queryResultsSAB, offset, 1 + MAX_ENTITIES);
   });
 
+  // OPTIMIZATION: Cache subarray views to avoid GC pressure
+  // Each entry stores { count, subarray } for the last returned view
+  // Only recreate the subarray when count changes
+  const cachedSubarrayViews = precomputedQueries.map(() => ({
+    count: -1, // -1 means never cached
+    subarray: null,
+  }));
+
   // Helper: generate queryMask from component classes
   function generateQueryMask(componentClasses) {
     let mask = 0n;
@@ -836,7 +844,19 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
     if (queryIndex !== undefined) {
       const view = queryResultViews[queryIndex];
       const count = view[0];
-      return view.subarray(1, 1 + count);
+
+      // OPTIMIZATION: Reuse cached subarray if count hasn't changed
+      // This avoids creating a new TypedArray view object every call
+      const cached = cachedSubarrayViews[queryIndex];
+      if (cached.count === count && cached.subarray !== null) {
+        return cached.subarray;
+      }
+
+      // Count changed - create new subarray and cache it
+      const subarray = view.subarray(1, 1 + count);
+      cached.count = count;
+      cached.subarray = subarray;
+      return subarray;
     }
 
     // Fallback: compute from activeEntitiesData
