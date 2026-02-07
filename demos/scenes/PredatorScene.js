@@ -3,11 +3,10 @@
 
 import WEED from '/src/index.js';
 import { Boid } from '../gameObjects/boid.js';
-import { Prey } from '../gameObjects/prey.js';
-import { Predator } from '../gameObjects/predator.js';
+
 // import { Player } from "../gameObjects/player.js";
 import { TallLight } from '../gameObjects/tallLight.js';
-import { PreySpawner } from '../gameObjects/preySpawner.js';
+
 import { House } from '../gameObjects/house.js';
 
 import { Tree } from '../gameObjects/tree.js';
@@ -239,9 +238,7 @@ export class PredatorScene extends WEED.Scene {
   // ========================================
 
   static entities = [
-    // [PreySpawner, 1],
-    // [Prey, 2000],
-    // [Predator, 8],
+
     // [Player, 1],
     [House, 2000],
     [TallLight, 300],
@@ -292,7 +289,6 @@ export class PredatorScene extends WEED.Scene {
     // this.spawnPlayer();
 
     this.spawnLights(this.numberOfTallLights);
-    // this.spawnPrey(1000);
     // this.spawnHouses(this.numberOfHouses);
     this.spawnGrass(20000);
     this.spawnCivilians(10000);
@@ -412,17 +408,6 @@ export class PredatorScene extends WEED.Scene {
     }
   }
 
-  spawnPrey(count) {
-    for (let i = 0; i < count; i++) {
-      this.spawnEntity(Prey, {
-        x: this.rng() * this.config.worldWidth,
-        y: this.rng() * this.config.worldHeight,
-        vx: 0,
-        vy: 0,
-      });
-    }
-  }
-
   spawnDestination() {
     this.spawnEntity(Destination, {
       x: 0,
@@ -430,27 +415,6 @@ export class PredatorScene extends WEED.Scene {
     });
   }
 
-  spawnPredators(count) {
-    for (let i = 0; i < count; i++) {
-      this.spawnEntity(Predator, {
-        x: this.rng() * this.config.worldWidth,
-        y: this.rng() * this.config.worldHeight,
-        vx: 0,
-        vy: 0,
-      });
-    }
-  }
-
-  spawnBoids(count) {
-    for (let i = 0; i < count; i++) {
-      this.spawnEntity(Boid, {
-        x: this.rng() * this.config.worldWidth,
-        y: this.rng() * this.config.worldHeight,
-        vx: 0,
-        vy: 0,
-      });
-    }
-  }
   spawnBarrels(count) {
     for (let i = 0; i < count; i++) {
       this.spawnEntity(Barrel, {

@@ -190,17 +190,6 @@ This writes two static properties (`_inputData`, `_keyIndexMap`) every frame. Th
 
 
 
-### 2.5 — `this.gameObjects[entityIndex]` Lookup in Hot Loop
-
-```319:319:src/workers/logic_worker.js
-        const obj = this.gameObjects[entityIndex];
-```
-
-`this.gameObjects` is a plain JS Array (line 44: `this.gameObjects = [];`). Entity indices can be sparse (not all indices have game objects, especially with interleaved spawning). V8 optimizes dense arrays as contiguous memory, but a sparse array with holes degrades to **dictionary mode** — every access becomes a hash table lookup instead of a pointer offset.
-
-Given that `createGameObjectInstances` fills `this.gameObjects[index]` at specific indices from `startIndex` to `startIndex + poolSize`, the array has holes for unused indices. If multiple entity types have non-contiguous ranges, V8 will likely switch the array to dictionary mode.
-
-**Fix:** Pre-allocate with `this.gameObjects = new Array(this.globalEntityCount).fill(null);` during initialization. This keeps the array in dense/packed mode. The `fill(null)` ensures V8 treats it as a packed array with consistent element kind.
 
 ### 2.6 — Tick Decimation Has Overhead Even When Not Used
 
