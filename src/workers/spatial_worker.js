@@ -73,10 +73,10 @@ class SpatialWorker extends AbstractWorker {
     // Replaces expensive (row / rowsPerBlock | 0) % totalWorkers in hot loops
     this.rowOwnership = null; // Uint8Array(gridHeight)
 
-    // Pre-computed entity positions (shared buffer from particle_worker or computed locally)
-    this.entityPosX = null; // Float32Array
-    this.entityPosY = null; // Float32Array
-    this.entityHalfExtent = null; // Float32Array
+    // Pre-computed entity positions (interleaved for cache locality)
+    // Layout: [x, y, halfExtent, pad] per entity (stride 4, 16 bytes each)
+    // Access: entityPosData[i * 4 + 0] = x, [i * 4 + 1] = y, [i * 4 + 2] = halfExtent
+    this.entityPosData = null; // Float32Array
 
     // O(1) duplicate detection for multi-cell entities
     // processedThisFrame[j] = entityId means entity "entityId" already processed entity "j"
@@ -157,12 +157,10 @@ class SpatialWorker extends AbstractWorker {
     this.ownedRows = new Int32Array(ownedRows);
     this.ownedRowCount = ownedRows.length;
 
-    // Initialize pre-computed entity position buffers
-    // These are SHARED buffers - we compute them during grid rebuild
-    if (data.buffers.entityPosX) {
-      this.entityPosX = new Float32Array(data.buffers.entityPosX);
-      this.entityPosY = new Float32Array(data.buffers.entityPosY);
-      this.entityHalfExtent = new Float32Array(data.buffers.entityHalfExtent);
+    // Initialize pre-computed entity position buffer (interleaved for cache locality)
+    // Layout: [x, y, halfExtent, pad] per entity (stride 4, 16 bytes each)
+    if (data.buffers.entityPosData) {
+      this.entityPosData = new Float32Array(data.buffers.entityPosData);
     }
     // Initialize duplicate detection marker
     this.processedMarker = new Int32Array(this.globalEntityCount);
@@ -333,9 +331,8 @@ class SpatialWorker extends AbstractWorker {
     const totalSpatialWorkers = this.totalSpatialWorkers;
     const workerId = this.workerId;
 
-    const entityPosX = this.entityPosX;
-    const entityPosY = this.entityPosY;
-    const entityHalfExtent = this.entityHalfExtent;
+    // Interleaved position data: [x, y, halfExtent, pad] per entity (stride 4)
+    const entityPosData = this.entityPosData;
 
     // Direct buffer access for grid (avoid Grid.addEntityToCell overhead in hot loop)
     const gridCounts = Grid._gridCounts;
@@ -381,10 +378,6 @@ class SpatialWorker extends AbstractWorker {
       // Skip invalid positions (NaN check via self-comparison)
       if (posX !== posX || posY !== posY) continue;
 
-      // Store pre-computed position for neighbor detection
-      entityPosX[i] = posX;
-      entityPosY[i] = posY;
-
       // Calculate half-extent based on collider type
       let halfW = 0,
         halfH = 0;
@@ -396,7 +389,13 @@ class SpatialWorker extends AbstractWorker {
           halfH = (height[i] || 0) * 0.5;
         }
       }
-      entityHalfExtent[i] = halfW > halfH ? halfW : halfH;
+
+      // Store pre-computed position for neighbor detection (interleaved layout)
+      // All 3 values in single cache line: [x, y, halfExtent, pad]
+      const baseIdx = i * 4;
+      entityPosData[baseIdx] = posX;
+      entityPosData[baseIdx + 1] = posY;
+      entityPosData[baseIdx + 2] = halfW > halfH ? halfW : halfH;
 
       // Calculate cell range this entity's bounding box covers
       let minCol = ((posX - halfW) * invCellSize) | 0;
@@ -477,9 +476,8 @@ class SpatialWorker extends AbstractWorker {
     const totalSpatialWorkers = this.totalSpatialWorkers;
     const workerId = this.workerId;
 
-    const entityPosX = this.entityPosX;
-    const entityPosY = this.entityPosY;
-    const entityHalfExtent = this.entityHalfExtent;
+    // Interleaved position data: [x, y, halfExtent, pad] per entity (stride 4)
+    const entityPosData = this.entityPosData;
 
     // Single buffer - direct access (row ownership eliminates races)
     const neighborData = Grid.neighborData;
@@ -528,7 +526,12 @@ class SpatialWorker extends AbstractWorker {
           // This prevents race conditions when entities span multiple rows
           // Home row = row containing entity's center Y position
           // =====================================================================
-          const myY = entityPosY[entityA];
+          // CACHE OPTIMIZED: Read from interleaved buffer (single cache line fetch)
+          const myBaseIdx = entityA * 4;
+          const myX = entityPosData[myBaseIdx];
+          const myY = entityPosData[myBaseIdx + 1];
+          const myHalfExtent = entityPosData[myBaseIdx + 2];
+
           let homeRow = (myY * invCellSize) | 0;
           // Clamp to grid bounds
           homeRow = homeRow < 0 ? 0 : homeRow > maxRow ? maxRow : homeRow;
@@ -538,8 +541,6 @@ class SpatialWorker extends AbstractWorker {
 
           this.entitiesProcessedThisFrame++;
 
-          const myX = entityPosX[entityA];
-          // myY already read above for home row calculation
           const myVisualRange = visualRange[entityA];
 
           // Neighbor write offset
@@ -551,9 +552,6 @@ class SpatialWorker extends AbstractWorker {
             neighborData[neighborOffset + 1] = 0; // collisionCount
             continue;
           }
-
-          // Calculate entity's half-extent for collision range calculation
-          const myHalfExtent = entityHalfExtent[entityA];
 
           // =================================================================
           // SLEEPING OPTIMIZATION: Reduced scan frequency for sleeping entities
@@ -621,18 +619,18 @@ class SpatialWorker extends AbstractWorker {
               processedMarker[entityB] = entityA;
 
               // Calculate squared distance for range check
-              // OPTIMIZED: Inline to avoid function call overhead in hot loop
-              const bX = entityPosX[entityB];
-              const bY = entityPosY[entityB];
+              // CACHE OPTIMIZED: Single cache line fetch for x, y, halfExtent
+              const bBaseIdx = entityB * 4;
+              const bX = entityPosData[bBaseIdx];
+              const bY = entityPosData[bBaseIdx + 1];
+              const bHalfExtent = entityPosData[bBaseIdx + 2];
+
               const dxAB = bX - myX;
               const dyAB = bY - myY;
               const distSq = dxAB * dxAB + dyAB * dyAB;
 
               // Early rejection: if distSq is 0, skip (same position)
               if (distSq === 0) continue;
-
-              // Expand effective range by target's half-extent
-              const bHalfExtent = entityHalfExtent[entityB];
               const effectiveRange = myVisualRange + bHalfExtent;
               const effectiveRangeSq = effectiveRange * effectiveRange;
 
