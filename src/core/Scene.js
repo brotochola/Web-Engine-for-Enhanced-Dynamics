@@ -1686,14 +1686,7 @@ class Scene {
     console.log(`[Scene] ✅ All init messages sent to workers`);
 
     // Setup message handlers
-    const allWorkers = [
-      ...this.workers.spatialWorkers,
-      ...this.workers.logicWorkers,
-      this.workers.physics,
-      this.workers.renderer,
-      this.workers.particle,
-      ...(this.workers.navigation ? [this.workers.navigation] : []),
-    ];
+    const allWorkers = this.getAllWorkers();
 
     console.log(`[Scene] 📨 Setting up message handlers for ${allWorkers.length} workers...`);
     for (let worker of allWorkers) {
@@ -1833,15 +1826,12 @@ class Scene {
     }
   }
 
+  getAllWorkers() {
+    return Object.values(this.workers).flat().filter(w => w);
+  }
+
   startAllWorkers() {
-    const allWorkers = [
-      ...this.workers.spatialWorkers,
-      ...this.workers.logicWorkers,
-      this.workers.physics,
-      this.workers.renderer,
-      this.workers.particle,
-      this.workers.navigation, // Navigation worker (if enabled)
-    ];
+    const allWorkers = this.getAllWorkers();
 
     console.log(`[Scene] 🚀 Starting ${allWorkers.filter(w => w).length} workers...`);
     for (const worker of allWorkers) {
@@ -2047,14 +2037,7 @@ class Scene {
     }
 
     // Terminate all workers
-    const allWorkers = [
-      ...this.workers.spatialWorkers,
-      ...this.workers.logicWorkers,
-      this.workers.physics,
-      this.workers.renderer,
-      this.workers.particle,
-      this.workers.navigation,
-    ];
+    const allWorkers = this.getAllWorkers();
 
     allWorkers.forEach((worker) => {
       if (worker) worker.terminate();
@@ -2168,14 +2151,7 @@ class Scene {
 
   pause() {
     this.state.pause = true;
-    const allWorkers = [
-      ...this.workers.spatialWorkers,
-      ...this.workers.logicWorkers,
-      this.workers.physics,
-      this.workers.renderer,
-      this.workers.particle,
-      this.workers.navigation,
-    ];
+    const allWorkers = this.getAllWorkers();
 
     allWorkers.forEach((worker) => {
       if (worker) worker.postMessage({ msg: 'pause' });
@@ -2184,14 +2160,7 @@ class Scene {
 
   resume() {
     this.state.pause = false;
-    const allWorkers = [
-      ...this.workers.spatialWorkers,
-      ...this.workers.logicWorkers,
-      this.workers.physics,
-      this.workers.renderer,
-      this.workers.particle,
-      this.workers.navigation,
-    ];
+    const allWorkers = this.getAllWorkers();
 
     allWorkers.forEach((worker) => {
       if (worker) worker.postMessage({ msg: 'resume' });
