@@ -26,6 +26,7 @@ import {
   calculateTileClipRegion,
   _decalTileBounds,
   _tileClipRegion,
+  countTrailingZeros,
 } from '../core/utils.js';
 import { PARTICLE_STATS, createStatsWriter } from './workers-utils.js';
 import { RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
@@ -523,7 +524,7 @@ class ParticleWorker extends AbstractWorker {
       let typeMask = query.typeMask;
       while (typeMask !== 0n) {
         // Find lowest set bit (trailing zeros)
-        const typeIndex = this._countTrailingZeros(typeMask);
+        const typeIndex = countTrailingZeros(typeMask);
         const meta = this._queryEntityMetadata[typeIndex];
 
         // Binary search activeEntitiesData for indices in [startIndex, endIndex)
@@ -561,24 +562,6 @@ class ParticleWorker extends AbstractWorker {
       // Write count at index 0
       resultView[0] = resultCount;
     }
-  }
-
-  /**
-   * Count trailing zeros in BigInt (position of lowest set bit)
-   * OPTIMIZED: Binary search approach - O(log n) instead of O(n)
-   * @private
-   */
-  _countTrailingZeros(n) {
-    if (n === 0n) return 64;
-    let count = 0;
-    // Binary search: check larger chunks first, halving search space each step
-    if ((n & 0xFFFFFFFFn) === 0n) { count += 32; n >>= 32n; }
-    if ((n & 0xFFFFn) === 0n) { count += 16; n >>= 16n; }
-    if ((n & 0xFFn) === 0n) { count += 8; n >>= 8n; }
-    if ((n & 0xFn) === 0n) { count += 4; n >>= 4n; }
-    if ((n & 0x3n) === 0n) { count += 2; n >>= 2n; }
-    if ((n & 0x1n) === 0n) { count += 1; }
-    return count;
   }
 
   /**
