@@ -509,6 +509,39 @@ export function cantorPair(a, b) {
 }
 
 /**
+ * Inverse of Cantor pairing function - recovers (a, b) from a Cantor key
+ * ZERO ALLOCATION: Mutates the result object instead of creating a new one
+ * Used for collision exit events to recover entity IDs without a lookup Map
+ *
+ * Mathematical inverse:
+ * - w = floor((sqrt(8z + 1) - 1) / 2)
+ * - t = (w² + w) / 2
+ * - b = z - t
+ * - a = w - b
+ *
+ * @param {number} z - Cantor pairing key (from cantorPair)
+ * @param {Object} result - Result object to mutate {a, b}
+ * @returns {Object} The result object with recovered values
+ *
+ * @example
+ *   const result = { a: 0, b: 0 };
+ *   cantorUnpair(key, result);
+ *   // result.a and result.b now contain the original values
+ */
+export function cantorUnpair(z, result) {
+  // w = floor((sqrt(8z + 1) - 1) / 2)
+  const w = ((Math.sqrt(8 * z + 1) - 1) / 2) | 0;
+  // t = (w² + w) / 2 = triangular number
+  const t = (w * w + w) / 2;
+  result.b = z - t;
+  result.a = w - result.b;
+  return result;
+}
+
+// Pre-allocated result object for cantorUnpair (zero GC in hot paths)
+export const _cantorResult = { a: 0, b: 0 };
+
+/**
  * Calculate distance between two 2D points
  * @param {number} x1 - First point X
  * @param {number} y1 - First point Y

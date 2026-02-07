@@ -23,7 +23,7 @@ import { Flash } from '../core/Flash.js';
 import { AbstractWorker } from './AbstractWorker.js';
 import { Grid } from '../core/Grid.js';
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from './workers-utils.js';
-import { cantorPair } from '../core/utils.js';
+import { cantorPair, cantorUnpair, _cantorResult } from '../core/utils.js';
 
 // Note: Core engine classes (GameObject, Mouse, Keyboard, etc.) and components
 // (Transform, RigidBody, etc.) are now registered automatically by AbstractWorker
@@ -67,15 +67,9 @@ class LogicWorker extends AbstractWorker {
     // Optimized collision tracking using numeric keys instead of strings
     // Uses Cantor pairing function: key = (a + b) * (a + b + 1) / 2 + b
     // This eliminates string allocation and GC pressure
+    // Reverse lookups use cantorUnpair() - no Map needed (zero GC)
     this.previousCollisions = new Set(); // Track collisions from last frame (numeric keys)
     this.currentCollisions = new Set(); // Track collisions in current frame (numeric keys)
-
-    // Collision pair cache for reverse lookups (key -> [entityA, entityB])
-    this.collisionPairCache = new Map(); // Only for exit events
-
-    // GC OPTIMIZATION: Reusable array pool for collision pairs (avoids allocation per collision)
-    this._collisionPairPool = []; // Pool of [entityA, entityB] arrays for reuse
-    this._collisionPairPoolSize = 0;
 
     // Screen visibility tracking (for onScreenEnter/Exit lifecycle methods)
     // Track previous frame's visibility state to detect transitions
@@ -448,32 +442,6 @@ class LogicWorker extends AbstractWorker {
       this.currentCollisions.add(keyAB);
       this.currentCollisions.add(keyBA);
 
-      // Cache the pair for potential exit events (only if new)
-      if (!this.previousCollisions.has(keyAB)) {
-        // GC OPTIMIZATION: Reuse arrays from pool instead of allocating new ones
-        let pairAB = this._collisionPairPool[this._collisionPairPoolSize];
-        if (!pairAB) {
-          pairAB = [0, 0];
-          this._collisionPairPool[this._collisionPairPoolSize] = pairAB;
-        }
-        this._collisionPairPoolSize++;
-        pairAB[0] = entityA;
-        pairAB[1] = entityB;
-
-        // Create reverse pair (BA) - reuse from pool
-        let pairBA = this._collisionPairPool[this._collisionPairPoolSize];
-        if (!pairBA) {
-          pairBA = [0, 0];
-          this._collisionPairPool[this._collisionPairPoolSize] = pairBA;
-        }
-        this._collisionPairPoolSize++;
-        pairBA[0] = entityB;
-        pairBA[1] = entityA;
-
-        this.collisionPairCache.set(keyAB, pairAB);
-        this.collisionPairCache.set(keyBA, pairBA);
-      }
-
       // Determine if this is a new collision or continuing
       const isNewCollision = !this.previousCollisions.has(keyAB);
 
@@ -501,13 +469,13 @@ class LogicWorker extends AbstractWorker {
     }
 
     // Check for collisions that ended (OnCollisionExit)
+    // Uses cantorUnpair for O(1) reverse lookup - no Map needed (zero GC)
     for (const prevKey of this.previousCollisions) {
       if (!this.currentCollisions.has(prevKey)) {
-        // Retrieve entity indices from cache (no string parsing!)
-        const pair = this.collisionPairCache.get(prevKey);
-        if (!pair) continue; // Shouldn't happen, but safety check
-
-        const [entityA, entityB] = pair;
+        // Recover entity indices using inverse Cantor function (zero allocation)
+        cantorUnpair(prevKey, _cantorResult);
+        const entityA = _cantorResult.a;
+        const entityB = _cantorResult.b;
 
         // Only process if this worker "owns" entityA (using same partitioning)
         if (entityA % this.totalLogicWorkers === this.workerIndex) {
@@ -522,9 +490,6 @@ class LogicWorker extends AbstractWorker {
             objB.onCollisionExit(entityA);
           }
         }
-
-        // Clean up cache entry for ended collision
-        this.collisionPairCache.delete(prevKey);
       }
     }
 
@@ -532,9 +497,6 @@ class LogicWorker extends AbstractWorker {
     const temp = this.previousCollisions;
     this.previousCollisions = this.currentCollisions;
     this.currentCollisions = temp;
-
-    // GC OPTIMIZATION: Reset collision pair pool for next frame (arrays stay allocated)
-    this._collisionPairPoolSize = 0;
   }
 
   /**
