@@ -130,6 +130,12 @@ export class QuerySystem {
     this.queryCacheSAB = null;
     this.queryResultsSAB = null;
 
+    /**
+     * Cache for queryMask generation to avoid repeated BigInt allocations
+     * Map: componentIds string (sorted, comma-joined) → queryMask (BigInt)
+     */
+    this.queryMaskCache = new Map();
+
     // Typed array views into SABs
     this.entityMetadataView = null;
     this.queryCacheView = null;
@@ -369,14 +375,15 @@ export class QuerySystem {
 
   /**
    * Generate queryMask (BigInt bitmask) from component classes
+   * Uses caching to avoid repeated BigInt allocations in hot paths
    * @param {Array} componentClasses - Array of component classes
    * @returns {BigInt} - Bitmask representing the component combination
    */
   _generateQueryMask(componentClasses) {
-    let mask = 0n;
+    // Extract and validate component IDs (cheap number operations)
+    const ids = [];
     for (const ComponentClass of componentClasses) {
       const componentId = ComponentClass.componentId;
-      // Check for null, undefined, or non-number
       if (componentId == null || typeof componentId !== 'number') {
         console.warn(
           `[QuerySystem] Component ${ComponentClass?.name || 'unknown'} has no componentId (got: ${componentId}). Was it registered?`
@@ -389,8 +396,27 @@ export class QuerySystem {
         );
         continue;
       }
-      mask |= 1n << BigInt(componentId);
+      ids.push(componentId);
     }
+
+    // Generate cache key from sorted IDs (string ops are cheaper than BigInt)
+    ids.sort((a, b) => a - b);
+    const cacheKey = ids.join(',');
+
+    // Check cache first
+    const cached = this.queryMaskCache.get(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    // Compute mask (expensive BigInt operations - only done once per unique query)
+    let mask = 0n;
+    for (const id of ids) {
+      mask |= 1n << BigInt(id);
+    }
+
+    // Cache and return
+    this.queryMaskCache.set(cacheKey, mask);
     return mask;
   }
 
@@ -725,12 +751,16 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
     subarray: null,
   }));
 
-  // Helper: generate queryMask from component classes
+  // OPTIMIZATION: Cache queryMask generation to avoid repeated BigInt allocations
+  // Map: componentIds string (sorted, comma-joined) → queryMask (BigInt)
+  const queryMaskCache = new Map();
+
+  // Helper: generate queryMask from component classes (with caching)
   function generateQueryMask(componentClasses) {
-    let mask = 0n;
+    // Extract and validate component IDs (cheap number operations)
+    const ids = [];
     for (const ComponentClass of componentClasses) {
       const componentId = ComponentClass.componentId;
-      // Check for null, undefined, or non-number
       if (componentId == null || typeof componentId !== 'number') {
         console.warn(
           `[QuerySystem] Component ${ComponentClass?.name || 'unknown'} has no componentId (got: ${componentId}). Was it registered?`
@@ -740,8 +770,27 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
       if (componentId >= MAX_COMPONENTS) {
         continue;
       }
-      mask |= 1n << BigInt(componentId);
+      ids.push(componentId);
     }
+
+    // Generate cache key from sorted IDs (string ops are cheaper than BigInt)
+    ids.sort((a, b) => a - b);
+    const cacheKey = ids.join(',');
+
+    // Check cache first
+    const cached = queryMaskCache.get(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    // Compute mask (expensive BigInt operations - only done once per unique query)
+    let mask = 0n;
+    for (const id of ids) {
+      mask |= 1n << BigInt(id);
+    }
+
+    // Cache and return
+    queryMaskCache.set(cacheKey, mask);
     return mask;
   }
 
