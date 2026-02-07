@@ -20,16 +20,6 @@
 
 
 
-### 2.5 — `_countTrailingZeros` is O(n)
-
-Lines 554-562 implement CTZ with a loop that shifts one bit at a time. For BigInts with many trailing zeros this is slow. JavaScript doesn't have a native CTZ for BigInt, but a binary search approach would be O(log n) instead of O(n):
-
-```javascript
-// O(log n) instead of O(n)
-if ((n & 0xFFFFFFFFn) === 0n) { count += 32; n >>= 32n; }
-if ((n & 0xFFFFn) === 0n) { count += 16; n >>= 16n; }
-// ...
-```
 
 ### 2.6 — Decal Stamping: Per-Pixel Division
 
