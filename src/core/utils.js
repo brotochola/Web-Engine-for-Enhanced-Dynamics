@@ -11,6 +11,58 @@ import { GameObject } from './gameObject.js';
 // ============================================================================
 
 /**
+ * Count trailing zeros in BigInt (position of lowest set bit)
+ * OPTIMIZED: Binary search approach - O(log n) instead of O(n)
+ * Uses bitmask checks to halve search space each step (max 6 checks)
+ * @param {bigint} n - BigInt value to check
+ * @returns {number} Number of trailing zeros (0-64)
+ */
+export function countTrailingZeros(n) {
+  if (n === 0n) return 64;
+  let count = 0;
+  // Binary search: check larger chunks first, halving search space each step
+  if ((n & 0xFFFFFFFFn) === 0n) { count += 32; n >>= 32n; }
+  if ((n & 0xFFFFn) === 0n) { count += 16; n >>= 16n; }
+  if ((n & 0xFFn) === 0n) { count += 8; n >>= 8n; }
+  if ((n & 0xFn) === 0n) { count += 4; n >>= 4n; }
+  if ((n & 0x3n) === 0n) { count += 2; n >>= 2n; }
+  if ((n & 0x1n) === 0n) { count += 1; }
+  return count;
+}
+
+/**
+ * Binary search for range [start, end) in sorted array with count at index 0
+ * Used by query system to find entity indices in a given pool range
+ * @param {TypedArray} data - Sorted array with count at index 0
+ * @param {number} start - Range start (inclusive)
+ * @param {number} end - Range end (exclusive)
+ * @returns {TypedArray} Subarray view of elements in range
+ */
+export function binarySearchRange(data, start, end) {
+  const totalCount = data[0];
+  if (totalCount === 0) return data.subarray(1, 1);
+
+  let lo = 1;
+  let hi = 1 + totalCount;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (data[mid] < start) lo = mid + 1;
+    else hi = mid;
+  }
+  const first = lo;
+
+  hi = 1 + totalCount;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (data[mid] < end) lo = mid + 1;
+    else hi = mid;
+  }
+  const last = lo;
+
+  return data.subarray(first, last);
+}
+
+/**
  * Format a number with underscore thousand separators
  * OPTIMIZED: No regex, no allocations for common cases
  * @param {number} num - Number to format

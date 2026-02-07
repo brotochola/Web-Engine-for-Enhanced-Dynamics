@@ -13,7 +13,7 @@
  *   const activeLights = queryActiveEntities([LightEmitter]); // Only active entities
  */
 
-import { collectComponents } from './utils.js';
+import { collectComponents, countTrailingZeros, binarySearchRange } from './utils.js';
 import { Transform } from '../components/Transform.js';
 import { GameObject } from './gameObject.js';
 
@@ -484,7 +484,7 @@ export class QuerySystem {
     let totalCount = 0;
     let mask = typeMask;
     while (mask !== 0n) {
-      const typeIndex = this._countTrailingZeros(mask);
+      const typeIndex = countTrailingZeros(mask);
       const meta = this.entityMetadata[typeIndex];
       totalCount += meta.poolSize;
       mask &= mask - 1n; // Clear lowest set bit
@@ -496,7 +496,7 @@ export class QuerySystem {
     mask = typeMask;
 
     while (mask !== 0n) {
-      const typeIndex = this._countTrailingZeros(mask);
+      const typeIndex = countTrailingZeros(mask);
       const meta = this.entityMetadata[typeIndex];
 
       for (let i = meta.startIndex; i < meta.endIndex; i++) {
@@ -567,11 +567,11 @@ export class QuerySystem {
 
     let mask = typeMask;
     while (mask !== 0n) {
-      const typeIndex = this._countTrailingZeros(mask);
+      const typeIndex = countTrailingZeros(mask);
       const meta = this.entityMetadata[typeIndex];
 
       // Binary search for range [startIndex, endIndex) in activeData
-      const slice = this._binarySearchRange(activeData, meta.startIndex, meta.endIndex);
+      const slice = binarySearchRange(activeData, meta.startIndex, meta.endIndex);
 
       for (let i = 0; i < slice.length; i++) {
         result[count++] = slice[i];
@@ -582,52 +582,6 @@ export class QuerySystem {
 
     return result.subarray(0, count);
   }
-
-  /**
-   * Binary search for indices in range [start, end) within sorted activeData
-   * @private
-   */
-  _binarySearchRange(activeData, start, end) {
-    const totalCount = activeData[0];
-    if (totalCount === 0) return new Uint16Array(0);
-
-    // Binary search for first index >= start
-    let lo = 1;
-    let hi = 1 + totalCount;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      if (activeData[mid] < start) lo = mid + 1;
-      else hi = mid;
-    }
-    const first = lo;
-
-    // Binary search for first index >= end
-    hi = 1 + totalCount;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      if (activeData[mid] < end) lo = mid + 1;
-      else hi = mid;
-    }
-    const last = lo;
-
-    // Return subarray view
-    return activeData.subarray(first, last);
-  }
-
-  /**
-   * Count trailing zeros in BigInt (position of lowest set bit)
-   * @private
-   */
-  _countTrailingZeros(n) {
-    if (n === 0n) return 64;
-    let count = 0;
-    while ((n & 1n) === 0n) {
-      n >>= 1n;
-      count++;
-    }
-    return count;
-  }
-
   /**
    * Serialize for sending to workers via postMessage
    */
@@ -804,42 +758,6 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
       }
     }
     return typeMask;
-  }
-
-  // Helper: count trailing zeros in BigInt
-  function countTrailingZeros(n) {
-    if (n === 0n) return 64;
-    let count = 0;
-    while ((n & 1n) === 0n) {
-      n >>= 1n;
-      count++;
-    }
-    return count;
-  }
-
-  // Helper: binary search for range in sorted array
-  function binarySearchRange(data, start, end) {
-    const totalCount = data[0];
-    if (totalCount === 0) return data.subarray(1, 1);
-
-    let lo = 1;
-    let hi = 1 + totalCount;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      if (data[mid] < start) lo = mid + 1;
-      else hi = mid;
-    }
-    const first = lo;
-
-    hi = 1 + totalCount;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      if (data[mid] < end) lo = mid + 1;
-      else hi = mid;
-    }
-    const last = lo;
-
-    return data.subarray(first, last);
   }
 
   /**
