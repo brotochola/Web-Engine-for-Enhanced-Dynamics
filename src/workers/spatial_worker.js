@@ -30,13 +30,12 @@ self.postMessage({
 
 import { Transform } from '../components/Transform.js';
 import { Collider } from '../components/Collider.js';
+import { RigidBody } from '../components/RigidBody.js';
 import { AbstractWorker } from './AbstractWorker.js';
 import { Grid } from '../core/Grid.js';
 import {
   SPATIAL_STATS,
   createMultiWorkerStatsWriter,
-  getEntityCellRange,
-  areAllEntityCellsSleeping,
   getEntityHomeCellIndex,
 } from './workers-utils.js';
 import { generateSymmetricalCirclePattern } from '../core/utils.js';
@@ -105,10 +104,6 @@ class SpatialWorker extends AbstractWorker {
     // Uint16Array since cell indices are always positive and < 65535
     this._cellNeighborCache = new Map();
     this._maxCellRadius = 12; // Support visual ranges up to ~1500px with cellSize=128
-
-    // Reusable scratch arrays for zero-allocation cell range calculations
-    // Layout: [minCol, maxCol, minRow, maxRow]
-    this._cellRangeScratch = new Int32Array(4);
 
     // Performance stats
     this.entitiesProcessedThisFrame = 0;
@@ -470,6 +465,9 @@ class SpatialWorker extends AbstractWorker {
   findNeighborsForOwnedEntities() {
     const visualRange = Collider.visualRange;
     const active = Transform.active;
+    const rigidBodyActive = RigidBody.active;
+    const rigidBodySleeping = RigidBody.sleeping;
+    const frameNumber = this.frameNumber;
 
     const gridWidth = this.gridWidth;
     const gridHeight = this.gridHeight;
@@ -490,9 +488,6 @@ class SpatialWorker extends AbstractWorker {
     const gridCounts = Grid._gridCounts;
     const gridEntities = Grid._gridEntities;
 
-    // Cell sleeping state buffer (read-only, written by particle_worker)
-    const cellSleepingData = Grid.cellSleepingData;
-
     // O(1) duplicate detection for neighbor search (prevents counting same neighbor twice)
     const processedMarker = this.processedMarker;
     processedMarker.fill(-1); // Reset markers each frame
@@ -503,9 +498,6 @@ class SpatialWorker extends AbstractWorker {
 
     // Clamp helpers for home row calculation
     const maxRow = gridHeight - 1;
-
-    // Reusable scratch array for cell range calculations (zero allocation)
-    const cellRangeScratch = this._cellRangeScratch;
 
     // =========================================================================
     // Iterate through all owned cells
@@ -560,35 +552,26 @@ class SpatialWorker extends AbstractWorker {
             continue;
           }
 
-          // Calculate entity's half-extent for cell range calculation
+          // Calculate entity's half-extent for collision range calculation
           const myHalfExtent = entityHalfExtent[entityA];
-          const myHalfW = myHalfExtent;
-          const myHalfH = myHalfExtent;
 
-          // Calculate which cells this entity spans (for sleeping cell optimization)
-          const hasValidCellRange = getEntityCellRange(
-            myX,
-            myY,
-            myHalfW,
-            myHalfH,
-            invCellSize,
-            gridWidth,
-            gridHeight,
-            cellRangeScratch
-          );
-
-          // Check if all cells entity spans are sleeping (only if cell sleeping data is available)
-          const allCellsSleeping =
-            cellSleepingData &&
-            hasValidCellRange &&
-            areAllEntityCellsSleeping(
-              cellRangeScratch[0], // minCol
-              cellRangeScratch[1], // maxCol
-              cellRangeScratch[2], // minRow
-              cellRangeScratch[3], // maxRow
-              gridWidth,
-              cellSleepingData
-            );
+          // =================================================================
+          // SLEEPING OPTIMIZATION: Reduced scan frequency for sleeping entities
+          // =================================================================
+          // Sleeping entities update neighbors every 4 frames instead of every frame.
+          // This is safe because:
+          // 1. Sleeping entities aren't moving
+          // 2. Physics already skips sleeping-to-sleeping collision resolution
+          // 3. Even if we miss a frame, we catch up quickly (max 4 frame delay)
+          // Stagger by entity ID to spread load evenly across frames.
+          // =================================================================
+          const entitySleeping = rigidBodyActive[entityA] && rigidBodySleeping[entityA];
+          if (entitySleeping && ((frameNumber + entityA) & 3) !== 0) {
+            // Skip this frame for sleeping entity - keep previous neighbor data
+            // (neighborData already contains last frame's neighbors)
+            this.sleepingEntitiesSkipped = (this.sleepingEntitiesSkipped || 0) + 1;
+            continue;
+          }
 
           // Calculate cell search radius (bitwise ceiling - avoids Math.ceil overhead in hot path)
           // Using (x | 0) + 1 always rounds up, may add one extra cell ring but negligible impact
@@ -604,112 +587,96 @@ class SpatialWorker extends AbstractWorker {
           const neighborCells = this._getNeighborCells(entityCellIndex, cellRadius, homeRow, homeCol);
           const neighborCellsLength = neighborCells.length;
 
-          // =================================================================
-          // OPTIMIZATION: Read-Modify-Write pattern for sleeping entities
-          // =================================================================
-          // If entity is in all sleeping cells:
-          // - Read previous frame's neighbor list
-          // - Keep neighbors from sleeping cells (they haven't moved)
-          // - Update neighbors from awake cells (they might have moved)
-          // =================================================================
-          let neighborCount = 0;
+          // =============================================================
+          // NEIGHBOR DETECTION with PARTITIONING
+          // =============================================================
+          // Partition neighbors into: collision candidates (first) + visual-only (after)
+          // Physics only iterates collision candidates, logic iterates all
+          // =============================================================
+          let collisionCount = 0;
+          let visualOnlyCount = 0;
+          const visualOnlyBuffer = this._visualOnlyBuffer;
+          const collisionBuffer = this._collisionBuffer;
 
-          // NOTE: Sleeping entity optimization temporarily disabled for neighbor partitioning
-          // TODO: Re-enable with proper collision candidate partitioning support
-          if (false && allCellsSleeping && cellSleepingData) {
-            // DISABLED - Using AWAKE path for all entities to ensure correct partitioning
-          } else {
-            // =============================================================
-            // AWAKE ENTITY PATH: Full neighbor detection with PARTITIONING
-            // =============================================================
-            // Partition neighbors into: collision candidates (first) + visual-only (after)
-            // Physics only iterates collision candidates, logic iterates all
-            // =============================================================
-            let collisionCount = 0;
-            let visualOnlyCount = 0;
-            const visualOnlyBuffer = this._visualOnlyBuffer;
-            const collisionBuffer = this._collisionBuffer;
+          for (let i = 0; i < neighborCellsLength; i++) {
+            const checkCellIndex = neighborCells[i];
+            const checkByteOffset = checkCellIndex * Grid.cellByteSize;
+            const checkCellCount = gridCounts[checkByteOffset];
 
-            for (let i = 0; i < neighborCellsLength; i++) {
-              const checkCellIndex = neighborCells[i];
-              const checkByteOffset = checkCellIndex * Grid.cellByteSize;
-              const checkCellCount = gridCounts[checkByteOffset];
+            if (checkCellCount === 0) continue;
 
-              if (checkCellCount === 0) continue;
+            this.cellsCheckedThisFrame++;
 
-              this.cellsCheckedThisFrame++;
+            const checkEntityBase = (checkByteOffset >> 2) + 1;
 
-              const checkEntityBase = (checkByteOffset >> 2) + 1;
+            // Check all entities in this cell
+            for (let j = 0; j < checkCellCount; j++) {
+              const entityB = gridEntities[checkEntityBase + j];
 
-              // Check all entities in this cell
-              for (let j = 0; j < checkCellCount; j++) {
-                const entityB = gridEntities[checkEntityBase + j];
+              // Skip self
+              if (entityA === entityB) continue;
 
-                // Skip self
-                if (entityA === entityB) continue;
+              // O(1) duplicate check: multi-cell entities appear in multiple cells
+              if (processedMarker[entityB] === entityA) continue;
+              processedMarker[entityB] = entityA;
 
-                // O(1) duplicate check: multi-cell entities appear in multiple cells
-                if (processedMarker[entityB] === entityA) continue;
-                processedMarker[entityB] = entityA;
+              // Calculate squared distance for range check
+              // OPTIMIZED: Inline to avoid function call overhead in hot loop
+              const bX = entityPosX[entityB];
+              const bY = entityPosY[entityB];
+              const dxAB = bX - myX;
+              const dyAB = bY - myY;
+              const distSq = dxAB * dxAB + dyAB * dyAB;
 
-                // Calculate squared distance for range check
-                // OPTIMIZED: Inline to avoid function call overhead in hot loop
-                const bX = entityPosX[entityB];
-                const bY = entityPosY[entityB];
-                const dxAB = bX - myX;
-                const dyAB = bY - myY;
-                const distSq = dxAB * dxAB + dyAB * dyAB;
+              // Early rejection: if distSq is 0, skip (same position)
+              if (distSq === 0) continue;
 
-                // Early rejection: if distSq is 0, skip (same position)
-                if (distSq === 0) continue;
+              // Expand effective range by target's half-extent
+              const bHalfExtent = entityHalfExtent[entityB];
+              const effectiveRange = myVisualRange + bHalfExtent;
+              const effectiveRangeSq = effectiveRange * effectiveRange;
 
-                // Expand effective range by target's half-extent
-                const bHalfExtent = entityHalfExtent[entityB];
-                const effectiveRange = myVisualRange + bHalfExtent;
-                const effectiveRangeSq = effectiveRange * effectiveRange;
+              // Check if within visual range
+              if (distSq < effectiveRangeSq) {
+                // Check if within collision range (smaller, for physics)
+                // Collision range = sum of half-extents + buffer for entity movement
+                const collisionRange = myHalfExtent + bHalfExtent + collisionBuffer;
+                const collisionRangeSq = collisionRange * collisionRange;
 
-                // Check if within visual range
-                if (distSq < effectiveRangeSq) {
-                  // Check if within collision range (smaller, for physics)
-                  // Collision range = sum of half-extents + buffer for entity movement
-                  const collisionRange = myHalfExtent + bHalfExtent + collisionBuffer;
-                  const collisionRangeSq = collisionRange * collisionRange;
-
-                  if (distSq < collisionRangeSq) {
-                    // COLLISION CANDIDATE: Write directly to neighborData (first section)
-                    if (collisionCount < maxNeighbors) {
-                      neighborData[neighborOffset + 2 + collisionCount] = entityB;
-                      collisionCount++;
-                      this.neighborsFoundThisFrame++;
-                    }
-                  } else {
-                    // VISUAL-ONLY: Buffer for later (will be written after collision candidates)
-                    if (collisionCount + visualOnlyCount < maxNeighbors) {
-                      visualOnlyBuffer[visualOnlyCount] = entityB;
-                      visualOnlyCount++;
-                      this.neighborsFoundThisFrame++;
-                    }
+                if (distSq < collisionRangeSq) {
+                  // COLLISION CANDIDATE: Write directly to neighborData (first section)
+                  if (collisionCount < maxNeighbors) {
+                    neighborData[neighborOffset + 2 + collisionCount] = entityB;
+                    collisionCount++;
+                    this.neighborsFoundThisFrame++;
                   }
-
-                  // Stop if we've hit the neighbor limit
-                  if (collisionCount + visualOnlyCount >= maxNeighbors) break;
+                } else {
+                  // VISUAL-ONLY: Buffer for later (will be written after collision candidates)
+                  if (collisionCount + visualOnlyCount < maxNeighbors) {
+                    visualOnlyBuffer[visualOnlyCount] = entityB;
+                    visualOnlyCount++;
+                    this.neighborsFoundThisFrame++;
+                  }
                 }
+
+                // Stop if we've hit the neighbor limit
+                if (collisionCount + visualOnlyCount >= maxNeighbors) break;
               }
-
-              if (collisionCount + visualOnlyCount >= maxNeighbors) break;
             }
 
-            // Copy visual-only neighbors to after collision candidates
-            for (let i = 0; i < visualOnlyCount; i++) {
-              neighborData[neighborOffset + 2 + collisionCount + i] = visualOnlyBuffer[i];
-            }
-
-            neighborCount = collisionCount + visualOnlyCount;
-
-            // Write counts: [totalCount, collisionCount, neighbors...]
-            neighborData[neighborOffset] = neighborCount;
-            neighborData[neighborOffset + 1] = collisionCount;
+            if (collisionCount + visualOnlyCount >= maxNeighbors) break;
           }
+
+          // Copy visual-only neighbors to after collision candidates
+          for (let i = 0; i < visualOnlyCount; i++) {
+            neighborData[neighborOffset + 2 + collisionCount + i] = visualOnlyBuffer[i];
+          }
+
+          const neighborCount = collisionCount + visualOnlyCount;
+
+          // Write counts: [totalCount, collisionCount, neighbors...]
+          neighborData[neighborOffset] = neighborCount;
+          neighborData[neighborOffset + 1] = collisionCount;
         }
       }
     }
