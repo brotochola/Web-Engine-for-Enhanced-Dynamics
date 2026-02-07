@@ -63,6 +63,56 @@ export function binarySearchRange(data, start, end) {
 }
 
 /**
+ * Binary search to find insertion point for sorted insert
+ * Returns the index where value should be inserted to maintain sorted order
+ * @param {TypedArray} data - The array (layout: [count, idx0, idx1, ...])
+ * @param {number} value - The value to insert
+ * @param {number} count - Number of elements (data[0])
+ * @returns {number} Insertion index (1-based, into data array)
+ */
+export function binarySearchInsertPoint(data, value, count) {
+  let lo = 1;
+  let hi = count + 1;
+
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (data[mid] < value) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+
+  return lo;
+}
+
+/**
+ * Binary search to find an element in a sorted array
+ * @param {TypedArray} data - The array (layout: [count, idx0, idx1, ...])
+ * @param {number} value - The value to find
+ * @param {number} count - Number of elements (data[0])
+ * @returns {number} Index where found (1-based), or -1 if not found
+ */
+export function binarySearchFind(data, value, count) {
+  let lo = 1;
+  let hi = count;
+
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    const val = data[mid];
+    if (val === value) {
+      return mid;
+    } else if (val < value) {
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+
+  return -1;
+}
+
+/**
  * Format a number with underscore thousand separators
  * OPTIMIZED: No regex, no allocations for common cases
  * @param {number} num - Number to format
