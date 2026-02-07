@@ -289,10 +289,6 @@ class LogicWorker extends AbstractWorker {
     // particle_worker builds this list at the start of each frame
     const totalActiveEntities = this.activeEntitiesData ? this.activeEntitiesData[0] : 0;
 
-    // PERFORMANCE: Cache Grid arrays once to avoid property lookups per entity
-    const neighborData = Grid.neighborData;
-    const stride = Grid._stride;
-
     // Job-based processing: atomically claim jobs until none remain
     // Jobs are now ranges in the active entity list, not entity index ranges
     while (true) {
@@ -325,9 +321,9 @@ class LogicWorker extends AbstractWorker {
           activeCount++;
           this.entitiesProcessedThisFrame++;
 
-          // OPTIMIZED: updating neighbors uses cached Grid arrays (GC free)
-          // Pass cached arrays to avoid property lookups per entity
-          obj.updateNeighbors(neighborData, null, stride);
+          // OPTIMIZED: updateNeighbors uses Grid statics directly (no params needed)
+          // Only updates per-instance _neighborOffset and neighborCount
+          obj.updateNeighbors();
 
           // TICK DECIMATION: Skip tick if countdown hasn't reached 0
           // Entities with tickInterval > 1 only tick every N frames (staggered by index)

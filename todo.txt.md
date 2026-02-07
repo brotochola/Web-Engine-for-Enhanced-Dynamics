@@ -220,29 +220,9 @@ That's 3 checks per entity per frame just to discover "no decimation." For thous
 
 ## 3. CACHE LOCALITY & DATA ACCESS
 
-### 3.1 — `updateNeighbors` Called Per Entity
 
-```327:327:src/workers/logic_worker.js
-          obj.updateNeighbors(neighborData, null, stride);
-```
 
-This calls a method on each `GameObject` instance, which sets three instance properties:
 
-```1148:1152:src/core/gameObject.js
-      this._neighborData = neighborData;
-      this._neighborOffset = this.index * stride;
-      this.neighborCount = neighborData[this._neighborOffset];
-```
-
-The `neighborData` pointer and `stride` are **the same** for every entity — they're cached grid arrays. But `updateNeighbors` still writes `this._neighborData = neighborData` on every instance every frame. This is a completely redundant write of the same pointer value to N different object locations.
-
-**Better:** Set `_neighborData` once during initialization (it never changes). Only update `_neighborOffset` and `neighborCount` per frame. Or better yet, make `neighborData` and `stride` static on `GameObject` (they're the same for all instances), and just read the count inline: `obj.neighborCount = neighborData[obj.index * stride];` — one line, no method call.
-
-### 3.2 — Random Access Pattern on `this.gameObjects`
-
-Each `entityIndex` comes from the active entity list (built by particle_worker). The indices are interleaved by design (see `initializeFreeList` with `interleaveFactor = 8`). So accessing `this.gameObjects[entityIndex]` jumps around in memory. Each `obj` is a different JS object on the heap — accessing its properties triggers random heap access.
-
-This is fundamental to the architecture and hard to avoid with OOP-style GameObjects. The interleaved spawning helps multi-core cache utilization but hurts single-thread cache locality. This is an intentional trade-off, well-documented in the codebase.
 
 ### 3.3 — `checkScreenVisibility` Called for Every Entity
 
@@ -262,20 +242,6 @@ The function call overhead (`checkScreenVisibility` as a method) is probably the
 
 ## 4. CORRECTNESS & ROBUSTNESS
 
-### 4.1 — Spawn/Despawn Only on Worker 0 — Serialization Bottleneck
-
-```570:574:src/workers/logic_worker.js
-        if (this.workerIndex !== 0) {
-          break; // Ignore spawn messages on other workers
-        }
-```
-
-All spawn/despawn operations route to worker 0. This means:
-- If entity logic on worker 2 calls `GameObject.spawn(Prey, {...})`, it sends a `spawnRequest` message to worker 0 via MessagePort
-- Worker 0 processes it in `handleCustomMessage` — which runs **between frames**, not during the current tick
-- The entity isn't actually spawned until worker 0's next message processing cycle
-
-This is architecturally sound (avoids freeList race conditions), but creates a **1-frame latency** for cross-worker spawns and makes worker 0 a bottleneck if many spawns happen per frame.
 
 ### 4.2 — Collision Exit Detection Assumes All Workers See All Collisions
 
