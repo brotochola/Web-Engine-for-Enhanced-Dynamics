@@ -1,0 +1,1 @@
+i'm building a web engine and i wanna make it as fast as possible, keeping in mind performance, multithreading without synching (no atomics!), no gc pressure, no allocation. Let's talk architecture. Do not code yet

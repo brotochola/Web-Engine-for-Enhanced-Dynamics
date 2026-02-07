@@ -351,6 +351,8 @@ class LogicWorker extends AbstractWorker {
           // If entity ticks every N frames, scale acceleration by N so physics
           // integrates the same total impulse. Without this, entities with
           // tickInterval > 1 would move N times slower.
+          // console.log("tickInterval", tickInterval);
+
           if (tickInterval > 1) {
             RigidBody.ax[entityIndex] *= tickInterval;
             RigidBody.ay[entityIndex] *= tickInterval;

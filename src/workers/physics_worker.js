@@ -24,6 +24,7 @@ import {
   testAABBAABBCollision,
 } from '../core/utils.js';
 import { rng } from '../core/utils.js';
+import { Camera } from '../core/Camera.js';
 // Note: Game-specific scripts are loaded dynamically by AbstractWorker
 // Physics worker uses RigidBody component for physics calculations
 
@@ -390,14 +391,14 @@ class PhysicsWorker extends AbstractWorker {
     const isStatic = RigidBody.static;
     const friction = RigidBody.friction;
     const sleeping = RigidBody.sleeping;
+    const maxAcc = RigidBody.maxAcc;
 
     const sleepThreshold = this.config.physics.sleepThreshold;
     const wakeUpThreshold = this.config.physics.wakeUpThreshold;
     const stillnessTime = RigidBody.stillnessTime;
 
-    // const maxAcc = RigidBody.maxAcc;
-
     const gravityScale = dtRatio * dtRatio;
+    const invDtRatio = 1 / dtRatio; // Pre-computed inverse to avoid division in loop
 
     // Use cached query result from updateVerlet/updateVerletFixedStep
     // This avoids redundant queryActiveEntities calls per frame
@@ -405,87 +406,68 @@ class PhysicsWorker extends AbstractWorker {
 
     for (let idx = 0; idx < physicsEntities.length; idx++) {
       const i = physicsEntities[idx];
-      // Note: active[i] check no longer needed - queryActiveEntities already filters
-      if (!rigidBodyActive[i]) continue;
-      if (isStatic[i]) continue;
-      // SLEEPING OPTIMIZATION: Skip physics integration for sleeping entities
+      // Note: active[i] and rigidBodyActive[i] checks removed - queryActiveEntities already filters
+
+      // Combined static + sleeping early-out (single branch for non-moving entities)
+      if (isStatic[i] || sleeping[i]) {
+        if (sleeping[i]) {
+          // Keep px/py in sync for sleeping entities to prevent NaN on wake-up
+          px[i] = x[i];
+          py[i] = y[i];
+        }
+        continue;
+      }
 
       // Apply acceleration (scaled by dtRatio)
-      let accX = ax[i] * dtRatio;
-      let accY = ay[i] * dtRatio;
+      let originalAccX = ax[i];
+      let originalAccY = ay[i];
+      const myMaxAcc = maxAcc[i] || 10;
+      originalAccX = Math.max(-myMaxAcc, Math.min(originalAccX, myMaxAcc));
+      originalAccY = Math.max(-myMaxAcc, Math.min(originalAccY, myMaxAcc));
+      const accX = originalAccX * dtRatio;
+      const accY = originalAccY * dtRatio;
+      // if (isNaN(accX) || isNaN(accY) || !Number.isFinite(accX) || !Number.isFinite(accY)) {
+      //   console.log("accX or accY is NaN or Infinity", i, Transform.x[i], Transform.y[i], originalAccX, originalAccY, "dtaratio", dtRatio, accX, accY);
+      //   debugger;
+      // };
 
-      //wake up
+      // Wake-up check (only for non-static, non-sleeping entities that passed the early-out)
+      // Note: This is now unreachable for sleeping entities, but kept for entities
+      // that might have been woken by collision in previous frame
       if (accX > wakeUpThreshold || accY > wakeUpThreshold) {
         sleeping[i] = 0;
         stillnessTime[i] = 0;
       }
 
-      if (sleeping[i]) {
-        // CRITICAL: Keep px/py in sync with x/y for sleeping entities
-        // Even though we skip physics integration, the position can still be
-        // modified by collisions or boundary constraints. If px/py become
-        // out of sync, Verlet integration will produce NaN when the entity wakes up.
-        // Always sync px/py with x/y to maintain Verlet relationship
-        px[i] = x[i];
-        py[i] = y[i];
-        continue;
-      }
-
       const oldX = x[i];
       const oldY = y[i];
 
-      // DEFENSIVE: Validate px/py before using in Verlet integration
-      // If px/py are NaN, initialize them from current position and velocity
-      if (isNaN(px[i]) || isNaN(py[i])) {
-        px[i] = x[i] - (vx[i] || 0) * dtRatio;
-        py[i] = y[i] - (vy[i] || 0) * dtRatio;
+      // Initialize px/py for newly created entities (NaN !== NaN is faster than isNaN)
+      if (px[i] !== px[i] || py[i] !== py[i]) {
+        px[i] = oldX;
+        py[i] = oldY;
       }
 
       // Verlet Integration
       let dx = (x[i] - px[i]) * damping;
       let dy = (y[i] - py[i]) * damping;
 
-      // DEFENSIVE: Check for NaN in dx/dy before continuing
-      // This can happen if px/py were corrupted or not properly initialized
-      if (isNaN(dx) || isNaN(dy)) {
-        // Recover by initializing px/py from current position
-        // This handles edge cases where entity state was corrupted
-        px[i] = x[i];
-        py[i] = y[i];
-        dx = 0;
-        dy = 0;
-      }
-
+      // Apply friction using linear approximation (faster than Math.pow)
       if (friction[i] > 0) {
-        const frictionFactor = Math.pow(1 - friction[i], dtRatio);
+        const frictionFactor = 1 - friction[i] * dtRatio;
         dx *= frictionFactor;
         dy *= frictionFactor;
       }
 
-      // // Limit acceleration magnitude while preserving direction
-      // const accMagnitudeSquared =accX * accX + accY * accY
-      // const maxAccel = maxAcc[i]*dtRatio;
-      // if (accMagnitudeSquared > maxAccel**2) {
-      //   const accScale = maxAccel / Math.sqrt(accMagnitudeSquared);
-      //   accX *= accScale;
-      //   accY *= accScale;
-      // }
-
       dx += gravityScale * gx + accX;
       dy += gravityScale * gy + accY;
 
-      // DEFENSIVE: Final check for NaN before updating position
-      if (isNaN(dx)) dx = 0;
-      if (isNaN(dy)) dy = 0;
-
       // Velocity clamping using squared comparison (avoids sqrt for most entities)
-      // OPTIMIZED: Inline calculation to avoid function call overhead
       const speedSquared = dx * dx + dy * dy;
       const maxSpeed = maxVel[i] * dtRatio;
       const maxSpeedSquared = maxSpeed * maxSpeed;
 
       if (speedSquared > maxSpeedSquared) {
-        // OPTIMIZED: Inline clamp to avoid object allocation
         const velScale = maxSpeed / Math.sqrt(speedSquared);
         dx *= velScale;
         dy *= velScale;
@@ -494,19 +476,12 @@ class PhysicsWorker extends AbstractWorker {
       x[i] = oldX + dx;
       y[i] = oldY + dy;
 
-      // DEFENSIVE: Final validation - if position is still NaN, reset to previous position
-      if (isNaN(x[i]) || isNaN(y[i])) {
-        x[i] = oldX;
-        y[i] = oldY;
-        px[i] = oldX;
-        py[i] = oldY;
-      }
-
       px[i] = oldX;
       py[i] = oldY;
 
-      vx[i] = dx / dtRatio;
-      vy[i] = dy / dtRatio;
+      // Use multiplication instead of division for velocity calculation
+      vx[i] = dx * invDtRatio;
+      vy[i] = dy * invDtRatio;
 
       ax[i] = 0;
       ay[i] = 0;

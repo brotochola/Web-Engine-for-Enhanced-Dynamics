@@ -96,4 +96,5 @@ export class RigidBody extends Component {
       }
     }
   }
+
 }

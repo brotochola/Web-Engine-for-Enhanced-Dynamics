@@ -635,10 +635,11 @@ export class GameObject {
     const i = this.index;
     const dx = x - Transform.x[i];
     const dy = y - Transform.y[i];
-    const distSq = dx * dx + dy * dy; // OPTIMIZED: Inline calculation (already have dx, dy)
-    if (distSq > 0) {
-      const invDist = acc / Math.sqrt(distSq);
-      return this.addAcceleration(dx * invDist, dy * invDist);
+    const distSq = dx * dx + dy * dy;
+    // Guard: distSq must be > 1 to avoid division issues
+    if (distSq > 1) {
+      const factor = acc / Math.sqrt(distSq);
+      return this.addAcceleration(dx * factor, dy * factor);
     }
     return this;
   }
