@@ -98,11 +98,7 @@ Engineering Analysis: spatial_worker.js
 
 
 
-2.3 — Math.ceil in Hot Path
-spatial_worker.js
-Lines 588-588
-          const cellRadius = Math.ceil(myVisualRange * invCellSize);
-Math.ceil is called per-entity in findNeighborsForOwnedEntities. This forces a float → int conversion through the standard library. Use the bitwise ceiling trick: ((myVisualRange * invCellSize) | 0) + 1 (with a check if it's already integer, or just always add 1 and accept the extra cell — one extra ring of cells is rarely noticed).
+
 
 
 2.4 — Sleeping Entity Optimization Is Disabled
@@ -113,6 +109,8 @@ The sleeping cell optimization is completely disabled via if (false && ...). Thi
 All the work to compute hasValidCellRange, call getEntityCellRange(), call areAllEntityCellsSleeping() (which loops through cells) — all of this is dead computation. The result (allCellsSleeping) is never used.
 Lines 558-585 are ~30 lines of pure overhead for every entity with a visual range, every frame.
 Fix: Either re-enable the optimization or remove the dead code entirely. Currently you're paying the cost of the sleeping check AND doing the full path anyway.
+
+
 2.5 — Visual-Only Buffer Copy
 spatial_worker.js
 Lines 696-698
