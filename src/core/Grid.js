@@ -28,12 +28,13 @@
 import { Transform } from '../components/Transform.js';
 import { Collider } from '../components/Collider.js';
 import { distanceSq2D } from './utils.js';
+import { SPATIAL_DEFAULTS } from './ConfigDefaults.js';
 
 // =============================================================================
 // CONSTANTS - Configurable via scene (defaults shown)
 // =============================================================================
 // These are defaults - actual values come from metadata.maxEntitiesPerCell and metadata.maxNeighbors
-const DEFAULT_MAX_ENTITIES_PER_CELL = 64; // Max entities per grid cell (matches ConfigDefaults.js)
+
 const DEFAULT_MAX_NEIGHBORS = 500; // Max neighbors per entity (matches ConfigDefaults.js)
 
 /**
@@ -63,9 +64,9 @@ export class Grid {
   static gridWidth = 0; // Number of columns
   static gridHeight = 0; // Number of rows
   static totalCells = 0;
-  static maxEntitiesPerCell = DEFAULT_MAX_ENTITIES_PER_CELL; // Configured from scene
-  static maxNeighbors = DEFAULT_MAX_NEIGHBORS; // Configured from scene
-  static rowsPerBlock = 1; // Default to 1 (interleaved)
+  static maxEntitiesPerCell = SPATIAL_DEFAULTS.maxEntitiesPerCell; // Configured from scene
+  static maxNeighbors = SPATIAL_DEFAULTS.maxNeighbors; // Configured from scene
+  static rowsPerBlock = SPATIAL_DEFAULTS.rowsPerBlock; // Default to 1 (interleaved)
 
   // Computed from maxEntitiesPerCell (set during initialize)
   static cellByteSize = 0; // Bytes per cell
@@ -122,9 +123,9 @@ export class Grid {
     Grid.totalCells = Grid.gridWidth * Grid.gridHeight;
 
     // Configure spatial limits from scene
-    Grid.maxNeighbors = metadata.maxNeighbors || DEFAULT_MAX_NEIGHBORS;
-    Grid.maxEntitiesPerCell = metadata.maxEntitiesPerCell || DEFAULT_MAX_ENTITIES_PER_CELL;
-    Grid.rowsPerBlock = metadata.rowsPerBlock || 1;
+    Grid.maxNeighbors = metadata.maxNeighbors || SPATIAL_DEFAULTS.maxNeighbors;
+    Grid.maxEntitiesPerCell = metadata.maxEntitiesPerCell || SPATIAL_DEFAULTS.maxEntitiesPerCell;
+    Grid.rowsPerBlock = metadata.rowsPerBlock || SPATIAL_DEFAULTS.rowsPerBlock;
 
     // Compute derived values
     Grid.cellByteSize = 4 + Grid.maxEntitiesPerCell * 4;
@@ -749,6 +750,3 @@ export class Grid {
     return count;
   }
 }
-
-// Export default constants for use by other modules (actual values configured via Grid.initialize)
-export { DEFAULT_MAX_ENTITIES_PER_CELL, DEFAULT_MAX_NEIGHBORS };

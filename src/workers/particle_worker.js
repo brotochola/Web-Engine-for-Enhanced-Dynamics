@@ -27,6 +27,7 @@ import {
   _tileClipRegion,
 } from '../core/utils.js';
 import { PARTICLE_STATS, createStatsWriter } from './workers-utils.js';
+import { RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
 
 // Note: Components (Transform, RigidBody, etc.) are now registered automatically
 // by AbstractWorker.registerAllComponents() after entity classes are loaded
@@ -188,7 +189,7 @@ class ParticleWorker extends AbstractWorker {
     // Store viewport dimensions for screen visibility checks
     this.canvasWidth = this.config.canvasWidth;
     this.canvasHeight = this.config.canvasHeight;
-    this.cullingRatio = this.config.renderer?.cullingRatio ?? 0.1;
+    this.cullingRatio = this.config.renderer?.cullingRatio ?? RENDERER_DEFAULTS.cullingRatio;
     console.log(`[PARTICLE WORKER] Canvas: ${this.canvasWidth}x${this.canvasHeight}, cullingRatio: ${this.cullingRatio}`);
 
     // Note: ParticleComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
@@ -269,7 +270,7 @@ class ParticleWorker extends AbstractWorker {
     ) {
       console.log('[PARTICLE WORKER] Initializing lighting system...');
       this.lightingEnabled = true;
-      this.lightingAmbient = lightingConfig.lightingAmbient ?? 0.05;
+      this.lightingAmbient = lightingConfig.lightingAmbient ?? LIGHTING_DEFAULTS.lightingAmbient;
       this.globalEntityCount = data.globalEntityCount || 0;
 
       // Note: Component arrays (Transform, LightEmitter, SpriteRenderer) are automatically
@@ -311,9 +312,9 @@ class ParticleWorker extends AbstractWorker {
 
       // Get physics config values
       const physicsConfig = this.config.physics || {};
-      this.minSpeedForRotation = physicsConfig.minSpeedForRotation ?? 0.1;
-      this.sleepThreshold = physicsConfig.sleepThreshold ?? 0.1;
-      this.sleepDuration = physicsConfig.sleepDuration ?? 30;
+      this.minSpeedForRotation = physicsConfig.minSpeedForRotation ?? PHYSICS_DEFAULTS.minSpeedForRotation;
+      this.sleepThreshold = physicsConfig.sleepThreshold ?? PHYSICS_DEFAULTS.sleepThreshold;
+      this.sleepDuration = physicsConfig.sleepDuration ?? PHYSICS_DEFAULTS.sleepDuration;
     }
 
     // ========================================

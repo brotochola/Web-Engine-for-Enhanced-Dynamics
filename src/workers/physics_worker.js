@@ -90,7 +90,7 @@ class PhysicsWorker extends AbstractWorker {
     if (data.buffers.collisionData) {
       this.collisionData = new Int32Array(data.buffers.collisionData);
       this.maxCollisionPairs =
-        this.config.physics?.maxCollisionPairs ?? this.config.maxCollisionPairs ?? 10000;
+        this.config.physics?.maxCollisionPairs ?? this.config.maxCollisionPairs ?? PHYSICS_DEFAULTS.maxCollisionPairs;
     }
 
     this.applyPhysicsConfig(this.config.physics || {});
@@ -149,9 +149,9 @@ class PhysicsWorker extends AbstractWorker {
     this.settings = validatePhysicsConfig(this.settings, this.config.physics);
 
     // Cache derived values that don't change during the scene
-    const wakeUpThreshold = this.config.physics.wakeUpThreshold ?? 0.1;
+    const wakeUpThreshold = this.config.physics.wakeUpThreshold ?? PHYSICS_DEFAULTS.wakeUpThreshold;
     this._wakeUpThresholdSq = wakeUpThreshold * wakeUpThreshold;
-    this._sleepThreshold = this.config.physics.sleepThreshold ?? 0.01;
+    this._sleepThreshold = this.config.physics.sleepThreshold ?? PHYSICS_DEFAULTS.sleepThreshold;
   }
 
   handleCustomMessage(data) {

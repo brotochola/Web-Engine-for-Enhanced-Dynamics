@@ -158,7 +158,7 @@ export const RENDERER_DEFAULTS = {
 
 export const LIGHTING_DEFAULTS = {
   enabled: false,
-  lightingAmbient: 0.3,
+  lightingAmbient: 0.05,
   maxLights: 10,
   shadowsEnabled: false,
   maxShadowCastingLights: 20,

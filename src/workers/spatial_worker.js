@@ -137,7 +137,7 @@ class SpatialWorker extends AbstractWorker {
     this.gridWidth = gridMetadata.gridCols;
     this.gridHeight = gridMetadata.gridRows;
     this.totalCells = gridMetadata.totalCells;
-    this.rowsPerBlock = gridMetadata.rowsPerBlock || 1; // Default to 1 (interleaved)
+    this.rowsPerBlock = gridMetadata.rowsPerBlock || SPATIAL_DEFAULTS.rowsPerBlock;
 
     // Store viewport for screen checks
     this.canvasWidth = this.config.canvasWidth;
@@ -167,11 +167,11 @@ class SpatialWorker extends AbstractWorker {
     this.processedMarker.fill(-1);
 
     // Initialize visual-only buffer (max size = maxNeighbors)
-    const maxNeighbors = Grid.maxNeighbors || 500;
+    const maxNeighbors = Grid.maxNeighbors || SPATIAL_DEFAULTS.maxNeighbors;
     this._visualOnlyBuffer = new Int32Array(maxNeighbors);
 
     // Collision buffer: extra distance for entity movement between spatial and physics
-    const collisionMargin = this.config.spatial?.collisionCandidateSearchMargin ?? 0.125;
+    const collisionMargin = this.config.spatial?.collisionCandidateSearchMargin ?? SPATIAL_DEFAULTS.collisionCandidateSearchMargin;
     this._collisionBuffer = this.cellSize * collisionMargin;
 
     // Initialize local cell counts array for race-free grid rebuilding
