@@ -9,7 +9,7 @@ import { LightEmitter } from '../components/LightEmitter.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { Grid } from './Grid.js';
-import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox, distanceSq2D, convertRGBtoBGR } from './utils.js';
+import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox, distanceSq2D, convertRGBtoBGR, binarySearchInsertPoint, binarySearchFind } from './utils.js';
 import Keyboard from './Keyboard.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
@@ -101,11 +101,15 @@ export class GameObject {
   // ===========================================================================
   // INCREMENTAL ACTIVE ENTITY MANAGEMENT
   // These methods maintain activeEntitiesData and query buffers incrementally
-  // on spawn/despawn instead of rebuilding every frame (O(1) vs O(N))
+  // on spawn/despawn instead of rebuilding every frame
+  // Lists are kept sorted by entity index for:
+  // - Better cache locality during iteration (sequential memory access)
+  // - O(log n) binary search for range queries
+  // - Deterministic iteration order regardless of spawn order
   // ===========================================================================
 
   /**
-   * Add an entity to activeEntitiesData (unsorted append)
+   * Add an entity to activeEntitiesData (sorted insert)
    * Called from spawn() after entity activation
    * @param {number} entityIndex - The entity index to add
    */
@@ -113,14 +117,20 @@ export class GameObject {
     const data = this.activeEntitiesData;
     if (!data) return;
 
-    // Append to end: increment count, write at new position
     const count = data[0];
-    data[count + 1] = entityIndex;
+    const insertPos = binarySearchInsertPoint(data, entityIndex, count);
+
+    // Shift elements right to make room
+    for (let i = count; i >= insertPos; i--) {
+      data[i + 1] = data[i];
+    }
+
+    data[insertPos] = entityIndex;
     data[0] = count + 1;
   }
 
   /**
-   * Remove an entity from activeEntitiesData (swap-remove, O(n) find)
+   * Remove an entity from activeEntitiesData (binary search + shift)
    * Called from despawn() before entity deactivation
    * @param {number} entityIndex - The entity index to remove
    */
@@ -131,19 +141,18 @@ export class GameObject {
     const count = data[0];
     if (count === 0) return;
 
-    // Find the entity in the list (linear scan)
-    for (let i = 1; i <= count; i++) {
-      if (data[i] === entityIndex) {
-        // Swap with last element and decrement count
-        data[i] = data[count];
-        data[0] = count - 1;
-        return;
-      }
+    const pos = binarySearchFind(data, entityIndex, count);
+    if (pos === -1) return;
+
+    // Shift elements left to fill gap
+    for (let i = pos; i < count; i++) {
+      data[i] = data[i + 1];
     }
+    data[0] = count - 1;
   }
 
   /**
-   * Add an entity to all matching precomputed query buffers
+   * Add an entity to all matching precomputed query buffers (sorted insert)
    * Called from spawn() after entity activation
    * @param {number} entityIndex - The entity index to add
    * @param {number} entityType - The entity's type ID
@@ -168,16 +177,20 @@ export class GameObject {
       if ((componentMask & query.queryMask) === query.queryMask) {
         const resultView = worker._queryResultViews[q];
         const count = resultView[0];
+        const insertPos = binarySearchInsertPoint(resultView, entityIndex, count);
 
-        // Append to query result buffer
-        resultView[count + 1] = entityIndex;
+        for (let i = count; i >= insertPos; i--) {
+          resultView[i + 1] = resultView[i];
+        }
+
+        resultView[insertPos] = entityIndex;
         resultView[0] = count + 1;
       }
     }
   }
 
   /**
-   * Remove an entity from all matching precomputed query buffers
+   * Remove an entity from all matching precomputed query buffers (binary search + shift)
    * Called from despawn() before entity deactivation
    * @param {number} entityIndex - The entity index to remove
    * @param {number} entityType - The entity's type ID
@@ -202,21 +215,20 @@ export class GameObject {
       if ((componentMask & query.queryMask) === query.queryMask) {
         const resultView = worker._queryResultViews[q];
         const count = resultView[0];
+        const pos = binarySearchFind(resultView, entityIndex, count);
 
-        // Find and swap-remove from query result buffer
-        for (let i = 1; i <= count; i++) {
-          if (resultView[i] === entityIndex) {
-            resultView[i] = resultView[count];
-            resultView[0] = count - 1;
-            break;
+        if (pos !== -1) {
+          for (let i = pos; i < count; i++) {
+            resultView[i] = resultView[i + 1];
           }
+          resultView[0] = count - 1;
         }
       }
     }
   }
 
   /**
-   * Remove an entity from its type's active list (swap-remove)
+   * Remove an entity from its type's active list (binary search + shift)
    * Called from despawn() before entity deactivation
    * @param {Class} EntityClass - The entity's class
    * @param {number} entityIndex - The entity index to remove
@@ -228,14 +240,34 @@ export class GameObject {
     const count = typeList[0];
     if (count === 0) return;
 
-    // Find and swap-remove
-    for (let i = 1; i <= count; i++) {
-      if (typeList[i] === entityIndex) {
-        typeList[i] = typeList[count];
-        typeList[0] = count - 1;
-        return;
+    const pos = binarySearchFind(typeList, entityIndex, count);
+    if (pos !== -1) {
+      for (let i = pos; i < count; i++) {
+        typeList[i] = typeList[i + 1];
       }
+      typeList[0] = count - 1;
     }
+  }
+
+  /**
+   * Add an entity to its type's active list (sorted insert)
+   * Called from spawn() after entity activation
+   * @param {Class} EntityClass - The entity's class
+   * @param {number} entityIndex - The entity index to add
+   */
+  static _addToTypeActiveList(EntityClass, entityIndex) {
+    const typeList = EntityClass._activeList;
+    if (!typeList) return;
+
+    const count = typeList[0];
+    const insertPos = binarySearchInsertPoint(typeList, entityIndex, count);
+
+    for (let i = count; i >= insertPos; i--) {
+      typeList[i + 1] = typeList[i];
+    }
+
+    typeList[insertPos] = entityIndex;
+    typeList[0] = count + 1;
   }
 
   /**
@@ -1772,16 +1804,10 @@ export class GameObject {
 
     // INCREMENTAL UPDATE: Add to activeEntitiesData, query buffers, and per-type list
     // This replaces the O(N) per-frame rebuild with O(1) per-spawn updates
+    // When sortedActiveEntities is enabled, lists are kept sorted by index
     GameObject._addToActiveEntities(i);
     GameObject._addToMatchingQueries(i, EntityClass.entityType);
-
-    // Add to per-type active list for O(1) getAllActive() on subclasses
-    const typeList = EntityClass._activeList;
-    if (typeList) {
-      const count = typeList[0];
-      typeList[count + 1] = i;
-      typeList[0] = count + 1;
-    }
+    GameObject._addToTypeActiveList(EntityClass, i);
 
     return instance;
   }

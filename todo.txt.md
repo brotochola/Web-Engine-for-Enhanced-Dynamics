@@ -9,15 +9,6 @@
 
 
 
----
-
-## 2. PARTICLE WORKER (`particle_worker.js`)
-
-
-
-
-
-
 
 
 ---
@@ -78,14 +69,6 @@ The entire engine relies on SharedArrayBuffers without Atomics (by design — "a
 
 
 
-
-
-### 4.5 — Worker Initialization is Fully Serial
-
-In `createWorkers()`, all workers receive init messages sequentially, then `await this.preloadAssets(...)` blocks before any worker can start. The `readyPromise` pattern waits for ALL workers before starting ANY of them.
-
-**Recommendation:** Workers that don't depend on asset data (spatial, physics, navigation) could start earlier with a partial init, then receive asset data later. This would reduce cold-start latency.
-
 ### 4.6 — Developer Experience: Type Safety
 
 There is zero TypeScript, JSDoc `@typedef`, or runtime validation on component array access. Accessing `Transform.x[entityId]` with an invalid `entityId` silently returns `undefined`, which becomes `NaN` and propagates through the entire physics system (hence all the defensive NaN checks in the Verlet integrator).
@@ -98,25 +81,7 @@ The stats system (`PHYSICS_STATS`, `PARTICLE_STATS`) only tracks aggregate count
 
 ---
 
-## Summary Priority Matrix
 
-| Priority | Issue | Impact | Effort |
-|----------|-------|--------|--------|
-| **P0** | BigInt in query hot paths (4.2) | ~10-50x slower bitmask ops per frame | Medium |
-| **P0** | `Math.pow` in friction (1.6) | ~50ns per entity per frame | Trivial |
-| **P0** | Wake-up threshold bug (1.5) | Entities never wake from negative acceleration | Trivial |
-| **P0** | Missing nav worker in destroy (3.5) | Worker leak on scene change | Trivial |
-| **P1** | Particle worker god object (2.1) | Serial bottleneck, no parallelism | Large |
-| **P1** | Shadow Map/Set GC (2.2) | GC spikes proportional to shadow count | Medium |
-| **P1** | Per-frame active list rebuild (4.3) | O(N) scan every frame | Medium |
-| **P1** | Init payload per worker (3.3) | Wasted memory, slow init | Medium |
-| **P2** | Decal stamping integer math (2.6) | ~2x speedup on CPU-bound stamping | Small |
-| **P2** | Duplicate stamp functions (2.7) | 170 lines of duplication | Small |
-| **P2** | Screen visibility duplication (2.4) | Maintenance burden | Small |
-| **P2** | Branch sorting for collision (1.3) | Better branch prediction | Medium |
-| **P3** | Scene constructor size (3.1, 3.2) | Developer comprehension | Medium |
-| **P3** | Profiling hooks (4.7) | Optimization visibility | Small |
-| **P3** | Debug-mode array bounds (4.6) | Bug detection in development | Medium |
 
 
 
@@ -125,22 +90,10 @@ The stats system (`PHYSICS_STATS`, `PARTICLE_STATS`) only tracks aggregate count
 
 Engineering Analysis: spatial_worker.js
 1. GC PRESSURE & MEMORY
-1.1 — processedMarker.fill(-1) Every Frame
-spatial_worker.js
-Lines 492-492
-    processedMarker.fill(-1); // Reset markers each frame
-This fills an Int32Array(globalEntityCount) every single frame. If globalEntityCount is 10,000, that's 40 KB zeroed out per frame per spatial worker. It's not GC pressure (it's a pre-allocated typed array), but it's a cache-polluting memset that touches memory not spatially related to what the worker is actually processing.
-Better approach: You already have the right pattern in place — the marker stores entityA as the "generation" marker. But instead of resetting to -1 each frame, you could use a global frame counter as the generation. Store processedMarker[entityB] = frameCounter instead of entityA. Then reset frameCounter each frame (a single integer write), and never call .fill() again. However, this only works because you're comparing per-entityA — your current design uses entityA as the marker value, which is actually smarter than a frame counter since it allows the marker to work within a single frame across multiple entityA passes. So the .fill(-1) is necessary with the current design.
-Real fix: Use a two-generation approach: allocate processedMarker as Int32Array(globalEntityCount * 2) with [markerA, generationA] pairs. Or accept the cost — for 10k entities at 60fps, it's ~2.4 MB/s of memset which is trivial on modern hardware. This is a non-issue in practice.
-1.2 — _cellNeighborCache is a Map That Grows Unboundedly
-spatial_worker.js
-Lines 96-103
-    this._circlePatterns = new Map();    this._patternLengths = new Map();    this._cellNeighborCache = new Map();    this._maxCellRadius = 12;
-The cache key is cellIndex * (maxCellRadius + 1) + cellRadius. For a grid of, say, 100×100 cells = 10,000 cells × 13 radii = 130,000 possible keys, each storing a Uint16Array. This cache:
-Never evicts. Once populated, it grows monotonically.
-Each entry allocates a Uint16Array via neighborCells.subarray(0, count) — subarrays are views, not copies, so the parent Uint16Array(maxNeighborCells) allocated at line 252 becomes unreachable except through the subarray view. V8 keeps the entire backing ArrayBuffer alive for a subarray view. So each cached entry pins a full-size Uint16Array allocation.
-In practice, many entities share the same radius, so the cache converges quickly. But with a large, varied world, the cache could hold tens of thousands of entries, each pinning a typed array backing buffer.
-Impact: Moderate. Not a per-frame concern, but a slow memory leak proportional to grid size × radius variety. Consider pre-allocating the cache for all cells at init time, or using a flat Int32Array with fixed-stride layout instead of a Map.
+
+
+
+
 1.3 — generateSymmetricalCirclePattern Allocates Objects
 utils.js
 Lines 2219-2252
