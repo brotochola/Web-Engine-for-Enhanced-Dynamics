@@ -167,6 +167,11 @@ class LogicWorker extends AbstractWorker {
     const maxParticles = data.maxParticles || 0;
     if (maxParticles > 0) {
       ParticleEmitter.initialize(maxParticles);
+
+      // Initialize shared free list for O(1) particle allocation
+      if (data.particleFreeList && data.particleFreeListTop) {
+        ParticleEmitter.initializeFreeList(data.particleFreeList, data.particleFreeListTop);
+      }
     }
 
     // Initialize DecorationPool if decorations are configured

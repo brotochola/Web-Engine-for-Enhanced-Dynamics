@@ -41,6 +41,11 @@ export class ParticleEmitter {
   static maxParticles = 0;
   static initialized = false;
 
+  // Free list for O(1) allocation (LIFO stack backed by SharedArrayBuffer)
+  // Shared between main thread (pop) and particle_worker (push on death)
+  static freeList = null; // Uint16Array - stack of free indices
+  static freeListTop = null; // Int32Array[1] - atomic counter for stack top
+
   /**
    * Initialize the emitter with particle pool size
    * Called automatically by logic worker during init
@@ -52,6 +57,41 @@ export class ParticleEmitter {
     console.log(
       `ParticleEmitter: Initialized with ${maxParticles} particles (indices 0-${maxParticles - 1})`
     );
+  }
+
+  /**
+   * Initialize the shared free list buffers
+   * Called by workers to connect to the shared free list
+   * @param {SharedArrayBuffer} freeListBuffer - Buffer for free indices (Uint16Array)
+   * @param {SharedArrayBuffer} freeListTopBuffer - Buffer for stack top (Int32Array[1])
+   */
+  static initializeFreeList(freeListBuffer, freeListTopBuffer) {
+    this.freeList = new Uint16Array(freeListBuffer);
+    this.freeListTop = new Int32Array(freeListTopBuffer);
+    console.log(
+      `ParticleEmitter: Free list initialized (top: ${this.freeListTop[0]})`
+    );
+  }
+
+  /**
+   * Return a particle index to the free list (called by particle_worker when particles die)
+   * Uses atomic operations for thread-safe access
+   * @param {number} index - Particle index to return
+   */
+  static returnToPool(index) {
+    if (!this.freeList || !this.freeListTop) return;
+
+    // Atomic increment and get previous value (this is our write slot)
+    const slot = Atomics.add(this.freeListTop, 0, 1);
+
+    // Safety check - don't overflow the free list
+    if (slot >= this.maxParticles) {
+      // Rollback - this shouldn't happen in normal operation
+      Atomics.sub(this.freeListTop, 0, 1);
+      return;
+    }
+
+    this.freeList[slot + 1] = index; // +1 because freeListTop is 0-indexed
   }
 
   /**
@@ -250,80 +290,94 @@ export class ParticleEmitter {
     const flipY = ParticleComponent.flipY;
     const blendMode = ParticleComponent.blendMode;
 
-    // Scan for inactive particles (indices 0 to maxParticles-1)
-    for (let i = 0; i < this.maxParticles && spawned < count; i++) {
-      if (active[i] === 0) {
-        // Position
-        x[i] = randomRange(config.x);
-        y[i] = randomRange(config.y);
-        z[i] = randomRange(config.z, 0);
+    // Use free list if available (O(1) allocation), fallback to linear scan
+    const useFreeList = this.freeList && this.freeListTop;
 
-        // Velocity
-        let particleVx, particleVy;
-
-        if (config.angleXY !== undefined && config.speed !== undefined) {
-          // Polar mode: angleXY (degrees) + speed
-          const angleDeg = randomRange(config.angleXY, 0);
-          const angleRad = (angleDeg * Math.PI) / 180;
-          const speed = randomRange(config.speed, 0);
-
-          particleVx = speed * Math.cos(angleRad);
-          particleVy = speed * Math.sin(angleRad);
-        } else {
-          // Cartesian mode: vx/vy ranges
-          particleVx = randomRange(config.vx, 0);
-          particleVy = randomRange(config.vy, 0);
-        }
-
-        vx[i] = particleVx;
-        vy[i] = particleVy;
-        vz[i] = randomRange(config.vz, 0);
-
-        // Lifecycle
-        lifespan[i] = randomRange(config.lifespan, 1000);
-        currentLife[i] = 0;
-
-        // Physics
-        gravity[i] = config.gravity ?? 0.15;
-
-        // Visual properties
-        // Support both uniform scale and independent scaleX/scaleY
-        const uniformScale = randomRange(config.scale, 1);
-        scaleX[i] =
-          config.scaleX !== undefined ? randomRange(config.scaleX, uniformScale) : uniformScale;
-        scaleY[i] =
-          config.scaleY !== undefined ? randomRange(config.scaleY, uniformScale) : uniformScale;
-        alpha[i] = randomRange(config.alpha, 1);
-        const particleColor = randomColor(config.tint);
-        tint[i] = convertRGBtoBGR(particleColor); // Convert RGB→BGR for PixiJS
-        baseTint[i] = particleColor; // Store original RGB for lighting calculation
-        particleTextureId[i] = textureId;
-
-        // Rotation (convert degrees to radians) and flipping
-        const rotationDeg = randomRange(config.rotation, 0);
-        rotation[i] = (rotationDeg * Math.PI) / 180;
-        flipX[i] = config.flipX ? 1 : 0;
-        flipY[i] = config.flipY ? 1 : 0;
-        fadeOnTheFloor[i] = config.fadeOnTheFloor ?? 0;
-        timeOnFloor[i] = 0;
-
-        // Alpha tweening: fade from initial alpha to 0 over lifespan
-        tweenToAlpha0[i] = config.tweenToAlpha0 ? 1 : 0;
-        initialAlpha[i] = config.tweenToAlpha0 ? alpha[i] : 0;
-
-        // Blood decal system: if true, particle stamps decal on floor hit and despawns
-        stayOnTheFloor[i] = config.stayOnTheFloor ? 1 : 0;
-
-        // Ground despawn: if true, particle despawns immediately on ground contact (no decal)
-        despawnOnGroundContact[i] = config.despawnOnGroundContact ? 1 : 0;
-
-        // Decal blend mode: 0 = normal (alpha over), 1 = multiply
-        blendMode[i] = config.blendMode ?? DECAL_STAMPS_BLEND_MODE.normal;
-
-        spawned++;
-        // Claim this particle
-        active[i] = 1;
+    while (spawned < count) {
+      // Get free particle index
+      let i;
+      // if (useFreeList) {
+      // Atomic decrement to pop from free list
+      const newTop = Atomics.sub(this.freeListTop, 0, 1) - 1;
+      if (newTop < 0) {
+        // Pool exhausted - restore and break
+        Atomics.add(this.freeListTop, 0, 1);
+        break;
       }
+      i = this.freeList[newTop + 1]; // +1 because array is 0-indexed but top counts from 0
+      // }
+
+      // Position
+      x[i] = randomRange(config.x);
+      y[i] = randomRange(config.y);
+      z[i] = randomRange(config.z, 0);
+
+      // Velocity
+      let particleVx, particleVy;
+
+      if (config.angleXY !== undefined && config.speed !== undefined) {
+        // Polar mode: angleXY (degrees) + speed
+        const angleDeg = randomRange(config.angleXY, 0);
+        const angleRad = (angleDeg * Math.PI) / 180;
+        const speed = randomRange(config.speed, 0);
+
+        particleVx = speed * Math.cos(angleRad);
+        particleVy = speed * Math.sin(angleRad);
+      } else {
+        // Cartesian mode: vx/vy ranges
+        particleVx = randomRange(config.vx, 0);
+        particleVy = randomRange(config.vy, 0);
+      }
+
+      vx[i] = particleVx;
+      vy[i] = particleVy;
+      vz[i] = randomRange(config.vz, 0);
+
+      // Lifecycle
+      lifespan[i] = randomRange(config.lifespan, 1000);
+      currentLife[i] = 0;
+
+      // Physics
+      gravity[i] = config.gravity ?? 0.15;
+
+      // Visual properties
+      // Support both uniform scale and independent scaleX/scaleY
+      const uniformScale = randomRange(config.scale, 1);
+      scaleX[i] =
+        config.scaleX !== undefined ? randomRange(config.scaleX, uniformScale) : uniformScale;
+      scaleY[i] =
+        config.scaleY !== undefined ? randomRange(config.scaleY, uniformScale) : uniformScale;
+      alpha[i] = randomRange(config.alpha, 1);
+      const particleColor = randomColor(config.tint);
+      tint[i] = convertRGBtoBGR(particleColor); // Convert RGB→BGR for PixiJS
+      baseTint[i] = particleColor; // Store original RGB for lighting calculation
+      particleTextureId[i] = textureId;
+
+      // Rotation (convert degrees to radians) and flipping
+      const rotationDeg = randomRange(config.rotation, 0);
+      rotation[i] = (rotationDeg * Math.PI) / 180;
+      flipX[i] = config.flipX ? 1 : 0;
+      flipY[i] = config.flipY ? 1 : 0;
+      fadeOnTheFloor[i] = config.fadeOnTheFloor ?? 0;
+      timeOnFloor[i] = 0;
+
+      // Alpha tweening: fade from initial alpha to 0 over lifespan
+      tweenToAlpha0[i] = config.tweenToAlpha0 ? 1 : 0;
+      initialAlpha[i] = config.tweenToAlpha0 ? alpha[i] : 0;
+
+      // Blood decal system: if true, particle stamps decal on floor hit and despawns
+      stayOnTheFloor[i] = config.stayOnTheFloor ? 1 : 0;
+
+      // Ground despawn: if true, particle despawns immediately on ground contact (no decal)
+      despawnOnGroundContact[i] = config.despawnOnGroundContact ? 1 : 0;
+
+      // Decal blend mode: 0 = normal (alpha over), 1 = multiply
+      blendMode[i] = config.blendMode ?? DECAL_STAMPS_BLEND_MODE.normal;
+
+      spawned++;
+      // Claim this particle
+      active[i] = 1;
+
     }
 
     return spawned;

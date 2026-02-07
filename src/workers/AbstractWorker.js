@@ -288,6 +288,14 @@ export class AbstractWorker {
       if (data.decorationActiveCount) {
         DecorationPool.initializeActiveCount(data.decorationActiveCount);
       }
+
+      // Initialize DecorationPool active indices from shared buffers
+      if (data.decorationActiveIndices && data.decorationIndexToSlot) {
+        DecorationPool.initializeActiveIndices(
+          data.decorationActiveIndices,
+          data.decorationIndexToSlot
+        );
+      }
     }
 
     // Initialize common shared buffers using Buffer->Data naming pattern

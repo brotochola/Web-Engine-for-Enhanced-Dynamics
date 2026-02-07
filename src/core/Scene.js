@@ -845,6 +845,20 @@ class Scene {
         maxParticles
       );
       ParticleComponent.particleCount = maxParticles;
+
+      // Create shared free list for O(1) particle allocation
+      // freeList: Uint16Array of size maxParticles (stack of free indices)
+      // freeListTop: Int32Array[1] (atomic counter for stack top)
+      this.buffers.particleFreeList = new SharedArrayBuffer(maxParticles * 2); // Uint16 = 2 bytes
+      this.buffers.particleFreeListTop = new SharedArrayBuffer(4); // Int32 = 4 bytes
+
+      // Initialize free list with all indices (0, 1, 2, ..., maxParticles-1)
+      const freeList = new Uint16Array(this.buffers.particleFreeList);
+      for (let i = 0; i < maxParticles; i++) {
+        freeList[i] = i;
+      }
+      // Stack top starts at maxParticles (all indices are free)
+      new Int32Array(this.buffers.particleFreeListTop)[0] = maxParticles;
     }
 
     // DecorationComponent buffer
@@ -863,9 +877,19 @@ class Scene {
       // Initialize to 0
       new Uint32Array(this.buffers.decorationActiveCount)[0] = 0;
 
+      // Create shared buffers for active decoration indices (O(1) iteration in workers)
+      // activeIndices: Uint16Array of active decoration indices
+      // indexToActiveSlot: Uint16Array mapping decoration index → slot in activeIndices
+      this.buffers.decorationActiveIndices = new SharedArrayBuffer(maxDecorations * 2); // Uint16 = 2 bytes
+      this.buffers.decorationIndexToSlot = new SharedArrayBuffer(maxDecorations * 2);
+
       // Initialize DecorationPool on main thread for scene-level spawning
       DecorationPool.initialize(maxDecorations);
       DecorationPool.initializeActiveCount(this.buffers.decorationActiveCount);
+      DecorationPool.initializeActiveIndices(
+        this.buffers.decorationActiveIndices,
+        this.buffers.decorationIndexToSlot
+      );
     }
 
     // Shadow sprite system
@@ -1511,8 +1535,12 @@ class Scene {
       keyIndexMap: this.createKeyIndexMap(),
       spritesheetMetadata: SpriteSheetRegistry.serialize(),
       maxParticles: this.config.particle.maxParticles,
+      particleFreeList: this.buffers.particleFreeList || null,
+      particleFreeListTop: this.buffers.particleFreeListTop || null,
       maxDecorations: this.config.decoration.maxDecorations,
       decorationActiveCount: this.buffers.decorationActiveCount || null,
+      decorationActiveIndices: this.buffers.decorationActiveIndices || null,
+      decorationIndexToSlot: this.buffers.decorationIndexToSlot || null,
       decals: this.config.particle.decals
         ? {
           enabled: true,

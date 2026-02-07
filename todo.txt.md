@@ -16,27 +16,9 @@
 
 
 
-### 2.2 — Shadow System: Map/Set GC Pressure
 
-Lines 1138-1142 declare `_shadowPairToSlot` (Map), `_shadowSlotToPair` (Map), `_usedSlotsThisFrame` (Set), `_ownedSlots` (Set), and `_pairsThisFrame` (Set). Each frame:
-- `usedSlots.clear()` + re-`.add()` per shadow
-- `ownedSlots.clear()` + re-populate from `pairToSlot.values()`
-- `pairsThisFrame.clear()` + re-`.add()` per pair
-- The cleanup loop (1582-1603) iterates all sprites AND iterates map entries
 
-Maps and Sets use internal hash tables that grow dynamically. While `.clear()` reuses backing storage, the `pairToSlot.delete()` calls during eviction can trigger internal rehashing.
 
-**Recommendation:** Replace the three Sets with flat `Uint8Array` or `Int32Array` bitmaps sized to `maxShadowSprites`. For example, `usedSlots` can be `Uint8Array(maxShadowSprites)` — set to 1 when used, `.fill(0)` to clear. This eliminates all hash table overhead and is cache-friendly. For `pairToSlot`/`slotToPair`, consider a fixed-size open-addressing hash map over a `Int32Array`.
-
-### 2.3 — `cantorPair` for Shadow Key Generation
-
-Line 1445: `cantorPair(lightIdx, neighborIdx)` produces a unique integer from two entity indices. If the result exceeds `Number.MAX_SAFE_INTEGER` (which happens when `lightIdx + neighborIdx > ~134M`), the hash becomes unreliable. For 65K max entities this is fine, but fragile.
-
-### 2.4 — Duplicate Screen Visibility Logic
-
-`updateEntityScreenVisibility()` (lines 1614-1693) and `updateDecorationScreenVisibility()` (lines 1701-1755) are essentially the same function with different component arrays. The camera bounds calculation is duplicated a third time in `calculateCameraBounds()`.
-
-**Recommendation:** Extract a generic `updateScreenVisibility(posX, posY, activeArray, isItOnScreenArray, count, cameraBounds)` function.
 
 ### 2.5 — `_countTrailingZeros` is O(n)
 
