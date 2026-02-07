@@ -97,18 +97,14 @@ Engineering Analysis: spatial_worker.js
 2. PERFORMANCE & ALGORITHMIC
 
 
-2.2 — Row Ownership Check in Inner Loop
-spatial_worker.js
-Lines 414-415
-        const blockIndex = (row / this.rowsPerBlock) | 0;        if (blockIndex % totalSpatialWorkers !== workerId) continue;
-This division + modulo is inside a nested loop (per entity × per row in entity's bounding box). While | 0 handles the floor and modulo is cheap for small divisors, the branch predictor will frequently mispredict here for entities near row boundaries.
-Better: Pre-compute a fast lookup rowOwnership[row] → workerId as a Uint8Array(gridHeight) during init. Then the check becomes a single array lookup: if (rowOwnership[row] !== workerId) continue;
 
 2.3 — Math.ceil in Hot Path
 spatial_worker.js
 Lines 588-588
           const cellRadius = Math.ceil(myVisualRange * invCellSize);
 Math.ceil is called per-entity in findNeighborsForOwnedEntities. This forces a float → int conversion through the standard library. Use the bitwise ceiling trick: ((myVisualRange * invCellSize) | 0) + 1 (with a check if it's already integer, or just always add 1 and accept the extra cell — one extra ring of cells is rarely noticed).
+
+
 2.4 — Sleeping Entity Optimization Is Disabled
 spatial_worker.js
 Lines 612-614
