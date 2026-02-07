@@ -94,26 +94,16 @@ Engineering Analysis: spatial_worker.js
 
 
 
-1.3 — generateSymmetricalCirclePattern Allocates Objects
-utils.js
-Lines 2219-2252
-  for (let dr = -cellRadius; dr <= cellRadius; dr++) {    for (let dc = -cellRadius; dc <= cellRadius; dc++) {      // ...      cells.push({ dr, dc, distSq: cellCenterDistSq });    }  }  cells.sort((a, b) => a.distSq - b.distSq);
-This creates one {dr, dc, distSq} object per candidate cell, pushes them to a plain array, sorts them (which also allocates internally for the comparator closures), then flattens into an Int32Array. For cellRadius = 12, that's up to 625 temporary objects.
-Verdict: This only runs at init time (_precomputeCirclePatterns), so it's harmless. Just noting it for completeness.
 2. PERFORMANCE & ALGORITHMIC
-2.1 — rebuildOwnedRows Iterates ALL Active Entities
-spatial_worker.js
-Lines 371-433
-    for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {      const i = activeEntitiesData[1 + activeIdx];      // ... position + half-extent calculations ...      for (let row = minRow; row <= maxRowBB; row++) {        const blockIndex = (row / this.rowsPerBlock) | 0;        if (blockIndex % totalSpatialWorkers !== workerId) continue;        // ... insert into cell ...      }    }
-Every spatial worker iterates every active entity, computes its position, computes its half-extent, computes its cell range — and then potentially skips it entirely if none of its rows belong to this worker. With N workers, this means the total work is N × totalActiveEntities for position computation, even though each entity only needs to be inserted by a fraction of workers.
-Impact: For 10,000 entities × 4 spatial workers = 40,000 position calculations per frame, most of which are wasted. The entity position buffers (entityPosX/Y, entityHalfExtent) are written by ALL workers redundantly — same values, same shared buffers, creating unnecessary write contention on the SAB.
-Fix option: Have one worker (or the particle worker, which already touches all entities) compute positions once into the shared buffers. Spatial workers then only read. Alternatively, precompute a per-worker entity list at lower frequency.
+
+
 2.2 — Row Ownership Check in Inner Loop
 spatial_worker.js
 Lines 414-415
         const blockIndex = (row / this.rowsPerBlock) | 0;        if (blockIndex % totalSpatialWorkers !== workerId) continue;
 This division + modulo is inside a nested loop (per entity × per row in entity's bounding box). While | 0 handles the floor and modulo is cheap for small divisors, the branch predictor will frequently mispredict here for entities near row boundaries.
 Better: Pre-compute a fast lookup rowOwnership[row] → workerId as a Uint8Array(gridHeight) during init. Then the check becomes a single array lookup: if (rowOwnership[row] !== workerId) continue;
+
 2.3 — Math.ceil in Hot Path
 spatial_worker.js
 Lines 588-588
