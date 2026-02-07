@@ -70,10 +70,11 @@ class SpatialWorker extends AbstractWorker {
     this.ownedRows = null; // Int32Array of row indices
     this.ownedRowCount = 0;
 
-    // Pre-computed entity positions (shared buffer from particle_worker or computed locally)
-    this.entityPosX = null; // Float32Array
-    this.entityPosY = null; // Float32Array
-    this.entityHalfExtent = null; // Float32Array
+    // Pre-computed entity positions (written by particle_worker, read by spatial workers)
+    // particle_worker computes these ONCE per frame, eliminating redundant N×E calculations
+    this.entityPosX = null; // Float32Array - READ ONLY in spatial worker
+    this.entityPosY = null; // Float32Array - READ ONLY in spatial worker
+    this.entityHalfExtent = null; // Float32Array - READ ONLY in spatial worker
 
     // O(1) duplicate detection for multi-cell entities
     // processedThisFrame[j] = entityId means entity "entityId" already processed entity "j"
@@ -155,8 +156,8 @@ class SpatialWorker extends AbstractWorker {
     this.ownedRows = new Int32Array(ownedRows);
     this.ownedRowCount = ownedRows.length;
 
-    // Initialize pre-computed entity position buffers
-    // These are SHARED buffers - we compute them during grid rebuild
+    // Initialize pre-computed entity position buffers (READ ONLY)
+    // particle_worker computes these ONCE per frame, spatial workers just READ
     if (data.buffers.entityPosX) {
       this.entityPosX = new Float32Array(data.buffers.entityPosX);
       this.entityPosY = new Float32Array(data.buffers.entityPosY);
@@ -310,27 +311,23 @@ class SpatialWorker extends AbstractWorker {
    * - Phase 2: Insert entities using local counts, write entity data to grid
    * - Phase 3: Copy local counts to gridCounts (single atomic-ish write per cell)
    *
-   * IMPORTANT: We iterate ALL entities because an entity at any position
-   * might belong to one of our rows. But we only write to our owned cells.
+   * OPTIMIZATION: Entity positions (entityPosX, entityPosY, entityHalfExtent) are
+   * pre-computed by particle_worker ONCE per frame. Spatial workers just READ from
+   * these shared buffers. This eliminates N×E redundant position calculations
+   * (where N = number of spatial workers, E = active entities).
+   *
+   * IMPORTANT: We still iterate ALL entities because an entity at any position
+   * might belong to one of our rows. But the per-entity work is now just reads
+   * and integer math (cell range calculation), not position computation.
    */
   rebuildOwnedRows() {
-    const active = Transform.active;
-    const x = Transform.x;
-    const y = Transform.y;
-    const offsetX = Collider.offsetX;
-    const offsetY = Collider.offsetY;
-    const colliderActive = Collider.active;
-    const shapeType = Collider.shapeType;
-    const radius = Collider.radius;
-    const width = Collider.width;
-    const height = Collider.height;
-
     const gridWidth = this.gridWidth;
     const gridHeight = this.gridHeight;
     const invCellSize = this.invCellSize;
     const totalSpatialWorkers = this.totalSpatialWorkers;
     const workerId = this.workerId;
 
+    // READ pre-computed positions from particle_worker (eliminates redundant computation)
     const entityPosX = this.entityPosX;
     const entityPosY = this.entityPosY;
     const entityHalfExtent = this.entityHalfExtent;
@@ -339,7 +336,6 @@ class SpatialWorker extends AbstractWorker {
     const gridCounts = Grid._gridCounts;
     const gridEntities = Grid._gridEntities;
 
-    const SHAPE_CIRCLE = 0;
     const maxCol = gridWidth - 1;
     const maxRow = gridHeight - 1;
 
@@ -363,7 +359,8 @@ class SpatialWorker extends AbstractWorker {
 
     // =========================================================================
     // PHASE 2: Insert all active entities into owned cells
-    // Use local counts for indexing, write entity data directly to grid
+    // OPTIMIZED: Read pre-computed positions from particle_worker buffers
+    // This eliminates N×E redundant position calculations across spatial workers
     // =========================================================================
     const activeEntitiesData = this.activeEntitiesData;
     const totalActiveEntities = activeEntitiesData ? activeEntitiesData[0] : 0;
@@ -371,35 +368,21 @@ class SpatialWorker extends AbstractWorker {
     for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
       const i = activeEntitiesData[1 + activeIdx];
 
-      // Calculate collider position
-      const posX = x[i] + (offsetX[i] || 0);
-      const posY = y[i] + (offsetY[i] || 0);
+      // READ pre-computed collider position from particle_worker
+      const posX = entityPosX[i];
+      const posY = entityPosY[i];
 
       // Skip invalid positions (NaN check via self-comparison)
       if (posX !== posX || posY !== posY) continue;
 
-      // Store pre-computed position for neighbor detection
-      entityPosX[i] = posX;
-      entityPosY[i] = posY;
-
-      // Calculate half-extent based on collider type
-      let halfW = 0,
-        halfH = 0;
-      if (colliderActive[i]) {
-        if (shapeType[i] === SHAPE_CIRCLE) {
-          halfW = halfH = radius[i] || 0;
-        } else {
-          halfW = (width[i] || 0) * 0.5;
-          halfH = (height[i] || 0) * 0.5;
-        }
-      }
-      entityHalfExtent[i] = halfW > halfH ? halfW : halfH;
+      // READ pre-computed half-extent from particle_worker
+      const halfExtent = entityHalfExtent[i];
 
       // Calculate cell range this entity's bounding box covers
-      let minCol = ((posX - halfW) * invCellSize) | 0;
-      let maxColBB = ((posX + halfW) * invCellSize) | 0;
-      let minRow = ((posY - halfH) * invCellSize) | 0;
-      let maxRowBB = ((posY + halfH) * invCellSize) | 0;
+      let minCol = ((posX - halfExtent) * invCellSize) | 0;
+      let maxColBB = ((posX + halfExtent) * invCellSize) | 0;
+      let minRow = ((posY - halfExtent) * invCellSize) | 0;
+      let maxRowBB = ((posY + halfExtent) * invCellSize) | 0;
 
       // Clamp to grid bounds
       minCol = minCol < 0 ? 0 : minCol > maxCol ? maxCol : minCol;

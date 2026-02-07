@@ -145,6 +145,15 @@ class ParticleWorker extends AbstractWorker {
     this._pairsThisFrame = new Set(); // Reusable Set for tracking pairs processed this frame (avoids allocation each frame)
 
     // ========================================
+    // PRE-COMPUTED ENTITY POSITIONS (for spatial workers)
+    // ========================================
+    // Particle worker computes these ONCE per frame, spatial workers just READ
+    // This eliminates redundant computation across N spatial workers
+    this.entityPosX = null; // Float32Array - shared buffer
+    this.entityPosY = null; // Float32Array - shared buffer
+    this.entityHalfExtent = null; // Float32Array - shared buffer
+
+    // ========================================
     // DERIVED PROPERTIES (moved from physics_worker)
     // ========================================
     // Minimum speed threshold for rotation updates (prevents jitter when stationary)
@@ -309,6 +318,20 @@ class ParticleWorker extends AbstractWorker {
       this.globalEntityCount = data.globalEntityCount;
       // Note: Transform and SpriteRenderer are automatically initialized by
       // AbstractWorker.initializeAllComponents()
+    }
+
+    // ========================================
+    // ENTITY POSITION BUFFERS - For Spatial Workers
+    // ========================================
+    // Particle worker computes entity positions ONCE per frame into these shared buffers.
+    // Spatial workers then READ from these buffers instead of redundantly computing
+    // positions themselves. This eliminates N×E redundant position calculations
+    // (where N = number of spatial workers, E = total active entities).
+    if (data.buffers.entityPosX) {
+      this.entityPosX = new Float32Array(data.buffers.entityPosX);
+      this.entityPosY = new Float32Array(data.buffers.entityPosY);
+      this.entityHalfExtent = new Float32Array(data.buffers.entityHalfExtent);
+      console.log(`[PARTICLE WORKER] Entity position buffers initialized (${this.globalEntityCount} entities)`);
     }
 
     // ========================================
@@ -591,6 +614,74 @@ class ParticleWorker extends AbstractWorker {
     this.activeParticleCount = count;
   }
 
+  /**
+   * Compute entity positions and half-extents for ALL active entities.
+   * Called ONCE per frame by particle_worker, then spatial workers READ from these buffers.
+   *
+   * PERFORMANCE: This eliminates redundant position computation across N spatial workers.
+   * Previously each spatial worker computed positions for ALL entities (N×E total computations),
+   * even though most entities don't belong to that worker's rows.
+   * Now we compute E positions once, and spatial workers just read.
+   *
+   * Writes to shared buffers:
+   * - entityPosX[i] = Transform.x[i] + Collider.offsetX[i]
+   * - entityPosY[i] = Transform.y[i] + Collider.offsetY[i]
+   * - entityHalfExtent[i] = max(halfWidth, halfHeight) based on collider shape
+   */
+  computeEntityPositions() {
+    // Early exit if buffers not initialized
+    if (!this.entityPosX || !this.activeEntitiesData) return;
+
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
+    const colliderActive = Collider.active;
+    const shapeType = Collider.shapeType;
+    const radius = Collider.radius;
+    const width = Collider.width;
+    const height = Collider.height;
+
+    const entityPosX = this.entityPosX;
+    const entityPosY = this.entityPosY;
+    const entityHalfExtent = this.entityHalfExtent;
+
+    const SHAPE_CIRCLE = 0;
+
+    // Use activeEntitiesData to iterate only active entities
+    const activeEntitiesData = this.activeEntitiesData;
+    const totalActiveEntities = activeEntitiesData ? activeEntitiesData[0] : 0;
+
+    for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
+      const i = activeEntitiesData[1 + activeIdx];
+
+      // Calculate collider position (world position + collider offset)
+      const posX = x[i] + (offsetX[i] || 0);
+      const posY = y[i] + (offsetY[i] || 0);
+
+      // Skip invalid positions (NaN check via self-comparison)
+      if (posX !== posX || posY !== posY) continue;
+
+      // Store pre-computed position for spatial workers
+      entityPosX[i] = posX;
+      entityPosY[i] = posY;
+
+      // Calculate half-extent based on collider type
+      let halfW = 0,
+        halfH = 0;
+      if (colliderActive[i]) {
+        if (shapeType[i] === SHAPE_CIRCLE) {
+          halfW = halfH = radius[i] || 0;
+        } else {
+          halfW = (width[i] || 0) * 0.5;
+          halfH = (height[i] || 0) * 0.5;
+        }
+      }
+      entityHalfExtent[i] = halfW > halfH ? halfW : halfH;
+    }
+  }
+
   // NOTE: rebuildSpatialGrid() removed - now handled by spatial workers using row-based partitioning
   // Each spatial worker owns specific rows (cellY % workerCount === workerId) and rebuilds only its own rows.
   // This eliminates all race conditions without synchronization overhead.
@@ -627,6 +718,10 @@ class ParticleWorker extends AbstractWorker {
 
     // Build active particle list - optimize physics by skipping inactive particles
     this.buildActiveParticleList();
+
+    // Compute entity positions for spatial workers ONCE per frame
+    // Spatial workers will READ from these shared buffers instead of redundantly computing
+    this.computeEntityPositions();
 
     // Reset stats counters for this frame
     this.particlesStampedThisFrame = 0;
