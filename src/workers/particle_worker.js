@@ -943,7 +943,6 @@ class ParticleWorker extends AbstractWorker {
   /**
    * Stamp all collected particles onto blood decal tiles
    * Batching improves cache locality for tile writes
-   * Branches per-particle (not per-pixel) based on blendMode
    */
   stampCollectedParticles() {
     if (this.particlesToStampCount === 0 || !this.decalsEnabled) return;
@@ -959,32 +958,17 @@ class ParticleWorker extends AbstractWorker {
 
     for (let i = 0; i < this.particlesToStampCount; i++) {
       const particleIndex = this.particlesToStamp[i];
-      const mode = particleBlendMode[particleIndex];
 
-      // Branch per-particle, not per-pixel (no performance penalty)
-      if (mode === 1) {
-        // Multiply blend mode
-        this.stampParticleToTileMultiply(
-          particleX[particleIndex],
-          particleY[particleIndex],
-          particleTint[particleIndex],
-          particleScaleX[particleIndex],
-          particleScaleY[particleIndex],
-          particleTextureId[particleIndex],
-          particleAlpha[particleIndex]
-        );
-      } else {
-        // Normal blend mode (alpha over)
-        this.stampParticleToTile(
-          particleX[particleIndex],
-          particleY[particleIndex],
-          particleTint[particleIndex],
-          particleScaleX[particleIndex],
-          particleScaleY[particleIndex],
-          particleTextureId[particleIndex],
-          particleAlpha[particleIndex]
-        );
-      }
+      this.stampParticleToTile(
+        particleX[particleIndex],
+        particleY[particleIndex],
+        particleTint[particleIndex],
+        particleScaleX[particleIndex],
+        particleScaleY[particleIndex],
+        particleTextureId[particleIndex],
+        particleAlpha[particleIndex],
+        particleBlendMode[particleIndex]
+      );
     }
 
     // Track stamped particles for stats
@@ -994,6 +978,10 @@ class ParticleWorker extends AbstractWorker {
   /**
    * Stamp a particle's texture onto the blood decal tilemap
    * Supports multi-tile stamping for decals larger than tile size
+   * Handles both NORMAL (alpha over) and MULTIPLY blend modes
+   *
+   * OPTIMIZATION: blendMode branches inside inner loop - branch predictor learns
+   * the constant pattern quickly since blendMode is fixed per particle call.
    *
    * @param {number} worldX - World X position of the particle
    * @param {number} worldY - World Y position of the particle
@@ -1002,8 +990,9 @@ class ParticleWorker extends AbstractWorker {
    * @param {number} scaleY - Particle vertical scale (affects stamp height)
    * @param {number} textureId - Index into decalTextures map
    * @param {number} alpha - Particle alpha at time of stamping (0-1)
+   * @param {number} blendMode - 0 = normal (alpha over), 1 = multiply (darken)
    */
-  stampParticleToTile(worldX, worldY, tint, scaleX, scaleY, textureId, alpha) {
+  stampParticleToTile(worldX, worldY, tint, scaleX, scaleY, textureId, alpha, blendMode) {
     // Get texture data for this particle
     const texture = this.decalTextures[textureId];
 
@@ -1117,13 +1106,10 @@ class ParticleWorker extends AbstractWorker {
 
             // Sample from source texture (nearest-neighbor)
             const srcOffset = (srcRowOffset + srcX) * 4;
-
-            // Apply particle alpha to texture alpha (fixed-point: alpha * 256)
             const texAlpha = textureRgba[srcOffset + 3];
-            const srcA = (texAlpha * alpha) | 0; // 0-255 range
 
-            // Skip fully transparent pixels
-            if (srcA < 1) continue;
+            // Skip fully transparent pixels (common to both blend modes)
+            if (texAlpha < 1) continue;
 
             // Get source RGB
             const srcR = textureRgba[srcOffset];
@@ -1133,206 +1119,68 @@ class ParticleWorker extends AbstractWorker {
             // Calculate destination offset in tile buffer
             const dstOffset = dstRowOffset + dstX * 4;
 
-            // Apply tint to source color - OPTIMIZED: >>8 instead of /255 (~2x faster)
-            const finalR = (srcR * tintR + 127) >> 8;
-            const finalG = (srcG * tintG + 127) >> 8;
-            const finalB = (srcB * tintB + 127) >> 8;
+            // Branch on blend mode - predictor learns pattern since blendMode is constant per call
+            if (blendMode === 1) {
+              // ========================================
+              // MULTIPLY BLEND: darkness of source = opacity of darkening effect
+              // ========================================
+              // Apply tint to source color
+              const tintedR = (srcR * tintR + 127) >> 8;
+              const tintedG = (srcG * tintG + 127) >> 8;
+              const tintedB = (srcB * tintB + 127) >> 8;
 
-            // OPTIMIZED: Integer-only alpha blending (no floating point)
-            // Formula: dst + ((src - dst) * alpha + 127) >> 8
-            const invSrcA = 255 - srcA;
-            const dstR = bloodTiles[dstOffset];
-            const dstG = bloodTiles[dstOffset + 1];
-            const dstB = bloodTiles[dstOffset + 2];
-            const dstA = bloodTiles[dstOffset + 3];
+              // Calculate luminance (0-255): white=255, black=0
+              const luminance = (tintedR * 77 + tintedG * 150 + tintedB * 29) >> 8;
 
-            // Blend colors using integer math
-            bloodTiles[dstOffset] = dstR + (((finalR - dstR) * srcA + 127) >> 8);
-            bloodTiles[dstOffset + 1] = dstG + (((finalG - dstG) * srcA + 127) >> 8);
-            bloodTiles[dstOffset + 2] = dstB + (((finalB - dstB) * srcA + 127) >> 8);
-            // Alpha: combine using "over" operator (integer version)
-            bloodTiles[dstOffset + 3] = srcA + ((dstA * invSrcA + 127) >> 8);
-          }
-        }
+              // Darkness = inverse luminance: white=0 (invisible), black=255 (full darken)
+              const darkness = 255 - luminance;
 
-        // Mark tile as dirty so pixi_worker updates its texture
-        this.bloodTilesDirty[tileIndex] = 1;
-      }
-    }
-  }
+              // Effective alpha = texture alpha * particle alpha * darkness
+              const effectiveAlpha = (((texAlpha * darkness) >> 8) * alpha) | 0;
 
-  /**
-   * Stamp a particle's texture onto the blood decal tilemap using MULTIPLY blend mode
-   * Multiply darkens the destination: result = (src * dst) / 255
-   * Alpha controls how much of the multiply effect is applied
-   *
-   * @param {number} worldX - World X position of the particle
-   * @param {number} worldY - World Y position of the particle
-   * @param {number} tint - Color tint (0xRRGGBB)
-   * @param {number} scaleX - Particle horizontal scale (affects stamp width)
-   * @param {number} scaleY - Particle vertical scale (affects stamp height)
-   * @param {number} textureId - Index into decalTextures map
-   * @param {number} alpha - Particle alpha at time of stamping (0-1)
-   */
-  stampParticleToTileMultiply(worldX, worldY, tint, scaleX, scaleY, textureId, alpha) {
-    // Get texture data for this particle
-    const texture = this.decalTextures[textureId];
+              // Skip light pixels (effectively transparent in multiply)
+              if (effectiveAlpha < 2) continue;
 
-    if (!texture) {
-      // No texture data available for this textureId
-      return;
-    }
+              // Integer-only alpha blending: dst * (255 - alpha) / 255
+              const invEffectiveAlpha = 255 - effectiveAlpha;
+              const dstR = bloodTiles[dstOffset];
+              const dstG = bloodTiles[dstOffset + 1];
+              const dstB = bloodTiles[dstOffset + 2];
+              const dstA = bloodTiles[dstOffset + 3];
 
-    // Cache frequently accessed values
-    const tileSize = this.decalsTileSize;
-    const tilePixelSize = this.decalsTilePixelSize;
-    const tilesX = this.decalsTilesX;
-    const tilesY = this.decalsTilesY;
-    const bloodTiles = this.bloodTilesRGBA;
-    const textureRgba = texture.rgba;
-    const texWidth = texture.width;
-    const texHeight = texture.height;
+              // Blend black (0) with existing content
+              bloodTiles[dstOffset] = (dstR * invEffectiveAlpha + 127) >> 8;
+              bloodTiles[dstOffset + 1] = (dstG * invEffectiveAlpha + 127) >> 8;
+              bloodTiles[dstOffset + 2] = (dstB * invEffectiveAlpha + 127) >> 8;
+              bloodTiles[dstOffset + 3] = effectiveAlpha + ((dstA * invEffectiveAlpha + 127) >> 8);
+            } else {
+              // ========================================
+              // NORMAL BLEND (alpha over)
+              // ========================================
+              const srcA = (texAlpha * alpha) | 0; // 0-255 range
 
-    // Calculate scaled texture dimensions in world units
-    const scaledWidthWorld = texture.width * scaleX;
-    const scaledHeightWorld = texture.height * scaleY;
-    const halfWidthWorld = scaledWidthWorld / 2;
-    const halfHeightWorld = scaledHeightWorld / 2;
+              // Skip nearly transparent pixels
+              if (srcA < 1) continue;
 
-    // Calculate scaled dimensions in pixels (for UV sampling)
-    const resolution = this.decalsResolution;
-    const scaledWidthPixels = (scaledWidthWorld * resolution + 0.999) | 0;
-    const scaledHeightPixels = (scaledHeightWorld * resolution + 0.999) | 0;
+              // Apply tint to source color
+              const finalR = (srcR * tintR + 127) >> 8;
+              const finalG = (srcG * tintG + 127) >> 8;
+              const finalB = (srcB * tintB + 127) >> 8;
 
-    // Calculate which tiles this decal touches
-    calculateDecalTileBounds(
-      worldX,
-      worldY,
-      halfWidthWorld,
-      halfHeightWorld,
-      tileSize,
-      tilesX,
-      tilesY,
-      _decalTileBounds
-    );
+              // Integer-only alpha blending: dst + ((src - dst) * alpha + 127) >> 8
+              const invSrcA = 255 - srcA;
+              const dstR = bloodTiles[dstOffset];
+              const dstG = bloodTiles[dstOffset + 1];
+              const dstB = bloodTiles[dstOffset + 2];
+              const dstA = bloodTiles[dstOffset + 3];
 
-    if (!_decalTileBounds.valid) {
-      return; // Decal is completely outside world bounds
-    }
-
-    // Extract RGB from tint (0xRRGGBB) - do once, not per-tile
-    const tintR = (tint >> 16) & 0xff;
-    const tintG = (tint >> 8) & 0xff;
-    const tintB = tint & 0xff;
-
-    // Pre-calculate UV mapping constants
-    const invScaledWidth = texWidth / scaledWidthPixels;
-    const invScaledHeight = texHeight / scaledHeightPixels;
-
-    // Iterate over all affected tiles
-    for (let ty = _decalTileBounds.minTileY; ty <= _decalTileBounds.maxTileY; ty++) {
-      for (let tx = _decalTileBounds.minTileX; tx <= _decalTileBounds.maxTileX; tx++) {
-        // Calculate clip region for this tile
-        calculateTileClipRegion(
-          worldX,
-          worldY,
-          halfWidthWorld,
-          halfHeightWorld,
-          tx,
-          ty,
-          tileSize,
-          tilePixelSize,
-          texWidth,
-          texHeight,
-          scaledWidthPixels,
-          scaledHeightPixels,
-          _tileClipRegion
-        );
-
-        if (!_tileClipRegion.valid) continue;
-
-        const tileIndex = tx + ty * tilesX;
-        const tileByteOffset = tileIndex * tilePixelSize * tilePixelSize * 4;
-
-        // Destination pixel bounds (clamped to tile)
-        const dstStartX = _tileClipRegion.dstStartX;
-        const dstStartY = _tileClipRegion.dstStartY;
-        const dstEndX = _tileClipRegion.dstEndX;
-        const dstEndY = _tileClipRegion.dstEndY;
-
-        // Source texture offset (where to start sampling in scaled coordinates)
-        const srcOffsetX = _tileClipRegion.srcOffsetX;
-        const srcOffsetY = _tileClipRegion.srcOffsetY;
-        const uvScaleX = _tileClipRegion.uvScaleX;
-        const uvScaleY = _tileClipRegion.uvScaleY;
-
-        // Stamp only the clipped region - no wasted iterations!
-        for (let dstY = dstStartY; dstY < dstEndY; dstY++) {
-          // Calculate source Y in scaled texture coordinates
-          const srcScaledY = srcOffsetY + (dstY - dstStartY) * uvScaleY;
-          const srcY = (srcScaledY * invScaledHeight) | 0;
-
-          // Bounds check source Y
-          if (srcY < 0 || srcY >= texHeight) continue;
-
-          const srcRowOffset = srcY * texWidth;
-          const dstRowOffset = tileByteOffset + dstY * tilePixelSize * 4;
-
-          for (let dstX = dstStartX; dstX < dstEndX; dstX++) {
-            // Calculate source X in scaled texture coordinates
-            const srcScaledX = srcOffsetX + (dstX - dstStartX) * uvScaleX;
-            const srcX = (srcScaledX * invScaledWidth) | 0;
-
-            // Bounds check source X
-            if (srcX < 0 || srcX >= texWidth) continue;
-
-            // Sample from source texture (nearest-neighbor)
-            const srcOffset = (srcRowOffset + srcX) * 4;
-
-            // Get source RGB and alpha
-            const srcR = textureRgba[srcOffset];
-            const srcG = textureRgba[srcOffset + 1];
-            const srcB = textureRgba[srcOffset + 2];
-            const texAlpha = textureRgba[srcOffset + 3];
-
-            // Skip fully transparent pixels
-            if (texAlpha < 1) continue;
-
-            // Apply tint to source color - OPTIMIZED: >>8 instead of /255 (~2x faster)
-            const tintedR = (srcR * tintR + 127) >> 8;
-            const tintedG = (srcG * tintG + 127) >> 8;
-            const tintedB = (srcB * tintB + 127) >> 8;
-
-            // MULTIPLY BLEND: darkness of source = opacity of darkening effect
-            // Calculate luminance (0-255): white=255, black=0
-            const luminance = (tintedR * 77 + tintedG * 150 + tintedB * 29) >> 8;
-
-            // Darkness = inverse luminance: white=0 (invisible), black=255 (full darken)
-            const darkness = 255 - luminance;
-
-            // Effective alpha = texture alpha * particle alpha * darkness
-            // OPTIMIZED: Integer-only calculation
-            const effectiveAlpha = (((texAlpha * darkness) >> 8) * alpha) | 0;
-
-            // Skip light pixels (effectively transparent in multiply)
-            if (effectiveAlpha < 2) continue;
-
-            // Calculate destination offset
-            const dstOffset = dstRowOffset + dstX * 4;
-
-            // OPTIMIZED: Integer-only alpha blending (no floating point)
-            // For multiply blend with black (0), formula simplifies to: dst * (255 - alpha) / 255
-            const invEffectiveAlpha = 255 - effectiveAlpha;
-            const dstR = bloodTiles[dstOffset];
-            const dstG = bloodTiles[dstOffset + 1];
-            const dstB = bloodTiles[dstOffset + 2];
-            const dstA = bloodTiles[dstOffset + 3];
-
-            // Blend black (0) with existing content using integer math
-            bloodTiles[dstOffset] = (dstR * invEffectiveAlpha + 127) >> 8;
-            bloodTiles[dstOffset + 1] = (dstG * invEffectiveAlpha + 127) >> 8;
-            bloodTiles[dstOffset + 2] = (dstB * invEffectiveAlpha + 127) >> 8;
-            bloodTiles[dstOffset + 3] = effectiveAlpha + ((dstA * invEffectiveAlpha + 127) >> 8);
+              // Blend colors
+              bloodTiles[dstOffset] = dstR + (((finalR - dstR) * srcA + 127) >> 8);
+              bloodTiles[dstOffset + 1] = dstG + (((finalG - dstG) * srcA + 127) >> 8);
+              bloodTiles[dstOffset + 2] = dstB + (((finalB - dstB) * srcA + 127) >> 8);
+              // Alpha: combine using "over" operator
+              bloodTiles[dstOffset + 3] = srcA + ((dstA * invSrcA + 127) >> 8);
+            }
           }
         }
 
