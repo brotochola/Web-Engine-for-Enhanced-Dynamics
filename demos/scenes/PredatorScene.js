@@ -596,43 +596,6 @@ export class PredatorScene extends WEED.Scene {
       });
     }
   }
-  // ========================================
-  // PUBLIC SPAWNING METHODS (for UI buttons)
-  // ========================================
-
-  spawnRandomPrey() {
-    this.spawnPrey(1);
-  }
-
-  spawnRandomPredator() {
-    this.spawnPredators(1);
-  }
-
-  async spawnPreyAtMouse() {
-    // Access Mouse through the component system
-    const { Mouse } = await import('/src/core/Mouse.js');
-    if (Mouse.x > 0 && Mouse.y > 0) {
-      this.spawnEntity(Prey, {
-        x: Mouse.x,
-        y: Mouse.y,
-        vx: 0,
-        vy: 0,
-      });
-    }
-  }
-
-  async spawnPredatorAtMouse() {
-    // Access Mouse through the component system
-    const { Mouse } = await import('/src/core/Mouse.js');
-    if (Mouse.x > 0 && Mouse.y > 0) {
-      this.spawnEntity(Predator, {
-        x: Mouse.x,
-        y: Mouse.y,
-        vx: 0,
-        vy: 0,
-      });
-    }
-  }
 
   clearAllEntities() {
     if (confirm('Clear all entities?')) {
