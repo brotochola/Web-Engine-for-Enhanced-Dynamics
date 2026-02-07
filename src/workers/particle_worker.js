@@ -3,6 +3,7 @@
 // Particles are NOT GameObjects - they use ParticleComponent directly
 
 import { ParticleComponent } from '../components/ParticleComponent.js';
+import { ParticleEmitter } from '../core/ParticleEmitter.js';
 import { DecorationComponent } from '../components/DecorationComponent.js';
 import { DecorationPool } from '../core/DecorationPool.js';
 import { Transform } from '../components/Transform.js';
@@ -206,6 +207,13 @@ class ParticleWorker extends AbstractWorker {
 
         // OPTIMIZATION: Track active particles to avoid scanning inactive ones
         this.activeParticleIndices = new Uint16Array(this.maxParticles);
+
+        // Initialize shared free list for returning dead particles
+        if (data.particleFreeList && data.particleFreeListTop) {
+          ParticleEmitter.maxParticles = this.maxParticles;
+          ParticleEmitter.initializeFreeList(data.particleFreeList, data.particleFreeListTop);
+          console.log('[PARTICLE WORKER] Particle free list initialized');
+        }
         console.log('[PARTICLE WORKER] Particle arrays initialized');
       }
     } else {
@@ -844,6 +852,7 @@ class ParticleWorker extends AbstractWorker {
       // Check if particle expired
       if (currentLife[i] >= lifespan[i]) {
         active[i] = 0;
+        ParticleEmitter.returnToPool(i);
         continue;
       }
 
@@ -872,6 +881,7 @@ class ParticleWorker extends AbstractWorker {
         // If despawnOnGroundContact is enabled, despawn immediately (no decal)
         if (despawnOnGroundContact[i]) {
           active[i] = 0;
+          ParticleEmitter.returnToPool(i);
           continue;
         }
 
@@ -881,6 +891,7 @@ class ParticleWorker extends AbstractWorker {
             this.particlesToStamp[this.particlesToStampCount++] = i;
           }
           active[i] = 0;
+          ParticleEmitter.returnToPool(i);
           // Note: we don't decrement activeCount here because it's just a return value
           // and the list index iteration continues. The particle is marked inactive.
           continue;
@@ -898,6 +909,7 @@ class ParticleWorker extends AbstractWorker {
 
           if (alpha[i] <= 0) {
             active[i] = 0;
+            ParticleEmitter.returnToPool(i);
             continue;
           }
         }
@@ -1746,19 +1758,24 @@ class ParticleWorker extends AbstractWorker {
       return; // No camera data available
     }
 
-    for (let i = 0; i < this.maxDecorations; i++) {
-      if (!active[i]) {
-        isItOnScreen[i] = 0;
-        continue;
+    // Use active indices list if available (O(activeCount) instead of O(maxDecorations))
+    const activeIndices = DecorationPool.activeIndices;
+    const activeCount = DecorationPool.activeCount;
+
+    if (activeIndices && activeCount && activeCount[0] > 0) {
+      // OPTIMIZED: Iterate only active decorations using compact list
+      const count = activeCount[0];
+      for (let idx = 0; idx < count; idx++) {
+        const i = activeIndices[idx];
+
+        // Transform world coordinates to screen coordinates
+        const screenX = x[i] * zoom - cameraOffsetX;
+        const screenY = y[i] * zoom - cameraOffsetY;
+
+        // Check if screen position is within viewport bounds (with margin)
+        isItOnScreen[i] =
+          screenX > minX && screenX < maxX && screenY > minY && screenY < maxY ? 1 : 0;
       }
-
-      // Transform world coordinates to screen coordinates
-      const screenX = x[i] * zoom - cameraOffsetX;
-      const screenY = y[i] * zoom - cameraOffsetY;
-
-      // Check if screen position is within viewport bounds (with margin)
-      isItOnScreen[i] =
-        screenX > minX && screenX < maxX && screenY > minY && screenY < maxY ? 1 : 0;
     }
   }
 

@@ -19,6 +19,11 @@ export class DecorationPool {
   // Used for early-exit optimization in workers
   static activeCount = null; // Uint32Array[1]
 
+  // Active indices list for O(1) iteration in workers (backed by SharedArrayBuffer)
+  // Maintained on spawn/despawn using swap-remove for O(1) operations
+  static activeIndices = null; // Uint16Array - compact list of active decoration indices
+  static indexToActiveSlot = null; // Uint16Array - maps decoration index → slot in activeIndices (for O(1) removal)
+
   /**
    * Initialize the decoration pool
    * Called automatically by logic worker during init
@@ -48,6 +53,18 @@ export class DecorationPool {
    */
   static initializeActiveCount(buffer) {
     this.activeCount = new Uint32Array(buffer);
+  }
+
+  /**
+   * Initialize the shared active indices buffers
+   * Called by workers to connect to the shared list
+   * @param {SharedArrayBuffer} activeIndicesBuffer - Buffer for active indices (Uint16Array)
+   * @param {SharedArrayBuffer} indexToSlotBuffer - Buffer for index→slot mapping (Uint16Array)
+   */
+  static initializeActiveIndices(activeIndicesBuffer, indexToSlotBuffer) {
+    this.activeIndices = new Uint16Array(activeIndicesBuffer);
+    this.indexToActiveSlot = new Uint16Array(indexToSlotBuffer);
+    console.log(`DecorationPool: Active indices initialized (count: ${this.activeCount ? this.activeCount[0] : 0})`);
   }
 
   /**
@@ -152,8 +169,14 @@ export class DecorationPool {
     // Claim this slot
     DecorationComponent.active[i] = 1;
 
-    // Increment active count (for early-exit optimization in workers)
-    if (this.activeCount) {
+    // Update active indices list (O(1) add to end)
+    if (this.activeCount && this.activeIndices && this.indexToActiveSlot) {
+      const slot = this.activeCount[0];
+      this.activeIndices[slot] = i;
+      this.indexToActiveSlot[i] = slot;
+      this.activeCount[0]++;
+    } else if (this.activeCount) {
+      // Fallback: just increment count if indices not initialized
       this.activeCount[0]++;
     }
 
@@ -221,8 +244,20 @@ export class DecorationPool {
     // Push index back to free list (O(1))
     this.freeList[++this.freeListTop] = index;
 
-    // Decrement active count
-    if (this.activeCount && this.activeCount[0] > 0) {
+    // Update active indices list (O(1) swap-remove)
+    if (this.activeCount && this.activeCount[0] > 0 && this.activeIndices && this.indexToActiveSlot) {
+      const slot = this.indexToActiveSlot[index];
+      const lastSlot = this.activeCount[0] - 1;
+
+      if (slot !== lastSlot) {
+        // Swap with last element
+        const lastIndex = this.activeIndices[lastSlot];
+        this.activeIndices[slot] = lastIndex;
+        this.indexToActiveSlot[lastIndex] = slot;
+      }
+      this.activeCount[0]--;
+    } else if (this.activeCount && this.activeCount[0] > 0) {
+      // Fallback: just decrement count if indices not initialized
       this.activeCount[0]--;
     }
 
@@ -246,7 +281,7 @@ export class DecorationPool {
     }
     this.freeListTop = this.maxDecorations - 1;
 
-    // Reset active count
+    // Reset active count (also clears active indices implicitly since count=0)
     if (this.activeCount) {
       this.activeCount[0] = 0;
     }
