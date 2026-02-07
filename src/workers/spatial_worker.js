@@ -70,6 +70,10 @@ class SpatialWorker extends AbstractWorker {
     this.ownedRows = null; // Int32Array of row indices
     this.ownedRowCount = 0;
 
+    // O(1) row ownership lookup: rowOwnership[row] → workerId
+    // Replaces expensive (row / rowsPerBlock | 0) % totalWorkers in hot loops
+    this.rowOwnership = null; // Uint8Array(gridHeight)
+
     // Pre-computed entity positions (shared buffer from particle_worker or computed locally)
     this.entityPosX = null; // Float32Array
     this.entityPosY = null; // Float32Array
@@ -143,12 +147,15 @@ class SpatialWorker extends AbstractWorker {
     this.canvasWidth = this.config.canvasWidth;
     this.canvasHeight = this.config.canvasHeight;
 
-    // Pre-compute owned rows using block-based partitioning
-    // Worker i owns rows where floor(row / rowsPerBlock) % totalWorkers === workerId
+    // Pre-compute row ownership lookup: rowOwnership[row] → workerId
+    // This replaces expensive (row / rowsPerBlock | 0) % totalWorkers in hot loops
+    this.rowOwnership = new Uint8Array(this.gridHeight);
     const ownedRows = [];
     for (let row = 0; row < this.gridHeight; row++) {
       const blockIndex = (row / this.rowsPerBlock) | 0;
-      if (blockIndex % this.totalSpatialWorkers === this.workerId) {
+      const owner = blockIndex % this.totalSpatialWorkers;
+      this.rowOwnership[row] = owner;
+      if (owner === this.workerId) {
         ownedRows.push(row);
       }
     }
@@ -345,6 +352,7 @@ class SpatialWorker extends AbstractWorker {
 
     const ownedRows = this.ownedRows;
     const ownedRowCount = this.ownedRowCount;
+    const rowOwnership = this.rowOwnership;
 
     // =========================================================================
     // PHASE 1: Clear LOCAL counts only (not grid counts!)
@@ -409,10 +417,8 @@ class SpatialWorker extends AbstractWorker {
 
       // Insert entity into ALL cells it overlaps, but only if we own that row
       for (let row = minRow; row <= maxRowBB; row++) {
-        // ROW OWNERSHIP CHECK: Only write to rows we own
-        // Block-based partitioning: floor(row / rowsPerBlock) % totalWorkers === workerId
-        const blockIndex = (row / this.rowsPerBlock) | 0;
-        if (blockIndex % totalSpatialWorkers !== workerId) continue;
+        // ROW OWNERSHIP CHECK: O(1) lookup replaces division + modulo
+        if (rowOwnership[row] !== workerId) continue;
 
         const rowBase = row * gridWidth;
 
@@ -493,6 +499,7 @@ class SpatialWorker extends AbstractWorker {
 
     const ownedRows = this.ownedRows;
     const ownedRowCount = this.ownedRowCount;
+    const rowOwnership = this.rowOwnership;
 
     // Clamp helpers for home row calculation
     const maxRow = gridHeight - 1;
@@ -534,9 +541,8 @@ class SpatialWorker extends AbstractWorker {
           // Clamp to grid bounds
           homeRow = homeRow < 0 ? 0 : homeRow > maxRow ? maxRow : homeRow;
 
-          // Skip if another worker owns this entity's home row
-          const homeBlockIndex = (homeRow / this.rowsPerBlock) | 0;
-          if (homeBlockIndex % totalSpatialWorkers !== workerId) continue;
+          // Skip if another worker owns this entity's home row (O(1) lookup)
+          if (rowOwnership[homeRow] !== workerId) continue;
 
           this.entitiesProcessedThisFrame++;
 
