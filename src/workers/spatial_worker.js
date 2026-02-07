@@ -590,8 +590,9 @@ class SpatialWorker extends AbstractWorker {
               cellSleepingData
             );
 
-          // Calculate cell search radius (use Math.ceil for conservative pattern matching)
-          const cellRadius = Math.ceil(myVisualRange * invCellSize);
+          // Calculate cell search radius (bitwise ceiling - avoids Math.ceil overhead in hot path)
+          // Using (x | 0) + 1 always rounds up, may add one extra cell ring but negligible impact
+          const cellRadius = ((myVisualRange * invCellSize) | 0) + 1;
 
           // Calculate entity's actual cell position (based on center, not storage cell)
           let homeCol = (myX * invCellSize) | 0;
