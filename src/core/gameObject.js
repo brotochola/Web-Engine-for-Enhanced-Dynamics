@@ -320,7 +320,7 @@ export class GameObject {
 
     // Neighbor properties (updated each frame before tick)
     this.neighborCount = 0;
-    // this.neighbors = null; // REMOVED: Subarray allocation causes GC stutter
+    // this._neighbors = null; // REMOVED: Subarray allocation causes GC stutter
     // this.neighborDistances = null; // REMOVED: GC stutter
     this._neighborOffset = 0; // Pointer-like offset into shared buffer
 
@@ -1317,58 +1317,34 @@ export class GameObject {
    * Update neighbor references for this entity
    * Called by logic worker before tick() each frame
    *
-   * @param {Int32Array} neighborData - Precomputed neighbors from spatial worker (deprecated, uses Grid)
-   * @param {Float32Array} distanceData - Precomputed squared distances from spatial worker (deprecated, uses Grid)
+   * OPTIMIZED: Uses Grid statics directly (neighborData and stride are the same for all entities).
+   * Only updates per-instance offset and count. Zero redundant writes.
+   * Lazy-inits this._neighbors view (once per entity lifetime).
    */
-  /**
-   * Update neighbor references for this entity
-   * Called by logic worker before tick() each frame
-   *
-   * OPTIMIZED: Receives pre-cached arrays from caller to avoid property lookups
-   * @param {Int32Array} neighborData - Cached Grid.neighborData
-   * @param {Float32Array} distanceData - Cached Grid.distanceData
-   * @param {number} stride - Cached Grid._stride
-   */
-  updateNeighbors(neighborData, distanceData, stride) {
-    // Fast path: arrays passed directly from caller (logic_worker caches them once)
-    // distanceData parameter is deprecated (no longer used, kept for API compatibility)
-    if (neighborData) {
-      this._neighborData = neighborData;
-      this._neighborOffset = this.index * stride;
-      this.neighborCount = neighborData[this._neighborOffset];
-      return;
-    }
+  updateNeighbors() {
+    // Grid.neighborData and Grid._stride are static - same for all entities
+    // Only _neighborOffset and neighborCount vary per instance
+    this._neighborOffset = this.index * Grid._stride;
+    this.neighborCount = Grid.neighborData[this._neighborOffset];
 
-    // Fallback to static arrays if no params passed
-    if (GameObject.neighborData) {
-      this._neighborData = GameObject.neighborData;
-      const maxNeighbors = this.config.spatial?.maxNeighbors || this.config.maxNeighbors || 100;
-      this._neighborOffset = this.index * (1 + maxNeighbors);
-      this.neighborCount = this._neighborData[this._neighborOffset];
-      return;
+    // Lazy-init neighbors view (once per entity lifetime, zero-copy into SAB)
+    // Fixed max length - use neighborCount to know how many are valid
+    if (!this._neighbors) {
+      this._neighbors = new Int32Array(
+        Grid.neighborData.buffer,
+        Grid.neighborData.byteOffset + (this._neighborOffset + 2) * 4,
+        Grid.maxNeighbors
+      );
     }
-
-    this._neighborData = null;
-    this.neighborCount = 0;
   }
 
   /**
    * Get neighbor index at specific position
-   * Zero-allocation replacement for this.neighbors[i]
-   * Uses direct array access for performance (Grid data cached in updateNeighbors)
    * @param {number} i - Index (0 to this.neighborCount - 1)
    * @returns {number} Entity index of the neighbor
    */
   getNeighbor(i) {
-    // Direct array access using cached offset (no method call overhead)
-    if (this._neighborData) {
-      return this._neighborData[this._neighborOffset + 1 + i];
-    }
-    // Fallback to static arrays
-    if (GameObject.neighborData) {
-      return GameObject.neighborData[this._neighborOffset + 1 + i];
-    }
-    return -1;
+    return this._neighbors[i];
   }
 
   /**
@@ -1396,68 +1372,27 @@ export class GameObject {
 
   /**
    * Get all neighbor IDs as an array
-   * @returns {Int32Array} Typed array of neighbor entity indices (view into internal buffer)
-   *
-   * NOTE: Uses Grid.neighborData (live getter) to always read from the current stable
-   * read buffer. This is safe for debugging/inspection from Chrome console.
-   * For hot-path access during tick(), use getNeighborId(i) which uses cached pointers.
+   * @returns {Int32Array} Typed array view of valid neighbor indices (zero-alloc subarray)
    */
   getAllNeighborIds() {
-    // Use Grid.neighborData getter (not cached this._neighborData) to get current read buffer
-    // This ensures we always read stable data, even when called from Chrome console
-    const neighborData = Grid.neighborData;
-    if (!neighborData) {
-      return new Int32Array(0);
-    }
-
-    const stride = Grid._stride;
-    const neighborOffset = this.index * stride;
-    const count = neighborData[neighborOffset]; // Read count from current read buffer
-
-    // Return a typed array view (zero-copy slice of the neighbor buffer)
-    // Note: Int32Array elements are 4 bytes each
-    return new Int32Array(
-      neighborData.buffer,
-      neighborData.byteOffset + (neighborOffset + 1) * 4,
-      count
-    );
+    return this._neighbors.subarray(0, this.neighborCount);
   }
 
   /**
    * Get all neighbor instances as an array
    * @returns {GameObject[]} Array of neighbor GameObject instances
-   *
-   * NOTE: Uses Grid.neighborData (live getter) to always read from the current stable
-   * read buffer. This is safe for debugging/inspection from Chrome console.
    */
   getAllNeighborInstances() {
-    // Use Grid.neighborData getter (not cached this._neighborData) to get current read buffer
-    const neighborData = Grid.neighborData;
-    if (!neighborData) {
-      return [];
-    }
-
-    const stride = Grid._stride;
-    const neighborOffset = this.index * stride;
-    const count = neighborData[neighborOffset]; // Read count from current read buffer
-
-    const neighbors = new Array(count);
+    const count = this.neighborCount;
+    const result = new Array(count);
     const entities = GameObject.instances;
+    const neighbors = this._neighbors;
 
-    let validCount = 0;
     for (let i = 0; i < count; i++) {
-      const neighborId = neighborData[neighborOffset + 1 + i];
-      if (neighborId >= 0 && neighborId < entities.length) {
-        neighbors[validCount++] = entities[neighborId];
-      }
+      result[i] = entities[neighbors[i]];
     }
 
-    // Trim array if some neighbors were invalid
-    if (validCount < count) {
-      neighbors.length = validCount;
-    }
-
-    return neighbors;
+    return result;
   }
 
   /**
@@ -1479,16 +1414,11 @@ export class GameObject {
   forEachNeighbor(callback) {
     const count = this.neighborCount;
     const instances = GameObject.instances;
-    const neighborData = GameObject.neighborData;
-    const distanceData = GameObject.distanceData;
-    const offset = this._neighborOffset;
+    const neighbors = this._neighbors;
 
     for (let i = 0; i < count; i++) {
-      const neighborIndex = neighborData[offset + 2 + i];
-      const distance = distanceData ? distanceData[offset + 2 + i] : 0;
-      const neighbor = instances ? instances[neighborIndex] : undefined;
-
-      callback(neighbor, distance, neighborIndex);
+      const neighborIndex = neighbors[i];
+      callback(instances[neighborIndex], 0, neighborIndex);
     }
   }
 
@@ -1497,7 +1427,7 @@ export class GameObject {
    * Override this in subclasses to define entity behavior
    * (AI, physics forces, animations, input handling, etc.)
    *
-   * Note: this.neighbors and this.neighborCount are updated before this is called
+   * Note: this._neighbors and this.neighborCount are updated before this is called
    * Input is available via this.mouse and this.keyboard
    *
    * @param {number} dtRatio - Delta time ratio normalized to 60fps (1.0 = 16.67ms frame)
