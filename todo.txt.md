@@ -55,27 +55,12 @@ Lines 1445-1548 build a single `initData` object containing **every** buffer, co
 
 If a worker crashes or throws an unhandled error, `_showFatalErrorMessage` displays an overlay but the engine continues running with degraded state. There's no mechanism to restart a failed worker or gracefully degrade.
 
-### 3.5 — `destroy()` Doesn't Terminate All Workers
-
-Lines 2022-2028: The destroy method doesn't terminate the `navigation` worker:
-```javascript
-const allWorkers = [
-  ...this.workers.spatialWorkers,
-  ...this.workers.logicWorkers,
-  this.workers.physics,
-  this.workers.renderer,
-  this.workers.particle,
-  // navigation is missing!
-];
-```
 
 ### 3.6 — SharedArrayBuffer Memory Accounting
 
 The `getSharedBufferSize` method (lines 2319-2405) is good for debugging but doesn't account for `queryEntityMetadata`, `queryCache`, `queryResults`, or `cellSleepingBuffer` in its breakdown iteration. Some buffers are tallied via the generic loop, others are explicitly named — the hybrid approach means new buffers can be silently omitted.
 
-### 3.7 — Config Proxy Overhead
 
-Lines 120-129: The `this.physics` Proxy intercepts every property access with a getter trap. In performance-sensitive code that reads physics config values frequently, this Proxy adds overhead for every read (not just writes). Consider making the Proxy write-only by using a direct object reference for reads.
 
 ---
 
@@ -90,11 +75,10 @@ The entire engine relies on SharedArrayBuffers without Atomics (by design — "a
 
 **Recommendation:** Create a `MEMORY_MODEL.md` or a centralized comment block in Scene.js documenting the ownership table.
 
-### 4.2 — BigInt in Hot Paths
 
-The QuerySystem uses `BigInt` for bitmask operations (`0n`, `1n << BigInt(n)`, `&`, etc.). BigInt operations in JavaScript are **significantly slower** than regular number operations (~10-50x) because they allocate heap objects. The `queryActiveEntities` function, called multiple times per frame from physics and particle workers, generates BigInts every call.
 
-**Recommendation:** Since `MAX_COMPONENTS = 64` and `MAX_ENTITY_TYPES = 64`, you could use two `Uint32` values (lo/hi) to represent 64-bit masks with standard number operations. This would eliminate all BigInt allocations from the hot path.
+
+
 
 ### 4.3 — Per-Frame Active Entity List Rebuild
 
