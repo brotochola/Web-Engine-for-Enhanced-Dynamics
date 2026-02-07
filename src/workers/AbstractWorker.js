@@ -665,11 +665,6 @@ export class AbstractWorker {
     this.isPaused = false;
     this.lastFrameTime = performance.now(); // Reset timing to avoid large delta
 
-    // Reset moving average to avoid pause spike affecting FPS
-    this.frameTimes.fill(16.67);
-    this.frameTimesSum = 16.67 * this.fpsFrameCount;
-    this.frameTimeIndex = 0;
-
     if (!this.usesCustomScheduler) {
       this.gameLoop(true);
     }

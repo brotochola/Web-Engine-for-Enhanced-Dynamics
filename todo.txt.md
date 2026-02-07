@@ -20,14 +20,6 @@
 
 
 
-
-
-### 2.7 — `stampParticleToTile` and `stampParticleToTileMultiply` are 95% Identical
-
-Lines 976-1130 vs 1145-1310 — nearly 170 lines duplicated. Only the inner pixel blending differs (~10 lines).
-
-**Recommendation:** Extract the tile iteration/clipping logic and pass a pixel blending callback or just branch inside the inner loop (the branch predictor will learn the pattern quickly since blend mode is constant per particle).
-
 ---
 
 ## 3. SCENE.JS
