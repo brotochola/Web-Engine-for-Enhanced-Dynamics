@@ -1108,10 +1108,11 @@ class Scene {
 
     // Pre-computed entity data: written by spatial workers during grid rebuild
     // Shared across all spatial workers for neighbor distance calculations
-    const ENTITY_POS_SIZE = this.totalEntityCount * 4; // Float32Array
-    this.buffers.entityPosX = new SharedArrayBuffer(ENTITY_POS_SIZE);
-    this.buffers.entityPosY = new SharedArrayBuffer(ENTITY_POS_SIZE);
-    this.buffers.entityHalfExtent = new SharedArrayBuffer(ENTITY_POS_SIZE);
+    // CACHE OPTIMIZED: Interleaved [x, y, halfExtent, pad] layout (16 bytes per entity)
+    // This ensures all three values per entity are in a single cache line fetch
+    // Access pattern: entityPosData[i * 4 + 0] = x, [i * 4 + 1] = y, [i * 4 + 2] = halfExtent
+    const ENTITY_POS_DATA_SIZE = this.totalEntityCount * 4 * 4; // 4 floats × 4 bytes
+    this.buffers.entityPosData = new SharedArrayBuffer(ENTITY_POS_DATA_SIZE);
 
     // Store grid metadata for workers
     this.gridMetadata = {
@@ -1508,9 +1509,8 @@ class Scene {
         gridBuffer: this.buffers.gridBuffer,
         // Cell sleeping state buffer: written by particle_worker, read by all workers
         cellSleepingBuffer: this.buffers.cellSleepingBuffer,
-        entityPosX: this.buffers.entityPosX,
-        entityPosY: this.buffers.entityPosY,
-        entityHalfExtent: this.buffers.entityHalfExtent,
+        // Interleaved entity position data: [x, y, halfExtent, pad] per entity (16 bytes each)
+        entityPosData: this.buffers.entityPosData,
         // Worker stat buffers
         rendererStats: this.buffers.rendererStats,
         particleStats: this.buffers.particleStats,
@@ -2407,9 +2407,7 @@ class Scene {
 
     // Spatial grid buffers
     breakdown.gridBuffer = getBufferSize(this.buffers.gridBuffer);
-    breakdown.entityPosX = getBufferSize(this.buffers.entityPosX);
-    breakdown.entityPosY = getBufferSize(this.buffers.entityPosY);
-    breakdown.entityHalfExtent = getBufferSize(this.buffers.entityHalfExtent);
+    breakdown.entityPosData = getBufferSize(this.buffers.entityPosData);
 
     // Worker stat buffers
     breakdown.rendererStats = getBufferSize(this.buffers.rendererStats);

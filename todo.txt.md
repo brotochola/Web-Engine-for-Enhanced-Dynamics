@@ -101,16 +101,6 @@ Engineering Analysis: spatial_worker.js
 
 
 
-2.4 — Sleeping Entity Optimization Is Disabled
-spatial_worker.js
-Lines 612-614
-          if (false && allCellsSleeping && cellSleepingData) {            // DISABLED - Using AWAKE path for all entities to ensure correct partitioning          } else {
-The sleeping cell optimization is completely disabled via if (false && ...). This means:
-All the work to compute hasValidCellRange, call getEntityCellRange(), call areAllEntityCellsSleeping() (which loops through cells) — all of this is dead computation. The result (allCellsSleeping) is never used.
-Lines 558-585 are ~30 lines of pure overhead for every entity with a visual range, every frame.
-Fix: Either re-enable the optimization or remove the dead code entirely. Currently you're paying the cost of the sleeping check AND doing the full path anyway.
-
-
 2.5 — Visual-Only Buffer Copy
 spatial_worker.js
 Lines 696-698
@@ -124,6 +114,8 @@ Lines 650-654
                 const bX = entityPosX[entityB];                const bY = entityPosY[entityB];                const dxAB = bX - myX;                const dyAB = bY - myY;                const distSq = dxAB * dxAB + dyAB * dyAB;
 entityB is an arbitrary entity ID — the access pattern into entityPosX[entityB] and entityPosY[entityB] is essentially random. Two separate arrays mean two cache misses for each candidate neighbor.
 Better: Interleave positions into a single Float32Array with [x0, y0, x1, y1, ...] layout. Then entityPosXY[entityB * 2] and entityPosXY[entityB * 2 + 1] are in the same cache line. This is a classic SoA → AoS trade-off for the position data specifically, where the access pattern is always "read X and Y together."
+
+
 3.2 — entityHalfExtent is a Third Array
 After reading entityPosX[entityB] and entityPosY[entityB], line 660 reads entityHalfExtent[entityB] — a third random-access cache miss for each candidate. If positions were interleaved as [x, y, halfExtent, pad] (stride 4, 16 bytes = one cache line per entity), all three values would be in a single cache line fetch.
 3.3 — Grid Buffer Access Pattern
