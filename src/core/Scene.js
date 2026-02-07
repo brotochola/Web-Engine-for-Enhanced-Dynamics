@@ -2173,6 +2173,7 @@ class Scene {
       this.workers.physics,
       this.workers.renderer,
       this.workers.particle,
+      this.workers.navigation,
     ];
 
     allWorkers.forEach((worker) => {
