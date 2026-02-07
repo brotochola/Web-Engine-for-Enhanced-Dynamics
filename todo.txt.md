@@ -188,51 +188,7 @@ This writes two static properties (`_inputData`, `_keyIndexMap`) every frame. Th
 
 ---
 
-## 2. PERFORMANCE & ALGORITHMIC
 
-### 2.1 — Double Cantor Pair Per Collision
-
-```438:439:src/workers/logic_worker.js
-      const keyAB = this.getCollisionKey(entityA, entityB);
-      const keyBA = this.getCollisionKey(entityB, entityA);
-```
-
-For every collision pair, **two** Cantor pair calculations are done, and **two** keys are stored in both Sets and the Map. This doubles the storage cost, the `.has()` lookup cost, and the `.add()` cost. The reason is to support bidirectional lookups (entityA→entityB and entityB→entityA).
-
-**Better approach:** Always normalize the pair to `(min, max)` ordering. Then you only need one key per collision. When calling callbacks, you still call both `objA.onCollisionEnter(entityB)` and `objB.onCollisionEnter(entityA)` — but the tracking only needs one key. This halves the Set sizes and Map entries.
-
-### 2.2 — `getCollisionKey` is a Method Call
-
-```401:403:src/workers/logic_worker.js
-  getCollisionKey(a, b) {
-    return cantorPair(a, b);
-  }
-```
-
-This is an instance method that delegates to an imported function. In the collision processing loop, this adds method dispatch overhead (prototype chain lookup → function call → another function call). V8 can inline this, but only if the callsite is monomorphic and hot enough. Just inline `cantorPair` directly or use the formula directly in `processCollisionCallbacks`.
-
-### 2.3 — Collision Partitioning Via Modulo
-
-```432:434:src/workers/logic_worker.js
-      if (entityA % this.totalLogicWorkers !== this.workerIndex) {
-        continue;
-      }
-```
-
-This means every logic worker reads **all** collision pairs from the shared buffer, computes the Cantor pair keys, then skips most of them. With 4 logic workers and 10,000 collision pairs, each worker reads 10,000 pairs but processes ~2,500. The wasted reads touch `collisionData[1 + i*2]` and `collisionData[1 + i*2 + 1]` sequentially, which is cache-friendly, so the waste is "only" in the modulo check and branch.
-
-**Better:** Pre-partition the collision data in the physics worker (group by `entityA % workerCount`), so each logic worker can jump to its section and skip the rest. However, this would add complexity to the physics worker. The current approach is pragmatic.
-
-### 2.4 — `processCollisionCallbacks` Before Entity Tick
-
-```277:280:src/workers/logic_worker.js
-    if (this.collisionData) {
-      this.processCollisionCallbacks();
-      this.systemsExecutedThisFrame++; // Collision system executed
-    }
-```
-
-Collision callbacks are processed **before** the job-stealing entity tick loop. This is sequential — one worker might finish collision processing quickly while others are still working. Since collisions are independent of entity ticks (they use last frame's physics data), this is fine architecturally. But it does mean the collision processing can't overlap with entity ticks — it's a serial phase that adds latency.
 
 ### 2.5 — `this.gameObjects[entityIndex]` Lookup in Hot Loop
 

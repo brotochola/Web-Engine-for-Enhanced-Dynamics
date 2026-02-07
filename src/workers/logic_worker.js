@@ -176,6 +176,10 @@ class LogicWorker extends AbstractWorker {
       DecorationPool.initialize(maxDecorations);
     }
 
+    // Pre-allocate gameObjects array to keep V8 in dense/packed mode
+    // Without this, sparse indices cause V8 to switch to dictionary mode (hash table lookups)
+    this.gameObjects = new Array(this.globalEntityCount).fill(null);
+
     // Create GameObject instances
     this.createGameObjectInstances();
 
