@@ -147,6 +147,11 @@ class PhysicsWorker extends AbstractWorker {
 
     // Use utility function for validation and merging
     this.settings = validatePhysicsConfig(this.settings, this.config.physics);
+
+    // Cache derived values that don't change during the scene
+    const wakeUpThreshold = this.config.physics.wakeUpThreshold ?? 0.1;
+    this._wakeUpThresholdSq = wakeUpThreshold * wakeUpThreshold;
+    this._sleepThreshold = this.config.physics.sleepThreshold ?? 0.01;
   }
 
   handleCustomMessage(data) {
@@ -393,8 +398,8 @@ class PhysicsWorker extends AbstractWorker {
     const sleeping = RigidBody.sleeping;
     const maxAcc = RigidBody.maxAcc;
 
-    const sleepThreshold = this.config.physics.sleepThreshold;
-    const wakeUpThreshold = this.config.physics.wakeUpThreshold;
+    // Use cached values (calculated once in applyPhysicsConfig, not per-frame)
+    const wakeUpThresholdSq = this._wakeUpThresholdSq;
     const stillnessTime = RigidBody.stillnessTime;
 
     const gravityScale = dtRatio * dtRatio;
@@ -434,7 +439,8 @@ class PhysicsWorker extends AbstractWorker {
       // Wake-up check (only for non-static, non-sleeping entities that passed the early-out)
       // Note: This is now unreachable for sleeping entities, but kept for entities
       // that might have been woken by collision in previous frame
-      if (accX > wakeUpThreshold || accY > wakeUpThreshold) {
+      // Use squared comparison to handle negative accelerations without Math.abs overhead
+      if (accX * accX > wakeUpThresholdSq || accY * accY > wakeUpThresholdSq) {
         sleeping[i] = 0;
         stillnessTime[i] = 0;
       }
