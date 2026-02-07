@@ -23,7 +23,7 @@ import { Flash } from '../core/Flash.js';
 import { AbstractWorker } from './AbstractWorker.js';
 import { Grid } from '../core/Grid.js';
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from './workers-utils.js';
-import { cantorPair, cantorUnpair, _cantorResult } from '../core/utils.js';
+import { cantorUnpair, _cantorResult } from '../core/utils.js';
 
 // Note: Core engine classes (GameObject, Mouse, Keyboard, etc.) and components
 // (Transform, RigidBody, etc.) are now registered automatically by AbstractWorker
@@ -393,107 +393,88 @@ class LogicWorker extends AbstractWorker {
   }
 
   /**
-   * Generate a unique numeric key for a collision pair using Cantor pairing function
-   * This eliminates string allocation and GC pressure
-   * @param {number} a - First entity ID
-   * @param {number} b - Second entity ID
-   * @returns {number} - Unique numeric key
-   */
-  getCollisionKey(a, b) {
-    return cantorPair(a, b);
-  }
-
-  /**
    * Process collision callbacks (Unity-style)
    * Determines Enter/Stay/Exit states and calls appropriate callbacks
-   * Partitions collision processing across workers using modulo (entityA % workers == myIndex)
-   * OPTIMIZED: Uses numeric keys instead of string concatenation for zero-allocation tracking
+   * Partitions collision processing across workers using modulo (minEntity % workers == myIndex)
+   * OPTIMIZED: Normalized (min,max) ordering - ONE key per collision pair (half the storage)
+   * ZERO ALLOC: Cantor pairing + inline min/max comparison, no string concat
    */
   processCollisionCallbacks() {
     // Read collision pairs from physics worker
     const pairCount = this.collisionData[0];
 
-    // DEBUG: Log collision processing
-    if (this.frameCount % 60 === 0 && pairCount > 0 && this.workerIndex === 0) {
-      // console.log(
-      //   `[Logic ${this.workerIndex}] Frame ${this.frameCount}: Processing ${pairCount} collision pairs`
-      // );
-    }
-
     // Clear current collisions set
     this.currentCollisions.clear();
 
+    // Cache for hot loop
+    const collisionData = this.collisionData;
+    const totalWorkers = this.totalLogicWorkers;
+    const myIndex = this.workerIndex;
+    const gameObjects = this.gameObjects;
+    const prevCollisions = this.previousCollisions;
+    const currCollisions = this.currentCollisions;
+
     // Read all collision pairs and populate current collisions
     for (let i = 0; i < pairCount; i++) {
-      const entityA = this.collisionData[1 + i * 2];
-      const entityB = this.collisionData[1 + i * 2 + 1];
+      const rawA = collisionData[1 + i * 2];
+      const rawB = collisionData[1 + i * 2 + 1];
 
-      // Partition collision processing across workers using modulo
-      // This avoids duplicate processing across multiple logic workers
-      if (entityA % this.totalLogicWorkers !== this.workerIndex) {
+      // Normalize to (min, max) - ensures consistent key regardless of collision order
+      // Branch-free would be slower here; ternary is ~2 cycles
+      const minE = rawA < rawB ? rawA : rawB;
+      const maxE = rawA < rawB ? rawB : rawA;
+
+      // Partition by minEntity for deterministic worker assignment
+      // Same entity pair always handled by same worker (Enter + Stay + Exit)
+      if (minE % totalWorkers !== myIndex) {
         continue;
       }
 
-      // Create unique numeric keys (both directions for easy lookup)
-      // NO STRING ALLOCATION - uses Cantor pairing function
-      const keyAB = this.getCollisionKey(entityA, entityB);
-      const keyBA = this.getCollisionKey(entityB, entityA);
+      // Single normalized key per collision pair (half the storage of bidirectional)
+      // Cantor pairing: key = (a + b) * (a + b + 1) / 2 + b
+      const sum = minE + maxE;
+      const key = ((sum * (sum + 1)) >> 1) + maxE;
 
-      this.currentCollisions.add(keyAB);
-      this.currentCollisions.add(keyBA);
+      currCollisions.add(key);
 
-      // Determine if this is a new collision or continuing
-      const isNewCollision = !this.previousCollisions.has(keyAB);
+      // Check previous frame - was this pair already colliding?
+      const isNewCollision = !prevCollisions.has(key);
 
-      const objA = this.gameObjects[entityA];
-      const objB = this.gameObjects[entityB];
+      const objA = gameObjects[rawA];
+      const objB = gameObjects[rawB];
 
       if (isNewCollision) {
         // OnCollisionEnter - First frame of collision
-        // Call BOTH entities' callbacks since physics only stores pairs once (i < j)
-        if (objA && objA.onCollisionEnter) {
-          objA.onCollisionEnter(entityB);
-        }
-        if (objB && objB.onCollisionEnter) {
-          objB.onCollisionEnter(entityA);
-        }
+        if (objA && objA.onCollisionEnter) objA.onCollisionEnter(rawB);
+        if (objB && objB.onCollisionEnter) objB.onCollisionEnter(rawA);
       } else {
         // OnCollisionStay - Continuous collision
-        if (objA && objA.onCollisionStay) {
-          objA.onCollisionStay(entityB);
-        }
-        if (objB && objB.onCollisionStay) {
-          objB.onCollisionStay(entityA);
-        }
+        if (objA && objA.onCollisionStay) objA.onCollisionStay(rawB);
+        if (objB && objB.onCollisionStay) objB.onCollisionStay(rawA);
       }
     }
 
     // Check for collisions that ended (OnCollisionExit)
-    // Uses cantorUnpair for O(1) reverse lookup - no Map needed (zero GC)
-    for (const prevKey of this.previousCollisions) {
-      if (!this.currentCollisions.has(prevKey)) {
-        // Recover entity indices using inverse Cantor function (zero allocation)
+    // cantorUnpair recovers (min, max) from normalized key - zero allocation
+    for (const prevKey of prevCollisions) {
+      if (!currCollisions.has(prevKey)) {
+        // Inverse Cantor: recover (minEntity, maxEntity) from key
         cantorUnpair(prevKey, _cantorResult);
-        const entityA = _cantorResult.a;
-        const entityB = _cantorResult.b;
+        const minE = _cantorResult.a;
+        const maxE = _cantorResult.b;
 
-        // Only process if this worker "owns" entityA (using same partitioning)
-        if (entityA % this.totalLogicWorkers === this.workerIndex) {
-          const objA = this.gameObjects[entityA];
-          const objB = this.gameObjects[entityB];
+        // Same partitioning as entry path (minEntity % workers)
+        if (minE % totalWorkers === myIndex) {
+          const objA = gameObjects[minE];
+          const objB = gameObjects[maxE];
 
-          // Call BOTH entities' callbacks
-          if (objA && objA.onCollisionExit) {
-            objA.onCollisionExit(entityB);
-          }
-          if (objB && objB.onCollisionExit) {
-            objB.onCollisionExit(entityA);
-          }
+          if (objA && objA.onCollisionExit) objA.onCollisionExit(maxE);
+          if (objB && objB.onCollisionExit) objB.onCollisionExit(minE);
         }
       }
     }
 
-    // Swap current and previous for next frame
+    // Swap current and previous for next frame (no allocation)
     const temp = this.previousCollisions;
     this.previousCollisions = this.currentCollisions;
     this.currentCollisions = temp;
