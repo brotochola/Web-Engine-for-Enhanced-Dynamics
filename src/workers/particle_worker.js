@@ -1118,8 +1118,9 @@ class ParticleWorker extends AbstractWorker {
             // Sample from source texture (nearest-neighbor)
             const srcOffset = (srcRowOffset + srcX) * 4;
 
-            // Apply particle alpha to texture alpha
-            const srcA = textureRgba[srcOffset + 3] * alpha;
+            // Apply particle alpha to texture alpha (fixed-point: alpha * 256)
+            const texAlpha = textureRgba[srcOffset + 3];
+            const srcA = (texAlpha * alpha) | 0; // 0-255 range
 
             // Skip fully transparent pixels
             if (srcA < 1) continue;
@@ -1132,24 +1133,25 @@ class ParticleWorker extends AbstractWorker {
             // Calculate destination offset in tile buffer
             const dstOffset = dstRowOffset + dstX * 4;
 
-            // Apply tint to source color (multiply blend) - use bitwise for speed
-            const finalR = ((srcR * tintR) / 255) | 0;
-            const finalG = ((srcG * tintG) / 255) | 0;
-            const finalB = ((srcB * tintB) / 255) | 0;
+            // Apply tint to source color - OPTIMIZED: >>8 instead of /255 (~2x faster)
+            const finalR = (srcR * tintR + 127) >> 8;
+            const finalG = (srcG * tintG + 127) >> 8;
+            const finalB = (srcB * tintB + 127) >> 8;
 
-            // Alpha blending with existing tile content
-            const srcAlphaNorm = srcA / 255;
-            const invSrcAlpha = 1 - srcAlphaNorm;
+            // OPTIMIZED: Integer-only alpha blending (no floating point)
+            // Formula: dst + ((src - dst) * alpha + 127) >> 8
+            const invSrcA = 255 - srcA;
+            const dstR = bloodTiles[dstOffset];
+            const dstG = bloodTiles[dstOffset + 1];
+            const dstB = bloodTiles[dstOffset + 2];
+            const dstA = bloodTiles[dstOffset + 3];
 
-            // Blend colors (bitwise truncation)
-            bloodTiles[dstOffset] =
-              (finalR * srcAlphaNorm + bloodTiles[dstOffset] * invSrcAlpha) | 0;
-            bloodTiles[dstOffset + 1] =
-              (finalG * srcAlphaNorm + bloodTiles[dstOffset + 1] * invSrcAlpha) | 0;
-            bloodTiles[dstOffset + 2] =
-              (finalB * srcAlphaNorm + bloodTiles[dstOffset + 2] * invSrcAlpha) | 0;
-            // Alpha: combine using "over" operator
-            bloodTiles[dstOffset + 3] = (srcA + bloodTiles[dstOffset + 3] * invSrcAlpha) | 0;
+            // Blend colors using integer math
+            bloodTiles[dstOffset] = dstR + (((finalR - dstR) * srcA + 127) >> 8);
+            bloodTiles[dstOffset + 1] = dstG + (((finalG - dstG) * srcA + 127) >> 8);
+            bloodTiles[dstOffset + 2] = dstB + (((finalB - dstB) * srcA + 127) >> 8);
+            // Alpha: combine using "over" operator (integer version)
+            bloodTiles[dstOffset + 3] = srcA + ((dstA * invSrcA + 127) >> 8);
           }
         }
 
@@ -1296,10 +1298,10 @@ class ParticleWorker extends AbstractWorker {
             // Skip fully transparent pixels
             if (texAlpha < 1) continue;
 
-            // Apply tint to source color
-            const tintedR = ((srcR * tintR) / 255) | 0;
-            const tintedG = ((srcG * tintG) / 255) | 0;
-            const tintedB = ((srcB * tintB) / 255) | 0;
+            // Apply tint to source color - OPTIMIZED: >>8 instead of /255 (~2x faster)
+            const tintedR = (srcR * tintR + 127) >> 8;
+            const tintedG = (srcG * tintG + 127) >> 8;
+            const tintedB = (srcB * tintB + 127) >> 8;
 
             // MULTIPLY BLEND: darkness of source = opacity of darkening effect
             // Calculate luminance (0-255): white=255, black=0
@@ -1309,7 +1311,8 @@ class ParticleWorker extends AbstractWorker {
             const darkness = 255 - luminance;
 
             // Effective alpha = texture alpha * particle alpha * darkness
-            const effectiveAlpha = ((texAlpha * alpha * darkness) / 255) | 0;
+            // OPTIMIZED: Integer-only calculation
+            const effectiveAlpha = (((texAlpha * darkness) >> 8) * alpha) | 0;
 
             // Skip light pixels (effectively transparent in multiply)
             if (effectiveAlpha < 2) continue;
@@ -1317,19 +1320,19 @@ class ParticleWorker extends AbstractWorker {
             // Calculate destination offset
             const dstOffset = dstRowOffset + dstX * 4;
 
-            // Get destination alpha
+            // OPTIMIZED: Integer-only alpha blending (no floating point)
+            // For multiply blend with black (0), formula simplifies to: dst * (255 - alpha) / 255
+            const invEffectiveAlpha = 255 - effectiveAlpha;
+            const dstR = bloodTiles[dstOffset];
+            const dstG = bloodTiles[dstOffset + 1];
+            const dstB = bloodTiles[dstOffset + 2];
             const dstA = bloodTiles[dstOffset + 3];
 
-            // Simple multiply simulation: write BLACK with darkness-based alpha
-            // When alpha-blended over the world, black darkens it proportionally
-            const srcAlphaNorm = effectiveAlpha / 255;
-            const invSrcAlpha = 1 - srcAlphaNorm;
-
-            // Blend black (0) with existing content
-            bloodTiles[dstOffset] = (bloodTiles[dstOffset] * invSrcAlpha) | 0;
-            bloodTiles[dstOffset + 1] = (bloodTiles[dstOffset + 1] * invSrcAlpha) | 0;
-            bloodTiles[dstOffset + 2] = (bloodTiles[dstOffset + 2] * invSrcAlpha) | 0;
-            bloodTiles[dstOffset + 3] = (effectiveAlpha + dstA * invSrcAlpha) | 0;
+            // Blend black (0) with existing content using integer math
+            bloodTiles[dstOffset] = (dstR * invEffectiveAlpha + 127) >> 8;
+            bloodTiles[dstOffset + 1] = (dstG * invEffectiveAlpha + 127) >> 8;
+            bloodTiles[dstOffset + 2] = (dstB * invEffectiveAlpha + 127) >> 8;
+            bloodTiles[dstOffset + 3] = effectiveAlpha + ((dstA * invEffectiveAlpha + 127) >> 8);
           }
         }
 

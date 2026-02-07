@@ -21,11 +21,6 @@
 
 
 
-### 2.6 — Decal Stamping: Per-Pixel Division
-
-Lines 1092-1122: The inner stamping loop does `srcA / 255`, `(srcR * tintR) / 255`, and `(finalR * srcAlphaNorm + bloodTiles[dstOffset] * invSrcAlpha)` per pixel. These divisions and multiplications dominate the stamping cost.
-
-**Recommendation:** Use integer-only blending: `(srcR * tintR + 127) >> 8` instead of `(srcR * tintR) / 255 | 0`. The `>> 8` approximation (divides by 256) is ~2x faster and visually indistinguishable. For alpha blending, use fixed-point: `alpha_fixed = (srcA * 257 + 256) >> 16` gives exact division by 255 using only integer ops.
 
 ### 2.7 — `stampParticleToTile` and `stampParticleToTileMultiply` are 95% Identical
 
