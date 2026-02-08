@@ -2663,13 +2663,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       actualSprite.anchorX = anchorX[i];
       actualSprite.anchorY = anchorY[i];
 
-      // Rotation: base rotation + sway animation (if enabled)
-      // if (sway[i]) {
-      //   actualSprite.rotation =
-      //     rotation[i] + Math.sin(this._swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
-      // } else {
       actualSprite.rotation = rotation[i];
-      // }
 
       // Update texture if it changed
       // Note: tid >= 0 is valid (0 is a valid animation index)
