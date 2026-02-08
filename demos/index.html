@@ -33,7 +33,7 @@
     import { PredatorScene } from '/demos/scenes/PredatorScene.js';
     import { BallsScene } from '/demos/scenes/BallsScene.js';
     import { BallsAndRectanglesScene } from '/demos/scenes/BallsAndRectanglesScene.js';
-    import { BichosScene } from '/demos/scenes/BichosScene.js';
+    import { BichosScene } from '/demos/scenes/bichosScene.js';
 
     // Destructure what we need from WEED
     const { GameEngine } = WEED;
@@ -61,7 +61,7 @@
     }
 
     // Load the Predator scene by default
-    await game.loadScene(BichosScene);
+    await game.loadScene(PredatorScene);
 
     console.log('✅ Scene loaded successfully!');
     console.log('💡 Debug UI: Press [H] to toggle, number keys for visual aids');
