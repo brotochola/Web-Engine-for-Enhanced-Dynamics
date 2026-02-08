@@ -244,33 +244,10 @@ The function call overhead (`checkScreenVisibility` as a method) is probably the
 
 
 
-### 4.3 — `collisionPairCache` Leak Risk
-
-```520:520:src/workers/logic_worker.js
-        this.collisionPairCache.delete(prevKey);
-```
-
-The `collisionPairCache` is only cleaned up when a collision exits. If an entity is despawned while in a collision (without the collision naturally ending), the cache entry is never deleted. Over time, this could leak entries. The impact depends on whether physics continues reporting collision pairs for despawned entities (it shouldn't, since `active[i]` would be 0).
-
----
 
 ## 5. DEV EXPERIENCE
 
-### 5.1 — Heavy Commented-Out Debug Code
 
-There are ~20 commented-out `console.log` statements throughout the file. While these don't affect runtime, they clutter the code and make it harder to read. Consider a proper logging system with log levels (e.g., `this.reportLog()` which already exists in AbstractWorker).
-
-### 5.2 — `systemsExecutedThisFrame` Counter Is Misleading
-
-```279:279:src/workers/logic_worker.js
-      this.systemsExecutedThisFrame++; // Collision system executed
-```
-
-```367:367:src/workers/logic_worker.js
-      this.systemsExecutedThisFrame++; // Entity tick system executed
-```
-
-This will always be 1 or 2 (collision + tick). It's not a useful metric — it doesn't tell you how many different system types were executed, just "did collision processing happen?" and "did we process at least one job?". The stat in the debug UI (`SYSTEMS_EXECUTED`) gives a false impression of varying workload.
 
 ### 5.3 — `Mouse.updatePreviousValues()` at End of Frame
 
@@ -281,23 +258,6 @@ This will always be 1 or 2 (collision + tick). It's not a useful metric — it d
 Every logic worker calls this on the same static `Mouse` class. If there are 4 logic workers, this runs 4 times per frame on the same shared state. It's idempotent (writes the same values), but it's redundant work and could cause subtle issues if `Mouse.prevX` is read by one worker while being written by another (torn read on float values in SAB).
 
 ---
-
-## 6. SUMMARY: PRIORITY RANKING
-
-| Priority | Issue | Impact | Effort |
-|----------|-------|--------|--------|
-| 🔴 **HIGH** | `cantorPair` produces non-SMI numbers → Set stores heap-boxed doubles | GC pressure proportional to collision count | Medium (switch to marker array or normalized pair indexing) |
-| 🔴 **HIGH** | Double Cantor pair per collision (AB + BA) doubles all collision tracking costs | 2× Set size, 2× Map entries, 2× lookups | Easy (normalize to min/max ordering) |
-| 🟡 **MED** | `this.gameObjects[]` likely in dictionary mode due to sparse indices | Hash table lookup per entity per frame | Trivial (pre-allocate with `.fill(null)`) |
-| 🟡 **MED** | `updateNeighbors()` writes same pointer to every instance every frame | N redundant writes + method call overhead | Easy (set once, inline count read) |
-| 🟡 **MED** | `Keyboard.initialize()` called every frame unnecessarily | 2 redundant writes per frame | Trivial |
-| 🟡 **MED** | Tick decimation check overhead for non-decimated entities | 3 checks × N entities, always false | Medium (separate entity lists or typed array lookup) |
-| 🟢 **LOW** | `collisionPairCache` never cleaned on despawn | Slow Map leak | Low |
-| 🟢 **LOW** | `Mouse.updatePreviousValues()` called by all workers | Redundant writes, potential torn reads | Trivial (only call on worker 0) |
-| 🟢 **LOW** | Array destructuring `[entityA, entityB] = pair` in exit loop | Minor GC per exit event | Trivial |
-| 🟢 **LOW** | Commented-out debug logging clutters code | Dev experience | Cleanup pass |
-
-The **biggest wins** would be normalizing collision pairs to single-direction keys (halves all collision tracking work) and replacing the `Set<number>` with a flat typed-array marker system (eliminates the heap-number boxing issue and removes `Set.clear()` cost entirely).
 
 
 -----------------
