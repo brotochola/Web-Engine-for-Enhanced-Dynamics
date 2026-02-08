@@ -1176,6 +1176,7 @@ class PixiRenderer extends AbstractWorker {
    * Update decal tile textures for any dirty tiles
    * Called each frame to check for tiles modified by particle_worker
    * Uses fire-and-forget createImageBitmap for async texture updates
+   * Optimized to reuse buffers, ImageData, and textures to reduce GC pressure
    */
   updateDecalTiles() {
     if (!this.decalsEnabled) return;
@@ -1199,11 +1200,22 @@ class PixiRenderer extends AbstractWorker {
         bytesPerTile
       );
 
-      // Create a non-shared copy for ImageData (ImageData can't use SharedArrayBuffer)
-      const tileRGBA = new Uint8ClampedArray(tileRGBAShared);
+      // Reuse pre-allocated buffer and ImageData if available
+      let tileRGBA = this._decalCopyBuffers?.[tileIndex];
+      let imageData = this._decalImageDatas?.[tileIndex];
 
-      // Create ImageData from the tile's RGBA buffer (uses pixel size)
-      const imageData = new ImageData(tileRGBA, tilePixelSize, tilePixelSize);
+      if (!tileRGBA) {
+        // Lazy init on first use - allocate once per tile, reuse forever
+        this._decalCopyBuffers ??= [];
+        this._decalImageDatas ??= [];
+        tileRGBA = new Uint8ClampedArray(bytesPerTile);
+        imageData = new ImageData(tileRGBA, tilePixelSize, tilePixelSize);
+        this._decalCopyBuffers[tileIndex] = tileRGBA;
+        this._decalImageDatas[tileIndex] = imageData;
+      }
+
+      // Copy data into reusable buffer
+      tileRGBA.set(tileRGBAShared);
 
       // Fire-and-forget: create ImageBitmap and update texture
       // The tile will appear on the next frame after the bitmap is ready
@@ -1211,9 +1223,14 @@ class PixiRenderer extends AbstractWorker {
       const sprite = this.decalTileSprites[tileIndex];
 
       createImageBitmap(imageData).then((bitmap) => {
-        // Create or update texture source
-        const source = new PIXI.ImageSource({ resource: bitmap });
-        sprite.texture = new PIXI.Texture({ source });
+        // Reuse existing texture source instead of creating new ones
+        if (sprite.texture !== PIXI.Texture.EMPTY && sprite.texture.source) {
+          sprite.texture.source.resource = bitmap;
+          sprite.texture.source.update();
+        } else {
+          const source = new PIXI.ImageSource({ resource: bitmap });
+          sprite.texture = new PIXI.Texture({ source });
+        }
         sprite.visible = true; // Show the tile now that it has content
       });
     }
