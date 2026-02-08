@@ -30,19 +30,6 @@ Creates a view, a copy, and an `ImageData` per dirty tile per frame. Also create
 
 ## 2. Performance
 
-### 2.1 🔴 Duplicate Light Iteration (Major)
-
-`updateLighting()` and `updateLightGlowSprites()` **both**:
-1. Call `this.queryActiveEntities([LightEmitter])` — same query, same result
-2. Reset `_lightPoolSize = 0`
-3. Loop through all light entities
-4. Perform identical viewport culling (`influenceRadius = 10 * sqrtLightIntensity[i]`)
-5. Build the sorted `_lightPool`
-6. Sort by distance to camera center
-
-This means the engine iterates all lights, culls, sorts, and processes them **twice** every frame for functionally the same data. On a scene with 500 LightEmitter entities, that's ~1000 wasted iterations + two sorts.
-
-**Fix**: Compute the sorted visible light list once in `update()` and pass it to both methods. Or merge them into a single pass.
 
 ### 2.2 🔴 Particle Loop Iterates ALL Slots (Major)
 

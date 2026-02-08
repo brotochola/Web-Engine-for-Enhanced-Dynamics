@@ -2361,6 +2361,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.particleSprites = new Array(this.maxParticles).fill(null);
     this.particleSpritePoolIndices = new Uint16Array(this.maxParticles).fill(0xFFFF);
     this.particleAppliedTextureId = new Uint16Array(this.maxParticles).fill(0xFFFF); // 0xFFFF = no texture applied
+    this.particleSpriteCount = 0; // Number of sprites currently allocated for particles
 
     console.log(
       `PIXI WORKER: Particle system initialized (${this.maxParticles} slots, using central particle pool)`
@@ -2394,6 +2395,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     let visibleParticleCount = 0;
 
+    // OPTIMIZATION: Calculate expected active count from free list for early exit
+    // activeCount = maxParticles - freeSlots
+    const freeListTop = this.particleFreeListTop;
+    const expectedActive = freeListTop ? this.maxParticles - freeListTop[0] : this.maxParticles;
+    let activeFound = 0;
+    let spritesProcessed = 0;
+    const totalSprites = this.particleSpriteCount;
+
     for (let i = 0; i < this.maxParticles; i++) {
       let sprite = this.particleSprites[i];
       const poolIndex = this.particleSpritePoolIndices[i];
@@ -2412,9 +2421,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           this.particleSpritePoolIndices[i] = 0xFFFF;
           // Reset applied texture tracking (no string allocation, no delete deoptimization)
           this.particleAppliedTextureId[i] = 0xFFFF;
+          this.particleSpriteCount--;
+          spritesProcessed++;
+        }
+        // Track active particles for early exit (even if off-screen)
+        if (active[i]) {
+          activeFound++;
         }
         continue;
       }
+
+      // Track active+visible particles for early exit
+      activeFound++;
+      spritesProcessed++;
 
       // Acquire sprite from central pool when particle becomes active and visible
       if (!sprite) {
@@ -2422,6 +2441,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         sprite = particle;
         this.particleSprites[i] = particle;
         this.particleSpritePoolIndices[i] = index;
+        this.particleSpriteCount++;
 
         // Add to container if Y-sorting is disabled
         if (!this.ySorting) {
@@ -2491,6 +2511,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           sprite.visible = true;
         }
       }
+
+      // OPTIMIZATION: Early exit when we've found all active particles AND processed all sprites
+      // This avoids iterating 10000 slots when only 200 are active
+      // We must process all sprites to ensure inactive particles get their sprites released
+      if (activeFound >= expectedActive && spritesProcessed >= totalSprites) {
+        break;
+      }
     }
 
     // Store visible particle count for reporting
@@ -2508,6 +2535,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.decorationSprites = new Array(this.maxDecorations).fill(null);
     this.decorationSpritePoolIndices = new Uint16Array(this.maxDecorations).fill(0xFFFF);
     this.decorationSpriteTextureIds = new Uint16Array(this.maxDecorations);
+    this.decorationSpriteCount = 0; // Track allocated sprites for cleanup
 
     console.log(
       `PIXI WORKER: Decoration system initialized (${this.maxDecorations} slots, using central particle pool)`
@@ -2555,7 +2583,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // else zoom >= fadeStartZoom: alphaMultiplier = 1.0 (already set)
 
     // Cache array references
-    const active = DecorationComponent.active;
+    const active = DecorationComponent.active
     const x = DecorationComponent.x;
     const y = DecorationComponent.y;
     const offsetX = DecorationComponent.offsetX;
@@ -3193,6 +3221,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (data.buffers.componentData.ParticleComponent && this.maxParticles > 0) {
       console.log(`PIXI WORKER: ParticleComponent initialized for ${this.maxParticles} particles`);
     }
+
+    // Initialize particle free list for early-exit optimization
+    // freeListTop tells us how many slots are free, so activeCount = maxParticles - freeListTop[0]
+    this.particleFreeListTop = data.particleFreeListTop
+      ? new Int32Array(data.particleFreeListTop)
+      : null;
 
     // Note: DecorationComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
     this.maxDecorations = data.maxDecorations || 0;
