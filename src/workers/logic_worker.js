@@ -389,7 +389,7 @@ class LogicWorker extends AbstractWorker {
 
     // Update previous mouse values for next frame
     // This allows entities to access Mouse.prevX, Mouse.prevY, Mouse.prevButton0 in their tick() methods
-    Mouse.updatePreviousValues();
+    if (this.workerIndex === 0) Mouse.updatePreviousValues();
 
   }
 
