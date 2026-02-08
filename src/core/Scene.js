@@ -51,6 +51,7 @@ import {
   LOGIC_STATS,
   NAVIGATION_STATS,
 } from '../workers/workers-utils.js';
+import { ParticleEmitter } from './ParticleEmitter.js';
 
 class Scene {
   // Worker index constants for FrameRate SharedArrayBuffer
@@ -746,6 +747,7 @@ class Scene {
     window.Flash = Flash;
     window.NavGrid = NavGrid;
     window.Grid = Grid;
+    window.DecorationPool = DecorationPool;
 
     console.log(
       `🌍 Exposed ${exposedEntities.length} entity classes and ${componentMap.size} components globally (${initializedCount} with SAB views)`
