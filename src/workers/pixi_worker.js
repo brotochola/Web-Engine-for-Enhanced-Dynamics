@@ -328,7 +328,7 @@ class PixiRenderer extends AbstractWorker {
     this.particleSprites = []; // Array of PIXI.Particle references (indexed 0 to maxParticles-1, null if not active)
     this.particleSpritePoolIndices = null; // Int32Array - Maps particle index to pool index (or -1 if no sprite)
     this.maxParticles = 0; // Number of particle slots
-    this.particleTextureCache = {}; // Cache for particle textures by textureId
+    this.particleAppliedTextureId = null; // Uint16Array - Track last-applied textureId per particle (0xFFFF = none)
 
     // Decoration rendering (separate from entities, static sprites)
     this.decorationSprites = []; // Array of PIXI.Particle references (indexed by decoration, null if not spawned)
@@ -2292,7 +2292,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (proxySheets && Object.keys(proxySheets).length > 0) {
       console.log(`🔗 Creating ${Object.keys(proxySheets).length} proxy spritesheets...`);
 
-      const bigAtlas = this.spritesheets['bigAtlas'];
+      const bigAtlas = this.spritesheets.bigAtlas;
       if (!bigAtlas) {
         console.error('❌ Cannot create proxy sheets: bigAtlas not loaded!');
         return;
@@ -2385,6 +2385,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Initialize particle tracking arrays
     this.particleSprites = new Array(this.maxParticles).fill(null);
     this.particleSpritePoolIndices = new Uint16Array(this.maxParticles).fill(0xFFFF);
+    this.particleAppliedTextureId = new Uint16Array(this.maxParticles).fill(0xFFFF); // 0xFFFF = no texture applied
 
     console.log(
       `PIXI WORKER: Particle system initialized (${this.maxParticles} slots, using central particle pool)`
@@ -2434,8 +2435,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           this.particlePool.release(poolIndex);
           this.particleSprites[i] = null;
           this.particleSpritePoolIndices[i] = 0xFFFF;
-          // Clear texture cache for this particle
-          delete this.particleTextureCache[i + '_' + textureId[i]];
+          // Reset applied texture tracking (no string allocation, no delete deoptimization)
+          this.particleAppliedTextureId[i] = 0xFFFF;
         }
         continue;
       }
@@ -2465,10 +2466,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       sprite.alpha = alpha[i];
       sprite.tint = tint[i];
 
-      // Update texture if needed (check cache)
+      // Update texture if needed (using typed array instead of object cache for zero allocation)
       // Note: tid >= 0 is valid (0 is a valid animation index), only skip for unset (-1 or undefined)
       const tid = textureId[i];
-      if (tid >= 0 && !this.particleTextureCache[i + '_' + tid]) {
+      if (tid >= 0 && this.particleAppliedTextureId[i] !== tid) {
         // Get texture from bigAtlas by animation index
         // Particles use the first frame of the animation (they don't animate)
         const textureName = SpriteSheetRegistry.getAnimationName('bigAtlas', tid);
@@ -2476,10 +2477,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (textureName) {
           // Look up in animations array (contains PIXI.Texture objects)
           // this.textures contains frame names, not animation names
-          const bigAtlas = this.spritesheets['bigAtlas'];
-          if (bigAtlas && bigAtlas.animations[textureName] && bigAtlas.animations[textureName][0]) {
+          const bigAtlas = this.spritesheets.bigAtlas
+          if (bigAtlas?.animations[textureName]?.[0]) {
             sprite.texture = bigAtlas.animations[textureName][0];
-            this.particleTextureCache[i + '_' + tid] = true;
+            this.particleAppliedTextureId[i] = tid;
           }
         }
       }

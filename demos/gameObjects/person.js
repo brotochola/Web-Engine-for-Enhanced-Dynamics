@@ -149,8 +149,8 @@ export class Person extends Lootable {
       vz: { min: -4, max: 0 },
       lifespan: 2000,
       gravity: 0.22,
-      scale: { min: 0.1, max: 0.2 },
-      alpha: { min: 0.4, max: 0.9 },
+      scale: { min: 0.12, max: 0.3 },
+      alpha: { min: 0.66, max: 0.95 },
       tint: { min: 0xaaaaaa, max: 0xffffff },
       stayOnTheFloor: true,
     });
