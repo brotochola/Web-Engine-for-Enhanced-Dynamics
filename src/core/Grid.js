@@ -11,9 +11,10 @@
 //
 // MEMORY LAYOUT:
 // SpatialGridSAB: Fixed cells with [count:Uint8, pad:3, entities[MAX_ENTITIES_PER_CELL]:Uint32]
-// NeighborsSAB:   Fixed per-entity with [totalCount:Int32, collisionCount:Int32, neighbors[MAX_NEIGHBORS]:Int32]
+// NeighborsSAB:   Fixed per-entity with [totalCount:Uint16, collisionCount:Uint16, neighbors[MAX_NEIGHBORS]:Uint16]
 //                 Neighbors are partitioned: [collision candidates..., visual-only neighbors...]
 //                 Physics only iterates collisionCount, logic iterates totalCount
+//                 Uses Uint16 since max entities = 65535 (fits in 16 bits)
 // DistancesSAB:   Fixed per-entity with [dist2[MAX_NEIGHBORS]:Float32]
 //
 // WHY NO DOUBLE BUFFERING FOR NEIGHBORS?
@@ -79,10 +80,11 @@ export class Grid {
   static _gridEntities = null; // Uint32Array view - entities starting at byte 4
 
   // ===== NEIGHBOR DATA (Single Buffer - Row Ownership) =====
-  // Layout per entity: [totalCount:Int32, collisionCount:Int32, neighbors[MAX_NEIGHBORS]:Int32]
+  // Layout per entity: [totalCount:Uint16, collisionCount:Uint16, neighbors[MAX_NEIGHBORS]:Uint16]
   // Neighbors are partitioned: collision candidates first (for physics), then visual-only (for logic)
+  // Uses Uint16 since max entities = 65535 (fits in 16 bits)
   static _neighborBuffer = null; // SharedArrayBuffer
-  static _neighborData = null; // Int32Array view
+  static _neighborData = null; // Uint16Array view
 
   // Layout per entity: [dist2[MAX_NEIGHBORS]:Float32]
   static _distanceBuffer = null; // SharedArrayBuffer
@@ -141,9 +143,10 @@ export class Grid {
     }
 
     // ===== NEIGHBOR DATA (Single Buffer) =====
+    // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     if (buffers.neighborBuffer) {
       Grid._neighborBuffer = buffers.neighborBuffer;
-      Grid._neighborData = new Int32Array(buffers.neighborBuffer);
+      Grid._neighborData = new Uint16Array(buffers.neighborBuffer);
     }
 
     // ===== DISTANCE DATA (Single Buffer) =====

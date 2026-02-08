@@ -214,7 +214,8 @@ class LogicWorker extends AbstractWorker {
         EntityClass.entityType = entityType; // Auto-assigned entity type ID
 
         // Pre-computed typed array of all entity indices for this class
-        EntityClass.entityIndices = new Int32Array(poolSize);
+        // Uses Uint16 since max entities = 65535 (fits in 16 bits)
+        EntityClass.entityIndices = new Uint16Array(poolSize);
         for (let j = 0; j < poolSize; j++) {
           EntityClass.entityIndices[j] = startIndex + j;
         }

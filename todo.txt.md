@@ -243,18 +243,6 @@ The function call overhead (`checkScreenVisibility` as a method) is probably the
 ## 4. CORRECTNESS & ROBUSTNESS
 
 
-### 4.2 — Collision Exit Detection Assumes All Workers See All Collisions
-
-```497:498:src/workers/logic_worker.js
-    for (const prevKey of this.previousCollisions) {
-      if (!this.currentCollisions.has(prevKey)) {
-```
-
-Each worker stores **its own** `previousCollisions` and `currentCollisions`. But collisions are partitioned by `entityA % totalLogicWorkers`. If worker 1 processes collision (A=3, B=7) this frame, it stores both `key(3,7)` and `key(7,3)` in its sets. Next frame, if this collision is gone, worker 1 detects the exit.
-
-But what about `key(7,3)`? Entity 7 is "owned" by a different worker (`7 % 4 = 3`). Worker 1 stored `key(7,3)` in its previous set but also calls `objB.onCollisionExit(entityA)` — so worker 1 calls the exit callback for entity 7 even though entity 7 is "owned" by worker 3. This is correct behavior (the collision pair `(3,7)` was processed by worker 1 which "owns" entityA=3), but it means worker 1 must have a valid `this.gameObjects[7]` to call `objB.onCollisionExit()`.
-
-Since **all workers** create **all GameObjects** (line 181: `this.createGameObjectInstances()`), this works. But it's subtle — if you ever optimized to only create GameObjects for owned entities, collision exit callbacks would silently break.
 
 ### 4.3 — `collisionPairCache` Leak Risk
 

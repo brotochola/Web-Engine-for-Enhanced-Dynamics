@@ -74,8 +74,9 @@ export class GameObject {
     this.globalEntityCount = count;
 
     // Initialize neighbor data if provided
+    // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     if (neighborBuffer) {
-      this.neighborData = new Int32Array(neighborBuffer);
+      this.neighborData = new Uint16Array(neighborBuffer);
     }
 
     // Initialize distance data if provided
@@ -1329,10 +1330,11 @@ export class GameObject {
 
     // Lazy-init neighbors view (once per entity lifetime, zero-copy into SAB)
     // Fixed max length - use neighborCount to know how many are valid
+    // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     if (!this._neighbors) {
-      this._neighbors = new Int32Array(
+      this._neighbors = new Uint16Array(
         Grid.neighborData.buffer,
-        Grid.neighborData.byteOffset + (this._neighborOffset + 2) * 4,
+        Grid.neighborData.byteOffset + (this._neighborOffset + 2) * 2, // Uint16 = 2 bytes
         Grid.maxNeighbors
       );
     }
