@@ -441,9 +441,6 @@ class PixiRenderer extends AbstractWorker {
     this._shadowTransform = new PIXI.Matrix();
     this._lightingTransform = new PIXI.Matrix(); // NDC mesh doesn't really need it but good to have
 
-    // Decoration sway animation (grass/foliage movement)
-    this.swayTime = 0;
-
     // ========================================
     // LIGHT GLOW SPRITE SYSTEM
     // ========================================
@@ -793,7 +790,7 @@ class PixiRenderer extends AbstractWorker {
     const anchorX = SpriteRenderer.anchorX;
     const anchorY = SpriteRenderer.anchorY;
     const renderVisible = SpriteRenderer.renderVisible;
-
+    const isAnimated = SpriteRenderer.isAnimated;
     const isItOnScreen = SpriteRenderer.isItOnScreen;
 
     const renderDirty = SpriteRenderer.renderDirty; // OPTIMIZATION: Dirty flag
@@ -886,7 +883,7 @@ class PixiRenderer extends AbstractWorker {
       }
 
       // ALWAYS advance animation frames (not just when dirty!)
-      this.changeFrameOfSprite(bodySprite, entityIndex, deltaSeconds);
+      if (isAnimated[entityIndex]) this.changeFrameOfSprite(bodySprite, entityIndex, deltaSeconds);
 
       // DENSE: use entity index directly for all component data
       // PixiJS 8 Particle uses scaleX/scaleY instead of scale.x/scale.y
@@ -1060,7 +1057,6 @@ class PixiRenderer extends AbstractWorker {
    */
   update(deltaTime, dtRatio, resuming) {
     // Accumulate time for decoration sway animation
-    this.swayTime += deltaTime;
 
     // Calculate interpolation alpha for smooth movement
     // When renderer FPS > physics FPS, alpha < 1.0 (smooth interpolation)
@@ -1359,7 +1355,8 @@ LIGHTING SYSTEM SETUP
 
         vec2 lightWorld = vec2(uLightX[i], uLightY[i]);
         float intensity = uLightIntensity[i];
-        vec3 color = vec3(uLightR[i], uLightG[i], uLightB[i]);
+        //switch B and R
+        vec3 color = vec3(uLightB[i], uLightG[i], uLightR[i]);
 
         float d = length(fragWorld - lightWorld);
         // Formula: intensity / (intensity + d²) → caps at 1.0 when d=0, falls off with distance
@@ -1873,7 +1870,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       sprite.scaleX = scale;
       sprite.scaleY = scale;
 
-      sprite.tint = convertRGBtoBGR(lightColor[entityIndex]);
+      sprite.tint = lightColor[entityIndex]
 
       // Show this sprite (alpha controls visibility for ParticleContainer)
       sprite.alpha = newAlpha;
@@ -1939,6 +1936,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const shadowEntityIdx = this.shadowSpriteEntityIdx;
     const shadowLightIdx = this.shadowSpriteLightIdx;
     const prevEntityIdx = this._shadowPrevEntityIdx;
+
+    const PI = Math.PI
 
     // Cache light component arrays
     const transformActive = Transform.active;
@@ -2050,7 +2049,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         // Update sprite properties
         sprite.x = screenSX;
         sprite.y = screenSY;
-        sprite.rotation = shadowRotation[shadowIdx] + Math.PI; // Point away from light
+        sprite.rotation = shadowRotation[shadowIdx] + PI; // Point away from light
         sprite.scaleX = shadowScaleX[shadowIdx] * zoom * resolution;
         sprite.scaleY = shadowScaleY[shadowIdx] * zoom * resolution;
         sprite.alpha = shadowAlpha[shadowIdx];
@@ -2598,14 +2597,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const anchorY = DecorationComponent.anchorY;
     const isItOnScreen = DecorationComponent.isItOnScreen;
 
-    // Precompute sway base angle once per frame (not per decoration)
-    this._swayBaseAngle = this.swayTime * 0.002;
-
-    // Sway animation arrays
-    const sway = DecorationComponent.sway;
-    const swayAmplitude = DecorationComponent.swayAmplitude;
-    const swayFrequency = DecorationComponent.swayFrequency;
-
     let visibleDecorationCount = 0;
 
     for (let i = 0; i < this.maxDecorations; i++) {
@@ -2656,12 +2647,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       actualSprite.anchorY = anchorY[i];
 
       // Rotation: base rotation + sway animation (if enabled)
-      if (sway[i]) {
-        actualSprite.rotation =
-          rotation[i] + Math.sin(this._swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
-      } else {
-        actualSprite.rotation = rotation[i];
-      }
+      // if (sway[i]) {
+      //   actualSprite.rotation =
+      //     rotation[i] + Math.sin(this._swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
+      // } else {
+      actualSprite.rotation = rotation[i];
+      // }
 
       // Update texture if it changed
       // Note: tid >= 0 is valid (0 is a valid animation index)

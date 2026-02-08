@@ -1566,6 +1566,9 @@ class ParticleWorker extends AbstractWorker {
   updateDecorationScreenVisibility(cameraBounds) {
     if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
 
+    // Precompute sway base angle once per frame (not per decoration)
+    this._swayBaseAngle = this.accumulatedTime * 0.002;
+
     // Early exit if no decorations are active (shared counter from DecorationPool)
     if (DecorationPool.activeCount && DecorationPool.activeCount[0] === 0) {
       return;
@@ -1575,6 +1578,10 @@ class ParticleWorker extends AbstractWorker {
     const x = DecorationComponent.x;
     const y = DecorationComponent.y;
     const isItOnScreen = DecorationComponent.isItOnScreen;
+    const sway = DecorationComponent.sway;
+    const swayAmplitude = DecorationComponent.swayAmplitude;
+    const swayFrequency = DecorationComponent.swayFrequency;
+    const rotation = DecorationComponent.rotation;
 
     // Use cameraBounds if provided, otherwise calculate from cameraData
     let zoom, cameraOffsetX, cameraOffsetY, minX, maxX, minY, maxY;
@@ -1620,6 +1627,10 @@ class ParticleWorker extends AbstractWorker {
         // Check if screen position is within viewport bounds (with margin)
         isItOnScreen[i] =
           screenX > minX && screenX < maxX && screenY > minY && screenY < maxY ? 1 : 0;
+
+        if (sway[idx]) {
+          rotation[idx] += Math.sin(this._swayBaseAngle * swayFrequency[idx] + idx * 0.1) * swayAmplitude[idx];
+        }
       }
     }
   }
