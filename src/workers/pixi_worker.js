@@ -2009,6 +2009,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       if (!shadowsByLight.has(lightIdx)) {
         // Reuse pooled array instead of allocating new one
+        // Skip if we've exceeded the pool size (more unique lights than maxLights)
+        if (shadowArrayPoolIdx >= shadowArrayPool.length) continue;
         const arr = shadowArrayPool[shadowArrayPoolIdx++];
         arr.length = 0;
         shadowsByLight.set(lightIdx, arr);

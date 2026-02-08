@@ -1,0 +1,3233 @@
+{
+  "frames": {
+    "bicho/nw/35.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 0.5,
+        "w": 62.5,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 6.5,
+        "w": 62.5,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/03.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 71.5,
+        "w": 53,
+        "h": 69.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23.75,
+        "y": 5.25,
+        "w": 53,
+        "h": 69.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/43.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 142,
+        "w": 57.5,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18.25,
+        "y": 7.25,
+        "w": 57.5,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/11.png": {
+      "frame": {
+        "x": 54.5,
+        "y": 71.5,
+        "w": 52,
+        "h": 68.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24.25,
+        "y": 6,
+        "w": 52,
+        "h": 68.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/42.png": {
+      "frame": {
+        "x": 64,
+        "y": 0.5,
+        "w": 52.5,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20.75,
+        "y": 8,
+        "w": 52.5,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/nw/34.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 212,
+        "w": 57.5,
+        "h": 66.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27.25,
+        "y": 7.25,
+        "w": 57.5,
+        "h": 66.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/44.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 279.75,
+        "w": 57.5,
+        "h": 66.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 15.75,
+        "y": 6.25,
+        "w": 57.5,
+        "h": 66.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/nw/36.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 347.25,
+        "w": 62.25,
+        "h": 66.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 22.5,
+        "y": 6,
+        "w": 62.25,
+        "h": 66.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/02.png": {
+      "frame": {
+        "x": 59,
+        "y": 141.25,
+        "w": 52.5,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 5.75,
+        "w": 52.5,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/10.png": {
+      "frame": {
+        "x": 107.5,
+        "y": 68.5,
+        "w": 52,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24.25,
+        "y": 6.75,
+        "w": 52,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/04.png": {
+      "frame": {
+        "x": 117.5,
+        "y": 0.5,
+        "w": 53,
+        "h": 65.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23.5,
+        "y": 4.75,
+        "w": 53,
+        "h": 65.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/12.png": {
+      "frame": {
+        "x": 59,
+        "y": 208.25,
+        "w": 52,
+        "h": 65.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24.25,
+        "y": 5.25,
+        "w": 52,
+        "h": 65.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/nw/33.png": {
+      "frame": {
+        "x": 59,
+        "y": 274.75,
+        "w": 55.75,
+        "h": 63.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 26.5,
+        "y": 7.75,
+        "w": 55.75,
+        "h": 63.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/41.png": {
+      "frame": {
+        "x": 112,
+        "y": 208.25,
+        "w": 49.75,
+        "h": 63.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23.25,
+        "y": 9,
+        "w": 49.75,
+        "h": 63.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/45.png": {
+      "frame": {
+        "x": 112.5,
+        "y": 135.5,
+        "w": 53.25,
+        "h": 62.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18.25,
+        "y": 5.5,
+        "w": 53.25,
+        "h": 62.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/nw/37.png": {
+      "frame": {
+        "x": 162.75,
+        "y": 67,
+        "w": 57.25,
+        "h": 62.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 5.5,
+        "w": 57.25,
+        "h": 62.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/01.png": {
+      "frame": {
+        "x": 171.5,
+        "y": 0.5,
+        "w": 52.5,
+        "h": 62.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 6.25,
+        "w": 52.5,
+        "h": 62.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/35.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 414.5,
+        "w": 63,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7.75,
+        "y": 6.25,
+        "w": 63,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/09.png": {
+      "frame": {
+        "x": 63.75,
+        "y": 339.25,
+        "w": 52.25,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 7.5,
+        "w": 52.25,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/40.png": {
+      "frame": {
+        "x": 115.75,
+        "y": 272.75,
+        "w": 47.75,
+        "h": 61.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24.5,
+        "y": 8,
+        "w": 47.75,
+        "h": 61.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/05.png": {
+      "frame": {
+        "x": 162.75,
+        "y": 199.25,
+        "w": 53,
+        "h": 61.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23.5,
+        "y": 4.25,
+        "w": 53,
+        "h": 61.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/13.png": {
+      "frame": {
+        "x": 166.75,
+        "y": 130.25,
+        "w": 52.25,
+        "h": 61.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24.25,
+        "y": 4.25,
+        "w": 52.25,
+        "h": 61.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/nw/32.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 477.5,
+        "w": 54.75,
+        "h": 60.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24.75,
+        "y": 8.25,
+        "w": 54.75,
+        "h": 60.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/nw/44.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 539,
+        "w": 64.5,
+        "h": 59.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25.5,
+        "y": 6.25,
+        "w": 64.5,
+        "h": 59.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/39.png": {
+      "frame": {
+        "x": 56.25,
+        "y": 477.5,
+        "w": 51,
+        "h": 59.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 21,
+        "y": 7,
+        "w": 51,
+        "h": 59.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/08.png": {
+      "frame": {
+        "x": 64.5,
+        "y": 402.25,
+        "w": 52.25,
+        "h": 59.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 6.75,
+        "w": 52.25,
+        "h": 59.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/34.png": {
+      "frame": {
+        "x": 117,
+        "y": 335.5,
+        "w": 60,
+        "h": 59
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 10.25,
+        "y": 6.75,
+        "w": 60,
+        "h": 59
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/nw/47.png": {
+      "frame": {
+        "x": 164.5,
+        "y": 261.5,
+        "w": 53.25,
+        "h": 58.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 26.25,
+        "y": 7.5,
+        "w": 53.25,
+        "h": 58.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/00.png": {
+      "frame": {
+        "x": 216.75,
+        "y": 192.5,
+        "w": 52.25,
+        "h": 58.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24.25,
+        "y": 6.75,
+        "w": 52.25,
+        "h": 58.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/36.png": {
+      "frame": {
+        "x": 220,
+        "y": 130.25,
+        "w": 60.25,
+        "h": 58
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 5.75,
+        "w": 60.25,
+        "h": 58
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/38.png": {
+      "frame": {
+        "x": 221,
+        "y": 63.75,
+        "w": 54,
+        "h": 57.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17.75,
+        "y": 6.25,
+        "w": 54,
+        "h": 57.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/nw/38.png": {
+      "frame": {
+        "x": 225,
+        "y": 0.5,
+        "w": 53.25,
+        "h": 57.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27.25,
+        "y": 6.25,
+        "w": 53.25,
+        "h": 57.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/46.png": {
+      "frame": {
+        "x": 276,
+        "y": 58.75,
+        "w": 49.5,
+        "h": 57.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20.5,
+        "y": 6.25,
+        "w": 49.5,
+        "h": 57.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/nw/46.png": {
+      "frame": {
+        "x": 279.25,
+        "y": 0.5,
+        "w": 57.75,
+        "h": 57
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25.25,
+        "y": 6.5,
+        "w": 57.75,
+        "h": 57
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/07.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 599.75,
+        "w": 52.5,
+        "h": 57
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23.75,
+        "y": 5.75,
+        "w": 52.5,
+        "h": 57
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/32.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 657.75,
+        "w": 55,
+        "h": 56.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30.25,
+        "y": 3.25,
+        "w": 55,
+        "h": 56.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/nw/43.png": {
+      "frame": {
+        "x": 54,
+        "y": 599.75,
+        "w": 66.25,
+        "h": 56.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 26.75,
+        "y": 7,
+        "w": 66.25,
+        "h": 56.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/03.png": {
+      "frame": {
+        "x": 66,
+        "y": 538.25,
+        "w": 53.25,
+        "h": 56
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23.5,
+        "y": 1.25,
+        "w": 53.25,
+        "h": 56
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/04.png": {
+      "frame": {
+        "x": 108.25,
+        "y": 462.75,
+        "w": 53.25,
+        "h": 56
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23.75,
+        "y": 0.75,
+        "w": 53.25,
+        "h": 56
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/05.png": {
+      "frame": {
+        "x": 121.25,
+        "y": 395.5,
+        "w": 53.25,
+        "h": 56
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23.75,
+        "y": 0.25,
+        "w": 53.25,
+        "h": 56
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/15.png": {
+      "frame": {
+        "x": 120.25,
+        "y": 519.75,
+        "w": 52.25,
+        "h": 56
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24.25,
+        "y": 6,
+        "w": 52.25,
+        "h": 56
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/09.png": {
+      "frame": {
+        "x": 162.5,
+        "y": 452.5,
+        "w": 52,
+        "h": 56
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24.25,
+        "y": 3.5,
+        "w": 52,
+        "h": 56
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/10.png": {
+      "frame": {
+        "x": 175.5,
+        "y": 395.5,
+        "w": 52,
+        "h": 56
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24.25,
+        "y": 2.75,
+        "w": 52,
+        "h": 56
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/11.png": {
+      "frame": {
+        "x": 228.5,
+        "y": 395.5,
+        "w": 51.75,
+        "h": 56
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24.25,
+        "y": 2,
+        "w": 51.75,
+        "h": 56
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/12.png": {
+      "frame": {
+        "x": 281.25,
+        "y": 395.5,
+        "w": 51.75,
+        "h": 56
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24.25,
+        "y": 1.25,
+        "w": 51.75,
+        "h": 56
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/33.png": {
+      "frame": {
+        "x": 178,
+        "y": 321,
+        "w": 57.5,
+        "h": 55.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 12.75,
+        "y": 7.25,
+        "w": 57.5,
+        "h": 55.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/37.png": {
+      "frame": {
+        "x": 218.75,
+        "y": 252,
+        "w": 57.25,
+        "h": 55.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 14.5,
+        "y": 5.25,
+        "w": 57.25,
+        "h": 55.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/06.png": {
+      "frame": {
+        "x": 270,
+        "y": 189.25,
+        "w": 52.75,
+        "h": 55.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23.75,
+        "y": 5,
+        "w": 52.75,
+        "h": 55.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/06.png": {
+      "frame": {
+        "x": 281.25,
+        "y": 117,
+        "w": 52.75,
+        "h": 55.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 1,
+        "w": 52.75,
+        "h": 55.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/08.png": {
+      "frame": {
+        "x": 334,
+        "y": 58.5,
+        "w": 52.25,
+        "h": 55.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24.25,
+        "y": 2.75,
+        "w": 52.25,
+        "h": 55.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/13.png": {
+      "frame": {
+        "x": 338,
+        "y": 0.5,
+        "w": 52,
+        "h": 55.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 0.5,
+        "w": 52,
+        "h": 55.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/nw/45.png": {
+      "frame": {
+        "x": 236.5,
+        "y": 308.75,
+        "w": 61.5,
+        "h": 55.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 5.75,
+        "w": 61.5,
+        "h": 55.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/02.png": {
+      "frame": {
+        "x": 277,
+        "y": 246,
+        "w": 53,
+        "h": 55.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23.75,
+        "y": 2,
+        "w": 53,
+        "h": 55.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/01.png": {
+      "frame": {
+        "x": 323.75,
+        "y": 173.75,
+        "w": 52.75,
+        "h": 55.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23.75,
+        "y": 2.5,
+        "w": 52.75,
+        "h": 55.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/07.png": {
+      "frame": {
+        "x": 335,
+        "y": 115.25,
+        "w": 52.75,
+        "h": 55.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 2,
+        "w": 52.75,
+        "h": 55.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/00.png": {
+      "frame": {
+        "x": 387.25,
+        "y": 57.25,
+        "w": 52.5,
+        "h": 55.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23.75,
+        "y": 3,
+        "w": 52.5,
+        "h": 55.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/14.png": {
+      "frame": {
+        "x": 391,
+        "y": 0.5,
+        "w": 52,
+        "h": 55.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 1.5,
+        "w": 52,
+        "h": 55.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/s/15.png": {
+      "frame": {
+        "x": 299,
+        "y": 302.5,
+        "w": 52,
+        "h": 55.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 2.25,
+        "w": 52,
+        "h": 55.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/n/14.png": {
+      "frame": {
+        "x": 334,
+        "y": 230.25,
+        "w": 52.25,
+        "h": 55.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24.25,
+        "y": 5.25,
+        "w": 52.25,
+        "h": 55.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/47.png": {
+      "frame": {
+        "x": 377.5,
+        "y": 171.75,
+        "w": 52.25,
+        "h": 55
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30.5,
+        "y": 3,
+        "w": 52.25,
+        "h": 55
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/36.png": {
+      "frame": {
+        "x": 388.75,
+        "y": 113.75,
+        "w": 60.25,
+        "h": 54
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29.25,
+        "y": 4,
+        "w": 60.25,
+        "h": 54
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/33.png": {
+      "frame": {
+        "x": 440.75,
+        "y": 57,
+        "w": 57.5,
+        "h": 53.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30.25,
+        "y": 4,
+        "w": 57.5,
+        "h": 53.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/nw/42.png": {
+      "frame": {
+        "x": 450,
+        "y": 0.5,
+        "w": 62.25,
+        "h": 53
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28.75,
+        "y": 7.75,
+        "w": 62.25,
+        "h": 53
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/37.png": {
+      "frame": {
+        "x": 513.25,
+        "y": 0.5,
+        "w": 57.5,
+        "h": 52.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28.75,
+        "y": 3.25,
+        "w": 57.5,
+        "h": 52.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/32.png": {
+      "frame": {
+        "x": 571.75,
+        "y": 0.5,
+        "w": 55,
+        "h": 52.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 15.25,
+        "y": 7.75,
+        "w": 55,
+        "h": 52.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/40.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 715.25,
+        "w": 55.75,
+        "h": 52.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 14.5,
+        "y": 3.25,
+        "w": 55.75,
+        "h": 52.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/nw/39.png": {
+      "frame": {
+        "x": 56.5,
+        "y": 657,
+        "w": 53.75,
+        "h": 52.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29.25,
+        "y": 7,
+        "w": 53.75,
+        "h": 52.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/ne/47.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 768.5,
+        "w": 51.75,
+        "h": 52
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18,
+        "y": 7,
+        "w": 51.75,
+        "h": 52
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/00.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 821.5,
+        "w": 64.75,
+        "h": 51.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 16,
+        "y": 8,
+        "w": 64.75,
+        "h": 51.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/07.png": {
+      "frame": {
+        "x": 53.25,
+        "y": 768.5,
+        "w": 62.75,
+        "h": 51.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 7.75,
+        "w": 62.75,
+        "h": 51.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/41.png": {
+      "frame": {
+        "x": 57.25,
+        "y": 710.25,
+        "w": 59,
+        "h": 51.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 12,
+        "y": 4.75,
+        "w": 59,
+        "h": 51.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/39.png": {
+      "frame": {
+        "x": 117,
+        "y": 657,
+        "w": 54,
+        "h": 51.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17.25,
+        "y": 2.75,
+        "w": 54,
+        "h": 51.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/41.png": {
+      "frame": {
+        "x": 117.25,
+        "y": 709.75,
+        "w": 49.75,
+        "h": 51.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27.5,
+        "y": 5,
+        "w": 49.75,
+        "h": 51.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/03.png": {
+      "frame": {
+        "x": 121.25,
+        "y": 576.75,
+        "w": 78,
+        "h": 51.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 2.5,
+        "y": 8.75,
+        "w": 78,
+        "h": 51.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/05.png": {
+      "frame": {
+        "x": 173.5,
+        "y": 509.5,
+        "w": 67.25,
+        "h": 51.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20.5,
+        "y": 7.75,
+        "w": 67.25,
+        "h": 51.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/46.png": {
+      "frame": {
+        "x": 215.5,
+        "y": 452.5,
+        "w": 49.75,
+        "h": 51.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30.5,
+        "y": 3.25,
+        "w": 49.75,
+        "h": 51.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/42.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 874.25,
+        "w": 52.5,
+        "h": 51.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27.25,
+        "y": 4.5,
+        "w": 52.5,
+        "h": 51.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/02.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 926.5,
+        "w": 73.5,
+        "h": 51
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 9,
+        "w": 73.5,
+        "h": 51
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/13.png": {
+      "frame": {
+        "x": 54,
+        "y": 874.25,
+        "w": 66.5,
+        "h": 51
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 14,
+        "y": 8.5,
+        "w": 66.5,
+        "h": 51
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/43.png": {
+      "frame": {
+        "x": 66.25,
+        "y": 821.25,
+        "w": 66.5,
+        "h": 51
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7.25,
+        "y": 5,
+        "w": 66.5,
+        "h": 51
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/06.png": {
+      "frame": {
+        "x": 117,
+        "y": 763,
+        "w": 62.75,
+        "h": 51
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20.25,
+        "y": 8.5,
+        "w": 62.75,
+        "h": 51
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/14.png": {
+      "frame": {
+        "x": 168,
+        "y": 709.75,
+        "w": 62.5,
+        "h": 51
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18,
+        "y": 8.5,
+        "w": 62.5,
+        "h": 51
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/43.png": {
+      "frame": {
+        "x": 180.75,
+        "y": 629.25,
+        "w": 57.5,
+        "h": 51
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24.75,
+        "y": 3.75,
+        "w": 57.5,
+        "h": 51
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/38.png": {
+      "frame": {
+        "x": 231.5,
+        "y": 562,
+        "w": 53.25,
+        "h": 51
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 2.75,
+        "w": 53.25,
+        "h": 51
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/01.png": {
+      "frame": {
+        "x": 241.75,
+        "y": 505,
+        "w": 69.25,
+        "h": 50.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11.5,
+        "y": 9.25,
+        "w": 69.25,
+        "h": 50.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/34.png": {
+      "frame": {
+        "x": 285.75,
+        "y": 452.5,
+        "w": 60.5,
+        "h": 50.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30,
+        "y": 4.25,
+        "w": 60.5,
+        "h": 50.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/44.png": {
+      "frame": {
+        "x": 347.25,
+        "y": 452.5,
+        "w": 57.5,
+        "h": 50.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27.25,
+        "y": 3.75,
+        "w": 57.5,
+        "h": 50.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/40.png": {
+      "frame": {
+        "x": 405.75,
+        "y": 452.5,
+        "w": 48,
+        "h": 50.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28.25,
+        "y": 5.25,
+        "w": 48,
+        "h": 50.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/04.png": {
+      "frame": {
+        "x": 454.75,
+        "y": 452.5,
+        "w": 72.5,
+        "h": 50
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20.25,
+        "y": 9,
+        "w": 72.5,
+        "h": 50
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/15.png": {
+      "frame": {
+        "x": 334,
+        "y": 359,
+        "w": 63.25,
+        "h": 50
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17.5,
+        "y": 9.75,
+        "w": 63.25,
+        "h": 50
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/35.png": {
+      "frame": {
+        "x": 352,
+        "y": 286.5,
+        "w": 62.5,
+        "h": 50
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 3.75,
+        "w": 62.5,
+        "h": 50
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/36.png": {
+      "frame": {
+        "x": 398.25,
+        "y": 227.75,
+        "w": 62.5,
+        "h": 50
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 15.5,
+        "y": 3.5,
+        "w": 62.5,
+        "h": 50
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/37.png": {
+      "frame": {
+        "x": 430.75,
+        "y": 168.75,
+        "w": 57.25,
+        "h": 50
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18.25,
+        "y": 3.25,
+        "w": 57.25,
+        "h": 50
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/32.png": {
+      "frame": {
+        "x": 461.75,
+        "y": 111.25,
+        "w": 55,
+        "h": 50
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 21,
+        "y": 5,
+        "w": 55,
+        "h": 50
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/08.png": {
+      "frame": {
+        "x": 499.25,
+        "y": 54.5,
+        "w": 64,
+        "h": 49.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 19.75,
+        "y": 9.5,
+        "w": 64,
+        "h": 49.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/nw/41.png": {
+      "frame": {
+        "x": 398.25,
+        "y": 337.5,
+        "w": 58.75,
+        "h": 49.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29.75,
+        "y": 8.5,
+        "w": 58.75,
+        "h": 49.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/34.png": {
+      "frame": {
+        "x": 415.5,
+        "y": 278.75,
+        "w": 57.5,
+        "h": 49.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 15.5,
+        "y": 4.25,
+        "w": 57.5,
+        "h": 49.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/33.png": {
+      "frame": {
+        "x": 461.75,
+        "y": 219.75,
+        "w": 55.75,
+        "h": 49.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18.25,
+        "y": 4.75,
+        "w": 55.75,
+        "h": 49.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/45.png": {
+      "frame": {
+        "x": 489,
+        "y": 162.25,
+        "w": 53,
+        "h": 49.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29.25,
+        "y": 3.5,
+        "w": 53,
+        "h": 49.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/12.png": {
+      "frame": {
+        "x": 528.25,
+        "y": 105.25,
+        "w": 72.25,
+        "h": 49.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 9.5,
+        "w": 72.25,
+        "h": 49.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/42.png": {
+      "frame": {
+        "x": 564.25,
+        "y": 54.25,
+        "w": 62.25,
+        "h": 49.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9.25,
+        "y": 5,
+        "w": 62.25,
+        "h": 49.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/39.png": {
+      "frame": {
+        "x": 398.25,
+        "y": 388.25,
+        "w": 50.75,
+        "h": 49.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28.75,
+        "y": 4.75,
+        "w": 50.75,
+        "h": 49.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/35.png": {
+      "frame": {
+        "x": 450,
+        "y": 388.25,
+        "w": 63.25,
+        "h": 49.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29.75,
+        "y": 4.5,
+        "w": 63.25,
+        "h": 49.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/sw/38.png": {
+      "frame": {
+        "x": 458,
+        "y": 329.5,
+        "w": 54,
+        "h": 49.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28.75,
+        "y": 4.25,
+        "w": 54,
+        "h": 49.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/11.png": {
+      "frame": {
+        "x": 474,
+        "y": 270.5,
+        "w": 76.75,
+        "h": 49
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 10,
+        "w": 76.75,
+        "h": 49
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/10.png": {
+      "frame": {
+        "x": 528.25,
+        "y": 213,
+        "w": 73.25,
+        "h": 49
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 19.75,
+        "y": 10.25,
+        "w": 73.25,
+        "h": 49
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/04.png": {
+      "frame": {
+        "x": 551.75,
+        "y": 155.75,
+        "w": 72.75,
+        "h": 49
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7.5,
+        "y": 9,
+        "w": 72.75,
+        "h": 49
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/12.png": {
+      "frame": {
+        "x": 602.5,
+        "y": 104.75,
+        "w": 71.75,
+        "h": 49
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8.75,
+        "y": 10,
+        "w": 71.75,
+        "h": 49
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/44.png": {
+      "frame": {
+        "x": 627.5,
+        "y": 54.25,
+        "w": 64.75,
+        "h": 49
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 10.25,
+        "y": 4.75,
+        "w": 64.75,
+        "h": 49
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/47.png": {
+      "frame": {
+        "x": 675.25,
+        "y": 0.5,
+        "w": 53.75,
+        "h": 49
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20.75,
+        "y": 5.25,
+        "w": 53.75,
+        "h": 49
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/45.png": {
+      "frame": {
+        "x": 693.25,
+        "y": 50.5,
+        "w": 61.75,
+        "h": 48.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13.75,
+        "y": 4,
+        "w": 61.75,
+        "h": 48.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/se/46.png": {
+      "frame": {
+        "x": 730,
+        "y": 0.5,
+        "w": 58,
+        "h": 48.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17.25,
+        "y": 4.75,
+        "w": 58,
+        "h": 48.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/09.png": {
+      "frame": {
+        "x": 513,
+        "y": 320.5,
+        "w": 68.5,
+        "h": 48.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 19.75,
+        "y": 10.75,
+        "w": 68.5,
+        "h": 48.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/11.png": {
+      "frame": {
+        "x": 551.75,
+        "y": 263,
+        "w": 76.5,
+        "h": 48.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 4.25,
+        "y": 10.25,
+        "w": 76.5,
+        "h": 48.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/13.png": {
+      "frame": {
+        "x": 602.5,
+        "y": 205.75,
+        "w": 67,
+        "h": 48
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 9.25,
+        "w": 67,
+        "h": 48
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/nw/40.png": {
+      "frame": {
+        "x": 629.25,
+        "y": 154.75,
+        "w": 55.25,
+        "h": 48
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30.5,
+        "y": 7.75,
+        "w": 55.25,
+        "h": 48
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/05.png": {
+      "frame": {
+        "x": 675.25,
+        "y": 104.25,
+        "w": 67.75,
+        "h": 47.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 12.5,
+        "y": 8.75,
+        "w": 67.75,
+        "h": 47.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/06.png": {
+      "frame": {
+        "x": 514.25,
+        "y": 370,
+        "w": 62.75,
+        "h": 47
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17.5,
+        "y": 9.5,
+        "w": 62.75,
+        "h": 47
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/03.png": {
+      "frame": {
+        "x": 0.5,
+        "y": 978.5,
+        "w": 77.75,
+        "h": 46.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 10.25,
+        "w": 77.75,
+        "h": 46.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/07.png": {
+      "frame": {
+        "x": 75,
+        "y": 926.25,
+        "w": 63,
+        "h": 46.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17.5,
+        "y": 10,
+        "w": 63,
+        "h": 46.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/10.png": {
+      "frame": {
+        "x": 121.5,
+        "y": 873.25,
+        "w": 72.75,
+        "h": 46.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 10.75,
+        "w": 72.75,
+        "h": 46.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/08.png": {
+      "frame": {
+        "x": 139,
+        "y": 815,
+        "w": 63.5,
+        "h": 46.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17.25,
+        "y": 10.75,
+        "w": 63.5,
+        "h": 46.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/e/09.png": {
+      "frame": {
+        "x": 195.25,
+        "y": 761.75,
+        "w": 68.25,
+        "h": 45.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 12.5,
+        "y": 11.5,
+        "w": 68.25,
+        "h": 45.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/14.png": {
+      "frame": {
+        "x": 231.5,
+        "y": 681.25,
+        "w": 62.5,
+        "h": 45.5
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 9.75,
+        "w": 62.5,
+        "h": 45.5
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/15.png": {
+      "frame": {
+        "x": 264.5,
+        "y": 614,
+        "w": 62.75,
+        "h": 44.75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 10.25,
+        "w": 62.75,
+        "h": 44.75
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/02.png": {
+      "frame": {
+        "x": 285.75,
+        "y": 556.75,
+        "w": 73.25,
+        "h": 44.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 10.75,
+        "w": 73.25,
+        "h": 44.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/01.png": {
+      "frame": {
+        "x": 328.25,
+        "y": 503.75,
+        "w": 69,
+        "h": 44.25
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 19.75,
+        "y": 10.75,
+        "w": 69,
+        "h": 44.25
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bicho/w/00.png": {
+      "frame": {
+        "x": 360,
+        "y": 549,
+        "w": 64.25,
+        "h": 44
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 19.75,
+        "y": 11,
+        "w": 64.25,
+        "h": 44
+      },
+      "sourceSize": {
+        "w": 99.5,
+        "h": 77.5
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    }
+  },
+  "animations": {
+    "n": [
+      "bicho/n/00.png",
+      "bicho/n/01.png",
+      "bicho/n/02.png",
+      "bicho/n/03.png",
+      "bicho/n/04.png",
+      "bicho/n/05.png",
+      "bicho/n/06.png",
+      "bicho/n/07.png",
+      "bicho/n/08.png",
+      "bicho/n/09.png",
+      "bicho/n/10.png",
+      "bicho/n/11.png",
+      "bicho/n/12.png",
+      "bicho/n/13.png",
+      "bicho/n/14.png",
+      "bicho/n/15.png"
+    ],
+    "ne": [
+      "bicho/ne/32.png",
+      "bicho/ne/33.png",
+      "bicho/ne/34.png",
+      "bicho/ne/35.png",
+      "bicho/ne/36.png",
+      "bicho/ne/37.png",
+      "bicho/ne/38.png",
+      "bicho/ne/39.png",
+      "bicho/ne/40.png",
+      "bicho/ne/41.png",
+      "bicho/ne/42.png",
+      "bicho/ne/43.png",
+      "bicho/ne/44.png",
+      "bicho/ne/45.png",
+      "bicho/ne/46.png",
+      "bicho/ne/47.png"
+    ],
+    "e": [
+      "bicho/e/00.png",
+      "bicho/e/01.png",
+      "bicho/e/02.png",
+      "bicho/e/03.png",
+      "bicho/e/04.png",
+      "bicho/e/05.png",
+      "bicho/e/06.png",
+      "bicho/e/07.png",
+      "bicho/e/08.png",
+      "bicho/e/09.png",
+      "bicho/e/10.png",
+      "bicho/e/11.png",
+      "bicho/e/12.png",
+      "bicho/e/13.png",
+      "bicho/e/14.png",
+      "bicho/e/15.png"
+    ],
+    "se": [
+      "bicho/se/32.png",
+      "bicho/se/33.png",
+      "bicho/se/34.png",
+      "bicho/se/35.png",
+      "bicho/se/36.png",
+      "bicho/se/37.png",
+      "bicho/se/38.png",
+      "bicho/se/39.png",
+      "bicho/se/40.png",
+      "bicho/se/41.png",
+      "bicho/se/42.png",
+      "bicho/se/43.png",
+      "bicho/se/44.png",
+      "bicho/se/45.png",
+      "bicho/se/46.png",
+      "bicho/se/47.png"
+    ],
+    "s": [
+      "bicho/s/00.png",
+      "bicho/s/01.png",
+      "bicho/s/02.png",
+      "bicho/s/03.png",
+      "bicho/s/04.png",
+      "bicho/s/05.png",
+      "bicho/s/06.png",
+      "bicho/s/07.png",
+      "bicho/s/08.png",
+      "bicho/s/09.png",
+      "bicho/s/10.png",
+      "bicho/s/11.png",
+      "bicho/s/12.png",
+      "bicho/s/13.png",
+      "bicho/s/14.png",
+      "bicho/s/15.png"
+    ],
+    "sw": [
+      "bicho/sw/32.png",
+      "bicho/sw/33.png",
+      "bicho/sw/34.png",
+      "bicho/sw/35.png",
+      "bicho/sw/36.png",
+      "bicho/sw/37.png",
+      "bicho/sw/38.png",
+      "bicho/sw/39.png",
+      "bicho/sw/40.png",
+      "bicho/sw/41.png",
+      "bicho/sw/42.png",
+      "bicho/sw/43.png",
+      "bicho/sw/44.png",
+      "bicho/sw/45.png",
+      "bicho/sw/46.png",
+      "bicho/sw/47.png"
+    ],
+    "w": [
+      "bicho/w/00.png",
+      "bicho/w/01.png",
+      "bicho/w/02.png",
+      "bicho/w/03.png",
+      "bicho/w/04.png",
+      "bicho/w/05.png",
+      "bicho/w/06.png",
+      "bicho/w/07.png",
+      "bicho/w/08.png",
+      "bicho/w/09.png",
+      "bicho/w/10.png",
+      "bicho/w/11.png",
+      "bicho/w/12.png",
+      "bicho/w/13.png",
+      "bicho/w/14.png",
+      "bicho/w/15.png"
+    ],
+    "nw": [
+      "bicho/nw/32.png",
+      "bicho/nw/33.png",
+      "bicho/nw/34.png",
+      "bicho/nw/35.png",
+      "bicho/nw/36.png",
+      "bicho/nw/37.png",
+      "bicho/nw/38.png",
+      "bicho/nw/39.png",
+      "bicho/nw/40.png",
+      "bicho/nw/41.png",
+      "bicho/nw/42.png",
+      "bicho/nw/43.png",
+      "bicho/nw/44.png",
+      "bicho/nw/45.png",
+      "bicho/nw/46.png",
+      "bicho/nw/47.png"
+    ]
+  },
+  "meta": {
+    "app": "http://free-tex-packer.com",
+    "version": "0.6.7",
+    "image": "texture.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 789,
+      "h": 1026
+    },
+    "scale": 0.25
+  }
+}
