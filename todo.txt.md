@@ -106,7 +106,6 @@ decorations con container!
 
 --------------
 
--en el map maker, exportar por layers
 
 -map maker: agregar pasto y faroles, y autos, y tachos de basura
 -en el autotiler agarrar por layer
