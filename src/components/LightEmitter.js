@@ -1,4 +1,5 @@
 import { Component } from '../core/Component.js';
+import { convertRGBtoBGR } from '../core/utils.js';
 
 export class LightEmitter extends Component {
   static ARRAY_SCHEMA = {
@@ -29,4 +30,9 @@ export class LightEmitter extends Component {
     // Cache sqrt(intensity) to avoid recalculating it every frame in hot loops
     LightEmitter.sqrtLightIntensity[this.index] = Math.sqrt(value);
   }
+
+  set lightColor(value) {
+    LightEmitter.lightColor[this.index] = convertRGBtoBGR(value);
+  }
+
 }
