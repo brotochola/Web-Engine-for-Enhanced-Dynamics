@@ -1,12 +1,3 @@
-[7 tools called]
-
-Now let me check a few more details on the utility functions used and the `_ySortPool` pattern.
-
-[4 tools called]
-
-Now I have the full picture. Here's the deep-dive engineering analysis of `src/workers/pixi_worker.js`.
-
----
 
 # 🔬 Engineering Analysis: `pixi_worker.js`
 
@@ -18,50 +9,9 @@ The renderer worker is a 3,545-line monolith managing **seven visual subsystems*
 
 ## 1. GC Pressure
 
-### 1.1 ✅ Well-Done: `_ySortPool` / `_lightPool` Reuse Pattern
 
-```946:954:src/workers/pixi_worker.js
-      const poolIdx = this._ySortPoolSize++;
-      if (!this._ySortPool[poolIdx]) {
-        this._ySortPool[poolIdx] = { entityId: 0, sprite: null, y: 0 };
-      }
-      const item = this._ySortPool[poolIdx];
-      item.entityId = entityIndex;
-      item.sprite = bodySprite;
-      item.y = y[entityIndex];
-```
 
-This lazy-grow-then-reuse pattern is excellent. Objects are created once and reused every frame. Same pattern at lines 1457, 1842, 2499, 2694. **No per-frame allocation once warmed up.**
 
-### 1.2 ✅ Well-Done: `_acquireResult` Reuse
-
-```127:129:src/workers/pixi_worker.js
-    // PERFORMANCE: Reusable acquire result object to avoid GC pressure
-    this._acquireResult = { particle: null, index: -1 };
-```
-
-Good. Callers destructure it (`const { particle, index } = this.particlePool.acquire()`) which copies the values out, so the shared mutable reference is safe. However this **is a footgun** — if anyone ever stores the reference instead of destructuring, it would silently break.
-
-### 1.3 ⚠️ `particleTextureCache` String Key Allocation
-
-```2471:2472:src/workers/pixi_worker.js
-      const tid = textureId[i];
-      if (tid >= 0 && !this.particleTextureCache[i + '_' + tid]) {
-```
-
-The `i + '_' + tid` string concatenation happens **every frame** for every visible particle — even when the cache hit succeeds. The lookup itself creates a temporary string. On a frame with 500 visible particles, that's 500 short-lived strings.
-
-**Fix**: Use a flat `Uint8Array(maxParticles)` that stores the last-applied `textureId`. Compare `lastAppliedTextureId[i] !== tid` — zero allocation.
-
-### 1.4 ⚠️ `delete` on `particleTextureCache` Triggers Slow Mode
-
-```2438:2438:src/workers/pixi_worker.js
-          delete this.particleTextureCache[i + '_' + textureId[i]];
-```
-
-Using `delete` on a plain object causes V8 to transition the object from "fast mode" (hidden classes) to "dictionary mode," permanently degrading property access performance. After enough deletes, every cache lookup becomes a hash table probe.
-
-**Fix**: Use a `Map`, or simply set the value to `undefined`/`false` instead of deleting.
 
 ### 1.5 ⚠️ `shadowsByLight` Map Allocates Arrays Per Frame
 
