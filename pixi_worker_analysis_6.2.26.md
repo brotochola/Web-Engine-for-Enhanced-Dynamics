@@ -12,21 +12,6 @@ The renderer worker is a 3,545-line monolith managing **seven visual subsystems*
 
 
 
-
-### 1.5 ⚠️ `shadowsByLight` Map Allocates Arrays Per Frame
-
-```2022:2027:src/workers/pixi_worker.js
-      if (!shadowsByLight.has(lightIdx)) {
-        shadowsByLight.set(lightIdx, []);
-        activeLightIndices.push(lightIdx);
-      }
-      shadowsByLight.get(lightIdx).push(i);
-```
-
-Each frame, `shadowsByLight.clear()` runs (line 2005), then new arrays are created via `[]` for each active light. With 10 lights, that's 10 array allocations plus internal Map entries every frame — all immediately eligible for GC.
-
-**Fix**: Pre-allocate a pool of arrays (one per `maxLights`), or use a flat structure like `lightShadowOffsets[lightIdx]` + `lightShadowCounts[lightIdx]` backed by typed arrays.
-
 ### 1.6 ⚠️ `updateDecalTiles` Allocations (Acceptable)
 
 ```1191:1201:src/workers/pixi_worker.js

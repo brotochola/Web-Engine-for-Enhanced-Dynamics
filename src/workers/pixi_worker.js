@@ -403,6 +403,12 @@ class PixiRenderer extends AbstractWorker {
     this._lightPool = [];
     this._lightPoolSize = 0;
 
+    // Pre-computed visible lights (computed once per frame, shared by updateLighting/updateLightGlowSprites)
+    this._visibleLightsAll = [];      // All visible lights (for shader uniforms)
+    this._visibleLightsAllCount = 0;
+    this._visibleLightsGlow = [];     // Visible lights with glow sprites
+    this._visibleLightsGlowCount = 0;
+
     // ========================================
     // RENDER-TEXTURE SHADOW SYSTEM
     // ========================================
@@ -1088,6 +1094,9 @@ class PixiRenderer extends AbstractWorker {
     // Update decal decal tiles (check for dirty tiles from particle_worker)
     this.updateDecalTiles();
 
+    // Pre-compute visible lights once (shared by updateLighting, updateShadowSprites, updateLightGlowSprites)
+    this.computeVisibleLights();
+
     // Update lighting shader uniforms from LightEmitter components
     this.updateLighting(interpolationAlpha);
 
@@ -1367,6 +1376,100 @@ LIGHTING SYSTEM SETUP
   }
 
   /* =====================
+COMPUTE VISIBLE LIGHTS (shared by updateLighting & updateLightGlowSprites)
+===================== */
+
+  /**
+   * Pre-compute visible lights once per frame.
+   * Both updateLighting() and updateLightGlowSprites() use this data.
+   * Avoids duplicate queryActiveEntities, culling, and sorting.
+   */
+  computeVisibleLights() {
+    const worldX = Transform.x;
+    const worldY = Transform.y;
+    const lightEnabled = LightEmitter.active;
+    const lightHeight = LightEmitter.height;
+    const glowHeightOffset = LightEmitter.glowHeightOffset;
+    const hasGlowSprite = LightEmitter.hasGlowSprite;
+    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+
+    const zoom = this._renderZoom;
+    const cameraX = this._renderCameraX;
+    const cameraY = this._renderCameraY;
+
+    // Calculate viewport bounds for culling
+    const viewWidth = this.canvasWidth / zoom;
+    const viewHeight = this.canvasHeight / zoom;
+    const viewRight = cameraX + viewWidth;
+    const viewBottom = cameraY + viewHeight;
+
+    // Viewport center for sorting by distance
+    const viewCenterX = cameraX + viewWidth / 2;
+    const viewCenterY = cameraY + viewHeight / 2;
+
+    // Query all active entities with LightEmitter ONCE
+    const lightEntities = this.queryActiveEntities([LightEmitter]);
+
+    // Reset pools
+    this._visibleLightsAllCount = 0;
+    this._visibleLightsGlowCount = 0;
+
+    for (let idx = 0; idx < lightEntities.length; idx++) {
+      const i = lightEntities[idx];
+      if (!lightEnabled[i]) continue;
+
+      // Use sprite position if available (already interpolated)
+      const sprite = this.bodySprites[i];
+      const x = sprite ? sprite.x : worldX[i];
+      // Use lightHeight for shader, glowHeightOffset for glow sprites
+      const yForLight = (sprite ? sprite.y : worldY[i]) - (lightHeight[i] || 0);
+
+      // Viewport culling: influenceRadius = 10 * sqrt(intensity)
+      const influenceRadius = 10 * sqrtLightIntensity[i];
+
+      if (
+        x + influenceRadius < cameraX ||
+        x - influenceRadius > viewRight ||
+        yForLight + influenceRadius < cameraY ||
+        yForLight - influenceRadius > viewBottom
+      ) {
+        continue;
+      }
+
+      // Distance squared to camera center (for prioritization)
+      const dx = x - viewCenterX;
+      const dy = yForLight - viewCenterY;
+      const distSq = dx * dx + dy * dy;
+
+      // Add to "all lights" pool
+      const allIdx = this._visibleLightsAllCount++;
+      if (!this._visibleLightsAll[allIdx]) {
+        this._visibleLightsAll[allIdx] = { entityId: 0, distSq: 0 };
+      }
+      this._visibleLightsAll[allIdx].entityId = i;
+      this._visibleLightsAll[allIdx].distSq = distSq;
+
+      // Add to "glow lights" pool if hasGlowSprite
+      if (hasGlowSprite[i]) {
+        const glowIdx = this._visibleLightsGlowCount++;
+        if (!this._visibleLightsGlow[glowIdx]) {
+          this._visibleLightsGlow[glowIdx] = { entityId: 0, distSq: 0 };
+        }
+        this._visibleLightsGlow[glowIdx].entityId = i;
+        this._visibleLightsGlow[glowIdx].distSq = distSq;
+      }
+    }
+
+    // Sort both pools by distance (closest first)
+    // Truncate to active size to avoid sorting stale entries
+    this._visibleLightsAll.length = this._visibleLightsAllCount;
+    this._visibleLightsAll.sort(sortByDistSq);
+
+    this._visibleLightsGlow.length = this._visibleLightsGlowCount;
+    this._visibleLightsGlow.sort(sortByDistSq);
+  }
+
+  /* =====================
 UPDATE LIGHTING (NO ZOOM SCALING)
 ===================== */
 
@@ -1375,28 +1478,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     const uniformGroup = this.lightingShader.resources.uniforms;
 
-    const active = Transform.active;
+    // Cache component arrays
     const worldX = Transform.x;
     const worldY = Transform.y;
-    const lightEnabled = LightEmitter.active;
     const lightColor = LightEmitter.lightColor;
     const lightIntensity = LightEmitter.lightIntensity;
-    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity; // OPTIMIZED: Pre-calculated sqrt(intensity)
     const lightHeight = LightEmitter.height;
 
     const zoom = this._renderZoom;
     const cameraX = this._renderCameraX;
     const cameraY = this._renderCameraY;
-
-    // Calculate viewport bounds for culling (using interpolated camera)
-    const viewWidth = this.canvasWidth / zoom;
-    const viewHeight = this.canvasHeight / zoom;
-    const viewRight = cameraX + viewWidth;
-    const viewBottom = cameraY + viewHeight;
-
-    // Viewport center for sorting
-    const viewCenterX = cameraX + viewWidth / 2;
-    const viewCenterY = cameraY + viewHeight / 2;
 
     // Update camera uniforms (vec2 types)
     uniformGroup.uniforms.uCameraPos[0] = cameraX;
@@ -1418,64 +1509,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightG = this._lightG;
     const lightB = this._lightB;
 
-    let lightIndex = 0;
-
-    // OPTIMIZATION: Use queryActiveEntities to iterate only active entities with LightEmitter
-    // This is O(numActiveLights) instead of O(allEntities)
-    const lightEntities = this.queryActiveEntities([LightEmitter]);
-
-    // Reset light pool for this frame (reuse objects to avoid GC)
-    this._lightPoolSize = 0;
-
-    for (let idx = 0; idx < lightEntities.length; idx++) {
-      const i = lightEntities[idx];
-      // Note: active[i] check no longer needed - queryActiveEntities already filters
-      if (!lightEnabled[i]) continue;
-
-      // Use sprite position if available (it's already interpolated)
-      const sprite = this.bodySprites[i];
-      const x = sprite ? sprite.x : worldX[i];
-      const y = (sprite ? sprite.y : worldY[i]) - (lightHeight[i] || 0);
-      const intensity = lightIntensity[i];
-
-      // Viewport culling: Only include lights that actually affect the visible screen
-      // Attenuation formula: I / (I + d^2). At d = 10 * sqrt(I), attenuation is ~0.01
-      // OPTIMIZED: Use pre-calculated sqrt(intensity) from LightEmitter setter
-      const influenceRadius = 10 * sqrtLightIntensity[i];
-
-      if (
-        x + influenceRadius < cameraX ||
-        x - influenceRadius > viewRight ||
-        y + influenceRadius < cameraY ||
-        y - influenceRadius > viewBottom
-      ) {
-        continue;
-      }
-
-      // Add to pool for sorting
-      const poolIdx = this._lightPoolSize++;
-      if (!this._lightPool[poolIdx]) {
-        this._lightPool[poolIdx] = { entityId: 0, distSq: 0 };
-      }
-      const item = this._lightPool[poolIdx];
-      item.entityId = i;
-
-      // Distance squared to camera center (for prioritization)
-      // OPTIMIZED: Inline calculation to avoid function call overhead
-      const dxLight = x - viewCenterX;
-      const dyLight = y - viewCenterY;
-      item.distSq = dxLight * dxLight + dyLight * dyLight;
-    }
-
-    // Sort visible lights by distance (closest first)
-    // GC OPTIMIZATION: Truncate pool to active size before sorting (avoids slice allocation)
-    // Setting .length doesn't allocate - pool regrows lazily next frame if needed
-    const visibleLights = this._lightPool;
-    visibleLights.length = this._lightPoolSize;
-    // OPTIMIZED: Use pre-defined comparator to avoid closure allocation per frame
-    visibleLights.sort(sortByDistSq);
-
-    const countToRender = Math.min(visibleLights.length, this.maxLights);
+    // Use pre-computed visible lights (computed in computeVisibleLights())
+    const visibleLights = this._visibleLightsAll;
+    const countToRender = Math.min(this._visibleLightsAllCount, this.maxLights);
 
     // OPTIMIZED: Reuse preallocated RGB object to avoid allocation per light
     const rgb = this._rgbResult;
@@ -1495,12 +1531,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       lightR[i] = rgb.r;
       lightG[i] = rgb.g;
       lightB[i] = rgb.b;
-
-      lightIndex++;
     }
 
     // Update light count uniform
-    uniformGroup.uniforms.uLightCount = lightIndex;
+    uniformGroup.uniforms.uLightCount = countToRender;
   }
 
   /**
@@ -1732,8 +1766,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   /**
    * Update light glow sprites each frame
-   * Iterates through entities with LightEmitter, maps to sprite pool (maxLights)
-   * Same iteration pattern as updateLighting() for consistency
+   * Uses pre-computed _visibleLightsGlow from computeVisibleLights()
    */
   updateLightGlowSprites(interpolationAlpha) {
     if (!this.lightGlowEnabled || !this.lightGlowContainer) {
@@ -1765,106 +1798,32 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const maxLights = this.maxLights;
 
     // Cache component array references
-    const active = Transform.active;
     const worldX = Transform.x;
     const worldY = Transform.y;
-    const lightEnabled = LightEmitter.active;
     const lightColor = LightEmitter.lightColor;
     const glowHeightOffset = LightEmitter.glowHeightOffset;
-    const hasGlowSprite = LightEmitter.hasGlowSprite;
     const visualRange = Collider.visualRange;
     const lightIntensity = LightEmitter.lightIntensity;
-    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity; // OPTIMIZED: Pre-calculated sqrt(intensity)
-
-    const zoom = this._renderZoom;
-    const cameraX = this._renderCameraX;
-    const cameraY = this._renderCameraY;
-
-    // Calculate viewport bounds for culling
-    const viewWidth = this.canvasWidth / zoom;
-    const viewHeight = this.canvasHeight / zoom;
-    const viewRight = cameraX + viewWidth;
-    const viewBottom = cameraY + viewHeight;
-
-    // Viewport center for sorting
-    const viewCenterX = cameraX + viewWidth / 2;
-    const viewCenterY = cameraY + viewHeight / 2;
 
     // Gradient texture base size (200px diameter = radius 100)
     const textureRadius = 100;
 
-    // Sprite pool index (maps active lights to sprite pool)
-    let spriteIndex = 0;
-
-    // OPTIMIZATION: Use queryActiveEntities to iterate only active entities with LightEmitter
-    // This is O(numActiveLights) instead of O(allEntities)
-    const lightEntities = this.queryActiveEntities([LightEmitter]);
+    // Use pre-computed visible glow lights (computed in computeVisibleLights())
+    const visibleLights = this._visibleLightsGlow;
+    const countToRender = Math.min(this._visibleLightsGlowCount, maxLights);
 
     // Log first successful update (one-time)
     if (!this._lightGlowUpdateLogged) {
       console.log(
-        `✅ PIXI WORKER: updateLightGlowSprites() running successfully. Found ${lightEntities.length} active entities with LightEmitter component`
+        `✅ PIXI WORKER: updateLightGlowSprites() running successfully. Found ${this._visibleLightsGlowCount} visible glow lights`
       );
       this._lightGlowUpdateLogged = true;
     }
 
-    // Reset light pool for this frame (reuse objects to avoid GC)
-    this._lightPoolSize = 0;
-
-    for (let idx = 0; idx < lightEntities.length; idx++) {
-      const i = lightEntities[idx];
-      // Note: active[i] check no longer needed - queryActiveEntities already filters
-      // Skip entities without LightEmitter active or without glow sprite
-      if (!lightEnabled[i] || !hasGlowSprite[i]) continue;
-
-      // Use sprite position if available (already interpolated)
-      const bodySprite = this.bodySprites[i];
-      const x = bodySprite ? bodySprite.x : worldX[i];
-      const y = (bodySprite ? bodySprite.y : worldY[i]) - (glowHeightOffset[i] || 0);
-      const intensity = lightIntensity[i];
-
-      // Viewport culling: Only include lights that actually affect the visible screen
-      // Use roughly same logic as updateLighting for consistency
-      // OPTIMIZED: Use pre-calculated sqrt(intensity) from LightEmitter setter
-      const influenceRadius = 10 * sqrtLightIntensity[i];
-
-      if (
-        x + influenceRadius < cameraX ||
-        x - influenceRadius > viewRight ||
-        y + influenceRadius < cameraY ||
-        y - influenceRadius > viewBottom
-      ) {
-        continue;
-      }
-
-      // Add to pool for sorting
-      const poolIdx = this._lightPoolSize++;
-      if (!this._lightPool[poolIdx]) {
-        this._lightPool[poolIdx] = { entityId: 0, distSq: 0 };
-      }
-      const item = this._lightPool[poolIdx];
-      item.entityId = i;
-
-      // Distance squared to camera center (for prioritization)
-      // OPTIMIZED: Inline calculation to avoid function call overhead
-      const dxGlow = x - viewCenterX;
-      const dyGlow = y - viewCenterY;
-      item.distSq = dxGlow * dxGlow + dyGlow * dyGlow;
-    }
-
-    // Sort visible lights by distance (closest first)
-    // GC OPTIMIZATION: Truncate pool to active size (avoids slice allocation)
-    // Setting .length doesn't allocate - pool regrows lazily next frame if needed
-    const visibleLights = this._lightPool;
-    visibleLights.length = this._lightPoolSize;
-    // visibleLights.sort(sortByDistSq);
-
-    const countToRender = Math.min(visibleLights.length, maxLights);
-
     // Log first update with details (one-time)
     if (!this._lightGlowFirstUpdateLogged && countToRender > 0) {
       console.log(
-        `🔍 PIXI WORKER: updateLightGlowSprites() - Rendering ${countToRender} lights (${visibleLights.length} visible, maxLights: ${maxLights})`
+        `🔍 PIXI WORKER: updateLightGlowSprites() - Rendering ${countToRender} lights (${this._visibleLightsGlowCount} visible, maxLights: ${maxLights})`
       );
       console.log(
         `   Container visible: ${this.lightGlowContainer.visible}, alpha: ${this.lightGlowContainer.alpha
@@ -1872,6 +1831,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       );
       this._lightGlowFirstUpdateLogged = true;
     }
+
+    // Sprite pool index (maps active lights to sprite pool)
+    let spriteIndex = 0;
 
     for (let i = 0; i < countToRender; i++) {
       const entityIndex = visibleLights[i].entityId;
@@ -2004,6 +1966,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const shadowsByLight = this._shadowsByLight;
     shadowsByLight.clear();
 
+    // Pre-allocate array pool to avoid per-frame allocations (one array per maxLights)
+    if (!this._shadowArrayPool) {
+      this._shadowArrayPool = [];
+      for (let i = 0; i < maxLights; i++) {
+        this._shadowArrayPool.push([]);
+      }
+    }
+    const shadowArrayPool = this._shadowArrayPool;
+    let shadowArrayPoolIdx = 0;
+
     // Also track which lights have active shadows (for ordering)
     if (!this._activeLightIndices) {
       this._activeLightIndices = [];
@@ -2020,7 +1992,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (lightIdx < 0) continue;
 
       if (!shadowsByLight.has(lightIdx)) {
-        shadowsByLight.set(lightIdx, []);
+        // Reuse pooled array instead of allocating new one
+        const arr = shadowArrayPool[shadowArrayPoolIdx++];
+        arr.length = 0;
+        shadowsByLight.set(lightIdx, arr);
         activeLightIndices.push(lightIdx);
       }
       shadowsByLight.get(lightIdx).push(i);
