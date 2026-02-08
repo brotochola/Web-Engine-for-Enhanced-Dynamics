@@ -8980,15 +8980,7 @@ function l1(r, t, e) {
   }
   const n = new qt(s);
   return ((Nd[e] = n), n);
-}=== Worker FPS(averaged) ===
-  PredatorScene.js: 369 Spatial 0: 40.17 FPS
-PredatorScene.js: 369 Spatial 1: 35.94 FPS
-PredatorScene.js: 369 Spatial 2: 35.61 FPS
-PredatorScene.js: 371 Physics: 117.64 FPS
-PredatorScene.js: 372 Renderer: 33.00 FPS
-PredatorScene.js: 373 Particle: 102.08 FPS
-PredatorScene.js: 375 Logic 0: 94.19 FPS
-PredatorScene.js: 375 Logic 1: 93.98 FPS
+}
 class Ue {
   constructor(t) {
     (typeof t == 'number'
