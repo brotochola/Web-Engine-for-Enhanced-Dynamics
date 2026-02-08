@@ -129,6 +129,7 @@ export class DecorationPool {
     const scaleX = DecorationComponent.scaleX;
     const scaleY = DecorationComponent.scaleY;
     const rotation = DecorationComponent.rotation;
+    const baseRotation = DecorationComponent.baseRotation;
     const alpha = DecorationComponent.alpha;
     const tint = DecorationComponent.tint;
     const anchorX = DecorationComponent.anchorX;
@@ -151,7 +152,8 @@ export class DecorationPool {
     scaleX[i] = randomRange(config.scaleX, 1);
     scaleY[i] = randomRange(config.scaleY, 1);
 
-    rotation[i] = config.rotation ?? 0;
+    baseRotation[i] = config.rotation ?? 0;
+    rotation[i] = baseRotation[i];
     alpha[i] = randomRange(config.alpha, 1);
     tint[i] = convertRGBtoBGR(config.tint ?? 0xffffff); // Convert RGB→BGR for PixiJS
     anchorX[i] = config.anchorX ?? 0.5;

@@ -1582,6 +1582,7 @@ class ParticleWorker extends AbstractWorker {
     const swayAmplitude = DecorationComponent.swayAmplitude;
     const swayFrequency = DecorationComponent.swayFrequency;
     const rotation = DecorationComponent.rotation;
+    const baseRotation = DecorationComponent.baseRotation;
 
     // Use cameraBounds if provided, otherwise calculate from cameraData
     let zoom, cameraOffsetX, cameraOffsetY, minX, maxX, minY, maxY;
@@ -1628,8 +1629,8 @@ class ParticleWorker extends AbstractWorker {
         isItOnScreen[i] =
           screenX > minX && screenX < maxX && screenY > minY && screenY < maxY ? 1 : 0;
 
-        if (sway[idx]) {
-          rotation[idx] += Math.sin(this._swayBaseAngle * swayFrequency[idx] + idx * 0.1) * swayAmplitude[idx];
+        if (sway[i]) {
+          rotation[i] = baseRotation[i] + Math.sin(this._swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
         }
       }
     }
