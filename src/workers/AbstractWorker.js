@@ -323,8 +323,9 @@ export class AbstractWorker {
     }
 
     // Initialize neighbor data reference (single buffer - row ownership eliminates races)
+    // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     if (data.buffers?.neighborData) {
-      this.neighborData = new Int32Array(data.buffers.neighborData);
+      this.neighborData = new Uint16Array(data.buffers.neighborData);
     }
 
     // Initialize distance data reference (single buffer)
@@ -396,8 +397,9 @@ export class AbstractWorker {
       this.queryMetadata = data.queries.metadata || [];
 
       if (data.queries.cache) {
+        // Uses Uint16 since max entities = 65535 (fits in 16 bits)
         Object.entries(data.queries.cache).forEach(([key, array]) => {
-          this.queryCache.set(key, new Int32Array(array));
+          this.queryCache.set(key, new Uint16Array(array));
         });
       }
 
@@ -731,7 +733,7 @@ export class AbstractWorker {
     // Fallback to legacy implementation
     if (!this.queryCache) {
       console.warn(`[${this.constructor.name}] Query system not initialized!`);
-      return new Int32Array(0);
+      return new Uint16Array(0);
     }
 
     const key = componentClasses
@@ -796,14 +798,15 @@ export class AbstractWorker {
    * Compute a query by checking which entities have all required components (legacy)
    * @private
    * @param {Array<Component>} componentClasses - Array of component classes
-   * @returns {Int32Array} - Indices of matching entities
+   * @returns {Uint16Array} - Indices of matching entities
    */
   _computeQuery(componentClasses) {
     const componentNames = componentClasses.map((c) => c.name);
     const componentNameSet = new Set(componentNames);
 
+    // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     const maxSize = this.queryMetadata.reduce((sum, m) => sum + m.poolSize, 0);
-    const matchingIndices = new Int32Array(maxSize);
+    const matchingIndices = new Uint16Array(maxSize);
     let count = 0;
 
     for (const metadata of this.queryMetadata) {

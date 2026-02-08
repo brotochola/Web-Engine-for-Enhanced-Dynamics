@@ -797,8 +797,9 @@ class Scene {
     // Layout per entity: [totalCount:Int32, collisionCount:Int32, neighbors[MAX_NEIGHBORS]:Int32]
     // Neighbors are partitioned: collision candidates first, then visual-only neighbors
     // Physics only iterates collisionCount, logic iterates totalCount
+    // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     const maxNeighbors = this.config.spatial.maxNeighbors;
-    const NEIGHBOR_BUFFER_SIZE = this.totalEntityCount * (2 + maxNeighbors) * 4;
+    const NEIGHBOR_BUFFER_SIZE = this.totalEntityCount * (2 + maxNeighbors) * 2; // Uint16 = 2 bytes
     this.buffers.neighborData = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
 
     // Layout per entity: [dist2[MAX_NEIGHBORS]:Float32]

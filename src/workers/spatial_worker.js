@@ -79,7 +79,8 @@ class SpatialWorker extends AbstractWorker {
 
     // O(1) duplicate detection for multi-cell entities
     // processedThisFrame[j] = entityId means entity "entityId" already processed entity "j"
-    this.processedMarker = null; // Int32Array
+    // Uses Uint16 since max entities = 65535 (fits in 16 bits), sentinel = 65535
+    this.processedMarker = null; // Uint16Array
 
     // Scratch array for visual-only neighbors (partitioned after collision candidates)
     // Pre-allocated to avoid per-frame allocation
@@ -162,12 +163,14 @@ class SpatialWorker extends AbstractWorker {
       this.entityPosData = new Float32Array(data.buffers.entityPosData);
     }
     // Initialize duplicate detection marker
-    this.processedMarker = new Int32Array(this.globalEntityCount);
-    this.processedMarker.fill(-1);
+    // Uses Uint16 since max entities = 65535 (fits in 16 bits), sentinel = 65535
+    this.processedMarker = new Uint16Array(this.globalEntityCount);
+    this.processedMarker.fill(65535); // 65535 = no entity (sentinel)
 
     // Initialize visual-only buffer (max size = maxNeighbors)
+    // Uses Uint16 since it stores entity IDs (max 65535)
     const maxNeighbors = Grid.maxNeighbors || SPATIAL_DEFAULTS.maxNeighbors;
-    this._visualOnlyBuffer = new Int32Array(maxNeighbors);
+    this._visualOnlyBuffer = new Uint16Array(maxNeighbors);
 
     // Collision buffer: extra distance for entity movement between spatial and physics
     const collisionMargin = this.config.spatial?.collisionCandidateSearchMargin ?? SPATIAL_DEFAULTS.collisionCandidateSearchMargin;
@@ -484,7 +487,7 @@ class SpatialWorker extends AbstractWorker {
 
     // O(1) duplicate detection for neighbor search (prevents counting same neighbor twice)
     const processedMarker = this.processedMarker;
-    processedMarker.fill(-1); // Reset markers each frame
+    processedMarker.fill(65535); // Reset markers each frame (65535 = sentinel)
 
     const ownedRows = this.ownedRows;
     const ownedRowCount = this.ownedRowCount;

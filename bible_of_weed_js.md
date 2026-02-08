@@ -28,6 +28,8 @@
     * Row-based partitioning (no locks needed)
     * Single SharedArrayBuffer for grid cells
     * Deterministic memory layout
+    * Neighbor data uses Uint16Array (entity IDs fit in 16 bits)
+    * Grid entities use Uint32Array (cell indices can exceed 65535)
 
 * Decorations:
     * NOT GameObjects (separate optimized pool)

@@ -1293,7 +1293,7 @@ export function query(componentClasses) {
 
   // Not available in main thread context
   console.warn('[query] Query system only available in worker context');
-  return new Int32Array(0);
+  return new Uint16Array(0);
 }
 
 // ============================================================================
