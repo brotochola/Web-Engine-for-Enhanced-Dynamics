@@ -495,14 +495,14 @@ class LogicWorker extends AbstractWorker {
     // Check for visibility state transitions
     if (currentlyVisible && !wasVisible) {
       // Entity just entered the screen
-      if (obj.onScreenEnter) {
-        obj.onScreenEnter();
-      }
+      // if (obj.onScreenEnter) {
+      obj.onScreenEnter();
+      // }
     } else if (!currentlyVisible && wasVisible) {
       // Entity just exited the screen
-      if (obj.onScreenExit) {
-        obj.onScreenExit();
-      }
+      // if (obj.onScreenExit) {
+      obj.onScreenExit();
+      // }
     }
 
     // Update previous visibility state for next frame
