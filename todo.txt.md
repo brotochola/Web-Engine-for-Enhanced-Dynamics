@@ -11,110 +11,23 @@
 
 
 
----
-
-## 3. SCENE.JS
-
-### 3.1 — Constructor Does Too Much
-
-The constructor (lines 75-330) is ~255 lines and performs:
-- Config merging, RNG setup, state init
-- Worker holder creation, query system init
-- Key mapping setup (40+ lines of manual key→index mapping)
-- Frame timing init
-- Flash auto-registration
-- Entity registration loop
-
-**Recommendation:** Extract `_setupKeyMapping()`, `_initWorkerHolders()`, and `_initFrameTiming()` methods. The keyMap could be a static constant since it never changes.
-
-### 3.2 — `createSharedBuffers` is ~380 Lines
-
-This single method (lines 781-1163) allocates and initializes every SharedArrayBuffer. It's the longest method in the file and mixes buffer creation, view initialization, component setup, query system building, and grid initialization.
-
-**Recommendation:** Break into `_createComponentBuffers()`, `_createSpatialGridBuffers()`, `_createSyncBuffers()`, `_createNavigationBuffers()`, etc.
-
-### 3.3 — `createWorkers` Sends Massive Init Payload
-
-Lines 1445-1548 build a single `initData` object containing **every** buffer, config, metadata, and serialized query — then clone it via `postMessage` to **every** worker. This means:
-- The structured clone of this object happens N times (one per worker)
-- Workers that don't need certain buffers (e.g., physics doesn't need decal textures) still receive them
-- `data.decals.textures` contains raw RGBA pixel data for every texture — this is potentially megabytes of data cloned per worker
-
-**Recommendation:** Create per-worker-type init payloads that only include what each worker needs. The `decals.textures` field should only go to particle_worker. Shadow data should only go to particle_worker and renderer. This would significantly reduce init time and memory.
-
-### 3.4 — No Worker Error Recovery
-
-If a worker crashes or throws an unhandled error, `_showFatalErrorMessage` displays an overlay but the engine continues running with degraded state. There's no mechanism to restart a failed worker or gracefully degrade.
-
-
-### 3.6 — SharedArrayBuffer Memory Accounting
-
-The `getSharedBufferSize` method (lines 2319-2405) is good for debugging but doesn't account for `queryEntityMetadata`, `queryCache`, `queryResults`, or `cellSleepingBuffer` in its breakdown iteration. Some buffers are tallied via the generic loop, others are explicitly named — the hybrid approach means new buffers can be silently omitted.
+Create a `MEMORY_MODEL.md` or a centralized comment block in Scene.js documenting the ownership table.
 
 
 
----
-
-## 4. CROSS-CUTTING CONCERNS
-
-### 4.1 — Shared Memory Consistency Model is Implicit
-
-The entire engine relies on SharedArrayBuffers without Atomics (by design — "accepts stale data"). This is well-documented in Grid.js comments, but the consistency guarantees are scattered across comments in different files. There's no centralized document explaining:
-- Which worker writes which buffer
-- What staleness is acceptable where
-- What happens if a worker reads mid-write (torn read safety)
-
-**Recommendation:** Create a `MEMORY_MODEL.md` or a centralized comment block in Scene.js documenting the ownership table.
-
-
-
-
-### 4.6 — Developer Experience: Type Safety
 
 There is zero TypeScript, JSDoc `@typedef`, or runtime validation on component array access. Accessing `Transform.x[entityId]` with an invalid `entityId` silently returns `undefined`, which becomes `NaN` and propagates through the entire physics system (hence all the defensive NaN checks in the Verlet integrator).
 
-**Recommendation:** In debug mode, wrap component arrays in Proxies that validate index bounds and throw on invalid access. This would catch 90% of entity lifecycle bugs instantly. Disable in production for zero overhead.
-
-### 4.7 — Missing Profiling Hooks
-
-The stats system (`PHYSICS_STATS`, `PARTICLE_STATS`) only tracks aggregate counters. There's no per-system timing breakdown (e.g., how much of particle worker's frame time is spent in `updateShadowSprites` vs `stampCollectedParticles`). Adding `performance.now()` markers around each subsystem would make optimization data-driven.
-
----
-
-
-
-
-
---
-
-
-Engineering Analysis: spatial_worker.js
-1. GC PRESSURE & MEMORY
-
-
-
-
-2. PERFORMANCE & ALGORITHMIC
 
 
 
 
 
 
-2.5 — Visual-Only Buffer Copy
-spatial_worker.js
-Lines 696-698
-            for (let i = 0; i < visualOnlyCount; i++) {              neighborData[neighborOffset + 2 + collisionCount + i] = visualOnlyBuffer[i];            }
-Visual-only neighbors are first written to a scratch buffer, then copied to neighborData. This is a two-pass write: once to _visualOnlyBuffer, once to neighborData.
-Alternative: Write collision candidates left-to-right and visual-only right-to-left within the same neighborData range, then swap the right-to-left portion. Or use a cursor that tracks the "collision end" and writes visual-only starting from maxNeighbors - 1 downward, then compact. Though honestly the current approach is clean and the copy is bounded by maxNeighbors (500 ints = 2KB), so this is a minor concern.
 
 
-3.3 — Grid Buffer Access Pattern
-spatial_worker.js
-Lines 628-629
-              const checkByteOffset = checkCellIndex * Grid.cellByteSize;              const checkCellCount = gridCounts[checkByteOffset];
-Grid.cellByteSize = 4 + maxEntitiesPerCell * 4 = 260 bytes for the default maxEntitiesPerCell = 64. This means cells are 260 bytes apart. Reading gridCounts[checkByteOffset] reads byte 0 of a 260-byte cell. The next cell's count is 260 bytes away — just barely outside a single 64-byte cache line. So iterating cells within a row will cause one cache miss per cell for the count alone.
-This is inherent to the grid design and not easily fixable without separating counts from entity lists (which would break the nice "one contiguous block per cell" layout).
+
+
 4. CORRECTNESS & ROBUSTNESS
 4.1 — this.rowsPerBlock vs Local rowsPerBlock
 In rebuildOwnedRows, the row ownership check uses this.rowsPerBlock:
@@ -170,25 +83,6 @@ Now I have the full picture. Here's my thorough analysis:
 
 
 
-### 1.3 — Destructuring in Hot Path
-
-```503:503:src/workers/logic_worker.js
-        const [entityA, entityB] = pair;
-```
-
-Array destructuring allocates a temporary iterator. This is inside the `previousCollisions` iteration loop (line 497), which runs for every collision that ended this frame. V8 can optimize simple array destructuring in many cases, but it's still a code smell in performance-critical code. Use `pair[0]` / `pair[1]` directly.
-
-### 1.4 — `Keyboard.initialize()` Called Every Frame
-
-```274:274:src/workers/logic_worker.js
-    Keyboard.initialize(this.inputData, this.keyIndexMap);
-```
-
-This writes two static properties (`_inputData`, `_keyIndexMap`) every frame. The values don't change between frames — `this.inputData` is the same `Int32Array` view, and `this.keyIndexMap` is the same object. This is just two unnecessary property writes at 60fps. Should be called once during initialization, not every frame.
-
----
-
-
 
 
 ### 2.6 — Tick Decimation Has Overhead Even When Not Used
@@ -240,24 +134,6 @@ The function call overhead (`checkScreenVisibility` as a method) is probably the
 
 ---
 
-## 4. CORRECTNESS & ROBUSTNESS
-
-
-
-
-## 5. DEV EXPERIENCE
-
-
-
-### 5.3 — `Mouse.updatePreviousValues()` at End of Frame
-
-```390:390:src/workers/logic_worker.js
-    Mouse.updatePreviousValues();
-```
-
-Every logic worker calls this on the same static `Mouse` class. If there are 4 logic workers, this runs 4 times per frame on the same shared state. It's idempotent (writes the same values), but it's redundant work and could cause subtle issues if `Mouse.prevX` is read by one worker while being written by another (torn read on float values in SAB).
-
----
 
 
 -----------------
