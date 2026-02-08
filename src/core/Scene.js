@@ -1462,6 +1462,30 @@ class Scene {
       this.workers.navigation.name = 'navigation';
     }
 
+    // Set up early error handlers IMMEDIATELY after worker creation
+    // This catches module loading errors (import failures, syntax errors) that would
+    // otherwise be missed if we wait until after postMessage to set up handlers
+    const earlyErrorHandler = (workerName) => (e) => {
+      console.error(
+        `❌ EARLY ERROR in ${workerName} worker (module load failed):\n`,
+        `Message: ${e.message}\n`,
+        `File: ${e.filename}:${e.lineno}:${e.colno}`,
+        e
+      );
+    };
+    this.workers.physics.onerror = earlyErrorHandler('physics');
+    this.workers.renderer.onerror = earlyErrorHandler('renderer');
+    this.workers.particle.onerror = earlyErrorHandler('particle');
+    for (let i = 0; i < this.numberOfSpatialWorkers; i++) {
+      this.workers.spatialWorkers[i].onerror = earlyErrorHandler(`spatial${i}`);
+    }
+    for (let i = 0; i < this.workers.logicWorkers.length; i++) {
+      this.workers.logicWorkers[i].onerror = earlyErrorHandler(`logic${i}`);
+    }
+    if (this.workers.navigation) {
+      this.workers.navigation.onerror = earlyErrorHandler('navigation');
+    }
+
     // Preload assets
     const spritesheetConfigs = this.imageUrls.spritesheets || {};
     await this.preloadAssets(this.imageUrls, spritesheetConfigs);

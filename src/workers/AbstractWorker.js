@@ -35,7 +35,12 @@ export class AbstractWorker {
     this._messageQueue = Promise.resolve();
 
     this.self.onmessage = (e) => {
-      this._messageQueue = this._messageQueue.then(() => this.handleMessage(e));
+      this._messageQueue = this._messageQueue
+        .then(() => this.handleMessage(e))
+        .catch((error) => {
+          console.error(`[${this.constructor.name}] Error in handleMessage:`, error);
+          this.reportError('Worker message handling failed', error);
+        });
     };
 
     // Frame timing and FPS tracking
@@ -399,7 +404,8 @@ export class AbstractWorker {
       if (data.queries.cache) {
         // Uses Uint16 since max entities = 65535 (fits in 16 bits)
         Object.entries(data.queries.cache).forEach(([key, array]) => {
-          this.queryCache.set(key, new Uint16Array(array));
+          // Handle both TypedArray and regular Array inputs
+          this.queryCache.set(key, Uint16Array.from(array));
         });
       }
 
