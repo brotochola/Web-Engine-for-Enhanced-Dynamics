@@ -245,6 +245,10 @@ export class AbstractWorker {
       // );
     }
 
+    // Register core engine classes globally BEFORE loading scripts
+    // This ensures GameObject, Component, etc. are available when entity scripts are evaluated
+    this.registerCoreClasses();
+
     // Load game-specific scripts dynamically (entity classes + custom components)
     // ALL workers now receive entity classes for consistent component access
     // Uses the unified loadEntityScripts function from utils.js (auto-detects worker context)
@@ -433,8 +437,7 @@ export class AbstractWorker {
       GameObject.cameraData = this.cameraData;
     }
 
-    // Register core engine classes globally (GameObject, Mouse, Keyboard, etc.)
-    this.registerCoreClasses();
+    // Note: registerCoreClasses() already called earlier (before loadEntityScripts)
 
     // Initialize ALL components (core + custom) for ALL workers
     // Connects components to SharedArrayBuffers and makes them globally available

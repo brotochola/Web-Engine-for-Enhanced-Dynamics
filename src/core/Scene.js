@@ -697,12 +697,25 @@ class Scene {
   /**
    * Load entity scripts dynamically in main thread
    * Uses the unified loadEntityScripts function (auto-detects window context)
+   *
+   * In bundle mode, classes are typically already imported by the scene file,
+   * so we expose them directly without re-loading the scripts.
    */
   async loadEntityScriptsInMainThread() {
     const scriptsToLoad = [];
 
     // Collect script paths from registered entity classes
+    // Classes that are already in registeredClasses don't need to be loaded again
     for (const classInfo of this.registeredClasses) {
+      const className = classInfo.class.name;
+
+      // If we already have the class reference, expose it globally without loading
+      if (classInfo.class && typeof window !== 'undefined') {
+        window[className] = classInfo.class;
+        continue;
+      }
+
+      // Only load scripts for classes we don't have yet
       if (classInfo.scriptPath) {
         scriptsToLoad.push(classInfo.scriptPath);
       }
@@ -1495,20 +1508,25 @@ class Scene {
     const spritesheetConfigs = this.imageUrls.spritesheets || {};
     await this.preloadAssets(this.imageUrls, spritesheetConfigs);
 
-    // Collect script paths
+    // Collect script paths - convert to absolute URLs for Workers running from Blobs
+    // Workers created from Blobs can't resolve relative paths like '/demos/...'
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const scriptsToLoad = [
       ...new Set(
         this.registeredClasses
           .map((r) => r.scriptPath)
           .filter((path) => path !== null && path !== undefined)
           .map((path) => {
-            if (path.startsWith('/') || path.startsWith('http')) {
+            // Already absolute URL
+            if (path.startsWith('http://') || path.startsWith('https://')) {
               return path;
             }
-            if (path.startsWith('../')) {
-              return path;
+            // Convert to absolute URL for Workers
+            if (path.startsWith('/')) {
+              return `${origin}${path}`;
             }
-            return `../${path}`;
+            // Relative paths - resolve against origin
+            return new URL(path, origin).href;
           })
       ),
     ];
