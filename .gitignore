@@ -21,3 +21,7 @@ dist/
 build/
 *.min.js
 *.min.css
+
+# Generated files
+src/core/InlineWorkers.generated.js
+src/index.bundle.js
