@@ -1399,6 +1399,9 @@ COMPUTE VISIBLE LIGHTS (shared by updateLighting & updateLightGlowSprites)
    * Avoids duplicate queryActiveEntities, culling, and sorting.
    */
   computeVisibleLights() {
+    // Early return if lighting is disabled (LightEmitter arrays not initialized)
+    if (!LightEmitter.active) return;
+
     const worldX = Transform.x;
     const worldY = Transform.y;
     const lightEnabled = LightEmitter.active;
