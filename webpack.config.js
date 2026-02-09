@@ -51,24 +51,7 @@ const optimization = {
                     drop_debugger: true,
                     pure_funcs: ['console.debug']
                 },
-                mangle: {
-                    reserved: [
-                        // Core
-                        'WEED', 'GameEngine', 'Scene', 'GameObject', 'Component',
-                        'FSM', 'FSMState', 'DebugFlags', 'DebugUI', 'Mouse', 'Camera',
-                        'Ray', 'NavGrid', 'Keyboard', 'SpriteSheetRegistry', 'BigAtlasInspector',
-                        // Components - CRITICAL: these names are used for identification
-                        'Transform', 'RigidBody', 'Collider', 'SpriteRenderer',
-                        'ParticleComponent', 'DecorationComponent', 'LightEmitter',
-                        'ShadowCaster', 'FlashComponent',
-                        // Systems
-                        'ParticleEmitter', 'DecorationPool', 'Flash', 'QuerySystem',
-                        // Workers
-                        'AbstractWorker',
-                        // Enums
-                        'ShapeType'
-                    ]
-                },
+                mangle: false,
                 format: {
                     comments: false
                 }
@@ -122,7 +105,7 @@ const mainConfig = {
             }
         ]
     },
-    // optimization,
+    optimization,
     plugins: shouldObfuscate ? [new WebpackObfuscator(obfuscatorOptions, [])] : [],
     resolve: {
         extensions: ['.js']
