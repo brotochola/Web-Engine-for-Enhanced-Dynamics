@@ -123,8 +123,10 @@ for (const file of distFiles) {
     }
 }
 
-console.log('\n✅ Single-file bundle created: dist/weed.bundle.min.js');
-console.log('\n📊 Bundle size:');
-const bundleStats = fs.statSync(path.join(rootDir, 'dist', 'weed.bundle.min.js'));
-console.log('   weed.bundle.min.js: ' + (bundleStats.size / 1024).toFixed(1) + ' KB');
-console.log('   (includes all workers embedded as strings)');
+console.log('\n✅ Single-file bundles created!');
+console.log('\n📊 Bundle sizes:');
+const umdStats = fs.statSync(path.join(rootDir, 'dist', 'weed.bundle.min.js'));
+const esmStats = fs.statSync(path.join(rootDir, 'dist', 'weed.bundle.esm.min.js'));
+console.log('   weed.bundle.min.js:     ' + (umdStats.size / 1024).toFixed(1) + ' KB (UMD - for <script> tags)');
+console.log('   weed.bundle.esm.min.js: ' + (esmStats.size / 1024).toFixed(1) + ' KB (ESM - for import statements)');
+console.log('   (both include all workers embedded as strings)');

@@ -4,8 +4,13 @@
   "description": "A blazing-fast multithreaded web game engine that handles 20,000+ NPCs without breaking a sweat",
   "type": "module",
   "main": "dist/weed.bundle.min.js",
+  "module": "dist/weed.bundle.esm.min.js",
   "exports": {
-    ".": "./dist/weed.bundle.min.js",
+    ".": {
+      "import": "./dist/weed.bundle.esm.min.js",
+      "require": "./dist/weed.bundle.min.js",
+      "default": "./dist/weed.bundle.min.js"
+    },
     "./src": "./src/index.js",
     "./src/*": "./src/*"
   },

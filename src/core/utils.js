@@ -1622,27 +1622,44 @@ export async function loadEntityScripts(scriptsToLoad, globalContext = null, ver
   }
 
   const contextName = typeof window !== 'undefined' ? 'Main Thread' : 'Worker';
+  const isWorker = typeof window === 'undefined';
+
+  // Detect if we're in a Blob-based worker (bundle mode) - import() won't work
+  const isBlobWorker = isWorker && typeof self !== 'undefined' &&
+    self.location && self.location.href && self.location.href.startsWith('blob:');
 
   if (verbose) {
     console.log(`📦 ${contextName}: Loading ${scriptsToLoad.length} entity scripts...`);
   }
 
-  for (const scriptPath of scriptsToLoad) {
-    try {
-      const module = await import(scriptPath);
+  // For Blob workers, load scripts in multiple passes to handle dependencies
+  // Scripts that fail (due to missing dependencies) are retried after others load
+  let pendingScripts = [...scriptsToLoad];
+  const maxPasses = 5;
+  let pass = 0;
 
-      // Make the exported class(es) available globally
-      Object.keys(module).forEach((key) => {
-        globalContext[key] = module[key];
-        loadedClasses[key] = module[key];
-        if (verbose) {
-          console.log(`  ✓ Registered ${key} from ${scriptPath}`);
-        }
-      });
-    } catch (error) {
-      console.error(`  ✗ ${contextName}: Failed to load ${scriptPath}:`, error);
-      console.error(`Error stack:`, error.stack);
+  while (pendingScripts.length > 0 && pass < maxPasses) {
+    pass++;
+    const failedScripts = [];
+
+    for (const scriptPath of pendingScripts) {
+      const success = await loadSingleScript(
+        scriptPath, loadedClasses, globalContext, isBlobWorker, contextName, verbose
+      );
+      if (!success) {
+        failedScripts.push(scriptPath);
+      }
     }
+
+    // If no progress was made, break to avoid infinite loop
+    if (failedScripts.length === pendingScripts.length) {
+      if (verbose) {
+        console.warn(`⚠️ ${contextName}: Could not load ${failedScripts.length} scripts after ${pass} passes`);
+      }
+      break;
+    }
+
+    pendingScripts = failedScripts;
   }
 
   if (verbose) {
@@ -1652,6 +1669,121 @@ export async function loadEntityScripts(scriptsToLoad, globalContext = null, ver
   }
 
   return loadedClasses;
+}
+
+async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlobWorker, contextName, verbose) {
+  try {
+    let module;
+
+    if (isBlobWorker) {
+      // In Blob-based workers, use fetch + evaluation instead of import()
+      // This handles the case where workers are created from bundled strings
+      const response = await fetch(scriptPath);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      const scriptText = await response.text();
+
+      // Create a module-like wrapper that captures exports
+      // We need to handle ES module syntax (export class, export const, etc.)
+      const exports = {};
+
+      // Transform the script to work in non-module context
+      let transformedScript = scriptText
+        // Remove ALL import statements (we provide WEED via parameters, other classes are already global)
+        .replace(/import\s+[\w\s{},*]+\s+from\s+['"][^'"]+['"]\s*;?/g, '')
+        .replace(/import\s+['"][^'"]+['"]\s*;?/g, '') // side-effect imports
+        // Remove const/let destructuring from WEED (we provide these as parameters)
+        .replace(/const\s*\{[\s\S]*?\}\s*=\s*WEED\s*;?/g, '')
+        .replace(/let\s*\{[\s\S]*?\}\s*=\s*WEED\s*;?/g, '')
+        // Replace import.meta.url with the script path
+        .replace(/import\.meta\.url/g, `'${scriptPath}'`)
+        // Transform exports to assignments on our exports object
+        .replace(/export\s+class\s+(\w+)/g, 'exports.$1 = class $1')
+        .replace(/export\s+const\s+(\w+)\s*=/g, 'exports.$1 =')
+        .replace(/export\s+function\s+(\w+)/g, 'exports.$1 = function $1')
+        .replace(/export\s+\{\s*([^}]+)\s*\}/g, (match, names) => {
+          return names.split(',').map(n => {
+            const name = n.trim().split(/\s+as\s+/);
+            return `exports.${name[name.length - 1].trim()} = ${name[0].trim()};`;
+          }).join('\n');
+        });
+
+      // Build the wrapper with WEED globals as function parameters
+      const moduleWrapper = new Function(
+        'exports', 'WEED',
+        'GameObject', 'Component', 'FSM', 'FSMState', 'Transform', 'RigidBody', 'Collider',
+        'SpriteRenderer', 'ParticleComponent', 'ShadowCaster', 'LightEmitter', 'FlashComponent',
+        'DecorationComponent', 'ParticleEmitter', 'DecorationPool', 'Flash', 'Mouse', 'Camera',
+        'NavGrid', 'Ray', 'ShapeType', 'rng', 'randomColor', 'distanceSq2D', 'getDirectionFromAngle',
+        'containerRadius', 'SpriteSheetRegistry', 'Keyboard',
+        transformedScript
+      );
+
+      // Get references - in workers, classes are directly on self, not self.WEED
+      const WEED = globalContext.WEED || globalContext;
+      const g = globalContext; // shorthand for getting classes
+
+      try {
+        moduleWrapper(
+          exports, WEED,
+          g.GameObject || WEED.GameObject,
+          g.Component || WEED.Component,
+          g.FSM || WEED.FSM,
+          g.FSMState || WEED.FSMState,
+          g.Transform || WEED.Transform,
+          g.RigidBody || WEED.RigidBody,
+          g.Collider || WEED.Collider,
+          g.SpriteRenderer || WEED.SpriteRenderer,
+          g.ParticleComponent || WEED.ParticleComponent,
+          g.ShadowCaster || WEED.ShadowCaster,
+          g.LightEmitter || WEED.LightEmitter,
+          g.FlashComponent || WEED.FlashComponent,
+          g.DecorationComponent || WEED.DecorationComponent,
+          g.ParticleEmitter || WEED.ParticleEmitter,
+          g.DecorationPool || WEED.DecorationPool,
+          g.Flash || WEED.Flash,
+          g.Mouse || WEED.Mouse,
+          g.Camera || WEED.Camera,
+          g.NavGrid || WEED.NavGrid,
+          g.Ray || WEED.Ray,
+          g.ShapeType || WEED.ShapeType,
+          g.rng || WEED.rng,
+          g.randomColor || WEED.randomColor,
+          g.distanceSq2D || WEED.distanceSq2D,
+          g.getDirectionFromAngle || WEED.getDirectionFromAngle,
+          g.containerRadius || WEED.containerRadius,
+          g.SpriteSheetRegistry || WEED.SpriteSheetRegistry,
+          g.Keyboard || WEED.Keyboard
+        );
+      } catch (evalError) {
+        console.error(`  ✗ Error evaluating ${scriptPath}:`, evalError);
+        console.error('First 500 chars of transformed script:', transformedScript.substring(0, 500));
+        throw evalError;
+      }
+
+      module = exports;
+    } else {
+      // Standard dynamic import for module-based workers and main thread
+      module = await import(scriptPath);
+    }
+
+    // Make the exported class(es) available globally
+    Object.keys(module).forEach((key) => {
+      globalContext[key] = module[key];
+      loadedClasses[key] = module[key];
+      if (verbose) {
+        console.log(`  ✓ Registered ${key} from ${scriptPath}`);
+      }
+    });
+    return true; // Success
+  } catch (error) {
+    // Only log on first pass or if verbose
+    if (verbose) {
+      console.warn(`  ⏳ ${contextName}: Deferred ${scriptPath} (dependency not ready)`);
+    }
+    return false; // Failed, will retry
+  }
 }
 
 // ============================================================================
