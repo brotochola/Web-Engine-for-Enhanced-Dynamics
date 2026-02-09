@@ -1422,35 +1422,40 @@ class Scene {
 
     const cacheBust = `?v=${Date.now()}`;
 
+    // Check if we're in bundle mode (WEED.WorkerSources exists)
+    const useInlineWorkers = typeof window !== 'undefined' && window.WEED?.BUNDLE_MODE && window.WEED?.WorkerSources;
+
+    // Helper to create worker from inline source or file
+    const makeWorker = (workerName) => {
+      if (useInlineWorkers) {
+        return window.WEED.createWorker(workerName);
+      }
+      return new Worker(`/src/workers/${workerName}.js${cacheBust}`, { type: 'module' });
+    };
+
+    if (useInlineWorkers) {
+      console.log('[Scene] Using inline workers (single-file bundle mode)');
+    }
+
     // Create multiple spatial workers for parallel neighbor detection
     const numberOfSpatialWorkers = this.config.spatial.numberOfSpatialWorkers;
     for (let i = 0; i < numberOfSpatialWorkers; i++) {
-      const spatialWorker = new Worker(`/src/workers/spatial_worker.js${cacheBust}`, {
-        type: 'module',
-      });
+      const spatialWorker = makeWorker('spatial_worker');
       spatialWorker.name = `spatial${i}`;
       this.workers.spatialWorkers.push(spatialWorker);
     }
 
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
-      const logicWorker = new Worker(`/src/workers/logic_worker.js${cacheBust}`, {
-        type: 'module',
-      });
+      const logicWorker = makeWorker('logic_worker');
       logicWorker.name = `logic${i}`;
       this.workers.logicWorkers.push(logicWorker);
     }
 
-    this.workers.physics = new Worker(`/src/workers/physics_worker.js${cacheBust}`, {
-      type: 'module',
-    });
-    this.workers.renderer = new Worker(`/src/workers/pixi_worker.js${cacheBust}`, {
-      type: 'module',
-    });
+    this.workers.physics = makeWorker('physics_worker');
+    this.workers.renderer = makeWorker('pixi_worker');
 
     // Particle worker always runs - handles particles, lighting, shadows, visibility, etc.
-    this.workers.particle = new Worker(`/src/workers/particle_worker.js${cacheBust}`, {
-      type: 'module',
-    });
+    this.workers.particle = makeWorker('particle_worker');
 
     this.workers.physics.name = 'physics';
     this.workers.renderer.name = 'renderer';
@@ -1458,9 +1463,7 @@ class Scene {
 
     // Navigation worker (if pathfinding enabled)
     if (this.config.navigation.enabled) {
-      this.workers.navigation = new Worker(`/src/workers/nav_worker.js${cacheBust}`, {
-        type: 'module',
-      });
+      this.workers.navigation = makeWorker('nav_worker');
       this.workers.navigation.name = 'navigation';
     }
 

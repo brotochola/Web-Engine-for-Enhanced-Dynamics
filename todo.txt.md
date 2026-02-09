@@ -1,4 +1,4 @@
-6.2.26:
+
 
 
 
@@ -13,12 +13,7 @@
 
 Create a `MEMORY_MODEL.md` or a centralized comment block in Scene.js documenting the ownership table.
 
-
-
-
-There is zero TypeScript, JSDoc `@typedef`, or runtime validation on component array access. Accessing `Transform.x[entityId]` with an invalid `entityId` silently returns `undefined`, which becomes `NaN` and propagates through the entire physics system (hence all the defensive NaN checks in the Verlet integrator).
-
-
+ JSDoc `@typedef`,
 
 
 
@@ -81,13 +76,15 @@ The function call overhead (`checkScreenVisibility` as a method) is probably the
 
 
 
-Segun la direccion de la velocidad ponerle un offset al pattern del spatial worker
+-Segun la direccion de la velocidad ponerle un offset al pattern del spatial worker
 
 
-re computar entidades activas en spawn y despawn!
 
+-testear renderizar en renderTextures, principalmente para las cosas en multiply
 
-decorations con container!
+-decorations con container!
+-constraints en el physics
+-limitar aceleration en GameObject, en addAcceleration (asi lo hace el logic y no el physics)
 
 
 4.testear EntityClass.tickAll vs instance.tick()
