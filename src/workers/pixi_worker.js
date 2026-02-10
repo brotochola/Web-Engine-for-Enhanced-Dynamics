@@ -1906,8 +1906,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (bodySprite) {
         sx = bodySprite.x;
         sy = bodySprite.y;
-      } else if (screenX[entityIndex] !== 0 || screenY[entityIndex] !== 0 || 
-                 (worldX[entityIndex] === 0 && worldY[entityIndex] === 0)) {
+      } else if (screenX[entityIndex] !== 0 || screenY[entityIndex] !== 0 ||
+        (worldX[entityIndex] === 0 && worldY[entityIndex] === 0)) {
         sx = screenX[entityIndex];
         sy = screenY[entityIndex];
       } else {
