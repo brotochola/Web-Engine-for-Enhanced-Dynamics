@@ -103,7 +103,7 @@ export class PredatorScene extends WEED.Scene {
     },
 
     renderer: {
-      noLimitFPS: false,
+      noLimitFPS: true,
       ySorting: true,
       interpolation: true,
       cullingRatio: 0.33,
@@ -290,7 +290,7 @@ export class PredatorScene extends WEED.Scene {
 
     this.spawnLights(this.numberOfTallLights);
     // this.spawnHouses(this.numberOfHouses);
-    this.spawnGrass(20000);
+    this.spawnGrass(10000);
     this.spawnCivilians(10000);
     this.spawnTrash(100);
     // this.spawnEntity(PreySpawner, {});

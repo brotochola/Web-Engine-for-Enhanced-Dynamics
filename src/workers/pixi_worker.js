@@ -557,10 +557,8 @@ class PixiRenderer extends AbstractWorker {
       this.stats[RENDERER_STATS.VISIBLE_ENTITIES] = this.visibleEntityCount;
       this.stats[RENDERER_STATS.VISIBLE_PARTICLES] = this.visibleParticleCount;
 
-      // Active decorations count (from shared counter)
-      this.stats[RENDERER_STATS.ACTIVE_DECORATIONS] = DecorationPool.activeCount
-        ? DecorationPool.activeCount[0]
-        : 0;
+      // Active decorations count (derived from free list)
+      this.stats[RENDERER_STATS.ACTIVE_DECORATIONS] = DecorationPool.getActiveCount();
     }
 
     // Reset draw call counter for next frame
@@ -2573,8 +2571,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       return;
     }
 
-    // Early exit if no decorations are active (shared counter from DecorationPool)
-    if (DecorationPool.activeCount && DecorationPool.activeCount[0] === 0) {
+    // Early exit if no decorations are active (derived from free list)
+    if (DecorationPool.getActiveCount() === 0) {
       this.visibleDecorationCount = 0;
       return;
     }

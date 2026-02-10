@@ -888,23 +888,25 @@ class Scene {
       );
       DecorationComponent.decorationCount = maxDecorations;
 
-      // Create shared buffer for active decoration count (4 bytes for Uint32)
-      this.buffers.decorationActiveCount = new SharedArrayBuffer(4);
-      // Initialize to 0
-      new Uint32Array(this.buffers.decorationActiveCount)[0] = 0;
+      // Create shared free list for O(1) decoration allocation (like particles)
+      // freeList: Uint16Array of size maxDecorations (stack of free indices)
+      // freeListTop: Int32Array[1] (atomic counter for stack top)
+      this.buffers.decorationFreeList = new SharedArrayBuffer(maxDecorations * 2); // Uint16 = 2 bytes
+      this.buffers.decorationFreeListTop = new SharedArrayBuffer(4); // Int32 = 4 bytes
 
-      // Create shared buffers for active decoration indices (O(1) iteration in workers)
-      // activeIndices: Uint16Array of active decoration indices
-      // indexToActiveSlot: Uint16Array mapping decoration index → slot in activeIndices
-      this.buffers.decorationActiveIndices = new SharedArrayBuffer(maxDecorations * 2); // Uint16 = 2 bytes
-      this.buffers.decorationIndexToSlot = new SharedArrayBuffer(maxDecorations * 2);
+      // Initialize free list with all indices (0, 1, 2, ..., maxDecorations-1)
+      const freeList = new Uint16Array(this.buffers.decorationFreeList);
+      for (let i = 0; i < maxDecorations; i++) {
+        freeList[i] = i;
+      }
+      // Stack top starts at maxDecorations (all indices are free)
+      new Int32Array(this.buffers.decorationFreeListTop)[0] = maxDecorations;
 
       // Initialize DecorationPool on main thread for scene-level spawning
       DecorationPool.initialize(maxDecorations);
-      DecorationPool.initializeActiveCount(this.buffers.decorationActiveCount);
-      DecorationPool.initializeActiveIndices(
-        this.buffers.decorationActiveIndices,
-        this.buffers.decorationIndexToSlot
+      DecorationPool.initializeFreeList(
+        this.buffers.decorationFreeList,
+        this.buffers.decorationFreeListTop
       );
     }
 
@@ -1607,9 +1609,8 @@ class Scene {
       particleFreeList: this.buffers.particleFreeList || null,
       particleFreeListTop: this.buffers.particleFreeListTop || null,
       maxDecorations: this.config.decoration.maxDecorations,
-      decorationActiveCount: this.buffers.decorationActiveCount || null,
-      decorationActiveIndices: this.buffers.decorationActiveIndices || null,
-      decorationIndexToSlot: this.buffers.decorationIndexToSlot || null,
+      decorationFreeList: this.buffers.decorationFreeList || null,
+      decorationFreeListTop: this.buffers.decorationFreeListTop || null,
       decals: this.config.particle.decals
         ? {
           enabled: true,
@@ -2471,7 +2472,8 @@ class Scene {
     breakdown.bloodTilesDirty = getBufferSize(this.buffers.bloodTilesDirty);
     breakdown.navigationData = getBufferSize(this.buffers.navigationData);
     breakdown.navigationStats = getBufferSize(this.buffers.navigationStats);
-    breakdown.decorationActiveCount = getBufferSize(this.buffers.decorationActiveCount);
+    breakdown.decorationFreeList = getBufferSize(this.buffers.decorationFreeList);
+    breakdown.decorationFreeListTop = getBufferSize(this.buffers.decorationFreeListTop);
 
     // Calculate total
     for (const value of Object.values(breakdown)) {
