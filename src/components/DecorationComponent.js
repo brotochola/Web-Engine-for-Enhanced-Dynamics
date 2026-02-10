@@ -16,6 +16,8 @@ export class DecorationComponent extends Component {
     // Offset from position for depth sorting (e.g., sort at ground level while sprite is at gun height)
     offsetX: Float32Array,
     offsetY: Float32Array,
+    screenX: Float32Array,
+    screenY: Float32Array,
 
     // === Visuals ===
     textureId: Uint16Array, // Index into texture atlas (bigAtlas animation index)

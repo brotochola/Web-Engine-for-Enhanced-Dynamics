@@ -805,6 +805,8 @@ class ParticleWorker extends AbstractWorker {
     const stayOnTheFloor = ParticleComponent.stayOnTheFloor;
     const despawnOnGroundContact = ParticleComponent.despawnOnGroundContact;
     const tweenToAlpha0 = ParticleComponent.tweenToAlpha0;
+    const screenX = ParticleComponent.screenX;
+    const screenY = ParticleComponent.screenY;
 
     let activeCount = 0;
 
@@ -909,13 +911,16 @@ class ParticleWorker extends AbstractWorker {
         }
       }
 
-      // Update screen visibility for this particle
+      // Update screen visibility and screen coordinates for this particle
       if (hasCamera) {
-        const screenX = x[i] * camZoom - camOffX;
-        const screenY = y[i] * camZoom - camOffY;
+        const sx = x[i] * camZoom - camOffX;
+        const sy = y[i] * camZoom - camOffY;
 
-        isItOnScreen[i] =
-          screenX > camMinX && screenX < camMaxX && screenY > camMinY && screenY < camMaxY ? 1 : 0;
+        // Write screen coordinates to shared buffer (read by pixi_worker)
+        screenX[i] = sx;
+        screenY[i] = sy;
+
+        isItOnScreen[i] = sx > camMinX && sx < camMaxX && sy > camMinY && sy < camMaxY ? 1 : 0;
       }
 
       activeCount++;
@@ -1583,7 +1588,8 @@ class ParticleWorker extends AbstractWorker {
     const swayFrequency = DecorationComponent.swayFrequency;
     const rotation = DecorationComponent.rotation;
     const baseRotation = DecorationComponent.baseRotation;
-
+    const screenX = DecorationComponent.screenX;
+    const screenY = DecorationComponent.screenY;
     // Use cameraBounds if provided, otherwise calculate from cameraData
     let zoom, cameraOffsetX, cameraOffsetY, minX, maxX, minY, maxY;
 
@@ -1622,12 +1628,15 @@ class ParticleWorker extends AbstractWorker {
         const i = activeIndices[idx];
 
         // Transform world coordinates to screen coordinates
-        const screenX = x[i] * zoom - cameraOffsetX;
-        const screenY = y[i] * zoom - cameraOffsetY;
+        const sx = x[i] * zoom - cameraOffsetX;
+        const sy = y[i] * zoom - cameraOffsetY;
+
+        // Write screen coordinates to shared buffer (read by pixi_worker)
+        screenX[i] = sx;
+        screenY[i] = sy;
 
         // Check if screen position is within viewport bounds (with margin)
-        isItOnScreen[i] =
-          screenX > minX && screenX < maxX && screenY > minY && screenY < maxY ? 1 : 0;
+        isItOnScreen[i] = sx > minX && sx < maxX && sy > minY && sy < maxY ? 1 : 0;
 
         if (sway[i]) {
           rotation[i] = baseRotation[i] + Math.sin(this._swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];

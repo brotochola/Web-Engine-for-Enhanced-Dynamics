@@ -575,10 +575,10 @@ class PixiRenderer extends AbstractWorker {
     const cameraX = this._renderCameraX;
     const cameraY = this._renderCameraY;
 
-    // Apply camera state to particle container
-    this.particleContainer.scale.set(zoom);
-    this.particleContainer.x = -cameraX * zoom;
-    this.particleContainer.y = -cameraY * zoom;
+    // ParticleContainer stays at 0,0 with scale 1 - sprites use screen coordinates
+    // this.particleContainer.scale.set(1);  // Already default
+    // this.particleContainer.x = 0;
+    // this.particleContainer.y = 0;
 
     // Apply camera state to background (since it's not a child of particleContainer)
     if (this.backgroundSprite) {
@@ -603,12 +603,8 @@ class PixiRenderer extends AbstractWorker {
 
     // Shadow sprites are now in main particleContainer (get camera transform automatically)
 
-    // Apply camera state to light glow container
-    if (this.lightGlowContainer) {
-      this.lightGlowContainer.scale.set(zoom);
-      this.lightGlowContainer.x = -cameraX * zoom;
-      this.lightGlowContainer.y = -cameraY * zoom;
-    }
+    // Light glow container stays at 0,0 - glow sprites use screen coordinates
+    // (same as entities, particles, decorations)
   }
 
   /**
@@ -792,6 +788,8 @@ class PixiRenderer extends AbstractWorker {
     const renderVisible = SpriteRenderer.renderVisible;
     const isAnimated = SpriteRenderer.isAnimated;
     const isItOnScreen = SpriteRenderer.isItOnScreen;
+    const screenX = SpriteRenderer.screenX;
+    const screenY = SpriteRenderer.screenY;
 
     const renderDirty = SpriteRenderer.renderDirty; // OPTIMIZATION: Dirty flag
 
@@ -887,8 +885,12 @@ class PixiRenderer extends AbstractWorker {
 
       // DENSE: use entity index directly for all component data
       // PixiJS 8 Particle uses scaleX/scaleY instead of scale.x/scale.y
-      if (bodySprite.scaleX !== scaleX[entityIndex]) bodySprite.scaleX = scaleX[entityIndex];
-      if (bodySprite.scaleY !== scaleY[entityIndex]) bodySprite.scaleY = scaleY[entityIndex];
+      // Multiply by zoom since particleContainer.scale is now 1.0 (screen space rendering)
+      const zoom = this._renderZoom;
+      const entityScaleX = scaleX[entityIndex] * zoom;
+      const entityScaleY = scaleY[entityIndex] * zoom;
+      if (bodySprite.scaleX !== entityScaleX) bodySprite.scaleX = entityScaleX;
+      if (bodySprite.scaleY !== entityScaleY) bodySprite.scaleY = entityScaleY;
 
       // Update anchor points (0-1 range)
       // PixiJS 8 Particle uses anchorX/anchorY instead of anchor.x/anchor.y
@@ -953,7 +955,7 @@ class PixiRenderer extends AbstractWorker {
       const item = this._ySortPool[poolIdx];
       item.entityId = entityIndex;
       item.sprite = bodySprite;
-      item.y = y[entityIndex];
+      item.y = screenY[entityIndex];
 
       // Update transform (position, rotation, scale)
 
@@ -961,8 +963,8 @@ class PixiRenderer extends AbstractWorker {
       // // or if interpolation is disabled
       if (this.interpolation && this.frameRateData && !wasInvisible) {
         // Interpolate from current sprite position toward physics target
-        bodySprite.x += (x[entityIndex] - bodySprite.x) * interpolationAlpha;
-        bodySprite.y += (y[entityIndex] - bodySprite.y) * interpolationAlpha;
+        bodySprite.x += (screenX[entityIndex] - bodySprite.x) * interpolationAlpha;
+        bodySprite.y += (screenY[entityIndex] - bodySprite.y) * interpolationAlpha;
 
         // Handle rotation interpolation with angle wrapping
         // Normalize angle difference to [-PI, PI] to avoid going the long way
@@ -971,8 +973,8 @@ class PixiRenderer extends AbstractWorker {
       } else {
         // No interpolation - directly set position
         // (first frame visible, interpolation disabled, or no frameRateData)
-        bodySprite.x = x[entityIndex];
-        bodySprite.y = y[entityIndex];
+        bodySprite.x = screenX[entityIndex];
+        bodySprite.y = screenY[entityIndex];
         bodySprite.rotation = rotation[entityIndex];
       }
     }
@@ -1276,7 +1278,6 @@ LIGHTING SYSTEM SETUP
       glProgram,
       resources: {
         uniforms: {
-          uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
           uZoom: { value: 1.0, type: 'f32' },
           uViewport: {
             value: new Float32Array([
@@ -1289,7 +1290,6 @@ LIGHTING SYSTEM SETUP
             value: new Float32Array([this.canvasWidth, this.canvasHeight]),
             type: 'vec2<f32>',
           },
-          uInvResolution: { value: 1.0 / this.lightingResolution, type: 'f32' },
 
           uLightX: { value: this._lightX, type: 'f32', size: maxLights },
           uLightY: { value: this._lightY, type: 'f32', size: maxLights },
@@ -1340,7 +1340,6 @@ LIGHTING SYSTEM SETUP
     return `
     precision mediump float;
 
-    uniform vec2 uCameraPos;
     uniform float uZoom;
     uniform vec2 uViewport;
     uniform vec2 uFullCanvasSize;
@@ -1358,27 +1357,25 @@ LIGHTING SYSTEM SETUP
       // Use normalized coordinates (0 to 1) to avoid resolution-scaling ambiguity.
       vec2 normCoord = gl_FragCoord.xy / uViewport;
 
-      // Map normalized coordinates back to full-screen pixels.
-      // When rendering to RenderTexture, PixiJS 8 may have already flipped Y coordinates.
-      // We test without the Y-flip first to see if that fixes the coordinate issue.
-      vec2 screenPos = normCoord * uFullCanvasSize;
-
-      vec2 fragWorld = (screenPos / uZoom) + uCameraPos;
+      // Map normalized coordinates back to full-screen pixels (screen space).
+      vec2 fragScreen = normCoord * uFullCanvasSize;
 
       vec3 totalLight = vec3(uAmbient);
 
       for (int i = 0; i < ${this.maxLights}; i++) {
         if (i >= uLightCount) break;
 
-        vec2 lightWorld = vec2(uLightX[i], uLightY[i]);
+        // Light positions are now in screen coordinates
+        vec2 lightScreen = vec2(uLightX[i], uLightY[i]);
         float intensity = uLightIntensity[i];
         //switch B and R
         vec3 color = vec3(uLightB[i], uLightG[i], uLightR[i]);
 
-        float d = length(fragWorld - lightWorld);
+        // Calculate distance in screen space, convert to world distance for attenuation
+        float screenDist = length(fragScreen - lightScreen);
+        float worldDist = screenDist / uZoom;
         // Formula: intensity / (intensity + d²) → caps at 1.0 when d=0, falls off with distance
-        // Higher intensity = light reaches farther, but max brightness is always 1.0
-        float attenuation = intensity / (intensity + d*d);
+        float attenuation = intensity / (intensity + worldDist*worldDist);
 
         totalLight += color * attenuation;
       }
@@ -1402,27 +1399,28 @@ COMPUTE VISIBLE LIGHTS (shared by updateLighting & updateLightGlowSprites)
     // Early return if lighting is disabled (LightEmitter arrays not initialized)
     if (!LightEmitter.active) return;
 
-    const worldX = Transform.x;
-    const worldY = Transform.y;
     const lightEnabled = LightEmitter.active;
     const lightHeight = LightEmitter.height;
-    const glowHeightOffset = LightEmitter.glowHeightOffset;
     const hasGlowSprite = LightEmitter.hasGlowSprite;
     const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+    const screenX = SpriteRenderer.screenX;
+    const screenY = SpriteRenderer.screenY;
+    const worldX = Transform.x;
+    const worldY = Transform.y;
 
     const zoom = this._renderZoom;
-    const cameraX = this._renderCameraX;
-    const cameraY = this._renderCameraY;
+    const cameraOffsetX = this._renderCameraX * zoom;
+    const cameraOffsetY = this._renderCameraY * zoom;
 
-    // Calculate viewport bounds for culling
-    const viewWidth = this.canvasWidth / zoom;
-    const viewHeight = this.canvasHeight / zoom;
-    const viewRight = cameraX + viewWidth;
-    const viewBottom = cameraY + viewHeight;
+    // Screen space viewport bounds for culling
+    const screenLeft = 0;
+    const screenRight = this.canvasWidth;
+    const screenTop = 0;
+    const screenBottom = this.canvasHeight;
 
-    // Viewport center for sorting by distance
-    const viewCenterX = cameraX + viewWidth / 2;
-    const viewCenterY = cameraY + viewHeight / 2;
+    // Viewport center in screen space for sorting by distance
+    const screenCenterX = this.canvasWidth / 2;
+    const screenCenterY = this.canvasHeight / 2;
 
     // Query all active entities with LightEmitter ONCE
     const lightEntities = this.queryActiveEntities([LightEmitter]);
@@ -1435,27 +1433,33 @@ COMPUTE VISIBLE LIGHTS (shared by updateLighting & updateLightGlowSprites)
       const i = lightEntities[idx];
       if (!lightEnabled[i]) continue;
 
-      // Use sprite position if available (already interpolated)
-      const sprite = this.bodySprites[i];
-      const x = sprite ? sprite.x : worldX[i];
-      // Use lightHeight for shader, glowHeightOffset for glow sprites
-      const yForLight = (sprite ? sprite.y : worldY[i]) - (lightHeight[i] || 0);
+      // Use screen coordinates (from SpriteRenderer if available, otherwise calculate)
+      // Fallback needed for lights on entities without SpriteRenderer (e.g. Flash entities)
+      let sx = screenX[i];
+      let sy = screenY[i];
+      if (sx === 0 && sy === 0 && (worldX[i] !== 0 || worldY[i] !== 0)) {
+        // screenX/screenY not calculated - compute inline
+        sx = worldX[i] * zoom - cameraOffsetX;
+        sy = worldY[i] * zoom - cameraOffsetY;
+      }
+      // Height offset is in world units, multiply by zoom for screen space
+      sy -= (lightHeight[i] || 0) * zoom;
 
-      // Viewport culling: influenceRadius = 10 * sqrt(intensity)
-      const influenceRadius = 10 * sqrtLightIntensity[i];
+      // Viewport culling: influenceRadius in screen space = world radius * zoom
+      const influenceRadiusScreen = 10 * sqrtLightIntensity[i] * zoom;
 
       if (
-        x + influenceRadius < cameraX ||
-        x - influenceRadius > viewRight ||
-        yForLight + influenceRadius < cameraY ||
-        yForLight - influenceRadius > viewBottom
+        sx + influenceRadiusScreen < screenLeft ||
+        sx - influenceRadiusScreen > screenRight ||
+        sy + influenceRadiusScreen < screenTop ||
+        sy - influenceRadiusScreen > screenBottom
       ) {
         continue;
       }
 
-      // Distance squared to camera center (for prioritization)
-      const dx = x - viewCenterX;
-      const dy = yForLight - viewCenterY;
+      // Distance squared to screen center (for prioritization)
+      const dx = sx - screenCenterX;
+      const dy = sy - screenCenterY;
       const distSq = dx * dx + dy * dy;
 
       // Add to "all lights" pool
@@ -1496,19 +1500,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const uniformGroup = this.lightingShader.resources.uniforms;
 
     // Cache component arrays
-    const worldX = Transform.x;
-    const worldY = Transform.y;
     const lightColor = LightEmitter.lightColor;
     const lightIntensity = LightEmitter.lightIntensity;
     const lightHeight = LightEmitter.height;
+    const screenX = SpriteRenderer.screenX;
+    const screenY = SpriteRenderer.screenY;
+    const worldX = Transform.x;
+    const worldY = Transform.y;
 
     const zoom = this._renderZoom;
-    const cameraX = this._renderCameraX;
-    const cameraY = this._renderCameraY;
+    const cameraOffsetX = this._renderCameraX * zoom;
+    const cameraOffsetY = this._renderCameraY * zoom;
 
-    // Update camera uniforms (vec2 types)
-    uniformGroup.uniforms.uCameraPos[0] = cameraX;
-    uniformGroup.uniforms.uCameraPos[1] = cameraY;
+    // Update zoom uniform
     uniformGroup.uniforms.uZoom = zoom;
 
     // Update viewport uniform every frame (handles resizes and resolution changes)
@@ -1519,8 +1523,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     uniformGroup.uniforms.uFullCanvasSize[1] = this.canvasHeight;
 
     // Use pre-allocated Float32Arrays for light data
-    const lightX = this._lightX;
-    const lightY = this._lightY;
+    const lightXArr = this._lightX;
+    const lightYArr = this._lightY;
     const lightIntensityArr = this._lightIntensity;
     const lightR = this._lightR;
     const lightG = this._lightG;
@@ -1537,12 +1541,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const entityIndex = visibleLights[i].entityId;
       const color = lightColor[entityIndex];
 
-      // Always use world coordinates for lights (shader converts screen to world)
-      // sprite.x/y are in container space (already transformed), so we use worldX/worldY
-      // Apply height offset to position light above the entity
-      lightX[i] = worldX[entityIndex];
-      lightY[i] = worldY[entityIndex] - (lightHeight[entityIndex] || 0);
-      lightIntensityArr[i] = lightIntensity[entityIndex]; // NO ZOOM SCALING
+      // Use screen coordinates for lights (shader works in screen space)
+      // Fallback for entities without SpriteRenderer (e.g. Flash entities)
+      let sx = screenX[entityIndex];
+      let sy = screenY[entityIndex];
+      if (sx === 0 && sy === 0 && (worldX[entityIndex] !== 0 || worldY[entityIndex] !== 0)) {
+        sx = worldX[entityIndex] * zoom - cameraOffsetX;
+        sy = worldY[entityIndex] * zoom - cameraOffsetY;
+      }
+      // Height offset is in world units, multiply by zoom for screen space
+      const heightOffsetScreen = (lightHeight[entityIndex] || 0) * zoom;
+      lightXArr[i] = sx;
+      lightYArr[i] = sy - heightOffsetScreen;
+      lightIntensityArr[i] = lightIntensity[entityIndex];
 
       extractRGBNormalizedMut(color, rgb);
       lightR[i] = rgb.r;
@@ -1821,9 +1832,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const glowHeightOffset = LightEmitter.glowHeightOffset;
     const visualRange = Collider.visualRange;
     const lightIntensity = LightEmitter.lightIntensity;
+    const screenX = SpriteRenderer.screenX;
+    const screenY = SpriteRenderer.screenY;
 
     // Gradient texture base size (200px diameter = radius 100)
     const textureRadius = 100;
+
+    // Camera data for screen coordinate conversion (when bodySprite not available)
+    const zoom = this._renderZoom;
+    const cameraOffsetX = this._renderCameraX * zoom;
+    const cameraOffsetY = this._renderCameraY * zoom;
 
     // Use pre-computed visible glow lights (computed in computeVisibleLights())
     const visibleLights = this._visibleLightsGlow;
@@ -1866,7 +1884,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Get visual range for this entity (from Collider component)
       const rangeVal = visualRange[entityIndex] || 200;
       const glowDiameter = rangeVal;
-      const scale = (glowDiameter * 3) / textureRadius;
+      // Scale in screen space = world scale * zoom
+      const scale = (glowDiameter * 3 * zoom) / textureRadius;
       const newAlpha = lightIntensity[entityIndex] / 1000000;
 
       // Skip glow sprites that are too small or too dim to be visible
@@ -1881,12 +1900,27 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         continue;
       }
 
-      // Position: entity position with height offset (light is above entity)
-      sprite.x = bodySprite ? bodySprite.x : worldX[entityIndex];
-      sprite.y =
-        (bodySprite ? bodySprite.y : worldY[entityIndex]) - (glowHeightOffset[entityIndex] || 0);
+      // Position: use screen coordinates (from bodySprite or SpriteRenderer.screenX/Y)
+      // Fallback for entities without SpriteRenderer (e.g. Flash entities)
+      let sx, sy;
+      if (bodySprite) {
+        sx = bodySprite.x;
+        sy = bodySprite.y;
+      } else if (screenX[entityIndex] !== 0 || screenY[entityIndex] !== 0 || 
+                 (worldX[entityIndex] === 0 && worldY[entityIndex] === 0)) {
+        sx = screenX[entityIndex];
+        sy = screenY[entityIndex];
+      } else {
+        // screenX/screenY not calculated - compute inline
+        sx = worldX[entityIndex] * zoom - cameraOffsetX;
+        sy = worldY[entityIndex] * zoom - cameraOffsetY;
+      }
+      // Height offset is in world units, multiply by zoom for screen space
+      const heightOffsetScreen = (glowHeightOffset[entityIndex] || 0) * zoom;
+      sprite.x = sx;
+      sprite.y = sy - heightOffsetScreen;
 
-      // Scale based on visualRange
+      // Scale based on visualRange (already in screen space)
       sprite.scaleX = scale;
       sprite.scaleY = scale;
 
@@ -2413,6 +2447,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const rotation = ParticleComponent.rotation;
     const flipX = ParticleComponent.flipX;
     const flipY = ParticleComponent.flipY;
+    const screenX = ParticleComponent.screenX;
+    const screenY = ParticleComponent.screenY;
 
     let visibleParticleCount = 0;
 
@@ -2470,14 +2506,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }
       }
 
-      // Calculate render Y (ground Y + height offset)
-      const renderY = y[i] + z[i];
+      // Calculate render Y (ground Y + height offset in screen space)
+      // z is in world units, multiply by zoom for screen space
+      const zoom = this._renderZoom;
+      const renderY = screenY[i] + z[i] * zoom;
 
       // Update sprite properties from ParticleComponent
-      sprite.x = x[i];
+      // Multiply scale by zoom since particleContainer.scale is now 1.0
+      sprite.x = screenX[i];
       sprite.y = renderY;
-      sprite.scaleX = flipX[i] ? -scaleX[i] : scaleX[i];
-      sprite.scaleY = flipY[i] ? -scaleY[i] : scaleY[i];
+      sprite.scaleX = (flipX[i] ? -scaleX[i] : scaleX[i]) * zoom;
+      sprite.scaleY = (flipY[i] ? -scaleY[i] : scaleY[i]) * zoom;
       sprite.rotation = rotation[i];
       sprite.alpha = alpha[i];
       sprite.tint = tint[i];
@@ -2525,7 +2564,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         item.entityId = -1; // Mark as particle (not an entity)
         item.particleIndex = i;
         item.sprite = sprite;
-        item.y = y[i]; // Sort by ground position
+        item.y = screenY[i]; // Sort by ground position
       } else {
         // Y-sorting disabled - just show the sprite
         if (!sprite.visible) {
@@ -2611,6 +2650,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const offsetY = DecorationComponent.offsetY;
     const scaleX = DecorationComponent.scaleX;
     const scaleY = DecorationComponent.scaleY;
+    const screenX = DecorationComponent.screenX;
+    const screenY = DecorationComponent.screenY;
     const rotation = DecorationComponent.rotation;
     const alpha = DecorationComponent.alpha;
     const tint = DecorationComponent.tint;
@@ -2658,10 +2699,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
 
       // Update sprite properties from DecorationComponent
-      actualSprite.x = x[i] + offsetX[i];
-      actualSprite.y = y[i] + offsetY[i];
-      actualSprite.scaleX = scaleX[i];
-      actualSprite.scaleY = scaleY[i];
+      // Multiply scale and offsets by zoom since particleContainer.scale is now 1.0
+      const zoom = this._renderZoom;
+      actualSprite.x = screenX[i] + offsetX[i] * zoom;
+      actualSprite.y = screenY[i] + offsetY[i] * zoom;
+      actualSprite.scaleX = scaleX[i] * zoom;
+      actualSprite.scaleY = scaleY[i] * zoom;
       // Apply zoom-based alpha multiplier (fade out at low zoom)
       actualSprite.alpha = alpha[i] * alphaMultiplier;
       actualSprite.tint = tint[i];
@@ -2706,7 +2749,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         item.entityId = -2; // Mark as decoration (not an entity, not a particle)
         item.decorationIndex = i;
         item.sprite = actualSprite;
-        item.y = y[i]; // Sort by base Y position only (offsetY only affects visual position, not sorting)
+        item.y = screenY[i]; // Sort by base Y position only (offsetY only affects visual position, not sorting)
       } else {
         // Y-sorting disabled - just show the sprite
         if (!actualSprite.visible) {

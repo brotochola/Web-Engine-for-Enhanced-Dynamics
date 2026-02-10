@@ -76,6 +76,9 @@ The function call overhead (`checkScreenVisibility` as a method) is probably the
 
 
 
+- en el particle worker hace una lista de los q estan en pantalla, para q el pixi_worker no tenga q iterar por todos.. y renderizar con posiciones de pantalla
+
+
 -Segun la direccion de la velocidad ponerle un offset al pattern del spatial worker
 
 

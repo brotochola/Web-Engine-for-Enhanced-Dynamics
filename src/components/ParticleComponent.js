@@ -59,6 +59,10 @@ export class ParticleComponent extends Component {
     // === Visibility ===
     isItOnScreen: Uint8Array, // 0 = not on screen, 1 = on screen
 
+    // === Screen Coordinates (calculated by particle_worker, read by pixi_worker) ===
+    screenX: Float32Array, // X position in screen space (world * zoom - cameraOffset)
+    screenY: Float32Array, // Y position in screen space (world * zoom - cameraOffset)
+
     // === Decal Blend Mode ===
     // Used when stayOnTheFloor=1 to determine how decal is blended onto tilemap
     // 0 = normal (alpha over), 1 = multiply (darkens underlying pixels)
