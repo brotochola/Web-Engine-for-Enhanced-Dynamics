@@ -41,24 +41,24 @@ const RENDER_SHADER = /* wgsl */`
     h: f32,
   }
 
+  // Packed instance data to stay within 8 storage buffer limit
+  // Layout per instance (16 floats = 64 bytes, aligned):
+  //   vec4: posX, posY, rotation, scaleX
+  //   vec4: scaleY, anchorX, anchorY, uvId (as f32 bitcast)
+  //   vec4: tintR, tintG, tintB, alpha
+  struct InstanceData {
+    posXY_rot_scaleX: vec4<f32>,    // x, y, rotation, scaleX
+    scaleY_anchor_uvId: vec4<f32>,  // scaleY, anchorX, anchorY, uvId (bitcast)
+    tint_alpha: vec4<f32>,          // tintR, tintG, tintB, alpha
+  }
+
   @group(0) @binding(0) var<uniform> uniforms: Uniforms;
   @group(0) @binding(1) var textureSampler: sampler;
   @group(0) @binding(2) var atlasTexture: texture_2d<f32>;
   @group(0) @binding(3) var<storage, read> uvTable: array<UVRect>;
 
-  // Instance data arrays (already Y-sorted on CPU)
-  @group(1) @binding(0) var<storage, read> posX: array<f32>;
-  @group(1) @binding(1) var<storage, read> posY: array<f32>;
-  @group(1) @binding(2) var<storage, read> rotation: array<f32>;
-  @group(1) @binding(3) var<storage, read> scaleX: array<f32>;
-  @group(1) @binding(4) var<storage, read> scaleY: array<f32>;
-  @group(1) @binding(5) var<storage, read> uvId: array<u32>;
-  @group(1) @binding(6) var<storage, read> tintR: array<f32>;
-  @group(1) @binding(7) var<storage, read> tintG: array<f32>;
-  @group(1) @binding(8) var<storage, read> tintB: array<f32>;
-  @group(1) @binding(9) var<storage, read> alpha: array<f32>;
-  @group(1) @binding(10) var<storage, read> anchorX: array<f32>;
-  @group(1) @binding(11) var<storage, read> anchorY: array<f32>;
+  // Single instance buffer (instead of 12 separate ones)
+  @group(1) @binding(0) var<storage, read> instances: array<InstanceData>;
 
   struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -72,7 +72,7 @@ const RENDER_SHADER = /* wgsl */`
     vec2<f32>(1.0, 1.0),
     vec2<f32>(0.0, 0.0),
     vec2<f32>(1.0, 1.0),
-    vec2<f32>(0.0, 1.0),
+    vec2<f32>(0.0, 1.0)
   );
 
   @vertex
@@ -80,21 +80,20 @@ const RENDER_SHADER = /* wgsl */`
     @builtin(vertex_index) vertexIndex: u32,
     @builtin(instance_index) instanceIndex: u32
   ) -> VertexOutput {
-    // Instance index directly indexes into data (already sorted)
-    let i = instanceIndex;
+    let inst = instances[instanceIndex];
+
+    // Unpack instance data
+    let worldX = inst.posXY_rot_scaleX.x;
+    let worldY = inst.posXY_rot_scaleX.y;
+    let rot = inst.posXY_rot_scaleX.z;
+    let sX = inst.posXY_rot_scaleX.w;
+    let sY = inst.scaleY_anchor_uvId.x;
+    let aX = inst.scaleY_anchor_uvId.y;
+    let aY = inst.scaleY_anchor_uvId.z;
+    let uvIdx = bitcast<u32>(inst.scaleY_anchor_uvId.w);
 
     // Get UV from lookup table
-    let uvIdx = uvId[i];
     let uv = uvTable[uvIdx];
-
-    // Get instance data
-    let worldX = posX[i];
-    let worldY = posY[i];
-    let rot = rotation[i];
-    let sX = scaleX[i];
-    let sY = scaleY[i];
-    let aX = anchorX[i];
-    let aY = anchorY[i];
 
     let quadPos = quadPositions[vertexIndex];
 
@@ -131,7 +130,7 @@ const RENDER_SHADER = /* wgsl */`
     var output: VertexOutput;
     output.position = vec4<f32>(ndcX, ndcY, 0.0, 1.0);
     output.uv = vec2<f32>(texU, texV);
-    output.tint = vec4<f32>(tintR[i], tintG[i], tintB[i], alpha[i]);
+    output.tint = inst.tint_alpha;
 
     return output;
   }
@@ -258,9 +257,30 @@ class WebGPURenderer extends AbstractWorker {
     console.log('WEBGPU RENDERER: Device initialized');
   }
 
-  createPipeline() {
-    const renderModule = this.device.createShaderModule({ code: RENDER_SHADER });
+  async createPipeline() {
+    const renderModule = this.device.createShaderModule({
+      code: RENDER_SHADER,
+      label: 'RenderShader'
+    });
+
+    // Check for shader compilation errors
+    const compilationInfo = await renderModule.getCompilationInfo();
+    if (compilationInfo.messages.length > 0) {
+      for (const msg of compilationInfo.messages) {
+        const type = msg.type; // 'error', 'warning', or 'info'
+        const line = msg.lineNum;
+        const col = msg.linePos;
+        const text = msg.message;
+        console.error(`WGSL ${type} at line ${line}:${col}: ${text}`);
+      }
+      const hasErrors = compilationInfo.messages.some(m => m.type === 'error');
+      if (hasErrors) {
+        throw new Error('Shader compilation failed - see console for details');
+      }
+    }
+
     this.renderPipeline = this.device.createRenderPipeline({
+      label: 'MainRenderPipeline',
       layout: 'auto',
       vertex: { module: renderModule, entryPoint: 'vertexMain' },
       fragment: {
@@ -285,41 +305,29 @@ class WebGPURenderer extends AbstractWorker {
     const dev = this.device;
 
     // Uniform buffer
-    this.uniformBuffer = dev.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.uniformBuffer = dev.createBuffer({
+      label: 'UniformBuffer',
+      size: 32,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    });
 
-    // Instance data buffers (SoA layout for cache-friendly GPU access)
-    this.instanceBuffers = {
-      posX: dev.createBuffer({ size: maxInstances * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
-      posY: dev.createBuffer({ size: maxInstances * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
-      rotation: dev.createBuffer({ size: maxInstances * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
-      scaleX: dev.createBuffer({ size: maxInstances * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
-      scaleY: dev.createBuffer({ size: maxInstances * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
-      uvId: dev.createBuffer({ size: maxInstances * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
-      tintR: dev.createBuffer({ size: maxInstances * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
-      tintG: dev.createBuffer({ size: maxInstances * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
-      tintB: dev.createBuffer({ size: maxInstances * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
-      alpha: dev.createBuffer({ size: maxInstances * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
-      anchorX: dev.createBuffer({ size: maxInstances * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
-      anchorY: dev.createBuffer({ size: maxInstances * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
-    };
+    // Packed instance data: 12 floats per instance (3 vec4s = 48 bytes)
+    // Padded to 16-byte alignment (48 is already 16-aligned)
+    this.INSTANCE_STRIDE = 12; // floats per instance
+    this.INSTANCE_BYTE_STRIDE = this.INSTANCE_STRIDE * 4; // 48 bytes
 
-    // CPU-side typed arrays for building instance data
-    this.cpuArrays = {
-      posX: new Float32Array(maxInstances),
-      posY: new Float32Array(maxInstances),
-      rotation: new Float32Array(maxInstances),
-      scaleX: new Float32Array(maxInstances),
-      scaleY: new Float32Array(maxInstances),
-      uvId: new Uint32Array(maxInstances),
-      tintR: new Float32Array(maxInstances),
-      tintG: new Float32Array(maxInstances),
-      tintB: new Float32Array(maxInstances),
-      alpha: new Float32Array(maxInstances),
-      anchorX: new Float32Array(maxInstances),
-      anchorY: new Float32Array(maxInstances),
-    };
+    this.instanceBuffer = dev.createBuffer({
+      label: 'InstanceDataBuffer',
+      size: maxInstances * this.INSTANCE_BYTE_STRIDE,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
 
-    console.log(`WEBGPU RENDERER: Buffers created (max: ${maxInstances})`);
+    // CPU-side packed array for uploading
+    this.cpuInstanceData = new Float32Array(maxInstances * this.INSTANCE_STRIDE);
+    // View for writing uvId as u32
+    this.cpuInstanceDataU32 = new Uint32Array(this.cpuInstanceData.buffer);
+
+    console.log(`WEBGPU RENDERER: Buffers created (max: ${maxInstances}, ${this.INSTANCE_BYTE_STRIDE} bytes/instance)`);
   }
 
   async uploadAtlasTexture(imageBitmap) {
@@ -393,6 +401,7 @@ class WebGPURenderer extends AbstractWorker {
   createBindGroups() {
     // Uniform bind group (group 0)
     this.uniformBindGroup = this.device.createBindGroup({
+      label: 'UniformBindGroup',
       layout: this.renderPipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: this.uniformBuffer } },
@@ -402,22 +411,12 @@ class WebGPURenderer extends AbstractWorker {
       ],
     });
 
-    // Instance bind group (group 1) - matches shader bindings
+    // Instance bind group (group 1) - single packed buffer
     this.instanceBindGroup = this.device.createBindGroup({
+      label: 'InstanceBindGroup',
       layout: this.renderPipeline.getBindGroupLayout(1),
       entries: [
-        { binding: 0, resource: { buffer: this.instanceBuffers.posX } },
-        { binding: 1, resource: { buffer: this.instanceBuffers.posY } },
-        { binding: 2, resource: { buffer: this.instanceBuffers.rotation } },
-        { binding: 3, resource: { buffer: this.instanceBuffers.scaleX } },
-        { binding: 4, resource: { buffer: this.instanceBuffers.scaleY } },
-        { binding: 5, resource: { buffer: this.instanceBuffers.uvId } },
-        { binding: 6, resource: { buffer: this.instanceBuffers.tintR } },
-        { binding: 7, resource: { buffer: this.instanceBuffers.tintG } },
-        { binding: 8, resource: { buffer: this.instanceBuffers.tintB } },
-        { binding: 9, resource: { buffer: this.instanceBuffers.alpha } },
-        { binding: 10, resource: { buffer: this.instanceBuffers.anchorX } },
-        { binding: 11, resource: { buffer: this.instanceBuffers.anchorY } },
+        { binding: 0, resource: { buffer: this.instanceBuffer } },
       ],
     });
 
@@ -524,28 +523,36 @@ class WebGPURenderer extends AbstractWorker {
       this._sortPool.sort(sortByY);
     }
 
-    // Write sorted data to CPU arrays
-    const cpu = this.cpuArrays;
+    // Write sorted data to packed CPU array
+    // Layout: [posX, posY, rotation, scaleX, scaleY, anchorX, anchorY, uvId, tintR, tintG, tintB, alpha]
+    const data = this.cpuInstanceData;
+    const dataU32 = this.cpuInstanceDataU32;
+    const stride = this.INSTANCE_STRIDE;
+
     for (let i = 0; i < this._sortPoolSize; i++) {
       const item = this._sortPool[i];
+      const base = i * stride;
 
       if (item.type === 'entity') {
         const idx = item.idx;
         const frameName = this.getEntityFrameName(idx);
         const rgb = this.tintToRGB(SpriteRenderer.tint[idx]);
 
-        cpu.posX[i] = Transform.x[idx];
-        cpu.posY[i] = Transform.y[idx];
-        cpu.rotation[i] = Transform.rotation[idx];
-        cpu.scaleX[i] = SpriteRenderer.scaleX[idx];
-        cpu.scaleY[i] = SpriteRenderer.scaleY[idx];
-        cpu.uvId[i] = this.getUVId(frameName);
-        cpu.tintR[i] = rgb.r;
-        cpu.tintG[i] = rgb.g;
-        cpu.tintB[i] = rgb.b;
-        cpu.alpha[i] = SpriteRenderer.alpha[idx];
-        cpu.anchorX[i] = SpriteRenderer.anchorX[idx];
-        cpu.anchorY[i] = SpriteRenderer.anchorY[idx];
+        // vec4: posX, posY, rotation, scaleX
+        data[base + 0] = Transform.x[idx];
+        data[base + 1] = Transform.y[idx];
+        data[base + 2] = Transform.rotation[idx];
+        data[base + 3] = SpriteRenderer.scaleX[idx];
+        // vec4: scaleY, anchorX, anchorY, uvId (as bitcast f32)
+        data[base + 4] = SpriteRenderer.scaleY[idx];
+        data[base + 5] = SpriteRenderer.anchorX[idx];
+        data[base + 6] = SpriteRenderer.anchorY[idx];
+        dataU32[base + 7] = this.getUVId(frameName); // Store as u32, shader bitcasts
+        // vec4: tintR, tintG, tintB, alpha
+        data[base + 8] = rgb.r;
+        data[base + 9] = rgb.g;
+        data[base + 10] = rgb.b;
+        data[base + 11] = SpriteRenderer.alpha[idx];
       } else if (item.type === 'particle') {
         const idx = item.idx;
         const tid = ParticleComponent.textureId[idx];
@@ -556,18 +563,18 @@ class WebGPURenderer extends AbstractWorker {
         }
         const rgb = this.tintToRGB(ParticleComponent.tint[idx]);
 
-        cpu.posX[i] = ParticleComponent.x[idx];
-        cpu.posY[i] = ParticleComponent.y[idx] + ParticleComponent.z[idx];
-        cpu.rotation[i] = ParticleComponent.rotation[idx];
-        cpu.scaleX[i] = ParticleComponent.flipX[idx] ? -ParticleComponent.scaleX[idx] : ParticleComponent.scaleX[idx];
-        cpu.scaleY[i] = ParticleComponent.flipY[idx] ? -ParticleComponent.scaleY[idx] : ParticleComponent.scaleY[idx];
-        cpu.uvId[i] = this.getUVId(frameName);
-        cpu.tintR[i] = rgb.r;
-        cpu.tintG[i] = rgb.g;
-        cpu.tintB[i] = rgb.b;
-        cpu.alpha[i] = ParticleComponent.alpha[idx];
-        cpu.anchorX[i] = 0.5;
-        cpu.anchorY[i] = 0.5;
+        data[base + 0] = ParticleComponent.x[idx];
+        data[base + 1] = ParticleComponent.y[idx] + ParticleComponent.z[idx];
+        data[base + 2] = ParticleComponent.rotation[idx];
+        data[base + 3] = ParticleComponent.flipX[idx] ? -ParticleComponent.scaleX[idx] : ParticleComponent.scaleX[idx];
+        data[base + 4] = ParticleComponent.flipY[idx] ? -ParticleComponent.scaleY[idx] : ParticleComponent.scaleY[idx];
+        data[base + 5] = 0.5;
+        data[base + 6] = 0.5;
+        dataU32[base + 7] = this.getUVId(frameName);
+        data[base + 8] = rgb.r;
+        data[base + 9] = rgb.g;
+        data[base + 10] = rgb.b;
+        data[base + 11] = ParticleComponent.alpha[idx];
       } else if (item.type === 'decoration') {
         const idx = item.idx;
         const tid = DecorationComponent.textureId[idx];
@@ -578,18 +585,18 @@ class WebGPURenderer extends AbstractWorker {
         }
         const rgb = this.tintToRGB(DecorationComponent.tint[idx]);
 
-        cpu.posX[i] = DecorationComponent.x[idx] + DecorationComponent.offsetX[idx];
-        cpu.posY[i] = DecorationComponent.y[idx] + DecorationComponent.offsetY[idx];
-        cpu.rotation[i] = DecorationComponent.rotation[idx];
-        cpu.scaleX[i] = DecorationComponent.scaleX[idx];
-        cpu.scaleY[i] = DecorationComponent.scaleY[idx];
-        cpu.uvId[i] = this.getUVId(frameName);
-        cpu.tintR[i] = rgb.r;
-        cpu.tintG[i] = rgb.g;
-        cpu.tintB[i] = rgb.b;
-        cpu.alpha[i] = DecorationComponent.alpha[idx];
-        cpu.anchorX[i] = DecorationComponent.anchorX[idx];
-        cpu.anchorY[i] = DecorationComponent.anchorY[idx];
+        data[base + 0] = DecorationComponent.x[idx] + DecorationComponent.offsetX[idx];
+        data[base + 1] = DecorationComponent.y[idx] + DecorationComponent.offsetY[idx];
+        data[base + 2] = DecorationComponent.rotation[idx];
+        data[base + 3] = DecorationComponent.scaleX[idx];
+        data[base + 4] = DecorationComponent.scaleY[idx];
+        data[base + 5] = DecorationComponent.anchorX[idx];
+        data[base + 6] = DecorationComponent.anchorY[idx];
+        dataU32[base + 7] = this.getUVId(frameName);
+        data[base + 8] = rgb.r;
+        data[base + 9] = rgb.g;
+        data[base + 10] = rgb.b;
+        data[base + 11] = DecorationComponent.alpha[idx];
       }
     }
 
@@ -672,25 +679,24 @@ class WebGPURenderer extends AbstractWorker {
   }
 
   uploadInstanceData(count) {
-    const dev = this.device;
-    const cpu = this.cpuArrays;
-    const inst = this.instanceBuffers;
-
-    dev.queue.writeBuffer(inst.posX, 0, cpu.posX, 0, count);
-    dev.queue.writeBuffer(inst.posY, 0, cpu.posY, 0, count);
-    dev.queue.writeBuffer(inst.rotation, 0, cpu.rotation, 0, count);
-    dev.queue.writeBuffer(inst.scaleX, 0, cpu.scaleX, 0, count);
-    dev.queue.writeBuffer(inst.scaleY, 0, cpu.scaleY, 0, count);
-    dev.queue.writeBuffer(inst.uvId, 0, cpu.uvId, 0, count);
-    dev.queue.writeBuffer(inst.tintR, 0, cpu.tintR, 0, count);
-    dev.queue.writeBuffer(inst.tintG, 0, cpu.tintG, 0, count);
-    dev.queue.writeBuffer(inst.tintB, 0, cpu.tintB, 0, count);
-    dev.queue.writeBuffer(inst.alpha, 0, cpu.alpha, 0, count);
-    dev.queue.writeBuffer(inst.anchorX, 0, cpu.anchorX, 0, count);
-    dev.queue.writeBuffer(inst.anchorY, 0, cpu.anchorY, 0, count);
+    // Upload packed instance data in a single call
+    const byteSize = count * this.INSTANCE_BYTE_STRIDE;
+    this.device.queue.writeBuffer(
+      this.instanceBuffer,
+      0,
+      this.cpuInstanceData.buffer,
+      0,
+      byteSize
+    );
   }
 
   render(instanceCount) {
+    // Safety check - don't render with invalid pipeline
+    if (!this.renderPipeline || !this.uniformBindGroup || !this.instanceBindGroup) {
+      console.warn('WEBGPU RENDERER: Cannot render - pipeline or bind groups not ready');
+      return;
+    }
+
     const dev = this.device;
 
     // Update render uniforms
@@ -788,7 +794,7 @@ class WebGPURenderer extends AbstractWorker {
     this.canvasHeight = data.config.canvasHeight;
 
     await this.initializeWebGPU(data.view);
-    this.createPipeline();
+    await this.createPipeline();
 
     if (data.spritesheetMetadata) {
       SpriteSheetRegistry.deserialize(data.spritesheetMetadata);
@@ -817,6 +823,12 @@ class WebGPURenderer extends AbstractWorker {
     const rendererConfig = data.config.renderer || {};
     this.ySorting = rendererConfig.ySorting !== false;
     this.interpolation = rendererConfig.interpolation !== false;
+
+    // Check for noLimitFPS in renderer config (AbstractWorker checks 'webgpurenderer' key, not 'renderer')
+    if (rendererConfig.noLimitFPS === true) {
+      this.noLimitFPS = true;
+      console.log('WEBGPU RENDERER: Running in unlimited FPS mode');
+    }
 
     console.log('WEBGPU RENDERER: Initialized');
     console.log(`  Max instances: ${maxInstances}`);
