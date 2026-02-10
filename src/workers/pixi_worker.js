@@ -283,8 +283,9 @@ class PixiRenderer extends AbstractWorker {
   constructor(selfRef) {
     super(selfRef);
 
-    // Use PIXI ticker instead of requestAnimationFrame
-    this.usesCustomScheduler = true;
+    // Use AbstractWorker's scheduling (RAF or setTimeout based on noLimitFPS)
+    // PIXI's ticker is completely disabled - we control when to render
+    this.usesCustomScheduler = false;
 
     // Renderer configuration options (set during initialize)
     this.ySorting = false; // Enable/disable Y-sorting for depth ordering
@@ -1111,7 +1112,7 @@ class PixiRenderer extends AbstractWorker {
     // Render lighting to lower-resolution texture if configured.
     // This significantly improves performance on GPU-bound systems.
 
-    // Render low-res lighting
+    // Render low-res lighting to RenderTexture
     if (this.lightingRT && this.lightingMesh) {
       this.pixiApp.renderer.render({
         container: this.lightingMesh,
@@ -1122,25 +1123,14 @@ class PixiRenderer extends AbstractWorker {
 
     // Let particle pool handle deferred pre-allocation during idle frames
     this.particlePool.endFrame();
+
+    // MANUAL RENDER: We control when PIXI renders (ticker is disabled)
+    // This is the ONLY place where the scene gets rendered to screen
+    this.pixiApp.renderer.render(this.pixiApp.stage);
   }
 
-  /**
-   * Setup PIXI ticker to call gameLoop (custom scheduler implementation)
-   */
-  onCustomSchedulerStart() {
-    if (this.noLimitFPS) {
-      // When noLimitFPS is true, bypass PIXI ticker and use standard loop
-      // This allows unlimited FPS like other workers
-      // console.log(
-      //   "PIXI WORKER: Using unlimited FPS mode (bypassing PIXI ticker)"
-      // );
-      this.usesCustomScheduler = false; // Switch to standard scheduler
-      this.scheduleNextFrame(); // Start the standard loop
-    } else {
-      // Standard mode: PIXI ticker will call gameLoop on every tick (60fps)
-      this.pixiApp.ticker.add(() => this.gameLoop());
-    }
-  }
+  // Note: onCustomSchedulerStart() removed - we use AbstractWorker's scheduling
+  // PIXI's ticker is disabled at init time, render() is called manually in update()
 
   /**
    * Create sprites for each decal decal tile
@@ -3283,6 +3273,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (this.pixiApp.renderer.type === PIXI.RendererType.WEBGL && !this.pixiApp.renderer.gl) {
         throw new Error('WebGL context initialization failed (gl is null)');
       }
+
+      // CRITICAL: Disable PIXI's internal ticker completely
+      // We control rendering via AbstractWorker's scheduling (RAF or setTimeout)
+      this.pixiApp.ticker.autoStart = false;
+      this.pixiApp.ticker.stop();
+      console.log('PIXI WORKER: PIXI ticker disabled - using AbstractWorker scheduling');
     } catch (error) {
       this.reportError('PIXI Initialization Failed', error);
       return;
