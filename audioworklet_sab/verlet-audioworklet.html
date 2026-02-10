@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AudioWorklet Verlet Physics</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+        }
+
+        canvas {
+            border: 1px solid #333;
+            background: #000;
+            display: block;
+            margin: 20px auto;
+        }
+
+        .info {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 0 5px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        .stats {
+            text-align: center;
+            font-family: monospace;
+            color: #4CAF50;
+        }
+    </style>
+</head>
+<body>
+    <div class="info">
+        <h1>AudioWorklet Verlet Physics</h1>
+        <p>3000 entidades con física Verlet procesada en AudioWorklet</p>
+    </div>
+
+    <div class="controls">
+        <button id="startBtn">Iniciar</button>
+        <button id="stopBtn" disabled>Detener</button>
+    </div>
+
+    <div class="stats">
+        <div>FPS: <span id="fps">0</span></div>
+        <div>Entidades: <span id="entities">3000</span></div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const NUM_ENTITIES = 10000;
+        const CANVAS_WIDTH = 1800;
+        const CANVAS_HEIGHT = 1600;
+
+        // Set canvas size
+        const canvas = document.getElementById('canvas');
+        canvas.width = CANVAS_WIDTH;
+        canvas.height = CANVAS_HEIGHT;
+
+        // Estructura de datos por entidad:
+        // [x, y, prevX, prevY, accelX, accelY]
+        // + 3 floats at end: [mouseX, mouseY, mouseDown]
+        const FLOATS_PER_ENTITY = 6;
+        const MOUSE_DATA_SIZE = 3;
+        const BUFFER_SIZE = NUM_ENTITIES * FLOATS_PER_ENTITY + MOUSE_DATA_SIZE;
+        const MOUSE_DATA_INDEX = NUM_ENTITIES * FLOATS_PER_ENTITY;
+
+        let audioContext;
+        let physicsNode;
+        let sharedBuffer;
+        let dataView;
+        let isRunning = false;
+
+        const ctx = canvas.getContext('2d');
+
+        let lastFrameTime = performance.now();
+        let frameCount = 0;
+        let lastFpsUpdate = performance.now();
+
+        // Inicializar AudioContext y AudioWorklet
+        async function init() {
+            try {
+                audioContext = new AudioContext({ sampleRate: 48000 });
+
+                // Crear SharedArrayBuffer para compartir datos
+                sharedBuffer = new SharedArrayBuffer(BUFFER_SIZE * Float32Array.BYTES_PER_ELEMENT);
+                dataView = new Float32Array(sharedBuffer);
+
+                // Inicializar posiciones aleatorias
+                initializeEntities();
+
+                // Cargar el AudioWorklet processor
+                await audioContext.audioWorklet.addModule('verlet-processor.js');
+
+                // Crear el nodo del worklet
+                physicsNode = new AudioWorkletNode(audioContext, 'verlet-processor', {
+                    processorOptions: {
+                        sharedBuffer: sharedBuffer,
+                        numEntities: NUM_ENTITIES,
+                        canvasWidth: CANVAS_WIDTH,
+                        canvasHeight: CANVAS_HEIGHT
+                    }
+                });
+
+                // Conectar al destino (aunque no producimos audio)
+                physicsNode.connect(audioContext.destination);
+
+                console.log('AudioWorklet inicializado correctamente');
+                document.getElementById('startBtn').disabled = false;
+
+            } catch (error) {
+                console.error('Error al inicializar AudioWorklet:', error);
+                alert('Error: ' + error.message);
+            }
+        }
+
+        // Inicializar entidades con posiciones aleatorias
+        function initializeEntities() {
+            for (let i = 0; i < NUM_ENTITIES; i++) {
+                const baseIdx = i * FLOATS_PER_ENTITY;
+
+                // Posición inicial aleatoria
+                const x = Math.random() * (CANVAS_WIDTH - 40) + 20;
+                const y = Math.random() * (CANVAS_HEIGHT - 40) + 20;
+
+                dataView[baseIdx + 0] = x;      // x
+                dataView[baseIdx + 1] = y;      // y
+                dataView[baseIdx + 2] = x;      // prevX
+                dataView[baseIdx + 3] = y;      // prevY
+
+                // Aceleración inicial (pequeña variación aleatoria)
+                dataView[baseIdx + 4] = (Math.random() - 0.5) * 0.5; // accelX
+                dataView[baseIdx + 5] = (Math.random() - 0.5) * 0.5; // accelY
+            }
+        }
+
+        // Iniciar simulación
+        async function start() {
+            if (!isRunning) {
+                // Resume AudioContext (required by browser policy)
+                await audioContext.resume();
+                console.log('AudioContext state:', audioContext.state);
+
+                isRunning = true;
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+                requestAnimationFrame(render);
+            }
+        }
+
+        // Detener simulación
+        function stop() {
+            isRunning = false;
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+        }
+
+        // Loop de renderizado
+        function render(timestamp) {
+            if (!isRunning) return;
+
+            // Limpiar canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            // Leer posiciones del SharedArrayBuffer y renderizar
+            for (let i = 0; i < NUM_ENTITIES; i++) {
+                const baseIdx = i * FLOATS_PER_ENTITY;
+                const x = dataView[baseIdx + 0];
+                const y = dataView[baseIdx + 1];
+                const accelX = dataView[baseIdx + 4];
+                const accelY = dataView[baseIdx + 5];
+
+                // Color basado en velocidad/aceleración
+                const speed = Math.sqrt(accelX * accelX + accelY * accelY);
+                const hue = (speed * 10) % 360;
+
+                ctx.fillStyle = `hsl(${hue}, 80%, 60%)`;
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Dibujar trail (estela)
+                const prevX = dataView[baseIdx + 2];
+                const prevY = dataView[baseIdx + 3];
+                ctx.strokeStyle = `hsla(${hue}, 80%, 60%, 0.3)`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(prevX, prevY);
+                ctx.lineTo(x, y);
+                ctx.stroke();
+            }
+
+            // Actualizar FPS
+            frameCount++;
+            const now = performance.now();
+            if (now - lastFpsUpdate >= 1000) {
+                const fps = Math.round(frameCount * 1000 / (now - lastFpsUpdate));
+                document.getElementById('fps').textContent = fps;
+                frameCount = 0;
+                lastFpsUpdate = now;
+            }
+
+            requestAnimationFrame(render);
+        }
+
+        // Event listeners
+        document.getElementById('startBtn').addEventListener('click', start);
+        document.getElementById('stopBtn').addEventListener('click', stop);
+
+        // Mouse tracking for attraction
+        function updateMousePosition(e) {
+            const rect = canvas.getBoundingClientRect();
+            dataView[MOUSE_DATA_INDEX] = e.clientX - rect.left;     // mouseX
+            dataView[MOUSE_DATA_INDEX + 1] = e.clientY - rect.top;  // mouseY
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            updateMousePosition(e);
+            dataView[MOUSE_DATA_INDEX + 2] = 1; // mouseDown = true
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            dataView[MOUSE_DATA_INDEX + 2] = 0; // mouseDown = false
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            updateMousePosition(e);
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            dataView[MOUSE_DATA_INDEX + 2] = 0; // mouseDown = false
+        });
+
+        // Inicializar cuando la página carga
+        init();
+    </script>
+</body>
+</html>
