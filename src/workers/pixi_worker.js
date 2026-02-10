@@ -19,6 +19,84 @@ import { RENDERER_STATS, createStatsWriter } from './workers-utils.js';
 import { sortByY } from '../core/utils.js';
 
 // ============================================================================
+// SHADER CODE - CULL COMPUTE PIPELINE
+// ============================================================================
+
+const CULL_SHADER = /* wgsl */`
+  struct CullUniforms {
+    cameraX: f32,
+    cameraY: f32,
+    zoom: f32,
+    viewportWidth: f32,
+    viewportHeight: f32,
+    totalInstances: u32,
+    cullMargin: f32,       // Extra margin for culling (pixels)
+    _padding: f32,
+  }
+
+  struct UVRect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+  }
+
+  // Same layout as render shader
+  struct InstanceData {
+    posXY_rot_scaleX: vec4<f32>,
+    scaleY_anchor_uvId: vec4<f32>,
+    tint_alpha: vec4<f32>,
+  }
+
+  @group(0) @binding(0) var<uniform> cull: CullUniforms;
+  @group(0) @binding(1) var<storage, read> allInstances: array<InstanceData>;
+  @group(0) @binding(2) var<storage, read> uvTable: array<UVRect>;
+  @group(0) @binding(3) var<storage, read_write> visibleInstances: array<InstanceData>;
+  @group(0) @binding(4) var<storage, read_write> visibleCount: atomic<u32>;
+
+  @compute @workgroup_size(256)
+  fn cullMain(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx >= cull.totalInstances) { return; }
+
+    let inst = allInstances[idx];
+
+    // Skip if alpha is 0 (inactive/invisible)
+    if (inst.tint_alpha.w <= 0.0) { return; }
+
+    let worldX = inst.posXY_rot_scaleX.x;
+    let worldY = inst.posXY_rot_scaleX.y;
+    let scaleX = inst.posXY_rot_scaleX.w;
+    let scaleY = inst.scaleY_anchor_uvId.x;
+    let uvIdx = bitcast<u32>(inst.scaleY_anchor_uvId.w);
+
+    // Get sprite size from UV table
+    let uv = uvTable[uvIdx];
+    let spriteW = uv.w * abs(scaleX);
+    let spriteH = uv.h * abs(scaleY);
+
+    // Transform to screen space (center of sprite)
+    let screenX = (worldX - cull.cameraX) * cull.zoom;
+    let screenY = (worldY - cull.cameraY) * cull.zoom;
+
+    // Half dimensions in screen space (account for scale and zoom)
+    let halfW = spriteW * cull.zoom * 0.5 + cull.cullMargin;
+    let halfH = spriteH * cull.zoom * 0.5 + cull.cullMargin;
+
+    // Frustum test (AABB vs viewport)
+    // Sprite is visible if its bounds intersect the viewport
+    if (screenX + halfW < 0.0 || screenX - halfW > cull.viewportWidth ||
+        screenY + halfH < 0.0 || screenY - halfH > cull.viewportHeight) {
+      return; // Off screen - cull it
+    }
+
+    // Visible! Atomically append to output buffer
+    let outIdx = atomicAdd(&visibleCount, 1u);
+    visibleInstances[outIdx] = inst;
+  }
+`;
+
+// ============================================================================
 // SHADER CODE - RENDER PIPELINE
 // ============================================================================
 
@@ -199,6 +277,24 @@ class WebGPURenderer extends AbstractWorker {
     this.uniformBindGroup = null;
     this.instanceBindGroup = null;
 
+    // ========== GPU CULLING ==========
+    // Cull compute pipeline
+    this.cullPipeline = null;
+    this.cullBindGroup = null;
+    this.cullUniformBuffer = null;
+
+    // GPU buffers for culling
+    this.allInstancesBuffer = null;      // Input: ALL instances (entities + particles + decorations)
+    this.visibleInstancesBuffer = null;  // Output: compacted visible instances
+    this.visibleCountBuffer = null;      // Atomic counter for visible count
+    this.visibleCountStagingBuffer = null; // For reading back count (indirect draw)
+    this.indirectDrawBuffer = null;      // For drawIndirect
+
+    // GPU culling config
+    this.gpuCulling = false;             // Enable/disable GPU culling
+    this.cullMargin = 50;                // Extra margin in pixels to avoid popping
+    this._statsReadbackPending = false;  // Track async stats readback
+
     // CPU-side arrays for uploading
     this.cpuArrays = null;
 
@@ -298,6 +394,108 @@ class WebGPURenderer extends AbstractWorker {
     });
 
     console.log('WEBGPU RENDERER: Pipeline created');
+  }
+
+  async createCullPipeline() {
+    const cullModule = this.device.createShaderModule({
+      code: CULL_SHADER,
+      label: 'CullShader'
+    });
+
+    // Check for shader compilation errors
+    const compilationInfo = await cullModule.getCompilationInfo();
+    if (compilationInfo.messages.length > 0) {
+      for (const msg of compilationInfo.messages) {
+        console.error(`WGSL Cull ${msg.type} at line ${msg.lineNum}:${msg.linePos}: ${msg.message}`);
+      }
+      if (compilationInfo.messages.some(m => m.type === 'error')) {
+        throw new Error('Cull shader compilation failed');
+      }
+    }
+
+    this.cullPipeline = this.device.createComputePipeline({
+      label: 'CullComputePipeline',
+      layout: 'auto',
+      compute: {
+        module: cullModule,
+        entryPoint: 'cullMain',
+      },
+    });
+
+    console.log('WEBGPU RENDERER: Cull compute pipeline created');
+  }
+
+  createCullBuffers(maxInstances) {
+    const dev = this.device;
+
+    // Cull uniform buffer (32 bytes, 8 floats)
+    this.cullUniformBuffer = dev.createBuffer({
+      label: 'CullUniformBuffer',
+      size: 32, // 8 x f32
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Input buffer: ALL instances (same layout as render instance buffer)
+    this.allInstancesBuffer = dev.createBuffer({
+      label: 'AllInstancesBuffer',
+      size: maxInstances * this.INSTANCE_BYTE_STRIDE,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    // Output buffer: visible instances after culling
+    this.visibleInstancesBuffer = dev.createBuffer({
+      label: 'VisibleInstancesBuffer',
+      size: maxInstances * this.INSTANCE_BYTE_STRIDE,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    // Atomic counter for visible count (single u32)
+    this.visibleCountBuffer = dev.createBuffer({
+      label: 'VisibleCountBuffer',
+      size: 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    });
+
+    // Staging buffer to read back visible count
+    this.visibleCountStagingBuffer = dev.createBuffer({
+      label: 'VisibleCountStagingBuffer',
+      size: 4,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+
+    // Indirect draw buffer (4 x u32: vertexCount, instanceCount, firstVertex, firstInstance)
+    this.indirectDrawBuffer = dev.createBuffer({
+      label: 'IndirectDrawBuffer',
+      size: 16,
+      usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST,
+    });
+
+    console.log(`WEBGPU RENDERER: Cull buffers created (max: ${maxInstances})`);
+  }
+
+  createCullBindGroup() {
+    this.cullBindGroup = this.device.createBindGroup({
+      label: 'CullBindGroup',
+      layout: this.cullPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.cullUniformBuffer } },
+        { binding: 1, resource: { buffer: this.allInstancesBuffer } },
+        { binding: 2, resource: { buffer: this.uvTableBuffer } },
+        { binding: 3, resource: { buffer: this.visibleInstancesBuffer } },
+        { binding: 4, resource: { buffer: this.visibleCountBuffer } },
+      ],
+    });
+
+    // Update instance bind group to use visible instances buffer for rendering
+    this.instanceBindGroupCulled = this.device.createBindGroup({
+      label: 'InstanceBindGroupCulled',
+      layout: this.renderPipeline.getBindGroupLayout(1),
+      entries: [
+        { binding: 0, resource: { buffer: this.visibleInstancesBuffer } },
+      ],
+    });
+
+    console.log('WEBGPU RENDERER: Cull bind group created');
   }
 
   createBuffers(maxInstances) {
@@ -459,6 +657,111 @@ class WebGPURenderer extends AbstractWorker {
     const g = ((tint >> 8) & 0xFF) / 255;
     const r = (tint & 0xFF) / 255;
     return { r, g, b };
+  }
+
+  /**
+   * Collect ALL instance data for GPU culling (no CPU visibility checks)
+   * GPU will handle culling via compute shader
+   */
+  collectAllInstanceDataForGPUCull(deltaSeconds) {
+    const data = this.cpuInstanceData;
+    const dataU32 = this.cpuInstanceDataU32;
+    const stride = this.INSTANCE_STRIDE;
+    let writeIdx = 0;
+
+    // Collect ALL entities (GPU will cull)
+    const entities = this.queryActiveEntities(this.queryConfig);
+    for (const entityIdx of entities) {
+      if (!Transform.active[entityIdx]) continue;
+      if (!SpriteRenderer.renderVisible[entityIdx]) continue;
+      // NOTE: We skip isItOnScreen check - GPU does frustum culling!
+
+      // Advance animation
+      if (SpriteRenderer.isAnimated[entityIdx]) {
+        this.advanceAnimation(entityIdx, deltaSeconds);
+      }
+
+      const base = writeIdx * stride;
+      const frameName = this.getEntityFrameName(entityIdx);
+      const rgb = this.tintToRGB(SpriteRenderer.tint[entityIdx]);
+
+      data[base + 0] = Transform.x[entityIdx];
+      data[base + 1] = Transform.y[entityIdx];
+      data[base + 2] = Transform.rotation[entityIdx];
+      data[base + 3] = SpriteRenderer.scaleX[entityIdx];
+      data[base + 4] = SpriteRenderer.scaleY[entityIdx];
+      data[base + 5] = SpriteRenderer.anchorX[entityIdx];
+      data[base + 6] = SpriteRenderer.anchorY[entityIdx];
+      dataU32[base + 7] = this.getUVId(frameName);
+      data[base + 8] = rgb.r;
+      data[base + 9] = rgb.g;
+      data[base + 10] = rgb.b;
+      data[base + 11] = SpriteRenderer.alpha[entityIdx];
+
+      writeIdx++;
+    }
+
+    // Collect ALL particles (GPU will cull)
+    for (let i = 0; i < this.maxParticles; i++) {
+      if (!ParticleComponent.active[i]) continue;
+      // NOTE: Skip isItOnScreen - GPU culls!
+
+      const base = writeIdx * stride;
+      const tid = ParticleComponent.textureId[i];
+      let frameName = '_white';
+      if (tid >= 0) {
+        const name = SpriteSheetRegistry.getAnimationName('bigAtlas', tid);
+        if (name) frameName = name;
+      }
+      const rgb = this.tintToRGB(ParticleComponent.tint[i]);
+
+      data[base + 0] = ParticleComponent.x[i];
+      data[base + 1] = ParticleComponent.y[i] + ParticleComponent.z[i];
+      data[base + 2] = ParticleComponent.rotation[i];
+      data[base + 3] = ParticleComponent.flipX[i] ? -ParticleComponent.scaleX[i] : ParticleComponent.scaleX[i];
+      data[base + 4] = ParticleComponent.flipY[i] ? -ParticleComponent.scaleY[i] : ParticleComponent.scaleY[i];
+      data[base + 5] = 0.5;
+      data[base + 6] = 0.5;
+      dataU32[base + 7] = this.getUVId(frameName);
+      data[base + 8] = rgb.r;
+      data[base + 9] = rgb.g;
+      data[base + 10] = rgb.b;
+      data[base + 11] = ParticleComponent.alpha[i];
+
+      writeIdx++;
+    }
+
+    // Collect ALL decorations (GPU will cull)
+    for (let i = 0; i < this.maxDecorations; i++) {
+      if (!DecorationComponent.active[i]) continue;
+      // NOTE: Skip isItOnScreen - GPU culls!
+
+      const base = writeIdx * stride;
+      const tid = DecorationComponent.textureId[i];
+      let frameName = '_white';
+      if (tid >= 0) {
+        const name = SpriteSheetRegistry.getAnimationName('bigAtlas', tid);
+        if (name) frameName = name;
+      }
+      const rgb = this.tintToRGB(DecorationComponent.tint[i]);
+
+      data[base + 0] = DecorationComponent.x[i] + DecorationComponent.offsetX[i];
+      data[base + 1] = DecorationComponent.y[i] + DecorationComponent.offsetY[i];
+      data[base + 2] = DecorationComponent.rotation[i];
+      data[base + 3] = DecorationComponent.scaleX[i];
+      data[base + 4] = DecorationComponent.scaleY[i];
+      data[base + 5] = DecorationComponent.anchorX[i];
+      data[base + 6] = DecorationComponent.anchorY[i];
+      dataU32[base + 7] = this.getUVId(frameName);
+      data[base + 8] = rgb.r;
+      data[base + 9] = rgb.g;
+      data[base + 10] = rgb.b;
+      data[base + 11] = DecorationComponent.alpha[i];
+
+      writeIdx++;
+    }
+
+    return writeIdx;
   }
 
   /**
@@ -637,6 +940,120 @@ class WebGPURenderer extends AbstractWorker {
     }
   }
 
+  /**
+   * Execute GPU culling + rendering in a single command buffer
+   * Uses drawIndirect to avoid GPU->CPU readback of visible count
+   */
+  executeGPUCullAndRender(totalInstances) {
+    if (!this.renderPipeline || !this.uniformBindGroup || !this.instanceBindGroupCulled) {
+      console.warn('WEBGPU RENDERER: Cannot render culled - pipeline or bind groups not ready');
+      return;
+    }
+
+    const dev = this.device;
+
+    // Reset visible count to 0 and set up indirect draw args
+    // Format: [vertexCount, instanceCount, firstVertex, firstInstance]
+    dev.queue.writeBuffer(this.indirectDrawBuffer, 0, new Uint32Array([6, 0, 0, 0]));
+    dev.queue.writeBuffer(this.visibleCountBuffer, 0, new Uint32Array([0]));
+
+    // Update cull uniforms
+    const cullUniforms = new Float32Array([
+      this._renderCameraX,
+      this._renderCameraY,
+      this._renderZoom,
+      this.canvasWidth,
+      this.canvasHeight,
+    ]);
+    dev.queue.writeBuffer(this.cullUniformBuffer, 0, cullUniforms);
+    dev.queue.writeBuffer(this.cullUniformBuffer, 20, new Uint32Array([totalInstances]));
+    dev.queue.writeBuffer(this.cullUniformBuffer, 24, new Float32Array([this.cullMargin, 0]));
+
+    // Update render uniforms
+    const renderUniforms = new Float32Array([
+      this._renderCameraX,
+      this._renderCameraY,
+      this._renderZoom,
+      this.canvasWidth,
+      this.canvasHeight,
+      this.atlasWidth,
+      this.atlasHeight,
+    ]);
+    dev.queue.writeBuffer(this.uniformBuffer, 0, renderUniforms);
+    // Note: instanceCount in uniform buffer not used with indirect draw
+
+    // Build single command buffer: Cull -> Copy count -> Render
+    const commandEncoder = dev.createCommandEncoder();
+
+    // ===== COMPUTE PASS: Frustum Culling =====
+    const workgroupSize = 256;
+    const workgroupCount = Math.ceil(totalInstances / workgroupSize);
+
+    const computePass = commandEncoder.beginComputePass();
+    computePass.setPipeline(this.cullPipeline);
+    computePass.setBindGroup(0, this.cullBindGroup);
+    computePass.dispatchWorkgroups(workgroupCount);
+    computePass.end();
+
+    // Copy visible count to indirect draw buffer's instanceCount (offset 4)
+    commandEncoder.copyBufferToBuffer(
+      this.visibleCountBuffer, 0,
+      this.indirectDrawBuffer, 4,  // instanceCount is at byte offset 4
+      4
+    );
+
+    // Also copy to staging buffer for stats readback (non-blocking)
+    commandEncoder.copyBufferToBuffer(
+      this.visibleCountBuffer, 0,
+      this.visibleCountStagingBuffer, 0,
+      4
+    );
+
+    // ===== RENDER PASS: Draw visible instances =====
+    const textureView = this.context.getCurrentTexture().createView();
+
+    const renderPass = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: textureView,
+        clearValue: { r: 0.1, g: 0.1, b: 0.15, a: 1.0 },
+        loadOp: 'clear',
+        storeOp: 'store',
+      }],
+    });
+
+    renderPass.setPipeline(this.renderPipeline);
+    renderPass.setBindGroup(0, this.uniformBindGroup);
+    renderPass.setBindGroup(1, this.instanceBindGroupCulled);
+    renderPass.drawIndirect(this.indirectDrawBuffer, 0);  // GPU reads instance count!
+    renderPass.end();
+
+    // Submit everything in one go
+    dev.queue.submit([commandEncoder.finish()]);
+
+    this.drawCallCount = 1;
+
+    // Async readback of visible count for stats (doesn't block rendering)
+    this.readbackVisibleCountForStats();
+  }
+
+  /**
+   * Non-blocking readback of visible count for stats display
+   */
+  readbackVisibleCountForStats() {
+    // Only attempt readback if not already pending
+    if (this._statsReadbackPending) return;
+    this._statsReadbackPending = true;
+
+    this.visibleCountStagingBuffer.mapAsync(GPUMapMode.READ).then(() => {
+      const countData = new Uint32Array(this.visibleCountStagingBuffer.getMappedRange());
+      this.visibleCount = countData[0];
+      this.visibleCountStagingBuffer.unmap();
+      this._statsReadbackPending = false;
+    }).catch(() => {
+      this._statsReadbackPending = false;
+    });
+  }
+
   update(deltaTime, dtRatio, resuming) {
     // Camera interpolation
     let interpolationAlpha = 1.0;
@@ -662,8 +1079,34 @@ class WebGPURenderer extends AbstractWorker {
       this._renderZoom += (targetZoom - this._renderZoom) * interpolationAlpha;
     }
 
-    // Collect instance data (includes Y-sorting on CPU)
     const deltaSeconds = deltaTime / 1000;
+
+    // ========== GPU CULLING PATH ==========
+    if (this.gpuCulling && this.cullPipeline) {
+      // Collect ALL instance data (no CPU visibility checks)
+      const totalCount = this.collectAllInstanceDataForGPUCull(deltaSeconds);
+
+      if (totalCount === 0) {
+        this.renderEmpty();
+        return;
+      }
+
+      // Upload ALL instances to GPU
+      const byteSize = totalCount * this.INSTANCE_BYTE_STRIDE;
+      this.device.queue.writeBuffer(
+        this.allInstancesBuffer,
+        0,
+        this.cpuInstanceData.buffer,
+        0,
+        byteSize
+      );
+
+      // Execute GPU cull + render in single command buffer (no async!)
+      this.executeGPUCullAndRender(totalCount);
+      return;
+    }
+
+    // ========== CPU CULLING PATH (with Y-sorting) ==========
     const totalCount = this.collectInstanceData(deltaSeconds);
 
     if (totalCount === 0) {
@@ -824,7 +1267,36 @@ class WebGPURenderer extends AbstractWorker {
     this.ySorting = rendererConfig.ySorting !== false;
     this.interpolation = rendererConfig.interpolation !== false;
 
-    // Check for noLimitFPS in renderer config (AbstractWorker checks 'webgpurenderer' key, not 'renderer')
+    // GPU Culling setup
+    // Enable GPU culling when Y-sorting is disabled OR explicitly requested
+    const gpuCullingRequested = rendererConfig.gpuCulling === true;
+    const canUseGPUCulling = !this.ySorting || gpuCullingRequested;
+
+    if (canUseGPUCulling) {
+      try {
+        await this.createCullPipeline();
+        this.createCullBuffers(maxInstances);
+        this.createCullBindGroup();
+        this.gpuCulling = true;
+        this.cullMargin = rendererConfig.cullMargin ?? 50;
+
+        // If GPU culling is forced but Y-sorting was requested, warn and disable Y-sorting
+        if (gpuCullingRequested && this.ySorting) {
+          console.warn('WEBGPU RENDERER: GPU culling enabled - Y-sorting disabled (not yet GPU-accelerated)');
+          this.ySorting = false;
+        }
+
+        console.log('WEBGPU RENDERER: GPU frustum culling ENABLED');
+        console.log(`  Cull margin: ${this.cullMargin}px`);
+      } catch (err) {
+        console.error('WEBGPU RENDERER: Failed to create cull pipeline, falling back to CPU culling', err);
+        this.gpuCulling = false;
+      }
+    } else {
+      console.log('WEBGPU RENDERER: Using CPU culling (Y-sorting enabled)');
+    }
+
+    // Check for noLimitFPS in renderer config
     if (rendererConfig.noLimitFPS === true) {
       this.noLimitFPS = true;
       console.log('WEBGPU RENDERER: Running in unlimited FPS mode');
@@ -832,8 +1304,8 @@ class WebGPURenderer extends AbstractWorker {
 
     console.log('WEBGPU RENDERER: Initialized');
     console.log(`  Max instances: ${maxInstances}`);
-    console.log(`  Y-sorting: ${this.ySorting} (GPU bitonic sort)`);
-    console.log(`  Compute shaders: cull + sort`);
+    console.log(`  Y-sorting: ${this.ySorting}`);
+    console.log(`  GPU culling: ${this.gpuCulling}`);
   }
 }
 
