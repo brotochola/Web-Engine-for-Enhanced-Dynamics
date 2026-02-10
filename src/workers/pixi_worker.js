@@ -9,6 +9,7 @@ self.postMessage({
 
 import { Transform } from '../components/Transform.js';
 import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { RigidBody } from '../components/RigidBody.js';
 import { ParticleComponent } from '../components/ParticleComponent.js';
 import { DecorationComponent } from '../components/DecorationComponent.js';
 import { DecorationPool } from '../core/DecorationPool.js';
@@ -155,6 +156,39 @@ const BITONIC_SORT_SHADER = /* wgsl */`
       instances[i] = instances[ixj];
       instances[ixj] = temp;
     }
+  }
+`;
+
+// ============================================================================
+// SHADER CODE - SPARSE UPDATE COMPUTE PIPELINE (Patch persistent buffer)
+// ============================================================================
+
+const SPARSE_UPDATE_SHADER = /* wgsl */`
+  struct UpdateParams {
+    updateCount: u32,
+    _padding1: u32,
+    _padding2: u32,
+    _padding3: u32,
+  }
+
+  struct InstanceData {
+    posXY_rot_scaleX: vec4<f32>,
+    scaleY_anchor_uvId: vec4<f32>,
+    tint_alpha: vec4<f32>,
+  }
+
+  @group(0) @binding(0) var<uniform> params: UpdateParams;
+  @group(0) @binding(1) var<storage, read> updateIndices: array<u32>;
+  @group(0) @binding(2) var<storage, read> updateData: array<InstanceData>;
+  @group(0) @binding(3) var<storage, read_write> instances: array<InstanceData>;
+
+  @compute @workgroup_size(256)
+  fn sparseUpdate(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let updateIdx = gid.x;
+    if (updateIdx >= params.updateCount) { return; }
+
+    let targetSlot = updateIndices[updateIdx];
+    instances[targetSlot] = updateData[updateIdx];
   }
 `;
 
@@ -363,6 +397,42 @@ class WebGPURenderer extends AbstractWorker {
     this.sortBindGroups = [];            // Corresponding bind groups
     this.sortBufferPoolSize = 0;         // Current pool size
     this.gpuSorting = false;             // Enable GPU Y-sorting
+
+    // ========== SPARSE UPDATES (Persistent GPU buffer with dirty tracking) ==========
+    this.sparseUpdates = false;          // Enable sparse update mode
+    this.sparseUpdatePipeline = null;    // Compute pipeline for patching
+    this.sparseUpdateBindGroup = null;
+    this.sparseUpdateUniformBuffer = null;
+    this.updateIndicesBuffer = null;     // GPU buffer: target slot indices
+    this.updateDataBuffer = null;        // GPU buffer: new instance data
+    this.persistentBufferInitialized = false; // First frame needs full upload
+
+    // Pre-allocated CPU arrays for sparse updates (zero GC pressure)
+    this.dirtyIndices = null;            // Uint32Array - which slots need updating
+    this.dirtyInstanceData = null;       // Float32Array - packed data for dirty slots
+    this.dirtyInstanceDataU32 = null;    // Uint32Array view for uvId
+    this.dirtyCount = 0;                 // How many dirty this frame
+    this.maxDirtyPerFrame = 0;           // Max dirty slots (sized to worst case)
+
+    // Slot tracking for entities/particles/decorations
+    // Entity i -> slot i
+    // Particle i -> slot globalEntityCount + i
+    // Decoration i -> slot globalEntityCount + maxParticles + i
+    this.particleSlotOffset = 0;
+    this.decorationSlotOffset = 0;
+
+    // Track previous active state to detect deactivation
+    this.prevEntityActive = null;        // Uint8Array - previous Transform.active state
+    this.prevParticleActive = null;      // Uint8Array - previous ParticleComponent.active
+    this.prevDecorationActive = null;    // Uint8Array - previous DecorationComponent.active
+
+    // ========== PRE-ALLOCATED TEMP ARRAYS (Zero GC in hot paths) ==========
+    // Reusable typed arrays for writeBuffer calls
+    this._tempU32_1 = new Uint32Array(1);      // Single u32
+    this._tempU32_4 = new Uint32Array(4);      // 4x u32 (indirect draw, sort params)
+    this._tempF32_2 = new Float32Array(2);     // 2x f32 (cull margin)
+    this._tempF32_5 = new Float32Array(5);     // 5x f32 (cull uniforms)
+    this._tempF32_7 = new Float32Array(7);     // 7x f32 (render uniforms)
 
     // CPU-side arrays for uploading
     this.cpuArrays = null;
@@ -639,6 +709,101 @@ class WebGPURenderer extends AbstractWorker {
     }
 
     console.log(`WEBGPU RENDERER: Sort bind groups created (${this.sortBufferPoolSize})`);
+  }
+
+  // ============================================================================
+  // SPARSE UPDATE PIPELINE (Persistent buffer with dirty tracking)
+  // ============================================================================
+
+  async createSparseUpdatePipeline() {
+    const updateModule = this.device.createShaderModule({
+      code: SPARSE_UPDATE_SHADER,
+      label: 'SparseUpdateShader'
+    });
+
+    const compilationInfo = await updateModule.getCompilationInfo();
+    if (compilationInfo.messages.length > 0) {
+      for (const msg of compilationInfo.messages) {
+        console.error(`WGSL SparseUpdate ${msg.type} at line ${msg.lineNum}:${msg.linePos}: ${msg.message}`);
+      }
+      if (compilationInfo.messages.some(m => m.type === 'error')) {
+        throw new Error('Sparse update shader compilation failed');
+      }
+    }
+
+    this.sparseUpdatePipeline = this.device.createComputePipeline({
+      label: 'SparseUpdatePipeline',
+      layout: 'auto',
+      compute: {
+        module: updateModule,
+        entryPoint: 'sparseUpdate',
+      },
+    });
+
+    console.log('WEBGPU RENDERER: Sparse update compute pipeline created');
+  }
+
+  createSparseUpdateBuffers(maxInstances) {
+    const dev = this.device;
+
+    // Uniform buffer for update count (16 bytes aligned)
+    this.sparseUpdateUniformBuffer = dev.createBuffer({
+      label: 'SparseUpdateUniformBuffer',
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Size for worst case: all instances dirty
+    // In practice, we'll use much less most frames
+    this.maxDirtyPerFrame = maxInstances;
+
+    // GPU buffer for update indices (u32 per entry)
+    this.updateIndicesBuffer = dev.createBuffer({
+      label: 'UpdateIndicesBuffer',
+      size: maxInstances * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    // GPU buffer for update data (48 bytes per instance = 12 floats)
+    this.updateDataBuffer = dev.createBuffer({
+      label: 'UpdateDataBuffer',
+      size: maxInstances * this.INSTANCE_BYTE_STRIDE,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    // Pre-allocate CPU-side arrays (ZERO GC during runtime)
+    this.dirtyIndices = new Uint32Array(maxInstances);
+    this.dirtyInstanceData = new Float32Array(maxInstances * this.INSTANCE_STRIDE);
+    this.dirtyInstanceDataU32 = new Uint32Array(this.dirtyInstanceData.buffer);
+
+    // Track previous active states for deactivation detection
+    this.prevEntityActive = new Uint8Array(this.globalEntityCount);
+    this.prevParticleActive = new Uint8Array(this.maxParticles);
+    this.prevDecorationActive = new Uint8Array(this.maxDecorations);
+
+    // Calculate slot offsets
+    this.particleSlotOffset = this.globalEntityCount;
+    this.decorationSlotOffset = this.globalEntityCount + this.maxParticles;
+
+    console.log(`WEBGPU RENDERER: Sparse update buffers created (max dirty: ${maxInstances})`);
+    console.log(`  Entity slots: 0-${this.globalEntityCount - 1}`);
+    console.log(`  Particle slots: ${this.particleSlotOffset}-${this.particleSlotOffset + this.maxParticles - 1}`);
+    console.log(`  Decoration slots: ${this.decorationSlotOffset}-${this.decorationSlotOffset + this.maxDecorations - 1}`);
+  }
+
+  createSparseUpdateBindGroup() {
+    this.sparseUpdateBindGroup = this.device.createBindGroup({
+      label: 'SparseUpdateBindGroup',
+      layout: this.sparseUpdatePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.sparseUpdateUniformBuffer } },
+        { binding: 1, resource: { buffer: this.updateIndicesBuffer } },
+        { binding: 2, resource: { buffer: this.updateDataBuffer } },
+        { binding: 3, resource: { buffer: this.allInstancesBuffer } }, // Persistent buffer
+      ],
+    });
+
+    console.log('WEBGPU RENDERER: Sparse update bind group created');
   }
 
   createBuffers(maxInstances) {
@@ -1049,6 +1214,364 @@ class WebGPURenderer extends AbstractWorker {
     return this._sortPoolSize;
   }
 
+  /**
+   * Collect ONLY dirty instance data for sparse GPU updates
+   * Uses dirty tracking to minimize CPU work and GPU uploads
+   * Zero GC pressure - all arrays pre-allocated
+   *
+   * Returns: total instance count (for culling), updates dirtyCount
+   */
+  collectSparseUpdates(deltaSeconds) {
+    const indices = this.dirtyIndices;
+    const data = this.dirtyInstanceData;
+    const dataU32 = this.dirtyInstanceDataU32;
+    const stride = this.INSTANCE_STRIDE;
+
+    let dirtyIdx = 0;
+    let totalActive = 0;
+
+    // ========== ENTITIES ==========
+    const entities = this.queryActiveEntities(this.queryConfig);
+    for (const entityIdx of entities) {
+      const isActive = Transform.active[entityIdx] && SpriteRenderer.renderVisible[entityIdx];
+      const wasActive = this.prevEntityActive[entityIdx];
+
+      if (isActive) {
+        totalActive++;
+
+        // Check if entity needs GPU update:
+        // 1. First frame (buffer not initialized)
+        // 2. Entity just became active
+        // 3. Entity is awake (not sleeping) - it moved
+        // 4. Visual properties changed (renderDirty)
+        // 5. Animated sprite (frame might change)
+        const justActivated = !wasActive;
+        const isAwake = !RigidBody.sleeping || RigidBody.sleeping[entityIdx] === 0;
+        const isDirty = SpriteRenderer.renderDirty[entityIdx] === 1;
+        const isAnimated = SpriteRenderer.isAnimated[entityIdx] === 1;
+
+        const needsUpdate = !this.persistentBufferInitialized ||
+          justActivated || isAwake || isDirty || isAnimated;
+
+        if (needsUpdate) {
+          // Advance animation if needed
+          if (isAnimated) {
+            this.advanceAnimation(entityIdx, deltaSeconds);
+          }
+
+          // Write to dirty arrays
+          const base = dirtyIdx * stride;
+          const frameName = this.getEntityFrameName(entityIdx);
+          const tint = SpriteRenderer.tint[entityIdx];
+
+          indices[dirtyIdx] = entityIdx; // Slot = entity index
+
+          data[base + 0] = Transform.x[entityIdx];
+          data[base + 1] = Transform.y[entityIdx];
+          data[base + 2] = Transform.rotation[entityIdx];
+          data[base + 3] = SpriteRenderer.scaleX[entityIdx];
+          data[base + 4] = SpriteRenderer.scaleY[entityIdx];
+          data[base + 5] = SpriteRenderer.anchorX[entityIdx];
+          data[base + 6] = SpriteRenderer.anchorY[entityIdx];
+          dataU32[base + 7] = this.getUVId(frameName);
+          // Inline tint conversion (avoid function call)
+          data[base + 8] = (tint & 0xFF) / 255;           // R
+          data[base + 9] = ((tint >> 8) & 0xFF) / 255;    // G
+          data[base + 10] = ((tint >> 16) & 0xFF) / 255;  // B
+          data[base + 11] = SpriteRenderer.alpha[entityIdx];
+
+          dirtyIdx++;
+
+          // Clear dirty flag
+          SpriteRenderer.renderDirty[entityIdx] = 0;
+        }
+
+        this.prevEntityActive[entityIdx] = 1;
+      } else if (wasActive) {
+        // Entity just became inactive - zero its GPU slot (alpha = 0)
+        const base = dirtyIdx * stride;
+        indices[dirtyIdx] = entityIdx;
+
+        // Zero out (alpha = 0 makes cull shader skip it)
+        data[base + 0] = 0;
+        data[base + 1] = 0;
+        data[base + 2] = 0;
+        data[base + 3] = 0;
+        data[base + 4] = 0;
+        data[base + 5] = 0;
+        data[base + 6] = 0;
+        dataU32[base + 7] = 0;
+        data[base + 8] = 0;
+        data[base + 9] = 0;
+        data[base + 10] = 0;
+        data[base + 11] = 0; // Alpha = 0
+
+        dirtyIdx++;
+        this.prevEntityActive[entityIdx] = 0;
+      }
+    }
+
+    // ========== PARTICLES (always dynamic, update all active) ==========
+    for (let i = 0; i < this.maxParticles; i++) {
+      const isActive = ParticleComponent.active[i];
+      const wasActive = this.prevParticleActive[i];
+      const slot = this.particleSlotOffset + i;
+
+      if (isActive) {
+        totalActive++;
+
+        // Particles are highly dynamic - always update active ones
+        const base = dirtyIdx * stride;
+        const tid = ParticleComponent.textureId[i];
+        let frameName = '_white';
+        if (tid >= 0) {
+          const name = SpriteSheetRegistry.getAnimationName('bigAtlas', tid);
+          if (name) frameName = name;
+        }
+        const tint = ParticleComponent.tint[i];
+
+        indices[dirtyIdx] = slot;
+
+        data[base + 0] = ParticleComponent.x[i];
+        data[base + 1] = ParticleComponent.y[i] + ParticleComponent.z[i];
+        data[base + 2] = ParticleComponent.rotation[i];
+        data[base + 3] = ParticleComponent.flipX[i] ? -ParticleComponent.scaleX[i] : ParticleComponent.scaleX[i];
+        data[base + 4] = ParticleComponent.flipY[i] ? -ParticleComponent.scaleY[i] : ParticleComponent.scaleY[i];
+        data[base + 5] = 0.5;
+        data[base + 6] = 0.5;
+        dataU32[base + 7] = this.getUVId(frameName);
+        data[base + 8] = (tint & 0xFF) / 255;
+        data[base + 9] = ((tint >> 8) & 0xFF) / 255;
+        data[base + 10] = ((tint >> 16) & 0xFF) / 255;
+        data[base + 11] = ParticleComponent.alpha[i];
+
+        dirtyIdx++;
+        this.prevParticleActive[i] = 1;
+      } else if (wasActive) {
+        // Particle deactivated - zero its slot
+        const base = dirtyIdx * stride;
+        indices[dirtyIdx] = slot;
+        for (let j = 0; j < stride; j++) data[base + j] = 0;
+        dirtyIdx++;
+        this.prevParticleActive[i] = 0;
+      }
+    }
+
+    // ========== DECORATIONS (mostly static, only update if dirty) ==========
+    for (let i = 0; i < this.maxDecorations; i++) {
+      const isActive = DecorationComponent.active[i];
+      const wasActive = this.prevDecorationActive[i];
+      const slot = this.decorationSlotOffset + i;
+
+      if (isActive) {
+        totalActive++;
+
+        // Decorations: update on first frame, activation, or if they have sway
+        // For now, treat sway decorations as always dirty (optimize later with GPU sway)
+        const justActivated = !wasActive;
+        const hasSway = DecorationComponent.swayAmount && DecorationComponent.swayAmount[i] > 0;
+
+        if (!this.persistentBufferInitialized || justActivated || hasSway) {
+          const base = dirtyIdx * stride;
+          const tid = DecorationComponent.textureId[i];
+          let frameName = '_white';
+          if (tid >= 0) {
+            const name = SpriteSheetRegistry.getAnimationName('bigAtlas', tid);
+            if (name) frameName = name;
+          }
+          const tint = DecorationComponent.tint[i];
+
+          indices[dirtyIdx] = slot;
+
+          data[base + 0] = DecorationComponent.x[i] + DecorationComponent.offsetX[i];
+          data[base + 1] = DecorationComponent.y[i] + DecorationComponent.offsetY[i];
+          data[base + 2] = DecorationComponent.rotation[i];
+          data[base + 3] = DecorationComponent.scaleX[i];
+          data[base + 4] = DecorationComponent.scaleY[i];
+          data[base + 5] = DecorationComponent.anchorX[i];
+          data[base + 6] = DecorationComponent.anchorY[i];
+          dataU32[base + 7] = this.getUVId(frameName);
+          data[base + 8] = (tint & 0xFF) / 255;
+          data[base + 9] = ((tint >> 8) & 0xFF) / 255;
+          data[base + 10] = ((tint >> 16) & 0xFF) / 255;
+          data[base + 11] = DecorationComponent.alpha[i];
+
+          dirtyIdx++;
+        }
+
+        this.prevDecorationActive[i] = 1;
+      } else if (wasActive) {
+        // Decoration deactivated - zero its slot
+        const base = dirtyIdx * stride;
+        indices[dirtyIdx] = slot;
+        for (let j = 0; j < stride; j++) data[base + j] = 0;
+        dirtyIdx++;
+        this.prevDecorationActive[i] = 0;
+      }
+    }
+
+    this.dirtyCount = dirtyIdx;
+    return totalActive;
+  }
+
+  /**
+   * Execute sparse update + GPU cull + sort + render
+   * Only uploads changed instances, patches persistent buffer on GPU
+   */
+  executeSparseUpdateAndRender(totalInstances) {
+    if (!this.renderPipeline || !this.uniformBindGroup || !this.instanceBindGroupCulled) {
+      console.warn('WEBGPU RENDERER: Cannot render - pipeline not ready');
+      return;
+    }
+
+    const dev = this.device;
+    const workgroupSize = 256;
+
+    // Upload sparse updates (only if there are any)
+    if (this.dirtyCount > 0) {
+      const indicesByteSize = this.dirtyCount * 4;
+      const dataByteSize = this.dirtyCount * this.INSTANCE_BYTE_STRIDE;
+
+      dev.queue.writeBuffer(this.updateIndicesBuffer, 0, this.dirtyIndices.buffer, 0, indicesByteSize);
+      dev.queue.writeBuffer(this.updateDataBuffer, 0, this.dirtyInstanceData.buffer, 0, dataByteSize);
+      this._tempU32_4[0] = this.dirtyCount;
+      this._tempU32_4[1] = 0;
+      this._tempU32_4[2] = 0;
+      this._tempU32_4[3] = 0;
+      dev.queue.writeBuffer(this.sparseUpdateUniformBuffer, 0, this._tempU32_4);
+    }
+
+    // Reset cull counter and indirect draw args (reuse pre-allocated arrays)
+    this._tempU32_4[0] = 6;  // vertexCount
+    this._tempU32_4[1] = 0;  // instanceCount (will be filled by cull)
+    this._tempU32_4[2] = 0;  // firstVertex
+    this._tempU32_4[3] = 0;  // firstInstance
+    dev.queue.writeBuffer(this.indirectDrawBuffer, 0, this._tempU32_4);
+    this._tempU32_1[0] = 0;
+    dev.queue.writeBuffer(this.visibleCountBuffer, 0, this._tempU32_1);
+
+    // Update cull uniforms (reuse pre-allocated array)
+    this._tempF32_5[0] = this._renderCameraX;
+    this._tempF32_5[1] = this._renderCameraY;
+    this._tempF32_5[2] = this._renderZoom;
+    this._tempF32_5[3] = this.canvasWidth;
+    this._tempF32_5[4] = this.canvasHeight;
+    dev.queue.writeBuffer(this.cullUniformBuffer, 0, this._tempF32_5);
+    this._tempU32_1[0] = totalInstances;
+    dev.queue.writeBuffer(this.cullUniformBuffer, 20, this._tempU32_1);
+    this._tempF32_2[0] = this.cullMargin;
+    this._tempF32_2[1] = 0;
+    dev.queue.writeBuffer(this.cullUniformBuffer, 24, this._tempF32_2);
+
+    // Update render uniforms (reuse pre-allocated array)
+    this._tempF32_7[0] = this._renderCameraX;
+    this._tempF32_7[1] = this._renderCameraY;
+    this._tempF32_7[2] = this._renderZoom;
+    this._tempF32_7[3] = this.canvasWidth;
+    this._tempF32_7[4] = this.canvasHeight;
+    this._tempF32_7[5] = this.atlasWidth;
+    this._tempF32_7[6] = this.atlasHeight;
+    dev.queue.writeBuffer(this.uniformBuffer, 0, this._tempF32_7);
+
+    // Pre-write sort uniform buffers if sorting enabled
+    let sortPassCount = 0;
+    let sortWorkgroupCount = 0;
+    if (this.gpuSorting && this.sortPipeline) {
+      const n = totalInstances;
+      const nextPow2 = this.nextPowerOf2(n);
+      sortWorkgroupCount = Math.ceil(nextPow2 / workgroupSize);
+
+      let bufferIdx = 0;
+      for (let k = 2; k <= nextPow2; k *= 2) {
+        for (let j = k >> 1; j > 0; j >>= 1) {
+          if (bufferIdx < this.sortBufferPoolSize) {
+            this._tempU32_4[0] = n;
+            this._tempU32_4[1] = k;
+            this._tempU32_4[2] = j;
+            this._tempU32_4[3] = 0;
+            dev.queue.writeBuffer(this.sortUniformBuffers[bufferIdx], 0, this._tempU32_4);
+            bufferIdx++;
+          }
+        }
+      }
+      sortPassCount = bufferIdx;
+    }
+
+    // Build command buffer: SparseUpdate → Cull → Sort → Render
+    const commandEncoder = dev.createCommandEncoder({ label: 'SparseMainEncoder' });
+
+    // ===== COMPUTE PASS: Sparse Update (patch persistent buffer) =====
+    if (this.dirtyCount > 0) {
+      const updateWorkgroups = Math.ceil(this.dirtyCount / workgroupSize);
+      const updatePass = commandEncoder.beginComputePass({ label: 'SparseUpdatePass' });
+      updatePass.setPipeline(this.sparseUpdatePipeline);
+      updatePass.setBindGroup(0, this.sparseUpdateBindGroup);
+      updatePass.dispatchWorkgroups(updateWorkgroups);
+      updatePass.end();
+    }
+
+    // ===== COMPUTE PASS: Frustum Culling =====
+    // Note: totalInstances is the buffer size, not active count
+    // Cull shader checks alpha > 0 to skip inactive slots
+    const maxSlots = this.globalEntityCount + this.maxParticles + this.maxDecorations;
+    const cullWorkgroupCount = Math.ceil(maxSlots / workgroupSize);
+    const cullPass = commandEncoder.beginComputePass({ label: 'CullPass' });
+    cullPass.setPipeline(this.cullPipeline);
+    cullPass.setBindGroup(0, this.cullBindGroup);
+    cullPass.dispatchWorkgroups(cullWorkgroupCount);
+    cullPass.end();
+
+    // ===== COMPUTE PASSES: Bitonic Sort =====
+    if (sortPassCount > 0) {
+      for (let i = 0; i < sortPassCount; i++) {
+        const sortPass = commandEncoder.beginComputePass({ label: `SortPass_${i}` });
+        sortPass.setPipeline(this.sortPipeline);
+        sortPass.setBindGroup(0, this.sortBindGroups[i]);
+        sortPass.dispatchWorkgroups(sortWorkgroupCount);
+        sortPass.end();
+      }
+    }
+
+    // Copy visible count to indirect draw buffer
+    commandEncoder.copyBufferToBuffer(this.visibleCountBuffer, 0, this.indirectDrawBuffer, 4, 4);
+
+    // Copy for stats readback
+    if (!this._statsReadbackPending) {
+      commandEncoder.copyBufferToBuffer(this.visibleCountBuffer, 0, this.visibleCountStagingBuffer, 0, 4);
+    }
+
+    // ===== RENDER PASS =====
+    const textureView = this.context.getCurrentTexture().createView();
+    const renderPass = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: textureView,
+        clearValue: { r: 0.1, g: 0.1, b: 0.15, a: 1.0 },
+        loadOp: 'clear',
+        storeOp: 'store',
+      }],
+    });
+
+    renderPass.setPipeline(this.renderPipeline);
+    renderPass.setBindGroup(0, this.uniformBindGroup);
+    renderPass.setBindGroup(1, this.instanceBindGroupCulled);
+    renderPass.drawIndirect(this.indirectDrawBuffer, 0);
+    renderPass.end();
+
+    dev.queue.submit([commandEncoder.finish()]);
+
+    this.drawCallCount = 1;
+
+    // Async stats readback
+    if (!this._statsReadbackPending) {
+      this.readbackVisibleCountForStats();
+    }
+
+    // Mark buffer as initialized after first frame
+    if (!this.persistentBufferInitialized) {
+      this.persistentBufferInitialized = true;
+    }
+  }
+
   advanceAnimation(entityIndex, deltaSeconds) {
     if (!this.frameAccumulator) return;
 
@@ -1099,34 +1622,37 @@ class WebGPURenderer extends AbstractWorker {
     const dev = this.device;
     const workgroupSize = 256;
 
-    // Reset visible count to 0 and set up indirect draw args
-    // Format: [vertexCount, instanceCount, firstVertex, firstInstance]
-    dev.queue.writeBuffer(this.indirectDrawBuffer, 0, new Uint32Array([6, 0, 0, 0]));
-    dev.queue.writeBuffer(this.visibleCountBuffer, 0, new Uint32Array([0]));
+    // Reset visible count to 0 and set up indirect draw args (reuse pre-allocated arrays)
+    this._tempU32_4[0] = 6;  // vertexCount
+    this._tempU32_4[1] = 0;  // instanceCount (will be filled by cull)
+    this._tempU32_4[2] = 0;  // firstVertex
+    this._tempU32_4[3] = 0;  // firstInstance
+    dev.queue.writeBuffer(this.indirectDrawBuffer, 0, this._tempU32_4);
+    this._tempU32_1[0] = 0;
+    dev.queue.writeBuffer(this.visibleCountBuffer, 0, this._tempU32_1);
 
-    // Update cull uniforms
-    const cullUniforms = new Float32Array([
-      this._renderCameraX,
-      this._renderCameraY,
-      this._renderZoom,
-      this.canvasWidth,
-      this.canvasHeight,
-    ]);
-    dev.queue.writeBuffer(this.cullUniformBuffer, 0, cullUniforms);
-    dev.queue.writeBuffer(this.cullUniformBuffer, 20, new Uint32Array([totalInstances]));
-    dev.queue.writeBuffer(this.cullUniformBuffer, 24, new Float32Array([this.cullMargin, 0]));
+    // Update cull uniforms (reuse pre-allocated array)
+    this._tempF32_5[0] = this._renderCameraX;
+    this._tempF32_5[1] = this._renderCameraY;
+    this._tempF32_5[2] = this._renderZoom;
+    this._tempF32_5[3] = this.canvasWidth;
+    this._tempF32_5[4] = this.canvasHeight;
+    dev.queue.writeBuffer(this.cullUniformBuffer, 0, this._tempF32_5);
+    this._tempU32_1[0] = totalInstances;
+    dev.queue.writeBuffer(this.cullUniformBuffer, 20, this._tempU32_1);
+    this._tempF32_2[0] = this.cullMargin;
+    this._tempF32_2[1] = 0;
+    dev.queue.writeBuffer(this.cullUniformBuffer, 24, this._tempF32_2);
 
-    // Update render uniforms
-    const renderUniforms = new Float32Array([
-      this._renderCameraX,
-      this._renderCameraY,
-      this._renderZoom,
-      this.canvasWidth,
-      this.canvasHeight,
-      this.atlasWidth,
-      this.atlasHeight,
-    ]);
-    dev.queue.writeBuffer(this.uniformBuffer, 0, renderUniforms);
+    // Update render uniforms (reuse pre-allocated array)
+    this._tempF32_7[0] = this._renderCameraX;
+    this._tempF32_7[1] = this._renderCameraY;
+    this._tempF32_7[2] = this._renderZoom;
+    this._tempF32_7[3] = this.canvasWidth;
+    this._tempF32_7[4] = this.canvasHeight;
+    this._tempF32_7[5] = this.atlasWidth;
+    this._tempF32_7[6] = this.atlasHeight;
+    dev.queue.writeBuffer(this.uniformBuffer, 0, this._tempF32_7);
 
     // Pre-write all sort uniform buffers (if sorting enabled)
     let sortPassCount = 0;
@@ -1141,11 +1667,11 @@ class WebGPURenderer extends AbstractWorker {
       for (let k = 2; k <= nextPow2; k *= 2) {
         for (let j = k >> 1; j > 0; j >>= 1) {
           if (bufferIdx < this.sortBufferPoolSize) {
-            dev.queue.writeBuffer(
-              this.sortUniformBuffers[bufferIdx],
-              0,
-              new Uint32Array([n, k, j, 0])
-            );
+            this._tempU32_4[0] = n;
+            this._tempU32_4[1] = k;
+            this._tempU32_4[2] = j;
+            this._tempU32_4[3] = 0;
+            dev.queue.writeBuffer(this.sortUniformBuffers[bufferIdx], 0, this._tempU32_4);
             bufferIdx++;
           }
         }
@@ -1274,7 +1800,22 @@ class WebGPURenderer extends AbstractWorker {
 
     const deltaSeconds = deltaTime / 1000;
 
-    // ========== GPU CULLING PATH ==========
+    // ========== SPARSE UPDATES PATH (Persistent buffer, dirty tracking) ==========
+    if (this.sparseUpdates && this.sparseUpdatePipeline) {
+      // Collect only dirty instances - massive savings for sleeping entities
+      const totalActive = this.collectSparseUpdates(deltaSeconds);
+
+      if (totalActive === 0 && this.persistentBufferInitialized) {
+        this.renderEmpty();
+        return;
+      }
+
+      // Execute: sparse update → cull → sort → render
+      this.executeSparseUpdateAndRender(totalActive);
+      return;
+    }
+
+    // ========== GPU CULLING PATH (Full upload every frame) ==========
     if (this.gpuCulling && this.cullPipeline) {
       // Collect ALL instance data (no CPU visibility checks)
       const totalCount = this.collectAllInstanceDataForGPUCull(deltaSeconds);
@@ -1335,18 +1876,17 @@ class WebGPURenderer extends AbstractWorker {
 
     const dev = this.device;
 
-    // Update render uniforms
-    const uniforms = new Float32Array([
-      this._renderCameraX,
-      this._renderCameraY,
-      this._renderZoom,
-      this.canvasWidth,
-      this.canvasHeight,
-      this.atlasWidth,
-      this.atlasHeight,
-    ]);
-    dev.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
-    dev.queue.writeBuffer(this.uniformBuffer, 28, new Uint32Array([instanceCount]));
+    // Update render uniforms (reuse pre-allocated array)
+    this._tempF32_7[0] = this._renderCameraX;
+    this._tempF32_7[1] = this._renderCameraY;
+    this._tempF32_7[2] = this._renderZoom;
+    this._tempF32_7[3] = this.canvasWidth;
+    this._tempF32_7[4] = this.canvasHeight;
+    this._tempF32_7[5] = this.atlasWidth;
+    this._tempF32_7[6] = this.atlasHeight;
+    dev.queue.writeBuffer(this.uniformBuffer, 0, this._tempF32_7);
+    this._tempU32_1[0] = instanceCount;
+    dev.queue.writeBuffer(this.uniformBuffer, 28, this._tempU32_1);
 
     const commandEncoder = dev.createCommandEncoder();
     const textureView = this.context.getCurrentTexture().createView();
@@ -1397,6 +1937,10 @@ class WebGPURenderer extends AbstractWorker {
       this.stats[RENDERER_STATS.SPRITES_CREATED] = this.maxInstances;
       this.stats[RENDERER_STATS.VISIBLE_ENTITIES] = this.visibleCount; // Approximate
       this.stats[RENDERER_STATS.ACTIVE_DECORATIONS] = DecorationPool.activeCount?.[0] || 0;
+      // Track sparse update efficiency (dirty count vs total)
+      if (this.sparseUpdates && RENDERER_STATS.DIRTY_COUNT !== undefined) {
+        this.stats[RENDERER_STATS.DIRTY_COUNT] = this.dirtyCount;
+      }
     }
   }
 
@@ -1488,10 +2032,31 @@ class WebGPURenderer extends AbstractWorker {
         if (this.gpuSorting) {
           console.log('WEBGPU RENDERER: GPU bitonic Y-sort ENABLED');
         }
+
+        // ========== SPARSE UPDATES (Dirty tracking optimization) ==========
+        // Enable sparse updates if requested (or default when GPU culling is on)
+        const sparseUpdatesRequested = rendererConfig.sparseUpdates !== false;
+        if (sparseUpdatesRequested) {
+          try {
+            await this.createSparseUpdatePipeline();
+            this.createSparseUpdateBuffers(maxInstances);
+            this.createSparseUpdateBindGroup();
+            this.sparseUpdates = true;
+
+            console.log('WEBGPU RENDERER: Sparse updates ENABLED');
+            console.log('  - Sleeping entities: SKIP (RigidBody.sleeping)');
+            console.log('  - Clean entities: SKIP (SpriteRenderer.renderDirty)');
+            console.log('  - Static decorations: SKIP (no sway)');
+          } catch (err) {
+            console.error('WEBGPU RENDERER: Failed to create sparse update pipeline', err);
+            this.sparseUpdates = false;
+          }
+        }
       } catch (err) {
         console.error('WEBGPU RENDERER: Failed to create GPU pipelines, falling back to CPU', err);
         this.gpuCulling = false;
         this.gpuSorting = false;
+        this.sparseUpdates = false;
       }
     } else {
       console.log('WEBGPU RENDERER: Using CPU culling + sorting');
@@ -1508,6 +2073,7 @@ class WebGPURenderer extends AbstractWorker {
     console.log(`  Y-sorting: ${this.ySorting} (GPU: ${this.gpuSorting})`);
     console.log(`  GPU culling: ${this.gpuCulling}`);
     console.log(`  GPU sorting: ${this.gpuSorting}`);
+    console.log(`  Sparse updates: ${this.sparseUpdates}`);
   }
 }
 
