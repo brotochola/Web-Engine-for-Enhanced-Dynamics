@@ -815,7 +815,9 @@ export function updateMassFromBox(index, width, height, RigidBody) {
 export function testCircleCircleCollision(x1, y1, r1, x2, y2, r2, result) {
   const dx = x1 - x2;
   const dy = y1 - y2;
-  const dist2 = distanceSq2D(x1, y1, x2, y2);
+  // DOT PRODUCT OPTIMIZATION: |v|² = v · v = dx² + dy²
+  // Avoids redundant recomputation of dx, dy inside distanceSq2D()
+  const dist2 = dx * dx + dy * dy;
   const minDist = r1 + r2;
 
   if (dist2 >= minDist * minDist) return null;
@@ -876,7 +878,9 @@ export function testCircleAABBCollision(circleX, circleY, circleR, boxX, boxY, b
   // Calculate distance from circle center to closest point
   const dx = circleX - closestX;
   const dy = circleY - closestY;
-  const dist2 = distanceSq2D(circleX, circleY, closestX, closestY);
+  // DOT PRODUCT OPTIMIZATION: |v|² = v · v = dx² + dy²
+  // Avoids redundant recomputation of dx, dy inside distanceSq2D()
+  const dist2 = dx * dx + dy * dy;
 
   if (dist2 >= circleR * circleR) return null;
 
