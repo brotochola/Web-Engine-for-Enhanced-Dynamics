@@ -104,6 +104,7 @@ export class PredatorScene extends WEED.Scene {
 
     renderer: {
       noLimitFPS: true,
+      gpuCulling: true,
       ySorting: true,
       interpolation: true,
       cullingRatio: 0.33,

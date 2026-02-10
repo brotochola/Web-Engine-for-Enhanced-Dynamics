@@ -97,6 +97,68 @@ const CULL_SHADER = /* wgsl */`
 `;
 
 // ============================================================================
+// SHADER CODE - BITONIC SORT COMPUTE PIPELINE (GPU Y-Sorting)
+// ============================================================================
+
+const BITONIC_SORT_SHADER = /* wgsl */`
+  struct SortParams {
+    count: u32,        // Number of elements to sort
+    k: u32,            // Current phase (power of 2)
+    j: u32,            // Current step within phase
+    _padding: u32,
+  }
+
+  struct InstanceData {
+    posXY_rot_scaleX: vec4<f32>,
+    scaleY_anchor_uvId: vec4<f32>,
+    tint_alpha: vec4<f32>,
+  }
+
+  @group(0) @binding(0) var<uniform> params: SortParams;
+  @group(0) @binding(1) var<storage, read_write> instances: array<InstanceData>;
+
+  @compute @workgroup_size(256)
+  fn bitonicSortStep(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+
+    // Bounds check - only process valid indices
+    if (i >= params.count) { return; }
+
+    // XOR to find partner index
+    let ixj = i ^ params.j;
+
+    // Only process if partner is higher (avoid double-swaps)
+    // and within bounds
+    if (ixj <= i || ixj >= params.count) { return; }
+
+    // Get Y values for comparison (Y is at posXY_rot_scaleX.y)
+    let yi = instances[i].posXY_rot_scaleX.y;
+    let yixj = instances[ixj].posXY_rot_scaleX.y;
+
+    // Determine sort direction based on bitonic sequence position
+    // If (i & k) == 0, we're in ascending half; otherwise descending
+    let ascending = ((i & params.k) == 0u);
+
+    // Swap condition:
+    // - ascending: swap if yi > yixj (move larger to higher index)
+    // - descending: swap if yi < yixj (move smaller to higher index)
+    var shouldSwap = false;
+    if (ascending) {
+      shouldSwap = (yi > yixj);
+    } else {
+      shouldSwap = (yi < yixj);
+    }
+
+    if (shouldSwap) {
+      // Swap entire instance data
+      let temp = instances[i];
+      instances[i] = instances[ixj];
+      instances[ixj] = temp;
+    }
+  }
+`;
+
+// ============================================================================
 // SHADER CODE - RENDER PIPELINE
 // ============================================================================
 
@@ -294,6 +356,13 @@ class WebGPURenderer extends AbstractWorker {
     this.gpuCulling = false;             // Enable/disable GPU culling
     this.cullMargin = 50;                // Extra margin in pixels to avoid popping
     this._statsReadbackPending = false;  // Track async stats readback
+
+    // ========== GPU SORTING (Bitonic Sort) ==========
+    this.sortPipeline = null;
+    this.sortUniformBuffers = [];        // Pool of uniform buffers for batched sort
+    this.sortBindGroups = [];            // Corresponding bind groups
+    this.sortBufferPoolSize = 0;         // Current pool size
+    this.gpuSorting = false;             // Enable GPU Y-sorting
 
     // CPU-side arrays for uploading
     this.cpuArrays = null;
@@ -496,6 +565,80 @@ class WebGPURenderer extends AbstractWorker {
     });
 
     console.log('WEBGPU RENDERER: Cull bind group created');
+  }
+
+  async createSortPipeline() {
+    const sortModule = this.device.createShaderModule({
+      code: BITONIC_SORT_SHADER,
+      label: 'BitonicSortShader'
+    });
+
+    // Check for shader compilation errors
+    const compilationInfo = await sortModule.getCompilationInfo();
+    if (compilationInfo.messages.length > 0) {
+      for (const msg of compilationInfo.messages) {
+        console.error(`WGSL Sort ${msg.type} at line ${msg.lineNum}:${msg.linePos}: ${msg.message}`);
+      }
+      if (compilationInfo.messages.some(m => m.type === 'error')) {
+        throw new Error('Bitonic sort shader compilation failed');
+      }
+    }
+
+    this.sortPipeline = this.device.createComputePipeline({
+      label: 'BitonicSortPipeline',
+      layout: 'auto',
+      compute: {
+        module: sortModule,
+        entryPoint: 'bitonicSortStep',
+      },
+    });
+
+    console.log('WEBGPU RENDERER: Bitonic sort compute pipeline created');
+  }
+
+  createSortBuffers(maxInstances) {
+    const dev = this.device;
+
+    // Calculate max sort passes needed for bitonic sort
+    // For n elements: passes = sum(1..log2(nextPow2(n))) = log2(n) * (log2(n) + 1) / 2
+    const maxPow2 = this.nextPowerOf2(maxInstances);
+    const log2Max = Math.ceil(Math.log2(maxPow2));
+    const maxPasses = (log2Max * (log2Max + 1)) / 2;
+
+    this.sortBufferPoolSize = maxPasses;
+    this.sortUniformBuffers = [];
+
+    // Create a pool of uniform buffers (16 bytes each: count, k, j, padding)
+    for (let i = 0; i < maxPasses; i++) {
+      const buffer = dev.createBuffer({
+        label: `SortUniformBuffer_${i}`,
+        size: 16,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      this.sortUniformBuffers.push(buffer);
+    }
+
+    console.log(`WEBGPU RENDERER: Sort buffer pool created (${maxPasses} buffers for up to ${maxInstances} instances)`);
+  }
+
+  createSortBindGroups() {
+    const dev = this.device;
+    this.sortBindGroups = [];
+
+    // Create a bind group for each uniform buffer in the pool
+    for (let i = 0; i < this.sortBufferPoolSize; i++) {
+      const bindGroup = dev.createBindGroup({
+        label: `SortBindGroup_${i}`,
+        layout: this.sortPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: this.sortUniformBuffers[i] } },
+          { binding: 1, resource: { buffer: this.visibleInstancesBuffer } },
+        ],
+      });
+      this.sortBindGroups.push(bindGroup);
+    }
+
+    console.log(`WEBGPU RENDERER: Sort bind groups created (${this.sortBufferPoolSize})`);
   }
 
   createBuffers(maxInstances) {
@@ -941,8 +1084,11 @@ class WebGPURenderer extends AbstractWorker {
   }
 
   /**
-   * Execute GPU culling + rendering in a single command buffer
+   * Execute GPU culling + sorting + rendering in a single command buffer
    * Uses drawIndirect to avoid GPU->CPU readback of visible count
+   * Uses pre-allocated uniform buffer pool for batched bitonic sort
+   *
+   * Pipeline: Cull → (optional) Bitonic Sort → Render
    */
   executeGPUCullAndRender(totalInstances) {
     if (!this.renderPipeline || !this.uniformBindGroup || !this.instanceBindGroupCulled) {
@@ -951,6 +1097,7 @@ class WebGPURenderer extends AbstractWorker {
     }
 
     const dev = this.device;
+    const workgroupSize = 256;
 
     // Reset visible count to 0 and set up indirect draw args
     // Format: [vertexCount, instanceCount, firstVertex, firstInstance]
@@ -980,38 +1127,73 @@ class WebGPURenderer extends AbstractWorker {
       this.atlasHeight,
     ]);
     dev.queue.writeBuffer(this.uniformBuffer, 0, renderUniforms);
-    // Note: instanceCount in uniform buffer not used with indirect draw
 
-    // Build single command buffer: Cull -> Copy count -> Render
-    const commandEncoder = dev.createCommandEncoder();
+    // Pre-write all sort uniform buffers (if sorting enabled)
+    let sortPassCount = 0;
+    let sortWorkgroupCount = 0;
+    if (this.gpuSorting && this.sortPipeline) {
+      const n = totalInstances;
+      const nextPow2 = this.nextPowerOf2(n);
+      sortWorkgroupCount = Math.ceil(nextPow2 / workgroupSize);
+
+      // Pre-write all (count, k, j) values to the uniform buffer pool
+      let bufferIdx = 0;
+      for (let k = 2; k <= nextPow2; k *= 2) {
+        for (let j = k >> 1; j > 0; j >>= 1) {
+          if (bufferIdx < this.sortBufferPoolSize) {
+            dev.queue.writeBuffer(
+              this.sortUniformBuffers[bufferIdx],
+              0,
+              new Uint32Array([n, k, j, 0])
+            );
+            bufferIdx++;
+          }
+        }
+      }
+      sortPassCount = bufferIdx;
+    }
+
+    // Build single command buffer: Cull -> Sort -> Copy -> Render
+    const commandEncoder = dev.createCommandEncoder({ label: 'MainEncoder' });
 
     // ===== COMPUTE PASS: Frustum Culling =====
-    const workgroupSize = 256;
-    const workgroupCount = Math.ceil(totalInstances / workgroupSize);
+    const cullWorkgroupCount = Math.ceil(totalInstances / workgroupSize);
+    const cullPass = commandEncoder.beginComputePass({ label: 'CullPass' });
+    cullPass.setPipeline(this.cullPipeline);
+    cullPass.setBindGroup(0, this.cullBindGroup);
+    cullPass.dispatchWorkgroups(cullWorkgroupCount);
+    cullPass.end();
 
-    const computePass = commandEncoder.beginComputePass();
-    computePass.setPipeline(this.cullPipeline);
-    computePass.setBindGroup(0, this.cullBindGroup);
-    computePass.dispatchWorkgroups(workgroupCount);
-    computePass.end();
+    // ===== COMPUTE PASSES: Bitonic Sort (all passes batched) =====
+    if (sortPassCount > 0) {
+      for (let i = 0; i < sortPassCount; i++) {
+        const sortPass = commandEncoder.beginComputePass({ label: `SortPass_${i}` });
+        sortPass.setPipeline(this.sortPipeline);
+        sortPass.setBindGroup(0, this.sortBindGroups[i]);
+        sortPass.dispatchWorkgroups(sortWorkgroupCount);
+        sortPass.end();
+      }
+    }
 
     // Copy visible count to indirect draw buffer's instanceCount (offset 4)
     commandEncoder.copyBufferToBuffer(
       this.visibleCountBuffer, 0,
-      this.indirectDrawBuffer, 4,  // instanceCount is at byte offset 4
+      this.indirectDrawBuffer, 4,
       4
     );
 
-    // Also copy to staging buffer for stats readback (non-blocking)
-    commandEncoder.copyBufferToBuffer(
-      this.visibleCountBuffer, 0,
-      this.visibleCountStagingBuffer, 0,
-      4
-    );
+    // Copy to staging buffer for stats readback ONLY if not currently mapped
+    // (avoids "buffer used while mapped" error)
+    if (!this._statsReadbackPending) {
+      commandEncoder.copyBufferToBuffer(
+        this.visibleCountBuffer, 0,
+        this.visibleCountStagingBuffer, 0,
+        4
+      );
+    }
 
     // ===== RENDER PASS: Draw visible instances =====
     const textureView = this.context.getCurrentTexture().createView();
-
     const renderPass = commandEncoder.beginRenderPass({
       colorAttachments: [{
         view: textureView,
@@ -1024,16 +1206,27 @@ class WebGPURenderer extends AbstractWorker {
     renderPass.setPipeline(this.renderPipeline);
     renderPass.setBindGroup(0, this.uniformBindGroup);
     renderPass.setBindGroup(1, this.instanceBindGroupCulled);
-    renderPass.drawIndirect(this.indirectDrawBuffer, 0);  // GPU reads instance count!
+    renderPass.drawIndirect(this.indirectDrawBuffer, 0);
     renderPass.end();
 
-    // Submit everything in one go
+    // Submit everything in one go!
     dev.queue.submit([commandEncoder.finish()]);
 
     this.drawCallCount = 1;
 
     // Async readback of visible count for stats (doesn't block rendering)
-    this.readbackVisibleCountForStats();
+    // Only attempt if we copied to staging buffer this frame
+    if (!this._statsReadbackPending) {
+      this.readbackVisibleCountForStats();
+    }
+  }
+
+  /**
+   * Helper: Get next power of 2 >= n
+   */
+  nextPowerOf2(n) {
+    if (n <= 1) return 1;
+    return 1 << (32 - Math.clz32(n - 1));
   }
 
   /**
@@ -1267,33 +1460,41 @@ class WebGPURenderer extends AbstractWorker {
     this.ySorting = rendererConfig.ySorting !== false;
     this.interpolation = rendererConfig.interpolation !== false;
 
-    // GPU Culling setup
-    // Enable GPU culling when Y-sorting is disabled OR explicitly requested
+    // GPU Culling + Sorting setup
+    // GPU path can be explicitly requested, or is used when Y-sorting is disabled
     const gpuCullingRequested = rendererConfig.gpuCulling === true;
-    const canUseGPUCulling = !this.ySorting || gpuCullingRequested;
+    const useGPUPath = gpuCullingRequested || !this.ySorting;
 
-    if (canUseGPUCulling) {
+    if (useGPUPath) {
       try {
+        // Create cull pipeline
         await this.createCullPipeline();
         this.createCullBuffers(maxInstances);
         this.createCullBindGroup();
         this.gpuCulling = true;
         this.cullMargin = rendererConfig.cullMargin ?? 50;
 
-        // If GPU culling is forced but Y-sorting was requested, warn and disable Y-sorting
-        if (gpuCullingRequested && this.ySorting) {
-          console.warn('WEBGPU RENDERER: GPU culling enabled - Y-sorting disabled (not yet GPU-accelerated)');
-          this.ySorting = false;
-        }
+        // Create sort pipeline for GPU Y-sorting (bitonic sort)
+        await this.createSortPipeline();
+        this.createSortBuffers(maxInstances);
+        this.createSortBindGroups();
+
+        // Enable GPU sorting if Y-sorting is requested
+        // GPU bitonic sort replaces CPU Array.sort()
+        this.gpuSorting = this.ySorting;
 
         console.log('WEBGPU RENDERER: GPU frustum culling ENABLED');
         console.log(`  Cull margin: ${this.cullMargin}px`);
+        if (this.gpuSorting) {
+          console.log('WEBGPU RENDERER: GPU bitonic Y-sort ENABLED');
+        }
       } catch (err) {
-        console.error('WEBGPU RENDERER: Failed to create cull pipeline, falling back to CPU culling', err);
+        console.error('WEBGPU RENDERER: Failed to create GPU pipelines, falling back to CPU', err);
         this.gpuCulling = false;
+        this.gpuSorting = false;
       }
     } else {
-      console.log('WEBGPU RENDERER: Using CPU culling (Y-sorting enabled)');
+      console.log('WEBGPU RENDERER: Using CPU culling + sorting');
     }
 
     // Check for noLimitFPS in renderer config
@@ -1304,8 +1505,9 @@ class WebGPURenderer extends AbstractWorker {
 
     console.log('WEBGPU RENDERER: Initialized');
     console.log(`  Max instances: ${maxInstances}`);
-    console.log(`  Y-sorting: ${this.ySorting}`);
+    console.log(`  Y-sorting: ${this.ySorting} (GPU: ${this.gpuSorting})`);
     console.log(`  GPU culling: ${this.gpuCulling}`);
+    console.log(`  GPU sorting: ${this.gpuSorting}`);
   }
 }
 
