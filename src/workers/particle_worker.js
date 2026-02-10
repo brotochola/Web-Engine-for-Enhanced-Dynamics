@@ -194,7 +194,8 @@ class ParticleWorker extends AbstractWorker {
     this.cullingRatio = this.config.renderer?.cullingRatio ?? RENDERER_DEFAULTS.cullingRatio;
     console.log(`[PARTICLE WORKER] Canvas: ${this.canvasWidth}x${this.canvasHeight}, cullingRatio: ${this.cullingRatio}`);
 
-    // Note: ParticleComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
+    // Note: ParticleComponent and ParticleEmitter are automatically initialized
+    // by AbstractWorker.initializeCommonBuffers() with shared free list
     if (this.maxParticles > 0) {
       if (!data.buffers.componentData.ParticleComponent) {
         console.warn(
@@ -209,12 +210,6 @@ class ParticleWorker extends AbstractWorker {
         // OPTIMIZATION: Track active particles to avoid scanning inactive ones
         this.activeParticleIndices = new Uint16Array(this.maxParticles);
 
-        // Initialize shared free list for returning dead particles
-        if (data.particleFreeList && data.particleFreeListTop) {
-          ParticleEmitter.maxParticles = this.maxParticles;
-          ParticleEmitter.initializeFreeList(data.particleFreeList, data.particleFreeListTop);
-          console.log('[PARTICLE WORKER] Particle free list initialized');
-        }
         console.log('[PARTICLE WORKER] Particle arrays initialized');
       }
     } else {
@@ -1569,8 +1564,13 @@ class ParticleWorker extends AbstractWorker {
     // Precompute sway base angle once per frame (not per decoration)
     this._swayBaseAngle = this.accumulatedTime * 0.002;
 
-    // Early exit if no decorations are active (shared counter from DecorationPool)
-    if (DecorationPool.activeCount && DecorationPool.activeCount[0] === 0) {
+    // Calculate expected active count from free list for early exit optimization
+    // activeCount = maxDecorations - freeSlots
+    const freeListTop = DecorationPool.freeListTop;
+    const expectedActive = freeListTop ? this.maxDecorations - freeListTop[0] : this.maxDecorations;
+
+    // Early exit if no decorations are active
+    if (expectedActive === 0) {
       return;
     }
 
@@ -1611,27 +1611,23 @@ class ParticleWorker extends AbstractWorker {
       return; // No camera data available
     }
 
-    // Use active indices list if available (O(activeCount) instead of O(maxDecorations))
-    const activeIndices = DecorationPool.activeIndices;
-    const activeCount = DecorationPool.activeCount;
+    // Iterate all decoration slots, early-exit when we've found all active ones
+    // (same pattern as buildActiveParticleList)
+    let activeFound = 0;
+    for (let i = 0; i < this.maxDecorations && activeFound < expectedActive; i++) {
+      if (!active[i]) continue;
+      activeFound++;
 
-    if (activeIndices && activeCount && activeCount[0] > 0) {
-      // OPTIMIZED: Iterate only active decorations using compact list
-      const count = activeCount[0];
-      for (let idx = 0; idx < count; idx++) {
-        const i = activeIndices[idx];
+      // Transform world coordinates to screen coordinates
+      const screenX = x[i] * zoom - cameraOffsetX;
+      const screenY = y[i] * zoom - cameraOffsetY;
 
-        // Transform world coordinates to screen coordinates
-        const screenX = x[i] * zoom - cameraOffsetX;
-        const screenY = y[i] * zoom - cameraOffsetY;
+      // Check if screen position is within viewport bounds (with margin)
+      isItOnScreen[i] =
+        screenX > minX && screenX < maxX && screenY > minY && screenY < maxY ? 1 : 0;
 
-        // Check if screen position is within viewport bounds (with margin)
-        isItOnScreen[i] =
-          screenX > minX && screenX < maxX && screenY > minY && screenY < maxY ? 1 : 0;
-
-        if (sway[i]) {
-          rotation[i] = baseRotation[i] + Math.sin(this._swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
-        }
+      if (sway[i]) {
+        rotation[i] = baseRotation[i] + Math.sin(this._swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
       }
     }
   }

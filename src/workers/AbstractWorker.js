@@ -278,6 +278,13 @@ export class AbstractWorker {
         ParticleComponent.particleCount = data.maxParticles;
         this.reportLog(`initialized ParticleComponent for ${data.maxParticles} particles`);
       }
+
+      // Initialize ParticleEmitter with shared free list (enables any worker to emit particles)
+      ParticleEmitter.initialize(data.maxParticles);
+      if (data.particleFreeList && data.particleFreeListTop) {
+        ParticleEmitter.initializeFreeList(data.particleFreeList, data.particleFreeListTop);
+        this.reportLog(`initialized ParticleEmitter free list`);
+      }
     }
 
     // Initialize DecorationComponent arrays (separate decoration pool system)
@@ -293,17 +300,11 @@ export class AbstractWorker {
         this.reportLog(`initialized DecorationComponent for ${data.maxDecorations} decorations`);
       }
 
-      // Initialize DecorationPool active count from shared buffer
-      if (data.decorationActiveCount) {
-        DecorationPool.initializeActiveCount(data.decorationActiveCount);
-      }
-
-      // Initialize DecorationPool active indices from shared buffers
-      if (data.decorationActiveIndices && data.decorationIndexToSlot) {
-        DecorationPool.initializeActiveIndices(
-          data.decorationActiveIndices,
-          data.decorationIndexToSlot
-        );
+      // Initialize DecorationPool with shared free list (enables any worker to spawn decorations)
+      DecorationPool.initialize(data.maxDecorations);
+      if (data.decorationFreeList && data.decorationFreeListTop) {
+        DecorationPool.initializeFreeList(data.decorationFreeList, data.decorationFreeListTop);
+        this.reportLog(`initialized DecorationPool free list`);
       }
     }
 
@@ -476,7 +477,7 @@ export class AbstractWorker {
         },
         data.gridMetadata
       );
-      this.reportLog('Grid system initialized (row-based partitioning, single buffers)');
+      // this.reportLog('Grid system initialized (row-based partitioning, single buffers)');
     }
 
     // Initialize Ray system with debug buffers (uses Grid for spatial data)
@@ -486,7 +487,7 @@ export class AbstractWorker {
         data.buffers.raycastDebugData, // Debug raycast buffer
         data.maxDebugRaycasts || 100
       );
-      this.reportLog('Ray system initialized with debug support');
+      // this.reportLog('Ray system initialized with debug support');
     }
 
     // Initialize NavGrid system (if navigation enabled)
@@ -497,7 +498,7 @@ export class AbstractWorker {
         worldWidth: data.config.worldWidth,
         worldHeight: data.config.worldHeight,
       });
-      this.reportLog('NavGrid initialized for pathfinding');
+      // this.reportLog('NavGrid initialized for pathfinding');
     }
   }
 
@@ -517,8 +518,8 @@ export class AbstractWorker {
     self.Flash = Flash;
     self.Camera = Camera;
     self.SpriteSheetRegistry = SpriteSheetRegistry;
+    self.DecorationPool = DecorationPool
 
-    this.reportLog('registered core engine classes globally');
   }
 
   /**

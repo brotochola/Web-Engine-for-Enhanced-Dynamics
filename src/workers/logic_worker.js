@@ -154,27 +154,9 @@ class LogicWorker extends AbstractWorker {
 
     // Note: Game-specific scripts and components are loaded automatically by AbstractWorker.initializeCommonBuffers()
     // All entity classes and components are now available in the worker's global scope with SharedArrayBuffer connections
-
-    // Initialize ParticleEmitter if particles are configured
-    // Particles are NOT entities - they have their own separate pool
-    // Note: ParticleComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
-    const maxParticles = data.maxParticles || 0;
-    if (maxParticles > 0) {
-      ParticleEmitter.initialize(maxParticles);
-
-      // Initialize shared free list for O(1) particle allocation
-      if (data.particleFreeList && data.particleFreeListTop) {
-        ParticleEmitter.initializeFreeList(data.particleFreeList, data.particleFreeListTop);
-      }
-    }
-
-    // Initialize DecorationPool if decorations are configured
-    // Decorations are NOT entities - they have their own separate pool
-    // Note: DecorationComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
-    const maxDecorations = data.maxDecorations || 0;
-    if (maxDecorations > 0) {
-      DecorationPool.initialize(maxDecorations);
-    }
+    //
+    // Note: ParticleEmitter and DecorationPool are now initialized by AbstractWorker.initializeCommonBuffers()
+    // with shared free lists, enabling any worker to spawn particles/decorations
 
     // Pre-allocate gameObjects array to keep V8 in dense/packed mode
     // Without this, sparse indices cause V8 to switch to dictionary mode (hash table lookups)
