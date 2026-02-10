@@ -62,6 +62,9 @@ import {
 // This enables OffscreenCanvas and WebGL support in web workers
 DOMAdapter.set(WebWorkerAdapter);
 import { convertRGBtoBGR } from '../core/utils.js';
+// Import SABParticleRenderer for high-performance direct SAB → GPU rendering
+import { SABParticleRenderer } from '../rendering/SABParticleRenderer.js';
+
 // Import @pixi/tilemap for efficient tilemap rendering (modified to import from pixi8webworker.js)
 import {
   CompositeTilemap,
@@ -450,6 +453,18 @@ class PixiRenderer extends AbstractWorker {
     this.lightGlowContainer = null; // ParticleContainer for glow sprites
     this.lightGlowSprites = []; // Array of Particle objects (one per entity slot)
     this.lightGlowTexture = null; // PIXI.Texture reference to _lightGradient
+
+    // ========================================
+    // SAB PARTICLE RENDERER (Experimental)
+    // ========================================
+    // High-performance renderer that reads directly from SABs
+    // Bypasses PIXI.Particle objects entirely for static sprites
+    this.sabRenderer = null; // SABParticleRenderer instance
+    this.sabRendererEnabled = false; // Config flag to enable/disable
+    this.sabActiveIndices = null; // Uint16Array - indices of active entities for SAB rendering
+    this.sabActiveCount = 0; // Number of active entities to render
+    this.sabTextureIds = null; // Uint8Array - texture ID per entity
+    this.sabBaseTexture = null; // WebGL texture for SAB renderer
   }
 
   /**
@@ -528,6 +543,150 @@ class PixiRenderer extends AbstractWorker {
     }
 
     console.log('PIXI WORKER: Draw call monitoring enabled');
+  }
+
+  /**
+   * Initialize SABParticleRenderer for high-performance direct SAB → GPU rendering
+   * This renderer bypasses PIXI.Particle objects entirely
+   */
+  initSABRenderer() {
+    const gl = this.pixiApp.renderer.gl;
+    if (!gl) {
+      console.warn('PIXI WORKER: SABRenderer requires WebGL context');
+      return;
+    }
+
+    try {
+      // Create SABParticleRenderer with max capacity
+      const maxCapacity = this.globalEntityCount + this.maxParticles + this.maxDecorations;
+      this.sabRenderer = new SABParticleRenderer(gl, maxCapacity);
+
+      // Set up SAB references from ECS components
+      this.sabRenderer.setSABs({
+        positionX: Transform.x,
+        positionY: Transform.y,
+        rotation: Transform.rotation,
+        scaleX: SpriteRenderer.scaleX,
+        scaleY: SpriteRenderer.scaleY,
+        anchorX: SpriteRenderer.anchorX,
+        anchorY: SpriteRenderer.anchorY,
+        tint: SpriteRenderer.tint,
+        alpha: SpriteRenderer.alpha,
+      });
+
+      // Allocate working arrays
+      this.sabActiveIndices = new Uint16Array(maxCapacity);
+      this.sabTextureIds = new Uint8Array(maxCapacity);
+
+      // Set projection (will be updated on resize)
+      this.sabRenderer.setProjection(this.canvasWidth, this.canvasHeight);
+
+      this.sabRendererEnabled = true;
+      console.log(`PIXI WORKER: SABParticleRenderer initialized (capacity: ${maxCapacity})`);
+    } catch (error) {
+      console.error('PIXI WORKER: Failed to initialize SABRenderer:', error);
+      this.sabRendererEnabled = false;
+    }
+  }
+
+  /**
+   * Render using SABParticleRenderer (called after PixiJS render)
+   * This reads directly from SABs and uploads to GPU
+   */
+  renderWithSABRenderer() {
+    if (!this.sabRendererEnabled || !this.sabRenderer) return;
+
+    const gl = this.pixiApp.renderer.gl;
+
+    // Update projection and camera transform
+    this.sabRenderer.setProjection(this.canvasWidth, this.canvasHeight);
+    this.sabRenderer.setWorldTransform(this._renderCameraX, this._renderCameraY, this._renderZoom);
+
+    // Get base texture from PixiJS (use first spritesheet's base texture)
+    if (!this.sabBaseTexture) {
+      // Find a spritesheet texture to use
+      const sheetNames = Object.keys(this.spritesheets);
+      if (sheetNames.length > 0) {
+        const sheet = this.spritesheets[sheetNames[0]];
+        if (sheet && sheet.textures) {
+          const firstTexture = Object.values(sheet.textures)[0];
+          if (firstTexture && firstTexture.source) {
+            // Get WebGL texture from PixiJS texture source
+            const glTexture = this.pixiApp.renderer.texture.getGlSource(firstTexture.source);
+            if (glTexture) {
+              this.sabBaseTexture = glTexture.texture;
+              this.sabRenderer.setTexture(this.sabBaseTexture);
+
+              // Register textures with their UVs
+              this._registerSABTextures(sheet);
+            }
+          }
+        }
+      }
+    }
+
+    if (!this.sabBaseTexture) return;
+
+    // Collect active entities for rendering (reusing Y-sort pool data)
+    this.sabActiveCount = 0;
+    const pool = this._ySortPool;
+    const poolSize = this._ySortPoolSize;
+
+    for (let i = 0; i < poolSize; i++) {
+      const item = pool[i];
+      const entityIdx = item.entityId;
+
+      // Get texture ID for this entity (would need to map animation frame to texture ID)
+      // For now, use a simple mapping
+      this.sabActiveIndices[this.sabActiveCount] = entityIdx;
+      this.sabTextureIds[entityIdx] = 0; // Default texture (need proper mapping)
+      this.sabActiveCount++;
+    }
+
+    // Don't render if no active sprites
+    if (this.sabActiveCount === 0) return;
+
+    // Save PixiJS WebGL state
+    gl.bindVertexArray(null);
+
+    // Render with SABParticleRenderer
+    this.sabRenderer.render(
+      this.sabActiveIndices,
+      this.sabActiveCount,
+      this.sabTextureIds,
+      this.ySorting
+    );
+
+    // Restore PixiJS state (it will rebind on next render)
+    gl.bindVertexArray(null);
+    gl.useProgram(null);
+  }
+
+  /**
+   * Register textures from a spritesheet for SABParticleRenderer
+   * @private
+   */
+  _registerSABTextures(sheet) {
+    if (!sheet.textures) return;
+
+    let textureId = 0;
+    for (const [name, texture] of Object.entries(sheet.textures)) {
+      if (texture.frame && texture.source) {
+        const uvs = {
+          x0: texture.frame.x / texture.source.width,
+          y0: texture.frame.y / texture.source.height,
+          x1: (texture.frame.x + texture.frame.width) / texture.source.width,
+          y1: texture.frame.y / texture.source.height,
+          x2: (texture.frame.x + texture.frame.width) / texture.source.width,
+          y2: (texture.frame.y + texture.frame.height) / texture.source.height,
+          x3: texture.frame.x / texture.source.width,
+          y3: (texture.frame.y + texture.frame.height) / texture.source.height,
+        };
+        this.sabRenderer.registerTexture(textureId, uvs, texture.frame.width, texture.frame.height);
+        textureId++;
+      }
+    }
+    console.log(`PIXI WORKER: Registered ${textureId} textures for SABRenderer`);
   }
 
   /**
@@ -1104,6 +1263,15 @@ class PixiRenderer extends AbstractWorker {
     this.updateLightGlowSprites(interpolationAlpha);
 
     this.updateSprites(deltaTime, interpolationAlpha);
+
+    // ========================================
+    // SAB PARTICLE RENDERER (Experimental)
+    // ========================================
+    // Render directly from SABs after PixiJS scene update
+    // This bypasses PIXI.Particle objects for performance
+    if (this.sabRendererEnabled) {
+      this.renderWithSABRenderer();
+    }
 
     // ========================================
     // LOW-RES OFF-SCREEN RENDERING
@@ -2831,6 +2999,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
     }
 
+    // Update SABParticleRenderer projection
+    if (this.sabRenderer) {
+      this.sabRenderer.setProjection(width, height);
+    }
+
     console.log(`PIXI WORKER: Resized to ${width}x${height}`);
   }
 
@@ -3306,6 +3479,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Load tilemaps (Tiled JSON + tileset textures)
     this.loadTilemaps(data.tilemaps);
     this.reportLog('finished loading tilemaps');
+
+    // ========================================
+    // SAB PARTICLE RENDERER - Initialize (Experimental)
+    // ========================================
+    // High-performance renderer that reads directly from ECS SABs
+    // Enable via config.renderer.useSABRenderer = true
+    if (rendererConfig.useSABRenderer) {
+      this.initSABRenderer();
+    }
 
     // ========================================
     // decal DECALS TILEMAP - Initialize
