@@ -70,7 +70,7 @@ export class PredatorScene extends WEED.Scene {
 
     particle: {
       noLimitFPS: true,
-      maxParticles: 20000,
+      maxParticles: 10000,
       decals: true,
       decalsTileSize: 256,
       decalsResolution: 0.5,
@@ -103,7 +103,7 @@ export class PredatorScene extends WEED.Scene {
     },
 
     renderer: {
-      noLimitFPS: true,
+      noLimitFPS: false,
       ySorting: true,
       interpolation: true,
       cullingRatio: 0.33,
@@ -117,8 +117,8 @@ export class PredatorScene extends WEED.Scene {
       maxLights: 100,
       shadowsEnabled: true,
       maxShadowCastingLights: 100,
-      maxShadowsPerLight: 500,
-      maxShadowsPerEntity: 10,
+      maxShadowsPerLight: 100,
+      maxShadowsPerEntity: 3,
       maxShadowSprites: 1000,
       maxFlashes: 2048,
       resolution: 0.25,
