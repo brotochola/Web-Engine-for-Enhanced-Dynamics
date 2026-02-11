@@ -88,6 +88,12 @@ class SpatialWorker extends AbstractWorker {
     // Uses Uint16 since max entities = 65535 (fits in 16 bits), sentinel = 65535
     this.processedMarker = null; // Uint16Array
 
+    // O(1) deduplication for entityA (source entity) - prevents processing same entity twice
+    // when it appears in multiple cells owned by this worker
+    // Uses frame counter approach to avoid fill() every frame
+    this._entityProcessedMarker = null; // Uint32Array
+    this._entityFrameCounter = 0;
+
     // Scratch array for visual-only neighbors (partitioned after collision candidates)
     // Pre-allocated to avoid per-frame allocation
     this._visualOnlyBuffer = null; // Int32Array
@@ -169,10 +175,14 @@ class SpatialWorker extends AbstractWorker {
     if (data.buffers.entityPosData) {
       this.entityPosData = new Float32Array(data.buffers.entityPosData);
     }
-    // Initialize duplicate detection marker
+    // Initialize duplicate detection marker for neighbors (entityB)
     // Uses Uint16 since max entities = 65535 (fits in 16 bits), sentinel = 65535
     this.processedMarker = new Uint16Array(this.globalEntityCount);
     this.processedMarker.fill(65535); // 65535 = no entity (sentinel)
+
+    // Initialize deduplication marker for source entities (entityA)
+    // Prevents same entity from being processed multiple times when it spans multiple cells
+    this._entityProcessedMarker = new Uint32Array(this.globalEntityCount);
 
     // Initialize visual-only buffer (max size = maxNeighbors)
     // Uses Uint16 since it stores entity IDs (max 65535)
@@ -501,6 +511,11 @@ class SpatialWorker extends AbstractWorker {
     const processedMarker = this.processedMarker;
     processedMarker.fill(65535); // Reset markers each frame (65535 = sentinel)
 
+    // Frame counter for entityA deduplication (avoids fill() every frame)
+    this._entityFrameCounter++;
+    const entityFrameMarker = this._entityFrameCounter;
+    const entityProcessedMarker = this._entityProcessedMarker;
+
     const ownedRows = this.ownedRows;
     const ownedRowCount = this.ownedRowCount;
     const rowOwnership = this.rowOwnership;
@@ -531,6 +546,11 @@ class SpatialWorker extends AbstractWorker {
 
           // Sanity check (shouldn't happen but safety)
           if (!active[entityA]) continue;
+
+          // O(1) deduplication: skip if this entity was already processed this frame
+          // (entity can appear in multiple cells due to bounding box spanning cells)
+          if (entityProcessedMarker[entityA] === entityFrameMarker) continue;
+          entityProcessedMarker[entityA] = entityFrameMarker;
 
           // =====================================================================
           // ENTITY OWNERSHIP CHECK: Only process if this worker owns entity's home row

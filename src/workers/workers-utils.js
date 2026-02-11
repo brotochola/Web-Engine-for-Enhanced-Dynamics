@@ -85,7 +85,6 @@ export const LOGIC_STATS = {
   FPS: 0,
   ENTITIES_PROCESSED: 1,
   SYSTEMS_EXECUTED: 2,
-  JOBS_STOLEN: 3,
   // Reserve space for future stats
   STRIDE_FLOATS: 16, // Each worker gets 64 bytes
   BUFFER_SIZE_PER_WORKER: 16 * 4,

@@ -167,7 +167,6 @@ class Scene {
       inputData: null,
       cameraData: null,
       syncData: null,
-      jobQueueData: null,
       debugData: null,
       raycastDebugData: null, // Raycast visualization data
       frameRateData: null, // Real-time FPS tracking per worker
@@ -1234,22 +1233,6 @@ class Scene {
     syncView[3] = 0;
     syncView[4] = 1;
 
-    // Job queue buffer
-    const entitiesPerJob = this.config.logic.numberOfEntitiesPerJob;
-    const totalJobs = Math.ceil(this.totalEntityCount / entitiesPerJob);
-    const JOB_QUEUE_SIZE = (2 + totalJobs * 2) * 4;
-    this.buffers.jobQueueData = new SharedArrayBuffer(JOB_QUEUE_SIZE);
-    const jobQueueView = new Int32Array(this.buffers.jobQueueData);
-    jobQueueView[0] = 0;
-    jobQueueView[1] = totalJobs;
-
-    for (let i = 0; i < totalJobs; i++) {
-      const startIndex = i * entitiesPerJob;
-      const endIndex = Math.min((i + 1) * entitiesPerJob, this.totalEntityCount);
-      jobQueueView[2 + i * 2] = startIndex;
-      jobQueueView[2 + i * 2 + 1] = endIndex;
-    }
-
     // Center camera on world
     const worldCenterX = this.config.worldWidth / 2 - this.config.canvasWidth / 2;
     const worldCenterY = this.config.worldHeight / 2 - this.config.canvasHeight / 2;
@@ -1675,7 +1658,6 @@ class Scene {
         inputData: this.buffers.inputData,
         cameraData: this.buffers.cameraData,
         syncData: this.buffers.syncData,
-        jobQueueData: this.buffers.jobQueueData,
         debugData: this.buffers.debugData,
         raycastDebugData: this.buffers.raycastDebugData,
         frameRateData: this.buffers.frameRateData,
@@ -2570,9 +2552,8 @@ class Scene {
     breakdown.cameraData = getBufferSize(this.buffers.cameraData);
     breakdown.mouseData = getBufferSize(this.buffers.mouseData);
 
-    // Synchronization and job queue buffers
+    // Synchronization buffer
     breakdown.syncData = getBufferSize(this.buffers.syncData);
-    breakdown.jobQueueData = getBufferSize(this.buffers.jobQueueData);
 
     // Debug buffers
     breakdown.debugData = getBufferSize(this.buffers.debugData);

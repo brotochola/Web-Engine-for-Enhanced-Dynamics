@@ -46,17 +46,11 @@ class LogicWorker extends AbstractWorker {
     // Worker identification
     this.workerIndex = 0; // Which worker am I? (0, 1, 2, ...)
 
-    // Frame synchronization (for multi-worker coordination)
-    this.syncData = null; // Int32Array for Atomics-based work coordination
+    // Multi-worker coordination
     this.totalLogicWorkers = 1; // Total number of logic workers
-
-    // Job queue for dynamic work distribution
-    this.jobQueueData = null; // Int32Array: [currentJobIndex, totalJobs, job0_start, job0_end, ...]
 
     // Performance tracking
     this.activeEntityCount = 0; // Number of active entities this worker is processing
-    this.jobsProcessedThisFrame = 0; // Track jobs claimed
-    this.jobsStolenThisFrame = 0; // Track jobs stolen from queue (same as jobs processed)
     this.entitiesProcessedThisFrame = 0; // Track actual entities processed
     this.systemsExecutedThisFrame = 0; // Track number of distinct update phases executed
     this.frameStartTime = 0; // For timing diagnostics
@@ -119,24 +113,8 @@ class LogicWorker extends AbstractWorker {
       // );
     }
 
-    // Initialize synchronization buffer for multi-worker coordination
-    if (data.buffers.syncData) {
-      this.syncData = new Int32Array(data.buffers.syncData);
-      this.totalLogicWorkers = this.syncData[2]; // Total workers stored at index 2
-
-      // console.log(
-      //   `LOGIC WORKER ${this.workerIndex}: Job-based work distribution with ${this.totalLogicWorkers} workers`
-      // );
-    }
-
-    // Initialize job queue for dynamic work distribution
-    if (data.buffers.jobQueueData) {
-      this.jobQueueData = new Int32Array(data.buffers.jobQueueData);
-      const totalJobs = this.jobQueueData[1];
-      //  console.log(
-      //   `LOGIC WORKER ${this.workerIndex}: Job queue initialized (${totalJobs} jobs total)`
-      // );
-    }
+    // Get total logic workers count from config
+    this.totalLogicWorkers = data.config?.logic?.numberOfLogicWorkers || 1;
 
     // console.log("LOGIC WORKER: Initializing with component system");
 
@@ -254,8 +232,6 @@ class LogicWorker extends AbstractWorker {
     this.frameStartTime = performance.now();
 
     // Reset stats for this frame
-    this.jobsProcessedThisFrame = 0;
-    this.jobsStolenThisFrame = 0;
     this.entitiesProcessedThisFrame = 0;
     this.systemsExecutedThisFrame = 0;
 
@@ -265,105 +241,69 @@ class LogicWorker extends AbstractWorker {
       this.systemsExecutedThisFrame++; // Collision system executed
     }
 
-    // Count active entities while processing jobs
+    // Count active entities while processing
     let activeCount = 0;
 
     // OPTIMIZED: Use activeEntitiesData to skip inactive entities entirely
     // particle_worker builds this list at the start of each frame
     const totalActiveEntities = this.activeEntitiesData ? this.activeEntitiesData[0] : 0;
 
-    // Job-based processing: atomically claim jobs until none remain
-    // Jobs are now ranges in the active entity list, not entity index ranges
-    while (true) {
-      // Atomically claim the next job
-      const jobIndex = Atomics.add(this.jobQueueData, 0, 1);
-      const totalJobs = this.jobQueueData[1];
+    // DETERMINISTIC MODULO: Each worker processes entities where (activeIdx % totalWorkers === workerIndex)
+    // This is simple, predictable, and requires no synchronization
+    const totalWorkers = this.totalLogicWorkers;
+    const myIndex = this.workerIndex;
 
-      // Check if all jobs are claimed
-      if (jobIndex >= totalJobs) {
-        break; // No more jobs, this worker is done
-      }
+    for (let activeIdx = myIndex; activeIdx < totalActiveEntities; activeIdx += totalWorkers) {
+      // Get actual entity index from active list
+      const entityIndex = this.activeEntitiesData[1 + activeIdx];
+      const obj = this.gameObjects[entityIndex];
 
-      this.jobsProcessedThisFrame++;
-      this.jobsStolenThisFrame++; // Track as stolen job
+      if (obj) {
+        activeCount++;
+        this.entitiesProcessedThisFrame++;
 
-      // Get job range from buffer (these are indices into the active entity list)
-      const jobStartIndex = this.jobQueueData[2 + jobIndex * 2];
-      const jobEndIndex = this.jobQueueData[2 + jobIndex * 2 + 1];
+        // OPTIMIZED: updateNeighbors uses Grid statics directly (no params needed)
+        // Only updates per-instance _neighborOffset and neighborCount
+        obj.updateNeighbors();
 
-      // Clamp job range to actual active entity count
-      const actualEndIndex = Math.min(jobEndIndex, totalActiveEntities);
-
-      // Process all active entities in this job's range
-      for (let activeIdx = jobStartIndex; activeIdx < actualEndIndex; activeIdx++) {
-        // Get actual entity index from active list (one extra indirection)
-        const entityIndex = this.activeEntitiesData[1 + activeIdx];
-        const obj = this.gameObjects[entityIndex];
-
-        if (obj) {
-          activeCount++;
-          this.entitiesProcessedThisFrame++;
-
-          // OPTIMIZED: updateNeighbors uses Grid statics directly (no params needed)
-          // Only updates per-instance _neighborOffset and neighborCount
-          obj.updateNeighbors();
-
-          // TICK DECIMATION: Skip tick if countdown hasn't reached 0
-          // Entities with tickInterval > 1 only tick every N frames (staggered by index)
-          // Cost: ~3 cycles (decrement + compare + branch) vs ~20 cycles for modulo
-          let tickInterval = 1;
-          if (GameObject.nextTick) {
-            tickInterval = obj.constructor.tickInterval || 1;
-            if (tickInterval > 1) {
-              if (--GameObject.nextTick[entityIndex] > 0) {
-                // Skip tick, but still check screen visibility
-                this.checkScreenVisibility(entityIndex, obj);
-                continue;
-              }
-              // Reset countdown for next cycle
-              GameObject.nextTick[entityIndex] = tickInterval;
-            }
-          }
-
-          // Tick entity logic with full timing info
-          // dtRatio: normalized to 60fps (1.0 = 16.67ms), deltaTime: actual ms, accumulatedTime: total ms, frameNumber
-          obj.tick(dtRatio, deltaTime, this.accumulatedTime, this.frameNumber);
-
-          // ACCELERATION SCALING: Compensate for tick decimation
-          // If entity ticks every N frames, scale acceleration by N so physics
-          // integrates the same total impulse. Without this, entities with
-          // tickInterval > 1 would move N times slower.
-          // console.log("tickInterval", tickInterval);
-
+        // TICK DECIMATION: Skip tick if countdown hasn't reached 0
+        // Entities with tickInterval > 1 only tick every N frames (staggered by index)
+        // Cost: ~3 cycles (decrement + compare + branch) vs ~20 cycles for modulo
+        let tickInterval = 1;
+        if (GameObject.nextTick) {
+          tickInterval = obj.constructor.tickInterval || 1;
           if (tickInterval > 1) {
-            RigidBody.ax[entityIndex] *= tickInterval;
-            RigidBody.ay[entityIndex] *= tickInterval;
+            if (--GameObject.nextTick[entityIndex] > 0) {
+              // Skip tick, but still check screen visibility
+              this.checkScreenVisibility(entityIndex, obj);
+              continue;
+            }
+            // Reset countdown for next cycle
+            GameObject.nextTick[entityIndex] = tickInterval;
           }
-
-          // Check for screen visibility changes and call lifecycle methods
-          this.checkScreenVisibility(entityIndex, obj);
         }
+
+        // Tick entity logic with full timing info
+        // dtRatio: normalized to 60fps (1.0 = 16.67ms), deltaTime: actual ms, accumulatedTime: total ms, frameNumber
+        obj.tick(dtRatio, deltaTime, this.accumulatedTime, this.frameNumber);
+
+        // ACCELERATION SCALING: Compensate for tick decimation
+        // If entity ticks every N frames, scale acceleration by N so physics
+        // integrates the same total impulse. Without this, entities with
+        // tickInterval > 1 would move N times slower.
+        if (tickInterval > 1) {
+          RigidBody.ax[entityIndex] *= tickInterval;
+          RigidBody.ay[entityIndex] *= tickInterval;
+        }
+
+        // Check for screen visibility changes and call lifecycle methods
+        this.checkScreenVisibility(entityIndex, obj);
       }
     }
 
     // Entity processing system executed
-    if (this.jobsProcessedThisFrame > 0) {
+    if (this.entitiesProcessedThisFrame > 0) {
       this.systemsExecutedThisFrame++; // Entity tick system executed
-    }
-
-    // Reset job queue for next frame
-    // Use syncData[1] as a "workers finished" counter for this frame
-    if (this.syncData && this.totalLogicWorkers > 1) {
-      const finishedCount = Atomics.add(this.syncData, 1, 1) + 1;
-
-      if (finishedCount === this.totalLogicWorkers) {
-        // Last worker to finish - reset for next frame
-        Atomics.store(this.jobQueueData, 0, 0); // Reset job counter
-        Atomics.store(this.syncData, 1, 0); // Reset finished counter
-      }
-    } else if (this.totalLogicWorkers === 1) {
-      // Single worker mode - just reset directly
-      Atomics.store(this.jobQueueData, 0, 0);
     }
 
     // Store active count for FPS reporting
@@ -712,7 +652,6 @@ class LogicWorker extends AbstractWorker {
       this.stats[LOGIC_STATS.FPS] = this.currentFPS;
       this.stats[LOGIC_STATS.ENTITIES_PROCESSED] = this.entitiesProcessedThisFrame;
       this.stats[LOGIC_STATS.SYSTEMS_EXECUTED] = this.systemsExecutedThisFrame;
-      this.stats[LOGIC_STATS.JOBS_STOLEN] = this.jobsStolenThisFrame;
     }
   }
 }

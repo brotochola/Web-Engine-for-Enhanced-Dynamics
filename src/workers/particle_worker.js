@@ -814,7 +814,7 @@ class ParticleWorker extends AbstractWorker {
     this.updateDerivedProperties();
 
     // Update cell sleeping states based on entity sleeping/static states
-    this.updateCellSleepingStates();
+    // this.updateCellSleepingStates();
 
     // Update screen visibility for all decorations
     // Also collects visible decorations for render queue
