@@ -910,11 +910,21 @@ class Scene {
       );
     }
 
-    // Shadow sprite system
+    // Shadow render queue (replaces old shadow sprite buffer)
+    // Pre-sorted renderables: light gradients interleaved with shadows
+    // Built by particle_worker, consumed by pixi_worker (same pattern as main renderQueue)
     const maxShadowSprites = this.config.lighting.maxShadowSprites;
+    const maxLights = this.config.lighting.maxLights || 128;
     if (this.config.lighting.shadowsEnabled && maxShadowSprites > 0) {
-      const shadowSpriteBufferSize = ShadowCaster.getBufferSize(maxShadowSprites);
-      this.buffers.shadowSpriteData = new SharedArrayBuffer(shadowSpriteBufferSize);
+      // Max items = shadows + light gradients (one per light)
+      const maxShadowRenderItems = maxShadowSprites + maxLights;
+      // Layout per item: x, y, scaleX, scaleY, rotation, alpha (6 * 4 = 24 bytes)
+      //                  tint (4 bytes), textureId (2 bytes), anchorX, anchorY (8 bytes)
+      // Total = 38 bytes, round to 40 for alignment
+      const SHADOW_QUEUE_ITEM_SIZE = 40;
+      const shadowQueueBufferSize = 4 + (maxShadowRenderItems * SHADOW_QUEUE_ITEM_SIZE);
+      this.buffers.shadowRenderQueueData = new SharedArrayBuffer(shadowQueueBufferSize);
+      this.maxShadowRenderItems = maxShadowRenderItems;
     }
 
     // Blood decals tilemap
@@ -1498,12 +1508,20 @@ class Scene {
       }
     }
 
+    // Build animation name → index lookup (for direct texture lookups like _lightGradient)
+    const animationNameToIndex = {};
+    for (let animIdx = 0; animIdx < animCount; animIdx++) {
+      const animName = bigAtlas.indexToName[animIdx];
+      animationNameToIndex[animName] = animIdx;
+    }
+
     console.log(`[Scene] Built texture metadata: ${currentOffset} total frames, ${animCount} animations`);
 
     return {
       animationFrameStart,
       animationFrameCount,
       proxyToGlobalAnim,
+      animationNameToIndex,
       totalFrames: currentOffset,
     };
   }
@@ -1748,7 +1766,10 @@ class Scene {
           maxShadowsPerLight: this.config.lighting.maxShadowsPerLight,
           maxShadowsPerEntity: this.config.lighting.maxShadowsPerEntity,
           maxShadowSprites: this.config.lighting.maxShadowSprites,
-          spriteData: this.buffers.shadowSpriteData,
+          maxLights: this.config.lighting.maxLights || 128,
+          // Shadow render queue (pre-sorted by particle_worker)
+          renderQueueData: this.buffers.shadowRenderQueueData,
+          maxRenderItems: this.maxShadowRenderItems,
         }
         : null,
       flashes:

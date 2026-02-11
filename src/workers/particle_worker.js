@@ -21,7 +21,6 @@ import {
   extractRGB,
   calculateSpeed,
   calculateVelocityAngle,
-  cantorPair,
   calculateDecalTileBounds,
   calculateTileClipRegion,
   _decalTileBounds,
@@ -135,15 +134,11 @@ class ParticleWorker extends AbstractWorker {
     this._entityShadowCounts = null;
 
     // ========================================
-    // STABLE SHADOW SLOT ASSIGNMENT
+    // SHADOW RENDER QUEUE
     // ========================================
-    // Maps (light, entity) pairs to shadow slots for stable assignment
-    // This prevents flickering and allows proper interpolation in pixi_worker
-    this._shadowPairToSlot = new Map(); // Key: cantorPair(lightIdx, neighborIdx), Value: slot index
-    this._shadowSlotToPair = null; // Int32Array[maxShadowSprites] - direct lookup by slot, -1 = empty
-    this._usedSlotsThisFrame = null; // Uint8Array bitmap - 1 if slot used this frame
-    this._ownedSlots = null; // Uint8Array bitmap - 1 if slot owned by a pair from previous frame
-    this._pairsThisFrame = new Set(); // Reusable Set for tracking pairs processed this frame (avoids allocation each frame)
+    // Pre-sorted shadow renderables (light gradients + shadows) for pixi_worker
+    // Order: light1_gradient, light1_shadows..., light2_gradient, light2_shadows...
+    this._shadowCollector = null;
 
     // ========================================
     // DERIVED PROPERTIES (moved from physics_worker)
@@ -370,29 +365,24 @@ class ParticleWorker extends AbstractWorker {
     console.log('[PARTICLE WORKER] Checking shadows configuration...', {
       hasShadows: !!data.shadows,
       enabled: data.shadows?.enabled,
-      hasSpriteData: !!data.shadows?.spriteData,
+      hasRenderQueueData: !!data.shadows?.renderQueueData,
       hasShadowCaster: !!data.buffers.componentData.ShadowCaster
     });
 
     if (
       data.shadows &&
       data.shadows.enabled &&
-      data.shadows.spriteData &&
+      data.shadows.renderQueueData &&
       data.buffers.componentData.ShadowCaster
     ) {
-      console.log('[PARTICLE WORKER] Initializing shadow system...');
+      console.log('[PARTICLE WORKER] Initializing shadow render queue system...');
       this.shadowsEnabled = true;
       this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
       this.maxShadowsPerLight = data.shadows.maxShadowsPerLight;
       this.maxShadowsPerEntity = data.shadows.maxShadowsPerEntity || 0; // 0 = unlimited
       this.maxShadowSprites = data.shadows.maxShadowSprites;
-
-      // GC OPTIMIZATION: Use typed arrays instead of Map/Set for slot tracking
-      // These are O(1) access with zero hashing overhead
-      this._usedSlotsThisFrame = new Uint8Array(this.maxShadowSprites);
-      this._ownedSlots = new Uint8Array(this.maxShadowSprites);
-      this._shadowSlotToPair = new Int32Array(this.maxShadowSprites);
-      this._shadowSlotToPair.fill(-1); // -1 indicates empty slot
+      this.maxShadowLights = data.shadows.maxLights || 128;
+      this.maxShadowRenderItems = data.shadows.maxRenderItems;
 
       // Allocate per-entity shadow count tracking array if limit is set
       if (this.maxShadowsPerEntity > 0) {
@@ -401,64 +391,69 @@ class ParticleWorker extends AbstractWorker {
 
       // Note: ShadowCaster is automatically initialized by AbstractWorker.initializeAllComponents()
 
-      // Create separate typed array views for shadow SPRITE data
-      // Uses same schema as ShadowCaster but different buffer
-      this.shadowSpriteActive = new Uint8Array(data.shadows.spriteData, 0, this.maxShadowSprites);
+      // ========================================
+      // SHADOW RENDER QUEUE - Initialize typed array views
+      // ========================================
+      // Layout: [count:Int32, then per-item: x, y, scaleX, scaleY, rotation, alpha, tint, textureId, anchorX, anchorY]
+      const sab = data.shadows.renderQueueData;
+      const maxItems = this.maxShadowRenderItems;
+      let offset = 0;
 
-      // Calculate offsets for Float32 arrays (after Uint8 active array, aligned to 4 bytes)
-      const float32Offset = Math.ceil(this.maxShadowSprites / 4) * 4;
-      const floatCount = this.maxShadowSprites;
+      this.shadowRenderQueueCount = new Int32Array(sab, offset, 1);
+      offset += 4;
 
-      // Buffer layout matches ShadowCaster.ARRAY_SCHEMA order:
-      // active(Uint8), shadowRadius, x, y, height, rotation, scaleX, scaleY, alpha, entityIdx, lightIdx
-      this.shadowSpriteRadius = new Float32Array(
-        data.shadows.spriteData,
-        float32Offset,
-        floatCount
-      );
-      this.shadowSpriteX = new Float32Array(
-        data.shadows.spriteData,
-        float32Offset + floatCount * 4,
-        floatCount
-      );
-      this.shadowSpriteY = new Float32Array(
-        data.shadows.spriteData,
-        float32Offset + floatCount * 8,
-        floatCount
-      );
-      // height is at offset 12 but not used for sprite buffer (skipped)
-      this.shadowSpriteRotation = new Float32Array(
-        data.shadows.spriteData,
-        float32Offset + floatCount * 16, // After height (12 + 4)
-        floatCount
-      );
-      this.shadowSpriteScaleX = new Float32Array(
-        data.shadows.spriteData,
-        float32Offset + floatCount * 20,
-        floatCount
-      );
-      this.shadowSpriteScaleY = new Float32Array(
-        data.shadows.spriteData,
-        float32Offset + floatCount * 24,
-        floatCount
-      );
-      this.shadowSpriteAlpha = new Float32Array(
-        data.shadows.spriteData,
-        float32Offset + floatCount * 28,
-        floatCount
-      );
-      this.shadowSpriteEntityIdx = new Uint16Array(
-        data.shadows.spriteData,
-        float32Offset + floatCount * 32,
-        floatCount
-      );
-      this.shadowSpriteLightIdx = new Uint16Array(
-        data.shadows.spriteData,
-        float32Offset + floatCount * 36,
-        floatCount
-      );
+      this.shadowRenderQueueX = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
 
-      console.log(`[PARTICLE WORKER] Shadow system enabled (${this.maxShadowSprites} shadow slots)`);
+      this.shadowRenderQueueY = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.shadowRenderQueueScaleX = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.shadowRenderQueueScaleY = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.shadowRenderQueueRotation = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.shadowRenderQueueAlpha = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.shadowRenderQueueTint = new Uint32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.shadowRenderQueueTextureId = new Uint16Array(sab, offset, maxItems);
+      offset += maxItems * 2;
+
+      // Align to 4 bytes for Float32Array
+      offset = Math.ceil(offset / 4) * 4;
+
+      this.shadowRenderQueueAnchorX = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.shadowRenderQueueAnchorY = new Float32Array(sab, offset, maxItems);
+
+      // Pre-allocate collector for shadow renderables (light gradients + shadows)
+      // Ordered: light1_gradient, light1_shadows..., light2_gradient, light2_shadows...
+      this._shadowCollector = new Array(maxItems);
+      for (let i = 0; i < maxItems; i++) {
+        this._shadowCollector[i] = {
+          type: 0, // 0 = light gradient, 1 = shadow
+          x: 0,
+          y: 0,
+          scaleX: 1,
+          scaleY: 1,
+          rotation: 0,
+          alpha: 1,
+          tint: 0xFFFFFF,
+          textureId: 0,
+          anchorX: 0.5,
+          anchorY: 0.5,
+        };
+      }
+
+      console.log(`[PARTICLE WORKER] Shadow render queue enabled (${maxItems} max items: ${this.maxShadowSprites} shadows + ${this.maxShadowLights} lights)`);
     } else {
       console.log('[PARTICLE WORKER] Shadows not enabled or missing buffers');
     }
@@ -600,6 +595,7 @@ class ParticleWorker extends AbstractWorker {
       this.animationFrameStart = data.textureMetadata.animationFrameStart;
       this.animationFrameCount = data.textureMetadata.animationFrameCount;
       this.proxyToGlobalAnim = data.textureMetadata.proxyToGlobalAnim;
+      this.animationNameToIndex = data.textureMetadata.animationNameToIndex;
       console.log(`[PARTICLE WORKER] Texture metadata loaded: ${data.textureMetadata.totalFrames} total frames`);
     }
 
@@ -811,8 +807,8 @@ class ParticleWorker extends AbstractWorker {
     // Also collects visible entities for render queue
     this.updateEntityScreenVisibility();
 
-    // Calculate shadow sprite positions (uses same neighbor data as lighting)
-    this.updateShadowSprites();
+    // Build shadow render queue (light gradients + shadows, pre-sorted for pixi_worker)
+    this.buildShadowRenderQueue();
 
     // Update derived properties (speed, velocityAngle) for RigidBody entities
     this.updateDerivedProperties();
@@ -1339,52 +1335,40 @@ class ParticleWorker extends AbstractWorker {
   }
 
   /**
-   * Update shadow sprites using STABLE SLOT ASSIGNMENT
-   * Each (light, entity) pair keeps the same slot across frames for smooth interpolation.
-   * Slots are only reassigned when pairs change.
+   * Build shadow render queue with light gradients and shadows
+   * Order: light1_gradient, light1_shadows..., light2_gradient, light2_shadows...
+   * This pre-sorted queue is consumed directly by pixi_worker (no additional sorting needed)
    */
-  updateShadowSprites() {
-    if (!this.shadowsEnabled || !this.shadowSpriteActive) return;
+  buildShadowRenderQueue() {
+    if (!this.shadowsEnabled || !this.shadowRenderQueueCount) {
+      if (this.shadowRenderQueueCount) this.shadowRenderQueueCount[0] = 0;
+      return;
+    }
 
-    const shadowActive = this.shadowSpriteActive;
-    const maxSprites = this.maxShadowSprites;
-
-    // Cache Grid data and metadata once per call to avoid repeated Atomics.load calls
-    // and potential race conditions if the buffer swaps mid-loop.
+    // Cache Grid data and metadata
     const neighborData = Grid.neighborData;
     const stride = Grid._stride;
 
     // Check if we have precomputed distances from Grid (spatial worker)
     if (!neighborData || Grid.maxNeighbors <= 0) {
-      // No spatial data - deactivate all shadows
-      for (let i = 0; i < maxSprites; i++) {
-        shadowActive[i] = 0;
-      }
+      this.shadowRenderQueueCount[0] = 0;
       return;
     }
 
-    // Cache component arrays (entity data)
+    // Cache component arrays
     const worldX = Transform.x;
     const worldY = Transform.y;
     const transformActive = Transform.active;
     const lightEnabled = LightEmitter.active;
     const lightIntensity = LightEmitter.lightIntensity;
+    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+    const lightHeight = LightEmitter.height;
+    const lightColor = LightEmitter.lightColor;
     const shadowCasterActive = ShadowCaster.active;
     const entityShadowRadius = ShadowCaster.shadowRadius;
     const entityShadowHeight = ShadowCaster.height;
     const isOnScreen = SpriteRenderer.isItOnScreen;
     const flashActive = FlashComponent.active;
-
-    // Shadow sprite output arrays
-    const shadowRadius = this.shadowSpriteRadius;
-    const shadowX = this.shadowSpriteX;
-    const shadowY = this.shadowSpriteY;
-    const shadowRotation = this.shadowSpriteRotation;
-    const shadowScaleX = this.shadowSpriteScaleX;
-    const shadowScaleY = this.shadowSpriteScaleY;
-    const shadowAlpha = this.shadowSpriteAlpha;
-    const shadowEntityIdx = this.shadowSpriteEntityIdx;
-    const shadowLightIdx = this.shadowSpriteLightIdx;
 
     // Per-entity shadow limit tracking
     const maxShadowsPerEntity = this.maxShadowsPerEntity;
@@ -1393,243 +1377,172 @@ class ParticleWorker extends AbstractWorker {
       entityShadowCounts.fill(0);
     }
 
-    // ========================================
-    // STABLE SLOT ASSIGNMENT PREP
-    // ========================================
-    const pairToSlot = this._shadowPairToSlot;
-    const slotToPair = this._shadowSlotToPair;
-    const usedSlots = this._usedSlotsThisFrame;
-    usedSlots.fill(0); // Clear bitmap
+    // Output arrays
+    const rqX = this.shadowRenderQueueX;
+    const rqY = this.shadowRenderQueueY;
+    const rqScaleX = this.shadowRenderQueueScaleX;
+    const rqScaleY = this.shadowRenderQueueScaleY;
+    const rqRotation = this.shadowRenderQueueRotation;
+    const rqAlpha = this.shadowRenderQueueAlpha;
+    const rqTint = this.shadowRenderQueueTint;
+    const rqTextureId = this.shadowRenderQueueTextureId;
+    const rqAnchorX = this.shadowRenderQueueAnchorX;
+    const rqAnchorY = this.shadowRenderQueueAnchorY;
 
-    // Track which slots are currently "owned" by pairs from previous frame
-    // We will avoid using these for NEW pairs until we're sure the owner is gone
-    // GC OPTIMIZATION: Use typed array bitmap instead of Set
-    const ownedSlots = this._ownedSlots;
-    // Populate ownedSlots from slotToPair (slot is owned if it has a valid pair)
-    for (let s = 0; s < maxSprites; s++) {
-      ownedSlots[s] = slotToPair[s] !== -1 ? 1 : 0;
-    }
+    // Entity texture lookup for shadow textures
+    const entityLastTextureId = this.entityLastTextureId;
 
-    // Track pairs processed this frame
-    // REUSE: Clear to avoid allocation each frame
-    const pairsThisFrame = this._pairsThisFrame;
-    pairsThisFrame.clear();
+    // Light gradient texture ID (from bigAtlas)
+    // Use animationNameToIndex to get the animation index, then animationFrameStart for texture ID
+    const lightGradientAnimIdx = this.animationNameToIndex?.['_lightGradient'] ?? 0;
+    const lightGradientTextureId = this.animationFrameStart?.[lightGradientAnimIdx] ?? 0;
 
-    let shadowCount = 0;
+    let writeIdx = 0;
     let lightsProcessed = 0;
+    const maxItems = this.maxShadowRenderItems;
+    const maxShadowSprites = this.maxShadowSprites;
+    const PI = Math.PI;
+
+    // Track shadow count for stats
+    let shadowCount = 0;
 
     // OPTIMIZED: Query only active entities with LightEmitter
     const lightEntities = this.queryActiveEntities([LightEmitter]);
 
-    // For each LIGHT, find nearby shadow casters and generate shadows
+    // For each LIGHT, add light gradient then its shadows
     for (let i = 0; i < lightEntities.length; i++) {
-      if (shadowCount >= maxSprites) break;
+      if (writeIdx >= maxItems) break;
       if (lightsProcessed >= this.maxShadowCastingLights) break;
 
       const lightIdx = lightEntities[i];
-      // Note: transformActive check no longer needed - queryActiveEntities already filters
-      if (!lightEnabled[lightIdx]) {
-        continue;
-      }
+      if (!lightEnabled[lightIdx]) continue;
 
       // Check if light is on screen (with margin)
       const isFlash = flashActive[lightIdx] === 1;
-      if (!isFlash && !isOnScreen[lightIdx]) {
-        continue;
-      }
+      if (!isFlash && !isOnScreen[lightIdx]) continue;
 
       const intensity = lightIntensity[lightIdx];
-      if (intensity <= 0) {
-        continue;
-      }
+      if (intensity <= 0) continue;
 
-      lightsProcessed++;
-
+      // Collect shadows for this light first (we need to know if there are any)
       const lightX = worldX[lightIdx];
       const lightY = worldY[lightIdx];
+      const lightH = lightHeight[lightIdx] || 0;
 
-      // Get neighbors of this light using direct buffer access (safer and much faster)
+      // Get neighbors of this light
       const offset = lightIdx * stride;
       const neighborCountForLight = neighborData[offset];
+
+      // Temporary collection for this light's shadows
+      const shadowStartIdx = writeIdx + 1; // Reserve slot 0 for light gradient
       let shadowsForThisLight = 0;
 
       for (let k = 0; k < neighborCountForLight; k++) {
         if (shadowsForThisLight >= this.maxShadowsPerLight) break;
-        if (shadowCount >= maxSprites) break;
+        if (shadowCount >= maxShadowSprites) break;
+        if (writeIdx + 1 + shadowsForThisLight >= maxItems) break;
 
         const neighborIdx = neighborData[offset + 2 + k];
 
         // Skip if not a shadow caster or inactive
-        if (!shadowCasterActive[neighborIdx] || !transformActive[neighborIdx]) {
-          continue;
-        }
-
-        // Shadow casters should be considered if they are anywhere near the screen
-        // isOnScreen already includes a 15% margin
-        if (!isOnScreen[neighborIdx]) {
-          continue;
-        }
-
-        // Create stable pair key
-        const pairKey = cantorPair(lightIdx, neighborIdx);
-
-        // Skip duplicate pairs (shouldn't happen with Grid but good for safety)
-        if (pairsThisFrame.has(pairKey)) {
-          continue;
-        }
-        pairsThisFrame.add(pairKey);
+        if (!shadowCasterActive[neighborIdx] || !transformActive[neighborIdx]) continue;
+        if (!isOnScreen[neighborIdx]) continue;
 
         // Per-entity shadow limit
-        if (maxShadowsPerEntity > 0 && entityShadowCounts[neighborIdx] >= maxShadowsPerEntity) {
-          continue;
-        }
+        if (maxShadowsPerEntity > 0 && entityShadowCounts[neighborIdx] >= maxShadowsPerEntity) continue;
 
-        // Calculate distance on-the-fly (collider positions)
-        // Distance from light to shadow caster (neighbor)
+        // Calculate distance
         const lightXWithOffset = Transform.x[lightIdx] + (Collider.offsetX[lightIdx] || 0);
         const lightYWithOffset = Transform.y[lightIdx] + (Collider.offsetY[lightIdx] || 0);
         const neighborX = Transform.x[neighborIdx] + (Collider.offsetX[neighborIdx] || 0);
         const neighborY = Transform.y[neighborIdx] + (Collider.offsetY[neighborIdx] || 0);
         const dx = neighborX - lightXWithOffset;
         const dy = neighborY - lightYWithOffset;
-        // OPTIMIZED: Inline since dx/dy are already calculated
         const distSq = dx * dx + dy * dy;
 
-        if (distSq < 1) {
-          continue; // Avoid division by zero
-        }
-
-        // ========================================
-        // GET OR ASSIGN STABLE SLOT
-        // ========================================
-        let slotIdx = -1;
-        if (pairToSlot.has(pairKey)) {
-          slotIdx = pairToSlot.get(pairKey);
-        } else {
-          // Find a free slot: not used this frame AND not owned by any pair
-          for (let s = 0; s < maxSprites; s++) {
-            if (usedSlots[s] === 0 && ownedSlots[s] === 0) {
-              slotIdx = s;
-              break;
-            }
-          }
-
-          // Fallback: If no truly free slots, take ANY slot not used this frame
-          if (slotIdx === -1) {
-            for (let s = 0; s < maxSprites; s++) {
-              if (usedSlots[s] === 0) {
-                slotIdx = s;
-                // If this slot was owned by someone else, we must evict them
-                const oldPairKey = slotToPair[slotIdx];
-                if (oldPairKey !== -1) {
-                  pairToSlot.delete(oldPairKey);
-                }
-                break;
-              }
-            }
-          }
-
-          if (slotIdx === -1) break; // Still no slots? Limit reached.
-
-          // Assign new slot
-          pairToSlot.set(pairKey, slotIdx);
-          slotToPair[slotIdx] = pairKey;
-        }
-
-        // Mark slot as used
-        usedSlots[slotIdx] = 1;
+        if (distSq < 1) continue;
 
         // Calculate shadow properties
         const casterX = worldX[neighborIdx];
         const casterY = worldY[neighborIdx];
         let casterRadius = entityShadowRadius[neighborIdx];
-
-        // Guard against NaN or zero radius
-        if (isNaN(casterRadius) || casterRadius <= 0) {
-          casterRadius = 10;
-        }
-
+        if (isNaN(casterRadius) || casterRadius <= 0) casterRadius = 10;
         const casterHeight = entityShadowHeight[neighborIdx] || casterRadius;
 
-        // BUGFIX: Use collider positions for direction vector to match distSq calculation
-        // distSq is calculated from collider positions (lightXWithOffset, neighborX)
-        // so lightDx/lightDy must also use collider positions for correct normalization
-        const lightDx = neighborX - lightXWithOffset;
-        const lightDy = neighborY - lightYWithOffset;
         const dist = Math.sqrt(distSq);
         const invDist = 1 / dist;
-        const dirX = lightDx * invDist;
-        const dirY = lightDy * invDist;
+        const dirX = dx * invDist;
+        const dirY = dy * invDist;
 
         // Shadow position
         const posX = casterX - dirX * casterRadius * 0.5;
         const posY = casterY - dirY * casterRadius * 0.5;
 
+        if (isNaN(posX) || isNaN(posY)) continue;
+
         // Shadow scale
         const distRatio = dist * 0.00390625; // 1/256
         const clampedDistRatio = distRatio > 1 ? 1 : distRatio;
-        const heightFactor = casterHeight * 0.025; // Normalizes 40 units to 1.0
+        const heightFactor = casterHeight * 0.025;
         const lengthScale = (0.3 + clampedDistRatio * 0.9) * heightFactor;
-        const widthScale = 1; //casterRadius * 0.0714;
+        const widthScale = 1;
 
-        // Alpha and Angle
+        // Alpha and angle
         let alpha = intensity / (intensity + distSq);
-        const angle = Math.atan2(dy, dx);
-
-        // Guard against NaN
         if (isNaN(alpha)) alpha = 0;
         if (alpha > 1) alpha = 1;
         if (alpha < 0) alpha = 0;
         alpha *= 0.33;
-        if (isNaN(posX) || isNaN(posY)) {
-          shadowActive[slotIdx] = 0;
-          continue;
-        }
 
-        // Write shadow data
-        shadowActive[slotIdx] = 1;
-        shadowRadius[slotIdx] = casterRadius;
-        shadowX[slotIdx] = posX;
-        shadowY[slotIdx] = posY;
-        shadowRotation[slotIdx] = angle - 1.5707963267948966; // PI/2
-        shadowScaleX[slotIdx] = widthScale;
-        shadowScaleY[slotIdx] = lengthScale;
-        shadowAlpha[slotIdx] = alpha;
-        shadowEntityIdx[slotIdx] = neighborIdx;
-        shadowLightIdx[slotIdx] = lightIdx;
+        const angle = Math.atan2(dy, dx);
 
-        shadowCount++;
+        // Get entity's current texture for shadow
+        const textureId = entityLastTextureId ? entityLastTextureId[neighborIdx] : 0;
+
+        // Write shadow to queue
+        const idx = shadowStartIdx + shadowsForThisLight;
+        rqX[idx] = posX;
+        rqY[idx] = posY;
+        rqScaleX[idx] = widthScale;
+        rqScaleY[idx] = lengthScale;
+        rqRotation[idx] = angle - 1.5707963267948966 + PI; // PI/2 + PI (point away from light)
+        rqAlpha[idx] = alpha;
+        rqTint[idx] = 0x000000; // Black shadows
+        rqTextureId[idx] = textureId;
+        rqAnchorX[idx] = 0.5;
+        rqAnchorY[idx] = 1.0; // Bottom anchor for shadows
+
         shadowsForThisLight++;
+        shadowCount++;
         if (maxShadowsPerEntity > 0) entityShadowCounts[neighborIdx]++;
       }
-    }
 
-    // ========================================
-    // CLEANUP
-    // ========================================
-    // Deactivate unused slots and remove stale mappings
-    for (let i = 0; i < maxSprites; i++) {
-      if (usedSlots[i] === 0) {
-        if (shadowActive[i]) {
-          shadowActive[i] = 0;
-          const stalePairKey = slotToPair[i];
-          if (stalePairKey !== -1) {
-            pairToSlot.delete(stalePairKey);
-            slotToPair[i] = -1;
-          }
-        }
+      // Only add light gradient if there are shadows for this light
+      if (shadowsForThisLight > 0) {
+        lightsProcessed++;
+
+        // Write light gradient FIRST (before its shadows in the queue)
+        const gradientScale = 10 * sqrtLightIntensity[lightIdx] * 3 / 100; // Match pixi_worker formula
+        const gradientAlpha = intensity / 50000;
+
+        rqX[writeIdx] = lightX;
+        rqY[writeIdx] = lightY - lightH;
+        rqScaleX[writeIdx] = gradientScale;
+        rqScaleY[writeIdx] = gradientScale;
+        rqRotation[writeIdx] = 0;
+        rqAlpha[writeIdx] = gradientAlpha;
+        rqTint[writeIdx] = 0xFFFFFF; // White light gradient
+        rqTextureId[writeIdx] = lightGradientTextureId;
+        rqAnchorX[writeIdx] = 0.5;
+        rqAnchorY[writeIdx] = 0.5; // Center anchor for light gradients
+
+        // Move write index past light gradient + all its shadows
+        writeIdx = shadowStartIdx + shadowsForThisLight;
       }
     }
 
-    // Final sweep for any pairs that weren't processed but somehow stayed in map
-    if (pairToSlot.size > shadowCount) {
-      for (const [key, slot] of pairToSlot.entries()) {
-        if (!pairsThisFrame.has(key)) {
-          pairToSlot.delete(key);
-          slotToPair[slot] = -1;
-        }
-      }
-    }
+    // Write count
+    this.shadowRenderQueueCount[0] = writeIdx;
 
     // Track shadows updated for stats
     this.shadowsUpdatedThisFrame = shadowCount;
