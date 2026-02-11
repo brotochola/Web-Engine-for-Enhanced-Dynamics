@@ -30,6 +30,7 @@ import {
 } from '../core/utils.js';
 import { PARTICLE_STATS, createStatsWriter } from './workers-utils.js';
 import { RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
+import { SpriteSheetRegistry } from '../core/SpriteSheetRegistry.js';
 
 // Note: Components (Transform, RigidBody, etc.) are now registered automatically
 // by AbstractWorker.registerAllComponents() after entity classes are loaded
@@ -150,6 +151,43 @@ class ParticleWorker extends AbstractWorker {
     // Minimum speed threshold for rotation updates (prevents jitter when stationary)
     this.minSpeedForRotation = 0.1;
     this.rigidBodyCount = 0;
+
+    // ========================================
+    // RENDER QUEUE SYSTEM
+    // ========================================
+    // Pre-sorted, screen-visible renderables for pixi_worker
+    // Built inline during visibility checks, consumed by pixi_worker
+    this.renderQueueEnabled = false;
+    this.renderQueueMaxItems = 0;
+    this.renderQueueCount = null;  // Int32Array[1] - current item count
+    // Per-item arrays (all maxItems length):
+    this.renderQueueX = null;      // Float32Array - interpolated X
+    this.renderQueueY = null;      // Float32Array - interpolated Y
+    this.renderQueueScaleX = null; // Float32Array
+    this.renderQueueScaleY = null; // Float32Array
+    this.renderQueueRotation = null; // Float32Array
+    this.renderQueueAlpha = null;  // Float32Array
+    this.renderQueueTint = null;   // Uint32Array
+    this.renderQueueTextureId = null; // Uint16Array (resolved frame)
+    this.renderQueueAnchorX = null; // Float32Array
+    this.renderQueueAnchorY = null; // Float32Array
+    this.renderQueueFrameIndex = null; // Uint8Array (for entity animations)
+
+    // Smoothed position buffers (for interpolation, indexed by globalIndex)
+    // Only entities need smoothing - particles/decorations update at 120fps
+    this.smoothedX = null;  // Float32Array[globalEntityCount]
+    this.smoothedY = null;  // Float32Array[globalEntityCount]
+
+    // Animation frame tracking (for entities, indexed by globalIndex)
+    this.entityFrameIndex = null;     // Uint16Array[globalEntityCount] - current frame
+    this.entityFrameAccumulator = null; // Float32Array[globalEntityCount] - time accumulator
+
+    // Temp array for collecting renderables before Y-sort
+    this._renderableCollector = null;  // [{y, type, index}, ...]
+    this._renderableCount = 0;
+
+    // Interpolation alpha (0-1, how far between physics frames)
+    this.interpolationAlpha = 0.5;
 
     // ========================================
     // SLEEPING OPTIMIZATION
@@ -448,6 +486,88 @@ class ParticleWorker extends AbstractWorker {
     }
 
     // Note: activeEntitiesData is initialized in AbstractWorker.initializeCommonBuffers
+
+    // ========================================
+    // RENDER QUEUE - Initialize
+    // ========================================
+    if (data.renderQueue && data.renderQueue.data) {
+      console.log('[PARTICLE WORKER] Initializing render queue system...');
+      this.renderQueueEnabled = true;
+      this.renderQueueMaxItems = data.renderQueue.maxItems;
+      const itemSize = data.renderQueue.itemSize; // 40 bytes
+      const sab = data.renderQueue.data;
+
+      // Create typed array views over the SharedArrayBuffer
+      // Layout: [count:Int32, then per-item data...]
+      this.renderQueueCount = new Int32Array(sab, 0, 1);
+
+      // Calculate offsets for each array (starting after count, 4-byte aligned)
+      const maxItems = this.renderQueueMaxItems;
+      let offset = 4; // After count
+
+      this.renderQueueX = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueY = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueScaleX = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueScaleY = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueRotation = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueAlpha = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueTint = new Uint32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueTextureId = new Uint16Array(sab, offset, maxItems);
+      offset += maxItems * 2;
+
+      // Align to 4 bytes for next Float32Array
+      offset = Math.ceil(offset / 4) * 4;
+
+      this.renderQueueAnchorX = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueAnchorY = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      // Frame index for entity animations (Uint8 is enough - max 256 frames per animation)
+      this.renderQueueFrameIndex = new Uint8Array(sab, offset, maxItems);
+
+      // Initialize smoothed position buffers (local, not shared)
+      if (this.globalEntityCount > 0) {
+        this.smoothedX = new Float32Array(this.globalEntityCount);
+        this.smoothedY = new Float32Array(this.globalEntityCount);
+        this.entityFrameIndex = new Uint16Array(this.globalEntityCount);
+        this.entityFrameAccumulator = new Float32Array(this.globalEntityCount);
+
+        // Initialize smoothed positions from current positions
+        for (let i = 0; i < this.globalEntityCount; i++) {
+          this.smoothedX[i] = Transform.x[i];
+          this.smoothedY[i] = Transform.y[i];
+        }
+      }
+
+      // Pre-allocate renderable collector (avoid per-frame allocation)
+      // Each entry: { y: number, type: 0=entity|1=particle|2=decoration, index: number }
+      const maxRenderables = maxItems;
+      this._renderableCollector = new Array(maxRenderables);
+      for (let i = 0; i < maxRenderables; i++) {
+        this._renderableCollector[i] = { y: 0, type: 0, index: 0 };
+      }
+
+      console.log(`[PARTICLE WORKER] Render queue initialized (max ${maxItems} items)`);
+    } else {
+      console.log('[PARTICLE WORKER] Render queue NOT enabled (no data provided)');
+    }
+
     console.log('[PARTICLE WORKER] ✅ Initialize() completed successfully!');
   }
 
@@ -620,6 +740,10 @@ class ParticleWorker extends AbstractWorker {
     // Each spatial worker now rebuilds its own rows, eliminating race conditions
     // without any synchronization. See spatial_worker.js rebuildOwnedRows().
 
+    // Reset render queue collector for this frame
+    // TODO: Disabled pending optimization
+    // this._renderableCount = 0;
+
     // Build active particle list - optimize physics by skipping inactive particles
     this.buildActiveParticleList();
 
@@ -635,6 +759,7 @@ class ParticleWorker extends AbstractWorker {
     const cameraBounds = this.calculateCameraBounds();
 
     // Run particle physics and collect particles to stamp
+    // Also collects visible particles for render queue
     const activeCount = this.updateParticlePhysics(deltaTime, dtRatio, cameraBounds);
 
     // Stamp collected particles onto blood decal tiles
@@ -649,6 +774,7 @@ class ParticleWorker extends AbstractWorker {
     this.updateFlashes(deltaTime);
 
     // Update screen visibility for all game entities BEFORE shadows
+    // Also collects visible entities for render queue
     this.updateEntityScreenVisibility();
 
     // Calculate shadow sprite positions (uses same neighbor data as lighting)
@@ -661,7 +787,12 @@ class ParticleWorker extends AbstractWorker {
     this.updateCellSleepingStates();
 
     // Update screen visibility for all decorations
+    // Also collects visible decorations for render queue
     this.updateDecorationScreenVisibility(cameraBounds);
+
+    // Build the final render queue (sorts by Y, applies interpolation, writes to SAB)
+    // TODO: Disabled pending optimization - registry lookups every frame are too slow
+    // this.buildRenderQueue(deltaTime, this.interpolationAlpha);
 
     // Store for FPS reporting
     this.activeParticleCount = activeCount;
@@ -909,8 +1040,13 @@ class ParticleWorker extends AbstractWorker {
         const screenX = x[i] * camZoom - camOffX;
         const screenY = y[i] * camZoom - camOffY;
 
-        isItOnScreen[i] =
-          screenX > camMinX && screenX < camMaxX && screenY > camMinY && screenY < camMaxY ? 1 : 0;
+        const onScreen = screenX > camMinX && screenX < camMaxX && screenY > camMinY && screenY < camMaxY;
+        isItOnScreen[i] = onScreen ? 1 : 0;
+
+        // Collect for render queue if visible
+        if (onScreen) {
+          this.collectRenderable(1, i, y[i]); // type=1 for particle
+        }
       }
 
       activeCount++;
@@ -1548,7 +1684,13 @@ class ParticleWorker extends AbstractWorker {
       screenY[i] = sy;
 
       // Check if screen position is within viewport bounds (with margin)
-      isItOnScreen[i] = sx >= screenMinX && sx <= screenMaxX && sy >= screenMinY && sy <= screenMaxY ? 1 : 0;
+      const onScreen = sx >= screenMinX && sx <= screenMaxX && sy >= screenMinY && sy <= screenMaxY;
+      isItOnScreen[i] = onScreen ? 1 : 0;
+
+      // Collect for render queue if visible AND renderVisible
+      if (onScreen && SpriteRenderer.renderVisible[i]) {
+        this.collectRenderable(0, i, y[i]); // type=0 for entity
+      }
     }
 
   }
@@ -1623,8 +1765,13 @@ class ParticleWorker extends AbstractWorker {
       const screenY = y[i] * zoom - cameraOffsetY;
 
       // Check if screen position is within viewport bounds (with margin)
-      isItOnScreen[i] =
-        screenX > minX && screenX < maxX && screenY > minY && screenY < maxY ? 1 : 0;
+      const onScreen = screenX > minX && screenX < maxX && screenY > minY && screenY < maxY;
+      isItOnScreen[i] = onScreen ? 1 : 0;
+
+      // Collect for render queue if visible
+      if (onScreen) {
+        this.collectRenderable(2, i, y[i]); // type=2 for decoration
+      }
 
       if (sway[i]) {
         rotation[i] = baseRotation[i] + Math.sin(this._swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
@@ -1799,6 +1946,225 @@ class ParticleWorker extends AbstractWorker {
         cellSleepingData[cellIndex] = newSleepingState;
       }
     }
+  }
+
+  // ========================================
+  // RENDER QUEUE BUILDING
+  // ========================================
+
+  /**
+   * Collect a visible renderable for the render queue
+   * Called inline during visibility checks
+   * @param {number} type - 0=entity, 1=particle, 2=decoration
+   * @param {number} index - Index within that type's pool
+   * @param {number} y - Y position for sorting
+   */
+  collectRenderable(type, index, y) {
+    if (!this.renderQueueEnabled) return;
+    if (this._renderableCount >= this.renderQueueMaxItems) return;
+
+    const entry = this._renderableCollector[this._renderableCount];
+    entry.y = y;
+    entry.type = type;
+    entry.index = index;
+    this._renderableCount++;
+  }
+
+  /**
+   * Build the final render queue from collected renderables
+   * - Sorts by Y for depth ordering
+   * - Applies interpolation to entity positions
+   * - Advances animation frames for entities
+   * - Writes all properties to render queue SAB
+   * @param {number} deltaTime - Frame time in milliseconds
+   * @param {number} interpolationAlpha - Lerp factor for smoothing (0-1)
+   */
+  buildRenderQueue(deltaTime, interpolationAlpha) {
+    if (!this.renderQueueEnabled || this._renderableCount === 0) {
+      if (this.renderQueueCount) this.renderQueueCount[0] = 0;
+      return;
+    }
+
+    const count = this._renderableCount;
+    const collector = this._renderableCollector;
+
+    // Sort by Y (ascending for proper depth - lower Y renders first)
+    // Using a simple insertion sort for small-ish arrays, or native sort for larger
+    if (count > 100) {
+      // For larger arrays, use native sort (optimized timsort)
+      const slice = collector.slice(0, count);
+      slice.sort((a, b) => a.y - b.y);
+      for (let i = 0; i < count; i++) {
+        collector[i] = slice[i];
+      }
+    } else {
+      // Insertion sort for small arrays (avoids allocation)
+      for (let i = 1; i < count; i++) {
+        const current = collector[i];
+        let j = i - 1;
+        while (j >= 0 && collector[j].y > current.y) {
+          collector[j + 1] = collector[j];
+          j--;
+        }
+        collector[j + 1] = current;
+      }
+    }
+
+    // Write sorted renderables to queue
+    const rqX = this.renderQueueX;
+    const rqY = this.renderQueueY;
+    const rqScaleX = this.renderQueueScaleX;
+    const rqScaleY = this.renderQueueScaleY;
+    const rqRotation = this.renderQueueRotation;
+    const rqAlpha = this.renderQueueAlpha;
+    const rqTint = this.renderQueueTint;
+    const rqTextureId = this.renderQueueTextureId;
+    const rqAnchorX = this.renderQueueAnchorX;
+    const rqAnchorY = this.renderQueueAnchorY;
+    const rqFrameIndex = this.renderQueueFrameIndex;
+
+    // Cache component arrays
+    const entityX = Transform.x;
+    const entityY = Transform.y;
+    const entityRotation = Transform.rotation;
+
+    const srScaleX = SpriteRenderer.scaleX;
+    const srScaleY = SpriteRenderer.scaleY;
+    const srAlpha = SpriteRenderer.alpha;
+    const srTint = SpriteRenderer.tint;
+    const srAnchorX = SpriteRenderer.anchorX;
+    const srAnchorY = SpriteRenderer.anchorY;
+    const srAnimState = SpriteRenderer.animationState;
+    const srSpritesheetId = SpriteRenderer.spritesheetId;
+    const srAnimSpeed = SpriteRenderer.animationSpeed;
+    const srLoop = SpriteRenderer.loop;
+    const srIsAnimated = SpriteRenderer.isAnimated;
+
+    const particleX = ParticleComponent.x;
+    const particleY = ParticleComponent.y;
+    const particleZ = ParticleComponent.z;
+    const particleScaleX = ParticleComponent.scaleX;
+    const particleScaleY = ParticleComponent.scaleY;
+    const particleRotation = ParticleComponent.rotation;
+    const particleAlpha = ParticleComponent.alpha;
+    const particleTint = ParticleComponent.tint;
+    const particleTextureId = ParticleComponent.textureId;
+
+    const decoX = DecorationComponent.x;
+    const decoY = DecorationComponent.y;
+    const decoScaleX = DecorationComponent.scaleX;
+    const decoScaleY = DecorationComponent.scaleY;
+    const decoRotation = DecorationComponent.rotation;
+    const decoAlpha = DecorationComponent.alpha;
+    const decoTint = DecorationComponent.tint;
+    const decoTextureId = DecorationComponent.textureId;
+    const decoAnchorX = DecorationComponent.anchorX;
+    const decoAnchorY = DecorationComponent.anchorY;
+
+    // Smoothed position buffers
+    const smoothedX = this.smoothedX;
+    const smoothedY = this.smoothedY;
+
+    // Animation tracking
+    const frameIndex = this.entityFrameIndex;
+    const frameAccum = this.entityFrameAccumulator;
+    const deltaSeconds = deltaTime / 1000;
+
+    for (let i = 0; i < count; i++) {
+      const entry = collector[i];
+      const type = entry.type;
+      const idx = entry.index;
+
+      if (type === 0) {
+        // === ENTITY ===
+        // Apply interpolation: smooth towards current position
+        const currX = entityX[idx];
+        const currY = entityY[idx];
+        smoothedX[idx] += (currX - smoothedX[idx]) * interpolationAlpha;
+        smoothedY[idx] += (currY - smoothedY[idx]) * interpolationAlpha;
+
+        rqX[i] = smoothedX[idx];
+        rqY[i] = smoothedY[idx];
+        rqScaleX[i] = srScaleX[idx];
+        rqScaleY[i] = srScaleY[idx];
+        rqRotation[i] = entityRotation[idx];
+        rqAlpha[i] = srAlpha[idx];
+        rqTint[i] = srTint[idx];
+        rqAnchorX[i] = srAnchorX[idx];
+        rqAnchorY[i] = srAnchorY[idx];
+
+        // Get animation info
+        const sheetId = srSpritesheetId[idx];
+        const animState = srAnimState[idx];
+
+        // Animation frame advancement
+        if (srIsAnimated[idx]) {
+          const sheetName = SpriteSheetRegistry.getSpritesheetName(sheetId);
+          const animName = sheetName ? SpriteSheetRegistry.getAnimationName(sheetName, animState) : null;
+          const frameCount = animName ? SpriteSheetRegistry.getAnimationFrameCount(sheetName, animName) : 1;
+
+          if (frameCount > 1) {
+            // Accumulate time
+            frameAccum[idx] += deltaSeconds;
+
+            // Calculate frame duration (animationSpeed is in FPS)
+            const frameDuration = 1 / (srAnimSpeed[idx] * 60);
+
+            // Advance frames if needed
+            if (frameAccum[idx] >= frameDuration) {
+              frameAccum[idx] -= frameDuration;
+
+              const currentFrame = frameIndex[idx];
+              const isLastFrame = currentFrame >= frameCount - 1;
+              const shouldLoop = srLoop[idx] === 1;
+
+              if (shouldLoop || !isLastFrame) {
+                frameIndex[idx] = (currentFrame + 1) % frameCount;
+              }
+            }
+          }
+        }
+
+        // Encode textureId: 0x8000 marker + spritesheetId + animState
+        // Use upper bits for type marker: 0x8000 = entity (needs anim lookup)
+        rqTextureId[i] = 0x8000 | (sheetId << 8) | animState;
+
+        // Write frame index for pixi_worker to use
+        rqFrameIndex[i] = frameIndex[idx];
+      } else if (type === 1) {
+        // === PARTICLE ===
+        // Particles update at 120fps, no interpolation needed
+        rqX[i] = particleX[idx];
+        rqY[i] = particleY[idx] + particleZ[idx]; // Apply Z offset for visual height
+        rqScaleX[i] = particleScaleX[idx];
+        rqScaleY[i] = particleScaleY[idx];
+        rqRotation[i] = particleRotation[idx];
+        rqAlpha[i] = particleAlpha[idx];
+        rqTint[i] = particleTint[idx];
+        rqTextureId[i] = particleTextureId[idx]; // Already resolved bigAtlas index
+        rqAnchorX[i] = 0.5; // Particles always centered
+        rqAnchorY[i] = 0.5;
+      } else {
+        // === DECORATION ===
+        // Decorations are static, no interpolation needed
+        rqX[i] = decoX[idx];
+        rqY[i] = decoY[idx];
+        rqScaleX[i] = decoScaleX[idx];
+        rqScaleY[i] = decoScaleY[idx];
+        rqRotation[i] = decoRotation[idx];
+        rqAlpha[i] = decoAlpha[idx];
+        rqTint[i] = decoTint[idx];
+        rqTextureId[i] = decoTextureId[idx]; // Already resolved bigAtlas index
+        rqAnchorX[i] = decoAnchorX[idx];
+        rqAnchorY[i] = decoAnchorY[idx];
+      }
+    }
+
+    // Write count
+    this.renderQueueCount[0] = count;
+
+    // Reset collector for next frame
+    this._renderableCount = 0;
   }
 
   /**

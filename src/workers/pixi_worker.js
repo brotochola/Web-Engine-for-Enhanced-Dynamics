@@ -365,6 +365,31 @@ class PixiRenderer extends AbstractWorker {
     this._ySortPoolSize = 0;
 
     // ========================================
+    // RENDER QUEUE SYSTEM
+    // ========================================
+    // Pre-sorted, screen-visible renderables from particle_worker
+    this.renderQueueEnabled = false;
+    this.renderQueueMaxItems = 0;
+    this.renderQueueCount = null;  // Int32Array[1] - current item count
+    this.renderQueueX = null;      // Float32Array - interpolated X
+    this.renderQueueY = null;      // Float32Array - interpolated Y
+    this.renderQueueScaleX = null; // Float32Array
+    this.renderQueueScaleY = null; // Float32Array
+    this.renderQueueRotation = null; // Float32Array
+    this.renderQueueAlpha = null;  // Float32Array
+    this.renderQueueTint = null;   // Uint32Array
+    this.renderQueueTextureId = null; // Uint16Array (encoded)
+    this.renderQueueAnchorX = null; // Float32Array
+    this.renderQueueAnchorY = null; // Float32Array
+    this.renderQueueFrameIndex = null; // Uint8Array (for entity animations)
+
+    // Render queue sprite pool (separate from entity/particle pools)
+    // Sprites are pooled and reused based on count diff between frames
+    this._rqSprites = [];      // Array of PIXI.Particle references
+    this._rqSpritePoolIndices = []; // Pool indices for release
+    this._rqPrevCount = 0;     // Previous frame's renderable count
+
+    // ========================================
     // decal DECALS TILEMAP SYSTEM
     // ========================================
     // Renders decal splats stamped by particle_worker onto tile sprites
@@ -1050,6 +1075,128 @@ class PixiRenderer extends AbstractWorker {
     }
   }
 
+  // ========================================
+  // RENDER QUEUE UPDATE (Optimized Path)
+  // ========================================
+  /**
+   * Update sprites from the pre-sorted render queue
+   * This bypasses all visibility checks and sorting - particle_worker already did it
+   * Sprite pool is resized based on count diff from previous frame
+   */
+  updateSpritesFromRenderQueue() {
+    if (!this.renderQueueEnabled) return;
+
+    const count = this.renderQueueCount[0];
+    const prevCount = this._rqPrevCount;
+
+    // Resize sprite pool based on count diff
+    if (count > prevCount) {
+      // Need more sprites - acquire the difference
+      for (let i = prevCount; i < count; i++) {
+        const { particle, index } = this.particlePool.acquire();
+        this._rqSprites[i] = particle;
+        this._rqSpritePoolIndices[i] = index;
+      }
+    } else if (count < prevCount) {
+      // Need fewer sprites - release the extras
+      for (let i = count; i < prevCount; i++) {
+        if (this._rqSpritePoolIndices[i] !== -1) {
+          this.particlePool.release(this._rqSpritePoolIndices[i]);
+          this._rqSprites[i] = null;
+          this._rqSpritePoolIndices[i] = -1;
+        }
+      }
+    }
+    this._rqPrevCount = count;
+
+    if (count === 0) {
+      // Clear the particle container (PixiJS 8 uses removeParticles)
+      this.particleContainer.removeParticles();
+      this.particleContainer.update();
+      return;
+    }
+
+    // Cache render queue arrays
+    const rqX = this.renderQueueX;
+    const rqY = this.renderQueueY;
+    const rqScaleX = this.renderQueueScaleX;
+    const rqScaleY = this.renderQueueScaleY;
+    const rqRotation = this.renderQueueRotation;
+    const rqAlpha = this.renderQueueAlpha;
+    const rqTint = this.renderQueueTint;
+    const rqTextureId = this.renderQueueTextureId;
+    const rqAnchorX = this.renderQueueAnchorX;
+    const rqAnchorY = this.renderQueueAnchorY;
+    const rqFrameIndex = this.renderQueueFrameIndex;
+
+    // Get bigAtlas for texture lookups
+    const bigAtlas = this.spritesheets.bigAtlas;
+
+    // Build particle container children in Y-sorted order
+    // Clear and re-add for proper depth ordering (PixiJS 8 uses removeParticles)
+    this.particleContainer.removeParticles();
+
+    let visibleCount = 0;
+
+    // Apply render queue properties to sprites (zero-branching on type!)
+    for (let i = 0; i < count; i++) {
+      const sprite = this._rqSprites[i];
+      if (!sprite) continue;
+
+      // Apply properties directly from render queue
+      sprite.x = rqX[i];
+      sprite.y = rqY[i];
+      sprite.scaleX = rqScaleX[i];
+      sprite.scaleY = rqScaleY[i];
+      sprite.rotation = rqRotation[i];
+      sprite.alpha = rqAlpha[i];
+      sprite.tint = rqTint[i];
+      sprite.anchorX = rqAnchorX[i];
+      sprite.anchorY = rqAnchorY[i];
+
+      // Resolve texture from textureId
+      // textureId encoding:
+      // - 0x8000 bit set: entity (needs animation lookup) - upper 7 bits = spritesheetId, lower 8 bits = animState
+      // - 0x8000 bit clear: direct bigAtlas animation index (particles/decorations)
+      const texId = rqTextureId[i];
+      if (texId & 0x8000) {
+        // Entity with animation
+        const sheetId = (texId >> 8) & 0x7F;
+        const animState = texId & 0xFF;
+        const frameIdx = rqFrameIndex[i]; // Animation frame from particle_worker
+        const sheetName = SpriteSheetRegistry.getSpritesheetName(sheetId);
+        if (sheetName && bigAtlas) {
+          const animName = SpriteSheetRegistry.getAnimationName(sheetName, animState);
+          if (animName) {
+            // Get prefixed animation name for bigAtlas
+            const prefixedAnimName = sheetName === 'bigAtlas' ? animName : `${sheetName}_${animName}`;
+            const frames = bigAtlas.animations[prefixedAnimName];
+            if (frames && frames.length > 0) {
+              // Use the frame index from particle_worker (clamped to valid range)
+              const safeFrameIdx = frameIdx < frames.length ? frameIdx : 0;
+              sprite.texture = frames[safeFrameIdx];
+            }
+          }
+        }
+      } else {
+        // Direct bigAtlas animation index (particles/decorations)
+        const animName = SpriteSheetRegistry.getAnimationName('bigAtlas', texId);
+        if (animName && bigAtlas?.animations[animName]?.[0]) {
+          sprite.texture = bigAtlas.animations[animName][0];
+        }
+      }
+
+      // Add to container (already Y-sorted by particle_worker!)
+      this.particleContainer.addParticle(sprite);
+      visibleCount++;
+    }
+
+    // Update particle container
+    // this.particleContainer.update();
+
+    this.visibleEntityCount = visibleCount;
+  }
+
   /**
    * Update method called each frame (implementation of AbstractWorker.update)
    */
@@ -1101,7 +1248,18 @@ class PixiRenderer extends AbstractWorker {
     // Update light glow sprites from LightEmitter component arrays
     this.updateLightGlowSprites(interpolationAlpha);
 
-    this.updateSprites(deltaTime, interpolationAlpha);
+    // Choose update path based on render queue availability
+    // TODO: Render queue is disabled pending optimization - texture lookups every frame are too slow
+    if (this.renderQueueEnabled) {
+      // OPTIMIZED PATH: Use pre-sorted render queue from particle_worker
+      // - No visibility checks (particle_worker already did it)
+      // - No Y-sorting (particle_worker already sorted)
+      // - No type branching (uniform property application)
+      this.updateSpritesFromRenderQueue();
+    } else {
+      // FALLBACK PATH: Traditional update with per-entity visibility/sorting
+      this.updateSprites(deltaTime, interpolationAlpha);
+    }
 
     // ========================================
     // LOW-RES OFF-SCREEN RENDERING
@@ -2119,7 +2277,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     // Update the container
-    this.shadowParticleContainer.update();
+    // this.shadowParticleContainer.update();
 
     // ========================================
     // STEP 4: Render to shadowRT
@@ -3334,6 +3492,69 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       console.log(
         `PIXI WORKER: decal decals enabled - ${this.decalsTilesX}×${this.decalsTilesY} tiles (${this.decalsTileSize}px world, ${this.decalsTilePixelSize}px texture @ ${this.decalsResolution}x)`
       );
+    }
+
+    // ========================================
+    // RENDER QUEUE SYSTEM - Initialize
+    // ========================================
+    if (data.renderQueue && data.renderQueue.data) {
+      console.log('PIXI WORKER: Initializing render queue system...');
+      this.renderQueueEnabled = true;
+      this.renderQueueMaxItems = data.renderQueue.maxItems;
+      const sab = data.renderQueue.data;
+
+      // Create typed array views over the SharedArrayBuffer
+      // Must match layout from particle_worker
+      const maxItems = this.renderQueueMaxItems;
+      let offset = 0;
+
+      this.renderQueueCount = new Int32Array(sab, offset, 1);
+      offset += 4;
+
+      this.renderQueueX = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueY = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueScaleX = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueScaleY = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueRotation = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueAlpha = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueTint = new Uint32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueTextureId = new Uint16Array(sab, offset, maxItems);
+      offset += maxItems * 2;
+
+      // Align to 4 bytes
+      offset = Math.ceil(offset / 4) * 4;
+
+      this.renderQueueAnchorX = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.renderQueueAnchorY = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      // Frame index for entity animations
+      this.renderQueueFrameIndex = new Uint8Array(sab, offset, maxItems);
+
+      // Pre-allocate sprite arrays
+      this._rqSprites = new Array(maxItems).fill(null);
+      this._rqSpritePoolIndices = new Array(maxItems).fill(-1);
+      this._rqPrevCount = 0;
+
+      console.log(`PIXI WORKER: Render queue initialized (max ${maxItems} items)`);
+    } else {
+      console.log('PIXI WORKER: Render queue NOT enabled');
     }
 
     // ========================================
