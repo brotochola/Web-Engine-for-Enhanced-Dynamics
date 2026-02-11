@@ -17,10 +17,10 @@ const {
 export class Tree extends GameObject {
   static scriptUrl = import.meta.url;
 
-  static components = [RigidBody, Collider, SpriteRenderer, ShadowCaster];
+  static components = [Collider, SpriteRenderer, ShadowCaster];
 
   setup() {
-    this.rigidBody.static = 1;
+    // this.rigidBody.static = 1;
     this.setSprite('tree' + (Math.random() > 0.5 ? 1 : 2));
     this.scale = Math.random() * 0.5 + 1;
     this.setScale(Math.random() > 0.5 ? this.scale : -this.scale, this.scale);

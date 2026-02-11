@@ -9,7 +9,7 @@ export class TallLight extends GameObject {
   static scriptUrl = import.meta.url;
 
   // Add PreyBehavior component for prey-specific properties
-  static components = [RigidBody, Collider, SpriteRenderer, LightEmitter];
+  static components = [Collider, SpriteRenderer, LightEmitter];
 
   // Note: ARRAY_SCHEMA removed - all data now in components (pure ECS architecture)
 
@@ -18,7 +18,7 @@ export class TallLight extends GameObject {
    * Overrides and extends Boid's setup()
    */
   setup() {
-    this.rigidBody.static = 1;
+    // this.rigidBody.static = 1;
     this.setSprite('tallLight');
 
     this.lightEmitter.lightColor = randomColor({
