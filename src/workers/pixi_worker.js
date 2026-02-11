@@ -390,6 +390,15 @@ class PixiRenderer extends AbstractWorker {
     this._rqPrevCount = 0;     // Previous frame's renderable count
 
     // ========================================
+    // FLAT TEXTURE LOOKUP (Zero-cost texture resolution)
+    // ========================================
+    // All textures flattened into single array for O(1) lookup
+    // Index = globalTextureId computed by particle_worker
+    this.flatTextures = [];           // PIXI.Texture[] indexed by globalTextureId
+    this.animationFrameStart = [];    // Starting index in flatTextures for each animation
+    this.animationFrameCount = [];    // Number of frames per animation
+
+    // ========================================
     // decal DECALS TILEMAP SYSTEM
     // ========================================
     // Renders decal splats stamped by particle_worker onto tile sprites
@@ -1110,9 +1119,8 @@ class PixiRenderer extends AbstractWorker {
     this._rqPrevCount = count;
 
     if (count === 0) {
-      // Clear the particle container (PixiJS 8 uses removeParticles)
-      this.particleContainer.removeParticles();
-      this.particleContainer.update();
+      // Clear the particle container (O(1) array truncation)
+      this.particleContainer.particleChildren.length = 0;
       return;
     }
 
@@ -1129,12 +1137,13 @@ class PixiRenderer extends AbstractWorker {
     const rqAnchorY = this.renderQueueAnchorY;
     const rqFrameIndex = this.renderQueueFrameIndex;
 
-    // Get bigAtlas for texture lookups
-    const bigAtlas = this.spritesheets.bigAtlas;
+    // Get flat texture array for O(1) lookup
+    const flatTextures = this.flatTextures;
 
     // Build particle container children in Y-sorted order
-    // Clear and re-add for proper depth ordering (PixiJS 8 uses removeParticles)
-    this.particleContainer.removeParticles();
+    // Clear and re-add for proper depth ordering
+    // Use direct array manipulation (O(1)) instead of removeParticles() which is expensive
+    this.particleContainer.particleChildren.length = 0;
 
     let visibleCount = 0;
 
@@ -1154,36 +1163,11 @@ class PixiRenderer extends AbstractWorker {
       sprite.anchorX = rqAnchorX[i];
       sprite.anchorY = rqAnchorY[i];
 
-      // Resolve texture from textureId
-      // textureId encoding:
-      // - 0x8000 bit set: entity (needs animation lookup) - upper 7 bits = spritesheetId, lower 8 bits = animState
-      // - 0x8000 bit clear: direct bigAtlas animation index (particles/decorations)
+      // Resolve texture from textureId (O(1) flat array lookup - no strings!)
+      // textureId is now globalTextureId computed by particle_worker
       const texId = rqTextureId[i];
-      if (texId & 0x8000) {
-        // Entity with animation
-        const sheetId = (texId >> 8) & 0x7F;
-        const animState = texId & 0xFF;
-        const frameIdx = rqFrameIndex[i]; // Animation frame from particle_worker
-        const sheetName = SpriteSheetRegistry.getSpritesheetName(sheetId);
-        if (sheetName && bigAtlas) {
-          const animName = SpriteSheetRegistry.getAnimationName(sheetName, animState);
-          if (animName) {
-            // Get prefixed animation name for bigAtlas
-            const prefixedAnimName = sheetName === 'bigAtlas' ? animName : `${sheetName}_${animName}`;
-            const frames = bigAtlas.animations[prefixedAnimName];
-            if (frames && frames.length > 0) {
-              // Use the frame index from particle_worker (clamped to valid range)
-              const safeFrameIdx = frameIdx < frames.length ? frameIdx : 0;
-              sprite.texture = frames[safeFrameIdx];
-            }
-          }
-        }
-      } else {
-        // Direct bigAtlas animation index (particles/decorations)
-        const animName = SpriteSheetRegistry.getAnimationName('bigAtlas', texId);
-        if (animName && bigAtlas?.animations[animName]?.[0]) {
-          sprite.texture = bigAtlas.animations[animName][0];
-        }
+      if (texId < flatTextures.length) {
+        sprite.texture = flatTextures[texId];
       }
 
       // Add to container (already Y-sorted by particle_worker!)
@@ -1248,18 +1232,8 @@ class PixiRenderer extends AbstractWorker {
     // Update light glow sprites from LightEmitter component arrays
     this.updateLightGlowSprites(interpolationAlpha);
 
-    // Choose update path based on render queue availability
-    // TODO: Render queue is disabled pending optimization - texture lookups every frame are too slow
-    if (this.renderQueueEnabled) {
-      // OPTIMIZED PATH: Use pre-sorted render queue from particle_worker
-      // - No visibility checks (particle_worker already did it)
-      // - No Y-sorting (particle_worker already sorted)
-      // - No type branching (uniform property application)
-      this.updateSpritesFromRenderQueue();
-    } else {
-      // FALLBACK PATH: Traditional update with per-entity visibility/sorting
-      this.updateSprites(deltaTime, interpolationAlpha);
-    }
+    // Use render queue from particle_worker - no fallback
+    this.updateSpritesFromRenderQueue();
 
     // ========================================
     // LOW-RES OFF-SCREEN RENDERING
@@ -2428,6 +2402,32 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           ) {
             this.createShadowSprites();
           }
+
+          // ========================================
+          // BUILD FLAT TEXTURE LOOKUP ARRAY
+          // ========================================
+          // Flatten all animation frames into single array for O(1) lookup
+          // particle_worker computes: globalTextureId = animationFrameStart[animIdx] + frameIdx
+          // pixi_worker does: sprite.texture = flatTextures[globalTextureId]
+          this.flatTextures = [];
+          this.animationFrameStart = [];
+          this.animationFrameCount = [];
+
+          // Get animation names in consistent order (same as SpriteSheetRegistry)
+          const animNames = Object.keys(animations);
+          for (let animIdx = 0; animIdx < animNames.length; animIdx++) {
+            const animName = animNames[animIdx];
+            const frames = animations[animName];
+
+            this.animationFrameStart[animIdx] = this.flatTextures.length;
+            this.animationFrameCount[animIdx] = frames.length;
+
+            for (let f = 0; f < frames.length; f++) {
+              this.flatTextures.push(frames[f]);
+            }
+          }
+
+          console.log(`✅ Built flat texture array: ${this.flatTextures.length} textures, ${animNames.length} animations`);
         }
 
         // console.log(

@@ -182,6 +182,11 @@ class ParticleWorker extends AbstractWorker {
     this.entityFrameIndex = null;     // Uint16Array[globalEntityCount] - current frame
     this.entityFrameAccumulator = null; // Float32Array[globalEntityCount] - time accumulator
 
+    // Texture metadata for globalTextureId computation
+    this.animationFrameStart = null;  // [animIdx] → starting index in flat texture array
+    this.animationFrameCount = null;  // [animIdx] → number of frames
+    this.proxyToGlobalAnim = null;    // [sheetId][localAnimIdx] → globalAnimIdx
+
     // Temp array for collecting renderables before Y-sort
     this._renderableCollector = null;  // [{y, type, index}, ...]
     this._renderableCount = 0;
@@ -568,6 +573,16 @@ class ParticleWorker extends AbstractWorker {
       console.log('[PARTICLE WORKER] Render queue NOT enabled (no data provided)');
     }
 
+    // ========================================
+    // TEXTURE METADATA - Initialize
+    // ========================================
+    if (data.textureMetadata) {
+      this.animationFrameStart = data.textureMetadata.animationFrameStart;
+      this.animationFrameCount = data.textureMetadata.animationFrameCount;
+      this.proxyToGlobalAnim = data.textureMetadata.proxyToGlobalAnim;
+      console.log(`[PARTICLE WORKER] Texture metadata loaded: ${data.textureMetadata.totalFrames} total frames`);
+    }
+
     console.log('[PARTICLE WORKER] ✅ Initialize() completed successfully!');
   }
 
@@ -741,8 +756,7 @@ class ParticleWorker extends AbstractWorker {
     // without any synchronization. See spatial_worker.js rebuildOwnedRows().
 
     // Reset render queue collector for this frame
-    // TODO: Disabled pending optimization
-    // this._renderableCount = 0;
+    this._renderableCount = 0;
 
     // Build active particle list - optimize physics by skipping inactive particles
     this.buildActiveParticleList();
@@ -791,8 +805,7 @@ class ParticleWorker extends AbstractWorker {
     this.updateDecorationScreenVisibility(cameraBounds);
 
     // Build the final render queue (sorts by Y, applies interpolation, writes to SAB)
-    // TODO: Disabled pending optimization - registry lookups every frame are too slow
-    // this.buildRenderQueue(deltaTime, this.interpolationAlpha);
+    this.buildRenderQueue(deltaTime, this.interpolationAlpha);
 
     // Store for FPS reporting
     this.activeParticleCount = activeCount;
@@ -2093,44 +2106,42 @@ class ParticleWorker extends AbstractWorker {
         rqAnchorX[i] = srAnchorX[idx];
         rqAnchorY[i] = srAnchorY[idx];
 
-        // Get animation info
+        // Get animation info and compute globalTextureId
         const sheetId = srSpritesheetId[idx];
         const animState = srAnimState[idx];
 
+        // Map (sheetId, animState) → global animation index
+        const proxyMap = this.proxyToGlobalAnim?.[sheetId];
+        const globalAnimIdx = proxyMap ? (proxyMap[animState] ?? 0) : 0;
+
+        // Get frame count from cached metadata (O(1), no registry lookup!)
+        const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
+
         // Animation frame advancement
-        if (srIsAnimated[idx]) {
-          const sheetName = SpriteSheetRegistry.getSpritesheetName(sheetId);
-          const animName = sheetName ? SpriteSheetRegistry.getAnimationName(sheetName, animState) : null;
-          const frameCount = animName ? SpriteSheetRegistry.getAnimationFrameCount(sheetName, animName) : 1;
+        if (srIsAnimated[idx] && animFrameCount > 1) {
+          // Accumulate time
+          frameAccum[idx] += deltaSeconds;
 
-          if (frameCount > 1) {
-            // Accumulate time
-            frameAccum[idx] += deltaSeconds;
+          // Calculate frame duration (animationSpeed is in FPS)
+          const frameDuration = 1 / (srAnimSpeed[idx] * 60);
 
-            // Calculate frame duration (animationSpeed is in FPS)
-            const frameDuration = 1 / (srAnimSpeed[idx] * 60);
+          // Advance frames if needed
+          if (frameAccum[idx] >= frameDuration) {
+            frameAccum[idx] -= frameDuration;
 
-            // Advance frames if needed
-            if (frameAccum[idx] >= frameDuration) {
-              frameAccum[idx] -= frameDuration;
+            const currentFrame = frameIndex[idx];
+            const isLastFrame = currentFrame >= animFrameCount - 1;
+            const shouldLoop = srLoop[idx] === 1;
 
-              const currentFrame = frameIndex[idx];
-              const isLastFrame = currentFrame >= frameCount - 1;
-              const shouldLoop = srLoop[idx] === 1;
-
-              if (shouldLoop || !isLastFrame) {
-                frameIndex[idx] = (currentFrame + 1) % frameCount;
-              }
+            if (shouldLoop || !isLastFrame) {
+              frameIndex[idx] = (currentFrame + 1) % animFrameCount;
             }
           }
         }
 
-        // Encode textureId: 0x8000 marker + spritesheetId + animState
-        // Use upper bits for type marker: 0x8000 = entity (needs anim lookup)
-        rqTextureId[i] = 0x8000 | (sheetId << 8) | animState;
-
-        // Write frame index for pixi_worker to use
-        rqFrameIndex[i] = frameIndex[idx];
+        // Compute globalTextureId (O(1) - no strings, no registry lookups!)
+        const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
+        rqTextureId[i] = animStart + frameIndex[idx];
       } else if (type === 1) {
         // === PARTICLE ===
         // Particles update at 120fps, no interpolation needed
@@ -2141,7 +2152,9 @@ class ParticleWorker extends AbstractWorker {
         rqRotation[i] = particleRotation[idx];
         rqAlpha[i] = particleAlpha[idx];
         rqTint[i] = particleTint[idx];
-        rqTextureId[i] = particleTextureId[idx]; // Already resolved bigAtlas index
+        // Particle textureId is bigAtlas animation index - convert to globalTextureId
+        const pAnimIdx = particleTextureId[idx];
+        rqTextureId[i] = this.animationFrameStart?.[pAnimIdx] ?? 0; // Frame 0 of animation
         rqAnchorX[i] = 0.5; // Particles always centered
         rqAnchorY[i] = 0.5;
       } else {
@@ -2154,7 +2167,9 @@ class ParticleWorker extends AbstractWorker {
         rqRotation[i] = decoRotation[idx];
         rqAlpha[i] = decoAlpha[idx];
         rqTint[i] = decoTint[idx];
-        rqTextureId[i] = decoTextureId[idx]; // Already resolved bigAtlas index
+        // Decoration textureId is bigAtlas animation index - convert to globalTextureId
+        const dAnimIdx = decoTextureId[idx];
+        rqTextureId[i] = this.animationFrameStart?.[dAnimIdx] ?? 0; // Frame 0 of animation
         rqAnchorX[i] = decoAnchorX[idx];
         rqAnchorY[i] = decoAnchorY[idx];
       }
