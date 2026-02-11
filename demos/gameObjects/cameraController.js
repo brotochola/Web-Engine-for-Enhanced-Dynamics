@@ -15,7 +15,14 @@ export class CameraController extends WEED.GameObject {
   tick(dtRatio) {
     const mySoldierIndices = MySoldier.getAllActive();
 
-    if (mySoldierIndices.length === 0) return;
+    if (mySoldierIndices.length <= 1) {
+      const idx = mySoldierIndices[0];
+      const x = Transform.x[idx];
+      const y = Transform.y[idx];
+      Camera.setZoom(1);
+      Camera.follow(x, y);
+      return;
+    }
 
     let minX = 9999;
     let minY = 9999;

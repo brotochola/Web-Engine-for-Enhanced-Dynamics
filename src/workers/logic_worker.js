@@ -14,6 +14,8 @@ import { Transform } from '../components/Transform.js';
 import { RigidBody } from '../components/RigidBody.js';
 import { Collider } from '../components/Collider.js';
 import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { LightEmitter } from '../components/LightEmitter.js';
+import { ShadowCaster } from '../components/ShadowCaster.js';
 import { ParticleComponent } from '../components/ParticleComponent.js';
 import { FlashComponent } from '../components/FlashComponent.js';
 import { SpriteSheetRegistry } from '../core/SpriteSheetRegistry.js';
@@ -568,45 +570,48 @@ class LogicWorker extends AbstractWorker {
           return;
         }
 
-        // Despawn ALL entities of this type (no partitioning - worker 0 handles all)
-        // OPTIMIZED: Use activeEntitiesData to skip inactive entities
-        let count = 0;
-        let skippedNoInstance = 0;
+        // OPTIMIZED BATCH DESPAWN: O(poolSize) - iterate pool range to catch ALL active entities
+        // This is more reliable than activeEntitiesData since entities might be active but not tracked
+        // (e.g., activated outside normal spawn flow, or race conditions during initialization)
+        const indicesToRemove = new Set();
         const entityType = EntityClass.entityType;
-        const totalActiveEntities = this.activeEntitiesData ? this.activeEntitiesData[0] : 0;
+        const startIndex = EntityClass.startIndex;
+        const endIndex = EntityClass.endIndex;
 
-        // Only iterate through active entities, not the entire pool
-        for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
-          const i = this.activeEntitiesData[1 + activeIdx];
-          if (Transform.entityType[i] === entityType) {
-            if (this.gameObjects[i]) {
-              this.gameObjects[i].despawn();
-              count++;
-            } else {
-              // Fallback: manually deactivate if no instance exists
-              // Also update all active lists (incremental active entity management)
-              GameObject._removeFromMatchingQueries(i, entityType);
-              GameObject._removeFromActiveEntities(i);
-              GameObject._removeFromTypeActiveList(EntityClass, i);
+        // Phase 1: Iterate pool range, collect active indices, deactivate, return to freelist
+        for (let i = startIndex; i < endIndex; i++) {
+          if (Transform.active[i]) {
+            indicesToRemove.add(i);
 
-              Transform.active[i] = 0;
-              if (RigidBody.active && RigidBody.active[i]) RigidBody.active[i] = 0;
-              if (Collider.active && Collider.active[i]) Collider.active[i] = 0;
-              if (SpriteRenderer.active && SpriteRenderer.active[i]) SpriteRenderer.active[i] = 0;
+            // Call onDespawned lifecycle hook if instance exists
+            if (this.gameObjects[i] && this.gameObjects[i].onDespawned) {
+              this.gameObjects[i].onDespawned();
+            }
 
-              // Return to free list
-              if (EntityClass.freeList) {
-                EntityClass.freeList[++EntityClass.freeListTop] = i;
-              }
+            // Deactivate all components
+            Transform.active[i] = 0;
+            if (RigidBody.active && RigidBody.active[i]) RigidBody.active[i] = 0;
+            if (Collider.active && Collider.active[i]) Collider.active[i] = 0;
+            if (SpriteRenderer.active && SpriteRenderer.active[i]) SpriteRenderer.active[i] = 0;
+            if (LightEmitter.active && LightEmitter.active[i]) LightEmitter.active[i] = 0;
+            if (ShadowCaster.active && ShadowCaster.active[i]) ShadowCaster.active[i] = 0;
 
-              skippedNoInstance++;
-              count++;
+            // Return to free list
+            if (EntityClass.freeList) {
+              EntityClass.freeList[++EntityClass.freeListTop] = i;
             }
           }
         }
 
+        // Phase 2: Batch remove from all data structures (single-pass each)
+        if (indicesToRemove.size > 0) {
+          GameObject._batchRemoveFromActiveEntities(indicesToRemove);
+          GameObject._batchRemoveFromMatchingQueries(indicesToRemove, entityType);
+          GameObject._clearTypeActiveList(EntityClass); // O(1) - we're removing ALL of this type
+        }
+
         console.log(
-          `LOGIC WORKER ${this.workerIndex}: Despawned ${count} ${className} entities (${skippedNoInstance} without instances)`
+          `LOGIC WORKER ${this.workerIndex}: Despawned ${indicesToRemove.size} ${className} entities`
         );
         break;
       }
@@ -617,17 +622,56 @@ class LogicWorker extends AbstractWorker {
           break;
         }
 
-        // Despawn ALL entities (no partitioning - worker 0 handles all)
-        // OPTIMIZED: Use activeEntitiesData to skip inactive entities
+        // OPTIMIZED BATCH CLEAR: Iterate all pool ranges to catch ALL active entities
+        // This is more reliable than activeEntitiesData since entities might be active but not tracked
         let totalDespawned = 0;
-        const totalActiveEntities = this.activeEntitiesData ? this.activeEntitiesData[0] : 0;
 
-        // Only iterate through active entities, not the entire pool
-        for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
-          const i = this.activeEntitiesData[1 + activeIdx];
-          if (this.gameObjects[i]) {
-            this.gameObjects[i].despawn();
-            totalDespawned++;
+        // Phase 1: Iterate all entity pools, deactivate, return to freelists
+        for (const classInfo of this.registeredClasses) {
+          const EntityClass = self[classInfo.name];
+          if (!EntityClass) continue;
+
+          const startIndex = EntityClass.startIndex;
+          const endIndex = EntityClass.endIndex;
+
+          for (let i = startIndex; i < endIndex; i++) {
+            if (Transform.active[i]) {
+              // Call onDespawned lifecycle hook
+              const gameObj = this.gameObjects[i];
+              if (gameObj && gameObj.onDespawned) {
+                gameObj.onDespawned();
+              }
+
+              // Deactivate all components
+              Transform.active[i] = 0;
+              if (RigidBody.active && RigidBody.active[i]) RigidBody.active[i] = 0;
+              if (Collider.active && Collider.active[i]) Collider.active[i] = 0;
+              if (SpriteRenderer.active && SpriteRenderer.active[i]) SpriteRenderer.active[i] = 0;
+              if (LightEmitter.active && LightEmitter.active[i]) LightEmitter.active[i] = 0;
+              if (ShadowCaster.active && ShadowCaster.active[i]) ShadowCaster.active[i] = 0;
+
+              // Return to free list
+              if (EntityClass.freeList) {
+                EntityClass.freeList[++EntityClass.freeListTop] = i;
+              }
+
+              totalDespawned++;
+            }
+          }
+
+          // Clear this type's active list
+          if (EntityClass._activeList) {
+            EntityClass._activeList[0] = 0;
+          }
+        }
+
+        // Phase 2: Clear global data structures (O(1) each - just set counts to 0)
+        this.activeEntitiesData[0] = 0;
+
+        // Clear all query buffers
+        if (this._queryResultViews) {
+          for (let q = 0; q < this._queryResultViews.length; q++) {
+            this._queryResultViews[q][0] = 0;
           }
         }
 

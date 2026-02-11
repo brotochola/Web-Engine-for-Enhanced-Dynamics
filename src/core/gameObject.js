@@ -153,6 +153,29 @@ export class GameObject {
   }
 
   /**
+   * Batch remove entities from activeEntitiesData (single-pass compaction)
+   * Much faster than individual removals when despawning many entities: O(n) vs O(k*n)
+   * @param {Set<number>} indicesToRemove - Set of entity indices to remove
+   */
+  static _batchRemoveFromActiveEntities(indicesToRemove) {
+    const data = this.activeEntitiesData;
+    if (!data || indicesToRemove.size === 0) return;
+
+    const count = data[0];
+    if (count === 0) return;
+
+    // Single-pass compaction: copy non-removed elements to front
+    let writePos = 1;
+    for (let readPos = 1; readPos <= count; readPos++) {
+      const entityIndex = data[readPos];
+      if (!indicesToRemove.has(entityIndex)) {
+        data[writePos++] = entityIndex;
+      }
+    }
+    data[0] = writePos - 1;
+  }
+
+  /**
    * Get the current worker context (works from any worker type)
    * @returns {Object|null} Worker instance with query system data, or null
    */
@@ -257,6 +280,59 @@ export class GameObject {
         typeList[i] = typeList[i + 1];
       }
       typeList[0] = count - 1;
+    }
+  }
+
+  /**
+   * Clear an entity type's active list (O(1))
+   * Used by despawnAll when removing ALL entities of a type
+   * @param {Class} EntityClass - The entity's class
+   */
+  static _clearTypeActiveList(EntityClass) {
+    const typeList = EntityClass._activeList;
+    if (typeList) {
+      typeList[0] = 0;
+    }
+  }
+
+  /**
+   * Batch remove entities from all matching query buffers (single-pass compaction)
+   * Much faster than individual removals: O(n * queries) vs O(k * n * queries)
+   * @param {Set<number>} indicesToRemove - Set of entity indices to remove
+   * @param {number} entityType - The entity type ID (all indices must be same type)
+   */
+  static _batchRemoveFromMatchingQueries(indicesToRemove, entityType) {
+    if (indicesToRemove.size === 0) return;
+
+    const worker = this._getWorkerContext();
+    if (!worker || !worker._queryResultViews || !worker._precomputedQueries || !worker._queryEntityMetadata) {
+      return;
+    }
+
+    const entityMeta = worker._queryEntityMetadata[entityType];
+    if (!entityMeta) return;
+
+    const componentMask = entityMeta.componentMask;
+
+    // For each matching query, do single-pass compaction
+    for (let q = 0; q < worker._precomputedQueries.length; q++) {
+      const query = worker._precomputedQueries[q];
+
+      if ((componentMask & query.queryMask) === query.queryMask) {
+        const resultView = worker._queryResultViews[q];
+        const count = resultView[0];
+        if (count === 0) continue;
+
+        // Single-pass compaction
+        let writePos = 1;
+        for (let readPos = 1; readPos <= count; readPos++) {
+          const entityIndex = resultView[readPos];
+          if (!indicesToRemove.has(entityIndex)) {
+            resultView[writePos++] = entityIndex;
+          }
+        }
+        resultView[0] = writePos - 1;
+      }
     }
   }
 
@@ -1624,6 +1700,9 @@ export class GameObject {
       RigidBody.velocityAngle[i] = 0;
       RigidBody.px[i] = 0;
       RigidBody.py[i] = 0;
+      // Reset sleeping state (entity must start awake for physics to work)
+      RigidBody.sleeping[i] = 0;
+      RigidBody.stillnessTime[i] = 0;
     }
 
     // Transform is always present
