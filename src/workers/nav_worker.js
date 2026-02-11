@@ -55,6 +55,17 @@ import {
   _cellRangeResult,
 } from '../core/ColliderUtils.js';
 
+// Components needed for shadow render queue and derived properties
+import { Transform } from '../components/Transform.js';
+import { RigidBody } from '../components/RigidBody.js';
+import { Collider } from '../components/Collider.js';
+import { LightEmitter } from '../components/LightEmitter.js';
+import { ShadowCaster } from '../components/ShadowCaster.js';
+import { FlashComponent } from '../components/FlashComponent.js';
+import { Grid } from '../core/Grid.js';
+import { calculateSpeed, calculateVelocityAngle } from '../core/utils.js';
+import { PHYSICS_DEFAULTS } from '../core/ConfigDefaults.js';
+
 /**
  * NavScratch - Reusable buffers for pathfinding algorithms
  *
@@ -168,6 +179,68 @@ class NavWorker extends AbstractWorker {
 
     // GC OPTIMIZATION: Reusable array for path results (avoids allocation per path)
     this._pathCellsArray = [];
+
+    // ========================================
+    // SHADOW RENDER QUEUE (moved from particle_worker)
+    // ========================================
+    // Calculates shadow positions for entities near lights
+    // Writes to ShadowSprite buffer, read by pixi_worker
+    this.shadowsEnabled = false;
+    this.maxShadowCastingLights = 20;
+    this.maxShadowsPerLight = 15;
+    this.maxShadowsPerEntity = 0; // 0 = unlimited
+    this.maxShadowSprites = 0;
+    this.maxShadowLights = 0;
+    this.maxShadowRenderItems = 0;
+
+    // Shadow render queue typed array views
+    this.shadowRenderQueueCount = null;
+    this.shadowRenderQueueX = null;
+    this.shadowRenderQueueY = null;
+    this.shadowRenderQueueScaleX = null;
+    this.shadowRenderQueueScaleY = null;
+    this.shadowRenderQueueRotation = null;
+    this.shadowRenderQueueAlpha = null;
+    this.shadowRenderQueueTint = null;
+    this.shadowRenderQueueTextureId = null;
+    this.shadowRenderQueueAnchorX = null;
+    this.shadowRenderQueueAnchorY = null;
+
+    // Per-entity shadow count tracking (reused each frame)
+    this._entityShadowCounts = null;
+
+    // Entity texture lookup for shadow textures
+    this.entityLastTextureId = null;
+
+    // Texture metadata for light gradient texture lookup
+    this.animationNameToIndex = null;
+    this.animationFrameStart = null;
+
+    // Stats tracking
+    this.shadowsUpdatedThisFrame = 0;
+
+    // Camera and viewport data for shadow culling
+    this.canvasWidth = 0;
+    this.canvasHeight = 0;
+    this.cullingRatio = 0.5;
+    this.globalEntityCount = 0;
+
+    // GC OPTIMIZATION: Pre-allocated query array
+    this._queryLightEmitter = null;
+
+    // ========================================
+    // DERIVED PROPERTIES (moved from particle_worker)
+    // ========================================
+    // Minimum speed threshold for rotation updates (prevents jitter when stationary)
+    this.minSpeedForRotation = 0.1;
+    this.rigidBodyCount = 0;
+
+    // Sleeping optimization
+    this.sleepThreshold = 0.1;
+    this.sleepDuration = 30;
+
+    // GC OPTIMIZATION: Pre-allocated query array
+    this._queryRigidBody = null;
   }
 
   /**
@@ -223,6 +296,109 @@ class NavWorker extends AbstractWorker {
       );
     } else {
       this.reportLog('no navigation buffer provided');
+    }
+
+    // ========================================
+    // SHADOW RENDER QUEUE - Initialize (moved from particle_worker)
+    // ========================================
+    if (
+      data.shadows &&
+      data.shadows.enabled &&
+      data.shadows.renderQueueData &&
+      data.buffers?.componentData?.ShadowCaster
+    ) {
+      this.shadowsEnabled = true;
+      this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
+      this.maxShadowsPerLight = data.shadows.maxShadowsPerLight;
+      this.maxShadowsPerEntity = data.shadows.maxShadowsPerEntity || 0;
+      this.maxShadowSprites = data.shadows.maxShadowSprites;
+      this.maxShadowLights = data.shadows.maxLights || 128;
+      this.maxShadowRenderItems = data.shadows.maxRenderItems;
+
+      // Store viewport dimensions for shadow culling
+      this.canvasWidth = data.config?.canvasWidth || 1920;
+      this.canvasHeight = data.config?.canvasHeight || 1080;
+      this.cullingRatio = data.config?.renderer?.cullingRatio ?? 0.5;
+      this.globalEntityCount = data.globalEntityCount || 0;
+
+      // Allocate per-entity shadow count tracking array if limit is set
+      if (this.maxShadowsPerEntity > 0 && this.globalEntityCount > 0) {
+        this._entityShadowCounts = new Uint8Array(this.globalEntityCount);
+      }
+
+      // Initialize shadow render queue typed array views
+      const sab = data.shadows.renderQueueData;
+      const maxItems = this.maxShadowRenderItems;
+      let offset = 0;
+
+      this.shadowRenderQueueCount = new Int32Array(sab, offset, 1);
+      offset += 4;
+
+      this.shadowRenderQueueX = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.shadowRenderQueueY = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.shadowRenderQueueScaleX = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.shadowRenderQueueScaleY = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.shadowRenderQueueRotation = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.shadowRenderQueueAlpha = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.shadowRenderQueueTint = new Uint32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.shadowRenderQueueTextureId = new Uint16Array(sab, offset, maxItems);
+      offset += maxItems * 2;
+
+      // Align to 4 bytes for Float32Array
+      offset = Math.ceil(offset / 4) * 4;
+
+      this.shadowRenderQueueAnchorX = new Float32Array(sab, offset, maxItems);
+      offset += maxItems * 4;
+
+      this.shadowRenderQueueAnchorY = new Float32Array(sab, offset, maxItems);
+
+      // Entity texture lookup buffer (separate SAB) - for shadow textures
+      if (data.renderQueue?.entityTextureData) {
+        this.entityLastTextureId = new Uint16Array(data.renderQueue.entityTextureData);
+      }
+
+      // Texture metadata for light gradient texture lookup
+      if (data.textureMetadata) {
+        this.animationNameToIndex = data.textureMetadata.animationNameToIndex;
+        this.animationFrameStart = data.textureMetadata.animationFrameStart;
+      }
+
+      // Pre-allocate query array for light entities
+      this._queryLightEmitter = [LightEmitter];
+
+      this.reportLog(`shadow render queue initialized (${maxItems} max items)`);
+    }
+
+    // ========================================
+    // DERIVED PROPERTIES - Initialize (moved from particle_worker)
+    // ========================================
+    if (data.buffers?.componentData?.RigidBody && data.componentPools?.RigidBody) {
+      this.rigidBodyCount = data.componentPools.RigidBody.count || 0;
+
+      // Get physics config values
+      const physicsConfig = data.config?.physics || {};
+      this.minSpeedForRotation = physicsConfig.minSpeedForRotation ?? PHYSICS_DEFAULTS.minSpeedForRotation;
+      this.sleepThreshold = physicsConfig.sleepThreshold ?? PHYSICS_DEFAULTS.sleepThreshold;
+      this.sleepDuration = physicsConfig.sleepDuration ?? PHYSICS_DEFAULTS.sleepDuration;
+
+      // Pre-allocate query array for rigidbody entities
+      this._queryRigidBody = [RigidBody];
+
+      this.reportLog(`derived properties initialized (${this.rigidBodyCount} rigidbodies)`);
     }
   }
 
@@ -351,31 +527,39 @@ class NavWorker extends AbstractWorker {
 
   /**
    * Update method called each frame
-   * Processes queued pathfinding requests
+   * Processes queued pathfinding requests and computes shadows/derived properties
    */
   update(deltaTime, dtRatio, resuming) {
-    if (!this.scratch) return;
-
-    // Update NavGrid's frame counter for LRU tracking
-    NavGrid._currentFrame = this.frameNumber;
-
     // Reset frame stats
     this.flowfieldsComputedThisFrame = 0;
     this.pathsComputedThisFrame = 0;
+    this.shadowsUpdatedThisFrame = 0;
 
-    // Process flowfield requests (higher priority, shared by many entities)
-    for (const targetCell of this.flowfieldRequests) {
-      this.computeFlowfield(targetCell);
-      this.flowfieldsComputedThisFrame++;
-    }
-    this.flowfieldRequests.clear();
+    // Process pathfinding requests (only if navigation initialized)
+    if (this.scratch) {
+      // Update NavGrid's frame counter for LRU tracking
+      NavGrid._currentFrame = this.frameNumber;
 
-    // Process path requests
-    for (const { fromCell, toCell } of this.pathRequests.values()) {
-      this.computePath(fromCell, toCell);
-      this.pathsComputedThisFrame++;
+      // Process flowfield requests (higher priority, shared by many entities)
+      for (const targetCell of this.flowfieldRequests) {
+        this.computeFlowfield(targetCell);
+        this.flowfieldsComputedThisFrame++;
+      }
+      this.flowfieldRequests.clear();
+
+      // Process path requests
+      for (const { fromCell, toCell } of this.pathRequests.values()) {
+        this.computePath(fromCell, toCell);
+        this.pathsComputedThisFrame++;
+      }
+      this.pathRequests.clear();
     }
-    this.pathRequests.clear();
+
+    // Build shadow render queue (moved from particle_worker)
+    this.buildShadowRenderQueue();
+
+    // Update derived properties: speed, velocityAngle, sleeping (moved from particle_worker)
+    this.updateDerivedProperties();
 
     // Write stats to SharedArrayBuffer for DebugUI
     this.reportFPS();
@@ -963,6 +1147,301 @@ class NavWorker extends AbstractWorker {
     return this.cachedPathsCount;
   }
 
+  // ========================================
+  // SHADOW RENDER QUEUE (moved from particle_worker)
+  // ========================================
+
+  /**
+   * Build shadow render queue with light gradients and shadows
+   * Order: light1_gradient, light1_shadows..., light2_gradient, light2_shadows...
+   * This pre-sorted queue is consumed directly by pixi_worker (no additional sorting needed)
+   */
+  buildShadowRenderQueue() {
+    if (!this.shadowsEnabled || !this.shadowRenderQueueCount) {
+      if (this.shadowRenderQueueCount) this.shadowRenderQueueCount[0] = 0;
+      return;
+    }
+
+    // Cache Grid data and metadata
+    const neighborData = Grid.neighborData;
+    const stride = Grid._stride;
+
+    // Check if we have precomputed distances from Grid (spatial worker)
+    if (!neighborData || Grid.maxNeighbors <= 0) {
+      this.shadowRenderQueueCount[0] = 0;
+      return;
+    }
+
+    // Cache component arrays
+    const worldX = Transform.x;
+    const worldY = Transform.y;
+    const transformActive = Transform.active;
+    const lightEnabled = LightEmitter.active;
+    const lightIntensity = LightEmitter.lightIntensity;
+    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+    const lightHeight = LightEmitter.height;
+    const shadowCasterActive = ShadowCaster.active;
+    const entityShadowRadius = ShadowCaster.shadowRadius;
+    const entityShadowHeight = ShadowCaster.height;
+    const flashActive = FlashComponent.active;
+
+    // Per-entity shadow limit tracking
+    const maxShadowsPerEntity = this.maxShadowsPerEntity;
+    const entityShadowCounts = this._entityShadowCounts;
+    if (maxShadowsPerEntity > 0 && entityShadowCounts) {
+      entityShadowCounts.fill(0);
+    }
+
+    // Output arrays
+    const rqX = this.shadowRenderQueueX;
+    const rqY = this.shadowRenderQueueY;
+    const rqScaleX = this.shadowRenderQueueScaleX;
+    const rqScaleY = this.shadowRenderQueueScaleY;
+    const rqRotation = this.shadowRenderQueueRotation;
+    const rqAlpha = this.shadowRenderQueueAlpha;
+    const rqTint = this.shadowRenderQueueTint;
+    const rqTextureId = this.shadowRenderQueueTextureId;
+    const rqAnchorX = this.shadowRenderQueueAnchorX;
+    const rqAnchorY = this.shadowRenderQueueAnchorY;
+
+    // Entity texture lookup for shadow textures
+    const entityLastTextureId = this.entityLastTextureId;
+
+    // Light gradient texture ID (from bigAtlas)
+    const lightGradientAnimIdx = this.animationNameToIndex?.['_lightGradient'] ?? 0;
+    const lightGradientTextureId = this.animationFrameStart?.[lightGradientAnimIdx] ?? 0;
+
+    let writeIdx = 0;
+    let lightsProcessed = 0;
+    const maxItems = this.maxShadowRenderItems;
+    const maxShadowSprites = this.maxShadowSprites;
+    const PI = Math.PI;
+
+    // Track shadow count for stats
+    let shadowCount = 0;
+
+    // Compute world-space viewport bounds for shadow culling
+    const zoom = this.cameraData ? this.cameraData[0] : 1;
+    const camX = this.cameraData ? this.cameraData[1] : 0;
+    const camY = this.cameraData ? this.cameraData[2] : 0;
+    const camOffsetX = camX * zoom;
+    const camOffsetY = camY * zoom;
+    const invZoom = 1 / zoom;
+    const cullMarginX = this.canvasWidth * this.cullingRatio;
+    const cullMarginY = this.canvasHeight * this.cullingRatio;
+    const viewMinX = (-cullMarginX + camOffsetX) * invZoom;
+    const viewMaxX = (this.canvasWidth + cullMarginX + camOffsetX) * invZoom;
+    const viewMinY = (-cullMarginY + camOffsetY) * invZoom;
+    const viewMaxY = (this.canvasHeight + cullMarginY + camOffsetY) * invZoom;
+
+    // Query only active entities with LightEmitter
+    const lightEntities = this.queryActiveEntities(this._queryLightEmitter || [LightEmitter]);
+
+    // For each LIGHT, add light gradient then its shadows
+    for (let i = 0; i < lightEntities.length; i++) {
+      if (writeIdx >= maxItems) break;
+      if (lightsProcessed >= this.maxShadowCastingLights) break;
+
+      const lightIdx = lightEntities[i];
+      if (!lightEnabled[lightIdx]) continue;
+
+      const isFlash = flashActive[lightIdx] === 1;
+      const intensity = lightIntensity[lightIdx];
+      if (intensity <= 0) continue;
+
+      // Collect shadows for this light first
+      const lightX = worldX[lightIdx];
+      const lightY = worldY[lightIdx];
+      const lightH = lightHeight[lightIdx] || 0;
+
+      // Check if light's influence area reaches the viewport
+      if (!isFlash) {
+        const lightInfluenceRadius = sqrtLightIntensity[lightIdx] * 10;
+        if (lightX + lightInfluenceRadius < viewMinX || lightX - lightInfluenceRadius > viewMaxX ||
+          lightY + lightInfluenceRadius < viewMinY || lightY - lightInfluenceRadius > viewMaxY) continue;
+      }
+
+      // Get neighbors of this light
+      const offset = lightIdx * stride;
+      const neighborCountForLight = neighborData[offset];
+
+      // Temporary collection for this light's shadows
+      const shadowStartIdx = writeIdx + 1;
+      let shadowsForThisLight = 0;
+
+      // Pre-compute light position with offset once per light
+      const lightXWithOffset = worldX[lightIdx] + (Collider.offsetX[lightIdx] || 0);
+      const lightYWithOffset = worldY[lightIdx] + (Collider.offsetY[lightIdx] || 0);
+
+      for (let k = 0; k < neighborCountForLight; k++) {
+        if (shadowsForThisLight >= this.maxShadowsPerLight) break;
+        if (shadowCount >= maxShadowSprites) break;
+        if (writeIdx + 1 + shadowsForThisLight >= maxItems) break;
+
+        const neighborIdx = neighborData[offset + 2 + k];
+
+        // Skip if not a shadow caster or inactive
+        if (!shadowCasterActive[neighborIdx] || !transformActive[neighborIdx]) continue;
+
+        // Per-entity shadow limit
+        if (maxShadowsPerEntity > 0 && entityShadowCounts[neighborIdx] >= maxShadowsPerEntity) continue;
+
+        // Calculate distance
+        const neighborX = worldX[neighborIdx] + (Collider.offsetX[neighborIdx] || 0);
+        const neighborY = worldY[neighborIdx] + (Collider.offsetY[neighborIdx] || 0);
+        const dx = neighborX - lightXWithOffset;
+        const dy = neighborY - lightYWithOffset;
+        const distSq = dx * dx + dy * dy;
+
+        if (distSq < 1) continue;
+
+        // Calculate shadow properties
+        const casterX = worldX[neighborIdx];
+        const casterY = worldY[neighborIdx];
+        let casterRadius = entityShadowRadius[neighborIdx];
+        if (Number.isNaN(casterRadius) || casterRadius <= 0) casterRadius = 10;
+        const casterHeight = entityShadowHeight[neighborIdx] || casterRadius;
+
+        const dist = Math.sqrt(distSq);
+        const invDist = 1 / dist;
+        const dirX = dx * invDist;
+        const dirY = dy * invDist;
+
+        // Shadow position
+        const posX = casterX - dirX * casterRadius * 0.5;
+        const posY = casterY - dirY * casterRadius * 0.5;
+
+        if (Number.isNaN(posX) || Number.isNaN(posY)) continue;
+
+        // Shadow scale
+        const distRatio = dist * 0.00390625; // 1/256
+        const clampedDistRatio = distRatio > 1 ? 1 : distRatio;
+        const heightFactor = casterHeight * 0.025;
+        const lengthScale = (0.3 + clampedDistRatio * 0.9) * heightFactor;
+        const widthScale = 1;
+
+        // Cull shadow by its actual world position
+        const shadowExtent = casterHeight * (1 + lengthScale);
+        if (posX + shadowExtent < viewMinX || posX - shadowExtent > viewMaxX ||
+          posY + shadowExtent < viewMinY || posY - shadowExtent > viewMaxY) continue;
+
+        // Alpha and angle
+        let alpha = intensity / (intensity + distSq);
+        if (Number.isNaN(alpha)) alpha = 0;
+        if (alpha > 1) alpha = 1;
+        if (alpha < 0) alpha = 0;
+        alpha *= 0.33;
+
+        const angle = Math.atan2(dy, dx);
+
+        // Get entity's current texture for shadow
+        const textureId = entityLastTextureId ? entityLastTextureId[neighborIdx] : 0;
+
+        // Write shadow to queue
+        const idx = shadowStartIdx + shadowsForThisLight;
+        rqX[idx] = posX;
+        rqY[idx] = posY;
+        rqScaleX[idx] = widthScale;
+        rqScaleY[idx] = lengthScale;
+        rqRotation[idx] = angle - 1.5707963267948966 + PI; // PI/2 + PI
+        rqAlpha[idx] = alpha;
+        rqTint[idx] = 0x000000;
+        rqTextureId[idx] = textureId;
+        rqAnchorX[idx] = 0.5;
+        rqAnchorY[idx] = 1.0;
+
+        shadowsForThisLight++;
+        shadowCount++;
+        if (maxShadowsPerEntity > 0) entityShadowCounts[neighborIdx]++;
+      }
+
+      // Only add light gradient if there are shadows for this light
+      if (shadowsForThisLight > 0) {
+        lightsProcessed++;
+
+        // Write light gradient FIRST
+        const gradientScale = 10 * sqrtLightIntensity[lightIdx] * 3 / 100;
+        const gradientAlpha = intensity / 50000;
+
+        rqX[writeIdx] = lightX;
+        rqY[writeIdx] = lightY - lightH;
+        rqScaleX[writeIdx] = gradientScale;
+        rqScaleY[writeIdx] = gradientScale;
+        rqRotation[writeIdx] = 0;
+        rqAlpha[writeIdx] = gradientAlpha;
+        rqTint[writeIdx] = 0xFFFFFF;
+        rqTextureId[writeIdx] = lightGradientTextureId;
+        rqAnchorX[writeIdx] = 0.5;
+        rqAnchorY[writeIdx] = 0.5;
+
+        // Move write index past light gradient + all its shadows
+        writeIdx = shadowStartIdx + shadowsForThisLight;
+      }
+    }
+
+    // Write count
+    this.shadowRenderQueueCount[0] = writeIdx;
+
+    // Track shadows updated for stats
+    this.shadowsUpdatedThisFrame = shadowCount;
+  }
+
+  // ========================================
+  // DERIVED PROPERTIES (moved from particle_worker)
+  // ========================================
+
+  /**
+   * Update derived properties from positions
+   * Calculates speed and velocityAngle from velocity data
+   * Also handles sleeping detection for physics optimization
+   */
+  updateDerivedProperties() {
+    if (this.rigidBodyCount === 0 || !RigidBody.vx) return;
+
+    const rigidBodyActive = RigidBody.active;
+    const vx = RigidBody.vx;
+    const vy = RigidBody.vy;
+    const velocityAngle = RigidBody.velocityAngle;
+    const speed = RigidBody.speed;
+    const minSpeedForRotation = this.minSpeedForRotation;
+    const sleepThreshold = this.sleepThreshold;
+    const sleepDuration = this.sleepDuration;
+    const sleeping = RigidBody.sleeping;
+    const stillnessTime = RigidBody.stillnessTime;
+    const isStatic = RigidBody.static;
+
+    // Query only active entities that have RigidBody component
+    const physicsEntities = this.queryActiveEntities(this._queryRigidBody || [RigidBody]);
+
+    for (let idx = 0; idx < physicsEntities.length; idx++) {
+      const i = physicsEntities[idx];
+      if (!rigidBodyActive[i]) continue;
+
+      // Skip static entities
+      if (isStatic[i]) continue;
+
+      // Calculate speed from velocity
+      const currentSpeed = calculateSpeed(vx[i], vy[i]);
+      speed[i] = currentSpeed;
+
+      // SLEEPING DETECTION: Track stillness and put entities to sleep
+      if (currentSpeed < sleepThreshold) {
+        stillnessTime[i]++;
+        if (stillnessTime[i] >= sleepDuration) {
+          sleeping[i] = 1;
+        }
+      } else {
+        sleeping[i] = 0;
+        stillnessTime[i] = 0;
+      }
+
+      // Only update rotation if moving above minimum threshold
+      if (currentSpeed > minSpeedForRotation) {
+        velocityAngle[i] = calculateVelocityAngle(vx[i], vy[i]);
+      }
+    }
+  }
+
   /**
    * Override reportFPS to write navigation-specific stats to SharedArrayBuffer
    */
@@ -978,6 +1457,7 @@ class NavWorker extends AbstractWorker {
     this.stats[NAVIGATION_STATS.PENDING_PATHS] = this.pathRequests.size;
     this.stats[NAVIGATION_STATS.GRID_WIDTH] = this.gridWidth;
     this.stats[NAVIGATION_STATS.GRID_HEIGHT] = this.gridHeight;
+    this.stats[NAVIGATION_STATS.SHADOWS_UPDATED] = this.shadowsUpdatedThisFrame;
   }
 }
 
