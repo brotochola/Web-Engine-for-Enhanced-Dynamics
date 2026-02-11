@@ -99,7 +99,7 @@ export class PredatorScene extends WEED.Scene {
       gravity: { x: 0, y: 0 },
       sleepThreshold: 0.25,
       wakeUpThreshold: 0.3,
-      sleepDuration: 9999999,
+      sleepDuration: 30,
     },
 
     renderer: {

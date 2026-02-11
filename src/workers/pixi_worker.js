@@ -1019,6 +1019,12 @@ class PixiRenderer extends AbstractWorker {
    */
   createDecalTileSprites() {
     const tileSize = this.decalsTileSize;
+    const tilePixelSize = this.decalsTilePixelSize;
+
+    // Create a single shared OffscreenCanvas for synchronous bitmap generation
+    // Reused for all tiles - transferToImageBitmap is sync and zero-copy
+    this._decalTileCanvas = new OffscreenCanvas(tilePixelSize, tilePixelSize);
+    this._decalTileCtx = this._decalTileCanvas.getContext('2d');
 
     for (let ty = 0; ty < this.decalsTilesY; ty++) {
       for (let tx = 0; tx < this.decalsTilesX; tx++) {
@@ -1045,7 +1051,7 @@ class PixiRenderer extends AbstractWorker {
   /**
    * Update decal tile textures for any dirty tiles
    * Called each frame to check for tiles modified by particle_worker
-   * Uses fire-and-forget createImageBitmap for async texture updates
+   * Uses synchronous transferToImageBitmap for zero-allocation texture updates
    * Optimized to reuse buffers, ImageData, and textures to reduce GC pressure
    */
   updateDecalTiles() {
@@ -1054,6 +1060,7 @@ class PixiRenderer extends AbstractWorker {
     // Use pixel size for buffer operations (not world tile size)
     const tilePixelSize = this.decalsTilePixelSize;
     const bytesPerTile = tilePixelSize * tilePixelSize * 4;
+    const ctx = this._decalTileCtx;
 
     for (let tileIndex = 0; tileIndex < this.decalsTotalTiles; tileIndex++) {
       // Check if this tile was modified by particle_worker
@@ -1087,22 +1094,26 @@ class PixiRenderer extends AbstractWorker {
       // Copy data into reusable buffer
       tileRGBA.set(tileRGBAShared);
 
-      // Fire-and-forget: create ImageBitmap and update texture
-      // The tile will appear on the next frame after the bitmap is ready
-      // PIXI will scale the lower-res texture up to the sprite's world size
+      // Synchronous bitmap creation via OffscreenCanvas - no promises, no closures
+      // putImageData + transferToImageBitmap is sync and zero-copy
+      ctx.putImageData(imageData, 0, 0);
+      const bitmap = this._decalTileCanvas.transferToImageBitmap();
+
       const sprite = this.decalTileSprites[tileIndex];
 
-      createImageBitmap(imageData).then((bitmap) => {
-        // Reuse existing texture source instead of creating new ones
-        if (sprite.texture !== PIXI.Texture.EMPTY && sprite.texture.source) {
-          sprite.texture.source.resource = bitmap;
-          sprite.texture.source.update();
-        } else {
-          const source = new PIXI.ImageSource({ resource: bitmap });
-          sprite.texture = new PIXI.Texture({ source });
-        }
-        sprite.visible = true; // Show the tile now that it has content
-      });
+      // Close old bitmap to release GPU memory immediately (avoid GC delay)
+      const oldBitmap = sprite.texture?.source?.resource;
+      if (oldBitmap?.close) oldBitmap.close();
+
+      // Reuse existing texture source instead of creating new ones
+      if (sprite.texture !== PIXI.Texture.EMPTY && sprite.texture.source) {
+        sprite.texture.source.resource = bitmap;
+        sprite.texture.source.update();
+      } else {
+        const source = new PIXI.ImageSource({ resource: bitmap });
+        sprite.texture = new PIXI.Texture({ source });
+      }
+      sprite.visible = true; // Show the tile now that it has content
     }
   }
 
