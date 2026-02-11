@@ -186,8 +186,25 @@ class ParticleWorker extends AbstractWorker {
     this._renderableCollector = null;  // [{y, type, index}, ...]
     this._renderableCount = 0;
 
+    // ========================================
+    // GC OPTIMIZATION: Pre-allocated query arrays
+    // ========================================
+    // Reusable single-component arrays for queryActiveEntities calls
+    this._queryLightEmitter = null;
+    this._queryRigidBody = null;
+    this._queryShadowCaster = null;
+
+    // Reusable buffer for getNumberOfShadows
+    this._shadowCasterBuffer = null;
+
     // Interpolation alpha (0-1, how far between physics frames)
     this.interpolationAlpha = 0.5;
+
+    // ========================================
+    // GC OPTIMIZATION: Static sort comparator
+    // ========================================
+    // Pre-defined comparator to avoid creating function each frame
+    this._sortByY = (a, b) => a.y - b.y;
 
     // ========================================
     // SLEEPING OPTIMIZATION
@@ -555,6 +572,14 @@ class ParticleWorker extends AbstractWorker {
       for (let i = 0; i < maxRenderables; i++) {
         this._renderableCollector[i] = { y: 0, type: 0, index: 0 };
       }
+
+      // GC OPTIMIZATION: Pre-allocate query arrays (avoid array literal creation per-frame)
+      this._queryLightEmitter = [LightEmitter];
+      this._queryRigidBody = [RigidBody];
+      this._queryShadowCaster = [ShadowCaster];
+
+      // GC OPTIMIZATION: Pre-allocate shadow caster result buffer
+      this._shadowCasterBuffer = new Uint16Array(this.globalEntityCount || 1024);
 
       console.log(`[PARTICLE WORKER] Render queue initialized (max ${maxItems} items)`);
     } else {
@@ -1331,7 +1356,8 @@ class ParticleWorker extends AbstractWorker {
     const viewMaxY = (this.canvasHeight + cullMarginY + camOffsetY) * invZoom;
 
     // OPTIMIZED: Query only active entities with LightEmitter
-    const lightEntities = this.queryActiveEntities([LightEmitter]);
+    // GC OPTIMIZED: Use pre-allocated query array instead of creating array literal
+    const lightEntities = this.queryActiveEntities(this._queryLightEmitter || [LightEmitter]);
 
     // For each LIGHT, add light gradient then its shadows
     for (let i = 0; i < lightEntities.length; i++) {
@@ -1367,6 +1393,10 @@ class ParticleWorker extends AbstractWorker {
       const shadowStartIdx = writeIdx + 1; // Reserve slot 0 for light gradient
       let shadowsForThisLight = 0;
 
+      // CACHE OPTIMIZATION: Pre-compute light position with offset once per light
+      const lightXWithOffset = worldX[lightIdx] + (Collider.offsetX[lightIdx] || 0);
+      const lightYWithOffset = worldY[lightIdx] + (Collider.offsetY[lightIdx] || 0);
+
       for (let k = 0; k < neighborCountForLight; k++) {
         if (shadowsForThisLight >= this.maxShadowsPerLight) break;
         if (shadowCount >= maxShadowSprites) break;
@@ -1380,11 +1410,9 @@ class ParticleWorker extends AbstractWorker {
         // Per-entity shadow limit
         if (maxShadowsPerEntity > 0 && entityShadowCounts[neighborIdx] >= maxShadowsPerEntity) continue;
 
-        // Calculate distance
-        const lightXWithOffset = Transform.x[lightIdx] + (Collider.offsetX[lightIdx] || 0);
-        const lightYWithOffset = Transform.y[lightIdx] + (Collider.offsetY[lightIdx] || 0);
-        const neighborX = Transform.x[neighborIdx] + (Collider.offsetX[neighborIdx] || 0);
-        const neighborY = Transform.y[neighborIdx] + (Collider.offsetY[neighborIdx] || 0);
+        // Calculate distance (light position already cached above)
+        const neighborX = worldX[neighborIdx] + (Collider.offsetX[neighborIdx] || 0);
+        const neighborY = worldY[neighborIdx] + (Collider.offsetY[neighborIdx] || 0);
         const dx = neighborX - lightXWithOffset;
         const dy = neighborY - lightYWithOffset;
         const distSq = dx * dx + dy * dy;
@@ -1693,7 +1721,8 @@ class ParticleWorker extends AbstractWorker {
 
     // OPTIMIZATION: Query only active entities that have RigidBody component
     // This skips inactive entities and those without physics (static decorations, etc.)
-    const physicsEntities = this.queryActiveEntities([RigidBody]);
+    // GC OPTIMIZED: Use pre-allocated query array instead of creating array literal
+    const physicsEntities = this.queryActiveEntities(this._queryRigidBody || [RigidBody]);
 
     for (let idx = 0; idx < physicsEntities.length; idx++) {
       const i = physicsEntities[idx];
@@ -1841,6 +1870,67 @@ class ParticleWorker extends AbstractWorker {
   // ========================================
 
   /**
+   * In-place heapsort for renderable collector array
+   * GC OPTIMIZED: No allocations, operates directly on the array
+   * Sorts only [0, count) portion of the array by y property
+   * @param {Array} arr - The collector array
+   * @param {number} count - Number of elements to sort
+   */
+  _heapsortRenderables(arr, count) {
+    // Build max heap
+    for (let i = (count >> 1) - 1; i >= 0; i--) {
+      this._heapifyRenderables(arr, count, i);
+    }
+
+    // Extract elements from heap one by one
+    for (let i = count - 1; i > 0; i--) {
+      // Swap root (max) with last element
+      const temp = arr[0];
+      arr[0] = arr[i];
+      arr[i] = temp;
+
+      // Heapify reduced heap
+      this._heapifyRenderables(arr, i, 0);
+    }
+  }
+
+  /**
+   * Heapify subtree rooted at index i (iterative for better performance)
+   * @param {Array} arr - The collector array
+   * @param {number} heapSize - Size of heap to consider
+   * @param {number} i - Root index of subtree
+   */
+  _heapifyRenderables(arr, heapSize, i) {
+    // Iterative implementation - avoids recursion overhead and stack growth
+    while (true) {
+      let largest = i;
+      const left = (i << 1) + 1;
+      const right = left + 1;
+
+      // Compare with left child
+      if (left < heapSize && arr[left].y > arr[largest].y) {
+        largest = left;
+      }
+
+      // Compare with right child
+      if (right < heapSize && arr[right].y > arr[largest].y) {
+        largest = right;
+      }
+
+      // If largest is root, we're done
+      if (largest === i) break;
+
+      // Swap root with largest child
+      const temp = arr[i];
+      arr[i] = arr[largest];
+      arr[largest] = temp;
+
+      // Continue heapifying the affected subtree
+      i = largest;
+    }
+  }
+
+  /**
    * Collect a visible renderable for the render queue
    * Called inline during visibility checks
    * @param {number} type - 0=entity, 1=particle, 2=decoration, 3=light glow
@@ -1878,24 +1968,27 @@ class ParticleWorker extends AbstractWorker {
     const collector = this._renderableCollector;
 
     // Sort by Y (ascending for proper depth - lower Y renders first)
-    // Using a simple insertion sort for small-ish arrays, or native sort for larger
-    if (count > 100) {
-      // For larger arrays, use native sort (optimized timsort)
-      const slice = collector.slice(0, count);
-      slice.sort((a, b) => a.y - b.y);
-      for (let i = 0; i < count; i++) {
-        collector[i] = slice[i];
-      }
-    } else {
-      // Insertion sort for small arrays (avoids allocation)
-      for (let i = 1; i < count; i++) {
-        const current = collector[i];
-        let j = i - 1;
-        while (j >= 0 && collector[j].y > current.y) {
-          collector[j + 1] = collector[j];
-          j--;
+    // GC OPTIMIZED: In-place sorting with pre-defined comparator (no allocations)
+    // For game rendering, arrays are typically partially sorted frame-to-frame
+    // (entities don't teleport), making insertion sort efficient for small arrays.
+    // For larger arrays, we use an in-place heapsort to avoid allocation.
+    if (count > 1) {
+      if (count > 256) {
+        // Heapsort for larger arrays - O(n log n), in-place, no allocation
+        this._heapsortRenderables(collector, count);
+      } else {
+        // Insertion sort for small arrays - O(n²) worst but O(n) for nearly-sorted
+        // Frame-to-frame coherence means this is usually very fast
+        for (let i = 1; i < count; i++) {
+          const current = collector[i];
+          const currentY = current.y;
+          let j = i - 1;
+          while (j >= 0 && collector[j].y > currentY) {
+            collector[j + 1] = collector[j];
+            j--;
+          }
+          collector[j + 1] = current;
         }
-        collector[j + 1] = current;
       }
     }
 
@@ -2138,10 +2231,19 @@ class ParticleWorker extends AbstractWorker {
   }
   getNumberOfShadows() {
     // OPTIMIZED: Query only active entities with ShadowCaster
-    const shadowCasters = this.queryActiveEntities([ShadowCaster]);
-    const ret = new Uint16Array(shadowCasters.length);
+    // GC OPTIMIZED: Use pre-allocated query array and result buffer
+    const shadowCasters = this.queryActiveEntities(this._queryShadowCaster || [ShadowCaster]);
+
+    // GC OPTIMIZED: Reuse pre-allocated buffer instead of creating new Uint16Array
+    const ret = this._shadowCasterBuffer;
+    if (!ret) {
+      // Fallback if buffer not initialized (shouldn't happen in normal flow)
+      return new Uint16Array(0);
+    }
+
     let count = 0;
-    for (let i = 0; i < shadowCasters.length; i++) {
+    const maxCount = ret.length;
+    for (let i = 0; i < shadowCasters.length && count < maxCount; i++) {
       const entityIdx = shadowCasters[i];
       // Note: Transform.active check no longer needed - queryActiveEntities already filters
       if (
