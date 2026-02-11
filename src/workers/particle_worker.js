@@ -2116,11 +2116,11 @@ class ParticleWorker extends AbstractWorker {
         // Apply interpolation: smooth towards current position
         const currX = entityX[idx];
         const currY = entityY[idx];
-        smoothedX[idx] += (currX - smoothedX[idx]) * interpolationAlpha;
-        smoothedY[idx] += (currY - smoothedY[idx]) * interpolationAlpha;
+        // smoothedX[idx] += (currX - smoothedX[idx]) * interpolationAlpha;
+        // smoothedY[idx] += (currY - smoothedY[idx]) * interpolationAlpha;
 
-        rqX[i] = smoothedX[idx];
-        rqY[i] = smoothedY[idx];
+        rqX[i] = currX
+        rqY[i] = currY
         rqScaleX[i] = srScaleX[idx];
         rqScaleY[i] = srScaleY[idx];
         rqRotation[i] = entityRotation[idx];

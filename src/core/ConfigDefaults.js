@@ -150,7 +150,7 @@ export const RENDERER_DEFAULTS = {
   cullingRatio: 0.1,
   startFadingDecorationsAtZoom: 0.5, // Zoom level where decorations start fading out
   hideDecorationsAtZoom: 0.25, // Zoom level where decorations are completely hidden
-  maxVisibleRenderables: 20000, // Max items in render queue per frame (entities + particles + decorations)
+  maxVisibleRenderables: 40000, // Max items in render queue per frame (entities + particles + decorations)
 };
 
 // ============================================================================
