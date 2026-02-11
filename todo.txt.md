@@ -76,9 +76,6 @@ The function call overhead (`checkScreenVisibility` as a method) is probably the
 
 
 
--Segun la direccion de la velocidad ponerle un offset al pattern del spatial worker
-
-
 
 -testear renderizar en renderTextures, principalmente para las cosas en multiply
 
@@ -93,7 +90,7 @@ The function call overhead (`checkScreenVisibility` as a method) is probably the
 8-const { x, y } = Transform.getValues();
 
 
-
+GameObject.spawn (deberia juntar y mandar en batch, en lugar de mandar mensajes uno por uno)
 
 
 
