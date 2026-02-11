@@ -363,7 +363,7 @@ export class Camera {
     const targetY = this._data[4];
 
     // NaN indicates no target set
-    if (!isNaN(targetX) && !isNaN(targetY)) {
+    if (!Number.isNaN(targetX) && !Number.isNaN(targetY)) {
       return { x: targetX, y: targetY };
     }
     return null;
@@ -375,8 +375,8 @@ export class Camera {
   static clearFollowTarget() {
     if (!this._data) return;
     // Set to NaN to indicate no target
-    this._data[3] = NaN;
-    this._data[4] = NaN;
+    this._data[3] = Number.NaN;
+    this._data[4] = Number.NaN;
   }
 
   /**

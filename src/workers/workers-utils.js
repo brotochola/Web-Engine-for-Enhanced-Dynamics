@@ -7,7 +7,7 @@
  * @returns {string} Formatted number (e.g., "1_000_000")
  */
 function formatNumber(num) {
-  if (num === null || num === undefined || isNaN(num)) return '--';
+  if (num === null || num === undefined || Number.isNaN(num)) return '--';
   const rounded = Math.round(num);
   return rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '_');
 }
