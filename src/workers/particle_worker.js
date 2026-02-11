@@ -1367,7 +1367,6 @@ class ParticleWorker extends AbstractWorker {
     const shadowCasterActive = ShadowCaster.active;
     const entityShadowRadius = ShadowCaster.shadowRadius;
     const entityShadowHeight = ShadowCaster.height;
-    const isOnScreen = SpriteRenderer.isItOnScreen;
     const flashActive = FlashComponent.active;
 
     // Per-entity shadow limit tracking
@@ -1406,6 +1405,21 @@ class ParticleWorker extends AbstractWorker {
     // Track shadow count for stats
     let shadowCount = 0;
 
+    // Compute world-space viewport bounds for shadow culling
+    // Shadows should be visible if any part appears on screen, not just if the caster is on screen
+    const zoom = this.cameraData ? this.cameraData[0] : 1;
+    const camX = this.cameraData ? this.cameraData[1] : 0;
+    const camY = this.cameraData ? this.cameraData[2] : 0;
+    const camOffsetX = camX * zoom;
+    const camOffsetY = camY * zoom;
+    const invZoom = 1 / zoom;
+    const cullMarginX = this.canvasWidth * this.cullingRatio;
+    const cullMarginY = this.canvasHeight * this.cullingRatio;
+    const viewMinX = (-cullMarginX + camOffsetX) * invZoom;
+    const viewMaxX = (this.canvasWidth + cullMarginX + camOffsetX) * invZoom;
+    const viewMinY = (-cullMarginY + camOffsetY) * invZoom;
+    const viewMaxY = (this.canvasHeight + cullMarginY + camOffsetY) * invZoom;
+
     // OPTIMIZED: Query only active entities with LightEmitter
     const lightEntities = this.queryActiveEntities([LightEmitter]);
 
@@ -1417,10 +1431,7 @@ class ParticleWorker extends AbstractWorker {
       const lightIdx = lightEntities[i];
       if (!lightEnabled[lightIdx]) continue;
 
-      // Check if light is on screen (with margin)
       const isFlash = flashActive[lightIdx] === 1;
-      if (!isFlash && !isOnScreen[lightIdx]) continue;
-
       const intensity = lightIntensity[lightIdx];
       if (intensity <= 0) continue;
 
@@ -1428,6 +1439,15 @@ class ParticleWorker extends AbstractWorker {
       const lightX = worldX[lightIdx];
       const lightY = worldY[lightIdx];
       const lightH = lightHeight[lightIdx] || 0;
+
+      // Check if light's influence area reaches the viewport
+      // A light off-screen can still cast visible shadows on entities near the viewport edge
+      // sqrt(intensity) * 10 is a generous world-space radius covering gradient + shadow reach
+      if (!isFlash) {
+        const lightInfluenceRadius = sqrtLightIntensity[lightIdx] * 10;
+        if (lightX + lightInfluenceRadius < viewMinX || lightX - lightInfluenceRadius > viewMaxX ||
+          lightY + lightInfluenceRadius < viewMinY || lightY - lightInfluenceRadius > viewMaxY) continue;
+      }
 
       // Get neighbors of this light
       const offset = lightIdx * stride;
@@ -1446,7 +1466,6 @@ class ParticleWorker extends AbstractWorker {
 
         // Skip if not a shadow caster or inactive
         if (!shadowCasterActive[neighborIdx] || !transformActive[neighborIdx]) continue;
-        if (!isOnScreen[neighborIdx]) continue;
 
         // Per-entity shadow limit
         if (maxShadowsPerEntity > 0 && entityShadowCounts[neighborIdx] >= maxShadowsPerEntity) continue;
@@ -1466,7 +1485,7 @@ class ParticleWorker extends AbstractWorker {
         const casterX = worldX[neighborIdx];
         const casterY = worldY[neighborIdx];
         let casterRadius = entityShadowRadius[neighborIdx];
-        if (isNaN(casterRadius) || casterRadius <= 0) casterRadius = 10;
+        if (Number.isNaN(casterRadius) || casterRadius <= 0) casterRadius = 10;
         const casterHeight = entityShadowHeight[neighborIdx] || casterRadius;
 
         const dist = Math.sqrt(distSq);
@@ -1478,7 +1497,7 @@ class ParticleWorker extends AbstractWorker {
         const posX = casterX - dirX * casterRadius * 0.5;
         const posY = casterY - dirY * casterRadius * 0.5;
 
-        if (isNaN(posX) || isNaN(posY)) continue;
+        if (Number.isNaN(posX) || Number.isNaN(posY)) continue;
 
         // Shadow scale
         const distRatio = dist * 0.00390625; // 1/256
@@ -1487,9 +1506,16 @@ class ParticleWorker extends AbstractWorker {
         const lengthScale = (0.3 + clampedDistRatio * 0.9) * heightFactor;
         const widthScale = 1;
 
+        // Cull shadow by its actual world position instead of caster's screen status
+        // This ensures shadows are visible whenever any part appears on screen
+        // Use casterHeight (visual height) as the base extent, not casterRadius (collider size)
+        const shadowExtent = casterHeight * (1 + lengthScale);
+        if (posX + shadowExtent < viewMinX || posX - shadowExtent > viewMaxX ||
+          posY + shadowExtent < viewMinY || posY - shadowExtent > viewMaxY) continue;
+
         // Alpha and angle
         let alpha = intensity / (intensity + distSq);
-        if (isNaN(alpha)) alpha = 0;
+        if (Number.isNaN(alpha)) alpha = 0;
         if (alpha > 1) alpha = 1;
         if (alpha < 0) alpha = 0;
         alpha *= 0.33;
