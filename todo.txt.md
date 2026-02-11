@@ -75,9 +75,10 @@ The function call overhead (`checkScreenVisibility` as a method) is probably the
 -----------------
 
 
+- lo de line of sight y ray.cast es re poco optimo, al menos
+no deberiamos hacerlo todo el tiepmo en los soldados
 
 
--testear renderizar en renderTextures, principalmente para las cosas en multiply
 
 -decorations con container!
 -constraints en el physics
