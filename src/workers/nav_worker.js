@@ -228,6 +228,11 @@ class NavWorker extends AbstractWorker {
     // GC OPTIMIZATION: Pre-allocated query array
     this._queryLightEmitter = null;
 
+    // GC OPTIMIZATION: Pre-allocated buffer for Y-sorted light indices
+    this._sortedLightEntities = [];
+    // GC OPTIMIZATION: Pre-bound comparator for Y-sorting (avoids arrow function allocation)
+    this._lightYComparator = (a, b) => Transform.y[a] - Transform.y[b];
+
     // ========================================
     // DERIVED PROPERTIES (moved from particle_worker)
     // ========================================
@@ -1154,6 +1159,7 @@ class NavWorker extends AbstractWorker {
   /**
    * Build shadow render queue with light gradients and shadows
    * Order: light1_gradient, light1_shadows..., light2_gradient, light2_shadows...
+   * Lights are sorted by Y position (lower Y first) for correct painter's algorithm layering
    * This pre-sorted queue is consumed directly by pixi_worker (no additional sorting needed)
    */
   buildShadowRenderQueue() {
@@ -1235,7 +1241,17 @@ class NavWorker extends AbstractWorker {
     const viewMaxY = (this.canvasHeight + cullMarginY + camOffsetY) * invZoom;
 
     // Query only active entities with LightEmitter
-    const lightEntities = this.queryActiveEntities(this._queryLightEmitter || [LightEmitter]);
+    const lightEntitiesRaw = this.queryActiveEntities(this._queryLightEmitter);
+
+    // Sort lights by Y position for consistent visual ordering (painter's algorithm)
+    // Lights higher on screen (lower Y) render first, so shadows layer correctly
+    // GC OPTIMIZATION: Reuse pre-allocated array instead of Array.from()
+    const lightEntities = this._sortedLightEntities;
+    lightEntities.length = lightEntitiesRaw.length;
+    for (let i = 0; i < lightEntitiesRaw.length; i++) {
+      lightEntities[i] = lightEntitiesRaw[i];
+    }
+    lightEntities.sort(this._lightYComparator);
 
     // For each LIGHT, add light gradient then its shadows
     for (let i = 0; i < lightEntities.length; i++) {
