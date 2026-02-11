@@ -2207,12 +2207,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         sprite.alpha = shadowAlpha[shadowIdx];
         sprite.tint = 0x000000; // Black for shadows
 
-        // Mirror texture from parent entity
+        // Mirror texture from parent entity using entityLastTextureId → flatTextures
         const currentEntity = shadowEntityIdx[shadowIdx];
-        if (currentEntity >= 0 && currentEntity < this.bodySprites.length) {
-          const bodySprite = this.bodySprites[currentEntity];
-          if (bodySprite && bodySprite.texture) {
-            sprite.texture = bodySprite.texture;
+        if (currentEntity >= 0 && this.entityLastTextureId && this.flatTextures) {
+          const textureId = this.entityLastTextureId[currentEntity];
+          if (textureId < this.flatTextures.length) {
+            sprite.texture = this.flatTextures[textureId];
           }
         }
 
@@ -3546,6 +3546,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Frame index for entity animations
       this.renderQueueFrameIndex = new Uint8Array(sab, offset, maxItems);
+      offset += maxItems;
+
+      // Align to 4 bytes
+      offset = Math.ceil(offset / 4) * 4;
+
+      // Type (0=entity, 1=particle, 2=decoration) - for shadow system
+      this.renderQueueType = new Uint8Array(sab, offset, maxItems);
+      offset += maxItems;
+
+      // Align to 4 bytes for Int32Array
+      offset = Math.ceil(offset / 4) * 4;
+
+      // Entity index (original index for shadow texture lookup, -1 for non-entities)
+      this.renderQueueEntityIndex = new Int32Array(sab, offset, maxItems);
+
+      // Entity texture lookup buffer (separate SAB)
+      // Maps entityIndex -> last computed globalTextureId for shadow system
+      if (data.renderQueue.entityTextureData) {
+        this.entityLastTextureId = new Uint16Array(data.renderQueue.entityTextureData);
+      }
 
       // Pre-allocate sprite arrays
       this._rqSprites = new Array(maxItems).fill(null);

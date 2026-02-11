@@ -545,6 +545,26 @@ class ParticleWorker extends AbstractWorker {
 
       // Frame index for entity animations (Uint8 is enough - max 256 frames per animation)
       this.renderQueueFrameIndex = new Uint8Array(sab, offset, maxItems);
+      offset += maxItems;
+
+      // Align to 4 bytes for next array
+      offset = Math.ceil(offset / 4) * 4;
+
+      // Type (0=entity, 1=particle, 2=decoration) - for shadow system
+      this.renderQueueType = new Uint8Array(sab, offset, maxItems);
+      offset += maxItems;
+
+      // Align to 4 bytes for Int32Array
+      offset = Math.ceil(offset / 4) * 4;
+
+      // Entity index (original index for shadow texture lookup, -1 for non-entities)
+      this.renderQueueEntityIndex = new Int32Array(sab, offset, maxItems);
+
+      // Entity texture lookup buffer (separate SAB)
+      // Maps entityIndex -> last computed globalTextureId for shadow system
+      if (data.renderQueue.entityTextureData) {
+        this.entityLastTextureId = new Uint16Array(data.renderQueue.entityTextureData);
+      }
 
       // Initialize smoothed position buffers (local, not shared)
       if (this.globalEntityCount > 0) {
@@ -2035,6 +2055,9 @@ class ParticleWorker extends AbstractWorker {
     const rqAnchorX = this.renderQueueAnchorX;
     const rqAnchorY = this.renderQueueAnchorY;
     const rqFrameIndex = this.renderQueueFrameIndex;
+    const rqType = this.renderQueueType;
+    const rqEntityIndex = this.renderQueueEntityIndex;
+    const entityLastTextureId = this.entityLastTextureId;
 
     // Cache component arrays
     const entityX = Transform.x;
@@ -2106,6 +2129,10 @@ class ParticleWorker extends AbstractWorker {
         rqAnchorX[i] = srAnchorX[idx];
         rqAnchorY[i] = srAnchorY[idx];
 
+        // Write type and entityIndex for shadow system
+        rqType[i] = 0; // Entity
+        rqEntityIndex[i] = idx;
+
         // Get animation info and compute globalTextureId
         const sheetId = srSpritesheetId[idx];
         const animState = srAnimState[idx];
@@ -2141,7 +2168,13 @@ class ParticleWorker extends AbstractWorker {
 
         // Compute globalTextureId (O(1) - no strings, no registry lookups!)
         const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
-        rqTextureId[i] = animStart + frameIndex[idx];
+        const globalTextureId = animStart + frameIndex[idx];
+        rqTextureId[i] = globalTextureId;
+
+        // Update entity texture lookup for shadow system
+        if (entityLastTextureId) {
+          entityLastTextureId[idx] = globalTextureId;
+        }
       } else if (type === 1) {
         // === PARTICLE ===
         // Particles update at 120fps, no interpolation needed
@@ -2157,6 +2190,9 @@ class ParticleWorker extends AbstractWorker {
         rqTextureId[i] = this.animationFrameStart?.[pAnimIdx] ?? 0; // Frame 0 of animation
         rqAnchorX[i] = 0.5; // Particles always centered
         rqAnchorY[i] = 0.5;
+        // Write type and entityIndex for shadow system
+        rqType[i] = 1; // Particle
+        rqEntityIndex[i] = -1; // Not an entity
       } else {
         // === DECORATION ===
         // Decorations are static, no interpolation needed
@@ -2172,6 +2208,9 @@ class ParticleWorker extends AbstractWorker {
         rqTextureId[i] = this.animationFrameStart?.[dAnimIdx] ?? 0; // Frame 0 of animation
         rqAnchorX[i] = decoAnchorX[idx];
         rqAnchorY[i] = decoAnchorY[idx];
+        // Write type and entityIndex for shadow system
+        rqType[i] = 2; // Decoration
+        rqEntityIndex[i] = -1; // Not an entity
       }
     }
 

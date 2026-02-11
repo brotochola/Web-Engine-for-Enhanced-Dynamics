@@ -950,13 +950,20 @@ class Scene {
     //   tint: Uint32[max] (max * 4 bytes)
     //   textureId: Uint16[max] (max * 2 bytes, aligned to 4)
     //   anchorX, anchorY: Float32[max] each (2 * max * 4 bytes)
-    //   frameIndex: Uint8[max] (max bytes, for entity animations)
-    // Total = 4 + max * (6*4 + 4 + 2 + 2padding + 2*4 + 1) = 4 + max * 43 bytes
+    //   type: Uint8[max] (max bytes, 0=entity, 1=particle, 2=decoration)
+    //   entityIndex: Int32[max] (max * 4 bytes, original entity index for shadows, -1 for non-entities)
+    // Total = 4 + max * (6*4 + 4 + 2 + 2padding + 2*4 + 1 + 4) = 4 + max * 48 bytes
     const maxVisibleRenderables = this.config.renderer.maxVisibleRenderables || 10000;
-    const RENDER_QUEUE_ITEM_SIZE = 44; // bytes per item (with all arrays)
+    const RENDER_QUEUE_ITEM_SIZE = 48; // bytes per item (with all arrays)
     const renderQueueBufferSize = 4 + (maxVisibleRenderables * RENDER_QUEUE_ITEM_SIZE);
     this.buffers.renderQueueData = new SharedArrayBuffer(renderQueueBufferSize);
     this.maxVisibleRenderables = maxVisibleRenderables;
+
+    // Entity texture lookup buffer (for shadow system)
+    // Maps entityIndex -> last computed globalTextureId
+    // This allows shadow system to get texture without searching render queue
+    const entityTextureBufferSize = this.totalEntityCount * 2; // Uint16 per entity
+    this.buffers.entityTextureData = new SharedArrayBuffer(entityTextureBufferSize);
 
     // Navigation buffer (for pathfinding)
     if (this.config.navigation.enabled) {
@@ -1714,8 +1721,9 @@ class Scene {
       // Render queue (particle_worker → pixi_worker)
       renderQueue: {
         data: this.buffers.renderQueueData,
+        entityTextureData: this.buffers.entityTextureData,
         maxItems: this.maxVisibleRenderables,
-        itemSize: 40, // bytes per item
+        itemSize: 48, // bytes per item
       },
       // Texture metadata for globalTextureId computation
       textureMetadata: this.textureMetadata,
