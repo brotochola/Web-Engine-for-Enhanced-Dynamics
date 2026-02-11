@@ -1205,7 +1205,7 @@ class ParticleWorker extends AbstractWorker {
 
       // Collect light glow as separate renderable (type=3) if entity has a glow sprite
       // Sorted at y+1 so it renders just above the entity in depth order
-      if (onScreen && LightEmitter.active[i] && LightEmitter.hasGlowSprite[i]) {
+      if (onScreen && LightEmitter.active && LightEmitter.active[i] && LightEmitter.hasGlowSprite[i]) {
         this.collectRenderable(3, i, y[i] + 10); // type=3 for light glow
       }
     }
@@ -1594,9 +1594,9 @@ class ParticleWorker extends AbstractWorker {
     const decoAnchorX = DecorationComponent.anchorX;
     const decoAnchorY = DecorationComponent.anchorY;
 
-    // Smoothed position buffers
-    const smoothedX = this.smoothedX;
-    const smoothedY = this.smoothedY;
+    // // Smoothed position buffers
+    // const smoothedX = this.smoothedX;
+    // const smoothedY = this.smoothedY;
 
     // Animation tracking
     const frameIndex = this.entityFrameIndex;
@@ -1674,7 +1674,6 @@ class ParticleWorker extends AbstractWorker {
         }
       } else if (type === 1) {
         // === PARTICLE ===
-        // Particles update at 120fps, no interpolation needed
         rqX[i] = particleX[idx];
         rqY[i] = particleY[idx] + particleZ[idx]; // Apply Z offset for visual height
         rqScaleX[i] = particleScaleX[idx];
@@ -1761,8 +1760,8 @@ class ParticleWorker extends AbstractWorker {
       this.stats[PARTICLE_STATS.PARTICLES_STAMPED] = this.particlesStampedThisFrame;
       this.stats[PARTICLE_STATS.FLASHES_UPDATED] = this.flashesUpdatedThisFrame;
       // Note: SHADOWS_UPDATED is now tracked by nav_worker
-      this.stats[PARTICLE_STATS.ACTIVE_ENTITIES] = this.activeEntityList
-        ? this.activeEntityList.length
+      this.stats[PARTICLE_STATS.ACTIVE_ENTITIES] = this.activeEntitiesData
+        ? this.activeEntitiesData[0]
         : 0;
       this.stats[PARTICLE_STATS.TOTAL_ENTITIES] = this.globalEntityCount || 0;
     }

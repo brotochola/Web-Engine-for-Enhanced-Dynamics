@@ -256,13 +256,10 @@ class NavWorker extends AbstractWorker {
 
     // Get navigation config
     const navConfig = data.config?.navigation;
-    if (!navConfig?.enabled) {
-      this.reportLog('navigation disabled, worker will idle');
-      return;
-    }
+    const navigationEnabled = navConfig?.enabled;
 
     // Check for noLimitFPS setting (defaults to true for nav worker)
-    if (navConfig.noLimitFPS !== undefined) {
+    if (navConfig?.noLimitFPS !== undefined) {
       this.noLimitFPS = navConfig.noLimitFPS;
     } else {
       this.noLimitFPS = true; // Nav worker runs fast by default
@@ -273,8 +270,8 @@ class NavWorker extends AbstractWorker {
       this.stats = createStatsWriter(data.buffers.navigationStats, NAVIGATION_STATS);
     }
 
-    // Initialize NavGrid from SAB
-    if (data.buffers?.navigationData) {
+    // Initialize NavGrid from SAB (only if navigation enabled)
+    if (navigationEnabled && data.buffers?.navigationData) {
       NavGrid.initialize(data.buffers.navigationData, {
         worldWidth: data.config.worldWidth,
         worldHeight: data.config.worldHeight,
@@ -299,8 +296,10 @@ class NavWorker extends AbstractWorker {
       this.reportLog(
         `initialized with ${this.gridWidth}x${this.gridHeight} grid (${this.totalCells} cells)`
       );
+    } else if (navigationEnabled) {
+      this.reportLog('navigation enabled but no buffer provided');
     } else {
-      this.reportLog('no navigation buffer provided');
+      this.reportLog('navigation disabled, running for shadow/derived properties only');
     }
 
     // ========================================

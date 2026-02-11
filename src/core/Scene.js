@@ -146,16 +146,13 @@ class Scene {
     // Particle worker always runs - it handles lighting, shadows, visibility, etc.
     this.workerReadyStates.particle = false;
 
-    // Navigation worker (if pathfinding enabled)
-    if (this.config.navigation.enabled) {
-      this.workerReadyStates.navigation = false;
-    }
+    // Navigation worker always runs - handles pathfinding and shadow render queue
+    this.workerReadyStates.navigation = false;
 
     this.totalWorkers =
-      3 +
+      4 +
       this.numberOfSpatialWorkers +
-      numberOfLogicWorkers +
-      (this.config.navigation.enabled ? 1 : 0);
+      numberOfLogicWorkers;
 
     // Shared buffers
     this.buffers = {
@@ -1216,10 +1213,8 @@ class Scene {
       LOGIC_STATS.BUFFER_SIZE_PER_WORKER * this.numberOfLogicWorkers
     );
 
-    // Navigation stats buffer (if navigation enabled)
-    if (this.config.navigation.enabled) {
-      this.buffers.navigationStats = new SharedArrayBuffer(NAVIGATION_STATS.BUFFER_SIZE);
-    }
+    // Navigation stats buffer (always created - nav_worker handles shadows/derived properties too)
+    this.buffers.navigationStats = new SharedArrayBuffer(NAVIGATION_STATS.BUFFER_SIZE);
 
     // Synchronization buffer
     const SYNC_BUFFER_SIZE = 5 * 4;
@@ -1522,12 +1517,10 @@ class Scene {
       connections.push({ from: `logic${i}`, to: 'logic0' });
     }
 
-    // Connect all logic workers to navigation worker (if enabled)
+    // Connect all logic workers to navigation worker
     // Logic workers send pathfinding requests, nav worker computes and writes to SAB
-    if (this.config.navigation.enabled) {
-      for (let i = 0; i < this.numberOfLogicWorkers; i++) {
-        connections.push({ from: `logic${i}`, to: 'navigation' });
-      }
+    for (let i = 0; i < this.numberOfLogicWorkers; i++) {
+      connections.push({ from: `logic${i}`, to: 'navigation' });
     }
 
     return setupWorkerCommunication(connections);
@@ -1577,11 +1570,9 @@ class Scene {
     this.workers.renderer.name = 'renderer';
     this.workers.particle.name = 'particle';
 
-    // Navigation worker (if pathfinding enabled)
-    if (this.config.navigation.enabled) {
-      this.workers.navigation = makeWorker('nav_worker');
-      this.workers.navigation.name = 'navigation';
-    }
+    // Navigation worker always runs - handles pathfinding and shadow render queue
+    this.workers.navigation = makeWorker('nav_worker');
+    this.workers.navigation.name = 'navigation';
 
     // Set up early error handlers IMMEDIATELY after worker creation
     // This catches module loading errors (import failures, syntax errors) that would
@@ -1603,9 +1594,7 @@ class Scene {
     for (let i = 0; i < this.workers.logicWorkers.length; i++) {
       this.workers.logicWorkers[i].onerror = earlyErrorHandler(`logic${i}`);
     }
-    if (this.workers.navigation) {
-      this.workers.navigation.onerror = earlyErrorHandler('navigation');
-    }
+    this.workers.navigation.onerror = earlyErrorHandler('navigation');
 
     // Preload assets
     const spritesheetConfigs = this.imageUrls.spritesheets || {};
@@ -1817,32 +1806,32 @@ class Scene {
       frameRateIndex: PARTICLE_INDEX,
     });
 
-    // Navigation worker (if pathfinding enabled)
-    if (this.config.navigation.enabled && this.workers.navigation) {
-      console.log(`[Scene]   → Initializing navigation worker...`);
-      const NAV_INDEX = LOGIC_START_INDEX + this.numberOfLogicWorkers;
+    // Navigation worker always runs - handles pathfinding and shadow render queue
+    console.log(`[Scene]   → Initializing navigation worker...`);
+    const NAV_INDEX = LOGIC_START_INDEX + this.numberOfLogicWorkers;
 
-      // Create a MessageChannel for main thread ↔ nav worker communication
-      const mainToNavChannel = new MessageChannel();
+    // Create a MessageChannel for main thread ↔ nav worker communication
+    const mainToNavChannel = new MessageChannel();
 
-      // Keep port1 for main thread, send port2 to nav worker
-      const mainThreadNavPort = mainToNavChannel.port1;
-      const navWorkerPort = mainToNavChannel.port2;
+    // Keep port1 for main thread, send port2 to nav worker
+    const mainThreadNavPort = mainToNavChannel.port1;
+    const navWorkerPort = mainToNavChannel.port2;
 
-      // Add the main thread port to nav worker's ports
-      const navPorts = workerPorts.navigation || {};
-      navPorts.mainThread = navWorkerPort;
+    // Add the main thread port to nav worker's ports
+    const navPorts = workerPorts.navigation || {};
+    navPorts.mainThread = navWorkerPort;
 
-      this.workers.navigation.postMessage(
-        {
-          ...initData,
-          workerPorts: navPorts,
-          frameRateIndex: NAV_INDEX,
-        },
-        Object.values(navPorts)
-      );
+    this.workers.navigation.postMessage(
+      {
+        ...initData,
+        workerPorts: navPorts,
+        frameRateIndex: NAV_INDEX,
+      },
+      Object.values(navPorts)
+    );
 
-      // Set up the main thread's NavGrid port for sending requests
+    // Set up the main thread's NavGrid port for sending requests (only if navigation enabled)
+    if (this.config.navigation.enabled) {
       NavGrid.setNavWorkerPort(mainThreadNavPort);
       mainThreadNavPort.start(); // Required to start receiving messages
     }
