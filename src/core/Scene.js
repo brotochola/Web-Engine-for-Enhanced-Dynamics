@@ -939,6 +939,25 @@ class Scene {
       this.decalsTotalTiles = totalTiles;
     }
 
+    // ========================================
+    // RENDER QUEUE BUFFER
+    // ========================================
+    // Pre-sorted, screen-visible renderables for pixi_worker
+    // Built by particle_worker, consumed by pixi_worker
+    // Layout (per array, for maxVisibleRenderables items):
+    //   count: Int32 (4 bytes)
+    //   x, y, scaleX, scaleY, rotation, alpha: Float32[max] each (6 * max * 4 bytes)
+    //   tint: Uint32[max] (max * 4 bytes)
+    //   textureId: Uint16[max] (max * 2 bytes, aligned to 4)
+    //   anchorX, anchorY: Float32[max] each (2 * max * 4 bytes)
+    //   frameIndex: Uint8[max] (max bytes, for entity animations)
+    // Total = 4 + max * (6*4 + 4 + 2 + 2padding + 2*4 + 1) = 4 + max * 43 bytes
+    const maxVisibleRenderables = this.config.renderer.maxVisibleRenderables || 10000;
+    const RENDER_QUEUE_ITEM_SIZE = 44; // bytes per item (with all arrays)
+    const renderQueueBufferSize = 4 + (maxVisibleRenderables * RENDER_QUEUE_ITEM_SIZE);
+    this.buffers.renderQueueData = new SharedArrayBuffer(renderQueueBufferSize);
+    this.maxVisibleRenderables = maxVisibleRenderables;
+
     // Navigation buffer (for pathfinding)
     if (this.config.navigation.enabled) {
       const navConfig = this.config.navigation;
@@ -1611,6 +1630,12 @@ class Scene {
       maxDecorations: this.config.decoration.maxDecorations,
       decorationFreeList: this.buffers.decorationFreeList || null,
       decorationFreeListTop: this.buffers.decorationFreeListTop || null,
+      // Render queue (particle_worker → pixi_worker)
+      renderQueue: {
+        data: this.buffers.renderQueueData,
+        maxItems: this.maxVisibleRenderables,
+        itemSize: 40, // bytes per item
+      },
       decals: this.config.particle.decals
         ? {
           enabled: true,
