@@ -1,14 +1,15 @@
 import WEED from '/src/index.js';
+import { Grid } from '/src/core/Grid.js';
 
 // Destructure what we need from WEED
-const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, ShapeType } = WEED;
+const { GameObject, Collider, SpriteRenderer, RigidBody, LightEmitter, rng, randomColor, ShapeType } = WEED;
 
 export class TallLight extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
   static scriptUrl = import.meta.url;
 
   // Add PreyBehavior component for prey-specific properties
-  static components = [Collider, SpriteRenderer, LightEmitter];
+  static components = [RigidBody, Collider, SpriteRenderer, LightEmitter];
 
   // Note: ARRAY_SCHEMA removed - all data now in components (pure ECS architecture)
 
@@ -17,6 +18,7 @@ export class TallLight extends GameObject {
    * Overrides and extends Boid's setup()
    */
   setup() {
+    this.rigidBody.static = 1;
     this.setSprite('tallLight');
 
     this.lightEmitter.lightColor = randomColor({
@@ -59,12 +61,17 @@ export class TallLight extends GameObject {
    * Note: this.neighbors and this.neighborCount are updated before this is called
    */
   tick(dtRatio) {
-    // DEBUG: Verificar neighbors
-    // if (this.index === this.constructor.startIndex) {
-    //   // Solo loggear la primera TallLight para no spamear
-    //   console.log(
-    //     `TallLight[${this.index}] neighbors: ${this.neighborCount}, visualRange: ${this.collider.visualRange}, active: ${this.collider.active}`
-    //   );
-    // }
+    // DEBUG: Track neighbor count stability
+    if ((this._frameCount || 0) % 60 === 0) {
+      const offset = this._neighborOffset;
+      const totalCount = Grid.neighborData[offset];
+      const collisionCount = Grid.neighborData[offset + 1];
+      console.log(
+        "worker", this.logicWorker.workerIndex,
+        `TallLight[${this.index}] neighbors: ${this.neighborCount} ` +
+        `(collision: ${collisionCount}, visual-only: ${totalCount - collisionCount})`
+      );
+    }
+    this._frameCount = (this._frameCount || 0) + 1;
   }
 }
