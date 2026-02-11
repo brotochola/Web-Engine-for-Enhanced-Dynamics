@@ -437,11 +437,9 @@ class PixiRenderer extends AbstractWorker {
     this._lightPool = [];
     this._lightPoolSize = 0;
 
-    // Pre-computed visible lights (computed once per frame, shared by updateLighting/updateLightGlowSprites)
+    // Pre-computed visible lights (computed once per frame, used by updateLighting shader)
     this._visibleLightsAll = [];      // All visible lights (for shader uniforms)
     this._visibleLightsAllCount = 0;
-    this._visibleLightsGlow = [];     // Visible lights with glow sprites
-    this._visibleLightsGlowCount = 0;
 
     // ========================================
     // RENDER-TEXTURE SHADOW SYSTEM
@@ -489,15 +487,8 @@ class PixiRenderer extends AbstractWorker {
     this._shadowTransform = new PIXI.Matrix();
     this._lightingTransform = new PIXI.Matrix(); // NDC mesh doesn't really need it but good to have
 
-    // ========================================
-    // LIGHT GLOW SPRITE SYSTEM
-    // ========================================
-    // Additive-blend glow sprites rendered at light positions
-    // Uses _lightGradient texture from BigAtlas
-    this.lightGlowEnabled = false;
-    this.lightGlowContainer = null; // ParticleContainer for glow sprites
-    this.lightGlowSprites = []; // Array of Particle objects (one per entity slot)
-    this.lightGlowTexture = null; // PIXI.Texture reference to _lightGradient
+    // Light glow sprites are now rendered as normal particles in the main particleContainer
+    // via the render queue (type=3) from particle_worker. No separate container needed.
   }
 
   /**
@@ -649,12 +640,7 @@ class PixiRenderer extends AbstractWorker {
 
     // Shadow sprites are now in main particleContainer (get camera transform automatically)
 
-    // Apply camera state to light glow container
-    if (this.lightGlowContainer) {
-      this.lightGlowContainer.scale.set(zoom);
-      this.lightGlowContainer.x = -cameraX * zoom;
-      this.lightGlowContainer.y = -cameraY * zoom;
-    }
+    // Light glow sprites are now in the main particleContainer (get camera transform automatically)
   }
 
   /**
@@ -807,265 +793,6 @@ class PixiRenderer extends AbstractWorker {
     this.currentAnimationFrames[entityId] = [];
     this.currentFrameIndex[entityId] = 0;
     this.frameAccumulator[entityId] = 0;
-  }
-
-  /**
-   * Update all sprite positions, visibility, and properties from SharedArrayBuffer
-   * Uses dirty flags to skip unnecessary visual property updates
-   * @param {number} deltaTime - Time elapsed since last frame in milliseconds
-   * @param {number} interpolationAlpha - Interpolation factor for smooth movement
-   */
-  updateSprites(deltaTime, interpolationAlpha) {
-    // Guard against uninitialized state
-    if (!this.bodySpritePoolIndices) return;
-
-    // Cache array references for performance
-    const active = Transform.active;
-    const x = Transform.x;
-    const y = Transform.y;
-    const rotation = Transform.rotation;
-
-    // SpriteRenderer properties
-    const animationState = SpriteRenderer.animationState;
-    const animationSpeed = SpriteRenderer.animationSpeed;
-    const tint = SpriteRenderer.tint;
-    const alpha = SpriteRenderer.alpha;
-
-    const scaleX = SpriteRenderer.scaleX;
-    const scaleY = SpriteRenderer.scaleY;
-    const anchorX = SpriteRenderer.anchorX;
-    const anchorY = SpriteRenderer.anchorY;
-    const renderVisible = SpriteRenderer.renderVisible;
-    const isAnimated = SpriteRenderer.isAnimated;
-    const isItOnScreen = SpriteRenderer.isItOnScreen;
-
-    const renderDirty = SpriteRenderer.renderDirty; // OPTIMIZATION: Dirty flag
-
-    // Track visible units count
-    let visibleCount = 0;
-
-    // Convert deltaTime from ms to seconds for frame calculation
-    const deltaSeconds = deltaTime / 1000;
-
-    // Reset Y-sort pool for this frame (reuse array, avoid GC pressure)
-    // Instead of creating new array + objects every frame, we reuse a pre-allocated pool
-    this._ySortPoolSize = 0;
-    // OPTIMIZED: queryActiveEntities returns only active (spawned) entities with SpriteRenderer
-    const allEntitiesWithSpriteRenderer = this.queryActiveEntities(this.queryConfig);
-
-    for (let i = 0; i < allEntitiesWithSpriteRenderer.length; i++) {
-      const entityIndex = allEntitiesWithSpriteRenderer[i];
-      let bodySprite = this.bodySprites[entityIndex];
-      const poolIndex = this.bodySpritePoolIndices[entityIndex];
-
-      // ========================================
-      // LAZY SPRITE CREATION (Memory Optimization)
-      // ========================================
-      // Sprites are only created when entities become visible on screen.
-      // This saves memory by not allocating PIXI.Particle objects for:
-      // - Inactive entities (in pool but not spawned)
-      // - Active but off-screen entities (outside camera viewport)
-      // The centralized particle pool handles reuse across all sprite types.
-      const shouldHaveSprite =
-        renderVisible[entityIndex] && isItOnScreen[entityIndex];
-
-      // Acquire sprite from central pool when entity becomes visible
-      if (!bodySprite && shouldHaveSprite) {
-        const entityType = Transform.entityType[entityIndex];
-        const config = this.entitySpriteConfigs[entityType];
-
-        // Skip entities without SpriteRenderer (e.g., Mouse entity)
-        if (!config || !config.hasSpriteRenderer) {
-          continue;
-        }
-
-        // Entity has SpriteRenderer and is visible - acquire sprite from pool
-        const { particle, index } = this.particlePool.acquire();
-        bodySprite = particle;
-        this.bodySprites[entityIndex] = particle;
-        this.bodySpritePoolIndices[entityIndex] = index;
-
-        // Add to container if Y-sorting is disabled
-        if (!this.ySorting) {
-          this.particleContainer.addParticle(particle);
-        }
-
-        // Mark as needing sprite setup (texture, animation, etc)
-        renderDirty[entityIndex] = 1;
-      }
-
-      // Skip entities without sprites (either not visible or no SpriteRenderer)
-      if (!bodySprite) {
-        continue;
-      }
-
-      // OPTIMIZATION: Only update visual properties if dirty flag is set
-      // This skips expensive operations (tint, alpha, flipping, animations) when unchanged
-      if (renderDirty[entityIndex]) {
-        // Check if spritesheet changed (per-instance override)
-        const spritesheetId = SpriteRenderer.spritesheetId;
-        if (
-          spritesheetId &&
-          this.currentSpritesheetIds &&
-          this.currentSpritesheetIds[entityIndex] !== spritesheetId[entityIndex]
-        ) {
-          this.updateEntitySpritesheet(bodySprite, entityIndex, spritesheetId[entityIndex]);
-          this.currentSpritesheetIds[entityIndex] = spritesheetId[entityIndex];
-        }
-
-        // Update body sprite visual properties
-        // Note: tint is already stored as BGR (converted at setter time in gameObject.js)
-        bodySprite.tint = tint[entityIndex];
-        bodySprite.alpha = alpha[entityIndex];
-
-        // Update animation if changed
-        this.updateSpriteAnimation(bodySprite, entityIndex, animationState[entityIndex]);
-
-        // Update animation speed (stored locally for manual animation)
-        this.animationSpeed[entityIndex] = animationSpeed[entityIndex];
-
-        // Clear dirty flag after updating
-        renderDirty[entityIndex] = 0;
-      }
-
-      // ALWAYS advance animation frames (not just when dirty!)
-      if (isAnimated[entityIndex]) this.changeFrameOfSprite(bodySprite, entityIndex, deltaSeconds);
-
-      // DENSE: use entity index directly for all component data
-      // PixiJS 8 Particle uses scaleX/scaleY instead of scale.x/scale.y
-      if (bodySprite.scaleX !== scaleX[entityIndex]) bodySprite.scaleX = scaleX[entityIndex];
-      if (bodySprite.scaleY !== scaleY[entityIndex]) bodySprite.scaleY = scaleY[entityIndex];
-
-      // Update anchor points (0-1 range)
-      // PixiJS 8 Particle uses anchorX/anchorY instead of anchor.x/anchor.y
-      if (bodySprite.anchorX !== anchorX[entityIndex]) bodySprite.anchorX = anchorX[entityIndex];
-      if (bodySprite.anchorY !== anchorY[entityIndex]) bodySprite.anchorY = anchorY[entityIndex];
-
-      // ========================================
-      // SPRITE LIFECYCLE MANAGEMENT
-      // ========================================
-      // Release sprites back to pool when entities go off-screen or despawn.
-      // This allows the same PIXI.Particle to be reused for different entities.
-      const shouldBeVisible =
-        active[entityIndex] && renderVisible[entityIndex] && isItOnScreen[entityIndex];
-
-      // Release sprite when entity despawns OR goes off-screen
-      if (!active[entityIndex] || !isItOnScreen[entityIndex]) {
-        if (bodySprite && this.bodySpritePoolIndices[entityIndex] !== 0xFFFF) {
-          this.particlePool.release(this.bodySpritePoolIndices[entityIndex]);
-          this.bodySprites[entityIndex] = null;
-          this.bodySpritePoolIndices[entityIndex] = 0xFFFF;
-
-          // CRITICAL: Always reset spritesheet tracking when sprite is released
-          // This forces texture update when entity gets a new sprite from pool
-          this.currentSpritesheetIds[entityIndex] = 0;
-
-          // Only reset animation state if entity despawned (not just off-screen)
-          // This preserves animation state when entity goes off-screen temporarily
-          if (!active[entityIndex]) {
-            this.previousAnimStates[entityIndex] = -1;
-            this.currentAnimationFrames[entityIndex] = [];
-          }
-        }
-        continue;
-      }
-
-      // Hide explicitly hidden entities (renderVisible=false, but keep sprite allocated)
-      if (!renderVisible[entityIndex]) {
-        if (bodySprite.visible) {
-          bodySprite.visible = false;
-        }
-        continue;
-      }
-
-      // Entity should be visible - count it
-      visibleCount++;
-
-      // BUGFIX: Always collect visible sprites into the pool
-      // This ensures sprites are properly managed even when Y-sorting is disabled
-      // Check if sprite is becoming visible for the first time (or after being hidden)
-      const wasInvisible = !bodySprite.visible;
-
-      // Make sprite visible before adding to pool
-      if (wasInvisible) {
-        bodySprite.visible = true;
-      }
-
-      // GC OPTIMIZATION: Reuse pooled objects instead of allocating new ones each frame
-      const poolIdx = this._ySortPoolSize++;
-      if (!this._ySortPool[poolIdx]) {
-        this._ySortPool[poolIdx] = { entityId: 0, sprite: null, y: 0 };
-      }
-      const item = this._ySortPool[poolIdx];
-      item.entityId = entityIndex;
-      item.sprite = bodySprite;
-      item.y = y[entityIndex];
-
-      // Update transform (position, rotation, scale)
-
-      // // Skip interpolation if sprite just became visible (to avoid slow lerp from 0,0)
-      // // or if interpolation is disabled
-      if (this.interpolation && this.frameRateData && !wasInvisible) {
-        // Interpolate from current sprite position toward physics target
-        bodySprite.x += (x[entityIndex] - bodySprite.x) * interpolationAlpha;
-        bodySprite.y += (y[entityIndex] - bodySprite.y) * interpolationAlpha;
-
-        // Handle rotation interpolation with angle wrapping
-        // Normalize angle difference to [-PI, PI] to avoid going the long way
-        const angleDiff = normalizeAngleDifference(bodySprite.rotation, rotation[entityIndex]);
-        bodySprite.rotation += angleDiff * interpolationAlpha;
-      } else {
-        // No interpolation - directly set position
-        // (first frame visible, interpolation disabled, or no frameRateData)
-        bodySprite.x = x[entityIndex];
-        bodySprite.y = y[entityIndex];
-        bodySprite.rotation = rotation[entityIndex];
-      }
-    }
-
-    // Store visible entity count for reporting
-    this.visibleEntityCount = visibleCount;
-
-    // Update particle sprites (adds to _ySortPool if Y-sorting is enabled)
-    if (this.maxParticles > 0) {
-      this.updateParticleSprites();
-    }
-
-    // Update decoration sprites (adds to _ySortPool if Y-sorting is enabled)
-    if (this.maxDecorations > 0) {
-      this.updateDecorationSprites();
-    }
-
-    // Second pass: Y-sort and re-add all sprites to container
-    // BUGFIX: Always rebuild the container, not just when ySorting is enabled
-    // This ensures despawned entities are properly removed from the render tree
-    const pool = this._ySortPool;
-    const poolSize = this._ySortPoolSize;
-
-    // GC OPTIMIZATION: Truncate pool to active size before sorting
-    // This allows native sort (O(n log n)) to only process active items
-    // Setting .length doesn't allocate - pool regrows lazily next frame if needed
-    pool.length = poolSize;
-
-    if (this.ySorting) {
-      // Sort by Y position using native Timsort (O(n log n), highly optimized)
-      // OPTIMIZED: Use pre-defined comparator to avoid closure allocation
-      pool.sort(sortByY);
-    }
-
-    // PixiJS 8: Clear particleChildren array and re-add in sorted order
-    this.particleContainer.particleChildren.length = 0;
-
-    // Note: Shadows are now rendered separately via shadowRT system (RenderTexture-based)
-    // They are no longer added to the main particleContainer
-
-    // Re-add all sprites (entities + particles) in Y-sorted order
-    for (let i = 0; i < poolSize; i++) {
-      this.particleContainer.addParticle(pool[i].sprite);
-    }
-
-    // Mark container as needing update
-    this.particleContainer.update();
   }
 
   changeFrameOfSprite(bodySprite, i, deltaSeconds) {
@@ -1233,7 +960,7 @@ class PixiRenderer extends AbstractWorker {
     // Update decal decal tiles (check for dirty tiles from particle_worker)
     this.updateDecalTiles();
 
-    // Pre-compute visible lights once (shared by updateLighting, updateShadowSprites, updateLightGlowSprites)
+    // Pre-compute visible lights once (shared by updateLighting, updateShadowSprites)
     this.computeVisibleLights();
 
     // Update lighting shader uniforms from LightEmitter components
@@ -1243,8 +970,7 @@ class PixiRenderer extends AbstractWorker {
     // This renders lights and shadows to shadowRT, which is displayed via shadowDisplaySprite (multiply blend)
     this.updateShadowSprites(interpolationAlpha);
 
-    // Update light glow sprites from LightEmitter component arrays
-    this.updateLightGlowSprites(interpolationAlpha);
+    // Light glow sprites are now in the render queue (type=3), no separate update needed
 
     // Use render queue from particle_worker - no fallback
     this.updateSpritesFromRenderQueue();
@@ -1534,12 +1260,12 @@ LIGHTING SYSTEM SETUP
   }
 
   /* =====================
-COMPUTE VISIBLE LIGHTS (shared by updateLighting & updateLightGlowSprites)
+COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
 ===================== */
 
   /**
    * Pre-compute visible lights once per frame.
-   * Both updateLighting() and updateLightGlowSprites() use this data.
+   * updateLighting() uses this data for shader uniforms.
    * Avoids duplicate queryActiveEntities, culling, and sorting.
    */
   computeVisibleLights() {
@@ -1550,8 +1276,6 @@ COMPUTE VISIBLE LIGHTS (shared by updateLighting & updateLightGlowSprites)
     const worldY = Transform.y;
     const lightEnabled = LightEmitter.active;
     const lightHeight = LightEmitter.height;
-    const glowHeightOffset = LightEmitter.glowHeightOffset;
-    const hasGlowSprite = LightEmitter.hasGlowSprite;
     const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
 
     const zoom = this._renderZoom;
@@ -1571,9 +1295,8 @@ COMPUTE VISIBLE LIGHTS (shared by updateLighting & updateLightGlowSprites)
     // Query all active entities with LightEmitter ONCE
     const lightEntities = this.queryActiveEntities([LightEmitter]);
 
-    // Reset pools
+    // Reset pool
     this._visibleLightsAllCount = 0;
-    this._visibleLightsGlowCount = 0;
 
     for (let idx = 0; idx < lightEntities.length; idx++) {
       const i = lightEntities[idx];
@@ -1582,7 +1305,6 @@ COMPUTE VISIBLE LIGHTS (shared by updateLighting & updateLightGlowSprites)
       // Use sprite position if available (already interpolated)
       const sprite = this.bodySprites[i];
       const x = sprite ? sprite.x : worldX[i];
-      // Use lightHeight for shader, glowHeightOffset for glow sprites
       const yForLight = (sprite ? sprite.y : worldY[i]) - (lightHeight[i] || 0);
 
       // Viewport culling: influenceRadius = 10 * sqrt(intensity)
@@ -1602,32 +1324,18 @@ COMPUTE VISIBLE LIGHTS (shared by updateLighting & updateLightGlowSprites)
       const dy = yForLight - viewCenterY;
       const distSq = dx * dx + dy * dy;
 
-      // Add to "all lights" pool
+      // Add to "all lights" pool (for shader uniforms)
       const allIdx = this._visibleLightsAllCount++;
       if (!this._visibleLightsAll[allIdx]) {
         this._visibleLightsAll[allIdx] = { entityId: 0, distSq: 0 };
       }
       this._visibleLightsAll[allIdx].entityId = i;
       this._visibleLightsAll[allIdx].distSq = distSq;
-
-      // Add to "glow lights" pool if hasGlowSprite
-      if (hasGlowSprite[i]) {
-        const glowIdx = this._visibleLightsGlowCount++;
-        if (!this._visibleLightsGlow[glowIdx]) {
-          this._visibleLightsGlow[glowIdx] = { entityId: 0, distSq: 0 };
-        }
-        this._visibleLightsGlow[glowIdx].entityId = i;
-        this._visibleLightsGlow[glowIdx].distSq = distSq;
-      }
     }
 
-    // Sort both pools by distance (closest first)
-    // Truncate to active size to avoid sorting stale entries
+    // Sort by distance (closest first), truncate to active size
     this._visibleLightsAll.length = this._visibleLightsAllCount;
     this._visibleLightsAll.sort(sortByDistSq);
-
-    this._visibleLightsGlow.length = this._visibleLightsGlowCount;
-    this._visibleLightsGlow.sort(sortByDistSq);
   }
 
   /* =====================
@@ -1761,239 +1469,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * 2. Create ParticleContainer with additive blend
    * 3. Create glow sprites for each entity slot
    */
-  createLightGlowSystem() {
-    // Get the gradient texture from BigAtlas
-    console.log(
-      `🔍 PIXI WORKER: createLightGlowSystem() called. Checking for _lightGradient texture...`
-    );
-    console.log(`   Total textures available: ${Object.keys(this.textures).length}`);
-    console.log(`   _lightGradient in textures: ${'_lightGradient' in this.textures}`);
-    this.lightGlowTexture = this.textures['_lightGradient'];
-    if (!this.lightGlowTexture) {
-      console.warn('PIXI WORKER: _lightGradient texture not found in BigAtlas');
-      console.warn(
-        `   Available texture keys (first 30):`,
-        Object.keys(this.textures).slice(0, 30)
-      );
-      return;
-    }
-
-    // Create ParticleContainer with additive blend for glow effect
-    // Note: vertex: false is required for alpha to work properly in PixiJS 8
-    // Scale changes still work without vertex: true
-    // Use "add" blend mode for additive light glow effect
-    this.lightGlowContainer = new PIXI.ParticleContainer({
-      blendMode: LAYER_DEFAULT_BLEND_MODES.LIGHT_GLOW,
-      dynamicProperties: {
-        vertex: true,
-        position: true,
-        rotation: false, // Glows don't rotate
-        uvs: true,
-        color: true, // For light color
-        alpha: true,
-      },
-    });
-
-    // Render above entities but below UI
-    this.lightGlowContainer.zIndex = PixiRenderer.Z_INDICES.LIGHT_GLOW;
-
-    // Ensure container is visible
-    this.lightGlowContainer.visible = true;
-    this.lightGlowContainer.alpha = 0.5;
-
-    console.log(
-      `PIXI WORKER: Light glow system created - container visible: ${this.lightGlowContainer.visible}, alpha: ${this.lightGlowContainer.alpha}, zIndex: ${this.lightGlowContainer.zIndex}`
-    );
-  }
-
-  /**
-   * Create glow sprites pool (size = maxLights)
-   * Called after textures are loaded
-   */
-  createLightGlowSprites() {
-    console.log(
-      `🔍 PIXI WORKER: createLightGlowSprites() called. lightGlowTexture:`,
-      this.lightGlowTexture,
-      `lightGlowContainer:`,
-      this.lightGlowContainer
-    );
-    if (!this.lightGlowTexture || !this.lightGlowContainer) {
-      console.warn(
-        `⚠️ PIXI WORKER: Cannot create light glow sprites - missing texture or container`
-      );
-      return;
-    }
-
-    // Create only maxLights sprites (same limit as shader)
-    for (let i = 0; i < this.maxLights; i++) {
-      const glowSprite = new PIXI.Particle({
-        texture: this.lightGlowTexture,
-        anchorX: 0.5,
-        anchorY: 0.5, // Center anchor for radial glow
-      });
-
-      // Start hidden AND off-screen to prevent (0,0) flash
-      glowSprite.alpha = 0;
-      glowSprite.scaleX = 0;
-      glowSprite.scaleY = 0;
-      glowSprite.x = -10000;
-      glowSprite.y = -10000;
-      glowSprite.visible = true; // Make sure sprite is visible (alpha controls opacity)
-
-      this.lightGlowSprites[i] = glowSprite;
-      this.lightGlowContainer.addParticle(glowSprite);
-    }
-
-    console.log(
-      `✅ PIXI WORKER: Created ${this.maxLights} light glow sprites (container has ${this.lightGlowContainer.children.length} children)`
-    );
-  }
-
-  /**
-   * Update light glow sprites each frame
-   * Uses pre-computed _visibleLightsGlow from computeVisibleLights()
-   */
-  updateLightGlowSprites(interpolationAlpha) {
-    if (!this.lightGlowEnabled || !this.lightGlowContainer) {
-      // Only log once per frame to avoid spam, use a flag
-      if (!this._lightGlowWarningLogged) {
-        if (!this.lightGlowEnabled) {
-          console.warn(
-            `⚠️ PIXI WORKER: updateLightGlowSprites() called but lightGlowEnabled is false`
-          );
-        }
-        if (!this.lightGlowContainer) {
-          console.warn(
-            `⚠️ PIXI WORKER: updateLightGlowSprites() called but lightGlowContainer is null`
-          );
-        }
-        this._lightGlowWarningLogged = true;
-      }
-      return;
-    }
-
-    // Skip updates when container is invisible to prevent WebGL buffer desync
-    // ParticleContainer doesn't sync vertex buffers when hidden, causing GL_INVALID_OPERATION
-    // errors when made visible again if sprite properties were modified while hidden
-    if (!this.lightGlowContainer.visible) {
-      return;
-    }
-
-    const sprites = this.lightGlowSprites;
-    const maxLights = this.maxLights;
-
-    // Cache component array references
-    const worldX = Transform.x;
-    const worldY = Transform.y;
-    const lightColor = LightEmitter.lightColor;
-    const glowHeightOffset = LightEmitter.glowHeightOffset;
-    const visualRange = Collider.visualRange;
-    const lightIntensity = LightEmitter.lightIntensity;
-
-    // Gradient texture base size (200px diameter = radius 100)
-    const textureRadius = 100;
-
-    // Use pre-computed visible glow lights (computed in computeVisibleLights())
-    const visibleLights = this._visibleLightsGlow;
-    const countToRender = Math.min(this._visibleLightsGlowCount, maxLights);
-
-    // Log first successful update (one-time)
-    if (!this._lightGlowUpdateLogged) {
-      console.log(
-        `✅ PIXI WORKER: updateLightGlowSprites() running successfully. Found ${this._visibleLightsGlowCount} visible glow lights`
-      );
-      this._lightGlowUpdateLogged = true;
-    }
-
-    // Log first update with details (one-time)
-    if (!this._lightGlowFirstUpdateLogged && countToRender > 0) {
-      console.log(
-        `🔍 PIXI WORKER: updateLightGlowSprites() - Rendering ${countToRender} lights (${this._visibleLightsGlowCount} visible, maxLights: ${maxLights})`
-      );
-      console.log(
-        `   Container visible: ${this.lightGlowContainer.visible}, alpha: ${this.lightGlowContainer.alpha
-        }, children: ${this.lightGlowContainer.children?.length || 'N/A'}`
-      );
-      this._lightGlowFirstUpdateLogged = true;
-    }
-
-    // Sprite pool index (maps active lights to sprite pool)
-    let spriteIndex = 0;
-
-    for (let i = 0; i < countToRender; i++) {
-      const entityIndex = visibleLights[i].entityId;
-      const sprite = sprites[spriteIndex];
-      if (!sprite) {
-        console.warn(`⚠️ PIXI WORKER: Sprite at index ${spriteIndex} is null!`);
-        spriteIndex++;
-        continue;
-      }
-
-      const bodySprite = this.bodySprites[entityIndex];
-
-      // Get visual range for this entity (from Collider component)
-      const rangeVal = visualRange[entityIndex] || 200;
-      const glowDiameter = rangeVal;
-      const scale = (glowDiameter * 3) / textureRadius;
-      const newAlpha = lightIntensity[entityIndex] / 1000000;
-
-      // Skip glow sprites that are too small or too dim to be visible
-      // Move off-screen to prevent ParticleContainer rendering artifacts
-      if (scale < 0.1 || newAlpha < 0.001) {
-        sprite.alpha = 0;
-        sprite.scaleX = 0;
-        sprite.scaleY = 0;
-        sprite.x = -10000;
-        sprite.y = -10000;
-        spriteIndex++;
-        continue;
-      }
-
-      // Position: entity position with height offset (light is above entity)
-      sprite.x = bodySprite ? bodySprite.x : worldX[entityIndex];
-      sprite.y =
-        (bodySprite ? bodySprite.y : worldY[entityIndex]) - (glowHeightOffset[entityIndex] || 0);
-
-      // Scale based on visualRange
-      sprite.scaleX = scale;
-      sprite.scaleY = scale;
-
-      sprite.tint = lightColor[entityIndex]
-
-      // Show this sprite (alpha controls visibility for ParticleContainer)
-      sprite.alpha = newAlpha;
-      sprite.visible = true; // Ensure sprite is visible
-
-      // Log first sprite update details (one-time)
-      if (i === 0 && !this._lightGlowSpriteUpdateLogged) {
-        console.log(
-          `🔍 PIXI WORKER: First light glow sprite update - entityIndex: ${entityIndex}, x: ${sprite.x
-          }, y: ${sprite.y}, scale: ${scale}, alpha: ${newAlpha}, tint: 0x${sprite.tint.toString(
-            16
-          )}`
-        );
-        console.log(
-          `   Sprite visible: ${sprite.visible}, texture: ${sprite.texture?.width}x${sprite.texture?.height}`
-        );
-        this._lightGlowSpriteUpdateLogged = true;
-      }
-
-      spriteIndex++;
-    }
-
-    // Hide any unused sprites in the pool
-    // Move off-screen AND set alpha=0 to prevent (0,0) rendering
-    for (let i = spriteIndex; i < maxLights; i++) {
-      const sprite = sprites[i];
-      if (sprite && sprite.alpha !== 0) {
-        sprite.alpha = 0;
-        sprite.scaleX = 0;
-        sprite.scaleY = 0;
-        sprite.x = -10000;
-        sprite.y = -10000;
-      }
-    }
-  }
+  // Light glow sprites are now rendered as normal particles in the main particleContainer
+  // via the render queue (type=3). They are y-sorted with entities/particles/decorations.
+  // See particle_worker.js buildRenderQueue() for the type=3 handler.
 
   /**
    * Update shadow sprites from pre-sorted shadowRenderQueue
@@ -2371,162 +1849,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * Update particle sprites from ParticleComponent data
-   * Adds visible particles to _ySortPool for Y-sorting (GC optimized)
-   */
-  updateParticleSprites() {
-    if (this.maxParticles === 0) {
-      this.visibleParticleCount = 0;
-      return;
-    }
-
-    // Cache array references
-    const active = ParticleComponent.active;
-    const x = ParticleComponent.x;
-    const y = ParticleComponent.y;
-    const z = ParticleComponent.z;
-    const scaleX = ParticleComponent.scaleX;
-    const scaleY = ParticleComponent.scaleY;
-    const alpha = ParticleComponent.alpha;
-    const tint = ParticleComponent.tint;
-    const textureId = ParticleComponent.textureId;
-    const isItOnScreen = ParticleComponent.isItOnScreen;
-    const rotation = ParticleComponent.rotation;
-    const flipX = ParticleComponent.flipX;
-    const flipY = ParticleComponent.flipY;
-
-    let visibleParticleCount = 0;
-
-    // OPTIMIZATION: Calculate expected active count from free list for early exit
-    // activeCount = maxParticles - freeSlots
-    const freeListTop = this.particleFreeListTop;
-    const expectedActive = freeListTop ? this.maxParticles - freeListTop[0] : this.maxParticles;
-    let activeFound = 0;
-    let spritesProcessed = 0;
-    const totalSprites = this.particleSpriteCount;
-
-    for (let i = 0; i < this.maxParticles; i++) {
-      let sprite = this.particleSprites[i];
-      const poolIndex = this.particleSpritePoolIndices[i];
-
-      // ========================================
-      // LAZY SPRITE CREATION & RELEASE
-      // ========================================
-      // Particle effects use the same centralized pool as entities and decorations.
-      // Sprites are acquired when particles spawn, released when they despawn or go off-screen.
-
-      // Release sprite when particle despawns or goes off-screen
-      if (!active[i] || !isItOnScreen[i]) {
-        if (sprite && poolIndex !== 0xFFFF) {
-          this.particlePool.release(poolIndex);
-          this.particleSprites[i] = null;
-          this.particleSpritePoolIndices[i] = 0xFFFF;
-          // Reset applied texture tracking (no string allocation, no delete deoptimization)
-          this.particleAppliedTextureId[i] = 0xFFFF;
-          this.particleSpriteCount--;
-          spritesProcessed++;
-        }
-        // Track active particles for early exit (even if off-screen)
-        if (active[i]) {
-          activeFound++;
-        }
-        continue;
-      }
-
-      // Track active+visible particles for early exit
-      activeFound++;
-      spritesProcessed++;
-
-      // Acquire sprite from central pool when particle becomes active and visible
-      if (!sprite) {
-        const { particle, index } = this.particlePool.acquire();
-        sprite = particle;
-        this.particleSprites[i] = particle;
-        this.particleSpritePoolIndices[i] = index;
-        this.particleSpriteCount++;
-
-        // Add to container if Y-sorting is disabled
-        if (!this.ySorting) {
-          this.particleContainer.addParticle(particle);
-        }
-      }
-
-      // Calculate render Y (ground Y + height offset)
-      const renderY = y[i] + z[i];
-
-      // Update sprite properties from ParticleComponent
-      sprite.x = x[i];
-      sprite.y = renderY;
-      sprite.scaleX = flipX[i] ? -scaleX[i] : scaleX[i];
-      sprite.scaleY = flipY[i] ? -scaleY[i] : scaleY[i];
-      sprite.rotation = rotation[i];
-      sprite.alpha = alpha[i];
-      sprite.tint = tint[i];
-
-      // Update texture if needed (using typed array instead of object cache for zero allocation)
-      // Note: tid >= 0 is valid (0 is a valid animation index), only skip for unset (-1 or undefined)
-      const tid = textureId[i];
-      if (tid >= 0 && this.particleAppliedTextureId[i] !== tid) {
-        // Get texture from bigAtlas by animation index
-        // Particles use the first frame of the animation (they don't animate)
-        const textureName = SpriteSheetRegistry.getAnimationName('bigAtlas', tid);
-
-        if (textureName) {
-          // Look up in animations array (contains PIXI.Texture objects)
-          // this.textures contains frame names, not animation names
-          const bigAtlas = this.spritesheets.bigAtlas
-          if (bigAtlas?.animations[textureName]?.[0]) {
-            sprite.texture = bigAtlas.animations[textureName][0];
-            this.particleAppliedTextureId[i] = tid;
-          }
-        }
-      }
-
-      // Count visible particles
-      visibleParticleCount++;
-
-      // Add to Y-sort list if sorting is enabled
-      // Use ground Y (y[i]) for sorting, renderY for display
-      if (this.ySorting) {
-        // Make sprite visible before adding to sort list
-        if (!sprite.visible) {
-          sprite.visible = true;
-        }
-        // GC OPTIMIZATION: Reuse pooled objects instead of allocating new ones each frame
-        const poolIdx = this._ySortPoolSize++;
-        if (!this._ySortPool[poolIdx]) {
-          this._ySortPool[poolIdx] = {
-            entityId: 0,
-            particleIndex: 0,
-            sprite: null,
-            y: 0,
-          };
-        }
-        const item = this._ySortPool[poolIdx];
-        item.entityId = -1; // Mark as particle (not an entity)
-        item.particleIndex = i;
-        item.sprite = sprite;
-        item.y = y[i]; // Sort by ground position
-      } else {
-        // Y-sorting disabled - just show the sprite
-        if (!sprite.visible) {
-          sprite.visible = true;
-        }
-      }
-
-      // OPTIMIZATION: Early exit when we've found all active particles AND processed all sprites
-      // This avoids iterating 10000 slots when only 200 are active
-      // We must process all sprites to ensure inactive particles get their sprites released
-      if (activeFound >= expectedActive && spritesProcessed >= totalSprites) {
-        break;
-      }
-    }
-
-    // Store visible particle count for reporting
-    this.visibleParticleCount = visibleParticleCount;
-  }
-
-  /**
    * Create decoration sprites (separate from entity sprites)
    * OPTIMIZATION: Uses lazy creation - sprites are acquired from central pool when needed
    */
@@ -2542,162 +1864,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     console.log(
       `PIXI WORKER: Decoration system initialized (${this.maxDecorations} slots, using central particle pool)`
     );
-  }
-
-  /**
-   * Update decoration sprites from DecorationComponent data
-   * Adds visible decorations to _ySortPool for Y-sorting (GC optimized)
-   */
-  updateDecorationSprites() {
-    if (this.maxDecorations === 0) {
-      this.visibleDecorationCount = 0;
-      return;
-    }
-
-    // Early exit if no decorations are active (derived from free list)
-    if (DecorationPool.getActiveCount() === 0) {
-      this.visibleDecorationCount = 0;
-      return;
-    }
-
-    // ========================================
-    // ZOOM-BASED CULLING & ALPHA INTERPOLATION
-    // ========================================
-    // At low zoom levels, decorations become too small to see and cause performance issues.
-    // - zoom < hideZoom: Skip rendering entirely (early exit)
-    // - hideZoom <= zoom < fadeStartZoom: Fade out (interpolate alpha from 0.0 to 1.0)
-    // - zoom >= fadeStartZoom: Full alpha (no culling)
-    const zoom = this._renderZoom;
-    const hideZoom = this.decorationHideZoom;
-    const fadeStartZoom = this.decorationFadeStartZoom;
-    let alphaMultiplier = 1.0;
-
-    if (zoom < hideZoom) {
-      // Too zoomed out - skip all decorations (zero allocation early exit)
-      this.visibleDecorationCount = 0;
-      return;
-    } else if (zoom < fadeStartZoom) {
-      // Fade out range: interpolate from 0.0 (at hideZoom) to 1.0 (at fadeStartZoom)
-      // Formula: (zoom - hideZoom) / (fadeStartZoom - hideZoom)
-      const fadeRange = fadeStartZoom - hideZoom;
-      alphaMultiplier = (zoom - hideZoom) / fadeRange;
-    }
-    // else zoom >= fadeStartZoom: alphaMultiplier = 1.0 (already set)
-
-    // Cache array references
-    const active = DecorationComponent.active
-    const x = DecorationComponent.x;
-    const y = DecorationComponent.y;
-    const offsetX = DecorationComponent.offsetX;
-    const offsetY = DecorationComponent.offsetY;
-    const scaleX = DecorationComponent.scaleX;
-    const scaleY = DecorationComponent.scaleY;
-    const rotation = DecorationComponent.rotation;
-    const alpha = DecorationComponent.alpha;
-    const tint = DecorationComponent.tint;
-    const textureId = DecorationComponent.textureId;
-    const anchorX = DecorationComponent.anchorX;
-    const anchorY = DecorationComponent.anchorY;
-    const isItOnScreen = DecorationComponent.isItOnScreen;
-
-    let visibleDecorationCount = 0;
-
-    for (let i = 0; i < this.maxDecorations; i++) {
-      const sprite = this.decorationSprites[i];
-      const poolIndex = this.decorationSpritePoolIndices[i];
-
-      // ========================================
-      // LAZY SPRITE CREATION & RELEASE
-      // ========================================
-      // Decorations use the same centralized pool as entities and particles.
-      // Sprites are acquired when decorations become visible, released when off-screen.
-
-      // Release sprite when decoration despawns or goes off-screen
-      if (!active[i] || !isItOnScreen[i]) {
-        if (sprite && poolIndex !== 0xFFFF) {
-          this.particlePool.release(poolIndex);
-          this.decorationSprites[i] = null;
-          this.decorationSpritePoolIndices[i] = 0xFFFF;
-          this.decorationSpriteTextureIds[i] = 0;
-        }
-        continue;
-      }
-
-      // Acquire sprite from central pool when decoration becomes visible
-      let actualSprite = sprite;
-      if (!actualSprite) {
-        const { particle, index } = this.particlePool.acquire();
-        actualSprite = particle;
-        this.decorationSprites[i] = particle;
-        this.decorationSpritePoolIndices[i] = index;
-        this.decorationSpriteTextureIds[i] = 0; // Reset texture tracking
-
-        // Add to container if Y-sorting is disabled
-        if (!this.ySorting) {
-          this.particleContainer.addParticle(particle);
-        }
-      }
-
-      // Update sprite properties from DecorationComponent
-      actualSprite.x = x[i] + offsetX[i];
-      actualSprite.y = y[i] + offsetY[i];
-      actualSprite.scaleX = scaleX[i];
-      actualSprite.scaleY = scaleY[i];
-      // Apply zoom-based alpha multiplier (fade out at low zoom)
-      actualSprite.alpha = alpha[i] * alphaMultiplier;
-      actualSprite.tint = tint[i];
-      actualSprite.anchorX = anchorX[i];
-      actualSprite.anchorY = anchorY[i];
-
-      actualSprite.rotation = rotation[i];
-
-      // Update texture if it changed
-      // Note: tid >= 0 is valid (0 is a valid animation index)
-      const tid = textureId[i];
-      if (tid >= 0 && this.decorationSpriteTextureIds[i] !== tid) {
-        // Get texture from bigAtlas by animation index
-        const textureName = SpriteSheetRegistry.getAnimationName('bigAtlas', tid);
-        if (textureName && this.textures[textureName]) {
-          actualSprite.texture = this.textures[textureName];
-          this.decorationSpriteTextureIds[i] = tid; // Track decoration's current texture
-        }
-      }
-
-      // Count visible decorations
-      visibleDecorationCount++;
-
-      // Add to Y-sort list if sorting is enabled
-      if (this.ySorting) {
-        // Make sprite visible before adding to sort list
-        if (!actualSprite.visible) {
-          actualSprite.visible = true;
-        }
-        // GC OPTIMIZATION: Reuse pooled objects instead of allocating new ones each frame
-        const poolIdx = this._ySortPoolSize++;
-        if (!this._ySortPool[poolIdx]) {
-          this._ySortPool[poolIdx] = {
-            entityId: 0,
-            particleIndex: 0,
-            decorationIndex: 0,
-            sprite: null,
-            y: 0,
-          };
-        }
-        const item = this._ySortPool[poolIdx];
-        item.entityId = -2; // Mark as decoration (not an entity, not a particle)
-        item.decorationIndex = i;
-        item.sprite = actualSprite;
-        item.y = y[i]; // Sort by base Y position only (offsetY only affects visual position, not sorting)
-      } else {
-        // Y-sorting disabled - just show the sprite
-        if (!actualSprite.visible) {
-          actualSprite.visible = true;
-        }
-      }
-    }
-
-    // Store visible decoration count for reporting
-    this.visibleDecorationCount = visibleDecorationCount;
   }
 
   /**
@@ -3431,34 +2597,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         `PIXI WORKER: Lighting system enabled (ambient: ${this.lightingAmbient}, maxLights: ${this.maxLights}, resolution: ${this.lightingResolution})`
       );
 
-      // ========================================
-      // LIGHT GLOW SPRITES - Initialize
-      // ========================================
-      // Create glow system (needs textures to be loaded first)
-      console.log(
-        `🔍 PIXI WORKER: Initializing light glow system (maxLights: ${this.maxLights})...`
-      );
-      this.lightGlowEnabled = true;
-      this.createLightGlowSystem();
-
-      if (this.lightGlowContainer) {
-        // Create glow sprites pool (size = maxLights)
-        this.createLightGlowSprites();
-
-        // Add glow container to stage
-        this.pixiApp.stage.addChild(this.lightGlowContainer);
-
-        // Verify container is on stage
-        const isOnStage = this.pixiApp.stage.children.includes(this.lightGlowContainer);
-        console.log(
-          `✅ PIXI WORKER: Light glow system enabled (${this.maxLights} sprites, container added to stage: ${isOnStage}, stage children: ${this.pixiApp.stage.children.length})`
-        );
-      } else {
-        console.error(
-          `❌ PIXI WORKER: Light glow container was NOT created! lightGlowTexture:`,
-          this.lightGlowTexture
-        );
-      }
+      // Light glow sprites are now handled by the render queue (type=3) from particle_worker
+      // No separate container or sprite pool needed
     }
 
     // Note: Debug visualization is now handled by DebugUI on main thread
@@ -3528,10 +2668,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.layerRefs.LIGHTING = this.lightingMesh;
     }
 
-    // LIGHT_GLOW layer
-    if (this.lightGlowContainer) {
-      this.layerRefs.LIGHT_GLOW = this.lightGlowContainer;
-    }
+    // LIGHT_GLOW layer - now rendered inside main particleContainer via render queue (type=3)
 
     const layerNames = Object.keys(this.layerRefs);
     console.log(
