@@ -289,20 +289,20 @@ export class PredatorScene extends WEED.Scene {
     // Spawn player first
     // this.spawnPlayer();
 
-    this.spawnLights(1);
+    this.spawnLights(100);
     // this.spawnHouses(this.numberOfHouses);
-    // this.spawnGrass(10000);
-    // this.spawnCivilians(10000);
-    // this.spawnTrash(100);
+    this.spawnGrass(10000);
+    this.spawnCivilians(10000);
+    this.spawnTrash(100);
     // this.spawnEntity(PreySpawner, {});
 
     this.spawnEntity(CameraController, {});
     // this.spawnTrees(this.numberOfTrees);
     // this.spawnBarrels(this.numberOfBarrels);
     // this.spawnRocks(this.numberOfRocks);
-    this.spawnMySoldiers(4);
+    this.spawnMySoldiers(2500);
     this.spawnDestination();
-    // this.spawnRocksTreesAndHouses();
+    this.spawnRocksTreesAndHouses();
   }
 
   spawnTrash(count) {

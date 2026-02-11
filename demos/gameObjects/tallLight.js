@@ -62,16 +62,6 @@ export class TallLight extends GameObject {
    */
   tick(dtRatio) {
     // DEBUG: Track neighbor count stability
-    if ((this._frameCount || 0) % 60 === 0) {
-      const offset = this._neighborOffset;
-      const totalCount = Grid.neighborData[offset];
-      const collisionCount = Grid.neighborData[offset + 1];
-      console.log(
-        "worker", this.logicWorker.workerIndex,
-        `TallLight[${this.index}] neighbors: ${this.neighborCount} ` +
-        `(collision: ${collisionCount}, visual-only: ${totalCount - collisionCount})`
-      );
-    }
-    this._frameCount = (this._frameCount || 0) + 1;
+
   }
 }
