@@ -1637,6 +1637,12 @@ class ParticleWorker extends AbstractWorker {
       if (onScreen && SpriteRenderer.renderVisible[i]) {
         this.collectRenderable(0, i, y[i]); // type=0 for entity
       }
+
+      // Collect light glow as separate renderable (type=3) if entity has a glow sprite
+      // Sorted at y+1 so it renders just above the entity in depth order
+      if (onScreen && LightEmitter.active[i] && LightEmitter.hasGlowSprite[i]) {
+        this.collectRenderable(3, i, y[i] + 10); // type=3 for light glow
+      }
     }
 
   }
@@ -1901,11 +1907,12 @@ class ParticleWorker extends AbstractWorker {
   /**
    * Collect a visible renderable for the render queue
    * Called inline during visibility checks
-   * @param {number} type - 0=entity, 1=particle, 2=decoration
+   * @param {number} type - 0=entity, 1=particle, 2=decoration, 3=light glow
    * @param {number} index - Index within that type's pool
    * @param {number} y - Y position for sorting
    */
   collectRenderable(type, index, y) {
+
     if (!this.renderQueueEnabled) return;
     if (this._renderableCount >= this.renderQueueMaxItems) return;
 
@@ -1998,6 +2005,16 @@ class ParticleWorker extends AbstractWorker {
     const particleAlpha = ParticleComponent.alpha;
     const particleTint = ParticleComponent.tint;
     const particleTextureId = ParticleComponent.textureId;
+
+    // Light glow component arrays
+    const lightColor = LightEmitter.lightColor;
+    const lightIntensity = LightEmitter.lightIntensity;
+    const glowHeightOffset = LightEmitter.glowHeightOffset;
+    const visualRange = Collider.visualRange;
+    // Light gradient texture ID (from bigAtlas) - same lookup as shadow system
+    const lightGradientAnimIdx = this.animationNameToIndex?.['_lightGradient'] ?? 0;
+    const lightGradientTextureId = this.animationFrameStart?.[lightGradientAnimIdx] ?? 0;
+    const GLOW_TEXTURE_RADIUS = 100; // Gradient texture base size (200px diameter)
 
     const decoX = DecorationComponent.x;
     const decoY = DecorationComponent.y;
@@ -2106,7 +2123,7 @@ class ParticleWorker extends AbstractWorker {
         // Write type and entityIndex for shadow system
         rqType[i] = 1; // Particle
         rqEntityIndex[i] = -1; // Not an entity
-      } else {
+      } else if (type === 2) {
         // === DECORATION ===
         // Decorations are static, no interpolation needed
         rqX[i] = decoX[idx];
@@ -2124,6 +2141,37 @@ class ParticleWorker extends AbstractWorker {
         // Write type and entityIndex for shadow system
         rqType[i] = 2; // Decoration
         rqEntityIndex[i] = -1; // Not an entity
+      } else {
+        // === LIGHT GLOW (type=3) ===
+        // Light glow sprites: _lightGradient texture, scaled by visualRange, tinted by lightColor
+        const rangeVal = visualRange[idx] || 200;
+        const scale = (rangeVal * 4) / GLOW_TEXTURE_RADIUS;
+        const glowAlpha = lightIntensity[idx] / 50000;
+
+        // console.log('scale', scale);
+        // console.log('glowAlpha', glowAlpha);
+
+        // Skip glow sprites that are too small or too dim
+        if (scale < 0.1 || glowAlpha < 0.001) {
+          rqAlpha[i] = 0;
+          rqScaleX[i] = 0;
+          rqScaleY[i] = 0;
+          rqX[i] = -10000;
+          rqY[i] = -10000;
+        } else {
+          rqX[i] = entityX[idx];
+          rqY[i] = entityY[idx] - (glowHeightOffset[idx] || 0);
+          rqScaleX[i] = scale;
+          rqScaleY[i] = scale;
+          rqAlpha[i] = glowAlpha;
+          rqTint[i] = lightColor[idx];
+        }
+        rqRotation[i] = 0;
+        rqTextureId[i] = lightGradientTextureId;
+        rqAnchorX[i] = 0.5;
+        rqAnchorY[i] = 0.5;
+        rqType[i] = 3; // Light glow
+        rqEntityIndex[i] = idx;
       }
     }
 
