@@ -1427,6 +1427,80 @@ class Scene {
     return textures;
   }
 
+  /**
+   * Build texture metadata for render queue system
+   * Creates lookup tables so particle_worker can compute globalTextureId
+   * and pixi_worker can do O(1) texture lookup
+   */
+  buildTextureMetadata() {
+    const bigAtlas = SpriteSheetRegistry.spritesheets.get('bigAtlas');
+    if (!bigAtlas) {
+      console.warn('[Scene] bigAtlas not found, texture metadata not built');
+      return null;
+    }
+
+    // Build animation frame offsets
+    // animationFrameStart[animIdx] = starting index in flat texture array
+    // animationFrameCount[animIdx] = number of frames
+    const animationFrameStart = [];
+    const animationFrameCount = [];
+    let currentOffset = 0;
+
+    // Process bigAtlas animations in index order
+    const animCount = bigAtlas.totalAnimations;
+    for (let animIdx = 0; animIdx < animCount; animIdx++) {
+      const animName = bigAtlas.indexToName[animIdx];
+      const animData = bigAtlas.animations[animName];
+      const frameCount = animData ? animData.frameCount : 1;
+
+      animationFrameStart[animIdx] = currentOffset;
+      animationFrameCount[animIdx] = frameCount;
+      currentOffset += frameCount;
+    }
+
+    // Build proxy sheet mapping: proxyToGlobalAnim[sheetId][localAnimIdx] = globalAnimIdx
+    // This maps (spritesheetId, animationState) → bigAtlas animation index
+    const proxyToGlobalAnim = {};
+    const spritesheetNames = SpriteSheetRegistry.spritesheetNames;
+
+    for (let sheetId = 0; sheetId < spritesheetNames.length; sheetId++) {
+      const sheetName = spritesheetNames[sheetId];
+      if (!sheetName) continue;
+
+      const sheet = SpriteSheetRegistry.spritesheets.get(sheetName);
+      if (!sheet) continue;
+
+      if (sheet.isProxy) {
+        // Proxy sheet - map local animation indices to bigAtlas indices
+        proxyToGlobalAnim[sheetId] = {};
+        for (const [animName, animInfo] of Object.entries(sheet.animations)) {
+          const localIdx = animInfo.index;
+          const prefixedName = animInfo.prefixedName;
+          // Look up the global index in bigAtlas
+          const globalAnimData = bigAtlas.animations[prefixedName];
+          if (globalAnimData) {
+            proxyToGlobalAnim[sheetId][localIdx] = globalAnimData.index;
+          }
+        }
+      } else if (sheetName === 'bigAtlas') {
+        // bigAtlas itself - direct 1:1 mapping
+        proxyToGlobalAnim[sheetId] = {};
+        for (let i = 0; i < animCount; i++) {
+          proxyToGlobalAnim[sheetId][i] = i;
+        }
+      }
+    }
+
+    console.log(`[Scene] Built texture metadata: ${currentOffset} total frames, ${animCount} animations`);
+
+    return {
+      animationFrameStart,
+      animationFrameCount,
+      proxyToGlobalAnim,
+      totalFrames: currentOffset,
+    };
+  }
+
   setupWorkerCommunication() {
     const connections = [{ from: 'physics', to: 'renderer' }];
 
@@ -1528,6 +1602,13 @@ class Scene {
     // Preload assets
     const spritesheetConfigs = this.imageUrls.spritesheets || {};
     await this.preloadAssets(this.imageUrls, spritesheetConfigs);
+
+    // ========================================
+    // BUILD TEXTURE METADATA FOR RENDER QUEUE
+    // ========================================
+    // Build lookup tables so particle_worker can compute globalTextureId
+    // and pixi_worker can do O(1) texture lookup
+    this.textureMetadata = this.buildTextureMetadata();
 
     // Collect script paths - convert to absolute URLs for Workers running from Blobs
     // Workers created from Blobs can't resolve relative paths like '/demos/...'
@@ -1636,6 +1717,8 @@ class Scene {
         maxItems: this.maxVisibleRenderables,
         itemSize: 40, // bytes per item
       },
+      // Texture metadata for globalTextureId computation
+      textureMetadata: this.textureMetadata,
       decals: this.config.particle.decals
         ? {
           enabled: true,
