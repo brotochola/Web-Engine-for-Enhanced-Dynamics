@@ -4,21 +4,26 @@
 //
 // ARCHITECTURE: Each spatial worker owns specific grid rows (cellY % workerCount === workerId)
 // - No double buffering (neither grid nor neighbors)
-// - No Atomics, no locks, no coordination, no synchronization
 // - Each worker rebuilds its own rows AND computes neighbors for entities in those rows
 // - Workers can READ any cell but only WRITE to owned rows/entities
 //
 // FLOW PER FRAME:
-// 1. Clear all cells in owned rows
+// 1. Clear LOCAL cell counts (not shared buffer - avoids mid-clear race)
 // 2. Insert ALL active entities into grid (only to owned rows)
-// 3. For each entity in owned rows: find neighbors using precomputed circle patterns
+// 3. Copy local counts to shared gridCounts (single write per cell)
+// 4. For each entity in owned rows: find neighbors using precomputed circle patterns
 //
-// MEMORY MODEL (100% deterministic, zero synchronization):
-// - Grid: Single buffer, row ownership prevents races
-// - Neighbors: Single buffer, row ownership prevents races
+// MEMORY MODEL (1-frame eventual consistency):
+// - Grid: Single buffer, row ownership prevents write races
+// - Neighbors: Single buffer, row ownership prevents write races
+// - Reading cells owned by other workers may return 1-frame-stale data (acceptable)
 // - "Torn reads" by logic workers just mix current + recent data (never garbage)
 // - Distance checks filter any out-of-range neighbors
 // - Transform.active[] check handles despawned entities
+//
+// IMPORTANT: Entity ownership (home row) must be determined from Transform.x/y,
+// NOT from entityPosData, because entityPosData is written by the owning worker
+// and may be stale/zero if read by a different worker before it runs.
 //
 // =============================================================================
 
@@ -38,6 +43,7 @@ import {
   getEntityHomeCellIndex,
 } from './workers-utils.js';
 import { generateSymmetricalCirclePattern } from '../core/utils.js';
+import { SPATIAL_DEFAULTS } from '../core/ConfigDefaults.js';
 
 /**
  * SpatialWorker - Row-based spatial hashing and neighbor detection
@@ -109,6 +115,7 @@ class SpatialWorker extends AbstractWorker {
     this.entitiesProcessedThisFrame = 0;
     this.neighborsFoundThisFrame = 0;
     this.cellsCheckedThisFrame = 0;
+
   }
 
   /**
@@ -171,6 +178,9 @@ class SpatialWorker extends AbstractWorker {
     // Uses Uint16 since it stores entity IDs (max 65535)
     const maxNeighbors = Grid.maxNeighbors || SPATIAL_DEFAULTS.maxNeighbors;
     this._visualOnlyBuffer = new Uint16Array(maxNeighbors);
+
+    // DEBUG: Check if visualOnlyBuffer was created with correct size
+    // console.log(`SPATIAL WORKER ${this.workerId}: visualOnlyBuffer size = ${this._visualOnlyBuffer.length}, Grid.maxNeighbors = ${Grid.maxNeighbors}, SPATIAL_DEFAULTS.maxNeighbors = ${SPATIAL_DEFAULTS.maxNeighbors}`);
 
     // Collision buffer: extra distance for entity movement between spatial and physics
     const collisionMargin = this.config.spatial?.collisionCandidateSearchMargin ?? SPATIAL_DEFAULTS.collisionCandidateSearchMargin;
@@ -294,11 +304,6 @@ class SpatialWorker extends AbstractWorker {
 
     // STEP 2: Find neighbors (only for entities in owned rows)
     this.findNeighborsForOwnedEntities();
-
-    // No synchronization needed - row ownership eliminates all races.
-    // Grid and neighbor data are single-buffered. "Torn reads" by logic workers
-    // just mix current + recent data (never garbage), and distance checks filter
-    // any out-of-range neighbors.
   }
 
   /**
@@ -466,6 +471,16 @@ class SpatialWorker extends AbstractWorker {
   findNeighborsForOwnedEntities() {
     const visualRange = Collider.visualRange;
     const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
+    const colliderActive = Collider.active;
+    const shapeType = Collider.shapeType;
+    const radius = Collider.radius;
+    const width = Collider.width;
+    const height = Collider.height;
+    const SHAPE_CIRCLE = 0;
 
     const gridWidth = this.gridWidth;
     const gridHeight = this.gridHeight;
@@ -474,9 +489,6 @@ class SpatialWorker extends AbstractWorker {
     const stride = Grid._stride;
     const totalSpatialWorkers = this.totalSpatialWorkers;
     const workerId = this.workerId;
-
-    // Interleaved position data: [x, y, halfExtent, pad] per entity (stride 4)
-    const entityPosData = this.entityPosData;
 
     // Single buffer - direct access (row ownership eliminates races)
     const neighborData = Grid.neighborData;
@@ -525,11 +537,21 @@ class SpatialWorker extends AbstractWorker {
           // This prevents race conditions when entities span multiple rows
           // Home row = row containing entity's center Y position
           // =====================================================================
-          // CACHE OPTIMIZED: Read from interleaved buffer (single cache line fetch)
-          const myBaseIdx = entityA * 4;
-          const myX = entityPosData[myBaseIdx];
-          const myY = entityPosData[myBaseIdx + 1];
-          const myHalfExtent = entityPosData[myBaseIdx + 2];
+          // Read position from Transform (source of truth) - entityPosData can be stale/race
+          const myX = x[entityA] + (offsetX[entityA] || 0);
+          const myY = y[entityA] + (offsetY[entityA] || 0);
+
+          // Calculate halfExtent from Collider data (avoid stale entityPosData)
+          let myHalfExtent = 0;
+          if (colliderActive[entityA]) {
+            if (shapeType[entityA] === SHAPE_CIRCLE) {
+              myHalfExtent = radius[entityA] || 0;
+            } else {
+              const halfW = (width[entityA] || 0) * 0.5;
+              const halfH = (height[entityA] || 0) * 0.5;
+              myHalfExtent = halfW > halfH ? halfW : halfH;
+            }
+          }
 
           let homeRow = (myY * invCellSize) | 0;
           // Clamp to grid bounds
@@ -605,11 +627,21 @@ class SpatialWorker extends AbstractWorker {
               processedMarker[entityB] = entityA;
 
               // Calculate squared distance for range check
-              // CACHE OPTIMIZED: Single cache line fetch for x, y, halfExtent
-              const bBaseIdx = entityB * 4;
-              const bX = entityPosData[bBaseIdx];
-              const bY = entityPosData[bBaseIdx + 1];
-              const bHalfExtent = entityPosData[bBaseIdx + 2];
+              // Read from Transform/Collider (source of truth) - entityPosData can be stale/race
+              const bX = x[entityB] + (offsetX[entityB] || 0);
+              const bY = y[entityB] + (offsetY[entityB] || 0);
+
+              // Calculate halfExtent from Collider data
+              let bHalfExtent = 0;
+              if (colliderActive[entityB]) {
+                if (shapeType[entityB] === SHAPE_CIRCLE) {
+                  bHalfExtent = radius[entityB] || 0;
+                } else {
+                  const bHalfW = (width[entityB] || 0) * 0.5;
+                  const bHalfH = (height[entityB] || 0) * 0.5;
+                  bHalfExtent = bHalfW > bHalfH ? bHalfW : bHalfH;
+                }
+              }
 
               const dxAB = bX - myX;
               const dyAB = bY - myY;
@@ -661,6 +693,12 @@ class SpatialWorker extends AbstractWorker {
           // Write counts: [totalCount, collisionCount, neighbors...]
           neighborData[neighborOffset] = neighborCount;
           neighborData[neighborOffset + 1] = collisionCount;
+
+          // DEBUG: Log when we have visual-only neighbors but no collision candidates
+          // This is the case the user reports as failing
+          // if (collisionCount === 0 && visualOnlyCount > 0 && entityA % 100 === 0) {
+          //   console.log(`SPATIAL DEBUG: Entity ${entityA} has ${visualOnlyCount} visual-only neighbors, 0 collision. Writing to offset ${neighborOffset}. First neighbor: ${visualOnlyBuffer[0]}`);
+          // }
         }
       }
     }
