@@ -133,9 +133,7 @@ export const DECORATION_DEFAULTS = {
 
 export const LOGIC_DEFAULTS = {
   numberOfLogicWorkers: 1,
-  numberOfEntitiesPerJob: 250,
   staggeredUpdates: false, // Enable tick decimation (entities tick every N frames based on tickInterval)
-
   noLimitFPS: false,
 };
 
