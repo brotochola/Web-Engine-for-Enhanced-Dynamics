@@ -1,7 +1,7 @@
 // Flash.js - Short-lived light flashes (muzzle flashes, sparks, impacts, etc.)
 // Flashes are GameObjects with LightEmitter + FlashComponent
 // They fade out over their lifespan and auto-despawn when expired
-// Update logic runs in particle_worker (not logic workers)
+// Updated via tick() like any other GameObject
 
 import { GameObject } from './gameObject.js';
 import { LightEmitter } from '../components/LightEmitter.js';
@@ -51,11 +51,7 @@ export class Flash extends GameObject {
 
   /**
    * Create a flash at the specified position
-   * Static API similar to ParticleEmitter.emit()
-   *
-   * NOTE: Unlike regular GameObjects, Flash uses direct slot scanning instead
-   * of the free list system. This is because flashes are expired by particle_worker
-   * which can't access the free list. We scan for inactive slots like particles do.
+   * Uses standard spawn() pattern like all other GameObjects
    *
    * @param {Object} config - Flash configuration
    * @param {number} config.x - X position in world coordinates
@@ -65,7 +61,7 @@ export class Flash extends GameObject {
    * @param {number} [config.color=0xFFFFFF] - Light color (0xRRGGBB)
    * @param {number} [config.intensity=10000] - Initial light intensity
    * @param {number} [config.hasGlowSprite=1] - Whether to render glow sprite (0 = no, 1 = yes)
-   * @returns {Flash|null} - The created flash instance, or null if pool exhausted
+   * @returns {Flash|null} - The created flash instance, or null if pool exhausted/routed
    *
    * @example
    * // Muzzle flash
@@ -76,17 +72,6 @@ export class Flash extends GameObject {
    *   lifespan: 80,
    *   color: 0xFFAA00,
    *   intensity: 40000
-   * });
-   *
-   * @example
-   * // Bullet impact spark
-   * Flash.create({
-   *   x: impactX,
-   *   y: impactY,
-   *   z: 10,
-   *   lifespan: 50,
-   *   color: 0xFFFFFF,
-   *   intensity: 20000
    * });
    */
   static create(config) {
@@ -100,47 +85,17 @@ export class Flash extends GameObject {
       return null;
     }
 
-    // Scan for inactive flash slot (like ParticleEmitter does)
-    // We can't use the free list because particle_worker expires flashes
-    // and can't return indices to the free list
-    const startIndex = this.startIndex;
-    const endIndex = startIndex + this.maxFlashes;
-
-    for (let i = startIndex; i < endIndex; i++) {
-      // Check if this slot is inactive (Transform.active === 0)
-      if (Transform.active[i] === 0) {
-        // Found an inactive slot - activate it
-        const instance = this.instances[i - startIndex];
-
-        if (!instance) {
-          console.error(`Flash: No instance at index ${i}`);
-          continue;
-        }
-
-        // Activate the entity
-        Transform.active[i] = 1;
-
-        // Call onSpawned with config
-        instance.onSpawned({
-          x: config.x,
-          y: config.y,
-          z: config.z ?? 0,
-          glowHeightOffset: config.z ?? 0,
-          lifespan: config.lifespan ?? 100,
-          color: config.color ?? 0xffffff,
-          intensity: config.intensity ?? 10000,
-          hasGlowSprite: config.hasGlowSprite ?? 1,
-        });
-
-        return instance;
-      }
-    }
-
-    // Pool exhausted
-    console.warn(
-      `Flash.create(): No inactive flash available! All ${this.maxFlashes} flashes are active.`
-    );
-    return null;
+    // Use standard spawn() - handles free list, active entity tracking, and query updates
+    return this.spawn({
+      x: config.x,
+      y: config.y,
+      z: config.z ?? 0,
+      glowHeightOffset: config.z ?? 0,
+      lifespan: config.lifespan ?? 100,
+      color: config.color ?? 0xffffff,
+      intensity: config.intensity ?? 10000,
+      hasGlowSprite: config.hasGlowSprite ?? 1,
+    });
   }
 
   /**
@@ -193,5 +148,26 @@ export class Flash extends GameObject {
     this.collider.active = 0;
   }
 
-  // Note: tick() is NOT used - flash updates happen in particle_worker.updateFlashes()
+  /**
+   * LIFECYCLE: Update flash each frame
+   * Fades intensity over lifespan, despawns when expired
+   */
+  tick(dtRatio, deltaTime) {
+    // Increment life
+    this.flashComponent.currentLife += deltaTime;
+
+    // Calculate remaining ratio (1.0 -> 0.0)
+    const remaining = 1 - (this.flashComponent.currentLife / this.flashComponent.lifespan);
+
+    if (remaining <= 0) {
+      // Flash expired
+      this.despawn();
+    } else {
+      // Update light intensity (linear fade)
+      const newIntensity = this.flashComponent.initialIntensity * remaining;
+      this.lightEmitter.lightIntensity = newIntensity;
+      // Update cached sqrt(intensity) for visual range calculations
+      this.lightEmitter.sqrtLightIntensity = Math.sqrt(newIntensity);
+    }
+  }
 }

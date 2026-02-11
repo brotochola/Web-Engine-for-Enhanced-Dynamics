@@ -153,14 +153,24 @@ export class GameObject {
   }
 
   /**
+   * Get the current worker context (works from any worker type)
+   * @returns {Object|null} Worker instance with query system data, or null
+   */
+  static _getWorkerContext() {
+    if (typeof self === 'undefined') return null;
+    // Try different worker types - whichever is defined
+    return self.logicWorker || self.particleWorker || self.pixiRenderer || self.physicsWorker || self.spatialWorker || null;
+  }
+
+  /**
    * Add an entity to all matching precomputed query buffers (sorted insert)
    * Called from spawn() after entity activation
    * @param {number} entityIndex - The entity index to add
    * @param {number} entityType - The entity's type ID
    */
   static _addToMatchingQueries(entityIndex, entityType) {
-    // Access query system from worker context
-    const worker = typeof self !== 'undefined' ? self.logicWorker : null;
+    // Access query system from worker context (works from any worker type)
+    const worker = this._getWorkerContext();
     if (!worker || !worker._queryResultViews || !worker._precomputedQueries || !worker._queryEntityMetadata) {
       return;
     }
@@ -197,8 +207,8 @@ export class GameObject {
    * @param {number} entityType - The entity's type ID
    */
   static _removeFromMatchingQueries(entityIndex, entityType) {
-    // Access query system from worker context
-    const worker = typeof self !== 'undefined' ? self.logicWorker : null;
+    // Access query system from worker context (works from any worker type)
+    const worker = this._getWorkerContext();
     if (!worker || !worker._queryResultViews || !worker._precomputedQueries || !worker._queryEntityMetadata) {
       return;
     }
@@ -1586,9 +1596,6 @@ export class GameObject {
 
     // Check if pool is exhausted
     if (EntityClass.freeListTop < 0) {
-      // console.warn(
-      //   `No inactive ${EntityClass.name} available in pool! All ${EntityClass.poolSize} entities are active.`
-      // );
       return null;
     }
 

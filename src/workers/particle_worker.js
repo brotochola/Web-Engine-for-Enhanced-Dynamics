@@ -197,14 +197,6 @@ class ParticleWorker extends AbstractWorker {
     this.sleepDuration = 30; // Frames of stillness required (0.5 seconds at 60fps)
 
     // ========================================
-    // FLASH SYSTEM
-    // ========================================
-    // Flashes are short-lived light sources (muzzle flashes, sparks, etc.)
-    // Updated here in particle_worker, not in logic workers
-    this.flashesEnabled = false;
-    this.maxFlashes = 0;
-    this.flashStartIndex = 0; // Entity index where flashes start
-
     // Note: activeEntitiesData is now initialized in AbstractWorker.initializeCommonBuffers
   }
 
@@ -466,26 +458,7 @@ class ParticleWorker extends AbstractWorker {
       enabled: data.flashes?.enabled
     });
 
-    if (data.flashes && data.flashes.enabled) {
-      console.log('[PARTICLE WORKER] Initializing flash system...');
-      this.flashesEnabled = true;
-      this.maxFlashes = data.flashes.maxFlashes;
-      this.flashStartIndex = data.flashes.startIndex;
-
-      // Note: FlashComponent is automatically initialized by AbstractWorker.initializeAllComponents()
-      if (data.buffers.componentData.FlashComponent) {
-        console.log(
-          `[PARTICLE WORKER] Flash system enabled (${this.maxFlashes} flashes, starting at index ${this.flashStartIndex})`
-        );
-      } else {
-        console.warn('[PARTICLE WORKER] FlashComponent buffer not found - flashes disabled');
-        this.flashesEnabled = false;
-      }
-    } else {
-      console.log('[PARTICLE WORKER] Flashes not enabled');
-    }
-
-    // Note: activeEntitiesData is initialized in AbstractWorker.initializeCommonBuffers
+    // Note: Flash is now a regular GameObject - updated by logic workers via Flash.tick()
 
     // ========================================
     // RENDER QUEUE - Initialize
@@ -801,7 +774,7 @@ class ParticleWorker extends AbstractWorker {
     // Update lighting tints for all visible game entities
     // this.updateEntityLighting();
 
-    this.updateFlashes(deltaTime);
+    // Note: Flash entities are now updated by logic workers via Flash.tick()
 
     // Update screen visibility for all game entities BEFORE shadows
     // Also collects visible entities for render queue
@@ -825,69 +798,6 @@ class ParticleWorker extends AbstractWorker {
 
     // Store for FPS reporting
     this.activeParticleCount = activeCount;
-  }
-
-  /**
-   * Update all active flashes
-   * Decreases intensity over lifespan, despawns when expired
-   * Flashes use LightEmitter for rendering - intensity decay makes them fade out
-   * @param {number} deltaTime - Frame time in milliseconds
-   */
-  updateFlashes(deltaTime) {
-    if (!this.flashesEnabled || this.maxFlashes === 0) return;
-
-    // Cache component arrays for performance
-    const flashActive = FlashComponent.active;
-    const lifespan = FlashComponent.lifespan;
-    const currentLife = FlashComponent.currentLife;
-    const initialIntensity = FlashComponent.initialIntensity;
-
-    const transformActive = Transform.active;
-    const lightActive = LightEmitter.active;
-    const lightIntensity = LightEmitter.lightIntensity;
-    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity; // OPTIMIZED: Pre-calculated sqrt(intensity)
-
-    const startIndex = this.flashStartIndex;
-    const endIndex = startIndex + this.maxFlashes;
-
-    let flashesUpdated = 0;
-
-    // Update all flashes in the pool
-    for (let entityIndex = startIndex; entityIndex < endIndex; entityIndex++) {
-      // FlashComponent uses entity index directly (dense allocation)
-      if (!flashActive[entityIndex]) continue;
-      if (!transformActive[entityIndex]) continue;
-
-      flashesUpdated++;
-
-      // Update lifetime
-      currentLife[entityIndex] += deltaTime;
-
-      // Calculate remaining life ratio (1.0 -> 0.0)
-      const remaining = 1 - currentLife[entityIndex] / lifespan[entityIndex];
-
-      if (remaining <= 0) {
-        // Flash expired - deactivate it
-        flashActive[entityIndex] = 0;
-        lightActive[entityIndex] = 0;
-        transformActive[entityIndex] = 0;
-
-        // Note: We can't return to free list from worker
-        // The free list is managed by GameObject.spawn() in logic worker
-        // However, since Flash.create() scans for inactive slots,
-        // setting active = 0 is sufficient for reuse
-      } else {
-        // Update light intensity based on remaining life
-        // Linear fade from initialIntensity to 0
-        const newIntensity = initialIntensity[entityIndex] * remaining;
-        lightIntensity[entityIndex] = newIntensity;
-        // OPTIMIZED: Also update cached sqrt(intensity) to avoid recalculating every frame
-        sqrtLightIntensity[entityIndex] = Math.sqrt(newIntensity);
-      }
-    }
-
-    // Track flashes updated for stats
-    this.flashesUpdatedThisFrame = flashesUpdated;
   }
 
   /**
