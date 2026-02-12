@@ -206,17 +206,14 @@ export class DecorationPool extends SharedAtomicPool {
     if (!this.initialized || !this.freeList || !this.freeListTop) return;
 
     // Mark all as inactive
+    const active = DecorationComponent.active;
+    const isItOnScreen = DecorationComponent.isItOnScreen;
     for (let i = 0; i < this.maxCount; i++) {
-      DecorationComponent.active[i] = 0;
-      DecorationComponent.isItOnScreen[i] = 0;
+      active[i] = 0;
+      isItOnScreen[i] = 0;
     }
 
-    // Reset free list to full (all indices available)
-    for (let i = 0; i < this.maxCount; i++) {
-      this.freeList[i] = i;
-    }
-
-    // Reset stack top to maxCount (all slots free)
-    this.freeListTop[0] = this.maxCount;
+    // Reset free list with interleaved ordering (reduces cache contention in multi-worker scenarios)
+    this.resetFreeListInterleaved();
   }
 }

@@ -1872,6 +1872,9 @@ export class GameObject {
   /**
    * SPAWNING SYSTEM: Despawn all entities of a specific type
    *
+   * OPTIMIZED: Uses batch removal methods instead of individual despawn() calls
+   * Complexity: O(N) instead of O(N²) for large pools
+   *
    * @param {Class} EntityClass - The entity class to despawn
    * @returns {number} - Number of entities despawned
    */
@@ -1883,33 +1886,55 @@ export class GameObject {
     const startIndex = EntityClass.startIndex;
     const endIndex = EntityClass.endIndex;
     const entityType = EntityClass.entityType;
-    let despawnedCount = 0;
+
+    // Phase 1: Collect all active indices and call lifecycle hooks
+    // Using Set for O(1) lookup in batch removal methods
+    const indicesToDespawn = new Set();
+
+    // Cache component active arrays for inner loop
+    const transformActive = Transform.active;
+    const rigidBodyActive = RigidBody.active;
+    const colliderActive = Collider.active;
+    const spriteRendererActive = SpriteRenderer.active;
+    const lightEmitterActive = LightEmitter.active;
+    const shadowCasterActive = ShadowCaster.active;
 
     for (let i = startIndex; i < endIndex; i++) {
-      if (Transform.active[i]) {
+      if (transformActive[i]) {
         const instance = EntityClass.instances[i - startIndex];
-        if (instance && instance.despawn) {
-          instance.despawn();
-          despawnedCount++;
-        } else {
-          // Manual despawn if instance missing - also update all active lists
-          GameObject._removeFromMatchingQueries(i, entityType);
-          GameObject._removeFromActiveEntities(i);
-          GameObject._removeFromTypeActiveList(EntityClass, i);
 
-          Transform.active[i] = 0;
-
-          // Return to free list if exists
-          if (EntityClass.freeList) {
-            EntityClass.freeList[++EntityClass.freeListTop] = i;
-          }
-
-          despawnedCount++;
+        // Call lifecycle hook (same as individual despawn)
+        if (instance?.onDespawned) {
+          instance.onDespawned();
         }
+
+        indicesToDespawn.add(i);
+
+        // Deactivate all component active flags
+        transformActive[i] = 0;
+        if (rigidBodyActive) rigidBodyActive[i] = 0;
+        if (colliderActive) colliderActive[i] = 0;
+        if (spriteRendererActive) spriteRendererActive[i] = 0;
+        if (lightEmitterActive) lightEmitterActive[i] = 0;
+        if (shadowCasterActive) shadowCasterActive[i] = 0;
       }
     }
 
-    return despawnedCount;
+    if (indicesToDespawn.size === 0) return 0;
+
+    // Phase 2: Batch remove from active lists (O(N) instead of O(N²))
+    GameObject._batchRemoveFromActiveEntities(indicesToDespawn);
+    GameObject._batchRemoveFromMatchingQueries(indicesToDespawn, entityType);
+
+    // Phase 3: Clear the per-type active list entirely (O(1))
+    GameObject._clearTypeActiveList(EntityClass);
+
+    // Phase 4: Reset free list with interleaved ordering (O(N) bulk reinit)
+    if (EntityClass.freeList) {
+      GameObject.initializeFreeList(EntityClass);
+    }
+
+    return indicesToDespawn.size;
   }
 
   /**

@@ -148,4 +148,31 @@ export class SharedAtomicPool {
         if (!this.freeListTop) return false;
         return this.freeListTop[0] > 0;
     }
+
+    /**
+     * Reset the free list to full with interleaved ordering
+     * Used by despawnAll() to efficiently reset the pool
+     *
+     * INTERLEAVED SPAWNING: Scatter indices to reduce multi-core cache contention
+     * Sequential [0,1,2,3...] causes workers to access adjacent memory, thrashing L3 cache
+     * Interleaved [0,8,16,24...,1,9,17,25...] spreads access across cache lines
+     *
+     * @param {number} [interleaveFactor=8] - Stride between consecutive spawns
+     */
+    static resetFreeListInterleaved(interleaveFactor = 8) {
+        if (!this.freeList || !this.freeListTop || this.maxCount === 0) return;
+
+        const count = this.maxCount;
+
+        // Build interleaved free list
+        let writeIndex = 0;
+        for (let offset = 0; offset < interleaveFactor && writeIndex < count; offset++) {
+            for (let i = offset; i < count && writeIndex < count; i += interleaveFactor) {
+                this.freeList[writeIndex++] = i;
+            }
+        }
+
+        // Reset stack top to full (all slots free)
+        this.freeListTop[0] = count;
+    }
 }
