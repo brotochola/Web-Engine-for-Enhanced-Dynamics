@@ -482,7 +482,7 @@ export class Person extends Lootable {
       vz: { min: -1, max: 5 }, // Some sparks fly up, others fall
       gravity: 0.4,
       lifespan: { min: 33, max: 100 },
-      scale: { min: 0.2, max: 0.3 },
+      scale: { min: 0.5, max: 0.1 },
       texture: 'square',
       tint: randomColor({ min: 0xffff00, max: 0xffffff }),
       alpha: { min: 0.5, max: 0.8 },
