@@ -216,7 +216,7 @@ TENER AMBOS! y se puede desde tickall llamar a sistemas, q tmb son metodos estat
 --- SPATIAL WORKER: ---
 ------------------------------------------------------------------------------------------------
 
-
+-q vuelva a escribir distSq
 
 ------------------------------------------------------------------------------------------------
 --- NAV WORKER: ---
