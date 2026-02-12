@@ -107,6 +107,7 @@ import { ParticleComponent } from './components/ParticleComponent.js';
 
 import { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/ParticleEmitter.js';
 import { DecorationPool } from './core/DecorationPool.js';
+import { SharedAtomicPool } from './core/SharedAtomicPool.js';
 import { DecorationComponent } from './components/DecorationComponent.js';
 import { LightEmitter } from './components/LightEmitter.js';
 import { ShadowCaster } from './components/ShadowCaster.js';
@@ -151,6 +152,9 @@ const WEED = {
   // Decorations
   DecorationPool,
   DecorationComponent,
+
+  // Pool base class (for custom pools)
+  SharedAtomicPool,
 
   // Flashes
   Flash,

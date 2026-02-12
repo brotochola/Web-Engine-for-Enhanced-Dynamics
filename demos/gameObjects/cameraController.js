@@ -15,7 +15,11 @@ export class CameraController extends WEED.GameObject {
   tick(dtRatio) {
     const mySoldierIndices = MySoldier.getAllActive();
 
-    if (mySoldierIndices.length <= 1) {
+    if (mySoldierIndices.length === 0) {
+      Camera.setZoom(1);
+      return;
+    }
+    if (mySoldierIndices.length == 1) {
       const idx = mySoldierIndices[0];
       const x = Transform.x[idx];
       const y = Transform.y[idx];

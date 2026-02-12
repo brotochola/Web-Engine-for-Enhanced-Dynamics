@@ -2,6 +2,8 @@
 // Used by game entities to spawn visual particle effects
 // Particles are NOT GameObjects - they use ParticleComponent directly
 //
+// EXTENDS SharedAtomicPool for thread-safe free list management
+//
 // ═══════════════════════════════════════════════════════════════════════════
 // TEXTURE SPECIFICATION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -29,6 +31,7 @@
 
 import { ParticleComponent } from '../components/ParticleComponent.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
+import { SharedAtomicPool } from './SharedAtomicPool.js';
 import { randomRange, randomColor, convertRGBtoBGR } from './utils.js';
 
 export const DECAL_STAMPS_BLEND_MODE = {
@@ -36,15 +39,14 @@ export const DECAL_STAMPS_BLEND_MODE = {
   multiply: 1,
 };
 
-export class ParticleEmitter {
-  // Particle pool size (set during initialization)
-  static maxParticles = 0;
-  static initialized = false;
+export class ParticleEmitter extends SharedAtomicPool {
+  // Pool name for logging (used by base class)
+  static poolName = 'ParticleEmitter';
 
-  // Free list for O(1) allocation (LIFO stack backed by SharedArrayBuffer)
-  // Shared between main thread (pop) and particle_worker (push on death)
-  static freeList = null; // Uint16Array - stack of free indices
-  static freeListTop = null; // Int32Array[1] - atomic counter for stack top
+  // Alias for backwards compatibility
+  static get maxParticles() {
+    return this.maxCount;
+  }
 
   /**
    * Initialize the emitter with particle pool size
@@ -52,46 +54,8 @@ export class ParticleEmitter {
    * @param {number} maxParticles - Number of particles in pool
    */
   static initialize(maxParticles) {
-    this.maxParticles = maxParticles;
-    this.initialized = true;
-    console.log(
-      `ParticleEmitter: Initialized with ${maxParticles} particles (indices 0-${maxParticles - 1})`
-    );
-  }
-
-  /**
-   * Initialize the shared free list buffers
-   * Called by workers to connect to the shared free list
-   * @param {SharedArrayBuffer} freeListBuffer - Buffer for free indices (Uint16Array)
-   * @param {SharedArrayBuffer} freeListTopBuffer - Buffer for stack top (Int32Array[1])
-   */
-  static initializeFreeList(freeListBuffer, freeListTopBuffer) {
-    this.freeList = new Uint16Array(freeListBuffer);
-    this.freeListTop = new Int32Array(freeListTopBuffer);
-    console.log(
-      `ParticleEmitter: Free list initialized (top: ${this.freeListTop[0]})`
-    );
-  }
-
-  /**
-   * Return a particle index to the free list (called by particle_worker when particles die)
-   * Uses atomic operations for thread-safe access
-   * @param {number} index - Particle index to return
-   */
-  static returnToPool(index) {
-    if (!this.freeList || !this.freeListTop) return;
-
-    // Atomic increment and get previous value (this is our write slot)
-    const slot = Atomics.add(this.freeListTop, 0, 1);
-
-    // Safety check - don't overflow the free list
-    if (slot >= this.maxParticles) {
-      // Rollback - this shouldn't happen in normal operation
-      Atomics.sub(this.freeListTop, 0, 1);
-      return;
-    }
-
-    this.freeList[slot + 1] = index; // +1 because freeListTop is 0-indexed
+    // Call base class initialize with the count
+    super.initialize(maxParticles);
   }
 
   /**
@@ -151,70 +115,6 @@ export class ParticleEmitter {
    *   stayOnTheFloor: true,  // Stamp as decal
    * });
    */
-  /**
-   * Stamp a decal directly onto the floor tilemap.
-   * Convenience wrapper that creates an "instant stamp" particle.
-   *
-   * TEXTURE OPTIONS:
-   * - Use `texture` for direct texture/frame names
-   * - Use `spritesheet` + `animation` + `frame` to specify an animation frame
-   *
-   * @param {Object} config - Decal configuration
-   * @param {number|{min,max}} config.x - X position or range
-   * @param {number|{min,max}} config.y - Y position or range
-   * @param {string} [config.texture] - Texture name (from bigAtlas). Can be:
-   *   - Static texture: "blood", "burn_mark"
-   *   - Prefixed animation: "civil1_hurt" (uses first frame)
-   *   - Specific frame: "civil1_hurt_5"
-   * @param {string} [config.spritesheet] - Spritesheet name for frame resolution (e.g., "civil1")
-   * @param {string} [config.animation] - Animation name for frame resolution (e.g., "hurt")
-   * @param {number} [config.frame=0] - Frame index within animation (0 = first, -1 = last)
-   * @param {number|{min,max}} [config.scale=1] - Scale or range
-   * @param {number|{min,max}} [config.scaleX] - X scale (overrides scale if provided)
-   * @param {number|{min,max}} [config.scaleY] - Y scale (overrides scale if provided)
-   * @param {number|{min,max}} [config.alpha=1] - Alpha (opacity) or range
-   * @param {number|{min,max}} [config.tint=0xFFFFFF] - Color tint or range
-   * @param {number|{min,max}} [config.rotation=0] - Rotation in degrees or range
-   * @param {number} [config.count=1] - Number of decals to stamp
-   * @returns {number} - Number of decals actually spawned
-   *
-   * @example
-   * // Stamp a static texture
-   * ParticleEmitter.stampDecal({
-   *   x: this.x,
-   *   y: this.y,
-   *   texture: "burn_mark",
-   *   scale: { min: 0.8, max: 1.2 },
-   *   rotation: { min: 0, max: 360 },
-   *   alpha: 0.9,
-   * });
-   *
-   * @example
-   * // Stamp the last frame of an animation (e.g., dead body)
-   * ParticleEmitter.stampDecal({
-   *   x: this.x,
-   *   y: this.y,
-   *   spritesheet: "civil1",
-   *   animation: "hurt",
-   *   frame: -1,  // Last frame
-   *   scaleX: this.spriteRenderer.scaleX,
-   *   scaleY: this.spriteRenderer.scaleY,
-   *   tint: this.spriteRenderer.baseTint,
-   * });
-   */
-  static stampDecal(config) {
-    return this.emit({
-      ...config,
-      z: 0,
-      lifespan: 100,
-      stayOnTheFloor: true,
-      vx: 0,
-      vy: 0,
-      vz: 0,
-      gravity: 1,
-    });
-  }
-
   static emit(config) {
     if (!this.initialized) {
       console.warn('ParticleEmitter.emit() called before initialization');
@@ -252,7 +152,7 @@ export class ParticleEmitter {
       if (!textureName) {
         console.warn(
           `ParticleEmitter.emit: Could not resolve frame for ` +
-          `spritesheet="${config.spritesheet}", animation="${config.animation}", frame=${config.frame ?? 0}`
+            `spritesheet="${config.spritesheet}", animation="${config.animation}", frame=${config.frame ?? 0}`
         );
       }
     }
@@ -262,7 +162,7 @@ export class ParticleEmitter {
       textureId = SpriteSheetRegistry.getTextureId(textureName);
     }
 
-    // Cache array references for performance
+    // Cache array references for performance (zero allocation - just reference copying)
     const active = ParticleComponent.active;
     const x = ParticleComponent.x;
     const y = ParticleComponent.y;
@@ -290,22 +190,13 @@ export class ParticleEmitter {
     const flipY = ParticleComponent.flipY;
     const blendMode = ParticleComponent.blendMode;
 
-    // Use free list if available (O(1) allocation), fallback to linear scan
-    const useFreeList = this.freeList && this.freeListTop;
-
     while (spawned < count) {
-      // Get free particle index
-      let i;
-      // if (useFreeList) {
-      // Atomic decrement to pop from free list
-      const newTop = Atomics.sub(this.freeListTop, 0, 1) - 1;
-      if (newTop < 0) {
-        // Pool exhausted - restore and break
-        Atomics.add(this.freeListTop, 0, 1);
+      // Acquire free index from pool (inherited from SharedAtomicPool)
+      const i = this.acquireIndex();
+      if (i < 0) {
+        // Pool exhausted
         break;
       }
-      i = this.freeList[newTop + 1]; // +1 because array is 0-indexed but top counts from 0
-      // }
 
       // Position
       x[i] = randomRange(config.x);
@@ -374,12 +265,76 @@ export class ParticleEmitter {
       // Decal blend mode: 0 = normal (alpha over), 1 = multiply
       blendMode[i] = config.blendMode ?? DECAL_STAMPS_BLEND_MODE.normal;
 
-      spawned++;
-      // Claim this particle
+      // Claim this particle (must be last - signals to other workers)
       active[i] = 1;
 
+      spawned++;
     }
 
     return spawned;
+  }
+
+  /**
+   * Stamp a decal directly onto the floor tilemap.
+   * Convenience wrapper that creates an "instant stamp" particle.
+   *
+   * TEXTURE OPTIONS:
+   * - Use `texture` for direct texture/frame names
+   * - Use `spritesheet` + `animation` + `frame` to specify an animation frame
+   *
+   * @param {Object} config - Decal configuration
+   * @param {number|{min,max}} config.x - X position or range
+   * @param {number|{min,max}} config.y - Y position or range
+   * @param {string} [config.texture] - Texture name (from bigAtlas). Can be:
+   *   - Static texture: "blood", "burn_mark"
+   *   - Prefixed animation: "civil1_hurt" (uses first frame)
+   *   - Specific frame: "civil1_hurt_5"
+   * @param {string} [config.spritesheet] - Spritesheet name for frame resolution (e.g., "civil1")
+   * @param {string} [config.animation] - Animation name for frame resolution (e.g., "hurt")
+   * @param {number} [config.frame=0] - Frame index within animation (0 = first, -1 = last)
+   * @param {number|{min,max}} [config.scale=1] - Scale or range
+   * @param {number|{min,max}} [config.scaleX] - X scale (overrides scale if provided)
+   * @param {number|{min,max}} [config.scaleY] - Y scale (overrides scale if provided)
+   * @param {number|{min,max}} [config.alpha=1] - Alpha (opacity) or range
+   * @param {number|{min,max}} [config.tint=0xFFFFFF] - Color tint or range
+   * @param {number|{min,max}} [config.rotation=0] - Rotation in degrees or range
+   * @param {number} [config.count=1] - Number of decals to stamp
+   * @returns {number} - Number of decals actually spawned
+   *
+   * @example
+   * // Stamp a static texture
+   * ParticleEmitter.stampDecal({
+   *   x: this.x,
+   *   y: this.y,
+   *   texture: "burn_mark",
+   *   scale: { min: 0.8, max: 1.2 },
+   *   rotation: { min: 0, max: 360 },
+   *   alpha: 0.9,
+   * });
+   *
+   * @example
+   * // Stamp the last frame of an animation (e.g., dead body)
+   * ParticleEmitter.stampDecal({
+   *   x: this.x,
+   *   y: this.y,
+   *   spritesheet: "civil1",
+   *   animation: "hurt",
+   *   frame: -1,  // Last frame
+   *   scaleX: this.spriteRenderer.scaleX,
+   *   scaleY: this.spriteRenderer.scaleY,
+   *   tint: this.spriteRenderer.baseTint,
+   * });
+   */
+  static stampDecal(config) {
+    return this.emit({
+      ...config,
+      z: 0,
+      lifespan: 100,
+      stayOnTheFloor: true,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      gravity: 1,
+    });
   }
 }

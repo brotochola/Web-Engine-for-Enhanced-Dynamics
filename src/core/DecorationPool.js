@@ -2,25 +2,26 @@
 // Used by game code to place static visual elements (grass, rocks, bushes, etc.)
 // Decorations are NOT GameObjects - they use DecorationComponent directly
 //
+// EXTENDS SharedAtomicPool for thread-safe free list management
+//
 // THREAD SAFETY:
 // - freeList and freeListTop are backed by SharedArrayBuffer
 // - Spawn/despawn use Atomics for lock-free concurrent access
 // - Any worker or the main thread can safely spawn/despawn decorations
-// - Pattern matches ParticleEmitter for consistency
 
 import { DecorationComponent } from '../components/DecorationComponent.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
+import { SharedAtomicPool } from './SharedAtomicPool.js';
 import { randomRange, convertRGBtoBGR } from './utils.js';
 
-export class DecorationPool {
-  // Pool size (set during initialization)
-  static maxDecorations = 0;
-  static initialized = false;
+export class DecorationPool extends SharedAtomicPool {
+  // Pool name for logging (used by base class)
+  static poolName = 'DecorationPool';
 
-  // Free list for O(1) allocation (LIFO stack backed by SharedArrayBuffer)
-  // Shared between all workers and main thread
-  static freeList = null; // Uint16Array - stack of free indices
-  static freeListTop = null; // Int32Array[1] - atomic counter for stack top
+  // Alias for backwards compatibility
+  static get maxDecorations() {
+    return this.maxCount;
+  }
 
   /**
    * Initialize the decoration pool with max count
@@ -28,46 +29,8 @@ export class DecorationPool {
    * @param {number} maxDecorations - Number of decorations in pool
    */
   static initialize(maxDecorations) {
-    this.maxDecorations = maxDecorations;
-    this.initialized = true;
-    console.log(
-      `DecorationPool: Initialized with ${maxDecorations} decorations (indices 0-${maxDecorations - 1})`
-    );
-  }
-
-  /**
-   * Initialize the shared free list buffers
-   * Called by workers to connect to the shared free list
-   * @param {SharedArrayBuffer} freeListBuffer - Buffer for free indices (Uint16Array)
-   * @param {SharedArrayBuffer} freeListTopBuffer - Buffer for stack top (Int32Array[1])
-   */
-  static initializeFreeList(freeListBuffer, freeListTopBuffer) {
-    this.freeList = new Uint16Array(freeListBuffer);
-    this.freeListTop = new Int32Array(freeListTopBuffer);
-    console.log(
-      `DecorationPool: Free list initialized (top: ${this.freeListTop[0]})`
-    );
-  }
-
-  /**
-   * Return a decoration index to the free list (called when despawning)
-   * Uses atomic operations for thread-safe access
-   * @param {number} index - Decoration index to return
-   */
-  static returnToPool(index) {
-    if (!this.freeList || !this.freeListTop) return;
-
-    // Atomic increment and get previous value (this is our write slot)
-    const slot = Atomics.add(this.freeListTop, 0, 1);
-
-    // Safety check - don't overflow the free list
-    if (slot >= this.maxDecorations) {
-      // Rollback - this shouldn't happen in normal operation
-      Atomics.sub(this.freeListTop, 0, 1);
-      return;
-    }
-
-    this.freeList[slot + 1] = index; // +1 because freeListTop is 0-indexed
+    // Call base class initialize with the count
+    super.initialize(maxDecorations);
   }
 
   /**
@@ -104,22 +67,12 @@ export class DecorationPool {
    * });
    */
   static spawn(config) {
-    if (!this.initialized || !this.freeList || !this.freeListTop) {
-      console.warn('DecorationPool.spawn() called before initialization');
-      return -1;
-    }
-
-    // Atomic decrement to pop from free list
-    const newTop = Atomics.sub(this.freeListTop, 0, 1) - 1;
-    if (newTop < 0) {
-      // Pool exhausted - restore and return
-      Atomics.add(this.freeListTop, 0, 1);
+    // Acquire free index from pool (inherited from SharedAtomicPool)
+    const i = this.acquireIndex();
+    if (i < 0) {
       console.warn('DecorationPool: No free slots available');
       return -1;
     }
-
-    // Get the index from the free list
-    const i = this.freeList[newTop + 1]; // +1 because array is 0-indexed but top counts from 0
 
     // Resolve texture name to textureId (frame index in bigAtlas)
     let textureId = 0;
@@ -127,7 +80,7 @@ export class DecorationPool {
       textureId = SpriteSheetRegistry.getAnimationIndex('bigAtlas', config.texture) ?? 0;
     }
 
-    // Cache array references for performance
+    // Cache array references for performance (zero allocation - just reference copying)
     const x = DecorationComponent.x;
     const y = DecorationComponent.y;
     const offsetX = DecorationComponent.offsetX;
@@ -225,7 +178,7 @@ export class DecorationPool {
       return false;
     }
 
-    if (index < 0 || index >= this.maxDecorations) {
+    if (index < 0 || index >= this.maxCount) {
       console.warn(`DecorationPool.despawn(): Invalid index ${index}`);
       return false;
     }
@@ -238,7 +191,7 @@ export class DecorationPool {
     DecorationComponent.active[index] = 0;
     DecorationComponent.isItOnScreen[index] = 0;
 
-    // Return index to free list using atomic operation
+    // Return index to free list (inherited from SharedAtomicPool)
     this.returnToPool(index);
 
     return true;
@@ -253,38 +206,17 @@ export class DecorationPool {
     if (!this.initialized || !this.freeList || !this.freeListTop) return;
 
     // Mark all as inactive
-    for (let i = 0; i < this.maxDecorations; i++) {
+    for (let i = 0; i < this.maxCount; i++) {
       DecorationComponent.active[i] = 0;
       DecorationComponent.isItOnScreen[i] = 0;
     }
 
     // Reset free list to full (all indices available)
-    for (let i = 0; i < this.maxDecorations; i++) {
+    for (let i = 0; i < this.maxCount; i++) {
       this.freeList[i] = i;
     }
 
-    // Reset stack top to maxDecorations (all slots free)
-    this.freeListTop[0] = this.maxDecorations;
-  }
-
-  /**
-   * Get the number of active decorations (derived from free list)
-   * Thread-safe: reads atomic counter
-   * @returns {number} - Count of active decorations
-   */
-  static getActiveCount() {
-    if (!this.initialized || !this.freeListTop) return 0;
-    // Active = total - free slots available
-    return this.maxDecorations - this.freeListTop[0];
-  }
-
-  /**
-   * Get the number of free slots available
-   * Thread-safe: reads atomic counter
-   * @returns {number} - Count of free decoration slots
-   */
-  static getFreeCount() {
-    if (!this.freeListTop) return 0;
-    return this.freeListTop[0];
+    // Reset stack top to maxCount (all slots free)
+    this.freeListTop[0] = this.maxCount;
   }
 }
