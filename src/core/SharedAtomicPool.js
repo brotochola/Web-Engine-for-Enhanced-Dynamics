@@ -72,17 +72,19 @@ export class SharedAtomicPool {
         }
 
         // Atomic decrement to pop from free list
-        const newTop = Atomics.sub(this.freeListTop, 0, 1) - 1;
+        // Atomics.sub returns the OLD value, then decrements
+        const oldTop = Atomics.sub(this.freeListTop, 0, 1);
 
-        if (newTop < 0) {
+        if (oldTop <= 0) {
             // Pool exhausted - restore counter and return failure
             Atomics.add(this.freeListTop, 0, 1);
             return -1;
         }
 
         // Return the index from the free list
-        // +1 offset because freeListTop counts from 0 but array is 0-indexed
-        return this.freeList[newTop + 1];
+        // oldTop was the count, so valid indices are 0 to oldTop-1
+        // We want the last item at index oldTop-1
+        return this.freeList[oldTop - 1];
     }
 
     /**
@@ -95,6 +97,7 @@ export class SharedAtomicPool {
         if (!this.freeList || !this.freeListTop) return;
 
         // Atomic increment and get previous value (this is our write slot)
+        // Atomics.add returns the OLD value, then increments
         const slot = Atomics.add(this.freeListTop, 0, 1);
 
         // Safety check - don't overflow the free list
@@ -104,9 +107,8 @@ export class SharedAtomicPool {
             return;
         }
 
-        // Write the index to the free list
-        // +1 offset because slot is 0-indexed but we write after the count
-        this.freeList[slot + 1] = index;
+        // Write the index to the free list at the old top position
+        this.freeList[slot] = index;
     }
 
     /**

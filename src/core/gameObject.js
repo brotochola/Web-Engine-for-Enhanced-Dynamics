@@ -1332,6 +1332,9 @@ export class GameObject {
   /**
    * Despawn this entity (return it to the inactive pool)
    * This is the proper way to deactivate an entity
+   *
+   * ATOMIC DESPAWN: Any worker can despawn directly using atomic free list operations
+   * No more worker-0 routing needed - freeList and freeListTop are SAB-backed
    */
   despawn() {
     // Prevent double-despawn which corrupts the free list
@@ -1339,40 +1342,6 @@ export class GameObject {
 
     const EntityClass = this.constructor;
     const entityType = EntityClass.entityType;
-
-    // WORKER ROUTING: If we're in a logic worker that's not worker 0,
-    // route the despawn request to worker 0 to keep freeList synchronized
-    if (typeof self !== 'undefined' && self.logicWorker) {
-      if (self.logicWorker.workerIndex !== 0) {
-        // LIFECYCLE: Call onDespawned() BEFORE deactivating
-        if (this.onDespawned) {
-          this.onDespawned();
-        }
-
-        // INCREMENTAL UPDATE: Remove from query buffers and per-type list BEFORE deactivating
-        // This is safe even from non-logic0 workers since the buffers are in SAB
-        GameObject._removeFromMatchingQueries(this.index, entityType);
-        GameObject._removeFromActiveEntities(this.index);
-        GameObject._removeFromTypeActiveList(EntityClass, this.index);
-
-        // Immediately deactivate so entity stops being processed
-        // (the active flag is in SharedArrayBuffer, visible to all workers)
-        Transform.active[this.index] = 0;
-        if (this.rigidBody) RigidBody.active[this.index] = 0;
-        if (this.collider) Collider.active[this.index] = 0;
-        if (this.spriteRenderer) SpriteRenderer.active[this.index] = 0;
-        if (this.lightEmitter) LightEmitter.active[this.index] = 0;
-        if (this.shadowCaster) ShadowCaster.active[this.index] = 0;
-
-        // Route to worker 0 to update the freeList
-        self.logicWorker.sendDataToWorker('logic0', {
-          msg: 'despawnRequest',
-          entityIndex: this.index,
-          className: this.constructor.name,
-        });
-        return;
-      }
-    }
 
     // LIFECYCLE: Call onDespawned() BEFORE deactivating
     // This allows cleanup, saving state, triggering effects, etc.
@@ -1394,9 +1363,18 @@ export class GameObject {
     if (this.lightEmitter) LightEmitter.active[this.index] = 0;
     if (this.shadowCaster) ShadowCaster.active[this.index] = 0;
 
-    // Return to free list if exists (O(1))
-    if (EntityClass.freeList) {
-      EntityClass.freeList[++EntityClass.freeListTop] = this.index;
+    // ATOMIC: Return to free list using atomic increment (thread-safe)
+    // Atomics.add returns OLD value, then increments
+    if (EntityClass.freeList && EntityClass.freeListTop) {
+      const slot = Atomics.add(EntityClass.freeListTop, 0, 1);
+      // Safety check - don't overflow the free list
+      if (slot < EntityClass.poolSize) {
+        // slot is the old count, so write at index slot
+        EntityClass.freeList[slot] = this.index;
+      } else {
+        // Rollback - this shouldn't happen in normal operation
+        Atomics.sub(EntityClass.freeListTop, 0, 1);
+      }
     }
   }
 
@@ -1573,21 +1551,26 @@ export class GameObject {
   }
 
   /**
-   * SPAWNING SYSTEM: Initialize free list for O(1) spawning
-   * Must be called after registration and before any spawning
+   * SPAWNING SYSTEM: Reset free list for an entity class (used by despawnAll)
+   * Repopulates the SAB-backed free list with interleaved ordering
+   *
+   * NOTE: Free lists are now SAB-backed and initialized by Scene.js
+   * This method is only called by despawnAll() to reset after bulk despawn
    *
    * Uses interleaved index ordering to reduce CPU cache contention between
    * logic workers. See inline comments for details.
    *
-   * @param {Class} EntityClass - The entity class to initialize
+   * @param {Class} EntityClass - The entity class to reset
    */
   static initializeFreeList(EntityClass) {
     const count = EntityClass.poolSize;
     const startIndex = EntityClass.startIndex;
 
-    // Create free list stack (LIFO - last written index is first to spawn)
-    EntityClass.freeList = new Uint16Array(count);
-    EntityClass.freeListTop = count - 1;
+    // Free list should already exist (SAB-backed, created by Scene.js)
+    if (!EntityClass.freeList || !EntityClass.freeListTop) {
+      console.error(`Cannot reset free list for ${EntityClass.name}: SAB not initialized`);
+      return;
+    }
 
     // INTERLEAVED SPAWNING: Scatter entity indices to reduce multi-core cache contention
     //
@@ -1613,11 +1596,14 @@ export class GameObject {
     // etc.
     // Result: popping from stack yields 7, 15, 23... then 6, 14, 22... etc.
     let writeIndex = 0;
-    for (let offset = 0; offset < interleaveFactor; offset++) {
-      for (let i = offset; i < count; i += interleaveFactor) {
+    for (let offset = 0; offset < interleaveFactor && writeIndex < count; offset++) {
+      for (let i = offset; i < count && writeIndex < count; i += interleaveFactor) {
         EntityClass.freeList[writeIndex++] = startIndex + i;
       }
     }
+
+    // Reset stack top to full (all slots free)
+    EntityClass.freeListTop[0] = count;
   }
 
   /**
@@ -1649,34 +1635,30 @@ export class GameObject {
       return null;
     }
 
-    // WORKER ROUTING: If we're in a logic worker that's not worker 0,
-    // route the spawn request to worker 0 to keep freeList synchronized
-    if (typeof self !== 'undefined' && self.logicWorker) {
-      if (self.logicWorker.workerIndex !== 0) {
-        // Route to worker 0 via MessagePort
-        self.logicWorker.sendDataToWorker('logic0', {
-          msg: 'spawnRequest',
-          className: EntityClass.name,
-          spawnConfig: spawnConfig,
-        });
-        return null; // Async spawn - no instance returned immediately
-      }
-    }
-
-    // Initialize free list if not exists (lazy init)
-    // BUGFIX: Use hasOwnProperty to prevent inheriting parent class's freeList
-    // (e.g., Prey extends Boid - Prey should have its own freeList, not inherit Boid's)
-    if (!EntityClass.hasOwnProperty('freeList')) {
-      GameObject.initializeFreeList(EntityClass);
-    }
-
-    // Check if pool is exhausted
-    if (EntityClass.freeListTop < 0) {
+    // ATOMIC SPAWN: Any worker can spawn directly using atomic free list operations
+    // No more worker-0 routing needed - freeList and freeListTop are SAB-backed
+    if (!EntityClass.freeList || !EntityClass.freeListTop) {
+      console.error(
+        `Cannot spawn ${EntityClass.name}: free list not initialized. Was scene properly initialized?`
+      );
       return null;
     }
 
-    // Pop index from free list (O(1))
-    const i = EntityClass.freeList[EntityClass.freeListTop--];
+    // Atomic decrement to pop from free list (thread-safe)
+    // Atomics.sub returns OLD value, then decrements
+    const oldTop = Atomics.sub(EntityClass.freeListTop, 0, 1);
+
+    // Check if pool is exhausted (oldTop was 0 or less before decrement)
+    if (oldTop <= 0) {
+      // Pool exhausted - restore counter and return failure
+      Atomics.add(EntityClass.freeListTop, 0, 1);
+      return null;
+    }
+
+    // Get index from free list
+    // oldTop was the count, so valid indices are 0 to oldTop-1
+    // We want the last item, at index oldTop-1
+    const i = EntityClass.freeList[oldTop - 1];
 
     // Get the instance (already created during initialization)
     const instance = EntityClass.instances[i - EntityClass.startIndex];
@@ -1842,8 +1824,8 @@ export class GameObject {
     }
 
     // If free list exists, use it for O(1) stats
-    if (EntityClass.freeList) {
-      const available = EntityClass.freeListTop + 1;
+    if (EntityClass.freeList && EntityClass.freeListTop) {
+      const available = EntityClass.freeListTop[0]; // SAB-backed Int32Array
       return {
         total: EntityClass.poolSize,
         active: EntityClass.poolSize - available,
@@ -2128,8 +2110,8 @@ export class GameObject {
     }
 
     // If free list exists, calculate from it (O(1))
-    if (EntityClass.hasOwnProperty('freeList')) {
-      return EntityClass.poolSize - (EntityClass.freeListTop + 1);
+    if (EntityClass.hasOwnProperty('freeList') && EntityClass.freeListTop) {
+      return EntityClass.poolSize - EntityClass.freeListTop[0]; // SAB-backed Int32Array
     }
 
     // Fallback: count active entities (O(n))

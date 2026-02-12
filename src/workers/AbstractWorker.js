@@ -359,6 +359,13 @@ export class AbstractWorker {
       this.perTypeActiveLists = data.buffers.perTypeActiveLists;
     }
 
+    // Entity free lists (SABs for atomic spawn/despawn from any worker)
+    // These are attached to EntityClass later after scripts load
+    if (data.buffers?.entityFreeLists) {
+      this.entityFreeLists = data.buffers.entityFreeLists;
+      this.entityFreeListTops = data.buffers.entityFreeListTops;
+    }
+
     // Initialize frame rate tracking buffer
     if (data.buffers?.frameRateData) {
       this.frameRateData = new Float32Array(data.buffers.frameRateData);
@@ -455,6 +462,20 @@ export class AbstractWorker {
         const sab = this.perTypeActiveLists[registration.name];
         if (EntityClass && sab) {
           EntityClass._activeList = new Uint16Array(sab);
+        }
+      }
+    }
+
+    // Attach entity free lists (SAB-backed) to EntityClasses
+    // This enables atomic spawn/despawn from ANY worker without routing to worker-0
+    if (this.entityFreeLists && this.entityFreeListTops && this.registeredClasses) {
+      for (const registration of this.registeredClasses) {
+        const EntityClass = self[registration.name];
+        const freeListSAB = this.entityFreeLists[registration.name];
+        const freeListTopSAB = this.entityFreeListTops[registration.name];
+        if (EntityClass && freeListSAB && freeListTopSAB) {
+          EntityClass.freeList = new Uint16Array(freeListSAB);
+          EntityClass.freeListTop = new Int32Array(freeListTopSAB);
         }
       }
     }
