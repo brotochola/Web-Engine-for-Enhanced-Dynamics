@@ -429,21 +429,30 @@ export class Person extends Lootable {
         offsetY: flashOffsetY, // Visual offset to gun height (negative value moves sprite up)
       });
 
-      //line
-      const decorationIndex = DecorationPool.spawn({
+      // Bullet tracer particle (travels from shooter to victim in 3 frames)
+      const tracerLength = 50;
+      const angleDeg = (lineAngle * 180) / Math.PI;
+      // Speed: travel full distance in ~3 frames (50ms at 60fps)
+      const tracerSpeed = 50;
+
+      ParticleEmitter.emit({
+        count: 1,
         x: this.x + flashOffsetX,
-        y: this.y - 1, // Base Y position for sorting (ground level)
+        y: this.y,
+        z: flashOffsetY,
+        angleXY: angleDeg,
+        speed: tracerSpeed,
+        gravity: 0,
+        lifespan: 120,//ms
         texture: '_white',
-        scaleX: distance / 8, // Stretch 8px texture to distance pixels
-        scaleY: 0.25, // Make it 2px high (2/8 = 0.25)
-        rotation: lineAngle,
-        alpha: 0.5,
-        anchorX: 0, // Start at shooter position
-        anchorY: 0.5, // Center vertically
-        offsetY: flashOffsetY, // Visual offset to gun height (negative value moves sprite up)
+        scaleX: tracerLength * 0.125,
+        scaleY: 0.5, // 2px high
+        rotation: angleDeg,
+        alpha: 0.66,
+        tweenToAlpha0: true
       });
+
       setTimeout(() => {
-        DecorationPool.despawn(decorationIndex);
         DecorationPool.despawn(muzzleIndex);
       }, 50);
 

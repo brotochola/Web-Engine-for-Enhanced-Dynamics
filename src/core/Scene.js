@@ -1077,6 +1077,49 @@ class Scene {
       EntityClass._activeList[0] = 0; // Initialize count to 0
     }
 
+    // ========================================
+    // ENTITY FREE LISTS - Atomic spawn/despawn from any worker
+    // ========================================
+    // Each entity type gets its own SAB-backed free list for lock-free allocation
+    // This eliminates the need for worker-0 routing for spawn/despawn operations
+    this.buffers.entityFreeLists = {};
+    this.buffers.entityFreeListTops = {};
+    for (const registration of this.registeredClasses) {
+      const typeName = registration.class.name;
+      const poolSize = registration.count;
+      const startIndex = registration.startIndex;
+
+      if (poolSize === 0) continue; // Skip abstract parent classes with no pool
+
+      // freeList: Uint16Array of poolSize (stack of free indices)
+      // freeListTop: Int32Array[1] (atomic counter for stack top)
+      const freeListBuffer = new SharedArrayBuffer(poolSize * 2); // Uint16 = 2 bytes
+      const freeListTopBuffer = new SharedArrayBuffer(4); // Int32 = 4 bytes
+
+      this.buffers.entityFreeLists[typeName] = freeListBuffer;
+      this.buffers.entityFreeListTops[typeName] = freeListTopBuffer;
+
+      // Initialize free list with interleaved ordering (reduces cache contention)
+      const freeList = new Uint16Array(freeListBuffer);
+      const freeListTop = new Int32Array(freeListTopBuffer);
+      const interleaveFactor = 8;
+
+      let writeIndex = 0;
+      for (let offset = 0; offset < interleaveFactor && writeIndex < poolSize; offset++) {
+        for (let i = offset; i < poolSize && writeIndex < poolSize; i += interleaveFactor) {
+          freeList[writeIndex++] = startIndex + i;
+        }
+      }
+
+      // Stack top starts at poolSize (all indices are free)
+      freeListTop[0] = poolSize;
+
+      // Initialize EntityClass on main thread
+      const EntityClass = registration.class;
+      EntityClass.freeList = freeList;
+      EntityClass.freeListTop = freeListTop;
+    }
+
     const INPUT_BUFFER_SIZE = this.inputBufferSize * 4;
     this.buffers.inputData = new SharedArrayBuffer(INPUT_BUFFER_SIZE);
     this.views.input = new Int32Array(this.buffers.inputData);
@@ -1676,6 +1719,9 @@ class Scene {
         queryResults: this.buffers.queryResults,
         // Per-type active entity lists (for O(1) type-specific queries)
         perTypeActiveLists: this.buffers.perTypeActiveLists,
+        // Entity free lists (for atomic spawn/despawn from any worker)
+        entityFreeLists: this.buffers.entityFreeLists,
+        entityFreeListTops: this.buffers.entityFreeListTops,
       },
       globalEntityCount: this.totalEntityCount,
       config: this.config,

@@ -152,7 +152,7 @@ export class ParticleEmitter extends SharedAtomicPool {
       if (!textureName) {
         console.warn(
           `ParticleEmitter.emit: Could not resolve frame for ` +
-            `spritesheet="${config.spritesheet}", animation="${config.animation}", frame=${config.frame ?? 0}`
+          `spritesheet="${config.spritesheet}", animation="${config.animation}", frame=${config.frame ?? 0}`
         );
       }
     }

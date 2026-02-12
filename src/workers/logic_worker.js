@@ -492,66 +492,13 @@ class LogicWorker extends AbstractWorker {
         break;
       }
 
-      // Handle spawn requests from other logic workers (worker-to-worker message)
-      case 'spawnRequest': {
-        // This should only be received by worker 0 (routed from other workers)
-        if (this.workerIndex !== 0) {
-          console.warn(
-            `LOGIC WORKER ${this.workerIndex}: Received spawnRequest but I'm not worker 0!`
-          );
-          break;
-        }
-
-        const { className, spawnConfig } = data;
-        const EntityClass = self[className];
-
-        if (!EntityClass) {
-          console.error(
-            `LOGIC WORKER ${this.workerIndex}: Cannot spawn ${className} - class not found!`
-          );
-          break;
-        }
-
-        const instance = GameObject.spawn(EntityClass, spawnConfig);
-        if (!instance) {
-          // console.warn(
-          //   `LOGIC WORKER ${this.workerIndex}: Failed to spawn ${className} - pool exhausted!`
-          // );
-        }
-        break;
-      }
-
-      // Handle despawn requests from other logic workers (worker-to-worker message)
-      case 'despawnRequest': {
-        // This should only be received by worker 0 (routed from other workers)
-        if (this.workerIndex !== 0) {
-          console.warn(
-            `LOGIC WORKER ${this.workerIndex}: Received despawnRequest but I'm not worker 0!`
-          );
-          break;
-        }
-
-        const { entityIndex, className } = data;
-        const EntityClass = self[className];
-
-        if (!EntityClass) {
-          console.error(
-            `LOGIC WORKER ${this.workerIndex}: Cannot despawn ${className} - class not found!`
-          );
-          break;
-        }
-
-        // Entity is already deactivated by the requesting worker
-        // We just need to return the index to the freeList
-        if (EntityClass.freeList) {
-          EntityClass.freeList[++EntityClass.freeListTop] = entityIndex;
-        }
-        break;
-      }
+      // NOTE: spawnRequest and despawnRequest handlers removed
+      // Entity spawn/despawn now uses atomic SAB-backed free lists
+      // Any worker can spawn/despawn directly without routing to worker-0
 
       case 'despawnAll': {
-        // Only worker 0 handles despawnAll to keep freeList synchronized with spawn
-        // (spawn also only runs on worker 0)
+        // Only worker 0 handles despawnAll to avoid duplicate processing
+        // (message is broadcast to all workers, but only one should act on it)
         if (this.workerIndex !== 0) {
           break;
         }
@@ -563,55 +510,19 @@ class LogicWorker extends AbstractWorker {
           console.error(
             `LOGIC WORKER ${this.workerIndex}: Cannot despawn ${className} - class not found!`
           );
-          console.error(
-            `LOGIC WORKER ${this.workerIndex}: Available classes:`,
-            Object.keys(self).filter((key) => typeof self[key] === 'function')
-          );
           return;
         }
 
-        // OPTIMIZED BATCH DESPAWN: O(poolSize) - iterate pool range to catch ALL active entities
-        // This is more reliable than activeEntitiesData since entities might be active but not tracked
-        // (e.g., activated outside normal spawn flow, or race conditions during initialization)
-        const indicesToRemove = new Set();
-        const entityType = EntityClass.entityType;
-        const startIndex = EntityClass.startIndex;
-        const endIndex = EntityClass.endIndex;
-
-        // Phase 1: Iterate pool range, collect active indices, deactivate, return to freelist
-        for (let i = startIndex; i < endIndex; i++) {
-          if (Transform.active[i]) {
-            indicesToRemove.add(i);
-
-            // Call onDespawned lifecycle hook if instance exists
-            if (this.gameObjects[i] && this.gameObjects[i].onDespawned) {
-              this.gameObjects[i].onDespawned();
-            }
-
-            // Deactivate all components
-            Transform.active[i] = 0;
-            if (RigidBody.active && RigidBody.active[i]) RigidBody.active[i] = 0;
-            if (Collider.active && Collider.active[i]) Collider.active[i] = 0;
-            if (SpriteRenderer.active && SpriteRenderer.active[i]) SpriteRenderer.active[i] = 0;
-            if (LightEmitter.active && LightEmitter.active[i]) LightEmitter.active[i] = 0;
-            if (ShadowCaster.active && ShadowCaster.active[i]) ShadowCaster.active[i] = 0;
-
-            // Return to free list
-            if (EntityClass.freeList) {
-              EntityClass.freeList[++EntityClass.freeListTop] = i;
-            }
-          }
-        }
-
-        // Phase 2: Batch remove from all data structures (single-pass each)
-        if (indicesToRemove.size > 0) {
-          GameObject._batchRemoveFromActiveEntities(indicesToRemove);
-          GameObject._batchRemoveFromMatchingQueries(indicesToRemove, entityType);
-          GameObject._clearTypeActiveList(EntityClass); // O(1) - we're removing ALL of this type
-        }
+        // Use unified batch despawn which handles:
+        // - Lifecycle hooks (onDespawned)
+        // - Component deactivation
+        // - Active list removal
+        // - Query cache updates
+        // - Free list reset (SAB-backed, interleaved)
+        const despawnedCount = GameObject.despawnAll(EntityClass);
 
         console.log(
-          `LOGIC WORKER ${this.workerIndex}: Despawned ${indicesToRemove.size} ${className} entities`
+          `LOGIC WORKER ${this.workerIndex}: Despawned ${despawnedCount} ${className} entities`
         );
         break;
       }
@@ -622,57 +533,13 @@ class LogicWorker extends AbstractWorker {
           break;
         }
 
-        // OPTIMIZED BATCH CLEAR: Iterate all pool ranges to catch ALL active entities
-        // This is more reliable than activeEntitiesData since entities might be active but not tracked
+        // Despawn all entities of each type using unified batch despawn
         let totalDespawned = 0;
-
-        // Phase 1: Iterate all entity pools, deactivate, return to freelists
         for (const classInfo of this.registeredClasses) {
           const EntityClass = self[classInfo.name];
           if (!EntityClass) continue;
 
-          const startIndex = EntityClass.startIndex;
-          const endIndex = EntityClass.endIndex;
-
-          for (let i = startIndex; i < endIndex; i++) {
-            if (Transform.active[i]) {
-              // Call onDespawned lifecycle hook
-              const gameObj = this.gameObjects[i];
-              if (gameObj && gameObj.onDespawned) {
-                gameObj.onDespawned();
-              }
-
-              // Deactivate all components
-              Transform.active[i] = 0;
-              if (RigidBody.active && RigidBody.active[i]) RigidBody.active[i] = 0;
-              if (Collider.active && Collider.active[i]) Collider.active[i] = 0;
-              if (SpriteRenderer.active && SpriteRenderer.active[i]) SpriteRenderer.active[i] = 0;
-              if (LightEmitter.active && LightEmitter.active[i]) LightEmitter.active[i] = 0;
-              if (ShadowCaster.active && ShadowCaster.active[i]) ShadowCaster.active[i] = 0;
-
-              // Return to free list
-              if (EntityClass.freeList) {
-                EntityClass.freeList[++EntityClass.freeListTop] = i;
-              }
-
-              totalDespawned++;
-            }
-          }
-
-          // Clear this type's active list
-          if (EntityClass._activeList) {
-            EntityClass._activeList[0] = 0;
-          }
-        }
-
-        // Phase 2: Clear global data structures (O(1) each - just set counts to 0)
-        this.activeEntitiesData[0] = 0;
-
-        // Clear all query buffers
-        if (this._queryResultViews) {
-          for (let q = 0; q < this._queryResultViews.length; q++) {
-            this._queryResultViews[q][0] = 0;
-          }
+          totalDespawned += GameObject.despawnAll(EntityClass);
         }
 
         // console.log(
