@@ -80,6 +80,8 @@ no deberiamos hacerlo todo el tiepmo en los soldados
 
 
 
+
+
 -decorations con container!
 -constraints en el physics
 -limitar aceleration en GameObject, en addAcceleration (asi lo hace el logic y no el physics)
@@ -256,8 +258,7 @@ TENER AMBOS! y se puede desde tickall llamar a sistemas, q tmb son metodos estat
 ------------------------------------
 
 
-
-
+bouncing/sliding !
 
 
 
