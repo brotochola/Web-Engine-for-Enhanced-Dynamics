@@ -1585,6 +1585,8 @@ class ParticleWorker extends AbstractWorker {
 
     const decoX = DecorationComponent.x;
     const decoY = DecorationComponent.y;
+    const decoOffsetX = DecorationComponent.offsetX;
+    const decoOffsetY = DecorationComponent.offsetY;
     const decoScaleX = DecorationComponent.scaleX;
     const decoScaleY = DecorationComponent.scaleY;
     const decoRotation = DecorationComponent.rotation;
@@ -1692,8 +1694,9 @@ class ParticleWorker extends AbstractWorker {
       } else if (type === 2) {
         // === DECORATION ===
         // Decorations are static, no interpolation needed
-        rqX[i] = decoX[idx];
-        rqY[i] = decoY[idx];
+        // Apply offset: sorted by base Y, rendered at Y + offsetY
+        rqX[i] = decoX[idx] + decoOffsetX[idx];
+        rqY[i] = decoY[idx] + decoOffsetY[idx];
         rqScaleX[i] = decoScaleX[idx];
         rqScaleY[i] = decoScaleY[idx];
         rqRotation[i] = decoRotation[idx];
