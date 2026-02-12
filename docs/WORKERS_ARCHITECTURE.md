@@ -44,7 +44,8 @@
 ### Particle Worker
 
 - **Updates particle physics**: position, velocity, lifetime, fading, rotation
-- **Builds main render queue**: collects entities/decorations/particles, Y-sorts, writes to SAB
+- **Builds main render queue**: collects entities/decorations/particles, Y-sorts,writes to SAB
+- **Animation frames**:  manages animated sprites current frame
 - **Stamps blood decals**: particles with `isDecal` write RGBA to blood tile SAB
 - **Updates cell sleeping state**: marks cells as sleeping when all entities are static/sleeping
 - **Manages entity screen visibility flag**: determines `isItOnScreen` per entity
@@ -63,7 +64,7 @@
 
 - **Reads render queue**: consumes Y-sorted items from particle worker
 - **Reads shadow queue**: renders shadows/light gradients from nav worker
-- **Renders to OffscreenCanvas**: manages PIXI.ParticleContainer, handles animations
+- **Renders to OffscreenCanvas**: manages PIXI.ParticleContainer
 - **Uploads blood tiles**: transfers dirty tile textures to GPU
 - **Handles camera**: applies view transforms from shared camera buffer
 
