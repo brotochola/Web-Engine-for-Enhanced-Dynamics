@@ -30,7 +30,6 @@ export class GameObject {
 
   // Neighbor data (from spatial worker)
   static neighborData = null;
-  static distanceData = null; // Squared distances for each neighbor
 
   // Active entities list (built by particle_worker each frame)
   // Layout: [count, entityIdx0, entityIdx1, ...]
@@ -61,14 +60,12 @@ export class GameObject {
    * @param {SharedArrayBuffer} buffer - Unused (kept for API compatibility)
    * @param {number} count - Total number of entities
    * @param {SharedArrayBuffer} [neighborBuffer] - Neighbor data buffer from spatial worker
-   * @param {SharedArrayBuffer} [distanceBuffer] - Distance data buffer from spatial worker
    * @param {SharedArrayBuffer} [nextTickBuffer] - Tick decimation countdown buffer (1 byte per entity)
    */
   static initializeArrays(
     buffer,
     count,
     neighborBuffer = null,
-    distanceBuffer = null,
     nextTickBuffer = null
   ) {
     this.globalEntityCount = count;
@@ -77,11 +74,6 @@ export class GameObject {
     // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     if (neighborBuffer) {
       this.neighborData = new Uint16Array(neighborBuffer);
-    }
-
-    // Initialize distance data if provided
-    if (distanceBuffer) {
-      this.distanceData = new Float32Array(distanceBuffer);
     }
 
     // Initialize tick decimation buffer if provided (staggeredUpdates enabled)
@@ -407,8 +399,7 @@ export class GameObject {
 
     // Neighbor properties (updated each frame before tick)
     this.neighborCount = 0;
-    // this._neighbors = null; // REMOVED: Subarray allocation causes GC stutter
-    // this.neighborDistances = null; // REMOVED: GC stutter
+    this._neighbors = null; // Lazy-init zero-copy view into Grid.neighborData
     this._neighborOffset = 0; // Pointer-like offset into shared buffer
 
     // Component instance cache (lazy-loaded on first access)
@@ -1384,7 +1375,7 @@ export class GameObject {
    *
    * OPTIMIZED: Uses Grid statics directly (neighborData and stride are the same for all entities).
    * Only updates per-instance offset and count. Zero redundant writes.
-   * Lazy-inits this._neighbors view (once per entity lifetime).
+   * Lazy-inits neighbor view (once per entity lifetime).
    */
   updateNeighbors() {
     // Grid.neighborData and Grid._stride are static - same for all entities
@@ -1427,13 +1418,7 @@ export class GameObject {
   getNeighborDistanceSq(i) {
     const neighborIdx = this.getNeighbor(i);
     if (neighborIdx < 0) return 0;
-
-    // Calculate distance on-the-fly (collider positions)
-    const myX = Transform.x[this.index] + (Collider.offsetX[this.index] || 0);
-    const myY = Transform.y[this.index] + (Collider.offsetY[this.index] || 0);
-    const neighborX = Transform.x[neighborIdx] + (Collider.offsetX[neighborIdx] || 0);
-    const neighborY = Transform.y[neighborIdx] + (Collider.offsetY[neighborIdx] || 0);
-    return distanceSq2D(myX, myY, neighborX, neighborY);
+    return Grid.getEntityDistanceSq(this.index, neighborIdx);
   }
 
   /**
@@ -1481,10 +1466,21 @@ export class GameObject {
     const count = this.neighborCount;
     const instances = GameObject.instances;
     const neighbors = this._neighbors;
+    const myX = Transform.x[this.index] + (Collider.offsetX[this.index] || 0);
+    const myY = Transform.y[this.index] + (Collider.offsetY[this.index] || 0);
+    const transformX = Transform.x;
+    const transformY = Transform.y;
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
 
     for (let i = 0; i < count; i++) {
       const neighborIndex = neighbors[i];
-      callback(instances[neighborIndex], 0, neighborIndex);
+      const neighborX = transformX[neighborIndex] + (offsetX[neighborIndex] || 0);
+      const neighborY = transformY[neighborIndex] + (offsetY[neighborIndex] || 0);
+      const dx = myX - neighborX;
+      const dy = myY - neighborY;
+      const distSq = dx * dx + dy * dy;
+      callback(instances[neighborIndex], distSq, neighborIndex);
     }
   }
 
