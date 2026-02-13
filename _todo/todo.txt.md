@@ -1,11 +1,17 @@
 
+------------------------------
+IDEAS PARA JUEGOS:
+-auto visto desde arriba, o topdown, formado por circulos con contraints, muchos autos, mucha gente
+
+
+------------------------------
 
 
 
 
 
 
-
+- no strings!, all constants
 
 
 
@@ -206,7 +212,11 @@ TENER AMBOS! y se puede desde tickall llamar a sistemas, q tmb son metodos estat
 
 
 
+---------------------------------
+-- sonido ---
+----------------------------
 
+- howler.js
 
 
 
@@ -239,7 +249,18 @@ TENER AMBOS! y se puede desde tickall llamar a sistemas, q tmb son metodos estat
 --- PHYSICS WORKER: ---
 ------------------------------------------------------------------------------------------------
 
-
+Distance Constraints - Final Summary
+Class: Constraint extends SharedAtomicPool
+SAB Arrays:
+Array	Type	Content
+pairs	Uint32	(entityA << 16) \| entityB
+restLength	Float32	Target distance
+stiffness	Float32	0-1 strength
+active	Uint8	Alive flag
+API:
+Constraint.add(a, b, dist, stiff) → idxConstraint.remove(idx)
+Solving: Physics worker, position-based, in substep loop.
+Thread-safe: Atomic free list from SharedAtomicPool.
 
 
 

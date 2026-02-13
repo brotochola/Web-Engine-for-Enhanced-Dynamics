@@ -70,7 +70,6 @@ export class AbstractWorker {
     this.inputData = null;
     this.cameraData = null;
     this.neighborData = null;
-    this.distanceData = null; // Squared distances for each neighbor
     this.activeEntitiesData = null; // Compact list of active entity indices [count, idx0, idx1, ...]
     this.frameRateData = null; // Real-time FPS tracking for all workers
     this.frameRateIndex = -1; // Index into frameRateData array (different from workerIndex used by logic workers!)
@@ -262,7 +261,6 @@ export class AbstractWorker {
         data.buffers.gameObjectData,
         this.globalEntityCount,
         data.buffers.neighborData, // Automatically initialize neighbor data
-        data.buffers.distanceData, // Automatically initialize distance data
         data.buffers.nextTickData // Tick decimation buffer (if staggeredUpdates enabled)
       );
     }
@@ -336,11 +334,6 @@ export class AbstractWorker {
     // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     if (data.buffers?.neighborData) {
       this.neighborData = new Uint16Array(data.buffers.neighborData);
-    }
-
-    // Initialize distance data reference (single buffer)
-    if (data.buffers?.distanceData) {
-      this.distanceData = new Float32Array(data.buffers.distanceData);
     }
 
     // Initialize active entities list (for load-balanced processing)
@@ -435,11 +428,6 @@ export class AbstractWorker {
       this.neighborData = GameObject.neighborData;
     }
 
-    // Keep a reference to distance data for easy access
-    if (GameObject.distanceData) {
-      this.distanceData = GameObject.distanceData;
-    }
-
     // Make camera data available to GameObject for direct access
     if (this.cameraData) {
       GameObject.cameraData = this.cameraData;
@@ -483,7 +471,7 @@ export class AbstractWorker {
     // Initialize Grid system with shared buffers and metadata
     // ARCHITECTURE: Row-based partitioned spatial grid
     // - gridBuffer: SINGLE buffer, each spatial worker owns specific rows
-    // - neighborData/distanceData: SINGLE buffer, row ownership eliminates races
+    // - neighborData: SINGLE buffer, row ownership eliminates races
     // - cellSleepingBuffer: SINGLE buffer, written by particle_worker, read by all
     // Row ownership: worker i owns rows where (cellY % totalWorkers === workerId)
     // No double buffering, no Atomics, no locks - pure deterministic memory.
@@ -493,7 +481,6 @@ export class AbstractWorker {
         {
           gridBuffer: data.buffers.gridBuffer,
           neighborBuffer: data.buffers.neighborData,
-          distanceBuffer: data.buffers.distanceData,
           cellSleepingBuffer: data.buffers.cellSleepingBuffer,
         },
         data.gridMetadata

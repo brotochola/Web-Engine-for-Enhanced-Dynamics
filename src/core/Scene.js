@@ -158,7 +158,6 @@ class Scene {
     this.buffers = {
       gameObjectData: null,
       neighborData: null,
-      distanceData: null,
       collisionData: null,
       activeEntitiesData: null, // Active entity list for spatial worker load balancing
       inputData: null,
@@ -813,10 +812,6 @@ class Scene {
     const NEIGHBOR_BUFFER_SIZE = this.totalEntityCount * (2 + maxNeighbors) * 2; // Uint16 = 2 bytes
     this.buffers.neighborData = new SharedArrayBuffer(NEIGHBOR_BUFFER_SIZE);
 
-    // Layout per entity: [dist2[MAX_NEIGHBORS]:Float32]
-    const DISTANCE_BUFFER_SIZE = this.totalEntityCount * (2 + maxNeighbors) * 4;
-    this.buffers.distanceData = new SharedArrayBuffer(DISTANCE_BUFFER_SIZE);
-
     // Number of spatial workers (used for stats buffer sizing)
     const numberOfSpatialWorkers = this.config.spatial.numberOfSpatialWorkers || 1;
 
@@ -830,7 +825,6 @@ class Scene {
       this.buffers.gameObjectData,
       this.totalEntityCount,
       this.buffers.neighborData,
-      this.buffers.distanceData,
       this.buffers.nextTickData || null
     );
 
@@ -1224,7 +1218,6 @@ class Scene {
       {
         gridBuffer: this.buffers.gridBuffer,
         neighborBuffer: this.buffers.neighborData,
-        distanceBuffer: this.buffers.distanceData,
         cellSleepingBuffer: this.buffers.cellSleepingBuffer,
       },
       {
@@ -1684,7 +1677,6 @@ class Scene {
         // "Torn reads" mix current + recent data (never garbage)
         // Distance checks filter any out-of-range neighbors
         neighborData: this.buffers.neighborData,
-        distanceData: this.buffers.distanceData,
         collisionData: this.buffers.collisionData,
         activeEntitiesData: this.buffers.activeEntitiesData,
         inputData: this.buffers.inputData,
@@ -2578,7 +2570,6 @@ class Scene {
     // Core entity buffers
     breakdown.gameObjectData = getBufferSize(this.buffers.gameObjectData);
     breakdown.neighborData = getBufferSize(this.buffers.neighborData);
-    breakdown.distanceData = getBufferSize(this.buffers.distanceData);
     breakdown.collisionData = getBufferSize(this.buffers.collisionData);
     breakdown.activeEntitiesData = getBufferSize(this.buffers.activeEntitiesData);
 

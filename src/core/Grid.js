@@ -15,8 +15,6 @@
 //                 Neighbors are partitioned: [collision candidates..., visual-only neighbors...]
 //                 Physics only iterates collisionCount, logic iterates totalCount
 //                 Uses Uint16 since max entities = 65535 (fits in 16 bits)
-// DistancesSAB:   Fixed per-entity with [dist2[MAX_NEIGHBORS]:Float32]
-//
 // WHY NO DOUBLE BUFFERING FOR NEIGHBORS?
 // - "Torn reads" only mix current + recent-frame data (never garbage)
 // - All neighbor entries are valid entity IDs (deterministic memory)
@@ -86,10 +84,6 @@ export class Grid {
   static _neighborBuffer = null; // SharedArrayBuffer
   static _neighborData = null; // Uint16Array view
 
-  // Layout per entity: [dist2[MAX_NEIGHBORS]:Float32]
-  static _distanceBuffer = null; // SharedArrayBuffer
-  static _distanceData = null; // Float32Array view
-
   // ===== CELL SLEEPING STATE (Single Buffer - Written by particle_worker) =====
   // Layout: One Uint8 per cell (0 = awake, 1 = sleeping)
   // A cell is sleeping if ALL entities in it are either sleeping or static
@@ -112,7 +106,6 @@ export class Grid {
    * @param {Object} buffers - SharedArrayBuffers:
    *   - gridBuffer: Spatial grid cells
    *   - neighborBuffer: Neighbor indices per entity
-   *   - distanceBuffer: Neighbor distances per entity
    *   - cellSleepingBuffer: Cell sleeping state (optional)
    * @param {Object} metadata - Grid configuration
    */
@@ -147,12 +140,6 @@ export class Grid {
     if (buffers.neighborBuffer) {
       Grid._neighborBuffer = buffers.neighborBuffer;
       Grid._neighborData = new Uint16Array(buffers.neighborBuffer);
-    }
-
-    // ===== DISTANCE DATA (Single Buffer) =====
-    if (buffers.distanceBuffer) {
-      Grid._distanceBuffer = buffers.distanceBuffer;
-      Grid._distanceData = new Float32Array(buffers.distanceBuffer);
     }
 
     // ===== CELL SLEEPING STATE (Single Buffer) =====
@@ -299,14 +286,6 @@ export class Grid {
   }
 
   /**
-   * Get the distance data array (single buffer, always current)
-   * Use Grid.distanceData in performance-critical loops
-   */
-  static get distanceData() {
-    return Grid._distanceData;
-  }
-
-  /**
    * Get total neighbor count for an entity (all neighbors within visual range)
    * @param {number} entityId - Entity index
    * @returns {number} Total number of neighbors
@@ -340,6 +319,26 @@ export class Grid {
   }
 
   /**
+   * Get squared distance between two entities using collider positions.
+   * @param {number} entityA - First entity index
+   * @param {number} entityB - Second entity index
+   * @returns {number} Squared distance
+   */
+  static getEntityDistanceSq(entityA, entityB) {
+    // Transform and Collider are imported at top of file
+    if (!Transform || !Transform.x || !Transform.y) return 0;
+
+    const entityAX = Transform.x[entityA] + (Collider.offsetX?.[entityA] || 0);
+    const entityAY = Transform.y[entityA] + (Collider.offsetY?.[entityA] || 0);
+    const entityBX = Transform.x[entityB] + (Collider.offsetX?.[entityB] || 0);
+    const entityBY = Transform.y[entityB] + (Collider.offsetY?.[entityB] || 0);
+
+    const dx = entityAX - entityBX;
+    const dy = entityAY - entityBY;
+    return dx * dx + dy * dy;
+  }
+
+  /**
    * Get squared distance to neighbor at index k
    * Calculates distance on-the-fly from collider positions
    * @param {number} entityId - Entity index
@@ -349,20 +348,11 @@ export class Grid {
   static getNeighborDistanceSq(entityId, k) {
     const neighborId = Grid.getNeighbor(entityId, k);
     if (neighborId < 0) return 0;
-
-    // Transform and Collider are imported at top of file
-    if (!Transform || !Transform.x || !Transform.y) return 0;
-
-    // Calculate distance on-the-fly (collider positions)
-    const entityX = Transform.x[entityId] + (Collider.offsetX?.[entityId] || 0);
-    const entityY = Transform.y[entityId] + (Collider.offsetY?.[entityId] || 0);
-    const neighborX = Transform.x[neighborId] + (Collider.offsetX?.[neighborId] || 0);
-    const neighborY = Transform.y[neighborId] + (Collider.offsetY?.[neighborId] || 0);
-    return distanceSq2D(entityX, entityY, neighborX, neighborY);
+    return Grid.getEntityDistanceSq(entityId, neighborId);
   }
 
   /**
-   * Get offset into neighbor/distance arrays for an entity
+   * Get offset into neighbor array for an entity
    * @param {number} entityId - Entity index
    * @returns {number} Offset into arrays
    */
@@ -404,13 +394,11 @@ export class Grid {
    * @param {number} entityId - Entity index
    * @param {number} k - Neighbor index
    * @param {number} neighborId - Neighbor entity ID
-   * @param {number} distSq - Squared distance to neighbor (optional, for distance buffer)
    */
-  static setNeighbor(entityId, k, neighborId, distSq) {
+  static setNeighbor(entityId, k, neighborId) {
     if (!Grid._neighborData) return;
     const idx = entityId * Grid._stride + 2 + k;
     Grid._neighborData[idx] = neighborId;
-    if (Grid._distanceData) Grid._distanceData[idx] = distSq;
   }
 
   // =============================================================================
