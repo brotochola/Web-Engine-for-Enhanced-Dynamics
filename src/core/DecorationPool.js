@@ -18,9 +18,21 @@ export class DecorationPool extends SharedAtomicPool {
   // Pool name for logging (used by base class)
   static poolName = 'DecorationPool';
 
+  // Compact list of active decoration indices [count, idx0, idx1, ...]
+  // Maintained incrementally by spawn/despawn, read by particle_worker
+  static activeDecorationsData = null;
+
   // Alias for backwards compatibility
   static get maxDecorations() {
     return this.maxCount;
+  }
+
+  /**
+   * Get count of active decorations from the compact list
+   * @returns {number} Number of active decorations
+   */
+  static getActiveCount() {
+    return this.activeDecorationsData ? this.activeDecorationsData[0] : 0;
   }
 
   /**
@@ -130,6 +142,13 @@ export class DecorationPool extends SharedAtomicPool {
     // Claim this slot (must be last - signals to other workers that this slot is in use)
     DecorationComponent.active[i] = 1;
 
+    // Add to activeDecorationsData compact list (append at end - O(1))
+    if (this.activeDecorationsData) {
+      const count = this.activeDecorationsData[0];
+      this.activeDecorationsData[1 + count] = i;
+      this.activeDecorationsData[0] = count + 1;
+    }
+
     return i;
   }
 
@@ -191,6 +210,20 @@ export class DecorationPool extends SharedAtomicPool {
     DecorationComponent.active[index] = 0;
     DecorationComponent.isItOnScreen[index] = 0;
 
+    // Remove from activeDecorationsData compact list (swap-with-last - O(n) search, O(1) remove)
+    if (this.activeDecorationsData) {
+      const count = this.activeDecorationsData[0];
+      // Find the index in the list
+      for (let i = 0; i < count; i++) {
+        if (this.activeDecorationsData[1 + i] === index) {
+          // Swap with last element and decrement count
+          this.activeDecorationsData[1 + i] = this.activeDecorationsData[count]; // last element
+          this.activeDecorationsData[0] = count - 1;
+          break;
+        }
+      }
+    }
+
     // Return index to free list (inherited from SharedAtomicPool)
     this.returnToPool(index);
 
@@ -213,7 +246,23 @@ export class DecorationPool extends SharedAtomicPool {
       isItOnScreen[i] = 0;
     }
 
+    // Clear activeDecorationsData compact list
+    if (this.activeDecorationsData) {
+      this.activeDecorationsData[0] = 0;
+    }
+
     // Reset free list with interleaved ordering (reduces cache contention in multi-worker scenarios)
     this.resetFreeListInterleaved();
+  }
+
+  /**
+   * Initialize activeDecorationsData from SharedArrayBuffer
+   * Called by workers during initialization
+   * @param {SharedArrayBuffer} buffer - The SAB for activeDecorationsData
+   */
+  static initializeActiveList(buffer) {
+    if (buffer) {
+      this.activeDecorationsData = new Uint16Array(buffer);
+    }
   }
 }

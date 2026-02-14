@@ -873,6 +873,20 @@ class Scene {
       }
       // Stack top starts at maxParticles (all indices are free)
       new Int32Array(this.buffers.particleFreeListTop)[0] = maxParticles;
+
+      // ========================================
+      // PARTICLE COMPACT LISTS - Optimized iteration for particle_worker and pre_render_worker
+      // ========================================
+      // activeParticlesData: [count, idx0, idx1, ...] - rebuilt each frame by particle_worker
+      // visibleParticlesData: [count, idx0, idx1, ...] - subset of active that are on-screen
+      // Both written by particle_worker, read by pre_render_worker
+      const ACTIVE_PARTICLES_BUFFER_SIZE = (1 + maxParticles) * 2; // count + indices (Uint16)
+      this.buffers.activeParticlesData = new SharedArrayBuffer(ACTIVE_PARTICLES_BUFFER_SIZE);
+      this.buffers.visibleParticlesData = new SharedArrayBuffer(ACTIVE_PARTICLES_BUFFER_SIZE);
+
+      // Initialize counts to 0
+      new Uint16Array(this.buffers.activeParticlesData)[0] = 0;
+      new Uint16Array(this.buffers.visibleParticlesData)[0] = 0;
     }
 
     // DecorationComponent buffer
@@ -906,6 +920,24 @@ class Scene {
         this.buffers.decorationFreeList,
         this.buffers.decorationFreeListTop
       );
+
+      // ========================================
+      // DECORATION COMPACT LISTS - Optimized iteration for particle_worker and pre_render_worker
+      // ========================================
+      // activeDecorationsData: [count, idx0, idx1, ...] - maintained incrementally by spawn/despawn
+      // visibleDecorationsData: [count, idx0, idx1, ...] - subset of active that are on-screen
+      // activeDecorationsData written by DecorationPool.spawn/despawn, read by particle_worker
+      // visibleDecorationsData written by particle_worker, read by pre_render_worker
+      const ACTIVE_DECORATIONS_BUFFER_SIZE = (1 + maxDecorations) * 2; // count + indices (Uint16)
+      this.buffers.activeDecorationsData = new SharedArrayBuffer(ACTIVE_DECORATIONS_BUFFER_SIZE);
+      this.buffers.visibleDecorationsData = new SharedArrayBuffer(ACTIVE_DECORATIONS_BUFFER_SIZE);
+
+      // Initialize counts to 0
+      new Uint16Array(this.buffers.activeDecorationsData)[0] = 0;
+      new Uint16Array(this.buffers.visibleDecorationsData)[0] = 0;
+
+      // Attach to DecorationPool for incremental maintenance
+      DecorationPool.activeDecorationsData = new Uint16Array(this.buffers.activeDecorationsData);
     }
 
     // Shadow render queue (replaces old shadow sprite buffer)
@@ -1060,6 +1092,12 @@ class Scene {
     this.buffers.activeEntitiesData = new SharedArrayBuffer(ACTIVE_ENTITIES_BUFFER_SIZE);
     // Make active entities list accessible from main thread via GameObject.getAllActive()
     GameObject.activeEntitiesData = new Uint16Array(this.buffers.activeEntitiesData);
+
+    // Visible entities buffer - subset of active entities that are on-screen
+    // Layout: [count, entityIdx0, entityIdx1, ...]
+    // Written by particle_worker each frame, read by pre_render_worker
+    this.buffers.visibleEntitiesData = new SharedArrayBuffer(ACTIVE_ENTITIES_BUFFER_SIZE);
+    new Uint16Array(this.buffers.visibleEntitiesData)[0] = 0; // Initialize count to 0
 
     // Per-type active entity lists - one SAB per entity type for O(1) type-specific queries
     // Layout: [count, entityIdx0, entityIdx1, ...] (same as global activeEntitiesData)
@@ -1690,6 +1728,7 @@ class Scene {
         neighborData: this.buffers.neighborData,
         collisionData: this.buffers.collisionData,
         activeEntitiesData: this.buffers.activeEntitiesData,
+        visibleEntitiesData: this.buffers.visibleEntitiesData,
         inputData: this.buffers.inputData,
         cameraData: this.buffers.cameraData,
         syncData: this.buffers.syncData,
@@ -1753,9 +1792,15 @@ class Scene {
       maxParticles: this.config.particle.maxParticles,
       particleFreeList: this.buffers.particleFreeList || null,
       particleFreeListTop: this.buffers.particleFreeListTop || null,
+      // Particle compact lists (for optimized iteration)
+      activeParticlesData: this.buffers.activeParticlesData || null,
+      visibleParticlesData: this.buffers.visibleParticlesData || null,
       maxDecorations: this.config.decoration.maxDecorations,
       decorationFreeList: this.buffers.decorationFreeList || null,
       decorationFreeListTop: this.buffers.decorationFreeListTop || null,
+      // Decoration compact lists (for optimized iteration)
+      activeDecorationsData: this.buffers.activeDecorationsData || null,
+      visibleDecorationsData: this.buffers.visibleDecorationsData || null,
       // Render queue (particle_worker → pixi_worker)
       renderQueue: {
         data: this.buffers.renderQueueData,

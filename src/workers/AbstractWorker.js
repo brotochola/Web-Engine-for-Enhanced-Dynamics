@@ -304,6 +304,33 @@ export class AbstractWorker {
         DecorationPool.initializeFreeList(data.decorationFreeList, data.decorationFreeListTop);
         this.reportLog(`initialized DecorationPool free list`);
       }
+
+      // Initialize activeDecorationsData compact list (for optimized iteration)
+      if (data.activeDecorationsData) {
+        DecorationPool.initializeActiveList(data.activeDecorationsData);
+        this.activeDecorationsData = new Uint16Array(data.activeDecorationsData);
+        this.reportLog(`initialized DecorationPool activeDecorationsData`);
+      }
+
+      // Initialize visibleDecorationsData compact list (written by particle_worker, read by pre_render_worker)
+      if (data.visibleDecorationsData) {
+        this.visibleDecorationsData = new Uint16Array(data.visibleDecorationsData);
+        this.reportLog(`initialized visibleDecorationsData`);
+      }
+    }
+
+    // Initialize particle compact lists (for optimized iteration)
+    if (data.maxParticles && data.maxParticles > 0) {
+      // activeParticlesData: rebuilt each frame by particle_worker
+      if (data.activeParticlesData) {
+        this.activeParticlesData = new Uint16Array(data.activeParticlesData);
+        this.reportLog(`initialized activeParticlesData`);
+      }
+      // visibleParticlesData: subset of active particles that are on-screen
+      if (data.visibleParticlesData) {
+        this.visibleParticlesData = new Uint16Array(data.visibleParticlesData);
+        this.reportLog(`initialized visibleParticlesData`);
+      }
     }
 
     // Initialize common shared buffers using Buffer->Data naming pattern
@@ -344,6 +371,13 @@ export class AbstractWorker {
       this.activeEntitiesData = new Uint16Array(data.buffers.activeEntitiesData);
       // Also set on GameObject for static access via GameObject.getAllActive()
       GameObject.activeEntitiesData = this.activeEntitiesData;
+    }
+
+    // Initialize visible entities list (for optimized rendering)
+    // Layout: [count, entityIdx0, entityIdx1, ...] - subset of active that are on-screen
+    // Written by particle_worker, read by pre_render_worker
+    if (data.buffers?.visibleEntitiesData) {
+      this.visibleEntitiesData = new Uint16Array(data.buffers.visibleEntitiesData);
     }
 
     // Per-type active entity lists (SABs for O(1) type-specific queries)
