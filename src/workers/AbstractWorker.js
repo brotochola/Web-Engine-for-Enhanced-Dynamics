@@ -21,6 +21,7 @@ import { Grid } from '../core/Grid.js';
 import { NavGrid } from '../core/NavGrid.js';
 import { ParticleComponent } from '../components/ParticleComponent.js';
 import { DecorationComponent } from '../components/DecorationComponent.js';
+import { Constraint } from '../core/Constraint.js';
 import { createWorkerQueryFunctions } from '../core/QuerySystem.js';
 
 /**
@@ -328,6 +329,15 @@ export class AbstractWorker {
       }
     }
 
+    // Initialize Constraint system (distance constraints for position-based dynamics)
+    // All workers can add/remove constraints atomically via the shared free list
+    if (data.constraints && data.constraints.enabled) {
+      Constraint.initializeArrays(data.constraints.data, data.constraints.maxConstraints);
+      Constraint.initialize(data.constraints.maxConstraints);
+      Constraint.initializeFreeList(data.constraints.freeList, data.constraints.freeListTop);
+      this.reportLog(`initialized Constraint system for ${data.constraints.maxConstraints} constraints`);
+    }
+
     // Initialize particle compact lists (for optimized iteration)
     if (data.maxParticles && data.maxParticles > 0) {
       // activeParticlesData: rebuilt each frame by particle_worker
@@ -572,8 +582,8 @@ export class AbstractWorker {
     self.Flash = Flash;
     self.Camera = Camera;
     self.SpriteSheetRegistry = SpriteSheetRegistry;
-    self.DecorationPool = DecorationPool
-
+    self.DecorationPool = DecorationPool;
+    self.Constraint = Constraint;
   }
 
   /**

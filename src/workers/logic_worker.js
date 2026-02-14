@@ -524,7 +524,7 @@ class LogicWorker extends AbstractWorker {
           break; // Ignore spawn messages on other workers
         }
 
-        const { className, spawnConfig } = data;
+        const { className, spawnConfig, entityIndex } = data;
         const EntityClass = self[className];
 
         if (!EntityClass) {
@@ -534,7 +534,9 @@ class LogicWorker extends AbstractWorker {
           return;
         }
 
-        const instance = GameObject.spawn(EntityClass, spawnConfig);
+        // If entityIndex is provided, use pre-assigned index from main thread
+        // Otherwise, let GameObject.spawn acquire a new index
+        const instance = GameObject.spawn(EntityClass, spawnConfig, entityIndex);
         if (!instance) {
           console.warn(
             `LOGIC WORKER ${this.workerIndex}: Failed to spawn ${className} - pool exhausted!`

@@ -86,6 +86,7 @@ export const PHYSICS_DEFAULTS = {
   verletDamping: 0.995,
   minSpeedForRotation: 0.1,
   maxCollisionPairs: 10000,
+  maxConstraints: 0, // Max distance constraints (0 = disabled)
   gravity: { x: 0, y: 0 },
   // Sleeping optimization
   sleepThreshold: 0.1, // Speed threshold below which entity is considered still (units/frame)

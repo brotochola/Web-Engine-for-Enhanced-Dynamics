@@ -1607,9 +1607,10 @@ export class GameObject {
    *
    * @param {Class} EntityClass - The entity class to spawn (e.g., Ball, Car)
    * @param {Object} spawnConfig - Initial configuration (position, velocity, etc.)
+   * @param {number} [preAssignedIndex] - Optional pre-assigned entity index (from main thread)
    * @returns {GameObject|null} - The spawned entity instance, or null if pool exhausted or routed to worker 0
    */
-  static spawn(EntityClassOrConfig, spawnConfig = {}) {
+  static spawn(EntityClassOrConfig, spawnConfig = {}, preAssignedIndex = -1) {
     // Support two calling conventions:
     // 1. GameObject.spawn(EntityClass, config) - for dynamic class spawning
     // 2. Prey.spawn(config) - cleaner API when calling on the class directly
@@ -1631,30 +1632,41 @@ export class GameObject {
       return null;
     }
 
-    // ATOMIC SPAWN: Any worker can spawn directly using atomic free list operations
-    // No more worker-0 routing needed - freeList and freeListTop are SAB-backed
-    if (!EntityClass.freeList || !EntityClass.freeListTop) {
-      console.error(
-        `Cannot spawn ${EntityClass.name}: free list not initialized. Was scene properly initialized?`
-      );
-      return null;
+    let i;
+
+    // ========================================
+    // INDEX ACQUISITION
+    // ========================================
+    if (preAssignedIndex >= 0) {
+      // Use pre-assigned index from main thread (already acquired atomically there)
+      // Skip freeList operations - index was already removed from freeList
+      i = preAssignedIndex;
+    } else {
+      // ATOMIC SPAWN: Any worker can spawn directly using atomic free list operations
+      // No more worker-0 routing needed - freeList and freeListTop are SAB-backed
+      if (!EntityClass.freeList || !EntityClass.freeListTop) {
+        console.error(
+          `Cannot spawn ${EntityClass.name}: free list not initialized. Was scene properly initialized?`
+        );
+        return null;
+      }
+
+      // Atomic decrement to pop from free list (thread-safe)
+      // Atomics.sub returns OLD value, then decrements
+      const oldTop = Atomics.sub(EntityClass.freeListTop, 0, 1);
+
+      // Check if pool is exhausted (oldTop was 0 or less before decrement)
+      if (oldTop <= 0) {
+        // Pool exhausted - restore counter and return failure
+        Atomics.add(EntityClass.freeListTop, 0, 1);
+        return null;
+      }
+
+      // Get index from free list
+      // oldTop was the count, so valid indices are 0 to oldTop-1
+      // We want the last item, at index oldTop-1
+      i = EntityClass.freeList[oldTop - 1];
     }
-
-    // Atomic decrement to pop from free list (thread-safe)
-    // Atomics.sub returns OLD value, then decrements
-    const oldTop = Atomics.sub(EntityClass.freeListTop, 0, 1);
-
-    // Check if pool is exhausted (oldTop was 0 or less before decrement)
-    if (oldTop <= 0) {
-      // Pool exhausted - restore counter and return failure
-      Atomics.add(EntityClass.freeListTop, 0, 1);
-      return null;
-    }
-
-    // Get index from free list
-    // oldTop was the count, so valid indices are 0 to oldTop-1
-    // We want the last item, at index oldTop-1
-    const i = EntityClass.freeList[oldTop - 1];
 
     // Get the instance (already created during initialization)
     const instance = EntityClass.instances[i - EntityClass.startIndex];
@@ -1795,15 +1807,19 @@ export class GameObject {
       }
     }
 
-    // NOW activate the entity
+    // NOW activate the entity (already done in main thread if preAssignedIndex was used)
     Transform.active[i] = 1;
 
     // INCREMENTAL UPDATE: Add to activeEntitiesData, query buffers, and per-type list
     // This replaces the O(N) per-frame rebuild with O(1) per-spawn updates
     // When sortedActiveEntities is enabled, lists are kept sorted by index
-    GameObject._addToActiveEntities(i);
+    // SKIP if index was pre-assigned (main thread already updated active lists)
+    if (preAssignedIndex < 0) {
+      GameObject._addToActiveEntities(i);
+      GameObject._addToTypeActiveList(EntityClass, i);
+    }
+    // Always update query caches (main thread doesn't have query system)
     GameObject._addToMatchingQueries(i, EntityClass.entityType);
-    GameObject._addToTypeActiveList(EntityClass, i);
 
     return instance;
   }
