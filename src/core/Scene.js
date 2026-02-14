@@ -947,9 +947,10 @@ class Scene {
       DecorationPool.activeDecorationsData = new Uint16Array(this.buffers.activeDecorationsData);
     }
 
-    // Shadow render queue (replaces old shadow sprite buffer)
+    // Shadow render queue (replaces old shadow sprite buffer) - DOUBLE BUFFERED
     // Pre-sorted renderables: light gradients interleaved with shadows
-    // Built by particle_worker, consumed by pixi_worker (same pattern as main renderQueue)
+    // Built by pre_render_worker, consumed by pixi_worker (same pattern as main renderQueue)
+    // Uses same sync buffer as main render queue (they're updated together)
     const maxShadowSprites = this.config.lighting.maxShadowSprites;
     const maxLights = this.config.lighting.maxLights || 128;
     if (this.config.lighting.shadowsEnabled && maxShadowSprites > 0) {
@@ -960,7 +961,9 @@ class Scene {
       // Total = 38 bytes, round to 40 for alignment
       const SHADOW_QUEUE_ITEM_SIZE = 40;
       const shadowQueueBufferSize = 4 + (maxShadowRenderItems * SHADOW_QUEUE_ITEM_SIZE);
-      this.buffers.shadowRenderQueueData = new SharedArrayBuffer(shadowQueueBufferSize);
+      // Two shadow queue buffers for double buffering (same swap timing as main queue)
+      this.buffers.shadowRenderQueueDataA = new SharedArrayBuffer(shadowQueueBufferSize);
+      this.buffers.shadowRenderQueueDataB = new SharedArrayBuffer(shadowQueueBufferSize);
       this.maxShadowRenderItems = maxShadowRenderItems;
     }
 
@@ -987,10 +990,13 @@ class Scene {
     }
 
     // ========================================
-    // RENDER QUEUE BUFFER
+    // RENDER QUEUE DOUBLE BUFFER
     // ========================================
     // Pre-sorted, screen-visible renderables for pixi_worker
-    // Built by particle_worker, consumed by pixi_worker
+    // Built by pre_render_worker, consumed by pixi_worker
+    // DOUBLE BUFFERED: pre_render writes to back buffer while pixi reads from front
+    // pre_render_worker waits if more than 1 frame ahead (pixi_worker never waits)
+    //
     // Layout (per array, for maxVisibleRenderables items):
     //   count: Int32 (4 bytes)
     //   x, y, scaleX, scaleY, rotation, alpha: Float32[max] each (6 * max * 4 bytes)
@@ -1003,7 +1009,22 @@ class Scene {
     const maxVisibleRenderables = this.config.renderer.maxVisibleRenderables || 10000;
     const RENDER_QUEUE_ITEM_SIZE = 48; // bytes per item (with all arrays)
     const renderQueueBufferSize = 4 + (maxVisibleRenderables * RENDER_QUEUE_ITEM_SIZE);
-    this.buffers.renderQueueData = new SharedArrayBuffer(renderQueueBufferSize);
+
+    // Two render queue buffers for double buffering
+    this.buffers.renderQueueDataA = new SharedArrayBuffer(renderQueueBufferSize);
+    this.buffers.renderQueueDataB = new SharedArrayBuffer(renderQueueBufferSize);
+
+    // Sync buffer for double buffering coordination
+    // Layout: [readyFrame: Int32, consumedFrame: Int32]
+    // readyFrame: incremented by pre_render_worker after writing a frame
+    // consumedFrame: set by pixi_worker after reading a frame
+    // pre_render_worker waits if readyFrame > consumedFrame + 1 (would overwrite unread data)
+    // pixi_worker never waits - always reads from (readyFrame % 2) buffer
+    this.buffers.renderQueueSync = new SharedArrayBuffer(8);
+    // Initialize sync counters to 0
+    new Int32Array(this.buffers.renderQueueSync)[0] = 0;
+    new Int32Array(this.buffers.renderQueueSync)[1] = 0;
+
     this.maxVisibleRenderables = maxVisibleRenderables;
 
     // Entity texture lookup buffer (for shadow system)
@@ -1845,9 +1866,13 @@ class Scene {
       // Decoration compact lists (for optimized iteration)
       activeDecorationsData: this.buffers.activeDecorationsData || null,
       visibleDecorationsData: this.buffers.visibleDecorationsData || null,
-      // Render queue (particle_worker → pixi_worker)
+      // Render queue (pre_render_worker → pixi_worker) - DOUBLE BUFFERED
+      // pre_render_worker writes to alternating buffers, pixi_worker reads latest
+      // pixi_worker never waits; pre_render_worker waits if >1 frame ahead
       renderQueue: {
-        data: this.buffers.renderQueueData,
+        dataA: this.buffers.renderQueueDataA,
+        dataB: this.buffers.renderQueueDataB,
+        sync: this.buffers.renderQueueSync,
         entityTextureData: this.buffers.entityTextureData,
         maxItems: this.maxVisibleRenderables,
         itemSize: 48, // bytes per item
@@ -1876,8 +1901,9 @@ class Scene {
           maxShadowsPerEntity: this.config.lighting.maxShadowsPerEntity,
           maxShadowSprites: this.config.lighting.maxShadowSprites,
           maxLights: this.config.lighting.maxLights || 128,
-          // Shadow render queue (pre-sorted by particle_worker)
-          renderQueueData: this.buffers.shadowRenderQueueData,
+          // Shadow render queue - DOUBLE BUFFERED (same sync as main queue)
+          renderQueueDataA: this.buffers.shadowRenderQueueDataA,
+          renderQueueDataB: this.buffers.shadowRenderQueueDataB,
           maxRenderItems: this.maxShadowRenderItems,
         }
         : null,
