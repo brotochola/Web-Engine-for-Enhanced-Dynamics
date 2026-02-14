@@ -393,7 +393,7 @@ export function randomRange(value, defaultVal = 0) {
   // { min, max } object - return random value in range
   const min = value.min ?? defaultVal;
   const max = value.max ?? defaultVal;
-  return min + Math.random() * (max - min);
+  return min + rng() * (max - min);
 }
 
 /**
@@ -422,7 +422,7 @@ export function randomColor(value, defaultVal = 0xffffff) {
   const maxB = maxColor & 0xff;
 
   // Random interpolation factor
-  const t = Math.random();
+  const t = rng();
 
   // Interpolate each channel
   const r = Math.round(minR + t * (maxR - minR));
