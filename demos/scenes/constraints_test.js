@@ -100,6 +100,11 @@ export class ConstraintsTestScene extends Scene {
         this.constraintMode = false;
         this.selectedEntityForConstraint = -1; // First selected entity index
         this.constraintStiffness = 0.8; // Default stiffness for new constraints
+
+        // Builder mode - click to spawn ball and connect to neighbors
+        this.builderMode = false;
+        this.builderNeighborRadius = 100; // Max distance to connect neighbors
+        this.builderConstraintStiffness = 0.5; // Stiffness for builder constraints
     }
 
     create() {
@@ -146,6 +151,7 @@ export class ConstraintsTestScene extends Scene {
         console.log('   G - Toggle gravity');
         console.log('   X - Toggle constraint mode (click two balls to connect)');
         console.log('   R - Toggle remove mode (click two balls to disconnect)');
+        console.log('   B - Toggle builder mode (click to spawn ball + connect to neighbors)');
         console.log('   K - Toggle constraint visualization in DebugUI');
     }
 
@@ -161,7 +167,7 @@ export class ConstraintsTestScene extends Scene {
         const balls = [];
 
         for (let i = 0; i < length; i++) {
-            const ball = this.spawnEntity(Ball, {
+            const ball = Ball.spawn({
                 x: startX,
                 y: startY + i * spacing,
                 vx: 0,
@@ -200,7 +206,7 @@ export class ConstraintsTestScene extends Scene {
         const spacing = Math.sqrt(dx * dx + dy * dy);
 
         for (let i = 0; i < segments; i++) {
-            const ball = this.spawnEntity(Ball, {
+            const ball = Ball.spawn({
                 x: x1 + dx * i,
                 y: y1 + dy * i + (i > 0 && i < segments - 1 ? 50 : 0), // Sag in middle
                 vx: 0,
@@ -237,7 +243,7 @@ export class ConstraintsTestScene extends Scene {
         // Create balls in a circle
         for (let i = 0; i < numBalls; i++) {
             const angle = i * angleStep;
-            const ball = this.spawnEntity(Ball, {
+            const ball = Ball.spawn({
                 x: centerX + Math.cos(angle) * radius,
                 y: centerY + Math.sin(angle) * radius,
                 radius: 10,
@@ -275,7 +281,7 @@ export class ConstraintsTestScene extends Scene {
         }
 
         // Add a center ball connected to all perimeter balls
-        const centerBall = this.spawnEntity(Ball, {
+        const centerBall = Ball.spawn({
             x: centerX,
             y: centerY,
             vx: 0,
@@ -304,7 +310,7 @@ export class ConstraintsTestScene extends Scene {
         for (let row = 0; row < height; row++) {
             grid[row] = [];
             for (let col = 0; col < width; col++) {
-                const ball = this.spawnEntity(Ball, {
+                const ball = Ball.spawn({
                     x: startX + col * spacing,
                     y: startY + row * spacing,
                     radius: radius,
@@ -421,9 +427,28 @@ export class ConstraintsTestScene extends Scene {
         }
         if (!kb.r) this._rPressed = false;
 
+        // Press B to toggle builder mode
+        if (kb.b && !this._bPressed) {
+            this._bPressed = true;
+            this.builderMode = !this.builderMode;
+            // Disable other modes when builder mode is enabled
+            if (this.builderMode) {
+                this.constraintMode = false;
+                this._removeMode = false;
+                this.selectedEntityForConstraint = -1;
+            }
+            console.log(`Builder mode: ${this.builderMode ? 'ON - Click to spawn ball and connect to neighbors' : 'OFF'}`);
+        }
+        if (!kb.b) this._bPressed = false;
+
         // Handle click-to-connect/remove in constraint mode
         if ((this.constraintMode || this._removeMode) && Mouse.isDown && !this._mouseWasDown) {
             this._handleConstraintClick();
+        }
+
+        // Handle builder mode click
+        if (this.builderMode && Mouse.isDown && !this._mouseWasDown) {
+            this._handleBuilderClick();
         }
         this._mouseWasDown = Mouse.isDown;
 
@@ -515,6 +540,41 @@ export class ConstraintsTestScene extends Scene {
     }
 
     /**
+     * Handle click in builder mode - spawn ball and connect to neighbors
+     */
+    _handleBuilderClick() {
+        // Spawn a new ball at mouse position
+        const newBall = Ball.spawn({
+            x: Mouse.x,
+            y: Mouse.y,
+            vx: 0,
+            vy: 0,
+        });
+        console.log('Builder: Spawning ball', newBall.index, GameObject.get(newBall.index));
+        if (!newBall) {
+            console.log('Failed to spawn ball - pool may be full');
+            return;
+        }
+
+        // Find all nearby balls
+        setTimeout(() => {
+            const neighbors = GameObject.get(newBall.index).getAllNeighborInstances().filter(n => n instanceof Ball);
+            console.log(`Builder: Found ${neighbors.length} neighbors`);
+        }, 1000);
+
+        // Create constraints to all neighbors
+        let constraintsCreated = 0;
+        for (const neighbor of neighbors) {
+            const idx = Constraint.add(newBall.index, neighbor.index, neighbor.distance, this.builderConstraintStiffness);
+            if (idx >= 0) {
+                constraintsCreated++;
+            }
+        }
+
+        console.log(`Builder: Spawned ball ${newBall.index} at (${Mouse.x.toFixed(0)}, ${Mouse.y.toFixed(0)}) with ${constraintsCreated} constraints to neighbors`);
+    }
+
+    /**
      * Remove any constraint between two entities
      */
     _removeConstraintBetween(entityA, entityB) {
@@ -570,7 +630,7 @@ export class ConstraintsTestScene extends Scene {
         const worldHeight = this.config.worldHeight;
 
         // Floor
-        this.spawnEntity(Floor, {
+        Floor.spawn({
             x: worldWidth / 2,
             y: worldHeight - wallThickness / 2 - wallThickness * 3,
             width: worldWidth,
@@ -578,7 +638,7 @@ export class ConstraintsTestScene extends Scene {
         });
 
         // Top wall
-        this.spawnEntity(Floor, {
+        Floor.spawn({
             x: worldWidth / 2,
             y: wallThickness / 2,
             width: worldWidth,
@@ -586,7 +646,7 @@ export class ConstraintsTestScene extends Scene {
         });
 
         // Left wall
-        this.spawnEntity(Floor, {
+        Floor.spawn({
             x: wallThickness / 2,
             y: worldHeight / 2,
             width: wallThickness,
@@ -594,7 +654,7 @@ export class ConstraintsTestScene extends Scene {
         });
 
         // Right wall
-        this.spawnEntity(Floor, {
+        Floor.spawn({
             x: worldWidth - wallThickness / 2,
             y: worldHeight / 2,
             width: wallThickness,
@@ -605,7 +665,7 @@ export class ConstraintsTestScene extends Scene {
     spawnBalls(count) {
         for (let i = 0; i < count; i++) {
             setTimeout(() => {
-                this.spawnEntity(Ball, {
+                Ball.spawn({
                     x: 0.2 * this.config.worldWidth + this.rng() * this.config.worldWidth * 0.6,
                     y: 0.2 * this.config.worldHeight + this.rng() * this.config.worldHeight * 0.6,
                     vx: 0,
@@ -620,7 +680,7 @@ export class ConstraintsTestScene extends Scene {
     // ========================================
 
     spawnRandomBall() {
-        this.spawnEntity(Ball, {
+        Ball.spawn({
             x: this.rng() * this.config.worldWidth,
             y: this.rng() * this.config.worldHeight,
             vx: 0,
@@ -630,7 +690,7 @@ export class ConstraintsTestScene extends Scene {
 
     spawnBallAtMouse() {
         if (Mouse.x > 0 && Mouse.y > 0) {
-            this.spawnEntity(Ball, {
+            Ball.spawn({
                 x: Mouse.x,
                 y: Mouse.y,
                 vx: 0,

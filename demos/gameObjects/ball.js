@@ -107,7 +107,7 @@ class Ball extends GameObject {
    */
   tick(dtRatio) {
     // Mouse interaction: push balls away from cursor on click
-    if (Mouse.isDown) {
+    if (Mouse.isButton1Down) {
       // Calculate distance using ergonomic API (clean and readable!)
       const dx = this.x - Mouse.x;
       const dy = this.y - Mouse.y;

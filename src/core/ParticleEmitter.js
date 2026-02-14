@@ -337,4 +337,12 @@ export class ParticleEmitter extends SharedAtomicPool {
       gravity: 1,
     });
   }
+
+  /**
+   * Reset all particle emitter state (extends parent reset)
+   * Called when switching scenes to clear stale static state
+   */
+  static reset() {
+    super.reset();
+  }
 }

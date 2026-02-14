@@ -55,9 +55,9 @@ export class Constraint extends SharedAtomicPool {
         // active: Uint8 (1 byte per constraint, aligned to 4)
         const alignedActiveSize = Math.ceil(maxConstraints / 4) * 4;
         return maxConstraints * 4 +    // pairs
-               maxConstraints * 4 +    // restLength
-               maxConstraints * 4 +    // stiffness
-               alignedActiveSize;      // active (aligned)
+            maxConstraints * 4 +    // restLength
+            maxConstraints * 4 +    // stiffness
+            alignedActiveSize;      // active (aligned)
     }
 
     /**
@@ -210,5 +210,17 @@ export class Constraint extends SharedAtomicPool {
             }
         }
         return result;
+    }
+
+    /**
+     * Reset all constraint state (extends parent reset)
+     * Called when switching scenes to clear stale static state
+     */
+    static reset() {
+        super.reset();
+        this.pairs = null;
+        this.restLength = null;
+        this.stiffness = null;
+        this.active = null;
     }
 }

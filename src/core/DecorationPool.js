@@ -265,4 +265,13 @@ export class DecorationPool extends SharedAtomicPool {
       this.activeDecorationsData = new Uint16Array(buffer);
     }
   }
+
+  /**
+   * Reset all decoration pool state (extends parent reset)
+   * Called when switching scenes to clear stale static state
+   */
+  static reset() {
+    super.reset();
+    this.activeDecorationsData = null;
+  }
 }
