@@ -91,8 +91,8 @@ export const LOGIC_STATS = {
 };
 
 /**
- * Navigation Worker Stats Schema
- * Single navigation worker with pathfinding metrics
+ * Navigation Worker Stats Schema (DEPRECATED - merged into particle_worker)
+ * Kept for backwards compatibility, now handled by particle_worker
  */
 export const NAVIGATION_STATS = {
   FPS: 0,
@@ -104,7 +104,23 @@ export const NAVIGATION_STATS = {
   PENDING_PATHS: 6, // Path requests waiting
   GRID_WIDTH: 7, // Grid dimensions for reference
   GRID_HEIGHT: 8,
-  SHADOWS_UPDATED: 9, // Shadow sprites computed this frame
+  SHADOWS_UPDATED: 9, // Shadow sprites computed this frame (now in pre_render)
+  // Reserve space for future stats
+  STRIDE_FLOATS: 16,
+  BUFFER_SIZE: 16 * 4,
+};
+
+/**
+ * Pre-Render Worker Stats Schema
+ * Single pre-render worker with visibility and render queue metrics
+ */
+export const PRE_RENDER_STATS = {
+  FPS: 0,
+  VISIBLE_ENTITIES: 1, // Entities on screen this frame
+  VISIBLE_PARTICLES: 2, // Particles on screen this frame
+  VISIBLE_DECORATIONS: 3, // Decorations on screen this frame
+  SHADOWS_UPDATED: 4, // Shadow sprites computed this frame
+  RENDER_QUEUE_SIZE: 5, // Total items in render queue
   // Reserve space for future stats
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
@@ -223,6 +239,33 @@ export const WORKER_DISPLAY_CONFIG = {
         key: 'PATHS_CACHED',
         format: (v) => formatNumber(v),
         label: 'A* cached',
+      },
+    ],
+  },
+  preRender: {
+    label: 'PreRender',
+    color: 'preRender',
+    stats: [
+      { key: 'FPS', format: (v) => v.toFixed(2) },
+      {
+        key: 'VISIBLE_ENTITIES',
+        format: (v) => formatNumber(v),
+        label: 'Vis Entities',
+      },
+      {
+        key: 'VISIBLE_PARTICLES',
+        format: (v) => formatNumber(v),
+        label: 'Vis Particles',
+      },
+      {
+        key: 'SHADOWS_UPDATED',
+        format: (v) => formatNumber(v),
+        label: 'Shadows',
+      },
+      {
+        key: 'RENDER_QUEUE_SIZE',
+        format: (v) => formatNumber(v),
+        label: 'Queue Size',
       },
     ],
   },

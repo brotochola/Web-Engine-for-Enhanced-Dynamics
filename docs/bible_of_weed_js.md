@@ -111,8 +111,8 @@ this.despawn();
 | `spatial_worker` | 1–N    | No      | Grid rebuild, neighbor detection      |
 | `physics_worker` | 1      | No      | Verlet integration, collision resolve |
 | `logic_worker`   | 1–N    | Yes     | Entity tick(), callbacks              |
-| `particle_worker`| 1      | No      | Particle physics, render queue build  |
-| `nav_worker`     | 1      | No      | Pathfinding, shadows, derived props   |
+| `particle_worker`| 1      | No      | Particles, decals, navigation, derived|
+| `pre_render_worker`| 1    | No      | Visibility, animation, render queues  |
 | `pixi_worker`    | 1      | No      | PixiJS rendering                      |
 
 ---
