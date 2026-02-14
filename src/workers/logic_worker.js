@@ -70,6 +70,16 @@ class LogicWorker extends AbstractWorker {
     // Screen visibility tracking (for onScreenEnter/Exit lifecycle methods)
     // Track previous frame's visibility state to detect transitions
     this.previousScreenVisibility = new Uint8Array(0); // Will be sized in initialize()
+
+    // ========================================
+    // TICK DECIMATION OPTIMIZATION
+    // ========================================
+    // Entity types are separated into two groups at initialization:
+    // - nonDecimatedTypes: tickInterval === 1 (most entities) → simple loop, zero overhead
+    // - decimatedTypes: tickInterval > 1 → full countdown logic
+    // This eliminates per-entity checks for the common case (no decimation)
+    this.nonDecimatedTypes = []; // Array of {EntityClass, activeList} for tickInterval === 1
+    this.decimatedTypes = [];    // Array of {EntityClass, activeList, tickInterval} for tickInterval > 1
   }
 
   /**
@@ -220,6 +230,32 @@ class LogicWorker extends AbstractWorker {
             instance.start();
           }
         }
+
+        // ========================================
+        // TICK DECIMATION: Classify entity type
+        // ========================================
+        // Separate into decimated vs non-decimated for optimized update loops
+        // Only classify if this type has entities (poolSize > 0)
+        if (poolSize > 0) {
+          const tickInterval = EntityClass.tickInterval || 1;
+
+          if (tickInterval > 1 && GameObject.nextTick) {
+            // Decimated type: needs full countdown logic
+            this.decimatedTypes.push({
+              EntityClass,
+              activeList: EntityClass._activeList,
+              tickInterval,
+              startIndex,
+            });
+          } else {
+            // Non-decimated type: simple loop, zero overhead
+            this.nonDecimatedTypes.push({
+              EntityClass,
+              activeList: EntityClass._activeList,
+              startIndex,
+            });
+          }
+        }
       } else {
         console.warn(`LOGIC WORKER: Class ${name} not found in worker scope!`);
       }
@@ -246,60 +282,100 @@ class LogicWorker extends AbstractWorker {
     // Count active entities while processing
     let activeCount = 0;
 
-    // OPTIMIZED: Use activeEntitiesData to skip inactive entities entirely
-    // particle_worker builds this list at the start of each frame
-    const totalActiveEntities = this.activeEntitiesData ? this.activeEntitiesData[0] : 0;
-
-    // DETERMINISTIC MODULO: Each worker processes entities where (activeIdx % totalWorkers === workerIndex)
-    // This is simple, predictable, and requires no synchronization
+    // DETERMINISTIC MODULO: Each worker processes entities where (idx % totalWorkers === workerIndex)
+    // Applied per-type to maintain fair load distribution
     const totalWorkers = this.totalLogicWorkers;
     const myIndex = this.workerIndex;
 
-    for (let activeIdx = myIndex; activeIdx < totalActiveEntities; activeIdx += totalWorkers) {
-      // Get actual entity index from active list
-      const entityIndex = this.activeEntitiesData[1 + activeIdx];
-      const obj = this.gameObjects[entityIndex];
+    // Cache hot references outside all loops
+    const gameObjects = this.gameObjects;
+    const accTime = this.accumulatedTime;
+    const frameNum = this.frameNumber;
 
-      if (obj) {
+    // ========================================
+    // PHASE 1: NON-DECIMATED ENTITIES (FAST PATH)
+    // ========================================
+    // Zero decimation overhead - no countdown checks, no prototype lookups
+    // This is the common case for most entity types
+    const nonDecimatedTypes = this.nonDecimatedTypes;
+    const nonDecimatedCount = nonDecimatedTypes.length;
+
+    for (let t = 0; t < nonDecimatedCount; t++) {
+      const typeInfo = nonDecimatedTypes[t];
+      const activeList = typeInfo.activeList;
+      const count = activeList[0];
+
+      // Worker partitioning within this type's active list
+      for (let idx = myIndex; idx < count; idx += totalWorkers) {
+        const entityIndex = activeList[1 + idx];
+        const obj = gameObjects[entityIndex];
+
         activeCount++;
         this.entitiesProcessedThisFrame++;
 
-        // OPTIMIZED: updateNeighbors uses Grid statics directly (no params needed)
-        // Only updates per-instance _neighborOffset and neighborCount
+        // Update neighbors (uses Grid statics directly)
         obj.updateNeighbors();
 
-        // TICK DECIMATION: Skip tick if countdown hasn't reached 0
-        // Entities with tickInterval > 1 only tick every N frames (staggered by index)
-        // Cost: ~3 cycles (decrement + compare + branch) vs ~20 cycles for modulo
-        let tickInterval = 1;
-        if (GameObject.nextTick) {
-          tickInterval = obj.constructor.tickInterval || 1;
-          if (tickInterval > 1) {
-            if (--GameObject.nextTick[entityIndex] > 0) {
-              // Skip tick, but still check screen visibility
-              this.checkScreenVisibility(entityIndex, obj);
-              continue;
-            }
-            // Reset countdown for next cycle
-            GameObject.nextTick[entityIndex] = tickInterval;
-          }
-        }
+        // Tick entity logic - no decimation checks needed!
+        obj.tick(dtRatio, deltaTime, accTime, frameNum);
 
-        // Tick entity logic with full timing info
-        // dtRatio: normalized to 60fps (1.0 = 16.67ms), deltaTime: actual ms, accumulatedTime: total ms, frameNumber
-        obj.tick(dtRatio, deltaTime, this.accumulatedTime, this.frameNumber);
-
-        // ACCELERATION SCALING: Compensate for tick decimation
-        // If entity ticks every N frames, scale acceleration by N so physics
-        // integrates the same total impulse. Without this, entities with
-        // tickInterval > 1 would move N times slower.
-        if (tickInterval > 1) {
-          RigidBody.ax[entityIndex] *= tickInterval;
-          RigidBody.ay[entityIndex] *= tickInterval;
-        }
-
-        // Check for screen visibility changes and call lifecycle methods
+        // Check for screen visibility changes
         this.checkScreenVisibility(entityIndex, obj);
+      }
+    }
+
+    // ========================================
+    // PHASE 2: DECIMATED ENTITIES (COUNTDOWN PATH)
+    // ========================================
+    // Full countdown logic for entities with tickInterval > 1
+    // tickInterval is cached per-type (no prototype lookup in inner loop)
+    const decimatedTypes = this.decimatedTypes;
+    const decimatedCount = decimatedTypes.length;
+    const nextTick = GameObject.nextTick; // Cache the typed array reference
+
+    if (decimatedCount > 0 && nextTick) {
+      // Cache RigidBody arrays for acceleration scaling
+      const rbAx = RigidBody.ax;
+      const rbAy = RigidBody.ay;
+
+      for (let t = 0; t < decimatedCount; t++) {
+        const typeInfo = decimatedTypes[t];
+        const activeList = typeInfo.activeList;
+        const count = activeList[0];
+        const tickInterval = typeInfo.tickInterval; // Pre-cached, no prototype lookup
+
+        // Worker partitioning within this type's active list
+        for (let idx = myIndex; idx < count; idx += totalWorkers) {
+          const entityIndex = activeList[1 + idx];
+          const obj = gameObjects[entityIndex];
+
+          activeCount++;
+          this.entitiesProcessedThisFrame++;
+
+          // Update neighbors (uses Grid statics directly)
+          obj.updateNeighbors();
+
+          // TICK DECIMATION: Check countdown
+          if (--nextTick[entityIndex] > 0) {
+            // Skip tick, but still check screen visibility
+            this.checkScreenVisibility(entityIndex, obj);
+            continue;
+          }
+
+          // Reset countdown for next cycle
+          nextTick[entityIndex] = tickInterval;
+
+          // Tick entity logic
+          obj.tick(dtRatio, deltaTime, accTime, frameNum);
+
+          // ACCELERATION SCALING: Compensate for tick decimation
+          // Scale acceleration by tickInterval so physics integrates same total impulse
+          rbAx[entityIndex] *= tickInterval;
+          rbAy[entityIndex] *= tickInterval;
+
+          // Check for screen visibility changes
+          this.checkScreenVisibility(entityIndex, obj);
+        }
       }
     }
 
