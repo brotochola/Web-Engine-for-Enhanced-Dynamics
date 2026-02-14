@@ -1,7 +1,7 @@
 import WEED from '/src/index.js';
 
 // Destructure what we need from WEED
-const { GameObject, Keyboard, Mouse, RigidBody, Collider, SpriteRenderer } = WEED;
+const { GameObject, Keyboard, Mouse, RigidBody, Collider, SpriteRenderer, rng } = WEED;
 
 class Ball extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
@@ -18,6 +18,20 @@ class Ball extends GameObject {
    * All components are guaranteed to be initialized at this point
    */
   setup() {
+
+  }
+
+  onScreenEnter() { }
+
+  onScreenExit() { }
+
+  /**
+   * LIFECYCLE: Called when ball is spawned/respawned from pool
+   * Initialize THIS instance - runs EVERY spawn
+   * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
+   */
+  onSpawned(spawnConfig = {}) {
+    // this.collider.radius = spawnConfig.radius; // Mass auto-computed from area (π * r²)
     // Configure RigidBody physics properties (same for all balls)
     this.rigidBody.maxVel = 100; // Max velocity
     this.rigidBody.maxAcc = 10; // Max acceleration
@@ -44,7 +58,7 @@ class Ball extends GameObject {
     this.setSprite('ball');
 
     const actualBallSize = 14; //png width
-    const ballRadius = Math.random() * 20 + 10;
+    const ballRadius = spawnConfig.radius || rng() * 20 + 10;
     this.collider.radius = ballRadius; // Mass auto-computed from area (π * r²)
 
     this.collider.visualRange = ballRadius * 3;
@@ -67,17 +81,6 @@ class Ball extends GameObject {
     this.myColor = colors[Math.floor(Math.random() * colors.length)];
     this.setTint(this.myColor);
   }
-
-  onScreenEnter() { }
-
-  onScreenExit() { }
-
-  /**
-   * LIFECYCLE: Called when ball is spawned/respawned from pool
-   * Initialize THIS instance - runs EVERY spawn
-   * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
-   */
-  onSpawned(spawnConfig = {}) { }
 
   onCollisionEnter(otherIndex) {
     // this.setTint(0xff0000);

@@ -31,6 +31,7 @@ import {
 import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from './ConfigDefaults.js';
 import { NavGrid } from './NavGrid.js';
 import { Grid } from './Grid.js';
+import { Constraint } from './Constraint.js';
 
 /**
  * DebugUI - Self-contained debug overlay that pulls data and updates itself
@@ -831,6 +832,7 @@ export class DebugUI {
       raycasts: 'showRaycasts',
       sleepingEntities: 'showSleepingEntities',
       sleepingCells: 'showSleepingCells',
+      constraints: 'showConstraints',
     };
 
     const method = methodMap[key];
@@ -843,6 +845,8 @@ export class DebugUI {
         flagName = 'SHOW_SLEEPING_CELLS';
       } else if (key === 'collisionCandidates') {
         flagName = 'SHOW_COLLISION_CANDIDATES';
+      } else if (key === 'constraints') {
+        flagName = 'SHOW_CONSTRAINTS';
       }
       const currentState = this.debugFlags.isEnabled(DEBUG_FLAGS[flagName]);
       this.debugFlags[method](!currentState);
@@ -1208,6 +1212,7 @@ export class DebugUI {
       { key: 'raycasts', label: 'Raycasts', shortcut: '8' },
       { key: 'sleepingEntities', label: 'Sleeping', shortcut: '9' },
       { key: 'sleepingCells', label: 'Sleep Cells', shortcut: 'S' },
+      { key: 'constraints', label: 'Constraints', shortcut: 'K' },
     ];
 
     for (const aid of visualAids) {
@@ -1903,7 +1908,8 @@ export class DebugUI {
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_RAYCASTS) ||
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES) ||
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_CELLS) ||
-      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SELECTED_ENTITY)
+      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SELECTED_ENTITY) ||
+      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_CONSTRAINTS)
     );
   }
 
@@ -2004,7 +2010,12 @@ export class DebugUI {
       this._drawSleepingEntities(ctx, canvas, camera, zoom);
     }
 
-    // 12. Draw selected entity bounding box (always on top)
+    // 12. Draw distance constraints
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_CONSTRAINTS)) {
+      this._drawConstraints(ctx, canvas, camera, zoom);
+    }
+
+    // 13. Draw selected entity bounding box (always on top)
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SELECTED_ENTITY)) {
       this._drawSelectedEntity(ctx, canvas, camera, zoom);
     }
@@ -2905,6 +2916,107 @@ export class DebugUI {
   }
 
   /**
+   * Draw distance constraints as lines between connected entities
+   * Color indicates stiffness: red (low) to green (high)
+   */
+  _drawConstraints(ctx, canvas, camera, zoom) {
+    // Check if Constraint is initialized
+    if (!Constraint.initialized || !Constraint.pairs || !Constraint.active) {
+      return;
+    }
+
+    const pairs = Constraint.pairs;
+    const restLength = Constraint.restLength;
+    const stiffness = Constraint.stiffness;
+    const constraintActive = Constraint.active;
+    const maxConstraints = Constraint.maxCount;
+
+    const x = Transform.x;
+    const y = Transform.y;
+    const entityActive = Transform.active;
+
+    ctx.lineWidth = 2;
+
+    for (let i = 0; i < maxConstraints; i++) {
+      if (!constraintActive[i]) continue;
+
+      // Unpack entity indices
+      const packed = pairs[i];
+      const entityA = packed >>> 16;
+      const entityB = packed & 0xFFFF;
+
+      // Skip if either entity is inactive
+      if (!entityActive[entityA] || !entityActive[entityB]) continue;
+
+      // Get positions
+      const ax = x[entityA];
+      const ay = y[entityA];
+      const bx = x[entityB];
+      const by = y[entityB];
+
+      // Transform to screen coords
+      const sax = (ax - camera.x) * zoom;
+      const say = (ay - camera.y) * zoom;
+      const sbx = (bx - camera.x) * zoom;
+      const sby = (by - camera.y) * zoom;
+
+      // Skip if both points are off-screen (rough culling)
+      if ((sax < -50 && sbx < -50) || (sax > canvas.width + 50 && sbx > canvas.width + 50) ||
+          (say < -50 && sby < -50) || (say > canvas.height + 50 && sby > canvas.height + 50)) {
+        continue;
+      }
+
+      // Calculate current distance
+      const dx = bx - ax;
+      const dy = by - ay;
+      const currentDist = Math.sqrt(dx * dx + dy * dy);
+      const targetDist = restLength[i];
+
+      // Color based on stretch/compression
+      // Green = at rest, Yellow = slightly stretched, Red = very stretched
+      // Cyan = compressed
+      const stretchRatio = currentDist / targetDist;
+      let r, g, b;
+
+      if (stretchRatio < 0.9) {
+        // Compressed - cyan
+        r = 0; g = 200; b = 255;
+      } else if (stretchRatio < 1.1) {
+        // Near rest length - green
+        r = 50; g = 255; b = 50;
+      } else if (stretchRatio < 1.3) {
+        // Slightly stretched - yellow
+        const t = (stretchRatio - 1.1) / 0.2;
+        r = Math.floor(50 + 205 * t);
+        g = 255;
+        b = Math.floor(50 * (1 - t));
+      } else {
+        // Very stretched - red
+        r = 255; g = Math.max(0, Math.floor(255 * (2 - stretchRatio))); b = 0;
+      }
+
+      // Alpha based on stiffness (stiffer = more visible)
+      const alpha = 0.4 + stiffness[i] * 0.5;
+
+      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+
+      ctx.beginPath();
+      ctx.moveTo(sax, say);
+      ctx.lineTo(sbx, sby);
+      ctx.stroke();
+
+      // Draw small circles at connection points
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha + 0.2})`;
+      ctx.beginPath();
+      ctx.arc(sax, say, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(sbx, sby, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  /**
    * Draw bounding box around selected entity
    * Golden yellow box with corner markers
    */
@@ -3749,6 +3861,9 @@ export class DebugUI {
       } else if (key === 's') {
         // Toggle sleeping cells visualization
         this._toggleVisualAid('sleepingCells');
+      } else if (key === 'k') {
+        // Toggle constraints visualization
+        this._toggleVisualAid('constraints');
       } else if (key === 'c') {
         // Toggle collision candidates visualization
         this._toggleVisualAid('collisionCandidates');

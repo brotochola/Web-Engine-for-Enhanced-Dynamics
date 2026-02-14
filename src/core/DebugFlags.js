@@ -18,6 +18,7 @@ export const DEBUG_FLAGS = {
   SHOW_SLEEPING_ENTITIES: 13, // Highlight sleeping entities
   SHOW_SLEEPING_CELLS: 14, // Highlight sleeping grid cells
   SHOW_COLLISION_CANDIDATES: 15, // Draw collision candidate connections
+  SHOW_CONSTRAINTS: 16, // Draw distance constraint lines
 };
 
 // Selected entity index storage (offset in debug buffer after flags)
@@ -172,6 +173,14 @@ export class DebugFlags {
   }
 
   /**
+   * Enable/disable distance constraints visualization
+   */
+  showConstraints(enabled = true) {
+    this.flags[DEBUG_FLAGS.SHOW_CONSTRAINTS] = enabled ? 1 : 0;
+    return this;
+  }
+
+  /**
    * Set the selected entity index (writes to shared buffer)
    * @param {number} entityIndex - Entity index or -1 for no selection
    */
@@ -295,6 +304,7 @@ export class DebugFlags {
       sleepingEntities: this.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES),
       sleepingCells: this.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_CELLS),
       collisionCandidates: this.isEnabled(DEBUG_FLAGS.SHOW_COLLISION_CANDIDATES),
+      constraints: this.isEnabled(DEBUG_FLAGS.SHOW_CONSTRAINTS),
     };
   }
 }

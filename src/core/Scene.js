@@ -54,6 +54,7 @@ import {
   PRE_RENDER_STATS,
 } from '../workers/workers-utils.js';
 import { ParticleEmitter } from './ParticleEmitter.js';
+import { Constraint } from './Constraint.js';
 
 class Scene {
   // Worker index constants for FrameRate SharedArrayBuffer
@@ -1084,6 +1085,40 @@ class Scene {
     this.views.collision = new Int32Array(this.buffers.collisionData);
     this.views.collision[0] = 0;
 
+    // ========================================
+    // CONSTRAINT SYSTEM - Distance constraints for position-based dynamics
+    // ========================================
+    const maxConstraints = this.config.physics.maxConstraints || 0;
+    if (maxConstraints > 0) {
+      // Constraint data buffer (pairs, restLength, stiffness, active)
+      const constraintBufferSize = Constraint.getBufferSize(maxConstraints);
+      this.buffers.constraintData = new SharedArrayBuffer(constraintBufferSize);
+      Constraint.initializeArrays(this.buffers.constraintData, maxConstraints);
+
+      // Free list for O(1) constraint allocation (same pattern as particles)
+      // freeList: Uint16Array of size maxConstraints (stack of free indices)
+      // freeListTop: Int32Array[1] (atomic counter for stack top)
+      this.buffers.constraintFreeList = new SharedArrayBuffer(maxConstraints * 2); // Uint16 = 2 bytes
+      this.buffers.constraintFreeListTop = new SharedArrayBuffer(4); // Int32 = 4 bytes
+
+      // Initialize free list with all indices (0, 1, 2, ..., maxConstraints-1)
+      const freeList = new Uint16Array(this.buffers.constraintFreeList);
+      for (let i = 0; i < maxConstraints; i++) {
+        freeList[i] = i;
+      }
+      // Stack top starts at maxConstraints (all indices are free)
+      new Int32Array(this.buffers.constraintFreeListTop)[0] = maxConstraints;
+
+      // Initialize Constraint class on main thread
+      Constraint.initialize(maxConstraints);
+      Constraint.initializeFreeList(
+        this.buffers.constraintFreeList,
+        this.buffers.constraintFreeListTop
+      );
+
+      console.log(`[Scene] Constraint system: ${maxConstraints} max constraints (${constraintBufferSize} bytes)`);
+    }
+
     // Active entities buffer - tracks which entities are active for spatial worker load balancing
     // Layout: [count, entityIdx0, entityIdx1, ...]
     // Now maintained incrementally by spawn/despawn instead of rebuilt each frame
@@ -1846,6 +1881,16 @@ class Scene {
           }
           : null,
       queries: this.querySystem.serialize(), // Pre-calculated entity queries
+      // Constraint system (distance constraints for position-based dynamics)
+      constraints: this.config.physics.maxConstraints > 0
+        ? {
+            enabled: true,
+            maxConstraints: this.config.physics.maxConstraints,
+            data: this.buffers.constraintData,
+            freeList: this.buffers.constraintFreeList,
+            freeListTop: this.buffers.constraintFreeListTop,
+          }
+        : null,
     };
 
     // Initialize workers
@@ -2466,18 +2511,81 @@ class Scene {
 
   spawnEntity(EntityClassOrName, spawnConfig = {}) {
     // Accept either a class or a string name
-    const className =
-      typeof EntityClassOrName === 'function' ? EntityClassOrName.name : EntityClassOrName;
+    let EntityClass;
+    let className;
 
+    if (typeof EntityClassOrName === 'function') {
+      EntityClass = EntityClassOrName;
+      className = EntityClass.name;
+    } else {
+      className = EntityClassOrName;
+      // Look up the class from registered classes
+      const registration = this.registeredClasses.find(r => r.class.name === className);
+      EntityClass = registration?.class;
+    }
+
+    // ========================================
+    // ATOMIC SPAWN: Reserve index on main thread
+    // ========================================
+    // This enables immediate use of entity index (e.g., for constraints)
+    // Workers will receive the pre-assigned index and initialize their instances
+    let entityIndex = -1;
+
+    if (EntityClass && EntityClass.freeList && EntityClass.freeListTop) {
+      // Atomic decrement to pop from free list (thread-safe)
+      const oldTop = Atomics.sub(EntityClass.freeListTop, 0, 1);
+
+      if (oldTop > 0) {
+        // Got a valid index
+        entityIndex = EntityClass.freeList[oldTop - 1];
+
+        // Initialize basic Transform data on main thread
+        // This makes the entity immediately "exist" for constraints
+        Transform.active[entityIndex] = 1;
+        Transform.x[entityIndex] = spawnConfig.x ?? 0;
+        Transform.y[entityIndex] = spawnConfig.y ?? 0;
+
+        // Add to active entities list atomically
+        const activeList = EntityClass._activeList;
+        if (activeList) {
+          const activeCount = Atomics.add(activeList, 0, 1);
+          activeList[1 + activeCount] = entityIndex;
+        }
+
+        // Add to global active entities list
+        const globalActiveList = GameObject.activeEntitiesData;
+        if (globalActiveList) {
+          const globalCount = Atomics.add(globalActiveList, 0, 1);
+          globalActiveList[1 + globalCount] = entityIndex;
+        }
+      } else {
+        // Pool exhausted - restore counter
+        Atomics.add(EntityClass.freeListTop, 0, 1);
+        console.warn(`spawnEntity: Pool exhausted for ${className}`);
+        return null;
+      }
+    }
+
+    // ========================================
+    // NOTIFY WORKERS
+    // ========================================
     if (this.workers.logicWorkers && this.workers.logicWorkers.length > 0) {
       this.workers.logicWorkers.forEach((worker) => {
         worker.postMessage({
           msg: 'spawn',
           className: className,
           spawnConfig: spawnConfig,
+          entityIndex: entityIndex, // Pre-assigned index (or -1 if not available)
         });
       });
     }
+
+    // Return a simple object with the index for immediate use
+    // (e.g., creating constraints between spawned entities)
+    if (entityIndex >= 0) {
+      return { index: entityIndex };
+    }
+    return null;
   }
 
   despawnEntity(entityIndex) {

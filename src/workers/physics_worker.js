@@ -12,6 +12,7 @@ import { GameObject } from '../core/gameObject.js';
 import { Transform } from '../components/Transform.js';
 import { RigidBody } from '../components/RigidBody.js';
 import { Collider } from '../components/Collider.js';
+import { Constraint } from '../core/Constraint.js';
 import { AbstractWorker } from './AbstractWorker.js';
 import { Grid } from '../core/Grid.js';
 import { PHYSICS_STATS, createStatsWriter } from './workers-utils.js';
@@ -70,6 +71,10 @@ class PhysicsWorker extends AbstractWorker {
       nx: 0,
       ny: 0,
     };
+
+    // Constraint system
+    this.constraintsEnabled = false;
+    this.maxConstraints = 0;
   }
 
   /**
@@ -91,6 +96,19 @@ class PhysicsWorker extends AbstractWorker {
       this.collisionData = new Int32Array(data.buffers.collisionData);
       this.maxCollisionPairs =
         this.config.physics?.maxCollisionPairs ?? this.config.maxCollisionPairs ?? PHYSICS_DEFAULTS.maxCollisionPairs;
+    }
+
+    // Initialize constraint system if enabled
+    if (data.constraints && data.constraints.enabled) {
+      this.constraintsEnabled = true;
+      this.maxConstraints = data.constraints.maxConstraints;
+
+      // Initialize Constraint arrays from SharedArrayBuffer
+      Constraint.initializeArrays(data.constraints.data, this.maxConstraints);
+      Constraint.initialize(this.maxConstraints);
+      Constraint.initializeFreeList(data.constraints.freeList, data.constraints.freeListTop);
+
+      console.log(`PHYSICS WORKER: Constraint system initialized with ${this.maxConstraints} max constraints`);
     }
 
     this.applyPhysicsConfig(this.config.physics || {});
@@ -258,24 +276,11 @@ class PhysicsWorker extends AbstractWorker {
         isTrigger,
         collisionCount
       );
-      // this.applyConstraintsVerlet(
-      //   active,
-      //   rigidBodyActive,
-      //   colliderActive,
-      //   x,
-      //   y,
-      //   offsetX,
-      //   offsetY,
-      //   shapeType,
-      //   radius,
-      //   width,
-      //   height,
-      //   isTrigger,
-      //   collisionCount,
-      //   worldWidth,
-      //   worldHeight,
-      //   rigidBodyCount
-      // );
+
+      // Solve distance constraints (position-based dynamics)
+      if (this.constraintsEnabled) {
+        this.solveDistanceConstraints(x, y, active);
+      }
     }
   }
 
@@ -369,6 +374,10 @@ class PhysicsWorker extends AbstractWorker {
       collisionCount
     );
 
+    // Solve distance constraints (position-based dynamics)
+    if (this.constraintsEnabled) {
+      this.solveDistanceConstraints(x, y, active);
+    }
   }
 
   /**
@@ -777,6 +786,104 @@ class PhysicsWorker extends AbstractWorker {
       this.stats[PHYSICS_STATS.COLLISION_CHECKS] = this.collisionChecksThisFrame;
       this.stats[PHYSICS_STATS.COLLISIONS_RESOLVED] = this.collisionsResolvedThisFrame;
       this.stats[PHYSICS_STATS.COLLISION_PAIRS] = this.collisionPairsThisFrame;
+    }
+  }
+
+  // ========================================
+  // DISTANCE CONSTRAINT SOLVING
+  // ========================================
+
+  /**
+   * Solve distance constraints using position-based dynamics (PBD)
+   * Each constraint maintains a target distance between two entities.
+   *
+   * Algorithm:
+   * 1. For each active constraint, get entity positions
+   * 2. Calculate current distance between entities
+   * 3. Compute position correction to reach target distance
+   * 4. Apply correction scaled by stiffness (split 50/50 between entities)
+   *
+   * @param {Float32Array} x - Entity X positions
+   * @param {Float32Array} y - Entity Y positions
+   * @param {Uint8Array} active - Entity active flags
+   */
+  solveDistanceConstraints(x, y, active) {
+    const pairs = Constraint.pairs;
+    const restLength = Constraint.restLength;
+    const stiffness = Constraint.stiffness;
+    const constraintActive = Constraint.active;
+    const maxConstraints = this.maxConstraints;
+
+    // Cache RigidBody static flags for mass-weighted response
+    const isStatic = RigidBody.static;
+    const invMass = RigidBody.invMass;
+    const rigidBodyActive = RigidBody.active;
+
+    for (let i = 0; i < maxConstraints; i++) {
+      // Skip inactive constraints
+      if (!constraintActive[i]) continue;
+
+      // Unpack entity indices
+      const packed = pairs[i];
+      const entityA = packed >>> 16;
+      const entityB = packed & 0xFFFF;
+
+      // Skip if either entity is inactive
+      if (!active[entityA] || !active[entityB]) continue;
+
+      // Get current positions
+      const ax = x[entityA];
+      const ay = y[entityA];
+      const bx = x[entityB];
+      const by = y[entityB];
+
+      // Calculate distance vector and current distance
+      const dx = bx - ax;
+      const dy = by - ay;
+      const currentDist = Math.sqrt(dx * dx + dy * dy);
+
+      // Skip if entities are at same position (avoid division by zero)
+      if (currentDist < 0.0001) continue;
+
+      // Calculate error (how far from rest length)
+      const targetDist = restLength[i];
+      const error = currentDist - targetDist;
+
+      // Skip if already at target distance
+      if (Math.abs(error) < 0.001) continue;
+
+      // Calculate correction direction (normalized)
+      const nx = dx / currentDist;
+      const ny = dy / currentDist;
+
+      // Apply stiffness to correction
+      const correction = error * stiffness[i] * 0.5; // 0.5 for relaxation
+
+      // Mass-weighted response (similar to collision resolution)
+      const aHasRB = rigidBodyActive[entityA];
+      const bHasRB = rigidBodyActive[entityB];
+      const aStatic = !aHasRB || isStatic[entityA];
+      const bStatic = !bHasRB || isStatic[entityB];
+
+      // Get inverse masses (static = 0 = infinite mass)
+      const invMassA = aStatic ? 0 : (invMass[entityA] || 1);
+      const invMassB = bStatic ? 0 : (invMass[entityB] || 1);
+      const totalInvMass = invMassA + invMassB;
+
+      // Skip if both are static (no movement possible)
+      if (totalInvMass === 0) continue;
+
+      // Distribute correction based on mass
+      const corrA = correction * (invMassA / totalInvMass);
+      const corrB = correction * (invMassB / totalInvMass);
+
+      // Apply position corrections
+      // Entity A moves toward B (positive correction)
+      // Entity B moves toward A (negative correction)
+      x[entityA] += nx * corrA;
+      y[entityA] += ny * corrA;
+      x[entityB] -= nx * corrB;
+      y[entityB] -= ny * corrB;
     }
   }
 }

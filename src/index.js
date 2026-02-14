@@ -49,6 +49,12 @@ export { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/ParticleEmitter
 export { DecorationPool } from './core/DecorationPool.js';
 
 // ============================================================================
+// CONSTRAINTS
+// ============================================================================
+// Distance constraints for position-based dynamics (ropes, springs, rigid connections)
+export { Constraint } from './core/Constraint.js';
+
+// ============================================================================
 // FLASHES
 // ============================================================================
 // Note: Flashes ARE GameObjects (auto-registered) with LightEmitter + FlashComponent
@@ -113,6 +119,7 @@ import { LightEmitter } from './components/LightEmitter.js';
 import { ShadowCaster } from './components/ShadowCaster.js';
 import { FlashComponent } from './components/FlashComponent.js';
 import { Flash } from './core/Flash.js';
+import { Constraint } from './core/Constraint.js';
 import { AbstractWorker } from './workers/AbstractWorker.js';
 import { ShapeType } from './core/ConfigDefaults.js';
 
@@ -152,6 +159,9 @@ const WEED = {
   // Decorations
   DecorationPool,
   DecorationComponent,
+
+  // Constraints (distance constraints for physics)
+  Constraint,
 
   // Pool base class (for custom pools)
   SharedAtomicPool,
