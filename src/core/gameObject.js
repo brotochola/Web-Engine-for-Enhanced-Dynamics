@@ -397,10 +397,19 @@ export class GameObject {
     GameObject.instances.push(this);
     this.constructor.instances.push(this);
 
-    // Neighbor properties (updated each frame before tick)
-    this.neighborCount = 0;
-    this._neighbors = null; // Lazy-init zero-copy view into Grid.neighborData
-    this._neighborOffset = 0; // Pointer-like offset into shared buffer
+    // Neighbor data: computed once in constructor (Grid is initialized before entities)
+    if (Grid._stride && Grid.neighborData) {
+      this._neighborOffset = index * Grid._stride;
+      this._neighbors = new Uint16Array(
+        Grid.neighborData.buffer,
+        Grid.neighborData.byteOffset + (this._neighborOffset + 2) * 2, // Uint16 = 2 bytes
+        Grid.maxNeighbors
+      );
+    } else {
+      // Fallback for edge cases (shouldn't happen in normal flow)
+      this._neighborOffset = -1;
+      this._neighbors = null;
+    }
 
     // Component instance cache (lazy-loaded on first access)
     this._componentCache = {};
@@ -1370,29 +1379,12 @@ export class GameObject {
   }
 
   /**
-   * Update neighbor references for this entity
-   * Called by logic worker before tick() each frame
-   *
-   * OPTIMIZED: Uses Grid statics directly (neighborData and stride are the same for all entities).
-   * Only updates per-instance offset and count. Zero redundant writes.
-   * Lazy-inits neighbor view (once per entity lifetime).
+   * Get count of neighbors for this entity
+   * Reads directly from spatial worker's SAB - always current
+   * @returns {number} Number of neighbors
    */
-  updateNeighbors() {
-    // Grid.neighborData and Grid._stride are static - same for all entities
-    // Only _neighborOffset and neighborCount vary per instance
-    this._neighborOffset = this.index * Grid._stride;
-    this.neighborCount = Grid.neighborData[this._neighborOffset];
-
-    // Lazy-init neighbors view (once per entity lifetime, zero-copy into SAB)
-    // Fixed max length - use neighborCount to know how many are valid
-    // Uses Uint16 since max entities = 65535 (fits in 16 bits)
-    if (!this._neighbors) {
-      this._neighbors = new Uint16Array(
-        Grid.neighborData.buffer,
-        Grid.neighborData.byteOffset + (this._neighborOffset + 2) * 2, // Uint16 = 2 bytes
-        Grid.maxNeighbors
-      );
-    }
+  get neighborCount() {
+    return Grid.neighborData[this._neighborOffset];
   }
 
   /**
@@ -1406,7 +1398,7 @@ export class GameObject {
 
   /**
    * Get all neighbor IDs as an array
-   * @returns {Int32Array} Typed array view of valid neighbor indices (zero-alloc subarray)
+   * @returns {Uint16Array} Typed array view of valid neighbor indices (zero-alloc subarray)
    */
   getAllNeighborIds() {
     return this._neighbors.subarray(0, this.neighborCount);
