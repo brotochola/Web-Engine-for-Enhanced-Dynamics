@@ -560,10 +560,12 @@ export class ConstraintsTestScene extends Scene {
             console.log('Builder: Spawning ball', newBall.index, neighbors);
 
             for (const neighbor of neighbors) {
-                const distSq = distanceSq2D(Transform.x[newBall.index], Transform.y[newBall.index], Transform.x[neighbor], Transform.y[neighbor]);
-                console.log("creating constraint between", newBall.index, neighbor, Math.sqrt(distSq));
-                Constraint.add(newBall.index, neighbor, Math.sqrt(distSq), this.builderConstraintStiffness);
+                if (Transform.active[neighbor] && Transform.entityType[neighbor] === Ball.entityType) {
+                    const distSq = distanceSq2D(Transform.x[newBall.index], Transform.y[newBall.index], Transform.x[neighbor], Transform.y[neighbor]);
+                    console.log("creating constraint between", newBall.index, neighbor, Math.sqrt(distSq));
+                    Constraint.add(newBall.index, neighbor, Math.sqrt(distSq), this.builderConstraintStiffness);
 
+                }
             }
 
         }, 60);
