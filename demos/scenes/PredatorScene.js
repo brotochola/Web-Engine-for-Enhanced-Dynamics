@@ -111,6 +111,9 @@ export class PredatorScene extends WEED.Scene {
       hideDecorationsAtZoom: 0.25,
       maxVisibleRenderables: 100000
     },
+    preRender: {
+      noLimitFPS: true,
+    },
 
     lighting: {
       enabled: true,

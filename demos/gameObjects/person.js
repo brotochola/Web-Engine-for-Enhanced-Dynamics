@@ -174,7 +174,7 @@ export class Person extends Lootable {
     // const animAfterDie = SpriteRenderer.animationState[this.index];
 
     // Animation FSM handles all animation state
-    this.personAnimationFSM.tick(dtRatio, this);
+    if (this.spriteRenderer?.spritesheetId) this.personAnimationFSM.tick(dtRatio, this);
 
     // const animAfterFSM = SpriteRenderer.animationState[this.index];
 

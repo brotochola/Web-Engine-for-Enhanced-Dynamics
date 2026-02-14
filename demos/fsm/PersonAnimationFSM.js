@@ -70,6 +70,7 @@ class IdleState extends FSMState {
 
 class WalkingState extends FSMState {
   static onEnter(owner, i, fromState) {
+    if (!owner.spriteRenderer?.spritesheetId) return;
     const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
     owner.setAnimation(`walk_${facingDir}`);
     owner.setAnimationSpeed(RigidBody.speed[i] * WALK_ANIMATION_MULTIPLIER);
@@ -121,6 +122,7 @@ class WalkingState extends FSMState {
 
 class RunningState extends FSMState {
   static onEnter(owner, i, fromState) {
+    if (!owner.spriteRenderer?.spritesheetId) return;
     const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
     owner.setAnimation(`run_${facingDir}`);
     owner.setAnimationSpeed(RigidBody.speed[i] * RUN_ANIMATION_MULTIPLIER);
@@ -185,6 +187,7 @@ class ShootingState extends FSMState {
 
 class PunchingState extends FSMState {
   static onEnter(owner, i, fromState) {
+    if (!owner.spriteRenderer?.spritesheetId) return;
     const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
     owner.setAnimation(`slash_${facingDir}`);
     owner.setAnimationSpeed(ACTION_ANIM_SPEED);
@@ -210,6 +213,7 @@ class PunchingState extends FSMState {
 
 class StickHitState extends FSMState {
   static onEnter(owner, i, fromState) {
+    if (!owner.spriteRenderer?.spritesheetId) return;
     const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
     owner.setAnimation(`1h_slash_${facingDir}`);
     owner.setAnimationSpeed(ACTION_ANIM_SPEED);
@@ -235,6 +239,7 @@ class StickHitState extends FSMState {
 
 class HurtState extends FSMState {
   static onEnter(owner, i, fromState) {
+    if (!owner.spriteRenderer?.spritesheetId) return;
     owner.setAnimation('hurt'); // No direction for hurt
     owner.setAnimationSpeed(ACTION_ANIM_SPEED);
   }
@@ -265,7 +270,9 @@ class DyingState extends FSMState {
   // static DYING_DURATION_MS = 100//(HURT_FRAMES -1)* (1000 / (DyingState.DYING_ANIM_SPEED * 60))
 
   static onEnter(owner, i, fromState) {
+    if (!owner.spriteRenderer?.spritesheetId) return;
     // Use hurt animation for death (no direction variant) - don't loop
+
     owner.setAnimation('hurt', false);
     owner.setAnimationSpeed(DYING_ANIM_SPEED);
   }
@@ -285,6 +292,7 @@ class DyingState extends FSMState {
 
 class DeadState extends FSMState {
   static onEnter(owner, i, fromState) {
+    if (!owner.spriteRenderer?.spritesheetId) return;
     // Stop on final frame, fade out
     owner.setAnimationSpeed(0);
     owner.onDeathAnimationComplete();
