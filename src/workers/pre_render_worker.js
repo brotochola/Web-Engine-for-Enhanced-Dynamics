@@ -3,9 +3,7 @@
 // This worker is purely visual - no physics or game logic
 
 import { ParticleComponent } from '../components/ParticleComponent.js';
-import { ParticleEmitter } from '../core/ParticleEmitter.js';
 import { DecorationComponent } from '../components/DecorationComponent.js';
-import { DecorationPool } from '../core/DecorationPool.js';
 import { Transform } from '../components/Transform.js';
 import { Collider } from '../components/Collider.js';
 import { LightEmitter } from '../components/LightEmitter.js';
@@ -392,99 +390,51 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * Collect visible particles for render queue
-     * Uses visibleParticlesData SAB populated by particle_worker (O(visibleCount) instead of O(maxParticles))
+     * Uses visibleParticlesData SAB populated by particle_worker
      */
     collectVisibleParticles() {
         if (this.maxParticles === 0) return;
 
         const visibleData = this.visibleParticlesData;
+        if (!visibleData) return;
 
-        // OPTIMIZED PATH: Use compact visible list from particle_worker
-        if (visibleData) {
-            const visibleCount = visibleData[0];
-            const y = ParticleComponent.y;
-
-            for (let idx = 0; idx < visibleCount; idx++) {
-                const i = visibleData[1 + idx];
-                this.collectRenderable(1, i, y[i]);
-                this.visibleParticlesCount++;
-            }
-            return;
-        }
-
-        // FALLBACK PATH: Scan maxParticles (should rarely happen)
-        const active = ParticleComponent.active;
+        const visibleCount = visibleData[0];
         const y = ParticleComponent.y;
-        const isItOnScreen = ParticleComponent.isItOnScreen;
 
-        const freeListTop = ParticleEmitter.freeListTop;
-        const expectedActive = freeListTop ? this.maxParticles - freeListTop[0] : this.maxParticles;
-
-        let found = 0;
-        for (let i = 0; i < this.maxParticles && found < expectedActive; i++) {
-            if (active[i]) {
-                found++;
-                // Only collect if already marked as visible by particle_worker
-                if (isItOnScreen[i]) {
-                    this.collectRenderable(1, i, y[i]);
-                    this.visibleParticlesCount++;
-                }
-            }
+        for (let idx = 0; idx < visibleCount; idx++) {
+            const i = visibleData[1 + idx];
+            this.collectRenderable(1, i, y[i]);
+            this.visibleParticlesCount++;
         }
     }
 
     /**
      * Collect visible entities for render queue
-     * Uses visibleEntitiesData SAB populated by particle_worker (O(visibleCount) instead of O(globalEntityCount))
+     * Uses visibleEntitiesData SAB populated by particle_worker
      */
     collectVisibleEntities() {
         if (this.globalEntityCount === 0 || !SpriteRenderer.isItOnScreen) return;
 
         const visibleData = this.visibleEntitiesData;
+        if (!visibleData) return;
 
-        // OPTIMIZED PATH: Use compact visible list from particle_worker
-        if (visibleData) {
-            const visibleCount = visibleData[0];
-            const y = Transform.y;
-            const renderVisible = SpriteRenderer.renderVisible;
-            const lightEmitterActive = LightEmitter.active;
-            const hasGlowSprite = LightEmitter.hasGlowSprite;
-
-            for (let idx = 0; idx < visibleCount; idx++) {
-                const i = visibleData[1 + idx];
-
-                // Collect entity sprite if renderVisible
-                if (renderVisible[i]) {
-                    this.collectRenderable(0, i, y[i]);
-                    this.visibleEntitiesCount++;
-                }
-
-                // Light glow sprites
-                if (lightEmitterActive && lightEmitterActive[i] && hasGlowSprite[i]) {
-                    this.collectRenderable(3, i, y[i] + 10);
-                }
-            }
-            return;
-        }
-
-        // FALLBACK PATH: Scan globalEntityCount (should rarely happen)
+        const visibleCount = visibleData[0];
         const y = Transform.y;
-        const active = Transform.active;
-        const isItOnScreen = SpriteRenderer.isItOnScreen;
-        const spriteRendererActive = SpriteRenderer.active;
         const renderVisible = SpriteRenderer.renderVisible;
+        const lightEmitterActive = LightEmitter.active;
+        const hasGlowSprite = LightEmitter.hasGlowSprite;
 
-        for (let i = 0; i < this.globalEntityCount; i++) {
-            if (!active[i] || !spriteRendererActive[i]) continue;
+        for (let idx = 0; idx < visibleCount; idx++) {
+            const i = visibleData[1 + idx];
 
-            // Only collect if already marked as visible by particle_worker
-            if (isItOnScreen[i] && renderVisible[i]) {
+            // Collect entity sprite if renderVisible
+            if (renderVisible[i]) {
                 this.collectRenderable(0, i, y[i]);
                 this.visibleEntitiesCount++;
             }
 
             // Light glow sprites
-            if (isItOnScreen[i] && LightEmitter.active && LightEmitter.active[i] && LightEmitter.hasGlowSprite[i]) {
+            if (lightEmitterActive && lightEmitterActive[i] && hasGlowSprite[i]) {
                 this.collectRenderable(3, i, y[i] + 10);
             }
         }
@@ -492,45 +442,21 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * Collect visible decorations for render queue
-     * Uses visibleDecorationsData SAB populated by particle_worker (O(visibleCount) instead of O(maxDecorations))
+     * Uses visibleDecorationsData SAB populated by particle_worker
      */
     collectVisibleDecorations() {
         if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
 
         const visibleData = this.visibleDecorationsData;
+        if (!visibleData) return;
 
-        // OPTIMIZED PATH: Use compact visible list from particle_worker
-        if (visibleData) {
-            const visibleCount = visibleData[0];
-            const y = DecorationComponent.y;
-
-            for (let idx = 0; idx < visibleCount; idx++) {
-                const i = visibleData[1 + idx];
-                this.collectRenderable(2, i, y[i]);
-                this.visibleDecorationsCount++;
-            }
-            return;
-        }
-
-        // FALLBACK PATH: Scan maxDecorations (should rarely happen)
-        const freeListTop = DecorationPool.freeListTop;
-        const expectedActive = freeListTop ? this.maxDecorations - freeListTop[0] : this.maxDecorations;
-        if (expectedActive === 0) return;
-
-        const active = DecorationComponent.active;
+        const visibleCount = visibleData[0];
         const y = DecorationComponent.y;
-        const isItOnScreen = DecorationComponent.isItOnScreen;
 
-        let activeFound = 0;
-        for (let i = 0; i < this.maxDecorations && activeFound < expectedActive; i++) {
-            if (!active[i]) continue;
-            activeFound++;
-
-            // Only collect if already marked as visible by particle_worker
-            if (isItOnScreen[i]) {
-                this.collectRenderable(2, i, y[i]);
-                this.visibleDecorationsCount++;
-            }
+        for (let idx = 0; idx < visibleCount; idx++) {
+            const i = visibleData[1 + idx];
+            this.collectRenderable(2, i, y[i]);
+            this.visibleDecorationsCount++;
         }
     }
 

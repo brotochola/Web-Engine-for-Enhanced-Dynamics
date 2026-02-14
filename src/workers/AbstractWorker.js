@@ -81,6 +81,10 @@ export class AbstractWorker {
     this.queryCache = null; // Will be initialized from main thread
     this.emptyQueryWarnings = new Set(); // Track empty query warnings (log once per query key)
 
+    // GC OPTIMIZATION: Pre-allocated empty array for query fallbacks
+    this._emptyUint16Array = new Uint16Array(0);
+    this._queryFallbackBuffer = null; // Initialized when globalEntityCount is known
+
     // MessagePorts for direct worker-to-worker communication
     this.workerPorts = new Map(); // Map<workerName, MessagePort>
 
@@ -227,6 +231,11 @@ export class AbstractWorker {
     // );
     this.reportLog('initializing common buffers');
     this.globalEntityCount = data.globalEntityCount;
+
+    // GC OPTIMIZATION: Pre-allocate fallback buffer for query results
+    if (this.globalEntityCount > 0) {
+      this._queryFallbackBuffer = new Uint16Array(this.globalEntityCount);
+    }
 
     // Store config for worker access
     this.config = data.config || {};
@@ -791,7 +800,7 @@ export class AbstractWorker {
     // Fallback to legacy implementation
     if (!this.queryCache) {
       console.warn(`[${this.constructor.name}] Query system not initialized!`);
-      return new Uint16Array(0);
+      return this._emptyUint16Array;
     }
 
     const key = componentClasses
@@ -821,20 +830,20 @@ export class AbstractWorker {
    * const activePhysics = this.queryActiveEntities([RigidBody, Collider]);
    */
   queryActiveEntities(componentClasses) {
-    // Use SAB-based query function if available
+    // Use SAB-based query function if available (primary path)
     if (this._queryActiveEntitiesFn) {
       return this._queryActiveEntitiesFn(componentClasses);
     }
 
-    // Fallback: filter query results by active state (slower)
+    // Fallback: filter query results by active state (legacy, slower)
     const allEntities = this.query(componentClasses);
     if (!allEntities || allEntities.length === 0) {
-      return new Uint16Array(0);
+      return this._emptyUint16Array;
     }
 
-    // Use activeEntitiesData if available for efficient active check
-    if (this.activeEntitiesData) {
-      const result = new Uint16Array(allEntities.length);
+    // Use pre-allocated fallback buffer if available
+    if (this.activeEntitiesData && this._queryFallbackBuffer) {
+      const result = this._queryFallbackBuffer;
       let count = 0;
       const Transform = self.Transform;
 
@@ -849,7 +858,7 @@ export class AbstractWorker {
     }
 
     console.warn(`[${this.constructor.name}] queryActiveEntities fallback - no activeEntitiesData`);
-    return new Uint16Array(0);
+    return this._emptyUint16Array;
   }
 
   /**

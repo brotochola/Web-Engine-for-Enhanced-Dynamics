@@ -325,6 +325,9 @@ class ParticleWorker extends AbstractWorker {
     this.cachedFlowfieldsCount = 0;
     this.cachedPathsCount = 0;
 
+    // GC OPTIMIZATION: Pre-allocated DataView for nav header reads (avoids creating Uint32Array views)
+    this._navDataView = null;
+
     // Derived properties
     this.globalEntityCount = 0;
     this.minSpeedForRotation = 0.1;
@@ -434,6 +437,9 @@ class ParticleWorker extends AbstractWorker {
       const pathQueueCapacity = Math.max(64, this.maxPaths * 8);
       this.flowfieldRequests = new FlowfieldRequestQueue(this.totalCells, flowfieldQueueCapacity);
       this.pathRequests = new PathRequestQueue(this.totalCells, pathQueueCapacity);
+
+      // GC OPTIMIZATION: Pre-allocate DataView for nav header reads
+      this._navDataView = new DataView(NavGrid._sab);
 
       // console.log(`[PARTICLE WORKER] Navigation initialized: ${this.gridWidth}x${this.gridHeight} grid`);
     }
@@ -751,29 +757,9 @@ class ParticleWorker extends AbstractWorker {
 
     const activeData = this.activeDecorationsData;
     const visibleData = this.visibleDecorationsData;
-
-    // Use compact list if available, otherwise fall back to scanning
     const activeCount = activeData ? activeData[0] : 0;
 
-    if (activeCount === 0 && !activeData) {
-      // Fallback: no activeDecorationsData available, use old method
-      const freeListTop = DecorationPool.freeListTop;
-      const expectedActive = freeListTop ? this.maxDecorations - freeListTop[0] : this.maxDecorations;
-      if (expectedActive === 0) {
-        if (visibleData) visibleData[0] = 0;
-        return;
-      }
-      // Old fallback scan (should rarely happen)
-      this._updateDecorationScreenVisibilityFallback(expectedActive);
-      return;
-    }
-
-    if (activeCount === 0) {
-      if (visibleData) visibleData[0] = 0;
-      return;
-    }
-
-    if (!this.cameraData) {
+    if (activeCount === 0 || !this.cameraData) {
       if (visibleData) visibleData[0] = 0;
       return;
     }
@@ -814,7 +800,7 @@ class ParticleWorker extends AbstractWorker {
 
       if (onScreen) {
         isItOnScreen[i] = 1;
-        if (visibleData) visibleData[1 + visibleCount] = i;
+        visibleData[1 + visibleCount] = i;
         visibleCount++;
       } else {
         isItOnScreen[i] = 0;
@@ -822,62 +808,7 @@ class ParticleWorker extends AbstractWorker {
     }
 
     // Write visible count to SAB
-    if (visibleData) visibleData[0] = visibleCount;
-  }
-
-  /**
-   * Fallback method for decoration visibility when activeDecorationsData is not available
-   * @private
-   */
-  _updateDecorationScreenVisibilityFallback(expectedActive) {
-    if (!this.cameraData) return;
-
-    const zoom = this.cameraData[0];
-    const cameraX = this.cameraData[1];
-    const cameraY = this.cameraData[2];
-
-    const cameraBounds = calculateCameraScreenBounds(
-      zoom, cameraX, cameraY,
-      this.canvasWidth, this.canvasHeight, this.cullingRatio,
-      this._cameraBounds
-    );
-
-    const active = DecorationComponent.active;
-    const x = DecorationComponent.x;
-    const y = DecorationComponent.y;
-    const isItOnScreen = DecorationComponent.isItOnScreen;
-    const visibleData = this.visibleDecorationsData;
-
-    const camZoom = cameraBounds.zoom;
-    const cameraOffsetX = cameraBounds.cameraOffsetX;
-    const cameraOffsetY = cameraBounds.cameraOffsetY;
-    const minX = cameraBounds.minX;
-    const maxX = cameraBounds.maxX;
-    const minY = cameraBounds.minY;
-    const maxY = cameraBounds.maxY;
-
-    let activeFound = 0;
-    let visibleCount = 0;
-
-    for (let i = 0; i < this.maxDecorations && activeFound < expectedActive; i++) {
-      if (!active[i]) continue;
-      activeFound++;
-
-      const screenXVal = x[i] * camZoom - cameraOffsetX;
-      const screenYVal = y[i] * camZoom - cameraOffsetY;
-
-      const onScreen = screenXVal > minX && screenXVal < maxX && screenYVal > minY && screenYVal < maxY;
-
-      if (onScreen) {
-        isItOnScreen[i] = 1;
-        if (visibleData) visibleData[1 + visibleCount] = i;
-        visibleCount++;
-      } else {
-        isItOnScreen[i] = 0;
-      }
-    }
-
-    if (visibleData) visibleData[0] = visibleCount;
+    visibleData[0] = visibleCount;
   }
 
   clearParticleStampList() {
@@ -1145,11 +1076,10 @@ class ParticleWorker extends AbstractWorker {
   updateDecorationSway() {
     if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
 
-    const freeListTop = DecorationPool.freeListTop;
-    const expectedActive = freeListTop ? this.maxDecorations - freeListTop[0] : this.maxDecorations;
-    if (expectedActive === 0) return;
+    const activeData = this.activeDecorationsData;
+    const activeCount = activeData ? activeData[0] : 0;
+    if (activeCount === 0) return;
 
-    const active = DecorationComponent.active;
     const sway = DecorationComponent.sway;
     const swayAmplitude = DecorationComponent.swayAmplitude;
     const swayFrequency = DecorationComponent.swayFrequency;
@@ -1158,10 +1088,9 @@ class ParticleWorker extends AbstractWorker {
 
     const swayBaseAngle = this.accumulatedTime * 0.002;
 
-    let activeFound = 0;
-    for (let i = 0; i < this.maxDecorations && activeFound < expectedActive; i++) {
-      if (!active[i]) continue;
-      activeFound++;
+    // OPTIMIZED: Iterate over compact activeDecorationsData instead of maxDecorations
+    for (let idx = 0; idx < activeCount; idx++) {
+      const i = activeData[1 + idx];
 
       if (sway[i]) {
         rotation[i] = baseRotation[i] + Math.sin(swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
@@ -1194,72 +1123,77 @@ class ParticleWorker extends AbstractWorker {
   }
 
   _findExistingFlowfieldSlot(targetCell) {
-    if (!NavGrid._initialized) return -1;
-    const sab = NavGrid._sab;
+    if (!NavGrid._initialized || !this._navDataView) return -1;
+    const dv = this._navDataView;
     const slotSize = NavGrid._flowfieldSlotSize;
     const maxFlowfields = NavGrid._maxFlowfields;
 
     for (let i = 0; i < maxFlowfields; i++) {
       const offset = NavGrid._flowfieldHeadersOffset + i * slotSize;
-      const view = new Uint32Array(sab, offset, 3);
-      if (view[0] === targetCell && view[2] === 2) return i;
+      // Read header: [targetCell, lastUsedFrame, status]
+      const slotTarget = dv.getUint32(offset, true);
+      const slotStatus = dv.getUint32(offset + 8, true);
+      if (slotTarget === targetCell && slotStatus === 2) return i;
     }
     return -1;
   }
 
   _updateFlowfieldLRU(slotIndex) {
-    const sab = NavGrid._sab;
+    if (!this._navDataView) return;
+    const dv = this._navDataView;
     const slotSize = NavGrid._flowfieldSlotSize;
     const headerOffset = NavGrid._flowfieldHeadersOffset + slotIndex * slotSize;
-    const view = new Uint32Array(sab, headerOffset, 3);
-    view[1] = this.frameNumber;
+    dv.setUint32(headerOffset + 4, this.frameNumber, true); // lastUsedFrame at offset 4
   }
 
   _findExistingPathSlot(fromCell, toCell) {
-    if (!NavGrid._initialized) return -1;
-    const sab = NavGrid._sab;
+    if (!NavGrid._initialized || !this._navDataView) return -1;
+    const dv = this._navDataView;
     const headerOffset = NavGrid._pathHeadersOffset;
     const headerSize = NavGrid._PATH_HEADER_SIZE;
     const maxPaths = NavGrid._maxPaths;
 
     for (let i = 0; i < maxPaths; i++) {
       const offset = headerOffset + i * headerSize;
-      const view = new Uint32Array(sab, offset, 5);
-      if (view[0] === fromCell && view[1] === toCell && view[4] === 2) return i;
+      // Read header: [fromCell, toCell, lastUsedFrame, length, status]
+      const slotFrom = dv.getUint32(offset, true);
+      const slotTo = dv.getUint32(offset + 4, true);
+      const slotStatus = dv.getUint32(offset + 16, true);
+      if (slotFrom === fromCell && slotTo === toCell && slotStatus === 2) return i;
     }
     return -1;
   }
 
   _updatePathLRU(slotIndex) {
-    const sab = NavGrid._sab;
+    if (!this._navDataView) return;
+    const dv = this._navDataView;
     const headerOffset = NavGrid._pathHeadersOffset + slotIndex * NavGrid._PATH_HEADER_SIZE;
-    const view = new Uint32Array(sab, headerOffset, 5);
-    view[2] = this.frameNumber;
+    dv.setUint32(headerOffset + 8, this.frameNumber, true); // lastUsedFrame at offset 8
   }
 
   _hasEmptyFlowfieldSlot() {
-    if (!NavGrid._initialized) return false;
-    const sab = NavGrid._sab;
+    if (!NavGrid._initialized || !this._navDataView) return false;
+    const dv = this._navDataView;
     const slotSize = NavGrid._flowfieldSlotSize;
 
     for (let i = 0; i < this.maxFlowfields; i++) {
       const offset = NavGrid._flowfieldHeadersOffset + i * slotSize;
-      const view = new Uint32Array(sab, offset, 3);
-      if (view[2] === 0) return true;
+      const slotStatus = dv.getUint32(offset + 8, true); // status at offset 8
+      if (slotStatus === 0) return true;
     }
     return false;
   }
 
   _hasEmptyPathSlot() {
-    if (!NavGrid._initialized) return false;
-    const sab = NavGrid._sab;
+    if (!NavGrid._initialized || !this._navDataView) return false;
+    const dv = this._navDataView;
     const headerOffset = NavGrid._pathHeadersOffset;
     const headerSize = NavGrid._PATH_HEADER_SIZE;
 
     for (let i = 0; i < this.maxPaths; i++) {
       const offset = headerOffset + i * headerSize;
-      const view = new Uint32Array(sab, offset, 5);
-      if (view[4] === 0) return true;
+      const slotStatus = dv.getUint32(offset + 16, true); // status at offset 16
+      if (slotStatus === 0) return true;
     }
     return false;
   }
