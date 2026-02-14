@@ -1422,44 +1422,6 @@ export class GameObject {
   }
 
   /**
-   * ITERATION: Iterate over all neighbors of this entity
-   * ZERO ALLOCATIONS - uses getNeighbor/getNeighborDistance directly
-   *
-   * @param {Function} callback - callback(neighborInstance, distance, neighborIndex)
-   *   - neighborInstance: The neighbor's GameObject instance (or undefined if not in logic worker)
-   *   - distance: Squared distance to the neighbor
-   *   - neighborIndex: Entity index of the neighbor
-   *
-   * @example
-   *   this.forEachNeighbor((neighbor, dist, idx) => {
-   *     if (dist < 10000) { // within 100 units
-   *       neighbor.takeDamage(10);
-   *     }
-   *   });
-   */
-  forEachNeighbor(callback) {
-    const count = this.neighborCount;
-    const instances = GameObject.instances;
-    const neighbors = this._neighbors;
-    const myX = Transform.x[this.index] + (Collider.offsetX[this.index] || 0);
-    const myY = Transform.y[this.index] + (Collider.offsetY[this.index] || 0);
-    const transformX = Transform.x;
-    const transformY = Transform.y;
-    const offsetX = Collider.offsetX;
-    const offsetY = Collider.offsetY;
-
-    for (let i = 0; i < count; i++) {
-      const neighborIndex = neighbors[i];
-      const neighborX = transformX[neighborIndex] + (offsetX[neighborIndex] || 0);
-      const neighborY = transformY[neighborIndex] + (offsetY[neighborIndex] || 0);
-      const dx = myX - neighborX;
-      const dy = myY - neighborY;
-      const distSq = dx * dx + dy * dy;
-      callback(instances[neighborIndex], distSq, neighborIndex);
-    }
-  }
-
-  /**
    * LIFECYCLE: Main update - called EVERY frame while entity is active
    * Override this in subclasses to define entity behavior
    * (AI, physics forces, animations, input handling, etc.)

@@ -129,8 +129,8 @@ this.despawn();
 // Access neighbors
 this.neighborCount;                    // Total neighbors
 this.getNeighbor(i);                   // Get neighbor by index
-this.getNeighborDistanceSq(i);         // Squared distance
-this.forEachNeighbor((neighbor, distSq) => { ... });
+
+
 ```
 
 ---

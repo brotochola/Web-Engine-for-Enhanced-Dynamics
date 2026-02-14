@@ -319,45 +319,25 @@ export class Grid {
   }
 
   /**
-   * Get squared distance between two entities using collider positions.
-   * @param {number} entityA - First entity index
-   * @param {number} entityB - Second entity index
-   * @returns {number} Squared distance
-   */
-  static getEntityDistanceSq(entityA, entityB) {
-    // Transform and Collider are imported at top of file
-    if (!Transform || !Transform.x || !Transform.y) return 0;
-
-    const entityAX = Transform.x[entityA] + (Collider.offsetX?.[entityA] || 0);
-    const entityAY = Transform.y[entityA] + (Collider.offsetY?.[entityA] || 0);
-    const entityBX = Transform.x[entityB] + (Collider.offsetX?.[entityB] || 0);
-    const entityBY = Transform.y[entityB] + (Collider.offsetY?.[entityB] || 0);
-
-    const dx = entityAX - entityBX;
-    const dy = entityAY - entityBY;
-    return dx * dx + dy * dy;
-  }
-
-  /**
-   * Get squared distance to neighbor at index k
-   * Calculates distance on-the-fly from collider positions
-   * @param {number} entityId - Entity index
-   * @param {number} k - Neighbor index (0 to count-1)
-   * @returns {number} Squared distance
-   */
-  static getNeighborDistanceSq(entityId, k) {
-    const neighborId = Grid.getNeighbor(entityId, k);
-    if (neighborId < 0) return 0;
-    return Grid.getEntityDistanceSq(entityId, neighborId);
-  }
-
-  /**
    * Get offset into neighbor array for an entity
    * @param {number} entityId - Entity index
    * @returns {number} Offset into arrays
    */
   static getNeighborOffset(entityId) {
     return entityId * Grid._stride;
+  }
+
+  /**
+   * Get all neighbors of an entity as a typed array view (zero-allocation)
+   * Returns a Uint16Array subarray pointing directly into the neighbor buffer
+   * @param {number} idx - Entity index
+   * @returns {Uint16Array} View of valid neighbor entity IDs (zero-GC subarray)
+   */
+  static getNeighborsOfEntityId(idx) {
+    if (!Grid._neighborData) return new Uint16Array(0);
+    const offset = idx * Grid._stride;
+    const count = Grid._neighborData[offset];
+    return Grid._neighborData.subarray(offset + 2, offset + 2 + count);
   }
 
   // =============================================================================

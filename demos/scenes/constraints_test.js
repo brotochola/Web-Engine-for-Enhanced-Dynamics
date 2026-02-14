@@ -5,7 +5,7 @@ import { Ball } from '/demos/gameObjects/ball.js';
 import { Floor } from '/demos/gameObjects/floor.js';
 
 import WEED from '/src/index.js';
-const { Scene, Camera, Mouse, Constraint, RigidBody, Transform, Grid, Collider } = WEED;
+const { Scene, Camera, Mouse, Constraint, RigidBody, Transform, Grid, Collider, distanceSq2D } = WEED;
 
 export class ConstraintsTestScene extends Scene {
     // ========================================
@@ -455,7 +455,7 @@ export class ConstraintsTestScene extends Scene {
         // Log FPS periodically
         if (frameNumber % (60 * 5) === 0) {
             this.printFPS();
-            console.log(`Active constraints: ${Constraint.getActiveCount()}`);
+            // console.log(`Active constraints: ${Constraint.getActiveCount()}`);
         }
     }
 
@@ -515,7 +515,7 @@ export class ConstraintsTestScene extends Scene {
         let nearestDistSq = maxDistance * maxDistance;
 
         // Simple iteration over all active entities
-        // In a real scenario you'd use Grid.getNeighbors for efficiency
+
         const active = Transform.active;
         const ex = Transform.x;
         const ey = Transform.y;
@@ -549,29 +549,25 @@ export class ConstraintsTestScene extends Scene {
             y: Mouse.y,
             vx: 0,
             vy: 0,
+            visualRange: 200
+
         });
-        console.log('Builder: Spawning ball', newBall.index, GameObject.get(newBall.index));
-        if (!newBall) {
-            console.log('Failed to spawn ball - pool may be full');
-            return;
-        }
 
-        // Find all nearby balls
+        // // Find all nearby balls
         setTimeout(() => {
-            const neighbors = GameObject.get(newBall.index).getAllNeighborInstances().filter(n => n instanceof Ball);
-            console.log(`Builder: Found ${neighbors.length} neighbors`);
-        }, 1000);
+            Collider.visualRange[newBall.index] = 500;
+            const neighbors = [...Grid.getNeighborsOfEntityId(newBall.index)]
+            console.log('Builder: Spawning ball', newBall.index, neighbors);
 
-        // Create constraints to all neighbors
-        let constraintsCreated = 0;
-        for (const neighbor of neighbors) {
-            const idx = Constraint.add(newBall.index, neighbor.index, neighbor.distance, this.builderConstraintStiffness);
-            if (idx >= 0) {
-                constraintsCreated++;
+            for (const neighbor of neighbors) {
+                const distSq = distanceSq2D(Transform.x[newBall.index], Transform.y[newBall.index], Transform.x[neighbor], Transform.y[neighbor]);
+                console.log("creating constraint between", newBall.index, neighbor, Math.sqrt(distSq));
+                Constraint.add(newBall.index, neighbor, Math.sqrt(distSq), this.builderConstraintStiffness);
+
             }
-        }
 
-        console.log(`Builder: Spawned ball ${newBall.index} at (${Mouse.x.toFixed(0)}, ${Mouse.y.toFixed(0)}) with ${constraintsCreated} constraints to neighbors`);
+        }, 60);
+
     }
 
     /**
