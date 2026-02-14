@@ -111,8 +111,8 @@ this.despawn();
 | `spatial_worker` | 1–N    | No      | Grid rebuild, neighbor detection      |
 | `physics_worker` | 1      | No      | Verlet integration, collision resolve |
 | `logic_worker`   | 1–N    | Yes     | Entity tick(), callbacks              |
-| `particle_worker`| 1      | No      | Particles, decals, navigation, derived|
-| `pre_render_worker`| 1    | No      | Visibility, animation, render queues  |
+| `particle_worker`| 1      | No      | Particles, decals, navigation, visibility lists |
+| `pre_render_worker`| 1    | No      | Animation, render/shadow queues       |
 | `pixi_worker`    | 1      | No      | PixiJS rendering                      |
 
 ---
@@ -202,6 +202,7 @@ this.spriteRenderer.scaleX = -1;         // Flip horizontal
 - **NOT GameObjects** — separate optimized pool
 - **Short-lived FX** — sparks, blood, smoke
 - **Supports ranges** — `{ min: 5, max: 10 }` for randomization
+- **Compact lists** — active/visible particles tracked in SABs for O(K) iteration
 
 ```javascript
 ParticleEmitter.emit({
@@ -241,6 +242,7 @@ ParticleEmitter.stampDecal({
 - **NOT GameObjects** — separate optimized pool
 - **Static visuals** — grass, rocks, debris
 - **Sway animation** — wind effect built-in
+- **Incremental tracking** — active/visible decorations maintained on spawn/despawn
 
 ```javascript
 DecorationPool.spawn({
@@ -346,3 +348,4 @@ for (const entityIndex of active) {
 - Tune `cellSize` — smaller = more cells, larger = more entities/cell
 - Use decorations for static visuals (cheaper than entities)
 - Use particles for short effects (cheaper than entities)
+- Visibility uses compact SAB lists — O(K) iteration, not O(N) scans

@@ -45,21 +45,22 @@
 
 - **Updates particle physics**: position, velocity, lifetime, fading, rotation
 - **Stamps blood decals**: particles with `isDecal` write RGBA to blood tile SAB
-- **Decoration sway**: updates oscillation for animated decorations (with decimation)
+- **Decoration sway**: updates oscillation for active decorations only (O(K) via `activeDecorationsData`)
 - **Computes flowfields**: Dijkstra with bucket queue, writes smoothed direction vectors
 - **Computes A\* paths**: binary heap priority queue, LRU cached results
 - **Rebuilds walkability**: marks grid cells blocked by static entities
 - **Computes derived properties**: `speed`, `velocityAngle`, `sleeping` for rigid bodies
-- **Writes to**: ParticleComponent, blood tiles, DecorationComponent, NavGrid, RigidBody derived fields
+- **Builds visibility lists**: fused pass builds `activeParticlesData` + `visibleParticlesData`; also writes `visibleEntitiesData` and `visibleDecorationsData`
+- **Writes to**: ParticleComponent, blood tiles, DecorationComponent, NavGrid, RigidBody derived fields, visibility SABs
 
 ### Pre-render Worker
 
-- **Updates screen visibility**: determines `isItOnScreen` for entities, particles, decorations
+- **Reads visibility SABs**: iterates compact `visibleEntitiesData`, `visibleParticlesData`, `visibleDecorationsData` (O(K) not O(N))
 - **Animation frames**: advances animated sprites current frame
 - **Builds main render queue**: collects visible entities/decorations/particles, Y-sorts, interpolates
 - **Builds shadow render queue**: calculates shadow geometry for lights, Y-sorted
 - **Screen coordinates**: calculates `screenX`, `screenY` for visible items
-- **Writes to**: SpriteRenderer.isItOnScreen, render queue, shadow render queue, screen coords
+- **Writes to**: render queue, shadow render queue, screen coords
 
 ### Pixi Worker
 
@@ -105,8 +106,9 @@ physics_worker: read neighbors → resolve collisions → write positions + pair
 logic_worker: read pairs → run scripts → write components
        ↓ (component data available)
 particle_worker: read components → update particles, decals, navigation
-       ↓ (particles + nav data available)
-pre_render_worker: read components → build render queue + shadow queue
+                 → write visibility SABs (active/visible particles, entities, decorations)
+       ↓ (particles + nav data + visibility lists available)
+pre_render_worker: read visibility SABs → build render queue + shadow queue (O(K) iteration)
        ↓ (render queue available)
 pixi_worker: read render queue → render frame
 ```
@@ -172,8 +174,8 @@ Operations that must be atomic are **routed to a single worker**:
 ### Single Workers
 
 - **Physics**: Collision resolution requires global view of all pairs
-- **Particle**: Particles, decals, navigation - owns these data regions
-- **Pre-render**: Render/shadow queues must be built atomically
+- **Particle**: Particles, decals, navigation, visibility lists - owns these data regions
+- **Pre-render**: Render/shadow queues must be built atomically; reads from visibility SABs
 - **Renderer**: Single GPU context
 
 ---
@@ -218,9 +220,18 @@ for (let i = 0; i < count; i++) {
 - Reusable result objects (`_acquireResult`, `_cameraBounds`)
 - Pre-allocated scratch buffers (`_renderableCollector`, `_visualOnlyBuffer`)
 - Marker arrays for O(1) deduplication instead of Set
+- Pre-allocated DataView for navigation SAB access (avoids `new Uint32Array()` in loops)
+- Static empty arrays for query fallbacks (avoids `new Uint16Array()` allocations)
 
 ### Sorted Active Lists
 
 - Binary search insert/remove: O(log N) mutations
 - Linear iteration: O(N) with cache-friendly access
 - Avoids rebuilding full list each frame
+
+### Compact Visibility Lists
+
+- **Particles**: Fused single pass builds both active and visible lists simultaneously
+- **Entities**: `particle_worker` writes `visibleEntitiesData` each frame
+- **Decorations**: `activeDecorationsData` maintained incrementally by `DecorationPool`; visibility computed by `particle_worker`
+- **Iteration**: O(K) where K = visible count, not O(N) where N = max pool size
