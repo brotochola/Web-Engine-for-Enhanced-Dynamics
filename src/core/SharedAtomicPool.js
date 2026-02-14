@@ -152,6 +152,17 @@ export class SharedAtomicPool {
     }
 
     /**
+     * Reset the pool to uninitialized state
+     * Called when switching scenes to clear stale static state
+     */
+    static reset() {
+        this.maxCount = 0;
+        this.initialized = false;
+        this.freeList = null;
+        this.freeListTop = null;
+    }
+
+    /**
      * Reset the free list to full with interleaved ordering
      * Used by despawnAll() to efficiently reset the pool
      *

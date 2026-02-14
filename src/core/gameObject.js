@@ -1580,10 +1580,13 @@ export class GameObject {
   /**
    * SPAWNING SYSTEM: Spawn an entity from the pool (activate an inactive entity)
    *
-   * @param {Class} EntityClass - The entity class to spawn (e.g., Ball, Car)
+   * Works from BOTH main thread and logic workers with the same syntax:
+   *   Ball.spawn({ x: 100, y: 200 })
+   *
+   * @param {Class|Object} EntityClassOrConfig - Entity class OR spawn config (when called as Ball.spawn(config))
    * @param {Object} spawnConfig - Initial configuration (position, velocity, etc.)
    * @param {number} [preAssignedIndex] - Optional pre-assigned entity index (from main thread)
-   * @returns {GameObject|null} - The spawned entity instance, or null if pool exhausted or routed to worker 0
+   * @returns {GameObject|{index:number}|null} - Instance (worker) or {index} (main thread), null if pool exhausted
    */
   static spawn(EntityClassOrConfig, spawnConfig = {}, preAssignedIndex = -1) {
     // Support two calling conventions:
@@ -1597,6 +1600,18 @@ export class GameObject {
       // New: Prey.spawn(config) - use `this` as the EntityClass
       EntityClass = this;
       spawnConfig = EntityClassOrConfig || {};
+    }
+
+    // ========================================
+    // CONTEXT DETECTION: Main thread vs Worker
+    // ========================================
+    // Main thread: delegate to Scene.spawnEntity (handles messaging to workers)
+    // Worker: execute spawn directly with atomic operations
+    const isMainThread = typeof window !== 'undefined' && typeof self.logicWorker === 'undefined';
+
+    if (isMainThread && typeof window.scene?.spawnEntity === 'function') {
+      // Main thread - delegate to Scene which handles worker messaging
+      return window.scene.spawnEntity(EntityClass, spawnConfig);
     }
 
     // Validate EntityClass has required metadata
@@ -1788,12 +1803,10 @@ export class GameObject {
     // INCREMENTAL UPDATE: Add to activeEntitiesData, query buffers, and per-type list
     // This replaces the O(N) per-frame rebuild with O(1) per-spawn updates
     // When sortedActiveEntities is enabled, lists are kept sorted by index
-    // SKIP if index was pre-assigned (main thread already updated active lists)
-    if (preAssignedIndex < 0) {
-      GameObject._addToActiveEntities(i);
-      GameObject._addToTypeActiveList(EntityClass, i);
-    }
-    // Always update query caches (main thread doesn't have query system)
+    // NOTE: Always do sorted insert, even with preAssignedIndex, because main thread
+    // only reserves the index (freeList) but doesn't update active lists (not atomic-safe)
+    GameObject._addToActiveEntities(i);
+    GameObject._addToTypeActiveList(EntityClass, i);
     GameObject._addToMatchingQueries(i, EntityClass.entityType);
 
     return instance;
@@ -1841,13 +1854,31 @@ export class GameObject {
   /**
    * SPAWNING SYSTEM: Despawn all entities of a specific type
    *
+   * Works from BOTH main thread and logic workers with the same syntax:
+   *   Ball.despawnAll()
+   *
    * OPTIMIZED: Uses batch removal methods instead of individual despawn() calls
    * Complexity: O(N) instead of O(N²) for large pools
    *
-   * @param {Class} EntityClass - The entity class to despawn
+   * @param {Class} [EntityClass] - The entity class to despawn (optional when called as Ball.despawnAll())
    * @returns {number} - Number of entities despawned
    */
   static despawnAll(EntityClass) {
+    // Support calling as Ball.despawnAll() without passing the class
+    if (!EntityClass || EntityClass === GameObject) {
+      EntityClass = this;
+    }
+
+    // ========================================
+    // CONTEXT DETECTION: Main thread vs Worker
+    // ========================================
+    const isMainThread = typeof window !== 'undefined' && typeof self.logicWorker === 'undefined';
+
+    if (isMainThread && typeof window.scene?.despawnAllEntities === 'function') {
+      // Main thread - delegate to Scene which handles worker messaging
+      window.scene.despawnAllEntities(EntityClass.name);
+      return; // Main thread doesn't know the count (async)
+    }
     if (EntityClass.startIndex === undefined || EntityClass.poolSize === undefined) {
       return 0;
     }

@@ -851,6 +851,9 @@ class Scene {
     }
 
     // ParticleComponent buffer
+    // Reset particle emitter state from any previous scene (clears stale SharedArrayBuffer references)
+    ParticleEmitter.reset();
+
     const maxParticles = this.config.particle.maxParticles;
     if (maxParticles > 0) {
       const particleBufferSize = ParticleComponent.getBufferSize(maxParticles);
@@ -891,6 +894,9 @@ class Scene {
     }
 
     // DecorationComponent buffer
+    // Reset decoration pool state from any previous scene (clears stale SharedArrayBuffer references)
+    DecorationPool.reset();
+
     const maxDecorations = this.config.decoration.maxDecorations;
     if (maxDecorations > 0) {
       const decorationBufferSize = DecorationComponent.getBufferSize(maxDecorations);
@@ -1088,6 +1094,9 @@ class Scene {
     // ========================================
     // CONSTRAINT SYSTEM - Distance constraints for position-based dynamics
     // ========================================
+    // Reset constraint state from any previous scene (clears stale SharedArrayBuffer references)
+    Constraint.reset();
+
     const maxConstraints = this.config.physics.maxConstraints || 0;
     if (maxConstraints > 0) {
       // Constraint data buffer (pairs, restLength, stiffness, active)
@@ -1884,12 +1893,12 @@ class Scene {
       // Constraint system (distance constraints for position-based dynamics)
       constraints: this.config.physics.maxConstraints > 0
         ? {
-            enabled: true,
-            maxConstraints: this.config.physics.maxConstraints,
-            data: this.buffers.constraintData,
-            freeList: this.buffers.constraintFreeList,
-            freeListTop: this.buffers.constraintFreeListTop,
-          }
+          enabled: true,
+          maxConstraints: this.config.physics.maxConstraints,
+          data: this.buffers.constraintData,
+          freeList: this.buffers.constraintFreeList,
+          freeListTop: this.buffers.constraintFreeListTop,
+        }
         : null,
     };
 
@@ -2529,6 +2538,10 @@ class Scene {
     // ========================================
     // This enables immediate use of entity index (e.g., for constraints)
     // Workers will receive the pre-assigned index and initialize their instances
+    //
+    // NOTE: Main thread only reserves the index and sets basic Transform data.
+    // Active list updates are done by worker 0 via GameObject.spawn() which
+    // maintains sorted order (required for binary search during despawn).
     let entityIndex = -1;
 
     if (EntityClass && EntityClass.freeList && EntityClass.freeListTop) {
@@ -2545,19 +2558,11 @@ class Scene {
         Transform.x[entityIndex] = spawnConfig.x ?? 0;
         Transform.y[entityIndex] = spawnConfig.y ?? 0;
 
-        // Add to active entities list atomically
-        const activeList = EntityClass._activeList;
-        if (activeList) {
-          const activeCount = Atomics.add(activeList, 0, 1);
-          activeList[1 + activeCount] = entityIndex;
-        }
-
-        // Add to global active entities list
-        const globalActiveList = GameObject.activeEntitiesData;
-        if (globalActiveList) {
-          const globalCount = Atomics.add(globalActiveList, 0, 1);
-          globalActiveList[1 + globalCount] = entityIndex;
-        }
+        // NOTE: Do NOT update active lists here!
+        // Active lists must be sorted for binary search to work during despawn.
+        // Sorted insert is not atomic-safe across threads, so we let worker 0
+        // handle it via GameObject.spawn() which uses _addToTypeActiveList()
+        // and _addToActiveEntities() with proper sorted insert.
       } else {
         // Pool exhausted - restore counter
         Atomics.add(EntityClass.freeListTop, 0, 1);
@@ -2567,16 +2572,17 @@ class Scene {
     }
 
     // ========================================
-    // NOTIFY WORKERS
+    // NOTIFY WORKER 0
     // ========================================
-    if (this.workers.logicWorkers && this.workers.logicWorkers.length > 0) {
-      this.workers.logicWorkers.forEach((worker) => {
-        worker.postMessage({
-          msg: 'spawn',
-          className: className,
-          spawnConfig: spawnConfig,
-          entityIndex: entityIndex, // Pre-assigned index (or -1 if not available)
-        });
+    // Only worker 0 handles spawn messages (others would ignore anyway)
+    // Worker 0 calls GameObject.spawn() which does lifecycle (setup, onSpawned, etc.)
+    const worker0 = this.workers.logicWorkers?.[0];
+    if (worker0) {
+      worker0.postMessage({
+        msg: 'spawn',
+        className: className,
+        spawnConfig: spawnConfig,
+        entityIndex: entityIndex, // Pre-assigned index
       });
     }
 
@@ -2589,23 +2595,23 @@ class Scene {
   }
 
   despawnEntity(entityIndex) {
-    if (this.workers.logicWorkers && this.workers.logicWorkers.length > 0) {
-      this.workers.logicWorkers.forEach((worker) => {
-        worker.postMessage({
-          msg: 'despawn',
-          entityIndex: entityIndex,
-        });
+    // Only worker 0 handles despawn messages
+    const worker0 = this.workers.logicWorkers?.[0];
+    if (worker0) {
+      worker0.postMessage({
+        msg: 'despawn',
+        entityIndex: entityIndex,
       });
     }
   }
 
   despawnAllEntities(className) {
-    if (this.workers.logicWorkers && this.workers.logicWorkers.length > 0) {
-      this.workers.logicWorkers.forEach((worker) => {
-        worker.postMessage({
-          msg: 'despawnAll',
-          className: className,
-        });
+    // Only worker 0 handles despawnAll messages
+    const worker0 = this.workers.logicWorkers?.[0];
+    if (worker0) {
+      worker0.postMessage({
+        msg: 'despawnAll',
+        className: className,
       });
     }
   }
