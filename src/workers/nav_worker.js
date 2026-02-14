@@ -63,8 +63,176 @@ import { LightEmitter } from '../components/LightEmitter.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
 import { FlashComponent } from '../components/FlashComponent.js';
 import { Grid } from '../core/Grid.js';
-import { calculateSpeed, calculateVelocityAngle } from '../core/utils.js';
+import { calculateCameraScreenBounds, screenBoundsToWorldBounds, calculateSpeed, calculateVelocityAngle } from '../core/utils.js';
 import { PHYSICS_DEFAULTS } from '../core/ConfigDefaults.js';
+
+const EMPTY_SLOT = 0;
+const OCCUPIED_SLOT = 1;
+const TOMBSTONE_SLOT = 2;
+
+function nextPowerOfTwo(value) {
+  let n = 1;
+  while (n < value) n <<= 1;
+  return n;
+}
+
+class Uint32SabRingBuffer {
+  constructor(capacity) {
+    this.capacity = Math.max(1, capacity | 0);
+    this._sab = new SharedArrayBuffer(this.capacity * 4);
+    this.values = new Uint32Array(this._sab);
+    this.head = 0;
+    this.tail = 0;
+    this.count = 0;
+  }
+
+  enqueue(value) {
+    if (this.count >= this.capacity) return false;
+    this.values[this.tail] = value >>> 0;
+    this.tail = (this.tail + 1) % this.capacity;
+    this.count++;
+    return true;
+  }
+
+  dequeue() {
+    if (this.count === 0) return -1;
+    const value = this.values[this.head];
+    this.head = (this.head + 1) % this.capacity;
+    this.count--;
+    return value >>> 0;
+  }
+
+  get size() {
+    return this.count;
+  }
+}
+
+class FlowfieldRequestQueue {
+  constructor(totalCells, capacity) {
+    this.ring = new Uint32SabRingBuffer(capacity);
+    this._pendingSab = new SharedArrayBuffer(totalCells);
+    this.pending = new Uint8Array(this._pendingSab);
+  }
+
+  enqueue(targetCell) {
+    if (this.pending[targetCell] === 1) return true;
+    if (!this.ring.enqueue(targetCell)) return false;
+    this.pending[targetCell] = 1;
+    return true;
+  }
+
+  dequeue() {
+    const cell = this.ring.dequeue();
+    if (cell < 0) return -1;
+    this.pending[cell] = 0;
+    return cell;
+  }
+
+  get size() {
+    return this.ring.size;
+  }
+}
+
+class PathRequestQueue {
+  constructor(totalCells, capacity) {
+    this.totalCells = totalCells;
+    this.capacity = Math.max(1, capacity | 0);
+
+    this.keyRingSab = new SharedArrayBuffer(this.capacity * 4);
+    this.fromRingSab = new SharedArrayBuffer(this.capacity * 4);
+    this.toRingSab = new SharedArrayBuffer(this.capacity * 4);
+    this.keyRing = new Uint32Array(this.keyRingSab);
+    this.fromRing = new Uint32Array(this.fromRingSab);
+    this.toRing = new Uint32Array(this.toRingSab);
+    this.head = 0;
+    this.tail = 0;
+    this.count = 0;
+
+    this.hashCapacity = nextPowerOfTwo(this.capacity * 4);
+    this.hashMask = this.hashCapacity - 1;
+    this.hashState = new Uint8Array(new SharedArrayBuffer(this.hashCapacity));
+    this.hashKey = new Uint32Array(new SharedArrayBuffer(this.hashCapacity * 4));
+    this.hashFrom = new Uint32Array(new SharedArrayBuffer(this.hashCapacity * 4));
+    this.hashTo = new Uint32Array(new SharedArrayBuffer(this.hashCapacity * 4));
+  }
+
+  _packPathKey(fromCell, toCell) {
+    if (this.totalCells <= 0xffff) {
+      return ((fromCell << 16) | toCell) >>> 0;
+    }
+    // Fallback hash for larger grids: keep Uint32 key while preserving from/to in hash table.
+    return (((fromCell * 73856093) ^ (toCell * 19349663)) >>> 0);
+  }
+
+  _findSlot(key, fromCell, toCell) {
+    let firstTombstone = -1;
+    let idx = key & this.hashMask;
+    for (let probe = 0; probe < this.hashCapacity; probe++) {
+      const state = this.hashState[idx];
+      if (state === EMPTY_SLOT) {
+        return firstTombstone >= 0 ? firstTombstone : idx;
+      }
+      if (state === TOMBSTONE_SLOT) {
+        if (firstTombstone < 0) firstTombstone = idx;
+      } else if (
+        this.hashKey[idx] === key &&
+        this.hashFrom[idx] === fromCell &&
+        this.hashTo[idx] === toCell
+      ) {
+        return idx;
+      }
+      idx = (idx + 1) & this.hashMask;
+    }
+    return firstTombstone;
+  }
+
+  enqueue(fromCell, toCell) {
+    const key = this._packPathKey(fromCell, toCell);
+    const slot = this._findSlot(key, fromCell, toCell);
+    if (slot < 0) return false;
+
+    if (this.hashState[slot] === OCCUPIED_SLOT) {
+      // Already pending (dedupe)
+      return true;
+    }
+    if (this.count >= this.capacity) return false;
+
+    this.keyRing[this.tail] = key;
+    this.fromRing[this.tail] = fromCell >>> 0;
+    this.toRing[this.tail] = toCell >>> 0;
+    this.tail = (this.tail + 1) % this.capacity;
+    this.count++;
+
+    this.hashState[slot] = OCCUPIED_SLOT;
+    this.hashKey[slot] = key;
+    this.hashFrom[slot] = fromCell >>> 0;
+    this.hashTo[slot] = toCell >>> 0;
+    return true;
+  }
+
+  dequeue(out) {
+    if (this.count === 0) return false;
+    const key = this.keyRing[this.head];
+    const fromCell = this.fromRing[this.head];
+    const toCell = this.toRing[this.head];
+    this.head = (this.head + 1) % this.capacity;
+    this.count--;
+
+    const slot = this._findSlot(key, fromCell, toCell);
+    if (slot >= 0 && this.hashState[slot] === OCCUPIED_SLOT) {
+      this.hashState[slot] = TOMBSTONE_SLOT;
+    }
+
+    out.key = key;
+    out.fromCell = fromCell;
+    out.toCell = toCell;
+    return true;
+  }
+
+  get size() {
+    return this.count;
+  }
+}
 
 /**
  * NavScratch - Reusable buffers for pathfinding algorithms
@@ -85,16 +253,28 @@ class NavScratch {
     this.direction = new Uint8Array(totalCells); // Output directions (discrete, for Dijkstra pass)
     this.smoothedVectors = new Int8Array(totalCells * 2); // Smoothed vectors (X, Y as Int8)
 
-    // Bucket queue for O(1) Dijkstra
+    // Bucket queue for O(1) Dijkstra (typed linked lists, zero per-iteration allocation)
     // Max distance must cover worst case: traversing entire grid diagonally
     // Cost is 10 for cardinal, 14 for diagonal moves
     // Worst case: (gridWidth + gridHeight) * 14 (diagonal cost)
     this.maxDistance = Math.min(65535, (gridWidth + gridHeight) * 14);
-    this.bucketQueue = new Array(this.maxDistance + 1);
+    this.bucketHead = new Int32Array(this.maxDistance + 1);
+    this.bucketTail = new Int32Array(this.maxDistance + 1);
+    this.bucketNodeNext = new Int32Array(totalCells);
+    this.bucketNodePrev = new Int32Array(totalCells);
+    this.bucketNodeDist = new Int32Array(totalCells);
+    this.bucketNodeCell = new Uint32Array(totalCells);
     for (let i = 0; i <= this.maxDistance; i++) {
-      this.bucketQueue[i] = [];
+      this.bucketHead[i] = -1;
+      this.bucketTail[i] = -1;
     }
-    this.bucketHead = 0;
+    for (let i = 0; i < totalCells; i++) {
+      this.bucketNodeNext[i] = -1;
+      this.bucketNodePrev[i] = -1;
+      this.bucketNodeDist[i] = -1;
+      this.bucketNodeCell[i] = i;
+    }
+    this.bucketHeadDistance = 0;
     this.bucketCount = 0;
 
     // A* buffers
@@ -122,8 +302,13 @@ class NavScratch {
     }
 
     // Reset bucket queue
-    this.bucketHead = 0;
+    this.bucketHeadDistance = 0;
     this.bucketCount = 0;
+    this.bucketHead.fill(-1);
+    this.bucketTail.fill(-1);
+    this.bucketNodeNext.fill(-1);
+    this.bucketNodePrev.fill(-1);
+    this.bucketNodeDist.fill(-1);
 
     // Reset A* heap
     this.heapSize = 0;
@@ -159,8 +344,9 @@ class NavWorker extends AbstractWorker {
     this.scratch = null;
 
     // Request queues (populated from MessagePort, processed in update)
-    this.flowfieldRequests = new Set();
-    this.pathRequests = new Map(); // key -> {fromCell, toCell}
+    this.flowfieldRequests = null;
+    this.pathRequests = null;
+    this._pathRequestTmp = { key: 0, fromCell: 0, toCell: 0 };
 
     // Grid metadata
     this.gridWidth = 0;
@@ -177,11 +363,8 @@ class NavWorker extends AbstractWorker {
     this.cachedFlowfieldsCount = 0;
     this.cachedPathsCount = 0;
 
-    // GC OPTIMIZATION: Reusable array for path results (avoids allocation per path)
-    this._pathCellsArray = [];
-
     // ========================================
-    // SHADOW RENDER QUEUE (moved from particle_worker)
+    // SHADOW RENDER QUEUE
     // ========================================
     // Calculates shadow positions for entities near lights
     // Writes to ShadowSprite buffer, read by pixi_worker
@@ -234,7 +417,7 @@ class NavWorker extends AbstractWorker {
     this._lightYComparator = (a, b) => Transform.y[a] - Transform.y[b];
 
     // ========================================
-    // DERIVED PROPERTIES (moved from particle_worker)
+    // DERIVED PROPERTIES
     // ========================================
     // Minimum speed threshold for rotation updates (prevents jitter when stationary)
     this.minSpeedForRotation = 0.1;
@@ -246,6 +429,8 @@ class NavWorker extends AbstractWorker {
 
     // GC OPTIMIZATION: Pre-allocated query array
     this._queryRigidBody = null;
+    this._cameraBounds = { zoom: 1, cameraOffsetX: 0, cameraOffsetY: 0, minX: 0, maxX: 0, minY: 0, maxY: 0 };
+    this._cameraWorldBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
   }
 
   /**
@@ -292,6 +477,10 @@ class NavWorker extends AbstractWorker {
         this.gridWidth,
         this.gridHeight
       );
+      const flowfieldQueueCapacity = Math.max(32, this.maxFlowfields * 8);
+      const pathQueueCapacity = Math.max(64, this.maxPaths * 8);
+      this.flowfieldRequests = new FlowfieldRequestQueue(this.totalCells, flowfieldQueueCapacity);
+      this.pathRequests = new PathRequestQueue(this.totalCells, pathQueueCapacity);
 
       this.reportLog(
         `initialized with ${this.gridWidth}x${this.gridHeight} grid (${this.totalCells} cells)`
@@ -303,7 +492,7 @@ class NavWorker extends AbstractWorker {
     }
 
     // ========================================
-    // SHADOW RENDER QUEUE - Initialize (moved from particle_worker)
+    // SHADOW RENDER QUEUE - Initialize
     // ========================================
     if (
       data.shadows &&
@@ -388,7 +577,7 @@ class NavWorker extends AbstractWorker {
     }
 
     // ========================================
-    // DERIVED PROPERTIES - Initialize (moved from particle_worker)
+    // DERIVED PROPERTIES - Initialize
     // ========================================
     if (data.buffers?.componentData?.RigidBody && data.componentPools?.RigidBody) {
       this.rigidBodyCount = data.componentPools.RigidBody.count || 0;
@@ -420,6 +609,7 @@ class NavWorker extends AbstractWorker {
 
     switch (type) {
       case 'REQUEST_FLOWFIELD': {
+        if (!this.flowfieldRequests) break;
         const { targetCell } = data;
         if (targetCell >= 0 && targetCell < this.totalCells) {
           // Check if flowfield already exists - if so, just update LRU
@@ -427,14 +617,14 @@ class NavWorker extends AbstractWorker {
           if (existingSlot >= 0) {
             this._updateFlowfieldLRU(existingSlot);
           } else {
-            // Queue for computation (Set deduplicates)
-            this.flowfieldRequests.add(targetCell);
+            this.flowfieldRequests.enqueue(targetCell);
           }
         }
         break;
       }
 
       case 'REQUEST_PATH': {
+        if (!this.pathRequests) break;
         const { fromCell, toCell } = data;
         if (
           fromCell >= 0 &&
@@ -447,9 +637,7 @@ class NavWorker extends AbstractWorker {
           if (existingSlot >= 0) {
             this._updatePathLRU(existingSlot);
           } else {
-            // Queue for computation (Map key deduplicates)
-            const key = `${fromCell}_${toCell}`;
-            this.pathRequests.set(key, { fromCell, toCell });
+            this.pathRequests.enqueue(fromCell, toCell);
           }
         }
         break;
@@ -545,24 +733,24 @@ class NavWorker extends AbstractWorker {
       NavGrid._currentFrame = this.frameNumber;
 
       // Process flowfield requests (higher priority, shared by many entities)
-      for (const targetCell of this.flowfieldRequests) {
+      let targetCell = this.flowfieldRequests.dequeue();
+      while (targetCell >= 0) {
         this.computeFlowfield(targetCell);
         this.flowfieldsComputedThisFrame++;
+        targetCell = this.flowfieldRequests.dequeue();
       }
-      this.flowfieldRequests.clear();
 
       // Process path requests
-      for (const { fromCell, toCell } of this.pathRequests.values()) {
-        this.computePath(fromCell, toCell);
+      while (this.pathRequests.dequeue(this._pathRequestTmp)) {
+        this.computePath(this._pathRequestTmp.fromCell, this._pathRequestTmp.toCell);
         this.pathsComputedThisFrame++;
       }
-      this.pathRequests.clear();
     }
 
-    // Build shadow render queue (moved from particle_worker)
+    // Build shadow render queue
     this.buildShadowRenderQueue();
 
-    // Update derived properties: speed, velocityAngle, sleeping (moved from particle_worker)
+    // Update derived properties: speed, velocityAngle, sleeping
     this.updateDerivedProperties();
 
     // Write stats to SharedArrayBuffer for DebugUI
@@ -601,9 +789,7 @@ class NavWorker extends AbstractWorker {
 
     // Target cell has distance 0
     scratch.distance[targetCell] = 0;
-    scratch.bucketQueue[0].push(targetCell);
-    scratch.bucketCount = 1;
-    scratch.bucketHead = 0;
+    this._bucketInsertCell(scratch, targetCell, 0);
 
     // 8-directional neighbors
     const dx = [0, 1, 1, 1, 0, -1, -1, -1];
@@ -626,14 +812,16 @@ class NavWorker extends AbstractWorker {
     // Dijkstra with bucket queue
     while (scratch.bucketCount > 0) {
       // Find next non-empty bucket
-      while (scratch.bucketQueue[scratch.bucketHead].length === 0) {
-        scratch.bucketHead++;
-        if (scratch.bucketHead > scratch.maxDistance) break;
+      while (
+        scratch.bucketHeadDistance <= scratch.maxDistance &&
+        scratch.bucketHead[scratch.bucketHeadDistance] < 0
+      ) {
+        scratch.bucketHeadDistance++;
       }
-      if (scratch.bucketHead > scratch.maxDistance) break;
+      if (scratch.bucketHeadDistance > scratch.maxDistance) break;
 
-      const cell = scratch.bucketQueue[scratch.bucketHead].pop();
-      scratch.bucketCount--;
+      const cell = this._bucketPopCell(scratch, scratch.bucketHeadDistance);
+      if (cell < 0) continue;
 
       if (scratch.isVisited(cell)) continue;
       scratch.markVisited(cell);
@@ -666,8 +854,7 @@ class NavWorker extends AbstractWorker {
 
           // Add to bucket queue
           const bucket = Math.min(newDist, scratch.maxDistance);
-          scratch.bucketQueue[bucket].push(neighbor);
-          scratch.bucketCount++;
+          this._bucketInsertCell(scratch, neighbor, bucket);
         }
       }
     }
@@ -978,14 +1165,7 @@ class NavWorker extends AbstractWorker {
     // Allocate slot and write results
     const slot = NavGrid.allocatePathSlot(fromCell, toCell);
 
-    // GC OPTIMIZATION: Reuse array instead of creating new one each path
-    const pathCells = this._pathCellsArray;
-    pathCells.length = 0; // Clear but keep allocated
-    for (let i = 0; i < pathLength; i++) {
-      pathCells.push(scratch.pathResult[i]);
-    }
-
-    NavGrid.writePathData(slot, pathCells);
+    NavGrid.writePathData(slot, scratch.pathResult, pathLength);
 
     // Update cache count
     if (willUseEmptySlot) {
@@ -1137,22 +1317,55 @@ class NavWorker extends AbstractWorker {
     return false;
   }
 
-  /**
-   * Get cached flowfields count
-   */
-  _countCachedFlowfields() {
-    return this.cachedFlowfieldsCount;
+  _bucketInsertCell(scratch, cell, bucket) {
+    const clampedBucket = bucket > scratch.maxDistance ? scratch.maxDistance : bucket;
+    const oldBucket = scratch.bucketNodeDist[cell];
+    if (oldBucket >= 0) {
+      if (oldBucket === clampedBucket) return;
+      this._bucketUnlinkCell(scratch, cell, oldBucket);
+    }
+
+    const head = scratch.bucketHead[clampedBucket];
+    scratch.bucketNodePrev[cell] = -1;
+    scratch.bucketNodeNext[cell] = head;
+    if (head >= 0) {
+      scratch.bucketNodePrev[head] = cell;
+    } else {
+      scratch.bucketTail[clampedBucket] = cell;
+    }
+    scratch.bucketHead[clampedBucket] = cell;
+    scratch.bucketNodeDist[cell] = clampedBucket;
+    scratch.bucketCount++;
   }
 
-  /**
-   * Get cached paths count
-   */
-  _countCachedPaths() {
-    return this.cachedPathsCount;
+  _bucketUnlinkCell(scratch, cell, bucket) {
+    const prev = scratch.bucketNodePrev[cell];
+    const next = scratch.bucketNodeNext[cell];
+    if (prev >= 0) {
+      scratch.bucketNodeNext[prev] = next;
+    } else {
+      scratch.bucketHead[bucket] = next;
+    }
+    if (next >= 0) {
+      scratch.bucketNodePrev[next] = prev;
+    } else {
+      scratch.bucketTail[bucket] = prev;
+    }
+    scratch.bucketNodePrev[cell] = -1;
+    scratch.bucketNodeNext[cell] = -1;
+    scratch.bucketNodeDist[cell] = -1;
+    scratch.bucketCount--;
+  }
+
+  _bucketPopCell(scratch, bucket) {
+    const cell = scratch.bucketHead[bucket];
+    if (cell < 0) return -1;
+    this._bucketUnlinkCell(scratch, cell, bucket);
+    return scratch.bucketNodeCell[cell];
   }
 
   // ========================================
-  // SHADOW RENDER QUEUE (moved from particle_worker)
+  // SHADOW RENDER QUEUE
   // ========================================
 
   /**
@@ -1229,15 +1442,25 @@ class NavWorker extends AbstractWorker {
     const zoom = this.cameraData ? this.cameraData[0] : 1;
     const camX = this.cameraData ? this.cameraData[1] : 0;
     const camY = this.cameraData ? this.cameraData[2] : 0;
-    const camOffsetX = camX * zoom;
-    const camOffsetY = camY * zoom;
-    const invZoom = 1 / zoom;
-    const cullMarginX = this.canvasWidth * this.cullingRatio;
-    const cullMarginY = this.canvasHeight * this.cullingRatio;
-    const viewMinX = (-cullMarginX + camOffsetX) * invZoom;
-    const viewMaxX = (this.canvasWidth + cullMarginX + camOffsetX) * invZoom;
-    const viewMinY = (-cullMarginY + camOffsetY) * invZoom;
-    const viewMaxY = (this.canvasHeight + cullMarginY + camOffsetY) * invZoom;
+    const screenBounds = calculateCameraScreenBounds(
+      zoom,
+      camX,
+      camY,
+      this.canvasWidth,
+      this.canvasHeight,
+      this.cullingRatio,
+      this._cameraBounds
+    );
+    const worldBounds = screenBoundsToWorldBounds(
+      screenBounds,
+      0,
+      0,
+      this._cameraWorldBounds
+    );
+    const viewMinX = worldBounds.minX;
+    const viewMaxX = worldBounds.maxX;
+    const viewMinY = worldBounds.minY;
+    const viewMaxY = worldBounds.maxY;
 
     // Query only active entities with LightEmitter
     const lightEntitiesRaw = this.queryActiveEntities(this._queryLightEmitter);
@@ -1402,7 +1625,7 @@ class NavWorker extends AbstractWorker {
   }
 
   // ========================================
-  // DERIVED PROPERTIES (moved from particle_worker)
+  // DERIVED PROPERTIES
   // ========================================
 
   /**
@@ -1466,10 +1689,10 @@ class NavWorker extends AbstractWorker {
     this.stats[NAVIGATION_STATS.FPS] = this.currentFPS;
     this.stats[NAVIGATION_STATS.FLOWFIELDS_COMPUTED] = this.flowfieldsComputedThisFrame;
     this.stats[NAVIGATION_STATS.PATHS_COMPUTED] = this.pathsComputedThisFrame;
-    this.stats[NAVIGATION_STATS.FLOWFIELDS_CACHED] = this._countCachedFlowfields();
-    this.stats[NAVIGATION_STATS.PATHS_CACHED] = this._countCachedPaths();
-    this.stats[NAVIGATION_STATS.PENDING_FLOWFIELDS] = this.flowfieldRequests.size;
-    this.stats[NAVIGATION_STATS.PENDING_PATHS] = this.pathRequests.size;
+    this.stats[NAVIGATION_STATS.FLOWFIELDS_CACHED] = this.cachedFlowfieldsCount;
+    this.stats[NAVIGATION_STATS.PATHS_CACHED] = this.cachedPathsCount;
+    this.stats[NAVIGATION_STATS.PENDING_FLOWFIELDS] = this.flowfieldRequests ? this.flowfieldRequests.size : 0;
+    this.stats[NAVIGATION_STATS.PENDING_PATHS] = this.pathRequests ? this.pathRequests.size : 0;
     this.stats[NAVIGATION_STATS.GRID_WIDTH] = this.gridWidth;
     this.stats[NAVIGATION_STATS.GRID_HEIGHT] = this.gridHeight;
     this.stats[NAVIGATION_STATS.SHADOWS_UPDATED] = this.shadowsUpdatedThisFrame;

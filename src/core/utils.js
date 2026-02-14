@@ -183,6 +183,48 @@ export function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
+/**
+ * Compute screen-space camera bounds (with culling margin) into a reusable object.
+ * Result shape: { zoom, cameraOffsetX, cameraOffsetY, minX, maxX, minY, maxY }.
+ */
+export function calculateCameraScreenBounds(
+  zoom,
+  cameraX,
+  cameraY,
+  canvasWidth,
+  canvasHeight,
+  cullingRatio,
+  result
+) {
+  const cameraOffsetX = cameraX * zoom;
+  const cameraOffsetY = cameraY * zoom;
+  const marginX = canvasWidth * cullingRatio;
+  const marginY = canvasHeight * cullingRatio;
+
+  result.zoom = zoom;
+  result.cameraOffsetX = cameraOffsetX;
+  result.cameraOffsetY = cameraOffsetY;
+  result.minX = -marginX;
+  result.maxX = canvasWidth + marginX;
+  result.minY = -marginY;
+  result.maxY = canvasHeight + marginY;
+  return result;
+}
+
+/**
+ * Convert screen-space camera bounds to world-space bounds.
+ * Optional world margins are applied after conversion.
+ * Result shape: { minX, maxX, minY, maxY }.
+ */
+export function screenBoundsToWorldBounds(screenBounds, worldMarginX = 0, worldMarginY = 0, result) {
+  const invZoom = 1 / screenBounds.zoom;
+  result.minX = (screenBounds.minX + screenBounds.cameraOffsetX) * invZoom - worldMarginX;
+  result.maxX = (screenBounds.maxX + screenBounds.cameraOffsetX) * invZoom + worldMarginX;
+  result.minY = (screenBounds.minY + screenBounds.cameraOffsetY) * invZoom - worldMarginY;
+  result.maxY = (screenBounds.maxY + screenBounds.cameraOffsetY) * invZoom + worldMarginY;
+  return result;
+}
+
 // ============================================================================
 // RAY INTERSECTION UTILITIES
 // Pure geometric functions - no object allocation, return distance or -1

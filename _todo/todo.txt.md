@@ -14,11 +14,6 @@ IDEAS PARA JUEGOS:
 - no strings!, all constants
 
 
-
-
-
-Create a `MEMORY_MODEL.md` or a centralized comment block in Scene.js documenting the ownership table.
-
  JSDoc `@typedef`,
 
 
@@ -99,7 +94,6 @@ no deberiamos hacerlo todo el tiepmo en los soldados
 8-const { x, y } = Transform.getValues();
 
 
-GameObject.spawn (deberia juntar y mandar en batch, en lugar de mandar mensajes uno por uno)
 
 
 
@@ -175,9 +169,6 @@ FSM
 ------------------------------------------------------------------------------------------------
 
 
--no usar this.propiedadComunDeOOP=1.. estos valores pueden cambiar entre workers, si hay mas de un
-logic_worker..
-
 
 -getAllPropertiesFromAllComponents(): para asi poder clonar
 -this.constructor.spawnCloneFromInstance(this)
@@ -226,7 +217,6 @@ TENER AMBOS! y se puede desde tickall llamar a sistemas, q tmb son metodos estat
 --- SPATIAL WORKER: ---
 ------------------------------------------------------------------------------------------------
 
--q vuelva a escribir distSq
 
 ------------------------------------------------------------------------------------------------
 --- NAV WORKER: ---

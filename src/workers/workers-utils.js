@@ -104,7 +104,7 @@ export const NAVIGATION_STATS = {
   PENDING_PATHS: 6, // Path requests waiting
   GRID_WIDTH: 7, // Grid dimensions for reference
   GRID_HEIGHT: 8,
-  SHADOWS_UPDATED: 9, // Shadow sprites computed this frame (moved from particle_worker)
+  SHADOWS_UPDATED: 9, // Shadow sprites computed this frame
   // Reserve space for future stats
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,

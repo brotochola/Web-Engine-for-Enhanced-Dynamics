@@ -18,6 +18,8 @@ import { Grid } from '../core/Grid.js';
 import {
   calculateTotalLightAtPosition,
   brightnessToTint,
+  calculateCameraScreenBounds,
+  screenBoundsToWorldBounds,
   extractRGB,
   calculateDecalTileBounds,
   calculateTileClipRegion,
@@ -112,11 +114,10 @@ class ParticleWorker extends AbstractWorker {
       minY: 0,
       maxY: 0,
     };
+    this._worldBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
 
     // Reusable grid query result to avoid per-frame allocations
     this._gridQueryResult = null;
-
-    // Note: Shadow render queue and derived properties moved to nav_worker.js
 
     // ========================================
     // RENDER QUEUE SYSTEM
@@ -314,8 +315,6 @@ class ParticleWorker extends AbstractWorker {
       // Note: Transform and SpriteRenderer are automatically initialized by
       // AbstractWorker.initializeAllComponents()
     }
-
-    // Note: RigidBody derived properties and shadow render queue moved to nav_worker.js
 
     // ========================================
     // FLASH SYSTEM - Initialize
@@ -654,8 +653,6 @@ class ParticleWorker extends AbstractWorker {
     // Also collects visible entities for render queue
     this.updateEntityScreenVisibility();
 
-    // Note: buildShadowRenderQueue() and updateDerivedProperties() moved to nav_worker
-
     // Update screen visibility for all decorations
     // Also collects visible decorations for render queue
     this.updateDecorationScreenVisibility(cameraBounds);
@@ -688,23 +685,16 @@ class ParticleWorker extends AbstractWorker {
     const cameraX = this.cameraData[1];
     const cameraY = this.cameraData[2];
 
-    // Pre-calculate all bounds once
-    const cameraOffsetX = cameraX * zoom;
-    const cameraOffsetY = cameraY * zoom;
-    const marginX = this.canvasWidth * this.cullingRatio;
-    const marginY = this.canvasHeight * this.cullingRatio;
-
-    // GC OPTIMIZATION: Reuse cached object instead of creating new one each frame
-    const bounds = this._cameraBounds;
-    bounds.zoom = zoom;
-    bounds.cameraOffsetX = cameraOffsetX;
-    bounds.cameraOffsetY = cameraOffsetY;
-    bounds.minX = -marginX;
-    bounds.maxX = this.canvasWidth + marginX;
-    bounds.minY = -marginY;
-    bounds.maxY = this.canvasHeight + marginY;
-
-    return bounds;
+    // Reuse cached object instead of creating a new one each frame.
+    return calculateCameraScreenBounds(
+      zoom,
+      cameraX,
+      cameraY,
+      this.canvasWidth,
+      this.canvasHeight,
+      this.cullingRatio,
+      this._cameraBounds
+    );
   }
 
   /**
@@ -1111,8 +1101,6 @@ class ParticleWorker extends AbstractWorker {
     }
   }
 
-  // Note: buildShadowRenderQueue() moved to nav_worker.js
-
   /**
    * Update isItOnScreen property for all game entities
    * OPTIMIZED: Uses spatial grid to only check entities in visible cells
@@ -1136,30 +1124,32 @@ class ParticleWorker extends AbstractWorker {
     const cameraX = this.cameraData[1];
     const cameraY = this.cameraData[2];
 
-    // Pre-calculate screen bounds (with culling margin)
-    const cameraOffsetX = cameraX * zoom;
-    const cameraOffsetY = cameraY * zoom;
-    const marginX = this.canvasWidth * this.cullingRatio;
-    const marginY = this.canvasHeight * this.cullingRatio;
-    const screenMinX = -marginX;
-    const screenMaxX = this.canvasWidth + marginX;
-    const screenMinY = -marginY;
-    const screenMaxY = this.canvasHeight + marginY;
-
-    // Convert screen bounds to world bounds for grid query
-    // Formula: screenX = worldX * zoom - cameraOffsetX
-    // Therefore: worldX = (screenX + cameraOffsetX) / zoom
-    const invZoom = 1 / zoom;
+    const screenBounds = calculateCameraScreenBounds(
+      zoom,
+      cameraX,
+      cameraY,
+      this.canvasWidth,
+      this.canvasHeight,
+      this.cullingRatio,
+      this._cameraBounds
+    );
 
     // Add safety margin for large entities that span multiple cells
     // Entities are registered in ALL cells they occupy (based on collider bounds)
     // If ANY of those cells is in this query rect, the entity will be found
     // We add 2 cells margin to handle entities up to ~4 cells wide/tall
     const cellMargin = Grid.cellSize * 2;
-    const worldMinX = (screenMinX + cameraOffsetX) * invZoom - cellMargin;
-    const worldMaxX = (screenMaxX + cameraOffsetX) * invZoom + cellMargin;
-    const worldMinY = (screenMinY + cameraOffsetY) * invZoom - cellMargin;
-    const worldMaxY = (screenMaxY + cameraOffsetY) * invZoom + cellMargin;
+    const worldBounds = screenBoundsToWorldBounds(screenBounds, cellMargin, cellMargin, this._worldBounds);
+    const cameraOffsetX = screenBounds.cameraOffsetX;
+    const cameraOffsetY = screenBounds.cameraOffsetY;
+    const screenMinX = screenBounds.minX;
+    const screenMaxX = screenBounds.maxX;
+    const screenMinY = screenBounds.minY;
+    const screenMaxY = screenBounds.maxY;
+    const worldMinX = worldBounds.minX;
+    const worldMaxX = worldBounds.maxX;
+    const worldMinY = worldBounds.minY;
+    const worldMaxY = worldBounds.maxY;
 
     // Verify Grid is initialized - fail loudly if not
     if (Grid.cellSize <= 0 || Grid.gridWidth <= 0) {
@@ -1258,14 +1248,21 @@ class ParticleWorker extends AbstractWorker {
       zoom = this.cameraData[0];
       const cameraX = this.cameraData[1];
       const cameraY = this.cameraData[2];
-      cameraOffsetX = cameraX * zoom;
-      cameraOffsetY = cameraY * zoom;
-      const marginX = this.canvasWidth * this.cullingRatio;
-      const marginY = this.canvasHeight * this.cullingRatio;
-      minX = -marginX;
-      maxX = this.canvasWidth + marginX;
-      minY = -marginY;
-      maxY = this.canvasHeight + marginY;
+      const fallbackBounds = calculateCameraScreenBounds(
+        zoom,
+        cameraX,
+        cameraY,
+        this.canvasWidth,
+        this.canvasHeight,
+        this.cullingRatio,
+        this._cameraBounds
+      );
+      cameraOffsetX = fallbackBounds.cameraOffsetX;
+      cameraOffsetY = fallbackBounds.cameraOffsetY;
+      minX = fallbackBounds.minX;
+      maxX = fallbackBounds.maxX;
+      minY = fallbackBounds.minY;
+      maxY = fallbackBounds.maxY;
     } else {
       return; // No camera data available
     }
@@ -1295,8 +1292,6 @@ class ParticleWorker extends AbstractWorker {
       }
     }
   }
-
-  // Note: updateDerivedProperties() moved to nav_worker.js
 
   /**
    * Update cell sleeping states based on entity sleeping/static states
