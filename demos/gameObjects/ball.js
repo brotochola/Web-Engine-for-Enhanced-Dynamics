@@ -31,6 +31,7 @@ class Ball extends GameObject {
    * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
    */
   onSpawned(spawnConfig = {}) {
+
     // this.collider.radius = spawnConfig.radius; // Mass auto-computed from area (π * r²)
     // Configure RigidBody physics properties (same for all balls)
     this.rigidBody.maxVel = 100; // Max velocity
@@ -61,7 +62,7 @@ class Ball extends GameObject {
     const ballRadius = spawnConfig.radius || rng() * 20 + 10;
     this.collider.radius = ballRadius; // Mass auto-computed from area (π * r²)
 
-    this.collider.visualRange = ballRadius * 3;
+    this.collider.visualRange = spawnConfig.visualRange || ballRadius * 3;
 
     const scale = (ballRadius * 2) / actualBallSize;
     this.spriteRenderer.scaleX = scale;
