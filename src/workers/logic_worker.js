@@ -313,9 +313,6 @@ class LogicWorker extends AbstractWorker {
         activeCount++;
         this.entitiesProcessedThisFrame++;
 
-        // Update neighbors (uses Grid statics directly)
-        obj.updateNeighbors();
-
         // Tick entity logic - no decimation checks needed!
         obj.tick(dtRatio, deltaTime, accTime, frameNum);
 
@@ -351,9 +348,6 @@ class LogicWorker extends AbstractWorker {
 
           activeCount++;
           this.entitiesProcessedThisFrame++;
-
-          // Update neighbors (uses Grid statics directly)
-          obj.updateNeighbors();
 
           // TICK DECIMATION: Check countdown
           if (--nextTick[entityIndex] > 0) {
