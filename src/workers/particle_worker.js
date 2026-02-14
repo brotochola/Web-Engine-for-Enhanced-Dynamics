@@ -356,7 +356,7 @@ class ParticleWorker extends AbstractWorker {
    * Initialize the particle worker
    */
   async initialize(data) {
-    console.log('[PARTICLE WORKER] Starting initialize()...');
+    // console.log('[PARTICLE WORKER] Starting initialize()...');
 
     // Initialize stats buffer
     if (data.buffers.particleStats) {
@@ -368,7 +368,7 @@ class ParticleWorker extends AbstractWorker {
     this.maxDecorations = data.maxDecorations || 0;
     this.globalEntityCount = data.globalEntityCount || 0;
 
-    console.log(`[PARTICLE WORKER] Max particles: ${this.maxParticles}, Decorations: ${this.maxDecorations}, Entities: ${this.globalEntityCount}`);
+    // console.log(`[PARTICLE WORKER] Max particles: ${this.maxParticles}, Decorations: ${this.maxDecorations}, Entities: ${this.globalEntityCount}`);
 
     // Initialize particle arrays
     if (this.maxParticles > 0 && data.buffers.componentData.ParticleComponent) {
@@ -380,7 +380,7 @@ class ParticleWorker extends AbstractWorker {
     // BLOOD DECALS TILEMAP - Initialize SABs
     // ========================================
     if (data.decals && data.decals.enabled) {
-      console.log('[PARTICLE WORKER] Initializing decals system...');
+      // console.log('[PARTICLE WORKER] Initializing decals system...');
       this.decalsEnabled = true;
       this.decalsTileSize = data.decals.tileSize;
       this.decalsTilePixelSize = data.decals.tilePixelSize;
@@ -401,7 +401,7 @@ class ParticleWorker extends AbstractWorker {
           };
         }
       }
-      console.log('[PARTICLE WORKER] Decals system initialized');
+      // console.log('[PARTICLE WORKER] Decals system initialized');
     }
 
     // ========================================
@@ -435,7 +435,7 @@ class ParticleWorker extends AbstractWorker {
       this.flowfieldRequests = new FlowfieldRequestQueue(this.totalCells, flowfieldQueueCapacity);
       this.pathRequests = new PathRequestQueue(this.totalCells, pathQueueCapacity);
 
-      console.log(`[PARTICLE WORKER] Navigation initialized: ${this.gridWidth}x${this.gridHeight} grid`);
+      // console.log(`[PARTICLE WORKER] Navigation initialized: ${this.gridWidth}x${this.gridHeight} grid`);
     }
 
     // ========================================
@@ -448,7 +448,7 @@ class ParticleWorker extends AbstractWorker {
       this.sleepDuration = physicsConfig.sleepDuration ?? PHYSICS_DEFAULTS.sleepDuration;
       this._queryRigidBody = [RigidBody];
 
-      console.log('[PARTICLE WORKER] Derived properties initialized');
+      // console.log('[PARTICLE WORKER] Derived properties initialized');
     }
 
     // Sway decimation config
@@ -459,7 +459,7 @@ class ParticleWorker extends AbstractWorker {
     this.canvasHeight = this.config.canvasHeight || 600;
     this.cullingRatio = this.config.renderer?.cullingRatio ?? 0.5;
 
-    console.log('[PARTICLE WORKER] ✅ Initialize() completed!');
+    // console.log('[PARTICLE WORKER] ✅ Initialize() completed!');
   }
 
   /**
@@ -467,13 +467,13 @@ class ParticleWorker extends AbstractWorker {
    */
   handleWorkerMessage(fromWorker, data) {
     const { type } = data;
-    console.log(`[PARTICLE WORKER] Received message from ${fromWorker}: ${type}`);
+    // console.log(`[PARTICLE WORKER] Received message from ${fromWorker}: ${type}`);
 
     switch (type) {
       case 'REQUEST_FLOWFIELD': {
         if (!this.flowfieldRequests) break;
         const { targetCell } = data;
-        console.log(`[PARTICLE WORKER] REQUEST_FLOWFIELD for targetCell: ${targetCell}`);
+        // console.log(`[PARTICLE WORKER] REQUEST_FLOWFIELD for targetCell: ${targetCell}`);
         if (targetCell >= 0 && targetCell < this.totalCells) {
           const existingSlot = this._findExistingFlowfieldSlot(targetCell);
           if (existingSlot >= 0) {
@@ -520,11 +520,11 @@ class ParticleWorker extends AbstractWorker {
     this.flowfieldsComputedThisFrame = 0;
     this.pathsComputedThisFrame = 0;
 
-    // Build active particle list
-    this.buildActiveParticleList();
+    // Build active particle list AND calculate visibility in one fused pass
+    // Writes to: activeParticlesData SAB, visibleParticlesData SAB, isItOnScreen flags
+    this.buildActiveAndVisibleParticleLists();
 
-    // Update screen visibility for all renderables (sets isItOnScreen flags)
-    this.updateParticleScreenVisibility();
+    // Update screen visibility for entities and decorations
     this.updateEntityScreenVisibility();
     this.updateDecorationScreenVisibility();
 
@@ -558,31 +558,44 @@ class ParticleWorker extends AbstractWorker {
   // PARTICLE PHYSICS
   // ========================================
 
-  buildActiveParticleList() {
+  /**
+   * Build active particle list AND calculate screen visibility in a single fused pass.
+   * Writes to:
+   * - activeParticlesData SAB: [count, idx0, idx1, ...] - all active particles
+   * - visibleParticlesData SAB: [count, idx0, idx1, ...] - active particles that are on-screen
+   * - isItOnScreen[i] flags for each particle
+   * - this.activeParticleIndices (local copy for physics update)
+   *
+   * This replaces the old separate buildActiveParticleList() and updateParticleScreenVisibility()
+   * methods, reducing iterations over maxParticles from 2 to 1.
+   */
+  buildActiveAndVisibleParticleLists() {
     if (this.maxParticles === 0) return;
 
     const active = ParticleComponent.active;
-    const indices = this.activeParticleIndices;
-    let count = 0;
+    const localIndices = this.activeParticleIndices;
+    const activeData = this.activeParticlesData;
+    const visibleData = this.visibleParticlesData;
 
-    const freeListTop = ParticleEmitter.freeListTop;
-    const expectedActive = freeListTop ? this.maxParticles - freeListTop[0] : this.maxParticles;
+    // Early exit if camera not ready (can't calculate visibility)
+    if (!this.cameraData) {
+      // Fall back to just building active list
+      let count = 0;
+      const freeListTop = ParticleEmitter.freeListTop;
+      const expectedActive = freeListTop ? this.maxParticles - freeListTop[0] : this.maxParticles;
 
-    for (let i = 0; i < this.maxParticles && count < expectedActive; i++) {
-      if (active[i]) {
-        indices[count++] = i;
+      for (let i = 0; i < this.maxParticles && count < expectedActive; i++) {
+        if (active[i]) {
+          localIndices[count] = i;
+          if (activeData) activeData[1 + count] = i;
+          count++;
+        }
       }
+      this.activeParticleCount = count;
+      if (activeData) activeData[0] = count;
+      if (visibleData) visibleData[0] = 0;
+      return;
     }
-
-    this.activeParticleCount = count;
-  }
-
-  /**
-   * Update screen visibility for all active particles
-   * Sets isItOnScreen flag based on camera bounds
-   */
-  updateParticleScreenVisibility() {
-    if (this.maxParticles === 0 || !this.cameraData) return;
 
     // Calculate camera bounds
     const zoom = this.cameraData[0];
@@ -611,24 +624,52 @@ class ParticleWorker extends AbstractWorker {
     const camMinY = cameraBounds.minY;
     const camMaxY = cameraBounds.maxY;
 
-    const activeIndices = this.activeParticleIndices;
-    const count = this.activeParticleCount;
+    const freeListTop = ParticleEmitter.freeListTop;
+    const expectedActive = freeListTop ? this.maxParticles - freeListTop[0] : this.maxParticles;
 
-    for (let idx = 0; idx < count; idx++) {
-      const i = activeIndices[idx];
+    let activeCount = 0;
+    let visibleCount = 0;
+
+    // FUSED PASS: Build active list AND calculate visibility in one iteration
+    for (let i = 0; i < this.maxParticles && activeCount < expectedActive; i++) {
+      if (!active[i]) continue;
+
+      // Add to active lists (local + SAB)
+      localIndices[activeCount] = i;
+      if (activeData) activeData[1 + activeCount] = i;
+      activeCount++;
+
+      // Calculate screen position and visibility
       const screenX = x[i] * camZoom - camOffX;
       const screenY = y[i] * camZoom - camOffY;
       const onScreen = screenX > camMinX && screenX < camMaxX && screenY > camMinY && screenY < camMaxY;
-      isItOnScreen[i] = onScreen ? 1 : 0;
+
+      if (onScreen) {
+        isItOnScreen[i] = 1;
+        if (visibleData) visibleData[1 + visibleCount] = i;
+        visibleCount++;
+      } else {
+        isItOnScreen[i] = 0;
+      }
     }
+
+    // Write counts to SABs
+    this.activeParticleCount = activeCount;
+    if (activeData) activeData[0] = activeCount;
+    if (visibleData) visibleData[0] = visibleCount;
   }
 
   /**
    * Update screen visibility for all active entities
-   * Sets isItOnScreen flag and calculates screenX/screenY
+   * Sets isItOnScreen flag, calculates screenX/screenY, and writes to visibleEntitiesData SAB
    */
   updateEntityScreenVisibility() {
-    if (!this.cameraData || this.globalEntityCount === 0 || !SpriteRenderer.isItOnScreen) return;
+    const visibleData = this.visibleEntitiesData;
+
+    if (!this.cameraData || this.globalEntityCount === 0 || !SpriteRenderer.isItOnScreen) {
+      if (visibleData) visibleData[0] = 0;
+      return;
+    }
 
     // Calculate camera bounds (reuses _cameraBounds object)
     const zoom = this.cameraData[0];
@@ -661,9 +702,14 @@ class ParticleWorker extends AbstractWorker {
     const cellMargin = Grid.cellSize * 2;
     const worldBounds = screenBoundsToWorldBounds(cameraBounds, cellMargin, cellMargin, this._worldBounds);
 
-    if (Grid.cellSize <= 0 || Grid.gridWidth <= 0) return;
+    if (Grid.cellSize <= 0 || Grid.gridWidth <= 0) {
+      if (visibleData) visibleData[0] = 0;
+      return;
+    }
 
     this._gridQueryResult = Grid.getEntitiesInRect(worldBounds.minX, worldBounds.minY, worldBounds.maxX, worldBounds.maxY);
+
+    let visibleCount = 0;
 
     for (let idx = 0; idx < this._gridQueryResult.count; idx++) {
       const i = this._gridQueryResult.entities[idx];
@@ -681,22 +727,111 @@ class ParticleWorker extends AbstractWorker {
       screenY[i] = sy;
 
       const onScreen = sx >= screenMinX && sx <= screenMaxX && sy >= screenMinY && sy <= screenMaxY;
-      isItOnScreen[i] = onScreen ? 1 : 0;
+
+      if (onScreen) {
+        isItOnScreen[i] = 1;
+        if (visibleData) visibleData[1 + visibleCount] = i;
+        visibleCount++;
+      } else {
+        isItOnScreen[i] = 0;
+      }
     }
+
+    // Write visible count to SAB
+    if (visibleData) visibleData[0] = visibleCount;
   }
 
   /**
    * Update screen visibility for all active decorations
-   * Sets isItOnScreen flag based on camera bounds
+   * Uses activeDecorationsData compact list (maintained by DecorationPool.spawn/despawn)
+   * Writes to visibleDecorationsData SAB for pre_render_worker to consume
    */
   updateDecorationScreenVisibility() {
     if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
 
-    const freeListTop = DecorationPool.freeListTop;
-    const expectedActive = freeListTop ? this.maxDecorations - freeListTop[0] : this.maxDecorations;
-    if (expectedActive === 0) return;
+    const activeData = this.activeDecorationsData;
+    const visibleData = this.visibleDecorationsData;
+
+    // Use compact list if available, otherwise fall back to scanning
+    const activeCount = activeData ? activeData[0] : 0;
+
+    if (activeCount === 0 && !activeData) {
+      // Fallback: no activeDecorationsData available, use old method
+      const freeListTop = DecorationPool.freeListTop;
+      const expectedActive = freeListTop ? this.maxDecorations - freeListTop[0] : this.maxDecorations;
+      if (expectedActive === 0) {
+        if (visibleData) visibleData[0] = 0;
+        return;
+      }
+      // Old fallback scan (should rarely happen)
+      this._updateDecorationScreenVisibilityFallback(expectedActive);
+      return;
+    }
+
+    if (activeCount === 0) {
+      if (visibleData) visibleData[0] = 0;
+      return;
+    }
+
+    if (!this.cameraData) {
+      if (visibleData) visibleData[0] = 0;
+      return;
+    }
 
     // Calculate camera bounds (reuses _cameraBounds object)
+    const zoom = this.cameraData[0];
+    const cameraX = this.cameraData[1];
+    const cameraY = this.cameraData[2];
+
+    const cameraBounds = calculateCameraScreenBounds(
+      zoom, cameraX, cameraY,
+      this.canvasWidth, this.canvasHeight, this.cullingRatio,
+      this._cameraBounds
+    );
+
+    const x = DecorationComponent.x;
+    const y = DecorationComponent.y;
+    const isItOnScreen = DecorationComponent.isItOnScreen;
+
+    const camZoom = cameraBounds.zoom;
+    const cameraOffsetX = cameraBounds.cameraOffsetX;
+    const cameraOffsetY = cameraBounds.cameraOffsetY;
+    const minX = cameraBounds.minX;
+    const maxX = cameraBounds.maxX;
+    const minY = cameraBounds.minY;
+    const maxY = cameraBounds.maxY;
+
+    let visibleCount = 0;
+
+    // OPTIMIZED: Iterate over compact activeDecorationsData instead of maxDecorations
+    for (let idx = 0; idx < activeCount; idx++) {
+      const i = activeData[1 + idx];
+
+      const screenXVal = x[i] * camZoom - cameraOffsetX;
+      const screenYVal = y[i] * camZoom - cameraOffsetY;
+
+      const onScreen = screenXVal > minX && screenXVal < maxX && screenYVal > minY && screenYVal < maxY;
+
+      if (onScreen) {
+        isItOnScreen[i] = 1;
+        if (visibleData) visibleData[1 + visibleCount] = i;
+        visibleCount++;
+      } else {
+        isItOnScreen[i] = 0;
+      }
+    }
+
+    // Write visible count to SAB
+    if (visibleData) visibleData[0] = visibleCount;
+  }
+
+  /**
+   * Fallback method for decoration visibility when activeDecorationsData is not available
+   * @private
+   */
+  _updateDecorationScreenVisibilityFallback(expectedActive) {
+    if (!this.cameraData) return;
+
     const zoom = this.cameraData[0];
     const cameraX = this.cameraData[1];
     const cameraY = this.cameraData[2];
@@ -711,6 +846,7 @@ class ParticleWorker extends AbstractWorker {
     const x = DecorationComponent.x;
     const y = DecorationComponent.y;
     const isItOnScreen = DecorationComponent.isItOnScreen;
+    const visibleData = this.visibleDecorationsData;
 
     const camZoom = cameraBounds.zoom;
     const cameraOffsetX = cameraBounds.cameraOffsetX;
@@ -721,6 +857,8 @@ class ParticleWorker extends AbstractWorker {
     const maxY = cameraBounds.maxY;
 
     let activeFound = 0;
+    let visibleCount = 0;
+
     for (let i = 0; i < this.maxDecorations && activeFound < expectedActive; i++) {
       if (!active[i]) continue;
       activeFound++;
@@ -729,8 +867,17 @@ class ParticleWorker extends AbstractWorker {
       const screenYVal = y[i] * camZoom - cameraOffsetY;
 
       const onScreen = screenXVal > minX && screenXVal < maxX && screenYVal > minY && screenYVal < maxY;
-      isItOnScreen[i] = onScreen ? 1 : 0;
+
+      if (onScreen) {
+        isItOnScreen[i] = 1;
+        if (visibleData) visibleData[1 + visibleCount] = i;
+        visibleCount++;
+      } else {
+        isItOnScreen[i] = 0;
+      }
     }
+
+    if (visibleData) visibleData[0] = visibleCount;
   }
 
   clearParticleStampList() {
