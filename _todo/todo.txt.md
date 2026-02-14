@@ -22,57 +22,6 @@ IDEAS PARA JUEGOS:
 
 
 
-### 2.6 — Tick Decimation Has Overhead Even When Not Used
-
-```332:344:src/workers/logic_worker.js
-          let tickInterval = 1;
-          if (GameObject.nextTick) {
-            tickInterval = obj.constructor.tickInterval || 1;
-            if (tickInterval > 1) {
-              if (--GameObject.nextTick[entityIndex] > 0) {
-                this.checkScreenVisibility(entityIndex, obj);
-                continue;
-              }
-              GameObject.nextTick[entityIndex] = tickInterval;
-            }
-          }
-```
-
-For entities with `tickInterval = 1` (the default — most entities), the code still:
-1. Checks `if (GameObject.nextTick)` — true if any entity uses tick decimation
-2. Reads `obj.constructor.tickInterval` — prototype chain lookup
-3. Checks `if (tickInterval > 1)` — false, falls through
-
-That's 3 checks per entity per frame just to discover "no decimation." For thousands of entities, this adds up.
-
-**Better:** Separate entities into two lists at initialization time — decimated and non-decimated. Process them with separate loops. Or store the tickInterval in a typed array indexed by entityIndex to avoid the prototype chain lookup.
-
----
-
-## 3. CACHE LOCALITY & DATA ACCESS
-
-
-
-
-
-### 3.3 — `checkScreenVisibility` Called for Every Entity
-
-```360:360:src/workers/logic_worker.js
-          this.checkScreenVisibility(entityIndex, obj);
-```
-
-Also called for decimated entities that skip tick (line 338). This function:
-1. Reads `SpriteRenderer.isItOnScreen[entityIndex]` — typed array access (cheap)
-2. Reads `this.previousScreenVisibility[entityIndex]` — typed array access (cheap)
-3. Compares them for transition detection
-4. Writes `this.previousScreenVisibility[entityIndex]` — typed array write
-
-The function call overhead (`checkScreenVisibility` as a method) is probably the most expensive part. V8 should inline this if the function is monomorphic and hot, but inlining into the hot loop directly would guarantee it.
-
----
-
-
-
 -----------------
 
 
