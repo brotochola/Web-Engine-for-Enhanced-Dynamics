@@ -952,12 +952,13 @@ export class NavGrid {
   /**
    * Write path data and mark as ready (nav worker only)
    */
-  static writePathData(slotIndex, pathCells) {
+  static writePathData(slotIndex, pathCells, explicitLength = -1) {
     const headerOffset = this._pathHeadersOffset + slotIndex * this._PATH_HEADER_SIZE;
     const headerView = new Uint32Array(this._sab, headerOffset, 5);
 
     // Clamp path length
-    const pathLength = Math.min(pathCells.length, this._maxPathLength);
+    const sourceLength = explicitLength >= 0 ? explicitLength : pathCells.length;
+    const pathLength = Math.min(sourceLength, this._maxPathLength);
     headerView[3] = pathLength;
 
     // Write path data
