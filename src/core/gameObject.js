@@ -1405,23 +1405,6 @@ export class GameObject {
   }
 
   /**
-   * Get neighbor distance squared at specific position
-   * Calculates distance on-the-fly from collider positions
-   *
-   * WARNING: This distance is calculated from COLLIDER positions (Transform + Collider.offset).
-   * If you need to compute direction vectors (dx/dy), calculate distSq manually from the same
-   * positions you use for dx/dy, otherwise the unit vector will be incorrect.
-   *
-   * @param {number} i - Index (0 to this.neighborCount - 1)
-   * @returns {number} Squared distance to the neighbor (based on collider positions)
-   */
-  getNeighborDistanceSq(i) {
-    const neighborIdx = this.getNeighbor(i);
-    if (neighborIdx < 0) return 0;
-    return Grid.getEntityDistanceSq(this.index, neighborIdx);
-  }
-
-  /**
    * Get all neighbor IDs as an array
    * @returns {Int32Array} Typed array view of valid neighbor indices (zero-alloc subarray)
    */
@@ -1932,102 +1915,14 @@ export class GameObject {
   }
 
   /**
-   * ITERATION: Iterate over all ACTIVE entities of this class (index only)
-   * Called on the entity class itself: Prey.forEachActive(i => ...)
+   * Get the first active entity index for this class
+   * Performance: O(1) - reads from pre-maintained SAB
    *
-   * This is the FASTEST iteration method - no instance lookup, no conditionals.
-   * Uses pre-computed entityIndices typed array for cache-friendly access.
-   *
-   * @example
-   *   Prey.forEachActive(i => {
-   *     Transform.x[i] += RigidBody.vx[i];
-   *   });
-   *
-   * @param {Function} callback - callback(index) called for each active entity
+   * @returns {number|null} First active entity index, or null if none active
    */
-  static forEachActive(callback) {
-    const indices = this.entityIndices;
-    if (!indices) return;
-
-    const active = Transform.active;
-    const len = indices.length;
-
-    for (let j = 0; j < len; j++) {
-      const i = indices[j];
-      if (active[i]) callback(i);
-    }
-  }
-
-  /**
-   * ITERATION: Iterate over ALL entities of this class (active or not)
-   * Called on the entity class itself: Prey.forEachAll(i => ...)
-   *
-   * Useful for reset/cleanup operations where you need to touch every slot.
-   * No active check - iterates the entire pool.
-   *
-   * @example
-   *   // Reset all entities of this type
-   *   Prey.forEachAll(i => {
-   *     Transform.x[i] = 0;
-   *     Transform.y[i] = 0;
-   *   });
-   *
-   * @param {Function} callback - callback(index) called for each entity
-   */
-  static forEachAll(callback) {
-    const indices = this.entityIndices;
-    if (!indices) return;
-
-    const len = indices.length;
-    for (let j = 0; j < len; j++) {
-      callback(indices[j]);
-    }
-  }
-
-  /**
-   * ITERATION: Iterate over ACTIVE entities with instance access (LOGIC WORKER ONLY)
-   * Called on the entity class itself: Prey.forEachInstanceActive((prey, i) => ...)
-   *
-   * NOTE: Instances only exist in logic_worker.js. Use forEachActive() in other contexts.
-   * ZERO ALLOCATIONS - inline loop, no closures.
-   *
-   * @example
-   *   Prey.forEachInstanceActive((prey, i) => {
-   *     prey.flee();
-   *   });
-   *
-   * @param {Function} callback - callback(instance, index) for each active entity
-   */
-  static forEachInstanceActive(callback) {
-    const indices = this.entityIndices;
-    if (!indices) return;
-
-    const active = Transform.active;
-    const instances = this.instances;
-    const len = indices.length;
-
-    for (let j = 0; j < len; j++) {
-      const i = indices[j];
-      if (active[i]) {
-        callback(instances ? instances[j] : undefined, i);
-      }
-    }
-  }
-
   static getFirstActiveIndex() {
-    const indices = this.entityIndices;
-    if (!indices) return null;
-
-    const active = Transform.active;
-    const len = indices.length;
-
-    for (let j = 0; j < len; j++) {
-      const idx = indices[j];
-      if (active[idx]) {
-        return idx;
-      }
-    }
-    return null;
+    const activeList = this._activeList;
+    return (activeList && activeList[0] > 0) ? activeList[1] : null;
   }
 
   static getFirstActiveInstance() {
@@ -2061,82 +1956,35 @@ export class GameObject {
     return typeList.subarray(1, 1 + count);
   }
 
-  static getAllActiveInstances() {
-    const indices = this.entityIndices;
-    if (!indices) return;
-
-    const active = Transform.active;
-    const instances = this.instances;
-    const len = indices.length;
-    const activeInstances = [];
-    for (let j = 0; j < len; j++) {
-      const i = indices[j];
-      if (active[i]) {
-        activeInstances.push(instances ? instances[j] : undefined);
-      }
-    }
-    return activeInstances;
-  }
-
   /**
-   * ITERATION: Iterate over ALL entities with instance access (LOGIC WORKER ONLY)
-   * Called on the entity class itself: Prey.forEachInstanceAll((prey, i) => ...)
+   * Get instances of all active entities of this type (LOGIC WORKER ONLY)
+   * NOTE: Allocates an array - prefer getAllActive() + manual loop for hot paths
    *
-   * Useful for reset/cleanup operations where you need instance access.
-   * No active check - iterates the entire pool.
-   *
-   * NOTE: Instances only exist in logic_worker.js. Use forEachAll() in other contexts.
-   * ZERO ALLOCATIONS - inline loop, no closures.
-   *
-   * @example
-   *   Prey.forEachInstanceAll((prey, i) => {
-   *     prey.reset();
-   *   });
-   *
-   * @param {Function} callback - callback(instance, index) for each entity
+   * @returns {Array} Array of active entity instances
    */
-  static forEachInstanceAll(callback) {
-    const indices = this.entityIndices;
-    if (!indices) return;
+  static getAllActiveInstances() {
+    const activeIndices = this.getAllActive();
+    if (!activeIndices) return [];
 
     const instances = this.instances;
+    const startIndex = this.startIndex;
+    const result = [];
 
-    const len = indices.length;
-
-    for (let j = 0; j < len; j++) {
-      callback(instances ? instances[j] : undefined, indices[j]);
+    for (let i = 0; i < activeIndices.length; i++) {
+      const entityIndex = activeIndices[i];
+      result.push(instances[entityIndex - startIndex]);
     }
+    return result;
   }
 
   /**
-   * ITERATION: Get count of active entities of this class
-   * Called on the entity class itself: Prey.activeCount
+   * Get count of active entities of this class
+   * Performance: O(1) - reads from pre-maintained SAB
    *
    * @returns {number} Number of currently active entities
    */
   static get activeCount() {
-    const EntityClass = this;
-
-    if (EntityClass.startIndex === undefined || EntityClass.poolSize === undefined) {
-      return 0;
-    }
-
-    // If free list exists, calculate from it (O(1))
-    if (EntityClass.hasOwnProperty('freeList') && EntityClass.freeListTop) {
-      return EntityClass.poolSize - EntityClass.freeListTop[0]; // SAB-backed Int32Array
-    }
-
-    // Fallback: count active entities (O(n))
-    const startIndex = EntityClass.startIndex;
-    const endIndex = EntityClass.endIndex;
-    let count = 0;
-
-    for (let i = startIndex; i < endIndex; i++) {
-      if (Transform.active[i]) {
-        count++;
-      }
-    }
-
-    return count;
+    const activeList = this._activeList;
+    return activeList ? activeList[0] : 0;
   }
 }

@@ -131,7 +131,7 @@ export class ConstraintsTestScene extends Scene {
         // this.createSoftBody(2600, 1500, 6, 80, 0.6);
 
         // Create a grid/cloth simulation
-        this.createCloth(1200, 2500, 20, 20, 40, 1);
+        this.createCloth(1200, 2500, 20, 20, 40, 0.1, 20);
 
         // Spawn some free balls for interaction
         console.log('🎬 ConstraintsTestScene: Spawning free balls...');
@@ -296,7 +296,7 @@ export class ConstraintsTestScene extends Scene {
     /**
      * Create a cloth-like grid of connected balls
      */
-    createCloth(startX, startY, width, height, spacing, stiffness = 0.3) {
+    createCloth(startX, startY, width, height, spacing, stiffness = 0.3, radius = 10) {
         const balls = [];
         const grid = [];
 
@@ -307,7 +307,7 @@ export class ConstraintsTestScene extends Scene {
                 const ball = this.spawnEntity(Ball, {
                     x: startX + col * spacing,
                     y: startY + row * spacing,
-                    radius: 10,
+                    radius: radius,
                     vx: 0,
                     vy: 0,
                 });
@@ -360,7 +360,9 @@ export class ConstraintsTestScene extends Scene {
 
     update(dtRatio, deltaTime, accumulatedTime, frameNumber) {
         if (Mouse.isDown) {
-            Ball.getallactive
+            [...Ball.getAllActive()].forEach(i => {
+                RigidBody.sleeping[i] = 0
+            });
         }
         // Handle WASD camera panning
         const panSpeed = this.cameraPanSpeed / Camera.zoom;
