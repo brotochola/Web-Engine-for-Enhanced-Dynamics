@@ -365,11 +365,22 @@ class PixiRenderer extends AbstractWorker {
     this._ySortPoolSize = 0;
 
     // ========================================
-    // RENDER QUEUE SYSTEM
+    // RENDER QUEUE SYSTEM (DOUBLE BUFFERED)
     // ========================================
-    // Pre-sorted, screen-visible renderables from particle_worker
+    // Pre-sorted, screen-visible renderables from pre_render_worker
+    // pixi_worker NEVER waits - always reads from latest ready buffer
+    // pre_render_worker waits if >1 frame ahead (to avoid overwriting unread data)
     this.renderQueueEnabled = false;
     this.renderQueueMaxItems = 0;
+
+    // Double buffer storage - views for both buffers
+    this.renderQueueBuffers = [null, null];
+
+    // Sync buffer for coordination: [readyFrame, consumedFrame]
+    this.renderQueueSync = null;
+    this.lastReadFrame = -1; // Last frame we read (to signal consumption)
+
+    // Current read buffer reference (set each frame based on readyFrame)
     this.renderQueueCount = null;  // Int32Array[1] - current item count
     this.renderQueueX = null;      // Float32Array - interpolated X
     this.renderQueueY = null;      // Float32Array - interpolated Y
@@ -442,15 +453,19 @@ class PixiRenderer extends AbstractWorker {
     this._visibleLightsAllCount = 0;
 
     // ========================================
-    // RENDER-TEXTURE SHADOW SYSTEM
+    // RENDER-TEXTURE SHADOW SYSTEM (DOUBLE BUFFERED)
     // ========================================
     // Shadows are rendered to a RenderTexture from pre-sorted shadowRenderQueue
-    // Built by particle_worker: light1_gradient, light1_shadows..., light2_gradient, etc.
+    // Built by pre_render_worker: light1_gradient, light1_shadows..., light2_gradient, etc.
     // The final texture is applied with MULTIPLY blend to darken the scene
+    // Uses same sync as main render queue (swapped together)
     this.shadowSpritesEnabled = false;
     this.maxShadowRenderItems = 0;
 
-    // Shadow render queue views (shared with particle_worker)
+    // Double buffer storage for shadows
+    this.shadowRenderQueueBuffers = [null, null];
+
+    // Current read buffer reference (set each frame based on readyFrame)
     this.shadowRenderQueueCount = null;
     this.shadowRenderQueueX = null;
     this.shadowRenderQueueY = null;
@@ -489,6 +504,51 @@ class PixiRenderer extends AbstractWorker {
 
     // Light glow sprites are now rendered as normal particles in the main particleContainer
     // via the render queue (type=3) from particle_worker. No separate container needed.
+  }
+
+  /**
+   * Set the current read buffer for main render queue
+   * @param {number} bufferIdx - 0 or 1
+   */
+  _setReadBuffer(bufferIdx) {
+    const buffer = this.renderQueueBuffers[bufferIdx];
+    if (!buffer) return;
+
+    this.renderQueueCount = buffer.count;
+    this.renderQueueX = buffer.x;
+    this.renderQueueY = buffer.y;
+    this.renderQueueScaleX = buffer.scaleX;
+    this.renderQueueScaleY = buffer.scaleY;
+    this.renderQueueRotation = buffer.rotation;
+    this.renderQueueAlpha = buffer.alpha;
+    this.renderQueueTint = buffer.tint;
+    this.renderQueueTextureId = buffer.textureId;
+    this.renderQueueAnchorX = buffer.anchorX;
+    this.renderQueueAnchorY = buffer.anchorY;
+    this.renderQueueFrameIndex = buffer.frameIndex;
+    this.renderQueueType = buffer.type;
+    this.renderQueueEntityIndex = buffer.entityIndex;
+  }
+
+  /**
+   * Set the current read buffer for shadow render queue
+   * @param {number} bufferIdx - 0 or 1
+   */
+  _setShadowReadBuffer(bufferIdx) {
+    const buffer = this.shadowRenderQueueBuffers[bufferIdx];
+    if (!buffer) return;
+
+    this.shadowRenderQueueCount = buffer.count;
+    this.shadowRenderQueueX = buffer.x;
+    this.shadowRenderQueueY = buffer.y;
+    this.shadowRenderQueueScaleX = buffer.scaleX;
+    this.shadowRenderQueueScaleY = buffer.scaleY;
+    this.shadowRenderQueueRotation = buffer.rotation;
+    this.shadowRenderQueueAlpha = buffer.alpha;
+    this.shadowRenderQueueTint = buffer.tint;
+    this.shadowRenderQueueTextureId = buffer.textureId;
+    this.shadowRenderQueueAnchorX = buffer.anchorX;
+    this.shadowRenderQueueAnchorY = buffer.anchorY;
   }
 
   /**
@@ -926,7 +986,32 @@ class PixiRenderer extends AbstractWorker {
    * Update method called each frame (implementation of AbstractWorker.update)
    */
   update(deltaTime, dtRatio, resuming) {
-    // Accumulate time for decoration sway animation
+    // ========================================
+    // DOUBLE BUFFER SYNC: Select read buffer
+    // ========================================
+    // pixi_worker NEVER waits - always reads the latest available frame
+    // If pre_render hasn't written anything new, we just re-render the same buffer
+    if (this.renderQueueSync) {
+      const readyFrame = Atomics.load(this.renderQueueSync, 0);
+
+      // Only switch buffers if a new frame is available
+      if (readyFrame > this.lastReadFrame) {
+        const readBufferIdx = readyFrame % 2;
+        this._setReadBuffer(readBufferIdx);
+
+        // Shadow queue uses same buffer index (swapped together)
+        if (this.shadowSpritesEnabled) {
+          this._setShadowReadBuffer(readBufferIdx);
+        }
+
+        // Signal that we've consumed this frame
+        // This allows pre_render_worker to reuse this buffer
+        this.lastReadFrame = readyFrame;
+        Atomics.store(this.renderQueueSync, 1, readyFrame);
+        // Wake pre_render_worker if it was waiting (it might be if >1 frame ahead)
+        Atomics.notify(this.renderQueueSync, 1, 1);
+      }
+    }
 
     // Calculate interpolation alpha for smooth movement
     // When renderer FPS > physics FPS, alpha < 1.0 (smooth interpolation)
@@ -972,7 +1057,7 @@ class PixiRenderer extends AbstractWorker {
 
     // Light glow sprites are now in the render queue (type=3), no separate update needed
 
-    // Use render queue from particle_worker - no fallback
+    // Use render queue from pre_render_worker - no fallback
     this.updateSpritesFromRenderQueue();
 
     // ========================================
@@ -2497,71 +2582,80 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     // ========================================
-    // RENDER QUEUE SYSTEM - Initialize
+    // RENDER QUEUE SYSTEM - Initialize (DOUBLE BUFFERED)
     // ========================================
-    if (data.renderQueue && data.renderQueue.data) {
-      console.log('PIXI WORKER: Initializing render queue system...');
+    if (data.renderQueue && data.renderQueue.dataA && data.renderQueue.dataB) {
+      console.log('PIXI WORKER: Initializing double-buffered render queue system...');
       this.renderQueueEnabled = true;
       this.renderQueueMaxItems = data.renderQueue.maxItems;
-      const sab = data.renderQueue.data;
 
-      // Create typed array views over the SharedArrayBuffer
-      // Must match layout from particle_worker
+      // Initialize sync buffer
+      this.renderQueueSync = new Int32Array(data.renderQueue.sync);
+      this.lastReadFrame = -1;
+
       const maxItems = this.renderQueueMaxItems;
-      let offset = 0;
 
-      this.renderQueueCount = new Int32Array(sab, offset, 1);
-      offset += 4;
+      // Create typed array views for BOTH buffers
+      const bufferSABs = [data.renderQueue.dataA, data.renderQueue.dataB];
 
-      this.renderQueueX = new Float32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+      for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
+        const sab = bufferSABs[bufIdx];
+        let offset = 0;
 
-      this.renderQueueY = new Float32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+        const buffer = {
+          count: new Int32Array(sab, offset, 1),
+        };
+        offset += 4;
 
-      this.renderQueueScaleX = new Float32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+        buffer.x = new Float32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      this.renderQueueScaleY = new Float32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+        buffer.y = new Float32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      this.renderQueueRotation = new Float32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+        buffer.scaleX = new Float32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      this.renderQueueAlpha = new Float32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+        buffer.scaleY = new Float32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      this.renderQueueTint = new Uint32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+        buffer.rotation = new Float32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      this.renderQueueTextureId = new Uint16Array(sab, offset, maxItems);
-      offset += maxItems * 2;
+        buffer.alpha = new Float32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      // Align to 4 bytes
-      offset = Math.ceil(offset / 4) * 4;
+        buffer.tint = new Uint32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      this.renderQueueAnchorX = new Float32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+        buffer.textureId = new Uint16Array(sab, offset, maxItems);
+        offset += maxItems * 2;
 
-      this.renderQueueAnchorY = new Float32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+        offset = Math.ceil(offset / 4) * 4;
 
-      // Frame index for entity animations
-      this.renderQueueFrameIndex = new Uint8Array(sab, offset, maxItems);
-      offset += maxItems;
+        buffer.anchorX = new Float32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      // Align to 4 bytes
-      offset = Math.ceil(offset / 4) * 4;
+        buffer.anchorY = new Float32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      // Type (0=entity, 1=particle, 2=decoration) - for shadow system
-      this.renderQueueType = new Uint8Array(sab, offset, maxItems);
-      offset += maxItems;
+        buffer.frameIndex = new Uint8Array(sab, offset, maxItems);
+        offset += maxItems;
 
-      // Align to 4 bytes for Int32Array
-      offset = Math.ceil(offset / 4) * 4;
+        offset = Math.ceil(offset / 4) * 4;
 
-      // Entity index (original index for shadow texture lookup, -1 for non-entities)
-      this.renderQueueEntityIndex = new Int32Array(sab, offset, maxItems);
+        buffer.type = new Uint8Array(sab, offset, maxItems);
+        offset += maxItems;
+
+        offset = Math.ceil(offset / 4) * 4;
+
+        buffer.entityIndex = new Int32Array(sab, offset, maxItems);
+
+        this.renderQueueBuffers[bufIdx] = buffer;
+      }
+
+      // Set initial read buffer (frame 0 uses buffer 0)
+      this._setReadBuffer(0);
 
       // Entity texture lookup buffer (separate SAB)
       // Maps entityIndex -> last computed globalTextureId for shadow system
@@ -2574,7 +2668,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._rqSpritePoolIndices = new Array(maxItems).fill(-1);
       this._rqPrevCount = 0;
 
-      console.log(`PIXI WORKER: Render queue initialized (max ${maxItems} items)`);
+      console.log(`PIXI WORKER: Double-buffered render queue initialized (max ${maxItems} items)`);
     } else {
       console.log('PIXI WORKER: Render queue NOT enabled');
     }
@@ -2689,51 +2783,62 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   createCastedShadowsSystem(data) {
     // ========================================
-    // SHADOW RENDER QUEUE - Initialize (requires lighting)
+    // SHADOW RENDER QUEUE - Initialize (DOUBLE BUFFERED)
     // ========================================
-    if (data.shadows && data.shadows.enabled && data.shadows.renderQueueData) {
+    if (data.shadows && data.shadows.enabled && data.shadows.renderQueueDataA && data.shadows.renderQueueDataB) {
       this.shadowSpritesEnabled = true;
       this.maxShadowRenderItems = data.shadows.maxRenderItems;
 
-      // Create typed array views over the SharedArrayBuffer
-      const sab = data.shadows.renderQueueData;
       const maxItems = this.maxShadowRenderItems;
-      let offset = 0;
 
-      this.shadowRenderQueueCount = new Int32Array(sab, offset, 1);
-      offset += 4;
+      // Create typed array views for BOTH shadow buffers
+      const shadowSABs = [data.shadows.renderQueueDataA, data.shadows.renderQueueDataB];
 
-      this.shadowRenderQueueX = new Float32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+      for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
+        const sab = shadowSABs[bufIdx];
+        let offset = 0;
 
-      this.shadowRenderQueueY = new Float32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+        const buffer = {
+          count: new Int32Array(sab, offset, 1),
+        };
+        offset += 4;
 
-      this.shadowRenderQueueScaleX = new Float32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+        buffer.x = new Float32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      this.shadowRenderQueueScaleY = new Float32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+        buffer.y = new Float32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      this.shadowRenderQueueRotation = new Float32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+        buffer.scaleX = new Float32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      this.shadowRenderQueueAlpha = new Float32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+        buffer.scaleY = new Float32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      this.shadowRenderQueueTint = new Uint32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+        buffer.rotation = new Float32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      this.shadowRenderQueueTextureId = new Uint16Array(sab, offset, maxItems);
-      offset += maxItems * 2;
+        buffer.alpha = new Float32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      // Align to 4 bytes for Float32Array
-      offset = Math.ceil(offset / 4) * 4;
+        buffer.tint = new Uint32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
 
-      this.shadowRenderQueueAnchorX = new Float32Array(sab, offset, maxItems);
-      offset += maxItems * 4;
+        buffer.textureId = new Uint16Array(sab, offset, maxItems);
+        offset += maxItems * 2;
 
-      this.shadowRenderQueueAnchorY = new Float32Array(sab, offset, maxItems);
+        offset = Math.ceil(offset / 4) * 4;
+
+        buffer.anchorX = new Float32Array(sab, offset, maxItems);
+        offset += maxItems * 4;
+
+        buffer.anchorY = new Float32Array(sab, offset, maxItems);
+
+        this.shadowRenderQueueBuffers[bufIdx] = buffer;
+      }
+
+      // Set initial read buffer (same as main queue)
+      this._setShadowReadBuffer(0);
 
       // Pre-allocate sprite arrays (uses central PixiParticlePool)
       this._shadowSprites = new Array(maxItems).fill(null);
@@ -2743,7 +2848,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Create shadow RenderTexture system
       this.createShadowSpriteSystem();
 
-      console.log(`PIXI WORKER: Shadow render queue enabled (${maxItems} max items)`);
+      console.log(`PIXI WORKER: Double-buffered shadow render queue enabled (${maxItems} max items)`);
     }
   }
 }
