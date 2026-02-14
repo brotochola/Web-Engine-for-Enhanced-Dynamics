@@ -120,7 +120,7 @@ Navigation SAB Layout:
 
 ### 5. Render Queue SAB
 
-Y-sorted render commands built by `particle_worker`, consumed by `pixi_worker`.
+Y-sorted render commands built by `pre_render_worker`, consumed by `pixi_worker`.
 
 ```
 RenderQueue Layout:
@@ -176,7 +176,64 @@ ActiveEntitiesData Layout:
 
 ---
 
-### 8. Per-Type Active Lists SAB
+### 8. Visible Entities SAB
+
+Compact list of entity indices currently on screen (written by `particle_worker`).
+
+```
+VisibleEntitiesData Layout:
+┌────────────┬───────────────────────────────────────┐
+│ count (u32)│ indices[maxEntities] (u16)            │
+└────────────┴───────────────────────────────────────┘
+```
+
+**Updated**: Each frame by `particle_worker` during visibility pass.
+
+---
+
+### 9. Active/Visible Particles SABs
+
+Compact lists for particle iteration (fused single-pass update by `particle_worker`).
+
+```
+ActiveParticlesData Layout:
+┌────────────┬───────────────────────────────────────┐
+│ count (u32)│ indices[maxParticles] (u16)           │
+└────────────┴───────────────────────────────────────┘
+
+VisibleParticlesData Layout:
+┌────────────┬───────────────────────────────────────┐
+│ count (u32)│ indices[maxParticles] (u16)           │
+└────────────┴───────────────────────────────────────┘
+```
+
+**Fused Pass**: `particle_worker` builds both lists in a single O(maxParticles) scan.
+
+---
+
+### 10. Active/Visible Decorations SABs
+
+Compact lists for decoration iteration.
+
+```
+ActiveDecorationsData Layout:
+┌────────────┬───────────────────────────────────────┐
+│ count (u32)│ indices[maxDecorations] (u16)         │
+└────────────┴───────────────────────────────────────┘
+
+VisibleDecorationsData Layout:
+┌────────────┬───────────────────────────────────────┐
+│ count (u32)│ indices[maxDecorations] (u16)         │
+└────────────┴───────────────────────────────────────┘
+```
+
+**Incremental Active List**: `DecorationPool` maintains `activeDecorationsData` on spawn/despawn (O(1) add, O(N) remove with swap-and-pop).
+
+**Visibility Pass**: `particle_worker` iterates only active decorations to build visible list.
+
+---
+
+### 11. Per-Type Active Lists SAB
 
 One active list per entity class for type-specific iteration.
 
@@ -195,7 +252,7 @@ PerTypeActiveLists Layout:
 
 ---
 
-### 9. Collision Data SAB
+### 12. Collision Data SAB
 
 Collision pairs written by `physics_worker`, read by `logic_worker`.
 
@@ -216,7 +273,7 @@ CollisionData Layout:
 
 ---
 
-### 10. Free Lists (Particles & Decorations)
+### 13. Free Lists (Particles & Decorations)
 
 LIFO stacks for O(1) allocation/deallocation.
 
@@ -234,7 +291,7 @@ FreeList Layout:
 
 ---
 
-### 11. Blood Decals SAB
+### 14. Blood Decals SAB
 
 RGBA pixel data for persistent decals.
 
@@ -254,7 +311,7 @@ BloodTilesDirty Layout:
 
 ---
 
-### 12. Worker Stats SABs
+### 15. Worker Stats SABs
 
 Per-worker performance counters (cache-line aligned at 64 bytes/16 floats).
 
@@ -277,15 +334,20 @@ Multi-Worker Stats: stride = 16 floats per worker
 | Grid cells              | Spatial (owned rows)| All workers                  |
 | Neighbor lists          | Spatial (owned rows)| Physics, Logic, Particle     |
 | Collision pairs         | Physics             | Logic                        |
-| Render queue            | Particle            | Renderer                     |
-| Shadow render queue     | Navigation          | Renderer                     |
-| Flowfields/Paths        | Navigation          | Logic                        |
+| Render queue            | Pre-render          | Renderer                     |
+| Shadow render queue     | Pre-render          | Renderer                     |
+| Flowfields/Paths        | Particle            | Logic                        |
 | Active entity lists     | Logic (spawn/despawn)| All workers                 |
+| Visible entities list   | Particle            | Pre-render                   |
+| Active particles list   | Particle            | Particle, Pre-render         |
+| Visible particles list  | Particle            | Pre-render                   |
+| Active decorations list | DecorationPool      | Particle                     |
+| Visible decorations list| Particle            | Pre-render                   |
 | Particle free list      | Particle (return)   | Logic (emit)                 |
 | Blood decals            | Particle (stamp)    | Renderer (upload)            |
-| Walkability grid        | Navigation          | Logic (queries)              |
+| Walkability grid        | Particle            | Logic (queries)              |
 | Cell sleeping state     | Particle            | All workers                  |
-| Derived properties      | Navigation          | All workers                  |
+| Derived properties      | Particle            | All workers                  |
 
 ---
 
@@ -315,4 +377,9 @@ Total SAB Memory ≈
   + maxDecorations × decorationComponentSize
   + bloodTileCount × tilePixelSize² × 4
   + workerStatsBuffers
+  + visibleEntitiesData: (4 + maxEntities × 2) bytes
+  + activeParticlesData: (4 + maxParticles × 2) bytes
+  + visibleParticlesData: (4 + maxParticles × 2) bytes
+  + activeDecorationsData: (4 + maxDecorations × 2) bytes
+  + visibleDecorationsData: (4 + maxDecorations × 2) bytes
 ```

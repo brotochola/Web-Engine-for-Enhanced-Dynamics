@@ -64,7 +64,7 @@ Lighting:
 ----------------------
 
 
-al computar sombras: tomar en cuenta la pos del shadowcaster, no de la luz
+
 
 
 
