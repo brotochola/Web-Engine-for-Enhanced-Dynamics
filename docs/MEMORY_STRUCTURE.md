@@ -145,7 +145,7 @@ RenderQueue Layout:
 
 ### 6. Shadow Render Queue SAB
 
-Shadow/light gradient sprites built by `nav_worker`.
+Shadow/light gradient sprites built by `pre_render_worker`.
 
 ```
 ShadowRenderQueue Layout:

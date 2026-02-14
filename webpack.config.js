@@ -12,8 +12,8 @@ const workerEntries = {
     'workers/physics_worker': './src/workers/physics_worker.js',
     'workers/pixi_worker': './src/workers/pixi_worker.js',
     'workers/spatial_worker': './src/workers/spatial_worker.js',
-    'workers/nav_worker': './src/workers/nav_worker.js',
     'workers/particle_worker': './src/workers/particle_worker.js',
+    'workers/pre_render_worker': './src/workers/pre_render_worker.js',
     'workers/pixi8webworker': './src/workers/pixi8webworker.js',
 };
 

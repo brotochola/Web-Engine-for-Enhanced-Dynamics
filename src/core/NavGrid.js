@@ -11,8 +11,8 @@
 // How it works:
 // 1. Entity calls NavGrid.requestVector(myX, myY, targetX, targetY, outVec)
 // 2. If flowfield for targetCell exists → returns direction vector immediately
-// 3. If flowfield doesn't exist → returns (0,0), sends request to nav_worker
-// 4. Nav_worker computes flowfield using Dijkstra's algorithm
+// 3. If flowfield doesn't exist → returns (0,0), sends request to particle_worker
+// 4. Particle worker computes flowfield using Dijkstra's algorithm
 // 5. Next frame, entity gets the direction vector
 //
 // Key concepts:
@@ -55,12 +55,12 @@
 //
 // - Main thread: Initializes SAB, can read for debug visualization
 // - Logic workers: READ-ONLY - call requestVector(), receive directions
-// - Nav worker: READ+WRITE - computes flowfields, writes to SAB
+// - Particle worker: READ+WRITE - computes flowfields, writes to SAB
 //
 // Communication flow:
 // 1. Logic worker calls requestVector() → flowfield not found
-// 2. Logic worker sends REQUEST_FLOWFIELD message to nav_worker via MessagePort
-// 3. Nav_worker computes Dijkstra, writes to slot, sets status = READY
+// 2. Logic worker sends REQUEST_FLOWFIELD message to particle_worker via MessagePort
+// 3. Particle worker computes Dijkstra, writes to slot, sets status = READY
 // 4. Next frame, logic worker finds flowfield and samples direction
 //
 // ============================================================================
@@ -125,7 +125,7 @@ const DIR_TO_VEC = [
  * Usage pattern:
  * - Call requestVector() or getNextAStarPosition() every frame
  * - If data not ready, returns fallback (0,0 or current position)
- * - Nav worker computes in background, next frame will have data
+ * - Particle worker computes in background, next frame will have data
  */
 export class NavGrid {
   // =========================================================
@@ -157,10 +157,10 @@ export class NavGrid {
   static _worldWidth = 0;
   static _worldHeight = 0;
 
-  // Communication port to nav worker (set by logic workers)
+  // Communication port to particle worker (set by logic workers)
   static _navWorkerPort = null;
 
-  // Request deduplication (avoid spamming nav worker)
+  // Request deduplication (avoid spamming particle worker)
   // Maps store targetCell/key -> version when request was made
   // Allows re-requesting after grid invalidation (version changes)
   static _pendingFlowfieldRequests = new Map();
@@ -273,9 +273,9 @@ export class NavGrid {
   }
 
   /**
-   * Set the MessagePort for communication with nav worker
+   * Set the MessagePort for communication with particle worker (handles navigation)
    * Called by logic workers during initialization
-   * @param {MessagePort} port - Port to nav worker
+   * @param {MessagePort} port - Port to particle worker
    */
   static setNavWorkerPort(port) {
     this._navWorkerPort = port;
@@ -343,7 +343,7 @@ export class NavGrid {
     if (slotIndex >= 0) {
       // Flowfield exists - sample vector at our current cell
       this._sampleFlowfield(slotIndex, currentCell, outVec);
-      // Note: LRU is handled by nav_worker when it receives requests
+      // Note: LRU is handled by particle_worker when it receives requests
     } else {
       // Flowfield not ready - return zero and request computation
       outVec.x = 0;
@@ -388,7 +388,7 @@ export class NavGrid {
       const nextCell = this._getPathNextCell(slotIndex, fromCell);
       if (nextCell >= 0) {
         this.getCellCenter(nextCell, outPos);
-        // Note: LRU is handled by nav_worker when it receives requests
+        // Note: LRU is handled by particle_worker when it receives requests
         return;
       }
     }
@@ -439,7 +439,7 @@ export class NavGrid {
     if (slotIndex >= 0) {
       // Path exists - copy to outPath
       this._copyPathToArray(slotIndex, outPath);
-      // Note: LRU is handled by nav_worker when it receives requests
+      // Note: LRU is handled by particle_worker when it receives requests
     } else {
       // Request calculation
       this._requestPath(fromCell, toCell);
@@ -524,7 +524,7 @@ export class NavGrid {
   }
 
   // =========================================================
-  // Mutation / Rebuild (NOT hot path - only nav worker)
+  // Mutation / Rebuild (NOT hot path - only particle worker)
   // =========================================================
 
   /**
@@ -547,7 +547,7 @@ export class NavGrid {
   }
 
   /**
-   * Set walkability for a cell (called by nav worker during rebuild)
+   * Set walkability for a cell (called by particle worker during rebuild)
    * @param {number} cellId - Cell ID
    * @param {number} walkable - 0 = blocked, 1+ = walkable (cost)
    */
@@ -558,7 +558,7 @@ export class NavGrid {
   }
 
   /**
-   * Get walkability array reference (for nav worker bulk updates)
+   * Get walkability array reference (for particle worker bulk updates)
    * @returns {Uint8Array} - Walkability array
    */
   static getWalkabilityArray() {
@@ -566,7 +566,7 @@ export class NavGrid {
   }
 
   /**
-   * Request nav worker to rebuild walkability from entity indices
+   * Request particle worker to rebuild walkability from entity indices
    * Can be called from any worker that has NavGrid initialized.
    * This invalidates ALL cached flowfields and paths.
    *
@@ -574,7 +574,7 @@ export class NavGrid {
    */
   static updateNavGrid(entityIndices) {
     if (!this._navWorkerPort) {
-      console.warn('NavGrid: No nav worker port set, cannot update grid');
+      console.warn('NavGrid: No particle worker port set, cannot update grid');
       return;
     }
 
@@ -680,7 +680,7 @@ export class NavGrid {
   }
 
   /**
-   * Request flowfield calculation from nav worker
+   * Request flowfield calculation from particle worker
    *
    * Uses version-based deduplication to avoid spamming requests.
    * If a request was already made for this targetCell in the current
@@ -690,7 +690,10 @@ export class NavGrid {
    * @private
    */
   static _requestFlowfield(targetCell) {
-    if (!this._navWorkerPort) return;
+    if (!this._navWorkerPort) {
+      console.warn('[NavGrid] _requestFlowfield called but no port set!');
+      return;
+    }
 
     // Get current version from SAB header
     const currentVersion = Atomics.load(this._headerView, 0);
@@ -799,7 +802,7 @@ export class NavGrid {
   }
 
   /**
-   * Request path calculation from nav worker
+   * Request path calculation from particle worker
    * @private
    */
   static _requestPath(fromCell, toCell) {
@@ -824,11 +827,11 @@ export class NavGrid {
   }
 
   // =========================================================
-  // Nav Worker specific methods (for writing results)
+  // Particle Worker specific methods (for writing results)
   // =========================================================
 
   /**
-   * Find or allocate a flowfield slot (nav worker only)
+   * Find or allocate a flowfield slot (particle worker only)
    *
    * Allocation strategy:
    * 1. If flowfield for targetCell already exists → return that slot
@@ -880,7 +883,7 @@ export class NavGrid {
   }
 
   /**
-   * Write flowfield data and mark as ready (nav worker only)
+   * Write flowfield data and mark as ready (particle worker only)
    *
    * @param {number} slotIndex - Slot to write to
    * @param {Int8Array} vectors - Vector data (2 bytes per cell: X, Y as Int8)
@@ -901,7 +904,7 @@ export class NavGrid {
   }
 
   /**
-   * Find or allocate a path slot (nav worker only)
+   * Find or allocate a path slot (particle worker only)
    * Uses LRU eviction if all slots are full
    * @returns {number} - Slot index
    */
@@ -950,7 +953,7 @@ export class NavGrid {
   }
 
   /**
-   * Write path data and mark as ready (nav worker only)
+   * Write path data and mark as ready (particle worker only)
    */
   static writePathData(slotIndex, pathCells, explicitLength = -1) {
     const headerOffset = this._pathHeadersOffset + slotIndex * this._PATH_HEADER_SIZE;

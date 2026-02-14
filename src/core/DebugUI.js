@@ -16,7 +16,7 @@ import {
   PHYSICS_STATS,
   SPATIAL_STATS,
   LOGIC_STATS,
-  NAVIGATION_STATS,
+  PRE_RENDER_STATS,
   WORKER_DISPLAY_CONFIG,
   createStatsReader,
   createMultiWorkerStatsReaderArray,
@@ -91,7 +91,7 @@ export class DebugUI {
       renderer: { values: new Array(60).fill(60), index: 0, sum: 3600 },
       particle: { values: new Array(60).fill(60), index: 0, sum: 3600 },
       physics: { values: new Array(60).fill(60), index: 0, sum: 3600 },
-      navigation: { values: new Array(60).fill(60), index: 0, sum: 3600 },
+      preRender: { values: new Array(60).fill(60), index: 0, sum: 3600 },
       spatial: [], // Array of smoothing objects (one per spatial worker)
       logic: [], // Array of smoothing objects (one per logic worker)
     };
@@ -211,8 +211,8 @@ export class DebugUI {
       logic: buffers.logicStats
         ? createMultiWorkerStatsReaderArray(buffers.logicStats, LOGIC_STATS, logicWorkerCount)
         : [],
-      navigation: buffers.navigationStats
-        ? createStatsReader(buffers.navigationStats, NAVIGATION_STATS)
+      preRender: buffers.preRenderStats
+        ? createStatsReader(buffers.preRenderStats, PRE_RENDER_STATS)
         : null,
     };
 
@@ -277,8 +277,8 @@ export class DebugUI {
     this.elements.mainFPS = mainFpsCell;
     table.appendChild(mainRow);
 
-    // Single workers (renderer, particle, physics, navigation)
-    const singleWorkers = ['renderer', 'particle', 'physics', 'navigation'];
+    // Single workers (renderer, particle, physics, preRender)
+    const singleWorkers = ['renderer', 'particle', 'physics', 'preRender'];
     for (const workerType of singleWorkers) {
       if (this.workerStatViews[workerType]) {
         const row = this._createWorkerStatRow(workerType, 0);
@@ -495,11 +495,11 @@ export class DebugUI {
       this.elements.mainFPS.textContent = 'FPS: ' + (mainFPSRounded / 100).toFixed(2);
     }
 
-    // Update single workers (renderer, particle, physics, navigation)
+    // Update single workers (renderer, particle, physics, preRender)
     this._updateSingleWorkerStats('renderer', RENDERER_STATS);
     this._updateSingleWorkerStats('particle', PARTICLE_STATS);
     this._updateSingleWorkerStats('physics', PHYSICS_STATS);
-    this._updateSingleWorkerStats('navigation', NAVIGATION_STATS);
+    this._updateSingleWorkerStats('preRender', PRE_RENDER_STATS);
 
     // Update multi-workers (spatial, logic)
     this._updateMultiWorkerStats('spatial', SPATIAL_STATS);

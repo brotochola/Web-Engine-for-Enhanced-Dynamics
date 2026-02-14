@@ -500,12 +500,15 @@ export class AbstractWorker {
 
     // Initialize NavGrid system (if navigation enabled)
     // Navigation buffer is shared across all workers
-    // Logic workers read flowfields/paths, nav worker writes them
+    // Logic workers read flowfields/paths, particle worker writes them
     if (data.buffers?.navigationData && data.config?.navigation?.enabled) {
+      console.log(`[${this.constructor.name}] Initializing NavGrid with navigation buffer`);
       NavGrid.initialize(data.buffers.navigationData, {
         worldWidth: data.config.worldWidth,
         worldHeight: data.config.worldHeight,
       });
+    } else {
+      console.log(`[${this.constructor.name}] NavGrid NOT initialized - navigationData: ${!!data.buffers?.navigationData}, enabled: ${data.config?.navigation?.enabled}`);
       // this.reportLog('NavGrid initialized for pathfinding');
     }
   }
@@ -644,10 +647,13 @@ export class AbstractWorker {
       };
     });
 
-    // If this worker has a port to the navigation worker, configure NavGrid to use it
-    // Logic workers use this to send pathfinding requests to the nav worker
-    if (this.workerPorts.has('navigation')) {
-      NavGrid.setNavWorkerPort(this.workerPorts.get('navigation'));
+    // If this worker has a port to the particle worker, configure NavGrid to use it
+    // Logic workers use this to send pathfinding requests to the particle worker
+    if (this.workerPorts.has('particle')) {
+      console.log(`[${this.constructor.name}] Setting NavGrid port to particle worker`);
+      NavGrid.setNavWorkerPort(this.workerPorts.get('particle'));
+    } else {
+      console.log(`[${this.constructor.name}] No particle port found. Available ports:`, Array.from(this.workerPorts.keys()));
     }
 
     // console.log(

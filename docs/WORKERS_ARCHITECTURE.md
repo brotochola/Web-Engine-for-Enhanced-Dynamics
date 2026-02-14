@@ -7,8 +7,8 @@
 | `spatial_worker`| 1–N          | No      | Spatial hashing, neighbor detection        |
 | `physics_worker`| 1            | No      | Verlet integration, collision resolution   |
 | `logic_worker`  | 1–N          | Yes     | Game logic, AI, entity lifecycle           |
-| `particle_worker`| 1           | No      | Particle physics, render queue, decals     |
-| `nav_worker`    | 1            | No      | Pathfinding, shadows, derived properties   |
+| `particle_worker`| 1           | No      | Particles, decals, navigation, derived props|
+| `pre_render_worker`| 1         | No      | Visibility, animation, render/shadow queues|
 | `pixi_worker`   | 1            | No      | PixiJS rendering                           |
 
 **Scripts**: "Yes" means the worker instantiates `GameObject` instances and runs user scripts.
@@ -44,26 +44,27 @@
 ### Particle Worker
 
 - **Updates particle physics**: position, velocity, lifetime, fading, rotation
-- **Builds main render queue**: collects entities/decorations/particles, Y-sorts,writes to SAB
-- **Animation frames**:  manages animated sprites current frame
 - **Stamps blood decals**: particles with `isDecal` write RGBA to blood tile SAB
-- **Updates cell sleeping state**: marks cells as sleeping when all entities are static/sleeping
-- **Manages entity screen visibility flag**: determines `isItOnScreen` per entity
-- **Writes to**: ParticleComponent, render queue, blood tiles, cell sleeping state, SpriteRenderer.isItOnScreen
-
-### Navigation Worker
-
+- **Decoration sway**: updates oscillation for animated decorations (with decimation)
 - **Computes flowfields**: Dijkstra with bucket queue, writes smoothed direction vectors
 - **Computes A\* paths**: binary heap priority queue, LRU cached results
 - **Rebuilds walkability**: marks grid cells blocked by static entities
-- **Builds shadow render queue**: calculates shadow geometry for lights, Y-sorted
 - **Computes derived properties**: `speed`, `velocityAngle`, `sleeping` for rigid bodies
-- **Writes to**: NavGrid (walkability, flowfields, paths), shadow render queue, RigidBody derived fields
+- **Writes to**: ParticleComponent, blood tiles, DecorationComponent, NavGrid, RigidBody derived fields
+
+### Pre-render Worker
+
+- **Updates screen visibility**: determines `isItOnScreen` for entities, particles, decorations
+- **Animation frames**: advances animated sprites current frame
+- **Builds main render queue**: collects visible entities/decorations/particles, Y-sorts, interpolates
+- **Builds shadow render queue**: calculates shadow geometry for lights, Y-sorted
+- **Screen coordinates**: calculates `screenX`, `screenY` for visible items
+- **Writes to**: SpriteRenderer.isItOnScreen, render queue, shadow render queue, screen coords
 
 ### Pixi Worker
 
-- **Reads render queue**: consumes Y-sorted items from particle worker
-- **Reads shadow queue**: renders shadows/light gradients from nav worker
+- **Reads render queue**: consumes Y-sorted items from pre-render worker
+- **Reads shadow queue**: renders shadows/light gradients from pre-render worker
 - **Renders to OffscreenCanvas**: manages PIXI.ParticleContainer
 - **Uploads blood tiles**: transfers dirty tile textures to GPU
 - **Handles camera**: applies view transforms from shared camera buffer
@@ -83,12 +84,12 @@ All workers run in a **lockstep-free async loop**:
 │          └─> update camera/input SABs                       │
 │                                                             │
 │  Workers (independent loops)                                │
-│    spatial_worker  ──────────────────────────────────────>  │
-│    physics_worker  ──────────────────────────────────────>  │
-│    logic_worker    ──────────────────────────────────────>  │
-│    particle_worker ──────────────────────────────────────>  │
-│    nav_worker      ──────────────────────────────────────>  │
-│    pixi_worker     ──────────────────────────────────────>  │
+│    spatial_worker    ────────────────────────────────────>  │
+│    physics_worker    ────────────────────────────────────>  │
+│    logic_worker      ────────────────────────────────────>  │
+│    particle_worker   ────────────────────────────────────>  │
+│    pre_render_worker ────────────────────────────────────>  │
+│    pixi_worker       ────────────────────────────────────>  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -103,7 +104,9 @@ physics_worker: read neighbors → resolve collisions → write positions + pair
        ↓ (positions + pairs available)
 logic_worker: read pairs → run scripts → write components
        ↓ (component data available)
-particle_worker: read components → build render queue
+particle_worker: read components → update particles, decals, navigation
+       ↓ (particles + nav data available)
+pre_render_worker: read components → build render queue + shadow queue
        ↓ (render queue available)
 pixi_worker: read render queue → render frame
 ```
@@ -169,8 +172,8 @@ Operations that must be atomic are **routed to a single worker**:
 ### Single Workers
 
 - **Physics**: Collision resolution requires global view of all pairs
-- **Particle**: Render queue must be built atomically
-- **Navigation**: Flowfield computation is per-target, no benefit from splitting
+- **Particle**: Particles, decals, navigation - owns these data regions
+- **Pre-render**: Render/shadow queues must be built atomically
 - **Renderer**: Single GPU context
 
 ---
@@ -182,17 +185,17 @@ Operations that must be atomic are **routed to a single worker**:
 Direct worker-to-worker communication without main thread relay:
 
 ```
-logic_worker[i] ←→ nav_worker     (flowfield/path requests)
-logic_worker[i] ←→ logic_worker[0] (spawn/despawn routing)
+logic_worker[i] ←→ particle_worker   (flowfield/path requests)
+logic_worker[i] ←→ logic_worker[0]   (spawn/despawn routing)
 ```
 
 ### Message Types
 
 | Message              | From          | To            | Purpose                    |
 |----------------------|---------------|---------------|----------------------------|
-| `REQUEST_FLOWFIELD`  | Logic         | Navigation    | Request flowfield compute  |
-| `REQUEST_PATH`       | Logic         | Navigation    | Request A* path compute    |
-| `REBUILD_FROM_INDICES`| Logic        | Navigation    | Update walkability         |
+| `REQUEST_FLOWFIELD`  | Logic         | Particle      | Request flowfield compute  |
+| `REQUEST_PATH`       | Logic         | Particle      | Request A* path compute    |
+| `REBUILD_FROM_INDICES`| Logic        | Particle      | Update walkability         |
 | `spawnRequest`       | Logic[1..N]   | Logic[0]      | Route spawn to worker 0    |
 | `despawnRequest`     | Logic[1..N]   | Logic[0]      | Route despawn to worker 0  |
 

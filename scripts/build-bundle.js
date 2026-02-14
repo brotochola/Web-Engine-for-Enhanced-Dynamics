@@ -38,7 +38,7 @@ const workers = {
     physics_worker: fs.readFileSync(path.join(workersDir, 'physics_worker.min.js'), 'utf8'),
     pixi_worker: fs.readFileSync(path.join(workersDir, 'pixi_worker.min.js'), 'utf8'),
     particle_worker: fs.readFileSync(path.join(workersDir, 'particle_worker.min.js'), 'utf8'),
-    nav_worker: fs.readFileSync(path.join(workersDir, 'nav_worker.min.js'), 'utf8'),
+    pre_render_worker: fs.readFileSync(path.join(workersDir, 'pre_render_worker.min.js'), 'utf8'),
 };
 
 // Step 3: Generate bundle entry with workers embedded in WEED
@@ -62,7 +62,7 @@ WEED.WorkerSources = {
   physics_worker: ${JSON.stringify(workers.physics_worker)},
   pixi_worker: ${JSON.stringify(workers.pixi_worker)},
   particle_worker: ${JSON.stringify(workers.particle_worker)},
-  nav_worker: ${JSON.stringify(workers.nav_worker)},
+  pre_render_worker: ${JSON.stringify(workers.pre_render_worker)},
 };
 
 // Helper to create worker from embedded source

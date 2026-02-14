@@ -169,6 +169,14 @@ export const LIGHTING_DEFAULTS = {
 };
 
 // ============================================================================
+// PRE-RENDER DEFAULTS
+// ============================================================================
+
+export const PRE_RENDER_DEFAULTS = {
+  noLimitFPS: true, // Set true to run visibility/render queue as fast as possible
+};
+
+// ============================================================================
 // NAVIGATION DEFAULTS
 // ============================================================================
 
@@ -178,7 +186,7 @@ export const NAVIGATION_DEFAULTS = {
   maxFlowfields: 16, // How many distinct flowfield targets to cache
   maxPaths: 64, // How many A* paths to cache
   maxPathLength: 128, // Maximum cells per path
-  noLimitFPS: true, // Nav worker runs as fast as possible by default
+  noLimitFPS: true, // Navigation (in particle_worker) runs as fast as possible by default
 };
 
 // ============================================================================
@@ -193,6 +201,7 @@ export const CONFIG_DEFAULTS = {
   decoration: DECORATION_DEFAULTS,
   logic: LOGIC_DEFAULTS,
   renderer: RENDERER_DEFAULTS,
+  preRender: PRE_RENDER_DEFAULTS,
   lighting: LIGHTING_DEFAULTS,
   navigation: NAVIGATION_DEFAULTS,
 };

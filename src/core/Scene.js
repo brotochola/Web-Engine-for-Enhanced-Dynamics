@@ -38,6 +38,7 @@ import {
   DECORATION_DEFAULTS,
   LOGIC_DEFAULTS,
   RENDERER_DEFAULTS,
+  PRE_RENDER_DEFAULTS,
   LIGHTING_DEFAULTS,
   NAVIGATION_DEFAULTS,
 } from './ConfigDefaults.js';
@@ -50,6 +51,7 @@ import {
   SPATIAL_STATS,
   LOGIC_STATS,
   NAVIGATION_STATS,
+  PRE_RENDER_STATS,
 } from '../workers/workers-utils.js';
 import { ParticleEmitter } from './ParticleEmitter.js';
 
@@ -109,7 +111,7 @@ class Scene {
       physics: null,
       renderer: null,
       particle: null,
-      navigation: null, // Dedicated pathfinding worker (if navigation.enabled)
+      preRender: null, // Pre-render worker for visibility, animation, render queues
     };
 
     // Query system for component-based entity filtering
@@ -143,11 +145,11 @@ class Scene {
     for (let i = 0; i < numberOfLogicWorkers; i++) {
       this.workerReadyStates[`logic${i}`] = false;
     }
-    // Particle worker always runs - it handles lighting, shadows, visibility, etc.
+    // Particle worker always runs - it handles particles, decals, navigation, derived properties
     this.workerReadyStates.particle = false;
 
-    // Navigation worker always runs - handles pathfinding and shadow render queue
-    this.workerReadyStates.navigation = false;
+    // Pre-render worker always runs - handles visibility, animation, render queues
+    this.workerReadyStates.preRender = false;
 
     this.totalWorkers =
       4 +
@@ -450,6 +452,12 @@ class Scene {
     this.config.renderer = {
       ...RENDERER_DEFAULTS,
       ...(this.config.renderer || {}),
+    };
+
+    // Pre-render defaults from centralized config
+    this.config.preRender = {
+      ...PRE_RENDER_DEFAULTS,
+      ...(this.config.preRender || {}),
     };
 
     // Lighting defaults from centralized config
@@ -981,7 +989,7 @@ class Scene {
       // Write header
       NavGrid.writeHeader(this.buffers.navigationData, navConfig, gridWidth, gridHeight);
 
-      // Initialize walkability to all walkable (nav worker will rebuild from static entities)
+      // Initialize walkability to all walkable (particle worker will rebuild from static entities)
       const walkabilityOffset = 32; // After header
       const walkabilityArray = new Uint8Array(
         this.buffers.navigationData,
@@ -1249,8 +1257,11 @@ class Scene {
       LOGIC_STATS.BUFFER_SIZE_PER_WORKER * this.numberOfLogicWorkers
     );
 
-    // Navigation stats buffer (always created - nav_worker handles shadows/derived properties too)
+    // Navigation stats buffer (used by particle_worker for navigation metrics)
     this.buffers.navigationStats = new SharedArrayBuffer(NAVIGATION_STATS.BUFFER_SIZE);
+
+    // Pre-render stats buffer (for visibility and render queue metrics)
+    this.buffers.preRenderStats = new SharedArrayBuffer(PRE_RENDER_STATS.BUFFER_SIZE);
 
     // Synchronization buffer
     const SYNC_BUFFER_SIZE = 5 * 4;
@@ -1553,10 +1564,10 @@ class Scene {
       connections.push({ from: `logic${i}`, to: 'logic0' });
     }
 
-    // Connect all logic workers to navigation worker
-    // Logic workers send pathfinding requests, nav worker computes and writes to SAB
+    // Connect all logic workers to particle worker
+    // Logic workers send pathfinding requests, particle worker computes and writes to SAB
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
-      connections.push({ from: `logic${i}`, to: 'navigation' });
+      connections.push({ from: `logic${i}`, to: 'particle' });
     }
 
     return setupWorkerCommunication(connections);
@@ -1599,16 +1610,16 @@ class Scene {
     this.workers.physics = makeWorker('physics_worker');
     this.workers.renderer = makeWorker('pixi_worker');
 
-    // Particle worker always runs - handles particles, lighting, shadows, visibility, etc.
+    // Particle worker always runs - handles particles, decals, navigation, derived properties
     this.workers.particle = makeWorker('particle_worker');
+
+    // Pre-render worker always runs - handles visibility, animation, render queues
+    this.workers.preRender = makeWorker('pre_render_worker');
 
     this.workers.physics.name = 'physics';
     this.workers.renderer.name = 'renderer';
     this.workers.particle.name = 'particle';
-
-    // Navigation worker always runs - handles pathfinding and shadow render queue
-    this.workers.navigation = makeWorker('nav_worker');
-    this.workers.navigation.name = 'navigation';
+    this.workers.preRender.name = 'preRender';
 
     // Set up early error handlers IMMEDIATELY after worker creation
     // This catches module loading errors (import failures, syntax errors) that would
@@ -1624,13 +1635,13 @@ class Scene {
     this.workers.physics.onerror = earlyErrorHandler('physics');
     this.workers.renderer.onerror = earlyErrorHandler('renderer');
     this.workers.particle.onerror = earlyErrorHandler('particle');
+    this.workers.preRender.onerror = earlyErrorHandler('preRender');
     for (let i = 0; i < this.numberOfSpatialWorkers; i++) {
       this.workers.spatialWorkers[i].onerror = earlyErrorHandler(`spatial${i}`);
     }
     for (let i = 0; i < this.workers.logicWorkers.length; i++) {
       this.workers.logicWorkers[i].onerror = earlyErrorHandler(`logic${i}`);
     }
-    this.workers.navigation.onerror = earlyErrorHandler('navigation');
 
     // Preload assets
     const spritesheetConfigs = this.imageUrls.spritesheets || {};
@@ -1837,42 +1848,46 @@ class Scene {
       workerPorts.physics ? Object.values(workerPorts.physics) : []
     );
 
-    // Particle worker always receives init data
+    // Particle worker - handles particles, decals, navigation, derived properties
     console.log(`[Scene]   → Initializing particle worker...`);
-    this.workers.particle.postMessage({
-      ...initData,
-      frameRateIndex: PARTICLE_INDEX,
-    });
+    const PARTICLE_NAV_INDEX = LOGIC_START_INDEX + this.numberOfLogicWorkers;
 
-    // Navigation worker always runs - handles pathfinding and shadow render queue
-    console.log(`[Scene]   → Initializing navigation worker...`);
-    const NAV_INDEX = LOGIC_START_INDEX + this.numberOfLogicWorkers;
+    // Create a MessageChannel for main thread ↔ particle worker communication (for nav requests)
+    const mainToParticleChannel = new MessageChannel();
+    const mainThreadNavPort = mainToParticleChannel.port1;
+    const particleWorkerNavPort = mainToParticleChannel.port2;
 
-    // Create a MessageChannel for main thread ↔ nav worker communication
-    const mainToNavChannel = new MessageChannel();
+    // Add the main thread port to particle worker's ports
+    const particlePorts = workerPorts.particle || {};
+    particlePorts.mainThread = particleWorkerNavPort;
 
-    // Keep port1 for main thread, send port2 to nav worker
-    const mainThreadNavPort = mainToNavChannel.port1;
-    const navWorkerPort = mainToNavChannel.port2;
-
-    // Add the main thread port to nav worker's ports
-    const navPorts = workerPorts.navigation || {};
-    navPorts.mainThread = navWorkerPort;
-
-    this.workers.navigation.postMessage(
+    this.workers.particle.postMessage(
       {
         ...initData,
-        workerPorts: navPorts,
-        frameRateIndex: NAV_INDEX,
+        workerPorts: particlePorts,
+        frameRateIndex: PARTICLE_INDEX,
       },
-      Object.values(navPorts)
+      Object.values(particlePorts)
     );
 
     // Set up the main thread's NavGrid port for sending requests (only if navigation enabled)
     if (this.config.navigation.enabled) {
       NavGrid.setNavWorkerPort(mainThreadNavPort);
-      mainThreadNavPort.start(); // Required to start receiving messages
+      mainThreadNavPort.start();
     }
+
+    // Pre-render worker - handles visibility, animation, render queues
+    console.log(`[Scene]   → Initializing pre-render worker...`);
+    const PRE_RENDER_INDEX = PARTICLE_NAV_INDEX + 1;
+
+    this.workers.preRender.postMessage({
+      ...initData,
+      buffers: {
+        ...initData.buffers,
+        preRenderStats: this.buffers.preRenderStats,
+      },
+      frameRateIndex: PRE_RENDER_INDEX,
+    });
 
     // Initialize renderer
     console.log(`[Scene]   → Initializing renderer worker...`);
