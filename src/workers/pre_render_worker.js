@@ -12,6 +12,7 @@ import { ShadowCaster } from '../components/ShadowCaster.js';
 import { FlashComponent } from '../components/FlashComponent.js';
 import { AbstractWorker } from './AbstractWorker.js';
 import { Grid } from '../core/Grid.js';
+import { Sun } from '../core/Sun.js';
 import {
     calculateCameraScreenBounds,
     screenBoundsToWorldBounds,
@@ -159,6 +160,21 @@ class PreRenderWorker extends AbstractWorker {
         this.visibleEntitiesCount = 0;
         this.visibleParticlesCount = 0;
         this.visibleDecorationsCount = 0;
+
+        // ========================================
+        // SUN / DIRECTIONAL LIGHT
+        // ========================================
+        // Sun provides parallel shadows (all shadows same direction)
+        // and modulates point light shadow visibility
+        this.sun = null;
+        this.sunEnabled = false;
+
+        // Pre-computed sun shadow direction (updated when sun changes)
+        this._sunShadowAngle = 0; // Radians, opposite to sun angle
+        this._sunShadowDirX = 0;
+        this._sunShadowDirY = 1;
+        this._sunShadowLength = 1; // Based on sun elevation
+        this._sunLastHour = -1; // Track for change detection
     }
 
     /**
@@ -385,6 +401,16 @@ class PreRenderWorker extends AbstractWorker {
             this._setShadowWriteBuffer(0);
 
             console.log(`[PRE_RENDER WORKER] Double-buffered shadow render queue initialized (${maxItems} max items)`);
+        }
+
+        // ========================================
+        // SUN SYSTEM - Initialize
+        // ========================================
+        if (data.sunData) {
+            this.sun = new Sun(data.sunData);
+            this.sunEnabled = this.sun.enabled;
+            this._updateSunShadowDirection();
+            console.log(`[PRE_RENDER WORKER] Sun system initialized (enabled: ${this.sunEnabled})`);
         }
 
         console.log('[PRE_RENDER WORKER] ✅ Initialize() completed!');
@@ -862,6 +888,29 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
+     * Update sun shadow direction based on current sun angle/elevation
+     * Called when sun hour changes
+     */
+    _updateSunShadowDirection() {
+        if (!this.sun) return;
+
+        const sunAngleRad = this.sun.angle * (Math.PI / 180);
+        // Shadow points opposite to sun direction
+        this._sunShadowAngle = sunAngleRad + Math.PI;
+        this._sunShadowDirX = Math.cos(this._sunShadowAngle);
+        this._sunShadowDirY = Math.sin(this._sunShadowAngle);
+
+        // Shadow length based on elevation (lower sun = longer shadows)
+        // Linear approximation: smooth progression from max at horizon to 0 at noon
+        // Avoids the "flat period" problem of tan-based calculation with hard cap
+        const elevation = this.sun.elevation;
+        const maxShadowFactor = 1.0; // Max shadow length = 1× caster height
+        this._sunShadowLength = maxShadowFactor * (1 - elevation / 90);
+
+        this._sunLastHour = this.sun.hour;
+    }
+
+    /**
      * Build shadow render queue
      */
     buildShadowRenderQueue() {
@@ -931,6 +980,81 @@ class PreRenderWorker extends AbstractWorker {
         const viewMaxX = worldBounds.maxX;
         const viewMinY = worldBounds.minY;
         const viewMaxY = worldBounds.maxY;
+
+        // ========================================
+        // SUN SHADOWS (rendered first, parallel direction)
+        // ========================================
+        // Check if sun hour changed (update shadow direction)
+        if (this.sun && this.sun.enabled) {
+            if (Math.abs(this.sun.hour - this._sunLastHour) > 0.01) {
+                this._updateSunShadowDirection();
+            }
+
+            // Only render sun shadows when sun is up (intensity > threshold)
+            const sunIntensity = this.sun.intensity;
+            if (sunIntensity > 0.1) {
+                const sunShadowAlpha = this.sun.shadowAlpha * sunIntensity;
+                const sunShadowAngle = this._sunShadowAngle;
+                const sunShadowDirX = this._sunShadowDirX;
+                const sunShadowDirY = this._sunShadowDirY;
+                const sunShadowLengthMult = this._sunShadowLength;
+
+                // Query all visible entities with ShadowCaster
+                const visibleData = this.visibleEntitiesData;
+                const visibleCount = visibleData ? visibleData[0] : 0;
+
+                for (let idx = 0; idx < visibleCount && writeIdx < maxItems && shadowCount < maxShadowSprites; idx++) {
+                    const entityIdx = visibleData[1 + idx];
+
+                    if (!shadowCasterActive[entityIdx] || !transformActive[entityIdx]) continue;
+                    if (maxShadowsPerEntity > 0 && entityShadowCounts[entityIdx] >= maxShadowsPerEntity) continue;
+
+                    const casterX = worldX[entityIdx];
+                    const casterY = worldY[entityIdx];
+                    let casterRadius = entityShadowRadius[entityIdx];
+                    if (Number.isNaN(casterRadius) || casterRadius <= 0) casterRadius = 10;
+                    const casterHeight = entityShadowHeight[entityIdx] || casterRadius;
+
+                    // Shadow position: offset from caster in sun shadow direction
+                    const posX = casterX - sunShadowDirX * casterRadius * 0.5;
+                    const posY = casterY - sunShadowDirY * casterRadius * 0.5;
+
+                    // Shadow length based on sun elevation and caster height
+                    const heightFactor = casterHeight * 0.025;
+                    const lengthScale = sunShadowLengthMult * heightFactor;
+                    const widthScale = 1;
+
+                    // Cull shadows outside view
+                    const shadowExtent = casterHeight * (1 + lengthScale);
+                    if (posX + shadowExtent < viewMinX || posX - shadowExtent > viewMaxX ||
+                        posY + shadowExtent < viewMinY || posY - shadowExtent > viewMaxY) continue;
+
+                    const textureId = entityLastTextureId ? entityLastTextureId[entityIdx] : 0;
+
+                    rqX[writeIdx] = posX;
+                    rqY[writeIdx] = posY;
+                    rqScaleX[writeIdx] = widthScale;
+                    rqScaleY[writeIdx] = lengthScale;
+                    rqRotation[writeIdx] = sunShadowAngle - 1.5707963267948966 + PI; // +PI/2 for anchor offset
+                    rqAlpha[writeIdx] = sunShadowAlpha;
+                    rqTint[writeIdx] = 0x000000;
+                    rqTextureId[writeIdx] = textureId;
+                    rqAnchorX[writeIdx] = 0.5;
+                    rqAnchorY[writeIdx] = 1.0;
+
+                    writeIdx++;
+                    shadowCount++;
+                    if (maxShadowsPerEntity > 0) entityShadowCounts[entityIdx]++;
+                }
+            }
+        }
+
+        // ========================================
+        // POINT LIGHT SHADOWS (suppressed when sun is bright)
+        // ========================================
+        // When sun intensity is high, point light shadows are less visible
+        const sunIntensity = this.sun?.enabled ? this.sun.intensity : 0;
+        const pointLightShadowMultiplier = 1 - (sunIntensity * 0.9); // At noon: 10% visibility
 
         const lightEntitiesRaw = this.queryActiveEntities(this._queryLightEmitter);
 
@@ -1021,6 +1145,8 @@ class PreRenderWorker extends AbstractWorker {
                 if (alpha > 1) alpha = 1;
                 if (alpha < 0) alpha = 0;
                 alpha *= 0.33;
+                // Suppress point light shadows when sun is bright
+                alpha *= pointLightShadowMultiplier;
 
                 const angle = Math.atan2(dy, dx);
 

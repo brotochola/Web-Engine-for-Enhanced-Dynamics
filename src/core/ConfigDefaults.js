@@ -156,9 +156,29 @@ export const RENDERER_DEFAULTS = {
 // LIGHTING DEFAULTS
 // ============================================================================
 
+/**
+ * Sun/directional light defaults
+ * The sun provides ambient light during daytime and casts parallel shadows
+ * When sun intensity is high, point light shadows are suppressed (realistic behavior)
+ */
+export const SUN_DEFAULTS = {
+  enabled: false, // Must be explicitly enabled
+  angle: 180, // Degrees (0=East, 90=South, 180=West, 270=North) - default facing south
+  elevation: 45, // Degrees above horizon (0=horizon, 90=overhead)
+  intensity: 0.7, // Light intensity (0-1), affects ambient brightness
+  color: 0xffffff, // Sun color (warm white default)
+  shadowAlpha: 0.4, // Base darkness of sun-cast shadows (0-1)
+  startHour: 12, // Starting hour for day cycle (0-24)
+  dayCycle: {
+    enabled: false, // Auto-advance time of day
+    speed: 1, // Multiplier (1 = real time, 60 = 1 minute = 1 hour)
+    dayDurationMinutes: 1440, // Real minutes for full day (1440 = 24 real hours)
+  },
+};
+
 export const LIGHTING_DEFAULTS = {
   enabled: false,
-  lightingAmbient: 0.05,
+  baseAmbient: 0.05, // Minimum ambient light (night/indoor) - renamed from lightingAmbient
   maxLights: 10,
   shadowsEnabled: false,
   maxShadowCastingLights: 20,
@@ -167,6 +187,7 @@ export const LIGHTING_DEFAULTS = {
   maxShadowSprites: 1000,
   maxFlashes: 0,
   resolution: 0.25,
+  sun: SUN_DEFAULTS,
 };
 
 // ============================================================================

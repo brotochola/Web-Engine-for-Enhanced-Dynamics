@@ -1,3 +1,19 @@
+-Sun
+-car
+-DecorationPools (ver md)
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ------------------------------
 IDEAS PARA JUEGOS:
@@ -10,8 +26,6 @@ IDEAS PARA JUEGOS:
 
 
 
-
-- no strings!, all constants
 
 
  JSDoc `@typedef`,
@@ -187,20 +201,6 @@ TENER AMBOS! y se puede desde tickall llamar a sistemas, q tmb son metodos estat
 ------------------------------------------------------------------------------------------------
 --- PHYSICS WORKER: ---
 ------------------------------------------------------------------------------------------------
-
-Distance Constraints - Final Summary
-Class: Constraint extends SharedAtomicPool
-SAB Arrays:
-Array	Type	Content
-pairs	Uint32	(entityA << 16) \| entityB
-restLength	Float32	Target distance
-stiffness	Float32	0-1 strength
-active	Uint8	Alive flag
-API:
-Constraint.add(a, b, dist, stiff) → idxConstraint.remove(idx)
-Solving: Physics worker, position-based, in substep loop.
-Thread-safe: Atomic free list from SharedAtomicPool.
-
 
 
 ------------------------------------------------------------------------------------------------

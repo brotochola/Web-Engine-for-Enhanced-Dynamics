@@ -1,0 +1,219 @@
+{
+  "frames": {
+    "COUPE_Burnt_000.png": {
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 85,
+        "h": 41
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 32,
+        "w": 85,
+        "h": 41
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "COUPE_Burnt_004.png": {
+      "frame": {
+        "x": 91,
+        "y": 2,
+        "w": 85,
+        "h": 41
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 32,
+        "w": 85,
+        "h": 41
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "COUPE_Burnt_003.png": {
+      "frame": {
+        "x": 180,
+        "y": 2,
+        "w": 73,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 14,
+        "y": 19,
+        "w": 73,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "COUPE_Burnt_007.png": {
+      "frame": {
+        "x": 2,
+        "y": 47,
+        "w": 73,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 24,
+        "w": 73,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "COUPE_Burnt_001.png": {
+      "frame": {
+        "x": 79,
+        "y": 47,
+        "w": 72,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 19,
+        "w": 72,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "COUPE_Burnt_005.png": {
+      "frame": {
+        "x": 2,
+        "y": 115,
+        "w": 72,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 15,
+        "y": 24,
+        "w": 72,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "COUPE_Burnt_002.png": {
+      "frame": {
+        "x": 257,
+        "y": 2,
+        "w": 42,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 18,
+        "w": 42,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "COUPE_Burnt_006.png": {
+      "frame": {
+        "x": 155,
+        "y": 74,
+        "w": 42,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 23,
+        "w": 42,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    }
+  },
+  "animations": {
+    "rotate": [
+      "COUPE_Burnt_000.png",
+      "COUPE_Burnt_001.png",
+      "COUPE_Burnt_002.png",
+      "COUPE_Burnt_003.png",
+      "COUPE_Burnt_004.png",
+      "COUPE_Burnt_005.png",
+      "COUPE_Burnt_006.png",
+      "COUPE_Burnt_007.png"
+    ]
+  },
+  "meta": {
+    "app": "http://free-tex-packer.com",
+    "version": "0.6.7",
+    "image": "texture.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 301,
+      "h": 181
+    },
+    "scale": 1
+  }
+}
