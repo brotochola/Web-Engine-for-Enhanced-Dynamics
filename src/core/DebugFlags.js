@@ -19,6 +19,7 @@ export const DEBUG_FLAGS = {
   SHOW_SLEEPING_CELLS: 14, // Highlight sleeping grid cells
   SHOW_COLLISION_CANDIDATES: 15, // Draw collision candidate connections
   SHOW_CONSTRAINTS: 16, // Draw distance constraint lines
+  SHOW_ENTITY_ORIGINS: 17, // Draw Transform.x, Transform.y position markers
 };
 
 // Selected entity index storage (offset in debug buffer after flags)
@@ -181,6 +182,14 @@ export class DebugFlags {
   }
 
   /**
+   * Enable/disable entity origin points (Transform.x, Transform.y) visualization
+   */
+  showEntityOrigins(enabled = true) {
+    this.flags[DEBUG_FLAGS.SHOW_ENTITY_ORIGINS] = enabled ? 1 : 0;
+    return this;
+  }
+
+  /**
    * Set the selected entity index (writes to shared buffer)
    * @param {number} entityIndex - Entity index or -1 for no selection
    */
@@ -231,6 +240,7 @@ export class DebugFlags {
     if (options.sleepingEntities !== undefined) this.showSleepingEntities(options.sleepingEntities);
     if (options.sleepingCells !== undefined) this.showSleepingCells(options.sleepingCells);
     if (options.collisionCandidates !== undefined) this.showCollisionCandidates(options.collisionCandidates);
+    if (options.entityOrigins !== undefined) this.showEntityOrigins(options.entityOrigins);
     return this;
   }
 
@@ -305,6 +315,7 @@ export class DebugFlags {
       sleepingCells: this.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_CELLS),
       collisionCandidates: this.isEnabled(DEBUG_FLAGS.SHOW_COLLISION_CANDIDATES),
       constraints: this.isEnabled(DEBUG_FLAGS.SHOW_CONSTRAINTS),
+      entityOrigins: this.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_ORIGINS),
     };
   }
 }
