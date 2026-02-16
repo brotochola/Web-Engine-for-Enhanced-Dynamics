@@ -31,6 +31,8 @@ export class Person extends Lootable {
 
   static punchRangeSq = 30 ** 2; // Distance to start punching
   static punchDamage = 0.3; // Damage per punch
+  static muzzleDistancePx = 30; // Distance from actor center to muzzle in world px
+  static muzzleHeightPx = -30; // Visual muzzle height (negative = above ground)
 
   // Flocking behavior (static - same for all Person instances)
   static minSquaredDistanceToGroup = 140 ** 2;
@@ -374,33 +376,11 @@ export class Person extends Lootable {
     // Trigger shoot animation
     this.personAnimationFSM.forceChangeState(PersonAnimationFSM.states.SHOOTING);
 
-    // Muzzle flash position and rotation based on direction
-    let flashOffsetX = 0;
-    let flashOffsetY = 0;
-    let muzzleRotation = 0;
-
-    switch (direction) {
-      case 'right':
-        flashOffsetX = 20;
-        flashOffsetY = -30;
-        muzzleRotation = 0; // 0 degrees
-        break;
-      case 'down':
-        flashOffsetX = 0;
-        flashOffsetY = -20;
-        muzzleRotation = Math.PI / 2; // 90 degrees
-        break;
-      case 'left':
-        flashOffsetX = -20;
-        flashOffsetY = -30;
-        muzzleRotation = Math.PI; // 180 degrees
-        break;
-      case 'up':
-        flashOffsetX = 0;
-        flashOffsetY = -45;
-        muzzleRotation = -Math.PI / 2; // 270 degrees (or -90 degrees)
-        break;
-    }
+    // Muzzle position from shooter center using target angle.
+    const muzzleDistancePx = this.constructor.muzzleDistancePx;
+    const muzzleHeightPx = this.constructor.muzzleHeightPx;
+    const muzzleX = this.x + Math.cos(lineAngle) * muzzleDistancePx;
+    const muzzleY = this.y + Math.sin(lineAngle) * muzzleDistancePx;
 
     //Deal Damage
     const target = GameObject.get(targetEntityIndex);
@@ -414,19 +394,6 @@ export class Person extends Lootable {
 
       //little fire: muzzle effect
       // Sprite renders at gun height (y + offsetY), but sorts at ground level (y)
-      const muzzleIndex = DecorationPool.spawn({
-        x: this.x + flashOffsetX,
-        y: this.y + 1, // Base Y position for sorting (ground level)
-        texture: "muzzle" + Math.floor(Math.random() * 3 + 1),
-        scaleX: 1,
-        scaleY: 1,
-        rotation: muzzleRotation,
-        alpha: 0.9,
-        anchorX: 0, // Start at shooter position
-        anchorY: 0.5, // Center vertically
-        offsetY: flashOffsetY, // Visual offset to gun height (negative value moves sprite up)
-      });
-
       // Bullet tracer particle (travels from shooter to victim in 3 frames)
       const tracerLength = 50;
       const angleDeg = (lineAngle * 180) / Math.PI;
@@ -434,10 +401,27 @@ export class Person extends Lootable {
       const tracerSpeed = 50;
 
       ParticleEmitter.emit({
+        count: 2,
+        x: muzzleX,
+        y: muzzleY + 1, // Base Y position for sorting (ground level)
+        texture: "muzzle" + Math.floor(Math.random() * 3 + 1),
+        scaleX: 1,
+        scaleY: 1,
+        rotation: { min: angleDeg * 0.9, max: angleDeg * 1.1 },
+        alpha: 0.9,
+        anchorX: 0, // Start at shooter position
+        anchorY: 0.5, // Center vertically
+        z: muzzleHeightPx,
+        gravity: 0,
+        lifespan: 50,
+        speed: 0
+      })
+
+      ParticleEmitter.emit({
         count: 1,
-        x: this.x + flashOffsetX,
-        y: this.y,
-        z: flashOffsetY,
+        x: muzzleX,
+        y: muzzleY,
+        z: muzzleHeightPx,
         angleXY: angleDeg,
         speed: tracerSpeed,
         gravity: 0,
@@ -450,22 +434,22 @@ export class Person extends Lootable {
         tweenToAlpha0: true
       });
 
-      setTimeout(() => {
-        DecorationPool.despawn(muzzleIndex);
-      }, 50);
+      // setTimeout(() => {
+      //   DecorationPool.despawn(muzzleIndex);
+      // }, 50);
 
       //create flash!
       Flash.create({
-        x: this.x + flashOffsetX,
-        y: this.y + flashOffsetY,
-        z: 0,
+        x: muzzleX,
+        y: muzzleY,
+        z: -muzzleHeightPx,
         lifespan: 18,
         color: 0xffaa00,
         intensity: 15000,
         hasGlowSprite: 0,
       });
 
-      this.shootingSparks(lineAngle, this.x + flashOffsetX, this.y + flashOffsetY)
+      this.shootingSparks(lineAngle, muzzleX, muzzleY)
 
     }, howMuchTimeToWaitUntilFire)
 

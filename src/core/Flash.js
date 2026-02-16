@@ -153,21 +153,23 @@ export class Flash extends GameObject {
    * Fades intensity over lifespan, despawns when expired
    */
   tick(dtRatio, deltaTime) {
+    const fc = FlashComponent;
     // Increment life
-    this.flashComponent.currentLife += deltaTime;
+    fc.currentLife[this.index] += deltaTime;
+    const currentLife = fc.currentLife[this.index];
+    const lifespan = fc.lifespan[this.index];
 
     // Calculate remaining ratio (1.0 -> 0.0)
-    const remaining = 1 - (this.flashComponent.currentLife / this.flashComponent.lifespan);
+    const remaining = 1 - (currentLife / lifespan);
 
     if (remaining <= 0) {
       // Flash expired
       this.despawn();
     } else {
       // Update light intensity (linear fade)
-      const newIntensity = this.flashComponent.initialIntensity * remaining;
-      this.lightEmitter.lightIntensity = newIntensity;
-      // Update cached sqrt(intensity) for visual range calculations
-      this.lightEmitter.sqrtLightIntensity = Math.sqrt(newIntensity);
+      const newIntensity = fc.initialIntensity[this.index] * remaining;
+      LightEmitter.lightIntensity[this.index] = newIntensity;
+
     }
   }
 }
