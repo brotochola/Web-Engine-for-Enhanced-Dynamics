@@ -336,13 +336,7 @@ export class GameObject {
    */
   static _addToTypeActiveList(EntityClass, entityIndex) {
     const typeList = EntityClass._activeList;
-    if (!typeList) {
-      // DEBUG: Log missing _activeList
-      if (EntityClass?.name === 'Flash') {
-        console.log(`[SPAWN DEBUG] WARNING: Flash._activeList is null/undefined!`);
-      }
-      return;
-    }
+    if (!typeList) return;
 
     const count = typeList[0];
     const insertPos = binarySearchInsertPoint(typeList, entityIndex, count);
@@ -1816,12 +1810,6 @@ export class GameObject {
     const logicWorker = typeof self !== 'undefined' ? self.logicWorker : null;
     if (logicWorker) {
       logicWorker.queueSpawnListUpdate(i, EntityClass.entityType, EntityClass);
-      // DEBUG: Log spawn queue
-      if (EntityClass.name === 'Flash') {
-        console.log(`[SPAWN DEBUG] Queued Flash ${i} for list update. Transform.active=${Transform.active[i]}, _activeList exists=${!!EntityClass._activeList}`);
-      }
-    } else if (EntityClass.name === 'Flash') {
-      console.log(`[SPAWN DEBUG] WARNING: No logicWorker for Flash ${i} spawn!`);
     }
 
     return instance;
