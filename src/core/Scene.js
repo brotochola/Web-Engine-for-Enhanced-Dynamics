@@ -1157,7 +1157,7 @@ class Scene {
     // ========================================
     // Sun provides ambient daylight and parallel shadows
     // Backed by SharedArrayBuffer for cross-worker access
-    const sunConfig = this.config.lighting?.sun || {};
+    const sunConfig = { ...SUN_DEFAULTS, ...this.config.lighting?.sun };
     if (sunConfig.enabled) {
       this.buffers.sunData = new SharedArrayBuffer(Sun.BYTE_LENGTH);
       Sun.initialize(this.buffers.sunData);
@@ -1165,7 +1165,7 @@ class Scene {
 
       // If day cycle is enabled, set initial time
       if (sunConfig.dayCycle?.enabled) {
-        Sun.setTimeOfDay(sunConfig.startHour || 12);
+        Sun.setTimeOfDay(sunConfig.startHour);
       }
 
       console.log(`[Scene] Sun system: enabled (hour: ${Sun.hour.toFixed(1)}, intensity: ${Sun.intensity.toFixed(2)})`);
@@ -1613,7 +1613,6 @@ class Scene {
     const animationFrameCount = [];
     let currentOffset = 0;
 
-    // Process bigAtlas animations in index order
     const animCount = bigAtlas.totalAnimations;
     for (let animIdx = 0; animIdx < animCount; animIdx++) {
       const animName = bigAtlas.indexToName[animIdx];
@@ -1624,6 +1623,9 @@ class Scene {
       animationFrameCount[animIdx] = frameCount;
       currentOffset += frameCount;
     }
+
+    // Get frame dimension arrays from SpriteSheetRegistry
+    const frameDimensions = SpriteSheetRegistry.buildFrameDimensionArrays();
 
     // Build proxy sheet mapping: proxyToGlobalAnim[sheetId][localAnimIdx] = globalAnimIdx
     // This maps (spritesheetId, animationState) → bigAtlas animation index
@@ -1673,6 +1675,8 @@ class Scene {
       proxyToGlobalAnim,
       animationNameToIndex,
       totalFrames: currentOffset,
+      frameWidth: frameDimensions?.frameWidth,   // Uint16Array[textureId] → pixel width
+      frameHeight: frameDimensions?.frameHeight, // Uint16Array[textureId] → pixel height
     };
   }
 

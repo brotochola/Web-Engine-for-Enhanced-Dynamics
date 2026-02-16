@@ -117,8 +117,8 @@ class SpriteSheetRegistry {
         const suggestions = this._findSimilar(animName, available).slice(0, 3);
         console.error(
           `❌ Animation "${animName}" not found in "${sheetName}"\n` +
-            `   Available animations: ${available.length}\n` +
-            (suggestions.length > 0 ? `   Did you mean: ${suggestions.join(', ')}?` : '')
+          `   Available animations: ${available.length}\n` +
+          (suggestions.length > 0 ? `   Did you mean: ${suggestions.join(', ')}?` : '')
         );
         return undefined;
       }
@@ -135,8 +135,8 @@ class SpriteSheetRegistry {
       const suggestions = this._findSimilar(animName, available).slice(0, 3);
       console.error(
         `❌ Animation "${animName}" not found in "${sheetName}"\n` +
-          `   Available animations: ${available.length}\n` +
-          (suggestions.length > 0 ? `   Did you mean: ${suggestions.join(', ')}?` : '')
+        `   Available animations: ${available.length}\n` +
+        (suggestions.length > 0 ? `   Did you mean: ${suggestions.join(', ')}?` : '')
       );
       return undefined;
     }
@@ -258,6 +258,63 @@ class SpriteSheetRegistry {
     if (!frameDims) return null;
 
     return frameDims.get(firstFrameName) || null;
+  }
+
+  /**
+   * Build frame dimension arrays for workers (Uint16Array indexed by textureId)
+   * Called once during Scene initialization, transferred to workers
+   *
+   * @returns {{frameWidth: Uint16Array, frameHeight: Uint16Array, totalFrames: number} | null}
+   */
+  static buildFrameDimensionArrays() {
+    const bigAtlas = this.spritesheets.get('bigAtlas');
+    if (!bigAtlas) {
+      console.warn('[SpriteSheetRegistry] bigAtlas not found, frame dimensions not built');
+      return null;
+    }
+
+    const frameDims = this.frameDimensions.get('bigAtlas');
+    if (!frameDims) {
+      console.warn('[SpriteSheetRegistry] bigAtlas frame dimensions not found');
+      return null;
+    }
+
+    // Count total frames
+    const animCount = bigAtlas.totalAnimations;
+    let totalFrames = 0;
+    for (let animIdx = 0; animIdx < animCount; animIdx++) {
+      const animName = bigAtlas.indexToName[animIdx];
+      const animData = bigAtlas.animations[animName];
+      totalFrames += animData ? animData.frameCount : 1;
+    }
+
+    // Allocate arrays (Uint16 - max 65535 pixels)
+    const frameWidth = new Uint16Array(totalFrames);
+    const frameHeight = new Uint16Array(totalFrames);
+
+    // Populate dimensions for each frame
+    let currentOffset = 0;
+    for (let animIdx = 0; animIdx < animCount; animIdx++) {
+      const animName = bigAtlas.indexToName[animIdx];
+      const animData = bigAtlas.animations[animName];
+      const frameCount = animData ? animData.frameCount : 1;
+
+      if (animData && animData.frames) {
+        for (let f = 0; f < animData.frames.length; f++) {
+          const frameName = animData.frames[f];
+          const dims = frameDims.get(frameName);
+          if (dims) {
+            frameWidth[currentOffset + f] = dims.w;
+            frameHeight[currentOffset + f] = dims.h;
+          }
+        }
+      }
+
+      currentOffset += frameCount;
+    }
+
+    console.log(`[SpriteSheetRegistry] Built frame dimension arrays: ${totalFrames} frames`);
+    return { frameWidth, frameHeight, totalFrames };
   }
 
   /**
@@ -444,7 +501,7 @@ class SpriteSheetRegistry {
     if (!this.spritesheets.has(spritesheet)) {
       console.error(
         `❌ ${entityName}: Unknown spritesheet "${spritesheet}"\n` +
-          `   Available: ${this.getSpritesheetNames().join(', ')}`
+        `   Available: ${this.getSpritesheetNames().join(', ')}`
       );
       return false;
     }
@@ -452,7 +509,7 @@ class SpriteSheetRegistry {
     if (defaultAnimation && !this.hasAnimation(spritesheet, defaultAnimation)) {
       console.error(
         `❌ ${entityName}: Invalid defaultAnimation "${defaultAnimation}"\n` +
-          `   Available: ${this.getAnimationNames(spritesheet).join(', ')}`
+        `   Available: ${this.getAnimationNames(spritesheet).join(', ')}`
       );
       return false;
     }
@@ -815,10 +872,8 @@ class SpriteSheetRegistry {
             });
 
             console.log(
-              `  ✅ Loaded spritesheet: ${sheetName} (${requiredFrames.size}/${
-                Object.keys(jsonData.frames).length
-              } frames, ${animationsToProcess.length}/${
-                Object.keys(jsonData.animations || {}).length
+              `  ✅ Loaded spritesheet: ${sheetName} (${requiredFrames.size}/${Object.keys(jsonData.frames).length
+              } frames, ${animationsToProcess.length}/${Object.keys(jsonData.animations || {}).length
               } animations)`
             );
           })
@@ -931,7 +986,7 @@ class SpriteSheetRegistry {
     if (actualWidth > 4096 || actualHeight > 4096) {
       console.warn(
         `⚠️ BigAtlas dimensions (${actualWidth}x${actualHeight}) exceed 4096x4096. ` +
-          `This may cause performance issues or fail to render on some mobile devices or older GPUs.`
+        `This may cause performance issues or fail to render on some mobile devices or older GPUs.`
       );
     }
 
@@ -978,8 +1033,7 @@ class SpriteSheetRegistry {
     }
 
     console.log(
-      `✅ BigAtlas created: ${actualWidth}x${actualHeight} with ${
-        Object.keys(frames).length
+      `✅ BigAtlas created: ${actualWidth}x${actualHeight} with ${Object.keys(frames).length
       } frames, ${Object.keys(animations).length} animations`
     );
 

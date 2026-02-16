@@ -1662,6 +1662,7 @@ export class GameObject {
 
     if (has.ShadowCaster) {
       ShadowCaster.active[i] = 1;
+      ShadowCaster.heightMultiplier[i] = 1; // Default: normal shadow (0 = no shadow)
     }
 
     if (has.SpriteRenderer) {

@@ -21,18 +21,20 @@ export class Tree extends GameObject {
 
   setup() {
     // this.rigidBody.static = 1;
-    this.setSprite('tree' + (Math.random() > 0.5 ? 1 : 2));
-    this.scale = Math.random() * 0.5 + 1;
-    this.setScale(Math.random() > 0.5 ? this.scale : -this.scale, this.scale);
+    const whichTree = Math.random() > 0.5 ? 1 : 2;
+    this.setSprite('tree' + whichTree);
+    const scale = Math.random() * 0.5 + 1;
+    this.setScale(Math.random() > 0.5 ? scale : -scale, scale);
 
     this.collider.shapeType = ShapeType.Circle;
-    this.collider.radius = 12 * this.scale;
-    this.collider.offsetY = -this.collider.radius * 0.5;
+    this.collider.radius = 12 * scale;
+    // this.collider.offsetY = -this.collider.radius * 0.5;
+    this.spriteRenderer.anchorY = 0.95;
+    this.spriteRenderer.anchorX = 0.45;
 
     this.collider.visualRange = this.collider.radius * 10
 
-    this.shadowCaster.shadowRadius = this.collider.radius * 2;
-    this.shadowCaster.height = 120 * this.scale;
+    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
   }
 
   onSpawned(spawnConfig = {}) { }

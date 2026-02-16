@@ -42,10 +42,10 @@ export class House extends GameObject {
     this.setScale(1, 1);
     this.collider.visualRange = 300;
 
-    this.shadowCaster.height = this.collider.height * 0.5;
+    this.shadowCaster.heightMultiplier = 0.5; // Shorter shadow for buildings
   }
 
-  onSpawned(spawnConfig = {}) {}
+  onSpawned(spawnConfig = {}) { }
 
   onDespawned() {
     // Could save stats, play death effects, etc.

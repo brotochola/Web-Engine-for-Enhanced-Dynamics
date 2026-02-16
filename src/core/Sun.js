@@ -329,22 +329,23 @@ export class Sun {
 
     /**
      * Initialize sun properties from a config object
-     * @param {Object} config - Sun configuration from scene config
+     * Config should be pre-merged with SUN_DEFAULTS by Scene
+     * @param {Object} config - Sun configuration (merged with defaults)
      */
     static initFromConfig(config) {
-        this.enabled = config.enabled ?? false;
-        this.angle = config.angle ?? 180;
-        this.elevation = config.elevation ?? 45;
-        this.intensity = config.intensity ?? 0.7;
-        this.color = config.color ?? 0xffffff;
-        this.shadowAlpha = config.shadowAlpha ?? 0.4;
-        this.hour = config.startHour ?? 12; // Default to noon
+        this.enabled = config.enabled;
+        this.angle = config.angle;
+        this.elevation = config.elevation;
+        this.intensity = config.intensity;
+        this.color = config.color;
+        this.shadowAlpha = config.shadowAlpha;
+        this.hour = config.startHour;
 
         // Shadow config
-        this.shadowAngleOffset = config.shadowAngleOffset ?? Math.PI;
-        this.shadowMinLengthRatio = config.shadowMinLengthRatio ?? 0.1;
-        this.shadowMaxLengthRatio = config.shadowMaxLengthRatio ?? 1.0;
-        this.shadowStretchAlphaFactor = config.shadowStretchAlphaFactor ?? 0.5;
+        this.shadowAngleOffset = config.shadowAngleOffset;
+        this.shadowMinLengthRatio = config.shadowMinLengthRatio;
+        this.shadowMaxLengthRatio = config.shadowMaxLengthRatio;
+        this.shadowStretchAlphaFactor = config.shadowStretchAlphaFactor;
 
         // Initialize shadow computed values
         this._updateShadowValues(this.elevation);

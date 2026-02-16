@@ -31,11 +31,10 @@ export class Barrel extends GameObject {
 
     this.collider.visualRange = 50;
 
-    this.shadowCaster.shadowRadius = this.collider.radius;
-    this.shadowCaster.height = 60;
+    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
   }
 
-  onSpawned(spawnConfig = {}) {}
+  onSpawned(spawnConfig = {}) { }
 
   onDespawned() {
     // Could save stats, play death effects, etc.
