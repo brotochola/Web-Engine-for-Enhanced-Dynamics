@@ -209,6 +209,7 @@ class PixiParticlePool {
     particle.x = 0;
     particle.y = 0;
     particle.rotation = 0;
+    particle.texture = null
 
     // Add to free list
     this.freeIndices.push(particleIndex);

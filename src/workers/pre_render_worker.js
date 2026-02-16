@@ -910,6 +910,8 @@ class PreRenderWorker extends AbstractWorker {
         const lightHeight = LightEmitter.height;
         const shadowCasterActive = ShadowCaster.active;
         const shadowHeightMultiplier = ShadowCaster.heightMultiplier;
+        const shadowAnchorOffsetX = ShadowCaster.anchorOffsetX;
+        const shadowAnchorOffsetY = ShadowCaster.anchorOffsetY;
         const flashActive = FlashComponent.active;
         const spriteScaleY = SpriteRenderer.scaleY;
         const spriteAnchorX = SpriteRenderer.anchorX;
@@ -974,6 +976,9 @@ class PreRenderWorker extends AbstractWorker {
                 const stretchAlphaMultiplier = 1 - Sun.shadowStretchAlphaFactor * (1 - stretchRatio);
                 const sunShadowAlpha = sunShadowBaseAlpha * stretchAlphaMultiplier;
 
+                // Precompute sun shadow rotation (constant for all sun shadows)
+                const sunShadowRotation = sunShadowAngle - 1.5707963267948966;
+
                 // Query all visible entities with ShadowCaster
                 const visibleData = this.visibleEntitiesData;
                 const visibleCount = visibleData ? visibleData[0] : 0;
@@ -1012,13 +1017,13 @@ class PreRenderWorker extends AbstractWorker {
                     rqY[writeIdx] = casterY;
                     rqScaleX[writeIdx] = 1;
                     rqScaleY[writeIdx] = lengthScale;
-                    // Sprite's natural "up" is -π/2, so subtract π/2 to align shadow direction
-                    rqRotation[writeIdx] = sunShadowAngle - 1.5707963267948966;
+                    rqRotation[writeIdx] = sunShadowRotation;
                     rqAlpha[writeIdx] = sunShadowAlpha;
                     rqTint[writeIdx] = 0x000000;
                     rqTextureId[writeIdx] = textureId;
-                    rqAnchorX[writeIdx] = anchorX;
-                    rqAnchorY[writeIdx] = anchorY;
+                    // Shadow anchor = sprite anchor + fixed offset (defines shadow pivot point on texture)
+                    rqAnchorX[writeIdx] = anchorX + (shadowAnchorOffsetX[entityIdx] || 0);
+                    rqAnchorY[writeIdx] = anchorY + (shadowAnchorOffsetY[entityIdx] || 0);
 
                     writeIdx++;
                     shadowCount++;
@@ -1135,12 +1140,14 @@ class PreRenderWorker extends AbstractWorker {
                 rqScaleX[shadowIdx] = 1;
                 rqScaleY[shadowIdx] = lengthScale;
                 // Sprite's natural "up" is -π/2, so subtract π/2 to align shadow direction
-                rqRotation[shadowIdx] = angle - 1.5707963267948966;
+                const pointShadowRotation = angle - 1.5707963267948966;
+                rqRotation[shadowIdx] = pointShadowRotation;
                 rqAlpha[shadowIdx] = alpha;
                 rqTint[shadowIdx] = 0x000000;
                 rqTextureId[shadowIdx] = textureId;
-                rqAnchorX[shadowIdx] = anchorX;
-                rqAnchorY[shadowIdx] = anchorY;
+                // Shadow anchor = sprite anchor + fixed offset (defines shadow pivot point on texture)
+                rqAnchorX[shadowIdx] = anchorX + (shadowAnchorOffsetX[neighborIdx] || 0);
+                rqAnchorY[shadowIdx] = anchorY + (shadowAnchorOffsetY[neighborIdx] || 0);
 
                 shadowsForThisLight++;
                 shadowCount++;

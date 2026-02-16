@@ -26,14 +26,21 @@ export class Trash extends Lootable {
         this.setSprite('trash');
         this.setScale(Math.random() > 0.5 ? 1 : -1, 1);
 
+        this.spriteRenderer.anchorY = 0.66
+        this.spriteRenderer.anchorX = 0.5
+
         this.collider.shapeType = ShapeType.Circle;
         this.rigidBody.friction = 0.8;
         this.collider.radius = 30
 
         this.collider.visualRange = this.collider.radius * 2
-        this.collider.offsetY = -15;
+        // this.collider.offsetY = -15;
 
         // Shadow uses default heightMultiplier = 1 (matches sprite scale)
+        this.shadowCaster.heightMultiplier = 1.5
+
+        this.shadowCaster.anchorOffsetY = -0.1
+        // this.shadowCaster.anchorOffsetX = 0.5
 
         this.lootableComponent.health = 1;
         this.lootableComponent.dropMoney = 100;
