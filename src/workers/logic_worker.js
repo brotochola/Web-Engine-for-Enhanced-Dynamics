@@ -80,6 +80,17 @@ class LogicWorker extends AbstractWorker {
     // This eliminates per-entity checks for the common case (no decimation)
     this.nonDecimatedTypes = []; // Array of {EntityClass, activeList} for tickInterval === 1
     this.decimatedTypes = [];    // Array of {EntityClass, activeList, tickInterval} for tickInterval > 1
+
+    // ========================================
+    // SPAWN/DESPAWN LIST UPDATE QUEUES
+    // ========================================
+    // List operations (activeEntities, perTypeActive, queries) are NOT thread-safe.
+    // Any worker can spawn/despawn (atomic freeList ops), but list updates are queued
+    // and processed by logic0 at the START of each frame (before any ticks).
+    // This eliminates race conditions in sorted list insertions/removals.
+    this.pendingSpawnListUpdates = [];   // [{entityIndex, entityType, EntityClass}, ...]
+    this.pendingDespawnListUpdates = []; // [{entityIndex, entityType, EntityClass}, ...]
+    this.receivedListUpdates = [];       // Batch updates received from other workers
   }
 
   /**
@@ -262,16 +273,136 @@ class LogicWorker extends AbstractWorker {
     }
   }
 
+  // ========================================
+  // SPAWN/DESPAWN LIST UPDATE QUEUE METHODS
+  // ========================================
+
   /**
-   * Update method called each frame (implementation of AbstractWorker.update)
-   * Uses job-based system: workers atomically claim jobs and process them
+   * Queue a spawn list update (called by GameObject.spawn)
+   * The actual list insertion will be done by logic0 at start of frame
    */
+  queueSpawnListUpdate(entityIndex, entityType, EntityClass) {
+    this.pendingSpawnListUpdates.push({ entityIndex, entityType, EntityClass });
+  }
+
+  /**
+   * Queue a despawn list update (called by GameObject.despawn)
+   * The actual list removal will be done by logic0 at start of frame
+   */
+  queueDespawnListUpdate(entityIndex, entityType, EntityClass) {
+    this.pendingDespawnListUpdates.push({ entityIndex, entityType, EntityClass });
+  }
+
+  /**
+   * Process all pending list updates (logic0 only, called at start of frame)
+   * This ensures all list operations happen single-threaded, avoiding race conditions.
+   */
+  processListUpdates() {
+    // Process own pending updates
+    this._processSpawnUpdates(this.pendingSpawnListUpdates);
+    this._processDespawnUpdates(this.pendingDespawnListUpdates);
+    this.pendingSpawnListUpdates = [];
+    this.pendingDespawnListUpdates = [];
+
+    // Process updates received from other workers
+    for (const batch of this.receivedListUpdates) {
+      if (batch.spawns) {
+        this._processSpawnUpdates(batch.spawns);
+      }
+      if (batch.despawns) {
+        this._processDespawnUpdates(batch.despawns);
+      }
+    }
+    this.receivedListUpdates = [];
+  }
+
+  /**
+   * Process spawn list updates - add entities to active lists
+   */
+  _processSpawnUpdates(updates) {
+    for (const update of updates) {
+      const { entityIndex, entityType, EntityClass } = update;
+      // Only add if entity is still active (wasn't despawned in same frame)
+      if (Transform.active[entityIndex] === 1) {
+        GameObject._addToActiveEntities(entityIndex);
+        GameObject._addToTypeActiveList(EntityClass, entityIndex);
+        GameObject._addToMatchingQueries(entityIndex, entityType);
+        // DEBUG: Log spawn list update processing
+        if (EntityClass?.name === 'Flash') {
+          console.log(`[SPAWN DEBUG] Added Flash ${entityIndex} to lists. _activeList[0]=${EntityClass._activeList?.[0]}, activeEntitiesData[0]=${GameObject.activeEntitiesData?.[0]}`);
+        }
+      } else if (EntityClass?.name === 'Flash') {
+        console.log(`[SPAWN DEBUG] Skipped Flash ${entityIndex} - Transform.active=${Transform.active[entityIndex]}`);
+      }
+    }
+  }
+
+  /**
+   * Process despawn list updates - remove entities from active lists
+   */
+  _processDespawnUpdates(updates) {
+    for (const update of updates) {
+      const { entityIndex, entityType, EntityClass } = update;
+      // Only remove if entity is actually inactive (wasn't respawned in same frame)
+      if (Transform.active[entityIndex] === 0) {
+        GameObject._removeFromMatchingQueries(entityIndex, entityType);
+        GameObject._removeFromActiveEntities(entityIndex);
+        GameObject._removeFromTypeActiveList(EntityClass, entityIndex);
+        // DEBUG: Log despawn list update processing
+        if (EntityClass?.name === 'Flash') {
+          console.log(`[DESPAWN DEBUG] Removed Flash ${entityIndex} from lists. _activeList[0]=${EntityClass._activeList?.[0]}, activeEntitiesData[0]=${GameObject.activeEntitiesData?.[0]}`);
+        }
+      } else if (EntityClass?.name === 'Flash') {
+        console.log(`[DESPAWN DEBUG] Skipped Flash ${entityIndex} removal - Transform.active=${Transform.active[entityIndex]} (was respawned?)`);
+      }
+    }
+  }
+
+  /**
+   * Send pending list updates to logic0 (called at end of frame by non-logic0 workers)
+   */
+  sendListUpdatesToLogic0() {
+    if (this.pendingSpawnListUpdates.length === 0 && this.pendingDespawnListUpdates.length === 0) {
+      return;
+    }
+
+    // Serialize EntityClass to class name for message passing
+    const spawns = this.pendingSpawnListUpdates.map(u => ({
+      entityIndex: u.entityIndex,
+      entityType: u.entityType,
+      className: u.EntityClass.name,
+    }));
+    const despawns = this.pendingDespawnListUpdates.map(u => ({
+      entityIndex: u.entityIndex,
+      entityType: u.entityType,
+      className: u.EntityClass.name,
+    }));
+
+    this.sendDataToWorker('logic0', {
+      msg: 'listUpdates',
+      spawns,
+      despawns,
+    });
+
+    this.pendingSpawnListUpdates = [];
+    this.pendingDespawnListUpdates = [];
+  }
+
   update(deltaTime, dtRatio, resuming) {
     this.frameStartTime = performance.now();
 
     // Reset stats for this frame
     this.entitiesProcessedThisFrame = 0;
     this.systemsExecutedThisFrame = 0;
+
+    // ========================================
+    // PHASE 0: PROCESS LIST UPDATES (logic0 only)
+    // ========================================
+    // All spawn/despawn list updates are queued and processed here BEFORE any ticks.
+    // This ensures single-threaded list operations, avoiding race conditions.
+    if (this.workerIndex === 0) {
+      this.processListUpdates();
+    }
 
     // Process collision callbacks BEFORE entity logic (Unity-style)
     if (this.collisionData) {
@@ -291,6 +422,7 @@ class LogicWorker extends AbstractWorker {
     const gameObjects = this.gameObjects;
     const accTime = this.accumulatedTime;
     const frameNum = this.frameNumber;
+    const transformActive = Transform.active; // Cache for active check
 
     // ========================================
     // PHASE 1: NON-DECIMATED ENTITIES (FAST PATH)
@@ -303,12 +435,17 @@ class LogicWorker extends AbstractWorker {
     for (let t = 0; t < nonDecimatedCount; t++) {
       const typeInfo = nonDecimatedTypes[t];
       const activeList = typeInfo.activeList;
-      const count = activeList[0];
+      const count = Math.min(activeList[0], activeList.length - 1);
 
       // Worker partitioning within this type's active list
       for (let idx = myIndex; idx < count; idx += totalWorkers) {
         const entityIndex = activeList[1 + idx];
+
+        // Skip despawned entities (may still be in list until logic0 processes removal)
+        if (transformActive[entityIndex] === 0) continue;
+
         const obj = gameObjects[entityIndex];
+        if (!obj || typeof obj.tick !== 'function') continue;
 
         activeCount++;
         this.entitiesProcessedThisFrame++;
@@ -338,13 +475,18 @@ class LogicWorker extends AbstractWorker {
       for (let t = 0; t < decimatedCount; t++) {
         const typeInfo = decimatedTypes[t];
         const activeList = typeInfo.activeList;
-        const count = activeList[0];
+        const count = Math.min(activeList[0], activeList.length - 1);
         const tickInterval = typeInfo.tickInterval; // Pre-cached, no prototype lookup
 
         // Worker partitioning within this type's active list
         for (let idx = myIndex; idx < count; idx += totalWorkers) {
           const entityIndex = activeList[1 + idx];
+
+          // Skip despawned entities (may still be in list until logic0 processes removal)
+          if (transformActive[entityIndex] === 0) continue;
+
           const obj = gameObjects[entityIndex];
+          if (!obj || typeof obj.tick !== 'function') continue;
 
           activeCount++;
           this.entitiesProcessedThisFrame++;
@@ -385,6 +527,13 @@ class LogicWorker extends AbstractWorker {
     // This allows entities to access Mouse.prevX, Mouse.prevY, Mouse.prevButton0 in their tick() methods
     if (this.workerIndex === 0) Mouse.updatePreviousValues();
 
+    // ========================================
+    // PHASE 3: SEND LIST UPDATES TO LOGIC0 (non-logic0 workers)
+    // ========================================
+    // At end of frame, send any queued spawn/despawn list updates to logic0
+    if (this.workerIndex !== 0) {
+      this.sendListUpdatesToLogic0();
+    }
   }
 
   /**
@@ -540,23 +689,20 @@ class LogicWorker extends AbstractWorker {
       }
 
       case 'despawn': {
-        // Only worker 0 handles despawn to keep freeList synchronized with spawn
+        // Only worker 0 handles despawn messages from main thread
         if (this.workerIndex !== 0) {
           break;
         }
 
         const { entityIndex } = data;
 
-        // Validate entity index
-        if (
-          entityIndex < 0 ||
-          entityIndex >= this.globalEntityCount ||
-          !Transform.active[entityIndex]
-        ) {
+        // Basic validation
+        if (entityIndex < 0 || entityIndex >= this.globalEntityCount) {
           break;
         }
 
         // Get the instance and despawn it
+        // Note: despawn() internally checks Transform.active to prevent double-despawn
         const instance = this.gameObjects[entityIndex];
         if (instance && instance.despawn) {
           instance.despawn();
@@ -617,6 +763,37 @@ class LogicWorker extends AbstractWorker {
         // console.log(
         //   `LOGIC WORKER ${this.workerIndex}: Cleared ${totalDespawned} entities`
         // );
+        break;
+      }
+
+      case 'listUpdates': {
+        // Only worker 0 processes list updates from other workers
+        if (this.workerIndex !== 0) {
+          break;
+        }
+
+        // Deserialize class names to EntityClass references
+        const { spawns, despawns } = data;
+
+        const deserializedSpawns = spawns?.map(u => ({
+          entityIndex: u.entityIndex,
+          entityType: u.entityType,
+          EntityClass: self[u.className],
+        })).filter(u => u.EntityClass) || [];
+
+        const deserializedDespawns = despawns?.map(u => ({
+          entityIndex: u.entityIndex,
+          entityType: u.entityType,
+          EntityClass: self[u.className],
+        })).filter(u => u.EntityClass) || [];
+
+        // Queue for processing at start of next frame
+        if (deserializedSpawns.length > 0 || deserializedDespawns.length > 0) {
+          this.receivedListUpdates.push({
+            spawns: deserializedSpawns,
+            despawns: deserializedDespawns,
+          });
+        }
         break;
       }
 

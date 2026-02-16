@@ -336,7 +336,13 @@ export class GameObject {
    */
   static _addToTypeActiveList(EntityClass, entityIndex) {
     const typeList = EntityClass._activeList;
-    if (!typeList) return;
+    if (!typeList) {
+      // DEBUG: Log missing _activeList
+      if (EntityClass?.name === 'Flash') {
+        console.log(`[SPAWN DEBUG] WARNING: Flash._activeList is null/undefined!`);
+      }
+      return;
+    }
 
     const count = typeList[0];
     const insertPos = binarySearchInsertPoint(typeList, entityIndex, count);
@@ -1333,36 +1339,53 @@ export class GameObject {
    * Despawn this entity (return it to the inactive pool)
    * This is the proper way to deactivate an entity
    *
-   * ATOMIC DESPAWN: Any worker can despawn directly using atomic free list operations
-   * No more worker-0 routing needed - freeList and freeListTop are SAB-backed
+   * MULTI-WORKER SAFETY:
+   * In multi-logic-worker mode, non-primary workers route despawn to logic0.
+   * This serializes shared active-list/query-list mutations and avoids list corruption.
+   */
+  /**
+   * Despawn this entity (return to pool)
+   *
+   * THREAD-SAFE ARCHITECTURE:
+   * - Any thread can call lifecycle hooks (onDespawned)
+   * - Any thread can deactivate components (unique index)
+   * - Any thread can do atomic freeList push
+   * - List updates (activeEntities, perTypeActive, queries) are QUEUED
+   * - Only logic0 processes list updates (at start of each frame)
    */
   despawn() {
+    const i = this.index;
+    const activeState = Transform.active[i];
     // Prevent double-despawn which corrupts the free list
-    if (Transform.active[this.index] === 0) return;
+    // 0 = inactive, 1 = active
+    if (activeState === 0) return;
 
     const EntityClass = this.constructor;
     const entityType = EntityClass.entityType;
 
+    // ========================================
+    // LIFECYCLE HOOKS (SAFE - local call)
+    // ========================================
     // LIFECYCLE: Call onDespawned() BEFORE deactivating
     // This allows cleanup, saving state, triggering effects, etc.
     if (this.onDespawned) {
       this.onDespawned();
     }
 
-    // INCREMENTAL UPDATE: Remove from query buffers and per-type list BEFORE deactivating
-    // This replaces the O(N) per-frame rebuild with O(1) per-despawn updates
-    GameObject._removeFromMatchingQueries(this.index, entityType);
-    GameObject._removeFromActiveEntities(this.index);
-    GameObject._removeFromTypeActiveList(EntityClass, this.index);
-
+    // ========================================
+    // COMPONENT DEACTIVATION (SAFE - unique index)
+    // ========================================
     // Deactivate all component active flags
-    Transform.active[this.index] = 0;
-    if (this.rigidBody) RigidBody.active[this.index] = 0;
-    if (this.collider) Collider.active[this.index] = 0;
-    if (this.spriteRenderer) SpriteRenderer.active[this.index] = 0;
-    if (this.lightEmitter) LightEmitter.active[this.index] = 0;
-    if (this.shadowCaster) ShadowCaster.active[this.index] = 0;
+    Transform.active[i] = 0;
+    if (this.rigidBody) RigidBody.active[i] = 0;
+    if (this.collider) Collider.active[i] = 0;
+    if (this.spriteRenderer) SpriteRenderer.active[i] = 0;
+    if (this.lightEmitter) LightEmitter.active[i] = 0;
+    if (this.shadowCaster) ShadowCaster.active[i] = 0;
 
+    // ========================================
+    // FREE LIST PUSH (ATOMIC - any thread)
+    // ========================================
     // ATOMIC: Return to free list using atomic increment (thread-safe)
     // Atomics.add returns OLD value, then increments
     if (EntityClass.freeList && EntityClass.freeListTop) {
@@ -1370,11 +1393,21 @@ export class GameObject {
       // Safety check - don't overflow the free list
       if (slot < EntityClass.poolSize) {
         // slot is the old count, so write at index slot
-        EntityClass.freeList[slot] = this.index;
+        EntityClass.freeList[slot] = i;
       } else {
         // Rollback - this shouldn't happen in normal operation
         Atomics.sub(EntityClass.freeListTop, 0, 1);
       }
+    }
+
+    // ========================================
+    // LIST UPDATES (QUEUED - processed by logic0)
+    // ========================================
+    // Queue list removal for logic0 to process at start of next frame
+    // This avoids race conditions in sorted list operations
+    const logicWorker = typeof self !== 'undefined' ? self.logicWorker : null;
+    if (logicWorker) {
+      logicWorker.queueDespawnListUpdate(i, entityType, EntityClass);
     }
   }
 
@@ -1545,6 +1578,12 @@ export class GameObject {
    * Works from BOTH main thread and logic workers with the same syntax:
    *   Ball.spawn({ x: 100, y: 200 })
    *
+   * THREAD-SAFE ARCHITECTURE:
+   * - Any thread can do atomic freeList pop and get index IMMEDIATELY
+   * - Any thread can set component data and call lifecycle hooks
+   * - List updates (activeEntities, perTypeActive, queries) are QUEUED
+   * - Only logic0 processes list updates (at start of each frame)
+   *
    * @param {Class|Object} EntityClassOrConfig - Entity class OR spawn config (when called as Ball.spawn(config))
    * @param {Object} spawnConfig - Initial configuration (position, velocity, etc.)
    * @param {number} [preAssignedIndex] - Optional pre-assigned entity index (from main thread)
@@ -1587,7 +1626,7 @@ export class GameObject {
     let i;
 
     // ========================================
-    // INDEX ACQUISITION
+    // INDEX ACQUISITION (ATOMIC - any thread)
     // ========================================
     if (preAssignedIndex >= 0) {
       // Use pre-assigned index from main thread (already acquired atomically there)
@@ -1595,7 +1634,6 @@ export class GameObject {
       i = preAssignedIndex;
     } else {
       // ATOMIC SPAWN: Any worker can spawn directly using atomic free list operations
-      // No more worker-0 routing needed - freeList and freeListTop are SAB-backed
       if (!EntityClass.freeList || !EntityClass.freeListTop) {
         console.error(
           `Cannot spawn ${EntityClass.name}: free list not initialized. Was scene properly initialized?`
@@ -1628,6 +1666,9 @@ export class GameObject {
       return null;
     }
 
+    // ========================================
+    // COMPONENT DATA SETUP (SAFE - unique index)
+    // ========================================
     // Reset component values to sensible defaults using direct array access (faster)
     // Check _hasComponents which is set in constructor based on entity's component list
     const has = instance._hasComponents;
@@ -1695,6 +1736,9 @@ export class GameObject {
       RigidBody.py[i] = Transform.y[i] - RigidBody.vy[i];
     }
 
+    // ========================================
+    // LIFECYCLE HOOKS (SAFE - local call)
+    // ========================================
     // LIFECYCLE: Call setup() to restore TYPE-level config after defaults were applied
     // setup() defines "what this entity type IS" (physics params, collision, render config)
     if (instance.setup) {
@@ -1760,17 +1804,25 @@ export class GameObject {
       }
     }
 
-    // NOW activate the entity (already done in main thread if preAssignedIndex was used)
+    // Activate the entity - this enables spatial_worker to add it to Grid
+    // and physics to process it. Must happen AFTER component setup.
     Transform.active[i] = 1;
 
-    // INCREMENTAL UPDATE: Add to activeEntitiesData, query buffers, and per-type list
-    // This replaces the O(N) per-frame rebuild with O(1) per-spawn updates
-    // When sortedActiveEntities is enabled, lists are kept sorted by index
-    // NOTE: Always do sorted insert, even with preAssignedIndex, because main thread
-    // only reserves the index (freeList) but doesn't update active lists (not atomic-safe)
-    GameObject._addToActiveEntities(i);
-    GameObject._addToTypeActiveList(EntityClass, i);
-    GameObject._addToMatchingQueries(i, EntityClass.entityType);
+    // ========================================
+    // LIST UPDATES (QUEUED - processed by logic0)
+    // ========================================
+    // Queue list update for logic0 to process at start of next frame
+    // This avoids race conditions in sorted list operations
+    const logicWorker = typeof self !== 'undefined' ? self.logicWorker : null;
+    if (logicWorker) {
+      logicWorker.queueSpawnListUpdate(i, EntityClass.entityType, EntityClass);
+      // DEBUG: Log spawn queue
+      if (EntityClass.name === 'Flash') {
+        console.log(`[SPAWN DEBUG] Queued Flash ${i} for list update. Transform.active=${Transform.active[i]}, _activeList exists=${!!EntityClass._activeList}`);
+      }
+    } else if (EntityClass.name === 'Flash') {
+      console.log(`[SPAWN DEBUG] WARNING: No logicWorker for Flash ${i} spawn!`);
+    }
 
     return instance;
   }
@@ -1847,7 +1899,9 @@ export class GameObject {
     }
 
     const startIndex = EntityClass.startIndex;
-    const endIndex = EntityClass.endIndex;
+    const endIndex = (EntityClass.endIndex !== undefined)
+      ? EntityClass.endIndex
+      : (startIndex + EntityClass.poolSize);
     const entityType = EntityClass.entityType;
 
     // Phase 1: Collect all active indices and call lifecycle hooks
@@ -1863,7 +1917,17 @@ export class GameObject {
     const shadowCasterActive = ShadowCaster.active;
 
     for (let i = startIndex; i < endIndex; i++) {
-      if (transformActive[i]) {
+      // Robust clear: treat any active component flag as "active entity".
+      // This recovers from partial/corrupted states where Transform.active got out of sync.
+      const isAnyComponentActive =
+        transformActive[i] ||
+        (rigidBodyActive && rigidBodyActive[i]) ||
+        (colliderActive && colliderActive[i]) ||
+        (spriteRendererActive && spriteRendererActive[i]) ||
+        (lightEmitterActive && lightEmitterActive[i]) ||
+        (shadowCasterActive && shadowCasterActive[i]);
+
+      if (isAnyComponentActive) {
         const instance = EntityClass.instances[i - startIndex];
 
         // Call lifecycle hook (same as individual despawn)

@@ -153,23 +153,38 @@ export class Flash extends GameObject {
    * Fades intensity over lifespan, despawns when expired
    */
   tick(dtRatio, deltaTime) {
+    const i = this.index;
     const fc = FlashComponent;
-    // Increment life
-    fc.currentLife[this.index] += deltaTime;
-    const currentLife = fc.currentLife[this.index];
-    const lifespan = fc.lifespan[this.index];
 
-    // Calculate remaining ratio (1.0 -> 0.0)
-    const remaining = 1 - (currentLife / lifespan);
+    // DEBUG: Log tick calls
+    // console.log(`[FLASH DEBUG] tick() called for Flash ${i}, Transform.active=${Transform.active[i]}, fc.active=${fc.active[i]}`);
 
-    if (remaining <= 0) {
-      // Flash expired
+    // Guard against stale ticks after despawn/list updates.
+    if (Transform.active[i] === 0 || fc.active[i] === 0) return;
+
+    const lifespan = fc.lifespan[i];
+    // Safety: if lifetime data is invalid, fail fast instead of leaking active flashes.
+    if (!Number.isFinite(lifespan) || lifespan <= 0) {
       this.despawn();
-    } else {
-      // Update light intensity (linear fade)
-      const newIntensity = fc.initialIntensity[this.index] * remaining;
-      LightEmitter.lightIntensity[this.index] = newIntensity;
-
+      return;
     }
+
+    const nextLife = fc.currentLife[i] + deltaTime;
+    if (!Number.isFinite(nextLife)) {
+      this.despawn();
+      return;
+    }
+    fc.currentLife[i] = nextLife;
+
+    if (nextLife >= lifespan) {
+      console.log(`[FLASH DEBUG] Flash ${i} expired (life=${nextLife.toFixed(0)}ms >= lifespan=${lifespan}ms), calling despawn()`);
+      this.despawn();
+      return;
+    }
+
+    // Update light intensity (linear fade)
+    const remaining = 1 - (nextLife / lifespan);
+    const newIntensity = fc.initialIntensity[i] * remaining;
+    LightEmitter.lightIntensity[i] = Number.isFinite(newIntensity) && newIntensity > 0 ? newIntensity : 0;
   }
 }

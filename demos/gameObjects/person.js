@@ -445,18 +445,18 @@ export class Person extends Lootable {
         z: -muzzleHeightPx,
         lifespan: 18,
         color: 0xffaa00,
-        intensity: 15000,
+        intensity: 10000,
         hasGlowSprite: 0,
       });
 
-      this.shootingSparks(lineAngle, muzzleX, muzzleY)
+      this.shootingSparks(lineAngle, muzzleX, muzzleY, muzzleHeightPx)
 
     }, howMuchTimeToWaitUntilFire)
 
     return true;
   }
 
-  shootingSparks(shootAngle, muzzleX, muzzleY) {
+  shootingSparks(shootAngle, muzzleX, muzzleY, muzzleHeightPx) {
     // Convert angle from radians to degrees for ParticleEmitter (which uses degrees)
     const angleDeg = (shootAngle * 180) / Math.PI;
     // Shotgun spread: 35 degree cone
@@ -465,8 +465,8 @@ export class Person extends Lootable {
     ParticleEmitter.emit({
       count: Math.floor(Math.random() * 20) + 40,
       x: muzzleX,
-      y: muzzleY + 30,
-      z: -30,
+      y: muzzleY + 1,
+      z: muzzleHeightPx,
       angleXY: { min: angleDeg - spreadDeg / 2, max: angleDeg + spreadDeg / 2 },
       speed: { min: 0.1, max: 20 },
       rotation: { min: 0, max: 360 },

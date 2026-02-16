@@ -159,6 +159,9 @@ class PixiParticlePool {
       particle.rotation = 0;
       particle.anchorX = 0.5;
       particle.anchorY = 0.5;
+      particle.x = -99999;
+      particle.y = -99999;
+      particle.texture = null;
 
       // CRITICAL: Reset texture to default to prevent texture bleeding between entities
       if (this.defaultTexture) {
@@ -206,8 +209,8 @@ class PixiParticlePool {
     particle.scaleX = 1;
     particle.scaleY = 1;
     particle.tint = 0xffffff;
-    particle.x = 0;
-    particle.y = 0;
+    particle.x = -99999;
+    particle.y = -99999;
     particle.rotation = 0;
     particle.texture = null
 

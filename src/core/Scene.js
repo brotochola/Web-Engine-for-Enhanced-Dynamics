@@ -2632,11 +2632,10 @@ class Scene {
     // ATOMIC SPAWN: Reserve index on main thread
     // ========================================
     // This enables immediate use of entity index (e.g., for constraints)
-    // Workers will receive the pre-assigned index and initialize their instances
-    //
-    // NOTE: Main thread only reserves the index and sets basic Transform data.
-    // Active list updates are done by worker 0 via GameObject.spawn() which
-    // maintains sorted order (required for binary search during despawn).
+    // Worker 0 receives the pre-assigned index and:
+    // 1. Sets up component data and calls lifecycle hooks
+    // 2. Queues list updates (activeEntities, perTypeActive, queries)
+    // 3. List updates are processed at start of next frame by logic0
     let entityIndex = -1;
 
     if (EntityClass && EntityClass.freeList && EntityClass.freeListTop) {
@@ -2647,17 +2646,14 @@ class Scene {
         // Got a valid index
         entityIndex = EntityClass.freeList[oldTop - 1];
 
-        // Initialize basic Transform data on main thread
-        // This makes the entity immediately "exist" for constraints
-        Transform.active[entityIndex] = 1;
+        // NOTE: Do NOT set Transform.active here!
+        // Worker 0 will set Transform.active = 1 after full setup.
+        // Setting it here would cause spatial_worker to add entity to Grid
+        // before it's in the active list (so it would never tick/despawn).
+        //
+        // We only set position so constraints can use the index immediately.
         Transform.x[entityIndex] = spawnConfig.x ?? 0;
         Transform.y[entityIndex] = spawnConfig.y ?? 0;
-
-        // NOTE: Do NOT update active lists here!
-        // Active lists must be sorted for binary search to work during despawn.
-        // Sorted insert is not atomic-safe across threads, so we let worker 0
-        // handle it via GameObject.spawn() which uses _addToTypeActiveList()
-        // and _addToActiveEntities() with proper sorted insert.
       } else {
         // Pool exhausted - restore counter
         Atomics.add(EntityClass.freeListTop, 0, 1);
@@ -2669,8 +2665,11 @@ class Scene {
     // ========================================
     // NOTIFY WORKER 0
     // ========================================
-    // Only worker 0 handles spawn messages (others would ignore anyway)
-    // Worker 0 calls GameObject.spawn() which does lifecycle (setup, onSpawned, etc.)
+    // Worker 0 calls GameObject.spawn() with preAssignedIndex which:
+    // - Skips freeList pop (already done above)
+    // - Sets up all component data
+    // - Calls lifecycle hooks (setup, onSpawned)
+    // - Queues list updates for processing at start of next frame
     const worker0 = this.workers.logicWorkers?.[0];
     if (worker0) {
       worker0.postMessage({
