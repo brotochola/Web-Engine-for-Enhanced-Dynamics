@@ -167,7 +167,7 @@ class SpriteSheetRegistry {
 
   /**
    * Get animation metadata (frameCount, frames, etc.)
-   * Handles proxy sheets transparently
+   * Works for both proxy and regular sheets
    *
    * @param {string} sheetName - Spritesheet name
    * @param {string} animName - Animation name
@@ -175,39 +175,23 @@ class SpriteSheetRegistry {
    */
   static getAnimationData(sheetName, animName) {
     const sheet = this.spritesheets.get(sheetName);
-    if (!sheet) return undefined;
-
-    if (sheet.isProxy) {
-      // Return proxy's own animation data (includes proxy-specific index)
-      return sheet.animations[animName];
-    }
-
-    return sheet.animations[animName];
+    return sheet?.animations[animName];
   }
 
   /**
    * Get all animation names for a spritesheet
    * Useful for UI, debugging, validation
-   * Handles proxy sheets transparently (returns unprefixed names)
    *
    * @param {string} sheetName - Spritesheet name
    * @returns {string[]} Array of animation names
    */
   static getAnimationNames(sheetName) {
     const sheet = this.spritesheets.get(sheetName);
-    if (!sheet) return [];
-
-    if (sheet.isProxy) {
-      // Return unprefixed animation names for developer convenience
-      return Object.keys(sheet.animations);
-    }
-
-    return Object.keys(sheet.animations);
+    return sheet ? Object.keys(sheet.animations) : [];
   }
 
   /**
    * Check if an animation exists
-   * Handles proxy sheets transparently
    *
    * @param {string} sheetName - Spritesheet name
    * @param {string} animName - Animation name
@@ -215,13 +199,7 @@ class SpriteSheetRegistry {
    */
   static hasAnimation(sheetName, animName) {
     const sheet = this.spritesheets.get(sheetName);
-    if (!sheet) return false;
-
-    if (sheet.isProxy) {
-      return animName in sheet.animations;
-    }
-
-    return animName in sheet.animations;
+    return sheet ? animName in sheet.animations : false;
   }
 
   /**
@@ -588,7 +566,6 @@ class SpriteSheetRegistry {
       this.height = height;
       this.padding = padding;
       this.freeRects = [{ x: 0, y: 0, width, height }];
-      this.usedRects = [];
     }
 
     insert(width, height, heuristic = 'best-short-side') {
@@ -640,17 +617,15 @@ class SpriteSheetRegistry {
     }
 
     placeRect(rect) {
-      let numRectsToProcess = this.freeRects.length;
-      for (let i = 0; i < numRectsToProcess; i++) {
-        if (this.splitFreeNode(this.freeRects[i], rect)) {
-          this.freeRects.splice(i, 1);
-          i--;
-          numRectsToProcess--;
+      // Mark rects for removal instead of splicing in loop (avoids O(n²) splices)
+      const toKeep = [];
+      for (let i = 0; i < this.freeRects.length; i++) {
+        if (!this.splitFreeNode(this.freeRects[i], rect)) {
+          toKeep.push(this.freeRects[i]);
         }
       }
-
+      this.freeRects = toKeep;
       this.pruneFreeList();
-      this.usedRects.push(rect);
     }
 
     splitFreeNode(freeNode, usedNode) {
@@ -697,19 +672,30 @@ class SpriteSheetRegistry {
     }
 
     pruneFreeList() {
-      for (let i = 0; i < this.freeRects.length; i++) {
-        for (let j = i + 1; j < this.freeRects.length; j++) {
+      // Mark contained rects for removal (avoids O(n²) splice operations)
+      const len = this.freeRects.length;
+      const keep = new Array(len).fill(true);
+
+      for (let i = 0; i < len; i++) {
+        if (!keep[i]) continue;
+        for (let j = i + 1; j < len; j++) {
+          if (!keep[j]) continue;
           if (this.isContainedIn(this.freeRects[i], this.freeRects[j])) {
-            this.freeRects.splice(i, 1);
-            i--;
+            keep[i] = false;
             break;
           }
           if (this.isContainedIn(this.freeRects[j], this.freeRects[i])) {
-            this.freeRects.splice(j, 1);
-            j--;
+            keep[j] = false;
           }
         }
       }
+
+      // Single pass to rebuild array
+      const newFreeRects = [];
+      for (let i = 0; i < len; i++) {
+        if (keep[i]) newFreeRects.push(this.freeRects[i]);
+      }
+      this.freeRects = newFreeRects;
     }
 
     isContainedIn(a, b) {
@@ -727,7 +713,13 @@ class SpriteSheetRegistry {
    * This combines all textures into a single atlas for optimal rendering performance
    *
    * @param {Object} assetsConfig - Asset configuration
-   * @param {Object} options - Packing options { maxWidth, maxHeight, padding, heuristic }
+   * @param {Object} options - Packing options from config.assets
+   * @param {number} options.maxAtlasWidth - Maximum atlas width (default: 4096)
+   * @param {number} options.maxAtlasHeight - Maximum atlas height (default: 4096)
+   * @param {number} options.atlasPadding - Padding between sprites (default: 2)
+   * @param {boolean} options.trimImages - Trim transparent pixels from individual images (default: true)
+   * @param {number} options.trimAlphaThreshold - Alpha threshold for trimming (default: 0)
+   * @param {string} options.heuristic - Packing heuristic (default: 'best-short-side')
    * @returns {Promise<Object>} - { canvas, json, proxySheets }
    *
    * @example
@@ -738,20 +730,30 @@ class SpriteSheetRegistry {
    *     person: { json: "/img/person.json", png: "/img/person.png" },
    *     lpc: { json: "/img/lpc.json", png: "/img/lpc.png" }
    *   }
-   * });
+   * }, config.assets);
    */
   static async createBigAtlas(
     assetsConfig,
-    options = {
-      maxWidth: 4096,
-      maxHeight: 4096,
-      padding: 2,
-      heuristic: 'best-short-side',
-    }
+    options = {}
   ) {
-    console.log('🎨 Creating BigAtlas from assets...');
+    // Merge with defaults
+    const {
+      maxAtlasWidth = 4096,
+      maxAtlasHeight = 4096,
+      atlasPadding = 2,
+      trimImages = true,
+      trimAlphaThreshold = 0,
+      heuristic = 'best-short-side',
+    } = options;
 
-    const { maxWidth, maxHeight, padding, heuristic } = options;
+    console.log('🎨 Creating BigAtlas from assets...');
+    if (trimImages) {
+      console.log(`  📐 Trimming enabled (alpha threshold: ${trimAlphaThreshold})`);
+    }
+
+    const maxWidth = maxAtlasWidth;
+    const maxHeight = maxAtlasHeight;
+    const padding = atlasPadding;
     const packer = new this.MaxRectsPacker(maxWidth, maxHeight, padding);
 
     const frames = {};
@@ -766,22 +768,51 @@ class SpriteSheetRegistry {
 
       individualImagePromises.push(
         this._loadImage(url).then((img) => {
+          let sourceImg = img;
+          let width = img.width;
+          let height = img.height;
+          let trimInfo = null;
+
+          // Apply trimming to individual images (not spritesheet frames)
+          if (trimImages) {
+            const trimResult = this._trimImage(img, trimAlphaThreshold);
+            if (trimResult) {
+              if (trimResult.wasTrimmed) {
+                sourceImg = trimResult.canvas;
+                width = trimResult.bounds.width;
+                height = trimResult.bounds.height;
+                trimInfo = trimResult.bounds;
+                console.log(
+                  `  ✅ Loaded image: ${name} (${img.width}x${img.height} → ${width}x${height} trimmed)`
+                );
+              } else {
+                console.log(`  ✅ Loaded image: ${name} (${img.width}x${img.height})`);
+              }
+            } else {
+              // Fully transparent image - still add it but warn
+              console.warn(`  ⚠️ Image "${name}" is fully transparent`);
+            }
+          } else {
+            console.log(`  ✅ Loaded image: ${name} (${img.width}x${img.height})`);
+          }
+
           imagesToPack.push({
             name: name,
-            img: img,
-            width: img.width,
-            height: img.height,
+            sourceImg: sourceImg,     // Trimmed canvas or original image
+            sourceRect: null,         // null = use entire source
+            width: width,
+            height: height,
+            // For trimmed images, sourceSize = trimmed size (anchors relative to visible content)
             sourceX: 0,
             sourceY: 0,
-            sourceWidth: img.width,
-            sourceHeight: img.height,
+            sourceWidth: width,
+            sourceHeight: height,
+            isSpritesheetFrame: false,
+            trimInfo: trimInfo,       // Store trim info for debugging
           });
 
           // Create a single-frame "animation" for this image
-          // This allows static textures to be referenced consistently
           animations[name] = [name];
-
-          console.log(`  ✅ Loaded image: ${name} (${img.width}x${img.height})`);
         })
       );
     }
@@ -800,15 +831,14 @@ class SpriteSheetRegistry {
             const animationsToProcess = [];
 
             if (jsonData.animations) {
-              Object.entries(jsonData.animations).forEach(([animName, frameList]) => {
-                if (excluded.includes(animName)) return;
-
+              for (const [animName, frameList] of Object.entries(jsonData.animations)) {
+                if (excluded.includes(animName)) continue;
                 animationsToProcess.push({ animName, frameList });
-                frameList.forEach((f) => requiredFrames.add(f));
-              });
+                for (const f of frameList) requiredFrames.add(f);
+              }
             } else {
               // If no animations defined, keep all frames
-              Object.keys(jsonData.frames).forEach((f) => requiredFrames.add(f));
+              for (const f of Object.keys(jsonData.frames)) requiredFrames.add(f);
             }
 
             // Create proxy sheet entry with its own index space
@@ -817,65 +847,117 @@ class SpriteSheetRegistry {
               targetSheet: 'bigAtlas',
               prefix: `${sheetName}_`,
               animations: {},
-              indexToName: {}, // Each proxy has its own animation index space
+              indexToName: {},
             };
 
-            // 2. Extract ONLY required frames from this spritesheet
-            Object.entries(jsonData.frames).forEach(([frameName, frameData]) => {
-              // Skip if this frame isn't used by any included animation
-              if (!requiredFrames.has(frameName)) return;
+            // Reusable canvas for frame extraction (sized to max frame)
+            let maxW = 0, maxH = 0;
+            for (const [frameName, frameData] of Object.entries(jsonData.frames)) {
+              if (!requiredFrames.has(frameName)) continue;
+              maxW = Math.max(maxW, frameData.frame.w);
+              maxH = Math.max(maxH, frameData.frame.h);
+            }
+            const extractCanvas = document.createElement('canvas');
+            extractCanvas.width = maxW;
+            extractCanvas.height = maxH;
+            const extractCtx = extractCanvas.getContext('2d', { willReadFrequently: true });
+
+            // Stats for logging
+            let trimmedCount = 0;
+            let savedPixels = 0;
+
+            // 2. Extract and optionally trim each frame
+            for (const [frameName, frameData] of Object.entries(jsonData.frames)) {
+              if (!requiredFrames.has(frameName)) continue;
 
               const prefixedName = `${sheetName}_${frameName}`;
               const frame = frameData.frame;
+              const originalW = frame.w;
+              const originalH = frame.h;
 
-              // Create canvas to extract this frame
-              const frameCanvas = document.createElement('canvas');
-              frameCanvas.width = frame.w;
-              frameCanvas.height = frame.h;
-              const frameCtx = frameCanvas.getContext('2d');
+              // Default: no trimming
+              let packedWidth = originalW;
+              let packedHeight = originalH;
+              let trimOffsetX = 0;
+              let trimOffsetY = 0;
+              let trimmedCanvas = null;
 
-              frameCtx.drawImage(img, frame.x, frame.y, frame.w, frame.h, 0, 0, frame.w, frame.h);
+              if (trimImages) {
+                // Extract frame to canvas for trimming analysis
+                extractCtx.clearRect(0, 0, originalW, originalH);
+                extractCtx.drawImage(img, frame.x, frame.y, originalW, originalH, 0, 0, originalW, originalH);
 
-              // Convert to image for packing
-              const frameImg = new Image();
-              frameImg.src = frameCanvas.toDataURL();
+                // Get trim bounds within this frame
+                const trimBounds = this._getTrimBoundsFromCanvas(extractCtx, originalW, originalH, trimAlphaThreshold);
+
+                if (trimBounds && (trimBounds.width < originalW || trimBounds.height < originalH)) {
+                  // Frame can be trimmed!
+                  packedWidth = trimBounds.width;
+                  packedHeight = trimBounds.height;
+                  trimOffsetX = trimBounds.x;
+                  trimOffsetY = trimBounds.y;
+
+                  // Create trimmed canvas for this frame
+                  trimmedCanvas = document.createElement('canvas');
+                  trimmedCanvas.width = packedWidth;
+                  trimmedCanvas.height = packedHeight;
+                  const trimmedCtx = trimmedCanvas.getContext('2d');
+                  trimmedCtx.drawImage(
+                    extractCanvas,
+                    trimOffsetX, trimOffsetY, packedWidth, packedHeight,
+                    0, 0, packedWidth, packedHeight
+                  );
+
+                  trimmedCount++;
+                  savedPixels += (originalW * originalH) - (packedWidth * packedHeight);
+                }
+              }
 
               imagesToPack.push({
                 name: prefixedName,
-                img: frameImg,
-                width: frame.w,
-                height: frame.h,
-                sourceX: frameData.spriteSourceSize?.x || 0,
-                sourceY: frameData.spriteSourceSize?.y || 0,
-                sourceWidth: frameData.sourceSize?.w || frame.w,
-                sourceHeight: frameData.sourceSize?.h || frame.h,
+                // For trimmed frames: use trimmed canvas; otherwise draw from source
+                sourceImg: trimmedCanvas || img,
+                sourceRect: trimmedCanvas ? null : frame,  // null = use entire sourceImg
+                width: packedWidth,
+                height: packedHeight,
+                // PixiJS trim metadata: offset within original frame
+                sourceX: trimOffsetX,
+                sourceY: trimOffsetY,
+                sourceWidth: originalW,   // Original frame size (for anchor calculations)
+                sourceHeight: originalH,
                 pivot: frameData.pivot,
+                isSpritesheetFrame: true,
+                isTrimmed: trimmedCanvas !== null,
               });
-            });
+            }
 
             // 3. Map included animations with prefixed names
-            let proxyIndex = 0; // Each proxy sheet has its own index space starting at 0
-            animationsToProcess.forEach(({ animName, frameList }) => {
+            let proxyIndex = 0;
+            for (const { animName, frameList } of animationsToProcess) {
               const prefixedAnimName = `${sheetName}_${animName}`;
               animations[prefixedAnimName] = frameList.map((f) => `${sheetName}_${f}`);
 
-              // Store in proxy for transparent lookup
               proxySheets[sheetName].animations[animName] = {
                 originalName: animName,
                 prefixedName: prefixedAnimName,
-                index: proxyIndex, // Proxy-specific index
+                index: proxyIndex,
               };
-
-              // Build proxy's own indexToName mapping
               proxySheets[sheetName].indexToName[proxyIndex] = animName;
               proxyIndex++;
-            });
+            }
 
-            console.log(
-              `  ✅ Loaded spritesheet: ${sheetName} (${requiredFrames.size}/${Object.keys(jsonData.frames).length
-              } frames, ${animationsToProcess.length}/${Object.keys(jsonData.animations || {}).length
-              } animations)`
-            );
+            const totalFrames = requiredFrames.size;
+            const savedKB = Math.round(savedPixels * 4 / 1024); // 4 bytes per pixel (RGBA)
+            if (trimImages && trimmedCount > 0) {
+              console.log(
+                `  ✅ Loaded spritesheet: ${sheetName} (${totalFrames} frames, ${trimmedCount} trimmed, ~${savedKB}KB saved)`
+              );
+            } else {
+              console.log(
+                `  ✅ Loaded spritesheet: ${sheetName} (${totalFrames}/${Object.keys(jsonData.frames).length
+                } frames, ${animationsToProcess.length} animations)`
+              );
+            }
           })
         );
       }
@@ -891,13 +973,15 @@ class SpriteSheetRegistry {
     const lightGradientCanvas = createCircularGradientCanvas(100, 0xffffff);
     imagesToPack.push({
       name: '_lightGradient',
-      img: lightGradientCanvas,
+      sourceImg: lightGradientCanvas,
+      sourceRect: null,
       width: lightGradientCanvas.width,
       height: lightGradientCanvas.height,
       sourceX: 0,
       sourceY: 0,
       sourceWidth: lightGradientCanvas.width,
       sourceHeight: lightGradientCanvas.height,
+      isSpritesheetFrame: false,
     });
     animations['_lightGradient'] = ['_lightGradient'];
     console.log(
@@ -913,13 +997,15 @@ class SpriteSheetRegistry {
     whiteCtx.fillRect(0, 0, 8, 8);
     imagesToPack.push({
       name: '_white',
-      img: whiteSquareCanvas,
+      sourceImg: whiteSquareCanvas,
+      sourceRect: null,
       width: 8,
       height: 8,
       sourceX: 0,
       sourceY: 0,
       sourceWidth: 8,
       sourceHeight: 8,
+      isSpritesheetFrame: false,
     });
     animations['_white'] = ['_white'];
     console.log(`  ✅ Generated built-in: _white (8x8)`);
@@ -927,29 +1013,16 @@ class SpriteSheetRegistry {
     // Sort images by size (largest first) for better packing
     imagesToPack.sort((a, b) => Math.max(b.width, b.height) - Math.max(a.width, a.height));
 
-    // Wait for all frame images to be ready
-    // Note: Canvas elements are always "complete" (no loading needed)
-    await Promise.all(
-      imagesToPack.map(
-        (imgData) =>
-          new Promise((resolve) => {
-            // Canvas elements don't need loading - they're ready immediately
-            if (imgData.img instanceof HTMLCanvasElement) {
-              resolve();
-            } else if (imgData.img.complete) {
-              resolve();
-            } else {
-              imgData.img.onload = resolve;
-            }
-          })
-      )
-    );
+    // No need to wait for intermediate images anymore!
+    // We now store references to source images and draw directly to final atlas.
 
     console.log(`🎨 Packing ${imagesToPack.length} images into atlas...`);
 
     // Pack all images
     let actualWidth = 0;
     let actualHeight = 0;
+    let totalTrimmed = 0;
+    let totalPixelsSaved = 0;
 
     for (const imgData of imagesToPack) {
       const rect = packer.insert(imgData.width, imgData.height, heuristic);
@@ -960,10 +1033,17 @@ class SpriteSheetRegistry {
         );
       }
 
+      // Determine if this frame was trimmed (packed size differs from original size)
+      const isTrimmed = imgData.width !== imgData.sourceWidth || imgData.height !== imgData.sourceHeight;
+      if (isTrimmed) {
+        totalTrimmed++;
+        totalPixelsSaved += (imgData.sourceWidth * imgData.sourceHeight) - (imgData.width * imgData.height);
+      }
+
       frames[imgData.name] = {
         frame: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
         rotated: false,
-        trimmed: false,
+        trimmed: isTrimmed,
         spriteSourceSize: {
           x: imgData.sourceX,
           y: imgData.sourceY,
@@ -998,10 +1078,23 @@ class SpriteSheetRegistry {
 
     ctx.clearRect(0, 0, actualWidth, actualHeight);
 
+    // Draw all images to atlas
     for (const imgData of imagesToPack) {
-      if (imgData.rect) {
+      if (!imgData.rect) continue;
+
+      if (imgData.sourceRect) {
+        // Spritesheet frame: draw from source rect
+        const sr = imgData.sourceRect;
         ctx.drawImage(
-          imgData.img,
+          imgData.sourceImg,
+          sr.x, sr.y, sr.w, sr.h,             // Source rect in spritesheet
+          imgData.rect.x, imgData.rect.y,     // Destination in atlas
+          imgData.rect.width, imgData.rect.height
+        );
+      } else {
+        // Individual image or canvas: draw entire source
+        ctx.drawImage(
+          imgData.sourceImg,
           imgData.rect.x,
           imgData.rect.y,
           imgData.rect.width,
@@ -1021,8 +1114,6 @@ class SpriteSheetRegistry {
       },
     };
 
-    console.log('#### frames', frames);
-
     // Register individual texture names as spritesheet IDs
     // This allows setSpritesheet("ball") to work for static textures
     const individualTextures = [];
@@ -1032,10 +1123,21 @@ class SpriteSheetRegistry {
       individualTextures.push(name);
     }
 
-    console.log(
-      `✅ BigAtlas created: ${actualWidth}x${actualHeight} with ${Object.keys(frames).length
-      } frames, ${Object.keys(animations).length} animations`
-    );
+    // Log creation summary with trim stats
+    const frameCount = Object.keys(frames).length;
+    const animCount = Object.keys(animations).length;
+    const savedKB = Math.round(totalPixelsSaved * 4 / 1024); // 4 bytes per RGBA pixel
+
+    if (trimImages && totalTrimmed > 0) {
+      console.log(
+        `✅ BigAtlas created: ${actualWidth}x${actualHeight} with ${frameCount} frames, ${animCount} animations\n` +
+        `   📐 Trimming: ${totalTrimmed}/${frameCount} frames trimmed, ~${savedKB}KB saved`
+      );
+    } else {
+      console.log(
+        `✅ BigAtlas created: ${actualWidth}x${actualHeight} with ${frameCount} frames, ${animCount} animations`
+      );
+    }
 
     return {
       canvas: canvas,
@@ -1057,6 +1159,139 @@ class SpriteSheetRegistry {
       img.onerror = reject;
       img.src = url;
     });
+  }
+
+  /**
+   * Helper: Find the tight bounding box of non-transparent pixels in an image
+   * Returns { x, y, width, height } of the content area, or null if fully transparent
+   * @private
+   * @param {HTMLImageElement|HTMLCanvasElement} img - Image to analyze
+   * @param {number} alphaThreshold - Pixels with alpha <= this are considered transparent (0-255)
+   * @returns {{x: number, y: number, width: number, height: number} | null}
+   */
+  static _getTrimBounds(img, alphaThreshold = 0) {
+    // Draw image to canvas to read pixel data
+    const w = img.width;
+    const h = img.height;
+    if (w === 0 || h === 0) return null;
+
+    // Reuse trim canvas if available
+    if (!this._trimCanvas) {
+      this._trimCanvas = document.createElement('canvas');
+      this._trimCtx = this._trimCanvas.getContext('2d', { willReadFrequently: true });
+    }
+    const canvas = this._trimCanvas;
+    const ctx = this._trimCtx;
+
+    // Resize if needed
+    if (canvas.width < w || canvas.height < h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0);
+
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const data = imageData.data;
+
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+
+    // Scan for non-transparent pixels
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const alpha = data[(y * w + x) * 4 + 3];
+        if (alpha > alphaThreshold) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+
+    // Check if any non-transparent pixels were found
+    if (maxX < 0 || maxY < 0) {
+      return null; // Fully transparent image
+    }
+
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
+    };
+  }
+
+  /**
+   * Helper: Get trim bounds from an already-drawn canvas context
+   * Avoids redundant drawImage calls when extracting spritesheet frames
+   * @private
+   * @param {CanvasRenderingContext2D} ctx - Canvas context with image already drawn
+   * @param {number} width - Width of drawn area
+   * @param {number} height - Height of drawn area
+   * @param {number} alphaThreshold - Pixels with alpha <= this are considered transparent
+   * @returns {{x: number, y: number, width: number, height: number} | null}
+   */
+  static _getTrimBoundsFromCanvas(ctx, width, height, alphaThreshold = 0) {
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+
+    let minX = width, minY = height, maxX = -1, maxY = -1;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const alpha = data[(y * width + x) * 4 + 3];
+        if (alpha > alphaThreshold) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+
+    if (maxX < 0 || maxY < 0) return null; // Fully transparent
+
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
+    };
+  }
+
+  /**
+   * Helper: Trim transparent pixels from an image
+   * Returns a new canvas with trimmed content and the trim bounds
+   * @private
+   * @param {HTMLImageElement|HTMLCanvasElement} img - Image to trim
+   * @param {number} alphaThreshold - Pixels with alpha <= this are trimmed
+   * @returns {{canvas: HTMLCanvasElement, bounds: {x, y, width, height}} | null}
+   */
+  static _trimImage(img, alphaThreshold = 0) {
+    const bounds = this._getTrimBounds(img, alphaThreshold);
+    if (!bounds) return null; // Fully transparent
+
+    // If no trimming needed (bounds = full image), return original
+    if (bounds.x === 0 && bounds.y === 0 &&
+      bounds.width === img.width && bounds.height === img.height) {
+      return { canvas: img, bounds, wasTrimmed: false };
+    }
+
+    // Create trimmed canvas
+    const trimmedCanvas = document.createElement('canvas');
+    trimmedCanvas.width = bounds.width;
+    trimmedCanvas.height = bounds.height;
+    const trimmedCtx = trimmedCanvas.getContext('2d');
+
+    trimmedCtx.drawImage(
+      img,
+      bounds.x, bounds.y, bounds.width, bounds.height,
+      0, 0, bounds.width, bounds.height
+    );
+
+    return { canvas: trimmedCanvas, bounds, wasTrimmed: true };
   }
 
   /**

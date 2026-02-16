@@ -1448,10 +1448,14 @@ class Scene {
     const assetsToLoad = imageUrls.textures || imageUrls.spritesheets ? flattenedAssets : imageUrls;
 
     try {
+      // Use config.assets for atlas options (with defaults from ASSETS_DEFAULTS)
+      const assetsConfig = this.config.assets || {};
       const bigAtlas = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, {
-        maxWidth: 4096,
-        maxHeight: 4096,
-        padding: 2,
+        maxAtlasWidth: assetsConfig.maxAtlasWidth ?? 4096,
+        maxAtlasHeight: assetsConfig.maxAtlasHeight ?? 4096,
+        atlasPadding: assetsConfig.atlasPadding ?? 2,
+        trimImages: assetsConfig.trimImages ?? true,
+        trimAlphaThreshold: assetsConfig.trimAlphaThreshold ?? 0,
         heuristic: 'best-short-side',
       });
 

@@ -64,6 +64,23 @@ export const LAYER_DEFAULT_BLEND_MODES = Object.freeze({
 });
 
 // ============================================================================
+// ASSETS DEFAULTS (BigAtlas generation)
+// ============================================================================
+
+export const ASSETS_DEFAULTS = {
+  /** Maximum atlas width in pixels (GPU texture limit) */
+  maxAtlasWidth: 4096,
+  /** Maximum atlas height in pixels (GPU texture limit) */
+  maxAtlasHeight: 4096,
+  /** Trim transparent pixels from individual images to save atlas space */
+  trimImages: true,
+  /** Alpha threshold for trimming (pixels with alpha <= this are trimmed) */
+  trimAlphaThreshold: 0,
+  /** Padding between packed sprites (prevents texture bleeding) */
+  atlasPadding: 2,
+};
+
+// ============================================================================
 // TOP-LEVEL DEFAULTS
 // ============================================================================
 
@@ -223,6 +240,7 @@ export const NAVIGATION_DEFAULTS = {
 
 export const CONFIG_DEFAULTS = {
   ...SCENE_DEFAULTS,
+  assets: ASSETS_DEFAULTS,
   physics: PHYSICS_DEFAULTS,
   spatial: SPATIAL_DEFAULTS,
   particle: PARTICLE_DEFAULTS,
