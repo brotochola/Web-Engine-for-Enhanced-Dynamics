@@ -156,9 +156,6 @@ export class Flash extends GameObject {
     const i = this.index;
     const fc = FlashComponent;
 
-    // DEBUG: Log tick calls
-    // console.log(`[FLASH DEBUG] tick() called for Flash ${i}, Transform.active=${Transform.active[i]}, fc.active=${fc.active[i]}`);
-
     // Guard against stale ticks after despawn/list updates.
     if (Transform.active[i] === 0 || fc.active[i] === 0) return;
 
@@ -177,7 +174,6 @@ export class Flash extends GameObject {
     fc.currentLife[i] = nextLife;
 
     if (nextLife >= lifespan) {
-      console.log(`[FLASH DEBUG] Flash ${i} expired (life=${nextLife.toFixed(0)}ms >= lifespan=${lifespan}ms), calling despawn()`);
       this.despawn();
       return;
     }

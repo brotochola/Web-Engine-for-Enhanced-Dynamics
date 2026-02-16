@@ -327,12 +327,6 @@ class LogicWorker extends AbstractWorker {
         GameObject._addToActiveEntities(entityIndex);
         GameObject._addToTypeActiveList(EntityClass, entityIndex);
         GameObject._addToMatchingQueries(entityIndex, entityType);
-        // DEBUG: Log spawn list update processing
-        if (EntityClass?.name === 'Flash') {
-          console.log(`[SPAWN DEBUG] Added Flash ${entityIndex} to lists. _activeList[0]=${EntityClass._activeList?.[0]}, activeEntitiesData[0]=${GameObject.activeEntitiesData?.[0]}`);
-        }
-      } else if (EntityClass?.name === 'Flash') {
-        console.log(`[SPAWN DEBUG] Skipped Flash ${entityIndex} - Transform.active=${Transform.active[entityIndex]}`);
       }
     }
   }
@@ -348,12 +342,6 @@ class LogicWorker extends AbstractWorker {
         GameObject._removeFromMatchingQueries(entityIndex, entityType);
         GameObject._removeFromActiveEntities(entityIndex);
         GameObject._removeFromTypeActiveList(EntityClass, entityIndex);
-        // DEBUG: Log despawn list update processing
-        if (EntityClass?.name === 'Flash') {
-          console.log(`[DESPAWN DEBUG] Removed Flash ${entityIndex} from lists. _activeList[0]=${EntityClass._activeList?.[0]}, activeEntitiesData[0]=${GameObject.activeEntitiesData?.[0]}`);
-        }
-      } else if (EntityClass?.name === 'Flash') {
-        console.log(`[DESPAWN DEBUG] Skipped Flash ${entityIndex} removal - Transform.active=${Transform.active[entityIndex]} (was respawned?)`);
       }
     }
   }
