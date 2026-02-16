@@ -318,14 +318,14 @@ export class PredatorScene extends WEED.Scene {
     this.spawnEntity(CameraController);
     // this.spawnTrees(this.numberOfTrees);
 
-    // this.spawnGrass(10000);
-    // this.spawnCivilians(10000);
-    // this.spawnBarrels(this.numberOfBarrels);
-    // this.spawnRocks(this.numberOfRocks);
+    this.spawnGrass(10000);
+    this.spawnCivilians(10000);
+    this.spawnBarrels(this.numberOfBarrels);
+    this.spawnRocks(this.numberOfRocks);
 
-    this.spawnMySoldiers(25);
+    this.spawnMySoldiers(2500);
 
-    // this.spawnRocksTreesAndHouses();
+    this.spawnRocksTreesAndHouses();
   }
 
   spawnTrash(count) {
@@ -406,9 +406,9 @@ export class PredatorScene extends WEED.Scene {
     // }
 
     // // console.log(dtRatio, deltaTime, accumulatedTime, frameNumber)
-    // if (frameNumber % 300 === 0) {
-    //   this.createNavGridForTheFlowField()
-    // }
+    if (frameNumber % 300 === 0) {
+      this.createNavGridForTheFlowField()
+    }
   }
 
   // ========================================

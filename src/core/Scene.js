@@ -1000,18 +1000,34 @@ class Scene {
     // DOUBLE BUFFERED: pre_render writes to back buffer while pixi reads from front
     // pre_render_worker waits if more than 1 frame ahead (pixi_worker never waits)
     //
-    // Layout (per array, for maxVisibleRenderables items):
+    // Layout (for maxVisibleRenderables items):
     //   count: Int32 (4 bytes)
-    //   x, y, scaleX, scaleY, rotation, alpha: Float32[max] each (6 * max * 4 bytes)
-    //   tint: Uint32[max] (max * 4 bytes)
-    //   textureId: Uint16[max] (max * 2 bytes, aligned to 4)
-    //   anchorX, anchorY: Float32[max] each (2 * max * 4 bytes)
-    //   type: Uint8[max] (max bytes, 0=entity, 1=particle, 2=decoration)
-    //   entityIndex: Int32[max] (max * 4 bytes, original entity index for shadows, -1 for non-entities)
-    // Total = 4 + max * (6*4 + 4 + 2 + 2padding + 2*4 + 1 + 4) = 4 + max * 48 bytes
+    //   x, y, scaleX, scaleY, rotation, alpha: Float32[max] each
+    //   tint: Uint32[max]
+    //   textureId: Uint16[max] (then aligned to 4 bytes)
+    //   anchorX, anchorY: Float32[max] each
+    //   type: Uint8[max] (then aligned to 4 bytes)
+    //   entityIndex: Int32[max] (original entity index for shadows, -1 for non-entities)
+    //
+    // Buffer size is computed with explicit alignment to match worker parsing.
     const maxVisibleRenderables = this.config.renderer.maxVisibleRenderables || 10000;
-    const RENDER_QUEUE_ITEM_SIZE = 48; // bytes per item (with all arrays)
-    const renderQueueBufferSize = 4 + (maxVisibleRenderables * RENDER_QUEUE_ITEM_SIZE);
+    let renderQueueOffset = 0;
+    renderQueueOffset += 4; // count Int32
+    renderQueueOffset += maxVisibleRenderables * 4; // x
+    renderQueueOffset += maxVisibleRenderables * 4; // y
+    renderQueueOffset += maxVisibleRenderables * 4; // scaleX
+    renderQueueOffset += maxVisibleRenderables * 4; // scaleY
+    renderQueueOffset += maxVisibleRenderables * 4; // rotation
+    renderQueueOffset += maxVisibleRenderables * 4; // alpha
+    renderQueueOffset += maxVisibleRenderables * 4; // tint
+    renderQueueOffset += maxVisibleRenderables * 2; // textureId
+    renderQueueOffset = Math.ceil(renderQueueOffset / 4) * 4; // align for Float32
+    renderQueueOffset += maxVisibleRenderables * 4; // anchorX
+    renderQueueOffset += maxVisibleRenderables * 4; // anchorY
+    renderQueueOffset += maxVisibleRenderables; // type
+    renderQueueOffset = Math.ceil(renderQueueOffset / 4) * 4; // align for Int32
+    renderQueueOffset += maxVisibleRenderables * 4; // entityIndex
+    const renderQueueBufferSize = renderQueueOffset;
 
     // Two render queue buffers for double buffering
     this.buffers.renderQueueDataA = new SharedArrayBuffer(renderQueueBufferSize);
@@ -2802,93 +2818,113 @@ class Scene {
   }
 
   /**
+   * Get detailed memory usage for all SharedArrayBuffers owned by this scene.
+   * Traverses this.buffers recursively and returns per-category and total usage.
+   *
+   * @returns {object} Detailed memory summary object
+   */
+  getMemoryUsageSummary() {
+    if (!this.buffers) {
+      return {
+        totalBytes: 0,
+        totalFormatted: '0 B',
+        bufferCount: 0,
+        categories: {},
+        flatBreakdown: {},
+      };
+    }
+
+    const categories = {};
+    const flatBreakdown = {};
+
+    let totalBytes = 0;
+    let bufferCount = 0;
+
+    for (const [key, value] of Object.entries(this.buffers)) {
+      const summary = this._summarizeBufferNode(value, key, flatBreakdown);
+      if (!summary) continue;
+      categories[key] = summary;
+      totalBytes += summary.totalBytes;
+      bufferCount += summary.bufferCount;
+    }
+
+    return {
+      totalBytes,
+      totalFormatted: this._formatBytes(totalBytes),
+      bufferCount,
+      categories,
+      flatBreakdown,
+    };
+  }
+
+  /**
+   * Recursively summarize SharedArrayBuffer usage for a node in this.buffers.
+   * @private
+   * @param {*} value - Node value (SAB, object, array, or primitive)
+   * @param {string} path - Dot path for flat breakdown keys
+   * @param {object} flatBreakdown - Accumulator for flattened byte map
+   * @returns {object|null} Summary object or null if no SABs found
+   */
+  _summarizeBufferNode(value, path, flatBreakdown) {
+    if (value instanceof SharedArrayBuffer) {
+      const bytes = value.byteLength;
+      flatBreakdown[path] = bytes;
+      return {
+        totalBytes: bytes,
+        totalFormatted: this._formatBytes(bytes),
+        bufferCount: 1,
+        children: null,
+      };
+    }
+
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    const entries = Array.isArray(value) ? value.entries() : Object.entries(value);
+    const children = {};
+    let totalBytes = 0;
+    let bufferCount = 0;
+
+    for (const [rawKey, childValue] of entries) {
+      const key = String(rawKey);
+      const childPath = `${path}.${key}`;
+      const childSummary = this._summarizeBufferNode(childValue, childPath, flatBreakdown);
+      if (!childSummary) continue;
+
+      children[key] = childSummary;
+      totalBytes += childSummary.totalBytes;
+      bufferCount += childSummary.bufferCount;
+    }
+
+    if (bufferCount === 0) {
+      return null;
+    }
+
+    return {
+      totalBytes,
+      totalFormatted: this._formatBytes(totalBytes),
+      bufferCount,
+      children,
+    };
+  }
+
+  /**
    * Get the total size of all SharedArrayBuffers used by the scene
    * @param {boolean} includeBreakdown - If true, returns an object with total and breakdown by category
    * @returns {number|object} Total size in bytes, or object with {total, breakdown} if includeBreakdown is true
    */
   getSharedBufferSize(includeBreakdown = false) {
-    if (!this.buffers) {
-      return includeBreakdown ? { total: 0, breakdown: {} } : 0;
-    }
+    const summary = this.getMemoryUsageSummary();
+    if (!includeBreakdown) return summary.totalBytes;
 
-    let total = 0;
-    const breakdown = {};
-
-    // Helper to safely get buffer size
-    const getBufferSize = (buffer) => {
-      if (!buffer || !(buffer instanceof SharedArrayBuffer)) return 0;
-      return buffer.byteLength;
+    return {
+      total: summary.totalBytes,
+      totalFormatted: summary.totalFormatted,
+      breakdown: summary.flatBreakdown,
+      categories: summary.categories,
+      bufferCount: summary.bufferCount,
     };
-
-    // Core entity buffers
-    breakdown.gameObjectData = getBufferSize(this.buffers.gameObjectData);
-    breakdown.neighborData = getBufferSize(this.buffers.neighborData);
-    breakdown.collisionData = getBufferSize(this.buffers.collisionData);
-    breakdown.activeEntitiesData = getBufferSize(this.buffers.activeEntitiesData);
-
-    // Input and camera buffers
-    breakdown.inputData = getBufferSize(this.buffers.inputData);
-    breakdown.cameraData = getBufferSize(this.buffers.cameraData);
-    breakdown.mouseData = getBufferSize(this.buffers.mouseData);
-
-    // Synchronization buffer
-    breakdown.syncData = getBufferSize(this.buffers.syncData);
-
-    // Debug buffers
-    breakdown.debugData = getBufferSize(this.buffers.debugData);
-    breakdown.raycastDebugData = getBufferSize(this.buffers.raycastDebugData);
-    breakdown.frameRateData = getBufferSize(this.buffers.frameRateData);
-
-    // Component buffers (nested object)
-    breakdown.componentData = {};
-    let componentDataTotal = 0;
-    if (this.buffers.componentData) {
-      for (const [componentName, componentBuffer] of Object.entries(this.buffers.componentData)) {
-        const size = getBufferSize(componentBuffer);
-        breakdown.componentData[componentName] = size;
-        componentDataTotal += size;
-      }
-    }
-    breakdown.componentDataTotal = componentDataTotal;
-
-    // Spatial grid buffers
-    breakdown.gridBuffer = getBufferSize(this.buffers.gridBuffer);
-    breakdown.entityPosData = getBufferSize(this.buffers.entityPosData);
-
-    // Worker stat buffers
-    breakdown.rendererStats = getBufferSize(this.buffers.rendererStats);
-    breakdown.particleStats = getBufferSize(this.buffers.particleStats);
-    breakdown.physicsStats = getBufferSize(this.buffers.physicsStats);
-    breakdown.spatialStats = getBufferSize(this.buffers.spatialStats);
-    breakdown.logicStats = getBufferSize(this.buffers.logicStats);
-
-    // Optional buffers
-    breakdown.nextTickData = getBufferSize(this.buffers.nextTickData);
-    breakdown.shadowSpriteData = getBufferSize(this.buffers.shadowSpriteData);
-    breakdown.bloodTilesRGBA = getBufferSize(this.buffers.bloodTilesRGBA);
-    breakdown.bloodTilesDirty = getBufferSize(this.buffers.bloodTilesDirty);
-    breakdown.navigationData = getBufferSize(this.buffers.navigationData);
-    breakdown.navigationStats = getBufferSize(this.buffers.navigationStats);
-    breakdown.decorationFreeList = getBufferSize(this.buffers.decorationFreeList);
-    breakdown.decorationFreeListTop = getBufferSize(this.buffers.decorationFreeListTop);
-
-    // Calculate total
-    for (const value of Object.values(breakdown)) {
-      if (typeof value === 'number') {
-        total += value;
-      }
-    }
-
-    if (includeBreakdown) {
-      return {
-        total,
-        breakdown,
-        // Human-readable format
-        totalFormatted: this._formatBytes(total),
-      };
-    }
-
-    return total;
   }
 
   /**
