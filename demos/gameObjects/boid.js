@@ -54,8 +54,7 @@ class Boid extends GameObject {
     this.flocking.turnFactor = 0.01; // Boundary avoidance strength
     this.flocking.margin = 20; // Distance from edge to start turning
 
-    // Initialize ShadowCaster - shadow radius based on collider
-    this.shadowCaster.shadowRadius = this.collider.radius;
+    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
   }
 
   // Note: this.flocking is automatically available because Flocking is in static components[]

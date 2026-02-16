@@ -171,8 +171,8 @@ export const SUN_DEFAULTS = {
   startHour: 12, // Starting hour for day cycle (0-24)
   // Shadow configuration
   shadowAngleOffset: Math.PI, // Hemisphere offset: π for southern (shadows point south), 0 for northern
-  shadowMinLengthRatio: 0.1, // Shadow length multiplier at zenith (noon) - shortest shadows
-  shadowMaxLengthRatio: 1.0, // Shadow length multiplier at horizon (sunrise/sunset) - longest shadows
+  shadowMinLengthRatio: 0.2, // Shadow length multiplier at zenith (noon) - shortest shadows
+  shadowMaxLengthRatio: 2.0, // Shadow length multiplier at horizon (sunrise/sunset) - longest shadows
   shadowStretchAlphaFactor: 0.5, // Alpha fade when shadows stretch (0=none, 1=full compensation)
   dayCycle: {
     enabled: false, // Auto-advance time of day

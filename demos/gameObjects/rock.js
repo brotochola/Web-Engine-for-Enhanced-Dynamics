@@ -29,8 +29,7 @@ export class Rock extends GameObject {
 
     this.collider.visualRange = 0;
 
-    this.shadowCaster.shadowRadius = this.collider.radius;
-    this.shadowCaster.height = this.collider.radius * 3;
+    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
   }
 
   onSpawned(spawnConfig = {}) { }

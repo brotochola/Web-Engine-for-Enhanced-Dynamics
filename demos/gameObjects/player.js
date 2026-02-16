@@ -67,9 +67,7 @@ export class Player extends GameObject {
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 1.0;
 
-    // Initialize shadow
-    this.shadowCaster.shadowRadius = this.collider.radius;
-    this.shadowCaster.height = this.collider.radius * 5;
+    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
 
     // Store last direction for idle animations
     this.lastDirection = 'down';

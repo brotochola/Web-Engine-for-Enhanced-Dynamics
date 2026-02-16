@@ -319,6 +319,8 @@ class PreRenderWorker extends AbstractWorker {
             this.animationFrameCount = data.textureMetadata.animationFrameCount;
             this.proxyToGlobalAnim = data.textureMetadata.proxyToGlobalAnim;
             this.animationNameToIndex = data.textureMetadata.animationNameToIndex;
+            this.frameWidth = data.textureMetadata.frameWidth;   // Uint16Array[textureId]
+            this.frameHeight = data.textureMetadata.frameHeight; // Uint16Array[textureId]
             console.log(`[PRE_RENDER WORKER] Texture metadata loaded: ${data.textureMetadata.totalFrames} total frames`);
         }
 
@@ -907,9 +909,11 @@ class PreRenderWorker extends AbstractWorker {
         const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
         const lightHeight = LightEmitter.height;
         const shadowCasterActive = ShadowCaster.active;
-        const entityShadowRadius = ShadowCaster.shadowRadius;
-        const entityShadowHeight = ShadowCaster.height;
+        const shadowHeightMultiplier = ShadowCaster.heightMultiplier;
         const flashActive = FlashComponent.active;
+        const spriteScaleY = SpriteRenderer.scaleY;
+        const spriteAnchorX = SpriteRenderer.anchorX;
+        const spriteAnchorY = SpriteRenderer.anchorY;
 
         const maxShadowsPerEntity = this.maxShadowsPerEntity;
         const entityShadowCounts = this._entityShadowCounts;
@@ -978,41 +982,43 @@ class PreRenderWorker extends AbstractWorker {
                     const entityIdx = visibleData[1 + idx];
 
                     if (!shadowCasterActive[entityIdx] || !transformActive[entityIdx]) continue;
+
+                    // heightMultiplier: 0 = no shadow, 1 = normal, 2 = 2x longer
+                    const heightMult = shadowHeightMultiplier[entityIdx];
+                    if (heightMult <= 0) continue;
+
                     if (maxShadowsPerEntity > 0 && entityShadowCounts[entityIdx] >= maxShadowsPerEntity) continue;
 
                     const casterX = worldX[entityIdx];
                     const casterY = worldY[entityIdx];
-                    let casterRadius = entityShadowRadius[entityIdx];
-                    if (Number.isNaN(casterRadius) || casterRadius <= 0) casterRadius = 10;
-                    const casterHeight = entityShadowHeight[entityIdx] || casterRadius;
-
-                    // Shadow position: at caster position
-                    const posX = casterX;
-                    const posY = casterY;
-
-                    // Shadow length = casterHeight × sunShadowLengthRatio (configured min/max)
-                    // The 0.025 factor converts world units to sprite scale
-                    const shadowLength = casterHeight * sunShadowLengthRatio;
-                    const lengthScale = shadowLength * 0.025;
-                    const widthScale = 1;
-
-                    // Cull shadows outside view (use actual shadow length for accuracy)
-                    const shadowExtent = casterRadius + shadowLength;
-                    if (posX + shadowExtent < viewMinX || posX - shadowExtent > viewMaxX ||
-                        posY + shadowExtent < viewMinY || posY - shadowExtent > viewMaxY) continue;
-
                     const textureId = entityLastTextureId ? entityLastTextureId[entityIdx] : 0;
 
-                    rqX[writeIdx] = posX;
-                    rqY[writeIdx] = posY;
-                    rqScaleX[writeIdx] = widthScale;
+                    // Shadow uses SAME position and anchor as sprite - no offset needed
+                    const entityScaleY = Math.abs(spriteScaleY[entityIdx]) || 1;
+                    const anchorX = spriteAnchorX[entityIdx] ?? 0.5;
+                    const anchorY = spriteAnchorY[entityIdx] ?? 0.95;
+
+                    // Shadow length = spriteScaleY × heightMultiplier × sunShadowLengthRatio
+                    // Negative to flip shadow (extends away from anchor, not same direction as sprite)
+                    const lengthScale = -entityScaleY * heightMult * sunShadowLengthRatio;
+
+                    // Cull shadows outside view
+                    const originalHeight = this.frameHeight ? this.frameHeight[textureId] : 50;
+                    const shadowExtent = Math.abs(lengthScale) * originalHeight + 100;
+                    if (casterX + shadowExtent < viewMinX || casterX - shadowExtent > viewMaxX ||
+                        casterY + shadowExtent < viewMinY || casterY - shadowExtent > viewMaxY) continue;
+
+                    rqX[writeIdx] = casterX;
+                    rqY[writeIdx] = casterY;
+                    rqScaleX[writeIdx] = 1;
                     rqScaleY[writeIdx] = lengthScale;
-                    rqRotation[writeIdx] = sunShadowAngle - 1.5707963267948966 + PI; // +PI/2 for anchor offset
+                    // Sprite's natural "up" is -π/2, so subtract π/2 to align shadow direction
+                    rqRotation[writeIdx] = sunShadowAngle - 1.5707963267948966;
                     rqAlpha[writeIdx] = sunShadowAlpha;
                     rqTint[writeIdx] = 0x000000;
                     rqTextureId[writeIdx] = textureId;
-                    rqAnchorX[writeIdx] = 0.5;
-                    rqAnchorY[writeIdx] = 1.0;
+                    rqAnchorX[writeIdx] = anchorX;
+                    rqAnchorY[writeIdx] = anchorY;
 
                     writeIdx++;
                     shadowCount++;
@@ -1076,6 +1082,10 @@ class PreRenderWorker extends AbstractWorker {
 
                 if (!shadowCasterActive[neighborIdx] || !transformActive[neighborIdx]) continue;
 
+                // heightMultiplier: 0 = no shadow, 1 = normal, 2 = 2x longer
+                const heightMult = shadowHeightMultiplier[neighborIdx];
+                if (heightMult <= 0) continue;
+
                 if (maxShadowsPerEntity > 0 && entityShadowCounts[neighborIdx] >= maxShadowsPerEntity) continue;
 
                 const neighborX = worldX[neighborIdx] + (Collider.offsetX[neighborIdx] || 0);
@@ -1088,29 +1098,26 @@ class PreRenderWorker extends AbstractWorker {
 
                 const casterX = worldX[neighborIdx];
                 const casterY = worldY[neighborIdx];
-                let casterRadius = entityShadowRadius[neighborIdx];
-                if (Number.isNaN(casterRadius) || casterRadius <= 0) casterRadius = 10;
-                const casterHeight = entityShadowHeight[neighborIdx] || casterRadius;
+                const textureId = entityLastTextureId ? entityLastTextureId[neighborIdx] : 0;
+
+                // Shadow uses SAME anchor as sprite
+                const entityScaleY = Math.abs(spriteScaleY[neighborIdx]) || 1;
+                const anchorX = spriteAnchorX[neighborIdx] ?? 0.5;
+                const anchorY = spriteAnchorY[neighborIdx] ?? 0.95;
 
                 const dist = Math.sqrt(distSq);
-                const invDist = 1 / dist;
-                const dirX = dx * invDist;
-                const dirY = dy * invDist;
 
-                const posX = casterX - dirX * casterRadius * 0.5;
-                const posY = casterY - dirY * casterRadius * 0.5;
-
-                if (Number.isNaN(posX) || Number.isNaN(posY)) continue;
-
+                // Shadow length based on distance and sprite scale
+                // Negative to flip shadow (extends away from anchor)
                 const distRatio = dist * 0.00390625;
                 const clampedDistRatio = distRatio > 1 ? 1 : distRatio;
-                const heightFactor = casterHeight * 0.025;
-                const lengthScale = (0.3 + clampedDistRatio * 0.9) * heightFactor;
-                const widthScale = 1;
+                const lengthScale = -(0.3 + clampedDistRatio * 0.9) * entityScaleY * heightMult;
 
-                const shadowExtent = casterHeight * (1 + lengthScale);
-                if (posX + shadowExtent < viewMinX || posX - shadowExtent > viewMaxX ||
-                    posY + shadowExtent < viewMinY || posY - shadowExtent > viewMaxY) continue;
+                // Cull shadows outside view
+                const originalHeight = this.frameHeight ? this.frameHeight[textureId] : 50;
+                const shadowExtent = Math.abs(lengthScale) * originalHeight + 100;
+                if (casterX + shadowExtent < viewMinX || casterX - shadowExtent > viewMaxX ||
+                    casterY + shadowExtent < viewMinY || casterY - shadowExtent > viewMaxY) continue;
 
                 let alpha = intensity / (intensity + distSq);
                 if (Number.isNaN(alpha)) alpha = 0;
@@ -1122,19 +1129,18 @@ class PreRenderWorker extends AbstractWorker {
 
                 const angle = Math.atan2(dy, dx);
 
-                const textureId = entityLastTextureId ? entityLastTextureId[neighborIdx] : 0;
-
                 const shadowIdx = shadowStartIdx + shadowsForThisLight;
-                rqX[shadowIdx] = posX;
-                rqY[shadowIdx] = posY;
-                rqScaleX[shadowIdx] = widthScale;
+                rqX[shadowIdx] = casterX;
+                rqY[shadowIdx] = casterY;
+                rqScaleX[shadowIdx] = 1;
                 rqScaleY[shadowIdx] = lengthScale;
-                rqRotation[shadowIdx] = angle - 1.5707963267948966 + PI;
+                // Sprite's natural "up" is -π/2, so subtract π/2 to align shadow direction
+                rqRotation[shadowIdx] = angle - 1.5707963267948966;
                 rqAlpha[shadowIdx] = alpha;
                 rqTint[shadowIdx] = 0x000000;
                 rqTextureId[shadowIdx] = textureId;
-                rqAnchorX[shadowIdx] = 0.5;
-                rqAnchorY[shadowIdx] = 1.0;
+                rqAnchorX[shadowIdx] = anchorX;
+                rqAnchorY[shadowIdx] = anchorY;
 
                 shadowsForThisLight++;
                 shadowCount++;

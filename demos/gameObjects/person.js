@@ -72,12 +72,10 @@ export class Person extends Lootable {
 
     // Sprite setup
     this.spriteRenderer.anchorX = 0.5;
-    this.spriteRenderer.anchorY = 1.0;
+    this.spriteRenderer.anchorY = 0.98;
     this.spriteRenderer.animationSpeed = 0.15;
 
-    // Shadow
-    this.shadowCaster.shadowRadius = 10;
-    this.shadowCaster.height = 50;
+    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
 
     // Flocking and resistance now use static class properties (no per-entity arrays needed)
   }
@@ -104,8 +102,7 @@ export class Person extends Lootable {
     this.setScale(scale, scale);
 
     this.collider.radius = 10 * scale;
-    this.shadowCaster.shadowRadius = this.collider.radius;
-    this.shadowCaster.height = this.collider.radius * 5;
+    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
 
     this.lootableComponent.health = 1;
     // resistance now uses static class property (Person.resistance)

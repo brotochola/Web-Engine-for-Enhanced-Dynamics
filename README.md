@@ -23,15 +23,15 @@ Built from the ground up with true parallelism using SharedArrayBuffers and 4 de
 
 ## ✨ Features That Make You Smile
 
-🎮 **Entity Component System** — Clean, composable architecture  
-⚡ **O(1) Object Pooling** — Spawn and despawn with zero allocations  
-🦅 **Built-in Flocking AI** — Boids with cohesion, separation, and alignment  
-💡 **2D Lighting & Shadows** — Dynamic lights, shadow casting, muzzle flashes  
-🎆 **Particle System** — Blood splats, sparks, decals that stick to the floor  
-📷 **Smart Camera** — Smooth follow, zoom, world bounds clamping  
-🎬 **Animated Sprites** — Spritesheet support with state-based animations  
-🎯 **Collision Callbacks** — Unity-style onCollisionEnter/Stay/Exit  
-🎭 **Scene Management** — Hot-swap between scenes with full cleanup  
+🎮 **Entity Component System** — Clean, composable architecture
+⚡ **O(1) Object Pooling** — Spawn and despawn with zero allocations
+🦅 **Built-in Flocking AI** — Boids with cohesion, separation, and alignment
+💡 **2D Lighting & Shadows** — Dynamic lights, shadow casting, muzzle flashes
+🎆 **Particle System** — Blood splats, sparks, decals that stick to the floor
+📷 **Smart Camera** — Smooth follow, zoom, world bounds clamping
+🎬 **Animated Sprites** — Spritesheet support with state-based animations
+🎯 **Collision Callbacks** — Unity-style onCollisionEnter/Stay/Exit
+🎭 **Scene Management** — Hot-swap between scenes with full cleanup
 🐛 **Debug UI** — Real-time FPS, entity counts, and visual debugging
 
 ---
@@ -142,7 +142,7 @@ class TorchLight extends GameObject {
     this.lightEmitter.lightColor = 0xff6600;
     this.lightEmitter.lightIntensity = 20000;
     this.lightEmitter.height = 100;
-    this.shadowCaster.shadowRadius = 20;
+    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
   }
 }
 ```
