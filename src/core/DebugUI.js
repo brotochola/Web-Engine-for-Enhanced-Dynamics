@@ -833,6 +833,7 @@ export class DebugUI {
       sleepingEntities: 'showSleepingEntities',
       sleepingCells: 'showSleepingCells',
       constraints: 'showConstraints',
+      entityOrigins: 'showEntityOrigins',
     };
 
     const method = methodMap[key];
@@ -847,6 +848,8 @@ export class DebugUI {
         flagName = 'SHOW_COLLISION_CANDIDATES';
       } else if (key === 'constraints') {
         flagName = 'SHOW_CONSTRAINTS';
+      } else if (key === 'entityOrigins') {
+        flagName = 'SHOW_ENTITY_ORIGINS';
       }
       const currentState = this.debugFlags.isEnabled(DEBUG_FLAGS[flagName]);
       this.debugFlags[method](!currentState);
@@ -1213,6 +1216,7 @@ export class DebugUI {
       { key: 'sleepingEntities', label: 'Sleeping', shortcut: '9' },
       { key: 'sleepingCells', label: 'Sleep Cells', shortcut: 'S' },
       { key: 'constraints', label: 'Constraints', shortcut: 'K' },
+      { key: 'entityOrigins', label: 'Origins', shortcut: 'O' },
     ];
 
     for (const aid of visualAids) {
@@ -1909,7 +1913,8 @@ export class DebugUI {
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES) ||
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_CELLS) ||
       this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_SELECTED_ENTITY) ||
-      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_CONSTRAINTS)
+      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_CONSTRAINTS) ||
+      this.debugFlags.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_ORIGINS)
     );
   }
 
@@ -1973,6 +1978,11 @@ export class DebugUI {
     // 5. Draw colliders
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_COLLIDERS)) {
       this._drawColliders(ctx, canvas, camera, zoom);
+    }
+
+    // 5.5. Draw entity origins (Transform.x, Transform.y points)
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_ORIGINS)) {
+      this._drawEntityOrigins(ctx, canvas, camera, zoom);
     }
 
     // 6. Draw velocity vectors
@@ -2417,6 +2427,56 @@ export class DebugUI {
         const halfH = (h / 2) * zoom;
         ctx.strokeRect(sx - halfW, sy - halfH, w * zoom, h * zoom);
       }
+    }
+  }
+
+  /**
+   * Draw entity origin points (Transform.x, Transform.y positions)
+   * Small crosshair markers showing the exact world position of each entity
+   * Selected entity gets a larger, brighter marker
+   */
+  _drawEntityOrigins(ctx, canvas, camera, zoom) {
+    const active = Transform.active;
+    const x = Transform.x;
+    const y = Transform.y;
+    const isOnScreen = SpriteRenderer.isItOnScreen;
+
+    const selectedIdx = this.debugFlags?.getSelectedEntity?.() ?? -1;
+
+    // Crosshair sizes
+    const crossSize = 4;
+    const selectedCrossSize = 8;
+
+    for (let i = 0; i < Transform.active.length; i++) {
+      if (!active[i] || !isOnScreen[i]) continue;
+
+      const posX = x[i];
+      const posY = y[i];
+
+      // Transform to screen coords
+      const sx = (posX - camera.x) * zoom;
+      const sy = (posY - camera.y) * zoom;
+
+      const isSelected = i === selectedIdx;
+      const size = isSelected ? selectedCrossSize : crossSize;
+
+      // Color: bright magenta for selected, dimmer for others
+      ctx.strokeStyle = isSelected ? 'rgba(255, 50, 255, 1.0)' : 'rgba(255, 50, 255, 0.7)';
+      ctx.lineWidth = isSelected ? 2 : 1;
+
+      // Draw crosshair
+      ctx.beginPath();
+      ctx.moveTo(sx - size, sy);
+      ctx.lineTo(sx + size, sy);
+      ctx.moveTo(sx, sy - size);
+      ctx.lineTo(sx, sy + size);
+      ctx.stroke();
+
+      // Draw center dot
+      ctx.fillStyle = isSelected ? 'rgba(255, 50, 255, 1.0)' : 'rgba(255, 50, 255, 0.8)';
+      ctx.beginPath();
+      ctx.arc(sx, sy, isSelected ? 3 : 1.5, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 
@@ -2962,7 +3022,7 @@ export class DebugUI {
 
       // Skip if both points are off-screen (rough culling)
       if ((sax < -50 && sbx < -50) || (sax > canvas.width + 50 && sbx > canvas.width + 50) ||
-          (say < -50 && sby < -50) || (say > canvas.height + 50 && sby > canvas.height + 50)) {
+        (say < -50 && sby < -50) || (say > canvas.height + 50 && sby > canvas.height + 50)) {
         continue;
       }
 
@@ -3867,6 +3927,9 @@ export class DebugUI {
       } else if (key === 'c') {
         // Toggle collision candidates visualization
         this._toggleVisualAid('collisionCandidates');
+      } else if (key === 'o') {
+        // Toggle entity origins visualization
+        this._toggleVisualAid('entityOrigins');
       } else if (key === '0') {
         if (this.debugFlags) {
           this.debugFlags.disableAll();

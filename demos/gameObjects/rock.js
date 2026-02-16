@@ -24,15 +24,15 @@ export class Rock extends GameObject {
     this.setScale(Math.random() > 0.5 ? this.scale : -this.scale, this.scale);
 
     this.collider.shapeType = ShapeType.Circle;
-    this.collider.radius = 22 * this.scale;
+    this.collider.radius = this.spriteRenderer.originalWidth * 0.4 * this.scale;
     // this.collider.offsetY = -this.collider.radius;
 
     this.collider.visualRange = 0;
 
     this.shadowCaster.heightMultiplier = 2
-    this.shadowCaster.anchorOffsetY = 0.5
+    this.shadowCaster.anchorOffsetY = 0.17
 
-    this.spriteRenderer.anchorY = 0.5
+    this.spriteRenderer.anchorY = 0.66
     this.spriteRenderer.anchorX = 0.5
 
     // Shadow uses default heightMultiplier = 1 (matches sprite scale)
