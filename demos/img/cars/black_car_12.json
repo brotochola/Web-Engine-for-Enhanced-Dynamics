@@ -1,0 +1,319 @@
+{
+  "frames": {
+    "Black_CIVIC_CLEAN_All_004.png": {
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 60,
+        "h": 46
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18,
+        "y": 29,
+        "w": 60,
+        "h": 46
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_CIVIC_CLEAN_All_044.png": {
+      "frame": {
+        "x": 66,
+        "y": 2,
+        "w": 60,
+        "h": 42
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18,
+        "y": 35,
+        "w": 60,
+        "h": 42
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_CIVIC_CLEAN_All_020.png": {
+      "frame": {
+        "x": 130,
+        "y": 2,
+        "w": 59,
+        "h": 48
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 22,
+        "y": 28,
+        "w": 59,
+        "h": 48
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_CIVIC_CLEAN_All_028.png": {
+      "frame": {
+        "x": 66,
+        "y": 48,
+        "w": 59,
+        "h": 44
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 22,
+        "y": 34,
+        "w": 59,
+        "h": 44
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_CIVIC_CLEAN_All_000.png": {
+      "frame": {
+        "x": 2,
+        "y": 52,
+        "w": 56,
+        "h": 36
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 35,
+        "w": 56,
+        "h": 36
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_CIVIC_CLEAN_All_024.png": {
+      "frame": {
+        "x": 2,
+        "y": 92,
+        "w": 56,
+        "h": 36
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 35,
+        "w": 56,
+        "h": 36
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_CIVIC_CLEAN_All_016.png": {
+      "frame": {
+        "x": 193,
+        "y": 2,
+        "w": 44,
+        "h": 50
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 26,
+        "w": 44,
+        "h": 50
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_CIVIC_CLEAN_All_032.png": {
+      "frame": {
+        "x": 129,
+        "y": 54,
+        "w": 44,
+        "h": 47
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 33,
+        "w": 44,
+        "h": 47
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_CIVIC_CLEAN_All_008.png": {
+      "frame": {
+        "x": 129,
+        "y": 105,
+        "w": 43,
+        "h": 50
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28,
+        "y": 26,
+        "w": 43,
+        "h": 50
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_CIVIC_CLEAN_All_040.png": {
+      "frame": {
+        "x": 62,
+        "y": 96,
+        "w": 43,
+        "h": 46
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28,
+        "y": 33,
+        "w": 43,
+        "h": 46
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_CIVIC_CLEAN_All_012.png": {
+      "frame": {
+        "x": 2,
+        "y": 132,
+        "w": 36,
+        "h": 48
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 32,
+        "y": 27,
+        "w": 36,
+        "h": 48
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_CIVIC_CLEAN_All_036.png": {
+      "frame": {
+        "x": 42,
+        "y": 146,
+        "w": 36,
+        "h": 43
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 32,
+        "y": 35,
+        "w": 36,
+        "h": 43
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    }
+  },
+  "animations": {
+    "rotate": [
+      "Black_CIVIC_CLEAN_All_000.png",
+      "Black_CIVIC_CLEAN_All_004.png",
+      "Black_CIVIC_CLEAN_All_008.png",
+      "Black_CIVIC_CLEAN_All_012.png",
+      "Black_CIVIC_CLEAN_All_016.png",
+      "Black_CIVIC_CLEAN_All_020.png",
+      "Black_CIVIC_CLEAN_All_024.png",
+      "Black_CIVIC_CLEAN_All_028.png",
+      "Black_CIVIC_CLEAN_All_032.png",
+      "Black_CIVIC_CLEAN_All_036.png",
+      "Black_CIVIC_CLEAN_All_040.png",
+      "Black_CIVIC_CLEAN_All_044.png"
+    ]
+  },
+  "meta": {
+    "app": "http://free-tex-packer.com",
+    "version": "0.6.7",
+    "image": "texture.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 239,
+      "h": 191
+    },
+    "scale": 1
+  }
+}

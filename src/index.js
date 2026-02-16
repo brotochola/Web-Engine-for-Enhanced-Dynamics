@@ -20,6 +20,7 @@ export { Camera } from './core/Camera.js';
 export { Ray } from './core/Ray.js';
 export { NavGrid } from './core/NavGrid.js';
 export { Grid } from './core/Grid.js';
+export { Sun } from './core/Sun.js';
 export { SpriteSheetRegistry } from './core/SpriteSheetRegistry.js';
 export { BigAtlasInspector } from './core/BigAtlasInspector.js';
 export * from './core/utils.js';
@@ -103,6 +104,7 @@ import { Camera } from './core/Camera.js';
 import { Ray } from './core/Ray.js';
 import { NavGrid } from './core/NavGrid.js';
 import { Grid } from './core/Grid.js';
+import { Sun } from './core/Sun.js';
 import { SpriteSheetRegistry } from './core/SpriteSheetRegistry.js';
 import { BigAtlasInspector } from './core/BigAtlasInspector.js';
 import * as utils from './core/utils.js';
@@ -141,6 +143,7 @@ const WEED = {
   Ray,
   NavGrid,
   Grid,
+  Sun,
   Keyboard,
   SpriteSheetRegistry,
   BigAtlasInspector,

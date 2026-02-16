@@ -41,7 +41,9 @@ import {
   PRE_RENDER_DEFAULTS,
   LIGHTING_DEFAULTS,
   NAVIGATION_DEFAULTS,
+  SUN_DEFAULTS,
 } from './ConfigDefaults.js';
+import { Sun } from './Sun.js';
 import { NavGrid } from './NavGrid.js';
 import { Grid } from './Grid.js';
 import {
@@ -1149,6 +1151,25 @@ class Scene {
       console.log(`[Scene] Constraint system: ${maxConstraints} max constraints (${constraintBufferSize} bytes)`);
     }
 
+    // ========================================
+    // SUN / DIRECTIONAL LIGHT SYSTEM
+    // ========================================
+    // Sun provides ambient daylight and parallel shadows
+    // Backed by SharedArrayBuffer for cross-worker access
+    const sunConfig = this.config.lighting?.sun || {};
+    if (sunConfig.enabled) {
+      this.buffers.sunData = new SharedArrayBuffer(Sun.BYTE_LENGTH);
+      this.sun = new Sun(this.buffers.sunData);
+      this.sun.initFromConfig(sunConfig);
+
+      // If day cycle is enabled, set initial time
+      if (sunConfig.dayCycle?.enabled) {
+        this.sun.setTimeOfDay(sunConfig.startHour || 12);
+      }
+
+      console.log(`[Scene] Sun system: enabled (hour: ${this.sun.hour.toFixed(1)}, intensity: ${this.sun.intensity.toFixed(2)})`);
+    }
+
     // Active entities buffer - tracks which entities are active for spatial worker load balancing
     // Layout: [count, entityIdx0, entityIdx1, ...]
     // Now maintained incrementally by spawn/despawn instead of rebuilt each frame
@@ -1907,6 +1928,8 @@ class Scene {
           maxRenderItems: this.maxShadowRenderItems,
         }
         : null,
+      // Sun/directional light system
+      sunData: this.buffers.sunData || null,
       flashes:
         this.config.lighting.maxFlashes > 0
           ? {
@@ -2370,6 +2393,10 @@ class Scene {
     // Main thread reads from cameraData and syncs to this.camera in updateCameraBuffer()
     this.updateCameraBuffer();
 
+    // Update sun day cycle (if enabled)
+    // Sun writes to SharedArrayBuffer, workers read it
+    this.updateSunDayCycle(deltaTime);
+
     // Visible/active units are now read directly by DebugUI from Transform/SpriteRenderer arrays
 
     // Call user's update hook
@@ -2377,6 +2404,23 @@ class Scene {
 
     // Reset per-frame input state (after update so devs can read it)
     Mouse.wheel = 0;
+  }
+
+  /**
+   * Update sun day cycle if enabled
+   * Advances time and updates sun position/intensity/color
+   * @param {number} deltaTime - Time since last frame in milliseconds
+   */
+  updateSunDayCycle(deltaTime) {
+    if (!this.sun) return;
+
+    const dayCycleConfig = this.config.lighting?.sun?.dayCycle;
+    if (!dayCycleConfig?.enabled) return;
+
+    const speed = dayCycleConfig.speed || 1;
+    const dayDurationMinutes = dayCycleConfig.dayDurationMinutes || 1440;
+
+    this.sun.advanceTime(deltaTime, speed, dayDurationMinutes);
   }
 
   createKeyIndexMap() {

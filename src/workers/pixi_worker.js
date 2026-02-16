@@ -20,6 +20,7 @@ import { SpriteSheetRegistry } from '../core/SpriteSheetRegistry.js';
 import { AbstractWorker } from './AbstractWorker.js';
 
 import { LightEmitter } from '../components/LightEmitter.js';
+import { Sun } from '../core/Sun.js';
 
 import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES, RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
 import { sortByY, normalizeAngleDifference, extractRGBNormalizedMut } from '../core/utils.js';
@@ -434,15 +435,23 @@ class PixiRenderer extends AbstractWorker {
     // LIGHTING SYSTEM
     // ========================================
     // Full-screen shader mesh for dynamic lighting (multiply blend)
-    // Configured via config.lighting: { enabled, lightingAmbient }
+    // Configured via config.lighting: { enabled, baseAmbient }
     this.lightingEnabled = false;
     this.lightingMesh = null; // PIXI.Mesh with lighting shader
     this.lightingShader = null; // Shader instance for updating uniforms
-    this.lightingAmbient = 0.05; // Ambient light level (0-1), read from config
+    this.baseAmbient = 0.05; // Base ambient light level (0-1), read from config (night/minimum light)
     this.maxLights = 128; // Maximum number of lights (default: 128), read from config
     this.lightingResolution = 1.0; // Resolution multiplier for lighting (e.g. 0.5 for half res)
     this.lightingRT = null; // RenderTexture for low-res lighting
     this.lightingDisplaySprite = null; // Sprite to display the lightingRT on stage
+
+    // ========================================
+    // SUN / DIRECTIONAL LIGHT
+    // ========================================
+    // Sun provides global ambient light that varies with time of day
+    // Reads from SharedArrayBuffer written by main thread
+    this.sun = null;
+    this.sunEnabled = false;
 
     // Reusable pool for light sorting (GC optimization)
     this._lightPool = [];
@@ -1268,7 +1277,12 @@ LIGHTING SYSTEM SETUP
           uLightG: { value: this._lightG, type: 'f32', size: maxLights },
           uLightB: { value: this._lightB, type: 'f32', size: maxLights },
           uLightCount: { value: 0, type: 'i32' },
-          uAmbient: { value: this.lightingAmbient, type: 'f32' },
+          uBaseAmbient: { value: this.baseAmbient, type: 'f32' },
+          // Sun uniforms
+          uSunIntensity: { value: 0, type: 'f32' },
+          uSunR: { value: 1.0, type: 'f32' },
+          uSunG: { value: 1.0, type: 'f32' },
+          uSunB: { value: 1.0, type: 'f32' },
         },
       },
     });
@@ -1318,7 +1332,12 @@ LIGHTING SYSTEM SETUP
     uniform float uLightG[${this.maxLights}];
     uniform float uLightB[${this.maxLights}];
     uniform int uLightCount;
-    uniform float uAmbient;
+    uniform float uBaseAmbient;
+    // Sun uniforms
+    uniform float uSunIntensity;
+    uniform float uSunR;
+    uniform float uSunG;
+    uniform float uSunB;
 
     void main() {
       // Use normalized coordinates (0 to 1) to avoid resolution-scaling ambiguity.
@@ -1331,8 +1350,16 @@ LIGHTING SYSTEM SETUP
 
       vec2 fragWorld = (screenPos / uZoom) + uCameraPos;
 
-      vec3 totalLight = vec3(uAmbient);
+      // Start with base ambient (night/minimum light)
+      vec3 totalLight = vec3(uBaseAmbient);
 
+      // Add sun contribution (global directional light)
+      // Sun color is applied uniformly across the scene
+      vec3 sunColor = vec3(uSunB, uSunG, uSunR); // BGR to RGB
+      totalLight += sunColor * uSunIntensity;
+
+      // Add point light contributions
+      // Point lights are suppressed when sun is bright (handled by intensity modulation)
       for (int i = 0; i < ${this.maxLights}; i++) {
         if (i >= uLightCount) break;
 
@@ -1500,6 +1527,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Update light count uniform
     uniformGroup.uniforms.uLightCount = countToRender;
+
+    // ========================================
+    // SUN UNIFORMS
+    // ========================================
+    // Sun provides global ambient light that varies with time of day
+    if (this.sun && this.sun.enabled) {
+      const sunIntensity = this.sun.intensity;
+      const sunColor = this.sun.color;
+
+      uniformGroup.uniforms.uSunIntensity = sunIntensity;
+
+      // Extract sun color RGB
+      extractRGBNormalizedMut(sunColor, rgb);
+      uniformGroup.uniforms.uSunR = rgb.r;
+      uniformGroup.uniforms.uSunG = rgb.g;
+      uniformGroup.uniforms.uSunB = rgb.b;
+    } else {
+      // Sun disabled - no sun contribution
+      uniformGroup.uniforms.uSunIntensity = 0;
+    }
   }
 
   /**
@@ -2690,8 +2737,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (lightingConfig.enabled && data.buffers.componentData.LightEmitter) {
       this.lightingEnabled = true;
       this.lightingResolution = lightingConfig.resolution || 1.0;
-      this.lightingAmbient =
-        lightingConfig.lightingAmbient !== undefined ? lightingConfig.lightingAmbient : 0.05;
+      // baseAmbient is the night/minimum light level (when sun is down)
+      // Support both new 'baseAmbient' and legacy 'lightingAmbient' config keys
+      this.baseAmbient =
+        lightingConfig.baseAmbient !== undefined
+          ? lightingConfig.baseAmbient
+          : lightingConfig.lightingAmbient !== undefined
+            ? lightingConfig.lightingAmbient
+            : 0.05;
       this.maxLights = lightingConfig.maxLights !== undefined ? lightingConfig.maxLights : 128;
 
       // Create lighting mesh (full-screen quad with multiply blend)
@@ -2699,11 +2752,20 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.createLightingSystem();
 
       console.log(
-        `PIXI WORKER: Lighting system enabled (ambient: ${this.lightingAmbient}, maxLights: ${this.maxLights}, resolution: ${this.lightingResolution})`
+        `PIXI WORKER: Lighting system enabled (baseAmbient: ${this.baseAmbient}, maxLights: ${this.maxLights}, resolution: ${this.lightingResolution})`
       );
 
       // Light glow sprites are now handled by the render queue (type=3) from particle_worker
       // No separate container or sprite pool needed
+    }
+
+    // ========================================
+    // SUN SYSTEM - Initialize
+    // ========================================
+    if (data.sunData) {
+      this.sun = new Sun(data.sunData);
+      this.sunEnabled = this.sun.enabled;
+      console.log(`PIXI WORKER: Sun system initialized (enabled: ${this.sunEnabled})`);
     }
 
     // Note: Debug visualization is now handled by DebugUI on main thread
