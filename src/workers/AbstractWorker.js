@@ -16,6 +16,7 @@ import {
   exposeEntityClassesGlobally,
 } from '../core/utils.js';
 import { Camera } from '../core/Camera.js';
+import { Sun } from '../core/Sun.js';
 import { Ray } from '../core/Ray.js';
 import { Grid } from '../core/Grid.js';
 import { NavGrid } from '../core/NavGrid.js';
@@ -376,6 +377,11 @@ export class AbstractWorker {
       Mouse.initialize(data.buffers.mouseData);
     }
 
+    // Initialize Sun static class (directional light shared across workers)
+    if (data.sunData) {
+      Sun.initialize(data.sunData);
+    }
+
     // Initialize neighbor data reference (single buffer - row ownership eliminates races)
     // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     if (data.buffers?.neighborData) {
@@ -584,6 +590,7 @@ export class AbstractWorker {
     self.SpriteSheetRegistry = SpriteSheetRegistry;
     self.DecorationPool = DecorationPool;
     self.Constraint = Constraint;
+    self.Sun = Sun
   }
 
   /**

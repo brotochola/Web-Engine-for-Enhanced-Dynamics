@@ -169,10 +169,15 @@ export const SUN_DEFAULTS = {
   color: 0xffffff, // Sun color (warm white default)
   shadowAlpha: 0.4, // Base darkness of sun-cast shadows (0-1)
   startHour: 12, // Starting hour for day cycle (0-24)
+  // Shadow configuration
+  shadowAngleOffset: Math.PI, // Hemisphere offset: π for southern (shadows point south), 0 for northern
+  shadowMinLengthRatio: 0.1, // Shadow length multiplier at zenith (noon) - shortest shadows
+  shadowMaxLengthRatio: 1.0, // Shadow length multiplier at horizon (sunrise/sunset) - longest shadows
+  shadowStretchAlphaFactor: 0.5, // Alpha fade when shadows stretch (0=none, 1=full compensation)
   dayCycle: {
     enabled: false, // Auto-advance time of day
     speed: 1, // Multiplier (1 = real time, 60 = 1 minute = 1 hour)
-    dayDurationMinutes: 1440, // Real minutes for full day (1440 = 24 real hours)
+    dayDurationMinutes: 5, // Real minutes for full day (1440 = 24 real hours)
   },
 };
 
@@ -187,6 +192,7 @@ export const LIGHTING_DEFAULTS = {
   maxShadowSprites: 1000,
   maxFlashes: 0,
   resolution: 0.25,
+  shadowResolution: 0.5,
   sun: SUN_DEFAULTS,
 };
 
