@@ -1785,11 +1785,27 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         const frameTextures = {};
         for (const [frameName, frameData] of Object.entries(jsonData.frames)) {
           const frame = frameData.frame;
-          // PixiJS 8: Texture constructor takes options object with source and frame
-          const texture = new PIXI.Texture({
+          const sourceSize = frameData.sourceSize;
+          const spriteSourceSize = frameData.spriteSourceSize;
+
+          // Build texture options
+          const textureOptions = {
             source,
             frame: new PIXI.Rectangle(frame.x, frame.y, frame.w, frame.h),
-          });
+          };
+
+          // If frame is trimmed, add orig and trim for proper anchor handling
+          // PixiJS uses these to offset the sprite so anchors work relative to original size
+          if (sourceSize && spriteSourceSize &&
+            (sourceSize.w !== frame.w || sourceSize.h !== frame.h)) {
+            textureOptions.orig = new PIXI.Rectangle(0, 0, sourceSize.w, sourceSize.h);
+            textureOptions.trim = new PIXI.Rectangle(
+              spriteSourceSize.x, spriteSourceSize.y,
+              spriteSourceSize.w, spriteSourceSize.h
+            );
+          }
+
+          const texture = new PIXI.Texture(textureOptions);
           frameTextures[frameName] = texture;
         }
 
