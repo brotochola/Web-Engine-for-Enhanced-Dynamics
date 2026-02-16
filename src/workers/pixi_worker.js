@@ -394,7 +394,6 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueTextureId = null; // Uint16Array (encoded)
     this.renderQueueAnchorX = null; // Float32Array
     this.renderQueueAnchorY = null; // Float32Array
-    this.renderQueueFrameIndex = null; // Uint8Array (for entity animations)
 
     // Render queue sprite pool (separate from entity/particle pools)
     // Sprites are pooled and reused based on count diff between frames
@@ -534,7 +533,6 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueTextureId = buffer.textureId;
     this.renderQueueAnchorX = buffer.anchorX;
     this.renderQueueAnchorY = buffer.anchorY;
-    this.renderQueueFrameIndex = buffer.frameIndex;
     this.renderQueueType = buffer.type;
     this.renderQueueEntityIndex = buffer.entityIndex;
   }
@@ -945,7 +943,6 @@ class PixiRenderer extends AbstractWorker {
     const rqTextureId = this.renderQueueTextureId;
     const rqAnchorX = this.renderQueueAnchorX;
     const rqAnchorY = this.renderQueueAnchorY;
-    const rqFrameIndex = this.renderQueueFrameIndex;
 
     // Get flat texture array for O(1) lookup
     const flatTextures = this.flatTextures;
@@ -2701,11 +2698,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
         buffer.anchorY = new Float32Array(sab, offset, maxItems);
         offset += maxItems * 4;
-
-        buffer.frameIndex = new Uint8Array(sab, offset, maxItems);
-        offset += maxItems;
-
-        offset = Math.ceil(offset / 4) * 4;
 
         buffer.type = new Uint8Array(sab, offset, maxItems);
         offset += maxItems;

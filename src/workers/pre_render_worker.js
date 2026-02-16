@@ -88,16 +88,11 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTextureId = null;
         this.renderQueueAnchorX = null;
         this.renderQueueAnchorY = null;
-        this.renderQueueFrameIndex = null;
         this.renderQueueType = null;
         this.renderQueueEntityIndex = null;
 
         // Entity texture lookup buffer
         this.entityLastTextureId = null;
-
-        // Smoothed position buffers (for interpolation)
-        this.smoothedX = null;
-        this.smoothedY = null;
 
         // Animation frame tracking
         this.entityFrameIndex = null;
@@ -109,16 +104,15 @@ class PreRenderWorker extends AbstractWorker {
         this.proxyToGlobalAnim = null;
         this.animationNameToIndex = null;
 
-        // Renderable collector
-        this._renderableCollector = null;
+        // Renderable collector (struct-of-arrays for better cache locality)
+        this._renderableY = null;
+        this._renderableType = null;
+        this._renderableIndex = null;
         this._renderableCount = 0;
 
         // Pre-allocated query arrays
         this._queryLightEmitter = null;
         this._queryShadowCaster = null;
-
-        // Interpolation alpha
-        this.interpolationAlpha = 0.5;
 
         // ========================================
         // SHADOW RENDER QUEUE (DOUBLE BUFFERED)
@@ -262,11 +256,6 @@ class PreRenderWorker extends AbstractWorker {
                 buffer.anchorY = new Float32Array(sab, offset, maxItems);
                 offset += maxItems * 4;
 
-                buffer.frameIndex = new Uint8Array(sab, offset, maxItems);
-                offset += maxItems;
-
-                offset = Math.ceil(offset / 4) * 4;
-
                 buffer.type = new Uint8Array(sab, offset, maxItems);
                 offset += maxItems;
 
@@ -285,24 +274,16 @@ class PreRenderWorker extends AbstractWorker {
                 this.entityLastTextureId = new Uint16Array(data.renderQueue.entityTextureData);
             }
 
-            // Initialize smoothed position buffers
+            // Animation state buffers
             if (this.globalEntityCount > 0) {
-                this.smoothedX = new Float32Array(this.globalEntityCount);
-                this.smoothedY = new Float32Array(this.globalEntityCount);
                 this.entityFrameIndex = new Uint16Array(this.globalEntityCount);
                 this.entityFrameAccumulator = new Float32Array(this.globalEntityCount);
-
-                for (let i = 0; i < this.globalEntityCount; i++) {
-                    this.smoothedX[i] = Transform.x[i];
-                    this.smoothedY[i] = Transform.y[i];
-                }
             }
 
-            // Pre-allocate renderable collector
-            this._renderableCollector = new Array(maxItems);
-            for (let i = 0; i < maxItems; i++) {
-                this._renderableCollector[i] = { y: 0, type: 0, index: 0 };
-            }
+            // Pre-allocate renderable collector buffers
+            this._renderableY = new Float32Array(maxItems);
+            this._renderableType = new Uint8Array(maxItems);
+            this._renderableIndex = new Int32Array(maxItems);
 
             // Pre-allocate query arrays
             this._queryLightEmitter = [LightEmitter];
@@ -432,7 +413,6 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTextureId = buffer.textureId;
         this.renderQueueAnchorX = buffer.anchorX;
         this.renderQueueAnchorY = buffer.anchorY;
-        this.renderQueueFrameIndex = buffer.frameIndex;
         this.renderQueueType = buffer.type;
         this.renderQueueEntityIndex = buffer.entityIndex;
     }
@@ -507,7 +487,7 @@ class PreRenderWorker extends AbstractWorker {
         this.collectVisibleDecorations();
 
         // Build the final render queue (sorts by Y, applies interpolation, writes to SAB)
-        this.buildRenderQueue(deltaTime, this.interpolationAlpha);
+        this.buildRenderQueue(deltaTime);
 
         // Build shadow render queue
         this.buildShadowRenderQueue();
@@ -580,6 +560,10 @@ class PreRenderWorker extends AbstractWorker {
         const renderVisible = SpriteRenderer.renderVisible;
         const lightEmitterActive = LightEmitter.active;
         const hasGlowSprite = LightEmitter.hasGlowSprite;
+        const lightIntensity = LightEmitter.lightIntensity;
+        const visualRange = Collider.visualRange;
+        const MIN_GLOW_INTENSITY = 50; // Matches alpha cull threshold in buildRenderQueue()
+        const MIN_GLOW_RANGE = 2.5; // Matches scale cull threshold in buildRenderQueue()
 
         for (let idx = 0; idx < visibleCount; idx++) {
             const i = visibleData[1 + idx];
@@ -591,7 +575,13 @@ class PreRenderWorker extends AbstractWorker {
             }
 
             // Light glow sprites
-            if (lightEmitterActive && lightEmitterActive[i] && hasGlowSprite[i]) {
+            if (
+                lightEmitterActive &&
+                lightEmitterActive[i] &&
+                hasGlowSprite[i] &&
+                lightIntensity[i] >= MIN_GLOW_INTENSITY &&
+                (visualRange[i] || 200) >= MIN_GLOW_RANGE
+            ) {
                 this.collectRenderable(3, i, y[i] + 10);
             }
         }
@@ -623,49 +613,64 @@ class PreRenderWorker extends AbstractWorker {
     collectRenderable(type, index, y) {
         if (!this.renderQueueEnabled) return;
         if (this._renderableCount >= this.renderQueueMaxItems) return;
-
-        const entry = this._renderableCollector[this._renderableCount];
-        entry.y = y;
-        entry.type = type;
-        entry.index = index;
-        this._renderableCount++;
+        const writeIdx = this._renderableCount;
+        this._renderableY[writeIdx] = y;
+        this._renderableType[writeIdx] = type;
+        this._renderableIndex[writeIdx] = index;
+        this._renderableCount = writeIdx + 1;
     }
 
     /**
      * In-place heapsort for renderable collector
      */
-    _heapsortRenderables(arr, count) {
+    _heapsortRenderables(count) {
+        const yArr = this._renderableY;
+        const typeArr = this._renderableType;
+        const indexArr = this._renderableIndex;
+
         for (let i = (count >> 1) - 1; i >= 0; i--) {
-            this._heapifyRenderables(arr, count, i);
+            this._heapifyRenderables(count, i, yArr, typeArr, indexArr);
         }
 
         for (let i = count - 1; i > 0; i--) {
-            const temp = arr[0];
-            arr[0] = arr[i];
-            arr[i] = temp;
-            this._heapifyRenderables(arr, i, 0);
+            const tempY = yArr[0];
+            const tempType = typeArr[0];
+            const tempIndex = indexArr[0];
+            yArr[0] = yArr[i];
+            typeArr[0] = typeArr[i];
+            indexArr[0] = indexArr[i];
+            yArr[i] = tempY;
+            typeArr[i] = tempType;
+            indexArr[i] = tempIndex;
+            this._heapifyRenderables(i, 0, yArr, typeArr, indexArr);
         }
     }
 
-    _heapifyRenderables(arr, heapSize, i) {
+    _heapifyRenderables(heapSize, i, yArr, typeArr, indexArr) {
         while (true) {
             let largest = i;
             const left = (i << 1) + 1;
             const right = left + 1;
 
-            if (left < heapSize && arr[left].y > arr[largest].y) {
+            if (left < heapSize && yArr[left] > yArr[largest]) {
                 largest = left;
             }
 
-            if (right < heapSize && arr[right].y > arr[largest].y) {
+            if (right < heapSize && yArr[right] > yArr[largest]) {
                 largest = right;
             }
 
             if (largest === i) break;
 
-            const temp = arr[i];
-            arr[i] = arr[largest];
-            arr[largest] = temp;
+            const tempY = yArr[i];
+            const tempType = typeArr[i];
+            const tempIndex = indexArr[i];
+            yArr[i] = yArr[largest];
+            typeArr[i] = typeArr[largest];
+            indexArr[i] = indexArr[largest];
+            yArr[largest] = tempY;
+            typeArr[largest] = tempType;
+            indexArr[largest] = tempIndex;
             i = largest;
         }
     }
@@ -673,29 +678,36 @@ class PreRenderWorker extends AbstractWorker {
     /**
      * Build the final render queue
      */
-    buildRenderQueue(deltaTime, interpolationAlpha) {
+    buildRenderQueue(deltaTime) {
         if (!this.renderQueueEnabled || this._renderableCount === 0) {
             if (this.renderQueueCount) this.renderQueueCount[0] = 0;
             return;
         }
 
         const count = this._renderableCount;
-        const collector = this._renderableCollector;
+        const collectorY = this._renderableY;
+        const collectorType = this._renderableType;
+        const collectorIndex = this._renderableIndex;
 
         // Sort by Y
         if (count > 1) {
             if (count > 256) {
-                this._heapsortRenderables(collector, count);
+                this._heapsortRenderables(count);
             } else {
                 for (let i = 1; i < count; i++) {
-                    const current = collector[i];
-                    const currentY = current.y;
+                    const currentY = collectorY[i];
+                    const currentType = collectorType[i];
+                    const currentIndex = collectorIndex[i];
                     let j = i - 1;
-                    while (j >= 0 && collector[j].y > currentY) {
-                        collector[j + 1] = collector[j];
+                    while (j >= 0 && collectorY[j] > currentY) {
+                        collectorY[j + 1] = collectorY[j];
+                        collectorType[j + 1] = collectorType[j];
+                        collectorIndex[j + 1] = collectorIndex[j];
                         j--;
                     }
-                    collector[j + 1] = current;
+                    collectorY[j + 1] = currentY;
+                    collectorType[j + 1] = currentType;
+                    collectorIndex[j + 1] = currentIndex;
                 }
             }
         }
@@ -768,9 +780,8 @@ class PreRenderWorker extends AbstractWorker {
         const deltaSeconds = deltaTime / 1000;
 
         for (let i = 0; i < count; i++) {
-            const entry = collector[i];
-            const type = entry.type;
-            const idx = entry.index;
+            const type = collectorType[i];
+            const idx = collectorIndex[i];
 
             if (type === 0) {
                 // === ENTITY ===
@@ -1038,13 +1049,38 @@ class PreRenderWorker extends AbstractWorker {
         // When sun intensity is high, point light shadows are less visible
         const sunIntensity = Sun.isInitialized && Sun.enabled ? Sun.intensity : 0;
         const pointLightShadowMultiplier = 1 - (sunIntensity * 0.9); // At noon: 10% visibility
+        const pointShadowAlphaScale = 0.33 * pointLightShadowMultiplier;
+        const MIN_POINT_SHADOW_ALPHA = 0.003;
+        if (pointShadowAlphaScale <= MIN_POINT_SHADOW_ALPHA) {
+            this.shadowRenderQueueCount[0] = writeIdx;
+            this.shadowsUpdatedThisFrame = shadowCount;
+            return;
+        }
 
         const lightEntitiesRaw = this.queryActiveEntities(this._queryLightEmitter);
 
+        // Only keep relevant on-screen lights, then sort those by Y.
         const lightEntities = this._sortedLightEntities;
-        lightEntities.length = lightEntitiesRaw.length;
+        lightEntities.length = 0;
         for (let i = 0; i < lightEntitiesRaw.length; i++) {
-            lightEntities[i] = lightEntitiesRaw[i];
+            const lightIdx = lightEntitiesRaw[i];
+            if (!lightEnabled[lightIdx]) continue;
+
+            const intensity = lightIntensity[lightIdx];
+            if (intensity <= 0) continue;
+
+            const isFlash = flashActive[lightIdx] === 1;
+            if (!isFlash) {
+                const lightX = worldX[lightIdx];
+                const lightY = worldY[lightIdx];
+                const lightInfluenceRadius = sqrtLightIntensity[lightIdx] * 10;
+                if (lightX + lightInfluenceRadius < viewMinX || lightX - lightInfluenceRadius > viewMaxX ||
+                    lightY + lightInfluenceRadius < viewMinY || lightY - lightInfluenceRadius > viewMaxY) {
+                    continue;
+                }
+            }
+
+            lightEntities.push(lightIdx);
         }
         lightEntities.sort(this._lightYComparator);
 
@@ -1053,21 +1089,13 @@ class PreRenderWorker extends AbstractWorker {
             if (lightsProcessed >= this.maxShadowCastingLights) break;
 
             const lightIdx = lightEntities[i];
-            if (!lightEnabled[lightIdx]) continue;
-
-            const isFlash = flashActive[lightIdx] === 1;
             const intensity = lightIntensity[lightIdx];
-            if (intensity <= 0) continue;
-
             const lightX = worldX[lightIdx];
             const lightY = worldY[lightIdx];
             const lightH = lightHeight[lightIdx] || 0;
-
-            if (!isFlash) {
-                const lightInfluenceRadius = sqrtLightIntensity[lightIdx] * 10;
-                if (lightX + lightInfluenceRadius < viewMinX || lightX - lightInfluenceRadius > viewMaxX ||
-                    lightY + lightInfluenceRadius < viewMinY || lightY - lightInfluenceRadius > viewMaxY) continue;
-            }
+            const maxShadowDistSq = pointShadowAlphaScale > MIN_POINT_SHADOW_ALPHA
+                ? intensity * ((pointShadowAlphaScale / MIN_POINT_SHADOW_ALPHA) - 1)
+                : 0;
 
             const offset = lightIdx * stride;
             const neighborCountForLight = neighborData[offset];
@@ -1100,6 +1128,7 @@ class PreRenderWorker extends AbstractWorker {
                 const distSq = dx * dx + dy * dy;
 
                 if (distSq < 1) continue;
+                if (maxShadowDistSq > 0 && distSq > maxShadowDistSq) continue;
 
                 const casterX = worldX[neighborIdx];
                 const casterY = worldY[neighborIdx];
@@ -1128,9 +1157,8 @@ class PreRenderWorker extends AbstractWorker {
                 if (Number.isNaN(alpha)) alpha = 0;
                 if (alpha > 1) alpha = 1;
                 if (alpha < 0) alpha = 0;
-                alpha *= 0.33;
-                // Suppress point light shadows when sun is bright
-                alpha *= pointLightShadowMultiplier;
+                alpha *= pointShadowAlphaScale;
+                if (alpha < MIN_POINT_SHADOW_ALPHA) continue;
 
                 const angle = Math.atan2(dy, dx);
 
