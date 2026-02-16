@@ -1,6 +1,7 @@
 /**
- * Sun - Singleton representing the sun/directional light
+ * Sun - Static class representing the sun/directional light
  * Backed by SharedArrayBuffer for cross-worker access
+ * Pattern follows Camera, Mouse, Keyboard static classes
  *
  * Main thread: read/write via setters (controls day cycle)
  * Workers: read-only via getters (consume state)
@@ -14,8 +15,8 @@
  * because they would be "drowned out" by sunlight in real life.
  */
 export class Sun {
-    // SAB layout (32 bytes total, 4-byte aligned)
-    static BYTE_LENGTH = 32;
+    // SAB layout (64 bytes total, 4-byte aligned)
+    static BYTE_LENGTH = 64;
 
     // Offsets in bytes
     static OFFSETS = {
@@ -27,7 +28,17 @@ export class Sun {
         COLOR: 16, // Uint32 (0xRRGGBB)
         SHADOW_ALPHA: 20, // Float32 (0-1, base shadow darkness from sun)
         HOUR: 24, // Float32 (0-24, current time of day)
-        // reserved: 28-31
+        // Shadow config (set once from config)
+        SHADOW_ANGLE_OFFSET: 28, // Float32 (radians, π for southern hemisphere)
+        SHADOW_MIN_LENGTH_RATIO: 32, // Float32 (shadow multiplier at zenith)
+        SHADOW_MAX_LENGTH_RATIO: 36, // Float32 (shadow multiplier at horizon)
+        SHADOW_STRETCH_ALPHA_FACTOR: 40, // Float32 (alpha fade when stretched)
+        // Shadow computed (updated in setTimeOfDay)
+        SHADOW_DIR_X: 44, // Float32 (cos of shadow angle)
+        SHADOW_DIR_Y: 48, // Float32 (sin of shadow angle)
+        SHADOW_LENGTH_RATIO: 52, // Float32 (current length ratio based on elevation)
+        SHADOW_ANGLE: 56, // Float32 (radians, for sprite rotation)
+        // reserved: 60-63
     };
 
     // Float32 indices (offset / 4)
@@ -37,6 +48,14 @@ export class Sun {
         INTENSITY: 3,
         SHADOW_ALPHA: 5,
         HOUR: 6,
+        SHADOW_ANGLE_OFFSET: 7,
+        SHADOW_MIN_LENGTH_RATIO: 8,
+        SHADOW_MAX_LENGTH_RATIO: 9,
+        SHADOW_STRETCH_ALPHA_FACTOR: 10,
+        SHADOW_DIR_X: 11,
+        SHADOW_DIR_Y: 12,
+        SHADOW_LENGTH_RATIO: 13,
+        SHADOW_ANGLE: 14,
     };
 
     // Uint32 indices (offset / 4)
@@ -60,11 +79,19 @@ export class Sun {
         { hour: 24, color: 0x1a1a2e }, // Midnight - dark blue
     ];
 
+    // SharedArrayBuffer views (set during initialization)
+    static _sab = null;
+    static _uint8 = null;
+    static _float32 = null;
+    static _uint32 = null;
+
+    // ============ Initialization ============
+
     /**
-     * Create a Sun instance backed by a SharedArrayBuffer
+     * Initialize Sun with shared data buffer
      * @param {SharedArrayBuffer} sharedArrayBuffer - SAB of at least Sun.BYTE_LENGTH bytes
      */
-    constructor(sharedArrayBuffer) {
+    static initialize(sharedArrayBuffer) {
         if (!sharedArrayBuffer || sharedArrayBuffer.byteLength < Sun.BYTE_LENGTH) {
             throw new Error(`Sun requires SharedArrayBuffer of at least ${Sun.BYTE_LENGTH} bytes`);
         }
@@ -75,62 +102,126 @@ export class Sun {
         this._uint32 = new Uint32Array(sharedArrayBuffer);
     }
 
+    /**
+     * Check if Sun is initialized
+     * @returns {boolean}
+     */
+    static get isInitialized() {
+        return this._sab !== null;
+    }
+
     // ============ Getters/Setters ============
 
     /** Whether sun lighting is enabled */
-    get enabled() {
-        return this._uint8[Sun.OFFSETS.ENABLED] === 1;
+    static get enabled() {
+        return this._uint8 ? this._uint8[Sun.OFFSETS.ENABLED] === 1 : false;
     }
-    set enabled(v) {
-        this._uint8[Sun.OFFSETS.ENABLED] = v ? 1 : 0;
+    static set enabled(v) {
+        if (this._uint8) this._uint8[Sun.OFFSETS.ENABLED] = v ? 1 : 0;
     }
 
     /** Sun angle in degrees (0=East, 90=South, 180=West, 270=North) */
-    get angle() {
-        return this._float32[Sun.F32.ANGLE];
+    static get angle() {
+        return this._float32 ? this._float32[Sun.F32.ANGLE] : 0;
     }
-    set angle(v) {
-        this._float32[Sun.F32.ANGLE] = v;
+    static set angle(v) {
+        if (this._float32) this._float32[Sun.F32.ANGLE] = v;
     }
 
     /** Sun elevation in degrees (0=horizon, 90=directly overhead) */
-    get elevation() {
-        return this._float32[Sun.F32.ELEVATION];
+    static get elevation() {
+        return this._float32 ? this._float32[Sun.F32.ELEVATION] : 0;
     }
-    set elevation(v) {
-        this._float32[Sun.F32.ELEVATION] = v;
+    static set elevation(v) {
+        if (this._float32) this._float32[Sun.F32.ELEVATION] = v;
     }
 
     /** Sun intensity (0-1), affects ambient light and point light shadow suppression */
-    get intensity() {
-        return this._float32[Sun.F32.INTENSITY];
+    static get intensity() {
+        return this._float32 ? this._float32[Sun.F32.INTENSITY] : 0;
     }
-    set intensity(v) {
-        this._float32[Sun.F32.INTENSITY] = Math.max(0, Math.min(1, v));
+    static set intensity(v) {
+        if (this._float32) this._float32[Sun.F32.INTENSITY] = Math.max(0, Math.min(1, v));
     }
 
     /** Sun color as 0xRRGGBB */
-    get color() {
-        return this._uint32[Sun.U32.COLOR];
+    static get color() {
+        return this._uint32 ? this._uint32[Sun.U32.COLOR] : 0xffffff;
     }
-    set color(v) {
-        this._uint32[Sun.U32.COLOR] = v;
+    static set color(v) {
+        if (this._uint32) this._uint32[Sun.U32.COLOR] = v;
     }
 
     /** Base shadow alpha for sun-cast shadows (0-1) */
-    get shadowAlpha() {
-        return this._float32[Sun.F32.SHADOW_ALPHA];
+    static get shadowAlpha() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_ALPHA] : 0;
     }
-    set shadowAlpha(v) {
-        this._float32[Sun.F32.SHADOW_ALPHA] = Math.max(0, Math.min(1, v));
+    static set shadowAlpha(v) {
+        if (this._float32) this._float32[Sun.F32.SHADOW_ALPHA] = Math.max(0, Math.min(1, v));
     }
 
     /** Current hour of day (0-24) */
-    get hour() {
-        return this._float32[Sun.F32.HOUR];
+    static get hour() {
+        return this._float32 ? this._float32[Sun.F32.HOUR] : 12;
     }
-    set hour(v) {
-        this._float32[Sun.F32.HOUR] = ((v % 24) + 24) % 24; // Wrap to 0-24
+    static set hour(v) {
+        if (this._float32) this._float32[Sun.F32.HOUR] = ((v % 24) + 24) % 24; // Wrap to 0-24
+    }
+
+    // ============ Shadow Config (set once from config) ============
+
+    /** Shadow angle offset in radians (π for southern hemisphere, 0 for northern) */
+    static get shadowAngleOffset() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_ANGLE_OFFSET] : Math.PI;
+    }
+    static set shadowAngleOffset(v) {
+        if (this._float32) this._float32[Sun.F32.SHADOW_ANGLE_OFFSET] = v;
+    }
+
+    /** Shadow length multiplier at zenith (noon) - shortest shadows */
+    static get shadowMinLengthRatio() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_MIN_LENGTH_RATIO] : 0.1;
+    }
+    static set shadowMinLengthRatio(v) {
+        if (this._float32) this._float32[Sun.F32.SHADOW_MIN_LENGTH_RATIO] = v;
+    }
+
+    /** Shadow length multiplier at horizon (sunrise/sunset) - longest shadows */
+    static get shadowMaxLengthRatio() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_MAX_LENGTH_RATIO] : 1.0;
+    }
+    static set shadowMaxLengthRatio(v) {
+        if (this._float32) this._float32[Sun.F32.SHADOW_MAX_LENGTH_RATIO] = v;
+    }
+
+    /** Alpha fade compensation when shadows stretch (0=none, 1=full) */
+    static get shadowStretchAlphaFactor() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_STRETCH_ALPHA_FACTOR] : 0.5;
+    }
+    static set shadowStretchAlphaFactor(v) {
+        if (this._float32) this._float32[Sun.F32.SHADOW_STRETCH_ALPHA_FACTOR] = Math.max(0, Math.min(1, v));
+    }
+
+    // ============ Shadow Computed (read-only for workers) ============
+
+    /** Shadow direction X component (cos of shadow angle) */
+    static get shadowDirX() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_DIR_X] : 0;
+    }
+
+    /** Shadow direction Y component (sin of shadow angle) */
+    static get shadowDirY() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_DIR_Y] : 1;
+    }
+
+    /** Current shadow length ratio based on sun elevation */
+    static get shadowLengthRatio() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_LENGTH_RATIO] : 1;
+    }
+
+    /** Shadow angle in radians (for sprite rotation) */
+    static get shadowAngle() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_ANGLE] : 0;
     }
 
     // ============ Convenience Methods ============
@@ -140,7 +231,7 @@ export class Sun {
      * Automatically calculates angle, elevation, intensity, and color
      * @param {number} hour - Hour of day (0-24, wraps automatically)
      */
-    setTimeOfDay(hour) {
+    static setTimeOfDay(hour) {
         this.hour = hour;
         const h = this.hour; // Use wrapped value
 
@@ -153,7 +244,8 @@ export class Sun {
         // Sun elevation: 0° at sunrise/sunset, peak at noon
         // Using cosine curve centered on noon (hour 12)
         const noonOffset = Math.abs(h - 12) / 12; // 0 at noon, 1 at midnight
-        this.elevation = Math.max(0, Math.cos(noonOffset * Math.PI) * 90);
+        const elevation = Math.max(0, Math.cos(noonOffset * Math.PI) * 90);
+        this.elevation = elevation;
 
         // Sun intensity: smooth day/night transition using cosine curve
         // Peak at noon, zero at night
@@ -161,6 +253,34 @@ export class Sun {
 
         // Sun color: interpolate from color table
         this.color = this._getColorForHour(h);
+
+        // Compute shadow direction and length ratio
+        this._updateShadowValues(elevation);
+    }
+
+    /**
+     * Update precomputed shadow values based on current sun state
+     * @param {number} elevation - Sun elevation in degrees
+     * @private
+     */
+    static _updateShadowValues(elevation) {
+        if (!this._float32) return;
+
+        const sunAngleRad = this.angle * (Math.PI / 180);
+        // Shadow points opposite to sun direction
+        // shadowAngleOffset adds π for southern hemisphere (shadows point south/down)
+        const shadowAngle = sunAngleRad + Math.PI + this.shadowAngleOffset;
+
+        this._float32[Sun.F32.SHADOW_ANGLE] = shadowAngle;
+        this._float32[Sun.F32.SHADOW_DIR_X] = Math.cos(shadowAngle);
+        this._float32[Sun.F32.SHADOW_DIR_Y] = Math.sin(shadowAngle);
+
+        // Shadow length ratio based on elevation (lower sun = longer shadows)
+        // Linear interpolation: horizon (0°) = maxLengthRatio, zenith (90°) = minLengthRatio
+        const t = elevation / 90; // 0 at horizon, 1 at zenith
+        const minRatio = this.shadowMinLengthRatio;
+        const maxRatio = this.shadowMaxLengthRatio;
+        this._float32[Sun.F32.SHADOW_LENGTH_RATIO] = maxRatio + t * (minRatio - maxRatio);
     }
 
     /**
@@ -169,7 +289,7 @@ export class Sun {
      * @returns {number} Color as 0xRRGGBB
      * @private
      */
-    _getColorForHour(hour) {
+    static _getColorForHour(hour) {
         const colors = Sun.DEFAULT_COLORS;
 
         // Find surrounding keyframes
@@ -211,7 +331,7 @@ export class Sun {
      * Initialize sun properties from a config object
      * @param {Object} config - Sun configuration from scene config
      */
-    initFromConfig(config) {
+    static initFromConfig(config) {
         this.enabled = config.enabled ?? false;
         this.angle = config.angle ?? 180;
         this.elevation = config.elevation ?? 45;
@@ -219,6 +339,15 @@ export class Sun {
         this.color = config.color ?? 0xffffff;
         this.shadowAlpha = config.shadowAlpha ?? 0.4;
         this.hour = config.startHour ?? 12; // Default to noon
+
+        // Shadow config
+        this.shadowAngleOffset = config.shadowAngleOffset ?? Math.PI;
+        this.shadowMinLengthRatio = config.shadowMinLengthRatio ?? 0.1;
+        this.shadowMaxLengthRatio = config.shadowMaxLengthRatio ?? 1.0;
+        this.shadowStretchAlphaFactor = config.shadowStretchAlphaFactor ?? 0.5;
+
+        // Initialize shadow computed values
+        this._updateShadowValues(this.elevation);
     }
 
     /**
@@ -227,7 +356,7 @@ export class Sun {
      * @param {number} speed - Day cycle speed multiplier (1 = real time)
      * @param {number} dayDurationMinutes - Real-world minutes for one full day cycle
      */
-    advanceTime(deltaMs, speed = 1, dayDurationMinutes = 1440) {
+    static advanceTime(deltaMs, speed = 1, dayDurationMinutes = 1440) {
         // Convert: deltaMs → hours of game time
         // dayDurationMinutes real minutes = 24 game hours
         // So 1 real ms = 24 / (dayDurationMinutes * 60 * 1000) game hours
@@ -241,16 +370,7 @@ export class Sun {
      * Get the underlying SharedArrayBuffer (for passing to workers)
      * @returns {SharedArrayBuffer}
      */
-    get buffer() {
+    static get buffer() {
         return this._sab;
-    }
-
-    /**
-     * Create a new Sun with its own SharedArrayBuffer
-     * @returns {Sun}
-     */
-    static create() {
-        const sab = new SharedArrayBuffer(Sun.BYTE_LENGTH);
-        return new Sun(sab);
     }
 }

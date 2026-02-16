@@ -761,6 +761,7 @@ class Scene {
     // Expose core classes that might not be in componentMap (system classes)
     window.GameObject = GameObject;
     window.Camera = Camera;
+    window.Sun = Sun;
     window.SpriteSheetRegistry = SpriteSheetRegistry;
     window.Mouse = Mouse;
     window.Flash = Flash;
@@ -1159,15 +1160,15 @@ class Scene {
     const sunConfig = this.config.lighting?.sun || {};
     if (sunConfig.enabled) {
       this.buffers.sunData = new SharedArrayBuffer(Sun.BYTE_LENGTH);
-      this.sun = new Sun(this.buffers.sunData);
-      this.sun.initFromConfig(sunConfig);
+      Sun.initialize(this.buffers.sunData);
+      Sun.initFromConfig(sunConfig);
 
       // If day cycle is enabled, set initial time
       if (sunConfig.dayCycle?.enabled) {
-        this.sun.setTimeOfDay(sunConfig.startHour || 12);
+        Sun.setTimeOfDay(sunConfig.startHour || 12);
       }
 
-      console.log(`[Scene] Sun system: enabled (hour: ${this.sun.hour.toFixed(1)}, intensity: ${this.sun.intensity.toFixed(2)})`);
+      console.log(`[Scene] Sun system: enabled (hour: ${Sun.hour.toFixed(1)}, intensity: ${Sun.intensity.toFixed(2)})`);
     }
 
     // Active entities buffer - tracks which entities are active for spatial worker load balancing
@@ -2412,7 +2413,7 @@ class Scene {
    * @param {number} deltaTime - Time since last frame in milliseconds
    */
   updateSunDayCycle(deltaTime) {
-    if (!this.sun) return;
+    if (!Sun.isInitialized) return;
 
     const dayCycleConfig = this.config.lighting?.sun?.dayCycle;
     if (!dayCycleConfig?.enabled) return;
@@ -2420,7 +2421,7 @@ class Scene {
     const speed = dayCycleConfig.speed || 1;
     const dayDurationMinutes = dayCycleConfig.dayDurationMinutes || 1440;
 
-    this.sun.advanceTime(deltaTime, speed, dayDurationMinutes);
+    Sun.advanceTime(deltaTime, speed, dayDurationMinutes);
   }
 
   createKeyIndexMap() {

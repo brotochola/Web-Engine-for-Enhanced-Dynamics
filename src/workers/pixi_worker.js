@@ -449,8 +449,7 @@ class PixiRenderer extends AbstractWorker {
     // SUN / DIRECTIONAL LIGHT
     // ========================================
     // Sun provides global ambient light that varies with time of day
-    // Reads from SharedArrayBuffer written by main thread
-    this.sun = null;
+    // Reads from SharedArrayBuffer via static Sun class (initialized by AbstractWorker)
     this.sunEnabled = false;
 
     // Reusable pool for light sorting (GC optimization)
@@ -1532,9 +1531,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // SUN UNIFORMS
     // ========================================
     // Sun provides global ambient light that varies with time of day
-    if (this.sun && this.sun.enabled) {
-      const sunIntensity = this.sun.intensity;
-      const sunColor = this.sun.color;
+    if (Sun.isInitialized && Sun.enabled) {
+      const sunIntensity = Sun.intensity;
+      const sunColor = Sun.color;
 
       uniformGroup.uniforms.uSunIntensity = sunIntensity;
 
@@ -2762,9 +2761,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // ========================================
     // SUN SYSTEM - Initialize
     // ========================================
-    if (data.sunData) {
-      this.sun = new Sun(data.sunData);
-      this.sunEnabled = this.sun.enabled;
+    // Note: Sun static class is initialized by AbstractWorker.initializeCommonBuffers()
+    if (Sun.isInitialized) {
+      this.sunEnabled = Sun.enabled;
       console.log(`PIXI WORKER: Sun system initialized (enabled: ${this.sunEnabled})`);
     }
 
