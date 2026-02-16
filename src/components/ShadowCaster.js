@@ -23,6 +23,8 @@ export class ShadowCaster extends Component {
     alpha: Float32Array, // Opacity (fades with distance from light)
     entityIdx: Int32Array, // Entity index that owns this shadow (for interpolation tracking)
     lightIdx: Int32Array, // Light entity index that casts this shadow (for interleaved rendering)
+    anchorOffsetX: Float32Array, // Shadow anchor offset X (0-1, relative to sprite size, default 0)
+    anchorOffsetY: Float32Array, // Shadow anchor offset Y (0-1, relative to sprite size, default 0)
   };
 
   // Static pool tracking (set during initialization)
