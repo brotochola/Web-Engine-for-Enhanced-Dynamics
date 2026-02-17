@@ -1,22 +1,23 @@
-// Car.js - Player-controlled car using Verlet physics with two connected circles
+// Car.js - Base car class using Verlet physics with two connected circles
 // The car consists of two CarPart entities (front/back) connected by a distance constraint.
 // The visible sprite is rendered at the midpoint, with rotation based on the angle between parts.
+// This base class has no input - extend it (like PlayerCar) for controllable cars.
 
 import WEED from '/src/index.js';
 import { CarComponent } from '../components/carComponent.js';
 import { CarPart } from './carPart.js';
 
-const { GameObject, Keyboard, RigidBody, SpriteRenderer, Transform, Constraint } = WEED;
+const { GameObject, RigidBody, SpriteRenderer, Transform, Constraint } = WEED;
 
 // Physics constants
-const CAR_PART_RADIUS = 15;
-const CAR_CONSTRAINT_DISTANCE = CAR_PART_RADIUS * 2.5;
-const CAR_CONSTRAINT_STIFFNESS = 0.7;
+export const CAR_PART_RADIUS = 15;
+export const CAR_CONSTRAINT_DISTANCE = CAR_PART_RADIUS * 2.5;
+export const CAR_CONSTRAINT_STIFFNESS = 0.7;
 
-// Control constants
-const ACCELERATION_FORCE = 0.1;  // Forward/backward thrust
-const TURN_FORCE = 0.05;          // Turning force on front wheel
-const SPRITE_SCALE = 1.5;
+// Movement constants (exported for subclasses)
+export const ACCELERATION_FORCE = 0.1;  // Forward/backward thrust
+export const TURN_FORCE = 0.05;          // Turning force on front wheel
+export const SPRITE_SCALE = 1.5;
 const TWO_PI = Math.PI * 2;
 
 export class Car extends GameObject {
@@ -34,6 +35,9 @@ export class Car extends GameObject {
     onSpawned(spawnConfig = {}) {
         const x = spawnConfig.x || 0;
         const y = spawnConfig.y || 0;
+        const sprite = spawnConfig.sprite || 'car';
+
+        console.log('Car: Spawning car with sprite:', sprite);
 
         // Spawn front CarPart (ahead of car position)
         const frontPart = CarPart.spawn({
@@ -67,8 +71,8 @@ export class Car extends GameObject {
         );
         this.carComponent.constraintIndex = constraintIdx;
 
-        // Set up sprite
-        this.setSpritesheet('car');
+        // Set up sprite from config (defaults to 'car')
+        this.setSpritesheet(sprite);
         this.setAnimation('0'); // Start facing right (0°)
 
         // Set scale
@@ -76,6 +80,7 @@ export class Car extends GameObject {
     }
 
     onDespawned() {
+
         const frontIdx = this.carComponent.frontEntityIndex;
         const backIdx = this.carComponent.backEntityIndex;
         const constraintIdx = this.carComponent.constraintIndex;
@@ -116,17 +121,6 @@ export class Car extends GameObject {
         const backX = Transform.x[backIdx];
         const backY = Transform.y[backIdx];
 
-        // Calculate car angle (direction from back to front)
-        const angle = Math.atan2(frontY - backY, frontX - backX);
-
-        // Handle keyboard input
-        this._handleInput(dtRatio, angle, frontIdx, backIdx);
-
-        // DEBUG: Log when any key is pressed (remove after testing)
-        if (Keyboard.w || Keyboard.a || Keyboard.s || Keyboard.d) {
-            console.log('Car input:', { w: Keyboard.w, a: Keyboard.a, s: Keyboard.s, d: Keyboard.d });
-        }
-
         // Update car position to midpoint between front and back
         const centerX = (frontX + backX) / 2;
         const centerY = (frontY + backY) / 2;
@@ -138,75 +132,65 @@ export class Car extends GameObject {
     }
 
     /**
-     * Handle keyboard input for car controls
-     * W/S = accelerate/brake (apply force along car direction)
-     * A/D = turn (steering only works when car is moving - like real cars!)
+     * Apply acceleration forces to the car (used by subclasses for input or AI)
+     * @param {number} forwardForce - Force along car direction (positive = forward)
+     * @param {number} turnForce - Turning force (positive = right, negative = left)
      */
-    _handleInput(dtRatio, angle, frontIdx, backIdx) {
-        const force = ACCELERATION_FORCE;
-        const turnForce = TURN_FORCE;
+    applyForces(forwardForce, turnForce) {
+        const frontIdx = this.carComponent.frontEntityIndex;
+        const backIdx = this.carComponent.backEntityIndex;
+
+        if (!Transform.active[frontIdx] || !Transform.active[backIdx]) {
+            return;
+        }
+
+        // Get positions and calculate angle
+        const frontX = Transform.x[frontIdx];
+        const frontY = Transform.y[frontIdx];
+        const backX = Transform.x[backIdx];
+        const backY = Transform.y[backIdx];
+        const angle = Math.atan2(frontY - backY, frontX - backX);
 
         // Calculate forward direction
         const forwardX = Math.cos(angle);
         const forwardY = Math.sin(angle);
 
-        // Get current velocity (use front part as reference)
+        // Get current velocity for steering calculations
         const velX = RigidBody.vx[frontIdx];
         const velY = RigidBody.vy[frontIdx];
-
-        // Calculate forward speed (dot product of velocity with forward direction)
-        // Positive = moving forward, negative = moving backward
         const forwardSpeed = velX * forwardX + velY * forwardY;
 
-        // Steering effectiveness scales with speed (like real cars)
-        // Clamp to prevent excessive turning at very high speeds
+        // Steering effectiveness scales with speed
         const maxSteerSpeed = 10;
         const steerFactor = Math.min(Math.abs(forwardSpeed) / maxSteerSpeed, 1.0);
-
-        // Reverse steering direction when going backward (like real cars)
         const steerDirection = forwardSpeed >= 0 ? 1 : -1;
 
         // Initialize acceleration
         let frontAx = 0, frontAy = 0;
         let backAx = 0, backAy = 0;
 
-        // W - Accelerate forward
-        if (Keyboard.w || Keyboard.arrowup) {
-            frontAx += forwardX * force;
-            frontAy += forwardY * force;
-            backAx += forwardX * force;
-            backAy += forwardY * force;
+        // Apply forward/backward force to both wheels
+        if (forwardForce !== 0) {
+            frontAx += forwardX * forwardForce;
+            frontAy += forwardY * forwardForce;
+            backAx += forwardX * forwardForce;
+            backAy += forwardY * forwardForce;
         }
 
-        // S - Brake/Reverse
-        if (Keyboard.s || Keyboard.arrowdown) {
-            frontAx -= forwardX * force;
-            frontAy -= forwardY * force;
-            backAx -= forwardX * force;
-            backAy -= forwardY * force;
-        }
-
-        // D - Turn right (only works when moving!)
-        if (Keyboard.d || Keyboard.arrowright) {
+        // Apply turn force to front wheel only
+        if (turnForce !== 0) {
             const effectiveTurn = turnForce * steerFactor * steerDirection;
             frontAx += -forwardY * effectiveTurn;
             frontAy += forwardX * effectiveTurn;
         }
 
-        // A - Turn left (only works when moving!)
-        if (Keyboard.a || Keyboard.arrowleft) {
-            const effectiveTurn = turnForce * steerFactor * steerDirection;
-            frontAx += forwardY * effectiveTurn;
-            frontAy += -forwardX * effectiveTurn;
-        }
-
-        // Apply accelerations (direct assignment, physics clears each frame)
+        // Apply accelerations
         RigidBody.ax[frontIdx] = frontAx;
         RigidBody.ay[frontIdx] = frontAy;
         RigidBody.ax[backIdx] = backAx;
         RigidBody.ay[backIdx] = backAy;
 
-        // Wake up car parts if any input is detected
+        // Wake up car parts if any force is applied
         if (frontAx !== 0 || frontAy !== 0 || backAx !== 0 || backAy !== 0) {
             RigidBody.sleeping[frontIdx] = 0;
             RigidBody.sleeping[backIdx] = 0;

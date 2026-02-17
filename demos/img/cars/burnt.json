@@ -194,14 +194,28 @@
     }
   },
   "animations": {
-    "rotate": [
-      "COUPE_Burnt_000.png",
-      "COUPE_Burnt_001.png",
-      "COUPE_Burnt_002.png",
-      "COUPE_Burnt_003.png",
-      "COUPE_Burnt_004.png",
-      "COUPE_Burnt_005.png",
-      "COUPE_Burnt_006.png",
+    "0": [
+      "COUPE_Burnt_000.png"
+    ],
+    "45": [
+      "COUPE_Burnt_001.png"
+    ],
+    "90": [
+      "COUPE_Burnt_002.png"
+    ],
+    "135": [
+      "COUPE_Burnt_003.png"
+    ],
+    "180": [
+      "COUPE_Burnt_004.png"
+    ],
+    "225": [
+      "COUPE_Burnt_005.png"
+    ],
+    "270": [
+      "COUPE_Burnt_006.png"
+    ],
+    "315": [
       "COUPE_Burnt_007.png"
     ]
   },

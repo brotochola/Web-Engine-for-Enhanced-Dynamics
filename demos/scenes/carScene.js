@@ -3,6 +3,7 @@
 
 import WEED from '/src/index.js';
 import { Car } from '../gameObjects/car.js';
+import { PlayerCar } from '../gameObjects/playerCar.js';
 import { CarPart } from '../gameObjects/carPart.js';
 
 const { Camera, Transform } = WEED;
@@ -13,8 +14,8 @@ export class CarScene extends WEED.Scene {
     // ========================================
 
     static config = {
-        worldWidth: 2000,
-        worldHeight: 1500,
+        worldWidth: 10000,
+        worldHeight: 7000,
         seed: 123456,
         debugUpdateInterval: 100,
 
@@ -93,6 +94,22 @@ export class CarScene extends WEED.Scene {
                 json: '/demos/img/cars/black_car_12.json',
                 png: '/demos/img/cars/black_car_12.png',
             },
+            car_red: {
+                json: '/demos/img/cars/red_car_12.json',
+                png: '/demos/img/cars/red_car_12.png',
+            },
+            car_yellow: {
+                json: '/demos/img/cars/yellow_car_12.json',
+                png: '/demos/img/cars/yellow_car_12.png',
+            },
+            car_police: {
+                json: '/demos/img/cars/poli.json',
+                png: '/demos/img/cars/poli.png',
+            },
+            car_burnt: {
+                json: '/demos/img/cars/burnt.json',
+                png: '/demos/img/cars/burnt.png',
+            },
         },
         tilemaps: {
             myTilemap: {
@@ -107,8 +124,9 @@ export class CarScene extends WEED.Scene {
     // ========================================
 
     static entities = [
-        [Car, 10],      // Player-controlled cars
-        [CarPart, 20],  // Physics bodies (2 per car)
+        [CarPart, 200],   // Physics bodies (2 per car) - must load first (Car depends on it)
+        [Car, 100],       // NPC cars - must load before PlayerCar (PlayerCar extends Car)
+        [PlayerCar, 1],   // Player-controlled car (only 1)
     ];
 
     // ========================================
@@ -124,13 +142,28 @@ export class CarScene extends WEED.Scene {
         // Set tilemap background
         this.setTilemapBackground('myTilemap', { scale: 1 });
 
+        const centerX = this.config.worldWidth / 2;
+        const centerY = this.config.worldHeight / 2;
+
         // Spawn player car at center of world
-        this.playerCar = Car.spawn({
-            x: this.config.worldWidth / 2,
-            y: this.config.worldHeight / 2,
+        this.playerCar = PlayerCar.spawn({
+            x: centerX,
+            y: centerY,
         });
 
-        // Center camera on car initially
+        // Spawn NPC cars around the world with different sprites
+        const npcCars = [
+            { x: centerX + 20, y: centerY - 100, sprite: 'car_red' },
+            { x: centerX - 20, y: centerY + 100, sprite: 'car_yellow' },
+            { x: centerX + 30, y: centerY + 200, sprite: 'car_police' },
+            { x: centerX - 30, y: centerY - 200, sprite: 'car_burnt' },
+        ];
+
+        for (const npcConfig of npcCars) {
+            Car.spawn(npcConfig);
+        }
+
+        // Center camera on player car initially
         if (this.playerCar) {
             Camera.centerOn(
                 Transform.x[this.playerCar.index],
@@ -138,7 +171,7 @@ export class CarScene extends WEED.Scene {
             );
         }
 
-        console.log('🚗 CarScene: Car spawned! Use WASD/Arrow keys to drive.');
+        console.log('🚗 CarScene: Player car and NPC cars spawned! Use WASD/Arrow keys to drive.');
     }
 
     update(dtRatio, deltaTime, accumulatedTime, frameNumber) {
