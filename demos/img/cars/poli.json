@@ -290,18 +290,40 @@
     }
   },
   "animations": {
-    "rotate": [
-      "POLICE_CLEAN_ALLD0000.png",
-      "POLICE_CLEAN_ALLD0004.png",
-      "POLICE_CLEAN_ALLD0008.png",
-      "POLICE_CLEAN_ALLD0012.png",
-      "POLICE_CLEAN_ALLD0016.png",
-      "POLICE_CLEAN_ALLD0020.png",
-      "POLICE_CLEAN_ALLD0024.png",
-      "POLICE_CLEAN_ALLD0028.png",
-      "POLICE_CLEAN_ALLD0032.png",
-      "POLICE_CLEAN_ALLD0036.png",
-      "POLICE_CLEAN_ALLD0040.png",
+    "0": [
+      "POLICE_CLEAN_ALLD0000.png"
+    ],
+    "30": [
+      "POLICE_CLEAN_ALLD0004.png"
+    ],
+    "60": [
+      "POLICE_CLEAN_ALLD0008.png"
+    ],
+    "90": [
+      "POLICE_CLEAN_ALLD0012.png"
+    ],
+    "120": [
+      "POLICE_CLEAN_ALLD0016.png"
+    ],
+    "150": [
+      "POLICE_CLEAN_ALLD0020.png"
+    ],
+    "180": [
+      "POLICE_CLEAN_ALLD0024.png"
+    ],
+    "210": [
+      "POLICE_CLEAN_ALLD0028.png"
+    ],
+    "240": [
+      "POLICE_CLEAN_ALLD0032.png"
+    ],
+    "270": [
+      "POLICE_CLEAN_ALLD0036.png"
+    ],
+    "300": [
+      "POLICE_CLEAN_ALLD0040.png"
+    ],
+    "330": [
       "POLICE_CLEAN_ALLD0044.png"
     ]
   },

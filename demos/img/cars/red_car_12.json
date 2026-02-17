@@ -290,18 +290,40 @@
     }
   },
   "animations": {
-    "rotate": [
-      "Red_HatchBack_CLEAN_All_000.png",
-      "Red_HatchBack_CLEAN_All_004.png",
-      "Red_HatchBack_CLEAN_All_008.png",
-      "Red_HatchBack_CLEAN_All_012.png",
-      "Red_HatchBack_CLEAN_All_016.png",
-      "Red_HatchBack_CLEAN_All_020.png",
-      "Red_HatchBack_CLEAN_All_024.png",
-      "Red_HatchBack_CLEAN_All_028.png",
-      "Red_HatchBack_CLEAN_All_032.png",
-      "Red_HatchBack_CLEAN_All_036.png",
-      "Red_HatchBack_CLEAN_All_040.png",
+    "0": [
+      "Red_HatchBack_CLEAN_All_000.png"
+    ],
+    "30": [
+      "Red_HatchBack_CLEAN_All_004.png"
+    ],
+    "60": [
+      "Red_HatchBack_CLEAN_All_008.png"
+    ],
+    "90": [
+      "Red_HatchBack_CLEAN_All_012.png"
+    ],
+    "120": [
+      "Red_HatchBack_CLEAN_All_016.png"
+    ],
+    "150": [
+      "Red_HatchBack_CLEAN_All_020.png"
+    ],
+    "180": [
+      "Red_HatchBack_CLEAN_All_024.png"
+    ],
+    "210": [
+      "Red_HatchBack_CLEAN_All_028.png"
+    ],
+    "240": [
+      "Red_HatchBack_CLEAN_All_032.png"
+    ],
+    "270": [
+      "Red_HatchBack_CLEAN_All_036.png"
+    ],
+    "300": [
+      "Red_HatchBack_CLEAN_All_040.png"
+    ],
+    "330": [
       "Red_HatchBack_CLEAN_All_044.png"
     ]
   },

@@ -290,18 +290,40 @@
     }
   },
   "animations": {
-    "rotate": [
-      "Yellow_COUPE_CLEAN_All_000.png",
-      "Yellow_COUPE_CLEAN_All_004.png",
-      "Yellow_COUPE_CLEAN_All_008.png",
-      "Yellow_COUPE_CLEAN_All_012.png",
-      "Yellow_COUPE_CLEAN_All_016.png",
-      "Yellow_COUPE_CLEAN_All_020.png",
-      "Yellow_COUPE_CLEAN_All_024.png",
-      "Yellow_COUPE_CLEAN_All_028.png",
-      "Yellow_COUPE_CLEAN_All_032.png",
-      "Yellow_COUPE_CLEAN_All_036.png",
-      "Yellow_COUPE_CLEAN_All_040.png",
+    "0": [
+      "Yellow_COUPE_CLEAN_All_000.png"
+    ],
+    "30": [
+      "Yellow_COUPE_CLEAN_All_004.png"
+    ],
+    "60": [
+      "Yellow_COUPE_CLEAN_All_008.png"
+    ],
+    "90": [
+      "Yellow_COUPE_CLEAN_All_012.png"
+    ],
+    "120": [
+      "Yellow_COUPE_CLEAN_All_016.png"
+    ],
+    "150": [
+      "Yellow_COUPE_CLEAN_All_020.png"
+    ],
+    "180": [
+      "Yellow_COUPE_CLEAN_All_024.png"
+    ],
+    "210": [
+      "Yellow_COUPE_CLEAN_All_028.png"
+    ],
+    "240": [
+      "Yellow_COUPE_CLEAN_All_032.png"
+    ],
+    "270": [
+      "Yellow_COUPE_CLEAN_All_036.png"
+    ],
+    "300": [
+      "Yellow_COUPE_CLEAN_All_040.png"
+    ],
+    "330": [
       "Yellow_COUPE_CLEAN_All_044.png"
     ]
   },
