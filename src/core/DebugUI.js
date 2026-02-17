@@ -2394,10 +2394,26 @@ export class DebugUI {
     const offsetX = Collider.offsetX;
     const offsetY = Collider.offsetY;
 
+    // Calculate visible bounds for manual culling (for entities without SpriteRenderer)
+    const viewLeft = camera.x - 100;
+    const viewRight = camera.x + canvas.width / zoom + 100;
+    const viewTop = camera.y - 100;
+    const viewBottom = camera.y + canvas.height / zoom + 100;
+
     ctx.lineWidth = 2; //* zoom;
 
     for (let i = 0; i < Transform.active.length; i++) {
-      if (!active[i] || !isOnScreen[i]) continue;
+      if (!active[i]) continue;
+
+      // Check visibility: use SpriteRenderer.isOnScreen if available,
+      // otherwise do manual bounds check (for entities without sprites like CarPart)
+      const entityX = x[i];
+      const entityY = y[i];
+      const onScreen = isOnScreen[i] || (
+        entityX >= viewLeft && entityX <= viewRight &&
+        entityY >= viewTop && entityY <= viewBottom
+      );
+      if (!onScreen) continue;
 
       const posX = x[i] + (offsetX?.[i] || 0);
       const posY = y[i] + (offsetY?.[i] || 0);

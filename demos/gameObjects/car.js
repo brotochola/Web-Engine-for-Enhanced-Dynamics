@@ -6,16 +6,16 @@ import WEED from '/src/index.js';
 import { CarComponent } from '../components/carComponent.js';
 import { CarPart } from './carPart.js';
 
-const { GameObject, Keyboard, RigidBody, Collider, SpriteRenderer, Transform, Constraint } = WEED;
+const { GameObject, Keyboard, RigidBody, SpriteRenderer, Transform, Constraint } = WEED;
 
 // Physics constants
 const CAR_PART_RADIUS = 15;
-const CAR_CONSTRAINT_DISTANCE = CAR_PART_RADIUS * 2 + 1;
-const CAR_CONSTRAINT_STIFFNESS = 1.0;
+const CAR_CONSTRAINT_DISTANCE = CAR_PART_RADIUS * 2.5;
+const CAR_CONSTRAINT_STIFFNESS = 0.7;
 
 // Control constants
-const ACCELERATION_FORCE = 0.5;  // Forward/backward thrust
-const TURN_FORCE = 0.1;          // Turning force on front wheel
+const ACCELERATION_FORCE = 0.1;  // Forward/backward thrust
+const TURN_FORCE = 0.05;          // Turning force on front wheel
 const SPRITE_SCALE = 1.5;
 const TWO_PI = Math.PI * 2;
 
@@ -140,7 +140,7 @@ export class Car extends GameObject {
     /**
      * Handle keyboard input for car controls
      * W/S = accelerate/brake (apply force along car direction)
-     * A/D = turn (apply perpendicular force to front part)
+     * A/D = turn (steering only works when car is moving - like real cars!)
      */
     _handleInput(dtRatio, angle, frontIdx, backIdx) {
         const force = ACCELERATION_FORCE;
@@ -149,6 +149,22 @@ export class Car extends GameObject {
         // Calculate forward direction
         const forwardX = Math.cos(angle);
         const forwardY = Math.sin(angle);
+
+        // Get current velocity (use front part as reference)
+        const velX = RigidBody.vx[frontIdx];
+        const velY = RigidBody.vy[frontIdx];
+
+        // Calculate forward speed (dot product of velocity with forward direction)
+        // Positive = moving forward, negative = moving backward
+        const forwardSpeed = velX * forwardX + velY * forwardY;
+
+        // Steering effectiveness scales with speed (like real cars)
+        // Clamp to prevent excessive turning at very high speeds
+        const maxSteerSpeed = 10;
+        const steerFactor = Math.min(Math.abs(forwardSpeed) / maxSteerSpeed, 1.0);
+
+        // Reverse steering direction when going backward (like real cars)
+        const steerDirection = forwardSpeed >= 0 ? 1 : -1;
 
         // Initialize acceleration
         let frontAx = 0, frontAy = 0;
@@ -170,16 +186,18 @@ export class Car extends GameObject {
             backAy -= forwardY * force;
         }
 
-        // A - Turn left (apply perpendicular force to front part only)
+        // D - Turn right (only works when moving!)
         if (Keyboard.d || Keyboard.arrowright) {
-            frontAx += -forwardY * turnForce;
-            frontAy += forwardX * turnForce;
+            const effectiveTurn = turnForce * steerFactor * steerDirection;
+            frontAx += -forwardY * effectiveTurn;
+            frontAy += forwardX * effectiveTurn;
         }
 
-        // D - Turn right (apply perpendicular force to front part only)
+        // A - Turn left (only works when moving!)
         if (Keyboard.a || Keyboard.arrowleft) {
-            frontAx += forwardY * turnForce;
-            frontAy += -forwardX * turnForce;
+            const effectiveTurn = turnForce * steerFactor * steerDirection;
+            frontAx += forwardY * effectiveTurn;
+            frontAy += -forwardX * effectiveTurn;
         }
 
         // Apply accelerations (direct assignment, physics clears each frame)

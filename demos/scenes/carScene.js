@@ -52,7 +52,7 @@ export class CarScene extends WEED.Scene {
             maxConstraints: 100, // Enable constraint system for car physics
             boundaryElasticity: 0.3,
             collisionResponseStrength: 0.8,
-            verletDamping: 0.99,  // Slightly lower damping for more momentum
+            verletDamping: 0.999, // Very low damping - car maintains momentum
             gravity: { x: 0, y: 0 },
             sleepThreshold: 999,   // Disable sleeping for this scene
             wakeUpThreshold: 1000,
