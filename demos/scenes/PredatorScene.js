@@ -84,7 +84,6 @@ export class PredatorScene extends WEED.Scene {
     logic: {
       noLimitFPS: true,
       numberOfLogicWorkers: 2,
-      numberOfEntitiesPerJob: 250,
       staggeredUpdates: true, // Enable tick decimation (entities tick based on their tickInterval)
     },
 

@@ -290,18 +290,40 @@
     }
   },
   "animations": {
-    "rotate": [
-      "Black_CIVIC_CLEAN_All_000.png",
-      "Black_CIVIC_CLEAN_All_004.png",
-      "Black_CIVIC_CLEAN_All_008.png",
-      "Black_CIVIC_CLEAN_All_012.png",
-      "Black_CIVIC_CLEAN_All_016.png",
-      "Black_CIVIC_CLEAN_All_020.png",
-      "Black_CIVIC_CLEAN_All_024.png",
-      "Black_CIVIC_CLEAN_All_028.png",
-      "Black_CIVIC_CLEAN_All_032.png",
-      "Black_CIVIC_CLEAN_All_036.png",
-      "Black_CIVIC_CLEAN_All_040.png",
+    "0": [
+      "Black_CIVIC_CLEAN_All_000.png"
+    ],
+    "30": [
+      "Black_CIVIC_CLEAN_All_004.png"
+    ],
+    "60": [
+      "Black_CIVIC_CLEAN_All_008.png"
+    ],
+    "90": [
+      "Black_CIVIC_CLEAN_All_012.png"
+    ],
+    "120": [
+      "Black_CIVIC_CLEAN_All_016.png"
+    ],
+    "150": [
+      "Black_CIVIC_CLEAN_All_020.png"
+    ],
+    "180": [
+      "Black_CIVIC_CLEAN_All_024.png"
+    ],
+    "210": [
+      "Black_CIVIC_CLEAN_All_028.png"
+    ],
+    "240": [
+      "Black_CIVIC_CLEAN_All_032.png"
+    ],
+    "270": [
+      "Black_CIVIC_CLEAN_All_036.png"
+    ],
+    "300": [
+      "Black_CIVIC_CLEAN_All_040.png"
+    ],
+    "330": [
       "Black_CIVIC_CLEAN_All_044.png"
     ]
   },
