@@ -5,6 +5,7 @@ import WEED from '/src/index.js';
 import { Car } from '../gameObjects/car.js';
 import { PlayerCar } from '../gameObjects/playerCar.js';
 import { CarPart } from '../gameObjects/carPart.js';
+import { rng } from '../../src/core/utils.js';
 
 const { Camera, Transform } = WEED;
 
@@ -50,7 +51,7 @@ export class CarScene extends WEED.Scene {
             subStepCount: 4, // Higher substeps for stable constraints
             noLimitFPS: true,
             maxCollisionPairs: 10000,
-            maxConstraints: 100, // Enable constraint system for car physics
+            maxConstraints: 10000, // Enable constraint system for car physics
             boundaryElasticity: 0.3,
             collisionResponseStrength: 0.8,
             verletDamping: 0.999, // Very low damping - car maintains momentum
@@ -106,10 +107,10 @@ export class CarScene extends WEED.Scene {
                 json: '/demos/img/cars/poli.json',
                 png: '/demos/img/cars/poli.png',
             },
-            car_burnt: {
-                json: '/demos/img/cars/burnt.json',
-                png: '/demos/img/cars/burnt.png',
-            },
+            // car_burnt: {
+            //     json: '/demos/img/cars/burnt.json',
+            //     png: '/demos/img/cars/burnt.png',
+            // },
         },
         tilemaps: {
             myTilemap: {
@@ -124,8 +125,8 @@ export class CarScene extends WEED.Scene {
     // ========================================
 
     static entities = [
-        [CarPart, 200],   // Physics bodies (2 per car) - must load first (Car depends on it)
-        [Car, 100],       // NPC cars - must load before PlayerCar (PlayerCar extends Car)
+        [CarPart, 2000],   // Physics bodies (2 per car) - must load first (Car depends on it)
+        [Car, 1000],       // NPC cars - must load before PlayerCar (PlayerCar extends Car)
         [PlayerCar, 1],   // Player-controlled car (only 1)
     ];
 
@@ -151,16 +152,20 @@ export class CarScene extends WEED.Scene {
             y: centerY,
         });
 
-        // Spawn NPC cars around the world with different sprites
-        const npcCars = [
-            { x: centerX + 20, y: centerY - 100, sprite: 'car_red' },
-            { x: centerX - 20, y: centerY + 100, sprite: 'car_yellow' },
-            { x: centerX + 30, y: centerY + 200, sprite: 'car_police' },
-            { x: centerX - 30, y: centerY - 200, sprite: 'car_burnt' },
-        ];
+        // Spawn 100 NPC cars randomly around the center
+        const carSprites = ['car_red', 'car_yellow', 'car_police'];
+        const spawnRadius = 2000;
 
-        for (const npcConfig of npcCars) {
-            Car.spawn(npcConfig);
+        for (let i = 0; i < 500; i++) {
+            const offsetX = (rng() * 2 - 1) * spawnRadius;
+            const offsetY = (rng() * 2 - 1) * spawnRadius;
+            const sprite = carSprites[Math.floor(rng() * carSprites.length)];
+
+            Car.spawn({
+                x: centerX + offsetX,
+                y: centerY + offsetY,
+                sprite: sprite,
+            });
         }
 
         // Center camera on player car initially

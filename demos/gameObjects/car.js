@@ -33,24 +33,26 @@ export class Car extends GameObject {
     }
 
     onSpawned(spawnConfig = {}) {
+
         const x = spawnConfig.x || 0;
         const y = spawnConfig.y || 0;
         const sprite = spawnConfig.sprite || 'car';
-
-        console.log('Car: Spawning car with sprite:', sprite);
+        // Set up sprite from config (defaults to 'car')
+        this.setSpritesheet(sprite);
+        this.setAnimation('0'); // Start facing right (0°)
 
         // Spawn front CarPart (ahead of car position)
         const frontPart = CarPart.spawn({
             x: x + CAR_CONSTRAINT_DISTANCE / 2,
             y: y,
-            radius: CAR_PART_RADIUS,
+            radius: this.spriteRenderer.originalWidth * 0.33,
         });
 
         // Spawn back CarPart (behind car position)
         const backPart = CarPart.spawn({
             x: x - CAR_CONSTRAINT_DISTANCE / 2,
             y: y,
-            radius: CAR_PART_RADIUS,
+            radius: this.spriteRenderer.originalWidth * 0.33,
         });
 
         if (!frontPart || !backPart) {
@@ -70,10 +72,6 @@ export class Car extends GameObject {
             CAR_CONSTRAINT_STIFFNESS
         );
         this.carComponent.constraintIndex = constraintIdx;
-
-        // Set up sprite from config (defaults to 'car')
-        this.setSpritesheet(sprite);
-        this.setAnimation('0'); // Start facing right (0°)
 
         // Set scale
         this.setScale(SPRITE_SCALE, SPRITE_SCALE);
