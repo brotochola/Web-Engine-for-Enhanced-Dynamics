@@ -28,7 +28,7 @@ export class CarPart extends GameObject {
         this.rigidBody.maxVel = 500;  // High max velocity for driving
         this.rigidBody.maxAcc = 100;  // High max acceleration for responsive input
         this.rigidBody.minSpeed = 0;
-        this.rigidBody.friction = 0.02; // Low friction for smooth rolling
+        this.rigidBody.friction = 0.04; // Low friction for smooth rolling
 
         // Ensure physics are active and awake
         this.rigidBody.sleeping = 0;
