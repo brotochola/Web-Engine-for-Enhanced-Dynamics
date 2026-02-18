@@ -29,6 +29,13 @@ export class Person extends Lootable {
   static scriptUrl = import.meta.url;
   static defaultFriction = 0.005;
 
+  // Virtual properties for TypeScript/JSDoc - component accessors are created dynamically
+  // by GameObject._ensureComponentAccessors() based on static.components array
+  /** @type {LootableComponent|null} */
+  lootableComponent;
+  /** @type {PersonAnimationFSM|null} */
+  personAnimationFSM;
+
   static punchRangeSq = 30 ** 2; // Distance to start punching
   static punchDamage = 0.3; // Damage per punch
   static muzzleDistancePx = 30; // Distance from actor center to muzzle in world px

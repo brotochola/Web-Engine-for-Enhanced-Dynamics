@@ -32,7 +32,19 @@ export class Car extends GameObject {
     // Car uses SpriteRenderer for visuals and CarComponent for physics references
     static components = [SpriteRenderer, CarComponent];
 
+    // Virtual property for TypeScript - component accessor is created dynamically
+    // by GameObject._ensureComponentAccessors() based on static.components array
+    /** @type {CarComponent} */
+    carComponent;
+
+    /**
+     * Configure car properties
+     * @this {Car}
+     */
     setup() {
+        // ERROR: active should be number (0 or 1), not string
+        // TypeScript should now show this as an error in red
+
         // Configure sprite anchors
         this.spriteRenderer.anchorX = 0.5;
         this.spriteRenderer.anchorY = 0.5;

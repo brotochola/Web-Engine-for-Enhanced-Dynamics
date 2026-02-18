@@ -25,4 +25,19 @@ export class CarComponent extends Component {
         // How many constraints this car has
         constraintCount: Uint8Array,
     };
+
+    // Virtual properties for TypeScript - these are auto-created from ARRAY_SCHEMA at runtime
+    // Properties are created by Component._createInstanceProperties() based on ARRAY_SCHEMA
+    /** @type {number} */ part0Index;
+    /** @type {number} */ part1Index;
+    /** @type {number} */ part2Index;
+    /** @type {number} */ part3Index;
+    /** @type {number} */ constraint0Index;
+    /** @type {number} */ constraint1Index;
+    /** @type {number} */ constraint2Index;
+    /** @type {number} */ constraint3Index;
+    /** @type {number} */ constraint4Index;
+    /** @type {number} */ constraint5Index;
+    /** @type {number} */ partCount;
+    /** @type {number} */ constraintCount;
 }

@@ -1,6 +1,7 @@
 /**
- * Default configuration values for the game engine
+ * @fileoverview Default configuration values for the game engine
  * Single source of truth for all config settings across the engine
+ * @see {@link WEED.types} for config type definitions (SceneConfig, PhysicsConfig, etc.)
  */
 
 // ============================================================================

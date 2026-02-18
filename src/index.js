@@ -1,7 +1,8 @@
-// ============================================================================
-// WeedJS - Multithreaded Game Engine 🌿
-// Main entry point for the engine
-// ============================================================================
+/**
+ * @fileoverview WeedJS - Multithreaded Game Engine 🌿
+ * Main entry point for the engine
+ * @see {@link WEED.types} for type definitions in src/core/types.js
+ */
 
 // ============================================================================
 // CORE MODULES

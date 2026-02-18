@@ -1,5 +1,8 @@
-// GameObject.js - Base class for all game entities using component composition
-// Entities are composed of components (Transform, RigidBody, Collider, etc.)
+/**
+ * @fileoverview Base class for all game entities using component composition
+ * Entities are composed of components (Transform, RigidBody, Collider, etc.)
+ * @see {@link WEED.types} for type definitions
+ */
 
 import { Transform } from '../components/Transform.js';
 import { RigidBody } from '../components/RigidBody.js';
@@ -11,45 +14,111 @@ import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { Grid } from './Grid.js';
 import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox, distanceSq2D, convertRGBtoBGR, binarySearchInsertPoint, binarySearchFind } from './utils.js';
 import Keyboard from './Keyboard.js';
+import { Component } from './Component.js';
+import WEED from '/src/index.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry };
 
+/**
+ * @class GameObject
+ *
+ * Component accessors are created dynamically by GameObject._ensureComponentAccessors()
+ * based on static.components array. TypeScript recognizes these via virtual properties below.
+ *
+ * Custom components (like CarComponent) are also accessible via this.componentName.
+ * For full type safety with custom components, add virtual properties in your entity class.
+ *
+ * @property {Transform} transform - Transform component (always present)
+ * @property {RigidBody|null} rigidBody - RigidBody component (if in static.components)
+ * @property {Collider|null} collider - Collider component (if in static.components)
+ * @property {SpriteRenderer|null} spriteRenderer - SpriteRenderer component (if in static.components)
+ * @property {LightEmitter|null} lightEmitter - LightEmitter component (if in static.components)
+ * @property {ShadowCaster|null} shadowCaster - ShadowCaster component (if in static.components)
+ */
 export class GameObject {
+  // Virtual properties for TypeScript - component accessors are created dynamically
+  // by GameObject._ensureComponentAccessors() based on static.components array
+  // These allow TypeScript to recognize component accessors in subclasses
+  /** @type {Transform} */
+  transform;
+  /** @type {RigidBody|null} */
+  rigidBody;
+  /** @type {Collider|null} */
+  collider;
+  /** @type {SpriteRenderer|null} */
+  spriteRenderer;
+  /** @type {LightEmitter|null} */
+  lightEmitter;
+  /** @type {ShadowCaster|null} */
+  shadowCaster;
   // Entity class metadata (for spawning system)
-  static startIndex = 0; // Starting index in arrays for this entity type
-  static poolSize = 0; // Allocated count for this entity type
+  /** @static @type {number} Starting index in arrays for this entity type */
+  static startIndex = 0;
+  /** @static @type {number} Allocated count for this entity type */
+  static poolSize = 0;
+  /** @static @type {number} Ending index in arrays (startIndex + poolSize) */
+  static endIndex;
 
   // Component composition - define which components this entity type has
   // Override in subclasses, e.g.: static components = [RigidBody, Collider, SpriteRenderer]
-  static components = []; // By default, only Transform (added automatically)
+  /** @static @type {Array<WEED.types.ComponentClass>} Array of component classes this entity uses */
+  static components = [];
 
   // Tick decimation - override in subclasses to reduce tick frequency
   // tickInterval = 10 means entity ticks every 10 frames (spread across frames via index offset)
-  static tickInterval = 1; // Default: tick every frame (no decimation)
+  /** @static @type {number} Tick decimation interval (1 = every frame) */
+  static tickInterval = 1;
 
   // Neighbor data (from spatial worker)
+  /** @static @type {Uint16Array|null} Neighbor data buffer from spatial worker */
   static neighborData = null;
 
   // Active entities list (built by particle_worker each frame)
   // Layout: [count, entityIdx0, entityIdx1, ...]
+  /** @static @type {WEED.types.ActiveEntitiesData|null} Active entities list */
   static activeEntitiesData = null;
 
   // Tick decimation countdown (Uint8Array, one byte per entity)
   // Decremented each frame; entity ticks when it reaches 0, then resets to tickInterval
+  /** @static @type {Uint8Array|null} Tick decimation countdown buffer (1 byte per entity) */
   static nextTick = null;
 
   // Camera data (shared with main thread)
-  static cameraData = null; // Float32Array [zoom, x, y]
+  /** @static @type {WEED.types.CameraData|null} Camera data buffer [zoom, x, y] */
+  static cameraData = null;
 
   // Entity type ID (auto-assigned during registration)
   // Note: entityType moved to Transform component for pure ECS architecture
-  static entityType = null; // Numeric ID assigned by GameEngine
+  /** @static @type {number|null} Numeric ID assigned by GameEngine */
+  static entityType = null;
 
+  /** @static @type {number} Total number of entities */
   static globalEntityCount = 0;
 
+  /** @static @type {Array<GameObject>} Array of entity instances */
   static instances = [];
 
+  /** @static @type {WEED.types.ActiveList|null} Per-type active list (SAB-backed) */
+  static _activeList = null;
+
+  /** @static @type {WEED.types.FreeList|null} Free list for object pooling (SAB-backed) */
+  static freeList = null;
+
+  /** @static @type {Int32Array|null} Free list top pointer (SAB-backed) */
+  static freeListTop = null;
+
+  /** @static @type {WEED.types.ComponentClassMap} Component class map */
+  static _componentClassMap = {};
+
+  /** @static @type {Object<string, number>} Global animation cache */
+  static _globalAnimationCache = {};
+
+  /**
+   * Get entity instance by index
+   * @param {number} entityIndex - Entity index
+   * @returns {GameObject|undefined} Entity instance or undefined
+   */
   static get(entityIndex) {
     return this.instances[entityIndex];
   }
@@ -61,6 +130,7 @@ export class GameObject {
    * @param {number} count - Total number of entities
    * @param {SharedArrayBuffer} [neighborBuffer] - Neighbor data buffer from spatial worker
    * @param {SharedArrayBuffer} [nextTickBuffer] - Tick decimation countdown buffer (1 byte per entity)
+   * @returns {void}
    */
   static initializeArrays(
     buffer,
@@ -105,6 +175,7 @@ export class GameObject {
    * Add an entity to activeEntitiesData (sorted insert)
    * Called from spawn() after entity activation
    * @param {number} entityIndex - The entity index to add
+   * @returns {void}
    */
   static _addToActiveEntities(entityIndex) {
     const data = this.activeEntitiesData;
@@ -126,6 +197,7 @@ export class GameObject {
    * Remove an entity from activeEntitiesData (binary search + shift)
    * Called from despawn() before entity deactivation
    * @param {number} entityIndex - The entity index to remove
+   * @returns {void}
    */
   static _removeFromActiveEntities(entityIndex) {
     const data = this.activeEntitiesData;
@@ -148,6 +220,7 @@ export class GameObject {
    * Batch remove entities from activeEntitiesData (single-pass compaction)
    * Much faster than individual removals when despawning many entities: O(n) vs O(k*n)
    * @param {Set<number>} indicesToRemove - Set of entity indices to remove
+   * @returns {void}
    */
   static _batchRemoveFromActiveEntities(indicesToRemove) {
     const data = this.activeEntitiesData;
@@ -169,7 +242,7 @@ export class GameObject {
 
   /**
    * Get the current worker context (works from any worker type)
-   * @returns {Object|null} Worker instance with query system data, or null
+   * @returns {WEED.types.WorkerContext|null} Worker instance with query system data, or null
    */
   static _getWorkerContext() {
     if (typeof self === 'undefined') return null;
@@ -182,6 +255,7 @@ export class GameObject {
    * Called from spawn() after entity activation
    * @param {number} entityIndex - The entity index to add
    * @param {number} entityType - The entity's type ID
+   * @returns {void}
    */
   static _addToMatchingQueries(entityIndex, entityType) {
     // Access query system from worker context (works from any worker type)
@@ -220,6 +294,7 @@ export class GameObject {
    * Called from despawn() before entity deactivation
    * @param {number} entityIndex - The entity index to remove
    * @param {number} entityType - The entity's type ID
+   * @returns {void}
    */
   static _removeFromMatchingQueries(entityIndex, entityType) {
     // Access query system from worker context (works from any worker type)
@@ -256,8 +331,9 @@ export class GameObject {
   /**
    * Remove an entity from its type's active list (binary search + shift)
    * Called from despawn() before entity deactivation
-   * @param {Class} EntityClass - The entity's class
+   * @param {WEED.types.EntityClass} EntityClass - The entity's class
    * @param {number} entityIndex - The entity index to remove
+   * @returns {void}
    */
   static _removeFromTypeActiveList(EntityClass, entityIndex) {
     const typeList = EntityClass._activeList;
@@ -278,7 +354,8 @@ export class GameObject {
   /**
    * Clear an entity type's active list (O(1))
    * Used by despawnAll when removing ALL entities of a type
-   * @param {Class} EntityClass - The entity's class
+   * @param {WEED.types.EntityClass} EntityClass - The entity's class
+   * @returns {void}
    */
   static _clearTypeActiveList(EntityClass) {
     const typeList = EntityClass._activeList;
@@ -292,6 +369,7 @@ export class GameObject {
    * Much faster than individual removals: O(n * queries) vs O(k * n * queries)
    * @param {Set<number>} indicesToRemove - Set of entity indices to remove
    * @param {number} entityType - The entity type ID (all indices must be same type)
+   * @returns {void}
    */
   static _batchRemoveFromMatchingQueries(indicesToRemove, entityType) {
     if (indicesToRemove.size === 0) return;
@@ -331,8 +409,9 @@ export class GameObject {
   /**
    * Add an entity to its type's active list (sorted insert)
    * Called from spawn() after entity activation
-   * @param {Class} EntityClass - The entity's class
+   * @param {WEED.types.EntityClass} EntityClass - The entity's class
    * @param {number} entityIndex - The entity index to add
+   * @returns {void}
    */
   static _addToTypeActiveList(EntityClass, entityIndex) {
     const typeList = EntityClass._activeList;
@@ -352,8 +431,8 @@ export class GameObject {
   /**
    * Collect all components from class hierarchy (delegates to utils.js)
    * Walks up the prototype chain and collects all unique components
-   * @param {Class} EntityClass - The entity class to collect components from
-   * @returns {Array<Component>} Array of unique component classes
+   * @param {WEED.types.EntityClass} EntityClass - The entity class to collect components from
+   * @returns {Array<WEED.types.ComponentClass>} Array of unique component classes
    */
   static _collectComponents(EntityClass) {
     return collectComponents(EntityClass, GameObject, Transform);
@@ -362,8 +441,8 @@ export class GameObject {
   /**
    * Constructor - stores entity index
    * @param {number} index - Entity index (unique across all entities)
-   * @param {Object} config - Configuration object from GameEngine
-   * @param {Object} logicWorker - Logic worker reference
+   * @param {Object} [config={}] - Configuration object from GameEngine
+   * @param {WEED.types.WorkerContext|null} [logicWorker=null] - Logic worker reference
    *
    * DENSE COMPONENT ALLOCATION:
    * All components are allocated for all entities. Entity index === component index.
@@ -371,13 +450,17 @@ export class GameObject {
    * Unused slots have default values (0/false).
    */
   constructor(index, config = {}, logicWorker = null) {
+    /** @type {number} Entity index (unique across all entities) */
     this.index = index;
+    /** @type {Object} Configuration object from GameEngine */
     this.config = config;
+    /** @type {WEED.types.WorkerContext|null} Logic worker reference */
     this.logicWorker = logicWorker;
 
     // DENSE ALLOCATION: entityIndex === componentIndex for all components
     // Store which components this entity TYPE has (for validation)
     // Keys are stored in BOTH PascalCase and camelCase for easy lookup
+    /** @type {WEED.types.HasComponents} Component flags (PascalCase and camelCase keys) */
     this._hasComponents = {};
     const entityComponents = collectComponents(this.constructor, GameObject, Transform);
     for (const ComponentClass of entityComponents) {
@@ -399,7 +482,9 @@ export class GameObject {
 
     // Neighbor data: computed once in constructor (Grid is initialized before entities)
     if (Grid._stride && Grid.neighborData) {
+      /** @type {WEED.types.NeighborOffset} Neighbor data offset in buffer */
       this._neighborOffset = index * Grid._stride;
+      /** @type {Uint16Array} Neighbor indices view */
       this._neighbors = new Uint16Array(
         Grid.neighborData.buffer,
         Grid.neighborData.byteOffset + (this._neighborOffset + 2) * 2, // Uint16 = 2 bytes
@@ -407,11 +492,14 @@ export class GameObject {
       );
     } else {
       // Fallback for edge cases (shouldn't happen in normal flow)
+      /** @type {number} Neighbor data offset (-1 if not initialized) */
       this._neighborOffset = -1;
+      /** @type {Uint16Array|null} Neighbor indices view */
       this._neighbors = null;
     }
 
     // Component instance cache (lazy-loaded on first access)
+    /** @type {WEED.types.ComponentCache} Component instance cache */
     this._componentCache = {};
 
     // Ensure component accessors are defined on prototype (done once per class)
@@ -446,14 +534,42 @@ export class GameObject {
     // Get component class map from entity class (set during registration)
     const entityComponentMap = this._componentClassMap || {};
 
-    // Define getters for all components this entity class uses
-    for (const componentName of Object.keys(entityComponentMap)) {
+    // Also collect components from static.components array (fallback if _componentClassMap is empty)
+    const componentsToProcess = new Map();
+
+    // First, add components from _componentClassMap
+    for (const [componentName, ComponentClass] of Object.entries(entityComponentMap)) {
+      componentsToProcess.set(componentName, ComponentClass);
+    }
+
+    // Then, add components from static.components array (if _componentClassMap is empty or incomplete)
+    if (this.components && Array.isArray(this.components)) {
+      for (const ComponentClass of this.components) {
+        if (!ComponentClass || !ComponentClass.name) continue;
+        const componentName = ComponentClass.name.charAt(0).toLowerCase() + ComponentClass.name.slice(1);
+        // Only add if not already in map (entityComponentMap takes precedence)
+        if (!componentsToProcess.has(componentName)) {
+          componentsToProcess.set(componentName, ComponentClass);
+        }
+      }
+    }
+
+    // Also ensure core components are available if entity has them
+    for (const [componentName, ComponentClass] of Object.entries(coreComponents)) {
+      // Check if this entity class uses this component (via static.components or _componentClassMap)
+      const hasComponent = (this.components && this.components.includes(ComponentClass)) ||
+        entityComponentMap[componentName];
+      if (hasComponent && !componentsToProcess.has(componentName)) {
+        componentsToProcess.set(componentName, ComponentClass);
+      }
+    }
+
+    // Define getters for all components
+    for (const [componentName, ComponentClass] of componentsToProcess) {
       // Skip if getter already exists
       if (Object.getOwnPropertyDescriptor(this.prototype, componentName)) {
         continue;
       }
-
-      const ComponentClass = entityComponentMap[componentName] || coreComponents[componentName];
 
       if (!ComponentClass) {
         continue;
@@ -497,10 +613,16 @@ export class GameObject {
   // TRANSFORM PROPERTIES
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /** Active state - whether entity is spawned and processing */
+  /**
+   * Active state - whether entity is spawned and processing
+   * @type {number} 0 = inactive, 1 = active
+   */
   get active() {
     return Transform.active[this.index];
   }
+  /**
+   * @param {number} value - 0 = inactive, 1 = active
+   */
   set active(value) {
     Transform.active[this.index] = value;
   }
@@ -974,9 +1096,10 @@ export class GameObject {
 
     // Verify the spritesheet exists
     if (!SpriteSheetRegistry.spritesheets.has(spritesheetName)) {
+      const available = Array.from(SpriteSheetRegistry.spritesheets.keys()).join(', ');
       console.error(
-        `❌ ${this.constructor.name}: Spritesheet "${spritesheetName}" not found. ` +
-        `Available: ${Array.from(SpriteSheetRegistry.spritesheets.keys()).join(', ')}`
+        '❌ ' + this.constructor.name + ': Spritesheet "' + spritesheetName + '" not found. ' +
+        'Available: ' + available + ' '
       );
       return;
     }
@@ -984,7 +1107,7 @@ export class GameObject {
     // Store which spritesheet to use (proxy sheet like civil1, civil2, etc.)
     const spritesheetId = SpriteSheetRegistry.getSpritesheetId(spritesheetName);
     if (spritesheetId === 0) {
-      console.error(`${this.constructor.name}: Spritesheet "${spritesheetName}" not registered`);
+      console.error(this.constructor.name + ': Spritesheet "' + spritesheetName + '" not registered');
       return;
     }
     this.spriteRenderer.spritesheetId = spritesheetId;
@@ -1014,15 +1137,15 @@ export class GameObject {
     const spritesheetId = this.spriteRenderer.spritesheetId;
     if (!spritesheetId || spritesheetId === 0) {
       console.error(
-        `❌ ${this.constructor.name}: Call setSpritesheet() before setAnimation(). ` +
-        `Or use setSprite() for static sprites.`
+        '❌ ' + this.constructor.name + ': Call setSpritesheet() before setAnimation(). ' +
+        'Or use setSprite() for static sprites.'
       );
       return;
     }
 
     const spritesheet = SpriteSheetRegistry.getSpritesheetName(spritesheetId);
     if (!spritesheet) {
-      console.error(`❌ ${this.constructor.name}: Invalid spritesheetId ${spritesheetId}`);
+      console.error('❌ ' + this.constructor.name + ': Invalid spritesheetId ' + spritesheetId + ' ');
       return;
     }
 
@@ -1031,7 +1154,7 @@ export class GameObject {
       GameObject._globalAnimationCache = {};
     }
 
-    const cacheKey = `${spritesheet}:${animationName}`;
+    const cacheKey = spritesheet + ':' + animationName + ' ';
     let animIndex = GameObject._globalAnimationCache[cacheKey];
 
     if (animIndex === undefined) {
@@ -1044,10 +1167,11 @@ export class GameObject {
           SpriteSheetRegistry.spritesheets.get(spritesheet)?.animations || {}
         );
 
+        const animList = availableAnims.slice(0, 10).join(', ');
+        const more = availableAnims.length > 10 ? '...' : '';
         console.error(
-          `❌ ${this.constructor.name}: Animation "${animationName}" not found in "${spritesheet}". ` +
-          `Available: ${availableAnims.slice(0, 10).join(', ')}${availableAnims.length > 10 ? '...' : ''
-          }`
+          '❌ ' + this.constructor.name + ': Animation "' + animationName + '" not found in "' + spritesheet + '". ' +
+          'Available: ' + animList + more + ' '
         );
         return;
       }
@@ -1095,20 +1219,20 @@ export class GameObject {
    *
    * 1. Static texture (from assets.textures):
    *    ```js
-   *    this.setSprite("rock1");
-   *    this.setSprite("blood");
-   *    ```
+  * this.setSprite("rock1");
+   * this.setSprite("blood");
+   * ```
    *
    * 2. Specific frame by name (if you know the exact frame name):
    *    ```js
-   *    this.setSprite("civil1_hurt_5");  // Last frame of hurt animation
-   *    ```
+  * this.setSprite("civil1_hurt_5");  // Last frame of hurt animation
+   * ```
    *
    * 3. Specific frame by parameters (recommended for animation frames):
    *    ```js
-   *    this.setSprite("civil1", "hurt", -1);  // -1 = last frame
-   *    this.setSprite("civil1", "walk_down", 0);  // 0 = first frame
-   *    ```
+  * this.setSprite("civil1", "hurt", -1);  // -1 = last frame
+   * this.setSprite("civil1", "walk_down", 0);  // 0 = first frame
+   * ```
    *
    * PERFORMANCE: Uses global cache to avoid repeated lookups.
    * String resolution happens ONCE per unique sprite, then cached.
@@ -1142,9 +1266,10 @@ export class GameObject {
       spriteName = SpriteSheetRegistry.getFrameName(spriteNameOrSheet, animation, frameIndex ?? 0);
 
       if (!spriteName) {
+        const frameIdx = frameIndex ?? 0;
         console.error(
-          `❌ ${this.constructor.name}: Could not resolve frame for ` +
-          `spritesheet="${spriteNameOrSheet}", animation="${animation}", frameIndex=${frameIndex ?? 0}`
+          '❌ ' + this.constructor.name + ': Could not resolve frame for ' +
+          'spritesheet = "' + spriteNameOrSheet + '", animation = "' + animation + '", frameIndex = ' + frameIdx
         );
         return this;
       }
@@ -1162,7 +1287,7 @@ export class GameObject {
       GameObject._globalAnimationCache = {};
     }
 
-    const cacheKey = `${sheetName}:${spriteName}`;
+    const cacheKey = sheetName + ':' + spriteName + ' ';
     let animIndex = GameObject._globalAnimationCache[cacheKey];
 
     if (animIndex === undefined) {
@@ -1172,8 +1297,8 @@ export class GameObject {
       if (animIndex === undefined) {
         // Sprite not found - provide helpful error message
         console.error(
-          `❌ ${this.constructor.name}: Sprite "${spriteName}" not found in bigAtlas. ` +
-          `Make sure it's included in your assets config (textures or spritesheets).`
+          '❌ ' + this.constructor.name + ': Sprite "' + spriteName + '" not found in bigAtlas. ' +
+          'Make sure it\'s included in your assets config (textures or spritesheets).'
         );
         return this;
       }
@@ -1185,7 +1310,7 @@ export class GameObject {
     // Store which spritesheet to use (bigAtlas for static sprites)
     const bigAtlasId = SpriteSheetRegistry.getSpritesheetId('bigAtlas');
     if (bigAtlasId === 0) {
-      console.error(`❌ ${this.constructor.name}: bigAtlas not loaded yet`);
+      console.error('❌ ' + this.constructor.name + ': bigAtlas not loaded yet');
       return this;
     }
     this.spriteRenderer.spritesheetId = bigAtlasId;
@@ -1202,6 +1327,9 @@ export class GameObject {
   }
   /**
    * Helper method to send sprite property changes to renderer
+   * @param {string} prop - Property name
+   * @param {*} value - Property value
+   * @returns {void}
    */
   setSpriteProp(prop, value) {
     if (this.logicWorker) {
@@ -1346,6 +1474,8 @@ export class GameObject {
    * - Any thread can do atomic freeList push
    * - List updates (activeEntities, perTypeActive, queries) are QUEUED
    * - Only logic0 processes list updates (at start of each frame)
+   *
+   * @returns {void}
    */
   despawn() {
     const i = this.index;
@@ -1408,7 +1538,7 @@ export class GameObject {
   /**
    * Get count of neighbors for this entity
    * Reads directly from spatial worker's SAB - always current
-   * @returns {number} Number of neighbors
+   * @type {number} Number of neighbors
    */
   get neighborCount() {
     return Grid.neighborData[this._neighborOffset];
@@ -1433,7 +1563,7 @@ export class GameObject {
 
   /**
    * Get all neighbor instances as an array
-   * @returns {GameObject[]} Array of neighbor GameObject instances
+   * @returns {Array<GameObject>} Array of neighbor GameObject instances
    */
   getAllNeighborInstances() {
     const count = this.neighborCount;
@@ -1520,7 +1650,8 @@ export class GameObject {
    * Uses interleaved index ordering to reduce CPU cache contention between
    * logic workers. See inline comments for details.
    *
-   * @param {Class} EntityClass - The entity class to reset
+   * @param {WEED.types.EntityClass} EntityClass - The entity class to reset
+   * @returns {void}
    */
   static initializeFreeList(EntityClass) {
     const count = EntityClass.poolSize;
@@ -1528,7 +1659,7 @@ export class GameObject {
 
     // Free list should already exist (SAB-backed, created by Scene.js)
     if (!EntityClass.freeList || !EntityClass.freeListTop) {
-      console.error(`Cannot reset free list for ${EntityClass.name}: SAB not initialized`);
+      console.error('Cannot reset free list for ' + EntityClass.name + ': SAB not initialized');
       return;
     }
 
@@ -1578,10 +1709,14 @@ export class GameObject {
    * - List updates (activeEntities, perTypeActive, queries) are QUEUED
    * - Only logic0 processes list updates (at start of each frame)
    *
-   * @param {Class|Object} EntityClassOrConfig - Entity class OR spawn config (when called as Ball.spawn(config))
-   * @param {Object} spawnConfig - Initial configuration (position, velocity, etc.)
-   * @param {number} [preAssignedIndex] - Optional pre-assigned entity index (from main thread)
-   * @returns {GameObject|{index:number}|null} - Instance (worker) or {index} (main thread), null if pool exhausted
+   * @param {WEED.types.EntityClass|WEED.types.SpawnConfig} EntityClassOrConfig - Entity class OR spawn config (when called as Ball.spawn(config))
+   * @param {WEED.types.SpawnConfig} [spawnConfig={}] - Initial configuration (position, velocity, etc.)
+   * @param {number} [preAssignedIndex=-1] - Optional pre-assigned entity index (from main thread)
+   * @returns {GameObject|WEED.types.EntityInstance|null} - Instance (always GameObject in workers, may be {index} in main thread), null if pool exhausted
+   *
+   * NOTE: When called from main thread, may return {index: number} instead of GameObject instance.
+   * When called from workers, always returns GameObject instance.
+   * When called as CarPart.spawn(), returns CarPart instance (or null).
    */
   static spawn(EntityClassOrConfig, spawnConfig = {}, preAssignedIndex = -1) {
     // Support two calling conventions:
@@ -1656,7 +1791,7 @@ export class GameObject {
     const instance = EntityClass.instances[i - EntityClass.startIndex];
 
     if (!instance) {
-      console.error(`No instance found at index ${i} for ${EntityClass.name}`);
+      console.error('No instance found at index ' + i + ' for ' + EntityClass.name);
       return null;
     }
 
@@ -1818,8 +1953,8 @@ export class GameObject {
   /**
    * SPAWNING SYSTEM: Get pool statistics for an entity class
    *
-   * @param {Class} EntityClass - The entity class to check
-   * @returns {Object} - { total, active, available }
+   * @param {WEED.types.EntityClass} EntityClass - The entity class to check
+   * @returns {WEED.types.PoolStats} Pool statistics
    */
   static getPoolStats(EntityClass) {
     if (EntityClass.startIndex === undefined || EntityClass.poolSize === undefined) {
@@ -1863,8 +1998,8 @@ export class GameObject {
    * OPTIMIZED: Uses batch removal methods instead of individual despawn() calls
    * Complexity: O(N) instead of O(N²) for large pools
    *
-   * @param {Class} [EntityClass] - The entity class to despawn (optional when called as Ball.despawnAll())
-   * @returns {number} - Number of entities despawned
+   * @param {WEED.types.EntityClass} [EntityClass] - The entity class to despawn (optional when called as Ball.despawnAll())
+   * @returns {number} Number of entities despawned
    */
   static despawnAll(EntityClass) {
     // Support calling as Ball.despawnAll() without passing the class
@@ -1963,6 +2098,12 @@ export class GameObject {
     return (activeList && activeList[0] > 0) ? activeList[1] : null;
   }
 
+  /**
+   * Get the first active entity instance for this class
+   * Performance: O(1) - reads from pre-maintained SAB
+   *
+   * @returns {GameObject|null} First active entity instance, or null if none active
+   */
   static getFirstActiveInstance() {
     const index = this.getFirstActiveIndex();
     if (index === null) return null;
@@ -1975,7 +2116,7 @@ export class GameObject {
    * When called on GameObject: returns ALL active entities from global list.
    * When called on a subclass (e.g., Prey.getAllActive()): returns per-type active list.
    *
-   * @returns {Uint16Array} Active entity indices (view into SAB, do not modify)
+   * @returns {WEED.types.ActiveList|null} Active entity indices (view into SAB, do not modify), or null if not initialized
    *
    * Performance: O(1) - returns subarray view into pre-maintained SAB
    */
@@ -1998,7 +2139,7 @@ export class GameObject {
    * Get instances of all active entities of this type (LOGIC WORKER ONLY)
    * NOTE: Allocates an array - prefer getAllActive() + manual loop for hot paths
    *
-   * @returns {Array} Array of active entity instances
+   * @returns {Array<GameObject>} Array of active entity instances
    */
   static getAllActiveInstances() {
     const activeIndices = this.getAllActive();
@@ -2019,7 +2160,7 @@ export class GameObject {
    * Get count of active entities of this class
    * Performance: O(1) - reads from pre-maintained SAB
    *
-   * @returns {number} Number of currently active entities
+   * @type {number} Number of currently active entities
    */
   static get activeCount() {
     const activeList = this._activeList;

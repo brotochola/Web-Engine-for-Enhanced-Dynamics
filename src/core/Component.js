@@ -1,5 +1,8 @@
-// Component.js - Base class for all ECS components
-// Provides shared array functionality via Structure of Arrays (SoA)
+/**
+ * @fileoverview Base class for all ECS components
+ * Provides shared array functionality via Structure of Arrays (SoA)
+ * @see {@link WEED.types} for component property type definitions
+ */
 //
 // CUSTOM GETTERS/SETTERS:
 // Subclasses can define custom getters/setters for any property in ARRAY_SCHEMA.
@@ -25,6 +28,28 @@
 // _createInstanceProperties(), while other properties (offsetX, offsetY, etc.)
 // will still get auto-generated accessors.
 
+/**
+ * @class Component
+ *
+ * Base class for all ECS components using Structure of Arrays (SoA).
+ *
+ * Static TypedArray properties are created dynamically by Component.initializeArrays()
+ * from ARRAY_SCHEMA. Each property in ARRAY_SCHEMA becomes a static TypedArray property.
+ *
+ * IMPORTANT FOR TYPESCRIPT:
+ * To enable TypeScript type checking, subclasses must declare static properties
+ * matching their ARRAY_SCHEMA. This is REQUIRED for static array access.
+ *
+ * PATTERN: After defining ARRAY_SCHEMA, add static property declarations.
+ * For each property in ARRAY_SCHEMA, add a static property declaration with JSDoc type.
+ *
+ * Example: If ARRAY_SCHEMA has "health: Float32Array", add:
+ *   /** @static @type {Float32Array} *\/ static health;
+ *
+ * This allows TypeScript to recognize: MyComponent.propertyName[entityIndex]
+ *
+ * See Collider.js, PersonComponent.js, and LootableComponent.js for complete examples.
+ */
 export class Component {
   // Shared memory buffer for this component type
   static sharedBuffer = null;
@@ -34,6 +59,10 @@ export class Component {
   // Array schema - defines all shared arrays and their types
   // Must be overridden in subclasses
   static ARRAY_SCHEMA = {};
+
+  // Runtime flag to track if instance properties have been created
+  // @type {boolean}
+  _propertiesCreated;
 
   /**
    * Initialize static arrays from SharedArrayBuffer

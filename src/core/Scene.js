@@ -1,6 +1,9 @@
-// Scene.js - Scene management with workers and entity pools
-// Handles workers, SharedArrayBuffers, entity registration, and scene lifecycle
-// This was previously GameEngine.js - renamed to better reflect its role
+/**
+ * @fileoverview Scene management with workers and entity pools
+ * Handles workers, SharedArrayBuffers, entity registration, and scene lifecycle
+ * This was previously GameEngine.js - renamed to better reflect its role
+ * @see {@link WEED.types} for type definitions
+ */
 
 import { GameObject } from './gameObject.js';
 import { Transform } from '../components/Transform.js';
@@ -2613,6 +2616,12 @@ class Scene {
     });
   }
 
+  /**
+   * Spawn a new entity instance
+   * @param {WEED.types.EntityClass|string} EntityClassOrName - Entity class or class name string
+   * @param {WEED.types.SpawnConfig} [spawnConfig={}] - Spawn configuration
+   * @returns {WEED.types.EntityInstance|null} - Entity instance with index, or null if pool exhausted
+   */
   spawnEntity(EntityClassOrName, spawnConfig = {}) {
     // Accept either a class or a string name
     let EntityClass;

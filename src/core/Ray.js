@@ -1,6 +1,9 @@
-// Ray.js - Raycasting system using spatial grid
-// Uses DDA (Digital Differential Analyzer) to traverse only cells the ray passes through
-// Now uses Grid class for spatial data and utils for geometric intersections
+/**
+ * @fileoverview Raycasting system using spatial grid
+ * Uses DDA (Digital Differential Analyzer) to traverse only cells the ray passes through
+ * Now uses Grid class for spatial data and utils for geometric intersections
+ * @see {@link WEED.types.RayCastResult} for ray cast result type definitions
+ */
 
 import { Transform } from '../components/Transform.js';
 import { Collider } from '../components/Collider.js';
@@ -235,7 +238,7 @@ export class Ray {
    * @param {number} xTo - Ray end X
    * @param {number} yTo - Ray end Y
    * @param {number} maxDist - Maximum ray distance (optional)
-   * @returns {Object} { hit: boolean, entityIndex: number, distance: number, hitX: number, hitY: number }
+   * @returns {WEED.types.RayCastResult} Hit information object
    *
    * @example
    *   const result = Ray.castWithInfo(player.x, player.y, targetX, targetY);

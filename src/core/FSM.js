@@ -1,6 +1,9 @@
-// FSM.js - Base class for Finite State Machines in WeedJS
-// FSM is a Component with its own SoA storage (state, time, nextState)
-// Each FSM subclass defines its own states and initial state
+/**
+ * @fileoverview Base class for Finite State Machines in WeedJS
+ * FSM is a Component with its own SoA storage (state, time, nextState)
+ * Each FSM subclass defines its own states and initial state
+ * @see {@link WEED.types.FSMProperties} and {@link WEED.types.FSMClass} for type definitions
+ */
 //
 // Usage:
 //   class EnemyBehaviourFSM extends FSM {
