@@ -1,5 +1,5 @@
-// Car.js - Base car class using Verlet physics with two connected circles
-// The car consists of two CarPart entities (front/back) connected by a distance constraint.
+// Car.js - Base car class using Verlet physics with multiple connected circles
+// The car consists of 2-4 CarPart entities connected by distance constraints.
 // The visible sprite is rendered at the midpoint, with rotation based on the angle between parts.
 // This base class has no input - extend it (like PlayerCar) for controllable cars.
 
@@ -10,15 +10,21 @@ import { CarPart } from './carPart.js';
 const { GameObject, RigidBody, SpriteRenderer, Transform, Constraint } = WEED;
 
 // Physics constants
-export const CAR_PART_RADIUS = 15;
-export const CAR_CONSTRAINT_DISTANCE = CAR_PART_RADIUS * 2.5;
-export const CAR_CONSTRAINT_STIFFNESS = 0.7;
+export const CAR_CONSTRAINT_STIFFNESS = 0.99;
 
 // Movement constants (exported for subclasses)
 export const ACCELERATION_FORCE = 0.1;  // Forward/backward thrust
 export const TURN_FORCE = 0.05;          // Turning force on front wheel
 export const SPRITE_SCALE = 1.5;
 const TWO_PI = Math.PI * 2;
+
+// Part indices in component arrays
+const PART_KEYS = ['part0Index', 'part1Index', 'part2Index', 'part3Index'];
+// Constraint keys for all pairs: 0-1, 0-2, 0-3, 1-2, 1-3, 2-3
+const CONSTRAINT_KEYS = [
+    'constraint0Index', 'constraint1Index', 'constraint2Index',
+    'constraint3Index', 'constraint4Index', 'constraint5Index'
+];
 
 export class Car extends GameObject {
     static scriptUrl = import.meta.url;
@@ -33,82 +39,135 @@ export class Car extends GameObject {
     }
 
     onSpawned(spawnConfig = {}) {
-
         const x = spawnConfig.x || 0;
         const y = spawnConfig.y || 0;
         const sprite = spawnConfig.sprite || 'car';
+        const scale = spawnConfig.scale || SPRITE_SCALE;
+
         // Set up sprite from config (defaults to 'car')
         this.setSpritesheet(sprite);
         this.setAnimation('0'); // Start facing right (0°)
+        this.setScale(scale, scale);
 
-        // Spawn front CarPart (ahead of car position)
-        const frontPart = CarPart.spawn({
-            x: x + CAR_CONSTRAINT_DISTANCE / 2,
-            y: y,
-            radius: this.spriteRenderer.originalWidth * 0.33,
-        });
+        // Calculate physics dimensions based on sprite size
+        const carLength = this.spriteRenderer.originalWidth * scale;
+        const carHeight = this.spriteRenderer.originalHeight * scale;
 
-        // Spawn back CarPart (behind car position)
-        const backPart = CarPart.spawn({
-            x: x - CAR_CONSTRAINT_DISTANCE / 2,
-            y: y,
-            radius: this.spriteRenderer.originalWidth * 0.33,
-        });
+        // Circle radius = half the car height (so circles fit the car body vertically)
+        const radius = carHeight / 3;
 
-        if (!frontPart || !backPart) {
-            console.error('Car: Failed to spawn CarParts');
-            return;
+        // Determine number of circles based on car aspect ratio
+        // More circles for longer cars to provide better collision coverage
+        const aspectRatio = carLength / carHeight;
+        let partCount;
+        if (aspectRatio >= 2.5) {
+            partCount = 4;
+        } else if (aspectRatio >= 1.8) {
+            partCount = 3;
+        } else {
+            partCount = 2;
         }
 
-        // Store entity indices
-        this.carComponent.frontEntityIndex = frontPart.index;
-        this.carComponent.backEntityIndex = backPart.index;
+        // Allow override from spawn config
+        if (spawnConfig.partCount) {
+            partCount = Math.max(2, Math.min(4, spawnConfig.partCount));
+        }
 
-        // Create constraint between front and back parts
-        const constraintIdx = Constraint.add(
-            frontPart.index,
-            backPart.index,
-            CAR_CONSTRAINT_DISTANCE,
-            CAR_CONSTRAINT_STIFFNESS
-        );
-        this.carComponent.constraintIndex = constraintIdx;
+        this.carComponent.partCount = partCount;
 
-        // Set scale
-        this.setScale(SPRITE_SCALE, SPRITE_SCALE);
+        // Calculate spacing between circle centers
+        // First and last circles are positioned so their outer edges touch car ends
+        // Distance from car edge to first/last circle center = radius
+        // Total span between first and last centers = carLength - 2*radius
+        const totalSpan = carLength - 2 * radius;
+        const spacing = totalSpan / (partCount - 1);
+
+        // Spawn CarParts evenly distributed along the car
+        const parts = [];
+        const startX = x - totalSpan / 2; // Back of car
+
+        for (let i = 0; i < partCount; i++) {
+            const partX = startX + i * spacing;
+            const part = CarPart.spawn({
+                x: partX,
+                y: y,
+                radius: radius,
+            });
+
+            if (!part) {
+                console.error(`Car: Failed to spawn CarPart ${i}`);
+                // Clean up already spawned parts
+                for (const p of parts) {
+                    p.despawn();
+                }
+                return;
+            }
+
+            parts.push(part);
+            this.carComponent[PART_KEYS[i]] = part.index;
+        }
+
+        // Create constraints between ALL pairs of parts (for rigid body)
+        // This ensures the car maintains its shape under collision
+        let constraintIndex = 0;
+        for (let i = 0; i < partCount; i++) {
+            for (let j = i + 1; j < partCount; j++) {
+                // Distance between parts i and j = (j - i) * spacing
+                const distance = (j - i) * spacing;
+                const constraintIdx = Constraint.add(
+                    parts[i].index,
+                    parts[j].index,
+                    distance,
+                    CAR_CONSTRAINT_STIFFNESS
+                );
+                this.carComponent[CONSTRAINT_KEYS[constraintIndex]] = constraintIdx;
+                constraintIndex++;
+            }
+        }
+        this.carComponent.constraintCount = constraintIndex;
     }
 
     onDespawned() {
+        const partCount = this.carComponent.partCount;
+        const constraintCount = this.carComponent.constraintCount;
 
-        const frontIdx = this.carComponent.frontEntityIndex;
-        const backIdx = this.carComponent.backEntityIndex;
-        const constraintIdx = this.carComponent.constraintIndex;
-
-        // Remove constraint first
-        if (constraintIdx >= 0) {
-            Constraint.remove(constraintIdx);
+        // Remove all constraints first
+        for (let i = 0; i < constraintCount; i++) {
+            const constraintIdx = this.carComponent[CONSTRAINT_KEYS[i]];
+            if (constraintIdx >= 0) {
+                Constraint.remove(constraintIdx);
+            }
+            this.carComponent[CONSTRAINT_KEYS[i]] = -1;
         }
 
         // Despawn CarParts
-        if (frontIdx > 0 && Transform.active[frontIdx]) {
-            const frontPart = GameObject.get(frontIdx);
-            if (frontPart) frontPart.despawn();
-        }
-        if (backIdx > 0 && Transform.active[backIdx]) {
-            const backPart = GameObject.get(backIdx);
-            if (backPart) backPart.despawn();
+        for (let i = 0; i < partCount; i++) {
+            const partIdx = this.carComponent[PART_KEYS[i]];
+            if (partIdx > 0 && Transform.active[partIdx]) {
+                const part = GameObject.get(partIdx);
+                if (part) part.despawn();
+            }
+            this.carComponent[PART_KEYS[i]] = 0;
         }
 
-        // Clear references
-        this.carComponent.frontEntityIndex = 0;
-        this.carComponent.backEntityIndex = 0;
-        this.carComponent.constraintIndex = -1;
+        this.carComponent.partCount = 0;
+        this.carComponent.constraintCount = 0;
+    }
+
+    /**
+     * Get front and back part indices (first and last parts)
+     */
+    _getFrontBackIndices() {
+        const partCount = this.carComponent.partCount;
+        const backIdx = this.carComponent.part0Index;
+        const frontIdx = this.carComponent[PART_KEYS[partCount - 1]];
+        return { frontIdx, backIdx };
     }
 
     tick(dtRatio) {
-        const frontIdx = this.carComponent.frontEntityIndex;
-        const backIdx = this.carComponent.backEntityIndex;
+        const { frontIdx, backIdx } = this._getFrontBackIndices();
 
-        // Validate that both parts exist
+        // Validate that both end parts exist
         if (!Transform.active[frontIdx] || !Transform.active[backIdx]) {
             return;
         }
@@ -135,8 +194,7 @@ export class Car extends GameObject {
      * @param {number} turnForce - Turning force (positive = right, negative = left)
      */
     applyForces(forwardForce, turnForce) {
-        const frontIdx = this.carComponent.frontEntityIndex;
-        const backIdx = this.carComponent.backEntityIndex;
+        const { frontIdx, backIdx } = this._getFrontBackIndices();
 
         if (!Transform.active[frontIdx] || !Transform.active[backIdx]) {
             return;
@@ -153,7 +211,7 @@ export class Car extends GameObject {
         const forwardX = Math.cos(angle);
         const forwardY = Math.sin(angle);
 
-        // Get current velocity for steering calculations
+        // Get current velocity for steering calculations (use front part as reference)
         const velX = RigidBody.vx[frontIdx];
         const velY = RigidBody.vy[frontIdx];
         const forwardSpeed = velX * forwardX + velY * forwardY;
@@ -163,37 +221,31 @@ export class Car extends GameObject {
         const steerFactor = Math.min(Math.abs(forwardSpeed) / maxSteerSpeed, 1.0);
         const steerDirection = forwardSpeed >= 0 ? 1 : -1;
 
-        // Initialize acceleration
-        let frontAx = 0, frontAy = 0;
-        let backAx = 0, backAy = 0;
+        const partCount = this.carComponent.partCount;
 
-        // Apply forward/backward force to both wheels
+        // Apply forward/backward force to all parts
         if (forwardForce !== 0) {
-            frontAx += forwardX * forwardForce;
-            frontAy += forwardY * forwardForce;
-            backAx += forwardX * forwardForce;
-            backAy += forwardY * forwardForce;
+            for (let i = 0; i < partCount; i++) {
+                const partIdx = this.carComponent[PART_KEYS[i]];
+                RigidBody.ax[partIdx] += forwardX * forwardForce;
+                RigidBody.ay[partIdx] += forwardY * forwardForce;
+            }
         }
 
-        // Apply turn force to front wheel only
+        // Apply turn force to front part only
         if (turnForce !== 0) {
             const effectiveTurn = turnForce * steerFactor * steerDirection;
-            frontAx += -forwardY * effectiveTurn;
-            frontAy += forwardX * effectiveTurn;
+            RigidBody.ax[frontIdx] += -forwardY * effectiveTurn;
+            RigidBody.ay[frontIdx] += forwardX * effectiveTurn;
         }
 
-        // Apply accelerations
-        RigidBody.ax[frontIdx] = frontAx;
-        RigidBody.ay[frontIdx] = frontAy;
-        RigidBody.ax[backIdx] = backAx;
-        RigidBody.ay[backIdx] = backAy;
-
-        // Wake up car parts if any force is applied
-        if (frontAx !== 0 || frontAy !== 0 || backAx !== 0 || backAy !== 0) {
-            RigidBody.sleeping[frontIdx] = 0;
-            RigidBody.sleeping[backIdx] = 0;
-            RigidBody.stillnessTime[frontIdx] = 0;
-            RigidBody.stillnessTime[backIdx] = 0;
+        // Wake up all car parts if any force is applied
+        if (forwardForce !== 0 || turnForce !== 0) {
+            for (let i = 0; i < partCount; i++) {
+                const partIdx = this.carComponent[PART_KEYS[i]];
+                RigidBody.sleeping[partIdx] = 0;
+                RigidBody.stillnessTime[partIdx] = 0;
+            }
         }
     }
 
@@ -202,8 +254,7 @@ export class Car extends GameObject {
      * Maps angle to one of 12 direction animations (0°, 30°, 60°, ..., 330°)
      */
     _updateSpriteFrame() {
-        const frontIdx = this.carComponent.frontEntityIndex;
-        const backIdx = this.carComponent.backEntityIndex;
+        const { frontIdx, backIdx } = this._getFrontBackIndices();
 
         if (!Transform.active[frontIdx] || !Transform.active[backIdx]) {
             return;
