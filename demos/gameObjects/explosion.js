@@ -1,5 +1,6 @@
 import WEED from '/src/index.js';
 import { ExplosionComponent } from '../components/explosionComponent.js';
+import { Fire } from './fire.js';
 
 const { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } = WEED;
 
@@ -20,6 +21,11 @@ export class Explosion extends GameObject {
 
   // Add ExplosionComponent for explosion-specific properties
   static components = [Collider, SpriteRenderer, LightEmitter, ExplosionComponent];
+
+  // Virtual property for TypeScript - component accessor is created dynamically
+  // by GameObject._ensureComponentAccessors() based on static.components array
+  /** @type {ExplosionComponent} */
+  explosionComponent;
 
   setup() {
     const ec = this.explosionComponent;
