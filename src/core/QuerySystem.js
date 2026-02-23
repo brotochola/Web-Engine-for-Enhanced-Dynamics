@@ -140,6 +140,13 @@ export class QuerySystem {
     this.entityMetadataView = null;
     this.queryCacheView = null;
     this.queryResultViews = []; // Array of Uint16Array views, one per pre-computed query
+
+    /**
+     * Reusable buffer for query() results - avoids GC pressure from repeated allocations.
+     * Initialized in buildQueries() when entityMetadata is known.
+     * Result is a temporary view - consume immediately, do not store.
+     */
+    this._queryResultBuffer = null;
   }
 
   /**
@@ -193,6 +200,10 @@ export class QuerySystem {
         `[QuerySystem] Too many entity types: ${this.entityMetadata.length} > MAX_ENTITY_TYPES (${MAX_ENTITY_TYPES})`
       );
     }
+
+    // Initialize reusable buffer for query() results (max size = total entities)
+    const totalEntities = this.entityMetadata.reduce((sum, meta) => sum + meta.poolSize, 0);
+    this._queryResultBuffer = new Uint16Array(totalEntities);
 
     this._logStatistics();
   }
@@ -477,36 +488,28 @@ export class QuerySystem {
 
   /**
    * Build query result array from typeMask
+   * Uses reusable buffer to avoid GC pressure. Result is a temporary view - consume immediately, do not store.
    * @private
    */
   _buildQueryResult(typeMask) {
-    // Count total entities first
-    let totalCount = 0;
-    let mask = typeMask;
-    while (mask !== 0n) {
-      const typeIndex = countTrailingZeros(mask);
-      const meta = this.entityMetadata[typeIndex];
-      totalCount += meta.poolSize;
-      mask &= mask - 1n; // Clear lowest set bit
-    }
+    const buffer = this._queryResultBuffer;
+    if (!buffer) return new Uint16Array(0);
 
-    // Allocate and fill result array
-    const result = new Uint16Array(totalCount);
     let writeIndex = 0;
-    mask = typeMask;
+    let mask = typeMask;
 
     while (mask !== 0n) {
       const typeIndex = countTrailingZeros(mask);
       const meta = this.entityMetadata[typeIndex];
 
       for (let i = meta.startIndex; i < meta.endIndex; i++) {
-        result[writeIndex++] = i;
+        buffer[writeIndex++] = i;
       }
 
       mask &= mask - 1n;
     }
 
-    return result;
+    return buffer.subarray(0, writeIndex);
   }
 
   /**
@@ -561,26 +564,26 @@ export class QuerySystem {
       return new Uint16Array(0);
     }
 
-    // For each matching entity type, binary search activeEntitiesData
-    const result = new Uint16Array(totalActive); // Max possible size
-    let count = 0;
+    const buffer = this._queryResultBuffer;
+    if (!buffer) return new Uint16Array(0);
 
+    let count = 0;
     let mask = typeMask;
+
     while (mask !== 0n) {
       const typeIndex = countTrailingZeros(mask);
       const meta = this.entityMetadata[typeIndex];
 
-      // Binary search for range [startIndex, endIndex) in activeData
       const slice = binarySearchRange(activeData, meta.startIndex, meta.endIndex);
 
       for (let i = 0; i < slice.length; i++) {
-        result[count++] = slice[i];
+        buffer[count++] = slice[i];
       }
 
       mask &= mask - 1n;
     }
 
-    return result.subarray(0, count);
+    return buffer.subarray(0, count);
   }
   /**
    * Serialize for sending to workers via postMessage
@@ -709,6 +712,16 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
   // Map: componentIds string (sorted, comma-joined) → queryMask (BigInt)
   const queryMaskCache = new Map();
 
+  // OPTIMIZATION: Reusable buffers for query() and queryActiveEntities fallback - avoids GC pressure
+  // Multiple buffers allow several queries in the same tick without overwriting
+  // Result is a temporary view - consume immediately, do not store
+  const totalEntityCount = entityMetadata.reduce((sum, m) => sum + m.poolSize, 0);
+  const QUERY_BUFFER_POOL_SIZE = 4;
+  const queryResultBuffers = Array.from({ length: QUERY_BUFFER_POOL_SIZE }, () =>
+    new Uint16Array(totalEntityCount)
+  );
+  let queryResultBufferIndex = 0;
+
   // Helper: generate queryMask from component classes (with caching)
   function generateQueryMask(componentClasses) {
     // Extract and validate component IDs (cheap number operations)
@@ -762,7 +775,8 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
 
   /**
    * Query for ALL entities with specified components
-   * including inactive entities
+   * including inactive entities.
+   * Result is a temporary view - consume immediately, do not store.
    */
   function query(componentClasses) {
     const queryMask = generateQueryMask(componentClasses);
@@ -773,29 +787,21 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
       queryToTypeMask.set(queryMask, typeMask);
     }
 
-    // Build result from matching entity type ranges
-    let totalCount = 0;
-    let mask = typeMask;
-    while (mask !== 0n) {
-      const typeIndex = countTrailingZeros(mask);
-      totalCount += entityMetadata[typeIndex].poolSize;
-      mask &= mask - 1n;
-    }
-
-    const result = new Uint16Array(totalCount);
+    const buffer = queryResultBuffers[queryResultBufferIndex];
+    queryResultBufferIndex = (queryResultBufferIndex + 1) % QUERY_BUFFER_POOL_SIZE;
     let writeIndex = 0;
-    mask = typeMask;
+    let mask = typeMask;
 
     while (mask !== 0n) {
       const typeIndex = countTrailingZeros(mask);
       const meta = entityMetadata[typeIndex];
       for (let i = meta.startIndex; i < meta.endIndex; i++) {
-        result[writeIndex++] = i;
+        buffer[writeIndex++] = i;
       }
       mask &= mask - 1n;
     }
 
-    return result;
+    return buffer.subarray(0, writeIndex);
   }
 
   /**
@@ -826,7 +832,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
       return subarray;
     }
 
-    // Fallback: compute from activeEntitiesData
+    // Fallback: compute from activeEntitiesData (reuse buffer to avoid GC pressure)
     let typeMask = queryToTypeMask.get(queryMask);
     if (typeMask === undefined) {
       typeMask = computeTypeMask(queryMask);
@@ -837,21 +843,22 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
       return new Uint16Array(0);
     }
 
-    const result = new Uint16Array(activeEntitiesData[0]);
+    const buffer = queryResultBuffers[queryResultBufferIndex];
+    queryResultBufferIndex = (queryResultBufferIndex + 1) % QUERY_BUFFER_POOL_SIZE;
     let count = 0;
-
     let mask = typeMask;
+
     while (mask !== 0n) {
       const typeIndex = countTrailingZeros(mask);
       const meta = entityMetadata[typeIndex];
       const slice = binarySearchRange(activeEntitiesData, meta.startIndex, meta.endIndex);
       for (let i = 0; i < slice.length; i++) {
-        result[count++] = slice[i];
+        buffer[count++] = slice[i];
       }
       mask &= mask - 1n;
     }
 
-    return result.subarray(0, count);
+    return buffer.subarray(0, count);
   }
 
   return {
