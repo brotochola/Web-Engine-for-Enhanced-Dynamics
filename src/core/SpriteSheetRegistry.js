@@ -403,6 +403,19 @@ class SpriteSheetRegistry {
   }
 
   /**
+   * Clear all spritesheet data (called when unloading a scene to prevent memory leaks)
+   * The next scene will repopulate the registry during its asset loading
+   */
+  static clearForSceneUnload() {
+    this.spritesheets.clear();
+    this.frameDimensions.clear();
+    this.spritesheetNames = [''];
+    this.spritesheetNameToId.clear();
+    this.spritesheetNameToId.set('', 0);
+    this.decalFrameNameToId = null;
+  }
+
+  /**
    * Get all registered spritesheet names
    *
    * @returns {string[]} Array of spritesheet names

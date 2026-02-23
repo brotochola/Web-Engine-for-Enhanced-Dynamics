@@ -281,6 +281,24 @@ export class NavGrid {
     this._navWorkerPort = port;
   }
 
+  /**
+   * Reset NavGrid state (called when unloading a scene to prevent memory leaks)
+   * Clears port reference and pending requests so old buffers can be GC'd
+   */
+  static reset() {
+    this._navWorkerPort = null;
+    this._initialized = false;
+    this._sab = null;
+    this._headerView = null;
+    this._walkability = null;
+    this._flowfieldHeaders = null;
+    this._flowfieldData = null;
+    this._pathHeaders = null;
+    this._pathData = null;
+    this._pendingFlowfieldRequests.clear();
+    this._pendingPathRequests.clear();
+  }
+
   // =========================================================
   // HOT Queries (per frame, O(1))
   // =========================================================

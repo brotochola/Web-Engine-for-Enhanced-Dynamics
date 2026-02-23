@@ -151,6 +151,21 @@ export class Grid {
     }
   }
 
+  /**
+   * Reset Grid state (called when unloading a scene to prevent memory leaks)
+   * Clears buffer references so old SharedArrayBuffers can be GC'd
+   */
+  static reset() {
+    Grid._gridBuffer = null;
+    Grid._gridCounts = null;
+    Grid._gridEntities = null;
+    Grid._neighborBuffer = null;
+    Grid._neighborData = null;
+    Grid._cellSleepingBuffer = null;
+    Grid._cellSleepingData = null;
+    Grid._markerArray = null;
+  }
+
   // =============================================================================
   // CELL ACCESS (Read from Single Grid Buffer)
   // =============================================================================
