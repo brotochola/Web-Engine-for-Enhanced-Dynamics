@@ -169,11 +169,11 @@ tick(dtRatio) {
 ## 🏃 Quick Start
 
 ```bash
-git clone https://github.com/your-repo/weedjs.git
+git clone https://github.com/nicedayzhu/weedjs.git
 cd weedjs
 node server/node_server.js
 
-# Open http://localhost:3000/demos/
+# Open http://localhost:8000/demos/
 ```
 
 > SharedArrayBuffer requires CORS headers. The included server handles this for you.

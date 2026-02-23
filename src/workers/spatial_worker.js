@@ -700,25 +700,30 @@ class SpatialWorker extends AbstractWorker {
               }
             }
 
-            if (collisionCount + visualOnlyCount >= maxNeighbors) break;
+            // Warn developer when neighbor limit is reached (throttled)
+            if (collisionCount + visualOnlyCount >= maxNeighbors) {
+              const now = performance.now();
+              if (!this._lastNeighborWarnTime || now - this._lastNeighborWarnTime > 5000) {
+                this._lastNeighborWarnTime = now;
+                console.warn(
+                  `⚠️ SPATIAL WORKER ${this.workerId}: Entity ${entityA} hit neighbor limit ` +
+                  `(${maxNeighbors} max). Some neighbors are being dropped. ` +
+                  `Consider increasing spatial.maxNeighbors or reducing entity density.`
+                );
+              }
+            }
+
+            // Copy visual-only neighbors to after collision candidates
+            for (let i = 0; i < visualOnlyCount; i++) {
+              neighborData[neighborOffset + 2 + collisionCount + i] = visualOnlyBuffer[i];
+            }
+
+            const neighborCount = collisionCount + visualOnlyCount;
+
+            // Write counts: [totalCount, collisionCount, neighbors...]
+            neighborData[neighborOffset] = neighborCount;
+            neighborData[neighborOffset + 1] = collisionCount;
           }
-
-          // Copy visual-only neighbors to after collision candidates
-          for (let i = 0; i < visualOnlyCount; i++) {
-            neighborData[neighborOffset + 2 + collisionCount + i] = visualOnlyBuffer[i];
-          }
-
-          const neighborCount = collisionCount + visualOnlyCount;
-
-          // Write counts: [totalCount, collisionCount, neighbors...]
-          neighborData[neighborOffset] = neighborCount;
-          neighborData[neighborOffset + 1] = collisionCount;
-
-          // DEBUG: Log when we have visual-only neighbors but no collision candidates
-          // This is the case the user reports as failing
-          // if (collisionCount === 0 && visualOnlyCount > 0 && entityA % 100 === 0) {
-          //   console.log(`SPATIAL DEBUG: Entity ${entityA} has ${visualOnlyCount} visual-only neighbors, 0 collision. Writing to offset ${neighborOffset}. First neighbor: ${visualOnlyBuffer[0]}`);
-          // }
         }
       }
     }

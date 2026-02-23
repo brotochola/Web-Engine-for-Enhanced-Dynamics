@@ -194,7 +194,16 @@ export class ParticleEmitter extends SharedAtomicPool {
       // Acquire free index from pool (inherited from SharedAtomicPool)
       const i = this.acquireIndex();
       if (i < 0) {
-        // Pool exhausted
+        // Pool exhausted — warn developer (throttled to avoid flooding console)
+        const now = performance.now();
+        if (!this._lastPoolWarnTime || now - this._lastPoolWarnTime > 2000) {
+          this._lastPoolWarnTime = now;
+          console.warn(
+            `⚠️ ${this.poolName}: Pool exhausted (${this.maxCount} max). ` +
+            `${count - spawned} particle(s) could not be spawned. ` +
+            `Consider increasing particle pool size.`
+          );
+        }
         break;
       }
 
