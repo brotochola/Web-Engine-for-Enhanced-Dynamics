@@ -46,6 +46,7 @@ import {
 import { Sun } from './Sun.js';
 import { NavGrid } from './NavGrid.js';
 import { Grid } from './Grid.js';
+import { Ray } from './Ray.js';
 import {
   RENDERER_STATS,
   PARTICLE_STATS,
@@ -2455,15 +2456,32 @@ class Scene {
   async destroy() {
     console.log(`🔴 Scene ${this.constructor.name}: Destroying...`);
 
+    // =========================================================================
+    // CRITICAL: Clear global references FIRST to allow GC of the scene
+    // window.scene holds a reference - without clearing, the entire scene stays in memory
+    // =========================================================================
+    if (typeof window !== 'undefined') {
+      window.scene = null;
+      delete window.downloadBigAtlas;
+      delete window.inspectBigAtlas;
+    }
+
     // Stop the main loop immediately
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
 
-    // Terminate all workers
+    // Break worker handler closures BEFORE terminate (prevents scene ref retention)
     const allWorkers = this.getAllWorkers();
+    allWorkers.forEach((worker) => {
+      if (worker) {
+        worker.onmessage = null;
+        worker.onerror = null;
+      }
+    });
 
+    // Terminate all workers
     allWorkers.forEach((worker) => {
       if (worker) worker.terminate();
     });
@@ -2494,15 +2512,21 @@ class Scene {
     // Clear keyboard state
     this.keyboard = {};
 
-    // Clear all entity instances
+    // Clear all entity instances AND break buffer references on EntityClass
+    // EntityClass.freeList, freeListTop, _activeList, entityIndices point to scene buffers
+    // Without clearing, entity classes not used in next scene keep old buffers alive
     for (const registration of this.registeredClasses) {
       const EntityClass = registration.class;
-      if (EntityClass.instances) {
-        EntityClass.instances = [];
-      }
-      if (EntityClass.poolSize !== undefined) {
-        EntityClass.poolSize = 0;
-      }
+      if (EntityClass.instances) EntityClass.instances = [];
+      EntityClass.poolSize = 0;
+      EntityClass.freeList = null;
+      EntityClass.freeListTop = null;
+      EntityClass._activeList = null;
+      EntityClass.entityIndices = null;
+      EntityClass.startIndex = undefined;
+      EntityClass.endIndex = undefined;
+      EntityClass.entityType = undefined;
+      if (EntityClass.sharedBuffer !== undefined) EntityClass.sharedBuffer = null;
     }
 
     // Clear gameObjects array
@@ -2587,6 +2611,26 @@ class Scene {
     if (globalThis.rng === this.rng) {
       globalThis.rng = null;
     }
+
+    // Clear static class buffer references (they point to scene's SharedArrayBuffers)
+    // New scene will re-initialize these during its init()
+    GameObject.activeEntitiesData = null;
+    if (Sun.isInitialized) {
+      Sun._sab = null;
+      Sun._uint8 = null;
+      Sun._float32 = null;
+      Sun._uint32 = null;
+    }
+    Camera._data = null;
+    Mouse._data = null;
+    Ray.debugFlags = null;
+    Ray.debugBuffer = null;
+    NavGrid.reset();
+    Grid.reset();
+    Constraint.reset();
+    ParticleEmitter.reset();
+    DecorationPool.reset();
+    SpriteSheetRegistry.clearForSceneUnload();
 
     // Clear registered classes for next scene
     this.registeredClasses = [];
