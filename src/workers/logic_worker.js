@@ -298,19 +298,23 @@ class LogicWorker extends AbstractWorker {
    * This ensures all list operations happen single-threaded, avoiding race conditions.
    */
   processListUpdates() {
-    // Process own pending updates
-    this._processSpawnUpdates(this.pendingSpawnListUpdates);
-    this._processDespawnUpdates(this.pendingDespawnListUpdates);
-    this.pendingSpawnListUpdates = [];
-    this.pendingDespawnListUpdates = [];
+    // ORDERING: Despawns first, then spawns.
+    // This ensures rapid despawn→re-spawn cycles at the same index resolve correctly:
+    // the old entry is removed before the new one is added (with dedup preventing duplicates).
 
-    // Process updates received from other workers
+    // Process own pending updates
+    this._processDespawnUpdates(this.pendingDespawnListUpdates);
+    this._processSpawnUpdates(this.pendingSpawnListUpdates);
+    this.pendingDespawnListUpdates = [];
+    this.pendingSpawnListUpdates = [];
+
+    // Process updates received from other workers (same order)
     for (const batch of this.receivedListUpdates) {
-      if (batch.spawns) {
-        this._processSpawnUpdates(batch.spawns);
-      }
       if (batch.despawns) {
         this._processDespawnUpdates(batch.despawns);
+      }
+      if (batch.spawns) {
+        this._processSpawnUpdates(batch.spawns);
       }
     }
     this.receivedListUpdates = [];
@@ -333,16 +337,15 @@ class LogicWorker extends AbstractWorker {
 
   /**
    * Process despawn list updates - remove entities from active lists
+   * No active-state guard: despawns are processed BEFORE spawns, so a re-spawned
+   * entity will be re-added in the subsequent spawn pass (with dedup protection).
    */
   _processDespawnUpdates(updates) {
     for (const update of updates) {
       const { entityIndex, entityType, EntityClass } = update;
-      // Only remove if entity is actually inactive (wasn't respawned in same frame)
-      if (Transform.active[entityIndex] === 0) {
-        GameObject._removeFromMatchingQueries(entityIndex, entityType);
-        GameObject._removeFromActiveEntities(entityIndex);
-        GameObject._removeFromTypeActiveList(EntityClass, entityIndex);
-      }
+      GameObject._removeFromMatchingQueries(entityIndex, entityType);
+      GameObject._removeFromActiveEntities(entityIndex);
+      GameObject._removeFromTypeActiveList(EntityClass, entityIndex);
     }
   }
 
