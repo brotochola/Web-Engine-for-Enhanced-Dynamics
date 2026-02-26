@@ -113,6 +113,9 @@ export class GameObject {
     const count = data[0];
     const insertPos = binarySearchInsertPoint(data, entityIndex, count);
 
+    // Dedup: entity already in list (rapid despawn/re-spawn reuse)
+    if (insertPos <= count && data[insertPos] === entityIndex) return;
+
     // Shift elements right to make room
     for (let i = count; i >= insertPos; i--) {
       data[i + 1] = data[i];
@@ -204,6 +207,8 @@ export class GameObject {
         const resultView = worker._queryResultViews[q];
         const count = resultView[0];
         const insertPos = binarySearchInsertPoint(resultView, entityIndex, count);
+
+        if (insertPos <= count && resultView[insertPos] === entityIndex) continue;
 
         for (let i = count; i >= insertPos; i--) {
           resultView[i + 1] = resultView[i];
@@ -340,6 +345,8 @@ export class GameObject {
 
     const count = typeList[0];
     const insertPos = binarySearchInsertPoint(typeList, entityIndex, count);
+
+    if (insertPos <= count && typeList[insertPos] === entityIndex) return;
 
     for (let i = count; i >= insertPos; i--) {
       typeList[i + 1] = typeList[i];
