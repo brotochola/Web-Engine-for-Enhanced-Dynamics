@@ -2,22 +2,25 @@
 // Flashes are GameObjects with LightEmitter + FlashComponent
 // They fade out over their lifespan and auto-despawn when expired
 // Updated via tick() like any other GameObject
+//
+// NOT in the spatial grid: Flash has no Collider, so it is never inserted into
+// grid cells and never receives neighbor data.  The pre_render_worker finds
+// shadow casters near a flash via a direct grid query instead.
 
 import { GameObject } from './gameObject.js';
 import { LightEmitter } from '../components/LightEmitter.js';
 import { FlashComponent } from '../components/FlashComponent.js';
 import { Transform } from '../components/Transform.js';
-import { Collider } from '../components/Collider.js';
 import { Camera } from './Camera.js';
 
 export class Flash extends GameObject {
   // Flash is an internal engine class - no user script needed
   static scriptUrl = null;
 
-  // Components: Transform (default) + LightEmitter + FlashComponent + Collider
-  // Collider with 0 radius is needed for spatial grid (shadow casting)
+  // Components: Transform (default) + LightEmitter + FlashComponent
+  // No Collider — Flash is excluded from the spatial grid entirely.
   // No RigidBody or SpriteRenderer needed
-  static components = [LightEmitter, FlashComponent, Collider];
+  static components = [LightEmitter, FlashComponent];
 
   // Pool tracking (set by gameEngine during auto-registration)
   static maxFlashes = 0;
@@ -126,26 +129,16 @@ export class Flash extends GameObject {
     // Set flash component properties
     this.flashComponent.lifespan = spawnConfig.lifespan ?? 100;
     this.flashComponent.currentLife = 0;
-    const intensity = spawnConfig.intensity ?? 10000;
-    this.flashComponent.initialIntensity = intensity;
+    this.flashComponent.initialIntensity = spawnConfig.intensity ?? 10000;
     this.flashComponent.active = 1;
-
-    // Set collider for spatial grid (needed for shadow casting via neighbor system)
-    this.collider.active = 1;
-    this.collider.radius = 0; // 0 radius - just need to be in the grid
-    // OPTIMIZED: Calculate sqrt once when intensity is set, not every frame
-    this.collider.visualRange = Math.sqrt(intensity);
-    this.collider.isTrigger = 1;
   }
 
   /**
    * LIFECYCLE: Called when flash is despawned
    */
   onDespawned() {
-    // Turn off light and collider
     this.lightEmitter.active = 0;
     this.flashComponent.active = 0;
-    this.collider.active = 0;
   }
 
   /**

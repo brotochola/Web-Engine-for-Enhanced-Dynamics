@@ -35,6 +35,7 @@ self.postMessage({
 
 import { Transform } from '../components/Transform.js';
 import { Collider } from '../components/Collider.js';
+import { SpriteRenderer } from '../components/SpriteRenderer.js';
 import { AbstractWorker } from './AbstractWorker.js';
 import { Grid } from '../core/Grid.js';
 import {
@@ -337,6 +338,7 @@ class SpatialWorker extends AbstractWorker {
     const offsetX = Collider.offsetX;
     const offsetY = Collider.offsetY;
     const colliderActive = Collider.active;
+    const spriteRendererActive = SpriteRenderer.active;
     const shapeType = Collider.shapeType;
     const radius = Collider.radius;
     const width = Collider.width;
@@ -387,6 +389,12 @@ class SpatialWorker extends AbstractWorker {
 
     for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
       const i = activeEntitiesData[1 + activeIdx];
+
+      // Insert entities that need to be in the grid for:
+      // - Collider: physics, neighbor queries
+      // - SpriteRenderer: visibility culling (particle_worker uses Grid.getEntitiesInRect)
+      // Flash has neither, so it is skipped.
+      if (!colliderActive[i] && !spriteRendererActive[i]) continue;
 
       // Calculate collider position
       const posX = x[i] + (offsetX[i] || 0);
