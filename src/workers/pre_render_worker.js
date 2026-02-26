@@ -114,6 +114,10 @@ class PreRenderWorker extends AbstractWorker {
         this._queryLightEmitter = null;
         this._queryShadowCaster = null;
 
+        // Flash grid-query: scratch buffer for candidate shadow casters + dedup marker
+        this._flashCandidateBuffer = null;
+        this._flashDedupMarker = null;
+
         // ========================================
         // SHADOW RENDER QUEUE (DOUBLE BUFFERED)
         // ========================================
@@ -288,6 +292,13 @@ class PreRenderWorker extends AbstractWorker {
             // Pre-allocate query arrays
             this._queryLightEmitter = [LightEmitter];
             this._queryShadowCaster = [ShadowCaster];
+
+            // Flash grid-query buffers (shadow caster candidates for flash lights)
+            const maxCandidates = Grid.maxNeighbors || 500;
+            this._flashCandidateBuffer = new Uint16Array(maxCandidates);
+            if (this.globalEntityCount > 0) {
+                this._flashDedupMarker = new Uint32Array(this.globalEntityCount);
+            }
 
             console.log(`[PRE_RENDER WORKER] Double-buffered render queue initialized (max ${maxItems} items)`);
         }
@@ -561,6 +572,7 @@ class PreRenderWorker extends AbstractWorker {
         const lightEmitterActive = LightEmitter.active;
         const hasGlowSprite = LightEmitter.hasGlowSprite;
         const lightIntensity = LightEmitter.lightIntensity;
+        const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
         const visualRange = Collider.visualRange;
         const MIN_GLOW_INTENSITY = 50; // Matches alpha cull threshold in buildRenderQueue()
         const MIN_GLOW_RANGE = 2.5; // Matches scale cull threshold in buildRenderQueue()
@@ -580,7 +592,7 @@ class PreRenderWorker extends AbstractWorker {
                 lightEmitterActive[i] &&
                 hasGlowSprite[i] &&
                 lightIntensity[i] >= MIN_GLOW_INTENSITY &&
-                (visualRange[i] || 200) >= MIN_GLOW_RANGE
+                (visualRange[i] || sqrtLightIntensity[i] || 200) >= MIN_GLOW_RANGE
             ) {
                 this.collectRenderable(3, i, y[i] + 10);
             }
@@ -756,6 +768,7 @@ class PreRenderWorker extends AbstractWorker {
 
         const lightColor = LightEmitter.lightColor;
         const lightIntensity = LightEmitter.lightIntensity;
+        const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
         const glowHeightOffset = LightEmitter.glowHeightOffset;
         const visualRange = Collider.visualRange;
         const lightGradientAnimIdx = this.animationNameToIndex?.['_lightGradient'] ?? 0;
@@ -864,7 +877,8 @@ class PreRenderWorker extends AbstractWorker {
                 rqEntityIndex[i] = -1;
             } else {
                 // === LIGHT GLOW (type=3) ===
-                const rangeVal = visualRange[idx] || 200;
+                // Flash entities have no Collider, so visualRange is 0; fall back to sqrtLightIntensity
+                const rangeVal = visualRange[idx] || sqrtLightIntensity[idx] || 200;
                 const scale = (rangeVal * 4) / GLOW_TEXTURE_RADIUS;
                 const glowAlpha = lightIntensity[idx] / 50000;
 
@@ -1084,6 +1098,21 @@ class PreRenderWorker extends AbstractWorker {
         }
         lightEntities.sort(this._lightYComparator);
 
+        // Grid cell data (used for flash direct queries)
+        const gridCounts = Grid._gridCounts;
+        const gridEntities = Grid._gridEntities;
+        const cellByteSize = Grid.cellByteSize;
+        const gridWidth = Grid.gridWidth;
+        const gridHeight = Grid.gridHeight;
+        const invCellSize = Grid.invCellSize;
+        const flashCandidateBuffer = this._flashCandidateBuffer;
+        const flashDedupMarker = this._flashDedupMarker;
+        const colliderOffsetX = Collider.offsetX;
+        const colliderOffsetY = Collider.offsetY;
+
+        // Frame-unique dedup tag (avoids clearing the marker array each light)
+        let dedupTag = 0;
+
         for (let i = 0; i < lightEntities.length; i++) {
             if (writeIdx >= maxItems) break;
             if (lightsProcessed >= this.maxShadowCastingLights) break;
@@ -1097,32 +1126,86 @@ class PreRenderWorker extends AbstractWorker {
                 ? intensity * ((pointShadowAlphaScale / MIN_POINT_SHADOW_ALPHA) - 1)
                 : 0;
 
-            const offset = lightIdx * stride;
-            const neighborCountForLight = neighborData[offset];
+            const isFlash = flashActive[lightIdx] === 1;
 
+            // ── Determine candidate source ────────────────────────────
+            let candidateCount;
+            let candidateSource;   // typed array holding entity indices
+            let candidateOffset;   // first candidate starts at candidateSource[candidateOffset]
+
+            if (isFlash && gridCounts && flashCandidateBuffer && flashDedupMarker) {
+                // FLASH PATH: scan grid cells around flash position
+                const searchRadius = sqrtLightIntensity[lightIdx] || 100;
+                const cellRadius = ((searchRadius * invCellSize) | 0) + 1;
+                const centerCol = (lightX * invCellSize) | 0;
+                const centerRow = (lightY * invCellSize) | 0;
+                const maxCol = gridWidth - 1;
+                const maxRow = gridHeight - 1;
+                const maxCandidates = flashCandidateBuffer.length;
+
+                dedupTag++;
+                let count = 0;
+
+                const rStart = centerRow - cellRadius;
+                const rEnd = centerRow + cellRadius;
+                const cStart = centerCol - cellRadius;
+                const cEnd = centerCol + cellRadius;
+
+                for (let r = (rStart < 0 ? 0 : rStart), rLim = (rEnd > maxRow ? maxRow : rEnd); r <= rLim; r++) {
+                    const rowBase = r * gridWidth;
+                    for (let c = (cStart < 0 ? 0 : cStart), cLim = (cEnd > maxCol ? maxCol : cEnd); c <= cLim; c++) {
+                        const cellIndex = rowBase + c;
+                        const byteOff = cellIndex * cellByteSize;
+                        const cellCount = gridCounts[byteOff];
+                        if (cellCount === 0) continue;
+
+                        const entityBase = (byteOff >> 2) + 1;
+                        for (let j = 0; j < cellCount; j++) {
+                            const eid = gridEntities[entityBase + j];
+                            if (flashDedupMarker[eid] === dedupTag) continue;
+                            flashDedupMarker[eid] = dedupTag;
+                            if (count < maxCandidates) {
+                                flashCandidateBuffer[count++] = eid;
+                            }
+                        }
+                    }
+                }
+
+                candidateCount = count;
+                candidateSource = flashCandidateBuffer;
+                candidateOffset = 0;
+            } else {
+                // REGULAR LIGHT PATH: use precomputed neighbor data
+                const offset = lightIdx * stride;
+                candidateCount = neighborData[offset];
+                candidateSource = neighborData;
+                candidateOffset = offset + 2;
+            }
+
+            // ── Process candidates into shadow sprites ────────────────
             const shadowStartIdx = writeIdx + 1;
             let shadowsForThisLight = 0;
 
-            const lightXWithOffset = worldX[lightIdx] + (Collider.offsetX[lightIdx] || 0);
-            const lightYWithOffset = worldY[lightIdx] + (Collider.offsetY[lightIdx] || 0);
+            // Flash has no Collider offsets; regular lights may have them
+            const lightXWithOffset = isFlash ? lightX : lightX + (colliderOffsetX[lightIdx] || 0);
+            const lightYWithOffset = isFlash ? lightY : lightY + (colliderOffsetY[lightIdx] || 0);
 
-            for (let k = 0; k < neighborCountForLight; k++) {
+            for (let k = 0; k < candidateCount; k++) {
                 if (shadowsForThisLight >= this.maxShadowsPerLight) break;
                 if (shadowCount >= maxShadowSprites) break;
                 if (writeIdx + 1 + shadowsForThisLight >= maxItems) break;
 
-                const neighborIdx = neighborData[offset + 2 + k];
+                const neighborIdx = candidateSource[candidateOffset + k];
 
                 if (!shadowCasterActive[neighborIdx] || !transformActive[neighborIdx]) continue;
 
-                // heightMultiplier: 0 = no shadow, 1 = normal, 2 = 2x longer
                 const heightMult = shadowHeightMultiplier[neighborIdx];
                 if (heightMult <= 0) continue;
 
                 if (maxShadowsPerEntity > 0 && entityShadowCounts[neighborIdx] >= maxShadowsPerEntity) continue;
 
-                const neighborX = worldX[neighborIdx] + (Collider.offsetX[neighborIdx] || 0);
-                const neighborY = worldY[neighborIdx] + (Collider.offsetY[neighborIdx] || 0);
+                const neighborX = worldX[neighborIdx] + (colliderOffsetX[neighborIdx] || 0);
+                const neighborY = worldY[neighborIdx] + (colliderOffsetY[neighborIdx] || 0);
                 const dx = neighborX - lightXWithOffset;
                 const dy = neighborY - lightYWithOffset;
                 const distSq = dx * dx + dy * dy;
@@ -1134,20 +1217,16 @@ class PreRenderWorker extends AbstractWorker {
                 const casterY = worldY[neighborIdx];
                 const textureId = entityLastTextureId ? entityLastTextureId[neighborIdx] : 0;
 
-                // Shadow uses SAME anchor as sprite
                 const entityScaleY = Math.abs(spriteScaleY[neighborIdx]) || 1;
                 const anchorX = spriteAnchorX[neighborIdx] ?? 0.5;
                 const anchorY = spriteAnchorY[neighborIdx] ?? 0.95;
 
                 const dist = Math.sqrt(distSq);
 
-                // Shadow length based on distance and sprite scale
-                // Negative to flip shadow (extends away from anchor)
                 const distRatio = dist * 0.00390625;
                 const clampedDistRatio = distRatio > 1 ? 1 : distRatio;
                 const lengthScale = -(0.3 + clampedDistRatio * 0.9) * entityScaleY * heightMult;
 
-                // Cull shadows outside view
                 const originalHeight = this.frameHeight ? this.frameHeight[textureId] : 50;
                 const shadowExtent = Math.abs(lengthScale) * originalHeight + 100;
                 if (casterX + shadowExtent < viewMinX || casterX - shadowExtent > viewMaxX ||
@@ -1167,13 +1246,11 @@ class PreRenderWorker extends AbstractWorker {
                 rqY[shadowIdx] = casterY;
                 rqScaleX[shadowIdx] = 1;
                 rqScaleY[shadowIdx] = lengthScale;
-                // Sprite's natural "up" is -π/2, so subtract π/2 to align shadow direction
                 const pointShadowRotation = angle - 1.5707963267948966;
                 rqRotation[shadowIdx] = pointShadowRotation;
                 rqAlpha[shadowIdx] = alpha;
                 rqTint[shadowIdx] = 0x000000;
                 rqTextureId[shadowIdx] = textureId;
-                // Shadow anchor = sprite anchor + fixed offset (defines shadow pivot point on texture)
                 rqAnchorX[shadowIdx] = anchorX + (shadowAnchorOffsetX[neighborIdx] || 0);
                 rqAnchorY[shadowIdx] = anchorY + (shadowAnchorOffsetY[neighborIdx] || 0);
 

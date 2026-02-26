@@ -443,7 +443,7 @@ export class Person extends Lootable {
         x: muzzleX,
         y: muzzleY,
         z: -muzzleHeightPx,
-        lifespan: 80,
+        lifespan: 18,
         color: 0xffaa00,
         intensity: 10000,
         hasGlowSprite: 0,
