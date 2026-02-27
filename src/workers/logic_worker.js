@@ -91,6 +91,9 @@ class LogicWorker extends AbstractWorker {
     this.pendingSpawnListUpdates = [];   // [{entityIndex, entityType, EntityClass}, ...]
     this.pendingDespawnListUpdates = []; // [{entityIndex, entityType, EntityClass}, ...]
     this.receivedListUpdates = [];       // Batch updates received from other workers
+    /** @internal Reused by sendListUpdatesToLogic0 to avoid .map() allocation */
+    this._spawnSerializedBuffer = [];
+    this._despawnSerializedBuffer = [];
   }
 
   /**
@@ -357,17 +360,18 @@ class LogicWorker extends AbstractWorker {
       return;
     }
 
-    // Serialize EntityClass to class name for message passing
-    const spawns = this.pendingSpawnListUpdates.map(u => ({
-      entityIndex: u.entityIndex,
-      entityType: u.entityType,
-      className: u.EntityClass.name,
-    }));
-    const despawns = this.pendingDespawnListUpdates.map(u => ({
-      entityIndex: u.entityIndex,
-      entityType: u.entityType,
-      className: u.EntityClass.name,
-    }));
+    // Serialize EntityClass to class name for message passing (reuse buffers to avoid .map() allocation)
+    const spawns = this._spawnSerializedBuffer;
+    const despawns = this._despawnSerializedBuffer;
+    spawns.length = 0;
+    despawns.length = 0;
+
+    for (const u of this.pendingSpawnListUpdates) {
+      spawns.push({ entityIndex: u.entityIndex, entityType: u.entityType, className: u.EntityClass.name });
+    }
+    for (const u of this.pendingDespawnListUpdates) {
+      despawns.push({ entityIndex: u.entityIndex, entityType: u.entityType, className: u.EntityClass.name });
+    }
 
     this.sendDataToWorker('logic0', {
       msg: 'listUpdates',

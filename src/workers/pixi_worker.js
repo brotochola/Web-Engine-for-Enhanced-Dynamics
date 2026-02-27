@@ -150,8 +150,9 @@ class PixiParticlePool {
       particleIndex = this.freeIndices.pop();
       particle = this.particles[particleIndex];
 
-      // Reset particle to default visible state (caller will set actual values)
-      particle.visible = false; // Caller makes it visible when ready
+      // Reset particle to default state (caller will set actual values)
+      // Note: visible=false doesn't work in ParticleContainer - we use x:-99999,y:-99999 to hide
+      particle.visible = false;
       particle.alpha = 1;
       particle.scaleX = 1;
       particle.scaleY = 1;
@@ -161,12 +162,8 @@ class PixiParticlePool {
       particle.anchorY = 0.5;
       particle.x = -99999;
       particle.y = -99999;
-      particle.texture = null;
-
-      // CRITICAL: Reset texture to default to prevent texture bleeding between entities
-      if (this.defaultTexture) {
-        particle.texture = this.defaultTexture;
-      }
+      // CRITICAL: Always reset texture to prevent texture bleeding when slot reused for different entity
+      particle.texture = this.defaultTexture || PIXI.Texture.WHITE;
     } else {
       // No free particles available - create a new one
       const texture = this.defaultTexture || PIXI.Texture.WHITE;
@@ -203,16 +200,16 @@ class PixiParticlePool {
     const particle = this.particles[particleIndex];
     if (!particle) return;
 
-    // Hide particle and reset state for reuse
+    // Hide particle and reset state for reuse (x:-99999 used because visible=false doesn't work in ParticleContainer)
     particle.visible = false;
     particle.alpha = 1;
-    particle.scaleX = 1;
-    particle.scaleY = 1;
+    particle.scaleX = 0.001;
+    particle.scaleY = 0.001;
     particle.tint = 0xffffff;
     particle.x = -99999;
     particle.y = -99999;
     particle.rotation = 0;
-    particle.texture = null
+    particle.texture = this.defaultTexture || PIXI.Texture.WHITE;
 
     // Add to free list
     this.freeIndices.push(particleIndex);
@@ -958,11 +955,19 @@ class PixiRenderer extends AbstractWorker {
     let visibleCount = 0;
 
     // Apply render queue properties to sprites (zero-branching on type!)
+    // CRITICAL: Set texture FIRST before position - prevents "texture bleeding" when pool slots
+    // are reused (e.g. civilian showing grass texture for one frame). visible=false doesn't work
+    // in ParticleContainer, so we rely on correct texture+position assignment order.
+    const fallbackTexture = this.particlePool.defaultTexture || (flatTextures.length > 0 ? flatTextures[0] : PIXI.Texture.WHITE);
     for (let i = 0; i < count; i++) {
       const sprite = this._rqSprites[i];
       if (!sprite) continue;
 
-      // Apply properties directly from render queue
+      // Resolve texture FIRST - always set to prevent stale texture from previous pool reuse
+      const texId = rqTextureId[i];
+      sprite.texture = (texId < flatTextures.length && texId >= 0) ? flatTextures[texId] : fallbackTexture;
+
+      // Apply transform properties
       sprite.x = rqX[i];
       sprite.y = rqY[i];
       sprite.scaleX = rqScaleX[i];
@@ -972,13 +977,6 @@ class PixiRenderer extends AbstractWorker {
       sprite.tint = rqTint[i];
       sprite.anchorX = rqAnchorX[i];
       sprite.anchorY = rqAnchorY[i];
-
-      // Resolve texture from textureId (O(1) flat array lookup - no strings!)
-      // textureId is now globalTextureId computed by particle_worker
-      const texId = rqTextureId[i];
-      if (texId < flatTextures.length) {
-        sprite.texture = flatTextures[texId];
-      }
 
       // Add to container (already Y-sorted by particle_worker!)
       this.particleContainer.addParticle(sprite);
@@ -1687,9 +1685,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.shadowParticleContainer.particleChildren.length = 0;
 
     // Apply render queue properties to sprites (pre-sorted by particle_worker!)
+    // CRITICAL: Set texture FIRST to prevent texture bleeding when pool slots are reused
+    const fallbackTexture = this.particlePool.defaultTexture || (flatTextures.length > 0 ? flatTextures[0] : PIXI.Texture.WHITE);
     for (let i = 0; i < count; i++) {
       const sprite = this._shadowSprites[i];
       if (!sprite) continue;
+
+      // Resolve texture FIRST - always set to prevent stale texture from previous pool reuse
+      const texId = rqTextureId[i];
+      sprite.texture = (texId < flatTextures.length && texId >= 0) ? flatTextures[texId] : fallbackTexture;
 
       // Convert world coordinates to screen space (shadowRT coordinates)
       sprite.x = (rqX[i] - cameraX) * zoom * resolution;
@@ -1701,12 +1705,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       sprite.tint = rqTint[i];
       sprite.anchorX = rqAnchorX[i];
       sprite.anchorY = rqAnchorY[i];
-
-      // Resolve texture from textureId (O(1) flat array lookup)
-      const texId = rqTextureId[i];
-      if (texId < flatTextures.length) {
-        sprite.texture = flatTextures[texId];
-      }
 
       // Add to container (already ordered by particle_worker!)
       this.shadowParticleContainer.addParticle(sprite);

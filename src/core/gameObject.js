@@ -50,6 +50,9 @@ export class GameObject {
 
   static instances = [];
 
+  /** @internal Reused by despawnAll to avoid Set allocation per call */
+  static _despawnAllBuffer = new Set();
+
   static get(entityIndex) {
     return this.instances[entityIndex];
   }
@@ -1439,7 +1442,9 @@ export class GameObject {
   }
 
   /**
-   * Get all neighbor instances as an array
+   * Get all neighbor instances as an array.
+   * Allocates a new array each call - avoid in hot paths (e.g. per-entity tick).
+   * Prefer getAllNeighborIds() + manual loop, or getAllNeighborInstancesMut(out) for zero-alloc.
    * @returns {GameObject[]} Array of neighbor GameObject instances
    */
   getAllNeighborInstances() {
@@ -1453,6 +1458,24 @@ export class GameObject {
     }
 
     return result;
+  }
+
+  /**
+   * Fill a provided array with neighbor instances (zero-alloc).
+   * Caller provides the array; it is cleared and filled. Use for hot paths.
+   * @param {GameObject[]} out - Array to fill (will be resized to neighborCount)
+   * @returns {GameObject[]} The same array, filled with neighbor instances
+   */
+  getAllNeighborInstancesMut(out) {
+    const count = this.neighborCount;
+    const entities = GameObject.instances;
+    const neighbors = this._neighbors;
+
+    for (let i = 0; i < count; i++) {
+      out[i] = entities[neighbors[i]];
+    }
+    out.length = count;
+    return out;
   }
 
   /**
@@ -1901,7 +1924,9 @@ export class GameObject {
 
     // Phase 1: Collect all active indices and call lifecycle hooks
     // Using Set for O(1) lookup in batch removal methods
-    const indicesToDespawn = new Set();
+    // Reuse static buffer to avoid allocation per call
+    const indicesToDespawn = GameObject._despawnAllBuffer;
+    indicesToDespawn.clear();
 
     // Cache component active arrays for inner loop
     const transformActive = Transform.active;
