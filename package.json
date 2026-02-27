@@ -71,6 +71,7 @@
     "rimraf": "^5.0.5",
     "style-loader": "^3.3.4",
     "terser-webpack-plugin": "^5.3.10",
+    "vitest": "^4.0.18",
     "webpack": "^5.90.3",
     "webpack-cli": "^5.1.4",
     "webpack-obfuscator": "^3.5.1"
