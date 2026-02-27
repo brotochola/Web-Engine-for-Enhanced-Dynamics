@@ -668,6 +668,8 @@ class ParticleWorker extends AbstractWorker {
   /**
    * Update screen visibility for all active entities
    * Sets isItOnScreen flag, calculates screenX/screenY, and writes to visibleEntitiesData SAB
+   *
+   * TEST: Iterate over ALL entities with SpriteRenderer (no grid) - to rule out grid as cause of disappearing balls
    */
   updateEntityScreenVisibility() {
     const visibleData = this.visibleEntitiesData;
@@ -704,27 +706,15 @@ class ParticleWorker extends AbstractWorker {
     const screenMinY = cameraBounds.minY;
     const screenMaxY = cameraBounds.maxY;
 
-    // Use Grid spatial query to only check entities near camera
-    const cellMargin = Grid.cellSize * 2;
-    const worldBounds = screenBoundsToWorldBounds(cameraBounds, cellMargin, cellMargin, this._worldBounds);
-
-    if (Grid.cellSize <= 0 || Grid.gridWidth <= 0) {
-      if (visibleData) visibleData[0] = 0;
-      return;
-    }
-
-    this._gridQueryResult = Grid.getEntitiesInRect(worldBounds.minX, worldBounds.minY, worldBounds.maxX, worldBounds.maxY);
-
+    const n = this.globalEntityCount;
     let visibleCount = 0;
 
-    for (let idx = 0; idx < this._gridQueryResult.count; idx++) {
-      const i = this._gridQueryResult.entities[idx];
-
+    // TEST: Iterate ALL entities (no grid) - cache refs for performance
+    for (let i = 0; i < n; i++) {
       if (!active[i]) {
         if (isItOnScreen[i] !== 0) isItOnScreen[i] = 0;
         continue;
       }
-
       if (!spriteRendererActive || !spriteRendererActive[i]) continue;
 
       const sx = x[i] * camZoom - cameraOffsetX;

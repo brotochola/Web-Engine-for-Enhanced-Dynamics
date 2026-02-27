@@ -589,16 +589,15 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * Collect visible entities for render queue
-     * Uses visibleEntitiesData SAB populated by particle_worker
+     * TEST: Iterate ALL entities (bypass visibleEntitiesData) - to isolate visibility flow
      */
     collectVisibleEntities() {
         if (this.globalEntityCount === 0 || !SpriteRenderer.isItOnScreen) return;
 
-        const visibleData = this.visibleEntitiesData;
-        if (!visibleData) return;
-
-        const visibleCount = visibleData[0];
+        const n = this.globalEntityCount;
         const y = Transform.y;
+        const active = Transform.active;
+        const spriteRendererActive = SpriteRenderer.active;
         const renderVisible = SpriteRenderer.renderVisible;
         const lightEmitterActive = LightEmitter.active;
         const hasGlowSprite = LightEmitter.hasGlowSprite;
@@ -608,8 +607,10 @@ class PreRenderWorker extends AbstractWorker {
         const MIN_GLOW_INTENSITY = 50; // Matches alpha cull threshold in buildRenderQueue()
         const MIN_GLOW_RANGE = 2.5; // Matches scale cull threshold in buildRenderQueue()
 
-        for (let idx = 0; idx < visibleCount; idx++) {
-            const i = visibleData[1 + idx];
+        // TEST: Iterate ALL entities - no visibleEntitiesData
+        for (let i = 0; i < n; i++) {
+            if (!active[i]) continue;
+            if (!spriteRendererActive || !spriteRendererActive[i]) continue;
 
             // Collect entity sprite if renderVisible
             if (renderVisible[i]) {
