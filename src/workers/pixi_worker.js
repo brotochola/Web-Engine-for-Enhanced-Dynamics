@@ -998,12 +998,14 @@ class PixiRenderer extends AbstractWorker {
     // ========================================
     // pixi_worker NEVER waits - always reads the latest available frame
     // If pre_render hasn't written anything new, we just re-render the same buffer
+    // pre_render writes to (renderQueueFrame % 2) BEFORE incrementing, then stores sync[0]=renderQueueFrame
+    // So when sync[0]=N, the data is in buffer (N-1)%2, not N%2
     if (this.renderQueueSync) {
       const readyFrame = Atomics.load(this.renderQueueSync, 0);
 
-      // Only switch buffers if a new frame is available
-      if (readyFrame > this.lastReadFrame) {
-        const readBufferIdx = readyFrame % 2;
+      // Only switch buffers if a new frame is available (readyFrame>0 ensures at least one frame was written)
+      if (readyFrame > this.lastReadFrame && readyFrame > 0) {
+        const readBufferIdx = (readyFrame - 1) % 2;
         this._setReadBuffer(readBufferIdx);
 
         // Shadow queue uses same buffer index (swapped together)

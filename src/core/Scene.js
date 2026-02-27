@@ -1047,7 +1047,7 @@ class Scene {
     // readyFrame: incremented by pre_render_worker after writing a frame
     // consumedFrame: set by pixi_worker after reading a frame
     // pre_render_worker waits if readyFrame > consumedFrame + 1 (would overwrite unread data)
-    // pixi_worker never waits - always reads from (readyFrame % 2) buffer
+    // pixi_worker never waits - reads from ((readyFrame-1) % 2) buffer (pre_render writes before incrementing)
     this.buffers.renderQueueSync = new SharedArrayBuffer(8);
     // Initialize sync counters to 0
     new Int32Array(this.buffers.renderQueueSync)[0] = 0;
