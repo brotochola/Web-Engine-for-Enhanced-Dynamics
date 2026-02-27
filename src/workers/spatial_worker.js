@@ -459,17 +459,24 @@ class SpatialWorker extends AbstractWorker {
 
     // =========================================================================
     // PHASE 3: Copy local counts to grid (single write per cell)
-    // This is the ONLY time we modify gridCounts - with final values
-    // Readers see either old count or new count, never 0 mid-clear
+    // Atomics.store ensures readers (particle_worker) see entity writes before count (release semantics)
+    // Readers use Atomics.load for acquire semantics - consistent snapshot, no torn reads
     // =========================================================================
+    const gridCountsInt32 = Grid._gridCountsInt32;
+    const countStride = Grid._cellCountInt32Stride;
+
     for (let r = 0; r < ownedRowCount; r++) {
       const row = ownedRows[r];
       const rowBase = row * gridWidth;
 
       for (let col = 0; col < gridWidth; col++) {
         const cellIndex = rowBase + col;
-        const byteOffset = cellIndex * Grid.cellByteSize;
-        gridCounts[byteOffset] = localCounts[cellIndex];
+        const count = localCounts[cellIndex];
+        if (gridCountsInt32) {
+          Atomics.store(gridCountsInt32, cellIndex * countStride, count);
+        } else {
+          gridCounts[cellIndex * Grid.cellByteSize] = count;
+        }
       }
     }
   }

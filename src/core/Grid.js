@@ -127,12 +127,16 @@ export class Grid {
     // Stride = 2 (totalCount + collisionCount) + maxNeighbors
     Grid.neighborStride = 2 + Grid.maxNeighbors;
     Grid._stride = Grid.neighborStride;
+    // Int32 stride for atomic count access: count for cell i is at index i * _cellCountInt32Stride
+    Grid._cellCountInt32Stride = Grid.cellByteSize >> 2;
 
     // ===== SPATIAL GRID (Single Buffer) =====
     if (buffers.gridBuffer) {
       Grid._gridBuffer = buffers.gridBuffer;
       Grid._gridCounts = new Uint8Array(buffers.gridBuffer);
       Grid._gridEntities = new Uint32Array(buffers.gridBuffer);
+      // Int32 view for Atomics on cell counts (visibility queries need acquire semantics)
+      Grid._gridCountsInt32 = new Int32Array(buffers.gridBuffer);
     }
 
     // ===== NEIGHBOR DATA (Single Buffer) =====
@@ -158,6 +162,7 @@ export class Grid {
   static reset() {
     Grid._gridBuffer = null;
     Grid._gridCounts = null;
+    Grid._gridCountsInt32 = null;
     Grid._gridEntities = null;
     Grid._neighborBuffer = null;
     Grid._neighborData = null;
@@ -530,10 +535,11 @@ export class Grid {
     }
 
     const markerArray = Grid._markerArray;
-    const gridCounts = Grid._gridCounts;
+    const gridCountsInt32 = Grid._gridCountsInt32;
     const gridEntities = Grid._gridEntities;
     const cellByteSize = Grid.cellByteSize;
     const gridWidth = Grid.gridWidth;
+    const countStride = Grid._cellCountInt32Stride;
 
     // Iterate cells in rectangular region
     for (let row = startRow; row <= endRow; row++) {
@@ -542,7 +548,8 @@ export class Grid {
       for (let col = startCol; col <= endCol; col++) {
         const cellIndex = rowBase + col;
         const byteOffset = cellIndex * cellByteSize;
-        const cellCount = gridCounts[byteOffset];
+        // Atomics.load ensures we see entity writes from spatial worker (acquire semantics)
+        const cellCount = gridCountsInt32 ? (Atomics.load(gridCountsInt32, cellIndex * countStride) & 0xFF) : 0;
 
         // Skip empty cells
         if (cellCount === 0) continue;

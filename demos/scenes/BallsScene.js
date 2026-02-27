@@ -53,7 +53,10 @@ export class BallsScene extends Scene {
     },
 
     renderer: {
-      noLimitFPS: true,
+      noLimitFPS: false,
+    },
+    preRender: {
+      noLimitFPS: false,
     },
 
     lighting: {
