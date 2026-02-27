@@ -890,7 +890,7 @@ class PreRenderWorker extends AbstractWorker {
                 rqAnchorX[i] = 0.5;
                 rqAnchorY[i] = 0.5;
                 rqType[i] = 1;
-                rqEntityIndex[i] = -1;
+                rqEntityIndex[i] = idx; // particle index (for pixiParticleId lookup)
             } else if (type === 2) {
                 // === DECORATION ===
                 rqX[i] = decoX[idx] + decoOffsetX[idx];
@@ -905,7 +905,7 @@ class PreRenderWorker extends AbstractWorker {
                 rqAnchorX[i] = decoAnchorX[idx];
                 rqAnchorY[i] = decoAnchorY[idx];
                 rqType[i] = 2;
-                rqEntityIndex[i] = -1;
+                rqEntityIndex[i] = idx; // decoration index (for pixiParticleId lookup)
             } else {
                 // === LIGHT GLOW (type=3) ===
                 // Flash entities have no Collider, so visualRange is 0; fall back to sqrtLightIntensity

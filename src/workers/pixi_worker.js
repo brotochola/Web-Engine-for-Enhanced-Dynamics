@@ -395,11 +395,16 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueAnchorX = null; // Float32Array
     this.renderQueueAnchorY = null; // Float32Array
 
-    // Render queue sprite pool (separate from entity/particle pools)
-    // Sprites are pooled and reused based on count diff between frames
-    this._rqSprites = [];      // Array of PIXI.Particle references
-    this._rqSpritePoolIndices = []; // Pool indices for release
-    this._rqPrevCount = 0;     // Previous frame's renderable count
+    // Render queue - STABLE SPRITE ASSIGNMENT (pixiParticleId)
+    // Each renderable (entity/decoration/particle) keeps its sprite while visible
+    // No more queue-slot-based assignment - prevents texture bleeding
+    this._renderFrameNumber = 0; // For visibility tracking (increments each frame)
+    this._lastFrameVisibleType = null;  // Uint8Array - type per last-frame visible
+    this._lastFrameVisibleIndex = null; // Int32Array - index per last-frame visible
+    this._lastFrameVisibleCount = 0;
+    this._entityVisibleFrame = null;    // Uint32Array - frame when entity was last visible
+    this._decorationVisibleFrame = null;
+    this._particleVisibleFrame = null;
 
     // ========================================
     // FLAT TEXTURE LOOKUP (Zero-cost texture resolution)
@@ -897,42 +902,24 @@ class PixiRenderer extends AbstractWorker {
   // ========================================
   /**
    * Update sprites from the pre-sorted render queue
-   * This bypasses all visibility checks and sorting - particle_worker already did it
-   * Sprite pool is resized based on count diff from previous frame
+   * STABLE SPRITE ASSIGNMENT: Each renderable keeps its PIXI.Particle while visible.
+   * Uses pixiParticleId in components to link renderable -> pool slot. Prevents texture bleeding.
    */
   updateSpritesFromRenderQueue() {
-    if (!this.renderQueueEnabled) return;
+    if (!this.renderQueueEnabled || !this._lastFrameVisibleType) return;
 
     const count = this.renderQueueCount[0];
-    const prevCount = this._rqPrevCount;
+    const frameNum = ++this._renderFrameNumber;
 
-    // Resize sprite pool based on count diff
-    if (count > prevCount) {
-      // Need more sprites - acquire the difference
-      for (let i = prevCount; i < count; i++) {
-        const { particle, index } = this.particlePool.acquire();
-        this._rqSprites[i] = particle;
-        this._rqSpritePoolIndices[i] = index;
-      }
-    } else if (count < prevCount) {
-      // Need fewer sprites - release the extras
-      for (let i = count; i < prevCount; i++) {
-        if (this._rqSpritePoolIndices[i] !== -1) {
-          this.particlePool.release(this._rqSpritePoolIndices[i]);
-          this._rqSprites[i] = null;
-          this._rqSpritePoolIndices[i] = -1;
-        }
-      }
-    }
-    this._rqPrevCount = count;
+    const lastCount = this._lastFrameVisibleCount;
+    const lastType = this._lastFrameVisibleType;
+    const lastIndex = this._lastFrameVisibleIndex;
+    const entityVis = this._entityVisibleFrame;
+    const decoVis = this._decorationVisibleFrame;
+    const particleVis = this._particleVisibleFrame;
+    const glowVis = this._glowVisibleFrame;
 
-    if (count === 0) {
-      // Clear the particle container (O(1) array truncation)
-      this.particleContainer.particleChildren.length = 0;
-      return;
-    }
-
-    // Cache render queue arrays
+    // Cache render queue arrays (needed for both steps)
     const rqX = this.renderQueueX;
     const rqY = this.renderQueueY;
     const rqScaleX = this.renderQueueScaleX;
@@ -943,31 +930,143 @@ class PixiRenderer extends AbstractWorker {
     const rqTextureId = this.renderQueueTextureId;
     const rqAnchorX = this.renderQueueAnchorX;
     const rqAnchorY = this.renderQueueAnchorY;
+    const rqType = this.renderQueueType;
+    const rqEntityIndex = this.renderQueueEntityIndex;
 
-    // Get flat texture array for O(1) lookup
     const flatTextures = this.flatTextures;
+    const fallbackTexture = this.particlePool.defaultTexture || (flatTextures.length > 0 ? flatTextures[0] : PIXI.Texture.WHITE);
+    const particles = this.particlePool.particles;
 
-    // Build particle container children in Y-sorted order
-    // Clear and re-add for proper depth ordering
-    // Use direct array manipulation (O(1)) instead of removeParticles() which is expensive
+    if (count === 0) {
+      for (let i = 0; i < lastCount; i++) {
+        const type = lastType[i];
+        const idx = lastIndex[i];
+        if (type === 0) {
+          const poolId = SpriteRenderer.pixiParticleId[idx];
+          if (poolId >= 0) {
+            this.particlePool.release(poolId);
+            SpriteRenderer.pixiParticleId[idx] = -1;
+          }
+        } else if (type === 3) {
+          const poolId = LightEmitter.pixiParticleId[idx];
+          if (poolId >= 0) {
+            this.particlePool.release(poolId);
+            LightEmitter.pixiParticleId[idx] = -1;
+          }
+        } else if (type === 1) {
+          const poolId = ParticleComponent.pixiParticleId[idx];
+          if (poolId >= 0) {
+            this.particlePool.release(poolId);
+            ParticleComponent.pixiParticleId[idx] = -1;
+          }
+        } else if (type === 2) {
+          const poolId = DecorationComponent.pixiParticleId[idx];
+          if (poolId >= 0) {
+            this.particlePool.release(poolId);
+            DecorationComponent.pixiParticleId[idx] = -1;
+          }
+        }
+      }
+      this.particleContainer.particleChildren.length = 0;
+      this._lastFrameVisibleCount = 0;
+      this.visibleEntityCount = 0;
+      return;
+    }
+
+    // Step 1: Mark this frame's visible renderables (so we can detect "left screen" below)
+    for (let i = 0; i < count; i++) {
+      const type = rqType[i];
+      const idx = rqEntityIndex[i];
+      if (idx < 0) continue;
+      if (type === 0) entityVis[idx] = frameNum;
+      else if (type === 3) glowVis[idx] = frameNum;
+      else if (type === 1) particleVis[idx] = frameNum;
+      else if (type === 2) decoVis[idx] = frameNum;
+    }
+
+    // Step 2: Release sprites for renderables that LEFT the screen
+    for (let i = 0; i < lastCount; i++) {
+      const type = lastType[i];
+      const idx = lastIndex[i];
+      let stillVisible = false;
+      if (type === 0) stillVisible = (entityVis[idx] === frameNum);
+      else if (type === 3) stillVisible = (glowVis[idx] === frameNum);
+      else if (type === 1) stillVisible = (particleVis[idx] === frameNum);
+      else if (type === 2) stillVisible = (decoVis[idx] === frameNum);
+      if (!stillVisible) {
+        if (type === 0) {
+          const poolId = SpriteRenderer.pixiParticleId[idx];
+          if (poolId >= 0) {
+            this.particlePool.release(poolId);
+            SpriteRenderer.pixiParticleId[idx] = -1;
+          }
+        } else if (type === 3) {
+          const poolId = LightEmitter.pixiParticleId[idx];
+          if (poolId >= 0) {
+            this.particlePool.release(poolId);
+            LightEmitter.pixiParticleId[idx] = -1;
+          }
+        } else if (type === 1) {
+          const poolId = ParticleComponent.pixiParticleId[idx];
+          if (poolId >= 0) {
+            this.particlePool.release(poolId);
+            ParticleComponent.pixiParticleId[idx] = -1;
+          }
+        } else if (type === 2) {
+          const poolId = DecorationComponent.pixiParticleId[idx];
+          if (poolId >= 0) {
+            this.particlePool.release(poolId);
+            DecorationComponent.pixiParticleId[idx] = -1;
+          }
+        }
+      }
+    }
+
     this.particleContainer.particleChildren.length = 0;
-
     let visibleCount = 0;
 
-    // Apply render queue properties to sprites (zero-branching on type!)
-    // CRITICAL: Set texture FIRST before position - prevents "texture bleeding" when pool slots
-    // are reused (e.g. civilian showing grass texture for one frame). visible=false doesn't work
-    // in ParticleContainer, so we rely on correct texture+position assignment order.
-    const fallbackTexture = this.particlePool.defaultTexture || (flatTextures.length > 0 ? flatTextures[0] : PIXI.Texture.WHITE);
+    // Step 3: For each visible renderable, get or acquire sprite, apply properties, add to container
     for (let i = 0; i < count; i++) {
-      const sprite = this._rqSprites[i];
+      const type = rqType[i];
+      const idx = rqEntityIndex[i];
+      if (idx < 0) continue;
+
+      let poolId = -1;
+      if (type === 0) {
+        poolId = SpriteRenderer.pixiParticleId[idx];
+        if (poolId < 0) {
+          const { index } = this.particlePool.acquire();
+          poolId = index;
+          SpriteRenderer.pixiParticleId[idx] = poolId;
+        }
+      } else if (type === 3) {
+        poolId = LightEmitter.pixiParticleId[idx];
+        if (poolId < 0) {
+          const { index } = this.particlePool.acquire();
+          poolId = index;
+          LightEmitter.pixiParticleId[idx] = poolId;
+        }
+      } else if (type === 1) {
+        poolId = ParticleComponent.pixiParticleId[idx];
+        if (poolId < 0) {
+          const { index } = this.particlePool.acquire();
+          poolId = index;
+          ParticleComponent.pixiParticleId[idx] = poolId;
+        }
+      } else if (type === 2) {
+        poolId = DecorationComponent.pixiParticleId[idx];
+        if (poolId < 0) {
+          const { index } = this.particlePool.acquire();
+          poolId = index;
+          DecorationComponent.pixiParticleId[idx] = poolId;
+        }
+      }
+
+      const sprite = particles[poolId];
       if (!sprite) continue;
 
-      // Resolve texture FIRST - always set to prevent stale texture from previous pool reuse
       const texId = rqTextureId[i];
       sprite.texture = (texId < flatTextures.length && texId >= 0) ? flatTextures[texId] : fallbackTexture;
-
-      // Apply transform properties
       sprite.x = rqX[i];
       sprite.y = rqY[i];
       sprite.scaleX = rqScaleX[i];
@@ -978,13 +1077,16 @@ class PixiRenderer extends AbstractWorker {
       sprite.anchorX = rqAnchorX[i];
       sprite.anchorY = rqAnchorY[i];
 
-      // Add to container (already Y-sorted by particle_worker!)
       this.particleContainer.addParticle(sprite);
       visibleCount++;
     }
 
-    // Update particle container
-    // this.particleContainer.update();
+    // Step 3: Save this frame's visible set for next frame's "left screen" detection
+    for (let i = 0; i < count; i++) {
+      lastType[i] = rqType[i];
+      lastIndex[i] = rqEntityIndex[i];
+    }
+    this._lastFrameVisibleCount = count;
 
     this.visibleEntityCount = visibleCount;
   }
@@ -2722,12 +2824,38 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this.entityLastTextureId = new Uint16Array(data.renderQueue.entityTextureData);
       }
 
-      // Pre-allocate sprite arrays
-      this._rqSprites = new Array(maxItems).fill(null);
-      this._rqSpritePoolIndices = new Array(maxItems).fill(-1);
-      this._rqPrevCount = 0;
+      // Pre-allocate visibility tracking for stable sprite assignment
+      this._lastFrameVisibleType = new Uint8Array(maxItems);
+      this._lastFrameVisibleIndex = new Int32Array(maxItems);
+      this._lastFrameVisibleCount = 0;
+      this._entityVisibleFrame = new Uint32Array(Math.max(1, this.globalEntityCount));
+      this._decorationVisibleFrame = new Uint32Array(Math.max(1, this.maxDecorations || 1));
+      this._particleVisibleFrame = new Uint32Array(Math.max(1, this.maxParticles || 1));
+      this._glowVisibleFrame = new Uint32Array(Math.max(1, this.globalEntityCount)); // type 3 (light glow) per entity
 
-      console.log(`PIXI WORKER: Double-buffered render queue initialized (max ${maxItems} items)`);
+      // Initialize pixiParticleId to -1 (unassigned) in all components
+      if (SpriteRenderer.pixiParticleId) {
+        for (let i = 0; i < SpriteRenderer.globalEntityCount; i++) {
+          SpriteRenderer.pixiParticleId[i] = -1;
+        }
+      }
+      if (DecorationComponent.pixiParticleId && DecorationComponent.decorationCount > 0) {
+        for (let i = 0; i < DecorationComponent.decorationCount; i++) {
+          DecorationComponent.pixiParticleId[i] = -1;
+        }
+      }
+      if (ParticleComponent.pixiParticleId && ParticleComponent.particleCount > 0) {
+        for (let i = 0; i < ParticleComponent.particleCount; i++) {
+          ParticleComponent.pixiParticleId[i] = -1;
+        }
+      }
+      if (LightEmitter.pixiParticleId) {
+        for (let i = 0; i < this.globalEntityCount; i++) {
+          LightEmitter.pixiParticleId[i] = -1;
+        }
+      }
+
+      console.log(`PIXI WORKER: Double-buffered render queue initialized (max ${maxItems} items, stable sprite assignment)`);
     } else {
       console.log('PIXI WORKER: Render queue NOT enabled');
     }

@@ -65,6 +65,9 @@ export class ParticleComponent extends Component {
     blendMode: Uint8Array,
     // Note: Anchor is always 0.5, 0.5 for particles (centered)
     // Note: No animation support - particles are static sprites
+
+    // Stable sprite binding (pixi_worker): pool index of assigned PIXI.Particle (-1 = none)
+    pixiParticleId: Int32Array,
   };
 
   // Static pool tracking (set during initialization)

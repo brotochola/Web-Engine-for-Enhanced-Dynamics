@@ -10,6 +10,7 @@ export class LightEmitter extends Component {
     height: Float32Array,
     glowHeightOffset: Float32Array,
     hasGlowSprite: Uint8Array, // 0 = no glow sprite, 1 = render glow sprite (default for static lights)
+    pixiParticleId: Int32Array, // Pool index for glow sprite (-1 = none) - separate from entity body
   };
 
   /**

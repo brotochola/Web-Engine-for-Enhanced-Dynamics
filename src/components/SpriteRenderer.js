@@ -40,6 +40,9 @@ export class SpriteRenderer extends Component {
     renderDirty: Uint8Array, // 1 = visual properties changed, needs update this frame
     screenX: Float32Array,
     screenY: Float32Array,
+
+    // Stable sprite binding (pixi_worker): pool index of assigned PIXI.Particle (-1 = none)
+    pixiParticleId: Int32Array,
   };
 
   /**

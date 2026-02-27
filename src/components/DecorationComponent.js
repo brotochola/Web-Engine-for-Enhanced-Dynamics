@@ -35,6 +35,9 @@ export class DecorationComponent extends Component {
     sway: Uint8Array, // 0 = no sway, 1 = sway enabled
     swayAmplitude: Float32Array, // Rotation amplitude in radians (e.g., 0.025 ≈ 1.4°)
     swayFrequency: Float32Array, // Speed multiplier (1.0 = normal, 0.5 = slow, 2.0 = fast)
+
+    // Stable sprite binding (pixi_worker): pool index of assigned PIXI.Particle (-1 = none)
+    pixiParticleId: Int32Array,
   };
 
   // Static pool tracking (set during initialization)
