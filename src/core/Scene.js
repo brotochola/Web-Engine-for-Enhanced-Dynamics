@@ -951,6 +951,14 @@ class Scene {
       DecorationPool.activeDecorationsData = new Uint16Array(this.buffers.activeDecorationsData);
     }
 
+    // Visible lights buffer: pre_render writes, pixi reads (eliminates duplicate queryActiveEntities)
+    // Layout: [count: Uint16, indices: Uint16[maxLights]]
+    if (this.config.lighting.enabled) {
+      const maxLightsForBuffer = this.config.lighting.maxLights || 128;
+      this.buffers.visibleLightsData = new SharedArrayBuffer(2 + maxLightsForBuffer * 2);
+      new Uint16Array(this.buffers.visibleLightsData)[0] = 0;
+    }
+
     // Shadow render queue (replaces old shadow sprite buffer) - DOUBLE BUFFERED
     // Pre-sorted renderables: light gradients interleaved with shadows
     // Built by pre_render_worker, consumed by pixi_worker (same pattern as main renderQueue)
@@ -1841,6 +1849,7 @@ class Scene {
         collisionData: this.buffers.collisionData,
         activeEntitiesData: this.buffers.activeEntitiesData,
         visibleEntitiesData: this.buffers.visibleEntitiesData,
+        visibleLightsData: this.buffers.visibleLightsData || null,
         inputData: this.buffers.inputData,
         cameraData: this.buffers.cameraData,
         syncData: this.buffers.syncData,

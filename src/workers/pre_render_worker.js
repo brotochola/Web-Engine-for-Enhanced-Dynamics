@@ -16,6 +16,7 @@ import { Sun } from '../core/Sun.js';
 import {
     calculateCameraScreenBounds,
     screenBoundsToWorldBounds,
+    generateSymmetricalCirclePattern,
 } from '../core/utils.js';
 import { PRE_RENDER_STATS, createStatsWriter } from './workers-utils.js';
 import { RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
@@ -117,6 +118,16 @@ class PreRenderWorker extends AbstractWorker {
         // Flash grid-query: scratch buffer for candidate shadow casters + dedup marker
         this._flashCandidateBuffer = null;
         this._flashDedupMarker = null;
+
+        // Precomputed circle patterns for flash grid queries (cellRadius -> Int32Array)
+        this._flashCirclePatterns = null;
+
+        // Visible lights SAB: written here, read by pixi (avoids duplicate query)
+        this.visibleLightsData = null;
+
+        // Scratch for entityShadowCounts clear (only clear used indices)
+        this._entityShadowIndicesToClear = null;
+        this._entityShadowIndicesToClearCount = 0;
 
         // ========================================
         // SHADOW RENDER QUEUE (DOUBLE BUFFERED)
@@ -300,6 +311,13 @@ class PreRenderWorker extends AbstractWorker {
                 this._flashDedupMarker = new Uint32Array(this.globalEntityCount);
             }
 
+            // Precompute circle patterns for flash grid queries (cellRadius 0..6 covers typical flash radii)
+            const cellSize = Grid.cellSize || 128;
+            this._flashCirclePatterns = new Map();
+            for (let r = 0; r <= 6; r++) {
+                this._flashCirclePatterns.set(r, generateSymmetricalCirclePattern(r, cellSize));
+            }
+
             console.log(`[PRE_RENDER WORKER] Double-buffered render queue initialized (max ${maxItems} items)`);
         }
 
@@ -390,6 +408,19 @@ class PreRenderWorker extends AbstractWorker {
             this._setShadowWriteBuffer(0);
 
             console.log(`[PRE_RENDER WORKER] Double-buffered shadow render queue initialized (${maxItems} max items)`);
+        }
+
+        // ========================================
+        // VISIBLE LIGHTS BUFFER - Initialize
+        // ========================================
+        // Written here, read by pixi (avoids duplicate queryActiveEntities)
+        if (data.buffers?.visibleLightsData) {
+            this.visibleLightsData = new Uint16Array(data.buffers.visibleLightsData);
+        }
+
+        // Scratch for entityShadowCounts: only clear indices we touched (avoids full fill)
+        if (this.globalEntityCount > 0) {
+            this._entityShadowIndicesToClear = new Uint16Array(this.globalEntityCount);
         }
 
         // ========================================
@@ -944,9 +975,12 @@ class PreRenderWorker extends AbstractWorker {
 
         const maxShadowsPerEntity = this.maxShadowsPerEntity;
         const entityShadowCounts = this._entityShadowCounts;
-        if (maxShadowsPerEntity > 0 && entityShadowCounts) {
-            entityShadowCounts.fill(0);
+        const toClear = this._entityShadowIndicesToClear;
+        const toClearCount = this._entityShadowIndicesToClearCount ?? 0;
+        if (maxShadowsPerEntity > 0 && entityShadowCounts && toClear) {
+            for (let i = 0; i < toClearCount; i++) entityShadowCounts[toClear[i]] = 0;
         }
+        this._entityShadowIndicesToClearCount = 0;
 
         const rqX = this.shadowRenderQueueX;
         const rqY = this.shadowRenderQueueY;
@@ -1052,7 +1086,10 @@ class PreRenderWorker extends AbstractWorker {
 
                     writeIdx++;
                     shadowCount++;
-                    if (maxShadowsPerEntity > 0) entityShadowCounts[entityIdx]++;
+                    if (maxShadowsPerEntity > 0) {
+                        entityShadowCounts[entityIdx]++;
+                        if (toClear) toClear[this._entityShadowIndicesToClearCount++] = entityIdx;
+                    }
                 }
             }
         }
@@ -1098,6 +1135,14 @@ class PreRenderWorker extends AbstractWorker {
         }
         lightEntities.sort(this._lightYComparator);
 
+        // Write visible lights to shared buffer (pixi reads instead of queryActiveEntities)
+        if (this.visibleLightsData) {
+            const maxWrite = this.visibleLightsData.length - 1;
+            const n = Math.min(lightEntities.length, maxWrite);
+            this.visibleLightsData[0] = n;
+            for (let w = 0; w < n; w++) this.visibleLightsData[1 + w] = lightEntities[w];
+        }
+
         // Grid cell data (used for flash direct queries)
         const gridCounts = Grid._gridCounts;
         const gridEntities = Grid._gridEntities;
@@ -1134,27 +1179,29 @@ class PreRenderWorker extends AbstractWorker {
             let candidateOffset;   // first candidate starts at candidateSource[candidateOffset]
 
             if (isFlash && gridCounts && flashCandidateBuffer && flashDedupMarker) {
-                // FLASH PATH: scan grid cells around flash position
+                // FLASH PATH: circle pattern (fewer cells than rect, distance-sorted)
                 const searchRadius = sqrtLightIntensity[lightIdx] || 100;
-                const cellRadius = ((searchRadius * invCellSize) | 0) + 1;
+                const cellRadius = Math.min(((searchRadius * invCellSize) | 0) + 1, 6);
                 const centerCol = (lightX * invCellSize) | 0;
                 const centerRow = (lightY * invCellSize) | 0;
                 const maxCol = gridWidth - 1;
                 const maxRow = gridHeight - 1;
                 const maxCandidates = flashCandidateBuffer.length;
 
-                dedupTag++;
-                let count = 0;
-
-                const rStart = centerRow - cellRadius;
-                const rEnd = centerRow + cellRadius;
-                const cStart = centerCol - cellRadius;
-                const cEnd = centerCol + cellRadius;
-
-                for (let r = (rStart < 0 ? 0 : rStart), rLim = (rEnd > maxRow ? maxRow : rEnd); r <= rLim; r++) {
-                    const rowBase = r * gridWidth;
-                    for (let c = (cStart < 0 ? 0 : cStart), cLim = (cEnd > maxCol ? maxCol : cEnd); c <= cLim; c++) {
-                        const cellIndex = rowBase + c;
+                const pattern = this._flashCirclePatterns?.get(cellRadius);
+                if (!pattern) {
+                    candidateCount = 0;
+                    candidateSource = flashCandidateBuffer;
+                    candidateOffset = 0;
+                } else {
+                    dedupTag++;
+                    let count = 0;
+                    const patternLen = pattern.length >> 1;
+                    for (let p = 0; p < patternLen; p++) {
+                        const r = centerRow + pattern[p * 2];
+                        const c = centerCol + pattern[p * 2 + 1];
+                        if (r < 0 || r > maxRow || c < 0 || c > maxCol) continue;
+                        const cellIndex = r * gridWidth + c;
                         const byteOff = cellIndex * cellByteSize;
                         const cellCount = gridCounts[byteOff];
                         if (cellCount === 0) continue;
@@ -1164,16 +1211,13 @@ class PreRenderWorker extends AbstractWorker {
                             const eid = gridEntities[entityBase + j];
                             if (flashDedupMarker[eid] === dedupTag) continue;
                             flashDedupMarker[eid] = dedupTag;
-                            if (count < maxCandidates) {
-                                flashCandidateBuffer[count++] = eid;
-                            }
+                            if (count < maxCandidates) flashCandidateBuffer[count++] = eid;
                         }
                     }
+                    candidateCount = count;
+                    candidateSource = flashCandidateBuffer;
+                    candidateOffset = 0;
                 }
-
-                candidateCount = count;
-                candidateSource = flashCandidateBuffer;
-                candidateOffset = 0;
             } else {
                 // REGULAR LIGHT PATH: use precomputed neighbor data
                 const offset = lightIdx * stride;
@@ -1256,7 +1300,10 @@ class PreRenderWorker extends AbstractWorker {
 
                 shadowsForThisLight++;
                 shadowCount++;
-                if (maxShadowsPerEntity > 0) entityShadowCounts[neighborIdx]++;
+                if (maxShadowsPerEntity > 0) {
+                    entityShadowCounts[neighborIdx]++;
+                    if (toClear) toClear[this._entityShadowIndicesToClearCount++] = neighborIdx;
+                }
             }
 
             if (shadowsForThisLight > 0) {

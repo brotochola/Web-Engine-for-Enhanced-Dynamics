@@ -1415,14 +1415,17 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
     const viewCenterX = cameraX + viewWidth / 2;
     const viewCenterY = cameraY + viewHeight / 2;
 
-    // Query all active entities with LightEmitter ONCE
-    const lightEntities = this.queryActiveEntities([LightEmitter]);
+    // Use pre_render's visible lights buffer when available (avoids duplicate queryActiveEntities)
+    const useSharedBuffer = !!this.visibleLightsData;
+    const lightCount = useSharedBuffer ? this.visibleLightsData[0] : 0;
+    const lightEntities = useSharedBuffer ? null : this.queryActiveEntities([LightEmitter]);
 
     // Reset pool
     this._visibleLightsAllCount = 0;
 
-    for (let idx = 0; idx < lightEntities.length; idx++) {
-      const i = lightEntities[idx];
+    const iterCount = useSharedBuffer ? lightCount : lightEntities.length;
+    for (let idx = 0; idx < iterCount; idx++) {
+      const i = useSharedBuffer ? this.visibleLightsData[1 + idx] : lightEntities[idx];
       if (!lightEnabled[i]) continue;
 
       // Use sprite position if available (already interpolated)
@@ -2747,6 +2750,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightingConfig = this.config.lighting || {};
     if (lightingConfig.enabled && data.buffers.componentData.LightEmitter) {
       this.lightingEnabled = true;
+      this.visibleLightsData = data.buffers.visibleLightsData
+        ? new Uint16Array(data.buffers.visibleLightsData)
+        : null;
       this.lightingResolution = lightingConfig.resolution || 1.0;
       // baseAmbient is the night/minimum light level (when sun is down)
       // Support both new 'baseAmbient' and legacy 'lightingAmbient' config keys
