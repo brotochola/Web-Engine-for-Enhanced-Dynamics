@@ -711,18 +711,11 @@ class PreRenderWorker extends AbstractWorker {
             screenX[i] = sx;
             screenY[i] = sy;
 
-            // Expand viewport by sprite extent for large sprites (e.g. Floor) - center can be off-screen while entity extends into view
+            // Use cached bounds (updated on scale/animation change)
             let halfExtent = 0;
-            if (this.frameWidth && this.frameHeight && this.entityLastTextureId) {
-                const textureId = this.entityLastTextureId[i] ?? 0;
-                const origW = this.frameWidth[textureId] || 0;
-                const origH = this.frameHeight[textureId] || 0;
-                const scaleX = srScaleX[i] || 1;
-                const scaleY = srScaleY[i] || 1;
-                const halfW = (origW * scaleX) * 0.5;
-                const halfH = (origH * scaleY) * 0.5;
-                halfExtent = halfW > halfH ? halfW : halfH;
-            }
+            const halfW = SpriteRenderer.boundsHalfW?.[i] ?? 0;
+            const halfH = SpriteRenderer.boundsHalfH?.[i] ?? 0;
+            if (halfW > 0 || halfH > 0) halfExtent = halfW > halfH ? halfW : halfH;
             if (halfExtent <= 0) halfExtent = visualRange[i] || 0;
             const extent = halfExtent * camZoom;
             const onScreen = sx >= screenMinX - extent && sx <= screenMaxX + extent &&
@@ -1026,6 +1019,16 @@ class PreRenderWorker extends AbstractWorker {
 
                         if (shouldLoop || !isLastFrame) {
                             frameIndex[idx] = (currentFrame + 1) % animFrameCount;
+                            // Bounds may change (variable frame sizes)
+                            if (this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH) {
+                                const texId = (this.animationFrameStart?.[globalAnimIdx] ?? 0) + frameIndex[idx];
+                                const origW = this.frameWidth[texId] || 0;
+                                const origH = this.frameHeight[texId] || 0;
+                                const sx = srScaleX[idx] || 1;
+                                const sy = srScaleY[idx] || 1;
+                                SpriteRenderer.boundsHalfW[idx] = (origW * sx) * 0.5;
+                                SpriteRenderer.boundsHalfH[idx] = (origH * sy) * 0.5;
+                            }
                         }
                     }
                 }

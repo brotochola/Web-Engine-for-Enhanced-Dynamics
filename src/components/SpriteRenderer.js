@@ -24,6 +24,8 @@ export class SpriteRenderer extends Component {
 
     scaleX: Float32Array, // Separate X scale
     scaleY: Float32Array, // Separate Y scale
+    boundsHalfW: Float32Array, // (frameWidth * scaleX) * 0.5 - world units, for culling
+    boundsHalfH: Float32Array, // (frameHeight * scaleY) * 0.5 - world units, for culling
     anchorX: Float32Array, // Separate X anchor
     anchorY: Float32Array, // Separate Y anchor
 
@@ -82,5 +84,18 @@ export class SpriteRenderer extends Component {
     const animIndex = SpriteRenderer.animationState[entityIndex];
     const dims = SpriteSheetRegistry.getFrameDimensionsById(spritesheetId, animIndex);
     return dims ? dims.h : 0;
+  }
+
+  /**
+   * Recompute bounds half-extents for culling. Call when scale or animation changes.
+   * @param {number} entityIndex - Entity index
+   */
+  static updateBounds(entityIndex) {
+    const w = SpriteRenderer.getOriginalWidth(entityIndex) || 0;
+    const h = SpriteRenderer.getOriginalHeight(entityIndex) || 0;
+    const sx = SpriteRenderer.scaleX[entityIndex] || 1;
+    const sy = SpriteRenderer.scaleY[entityIndex] || 1;
+    SpriteRenderer.boundsHalfW[entityIndex] = (w * sx) * 0.5;
+    SpriteRenderer.boundsHalfH[entityIndex] = (h * sy) * 0.5;
   }
 }

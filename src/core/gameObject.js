@@ -654,6 +654,7 @@ export class GameObject {
     if (!this._hasComponents.SpriteRenderer) return;
     if (SpriteRenderer.scaleX[this.index] !== value) {
       SpriteRenderer.scaleX[this.index] = value;
+      SpriteRenderer.updateBounds(this.index);
       SpriteRenderer.renderDirty[this.index] = 1;
     }
   }
@@ -667,6 +668,7 @@ export class GameObject {
     if (!this._hasComponents.SpriteRenderer) return;
     if (SpriteRenderer.scaleY[this.index] !== value) {
       SpriteRenderer.scaleY[this.index] = value;
+      SpriteRenderer.updateBounds(this.index);
       SpriteRenderer.renderDirty[this.index] = 1;
     }
   }
@@ -813,6 +815,7 @@ export class GameObject {
       changed = true;
     }
     if (changed) {
+      SpriteRenderer.updateBounds(this.index);
       SpriteRenderer.renderDirty[this.index] = 1;
     }
     return this;
@@ -841,6 +844,7 @@ export class GameObject {
     if (!this._hasComponents.SpriteRenderer) return this;
     if (SpriteRenderer.animationState[this.index] !== state) {
       SpriteRenderer.animationState[this.index] = state;
+      SpriteRenderer.updateBounds(this.index);
       SpriteRenderer.renderDirty[this.index] = 1;
     }
     return this;
@@ -1002,6 +1006,7 @@ export class GameObject {
     // Mark as animated
     this.spriteRenderer.isAnimated = 1;
 
+    SpriteRenderer.updateBounds(this.index);
     this.markDirty();
   }
 
@@ -1737,6 +1742,8 @@ export class GameObject {
       SpriteRenderer.alpha[i] = 1.0;
       SpriteRenderer.scaleX[i] = 1;
       SpriteRenderer.scaleY[i] = 1;
+      SpriteRenderer.boundsHalfW[i] = 0;
+      SpriteRenderer.boundsHalfH[i] = 0;
       SpriteRenderer.anchorX[i] = 0.5;
       SpriteRenderer.anchorY[i] = 1.0;
       SpriteRenderer.renderVisible[i] = 1;
