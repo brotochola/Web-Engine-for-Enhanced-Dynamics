@@ -210,6 +210,7 @@ class PreRenderWorker extends AbstractWorker {
         this.canvasWidth = this.config.canvasWidth;
         this.canvasHeight = this.config.canvasHeight;
         this.cullingRatio = this.config.renderer?.cullingRatio ?? RENDERER_DEFAULTS.cullingRatio;
+        this.useGridForEntityVisibility = this.config.renderer?.useGridForEntityVisibility ?? RENDERER_DEFAULTS.useGridForEntityVisibility;
 
         console.log(`[PRE_RENDER WORKER] Entities: ${this.globalEntityCount}, Particles: ${this.maxParticles}, Decorations: ${this.maxDecorations}`);
 
@@ -522,15 +523,15 @@ class PreRenderWorker extends AbstractWorker {
         this.shadowsUpdatedThisFrame = 0;
         this._renderableCount = 0;
 
-        // Collect visible renderables for render queue
+        // Collect visible renderables for render queue (entities + sun shadows fused in one pass)
         this.collectVisibleParticles();
-        this.collectVisibleEntities(); // Does entity visibility + culling (no visibleEntitiesData)
+        this.collectVisibleEntities();
         this.collectVisibleDecorations();
 
         // Build the final render queue (sorts by Y, applies interpolation, writes to SAB)
         this.buildRenderQueue(deltaTime);
 
-        // Build shadow render queue
+        // Build shadow render queue (sun shadows already done in collectVisibleEntities)
         this.buildShadowRenderQueue();
 
         // ========================================
@@ -587,9 +588,9 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * Entity visibility + collect for render queue
-     * Iterates all entities, viewport culling, sets isItOnScreen/screenX/screenY, adds visible to queue.
-     * No visibleEntitiesData - avoids race with particle_worker.
+     * Entity visibility + collect for render queue + sun shadows (fused pass)
+     * Iterates activeEntitiesData (or all entities), viewport culling, sets isItOnScreen/screenX/screenY,
+     * adds visible to queue. When shadows enabled, also writes sun shadows in same pass.
      */
     collectVisibleEntities() {
         if (this.globalEntityCount === 0 || !SpriteRenderer.isItOnScreen || !this.cameraData) return;
@@ -597,7 +598,6 @@ class PreRenderWorker extends AbstractWorker {
         const cameraBounds = this.calculateCameraBounds();
         if (!cameraBounds) return;
 
-        const n = this.globalEntityCount;
         const x = Transform.x;
         const y = Transform.y;
         const active = Transform.active;
@@ -622,7 +622,87 @@ class PreRenderWorker extends AbstractWorker {
         const screenMinY = cameraBounds.minY;
         const screenMaxY = cameraBounds.maxY;
 
-        for (let i = 0; i < n; i++) {
+        // Iteration source: grid (sparse), activeEntitiesData (fewer), or all (0..n)
+        let iterCount, getEntityIdx;
+        if (this.useGridForEntityVisibility && Grid.cellSize > 0 && Grid.gridWidth > 0) {
+            const screenBounds = calculateCameraScreenBounds(
+                this.cameraData[0], this.cameraData[1], this.cameraData[2],
+                this.canvasWidth, this.canvasHeight, this.cullingRatio, this._cameraBounds
+            );
+            const cellMargin = Grid.cellSize * 2;
+            const worldBounds = screenBoundsToWorldBounds(screenBounds, cellMargin, cellMargin, this._worldBounds);
+            this._gridQueryResult = Grid.getEntitiesInRect(worldBounds.minX, worldBounds.minY, worldBounds.maxX, worldBounds.maxY);
+            iterCount = this._gridQueryResult.count;
+            getEntityIdx = (idx) => this._gridQueryResult.entities[idx];
+        } else if (this.activeEntitiesData && this.activeEntitiesData[0] > 0) {
+            const activeData = this.activeEntitiesData;
+            iterCount = activeData[0];
+            getEntityIdx = (idx) => activeData[1 + idx];
+        } else {
+            iterCount = this.globalEntityCount;
+            getEntityIdx = (idx) => idx;
+        }
+
+        // Sun shadows (fused): write during same pass when enabled
+        let sunShadowWriteIdx = 0;
+        let sunShadowCount = 0;
+        const doSunShadows = this.shadowsEnabled &&
+            Sun.isInitialized && Sun.enabled && Sun.intensity > 0.1 &&
+            this.shadowRenderQueueX && this.maxShadowRenderItems > 0;
+        let rqX, rqY, rqScaleX, rqScaleY, rqRotation, rqAlpha, rqTint, rqTextureId, rqAnchorX, rqAnchorY;
+        let viewMinX, viewMaxX, viewMinY, viewMaxY;
+        let sunShadowRotation, sunShadowAlpha;
+        let shadowCasterActive, shadowHeightMultiplier, shadowAnchorOffsetX, shadowAnchorOffsetY;
+        let worldX, worldY, transformActive, spriteScaleY, spriteAnchorX, spriteAnchorY;
+        let entityShadowCounts, toClear, maxShadowsPerEntity;
+        if (doSunShadows) {
+            const screenBounds = calculateCameraScreenBounds(
+                this.cameraData[0], this.cameraData[1], this.cameraData[2],
+                this.canvasWidth, this.canvasHeight, this.cullingRatio, this._cameraBounds
+            );
+            const worldBounds = screenBoundsToWorldBounds(screenBounds, 0, 0, this._worldBounds);
+            viewMinX = worldBounds.minX;
+            viewMaxX = worldBounds.maxX;
+            viewMinY = worldBounds.minY;
+            viewMaxY = worldBounds.maxY;
+            const si = Sun.intensity;
+            sunShadowAlpha = Sun.shadowAlpha * si * (1 - Sun.shadowStretchAlphaFactor * (1 - Sun.shadowMinLengthRatio / Sun.shadowLengthRatio));
+            sunShadowRotation = Sun.shadowAngle - 1.5707963267948966;
+            rqX = this.shadowRenderQueueX;
+            rqY = this.shadowRenderQueueY;
+            rqScaleX = this.shadowRenderQueueScaleX;
+            rqScaleY = this.shadowRenderQueueScaleY;
+            rqRotation = this.shadowRenderQueueRotation;
+            rqAlpha = this.shadowRenderQueueAlpha;
+            rqTint = this.shadowRenderQueueTint;
+            rqTextureId = this.shadowRenderQueueTextureId;
+            rqAnchorX = this.shadowRenderQueueAnchorX;
+            rqAnchorY = this.shadowRenderQueueAnchorY;
+            shadowCasterActive = ShadowCaster.active;
+            shadowHeightMultiplier = ShadowCaster.heightMultiplier;
+            shadowAnchorOffsetX = ShadowCaster.anchorOffsetX;
+            shadowAnchorOffsetY = ShadowCaster.anchorOffsetY;
+            worldX = Transform.x;
+            worldY = Transform.y;
+            transformActive = Transform.active;
+            spriteScaleY = SpriteRenderer.scaleY;
+            spriteAnchorX = SpriteRenderer.anchorX;
+            spriteAnchorY = SpriteRenderer.anchorY;
+            entityShadowCounts = this._entityShadowCounts;
+            toClear = this._entityShadowIndicesToClear;
+            maxShadowsPerEntity = this.maxShadowsPerEntity ?? 0;
+            // Clear entityShadowCounts for entities from previous frame
+            const prevToClearCount = this._entityShadowIndicesToClearCount ?? 0;
+            if (maxShadowsPerEntity > 0 && entityShadowCounts && toClear) {
+                for (let k = 0; k < prevToClearCount; k++) entityShadowCounts[toClear[k]] = 0;
+            }
+        }
+
+        const maxItems = this.maxShadowRenderItems ?? 0;
+        const maxShadowSprites = this.maxShadowSprites ?? 0;
+
+        for (let idx = 0; idx < iterCount; idx++) {
+            const i = getEntityIdx(idx);
             if (!active[i]) {
                 if (isItOnScreen[i] !== 0) isItOnScreen[i] = 0;
                 continue;
@@ -654,6 +734,48 @@ class PreRenderWorker extends AbstractWorker {
             ) {
                 this.collectRenderable(3, i, y[i] + 10);
             }
+
+            // Sun shadows (fused)
+            if (doSunShadows && sunShadowWriteIdx < maxItems && sunShadowCount < maxShadowSprites) {
+                if (shadowCasterActive[i] && transformActive[i]) {
+                    const heightMult = shadowHeightMultiplier[i];
+                    if (heightMult > 0 && (maxShadowsPerEntity <= 0 || (entityShadowCounts[i] ?? 0) < maxShadowsPerEntity)) {
+                        const casterX = worldX[i];
+                        const casterY = worldY[i];
+                        const textureId = this.entityLastTextureId ? this.entityLastTextureId[i] : 0;
+                        const entityScaleY = Math.abs(spriteScaleY[i]) || 1;
+                        const anchorX = spriteAnchorX[i] ?? 0.5;
+                        const anchorY = spriteAnchorY[i] ?? 0.95;
+                        const lengthScale = -entityScaleY * heightMult * Sun.shadowLengthRatio;
+                        const originalHeight = this.frameHeight ? this.frameHeight[textureId] : 50;
+                        const shadowExtent = Math.abs(lengthScale) * originalHeight + 100;
+                        if (!(casterX + shadowExtent < viewMinX || casterX - shadowExtent > viewMaxX ||
+                            casterY + shadowExtent < viewMinY || casterY - shadowExtent > viewMaxY)) {
+                            rqX[sunShadowWriteIdx] = casterX;
+                            rqY[sunShadowWriteIdx] = casterY;
+                            rqScaleX[sunShadowWriteIdx] = 1;
+                            rqScaleY[sunShadowWriteIdx] = lengthScale;
+                            rqRotation[sunShadowWriteIdx] = sunShadowRotation;
+                            rqAlpha[sunShadowWriteIdx] = sunShadowAlpha;
+                            rqTint[sunShadowWriteIdx] = 0x000000;
+                            rqTextureId[sunShadowWriteIdx] = textureId;
+                            rqAnchorX[sunShadowWriteIdx] = anchorX + (shadowAnchorOffsetX[i] || 0);
+                            rqAnchorY[sunShadowWriteIdx] = anchorY + (shadowAnchorOffsetY[i] || 0);
+                            sunShadowWriteIdx++;
+                            sunShadowCount++;
+                            if (maxShadowsPerEntity > 0 && entityShadowCounts && toClear) {
+                                entityShadowCounts[i] = (entityShadowCounts[i] ?? 0) + 1;
+                                toClear[this._entityShadowIndicesToClearCount++] = i;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (doSunShadows) {
+            this._sunShadowWriteIdx = sunShadowWriteIdx;
+            this._sunShadowCount = sunShadowCount;
         }
     }
 
@@ -1025,13 +1147,16 @@ class PreRenderWorker extends AbstractWorker {
         const lightGradientAnimIdx = this.animationNameToIndex?.['_lightGradient'] ?? 0;
         const lightGradientTextureId = this.animationFrameStart?.[lightGradientAnimIdx] ?? 0;
 
-        let writeIdx = 0;
+        // Sun shadows: use fused pass from collectVisibleEntities, or skip if not done
+        let writeIdx = this._sunShadowWriteIdx ?? 0;
+        let shadowCount = this._sunShadowCount ?? 0;
+        this._sunShadowWriteIdx = undefined;
+        this._sunShadowCount = undefined;
+
         let lightsProcessed = 0;
         const maxItems = this.maxShadowRenderItems;
         const maxShadowSprites = this.maxShadowSprites;
         const PI = Math.PI;
-
-        let shadowCount = 0;
 
         const zoom = this.cameraData ? this.cameraData[0] : 1;
         const camX = this.cameraData ? this.cameraData[1] : 0;
@@ -1044,78 +1169,6 @@ class PreRenderWorker extends AbstractWorker {
         const viewMaxX = worldBounds.maxX;
         const viewMinY = worldBounds.minY;
         const viewMaxY = worldBounds.maxY;
-
-        // ========================================
-        // SUN SHADOWS (rendered first, parallel direction)
-        // ========================================
-        // SUN SHADOWS (precomputed in Sun class)
-        if (Sun.isInitialized && Sun.enabled) {
-            // Only render sun shadows when sun is up (intensity > threshold)
-            const sunIntensity = Sun.intensity;
-            if (sunIntensity > 0.1) {
-                const sunShadowAngle = Sun.shadowAngle;
-                const sunShadowLengthRatio = Sun.shadowLengthRatio;
-
-                // Stretch-based alpha: longer shadows = more transparent
-                const sunShadowBaseAlpha = Sun.shadowAlpha * sunIntensity;
-                const stretchRatio = Sun.shadowMinLengthRatio / sunShadowLengthRatio;
-                const stretchAlphaMultiplier = 1 - Sun.shadowStretchAlphaFactor * (1 - stretchRatio);
-                const sunShadowAlpha = sunShadowBaseAlpha * stretchAlphaMultiplier;
-
-                // Precompute sun shadow rotation (constant for all sun shadows)
-                const sunShadowRotation = sunShadowAngle - 1.5707963267948966;
-
-                // Iterate all entities with ShadowCaster (no visibleEntitiesData)
-                const entityCount = this.globalEntityCount;
-                for (let entityIdx = 0; entityIdx < entityCount && writeIdx < maxItems && shadowCount < maxShadowSprites; entityIdx++) {
-                    if (!shadowCasterActive[entityIdx] || !transformActive[entityIdx]) continue;
-
-                    // heightMultiplier: 0 = no shadow, 1 = normal, 2 = 2x longer
-                    const heightMult = shadowHeightMultiplier[entityIdx];
-                    if (heightMult <= 0) continue;
-
-                    if (maxShadowsPerEntity > 0 && entityShadowCounts[entityIdx] >= maxShadowsPerEntity) continue;
-
-                    const casterX = worldX[entityIdx];
-                    const casterY = worldY[entityIdx];
-                    const textureId = entityLastTextureId ? entityLastTextureId[entityIdx] : 0;
-
-                    // Shadow uses SAME position and anchor as sprite - no offset needed
-                    const entityScaleY = Math.abs(spriteScaleY[entityIdx]) || 1;
-                    const anchorX = spriteAnchorX[entityIdx] ?? 0.5;
-                    const anchorY = spriteAnchorY[entityIdx] ?? 0.95;
-
-                    // Shadow length = spriteScaleY × heightMultiplier × sunShadowLengthRatio
-                    // Negative to flip shadow (extends away from anchor, not same direction as sprite)
-                    const lengthScale = -entityScaleY * heightMult * sunShadowLengthRatio;
-
-                    // Cull shadows outside view
-                    const originalHeight = this.frameHeight ? this.frameHeight[textureId] : 50;
-                    const shadowExtent = Math.abs(lengthScale) * originalHeight + 100;
-                    if (casterX + shadowExtent < viewMinX || casterX - shadowExtent > viewMaxX ||
-                        casterY + shadowExtent < viewMinY || casterY - shadowExtent > viewMaxY) continue;
-
-                    rqX[writeIdx] = casterX;
-                    rqY[writeIdx] = casterY;
-                    rqScaleX[writeIdx] = 1;
-                    rqScaleY[writeIdx] = lengthScale;
-                    rqRotation[writeIdx] = sunShadowRotation;
-                    rqAlpha[writeIdx] = sunShadowAlpha;
-                    rqTint[writeIdx] = 0x000000;
-                    rqTextureId[writeIdx] = textureId;
-                    // Shadow anchor = sprite anchor + fixed offset (defines shadow pivot point on texture)
-                    rqAnchorX[writeIdx] = anchorX + (shadowAnchorOffsetX[entityIdx] || 0);
-                    rqAnchorY[writeIdx] = anchorY + (shadowAnchorOffsetY[entityIdx] || 0);
-
-                    writeIdx++;
-                    shadowCount++;
-                    if (maxShadowsPerEntity > 0) {
-                        entityShadowCounts[entityIdx]++;
-                        if (toClear) toClear[this._entityShadowIndicesToClearCount++] = entityIdx;
-                    }
-                }
-            }
-        }
 
         // ========================================
         // POINT LIGHT SHADOWS (suppressed when sun is bright)

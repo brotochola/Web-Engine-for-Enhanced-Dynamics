@@ -164,6 +164,8 @@ export const RENDERER_DEFAULTS = {
   ySorting: false,
   interpolation: true, // Smooth rendering when renderer FPS > physics FPS
   cullingRatio: 0.1,
+  /** Use spatial grid for entity visibility (fewer iterations in sparse scenes). False = iterate all active (faster for dense scenes). */
+  useGridForEntityVisibility: false,
   startFadingDecorationsAtZoom: 0.5, // Zoom level where decorations start fading out
   hideDecorationsAtZoom: 0.25, // Zoom level where decorations are completely hidden
   maxVisibleRenderables: 40000, // Max items in render queue per frame (entities + particles + decorations)
