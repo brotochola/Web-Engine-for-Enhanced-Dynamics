@@ -530,8 +530,7 @@ class ParticleWorker extends AbstractWorker {
     // Writes to: activeParticlesData SAB, visibleParticlesData SAB, isItOnScreen flags
     this.buildActiveAndVisibleParticleLists();
 
-    // Update screen visibility for entities and decorations
-    this.updateEntityScreenVisibility();
+    // Update screen visibility for decorations (entities done in pre_render_worker)
     this.updateDecorationScreenVisibility();
 
     // Clear stamp collection
@@ -662,78 +661,6 @@ class ParticleWorker extends AbstractWorker {
     // Write counts to SABs
     this.activeParticleCount = activeCount;
     if (activeData) activeData[0] = activeCount;
-    if (visibleData) visibleData[0] = visibleCount;
-  }
-
-  /**
-   * Update screen visibility for all active entities
-   * Sets isItOnScreen flag, calculates screenX/screenY, and writes to visibleEntitiesData SAB
-   *
-   * TEST: Iterate over ALL entities with SpriteRenderer (no grid) - to rule out grid as cause of disappearing balls
-   */
-  updateEntityScreenVisibility() {
-    const visibleData = this.visibleEntitiesData;
-
-    if (!this.cameraData || this.globalEntityCount === 0 || !SpriteRenderer.isItOnScreen) {
-      if (visibleData) visibleData[0] = 0;
-      return;
-    }
-
-    // Calculate camera bounds (reuses _cameraBounds object)
-    const zoom = this.cameraData[0];
-    const cameraX = this.cameraData[1];
-    const cameraY = this.cameraData[2];
-
-    const cameraBounds = calculateCameraScreenBounds(
-      zoom, cameraX, cameraY,
-      this.canvasWidth, this.canvasHeight, this.cullingRatio,
-      this._cameraBounds
-    );
-
-    const x = Transform.x;
-    const y = Transform.y;
-    const active = Transform.active;
-    const isItOnScreen = SpriteRenderer.isItOnScreen;
-    const screenX = SpriteRenderer.screenX;
-    const screenY = SpriteRenderer.screenY;
-    const spriteRendererActive = SpriteRenderer.active;
-
-    const camZoom = cameraBounds.zoom;
-    const cameraOffsetX = cameraBounds.cameraOffsetX;
-    const cameraOffsetY = cameraBounds.cameraOffsetY;
-    const screenMinX = cameraBounds.minX;
-    const screenMaxX = cameraBounds.maxX;
-    const screenMinY = cameraBounds.minY;
-    const screenMaxY = cameraBounds.maxY;
-
-    const n = this.globalEntityCount;
-    let visibleCount = 0;
-
-    // TEST: Iterate ALL entities (no grid) - cache refs for performance
-    for (let i = 0; i < n; i++) {
-      if (!active[i]) {
-        if (isItOnScreen[i] !== 0) isItOnScreen[i] = 0;
-        continue;
-      }
-      if (!spriteRendererActive || !spriteRendererActive[i]) continue;
-
-      const sx = x[i] * camZoom - cameraOffsetX;
-      const sy = y[i] * camZoom - cameraOffsetY;
-      screenX[i] = sx;
-      screenY[i] = sy;
-
-      const onScreen = sx >= screenMinX && sx <= screenMaxX && sy >= screenMinY && sy <= screenMaxY;
-
-      if (onScreen) {
-        isItOnScreen[i] = 1;
-        if (visibleData) visibleData[1 + visibleCount] = i;
-        visibleCount++;
-      } else {
-        isItOnScreen[i] = 0;
-      }
-    }
-
-    // Write visible count to SAB
     if (visibleData) visibleData[0] = visibleCount;
   }
 

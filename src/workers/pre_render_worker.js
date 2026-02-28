@@ -523,9 +523,8 @@ class PreRenderWorker extends AbstractWorker {
         this._renderableCount = 0;
 
         // Collect visible renderables for render queue
-        // (visibility flags already set by particle_worker)
         this.collectVisibleParticles();
-        this.collectVisibleEntities();
+        this.collectVisibleEntities(); // Does entity visibility + culling (no visibleEntitiesData)
         this.collectVisibleDecorations();
 
         // Build the final render queue (sorts by Y, applies interpolation, writes to SAB)
@@ -588,15 +587,23 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * Collect visible entities for render queue
-     * TEST: Iterate ALL entities (bypass visibleEntitiesData) - to isolate visibility flow
+     * Entity visibility + collect for render queue
+     * Iterates all entities, viewport culling, sets isItOnScreen/screenX/screenY, adds visible to queue.
+     * No visibleEntitiesData - avoids race with particle_worker.
      */
     collectVisibleEntities() {
-        if (this.globalEntityCount === 0 || !SpriteRenderer.isItOnScreen) return;
+        if (this.globalEntityCount === 0 || !SpriteRenderer.isItOnScreen || !this.cameraData) return;
+
+        const cameraBounds = this.calculateCameraBounds();
+        if (!cameraBounds) return;
 
         const n = this.globalEntityCount;
+        const x = Transform.x;
         const y = Transform.y;
         const active = Transform.active;
+        const isItOnScreen = SpriteRenderer.isItOnScreen;
+        const screenX = SpriteRenderer.screenX;
+        const screenY = SpriteRenderer.screenY;
         const spriteRendererActive = SpriteRenderer.active;
         const renderVisible = SpriteRenderer.renderVisible;
         const lightEmitterActive = LightEmitter.active;
@@ -604,21 +611,40 @@ class PreRenderWorker extends AbstractWorker {
         const lightIntensity = LightEmitter.lightIntensity;
         const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
         const visualRange = Collider.visualRange;
-        const MIN_GLOW_INTENSITY = 50; // Matches alpha cull threshold in buildRenderQueue()
-        const MIN_GLOW_RANGE = 2.5; // Matches scale cull threshold in buildRenderQueue()
+        const MIN_GLOW_INTENSITY = 50;
+        const MIN_GLOW_RANGE = 2.5;
 
-        // TEST: Iterate ALL entities - no visibleEntitiesData
+        const camZoom = cameraBounds.zoom;
+        const cameraOffsetX = cameraBounds.cameraOffsetX;
+        const cameraOffsetY = cameraBounds.cameraOffsetY;
+        const screenMinX = cameraBounds.minX;
+        const screenMaxX = cameraBounds.maxX;
+        const screenMinY = cameraBounds.minY;
+        const screenMaxY = cameraBounds.maxY;
+
         for (let i = 0; i < n; i++) {
-            if (!active[i]) continue;
+            if (!active[i]) {
+                if (isItOnScreen[i] !== 0) isItOnScreen[i] = 0;
+                continue;
+            }
             if (!spriteRendererActive || !spriteRendererActive[i]) continue;
 
-            // Collect entity sprite if renderVisible
+            const sx = x[i] * camZoom - cameraOffsetX;
+            const sy = y[i] * camZoom - cameraOffsetY;
+            screenX[i] = sx;
+            screenY[i] = sy;
+
+            const onScreen = sx >= screenMinX && sx <= screenMaxX && sy >= screenMinY && sy <= screenMaxY;
+            if (!onScreen) {
+                isItOnScreen[i] = 0;
+                continue;
+            }
+            isItOnScreen[i] = 1;
+
             if (renderVisible[i]) {
                 this.collectRenderable(0, i, y[i]);
                 this.visibleEntitiesCount++;
             }
-
-            // Light glow sprites
             if (
                 lightEmitterActive &&
                 lightEmitterActive[i] &&
@@ -1039,13 +1065,9 @@ class PreRenderWorker extends AbstractWorker {
                 // Precompute sun shadow rotation (constant for all sun shadows)
                 const sunShadowRotation = sunShadowAngle - 1.5707963267948966;
 
-                // Query all visible entities with ShadowCaster
-                const visibleData = this.visibleEntitiesData;
-                const visibleCount = visibleData ? visibleData[0] : 0;
-
-                for (let idx = 0; idx < visibleCount && writeIdx < maxItems && shadowCount < maxShadowSprites; idx++) {
-                    const entityIdx = visibleData[1 + idx];
-
+                // Iterate all entities with ShadowCaster (no visibleEntitiesData)
+                const entityCount = this.globalEntityCount;
+                for (let entityIdx = 0; entityIdx < entityCount && writeIdx < maxItems && shadowCount < maxShadowSprites; entityIdx++) {
                     if (!shadowCasterActive[entityIdx] || !transformActive[entityIdx]) continue;
 
                     // heightMultiplier: 0 = no shadow, 1 = normal, 2 = 2x longer

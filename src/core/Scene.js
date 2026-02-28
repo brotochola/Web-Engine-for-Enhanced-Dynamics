@@ -1205,12 +1205,6 @@ class Scene {
     // Make active entities list accessible from main thread via GameObject.getAllActive()
     GameObject.activeEntitiesData = new Uint16Array(this.buffers.activeEntitiesData);
 
-    // Visible entities buffer - subset of active entities that are on-screen
-    // Layout: [count, entityIdx0, entityIdx1, ...]
-    // Written by particle_worker each frame, read by pre_render_worker
-    this.buffers.visibleEntitiesData = new SharedArrayBuffer(ACTIVE_ENTITIES_BUFFER_SIZE);
-    new Uint16Array(this.buffers.visibleEntitiesData)[0] = 0; // Initialize count to 0
-
     // Per-type active entity lists - one SAB per entity type for O(1) type-specific queries
     // Layout: [count, entityIdx0, entityIdx1, ...] (same as global activeEntitiesData)
     // Maintained incrementally by spawn/despawn
@@ -1848,7 +1842,6 @@ class Scene {
         neighborData: this.buffers.neighborData,
         collisionData: this.buffers.collisionData,
         activeEntitiesData: this.buffers.activeEntitiesData,
-        visibleEntitiesData: this.buffers.visibleEntitiesData,
         visibleLightsData: this.buffers.visibleLightsData || null,
         inputData: this.buffers.inputData,
         cameraData: this.buffers.cameraData,

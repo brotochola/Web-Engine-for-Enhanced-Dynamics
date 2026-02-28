@@ -398,13 +398,6 @@ export class AbstractWorker {
       GameObject.activeEntitiesData = this.activeEntitiesData;
     }
 
-    // Initialize visible entities list (for optimized rendering)
-    // Layout: [count, entityIdx0, entityIdx1, ...] - subset of active that are on-screen
-    // Written by particle_worker, read by pre_render_worker
-    if (data.buffers?.visibleEntitiesData) {
-      this.visibleEntitiesData = new Uint16Array(data.buffers.visibleEntitiesData);
-    }
-
     // Per-type active entity lists (SABs for O(1) type-specific queries)
     // These are attached to EntityClass in createGameObjectInstances()
     if (data.buffers?.perTypeActiveLists) {

@@ -4,8 +4,6 @@
 
 ## -- spritesheet registry ---
 
-trim but keeping pivot points ok
-
 ---
 
 IDEAS PARA JUEGOS:
