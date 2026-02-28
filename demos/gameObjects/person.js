@@ -619,7 +619,7 @@ export class Person extends Lootable {
       animation: 'hurt',
       frame: -1, // Last frame = death pose
       x: this.x,
-      y: this.y - 32,
+      y: this.y - 8,
       scaleX: this.spriteRenderer.scaleX,
       scaleY: this.spriteRenderer.scaleY,
       tint: this.spriteRenderer.baseTint,

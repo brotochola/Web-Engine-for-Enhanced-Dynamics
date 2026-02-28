@@ -114,6 +114,7 @@ class PreRenderWorker extends AbstractWorker {
         // Pre-allocated query arrays
         this._queryLightEmitter = null;
         this._queryShadowCaster = null;
+        this._querySpriteRenderer = null;
 
         // Flash grid-query: scratch buffer for candidate shadow casters + dedup marker
         this._flashCandidateBuffer = null;
@@ -210,7 +211,6 @@ class PreRenderWorker extends AbstractWorker {
         this.canvasWidth = this.config.canvasWidth;
         this.canvasHeight = this.config.canvasHeight;
         this.cullingRatio = this.config.renderer?.cullingRatio ?? RENDERER_DEFAULTS.cullingRatio;
-        this.useGridForEntityVisibility = this.config.renderer?.useGridForEntityVisibility ?? RENDERER_DEFAULTS.useGridForEntityVisibility;
 
         console.log(`[PRE_RENDER WORKER] Entities: ${this.globalEntityCount}, Particles: ${this.maxParticles}, Decorations: ${this.maxDecorations}`);
 
@@ -304,6 +304,7 @@ class PreRenderWorker extends AbstractWorker {
             // Pre-allocate query arrays
             this._queryLightEmitter = [LightEmitter];
             this._queryShadowCaster = [ShadowCaster];
+            this._querySpriteRenderer = [SpriteRenderer];
 
             // Flash grid-query buffers (shadow caster candidates for flash lights)
             const maxCandidates = Grid.maxNeighbors || 500;
@@ -611,6 +612,8 @@ class PreRenderWorker extends AbstractWorker {
         const lightIntensity = LightEmitter.lightIntensity;
         const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
         const visualRange = Collider.visualRange;
+        const srScaleX = SpriteRenderer.scaleX;
+        const srScaleY = SpriteRenderer.scaleY;
         const MIN_GLOW_INTENSITY = 50;
         const MIN_GLOW_RANGE = 2.5;
 
@@ -622,18 +625,12 @@ class PreRenderWorker extends AbstractWorker {
         const screenMinY = cameraBounds.minY;
         const screenMaxY = cameraBounds.maxY;
 
-        // Iteration source: grid (sparse), activeEntitiesData (fewer), or all (0..n)
+        // Iteration source: queryActiveEntities([SpriteRenderer]) for only sprite entities, else fallback
         let iterCount, getEntityIdx;
-        if (this.useGridForEntityVisibility && Grid.cellSize > 0 && Grid.gridWidth > 0) {
-            const screenBounds = calculateCameraScreenBounds(
-                this.cameraData[0], this.cameraData[1], this.cameraData[2],
-                this.canvasWidth, this.canvasHeight, this.cullingRatio, this._cameraBounds
-            );
-            const cellMargin = Grid.cellSize * 2;
-            const worldBounds = screenBoundsToWorldBounds(screenBounds, cellMargin, cellMargin, this._worldBounds);
-            this._gridQueryResult = Grid.getEntitiesInRect(worldBounds.minX, worldBounds.minY, worldBounds.maxX, worldBounds.maxY);
-            iterCount = this._gridQueryResult.count;
-            getEntityIdx = (idx) => this._gridQueryResult.entities[idx];
+        const spriteEntities = this.queryActiveEntities(this._querySpriteRenderer || [SpriteRenderer]);
+        if (spriteEntities && spriteEntities.length > 0) {
+            iterCount = spriteEntities.length;
+            getEntityIdx = (idx) => spriteEntities[idx];
         } else if (this.activeEntitiesData && this.activeEntitiesData[0] > 0) {
             const activeData = this.activeEntitiesData;
             iterCount = activeData[0];
@@ -714,7 +711,22 @@ class PreRenderWorker extends AbstractWorker {
             screenX[i] = sx;
             screenY[i] = sy;
 
-            const onScreen = sx >= screenMinX && sx <= screenMaxX && sy >= screenMinY && sy <= screenMaxY;
+            // Expand viewport by sprite extent for large sprites (e.g. Floor) - center can be off-screen while entity extends into view
+            let halfExtent = 0;
+            if (this.frameWidth && this.frameHeight && this.entityLastTextureId) {
+                const textureId = this.entityLastTextureId[i] ?? 0;
+                const origW = this.frameWidth[textureId] || 0;
+                const origH = this.frameHeight[textureId] || 0;
+                const scaleX = srScaleX[i] || 1;
+                const scaleY = srScaleY[i] || 1;
+                const halfW = (origW * scaleX) * 0.5;
+                const halfH = (origH * scaleY) * 0.5;
+                halfExtent = halfW > halfH ? halfW : halfH;
+            }
+            if (halfExtent <= 0) halfExtent = visualRange[i] || 0;
+            const extent = halfExtent * camZoom;
+            const onScreen = sx >= screenMinX - extent && sx <= screenMaxX + extent &&
+                sy >= screenMinY - extent && sy <= screenMaxY + extent;
             if (!onScreen) {
                 isItOnScreen[i] = 0;
                 continue;
