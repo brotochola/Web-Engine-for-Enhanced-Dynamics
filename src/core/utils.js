@@ -1553,6 +1553,37 @@ export function createCircularGradientCanvas(radius = 100, color = 0xffffff) {
 }
 
 /**
+ * Create a horizontal line texture (e.g. 10x1) with white pixels and gradient alpha.
+ * Used for bullet trails: left edge fades (prev position), right edge bright (curr position).
+ *
+ * @param {number} width - Texture width (default: 10)
+ * @param {number} height - Texture height (default: 1)
+ * @param {number} color - Color in 0xRRGGBB format (default: white)
+ * @returns {HTMLCanvasElement} Canvas with the gradient drawn
+ */
+export function createBulletTrailCanvas(width = 10, height = 1, color = 0xffffff) {
+  width = Math.max(1, Math.round(width));
+  height = Math.max(1, Math.round(height));
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = width;
+  canvas.height = height;
+
+  const r = (color >> 16) & 255;
+  const g = (color >> 8) & 255;
+  const b = color & 255;
+
+  const gradient = ctx.createLinearGradient(0, 0, width, 0);
+  gradient.addColorStop(0, `rgba(${r},${g},${b},0)`);
+  gradient.addColorStop(1, `rgba(${r},${g},${b},1)`);
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+
+  return canvas;
+}
+
+/**
  * Extract RGB components from a color value (0xRRGGBB format)
  * NOTE: Allocates a new object - use extractRGBMut() in hot paths
  * @param {number} color - Color in 0xRRGGBB format

@@ -2,7 +2,7 @@
 // Provides string→index mapping for animations without runtime overhead
 // String lookups happen ONCE at setup, game loop uses fast numeric indices
 
-import { createCircularGradientCanvas } from './utils.js';
+import { createCircularGradientCanvas, createBulletTrailCanvas } from './utils.js';
 
 /**
  * SpriteSheetRegistry - Manages spritesheet metadata and animation lookups
@@ -999,6 +999,25 @@ class SpriteSheetRegistry {
     animations['_lightGradient'] = ['_lightGradient'];
     console.log(
       `  ✅ Generated built-in: _lightGradient (${lightGradientCanvas.width}x${lightGradientCanvas.height})`
+    );
+
+    // Bullet trail line (10x1 white with gradient alpha: prev→curr)
+    const bulletTrailCanvas = createBulletTrailCanvas(10, 1, 0xffffff);
+    imagesToPack.push({
+      name: '_bulletTrail',
+      sourceImg: bulletTrailCanvas,
+      sourceRect: null,
+      width: bulletTrailCanvas.width,
+      height: bulletTrailCanvas.height,
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth: bulletTrailCanvas.width,
+      sourceHeight: bulletTrailCanvas.height,
+      isSpritesheetFrame: false,
+    });
+    animations['_bulletTrail'] = ['_bulletTrail'];
+    console.log(
+      `  ✅ Generated built-in: _bulletTrail (${bulletTrailCanvas.width}x${bulletTrailCanvas.height})`
     );
 
     // White square (8x8 solid white - used as default/background texture)

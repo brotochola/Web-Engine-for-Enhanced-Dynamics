@@ -7,6 +7,9 @@ import { Component } from '../core/Component.js';
 export class BulletComponent extends Component {
   static ARRAY_SCHEMA = {
     active: Uint8Array,
+    startX: Float32Array,
+    startY: Float32Array,
+    trailWidth: Float32Array,
 
     x: Float32Array,
     y: Float32Array,
@@ -15,6 +18,7 @@ export class BulletComponent extends Component {
 
     vx: Float32Array,
     vy: Float32Array,
+    bulletAngle: Float32Array,
 
     damage: Float32Array,
     ownerId: Uint16Array,
@@ -24,7 +28,7 @@ export class BulletComponent extends Component {
     scale: Float32Array,
     alpha: Float32Array,
     tint: Uint32Array,
-    rotation: Float32Array,
+    spriteRotation: Float32Array,
     anchorX: Float32Array,
     anchorY: Float32Array,
 

@@ -58,8 +58,8 @@ export class Person extends Lootable {
   // WEAPON DEFINITIONS - damage, cooldown (ms), range (px)
   // ==========================================
   static WEAPONS = {
-    PISTOL: { damage: 0.66, cooldown: 200, range: 180, rangeSq: 180 ** 2, bulletSpeed: 900 },
-    MACHINE_GUN: { damage: 0.2, cooldown: 100, range: 500, rangeSq: 500 ** 2, bulletSpeed: 1500, rapidFire: true },
+    PISTOL: { damage: 0.66, cooldown: 500, range: 180, rangeSq: 180 ** 2, bulletSpeed: 900 },
+    MACHINE_GUN: { damage: 0.2, cooldown: 200, range: 500, rangeSq: 500 ** 2, bulletSpeed: 1500, rapidFire: true },
   };
 
   setup() {
@@ -402,9 +402,10 @@ export class Person extends Lootable {
       shooterEntityType: Transform.entityType[this.index],
       texture: 'bullet',
       scale: 2,
-      rotation: lineAngle,
+      spriteRotation: lineAngle,
       anchorX: 1,
       anchorY: 0.5,
+      trailWidth: 4
     });
 
     //little fire: muzzle effect

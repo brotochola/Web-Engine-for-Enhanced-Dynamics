@@ -47,6 +47,8 @@ export class BulletPool extends SharedAtomicPool {
 
     const x = BulletComponent.x;
     const y = BulletComponent.y;
+    const startX = BulletComponent.startX;
+    const startY = BulletComponent.startY;
     const prevX = BulletComponent.prevX;
     const prevY = BulletComponent.prevY;
     const vx = BulletComponent.vx;
@@ -58,15 +60,22 @@ export class BulletPool extends SharedAtomicPool {
     const scale = BulletComponent.scale;
     const alpha = BulletComponent.alpha;
     const tint = BulletComponent.tint;
-    const rotation = BulletComponent.rotation;
+    const spriteRotation = BulletComponent.spriteRotation;
     const anchorX = BulletComponent.anchorX;
     const anchorY = BulletComponent.anchorY;
     const offsetY = BulletComponent.offsetY;
-
+    const trailWidth = BulletComponent.trailWidth;
+    const bulletAngle = BulletComponent.bulletAngle;
     const px = config.x;
     const py = config.y;
     x[i] = px;
     y[i] = py;
+
+    startX[i] = px;
+    startY[i] = py;
+
+    trailWidth[i] = config.trailWidth ?? 0;
+
     prevX[i] = px;
     prevY[i] = py;
     vx[i] = config.vx;
@@ -83,7 +92,8 @@ export class BulletPool extends SharedAtomicPool {
     scale[i] = config.scale ?? 1;
     alpha[i] = config.alpha ?? 1;
     tint[i] = convertRGBtoBGR(config.tint ?? 0xffffff);
-    rotation[i] = config.rotation ?? 0;
+    spriteRotation[i] = config.spriteRotation ?? config.rotation ?? 0;
+    bulletAngle[i] = Math.atan2(config.vy, config.vx);
     anchorX[i] = config.anchorX ?? 0;
     anchorY[i] = config.anchorY ?? 0.5;
     offsetY[i] = config.offsetY ?? 0;

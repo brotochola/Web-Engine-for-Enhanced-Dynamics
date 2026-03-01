@@ -820,10 +820,16 @@ class PreRenderWorker extends AbstractWorker {
 
         const visibleCount = visibleData[0];
         const y = BulletComponent.y;
+        const trailWidth = BulletComponent.trailWidth;
+        const active = BulletComponent.active;
 
         for (let idx = 0; idx < visibleCount; idx++) {
             const i = visibleData[1 + idx];
+            if (!active[i]) continue;
             this.collectRenderable(4, i, y[i]);
+            if (trailWidth[i] > 0) {
+                this.collectRenderable(5, i, y[i] - 0.01);
+            }
         }
     }
 
@@ -998,14 +1004,23 @@ class PreRenderWorker extends AbstractWorker {
 
         const bulletX = BulletComponent.x;
         const bulletY = BulletComponent.y;
+        const bulletStartX = BulletComponent.startX ?? BulletComponent.prevX;
+        const bulletStartY = BulletComponent.startY ?? BulletComponent.prevY;
         const bulletOffsetY = BulletComponent.offsetY;
         const bulletScale = BulletComponent.scale;
         const bulletAlpha = BulletComponent.alpha;
         const bulletTint = BulletComponent.tint;
         const bulletTextureId = BulletComponent.textureId;
-        const bulletRotation = BulletComponent.rotation;
+        const bulletSpriteRotation = BulletComponent.spriteRotation;
+        const bulletTrailWidth = BulletComponent.trailWidth;
+        const bulletAngle = BulletComponent.bulletAngle;
         const bulletAnchorX = BulletComponent.anchorX;
         const bulletAnchorY = BulletComponent.anchorY;
+        const bulletActive = BulletComponent.active;
+
+        const bulletTrailAnimIdx = this.animationNameToIndex?.['_bulletTrail'] ?? 0;
+        const bulletTrailTextureId = this.animationFrameStart?.[bulletTrailAnimIdx] ?? 0;
+        const BULLET_TRAIL_MIN_LENGTH_SQ = 0.01;
 
         const frameIndex = this.entityFrameIndex;
         const frameAccum = this.entityFrameAccumulator;
@@ -1106,18 +1121,70 @@ class PreRenderWorker extends AbstractWorker {
                 rqEntityIndex[i] = -1;
             } else if (type === 4) {
                 // === BULLET ===
-                rqX[i] = bulletX[idx];
-                rqY[i] = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
-                rqScaleX[i] = bulletScale[idx];
-                rqScaleY[i] = bulletScale[idx];
-                rqRotation[i] = bulletRotation[idx];
-                rqAlpha[i] = bulletAlpha[idx];
-                rqTint[i] = bulletTint[idx];
-                const bAnimIdx = bulletTextureId[idx];
-                rqTextureId[i] = this.animationFrameStart?.[bAnimIdx] ?? 0;
-                rqAnchorX[i] = bulletAnchorX[idx];
-                rqAnchorY[i] = bulletAnchorY[idx];
+                if (!bulletActive[idx]) {
+                    rqAlpha[i] = 0;
+                    rqScaleX[i] = 0;
+                    rqScaleY[i] = 0;
+                    rqX[i] = -10000;
+                    rqY[i] = -10000;
+                } else {
+                    rqX[i] = bulletX[idx];
+                    rqY[i] = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
+                    rqScaleX[i] = bulletScale[idx];
+                    rqScaleY[i] = bulletScale[idx];
+                    rqRotation[i] = bulletSpriteRotation[idx];
+                    rqAlpha[i] = bulletAlpha[idx];
+                    rqTint[i] = bulletTint[idx];
+                    const bAnimIdx = bulletTextureId[idx];
+                    rqTextureId[i] = this.animationFrameStart?.[bAnimIdx] ?? 0;
+                    rqAnchorX[i] = bulletAnchorX[idx];
+                    rqAnchorY[i] = bulletAnchorY[idx];
+                }
                 rqType[i] = 4;
+                rqEntityIndex[i] = -1;
+            } else if (type === 5) {
+                // === BULLET TRAIL (line from start to curr, 0-alpha at start) ===
+                if (!bulletActive[idx]) {
+                    rqAlpha[i] = 0;
+                    rqScaleX[i] = 0;
+                    rqScaleY[i] = 0;
+                    rqX[i] = -10000;
+                    rqY[i] = -10000;
+                } else {
+                    const currX = bulletX[idx];
+                    const currY = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
+                    const startX = bulletStartX[idx];
+                    const startY = bulletStartY[idx] + (bulletOffsetY[idx] ?? 0);
+                    const dx = currX - startX;
+                    const dy = currY - startY;
+                    const lenSq = dx * dx + dy * dy;
+
+                    if (lenSq < BULLET_TRAIL_MIN_LENGTH_SQ) {
+                        rqAlpha[i] = 0;
+                        rqScaleX[i] = 0;
+                        rqScaleY[i] = 0;
+                        rqX[i] = -10000;
+                        rqY[i] = -10000;
+                    } else {
+                        const adx = dx < 0 ? -dx : dx;
+                        const ady = dy < 0 ? -dy : dy;
+                        const max = adx > ady ? adx : ady;
+                        const min = adx > ady ? ady : adx;
+                        const lengthApprox = 0.96 * max + 0.4 * min;
+
+                        rqX[i] = (startX + currX) * 0.5;
+                        rqY[i] = (startY + currY) * 0.5;
+                        rqScaleX[i] = lengthApprox / 10;
+                        rqScaleY[i] = bulletTrailWidth[idx];
+                        rqRotation[i] = bulletAngle[idx];
+                        rqAlpha[i] = bulletAlpha[idx] * 0.9;
+                        rqTint[i] = 0xffffff;
+                    }
+                }
+                rqTextureId[i] = bulletTrailTextureId;
+                rqAnchorX[i] = 0.5;
+                rqAnchorY[i] = 0.5;
+                rqType[i] = 5;
                 rqEntityIndex[i] = -1;
             } else {
                 // === LIGHT GLOW (type=3) ===
