@@ -143,6 +143,7 @@ class LogicWorker extends AbstractWorker {
     this.totalLogicWorkers = data.config?.logic?.numberOfLogicWorkers || 1;
 
     if (data.impactBuffer) {
+      this._impactCount = new Int32Array(data.impactBuffer, 0, 1);
       this._impactData = new Float32Array(data.impactBuffer, 4, 384);
     }
 
@@ -393,6 +394,12 @@ class LogicWorker extends AbstractWorker {
     // Reset stats for this frame
     this.entitiesProcessedThisFrame = 0;
     this.systemsExecutedThisFrame = 0;
+
+    // Process bullet impacts from particle_worker (SAB poll - no message needed)
+    if (this._impactCount) {
+      const count = this._impactCount[0];
+      if (count > 0) this.processImpacts(count);
+    }
 
     // ========================================
     // PHASE 0: PROCESS LIST UPDATES (logic0 only)
@@ -685,10 +692,6 @@ class LogicWorker extends AbstractWorker {
    * Implements spawning and despawning commands
    */
   handleCustomMessage(data) {
-    if (data.type === 'impacts') {
-      this.processImpacts(data.count);
-      return;
-    }
     const { msg } = data;
 
     switch (msg) {

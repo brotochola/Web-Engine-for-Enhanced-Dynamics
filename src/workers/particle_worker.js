@@ -750,7 +750,7 @@ class ParticleWorker extends AbstractWorker {
 
   /**
    * Tick all active bullets: move, raycast prev→next, write impacts, despawn on hit.
-   * Builds activeBulletsData and visibleBulletsData. Sends impacts to logic0.
+   * Builds activeBulletsData and visibleBulletsData. Logic workers poll impactBuffer at frame start.
    */
   tickAllBullets(deltaTime, dtRatio) {
     const maxBullets = this.maxBullets;
@@ -772,7 +772,6 @@ class ParticleWorker extends AbstractWorker {
     const impactData = this._impactData;
     const dt = dtRatio * (1 / 60);
     const excludeSet = this._bulletExcludeSet;
-    const totalLogicWorkers = this.totalLogicWorkers || 1;
 
     let activeWrite = 1;
     let impactWrite = 0;
@@ -826,12 +825,6 @@ class ParticleWorker extends AbstractWorker {
 
     activeData[0] = activeWrite - 1;
     if (impactCount) impactCount[0] = impactWrite;
-
-    if (impactWrite > 0) {
-      for (let w = 0; w < totalLogicWorkers; w++) {
-        this.sendDataToWorker(`logic${w}`, { type: 'impacts', count: impactWrite });
-      }
-    }
 
     if (activeWrite <= 1 || !this.cameraData || !visibleData) return;
 
@@ -967,7 +960,7 @@ class ParticleWorker extends AbstractWorker {
 
     const particleX = ParticleComponent.x;
     const particleY = ParticleComponent.y;
-    const particleTint = ParticleComponent.tint;
+    const particleTint = ParticleComponent.baseTint; // Use RGB (tint is BGR for PixiJS)
     const particleScaleX = ParticleComponent.scaleX;
     const particleScaleY = ParticleComponent.scaleY;
     const particleTextureId = ParticleComponent.textureId;

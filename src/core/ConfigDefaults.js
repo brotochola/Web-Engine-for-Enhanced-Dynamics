@@ -38,8 +38,6 @@ export const Z_INDICES = Object.freeze({
   ENTITIES: 3,
   /** Lighting overlay layer */
   LIGHTING: 4,
-  /** Light glow effects layer */
-  LIGHT_GLOW: 5,
 });
 
 /**
@@ -55,12 +53,10 @@ export const LAYER_DEFAULT_BLEND_MODES = Object.freeze({
   DECALS: 'normal',
   /** Casted shadows - multiply to darken scene */
   CASTED_SHADOWS: 'multiply',
-  /** Entities layer - normal-npm (non-premultiplied alpha for ParticleContainer) */
+  /** Entities layer - normal-npm (non-premultiplied alpha for correct particle/alpha blending) */
   ENTITIES: 'normal-npm',
   /** Lighting overlay - multiply to darken unlit areas */
   LIGHTING: 'multiply',
-  /** Light glow effects - additive for glow effect */
-  LIGHT_GLOW: 'add',
 });
 
 // ============================================================================

@@ -59,7 +59,7 @@ export class Person extends Lootable {
   // ==========================================
   static WEAPONS = {
     PISTOL: { damage: 0.66, cooldown: 500, range: 180, rangeSq: 180 ** 2, bulletSpeed: 900 },
-    MACHINE_GUN: { damage: 0.2, cooldown: 200, range: 500, rangeSq: 500 ** 2, bulletSpeed: 1500, rapidFire: true },
+    MACHINE_GUN: { damage: 0.2, cooldown: 133, range: 500, rangeSq: 500 ** 2, bulletSpeed: 1500, rapidFire: true },
   };
 
   setup() {
@@ -401,7 +401,7 @@ export class Person extends Lootable {
       ownerId: this.index,
       shooterEntityType: Transform.entityType[this.index],
       texture: 'bullet',
-      scale: 2,
+      scale: 1,
       spriteRotation: lineAngle,
       anchorX: 1,
       anchorY: 0.5,
@@ -415,14 +415,32 @@ export class Person extends Lootable {
     const angleDeg = (lineAngle * 180) / Math.PI;
 
     ParticleEmitter.emit({
-      count: 2,
+      count: 1,
       x: muzzleX,
       y: muzzleY + 1, // Base Y position for sorting (ground level)
       texture: "muzzle" + Math.floor(Math.random() * 3 + 1),
-      scaleX: 1,
-      scaleY: 1,
+      scaleX: Math.random() * 0.5 + 0.5,
+      scaleY: Math.random() * 0.5 + 0.5,
       rotation: { min: angleDeg * 0.9, max: angleDeg * 1.1 },
-      alpha: 0.9,
+      alpha: Math.random() * 0.5 + 0.5,
+      anchorX: 0, // Start at shooter position
+      anchorY: 0.5, // Center vertically
+      z: muzzleHeightPx,
+      gravity: 0,
+      lifespan: 50,
+      speed: 0
+    })
+
+    //second muzzle
+    ParticleEmitter.emit({
+      count: 1,
+      x: muzzleX,
+      y: muzzleY + 1, // Base Y position for sorting (ground level)
+      texture: "muzzle" + Math.floor(Math.random() * 3 + 1),
+      scaleX: Math.random() * 0.5 + 0.5,
+      scaleY: Math.random() * 0.5 + 0.5,
+      rotation: { min: angleDeg * 0.9, max: angleDeg * 1.1 },
+      alpha: Math.random() * 0.5 + 0.5,
       anchorX: 0, // Start at shooter position
       anchorY: 0.5, // Center vertically
       z: muzzleHeightPx,
@@ -466,9 +484,9 @@ export class Person extends Lootable {
       vz: { min: -1, max: 5 }, // Some sparks fly up, others fall
       gravity: 0.4,
       lifespan: { min: 33, max: 100 },
-      scale: { min: 0.5, max: 0.1 },
-      texture: 'square',
-      tint: randomColor({ min: 0xffff00, max: 0xffffff }),
+      scale: { min: 0.15, max: 0.5 },
+      texture: '_whiteCircle',
+      tint: { min: 0xffff00, max: 0xffffff },
       alpha: { min: 0.5, max: 0.8 },
       despawnOnGroundContact: true, // Despawn immediately when particles touch the ground
     });

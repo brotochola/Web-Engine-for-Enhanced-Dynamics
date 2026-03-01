@@ -60,7 +60,7 @@ export class Lootable extends GameObject {
       lifespan: { min: 100, max: 300 },
       scale: { min: 0.25, max: 0.5 },
       texture: 'square',
-      tint: randomColor({ min: 0xffff00, max: 0xffbb00 }),
+      tint: { min: 0xffff00, max: 0xffbb00 },
       alpha: { min: 0.8, max: 1 },
       stayOnTheFloor: false,
     });

@@ -1539,7 +1539,6 @@ export class DebugUI {
     // LIGHTING related layers
     if (config.lighting?.enabled) {
       available.add('LIGHTING');
-      available.add('LIGHT_GLOW');
 
       // CASTED_SHADOWS - only if shadows are enabled within lighting
       if (config.lighting?.shadowsEnabled) {

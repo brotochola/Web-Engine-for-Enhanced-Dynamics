@@ -36,7 +36,7 @@ function findClosestCivilian(owner) {
     const neighborIndex = owner.getNeighbor(n);
     if (Transform.entityType[neighborIndex] !== civilianType) continue;
     if (LootableComponent.health[neighborIndex] <= 0) continue;
-    if (!Ray.hasLineOfSight(owner.index, neighborIndex)) continue;
+    // if (!Ray.hasLineOfSight(owner.index, neighborIndex)) continue;
 
     // Calculate distance on-the-fly (collider positions)
     const neighborX = Transform.x[neighborIndex] + (Collider.offsetX[neighborIndex] || 0);

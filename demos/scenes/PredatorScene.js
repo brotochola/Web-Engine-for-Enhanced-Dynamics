@@ -81,8 +81,8 @@ export class PredatorScene extends WEED.Scene {
     },
 
     bullet: {
-      maxBullets: 512,
-      maxImpactsPerFrame: 64,
+      maxBullets: 2048,
+      maxImpactsPerFrame: 512,
     },
 
     // Logic configuration
@@ -269,7 +269,7 @@ export class PredatorScene extends WEED.Scene {
     [TallLight, 300],
     [Civilian, 15000], // FSM-based civilians
     [Tree, 5000],
-    [Barrel, 100],
+    [Barrel, 1000],
     [Rock, 5000],
     [Fire, 100],
     [Explosion, 100],
@@ -328,7 +328,7 @@ export class PredatorScene extends WEED.Scene {
     this.spawnBarrels(this.numberOfBarrels);
     // this.spawnRocks(this.numberOfRocks);
 
-    this.spawnMySoldiers(2000);
+    this.spawnMySoldiers(20);
 
     this.spawnRocksTreesAndHouses();
   }

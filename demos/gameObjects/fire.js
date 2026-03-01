@@ -151,7 +151,7 @@ export class Fire extends GameObject {
       lifespan: { min: 200, max: 500 },
       scale: 0.25 * fadeFactor,
       texture: 'square',
-      tint: randomColor({ min: 0xffff00, max: 0xffbb00 }),
+      tint: { min: 0xffff00, max: 0xffbb00 },
       alpha: { min: 0.8 * fadeFactor, max: 1 * fadeFactor },
     });
   }
@@ -177,7 +177,7 @@ export class Fire extends GameObject {
         max: this.fireComponent.baseScale * 3 * fadeFactor,
       },
       texture: 'smoke',
-      tint: randomColor({ min: 0xaaaaaa, max: 0x666666 }),
+      tint: { min: 0xaaaaaa, max: 0x666666 },
       alpha: { min: 0.15 * fadeFactor, max: 0.3 * fadeFactor },
       tweenToAlpha0: true,
     });

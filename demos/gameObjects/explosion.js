@@ -184,7 +184,7 @@ export class Explosion extends GameObject {
       lifespan: { min: 100, max: 300 },
       scale: { min: 0.25, max: 0.5 },
       texture: 'square',
-      tint: randomColor({ min: 0xffff00, max: 0xffbb00 }),
+      tint: { min: 0xffff00, max: 0xffbb00 },
       alpha: { min: 0.8, max: 1 },
       stayOnTheFloor: false,
     });
@@ -208,7 +208,7 @@ export class Explosion extends GameObject {
       lifespan: { min: 500, max: 2000 },
       scale: { min: 1, max: 3 },
       texture: 'smoke',
-      tint: randomColor({ min: 0xaaaaaa, max: 0x666666 }),
+      tint: { min: 0xaaaaaa, max: 0x666666 },
       alpha: { min: 0.15, max: 0.3 },
       tweenToAlpha0: true,
     });

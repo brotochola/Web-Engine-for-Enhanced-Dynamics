@@ -136,6 +136,7 @@ import { ShapeType } from './core/ConfigDefaults.js';
 
 // Create the WEED namespace object (like PIXI)
 const WEED = {
+
   // Core
   GameEngine,
   Scene,

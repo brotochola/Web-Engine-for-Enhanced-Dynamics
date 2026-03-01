@@ -1,8 +1,7 @@
 import WEED from '/src/index.js';
-import { Grid } from '/src/core/Grid.js';
 
 // Destructure what we need from WEED
-const { GameObject, Collider, SpriteRenderer, RigidBody, LightEmitter, rng, randomColor, ShapeType } = WEED;
+const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, ShapeType, Flash } = WEED;
 
 export class TallLight extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
@@ -55,6 +54,37 @@ export class TallLight extends GameObject {
    */
   onDespawned() {
     // Could save stats, play death effects, etc.
+  }
+
+  onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
+    const count = Math.floor(damage * 8) + 3;
+    ParticleEmitter.emit({
+      count,
+      texture: 'square',
+      x: hitX,
+      y: hitY,
+      z: -20,
+      angleXY: { min: 0, max: 360 },
+      speed: { min: 1.5, max: 4 },
+      vz: { min: 2, max: 6 },
+      lifespan: { min: 400, max: 800 },
+      gravity: 0.35,
+      scale: { min: 0.15, max: 0.4 },
+      alpha: { min: 0.7, max: 1 },
+      tint: { min: 0xffff00, max: 0xffffff },
+      rotation: { min: 0, max: 360 },
+      stayOnTheFloor: false,
+      despawnOnGroundContact: true,
+    });
+
+    Flash.create({
+      x: hitX,
+      y: hitY,
+      lifespan: 18,
+      color: 0xffee00,
+      intensity: 5000,
+      hasGlowSprite: 1,
+    });
   }
 
   /**

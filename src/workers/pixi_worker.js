@@ -510,8 +510,6 @@ class PixiRenderer extends AbstractWorker {
     this._shadowTransform = new PIXI.Matrix();
     this._lightingTransform = new PIXI.Matrix(); // NDC mesh doesn't really need it but good to have
 
-    // Light glow sprites are now rendered as normal particles in the main particleContainer
-    // via the render queue (type=3) from particle_worker. No separate container needed.
   }
 
   /**
@@ -706,8 +704,6 @@ class PixiRenderer extends AbstractWorker {
     }
 
     // Shadow sprites are now in main particleContainer (get camera transform automatically)
-
-    // Light glow sprites are now in the main particleContainer (get camera transform automatically)
   }
 
   /**
@@ -1063,8 +1059,6 @@ class PixiRenderer extends AbstractWorker {
     // Update shadow RenderTexture with interleaved lights + shadows
     // This renders lights and shadows to shadowRT, which is displayed via shadowDisplaySprite (multiply blend)
     this.updateShadowSprites(interpolationAlpha);
-
-    // Light glow sprites are now in the render queue (type=3), no separate update needed
 
     // Use render queue from pre_render_worker - no fallback
     this.updateSpritesFromRenderQueue();
@@ -1605,20 +1599,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     );
   }
 
-  // ========================================
-  // LIGHT GLOW SYSTEM
-  // ========================================
-
-  /**
-   * Create the light glow system:
-   * 1. Get _lightGradient texture from BigAtlas
-   * 2. Create ParticleContainer with additive blend
-   * 3. Create glow sprites for each entity slot
-   */
-  // Light glow sprites are now rendered as normal particles in the main particleContainer
-  // via the render queue (type=3). They are y-sorted with entities/particles/decorations.
-  // See particle_worker.js buildRenderQueue() for the type=3 handler.
-
   /**
    * Update shadow sprites from pre-sorted shadowRenderQueue
    * Queue is built by particle_worker: light1_gradient, light1_shadows..., light2_gradient, etc.
@@ -1782,7 +1762,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }
 
         // PixiJS 8: Create ImageSource from ImageBitmap
-        const source = new PIXI.ImageSource({ resource: data.imageBitmap });
+        // BigAtlas/canvas content uses premultiplied alpha - required for 'normal' blend mode
+        const source = new PIXI.ImageSource({
+          resource: data.imageBitmap,
+          // alphaMode: "premultiply-alpha-on-upload",
+        });
         const jsonData = data.json;
 
         // Manually create textures for each frame
@@ -2772,8 +2756,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         `PIXI WORKER: Lighting system enabled (baseAmbient: ${this.baseAmbient}, maxLights: ${this.maxLights}, resolution: ${this.lightingResolution})`
       );
 
-      // Light glow sprites are now handled by the render queue (type=3) from particle_worker
-      // No separate container or sprite pool needed
     }
 
     // ========================================
@@ -2851,8 +2833,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     } else if (this.lightingMesh) {
       this.layerRefs.LIGHTING = this.lightingMesh;
     }
-
-    // LIGHT_GLOW layer - now rendered inside main particleContainer via render queue (type=3)
 
     const layerNames = Object.keys(this.layerRefs);
     console.log(

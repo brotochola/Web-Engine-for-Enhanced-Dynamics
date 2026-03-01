@@ -10,6 +10,10 @@ const {
   ShadowCaster,
   RigidBody,
   ShapeType,
+  ParticleEmitter,
+  randomColor,
+  Flash,
+
 } = WEED;
 
 export class Barrel extends GameObject {
@@ -38,6 +42,40 @@ export class Barrel extends GameObject {
 
   onDespawned() {
     // Could save stats, play death effects, etc.
+  }
+
+  onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
+
+    const radius = this.collider.radius;
+    ParticleEmitter.emit({
+      count: Math.floor(Math.random() * radius) + radius * 0.5,
+      x: hitX,
+      y: hitY,
+      z: - Math.random() * this.spriteRenderer.originalHeight,
+      angleXY: { min: 0, max: 360 },
+      speed: { min: radius * 0.2, max: radius * 0.4 },
+      rotation: { min: 0, max: 360 },
+      vz: -Math.random() * 4 - 2,
+      gravity: 0.6,
+      lifespan: { min: 100, max: 300 },
+      scale: { min: 0.15, max: 0.5 },
+      texture: '_whiteCircle',
+      tint: { min: 0xffff00, max: 0xffbb00 },
+      alpha: { min: 0.8, max: 1 },
+      stayOnTheFloor: false,
+      despawnOnGroundContact: true,
+    });
+
+    this.addAcceleration(hitX - this.x, hitY - this.y);
+
+    Flash.create({
+      x: hitX,
+      y: hitY,
+      lifespan: 18,
+      color: 0xffee00,
+      intensity: Math.random() * 1000 + 1000,
+      hasGlowSprite: 1,
+    });
   }
 
   tick(dtRatio) {

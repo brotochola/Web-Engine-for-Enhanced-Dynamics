@@ -1042,6 +1042,30 @@ class SpriteSheetRegistry {
     animations['_white'] = ['_white'];
     console.log(`  ✅ Generated built-in: _white (8x8)`);
 
+    // White circle (radius 4px - used for particles, bullets, etc.)
+    const whiteCircleCanvas = document.createElement('canvas');
+    whiteCircleCanvas.width = 8;
+    whiteCircleCanvas.height = 8;
+    const whiteCircleCtx = whiteCircleCanvas.getContext('2d');
+    whiteCircleCtx.fillStyle = '#ffffff';
+    whiteCircleCtx.beginPath();
+    whiteCircleCtx.arc(4, 4, 4, 0, Math.PI * 2);
+    whiteCircleCtx.fill();
+    imagesToPack.push({
+      name: '_whiteCircle',
+      sourceImg: whiteCircleCanvas,
+      sourceRect: null,
+      width: 8,
+      height: 8,
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth: 8,
+      sourceHeight: 8,
+      isSpritesheetFrame: false,
+    });
+    animations['_whiteCircle'] = ['_whiteCircle'];
+    console.log(`  ✅ Generated built-in: _whiteCircle (8x8, radius 4px)`);
+
     // Sort images by size (largest first) for better packing
     imagesToPack.sort((a, b) => Math.max(b.width, b.height) - Math.max(a.width, a.height));
 

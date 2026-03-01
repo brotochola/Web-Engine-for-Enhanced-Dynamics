@@ -38,5 +38,28 @@ export class Rock extends GameObject {
     // Shadow uses default heightMultiplier = 1 (matches sprite scale)
   }
 
+  onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
+    const radius = this.collider.radius;
+    ParticleEmitter.emit({
+      count: 10 + Math.random() * 10,
+      x: hitX,
+      y: hitY,
+      z: - Math.random() * this.spriteRenderer.originalHeight,
+      angleXY: { min: 0, max: 360 },
+      speed: { min: 2, max: 4 },
+      rotation: { min: 0, max: 360 },
+      vz: -Math.random() * 4 - 2,
+      gravity: 0.6,
+      lifespan: { min: 100, max: 300 },
+      scale: { min: 0.15, max: 0.5 },
+      texture: '_whiteCircle',
+      tint: { min: 0xffff00, max: 0xffbb00 },
+      alpha: { min: 0.8, max: 1 },
+      stayOnTheFloor: false,
+      despawnOnGroundContact: true,
+    });
+
+  }
+
   onSpawned(spawnConfig = {}) { }
 }
