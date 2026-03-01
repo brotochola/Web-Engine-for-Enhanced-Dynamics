@@ -2,10 +2,12 @@
 // Demonstrates Verlet physics car using two connected circles
 
 import WEED from '/src/index.js';
-import { Car } from '../gameObjects/car.js';
+import { AICar } from '../gameObjects/aiCar.js';
 import { PlayerCar } from '../gameObjects/playerCar.js';
 import { CarPart } from '../gameObjects/carPart.js';
+import { NavGrid } from '../../src/core/NavGrid.js';
 import { rng } from '../../src/core/utils.js';
+import { Rock } from '../gameObjects/rock.js';
 
 const { Camera, Transform } = WEED;
 
@@ -78,7 +80,8 @@ export class CarScene extends WEED.Scene {
         },
 
         navigation: {
-            enabled: false,
+            enabled: true,
+            cellSize: 64,
         },
     };
 
@@ -88,7 +91,10 @@ export class CarScene extends WEED.Scene {
 
     static assets = {
         textures: {
-
+            rock1: '/demos/img/rock1.png',
+            rock2: '/demos/img/rock2.png',
+            rock3: '/demos/img/rock3.png',
+            rock4: '/demos/img/rock4.png',
         },
         spritesheets: {
             car: {
@@ -126,8 +132,9 @@ export class CarScene extends WEED.Scene {
 
     static entities = [
         [CarPart, 5000],   // Physics bodies (up to 8 per car, 501 cars) - must load first (Car depends on it)
-        [Car, 1000],       // NPC cars - must load before PlayerCar (PlayerCar extends Car)
+        [AICar, 1000],    // NPC cars following player via flowfield - must load before PlayerCar
         [PlayerCar, 1],   // Player-controlled car (only 1)
+        [Rock, 1000]
     ];
 
     // ========================================
@@ -137,6 +144,12 @@ export class CarScene extends WEED.Scene {
     constructor(game) {
         super(game);
         this.playerCar = null;
+    }
+
+    createNavGridForTheFlowField() {
+        NavGrid.updateNavGrid([
+            ...Rock.getAllActive(),
+        ]);
     }
 
     create() {
@@ -153,21 +166,24 @@ export class CarScene extends WEED.Scene {
             sprite: 'car_police',
         });
 
-        // Spawn 100 NPC cars randomly around the center
-        const carSprites = ['car_red', 'car_yellow', 'car_police'];
+        // Spawn NPC cars randomly around the center - they will follow player via flowfield
+        const carSprites = ["car", 'car_red', 'car_yellow'];
         const spawnRadius = 2000;
 
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < 5; i++) {
             const offsetX = (rng() * 2 - 1) * spawnRadius;
             const offsetY = (rng() * 2 - 1) * spawnRadius;
             const sprite = carSprites[Math.floor(rng() * carSprites.length)];
 
-            Car.spawn({
+            AICar.spawn({
                 x: centerX + offsetX,
                 y: centerY + offsetY,
                 sprite: sprite,
             });
         }
+
+        // Initialize navigation grid (all cells walkable for open-world driving)
+        setTimeout(() => NavGrid.updateNavGrid([]), 500);
 
         // Center camera on player car initially
         if (this.playerCar) {
@@ -177,10 +193,14 @@ export class CarScene extends WEED.Scene {
             );
         }
 
-        console.log('🚗 CarScene: Player car and NPC cars spawned! Use WASD/Arrow keys to drive.');
+        console.log('🚗 CarScene: Player car and AI cars spawned! Drive with WASD/Arrow keys - AI cars follow you via flowfield pathfinding.');
     }
 
     update(dtRatio, deltaTime, accumulatedTime, frameNumber) {
+        if (frameNumber % 300 === 0) {
+            this.createNavGridForTheFlowField()
+        }
+
         // Follow the player car with camera
         if (this.playerCar && Transform.active[this.playerCar.index]) {
             Camera.follow(

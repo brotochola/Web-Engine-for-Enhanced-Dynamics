@@ -14,7 +14,7 @@ const { GameObject, RigidBody, SpriteRenderer, Transform, Constraint } = WEED;
 export const CAR_CONSTRAINT_STIFFNESS = 0.99;
 
 // Movement constants (exported for subclasses)
-export const ACCELERATION_FORCE = 0.3;  // Forward/backward thrust
+export const ACCELERATION_FORCE = 0.2;  // Forward/backward thrust
 export const TURN_FORCE = 0.066;        // Turning force on front parts
 export const SPRITE_SCALE = 1.5;
 const TWO_PI = Math.PI * 2;
