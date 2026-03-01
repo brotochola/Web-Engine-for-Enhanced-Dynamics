@@ -9,7 +9,9 @@ import { Collider } from '../components/Collider.js';
 import { SpriteRenderer } from '../components/SpriteRenderer.js';
 import { ParticleComponent } from '../components/ParticleComponent.js';
 import { DecorationComponent } from '../components/DecorationComponent.js';
+import { BulletComponent } from '../components/BulletComponent.js';
 import { DecorationPool } from './DecorationPool.js';
+import { BulletPool } from './BulletPool.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
 import { FlashComponent } from '../components/FlashComponent.js';
 import { LightEmitter } from '../components/LightEmitter.js';
@@ -36,6 +38,7 @@ import {
   SPATIAL_DEFAULTS,
   PARTICLE_DEFAULTS,
   DECORATION_DEFAULTS,
+  BULLET_DEFAULTS,
   LOGIC_DEFAULTS,
   RENDERER_DEFAULTS,
   PRE_RENDER_DEFAULTS,
@@ -446,6 +449,12 @@ class Scene {
       ...(this.config.decoration || {}),
     };
 
+    // Bullet defaults from centralized config
+    this.config.bullet = {
+      ...BULLET_DEFAULTS,
+      ...(this.config.bullet || {}),
+    };
+
     // Logic defaults from centralized config
     this.config.logic = {
       ...LOGIC_DEFAULTS,
@@ -511,6 +520,16 @@ class Scene {
   /** @returns {number} Maximum number of decorations */
   get maxDecorations() {
     return this.config.decoration.maxDecorations;
+  }
+
+  /** @returns {boolean} Whether bullets are enabled */
+  get hasBullets() {
+    return this.config.bullet.maxBullets > 0;
+  }
+
+  /** @returns {number} Maximum number of bullets */
+  get maxBullets() {
+    return this.config.bullet.maxBullets;
   }
 
   /**
@@ -949,6 +968,45 @@ class Scene {
 
       // Attach to DecorationPool for incremental maintenance
       DecorationPool.activeDecorationsData = new Uint16Array(this.buffers.activeDecorationsData);
+    }
+
+    // BulletComponent buffer
+    BulletPool.reset();
+    const maxBullets = this.config.bullet.maxBullets;
+    const maxImpactsPerFrame = this.config.bullet.maxImpactsPerFrame ?? 64;
+    if (maxBullets > 0) {
+      const bulletBufferSize = BulletComponent.getBufferSize(maxBullets);
+      this.buffers.componentData.BulletComponent = new SharedArrayBuffer(bulletBufferSize);
+      BulletComponent.initializeArrays(
+        this.buffers.componentData.BulletComponent,
+        maxBullets
+      );
+      BulletComponent.bulletCount = maxBullets;
+
+      this.buffers.bulletFreeList = new SharedArrayBuffer(maxBullets * 2);
+      this.buffers.bulletFreeListTop = new SharedArrayBuffer(4);
+      const bulletFreeList = new Uint16Array(this.buffers.bulletFreeList);
+      for (let i = 0; i < maxBullets; i++) {
+        bulletFreeList[i] = i;
+      }
+      new Int32Array(this.buffers.bulletFreeListTop)[0] = maxBullets;
+
+      const ACTIVE_BULLETS_BUFFER_SIZE = (1 + maxBullets) * 2;
+      this.buffers.activeBulletsData = new SharedArrayBuffer(ACTIVE_BULLETS_BUFFER_SIZE);
+      this.buffers.visibleBulletsData = new SharedArrayBuffer(ACTIVE_BULLETS_BUFFER_SIZE);
+      new Uint16Array(this.buffers.activeBulletsData)[0] = 0;
+      new Uint16Array(this.buffers.visibleBulletsData)[0] = 0;
+
+      // Impact buffer: [count: Int32, per impact: targetId, damage, hitX, hitY, ownerId, shooterType as Float32] = 4 + 6*4*64
+      const IMPACT_STRIDE = 24;
+      this.buffers.impactBuffer = new SharedArrayBuffer(4 + maxImpactsPerFrame * IMPACT_STRIDE);
+      new Int32Array(this.buffers.impactBuffer)[0] = 0;
+
+      BulletPool.initialize(maxBullets);
+      BulletPool.initializeFreeList(
+        this.buffers.bulletFreeList,
+        this.buffers.bulletFreeListTop
+      );
     }
 
     // Visible lights buffer: pre_render writes, pixi reads (eliminates duplicate queryActiveEntities)
@@ -1722,6 +1780,11 @@ class Scene {
       connections.push({ from: `logic${i}`, to: 'particle' });
     }
 
+    // Connect particle worker to all logic workers for bullet impact events (each processes targetId % workers)
+    for (let i = 0; i < this.numberOfLogicWorkers; i++) {
+      connections.push({ from: 'particle', to: `logic${i}` });
+    }
+
     return setupWorkerCommunication(connections);
   }
 
@@ -1915,6 +1978,14 @@ class Scene {
       // Decoration compact lists (for optimized iteration)
       activeDecorationsData: this.buffers.activeDecorationsData || null,
       visibleDecorationsData: this.buffers.visibleDecorationsData || null,
+      // Bullet system
+      maxBullets: this.config.bullet.maxBullets,
+      bulletFreeList: this.buffers.bulletFreeList || null,
+      bulletFreeListTop: this.buffers.bulletFreeListTop || null,
+      activeBulletsData: this.buffers.activeBulletsData || null,
+      visibleBulletsData: this.buffers.visibleBulletsData || null,
+      impactBuffer: this.buffers.impactBuffer || null,
+      totalLogicWorkers: this.numberOfLogicWorkers,
       // Render queue (pre_render_worker → pixi_worker) - DOUBLE BUFFERED
       // pre_render_worker writes to alternating buffers, pixi_worker reads latest
       // pixi_worker never waits; pre_render_worker waits if >1 frame ahead
@@ -2598,6 +2669,13 @@ class Scene {
       }
     }
 
+    // Clear BulletComponent if it exists
+    if (BulletComponent.active && this.config.bullet?.maxBullets > 0) {
+      for (let i = 0; i < this.config.bullet.maxBullets; i++) {
+        BulletComponent.active[i] = 0;
+      }
+    }
+
     // Reset Mouse state
     Mouse.isPresent = false;
     Mouse.isButton0Down = false;
@@ -2632,6 +2710,7 @@ class Scene {
     Constraint.reset();
     ParticleEmitter.reset();
     DecorationPool.reset();
+    BulletPool.reset();
     SpriteSheetRegistry.clearForSceneUnload();
 
     // Clear registered classes for next scene

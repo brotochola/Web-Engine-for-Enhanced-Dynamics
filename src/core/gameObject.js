@@ -1546,6 +1546,20 @@ export class GameObject {
   }
 
   /**
+   * LIFECYCLE: Called when this entity is hit by a bullet (raycast impact)
+   * Override in subclasses to apply damage, spawn effects, etc.
+   *
+   * @param {number} damage - Damage amount
+   * @param {number} hitX - Impact X in world space
+   * @param {number} hitY - Impact Y in world space
+   * @param {number} ownerId - Shooter entity index
+   * @param {number} shooterEntityType - Shooter's entity type (for team/friendly fire)
+   */
+  onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
+    // Override in subclasses
+  }
+
+  /**
    * SPAWNING SYSTEM: Reset free list for an entity class (used by despawnAll)
    * Repopulates the SAB-backed free list with interleaved ordering
    *

@@ -142,6 +142,10 @@ class LogicWorker extends AbstractWorker {
     // Get total logic workers count from config
     this.totalLogicWorkers = data.config?.logic?.numberOfLogicWorkers || 1;
 
+    if (data.impactBuffer) {
+      this._impactData = new Float32Array(data.impactBuffer, 4, 384);
+    }
+
     // console.log("LOGIC WORKER: Initializing with component system");
 
     // Initialize collision buffer
@@ -532,6 +536,35 @@ class LogicWorker extends AbstractWorker {
   }
 
   /**
+   * Process bullet impact events from particle_worker.
+   * Partitioned by targetId % totalWorkers - each worker processes impacts for its entities.
+   */
+  processImpacts(count) {
+    if (!count || !this._impactData || count <= 0) return;
+    const impactData = this._impactData;
+    const totalWorkers = this.totalLogicWorkers;
+    const myIndex = this.workerIndex;
+    const gameObjects = this.gameObjects;
+
+    for (let i = 0; i < count; i++) {
+      const base = i * 6;
+      const targetId = impactData[base] | 0;
+      if (targetId % totalWorkers !== myIndex) continue;
+
+      const damage = impactData[base + 1];
+      const hitX = impactData[base + 2];
+      const hitY = impactData[base + 3];
+      const ownerId = impactData[base + 4] | 0;
+      const shooterEntityType = impactData[base + 5] | 0;
+
+      const obj = gameObjects[targetId];
+      if (obj && obj.onGotShot) {
+        obj.onGotShot(damage, hitX, hitY, ownerId, shooterEntityType);
+      }
+    }
+  }
+
+  /**
    * Process collision callbacks (Unity-style)
    * Determines Enter/Stay/Exit states and calls appropriate callbacks
    * Partitions collision processing across workers using modulo (minEntity % workers == myIndex)
@@ -652,6 +685,10 @@ class LogicWorker extends AbstractWorker {
    * Implements spawning and despawning commands
    */
   handleCustomMessage(data) {
+    if (data.type === 'impacts') {
+      this.processImpacts(data.count);
+      return;
+    }
     const { msg } = data;
 
     switch (msg) {

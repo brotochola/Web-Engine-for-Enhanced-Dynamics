@@ -80,6 +80,11 @@ export class PredatorScene extends WEED.Scene {
       maxDecorations: 40000, // Non-interactive decorations like grass
     },
 
+    bullet: {
+      maxBullets: 512,
+      maxImpactsPerFrame: 64,
+    },
+
     // Logic configuration
     logic: {
       noLimitFPS: true,
@@ -159,6 +164,7 @@ export class PredatorScene extends WEED.Scene {
 
   static assets = {
     textures: {
+      bullet: '/demos/img/bullet.png',
       muzzle1: '/demos/img/muzzle1.png',
       muzzle2: '/demos/img/muzzle2.png',
       muzzle3: '/demos/img/muzzle3.png',
@@ -317,14 +323,14 @@ export class PredatorScene extends WEED.Scene {
     this.spawnEntity(CameraController);
     // this.spawnTrees(this.numberOfTrees);
 
-    this.spawnGrass(10000);
-    this.spawnCivilians(10000);
+    this.spawnGrass(1000);
+    this.spawnCivilians(1000);
     this.spawnBarrels(this.numberOfBarrels);
     this.spawnRocks(this.numberOfRocks);
 
-    this.spawnMySoldiers(2000);
+    this.spawnMySoldiers(200);
 
-    this.spawnRocksTreesAndHouses();
+    // this.spawnRocksTreesAndHouses();
   }
 
   spawnTrash(count) {

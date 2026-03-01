@@ -146,6 +146,15 @@ export const DECORATION_DEFAULTS = {
 };
 
 // ============================================================================
+// BULLET DEFAULTS
+// ============================================================================
+
+export const BULLET_DEFAULTS = {
+  maxBullets: 0,
+  maxImpactsPerFrame: 64,
+};
+
+// ============================================================================
 // LOGIC DEFAULTS
 // ============================================================================
 
@@ -245,6 +254,7 @@ export const CONFIG_DEFAULTS = {
   spatial: SPATIAL_DEFAULTS,
   particle: PARTICLE_DEFAULTS,
   decoration: DECORATION_DEFAULTS,
+  bullet: BULLET_DEFAULTS,
   logic: LOGIC_DEFAULTS,
   renderer: RENDERER_DEFAULTS,
   preRender: PRE_RENDER_DEFAULTS,

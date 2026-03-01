@@ -1,0 +1,105 @@
+// BulletPool.js - Static API for spawning bullets
+// Bullets are NOT GameObjects - they use BulletComponent directly
+// Straight-line movement, raycast collision (prev→next), no physics
+//
+// EXTENDS SharedAtomicPool for thread-safe free list management
+
+import { BulletComponent } from '../components/BulletComponent.js';
+import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
+import { SharedAtomicPool } from './SharedAtomicPool.js';
+import { convertRGBtoBGR } from './utils.js';
+
+export class BulletPool extends SharedAtomicPool {
+  static poolName = 'BulletPool';
+
+  static get maxBullets() {
+    return this.maxCount;
+  }
+
+  static initialize(maxBullets) {
+    super.initialize(maxBullets);
+  }
+
+  /**
+   * Spawn a bullet. Called from logic_worker when entity shoots.
+   *
+   * @param {Object} config
+   * @param {number} config.x - Start X
+   * @param {number} config.y - Start Y
+   * @param {number} config.vx - Velocity X
+   * @param {number} config.vy - Velocity Y
+   * @param {number} config.damage - Damage on hit
+   * @param {number} config.ownerId - Shooter entity index (excluded from raycast)
+   * @param {number} config.shooterEntityType - Entity type ID for team/friendly fire
+   * @param {string} [config.texture] - Texture name (default "bullet")
+   * @param {number} [config.scale=1] - Scale
+   * @param {number} [config.alpha=1] - Alpha
+   * @param {number} [config.tint=0xFFFFFF] - Tint
+   * @param {number} [config.rotation=0] - Rotation in radians
+   * @param {number} [config.anchorX=0] - Anchor X (0=left tip, 0.5=center)
+   * @param {number} [config.anchorY=0.5] - Anchor Y (0.5=vertical center)
+   * @param {number} [config.offsetY=0] - Visual Y offset (e.g., muzzle height); sort at y, render at y + offsetY
+   * @returns {number} Bullet index or -1 if pool full
+   */
+  static spawn(config) {
+    const i = this.acquireIndex();
+    if (i < 0) return -1;
+
+    const x = BulletComponent.x;
+    const y = BulletComponent.y;
+    const prevX = BulletComponent.prevX;
+    const prevY = BulletComponent.prevY;
+    const vx = BulletComponent.vx;
+    const vy = BulletComponent.vy;
+    const damage = BulletComponent.damage;
+    const ownerId = BulletComponent.ownerId;
+    const shooterEntityType = BulletComponent.shooterEntityType;
+    const textureId = BulletComponent.textureId;
+    const scale = BulletComponent.scale;
+    const alpha = BulletComponent.alpha;
+    const tint = BulletComponent.tint;
+    const rotation = BulletComponent.rotation;
+    const anchorX = BulletComponent.anchorX;
+    const anchorY = BulletComponent.anchorY;
+    const offsetY = BulletComponent.offsetY;
+
+    const px = config.x;
+    const py = config.y;
+    x[i] = px;
+    y[i] = py;
+    prevX[i] = px;
+    prevY[i] = py;
+    vx[i] = config.vx;
+    vy[i] = config.vy;
+    damage[i] = config.damage;
+    ownerId[i] = config.ownerId;
+    shooterEntityType[i] = config.shooterEntityType ?? 0;
+
+    let texId = 0;
+    if (config.texture) {
+      texId = SpriteSheetRegistry.getAnimationIndex('bigAtlas', config.texture) ?? 0;
+    }
+    textureId[i] = texId;
+    scale[i] = config.scale ?? 1;
+    alpha[i] = config.alpha ?? 1;
+    tint[i] = convertRGBtoBGR(config.tint ?? 0xffffff);
+    rotation[i] = config.rotation ?? 0;
+    anchorX[i] = config.anchorX ?? 0;
+    anchorY[i] = config.anchorY ?? 0.5;
+    offsetY[i] = config.offsetY ?? 0;
+    BulletComponent.isItOnScreen[i] = 0;
+    BulletComponent.active[i] = 1;
+
+    return i;
+  }
+
+  /**
+   * Despawn bullet by index. Called from particle_worker when bullet hits or from logic.
+   */
+  static despawn(i) {
+    if (i < 0 || i >= this.maxCount) return;
+    if (BulletComponent.active[i] === 0) return;
+    BulletComponent.active[i] = 0;
+    this.returnToPool(i);
+  }
+}

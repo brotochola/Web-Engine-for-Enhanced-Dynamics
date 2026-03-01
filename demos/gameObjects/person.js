@@ -18,6 +18,7 @@ import {
   getDirectionFromAngle,
   GameObject,
   DecorationPool,
+  BulletPool,
   randomColor,
 } from '../../src/index.js';
 
@@ -57,8 +58,8 @@ export class Person extends Lootable {
   // WEAPON DEFINITIONS - damage, cooldown (ms), range (px)
   // ==========================================
   static WEAPONS = {
-    PISTOL: { damage: 0.66, cooldown: 200, range: 180, rangeSq: 180 ** 2 },
-    MACHINE_GUN: { damage: 0.2, cooldown: 100, range: 500, rangeSq: 500 ** 2 },
+    PISTOL: { damage: 0.66, cooldown: 200, range: 180, rangeSq: 180 ** 2, bulletSpeed: 900 },
+    MACHINE_GUN: { damage: 0.2, cooldown: 100, range: 500, rangeSq: 500 ** 2, bulletSpeed: 1500, rapidFire: true },
   };
 
   setup() {
@@ -132,12 +133,6 @@ export class Person extends Lootable {
 
     if (damage < 0.1) return;
 
-    // // Trigger hurt animation immediately (if not already dying)
-    // if (!PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.DYING) &&
-    //     !PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.DEAD)) {
-    //     PersonAnimationFSM.forceChangeState(this.index, PersonAnimationFSM.states.HURT, this);
-    // }
-
     ParticleEmitter.emit({
       count: Math.floor(damage * (Math.random() * 5 + 3)),
       texture: 'blood',
@@ -158,17 +153,20 @@ export class Person extends Lootable {
 
   tick(dtRatio) {
     const isDead = PersonComponent.dead[this.index] === 1;
-    // const animBefore = SpriteRenderer.animationState[this.index];
+    const isShooting = PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.SHOOTING);
 
-    // Skip Lootable.tick() if already dead (prevents re-triggering die())
     if (!isDead) {
       super.tick(dtRatio);
     }
 
-    this.keepWithinBounds(dtRatio);
-
-    if (RigidBody.speed[this.index] < 0.166) {
+    // When shooting: no movement (zero velocity, skip acceleration)
+    if (isShooting) {
       this.setVelocity(0, 0);
+    } else {
+      this.keepWithinBounds(dtRatio);
+      if (RigidBody.speed[this.index] < 0.166) {
+        this.setVelocity(0, 0);
+      }
     }
 
     // const animAfterDie = SpriteRenderer.animationState[this.index];
@@ -331,20 +329,24 @@ export class Person extends Lootable {
    */
   shoot(targetEntityIndex) {
     if (PersonComponent.dead[this.index] === 1) return false;
-    if (this.isPerformingAction()) return false;
 
     const weapon = this.getBestWeapon();
     if (!weapon) return false;
 
+    // Block if performing action (unless rapid-fire weapon + already in shooting animation)
+    if (this.isPerformingAction()) {
+      const rapidFireInShooting = weapon.rapidFire && PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.SHOOTING);
+      if (!rapidFireInShooting) return false;
+    }
+
     // Check cooldown
     if (!this.canFire(weapon)) return false;
 
-    this.setVelocity(this.vx * 0.5, this.vy * 0.5);
+    this.setVelocity(0, 0);
 
     // Face the target
     const targetX = Transform.x[targetEntityIndex];
     const targetY = Transform.y[targetEntityIndex];
-    const distance = Math.sqrt(PersonComponent.closestEnemyDistanceSq[this.index])
 
     const angle = Math.atan2(targetY - this.y, targetX - this.x) + HALF_PI;
 
@@ -373,8 +375,11 @@ export class Person extends Lootable {
     // Record shot time
     PersonComponent.lastShotTime[this.index] = performance.now();
 
-    // Trigger shoot animation
-    this.personAnimationFSM.forceChangeState(PersonAnimationFSM.states.SHOOTING);
+    // Trigger shoot animation (skip if rapid-fire and already shooting - avoids resetting animation)
+    const alreadyShooting = PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.SHOOTING);
+    if (!(weapon.rapidFire && alreadyShooting)) {
+      this.personAnimationFSM.forceChangeState(PersonAnimationFSM.states.SHOOTING);
+    }
 
     // Muzzle position from shooter center using target angle.
     const muzzleDistancePx = this.constructor.muzzleDistancePx;
@@ -382,76 +387,63 @@ export class Person extends Lootable {
     const muzzleX = this.x + Math.cos(lineAngle) * muzzleDistancePx;
     const muzzleY = this.y + Math.sin(lineAngle) * muzzleDistancePx;
 
-    //Deal Damage
-    const target = GameObject.get(targetEntityIndex);
-    if (target && target.recieveDamage) {
-      target.recieveDamage(weapon.damage);
-    }
+    // Spawn bullet (raycast hit handled by engine; target.onGotShot called on impact)
+    const speed = weapon.bulletSpeed ?? 800;
+    const vx = Math.cos(lineAngle) * speed;
+    const vy = Math.sin(lineAngle) * speed;
+    BulletPool.spawn({
+      x: muzzleX,
+      y: muzzleY,
+      offsetY: muzzleHeightPx,
+      vx,
+      vy,
+      damage: weapon.damage,
+      ownerId: this.index,
+      shooterEntityType: Transform.entityType[this.index],
+      texture: 'bullet',
+      scale: 2,
+      rotation: lineAngle,
+      anchorX: 1,
+      anchorY: 0.5,
+    });
 
-    const howMuchTimeToWaitUntilFire = 100
+    //little fire: muzzle effect
+    // Sprite renders at gun height (y + offsetY), but sorts at ground level (y)
+    // Bullet tracer particle (travels from shooter to victim in 3 frames)
 
-    setTimeout(() => {
+    const angleDeg = (lineAngle * 180) / Math.PI;
 
-      //little fire: muzzle effect
-      // Sprite renders at gun height (y + offsetY), but sorts at ground level (y)
-      // Bullet tracer particle (travels from shooter to victim in 3 frames)
-      const tracerLength = 50;
-      const angleDeg = (lineAngle * 180) / Math.PI;
-      // Speed: travel full distance in ~3 frames (50ms at 60fps)
-      const tracerSpeed = 50;
+    ParticleEmitter.emit({
+      count: 2,
+      x: muzzleX,
+      y: muzzleY + 1, // Base Y position for sorting (ground level)
+      texture: "muzzle" + Math.floor(Math.random() * 3 + 1),
+      scaleX: 1,
+      scaleY: 1,
+      rotation: { min: angleDeg * 0.9, max: angleDeg * 1.1 },
+      alpha: 0.9,
+      anchorX: 0, // Start at shooter position
+      anchorY: 0.5, // Center vertically
+      z: muzzleHeightPx,
+      gravity: 0,
+      lifespan: 50,
+      speed: 0
+    })
 
-      ParticleEmitter.emit({
-        count: 2,
-        x: muzzleX,
-        y: muzzleY + 1, // Base Y position for sorting (ground level)
-        texture: "muzzle" + Math.floor(Math.random() * 3 + 1),
-        scaleX: 1,
-        scaleY: 1,
-        rotation: { min: angleDeg * 0.9, max: angleDeg * 1.1 },
-        alpha: 0.9,
-        anchorX: 0, // Start at shooter position
-        anchorY: 0.5, // Center vertically
-        z: muzzleHeightPx,
-        gravity: 0,
-        lifespan: 50,
-        speed: 0
-      })
+    //create flash!
+    Flash.create({
+      x: muzzleX,
+      y: muzzleY,
+      z: -muzzleHeightPx,
+      lifespan: 18,
+      color: 0xffaa00,
+      intensity: 10000,
+      hasGlowSprite: 0,
+    });
 
-      ParticleEmitter.emit({
-        count: 1,
-        x: muzzleX,
-        y: muzzleY,
-        z: muzzleHeightPx,
-        angleXY: angleDeg,
-        speed: tracerSpeed,
-        gravity: 0,
-        lifespan: 120,//ms
-        texture: '_white',
-        scaleX: tracerLength * 0.125,
-        scaleY: 0.5, // 2px high
-        rotation: angleDeg,
-        alpha: 0.66,
-        tweenToAlpha0: true
-      });
+    this.shootingSparks(lineAngle, muzzleX, muzzleY, muzzleHeightPx)
 
-      // setTimeout(() => {
-      //   DecorationPool.despawn(muzzleIndex);
-      // }, 50);
-
-      //create flash!
-      Flash.create({
-        x: muzzleX,
-        y: muzzleY,
-        z: -muzzleHeightPx,
-        lifespan: 18,
-        color: 0xffaa00,
-        intensity: 10000,
-        hasGlowSprite: 0,
-      });
-
-      this.shootingSparks(lineAngle, muzzleX, muzzleY, muzzleHeightPx)
-
-    }, howMuchTimeToWaitUntilFire)
+    // }, howMuchTimeToWaitUntilFire)
 
     return true;
   }
@@ -463,12 +455,12 @@ export class Person extends Lootable {
     const spreadDeg = 10;
 
     ParticleEmitter.emit({
-      count: Math.floor(Math.random() * 20) + 40,
+      count: Math.floor(Math.random() * 10) + 10,
       x: muzzleX,
       y: muzzleY + 1,
       z: muzzleHeightPx,
       angleXY: { min: angleDeg - spreadDeg / 2, max: angleDeg + spreadDeg / 2 },
-      speed: { min: 0.1, max: 20 },
+      speed: { min: 0.1, max: 10 },
       rotation: { min: 0, max: 360 },
       vz: { min: -1, max: 5 }, // Some sparks fly up, others fall
       gravity: 0.4,

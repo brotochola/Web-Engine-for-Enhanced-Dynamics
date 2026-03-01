@@ -4,6 +4,7 @@
 
 import { ParticleComponent } from '../components/ParticleComponent.js';
 import { DecorationComponent } from '../components/DecorationComponent.js';
+import { BulletComponent } from '../components/BulletComponent.js';
 import { Transform } from '../components/Transform.js';
 import { Collider } from '../components/Collider.js';
 import { LightEmitter } from '../components/LightEmitter.js';
@@ -46,6 +47,7 @@ class PreRenderWorker extends AbstractWorker {
         this.globalEntityCount = 0;
         this.maxParticles = 0;
         this.maxDecorations = 0;
+        this.maxBullets = 0;
 
         // ========================================
         // GC OPTIMIZATION: Cached objects
@@ -206,6 +208,7 @@ class PreRenderWorker extends AbstractWorker {
         this.globalEntityCount = data.globalEntityCount || 0;
         this.maxParticles = data.maxParticles || 0;
         this.maxDecorations = data.maxDecorations || 0;
+        this.maxBullets = data.maxBullets || 0;
 
         // Store viewport dimensions
         this.canvasWidth = this.config.canvasWidth;
@@ -528,6 +531,7 @@ class PreRenderWorker extends AbstractWorker {
         this.collectVisibleParticles();
         this.collectVisibleEntities();
         this.collectVisibleDecorations();
+        this.collectVisibleBullets();
 
         // Build the final render queue (sorts by Y, applies interpolation, writes to SAB)
         this.buildRenderQueue(deltaTime);
@@ -805,6 +809,25 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
+     * Collect visible bullets for render queue
+     * Uses visibleBulletsData SAB populated by particle_worker
+     */
+    collectVisibleBullets() {
+        if (!this.maxBullets || this.maxBullets === 0 || !BulletComponent.active) return;
+
+        const visibleData = this.visibleBulletsData;
+        if (!visibleData) return;
+
+        const visibleCount = visibleData[0];
+        const y = BulletComponent.y;
+
+        for (let idx = 0; idx < visibleCount; idx++) {
+            const i = visibleData[1 + idx];
+            this.collectRenderable(4, i, y[i]);
+        }
+    }
+
+    /**
      * Collect a visible renderable for the render queue
      */
     collectRenderable(type, index, y) {
@@ -973,6 +996,17 @@ class PreRenderWorker extends AbstractWorker {
         const decoAnchorX = DecorationComponent.anchorX;
         const decoAnchorY = DecorationComponent.anchorY;
 
+        const bulletX = BulletComponent.x;
+        const bulletY = BulletComponent.y;
+        const bulletOffsetY = BulletComponent.offsetY;
+        const bulletScale = BulletComponent.scale;
+        const bulletAlpha = BulletComponent.alpha;
+        const bulletTint = BulletComponent.tint;
+        const bulletTextureId = BulletComponent.textureId;
+        const bulletRotation = BulletComponent.rotation;
+        const bulletAnchorX = BulletComponent.anchorX;
+        const bulletAnchorY = BulletComponent.anchorY;
+
         const frameIndex = this.entityFrameIndex;
         const frameAccum = this.entityFrameAccumulator;
         const deltaSeconds = deltaTime / 1000;
@@ -1069,6 +1103,21 @@ class PreRenderWorker extends AbstractWorker {
                 rqAnchorX[i] = decoAnchorX[idx];
                 rqAnchorY[i] = decoAnchorY[idx];
                 rqType[i] = 2;
+                rqEntityIndex[i] = -1;
+            } else if (type === 4) {
+                // === BULLET ===
+                rqX[i] = bulletX[idx];
+                rqY[i] = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
+                rqScaleX[i] = bulletScale[idx];
+                rqScaleY[i] = bulletScale[idx];
+                rqRotation[i] = bulletRotation[idx];
+                rqAlpha[i] = bulletAlpha[idx];
+                rqTint[i] = bulletTint[idx];
+                const bAnimIdx = bulletTextureId[idx];
+                rqTextureId[i] = this.animationFrameStart?.[bAnimIdx] ?? 0;
+                rqAnchorX[i] = bulletAnchorX[idx];
+                rqAnchorY[i] = bulletAnchorY[idx];
+                rqType[i] = 4;
                 rqEntityIndex[i] = -1;
             } else {
                 // === LIGHT GLOW (type=3) ===

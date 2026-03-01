@@ -24,6 +24,14 @@ export class Lootable extends GameObject {
 
   }
 
+  /**
+   * LIFECYCLE: Called by engine when a bullet hits this entity (raycast impact).
+   * Delegates to game's recieveDamage for damage logic.
+   */
+  onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
+    this.recieveDamage(damage);
+  }
+
   die() {
     const amountOfMoney = LootableComponent.dropMoney[this.index];
     if (amountOfMoney > 0) {

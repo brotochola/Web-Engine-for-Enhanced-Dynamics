@@ -51,6 +51,13 @@ export { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/ParticleEmitter
 export { DecorationPool } from './core/DecorationPool.js';
 
 // ============================================================================
+// BULLETS
+// ============================================================================
+// Note: Bullets are NOT GameObjects - they use BulletComponent directly
+export { BulletPool } from './core/BulletPool.js';
+export { BulletComponent } from './components/BulletComponent.js';
+
+// ============================================================================
 // CONSTRAINTS
 // ============================================================================
 // Distance constraints for position-based dynamics (ropes, springs, rigid connections)

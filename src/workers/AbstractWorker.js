@@ -6,6 +6,8 @@ import Keyboard from '../core/Keyboard.js';
 import { Mouse } from '../core/Mouse.js';
 import { ParticleEmitter } from '../core/ParticleEmitter.js';
 import { DecorationPool } from '../core/DecorationPool.js';
+import { BulletPool } from '../core/BulletPool.js';
+import { BulletComponent } from '../components/BulletComponent.js';
 import { Flash } from '../core/Flash.js';
 import {
   seededRandom,
@@ -330,6 +332,33 @@ export class AbstractWorker {
       }
     }
 
+    // Initialize BulletComponent arrays (separate bullet pool system)
+    if (data.maxBullets && data.maxBullets > 0) {
+      if (data.buffers?.componentData?.BulletComponent) {
+        BulletComponent.initializeArrays(
+          data.buffers.componentData.BulletComponent,
+          data.maxBullets
+        );
+        BulletComponent.bulletCount = data.maxBullets;
+        this.maxBullets = data.maxBullets;
+        this.reportLog(`initialized BulletComponent for ${data.maxBullets} bullets`);
+      }
+      BulletPool.initialize(data.maxBullets);
+      if (data.bulletFreeList && data.bulletFreeListTop) {
+        BulletPool.initializeFreeList(data.bulletFreeList, data.bulletFreeListTop);
+      }
+      if (data.activeBulletsData) {
+        this.activeBulletsData = new Uint16Array(data.activeBulletsData);
+      }
+      if (data.visibleBulletsData) {
+        this.visibleBulletsData = new Uint16Array(data.visibleBulletsData);
+      }
+      if (data.impactBuffer) {
+        this.impactBuffer = data.impactBuffer;
+      }
+      this.totalLogicWorkers = data.totalLogicWorkers ?? 1;
+    }
+
     // Initialize Constraint system (distance constraints for position-based dynamics)
     // All workers can add/remove constraints atomically via the shared free list
     if (data.constraints && data.constraints.enabled) {
@@ -582,6 +611,7 @@ export class AbstractWorker {
     self.Camera = Camera;
     self.SpriteSheetRegistry = SpriteSheetRegistry;
     self.DecorationPool = DecorationPool;
+    self.BulletPool = BulletPool;
     self.Constraint = Constraint;
     self.Sun = Sun
   }

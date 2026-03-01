@@ -5,6 +5,9 @@ import { ParticleComponent } from '../components/ParticleComponent.js';
 import { ParticleEmitter } from '../core/ParticleEmitter.js';
 import { DecorationComponent } from '../components/DecorationComponent.js';
 import { DecorationPool } from '../core/DecorationPool.js';
+import { BulletPool } from '../core/BulletPool.js';
+import { BulletComponent } from '../components/BulletComponent.js';
+import { Ray } from '../core/Ray.js';
 import { Transform } from '../components/Transform.js';
 import { RigidBody } from '../components/RigidBody.js';
 import { Collider } from '../components/Collider.js';
@@ -353,6 +356,12 @@ class ParticleWorker extends AbstractWorker {
     };
     this._worldBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
     this._gridQueryResult = null;
+
+    // Bullets
+    this.maxBullets = 0;
+    this._impactCount = null;
+    this._impactData = null;
+    this._bulletExcludeSet = new Set();
   }
 
   /**
@@ -369,7 +378,13 @@ class ParticleWorker extends AbstractWorker {
     // Get max particles from config
     this.maxParticles = data.maxParticles || 0;
     this.maxDecorations = data.maxDecorations || 0;
+    this.maxBullets = data.maxBullets || 0;
     this.globalEntityCount = data.globalEntityCount || 0;
+
+    if (data.impactBuffer && this.maxBullets > 0) {
+      this._impactCount = new Int32Array(data.impactBuffer, 0, 1);
+      this._impactData = new Float32Array(data.impactBuffer, 4, 384);
+    }
 
     // console.log(`[PARTICLE WORKER] Max particles: ${this.maxParticles}, Decorations: ${this.maxDecorations}, Entities: ${this.globalEntityCount}`);
 
@@ -532,6 +547,11 @@ class ParticleWorker extends AbstractWorker {
 
     // Update screen visibility for decorations (entities done in pre_render_worker)
     this.updateDecorationScreenVisibility();
+
+    // Bullet physics + raycast + impact events
+    if (this.maxBullets > 0) {
+      this.tickAllBullets(deltaTime, dtRatio);
+    }
 
     // Clear stamp collection
     this.clearParticleStampList();
@@ -725,6 +745,121 @@ class ParticleWorker extends AbstractWorker {
     }
 
     // Write visible count to SAB
+    visibleData[0] = visibleCount;
+  }
+
+  /**
+   * Tick all active bullets: move, raycast prev→next, write impacts, despawn on hit.
+   * Builds activeBulletsData and visibleBulletsData. Sends impacts to logic0.
+   */
+  tickAllBullets(deltaTime, dtRatio) {
+    const maxBullets = this.maxBullets;
+    const active = BulletComponent.active;
+    const x = BulletComponent.x;
+    const y = BulletComponent.y;
+    const prevX = BulletComponent.prevX;
+    const prevY = BulletComponent.prevY;
+    const vx = BulletComponent.vx;
+    const vy = BulletComponent.vy;
+    const damage = BulletComponent.damage;
+    const ownerId = BulletComponent.ownerId;
+    const shooterEntityType = BulletComponent.shooterEntityType;
+    const isItOnScreen = BulletComponent.isItOnScreen;
+
+    const activeData = this.activeBulletsData;
+    const visibleData = this.visibleBulletsData;
+    const impactCount = this._impactCount;
+    const impactData = this._impactData;
+    const dt = dtRatio * (1 / 60);
+    const excludeSet = this._bulletExcludeSet;
+    const totalLogicWorkers = this.totalLogicWorkers || 1;
+
+    let activeWrite = 1;
+    let impactWrite = 0;
+    const maxImpacts = 64;
+
+    for (let i = 0; i < maxBullets; i++) {
+      if (!active[i]) continue;
+
+      const px = x[i];
+      const py = y[i];
+      prevX[i] = px;
+      prevY[i] = py;
+
+      const nx = px + vx[i] * dt;
+      const ny = py + vy[i] * dt;
+      x[i] = nx;
+      y[i] = ny;
+
+      excludeSet.clear();
+      excludeSet.add(ownerId[i]);
+      const hit = Ray.linecast(px, py, nx, ny, excludeSet);
+
+      if (hit.blocked && hit.entityIndex >= 0) {
+        const dx = nx - px;
+        const dy = ny - py;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        const t = len > 0 ? Math.min(hit.distance / len, 1) : 0;
+        const hitX = px + dx * t;
+        const hitY = py + dy * t;
+
+        if (impactCount && impactWrite < maxImpacts) {
+          const base = impactWrite * 6;
+          impactData[base] = hit.entityIndex;
+          impactData[base + 1] = damage[i];
+          impactData[base + 2] = hitX;
+          impactData[base + 3] = hitY;
+          impactData[base + 4] = ownerId[i];
+          impactData[base + 5] = shooterEntityType[i];
+          impactWrite++;
+        }
+        // if (this.maxParticles > 0 && ParticleEmitter.hasCapacity()) {
+        //   ParticleEmitter.emit({ x: hitX, y: hitY, texture: 'impact_spark', count: 4, speed: 2 });
+        // }
+        active[i] = 0;
+        BulletPool.returnToPool(i);
+        continue;
+      }
+
+      activeData[activeWrite++] = i;
+    }
+
+    activeData[0] = activeWrite - 1;
+    if (impactCount) impactCount[0] = impactWrite;
+
+    if (impactWrite > 0) {
+      for (let w = 0; w < totalLogicWorkers; w++) {
+        this.sendDataToWorker(`logic${w}`, { type: 'impacts', count: impactWrite });
+      }
+    }
+
+    if (activeWrite <= 1 || !this.cameraData || !visibleData) return;
+
+    const cameraBounds = calculateCameraScreenBounds(
+      this.cameraData[0], this.cameraData[1], this.cameraData[2],
+      this.canvasWidth, this.canvasHeight, this.cullingRatio,
+      this._cameraBounds
+    );
+    const camZoom = cameraBounds.zoom;
+    const camOffX = cameraBounds.cameraOffsetX;
+    const camOffY = cameraBounds.cameraOffsetY;
+    const minX = cameraBounds.minX;
+    const maxX = cameraBounds.maxX;
+    const minY = cameraBounds.minY;
+    const maxY = cameraBounds.maxY;
+
+    let visibleCount = 0;
+    const activeCount = activeWrite - 1;
+    for (let idx = 0; idx < activeCount; idx++) {
+      const i = activeData[1 + idx];
+      const sx = x[i] * camZoom - camOffX;
+      const sy = y[i] * camZoom - camOffY;
+      const onScreen = sx > minX && sx < maxX && sy > minY && sy < maxY;
+      isItOnScreen[i] = onScreen ? 1 : 0;
+      if (onScreen) {
+        visibleData[1 + visibleCount++] = i;
+      }
+    }
     visibleData[0] = visibleCount;
   }
 
