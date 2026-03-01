@@ -1,10 +1,10 @@
 // AICar.js - AI-controlled car that follows the player using flowfield pathfinding
 
 import WEED from '/src/index.js';
-import { Car, ACCELERATION_FORCE, TURN_FORCE } from './car.js';
+import { Car } from './car.js';
 import { PlayerCar } from './playerCar.js';
-import { CarComponent, PART_KEYS } from '../components/carComponent.js';
 import { NavGrid } from '../../src/core/NavGrid.js';
+import { CarComponent } from '../components/carComponent.js';
 
 const { Transform, SpriteRenderer } = WEED;
 
@@ -51,9 +51,10 @@ export class AICar extends Car {
         const turnForce = Math.sign(angleDiff) * Math.min(Math.abs(angleDiff) * 2, 1) * this.constructor.aiTurnStrength;
 
         const alignment = Math.cos(angleDiff);
+        const accel = this.carComponent.accelerationForce;
         const forwardForce = alignment > 0
-            ? ACCELERATION_FORCE * this.constructor.aiForwardStrength
-            : -ACCELERATION_FORCE * this.constructor.aiForwardStrength * 0.6;
+            ? accel * this.constructor.aiForwardStrength
+            : -accel * this.constructor.aiForwardStrength * 0.6;
 
         this.applyForces(forwardForce, turnForce);
     }

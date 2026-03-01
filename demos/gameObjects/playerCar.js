@@ -2,10 +2,10 @@
 // Adds keyboard input handling for WASD/Arrow keys
 
 import WEED from '/src/index.js';
-import { Car, ACCELERATION_FORCE, TURN_FORCE } from './car.js';
+import { Car } from './car.js';
 import { CarComponent } from '../components/carComponent.js';
 
-const { Keyboard, SpriteRenderer } = WEED;
+const { Keyboard, SpriteRenderer, RigidBody } = WEED;
 
 export class PlayerCar extends Car {
     static scriptUrl = import.meta.url;
@@ -23,36 +23,48 @@ export class PlayerCar extends Car {
 
     /**
      * Handle keyboard input for car controls
-     * W/S = accelerate/brake
-     * A/D = turn (steering only works when moving - like real cars!)
+     * W/S = accelerate/brake-reverse
+     * A/D = turn (works at all speeds - arcade feel)
      */
     _handleInput(dtRatio) {
         let forwardForce = 0;
         let turnForce = 0;
 
+        const accel = this.carComponent.accelerationForce;
+        const brakeMult = this.carComponent.brakeForce;
+
         // W - Accelerate forward
         if (Keyboard.w || Keyboard.arrowup) {
-            forwardForce += ACCELERATION_FORCE;
+            forwardForce += accel;
         }
 
-        // S - Brake/Reverse
+        // S - Brake (stronger when going forward) or reverse
         if (Keyboard.s || Keyboard.arrowdown) {
-            forwardForce -= ACCELERATION_FORCE;
+            const forwardSpeed = this._getForwardSpeed();
+            const isMovingForward = forwardSpeed > 1;
+            forwardForce -= isMovingForward ? accel * brakeMult : accel;
         }
 
         // D - Turn right
         if (Keyboard.d || Keyboard.arrowright) {
-            turnForce += TURN_FORCE;
+            turnForce += this.carComponent.turnForce;
         }
 
         // A - Turn left
         if (Keyboard.a || Keyboard.arrowleft) {
-            turnForce -= TURN_FORCE;
+            turnForce -= this.carComponent.turnForce;
         }
 
-        // Apply forces through the base class method
         if (forwardForce !== 0 || turnForce !== 0) {
             this.applyForces(forwardForce, turnForce);
         }
+    }
+
+    _getForwardSpeed() {
+        const { frontIndices } = this._getFrontBackParts();
+        const angle = this.carComponent.angle;
+        const velX = frontIndices.reduce((s, i) => s + RigidBody.vx[i], 0) / frontIndices.length;
+        const velY = frontIndices.reduce((s, i) => s + RigidBody.vy[i], 0) / frontIndices.length;
+        return velX * Math.cos(angle) + velY * Math.sin(angle);
     }
 }

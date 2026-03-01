@@ -5,18 +5,11 @@
 // This base class has no input - extend it (like PlayerCar) for controllable cars.
 
 import WEED from '/src/index.js';
-import { CarComponent, PART_KEYS, CONSTRAINT_KEYS } from '../components/carComponent.js';
+import { CarComponent, CAR_DEFAULTS, PART_KEYS, CONSTRAINT_KEYS } from '../components/carComponent.js';
 import { CarPart } from './carPart.js';
 
 const { GameObject, RigidBody, SpriteRenderer, Transform, Constraint } = WEED;
 
-// Physics constants
-export const CAR_CONSTRAINT_STIFFNESS = 0.99;
-
-// Movement constants (exported for subclasses)
-export const ACCELERATION_FORCE = 0.2;  // Forward/backward thrust
-export const TURN_FORCE = 0.066;        // Turning force on front parts
-export const SPRITE_SCALE = 1.5;
 const TWO_PI = Math.PI * 2;
 
 export class Car extends GameObject {
@@ -33,8 +26,18 @@ export class Car extends GameObject {
         const x = spawnConfig.x || 0;
         const y = spawnConfig.y || 0;
         const sprite = spawnConfig.sprite || 'car';
-        const scale = spawnConfig.scale || SPRITE_SCALE;
 
+        // Set car tuning from spawnConfig or defaults (stored in CarComponent)
+        this.carComponent.accelerationForce = spawnConfig.accelerationForce ?? CAR_DEFAULTS.accelerationForce;
+        this.carComponent.turnForce = spawnConfig.turnForce ?? CAR_DEFAULTS.turnForce;
+        this.carComponent.brakeForce = spawnConfig.brakeForce ?? CAR_DEFAULTS.brakeForce;
+        this.carComponent.spriteScale = spawnConfig.scale ?? spawnConfig.spriteScale ?? CAR_DEFAULTS.spriteScale;
+        this.carComponent.constraintStiffness = spawnConfig.constraintStiffness ?? CAR_DEFAULTS.constraintStiffness;
+        this.carComponent.maxSteerSpeed = spawnConfig.maxSteerSpeed ?? CAR_DEFAULTS.maxSteerSpeed;
+        this.carComponent.minSteerFactor = spawnConfig.minSteerFactor ?? CAR_DEFAULTS.minSteerFactor;
+        this.carComponent.lateralDampening = spawnConfig.lateralDampening ?? CAR_DEFAULTS.lateralDampening;
+
+        const scale = this.carComponent.spriteScale;
         this.setSpritesheet(sprite);
         this.setAnimation('0');
         this.setScale(scale, scale);
@@ -60,13 +63,18 @@ export class Car extends GameObject {
         this.carComponent.partCount = partCount;
 
         // Spacing: parts span car length and height (minus padding for radius)
+        // Minimum center-to-center = 2*radius + 2px so edges are at least 2px apart
+        const minGap = 2;
+        const minSpacing = 2 * radius + minGap;
         const lengthSpan = carLength - 2 * radius;
         const heightSpan = carHeight - 2 * radius;
-        const colSpacing = cols > 1 ? lengthSpan / (cols - 1) : 0;
-        const rowSpacing = rows > 1 ? heightSpan / (rows - 1) : 0;
+        const colSpacing = cols > 1 ? Math.max(lengthSpan / (cols - 1), minSpacing) : minSpacing;
+        const rowSpacing = rows > 1 ? Math.max(heightSpan / (rows - 1), minSpacing) : minSpacing;
 
-        const startX = x - lengthSpan / 2;
-        const startY = y - heightSpan / 2;
+        const totalLength = (cols - 1) * colSpacing;
+        const totalHeight = (rows - 1) * rowSpacing;
+        const startX = x - totalLength / 2;
+        const startY = y - totalHeight / 2;
 
         const parts = [];
         for (let row = 0; row < rows; row++) {
@@ -95,7 +103,7 @@ export class Car extends GameObject {
                 Transform.x[parts[a].index] - Transform.x[parts[b].index],
                 Transform.y[parts[a].index] - Transform.y[parts[b].index]
             );
-            return Constraint.add(parts[a].index, parts[b].index, dist, CAR_CONSTRAINT_STIFFNESS);
+            return Constraint.add(parts[a].index, parts[b].index, dist, this.carComponent.constraintStiffness);
         };
 
         let constraintIndex = 0;
@@ -196,7 +204,27 @@ export class Car extends GameObject {
         Transform.x[this.index] = centerX;
         Transform.y[this.index] = centerY;
 
+        this.carComponent.angle = Math.atan2(frontY - backY, frontX - backX);
+        this._applyLateralFriction();
         this._updateSpriteFrame();
+    }
+
+    /** Apply force opposing lateral velocity - tire-like friction. Resists sliding from collisions. */
+    _applyLateralFriction() {
+        const angle = this.carComponent.angle;
+        const forwardX = Math.cos(angle);
+        const forwardY = Math.sin(angle);
+        const lateralX = -forwardY;
+        const lateralY = forwardX;
+        const strength = (1 - this.carComponent.lateralDampening) * 0.25;
+
+        for (const partIdx of this._getAllPartIndices()) {
+            const vx = RigidBody.vx[partIdx];
+            const vy = RigidBody.vy[partIdx];
+            const lateral = vx * lateralX + vy * lateralY;
+            RigidBody.ax[partIdx] -= lateralX * lateral * strength;
+            RigidBody.ay[partIdx] -= lateralY * lateral * strength;
+        }
     }
 
     applyForces(forwardForce, turnForce) {
@@ -205,39 +233,48 @@ export class Car extends GameObject {
         const backActive = backIndices.every(i => Transform.active[i]);
         if (!frontActive || !backActive) return;
 
-        const frontX = frontIndices.reduce((s, i) => s + Transform.x[i], 0) / frontIndices.length;
-        const frontY = frontIndices.reduce((s, i) => s + Transform.y[i], 0) / frontIndices.length;
-        const backX = backIndices.reduce((s, i) => s + Transform.x[i], 0) / backIndices.length;
-        const backY = backIndices.reduce((s, i) => s + Transform.y[i], 0) / backIndices.length;
-
-        const angle = Math.atan2(frontY - backY, frontX - backX);
+        const angle = this.carComponent.angle;
         const forwardX = Math.cos(angle);
         const forwardY = Math.sin(angle);
+        const lateralX = -forwardY;
+        const lateralY = forwardX;
 
-        // Use average front velocity for steering
+        // Steering: blend minSteerFactor (at rest) to 1.0 (at maxSteerSpeed) - arcade feel
         const velX = frontIndices.reduce((s, i) => s + RigidBody.vx[i], 0) / frontIndices.length;
         const velY = frontIndices.reduce((s, i) => s + RigidBody.vy[i], 0) / frontIndices.length;
         const forwardSpeed = velX * forwardX + velY * forwardY;
-
-        const maxSteerSpeed = 10;
-        const steerFactor = Math.min(Math.abs(forwardSpeed) / maxSteerSpeed, 1.0);
+        const maxSteer = this.carComponent.maxSteerSpeed;
+        const minSteer = this.carComponent.minSteerFactor;
+        const speedFactor = Math.min(Math.abs(forwardSpeed) / maxSteer, 1.0);
+        const steerFactor = minSteer + (1 - minSteer) * speedFactor;
         const steerDirection = forwardSpeed >= 0 ? 1 : -1;
 
         const allParts = this._getAllPartIndices();
-        const frontParts = this._getFrontPartIndices();
+        const cols = this.carComponent.gridCols;
+        const partCount = this.carComponent.partCount;
 
-        if (forwardForce !== 0) {
+        // When turning, redirect some forward thrust into rotation (grip budget - prevents speed-up)
+        const turnMagnitude = turnForce !== 0 ? Math.abs(turnForce) * steerFactor : 0;
+        const forwardScale = turnMagnitude > 0 ? 1 / (1 + turnMagnitude * 2) : 1;
+        const scaledForward = forwardForce * forwardScale;
+
+        if (scaledForward !== 0) {
             for (const partIdx of allParts) {
-                RigidBody.ax[partIdx] += forwardX * forwardForce;
-                RigidBody.ay[partIdx] += forwardY * forwardForce;
+                RigidBody.ax[partIdx] += forwardX * scaledForward;
+                RigidBody.ay[partIdx] += forwardY * scaledForward;
             }
         }
 
+        // Apply turn as torque: front parts push one way, back parts the other (arcade rotation)
         if (turnForce !== 0) {
             const effectiveTurn = turnForce * steerFactor * steerDirection;
-            for (const partIdx of frontParts) {
-                RigidBody.ax[partIdx] += -forwardY * effectiveTurn;
-                RigidBody.ay[partIdx] += forwardX * effectiveTurn;
+            for (let i = 0; i < partCount; i++) {
+                const partIdx = this.carComponent[PART_KEYS[i]];
+                const col = i % cols;
+                const frontness = (col - (cols - 1) / 2) * (2 / (cols - 1));  // -1 at back, +1 at front
+                const partTurn = effectiveTurn * frontness;
+                RigidBody.ax[partIdx] += lateralX * partTurn;
+                RigidBody.ay[partIdx] += lateralY * partTurn;
             }
         }
 
@@ -255,12 +292,7 @@ export class Car extends GameObject {
         const backActive = backIndices.every(i => Transform.active[i]);
         if (!frontActive || !backActive) return;
 
-        const frontX = frontIndices.reduce((s, i) => s + Transform.x[i], 0) / frontIndices.length;
-        const frontY = frontIndices.reduce((s, i) => s + Transform.y[i], 0) / frontIndices.length;
-        const backX = backIndices.reduce((s, i) => s + Transform.x[i], 0) / backIndices.length;
-        const backY = backIndices.reduce((s, i) => s + Transform.y[i], 0) / backIndices.length;
-
-        let angle = Math.atan2(frontY - backY, frontX - backX);
+        let angle = this.carComponent.angle;
         if (angle < 0) angle += TWO_PI;
 
         const degrees = (angle * 180) / Math.PI;
