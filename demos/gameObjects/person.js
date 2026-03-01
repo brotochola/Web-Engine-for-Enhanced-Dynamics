@@ -159,10 +159,9 @@ export class Person extends Lootable {
       super.tick(dtRatio);
     }
 
-    // When shooting: no movement (zero velocity, skip acceleration)
-    if (isShooting) {
-      this.setVelocity(0, 0);
-    } else {
+    // When shooting: don't run (no acceleration from behavior) but allow being pushed.
+    // We skip keepWithinBounds and low-speed zero so external pushes (knockback, collisions) work.
+    if (!isShooting) {
       this.keepWithinBounds(dtRatio);
       if (RigidBody.speed[this.index] < 0.166) {
         this.setVelocity(0, 0);
@@ -341,8 +340,6 @@ export class Person extends Lootable {
 
     // Check cooldown
     if (!this.canFire(weapon)) return false;
-
-    this.setVelocity(0, 0);
 
     // Face the target
     const targetX = Transform.x[targetEntityIndex];

@@ -54,6 +54,20 @@ function findClosestCivilian(owner) {
   return _closestResult.index === -1 ? null : _closestResult;
 }
 
+function findACivilianToShoot(owner) {
+  const civilianType = Civilian.entityType;
+
+  for (let n = 0; n < owner.neighborCount; n++) {
+    const neighborIndex = owner.getNeighbor(n);
+    if (Transform.entityType[neighborIndex] !== civilianType) continue;
+    if (LootableComponent.health[neighborIndex] <= 0) continue;
+    if (!Ray.hasLineOfSight(owner.index, neighborIndex)) continue;
+
+    return neighborIndex
+  }
+  return null
+}
+
 // ==========================================
 // HELPER: Check if stored target is still valid
 // ==========================================
@@ -62,7 +76,7 @@ function isStoredTargetValid(owner, i) {
   const targetIndex = PersonComponent.closestEnemyIndex[i];
   if (targetIndex < 0) return false;
   if (LootableComponent.health[targetIndex] <= 0) return false;
-  if (!Ray.hasLineOfSight(owner.index, targetIndex)) return false;
+  // if (!Ray.hasLineOfSight(owner.index, targetIndex)) return false;
   return true;
 }
 
@@ -258,7 +272,8 @@ class GoingToEnemyState extends FSMState {
 
 class RangedAttackingState extends FSMState {
   static onEnter(owner, i, fromState) {
-
+    // Stop running momentum when entering shoot stance; allows external pushes afterward
+    owner.setVelocity(0, 0);
   }
 
   static onUpdate(owner, i, dt, totalTime) {
