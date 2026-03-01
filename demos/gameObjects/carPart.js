@@ -74,6 +74,12 @@ export class CarPart extends GameObject {
     }
 
     tick(dtRatio) {
-        // Controlled by parent Car - no per-part behavior
+        // When very slow, gentle drag to prevent endless sliding
+        // const i = this.index;
+        // const spd = RigidBody.speed[i];
+        // if (spd < 25 && spd > 0.5) {
+        //     RigidBody.ax[i] -= RigidBody.vx[i] * 0.06;
+        //     RigidBody.ay[i] -= RigidBody.vy[i] * 0.06;
+        // }
     }
 }

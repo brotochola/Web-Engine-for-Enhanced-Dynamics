@@ -16,15 +16,20 @@ export class AICar extends Car {
 
     static components = [SpriteRenderer, CarComponent];
 
-    // AI tuning - slightly stronger turn for responsive following
-    static aiTurnStrength = 0.1;
+    static aiTurnStrength = 0.8;
     static aiForwardStrength = 0.9;
+    static closeToPlayerDistSq = 800 * 800;
 
     tick(dtRatio) {
         super.tick(dtRatio);
 
         const player = PlayerCar.getFirstActiveInstance();
+
         if (!player) return;
+
+        const dx = player.x - this.x;
+        const dy = player.y - this.y;
+        if (dx * dx + dy * dy < this.constructor.closeToPlayerDistSq) return;
 
         NavGrid.requestVector(this.x, this.y, player.x, player.y, _navVec);
 

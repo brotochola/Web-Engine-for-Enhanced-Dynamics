@@ -50,17 +50,17 @@ export class CarScene extends WEED.Scene {
 
         // Physics configuration
         physics: {
-            subStepCount: 4, // Higher substeps for stable constraints
+            subStepCount: 6, // Higher substeps for stable constraints
             noLimitFPS: true,
-            maxCollisionPairs: 10000,
-            maxConstraints: 10000, // Enable constraint system for car physics
+            maxCollisionPairs: 50000,
+            maxConstraints: 50000, // Enable constraint system for car physics
             boundaryElasticity: 0.3,
             collisionResponseStrength: 0.8,
             verletDamping: 0.999, // Very low damping - car maintains momentum
             gravity: { x: 0, y: 0 },
             sleepThreshold: 999,   // Disable sleeping for this scene
             wakeUpThreshold: 1000,
-            sleepDuration: 9999,
+            sleepDuration: 1000,
         },
 
         renderer: {
@@ -68,7 +68,7 @@ export class CarScene extends WEED.Scene {
             ySorting: true,
             interpolation: true,
             cullingRatio: 0.5,
-            maxVisibleRenderables: 1000,
+            maxVisibleRenderables: 5000, // Must fit: cars + rocks + particles + decorations (500 cars + 1000 particles = 1500+)
         },
 
         preRender: {
@@ -170,7 +170,7 @@ export class CarScene extends WEED.Scene {
         const carSprites = ["car", 'car_red', 'car_yellow'];
         const spawnRadius = 2000;
 
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 50; i++) {
             const offsetX = (rng() * 2 - 1) * spawnRadius;
             const offsetY = (rng() * 2 - 1) * spawnRadius;
             const sprite = carSprites[Math.floor(rng() * carSprites.length)];

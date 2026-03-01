@@ -3935,7 +3935,7 @@ export class DebugUI {
         this._toggleVisualAid(keyMap[key]);
       } else if (key === 's') {
         // Toggle sleeping cells visualization
-        this._toggleVisualAid('sleepingCells');
+        // this._toggleVisualAid('sleepingCells');
       } else if (key === 'k') {
         // Toggle constraints visualization
         this._toggleVisualAid('constraints');

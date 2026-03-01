@@ -30,11 +30,15 @@ export class Car extends GameObject {
         // Set car tuning from spawnConfig or defaults (stored in CarComponent)
         this.carComponent.accelerationForce = spawnConfig.accelerationForce ?? CAR_DEFAULTS.accelerationForce;
         this.carComponent.turnForce = spawnConfig.turnForce ?? CAR_DEFAULTS.turnForce;
+        this.carComponent.steeringAngle = spawnConfig.steeringAngle ?? CAR_DEFAULTS.steeringAngle;
         this.carComponent.brakeForce = spawnConfig.brakeForce ?? CAR_DEFAULTS.brakeForce;
         this.carComponent.spriteScale = spawnConfig.scale ?? spawnConfig.spriteScale ?? CAR_DEFAULTS.spriteScale;
         this.carComponent.constraintStiffness = spawnConfig.constraintStiffness ?? CAR_DEFAULTS.constraintStiffness;
         this.carComponent.maxSteerSpeed = spawnConfig.maxSteerSpeed ?? CAR_DEFAULTS.maxSteerSpeed;
         this.carComponent.minSteerFactor = spawnConfig.minSteerFactor ?? CAR_DEFAULTS.minSteerFactor;
+        this.carComponent.slipSpeed = spawnConfig.slipSpeed ?? CAR_DEFAULTS.slipSpeed;
+        this.carComponent.tractionTight = spawnConfig.tractionTight ?? CAR_DEFAULTS.tractionTight;
+        this.carComponent.tractionLoose = spawnConfig.tractionLoose ?? CAR_DEFAULTS.tractionLoose;
         this.carComponent.lateralDampening = spawnConfig.lateralDampening ?? CAR_DEFAULTS.lateralDampening;
 
         const scale = this.carComponent.spriteScale;
@@ -239,24 +243,70 @@ export class Car extends GameObject {
         const lateralX = -forwardY;
         const lateralY = forwardX;
 
-        // Steering: blend minSteerFactor (at rest) to 1.0 (at maxSteerSpeed) - arcade feel
-        const velX = frontIndices.reduce((s, i) => s + RigidBody.vx[i], 0) / frontIndices.length;
-        const velY = frontIndices.reduce((s, i) => s + RigidBody.vy[i], 0) / frontIndices.length;
-        const forwardSpeed = velX * forwardX + velY * forwardY;
+        const allParts = this._getAllPartIndices();
+        let centerVx = 0, centerVy = 0;
+        for (const partIdx of allParts) {
+            centerVx += RigidBody.vx[partIdx];
+            centerVy += RigidBody.vy[partIdx];
+        }
+        centerVx /= allParts.length;
+        centerVy /= allParts.length;
+        const speed = Math.hypot(centerVx, centerVy);
+        const forwardSpeed = centerVx * forwardX + centerVy * forwardY;
+
         const maxSteer = this.carComponent.maxSteerSpeed;
         const minSteer = this.carComponent.minSteerFactor;
         const speedFactor = Math.min(Math.abs(forwardSpeed) / maxSteer, 1.0);
         const steerFactor = minSteer + (1 - minSteer) * speedFactor;
         const steerDirection = forwardSpeed >= 0 ? 1 : -1;
 
-        const allParts = this._getAllPartIndices();
         const cols = this.carComponent.gridCols;
         const partCount = this.carComponent.partCount;
+        const fX = frontIndices.reduce((s, i) => s + Transform.x[i], 0) / frontIndices.length;
+        const fY = frontIndices.reduce((s, i) => s + Transform.y[i], 0) / frontIndices.length;
+        const bX = backIndices.reduce((s, i) => s + Transform.x[i], 0) / backIndices.length;
+        const bY = backIndices.reduce((s, i) => s + Transform.y[i], 0) / backIndices.length;
+        const wheelBase = Math.hypot(fX - bX, fY - bY);
 
-        // When turning, redirect some forward thrust into rotation (grip budget - prevents speed-up)
+        let newHeadingX = forwardX;
+        let newHeadingY = forwardY;
+        if (turnForce !== 0 && wheelBase > 0.1) {
+            const steerAngle = turnForce * this.carComponent.steeringAngle;
+            const delta = 0.016;
+            const rearX = (fX + bX) / 2 - forwardX * wheelBase / 2;
+            const rearY = (fY + bY) / 2 - forwardY * wheelBase / 2;
+            const rearNextX = rearX + centerVx * delta;
+            const rearNextY = rearY + centerVy * delta;
+            const cosS = Math.cos(steerAngle);
+            const sinS = Math.sin(steerAngle);
+            const frontNextX = rearX + forwardX * wheelBase + (centerVx * cosS - centerVy * sinS) * delta;
+            const frontNextY = rearY + forwardY * wheelBase + (centerVx * sinS + centerVy * cosS) * delta;
+            const dx = frontNextX - rearNextX;
+            const dy = frontNextY - rearNextY;
+            const len = Math.hypot(dx, dy) || 0.001;
+            newHeadingX = dx / len;
+            newHeadingY = dy / len;
+        }
+
         const turnMagnitude = turnForce !== 0 ? Math.abs(turnForce) * steerFactor : 0;
-        const forwardScale = turnMagnitude > 0 ? 1 / (1 + turnMagnitude * 2) : 1;
+        const forwardScale = turnMagnitude > 0 ? 1 / (1 + turnMagnitude * 1.5) : 1;
         const scaledForward = forwardForce * forwardScale;
+
+        const slipSpeed = this.carComponent.slipSpeed;
+        const traction = speed > slipSpeed ? this.carComponent.tractionLoose : this.carComponent.tractionTight;
+        const redirectK = 0.008 * traction;
+
+        if (speed > 1) {
+            const dir = forwardSpeed >= 0 ? 1 : -1;
+            const desiredVx = newHeadingX * speed * dir;
+            const desiredVy = newHeadingY * speed * dir;
+            const corrX = (desiredVx - centerVx) * redirectK;
+            const corrY = (desiredVy - centerVy) * redirectK;
+            for (const partIdx of allParts) {
+                RigidBody.ax[partIdx] += corrX;
+                RigidBody.ay[partIdx] += corrY;
+            }
+        }
 
         if (scaledForward !== 0) {
             for (const partIdx of allParts) {
@@ -265,13 +315,12 @@ export class Car extends GameObject {
             }
         }
 
-        // Apply turn as torque: front parts push one way, back parts the other (arcade rotation)
         if (turnForce !== 0) {
             const effectiveTurn = turnForce * steerFactor * steerDirection;
             for (let i = 0; i < partCount; i++) {
                 const partIdx = this.carComponent[PART_KEYS[i]];
                 const col = i % cols;
-                const frontness = (col - (cols - 1) / 2) * (2 / (cols - 1));  // -1 at back, +1 at front
+                const frontness = (col - (cols - 1) / 2) * (2 / (cols - 1));
                 const partTurn = effectiveTurn * frontness;
                 RigidBody.ax[partIdx] += lateralX * partTurn;
                 RigidBody.ay[partIdx] += lateralY * partTurn;
