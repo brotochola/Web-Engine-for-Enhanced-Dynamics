@@ -56,6 +56,8 @@ function findClosestCivilian(owner) {
 
 function findACivilianToShoot(owner) {
   const civilianType = Civilian.entityType;
+  const ownerX = Transform.x[owner.index] + (Collider.offsetX[owner.index] || 0);
+  const ownerY = Transform.y[owner.index] + (Collider.offsetY[owner.index] || 0);
 
   for (let n = 0; n < owner.neighborCount; n++) {
     const neighborIndex = owner.getNeighbor(n);
@@ -63,9 +65,15 @@ function findACivilianToShoot(owner) {
     if (LootableComponent.health[neighborIndex] <= 0) continue;
     if (!Ray.hasLineOfSight(owner.index, neighborIndex)) continue;
 
-    return neighborIndex
+    const neighborX = Transform.x[neighborIndex] + (Collider.offsetX[neighborIndex] || 0);
+    const neighborY = Transform.y[neighborIndex] + (Collider.offsetY[neighborIndex] || 0);
+    const dx = neighborX - ownerX;
+    const dy = neighborY - ownerY;
+    _closestResult.index = neighborIndex;
+    _closestResult.distSq = dx * dx + dy * dy;
+    return _closestResult;
   }
-  return null
+  return null;
 }
 
 // ==========================================
@@ -76,7 +84,6 @@ function isStoredTargetValid(owner, i) {
   const targetIndex = PersonComponent.closestEnemyIndex[i];
   if (targetIndex < 0) return false;
   if (LootableComponent.health[targetIndex] <= 0) return false;
-  // if (!Ray.hasLineOfSight(owner.index, targetIndex)) return false;
   return true;
 }
 
@@ -98,8 +105,9 @@ function clearTarget(i) {
 // HELPER: Check if soldier can shoot target
 // ==========================================
 
-function canShootTarget(owner, targetDistSq) {
+function canShootTarget(owner, targetIndex, targetDistSq) {
   if (!owner.hasGun()) return false;
+  if (!Ray.hasLineOfSight(owner.index, targetIndex)) return false;
   const weapon = owner.getBestWeapon();
   return targetDistSq <= weapon.rangeSq;
 }
@@ -122,15 +130,15 @@ class IdleSoldierState extends FSMState {
   }
 
   static onUpdate(owner, i, dt) {
-    // Scan for civilians
-    const closest = findClosestCivilian(owner);
+    // Scan for civilians: gun → need LOS; no gun → closest (melee)
+    const closest = owner.hasGun() ? findACivilianToShoot(owner) : findClosestCivilian(owner);
 
     if (closest) {
       // Store target in PersonComponent
       storeTarget(i, closest.index, closest.distSq);
 
       // Priority A: Can we shoot?
-      if (canShootTarget(owner, closest.distSq)) {
+      if (canShootTarget(owner, closest.index, closest.distSq)) {
         this.fsm.changeState(i, this.fsm.states.RANGED_ATTACKING);
         return;
       }
@@ -147,7 +155,7 @@ class IdleSoldierState extends FSMState {
       return;
     }
 
-    // // No enemies - flock with team
+    // No enemies - flock with team
     owner.updateTeamData();
     // owner.groupWithMyTeam();
     owner.separateFromTeam();
@@ -223,7 +231,7 @@ class GoingToEnemyState extends FSMState {
       PersonComponent.closestEnemyDistanceSq[i] = distSq;
 
       // Can we shoot?
-      if (canShootTarget(owner, distSq)) {
+      if (canShootTarget(owner, targetIndex, distSq)) {
         this.fsm.changeState(i, this.fsm.states.RANGED_ATTACKING);
         return;
       }
@@ -277,11 +285,17 @@ class RangedAttackingState extends FSMState {
   }
 
   static onUpdate(owner, i, dt, totalTime) {
-
     const targetIndex = PersonComponent.closestEnemyIndex[i];
-    if (targetIndex < 0) return;
+    if (targetIndex < 0) {
+      this.fsm.changeState(i, this.fsm.states.IDLE);
+      return;
+    }
 
-    // Try to shoot (handles cooldown, animation, muzzle flash)
+    const distSq = distanceSq2D(owner.x, owner.y, Transform.x[targetIndex], Transform.y[targetIndex]);
+    if (!canShootTarget(owner, targetIndex, distSq)) {
+      this.fsm.changeState(i, this.fsm.states.IDLE);
+      return;
+    }
 
     owner.shoot(targetIndex);
 
