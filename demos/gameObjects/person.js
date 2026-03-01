@@ -124,12 +124,12 @@ export class Person extends Lootable {
     this.setScale(scale, scale);
   }
 
-  recieveDamage(damage) {
+  recieveDamage(damage, sourceX, sourceY) {
     // console.log('recieveDamage', this.index, damage, this.lootableComponent.health);
     // Don't process damage if already dead
     if (PersonComponent.dead[this.index] === 1) return;
 
-    super.recieveDamage(damage);
+    super.recieveDamage(damage, sourceX, sourceY);
 
     if (damage < 0.1) return;
 
@@ -512,7 +512,7 @@ export class Person extends Lootable {
     const target = GameObject.get(targetEntityIndex);
     if (target && target.recieveDamage) {
       const damage = this.constructor.punchDamage;
-      target.recieveDamage(damage);
+      target.recieveDamage(damage, this.x, this.y);
     }
 
     return true;

@@ -5,6 +5,7 @@ import WEED from '/src/index.js';
 
 import { Player } from '../gameObjects/player.js';
 import { MySoldier } from '../gameObjects/mySoldier.js';
+import { CivilianComponent } from '../components/civilianComponent.js';
 
 const { FSM, FSMState, Transform, RigidBody } = WEED;
 
@@ -99,6 +100,46 @@ class FleeingCivilianBehaviorState extends FSMState {
   }
 }
 
+const PANIC_DURATION_MS = 20_000;
+const PANIC_FLEE_FACTOR = 120; // Run as fast as possible away from threat
+const PANIC_MAX_VEL = 5; // Higher than normal (3) for "run as fast as possible"
+
+class PanicCivilianBehaviorState extends FSMState {
+  static onEnter(owner, i, fromState) {
+    RigidBody.sleeping[i] = 0;
+    RigidBody.stillnessTime[i] = 0;
+    owner.rigidBody.maxVel = PANIC_MAX_VEL;
+  }
+
+  static onUpdate(owner, i, dt, totalTime) {
+    // 20s timer: return to IDLE unless hurt again (timer resets on damage)
+    if (totalTime >= PANIC_DURATION_MS) {
+      this.fsm.changeState(i, this.fsm.states.IDLE);
+      return;
+    }
+
+    // Flee away from panic origin (where damage came from)
+    const ox = CivilianComponent.panicOriginX[i];
+    const oy = CivilianComponent.panicOriginY[i];
+    const dx = owner.x - ox;
+    const dy = owner.y - oy;
+    const dist2 = dx * dx + dy * dy;
+
+    if (dist2 > 1) {
+      // Normalize and scale for maximum flee speed
+      const invDist = 1 / Math.sqrt(dist2);
+      owner.addAcceleration(
+        dx * invDist * PANIC_FLEE_FACTOR * dt,
+        dy * invDist * PANIC_FLEE_FACTOR * dt
+      );
+    }
+  }
+
+  static onExit(owner, i, toState) {
+    owner.rigidBody.maxVel = 3;
+  }
+}
+
 // ==========================================
 // FSM COMPONENT
 // ==========================================
@@ -107,6 +148,7 @@ export class CivilianBehaviorFSM extends FSM {
   static states = {
     IDLE: IdleCivilianBehaviorState,
     FLEEING: FleeingCivilianBehaviorState,
+    PANIC: PanicCivilianBehaviorState,
   };
 
   static initial = this.states.IDLE;

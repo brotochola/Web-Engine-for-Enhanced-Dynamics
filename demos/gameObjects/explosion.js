@@ -164,7 +164,7 @@ export class Explosion extends GameObject {
 
       const damage = this.explosionComponent.wantedIntensity / (distSq * 50);
 
-      neighborInstance.recieveDamage(damage);
+      neighborInstance.recieveDamage(damage, myX, myY);
     }
   }
 

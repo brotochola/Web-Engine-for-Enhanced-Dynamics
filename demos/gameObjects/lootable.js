@@ -18,18 +18,18 @@ export class Lootable extends GameObject {
     if (myHealth <= 0) this.die();
   }
 
-  recieveDamage(damage) {
+  recieveDamage(damage, sourceX, sourceY) {
     const resistance = this.constructor.resistance;
     LootableComponent.health[this.index] -= damage * (1 - resistance);
-
   }
 
   /**
    * LIFECYCLE: Called by engine when a bullet hits this entity (raycast impact).
    * Delegates to game's recieveDamage for damage logic.
+   * Passes hit position as damage source (civilian panic flees away from it).
    */
   onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
-    this.recieveDamage(damage);
+    this.recieveDamage(damage, hitX, hitY);
   }
 
   die() {
