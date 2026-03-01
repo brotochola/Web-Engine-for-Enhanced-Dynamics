@@ -26,9 +26,9 @@ export class CarPart extends GameObject {
 
         // Configure physics - car parts need high limits for responsive control
         this.rigidBody.maxVel = 500;  // High max velocity for driving
-        this.rigidBody.maxAcc = 100;  // High max acceleration for responsive input
+        this.rigidBody.maxAcc = 2;  // High max acceleration for responsive input
         this.rigidBody.minSpeed = 0;
-        this.rigidBody.friction = 0.04; // Low friction for smooth rolling
+        this.rigidBody.friction = 0.066; // Low friction for smooth rolling
 
         // Ensure physics are active and awake
         this.rigidBody.sleeping = 0;
@@ -39,8 +39,17 @@ export class CarPart extends GameObject {
     onDespawned() {
         // Cleanup handled by Car parent
     }
+    onCollisionEnter(otherEntityIndex) {
+        this.rigidBody.ax = 0
+        this.rigidBody.ay = 0
+
+        // this.setVelocity(this.rigidBody.vx * 0.5, this.rigidBody.vy * 0.5);
+    }
 
     tick(dtRatio) {
         // No behavior - controlled by parent Car entity
+        if (RigidBody.speed[this.index] < 0.1) {
+            this.setVelocity(0, 0);
+        }
     }
 }

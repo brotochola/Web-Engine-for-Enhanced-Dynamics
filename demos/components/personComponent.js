@@ -27,6 +27,7 @@ export class PersonComponent extends Component {
     facingDirection: Uint8Array, // 0=up, 1=left, 2=down, 3=right
     // Shooting state
     lastShotTime: Float32Array, // Game tick when last shot was fired (for cooldown)
+    aimingAccuracy: Float32Array, // 0 = terrible aim (max spread), 1 = perfect aim (no spread)
     closestEnemyIndex: Int16Array,
     closestEnemyDistanceSq: Float32Array,
   };

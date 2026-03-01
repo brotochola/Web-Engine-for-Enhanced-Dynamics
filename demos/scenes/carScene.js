@@ -125,7 +125,7 @@ export class CarScene extends WEED.Scene {
     // ========================================
 
     static entities = [
-        [CarPart, 2000],   // Physics bodies (2 per car) - must load first (Car depends on it)
+        [CarPart, 5000],   // Physics bodies (up to 8 per car, 501 cars) - must load first (Car depends on it)
         [Car, 1000],       // NPC cars - must load before PlayerCar (PlayerCar extends Car)
         [PlayerCar, 1],   // Player-controlled car (only 1)
     ];
@@ -150,13 +150,14 @@ export class CarScene extends WEED.Scene {
         this.playerCar = PlayerCar.spawn({
             x: centerX,
             y: centerY,
+            sprite: 'car_police',
         });
 
         // Spawn 100 NPC cars randomly around the center
         const carSprites = ['car_red', 'car_yellow', 'car_police'];
         const spawnRadius = 2000;
 
-        for (let i = 0; i < 500; i++) {
+        for (let i = 0; i < 50; i++) {
             const offsetX = (rng() * 2 - 1) * spawnRadius;
             const offsetY = (rng() * 2 - 1) * spawnRadius;
             const sprite = carSprites[Math.floor(rng() * carSprites.length)];

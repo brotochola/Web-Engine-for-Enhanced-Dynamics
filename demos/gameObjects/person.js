@@ -121,6 +121,9 @@ export class Person extends Lootable {
     // Reset shot cooldown (so recycled entities can fire immediately)
     PersonComponent.lastShotTime[this.index] = 0;
 
+    // Aiming accuracy: 0 = max spread, 1 = perfect aim (default 0.8)
+    PersonComponent.aimingAccuracy[this.index] = spawnConfig.aimingAccuracy ?? 0.8;
+
     this.setScale(scale, scale);
   }
 
@@ -386,8 +389,14 @@ export class Person extends Lootable {
 
     // Spawn bullet (raycast hit handled by engine; target.onGotShot called on impact)
     const speed = weapon.bulletSpeed ?? 800;
-    const vx = Math.cos(lineAngle) * speed;
-    const vy = Math.sin(lineAngle) * speed;
+    // Apply aiming spread: accuracy 1 = no spread, 0 = max spread (~12°)
+    const accuracy = PersonComponent.aimingAccuracy[this.index];
+    const maxSpreadRad = 0.21; // ~12 degrees when accuracy is 0
+    const spreadRad = maxSpreadRad * (1 - accuracy);
+    const angleOffset = (rng() - 0.5) * 2 * spreadRad;
+    const shotAngle = lineAngle + angleOffset;
+    const vx = Math.cos(shotAngle) * speed;
+    const vy = Math.sin(shotAngle) * speed;
     BulletPool.spawn({
       x: muzzleX,
       y: muzzleY,
@@ -399,7 +408,7 @@ export class Person extends Lootable {
       shooterEntityType: Transform.entityType[this.index],
       texture: 'bullet',
       scale: 1,
-      spriteRotation: lineAngle,
+      spriteRotation: shotAngle,
       anchorX: 1,
       anchorY: 0.5,
       trailWidth: 4

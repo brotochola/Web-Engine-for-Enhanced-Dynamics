@@ -1,28 +1,49 @@
 // CarComponent.js - Data for car entities
 // Stores references to physics body parts and constraints
+// Grid layout: cols x rows (3x2 or 4x2) - triangular mesh constraints
 
 import { Component } from '/src/core/Component.js';
 
-// Maximum of 4 circles per car (supports various car lengths)
-// With 4 parts, we need up to 6 constraints (all pairs: 0-1, 0-2, 0-3, 1-2, 1-3, 2-3)
+// Max 4 cols x 2 rows = 8 parts, triangular mesh gives ~13 constraints
 export class CarComponent extends Component {
     static ARRAY_SCHEMA = {
-        // Entity indices for physics bodies (CarParts) - up to 4 parts
+        gridCols: Uint8Array,
+        gridRows: Uint8Array,
+        partCount: Uint8Array,
+        constraintCount: Uint8Array,
+
         part0Index: Uint16Array,
         part1Index: Uint16Array,
         part2Index: Uint16Array,
         part3Index: Uint16Array,
-        // Constraint indices linking ALL pairs of parts (-1 if none)
-        // For 4 parts: 6 constraints, for 3 parts: 3 constraints, for 2 parts: 1 constraint
-        constraint0Index: Int16Array,  // 0-1
-        constraint1Index: Int16Array,  // 0-2
-        constraint2Index: Int16Array,  // 0-3
-        constraint3Index: Int16Array,  // 1-2
-        constraint4Index: Int16Array,  // 1-3
-        constraint5Index: Int16Array,  // 2-3
-        // How many parts this car actually uses (2, 3, or 4)
-        partCount: Uint8Array,
-        // How many constraints this car has
-        constraintCount: Uint8Array,
+        part4Index: Uint16Array,
+        part5Index: Uint16Array,
+        part6Index: Uint16Array,
+        part7Index: Uint16Array,
+
+        constraint0Index: Int16Array,
+        constraint1Index: Int16Array,
+        constraint2Index: Int16Array,
+        constraint3Index: Int16Array,
+        constraint4Index: Int16Array,
+        constraint5Index: Int16Array,
+        constraint6Index: Int16Array,
+        constraint7Index: Int16Array,
+        constraint8Index: Int16Array,
+        constraint9Index: Int16Array,
+        constraint10Index: Int16Array,
+        constraint11Index: Int16Array,
+        constraint12Index: Int16Array,
     };
 }
+
+export const PART_KEYS = [
+    'part0Index', 'part1Index', 'part2Index', 'part3Index',
+    'part4Index', 'part5Index', 'part6Index', 'part7Index'
+];
+export const CONSTRAINT_KEYS = [
+    'constraint0Index', 'constraint1Index', 'constraint2Index', 'constraint3Index',
+    'constraint4Index', 'constraint5Index', 'constraint6Index', 'constraint7Index',
+    'constraint8Index', 'constraint9Index', 'constraint10Index', 'constraint11Index',
+    'constraint12Index',
+];

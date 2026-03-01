@@ -1,9 +1,12 @@
 import WEED from '/src/index.js';
 import { CivilianBehaviorFSM } from '../fsm/civilianBehaviorFSM.js';
 import { CivilianComponent } from '../components/civilianComponent.js';
+import { SoldierBehaviorFSM } from '../fsm/SoldierBehaviorFSM.js';
+import { MySoldier } from './mySoldier.js';
 import { Person } from './person.js';
+import { PersonComponent } from '../components/personComponent.js';
 
-const { rng } = WEED;
+const { rng, Transform, GameObject } = WEED;
 
 export class Civilian extends Person {
   static scriptUrl = import.meta.url;
@@ -24,7 +27,7 @@ export class Civilian extends Person {
     super.onSpawned(spawnConfig);
 
     // groupingForce now uses static class property (Civilian.groupingForce)
-    this.collider.visualRange = 100;
+    this.collider.visualRange = 150;
   }
 
   recieveDamage(damage, sourceX, sourceY) {
@@ -34,17 +37,37 @@ export class Civilian extends Person {
 
     // Store panic origin (where to flee from)
     const i = this.index;
-    CivilianComponent.panicOriginX[i] = sourceX != null ? sourceX : this.x - 1;
-    CivilianComponent.panicOriginY[i] = sourceY != null ? sourceY : this.y;
+    const panicX = sourceX != null ? sourceX : this.x - 1;
+    const panicY = sourceY != null ? sourceY : this.y;
+    CivilianComponent.panicOriginX[i] = panicX;
+    CivilianComponent.panicOriginY[i] = panicY;
 
-    const fsm = this.civilianBehaviorFSM;
     const PANIC = CivilianBehaviorFSM.states.PANIC;
+    const civilianEntityType = Civilian.entityType;
 
     if (CivilianBehaviorFSM.isInState(this.index, PANIC)) {
       // Already in panic: reset 20s timer
       CivilianBehaviorFSM.forceChangeState(this.index, PANIC, this);
     } else {
-      fsm.changeState(PANIC);
+      this.civilianBehaviorFSM.changeState(PANIC);
+    }
+
+    // Propagate panic to neighbor civilians
+    for (let n = 0; n < this.neighborCount; n++) {
+      const neighborIndex = this.getNeighbor(n);
+      if (neighborIndex === i) continue;
+      if (Transform.entityType[neighborIndex] !== civilianEntityType) continue;
+      if (PersonComponent.dead[neighborIndex] === 1) continue;
+
+      CivilianComponent.panicOriginX[neighborIndex] = panicX;
+      CivilianComponent.panicOriginY[neighborIndex] = panicY;
+
+      const neighborInstance = GameObject.get(neighborIndex);
+      if (CivilianBehaviorFSM.isInState(neighborIndex, PANIC)) {
+        CivilianBehaviorFSM.forceChangeState(neighborIndex, PANIC, neighborInstance);
+      } else {
+        neighborInstance.civilianBehaviorFSM.changeState(PANIC);
+      }
     }
   }
 
@@ -67,12 +90,36 @@ export class Civilian extends Person {
     // if (animAfterPerson !== animAfterBehavior || animAfterBehavior !== animAfterGroup) {
     //   console.log(`[Civilian ${this.index}] Anim OVERWRITTEN! AfterPerson:${animAfterPerson} AfterBehavior:${animAfterBehavior} AfterGroup:${animAfterGroup}`);
     // }
-  }
-  // calculateAStarToMouse() {
-  //   const path = [];
-  //   NavGrid.getPathAStar(this.x, this.y, Mouse.x, Mouse.y, path);
-  //   console.log("path", path);
-  //   return path;
 
-  // }
+    this.checkIfTheresViolenceAroundMe()
+
+  }
+
+  checkIfTheresViolenceAroundMe() {
+    const soldierEntityType = MySoldier.entityType;
+    const RANGED = SoldierBehaviorFSM.states.RANGED_ATTACKING;
+    const CLOSE = SoldierBehaviorFSM.states.CLOSE_ATTACKING;
+
+    for (let n = 0; n < this.neighborCount; n++) {
+      const neighborIndex = this.getNeighbor(n);
+      if (Transform.entityType[neighborIndex] !== soldierEntityType) continue;
+
+      const stateIndex = SoldierBehaviorFSM.state[neighborIndex];
+      if (stateIndex === RANGED.stateIndex || stateIndex === CLOSE.stateIndex) {
+        // Soldier is shooting or punching - trigger panic
+        const i = this.index;
+        CivilianComponent.panicOriginX[i] = Transform.x[neighborIndex];
+        CivilianComponent.panicOriginY[i] = Transform.y[neighborIndex];
+
+        const fsm = this.civilianBehaviorFSM;
+        const PANIC = CivilianBehaviorFSM.states.PANIC;
+        if (CivilianBehaviorFSM.isInState(i, PANIC)) {
+          CivilianBehaviorFSM.forceChangeState(i, PANIC, this);
+        } else {
+          fsm.changeState(PANIC);
+        }
+        return;
+      }
+    }
+  }
 }
