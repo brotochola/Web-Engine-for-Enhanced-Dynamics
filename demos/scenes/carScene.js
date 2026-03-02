@@ -170,7 +170,7 @@ export class CarScene extends WEED.Scene {
         const carSprites = ["car", 'car_red', 'car_yellow'];
         const spawnRadius = 2000;
 
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < 0; i++) {
             const offsetX = (rng() * 2 - 1) * spawnRadius;
             const offsetY = (rng() * 2 - 1) * spawnRadius;
             const sprite = carSprites[Math.floor(rng() * carSprites.length)];

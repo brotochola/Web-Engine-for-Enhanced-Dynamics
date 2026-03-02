@@ -8,7 +8,7 @@ import WEED from '/src/index.js';
 import { CarComponent, CAR_DEFAULTS, PART_KEYS, CONSTRAINT_KEYS } from '../components/carComponent.js';
 import { CarPart } from './carPart.js';
 
-const { GameObject, RigidBody, SpriteRenderer, Transform, Constraint } = WEED;
+const { GameObject, RigidBody, SpriteRenderer, Transform, Constraint, SpriteSheetRegistry } = WEED;
 
 const TWO_PI = Math.PI * 2;
 
@@ -341,11 +341,24 @@ export class Car extends GameObject {
         const backActive = backIndices.every(i => Transform.active[i]);
         if (!frontActive || !backActive) return;
 
+        const spritesheetId = this.spriteRenderer.spritesheetId;
+        if (!spritesheetId) return;
+        const spritesheet = SpriteSheetRegistry.getSpritesheetName(spritesheetId);
+        if (!spritesheet) return;
+
+        const animNames = SpriteSheetRegistry.getAnimationNames(spritesheet);
+        const angleKeys = animNames
+            .map(k => ({ num: parseFloat(k), key: k }))
+            .filter(p => !isNaN(p.num))
+            .sort((a, b) => a.num - b.num);
+        if (angleKeys.length === 0) return;
+
         let angle = this.carComponent.angle;
         if (angle < 0) angle += TWO_PI;
-
         const degrees = (angle * 180) / Math.PI;
-        const snappedDegrees = Math.round(degrees / 30) * 30 % 360;
-        this.setAnimation(String(snappedDegrees));
+        const degreesNorm = ((degrees % 360) + 360) % 360;
+
+        const index = Math.round((degreesNorm / 360) * angleKeys.length) % angleKeys.length;
+        this.setAnimation(angleKeys[index].key);
     }
 }

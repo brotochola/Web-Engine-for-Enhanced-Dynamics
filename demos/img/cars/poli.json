@@ -1,8 +1,200 @@
 {
   "frames": {
-    "POLICE_CLEAN_ALLD0004.png": {
+    "POLICE_CLEAN_ALLD0003": {
       "frame": {
         "x": 2,
+        "y": 2,
+        "w": 87,
+        "h": 49
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 29,
+        "w": 87,
+        "h": 49
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0022": {
+      "frame": {
+        "x": 93,
+        "y": 2,
+        "w": 87,
+        "h": 49
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 29,
+        "w": 87,
+        "h": 49
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0026": {
+      "frame": {
+        "x": 184,
+        "y": 2,
+        "w": 87,
+        "h": 47
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 30,
+        "w": 87,
+        "h": 47
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0045": {
+      "frame": {
+        "x": 275,
+        "y": 2,
+        "w": 87,
+        "h": 47
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 30,
+        "w": 87,
+        "h": 47
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0023": {
+      "frame": {
+        "x": 366,
+        "y": 2,
+        "w": 86,
+        "h": 46
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 29,
+        "w": 86,
+        "h": 46
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0002": {
+      "frame": {
+        "x": 456,
+        "y": 2,
+        "w": 86,
+        "h": 45
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 30,
+        "w": 86,
+        "h": 45
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0025": {
+      "frame": {
+        "x": 546,
+        "y": 2,
+        "w": 86,
+        "h": 45
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 30,
+        "w": 86,
+        "h": 45
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0046": {
+      "frame": {
+        "x": 636,
+        "y": 2,
+        "w": 86,
+        "h": 45
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 30,
+        "w": 86,
+        "h": 45
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0004": {
+      "frame": {
+        "x": 726,
         "y": 2,
         "w": 85,
         "h": 55
@@ -24,10 +216,10 @@
         "y": 0.5
       }
     },
-    "POLICE_CLEAN_ALLD0044.png": {
+    "POLICE_CLEAN_ALLD0044": {
       "frame": {
-        "x": 91,
-        "y": 2,
+        "x": 456,
+        "y": 51,
         "w": 85,
         "h": 55
       },
@@ -48,10 +240,106 @@
         "y": 0.5
       }
     },
-    "POLICE_CLEAN_ALLD0000.png": {
+    "POLICE_CLEAN_ALLD0021": {
       "frame": {
-        "x": 180,
-        "y": 2,
+        "x": 366,
+        "y": 52,
+        "w": 85,
+        "h": 54
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 27,
+        "w": 85,
+        "h": 54
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0027": {
+      "frame": {
+        "x": 545,
+        "y": 51,
+        "w": 85,
+        "h": 54
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 26,
+        "w": 85,
+        "h": 54
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0001": {
+      "frame": {
+        "x": 634,
+        "y": 51,
+        "w": 84,
+        "h": 43
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 30,
+        "w": 84,
+        "h": 43
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0047": {
+      "frame": {
+        "x": 184,
+        "y": 53,
+        "w": 84,
+        "h": 43
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 30,
+        "w": 84,
+        "h": 43
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0000": {
+      "frame": {
+        "x": 272,
+        "y": 53,
         "w": 84,
         "h": 42
       },
@@ -72,10 +360,10 @@
         "y": 0.5
       }
     },
-    "POLICE_CLEAN_ALLD0024.png": {
+    "POLICE_CLEAN_ALLD0024": {
       "frame": {
-        "x": 268,
-        "y": 2,
+        "x": 272,
+        "y": 99,
         "w": 84,
         "h": 42
       },
@@ -96,10 +384,10 @@
         "y": 0.5
       }
     },
-    "POLICE_CLEAN_ALLD0020.png": {
+    "POLICE_CLEAN_ALLD0020": {
       "frame": {
-        "x": 356,
-        "y": 2,
+        "x": 2,
+        "y": 55,
         "w": 81,
         "h": 59
       },
@@ -120,10 +408,10 @@
         "y": 0.5
       }
     },
-    "POLICE_CLEAN_ALLD0028.png": {
+    "POLICE_CLEAN_ALLD0028": {
       "frame": {
-        "x": 180,
-        "y": 48,
+        "x": 87,
+        "y": 55,
         "w": 81,
         "h": 59
       },
@@ -144,10 +432,298 @@
         "y": 0.5
       }
     },
-    "POLICE_CLEAN_ALLD0016.png": {
+    "POLICE_CLEAN_ALLD0005": {
       "frame": {
-        "x": 265,
-        "y": 48,
+        "x": 172,
+        "y": 100,
+        "w": 79,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 23,
+        "w": 79,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0043": {
+      "frame": {
+        "x": 172,
+        "y": 166,
+        "w": 79,
+        "h": 61
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 23,
+        "w": 79,
+        "h": 61
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0019": {
+      "frame": {
+        "x": 2,
+        "y": 118,
+        "w": 77,
+        "h": 63
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 23,
+        "w": 77,
+        "h": 63
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0029": {
+      "frame": {
+        "x": 83,
+        "y": 118,
+        "w": 77,
+        "h": 63
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 22,
+        "w": 77,
+        "h": 63
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0006": {
+      "frame": {
+        "x": 2,
+        "y": 185,
+        "w": 71,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 15,
+        "y": 22,
+        "w": 71,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0018": {
+      "frame": {
+        "x": 77,
+        "y": 185,
+        "w": 71,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 14,
+        "y": 22,
+        "w": 71,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0030": {
+      "frame": {
+        "x": 815,
+        "y": 2,
+        "w": 71,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 14,
+        "y": 21,
+        "w": 71,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0042": {
+      "frame": {
+        "x": 722,
+        "y": 61,
+        "w": 71,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 15,
+        "y": 21,
+        "w": 71,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0017": {
+      "frame": {
+        "x": 634,
+        "y": 98,
+        "w": 65,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 21,
+        "w": 65,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0031": {
+      "frame": {
+        "x": 545,
+        "y": 130,
+        "w": 65,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 20,
+        "w": 65,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0007": {
+      "frame": {
+        "x": 360,
+        "y": 110,
+        "w": 63,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 19,
+        "y": 21,
+        "w": 63,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0041": {
+      "frame": {
+        "x": 255,
+        "y": 145,
+        "w": 63,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 19,
+        "y": 20,
+        "w": 63,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0016": {
+      "frame": {
+        "x": 427,
+        "y": 110,
         "w": 57,
         "h": 68
       },
@@ -168,10 +744,58 @@
         "y": 0.5
       }
     },
-    "POLICE_CLEAN_ALLD0032.png": {
+    "POLICE_CLEAN_ALLD0015": {
       "frame": {
-        "x": 2,
-        "y": 61,
+        "x": 488,
+        "y": 181,
+        "w": 51,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 20,
+        "w": 51,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0033": {
+      "frame": {
+        "x": 488,
+        "y": 110,
+        "w": 51,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 20,
+        "w": 51,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0032": {
+      "frame": {
+        "x": 322,
+        "y": 181,
         "w": 57,
         "h": 67
       },
@@ -192,10 +816,34 @@
         "y": 0.5
       }
     },
-    "POLICE_CLEAN_ALLD0008.png": {
+    "POLICE_CLEAN_ALLD0011": {
       "frame": {
-        "x": 63,
-        "y": 61,
+        "x": 383,
+        "y": 181,
+        "w": 39,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 21,
+        "w": 39,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0008": {
+      "frame": {
+        "x": 426,
+        "y": 182,
         "w": 55,
         "h": 68
       },
@@ -216,20 +864,212 @@
         "y": 0.5
       }
     },
-    "POLICE_CLEAN_ALLD0040.png": {
+    "POLICE_CLEAN_ALLD0040": {
+      "frame": {
+        "x": 255,
+        "y": 216,
+        "w": 55,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23,
+        "y": 20,
+        "w": 55,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0009": {
+      "frame": {
+        "x": 152,
+        "y": 231,
+        "w": 49,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 26,
+        "y": 20,
+        "w": 49,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0014": {
+      "frame": {
+        "x": 205,
+        "y": 231,
+        "w": 45,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27,
+        "y": 21,
+        "w": 45,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0039": {
+      "frame": {
+        "x": 314,
+        "y": 252,
+        "w": 49,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 26,
+        "y": 20,
+        "w": 49,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0034": {
+      "frame": {
+        "x": 367,
+        "y": 252,
+        "w": 45,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27,
+        "y": 20,
+        "w": 45,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0010": {
+      "frame": {
+        "x": 254,
+        "y": 287,
+        "w": 44,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28,
+        "y": 21,
+        "w": 44,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0038": {
+      "frame": {
+        "x": 205,
+        "y": 302,
+        "w": 44,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28,
+        "y": 20,
+        "w": 44,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0013": {
+      "frame": {
+        "x": 253,
+        "y": 358,
+        "w": 39,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30,
+        "y": 21,
+        "w": 39,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0035": {
       "frame": {
         "x": 2,
-        "y": 132,
-        "w": 55,
-        "h": 67
+        "y": 254,
+        "w": 39,
+        "h": 66
       },
       "rotated": false,
       "trimmed": true,
       "spriteSourceSize": {
-        "x": 23,
+        "x": 30,
         "y": 20,
-        "w": 55,
-        "h": 67
+        "w": 39,
+        "h": 66
       },
       "sourceSize": {
         "w": 100,
@@ -240,10 +1080,34 @@
         "y": 0.5
       }
     },
-    "POLICE_CLEAN_ALLD0012.png": {
+    "POLICE_CLEAN_ALLD0037": {
       "frame": {
-        "x": 122,
-        "y": 61,
+        "x": 45,
+        "y": 254,
+        "w": 39,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 20,
+        "w": 39,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "POLICE_CLEAN_ALLD0012": {
+      "frame": {
+        "x": 88,
+        "y": 254,
         "w": 37,
         "h": 66
       },
@@ -264,10 +1128,10 @@
         "y": 0.5
       }
     },
-    "POLICE_CLEAN_ALLD0036.png": {
+    "POLICE_CLEAN_ALLD0036": {
       "frame": {
-        "x": 163,
-        "y": 111,
+        "x": 129,
+        "y": 303,
         "w": 37,
         "h": 66
       },
@@ -291,50 +1155,158 @@
   },
   "animations": {
     "0": [
-      "POLICE_CLEAN_ALLD0000.png"
+      "POLICE_CLEAN_ALLD0000"
+    ],
+    "7.5": [
+      "POLICE_CLEAN_ALLD0001"
+    ],
+    "15": [
+      "POLICE_CLEAN_ALLD0002"
+    ],
+    "22.5": [
+      "POLICE_CLEAN_ALLD0003"
     ],
     "30": [
-      "POLICE_CLEAN_ALLD0004.png"
+      "POLICE_CLEAN_ALLD0004"
+    ],
+    "37.5": [
+      "POLICE_CLEAN_ALLD0005"
+    ],
+    "45": [
+      "POLICE_CLEAN_ALLD0006"
+    ],
+    "52.5": [
+      "POLICE_CLEAN_ALLD0007"
     ],
     "60": [
-      "POLICE_CLEAN_ALLD0008.png"
+      "POLICE_CLEAN_ALLD0008"
+    ],
+    "67.5": [
+      "POLICE_CLEAN_ALLD0009"
+    ],
+    "75": [
+      "POLICE_CLEAN_ALLD0010"
+    ],
+    "82.5": [
+      "POLICE_CLEAN_ALLD0011"
     ],
     "90": [
-      "POLICE_CLEAN_ALLD0012.png"
+      "POLICE_CLEAN_ALLD0012"
+    ],
+    "97.5": [
+      "POLICE_CLEAN_ALLD0013"
+    ],
+    "105": [
+      "POLICE_CLEAN_ALLD0014"
+    ],
+    "112.5": [
+      "POLICE_CLEAN_ALLD0015"
     ],
     "120": [
-      "POLICE_CLEAN_ALLD0016.png"
+      "POLICE_CLEAN_ALLD0016"
+    ],
+    "127.5": [
+      "POLICE_CLEAN_ALLD0017"
+    ],
+    "135": [
+      "POLICE_CLEAN_ALLD0018"
+    ],
+    "142.5": [
+      "POLICE_CLEAN_ALLD0019"
     ],
     "150": [
-      "POLICE_CLEAN_ALLD0020.png"
+      "POLICE_CLEAN_ALLD0020"
+    ],
+    "157.5": [
+      "POLICE_CLEAN_ALLD0021"
+    ],
+    "165": [
+      "POLICE_CLEAN_ALLD0022"
+    ],
+    "172.5": [
+      "POLICE_CLEAN_ALLD0023"
     ],
     "180": [
-      "POLICE_CLEAN_ALLD0024.png"
+      "POLICE_CLEAN_ALLD0024"
+    ],
+    "187.5": [
+      "POLICE_CLEAN_ALLD0025"
+    ],
+    "195": [
+      "POLICE_CLEAN_ALLD0026"
+    ],
+    "202.5": [
+      "POLICE_CLEAN_ALLD0027"
     ],
     "210": [
-      "POLICE_CLEAN_ALLD0028.png"
+      "POLICE_CLEAN_ALLD0028"
+    ],
+    "217.5": [
+      "POLICE_CLEAN_ALLD0029"
+    ],
+    "225": [
+      "POLICE_CLEAN_ALLD0030"
+    ],
+    "232.5": [
+      "POLICE_CLEAN_ALLD0031"
     ],
     "240": [
-      "POLICE_CLEAN_ALLD0032.png"
+      "POLICE_CLEAN_ALLD0032"
+    ],
+    "247.5": [
+      "POLICE_CLEAN_ALLD0033"
+    ],
+    "255": [
+      "POLICE_CLEAN_ALLD0034"
+    ],
+    "262.5": [
+      "POLICE_CLEAN_ALLD0035"
     ],
     "270": [
-      "POLICE_CLEAN_ALLD0036.png"
+      "POLICE_CLEAN_ALLD0036"
+    ],
+    "277.5": [
+      "POLICE_CLEAN_ALLD0037"
+    ],
+    "285": [
+      "POLICE_CLEAN_ALLD0038"
+    ],
+    "292.5": [
+      "POLICE_CLEAN_ALLD0039"
     ],
     "300": [
-      "POLICE_CLEAN_ALLD0040.png"
+      "POLICE_CLEAN_ALLD0040"
+    ],
+    "307.5": [
+      "POLICE_CLEAN_ALLD0041"
+    ],
+    "315": [
+      "POLICE_CLEAN_ALLD0042"
+    ],
+    "322.5": [
+      "POLICE_CLEAN_ALLD0043"
     ],
     "330": [
-      "POLICE_CLEAN_ALLD0044.png"
+      "POLICE_CLEAN_ALLD0044"
+    ],
+    "337.5": [
+      "POLICE_CLEAN_ALLD0045"
+    ],
+    "345": [
+      "POLICE_CLEAN_ALLD0046"
+    ],
+    "352.5": [
+      "POLICE_CLEAN_ALLD0047"
     ]
   },
   "meta": {
     "app": "http://free-tex-packer.com",
     "version": "0.6.7",
-    "image": "texture.png",
+    "image": "poli.png",
     "format": "RGBA8888",
     "size": {
-      "w": 439,
-      "h": 201
+      "w": 888,
+      "h": 427
     },
     "scale": 1
   }
