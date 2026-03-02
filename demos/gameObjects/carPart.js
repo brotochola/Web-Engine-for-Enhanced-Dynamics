@@ -50,10 +50,12 @@ export class CarPart extends GameObject {
         const radius = this.collider.radius;
         const speed = RigidBody.speed[this.index];
 
+        const numSparks = Math.floor(Math.abs(RigidBody.vx[otherEntityIndex] - RigidBody.vx[this.index]) + Math.abs(RigidBody.vy[otherEntityIndex] - RigidBody.vy[this.index]));
+
         if (speed > 3) {
-            const count = Math.floor(Math.random() * 3) + Math.min(4, Math.floor(speed * 0.5));
+
             ParticleEmitter.emit({
-                count,
+                count: numSparks,
                 x: hitX,
                 y: hitY,
                 z: -Math.random() * radius,
@@ -62,13 +64,33 @@ export class CarPart extends GameObject {
                 rotation: { min: 0, max: 360 },
                 vz: -Math.random() * 4 - 2,
                 gravity: 0.6,
-                lifespan: { min: 80, max: 200 },
+                lifespan: { min: 200, max: 1200 },
                 scale: { min: 0.3, max: 0.66 },
                 texture: '_whiteCircle',
                 tint: { min: 0xffff00, max: 0xffbb00 },
                 alpha: { min: 0.8, max: 1 },
                 stayOnTheFloor: false,
                 despawnOnGroundContact: true,
+            });
+
+            ParticleEmitter.emit({
+                count: numSparks,
+                x: hitX,
+                y: hitY + Math.random() * 8,
+                z: -5 - Math.random() * 10,
+                angleXY: 0,
+                speed: { min: 0.2, max: 1.2 },
+                vz: -Math.random() * 1.5,
+                gravity: 0,
+                rotation: { min: 0, max: 360 },
+                flipX: Math.random() > 0.5,
+                flipY: Math.random() > 0.5,
+                lifespan: { min: 300, max: 1800 },
+                scale: { min: 0.4, max: 1.5 },
+                texture: 'smoke',
+                tint: { min: 0x999999, max: 0xbbbbbb },
+                alpha: { min: 0.05, max: 0.1 },
+                tweenToAlpha0: true,
             });
         }
     }

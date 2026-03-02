@@ -91,6 +91,7 @@ export class CarScene extends WEED.Scene {
 
     static assets = {
         textures: {
+            smoke: '/demos/img/smoke.png',
             rock1: '/demos/img/rock1.png',
             rock2: '/demos/img/rock2.png',
             rock3: '/demos/img/rock3.png',

@@ -8,7 +8,7 @@ import WEED from '/src/index.js';
 import { CarComponent, CAR_DEFAULTS, PART_KEYS, CONSTRAINT_KEYS } from '../components/carComponent.js';
 import { CarPart } from './carPart.js';
 
-const { GameObject, RigidBody, SpriteRenderer, Transform, Constraint, SpriteSheetRegistry } = WEED;
+const { GameObject, RigidBody, SpriteRenderer, Transform, Constraint, SpriteSheetRegistry, ParticleEmitter } = WEED;
 
 const TWO_PI = Math.PI * 2;
 
@@ -210,7 +210,44 @@ export class Car extends GameObject {
 
         this.carComponent.angle = Math.atan2(frontY - backY, frontX - backX);
         this._applyLateralFriction();
+        this._emitDust(centerX, centerY, frontX, frontY, backX, backY);
         this._updateSpriteFrame();
+    }
+
+    /** Emit dust particles from rear when driving (like fire.js smoke) */
+    _emitDust(centerX, centerY, frontX, frontY, backX, backY) {
+
+        const pi = this.carComponent.part0Index;
+        // const vx = RigidBody.vx[pi];
+        // const vy = RigidBody.vy[pi];
+        const speed = RigidBody.speed[pi];
+
+        if (speed < 15 || Math.random() > 0.35) return;
+
+        const angle = this.carComponent.angle;
+        const angleDeg = (angle * 180) / Math.PI;
+        const rearAngleMin = angleDeg + 160;
+        const rearAngleMax = angleDeg + 200;
+
+        ParticleEmitter.emit({
+            count: Math.floor(Math.random() * 2) + 1,
+            x: backX + (Math.random() - 0.5) * 8,
+            y: backY + (Math.random() - 0.5) * 8,
+            z: -5 - Math.random() * 10,
+            angleXY: { min: rearAngleMin, max: rearAngleMax },
+            speed: { min: 0.2, max: 1.2 },
+            vz: -Math.random() * 0.5,
+            gravity: 0,
+            rotation: { min: 0, max: 360 },
+            flipX: Math.random() > 0.5,
+            flipY: Math.random() > 0.5,
+            lifespan: { min: 300, max: 1800 },
+            scale: { min: 0.4, max: 1.5 },
+            texture: 'smoke',
+            tint: { min: 0x999999, max: 0xbbbbbb },
+            alpha: { min: 0.05, max: 0.1 },
+            tweenToAlpha0: true,
+        });
     }
 
     /** Apply force opposing lateral velocity - tire-like friction. Resists sliding from collisions. */
