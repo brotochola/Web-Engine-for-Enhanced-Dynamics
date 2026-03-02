@@ -1,0 +1,1217 @@
+{
+  "frames": {
+    "White_SUV_CLEAN_All_003.png": {
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 81,
+        "h": 54
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 24,
+        "w": 81,
+        "h": 54
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_022.png": {
+      "frame": {
+        "x": 87,
+        "y": 2,
+        "w": 81,
+        "h": 54
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 24,
+        "w": 81,
+        "h": 54
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_045.png": {
+      "frame": {
+        "x": 172,
+        "y": 2,
+        "w": 81,
+        "h": 50
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 27,
+        "w": 81,
+        "h": 50
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_026.png": {
+      "frame": {
+        "x": 257,
+        "y": 2,
+        "w": 81,
+        "h": 49
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 28,
+        "w": 81,
+        "h": 49
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_004.png": {
+      "frame": {
+        "x": 342,
+        "y": 2,
+        "w": 80,
+        "h": 59
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 21,
+        "w": 80,
+        "h": 59
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_021.png": {
+      "frame": {
+        "x": 257,
+        "y": 55,
+        "w": 80,
+        "h": 58
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 22,
+        "w": 80,
+        "h": 58
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_044.png": {
+      "frame": {
+        "x": 172,
+        "y": 56,
+        "w": 80,
+        "h": 55
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 25,
+        "w": 80,
+        "h": 55
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_027.png": {
+      "frame": {
+        "x": 2,
+        "y": 60,
+        "w": 80,
+        "h": 53
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 26,
+        "w": 80,
+        "h": 53
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_002.png": {
+      "frame": {
+        "x": 86,
+        "y": 60,
+        "w": 80,
+        "h": 48
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 12,
+        "y": 27,
+        "w": 80,
+        "h": 48
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_023.png": {
+      "frame": {
+        "x": 86,
+        "y": 112,
+        "w": 80,
+        "h": 48
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 27,
+        "w": 80,
+        "h": 48
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_025.png": {
+      "frame": {
+        "x": 2,
+        "y": 117,
+        "w": 80,
+        "h": 46
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 29,
+        "w": 80,
+        "h": 46
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_046.png": {
+      "frame": {
+        "x": 170,
+        "y": 115,
+        "w": 80,
+        "h": 46
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 12,
+        "y": 29,
+        "w": 80,
+        "h": 46
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_020.png": {
+      "frame": {
+        "x": 86,
+        "y": 164,
+        "w": 78,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 10,
+        "y": 20,
+        "w": 78,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_028.png": {
+      "frame": {
+        "x": 2,
+        "y": 167,
+        "w": 78,
+        "h": 57
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 10,
+        "y": 24,
+        "w": 78,
+        "h": 57
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_001.png": {
+      "frame": {
+        "x": 2,
+        "y": 228,
+        "w": 78,
+        "h": 44
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 29,
+        "w": 78,
+        "h": 44
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_047.png": {
+      "frame": {
+        "x": 426,
+        "y": 2,
+        "w": 78,
+        "h": 43
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 30,
+        "w": 78,
+        "h": 43
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_000.png": {
+      "frame": {
+        "x": 508,
+        "y": 2,
+        "w": 77,
+        "h": 42
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 14,
+        "y": 30,
+        "w": 77,
+        "h": 42
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_024.png": {
+      "frame": {
+        "x": 589,
+        "y": 2,
+        "w": 77,
+        "h": 42
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 30,
+        "w": 77,
+        "h": 42
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_005.png": {
+      "frame": {
+        "x": 670,
+        "y": 2,
+        "w": 75,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 19,
+        "w": 75,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_043.png": {
+      "frame": {
+        "x": 508,
+        "y": 48,
+        "w": 74,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 14,
+        "y": 22,
+        "w": 74,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_019.png": {
+      "frame": {
+        "x": 426,
+        "y": 49,
+        "w": 73,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 19,
+        "w": 73,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_029.png": {
+      "frame": {
+        "x": 586,
+        "y": 48,
+        "w": 73,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 22,
+        "w": 73,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_006.png": {
+      "frame": {
+        "x": 341,
+        "y": 65,
+        "w": 67,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 18,
+        "w": 67,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_018.png": {
+      "frame": {
+        "x": 254,
+        "y": 117,
+        "w": 67,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 16,
+        "y": 18,
+        "w": 67,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_030.png": {
+      "frame": {
+        "x": 168,
+        "y": 165,
+        "w": 67,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 16,
+        "y": 21,
+        "w": 67,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_042.png": {
+      "frame": {
+        "x": 84,
+        "y": 230,
+        "w": 67,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 21,
+        "w": 67,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_017.png": {
+      "frame": {
+        "x": 2,
+        "y": 276,
+        "w": 62,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 19,
+        "y": 17,
+        "w": 62,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_031.png": {
+      "frame": {
+        "x": 749,
+        "y": 2,
+        "w": 62,
+        "h": 63
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 19,
+        "y": 20,
+        "w": 62,
+        "h": 63
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_007.png": {
+      "frame": {
+        "x": 815,
+        "y": 2,
+        "w": 60,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 17,
+        "w": 60,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_041.png": {
+      "frame": {
+        "x": 749,
+        "y": 69,
+        "w": 60,
+        "h": 63
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 20,
+        "w": 60,
+        "h": 63
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_016.png": {
+      "frame": {
+        "x": 663,
+        "y": 70,
+        "w": 56,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 22,
+        "y": 17,
+        "w": 56,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_032.png": {
+      "frame": {
+        "x": 663,
+        "y": 143,
+        "w": 56,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 22,
+        "y": 19,
+        "w": 56,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_008.png": {
+      "frame": {
+        "x": 503,
+        "y": 112,
+        "w": 54,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23,
+        "y": 17,
+        "w": 54,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_040.png": {
+      "frame": {
+        "x": 412,
+        "y": 118,
+        "w": 54,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23,
+        "y": 19,
+        "w": 54,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_015.png": {
+      "frame": {
+        "x": 325,
+        "y": 136,
+        "w": 50,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 17,
+        "w": 50,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_033.png": {
+      "frame": {
+        "x": 239,
+        "y": 188,
+        "w": 50,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 19,
+        "w": 50,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_009.png": {
+      "frame": {
+        "x": 155,
+        "y": 231,
+        "w": 48,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 26,
+        "y": 17,
+        "w": 48,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_039.png": {
+      "frame": {
+        "x": 155,
+        "y": 304,
+        "w": 48,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 26,
+        "y": 19,
+        "w": 48,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_014.png": {
+      "frame": {
+        "x": 68,
+        "y": 296,
+        "w": 45,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27,
+        "y": 17,
+        "w": 45,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_034.png": {
+      "frame": {
+        "x": 2,
+        "y": 349,
+        "w": 45,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27,
+        "y": 20,
+        "w": 45,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_010.png": {
+      "frame": {
+        "x": 561,
+        "y": 112,
+        "w": 44,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 17,
+        "w": 44,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_038.png": {
+      "frame": {
+        "x": 609,
+        "y": 112,
+        "w": 44,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 20,
+        "w": 44,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_011.png": {
+      "frame": {
+        "x": 609,
+        "y": 178,
+        "w": 40,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 18,
+        "w": 40,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_012.png": {
+      "frame": {
+        "x": 51,
+        "y": 369,
+        "w": 40,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30,
+        "y": 18,
+        "w": 40,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_013.png": {
+      "frame": {
+        "x": 2,
+        "y": 415,
+        "w": 40,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 18,
+        "w": 40,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_035.png": {
+      "frame": {
+        "x": 95,
+        "y": 369,
+        "w": 40,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 20,
+        "w": 40,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_037.png": {
+      "frame": {
+        "x": 470,
+        "y": 185,
+        "w": 40,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 20,
+        "w": 40,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "White_SUV_CLEAN_All_036.png": {
+      "frame": {
+        "x": 379,
+        "y": 186,
+        "w": 40,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30,
+        "y": 21,
+        "w": 40,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    }
+  },
+  "animations": {
+    "0": ["White_SUV_CLEAN_All_000.png"],
+    "7.5": ["White_SUV_CLEAN_All_001.png"],
+    "15": ["White_SUV_CLEAN_All_002.png"],
+    "22.5": ["White_SUV_CLEAN_All_003.png"],
+    "30": ["White_SUV_CLEAN_All_004.png"],
+    "37.5": ["White_SUV_CLEAN_All_005.png"],
+    "45": ["White_SUV_CLEAN_All_006.png"],
+    "52.5": ["White_SUV_CLEAN_All_007.png"],
+    "60": ["White_SUV_CLEAN_All_008.png"],
+    "67.5": ["White_SUV_CLEAN_All_009.png"],
+    "75": ["White_SUV_CLEAN_All_010.png"],
+    "82.5": ["White_SUV_CLEAN_All_011.png"],
+    "90": ["White_SUV_CLEAN_All_012.png"],
+    "97.5": ["White_SUV_CLEAN_All_013.png"],
+    "105": ["White_SUV_CLEAN_All_014.png"],
+    "112.5": ["White_SUV_CLEAN_All_015.png"],
+    "120": ["White_SUV_CLEAN_All_016.png"],
+    "127.5": ["White_SUV_CLEAN_All_017.png"],
+    "135": ["White_SUV_CLEAN_All_018.png"],
+    "142.5": ["White_SUV_CLEAN_All_019.png"],
+    "150": ["White_SUV_CLEAN_All_020.png"],
+    "157.5": ["White_SUV_CLEAN_All_021.png"],
+    "165": ["White_SUV_CLEAN_All_022.png"],
+    "172.5": ["White_SUV_CLEAN_All_023.png"],
+    "180": ["White_SUV_CLEAN_All_024.png"],
+    "187.5": ["White_SUV_CLEAN_All_025.png"],
+    "195": ["White_SUV_CLEAN_All_026.png"],
+    "202.5": ["White_SUV_CLEAN_All_027.png"],
+    "210": ["White_SUV_CLEAN_All_028.png"],
+    "217.5": ["White_SUV_CLEAN_All_029.png"],
+    "225": ["White_SUV_CLEAN_All_030.png"],
+    "232.5": ["White_SUV_CLEAN_All_031.png"],
+    "240": ["White_SUV_CLEAN_All_032.png"],
+    "247.5": ["White_SUV_CLEAN_All_033.png"],
+    "255": ["White_SUV_CLEAN_All_034.png"],
+    "262.5": ["White_SUV_CLEAN_All_035.png"],
+    "270": ["White_SUV_CLEAN_All_036.png"],
+    "277.5": ["White_SUV_CLEAN_All_037.png"],
+    "285": ["White_SUV_CLEAN_All_038.png"],
+    "292.5": ["White_SUV_CLEAN_All_039.png"],
+    "300": ["White_SUV_CLEAN_All_040.png"],
+    "307.5": ["White_SUV_CLEAN_All_041.png"],
+    "315": ["White_SUV_CLEAN_All_042.png"],
+    "322.5": ["White_SUV_CLEAN_All_043.png"],
+    "330": ["White_SUV_CLEAN_All_044.png"],
+    "337.5": ["White_SUV_CLEAN_All_045.png"],
+    "345": ["White_SUV_CLEAN_All_046.png"],
+    "352.5": ["White_SUV_CLEAN_All_047.png"]
+  },
+  "meta": {
+    "app": "http://free-tex-packer.com",
+    "version": "0.6.7",
+    "image": "white.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 877,
+      "h": 485
+    },
+    "scale": 1
+  }
+}

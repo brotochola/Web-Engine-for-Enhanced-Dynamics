@@ -97,17 +97,26 @@ export class CarScene extends WEED.Scene {
             rock4: '/demos/img/rock4.png',
         },
         spritesheets: {
-            car: {
-                json: '/demos/img/cars/black_car_12.json',
-                png: '/demos/img/cars/black_car_12.png',
+
+            red_car: {
+                json: '/demos/img/cars/red.json',
+                png: '/demos/img/cars/red.png',
             },
-            car_red: {
-                json: '/demos/img/cars/red_car_12.json',
-                png: '/demos/img/cars/red_car_12.png',
+            yellow_car: {
+                json: '/demos/img/cars/yellow.json',
+                png: '/demos/img/cars/yellow.png',
             },
-            car_yellow: {
-                json: '/demos/img/cars/yellow_car_12.json',
-                png: '/demos/img/cars/yellow_car_12.png',
+            black_car: {
+                json: '/demos/img/cars/black.json',
+                png: '/demos/img/cars/black.png',
+            },
+            white_car: {
+                json: '/demos/img/cars/white.json',
+                png: '/demos/img/cars/white.png',
+            },
+            blue_car: {
+                json: '/demos/img/cars/blue.json',
+                png: '/demos/img/cars/blue.png',
             },
             car_police: {
                 json: '/demos/img/cars/poli.json',
@@ -167,10 +176,10 @@ export class CarScene extends WEED.Scene {
         });
 
         // Spawn NPC cars randomly around the center - they will follow player via flowfield
-        const carSprites = ["car", 'car_red', 'car_yellow'];
+        const carSprites = ['red_car', 'yellow_car', 'black_car', 'white_car', 'blue_car'];
         const spawnRadius = 2000;
 
-        for (let i = 0; i < 0; i++) {
+        for (let i = 0; i < 10; i++) {
             const offsetX = (rng() * 2 - 1) * spawnRadius;
             const offsetY = (rng() * 2 - 1) * spawnRadius;
             const sprite = carSprites[Math.floor(rng() * carSprites.length)];
@@ -200,15 +209,7 @@ export class CarScene extends WEED.Scene {
         if (frameNumber % 300 === 0) {
             this.createNavGridForTheFlowField()
         }
-
-        // Follow the player car with camera
-        if (this.playerCar && Transform.active[this.playerCar.index]) {
-            Camera.follow(
-                Transform.x[this.playerCar.index],
-                Transform.y[this.playerCar.index],
-                0.1 // Smooth follow factor
-            );
-        }
+        // Camera is updated by PlayerCar.tick() (zoom + look-ahead follow)
     }
 
 }

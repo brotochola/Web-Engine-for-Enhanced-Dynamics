@@ -1,0 +1,1217 @@
+{
+  "frames": {
+    "Blue_WAGON_CLEAN_All_003.png": {
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 89,
+        "h": 55
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 5,
+        "y": 23,
+        "w": 89,
+        "h": 55
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_022.png": {
+      "frame": {
+        "x": 95,
+        "y": 2,
+        "w": 89,
+        "h": 55
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 23,
+        "w": 89,
+        "h": 55
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_026.png": {
+      "frame": {
+        "x": 188,
+        "y": 2,
+        "w": 89,
+        "h": 51
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 27,
+        "w": 89,
+        "h": 51
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_045.png": {
+      "frame": {
+        "x": 281,
+        "y": 2,
+        "w": 89,
+        "h": 51
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 5,
+        "y": 27,
+        "w": 89,
+        "h": 51
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_004.png": {
+      "frame": {
+        "x": 374,
+        "y": 2,
+        "w": 87,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 19,
+        "w": 87,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_021.png": {
+      "frame": {
+        "x": 188,
+        "y": 57,
+        "w": 87,
+        "h": 61
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 20,
+        "w": 87,
+        "h": 61
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_044.png": {
+      "frame": {
+        "x": 279,
+        "y": 57,
+        "w": 87,
+        "h": 57
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 24,
+        "w": 87,
+        "h": 57
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_027.png": {
+      "frame": {
+        "x": 2,
+        "y": 61,
+        "w": 87,
+        "h": 55
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 25,
+        "w": 87,
+        "h": 55
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_002.png": {
+      "frame": {
+        "x": 93,
+        "y": 61,
+        "w": 87,
+        "h": 50
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 26,
+        "w": 87,
+        "h": 50
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_023.png": {
+      "frame": {
+        "x": 93,
+        "y": 115,
+        "w": 87,
+        "h": 50
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 26,
+        "w": 87,
+        "h": 50
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_025.png": {
+      "frame": {
+        "x": 2,
+        "y": 120,
+        "w": 87,
+        "h": 47
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 28,
+        "w": 87,
+        "h": 47
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_046.png": {
+      "frame": {
+        "x": 465,
+        "y": 2,
+        "w": 87,
+        "h": 47
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 28,
+        "w": 87,
+        "h": 47
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_001.png": {
+      "frame": {
+        "x": 556,
+        "y": 2,
+        "w": 87,
+        "h": 46
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 28,
+        "w": 87,
+        "h": 46
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_047.png": {
+      "frame": {
+        "x": 647,
+        "y": 2,
+        "w": 87,
+        "h": 44
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 29,
+        "w": 87,
+        "h": 44
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_000.png": {
+      "frame": {
+        "x": 738,
+        "y": 2,
+        "w": 86,
+        "h": 44
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 29,
+        "w": 86,
+        "h": 44
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_024.png": {
+      "frame": {
+        "x": 828,
+        "y": 2,
+        "w": 86,
+        "h": 44
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 29,
+        "w": 86,
+        "h": 44
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_020.png": {
+      "frame": {
+        "x": 918,
+        "y": 2,
+        "w": 85,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 18,
+        "w": 85,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_028.png": {
+      "frame": {
+        "x": 647,
+        "y": 50,
+        "w": 85,
+        "h": 61
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 22,
+        "w": 85,
+        "h": 61
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_005.png": {
+      "frame": {
+        "x": 556,
+        "y": 52,
+        "w": 81,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 16,
+        "w": 81,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_043.png": {
+      "frame": {
+        "x": 465,
+        "y": 53,
+        "w": 81,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 21,
+        "w": 81,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_019.png": {
+      "frame": {
+        "x": 370,
+        "y": 68,
+        "w": 79,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 16,
+        "w": 79,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_029.png": {
+      "frame": {
+        "x": 279,
+        "y": 121,
+        "w": 79,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 20,
+        "w": 79,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_006.png": {
+      "frame": {
+        "x": 184,
+        "y": 140,
+        "w": 73,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 15,
+        "w": 73,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_018.png": {
+      "frame": {
+        "x": 93,
+        "y": 169,
+        "w": 73,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 14,
+        "y": 15,
+        "w": 73,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_030.png": {
+      "frame": {
+        "x": 2,
+        "y": 171,
+        "w": 73,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 14,
+        "y": 19,
+        "w": 73,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_042.png": {
+      "frame": {
+        "x": 453,
+        "y": 121,
+        "w": 73,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 19,
+        "w": 73,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_017.png": {
+      "frame": {
+        "x": 362,
+        "y": 140,
+        "w": 67,
+        "h": 72
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 14,
+        "w": 67,
+        "h": 72
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_031.png": {
+      "frame": {
+        "x": 362,
+        "y": 216,
+        "w": 67,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 18,
+        "w": 67,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_007.png": {
+      "frame": {
+        "x": 362,
+        "y": 289,
+        "w": 65,
+        "h": 72
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 14,
+        "w": 65,
+        "h": 72
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_041.png": {
+      "frame": {
+        "x": 261,
+        "y": 190,
+        "w": 65,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 18,
+        "w": 65,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_016.png": {
+      "frame": {
+        "x": 170,
+        "y": 214,
+        "w": 60,
+        "h": 72
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 14,
+        "w": 60,
+        "h": 72
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_032.png": {
+      "frame": {
+        "x": 170,
+        "y": 290,
+        "w": 60,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 18,
+        "w": 60,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_008.png": {
+      "frame": {
+        "x": 234,
+        "y": 263,
+        "w": 58,
+        "h": 72
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 21,
+        "y": 14,
+        "w": 58,
+        "h": 72
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_040.png": {
+      "frame": {
+        "x": 296,
+        "y": 263,
+        "w": 58,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 21,
+        "y": 18,
+        "w": 58,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_015.png": {
+      "frame": {
+        "x": 296,
+        "y": 337,
+        "w": 54,
+        "h": 72
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23,
+        "y": 14,
+        "w": 54,
+        "h": 72
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_033.png": {
+      "frame": {
+        "x": 234,
+        "y": 339,
+        "w": 54,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23,
+        "y": 18,
+        "w": 54,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_009.png": {
+      "frame": {
+        "x": 2,
+        "y": 243,
+        "w": 52,
+        "h": 72
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 14,
+        "w": 52,
+        "h": 72
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_039.png": {
+      "frame": {
+        "x": 58,
+        "y": 243,
+        "w": 52,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 18,
+        "w": 52,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_010.png": {
+      "frame": {
+        "x": 114,
+        "y": 243,
+        "w": 46,
+        "h": 72
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27,
+        "y": 14,
+        "w": 46,
+        "h": 72
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_014.png": {
+      "frame": {
+        "x": 58,
+        "y": 317,
+        "w": 46,
+        "h": 72
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27,
+        "y": 14,
+        "w": 46,
+        "h": 72
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_034.png": {
+      "frame": {
+        "x": 2,
+        "y": 319,
+        "w": 46,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27,
+        "y": 18,
+        "w": 46,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_038.png": {
+      "frame": {
+        "x": 2,
+        "y": 392,
+        "w": 46,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27,
+        "y": 18,
+        "w": 46,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_011.png": {
+      "frame": {
+        "x": 108,
+        "y": 319,
+        "w": 41,
+        "h": 72
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30,
+        "y": 14,
+        "w": 41,
+        "h": 72
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_035.png": {
+      "frame": {
+        "x": 52,
+        "y": 393,
+        "w": 41,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 18,
+        "w": 41,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_013.png": {
+      "frame": {
+        "x": 2,
+        "y": 465,
+        "w": 40,
+        "h": 72
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30,
+        "y": 14,
+        "w": 40,
+        "h": 72
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_037.png": {
+      "frame": {
+        "x": 153,
+        "y": 364,
+        "w": 40,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30,
+        "y": 18,
+        "w": 40,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_012.png": {
+      "frame": {
+        "x": 97,
+        "y": 395,
+        "w": 38,
+        "h": 71
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 15,
+        "w": 38,
+        "h": 71
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Blue_WAGON_CLEAN_All_036.png": {
+      "frame": {
+        "x": 46,
+        "y": 466,
+        "w": 38,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 18,
+        "w": 38,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    }
+  },
+  "animations": {
+    "0": ["Blue_WAGON_CLEAN_All_000.png"],
+    "7.5": ["Blue_WAGON_CLEAN_All_001.png"],
+    "15": ["Blue_WAGON_CLEAN_All_002.png"],
+    "22.5": ["Blue_WAGON_CLEAN_All_003.png"],
+    "30": ["Blue_WAGON_CLEAN_All_004.png"],
+    "37.5": ["Blue_WAGON_CLEAN_All_005.png"],
+    "45": ["Blue_WAGON_CLEAN_All_006.png"],
+    "52.5": ["Blue_WAGON_CLEAN_All_007.png"],
+    "60": ["Blue_WAGON_CLEAN_All_008.png"],
+    "67.5": ["Blue_WAGON_CLEAN_All_009.png"],
+    "75": ["Blue_WAGON_CLEAN_All_010.png"],
+    "82.5": ["Blue_WAGON_CLEAN_All_011.png"],
+    "90": ["Blue_WAGON_CLEAN_All_012.png"],
+    "97.5": ["Blue_WAGON_CLEAN_All_013.png"],
+    "105": ["Blue_WAGON_CLEAN_All_014.png"],
+    "112.5": ["Blue_WAGON_CLEAN_All_015.png"],
+    "120": ["Blue_WAGON_CLEAN_All_016.png"],
+    "127.5": ["Blue_WAGON_CLEAN_All_017.png"],
+    "135": ["Blue_WAGON_CLEAN_All_018.png"],
+    "142.5": ["Blue_WAGON_CLEAN_All_019.png"],
+    "150": ["Blue_WAGON_CLEAN_All_020.png"],
+    "157.5": ["Blue_WAGON_CLEAN_All_021.png"],
+    "165": ["Blue_WAGON_CLEAN_All_022.png"],
+    "172.5": ["Blue_WAGON_CLEAN_All_023.png"],
+    "180": ["Blue_WAGON_CLEAN_All_024.png"],
+    "187.5": ["Blue_WAGON_CLEAN_All_025.png"],
+    "195": ["Blue_WAGON_CLEAN_All_026.png"],
+    "202.5": ["Blue_WAGON_CLEAN_All_027.png"],
+    "210": ["Blue_WAGON_CLEAN_All_028.png"],
+    "217.5": ["Blue_WAGON_CLEAN_All_029.png"],
+    "225": ["Blue_WAGON_CLEAN_All_030.png"],
+    "232.5": ["Blue_WAGON_CLEAN_All_031.png"],
+    "240": ["Blue_WAGON_CLEAN_All_032.png"],
+    "247.5": ["Blue_WAGON_CLEAN_All_033.png"],
+    "255": ["Blue_WAGON_CLEAN_All_034.png"],
+    "262.5": ["Blue_WAGON_CLEAN_All_035.png"],
+    "270": ["Blue_WAGON_CLEAN_All_036.png"],
+    "277.5": ["Blue_WAGON_CLEAN_All_037.png"],
+    "285": ["Blue_WAGON_CLEAN_All_038.png"],
+    "292.5": ["Blue_WAGON_CLEAN_All_039.png"],
+    "300": ["Blue_WAGON_CLEAN_All_040.png"],
+    "307.5": ["Blue_WAGON_CLEAN_All_041.png"],
+    "315": ["Blue_WAGON_CLEAN_All_042.png"],
+    "322.5": ["Blue_WAGON_CLEAN_All_043.png"],
+    "330": ["Blue_WAGON_CLEAN_All_044.png"],
+    "337.5": ["Blue_WAGON_CLEAN_All_045.png"],
+    "345": ["Blue_WAGON_CLEAN_All_046.png"],
+    "352.5": ["Blue_WAGON_CLEAN_All_047.png"]
+  },
+  "meta": {
+    "app": "http://free-tex-packer.com",
+    "version": "0.6.7",
+    "image": "blue.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1005,
+      "h": 539
+    },
+    "scale": 1
+  }
+}

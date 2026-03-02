@@ -1,0 +1,1217 @@
+{
+  "frames": {
+    "Black_SEDAN_CLEAN_All_003.png": {
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 86,
+        "h": 48
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 30,
+        "w": 86,
+        "h": 48
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_022.png": {
+      "frame": {
+        "x": 92,
+        "y": 2,
+        "w": 86,
+        "h": 48
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 30,
+        "w": 86,
+        "h": 48
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_026.png": {
+      "frame": {
+        "x": 182,
+        "y": 2,
+        "w": 86,
+        "h": 47
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 30,
+        "w": 86,
+        "h": 47
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_045.png": {
+      "frame": {
+        "x": 272,
+        "y": 2,
+        "w": 86,
+        "h": 47
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 30,
+        "w": 86,
+        "h": 47
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_021.png": {
+      "frame": {
+        "x": 362,
+        "y": 2,
+        "w": 85,
+        "h": 54
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 27,
+        "w": 85,
+        "h": 54
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_027.png": {
+      "frame": {
+        "x": 182,
+        "y": 53,
+        "w": 85,
+        "h": 54
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 7,
+        "y": 26,
+        "w": 85,
+        "h": 54
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_004.png": {
+      "frame": {
+        "x": 271,
+        "y": 53,
+        "w": 84,
+        "h": 55
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 27,
+        "w": 84,
+        "h": 55
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_044.png": {
+      "frame": {
+        "x": 2,
+        "y": 54,
+        "w": 84,
+        "h": 55
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 26,
+        "w": 84,
+        "h": 55
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_002.png": {
+      "frame": {
+        "x": 90,
+        "y": 54,
+        "w": 84,
+        "h": 44
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 31,
+        "w": 84,
+        "h": 44
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_023.png": {
+      "frame": {
+        "x": 90,
+        "y": 102,
+        "w": 84,
+        "h": 44
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 31,
+        "w": 84,
+        "h": 44
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_025.png": {
+      "frame": {
+        "x": 2,
+        "y": 113,
+        "w": 84,
+        "h": 43
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 32,
+        "w": 84,
+        "h": 43
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_046.png": {
+      "frame": {
+        "x": 178,
+        "y": 111,
+        "w": 84,
+        "h": 43
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 32,
+        "w": 84,
+        "h": 43
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_001.png": {
+      "frame": {
+        "x": 90,
+        "y": 150,
+        "w": 83,
+        "h": 41
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 32,
+        "w": 83,
+        "h": 41
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_047.png": {
+      "frame": {
+        "x": 2,
+        "y": 160,
+        "w": 83,
+        "h": 41
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 32,
+        "w": 83,
+        "h": 41
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_000.png": {
+      "frame": {
+        "x": 451,
+        "y": 2,
+        "w": 83,
+        "h": 40
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 32,
+        "w": 83,
+        "h": 40
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_024.png": {
+      "frame": {
+        "x": 538,
+        "y": 2,
+        "w": 83,
+        "h": 40
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 32,
+        "w": 83,
+        "h": 40
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_020.png": {
+      "frame": {
+        "x": 625,
+        "y": 2,
+        "w": 81,
+        "h": 59
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 25,
+        "w": 81,
+        "h": 59
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_028.png": {
+      "frame": {
+        "x": 451,
+        "y": 46,
+        "w": 81,
+        "h": 59
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 24,
+        "w": 81,
+        "h": 59
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_005.png": {
+      "frame": {
+        "x": 536,
+        "y": 46,
+        "w": 79,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 23,
+        "w": 79,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_043.png": {
+      "frame": {
+        "x": 359,
+        "y": 60,
+        "w": 79,
+        "h": 61
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 23,
+        "w": 79,
+        "h": 61
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_019.png": {
+      "frame": {
+        "x": 266,
+        "y": 112,
+        "w": 77,
+        "h": 63
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 23,
+        "w": 77,
+        "h": 63
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_029.png": {
+      "frame": {
+        "x": 177,
+        "y": 158,
+        "w": 77,
+        "h": 63
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 22,
+        "w": 77,
+        "h": 63
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_006.png": {
+      "frame": {
+        "x": 89,
+        "y": 195,
+        "w": 71,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 15,
+        "y": 22,
+        "w": 71,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_018.png": {
+      "frame": {
+        "x": 2,
+        "y": 205,
+        "w": 71,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 14,
+        "y": 22,
+        "w": 71,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_030.png": {
+      "frame": {
+        "x": 442,
+        "y": 109,
+        "w": 71,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 14,
+        "y": 21,
+        "w": 71,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_042.png": {
+      "frame": {
+        "x": 347,
+        "y": 125,
+        "w": 71,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 15,
+        "y": 21,
+        "w": 71,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_017.png": {
+      "frame": {
+        "x": 258,
+        "y": 179,
+        "w": 65,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 21,
+        "w": 65,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_031.png": {
+      "frame": {
+        "x": 258,
+        "y": 250,
+        "w": 65,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 20,
+        "w": 65,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_007.png": {
+      "frame": {
+        "x": 164,
+        "y": 225,
+        "w": 63,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 19,
+        "y": 21,
+        "w": 63,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_041.png": {
+      "frame": {
+        "x": 77,
+        "y": 264,
+        "w": 63,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 19,
+        "y": 20,
+        "w": 63,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_016.png": {
+      "frame": {
+        "x": 2,
+        "y": 274,
+        "w": 57,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 21,
+        "y": 20,
+        "w": 57,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_032.png": {
+      "frame": {
+        "x": 144,
+        "y": 296,
+        "w": 57,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 21,
+        "y": 20,
+        "w": 57,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_009.png": {
+      "frame": {
+        "x": 205,
+        "y": 296,
+        "w": 49,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 26,
+        "y": 20,
+        "w": 49,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_008.png": {
+      "frame": {
+        "x": 63,
+        "y": 335,
+        "w": 55,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23,
+        "y": 20,
+        "w": 55,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_040.png": {
+      "frame": {
+        "x": 2,
+        "y": 346,
+        "w": 55,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23,
+        "y": 20,
+        "w": 55,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_015.png": {
+      "frame": {
+        "x": 61,
+        "y": 407,
+        "w": 51,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 20,
+        "w": 51,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_033.png": {
+      "frame": {
+        "x": 2,
+        "y": 417,
+        "w": 51,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 20,
+        "w": 51,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_039.png": {
+      "frame": {
+        "x": 122,
+        "y": 367,
+        "w": 49,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 26,
+        "y": 20,
+        "w": 49,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_014.png": {
+      "frame": {
+        "x": 710,
+        "y": 2,
+        "w": 45,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27,
+        "y": 21,
+        "w": 45,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_034.png": {
+      "frame": {
+        "x": 619,
+        "y": 65,
+        "w": 45,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27,
+        "y": 20,
+        "w": 45,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_012.png": {
+      "frame": {
+        "x": 668,
+        "y": 65,
+        "w": 38,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 22,
+        "w": 38,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_010.png": {
+      "frame": {
+        "x": 619,
+        "y": 136,
+        "w": 44,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28,
+        "y": 21,
+        "w": 44,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_038.png": {
+      "frame": {
+        "x": 517,
+        "y": 112,
+        "w": 44,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28,
+        "y": 20,
+        "w": 44,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_011.png": {
+      "frame": {
+        "x": 565,
+        "y": 112,
+        "w": 39,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 21,
+        "w": 39,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_013.png": {
+      "frame": {
+        "x": 565,
+        "y": 183,
+        "w": 39,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30,
+        "y": 21,
+        "w": 39,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_035.png": {
+      "frame": {
+        "x": 422,
+        "y": 178,
+        "w": 39,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30,
+        "y": 21,
+        "w": 39,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_037.png": {
+      "frame": {
+        "x": 465,
+        "y": 178,
+        "w": 39,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 21,
+        "w": 39,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Black_SEDAN_CLEAN_All_036.png": {
+      "frame": {
+        "x": 508,
+        "y": 183,
+        "w": 38,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 21,
+        "w": 38,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    }
+  },
+  "animations": {
+    "0": ["Black_SEDAN_CLEAN_All_000.png"],
+    "7.5": ["Black_SEDAN_CLEAN_All_001.png"],
+    "15": ["Black_SEDAN_CLEAN_All_002.png"],
+    "22.5": ["Black_SEDAN_CLEAN_All_003.png"],
+    "30": ["Black_SEDAN_CLEAN_All_004.png"],
+    "37.5": ["Black_SEDAN_CLEAN_All_005.png"],
+    "45": ["Black_SEDAN_CLEAN_All_006.png"],
+    "52.5": ["Black_SEDAN_CLEAN_All_007.png"],
+    "60": ["Black_SEDAN_CLEAN_All_008.png"],
+    "67.5": ["Black_SEDAN_CLEAN_All_009.png"],
+    "75": ["Black_SEDAN_CLEAN_All_010.png"],
+    "82.5": ["Black_SEDAN_CLEAN_All_011.png"],
+    "90": ["Black_SEDAN_CLEAN_All_012.png"],
+    "97.5": ["Black_SEDAN_CLEAN_All_013.png"],
+    "105": ["Black_SEDAN_CLEAN_All_014.png"],
+    "112.5": ["Black_SEDAN_CLEAN_All_015.png"],
+    "120": ["Black_SEDAN_CLEAN_All_016.png"],
+    "127.5": ["Black_SEDAN_CLEAN_All_017.png"],
+    "135": ["Black_SEDAN_CLEAN_All_018.png"],
+    "142.5": ["Black_SEDAN_CLEAN_All_019.png"],
+    "150": ["Black_SEDAN_CLEAN_All_020.png"],
+    "157.5": ["Black_SEDAN_CLEAN_All_021.png"],
+    "165": ["Black_SEDAN_CLEAN_All_022.png"],
+    "172.5": ["Black_SEDAN_CLEAN_All_023.png"],
+    "180": ["Black_SEDAN_CLEAN_All_024.png"],
+    "187.5": ["Black_SEDAN_CLEAN_All_025.png"],
+    "195": ["Black_SEDAN_CLEAN_All_026.png"],
+    "202.5": ["Black_SEDAN_CLEAN_All_027.png"],
+    "210": ["Black_SEDAN_CLEAN_All_028.png"],
+    "217.5": ["Black_SEDAN_CLEAN_All_029.png"],
+    "225": ["Black_SEDAN_CLEAN_All_030.png"],
+    "232.5": ["Black_SEDAN_CLEAN_All_031.png"],
+    "240": ["Black_SEDAN_CLEAN_All_032.png"],
+    "247.5": ["Black_SEDAN_CLEAN_All_033.png"],
+    "255": ["Black_SEDAN_CLEAN_All_034.png"],
+    "262.5": ["Black_SEDAN_CLEAN_All_035.png"],
+    "270": ["Black_SEDAN_CLEAN_All_036.png"],
+    "277.5": ["Black_SEDAN_CLEAN_All_037.png"],
+    "285": ["Black_SEDAN_CLEAN_All_038.png"],
+    "292.5": ["Black_SEDAN_CLEAN_All_039.png"],
+    "300": ["Black_SEDAN_CLEAN_All_040.png"],
+    "307.5": ["Black_SEDAN_CLEAN_All_041.png"],
+    "315": ["Black_SEDAN_CLEAN_All_042.png"],
+    "322.5": ["Black_SEDAN_CLEAN_All_043.png"],
+    "330": ["Black_SEDAN_CLEAN_All_044.png"],
+    "337.5": ["Black_SEDAN_CLEAN_All_045.png"],
+    "345": ["Black_SEDAN_CLEAN_All_046.png"],
+    "352.5": ["Black_SEDAN_CLEAN_All_047.png"]
+  },
+  "meta": {
+    "app": "http://free-tex-packer.com",
+    "version": "0.6.7",
+    "image": "black.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 757,
+      "h": 486
+    },
+    "scale": 1
+  }
+}

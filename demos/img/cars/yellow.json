@@ -1,0 +1,1313 @@
+{
+  "frames": {
+    "Yellow_COUPE_CLEAN_All_003.png": {
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 87,
+        "h": 52
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 4,
+        "y": 27,
+        "w": 87,
+        "h": 52
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_022.png": {
+      "frame": {
+        "x": 93,
+        "y": 2,
+        "w": 87,
+        "h": 52
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 27,
+        "w": 87,
+        "h": 52
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_026.png": {
+      "frame": {
+        "x": 184,
+        "y": 2,
+        "w": 87,
+        "h": 49
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 30,
+        "w": 87,
+        "h": 49
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_045.png": {
+      "frame": {
+        "x": 275,
+        "y": 2,
+        "w": 87,
+        "h": 49
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 4,
+        "y": 30,
+        "w": 87,
+        "h": 49
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_021.png": {
+      "frame": {
+        "x": 366,
+        "y": 2,
+        "w": 86,
+        "h": 57
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 24,
+        "w": 86,
+        "h": 57
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_027.png": {
+      "frame": {
+        "x": 184,
+        "y": 55,
+        "w": 86,
+        "h": 53
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 28,
+        "w": 86,
+        "h": 53
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_002.png": {
+      "frame": {
+        "x": 274,
+        "y": 55,
+        "w": 86,
+        "h": 46
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 5,
+        "y": 30,
+        "w": 86,
+        "h": 46
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_023.png": {
+      "frame": {
+        "x": 2,
+        "y": 58,
+        "w": 86,
+        "h": 46
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 30,
+        "w": 86,
+        "h": 46
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_025.png": {
+      "frame": {
+        "x": 92,
+        "y": 58,
+        "w": 86,
+        "h": 46
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 30,
+        "w": 86,
+        "h": 46
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_046.png": {
+      "frame": {
+        "x": 2,
+        "y": 108,
+        "w": 86,
+        "h": 46
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 5,
+        "y": 30,
+        "w": 86,
+        "h": 46
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_004.png": {
+      "frame": {
+        "x": 92,
+        "y": 108,
+        "w": 85,
+        "h": 59
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 23,
+        "w": 85,
+        "h": 59
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_044.png": {
+      "frame": {
+        "x": 2,
+        "y": 158,
+        "w": 85,
+        "h": 53
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 28,
+        "w": 85,
+        "h": 53
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_047.png": {
+      "frame": {
+        "x": 456,
+        "y": 2,
+        "w": 85,
+        "h": 44
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 30,
+        "w": 85,
+        "h": 44
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_001.png": {
+      "frame": {
+        "x": 545,
+        "y": 2,
+        "w": 85,
+        "h": 43
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 31,
+        "w": 85,
+        "h": 43
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_000.png": {
+      "frame": {
+        "x": 634,
+        "y": 2,
+        "w": 85,
+        "h": 42
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 31,
+        "w": 85,
+        "h": 42
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_024.png": {
+      "frame": {
+        "x": 723,
+        "y": 2,
+        "w": 85,
+        "h": 42
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 31,
+        "w": 85,
+        "h": 42
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_020.png": {
+      "frame": {
+        "x": 812,
+        "y": 2,
+        "w": 83,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 10,
+        "y": 21,
+        "w": 83,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_028.png": {
+      "frame": {
+        "x": 634,
+        "y": 48,
+        "w": 83,
+        "h": 57
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 10,
+        "y": 26,
+        "w": 83,
+        "h": 57
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_005.png": {
+      "frame": {
+        "x": 545,
+        "y": 49,
+        "w": 80,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 19,
+        "w": 80,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_043.png": {
+      "frame": {
+        "x": 456,
+        "y": 50,
+        "w": 80,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 25,
+        "w": 80,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_019.png": {
+      "frame": {
+        "x": 721,
+        "y": 48,
+        "w": 78,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 12,
+        "y": 19,
+        "w": 78,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_029.png": {
+      "frame": {
+        "x": 629,
+        "y": 109,
+        "w": 78,
+        "h": 61
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 12,
+        "y": 24,
+        "w": 78,
+        "h": 61
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_006.png": {
+      "frame": {
+        "x": 364,
+        "y": 63,
+        "w": 73,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 17,
+        "w": 73,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_018.png": {
+      "frame": {
+        "x": 274,
+        "y": 105,
+        "w": 73,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 14,
+        "y": 17,
+        "w": 73,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_030.png": {
+      "frame": {
+        "x": 181,
+        "y": 136,
+        "w": 73,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 14,
+        "y": 23,
+        "w": 73,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_042.png": {
+      "frame": {
+        "x": 91,
+        "y": 171,
+        "w": 73,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 23,
+        "w": 73,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_017.png": {
+      "frame": {
+        "x": 2,
+        "y": 215,
+        "w": 67,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 16,
+        "w": 67,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_031.png": {
+      "frame": {
+        "x": 441,
+        "y": 114,
+        "w": 67,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 22,
+        "w": 67,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_007.png": {
+      "frame": {
+        "x": 351,
+        "y": 174,
+        "w": 65,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 16,
+        "w": 65,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_041.png": {
+      "frame": {
+        "x": 258,
+        "y": 178,
+        "w": 65,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 22,
+        "w": 65,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_016.png": {
+      "frame": {
+        "x": 168,
+        "y": 204,
+        "w": 60,
+        "h": 71
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 16,
+        "w": 60,
+        "h": 71
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_032.png": {
+      "frame": {
+        "x": 73,
+        "y": 239,
+        "w": 60,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 22,
+        "w": 60,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_008.png": {
+      "frame": {
+        "x": 2,
+        "y": 289,
+        "w": 58,
+        "h": 71
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 21,
+        "y": 16,
+        "w": 58,
+        "h": 71
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_040.png": {
+      "frame": {
+        "x": 512,
+        "y": 119,
+        "w": 58,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 21,
+        "y": 22,
+        "w": 58,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_010.png": {
+      "frame": {
+        "x": 574,
+        "y": 119,
+        "w": 47,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27,
+        "y": 16,
+        "w": 47,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_015.png": {
+      "frame": {
+        "x": 512,
+        "y": 189,
+        "w": 54,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23,
+        "y": 16,
+        "w": 54,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_033.png": {
+      "frame": {
+        "x": 420,
+        "y": 184,
+        "w": 54,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23,
+        "y": 22,
+        "w": 54,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_009.png": {
+      "frame": {
+        "x": 420,
+        "y": 254,
+        "w": 52,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 16,
+        "w": 52,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_039.png": {
+      "frame": {
+        "x": 232,
+        "y": 248,
+        "w": 52,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 22,
+        "w": 52,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_014.png": {
+      "frame": {
+        "x": 137,
+        "y": 279,
+        "w": 47,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 26,
+        "y": 16,
+        "w": 47,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_034.png": {
+      "frame": {
+        "x": 64,
+        "y": 309,
+        "w": 47,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 26,
+        "y": 22,
+        "w": 47,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_038.png": {
+      "frame": {
+        "x": 2,
+        "y": 364,
+        "w": 47,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27,
+        "y": 22,
+        "w": 47,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_013.png": {
+      "frame": {
+        "x": 288,
+        "y": 248,
+        "w": 43,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28,
+        "y": 17,
+        "w": 43,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_035.png": {
+      "frame": {
+        "x": 335,
+        "y": 318,
+        "w": 43,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28,
+        "y": 22,
+        "w": 43,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_036.png": {
+      "frame": {
+        "x": 335,
+        "y": 248,
+        "w": 42,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 22,
+        "w": 42,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_011.png": {
+      "frame": {
+        "x": 188,
+        "y": 318,
+        "w": 42,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 17,
+        "w": 42,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_012.png": {
+      "frame": {
+        "x": 234,
+        "y": 318,
+        "w": 42,
+        "h": 69
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 17,
+        "w": 42,
+        "h": 69
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "Yellow_COUPE_CLEAN_All_037.png": {
+      "frame": {
+        "x": 280,
+        "y": 321,
+        "w": 42,
+        "h": 65
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 22,
+        "w": 42,
+        "h": 65
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    }
+  },
+  "animations": {
+    "0": [
+      "Yellow_COUPE_CLEAN_All_000.png"
+    ],
+    "7.5": [
+      "Yellow_COUPE_CLEAN_All_001.png"
+    ],
+    "15": [
+      "Yellow_COUPE_CLEAN_All_002.png"
+    ],
+    "22.5": [
+      "Yellow_COUPE_CLEAN_All_003.png"
+    ],
+    "30": [
+      "Yellow_COUPE_CLEAN_All_004.png"
+    ],
+    "37.5": [
+      "Yellow_COUPE_CLEAN_All_005.png"
+    ],
+    "45": [
+      "Yellow_COUPE_CLEAN_All_006.png"
+    ],
+    "52.5": [
+      "Yellow_COUPE_CLEAN_All_007.png"
+    ],
+    "60": [
+      "Yellow_COUPE_CLEAN_All_008.png"
+    ],
+    "67.5": [
+      "Yellow_COUPE_CLEAN_All_009.png"
+    ],
+    "75": [
+      "Yellow_COUPE_CLEAN_All_010.png"
+    ],
+    "82.5": [
+      "Yellow_COUPE_CLEAN_All_011.png"
+    ],
+    "90": [
+      "Yellow_COUPE_CLEAN_All_012.png"
+    ],
+    "97.5": [
+      "Yellow_COUPE_CLEAN_All_013.png"
+    ],
+    "105": [
+      "Yellow_COUPE_CLEAN_All_014.png"
+    ],
+    "112.5": [
+      "Yellow_COUPE_CLEAN_All_015.png"
+    ],
+    "120": [
+      "Yellow_COUPE_CLEAN_All_016.png"
+    ],
+    "127.5": [
+      "Yellow_COUPE_CLEAN_All_017.png"
+    ],
+    "135": [
+      "Yellow_COUPE_CLEAN_All_018.png"
+    ],
+    "142.5": [
+      "Yellow_COUPE_CLEAN_All_019.png"
+    ],
+    "150": [
+      "Yellow_COUPE_CLEAN_All_020.png"
+    ],
+    "157.5": [
+      "Yellow_COUPE_CLEAN_All_021.png"
+    ],
+    "165": [
+      "Yellow_COUPE_CLEAN_All_022.png"
+    ],
+    "172.5": [
+      "Yellow_COUPE_CLEAN_All_023.png"
+    ],
+    "180": [
+      "Yellow_COUPE_CLEAN_All_024.png"
+    ],
+    "187.5": [
+      "Yellow_COUPE_CLEAN_All_025.png"
+    ],
+    "195": [
+      "Yellow_COUPE_CLEAN_All_026.png"
+    ],
+    "202.5": [
+      "Yellow_COUPE_CLEAN_All_027.png"
+    ],
+    "210": [
+      "Yellow_COUPE_CLEAN_All_028.png"
+    ],
+    "217.5": [
+      "Yellow_COUPE_CLEAN_All_029.png"
+    ],
+    "225": [
+      "Yellow_COUPE_CLEAN_All_030.png"
+    ],
+    "232.5": [
+      "Yellow_COUPE_CLEAN_All_031.png"
+    ],
+    "240": [
+      "Yellow_COUPE_CLEAN_All_032.png"
+    ],
+    "247.5": [
+      "Yellow_COUPE_CLEAN_All_033.png"
+    ],
+    "255": [
+      "Yellow_COUPE_CLEAN_All_034.png"
+    ],
+    "262.5": [
+      "Yellow_COUPE_CLEAN_All_035.png"
+    ],
+    "270": [
+      "Yellow_COUPE_CLEAN_All_036.png"
+    ],
+    "277.5": [
+      "Yellow_COUPE_CLEAN_All_037.png"
+    ],
+    "285": [
+      "Yellow_COUPE_CLEAN_All_038.png"
+    ],
+    "292.5": [
+      "Yellow_COUPE_CLEAN_All_039.png"
+    ],
+    "300": [
+      "Yellow_COUPE_CLEAN_All_040.png"
+    ],
+    "307.5": [
+      "Yellow_COUPE_CLEAN_All_041.png"
+    ],
+    "315": [
+      "Yellow_COUPE_CLEAN_All_042.png"
+    ],
+    "322.5": [
+      "Yellow_COUPE_CLEAN_All_043.png"
+    ],
+    "330": [
+      "Yellow_COUPE_CLEAN_All_044.png"
+    ],
+    "337.5": [
+      "Yellow_COUPE_CLEAN_All_045.png"
+    ],
+    "345": [
+      "Yellow_COUPE_CLEAN_All_046.png"
+    ],
+    "352.5": [
+      "Yellow_COUPE_CLEAN_All_047.png"
+    ]
+  },
+  "meta": {
+    "app": "http://free-tex-packer.com",
+    "version": "0.6.7",
+    "image": "yellow.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 897,
+      "h": 432
+    },
+    "scale": 1
+  }
+}
