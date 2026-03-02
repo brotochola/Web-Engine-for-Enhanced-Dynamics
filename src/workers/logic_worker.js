@@ -313,8 +313,8 @@ class LogicWorker extends AbstractWorker {
     // Process own pending updates
     this._processDespawnUpdates(this.pendingDespawnListUpdates);
     this._processSpawnUpdates(this.pendingSpawnListUpdates);
-    this.pendingDespawnListUpdates = [];
-    this.pendingSpawnListUpdates = [];
+    this.pendingDespawnListUpdates.length = 0;
+    this.pendingSpawnListUpdates.length = 0;
 
     // Process updates received from other workers (same order)
     for (const batch of this.receivedListUpdates) {
@@ -325,7 +325,7 @@ class LogicWorker extends AbstractWorker {
         this._processSpawnUpdates(batch.spawns);
       }
     }
-    this.receivedListUpdates = [];
+    this.receivedListUpdates.length = 0;
   }
 
   /**
@@ -384,8 +384,8 @@ class LogicWorker extends AbstractWorker {
       despawns,
     });
 
-    this.pendingSpawnListUpdates = [];
-    this.pendingDespawnListUpdates = [];
+    this.pendingSpawnListUpdates.length = 0;
+    this.pendingDespawnListUpdates.length = 0;
   }
 
   update(deltaTime, dtRatio, resuming) {
@@ -807,22 +807,30 @@ class LogicWorker extends AbstractWorker {
           break;
         }
 
-        // Deserialize class names to EntityClass references
+        // Deserialize class names to EntityClass references (single-pass loop avoids .map/.filter intermediates)
         const { spawns, despawns } = data;
+        const deserializedSpawns = [];
+        const deserializedDespawns = [];
 
-        const deserializedSpawns = spawns?.map(u => ({
-          entityIndex: u.entityIndex,
-          entityType: u.entityType,
-          EntityClass: self[u.className],
-        })).filter(u => u.EntityClass) || [];
+        if (spawns) {
+          for (let i = 0; i < spawns.length; i++) {
+            const u = spawns[i];
+            const EntityClass = self[u.className];
+            if (EntityClass) {
+              deserializedSpawns.push({ entityIndex: u.entityIndex, entityType: u.entityType, EntityClass });
+            }
+          }
+        }
+        if (despawns) {
+          for (let i = 0; i < despawns.length; i++) {
+            const u = despawns[i];
+            const EntityClass = self[u.className];
+            if (EntityClass) {
+              deserializedDespawns.push({ entityIndex: u.entityIndex, entityType: u.entityType, EntityClass });
+            }
+          }
+        }
 
-        const deserializedDespawns = despawns?.map(u => ({
-          entityIndex: u.entityIndex,
-          entityType: u.entityType,
-          EntityClass: self[u.className],
-        })).filter(u => u.EntityClass) || [];
-
-        // Queue for processing at start of next frame
         if (deserializedSpawns.length > 0 || deserializedDespawns.length > 0) {
           this.receivedListUpdates.push({
             spawns: deserializedSpawns,

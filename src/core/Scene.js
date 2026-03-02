@@ -2695,6 +2695,8 @@ class Scene {
     // Clear static class buffer references (they point to scene's SharedArrayBuffers)
     // New scene will re-initialize these during its init()
     GameObject.activeEntitiesData = null;
+    GameObject.instances = [];
+    GameObject._globalAnimationCache = {};
     if (Sun.isInitialized) {
       Sun._sab = null;
       Sun._uint8 = null;

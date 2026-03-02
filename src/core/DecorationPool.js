@@ -142,11 +142,10 @@ export class DecorationPool extends SharedAtomicPool {
     // Claim this slot (must be last - signals to other workers that this slot is in use)
     DecorationComponent.active[i] = 1;
 
-    // Add to activeDecorationsData compact list (append at end - O(1))
+    // Add to activeDecorationsData compact list (append at end - O(1), atomic count increment)
     if (this.activeDecorationsData) {
-      const count = this.activeDecorationsData[0];
-      this.activeDecorationsData[1 + count] = i;
-      this.activeDecorationsData[0] = count + 1;
+      const slot = Atomics.add(this.activeDecorationsData, 0, 1);
+      this.activeDecorationsData[1 + slot] = i;
     }
 
     return i;
@@ -211,14 +210,14 @@ export class DecorationPool extends SharedAtomicPool {
     DecorationComponent.isItOnScreen[index] = 0;
 
     // Remove from activeDecorationsData compact list (swap-with-last - O(n) search, O(1) remove)
+    // NOTE: scan + swap is not fully atomic across workers; concurrent despawns may leave
+    // phantom entries. This is benign: readers skip inactive slots via DecorationComponent.active.
     if (this.activeDecorationsData) {
-      const count = this.activeDecorationsData[0];
-      // Find the index in the list
+      const count = Atomics.load(this.activeDecorationsData, 0);
       for (let i = 0; i < count; i++) {
         if (this.activeDecorationsData[1 + i] === index) {
-          // Swap with last element and decrement count
-          this.activeDecorationsData[1 + i] = this.activeDecorationsData[count]; // last element
-          this.activeDecorationsData[0] = count - 1;
+          const oldCount = Atomics.sub(this.activeDecorationsData, 0, 1);
+          this.activeDecorationsData[1 + i] = this.activeDecorationsData[oldCount - 1];
           break;
         }
       }

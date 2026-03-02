@@ -164,6 +164,7 @@ export class Grid {
     Grid._cellSleepingBuffer = null;
     Grid._cellSleepingData = null;
     Grid._markerArray = null;
+    Grid._processedSet = null;
   }
 
   // =============================================================================

@@ -85,9 +85,10 @@ class SpatialWorker extends AbstractWorker {
     this.entityPosData = null; // Float32Array
 
     // O(1) duplicate detection for multi-cell entities
-    // processedThisFrame[j] = entityId means entity "entityId" already processed entity "j"
-    // Uses Uint16 since max entities = 65535 (fits in 16 bits), sentinel = 65535
-    this.processedMarker = null; // Uint16Array
+    // processedMarker[entityB] = (frameStamp | entityA) encodes both frame and source entity
+    // Upper 16 bits = frame counter, lower 16 bits = entityA. Avoids fill() every frame.
+    this.processedMarker = null; // Uint32Array
+    this._processedFrameCounter = 0;
 
     // O(1) deduplication for entityA (source entity) - prevents processing same entity twice
     // when it appears in multiple cells owned by this worker
@@ -177,9 +178,8 @@ class SpatialWorker extends AbstractWorker {
       this.entityPosData = new Float32Array(data.buffers.entityPosData);
     }
     // Initialize duplicate detection marker for neighbors (entityB)
-    // Uses Uint16 since max entities = 65535 (fits in 16 bits), sentinel = 65535
-    this.processedMarker = new Uint16Array(this.globalEntityCount);
-    this.processedMarker.fill(65535); // 65535 = no entity (sentinel)
+    // Uint32Array: upper 16 bits = frame counter, lower 16 bits = entityA
+    this.processedMarker = new Uint32Array(this.globalEntityCount);
 
     // Initialize deduplication marker for source entities (entityA)
     // Prevents same entity from being processed multiple times when it spans multiple cells
@@ -516,8 +516,14 @@ class SpatialWorker extends AbstractWorker {
     const gridEntities = Grid._gridEntities;
 
     // O(1) duplicate detection for neighbor search (prevents counting same neighbor twice)
+    // Uses packed stamp (frameCounter << 16 | entityA) to avoid fill() every frame
     const processedMarker = this.processedMarker;
-    processedMarker.fill(65535); // Reset markers each frame (65535 = sentinel)
+    this._processedFrameCounter++;
+    if (this._processedFrameCounter >= 65536) {
+      this._processedFrameCounter = 1;
+      processedMarker.fill(0);
+    }
+    const processedFrameStamp = this._processedFrameCounter << 16;
 
     // Frame counter for entityA deduplication (avoids fill() every frame)
     this._entityFrameCounter++;
@@ -590,6 +596,7 @@ class SpatialWorker extends AbstractWorker {
 
           this.entitiesProcessedThisFrame++;
 
+          const stampedA = processedFrameStamp | entityA;
           const myVisualRange = visualRange[entityA];
 
           // Neighbor write offset
@@ -651,8 +658,8 @@ class SpatialWorker extends AbstractWorker {
               if (entityA === entityB) continue;
 
               // O(1) duplicate check: multi-cell entities appear in multiple cells
-              if (processedMarker[entityB] === entityA) continue;
-              processedMarker[entityB] = entityA;
+              if (processedMarker[entityB] === stampedA) continue;
+              processedMarker[entityB] = stampedA;
 
               // Calculate squared distance for range check
               // Read from Transform/Collider (source of truth) - entityPosData can be stale/race
