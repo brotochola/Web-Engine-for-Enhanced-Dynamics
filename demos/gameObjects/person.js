@@ -59,7 +59,7 @@ export class Person extends Lootable {
   // WEAPON DEFINITIONS - damage, cooldown (ms), range (px)
   // ==========================================
   static WEAPON_SOUND_OPTIONS = {
-    volume: 0.65,
+    volume: 0.33,
     randomPitch: { min: 0.9, max: 1.1 },
   };
 

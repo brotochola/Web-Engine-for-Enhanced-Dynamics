@@ -1,7 +1,7 @@
 import WEED from '/src/index.js';
 import { ExplosionComponent } from '../components/explosionComponent.js';
 
-const { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } = WEED;
+const { SoundManager, ParticleEmitter, DECAL_STAMPS_BLEND_MODE } = WEED;
 
 // Destructure what we need from WEED
 const {
@@ -70,6 +70,11 @@ export class Explosion extends GameObject {
   }
 
   onSpawned(spawnConfig = {}) {
+    SoundManager.play('explosion_corta', {
+      volume: 1,
+      randomPitch: { min: 0.9, max: 1.1 },
+    });
+
     setTimeout(() => this.stampDecalToFloor(), 100);
   }
 
