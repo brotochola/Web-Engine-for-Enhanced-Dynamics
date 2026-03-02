@@ -1,7 +1,7 @@
 import WEED from '/src/index.js';
 
 // Destructure what we need from WEED
-const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, ShapeType, Flash } = WEED;
+const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, ShapeType, Flash, SoundManager } = WEED;
 
 export class TallLight extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
@@ -57,6 +57,12 @@ export class TallLight extends GameObject {
   }
 
   onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
+    const impactSound = Math.random() > 0.5 ? 'bala_golpea_metal' : 'bala_golpea_metal_2';
+    SoundManager.play(impactSound, {
+      volume: 0.6,
+      randomPitch: { min: 0.9, max: 1.15 },
+    });
+
     const count = Math.floor(damage * 8) + 3;
     ParticleEmitter.emit({
       count,

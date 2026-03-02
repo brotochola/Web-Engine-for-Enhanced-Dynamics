@@ -15,6 +15,7 @@ import {
   SpriteSheetRegistry,
   Ray,
   Flash,
+  SoundManager,
   getDirectionFromAngle,
   GameObject,
   DecorationPool,
@@ -57,9 +58,29 @@ export class Person extends Lootable {
   // ==========================================
   // WEAPON DEFINITIONS - damage, cooldown (ms), range (px)
   // ==========================================
+  static WEAPON_SOUND_OPTIONS = {
+    volume: 0.65,
+    randomPitch: { min: 0.9, max: 1.1 },
+  };
+
   static WEAPONS = {
-    PISTOL: { damage: 0.66, cooldown: 500, range: 180, rangeSq: 180 ** 2, bulletSpeed: 900 },
-    MACHINE_GUN: { damage: 0.2, cooldown: 133, range: 500, rangeSq: 500 ** 2, bulletSpeed: 1500, rapidFire: true },
+    PISTOL: {
+      damage: 0.66,
+      cooldown: 500,
+      range: 180,
+      rangeSq: 180 ** 2,
+      bulletSpeed: 900,
+      sound: 'pistola_disparo',
+    },
+    MACHINE_GUN: {
+      damage: 0.2,
+      cooldown: 133,
+      range: 500,
+      rangeSq: 500 ** 2,
+      bulletSpeed: 1500,
+      rapidFire: true,
+      sound: 'ametralladora_disparo',
+    },
   };
 
   setup() {
@@ -414,6 +435,10 @@ export class Person extends Lootable {
       trailWidth: 4
     });
 
+    if (weapon.sound) {
+      SoundManager.play(weapon.sound, Person.WEAPON_SOUND_OPTIONS);
+    }
+
     //little fire: muzzle effect
     // Sprite renders at gun height (y + offsetY), but sorts at ground level (y)
     // Bullet tracer particle (travels from shooter to victim in 3 frames)
@@ -594,6 +619,13 @@ export class Person extends Lootable {
     this.rigidBody.friction = 0.9;
     // Mark as dead immediately - prevents firing and other actions
     PersonComponent.dead[this.index] = 1;
+
+    const deathSounds = ['dolor1', 'dolor2', 'dolor3', 'dolor4'];
+    const deathSound = deathSounds[(Math.random() * deathSounds.length) | 0];
+    SoundManager.play(deathSound, {
+      volume: 0.8,
+      randomPitch: { min: 0.9, max: 1.1 },
+    });
 
     // Emit blood particles
     ParticleEmitter.emit({

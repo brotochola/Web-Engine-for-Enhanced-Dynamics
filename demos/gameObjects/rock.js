@@ -11,6 +11,7 @@ const {
   randomColor,
   ShadowCaster,
   ShapeType,
+  SoundManager,
 } = WEED;
 
 export class Rock extends GameObject {
@@ -39,6 +40,12 @@ export class Rock extends GameObject {
   }
 
   onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
+    const impactSound = Math.random() > 0.5 ? 'bala_golpea_metal' : 'bala_golpea_metal_2';
+    SoundManager.play(impactSound, {
+      volume: 0.55,
+      randomPitch: { min: 0.85, max: 1.12 },
+    });
+
     const radius = this.collider.radius;
     ParticleEmitter.emit({
       count: 10 + Math.random() * 10,

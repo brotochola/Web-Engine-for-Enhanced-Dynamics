@@ -258,6 +258,21 @@ export class PredatorScene extends WEED.Scene {
     },
   };
 
+  static audios = {
+    ametralladora_disparo: '/demos/audios/ametralladora_disparo.mp3',
+    bala_golpea_metal: '/demos/audios/bala_golpea_metal.mp3',
+    bala_golpea_metal_2: '/demos/audios/bala_golpea_metal_2.mp3',
+    dolor1: '/demos/audios/dolor1.mp3',
+    dolor2: '/demos/audios/dolor2.mp3',
+    dolor3: '/demos/audios/dolor3.mp3',
+    dolor4: '/demos/audios/dolor4.mp3',
+    explosion_corta: '/demos/audios/explosion_corta.mp3',
+    explosion_de_fuego: '/demos/audios/explosion_de_fuego.mp3',
+    explosion_larga: '/demos/audios/explosion_larga.mp3',
+    golpe: '/demos/audios/golpe.mp3',
+    pistola_disparo: '/demos/audios/pistola_disparo.mp3',
+  };
+
   // ========================================
   // STATIC ENTITY REGISTRATION
   // ========================================

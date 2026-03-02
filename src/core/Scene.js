@@ -61,6 +61,8 @@ import {
 } from '../workers/workers-utils.js';
 import { ParticleEmitter } from './ParticleEmitter.js';
 import { Constraint } from './Constraint.js';
+import '../lib/howler.core.js';
+import { SoundManager } from './SoundManager.js';
 
 class Scene {
   // Worker index constants for FrameRate SharedArrayBuffer
@@ -78,6 +80,7 @@ class Scene {
   // Static declarations - override these in subclasses
   static config = {};
   static assets = {};
+  static audios = [];
   static entities = []; // [[EntityClass, poolSize], ...]
 
   static now = Date.now();
@@ -90,6 +93,8 @@ class Scene {
     // Merge static config with any runtime config
     this.config = { ...this.constructor.config };
     this.imageUrls = { ...this.constructor.assets };
+    this.audioUrls = this.constructor.audios || [];
+    this.loadedAudioNames = [];
 
     this.seed = this.config.seed || Math.random();
     this.rng = seededRandom(this.seed);
@@ -1609,6 +1614,32 @@ class Scene {
     }
   }
 
+  async preloadAudios(audioManifest) {
+    if (!audioManifest || (Array.isArray(audioManifest) && audioManifest.length === 0)) {
+      return [];
+    }
+
+    await SoundManager.loadManifest(audioManifest);
+
+    const names = [];
+    if (Array.isArray(audioManifest)) {
+      for (let i = 0; i < audioManifest.length; i++) {
+        const entry = audioManifest[i];
+        if (!entry) continue;
+        if (typeof entry === 'string') names.push(entry);
+        else if (entry.name) names.push(entry.name);
+        else if (entry.id) names.push(entry.id);
+      }
+      return names;
+    }
+
+    if (typeof audioManifest === 'object') {
+      return Object.keys(audioManifest);
+    }
+
+    return names;
+  }
+
   extractDecalTextures(atlasCanvas, atlasJson) {
     const ctx = atlasCanvas.getContext('2d');
     const textures = {};
@@ -1861,6 +1892,7 @@ class Scene {
     // Preload assets
     const spritesheetConfigs = this.imageUrls.spritesheets || {};
     await this.preloadAssets(this.imageUrls, spritesheetConfigs);
+    this.loadedAudioNames = await this.preloadAudios(this.audioUrls);
 
     // ========================================
     // BUILD TEXTURE METADATA FOR RENDER QUEUE
@@ -2209,6 +2241,9 @@ class Scene {
 
       // Show a visible error message on the page
       this._showFatalErrorMessage(workerName, title, message);
+    } else if (e.data.msg === 'playSound') {
+      const { name, options } = e.data;
+      SoundManager.playFromMainThread(name, options || {});
     } else {
       // Log unexpected messages for debugging
       console.log(`[Scene] 📨 Received message from ${e.currentTarget.name}:`, e.data.msg, e.data);
@@ -2580,6 +2615,12 @@ class Scene {
     }
     if (this._wheelHandler) {
       window.removeEventListener('wheel', this._wheelHandler);
+    }
+
+    // Unload scene-specific audio assets
+    if (this.loadedAudioNames && this.loadedAudioNames.length > 0) {
+      SoundManager.unloadMany(this.loadedAudioNames);
+      this.loadedAudioNames.length = 0;
     }
 
     // Clear keyboard state

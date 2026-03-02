@@ -23,6 +23,7 @@ export { Grid } from './core/Grid.js';
 export { Sun } from './core/Sun.js';
 export { SpriteSheetRegistry } from './core/SpriteSheetRegistry.js';
 export { BigAtlasInspector } from './core/BigAtlasInspector.js';
+export { SoundManager } from './core/SoundManager.js';
 export * from './core/utils.js';
 
 // ============================================================================
@@ -114,6 +115,7 @@ import { Grid } from './core/Grid.js';
 import { Sun } from './core/Sun.js';
 import { SpriteSheetRegistry } from './core/SpriteSheetRegistry.js';
 import { BigAtlasInspector } from './core/BigAtlasInspector.js';
+import { SoundManager } from './core/SoundManager.js';
 import * as utils from './core/utils.js';
 
 import { Transform } from './components/Transform.js';
@@ -155,6 +157,7 @@ const WEED = {
   Keyboard,
   SpriteSheetRegistry,
   BigAtlasInspector,
+  SoundManager,
 
   // Components
   Transform,

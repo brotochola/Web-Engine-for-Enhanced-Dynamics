@@ -25,6 +25,7 @@ import { NavGrid } from '../core/NavGrid.js';
 import { ParticleComponent } from '../components/ParticleComponent.js';
 import { DecorationComponent } from '../components/DecorationComponent.js';
 import { Constraint } from '../core/Constraint.js';
+import { SoundManager } from '../core/SoundManager.js';
 import { createWorkerQueryFunctions } from '../core/QuerySystem.js';
 
 /**
@@ -613,7 +614,8 @@ export class AbstractWorker {
     self.DecorationPool = DecorationPool;
     self.BulletPool = BulletPool;
     self.Constraint = Constraint;
-    self.Sun = Sun
+    self.Sun = Sun;
+    self.SoundManager = SoundManager;
   }
 
   /**

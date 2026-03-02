@@ -1793,7 +1793,7 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
         'SpriteRenderer', 'ParticleComponent', 'ShadowCaster', 'LightEmitter', 'FlashComponent',
         'DecorationComponent', 'ParticleEmitter', 'DecorationPool', 'Flash', 'Mouse', 'Camera',
         'NavGrid', 'Ray', 'ShapeType', 'rng', 'randomColor', 'distanceSq2D', 'getDirectionFromAngle',
-        'containerRadius', 'SpriteSheetRegistry', 'Keyboard',
+        'containerRadius', 'SpriteSheetRegistry', 'Keyboard', 'SoundManager',
         transformedScript
       );
 
@@ -1831,7 +1831,8 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
           g.getDirectionFromAngle || WEED.getDirectionFromAngle,
           g.containerRadius || WEED.containerRadius,
           g.SpriteSheetRegistry || WEED.SpriteSheetRegistry,
-          g.Keyboard || WEED.Keyboard
+          g.Keyboard || WEED.Keyboard,
+          g.SoundManager || WEED.SoundManager
         );
       } catch (evalError) {
         console.error(`  ✗ Error evaluating ${scriptPath}:`, evalError);
