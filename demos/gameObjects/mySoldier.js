@@ -12,7 +12,7 @@ const { Transform } = WEED;
 export class MySoldier extends Person {
   static scriptUrl = import.meta.url;
 
-  static tickInterval = 4; // Tick every 10 frames (staggered across entities)
+  static tickInterval = 4; // Tick every 4 frames (staggered across entities)
 
   // Static properties for soldier behavior
   static punchRangeSq = 35 ** 2; // Distance to start punching

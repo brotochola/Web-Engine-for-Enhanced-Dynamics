@@ -343,7 +343,7 @@ export class PredatorScene extends WEED.Scene {
     this.spawnBarrels(this.numberOfBarrels);
     // this.spawnRocks(this.numberOfRocks);
 
-    this.spawnMySoldiers(20);
+    this.spawnMySoldiers(2000);
 
     this.spawnRocksTreesAndHouses();
   }

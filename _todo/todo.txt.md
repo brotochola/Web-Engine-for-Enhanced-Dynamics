@@ -1,9 +1,5 @@
--DecorationPools (ver md)
-
 ---
-
 ## -- spritesheet registry ---
-
 ---
 
 IDEAS PARA JUEGOS:
@@ -15,22 +11,21 @@ JSDoc `@typedef`,
 
 ---
 
-- lo de line of sight y ray.cast es re poco optimo, al menos
-  no deberiamos hacerlo todo el tiepmo en los soldados
-
 -decorations con container!
--constraints en el physics
+
 -limitar aceleration en GameObject, en addAcceleration (asi lo hace el logic y no el physics)
 
 4.testear EntityClass.tickAll vs instance.tick()
-6-re ver todos los momentos q se usa postMessage
+
 7-poolsize variable, automatico.. no tener limite para la cantidad de gameobjects de tipo tal
+
 8-const { x, y } = Transform.getValues();
 
 ---
 
 -map maker: agregar pasto y faroles, y autos, y tachos de basura
--en el autotiler agarrar por layer
+
+- flowfield en caminos
 
 ---
 
@@ -87,8 +82,6 @@ TENER AMBOS! y se puede desde tickall llamar a sistemas, q tmb son metodos estat
 ---
 
 ## -- sonido ---
-
-- howler.js
 
 ---
 

@@ -145,6 +145,9 @@ export class Person extends Lootable {
     // Aiming accuracy: 0 = max spread, 1 = perfect aim (default 0.8)
     PersonComponent.aimingAccuracy[this.index] = spawnConfig.aimingAccuracy ?? 0.8;
 
+    // Reset team-throttle timestamp (entity indices are reused)
+    PersonComponent.lastTeamDataUpdateTime[this.index] = 0;
+
     this.setScale(scale, scale);
   }
 

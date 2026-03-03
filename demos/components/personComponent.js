@@ -30,5 +30,7 @@ export class PersonComponent extends Component {
     aimingAccuracy: Float32Array, // 0 = terrible aim (max spread), 1 = perfect aim (no spread)
     closestEnemyIndex: Int16Array,
     closestEnemyDistanceSq: Float32Array,
+    // Team data throttling timestamp cache
+    lastTeamDataUpdateTime: Float32Array,
   };
 }

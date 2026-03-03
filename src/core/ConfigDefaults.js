@@ -238,4 +238,3 @@ export const NAVIGATION_DEFAULTS = {
   maxPathLength: 128, // Maximum cells per path
   noLimitFPS: true, // Navigation (in particle_worker) runs as fast as possible by default
 };
-

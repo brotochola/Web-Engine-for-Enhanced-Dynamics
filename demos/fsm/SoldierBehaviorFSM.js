@@ -18,6 +18,8 @@ const { FSM, FSMState, Transform, RigidBody, GameObject, Collider, getDirectionF
 
 const _closestResult = { index: -1, distSq: Infinity };
 const _navVec = { x: 0, y: 0 };
+const ENABLE_TEAM_DATA_THROTTLE = true;
+const TEAM_DATA_INTERVAL_MS = 16;
 
 // ==========================================
 // HELPER: Find closest civilian in neighbors
@@ -130,6 +132,8 @@ class IdleSoldierState extends FSMState {
   }
 
   static onUpdate(owner, i, dt) {
+    const nowMs = performance.now();
+
     // Scan for civilians: gun → need LOS; no gun → closest (melee)
     const closest = owner.hasGun() ? findACivilianToShoot(owner) : findClosestCivilian(owner);
 
@@ -156,7 +160,14 @@ class IdleSoldierState extends FSMState {
     }
 
     // No enemies - flock with team
-    owner.updateTeamData();
+    if (
+      !ENABLE_TEAM_DATA_THROTTLE ||
+      TEAM_DATA_INTERVAL_MS <= 0 ||
+      nowMs - PersonComponent.lastTeamDataUpdateTime[i] >= TEAM_DATA_INTERVAL_MS
+    ) {
+      owner.updateTeamData();
+      PersonComponent.lastTeamDataUpdateTime[i] = nowMs;
+    }
     // owner.groupWithMyTeam();
     owner.separateFromTeam();
 
