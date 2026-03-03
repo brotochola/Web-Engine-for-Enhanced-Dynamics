@@ -1,237 +1,362 @@
-# WEED Engine Workers Architecture
+# WEED Engine Workers Architecture 🌿
+
+Six specialized Web Workers, all talking through shared memory instead of postMessage.
+Each worker owns its data region. Nobody steps on anybody else's bytes. It's beautiful.
+
+---
 
 ## Worker Overview
 
-| Worker          | Count        | Scripts | Purpose                                    |
-|-----------------|--------------|---------|--------------------------------------------|
-| `spatial_worker`| 1–N          | No      | Spatial hashing, neighbor detection        |
-| `physics_worker`| 1            | No      | Verlet integration, collision resolution   |
-| `logic_worker`  | 1–N          | Yes     | Game logic, AI, entity lifecycle           |
-| `particle_worker`| 1           | No      | Particles, decals, navigation, derived props|
-| `pre_render_worker`| 1         | No      | Visibility, animation, render/shadow queues|
-| `pixi_worker`   | 1            | No      | PixiJS rendering                           |
+| Worker | Count | Scalable | Runs Entity Scripts | Primary Job |
+|---|---:|---|---|---|
+| `spatial_worker` | 1..N | Yes | No | Spatial hash grid + neighbor lists |
+| `physics_worker` | 1 | No | No | Verlet integration + collision resolution |
+| `logic_worker` | 1..N | Yes | **Yes** | Entity `tick()`, callbacks, lifecycle |
+| `particle_worker` | 1 | No | No | Particles, bullets, decals, navigation, visibility lists |
+| `pre_render_worker` | 1 | No | No | Animation, Y-sort, render + shadow queue assembly |
+| `pixi_worker` | 1 | No | No | PixiJS on OffscreenCanvas. Draws the frame. |
 
-**Scripts**: "Yes" means the worker instantiates `GameObject` instances and runs user scripts.
-
----
-
-## Worker Responsibilities
-
-### Spatial Worker
-
-- **Rebuilds owned grid rows** each frame (clears cells, inserts entities)
-- **Computes neighbor lists** for entities whose home cell is in an owned row
-- **Partitions neighbors** into collision candidates (within collision range) and visual-only
-- **Writes to**: Grid cells (owned rows), neighbor/distance buffers (owned entities)
-
-### Physics Worker
-
-- **Applies Verlet integration**: `pos += vel * dt + 0.5 * accel * dt²`
-- **Resolves collisions**: iterates collision candidates, tests shapes, separates overlaps
-- **Records collision pairs** to `collisionData` SAB for logic callbacks
-- **Fixed timestep mode**: accumulates time when `noLimitFPS` enabled for stable simulation
-- **Writes to**: Transform (x, y), RigidBody (vx, vy, px, py), collisionData
-
-### Logic Worker
-
-- **Runs entity tick methods**: `tick(dt)` on active entities (partitioned by worker index)
-- **Processes collision callbacks**: `onCollisionEnter`, `onCollisionStay`, `onCollisionExit`
-- **Handles screen visibility callbacks**: `onScreenEnter`, `onScreenExit`
-- **Manages entity lifecycle**: `spawn()` and `despawn()` routed through worker 0
-- **Applies tick decimation**: entities with `tickInterval > 1` skip frames
-- **Writes to**: Component arrays (game logic), active entity lists (spawn/despawn)
-
-### Particle Worker
-
-- **Updates particle physics**: position, velocity, lifetime, fading, rotation
-- **Stamps blood decals**: particles with `isDecal` write RGBA to blood tile SAB
-- **Decoration sway**: updates oscillation for active decorations only (O(K) via `activeDecorationsData`)
-- **Computes flowfields**: Dijkstra with bucket queue, writes smoothed direction vectors
-- **Computes A\* paths**: binary heap priority queue, LRU cached results
-- **Rebuilds walkability**: marks grid cells blocked by static entities
-- **Computes derived properties**: `speed`, `velocityAngle`, `sleeping` for rigid bodies
-- **Builds visibility lists**: fused pass builds `activeParticlesData` + `visibleParticlesData`; also writes `visibleEntitiesData` and `visibleDecorationsData`
-- **Writes to**: ParticleComponent, blood tiles, DecorationComponent, NavGrid, RigidBody derived fields, visibility SABs
-
-### Pre-render Worker
-
-- **Reads visibility SABs**: iterates compact `visibleEntitiesData`, `visibleParticlesData`, `visibleDecorationsData` (O(K) not O(N))
-- **Animation frames**: advances animated sprites current frame
-- **Builds main render queue**: collects visible entities/decorations/particles, Y-sorts, interpolates
-- **Builds shadow render queue**: calculates shadow geometry for lights, Y-sorted
-- **Screen coordinates**: calculates `screenX`, `screenY` for visible items
-- **Writes to**: render queue, shadow render queue, screen coords
-
-### Pixi Worker
-
-- **Reads render queue**: consumes Y-sorted items from pre-render worker
-- **Reads shadow queue**: renders shadows/light gradients from pre-render worker
-- **Renders to OffscreenCanvas**: manages PIXI.ParticleContainer
-- **Uploads blood tiles**: transfers dirty tile textures to GPU
-- **Handles camera**: applies view transforms from shared camera buffer
+All workers live in `src/workers/`. Created in `Scene.js` (~line 1819).
 
 ---
 
-## Multithreading Model
+## Per-Worker Detail
 
-### Frame Synchronization
+### Spatial Worker (1..N)
 
-All workers run in a **lockstep-free async loop**:
+Rebuilds the spatial hash grid and computes neighbor lists. The foundation everything else reads from.
+
+**What it does each frame:**
+1. Clear owned grid rows
+2. Insert active entities into grid cells
+3. For each entity in owned rows, find neighbors within `visualRange`
+4. Partition neighbors: collision candidates first, then visual-only
+5. Write `totalCount` + `collisionCount` + neighbor indices
+
+**Row ownership:** `blockIndex = floor(row / rowsPerBlock)`, `owner = blockIndex % totalSpatialWorkers`
+
+Each worker writes only its own rows. No overlap.
+
+| Buffer | Access | Notes |
+|---|---|---|
+| `gridBuffer` | **Write** (owned rows) | Cell counts + entity indices |
+| `neighborData` | **Write** (entities in owned rows) | `[totalCount, collisionCount, neighbors...]` |
+| `entityPosData` | **Write** | Cached `[x, y, halfExtent, pad]` per entity |
+| `activeEntitiesData` | Read | Knows which entities exist |
+| Transform, Collider, SpriteRenderer | Read | Source positions, radii, visual ranges |
+| `spatialStats` | **Write** | FPS, neighbor checks, cells checked |
+| `frameRateData` | **Write** | Own slot |
+
+---
+
+### Physics Worker (1)
+
+Integrates rigid bodies and resolves collisions. Reads neighbor data from spatial, writes collision pairs for logic.
+
+**What it does each frame:**
+1. Integrate positions (Verlet: `pos += vel + acc * dt²`)
+2. For each active entity with collision neighbors, resolve overlaps
+3. Write collision pairs to `collisionData`
+4. Optionally solve constraints
+
+| Buffer | Access | Notes |
+|---|---|---|
+| Transform (`x`, `y`) | **Write** | Position integration |
+| RigidBody (`px`, `py`, `vx`, `vy`) | **Write** | Velocity, previous position |
+| Collider | Read | Shapes, radii, layers, masks |
+| `neighborData` | Read | First `collisionCount` entries per entity |
+| `collisionData` | **Write** | `[pairCount, A0, B0, A1, B1, ...]` |
+| `constraintData` | Read/**Write** | Solve + free constraints |
+| `constraintFreeList/Top` | Read/**Write** | Return freed constraint slots |
+| `activeEntitiesData` | Read | Which entities are alive |
+| `physicsStats` | **Write** | FPS, checks, pairs resolved |
+| `frameRateData` | **Write** | Own slot |
+
+---
+
+### Logic Worker (1..N)
+
+Where your game code runs. Every entity's `tick()` executes here. Also handles collision callbacks, screen visibility events, and spawn/despawn lifecycle.
+
+**What it does each frame:**
+1. **(Logic 0 only)** Process `listUpdates` from other logic workers (despawns first, then spawns)
+2. **(Logic 0 only)** Process spawn/despawn messages from main thread
+3. Process impacts from `impactBuffer`
+4. Dispatch collision callbacks (`onCollisionEnter`, `onCollisionStay`, `onCollisionExit`)
+5. Run `tick(dtRatio)` on owned entity partition
+6. Handle on-screen enter/exit callbacks
+
+**Entity partition:** `for (idx = myIndex; idx < count; idx += totalWorkers)` over per-type active lists.
+
+**Collision partition:** `minEntity % totalWorkers === myIndex` (Cantor pairing for enter/stay/exit tracking).
+
+**Tick decimation:** entities with `tickInterval > 1` use `nextTickData[entityIndex]` countdown. When tick fires, `RigidBody.ax/ay` is scaled by `tickInterval` to compensate for skipped frames.
+
+| Buffer | Access | Notes |
+|---|---|---|
+| All component SABs | Read/**Write** | Entity state (positions, velocities, custom components) |
+| `collisionData` | Read | From physics -- collision pairs |
+| `impactBuffer` | Read | From particle -- bullet impacts |
+| `activeEntitiesData` | Read/**Write** (logic 0) | Logic 0 maintains the global active list |
+| `perTypeActiveLists` | Read/**Write** (logic 0) | Per-type active lists |
+| `nextTickData` | Read/**Write** | Tick decimation countdown per entity |
+| `inputData` | Read | Keyboard state |
+| `mouseData` | Read | Mouse position + buttons |
+| `cameraData` | Read/**Write** | Camera follow targets |
+| `constraintData` | **Write** | Create constraints via `Constraint.add` |
+| `constraintFreeList/Top` | Read/**Write** | Pop free constraint slots |
+| `raycastDebugData` | **Write** | Debug ray visualization |
+| `logicStats` | **Write** | FPS, entities processed |
+| `frameRateData` | **Write** | Own slot |
+
+**Logic 0 special duties:**
+- Receives spawn/despawn messages from main thread
+- Receives `listUpdates` from logic workers 1..N
+- Runs `processListUpdates()` before any ticks (despawns first, spawns second)
+- Updates `activeEntitiesData`, per-type active lists, query caches
+- Updates `Mouse.previousValues`
+
+---
+
+### Particle Worker (1)
+
+The multitasker. Handles particles, bullets, decals, navigation computation, visibility lists, query results, and derived rigid body values.
+
+**What it does each frame:**
+1. Update particle simulation (lifetime, gravity, ground collision, alpha fade)
+2. Stamp decals onto tile buffers
+3. Tick bullets (movement, trail, screen visibility, impact detection → `impactBuffer`)
+4. Update decoration sway
+5. Build compact active + visible lists for particles, decorations, bullets
+6. Compute cell sleeping flags
+7. Populate query system results
+8. Handle navigation requests (flowfields via Dijkstra, A* paths)
+9. Update walkability grid on rebuild requests
+10. Compute derived rigid body values used downstream
+
+| Buffer | Access | Notes |
+|---|---|---|
+| `ParticleComponent` | Read/**Write** | Particle simulation |
+| `DecorationComponent` | Read | Sway animation |
+| `BulletComponent` | Read/**Write** | Bullet physics + impacts |
+| `activeParticlesData` | **Write** | Active particle index list |
+| `visibleParticlesData` | **Write** | Visible particle index list |
+| `activeDecorationsData` | Read | From DecorationPool |
+| `visibleDecorationsData` | **Write** | Visible decoration index list |
+| `activeBulletsData` | **Write** | Active bullet index list |
+| `visibleBulletsData` | **Write** | Visible bullet index list |
+| `impactBuffer` | **Write** | `[count, targetId, damage, hitX, hitY, ownerId, shooterType, ...]` |
+| `cellSleepingBuffer` | **Write** | Per-cell sleeping state |
+| `bloodTilesRGBA` | **Write** | Decal pixel data |
+| `bloodTilesDirty` | **Write** | Dirty tile flags |
+| `navigationData` | Read/**Write** | Flowfields, A* paths, walkability |
+| `queryResultsSAB` | **Write** | Query system results |
+| Transform, RigidBody, Collider | Read | Entity state for visibility/bullet checks |
+| `cameraData` | Read | Camera bounds for visibility |
+| `activeEntitiesData` | Read | Which entities are alive |
+| `particleStats` | **Write** | FPS, active counts |
+| `navigationStats` | **Write** | Flowfields/paths computed/cached |
+| `frameRateData` | **Write** | Own slot |
+
+---
+
+### Pre-Render Worker (1)
+
+Reads visibility lists, advances animations, builds the render and shadow queues that pixi consumes.
+
+**What it does each frame:**
+1. Read compact visible lists (entities, particles, decorations, bullets)
+2. Advance sprite animation frames
+3. Compute interpolated positions, scales, rotations
+4. Build main render queue (SoA packed: x, y, scaleX, scaleY, rotation, alpha, tint, textureId, anchorX, anchorY, type, entityIndex)
+5. Build shadow/light render queue
+6. Write to alternating double buffer (`renderQueueFrame % 2`)
+7. Signal pixi via `Atomics.store` + `Atomics.notify` on `renderQueueSync`
+8. Wait if more than 1 frame ahead of pixi
+
+| Buffer | Access | Notes |
+|---|---|---|
+| `renderQueueDataA/B` | **Write** | Alternating double buffer |
+| `shadowRenderQueueDataA/B` | **Write** | Shadow/light queue |
+| `renderQueueSync` | Read/**Write** | Atomics: readyFrame + consumedFrame |
+| `entityTextureData` | **Write** | Per-entity texture ID |
+| `visibleLightsData` | **Write** | Visible light index list |
+| `visibleParticlesData` | Read | From particle worker |
+| `visibleDecorationsData` | Read | From particle worker |
+| `visibleBulletsData` | Read | From particle worker |
+| `activeEntitiesData` | Read | Entity list |
+| All component SABs | Read | Positions, sprites, animation state |
+| `cameraData` | Read | Zoom, position |
+| `sunData` | Read | Lighting/shadow config |
+| `preRenderStats` | **Write** | FPS, visible counts, queue size |
+| `frameRateData` | **Write** | Own slot |
+
+---
+
+### Pixi Worker (1)
+
+Consumes the render queues and draws to an OffscreenCanvas. Never touches game state.
+
+**OffscreenCanvas:** transferred from main thread at init via `canvas.transferControlToOffscreen()`.
+
+**What it does each frame:**
+1. `Atomics.load(renderQueueSync, 0)` -- check for new frame
+2. If new: read from `(readyFrame - 1) % 2` buffer
+3. Render sprites, shadows, lights, particles, decorations, bullets
+4. Upload dirty decal tiles to GPU textures
+5. `Atomics.store(renderQueueSync, 1, readyFrame)` + notify
+
+**It never waits.** If there's no new frame, it skips. Pre-render is the one that waits (if it's too far ahead).
+
+| Buffer | Access | Notes |
+|---|---|---|
+| `renderQueueDataA/B` | Read | Main sprite queue |
+| `shadowRenderQueueDataA/B` | Read | Shadow/light queue |
+| `renderQueueSync` | Read/**Write** | Atomics: consume frame + notify |
+| `bloodTilesRGBA` | Read | Decal tile pixels |
+| `bloodTilesDirty` | Read | Which tiles to re-upload |
+| `entityTextureData` | Read | Texture IDs |
+| `visibleLightsData` | Read | Light indices |
+| `cameraData` | Read | Zoom, position |
+| `sunData` | Read | Ambient/shadow config |
+| `rendererStats` | **Write** | FPS, draw calls, sprite counts |
+| `frameRateData` | **Write** | Own slot |
+
+---
+
+## Dataflow Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Main Thread                                                │
-│    └─> requestAnimationFrame                                │
-│          └─> update camera/input SABs                       │
-│                                                             │
-│  Workers (independent loops)                                │
-│    spatial_worker    ────────────────────────────────────>  │
-│    physics_worker    ────────────────────────────────────>  │
-│    logic_worker      ────────────────────────────────────>  │
-│    particle_worker   ────────────────────────────────────>  │
-│    pre_render_worker ────────────────────────────────────>  │
-│    pixi_worker       ────────────────────────────────────>  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-Workers **do not wait** for each other. Each reads "current or recent" data from SABs.
-
-### Data Flow Per Frame
-
-```
-spatial_worker: read positions → write grid + neighbors
-       ↓ (neighbors available)
-physics_worker: read neighbors → resolve collisions → write positions + pairs
-       ↓ (positions + pairs available)
-logic_worker: read pairs → run scripts → write components
-       ↓ (component data available)
-particle_worker: read components → update particles, decals, navigation
-                 → write visibility SABs (active/visible particles, entities, decorations)
-       ↓ (particles + nav data + visibility lists available)
-pre_render_worker: read visibility SABs → build render queue + shadow queue (O(K) iteration)
-       ↓ (render queue available)
-pixi_worker: read render queue → render frame
+                    ┌──────────────┐
+                    │  Main Thread │
+                    │  (input,     │
+                    │   camera,    │
+                    │   debug)     │
+                    └──────┬───────┘
+                           │ SABs + spawn/despawn messages
+           ┌───────────────┼───────────────┐
+           ▼               ▼               ▼
+   ┌──────────────┐ ┌─────────────┐ ┌─────────────┐
+   │   Spatial     │ │   Physics   │ │   Logic     │
+   │   Worker(s)   │ │   Worker    │ │   Worker(s) │
+   │               │ │             │ │             │
+   │ grid +        │ │ integration │ │ tick() +    │
+   │ neighbors     │ │ + collisions│ │ callbacks   │
+   └───────┬───────┘ └──────┬──────┘ └──────┬──────┘
+           │                │               │
+           │ neighborData   │ collisionData │ component state
+           │ gridBuffer     │               │ active lists
+           ▼                ▼               ▼
+         ┌─────────────────────────────────────┐
+         │          Particle Worker             │
+         │                                      │
+         │  particles, bullets, decals,         │
+         │  navigation, visibility lists,       │
+         │  query results, impacts              │
+         └──────────────────┬──────────────────┘
+                            │ visible lists
+                            ▼
+                  ┌────────────────────┐
+                  │  Pre-Render Worker │
+                  │                    │
+                  │  animation,        │
+                  │  render queues,    │
+                  │  shadow queues     │
+                  └─────────┬──────────┘
+                            │ double-buffered queues (Atomics)
+                            ▼
+                  ┌────────────────────┐
+                  │    Pixi Worker     │
+                  │                    │
+                  │  OffscreenCanvas   │
+                  │  final render      │
+                  └────────────────────┘
 ```
 
 ---
 
-## Atomics Avoidance Strategy
+## Message Protocol
 
-### 1. Data Ownership (No Contention)
+### Main Thread → Workers
 
-Each worker owns specific data regions—no two workers write the same memory location.
+| Message | Target | Payload |
+|---|---|---|
+| `init` | All workers | `buffers`, `config`, `scriptsToLoad`, `registeredClasses`, spritesheet data, etc. |
+| `start` | All workers | -- |
+| `pause` | All workers | -- |
+| `resume` | All workers | -- |
+| `spawn` | Logic 0 | `{ className, spawnConfig, entityIndex }` |
+| `despawn` | Logic 0 | `{ entityIndex }` |
+| `despawnAll` | Logic 0 | `{ className }` |
+| `clearAll` | Logic 0 | -- |
+| `updatePhysicsConfig` | Physics | `{ config }` |
+| `setBackground` | Pixi | `{ type, textureId, tileScale, tilemapId, options }` |
 
-| Strategy               | Application                                        |
-|------------------------|-------------------------------------------------   |
-| **Row partitioning**   | Spatial grid cells, neighbor lists                 |
-| **Single writer**      | Physics → collision pairs, Particle → render queue |
-| **Index partitioning** | Logic workers partition entities by `idx % N`      |
+### Workers → Main Thread
 
-### 2. Write-Once-Read-Many
+| Message | Source | Payload |
+|---|---|---|
+| `workerReady` | Any | `{ worker: constructorName }` |
+| `log` | Any | `{ message, when }` |
+| `fps` | Any | FPS + active entity counts |
+| `error` | Any | `{ title, message, stack }` |
+| `playSound` | Logic | `{ name, options }` |
 
-Within a frame, data is **written once** then **read many times**:
+### Worker ↔ Worker (MessagePort)
 
-- Spatial writes neighbors → Physics + Logic read
-- Physics writes collision pairs → Logic reads
-- Particle writes render queue → Renderer reads
-
-### 3. Tolerated Stale Reads
-
-"Torn reads" (reading while another worker writes) produce **1-frame-stale data**, not garbage:
-
-- **Grid cells**: May see previous frame's entity list → filtered by distance check
-- **Neighbor lists**: May have stale neighbors → `Transform.active` check filters despawned
-- **Positions**: May be 1 frame behind → imperceptible, consistent next frame
-
-This is acceptable because:
-- All array values are valid entity IDs or positions
-- Distance/active checks filter invalid results
-- 1-frame latency is visually unnoticeable at 60+ FPS
-
-### 4. Routed Operations (Serialized Mutations)
-
-Operations that must be atomic are **routed to a single worker**:
-
-- **Spawn/Despawn**: All requests go to `logic_worker[0]` via MessagePort
-- **Free list operations**: Use `Atomics.add/sub` only for the stack pointer
+| From | To | Message | Purpose |
+|---|---|---|---|
+| Logic 1..N | Logic 0 | `listUpdates` | `{ spawns, despawns }` -- merged by logic 0 at frame start |
+| Logic 0..N | Particle | `REQUEST_FLOWFIELD` | Request flowfield for `targetCell` |
+| Logic 0..N | Particle | `REQUEST_PATH` | Request A* path `fromCell → toCell` |
+| Logic 0..N | Particle | `REBUILD` | Rebuild walkability from static entities |
+| Logic 0..N | Particle | `REBUILD_FROM_INDICES` | Rebuild walkability from specific entity indices |
+| Logic 0..N | Pixi | (game-specific) | Custom renderer messages from entity code |
 
 ---
 
-## Worker Scaling
+## Scaling Rules
 
-### Spatial Workers (N)
+### Spatial Workers
 
-- **Row assignment**: Worker `i` owns rows where `floor(row / rowsPerBlock) % N === i`
-- **Block-based**: `rowsPerBlock` controls granularity (default 1 = interleaved)
-- **Load balancing**: Rows distributed evenly; entities cluster naturally
+- Grid rows divided into blocks of `rowsPerBlock` (default 2)
+- `blockIndex = floor(row / rowsPerBlock)`
+- `owner = blockIndex % totalSpatialWorkers`
+- Each worker clears + rebuilds only its owned rows. Zero overlap.
 
-### Logic Workers (N)
+### Logic Workers
 
-- **Entity assignment**: Worker `i` processes entities where `activeIdx % N === i`
-- **No coordination**: Each worker iterates independently through active list
-- **Spawn routing**: All spawns go to worker 0 to maintain free list consistency
+- Active entities partitioned by: `idx % totalWorkers === workerIndex` (over per-type active lists)
+- Collision pairs partitioned by: `min(entityA, entityB) % totalWorkers === myIndex`
+- Impact processing: `targetId % totalWorkers === myIndex`
+- Logic worker 0 has extra duties: list mutations, spawn/despawn processing, mouse state
 
-### Single Workers
+### Single-Instance Workers
 
-- **Physics**: Collision resolution requires global view of all pairs
-- **Particle**: Particles, decals, navigation, visibility lists - owns these data regions
-- **Pre-render**: Render/shadow queues must be built atomically; reads from visibility SABs
-- **Renderer**: Single GPU context
-
----
-
-## Inter-Worker Communication
-
-### MessagePort Channels
-
-Direct worker-to-worker communication without main thread relay:
-
-```
-logic_worker[i] ←→ particle_worker   (flowfield/path requests)
-logic_worker[i] ←→ logic_worker[0]   (spawn/despawn routing)
-```
-
-### Message Types
-
-| Message              | From          | To            | Purpose                    |
-|----------------------|---------------|---------------|----------------------------|
-| `REQUEST_FLOWFIELD`  | Logic         | Particle      | Request flowfield compute  |
-| `REQUEST_PATH`       | Logic         | Particle      | Request A* path compute    |
-| `REBUILD_FROM_INDICES`| Logic        | Particle      | Update walkability         |
-| `spawnRequest`       | Logic[1..N]   | Logic[0]      | Route spawn to worker 0    |
-| `despawnRequest`     | Logic[1..N]   | Logic[0]      | Route despawn to worker 0  |
+Physics, particle, pre_render, and pixi are single-owner by design. Their workloads don't partition cleanly or benefit from splitting.
 
 ---
 
-## Performance Patterns
+## Frame Rate Indexing
 
-### Cache-Friendly Iteration
+Each worker gets a slot in `frameRateData` for aggregate FPS monitoring:
 
-```javascript
-// Good: Contiguous array access
-const x = Transform.x, y = Transform.y;
-for (let i = 0; i < count; i++) {
-  sum += x[indices[i]] + y[indices[i]];
-}
-```
+| Slot Range | Worker |
+|---|---|
+| `0 .. N-1` | Spatial workers |
+| `N` | Physics |
+| `N+1` | Pixi (renderer) |
+| `N+2` | Particle |
+| `N+3 .. N+2+L` | Logic workers |
+| `N+3+L` | Pre-render |
 
-### Zero-Allocation Hot Paths
+Where `N = numberOfSpatialWorkers`, `L = numberOfLogicWorkers`.
 
-- Reusable result objects (`_acquireResult`, `_cameraBounds`)
-- Pre-allocated scratch buffers (`_renderableCollector`, `_visualOnlyBuffer`)
-- Marker arrays for O(1) deduplication instead of Set
-- Pre-allocated DataView for navigation SAB access (avoids `new Uint32Array()` in loops)
-- Static empty arrays for query fallbacks (avoids `new Uint16Array()` allocations)
+---
 
-### Sorted Active Lists
+## Performance Notes
 
-- Binary search insert/remove: O(log N) mutations
-- Linear iteration: O(N) with cache-friendly access
-- Avoids rebuilding full list each frame
-
-### Compact Visibility Lists
-
-- **Particles**: Fused single pass builds both active and visible lists simultaneously
-- **Entities**: `particle_worker` writes `visibleEntitiesData` each frame
-- **Decorations**: `activeDecorationsData` maintained incrementally by `DecorationPool`; visibility computed by `particle_worker`
-- **Iteration**: O(K) where K = visible count, not O(N) where N = max pool size
+- Workers are asynchronous. There's no global frame barrier. Each worker runs at its own pace.
+- The only Atomics synchronization is between pre_render and pixi (render queue double buffer) and in the free-list stacks (spawn/despawn).
+- Single-writer ownership eliminates the need for locks on frame-critical data.
+- If your game stutters, check `frameRateData` in debug UI to find which worker is the bottleneck.

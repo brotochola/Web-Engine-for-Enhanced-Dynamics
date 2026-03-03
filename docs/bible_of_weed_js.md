@@ -1,351 +1,124 @@
 # WEED.js Quick Reference
 
-## Hard Limits
+Engine-focused notes for the current `src/` architecture.
 
-| Resource               | Max Value      | Type       | Notes                          |
-|------------------------|----------------|------------|--------------------------------|
-| Entities               | 65,535         | `Uint16`   | Global across all types        |
-| Entity Types           | 256            | `Uint8`    | GameObject subclasses          |
-| Components             | 64             | `BigInt`   | Bitmask limits                 |
-| Neighbors per Entity   | 500            | `Uint16`   | Configurable via `spatial.maxNeighbors` |
-| Entities per Cell      | 64             | `Uint8`    | Configurable via `spatial.maxEntitiesPerCell` |
-| Collision Pairs/Frame  | 10,000         | `Int32`    | Configurable via `physics.maxCollisionPairs` |
-| Flowfield Slots        | 16             | default    | LRU cache, configurable        |
-| A* Path Slots          | 64             | default    | LRU cache, configurable        |
-| Path Length            | 128 cells      | default    | Max cells per path             |
-| Shadow Casting Lights  | 20             | default    | Configurable                   |
-| Shadows per Light      | 15             | default    | Configurable                   |
-| Render Queue Items     | 40,000         | default    | Entities + particles + decorations |
+## Practical Limits
+
+| Resource | Current Limit |
+|---|---|
+| Entity indices | `0..65534` (`Uint16`) |
+| QuerySystem component mask width | `64` components |
+| QuerySystem entity-type mask width | `64` entity types |
+| Default max neighbors/entity | `500` |
+| Default max entities/cell | `64` |
+| Default max collision pairs/frame | `10000` |
 
 ---
 
-## Scene
+## Scene Contract
 
-- **One active scene** at a time
-- Defines: assets, entity classes, world size, worker counts
-- Creates all SharedArrayBuffers on init
+Every scene defines:
+
+- `static config` (engine settings)
+- `static assets` (textures/spritesheets)
+- `static audios` (optional)
+- `static entities = [[EntityClass, poolSize], ...]`
 
 ```javascript
-static config = {
-  worldWidth: 1000,
-  worldHeight: 1000,
-  canvasWidth: 800,
-  canvasHeight: 600,
-  gravity: { x: 0, y: 0 },
-  spatial: { cellSize: 128, numberOfSpatialWorkers: 1 },
-  logic: { numberOfLogicWorkers: 1 },
-  particle: { maxParticles: 1000 },
-  decoration: { maxDecorations: 5000 },
-  navigation: { enabled: true, cellSize: 32 },
-  lighting: { enabled: true, shadowsEnabled: true },
-  renderer: { ySorting: true, interpolation: true },
-};
-```
-
----
-
-## Entities
-
-- **Indices, not objects** — just integers 0..65534
-- **Defined by components** — composition over inheritance
-- **Pooled per type** — pre-allocated, recycled on spawn/despawn
-
----
-
-## Components
-
-- **Static data** — stored in SharedArrayBuffers (Structure of Arrays)
-- **Fixed at registration** — cannot add/remove at runtime
-- **Access via index** — `Transform.x[entityIndex]`
-
-### Core Components
-
-| Component          | Purpose                                    |
-|--------------------|--------------------------------------------|
-| `Transform`        | Position (x, y), rotation, active state    |
-| `RigidBody`        | Velocity, acceleration, mass, sleeping     |
-| `Collider`         | Shape (Circle/Box), collision filtering    |
-| `SpriteRenderer`   | Animation, tint, alpha, scale, visibility  |
-| `LightEmitter`     | Point light source (color, intensity)      |
-| `ShadowCaster`     | Casts shadows from nearby lights           |
-
----
-
-## GameObjects
-
-- **Facades** — wrap entity index with component accessors
-- **No instance properties** — use component data only
-- **Static shared access** — `Mouse`, `Keyboard`, `Camera`, `Grid`
-
-### Lifecycle Hooks
-
-| Method               | When Called                              |
-|----------------------|------------------------------------------|
-| `setup()`            | Once when instance created (at scene start) |
-| `onSpawned(config)`  | Each time entity spawns                  |
-| `onDespawned()`      | Each time entity despawns                |
-| `tick(dt, dtRatio)`  | Every frame (or per `tickInterval`)      |
-| `onCollisionEnter()` | First frame of collision                 |
-| `onCollisionStay()`  | Ongoing collision                        |
-| `onCollisionExit()`  | Frame after collision ends               |
-| `onScreenEnter()`    | Entity enters camera view                |
-| `onScreenExit()`     | Entity leaves camera view                |
-
-### Spawning
-
-```javascript
-// From main thread
-scene.spawnEntity(Zombie, { x: 100, y: 200 });
-
-// From entity script
-GameObject.spawn(Zombie, { x: 100, y: 200 });
-this.despawn();
-```
-
----
-
-## Workers
-
-| Worker           | Count  | Scripts | Role                                  |
-|------------------|--------|---------|---------------------------------------|
-| `spatial_worker` | 1–N    | No      | Grid rebuild, neighbor detection      |
-| `physics_worker` | 1      | No      | Verlet integration, collision resolve |
-| `logic_worker`   | 1–N    | Yes     | Entity tick(), callbacks              |
-| `particle_worker`| 1      | No      | Particles, decals, navigation, visibility lists |
-| `pre_render_worker`| 1    | No      | Animation, render/shadow queues       |
-| `pixi_worker`    | 1      | No      | PixiJS rendering                      |
-
----
-
-## Spatial Grid
-
-- **Row-based partitioning** — workers own rows, no locks
-- **Cell size** — default 128px, tune for entity density
-- **Neighbor types**:
-  - Collision candidates (within collider range)
-  - Visual-only (within `visualRange`, for AI)
-
-```javascript
-// Access neighbors
-this.neighborCount;                    // Total neighbors
-this.getNeighbor(i);                   // Get neighbor by index
-
-
-```
-
----
-
-## Physics
-
-- **Verlet integration** — stable, handles constraints
-- **Sub-stepping** — default 4 steps per frame
-- **Collision shapes** — Circle (0), Box (1)
-- **Sleeping** — entities stop updating when still
-
-### Collision Filtering
-
-```javascript
-// Layers: 16-bit bitmask
-this.collider.collisionLayer = 0b0001;  // I am on layer 1
-this.collider.collisionMask = 0b0110;   // I collide with layers 2 and 3
-```
-
----
-
-## Navigation
-
-- **Flowfields** — for many entities → same target (Dijkstra)
-- **A\* paths** — for individual entity → unique target
-- **LRU cached** — auto-evicts least recently used
-
-```javascript
-// Flowfield (returns direction vector)
-const vec = { x: 0, y: 0 };
-NavGrid.requestVector(this.x, this.y, target.x, target.y, vec);
-this.vx += vec.x * speed;
-this.vy += vec.y * speed;
-
-// Walkability check
-NavGrid.isPositionWalkable(x, y);
-```
-
----
-
-## Rendering
-
-### Layers (Z-Index)
-
-| Layer            | Z  | Blend Mode  |
-|------------------|-----|-------------|
-| `BACKGROUND`     | 0   | normal      |
-| `DECALS`         | 1   | normal      |
-| `CASTED_SHADOWS` | 2   | multiply    |
-| `ENTITIES`       | 3   | normal-npm  |
-| `LIGHTING`       | 4   | multiply    |
-| `LIGHT_GLOW`     | 5   | add         |
-
-### Sprites & Animation
-
-```javascript
-this.setSpritesheet('zombie');           // Set spritesheet
-this.setAnimation('walk', true);         // Play animation (loop)
-this.setAnimation('attack', false);      // Play once
-this.spriteRenderer.alpha = 0.5;         // Transparency
-this.spriteRenderer.tint = 0xFF0000;     // Color tint (RGB)
-this.spriteRenderer.scaleX = -1;         // Flip horizontal
-```
-
----
-
-## Particles
-
-- **NOT GameObjects** — separate optimized pool
-- **Short-lived FX** — sparks, blood, smoke
-- **Supports ranges** — `{ min: 5, max: 10 }` for randomization
-- **Compact lists** — active/visible particles tracked in SABs for O(K) iteration
-
-```javascript
-ParticleEmitter.emit({
-  x: this.x,
-  y: this.y,
-  count: 10,
-  texture: 'blood',
-  speed: { min: 50, max: 150 },
-  angle: { min: 0, max: Math.PI * 2 },
-  lifetime: { min: 0.5, max: 1.5 },
-  gravity: 500,
-  fadeOut: true,
-});
-```
-
-### Floor Decals
-
-```javascript
-// Particle that stamps and disappears
-ParticleEmitter.emit({
-  ...config,
-  staysOnTheFloor: true,  // Stamps when z reaches 0
-});
-
-// Direct decal stamp
-ParticleEmitter.stampDecal({
-  x: 100, y: 200,
-  texture: 'bloodstain',
-  scale: { min: 0.8, max: 1.2 },
-});
-```
-
----
-
-## Decorations
-
-- **NOT GameObjects** — separate optimized pool
-- **Static visuals** — grass, rocks, debris
-- **Sway animation** — wind effect built-in
-- **Incremental tracking** — active/visible decorations maintained on spawn/despawn
-
-```javascript
-DecorationPool.spawn({
-  x: 500,
-  y: 300,
-  texture: 'grass1',
-  scaleX: { min: 0.8, max: 1.2 },
-  sway: true,
-  swayAmplitude: 0.025,
-});
-```
-
----
-
-## Lighting
-
-- **`LightEmitter`** — point light source
-- **`ShadowCaster`** — casts dynamic shadows
-- **Ambient** — global minimum light level
-
-```javascript
-// Light source
-this.lightEmitter.color = 0xFFAA00;
-this.lightEmitter.intensity = 1.5;
-this.lightEmitter.height = 50;
-
-// Shadow caster
-this.shadowCaster.active = 1;
-this.shadowCaster.opacity = 0.6;
-```
-
----
-
-## Input
-
-```javascript
-// Keyboard (static access)
-if (Keyboard.w) { ... }
-if (Keyboard.a) { ... }
-
-
-
-// Mouse (static access)
-Mouse.x; Mouse.y;                    // World position
-Mouse.screenX; Mouse.screenY;        // Screen position
-Mouse.isButton0Down;                 // Left click
-Mouse.isButton2Down                  // Right click
-```
-
----
-
-## Camera
-
-```javascript
-Camera.x; Camera.y;                  // World position
-Camera.zoom;                         // Current zoom level
-Camera.follow(x,y);                  // Follow x,y with lerp
-Camera.setPosition(x, y);            // Manual position
-Camera.setZoom(1.5);                 // Set zoom
-```
-
----
-
-## Query System
-
-```javascript
-// All entities with components (any state)
-const all = query([Transform, RigidBody]);
-
-// Only active entities with components
-const active = queryActiveEntities([Transform, Collider]);
-
-// Iterate results
-for (const entityIndex of active) {
-  const x = Transform.x[entityIndex];
+class MyScene extends WEED.Scene {
+  static config = {
+    worldWidth: 2000,
+    worldHeight: 2000,
+    spatial: { cellSize: 128, numberOfSpatialWorkers: 1 },
+    logic: { numberOfLogicWorkers: 1, staggeredUpdates: false },
+    physics: { subStepCount: 4 },
+    particle: { maxParticles: 2000 },
+    decoration: { maxDecorations: 1000 },
+  };
+
+  static entities = [[MyEntity, 5000]];
 }
 ```
 
 ---
 
-## Rules & Gotchas
+## Entity Model
 
-### Do
+- Entities are pooled; no runtime allocation per spawn.
+- `GameObject` is a facade over typed arrays.
+- Component sets are fixed per class (`static components`).
+- Neighbor access in hot paths:
+  - `this.neighborCount`
+  - `this.getNeighbor(i)`
+  - `this.getAllNeighborIds()`
 
-- Use component properties for all entity state
-- Pool entities — spawn/despawn, don't create/destroy
-- Use `tickInterval` for expensive AI (tick every N frames)
-- Use flowfields for group pathfinding (many → one target)
-- Use collision layers/masks to reduce pair checks
+Lifecycle hooks:
 
-### Don't
+- `setup()` once per pooled instance
+- `onSpawned(spawnConfig)` each spawn
+- `tick(dtRatio, deltaTime, accumulatedTime, frameNumber)` update
+- `onCollisionEnter/Stay/Exit(otherIndex)`
+- `onScreenEnter/Exit()`
+- `onDespawned()` before returning to pool
 
-- Add instance properties to GameObjects (lost on despawn)
-- Add/remove components at runtime (fixed at registration)
-- Use Atomics in game code (engine handles sync)
-- Spawn/despawn from non-logic workers (routed internally)
-- Exceed pool limits (silent failures)
+---
 
-### Performance Tips
+## Worker Roles
 
-- Keep `visualRange` reasonable (affects neighbor count)
-- Use `sleeping` for static/idle entities
-- Tune `cellSize` — smaller = more cells, larger = more entities/cell
-- Use decorations for static visuals (cheaper than entities)
-- Use particles for short effects (cheaper than entities)
-- Visibility uses compact SAB lists — O(K) iteration, not O(N) scans
+| Worker | Count | Main Responsibility |
+|---|---:|---|
+| `spatial_worker` | 1..N | Grid rebuild + neighbor lists |
+| `physics_worker` | 1 | Integration + collision solve |
+| `logic_worker` | 1..N | Entity tick + callbacks + lifecycle |
+| `particle_worker` | 1 | Particles, decals, nav, visibility buffers |
+| `pre_render_worker` | 1 | Animation + render/shadow queue build |
+| `pixi_worker` | 1 | OffscreenCanvas/Pixi draw |
+
+---
+
+## Useful APIs
+
+```javascript
+// Input
+if (WEED.Keyboard.isDown('w')) { ... }
+if (WEED.Mouse.isButton0Down) { ... }
+
+// Camera
+WEED.Camera.follow(this.x, this.y);
+WEED.Camera.setZoom(1.5);
+
+// Particles
+WEED.ParticleEmitter.emit({
+  x: this.x,
+  y: this.y,
+  texture: 'blood',
+  angleXY: { min: 0, max: 360 },
+  speed: { min: 1, max: 3 },
+  lifespan: 800,
+});
+
+// Query helpers (worker context)
+const all = query([WEED.Transform, WEED.Collider]);
+const active = queryActiveEntities([WEED.Transform, WEED.SpriteRenderer]);
+```
+
+---
+
+## Important Defaults
+
+- Physics: `subStepCount = 4`
+- Spatial: `cellSize = 128`
+- Logic: `staggeredUpdates = false`
+- Renderer: `interpolation = true`, `maxVisibleRenderables = 40000`
+- Navigation: `enabled = false` by default
+
+See `src/core/ConfigDefaults.js` for the canonical defaults.
+
+---
+
+## Performance Notes
+
+- Prefer component-array reads in hot loops.
+- Keep `collider.visualRange` tight to reduce neighbor pressure.
+- Use `tickInterval > 1` for heavy AI and enable `logic.staggeredUpdates`.
+- Use particles/decorations for short-lived or static visuals instead of full entities.

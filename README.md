@@ -1,6 +1,10 @@
 # WeedJS 🌿
 
-**A blazing-fast multithreaded web game engine that handles 20,000+ NPCs without breaking a sweat.**
+**20,000 entities. 60fps. In your browser. No, seriously.**
+
+Most web game engines tap out around 2000 sprites and call it a day. WeedJS looked at that, took a hit, and said _"what if we just... didn't have that problem?"_
+
+The result: a multithreaded 2D engine where your game logic, physics, spatial queries, particles, and rendering all run on separate threads through `SharedArrayBuffer` pipelines. Zero message-passing bottlenecks. Zero main-thread rendering. Just raw parallel throughput.
 
 🔗 **Live Demo**: https://multithreaded-game-engine.vercel.app/demos
 
@@ -8,190 +12,164 @@
 
 ---
 
-## 🔥 20,000 Entities. Smooth 60fps. In Your Browser.
+## Why It Hits Different
 
-Most web game engines choke at a few hundred entities. **WeedJS runs 20,000 with room to spare.**
+Other engines serialize everything through one thread and pray. WeedJS splits the work across 6+ dedicated Web Workers that share memory directly:
 
-Built from the ground up with true parallelism using SharedArrayBuffers and 4 dedicated Web Workers:
+| Worker                  | What It Does                                                       |
+| ----------------------- | ------------------------------------------------------------------ |
+| `spatial_worker` (1..N) | Spatial hashing, neighbor detection. Knows who's near who.         |
+| `physics_worker` (1)    | Verlet integration, collision resolution. Solid and predictable.   |
+| `logic_worker` (1..N)   | Your `tick()` code runs here. AI, behaviors, the fun stuff.        |
+| `particle_worker` (1)   | Particles, decals, navigation, visibility lists. The multitasker.  |
+| `pre_render_worker` (1) | Animation, Y-sorting, render queue assembly. The stage manager.    |
+| `pixi_worker` (1)       | PixiJS on an OffscreenCanvas. Draws frames, stays out of your way. |
 
-- **Spatial Worker** — Blazing-fast neighbor queries via spatial hashing
-- **Logic Workers** — Your game AI runs in parallel across multiple cores
-- **Physics Worker** — Rock-solid Verlet integration with collision detection
-- **Renderer Worker** — PixiJS-powered graphics running off the main thread
-
----
-
-## ✨ Features That Make You Smile
-
-🎮 **Entity Component System** — Clean, composable architecture
-⚡ **O(1) Object Pooling** — Spawn and despawn with zero allocations
-🦅 **Built-in Flocking AI** — Boids with cohesion, separation, and alignment
-💡 **2D Lighting & Shadows** — Dynamic lights, shadow casting, muzzle flashes
-🎆 **Particle System** — Blood splats, sparks, decals that stick to the floor
-📷 **Smart Camera** — Smooth follow, zoom, world bounds clamping
-🎬 **Animated Sprites** — Spritesheet support with state-based animations
-🎯 **Collision Callbacks** — Unity-style onCollisionEnter/Stay/Exit
-🎭 **Scene Management** — Hot-swap between scenes with full cleanup
-🐛 **Debug UI** — Real-time FPS, entity counts, and visual debugging
+All backed by typed arrays on SharedArrayBuffers. Single-writer ownership per data region. No locks, no Atomics spam, no drama.
 
 ---
 
-## 💫 Stupidly Simple API
+## The Stupid-Simple API
+
+You define entities. You give them components. You write a `tick()`. That's it.
 
 ```javascript
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer, Scene } = WEED;
+const { GameObject, Scene, RigidBody, Collider, SpriteRenderer } = WEED;
 
-// Define your entity
 class Zombie extends GameObject {
+  static scriptUrl = import.meta.url;
   static components = [RigidBody, Collider, SpriteRenderer];
 
   setup() {
-    this.rigidBody.maxVel = 3;
-    this.collider.radius = 15;
+    this.collider.radius = 12;
+    this.collider.visualRange = 160;
+    this.rigidBody.maxVel = 2.5;
+    this.rigidBody.friction = 0.02;
   }
 
-  onSpawned(config) {
-    this.x = config.x;
-    this.y = config.y;
+  onSpawned({ x = 0, y = 0 } = {}) {
+    this.x = x;
+    this.y = y;
     this.setSpritesheet('zombie');
     this.setAnimation('walk_down');
   }
 
   tick(dtRatio) {
-    // Your AI runs here - neighbors already calculated!
-    for (let i = 0; i < this.neighborCount; i++) {
-      const neighborIdx = this.neighbors[i];
-      const dist = Math.sqrt(this.neighborDistances[i]);
-      // Do something with nearby entities...
+    // Neighbors are pre-computed by the spatial worker. Just use them.
+    for (let n = 0; n < this.neighborCount; n++) {
+      const neighborIndex = this.getNeighbor(n);
+      // chase, flee, bite, whatever
     }
-  }
-
-  onCollisionEnter(otherIndex) {
-    // Bite them!
   }
 }
 
-// Create scene with 20K zombies
 class ZombieScene extends Scene {
   static config = {
     worldWidth: 5000,
-    worldHeight: 2000,
-    spatial: { cellSize: 128, maxNeighbors: 1500 },
-    physics: { gravity: { x: 0, y: 0 } },
+    worldHeight: 3000,
+    spatial: { cellSize: 128, maxNeighbors: 500 },
+    logic: { numberOfLogicWorkers: 2 },
   };
 
   static entities = [[Zombie, 20000]];
 
   create() {
     for (let i = 0; i < 20000; i++) {
-      this.spawnEntity('Zombie', {
+      this.spawnEntity(Zombie, {
         x: Math.random() * 5000,
-        y: Math.random() * 2000,
+        y: Math.random() * 3000,
       });
     }
   }
 }
 
-// Run it
 const game = new WEED.GameEngine({ debug: true });
 await game.loadScene(ZombieScene);
 ```
 
-That's it. 20,000 zombies chasing each other with spatial awareness, physics, and animations. **All at 60fps.**
+20,000 zombies with spatial awareness, physics, and animations. All at 60fps. You're welcome.
 
 ---
 
-## 🌈 Particles & Effects
+## What's In The Box
+
+- **Pooled ECS** -- entities are indices into typed arrays, not objects on the heap. Spawn and despawn cost basically nothing.
+- **Spatial hashing** -- neighbor queries are automatic. Every entity knows who's nearby without you writing a single spatial algorithm.
+- **2D lighting & shadows** -- point lights, shadow casters, sun/day cycle, muzzle flashes. All rendered on a separate thread.
+- **Particles & decals** -- blood, sparks, smoke, floor stamps. Separate optimized pool, not full entities.
+- **Flowfield + A\* navigation** -- request a direction vector and the engine handles pathfinding in the background.
+- **Collision callbacks** -- `onCollisionEnter`, `onCollisionStay`, `onCollisionExit`. Unity vibes, worker performance.
+- **FSM system** -- built-in finite state machines for animation and behavior, component-style.
+- **Debug UI** -- real-time FPS per worker, entity inspector, visual debugging. Toggle it on and watch the machine breathe.
+
+---
+
+## APIs You'll Actually Use
 
 ```javascript
-// Blood splatter on collision
+// Input
+Keyboard.isDown('w');
+Mouse.isButton0Down;
+(Mouse.x, Mouse.y);
+
+// Camera
+Camera.follow(this.x, this.y);
+Camera.setZoom(1.5);
+
+// Particles
 ParticleEmitter.emit({
-  count: { min: 4, max: 8 },
   texture: 'blood',
   x: this.x,
   y: this.y,
   angleXY: { min: 0, max: 360 },
-  speed: { min: 0.7, max: 1.5 },
-  lifespan: 6000,
-  gravity: 0.15,
-  stayOnTheFloor: true, // Decal!
+  speed: { min: 1, max: 3 },
+  lifespan: 800,
+  stayOnTheFloor: true,
 });
 
-// Muzzle flash
-Flash.create({
-  x: gun.x,
-  y: gun.y,
-  z: 30,
-  lifespan: 80,
-  color: 0xffaa00,
-  intensity: 40000,
-});
+// Flashes
+Flash.create({ x: this.x, y: this.y, z: 30, lifespan: 50, color: 0xffaa00, intensity: 10000 });
+
+// Queries (inside worker/entity code)
+const enemies = query([RigidBody, EnemyComponent]);
 ```
 
 ---
 
-## 💡 Dynamic Lighting
-
-```javascript
-class TorchLight extends GameObject {
-  static components = [LightEmitter, ShadowCaster];
-
-  setup() {
-    this.lightEmitter.lightColor = 0xff6600;
-    this.lightEmitter.lightIntensity = 20000;
-    this.lightEmitter.height = 100;
-    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
-  }
-}
-```
-
-Entities cast shadows. Lights illuminate. It all just works.
-
----
-
-## 🎮 Input That Feels Right
-
-```javascript
-tick(dtRatio) {
-  if (Keyboard.isDown("w")) this.rigidBody.ay -= 0.3;
-  if (Keyboard.isDown("s")) this.rigidBody.ay += 0.3;
-  if (Mouse.isDown) {
-    // Run away from cursor!
-  }
-  Camera.follow(this.x, this.y);
-}
-```
-
----
-
-## 🏃 Quick Start
+## Quick Start
 
 ```bash
 git clone https://github.com/your-repo/weedjs.git
 cd weedjs
 node server/node_server.js
-
-# Open http://localhost:3000/demos/
 ```
 
-> SharedArrayBuffer requires CORS headers. The included server handles this for you.
+Open `http://localhost:3000/demos/`.
+
+> `SharedArrayBuffer` requires cross-origin isolation headers. The included server handles this.
 
 ---
 
 ## 🌿 Why "WeedJS"?
 
 Because it grows fast, spreads everywhere, and just won't die.
-
 Also, this engine is _dope_.
 
 ---
 
-## 📄 License
+## Docs
 
-ISC
+| File                           | What's In It                   |
+| ------------------------------ | ------------------------------ |
+| `docs/bible_of_weed_js.md`     | Quick reference for the engine |
+| `docs/WORKERS_ARCHITECTURE.md` | Worker roles and data flow     |
+| `docs/MEMORY_STRUCTURE.md`     | SAB layout and ownership model |
+| `docs/ENTITY_TEMPLATE.js`      | Copy-paste starter entity      |
 
 ---
 
-**Stop counting entities. Start making games.** 🎮
+## License
+
+ISC

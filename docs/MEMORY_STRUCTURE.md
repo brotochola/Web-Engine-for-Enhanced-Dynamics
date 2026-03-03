@@ -1,385 +1,417 @@
-# WEED Engine Memory Structure
+# WEED Engine Memory Structure 🌿
 
-## Overview
+Everything in WeedJS lives in `SharedArrayBuffer`. No message passing for hot data.
+No cloning. No serialization tax. Just typed arrays pointing at the same memory from different threads.
 
-All game state lives in **SharedArrayBuffers (SABs)** that workers reference through TypedArray views. This enables zero-copy, lock-free parallelism across Web Workers.
-
----
-
-## Core Memory Layout
-
-### 1. Component SABs (Structure of Arrays)
-
-Each component class owns one SAB. Properties are stored as separate contiguous TypedArrays indexed by `entityIndex`.
-
-```
-ComponentSAB Layout:
-┌─────────────────────────────────────────────────────────────┐
-│ property1[0..N] │ property2[0..N] │ property3[0..N] │ ...   │
-│   (TypeA)       │    (TypeB)      │    (TypeC)      │       │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Example: Transform Component**
-| Property     | Type          | Stride  | Offset Formula           |
-|--------------|---------------|---------|--------------------------|
-| `active`     | `Uint8Array`  | 1 byte  | `entityIndex * 1`        |
-| `entityType` | `Uint8Array`  | 1 byte  | `activeEnd + entityIndex`|
-| `x`          | `Float32Array`| 4 bytes | aligned after entityType |
-| `y`          | `Float32Array`| 4 bytes | aligned after x          |
-| `rotation`   | `Float32Array`| 4 bytes | aligned after y          |
-
-**Alignment**: Each TypedArray starts at a byte offset divisible by its element size (4 for Float32, 2 for Uint16, etc.).
-
-**Access Pattern**: `Transform.x[entityIndex]` reads/writes directly to the SAB.
+This doc maps every buffer: what's in it, how big it is, who writes it, who reads it.
 
 ---
 
-### 2. Spatial Grid SAB
+## How It Works
 
-Row-based spatial hashing for neighbor queries.
+Every buffer is allocated in `Scene.createSharedBuffers()`. Workers get SAB references at init time through `AbstractWorker`. From that point, workers read/write typed array views directly -- no postMessage overhead for frame data.
 
-```
-GridBuffer Layout (per cell):
-┌─────────────┬───────────────────────────────────────────────┐
-│ count (u8)  │ pad (3 bytes) │ entities[MAX_PER_CELL] (u32)  │
-├─────────────┴───────────────┴───────────────────────────────┤
-│ Cell Size = 4 + (maxEntitiesPerCell × 4) bytes              │
-└─────────────────────────────────────────────────────────────┘
-
-Total Grid Size = cellByteSize × gridWidth × gridHeight
-```
-
-| Field      | Type     | Offset                                     |
-|------------|----------|--------------------------------------------|
-| `count`    | `Uint8`  | `cellIndex * cellByteSize`                 |
-| `entities` | `Uint32` | `(cellIndex * cellByteSize >> 2) + 1 + k`  |
-
-**Cell Index**: `row * gridWidth + col`
-
-**Row Ownership**: Worker `i` owns rows where `(row / rowsPerBlock) % totalWorkers === i`
+The golden rule: **one writer per data region**. Multiple readers are fine. This avoids Atomics overhead in frame-critical paths.
 
 ---
 
-### 3. Neighbor SAB
+## 1. Component Buffers (Structure of Arrays)
 
-Per-entity neighbor lists with collision/visual partitioning.
+Each registered component gets its own contiguous SAB. Fields are laid out SoA-style:
+all X values packed together, then all Y values, etc. No per-entity objects on the heap.
 
-```
-NeighborBuffer Layout (per entity):
-┌──────────────┬─────────────────┬────────────────────────────┐
-│ totalCount   │ collisionCount  │ neighbors[MAX_NEIGHBORS]   │
-│   (u16)      │     (u16)       │         (u16 each)         │
-└──────────────┴─────────────────┴────────────────────────────┘
+**Size:** `ComponentClass.getBufferSize(poolSize)` -- iterates `ARRAY_SCHEMA`, aligns each field to its element size, packs `poolSize * bytesPerElement` per field.
 
-Stride = 2 + maxNeighbors (in Uint16 elements)
-```
+**Access:** `Transform.x[entityIndex]`, `RigidBody.vx[entityIndex]`, etc.
 
-| Field             | Offset Formula                     |
-|-------------------|------------------------------------|
-| `totalCount`      | `entityIndex * stride`             |
-| `collisionCount`  | `entityIndex * stride + 1`         |
-| `neighbor[k]`     | `entityIndex * stride + 2 + k`     |
+### Core Component Schemas
 
-**Partitioning**: Neighbors 0..(collisionCount-1) are collision candidates; rest are visual-only.
+| Component | Fields (type) |
+|---|---|
+| **Transform** | `active` (Uint8), `entityType` (Uint8), `x` (Float32), `y` (Float32), `rotation` (Float32) |
+| **RigidBody** | `active`, `static`, `collisionCount`, `sleeping` (Uint8); `vx`, `vy`, `ax`, `ay`, `px`, `py`, `angularVelocity`, `angularAccel`, `mass`, `invMass`, `inertia`, `invInertia`, `drag`, `angularDrag`, `maxVel`, `maxAcc`, `minSpeed`, `friction`, `velocityAngle`, `speed`, `stillnessTime` (Float32) |
+| **Collider** | `active`, `shapeType`, `isTrigger` (Uint8); `offsetX`, `offsetY`, `radius`, `width`, `height`, `restitution`, `aabbMinX`, `aabbMinY`, `aabbMaxX`, `aabbMaxY`, `visualRange` (Float32); `collisionLayer`, `collisionMask` (Uint16) |
+| **SpriteRenderer** | `active`, `textureId`, animation fields, flip flags, etc. |
+| **ParticleComponent** | `active`, `x`, `y`, `z`, `vx`, `vy`, `vz`, `lifespan`, `currentLife`, `gravity`, `scaleX/Y`, `alpha`, `tint`, `baseTint`, `textureId`, `rotation`, `flipX/Y`, `fadeOnTheFloor`, `timeOnFloor`, `initialAlpha`, `stayOnTheFloor`, `despawnOnGroundContact`, `tweenToAlpha0`, `isItOnScreen`, `blendMode` (mixed Uint8/Uint16/Float32/Uint32) |
+| **DecorationComponent** | `active`, `x`, `y`, `offsetX/Y`, `textureId`, `scaleX/Y`, `baseRotation`, `rotation`, `alpha`, `tint`, `anchorX/Y`, `isItOnScreen`, `sway`, `swayAmplitude`, `swayFrequency` |
+| **BulletComponent** | `active`, `startX/Y`, `trailWidth`, `x`, `y`, `prevX/Y`, `vx`, `vy`, `bulletAngle`, `damage`, `ownerId`, `shooterEntityType`, `textureId`, `scale`, `alpha`, `tint`, `spriteRotation`, `anchorX/Y`, `offsetY`, `isItOnScreen` |
 
----
-
-### 4. Navigation SAB
-
-Pathfinding data with flowfield and A* path caching.
-
-```
-Navigation SAB Layout:
-┌─────────────────────────────────────────────────────────────┐
-│ HEADER (32 bytes)                                           │
-│   version(u32), gridWidth(u32), gridHeight(u32),            │
-│   cellSize(u32), totalCells(u32), maxFlowfields(u32),       │
-│   maxPaths(u32), maxPathLength(u32)                         │
-├─────────────────────────────────────────────────────────────┤
-│ WALKABILITY (totalCells bytes)                              │
-│   1 byte per cell: 0=blocked, 1+=walkable                   │
-├─────────────────────────────────────────────────────────────┤
-│ FLOWFIELD SLOTS (interleaved)                               │
-│   Per slot: Header(12B) + Data(totalCells×2 bytes)          │
-│     Header: targetCell(u32), lastUsedFrame(u32), status(u32)│
-│     Data: Int8 pairs (dirX, dirY) per cell                  │
-├─────────────────────────────────────────────────────────────┤
-│ PATH SLOTS                                                  │
-│   Per slot: Header(20B) + Data(maxPathLength×4 bytes)       │
-│     Header: fromCell, toCell, lastUsedFrame, length, status │
-│     Data: Uint32 cell indices                               │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Flowfield Slot Size**: `12 + ceil(totalCells × 2 / 4) × 4` (aligned)
-
-**Path Slot Size**: `20 + maxPathLength × 4`
+| Writer | Reader |
+|---|---|
+| Logic workers (entity `tick()`), physics (RigidBody/Collider), particle (ParticleComponent/DecorationComponent/BulletComponent) | All workers |
 
 ---
 
-### 5. Render Queue SAB
+## 2. Spatial Grid + Neighbor Buffers
 
-Y-sorted render commands built by `pre_render_worker`, consumed by `pixi_worker`.
+### `gridBuffer` -- Spatial Hash Grid
 
-```
-RenderQueue Layout:
-┌────────────────────────────────────────────────────────────────┐
-│ count[1] (i32)                                                 │
-├────────────────────────────────────────────────────────────────┤
-│ x[MAX] (f32) │ y[MAX] (f32) │ scaleX[MAX] (f32) │ ...         │
-│ rotation[MAX] (f32) │ alpha[MAX] (f32) │ tint[MAX] (u32)      │
-│ textureId[MAX] (u16) │ anchorX[MAX] (f32) │ anchorY[MAX] (f32)│
-│ frameIndex[MAX] (u16) │ type[MAX] (u8) │ entityIndex[MAX] (u16)│
-└────────────────────────────────────────────────────────────────┘
-```
+The world is divided into cells. Each cell stores a count + entity indices.
 
-| Field         | Type          | Description                        |
-|---------------|---------------|------------------------------------|
-| `count`       | `Int32Array`  | Number of items to render          |
-| `x`, `y`      | `Float32Array`| World position                     |
-| `textureId`   | `Uint16Array` | Proxy texture ID (bigAtlas)        |
-| `type`        | `Uint8Array`  | 0=entity, 1=decoration, 2=particle |
+| Property | Value |
+|---|---|
+| **Cell byte size** | `4 + maxEntitiesPerCell * 4` (default 64 entities = 260 bytes/cell) |
+| **Total size** | `totalCells * cellByteSize` |
+| **Cell layout** | `[count: Uint8, pad: 3 bytes, entities[maxEntitiesPerCell]: Uint32]` |
+| **Typed arrays** | `Uint8Array` (counts), `Uint32Array` (entity indices) |
 
----
+| Writer | Reader |
+|---|---|
+| Spatial workers (each owns rows where `cellY % workerCount === workerId`) | Physics, logic, particle |
 
-### 6. Shadow Render Queue SAB
+### `neighborData` -- Per-Entity Neighbor List
 
-Shadow/light gradient sprites built by `pre_render_worker`.
+Every entity gets a neighbor list, pre-sorted: collision candidates first, then visual-range neighbors.
 
-```
-ShadowRenderQueue Layout:
-┌────────────────────────────────────────────────────────────────┐
-│ count[1] (i32)                                                 │
-├────────────────────────────────────────────────────────────────┤
-│ x[MAX] (f32) │ y[MAX] (f32) │ scaleX[MAX] (f32) │ ...         │
-│ rotation[MAX] (f32) │ alpha[MAX] (f32) │ tint[MAX] (u32)      │
-│ textureId[MAX] (u16) │ anchorX[MAX] (f32) │ anchorY[MAX] (f32)│
-│ frameIndex[MAX] (u16) │ type[MAX] (u8) │ sortY[MAX] (f32)     │
-└────────────────────────────────────────────────────────────────┘
-```
+| Property | Value |
+|---|---|
+| **Size** | `totalEntityCount * (2 + maxNeighbors) * 2` bytes |
+| **Per-entity layout** | `[totalCount: Uint16, collisionCount: Uint16, neighbors[maxNeighbors]: Uint16]` |
+| **Typed array** | `Uint16Array` |
 
----
+| Writer | Reader |
+|---|---|
+| Spatial workers (per owned rows) | Physics (first `collisionCount` entries), logic (all `totalCount` entries) |
 
-### 7. Active Entities SAB
+### `entityPosData` -- Cached Positions for Spatial
 
-Compact sorted list of active entity indices.
+| Property | Value |
+|---|---|
+| **Size** | `totalEntityCount * 4 * 4` bytes (stride: 4 floats = 16 bytes/entity) |
+| **Per-entity layout** | `[x: Float32, y: Float32, halfExtent: Float32, pad: Float32]` |
+| **Typed array** | `Float32Array` |
 
-```
-ActiveEntitiesData Layout:
-┌────────────┬───────────────────────────────────────┐
-│ count (u32)│ indices[maxEntities] (u16)            │
-└────────────┴───────────────────────────────────────┘
-```
+| Writer | Reader |
+|---|---|
+| Spatial workers (during grid rebuild) | Spatial workers (distance checks) |
 
-**Operations**: Binary search insert/remove to maintain sorted order.
+### `cellSleepingBuffer` -- Cell Sleep State
 
----
+| Property | Value |
+|---|---|
+| **Size** | `totalCells` bytes |
+| **Layout** | `1 byte/cell` (0 = awake, 1 = sleeping) |
+| **Typed array** | `Uint8Array` |
 
-### 8. Visible Entities SAB
-
-Compact list of entity indices currently on screen (written by `particle_worker`).
-
-```
-VisibleEntitiesData Layout:
-┌────────────┬───────────────────────────────────────┐
-│ count (u32)│ indices[maxEntities] (u16)            │
-└────────────┴───────────────────────────────────────┘
-```
-
-**Updated**: Each frame by `particle_worker` during visibility pass.
+| Writer | Reader |
+|---|---|
+| Particle worker | All workers |
 
 ---
 
-### 9. Active/Visible Particles SABs
+## 3. Active / Visible Index Lists
 
-Compact lists for particle iteration (fused single-pass update by `particle_worker`).
+Compact index lists so workers iterate only alive/visible entities. No scanning full pools.
 
-```
-ActiveParticlesData Layout:
-┌────────────┬───────────────────────────────────────┐
-│ count (u32)│ indices[maxParticles] (u16)           │
-└────────────┴───────────────────────────────────────┘
+All lists share the same layout: `[count: Uint16, idx0: Uint16, idx1: Uint16, ...]`
 
-VisibleParticlesData Layout:
-┌────────────┬───────────────────────────────────────┐
-│ count (u32)│ indices[maxParticles] (u16)           │
-└────────────┴───────────────────────────────────────┘
-```
-
-**Fused Pass**: `particle_worker` builds both lists in a single O(maxParticles) scan.
-
----
-
-### 10. Active/Visible Decorations SABs
-
-Compact lists for decoration iteration.
-
-```
-ActiveDecorationsData Layout:
-┌────────────┬───────────────────────────────────────┐
-│ count (u32)│ indices[maxDecorations] (u16)         │
-└────────────┴───────────────────────────────────────┘
-
-VisibleDecorationsData Layout:
-┌────────────┬───────────────────────────────────────┐
-│ count (u32)│ indices[maxDecorations] (u16)         │
-└────────────┴───────────────────────────────────────┘
-```
-
-**Incremental Active List**: `DecorationPool` maintains `activeDecorationsData` on spawn/despawn (O(1) add, O(N) remove with swap-and-pop).
-
-**Visibility Pass**: `particle_worker` iterates only active decorations to build visible list.
+| Buffer | Size | Writer | Reader |
+|---|---|---|---|
+| `activeEntitiesData` | `(1 + totalEntityCount) * 2` bytes | Logic worker 0 (spawn/despawn) | Spatial, particle, pre_render |
+| `perTypeActiveLists[typeName]` | `(1 + poolSize) * 2` bytes each | Logic worker 0 | All workers |
+| `activeParticlesData` | `(1 + maxParticles) * 2` bytes | Particle worker | Pre_render |
+| `visibleParticlesData` | `(1 + maxParticles) * 2` bytes | Particle worker | Pre_render |
+| `activeDecorationsData` | `(1 + maxDecorations) * 2` bytes | DecorationPool + particle worker | Pre_render |
+| `visibleDecorationsData` | `(1 + maxDecorations) * 2` bytes | Particle worker | Pre_render |
+| `activeBulletsData` | `(1 + maxBullets) * 2` bytes | Logic worker | Pre_render |
+| `visibleBulletsData` | `(1 + maxBullets) * 2` bytes | Particle worker | Pre_render |
 
 ---
 
-### 11. Per-Type Active Lists SAB
+## 4. Collision + Impact Buffers
 
-One active list per entity class for type-specific iteration.
+### `collisionData` -- Collision Pairs
 
-```
-PerTypeActiveLists Layout:
-┌─────────────────────────────────────────────────────────────┐
-│ Type 0: count(u32) │ indices[typeMaxCount](u16)             │
-├─────────────────────────────────────────────────────────────┤
-│ Type 1: count(u32) │ indices[typeMaxCount](u16)             │
-├─────────────────────────────────────────────────────────────┤
-│ ...                                                         │
-└─────────────────────────────────────────────────────────────┘
-```
+| Property | Value |
+|---|---|
+| **Size** | `(1 + maxCollisionPairs * 2) * 4` bytes. Default 10,000 pairs = ~80 KB |
+| **Layout** | `[pairCount: Int32, entityA0, entityB0, entityA1, entityB1, ...]` |
+| **Typed array** | `Int32Array` |
 
-**Offset**: Each type has reserved space based on its registered entity count.
+| Writer | Reader |
+|---|---|
+| Physics worker | Logic workers (collision callbacks) |
 
----
+### `impactBuffer` -- Bullet/Projectile Impacts
 
-### 12. Collision Data SAB
+| Property | Value |
+|---|---|
+| **Size** | `4 + maxImpactsPerFrame * 24` bytes. Default 64 impacts = ~1.5 KB |
+| **Stride** | 24 bytes (6 floats): `[targetId, damage, hitX, hitY, ownerId, shooterType]` |
+| **Layout** | `[count: Int32, impact0[6]: Float32, impact1[6]: Float32, ...]` |
+| **Typed arrays** | `Int32Array` (count), `Float32Array` (impact data) |
 
-Collision pairs written by `physics_worker`, read by `logic_worker`.
-
-```
-CollisionData Layout:
-┌────────────┬───────────────────────────────────────────────┐
-│ count (i32)│ pairs[maxPairs × 2] (i32)                     │
-└────────────┴───────────────────────────────────────────────┘
-```
-
-| Offset | Content                        |
-|--------|--------------------------------|
-| 0      | Pair count                     |
-| 1      | Entity A index (pair 0)        |
-| 2      | Entity B index (pair 0)        |
-| 3      | Entity A index (pair 1)        |
-| ...    | ...                            |
+| Writer | Reader |
+|---|---|
+| Particle worker | Logic workers |
 
 ---
 
-### 13. Free Lists (Particles & Decorations)
+## 5. Constraint Buffers
 
-LIFO stacks for O(1) allocation/deallocation.
+### `constraintData`
 
-```
-FreeList Layout:
-┌──────────────┬────────────────────────────────────┐
-│ top (i32)    │ indices[maxCount] (u16)            │
-│ (Atomics)    │                                    │
-└──────────────┴────────────────────────────────────┘
-```
+| Property | Value |
+|---|---|
+| **Size** | `maxConstraints * 4` (pairs) + `maxConstraints * 4` (restLength) + `maxConstraints * 4` (stiffness) + `ceil(maxConstraints/4) * 4` (active, aligned) |
+| **Layout** | `pairs: Uint32[]`, `restLength: Float32[]`, `stiffness: Float32[]`, `active: Uint8[]` |
 
-**Allocation**: `Atomics.sub(top, 0, 1)` → read `freeList[top]`
+### `constraintFreeList` / `constraintFreeListTop`
 
-**Deallocation**: `Atomics.add(top, 0, 1)` → write `freeList[top]`
+| Property | Value |
+|---|---|
+| **Free list** | `maxConstraints * 2` bytes (`Uint16Array`) -- stack of available indices |
+| **Top pointer** | 4 bytes (`Int32Array`) -- atomic stack top via `Atomics.sub`/`Atomics.add` |
 
----
-
-### 14. Blood Decals SAB
-
-RGBA pixel data for persistent decals.
-
-```
-BloodTiles Layout:
-┌─────────────────────────────────────────────────────────────┐
-│ RGBA pixels[tilesX × tilesY × tilePixelSize²×4] (u8clamped) │
-└─────────────────────────────────────────────────────────────┘
-
-BloodTilesDirty Layout:
-┌─────────────────────────────────────────────────────────────┐
-│ dirty[totalTiles] (u8) - 1 = tile needs GPU upload          │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Tile Offset**: `tileIndex * tilePixelSize * tilePixelSize * 4`
+| Writer | Reader |
+|---|---|
+| Logic workers (create), physics (resolve + free) | Logic, physics |
 
 ---
 
-### 15. Worker Stats SABs
+## 6. Render Queues (Double-Buffered)
 
-Per-worker performance counters (cache-line aligned at 64 bytes/16 floats).
+### Main Render Queue (`renderQueueDataA` / `renderQueueDataB`)
 
-```
-Stats Layout (per worker):
-┌─────────────────────────────────────────────────────────────┐
-│ stat0 (f32) │ stat1 (f32) │ ... │ stat15 (f32) │ padding    │
-└─────────────────────────────────────────────────────────────┘
+Two identical buffers. Pre_render writes one while pixi reads the other.
 
-Multi-Worker Stats: stride = 16 floats per worker
-```
+**Size per buffer:** ~520 KB at default `maxVisibleRenderables = 10000`
+
+**Per-item layout (packed SoA across the buffer):**
+
+| Field | Type | Count |
+|---|---|---|
+| `count` | Int32 | 1 (header) |
+| `x` | Float32 | max |
+| `y` | Float32 | max |
+| `scaleX` | Float32 | max |
+| `scaleY` | Float32 | max |
+| `rotation` | Float32 | max |
+| `alpha` | Float32 | max |
+| `tint` | Uint32 | max |
+| `textureId` | Uint16 | max (+ 4-byte align pad) |
+| `anchorX` | Float32 | max |
+| `anchorY` | Float32 | max |
+| `type` | Uint8 | max (+ 4-byte align pad) |
+| `entityIndex` | Int32 | max |
+
+| Writer | Reader |
+|---|---|
+| Pre_render worker | Pixi worker |
+
+### `renderQueueSync` -- Double-Buffer Coordination
+
+| Property | Value |
+|---|---|
+| **Size** | 8 bytes |
+| **Layout** | `[readyFrame: Int32, consumedFrame: Int32]` |
+| **Synchronization** | `Atomics.store` / `Atomics.load` / `Atomics.wait` / `Atomics.notify` |
+
+**Flow:**
+1. Pre_render writes to buffer `renderQueueFrame % 2`, then `Atomics.store(sync, 0, renderQueueFrame)` + notify
+2. Pixi reads `readyFrame`, consumes from `(readyFrame - 1) % 2`, stores `consumedFrame` + notify
+3. Pre_render waits if it's more than 1 frame ahead of pixi
+
+| Writer | Reader |
+|---|---|
+| Pre_render (`readyFrame`), pixi (`consumedFrame`) | Both |
+
+### Shadow/Light Queue (`shadowRenderQueueDataA` / `shadowRenderQueueDataB`)
+
+Same double-buffered pattern. Separate queue for shadow casters and lights.
+
+| Property | Value |
+|---|---|
+| **Size** | `4 + (maxShadowSprites + maxLights) * 40` bytes per buffer |
+| **Item size** | 40 bytes (same fields as main queue minus `type`/`entityIndex`) |
+
+| Writer | Reader |
+|---|---|
+| Pre_render worker | Pixi worker |
+
+### `entityTextureData`
+
+| Property | Value |
+|---|---|
+| **Size** | `totalEntityCount * 2` bytes |
+| **Layout** | 1 `Uint16` per entity -- last computed global texture ID |
+
+| Writer | Reader |
+|---|---|
+| Pre_render worker | Pixi worker |
+
+### `visibleLightsData`
+
+| Property | Value |
+|---|---|
+| **Size** | `(2 + maxLights * 2)` bytes |
+| **Layout** | `[count: Uint16, lightIdx0: Uint16, lightIdx1: Uint16, ...]` |
+
+| Writer | Reader |
+|---|---|
+| Pre_render worker | Pixi worker |
 
 ---
 
-## Worker Data Ownership
+## 7. Navigation Buffers
 
-| SAB/Data                | Writer(s)           | Reader(s)                    |
-|-------------------------|---------------------|------------------------------|
-| Component arrays        | Logic (via scripts) | All workers                  |
-| Grid cells              | Spatial (owned rows)| All workers                  |
-| Neighbor lists          | Spatial (owned rows)| Physics, Logic, Particle     |
-| Collision pairs         | Physics             | Logic                        |
-| Render queue            | Pre-render          | Renderer                     |
-| Shadow render queue     | Pre-render          | Renderer                     |
-| Flowfields/Paths        | Particle            | Logic                        |
-| Active entity lists     | Logic (spawn/despawn)| All workers                 |
-| Visible entities list   | Particle            | Pre-render                   |
-| Active particles list   | Particle            | Particle, Pre-render         |
-| Visible particles list  | Particle            | Pre-render                   |
-| Active decorations list | DecorationPool      | Particle                     |
-| Visible decorations list| Particle            | Pre-render                   |
-| Particle free list      | Particle (return)   | Logic (emit)                 |
-| Blood decals            | Particle (stamp)    | Renderer (upload)            |
-| Walkability grid        | Particle            | Logic (queries)              |
-| Cell sleeping state     | Particle            | All workers                  |
-| Derived properties      | Particle            | All workers                  |
+### `navigationData`
 
----
+All navigation state lives in one SAB. Size comes from `NavGrid.calculateSABSize()`.
 
-## Alignment Rules
+**Layout:**
 
-1. **Float32Array**: Offset must be divisible by 4
-2. **Uint32Array/Int32Array**: Offset must be divisible by 4
-3. **Uint16Array/Int16Array**: Offset must be divisible by 2
-4. **Uint8Array/Int8Array**: Any offset
+| Section | Size | Contents |
+|---|---|---|
+| **Header** | 32 bytes (8 × Uint32) | `version`, `gridWidth`, `gridHeight`, `cellSize`, `totalCells`, `maxFlowfields`, `maxPaths`, `maxPathLength` |
+| **Walkability** | `totalCells` bytes | 1 byte/cell (0 = blocked, 1+ = walkable) |
+| **Flowfield slots** | `maxFlowfields * (12 + ceil(totalCells*2/4)*4)` | Per slot: `[targetCell, lastUsedFrame, status]` header + 2 bytes/cell direction data (4-byte aligned) |
+| **Path slots** | `maxPaths * (20 + maxPathLength*4)` | Per slot: `[fromCell, toCell, lastUsedFrame, length, status]` header + `Uint32` cell indices |
 
-Component buffer calculation pads each property array to maintain alignment for the next.
+**Typed arrays:** `Uint32Array` (header, path indices), `Uint8Array` (walkability), dynamic views for flowfield/path data.
+
+**Eviction:** LRU by `lastUsedFrame` for both flowfield and path slots.
+
+| Writer | Reader |
+|---|---|
+| Particle worker (computes flowfields, A* paths, walkability updates) | Logic workers (via `NavGrid.requestVector`, `getNextAStarPosition`) |
 
 ---
 
-## Memory Estimation
+## 8. Decal Tile Buffers
 
-```
-Total SAB Memory ≈
-  + Σ (componentBufferSize for each component)
-  + gridCells × cellByteSize
-  + entityCount × neighborStride × 2  (neighbors)
-  + entityCount × maxNeighbors × 4    (distances)
-  + navigationSABSize
-  + renderQueueMaxItems × ~60 bytes
-  + shadowQueueMaxItems × ~56 bytes
-  + maxParticles × particleComponentSize
-  + maxDecorations × decorationComponentSize
-  + bloodTileCount × tilePixelSize² × 4
-  + workerStatsBuffers
-  + visibleEntitiesData: (4 + maxEntities × 2) bytes
-  + activeParticlesData: (4 + maxParticles × 2) bytes
-  + visibleParticlesData: (4 + maxParticles × 2) bytes
-  + activeDecorationsData: (4 + maxDecorations × 2) bytes
-  + visibleDecorationsData: (4 + maxDecorations × 2) bytes
-```
+Persistent decals (blood, scorch marks, etc.) are stamped onto tile-based RGBA buffers.
+
+### `bloodTilesRGBA`
+
+| Property | Value |
+|---|---|
+| **Tile count** | `tilesX * tilesY` where `tilesX = ceil(worldWidth / tileSize)`, `tilesY = ceil(worldHeight / tileSize)` |
+| **Bytes per tile** | `tilePixelSize * tilePixelSize * 4` (RGBA) |
+| **Total size** | `totalTiles * bytesPerTile` |
+| **Typed array** | `Uint8ClampedArray` (particle worker writes pixels), GPU texture upload (pixi worker) |
+
+### `bloodTilesDirty`
+
+| Property | Value |
+|---|---|
+| **Size** | `totalTiles` bytes |
+| **Layout** | 1 byte/tile (0 = clean, 1 = dirty) |
+| **Typed array** | `Uint8Array` |
+
+| Writer | Reader |
+|---|---|
+| Particle worker (stamp decals, set dirty) | Pixi worker (selective GPU upload, clear dirty) |
+
+---
+
+## 9. Entity + Particle + Decoration + Bullet Free Lists
+
+O(1) pool allocation via atomic stacks. Every pooled type gets the same pattern:
+
+| Buffer | Size | Typed Array | Purpose |
+|---|---|---|---|
+| `freeList` | `poolSize * 2` bytes | `Uint16Array` | Stack of available indices |
+| `freeListTop` | 4 bytes | `Int32Array` | Atomic stack pointer (`Atomics.sub` to pop, `Atomics.add` to push) |
+
+**Applied to:**
+
+| Pool | Free List Writer | Free List Reader |
+|---|---|---|
+| **Entities** (per type) | Logic workers (spawn/despawn) | Logic workers |
+| **Particles** | Logic workers (spawn), particle worker (despawn) | Logic, particle |
+| **Decorations** | Logic workers (spawn), particle worker | Logic, particle |
+| **Bullets** | Logic workers (spawn), particle worker (impact despawn) | Logic, particle |
+| **Constraints** | Logic workers (create), physics worker (free) | Logic, physics |
+
+---
+
+## 10. Stats Buffers
+
+Every worker family writes its own stats SAB. Main thread reads them for DebugUI.
+
+All use a strided `Float32Array` layout: **16 floats (64 bytes) per worker slot**.
+
+| Buffer | Slots | Fields |
+|---|---|---|
+| `rendererStats` | 1 | FPS, DRAW_CALLS, VISIBLE_SPRITES, SPRITES_CREATED, DECORATION_SPRITES, VISIBLE_DECORATIONS, VISIBLE_ENTITIES, VISIBLE_PARTICLES, ACTIVE_DECORATIONS |
+| `particleStats` | 1 | FPS, ACTIVE_PARTICLES, TOTAL_PARTICLES, PARTICLES_STAMPED, FLASHES_UPDATED, SHADOWS_UPDATED, ACTIVE_ENTITIES, TOTAL_ENTITIES |
+| `physicsStats` | 1 | FPS, COLLISION_CHECKS, COLLISIONS_RESOLVED, COLLISION_PAIRS |
+| `spatialStats` | N (1 per spatial worker) | FPS, NEIGHBOR_CHECKS, GRID_CELLS_CHECKED, ENTITIES_PROCESSED |
+| `logicStats` | N (1 per logic worker) | FPS, ENTITIES_PROCESSED, SYSTEMS_EXECUTED |
+| `navigationStats` | 1 | FPS, FLOWFIELDS_COMPUTED, PATHS_COMPUTED, FLOWFIELDS_CACHED, PATHS_CACHED, PENDING counts, GRID_WIDTH/HEIGHT |
+| `preRenderStats` | 1 | FPS, VISIBLE_ENTITIES, VISIBLE_PARTICLES, VISIBLE_DECORATIONS, SHADOWS_UPDATED, RENDER_QUEUE_SIZE |
+| `frameRateData` | `maxWorkers` | 1 `Float32` per worker (aggregate FPS) |
+
+| Writer | Reader |
+|---|---|
+| Each worker writes its own slot | Main thread (DebugUI) |
+
+---
+
+## 11. Query System Buffers
+
+| Buffer | Size | Layout |
+|---|---|---|
+| `queryEntityMetadata` | `16 + numTypes * 16` | `[numTypes, pad, per-type: componentMask, startIndex, endIndex]` |
+| `queryCacheSAB` | `8 + maxQueries * 16` | `[numQueries, maxQueries, pad, per-query: queryMask, typeMask]` |
+| `queryResultsSAB` | `numQueries * (2 + 65535*2)` | Per query: `[count: Uint16, entityIndices: Uint16[65535]]` |
+
+| Writer | Reader |
+|---|---|
+| Particle worker (populates query results), main thread (metadata/cache init) | Logic workers, pre_render worker |
+
+---
+
+## 12. Input / Camera / Debug / Misc
+
+| Buffer | Size | Layout | Writer | Reader |
+|---|---|---|---|---|
+| `inputData` | `inputBufferSize * 4` bytes | `Int32` per key | Main thread | Logic workers |
+| `mouseData` | 28 bytes (7 × Float32) | `[x, y, button0, button1, button2, isPresent, wheel]` | Main thread | All workers |
+| `cameraData` | 24 bytes (6 × Float32) | `[zoom, x, y, followTargetX, followTargetY, targetZoom]` | Main thread + Player.tick | All workers |
+| `debugData` | 32 bytes | `[flags 0-15: Uint8, selectedEntityIndex: Int32]` | Main thread | All workers |
+| `raycastDebugData` | `(1 + 100*7) * 4` bytes | `[count, per-ray: startX, startY, endX, endY, hitX, hitY, hit]` Float32 | Logic workers | Main thread |
+| `sunData` | 64 bytes | Mixed Uint8/Float32/Uint32 (see `Sun.OFFSETS`) | Main thread | All workers |
+| `syncData` | 20 bytes (5 × Int32) | `Int32Array[5]` | Main thread | All workers |
+| `nextTickData` | `totalEntityCount` bytes | 1 byte/entity (tick decimation countdown) | Logic workers | Logic workers |
+
+---
+
+## Full Ownership Map
+
+The big picture. Who writes what, who reads what.
+
+| Data Region | Primary Writer | Readers |
+|---|---|---|
+| Component arrays (Transform, RigidBody, etc.) | Logic workers (entity code), physics (RB/Collider), particle (particles/decorations/bullets) | All workers |
+| Spatial grid (`gridBuffer`) | Spatial workers (owned rows) | Physics, logic, particle |
+| Neighbor lists (`neighborData`) | Spatial workers (owned entities) | Physics, logic |
+| Position cache (`entityPosData`) | Spatial workers | Spatial workers |
+| Cell sleeping (`cellSleepingBuffer`) | Particle worker | All workers |
+| Active entity lists | Logic worker 0 | Spatial, particle, pre_render |
+| Per-type active lists | Logic worker 0 | All workers |
+| Active/visible particle lists | Particle worker | Pre_render |
+| Active/visible decoration lists | Particle worker + DecorationPool | Pre_render |
+| Active/visible bullet lists | Logic (active), particle (visible) | Pre_render |
+| Collision pairs (`collisionData`) | Physics worker | Logic workers |
+| Impact buffer | Particle worker | Logic workers |
+| Constraint data | Logic workers (create), physics (resolve) | Logic, physics |
+| Render queues (main + shadow) | Pre_render worker | Pixi worker |
+| Render queue sync | Pre_render + pixi (Atomics) | Both |
+| Entity texture data | Pre_render worker | Pixi worker |
+| Visible lights | Pre_render worker | Pixi worker |
+| Navigation (flowfields, A*, walkability) | Particle worker | Logic workers |
+| Decal tiles (RGBA + dirty) | Particle worker | Pixi worker |
+| Stats buffers | Each worker (own slot) | Main thread |
+| Query results | Particle worker | Logic, pre_render |
+| Input/mouse/camera/debug | Main thread | All workers |
+
+---
+
+## Notes for Contributors
+
+- All SABs are created in `Scene.createSharedBuffers()`. If you add a new buffer, that's where it goes.
+- Prefer extending existing SAB layouts over adding new postMessage payloads for per-frame data.
+- Keep hot-path data in typed arrays. Object allocation in worker loops is the enemy.
+- If you change any layout, update: `Scene.js` (buffer creation), the relevant worker init, and this document.
