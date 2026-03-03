@@ -239,21 +239,3 @@ export const NAVIGATION_DEFAULTS = {
   noLimitFPS: true, // Navigation (in particle_worker) runs as fast as possible by default
 };
 
-// ============================================================================
-// COMBINED CONFIG (for convenience)
-// ============================================================================
-
-export const CONFIG_DEFAULTS = {
-  ...SCENE_DEFAULTS,
-  assets: ASSETS_DEFAULTS,
-  physics: PHYSICS_DEFAULTS,
-  spatial: SPATIAL_DEFAULTS,
-  particle: PARTICLE_DEFAULTS,
-  decoration: DECORATION_DEFAULTS,
-  bullet: BULLET_DEFAULTS,
-  logic: LOGIC_DEFAULTS,
-  renderer: RENDERER_DEFAULTS,
-  preRender: PRE_RENDER_DEFAULTS,
-  lighting: LIGHTING_DEFAULTS,
-  navigation: NAVIGATION_DEFAULTS,
-};

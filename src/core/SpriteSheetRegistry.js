@@ -381,8 +381,8 @@ class SpriteSheetRegistry {
       this.spritesheetNameToId = new Map(Object.entries(serialized.spritesheetNameToId));
     }
 
-    // Restore spritesheets
-    const sheets = serialized.spritesheets || serialized;
+    // Restore spritesheets (strict serialized format)
+    const sheets = serialized.spritesheets || {};
     for (const [name, sheet] of Object.entries(sheets)) {
       this.spritesheets.set(name, sheet);
     }

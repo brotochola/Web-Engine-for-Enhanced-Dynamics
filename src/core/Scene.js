@@ -1510,24 +1510,12 @@ class Scene {
     this.loadedTilemaps = {}; // Store loaded tilemap data
 
     console.log('🎨 Generating BigAtlas from all assets...');
-
-    // Transform new format to old format expected by createBigAtlas
-    // New format: { textures: {...}, spritesheets: {...} }
-    // Old format: { texture1: "url", texture2: "url", spritesheets: {...} }
-    const flattenedAssets = {};
-
-    if (imageUrls.textures) {
-      // Flatten textures to root level
-      Object.assign(flattenedAssets, imageUrls.textures);
-    }
-
-    if (imageUrls.spritesheets) {
-      // Keep spritesheets nested
-      flattenedAssets.spritesheets = imageUrls.spritesheets;
-    }
-
-    // If imageUrls is already in old format (no textures/spritesheets keys), use as-is
-    const assetsToLoad = imageUrls.textures || imageUrls.spritesheets ? flattenedAssets : imageUrls;
+    const textures = imageUrls?.textures || {};
+    const spritesheets = imageUrls?.spritesheets || {};
+    const assetsToLoad = {
+      ...textures,
+      spritesheets,
+    };
 
     try {
       // Use config.assets for atlas options (with defaults from ASSETS_DEFAULTS)

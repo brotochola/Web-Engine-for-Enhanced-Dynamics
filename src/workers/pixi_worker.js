@@ -2036,17 +2036,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * Handle custom messages (for backwards compatibility)
-   * @deprecated - Use handleWorkerMessage for direct worker communication
+   * Handle custom messages
    */
   handleCustomMessage(data) {
     const { msg } = data;
     console.log(`PIXI WORKER: handleCustomMessage called with msg: ${msg}`);
 
-    // Handle old-style messages if they still arrive via main thread
-    if (msg === 'toRenderer') {
-      this.handleSpriteCommand(data);
-    } else if (msg === 'setBackground') {
+    if (msg === 'setBackground') {
       this.handleSetBackground(data);
     } else if (msg === 'resize') {
       this.handleResize(data);
@@ -2739,13 +2735,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         : null;
       this.lightingResolution = lightingConfig.resolution || 1.0;
       // baseAmbient is the night/minimum light level (when sun is down)
-      // Support both new 'baseAmbient' and legacy 'lightingAmbient' config keys
-      this.baseAmbient =
-        lightingConfig.baseAmbient !== undefined
-          ? lightingConfig.baseAmbient
-          : lightingConfig.lightingAmbient !== undefined
-            ? lightingConfig.lightingAmbient
-            : 0.05;
+      this.baseAmbient = lightingConfig.baseAmbient !== undefined ? lightingConfig.baseAmbient : 0.05;
       this.maxLights = lightingConfig.maxLights !== undefined ? lightingConfig.maxLights : 128;
 
       // Create lighting mesh (full-screen quad with multiply blend)

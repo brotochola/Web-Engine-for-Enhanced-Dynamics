@@ -83,12 +83,10 @@ export class AbstractWorker {
     this.registeredClasses = [];
 
     // Query system cache for component-based entity filtering
-    this.queryCache = null; // Will be initialized from main thread
     this.emptyQueryWarnings = new Set(); // Track empty query warnings (log once per query key)
 
-    // GC OPTIMIZATION: Pre-allocated empty array for query fallbacks
+    // Pre-allocated empty array for query fallbacks
     this._emptyUint16Array = new Uint16Array(0);
-    this._queryFallbackBuffer = null; // Initialized when globalEntityCount is known
 
     // MessagePorts for direct worker-to-worker communication
     this.workerPorts = new Map(); // Map<workerName, MessagePort>
@@ -236,11 +234,6 @@ export class AbstractWorker {
     // );
     this.reportLog('initializing common buffers');
     this.globalEntityCount = data.globalEntityCount;
-
-    // GC OPTIMIZATION: Pre-allocate fallback buffer for query results
-    if (this.globalEntityCount > 0) {
-      this._queryFallbackBuffer = new Uint16Array(this.globalEntityCount);
-    }
 
     // Store config for worker access
     this.config = data.config || {};
@@ -455,9 +448,8 @@ export class AbstractWorker {
     // Store registered classes (used by logic worker and potentially others)
     this.registeredClasses = data.registeredClasses || [];
 
-    // Initialize query system for component-based entity filtering (SAB-based)
+    // Initialize query system for component-based entity filtering (SAB-based only)
     if (data.queries && data.buffers?.queryEntityMetadata) {
-      // Create worker query functions using SAB-backed data
       const queryFunctions = createWorkerQueryFunctions(
         data.queries,
         {
@@ -468,37 +460,17 @@ export class AbstractWorker {
         this.activeEntitiesData
       );
 
-      // Store query functions for use in this worker
       this._queryFn = queryFunctions.query;
       this._queryActiveEntitiesFn = queryFunctions.queryActiveEntities;
-
-      // Store internals for particle_worker to populate results
       this._queryResultViews = queryFunctions._queryResultViews;
       this._precomputedQueries = queryFunctions._precomputedQueries;
       this._queryEntityMetadata = queryFunctions._entityMetadata;
 
-      // Legacy support: keep queryMetadata for backwards compatibility
-      this.queryMetadata = data.queries.metadata || [];
-
       this.reportLog(
-        `initialized query system with ${this._precomputedQueries?.length || 0} pre-computed queries, ${this.queryMetadata.length} entity types`
+        `initialized query system with ${this._precomputedQueries?.length || 0} pre-computed queries`
       );
     } else if (data.queries) {
-      // Fallback for workers that don't receive SABs (backwards compatibility)
-      this.queryCache = new Map();
-      this.queryMetadata = data.queries.metadata || [];
-
-      if (data.queries.cache) {
-        // Uses Uint16 since max entities = 65535 (fits in 16 bits)
-        Object.entries(data.queries.cache).forEach(([key, array]) => {
-          // Handle both TypedArray and regular Array inputs
-          this.queryCache.set(key, Uint16Array.from(array));
-        });
-      }
-
-      this.reportLog(
-        `initialized query system (legacy mode) with ${this.queryCache?.size || 0} cached queries`
-      );
+      throw new Error('Query system requires SAB buffers (queryEntityMetadata/queryCache/queryResults)');
     }
 
     this.reportLog('finished initializing common buffers');
@@ -834,30 +806,11 @@ export class AbstractWorker {
    * const physicsObjects = this.query([RigidBody, Collider]);
    */
   query(componentClasses) {
-    // Use new SAB-based query function if available
-    if (this._queryFn) {
-      return this._queryFn(componentClasses);
-    }
-
-    // Fallback to legacy implementation
-    if (!this.queryCache) {
+    if (!this._queryFn) {
       console.warn(`[${this.constructor.name}] Query system not initialized!`);
       return this._emptyUint16Array;
     }
-
-    const key = componentClasses
-      .map((CompClass) => CompClass.name)
-      .sort()
-      .join(',');
-
-    let result = this.queryCache.get(key);
-
-    if (!result) {
-      result = this._computeQuery(componentClasses);
-      this.queryCache.set(key, result);
-    }
-
-    return result;
+    return this._queryFn(componentClasses);
   }
 
   /**
@@ -872,65 +825,11 @@ export class AbstractWorker {
    * const activePhysics = this.queryActiveEntities([RigidBody, Collider]);
    */
   queryActiveEntities(componentClasses) {
-    // Use SAB-based query function if available (primary path)
-    if (this._queryActiveEntitiesFn) {
-      return this._queryActiveEntitiesFn(componentClasses);
-    }
-
-    // Fallback: filter query results by active state (legacy, slower)
-    const allEntities = this.query(componentClasses);
-    if (!allEntities || allEntities.length === 0) {
+    if (!this._queryActiveEntitiesFn) {
+      console.warn(`[${this.constructor.name}] Active query system not initialized!`);
       return this._emptyUint16Array;
     }
-
-    // Use pre-allocated fallback buffer if available
-    if (this.activeEntitiesData && this._queryFallbackBuffer) {
-      const result = this._queryFallbackBuffer;
-      let count = 0;
-      const Transform = self.Transform;
-
-      for (let i = 0; i < allEntities.length; i++) {
-        const idx = allEntities[i];
-        if (Transform && Transform.active[idx]) {
-          result[count++] = idx;
-        }
-      }
-
-      return result.subarray(0, count);
-    }
-
-    console.warn(`[${this.constructor.name}] queryActiveEntities fallback - no activeEntitiesData`);
-    return this._emptyUint16Array;
-  }
-
-  /**
-   * Compute a query by checking which entities have all required components (legacy)
-   * @private
-   * @param {Array<Component>} componentClasses - Array of component classes
-   * @returns {Uint16Array} - Indices of matching entities
-   */
-  _computeQuery(componentClasses) {
-    const componentNames = componentClasses.map((c) => c.name);
-    const componentNameSet = new Set(componentNames);
-
-    // Uses Uint16 since max entities = 65535 (fits in 16 bits)
-    const maxSize = this.queryMetadata.reduce((sum, m) => sum + m.poolSize, 0);
-    const matchingIndices = new Uint16Array(maxSize);
-    let count = 0;
-
-    for (const metadata of this.queryMetadata) {
-      const hasAllComponents = [...componentNameSet].every((name) =>
-        metadata.componentNames.includes(name)
-      );
-
-      if (hasAllComponents) {
-        for (let i = metadata.startIndex; i < metadata.endIndex; i++) {
-          matchingIndices[count++] = i;
-        }
-      }
-    }
-
-    return matchingIndices.subarray(0, count);
+    return this._queryActiveEntitiesFn(componentClasses);
   }
 
   // ==========================================

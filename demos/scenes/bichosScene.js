@@ -94,7 +94,7 @@ export class BichosScene extends WEED.Scene {
 
     lighting: {
       enabled: true,
-      lightingAmbient: 0,
+      baseAmbient: 0,
       maxLights: 100,
       shadowsEnabled: true,
       maxShadowCastingLights: 100,

@@ -81,29 +81,3 @@ export function getCellRange(posX, posY, halfW, halfH, invCellSize, maxCol, maxR
   return result;
 }
 
-/**
- * Combined: Get cell range for an entity's collider
- * Convenience function for non-hot paths
- * ZERO ALLOCATION - mutates both result objects
- *
- * @param {number} idx - Entity index
- * @param {number} invCellSize - 1/cellSize
- * @param {number} maxCol - gridCols - 1
- * @param {number} maxRow - gridRows - 1
- * @param {Object} boundsResult - Bounds result object {posX, posY, halfW, halfH}
- * @param {Object} rangeResult - Range result object {minCol, maxCol, minRow, maxRow}
- * @returns {Object} The rangeResult object
- */
-export function getEntityCellRange(idx, invCellSize, maxCol, maxRow, boundsResult, rangeResult) {
-  getColliderBounds(idx, boundsResult);
-  return getCellRange(
-    boundsResult.posX,
-    boundsResult.posY,
-    boundsResult.halfW,
-    boundsResult.halfH,
-    invCellSize,
-    maxCol,
-    maxRow,
-    rangeResult
-  );
-}
