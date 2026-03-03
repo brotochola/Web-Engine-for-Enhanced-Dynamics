@@ -12,6 +12,24 @@ The result: a multithreaded 2D engine where your game logic, physics, spatial qu
 
 ---
 
+## Philosophy
+
+Games shouldn't depend on corporations. Not to build them, not to distribute them.
+
+Unity can change their pricing overnight and hold your project hostage. Steam takes 30% for being a middleman. Unreal wants 5% of your revenue. These aren't platforms -- they're tollbooths between you and your players.
+
+The web is the most democratic platform ever built. It's open standards, owned by nobody. Everyone already has the runtime installed -- it's called a browser. Distribution is a URL. No app store approval, no 500MB installer, no SDK license. You send a link, someone clicks it, they're playing your game. That's it. That's the whole pipeline.
+
+A web game with WeedJS -- sprites, physics, AI, audio, 20,000 entities -- weighs about 3MB. A Unity "Hello World" weighs 50MB+. An Unreal project starts in the hundreds. That matters when your player is on a phone with 4G.
+
+And JavaScript is the language of the web. Not TypeScript, not Dart, not something that compiles-to-JS. Actual JavaScript. No transpiler. No bundler. No webpack config from hell. No `package.json` with 400 dependencies. No build step between you and the browser. You write `.js` files, the browser runs `.js` files. Zero intermediaries.
+
+Chrome DevTools is a better debugger than most paid IDEs. View Source is built into every browser -- anyone can open your game and learn from it. The web was designed to be inspectable, hackable, and free. Games should be too.
+
+**Stop asking permission to make games. The browser is right there.**
+
+---
+
 ## Why It Hits Different
 
 Other engines serialize everything through one thread and pray. WeedJS splits the work across 6+ dedicated Web Workers that share memory directly:
