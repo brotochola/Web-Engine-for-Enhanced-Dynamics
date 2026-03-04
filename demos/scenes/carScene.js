@@ -134,6 +134,9 @@ export class CarScene extends WEED.Scene {
                 png: '/demos/img/tilemap/2.png',
             },
         },
+        flowfields: {
+            roads: '/demos/flowfield1.json',
+        },
     };
 
     // ========================================

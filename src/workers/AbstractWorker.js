@@ -565,6 +565,13 @@ export class AbstractWorker {
       console.log(`[${this.constructor.name}] NavGrid NOT initialized - navigationData: ${!!data.buffers?.navigationData}, enabled: ${data.config?.navigation?.enabled}`);
       // this.reportLog('NavGrid initialized for pathfinding');
     }
+
+    // Register static (pre-baked) flowfields from JSON
+    if (data.staticFlowfields) {
+      for (const [name, ff] of Object.entries(data.staticFlowfields)) {
+        NavGrid.registerStaticFlowfield(name, ff);
+      }
+    }
   }
 
   /**

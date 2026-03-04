@@ -75,6 +75,7 @@ export class DebugUI {
     // Navigation debug state
     this._selectedFlowfieldSlot = -1; // Currently selected flowfield for visualization
     this._selectedPathSlot = -1; // Currently selected path for visualization
+    this._selectedStaticFlowfield = null; // Name of selected static flowfield (or null)
     this._showWalkabilityGrid = false; // Show walkable/blocked cells
 
     // Unified debug canvas (replaces _navVisualizationCanvas)
@@ -1632,6 +1633,22 @@ export class DebugUI {
 
     columnsContainer.appendChild(pathsCol);
 
+    // Static flowfields column
+    const staticFfCol = document.createElement('div');
+    staticFfCol.className = 'debug-ui-nav-column';
+
+    const staticFfHeader = document.createElement('div');
+    staticFfHeader.className = 'debug-ui-nav-header';
+    staticFfHeader.innerHTML = "<span>🛣️ Static FF</span><span class='count' id='nav-static-ff-count'>0</span>";
+    staticFfCol.appendChild(staticFfHeader);
+
+    const staticFfList = document.createElement('div');
+    staticFfList.className = 'debug-ui-nav-list';
+    staticFfList.id = 'nav-static-flowfields-list';
+    staticFfCol.appendChild(staticFfList);
+
+    columnsContainer.appendChild(staticFfCol);
+
     panel.appendChild(columnsContainer);
 
     // Control buttons row
@@ -1672,8 +1689,10 @@ export class DebugUI {
     // Store references
     this.elements.navFlowfieldsList = ffList;
     this.elements.navPathsList = pathList;
+    this.elements.navStaticFlowfieldsList = staticFfList;
     this.elements.navFFCount = document.getElementById('nav-ff-count');
     this.elements.navPathCount = document.getElementById('nav-path-count');
+    this.elements.navStaticFFCount = document.getElementById('nav-static-ff-count');
 
     this.container.appendChild(panel);
     this.sections.navigation.panel = panel;
@@ -1683,26 +1702,31 @@ export class DebugUI {
    * Refresh navigation lists with current cached data
    */
   _refreshNavigationLists() {
-    if (!NavGrid._initialized) {
+    if (!NavGrid._initialized && NavGrid._staticFlowfields.size === 0) {
       this._showNavMessage('NavGrid not initialized');
       return;
     }
 
-    // Get cached flowfields
-    const flowfields = NavGrid.getCachedFlowfieldsList();
-    const paths = NavGrid.getCachedPathsList();
+    // Get cached dynamic flowfields
+    const flowfields = NavGrid._initialized ? NavGrid.getCachedFlowfieldsList() : [];
+    const paths = NavGrid._initialized ? NavGrid.getCachedPathsList() : [];
 
     // Update counts
     const ffCountEl = document.getElementById('nav-ff-count');
     const pathCountEl = document.getElementById('nav-path-count');
+    const staticFFCountEl = document.getElementById('nav-static-ff-count');
     if (ffCountEl) ffCountEl.textContent = flowfields.length;
     if (pathCountEl) pathCountEl.textContent = paths.length;
+    if (staticFFCountEl) staticFFCountEl.textContent = NavGrid._staticFlowfields.size;
 
     // Render flowfields list
     this._renderFlowfieldsList(flowfields);
 
     // Render paths list
     this._renderPathsList(paths);
+
+    // Render static flowfields list
+    this._renderStaticFlowfieldsList();
   }
 
   _showNavMessage(msg) {
@@ -1772,8 +1796,9 @@ export class DebugUI {
   }
 
   _selectFlowfield(slotIndex) {
-    // Deselect path
+    // Deselect path and static flowfield
     this._selectedPathSlot = -1;
+    this._selectedStaticFlowfield = null;
 
     // Toggle selection
     if (this._selectedFlowfieldSlot === slotIndex) {
@@ -1795,14 +1820,69 @@ export class DebugUI {
   }
 
   _selectPath(slotIndex) {
-    // Deselect flowfield
+    // Deselect flowfield and static flowfield
     this._selectedFlowfieldSlot = -1;
+    this._selectedStaticFlowfield = null;
 
     // Toggle selection
     if (this._selectedPathSlot === slotIndex) {
       this._selectedPathSlot = -1;
     } else {
       this._selectedPathSlot = slotIndex;
+    }
+
+    // Start/stop RAF loop based on active visualization
+    if (this._hasActiveDebugVisualization()) {
+      this._startDebugVisualizationLoop();
+    } else {
+      this._stopDebugVisualizationLoop();
+      this._clearDebugCanvas();
+    }
+
+    // Refresh lists to update selection state
+    this._refreshNavigationLists();
+  }
+
+  _renderStaticFlowfieldsList() {
+    const container = this.elements.navStaticFlowfieldsList;
+    if (!container) return;
+
+    container.innerHTML = '';
+    const names = Array.from(NavGrid._staticFlowfields.keys());
+
+    if (names.length === 0) {
+      container.innerHTML = '<div class="debug-ui-nav-empty">No static flowfields</div>';
+      return;
+    }
+
+    for (const name of names) {
+      const ff = NavGrid._staticFlowfields.get(name);
+      const item = document.createElement('div');
+      item.className = 'debug-ui-nav-item';
+      if (this._selectedStaticFlowfield === name) {
+        item.classList.add('selected');
+      }
+
+      item.innerHTML = `
+        <span class="slot">${name}</span>
+        <span class="target">${ff.gridWidth}x${ff.gridHeight}</span>
+      `;
+
+      item.onclick = () => this._selectStaticFlowfield(name);
+      container.appendChild(item);
+    }
+  }
+
+  _selectStaticFlowfield(name) {
+    // Deselect dynamic flowfield and path
+    this._selectedFlowfieldSlot = -1;
+    this._selectedPathSlot = -1;
+
+    // Toggle selection
+    if (this._selectedStaticFlowfield === name) {
+      this._selectedStaticFlowfield = null;
+    } else {
+      this._selectedStaticFlowfield = name;
     }
 
     // Start/stop RAF loop based on active visualization
@@ -1854,6 +1934,7 @@ export class DebugUI {
   _clearNavVisualization() {
     this._selectedFlowfieldSlot = -1;
     this._selectedPathSlot = -1;
+    this._selectedStaticFlowfield = null;
     this._showWalkabilityGrid = false;
 
     // Reset walkability button state
@@ -1886,7 +1967,7 @@ export class DebugUI {
    */
   _hasActiveNavVisualization() {
     return (
-      this._showWalkabilityGrid || this._selectedFlowfieldSlot >= 0 || this._selectedPathSlot >= 0
+      this._showWalkabilityGrid || this._selectedFlowfieldSlot >= 0 || this._selectedPathSlot >= 0 || this._selectedStaticFlowfield !== null
     );
   }
 
@@ -1967,6 +2048,11 @@ export class DebugUI {
     // 3. Draw flowfield arrows
     if (this._selectedFlowfieldSlot >= 0) {
       this._drawFlowfield(ctx, canvas, camera, zoom, this._selectedFlowfieldSlot);
+    }
+
+    // 3.5. Draw static flowfield arrows
+    if (this._selectedStaticFlowfield !== null) {
+      this._drawStaticFlowfield(ctx, canvas, camera, zoom, this._selectedStaticFlowfield);
     }
 
     // 4. Draw path
@@ -2195,6 +2281,71 @@ export class DebugUI {
     ctx.strokeStyle = 'white';
     ctx.lineWidth = 2;
     ctx.stroke();
+  }
+
+  /**
+   * Draw static (pre-baked) flowfield arrows
+   */
+  _drawStaticFlowfield(ctx, canvas, camera, zoom, name) {
+    const ff = NavGrid._staticFlowfields.get(name);
+    if (!ff) return;
+
+    const { vectors, gridWidth, gridHeight, cellSize } = ff;
+
+    ctx.strokeStyle = 'rgba(100, 255, 100, 0.7)';
+    ctx.lineWidth = 1.5;
+
+    const arrowLen = cellSize * 0.35 * zoom;
+
+    const startCellX = Math.max(0, Math.floor(camera.x / cellSize) - 1);
+    const startCellY = Math.max(0, Math.floor(camera.y / cellSize) - 1);
+    const endCellX = Math.min(
+      gridWidth,
+      Math.ceil((camera.x + canvas.width / zoom) / cellSize) + 1
+    );
+    const endCellY = Math.min(
+      gridHeight,
+      Math.ceil((camera.y + canvas.height / zoom) / cellSize) + 1
+    );
+
+    for (let y = startCellY; y < endCellY; y++) {
+      for (let x = startCellX; x < endCellX; x++) {
+        const vecIdx = (y * gridWidth + x) * 2;
+        const vx = vectors[vecIdx];
+        const vy = vectors[vecIdx + 1];
+
+        if (vx === 0 && vy === 0) continue;
+
+        const dx = vx / 127;
+        const dy = vy / 127;
+
+        const wx = x * cellSize + cellSize / 2;
+        const wy = y * cellSize + cellSize / 2;
+
+        const sx = (wx - camera.x) * zoom;
+        const sy = (wy - camera.y) * zoom;
+
+        ctx.beginPath();
+        ctx.moveTo(sx - dx * arrowLen * 0.5, sy - dy * arrowLen * 0.5);
+        ctx.lineTo(sx + dx * arrowLen * 0.5, sy + dy * arrowLen * 0.5);
+        ctx.stroke();
+
+        const headLen = arrowLen * 0.4;
+        const angle = Math.atan2(dy, dx);
+        ctx.beginPath();
+        ctx.moveTo(sx + dx * arrowLen * 0.5, sy + dy * arrowLen * 0.5);
+        ctx.lineTo(
+          sx + dx * arrowLen * 0.5 - headLen * Math.cos(angle - Math.PI / 6),
+          sy + dy * arrowLen * 0.5 - headLen * Math.sin(angle - Math.PI / 6)
+        );
+        ctx.moveTo(sx + dx * arrowLen * 0.5, sy + dy * arrowLen * 0.5);
+        ctx.lineTo(
+          sx + dx * arrowLen * 0.5 - headLen * Math.cos(angle + Math.PI / 6),
+          sy + dy * arrowLen * 0.5 - headLen * Math.sin(angle + Math.PI / 6)
+        );
+        ctx.stroke();
+      }
+    }
   }
 
   /**

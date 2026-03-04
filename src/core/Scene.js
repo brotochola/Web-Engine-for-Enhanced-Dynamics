@@ -1600,6 +1600,11 @@ class Scene {
         }
       }
     }
+
+    // Load static flowfields (pre-baked direction grids from JSON)
+    if (imageUrls.flowfields) {
+      await NavGrid.loadStaticFlowfieldsFromJSON(imageUrls.flowfields, this.config.worldWidth, this.config.worldHeight);
+    }
   }
 
   async preloadAudios(audioManifest) {
@@ -2058,6 +2063,8 @@ class Scene {
           }
           : null,
       queries: this.querySystem.serialize(), // Pre-calculated entity queries
+      // Static flowfields loaded from JSON (pre-baked direction grids for roads, sidewalks, etc.)
+      staticFlowfields: NavGrid.serializeStaticFlowfields(),
       // Constraint system (distance constraints for position-based dynamics)
       constraints: this.config.physics.maxConstraints > 0
         ? {

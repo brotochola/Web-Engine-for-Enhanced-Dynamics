@@ -169,6 +169,10 @@ export class NavGrid {
   // Frame tracking for LRU
   static _currentFrame = 0;
 
+  // Static (pre-baked) flowfields loaded from JSON
+  // Map<name, { gridWidth, gridHeight, cellSize, vectors: Int8Array }>
+  static _staticFlowfields = new Map();
+
   // =========================================================
   // Byte offsets in the SAB (calculated in initialize)
   // =========================================================
@@ -281,6 +285,126 @@ export class NavGrid {
     this._navWorkerPort = port;
   }
 
+  // =========================================================
+  // Static (pre-baked) flowfields from JSON
+  // =========================================================
+
+  /**
+   * Register a pre-baked flowfield (loaded from JSON at scene startup).
+   * Called once per flowfield during worker initialization.
+   *
+   * @param {string} name - Unique flowfield identifier (e.g. 'roads', 'sidewalk')
+   * @param {Object} data - Flowfield data
+   * @param {number} data.gridWidth - Width in cells
+   * @param {number} data.gridHeight - Height in cells
+   * @param {number} data.cellSize - World pixels per cell
+   * @param {Int8Array} data.vectors - Flat vector data (2 bytes per cell: X, Y in [-127, 127])
+   */
+  static registerStaticFlowfield(name, data) {
+    this._staticFlowfields.set(name, {
+      gridWidth: data.gridWidth,
+      gridHeight: data.gridHeight,
+      cellSize: data.cellSize,
+      vectors: data.vectors instanceof Int8Array ? data.vectors : new Int8Array(data.vectors),
+    });
+  }
+
+  /**
+   * Load static flowfields from JSON URLs (main thread only).
+   * Fetches each JSON, parses direction data, clips to scene world bounds,
+   * and stores in _staticFlowfields.
+   *
+   * @param {Object} flowfieldUrls - Map of name → URL (e.g. { roads: '/data/roads.json' })
+   * @param {number} sceneWorldWidth - Scene world width in pixels
+   * @param {number} sceneWorldHeight - Scene world height in pixels
+   */
+  static async loadStaticFlowfieldsFromJSON(flowfieldUrls, sceneWorldWidth, sceneWorldHeight) {
+    const worldW = sceneWorldWidth || Infinity;
+    const worldH = sceneWorldHeight || Infinity;
+
+    console.log(`[NavGrid] Loading ${Object.keys(flowfieldUrls).length} static flowfields...`);
+
+    for (const [name, url] of Object.entries(flowfieldUrls)) {
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`Failed to fetch flowfield: ${url}`);
+        const json = await resp.json();
+
+        const srcW = json.gridWidth;
+        const srcH = json.gridHeight;
+        const cellSize = json.cellSize;
+
+        const clippedW = Math.min(srcW, Math.floor(worldW / cellSize));
+        const clippedH = Math.min(srcH, Math.floor(worldH / cellSize));
+        const vectors = new Int8Array(clippedW * clippedH * 2);
+
+        for (let row = 0; row < clippedH; row++) {
+          const rowData = json.data[row];
+          for (let col = 0; col < clippedW; col++) {
+            const cell = rowData[col];
+            if (cell) {
+              const idx = (row * clippedW + col) * 2;
+              vectors[idx] = Math.round(Math.max(-1, Math.min(1, cell[0])) * 127);
+              vectors[idx + 1] = Math.round(Math.max(-1, Math.min(1, cell[1])) * 127);
+            }
+          }
+        }
+
+        this._staticFlowfields.set(name, { gridWidth: clippedW, gridHeight: clippedH, cellSize, vectors });
+        console.log(`[NavGrid]   Loaded flowfield: ${name} (${clippedW}x${clippedH}, cellSize=${cellSize})`);
+      } catch (error) {
+        console.error(`[NavGrid] Failed to load flowfield "${name}":`, error);
+      }
+    }
+  }
+
+  /**
+   * Serialize loaded static flowfields for transfer to workers via initData.
+   * @returns {Object} Plain object { name: { gridWidth, gridHeight, cellSize, vectors } }
+   */
+  static serializeStaticFlowfields() {
+    const result = {};
+    for (const [name, ff] of this._staticFlowfields) {
+      result[name] = {
+        gridWidth: ff.gridWidth,
+        gridHeight: ff.gridHeight,
+        cellSize: ff.cellSize,
+        vectors: ff.vectors,
+      };
+    }
+    return result;
+  }
+
+  /**
+   * Sample a pre-baked static flowfield at a world position.
+   *
+   * @param {string} name - Flowfield identifier (must match a registered flowfield)
+   * @param {number} worldX - World X position to sample
+   * @param {number} worldY - World Y position to sample
+   * @param {Object} outVec - Output vector {x, y} to fill (float values in [-1, 1])
+   */
+  static requestVectorFromStaticFlowfield(name, worldX, worldY, outVec) {
+    const ff = this._staticFlowfields.get(name);
+    if (!ff) {
+      outVec.x = 0;
+      outVec.y = 0;
+      return;
+    }
+
+    const cellX = Math.floor(worldX / ff.cellSize);
+    const cellY = Math.floor(worldY / ff.cellSize);
+
+    if (cellX < 0 || cellX >= ff.gridWidth || cellY < 0 || cellY >= ff.gridHeight) {
+      outVec.x = 0;
+      outVec.y = 0;
+      return;
+    }
+
+    const idx = (cellY * ff.gridWidth + cellX) * 2;
+    outVec.x = ff.vectors[idx] / 127;
+    outVec.y = ff.vectors[idx + 1] / 127;
+  }
+
   /**
    * Reset NavGrid state (called when unloading a scene to prevent memory leaks)
    * Clears port reference and pending requests so old buffers can be GC'd
@@ -297,6 +421,7 @@ export class NavGrid {
     this._pathData = null;
     this._pendingFlowfieldRequests.clear();
     this._pendingPathRequests.clear();
+    this._staticFlowfields.clear();
   }
 
   // =========================================================

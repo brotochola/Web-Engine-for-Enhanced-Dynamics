@@ -1,4 +1,4 @@
-// AICar.js - AI-controlled car that follows the player using flowfield pathfinding
+// AICar.js - AI-controlled car that follows a static flowfield (or the player as fallback)
 
 import WEED from '/src/index.js';
 import { Car } from './car.js';
@@ -18,20 +18,20 @@ export class AICar extends Car {
 
     static aiTurnStrength = 0.8;
     static aiForwardStrength = 0.9;
-    static closeToPlayerDistSq = 800 * 800;
+    static flowfieldName = 'roads';
 
     tick(dtRatio) {
         super.tick(dtRatio);
 
-        const player = PlayerCar.getFirstActiveInstance();
+        NavGrid.requestVectorFromStaticFlowfield(this.constructor.flowfieldName, this.x, this.y, _navVec);
 
-        if (!player) return;
-
-        const dx = player.x - this.x;
-        const dy = player.y - this.y;
-        if (dx * dx + dy * dy < this.constructor.closeToPlayerDistSq) return;
-
-        NavGrid.requestVector(this.x, this.y, player.x, player.y, _navVec);
+        // Fallback to dynamic flowfield toward player if static flowfield has no direction here
+        if (_navVec.x === 0 && _navVec.y === 0) {
+            const player = PlayerCar.getFirstActiveInstance();
+            if (player) {
+                NavGrid.requestVector(this.x, this.y, player.x, player.y, _navVec);
+            }
+        }
 
         const lenSq = _navVec.x * _navVec.x + _navVec.y * _navVec.y;
         if (lenSq < 0.01) return;
