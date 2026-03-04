@@ -1312,7 +1312,7 @@ LIGHTING SYSTEM SETUP
 
   buildFragmentShaderBasic() {
     return `
-    precision mediump float;
+    precision highp float;
 
     uniform vec2 uCameraPos;
     uniform float uZoom;
@@ -1362,10 +1362,18 @@ LIGHTING SYSTEM SETUP
         //switch B and R
         vec3 color = vec3(uLightB[i], uLightG[i], uLightR[i]);
 
-        float d = length(fragWorld - lightWorld);
-        // Formula: intensity / (intensity + d²) → caps at 1.0 when d=0, falls off with distance
-        // Higher intensity = light reaches farther, but max brightness is always 1.0
-        float attenuation = intensity / (intensity + d*d);
+        // Keep attenuation math numerically stable on mobile fragment shaders.
+        // Many mobile GPUs run mediump in fragment stage (even when highp is requested),
+        // and d*d can overflow at common world distances, causing hard light cutoffs.
+        // Scale both intensity and distance by the same factor so the equation remains
+        // visually equivalent while staying in a safe numeric range:
+        //   I/(I + d²) == (I*k²)/((I*k²) + (d*k)²)
+        const float DISTANCE_SCALE = 1.0 / 1024.0;
+        vec2 deltaScaled = (fragWorld - lightWorld) * DISTANCE_SCALE;
+        float d2Scaled = dot(deltaScaled, deltaScaled);
+        float intensityScaled = intensity * DISTANCE_SCALE * DISTANCE_SCALE;
+        // Formula: intensity / (intensity + d²) → caps at 1.0 when d=0, falls off with distance.
+        float attenuation = intensityScaled / (intensityScaled + d2Scaled);
 
         totalLight += color * attenuation;
       }
