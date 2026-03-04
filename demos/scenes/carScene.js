@@ -17,8 +17,8 @@ export class CarScene extends WEED.Scene {
     // ========================================
 
     static config = {
-        worldWidth: 10000,
-        worldHeight: 7000,
+        worldWidth: 20000,
+        worldHeight: 20000,
         seed: 123456,
         debugUpdateInterval: 100,
 
@@ -130,12 +130,12 @@ export class CarScene extends WEED.Scene {
         },
         tilemaps: {
             myTilemap: {
-                json: '/demos/img/tilemap/2.json',
+                json: '/demos/map_n_flowfield/tilemap.json',
                 png: '/demos/img/tilemap/2.png',
             },
         },
         flowfields: {
-            roads: '/demos/flowfield1.json',
+            roads: '/demos/map_n_flowfield/flowfield1.json',
         },
     };
 
@@ -181,9 +181,9 @@ export class CarScene extends WEED.Scene {
 
         // Spawn NPC cars randomly around the center - they will follow player via flowfield
         const carSprites = ['red_car', 'yellow_car', 'black_car', 'white_car', 'blue_car'];
-        const spawnRadius = 2000;
+        const spawnRadius = 5000;
 
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 100; i++) {
             const offsetX = (rng() * 2 - 1) * spawnRadius;
             const offsetY = (rng() * 2 - 1) * spawnRadius;
             const sprite = carSprites[Math.floor(rng() * carSprites.length)];
