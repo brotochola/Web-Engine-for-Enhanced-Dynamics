@@ -39,7 +39,7 @@ export class PlayerCar extends Car {
         const futureY = centerY + vy * LOOK_AHEAD_PER_SPEED;
         Camera.follow(futureX, futureY, CAMERA_FOLLOW_SMOOTH, dtRatio);
 
-        const speed = vx + vy
+        const speed = Math.abs(vx) + Math.abs(vy)
         const speedT = Math.min(
             1,
             Math.max(0, (speed - SPEED_FOR_MIN_ZOOM) / (SPEED_FOR_MAX_ZOOM - SPEED_FOR_MIN_ZOOM))

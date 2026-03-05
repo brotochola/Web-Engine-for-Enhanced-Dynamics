@@ -33,7 +33,7 @@ export class CarScene extends WEED.Scene {
         },
 
         particle: {
-            noLimitFPS: false,
+            noLimitFPS: true,
             maxParticles: 1000,
             decals: false,
         },
@@ -44,7 +44,7 @@ export class CarScene extends WEED.Scene {
 
         // Logic configuration
         logic: {
-            noLimitFPS: false,
+            noLimitFPS: true,
             numberOfLogicWorkers: 1,
             staggeredUpdates: false,
         },
@@ -65,7 +65,7 @@ export class CarScene extends WEED.Scene {
         },
 
         renderer: {
-            noLimitFPS: false,
+            noLimitFPS: true,
             ySorting: true,
             interpolation: true,
             cullingRatio: 0.5,
@@ -73,7 +73,7 @@ export class CarScene extends WEED.Scene {
         },
 
         preRender: {
-            noLimitFPS: false,
+            noLimitFPS: true,
         },
 
         lighting: {
