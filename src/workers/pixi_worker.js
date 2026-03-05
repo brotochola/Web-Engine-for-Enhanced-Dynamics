@@ -2177,6 +2177,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Update layer refs after background change
     this._updateBackgroundLayerRef();
+
+    // Warm-up render: force GPU to compile shaders and upload geometry/textures now,
+    // rather than causing a frame spike on the first visible frame.
+    if (this.pixiApp && this.pixiApp.renderer) {
+      this.pixiApp.renderer.render(this.pixiApp.stage);
+      console.log(`PIXI WORKER: Warm-up render completed (GPU shaders/geometry uploaded)`);
+    }
+
+    self.postMessage({ msg: 'backgroundReady' });
   }
 
   /**

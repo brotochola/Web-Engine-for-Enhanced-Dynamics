@@ -124,7 +124,7 @@ export class PlayerCar extends Car {
         const futureX = centerX + _svx * lookAheadTime;
         const futureY = centerY + _svy * lookAheadTime;
 
-        Camera.follow(futureX, futureY, 0.5);
+        Camera.follow(futureX, futureY, 0.1);
 
         const t = _ssp <= SPEED_FOR_MIN_ZOOM ? 0 : (_ssp >= SPEED_FOR_MAX_ZOOM ? 1 : (_ssp - SPEED_FOR_MIN_ZOOM) / (SPEED_FOR_MAX_ZOOM - SPEED_FOR_MIN_ZOOM));
         Camera.setZoom(ZOOM_AT_MIN_SPEED + t * (ZOOM_AT_MAX_SPEED - ZOOM_AT_MIN_SPEED));

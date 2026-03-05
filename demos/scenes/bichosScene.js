@@ -197,10 +197,11 @@ export class BichosScene extends WEED.Scene {
     this.frameCount = 0;
   }
 
-  create() {
-    // Set tilemap background
-    this.setTilemapBackground('myTilemap', { scale: 1 });
+  async preload() {
+    await this.setTilemapBackground('myTilemap', { scale: 1 });
+  }
 
+  create() {
     // Spawn initial entities
     // console.log('🎬 PredatorScene: Spawning entities...');
 
@@ -257,7 +258,7 @@ export class BichosScene extends WEED.Scene {
             y: house.y,
           });
         });
-        setTimeout(() => this.createNavGridForTheFlowField(), 500);
+        this.createNavGridForTheFlowField();
       });
     // this.spawnRocks(this.numberOfRocks);
     // this.spawnTrees(this.numberOfTrees);

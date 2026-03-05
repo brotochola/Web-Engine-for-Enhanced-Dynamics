@@ -32,7 +32,7 @@ export class CarScene extends WEED.Scene {
         },
 
         particle: {
-            noLimitFPS: true,
+            noLimitFPS: false,
             maxParticles: 1000,
             decals: false,
         },
@@ -43,7 +43,7 @@ export class CarScene extends WEED.Scene {
 
         // Logic configuration
         logic: {
-            noLimitFPS: true,
+            noLimitFPS: false,
             numberOfLogicWorkers: 1,
             staggeredUpdates: false,
         },
@@ -64,7 +64,7 @@ export class CarScene extends WEED.Scene {
         },
 
         renderer: {
-            noLimitFPS: true,
+            noLimitFPS: false,
             ySorting: true,
             interpolation: true,
             cullingRatio: 0.5,
@@ -72,7 +72,7 @@ export class CarScene extends WEED.Scene {
         },
 
         preRender: {
-            noLimitFPS: true,
+            noLimitFPS: false,
         },
 
         lighting: {
@@ -165,21 +165,19 @@ export class CarScene extends WEED.Scene {
         ]);
     }
 
-    create() {
-        // Set tilemap background
-        this.setTilemapBackground('myTilemap', { scale: 1 });
+    async preload() {
+        console.log('🚗 CarScene: Preloading...');
+        await this.setTilemapBackground('myTilemap', { scale: 1 });
 
         const centerX = this.config.worldWidth / 2;
         const centerY = this.config.worldHeight / 2;
 
-        // Spawn player car at center of world
         this.playerCar = PlayerCar.spawn({
             x: centerX,
             y: centerY,
             sprite: 'car_police',
         });
 
-        // Spawn NPC cars randomly around the center - they will follow player via flowfield
         const carSprites = ['red_car', 'yellow_car', 'black_car', 'white_car', 'blue_car'];
         const spawnRadius = 5000;
 
@@ -195,16 +193,20 @@ export class CarScene extends WEED.Scene {
             });
         }
 
-        // Initialize navigation grid (all cells walkable for open-world driving)
-        setTimeout(() => NavGrid.updateNavGrid([]), 500);
+        this.createNavGridForTheFlowField();
 
-        // Center camera on player car initially
         if (this.playerCar) {
             Camera.centerOn(
                 Transform.x[this.playerCar.index],
                 Transform.y[this.playerCar.index]
             );
         }
+
+        console.log('🚗 CarScene: Preloaded!');
+
+    }
+
+    create() {
 
         console.log('🚗 CarScene: Player car and AI cars spawned! Drive with WASD/Arrow keys - AI cars follow you via flowfield pathfinding.');
     }

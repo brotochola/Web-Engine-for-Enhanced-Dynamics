@@ -685,15 +685,10 @@ class Scene {
     await this.createWorkers();
     console.log(`[Scene] ✅ Workers created, waiting for ready signals...`);
 
-    // Setup event listeners
+    // Setup event listeners (input must be ready before create() so spawn logic can read config)
     console.log(`[Scene] 🎧 Setting up event listeners...`);
     this.setupEventListeners();
     console.log(`[Scene] ✅ Event listeners set up`);
-
-    // Start main loop
-    console.log(`[Scene] 🔄 Starting main loop...`);
-    this.startMainLoop();
-    console.log(`[Scene] ✅ Main loop started`);
 
     // Update entity count display
     const numberBoidsElement = document.getElementById('numberBoids');
@@ -706,7 +701,7 @@ class Scene {
     console.log(`[Scene] Current worker ready states:`, { ...this.workerReadyStates });
     console.log(`[Scene] Total workers expected: ${this.totalWorkers}`);
 
-    // Wait for all workers to be ready
+    // Wait for all workers to be ready (workers stay paused until we send 'start')
     await this.readyPromise;
     console.log(`[Scene] ✅ All workers are ready!`);
 
@@ -719,10 +714,29 @@ class Scene {
       `💡 Debug tip: Use 'scene', 'game', component classes, and entity classes from console`
     );
 
-    // Call user's create() hook
+    // LIFECYCLE PHASE 1: preload()
+    // Scene infrastructure setup (tilemap background, camera, nav grid).
+    // Messages sent here are processed by workers while they are still paused,
+    // so the renderer can build the tilemap and warm up the GPU before the first frame.
+    console.log(`[Scene] 📦 Calling user's preload() hook...`);
+    await this.preload();
+    console.log(`[Scene] ✅ User's preload() hook completed`);
+
+    // LIFECYCLE PHASE 2: create()
+    // Spawn entities and set up the game world.
     console.log(`[Scene] 🎨 Calling user's create() hook...`);
-    this.create();
+    await this.create();
     console.log(`[Scene] ✅ User's create() hook completed`);
+
+    // LIFECYCLE PHASE 3: Start everything.
+    // Main thread loop first (for input handling), then worker game loops.
+    // Workers see a fully populated scene with infrastructure ready on frame 1.
+    console.log(`[Scene] 🔄 Starting main loop...`);
+    this.startMainLoop();
+    console.log(`[Scene] ✅ Main loop started`);
+
+    console.log(`[Scene] 🚀 Starting all worker game loops...`);
+    this.startAllWorkers();
   }
 
   /**
@@ -803,6 +817,25 @@ class Scene {
   }
 
   // User lifecycle hooks - override these in subclasses
+
+  /**
+   * Called after all workers are initialized but BEFORE the game loop starts.
+   * Use this for scene infrastructure that workers need on their first frame:
+   * - setTilemapBackground()
+   * - Camera.centerOn()
+   * - NavGrid setup
+   *
+   * Messages sent here are processed by workers while they are still paused,
+   * guaranteeing everything is ready before the first frame renders.
+   */
+  preload() {
+    // Override this for scene infrastructure setup
+  }
+
+  /**
+   * Called after preload(), right before workers start their game loops.
+   * Use this for spawning entities and game-world setup.
+   */
   create() {
     // Override this to spawn initial entities
   }
@@ -2236,6 +2269,11 @@ class Scene {
 
       // Show a visible error message on the page
       this._showFatalErrorMessage(workerName, title, message);
+    } else if (e.data.msg === 'backgroundReady') {
+      if (this._backgroundReadyResolve) {
+        this._backgroundReadyResolve();
+        this._backgroundReadyResolve = null;
+      }
     } else if (e.data.msg === 'playSound') {
       const { name, options } = e.data;
       SoundManager.playFromMainThread(name, options || {});
@@ -2325,8 +2363,7 @@ class Scene {
     const allReady = Object.values(this.workerReadyStates).every((ready) => ready);
 
     if (allReady) {
-      console.log(`[Scene] 🎉 All workers are ready! Starting all workers...`);
-      this.startAllWorkers();
+      console.log(`[Scene] 🎉 All workers are ready!`);
       if (this.resolveReady) {
         console.log(`[Scene] ✅ Resolving ready promise`);
         this.resolveReady();
@@ -2943,7 +2980,7 @@ class Scene {
   setTilemapBackground(tilemapId, options = {}) {
     if (!this.workers.renderer) {
       console.warn('Renderer worker not initialized');
-      return;
+      return Promise.resolve();
     }
 
     // Check if the tilemap asset exists
@@ -2953,14 +2990,18 @@ class Scene {
         `Tilemap "${tilemapId}" not found. ` +
         `Available tilemaps: [${availableTilemaps.join(', ') || 'none'}]`
       );
-      return;
+      return Promise.resolve();
     }
 
-    this.workers.renderer.postMessage({
-      msg: 'setBackground',
-      type: 'tilemap',
-      tilemapId: tilemapId,
-      options: options,
+    return new Promise((resolve) => {
+      this._backgroundReadyResolve = resolve;
+
+      this.workers.renderer.postMessage({
+        msg: 'setBackground',
+        type: 'tilemap',
+        tilemapId: tilemapId,
+        options: options,
+      });
     });
   }
 

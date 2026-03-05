@@ -111,7 +111,7 @@ export class AbstractWorker {
    */
   updateFrameTiming() {
     const now = performance.now();
-    const deltaTime = now - this.lastFrameTime;
+    const deltaTime = Math.min(now - this.lastFrameTime, 100);
     this.lastFrameTime = now;
 
     // Calculate instantaneous FPS

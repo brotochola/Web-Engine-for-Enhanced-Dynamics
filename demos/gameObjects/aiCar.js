@@ -5,6 +5,7 @@ import { Car } from './car.js';
 import { PlayerCar } from './playerCar.js';
 import { NavGrid } from '../../src/core/NavGrid.js';
 import { CarComponent } from '../components/carComponent.js';
+import { distanceSq2D } from '../../src/index.js';
 
 const { Transform, SpriteRenderer } = WEED;
 
@@ -28,7 +29,7 @@ export class AICar extends Car {
         // Fallback to dynamic flowfield toward player if static flowfield has no direction here
         if (_navVec.x === 0 && _navVec.y === 0) {
             const player = PlayerCar.getFirstActiveInstance();
-            if (player) {
+            if (player && distanceSq2D(this.x, this.y, player.x, player.y) > 250000) {
                 NavGrid.requestVector(this.x, this.y, player.x, player.y, _navVec);
             }
         }
