@@ -62,6 +62,6 @@ export class AICar extends Car {
             ? accel * this.constructor.aiForwardStrength
             : -accel * this.constructor.aiForwardStrength * 0.6;
 
-        this.applyForces(forwardForce, turnForce);
+        this.applyForces(forwardForce, turnForce, dtRatio);
     }
 }

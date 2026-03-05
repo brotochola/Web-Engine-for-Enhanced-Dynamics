@@ -22,7 +22,7 @@ export class CarPart extends GameObject {
         // Configure collider
         this.collider.radius = radius;
         this.collider.isTrigger = 0; // Physical collision
-        this.collider.visualRange = radius * 2;
+        this.collider.visualRange = radius * 3;
 
         // Configure physics - tuned for arcade feel
         this.rigidBody.maxVel = 400;

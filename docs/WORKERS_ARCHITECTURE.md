@@ -102,7 +102,7 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 | `nextTickData` | Read/**Write** | Tick decimation countdown per entity |
 | `inputData` | Read | Keyboard state |
 | `mouseData` | Read | Mouse position + buttons |
-| `cameraData` | Read/**Write** | Camera follow targets |
+| `cameraData` | Read/**Write** | Camera state SAB `[zoom,x,y,followX,followY,targetZoom]` (prefer single writer policy) |
 | `constraintData` | **Write** | Create constraints via `Constraint.add` |
 | `constraintFreeList/Top` | Read/**Write** | Pop free constraint slots |
 | `raycastDebugData` | **Write** | Debug ray visualization |
@@ -177,6 +177,7 @@ Reads visibility lists, advances animations, builds the render and shadow queues
 | Buffer | Access | Notes |
 |---|---|---|
 | `renderQueueDataA/B` | **Write** | Alternating double buffer |
+| `renderQueueCameraA/B` | **Write** | Per-buffer camera snapshot `[zoom,x,y]` frame-locked to render queue generation |
 | `shadowRenderQueueDataA/B` | **Write** | Shadow/light queue |
 | `renderQueueSync` | Read/**Write** | Atomics: readyFrame + consumedFrame |
 | `entityTextureData` | **Write** | Per-entity texture ID |
@@ -186,7 +187,7 @@ Reads visibility lists, advances animations, builds the render and shadow queues
 | `visibleBulletsData` | Read | From particle worker |
 | `activeEntitiesData` | Read | Entity list |
 | All component SABs | Read | Positions, sprites, animation state |
-| `cameraData` | Read | Zoom, position |
+| `cameraData` | Read | Live camera state (used to latch a per-frame snapshot) |
 | `sunData` | Read | Lighting/shadow config |
 | `preRenderStats` | **Write** | FPS, visible counts, queue size |
 | `frameRateData` | **Write** | Own slot |
@@ -211,13 +212,14 @@ Consumes the render queues and draws to an OffscreenCanvas. Never touches game s
 | Buffer | Access | Notes |
 |---|---|---|
 | `renderQueueDataA/B` | Read | Main sprite queue |
+| `renderQueueCameraA/B` | Read | Camera snapshot matched to the consumed render queue buffer |
 | `shadowRenderQueueDataA/B` | Read | Shadow/light queue |
 | `renderQueueSync` | Read/**Write** | Atomics: consume frame + notify |
 | `bloodTilesRGBA` | Read | Decal tile pixels |
 | `bloodTilesDirty` | Read | Which tiles to re-upload |
 | `entityTextureData` | Read | Texture IDs |
 | `visibleLightsData` | Read | Light indices |
-| `cameraData` | Read | Zoom, position |
+| `cameraData` | Read | Fallback only when renderQueue camera snapshots are unavailable |
 | `sunData` | Read | Ambient/shadow config |
 | `rendererStats` | **Write** | FPS, draw calls, sprite counts |
 | `frameRateData` | **Write** | Own slot |

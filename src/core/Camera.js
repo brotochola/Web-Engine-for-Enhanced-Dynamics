@@ -4,13 +4,22 @@
 
 /**
  * Static Camera class for managing viewport state
- * Camera data is stored in a SharedArrayBuffer: [zoom, x, y]
- * - zoom: Camera zoom level (1 = 100%)
- * - x, y: Top-left corner of viewport in world coordinates
+ * Camera data is stored in a SharedArrayBuffer Float32Array[6]:
+ * [zoom, x, y, followTargetX, followTargetY, targetZoom]
+ *
+ * Recommended threading model:
+ * - Single writer for Camera.follow/centerOn/setPosition/setZoom
+ * - Multiple readers in pre_render, pixi, main thread UI/debug
  */
 export class Camera {
-  // SharedArrayBuffer view: Float32Array [zoom, x, y]
+  // SharedArrayBuffer view: Float32Array [zoom, x, y, followTargetX, followTargetY, targetZoom]
   static _data = null;
+  static IDX_ZOOM = 0;
+  static IDX_X = 1;
+  static IDX_Y = 2;
+  static IDX_FOLLOW_X = 3;
+  static IDX_FOLLOW_Y = 4;
+  static IDX_TARGET_ZOOM = 5;
 
   // Canvas dimensions (needed for centering calculations)
   static _canvasWidth = 0;
@@ -32,7 +41,7 @@ export class Camera {
 
   /**
    * Initialize camera with shared data buffer
-   * @param {Float32Array} data - Float32Array view of SharedArrayBuffer [zoom, x, y]
+   * @param {Float32Array} data - Float32Array view [zoom, x, y, followTargetX, followTargetY, targetZoom]
    * @param {number} canvasWidth - Canvas width in pixels
    * @param {number} canvasHeight - Canvas height in pixels
    */
@@ -40,6 +49,14 @@ export class Camera {
     this._data = data;
     this._canvasWidth = canvasWidth;
     this._canvasHeight = canvasHeight;
+    if (this._data && this._data.length > this.IDX_TARGET_ZOOM) {
+      // Keep buffer fields in a valid state for readers across workers.
+      this._data[this.IDX_TARGET_ZOOM] = this._data[this.IDX_TARGET_ZOOM] > 0
+        ? this._data[this.IDX_TARGET_ZOOM]
+        : (this._data[this.IDX_ZOOM] || 1);
+      if (Number.isNaN(this._data[this.IDX_FOLLOW_X])) this._data[this.IDX_FOLLOW_X] = this._data[this.IDX_X] || 0;
+      if (Number.isNaN(this._data[this.IDX_FOLLOW_Y])) this._data[this.IDX_FOLLOW_Y] = this._data[this.IDX_Y] || 0;
+    }
   }
 
   /**
@@ -80,7 +97,10 @@ export class Camera {
   }
 
   static set x(value) {
-    if (this._data) this._data[1] = value;
+    if (this._data) {
+      this._data[1] = value;
+      this._clampToWorldBounds();
+    }
   }
 
   static get y() {
@@ -88,7 +108,10 @@ export class Camera {
   }
 
   static set y(value) {
-    if (this._data) this._data[2] = value;
+    if (this._data) {
+      this._data[2] = value;
+      this._clampToWorldBounds();
+    }
   }
 
   // ============================================
@@ -296,48 +319,32 @@ export class Camera {
    * @param {number} targetX - Target X position in world coordinates
    * @param {number} targetY - Target Y position in world coordinates
    * @param {number} [smoothing] - Optional smoothing override (0-1)
+   * @param {number} [dtRatio] - Delta time ratio for frame-rate-independent smoothing
    */
-  static follow(targetX, targetY, smoothing) {
+  static follow(targetX, targetY, smoothing, dtRatio) {
     if (!this._data) return;
 
-    // Store follow target in SharedArrayBuffer for cross-thread access
-    // Buffer layout: [zoom, x, y, followTargetX, followTargetY, targetZoom]
     this._data[3] = targetX;
     this._data[4] = targetY;
 
     const s = smoothing ?? this._smoothing;
-
-    // Check if zoom is actively changing
-    const currentZoom = this._data[0];
-    const targetZoom = this._data[5];
-    const zoomDiff = Math.abs(targetZoom - currentZoom);
-    const isZooming = targetZoom > 0 && zoomDiff > 0.001;
+    const es = (dtRatio != null && dtRatio > 0) ? Math.min(s * dtRatio, 1.0) : s;
 
     // Lerp zoom toward target zoom
-    if (isZooming) {
-      const newZoom = currentZoom + (targetZoom - currentZoom) * s;
+    const currentZoom = this._data[0];
+    const targetZoom = this._data[5];
+    if (targetZoom > 0 && Math.abs(targetZoom - currentZoom) > 0.0001) {
+      const newZoom = currentZoom + (targetZoom - currentZoom) * es;
       this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, newZoom));
     }
 
     const zoom = this._data[0];
-
-    // Calculate camera position to center target on screen (accounting for zoom)
-    // Formula derived from: screenCenter = (targetX - cameraX) * zoom
-    // Solving for cameraX: cameraX = targetX - screenCenter / zoom
     const targetCameraX = targetX - this._canvasWidth / (2 * zoom);
     const targetCameraY = targetY - this._canvasHeight / (2 * zoom);
 
-    if (isZooming) {
-      // Snap position while zooming to keep target perfectly centered
-      this._data[1] = targetCameraX;
-      this._data[2] = targetCameraY;
-    } else {
-      // Lerp to target position when not zooming
-      this._data[1] += (targetCameraX - this._data[1]) * s;
-      this._data[2] += (targetCameraY - this._data[2]) * s;
-    }
+    this._data[1] += (targetCameraX - this._data[1]) * es;
+    this._data[2] += (targetCameraY - this._data[2]) * es;
 
-    // Clamp to world bounds
     this._clampToWorldBounds();
   }
 
@@ -358,7 +365,7 @@ export class Camera {
   static getFollowTarget() {
     if (!this._data) return null;
 
-    // Buffer layout: [zoom, x, y, followTargetX, followTargetY]
+    // Buffer layout: [zoom, x, y, followTargetX, followTargetY, targetZoom]
     const targetX = this._data[3];
     const targetY = this._data[4];
 

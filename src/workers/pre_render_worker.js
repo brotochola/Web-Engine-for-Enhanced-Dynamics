@@ -74,6 +74,7 @@ class PreRenderWorker extends AbstractWorker {
         // Double buffer storage - each buffer has its own typed array views
         // Index 0 = buffer A, Index 1 = buffer B
         this.renderQueueBuffers = [null, null];
+        this.renderQueueCameraBuffers = [null, null];
 
         // Sync buffer for coordination: [readyFrame, consumedFrame]
         this.renderQueueSync = null;
@@ -93,6 +94,10 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueAnchorY = null;
         this.renderQueueType = null;
         this.renderQueueEntityIndex = null;
+        this.renderQueueCamera = null;
+        this._frameCameraZoom = 1;
+        this._frameCameraX = 0;
+        this._frameCameraY = 0;
 
         // Entity texture lookup buffer
         this.entityLastTextureId = null;
@@ -233,6 +238,7 @@ class PreRenderWorker extends AbstractWorker {
 
             // Create typed array views for BOTH buffers
             const bufferSABs = [data.renderQueue.dataA, data.renderQueue.dataB];
+            const cameraSABs = [data.renderQueue.cameraA || null, data.renderQueue.cameraB || null];
 
             for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
                 const sab = bufferSABs[bufIdx];
@@ -283,6 +289,9 @@ class PreRenderWorker extends AbstractWorker {
                 buffer.entityIndex = new Int32Array(sab, offset, maxItems);
 
                 this.renderQueueBuffers[bufIdx] = buffer;
+                this.renderQueueCameraBuffers[bufIdx] = cameraSABs[bufIdx]
+                    ? new Float32Array(cameraSABs[bufIdx], 0, 3)
+                    : null;
             }
 
             // Set initial write buffer (will be updated each frame)
@@ -462,6 +471,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueAnchorY = buffer.anchorY;
         this.renderQueueType = buffer.type;
         this.renderQueueEntityIndex = buffer.entityIndex;
+        this.renderQueueCamera = this.renderQueueCameraBuffers[bufferIdx];
     }
 
     /**
@@ -520,6 +530,18 @@ class PreRenderWorker extends AbstractWorker {
             }
         }
 
+        // Latch camera once per pre-render frame to keep all culling and queue writes coherent.
+        if (this.cameraData) {
+            this._frameCameraZoom = this.cameraData[0];
+            this._frameCameraX = this.cameraData[1];
+            this._frameCameraY = this.cameraData[2];
+            if (this.renderQueueCamera) {
+                this.renderQueueCamera[0] = this._frameCameraZoom;
+                this.renderQueueCamera[1] = this._frameCameraX;
+                this.renderQueueCamera[2] = this._frameCameraY;
+            }
+        }
+
         // Reset stats
         this.visibleEntitiesCount = 0;
         this.visibleParticlesCount = 0;
@@ -556,10 +578,9 @@ class PreRenderWorker extends AbstractWorker {
      */
     calculateCameraBounds() {
         if (this.cameraData === null) return null;
-
-        const zoom = this.cameraData[0];
-        const cameraX = this.cameraData[1];
-        const cameraY = this.cameraData[2];
+        const zoom = this._frameCameraZoom;
+        const cameraX = this._frameCameraX;
+        const cameraY = this._frameCameraY;
 
         return calculateCameraScreenBounds(
             zoom,
@@ -658,7 +679,7 @@ class PreRenderWorker extends AbstractWorker {
         let entityShadowCounts, toClear, maxShadowsPerEntity;
         if (doSunShadows) {
             const screenBounds = calculateCameraScreenBounds(
-                this.cameraData[0], this.cameraData[1], this.cameraData[2],
+                this._frameCameraZoom, this._frameCameraX, this._frameCameraY,
                 this.canvasWidth, this.canvasHeight, this.cullingRatio, this._cameraBounds
             );
             const worldBounds = screenBoundsToWorldBounds(screenBounds, 0, 0, this._worldBounds);
@@ -1289,9 +1310,9 @@ class PreRenderWorker extends AbstractWorker {
         const maxShadowSprites = this.maxShadowSprites;
         const PI = Math.PI;
 
-        const zoom = this.cameraData ? this.cameraData[0] : 1;
-        const camX = this.cameraData ? this.cameraData[1] : 0;
-        const camY = this.cameraData ? this.cameraData[2] : 0;
+        const zoom = this.cameraData ? this._frameCameraZoom : 1;
+        const camX = this.cameraData ? this._frameCameraX : 0;
+        const camY = this.cameraData ? this._frameCameraY : 0;
         const screenBounds = calculateCameraScreenBounds(
             zoom, camX, camY, this.canvasWidth, this.canvasHeight, this.cullingRatio, this._cameraBounds
         );

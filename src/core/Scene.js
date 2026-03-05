@@ -1137,6 +1137,10 @@ class Scene {
     // Two render queue buffers for double buffering
     this.buffers.renderQueueDataA = new SharedArrayBuffer(renderQueueBufferSize);
     this.buffers.renderQueueDataB = new SharedArrayBuffer(renderQueueBufferSize);
+    // Per-buffer camera snapshot: [zoom, x, y]
+    // Written by pre_render_worker alongside renderQueue frame, read by pixi_worker with same buffer index.
+    this.buffers.renderQueueCameraA = new SharedArrayBuffer(12);
+    this.buffers.renderQueueCameraB = new SharedArrayBuffer(12);
 
     // Sync buffer for double buffering coordination
     // Layout: [readyFrame: Int32, consumedFrame: Int32]
@@ -2050,6 +2054,8 @@ class Scene {
       renderQueue: {
         dataA: this.buffers.renderQueueDataA,
         dataB: this.buffers.renderQueueDataB,
+        cameraA: this.buffers.renderQueueCameraA,
+        cameraB: this.buffers.renderQueueCameraB,
         sync: this.buffers.renderQueueSync,
         entityTextureData: this.buffers.entityTextureData,
         maxItems: this.maxVisibleRenderables,

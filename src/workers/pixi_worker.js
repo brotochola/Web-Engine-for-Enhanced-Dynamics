@@ -377,6 +377,7 @@ class PixiRenderer extends AbstractWorker {
 
     // Double buffer storage - views for both buffers
     this.renderQueueBuffers = [null, null];
+    this.renderQueueCameraBuffers = [null, null];
 
     // Sync buffer for coordination: [readyFrame, consumedFrame]
     this.renderQueueSync = null;
@@ -394,6 +395,7 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueTextureId = null; // Uint16Array (encoded)
     this.renderQueueAnchorX = null; // Float32Array
     this.renderQueueAnchorY = null; // Float32Array
+    this.renderQueueCamera = null; // Float32Array[3] -> [zoom, x, y]
 
     // Render queue sprite pool (separate from entity/particle pools)
     // Sprites are pooled and reused based on count diff between frames
@@ -533,6 +535,7 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueAnchorY = buffer.anchorY;
     this.renderQueueType = buffer.type;
     this.renderQueueEntityIndex = buffer.entityIndex;
+    this.renderQueueCamera = this.renderQueueCameraBuffers[bufferIdx];
   }
 
   /**
@@ -1015,34 +1018,23 @@ class PixiRenderer extends AbstractWorker {
         Atomics.store(this.renderQueueSync, 1, readyFrame);
         // Wake pre_render_worker if it was waiting (it might be if >1 frame ahead)
         Atomics.notify(this.renderQueueSync, 1, 1);
+
+        // Frame-locked camera: consume camera snapshot from the same renderQueue generation.
+        if (this.renderQueueCamera) {
+          this._renderZoom = this.renderQueueCamera[0];
+          this._renderCameraX = this.renderQueueCamera[1];
+          this._renderCameraY = this.renderQueueCamera[2];
+          this._cameraInitialized = true;
+        }
       }
     }
 
-    // Calculate interpolation alpha for smooth movement
-    // When renderer FPS > physics FPS, alpha < 1.0 (smooth interpolation)
-    let interpolationAlpha = 1.0;
-    if (this.interpolation && this.frameRateData) {
-      const physicsFPS = this.frameRateData[this.physicsWorkerIndex] || 60;
-      if (physicsFPS > 0 && this.currentFPS > physicsFPS) {
-        interpolationAlpha = Math.min(1.0, physicsFPS / this.currentFPS);
-      }
-    }
-
-    // Interpolate camera state for smooth background and lighting movement
-    const targetZoom = this.cameraData[0];
-    const targetCamX = this.cameraData[1];
-    const targetCamY = this.cameraData[2];
-
-    // Initialize or interpolate
-    if (!this._cameraInitialized) {
-      this._renderCameraX = targetCamX;
-      this._renderCameraY = targetCamY;
-      this._renderZoom = targetZoom;
+    // Fallback path: if frame-locked camera buffers are unavailable, use live camera SAB.
+    if (!this.renderQueueCamera && this.cameraData) {
+      this._renderZoom = this.cameraData[0];
+      this._renderCameraX = this.cameraData[1];
+      this._renderCameraY = this.cameraData[2];
       this._cameraInitialized = true;
-    } else {
-      this._renderCameraX += (targetCamX - this._renderCameraX) * interpolationAlpha;
-      this._renderCameraY += (targetCamY - this._renderCameraY) * interpolationAlpha;
-      this._renderZoom += (targetZoom - this._renderZoom) * interpolationAlpha;
     }
 
     this.updateCameraTransform();
@@ -1054,11 +1046,11 @@ class PixiRenderer extends AbstractWorker {
     this.computeVisibleLights();
 
     // Update lighting shader uniforms from LightEmitter components
-    this.updateLighting(interpolationAlpha);
+    this.updateLighting();
 
     // Update shadow RenderTexture with interleaved lights + shadows
     // This renders lights and shadows to shadowRT, which is displayed via shadowDisplaySprite (multiply blend)
-    this.updateShadowSprites(interpolationAlpha);
+    this.updateShadowSprites();
 
     // Use render queue from pre_render_worker - no fallback
     this.updateSpritesFromRenderQueue();
@@ -1470,7 +1462,7 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
 UPDATE LIGHTING (NO ZOOM SCALING)
 ===================== */
 
-  updateLighting(interpolationAlpha) {
+  updateLighting() {
     if (!this.lightingEnabled || !this.lightingShader) return;
 
     const uniformGroup = this.lightingShader.resources.uniforms;
@@ -1612,7 +1604,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Queue is built by particle_worker: light1_gradient, light1_shadows..., light2_gradient, etc.
    * Rendering happens in SCREEN SPACE (shadowRT coordinates)
    */
-  updateShadowSprites(interpolationAlpha) {
+  updateShadowSprites() {
     if (!this.shadowSpritesEnabled || !this.shadowRenderQueueCount) return;
     if (!this.shadowParticleContainer || !this.shadowRT) return;
 
@@ -2660,6 +2652,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Create typed array views for BOTH buffers
       const bufferSABs = [data.renderQueue.dataA, data.renderQueue.dataB];
+      const cameraSABs = [data.renderQueue.cameraA || null, data.renderQueue.cameraB || null];
 
       for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
         const sab = bufferSABs[bufIdx];
@@ -2710,6 +2703,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         buffer.entityIndex = new Int32Array(sab, offset, maxItems);
 
         this.renderQueueBuffers[bufIdx] = buffer;
+        this.renderQueueCameraBuffers[bufIdx] = cameraSABs[bufIdx]
+          ? new Float32Array(cameraSABs[bufIdx], 0, 3)
+          : null;
       }
 
       // Set initial read buffer (frame 0 uses buffer 0)

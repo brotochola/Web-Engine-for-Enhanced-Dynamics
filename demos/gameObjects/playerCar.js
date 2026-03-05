@@ -4,21 +4,15 @@
 import WEED from '/src/index.js';
 import { Car } from './car.js';
 import { CarComponent } from '../components/carComponent.js';
-import { CarPart } from './carPart.js';
 
-const { Keyboard, SpriteRenderer, RigidBody, Camera, Transform } = WEED;
-
-// Camera tuning: zoom out when fast, look ahead in movement direction
+const { Keyboard, SpriteRenderer, RigidBody, Camera } = WEED;
 const ZOOM_AT_MIN_SPEED = 1.0;
 const ZOOM_AT_MAX_SPEED = 0.25;
 const SPEED_FOR_MIN_ZOOM = 0;
-const SPEED_FOR_MAX_ZOOM = 100;
-const LOOK_AHEAD_PER_SPEED = 0.5;
-const CAMERA_SMOOTH = 0.15; // Lower = smoother, less responsive to jitter
-
-// Module-level smoothed values (no per-frame alloc, no GC)
-let _svx = 0, _svy = 0, _ssp = 0;
-let _cameraInit = false;
+const SPEED_FOR_MAX_ZOOM = 60;
+const LOOK_AHEAD_PER_SPEED = 15;
+const CAMERA_SMOOTH = 0.015;
+const CAMERA_FOLLOW_SMOOTH = 0.05//0.05;
 
 export class PlayerCar extends Car {
     static scriptUrl = import.meta.url;
@@ -26,20 +20,32 @@ export class PlayerCar extends Car {
     // Must explicitly define components for entity pool initialization
     static components = [SpriteRenderer, CarComponent];
 
-    onDespawned() {
-        super.onDespawned();
-        _cameraInit = false;
-    }
-
     tick(dtRatio) {
-        // Call base class tick (updates position and sprite)
         super.tick(dtRatio);
-
-        // Handle player input
+        this._updateCamera(dtRatio);
         this._handleInput(dtRatio);
+    }
+    _updateCamera(dtRatio) {
+        const player = this.index
+        if (player === null) return;
+        if (!Transform.active[player]) return;
 
-        // Camera: zoom out with speed, center on future position (see ahead)
-        this._updateCamera();
+        const centerX = Transform.x[player];
+        const centerY = Transform.y[player];
+        const vx = CarComponent.vx[player];
+        const vy = CarComponent.vy[player];
+
+        const futureX = centerX + vx * LOOK_AHEAD_PER_SPEED;
+        const futureY = centerY + vy * LOOK_AHEAD_PER_SPEED;
+        Camera.follow(futureX, futureY, CAMERA_FOLLOW_SMOOTH, dtRatio);
+
+        const speed = vx + vy
+        const speedT = Math.min(
+            1,
+            Math.max(0, (speed - SPEED_FOR_MIN_ZOOM) / (SPEED_FOR_MAX_ZOOM - SPEED_FOR_MIN_ZOOM))
+        );
+        const zoom = ZOOM_AT_MIN_SPEED + speedT * (ZOOM_AT_MAX_SPEED - ZOOM_AT_MIN_SPEED);
+        Camera.setZoom(zoom);
     }
 
     /**
@@ -77,7 +83,7 @@ export class PlayerCar extends Car {
         }
 
         if (forwardForce !== 0 || turnForce !== 0) {
-            this.applyForces(forwardForce, turnForce);
+            this.applyForces(forwardForce, turnForce, dtRatio);
         }
     }
 
@@ -89,44 +95,4 @@ export class PlayerCar extends Car {
         return velX * Math.cos(angle) + velY * Math.sin(angle);
     }
 
-    _getCenterVelocity() {
-        const allParts = this._getAllPartIndices();
-        let vx = 0, vy = 0;
-        for (const i of allParts) {
-            vx += RigidBody.vx[i];
-            vy += RigidBody.vy[i];
-        }
-        vx /= allParts.length;
-        vy /= allParts.length;
-        return { vx, vy, speed: Math.hypot(vx, vy) };
-    }
-
-    _updateCamera() {
-        const centerX = Transform.x[this.index];
-        const centerY = Transform.y[this.index];
-        const pi = this.carComponent.part0Index;
-        const vx = RigidBody.vx[pi];
-        const vy = RigidBody.vy[pi];
-        const speed = RigidBody.speed[pi];
-
-        // Exponential smoothing: no sqrt, no alloc, no GC
-        const k = CAMERA_SMOOTH;
-        if (!_cameraInit) {
-            _svx = vx; _svy = vy; _ssp = speed;
-            _cameraInit = true;
-        } else {
-            _svx += (vx - _svx) * k;
-            _svy += (vy - _svy) * k;
-            _ssp += (speed - _ssp) * k;
-        }
-
-        const lookAheadTime = _ssp * LOOK_AHEAD_PER_SPEED;
-        const futureX = centerX + _svx * lookAheadTime;
-        const futureY = centerY + _svy * lookAheadTime;
-
-        Camera.follow(futureX, futureY, 0.1);
-
-        const t = _ssp <= SPEED_FOR_MIN_ZOOM ? 0 : (_ssp >= SPEED_FOR_MAX_ZOOM ? 1 : (_ssp - SPEED_FOR_MIN_ZOOM) / (SPEED_FOR_MAX_ZOOM - SPEED_FOR_MIN_ZOOM));
-        Camera.setZoom(ZOOM_AT_MIN_SPEED + t * (ZOOM_AT_MAX_SPEED - ZOOM_AT_MIN_SPEED));
-    }
 }

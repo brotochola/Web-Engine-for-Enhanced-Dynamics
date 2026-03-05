@@ -8,6 +8,7 @@ import { CarPart } from '../gameObjects/carPart.js';
 import { NavGrid } from '../../src/core/NavGrid.js';
 import { rng } from '../../src/core/utils.js';
 import { Rock } from '../gameObjects/rock.js';
+import { CarComponent } from '../components/carComponent.js';
 
 const { Camera, Transform } = WEED;
 
@@ -157,6 +158,12 @@ export class CarScene extends WEED.Scene {
     constructor(game) {
         super(game);
         this.playerCar = null;
+        this._cameraInit = false;
+        this._cameraSmoothedVx = 0;
+        this._cameraSmoothedVy = 0;
+        this._cameraSmoothedSpeed = 0;
+        this._cameraPrevCenterX = 0;
+        this._cameraPrevCenterY = 0;
     }
 
     createNavGridForTheFlowField() {
@@ -200,6 +207,9 @@ export class CarScene extends WEED.Scene {
                 Transform.x[this.playerCar.index],
                 Transform.y[this.playerCar.index]
             );
+            this._cameraInit = false;
+            this._cameraPrevCenterX = Transform.x[this.playerCar.index];
+            this._cameraPrevCenterY = Transform.y[this.playerCar.index];
         }
 
         console.log('🚗 CarScene: Preloaded!');
@@ -212,10 +222,10 @@ export class CarScene extends WEED.Scene {
     }
 
     update(dtRatio, deltaTime, accumulatedTime, frameNumber) {
-        if (frameNumber % 300 === 0) {
-            this.createNavGridForTheFlowField()
-        }
-        // Camera is updated by PlayerCar.tick() (zoom + look-ahead follow)
+        // if (frameNumber % 300 === 0) {
+        //     this.createNavGridForTheFlowField()
+        // }
+
     }
 
 }
