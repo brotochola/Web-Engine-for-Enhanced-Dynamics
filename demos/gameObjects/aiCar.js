@@ -34,8 +34,8 @@ export class AICar extends Car {
             }
         }
 
-        const lenSq = _navVec.x * _navVec.x + _navVec.y * _navVec.y;
-        if (lenSq < 0.01) return;
+        // const lenSq = _navVec.x * _navVec.x + _navVec.y * _navVec.y;
+        // if (lenSq < 0.01) return;
 
         const { frontIndices, backIndices } = this._getFrontBackParts();
         const frontActive = frontIndices.every(i => Transform.active[i]);

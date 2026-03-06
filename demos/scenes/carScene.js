@@ -8,18 +8,37 @@ import { CarPart } from '../gameObjects/carPart.js';
 import { NavGrid } from '../../src/core/NavGrid.js';
 import { rng } from '../../src/core/utils.js';
 import { Rock } from '../gameObjects/rock.js';
-import { CarComponent } from '../components/carComponent.js';
+
+import { PersonThatFollowsAFlowfield } from '../gameObjects/personThatFollowsAFlowfield.js';
 
 const { Camera, Transform } = WEED;
-
+const excludedLPCAnimations = [
+    'spellcast_up',
+    'spellcast_left',
+    'spellcast_down',
+    'spellcast_right',
+    'thrust_up',
+    'thrust_left',
+    'thrust_down',
+    'thrust_right',
+    // "slash_up",
+    // "slash_left",
+    // "slash_down",
+    // "slash_right",
+    'climb',
+    'emote_up',
+    'emote_left',
+    'emote_down',
+    'emote_right',
+];
 export class CarScene extends WEED.Scene {
     // ========================================
     // STATIC SCENE CONFIGURATION
     // ========================================
 
     static config = {
-        worldWidth: 20000,
-        worldHeight: 20000,
+        worldWidth: 10000,
+        worldHeight: 5000,
         seed: 123456,
         debugUpdateInterval: 100,
 
@@ -34,8 +53,10 @@ export class CarScene extends WEED.Scene {
 
         particle: {
             noLimitFPS: true,
-            maxParticles: 1000,
-            decals: false,
+            maxParticles: 10000,
+            decals: true,
+            decalsTileSize: 256,
+            decalsResolution: 0.5,
         },
 
         decoration: {
@@ -61,7 +82,7 @@ export class CarScene extends WEED.Scene {
             gravity: { x: 0, y: 0 },
             sleepThreshold: 999,   // Disable sleeping for this scene
             wakeUpThreshold: 1000,
-            sleepDuration: 1000,
+            sleepDuration: 100000,
         },
 
         renderer: {
@@ -89,7 +110,20 @@ export class CarScene extends WEED.Scene {
     // ========================================
     // STATIC ASSETS CONFIGURATION
     // ========================================
-
+    static audios = {
+        ametralladora_disparo: '/demos/audios/ametralladora_disparo.mp3',
+        bala_golpea_metal: '/demos/audios/bala_golpea_metal.mp3',
+        bala_golpea_metal_2: '/demos/audios/bala_golpea_metal_2.mp3',
+        dolor1: '/demos/audios/dolor1.mp3',
+        dolor2: '/demos/audios/dolor2.mp3',
+        dolor3: '/demos/audios/dolor3.mp3',
+        dolor4: '/demos/audios/dolor4.mp3',
+        explosion_corta: '/demos/audios/explosion_corta.mp3',
+        explosion_de_fuego: '/demos/audios/explosion_de_fuego.mp3',
+        explosion_larga: '/demos/audios/explosion_larga.mp3',
+        golpe: '/demos/audios/golpe.mp3',
+        pistola_disparo: '/demos/audios/pistola_disparo.mp3',
+    };
     static assets = {
         textures: {
             smoke: '/demos/img/smoke.png',
@@ -97,6 +131,7 @@ export class CarScene extends WEED.Scene {
             rock2: '/demos/img/rock2.png',
             rock3: '/demos/img/rock3.png',
             rock4: '/demos/img/rock4.png',
+            blood: '/demos/img/blood.png',
         },
         spritesheets: {
 
@@ -128,15 +163,32 @@ export class CarScene extends WEED.Scene {
             //     json: '/demos/img/cars/burnt.json',
             //     png: '/demos/img/cars/burnt.png',
             // },
+            civil1: {
+                json: '/demos/img/civil1.json',
+                png: '/demos/img/civil1.png',
+                excludeAnimations: excludedLPCAnimations,
+            },
+            civil2: {
+                json: '/demos/img/civil1.json',
+                png: '/demos/img/civil2.png',
+                excludeAnimations: excludedLPCAnimations,
+            },
+            civil3: {
+                json: '/demos/img/civil1.json',
+                png: '/demos/img/civil3.png',
+                excludeAnimations: excludedLPCAnimations,
+            },
         },
         tilemaps: {
-            myTilemap: {
+            roads_tilemap: {
                 json: '/demos/map_n_flowfield/tilemap.json',
                 png: '/demos/img/tilemap/2.png',
             },
         },
         flowfields: {
-            roads: '/demos/map_n_flowfield/flowfield1.json',
+            sidewalks: '/demos/map_n_flowfield/sidewalks_flowfield.json',
+            roads: '/demos/map_n_flowfield/roads_flowfield.json',
+
         },
     };
 
@@ -148,7 +200,8 @@ export class CarScene extends WEED.Scene {
         [CarPart, 5000],   // Physics bodies (up to 8 per car, 501 cars) - must load first (Car depends on it)
         [AICar, 1000],    // NPC cars following player via flowfield - must load before PlayerCar
         [PlayerCar, 1],   // Player-controlled car (only 1)
-        [Rock, 1000]
+        [Rock, 1000],
+        [PersonThatFollowsAFlowfield, 5000]
     ];
 
     // ========================================
@@ -174,29 +227,38 @@ export class CarScene extends WEED.Scene {
 
     async preload() {
         console.log('🚗 CarScene: Preloading...');
-        await this.setTilemapBackground('myTilemap', { scale: 1 });
+        await this.setTilemapBackground('roads_tilemap', { scale: 1 });
 
         const centerX = this.config.worldWidth / 2;
         const centerY = this.config.worldHeight / 2;
 
         this.playerCar = PlayerCar.spawn({
-            x: centerX,
-            y: centerY,
+            x: 100,
+            y: 100,
             sprite: 'car_police',
         });
 
         const carSprites = ['red_car', 'yellow_car', 'black_car', 'white_car', 'blue_car'];
-        const spawnRadius = 5000;
+        const spawnRadius = 1000;
 
-        for (let i = 0; i < 100; i++) {
+        for (let i = 0; i < 20; i++) {
             const offsetX = (rng() * 2 - 1) * spawnRadius;
             const offsetY = (rng() * 2 - 1) * spawnRadius;
             const sprite = carSprites[Math.floor(rng() * carSprites.length)];
 
             AICar.spawn({
-                x: centerX + offsetX,
+                x: 1000 + centerX + offsetX,
                 y: centerY + offsetY,
                 sprite: sprite,
+            });
+        }
+
+        for (let i = 0; i < 1000; i++) {
+            const offsetX = (rng() * 2 - 1) * spawnRadius;
+            const offsetY = (rng() * 2 - 1) * spawnRadius;
+            PersonThatFollowsAFlowfield.spawn({
+                x: -1000 + centerX + offsetX,
+                y: centerY + offsetY,
             });
         }
 

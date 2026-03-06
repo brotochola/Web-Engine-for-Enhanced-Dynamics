@@ -330,16 +330,17 @@ export class NavGrid {
         if (!resp.ok) throw new Error(`Failed to fetch flowfield: ${url}`);
         const json = await resp.json();
 
-        const srcW = json.gridWidth;
-        const srcH = json.gridHeight;
-        const cellSize = json.cellSize;
+        const { metadata, data } = json;
+        const srcW = metadata.widthCells;
+        const srcH = metadata.heightCells;
+        const cellSize = metadata.cellSizePx;
 
         const clippedW = Math.min(srcW, Math.floor(worldW / cellSize));
         const clippedH = Math.min(srcH, Math.floor(worldH / cellSize));
         const vectors = new Int8Array(clippedW * clippedH * 2);
 
         for (let row = 0; row < clippedH; row++) {
-          const rowData = json.data[row];
+          const rowData = data[row];
           for (let col = 0; col < clippedW; col++) {
             const cell = rowData[col];
             if (cell) {

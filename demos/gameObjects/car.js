@@ -415,6 +415,7 @@ export class Car extends GameObject {
         if (angleKeys.length === 0) return;
 
         let angle = this.carComponent.angle;
+        if (angle == null || isNaN(angle)) return;
         if (angle < 0) angle += TWO_PI;
         const degrees = (angle * 180) / Math.PI;
         const degreesNorm = ((degrees % 360) + 360) % 360;

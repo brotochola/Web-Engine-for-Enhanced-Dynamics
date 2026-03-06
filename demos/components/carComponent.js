@@ -7,8 +7,8 @@ import { Component } from '/src/core/Component.js';
 // Max 4 cols x 2 rows = 8 parts, triangular mesh gives ~13 constraints
 // Default tuning values - hybrid: torque (rotation) + Godot-style velocity redirection (trajectory)
 export const CAR_DEFAULTS = {
-    accelerationForce: 0.32,
-    turnForce: 0.32,
+    accelerationForce: 0.25,
+    turnForce: 0.36,
     steeringAngle: 0.5,     // Radians (~23°) for bicycle model
     brakeForce: 1.4,
     spriteScale: 1.5,
