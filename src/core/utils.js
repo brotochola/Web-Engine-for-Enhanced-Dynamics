@@ -1972,11 +1972,11 @@ export function exposeEntityClassesGlobally(registeredClasses, globalRef) {
  * @returns {string} Pathname portion of URL, or original string if URL parsing fails
  */
 export function urlToPath(url) {
+  if (url && url.startsWith('blob:')) return url;
   try {
     const urlObj = new URL(url);
     return urlObj.pathname;
   } catch (e) {
-    // If URL parsing fails (e.g., already a path), return as-is
     return url;
   }
 }

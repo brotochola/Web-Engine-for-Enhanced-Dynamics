@@ -1917,6 +1917,10 @@ class Scene {
           .map((r) => r.scriptPath)
           .filter((path) => path !== null && path !== undefined)
           .map((path) => {
+            // Blob URLs (inline entity sources) — pass through as-is
+            if (path.startsWith('blob:')) {
+              return path;
+            }
             // Already absolute URL
             if (path.startsWith('http://') || path.startsWith('https://')) {
               return path;
