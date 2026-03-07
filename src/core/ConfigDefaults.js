@@ -84,8 +84,6 @@ export const SCENE_DEFAULTS = {
   gravity: { x: 0, y: 0 },
   worldWidth: 1000,
   worldHeight: 1000,
-  canvasWidth: 800,
-  canvasHeight: 600,
 };
 
 // ============================================================================

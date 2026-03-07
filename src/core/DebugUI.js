@@ -324,12 +324,12 @@ export class DebugUI {
     audioLabel.textContent = 'Audio:';
     audioRow.appendChild(audioLabel);
 
-    const audioStats = ['Slots', 'Loaded', 'Dropped', 'MixGain', 'MasterVol', 'Rate', 'Latency'];
+    const audioStats = ['SlotsLd', 'DropMix', 'Vol', 'RateLat'];
     this.elements.audioStats = {};
     for (const stat of audioStats) {
       const cell = document.createElement('div');
       cell.className = 'debug-ui-worker-cell stat debug-ui-stat audio';
-      cell.textContent = stat + ': --';
+      cell.textContent = '--';
       audioRow.appendChild(cell);
       this.elements.audioStats[stat] = cell;
     }
@@ -552,27 +552,19 @@ export class DebugUI {
     const baseLat = audioMetrics.baseLatency || 0;
     const outLat = audioMetrics.outputLatency || 0;
 
-    if (active !== pv.audioActive || max !== pv.audioMax) {
+    if (active !== pv.audioActive || max !== pv.audioMax || loaded !== pv.audioLoaded) {
       pv.audioActive = active;
       pv.audioMax = max;
-      els.Slots.textContent = 'Slots: ' + active + '/' + max;
-    }
-
-    if (loaded !== pv.audioLoaded) {
       pv.audioLoaded = loaded;
-      els.Loaded.textContent = 'Loaded: ' + loaded;
+      els.SlotsLd.textContent = active + '/' + max + ' Ld:' + loaded;
     }
 
     const dropped = (audioMetrics.dropped || 0) | 0;
-    if (dropped !== pv.audioDropped) {
-      pv.audioDropped = dropped;
-      els.Dropped.textContent = 'Dropped: ' + dropped;
-    }
-
     const mixGainR = ((audioMetrics.mixGain || 0) * 100 + 0.5) | 0;
-    if (mixGainR !== pv.audioMixGain) {
+    if (dropped !== pv.audioDropped || mixGainR !== pv.audioMixGain) {
+      pv.audioDropped = dropped;
       pv.audioMixGain = mixGainR;
-      els.MixGain.textContent = 'Mix: ' + mixGainR + '%';
+      els.DropMix.textContent = 'Dropped:' + dropped + ' Mix:' + mixGainR + '%';
     }
 
     const muted = audioMetrics.muted;
@@ -580,18 +572,15 @@ export class DebugUI {
     if (masterVolR !== pv.audioMasterVol || muted !== pv.audioMuted) {
       pv.audioMasterVol = masterVolR;
       pv.audioMuted = muted;
-      els.MasterVol.textContent = 'Vol: ' + masterVolR + '%' + (muted ? ' (muted)' : '');
-    }
-
-    if (rate !== pv.audioRate) {
-      pv.audioRate = rate;
-      els.Rate.textContent = 'Rate: ' + (rate >= 1000 ? (rate / 1000) + 'k' : rate);
+      els.Vol.textContent = 'Vol:' + masterVolR + '%' + (muted ? ' (m)' : '');
     }
 
     const latencyMs = ((baseLat + outLat) * 100000 + 0.5) | 0;
-    if (latencyMs !== pv.audioLatency) {
+    if (rate !== pv.audioRate || latencyMs !== pv.audioLatency) {
+      pv.audioRate = rate;
       pv.audioLatency = latencyMs;
-      els.Latency.textContent = 'Lat: ' + (latencyMs / 100).toFixed(2) + 'ms';
+      const rateStr = rate >= 1000 ? (rate / 1000) + 'k' : rate;
+      els.RateLat.textContent = rateStr + ' Lat:' + (latencyMs / 100).toFixed(2) + 'ms';
     }
   }
 

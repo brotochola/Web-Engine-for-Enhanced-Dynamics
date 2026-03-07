@@ -2044,8 +2044,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     if (msg === 'setBackground') {
       this.handleSetBackground(data);
-    } else if (msg === 'resize') {
-      this.handleResize(data);
     } else if (msg === 'setLayerProps') {
       this.handleSetLayerProps(data);
     } else {
@@ -2093,29 +2091,53 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * Handle canvas resize messages
+   * PixiJS-specific resize: resize renderer and render textures.
+   * Base class (AbstractWorker) already updates canvasWidth/Height, config, and Camera.
    */
-  handleResize(data) {
-    const { width, height } = data;
-    this.canvasWidth = width;
-    this.canvasHeight = height;
-
+  onResize(width, height) {
+    // Let PixiJS resize the renderer first (updates viewport, projection, and canvas)
     if (this.pixiApp) {
       this.pixiApp.renderer.resize(width, height);
     }
 
-    // Resize lighting RenderTexture
+    // Fallback: ensure the OffscreenCanvas pixel buffer actually matches.
+    // Do this AFTER renderer.resize() so we don't confuse PixiJS's internal size tracking.
+    if (this.canvasView) {
+      if (this.canvasView.width !== width) this.canvasView.width = width;
+      if (this.canvasView.height !== height) this.canvasView.height = height;
+    }
+
+    // Recreate lighting RenderTexture at the new size.
+    // RT.resize() in PixiJS 8 can fail to update the GPU framebuffer;
+    // destroy + create guarantees a fresh texture at the correct dimensions.
     if (this.lightingRT) {
-      this.lightingRT.resize(width * this.lightingResolution, height * this.lightingResolution);
+      const lw = width * this.lightingResolution;
+      const lh = height * this.lightingResolution;
+      this.lightingRT.destroy(true);
+      this.lightingRT = PIXI.RenderTexture.create({ width: lw, height: lh });
       if (this.lightingDisplaySprite) {
+        this.lightingDisplaySprite.texture = this.lightingRT;
         this.lightingDisplaySprite.scale.set(1.0 / this.lightingResolution);
       }
     }
 
-    // Resize shadow RenderTexture
+    // Sync lighting shader uniforms immediately
+    if (this.lightingShader) {
+      const u = this.lightingShader.resources.uniforms.uniforms;
+      u.uViewport[0] = width * this.lightingResolution;
+      u.uViewport[1] = height * this.lightingResolution;
+      u.uFullCanvasSize[0] = width;
+      u.uFullCanvasSize[1] = height;
+    }
+
+    // Recreate shadow RenderTexture at the new size
     if (this.shadowRT) {
-      this.shadowRT.resize(width * this.shadowResolution, height * this.shadowResolution);
+      const sw = width * this.shadowResolution;
+      const sh = height * this.shadowResolution;
+      this.shadowRT.destroy(true);
+      this.shadowRT = PIXI.RenderTexture.create({ width: sw, height: sh });
       if (this.shadowDisplaySprite) {
+        this.shadowDisplaySprite.texture = this.shadowRT;
         this.shadowDisplaySprite.scale.set(1.0 / this.shadowResolution);
       }
     }

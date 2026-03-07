@@ -2823,6 +2823,25 @@ class Scene {
     });
   }
 
+  /**
+   * Resize the canvas and propagate new dimensions to Camera and all workers
+   * Called by GameEngine.resize() when the window is resized (autoResize) or manually
+   * @param {number} width - New canvas width in pixels
+   * @param {number} height - New canvas height in pixels
+   */
+  resize(width, height) {
+    this.config.canvasWidth = width;
+    this.config.canvasHeight = height;
+
+    Camera.canvasWidth = width;
+    Camera.canvasHeight = height;
+
+    const allWorkers = this.getAllWorkers();
+    allWorkers.forEach((worker) => {
+      if (worker) worker.postMessage({ msg: 'resize', width, height });
+    });
+  }
+
   spawnEntity(EntityClassOrName, spawnConfig = {}) {
     // Accept either a class or a string name
     let EntityClass;

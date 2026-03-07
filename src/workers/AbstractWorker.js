@@ -681,6 +681,18 @@ export class AbstractWorker {
         this.resume();
         break;
 
+      case 'resize': {
+        const { width, height } = e.data;
+        this.canvasWidth = width;
+        this.canvasHeight = height;
+        this.config.canvasWidth = width;
+        this.config.canvasHeight = height;
+        Camera.canvasWidth = width;
+        Camera.canvasHeight = height;
+        this.onResize(width, height);
+        break;
+      }
+
       default:
         this.handleCustomMessage(e.data);
         break;
@@ -865,6 +877,16 @@ export class AbstractWorker {
    */
   update(deltaTime, dtRatio, resuming) {
     throw new Error('update() must be implemented by subclass');
+  }
+
+  /**
+   * Called after canvas dimensions are updated on resize.
+   * Override in subclasses that need extra resize logic (e.g. pixi_worker resizes the renderer).
+   * @param {number} width - New canvas width
+   * @param {number} height - New canvas height
+   */
+  onResize(width, height) {
+    // Override in subclass if needed
   }
 
   /**

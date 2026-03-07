@@ -11,8 +11,16 @@ class GameEngine {
   };
 
   constructor(config = {}) {
-    this.canvasWidth = config.canvasWidth || window.innerWidth;
-    this.canvasHeight = config.canvasHeight || window.innerHeight;
+    this.autoResize = config.autoResize || false;
+
+    if (this.autoResize) {
+      this.canvasWidth = window.innerWidth;
+      this.canvasHeight = window.innerHeight;
+    } else {
+      this.canvasWidth = config.canvasWidth || window.innerWidth;
+      this.canvasHeight = config.canvasHeight || window.innerHeight;
+    }
+
     this.canvas = null;
     this.currentScene = null;
 
@@ -33,21 +41,21 @@ class GameEngine {
 
     // Create canvas immediately
     this._createCanvas();
+
+    // Auto-resize: track window size changes
+    if (this.autoResize) {
+      this._resizeDebounceTimer = null;
+      this._onWindowResize = () => {
+        clearTimeout(this._resizeDebounceTimer);
+        this._resizeDebounceTimer = setTimeout(() => {
+          this.resize(window.innerWidth, window.innerHeight);
+        }, 150);
+      };
+      window.addEventListener('resize', this._onWindowResize);
+    }
+
     printLogo();
   }
-  // printLogo() {
-  //   // console.log(`
-  //   //   ██╗    ██╗███████╗███████╗██████╗      ██╗███████╗
-  //   //   ██║    ██║██╔════╝██╔════╝██╔══██╗     ██║██╔════╝
-  //   //   ██║ █╗ ██║█████╗  █████╗  ██║  ██║     ██║███████╗
-  //   //   ██║███╗██║██╔══╝  ██╔══╝  ██║  ██║██   ██║╚════██║
-  //   //   ╚███╔███╔╝███████╗███████╗██████╔╝╚█████╔╝███████║
-  //   //    ╚══╝╚══╝ ╚══════╝╚══════╝╚═════╝  ╚════╝ ╚══════╝
-
-  //   //         Web Engine for Enhanced Dynamics
-  //   //   `);
-
-  // }
 
   _createCanvas() {
     this.canvas = document.createElement('canvas');
@@ -97,7 +105,8 @@ class GameEngine {
       console.log(`📥 Loading scene: ${SceneClass.name}`);
       this.currentScene = new SceneClass(this);
 
-      // Merge canvas dimensions into scene config
+      // Engine owns canvas dimensions — inject into scene config before init
+      // so workers receive the correct values during initialization
       this.currentScene.config.canvasWidth = this.canvasWidth;
       this.currentScene.config.canvasHeight = this.canvasHeight;
 
@@ -195,9 +204,34 @@ class GameEngine {
     return this.state === GameEngine.states.TRANSITIONING;
   }
 
+  /**
+   * Resize the canvas and propagate to the active scene + all workers
+   * @param {number} width - New canvas width in pixels
+   * @param {number} height - New canvas height in pixels
+   */
+  resize(width, height) {
+    this.canvasWidth = width;
+    this.canvasHeight = height;
+
+    // Update the CSS display size (the actual pixel buffer is owned by the OffscreenCanvas in the worker)
+    if (this.canvas) {
+      this.canvas.style.width = width + 'px';
+      this.canvas.style.height = height + 'px';
+    }
+
+    if (this.currentScene) {
+      this.currentScene.resize(width, height);
+    }
+  }
+
   // Cleanup
   async destroy() {
     this.state = GameEngine.states.TRANSITIONING;
+
+    if (this._onWindowResize) {
+      window.removeEventListener('resize', this._onWindowResize);
+      clearTimeout(this._resizeDebounceTimer);
+    }
 
     // Destroy debug UI
     if (this.debugUI) {

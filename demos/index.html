@@ -68,9 +68,8 @@
     // ========================================
 
     const game = new GameEngine({
-      canvasWidth: window.innerWidth,
-      canvasHeight: window.innerHeight,
-      debug: true, // Enable debug UI
+      autoResize: true,
+      debug: true,
     });
     // Make game global for console access
     window.game = game;
