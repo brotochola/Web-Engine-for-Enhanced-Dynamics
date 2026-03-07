@@ -5,7 +5,7 @@
 // Main thread decodes audio files and sends PCM to the worklet via postMessage.
 //
 // SAB Layout (HEADER_SIZE + maxSlots * SLOT_SIZE words × 4 bytes):
-//   HEADER [0..3]: [maxSlots, reserved, reserved, reserved]
+//   HEADER [0..3]: [maxSlots, droppedCount, reserved, reserved]
 //   Each SLOT [+0..+7]:
 //     +0 state   (Int32)   0=free 1=playing 2=claiming
 //     +1 audioId (Int32)
@@ -23,6 +23,7 @@ export class SoundManager {
 
   // SAB slot layout
   static HEADER_SIZE = 4;
+  static HEADER_DROPPED = 1;
   static SLOT_SIZE = 8;
   static STATE_FREE = 0;
   static STATE_PLAYING = 1;
@@ -269,6 +270,20 @@ export class SoundManager {
     this._nameToId.clear();
   }
 
+  static reset() {
+    this.stopAll();
+    if (this._workletNode) {
+      for (const [, id] of this._nameToId) {
+        this._workletNode.port.postMessage({ type: 'unload', id });
+      }
+    }
+    this._idToName.length = 0;
+    this._nameToId.clear();
+    if (this._i32) {
+      Atomics.store(this._i32, this.HEADER_DROPPED, 0);
+    }
+  }
+
   static getActiveSlotCount() {
     if (!this._i32) return 0;
     let count = 0;
@@ -286,6 +301,7 @@ export class SoundManager {
       activeSlots: this.getActiveSlotCount(),
       maxSlots: this._maxSlots,
       loadedSounds: this._nameToId.size,
+      dropped: this._i32 ? Atomics.load(this._i32, this.HEADER_DROPPED) : 0,
       state: ctx ? ctx.state : 'closed',
       sampleRate: ctx ? ctx.sampleRate : 0,
       baseLatency: ctx ? (ctx.baseLatency || 0) : 0,
@@ -315,6 +331,7 @@ export class SoundManager {
         return s;
       }
     }
+    Atomics.add(this._i32, this.HEADER_DROPPED, 1);
     return -1;
   }
 

@@ -107,6 +107,7 @@ export class DebugUI {
       audioActive: -1,
       audioMax: -1,
       audioLoaded: -1,
+      audioDropped: -1,
       audioState: '',
       audioRate: -1,
       audioLatency: -1,
@@ -321,7 +322,7 @@ export class DebugUI {
     audioLabel.textContent = 'Audio:';
     audioRow.appendChild(audioLabel);
 
-    const audioStats = ['Slots', 'Loaded', 'State', 'Rate', 'Latency'];
+    const audioStats = ['Slots', 'Loaded', 'Dropped', 'State', 'Rate', 'Latency'];
     this.elements.audioStats = {};
     for (const stat of audioStats) {
       const cell = document.createElement('div');
@@ -559,6 +560,12 @@ export class DebugUI {
     if (loaded !== pv.audioLoaded) {
       pv.audioLoaded = loaded;
       els.Loaded.textContent = 'Loaded: ' + loaded;
+    }
+
+    const dropped = (audioMetrics.dropped || 0) | 0;
+    if (dropped !== pv.audioDropped) {
+      pv.audioDropped = dropped;
+      els.Dropped.textContent = 'Dropped: ' + dropped;
     }
 
     if (state !== pv.audioState) {

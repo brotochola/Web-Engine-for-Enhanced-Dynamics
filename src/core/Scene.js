@@ -244,6 +244,7 @@ class Scene {
       activeSlots: 0,
       maxSlots: 0,
       loadedSounds: 0,
+      dropped: 0,
       state: 'closed',
       sampleRate: 0,
       baseLatency: 0,
@@ -2586,6 +2587,7 @@ class Scene {
     audioMetrics.activeSlots = am.activeSlots;
     audioMetrics.maxSlots = am.maxSlots;
     audioMetrics.loadedSounds = am.loadedSounds;
+    audioMetrics.dropped = am.dropped;
     audioMetrics.state = am.state;
     audioMetrics.sampleRate = am.sampleRate;
     audioMetrics.baseLatency = am.baseLatency;
@@ -2685,11 +2687,9 @@ class Scene {
       window.removeEventListener('wheel', this._wheelHandler);
     }
 
-    // Unload scene-specific audio assets
-    if (this.loadedAudioNames && this.loadedAudioNames.length > 0) {
-      SoundManager.unloadMany(this.loadedAudioNames);
-      this.loadedAudioNames.length = 0;
-    }
+    // Reset audio state (stop all sounds, unload assets, zero dropped counter)
+    SoundManager.reset();
+    if (this.loadedAudioNames) this.loadedAudioNames.length = 0;
 
     // Clear keyboard state
     this.keyboard = {};
@@ -2831,6 +2831,7 @@ class Scene {
       activeSlots: 0,
       maxSlots: 0,
       loadedSounds: 0,
+      dropped: 0,
       state: 'closed',
       sampleRate: 0,
       baseLatency: 0,
