@@ -47,10 +47,7 @@ export class Barrel extends GameObject {
 
   onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
     const impactSound = Math.random() > 0.5 ? 'bala_golpea_metal' : 'bala_golpea_metal_2';
-    SoundManager.play(impactSound, {
-      volume: 0.6,
-      randomPitch: { min: 0.85, max: 1.15 },
-    });
+    SoundManager.play(impactSound, 0.6, 0.85, 1.15);
 
     const radius = this.collider.radius;
     ParticleEmitter.emit({

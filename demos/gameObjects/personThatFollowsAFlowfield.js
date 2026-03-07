@@ -148,10 +148,7 @@ export class PersonThatFollowsAFlowfield extends GameObject {
         // Play death sound
         const deathSounds = ['dolor1', 'dolor2', 'dolor3', 'dolor4'];
         const deathSound = deathSounds[(Math.random() * deathSounds.length) | 0];
-        SoundManager.play(deathSound, {
-            volume: 0.8,
-            randomPitch: { min: 0.9, max: 1.1 },
-        });
+        SoundManager.play(deathSound, 0.8, 0.9, 1.1);
 
         // Emit blood particles
         ParticleEmitter.emit({

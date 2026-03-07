@@ -84,6 +84,11 @@ export class PredatorScene extends WEED.Scene {
       maxBullets: 2048,
       maxImpactsPerFrame: 512,
     },
+    audio: {
+      queueCapacity: 512, // SAB ring size per logic worker (must be power of two)
+      maxEventsPerFrame: 16, // Main-thread audio processing budget per RAF frame
+      maxBacklogPerWorker: 16, // Keep only newest N queued events per worker (drop older burst backlog)
+    },
 
     // Logic configuration
     logic: {
@@ -428,7 +433,7 @@ export class PredatorScene extends WEED.Scene {
 
     // // console.log(dtRatio, deltaTime, accumulatedTime, frameNumber)
     if (frameNumber % 300 === 0) {
-      this.createNavGridForTheFlowField()
+      // this.createNavGridForTheFlowField()
     }
   }
 

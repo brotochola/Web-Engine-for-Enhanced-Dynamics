@@ -58,10 +58,9 @@ export class Person extends Lootable {
   // ==========================================
   // WEAPON DEFINITIONS - damage, cooldown (ms), range (px)
   // ==========================================
-  static WEAPON_SOUND_OPTIONS = {
-    volume: 0.33,
-    randomPitch: { min: 0.9, max: 1.1 },
-  };
+  static WEAPON_SOUND_VOLUME = 0.33;
+  static WEAPON_SOUND_RATE_MIN = 0.9;
+  static WEAPON_SOUND_RATE_MAX = 1.1;
 
   static WEAPONS = {
     PISTOL: {
@@ -439,7 +438,12 @@ export class Person extends Lootable {
     });
 
     if (weapon.sound) {
-      SoundManager.play(weapon.sound, Person.WEAPON_SOUND_OPTIONS);
+      SoundManager.play(
+        weapon.sound,
+        Person.WEAPON_SOUND_VOLUME,
+        Person.WEAPON_SOUND_RATE_MIN,
+        Person.WEAPON_SOUND_RATE_MAX
+      );
     }
 
     //little fire: muzzle effect
@@ -625,10 +629,7 @@ export class Person extends Lootable {
 
     const deathSounds = ['dolor1', 'dolor2', 'dolor3', 'dolor4'];
     const deathSound = deathSounds[(Math.random() * deathSounds.length) | 0];
-    SoundManager.play(deathSound, {
-      volume: 0.8,
-      randomPitch: { min: 0.9, max: 1.1 },
-    });
+    SoundManager.play(deathSound, 0.8, 0.9, 1.1);
 
     // Emit blood particles
     ParticleEmitter.emit({

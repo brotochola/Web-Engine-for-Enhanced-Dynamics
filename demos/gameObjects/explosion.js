@@ -70,10 +70,7 @@ export class Explosion extends GameObject {
   }
 
   onSpawned(spawnConfig = {}) {
-    SoundManager.play('explosion_corta', {
-      volume: 1,
-      randomPitch: { min: 0.9, max: 1.1 },
-    });
+    SoundManager.play('explosion_corta', 1, 0.9, 1.1);
 
     setTimeout(() => this.stampDecalToFloor(), 100);
   }

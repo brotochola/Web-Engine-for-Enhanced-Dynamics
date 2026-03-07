@@ -24,9 +24,32 @@
       top: 0;
       left: 0;
     }
+
+    #scene_list {
+      position: fixed;
+      top: 50vh;
+      left: 50vw;
+      transform: translate(-50%, -50%);
+      color: white;
+      z-index: 1000;
+    }
+
+    .scene_chooser_button {
+      margin: 10px;
+      width: 200px;
+      height: 30px;
+      background: #000;
+      color: white;
+      border: 1px solid white;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
+  <div id="scene_list"></div>
   <script type="module">
     // Import WeedJS engine 🌿
     import WEED from '/src/index.js';
@@ -51,21 +74,36 @@
     });
     // Make game global for console access
     window.game = game;
-
+    const scenes = [
+      { name: '🐺 Predators', class: PredatorScene },
+      { name: '⚽ Balls', class: BallsScene },
+      { name: '🔗 Constraints', class: ConstraintsTestScene },
+      { name: '📦 Boxes', class: BallsAndRectanglesScene },
+      { name: '🐜 Ants', class: BichosScene },
+      { name: '🚗 Car', class: CarScene },
+    ]
     // Register available scenes with DebugUI for scene switching
     if (game.debugUI) {
-      game.debugUI.registerScenes([
-        { name: '🐺 Predators', class: PredatorScene },
-        { name: '⚽ Balls', class: BallsScene },
-        { name: '🔗 Constraints', class: ConstraintsTestScene },
-        { name: '📦 Boxes', class: BallsAndRectanglesScene },
-        { name: '🐜 Ants', class: BichosScene },
-        { name: '🚗 Car', class: CarScene },
-      ]);
+      game.debugUI.registerScenes(scenes);
     }
 
+
+    for (let i = 0; i < scenes.length; i++) {
+      const scene = scenes[i];
+      const button = document.createElement('button');
+      button.className = 'scene_chooser_button';
+      button.onclick = () => {
+        game.loadScene(scene.class);
+        document.getElementById('scene_list').style.display = 'none';
+      }
+      button.textContent = scene.name;
+      document.getElementById('scene_list').appendChild(button);
+      document.getElementById('scene_list').appendChild(document.createElement('br'));
+    }
+
+
     // Load the Predator scene by default
-    await game.loadScene(CarScene);
+    // await game.loadScene(PredatorScene);
 
     console.log('✅ Scene loaded successfully!');
     console.log('💡 Debug UI: Press [H] to toggle, number keys for visual aids');

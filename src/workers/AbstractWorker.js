@@ -255,6 +255,10 @@ export class AbstractWorker {
     // This ensures GameObject, Component, etc. are available when entity scripts are evaluated
     this.registerCoreClasses();
 
+    // Initialize worker-side SoundManager audio routing (SAB queue + sound ID map)
+    SoundManager.importSoundIdMap(data.audio?.soundIdMap || null);
+    SoundManager.initializeAudioQueue(data.audioQueue || null);
+
     // Load game-specific scripts dynamically (entity classes + custom components)
     // ALL workers now receive entity classes for consistent component access
     // Uses the unified loadEntityScripts function from utils.js (auto-detects worker context)

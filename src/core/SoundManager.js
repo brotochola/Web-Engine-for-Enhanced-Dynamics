@@ -1,11 +1,32 @@
 // SoundManager.js - Static audio system facade for WeedJS
-// Worker usage: SoundManager.play() posts an audio command to main thread.
-// Main thread usage: SoundManager.playFromMainThread() executes Howler playback.
+// Worker usage: SoundManager.play() writes audio events into SAB ring queue.
+// Main thread usage: Scene drains SAB queues and executes Howler playback.
 
 export class SoundManager {
   static _enabled = true;
-  static _sounds = new Map(); // name -> Howl instance
-  static _defs = new Map(); // name -> normalized sound definition
+  static _nameToId = new Map(); // name -> id
+  static _idToName = []; // id -> name
+  static _defsById = []; // id -> normalized definition
+  static _soundsById = []; // id -> Howl instance
+
+  // Audio event queue constants (SAB ring buffer)
+  static EVENT_PLAY = 1;
+  static FLAG_LOOP = 1 << 0;
+  static FLAG_MUTE = 1 << 1;
+  static EVENT_STRIDE_WORDS = 8;
+  static HEADER_WRITE = 0;
+  static HEADER_READ = 1;
+  static HEADER_DROPPED = 2;
+  static HEADER_PUSHED = 3;
+
+  static _queueHeader = null; // Int32Array
+  static _queueI32 = null; // Int32Array view over event data SAB
+  static _queueF32 = null; // Float32Array view over event data SAB
+  static _queueCapacity = 0;
+  static _queueMask = 0;
+  static _audioUnlocked = false;
+  static _unlockListenersAttached = false;
+  static _unlockHandler = null;
 
   static _isWorkerContext() {
     return typeof window === 'undefined' && typeof self !== 'undefined';
@@ -19,11 +40,90 @@ export class SoundManager {
     this._enabled = !!enabled;
   }
 
+  static initializeAutoplayGate() {
+    if (this._isWorkerContext()) return;
+    if (this._unlockListenersAttached) return;
+
+    // If browser already has user activation, mark unlocked immediately.
+    if (this._hasUserActivation()) {
+      this._audioUnlocked = true;
+      this._tryResumeAudioContext();
+      return;
+    }
+
+    this._unlockHandler = () => {
+      this._audioUnlocked = true;
+      this._tryResumeAudioContext();
+      this._detachUnlockListeners();
+    };
+
+    const opts = { capture: true, passive: true };
+    document.addEventListener('pointerdown', this._unlockHandler, opts);
+    document.addEventListener('touchstart', this._unlockHandler, opts);
+    document.addEventListener('keydown', this._unlockHandler, opts);
+    this._unlockListenersAttached = true;
+  }
+
+  static isAudioUnlocked() {
+    if (this._isWorkerContext()) return false;
+    return this._audioUnlocked || this._hasUserActivation() || this._isAudioContextRunning();
+  }
+
+  static initializeAudioQueue(queueConfig) {
+    if (!queueConfig) {
+      this._queueHeader = null;
+      this._queueI32 = null;
+      this._queueF32 = null;
+      this._queueCapacity = 0;
+      this._queueMask = 0;
+      return;
+    }
+
+    const capacity = queueConfig.capacity | 0;
+    if (capacity <= 0 || (capacity & (capacity - 1)) !== 0) {
+      throw new Error('SoundManager: audio queue capacity must be power of two');
+    }
+
+    this._queueHeader = new Int32Array(queueConfig.header);
+    this._queueI32 = new Int32Array(queueConfig.data);
+    this._queueF32 = new Float32Array(queueConfig.data);
+    this._queueCapacity = capacity;
+    this._queueMask = capacity - 1;
+  }
+
+  static importSoundIdMap(soundIdMap) {
+    this._nameToId.clear();
+    this._idToName.length = 0;
+
+    if (!soundIdMap || typeof soundIdMap !== 'object') return;
+
+    for (const [name, idValue] of Object.entries(soundIdMap)) {
+      const id = idValue | 0;
+      if (id < 0) continue;
+      this._nameToId.set(name, id);
+      this._idToName[id] = name;
+    }
+  }
+
+  static exportSoundIdMap() {
+    const out = {};
+    for (const [name, id] of this._nameToId) {
+      out[name] = id;
+    }
+    return out;
+  }
+
+  static getSoundId(name) {
+    if (typeof name !== 'string') return -1;
+    const id = this._nameToId.get(name);
+    return typeof id === 'number' ? id : -1;
+  }
+
   static register(name, definition) {
     if (!name || !definition) return;
     const normalized = this._normalizeDefinition(name, definition);
     if (!normalized) return;
-    this._defs.set(name, normalized);
+    this._setDefinition(name, normalized);
   }
 
   static async loadManifest(manifest) {
@@ -32,13 +132,13 @@ export class SoundManager {
     const loadPromises = [];
 
     for (const [name, definition] of entries) {
-      this._defs.set(name, definition);
+      const id = this._setDefinition(name, definition);
 
       if (!mainThread) continue;
 
       const howl = this._createHowl(definition);
       if (!howl) continue;
-      this._sounds.set(name, howl);
+      this._soundsById[id] = howl;
 
       // Optionally wait for preload if requested.
       if (definition.preload !== false) {
@@ -56,55 +156,106 @@ export class SoundManager {
     }
   }
 
-  static play(name, options = {}) {
-    if (!this._enabled || !name) return null;
+  static play(nameOrId, volume = 1, rateMin = 1, rateMax = rateMin, loop = 0, mute = 0) {
+    if (!this._enabled) return null;
+
+    const soundDefId = this._resolveSoundId(nameOrId);
+    if (soundDefId < 0) return null;
+
+    const playbackRate = this._resolveRateRange(rateMin, rateMax);
+    const flags = (loop ? this.FLAG_LOOP : 0) | (mute ? this.FLAG_MUTE : 0);
 
     if (this._isWorkerContext()) {
-      // Workers cannot own audio playback. Forward command to main thread.
-      if (typeof self?.postMessage === 'function') {
-        self.postMessage({
-          msg: 'playSound',
-          name,
-          options,
-        });
-      }
-      return null;
+      return this._enqueuePlay(soundDefId, volume, playbackRate, flags);
     }
 
-    return this.playFromMainThread(name, options);
+    return this.playFromMainThreadById(soundDefId, volume, playbackRate, loop, mute);
   }
 
-  static playFromMainThread(name, options = {}) {
-    if (!this._enabled || !name) return null;
+  static playFromMainThreadById(soundDefId, volume = 1, rate = 1, loop = 0, mute = 0) {
+    if (!this._enabled) return null;
+    if (!this.isAudioUnlocked()) return null;
 
-    const howl = this._ensureHowl(name);
+    const howl = this._ensureHowlById(soundDefId);
     if (!howl) return null;
 
-    const playbackRate = this._resolveRate(options);
-    const soundId = howl.play(options.sprite);
-
+    const soundId = howl.play();
     if (soundId == null) return null;
 
-    if (options.volume != null) howl.volume(options.volume, soundId);
-    if (options.loop != null) howl.loop(!!options.loop, soundId);
-    if (options.mute != null) howl.mute(!!options.mute, soundId);
-    if (playbackRate != null) howl.rate(playbackRate, soundId);
+    howl.volume(Number.isFinite(volume) ? volume : 1, soundId);
+    howl.loop(!!loop, soundId);
+    howl.mute(!!mute, soundId);
+    howl.rate(Number.isFinite(rate) ? rate : 1, soundId);
 
     return soundId;
   }
 
-  static stop(name) {
-    const howl = this._sounds.get(name);
+  static drainAudioQueueFromMainThread(queueView, maxEvents = Number.POSITIVE_INFINITY) {
+    if (!queueView) return 0;
+
+    const { header, i32, f32, mask } = queueView;
+    let read = Atomics.load(header, this.HEADER_READ);
+    const write = Atomics.load(header, this.HEADER_WRITE);
+    let consumed = 0;
+
+    while (read < write && consumed < maxEvents) {
+      const slot = read & mask;
+      const base = slot * this.EVENT_STRIDE_WORDS;
+      const eventType = i32[base + 0];
+
+      if (eventType === this.EVENT_PLAY) {
+        const soundDefId = i32[base + 1];
+        const flags = i32[base + 2];
+        const volume = f32[base + 3];
+        const rate = f32[base + 4];
+        this.playFromMainThreadById(
+          soundDefId,
+          volume,
+          rate,
+          (flags & this.FLAG_LOOP) !== 0,
+          (flags & this.FLAG_MUTE) !== 0
+        );
+      }
+
+      read++;
+      consumed++;
+    }
+
+    if (consumed > 0) {
+      Atomics.store(header, this.HEADER_READ, read);
+    }
+
+    return consumed;
+  }
+
+  static stop(nameOrId) {
+    const soundDefId = this._resolveSoundId(nameOrId);
+    if (soundDefId < 0) return;
+    const howl = this._soundsById[soundDefId];
     if (howl) howl.stop();
   }
 
-  static unload(name) {
-    const howl = this._sounds.get(name);
+  static stopAll() {
+    for (let i = 0; i < this._soundsById.length; i++) {
+      const howl = this._soundsById[i];
+      if (howl) howl.stop();
+    }
+  }
+
+  static unload(nameOrId) {
+    const soundDefId = this._resolveSoundId(nameOrId);
+    if (soundDefId < 0) return;
+
+    const howl = this._soundsById[soundDefId];
     if (howl) {
       howl.unload();
-      this._sounds.delete(name);
+      this._soundsById[soundDefId] = null;
     }
-    this._defs.delete(name);
+
+    const name = this._idToName[soundDefId];
+    if (name) this._nameToId.delete(name);
+    this._idToName[soundDefId] = null;
+    this._defsById[soundDefId] = null;
   }
 
   static unloadMany(names) {
@@ -115,60 +266,91 @@ export class SoundManager {
   }
 
   static unloadAll() {
-    for (const howl of this._sounds.values()) {
-      howl.unload();
+    for (let i = 0; i < this._soundsById.length; i++) {
+      const howl = this._soundsById[i];
+      if (howl) howl.unload();
     }
-    this._sounds.clear();
-    this._defs.clear();
+    this._soundsById.length = 0;
+    this._defsById.length = 0;
+    this._idToName.length = 0;
+    this._nameToId.clear();
   }
 
-  static _resolveRate(options) {
-    const tempo = options.tempo ?? options.rate ?? options.pitch ?? 1;
-
-    // randomPitch can be:
-    // - number (interpreted as +- range around 1.0)
-    // - [min, max]
-    // - { min, max }
-    let randomPitchFactor = 1;
-    const rp = options.randomPitch;
-
-    if (typeof rp === 'number') {
-      const min = 1 - rp;
-      const max = 1 + rp;
-      randomPitchFactor = min + Math.random() * (max - min);
-    } else if (Array.isArray(rp) && rp.length >= 2) {
-      const min = Number(rp[0]);
-      const max = Number(rp[1]);
-      if (Number.isFinite(min) && Number.isFinite(max)) {
-        randomPitchFactor = min + Math.random() * (max - min);
-      }
-    } else if (rp && typeof rp === 'object') {
-      const min = Number(rp.min);
-      const max = Number(rp.max);
-      if (Number.isFinite(min) && Number.isFinite(max)) {
-        randomPitchFactor = min + Math.random() * (max - min);
-      }
-    }
-
-    const result = Number(tempo) * randomPitchFactor;
+  static _resolveRateRange(rateMin, rateMax) {
+    const min = Number.isFinite(rateMin) ? rateMin : 1;
+    const max = Number.isFinite(rateMax) ? rateMax : min;
+    const low = min <= max ? min : max;
+    const high = min <= max ? max : min;
+    const result = low + Math.random() * (high - low);
     if (!Number.isFinite(result)) return 1;
     return Math.max(0.25, Math.min(4, result));
   }
 
-  static _ensureHowl(name) {
-    let howl = this._sounds.get(name);
+  static _resolveSoundId(nameOrId) {
+    if (typeof nameOrId === 'number' && Number.isInteger(nameOrId) && nameOrId >= 0) {
+      return nameOrId;
+    }
+    if (typeof nameOrId !== 'string') return -1;
+    const id = this._nameToId.get(nameOrId);
+    return typeof id === 'number' ? id : -1;
+  }
+
+  static _setDefinition(name, definition) {
+    let id = this._nameToId.get(name);
+    if (typeof id !== 'number') {
+      id = this._idToName.length;
+      this._nameToId.set(name, id);
+      this._idToName[id] = name;
+    }
+    this._defsById[id] = definition;
+    return id;
+  }
+
+  static _ensureHowlById(soundDefId) {
+    let howl = this._soundsById[soundDefId];
     if (howl) return howl;
 
-    const def = this._defs.get(name);
+    const def = this._defsById[soundDefId];
     if (!def) {
+      const name = this._idToName[soundDefId] || `#${soundDefId}`;
       console.warn(`SoundManager: Sound "${name}" is not registered`);
       return null;
     }
 
     howl = this._createHowl(def);
     if (!howl) return null;
-    this._sounds.set(name, howl);
+    this._soundsById[soundDefId] = howl;
     return howl;
+  }
+
+  static _enqueuePlay(soundDefId, volume, rate, flags) {
+    const header = this._queueHeader;
+    if (!header || !this._queueI32 || !this._queueF32) return null;
+
+    const write = Atomics.load(header, this.HEADER_WRITE);
+    const read = Atomics.load(header, this.HEADER_READ);
+    const pending = write - read;
+
+    if (pending >= this._queueCapacity) {
+      Atomics.add(header, this.HEADER_DROPPED, 1);
+      return null;
+    }
+
+    const slot = write & this._queueMask;
+    const base = slot * this.EVENT_STRIDE_WORDS;
+
+    this._queueI32[base + 0] = this.EVENT_PLAY;
+    this._queueI32[base + 1] = soundDefId;
+    this._queueI32[base + 2] = flags | 0;
+    this._queueF32[base + 3] = Number.isFinite(volume) ? volume : 1;
+    this._queueF32[base + 4] = Number.isFinite(rate) ? rate : 1;
+    this._queueI32[base + 5] = 0;
+    this._queueI32[base + 6] = 0;
+    this._queueI32[base + 7] = 0;
+
+    Atomics.store(header, this.HEADER_WRITE, write + 1);
+    Atomics.add(header, this.HEADER_PUSHED, 1);
+    return 1;
   }
 
   static _createHowl(definition) {
@@ -186,6 +368,30 @@ export class SoundManager {
       html5: !!definition.html5,
       sprite: definition.sprite,
     });
+  }
+
+  static _hasUserActivation() {
+    return !!globalThis.navigator?.userActivation?.hasBeenActive;
+  }
+
+  static _isAudioContextRunning() {
+    return globalThis.Howler?.ctx?.state === 'running';
+  }
+
+  static _tryResumeAudioContext() {
+    const ctx = globalThis.Howler?.ctx;
+    if (!ctx || ctx.state !== 'suspended') return;
+    // Best-effort: resume may reject if browser still blocks.
+    Promise.resolve(ctx.resume()).catch(() => { });
+  }
+
+  static _detachUnlockListeners() {
+    if (!this._unlockListenersAttached || !this._unlockHandler) return;
+    document.removeEventListener('pointerdown', this._unlockHandler, true);
+    document.removeEventListener('touchstart', this._unlockHandler, true);
+    document.removeEventListener('keydown', this._unlockHandler, true);
+    this._unlockListenersAttached = false;
+    this._unlockHandler = null;
   }
 
   static _normalizeManifest(manifest) {

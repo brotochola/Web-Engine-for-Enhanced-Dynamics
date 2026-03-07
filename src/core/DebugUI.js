@@ -104,6 +104,10 @@ export class DebugUI {
     // Cache previous values to skip DOM updates when unchanged
     this._prevValues = {
       mainFPS: -1,
+      audioPushed: -1,
+      audioDropped: -1,
+      audioPending: -1,
+      audioConsumedFrame: -1,
       activeGO: -1,
       totalGO: -1,
       visibleGO: -1,
@@ -277,6 +281,13 @@ export class DebugUI {
     mainFpsCell.textContent = 'FPS: --';
     mainRow.appendChild(mainFpsCell);
     this.elements.mainFPS = mainFpsCell;
+
+    const mainAudioCell = document.createElement('div');
+    mainAudioCell.className = 'debug-ui-worker-cell stat';
+    mainAudioCell.textContent = 'Audio: push -- drop -- pend -- cons/frame --';
+    mainRow.appendChild(mainAudioCell);
+    this.elements.mainAudio = mainAudioCell;
+
     table.appendChild(mainRow);
 
     // Single workers (renderer, particle, physics, preRender)
@@ -495,6 +506,37 @@ export class DebugUI {
     if (this.elements.mainFPS && mainFPSRounded !== this._prevValues.mainFPS) {
       this._prevValues.mainFPS = mainFPSRounded;
       this.elements.mainFPS.textContent = 'FPS: ' + (mainFPSRounded / 100).toFixed(2);
+    }
+
+    // Main thread audio queue metrics (SAB queues drained by Scene)
+    const audioMetrics = scene.audioMetrics;
+    if (this.elements.mainAudio && audioMetrics) {
+      const pushed = (audioMetrics.pushed || 0) | 0;
+      const dropped = (audioMetrics.dropped || 0) | 0;
+      const pending = (audioMetrics.pending || 0) | 0;
+      const consumedFrame = (audioMetrics.consumedFrame || 0) | 0;
+
+      const pv = this._prevValues;
+      if (
+        pushed !== pv.audioPushed ||
+        dropped !== pv.audioDropped ||
+        pending !== pv.audioPending ||
+        consumedFrame !== pv.audioConsumedFrame
+      ) {
+        pv.audioPushed = pushed;
+        pv.audioDropped = dropped;
+        pv.audioPending = pending;
+        pv.audioConsumedFrame = consumedFrame;
+        this.elements.mainAudio.textContent =
+          'Audio: push ' +
+          formatNumber(pushed) +
+          ' drop ' +
+          formatNumber(dropped) +
+          ' pend ' +
+          formatNumber(pending) +
+          ' cons/frame ' +
+          formatNumber(consumedFrame);
+      }
     }
 
     // Update single workers (renderer, particle, physics, preRender)

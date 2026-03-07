@@ -34,7 +34,6 @@ export class Drop extends GameObject {
   onCollisionEnter(other) {
     const entityType = Transform.entityType[other];
     if (entityType === MySoldier.entityType) {
-      console.log(this.dropComponent.type, 'grabbed', this.dropComponent.amount);
       this.despawn();
     }
   }

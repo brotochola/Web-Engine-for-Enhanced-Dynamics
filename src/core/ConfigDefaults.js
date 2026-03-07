@@ -151,6 +151,19 @@ export const BULLET_DEFAULTS = {
 };
 
 // ============================================================================
+// AUDIO DEFAULTS
+// ============================================================================
+
+export const AUDIO_DEFAULTS = {
+  // Audio event ring queue capacity per logic worker (must be power of two)
+  queueCapacity: 1024,
+  // Max audio events drained/executed on main thread per frame
+  maxEventsPerFrame: 64,
+  // Keep only the newest N queued events per worker (drop stale burst backlog)
+  maxBacklogPerWorker: 128,
+};
+
+// ============================================================================
 // LOGIC DEFAULTS
 // ============================================================================
 

@@ -42,6 +42,7 @@ import {
   LOGIC_DEFAULTS,
   RENDERER_DEFAULTS,
   PRE_RENDER_DEFAULTS,
+  AUDIO_DEFAULTS,
   LIGHTING_DEFAULTS,
   NAVIGATION_DEFAULTS,
   SUN_DEFAULTS,
@@ -199,6 +200,8 @@ class Scene {
       queryEntityMetadata: null,
       queryCache: null,
       queryResults: null,
+      // Audio event queues (one SPSC queue per logic worker)
+      audioQueues: {},
     };
 
     // Component type ID tracking (similar to entityType)
@@ -231,6 +234,7 @@ class Scene {
       collision: null,
       frameRate: null,
     };
+    this.audioQueueViews = [];
 
     // Main thread FPS tracking
     this.mainFPS = 0;
@@ -240,6 +244,14 @@ class Scene {
     this.mainFrameTimesSum = 16.67 * this.mainFPSFrameCount;
     this.mainFPSReportInterval = 30;
     this.mainFrameNumber = 0;
+    this.audioMetrics = {
+      pushed: 0,
+      dropped: 0,
+      consumedFrame: 0,
+      consumedTotal: 0,
+      pending: 0,
+    };
+    this._audioDrainStartQueue = 0;
 
     // Worker stats (populated by worker messages, read by DebugUI)
     this.workerStats = {
@@ -460,6 +472,32 @@ class Scene {
       ...(this.config.bullet || {}),
     };
 
+    // Audio defaults from centralized config
+    this.config.audio = {
+      ...AUDIO_DEFAULTS,
+      ...(this.config.audio || {}),
+    };
+    if (
+      !Number.isInteger(this.config.audio.maxEventsPerFrame) ||
+      this.config.audio.maxEventsPerFrame <= 0
+    ) {
+      console.warn(
+        `[Scene] Invalid audio.maxEventsPerFrame (${this.config.audio.maxEventsPerFrame}). ` +
+        `Using default ${AUDIO_DEFAULTS.maxEventsPerFrame}.`
+      );
+      this.config.audio.maxEventsPerFrame = AUDIO_DEFAULTS.maxEventsPerFrame;
+    }
+    if (
+      !Number.isInteger(this.config.audio.maxBacklogPerWorker) ||
+      this.config.audio.maxBacklogPerWorker <= 0
+    ) {
+      console.warn(
+        `[Scene] Invalid audio.maxBacklogPerWorker (${this.config.audio.maxBacklogPerWorker}). ` +
+        `Using default ${AUDIO_DEFAULTS.maxBacklogPerWorker}.`
+      );
+      this.config.audio.maxBacklogPerWorker = AUDIO_DEFAULTS.maxBacklogPerWorker;
+    }
+
     // Logic defaults from centralized config
     this.config.logic = {
       ...LOGIC_DEFAULTS,
@@ -669,6 +707,9 @@ class Scene {
       throw new Error('SharedArrayBuffer not available! Check CORS headers.');
     }
     console.log(`[Scene] ✅ SharedArrayBuffer support confirmed`);
+
+    // Install autoplay/user-gesture gate for main-thread audio playback.
+    SoundManager.initializeAutoplayGate();
 
     // Load entity scripts dynamically in main thread (like workers do)
     console.log(`[Scene] 📜 Loading entity scripts in main thread...`);
@@ -1413,6 +1454,44 @@ class Scene {
     this.buffers.frameRateData = new SharedArrayBuffer(FRAMERATE_BUFFER_SIZE);
     this.views.frameRate = new Float32Array(this.buffers.frameRateData);
 
+    // Audio event queues: one SPSC SAB ring queue per logic worker
+    let AUDIO_QUEUE_CAPACITY = this.config.audio?.queueCapacity | 0;
+    if (AUDIO_QUEUE_CAPACITY <= 0 || (AUDIO_QUEUE_CAPACITY & (AUDIO_QUEUE_CAPACITY - 1)) !== 0) {
+      console.warn(
+        `[Scene] Invalid audio.queueCapacity (${this.config.audio?.queueCapacity}). ` +
+        `Using default ${AUDIO_DEFAULTS.queueCapacity}. Must be power of two.`
+      );
+      AUDIO_QUEUE_CAPACITY = AUDIO_DEFAULTS.queueCapacity;
+    }
+    const AUDIO_QUEUE_STRIDE_WORDS = 8; // 32 bytes/event
+    const AUDIO_QUEUE_HEADER_WORDS = 4; // write, read, dropped, pushed
+    for (let i = 0; i < this.numberOfLogicWorkers; i++) {
+      const workerName = `logic${i}`;
+      const headerSAB = new SharedArrayBuffer(AUDIO_QUEUE_HEADER_WORDS * 4);
+      const dataSAB = new SharedArrayBuffer(
+        AUDIO_QUEUE_CAPACITY * AUDIO_QUEUE_STRIDE_WORDS * 4
+      );
+
+      const header = new Int32Array(headerSAB);
+      header[0] = 0; // write
+      header[1] = 0; // read
+      header[2] = 0; // dropped
+      header[3] = 0; // pushed
+
+      this.buffers.audioQueues[workerName] = {
+        header: headerSAB,
+        data: dataSAB,
+        capacity: AUDIO_QUEUE_CAPACITY,
+      };
+
+      this.audioQueueViews.push({
+        header,
+        i32: new Int32Array(dataSAB),
+        f32: new Float32Array(dataSAB),
+        mask: AUDIO_QUEUE_CAPACITY - 1,
+      });
+    }
+
     // ==========================================================================
     // SPATIAL GRID - Row-Based Partitioned Single Buffer
     // ==========================================================================
@@ -2114,6 +2193,10 @@ class Scene {
           freeListTop: this.buffers.constraintFreeListTop,
         }
         : null,
+      audio: {
+        soundIdMap: SoundManager.exportSoundIdMap(),
+      },
+      audioQueue: null,
     };
 
     // Initialize workers
@@ -2146,6 +2229,7 @@ class Scene {
           workerIndex: i, // For logic worker job partitioning (0, 1, 2, ...)
           frameRateIndex: LOGIC_START_INDEX + i, // For FPS tracking
           bigAtlasProxySheets: this.bigAtlasProxySheets || {},
+          audioQueue: this.buffers.audioQueues[`logic${i}`] || null,
         },
         workerPorts[`logic${i}`] ? Object.values(workerPorts[`logic${i}`]) : []
       );
@@ -2280,9 +2364,6 @@ class Scene {
         this._backgroundReadyResolve();
         this._backgroundReadyResolve = null;
       }
-    } else if (e.data.msg === 'playSound') {
-      const { name, options } = e.data;
-      SoundManager.playFromMainThread(name, options || {});
     } else {
       // Log unexpected messages for debugging
       console.log(`[Scene] 📨 Received message from ${e.currentTarget.name}:`, e.data.msg, e.data);
@@ -2561,6 +2642,9 @@ class Scene {
   updateInternal(deltaTime) {
     const dtRatio = deltaTime / 16.67;
 
+    // Drain audio events produced by logic workers (SAB SPSC queues)
+    this._drainAudioQueues();
+
     // Note: Camera following is now handled in Player.tick() which writes directly to cameraData SharedArrayBuffer
     // Main thread reads from cameraData and syncs to this.camera in updateCameraBuffer()
     this.updateCameraBuffer();
@@ -2576,6 +2660,63 @@ class Scene {
 
     // Reset per-frame input state (after update so devs can read it)
     Mouse.wheel = 0;
+  }
+
+  _drainAudioQueues() {
+    const queues = this.audioQueueViews;
+    let consumedFrame = 0;
+    let pending = 0;
+    let pushed = 0;
+    let dropped = 0;
+
+    // Drain with per-frame budget to avoid long RAF stalls on bursty audio.
+    let budget = this.config.audio.maxEventsPerFrame | 0;
+    if (budget <= 0) budget = AUDIO_DEFAULTS.maxEventsPerFrame;
+    let maxBacklogPerWorker = this.config.audio.maxBacklogPerWorker | 0;
+    if (maxBacklogPerWorker <= 0) {
+      maxBacklogPerWorker = AUDIO_DEFAULTS.maxBacklogPerWorker;
+    }
+
+    const queueCount = queues.length;
+    // Drop stale backlog first so we stay near real-time audio.
+    for (let i = 0; i < queueCount; i++) {
+      const q = queues[i];
+      const write = Atomics.load(q.header, 0);
+      const read = Atomics.load(q.header, 1);
+      const pendingQ = write - read;
+      if (pendingQ > maxBacklogPerWorker) {
+        const dropCount = pendingQ - maxBacklogPerWorker;
+        Atomics.store(q.header, 1, read + dropCount);
+        Atomics.add(q.header, 2, dropCount);
+      }
+    }
+
+    if (queueCount > 0 && budget > 0) {
+      const start = this._audioDrainStartQueue % queueCount;
+      for (let step = 0; step < queueCount && budget > 0; step++) {
+        const idx = (start + step) % queueCount;
+        const q = queues[idx];
+        const consumed = SoundManager.drainAudioQueueFromMainThread(q, budget);
+        consumedFrame += consumed;
+        budget -= consumed;
+      }
+      this._audioDrainStartQueue = (start + 1) % queueCount;
+    }
+
+    for (let i = 0; i < queueCount; i++) {
+      const q = queues[i];
+      const write = Atomics.load(q.header, 0);
+      const read = Atomics.load(q.header, 1);
+      pending += write - read;
+      dropped += Atomics.load(q.header, 2);
+      pushed += Atomics.load(q.header, 3);
+    }
+
+    this.audioMetrics.pushed = pushed;
+    this.audioMetrics.dropped = dropped;
+    this.audioMetrics.pending = pending;
+    this.audioMetrics.consumedFrame = consumedFrame;
+    this.audioMetrics.consumedTotal += consumedFrame;
   }
 
   /**
@@ -2797,6 +2938,15 @@ class Scene {
     // Clear registered classes for next scene
     this.registeredClasses = [];
     this.totalEntityCount = 0;
+    this.audioQueueViews = [];
+    this.audioMetrics = {
+      pushed: 0,
+      dropped: 0,
+      consumedFrame: 0,
+      consumedTotal: 0,
+      pending: 0,
+    };
+    this._audioDrainStartQueue = 0;
 
     console.log(`✅ Scene ${this.constructor.name}: Destroyed!`);
   }
