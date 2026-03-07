@@ -1,5 +1,4 @@
 import { Component } from '../core/Component.js';
-import { convertRGBtoBGR } from '../core/utils.js';
 
 export class LightEmitter extends Component {
   static ARRAY_SCHEMA = {
@@ -32,7 +31,7 @@ export class LightEmitter extends Component {
   }
 
   set lightColor(value) {
-    LightEmitter.lightColor[this.index] = convertRGBtoBGR(value);
+    LightEmitter.lightColor[this.index] = value;
   }
 
 }

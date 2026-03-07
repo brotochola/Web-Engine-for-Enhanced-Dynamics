@@ -26,7 +26,7 @@
   groupD8 as b,
   Container as Ae,
   extensions as re,
-} from '../workers/pixi8webworker.js';
+} from './pixi_8.16_.min.js';
 const w = {
     TEXTURES_PER_TILEMAP: 16,
     TEXTILE_SCALE_MODE: 'linear',

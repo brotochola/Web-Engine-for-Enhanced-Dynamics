@@ -960,7 +960,7 @@ class ParticleWorker extends AbstractWorker {
 
     const particleX = ParticleComponent.x;
     const particleY = ParticleComponent.y;
-    const particleTint = ParticleComponent.baseTint; // Use RGB (tint is BGR for PixiJS)
+    const particleTint = ParticleComponent.baseTint;
     const particleScaleX = ParticleComponent.scaleX;
     const particleScaleY = ParticleComponent.scaleY;
     const particleTextureId = ParticleComponent.textureId;

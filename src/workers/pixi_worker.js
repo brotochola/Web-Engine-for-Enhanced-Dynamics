@@ -57,13 +57,13 @@ import {
   // Web Worker adapter - REQUIRED for PixiJS 8 in workers
   DOMAdapter,
   WebWorkerAdapter,
-} from './pixi8webworker.js';
+} from '../lib/pixi_8.16_.min.js'
 
 // CRITICAL: Set the WebWorkerAdapter BEFORE any PixiJS operations
 // This enables OffscreenCanvas and WebGL support in web workers
 DOMAdapter.set(WebWorkerAdapter);
-import { convertRGBtoBGR } from '../core/utils.js';
-// Import @pixi/tilemap for efficient tilemap rendering (modified to import from pixi8webworker.js)
+
+// Import @pixi/tilemap for efficient tilemap rendering
 import {
   CompositeTilemap,
   TilemapPipe,
@@ -1341,7 +1341,7 @@ LIGHTING SYSTEM SETUP
 
       // Add sun contribution (global directional light)
       // Sun color is applied uniformly across the scene
-      vec3 sunColor = vec3(uSunB, uSunG, uSunR); // BGR to RGB
+      vec3 sunColor = vec3(uSunR, uSunG, uSunB);
       totalLight += sunColor * uSunIntensity;
 
       // Add point light contributions
@@ -1351,8 +1351,7 @@ LIGHTING SYSTEM SETUP
 
         vec2 lightWorld = vec2(uLightX[i], uLightY[i]);
         float intensity = uLightIntensity[i];
-        //switch B and R
-        vec3 color = vec3(uLightB[i], uLightG[i], uLightR[i]);
+        vec3 color = vec3(uLightR[i], uLightG[i], uLightB[i]);
 
         // Keep attenuation math numerically stable on mobile fragment shaders.
         // Many mobile GPUs run mediump in fragment stage (even when highp is requested),
@@ -1572,7 +1571,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Create ParticleContainer for lights + shadows
     // Uses normal blend internally - the multiply happens on shadowDisplaySprite
     this.shadowParticleContainer = new PIXI.ParticleContainer({
-      blendMode: 'normal-npm',
+      blendMode: 'normal',
       dynamicProperties: {
         vertex: true,
         position: true,

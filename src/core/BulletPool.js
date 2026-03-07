@@ -7,7 +7,6 @@
 import { BulletComponent } from '../components/BulletComponent.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { SharedAtomicPool } from './SharedAtomicPool.js';
-import { convertRGBtoBGR } from './utils.js';
 
 export class BulletPool extends SharedAtomicPool {
   static poolName = 'BulletPool';
@@ -91,7 +90,7 @@ export class BulletPool extends SharedAtomicPool {
     textureId[i] = texId;
     scale[i] = config.scale ?? 1;
     alpha[i] = config.alpha ?? 1;
-    tint[i] = convertRGBtoBGR(config.tint ?? 0xffffff);
+    tint[i] = config.tint ?? 0xffffff;
     spriteRotation[i] = config.spriteRotation ?? config.rotation ?? 0;
     bulletAngle[i] = Math.atan2(config.vy, config.vx);
     anchorX[i] = config.anchorX ?? 0;

@@ -12,7 +12,7 @@
 import { DecorationComponent } from '../components/DecorationComponent.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { SharedAtomicPool } from './SharedAtomicPool.js';
-import { randomRange, convertRGBtoBGR } from './utils.js';
+import { randomRange } from './utils.js';
 
 export class DecorationPool extends SharedAtomicPool {
   // Pool name for logging (used by base class)
@@ -126,7 +126,7 @@ export class DecorationPool extends SharedAtomicPool {
     baseRotation[i] = config.rotation ?? 0;
     rotation[i] = baseRotation[i];
     alpha[i] = randomRange(config.alpha, 1);
-    tint[i] = convertRGBtoBGR(config.tint ?? 0xffffff); // Convert RGB→BGR for PixiJS
+    tint[i] = config.tint ?? 0xffffff;
     anchorX[i] = config.anchorX ?? 0.5;
     anchorY[i] = config.anchorY ?? 1;
     decorationTextureId[i] = textureId;

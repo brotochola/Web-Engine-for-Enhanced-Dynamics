@@ -9,7 +9,7 @@ import { LightEmitter } from '../components/LightEmitter.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { Grid } from './Grid.js';
-import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox, distanceSq2D, convertRGBtoBGR, binarySearchInsertPoint, binarySearchFind } from './utils.js';
+import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox, distanceSq2D, binarySearchInsertPoint, binarySearchFind } from './utils.js';
 import Keyboard from './Keyboard.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
@@ -623,10 +623,9 @@ export class GameObject {
   }
   set tint(value) {
     if (!this._hasComponents.SpriteRenderer) return;
-    SpriteRenderer.baseTint[this.index] = value; // Store RGB for lighting/user access
-    const bgrValue = convertRGBtoBGR(value); // Convert RGB→BGR for PixiJS
-    if (SpriteRenderer.tint[this.index] !== bgrValue) {
-      SpriteRenderer.tint[this.index] = bgrValue;
+    SpriteRenderer.baseTint[this.index] = value;
+    if (SpriteRenderer.tint[this.index] !== value) {
+      SpriteRenderer.tint[this.index] = value;
       SpriteRenderer.renderDirty[this.index] = 1;
     }
   }
@@ -772,10 +771,9 @@ export class GameObject {
    */
   setTint(value) {
     if (!this._hasComponents.SpriteRenderer) return this;
-    SpriteRenderer.baseTint[this.index] = value; // Store RGB for lighting/user access
-    const bgrValue = convertRGBtoBGR(value); // Convert RGB→BGR for PixiJS
-    if (SpriteRenderer.tint[this.index] !== bgrValue) {
-      SpriteRenderer.tint[this.index] = bgrValue;
+    SpriteRenderer.baseTint[this.index] = value;
+    if (SpriteRenderer.tint[this.index] !== value) {
+      SpriteRenderer.tint[this.index] = value;
       SpriteRenderer.renderDirty[this.index] = 1;
     }
     return this;

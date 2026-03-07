@@ -53,8 +53,8 @@ export const LAYER_DEFAULT_BLEND_MODES = Object.freeze({
   DECALS: 'normal',
   /** Casted shadows - multiply to darken scene */
   CASTED_SHADOWS: 'multiply',
-  /** Entities layer - normal-npm (non-premultiplied alpha for correct particle/alpha blending) */
-  ENTITIES: 'normal-npm',
+  /** Entities layer - standard alpha blending (PixiJS 8.16+ uses 'normal' for correct alpha) */
+  ENTITIES: 'normal',
   /** Lighting overlay - multiply to darken unlit areas */
   LIGHTING: 'multiply',
 });

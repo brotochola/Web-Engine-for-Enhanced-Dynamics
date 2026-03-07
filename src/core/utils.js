@@ -1640,18 +1640,6 @@ export function extractRGBNormalizedMut(color, result) {
 }
 
 /**
- * Convert RGB to BGR (swaps red and blue channels)
- * @param {number} color - Color in 0xRRGGBB format
- * @returns {number} Color in 0xBBGGRR format
- */
-export function convertRGBtoBGR(color) {
-  const colorR = (color >> 16) & 0xff;
-  const colorG = (color >> 8) & 0xff;
-  const colorB = color & 0xff;
-  return (colorB << 16) | (colorG << 8) | colorR;
-}
-
-/**
  * Calculate speed from velocity components
  * @param {number} vx - Velocity X component
  * @param {number} vy - Velocity Y component

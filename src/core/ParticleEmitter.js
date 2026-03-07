@@ -32,7 +32,7 @@
 import { ParticleComponent } from '../components/ParticleComponent.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { SharedAtomicPool } from './SharedAtomicPool.js';
-import { randomRange, randomColor, convertRGBtoBGR } from './utils.js';
+import { randomRange, randomColor } from './utils.js';
 
 export const DECAL_STAMPS_BLEND_MODE = {
   normal: 0,
@@ -240,7 +240,7 @@ export class ParticleEmitter extends SharedAtomicPool {
         config.scaleY !== undefined ? randomRange(config.scaleY, uniformScale) : uniformScale;
       alpha[i] = randomRange(config.alpha, 1);
       const particleColor = randomColor(config.tint);
-      tint[i] = convertRGBtoBGR(particleColor); // Convert RGB→BGR for PixiJS
+      tint[i] = particleColor;
       baseTint[i] = particleColor; // Store original RGB for lighting calculation
       particleTextureId[i] = textureId;
 
