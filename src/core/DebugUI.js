@@ -104,10 +104,12 @@ export class DebugUI {
     // Cache previous values to skip DOM updates when unchanged
     this._prevValues = {
       mainFPS: -1,
-      audioPushed: -1,
-      audioDropped: -1,
-      audioPending: -1,
-      audioConsumedFrame: -1,
+      audioActive: -1,
+      audioMax: -1,
+      audioLoaded: -1,
+      audioState: '',
+      audioRate: -1,
+      audioLatency: -1,
       activeGO: -1,
       totalGO: -1,
       visibleGO: -1,
@@ -282,12 +284,6 @@ export class DebugUI {
     mainRow.appendChild(mainFpsCell);
     this.elements.mainFPS = mainFpsCell;
 
-    const mainAudioCell = document.createElement('div');
-    mainAudioCell.className = 'debug-ui-worker-cell stat';
-    mainAudioCell.textContent = 'Audio: push -- drop -- pend -- cons/frame --';
-    mainRow.appendChild(mainAudioCell);
-    this.elements.mainAudio = mainAudioCell;
-
     table.appendChild(mainRow);
 
     // Single workers (renderer, particle, physics, preRender)
@@ -316,6 +312,25 @@ export class DebugUI {
         }
       }
     }
+
+    // Audio row (AudioWorklet metrics)
+    const audioRow = document.createElement('div');
+    audioRow.className = 'debug-ui-worker-row';
+    const audioLabel = document.createElement('div');
+    audioLabel.className = 'debug-ui-worker-cell label debug-ui-stat audio';
+    audioLabel.textContent = 'Audio:';
+    audioRow.appendChild(audioLabel);
+
+    const audioStats = ['Slots', 'Loaded', 'State', 'Rate', 'Latency'];
+    this.elements.audioStats = {};
+    for (const stat of audioStats) {
+      const cell = document.createElement('div');
+      cell.className = 'debug-ui-worker-cell stat debug-ui-stat audio';
+      cell.textContent = stat + ': --';
+      audioRow.appendChild(cell);
+      this.elements.audioStats[stat] = cell;
+    }
+    table.appendChild(audioRow);
 
     container.appendChild(table);
   }
@@ -508,19 +523,8 @@ export class DebugUI {
       this.elements.mainFPS.textContent = 'FPS: ' + (mainFPSRounded / 100).toFixed(2);
     }
 
-    // AudioWorklet slot metrics
-    const audioMetrics = scene.audioMetrics;
-    if (this.elements.mainAudio && audioMetrics) {
-      const active = (audioMetrics.activeSlots || 0) | 0;
-      const max = (audioMetrics.maxSlots || 0) | 0;
-
-      const pv = this._prevValues;
-      if (active !== pv.audioActive || max !== pv.audioMax) {
-        pv.audioActive = active;
-        pv.audioMax = max;
-        this.elements.mainAudio.textContent = 'Audio: ' + active + '/' + max + ' slots';
-      }
-    }
+    // AudioWorklet metrics
+    this._updateAudioStats(scene.audioMetrics);
 
     // Update single workers (renderer, particle, physics, preRender)
     this._updateSingleWorkerStats('renderer', RENDERER_STATS);
@@ -531,6 +535,47 @@ export class DebugUI {
     // Update multi-workers (spatial, logic)
     this._updateMultiWorkerStats('spatial', SPATIAL_STATS);
     this._updateMultiWorkerStats('logic', LOGIC_STATS);
+  }
+
+  _updateAudioStats(audioMetrics) {
+    const els = this.elements.audioStats;
+    if (!els || !audioMetrics) return;
+
+    const pv = this._prevValues;
+    const active = (audioMetrics.activeSlots || 0) | 0;
+    const max = (audioMetrics.maxSlots || 0) | 0;
+    const loaded = (audioMetrics.loadedSounds || 0) | 0;
+    const state = audioMetrics.state || 'closed';
+    const rate = (audioMetrics.sampleRate || 0) | 0;
+    const baseLat = audioMetrics.baseLatency || 0;
+    const outLat = audioMetrics.outputLatency || 0;
+
+    if (active !== pv.audioActive || max !== pv.audioMax) {
+      pv.audioActive = active;
+      pv.audioMax = max;
+      els.Slots.textContent = 'Slots: ' + active + '/' + max;
+    }
+
+    if (loaded !== pv.audioLoaded) {
+      pv.audioLoaded = loaded;
+      els.Loaded.textContent = 'Loaded: ' + loaded;
+    }
+
+    if (state !== pv.audioState) {
+      pv.audioState = state;
+      els.State.textContent = 'Ctx: ' + state;
+    }
+
+    if (rate !== pv.audioRate) {
+      pv.audioRate = rate;
+      els.Rate.textContent = 'Rate: ' + (rate >= 1000 ? (rate / 1000) + 'k' : rate);
+    }
+
+    const latencyMs = ((baseLat + outLat) * 100000 + 0.5) | 0;
+    if (latencyMs !== pv.audioLatency) {
+      pv.audioLatency = latencyMs;
+      els.Latency.textContent = 'Lat: ' + (latencyMs / 100).toFixed(2) + 'ms';
+    }
   }
 
   /**

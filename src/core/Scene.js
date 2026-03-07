@@ -243,6 +243,11 @@ class Scene {
     this.audioMetrics = {
       activeSlots: 0,
       maxSlots: 0,
+      loadedSounds: 0,
+      state: 'closed',
+      sampleRate: 0,
+      baseLatency: 0,
+      outputLatency: 0,
     };
 
     // Worker stats (populated by worker messages, read by DebugUI)
@@ -2575,9 +2580,16 @@ class Scene {
   updateInternal(deltaTime) {
     const dtRatio = deltaTime / 16.67;
 
-    // Update audio slot metrics (worklet handles playback directly via SAB)
-    this.audioMetrics.activeSlots = SoundManager.getActiveSlotCount();
-    this.audioMetrics.maxSlots = SoundManager._maxSlots;
+    // Update audio metrics from AudioWorklet (worklet handles playback directly via SAB)
+    const am = SoundManager.getMetrics();
+    const audioMetrics = this.audioMetrics;
+    audioMetrics.activeSlots = am.activeSlots;
+    audioMetrics.maxSlots = am.maxSlots;
+    audioMetrics.loadedSounds = am.loadedSounds;
+    audioMetrics.state = am.state;
+    audioMetrics.sampleRate = am.sampleRate;
+    audioMetrics.baseLatency = am.baseLatency;
+    audioMetrics.outputLatency = am.outputLatency;
 
     // Note: Camera following is now handled in Player.tick() which writes directly to cameraData SharedArrayBuffer
     // Main thread reads from cameraData and syncs to this.camera in updateCameraBuffer()
@@ -2818,6 +2830,11 @@ class Scene {
     this.audioMetrics = {
       activeSlots: 0,
       maxSlots: 0,
+      loadedSounds: 0,
+      state: 'closed',
+      sampleRate: 0,
+      baseLatency: 0,
+      outputLatency: 0,
     };
 
     console.log(`✅ Scene ${this.constructor.name}: Destroyed!`);

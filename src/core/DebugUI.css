@@ -124,6 +124,9 @@
 .debug-ui-stat.particle {
   color: #fb923c;
 }
+.debug-ui-stat.audio {
+  color: #38bdf8;
+}
 .debug-ui-stat.navigation {
   color: #14b8a6; /* teal for navigation */
 }

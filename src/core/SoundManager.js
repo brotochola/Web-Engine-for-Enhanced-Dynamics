@@ -280,6 +280,19 @@ export class SoundManager {
     return count;
   }
 
+  static getMetrics() {
+    const ctx = this._audioCtx;
+    return {
+      activeSlots: this.getActiveSlotCount(),
+      maxSlots: this._maxSlots,
+      loadedSounds: this._nameToId.size,
+      state: ctx ? ctx.state : 'closed',
+      sampleRate: ctx ? ctx.sampleRate : 0,
+      baseLatency: ctx ? (ctx.baseLatency || 0) : 0,
+      outputLatency: ctx ? (ctx.outputLatency || 0) : 0,
+    };
+  }
+
   // ─── Private ──────────────────────────────────────────────────────────────
 
   static _writeSlot(audioId, volume, pitch, pan, loop) {
