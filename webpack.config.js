@@ -14,7 +14,6 @@ const workerEntries = {
     'workers/spatial_worker': './src/workers/spatial_worker.js',
     'workers/particle_worker': './src/workers/particle_worker.js',
     'workers/pre_render_worker': './src/workers/pre_render_worker.js',
-    'workers/pixi8webworker': './src/workers/pixi8webworker.js',
 };
 
 // Check if we should obfuscate
@@ -64,7 +63,7 @@ const optimization = {
 // Babel loader config
 const babelLoader = {
     test: /\.js$/,
-    exclude: /node_modules/,
+    exclude: [/node_modules/, /src[\\/]lib[\\/]/],
     use: {
         loader: 'babel-loader',
         options: {
