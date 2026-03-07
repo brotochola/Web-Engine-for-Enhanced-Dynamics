@@ -85,9 +85,7 @@ export class PredatorScene extends WEED.Scene {
       maxImpactsPerFrame: 512,
     },
     audio: {
-      queueCapacity: 512, // SAB ring size per logic worker (must be power of two)
-      maxEventsPerFrame: 16, // Main-thread audio processing budget per RAF frame
-      maxBacklogPerWorker: 16, // Keep only newest N queued events per worker (drop older burst backlog)
+      maxSlots: 2048,
     },
 
     // Logic configuration

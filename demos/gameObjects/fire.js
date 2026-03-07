@@ -63,7 +63,7 @@ export class Fire extends GameObject {
 
   onSpawned(spawnConfig = {}) {
     this.setup(spawnConfig);
-    SoundManager.play('explosion_de_fuego', 0.8, 0.9, 1.1);
+    SoundManager.play('explosion_de_fuego', 0.8, 0.9, 1.1, 0, 0, this.x, this.y);
   }
 
   tick(dt, deltaTime) {

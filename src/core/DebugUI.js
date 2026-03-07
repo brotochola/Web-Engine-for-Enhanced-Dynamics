@@ -508,34 +508,17 @@ export class DebugUI {
       this.elements.mainFPS.textContent = 'FPS: ' + (mainFPSRounded / 100).toFixed(2);
     }
 
-    // Main thread audio queue metrics (SAB queues drained by Scene)
+    // AudioWorklet slot metrics
     const audioMetrics = scene.audioMetrics;
     if (this.elements.mainAudio && audioMetrics) {
-      const pushed = (audioMetrics.pushed || 0) | 0;
-      const dropped = (audioMetrics.dropped || 0) | 0;
-      const pending = (audioMetrics.pending || 0) | 0;
-      const consumedFrame = (audioMetrics.consumedFrame || 0) | 0;
+      const active = (audioMetrics.activeSlots || 0) | 0;
+      const max = (audioMetrics.maxSlots || 0) | 0;
 
       const pv = this._prevValues;
-      if (
-        pushed !== pv.audioPushed ||
-        dropped !== pv.audioDropped ||
-        pending !== pv.audioPending ||
-        consumedFrame !== pv.audioConsumedFrame
-      ) {
-        pv.audioPushed = pushed;
-        pv.audioDropped = dropped;
-        pv.audioPending = pending;
-        pv.audioConsumedFrame = consumedFrame;
-        this.elements.mainAudio.textContent =
-          'Audio: push ' +
-          formatNumber(pushed) +
-          ' drop ' +
-          formatNumber(dropped) +
-          ' pend ' +
-          formatNumber(pending) +
-          ' cons/frame ' +
-          formatNumber(consumedFrame);
+      if (active !== pv.audioActive || max !== pv.audioMax) {
+        pv.audioActive = active;
+        pv.audioMax = max;
+        this.elements.mainAudio.textContent = 'Audio: ' + active + '/' + max + ' slots';
       }
     }
 
