@@ -101,7 +101,14 @@ export class SoundManager {
 
     this._audioCtx = new AudioContext({ latencyHint: 'interactive' });
 
-    const processorUrl = new URL('../workers/AudioMixerProcessor.js', import.meta.url).href;
+    let processorUrl;
+    const embedded = typeof globalThis.WEED !== 'undefined' && globalThis.WEED.AudioWorkletSource;
+    if (embedded) {
+      const blob = new Blob([embedded], { type: 'application/javascript' });
+      processorUrl = URL.createObjectURL(blob);
+    } else {
+      processorUrl = new URL('../workers/AudioMixerProcessor.js', import.meta.url).href;
+    }
     await this._audioCtx.audioWorklet.addModule(processorUrl);
 
     this._maxSlots = maxSlots;

@@ -67,6 +67,7 @@ const babelLoader = {
     use: {
         loader: 'babel-loader',
         options: {
+            compact: true,
             presets: [
                 ['@babel/preset-env', {
                     targets: { browsers: ['> 1%', 'last 2 versions', 'not dead'] },

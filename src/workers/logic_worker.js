@@ -12,18 +12,13 @@ import { Mouse } from '../core/Mouse.js';
 import Keyboard from '../core/Keyboard.js';
 import { Transform } from '../components/Transform.js';
 import { RigidBody } from '../components/RigidBody.js';
-import { Collider } from '../components/Collider.js';
+
 import { SpriteRenderer } from '../components/SpriteRenderer.js';
-import { LightEmitter } from '../components/LightEmitter.js';
-import { ShadowCaster } from '../components/ShadowCaster.js';
-import { ParticleComponent } from '../components/ParticleComponent.js';
-import { FlashComponent } from '../components/FlashComponent.js';
+
 import { SpriteSheetRegistry } from '../core/SpriteSheetRegistry.js';
-import { ParticleEmitter } from '../core/ParticleEmitter.js';
-import { DecorationPool } from '../core/DecorationPool.js';
-import { Flash } from '../core/Flash.js';
+
 import { AbstractWorker } from './AbstractWorker.js';
-import { Grid } from '../core/Grid.js';
+
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from './workers-utils.js';
 import { cantorUnpair, _cantorResult } from '../core/utils.js';
 
