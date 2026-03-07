@@ -686,7 +686,6 @@ class Scene {
     if (typeof SharedArrayBuffer === 'undefined') {
       throw new Error('SharedArrayBuffer not available! Check CORS headers.');
     }
-    console.log(`[Scene] ✅ SharedArrayBuffer support confirmed`);
 
     // Initialize AudioWorklet mixer and autoplay gate
     const audioConfig = this.config.audio || {};
@@ -698,24 +697,20 @@ class Scene {
     SoundManager.initializeAutoplayGate();
 
     // Load entity scripts dynamically in main thread (like workers do)
-    console.log(`[Scene] 📜 Loading entity scripts in main thread...`);
+
     await this.loadEntityScriptsInMainThread();
-    console.log(`[Scene] ✅ Entity scripts loaded`);
 
     // Create shared buffers
-    console.log(`[Scene] 🗄️ Creating shared buffers...`);
+
     this.createSharedBuffers();
-    console.log(`[Scene] ✅ Shared buffers created`);
 
     // Create workers
-    console.log(`[Scene] 👷 Creating workers...`);
+
     await this.createWorkers();
-    console.log(`[Scene] ✅ Workers created, waiting for ready signals...`);
 
     // Setup event listeners (input must be ready before create() so spawn logic can read config)
-    console.log(`[Scene] 🎧 Setting up event listeners...`);
+
     this.setupEventListeners();
-    console.log(`[Scene] ✅ Event listeners set up`);
 
     // Update entity count display
     const numberBoidsElement = document.getElementById('numberBoids');
@@ -724,45 +719,27 @@ class Scene {
     }
 
     // Log current worker ready states
-    console.log(`[Scene] ⏳ Waiting for workers to be ready...`);
-    console.log(`[Scene] Current worker ready states:`, { ...this.workerReadyStates });
-    console.log(`[Scene] Total workers expected: ${this.totalWorkers}`);
 
     // Wait for all workers to be ready (workers stay paused until we send 'start')
     await this.readyPromise;
-    console.log(`[Scene] ✅ All workers are ready!`);
 
     // Expose scene and component references globally for console access
-    console.log(`[Scene] 🌍 Exposing global references...`);
     this.exposeGlobalReferences();
-
-    console.log(`✅ Scene ${this.constructor.name}: Initialized!`);
-    console.log(
-      `💡 Debug tip: Use 'scene', 'game', component classes, and entity classes from console`
-    );
 
     // LIFECYCLE PHASE 1: preload()
     // Scene infrastructure setup (tilemap background, camera, nav grid).
     // Messages sent here are processed by workers while they are still paused,
     // so the renderer can build the tilemap and warm up the GPU before the first frame.
-    console.log(`[Scene] 📦 Calling user's preload() hook...`);
     await this.preload();
-    console.log(`[Scene] ✅ User's preload() hook completed`);
 
     // LIFECYCLE PHASE 2: create()
     // Spawn entities and set up the game world.
-    console.log(`[Scene] 🎨 Calling user's create() hook...`);
     await this.create();
-    console.log(`[Scene] ✅ User's create() hook completed`);
 
     // LIFECYCLE PHASE 3: Start everything.
     // Main thread loop first (for input handling), then worker game loops.
     // Workers see a fully populated scene with infrastructure ready on frame 1.
-    console.log(`[Scene] 🔄 Starting main loop...`);
     this.startMainLoop();
-    console.log(`[Scene] ✅ Main loop started`);
-
-    console.log(`[Scene] 🚀 Starting all worker game loops...`);
     this.startAllWorkers();
   }
 
@@ -836,12 +813,6 @@ class Scene {
     window.DecorationPool = DecorationPool;
     window.SoundManager = SoundManager;
 
-    console.log(
-      `🌍 Exposed ${exposedEntities.length} entity classes and ${componentMap.size} components globally (${initializedCount} with SAB views)`
-    );
-    if (exposedEntities.length > 0) {
-      console.log(`💡 Try: ${exposedEntities[0]}.forEach(i => console.log(i)) or RigidBody.vx[0]`);
-    }
   }
 
   // User lifecycle hooks - override these in subclasses
@@ -1230,16 +1201,12 @@ class Scene {
         worldHeight,
       });
 
-      console.log(
-        `[Scene] Navigation grid: ${gridWidth}x${gridHeight} cells (${navBufferSize} bytes)`
-      );
     }
 
     // Pre-initialize entityType values
     this.preInitializeEntityTypeArrays();
 
     // Build query system for fast component-based entity filtering
-    console.log('[Scene] Building query system...');
     this.querySystem.buildQueries(this.registeredClasses);
 
     // Define pre-computed queries for engine components
@@ -1258,8 +1225,6 @@ class Scene {
     this.buffers.queryEntityMetadata = querySABs.entityMetadataSAB;
     this.buffers.queryCache = querySABs.queryCacheSAB;
     this.buffers.queryResults = querySABs.queryResultsSAB;
-
-    console.log('[Scene] Query system ready!');
 
     // Collision data buffer
     const maxCollisionPairs = this.config.physics.maxCollisionPairs;
@@ -1302,7 +1267,6 @@ class Scene {
         this.buffers.constraintFreeListTop
       );
 
-      console.log(`[Scene] Constraint system: ${maxConstraints} max constraints (${constraintBufferSize} bytes)`);
     }
 
     // ========================================
@@ -1321,7 +1285,6 @@ class Scene {
         Sun.setTimeOfDay(sunConfig.startHour);
       }
 
-      console.log(`[Scene] Sun system: enabled (hour: ${Sun.hour.toFixed(1)}, intensity: ${Sun.intensity.toFixed(2)})`);
     }
 
     // Active entities buffer - tracks which entities are active for spatial worker load balancing
@@ -1512,11 +1475,6 @@ class Scene {
       }
     );
 
-    console.log(
-      `[Scene] Spatial grid: ${gridCols}x${gridRows} cells (${totalCells} total), ` +
-      `${cellSize}px cell size, ${GRID_BUFFER_SIZE} bytes (row-based partitioning)`
-    );
-
     // Worker stat buffers: detailed metrics for each worker type
     // Each buffer uses strided layout for cache-line isolation (64 bytes per worker)
     this.buffers.rendererStats = new SharedArrayBuffer(RENDERER_STATS.BUFFER_SIZE);
@@ -1574,7 +1532,6 @@ class Scene {
     this.loadedSpritesheets = {};
     this.loadedTilemaps = {}; // Store loaded tilemap data
 
-    console.log('🎨 Generating BigAtlas from all assets...');
     const textures = imageUrls?.textures || {};
     const spritesheets = imageUrls?.spritesheets || {};
     const assetsToLoad = {
@@ -1634,7 +1591,6 @@ class Scene {
 
     // Load tilemaps (Tiled JSON + tileset images)
     if (imageUrls.tilemaps) {
-      console.log(`🗺️ Loading ${Object.keys(imageUrls.tilemaps).length} tilemaps...`);
 
       for (const [tilemapId, tilemapConfig] of Object.entries(imageUrls.tilemaps)) {
         try {
@@ -1659,7 +1615,6 @@ class Scene {
             tilesetBitmap: tilesetBitmap,
           };
 
-          console.log(`  ✅ Loaded tilemap: ${tilemapId}`);
         } catch (error) {
           console.error(`❌ Failed to load tilemap "${tilemapId}":`, error);
         }
@@ -1757,10 +1712,6 @@ class Scene {
     this.decalFrameNameToId = frameNameToId;
     SpriteSheetRegistry.setDecalFrameMapping(frameNameToId);
 
-    console.log(
-      `📍 Extracted ${animationNames.length} animation textures + ${frameNames.length} frame textures for decals`
-    );
-
     return textures;
   }
 
@@ -1836,8 +1787,6 @@ class Scene {
       const animName = bigAtlas.indexToName[animIdx];
       animationNameToIndex[animName] = animIdx;
     }
-
-    console.log(`[Scene] Built texture metadata: ${currentOffset} total frames, ${animCount} animations`);
 
     return {
       animationFrameStart,

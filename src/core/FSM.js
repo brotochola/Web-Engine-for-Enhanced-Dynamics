@@ -150,7 +150,9 @@ export class FSM extends Component {
 
     if (CurrentState) {
       // Update time in state (approximate ms based on 60fps baseline)
-      FSMClass.time[i] += dt * 16.67;
+      // Scale by tickInterval so decimated entities track real elapsed time
+      const tickInterval = owner?.constructor?.tickInterval || 1;
+      FSMClass.time[i] += dt * 16.67 * tickInterval;
 
       // Call state's onUpdate
       CurrentState.onUpdate(owner, i, dt, FSMClass.time[i]);

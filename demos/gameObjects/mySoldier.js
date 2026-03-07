@@ -6,6 +6,7 @@ import WEED from '/src/index.js';
 import { Person } from './person.js';
 import { SoldierBehaviorFSM } from '../fsm/SoldierBehaviorFSM.js';
 import { PersonAnimationFSM } from '../fsm/PersonAnimationFSM.js';
+import { PersonComponent } from '../components/personComponent.js';
 
 const { Transform } = WEED;
 
@@ -53,11 +54,8 @@ export class MySoldier extends Person {
   tick(dtRatio) {
     super.tick(dtRatio);
 
-    // Flocking behavior
-    // this.groupWithMyTeam();
-    // this.separateFromTeam();
+    if (PersonComponent.dead[this.index] === 1) return;
 
-    // Behavior FSM handles destination following, enemy chasing, and attacking
     this.soldierBehaviorFSM.tick(dtRatio, this);
   }
 

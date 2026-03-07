@@ -151,11 +151,16 @@ export class Person extends Lootable {
   }
 
   recieveDamage(damage, sourceX, sourceY) {
-    // console.log('recieveDamage', this.index, damage, this.lootableComponent.health);
     // Don't process damage if already dead
     if (PersonComponent.dead[this.index] === 1) return;
 
     super.recieveDamage(damage, sourceX, sourceY);
+
+    // Trigger death immediately on lethal damage (don't wait for next tick)
+    if (LootableComponent.health[this.index] <= 0) {
+      this.die();
+      return;
+    }
 
     if (damage < 0.1) return;
 

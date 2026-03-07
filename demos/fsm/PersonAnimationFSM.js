@@ -172,8 +172,10 @@ class ShootingState extends FSMState {
   }
 
   static onUpdate(owner, i, dt) {
-
-    // Animation complete?
+    if (LootableComponent.health[i] <= 0) {
+      this.fsm.changeState(i, this.fsm.states.DYING);
+      return;
+    }
 
     if (this.fsm.time[i] >= SHOOT_DURATION_MS) {
       this.fsm.changeState(i, this.fsm.states.IDLE);

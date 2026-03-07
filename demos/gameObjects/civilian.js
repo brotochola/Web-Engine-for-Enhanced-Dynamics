@@ -72,27 +72,12 @@ export class Civilian extends Person {
   }
 
   tick(dt) {
-    const { SpriteRenderer } = WEED;
-    // const animBefore = SpriteRenderer.animationState[this.index];
-
-    // Update the FSM - handles state transitions and calls onUpdate
     super.tick(dt);
 
-    // const animAfterPerson = SpriteRenderer.animationState[this.index];
+    if (PersonComponent.dead[this.index] === 1) return;
 
     this.civilianBehaviorFSM.tick(dt, this);
-
-    // const animAfterBehavior = SpriteRenderer.animationState[this.index];
-
-    // const animAfterGroup = SpriteRenderer.animationState[this.index];
-
-    // Debug: track if animation changes during Civilian-specific code
-    // if (animAfterPerson !== animAfterBehavior || animAfterBehavior !== animAfterGroup) {
-    //   console.log(`[Civilian ${this.index}] Anim OVERWRITTEN! AfterPerson:${animAfterPerson} AfterBehavior:${animAfterBehavior} AfterGroup:${animAfterGroup}`);
-    // }
-
-    this.checkIfTheresViolenceAroundMe()
-
+    this.checkIfTheresViolenceAroundMe();
   }
 
   checkIfTheresViolenceAroundMe() {
