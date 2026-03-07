@@ -80,6 +80,7 @@ const umdConfig = {
         minimizer: [
             new TerserPlugin({
                 terserOptions: {
+                    keep_classnames: true,
                     compress: {
                         drop_console: false,
                         drop_debugger: true,

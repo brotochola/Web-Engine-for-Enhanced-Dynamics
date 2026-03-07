@@ -1720,6 +1720,8 @@ class ParticleWorker extends AbstractWorker {
     if (!Grid.cellSleepingData || Grid.totalCells === 0) return;
 
     const transformActive = Transform.active;
+    if (!transformActive) return;
+
     const rigidBodyActive = RigidBody.active;
     const colliderActive = Collider.active;
     const rigidBodySleeping = RigidBody.sleeping;

@@ -41,10 +41,14 @@ const workers = {
     pre_render_worker: fs.readFileSync(path.join(workersDir, 'pre_render_worker.min.js'), 'utf8'),
 };
 
-// Read AudioWorklet processor source (can't be loaded via Blob URL the same way,
-// but we embed it so SoundManager can create one at runtime in bundle mode)
+// Read AudioWorklet processor source (embedded so SoundManager can create one at runtime)
 const audioWorkletSource = fs.readFileSync(
     path.join(rootDir, 'src', 'workers', 'AudioMixerProcessor.js'), 'utf8'
+);
+
+// Read DebugUI CSS (embedded so _injectStyles works without fetching a separate file)
+const debugUICSS = fs.readFileSync(
+    path.join(rootDir, 'src', 'core', 'DebugUI.css'), 'utf8'
 );
 
 // Step 3: Generate bundle entry with workers embedded in WEED
@@ -73,6 +77,9 @@ WEED.WorkerSources = {
 
 // Embed AudioWorklet processor source (SoundManager uses this via Blob URL in bundle mode)
 WEED.AudioWorkletSource = ${JSON.stringify(audioWorkletSource)};
+
+// Embed DebugUI CSS (injected via <style> tag instead of fetching a separate file)
+WEED.DebugUICSS = ${JSON.stringify(debugUICSS)};
 
 // Helper to create worker from embedded source
 WEED.createWorker = function(workerName) {

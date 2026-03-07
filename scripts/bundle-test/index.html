@@ -4,13 +4,35 @@
   <meta charset="UTF-8">
   <title>WeedJS Bundle Smoke Test</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { margin: 0; overflow: hidden; background: #111; }
-    canvas { display: block; width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #111;
+    }
+
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      position: fixed;
+      top: 0;
+      left: 0;
+    }
+
     #info {
-      position: fixed; top: 12px; left: 12px;
-      color: #8f8; font: 13px/1.5 monospace;
-      z-index: 1000; pointer-events: none;
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      color: #8f8;
+      font: 13px/1.5 monospace;
+      z-index: 1000;
+      pointer-events: none;
       text-shadow: 0 1px 3px #000;
     }
   </style>
@@ -27,7 +49,7 @@
     This keeps everything in a single HTML file.
   -->
   <script type="text/plain" id="entity-source">
-const { GameObject, RigidBody, Collider, SpriteRenderer, ShapeType, Mouse, rng } = WEED;
+const { GameObject, Keyboard, RigidBody, Collider, SpriteRenderer, ShapeType, Mouse, rng } = WEED;
 
 export class Ball extends GameObject {
   static instances = [];
@@ -51,9 +73,9 @@ export class Ball extends GameObject {
     this.setAlpha(1.0);
 
     this.setSprite('_whiteCircle');
-    const ballRadius = spawnConfig.radius || rng() * 15 + 5;
+    const ballRadius = spawnConfig.radius || rng() * 20 + 10;
     this.collider.radius = ballRadius;
-    this.collider.visualRange = ballRadius * 3;
+    this.collider.visualRange = spawnConfig.visualRange || ballRadius * 3;
 
     const scale = (ballRadius * 2) / 8;
     this.spriteRenderer.scaleX = scale;
@@ -76,6 +98,10 @@ export class Ball extends GameObject {
       if (dist2 > 20000) return;
       this.rigidBody.ax = dx * 0.2;
       this.rigidBody.ay = dy * 0.2;
+    }
+
+    if (Keyboard.m) {
+      this.rigidBody.ax = -3;
     }
   }
 }
@@ -131,30 +157,32 @@ export class Wall extends GameObject {
     Ball.scriptUrl = entityBlobUrl;
     Wall.scriptUrl = entityBlobUrl;
 
-    const WORLD_W = 2000;
-    const WORLD_H = 2000;
-    const BALL_COUNT = 500;
-    const WALL_T = 100;
+    const WORLD_W = 4000;
+    const WORLD_H = 5000;
+    const BALL_COUNT = 9000;
+    const WALL_T = 150;
 
     class TestScene extends Scene {
       static config = {
         worldWidth: WORLD_W,
         worldHeight: WORLD_H,
         spatial: {
-          cellSize: 80,
-          maxNeighbors: 256,
+          numberOfSpatialWorkers: 2,
+          cellSize: 100,
+          maxNeighbors: 512,
           noLimitFPS: true,
+          collisionCandidateSearchMargin: 0.5
         },
         logic: { noLimitFPS: true },
-        particle: { noLimitFPS: true, maxParticles: 0, decals: false },
+        particle: { noLimitFPS: true, maxParticles: 0, decals: false, decalsTileSize: 256, decalsResolution: 0.5 },
         physics: {
-          subStepCount: 4,
-          noLimitFPS: true,
-          maxCollisionPairs: 50000,
-          gravity: { x: 0, y: 0.5 },
+          subStepCount: 4, // Subdivide each 60fps frame into 4 constraint-solving passes
+          noLimitFPS: true, // Run physics as fast as possible (uses fixed-timestep accumulator)
+          maxCollisionPairs: 100000, //this is to trigger the collision callbacks, not the resolve collisions
           verletDamping: 0.9999,
           boundaryElasticity: 0,
           collisionResponseStrength: 0.66,
+          gravity: { x: 0, y: 0.5 },
           sleepThreshold: 0.5,
           wakeUpThreshold: 0.5,
           sleepDuration: 10,
@@ -164,8 +192,8 @@ export class Wall extends GameObject {
       };
 
       static entities = [
-        [Ball, BALL_COUNT + 100],
-        [Wall, 10],
+        [Ball, 10000],
+        [Wall, 1000],
       ];
 
       constructor(game) {
@@ -178,15 +206,19 @@ export class Wall extends GameObject {
         const w = WORLD_W, h = WORLD_H, t = WALL_T;
 
         this.spawnEntity(Wall, { x: w / 2, y: h - t / 2, width: w, height: t });
-        this.spawnEntity(Wall, { x: w / 2, y: t / 2,     width: w, height: t });
-        this.spawnEntity(Wall, { x: t / 2, y: h / 2,     width: t, height: h });
+        this.spawnEntity(Wall, { x: w / 2, y: t / 2, width: w, height: t });
+        this.spawnEntity(Wall, { x: t / 2, y: h / 2, width: t, height: h });
         this.spawnEntity(Wall, { x: w - t / 2, y: h / 2, width: t, height: h });
 
         for (let i = 0; i < BALL_COUNT; i++) {
-          this.spawnEntity(Ball, {
-            x: t + Math.random() * (w - t * 2),
-            y: t + Math.random() * (h - t * 2),
-          });
+          setTimeout(() => {
+            this.spawnEntity(Ball, {
+              x: 0.2 * w + Math.random() * w * 0.6,
+              y: 0.2 * h + Math.random() * h * 0.6,
+              vx: 0,
+              vy: 0,
+            });
+          }, i);
         }
 
         Camera.centerOn(this.camX, this.camY);
@@ -198,9 +230,9 @@ export class Wall extends GameObject {
       update(dtRatio) {
         const speed = 10 / Camera.zoom;
         const kb = this.keyboard;
-        if (kb.w || kb.arrowup)    this.camY -= speed;
-        if (kb.s || kb.arrowdown)  this.camY += speed;
-        if (kb.a || kb.arrowleft)  this.camX -= speed;
+        if (kb.w || kb.arrowup) this.camY -= speed;
+        if (kb.s || kb.arrowdown) this.camY += speed;
+        if (kb.a || kb.arrowleft) this.camX -= speed;
         if (kb.d || kb.arrowright) this.camX += speed;
         this.camX = Math.max(0, Math.min(this.camX, WORLD_W));
         this.camY = Math.max(0, Math.min(this.camY, WORLD_H));

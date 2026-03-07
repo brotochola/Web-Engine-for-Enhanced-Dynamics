@@ -949,19 +949,27 @@ export class DebugUI {
   async _injectStyles() {
     if (document.getElementById('debug-ui-styles')) return;
 
-    try {
-      // Fetch CSS file from the same directory as this module
-      const cssPath = new URL('./DebugUI.css', import.meta.url).href;
-      const response = await fetch(cssPath);
-      const cssText = await response.text();
+    let cssText = null;
 
+    // Bundle mode: CSS embedded as a string in WEED.DebugUICSS
+    if (typeof globalThis.WEED !== 'undefined' && globalThis.WEED.DebugUICSS) {
+      cssText = globalThis.WEED.DebugUICSS;
+    } else {
+      // Dev mode: fetch from source directory
+      try {
+        const cssPath = new URL('./DebugUI.css', import.meta.url).href;
+        const response = await fetch(cssPath);
+        cssText = await response.text();
+      } catch (error) {
+        console.error('Failed to load DebugUI.css:', error);
+      }
+    }
+
+    if (cssText) {
       const style = document.createElement('style');
       style.id = 'debug-ui-styles';
       style.textContent = cssText;
       document.head.appendChild(style);
-    } catch (error) {
-      console.error('Failed to load DebugUI.css:', error);
-      // Fallback: continue without styles (or could inject minimal inline styles)
     }
   }
 

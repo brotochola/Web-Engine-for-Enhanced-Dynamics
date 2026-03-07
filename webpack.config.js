@@ -45,6 +45,7 @@ const optimization = {
     minimizer: [
         new TerserPlugin({
             terserOptions: {
+                keep_classnames: true,
                 compress: {
                     drop_console: true,
                     drop_debugger: true,
