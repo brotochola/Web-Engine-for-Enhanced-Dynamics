@@ -108,7 +108,9 @@ export class DebugUI {
       audioMax: -1,
       audioLoaded: -1,
       audioDropped: -1,
-      audioState: '',
+      audioMixGain: -1,
+      audioMasterVol: -1,
+      audioMuted: false,
       audioRate: -1,
       audioLatency: -1,
       activeGO: -1,
@@ -322,7 +324,7 @@ export class DebugUI {
     audioLabel.textContent = 'Audio:';
     audioRow.appendChild(audioLabel);
 
-    const audioStats = ['Slots', 'Loaded', 'Dropped', 'State', 'Rate', 'Latency'];
+    const audioStats = ['Slots', 'Loaded', 'Dropped', 'MixGain', 'MasterVol', 'Rate', 'Latency'];
     this.elements.audioStats = {};
     for (const stat of audioStats) {
       const cell = document.createElement('div');
@@ -546,7 +548,6 @@ export class DebugUI {
     const active = (audioMetrics.activeSlots || 0) | 0;
     const max = (audioMetrics.maxSlots || 0) | 0;
     const loaded = (audioMetrics.loadedSounds || 0) | 0;
-    const state = audioMetrics.state || 'closed';
     const rate = (audioMetrics.sampleRate || 0) | 0;
     const baseLat = audioMetrics.baseLatency || 0;
     const outLat = audioMetrics.outputLatency || 0;
@@ -568,9 +569,18 @@ export class DebugUI {
       els.Dropped.textContent = 'Dropped: ' + dropped;
     }
 
-    if (state !== pv.audioState) {
-      pv.audioState = state;
-      els.State.textContent = 'Ctx: ' + state;
+    const mixGainR = ((audioMetrics.mixGain || 0) * 100 + 0.5) | 0;
+    if (mixGainR !== pv.audioMixGain) {
+      pv.audioMixGain = mixGainR;
+      els.MixGain.textContent = 'Mix: ' + mixGainR + '%';
+    }
+
+    const muted = audioMetrics.muted;
+    const masterVolR = ((audioMetrics.masterVolume || 0) * 100 + 0.5) | 0;
+    if (masterVolR !== pv.audioMasterVol || muted !== pv.audioMuted) {
+      pv.audioMasterVol = masterVolR;
+      pv.audioMuted = muted;
+      els.MasterVol.textContent = 'Vol: ' + masterVolR + '%' + (muted ? ' (muted)' : '');
     }
 
     if (rate !== pv.audioRate) {

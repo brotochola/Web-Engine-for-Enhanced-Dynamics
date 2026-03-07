@@ -155,8 +155,10 @@ export const BULLET_DEFAULTS = {
 // ============================================================================
 
 export const AUDIO_DEFAULTS = {
-  // Max simultaneous sounds (AudioWorklet SAB slot count)
-  maxSlots: 128,
+  maxSlots: 128, // Max simultaneous sounds (AudioWorklet SAB slot count)
+  mixGain: 0.5, // Mix gain (0-1)
+  masterVolume: 1.0, // Master volume (0-1)
+
 };
 
 // ============================================================================

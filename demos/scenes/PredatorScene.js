@@ -431,7 +431,7 @@ export class PredatorScene extends WEED.Scene {
 
     // // console.log(dtRatio, deltaTime, accumulatedTime, frameNumber)
     if (frameNumber % 300 === 0) {
-      // this.createNavGridForTheFlowField()
+      this.createNavGridForTheFlowField()
     }
   }
 

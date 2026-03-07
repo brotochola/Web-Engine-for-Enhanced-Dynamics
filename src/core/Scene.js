@@ -245,6 +245,9 @@ class Scene {
       maxSlots: 0,
       loadedSounds: 0,
       dropped: 0,
+      mixGain: 0,
+      masterVolume: 0,
+      muted: false,
       state: 'closed',
       sampleRate: 0,
       baseLatency: 0,
@@ -686,7 +689,12 @@ class Scene {
     console.log(`[Scene] ✅ SharedArrayBuffer support confirmed`);
 
     // Initialize AudioWorklet mixer and autoplay gate
-    await SoundManager.initializeAudioWorklet(this.config.audio?.maxSlots);
+    const audioConfig = this.config.audio || {};
+    await SoundManager.initializeAudioWorklet(
+      audioConfig.maxSlots,
+      audioConfig.mixGain,
+      audioConfig.masterVolume
+    );
     SoundManager.initializeAutoplayGate();
 
     // Load entity scripts dynamically in main thread (like workers do)
@@ -826,6 +834,7 @@ class Scene {
     window.NavGrid = NavGrid;
     window.Grid = Grid;
     window.DecorationPool = DecorationPool;
+    window.SoundManager = SoundManager;
 
     console.log(
       `🌍 Exposed ${exposedEntities.length} entity classes and ${componentMap.size} components globally (${initializedCount} with SAB views)`
@@ -2588,6 +2597,9 @@ class Scene {
     audioMetrics.maxSlots = am.maxSlots;
     audioMetrics.loadedSounds = am.loadedSounds;
     audioMetrics.dropped = am.dropped;
+    audioMetrics.mixGain = am.mixGain;
+    audioMetrics.masterVolume = am.masterVolume;
+    audioMetrics.muted = am.muted;
     audioMetrics.state = am.state;
     audioMetrics.sampleRate = am.sampleRate;
     audioMetrics.baseLatency = am.baseLatency;
@@ -2832,6 +2844,9 @@ class Scene {
       maxSlots: 0,
       loadedSounds: 0,
       dropped: 0,
+      mixGain: 0,
+      masterVolume: 0,
+      muted: false,
       state: 'closed',
       sampleRate: 0,
       baseLatency: 0,

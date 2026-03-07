@@ -3,6 +3,8 @@
 // Reads play commands from a SharedArrayBuffer slot array, mixes all active
 // sounds with pitch interpolation + equal-power pan, and writes stereo output.
 //
+// SAB header (4 words): [maxSlots(i32), droppedCount(i32), mixGain(f32), masterVolume(f32)]
+//
 // SAB slot layout per slot (8 × Int32/Float32, 32 bytes):
 //   +0 state   (Int32)   0=free  1=playing  2=claiming (skip)
 //   +1 audioId (Int32)
@@ -55,6 +57,7 @@ class MixerProcessor extends AudioWorkletProcessor {
     var i32 = this._i32;
     var f32 = this._f32;
     var PI_4 = Math.PI * 0.25;
+    var mixGain = f32[2] || 1;
 
     for (var s = 0; s < this._max; s++) {
       var b = H + s * S;
@@ -63,7 +66,7 @@ class MixerProcessor extends AudioWorkletProcessor {
       var id = i32[b + 1];
       var pitch = f32[b + 2] || 1;
       var pan = f32[b + 3];
-      var vol = f32[b + 4];
+      var vol = f32[b + 4] * mixGain;
       var loop = i32[b + 5];
       var cursor = f32[b + 6];
 
@@ -107,10 +110,13 @@ class MixerProcessor extends AudioWorkletProcessor {
       f32[b + 6] = ended ? 0 : cursor;
     }
 
+    var masterVol = f32[3];
     for (var i = 0; i < frames; i++) {
+      L[i] *= masterVol;
       if (L[i] > 1) L[i] = 1;
       else if (L[i] < -1) L[i] = -1;
       if (R) {
+        R[i] *= masterVol;
         if (R[i] > 1) R[i] = 1;
         else if (R[i] < -1) R[i] = -1;
       }

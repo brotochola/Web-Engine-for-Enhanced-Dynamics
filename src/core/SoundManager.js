@@ -5,7 +5,7 @@
 // Main thread decodes audio files and sends PCM to the worklet via postMessage.
 //
 // SAB Layout (HEADER_SIZE + maxSlots * SLOT_SIZE words × 4 bytes):
-//   HEADER [0..3]: [maxSlots, droppedCount, reserved, reserved]
+//   HEADER [0..3]: [maxSlots(i32), droppedCount(i32), mixGain(f32), masterVolume(f32)]
 //   Each SLOT [+0..+7]:
 //     +0 state   (Int32)   0=free 1=playing 2=claiming
 //     +1 audioId (Int32)
@@ -24,6 +24,8 @@ export class SoundManager {
   // SAB slot layout
   static HEADER_SIZE = 4;
   static HEADER_DROPPED = 1;
+  static HEADER_MIX_GAIN = 2;
+  static HEADER_MASTER_VOL = 3;
   static SLOT_SIZE = 8;
   static STATE_FREE = 0;
   static STATE_PLAYING = 1;
@@ -38,6 +40,10 @@ export class SoundManager {
   // AudioWorklet (main thread only)
   static _audioCtx = null;
   static _workletNode = null;
+
+  // Volume state (main thread tracks these for mute/unmute restore)
+  static _muted = false;
+  static _savedMasterVolume = 1.0;
 
   // Spatial culling / panning
   static _spatialResult = { audible: 1, gain: 1, pan: 0 };
@@ -89,7 +95,7 @@ export class SoundManager {
 
   // ─── AudioWorklet initialization (main thread only) ─────────────────────────
 
-  static async initializeAudioWorklet(maxSlots = 64) {
+  static async initializeAudioWorklet(maxSlots = 64, mixGain = 0.5, masterVolume = 1.0) {
     if (this._isWorkerContext()) return false;
     if (this._audioCtx) return true;
 
@@ -106,6 +112,11 @@ export class SoundManager {
     this._i32.fill(0);
     Atomics.store(this._i32, 0, maxSlots);
 
+    this._f32[this.HEADER_MIX_GAIN] = Math.max(0, Math.min(1, mixGain));
+    this._f32[this.HEADER_MASTER_VOL] = Math.max(0, Math.min(1, masterVolume));
+    this._savedMasterVolume = this._f32[this.HEADER_MASTER_VOL];
+    this._muted = false;
+
     this._workletNode = new AudioWorkletNode(this._audioCtx, 'weed-audio-mixer', {
       numberOfOutputs: 1,
       outputChannelCount: [2],
@@ -115,7 +126,7 @@ export class SoundManager {
     this._workletNode.port.postMessage({ type: 'init', sab: this._sab, maxSlots });
 
     console.log(
-      `[SoundManager] AudioWorklet mixer initialized (${maxSlots} slots, ${sabBytes} bytes SAB)`
+      `[SoundManager] AudioWorklet mixer initialized (${maxSlots} slots, mixGain=${mixGain}, masterVol=${masterVolume})`
     );
     return true;
   }
@@ -302,11 +313,47 @@ export class SoundManager {
       maxSlots: this._maxSlots,
       loadedSounds: this._nameToId.size,
       dropped: this._i32 ? Atomics.load(this._i32, this.HEADER_DROPPED) : 0,
+      mixGain: this._f32 ? this._f32[this.HEADER_MIX_GAIN] : 0,
+      masterVolume: this._muted ? this._savedMasterVolume : (this._f32 ? this._f32[this.HEADER_MASTER_VOL] : 0),
+      muted: this._muted,
       state: ctx ? ctx.state : 'closed',
       sampleRate: ctx ? ctx.sampleRate : 0,
       baseLatency: ctx ? (ctx.baseLatency || 0) : 0,
       outputLatency: ctx ? (ctx.outputLatency || 0) : 0,
     };
+  }
+
+  // ─── Volume controls ─────────────────────────────────────────────────────
+
+  static setMixGain(value) {
+    if (!this._f32) return;
+    this._f32[this.HEADER_MIX_GAIN] = Math.max(0, Math.min(1, value));
+  }
+
+  static getMixGain() {
+    return this._f32 ? this._f32[this.HEADER_MIX_GAIN] : 0;
+  }
+
+  static setMasterVolume(value) {
+    const clamped = Math.max(0, Math.min(1, value));
+    this._savedMasterVolume = clamped;
+    if (!this._muted && this._f32) {
+      this._f32[this.HEADER_MASTER_VOL] = clamped;
+    }
+  }
+
+  static getMasterVolume() {
+    return this._savedMasterVolume;
+  }
+
+  static setMuted(muted) {
+    this._muted = !!muted;
+    if (!this._f32) return;
+    this._f32[this.HEADER_MASTER_VOL] = this._muted ? 0 : this._savedMasterVolume;
+  }
+
+  static isMuted() {
+    return this._muted;
   }
 
   // ─── Private ──────────────────────────────────────────────────────────────
@@ -473,7 +520,7 @@ export class SoundManager {
   static _tryResumeAudioContext() {
     const ctx = this._audioCtx;
     if (!ctx || ctx.state !== 'suspended') return;
-    Promise.resolve(ctx.resume()).catch(() => {});
+    Promise.resolve(ctx.resume()).catch(() => { });
   }
 
   static _detachUnlockListeners() {
