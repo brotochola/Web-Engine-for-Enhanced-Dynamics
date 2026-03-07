@@ -482,6 +482,9 @@ export class SoundManager {
     const viewport = Camera.getViewportBounds();
     if (!viewport || !Number.isFinite(viewport.width) || viewport.width <= 0) return out;
 
+    const zoom = Camera.zoom;
+    const zoomGain = (zoom > 0 && zoom < 1) ? zoom : 1;
+
     const left = viewport.left;
     const right = viewport.right;
     const top = viewport.top;
@@ -496,7 +499,10 @@ export class SoundManager {
     const dyOut = worldY < top ? top - worldY : worldY > bottom ? worldY - bottom : 0;
     const outsideDistance = Math.sqrt(dxOut * dxOut + dyOut * dyOut);
 
-    if (outsideDistance <= 0) return out;
+    if (outsideDistance <= 0) {
+      out.gain = zoomGain;
+      return out;
+    }
 
     const gain = 1 - outsideDistance / viewportWidth;
     if (gain <= 0) {
@@ -505,7 +511,7 @@ export class SoundManager {
       return out;
     }
 
-    out.gain = gain;
+    out.gain = gain * zoomGain;
     return out;
   }
 

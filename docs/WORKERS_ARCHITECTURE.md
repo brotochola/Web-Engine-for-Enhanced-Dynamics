@@ -15,6 +15,7 @@ Each worker owns its data region. Nobody steps on anybody else's bytes. It's bea
 | `particle_worker` | 1 | No | No | Particles, bullets, decals, navigation, visibility lists |
 | `pre_render_worker` | 1 | No | No | Animation, Y-sort, render + shadow queue assembly |
 | `pixi_worker` | 1 | No | No | PixiJS on OffscreenCanvas. Draws the frame. |
+| `AudioMixerProcessor` | 1 | No | No | Real-time PCM mixing on audio thread (AudioWorklet) |
 
 All workers live in `src/workers/`. Created in `Scene.js` (~line 1819).
 
@@ -226,6 +227,39 @@ Consumes the render queues and draws to an OffscreenCanvas. Never touches game s
 
 ---
 
+### AudioMixerProcessor (AudioWorklet, 1)
+
+Not a Web Worker — an `AudioWorkletProcessor` running on the browser's **audio render thread** at hardware sample rate (typically 44.1/48 kHz, ~128 samples per `process()` call). Communicates with the rest of the engine through a SharedArrayBuffer slot array managed by `SoundManager`.
+
+**How sound gets played:**
+1. Any thread (logic worker, main thread) calls `SoundManager.play()` which atomically claims a free SAB slot via `Atomics.compareExchange`
+2. The worklet's `process()` scans slots every ~2.9 ms, picks up `state === 1` (playing)
+3. Worklet reads pre-loaded PCM buffers, applies pitch interpolation + equal-power stereo pan, advances cursor
+4. When a sound finishes (non-looping), worklet sets `state = 0` to free the slot
+
+**Slot claiming is lock-free.** Writers use a CAS loop over the slot array; the worklet reads atomically. No postMessage in the hot path.
+
+**PCM assets** are decoded on the main thread (`AudioContext.decodeAudioData`) and transferred to the worklet via `postMessage({ type: 'load', id, channels, length })`. Once loaded, asset data stays local to the worklet process.
+
+**Spatial audio:** `SoundManager._computeSpatial()` runs on the caller's thread before writing the slot. It derives `gain` (distance attenuation from camera viewport) and `pan` (stereo position relative to viewport center). Sounds a full viewport-width outside the camera are culled and never written.
+
+| Buffer / Data | Access | Notes |
+|---|---|---|
+| Audio mixer SAB (slot array) | Read | Scans all slots per `process()` call |
+| Audio mixer SAB (slot cursor, state) | **Write** | Advances cursor, frees finished slots |
+| PCM asset buffers (local `Map`) | Read | `Float32Array[]` per loaded sound |
+| Audio output (stereo) | **Write** | `outputs[0][0]` (L) and `outputs[0][1]` (R) |
+
+**Messages received (from main thread via `port.postMessage`):**
+
+| Message | Payload | Purpose |
+|---|---|---|
+| `init` | `{ sab, maxSlots }` | Attach SAB views |
+| `load` | `{ id, channels, length }` | Store decoded PCM |
+| `unload` | `{ id }` | Free asset memory |
+
+---
+
 ## Dataflow Diagram
 
 ```
@@ -273,6 +307,29 @@ Consumes the render queues and draws to an OffscreenCanvas. Never touches game s
                   │  OffscreenCanvas   │
                   │  final render      │
                   └────────────────────┘
+
+   ═══════════════════════════════════════════════════
+   Audio path (orthogonal to the render pipeline):
+
+   Main Thread / Logic Workers
+        │
+        │  SoundManager.play() writes SAB slot
+        │  (Atomics.compareExchange, lock-free)
+        │
+        ▼
+   ┌──────────────────────────┐
+   │  AudioMixerProcessor     │
+   │  (AudioWorklet thread)   │
+   │                          │
+   │  reads SAB slots every   │
+   │  ~128 samples, mixes     │
+   │  PCM → stereo output     │
+   └──────────────────────────┘
+        ▲
+        │ postMessage (init / load / unload)
+        │ (one-time setup, not per-frame)
+        │
+   Main Thread (decode + transfer PCM)
 ```
 
 ---
@@ -293,6 +350,14 @@ Consumes the render queues and draws to an OffscreenCanvas. Never touches game s
 | `clearAll` | Logic 0 | -- |
 | `updatePhysicsConfig` | Physics | `{ config }` |
 | `setBackground` | Pixi | `{ type, textureId, tileScale, tilemapId, options }` |
+
+### Main Thread → AudioWorklet
+
+| Message | Payload | When |
+|---|---|---|
+| `init` | `{ sab, maxSlots }` | Once, during `SoundManager.initializeAudioWorklet()` |
+| `load` | `{ id, channels: Float32Array[], length }` | Per sound, after `decodeAudioData` |
+| `unload` | `{ id }` | On `SoundManager.unload()` / `reset()` |
 
 ### Workers → Main Thread
 
@@ -362,3 +427,4 @@ Where `N = numberOfSpatialWorkers`, `L = numberOfLogicWorkers`.
 - The only Atomics synchronization is between pre_render and pixi (render queue double buffer) and in the free-list stacks (spawn/despawn).
 - Single-writer ownership eliminates the need for locks on frame-critical data.
 - If your game stutters, check `frameRateData` in debug UI to find which worker is the bottleneck.
+- Audio slot writes are lock-free (CAS). The worklet reads the SAB at hardware sample rate with zero postMessage overhead per frame. If you see `droppedCount` rising, increase `maxSlots` or make sure you `stop()` looping sounds when they're no longer needed.

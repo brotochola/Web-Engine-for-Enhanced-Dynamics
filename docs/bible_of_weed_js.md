@@ -12,6 +12,9 @@ Engine-focused notes for the current `src/` architecture.
 | Default max neighbors/entity | `500` |
 | Default max entities/cell | `64` |
 | Default max collision pairs/frame | `10000` |
+| Audio mixer slots | `64` default (`maxSlots` param) |
+| Audio playback rate range | `0.25..4` |
+| Sound ID type | `Int32` (index into per-name ID map) |
 
 ---
 
@@ -73,6 +76,7 @@ Lifecycle hooks:
 | `particle_worker` | 1 | Particles, decals, nav, visibility buffers |
 | `pre_render_worker` | 1 | Animation + render/shadow queue build |
 | `pixi_worker` | 1 | OffscreenCanvas/Pixi draw |
+| `AudioMixerProcessor` (worklet) | 1 | Real-time PCM mixing on the audio thread via SAB |
 
 ---
 
@@ -100,6 +104,15 @@ WEED.ParticleEmitter.emit({
 // Query helpers (worker context)
 const all = query([WEED.Transform, WEED.Collider]);
 const active = queryActiveEntities([WEED.Transform, WEED.SpriteRenderer]);
+
+// Sound (works from both main thread and workers)
+WEED.SoundManager.play('hit', 0.8);                         // name, volume
+WEED.SoundManager.play('step', 0.5, 0.9, 1.1);             // random pitch 0.9–1.1
+WEED.SoundManager.play('engine', 1, 1, 1, 1);               // loop=1
+WEED.SoundManager.play('explosion', 1, 1, 1, 0, 0, x, y);  // spatial (worldX, worldY)
+WEED.SoundManager.stop('engine');
+WEED.SoundManager.setMasterVolume(0.7);
+WEED.SoundManager.setMuted(true);
 ```
 
 ---
@@ -110,6 +123,7 @@ const active = queryActiveEntities([WEED.Transform, WEED.SpriteRenderer]);
 - Spatial: `cellSize = 128`
 - Logic: `staggeredUpdates = false`
 - Renderer: `interpolation = true`, `maxVisibleRenderables = 40000`
+- Audio: `maxSlots = 64`, `mixGain = 0.5`, `masterVolume = 1.0`
 - Navigation: `enabled = false` by default
 
 See `src/core/ConfigDefaults.js` for the canonical defaults.
@@ -122,3 +136,5 @@ See `src/core/ConfigDefaults.js` for the canonical defaults.
 - Keep `collider.visualRange` tight to reduce neighbor pressure.
 - Use `tickInterval > 1` for heavy AI and enable `logic.staggeredUpdates`.
 - Use particles/decorations for short-lived or static visuals instead of full entities.
+- Sound slots are finite (default 64). One-shot SFX are cheap; don't forget `stop()` on loops.
+- Spatial sound culls anything a full viewport-width outside the camera. Keep that in mind for ambient loops.

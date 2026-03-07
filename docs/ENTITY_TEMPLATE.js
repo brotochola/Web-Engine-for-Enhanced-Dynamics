@@ -1,7 +1,7 @@
 // Entity Template - engine-level starter (no demo dependencies)
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer } = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, SoundManager } = WEED;
 
 class MyEntity extends GameObject {
   // Required for script auto-loading in worker contexts
@@ -48,6 +48,11 @@ class MyEntity extends GameObject {
       const neighborIndex = this.getNeighbor(n);
       // ...
     }
+
+    // Sound playback — works identically on main thread and workers.
+    // play(nameOrId, volume, rateMin, rateMax, loop, mute, worldX, worldY)
+    // Spatial args (worldX/Y) enable distance attenuation + stereo pan.
+    SoundManager.play('step', 0.4, 0.9, 1.1, 0, 0, this.x, this.y);
   }
 
   onCollisionEnter(otherIndex) {

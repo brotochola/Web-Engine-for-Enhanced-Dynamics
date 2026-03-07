@@ -363,7 +363,78 @@ All use a strided `Float32Array` layout: **16 floats (64 bytes) per worker slot*
 
 ---
 
-## 12. Input / Camera / Debug / Misc
+## 12. Audio Mixer SAB (SoundManager ↔ AudioWorklet)
+
+Sound playback is fully lock-free. Workers and the main thread write play commands into a slot array backed by a `SharedArrayBuffer`. The `AudioMixerProcessor` worklet reads the same SAB every `process()` call (~128 samples / ~2.9 ms at 44.1 kHz) and mixes all active sounds into stereo output.
+
+### SAB Layout
+
+**Total size:** `(HEADER_SIZE + maxSlots × SLOT_SIZE) × 4` bytes. Default `maxSlots = 64` → **2,080 bytes**.
+
+#### Header (4 × Int32/Float32, 16 bytes)
+
+| Offset | Field | Type | Description |
+|---:|---|---|---|
+| 0 | `maxSlots` | Int32 | Number of sound slots |
+| 1 | `droppedCount` | Int32 | Incremented when all slots are full and a play request is dropped |
+| 2 | `mixGain` | Float32 | Per-sound mix multiplier (0..1, default 0.5) |
+| 3 | `masterVolume` | Float32 | Global output multiplier (0..1, default 1.0) |
+
+#### Per-Slot Layout (8 × Int32/Float32, 32 bytes)
+
+| Offset | Field | Type | Description |
+|---:|---|---|---|
+| +0 | `state` | Int32 | `0` = free, `1` = playing, `2` = claiming (transient) |
+| +1 | `audioId` | Int32 | Index into the loaded sound asset map |
+| +2 | `pitch` | Float32 | Playback rate (0.25..4, default 1) |
+| +3 | `pan` | Float32 | Stereo pan (-1 left .. +1 right) |
+| +4 | `volume` | Float32 | Per-slot volume (0..1) |
+| +5 | `loop` | Int32 | `0` = one-shot, `1` = loop |
+| +6 | `cursor` | Float32 | Fractional sample position (written by worklet) |
+| +7 | reserved | Int32 | Unused |
+
+#### Slot Claiming Protocol
+
+Slot writes are lock-free via `Atomics.compareExchange`:
+
+1. Writer scans slots for `state === 0` (free)
+2. `Atomics.compareExchange(i32, slotBase, 0, 2)` — atomically claim if still free
+3. Write `audioId`, `pitch`, `pan`, `volume`, `loop`, zero `cursor`
+4. `Atomics.store(i32, slotBase, 1)` — transition to playing
+5. If no free slot found, `Atomics.add(i32, HEADER_DROPPED, 1)` and return -1
+
+This allows any thread (logic workers, main thread) to trigger sounds without locks or postMessage.
+
+#### Worklet-Side Read
+
+The `AudioMixerProcessor.process()` runs on the audio render thread:
+
+1. Iterates all slots, skips any with `state !== 1`
+2. Reads PCM from pre-loaded asset buffers, applying linear interpolation for pitch
+3. Equal-power pan: `gL = cos((pan+1) × π/4) × vol × mixGain`, `gR = sin(…)`
+4. Advances `cursor` by `pitch` per output frame, writes it back to SAB
+5. On end-of-buffer: loops (resets cursor) or frees slot (`state = 0`)
+6. Applies `masterVolume` and hard clips at ±1
+
+| Writer | Reader |
+|---|---|
+| Any thread (logic workers, main thread) via `SoundManager.play()` | `AudioMixerProcessor` worklet (audio thread) |
+
+#### PCM Asset Transfer
+
+Audio assets are **not** in the SAB. They are decoded on the main thread and sent to the worklet via `postMessage`:
+
+| Message | Direction | Payload |
+|---|---|---|
+| `init` | Main → Worklet | `{ sab, maxSlots }` |
+| `load` | Main → Worklet | `{ id, channels: Float32Array[], length }` |
+| `unload` | Main → Worklet | `{ id }` |
+
+The worklet stores assets in a `Map<id, { ch, len, nCh }>`. Only slot state travels through the SAB; decoded PCM stays local to the worklet.
+
+---
+
+## 13. Input / Camera / Debug / Misc
 
 | Buffer | Size | Layout | Writer | Reader |
 |---|---|---|---|---|
@@ -405,6 +476,7 @@ The big picture. Who writes what, who reads what.
 | Decal tiles (RGBA + dirty) | Particle worker | Pixi worker |
 | Stats buffers | Each worker (own slot) | Main thread |
 | Query results | Particle worker | Logic, pre_render |
+| Audio mixer SAB (slot array) | Any thread (`SoundManager.play`) + worklet (`cursor`, `state` free) | `AudioMixerProcessor` worklet (audio thread) |
 | Input/mouse/camera/debug | Main thread | All workers |
 
 ---
@@ -414,4 +486,5 @@ The big picture. Who writes what, who reads what.
 - All SABs are created in `Scene.createSharedBuffers()`. If you add a new buffer, that's where it goes.
 - Prefer extending existing SAB layouts over adding new postMessage payloads for per-frame data.
 - Keep hot-path data in typed arrays. Object allocation in worker loops is the enemy.
+- The audio mixer SAB is created in `SoundManager.initializeAudioWorklet()`, not `Scene.createSharedBuffers()`. Workers receive it via `SoundManager.initializeSlotSAB()`.
 - If you change any layout, update: `Scene.js` (buffer creation), the relevant worker init, and this document.
