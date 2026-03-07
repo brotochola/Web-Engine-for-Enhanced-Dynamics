@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WeedJS Bundle Smoke Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { margin: 0; overflow: hidden; background: #111; }
+    canvas { display: block; width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; }
+    #info {
+      position: fixed; top: 12px; left: 12px;
+      color: #8f8; font: 13px/1.5 monospace;
+      z-index: 1000; pointer-events: none;
+      text-shadow: 0 1px 3px #000;
+    }
+  </style>
+</head>
+<body>
+  <div id="info">WeedJS Bundle Smoke Test — Loading...</div>
+
+  <!-- UMD bundle: sets window.WEED -->
+  <script src="weed.bundle.min.js"></script>
+
+  <!--
+    Entity definitions as inert text (not executed directly).
+    Workers fetch this via Blob URL; main thread imports it dynamically.
+    This keeps everything in a single HTML file.
+  -->
+  <script type="text/plain" id="entity-source">
+const { GameObject, RigidBody, Collider, SpriteRenderer, ShapeType, Mouse, rng } = WEED;
+
+export class Ball extends GameObject {
+  static instances = [];
+  static components = [RigidBody, Collider, SpriteRenderer];
+
+  setup() {}
+  onScreenEnter() {}
+  onScreenExit() {}
+
+  onSpawned(spawnConfig = {}) {
+    this.rigidBody.maxVel = 100;
+    this.rigidBody.maxAcc = 10;
+    this.rigidBody.minSpeed = 0;
+    this.rigidBody.friction = 0.001;
+    this.rotation = 0;
+    this.rigidBody.ax = 0;
+    this.rigidBody.ay = 0;
+
+    this.spriteRenderer.anchorX = 0.5;
+    this.spriteRenderer.anchorY = 0.5;
+    this.setAlpha(1.0);
+
+    this.setSprite('_whiteCircle');
+    const ballRadius = spawnConfig.radius || rng() * 15 + 5;
+    this.collider.radius = ballRadius;
+    this.collider.visualRange = ballRadius * 3;
+
+    const scale = (ballRadius * 2) / 8;
+    this.spriteRenderer.scaleX = scale;
+    this.spriteRenderer.scaleY = scale;
+
+    const colors = [0xff6b6b, 0x4ecdc4, 0xffe66d, 0xa29bfe, 0x95e1d3, 0xfeca57, 0x48dbfb, 0xff9ff3];
+    this.myColor = colors[Math.floor(Math.random() * colors.length)];
+    this.setTint(this.myColor);
+  }
+
+  onCollisionEnter() {}
+  onCollisionExit() {}
+  onDespawned() {}
+
+  tick(dtRatio) {
+    if (Mouse.isButton1Down) {
+      const dx = this.x - Mouse.x;
+      const dy = this.y - Mouse.y;
+      const dist2 = dx * dx + dy * dy;
+      if (dist2 > 20000) return;
+      this.rigidBody.ax = dx * 0.2;
+      this.rigidBody.ay = dy * 0.2;
+    }
+  }
+}
+
+export class Wall extends GameObject {
+  static instances = [];
+  static components = [Collider, SpriteRenderer];
+
+  setup() {
+    this.collider.shapeType = ShapeType.Box;
+    this.spriteRenderer.active = 1;
+    this.collider.restitution = 0;
+    this.collider.visualRange = 0;
+  }
+
+  onScreenEnter() {}
+  onScreenExit() {}
+
+  onSpawned(spawnConfig = {}) {
+    const width = spawnConfig.width || 100;
+    const height = spawnConfig.height || 100;
+
+    this.collider.width = width;
+    this.collider.height = height;
+    this.collider.radius = 0;
+
+    const halfDiag = Math.hypot(width, height) / 2;
+    this.collider.visualRange = halfDiag + 200;
+
+    this.setSprite('_white');
+    this.setScale(width / 8, height / 8);
+    this.setAnchor(0.5, 0.5);
+    this.setTint(0x444444);
+    this.setAlpha(0.8);
+  }
+
+  onDespawned() {}
+  tick(dtRatio) {}
+}
+  </script>
+
+  <script type="module">
+    const { GameEngine, Scene, Camera, Mouse } = WEED;
+
+    // Create a fetchable Blob URL from the inline entity source.
+    // Main thread imports it as a module; workers fetch() the same URL.
+    const entitySource = document.getElementById('entity-source').textContent;
+    const entityBlobUrl = URL.createObjectURL(
+      new Blob([entitySource], { type: 'application/javascript' })
+    );
+
+    const { Ball, Wall } = await import(entityBlobUrl);
+    Ball.scriptUrl = entityBlobUrl;
+    Wall.scriptUrl = entityBlobUrl;
+
+    const WORLD_W = 2000;
+    const WORLD_H = 2000;
+    const BALL_COUNT = 500;
+    const WALL_T = 100;
+
+    class TestScene extends Scene {
+      static config = {
+        worldWidth: WORLD_W,
+        worldHeight: WORLD_H,
+        spatial: {
+          cellSize: 80,
+          maxNeighbors: 256,
+          noLimitFPS: true,
+        },
+        logic: { noLimitFPS: true },
+        particle: { noLimitFPS: true, maxParticles: 0, decals: false },
+        physics: {
+          subStepCount: 4,
+          noLimitFPS: true,
+          maxCollisionPairs: 50000,
+          gravity: { x: 0, y: 0.5 },
+          verletDamping: 0.9999,
+          boundaryElasticity: 0,
+          collisionResponseStrength: 0.66,
+          sleepThreshold: 0.5,
+          wakeUpThreshold: 0.5,
+          sleepDuration: 10,
+        },
+        renderer: { noLimitFPS: true },
+        lighting: { enabled: false },
+      };
+
+      static entities = [
+        [Ball, BALL_COUNT + 100],
+        [Wall, 10],
+      ];
+
+      constructor(game) {
+        super(game);
+        this.camX = WORLD_W / 2;
+        this.camY = WORLD_H / 2;
+      }
+
+      create() {
+        const w = WORLD_W, h = WORLD_H, t = WALL_T;
+
+        this.spawnEntity(Wall, { x: w / 2, y: h - t / 2, width: w, height: t });
+        this.spawnEntity(Wall, { x: w / 2, y: t / 2,     width: w, height: t });
+        this.spawnEntity(Wall, { x: t / 2, y: h / 2,     width: t, height: h });
+        this.spawnEntity(Wall, { x: w - t / 2, y: h / 2, width: t, height: h });
+
+        for (let i = 0; i < BALL_COUNT; i++) {
+          this.spawnEntity(Ball, {
+            x: t + Math.random() * (w - t * 2),
+            y: t + Math.random() * (h - t * 2),
+          });
+        }
+
+        Camera.centerOn(this.camX, this.camY);
+        document.getElementById('info').innerHTML =
+          'WeedJS Bundle Test &#10004;<br>' +
+          BALL_COUNT + ' balls &mdash; click to push, scroll to zoom, WASD to pan';
+      }
+
+      update(dtRatio) {
+        const speed = 10 / Camera.zoom;
+        const kb = this.keyboard;
+        if (kb.w || kb.arrowup)    this.camY -= speed;
+        if (kb.s || kb.arrowdown)  this.camY += speed;
+        if (kb.a || kb.arrowleft)  this.camX -= speed;
+        if (kb.d || kb.arrowright) this.camX += speed;
+        this.camX = Math.max(0, Math.min(this.camX, WORLD_W));
+        this.camY = Math.max(0, Math.min(this.camY, WORLD_H));
+        Camera.follow(this.camX, this.camY, 0.15);
+        Camera.setZoom(Camera.zoom * (1 - Mouse.wheel * 0.001));
+      }
+    }
+
+    const game = new GameEngine({ autoResize: true, debug: true });
+    window.game = game;
+    game.loadScene(TestScene);
+  </script>
+</body>
+</html>

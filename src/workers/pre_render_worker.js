@@ -535,6 +535,21 @@ class PreRenderWorker extends AbstractWorker {
             this._frameCameraZoom = this.cameraData[0];
             this._frameCameraX = this.cameraData[1];
             this._frameCameraY = this.cameraData[2];
+
+            // Re-clamp position for the latched zoom to guard against the SAB
+            // race where the logic worker wrote a new zoom but hasn't finished
+            // clamping position yet.
+            const ww = Camera.worldWidth;
+            const wh = Camera.worldHeight;
+            if (ww !== Infinity && wh !== Infinity && this._frameCameraZoom > 0) {
+                const vpW = Camera.canvasWidth / this._frameCameraZoom;
+                const vpH = Camera.canvasHeight / this._frameCameraZoom;
+                const maxX = Math.max(0, ww - vpW);
+                const maxY = Math.max(0, wh - vpH);
+                this._frameCameraX = Math.max(0, Math.min(this._frameCameraX, maxX));
+                this._frameCameraY = Math.max(0, Math.min(this._frameCameraY, maxY));
+            }
+
             if (this.renderQueueCamera) {
                 this.renderQueueCamera[0] = this._frameCameraZoom;
                 this.renderQueueCamera[1] = this._frameCameraX;

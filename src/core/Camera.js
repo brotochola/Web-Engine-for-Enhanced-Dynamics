@@ -330,22 +330,34 @@ export class Camera {
     const s = smoothing ?? this._smoothing;
     const es = (dtRatio != null && dtRatio > 0) ? Math.min(s * dtRatio, 1.0) : s;
 
-    // Lerp zoom toward target zoom
+    // Compute new zoom without writing to the shared buffer yet
     const currentZoom = this._data[0];
-    const targetZoom = this._data[5];
-    if (targetZoom > 0 && Math.abs(targetZoom - currentZoom) > 0.0001) {
-      const newZoom = currentZoom + (targetZoom - currentZoom) * es;
-      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, newZoom));
+    let newZoom = currentZoom;
+    const tgtZoom = this._data[5];
+    if (tgtZoom > 0 && Math.abs(tgtZoom - currentZoom) > 0.0001) {
+      newZoom = currentZoom + (tgtZoom - currentZoom) * es;
+      newZoom = Math.max(this.minZoom, Math.min(this._maxZoom, newZoom));
     }
 
-    const zoom = this._data[0];
-    const targetCameraX = targetX - this._canvasWidth / (2 * zoom);
-    const targetCameraY = targetY - this._canvasHeight / (2 * zoom);
+    const targetCameraX = targetX - this._canvasWidth / (2 * newZoom);
+    const targetCameraY = targetY - this._canvasHeight / (2 * newZoom);
 
-    this._data[1] += (targetCameraX - this._data[1]) * es;
-    this._data[2] += (targetCameraY - this._data[2]) * es;
+    const newX = this._data[1] + (targetCameraX - this._data[1]) * es;
+    const newY = this._data[2] + (targetCameraY - this._data[2]) * es;
 
-    this._clampToWorldBounds();
+    // Clamp using the LOWER of old/new zoom so the position is valid for
+    // whichever zoom a cross-thread reader might observe (SAB race window).
+    const clampZoom = Math.min(currentZoom, newZoom);
+    const vpW = this._canvasWidth / clampZoom;
+    const vpH = this._canvasHeight / clampZoom;
+    const maxX = Math.max(0, this._worldWidth - vpW);
+    const maxY = Math.max(0, this._worldHeight - vpH);
+
+    // Write position BEFORE zoom so a reader that still sees the old zoom
+    // will never pair it with a position that exceeds its viewport bounds.
+    this._data[1] = Math.max(0, Math.min(newX, maxX));
+    this._data[2] = Math.max(0, Math.min(newY, maxY));
+    this._data[0] = newZoom;
   }
 
   /**

@@ -1029,8 +1029,9 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
-    // Fallback path: if frame-locked camera buffers are unavailable, use live camera SAB.
-    if (!this.renderQueueCamera && this.cameraData) {
+    // Camera is always provided by the pre-render worker via renderQueueCamera.
+    // Fall back to live SAB only during the very first frames before init completes.
+    if (!this._cameraInitialized && this.cameraData) {
       this._renderZoom = this.cameraData[0];
       this._renderCameraX = this.cameraData[1];
       this._renderCameraY = this.cameraData[2];

@@ -34,7 +34,7 @@ export class CameraController extends WEED.GameObject {
     let maxY = 0;
 
     // Find bounding box of all soldiers
-    for (let i = 1; i < mySoldierIndices.length; i++) {
+    for (let i = 0; i < mySoldierIndices.length; i++) {
       const idx = mySoldierIndices[i];
       const x = Transform.x[idx];
       const y = Transform.y[idx];

@@ -16,6 +16,10 @@ import {
   initializeComponentViews,
   exposeComponentsGlobally,
   exposeEntityClassesGlobally,
+  randomColor,
+  distanceSq2D,
+  getDirectionFromAngle,
+  containerRadius,
 } from '../core/utils.js';
 import { Camera } from '../core/Camera.js';
 import { Sun } from '../core/Sun.js';
@@ -27,6 +31,18 @@ import { DecorationComponent } from '../components/DecorationComponent.js';
 import { Constraint } from '../core/Constraint.js';
 import { SoundManager } from '../core/SoundManager.js';
 import { createWorkerQueryFunctions } from '../core/QuerySystem.js';
+
+import { Component } from '../core/Component.js';
+import { FSM } from '../core/FSM.js';
+import { FSMState } from '../core/FSMState.js';
+import { Transform } from '../components/Transform.js';
+import { RigidBody } from '../components/RigidBody.js';
+import { Collider } from '../components/Collider.js';
+import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { LightEmitter } from '../components/LightEmitter.js';
+import { ShadowCaster } from '../components/ShadowCaster.js';
+import { FlashComponent } from '../components/FlashComponent.js';
+import { ShapeType } from '../core/ConfigDefaults.js';
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -584,21 +600,44 @@ export class AbstractWorker {
    */
   registerCoreClasses() {
     self.GameObject = GameObject;
+    self.Component = Component;
+    self.FSM = FSM;
+    self.FSMState = FSMState;
     self.Mouse = Mouse;
     self.Keyboard = Keyboard;
     self.Ray = Ray;
     self.Grid = Grid;
     self.NavGrid = NavGrid;
-    self.ParticleEmitter = ParticleEmitter;
-    self.ParticleComponent = ParticleComponent;
-    self.Flash = Flash;
     self.Camera = Camera;
+    self.Sun = Sun;
     self.SpriteSheetRegistry = SpriteSheetRegistry;
+    self.SoundManager = SoundManager;
+    self.Constraint = Constraint;
+
+    // Components (required for blob worker entity script evaluation)
+    self.Transform = Transform;
+    self.RigidBody = RigidBody;
+    self.Collider = Collider;
+    self.SpriteRenderer = SpriteRenderer;
+    self.ParticleComponent = ParticleComponent;
+    self.LightEmitter = LightEmitter;
+    self.ShadowCaster = ShadowCaster;
+    self.FlashComponent = FlashComponent;
+    self.DecorationComponent = DecorationComponent;
+    self.BulletComponent = BulletComponent;
+
+    // Systems
+    self.ParticleEmitter = ParticleEmitter;
     self.DecorationPool = DecorationPool;
     self.BulletPool = BulletPool;
-    self.Constraint = Constraint;
-    self.Sun = Sun;
-    self.SoundManager = SoundManager;
+    self.Flash = Flash;
+
+    // Enums & utilities
+    self.ShapeType = ShapeType;
+    self.randomColor = randomColor;
+    self.distanceSq2D = distanceSq2D;
+    self.getDirectionFromAngle = getDirectionFromAngle;
+    self.containerRadius = containerRadius;
   }
 
   /**
