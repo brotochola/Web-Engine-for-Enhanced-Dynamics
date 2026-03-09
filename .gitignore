@@ -16,11 +16,7 @@ Thumbs.db
 *.swo
 *~
 
-# Build outputs (if any)
-dist/
-build/
-*.min.js
-*.min.css
+
 
 # Generated files
 src/index.bundle.js
