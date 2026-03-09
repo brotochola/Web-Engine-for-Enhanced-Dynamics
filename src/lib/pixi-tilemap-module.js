@@ -132,10 +132,10 @@ class ae {
   checkIndexBuffer(e) {
     const t = e * 6;
     if (t <= this.ibLen) return;
-    let i = t;
-    for (; i < t; ) i <<= 1;
-    ((this.ibLen = t),
-      (this.indexBuffer.data = Ee(e, w.use32bitIndex ? new Uint32Array(t) : new Uint16Array(t))));
+    let i = (this.ibLen / 6) || 1;
+    for (; i < e; ) i <<= 1;
+    ((this.ibLen = i * 6),
+      (this.indexBuffer.data = Ee(i, w.use32bitIndex ? new Uint32Array(i * 6) : new Uint16Array(i * 6))));
   }
   destroyRenderable(e) {
     (e.vb.destroy(!0), (e.vb = null));
@@ -786,7 +786,7 @@ class oe extends Te {
         (a[o++] = M),
         (a[o++] = z));
     }
-    u.data = a;
+    u.data = a.subarray(0, o);
   }
   isModified(e) {
     return !!(this.rects_count * A !== this.pointsBuf.length || (e && this.hasAnimatedTile));
