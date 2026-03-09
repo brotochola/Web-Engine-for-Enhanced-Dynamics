@@ -1105,7 +1105,7 @@ class PixiRenderer extends AbstractWorker {
     // Create a single shared OffscreenCanvas for synchronous bitmap generation
     // Reused for all tiles - transferToImageBitmap is sync and zero-copy
     this._decalTileCanvas = new OffscreenCanvas(tilePixelSize, tilePixelSize);
-    this._decalTileCtx = this._decalTileCanvas.getContext('2d');
+    this._decalTileCtx = this._decalTileCanvas.getContext('2d', { willReadFrequently: true });
 
     for (let ty = 0; ty < this.decalsTilesY; ty++) {
       for (let tx = 0; tx < this.decalsTilesX; tx++) {

@@ -1654,7 +1654,8 @@ class Scene {
   }
 
   extractDecalTextures(atlasCanvas, atlasJson) {
-    const ctx = atlasCanvas.getContext('2d');
+    const ctx = atlasCanvas.getContext('2d', { willReadFrequently: true });
+
     const textures = {};
     const animationNames = Object.keys(atlasJson.animations);
 

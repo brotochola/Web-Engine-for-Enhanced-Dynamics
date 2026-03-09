@@ -76,6 +76,7 @@ export class AbstractWorker {
     // State
     this.isPaused = true;
     this.globalEntityCount = 0;
+    this.config = {};
 
     // Scheduling
     this.usesCustomScheduler = false; // Override in subclass if using custom scheduler

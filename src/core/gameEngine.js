@@ -59,6 +59,8 @@ class GameEngine {
 
   _createCanvas() {
     this.canvas = document.createElement('canvas');
+    this.canvas.willReadFrequently = true
+
     this.canvas.width = this.canvasWidth;
     this.canvas.height = this.canvasHeight;
     document.body.appendChild(this.canvas);

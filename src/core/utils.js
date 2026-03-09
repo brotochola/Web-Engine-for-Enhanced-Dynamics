@@ -1511,7 +1511,7 @@ export function brightnessToColoredTint(brightness, baseColor = 0xffffff) {
 export function createCircularGradientCanvas(radius = 100, color = 0xffffff) {
   radius = Math.round(radius);
   const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const size = radius * 2;
   canvas.width = size;
   canvas.height = size;
@@ -1565,7 +1565,7 @@ export function createBulletTrailCanvas(width = 10, height = 1, color = 0xffffff
   width = Math.max(1, Math.round(width));
   height = Math.max(1, Math.round(height));
   const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   canvas.width = width;
   canvas.height = height;
 

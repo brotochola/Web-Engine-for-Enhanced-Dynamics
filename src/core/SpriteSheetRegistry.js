@@ -914,7 +914,7 @@ class SpriteSheetRegistry {
                   trimmedCanvas = document.createElement('canvas');
                   trimmedCanvas.width = packedWidth;
                   trimmedCanvas.height = packedHeight;
-                  const trimmedCtx = trimmedCanvas.getContext('2d');
+                  const trimmedCtx = trimmedCanvas.getContext('2d', { willReadFrequently: true });
                   trimmedCtx.drawImage(
                     extractCanvas,
                     trimOffsetX, trimOffsetY, packedWidth, packedHeight,
@@ -1024,7 +1024,7 @@ class SpriteSheetRegistry {
     const whiteSquareCanvas = document.createElement('canvas');
     whiteSquareCanvas.width = 8;
     whiteSquareCanvas.height = 8;
-    const whiteCtx = whiteSquareCanvas.getContext('2d');
+    const whiteCtx = whiteSquareCanvas.getContext('2d', { willReadFrequently: true });
     whiteCtx.fillStyle = '#ffffff';
     whiteCtx.fillRect(0, 0, 8, 8);
     imagesToPack.push({
@@ -1046,7 +1046,7 @@ class SpriteSheetRegistry {
     const whiteCircleCanvas = document.createElement('canvas');
     whiteCircleCanvas.width = 8;
     whiteCircleCanvas.height = 8;
-    const whiteCircleCtx = whiteCircleCanvas.getContext('2d');
+    const whiteCircleCtx = whiteCircleCanvas.getContext('2d', { willReadFrequently: true });
     whiteCircleCtx.fillStyle = '#ffffff';
     whiteCircleCtx.beginPath();
     whiteCircleCtx.arc(4, 4, 4, 0, Math.PI * 2);
@@ -1130,7 +1130,7 @@ class SpriteSheetRegistry {
     const canvas = document.createElement('canvas');
     canvas.width = actualWidth;
     canvas.height = actualHeight;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
     ctx.clearRect(0, 0, actualWidth, actualHeight);
 
@@ -1339,7 +1339,7 @@ class SpriteSheetRegistry {
     const trimmedCanvas = document.createElement('canvas');
     trimmedCanvas.width = bounds.width;
     trimmedCanvas.height = bounds.height;
-    const trimmedCtx = trimmedCanvas.getContext('2d');
+    const trimmedCtx = trimmedCanvas.getContext('2d', { willReadFrequently: true });
 
     trimmedCtx.drawImage(
       img,

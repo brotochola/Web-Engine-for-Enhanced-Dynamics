@@ -2003,7 +2003,7 @@ export class DebugUI {
 
     document.body.appendChild(canvas);
     this._debugCanvas = canvas;
-    this._debugCtx = canvas.getContext('2d');
+    this._debugCtx = canvas.getContext('2d', { willReadFrequently: true });
 
     // Handle resize
     this._resizeHandler = () => {
