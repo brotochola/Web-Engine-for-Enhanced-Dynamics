@@ -68,7 +68,7 @@ export class Person extends Lootable {
       cooldown: 500,
       range: 180,
       rangeSq: 180 ** 2,
-      bulletSpeed: 900,
+      bulletSpeed: 1500,
       sound: 'pistola_disparo',
     },
     MACHINE_GUN: {
@@ -76,7 +76,7 @@ export class Person extends Lootable {
       cooldown: 133,
       range: 500,
       rangeSq: 500 ** 2,
-      bulletSpeed: 1500,
+      bulletSpeed: 2300,
       rapidFire: true,
       sound: 'ametralladora_disparo',
     },
