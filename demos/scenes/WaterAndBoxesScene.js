@@ -7,6 +7,7 @@ import { WaterBall } from '/demos/gameObjects/waterBall.js';
 import { Box } from '/demos/gameObjects/box.js';
 import { Floor } from '/demos/gameObjects/floor.js';
 import { Camera } from '/src/core/Camera.js';
+import { Layer } from '/src/core/Layer.js';
 import WEED from '/src/index.js';
 const { Mouse } = WEED;
 
@@ -16,13 +17,14 @@ export class WaterAndBoxesScene extends WEED.Scene {
   // ========================================
 
   static config = {
-    worldWidth: 5000,
+    worldWidth: 4000,
     worldHeight: 3000,
 
     spatial: {
-      cellSize: 100,
+      cellSize: 64,
       maxNeighbors: 900,
       noLimitFPS: true,
+      numberOfSpatialWorkers: 2,
     },
 
     logic: {
@@ -69,8 +71,13 @@ export class WaterAndBoxesScene extends WEED.Scene {
           fragment: '/demos/shaders/metaball.frag',
           containerBlend: 'add', // Additive blend inside the RT (density field)
           uniforms: {
-            uThreshold: { value: 0.15, type: 'f32' },
+            uThreshold: { value: 0.65, type: 'f32' },
             uWaterColor: { value: [0.15, 0.45, 0.95], type: 'vec3<f32>' },
+            uFoamIntensity: { value: 1.25, type: 'f32' },
+            uFoamWidth: { value: 0.16, type: 'f32' },
+            uSampleStep: { value: 0.0025, type: 'f32' },
+            uOpacity: { value: 0.95, type: 'f32' },
+            uTime: { value: 0.0, type: 'f32' },
           },
         },
       },
@@ -126,7 +133,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
     );
   }
 
-  update(time, delta) {
+  update(dtRatio, deltaTime, time) {
     const panSpeed = this.cameraPanSpeed / Camera.zoom;
     const kb = this.keyboard;
 
@@ -140,6 +147,8 @@ export class WaterAndBoxesScene extends WEED.Scene {
 
     Camera.follow(this.cameraFollowX, this.cameraFollowY, 0.15);
     Camera.setZoom(Camera.zoom * (1 - Mouse.wheel * 0.001));
+
+    Layer.get('water').setUniform('uTime', time * 0.002);
   }
 
   // ========================================
