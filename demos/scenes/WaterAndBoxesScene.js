@@ -37,16 +37,19 @@ export class WaterAndBoxesScene extends WEED.Scene {
 
     physics: {
       subStepCount: 5,
-      noLimitFPS: false,
+      noLimitFPS: true,
       maxCollisionPairs: 100000,
-      verletDamping: 0.99,
+      verletDamping: 0.999,
       boundaryElasticity: 0.3,
-      collisionResponseStrength: 0.9,
+      collisionResponseStrength: 0.99,
       gravity: { x: 0, y: 0.5 },
+      sleepThreshold: 0,
+      wakeUpThreshold: 9999,
+      sleepDuration: 9999999,
     },
 
     renderer: {
-      noLimitFPS: false,
+      noLimitFPS: true,
     },
 
     lighting: {
@@ -58,16 +61,16 @@ export class WaterAndBoxesScene extends WEED.Scene {
     // gradients into blobby metaball shapes.
     layers: {
       water: {
-        zIndex: 3.5,             // Render above default ENTITIES layer (zIndex 3)
+        zIndex: 4,             // Render above default ENTITIES layer (zIndex 3)
         blendMode: 'normal',     // Final display blend of the post-processed sprite
-        resolution: 0.15,         // Half-res RT for performance
+        resolution: 0.25,         // Half-res RT for performance
         maxItems: 5000,
         shader: {
-          // fragment: '/demos/shaders/metaball.frag',
+          fragment: '/demos/shaders/metaball.frag',
           containerBlend: 'add', // Additive blend inside the RT (density field)
           uniforms: {
-            // uThreshold: { value: 0.35, type: 'f32' },
-            // uWaterColor: { value: [0.15, 0.45, 0.95], type: 'vec3<f32>' },
+            uThreshold: { value: 0.1, type: 'f32' },
+            uWaterColor: { value: [0.15, 0.45, 0.95], type: 'vec3<f32>' },
           },
         },
       },
@@ -89,7 +92,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
   // ========================================
 
   static entities = [
-    [WaterBall, 5000],
+    [WaterBall, 8000],
     [Box, 500],
     [Floor, 1000],
   ];
@@ -111,8 +114,8 @@ export class WaterAndBoxesScene extends WEED.Scene {
     console.log('WaterAndBoxesScene: Spawning entities...');
 
     this.spawnFloorAndWalls();
-    this.spawnWaterBalls(this.numberOfWaterBalls);
-    this.spawnBoxes(this.numberOfBoxes);
+    this.spawnWaterBalls(4000);
+    this.spawnBoxes(10);
 
     this.cameraFollowX = this.config.worldWidth / 2;
     this.cameraFollowY = this.config.worldHeight / 2;

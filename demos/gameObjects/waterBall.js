@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, Mouse, RigidBody, Collider, SpriteRenderer, rng } = WEED;
+const { GameObject, Mouse, RigidBody, Collider, SpriteRenderer, rng, randomColor } = WEED;
 
 class WaterBall extends GameObject {
   static scriptUrl = import.meta.url;
@@ -10,17 +10,17 @@ class WaterBall extends GameObject {
   setup() { }
 
   onSpawned(spawnConfig = {}) {
-    this.rigidBody.maxVel = 80;
+    this.rigidBody.maxVel = 400;
     this.rigidBody.maxAcc = 8;
     this.rigidBody.minSpeed = 0;
-    this.rigidBody.friction = 0.001;
+    this.rigidBody.friction = 0
 
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.5;
 
     this.setSprite('_lightGradient');
     this.setLayer('water');
-    this.setTint(0xffffff);
+    this.setTint(randomColor({ min: 0x0000ff, max: 0x00ffff }));
     this.setAlpha(1.0);
 
     const ballRadius = 15
@@ -29,8 +29,8 @@ class WaterBall extends GameObject {
 
     // const GRADIENT_TEX_SIZE = 200;
     // const scale = (ballRadius * 2) / GRADIENT_TEX_SIZE;
-    this.spriteRenderer.scaleX = 10;
-    this.spriteRenderer.scaleY = 10
+    this.spriteRenderer.scaleX = 5;
+    this.spriteRenderer.scaleY = 5
   }
 
   tick(dtRatio) {

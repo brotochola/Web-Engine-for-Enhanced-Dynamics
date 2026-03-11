@@ -19,17 +19,17 @@ class Box extends GameObject {
    */
   setup() {
     // Configure RigidBody physics properties (same for all boxes)
-    this.rigidBody.maxVel = 50; // Max velocity
-    this.rigidBody.maxAcc = 2; // Max acceleration
+    this.rigidBody.maxVel = 150; // Max velocity
+    this.rigidBody.maxAcc = 21; // Max acceleration
     this.rigidBody.minSpeed = 0; // Boxes can come to rest
-    this.rigidBody.friction = 0.01; // Low friction - let boxes settle naturally
+    this.rigidBody.friction = 0.001; // Low friction - let boxes settle naturally
 
     this.onSpawned();
   }
 
-  onScreenEnter() {}
+  onScreenEnter() { }
 
-  onScreenExit() {}
+  onScreenExit() { }
 
   /**
    * LIFECYCLE: Called when box is spawned/respawned from pool
@@ -95,6 +95,9 @@ class Box extends GameObject {
     ];
     this.myColor = colors[Math.floor(Math.random() * colors.length)];
     this.setTint(this.myColor);
+
+    RigidBody.mass[this.index] *= 0.1;
+    RigidBody.invMass[this.index] *= 10;
   }
 
   onCollisionEnter(otherIndex) {
