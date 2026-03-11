@@ -45,12 +45,10 @@ void main() {
 
     float edge = smoothstep(uThreshold - 0.03, uThreshold + 0.03, density);
 
-    vec3 spriteColor = density > 0.001 ? acc.rgb / density : vec3(1.0, 1.0, 1.0);
+    vec3 spriteColor = density > 0.001 ? acc.rgb / density : vec3(1.0);
 
     float depth = smoothstep(uThreshold, uThreshold + 0.6, density);
-    vec3 shallow = uWaterColor * 1.3;
-    vec3 deep    = uWaterColor * 0.45;
-    vec3 waterGradient = mix(shallow, deep, depth);
+    vec3 baseColor = mix(vec3(1.0), spriteColor * 0.45, depth) * edge;
 
     float surfaceBand = 1.0 - smoothstep(0.0, uFoamWidth, abs(density - uThreshold));
     vec2 fieldGrad = vec2(dR - dL, dB - dT);
@@ -61,14 +59,12 @@ void main() {
     float foam = clamp(surfaceBand * foamTurb * uFoamIntensity * mix(0.85, 1.1, ripple), 0.0, 1.0);
 
     vec3 caustics = causticPattern(vTextureCoord * 3.0, uTime);
+    baseColor = baseColor + caustics * (1.0 - baseColor) * edge * 0.35;
 
-    vec3 baseColor = spriteColor * waterGradient * edge;
-    baseColor = mix(baseColor, baseColor * caustics * 1.8, edge * 0.4);
-
-    vec3 waterColorOut = mix(baseColor, vec3(1.0, 1.0, 1.0), foam);
+    vec3 waterColorOut = mix(baseColor, vec3(1.0), foam);
 
     float densityAlpha = smoothstep(0.0, uThreshold + 0.6, density);
-    float alpha = clamp(edge * densityAlpha * uOpacity + foam * 0.2, 0.0, 1.0);
+    float alpha = clamp(edge * depth * uOpacity + foam * 0.2, 0.0, 1.0);
 
     finalColor = vec4(waterColorOut, alpha);
 }
