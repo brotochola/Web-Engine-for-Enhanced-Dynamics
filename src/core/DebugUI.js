@@ -29,6 +29,7 @@ import {
   distanceSq2D,
 } from './utils.js';
 import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from './ConfigDefaults.js';
+import { Layer } from './Layer.js';
 import { NavGrid } from './NavGrid.js';
 import { Grid } from './Grid.js';
 import { Constraint } from './Constraint.js';
@@ -1402,8 +1403,15 @@ export class DebugUI {
     const panel = document.createElement('div');
     panel.className = 'debug-ui-panel';
 
-    // Layer names from Z_INDICES enum (imported from ConfigDefaults)
+    // Layer names: built-in layers from Z_INDICES + custom layers from Layer registry
     const layerNames = Object.keys(Z_INDICES);
+    if (Layer.initialized) {
+      for (const l of Layer.getCustomLayers()) {
+        if (!layerNames.includes(l.name)) {
+          layerNames.push(l.name);
+        }
+      }
+    }
 
     // Store layer control elements for potential updates
     this.elements.layerControls = {};
@@ -1628,6 +1636,13 @@ export class DebugUI {
       // CASTED_SHADOWS - only if shadows are enabled within lighting
       if (config.lighting?.shadowsEnabled) {
         available.add('CASTED_SHADOWS');
+      }
+    }
+
+    // Custom layers from Layer registry
+    if (Layer.initialized) {
+      for (const l of Layer.getCustomLayers()) {
+        available.add(l.name);
       }
     }
 

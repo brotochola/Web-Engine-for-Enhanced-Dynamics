@@ -8,6 +8,7 @@ import { SpriteRenderer } from '../components/SpriteRenderer.js';
 import { LightEmitter } from '../components/LightEmitter.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
+import { Layer } from './Layer.js';
 import { Grid } from './Grid.js';
 import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox, distanceSq2D, binarySearchInsertPoint, binarySearchFind } from './utils.js';
 import Keyboard from './Keyboard.js';
@@ -789,6 +790,27 @@ export class GameObject {
     const v = value ? 1 : 0;
     if (SpriteRenderer.renderVisible[this.index] !== v) {
       SpriteRenderer.renderVisible[this.index] = v;
+      SpriteRenderer.renderDirty[this.index] = 1;
+    }
+    return this;
+  }
+
+  /**
+   * Set rendering layer for this entity
+   * Entities in different layers are rendered into separate ParticleContainers
+   * and can have custom shaders applied (e.g., metaball water effect).
+   * @param {string} layerName - Layer name (e.g., 'water') or 'ENTITIES' for default
+   * @returns {this} For chaining
+   */
+  setLayer(layerName) {
+    if (!this._hasComponents.SpriteRenderer) return this;
+    const id = Layer.getId(layerName);
+    if (id === -1) {
+      console.warn(`setLayer: Layer "${layerName}" not found`);
+      return this;
+    }
+    if (SpriteRenderer.layerId[this.index] !== id) {
+      SpriteRenderer.layerId[this.index] = id;
       SpriteRenderer.renderDirty[this.index] = 1;
     }
     return this;

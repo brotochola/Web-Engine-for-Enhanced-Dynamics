@@ -23,6 +23,7 @@ import {
 } from '../core/utils.js';
 import { Camera } from '../core/Camera.js';
 import { Sun } from '../core/Sun.js';
+import { Layer } from '../core/Layer.js';
 import { Ray } from '../core/Ray.js';
 import { Grid } from '../core/Grid.js';
 import { NavGrid } from '../core/NavGrid.js';
@@ -426,6 +427,11 @@ export class AbstractWorker {
       Sun.initialize(data.sunData);
     }
 
+    // Initialize Layer static class (rendering layers shared across workers)
+    if (data.layerData) {
+      Layer.initializeFromBuffers(data.layerData);
+    }
+
     // Initialize neighbor data reference (single buffer - row ownership eliminates races)
     // Uses Uint16 since max entities = 65535 (fits in 16 bits)
     if (data.buffers?.neighborData) {
@@ -614,6 +620,7 @@ export class AbstractWorker {
     self.SpriteSheetRegistry = SpriteSheetRegistry;
     self.SoundManager = SoundManager;
     self.Constraint = Constraint;
+    self.Layer = Layer;
 
     // Components (required for blob worker entity script evaluation)
     self.Transform = Transform;

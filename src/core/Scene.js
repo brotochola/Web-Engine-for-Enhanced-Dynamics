@@ -46,8 +46,12 @@ import {
   LIGHTING_DEFAULTS,
   NAVIGATION_DEFAULTS,
   SUN_DEFAULTS,
+  LAYER_DEFAULTS,
+  Z_INDICES,
+  LAYER_DEFAULT_BLEND_MODES,
 } from './ConfigDefaults.js';
 import { Sun } from './Sun.js';
+import { Layer } from './Layer.js';
 import { NavGrid } from './NavGrid.js';
 import { Grid } from './Grid.js';
 import { Ray } from './Ray.js';
@@ -513,6 +517,11 @@ class Scene {
       ...NAVIGATION_DEFAULTS,
       ...(this.config.navigation || {}),
     };
+
+    // Layers defaults (custom layers are user-defined, empty by default)
+    if (!this.config.layers) {
+      this.config.layers = {};
+    }
   }
 
   // ========================================
@@ -812,6 +821,7 @@ class Scene {
     window.Grid = Grid;
     window.DecorationPool = DecorationPool;
     window.SoundManager = SoundManager;
+    window.Layer = Layer;
 
   }
 
@@ -1153,6 +1163,53 @@ class Scene {
     new Int32Array(this.buffers.renderQueueSync)[1] = 0;
 
     this.maxVisibleRenderables = maxVisibleRenderables;
+
+    // ========================================
+    // LAYER SYSTEM INITIALIZATION
+    // ========================================
+    // Register built-in layers from Z_INDICES with their blend modes,
+    // then register custom layers from scene config.
+    const builtInLayers = {};
+    for (const [name, zIndex] of Object.entries(Z_INDICES)) {
+      builtInLayers[name] = {
+        zIndex,
+        blendMode: LAYER_DEFAULT_BLEND_MODES[name] || 'normal',
+      };
+    }
+    Layer.initializeFromConfig(this.config.layers, builtInLayers);
+
+    // Allocate per-layer render queue SABs for custom layers
+    this.customLayerRenderQueues = {};
+    const customLayers = Layer.getCustomLayers();
+    for (const layer of customLayers) {
+      const meta = Layer._metadata.customLayerConfigs[layer.name];
+      const layerMaxItems = meta?.maxItems || LAYER_DEFAULTS.maxItemsPerLayer;
+
+      let layerQueueOffset = 0;
+      layerQueueOffset += 4;                   // count Int32
+      layerQueueOffset += layerMaxItems * 4;   // x
+      layerQueueOffset += layerMaxItems * 4;   // y
+      layerQueueOffset += layerMaxItems * 4;   // scaleX
+      layerQueueOffset += layerMaxItems * 4;   // scaleY
+      layerQueueOffset += layerMaxItems * 4;   // rotation
+      layerQueueOffset += layerMaxItems * 4;   // alpha
+      layerQueueOffset += layerMaxItems * 4;   // tint
+      layerQueueOffset += layerMaxItems * 2;   // textureId
+      layerQueueOffset = Math.ceil(layerQueueOffset / 4) * 4;
+      layerQueueOffset += layerMaxItems * 4;   // anchorX
+      layerQueueOffset += layerMaxItems * 4;   // anchorY
+      layerQueueOffset += layerMaxItems;       // type
+      layerQueueOffset = Math.ceil(layerQueueOffset / 4) * 4;
+      layerQueueOffset += layerMaxItems * 4;   // entityIndex
+
+      this.customLayerRenderQueues[layer.id] = {
+        dataA: new SharedArrayBuffer(layerQueueOffset),
+        dataB: new SharedArrayBuffer(layerQueueOffset),
+        maxItems: layerMaxItems,
+        layerId: layer.id,
+        layerName: layer.name,
+      };
+    }
 
     // Entity texture lookup buffer (for shadow system)
     // Maps entityIndex -> last computed globalTextureId
@@ -1625,6 +1682,31 @@ class Scene {
     if (imageUrls.flowfields) {
       await NavGrid.loadStaticFlowfieldsFromJSON(imageUrls.flowfields, this.config.worldWidth, this.config.worldHeight);
     }
+
+    // Load custom layer shader files (.frag/.glsl loaded as text via fetch)
+    this._loadedShaderSources = {};
+    if (this.config.layers) {
+      const shaderPromises = [];
+      for (const [layerName, layerConfig] of Object.entries(this.config.layers)) {
+        if (layerConfig.shader?.fragment) {
+          const fragPath = layerConfig.shader.fragment;
+          shaderPromises.push(
+            fetch(fragPath)
+              .then(res => {
+                if (!res.ok) throw new Error(`Failed to load shader: ${fragPath}`);
+                return res.text();
+              })
+              .then(source => {
+                this._loadedShaderSources[layerName] = source;
+              })
+          );
+        }
+      }
+      if (shaderPromises.length > 0) {
+        await Promise.all(shaderPromises);
+        console.log(`[Scene] Loaded ${shaderPromises.length} custom layer shader(s)`);
+      }
+    }
   }
 
   async preloadAudios(audioManifest) {
@@ -1909,6 +1991,15 @@ class Scene {
     // and pixi_worker can do O(1) texture lookup
     this.textureMetadata = this.buildTextureMetadata();
 
+    // Inject loaded shader source text into Layer metadata for worker serialization
+    if (this._loadedShaderSources) {
+      for (const [layerName, source] of Object.entries(this._loadedShaderSources)) {
+        if (Layer._metadata?.customLayerConfigs?.[layerName]) {
+          Layer._metadata.customLayerConfigs[layerName].shaderFragment = source;
+        }
+      }
+    }
+
     // Collect script paths - convert to absolute URLs for Workers running from Blobs
     // Workers created from Blobs can't resolve relative paths like '/demos/...'
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -2100,6 +2191,9 @@ class Scene {
         soundIdMap: SoundManager.exportSoundIdMap(),
         slotSAB: SoundManager.getSlotSABConfig(),
       },
+      // Layer system data (static layer config + uniform SABs + per-layer render queues)
+      layerData: Layer.getSerializableData(),
+      customLayerRenderQueues: this.customLayerRenderQueues,
     };
 
     // Initialize workers
@@ -2845,6 +2939,26 @@ class Scene {
     allWorkers.forEach((worker) => {
       if (worker) worker.postMessage({ msg: 'resize', width, height });
     });
+  }
+
+  /**
+   * Set a shader uniform on a custom rendering layer.
+   * Can be called from the main thread (Scene subclass) at any time.
+   * The value is written directly to a SharedArrayBuffer; pixi_worker picks it
+   * up on the next frame via an Atomics dirty flag -- zero postMessage overhead.
+   * @param {string} layerName
+   * @param {string} uniformName
+   * @param {number|number[]} value
+   * @returns {this}
+   */
+  setLayerUniform(layerName, uniformName, value) {
+    const layer = Layer.get(layerName);
+    if (!layer) {
+      console.warn(`setLayerUniform: Layer "${layerName}" not found`);
+      return this;
+    }
+    layer.setUniform(uniformName, value);
+    return this;
   }
 
   spawnEntity(EntityClassOrName, spawnConfig = {}) {

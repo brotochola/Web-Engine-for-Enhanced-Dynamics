@@ -1,0 +1,434 @@
+// Layer.js - Rendering layer system for custom shader pipelines
+// Static class with facade instances, backed by SharedArrayBuffer
+//
+// ARCHITECTURE:
+// - Built-in layers (BACKGROUND, DECALS, etc.) registered by engine at init
+// - Custom layers defined in scene config.layers
+// - Each Layer instance is a lightweight facade over SAB arrays (like GameObject)
+// - Layer.get('water').setUniform('uThreshold', 0.4) works from any thread
+//
+// THREAD SAFETY:
+// - Config arrays written once at init (read-only after)
+// - Uniform arrays use Atomics dirty flag for safe cross-worker writes
+
+export class Layer {
+    static MAX_LAYERS = 16;
+    static ENTITIES_ID = -1; // Set during init when ENTITIES is registered
+
+    // Registry
+    static _byName = {};
+    static _byId = [];
+    static count = 0;
+    static initialized = false;
+
+    // Config SAB and typed views (shared, read-only after init)
+    static _configSAB = null;
+    static _zIndex = null;            // Float32Array[MAX_LAYERS]
+    static _blendModeId = null;       // Uint8Array[MAX_LAYERS]
+    static _hasShader = null;         // Uint8Array[MAX_LAYERS]
+    static _resolution = null;        // Float32Array[MAX_LAYERS]
+    static _containerBlendId = null;  // Uint8Array[MAX_LAYERS]
+    static _available = null;         // Uint8Array[MAX_LAYERS]
+    static _hasRenderQueue = null;    // Uint8Array[MAX_LAYERS]
+
+    // Per-layer uniform SABs (only for layers with shaders)
+    static _uniformSABs = [];     // SharedArrayBuffer[] indexed by layer id
+    static _uniformFloats = [];   // Float32Array[] indexed by layer id
+    static _uniformDirty = [];    // Int32Array[1][] indexed by layer id
+    static _uniformMaps = [];     // { name: { offset, size } }[] indexed by layer id
+
+    // Blend mode string <-> ID mapping
+    static BLEND_MODES = ['normal', 'add', 'multiply', 'screen'];
+    static BLEND_MODE_IDS = { 'normal': 0, 'add': 1, 'multiply': 2, 'screen': 3 };
+
+    // Metadata for serialization to workers
+    static _metadata = null;
+
+    constructor(id, name) {
+        this.id = id;
+        this.name = name;
+    }
+
+    // ========================================
+    // FACADE GETTERS (read from static SAB arrays via this.id)
+    // ========================================
+
+    get zIndex() { return Layer._zIndex[this.id]; }
+    get resolution() { return Layer._resolution[this.id]; }
+    get hasShader() { return Layer._hasShader[this.id] === 1; }
+    get available() { return Layer._available[this.id] === 1; }
+    get blendMode() { return Layer.BLEND_MODES[Layer._blendModeId[this.id]] || 'normal'; }
+    get containerBlendMode() { return Layer.BLEND_MODES[Layer._containerBlendId[this.id]] || 'normal'; }
+    get hasRenderQueue() { return Layer._hasRenderQueue[this.id] === 1; }
+    get builtIn() { return this._builtIn; }
+
+    // ========================================
+    // UNIFORM ACCESS (cross-worker safe via SAB + Atomics)
+    // ========================================
+
+    setUniform(name, value) {
+        const map = Layer._uniformMaps[this.id];
+        if (!map) return this;
+        const entry = map[name];
+        if (!entry) return this;
+
+        const floats = Layer._uniformFloats[this.id];
+        if (typeof value === 'number') {
+            floats[entry.offset] = value;
+        } else if (Array.isArray(value)) {
+            for (let i = 0; i < entry.size && i < value.length; i++) {
+                floats[entry.offset + i] = value[i];
+            }
+        }
+        Atomics.store(Layer._uniformDirty[this.id], 0, 1);
+        return this;
+    }
+
+    getUniform(name) {
+        const map = Layer._uniformMaps[this.id];
+        if (!map) return undefined;
+        const entry = map[name];
+        if (!entry) return undefined;
+
+        const floats = Layer._uniformFloats[this.id];
+        if (entry.size === 1) return floats[entry.offset];
+        const result = new Array(entry.size);
+        for (let i = 0; i < entry.size; i++) {
+            result[i] = floats[entry.offset + i];
+        }
+        return result;
+    }
+
+    // ========================================
+    // STATIC API
+    // ========================================
+
+    static get(name) { return this._byName[name] || null; }
+    static getById(id) { return this._byId[id] || null; }
+    static getAll() { return this._byId.filter(Boolean); }
+
+    static getId(name) {
+        const layer = this._byName[name];
+        return layer ? layer.id : -1;
+    }
+
+    static getName(id) {
+        const layer = this._byId[id];
+        return layer ? layer.name : null;
+    }
+
+    static getCustomLayers() {
+        return this._byId.filter(l => l && this._hasRenderQueue[l.id] === 1 && l.id !== this.ENTITIES_ID);
+    }
+
+    // ========================================
+    // CONFIG SAB LAYOUT
+    // ========================================
+    // All layer config packed into one SAB for efficient cross-worker sharing.
+    // Layout:
+    //   zIndex:          Float32[MAX_LAYERS]
+    //   blendModeId:     Uint8[MAX_LAYERS]
+    //   hasShader:       Uint8[MAX_LAYERS]
+    //   (align to 4)
+    //   resolution:      Float32[MAX_LAYERS]
+    //   containerBlendId:Uint8[MAX_LAYERS]
+    //   available:       Uint8[MAX_LAYERS]
+    //   hasRenderQueue:  Uint8[MAX_LAYERS]
+
+    static _createConfigViews(sab) {
+        let offset = 0;
+        this._zIndex = new Float32Array(sab, offset, this.MAX_LAYERS);
+        offset += this.MAX_LAYERS * 4;
+
+        this._blendModeId = new Uint8Array(sab, offset, this.MAX_LAYERS);
+        offset += this.MAX_LAYERS;
+
+        this._hasShader = new Uint8Array(sab, offset, this.MAX_LAYERS);
+        offset += this.MAX_LAYERS;
+
+        // Align for Float32
+        offset = Math.ceil(offset / 4) * 4;
+
+        this._resolution = new Float32Array(sab, offset, this.MAX_LAYERS);
+        offset += this.MAX_LAYERS * 4;
+
+        this._containerBlendId = new Uint8Array(sab, offset, this.MAX_LAYERS);
+        offset += this.MAX_LAYERS;
+
+        this._available = new Uint8Array(sab, offset, this.MAX_LAYERS);
+        offset += this.MAX_LAYERS;
+
+        this._hasRenderQueue = new Uint8Array(sab, offset, this.MAX_LAYERS);
+    }
+
+    static _getConfigSABSize() {
+        let size = 0;
+        size += this.MAX_LAYERS * 4;  // zIndex Float32
+        size += this.MAX_LAYERS;      // blendModeId Uint8
+        size += this.MAX_LAYERS;      // hasShader Uint8
+        size = Math.ceil(size / 4) * 4; // align
+        size += this.MAX_LAYERS * 4;  // resolution Float32
+        size += this.MAX_LAYERS;      // containerBlendId Uint8
+        size += this.MAX_LAYERS;      // available Uint8
+        size += this.MAX_LAYERS;      // hasRenderQueue Uint8
+        return Math.ceil(size / 4) * 4; // final align
+    }
+
+    // ========================================
+    // INITIALIZATION (main thread)
+    // ========================================
+
+    static initializeFromConfig(layersConfig = {}, builtInLayers = {}) {
+        // Reset state
+        this._byName = {};
+        this._byId = [];
+        this.count = 0;
+        this._uniformSABs = [];
+        this._uniformFloats = [];
+        this._uniformDirty = [];
+        this._uniformMaps = [];
+
+        // Allocate config SAB
+        this._configSAB = new SharedArrayBuffer(this._getConfigSABSize());
+        this._createConfigViews(this._configSAB);
+
+        // Register built-in layers (BACKGROUND, DECALS, CASTED_SHADOWS, ENTITIES, LIGHTING)
+        for (const [name, config] of Object.entries(builtInLayers)) {
+            const layer = this._register(name, { ...config, _builtIn: true });
+            if (name === 'ENTITIES') {
+                this.ENTITIES_ID = layer.id;
+                this._hasRenderQueue[layer.id] = 1;
+            }
+        }
+
+        // Register custom layers from scene config
+        for (const [name, config] of Object.entries(layersConfig)) {
+            const layer = this._register(name, {
+                ...config,
+                _builtIn: false,
+            });
+            this._hasRenderQueue[layer.id] = 1;
+
+            if (config.shader && config.shader.uniforms) {
+                this._allocateUniformSAB(layer.id, config.shader.uniforms);
+            }
+        }
+
+        this.initialized = true;
+        this._buildMetadata(layersConfig);
+        return this;
+    }
+
+    static _register(name, config = {}) {
+        if (this.count >= this.MAX_LAYERS) {
+            console.error(`Layer: MAX_LAYERS (${this.MAX_LAYERS}) exceeded, cannot register "${name}"`);
+            return null;
+        }
+
+        const id = this.count++;
+        const layer = new Layer(id, name);
+        layer._builtIn = !!config._builtIn;
+
+        this._zIndex[id] = config.zIndex !== undefined ? config.zIndex : id;
+        this._blendModeId[id] = this.BLEND_MODE_IDS[config.blendMode || 'normal'] || 0;
+        this._hasShader[id] = config.shader ? 1 : 0;
+        this._resolution[id] = config.resolution || 1.0;
+        this._containerBlendId[id] = config.shader?.containerBlend
+            ? (this.BLEND_MODE_IDS[config.shader.containerBlend] || 0)
+            : 0;
+        this._available[id] = 1;
+
+        this._byName[name] = layer;
+        this._byId[id] = layer;
+
+        return layer;
+    }
+
+    // ========================================
+    // UNIFORM SAB ALLOCATION (main thread)
+    // ========================================
+
+    static _allocateUniformSAB(layerId, uniformsConfig) {
+        const map = {};
+        let floatCount = 0;
+
+        for (const [name, def] of Object.entries(uniformsConfig)) {
+            const size = this._getUniformSize(def.type);
+            map[name] = { offset: floatCount, size };
+            floatCount += size;
+        }
+
+        // Layout: Float32[floatCount] + Int32[1] (dirty flag)
+        const floatBytes = floatCount * 4;
+        const dirtyOffset = Math.ceil(floatBytes / 4) * 4; // align dirty flag
+        const totalBytes = dirtyOffset + 4;
+        const sab = new SharedArrayBuffer(totalBytes);
+
+        const floats = new Float32Array(sab, 0, floatCount);
+        const dirty = new Int32Array(sab, dirtyOffset, 1);
+
+        // Write initial values
+        for (const [name, def] of Object.entries(uniformsConfig)) {
+            const entry = map[name];
+            if (typeof def.value === 'number') {
+                floats[entry.offset] = def.value;
+            } else if (Array.isArray(def.value)) {
+                for (let i = 0; i < def.value.length && i < entry.size; i++) {
+                    floats[entry.offset + i] = def.value[i];
+                }
+            }
+        }
+
+        this._uniformSABs[layerId] = sab;
+        this._uniformFloats[layerId] = floats;
+        this._uniformDirty[layerId] = dirty;
+        this._uniformMaps[layerId] = map;
+
+        Atomics.store(dirty, 0, 1);
+    }
+
+    static _getUniformSize(type) {
+        if (!type) return 1;
+        if (type === 'f32' || type === 'i32') return 1;
+        if (type === 'vec2<f32>') return 2;
+        if (type === 'vec3<f32>') return 3;
+        if (type === 'vec4<f32>') return 4;
+        return 1;
+    }
+
+    // ========================================
+    // SERIALIZATION (main thread -> workers)
+    // ========================================
+
+    static _buildMetadata(layersConfig) {
+        this._metadata = {
+            count: this.count,
+            entitiesId: this.ENTITIES_ID,
+            names: [],
+            builtIn: [],
+            customLayerConfigs: {},
+        };
+
+        for (let i = 0; i < this.count; i++) {
+            this._metadata.names[i] = this._byId[i].name;
+            this._metadata.builtIn[i] = this._byId[i]._builtIn;
+        }
+
+        for (const [name, config] of Object.entries(layersConfig)) {
+            const layer = this._byName[name];
+            if (!layer) continue;
+
+            const meta = {
+                id: layer.id,
+                uniformMap: this._uniformMaps[layer.id] || null,
+                shaderFragment: config.shader?.fragment || null,
+                maxItems: config.maxItems || 5000,
+            };
+
+            if (config.shader?.uniforms) {
+                meta.uniformTypes = {};
+                for (const [uName, uDef] of Object.entries(config.shader.uniforms)) {
+                    meta.uniformTypes[uName] = uDef.type || 'f32';
+                }
+            }
+
+            this._metadata.customLayerConfigs[name] = meta;
+        }
+    }
+
+    static getSerializableData() {
+        const uniformSABs = {};
+        for (let i = 0; i < this.count; i++) {
+            if (this._uniformSABs[i]) {
+                uniformSABs[i] = this._uniformSABs[i];
+            }
+        }
+
+        return {
+            configSAB: this._configSAB,
+            uniformSABs,
+            metadata: this._metadata,
+        };
+    }
+
+    // ========================================
+    // INITIALIZATION (workers)
+    // ========================================
+
+    static initializeFromBuffers(data) {
+        if (!data || !data.configSAB) return;
+
+        // Reset
+        this._byName = {};
+        this._byId = [];
+        this._uniformSABs = [];
+        this._uniformFloats = [];
+        this._uniformDirty = [];
+        this._uniformMaps = [];
+
+        // Create typed views over the shared config SAB
+        this._configSAB = data.configSAB;
+        this._createConfigViews(this._configSAB);
+
+        // Reconstruct registry from metadata
+        const meta = data.metadata;
+        this.count = meta.count;
+        this.ENTITIES_ID = meta.entitiesId;
+
+        for (let i = 0; i < meta.count; i++) {
+            const layer = new Layer(i, meta.names[i]);
+            layer._builtIn = meta.builtIn[i];
+            this._byName[meta.names[i]] = layer;
+            this._byId[i] = layer;
+        }
+
+        // Initialize uniform SAB views
+        for (const [idStr, sab] of Object.entries(data.uniformSABs)) {
+            const id = parseInt(idStr);
+            const name = meta.names[id];
+            const customConfig = meta.customLayerConfigs[name];
+            if (!customConfig || !customConfig.uniformMap) continue;
+
+            const uMap = customConfig.uniformMap;
+            let floatCount = 0;
+            for (const entry of Object.values(uMap)) {
+                floatCount = Math.max(floatCount, entry.offset + entry.size);
+            }
+
+            const floatBytes = floatCount * 4;
+            const dirtyOffset = Math.ceil(floatBytes / 4) * 4;
+
+            this._uniformSABs[id] = sab;
+            this._uniformFloats[id] = new Float32Array(sab, 0, floatCount);
+            this._uniformDirty[id] = new Int32Array(sab, dirtyOffset, 1);
+            this._uniformMaps[id] = uMap;
+        }
+
+        this.initialized = true;
+    }
+
+    // ========================================
+    // RESET (scene cleanup)
+    // ========================================
+
+    static reset() {
+        this._byName = {};
+        this._byId = [];
+        this.count = 0;
+        this.initialized = false;
+        this.ENTITIES_ID = -1;
+        this._configSAB = null;
+        this._zIndex = null;
+        this._blendModeId = null;
+        this._hasShader = null;
+        this._resolution = null;
+        this._containerBlendId = null;
+        this._available = null;
+        this._hasRenderQueue = null;
+        this._uniformSABs = [];
+        this._uniformFloats = [];
+        this._uniformDirty = [];
+        this._uniformMaps = [];
+        this._metadata = null;
+    }
+}

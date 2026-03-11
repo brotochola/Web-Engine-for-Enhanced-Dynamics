@@ -23,6 +23,7 @@ import { LightEmitter } from '../components/LightEmitter.js';
 import { Sun } from '../core/Sun.js';
 
 import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES, RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
+import { Layer } from '../core/Layer.js';
 import { sortByY, normalizeAngleDifference, extractRGBNormalizedMut } from '../core/utils.js';
 
 // OPTIMIZED: Pre-defined comparator function for light sorting (avoids closure allocation per frame)
@@ -403,6 +404,9 @@ class PixiRenderer extends AbstractWorker {
     this._rqSpritePoolIndices = []; // Pool indices for release
     this._rqPrevCount = 0;     // Previous frame's renderable count
 
+    // Custom layer rendering infrastructure (populated during initialize)
+    this._customLayers = {};  // layerId -> { buffers, readRef, sprites, poolIndices, prevCount, pc, rt, displaySprite, filter }
+
     // ========================================
     // FLAT TEXTURE LOOKUP (Zero-cost texture resolution)
     // ========================================
@@ -707,6 +711,20 @@ class PixiRenderer extends AbstractWorker {
     }
 
     // Shadow sprites are now in main particleContainer (get camera transform automatically)
+
+    // Apply camera to custom layer ParticleContainers (for non-shader layers on stage)
+    // and position display sprites for shader layers
+    for (const cl of Object.values(this._customLayers)) {
+      if (cl.rt) {
+        // Shader layers: ParticleContainer renders to RT in screen space (like shadows)
+        // No camera transform on the PC itself; it's applied during sprite update
+      } else {
+        // Non-shader layers: ParticleContainer is on the stage directly
+        cl.pc.scale.set(zoom);
+        cl.pc.x = -cameraX * zoom;
+        cl.pc.y = -cameraY * zoom;
+      }
+    }
   }
 
   /**
@@ -1012,6 +1030,11 @@ class PixiRenderer extends AbstractWorker {
           this._setShadowReadBuffer(readBufferIdx);
         }
 
+        // Custom layer queues also swap with the same frame
+        for (const cl of Object.values(this._customLayers)) {
+          cl.readRef = cl.buffers[readBufferIdx];
+        }
+
         // Signal that we've consumed this frame
         // This allows pre_render_worker to reuse this buffer
         this.lastReadFrame = readyFrame;
@@ -1055,6 +1078,9 @@ class PixiRenderer extends AbstractWorker {
 
     // Use render queue from pre_render_worker - no fallback
     this.updateSpritesFromRenderQueue();
+
+    // Update custom layer sprites and render shader layers to their RenderTextures
+    this.updateCustomLayers();
 
     // ========================================
     // LOW-RES OFF-SCREEN RENDERING
@@ -2142,6 +2168,33 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
     }
 
+    // Recreate custom layer RenderTextures at new size
+    for (const cl of Object.values(this._customLayers)) {
+      if (cl.rt) {
+        const resolution = cl.resolution || 1.0;
+        const lw = width * resolution;
+        const lh = height * resolution;
+
+        cl.rt.destroy(true);
+        cl.rt = PIXI.RenderTexture.create({ width: lw, height: lh });
+
+        // Re-bind the raw RT as the shader's input texture
+        if (cl.shader) {
+          cl.shader.resources.uTexture = cl.rt.source;
+        }
+
+        if (cl.rtOut) {
+          cl.rtOut.destroy(true);
+          cl.rtOut = PIXI.RenderTexture.create({ width: lw, height: lh });
+        }
+
+        if (cl.displaySprite) {
+          cl.displaySprite.texture = cl.rtOut || cl.rt;
+          cl.displaySprite.scale.set(1.0 / resolution);
+        }
+      }
+    }
+
     console.log(`PIXI WORKER: Resized to ${width}x${height}`);
   }
 
@@ -2810,6 +2863,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.reportLog('finished creating decoration sprites');
 
     // ========================================
+    // CUSTOM LAYER RENDERING INFRASTRUCTURE
+    // ========================================
+    this.initializeCustomLayers(data);
+
+    // ========================================
     // LAYER REFERENCES MAP - For debug UI control
     // ========================================
     this.buildLayerRefsMap();
@@ -2820,6 +2878,306 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     );
 
     // Note: Game loop will start when "start" message is received from main thread
+  }
+
+  // ========================================
+  // CUSTOM LAYER SYSTEM
+  // ========================================
+
+  /**
+   * Standard fullscreen quad vertex shader for post-processing meshes.
+   * Maps NDC quad to UV space so the fragment shader can sample a RenderTexture.
+   */
+  static FULLSCREEN_VERTEX = `
+    attribute vec2 aPosition;
+    attribute vec2 aUV;
+    varying vec2 vTextureCoord;
+    void main() {
+      vTextureCoord = aUV;
+      gl_Position = vec4(aPosition, 0.0, 1.0);
+    }
+  `;
+
+  /**
+   * Initialize custom layer rendering infrastructure:
+   * - Per-layer ParticleContainers, sprite pools, render queue SAB views
+   * - For shader layers: two RenderTextures (raw + post-processed) + fullscreen Mesh
+   */
+  initializeCustomLayers(data) {
+    if (!data.customLayerRenderQueues || !data.layerData) return;
+
+    const metadata = data.layerData.metadata;
+    if (!metadata?.customLayerConfigs) return;
+
+    for (const [layerName, config] of Object.entries(metadata.customLayerConfigs)) {
+      const layerId = config.id;
+      const lrq = data.customLayerRenderQueues[layerId];
+      if (!lrq) continue;
+
+      const layerObj = Layer.getById(layerId);
+      if (!layerObj) continue;
+
+      const maxItems = lrq.maxItems;
+      const resolution = layerObj.resolution;
+      const hasShader = layerObj.hasShader;
+
+      // Parse double-buffered render queue SABs
+      const sabPair = [lrq.dataA, lrq.dataB];
+      const buffers = [];
+      for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
+        const sab = sabPair[bufIdx];
+        let off = 0;
+        const b = { count: new Int32Array(sab, off, 1) };
+        off += 4;
+        b.x = new Float32Array(sab, off, maxItems); off += maxItems * 4;
+        b.y = new Float32Array(sab, off, maxItems); off += maxItems * 4;
+        b.scaleX = new Float32Array(sab, off, maxItems); off += maxItems * 4;
+        b.scaleY = new Float32Array(sab, off, maxItems); off += maxItems * 4;
+        b.rotation = new Float32Array(sab, off, maxItems); off += maxItems * 4;
+        b.alpha = new Float32Array(sab, off, maxItems); off += maxItems * 4;
+        b.tint = new Uint32Array(sab, off, maxItems); off += maxItems * 4;
+        b.textureId = new Uint16Array(sab, off, maxItems); off += maxItems * 2;
+        off = Math.ceil(off / 4) * 4;
+        b.anchorX = new Float32Array(sab, off, maxItems); off += maxItems * 4;
+        b.anchorY = new Float32Array(sab, off, maxItems); off += maxItems * 4;
+        b.type = new Uint8Array(sab, off, maxItems); off += maxItems;
+        off = Math.ceil(off / 4) * 4;
+        b.entityIndex = new Int32Array(sab, off, maxItems);
+        buffers[bufIdx] = b;
+      }
+
+      // Create ParticleContainer for this layer
+      const containerBlend = layerObj.containerBlendMode;
+      const pc = new PIXI.ParticleContainer({
+        blendMode: containerBlend,
+        dynamicProperties: {
+          vertex: true,
+          position: true,
+          rotation: true,
+          uvs: true,
+          color: true,
+          alpha: true,
+        },
+      });
+
+      const cl = {
+        layerId,
+        layerName,
+        maxItems,
+        resolution,
+        buffers,
+        readRef: buffers[0],
+        sprites: new Array(maxItems).fill(null),
+        poolIndices: new Array(maxItems).fill(-1),
+        prevCount: 0,
+        pc,
+        rt: null,          // Raw density RT (additive blend output)
+        rtOut: null,        // Post-processed RT (after threshold shader)
+        shaderMesh: null,   // Fullscreen quad Mesh with custom shader
+        shader: null,       // Shader instance for uniform updates
+        displaySprite: null,
+      };
+
+      if (hasShader && config.shaderFragment) {
+        const w = this.canvasWidth * resolution;
+        const h = this.canvasHeight * resolution;
+
+        // Two RTs: raw (density accumulation via additive PC) and processed (after shader)
+        cl.rt = PIXI.RenderTexture.create({ width: w, height: h });
+        cl.rtOut = PIXI.RenderTexture.create({ width: w, height: h });
+
+        // Build fullscreen quad geometry (NDC -1..1 mapped to UV 0..1)
+        const geometry = new Geometry({
+          attributes: {
+            aPosition: { buffer: new Float32Array([-1, -1, 1, -1, 1, 1, -1, 1]), format: 'float32x2' },
+            aUV: { buffer: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]), format: 'float32x2' },
+          },
+          indexBuffer: new Uint16Array([0, 1, 2, 0, 2, 3]),
+        });
+
+        // Build uniform resources from the layer's SAB initial values
+        const uniformDefs = {};
+        if (config.uniformMap) {
+          for (const [uName, entry] of Object.entries(config.uniformMap)) {
+            const uType = config.uniformTypes?.[uName] || 'f32';
+            const floats = Layer._uniformFloats[layerId];
+            if (entry.size === 1) {
+              uniformDefs[uName] = { value: floats[entry.offset], type: uType };
+            } else {
+              const arr = new Float32Array(entry.size);
+              for (let k = 0; k < entry.size; k++) arr[k] = floats[entry.offset + k];
+              uniformDefs[uName] = { value: arr, type: uType };
+            }
+          }
+        }
+
+        try {
+          cl.shader = new Shader({
+            glProgram: GlProgram.from({
+              vertex: PixiRenderer.FULLSCREEN_VERTEX,
+              fragment: config.shaderFragment,
+            }),
+            resources: {
+              uTexture: cl.rt.source,
+              customUniforms: uniformDefs,
+            },
+          });
+
+          cl.shaderMesh = new Mesh({ geometry, shader: cl.shader });
+        } catch (err) {
+          console.error(`PIXI WORKER: Failed to compile shader for layer "${layerName}":`, err);
+        }
+
+        // Display sprite shows the post-processed RT on the main stage
+        cl.displaySprite = new PIXI.Sprite(cl.rtOut);
+        cl.displaySprite.anchor.set(0, 0);
+        cl.displaySprite.position.set(0, 0);
+        cl.displaySprite.scale.set(1.0 / resolution);
+        cl.displaySprite.zIndex = layerObj.zIndex;
+        cl.displaySprite.blendMode = layerObj.blendMode;
+
+        this.pixiApp.stage.addChild(cl.displaySprite);
+        console.log(`PIXI WORKER: Custom shader layer "${layerName}" initialized (resolution=${resolution}, RT=${w}x${h})`);
+      } else {
+        // Non-shader layer: PC goes directly on stage
+        pc.zIndex = layerObj.zIndex;
+        this.pixiApp.stage.addChild(pc);
+        console.log(`PIXI WORKER: Custom layer "${layerName}" initialized (no shader)`);
+      }
+
+      this._customLayers[layerId] = cl;
+    }
+
+    // Re-sort stage after adding custom layer display objects
+    if (Object.keys(this._customLayers).length > 0) {
+      this.pixiApp.stage.sortChildren();
+    }
+  }
+
+  /**
+   * Update all custom layer sprites from their render queues and render shader
+   * layers through the two-RT pipeline (density → threshold → display).
+   */
+  updateCustomLayers() {
+    const flatTextures = this.flatTextures;
+    const fallbackTexture = this.particlePool.defaultTexture || (flatTextures.length > 0 ? flatTextures[0] : PIXI.Texture.WHITE);
+
+    for (const cl of Object.values(this._customLayers)) {
+      const ref = cl.readRef;
+      if (!ref) continue;
+
+      const count = ref.count[0];
+      const prevCount = cl.prevCount;
+
+      // Resize sprite pool
+      if (count > prevCount) {
+        for (let i = prevCount; i < count; i++) {
+          const { particle, index } = this.particlePool.acquire();
+          cl.sprites[i] = particle;
+          cl.poolIndices[i] = index;
+        }
+      } else if (count < prevCount) {
+        for (let i = count; i < prevCount; i++) {
+          if (cl.poolIndices[i] !== -1) {
+            this.particlePool.release(cl.poolIndices[i]);
+            cl.sprites[i] = null;
+            cl.poolIndices[i] = -1;
+          }
+        }
+      }
+      cl.prevCount = count;
+
+      cl.pc.particleChildren.length = 0;
+
+      if (count === 0) {
+        // Clear both RTs when empty
+        if (cl.rt) {
+          this.pixiApp.renderer.render({ container: cl.pc, target: cl.rt, clear: true });
+        }
+        if (cl.rtOut && cl.shaderMesh) {
+          this.pixiApp.renderer.render({ container: cl.shaderMesh, target: cl.rtOut, clear: true });
+        }
+        continue;
+      }
+
+      const rqX = ref.x;
+      const rqY = ref.y;
+      const rqScaleX = ref.scaleX;
+      const rqScaleY = ref.scaleY;
+      const rqRotation = ref.rotation;
+      const rqAlpha = ref.alpha;
+      const rqTint = ref.tint;
+      const rqTextureId = ref.textureId;
+      const rqAnchorX = ref.anchorX;
+      const rqAnchorY = ref.anchorY;
+
+      const zoom = this._renderZoom;
+      const cameraX = this._renderCameraX;
+      const cameraY = this._renderCameraY;
+      const resolution = cl.resolution || 1.0;
+      const renderToRT = !!cl.rt;
+
+      for (let i = 0; i < count; i++) {
+        const sprite = cl.sprites[i];
+        if (!sprite) continue;
+
+        const texId = rqTextureId[i];
+        sprite.texture = (texId < flatTextures.length && texId >= 0) ? flatTextures[texId] : fallbackTexture;
+
+        if (renderToRT) {
+          // Screen-space coordinates for RT rendering (like shadow system)
+          sprite.x = (rqX[i] - cameraX) * zoom * resolution;
+          sprite.y = (rqY[i] - cameraY) * zoom * resolution;
+          sprite.scaleX = rqScaleX[i] * zoom * resolution;
+          sprite.scaleY = rqScaleY[i] * zoom * resolution;
+        } else {
+          // World-space coordinates (camera applied via container transform)
+          sprite.x = rqX[i];
+          sprite.y = rqY[i];
+          sprite.scaleX = rqScaleX[i];
+          sprite.scaleY = rqScaleY[i];
+        }
+
+        sprite.rotation = rqRotation[i];
+        sprite.alpha = rqAlpha[i];
+        sprite.tint = rqTint[i];
+        sprite.anchorX = rqAnchorX[i];
+        sprite.anchorY = rqAnchorY[i];
+
+        cl.pc.addParticle(sprite);
+      }
+
+      // Two-pass shader pipeline for shader layers:
+      // 1. Render additive ParticleContainer → raw density RT
+      // 2. Render fullscreen Mesh (threshold shader reads raw RT) → processed RT
+      if (cl.rt && cl.shaderMesh && cl.rtOut) {
+        this.pixiApp.renderer.render({ container: cl.pc, target: cl.rt, clear: true });
+        this.pixiApp.renderer.render({ container: cl.shaderMesh, target: cl.rtOut, clear: true });
+      } else if (!cl.rt) {
+        // Non-shader layer: PC already on stage (no RT needed)
+      }
+
+      // Update shader uniforms from Layer SABs (cross-worker dirty flag)
+      if (cl.shader && Layer._uniformDirty[cl.layerId]) {
+        const dirty = Atomics.exchange(Layer._uniformDirty[cl.layerId], 0, 0);
+        if (dirty) {
+          const floats = Layer._uniformFloats[cl.layerId];
+          const uniformMap = Layer._uniformMaps[cl.layerId];
+          if (floats && uniformMap && cl.shader.resources?.customUniforms?.uniforms) {
+            const u = cl.shader.resources.customUniforms.uniforms;
+            for (const [uName, entry] of Object.entries(uniformMap)) {
+              if (entry.size === 1) {
+                u[uName] = floats[entry.offset];
+              } else if (u[uName] && typeof u[uName] === 'object' && u[uName].length) {
+                for (let k = 0; k < entry.size; k++) {
+                  u[uName][k] = floats[entry.offset + k];
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -2857,6 +3215,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.layerRefs.LIGHTING = this.lightingDisplaySprite;
     } else if (this.lightingMesh) {
       this.layerRefs.LIGHTING = this.lightingMesh;
+    }
+
+    // Custom layers (display sprite for shader layers, ParticleContainer for plain layers)
+    for (const cl of Object.values(this._customLayers)) {
+      const layerObj = Layer.getById(cl.layerId);
+      if (!layerObj) continue;
+      this.layerRefs[layerObj.name] = cl.displaySprite || cl.pc;
     }
 
     const layerNames = Object.keys(this.layerRefs);

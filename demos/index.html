@@ -59,6 +59,7 @@
     import { BichosScene } from '/demos/scenes/bichosScene.js';
     import { ConstraintsTestScene } from '/demos/scenes/constraints_test.js';
     import { CarScene } from '/demos/scenes/carScene.js';
+    import { WaterAndBoxesScene } from '/demos/scenes/WaterAndBoxesScene.js';
 
     // Destructure what we need from WEED
     const { GameEngine } = WEED;
@@ -80,6 +81,7 @@
       { name: '📦 Boxes', class: BallsAndRectanglesScene },
       { name: '🐜 Ants', class: BichosScene },
       { name: '🚗 Car', class: CarScene },
+      { name: '💧 Water & Boxes', class: WaterAndBoxesScene },
     ]
     // Register available scenes with DebugUI for scene switching
     if (game.debugUI) {

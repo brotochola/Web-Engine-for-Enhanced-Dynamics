@@ -34,6 +34,9 @@ export class SpriteRenderer extends Component {
     zOffset: Float32Array,
     blendMode: Uint8Array, // Blend mode (0=normal, 1=add, 2=multiply, etc.)
 
+    // Layer assignment (0 = default ENTITIES layer, set via GameObject.setLayer())
+    layerId: Uint8Array,
+
     // Visibility
     renderVisible: Uint8Array, // Override visibility (separate from culling)
     isItOnScreen: Uint8Array, // Screen culling - updated by spatial worker

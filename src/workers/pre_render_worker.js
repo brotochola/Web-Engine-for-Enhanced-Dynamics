@@ -21,6 +21,7 @@ import {
 } from '../core/utils.js';
 import { PRE_RENDER_STATS, createStatsWriter } from './workers-utils.js';
 import { RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
+import { Layer } from '../core/Layer.js';
 
 /**
  * PreRenderWorker - Handles all visual pre-calculations before rendering
@@ -333,6 +334,57 @@ class PreRenderWorker extends AbstractWorker {
             }
 
             console.log(`[PRE_RENDER WORKER] Double-buffered render queue initialized (max ${maxItems} items)`);
+
+            // Initialize per-custom-layer collectors and render queue buffers
+            this._customLayerCollectors = {};
+            this._customLayerQueueBuffers = {};
+            this._customLayerQueueRefs = {};
+
+            if (data.customLayerRenderQueues) {
+                for (const [idStr, lrq] of Object.entries(data.customLayerRenderQueues)) {
+                    const layerId = parseInt(idStr);
+                    const layerMax = lrq.maxItems;
+
+                    // Pre-allocate collector arrays for this layer
+                    this._customLayerCollectors[layerId] = {
+                        y: new Float32Array(layerMax),
+                        type: new Uint8Array(layerMax),
+                        index: new Int32Array(layerMax),
+                        count: 0,
+                        maxItems: layerMax,
+                    };
+
+                    // Create typed views for both double-buffers
+                    const sabPair = [lrq.dataA, lrq.dataB];
+                    const bufs = [];
+                    for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
+                        const sab = sabPair[bufIdx];
+                        let off = 0;
+                        const b = { count: new Int32Array(sab, off, 1) };
+                        off += 4;
+                        b.x = new Float32Array(sab, off, layerMax); off += layerMax * 4;
+                        b.y = new Float32Array(sab, off, layerMax); off += layerMax * 4;
+                        b.scaleX = new Float32Array(sab, off, layerMax); off += layerMax * 4;
+                        b.scaleY = new Float32Array(sab, off, layerMax); off += layerMax * 4;
+                        b.rotation = new Float32Array(sab, off, layerMax); off += layerMax * 4;
+                        b.alpha = new Float32Array(sab, off, layerMax); off += layerMax * 4;
+                        b.tint = new Uint32Array(sab, off, layerMax); off += layerMax * 4;
+                        b.textureId = new Uint16Array(sab, off, layerMax); off += layerMax * 2;
+                        off = Math.ceil(off / 4) * 4;
+                        b.anchorX = new Float32Array(sab, off, layerMax); off += layerMax * 4;
+                        b.anchorY = new Float32Array(sab, off, layerMax); off += layerMax * 4;
+                        b.type = new Uint8Array(sab, off, layerMax); off += layerMax;
+                        off = Math.ceil(off / 4) * 4;
+                        b.entityIndex = new Int32Array(sab, off, layerMax);
+                        bufs[bufIdx] = b;
+                    }
+                    this._customLayerQueueBuffers[layerId] = bufs;
+                    // Active write refs (swapped each frame like the main queue)
+                    this._customLayerQueueRefs[layerId] = {};
+
+                    console.log(`[PRE_RENDER WORKER] Custom layer ${layerId} render queue initialized (max ${layerMax} items)`);
+                }
+            }
         }
 
         // ========================================
@@ -472,6 +524,13 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueType = buffer.type;
         this.renderQueueEntityIndex = buffer.entityIndex;
         this.renderQueueCamera = this.renderQueueCameraBuffers[bufferIdx];
+
+        // Swap custom layer write buffers in sync
+        if (this._customLayerQueueBuffers) {
+            for (const [idStr, bufs] of Object.entries(this._customLayerQueueBuffers)) {
+                this._customLayerQueueRefs[idStr] = bufs[bufferIdx];
+            }
+        }
     }
 
     /**
@@ -572,6 +631,9 @@ class PreRenderWorker extends AbstractWorker {
 
         // Build the final render queue (sorts by Y, applies interpolation, writes to SAB)
         this.buildRenderQueue(deltaTime);
+
+        // Build custom layer render queues (entities routed by SpriteRenderer.layerId)
+        this.buildCustomLayerQueues(deltaTime);
 
         // Build shadow render queue (sun shadows already done in collectVisibleEntities)
         this.buildShadowRenderQueue();
@@ -870,10 +932,30 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * Collect a visible renderable for the render queue
+     * Collect a visible renderable for the render queue.
+     * Entities (type 0) with a non-default layerId are routed to that layer's
+     * dedicated collector; everything else goes into the default ENTITIES queue.
      */
     collectRenderable(type, index, y) {
         if (!this.renderQueueEnabled) return;
+
+        // Route entities with custom layerId to their layer's collector
+        if (type === 0 && this._customLayerCollectors) {
+            const layerId = SpriteRenderer.layerId[index];
+            if (layerId !== 0 && layerId !== Layer.ENTITIES_ID) {
+                const collector = this._customLayerCollectors[layerId];
+                if (collector && collector.count < collector.maxItems) {
+                    const wi = collector.count;
+                    collector.y[wi] = y;
+                    collector.type[wi] = type;
+                    collector.index[wi] = index;
+                    collector.count = wi + 1;
+                }
+                return;
+            }
+        }
+
+        // Default ENTITIES layer (or non-entity types)
         if (this._renderableCount >= this.renderQueueMaxItems) return;
         const writeIdx = this._renderableCount;
         this._renderableY[writeIdx] = y;
@@ -1254,6 +1336,128 @@ class PreRenderWorker extends AbstractWorker {
 
         this.renderQueueCount[0] = count;
         this._renderableCount = 0;
+    }
+
+    /**
+     * Build render queues for all custom layers.
+     * Each custom layer's collector only contains entities (type=0).
+     * Shares the same animation, texture-resolve, and entity-position logic
+     * as the ENTITIES path in buildRenderQueue, but writes to a separate SAB.
+     */
+    buildCustomLayerQueues(deltaTime) {
+        if (!this._customLayerCollectors) return;
+
+        const entityX = Transform.x;
+        const entityY = Transform.y;
+        const entityRotation = Transform.rotation;
+        const srScaleX = SpriteRenderer.scaleX;
+        const srScaleY = SpriteRenderer.scaleY;
+        const srAlpha = SpriteRenderer.alpha;
+        const srTint = SpriteRenderer.tint;
+        const srAnchorX = SpriteRenderer.anchorX;
+        const srAnchorY = SpriteRenderer.anchorY;
+        const srAnimState = SpriteRenderer.animationState;
+        const srSpritesheetId = SpriteRenderer.spritesheetId;
+        const srAnimSpeed = SpriteRenderer.animationSpeed;
+        const srLoop = SpriteRenderer.loop;
+        const srIsAnimated = SpriteRenderer.isAnimated;
+
+        const frameIndex = this.entityFrameIndex;
+        const frameAccum = this.entityFrameAccumulator;
+        const entityLastTextureId = this.entityLastTextureId;
+        const deltaSeconds = deltaTime / 1000;
+
+        for (const [idStr, collector] of Object.entries(this._customLayerCollectors)) {
+            const layerId = parseInt(idStr);
+            const layerCount = collector.count;
+            if (layerCount === 0) {
+                const ref = this._customLayerQueueRefs[layerId];
+                if (ref) ref.count[0] = 0;
+                collector.count = 0;
+                continue;
+            }
+
+            const ref = this._customLayerQueueRefs[layerId];
+            if (!ref) { collector.count = 0; continue; }
+
+            const cY = collector.y;
+            const cType = collector.type;
+            const cIndex = collector.index;
+
+            // Y-sort using insertion sort (custom layers are typically small)
+            for (let i = 1; i < layerCount; i++) {
+                const currentY = cY[i];
+                const currentType = cType[i];
+                const currentIndex = cIndex[i];
+                let j = i - 1;
+                while (j >= 0 && cY[j] > currentY) {
+                    cY[j + 1] = cY[j];
+                    cType[j + 1] = cType[j];
+                    cIndex[j + 1] = cIndex[j];
+                    j--;
+                }
+                cY[j + 1] = currentY;
+                cType[j + 1] = currentType;
+                cIndex[j + 1] = currentIndex;
+            }
+
+            const rqX = ref.x;
+            const rqY = ref.y;
+            const rqScaleX = ref.scaleX;
+            const rqScaleY = ref.scaleY;
+            const rqRotation = ref.rotation;
+            const rqAlpha = ref.alpha;
+            const rqTint = ref.tint;
+            const rqTextureId = ref.textureId;
+            const rqAnchorX = ref.anchorX;
+            const rqAnchorY = ref.anchorY;
+            const rqType = ref.type;
+            const rqEntityIndex = ref.entityIndex;
+
+            for (let i = 0; i < layerCount; i++) {
+                const idx = cIndex[i];
+
+                rqX[i] = entityX[idx];
+                rqY[i] = entityY[idx];
+                rqScaleX[i] = srScaleX[idx];
+                rqScaleY[i] = srScaleY[idx];
+                rqRotation[i] = entityRotation[idx];
+                rqAlpha[i] = srAlpha[idx];
+                rqTint[i] = srTint[idx];
+                rqAnchorX[i] = srAnchorX[idx];
+                rqAnchorY[i] = srAnchorY[idx];
+                rqType[i] = 0;
+                rqEntityIndex[i] = idx;
+
+                // Texture resolve (same logic as buildRenderQueue entity path)
+                const sheetId = srSpritesheetId[idx];
+                const animState = srAnimState[idx];
+                const proxyMap = this.proxyToGlobalAnim?.[sheetId];
+                const globalAnimIdx = proxyMap ? (proxyMap[animState] ?? 0) : 0;
+                const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
+
+                if (srIsAnimated[idx] && animFrameCount > 1) {
+                    frameAccum[idx] += deltaSeconds;
+                    const frameDuration = 1 / (srAnimSpeed[idx] * 60);
+                    if (frameAccum[idx] >= frameDuration) {
+                        frameAccum[idx] -= frameDuration;
+                        const currentFrame = frameIndex[idx];
+                        const isLastFrame = currentFrame >= animFrameCount - 1;
+                        if (srLoop[idx] === 1 || !isLastFrame) {
+                            frameIndex[idx] = (currentFrame + 1) % animFrameCount;
+                        }
+                    }
+                }
+
+                const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
+                const globalTextureId = animStart + frameIndex[idx];
+                rqTextureId[i] = globalTextureId;
+                if (entityLastTextureId) entityLastTextureId[idx] = globalTextureId;
+            }
+
+            ref.count[0] = layerCount;
+            collector.count = 0;
+        }
     }
 
     /**
