@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, Mouse, RigidBody, Collider, SpriteRenderer, rng, randomColor } = WEED;
+const { GameObject, Mouse, RigidBody, Collider, SpriteRenderer, randomColor } = WEED;
 
 class WaterBall extends GameObject {
   static scriptUrl = import.meta.url;
@@ -10,10 +10,10 @@ class WaterBall extends GameObject {
   setup() { }
 
   onSpawned(spawnConfig = {}) {
-    this.rigidBody.maxVel = 400;
+    this.rigidBody.maxVel = 300;
     this.rigidBody.maxAcc = 8;
     this.rigidBody.minSpeed = 0;
-    this.rigidBody.friction = 0
+    this.rigidBody.friction = 0.01
 
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.5;
@@ -23,14 +23,17 @@ class WaterBall extends GameObject {
     this.setTint(randomColor({ min: 0x0000ff, max: 0x00ffff }));
     this.setAlpha(1.0);
 
-    const ballRadius = 15
-    this.collider.radius = ballRadius;
-    this.collider.visualRange = ballRadius * 4;
+    // Small collider + larger visual = dense packing with lots of gradient overlap.
+    // Physics prevents co-location; the metaball shader merges overlapping gradients
+    // into a smooth continuous surface.
+    const colliderRadius = 10;
+    this.collider.radius = colliderRadius;
+    this.collider.visualRange = colliderRadius * 8;
 
-    // const GRADIENT_TEX_SIZE = 200;
-    // const scale = (ballRadius * 2) / GRADIENT_TEX_SIZE;
-    this.spriteRenderer.scaleX = 5;
-    this.spriteRenderer.scaleY = 5
+    RigidBody.mass[this.index] *= 2;
+    RigidBody.invMass[this.index] = 1 / (RigidBody.mass[this.index] || 1);
+
+    this.setScale(3);
   }
 
   tick(dtRatio) {

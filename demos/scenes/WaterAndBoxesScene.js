@@ -36,13 +36,13 @@ export class WaterAndBoxesScene extends WEED.Scene {
     },
 
     physics: {
-      subStepCount: 5,
+      subStepCount: 3,
       noLimitFPS: true,
       maxCollisionPairs: 100000,
       verletDamping: 0.999,
-      boundaryElasticity: 0.3,
-      collisionResponseStrength: 0.99,
-      gravity: { x: 0, y: 0.5 },
+      boundaryElasticity: 0.1,
+      collisionResponseStrength: 0.33,
+      gravity: { x: 0, y: 1 },
       sleepThreshold: 0,
       wakeUpThreshold: 9999,
       sleepDuration: 9999999,
@@ -63,13 +63,13 @@ export class WaterAndBoxesScene extends WEED.Scene {
       water: {
         zIndex: 4,             // Render above default ENTITIES layer (zIndex 3)
         blendMode: 'normal',     // Final display blend of the post-processed sprite
-        resolution: 0.25,         // Half-res RT for performance
+        resolution: 0.5,         // Half-res RT for performance
         maxItems: 5000,
         shader: {
           fragment: '/demos/shaders/metaball.frag',
           containerBlend: 'add', // Additive blend inside the RT (density field)
           uniforms: {
-            uThreshold: { value: 0.1, type: 'f32' },
+            uThreshold: { value: 0.15, type: 'f32' },
             uWaterColor: { value: [0.15, 0.45, 0.95], type: 'vec3<f32>' },
           },
         },
@@ -147,36 +147,36 @@ export class WaterAndBoxesScene extends WEED.Scene {
   // ========================================
 
   spawnFloorAndWalls() {
-    const wallThickness = 150;
+    const wallThickness = 600;
     const worldWidth = this.config.worldWidth;
     const worldHeight = this.config.worldHeight;
 
     this.spawnEntity(Floor, {
       x: worldWidth / 2,
-      y: worldHeight - wallThickness / 2 - wallThickness * 3,
-      width: worldWidth,
+      y: worldHeight + wallThickness / 4,
+      width: worldWidth + wallThickness * 2,
       height: wallThickness,
     });
 
     this.spawnEntity(Floor, {
       x: worldWidth / 2,
-      y: wallThickness / 2,
-      width: worldWidth,
+      y: -wallThickness / 2,
+      width: worldWidth + wallThickness * 2,
       height: wallThickness,
     });
 
     this.spawnEntity(Floor, {
-      x: wallThickness / 2,
+      x: -wallThickness / 2,
       y: worldHeight / 2,
       width: wallThickness,
-      height: worldHeight,
+      height: worldHeight + wallThickness * 2,
     });
 
     this.spawnEntity(Floor, {
-      x: worldWidth - wallThickness / 2,
+      x: worldWidth + wallThickness / 2,
       y: worldHeight / 2,
       width: wallThickness,
-      height: worldHeight,
+      height: worldHeight + wallThickness * 2,
     });
   }
 

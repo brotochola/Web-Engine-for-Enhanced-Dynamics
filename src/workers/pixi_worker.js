@@ -406,6 +406,7 @@ class PixiRenderer extends AbstractWorker {
 
     // Custom layer rendering infrastructure (populated during initialize)
     this._customLayers = {};  // layerId -> { buffers, readRef, sprites, poolIndices, prevCount, pc, rt, displaySprite, filter }
+    this._customLayerList = []; // Cached array of custom layer objects, set once during init
 
     // ========================================
     // FLAT TEXTURE LOOKUP (Zero-cost texture resolution)
@@ -712,14 +713,11 @@ class PixiRenderer extends AbstractWorker {
 
     // Shadow sprites are now in main particleContainer (get camera transform automatically)
 
-    // Apply camera to custom layer ParticleContainers (for non-shader layers on stage)
-    // and position display sprites for shader layers
-    for (const cl of Object.values(this._customLayers)) {
-      if (cl.rt) {
-        // Shader layers: ParticleContainer renders to RT in screen space (like shadows)
-        // No camera transform on the PC itself; it's applied during sprite update
-      } else {
-        // Non-shader layers: ParticleContainer is on the stage directly
+    // Apply camera to custom layer ParticleContainers (non-shader layers only;
+    // shader layers render to RT in screen space so no container transform needed)
+    for (let i = 0; i < this._customLayerList.length; i++) {
+      const cl = this._customLayerList[i];
+      if (!cl.rt) {
         cl.pc.scale.set(zoom);
         cl.pc.x = -cameraX * zoom;
         cl.pc.y = -cameraY * zoom;
@@ -1031,8 +1029,8 @@ class PixiRenderer extends AbstractWorker {
         }
 
         // Custom layer queues also swap with the same frame
-        for (const cl of Object.values(this._customLayers)) {
-          cl.readRef = cl.buffers[readBufferIdx];
+        for (let i = 0; i < this._customLayerList.length; i++) {
+          this._customLayerList[i].readRef = this._customLayerList[i].buffers[readBufferIdx];
         }
 
         // Signal that we've consumed this frame
@@ -2169,7 +2167,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     // Recreate custom layer RenderTextures at new size
-    for (const cl of Object.values(this._customLayers)) {
+    for (let i = 0; i < this._customLayerList.length; i++) {
+      const cl = this._customLayerList[i];
       if (cl.rt) {
         const resolution = cl.resolution || 1.0;
         const lw = width * resolution;
@@ -3048,8 +3047,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._customLayers[layerId] = cl;
     }
 
-    // Re-sort stage after adding custom layer display objects
-    if (Object.keys(this._customLayers).length > 0) {
+    // Cache the list once -- layers never change at runtime
+    this._customLayerList = Object.values(this._customLayers);
+
+    if (this._customLayerList.length > 0) {
       this.pixiApp.stage.sortChildren();
     }
   }
@@ -3062,7 +3063,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const flatTextures = this.flatTextures;
     const fallbackTexture = this.particlePool.defaultTexture || (flatTextures.length > 0 ? flatTextures[0] : PIXI.Texture.WHITE);
 
-    for (const cl of Object.values(this._customLayers)) {
+    for (let li = 0; li < this._customLayerList.length; li++) {
+      const cl = this._customLayerList[li];
       const ref = cl.readRef;
       if (!ref) continue;
 
@@ -3218,7 +3220,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     // Custom layers (display sprite for shader layers, ParticleContainer for plain layers)
-    for (const cl of Object.values(this._customLayers)) {
+    for (let i = 0; i < this._customLayerList.length; i++) {
+      const cl = this._customLayerList[i];
       const layerObj = Layer.getById(cl.layerId);
       if (!layerObj) continue;
       this.layerRefs[layerObj.name] = cl.displaySprite || cl.pc;

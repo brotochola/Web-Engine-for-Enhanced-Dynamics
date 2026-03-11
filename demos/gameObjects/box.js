@@ -96,8 +96,8 @@ class Box extends GameObject {
     this.myColor = colors[Math.floor(Math.random() * colors.length)];
     this.setTint(this.myColor);
 
-    RigidBody.mass[this.index] *= 0.1;
-    RigidBody.invMass[this.index] *= 10;
+    RigidBody.mass[this.index] *= 0.25;
+    RigidBody.invMass[this.index] *= 4;
   }
 
   onCollisionEnter(otherIndex) {
