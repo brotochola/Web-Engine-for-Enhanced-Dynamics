@@ -1,24 +1,9 @@
 import WEED from '/src/index.js';
 
-const { GameObject, Mouse, RigidBody, Collider, SpriteRenderer } = WEED;
+const { GameObject, Mouse, RigidBody, Collider, SpriteRenderer, mixTint } = WEED;
 
 const BASE_WATER_TINT = 0x7fb2ff;
 const SPLASH_TINT = 0xffffff;
-
-function mixTint(a, b, t) {
-  const clamped = Math.max(0, Math.min(1, t));
-  const ar = (a >> 16) & 255;
-  const ag = (a >> 8) & 255;
-  const ab = a & 255;
-  const br = (b >> 16) & 255;
-  const bg = (b >> 8) & 255;
-  const bb = b & 255;
-
-  const r = Math.round(ar + (br - ar) * clamped);
-  const g = Math.round(ag + (bg - ag) * clamped);
-  const bCh = Math.round(ab + (bb - ab) * clamped);
-  return (r << 16) | (g << 8) | bCh;
-}
 
 class WaterBall extends GameObject {
   static scriptUrl = import.meta.url;
@@ -55,16 +40,18 @@ class WaterBall extends GameObject {
   }
 
   tick(dtRatio) {
-    const speed = this.rigidBody.speed || 0;
-    const splash = Math.max(0, Math.min(1, (speed - 55) / 150));
-    this.setTint(mixTint(BASE_WATER_TINT, SPLASH_TINT, splash));
-    this.setAlpha(0.82 + splash * 0.18);
+    const speedFactor = Math.min(1, (this.rigidBody.speed * 0.1) / this.rigidBody.maxVel);
+    const tint = mixTint(BASE_WATER_TINT, SPLASH_TINT, speedFactor);
+
+    this.setTint(tint);
+    // this.setTint(0x000077)
+    this.setAlpha(0.5);
 
     if (Mouse.isButton1Down) {
       const dx = this.x - Mouse.x;
       const dy = this.y - Mouse.y;
       const dist2 = dx * dx + dy * dy;
-      if (dist2 > 20000) return;
+      if (dist2 > 40000) return;
       this.addAcceleration(dx * 0.2, dy * 0.2);
     }
   }

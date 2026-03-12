@@ -71,7 +71,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
           fragment: '/demos/shaders/metaball.frag',
           containerBlend: 'add', // Additive blend inside the RT (density field)
           uniforms: {
-            uThreshold: { value: 0.65, type: 'f32' },
+            uThreshold: { value: 0.8, type: 'f32' },
             uWaterColor: { value: [0.15, 0.45, 0.95], type: 'vec3<f32>' },
             uFoamIntensity: { value: 1.25, type: 'f32' },
             uFoamWidth: { value: 0.16, type: 'f32' },

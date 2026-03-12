@@ -63,8 +63,8 @@ void main() {
 
     vec3 waterColorOut = mix(baseColor, vec3(1.0), foam);
 
-    float densityAlpha = smoothstep(0.0, uThreshold + 0.6, density);
+    float densityAlpha = smoothstep(0.0, uThreshold , density);
     float alpha = clamp(edge * depth * uOpacity + foam * 0.2, 0.0, 1.0);
 
-    finalColor = vec4(waterColorOut, alpha);
+    finalColor = vec4(baseColor, alpha);
 }
