@@ -169,17 +169,24 @@ Reads visibility lists, advances animations, builds the render and shadow queues
 1. Read compact visible lists (entities, particles, decorations, bullets)
 2. Advance sprite animation frames
 3. Compute interpolated positions, scales, rotations
-4. Build main render queue (SoA packed: x, y, scaleX, scaleY, rotation, alpha, tint, textureId, anchorX, anchorY, type, entityIndex)
-5. Build shadow/light render queue
-6. Write to alternating double buffer (`renderQueueFrame % 2`)
-7. Signal pixi via `Atomics.store` + `Atomics.notify` on `renderQueueSync`
-8. Wait if more than 1 frame ahead of pixi
+4. Collect visible renderables -- entities routed by `SpriteRenderer.layerId`:
+   - `layerId === ENTITIES_ID` → main render queue
+   - Otherwise → per-layer custom collector
+5. Build main render queue (Y-sorted, SoA packed via `RenderQueueLayout.js`). Uses heapsort for >256 items, insertion sort otherwise
+6. Build per-layer custom render queues (same Y-sort + heapsort fallback). Emits `console.warn` if a layer's queue overflows `maxItems`
+7. Build shadow/light render queue (respects `maxShadowsPerEntity` budget across sun + point lights)
+8. Write to alternating double buffer (`renderQueueFrame % 2`)
+9. Signal pixi via `Atomics.store` + `Atomics.notify` on `renderQueueSync`
+10. Wait if more than 1 frame ahead of pixi
+
+**Custom layer iteration** is pre-cached at init time as a flat array (`_customLayerEntries`), avoiding `Object.entries()` allocations in the hot path.
 
 | Buffer | Access | Notes |
 |---|---|---|
-| `renderQueueDataA/B` | **Write** | Alternating double buffer |
+| `renderQueueDataA/B` | **Write** | Alternating double buffer (layout from `RenderQueueLayout.js`) |
 | `renderQueueCameraA/B` | **Write** | Per-buffer camera snapshot `[zoom,x,y]` frame-locked to render queue generation |
 | `shadowRenderQueueDataA/B` | **Write** | Shadow/light queue |
+| Per-layer `dataA/B` | **Write** | Custom layer render queues (same SoA layout, sized to `config.layers[name].maxItems`) |
 | `renderQueueSync` | Read/**Write** | Atomics: readyFrame + consumedFrame |
 | `entityTextureData` | **Write** | Per-entity texture ID |
 | `visibleLightsData` | **Write** | Visible light index list |
@@ -188,6 +195,7 @@ Reads visibility lists, advances animations, builds the render and shadow queues
 | `visibleBulletsData` | Read | From particle worker |
 | `activeEntitiesData` | Read | Entity list |
 | All component SABs | Read | Positions, sprites, animation state |
+| `Layer._configSAB` | Read | Layer properties (hasRenderQueue, ySorting, etc.) |
 | `cameraData` | Read | Live camera state (used to latch a per-frame snapshot) |
 | `sunData` | Read | Lighting/shadow config |
 | `preRenderStats` | **Write** | FPS, visible counts, queue size |
@@ -204,18 +212,60 @@ Consumes the render queues and draws to an OffscreenCanvas. Never touches game s
 **What it does each frame:**
 1. `Atomics.load(renderQueueSync, 0)` -- check for new frame
 2. If new: read from `(readyFrame - 1) % 2` buffer
-3. Render sprites, shadows, lights, particles, decorations, bullets
-4. Upload dirty decal tiles to GPU textures
-5. `Atomics.store(renderQueueSync, 1, readyFrame)` + notify
+3. Render main sprites (ENTITIES layer) from main render queue
+4. Render shadows, lights, particles, decorations, bullets
+5. **For each custom layer** (see pipeline below):
+   - Read the layer's double-buffered render queue
+   - Update `ParticleContainer` sprites from the SoA data
+   - If the layer has **no shader**: render the `ParticleContainer` directly to screen at its `zIndex`
+   - If the layer has a **shader**: run the two-RT pipeline (see below)
+6. Check `Atomics.load(uniformDirty, 0)` for each shader layer; if dirty, upload new uniform values to the GPU shader and clear the flag
+7. Upload dirty decal tiles to GPU textures
+8. `Atomics.store(renderQueueSync, 1, readyFrame)` + notify
 
 **It never waits.** If there's no new frame, it skips. Pre-render is the one that waits (if it's too far ahead).
 
+#### Two-RT Shader Pipeline (custom shader layers)
+
+Custom layers with a `shader` use a two-RenderTexture pipeline for off-screen compositing:
+
+```
+ParticleContainer (entity sprites)
+        │
+        │ render with containerBlendMode (e.g. 'add')
+        ▼
+   ┌─────────────┐
+   │  rawRT       │  Density / accumulation texture
+   │  (offscreen) │  Resolution controlled by layer.resolution
+   └──────┬──────┘
+          │ sampled as uSampler in fragment shader
+          ▼
+   ┌─────────────┐
+   │  Fullscreen  │  Custom fragment shader (e.g. metaball threshold)
+   │  Mesh pass   │  Reads rawRT + uniforms from SAB
+   └──────┬──────┘
+          │ render
+          ▼
+   ┌─────────────┐
+   │  outputRT    │  Final composited layer result
+   │  (offscreen) │
+   └──────┬──────┘
+          │ displayed as Sprite on stage at layer.zIndex
+          ▼
+      Main Stage
+```
+
+This enables effects like metaball water, fog accumulation, heat distortion -- anything that needs a gather-then-process pattern.
+
 | Buffer | Access | Notes |
 |---|---|---|
-| `renderQueueDataA/B` | Read | Main sprite queue |
+| `renderQueueDataA/B` | Read | Main sprite queue (layout from `RenderQueueLayout.js`) |
 | `renderQueueCameraA/B` | Read | Camera snapshot matched to the consumed render queue buffer |
 | `shadowRenderQueueDataA/B` | Read | Shadow/light queue |
+| Per-layer `dataA/B` | Read | Custom layer render queues (same SoA layout) |
 | `renderQueueSync` | Read/**Write** | Atomics: consume frame + notify |
+| `Layer._configSAB` | Read | Layer properties (zIndex, blendMode, hasShader, resolution, etc.) |
+| `Layer._uniformSABs[id]` | Read | Shader uniform values + dirty flag (Atomics) |
 | `bloodTilesRGBA` | Read | Decal tile pixels |
 | `bloodTilesDirty` | Read | Which tiles to re-upload |
 | `entityTextureData` | Read | Texture IDs |
@@ -297,15 +347,20 @@ Not a Web Worker — an `AudioWorkletProcessor` running on the browser's **audio
                   │                    │
                   │  animation,        │
                   │  render queues,    │
-                  │  shadow queues     │
+                  │  shadow queues,    │
+                  │  custom layer      │
+                  │  queues            │
                   └─────────┬──────────┘
                             │ double-buffered queues (Atomics)
+                            │ + per-layer SABs
                             ▼
                   ┌────────────────────┐
                   │    Pixi Worker     │
                   │                    │
                   │  OffscreenCanvas   │
-                  │  final render      │
+                  │  main render +     │
+                  │  custom layer      │
+                  │  two-RT pipeline   │
                   └────────────────────┘
 
    ═══════════════════════════════════════════════════

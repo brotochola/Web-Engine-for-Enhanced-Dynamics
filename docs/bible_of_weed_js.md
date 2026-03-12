@@ -13,6 +13,8 @@ Engine-focused notes for the current `src/` architecture.
 | Default max entities/cell | `64` |
 | Default max collision pairs/frame | `10000` |
 | Audio mixer slots | `64` default (`maxSlots` param) |
+| Max rendering layers | `16` (`Layer.MAX_LAYERS`) |
+| Default custom layer maxItems | `5000` |
 | Audio playback rate range | `0.25..4` |
 | Sound ID type | `Int32` (index into per-name ID map) |
 
@@ -80,6 +82,139 @@ Lifecycle hooks:
 
 ---
 
+## Layer System
+
+The engine renders everything through **layers**. Five built-in layers handle the default pipeline. Custom layers let you render groups of entities with their own sorting, blend mode, and optional fragment shader (the two-RT pipeline).
+
+### Built-in Layers
+
+| Name | zIndex | Purpose |
+|---|---|---|
+| `BACKGROUND` | 0 | Background image / tilemap |
+| `DECALS` | 1 | Blood tiles, floor stains |
+| `CASTED_SHADOWS` | 2 | Entity shadow projections |
+| `ENTITIES` | 3 | Default entity rendering (main render queue) |
+| `LIGHTING` | 4 | Point lights, ambient overlay |
+
+All entities render on `ENTITIES` by default. You don't need to touch layers for most games.
+
+### Defining Custom Layers
+
+Add a `layers` object to your scene's `static config`:
+
+```javascript
+static config = {
+  // ... other config ...
+  layers: {
+    water: {
+      zIndex: 4,              // display order (higher = on top)
+      blendMode: 'normal',    // final composite blend: 'normal', 'add', 'multiply', 'screen'
+      resolution: 0.33,       // RT resolution multiplier (lower = cheaper, blurrier)
+      maxItems: 5000,         // render queue capacity for this layer
+      ySorting: false,        // disable Y-sort if order doesn't matter
+      shader: {
+        fragment: '/shaders/metaball.frag',     // WGSL/GLSL fragment path
+        containerBlend: 'add',                  // blend for the density pass
+        uniforms: {
+          uThreshold:  { value: 0.8,               type: 'f32' },
+          uWaterColor: { value: [0.05, 0.1, 0.95], type: 'vec3<f32>' },
+          uTime:       { value: 0.0,               type: 'f32' },
+        },
+      },
+    },
+  },
+};
+```
+
+Layers **without** a `shader` block are simple sorted ParticleContainers at their own zIndex. Layers **with** a `shader` use the two-RT pipeline (density pass + fragment shader post-process).
+
+### Assigning Entities to Layers
+
+```javascript
+// Inside entity tick() or onSpawned()
+this.setLayer('water');        // route to the 'water' custom layer
+this.setLayer('ENTITIES');     // move back to default
+
+// Read-only
+const name = this.layerName;   // 'water', 'ENTITIES', etc.
+```
+
+### Shader Uniforms
+
+Uniforms are stored in SharedArrayBuffers and can be updated from **any thread**:
+
+```javascript
+const water = WEED.Layer.get('water');
+water.setUniform('uTime', accumulatedTime);
+water.setUniform('uWaterColor', [0.0, 0.2, 0.8]);
+
+const val   = water.getUniform('uThreshold');   // number
+const color = water.getUniform('uWaterColor');   // Float32Array subview (zero-alloc)
+```
+
+The pixi worker picks up dirty uniforms each frame via an atomic flag.
+
+### Supported Uniform Types
+
+| Type | Size (floats) | Example |
+|---|---|---|
+| `f32` | 1 | `{ value: 0.5, type: 'f32' }` |
+| `i32` | 1 | `{ value: 3, type: 'i32' }` |
+| `vec2<f32>` | 2 | `{ value: [0.5, 1.0], type: 'vec2<f32>' }` |
+| `vec3<f32>` | 3 | `{ value: [1, 0, 0], type: 'vec3<f32>' }` |
+| `vec4<f32>` | 4 | `{ value: [1, 1, 1, 1], type: 'vec4<f32>' }` |
+
+### Layer API Reference
+
+```javascript
+WEED.Layer.get('water')       // Layer instance or null
+WEED.Layer.getById(5)         // by numeric id
+WEED.Layer.getAll()           // all registered layers (cached)
+WEED.Layer.getCustomLayers()  // only layers with their own render queue (excludes ENTITIES)
+WEED.Layer.getId('water')     // numeric id or -1
+WEED.Layer.getName(5)         // name string or null
+```
+
+### Two-RT Shader Pipeline (How It Works)
+
+```
+  Entities assigned to layer (e.g. water balls)
+          │
+          │ Y-sort + write SoA render queue (pre_render_worker)
+          ▼
+  ParticleContainer (sprites)
+          │
+          │ render with containerBlend (e.g. 'add')
+          ▼
+    ┌───────────┐
+    │  rawRT     │   Density / accumulation texture (resolution × screen)
+    └─────┬─────┘
+          │ sampled as uSampler in your fragment shader
+          ▼
+    ┌───────────┐
+    │  Shader   │   Custom fragment: threshold, color, effects
+    │  Mesh     │   Reads rawRT + your uniforms from SAB
+    └─────┬─────┘
+          │
+          ▼
+    ┌───────────┐
+    │ outputRT   │   Final composited result
+    └─────┬─────┘
+          │ displayed as Sprite on stage at layer.zIndex
+          ▼
+      Screen
+```
+
+### Performance Tips
+
+- Set `maxItems` to a realistic cap. If exceeded, a console warning fires once.
+- Lower `resolution` for expensive shader layers (0.25-0.5 is usually fine for soft effects).
+- Disable `ySorting` if visual order within the layer doesn't matter.
+- Uniform reads with `getUniform()` return `Float32Array.subarray()` views -- zero allocation, safe for hot paths.
+- The layer system uses the same `RenderQueueLayout.js` as the main queue. One definition, no drift.
+
+---
+
 ## Useful APIs
 
 ```javascript
@@ -123,6 +258,7 @@ WEED.SoundManager.setMuted(true);
 - Spatial: `cellSize = 128`
 - Logic: `staggeredUpdates = false`
 - Renderer: `interpolation = true`, `maxVisibleRenderables = 40000`
+- Layers: `maxItems = 5000`, `resolution = 1.0`, `ySorting = true`, `blendMode = 'normal'`
 - Audio: `maxSlots = 64`, `mixGain = 0.5`, `masterVolume = 1.0`
 - Navigation: `enabled = false` by default
 

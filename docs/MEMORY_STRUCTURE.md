@@ -175,7 +175,7 @@ All lists share the same layout: `[count: Uint16, idx0: Uint16, idx1: Uint16, ..
 
 Two identical buffers. Pre_render writes one while pixi reads the other.
 
-**Size per buffer:** ~520 KB at default `maxVisibleRenderables = 10000`
+**Size per buffer:** computed by `computeBufferSize(maxItems)` in `src/core/RenderQueueLayout.js`
 
 **Per-item layout (packed SoA across the buffer):**
 
@@ -194,6 +194,18 @@ Two identical buffers. Pre_render writes one while pixi reads the other.
 | `anchorY` | Float32 | max |
 | `type` | Uint8 | max (+ 4-byte align pad) |
 | `entityIndex` | Int32 | max |
+
+This layout is defined once in `src/core/RenderQueueLayout.js` and used by Scene (allocation), pre_render_worker (write views), and pixi_worker (read views). To add a field, edit the `FIELDS` array in that file.
+
+| Writer | Reader |
+|---|---|
+| Pre_render worker | Pixi worker |
+
+### Custom Layer Render Queues (per-layer `dataA` / `dataB`)
+
+Each custom layer (defined in `config.layers`) gets its own double-buffered render queue with the **same SoA layout** as the main queue, sized to `config.layers[name].maxItems` (default 5000).
+
+Entities are routed to a layer's queue when `SpriteRenderer.layerId` is set via `entity.setLayer('water')`. The pre_render_worker's `collectRenderable()` dispatches to the correct collector; `buildCustomLayerQueues()` Y-sorts and writes the layer's SAB.
 
 | Writer | Reader |
 |---|---|
@@ -253,7 +265,74 @@ Same double-buffered pattern. Separate queue for shadow casters and lights.
 
 ---
 
-## 7. Navigation Buffers
+## 7. Layer System SABs
+
+The layer system (`src/core/Layer.js`) stores all layer configuration and shader uniforms in SharedArrayBuffers so any worker can read them without postMessage.
+
+### Layer Config SAB (`Layer._configSAB`)
+
+One SAB, allocated during `Layer.initializeFromConfig()`. Holds read-only properties for up to `MAX_LAYERS` (16) layers.
+
+**Size:** `_getConfigSABSize()` (~208 bytes at MAX_LAYERS=16)
+
+**Layout (packed, with alignment pads):**
+
+| Field | Type | Count | Description |
+|---|---|---|---|
+| `zIndex` | Float32 | MAX_LAYERS | Display order (lower = further back) |
+| `blendModeId` | Uint8 | MAX_LAYERS | 0=normal, 1=add, 2=multiply, 3=screen |
+| `hasShader` | Uint8 | MAX_LAYERS | 1 if layer has a custom fragment shader |
+| `ySorting` | Uint8 | MAX_LAYERS | 1 if Y-sort is enabled for this layer |
+| *(4-byte align pad)* | | | |
+| `resolution` | Float32 | MAX_LAYERS | RT resolution multiplier (default 1.0) |
+| `containerBlendId` | Uint8 | MAX_LAYERS | Blend mode for the ParticleContainer pass |
+| `available` | Uint8 | MAX_LAYERS | 1 if the slot is occupied |
+| `hasRenderQueue` | Uint8 | MAX_LAYERS | 1 if this layer has its own render queue |
+
+Written once at init. All fields are read-only after that.
+
+| Writer | Reader |
+|---|---|
+| Main thread (`Layer.initializeFromConfig`) | All workers (`Layer.initializeFromBuffers`) |
+
+### Per-Layer Uniform SABs (`Layer._uniformSABs[id]`)
+
+Only allocated for custom layers that have a `shader` with `uniforms`. One SAB per shader layer.
+
+**Layout:**
+
+| Section | Type | Size | Description |
+|---|---|---|---|
+| Uniform data | Float32 | `floatCount` (sum of all uniform sizes) | `vec2` = 2 floats, `vec3` = 3, `vec4` = 4, `f32`/`i32` = 1 |
+| *(4-byte align)* | | | |
+| Dirty flag | Int32 | 1 | Set to 1 via `Atomics.store` on any `setUniform()` call |
+
+**Cross-worker protocol:**
+
+1. Any thread calls `layer.setUniform('uThreshold', 0.4)` → writes Float32 data + `Atomics.store(dirty, 0, 1)`
+2. Pixi worker checks `Atomics.load(dirty, 0)` each frame. If dirty, reads new values and uploads to GPU shader
+3. Pixi clears the flag after reading: `Atomics.store(dirty, 0, 0)`
+
+| Writer | Reader |
+|---|---|
+| Any thread (`setUniform()`) | Pixi worker (shader uniform upload) |
+
+### `RenderQueueLayout.js` (shared layout definition)
+
+Not a SAB itself, but the single source of truth for all render queue memory layouts. Imported by Scene (allocation), pre_render_worker (write views), and pixi_worker (read views).
+
+**Exports:**
+
+| Function | Purpose |
+|---|---|
+| `computeBufferSize(maxItems)` | Returns total byte count for a render queue SAB |
+| `createViews(sab, maxItems)` | Returns `{ count, x, y, scaleX, scaleY, rotation, alpha, tint, textureId, anchorX, anchorY, type, entityIndex }` TypedArray views |
+
+To add a new per-sprite field, add an entry to the `FIELDS` array in this file. All consumers update automatically.
+
+---
+
+## 8. Navigation Buffers
 
 ### `navigationData`
 
@@ -278,7 +357,7 @@ All navigation state lives in one SAB. Size comes from `NavGrid.calculateSABSize
 
 ---
 
-## 8. Decal Tile Buffers
+## 9. Decal Tile Buffers
 
 Persistent decals (blood, scorch marks, etc.) are stamped onto tile-based RGBA buffers.
 
@@ -305,7 +384,7 @@ Persistent decals (blood, scorch marks, etc.) are stamped onto tile-based RGBA b
 
 ---
 
-## 9. Entity + Particle + Decoration + Bullet Free Lists
+## 10. Entity + Particle + Decoration + Bullet Free Lists
 
 O(1) pool allocation via atomic stacks. Every pooled type gets the same pattern:
 
@@ -326,7 +405,7 @@ O(1) pool allocation via atomic stacks. Every pooled type gets the same pattern:
 
 ---
 
-## 10. Stats Buffers
+## 11. Stats Buffers
 
 Every worker family writes its own stats SAB. Main thread reads them for DebugUI.
 
@@ -349,7 +428,7 @@ All use a strided `Float32Array` layout: **16 floats (64 bytes) per worker slot*
 
 ---
 
-## 11. Query System Buffers
+## 12. Query System Buffers
 
 | Buffer | Size | Layout |
 |---|---|---|
@@ -363,7 +442,7 @@ All use a strided `Float32Array` layout: **16 floats (64 bytes) per worker slot*
 
 ---
 
-## 12. Audio Mixer SAB (SoundManager ↔ AudioWorklet)
+## 13. Audio Mixer SAB (SoundManager ↔ AudioWorklet)
 
 Sound playback is fully lock-free. Workers and the main thread write play commands into a slot array backed by a `SharedArrayBuffer`. The `AudioMixerProcessor` worklet reads the same SAB every `process()` call (~128 samples / ~2.9 ms at 44.1 kHz) and mixes all active sounds into stereo output.
 
@@ -434,7 +513,7 @@ The worklet stores assets in a `Map<id, { ch, len, nCh }>`. Only slot state trav
 
 ---
 
-## 13. Input / Camera / Debug / Misc
+## 14. Input / Camera / Debug / Misc
 
 | Buffer | Size | Layout | Writer | Reader |
 |---|---|---|---|---|
@@ -469,8 +548,11 @@ The big picture. Who writes what, who reads what.
 | Impact buffer | Particle worker | Logic workers |
 | Constraint data | Logic workers (create), physics (resolve) | Logic, physics |
 | Render queues (main + shadow) | Pre_render worker | Pixi worker |
+| Custom layer render queues | Pre_render worker | Pixi worker |
 | Render queue sync | Pre_render + pixi (Atomics) | Both |
 | Entity texture data | Pre_render worker | Pixi worker |
+| Layer config SAB | Main thread (once at init) | All workers |
+| Layer uniform SABs | Any thread (`setUniform`) | Pixi worker |
 | Visible lights | Pre_render worker | Pixi worker |
 | Navigation (flowfields, A*, walkability) | Particle worker | Logic workers |
 | Decal tiles (RGBA + dirty) | Particle worker | Pixi worker |
