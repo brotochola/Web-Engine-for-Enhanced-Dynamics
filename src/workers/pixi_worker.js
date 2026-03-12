@@ -30,6 +30,14 @@ import { sortByY, normalizeAngleDifference, extractRGBNormalizedMut } from '../c
 function sortByDistSq(a, b) {
   return a.distSq - b.distSq;
 }
+
+const PARTICLE_PREWARM_POLICY = {
+  BOOT_MAIN_FRACTION: 0.15,
+  BOOT_SHADOW_FRACTION: 0.1,
+  BOOT_CUSTOM_FRACTION: 0.1,
+  FRAME_SAFETY_MARGIN: 32,
+  MAX_PREWARM_COUNT: 12000,
+};
 import { RENDERER_STATS, createStatsWriter } from './workers-utils.js';
 
 // Import PixiJS 8 library (ES6 module with named exports)
@@ -407,6 +415,8 @@ class PixiRenderer extends AbstractWorker {
     // Custom layer rendering infrastructure (populated during initialize)
     this._customLayers = {};  // layerId -> { buffers, readRef, sprites, poolIndices, prevCount, pc, rt, displaySprite, filter }
     this._customLayerList = []; // Cached array of custom layer objects, set once during init
+    this._layerRuntime = Object.create(null); // layerName -> display object
+    this.layerRefs = {};
 
     // ========================================
     // FLAT TEXTURE LOOKUP (Zero-cost texture resolution)
@@ -1067,6 +1077,9 @@ class PixiRenderer extends AbstractWorker {
     // Pre-compute visible lights once (shared by updateLighting, updateShadowSprites)
     this.computeVisibleLights();
 
+    // Grow the central pool before any queue update loops acquire particles.
+    this.prewarmParticlePoolForFrameDemand();
+
     // Update lighting shader uniforms from LightEmitter components
     this.updateLighting();
 
@@ -1313,16 +1326,14 @@ LIGHTING SYSTEM SETUP
       this.lightingDisplaySprite.anchor.set(0, 0); // Ensure top-left anchor
       this.lightingDisplaySprite.position.set(0, 0); // Position at top-left of screen
       this.lightingDisplaySprite.scale.set(1.0 / this.lightingResolution);
-      this.lightingDisplaySprite.blendMode = LAYER_DEFAULT_BLEND_MODES.LIGHTING;
-      this.lightingDisplaySprite.zIndex = PixiRenderer.Z_INDICES.LIGHTING;
+      this._registerLayerDisplayObject('LIGHTING', this.lightingDisplaySprite);
       this.pixiApp.stage.addChild(this.lightingDisplaySprite);
 
       console.log(
         `PIXI WORKER: Lighting RenderTexture created (${this.lightingRT.width}x${this.lightingRT.height})`
       );
     } else {
-      this.lightingMesh.blendMode = LAYER_DEFAULT_BLEND_MODES.LIGHTING;
-      this.lightingMesh.zIndex = PixiRenderer.Z_INDICES.LIGHTING;
+      this._registerLayerDisplayObject('LIGHTING', this.lightingMesh);
       this.pixiApp.stage.addChild(this.lightingMesh);
     }
   }
@@ -1612,8 +1623,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.shadowDisplaySprite.anchor.set(0, 0);
     this.shadowDisplaySprite.position.set(0, 0);
     this.shadowDisplaySprite.scale.set(1.0 / this.shadowResolution);
-    this.shadowDisplaySprite.blendMode = LAYER_DEFAULT_BLEND_MODES.CASTED_SHADOWS;
-    this.shadowDisplaySprite.zIndex = PixiRenderer.Z_INDICES.CASTED_SHADOWS;
+    this._registerLayerDisplayObject('CASTED_SHADOWS', this.shadowDisplaySprite);
 
     // Add to stage
     this.pixiApp.stage.addChild(this.shadowDisplaySprite);
@@ -2114,6 +2124,102 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     console.log(`PIXI WORKER: Layer "${layer}" updated:`, { visible, alpha, blendMode, zIndex });
   }
 
+  _applyLayerPresentation(layerName, displayObject) {
+    if (!displayObject) return;
+    const layer = Layer.get(layerName);
+    if (!layer) return;
+    displayObject.zIndex = layer.zIndex;
+    const useContainerBlend = displayObject instanceof PIXI.ParticleContainer;
+    displayObject.blendMode = useContainerBlend ? layer.containerBlendMode : layer.blendMode;
+  }
+
+  _registerLayerDisplayObject(layerName, displayObject) {
+    if (!layerName || !displayObject) return;
+    this._applyLayerPresentation(layerName, displayObject);
+    this._layerRuntime[layerName] = displayObject;
+  }
+
+  _syncLayerRefsFromRuntime() {
+    const refs = {};
+    const allLayers = Layer.getAll();
+    for (let i = 0; i < allLayers.length; i++) {
+      const layer = allLayers[i];
+      if (!layer) continue;
+      const runtimeObj = this._layerRuntime[layer.name];
+      if (runtimeObj) refs[layer.name] = runtimeObj;
+    }
+    this.layerRefs = refs;
+  }
+
+  _recreateCustomLayerRTs(cl, width, height) {
+    if (!cl || !cl.rt) return;
+    const resolution = cl.resolution || 1.0;
+    const lw = width * resolution;
+    const lh = height * resolution;
+
+    cl.rt.destroy(true);
+    cl.rt = PIXI.RenderTexture.create({ width: lw, height: lh });
+
+    if (cl.shader) {
+      cl.shader.resources.uTexture = cl.rt.source;
+    }
+
+    if (cl.rtOut) {
+      cl.rtOut.destroy(true);
+      cl.rtOut = PIXI.RenderTexture.create({ width: lw, height: lh });
+    }
+
+    if (cl.displaySprite) {
+      cl.displaySprite.texture = cl.rtOut || cl.rt;
+      cl.displaySprite.scale.set(1.0 / resolution);
+    }
+  }
+
+  prewarmParticlePoolAtBoot() {
+    let target = 0;
+    target += (this.renderQueueMaxItems * PARTICLE_PREWARM_POLICY.BOOT_MAIN_FRACTION) | 0;
+    if (this.shadowSpritesEnabled) {
+      target += (this.maxShadowRenderItems * PARTICLE_PREWARM_POLICY.BOOT_SHADOW_FRACTION) | 0;
+    }
+    for (let i = 0; i < this._customLayerList.length; i++) {
+      target += (this._customLayerList[i].maxItems * PARTICLE_PREWARM_POLICY.BOOT_CUSTOM_FRACTION) | 0;
+    }
+    if (target > PARTICLE_PREWARM_POLICY.MAX_PREWARM_COUNT) {
+      target = PARTICLE_PREWARM_POLICY.MAX_PREWARM_COUNT;
+    }
+
+    const missing = target - this.particlePool.freeIndices.length;
+    if (missing > 0) {
+      this.particlePool.preallocate(missing);
+    }
+  }
+
+  prewarmParticlePoolForFrameDemand() {
+    let needed = 0;
+    if (this.renderQueueCount) {
+      const mainCount = this.renderQueueCount[0];
+      if (mainCount > this._rqPrevCount) needed += (mainCount - this._rqPrevCount);
+    }
+    if (this.shadowRenderQueueCount) {
+      const shadowCount = this.shadowRenderQueueCount[0];
+      if (shadowCount > this._shadowPrevCount) needed += (shadowCount - this._shadowPrevCount);
+    }
+    for (let i = 0; i < this._customLayerList.length; i++) {
+      const cl = this._customLayerList[i];
+      const ref = cl.readRef;
+      if (!ref) continue;
+      const count = ref.count[0];
+      if (count > cl.prevCount) needed += (count - cl.prevCount);
+    }
+
+    if (needed <= 0) return;
+    needed += PARTICLE_PREWARM_POLICY.FRAME_SAFETY_MARGIN;
+    const missing = needed - this.particlePool.freeIndices.length;
+    if (missing > 0) {
+      this.particlePool.preallocate(missing);
+    }
+  }
+
   /**
    * PixiJS-specific resize: resize renderer and render textures.
    * Base class (AbstractWorker) already updates canvasWidth/Height, config, and Camera.
@@ -2170,27 +2276,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
       if (cl.rt) {
-        const resolution = cl.resolution || 1.0;
-        const lw = width * resolution;
-        const lh = height * resolution;
-
-        cl.rt.destroy(true);
-        cl.rt = PIXI.RenderTexture.create({ width: lw, height: lh });
-
-        // Re-bind the raw RT as the shader's input texture
-        if (cl.shader) {
-          cl.shader.resources.uTexture = cl.rt.source;
-        }
-
-        if (cl.rtOut) {
-          cl.rtOut.destroy(true);
-          cl.rtOut = PIXI.RenderTexture.create({ width: lw, height: lh });
-        }
-
-        if (cl.displaySprite) {
-          cl.displaySprite.texture = cl.rtOut || cl.rt;
-          cl.displaySprite.scale.set(1.0 / resolution);
-        }
+        this._recreateCustomLayerRTs(cl, width, height);
       }
     }
 
@@ -2258,15 +2344,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Update the BACKGROUND layer reference after background changes
    */
   _updateBackgroundLayerRef() {
-    if (!this.layerRefs) return;
-
     if (this.currentTilemap) {
-      this.layerRefs.BACKGROUND = this.currentTilemap;
+      this._registerLayerDisplayObject('BACKGROUND', this.currentTilemap);
     } else if (this.backgroundSprite) {
-      this.layerRefs.BACKGROUND = this.backgroundSprite;
+      this._registerLayerDisplayObject('BACKGROUND', this.backgroundSprite);
     } else {
-      delete this.layerRefs.BACKGROUND;
+      delete this._layerRuntime.BACKGROUND;
     }
+    this._syncLayerRefsFromRuntime();
   }
 
   /**
@@ -2282,7 +2367,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.backgroundSprite = new PIXI.Sprite(texture);
     this.backgroundSprite.width = this.worldWidth;
     this.backgroundSprite.height = this.worldHeight;
-    this.backgroundSprite.zIndex = PixiRenderer.Z_INDICES.BACKGROUND;
+    this._registerLayerDisplayObject('BACKGROUND', this.backgroundSprite);
     this.pixiApp.stage.addChild(this.backgroundSprite);
 
     console.log(`PIXI WORKER: Static background set to "${textureId}"`);
@@ -2305,7 +2390,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     });
     this.backgroundSprite.tileScale.set(tileScale, tileScale);
     this.backgroundSprite.tilePosition.set(0, 0);
-    this.backgroundSprite.zIndex = PixiRenderer.Z_INDICES.BACKGROUND;
+    this._registerLayerDisplayObject('BACKGROUND', this.backgroundSprite);
     this.pixiApp.stage.addChild(this.backgroundSprite);
 
     console.log(`PIXI WORKER: Tiling background set to "${textureId}" (scale: ${tileScale})`);
@@ -2355,7 +2440,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.parseTiledJSON(this.currentTilemap, data, options);
 
     // Set z-index and add to stage
-    this.currentTilemap.zIndex = PixiRenderer.Z_INDICES.BACKGROUND;
+    this._registerLayerDisplayObject('BACKGROUND', this.currentTilemap);
     this.pixiApp.stage.addChild(this.currentTilemap);
 
     // Apply initial scale immediately
@@ -2549,7 +2634,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Create ParticleContainer with dynamic properties for sprites
     // PixiJS 8 ParticleContainer API
     this.particleContainer = new PIXI.ParticleContainer({
-      blendMode: LAYER_DEFAULT_BLEND_MODES.ENTITIES,
+      blendMode: Layer.get('ENTITIES')?.blendMode || LAYER_DEFAULT_BLEND_MODES.ENTITIES,
       dynamicProperties: {
         vertex: true, // Must be true to allow dynamic scale changes
         position: true,
@@ -2697,7 +2782,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Create decal tile container (renders between background and entities)
       this.decalTileContainer = new PIXI.Container();
-      this.decalTileContainer.zIndex = PixiRenderer.Z_INDICES.DECALS;
+      this._registerLayerDisplayObject('DECALS', this.decalTileContainer);
 
       // Create sprites for each tile
       this.createDecalTileSprites();
@@ -2808,7 +2893,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Add particle container to the stage
     // Sprites are Y-sorted and re-added every frame for proper depth ordering
-    this.particleContainer.zIndex = PixiRenderer.Z_INDICES.ENTITIES;
+    this._registerLayerDisplayObject('ENTITIES', this.particleContainer);
     this.pixiApp.stage.addChild(this.particleContainer);
 
     // ========================================
@@ -2865,6 +2950,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // CUSTOM LAYER RENDERING INFRASTRUCTURE
     // ========================================
     this.initializeCustomLayers(data);
+    this.prewarmParticlePoolAtBoot();
 
     // ========================================
     // LAYER REFERENCES MAP - For debug UI control
@@ -2906,10 +2992,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!data.customLayerRenderQueues || !data.layerData) return;
 
     const metadata = data.layerData.metadata;
-    if (!metadata?.customLayerConfigs) return;
+    if (!metadata?.layers) return;
 
-    for (const [layerName, config] of Object.entries(metadata.customLayerConfigs)) {
+    const layerMetas = metadata.layers;
+    for (let mi = 0; mi < layerMetas.length; mi++) {
+      const config = layerMetas[mi];
+      if (!config || config.builtIn || !config.hasRenderQueue || config.id === metadata.entitiesId) continue;
       const layerId = config.id;
+      const layerName = config.name;
       const lrq = data.customLayerRenderQueues[layerId];
       if (!lrq) continue;
 
@@ -2963,6 +3053,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         layerId,
         layerName,
         maxItems,
+        baseResolution: resolution,
         resolution,
         buffers,
         readRef: buffers[0],
@@ -2975,6 +3066,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         shaderMesh: null,   // Fullscreen quad Mesh with custom shader
         shader: null,       // Shader instance for uniform updates
         displaySprite: null,
+        uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,
+        uniformStore: null,
       };
 
       if (hasShader && config.shaderFragment) {
@@ -3021,6 +3114,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               customUniforms: uniformDefs,
             },
           });
+          cl.uniformStore = cl.shader.resources?.customUniforms?.uniforms || null;
 
           cl.shaderMesh = new Mesh({ geometry, shader: cl.shader });
         } catch (err) {
@@ -3032,14 +3126,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         cl.displaySprite.anchor.set(0, 0);
         cl.displaySprite.position.set(0, 0);
         cl.displaySprite.scale.set(1.0 / resolution);
-        cl.displaySprite.zIndex = layerObj.zIndex;
-        cl.displaySprite.blendMode = layerObj.blendMode;
+        this._registerLayerDisplayObject(layerName, cl.displaySprite);
 
         this.pixiApp.stage.addChild(cl.displaySprite);
         console.log(`PIXI WORKER: Custom shader layer "${layerName}" initialized (resolution=${resolution}, RT=${w}x${h})`);
       } else {
         // Non-shader layer: PC goes directly on stage
-        pc.zIndex = layerObj.zIndex;
+        this._registerLayerDisplayObject(layerName, pc);
         this.pixiApp.stage.addChild(pc);
         console.log(`PIXI WORKER: Custom layer "${layerName}" initialized (no shader)`);
       }
@@ -3053,6 +3146,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this._customLayerList.length > 0) {
       this.pixiApp.stage.sortChildren();
     }
+    this._syncLayerRefsFromRuntime();
   }
 
   /**
@@ -3161,18 +3255,25 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Update shader uniforms from Layer SABs (cross-worker dirty flag)
       if (cl.shader && Layer._uniformDirty[cl.layerId]) {
-        const dirty = Atomics.exchange(Layer._uniformDirty[cl.layerId], 0, 0);
-        if (dirty) {
+        const dirtyRef = Layer._uniformDirty[cl.layerId];
+        if (Atomics.load(dirtyRef, 0) === 1) {
+          Atomics.store(dirtyRef, 0, 0);
           const floats = Layer._uniformFloats[cl.layerId];
-          const uniformMap = Layer._uniformMaps[cl.layerId];
-          if (floats && uniformMap && cl.shader.resources?.customUniforms?.uniforms) {
-            const u = cl.shader.resources.customUniforms.uniforms;
-            for (const [uName, entry] of Object.entries(uniformMap)) {
+          const entries = cl.uniformEntries;
+          const u = cl.uniformStore;
+          if (floats && entries && u) {
+            for (let ei = 0; ei < entries.length; ei++) {
+              const [uName, entry] = entries[ei];
               if (entry.size === 1) {
                 u[uName] = floats[entry.offset];
-              } else if (u[uName] && typeof u[uName] === 'object' && u[uName].length) {
-                for (let k = 0; k < entry.size; k++) {
-                  u[uName][k] = floats[entry.offset + k];
+              } else {
+                const target = u[uName];
+                if (target && typeof target.set === 'function') {
+                  target.set(floats.subarray(entry.offset, entry.offset + entry.size));
+                } else if (target && typeof target === 'object' && target.length) {
+                  for (let k = 0; k < entry.size; k++) {
+                    target[k] = floats[entry.offset + k];
+                  }
                 }
               }
             }
@@ -3187,45 +3288,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Called after all layers are initialized
    */
   buildLayerRefsMap() {
-    this.layerRefs = {};
-
-    // BACKGROUND layer
-    if (this.backgroundSprite) {
-      this.layerRefs.BACKGROUND = this.backgroundSprite;
-    }
-    if (this.currentTilemap) {
-      this.layerRefs.BACKGROUND = this.currentTilemap;
-    }
-
-    // DECALS layer
-    if (this.decalTileContainer) {
-      this.layerRefs.DECALS = this.decalTileContainer;
-    }
-
-    // CASTED_SHADOWS layer
-    if (this.shadowDisplaySprite) {
-      this.layerRefs.CASTED_SHADOWS = this.shadowDisplaySprite;
-    }
-
-    // ENTITIES layer (particle container)
-    if (this.particleContainer) {
-      this.layerRefs.ENTITIES = this.particleContainer;
-    }
-
-    // LIGHTING layer
-    if (this.lightingDisplaySprite) {
-      this.layerRefs.LIGHTING = this.lightingDisplaySprite;
-    } else if (this.lightingMesh) {
-      this.layerRefs.LIGHTING = this.lightingMesh;
-    }
-
-    // Custom layers (display sprite for shader layers, ParticleContainer for plain layers)
+    if (this.currentTilemap) this._registerLayerDisplayObject('BACKGROUND', this.currentTilemap);
+    else if (this.backgroundSprite) this._registerLayerDisplayObject('BACKGROUND', this.backgroundSprite);
+    if (this.decalTileContainer) this._registerLayerDisplayObject('DECALS', this.decalTileContainer);
+    if (this.shadowDisplaySprite) this._registerLayerDisplayObject('CASTED_SHADOWS', this.shadowDisplaySprite);
+    if (this.particleContainer) this._registerLayerDisplayObject('ENTITIES', this.particleContainer);
+    if (this.lightingDisplaySprite) this._registerLayerDisplayObject('LIGHTING', this.lightingDisplaySprite);
+    else if (this.lightingMesh) this._registerLayerDisplayObject('LIGHTING', this.lightingMesh);
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
-      const layerObj = Layer.getById(cl.layerId);
-      if (!layerObj) continue;
-      this.layerRefs[layerObj.name] = cl.displaySprite || cl.pc;
+      this._registerLayerDisplayObject(cl.layerName, cl.displaySprite || cl.pc);
     }
+    this._syncLayerRefsFromRuntime();
 
     const layerNames = Object.keys(this.layerRefs);
     console.log(

@@ -34,7 +34,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
 
     particle: {
       noLimitFPS: true,
-      maxParticles: 0,
+      maxParticles: 30000,
       decals: false,
     },
 
@@ -42,9 +42,9 @@ export class WaterAndBoxesScene extends WEED.Scene {
       subStepCount: 4,
       noLimitFPS: true,
       maxCollisionPairs: 100000,
-      verletDamping: 0.999,
+      verletDamping: 0.997,
       boundaryElasticity: 0.1,
-      collisionResponseStrength: 0.66,
+      collisionResponseStrength: 0.5,
       gravity: { x: 0, y: 1 },
       sleepThreshold: 0,
       wakeUpThreshold: 9999,
@@ -52,7 +52,8 @@ export class WaterAndBoxesScene extends WEED.Scene {
     },
 
     renderer: {
-      noLimitFPS: true,
+      noLimitFPS: false,
+      ySorting: false
     },
 
     lighting: {
@@ -66,8 +67,9 @@ export class WaterAndBoxesScene extends WEED.Scene {
       water: {
         zIndex: 4,             // Render above default ENTITIES layer (zIndex 3)
         blendMode: 'normal',     // Final display blend of the post-processed sprite
-        resolution: 0.5,         // Half-res RT for performance
+        resolution: 0.33,         // Half-res RT for performance
         maxItems: 5000,
+        ySorting: false, // no need to sort water balls
         shader: {
           fragment: '/demos/shaders/metaball.frag',
           containerBlend: 'add', // Additive blend inside the RT (density field)

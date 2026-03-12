@@ -1170,20 +1170,33 @@ class Scene {
     // Register built-in layers from Z_INDICES with their blend modes,
     // then register custom layers from scene config.
     const builtInLayers = {};
+    const defaultYSorting = this.config.renderer?.ySorting !== undefined
+      ? !!this.config.renderer.ySorting
+      : true;
     for (const [name, zIndex] of Object.entries(Z_INDICES)) {
       builtInLayers[name] = {
         zIndex,
         blendMode: LAYER_DEFAULT_BLEND_MODES[name] || 'normal',
+        ySorting: defaultYSorting,
+        layerType:
+          name === 'BACKGROUND' ? 'background'
+            : name === 'DECALS' ? 'decals'
+              : name === 'CASTED_SHADOWS' ? 'shadows'
+                : name === 'LIGHTING' ? 'lighting'
+                  : 'world',
       };
     }
-    Layer.initializeFromConfig(this.config.layers, builtInLayers);
+    Layer.initializeFromConfig(this.config.layers, builtInLayers, defaultYSorting);
 
     // Allocate per-layer render queue SABs for custom layers
     this.customLayerRenderQueues = {};
-    const customLayers = Layer.getCustomLayers();
-    for (const layer of customLayers) {
-      const meta = Layer._metadata.customLayerConfigs[layer.name];
-      const layerMaxItems = meta?.maxItems || LAYER_DEFAULTS.maxItemsPerLayer;
+    const layerMetas = Layer._metadata?.layers || [];
+    for (let i = 0; i < layerMetas.length; i++) {
+      const meta = layerMetas[i];
+      if (!meta || meta.builtIn || !meta.hasRenderQueue || meta.id === Layer.ENTITIES_ID) continue;
+      const layer = Layer.getById(meta.id);
+      if (!layer) continue;
+      const layerMaxItems = meta.maxItems || LAYER_DEFAULTS.maxItemsPerLayer;
 
       let layerQueueOffset = 0;
       layerQueueOffset += 4;                   // count Int32
@@ -1994,8 +2007,10 @@ class Scene {
     // Inject loaded shader source text into Layer metadata for worker serialization
     if (this._loadedShaderSources) {
       for (const [layerName, source] of Object.entries(this._loadedShaderSources)) {
-        if (Layer._metadata?.customLayerConfigs?.[layerName]) {
-          Layer._metadata.customLayerConfigs[layerName].shaderFragment = source;
+        const layer = Layer.get(layerName);
+        const layerMeta = layer ? Layer._metadata?.layers?.[layer.id] : null;
+        if (layerMeta) {
+          layerMeta.shaderFragment = source;
         }
       }
     }

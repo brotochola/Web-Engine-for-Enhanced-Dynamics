@@ -117,7 +117,7 @@ export class ParticleEmitter extends SharedAtomicPool {
    */
   static emit(config) {
     if (!this.initialized) {
-      console.warn('ParticleEmitter.emit() called before initialization');
+      // console.warn('ParticleEmitter.emit() called before initialization');
       return 0;
     }
 

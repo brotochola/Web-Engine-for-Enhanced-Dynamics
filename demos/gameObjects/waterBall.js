@@ -16,7 +16,7 @@ class WaterBall extends GameObject {
     this.rigidBody.maxVel = 80;
     this.rigidBody.maxAcc = 8;
     this.rigidBody.minSpeed = 0;
-    this.rigidBody.friction = 0.01
+    this.rigidBody.friction = 0.02
 
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.5;
@@ -54,6 +54,39 @@ class WaterBall extends GameObject {
       if (dist2 > 40000) return;
       this.addAcceleration(dx * 0.2, dy * 0.2);
     }
+  }
+
+  onCollisionEnter(otherIndex) {
+    const rb = RigidBody
+    const otherSpeed = rb.speed[otherIndex]
+    const mySpeed = rb.speed[this.index]
+
+    const difVelX = rb.vx[otherIndex] - rb.vx[this.index]
+    const difVelY = rb.vy[otherIndex] - rb.vy[this.index]
+    const difVel = difVelX + difVelY
+    const energy = difVel * rb.mass[otherIndex]
+    const energyRatio = energy / 10000
+
+    if (energyRatio < 3) return
+
+    ParticleEmitter.emit({
+      count: Math.floor(energyRatio * 0.5),
+      x: this.x,
+      y: this.y,
+      z: -this.radius,
+      texture: '_whiteCircle',
+      alpha: { min: 0.25, max: 0.5 },
+      scale: { min: 0.66, max: 2 },
+      lifespan: { min: 500, max: 4000 },
+      angleXY: { min: -180, max: 0 },
+      speed: { min: mySpeed, max: otherSpeed },
+      gravity: 0.7,
+      vz: -energyRatio * 0.1 - 0.01,
+      despawnOnGroundContact: true,
+      tweenToAlpha0: true,
+
+    });
+
   }
 }
 

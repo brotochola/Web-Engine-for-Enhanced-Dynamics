@@ -352,6 +352,7 @@ class PreRenderWorker extends AbstractWorker {
                         index: new Int32Array(layerMax),
                         count: 0,
                         maxItems: layerMax,
+                        ySorting: Layer.getById(layerId)?.ySorting !== false,
                     };
 
                     // Create typed views for both double-buffers
@@ -1033,8 +1034,11 @@ class PreRenderWorker extends AbstractWorker {
         const collectorType = this._renderableType;
         const collectorIndex = this._renderableIndex;
 
-        // Sort by Y
-        if (count > 1) {
+        const entitiesLayer = Layer.getById(Layer.ENTITIES_ID);
+        const shouldSortByY = entitiesLayer ? entitiesLayer.ySorting : true;
+
+        // Sort by Y (ENTITIES layer policy)
+        if (shouldSortByY && count > 1) {
             if (count > 256) {
                 this._heapsortRenderables(count);
             } else {
@@ -1384,21 +1388,23 @@ class PreRenderWorker extends AbstractWorker {
             const cType = collector.type;
             const cIndex = collector.index;
 
-            // Y-sort using insertion sort (custom layers are typically small)
-            for (let i = 1; i < layerCount; i++) {
-                const currentY = cY[i];
-                const currentType = cType[i];
-                const currentIndex = cIndex[i];
-                let j = i - 1;
-                while (j >= 0 && cY[j] > currentY) {
-                    cY[j + 1] = cY[j];
-                    cType[j + 1] = cType[j];
-                    cIndex[j + 1] = cIndex[j];
-                    j--;
+            // Optional Y-sort (per-layer policy)
+            if (collector.ySorting && layerCount > 1) {
+                for (let i = 1; i < layerCount; i++) {
+                    const currentY = cY[i];
+                    const currentType = cType[i];
+                    const currentIndex = cIndex[i];
+                    let j = i - 1;
+                    while (j >= 0 && cY[j] > currentY) {
+                        cY[j + 1] = cY[j];
+                        cType[j + 1] = cType[j];
+                        cIndex[j + 1] = cIndex[j];
+                        j--;
+                    }
+                    cY[j + 1] = currentY;
+                    cType[j + 1] = currentType;
+                    cIndex[j + 1] = currentIndex;
                 }
-                cY[j + 1] = currentY;
-                cType[j + 1] = currentType;
-                cIndex[j + 1] = currentIndex;
             }
 
             const rqX = ref.x;

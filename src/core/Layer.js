@@ -14,6 +14,7 @@
 export class Layer {
     static MAX_LAYERS = 16;
     static ENTITIES_ID = -1; // Set during init when ENTITIES is registered
+    static _defaultYSorting = true;
 
     // Registry
     static _byName = {};
@@ -26,6 +27,7 @@ export class Layer {
     static _zIndex = null;            // Float32Array[MAX_LAYERS]
     static _blendModeId = null;       // Uint8Array[MAX_LAYERS]
     static _hasShader = null;         // Uint8Array[MAX_LAYERS]
+    static _ySorting = null;          // Uint8Array[MAX_LAYERS]
     static _resolution = null;        // Float32Array[MAX_LAYERS]
     static _containerBlendId = null;  // Uint8Array[MAX_LAYERS]
     static _available = null;         // Uint8Array[MAX_LAYERS]
@@ -47,6 +49,7 @@ export class Layer {
     constructor(id, name) {
         this.id = id;
         this.name = name;
+        this._layerType = 'world';
     }
 
     // ========================================
@@ -56,11 +59,13 @@ export class Layer {
     get zIndex() { return Layer._zIndex[this.id]; }
     get resolution() { return Layer._resolution[this.id]; }
     get hasShader() { return Layer._hasShader[this.id] === 1; }
+    get ySorting() { return Layer._ySorting[this.id] === 1; }
     get available() { return Layer._available[this.id] === 1; }
     get blendMode() { return Layer.BLEND_MODES[Layer._blendModeId[this.id]] || 'normal'; }
     get containerBlendMode() { return Layer.BLEND_MODES[Layer._containerBlendId[this.id]] || 'normal'; }
     get hasRenderQueue() { return Layer._hasRenderQueue[this.id] === 1; }
     get builtIn() { return this._builtIn; }
+    get layerType() { return this._layerType; }
 
     // ========================================
     // UNIFORM ACCESS (cross-worker safe via SAB + Atomics)
@@ -129,6 +134,7 @@ export class Layer {
     //   zIndex:          Float32[MAX_LAYERS]
     //   blendModeId:     Uint8[MAX_LAYERS]
     //   hasShader:       Uint8[MAX_LAYERS]
+    //   ySorting:        Uint8[MAX_LAYERS]
     //   (align to 4)
     //   resolution:      Float32[MAX_LAYERS]
     //   containerBlendId:Uint8[MAX_LAYERS]
@@ -144,6 +150,9 @@ export class Layer {
         offset += this.MAX_LAYERS;
 
         this._hasShader = new Uint8Array(sab, offset, this.MAX_LAYERS);
+        offset += this.MAX_LAYERS;
+
+        this._ySorting = new Uint8Array(sab, offset, this.MAX_LAYERS);
         offset += this.MAX_LAYERS;
 
         // Align for Float32
@@ -166,6 +175,7 @@ export class Layer {
         size += this.MAX_LAYERS * 4;  // zIndex Float32
         size += this.MAX_LAYERS;      // blendModeId Uint8
         size += this.MAX_LAYERS;      // hasShader Uint8
+        size += this.MAX_LAYERS;      // ySorting Uint8
         size = Math.ceil(size / 4) * 4; // align
         size += this.MAX_LAYERS * 4;  // resolution Float32
         size += this.MAX_LAYERS;      // containerBlendId Uint8
@@ -178,7 +188,7 @@ export class Layer {
     // INITIALIZATION (main thread)
     // ========================================
 
-    static initializeFromConfig(layersConfig = {}, builtInLayers = {}) {
+    static initializeFromConfig(layersConfig = {}, builtInLayers = {}, defaultYSorting = true) {
         // Reset state
         this._byName = {};
         this._byId = [];
@@ -187,6 +197,7 @@ export class Layer {
         this._uniformFloats = [];
         this._uniformDirty = [];
         this._uniformMaps = [];
+        this._defaultYSorting = !!defaultYSorting;
 
         // Allocate config SAB
         this._configSAB = new SharedArrayBuffer(this._getConfigSABSize());
@@ -194,7 +205,11 @@ export class Layer {
 
         // Register built-in layers (BACKGROUND, DECALS, CASTED_SHADOWS, ENTITIES, LIGHTING)
         for (const [name, config] of Object.entries(builtInLayers)) {
-            const layer = this._register(name, { ...config, _builtIn: true });
+            const layer = this._register(name, {
+                ...config,
+                _builtIn: true,
+                _layerType: config.layerType || this._deriveLayerType(name, config, true),
+            });
             if (name === 'ENTITIES') {
                 this.ENTITIES_ID = layer.id;
                 this._hasRenderQueue[layer.id] = 1;
@@ -206,6 +221,7 @@ export class Layer {
             const layer = this._register(name, {
                 ...config,
                 _builtIn: false,
+                _layerType: config.layerType || this._deriveLayerType(name, config, false),
             });
             this._hasRenderQueue[layer.id] = 1;
 
@@ -215,8 +231,20 @@ export class Layer {
         }
 
         this.initialized = true;
-        this._buildMetadata(layersConfig);
+        this._buildMetadata(layersConfig, builtInLayers);
         return this;
+    }
+
+    static _deriveLayerType(name, config = {}, builtIn = false) {
+        if (config.layerType) return config.layerType;
+        if (builtIn) {
+            if (name === 'BACKGROUND') return 'background';
+            if (name === 'DECALS') return 'decals';
+            if (name === 'CASTED_SHADOWS') return 'shadows';
+            if (name === 'ENTITIES') return 'world';
+            if (name === 'LIGHTING') return 'lighting';
+        }
+        return config.shader ? 'screenRT' : 'world';
     }
 
     static _register(name, config = {}) {
@@ -228,10 +256,14 @@ export class Layer {
         const id = this.count++;
         const layer = new Layer(id, name);
         layer._builtIn = !!config._builtIn;
+        layer._layerType = config._layerType || this._deriveLayerType(name, config, layer._builtIn);
 
         this._zIndex[id] = config.zIndex !== undefined ? config.zIndex : id;
         this._blendModeId[id] = this.BLEND_MODE_IDS[config.blendMode || 'normal'] || 0;
         this._hasShader[id] = config.shader ? 1 : 0;
+        this._ySorting[id] = config.ySorting !== undefined
+            ? (config.ySorting ? 1 : 0)
+            : (this._defaultYSorting ? 1 : 0);
         this._resolution[id] = config.resolution || 1.0;
         this._containerBlendId[id] = config.shader?.containerBlend
             ? (this.BLEND_MODE_IDS[config.shader.containerBlend] || 0)
@@ -300,39 +332,49 @@ export class Layer {
     // SERIALIZATION (main thread -> workers)
     // ========================================
 
-    static _buildMetadata(layersConfig) {
+    static _buildMetadata(layersConfig, builtInLayers) {
         this._metadata = {
             count: this.count,
             entitiesId: this.ENTITIES_ID,
-            names: [],
-            builtIn: [],
-            customLayerConfigs: {},
+            layers: new Array(this.count),
         };
 
         for (let i = 0; i < this.count; i++) {
-            this._metadata.names[i] = this._byId[i].name;
-            this._metadata.builtIn[i] = this._byId[i]._builtIn;
-        }
-
-        for (const [name, config] of Object.entries(layersConfig)) {
-            const layer = this._byName[name];
-            if (!layer) continue;
+            const layer = this._byId[i];
+            const name = layer.name;
+            const isBuiltIn = !!layer._builtIn;
+            const config = isBuiltIn
+                ? (builtInLayers[name] || {})
+                : (layersConfig[name] || {});
 
             const meta = {
                 id: layer.id,
+                name,
+                builtIn: isBuiltIn,
+                layerType: layer._layerType || this._deriveLayerType(name, config, isBuiltIn),
+                zIndex: this._zIndex[i],
+                blendMode: this.BLEND_MODES[this._blendModeId[i]] || 'normal',
+                containerBlendMode: this.BLEND_MODES[this._containerBlendId[i]] || 'normal',
+                hasShader: this._hasShader[i] === 1,
+                ySorting: this._ySorting[i] === 1,
+                resolution: this._resolution[i],
+                hasRenderQueue: this._hasRenderQueue[i] === 1,
+                maxItems: isBuiltIn ? 0 : (config.maxItems || 5000),
                 uniformMap: this._uniformMaps[layer.id] || null,
                 shaderFragment: config.shader?.fragment || null,
-                maxItems: config.maxItems || 5000,
+                dynamicResolution: config.dynamicResolution || null,
+                uniformTypes: null,
             };
 
             if (config.shader?.uniforms) {
-                meta.uniformTypes = {};
+                const uniformTypes = {};
                 for (const [uName, uDef] of Object.entries(config.shader.uniforms)) {
-                    meta.uniformTypes[uName] = uDef.type || 'f32';
+                    uniformTypes[uName] = uDef.type || 'f32';
                 }
+                meta.uniformTypes = uniformTypes;
             }
 
-            this._metadata.customLayerConfigs[name] = meta;
+            this._metadata.layers[i] = meta;
         }
     }
 
@@ -376,20 +418,22 @@ export class Layer {
         this.ENTITIES_ID = meta.entitiesId;
 
         for (let i = 0; i < meta.count; i++) {
-            const layer = new Layer(i, meta.names[i]);
-            layer._builtIn = meta.builtIn[i];
-            this._byName[meta.names[i]] = layer;
+            const layerMeta = meta.layers[i];
+            if (!layerMeta) continue;
+            const layer = new Layer(i, layerMeta.name);
+            layer._builtIn = !!layerMeta.builtIn;
+            layer._layerType = layerMeta.layerType || 'world';
+            this._byName[layerMeta.name] = layer;
             this._byId[i] = layer;
         }
 
         // Initialize uniform SAB views
         for (const [idStr, sab] of Object.entries(data.uniformSABs)) {
             const id = parseInt(idStr);
-            const name = meta.names[id];
-            const customConfig = meta.customLayerConfigs[name];
-            if (!customConfig || !customConfig.uniformMap) continue;
+            const layerMeta = meta.layers[id];
+            if (!layerMeta || !layerMeta.uniformMap) continue;
 
-            const uMap = customConfig.uniformMap;
+            const uMap = layerMeta.uniformMap;
             let floatCount = 0;
             for (const entry of Object.values(uMap)) {
                 floatCount = Math.max(floatCount, entry.offset + entry.size);
@@ -421,6 +465,7 @@ export class Layer {
         this._zIndex = null;
         this._blendModeId = null;
         this._hasShader = null;
+        this._ySorting = null;
         this._resolution = null;
         this._containerBlendId = null;
         this._available = null;
