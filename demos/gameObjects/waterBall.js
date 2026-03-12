@@ -13,7 +13,7 @@ class WaterBall extends GameObject {
   setup() { }
 
   onSpawned(spawnConfig = {}) {
-    this.rigidBody.maxVel = 80;
+    this.rigidBody.maxVel = 120;
     this.rigidBody.maxAcc = 8;
     this.rigidBody.minSpeed = 0;
     this.rigidBody.friction = 0.02
@@ -51,12 +51,15 @@ class WaterBall extends GameObject {
       const dx = this.x - Mouse.x;
       const dy = this.y - Mouse.y;
       const dist2 = dx * dx + dy * dy;
-      if (dist2 > 40000) return;
-      this.addAcceleration(dx * 0.2, dy * 0.2);
+      if (dist2 > 160000) return;
+      this.addAcceleration(dx * 0.4, dy * 0.4);
     }
   }
 
   onCollisionEnter(otherIndex) {
+
+    if (WaterBall.entityType == Transform.entityType[otherIndex]) return
+
     const rb = RigidBody
     const otherSpeed = rb.speed[otherIndex]
     const mySpeed = rb.speed[this.index]
@@ -77,9 +80,9 @@ class WaterBall extends GameObject {
       texture: '_whiteCircle',
       alpha: { min: 0.25, max: 0.5 },
       scale: { min: 0.66, max: 2 },
-      lifespan: { min: 500, max: 4000 },
-      angleXY: { min: -180, max: 0 },
-      speed: { min: mySpeed, max: otherSpeed },
+      lifespan: { min: 1000, max: 5000 },
+      angleXY: { min: -180, max: 180 },
+      speed: { min: mySpeed * 0.25, max: otherSpeed * 0.5 },
       gravity: 0.7,
       vz: -energyRatio * 0.1 - 0.01,
       despawnOnGroundContact: true,
