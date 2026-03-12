@@ -52,7 +52,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
     },
 
     renderer: {
-      noLimitFPS: false,
+      noLimitFPS: true,
       ySorting: false
     },
 

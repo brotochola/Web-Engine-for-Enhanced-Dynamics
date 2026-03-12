@@ -24,6 +24,7 @@ import { Sun } from '../core/Sun.js';
 
 import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES, RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
 import { Layer } from '../core/Layer.js';
+import { createViews as createRenderQueueViews } from '../core/RenderQueueLayout.js';
 import { sortByY, normalizeAngleDifference, extractRGBNormalizedMut } from '../core/utils.js';
 
 // OPTIMIZED: Pre-defined comparator function for light sorting (avoids closure allocation per frame)
@@ -2984,9 +2985,22 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   `;
 
   /**
-   * Initialize custom layer rendering infrastructure:
-   * - Per-layer ParticleContainers, sprite pools, render queue SAB views
-   * - For shader layers: two RenderTextures (raw + post-processed) + fullscreen Mesh
+   * Initialize custom layer rendering infrastructure.
+   *
+   * NON-SHADER LAYERS:
+   *   ParticleContainer added directly to stage at the layer's zIndex.
+   *   Camera transform applied via container.scale / container.position.
+   *
+   * SHADER LAYERS (two-RT pipeline):
+   *   1. ParticleContainer rendered (additive blend) → raw density RenderTexture (RT)
+   *   2. Fullscreen Mesh with custom fragment shader reads density RT → output RT
+   *   3. Output RT displayed on stage via Sprite at the layer's zIndex
+   *   This enables screen-space effects (metaballs, heat distortion, etc.)
+   *   driven by entity positions without per-entity shader overhead.
+   *
+   * Uniforms are shared via Layer SABs with Atomics dirty flags -- any thread
+   * can call Layer.get('water').setUniform('uThreshold', 0.4) and the change
+   * is picked up next frame with zero postMessage overhead.
    */
   initializeCustomLayers(data) {
     if (!data.customLayerRenderQueues || !data.layerData) return;
@@ -3010,30 +3024,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const resolution = layerObj.resolution;
       const hasShader = layerObj.hasShader;
 
-      // Parse double-buffered render queue SABs
-      const sabPair = [lrq.dataA, lrq.dataB];
-      const buffers = [];
-      for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
-        const sab = sabPair[bufIdx];
-        let off = 0;
-        const b = { count: new Int32Array(sab, off, 1) };
-        off += 4;
-        b.x = new Float32Array(sab, off, maxItems); off += maxItems * 4;
-        b.y = new Float32Array(sab, off, maxItems); off += maxItems * 4;
-        b.scaleX = new Float32Array(sab, off, maxItems); off += maxItems * 4;
-        b.scaleY = new Float32Array(sab, off, maxItems); off += maxItems * 4;
-        b.rotation = new Float32Array(sab, off, maxItems); off += maxItems * 4;
-        b.alpha = new Float32Array(sab, off, maxItems); off += maxItems * 4;
-        b.tint = new Uint32Array(sab, off, maxItems); off += maxItems * 4;
-        b.textureId = new Uint16Array(sab, off, maxItems); off += maxItems * 2;
-        off = Math.ceil(off / 4) * 4;
-        b.anchorX = new Float32Array(sab, off, maxItems); off += maxItems * 4;
-        b.anchorY = new Float32Array(sab, off, maxItems); off += maxItems * 4;
-        b.type = new Uint8Array(sab, off, maxItems); off += maxItems;
-        off = Math.ceil(off / 4) * 4;
-        b.entityIndex = new Int32Array(sab, off, maxItems);
-        buffers[bufIdx] = b;
-      }
+      const buffers = [
+        createRenderQueueViews(lrq.dataA, maxItems),
+        createRenderQueueViews(lrq.dataB, maxItems),
+      ];
 
       // Create ParticleContainer for this layer
       const containerBlend = layerObj.containerBlendMode;

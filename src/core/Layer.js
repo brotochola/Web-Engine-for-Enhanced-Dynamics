@@ -46,6 +46,10 @@ export class Layer {
     // Metadata for serialization to workers
     static _metadata = null;
 
+    // Cached getAll() result (rebuilt on count change)
+    static _allCache = [];
+    static _allCacheCount = -1;
+
     constructor(id, name) {
         this.id = id;
         this.name = name;
@@ -97,11 +101,7 @@ export class Layer {
 
         const floats = Layer._uniformFloats[this.id];
         if (entry.size === 1) return floats[entry.offset];
-        const result = new Array(entry.size);
-        for (let i = 0; i < entry.size; i++) {
-            result[i] = floats[entry.offset + i];
-        }
-        return result;
+        return floats.subarray(entry.offset, entry.offset + entry.size);
     }
 
     // ========================================
@@ -110,7 +110,13 @@ export class Layer {
 
     static get(name) { return this._byName[name] || null; }
     static getById(id) { return this._byId[id] || null; }
-    static getAll() { return this._byId.filter(Boolean); }
+    static getAll() {
+        if (this._allCacheCount !== this.count) {
+            this._allCache = this._byId.filter(Boolean);
+            this._allCacheCount = this.count;
+        }
+        return this._allCache;
+    }
 
     static getId(name) {
         const layer = this._byName[name];
@@ -208,7 +214,7 @@ export class Layer {
             const layer = this._register(name, {
                 ...config,
                 _builtIn: true,
-                _layerType: config.layerType || this._deriveLayerType(name, config, true),
+                _layerType: config.layerType || this._deriveLayerType(name, true, !!config.shader),
             });
             if (name === 'ENTITIES') {
                 this.ENTITIES_ID = layer.id;
@@ -221,7 +227,7 @@ export class Layer {
             const layer = this._register(name, {
                 ...config,
                 _builtIn: false,
-                _layerType: config.layerType || this._deriveLayerType(name, config, false),
+                _layerType: config.layerType || this._deriveLayerType(name, false, !!config.shader),
             });
             this._hasRenderQueue[layer.id] = 1;
 
@@ -235,8 +241,7 @@ export class Layer {
         return this;
     }
 
-    static _deriveLayerType(name, config = {}, builtIn = false) {
-        if (config.layerType) return config.layerType;
+    static _deriveLayerType(name, builtIn = false, hasShader = false) {
         if (builtIn) {
             if (name === 'BACKGROUND') return 'background';
             if (name === 'DECALS') return 'decals';
@@ -244,7 +249,7 @@ export class Layer {
             if (name === 'ENTITIES') return 'world';
             if (name === 'LIGHTING') return 'lighting';
         }
-        return config.shader ? 'screenRT' : 'world';
+        return hasShader ? 'screenRT' : 'world';
     }
 
     static _register(name, config = {}) {
@@ -256,7 +261,7 @@ export class Layer {
         const id = this.count++;
         const layer = new Layer(id, name);
         layer._builtIn = !!config._builtIn;
-        layer._layerType = config._layerType || this._deriveLayerType(name, config, layer._builtIn);
+        layer._layerType = config._layerType || this._deriveLayerType(name, layer._builtIn, !!config.shader);
 
         this._zIndex[id] = config.zIndex !== undefined ? config.zIndex : id;
         this._blendModeId[id] = this.BLEND_MODE_IDS[config.blendMode || 'normal'] || 0;
@@ -351,7 +356,7 @@ export class Layer {
                 id: layer.id,
                 name,
                 builtIn: isBuiltIn,
-                layerType: layer._layerType || this._deriveLayerType(name, config, isBuiltIn),
+                layerType: layer._layerType,
                 zIndex: this._zIndex[i],
                 blendMode: this.BLEND_MODES[this._blendModeId[i]] || 'normal',
                 containerBlendMode: this.BLEND_MODES[this._containerBlendId[i]] || 'normal',
@@ -475,5 +480,7 @@ export class Layer {
         this._uniformDirty = [];
         this._uniformMaps = [];
         this._metadata = null;
+        this._allCache = [];
+        this._allCacheCount = -1;
     }
 }

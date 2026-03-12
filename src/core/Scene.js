@@ -52,6 +52,7 @@ import {
 } from './ConfigDefaults.js';
 import { Sun } from './Sun.js';
 import { Layer } from './Layer.js';
+import { computeBufferSize as computeRenderQueueBufferSize } from './RenderQueueLayout.js';
 import { NavGrid } from './NavGrid.js';
 import { Grid } from './Grid.js';
 import { Ray } from './Ray.js';
@@ -1125,23 +1126,7 @@ class Scene {
     //
     // Buffer size is computed with explicit alignment to match worker parsing.
     const maxVisibleRenderables = this.config.renderer.maxVisibleRenderables || 10000;
-    let renderQueueOffset = 0;
-    renderQueueOffset += 4; // count Int32
-    renderQueueOffset += maxVisibleRenderables * 4; // x
-    renderQueueOffset += maxVisibleRenderables * 4; // y
-    renderQueueOffset += maxVisibleRenderables * 4; // scaleX
-    renderQueueOffset += maxVisibleRenderables * 4; // scaleY
-    renderQueueOffset += maxVisibleRenderables * 4; // rotation
-    renderQueueOffset += maxVisibleRenderables * 4; // alpha
-    renderQueueOffset += maxVisibleRenderables * 4; // tint
-    renderQueueOffset += maxVisibleRenderables * 2; // textureId
-    renderQueueOffset = Math.ceil(renderQueueOffset / 4) * 4; // align for Float32
-    renderQueueOffset += maxVisibleRenderables * 4; // anchorX
-    renderQueueOffset += maxVisibleRenderables * 4; // anchorY
-    renderQueueOffset += maxVisibleRenderables; // type
-    renderQueueOffset = Math.ceil(renderQueueOffset / 4) * 4; // align for Int32
-    renderQueueOffset += maxVisibleRenderables * 4; // entityIndex
-    const renderQueueBufferSize = renderQueueOffset;
+    const renderQueueBufferSize = computeRenderQueueBufferSize(maxVisibleRenderables);
 
     // Two render queue buffers for double buffering
     this.buffers.renderQueueDataA = new SharedArrayBuffer(renderQueueBufferSize);
@@ -1197,27 +1182,11 @@ class Scene {
       const layer = Layer.getById(meta.id);
       if (!layer) continue;
       const layerMaxItems = meta.maxItems || LAYER_DEFAULTS.maxItemsPerLayer;
-
-      let layerQueueOffset = 0;
-      layerQueueOffset += 4;                   // count Int32
-      layerQueueOffset += layerMaxItems * 4;   // x
-      layerQueueOffset += layerMaxItems * 4;   // y
-      layerQueueOffset += layerMaxItems * 4;   // scaleX
-      layerQueueOffset += layerMaxItems * 4;   // scaleY
-      layerQueueOffset += layerMaxItems * 4;   // rotation
-      layerQueueOffset += layerMaxItems * 4;   // alpha
-      layerQueueOffset += layerMaxItems * 4;   // tint
-      layerQueueOffset += layerMaxItems * 2;   // textureId
-      layerQueueOffset = Math.ceil(layerQueueOffset / 4) * 4;
-      layerQueueOffset += layerMaxItems * 4;   // anchorX
-      layerQueueOffset += layerMaxItems * 4;   // anchorY
-      layerQueueOffset += layerMaxItems;       // type
-      layerQueueOffset = Math.ceil(layerQueueOffset / 4) * 4;
-      layerQueueOffset += layerMaxItems * 4;   // entityIndex
+      const layerQueueSize = computeRenderQueueBufferSize(layerMaxItems);
 
       this.customLayerRenderQueues[layer.id] = {
-        dataA: new SharedArrayBuffer(layerQueueOffset),
-        dataB: new SharedArrayBuffer(layerQueueOffset),
+        dataA: new SharedArrayBuffer(layerQueueSize),
+        dataB: new SharedArrayBuffer(layerQueueSize),
         maxItems: layerMaxItems,
         layerId: layer.id,
         layerName: layer.name,

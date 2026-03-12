@@ -22,6 +22,7 @@ import {
 import { PRE_RENDER_STATS, createStatsWriter } from './workers-utils.js';
 import { RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
 import { Layer } from '../core/Layer.js';
+import { createViews as createRenderQueueViews } from '../core/RenderQueueLayout.js';
 
 /**
  * PreRenderWorker - Handles all visual pre-calculations before rendering
@@ -242,54 +243,7 @@ class PreRenderWorker extends AbstractWorker {
             const cameraSABs = [data.renderQueue.cameraA || null, data.renderQueue.cameraB || null];
 
             for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
-                const sab = bufferSABs[bufIdx];
-                let offset = 0;
-
-                const buffer = {
-                    count: new Int32Array(sab, offset, 1),
-                };
-                offset += 4;
-
-                buffer.x = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.y = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.scaleX = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.scaleY = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.rotation = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.alpha = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.tint = new Uint32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.textureId = new Uint16Array(sab, offset, maxItems);
-                offset += maxItems * 2;
-
-                offset = Math.ceil(offset / 4) * 4;
-
-                buffer.anchorX = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.anchorY = new Float32Array(sab, offset, maxItems);
-                offset += maxItems * 4;
-
-                buffer.type = new Uint8Array(sab, offset, maxItems);
-                offset += maxItems;
-
-                offset = Math.ceil(offset / 4) * 4;
-
-                buffer.entityIndex = new Int32Array(sab, offset, maxItems);
-
-                this.renderQueueBuffers[bufIdx] = buffer;
+                this.renderQueueBuffers[bufIdx] = createRenderQueueViews(bufferSABs[bufIdx], maxItems);
                 this.renderQueueCameraBuffers[bufIdx] = cameraSABs[bufIdx]
                     ? new Float32Array(cameraSABs[bufIdx], 0, 3)
                     : null;
@@ -336,17 +290,19 @@ class PreRenderWorker extends AbstractWorker {
             console.log(`[PRE_RENDER WORKER] Double-buffered render queue initialized (max ${maxItems} items)`);
 
             // Initialize per-custom-layer collectors and render queue buffers
+            // Indexed by layerId for O(1) lookup in collectRenderable()
             this._customLayerCollectors = {};
             this._customLayerQueueBuffers = {};
             this._customLayerQueueRefs = {};
+            // Flat cached arrays for zero-alloc iteration in hot paths
+            this._customLayerEntries = [];
 
             if (data.customLayerRenderQueues) {
                 for (const [idStr, lrq] of Object.entries(data.customLayerRenderQueues)) {
                     const layerId = parseInt(idStr);
                     const layerMax = lrq.maxItems;
 
-                    // Pre-allocate collector arrays for this layer
-                    this._customLayerCollectors[layerId] = {
+                    const collector = {
                         y: new Float32Array(layerMax),
                         type: new Uint8Array(layerMax),
                         index: new Int32Array(layerMax),
@@ -354,34 +310,16 @@ class PreRenderWorker extends AbstractWorker {
                         maxItems: layerMax,
                         ySorting: Layer.getById(layerId)?.ySorting !== false,
                     };
+                    this._customLayerCollectors[layerId] = collector;
 
-                    // Create typed views for both double-buffers
-                    const sabPair = [lrq.dataA, lrq.dataB];
-                    const bufs = [];
-                    for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
-                        const sab = sabPair[bufIdx];
-                        let off = 0;
-                        const b = { count: new Int32Array(sab, off, 1) };
-                        off += 4;
-                        b.x = new Float32Array(sab, off, layerMax); off += layerMax * 4;
-                        b.y = new Float32Array(sab, off, layerMax); off += layerMax * 4;
-                        b.scaleX = new Float32Array(sab, off, layerMax); off += layerMax * 4;
-                        b.scaleY = new Float32Array(sab, off, layerMax); off += layerMax * 4;
-                        b.rotation = new Float32Array(sab, off, layerMax); off += layerMax * 4;
-                        b.alpha = new Float32Array(sab, off, layerMax); off += layerMax * 4;
-                        b.tint = new Uint32Array(sab, off, layerMax); off += layerMax * 4;
-                        b.textureId = new Uint16Array(sab, off, layerMax); off += layerMax * 2;
-                        off = Math.ceil(off / 4) * 4;
-                        b.anchorX = new Float32Array(sab, off, layerMax); off += layerMax * 4;
-                        b.anchorY = new Float32Array(sab, off, layerMax); off += layerMax * 4;
-                        b.type = new Uint8Array(sab, off, layerMax); off += layerMax;
-                        off = Math.ceil(off / 4) * 4;
-                        b.entityIndex = new Int32Array(sab, off, layerMax);
-                        bufs[bufIdx] = b;
-                    }
+                    const bufs = [
+                        createRenderQueueViews(lrq.dataA, layerMax),
+                        createRenderQueueViews(lrq.dataB, layerMax),
+                    ];
                     this._customLayerQueueBuffers[layerId] = bufs;
-                    // Active write refs (swapped each frame like the main queue)
                     this._customLayerQueueRefs[layerId] = {};
+
+                    this._customLayerEntries.push({ layerId, collector, bufs, ref: null });
 
                     console.log(`[PRE_RENDER WORKER] Custom layer ${layerId} render queue initialized (max ${layerMax} items)`);
                 }
@@ -527,9 +465,12 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueCamera = this.renderQueueCameraBuffers[bufferIdx];
 
         // Swap custom layer write buffers in sync
-        if (this._customLayerQueueBuffers) {
-            for (const [idStr, bufs] of Object.entries(this._customLayerQueueBuffers)) {
-                this._customLayerQueueRefs[idStr] = bufs[bufferIdx];
+        const entries = this._customLayerEntries;
+        if (entries) {
+            for (let i = 0; i < entries.length; i++) {
+                const e = entries[i];
+                e.ref = e.bufs[bufferIdx];
+                this._customLayerQueueRefs[e.layerId] = e.ref;
             }
         }
     }
@@ -945,12 +886,17 @@ class PreRenderWorker extends AbstractWorker {
             const layerId = SpriteRenderer.layerId[index];
             if (layerId !== 0 && layerId !== Layer.ENTITIES_ID) {
                 const collector = this._customLayerCollectors[layerId];
-                if (collector && collector.count < collector.maxItems) {
-                    const wi = collector.count;
-                    collector.y[wi] = y;
-                    collector.type[wi] = type;
-                    collector.index[wi] = index;
-                    collector.count = wi + 1;
+                if (collector) {
+                    if (collector.count < collector.maxItems) {
+                        const wi = collector.count;
+                        collector.y[wi] = y;
+                        collector.type[wi] = type;
+                        collector.index[wi] = index;
+                        collector.count = wi + 1;
+                    } else if (!collector._overflowWarned) {
+                        collector._overflowWarned = true;
+                        console.warn(`[PRE_RENDER] Layer ${Layer.getName(layerId)} render queue full (max ${collector.maxItems}). Increase maxItems in scene config.`);
+                    }
                 }
                 return;
             }
@@ -966,13 +912,10 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * In-place heapsort for renderable collector
+     * In-place heapsort for any renderable collector triplet (Y, type, index).
+     * Used by both main ENTITIES queue and custom layer queues.
      */
-    _heapsortRenderables(count) {
-        const yArr = this._renderableY;
-        const typeArr = this._renderableType;
-        const indexArr = this._renderableIndex;
-
+    _heapsortCollector(count, yArr, typeArr, indexArr) {
         for (let i = (count >> 1) - 1; i >= 0; i--) {
             this._heapifyRenderables(count, i, yArr, typeArr, indexArr);
         }
@@ -989,6 +932,10 @@ class PreRenderWorker extends AbstractWorker {
             indexArr[i] = tempIndex;
             this._heapifyRenderables(i, 0, yArr, typeArr, indexArr);
         }
+    }
+
+    _heapsortRenderables(count) {
+        this._heapsortCollector(count, this._renderableY, this._renderableType, this._renderableIndex);
     }
 
     _heapifyRenderables(heapSize, i, yArr, typeArr, indexArr) {
@@ -1371,39 +1318,43 @@ class PreRenderWorker extends AbstractWorker {
         const entityLastTextureId = this.entityLastTextureId;
         const deltaSeconds = deltaTime / 1000;
 
-        for (const [idStr, collector] of Object.entries(this._customLayerCollectors)) {
-            const layerId = parseInt(idStr);
+        const layerEntries = this._customLayerEntries;
+        for (let li = 0; li < layerEntries.length; li++) {
+            const entry = layerEntries[li];
+            const collector = entry.collector;
             const layerCount = collector.count;
             if (layerCount === 0) {
-                const ref = this._customLayerQueueRefs[layerId];
-                if (ref) ref.count[0] = 0;
-                collector.count = 0;
+                if (entry.ref) entry.ref.count[0] = 0;
                 continue;
             }
 
-            const ref = this._customLayerQueueRefs[layerId];
+            const ref = entry.ref;
             if (!ref) { collector.count = 0; continue; }
 
             const cY = collector.y;
             const cType = collector.type;
             const cIndex = collector.index;
 
-            // Optional Y-sort (per-layer policy)
+            // Y-sort (per-layer policy), same threshold as main ENTITIES queue
             if (collector.ySorting && layerCount > 1) {
-                for (let i = 1; i < layerCount; i++) {
-                    const currentY = cY[i];
-                    const currentType = cType[i];
-                    const currentIndex = cIndex[i];
-                    let j = i - 1;
-                    while (j >= 0 && cY[j] > currentY) {
-                        cY[j + 1] = cY[j];
-                        cType[j + 1] = cType[j];
-                        cIndex[j + 1] = cIndex[j];
-                        j--;
+                if (layerCount > 256) {
+                    this._heapsortCollector(layerCount, cY, cType, cIndex);
+                } else {
+                    for (let i = 1; i < layerCount; i++) {
+                        const currentY = cY[i];
+                        const currentType = cType[i];
+                        const currentIndex = cIndex[i];
+                        let j = i - 1;
+                        while (j >= 0 && cY[j] > currentY) {
+                            cY[j + 1] = cY[j];
+                            cType[j + 1] = cType[j];
+                            cIndex[j + 1] = cIndex[j];
+                            j--;
+                        }
+                        cY[j + 1] = currentY;
+                        cType[j + 1] = currentType;
+                        cIndex[j + 1] = currentIndex;
                     }
-                    cY[j + 1] = currentY;
-                    cType[j + 1] = currentType;
-                    cIndex[j + 1] = currentIndex;
                 }
             }
 
@@ -1502,11 +1453,11 @@ class PreRenderWorker extends AbstractWorker {
         const maxShadowsPerEntity = this.maxShadowsPerEntity;
         const entityShadowCounts = this._entityShadowCounts;
         const toClear = this._entityShadowIndicesToClear;
-        const toClearCount = this._entityShadowIndicesToClearCount ?? 0;
-        if (maxShadowsPerEntity > 0 && entityShadowCounts && toClear) {
-            for (let i = 0; i < toClearCount; i++) entityShadowCounts[toClear[i]] = 0;
-        }
-        this._entityShadowIndicesToClearCount = 0;
+
+        // NOTE: Do NOT clear entityShadowCounts here. collectVisibleEntities()
+        // already cleared the previous frame's counts and accumulated sun shadow
+        // counts for this frame. Point light shadows must respect those counts so
+        // the total per-entity shadow budget (sun + point) is enforced correctly.
 
         const rqX = this.shadowRenderQueueX;
         const rqY = this.shadowRenderQueueY;

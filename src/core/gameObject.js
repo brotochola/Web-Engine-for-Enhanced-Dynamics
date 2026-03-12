@@ -795,6 +795,12 @@ export class GameObject {
     return this;
   }
 
+  /** Current rendering layer name (read-only) */
+  get layerName() {
+    if (!this._hasComponents.SpriteRenderer) return null;
+    return Layer.getName(SpriteRenderer.layerId[this.index]);
+  }
+
   /**
    * Set rendering layer for this entity
    * Entities in different layers are rendered into separate ParticleContainers
@@ -1235,20 +1241,6 @@ export class GameObject {
 
     return this;
   }
-  /**
-   * Helper method to send sprite property changes to renderer
-   */
-  setSpriteProp(prop, value) {
-    if (this.logicWorker) {
-      this.logicWorker.sendDataToWorker('renderer', {
-        cmd: 'setProp',
-        entityId: this.index,
-        prop: prop,
-        value: value,
-      });
-    }
-  }
-
   /**
    * LIFECYCLE: Called at the END of constructor - runs ONCE per entity lifetime
    * Override in subclasses to configure entity TYPE properties
