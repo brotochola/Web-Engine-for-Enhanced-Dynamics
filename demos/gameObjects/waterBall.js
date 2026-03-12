@@ -2,7 +2,7 @@ import WEED from '/src/index.js';
 
 const { GameObject, Mouse, RigidBody, Collider, SpriteRenderer, mixTint } = WEED;
 
-const BASE_WATER_TINT = 0x7fb2ff;
+const BASE_WATER_TINT = 0x0000aa;
 const SPLASH_TINT = 0xffffff;
 
 class WaterBall extends GameObject {
@@ -13,7 +13,7 @@ class WaterBall extends GameObject {
   setup() { }
 
   onSpawned(spawnConfig = {}) {
-    this.rigidBody.maxVel = 300;
+    this.rigidBody.maxVel = 80;
     this.rigidBody.maxAcc = 8;
     this.rigidBody.minSpeed = 0;
     this.rigidBody.friction = 0.01
@@ -40,12 +40,12 @@ class WaterBall extends GameObject {
   }
 
   tick(dtRatio) {
-    const speedFactor = Math.min(1, (this.rigidBody.speed * 0.1) / this.rigidBody.maxVel);
+    const speedFactor = Math.min(1, (this.rigidBody.speed) / (this.rigidBody.maxVel));
     const tint = mixTint(BASE_WATER_TINT, SPLASH_TINT, speedFactor);
 
     this.setTint(tint);
     // this.setTint(0x000077)
-    this.setAlpha(0.5);
+    this.setAlpha(0.4 + speedFactor * 0.6);
 
     if (Mouse.isButton1Down) {
       const dx = this.x - Mouse.x;

@@ -25,6 +25,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
       maxNeighbors: 900,
       noLimitFPS: true,
       numberOfSpatialWorkers: 2,
+      maxEntitiesPerCell: 256,
     },
 
     logic: {
@@ -38,12 +39,12 @@ export class WaterAndBoxesScene extends WEED.Scene {
     },
 
     physics: {
-      subStepCount: 3,
+      subStepCount: 4,
       noLimitFPS: true,
       maxCollisionPairs: 100000,
       verletDamping: 0.999,
       boundaryElasticity: 0.1,
-      collisionResponseStrength: 0.33,
+      collisionResponseStrength: 0.66,
       gravity: { x: 0, y: 1 },
       sleepThreshold: 0,
       wakeUpThreshold: 9999,
@@ -72,11 +73,11 @@ export class WaterAndBoxesScene extends WEED.Scene {
           containerBlend: 'add', // Additive blend inside the RT (density field)
           uniforms: {
             uThreshold: { value: 0.8, type: 'f32' },
-            uWaterColor: { value: [0.15, 0.45, 0.95], type: 'vec3<f32>' },
+            uWaterColor: { value: [0.05, 0.1, 0.95], type: 'vec3<f32>' },
             uFoamIntensity: { value: 1.25, type: 'f32' },
             uFoamWidth: { value: 0.16, type: 'f32' },
             uSampleStep: { value: 0.0025, type: 'f32' },
-            uOpacity: { value: 0.95, type: 'f32' },
+            uOpacity: { value: 0.9, type: 'f32' },
             uTime: { value: 0.0, type: 'f32' },
           },
         },

@@ -45,11 +45,24 @@ void main() {
 
     float edge = smoothstep(uThreshold - 0.03, uThreshold + 0.03, density);
 
+    // Sprite color encodes speed: white = fast, blue = slow
     vec3 spriteColor = density > 0.001 ? acc.rgb / density : vec3(1.0);
+    float speedFactor = (spriteColor.r + spriteColor.g) * 0.5; // whiter = faster
 
-    float depth = smoothstep(uThreshold, uThreshold + 0.6, density);
-    vec3 baseColor = mix(vec3(1.0), spriteColor * 0.45, depth) * edge;
+    // Depth factor: how far above threshold (0 = surface, 1 = deep)
+    float depth = smoothstep(uThreshold, uThreshold + 0.8, density);
 
+    // Goal 2: More density → more blue
+    // Blend from white (surface/shallow) to deep water color based on density
+    vec3 shallowColor = vec3(0.7, 0.85, 1.0);
+    vec3 deepColor = uWaterColor * 0.6;
+    vec3 densityColor = mix(shallowColor, deepColor, depth);
+
+    // Goal 1: Speed → white (override density color with speed-based whitening)
+    vec3 baseColor = mix(densityColor, spriteColor, speedFactor * 0.7);
+    baseColor *= edge;
+
+    // Foam at surface boundaries and turbulent regions
     float surfaceBand = 1.0 - smoothstep(0.0, uFoamWidth, abs(density - uThreshold));
     vec2 fieldGrad = vec2(dR - dL, dB - dT);
     float slope = length(fieldGrad);
@@ -58,13 +71,22 @@ void main() {
     float ripple = clamp(abs((dR + dB) - (dL + dT)) * 4.0, 0.0, 1.0);
     float foam = clamp(surfaceBand * foamTurb * uFoamIntensity * mix(0.85, 1.1, ripple), 0.0, 1.0);
 
+    // Extra foam for fast-moving water
+    foam += speedFactor * surfaceBand * 0.3;
+    foam = clamp(foam, 0.0, 1.0);
+
+    // Caustics (more visible in deeper/calmer water)
     vec3 caustics = causticPattern(vTextureCoord * 3.0, uTime);
-    baseColor = baseColor + caustics * (1.0 - baseColor) * edge * 0.35;
+    float causticStrength = 5.0 * depth * (1.0 - speedFactor * 0.5) * 0.4;
+    baseColor = baseColor + caustics * (1.0 - baseColor) * edge * causticStrength;
 
-    vec3 waterColorOut = mix(baseColor, vec3(1.0), foam);
+    // Apply foam
+    vec3 finalRGB = mix(baseColor, vec3(1.0), foam);
 
-    float densityAlpha = smoothstep(0.0, uThreshold , density);
-    float alpha = clamp(edge * depth * uOpacity + foam * 0.2, 0.0, 1.0);
+    // Goal 3: Less density → less alpha
+    // Smooth alpha falloff: transparent at edges, opaque in dense regions
+    float densityAlpha = smoothstep(0.0, uThreshold * 0.5, density);
+    float alpha = clamp(densityAlpha * depth * uOpacity + foam * 0.3 + edge * 0.2, 0.0, 1.0);
 
-    finalColor = vec4(baseColor, alpha);
+    finalColor = vec4(finalRGB, alpha);
 }
