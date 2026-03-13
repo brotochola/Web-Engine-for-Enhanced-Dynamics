@@ -2,9 +2,6 @@
 ## -- spritesheet registry ---
 ---
 
-IDEAS PARA JUEGOS:
--auto visto desde arriba, o topdown, formado por circulos con contraints, muchos autos, mucha gente
-
 ---
 
 JSDoc `@typedef`,

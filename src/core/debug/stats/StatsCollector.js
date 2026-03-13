@@ -101,6 +101,19 @@ export class StatsCollector {
     }
 
     this._prevWorkerStats = {};
+
+    const pv = this._prevValues;
+    pv.mainFPS = -1;
+    pv.audioActive = -1; pv.audioMax = -1; pv.audioLoaded = -1;
+    pv.audioDropped = -1; pv.audioMixGain = -1; pv.audioMasterVol = -1;
+    pv.audioMuted = false; pv.audioRate = -1; pv.audioLatency = -1;
+    pv.activeGO = -1; pv.totalGO = -1; pv.visibleGO = -1;
+    pv.activeP = -1; pv.totalP = -1; pv.visibleP = -1;
+    pv.activeD = -1; pv.totalD = -1; pv.visibleD = -1;
+    pv.flashUpdated = -1;
+    pv.activeEntities = -1; pv.totalEntities = -1; pv.visibleEntities = -1;
+    pv.decorationTotal = -1; pv.decorationActive = -1;
+    pv.decorationVisible = -1; pv.decorationSprites = -1;
   }
 
   detach() {

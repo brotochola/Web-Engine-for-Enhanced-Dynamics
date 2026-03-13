@@ -97,7 +97,11 @@ export class SoundManager {
 
   static async initializeAudioWorklet(maxSlots = 64, mixGain = 0.5, masterVolume = 1.0) {
     if (this._isWorkerContext()) return false;
-    if (this._audioCtx) return true;
+
+    if (this._audioCtx) {
+      this._reconfigureForNewScene(maxSlots, mixGain, masterVolume);
+      return true;
+    }
 
     this._audioCtx = new AudioContext({ latencyHint: 'interactive' });
 
@@ -155,6 +159,35 @@ export class SoundManager {
     this._i32 = new Int32Array(config.sab);
     this._f32 = new Float32Array(config.sab);
     this._maxSlots = config.maxSlots || this._i32[0] || 64;
+  }
+
+  /**
+   * Reconfigure the audio worklet for a new scene without recreating the AudioContext.
+   * Rebuilds the SAB if maxSlots changed, and always applies fresh gain/volume.
+   */
+  static _reconfigureForNewScene(maxSlots, mixGain, masterVolume) {
+    if (maxSlots !== this._maxSlots) {
+      this._maxSlots = maxSlots;
+      const sabBytes = (this.HEADER_SIZE + maxSlots * this.SLOT_SIZE) * 4;
+      this._sab = new SharedArrayBuffer(sabBytes);
+      this._i32 = new Int32Array(this._sab);
+      this._f32 = new Float32Array(this._sab);
+      this._i32.fill(0);
+      Atomics.store(this._i32, 0, maxSlots);
+
+      if (this._workletNode) {
+        this._workletNode.port.postMessage({ type: 'init', sab: this._sab, maxSlots });
+      }
+    }
+
+    this._f32[this.HEADER_MIX_GAIN] = Math.max(0, Math.min(1, mixGain));
+    this._f32[this.HEADER_MASTER_VOL] = Math.max(0, Math.min(1, masterVolume));
+    this._savedMasterVolume = this._f32[this.HEADER_MASTER_VOL];
+    this._muted = false;
+
+    console.log(
+      `[SoundManager] AudioWorklet reconfigured for new scene (${maxSlots} slots, mixGain=${mixGain}, masterVol=${masterVolume})`
+    );
   }
 
   // ─── Sound ID mapping ──────────────────────────────────────────────────────
