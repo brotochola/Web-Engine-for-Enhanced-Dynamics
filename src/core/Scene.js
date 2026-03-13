@@ -718,10 +718,6 @@ class Scene {
 
     await this.createWorkers();
 
-    // Setup event listeners (input must be ready before create() so spawn logic can read config)
-
-    this.setupEventListeners();
-
     // Update entity count display
     const numberBoidsElement = document.getElementById('numberBoids');
     if (numberBoidsElement) {
@@ -2548,59 +2544,43 @@ class Scene {
     }
   }
 
-  setupEventListeners() {
-    // Store bound handlers so we can remove them later
-    this._keydownHandler = (e) => {
-      const key = e.key.toLowerCase();
-      this.keyboard[key] = true;
-      this.updateKeyboardBuffer();
-    };
+  // ---------------------------------------------------------------------------
+  // Input callbacks — called by GameEngine's event listeners
+  // ---------------------------------------------------------------------------
 
-    this._keyupHandler = (e) => {
-      const key = e.key.toLowerCase();
-      this.keyboard[key] = false;
-      this.updateKeyboardBuffer();
-    };
+  onKeyDown(key) {
+    this.keyboard[key] = true;
+    this.updateKeyboardBuffer();
+  }
 
-    this._mousedownHandler = (e) => {
-      // Skip button state updates when debug tool is active (DebugUI painter/eraser)
-      if (Mouse.isDebugToolActive) return;
-      if (e.button == 0) Mouse.isButton0Down = true;
-      if (e.button == 1) Mouse.isButton1Down = true;
-      if (e.button == 2) Mouse.isButton2Down = true;
-    };
+  onKeyUp(key) {
+    this.keyboard[key] = false;
+    this.updateKeyboardBuffer();
+  }
 
-    this._mouseupHandler = (e) => {
-      // Always process mouseup to prevent stuck button state
-      if (e.button == 0) Mouse.isButton0Down = false;
-      if (e.button == 1) Mouse.isButton1Down = false;
-      if (e.button == 2) Mouse.isButton2Down = false;
-    };
+  onMouseDown(button) {
+    if (button == 0) Mouse.isButton0Down = true;
+    if (button == 1) Mouse.isButton1Down = true;
+    if (button == 2) Mouse.isButton2Down = true;
+  }
 
-    this._mousemoveHandler = (e) => {
-      const rect = this.canvas.getBoundingClientRect();
-      Mouse.isPresent = true;
-      Mouse.setCanvasPosition(e.clientX - rect.left, e.clientY - rect.top, this.camera);
-    };
+  onMouseUp(button) {
+    if (button == 0) Mouse.isButton0Down = false;
+    if (button == 1) Mouse.isButton1Down = false;
+    if (button == 2) Mouse.isButton2Down = false;
+  }
 
-    this._mouseleaveHandler = () => {
-      Mouse.isPresent = false;
-    };
+  onMouseMove(canvasX, canvasY) {
+    Mouse.isPresent = true;
+    Mouse.setCanvasPosition(canvasX, canvasY, this.camera);
+  }
 
-    this._wheelHandler = (e) => {
-      e.preventDefault();
+  onMouseLeave() {
+    Mouse.isPresent = false;
+  }
 
-      // Accumulate wheel delta for this frame (devs read Mouse.wheel in tick)
-      Mouse.wheel += e.deltaY;
-    };
-
-    window.addEventListener('keydown', this._keydownHandler);
-    window.addEventListener('keyup', this._keyupHandler);
-    this.canvas.addEventListener('mousedown', this._mousedownHandler);
-    this.canvas.addEventListener('mouseup', this._mouseupHandler);
-    this.canvas.addEventListener('mousemove', this._mousemoveHandler);
-    this.canvas.addEventListener('mouseleave', this._mouseleaveHandler);
-    window.addEventListener('wheel', this._wheelHandler, { passive: false });
+  onWheel(deltaY) {
+    Mouse.wheel += deltaY;
   }
 
   updateKeyboardBuffer() {
@@ -2733,29 +2713,6 @@ class Scene {
     allWorkers.forEach((worker) => {
       if (worker) worker.terminate();
     });
-
-    // Remove event listeners
-    if (this._keydownHandler) {
-      window.removeEventListener('keydown', this._keydownHandler);
-    }
-    if (this._keyupHandler) {
-      window.removeEventListener('keyup', this._keyupHandler);
-    }
-    if (this._mousedownHandler) {
-      this.canvas.removeEventListener('mousedown', this._mousedownHandler);
-    }
-    if (this._mouseupHandler) {
-      this.canvas.removeEventListener('mouseup', this._mouseupHandler);
-    }
-    if (this._mousemoveHandler) {
-      this.canvas.removeEventListener('mousemove', this._mousemoveHandler);
-    }
-    if (this._mouseleaveHandler) {
-      this.canvas.removeEventListener('mouseleave', this._mouseleaveHandler);
-    }
-    if (this._wheelHandler) {
-      window.removeEventListener('wheel', this._wheelHandler);
-    }
 
     // Reset audio state (stop all sounds, unload assets, zero dropped counter)
     SoundManager.reset();

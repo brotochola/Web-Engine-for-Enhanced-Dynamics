@@ -1,8 +1,13 @@
 // GameEngine.js - Lightweight scene orchestrator
-// Manages canvas, scene lifecycle, and debug UI
+// Manages canvas, scene lifecycle, input listeners, browser hardening, and debug UI
 
 import { DebugUI } from './DebugUI.js';
+import { Mouse } from './Mouse.js';
 import { printLogo } from './utils.js';
+
+const PREVENT_DEFAULT_KEYS = new Set([
+  'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab',
+]);
 
 class GameEngine {
   static states = {
@@ -12,6 +17,9 @@ class GameEngine {
 
   constructor(config = {}) {
     this.autoResize = config.autoResize || false;
+    this.preventContextMenu = config.preventContextMenu !== false;
+    this.preventDefaultKeys = config.preventDefaultKeys !== false;
+    this.injectStyles = config.injectStyles !== false;
 
     if (this.autoResize) {
       this.canvasWidth = window.innerWidth;
@@ -39,8 +47,15 @@ class GameEngine {
       });
     }
 
+    // Browser environment hardening
+    this._injectedStyle = null;
+    if (this.injectStyles) this._injectBodyStyles();
+
     // Create canvas immediately
     this._createCanvas();
+
+    // Input listeners (engine owns all listeners, forwards to currentScene)
+    this._setupWindowListeners();
 
     // Auto-resize: track window size changes
     if (this.autoResize) {
@@ -57,11 +72,121 @@ class GameEngine {
     printLogo();
   }
 
+  // ---------------------------------------------------------------------------
+  // Browser environment hardening
+  // ---------------------------------------------------------------------------
+
+  _injectBodyStyles() {
+    const style = document.createElement('style');
+    style.textContent = `html, body { margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; background: black; }`;
+    document.head.appendChild(style);
+    this._injectedStyle = style;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Canvas
+  // ---------------------------------------------------------------------------
+
   _createCanvas() {
     this.canvas = document.createElement('canvas');
     this.canvas.width = this.canvasWidth;
     this.canvas.height = this.canvasHeight;
+
+    const s = this.canvas.style;
+    s.display = 'block';
+    s.position = 'fixed';
+    s.top = '0';
+    s.left = '0';
+    s.touchAction = 'none';
+    s.userSelect = 'none';
+    s.webkitUserSelect = 'none';
+    s.webkitTouchCallout = 'none';
+
     document.body.appendChild(this.canvas);
+
+    this._setupCanvasListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Input — window-level listeners (registered once, survive scene transitions)
+  // ---------------------------------------------------------------------------
+
+  _setupWindowListeners() {
+    this._keydownHandler = (e) => {
+      if (this.preventDefaultKeys && PREVENT_DEFAULT_KEYS.has(e.key.toLowerCase())) {
+        e.preventDefault();
+      }
+      this.currentScene?.onKeyDown(e.key.toLowerCase());
+    };
+
+    this._keyupHandler = (e) => {
+      this.currentScene?.onKeyUp(e.key.toLowerCase());
+    };
+
+    this._wheelHandler = (e) => {
+      e.preventDefault();
+      this.currentScene?.onWheel(e.deltaY);
+    };
+
+    window.addEventListener('keydown', this._keydownHandler);
+    window.addEventListener('keyup', this._keyupHandler);
+    window.addEventListener('wheel', this._wheelHandler, { passive: false });
+
+    if (this.preventContextMenu) {
+      this._contextmenuHandler = (e) => e.preventDefault();
+      window.addEventListener('contextmenu', this._contextmenuHandler);
+    }
+
+    this._fullscreenchangeHandler = () => {
+      if (this.autoResize) {
+        this.resize(window.innerWidth, window.innerHeight);
+      }
+    };
+    document.addEventListener('fullscreenchange', this._fullscreenchangeHandler);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Input — canvas-level listeners (re-attached each time canvas is recreated)
+  // ---------------------------------------------------------------------------
+
+  _setupCanvasListeners() {
+    this.canvas.addEventListener('mousedown', (e) => {
+      if (Mouse.isDebugToolActive) return;
+      this.currentScene?.onMouseDown(e.button);
+    });
+
+    this.canvas.addEventListener('mouseup', (e) => {
+      this.currentScene?.onMouseUp(e.button);
+    });
+
+    this.canvas.addEventListener('mousemove', (e) => {
+      const rect = this.canvas.getBoundingClientRect();
+      this.currentScene?.onMouseMove(e.clientX - rect.left, e.clientY - rect.top);
+    });
+
+    this.canvas.addEventListener('mouseleave', () => {
+      this.currentScene?.onMouseLeave();
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fullscreen API
+  // ---------------------------------------------------------------------------
+
+  async requestFullscreen() {
+    if (!document.fullscreenElement) {
+      await document.body.requestFullscreen();
+    }
+  }
+
+  exitFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    }
+  }
+
+  get isFullscreen() {
+    return !!document.fullscreenElement;
   }
 
   /**
@@ -233,6 +358,21 @@ class GameEngine {
       clearTimeout(this._resizeDebounceTimer);
     }
 
+    // Remove window-level input listeners
+    window.removeEventListener('keydown', this._keydownHandler);
+    window.removeEventListener('keyup', this._keyupHandler);
+    window.removeEventListener('wheel', this._wheelHandler);
+    if (this._contextmenuHandler) {
+      window.removeEventListener('contextmenu', this._contextmenuHandler);
+    }
+    document.removeEventListener('fullscreenchange', this._fullscreenchangeHandler);
+
+    // Remove injected styles
+    if (this._injectedStyle && this._injectedStyle.parentNode) {
+      this._injectedStyle.parentNode.removeChild(this._injectedStyle);
+      this._injectedStyle = null;
+    }
+
     // Destroy debug UI
     if (this.debugUI) {
       this.debugUI.destroy();
@@ -244,6 +384,7 @@ class GameEngine {
       this.currentScene = null;
     }
 
+    // Canvas-level listeners die with the element
     if (this.canvas && this.canvas.parentNode) {
       this.canvas.parentNode.removeChild(this.canvas);
     }
