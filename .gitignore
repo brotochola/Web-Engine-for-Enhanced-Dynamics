@@ -16,7 +16,7 @@ Thumbs.db
 *.swo
 *~
 
-
+package-lock.json
 
 # Generated files
 src/index.bundle.js

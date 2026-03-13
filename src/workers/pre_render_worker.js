@@ -737,6 +737,7 @@ class PreRenderWorker extends AbstractWorker {
             if (maxShadowsPerEntity > 0 && entityShadowCounts && toClear) {
                 for (let k = 0; k < prevToClearCount; k++) entityShadowCounts[toClear[k]] = 0;
             }
+            this._entityShadowIndicesToClearCount = 0;
         }
 
         const maxItems = this.maxShadowRenderItems ?? 0;
