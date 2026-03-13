@@ -12,7 +12,7 @@ export const DEBUG_FLAGS = {
   SHOW_PROFILER: 8, // Show detailed timing breakdown
   SHOW_ENTITY_INDICES: 9, // Show entity index numbers
   SHOW_ACTIVE_ONLY: 10, // Only show debug for active entities
-  SHOW_RAYCASTS: 11, // Draw raycasts with hit points
+  SHOW_DEBUG_DRAWS: 11, // Draw user debug primitives (lines, circles, text, etc.)
   SHOW_SELECTED_ENTITY: 12, // Draw bounding box around selected entity
   SHOW_SLEEPING_ENTITIES: 13, // Highlight sleeping entities
   SHOW_SLEEPING_CELLS: 14, // Highlight sleeping grid cells
@@ -124,10 +124,10 @@ export class DebugFlags {
   }
 
   /**
-   * Enable/disable raycast visualization
+   * Enable/disable debug draw visualization (lines, circles, text, etc.)
    */
-  showRaycasts(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_RAYCASTS] = enabled ? 1 : 0;
+  showDebugDraws(enabled = true) {
+    this.flags[DEBUG_FLAGS.SHOW_DEBUG_DRAWS] = enabled ? 1 : 0;
     return this;
   }
 
@@ -297,7 +297,7 @@ export class DebugFlags {
       fpsGraph: this.isEnabled(DEBUG_FLAGS.SHOW_FPS_GRAPH),
       profiler: this.isEnabled(DEBUG_FLAGS.SHOW_PROFILER),
       entityIndices: this.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INDICES),
-      raycasts: this.isEnabled(DEBUG_FLAGS.SHOW_RAYCASTS),
+      debugDraws: this.isEnabled(DEBUG_FLAGS.SHOW_DEBUG_DRAWS),
       sleepingEntities: this.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES),
       sleepingCells: this.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_CELLS),
       collisionCandidates: this.isEnabled(DEBUG_FLAGS.SHOW_COLLISION_CANDIDATES),

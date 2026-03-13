@@ -56,6 +56,7 @@ import { computeBufferSize as computeRenderQueueBufferSize } from './RenderQueue
 import { NavGrid } from './NavGrid.js';
 import { Grid } from './Grid.js';
 import { Ray } from './Ray.js';
+import { DebugDraw } from './DebugDraw.js';
 import {
   RENDERER_STATS,
   PARTICLE_STATS,
@@ -183,7 +184,7 @@ class Scene {
       cameraData: null,
       syncData: null,
       debugData: null,
-      raycastDebugData: null, // Raycast visualization data
+      debugDrawData: null, // Debug draw ring buffer (DebugDraw API)
       frameRateData: null, // Real-time FPS tracking per worker
       componentData: {
         Transform: null,
@@ -1423,13 +1424,12 @@ class Scene {
     // Initialize selected entity to -1 (no selection)
     this.debugFlags.setSelectedEntity(-1);
 
-    // Raycast debug buffer - stores recent raycasts for visualization
-    // Layout: [count, ray0_startX, ray0_startY, ray0_endX, ray0_endY, ray0_hitX, ray0_hitY, ray0_hit, ray1_...]
-    // 1 + maxRaycasts * 7 floats (startX, startY, endX, endY, hitX, hitY, hit)
-    const maxDebugRaycasts = 100;
-    const RAYCAST_DEBUG_SIZE = (1 + maxDebugRaycasts * 7) * 4; // Float32Array
-    this.buffers.raycastDebugData = new SharedArrayBuffer(RAYCAST_DEBUG_SIZE);
-    this.maxDebugRaycasts = maxDebugRaycasts;
+    // Debug draw ring buffer — written by DebugDraw.drawLine() etc. from any thread,
+    // read by the main-thread DebugCanvas renderer.
+    const maxDebugDrawEntries = this.config.debug?.maxDrawEntries || 256;
+    this.buffers.debugDrawData = new SharedArrayBuffer(DebugDraw.getBufferSize(maxDebugDrawEntries));
+    this.maxDebugDrawEntries = maxDebugDrawEntries;
+    DebugDraw.initialize(this.buffers.debugDrawData, maxDebugDrawEntries);
 
     // FrameRate buffer: stores real-time FPS for each worker
     // Layout: [spatial0_fps, spatial1_fps, ..., physics_fps, renderer_fps, particle_fps, logic0_fps, logic1_fps, ...]
@@ -2051,7 +2051,7 @@ class Scene {
         cameraData: this.buffers.cameraData,
         syncData: this.buffers.syncData,
         debugData: this.buffers.debugData,
-        raycastDebugData: this.buffers.raycastDebugData,
+        debugDrawData: this.buffers.debugDrawData,
         frameRateData: this.buffers.frameRateData,
         componentData: this.buffers.componentData,
         // Spatial grid: SINGLE BUFFER with row-based partitioning
@@ -2086,7 +2086,7 @@ class Scene {
       globalEntityCount: this.totalEntityCount,
       config: this.config,
       gridMetadata: this.gridMetadata,
-      maxDebugRaycasts: this.maxDebugRaycasts,
+      maxDebugDrawEntries: this.maxDebugDrawEntries,
       scriptsToLoad: scriptsToLoad,
       registeredClasses: this.registeredClasses.map((r) => ({
         name: r.class.name,

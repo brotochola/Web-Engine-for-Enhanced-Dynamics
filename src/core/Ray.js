@@ -6,7 +6,6 @@ import { Transform } from '../components/Transform.js';
 import { Collider } from '../components/Collider.js';
 import { Grid } from './Grid.js';
 import { rayCircleIntersect, rayBoxIntersect } from './utils.js';
-import { DEBUG_FLAGS } from './DebugFlags.js';
 
 /**
  * Ray - Static class for raycasting against entities in the spatial grid
@@ -37,11 +36,6 @@ export class Ray {
   static SHAPE_CIRCLE = 0;
   static SHAPE_BOX = 1;
 
-  // Debug visualization
-  static debugFlags = null; // DebugFlags instance (Uint8Array)
-  static debugBuffer = null; // Float32Array - stores raycast visualization data
-  static maxDebugRaycasts = 100;
-
   // GC Optimization: Reusable objects to avoid GC pressure
   static _tempResult = { entityIndex: -1, distance: Infinity };
   static _tempHitInfo = {
@@ -62,25 +56,6 @@ export class Ray {
   static _checkedEntities = new Set(); // Reused Set for castAll
 
   /**
-   * Initialize Ray system with debug buffers
-   * Grid data is accessed via Grid class (initialized separately by AbstractWorker)
-   *
-   * @param {SharedArrayBuffer} debugFlagsBuffer - Debug flags buffer
-   * @param {SharedArrayBuffer} debugBuffer - Raycast visualization buffer
-   * @param {number} maxDebugRaycasts - Max raycasts to store for debug
-   */
-  static initialize(debugFlagsBuffer = null, debugBuffer = null, maxDebugRaycasts = 100) {
-    // Debug visualization
-    if (debugFlagsBuffer) {
-      Ray.debugFlags = new Uint8Array(debugFlagsBuffer);
-    }
-    if (debugBuffer) {
-      Ray.debugBuffer = new Float32Array(debugBuffer);
-      Ray.maxDebugRaycasts = maxDebugRaycasts;
-    }
-  }
-
-  /**
    * Cast a ray from (xFrom, yFrom) to (xTo, yTo)
    * Returns the index of the first entity hit, or -1 if no collision
    *
@@ -99,10 +74,6 @@ export class Ray {
 
     // Early exit if ray is too short or too long (avoid sqrt if possible)
     if (distSq === 0 || (maxDist !== Infinity && distSq > maxDist * maxDist)) {
-      // Still log debug data for miss
-      if (Ray._isDebugEnabled()) {
-        Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, xTo, yTo, false);
-      }
       return -1;
     }
 
@@ -183,18 +154,6 @@ export class Ray {
         if (result.entityIndex !== -1) {
           closestHit = result.entityIndex;
           closestDist = result.distance;
-
-          // Calculate hit point
-          const hitX = xFrom + dirX * closestDist;
-          const hitY = yFrom + dirY * closestDist;
-
-          // Log debug data
-          if (Ray._isDebugEnabled()) {
-            Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, hitX, hitY, true);
-          }
-
-          // Early exit - we found a hit in this cell
-          // Continue to check remaining cells in case there's a closer hit
         }
       }
 
@@ -213,14 +172,8 @@ export class Ray {
       }
     }
 
-    // If we found a hit, we already logged debug data
     if (closestHit !== -1 && closestDist !== 0) {
       return closestHit;
-    }
-
-    // No hit - log debug data
-    if (Ray._isDebugEnabled()) {
-      Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, xTo, yTo, false);
     }
 
     return -1;
@@ -260,9 +213,6 @@ export class Ray {
 
     // Early exit if ray is too short or too long (avoid sqrt if possible)
     if (distSq === 0 || (maxDist !== Infinity && distSq > maxDist * maxDist)) {
-      if (Ray._isDebugEnabled()) {
-        Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, xTo, yTo, false);
-      }
       return info;
     }
 
@@ -282,14 +232,6 @@ export class Ray {
       info.distance = result.distance;
       info.hitX = xFrom + dirX * result.distance;
       info.hitY = yFrom + dirY * result.distance;
-
-      if (Ray._isDebugEnabled()) {
-        Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, info.hitX, info.hitY, true);
-      }
-    } else {
-      if (Ray._isDebugEnabled()) {
-        Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, xTo, yTo, false);
-      }
     }
 
     return info;
@@ -565,16 +507,6 @@ export class Ray {
     }
     outHits.length = count;
 
-    // Debug visualization for first hit
-    if (Ray._isDebugEnabled()) {
-      if (Ray._tempHitsArray.length > 0) {
-        const firstHit = Ray._tempHitsArray[0];
-        Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, firstHit.hitX, firstHit.hitY, true);
-      } else {
-        Ray._addDebugRaycast(xFrom, yFrom, xTo, yTo, xTo, yTo, false);
-      }
-    }
-
     return Ray._tempHitsArray;
   }
 
@@ -847,51 +779,5 @@ export class Ray {
 
     Ray._tempResult.entityIndex = closestIndex;
     Ray._tempResult.distance = closestDist;
-  }
-
-  /**
-   * Check if debug visualization is enabled
-   * @private
-   */
-  static _isDebugEnabled() {
-    return Ray.debugFlags && Ray.debugFlags[DEBUG_FLAGS.SHOW_RAYCASTS] === 1;
-  }
-
-  /**
-   * Add raycast to debug buffer for visualization
-   * @private
-   */
-  static _addDebugRaycast(startX, startY, endX, endY, hitX, hitY, didHit) {
-    if (!Ray.debugBuffer) return;
-
-    // Get current count (index 0)
-    const count = Ray.debugBuffer[0];
-
-    // Circular buffer - wrap around if full
-    const index = Math.floor(count % Ray.maxDebugRaycasts);
-
-    // Write raycast data (7 floats per raycast)
-    // Layout: startX, startY, endX, endY, hitX, hitY, hit
-    const offset = 1 + index * 7;
-    Ray.debugBuffer[offset] = startX;
-    Ray.debugBuffer[offset + 1] = startY;
-    Ray.debugBuffer[offset + 2] = endX;
-    Ray.debugBuffer[offset + 3] = endY;
-    Ray.debugBuffer[offset + 4] = hitX;
-    Ray.debugBuffer[offset + 5] = hitY;
-    Ray.debugBuffer[offset + 6] = didHit ? 1 : 0;
-
-    // Increment count (capped at maxDebugRaycasts for renderer to know limit)
-    Ray.debugBuffer[0] = Math.min(count + 1, Ray.maxDebugRaycasts);
-  }
-
-  /**
-   * Clear all debug raycasts (call at start of frame)
-   * This is now called by pixi_worker at the start of each render frame
-   */
-  static clearDebugRaycasts() {
-    if (Ray.debugBuffer) {
-      Ray.debugBuffer[0] = 0; // Reset count
-    }
   }
 }

@@ -8,6 +8,7 @@ import { SpriteRenderer } from '../../../components/SpriteRenderer.js';
 import { Mouse } from '../../Mouse.js';
 import { Grid } from '../../Grid.js';
 import { Constraint } from '../../Constraint.js';
+import { DebugDraw } from '../../DebugDraw.js';
 import { distanceSq2D } from '../../utils.js';
 
 export class PhysicsDebugRenderer {
@@ -382,57 +383,113 @@ export class PhysicsDebugRenderer {
     ctx.fillText(`${candidateCount} candidates`, mySx + 10, mySy - 10);
   }
 
-  // ------- raycasts -------
+  // ------- debug draw primitives -------
 
-  drawRaycasts(ctx, canvas, camera, zoom, scene) {
-    const raycastBuffer = scene?.buffers?.raycastDebugData;
-    if (!raycastBuffer) return;
+  drawDebugPrimitives(ctx, canvas, camera, zoom) {
+    if (!DebugDraw._initialized || !DebugDraw._buffer) return;
 
-    const raycastView = new Float32Array(raycastBuffer);
-    const count = Math.min(raycastView[0], scene?.maxDebugRaycasts || 100);
-    if (count === 0) return;
+    const buf    = DebugDraw._buffer;
+    const stride = DebugDraw.ENTRY_STRIDE;
+    const max    = DebugDraw._maxEntries;
+    const now    = performance.now();
 
-    for (let i = 0; i < count; i++) {
-      const o = 1 + i * 7;
-      const startX = raycastView[o];
-      const startY = raycastView[o + 1];
-      const endX = raycastView[o + 2];
-      const endY = raycastView[o + 3];
-      const hitX = raycastView[o + 4];
-      const hitY = raycastView[o + 5];
-      const didHit = raycastView[o + 6] === 1;
+    for (let i = 0; i < max; i++) {
+      const off  = i * stride;
+      const type = buf[off];
+      if (type === 0) continue;
 
-      const sStartX = (startX - camera.x) * zoom;
-      const sStartY = (startY - camera.y) * zoom;
-      const sEndX = (endX - camera.x) * zoom;
-      const sEndY = (endY - camera.y) * zoom;
-      const sHitX = (hitX - camera.x) * zoom;
-      const sHitY = (hitY - camera.y) * zoom;
-
-      if (didHit) {
-        ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(sStartX, sStartY); ctx.lineTo(sHitX, sHitY); ctx.stroke();
-
-        ctx.strokeStyle = 'rgba(255, 0, 0, 0.4)'; ctx.lineWidth = 1; ctx.setLineDash([5, 5]);
-        ctx.beginPath(); ctx.moveTo(sHitX, sHitY); ctx.lineTo(sEndX, sEndY); ctx.stroke();
-        ctx.setLineDash([]);
-
-        ctx.fillStyle = 'rgba(255, 0, 0, 1.0)';
-        ctx.beginPath(); ctx.arc(sHitX, sHitY, 4, 0, Math.PI * 2); ctx.fill();
-
-        ctx.strokeStyle = 'rgba(255, 255, 255, 1.0)'; ctx.lineWidth = 2;
-        const cs = 8;
-        ctx.beginPath();
-        ctx.moveTo(sHitX - cs, sHitY); ctx.lineTo(sHitX + cs, sHitY);
-        ctx.moveTo(sHitX, sHitY - cs); ctx.lineTo(sHitX, sHitY + cs);
-        ctx.stroke();
-      } else {
-        ctx.strokeStyle = 'rgba(255, 170, 0, 0.5)'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(sStartX, sStartY); ctx.lineTo(sEndX, sEndY); ctx.stroke();
+      const expireTime = buf[off + 6];
+      if (now > expireTime) {
+        buf[off] = 0; // mark expired
+        continue;
       }
 
-      ctx.fillStyle = 'rgba(0, 255, 255, 0.8)';
-      ctx.beginPath(); ctx.arc(sStartX, sStartY, 3, 0, Math.PI * 2); ctx.fill();
+      const colorInt = buf[off + 5] | 0;
+      const r = (colorInt >> 16) & 0xFF;
+      const g = (colorInt >> 8)  & 0xFF;
+      const b =  colorInt        & 0xFF;
+      const rgb = `rgb(${r},${g},${b})`;
+
+      switch (type) {
+        case DebugDraw.TYPE_LINE: {
+          const sx1 = (buf[off + 1] - camera.x) * zoom;
+          const sy1 = (buf[off + 2] - camera.y) * zoom;
+          const sx2 = (buf[off + 3] - camera.x) * zoom;
+          const sy2 = (buf[off + 4] - camera.y) * zoom;
+          ctx.strokeStyle = rgb;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(sx1, sy1);
+          ctx.lineTo(sx2, sy2);
+          ctx.stroke();
+          break;
+        }
+        case DebugDraw.TYPE_CIRCLE: {
+          const sx = (buf[off + 1] - camera.x) * zoom;
+          const sy = (buf[off + 2] - camera.y) * zoom;
+          const sr = buf[off + 3] * zoom;
+          ctx.strokeStyle = rgb;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+          ctx.stroke();
+          break;
+        }
+        case DebugDraw.TYPE_RECT: {
+          const rx = buf[off + 1];
+          const ry = buf[off + 2];
+          const rw = buf[off + 3];
+          const rh = buf[off + 4];
+          ctx.strokeStyle = rgb;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(
+            (rx - rw / 2 - camera.x) * zoom,
+            (ry - rh / 2 - camera.y) * zoom,
+            rw * zoom,
+            rh * zoom
+          );
+          break;
+        }
+        case DebugDraw.TYPE_TEXT: {
+          const tx = (buf[off + 1] - camera.x) * zoom;
+          const ty = (buf[off + 2] - camera.y) * zoom;
+          const len = buf[off + 7] | 0;
+          let text = '';
+          for (let c = 0; c < len; c++) text += String.fromCharCode(buf[off + 8 + c]);
+          ctx.font = '12px monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          const m = ctx.measureText(text);
+          ctx.fillStyle = 'rgba(0,0,0,0.7)';
+          ctx.fillRect(tx - m.width / 2 - 2, ty - 12, m.width + 4, 14);
+          ctx.fillStyle = rgb;
+          ctx.fillText(text, tx, ty);
+          break;
+        }
+        case DebugDraw.TYPE_CELL: {
+          const cellSize = Grid.cellSize || 64;
+          const cx = buf[off + 1] * cellSize;
+          const cy = buf[off + 2] * cellSize;
+          const scx = (cx - camera.x) * zoom;
+          const scy = (cy - camera.y) * zoom;
+          const scs = cellSize * zoom;
+          ctx.fillStyle = `rgba(${r},${g},${b},0.3)`;
+          ctx.fillRect(scx, scy, scs, scs);
+          ctx.strokeStyle = rgb;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(scx, scy, scs, scs);
+          break;
+        }
+        case DebugDraw.TYPE_POINT: {
+          const px = (buf[off + 1] - camera.x) * zoom;
+          const py = (buf[off + 2] - camera.y) * zoom;
+          ctx.fillStyle = rgb;
+          ctx.beginPath();
+          ctx.arc(px, py, 4, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        }
+      }
     }
   }
 

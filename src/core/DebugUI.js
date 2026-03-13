@@ -1,10 +1,14 @@
 // DebugUI.js — Thin orchestrator that wires panels, tools, stats, and canvas together
 // All heavy logic lives in src/core/debug/ sub-modules.
+//
+// Static draw API (DebugUI.drawLine, etc.) delegates to DebugDraw so game scripts
+// can call DebugUI.drawLine(...) from any worker or the main thread.
 
 import { injectStyles, createTab } from './debug/ui/DebugDOM.js';
 import { StatsCollector } from './debug/stats/StatsCollector.js';
 import { DebugCanvas } from './debug/rendering/DebugCanvas.js';
 import { ToolManager } from './debug/tools/ToolManager.js';
+import { DebugDraw } from './DebugDraw.js';
 
 // Panels
 import { ScenePanel } from './debug/panels/ScenePanel.js';
@@ -249,7 +253,7 @@ export class DebugUI {
       } else if (e.code >= 'Digit1' && e.code <= 'Digit8') {
         e.preventDefault();
         const digit = e.code.charAt(5);
-        const map = { 1: 'colliders', 2: 'velocity', 3: 'acceleration', 4: 'neighbors', 5: 'spatialGrid', 6: 'entityIndices', 7: 'raycasts', 8: 'sleepingEntities' };
+        const map = { 1: 'colliders', 2: 'velocity', 3: 'acceleration', 4: 'neighbors', 5: 'spatialGrid', 6: 'entityIndices', 7: 'debugDraws', 8: 'sleepingEntities' };
         this.panels.visual.toggleVisualAid(map[digit]);
       } else if (key === 'k') {
         e.preventDefault();
@@ -273,3 +277,12 @@ export class DebugUI {
     window.addEventListener('keydown', this._keyHandler);
   }
 }
+
+// Static draw API — delegates to DebugDraw so the same call works on workers
+// (where DebugDraw is imported directly) and on the main thread (via DebugUI).
+DebugUI.drawLine      = DebugDraw.drawLine;
+DebugUI.drawCircle    = DebugDraw.drawCircle;
+DebugUI.drawRect      = DebugDraw.drawRect;
+DebugUI.drawText      = DebugDraw.drawText;
+DebugUI.drawPoint     = DebugDraw.drawPoint;
+DebugUI.highlightCell = DebugDraw.highlightCell;

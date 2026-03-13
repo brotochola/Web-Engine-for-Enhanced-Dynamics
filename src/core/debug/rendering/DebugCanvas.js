@@ -114,7 +114,7 @@ export class DebugCanvas {
       flags.isEnabled(DEBUG_FLAGS.SHOW_NEIGHBORS) ||
       flags.isEnabled(DEBUG_FLAGS.SHOW_COLLISION_CANDIDATES) ||
       flags.isEnabled(DEBUG_FLAGS.SHOW_SPATIAL_GRID) ||
-      flags.isEnabled(DEBUG_FLAGS.SHOW_RAYCASTS) ||
+      flags.isEnabled(DEBUG_FLAGS.SHOW_DEBUG_DRAWS) ||
       flags.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_ENTITIES) ||
       flags.isEnabled(DEBUG_FLAGS.SHOW_SLEEPING_CELLS) ||
       flags.isEnabled(DEBUG_FLAGS.SHOW_SELECTED_ENTITY) ||
@@ -195,9 +195,9 @@ export class DebugCanvas {
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_COLLISION_CANDIDATES))
       this.physics.drawCollisionCandidateConnections(ctx, canvas, camera, zoom);
 
-    // 9. Raycasts
-    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_RAYCASTS))
-      this.physics.drawRaycasts(ctx, canvas, camera, zoom, scene);
+    // 9. Debug draw primitives (lines, circles, text, etc. via DebugDraw API)
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_DEBUG_DRAWS))
+      this.physics.drawDebugPrimitives(ctx, canvas, camera, zoom);
 
     // 10. Entity indices
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INDICES))

@@ -24,7 +24,7 @@ export class VisualAidsPanel {
       { key: 'collisionCandidates', label: 'Collision', shortcut: 'C' },
       { key: 'spatialGrid', label: 'Grid', shortcut: '5' },
       { key: 'entityIndices', label: 'Indices', shortcut: '6' },
-      { key: 'raycasts', label: 'Raycasts', shortcut: '7' },
+      { key: 'debugDraws', label: 'Draws', shortcut: '7' },
       { key: 'sleepingEntities', label: 'Sleeping', shortcut: '8' },
       { key: 'sleepingCells', label: 'Sleep Cells', shortcut: 'S' },
       { key: 'constraints', label: 'Constraints', shortcut: 'K' },
@@ -107,7 +107,7 @@ export class VisualAidsPanel {
       collisionCandidates: 'showCollisionCandidates',
       spatialGrid: 'showSpatialGrid',
       entityIndices: 'showEntityIndices',
-      raycasts: 'showRaycasts',
+      debugDraws: 'showDebugDraws',
       sleepingEntities: 'showSleepingEntities',
       sleepingCells: 'showSleepingCells',
       constraints: 'showConstraints',
@@ -118,7 +118,8 @@ export class VisualAidsPanel {
     if (!method || !flags[method]) return;
 
     let flagName = `SHOW_${key.toUpperCase().replace('GRID', '_GRID').replace('INDICES', '_INDICES')}`;
-    if (key === 'sleepingEntities') flagName = 'SHOW_SLEEPING_ENTITIES';
+    if (key === 'debugDraws') flagName = 'SHOW_DEBUG_DRAWS';
+    else if (key === 'sleepingEntities') flagName = 'SHOW_SLEEPING_ENTITIES';
     else if (key === 'sleepingCells') flagName = 'SHOW_SLEEPING_CELLS';
     else if (key === 'collisionCandidates') flagName = 'SHOW_COLLISION_CANDIDATES';
     else if (key === 'constraints') flagName = 'SHOW_CONSTRAINTS';

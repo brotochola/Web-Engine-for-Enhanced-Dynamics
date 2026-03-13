@@ -25,6 +25,7 @@ import { Camera } from '../core/Camera.js';
 import { Sun } from '../core/Sun.js';
 import { Layer } from '../core/Layer.js';
 import { Ray } from '../core/Ray.js';
+import { DebugDraw } from '../core/DebugDraw.js';
 import { Grid } from '../core/Grid.js';
 import { NavGrid } from '../core/NavGrid.js';
 import { ParticleComponent } from '../components/ParticleComponent.js';
@@ -569,14 +570,9 @@ export class AbstractWorker {
       // this.reportLog('Grid system initialized (row-based partitioning, single buffers)');
     }
 
-    // Initialize Ray system with debug buffers (uses Grid for spatial data)
-    if (data.buffers?.debugData || data.buffers?.raycastDebugData) {
-      Ray.initialize(
-        data.buffers.debugData, // Debug flags
-        data.buffers.raycastDebugData, // Debug raycast buffer
-        data.maxDebugRaycasts || 100
-      );
-      // this.reportLog('Ray system initialized with debug support');
+    // Initialize DebugDraw ring buffer (shared across all workers and main thread)
+    if (data.buffers?.debugDrawData) {
+      DebugDraw.initialize(data.buffers.debugDrawData, data.maxDebugDrawEntries || 256);
     }
 
     // Initialize NavGrid system (if navigation enabled)
@@ -613,6 +609,8 @@ export class AbstractWorker {
     self.Mouse = Mouse;
     self.Keyboard = Keyboard;
     self.Ray = Ray;
+    self.DebugDraw = DebugDraw;
+    self.DebugUI = DebugDraw; // alias so game scripts can use DebugUI.drawLine(...)
     self.Grid = Grid;
     self.NavGrid = NavGrid;
     self.Camera = Camera;
