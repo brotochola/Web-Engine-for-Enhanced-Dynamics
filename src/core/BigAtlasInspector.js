@@ -164,7 +164,7 @@ class BigAtlasInspector {
     const displayCanvas = document.createElement('canvas');
     displayCanvas.width = atlasCanvas.width;
     displayCanvas.height = atlasCanvas.height;
-    const ctx = displayCanvas.getContext('2d', { willReadFrequently: true });
+    const ctx = displayCanvas.getContext('2d');
     ctx.drawImage(atlasCanvas, 0, 0);
 
     // Overlay canvas for frame borders
@@ -180,7 +180,7 @@ class BigAtlasInspector {
 
     let showFrames = false;
     const drawFrameOverlays = () => {
-      const overlayCtx = overlayCanvas.getContext('2d', { willReadFrequently: true });
+      const overlayCtx = overlayCanvas.getContext('2d');
       overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
       if (showFrames) {
