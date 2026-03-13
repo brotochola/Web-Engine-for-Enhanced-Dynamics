@@ -21,7 +21,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
     worldHeight: 3000,
 
     spatial: {
-      cellSize: 64,
+      cellSize: 128,
       maxNeighbors: 900,
       noLimitFPS: true,
       numberOfSpatialWorkers: 2,
@@ -68,7 +68,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
         zIndex: 4,             // Render above default ENTITIES layer (zIndex 3)
         blendMode: 'normal',     // Final display blend of the post-processed sprite
         resolution: 0.33,         // Half-res RT for performance
-        maxItems: 5000,
+        maxItems: 50000,
         ySorting: false, // no need to sort water balls
         shader: {
           fragment: '/demos/shaders/metaball.frag',
@@ -102,7 +102,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
   // ========================================
 
   static entities = [
-    [WaterBall, 8000],
+    [WaterBall, 20000],
     [Box, 500],
     [Floor, 1000],
   ];
@@ -125,7 +125,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
 
     this.spawnFloorAndWalls();
     this.spawnWaterBalls(4000);
-    this.spawnBoxes(10);
+    this.spawnBoxes(2);
 
     this.cameraFollowX = this.config.worldWidth / 2;
     this.cameraFollowY = this.config.worldHeight / 2;

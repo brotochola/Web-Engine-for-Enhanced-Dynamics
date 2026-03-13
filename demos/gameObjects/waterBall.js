@@ -29,30 +29,31 @@ class WaterBall extends GameObject {
     // Small collider + larger visual = dense packing with lots of gradient overlap.
     // Physics prevents co-location; the metaball shader merges overlapping gradients
     // into a smooth continuous surface.
-    const colliderRadius = 10;
+    const colliderRadius = 20;
     this.collider.radius = colliderRadius;
-    this.collider.visualRange = colliderRadius * 8;
+    this.collider.visualRange = colliderRadius * 6;
 
     RigidBody.mass[this.index] *= 2;
     RigidBody.invMass[this.index] = 1 / (RigidBody.mass[this.index] || 1);
 
-    this.setScale(5);
+    this.setScale(this.collider.radius * 0.5);
   }
 
   tick(dtRatio) {
     const speedFactor = Math.min(1, (this.rigidBody.speed) / (this.rigidBody.maxVel));
-    const tint = mixTint(BASE_WATER_TINT, SPLASH_TINT, speedFactor);
+    const tint = mixTint(BASE_WATER_TINT, SPLASH_TINT, speedFactor * 0.5);
 
     this.setTint(tint);
     // this.setTint(0x000077)
-    this.setAlpha(0.4 + speedFactor * 0.6);
+    this.setAlpha(0.4 + speedFactor * 0.1);
 
     if (Mouse.isButton1Down) {
       const dx = this.x - Mouse.x;
       const dy = this.y - Mouse.y;
       const dist2 = dx * dx + dy * dy;
-      if (dist2 > 160000) return;
-      this.addAcceleration(dx * 0.4, dy * 0.4);
+      if (dist2 > 360000) return;
+      const force = 1000 / dist2
+      this.addAcceleration(dx * force, dy * force);
     }
   }
 
