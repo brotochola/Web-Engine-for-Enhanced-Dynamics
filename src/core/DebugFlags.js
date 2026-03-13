@@ -8,7 +8,6 @@ export const DEBUG_FLAGS = {
   SHOW_NEIGHBORS: 3, // Draw neighbor connections
   SHOW_SPATIAL_GRID: 4, // Draw spatial hash grid
   SHOW_ENTITY_INFO: 5, // Show entity data on hover
-  SHOW_AABB: 6, // Draw axis-aligned bounding boxes
   SHOW_FPS_GRAPH: 7, // Draw FPS history graph
   SHOW_PROFILER: 8, // Show detailed timing breakdown
   SHOW_ENTITY_INDICES: 9, // Show entity index numbers
@@ -48,7 +47,6 @@ export class DebugFlags {
       acceleration: 0xff0044, // Red
       neighbor: 0x00ffff, // Cyan
       grid: 0x444444, // Gray
-      aabb: 0xff8800, // Orange
       text: 0xffffff, // White
     };
   }
@@ -98,14 +96,6 @@ export class DebugFlags {
    */
   showEntityInfo(enabled = true) {
     this.flags[DEBUG_FLAGS.SHOW_ENTITY_INFO] = enabled ? 1 : 0;
-    return this;
-  }
-
-  /**
-   * Enable/disable AABB visualization
-   */
-  showAABB(enabled = true) {
-    this.flags[DEBUG_FLAGS.SHOW_AABB] = enabled ? 1 : 0;
     return this;
   }
 
@@ -233,7 +223,6 @@ export class DebugFlags {
     if (options.neighbors !== undefined) this.showNeighbors(options.neighbors);
     if (options.spatialGrid !== undefined) this.showSpatialGrid(options.spatialGrid);
     if (options.entityInfo !== undefined) this.showEntityInfo(options.entityInfo);
-    if (options.aabb !== undefined) this.showAABB(options.aabb);
     if (options.fpsGraph !== undefined) this.showFPSGraph(options.fpsGraph);
     if (options.profiler !== undefined) this.showProfiler(options.profiler);
     if (options.entityIndices !== undefined) this.showEntityIndices(options.entityIndices);
@@ -262,7 +251,6 @@ export class DebugFlags {
       colliders: true,
       velocity: true,
       acceleration: true,
-      aabb: false,
     });
   }
 
@@ -306,7 +294,6 @@ export class DebugFlags {
       neighbors: this.isEnabled(DEBUG_FLAGS.SHOW_NEIGHBORS),
       spatialGrid: this.isEnabled(DEBUG_FLAGS.SHOW_SPATIAL_GRID),
       entityInfo: this.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INFO),
-      aabb: this.isEnabled(DEBUG_FLAGS.SHOW_AABB),
       fpsGraph: this.isEnabled(DEBUG_FLAGS.SHOW_FPS_GRAPH),
       profiler: this.isEnabled(DEBUG_FLAGS.SHOW_PROFILER),
       entityIndices: this.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_INDICES),

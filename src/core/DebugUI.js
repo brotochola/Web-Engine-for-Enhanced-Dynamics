@@ -120,8 +120,8 @@ export class DebugUI {
   }
 
   toggle() { this.container.classList.toggle('hidden'); }
-  show()   { this.container.classList.remove('hidden'); }
-  hide()   { this.container.classList.add('hidden'); }
+  show() { this.container.classList.remove('hidden'); }
+  hide() { this.container.classList.add('hidden'); }
 
   destroy() {
     this.stop();
@@ -162,13 +162,13 @@ export class DebugUI {
     header.className = 'debug-ui-header';
 
     const tabDefs = [
-      ['🎬', 'Scene',       'scene'],
+      ['🎬', 'Scene', 'scene'],
       ['⚡', 'Performance', 'performance'],
-      ['👁', 'Visual',      'visual'],
-      ['📦', 'Entities',    'entities'],
+      ['👁', 'Visual', 'visual'],
+      ['📦', 'Entities', 'entities'],
       ['🌿', 'Decorations', 'decorations'],
-      ['📚', 'Layers',      'layers'],
-      ['🧭', 'Nav',         'navigation'],
+      ['📚', 'Layers', 'layers'],
+      ['🧭', 'Nav', 'navigation'],
     ];
 
     for (const [icon, label, id] of tabDefs) {
@@ -228,25 +228,40 @@ export class DebugUI {
 
   _setupKeyboardShortcuts() {
     this._keyHandler = (e) => {
+      console.log(e.key);
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      if (e.key === 'Escape') {
+        this.tools.deactivateAll();
+        return;
+      }
+
+      if (!e.shiftKey) return;
+
       const key = e.key.toLowerCase();
 
       if (key === 'h') {
+        e.preventDefault();
         this.toggle();
-      } else if (key === 'escape') {
-        this.tools.deactivateAll();
       } else if (key === 'i') {
+        e.preventDefault();
         this.tools.toggleInspector();
-      } else if (key >= '1' && key <= '9') {
-        const map = { 1: 'colliders', 2: 'velocity', 3: 'acceleration', 4: 'neighbors', 5: 'spatialGrid', 6: 'aabb', 7: 'entityIndices', 8: 'raycasts', 9: 'sleepingEntities' };
-        this.panels.visual.toggleVisualAid(map[key]);
+      } else if (e.code >= 'Digit1' && e.code <= 'Digit8') {
+        e.preventDefault();
+        const digit = e.code.charAt(5);
+        const map = { 1: 'colliders', 2: 'velocity', 3: 'acceleration', 4: 'neighbors', 5: 'spatialGrid', 6: 'entityIndices', 7: 'raycasts', 8: 'sleepingEntities' };
+        this.panels.visual.toggleVisualAid(map[digit]);
       } else if (key === 'k') {
+        e.preventDefault();
         this.panels.visual.toggleVisualAid('constraints');
       } else if (key === 'c') {
+        e.preventDefault();
         this.panels.visual.toggleVisualAid('collisionCandidates');
       } else if (key === 'o') {
+        e.preventDefault();
         this.panels.visual.toggleVisualAid('entityOrigins');
-      } else if (key === '0') {
+      } else if (e.code === 'Digit0') {
+        e.preventDefault();
         if (this.debugFlags) {
           this.debugFlags.disableAll();
           this.panels.visual.updateState();

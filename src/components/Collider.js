@@ -53,12 +53,6 @@ class Collider extends Component {
     collisionLayer: Uint16Array,
     collisionMask: Uint16Array,
 
-    // AABB cache (updated by physics system)
-    aabbMinX: Float32Array,
-    aabbMinY: Float32Array,
-    aabbMaxX: Float32Array,
-    aabbMaxY: Float32Array,
-
     // Perception (for spatial queries)
     visualRange: Float32Array,
   };

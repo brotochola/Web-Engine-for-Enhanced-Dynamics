@@ -39,7 +39,7 @@ export class DebugCanvas {
     document.body.appendChild(canvas);
 
     this._canvas = canvas;
-    this._ctx = canvas.getContext('2d', { willReadFrequently: true });
+    this._ctx = canvas.getContext('2d');
 
     this._resizeHandler = () => {
       if (this._canvas) {

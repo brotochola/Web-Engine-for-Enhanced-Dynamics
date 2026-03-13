@@ -40,7 +40,7 @@ export class PhysicsDebugRenderer {
     const worldEndX = Math.min(endCellX * cellSize, worldWidth);
     const worldEndY = Math.min(endCellY * cellSize, worldHeight);
 
-    ctx.strokeStyle = 'rgba(255, 255, 0, 0.2)';
+    ctx.strokeStyle = '#00ff00';
     ctx.lineWidth = 1;
     ctx.beginPath();
 
@@ -187,25 +187,34 @@ export class PhysicsDebugRenderer {
     const isOnScreen = SpriteRenderer.isItOnScreen;
     const vx = RigidBody.vx;
     const vy = RigidBody.vy;
-
-    ctx.strokeStyle = 'rgba(0, 136, 255, 0.9)';
-    ctx.lineWidth = 2 / zoom;
     const scale = 10;
 
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0, 136, 255, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'butt';
+    ctx.lineJoin = 'miter';
+    ctx.setLineDash([]);
+    const maxLen = 80;
+    ctx.beginPath();
     for (let i = 0; i < active.length; i++) {
       if (!active[i] || !isOnScreen[i]) continue;
       const velX = vx[i];
       const velY = vy[i];
       if (Math.abs(velX) < 0.01 && Math.abs(velY) < 0.01) continue;
 
+      let dx = velX * scale * zoom;
+      let dy = velY * scale * zoom;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len > maxLen) { const s = maxLen / len; dx *= s; dy *= s; }
+
       const sx = (x[i] - camera.x) * zoom;
       const sy = (y[i] - camera.y) * zoom;
-      const endX = sx + velX * scale * zoom;
-      const endY = sy + velY * scale * zoom;
-
-      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(endX, endY); ctx.stroke();
-      this._drawArrowHead(ctx, endX, endY, velX, velY, 5 * zoom);
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + dx, sy + dy);
     }
+    ctx.stroke();
+    ctx.restore();
   }
 
   // ------- acceleration -------
@@ -217,25 +226,34 @@ export class PhysicsDebugRenderer {
     const isOnScreen = SpriteRenderer.isItOnScreen;
     const ax = RigidBody.ax;
     const ay = RigidBody.ay;
-
-    ctx.strokeStyle = 'rgba(255, 0, 68, 0.9)';
-    ctx.lineWidth = 2 / zoom;
     const scale = 50;
 
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 0, 68, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'butt';
+    ctx.lineJoin = 'miter';
+    ctx.setLineDash([]);
+    const maxLen = 80;
+    ctx.beginPath();
     for (let i = 0; i < active.length; i++) {
       if (!active[i] || !isOnScreen[i]) continue;
       const accX = ax[i];
       const accY = ay[i];
       if (Math.abs(accX) < 0.01 && Math.abs(accY) < 0.01) continue;
 
+      let dx = accX * scale * zoom;
+      let dy = accY * scale * zoom;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len > maxLen) { const s = maxLen / len; dx *= s; dy *= s; }
+
       const sx = (x[i] - camera.x) * zoom;
       const sy = (y[i] - camera.y) * zoom;
-      const endX = sx + accX * scale * zoom;
-      const endY = sy + accY * scale * zoom;
-
-      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(endX, endY); ctx.stroke();
-      this._drawArrowHead(ctx, endX, endY, accX, accY, 5 * zoom);
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + dx, sy + dy);
     }
+    ctx.stroke();
+    ctx.restore();
   }
 
   // ------- sleeping entities -------
@@ -426,7 +444,7 @@ export class PhysicsDebugRenderer {
     const y = Transform.y;
     const isOnScreen = SpriteRenderer.isItOnScreen;
 
-    ctx.font = `${Math.max(10, 12 / zoom)}px monospace`;
+    ctx.font = `10px monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
 
@@ -474,7 +492,7 @@ export class PhysicsDebugRenderer {
       const sby = (y[entityB] - camera.y) * zoom;
 
       if ((sax < -50 && sbx < -50) || (sax > canvas.width + 50 && sbx > canvas.width + 50) ||
-          (say < -50 && sby < -50) || (say > canvas.height + 50 && sby > canvas.height + 50)) continue;
+        (say < -50 && sby < -50) || (say > canvas.height + 50 && sby > canvas.height + 50)) continue;
 
       const dx = x[entityB] - x[entityA];
       const dy = y[entityB] - y[entityA];
@@ -563,15 +581,5 @@ export class PhysicsDebugRenderer {
       if (d2 < closestDist2) { closestDist2 = d2; closest = id; }
     }
     return closest;
-  }
-
-  _drawArrowHead(ctx, endX, endY, dirX, dirY, arrowSize) {
-    const angle = Math.atan2(dirY, dirX);
-    ctx.beginPath();
-    ctx.moveTo(endX, endY);
-    ctx.lineTo(endX - arrowSize * Math.cos(angle - Math.PI / 6), endY - arrowSize * Math.sin(angle - Math.PI / 6));
-    ctx.moveTo(endX, endY);
-    ctx.lineTo(endX - arrowSize * Math.cos(angle + Math.PI / 6), endY - arrowSize * Math.sin(angle + Math.PI / 6));
-    ctx.stroke();
   }
 }
