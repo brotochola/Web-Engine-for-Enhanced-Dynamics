@@ -1,7 +1,7 @@
 // Entity Template - engine-level starter (no demo dependencies)
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer, SoundManager } = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, SoundManager, Mouse } = WEED;
 
 class MyEntity extends GameObject {
   // Required for script auto-loading in worker contexts
@@ -37,9 +37,23 @@ class MyEntity extends GameObject {
   tick(dtRatio, deltaTime, accumulatedTime, frameNumber) {
     const i = this.index;
 
-    // Example input
+    // Keyboard — true every frame while held
     if (WEED.Keyboard.isDown('arrowup')) {
       RigidBody.ay[i] -= 0.5 * dtRatio;
+    }
+
+    // Mouse — held state (true every frame while button is down)
+    if (Mouse.isButton0Down) {
+      // drag, continuous fire, etc.
+    }
+
+    // Mouse — edge detection (true only on the frame the event fired)
+    // Reliable across all logic workers (uses SAB event counters).
+    if (Mouse.isButton0Pressed) {
+      // click: fires once on mousedown, even on fast clicks
+    }
+    if (Mouse.isButton0Released) {
+      // release: fires once on mouseup
     }
 
     // Example neighbor iteration

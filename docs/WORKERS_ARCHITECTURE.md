@@ -115,7 +115,7 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 - Receives `listUpdates` from logic workers 1..N
 - Runs `processListUpdates()` before any ticks (despawns first, spawns second)
 - Updates `activeEntitiesData`, per-type active lists, query caches
-- Updates `Mouse.previousValues`
+- All logic workers call `Mouse.updateEdgeFlags()` before entity ticks (per-worker edge detection for `isButton0Pressed` etc.)
 
 ---
 

@@ -865,7 +865,7 @@ class Scene {
   // I'll include the essential ones inline and reference the rest
 
   createSharedBuffers() {
-    // Mouse buffer: [x, y, button0, button1, button2, isPresent, wheel] - 7 Float32 values
+    // Mouse buffer: [x, y, btn0, btn1, btn2, isPresent, wheel, press0, rel0, press1, rel1, press2, rel2] - 13 Float32 values
     this.buffers.mouseData = new SharedArrayBuffer(Mouse.BUFFER_SIZE);
     Mouse.initialize(this.buffers.mouseData);
 
@@ -2071,7 +2071,7 @@ class Scene {
         navigationStats: this.buffers.navigationStats || null,
         // Tick decimation buffer (if staggeredUpdates enabled)
         nextTickData: this.buffers.nextTickData || null,
-        // Mouse input buffer (x, y, buttons, presence, wheel)
+        // Mouse input buffer (x, y, buttons, presence, wheel, press/release counters)
         mouseData: this.buffers.mouseData,
         // Query system SABs (for component-based entity queries)
         queryEntityMetadata: this.buffers.queryEntityMetadata,
@@ -2559,15 +2559,15 @@ class Scene {
   }
 
   onMouseDown(button) {
-    if (button == 0) Mouse.isButton0Down = true;
-    if (button == 1) Mouse.isButton1Down = true;
-    if (button == 2) Mouse.isButton2Down = true;
+    if (button == 0) { Mouse.isButton0Down = true; Mouse.incrementPress0(); }
+    if (button == 1) { Mouse.isButton1Down = true; Mouse.incrementPress1(); }
+    if (button == 2) { Mouse.isButton2Down = true; Mouse.incrementPress2(); }
   }
 
   onMouseUp(button) {
-    if (button == 0) Mouse.isButton0Down = false;
-    if (button == 1) Mouse.isButton1Down = false;
-    if (button == 2) Mouse.isButton2Down = false;
+    if (button == 0) { Mouse.isButton0Down = false; Mouse.incrementRelease0(); }
+    if (button == 1) { Mouse.isButton1Down = false; Mouse.incrementRelease1(); }
+    if (button == 2) { Mouse.isButton2Down = false; Mouse.incrementRelease2(); }
   }
 
   onMouseMove(canvasX, canvasY) {

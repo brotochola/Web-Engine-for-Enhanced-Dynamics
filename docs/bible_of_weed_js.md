@@ -249,9 +249,19 @@ WEED.Layer.getName(5)         // name string or null
 ## Useful APIs
 
 ```javascript
-// Input
+// Input — Keyboard
 if (WEED.Keyboard.isDown('w')) { ... }
-if (WEED.Mouse.isButton0Down) { ... }
+
+// Input — Mouse (held state: true every frame while button is held)
+if (WEED.Mouse.isButton0Down) { ... }   // left button
+if (WEED.Mouse.isButton1Down) { ... }   // middle button
+if (WEED.Mouse.isButton2Down) { ... }   // right button
+
+// Input — Mouse (edge detection: true only on the frame the event occurred)
+// Works reliably across ALL logic workers — backed by SAB event counters.
+if (Mouse.isButton0Pressed) { ... }     // left button just pressed (mousedown edge)
+if (Mouse.isButton0Released) { ... }    // left button just released (mouseup edge)
+if (Mouse.clicked) { ... }             // alias for isButton0Pressed
 
 // Camera
 WEED.Camera.follow(this.x, this.y);
@@ -279,6 +289,39 @@ WEED.SoundManager.play('explosion', 1, 1, 1, 0, 0, x, y);  // spatial (worldX, w
 WEED.SoundManager.stop('engine');
 WEED.SoundManager.setMasterVolume(0.7);
 WEED.SoundManager.setMuted(true);
+```
+
+---
+
+## GameEngine Browser Hardening
+
+The engine automatically handles fullscreen web game boilerplate. All event listeners (keyboard, mouse, wheel) are owned by `GameEngine` and forwarded to the active scene via callbacks (`onKeyDown`, `onMouseDown`, etc.). Listeners survive scene transitions — no gap between scenes.
+
+```javascript
+const game = new GameEngine({
+  autoResize: true,          // resize canvas on window resize
+  preventContextMenu: true,  // block right-click context menu (default: true)
+  preventDefaultKeys: true,  // preventDefault on arrows, space, tab (default: true)
+  injectStyles: true,        // inject body CSS reset: margin:0, overflow:hidden, etc. (default: true)
+  debug: true,
+});
+
+// Fullscreen API
+await game.requestFullscreen();
+game.exitFullscreen();
+game.isFullscreen; // boolean getter
+```
+
+Canvas CSS (`position: fixed`, `touch-action: none`, `user-select: none`) is applied automatically by the engine on every canvas it creates. No CSS needed in your HTML for body reset or canvas styling.
+
+Recommended `<head>` meta tags (add these to your HTML — the engine can't inject them reliably from JS):
+
+```html
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
 ```
 
 ---

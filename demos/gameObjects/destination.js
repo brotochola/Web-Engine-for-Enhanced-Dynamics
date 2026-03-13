@@ -45,7 +45,7 @@ export class Destination extends GameObject {
    */
   tick(dt) {
 
-    if (/*!Mouse._prevButton0 && */Mouse.isButton0Down) {
+    if (Mouse.isButton0Pressed) {
       this.x = Mouse.x;
       this.y = Mouse.y;
       this.collider.radius = containerRadius(MySoldier.activeCount, 10, 1.25) + 20;

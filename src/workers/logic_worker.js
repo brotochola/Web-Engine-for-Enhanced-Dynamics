@@ -405,6 +405,10 @@ class LogicWorker extends AbstractWorker {
       this.processListUpdates();
     }
 
+    // Snapshot mouse edge flags BEFORE entity ticks so isButton0Pressed etc. are
+    // stable for the entire frame. Every worker does this independently.
+    Mouse.updateEdgeFlags();
+
     // Process collision callbacks BEFORE entity logic (Unity-style)
     if (this.collisionData) {
       this.processCollisionCallbacks();
@@ -523,10 +527,6 @@ class LogicWorker extends AbstractWorker {
 
     // Store active count for FPS reporting
     this.activeEntityCount = activeCount;
-
-    // Update previous mouse values for next frame
-    // This allows entities to access Mouse.prevX, Mouse.prevY, Mouse.prevButton0 in their tick() methods
-    if (this.workerIndex === 0) Mouse.updatePreviousValues();
 
     // ========================================
     // PHASE 3: SEND LIST UPDATES TO LOGIC0 (non-logic0 workers)
