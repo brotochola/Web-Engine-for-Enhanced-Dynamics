@@ -367,6 +367,7 @@ export class Layer {
                 maxItems: isBuiltIn ? 0 : (config.maxItems || 5000),
                 uniformMap: this._uniformMaps[layer.id] || null,
                 shaderFragment: config.shader?.fragment || null,
+                shaderName: null,
                 dynamicResolution: config.dynamicResolution || null,
                 uniformTypes: null,
             };

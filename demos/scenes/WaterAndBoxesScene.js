@@ -71,7 +71,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
         maxItems: 50000,
         ySorting: false, // no need to sort water balls
         shader: {
-          fragment: '/demos/shaders/metaball.frag',
+          fragment: 'metaball',
           containerBlend: 'add', // Additive blend inside the RT (density field)
           uniforms: {
             uThreshold: { value: 0.8, type: 'f32' },
@@ -94,6 +94,9 @@ export class WaterAndBoxesScene extends WEED.Scene {
   static assets = {
     textures: {
       box: '/demos/img/box_100_100.png',
+    },
+    shaders: {
+      metaball: '/demos/shaders/metaball.frag',
     },
   };
 

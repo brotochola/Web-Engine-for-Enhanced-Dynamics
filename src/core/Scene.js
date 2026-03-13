@@ -1665,28 +1665,49 @@ class Scene {
       await NavGrid.loadStaticFlowfieldsFromJSON(imageUrls.flowfields, this.config.worldWidth, this.config.worldHeight);
     }
 
-    // Load custom layer shader files (.frag/.glsl loaded as text via fetch)
+    // Load shader assets declared in static assets.shaders (name → path)
     this._loadedShaderSources = {};
+    const shaderAssets = imageUrls?.shaders || {};
+    const shaderAssetPromises = [];
+    for (const [shaderName, shaderPath] of Object.entries(shaderAssets)) {
+      shaderAssetPromises.push(
+        fetch(shaderPath)
+          .then(res => {
+            if (!res.ok) throw new Error(`Failed to load shader asset "${shaderName}": ${shaderPath}`);
+            return res.text();
+          })
+          .then(source => {
+            this._loadedShaderSources[shaderName] = source;
+          })
+      );
+    }
+    if (shaderAssetPromises.length > 0) {
+      await Promise.all(shaderAssetPromises);
+      console.log(`[Scene] Loaded ${shaderAssetPromises.length} shader asset(s)`);
+    }
+
+    // Resolve layer shader references: name lookup into loaded assets, or direct URL fetch
     if (this.config.layers) {
-      const shaderPromises = [];
+      const inlinePromises = [];
       for (const [layerName, layerConfig] of Object.entries(this.config.layers)) {
-        if (layerConfig.shader?.fragment) {
-          const fragPath = layerConfig.shader.fragment;
-          shaderPromises.push(
-            fetch(fragPath)
+        const fragRef = layerConfig.shader?.fragment;
+        if (!fragRef) continue;
+        if (this._loadedShaderSources[fragRef]) continue; // already loaded as named asset
+        if (fragRef.includes('/') || fragRef.includes('.')) {
+          inlinePromises.push(
+            fetch(fragRef)
               .then(res => {
-                if (!res.ok) throw new Error(`Failed to load shader: ${fragPath}`);
+                if (!res.ok) throw new Error(`Failed to load shader: ${fragRef}`);
                 return res.text();
               })
               .then(source => {
-                this._loadedShaderSources[layerName] = source;
+                this._loadedShaderSources[fragRef] = source;
               })
           );
         }
       }
-      if (shaderPromises.length > 0) {
-        await Promise.all(shaderPromises);
-        console.log(`[Scene] Loaded ${shaderPromises.length} custom layer shader(s)`);
+      if (inlinePromises.length > 0) {
+        await Promise.all(inlinePromises);
       }
     }
   }
@@ -1974,12 +1995,17 @@ class Scene {
     this.textureMetadata = this.buildTextureMetadata();
 
     // Inject loaded shader source text into Layer metadata for worker serialization
-    if (this._loadedShaderSources) {
-      for (const [layerName, source] of Object.entries(this._loadedShaderSources)) {
+    if (this._loadedShaderSources && this.config.layers) {
+      for (const [layerName, layerConfig] of Object.entries(this.config.layers)) {
+        const fragRef = layerConfig.shader?.fragment;
+        if (!fragRef) continue;
+        const source = this._loadedShaderSources[fragRef];
+        if (!source) continue;
         const layer = Layer.get(layerName);
         const layerMeta = layer ? Layer._metadata?.layers?.[layer.id] : null;
         if (layerMeta) {
           layerMeta.shaderFragment = source;
+          layerMeta.shaderName = fragRef;
         }
       }
     }

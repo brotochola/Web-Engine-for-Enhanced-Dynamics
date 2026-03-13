@@ -2091,38 +2091,39 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * @param {Object} data - { layer: string, visible?: boolean, alpha?: number, blendMode?: string, zIndex?: number }
    */
   handleSetLayerProps(data) {
-    const { layer, visible, alpha, blendMode, zIndex } = data;
+    const { layer, visible, alpha, blendMode, containerBlendMode, zIndex } = data;
 
     const displayObject = this.layerRefs?.[layer];
     if (!displayObject) {
-      // Layer doesn't exist in current scene config - silently ignore
       return;
     }
 
-    // Apply visibility
     if (visible !== undefined) {
       displayObject.visible = visible;
     }
 
-    // Apply alpha
     if (alpha !== undefined) {
       displayObject.alpha = Math.max(0, Math.min(1, alpha));
     }
 
-    // Apply blend mode
     if (blendMode !== undefined) {
-      // Pass through directly - PIXI supports these blend modes
       displayObject.blendMode = blendMode;
     }
 
-    // Apply z-index
-    if (zIndex !== undefined) {
-      displayObject.zIndex = zIndex;
-      // Re-sort stage children after z-index change
-      this.pixiApp.stage.sortChildren();
+    if (containerBlendMode !== undefined) {
+      const layerObj = Layer.get(layer);
+      if (layerObj) {
+        const cl = this._customLayers[layerObj.id];
+        if (cl?.pc) {
+          cl.pc.blendMode = containerBlendMode;
+        }
+      }
     }
 
-    console.log(`PIXI WORKER: Layer "${layer}" updated:`, { visible, alpha, blendMode, zIndex });
+    if (zIndex !== undefined) {
+      displayObject.zIndex = zIndex;
+      this.pixiApp.stage.sortChildren();
+    }
   }
 
   _applyLayerPresentation(layerName, displayObject) {

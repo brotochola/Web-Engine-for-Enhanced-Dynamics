@@ -100,9 +100,17 @@ All entities render on `ENTITIES` by default. You don't need to touch layers for
 
 ### Defining Custom Layers
 
-Add a `layers` object to your scene's `static config`:
+Shaders are loaded as named assets in `static assets.shaders`, then referenced by name in the layer config. This lets multiple layers share the same shader with different uniforms.
 
 ```javascript
+static assets = {
+  textures: { box: '/img/box.png' },
+  shaders: {
+    metaball: '/shaders/metaball.frag',
+    heatDistortion: '/shaders/heat.frag',
+  },
+};
+
 static config = {
   // ... other config ...
   layers: {
@@ -113,7 +121,7 @@ static config = {
       maxItems: 5000,         // render queue capacity for this layer
       ySorting: false,        // disable Y-sort if order doesn't matter
       shader: {
-        fragment: '/shaders/metaball.frag',     // WGSL/GLSL fragment path
+        fragment: 'metaball',                   // shader asset name (not a path!)
         containerBlend: 'add',                  // blend for the density pass
         uniforms: {
           uThreshold:  { value: 0.8,               type: 'f32' },
@@ -122,11 +130,34 @@ static config = {
         },
       },
     },
+    lava: {
+      zIndex: 5,
+      shader: {
+        fragment: 'metaball',                   // same shader, different uniforms
+        containerBlend: 'add',
+        uniforms: {
+          uThreshold:  { value: 0.6,               type: 'f32' },
+          uWaterColor: { value: [0.9, 0.2, 0.0],   type: 'vec3<f32>' },
+          uTime:       { value: 0.0,               type: 'f32' },
+        },
+      },
+    },
   },
 };
 ```
 
+If `fragment` contains `/` or `.` it's treated as a direct URL (backward compat), but prefer named assets.
+
 Layers **without** a `shader` block are simple sorted ParticleContainers at their own zIndex. Layers **with** a `shader` use the two-RT pipeline (density pass + fragment shader post-process).
+
+### DebugUI Layer Inspector
+
+Open the **Layers** tab in the debug overlay. Each layer shows visibility, alpha, blend mode, and z-index controls. Click a layer name to expand its detail panel:
+
+- **Type** -- `world` or `screenRT` (shader), with a badge
+- **Shader** -- asset name (e.g. `metaball`) + container blend mode
+- **Resolution**, **Y-Sorting**, **maxItems**
+- **Live uniform editors** -- number inputs for every uniform, updated in real-time from SAB. Edit a value and it calls `setUniform()` immediately
 
 ### Assigning Entities to Layers
 

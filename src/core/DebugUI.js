@@ -456,6 +456,7 @@ export class DebugUI {
     this._updatePerformanceSection();
     this._updateEntitiesSection();
     this._updateDecorationsSection();
+    this._updateLayersSection();
     this._updateToolButtonStates();
     this._updatePaintTool();
     this._updateInspectorValues();
@@ -1405,8 +1406,9 @@ export class DebugUI {
 
     this.elements.layerControls = {};
     this.elements.layerRows = {};
+    this.elements.layerDetails = {};
+    this.elements.layerUniformInputs = {};
 
-    // Built-in layers are always present at construction time
     for (const layerName of Object.keys(Z_INDICES)) {
       this._createLayerRow(layerName, panel);
     }
@@ -1418,160 +1420,295 @@ export class DebugUI {
   _createLayerRow(layerName, panel) {
     if (this.elements.layerRows[layerName]) return;
 
+    const selectStyle = 'font-size:10px;padding:2px 4px;cursor:pointer;background:rgba(0,0,0,0.5);color:white;border:1px solid rgba(255,255,255,0.3);border-radius:3px';
+    const lblStyle = 'font-size:10px;color:rgba(255,255,255,0.7)';
+    const cellStyle = 'display:flex;align-items:center;gap:4px';
+
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'margin-bottom:4px;border-bottom:1px solid rgba(255,255,255,0.04);padding-bottom:4px';
+
     const row = document.createElement('div');
     row.className = 'debug-ui-row';
-    row.style.gap = '12px';
-    row.style.alignItems = 'center';
-    row.style.marginBottom = '6px';
+    row.style.cssText = 'gap:10px;align-items:center;margin-bottom:2px';
 
+    // --- Name ---
     const label = document.createElement('span');
     label.className = 'debug-ui-stat';
-    label.style.minWidth = '120px';
-    label.style.fontWeight = 'bold';
+    label.style.cssText = 'min-width:110px;font-weight:bold';
     label.textContent = layerName;
     row.appendChild(label);
 
-    // Visibility checkbox
+    // --- Visible ---
     const visibleLabel = document.createElement('label');
-    visibleLabel.style.display = 'flex';
-    visibleLabel.style.alignItems = 'center';
-    visibleLabel.style.gap = '4px';
-    visibleLabel.style.cursor = 'pointer';
-    visibleLabel.style.fontSize = '10px';
-    visibleLabel.style.color = 'rgba(255, 255, 255, 0.7)';
-
+    visibleLabel.style.cssText = `${cellStyle};cursor:pointer;${lblStyle}`;
     const visibleCheckbox = document.createElement('input');
     visibleCheckbox.type = 'checkbox';
     visibleCheckbox.checked = true;
     visibleCheckbox.style.cursor = 'pointer';
     visibleCheckbox.onchange = () =>
       this._setLayerProp(layerName, 'visible', visibleCheckbox.checked);
-
     visibleLabel.appendChild(visibleCheckbox);
     visibleLabel.appendChild(document.createTextNode('Visible'));
     row.appendChild(visibleLabel);
 
-    // Alpha slider
+    // --- Alpha ---
     const alphaContainer = document.createElement('div');
-    alphaContainer.style.display = 'flex';
-    alphaContainer.style.alignItems = 'center';
-    alphaContainer.style.gap = '4px';
-
-    const alphaLabel = document.createElement('span');
-    alphaLabel.style.fontSize = '10px';
-    alphaLabel.style.color = 'rgba(255, 255, 255, 0.7)';
-    alphaLabel.textContent = 'Alpha:';
-    alphaContainer.appendChild(alphaLabel);
-
+    alphaContainer.style.cssText = cellStyle;
+    const alphaLbl = document.createElement('span');
+    alphaLbl.style.cssText = lblStyle;
+    alphaLbl.textContent = 'Alpha:';
+    alphaContainer.appendChild(alphaLbl);
     const alphaSlider = document.createElement('input');
     alphaSlider.type = 'range';
     alphaSlider.min = '0';
     alphaSlider.max = '100';
     alphaSlider.value = '100';
-    alphaSlider.style.width = '80px';
-    alphaSlider.style.cursor = 'pointer';
+    alphaSlider.style.cssText = 'width:60px;cursor:pointer';
+    const alphaValue = document.createElement('span');
+    alphaValue.style.cssText = `${lblStyle};min-width:30px`;
+    alphaValue.textContent = '100%';
     alphaSlider.oninput = () => {
       alphaValue.textContent = alphaSlider.value + '%';
       this._setLayerProp(layerName, 'alpha', parseInt(alphaSlider.value) / 100);
     };
     alphaContainer.appendChild(alphaSlider);
-
-    const alphaValue = document.createElement('span');
-    alphaValue.style.fontSize = '10px';
-    alphaValue.style.color = 'rgba(255, 255, 255, 0.7)';
-    alphaValue.style.minWidth = '35px';
-    alphaValue.textContent = '100%';
     alphaContainer.appendChild(alphaValue);
-
     row.appendChild(alphaContainer);
 
-    // Blend mode dropdown
+    // --- Shader (dropdown of loaded shader assets) ---
+    const shaderContainer = document.createElement('div');
+    shaderContainer.style.cssText = cellStyle;
+    const shaderLbl = document.createElement('span');
+    shaderLbl.style.cssText = lblStyle;
+    shaderLbl.textContent = 'Shader:';
+    shaderContainer.appendChild(shaderLbl);
+    const shaderSelect = document.createElement('select');
+    shaderSelect.style.cssText = selectStyle;
+    shaderSelect.disabled = true;
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '(none)';
+    shaderSelect.appendChild(noneOpt);
+    shaderContainer.appendChild(shaderSelect);
+    row.appendChild(shaderContainer);
+
+    // --- Output Blend (final composite) ---
     const blendContainer = document.createElement('div');
-    blendContainer.style.display = 'flex';
-    blendContainer.style.alignItems = 'center';
-    blendContainer.style.gap = '4px';
-
-    const blendLabel = document.createElement('span');
-    blendLabel.style.fontSize = '10px';
-    blendLabel.style.color = 'rgba(255, 255, 255, 0.7)';
-    blendLabel.textContent = 'Blend:';
-    blendContainer.appendChild(blendLabel);
-
+    blendContainer.style.cssText = cellStyle;
+    const blendLbl = document.createElement('span');
+    blendLbl.style.cssText = lblStyle;
+    blendLbl.textContent = 'Output Blend:';
+    blendContainer.appendChild(blendLbl);
     const blendSelect = document.createElement('select');
-    blendSelect.style.fontSize = '10px';
-    blendSelect.style.padding = '2px 4px';
-    blendSelect.style.cursor = 'pointer';
-    blendSelect.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-    blendSelect.style.color = 'white';
-    blendSelect.style.border = '1px solid rgba(255, 255, 255, 0.3)';
-    blendSelect.style.borderRadius = '3px';
-
-    const blendModes = [
-      'normal',
-      'normal-npm',
-      'add',
-      'add-npm',
-      'multiply',
-      'screen',
-      'screen-npm',
-      'erase',
-    ];
-    for (const mode of blendModes) {
-      const option = document.createElement('option');
-      option.value = mode;
-      option.textContent = mode;
-      blendSelect.appendChild(option);
+    blendSelect.style.cssText = selectStyle;
+    for (const mode of ['normal', 'normal-npm', 'add', 'add-npm', 'multiply', 'screen', 'screen-npm', 'erase']) {
+      const opt = document.createElement('option');
+      opt.value = mode;
+      opt.textContent = mode;
+      blendSelect.appendChild(opt);
     }
-
     const customLayer = Layer.initialized ? Layer.get(layerName) : null;
     blendSelect.value = customLayer
       ? Layer.BLEND_MODES[Layer._blendModeId[customLayer.id]] || 'normal'
       : LAYER_DEFAULT_BLEND_MODES[layerName] || 'normal';
     blendSelect.onchange = () => this._setLayerProp(layerName, 'blendMode', blendSelect.value);
     blendContainer.appendChild(blendSelect);
-
     row.appendChild(blendContainer);
 
-    // Z-Index input
-    const zIndexContainer = document.createElement('div');
-    zIndexContainer.style.display = 'flex';
-    zIndexContainer.style.alignItems = 'center';
-    zIndexContainer.style.gap = '4px';
+    // --- Container Blend (density pass, shader layers only) ---
+    const cBlendContainer = document.createElement('div');
+    cBlendContainer.style.cssText = cellStyle;
+    const cBlendLbl = document.createElement('span');
+    cBlendLbl.style.cssText = lblStyle;
+    cBlendLbl.textContent = 'Container Blend:';
+    cBlendContainer.appendChild(cBlendLbl);
+    const cBlendSelect = document.createElement('select');
+    cBlendSelect.style.cssText = selectStyle;
+    for (const mode of ['normal', 'add', 'multiply', 'screen']) {
+      const opt = document.createElement('option');
+      opt.value = mode;
+      opt.textContent = mode;
+      cBlendSelect.appendChild(opt);
+    }
+    if (customLayer) {
+      cBlendSelect.value = Layer.BLEND_MODES[Layer._containerBlendId[customLayer.id]] || 'normal';
+    }
+    cBlendSelect.onchange = () =>
+      this._setLayerProp(layerName, 'containerBlendMode', cBlendSelect.value);
+    cBlendContainer.appendChild(cBlendSelect);
+    row.appendChild(cBlendContainer);
 
-    const zIndexLabel = document.createElement('span');
-    zIndexLabel.style.fontSize = '10px';
-    zIndexLabel.style.color = 'rgba(255, 255, 255, 0.7)';
-    zIndexLabel.textContent = 'Z:';
-    zIndexContainer.appendChild(zIndexLabel);
+    // --- Y-Sort (checkbox, writes directly to SAB) ---
+    const ySortLabel = document.createElement('label');
+    ySortLabel.style.cssText = `${cellStyle};cursor:pointer;${lblStyle}`;
+    const ySortCheckbox = document.createElement('input');
+    ySortCheckbox.type = 'checkbox';
+    ySortCheckbox.style.cursor = 'pointer';
+    ySortCheckbox.checked = customLayer ? customLayer.ySorting : true;
+    ySortCheckbox.onchange = () => {
+      const l = Layer.get(layerName);
+      if (l && Layer._ySorting) {
+        Layer._ySorting[l.id] = ySortCheckbox.checked ? 1 : 0;
+      }
+    };
+    ySortLabel.appendChild(ySortCheckbox);
+    ySortLabel.appendChild(document.createTextNode('Y-Sort'));
+    row.appendChild(ySortLabel);
 
+    // --- Resolution ---
+    const resContainer = document.createElement('div');
+    resContainer.style.cssText = cellStyle;
+    const resLbl = document.createElement('span');
+    resLbl.style.cssText = lblStyle;
+    resLbl.textContent = 'Res:';
+    resContainer.appendChild(resLbl);
+    const resValue = document.createElement('span');
+    resValue.style.cssText = `${lblStyle};color:rgba(255,255,255,0.8)`;
+    resValue.textContent = customLayer ? customLayer.resolution + 'x' : '1x';
+    resContainer.appendChild(resValue);
+    row.appendChild(resContainer);
+
+    // --- Z-Index ---
+    const zContainer = document.createElement('div');
+    zContainer.style.cssText = cellStyle;
+    const zLbl = document.createElement('span');
+    zLbl.style.cssText = lblStyle;
+    zLbl.textContent = 'Z:';
+    zContainer.appendChild(zLbl);
     const zIndexInput = document.createElement('input');
     zIndexInput.type = 'number';
     zIndexInput.value = customLayer
       ? Layer._zIndex[customLayer.id]
       : (Z_INDICES[layerName] ?? 0);
-    zIndexInput.style.width = '50px';
-    zIndexInput.style.fontSize = '10px';
-    zIndexInput.style.padding = '2px 4px';
-    zIndexInput.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-    zIndexInput.style.color = 'white';
-    zIndexInput.style.border = '1px solid rgba(255, 255, 255, 0.3)';
-    zIndexInput.style.borderRadius = '3px';
+    zIndexInput.style.cssText = 'width:50px;font-size:10px;padding:2px 4px;background:rgba(0,0,0,0.5);color:white;border:1px solid rgba(255,255,255,0.3);border-radius:3px';
     zIndexInput.onchange = () =>
       this._setLayerProp(layerName, 'zIndex', parseInt(zIndexInput.value));
-    zIndexContainer.appendChild(zIndexInput);
+    zContainer.appendChild(zIndexInput);
+    row.appendChild(zContainer);
 
-    row.appendChild(zIndexContainer);
+    wrapper.appendChild(row);
 
-    panel.appendChild(row);
+    // --- Uniforms expandable (only section that collapses) ---
+    const uniformsBlock = document.createElement('div');
+    uniformsBlock.style.cssText = 'display:none;padding:4px 0 4px 16px;font-size:10px;color:rgba(255,255,255,0.55);line-height:1.6';
+    wrapper.appendChild(uniformsBlock);
+
+    label.style.cursor = 'pointer';
+    label.title = 'Click to expand uniforms';
+    label.onclick = () => {
+      const open = uniformsBlock.style.display === 'none';
+      uniformsBlock.style.display = open ? 'block' : 'none';
+      if (open) this._populateLayerUniforms(layerName);
+    };
+
+    panel.appendChild(wrapper);
 
     this.elements.layerControls[layerName] = {
       visible: visibleCheckbox,
       alpha: alphaSlider,
       alphaValue: alphaValue,
       blendMode: blendSelect,
+      containerBlend: cBlendSelect,
+      shader: shaderSelect,
+      ySorting: ySortCheckbox,
+      resolution: resValue,
       zIndex: zIndexInput,
     };
-    this.elements.layerRows[layerName] = row;
+    this.elements.layerRows[layerName] = wrapper;
+    this.elements.layerDetails[layerName] = uniformsBlock;
+  }
+
+  _populateLayerUniforms(layerName) {
+    const block = this.elements.layerDetails[layerName];
+    if (!block) return;
+
+    const layer = Layer.initialized ? Layer.get(layerName) : null;
+    if (!layer) {
+      block.textContent = 'Layer not initialized';
+      return;
+    }
+
+    const meta = Layer._metadata?.layers?.[layer.id];
+    block.innerHTML = '';
+    this.elements.layerUniformInputs[layerName] = {};
+
+    if (!layer.hasShader || !meta?.uniformMap) {
+      block.innerHTML = '<span style="color:rgba(255,255,255,0.3)">No shader uniforms</span>';
+      return;
+    }
+
+    const dimStyle = 'color:rgba(255,255,255,0.4)';
+
+    for (const [uName, entry] of Object.entries(meta.uniformMap)) {
+      const uType = meta.uniformTypes?.[uName] || 'f32';
+      const uRow = document.createElement('div');
+      uRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:2px';
+
+      const uLabel = document.createElement('span');
+      uLabel.style.cssText = `${dimStyle};min-width:120px`;
+      uLabel.textContent = uName;
+      uRow.appendChild(uLabel);
+
+      const uTypeSpan = document.createElement('span');
+      uTypeSpan.style.cssText = 'color:rgba(255,255,255,0.3);font-size:9px;min-width:55px';
+      uTypeSpan.textContent = uType;
+      uRow.appendChild(uTypeSpan);
+
+      const inputs = [];
+      for (let i = 0; i < entry.size; i++) {
+        const inp = document.createElement('input');
+        inp.type = 'number';
+        inp.step = '0.01';
+        inp.style.cssText = 'width:60px;font-size:10px;padding:1px 4px;background:rgba(0,0,0,0.5);color:#fbbf24;border:1px solid rgba(255,255,255,0.2);border-radius:3px';
+        const currentVal = Layer._uniformFloats[layer.id]
+          ? Layer._uniformFloats[layer.id][entry.offset + i]
+          : 0;
+        inp.value = parseFloat(currentVal.toFixed(4));
+        inp.onchange = () => {
+          if (entry.size === 1) {
+            layer.setUniform(uName, parseFloat(inp.value));
+          } else {
+            const arr = [];
+            for (let j = 0; j < inputs.length; j++) {
+              arr.push(parseFloat(inputs[j].value));
+            }
+            layer.setUniform(uName, arr);
+          }
+        };
+        inputs.push(inp);
+        uRow.appendChild(inp);
+      }
+
+      block.appendChild(uRow);
+      this.elements.layerUniformInputs[layerName][uName] = inputs;
+    }
+  }
+
+  _updateLayersSection() {
+    if (!Layer.initialized) return;
+    if (!this.sections.layers?.panel) return;
+    if (this.sections.layers.panel.style.display === 'none') return;
+
+    for (const [layerName, inputMap] of Object.entries(this.elements.layerUniformInputs)) {
+      const layer = Layer.get(layerName);
+      if (!layer || !Layer._uniformFloats[layer.id]) continue;
+
+      const meta = Layer._metadata?.layers?.[layer.id];
+      if (!meta?.uniformMap) continue;
+
+      for (const [uName, inputs] of Object.entries(inputMap)) {
+        const entry = meta.uniformMap[uName];
+        if (!entry) continue;
+        for (let i = 0; i < inputs.length; i++) {
+          if (document.activeElement === inputs[i]) continue;
+          const live = Layer._uniformFloats[layer.id][entry.offset + i];
+          const display = parseFloat(live.toFixed(4));
+          if (parseFloat(inputs[i].value) !== display) {
+            inputs[i].value = display;
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -1585,7 +1722,6 @@ export class DebugUI {
     const availableLayers = this._getAvailableLayers(config);
     const panel = this.sections.layers.panel;
 
-    // Create rows for custom layers that weren't present at construction time
     if (Layer.initialized) {
       for (const l of Layer.getCustomLayers()) {
         if (!this.elements.layerRows[l.name]) {
@@ -1594,24 +1730,55 @@ export class DebugUI {
       }
     }
 
-    for (const [layerName, row] of Object.entries(this.elements.layerRows)) {
+    // Collect loaded shader asset names for the dropdown
+    const shaderNames = this.scene._loadedShaderSources
+      ? Object.keys(this.scene._loadedShaderSources)
+      : [];
+
+    for (const [layerName, wrapper] of Object.entries(this.elements.layerRows)) {
       const isAvailable = availableLayers.has(layerName);
       const controls = this.elements.layerControls[layerName];
 
       if (isAvailable) {
-        row.style.opacity = '1';
-        row.style.pointerEvents = 'auto';
+        wrapper.style.opacity = '1';
+        wrapper.style.pointerEvents = 'auto';
         controls.visible.disabled = false;
         controls.alpha.disabled = false;
         controls.blendMode.disabled = false;
         controls.zIndex.disabled = false;
       } else {
-        row.style.opacity = '0.4';
-        row.style.pointerEvents = 'none';
+        wrapper.style.opacity = '0.4';
+        wrapper.style.pointerEvents = 'none';
         controls.visible.disabled = true;
         controls.alpha.disabled = true;
         controls.blendMode.disabled = true;
         controls.zIndex.disabled = true;
+      }
+
+      // Populate shader dropdown with loaded asset names
+      const shaderSelect = controls.shader;
+      if (shaderSelect && shaderNames.length > 0 && shaderSelect.options.length <= 1) {
+        for (const name of shaderNames) {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          shaderSelect.appendChild(opt);
+        }
+      }
+
+      // Sync controls to Layer data for custom layers
+      const layer = Layer.initialized ? Layer.get(layerName) : null;
+      if (layer) {
+        const meta = Layer._metadata?.layers?.[layer.id];
+        if (meta?.shaderName) {
+          shaderSelect.value = meta.shaderName;
+        }
+        controls.ySorting.checked = layer.ySorting;
+        controls.resolution.textContent = layer.resolution.toFixed(3) + 'x';
+        if (layer.hasShader) {
+          controls.containerBlend.value =
+            Layer.BLEND_MODES[Layer._containerBlendId[layer.id]] || 'normal';
+        }
       }
     }
   }
@@ -1624,29 +1791,20 @@ export class DebugUI {
   _getAvailableLayers(config) {
     const available = new Set();
 
-    // ENTITIES is always available
     available.add('ENTITIES');
-
-    // BACKGROUND - always available since it can be set dynamically via
-    // setStaticBackground(), setTilingBackground(), or setTilemapBackground()
     available.add('BACKGROUND');
 
-    // DECALS - check particle.decals config
     if (config.particle?.decals) {
       available.add('DECALS');
     }
 
-    // LIGHTING related layers
     if (config.lighting?.enabled) {
       available.add('LIGHTING');
-
-      // CASTED_SHADOWS - only if shadows are enabled within lighting
       if (config.lighting?.shadowsEnabled) {
         available.add('CASTED_SHADOWS');
       }
     }
 
-    // Custom layers from Layer registry
     if (Layer.initialized) {
       for (const l of Layer.getCustomLayers()) {
         available.add(l.name);
