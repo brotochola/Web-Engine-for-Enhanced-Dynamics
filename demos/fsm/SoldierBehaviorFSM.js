@@ -7,10 +7,10 @@ import { Civilian } from '../gameObjects/civilian.js';
 import { Destination } from '../gameObjects/destination.js';
 import { NavGrid } from '../../src/core/NavGrid.js';
 import { PersonComponent, DIRECTION_NAMES } from '../components/personComponent.js';
-import { distanceSq2D, Ray } from '../../src/index.js';
+
 import { LootableComponent } from '../components/lootableComponent.js';
 
-const { FSM, FSMState, Transform, RigidBody, GameObject, Collider, getDirectionFromAngle } = WEED;
+const { distanceSq2D, Ray, DebugDraw, FSM, FSMState, Transform, RigidBody, GameObject, Collider, getDirectionFromAngle } = WEED;
 
 // ==========================================
 // REUSABLE OBJECTS - Zero allocation
@@ -65,7 +65,15 @@ function findACivilianToShoot(owner) {
     const neighborIndex = owner.getNeighbor(n);
     if (Transform.entityType[neighborIndex] !== civilianType) continue;
     if (LootableComponent.health[neighborIndex] <= 0) continue;
-    if (!Ray.hasLineOfSight(owner.index, neighborIndex)) continue;
+    const hasLOS = Ray.hasLineOfSight(owner.index, neighborIndex);
+
+    // DebugDraw.drawLine(
+    //   ownerX, ownerY,
+    //   Transform.x[neighborIndex] + (Collider.offsetX[neighborIndex] || 0),
+    //   Transform.y[neighborIndex] + (Collider.offsetY[neighborIndex] || 0),
+    //   hasLOS ? 0x00FF00 : 0xFF0000, 3
+    // );
+    if (!hasLOS) continue;
 
     const neighborX = Transform.x[neighborIndex] + (Collider.offsetX[neighborIndex] || 0);
     const neighborY = Transform.y[neighborIndex] + (Collider.offsetY[neighborIndex] || 0);
@@ -109,7 +117,13 @@ function clearTarget(i) {
 
 function canShootTarget(owner, targetIndex, targetDistSq) {
   if (!owner.hasGun()) return false;
-  if (!Ray.hasLineOfSight(owner.index, targetIndex)) return false;
+  const hasLOS = Ray.hasLineOfSight(owner.index, targetIndex);
+  DebugDraw.drawLine(
+    Transform.x[owner.index], Transform.y[owner.index],
+    Transform.x[targetIndex], Transform.y[targetIndex],
+    hasLOS ? 0x00FF00 : 0xFF0000, 0
+  );
+  if (!hasLOS) return false;
   const weapon = owner.getBestWeapon();
   return targetDistSq <= weapon.rangeSq;
 }

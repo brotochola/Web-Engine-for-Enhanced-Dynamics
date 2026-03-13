@@ -19,20 +19,28 @@ const TYPE_TEXT   = 4;
 const TYPE_CELL   = 5;
 const TYPE_POINT  = 6;
 
-// Buffer layout
+// Buffer layout — header stores the atomic write head + the main thread's timeOrigin
+// so workers can translate their local performance.now() to main-thread-relative time.
+//
+// Header (16 bytes):
+//   bytes  0–3 : Int32   — atomic write head
+//   bytes  4–7 : padding (Float64 alignment)
+//   bytes 8–15 : Float64 — main thread's performance.timeOrigin
+//
+// Entries start at byte 16, each ENTRY_STRIDE × 4 bytes.
 const ENTRY_STRIDE   = 32;  // float32 slots per entry
-const HEADER_BYTES   = 4;   // 1 × Int32 for atomic write head
+const HEADER_BYTES   = 16;
 const MAX_TEXT_CHARS  = 24;  // text slots per entry (offset 8..31)
 
 // duration=0 draws persist for this many ms so the main-thread renderer can catch them
 const SINGLE_FRAME_TTL_MS = 67; // ~4 frames at 60 fps
 
 export class DebugDraw {
-  // SAB views (set by initialize)
   static _writeHead  = null;  // Int32Array[1]  — atomic write index
   static _buffer     = null;  // Float32Array   — entry data (starts after header)
   static _maxEntries = 0;
   static _initialized = false;
+  static _timeOffset = 0;     // ms to add to local performance.now() to get main-thread time
 
   // Public constants (used by the renderer to decode entries)
   static TYPE_LINE   = TYPE_LINE;
@@ -54,11 +62,20 @@ export class DebugDraw {
   /**
    * Attach to a SharedArrayBuffer.
    * Called once on the main thread (by Scene) and once per worker (by AbstractWorker).
+   * The first caller (main thread) stamps its performance.timeOrigin into the header;
+   * subsequent callers (workers) read it to compute their clock offset.
    */
   static initialize(sab, maxEntries = 256) {
     DebugDraw._writeHead  = new Int32Array(sab, 0, 1);
     DebugDraw._buffer     = new Float32Array(sab, HEADER_BYTES);
     DebugDraw._maxEntries = maxEntries;
+
+    const originView = new Float64Array(sab, 8, 1);
+    if (originView[0] === 0) {
+      originView[0] = performance.timeOrigin;
+    }
+    DebugDraw._timeOffset = performance.timeOrigin - originView[0];
+
     DebugDraw._initialized = true;
   }
 
@@ -97,9 +114,10 @@ export class DebugDraw {
     buf[offset + 3] = 0;
     buf[offset + 4] = 0;
     buf[offset + 5] = color;
+    const t = performance.now() + DebugDraw._timeOffset;
     buf[offset + 6] = duration <= 0
-      ? performance.now() + SINGLE_FRAME_TTL_MS
-      : performance.now() + duration * 1000;
+      ? t + SINGLE_FRAME_TTL_MS
+      : t + duration * 1000;
 
     const len = Math.min(text.length, MAX_TEXT_CHARS);
     buf[offset + 7] = len;
@@ -126,9 +144,10 @@ export class DebugDraw {
     buf[offset + 3] = p3;
     buf[offset + 4] = p4;
     buf[offset + 5] = color;
+    const t = performance.now() + DebugDraw._timeOffset;
     buf[offset + 6] = duration <= 0
-      ? performance.now() + SINGLE_FRAME_TTL_MS
-      : performance.now() + duration * 1000;
+      ? t + SINGLE_FRAME_TTL_MS
+      : t + duration * 1000;
     buf[offset + 7] = 0;
   }
 }

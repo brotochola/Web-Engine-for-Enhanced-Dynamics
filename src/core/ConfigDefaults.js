@@ -255,3 +255,11 @@ export const NAVIGATION_DEFAULTS = {
   maxPathLength: 128, // Maximum cells per path
   noLimitFPS: true, // Navigation (in particle_worker) runs as fast as possible by default
 };
+
+// ============================================================================
+// DEBUG DEFAULTS
+// ============================================================================
+
+export const DEBUG_DEFAULTS = {
+  maxDebugDrawEntries: 256, // Ring buffer capacity for cross-thread debug drawing primitives
+};

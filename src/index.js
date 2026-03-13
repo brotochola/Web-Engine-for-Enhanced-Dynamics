@@ -14,6 +14,7 @@ export { FSM } from './core/FSM.js';
 export { FSMState } from './core/FSMState.js';
 export { DebugFlags } from './core/DebugFlags.js';
 export { DebugUI } from './core/DebugUI.js';
+export { DebugDraw } from './core/DebugDraw.js';
 export { ShapeType } from './core/ConfigDefaults.js';
 export { Mouse } from './core/Mouse.js';
 export { Camera } from './core/Camera.js';
@@ -108,6 +109,7 @@ import { FSM } from './core/FSM.js';
 import { FSMState } from './core/FSMState.js';
 import { DebugFlags } from './core/DebugFlags.js';
 import { DebugUI } from './core/DebugUI.js';
+import { DebugDraw } from './core/DebugDraw.js';
 import { Mouse } from './core/Mouse.js';
 import { Camera } from './core/Camera.js';
 import { Ray } from './core/Ray.js';
@@ -150,6 +152,7 @@ const WEED = {
   FSMState,
   DebugFlags,
   DebugUI,
+  DebugDraw,
   Mouse,
   Camera,
   Ray,

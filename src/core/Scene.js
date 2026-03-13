@@ -45,6 +45,7 @@ import {
   AUDIO_DEFAULTS,
   LIGHTING_DEFAULTS,
   NAVIGATION_DEFAULTS,
+  DEBUG_DEFAULTS,
   SUN_DEFAULTS,
   LAYER_DEFAULTS,
   Z_INDICES,
@@ -518,6 +519,12 @@ class Scene {
     this.config.navigation = {
       ...NAVIGATION_DEFAULTS,
       ...(this.config.navigation || {}),
+    };
+
+    // Debug defaults from centralized config
+    this.config.debug = {
+      ...DEBUG_DEFAULTS,
+      ...(this.config.debug || {}),
     };
 
     // Layers defaults (custom layers are user-defined, empty by default)
@@ -1426,7 +1433,7 @@ class Scene {
 
     // Debug draw ring buffer — written by DebugDraw.drawLine() etc. from any thread,
     // read by the main-thread DebugCanvas renderer.
-    const maxDebugDrawEntries = this.config.debug?.maxDrawEntries || 256;
+    const maxDebugDrawEntries = this.config.debug.maxDebugDrawEntries;
     this.buffers.debugDrawData = new SharedArrayBuffer(DebugDraw.getBufferSize(maxDebugDrawEntries));
     this.maxDebugDrawEntries = maxDebugDrawEntries;
     DebugDraw.initialize(this.buffers.debugDrawData, maxDebugDrawEntries);
