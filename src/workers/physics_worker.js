@@ -424,25 +424,18 @@ class PhysicsWorker extends AbstractWorker {
       // Combined static + sleeping early-out (single branch for non-moving entities)
       if (isStatic[i] || sleeping[i]) {
         if (sleeping[i]) {
-          // Keep px/py in sync for sleeping entities to prevent NaN on wake-up
           px[i] = x[i];
           py[i] = y[i];
+          ax[i] = 0;
+          ay[i] = 0;
         }
         continue;
       }
 
-      // Apply acceleration (scaled by dtRatio)
       const accX = ax[i] * dtRatio;
       const accY = ay[i] * dtRatio;
-      // if (isNaN(accX) || isNaN(accY) || !Number.isFinite(accX) || !Number.isFinite(accY)) {
-      //   console.log("accX or accY is NaN or Infinity", i, Transform.x[i], Transform.y[i], originalAccX, originalAccY, "dtaratio", dtRatio, accX, accY);
-      //   debugger;
-      // };
 
-      // Wake-up check (only for non-static, non-sleeping entities that passed the early-out)
-      // Note: This is now unreachable for sleeping entities, but kept for entities
-      // that might have been woken by collision in previous frame
-      // Use squared comparison to handle negative accelerations without Math.abs overhead
+      // Wake-up check: use squared comparison to avoid Math.abs overhead
       if (accX * accX > wakeUpThresholdSq || accY * accY > wakeUpThresholdSq) {
         sleeping[i] = 0;
         stillnessTime[i] = 0;
@@ -482,13 +475,25 @@ class PhysicsWorker extends AbstractWorker {
         dy *= velScale;
       }
 
+      // NaN/Infinity safety: if integration produced non-finite values, reset entity motion.
+      // Catches bugs in game code (e.g. 0/0 in steering) and the Infinity*0=NaN path
+      // in velocity clamping. Without this, one bad frame corrupts the entity permanently.
+      if (dx !== dx || dy !== dy || dx === Infinity || dx === -Infinity || dy === Infinity || dy === -Infinity) {
+        px[i] = oldX;
+        py[i] = oldY;
+        vx[i] = 0;
+        vy[i] = 0;
+        ax[i] = 0;
+        ay[i] = 0;
+        continue;
+      }
+
       x[i] = oldX + dx;
       y[i] = oldY + dy;
 
       px[i] = oldX;
       py[i] = oldY;
 
-      // Use multiplication instead of division for velocity calculation
       vx[i] = dx * invDtRatio;
       vy[i] = dy * invDtRatio;
 
