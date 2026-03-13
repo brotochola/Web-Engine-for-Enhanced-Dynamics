@@ -85,7 +85,6 @@ export class Person extends Lootable {
   setup() {
     // Physics properties
     this.rigidBody.maxVel = 3;
-    this.rigidBody.maxAcc = 0.5;
     this.rigidBody.minSpeed = 0;
     this.rigidBody.friction = Person.defaultFriction;
 

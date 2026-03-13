@@ -35,8 +35,6 @@ class Ball extends GameObject {
     // this.collider.radius = spawnConfig.radius; // Mass auto-computed from area (π * r²)
     // Configure RigidBody physics properties (same for all balls)
     this.rigidBody.maxVel = 100; // Max velocity
-
-    this.rigidBody.maxAcc = 10; // Max acceleration
     this.rigidBody.minSpeed = 0; // Balls can come to rest
     this.rigidBody.friction = 0.001; // Low friction - let balls settle naturally
     // Set the texture for this static sprite

@@ -29,8 +29,8 @@ all X values packed together, then all Y values, etc. No per-entity objects on t
 | Component | Fields (type) |
 |---|---|
 | **Transform** | `active` (Uint8), `entityType` (Uint8), `x` (Float32), `y` (Float32), `rotation` (Float32) |
-| **RigidBody** | `active`, `static`, `collisionCount`, `sleeping` (Uint8); `vx`, `vy`, `ax`, `ay`, `px`, `py`, `angularVelocity`, `angularAccel`, `mass`, `invMass`, `inertia`, `invInertia`, `drag`, `angularDrag`, `maxVel`, `maxAcc`, `minSpeed`, `friction`, `velocityAngle`, `speed`, `stillnessTime` (Float32) |
-| **Collider** | `active`, `shapeType`, `isTrigger` (Uint8); `offsetX`, `offsetY`, `radius`, `width`, `height`, `restitution`, `aabbMinX`, `aabbMinY`, `aabbMaxX`, `aabbMaxY`, `visualRange` (Float32); `collisionLayer`, `collisionMask` (Uint16) |
+| **RigidBody** | `active`, `static`, `collisionCount`, `sleeping` (Uint8); `vx`, `vy`, `ax`, `ay`, `px`, `py`, `angularVelocity`, `angularAccel`, `mass`, `invMass`, `drag`, `angularDrag`, `maxVel`, `minSpeed`, `friction`, `velocityAngle`, `speed`, `stillnessTime` (Float32) |
+| **Collider** | `active`, `shapeType`, `isTrigger` (Uint8); `offsetX`, `offsetY`, `radius`, `width`, `height`, `aabbMinX`, `aabbMinY`, `aabbMaxX`, `aabbMaxY`, `visualRange` (Float32); `collisionLayer`, `collisionMask` (Uint16) |
 | **SpriteRenderer** | `active`, `textureId`, animation fields, flip flags, etc. |
 | **ParticleComponent** | `active`, `x`, `y`, `z`, `vx`, `vy`, `vz`, `lifespan`, `currentLife`, `gravity`, `scaleX/Y`, `alpha`, `tint`, `baseTint`, `textureId`, `rotation`, `flipX/Y`, `fadeOnTheFloor`, `timeOnFloor`, `initialAlpha`, `stayOnTheFloor`, `despawnOnGroundContact`, `tweenToAlpha0`, `isItOnScreen`, `blendMode` (mixed Uint8/Uint16/Float32/Uint32) |
 | **DecorationComponent** | `active`, `x`, `y`, `offsetX/Y`, `textureId`, `scaleX/Y`, `baseRotation`, `rotation`, `alpha`, `tint`, `anchorX/Y`, `isItOnScreen`, `sway`, `swayAmplitude`, `swayFrequency` |

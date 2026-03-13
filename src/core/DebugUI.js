@@ -228,7 +228,7 @@ export class DebugUI {
 
   _setupKeyboardShortcuts() {
     this._keyHandler = (e) => {
-      console.log(e.key);
+
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
       if (e.key === 'Escape') {

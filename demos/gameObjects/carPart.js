@@ -26,7 +26,6 @@ export class CarPart extends GameObject {
 
         // Configure physics - tuned for arcade feel
         this.rigidBody.maxVel = 400;
-        this.rigidBody.maxAcc = 3;
         this.rigidBody.minSpeed = 0;
         this.rigidBody.friction = 0.01;  // Slight coast drag when off gas
 

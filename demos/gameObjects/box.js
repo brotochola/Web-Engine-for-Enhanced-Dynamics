@@ -20,7 +20,6 @@ class Box extends GameObject {
   setup() {
     // Configure RigidBody physics properties (same for all boxes)
     this.rigidBody.maxVel = 150; // Max velocity
-    this.rigidBody.maxAcc = 21; // Max acceleration
     this.rigidBody.minSpeed = 0; // Boxes can come to rest
     this.rigidBody.friction = 0.001; // Low friction - let boxes settle naturally
 

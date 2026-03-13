@@ -40,7 +40,6 @@ export class Bug extends GameObject {
         this.spriteRenderer.anchorY = 0.5;
 
         this.rigidBody.maxVel = 5;
-        this.rigidBody.maxAcc = 0.1;
         this.rigidBody.minSpeed = 0;
         this.rigidBody.friction = 0.04;
 

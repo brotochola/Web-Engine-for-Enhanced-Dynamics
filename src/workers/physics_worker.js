@@ -4,7 +4,7 @@ self.postMessage({
   when: Date.now(),
 });
 // physics_worker.js - Physics integration (velocity, position updates)
-// Now uses per-entity maxVel, maxAcc, and friction from GameObject arrays
+// Now uses per-entity maxVel and friction from GameObject arrays
 // Supports Circle and AABB (Box) colliders
 
 // Import engine dependencies
@@ -405,7 +405,6 @@ class PhysicsWorker extends AbstractWorker {
     const isStatic = RigidBody.static;
     const friction = RigidBody.friction;
     const sleeping = RigidBody.sleeping;
-    const maxAcc = RigidBody.maxAcc;
 
     // Use cached values (calculated once in applyPhysicsConfig, not per-frame)
     const wakeUpThresholdSq = this._wakeUpThresholdSq;
@@ -433,13 +432,8 @@ class PhysicsWorker extends AbstractWorker {
       }
 
       // Apply acceleration (scaled by dtRatio)
-      let originalAccX = ax[i];
-      let originalAccY = ay[i];
-      const myMaxAcc = maxAcc[i] || 10;
-      originalAccX = Math.max(-myMaxAcc, Math.min(originalAccX, myMaxAcc));
-      originalAccY = Math.max(-myMaxAcc, Math.min(originalAccY, myMaxAcc));
-      const accX = originalAccX * dtRatio;
-      const accY = originalAccY * dtRatio;
+      const accX = ax[i] * dtRatio;
+      const accY = ay[i] * dtRatio;
       // if (isNaN(accX) || isNaN(accY) || !Number.isFinite(accX) || !Number.isFinite(accY)) {
       //   console.log("accX or accY is NaN or Infinity", i, Transform.x[i], Transform.y[i], originalAccX, originalAccY, "dtaratio", dtRatio, accX, accY);
       //   debugger;

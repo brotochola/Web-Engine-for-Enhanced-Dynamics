@@ -46,9 +46,6 @@ class Collider extends Component {
     // Trigger mode
     isTrigger: Uint8Array, // trigger=only events, no physical response
 
-    // Material properties
-    restitution: Float32Array, // bounciness (0-1)
-
     // Collision filtering
     collisionLayer: Uint16Array,
     collisionMask: Uint16Array,

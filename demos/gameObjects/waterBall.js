@@ -14,7 +14,6 @@ class WaterBall extends GameObject {
 
   onSpawned(spawnConfig = {}) {
     this.rigidBody.maxVel = 120;
-    this.rigidBody.maxAcc = 8;
     this.rigidBody.minSpeed = 0;
     this.rigidBody.friction = 0.02
 

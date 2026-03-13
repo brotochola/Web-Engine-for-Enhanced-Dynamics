@@ -29,8 +29,6 @@ export class RigidBody extends Component {
     // Mass properties
     mass: Float32Array,
     invMass: Float32Array,
-    inertia: Float32Array, // moment of inertia
-    invInertia: Float32Array,
 
     // Damping
     drag: Float32Array,
@@ -38,7 +36,6 @@ export class RigidBody extends Component {
 
     // Constraints
     maxVel: Float32Array,
-    maxAcc: Float32Array,
     minSpeed: Float32Array,
     friction: Float32Array,
 

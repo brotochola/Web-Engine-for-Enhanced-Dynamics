@@ -61,7 +61,6 @@ export class Ball extends GameObject {
 
   onSpawned(spawnConfig = {}) {
     this.rigidBody.maxVel = 100;
-    this.rigidBody.maxAcc = 10;
     this.rigidBody.minSpeed = 0;
     this.rigidBody.friction = 0.001;
     this.rotation = 0;
@@ -113,7 +112,6 @@ export class Wall extends GameObject {
   setup() {
     this.collider.shapeType = ShapeType.Box;
     this.spriteRenderer.active = 1;
-    this.collider.restitution = 0;
     this.collider.visualRange = 0;
   }
 

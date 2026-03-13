@@ -30,7 +30,6 @@ class Boid extends GameObject {
 
     // Initialize RigidBody constraints
     this.rigidBody.maxVel = 10;
-    this.rigidBody.maxAcc = 0.2;
     this.rigidBody.minSpeed = 0; // Keep boids moving
     this.rigidBody.friction = 0.01;
 

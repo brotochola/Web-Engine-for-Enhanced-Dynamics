@@ -26,8 +26,6 @@ class Floor extends GameObject {
 
         // Enable sprite renderer to make floor/walls visible
         this.spriteRenderer.active = 1;
-        this.collider.restitution = 0
-
         // Set visual range for spatial queries
         this.collider.visualRange = 0; // Large range to ensure collisions are detected
     }

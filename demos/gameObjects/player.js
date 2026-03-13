@@ -42,7 +42,6 @@ export class Player extends GameObject {
   setup() {
     // Initialize physics properties
     this.rigidBody.maxVel = 5; // Maximum velocity
-    this.rigidBody.maxAcc = 0.5; // Maximum acceleration
     this.rigidBody.minSpeed = 0;
     this.rigidBody.friction = 0.03; // Friction for smooth stopping
 
