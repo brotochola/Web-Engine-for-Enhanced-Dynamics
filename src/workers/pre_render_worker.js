@@ -229,6 +229,12 @@ class PreRenderWorker extends AbstractWorker {
         this.canvasHeight = this.config.canvasHeight;
         this.cullingRatio = this.config.renderer?.cullingRatio ?? RENDERER_DEFAULTS.cullingRatio;
 
+        // Decoration zoom-based fade/hide thresholds
+        const rendererConfig = this.config.renderer || {};
+        this.decorationFadeStartZoom = rendererConfig.startFadingDecorationsAtZoom ?? RENDERER_DEFAULTS.startFadingDecorationsAtZoom;
+        this.decorationHideZoom = rendererConfig.hideDecorationsAtZoom ?? RENDERER_DEFAULTS.hideDecorationsAtZoom;
+        this._decorationZoomAlpha = 1;
+
         console.log(`[PRE_RENDER WORKER] Entities: ${this.globalEntityCount}, Particles: ${this.maxParticles}, Decorations: ${this.maxDecorations}`);
 
         // ========================================
@@ -572,6 +578,16 @@ class PreRenderWorker extends AbstractWorker {
         this.shadowsUpdatedThisFrame = 0;
         this._renderableCount = 0;
 
+        // Compute decoration zoom alpha (fully visible above fadeStart, fades to 0 at hideZoom)
+        const zoom = this._frameCameraZoom;
+        if (zoom >= this.decorationFadeStartZoom) {
+            this._decorationZoomAlpha = 1;
+        } else if (zoom <= this.decorationHideZoom) {
+            this._decorationZoomAlpha = 0;
+        } else {
+            this._decorationZoomAlpha = (zoom - this.decorationHideZoom) / (this.decorationFadeStartZoom - this.decorationHideZoom);
+        }
+
         // Collect visible renderables for render queue (entities + sun shadows fused in one pass)
         this.collectVisibleParticles();
         this.collectVisibleEntities();
@@ -845,6 +861,7 @@ class PreRenderWorker extends AbstractWorker {
      */
     collectVisibleDecorations() {
         if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
+        if (this._decorationZoomAlpha <= 0) return;
 
         const visibleData = this.visibleDecorationsData;
         if (!visibleData) return;
@@ -1205,7 +1222,7 @@ class PreRenderWorker extends AbstractWorker {
                 rqScaleX[i] = decoScaleX[idx];
                 rqScaleY[i] = decoScaleY[idx];
                 rqRotation[i] = decoRotation[idx];
-                rqAlpha[i] = decoAlpha[idx];
+                rqAlpha[i] = decoAlpha[idx] * this._decorationZoomAlpha;
                 rqTint[i] = decoTint[idx];
                 const dAnimIdx = decoTextureId[idx];
                 rqTextureId[i] = this.animationFrameStart?.[dAnimIdx] ?? 0;
