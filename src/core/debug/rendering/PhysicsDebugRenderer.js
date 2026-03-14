@@ -8,7 +8,7 @@ import { SpriteRenderer } from '../../../components/SpriteRenderer.js';
 import { Mouse } from '../../Mouse.js';
 import { Grid } from '../../Grid.js';
 import { Constraint } from '../../Constraint.js';
-import { DebugDraw } from '../../DebugDraw.js';
+import { DebugDraw } from '../DebugDraw.js';
 import { distanceSq2D } from '../../utils.js';
 
 export class PhysicsDebugRenderer {

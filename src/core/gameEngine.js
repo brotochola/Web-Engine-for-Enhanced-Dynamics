@@ -1,7 +1,7 @@
 // GameEngine.js - Lightweight scene orchestrator
 // Manages canvas, scene lifecycle, input listeners, browser hardening, and debug UI
 
-import { DebugUI } from './DebugUI.js';
+import { DebugUI } from './debug/DebugUI.js';
 import { Mouse } from './Mouse.js';
 import { printLogo } from './utils.js';
 

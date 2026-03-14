@@ -25,7 +25,7 @@ import { Camera } from '../core/Camera.js';
 import { Sun } from '../core/Sun.js';
 import { Layer } from '../core/Layer.js';
 import { Ray } from '../core/Ray.js';
-import { DebugDraw } from '../core/DebugDraw.js';
+import { DebugDraw } from '../core/debug/DebugDraw.js';
 import { Grid } from '../core/Grid.js';
 import { NavGrid } from '../core/NavGrid.js';
 import { ParticleComponent } from '../components/ParticleComponent.js';

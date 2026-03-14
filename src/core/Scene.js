@@ -26,7 +26,7 @@ import {
   exposeEntityClassesGlobally,
   urlToPath,
 } from './utils.js';
-import { DebugFlags } from './DebugFlags.js';
+import { DebugFlags } from './debug/DebugFlags.js';
 import { Mouse } from './Mouse.js';
 import { Flash } from './Flash.js';
 import { BigAtlasInspector } from './BigAtlasInspector.js';
@@ -57,7 +57,7 @@ import { computeBufferSize as computeRenderQueueBufferSize } from './RenderQueue
 import { NavGrid } from './NavGrid.js';
 import { Grid } from './Grid.js';
 import { Ray } from './Ray.js';
-import { DebugDraw } from './DebugDraw.js';
+import { DebugDraw } from './debug/DebugDraw.js';
 import {
   RENDERER_STATS,
   PARTICLE_STATS,

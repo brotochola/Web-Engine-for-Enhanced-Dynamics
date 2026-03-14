@@ -1,6 +1,6 @@
 // DebugCanvas.js — Manages the full-screen canvas overlay for all debug rendering
 
-import { DEBUG_FLAGS } from '../../DebugFlags.js';
+import { DEBUG_FLAGS } from '../DebugFlags.js';
 import { NavDebugRenderer } from './NavDebugRenderer.js';
 import { PhysicsDebugRenderer } from './PhysicsDebugRenderer.js';
 

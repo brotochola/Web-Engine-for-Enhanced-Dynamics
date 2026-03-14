@@ -1,6 +1,6 @@
 // VisualAidsPanel.js — Toggle buttons for debug flags (colliders, velocity, etc.)
 
-import { DEBUG_FLAGS } from '../../DebugFlags.js';
+import { DEBUG_FLAGS } from '../DebugFlags.js';
 import { createPanel, createRow, createDivider } from '../ui/DebugDOM.js';
 
 export class VisualAidsPanel {

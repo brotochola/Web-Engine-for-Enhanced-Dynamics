@@ -48,7 +48,7 @@ const audioWorkletSource = fs.readFileSync(
 
 // Read DebugUI CSS (embedded so _injectStyles works without fetching a separate file)
 const debugUICSS = fs.readFileSync(
-    path.join(rootDir, 'src', 'core', 'DebugUI.css'), 'utf8'
+    path.join(rootDir, 'src', 'core', 'debug', 'DebugUI.css'), 'utf8'
 );
 
 // Step 3: Generate bundle entry with workers embedded in WEED

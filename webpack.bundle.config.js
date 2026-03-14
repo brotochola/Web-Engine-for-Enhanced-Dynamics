@@ -90,7 +90,7 @@ const umdConfig = {
                         reserved: [
                             // Core
                             'WEED', 'GameEngine', 'Scene', 'GameObject', 'Component',
-                            'FSM', 'FSMState', 'DebugFlags', 'DebugUI', 'Mouse', 'Camera',
+                            'FSM', 'FSMState', 'DebugFlags', 'DebugUI', 'DebugDraw', 'Mouse', 'Camera',
                             'Ray', 'NavGrid', 'Keyboard', 'SpriteSheetRegistry', 'BigAtlasInspector',
                             // Components - CRITICAL: these names are used for identification
                             'Transform', 'RigidBody', 'Collider', 'SpriteRenderer',

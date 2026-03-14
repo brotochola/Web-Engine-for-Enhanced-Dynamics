@@ -4,20 +4,20 @@
 // Static draw API (DebugUI.drawLine, etc.) delegates to DebugDraw so game scripts
 // can call DebugUI.drawLine(...) from any worker or the main thread.
 
-import { injectStyles, createTab } from './debug/ui/DebugDOM.js';
-import { StatsCollector } from './debug/stats/StatsCollector.js';
-import { DebugCanvas } from './debug/rendering/DebugCanvas.js';
-import { ToolManager } from './debug/tools/ToolManager.js';
+import { injectStyles, createTab } from './ui/DebugDOM.js';
+import { StatsCollector } from './stats/StatsCollector.js';
+import { DebugCanvas } from './rendering/DebugCanvas.js';
+import { ToolManager } from './tools/ToolManager.js';
 import { DebugDraw } from './DebugDraw.js';
 
 // Panels
-import { ScenePanel } from './debug/panels/ScenePanel.js';
-import { PerformancePanel } from './debug/panels/PerformancePanel.js';
-import { VisualAidsPanel } from './debug/panels/VisualAidsPanel.js';
-import { EntitiesPanel } from './debug/panels/EntitiesPanel.js';
-import { DecorationsPanel } from './debug/panels/DecorationsPanel.js';
-import { LayersPanel } from './debug/panels/LayersPanel.js';
-import { NavigationPanel } from './debug/panels/NavigationPanel.js';
+import { ScenePanel } from './panels/ScenePanel.js';
+import { PerformancePanel } from './panels/PerformancePanel.js';
+import { VisualAidsPanel } from './panels/VisualAidsPanel.js';
+import { EntitiesPanel } from './panels/EntitiesPanel.js';
+import { DecorationsPanel } from './panels/DecorationsPanel.js';
+import { LayersPanel } from './panels/LayersPanel.js';
+import { NavigationPanel } from './panels/NavigationPanel.js';
 
 /**
  * DebugUI — Self-contained debug overlay managed by GameEngine.
