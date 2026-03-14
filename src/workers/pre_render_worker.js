@@ -20,7 +20,7 @@ import {
     generateSymmetricalCirclePattern,
 } from '../core/utils.js';
 import { PRE_RENDER_STATS, createStatsWriter } from './workers-utils.js';
-import { RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
+import { RENDERER_DEFAULTS, CAMERA_TYPES } from '../core/ConfigDefaults.js';
 import { Layer } from '../core/Layer.js';
 import { createViews as createRenderQueueViews } from '../core/RenderQueueLayout.js';
 
@@ -216,6 +216,13 @@ class PreRenderWorker extends AbstractWorker {
         this.maxParticles = data.maxParticles || 0;
         this.maxDecorations = data.maxDecorations || 0;
         this.maxBullets = data.maxBullets || 0;
+
+        // Particle camera view (from PARTICLE_DEFAULTS)
+        const particleConfig = this.config.particle || {};
+        this.particleCameraView = particleConfig.cameraView ?? CAMERA_TYPES.TOPDOWN;
+        this.zenithalMaxHeight = particleConfig.zenithalMaxHeight ?? 50;
+        this.zenithalScaleFactor = particleConfig.zenithalScaleFactor ?? 0.5;
+        this.zenithalAlphaFade = particleConfig.zenithalAlphaFade ?? 0;
 
         // Store viewport dimensions
         this.canvasWidth = this.config.canvasWidth;
@@ -624,10 +631,13 @@ class PreRenderWorker extends AbstractWorker {
 
         const visibleCount = visibleData[0];
         const y = ParticleComponent.y;
+        const z = ParticleComponent.z;
+        const isZenithal = this.particleCameraView === CAMERA_TYPES.ZENITHAL;
 
         for (let idx = 0; idx < visibleCount; idx++) {
             const i = visibleData[1 + idx];
-            this.collectRenderable(1, i, y[i]);
+            const sortKey = isZenithal ? -z[i] : y[i];
+            this.collectRenderable(1, i, sortKey);
             this.visibleParticlesCount++;
         }
     }
@@ -1162,11 +1172,25 @@ class PreRenderWorker extends AbstractWorker {
             } else if (type === 1) {
                 // === PARTICLE ===
                 rqX[i] = particleX[idx];
-                rqY[i] = particleY[idx] + particleZ[idx];
-                rqScaleX[i] = particleScaleX[idx];
-                rqScaleY[i] = particleScaleY[idx];
+                if (this.particleCameraView === CAMERA_TYPES.ZENITHAL) {
+                    rqY[i] = particleY[idx];
+                    const height = -particleZ[idx];
+                    const heightFactor = 1 + (height / this.zenithalMaxHeight) * this.zenithalScaleFactor;
+                    rqScaleX[i] = particleScaleX[idx] * heightFactor;
+                    rqScaleY[i] = particleScaleY[idx] * heightFactor;
+                    let a = particleAlpha[idx];
+                    if (this.zenithalAlphaFade > 0) {
+                        const alphaFade = Math.min(1, (height / this.zenithalMaxHeight) * this.zenithalAlphaFade);
+                        a *= Math.max(0, 1 - alphaFade);
+                    }
+                    rqAlpha[i] = a;
+                } else {
+                    rqY[i] = particleY[idx] + particleZ[idx];
+                    rqScaleX[i] = particleScaleX[idx];
+                    rqScaleY[i] = particleScaleY[idx];
+                    rqAlpha[i] = particleAlpha[idx];
+                }
                 rqRotation[i] = particleRotation[idx];
-                rqAlpha[i] = particleAlpha[idx];
                 rqTint[i] = particleTint[idx];
                 const pAnimIdx = particleTextureId[idx];
                 rqTextureId[i] = this.animationFrameStart?.[pAnimIdx] ?? 0;

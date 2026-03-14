@@ -28,7 +28,8 @@
     This keeps everything in a single HTML file.
   -->
   <script type="text/plain" id="entity-source">
-const { GameObject, Keyboard, RigidBody, Collider, SpriteRenderer, ShapeType, Mouse, rng } = WEED;
+const { GameObject, Keyboard, RigidBody, Collider, SpriteRenderer, Mouse, rng, enums } = WEED;
+const { ShapeType } = enums;
 
 export class Ball extends GameObject {
   static instances = [];

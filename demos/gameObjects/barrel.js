@@ -3,19 +3,17 @@ import WEED from '/src/index.js';
 // Destructure what we need from WEED
 const {
   GameObject,
-
   Collider,
   SpriteRenderer,
-
   ShadowCaster,
   RigidBody,
-  ShapeType,
   ParticleEmitter,
   randomColor,
   Flash,
   SoundManager,
-
+  enums,
 } = WEED;
+const { ShapeType } = enums;
 
 export class Barrel extends GameObject {
   static scriptUrl = import.meta.url;

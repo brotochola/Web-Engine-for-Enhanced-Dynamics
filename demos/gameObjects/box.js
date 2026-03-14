@@ -1,7 +1,8 @@
 import WEED from '/src/index.js';
 
 // Destructure what we need from WEED
-const { GameObject, Keyboard, Mouse, RigidBody, Collider, SpriteRenderer, ShapeType } = WEED;
+const { GameObject, Keyboard, Mouse, RigidBody, Collider, SpriteRenderer, enums } = WEED;
+const { ShapeType } = enums;
 
 class Box extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!

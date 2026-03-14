@@ -729,9 +729,9 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
     for (const ComponentClass of componentClasses) {
       const componentId = ComponentClass.componentId;
       if (componentId == null || typeof componentId !== 'number') {
-        console.warn(
-          `[QuerySystem] Component ${ComponentClass?.name || 'unknown'} has no componentId (got: ${componentId}). Was it registered?`
-        );
+        // console.warn(
+        //   `[QuerySystem] Component ${ComponentClass?.name || 'unknown'} has no componentId (got: ${componentId}). Was it registered?`
+        // );
         continue;
       }
       if (componentId >= MAX_COMPONENTS) {

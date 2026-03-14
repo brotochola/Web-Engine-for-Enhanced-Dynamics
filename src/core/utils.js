@@ -1827,7 +1827,7 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
           g.Camera || WEED.Camera,
           g.NavGrid || WEED.NavGrid,
           g.Ray || WEED.Ray,
-          g.ShapeType || WEED.ShapeType,
+          g.ShapeType || WEED.enums?.ShapeType,
           g.rng || WEED.rng,
           g.randomColor || WEED.randomColor,
           g.distanceSq2D || WEED.distanceSq2D,

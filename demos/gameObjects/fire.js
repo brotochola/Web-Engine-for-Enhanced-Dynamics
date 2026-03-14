@@ -12,8 +12,9 @@ const {
   randomColor,
   ShadowCaster,
   SpriteSheetRegistry,
-  ShapeType,
+  enums,
 } = WEED;
+const { ShapeType } = enums;
 
 export class Fire extends GameObject {
   static scriptUrl = import.meta.url;

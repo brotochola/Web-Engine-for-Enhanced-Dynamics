@@ -953,6 +953,10 @@ class Scene {
       // Stack top starts at maxParticles (all indices are free)
       new Int32Array(this.buffers.particleFreeListTop)[0] = maxParticles;
 
+      // Initialize ParticleEmitter on the main thread so Scene.update() can emit particles
+      ParticleEmitter.initialize(maxParticles);
+      ParticleEmitter.initializeFreeList(this.buffers.particleFreeList, this.buffers.particleFreeListTop);
+
       // ========================================
       // PARTICLE COMPACT LISTS - Optimized iteration for particle_worker and pre_render_worker
       // ========================================
@@ -2659,6 +2663,10 @@ class Scene {
     this.updateSunDayCycle(deltaTime);
 
     // Visible/active units are now read directly by DebugUI from Transform/SpriteRenderer arrays
+
+    // Update mouse edge flags (isButton0Pressed, isButton0Released, etc.) on the main thread
+    // so Scene.update() can use them the same way entity tick() does in workers
+    Mouse.updateEdgeFlags();
 
     // Call user's update hook
     this.update(dtRatio, deltaTime, performance.now(), this.mainFrameNumber);

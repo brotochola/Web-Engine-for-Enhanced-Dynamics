@@ -12,8 +12,9 @@ const {
   rng,
   randomColor,
   ShadowCaster,
-  ShapeType,
+  enums,
 } = WEED;
+const { ShapeType } = enums;
 
 export class Explosion extends GameObject {
   static scriptUrl = import.meta.url;

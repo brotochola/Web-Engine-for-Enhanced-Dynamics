@@ -519,9 +519,9 @@ export class AbstractWorker {
 
     // Initialize ALL components (core + custom) for ALL workers
     // Connects components to SharedArrayBuffers and makes them globally available
-    if (this.registeredClasses && this.registeredClasses.length > 0) {
-      this.initializeAllComponents(data);
-    }
+    // Always called: core components (Transform, RigidBody, etc.) need SAB views
+    // even when no entity classes are registered (e.g. particle-only scenes)
+    this.initializeAllComponents(data);
 
     // Attach per-type active list views to EntityClasses
     // Now that scripts are loaded and components initialized, EntityClasses are on self
@@ -653,29 +653,48 @@ export class AbstractWorker {
    * @param {Object} data - Initialization data containing componentPools and buffers
    */
   initializeAllComponents(data) {
-    if (!this.registeredClasses || this.registeredClasses.length === 0) {
-      return; // No entity classes registered
+    const componentData = data.buffers?.componentData;
+    const componentPools = data.componentPools;
+    const totalEntityCount = data.globalEntityCount || 0;
+
+    if (this.registeredClasses && this.registeredClasses.length > 0) {
+      // Collect ALL components from all registered entity classes
+      const componentClasses = collectAllComponentsFromClasses(this.registeredClasses, self);
+
+      // Initialize component views from SharedArrayBuffers
+      const initializedCount = initializeComponentViews(
+        componentClasses,
+        componentData,
+        componentPools,
+        totalEntityCount
+      );
+
+      // Make all components globally available for dynamic lookups
+      exposeComponentsGlobally(componentClasses, self);
+
+      if (componentClasses.size > 0) {
+        this.reportLog(
+          `initialized ${initializedCount}/${componentClasses.size} component classes with SharedArrayBuffers`
+        );
+      }
     }
 
-    // Collect ALL components from all registered entity classes
-    const componentClasses = collectAllComponentsFromClasses(this.registeredClasses, self);
-
-    // Initialize component views from SharedArrayBuffers
-    const initializedCount = initializeComponentViews(
-      componentClasses,
-      data.buffers?.componentData,
-      data.componentPools,
-      data.totalEntityCount
-    );
-
-    // Make all components globally available for dynamic lookups
-    exposeComponentsGlobally(componentClasses, self);
-
-    // Log initialization for debugging
-    if (componentClasses.size > 0) {
-      this.reportLog(
-        `initialized ${initializedCount}/${componentClasses.size} component classes with SharedArrayBuffers`
-      );
+    // Always initialize core entity components if buffers exist, even when no entity uses them.
+    // Workers receive componentPools as { name: { count, componentId } } (no ComponentClass ref).
+    // Without this, scenes whose entities don't use RigidBody/Collider crash in spatial/physics/logic
+    // because those workers access .active, .collisionCount etc. which are undefined typed arrays.
+    const coreComponents = [Transform, RigidBody, Collider, SpriteRenderer];
+    for (const ComponentClass of coreComponents) {
+      const name = ComponentClass.name;
+      const buffer = componentData?.[name];
+      const pool = componentPools?.[name];
+      if (buffer) {
+        const alreadyInit = ComponentClass.active && ComponentClass.active.length === totalEntityCount;
+        if (!alreadyInit) {
+          ComponentClass.initializeArrays(buffer, totalEntityCount);
+          if (pool?.componentId !== undefined) ComponentClass.componentId = pool.componentId;
+        }
+      }
     }
   }
 

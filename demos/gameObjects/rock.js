@@ -3,16 +3,16 @@ import WEED from '/src/index.js';
 // Destructure what we need from WEED
 const {
   GameObject,
-
   Collider,
   SpriteRenderer,
   LightEmitter,
   rng,
   randomColor,
   ShadowCaster,
-  ShapeType,
   SoundManager,
+  enums,
 } = WEED;
+const { ShapeType } = enums;
 
 export class Rock extends GameObject {
   static scriptUrl = import.meta.url;

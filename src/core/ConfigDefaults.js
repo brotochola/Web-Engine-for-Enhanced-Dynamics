@@ -59,6 +59,20 @@ export const LAYER_DEFAULT_BLEND_MODES = Object.freeze({
   LIGHTING: 'multiply',
 });
 
+/**
+ * Camera / view styles for particle (and future entity) rendering.
+ * @readonly
+ * @enum {number}
+ */
+export const CAMERA_TYPES = Object.freeze({
+  /** Top-down / isometric: Z offsets screen Y */
+  TOPDOWN: 0,
+  /** Zenithal (bird's-eye): Z affects scale (and optionally alpha) */
+  ZENITHAL: 1,
+  /** Side / platformer: Z offsets screen Y (same as topdown for particles) */
+  SIDE: 2,
+});
+
 // ============================================================================
 // ASSETS DEFAULTS (BigAtlas generation)
 // ============================================================================
@@ -129,6 +143,14 @@ export const PARTICLE_DEFAULTS = {
   decals: false,
   decalsTileSize: 256,
   decalsResolution: 0.5,
+  /** Camera view for particle Z handling (values from CAMERA_TYPES) */
+  cameraView: CAMERA_TYPES.TOPDOWN,
+  /** Zenithal only: Z value representing max height for scale calculation */
+  zenithalMaxHeight: 50,
+  /** Zenithal only: scale multiplier at maxHeight (1.0 = double size at max) */
+  zenithalScaleFactor: 0.5,
+  /** Zenithal only: alpha reduction at maxHeight (0 = none, 0.5 = halved) */
+  zenithalAlphaFade: 0,
 };
 
 // ============================================================================

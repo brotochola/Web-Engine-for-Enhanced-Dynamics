@@ -4,15 +4,15 @@ import WEED from '/src/index.js';
 // Destructure what we need from WEED
 const {
   GameObject,
-
   Collider,
   SpriteRenderer,
   LightEmitter,
   randomColor,
-  ShapeType,
   Flash,
   ParticleEmitter,
+  enums,
 } = WEED;
+const { ShapeType } = enums;
 
 export class House extends GameObject {
   static scriptUrl = import.meta.url;

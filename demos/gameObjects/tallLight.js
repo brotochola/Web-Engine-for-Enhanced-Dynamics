@@ -1,7 +1,8 @@
 import WEED from '/src/index.js';
 
 // Destructure what we need from WEED
-const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, ShapeType, Flash, SoundManager } = WEED;
+const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, Flash, SoundManager, enums } = WEED;
+const { ShapeType } = enums;
 
 export class TallLight extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!

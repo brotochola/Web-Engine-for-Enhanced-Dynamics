@@ -13,8 +13,9 @@ const {
     rng,
     randomColor,
     ShadowCaster,
-    ShapeType,
+    enums,
 } = WEED;
+const { ShapeType } = enums;
 
 export class Trash extends Lootable {
     static scriptUrl = import.meta.url;
