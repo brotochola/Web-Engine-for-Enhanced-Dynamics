@@ -1,25 +1,25 @@
 // DebugFlags.js - Debug flag management for visualizing game state
 // Provides API for enabling/disabling debug visualizations via SharedArrayBuffer
 
-export const DEBUG_FLAGS = {
-  SHOW_COLLIDERS: 0, // Draw collision shapes
-  SHOW_VELOCITY: 1, // Draw velocity vectors
-  SHOW_ACCELERATION: 2, // Draw acceleration vectors
-  SHOW_NEIGHBORS: 3, // Draw neighbor connections
-  SHOW_SPATIAL_GRID: 4, // Draw spatial hash grid
-  SHOW_ENTITY_INFO: 5, // Show entity data on hover
-  SHOW_FPS_GRAPH: 7, // Draw FPS history graph
-  SHOW_PROFILER: 8, // Show detailed timing breakdown
-  SHOW_ENTITY_INDICES: 9, // Show entity index numbers
-  SHOW_ACTIVE_ONLY: 10, // Only show debug for active entities
-  SHOW_DEBUG_DRAWS: 11, // Draw user debug primitives (lines, circles, text, etc.)
-  SHOW_SELECTED_ENTITY: 12, // Draw bounding box around selected entity
-  SHOW_SLEEPING_ENTITIES: 13, // Highlight sleeping entities
-  SHOW_SLEEPING_CELLS: 14, // Highlight sleeping grid cells
-  SHOW_COLLISION_CANDIDATES: 15, // Draw collision candidate connections
-  SHOW_CONSTRAINTS: 16, // Draw distance constraint lines
-  SHOW_ENTITY_ORIGINS: 17, // Draw Transform.x, Transform.y position markers
-};
+export const DEBUG_FLAGS = Object.freeze({
+  SHOW_COLLIDERS: 0,
+  SHOW_VELOCITY: 1,
+  SHOW_ACCELERATION: 2,
+  SHOW_NEIGHBORS: 3,
+  SHOW_SPATIAL_GRID: 4,
+  SHOW_ENTITY_INFO: 5,
+  SHOW_FPS_GRAPH: 7,
+  SHOW_PROFILER: 8,
+  SHOW_ENTITY_INDICES: 9,
+  SHOW_ACTIVE_ONLY: 10,
+  SHOW_DEBUG_DRAWS: 11,
+  SHOW_SELECTED_ENTITY: 12,
+  SHOW_SLEEPING_ENTITIES: 13,
+  SHOW_SLEEPING_CELLS: 14,
+  SHOW_COLLISION_CANDIDATES: 15,
+  SHOW_CONSTRAINTS: 16,
+  SHOW_ENTITY_ORIGINS: 17,
+});
 
 // Selected entity index storage (offset in debug buffer after flags)
 // Layout: [flags 0-15] [selectedEntityIndex at offset 16-19 as Int32]

@@ -32,13 +32,13 @@ function sortByDistSq(a, b) {
   return a.distSq - b.distSq;
 }
 
-const PARTICLE_PREWARM_POLICY = {
+const PARTICLE_PREWARM_POLICY = Object.freeze({
   BOOT_MAIN_FRACTION: 0.15,
   BOOT_SHADOW_FRACTION: 0.1,
   BOOT_CUSTOM_FRACTION: 0.1,
   FRAME_SAFETY_MARGIN: 32,
   MAX_PREWARM_COUNT: 12000,
-};
+});
 import { RENDERER_STATS, createStatsWriter } from './workers-utils.js';
 
 // Import PixiJS 8 library (ES6 module with named exports)
@@ -88,7 +88,7 @@ tilemapSettings.use32bitIndex = true;
 extensions.add(TilemapPipe);
 
 // Create PIXI-like namespace for compatibility with existing code patterns
-const PIXI = {
+const PIXI = Object.freeze({
   Application,
   Container,
   Sprite,
@@ -108,7 +108,7 @@ const PIXI = {
   GlProgram,
   RendererType,
   RenderTexture,
-};
+});
 
 // Note: Core engine classes (GameObject, Mouse, etc.) and components
 // (Transform, RigidBody, etc.) are now registered automatically by AbstractWorker.

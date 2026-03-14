@@ -1,7 +1,7 @@
 // DebugFlags stub — production no-op replacement.
 // Exports the same shape (named exports + class) so Scene.js works without changes.
 
-export const DEBUG_FLAGS = {
+export const DEBUG_FLAGS = Object.freeze({
   SHOW_COLLIDERS: 0,
   SHOW_VELOCITY: 1,
   SHOW_ACCELERATION: 2,
@@ -19,7 +19,7 @@ export const DEBUG_FLAGS = {
   SHOW_COLLISION_CANDIDATES: 15,
   SHOW_CONSTRAINTS: 16,
   SHOW_ENTITY_ORIGINS: 17,
-};
+});
 
 export const DEBUG_SELECTED_ENTITY_OFFSET = 16;
 

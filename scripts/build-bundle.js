@@ -64,38 +64,37 @@ const bundleEntryCode = `
  * AUTO-GENERATED - DO NOT EDIT
  */
 
-// Import everything from main index
-import WEED from './index.js';
+import WEED_BASE from './index.js';
 export * from './index.js';
 
-// Embed worker sources directly in WEED object
-WEED.WorkerSources = {
+const WorkerSources = Object.freeze({
   spatial_worker: ${JSON.stringify(workers.spatial_worker)},
   logic_worker: ${JSON.stringify(workers.logic_worker)},
   physics_worker: ${JSON.stringify(workers.physics_worker)},
   pixi_worker: ${JSON.stringify(workers.pixi_worker)},
   particle_worker: ${JSON.stringify(workers.particle_worker)},
   pre_render_worker: ${JSON.stringify(workers.pre_render_worker)},
-};
+});
 
-// Embed AudioWorklet processor source (SoundManager uses this via Blob URL in bundle mode)
-WEED.AudioWorkletSource = ${JSON.stringify(audioWorkletSource)};
+const WEED = Object.freeze({
+  ...WEED_BASE,
+  WorkerSources,
+  AudioWorkletSource: ${JSON.stringify(audioWorkletSource)},
+  DebugUICSS: ${JSON.stringify(debugUICSS)},
+  BUNDLE_MODE: true,
+  createWorker(workerName) {
+    const source = WorkerSources[workerName];
+    if (!source) {
+      throw new Error('Unknown worker: ' + workerName + '. Available: ' + Object.keys(WorkerSources).join(', '));
+    }
+    const blob = new Blob([source], { type: 'application/javascript' });
+    return new Worker(URL.createObjectURL(blob));
+  },
+});
 
-// Embed DebugUI CSS (injected via <style> tag instead of fetching a separate file)
-WEED.DebugUICSS = ${JSON.stringify(debugUICSS)};
-
-// Helper to create worker from embedded source
-WEED.createWorker = function(workerName) {
-  const source = WEED.WorkerSources[workerName];
-  if (!source) {
-    throw new Error('Unknown worker: ' + workerName + '. Available: ' + Object.keys(WEED.WorkerSources).join(', '));
-  }
-  const blob = new Blob([source], { type: 'application/javascript' });
-  return new Worker(URL.createObjectURL(blob));
-};
-
-// Mark as bundle mode
-WEED.BUNDLE_MODE = true;
+if (typeof window !== 'undefined') {
+  window.WEED = WEED;
+}
 
 export default WEED;
 `;

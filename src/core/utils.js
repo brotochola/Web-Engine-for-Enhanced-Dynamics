@@ -2282,15 +2282,14 @@ export function hslToHex(h, s, l) {
  * Predefined colors for core components (consistent, visually distinct)
  * Custom components will get auto-generated pastel colors based on their name
  */
-export const COMPONENT_COLORS = {
-  // Core components - carefully chosen for visual distinction
-  Transform: { css: 'hsl(120, 60%, 75%)', hex: 0x8fbc8f }, // Soft green
-  RigidBody: { css: 'hsl(210, 70%, 75%)', hex: 0x87ceeb }, // Sky blue
-  Collider: { css: 'hsl(45, 80%, 70%)', hex: 0xf4d03f }, // Golden yellow
-  SpriteRenderer: { css: 'hsl(280, 60%, 75%)', hex: 0xb19cd9 }, // Soft purple
-  LightEmitter: { css: 'hsl(30, 80%, 70%)', hex: 0xf5a962 }, // Warm orange
-  ShadowCaster: { css: 'hsl(0, 0%, 65%)', hex: 0xa8a8a8 }, // Gray
-};
+export const COMPONENT_COLORS = Object.freeze({
+  Transform: Object.freeze({ css: 'hsl(120, 60%, 75%)', hex: 0x8fbc8f }),
+  RigidBody: Object.freeze({ css: 'hsl(210, 70%, 75%)', hex: 0x87ceeb }),
+  Collider: Object.freeze({ css: 'hsl(45, 80%, 70%)', hex: 0xf4d03f }),
+  SpriteRenderer: Object.freeze({ css: 'hsl(280, 60%, 75%)', hex: 0xb19cd9 }),
+  LightEmitter: Object.freeze({ css: 'hsl(30, 80%, 70%)', hex: 0xf5a962 }),
+  ShadowCaster: Object.freeze({ css: 'hsl(0, 0%, 65%)', hex: 0xa8a8a8 }),
+});
 
 /**
  * Get color for a component (core or custom)

@@ -16,121 +16,114 @@ function formatNumber(num) {
  * Renderer Worker Stats Schema
  * Single renderer worker with draw call and visibility metrics
  */
-export const RENDERER_STATS = {
+export const RENDERER_STATS = Object.freeze({
   FPS: 0,
   DRAW_CALLS: 1,
-  VISIBLE_SPRITES: 2, // Total visible sprites (entities + particles + decorations)
-  SPRITES_CREATED: 3, // Total PIXI.Particle objects created (from centralized pool)
-  DECORATION_SPRITES: 4, // For DebugUI decoration stats (same as SPRITES_CREATED)
-  VISIBLE_DECORATIONS: 5, // For DebugUI decoration stats
-  VISIBLE_ENTITIES: 6, // Visible GameObjects (not particles/decorations)
-  VISIBLE_PARTICLES: 7, // Visible particles only
-  ACTIVE_DECORATIONS: 8, // Active decorations (from DecorationComponent.active loop)
-  // Reserve space for future stats
-  STRIDE_FLOATS: 16, // 64 bytes = 1 cache line
-  BUFFER_SIZE: 16 * 4, // 64 bytes
-};
+  VISIBLE_SPRITES: 2,
+  SPRITES_CREATED: 3,
+  DECORATION_SPRITES: 4,
+  VISIBLE_DECORATIONS: 5,
+  VISIBLE_ENTITIES: 6,
+  VISIBLE_PARTICLES: 7,
+  ACTIVE_DECORATIONS: 8,
+  STRIDE_FLOATS: 16,
+  BUFFER_SIZE: 16 * 4,
+});
 
 /**
  * Particle Worker Stats Schema
  * Single particle worker with particle counts
  */
-export const PARTICLE_STATS = {
+export const PARTICLE_STATS = Object.freeze({
   FPS: 0,
   ACTIVE_PARTICLES: 1,
   TOTAL_PARTICLES: 2,
   PARTICLES_STAMPED: 3,
   FLASHES_UPDATED: 4,
   SHADOWS_UPDATED: 5,
-  ACTIVE_ENTITIES: 6, // Active GameObjects (from buildActiveEntityList)
-  TOTAL_ENTITIES: 7, // Total entity pool size
-  // Reserve space for future stats
+  ACTIVE_ENTITIES: 6,
+  TOTAL_ENTITIES: 7,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
-};
+});
 
 /**
  * Physics Worker Stats Schema
  * Single physics worker with collision metrics
  */
-export const PHYSICS_STATS = {
+export const PHYSICS_STATS = Object.freeze({
   FPS: 0,
   COLLISION_CHECKS: 1,
   COLLISIONS_RESOLVED: 2,
   COLLISION_PAIRS: 3,
-  // Reserve space for future stats
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
-};
+});
 
 /**
  * Spatial Worker Stats Schema (Multi-worker)
  * Multiple spatial workers with neighbor query metrics
  */
-export const SPATIAL_STATS = {
+export const SPATIAL_STATS = Object.freeze({
   FPS: 0,
   NEIGHBOR_CHECKS: 1,
   GRID_CELLS_CHECKED: 2,
   ENTITIES_PROCESSED: 3,
-  // Reserve space for future stats
-  STRIDE_FLOATS: 16, // Each worker gets 64 bytes
+  STRIDE_FLOATS: 16,
   BUFFER_SIZE_PER_WORKER: 16 * 4,
-};
+});
 
 /**
  * Logic Worker Stats Schema (Multi-worker)
  * Multiple logic workers with system execution metrics
  */
-export const LOGIC_STATS = {
+export const LOGIC_STATS = Object.freeze({
   FPS: 0,
   ENTITIES_PROCESSED: 1,
   SYSTEMS_EXECUTED: 2,
-  // Reserve space for future stats
-  STRIDE_FLOATS: 16, // Each worker gets 64 bytes
+  STRIDE_FLOATS: 16,
   BUFFER_SIZE_PER_WORKER: 16 * 4,
-};
+});
 
 /**
  * Navigation Worker Stats Schema (DEPRECATED - merged into particle_worker)
  * Kept for backwards compatibility, now handled by particle_worker
  */
-export const NAVIGATION_STATS = {
+export const NAVIGATION_STATS = Object.freeze({
   FPS: 0,
-  FLOWFIELDS_COMPUTED: 1, // Flowfields calculated this frame
-  PATHS_COMPUTED: 2, // A* paths calculated this frame
-  FLOWFIELDS_CACHED: 3, // Total flowfields in cache
-  PATHS_CACHED: 4, // Total A* paths in cache
-  PENDING_FLOWFIELDS: 5, // Flowfield requests waiting
-  PENDING_PATHS: 6, // Path requests waiting
-  GRID_WIDTH: 7, // Grid dimensions for reference
+  FLOWFIELDS_COMPUTED: 1,
+  PATHS_COMPUTED: 2,
+  FLOWFIELDS_CACHED: 3,
+  PATHS_CACHED: 4,
+  PENDING_FLOWFIELDS: 5,
+  PENDING_PATHS: 6,
+  GRID_WIDTH: 7,
   GRID_HEIGHT: 8,
-  SHADOWS_UPDATED: 9, // Shadow sprites computed this frame (now in pre_render)
-  // Reserve space for future stats
+  SHADOWS_UPDATED: 9,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
-};
+});
 
 /**
  * Pre-Render Worker Stats Schema
  * Single pre-render worker with visibility and render queue metrics
  */
-export const PRE_RENDER_STATS = {
+export const PRE_RENDER_STATS = Object.freeze({
   FPS: 0,
-  VISIBLE_ENTITIES: 1, // Entities on screen this frame
-  VISIBLE_PARTICLES: 2, // Particles on screen this frame
-  VISIBLE_DECORATIONS: 3, // Decorations on screen this frame
-  SHADOWS_UPDATED: 4, // Shadow sprites computed this frame
-  RENDER_QUEUE_SIZE: 5, // Total items in render queue
-  // Reserve space for future stats
+  VISIBLE_ENTITIES: 1,
+  VISIBLE_PARTICLES: 2,
+  VISIBLE_DECORATIONS: 3,
+  SHADOWS_UPDATED: 4,
+  RENDER_QUEUE_SIZE: 5,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
-};
+});
 
 /**
  * Display configuration for worker stats
  * Defines which stats to show in DebugUI and how to format them
  */
-export const WORKER_DISPLAY_CONFIG = {
+export const WORKER_DISPLAY_CONFIG = Object.freeze({
   renderer: {
     label: 'Render',
     color: 'renderer',
@@ -269,7 +262,7 @@ export const WORKER_DISPLAY_CONFIG = {
       },
     ],
   },
-};
+});
 
 /**
  * Create a stats writer view for a single worker

@@ -1,10 +1,9 @@
 import WEED from '/src/index.js';
 import { ExplosionComponent } from '../components/explosionComponent.js';
 
-const { SoundManager, ParticleEmitter, DECAL_STAMPS_BLEND_MODE } = WEED;
-
-// Destructure what we need from WEED
 const {
+  SoundManager,
+  ParticleEmitter,
   GameObject,
   Collider,
   SpriteRenderer,
@@ -14,7 +13,7 @@ const {
   ShadowCaster,
   enums,
 } = WEED;
-const { ShapeType } = enums;
+const { ShapeType, DECAL_STAMPS_BLEND_MODE } = enums;
 
 export class Explosion extends GameObject {
   static scriptUrl = import.meta.url;

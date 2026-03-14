@@ -87,32 +87,32 @@ const PATH_STATUS = {
  * Direction encoding for flowfields
  * 8 directions + no movement = 9 values (fits in 4 bits)
  */
-const DIRECTION = {
+const DIRECTION = Object.freeze({
   NONE: 0,
-  N: 1, // (0, -1)
-  NE: 2, // (1, -1)
-  E: 3, // (1, 0)
-  SE: 4, // (1, 1)
-  S: 5, // (0, 1)
-  SW: 6, // (-1, 1)
-  W: 7, // (-1, 0)
-  NW: 8, // (-1, -1)
-};
+  N: 1,
+  NE: 2,
+  E: 3,
+  SE: 4,
+  S: 5,
+  SW: 6,
+  W: 7,
+  NW: 8,
+});
 
 /**
  * Direction to dx/dy lookup table
  */
-const DIR_TO_VEC = [
-  [0, 0], // NONE
-  [0, -1], // N
-  [1, -1], // NE
-  [1, 0], // E
-  [1, 1], // SE
-  [0, 1], // S
-  [-1, 1], // SW
-  [-1, 0], // W
-  [-1, -1], // NW
-];
+const DIR_TO_VEC = Object.freeze([
+  Object.freeze([0, 0]),
+  Object.freeze([0, -1]),
+  Object.freeze([1, -1]),
+  Object.freeze([1, 0]),
+  Object.freeze([1, 1]),
+  Object.freeze([0, 1]),
+  Object.freeze([-1, 1]),
+  Object.freeze([-1, 0]),
+  Object.freeze([-1, -1]),
+]);
 
 /**
  * NavGrid - Navigation grid for pathfinding

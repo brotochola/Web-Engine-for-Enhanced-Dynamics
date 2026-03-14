@@ -38,6 +38,18 @@ const EMPTY_SLOT = 0;
 const OCCUPIED_SLOT = 1;
 const TOMBSTONE_SLOT = 2;
 
+const NAV_DX = Object.freeze([0, 1, 1, 1, 0, -1, -1, -1]);
+const NAV_DY = Object.freeze([-1, -1, 0, 1, 1, 1, 0, -1]);
+const NAV_COST = Object.freeze([10, 14, 10, 14, 10, 14, 10, 14]);
+const NAV_OPPOSITE_DIR = Object.freeze([
+  DIRECTION.S, DIRECTION.SW, DIRECTION.W, DIRECTION.NW,
+  DIRECTION.N, DIRECTION.NE, DIRECTION.E, DIRECTION.SE,
+]);
+const NAV_DIR_MAP = Object.freeze([
+  DIRECTION.N, DIRECTION.NE, DIRECTION.E, DIRECTION.SE,
+  DIRECTION.S, DIRECTION.SW, DIRECTION.W, DIRECTION.NW,
+]);
+
 function nextPowerOfTwo(value) {
   let n = 1;
   while (n < value) n <<= 1;
@@ -1306,15 +1318,6 @@ class ParticleWorker extends AbstractWorker {
     scratch.distance[targetCell] = 0;
     this._bucketInsertCell(scratch, targetCell, 0);
 
-    const dx = [0, 1, 1, 1, 0, -1, -1, -1];
-    const dy = [-1, -1, 0, 1, 1, 1, 0, -1];
-    const cost = [10, 14, 10, 14, 10, 14, 10, 14];
-
-    const oppositeDir = [
-      DIRECTION.S, DIRECTION.SW, DIRECTION.W, DIRECTION.NW,
-      DIRECTION.N, DIRECTION.NE, DIRECTION.E, DIRECTION.SE,
-    ];
-
     while (scratch.bucketCount > 0) {
       while (scratch.bucketHeadDistance <= scratch.maxDistance && scratch.bucketHead[scratch.bucketHeadDistance] < 0) {
         scratch.bucketHeadDistance++;
@@ -1332,8 +1335,8 @@ class ParticleWorker extends AbstractWorker {
       const cellY = Math.floor(cell / gridWidth);
 
       for (let dir = 0; dir < 8; dir++) {
-        const nx = cellX + dx[dir];
-        const ny = cellY + dy[dir];
+        const nx = cellX + NAV_DX[dir];
+        const ny = cellY + NAV_DY[dir];
 
         if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= this.gridHeight) continue;
 
@@ -1342,22 +1345,16 @@ class ParticleWorker extends AbstractWorker {
         if (walkability[neighbor] === 0) continue;
         if (scratch.isVisited(neighbor)) continue;
 
-        const newDist = cellDist + cost[dir];
+        const newDist = cellDist + NAV_COST[dir];
         if (newDist < scratch.distance[neighbor]) {
           scratch.distance[neighbor] = newDist;
-          scratch.direction[neighbor] = oppositeDir[dir];
+          scratch.direction[neighbor] = NAV_OPPOSITE_DIR[dir];
 
           const bucket = Math.min(newDist, scratch.maxDistance);
           this._bucketInsertCell(scratch, neighbor, bucket);
         }
       }
     }
-
-    // Second pass: make unwalkable tiles point towards nearest walkable neighbor
-    const dirMap = [
-      DIRECTION.N, DIRECTION.NE, DIRECTION.E, DIRECTION.SE,
-      DIRECTION.S, DIRECTION.SW, DIRECTION.W, DIRECTION.NW,
-    ];
 
     for (let cell = 0; cell < totalCells; cell++) {
       if (walkability[cell] !== 0) continue;
@@ -1369,8 +1366,8 @@ class ParticleWorker extends AbstractWorker {
       let bestDist = 65535;
 
       for (let dir = 0; dir < 8; dir++) {
-        const nx = cellX + dx[dir];
-        const ny = cellY + dy[dir];
+        const nx = cellX + NAV_DX[dir];
+        const ny = cellY + NAV_DY[dir];
 
         if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= this.gridHeight) continue;
 
@@ -1380,7 +1377,7 @@ class ParticleWorker extends AbstractWorker {
 
         if (scratch.distance[neighbor] < bestDist) {
           bestDist = scratch.distance[neighbor];
-          bestDir = dirMap[dir];
+          bestDir = NAV_DIR_MAP[dir];
         }
       }
 
@@ -1530,9 +1527,6 @@ class ParticleWorker extends AbstractWorker {
     heapPush(fromCell);
     scratch.inOpenSet[fromCell] = 1;
 
-    const dx = [0, 1, 1, 1, 0, -1, -1, -1];
-    const dy = [-1, -1, 0, 1, 1, 1, 0, -1];
-    const cost = [10, 14, 10, 14, 10, 14, 10, 14];
 
     let found = false;
 
@@ -1553,8 +1547,8 @@ class ParticleWorker extends AbstractWorker {
       const currentY = Math.floor(current / gridWidth);
 
       for (let dir = 0; dir < 8; dir++) {
-        const nx = currentX + dx[dir];
-        const ny = currentY + dy[dir];
+        const nx = currentX + NAV_DX[dir];
+        const ny = currentY + NAV_DY[dir];
 
         if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= gridHeight) continue;
 
@@ -1563,7 +1557,7 @@ class ParticleWorker extends AbstractWorker {
         if (walkability[neighbor] === 0) continue;
         if (scratch.isVisited(neighbor)) continue;
 
-        const tentativeG = currentG + cost[dir];
+        const tentativeG = currentG + NAV_COST[dir];
 
         if (!scratch.inOpenSet[neighbor] || tentativeG < scratch.heapGCost[neighbor]) {
           scratch.cameFrom[neighbor] = current;

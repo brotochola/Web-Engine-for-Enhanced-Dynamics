@@ -34,10 +34,10 @@ import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { SharedAtomicPool } from './SharedAtomicPool.js';
 import { randomRange, randomColor } from './utils.js';
 
-export const DECAL_STAMPS_BLEND_MODE = {
+export const DECAL_STAMPS_BLEND_MODE = Object.freeze({
   normal: 0,
   multiply: 1,
-};
+});
 
 export class ParticleEmitter extends SharedAtomicPool {
   // Pool name for logging (used by base class)

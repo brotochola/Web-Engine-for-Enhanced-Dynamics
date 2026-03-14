@@ -137,6 +137,7 @@ import { FlashComponent } from './components/FlashComponent.js';
 import { Flash } from './core/Flash.js';
 import { Constraint } from './core/Constraint.js';
 import { AbstractWorker } from './workers/AbstractWorker.js';
+import { DEBUG_FLAGS } from './core/debug/DebugFlags.js';
 import {
   ShapeType,
   Z_INDICES,
@@ -149,10 +150,11 @@ const enums = Object.freeze({
   Z_INDICES,
   LAYER_DEFAULT_BLEND_MODES,
   CAMERA_TYPES,
+  DECAL_STAMPS_BLEND_MODE,
+  DEBUG_FLAGS,
 });
 
-// Create the WEED namespace object (like PIXI)
-const WEED = {
+const WEED = Object.freeze({
 
   // Core
   GameEngine,
@@ -188,16 +190,15 @@ const WEED = {
 
   // Particles
   ParticleEmitter,
-  DECAL_STAMPS_BLEND_MODE,
 
   // Decorations
   DecorationPool,
   DecorationComponent,
 
-  // Constraints (distance constraints for physics)
+  // Constraints
   Constraint,
 
-  // Pool base class (for custom pools)
+  // Pool base class
   SharedAtomicPool,
 
   // Flashes
@@ -206,19 +207,16 @@ const WEED = {
   // Workers
   AbstractWorker,
 
-  // Utils (spread all utility functions)
+  // Utils
   ...utils,
 
   enums,
 
-  // Version
   VERSION: '1.0.0',
-};
+});
 
-// Make WEED available globally if in browser
 if (typeof window !== 'undefined') {
   window.WEED = WEED;
 }
 
-// Export WEED namespace as default
 export default WEED;

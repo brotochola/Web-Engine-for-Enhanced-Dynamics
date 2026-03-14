@@ -77,7 +77,7 @@ export const CAMERA_TYPES = Object.freeze({
 // ASSETS DEFAULTS (BigAtlas generation)
 // ============================================================================
 
-export const ASSETS_DEFAULTS = {
+export const ASSETS_DEFAULTS = Object.freeze({
   /** Maximum atlas width in pixels (GPU texture limit) */
   maxAtlasWidth: 4096,
   /** Maximum atlas height in pixels (GPU texture limit) */
@@ -88,122 +88,116 @@ export const ASSETS_DEFAULTS = {
   trimAlphaThreshold: 0,
   /** Padding between packed sprites (prevents texture bleeding) */
   atlasPadding: 2,
-};
+});
 
 // ============================================================================
 // TOP-LEVEL DEFAULTS
 // ============================================================================
 
-export const SCENE_DEFAULTS = {
-  gravity: { x: 0, y: 0 },
+export const SCENE_DEFAULTS = Object.freeze({
+  gravity: Object.freeze({ x: 0, y: 0 }),
   worldWidth: 1000,
   worldHeight: 1000,
-};
+});
 
 // ============================================================================
 // PHYSICS DEFAULTS
 // ============================================================================
 
-export const PHYSICS_DEFAULTS = {
+export const PHYSICS_DEFAULTS = Object.freeze({
   subStepCount: 4,
   boundaryElasticity: 0.8,
   collisionResponseStrength: 0.8,
   verletDamping: 0.995,
   minSpeedForRotation: 0.1,
   maxCollisionPairs: 10000,
-  maxConstraints: 0, // Max distance constraints (0 = disabled)
-  gravity: { x: 0, y: 0 },
-  // Sleeping optimization
-  sleepThreshold: 0.1, // Speed threshold below which entity is considered still (units/frame)
-  wakeUpThreshold: 0.05, // Speed threshold above which entity is considered moving (units/frame)
-  sleepDuration: 30, // Frames of stillness required before sleeping (0.5 seconds at 60fps)
-};
+  maxConstraints: 0,
+  gravity: Object.freeze({ x: 0, y: 0 }),
+  sleepThreshold: 0.1,
+  wakeUpThreshold: 0.05,
+  sleepDuration: 30,
+});
 
 // ============================================================================
 // SPATIAL DEFAULTS (Spatial Hashing Grid)
 // ============================================================================
 
-export const SPATIAL_DEFAULTS = {
-  cellSize: 128, // Grid cell size in world units
-  maxNeighbors: 500, // Max neighbors per entity (passed to Grid via gridMetadata)
-  maxEntitiesPerCell: 64, // Max entities per grid cell (passed to Grid via gridMetadata)
-  numberOfSpatialWorkers: 1, // Number of parallel spatial workers for neighbor detection
+export const SPATIAL_DEFAULTS = Object.freeze({
+  cellSize: 128,
+  maxNeighbors: 500,
+  maxEntitiesPerCell: 64,
+  numberOfSpatialWorkers: 1,
   rowsPerBlock: 2,
   noLimitFPS: false,
-  collisionCandidateSearchMargin: 0.25,// Extra distance added to collision range to account for entity movement between spatial worker and physics worker
-};
+  collisionCandidateSearchMargin: 0.25,
+});
 
 // ============================================================================
 // PARTICLE DEFAULTS
 // ============================================================================
 
-export const PARTICLE_DEFAULTS = {
+export const PARTICLE_DEFAULTS = Object.freeze({
   maxParticles: 0,
   noLimitFPS: false,
   decals: false,
   decalsTileSize: 256,
   decalsResolution: 0.5,
-  /** Camera view for particle Z handling (values from CAMERA_TYPES) */
   cameraView: CAMERA_TYPES.TOPDOWN,
-  /** Zenithal only: Z value representing max height for scale calculation */
   zenithalMaxHeight: 50,
-  /** Zenithal only: scale multiplier at maxHeight (1.0 = double size at max) */
   zenithalScaleFactor: 0.5,
-  /** Zenithal only: alpha reduction at maxHeight (0 = none, 0.5 = halved) */
   zenithalAlphaFade: 0,
-};
+});
 
 // ============================================================================
 // DECORATION DEFAULTS
 // ============================================================================
 
-export const DECORATION_DEFAULTS = {
-  maxDecorations: 0, // Number of static decorations (grass, rocks, etc.)
-};
+export const DECORATION_DEFAULTS = Object.freeze({
+  maxDecorations: 0,
+});
 
 // ============================================================================
 // BULLET DEFAULTS
 // ============================================================================
 
-export const BULLET_DEFAULTS = {
+export const BULLET_DEFAULTS = Object.freeze({
   maxBullets: 0,
   maxImpactsPerFrame: 64,
-};
+});
 
 // ============================================================================
 // AUDIO DEFAULTS
 // ============================================================================
 
-export const AUDIO_DEFAULTS = {
-  maxSlots: 128, // Max simultaneous sounds (AudioWorklet SAB slot count)
-  mixGain: 0.5, // Mix gain (0-1)
-  masterVolume: 1.0, // Master volume (0-1)
-
-};
+export const AUDIO_DEFAULTS = Object.freeze({
+  maxSlots: 128,
+  mixGain: 0.5,
+  masterVolume: 1.0,
+});
 
 // ============================================================================
 // LOGIC DEFAULTS
 // ============================================================================
 
-export const LOGIC_DEFAULTS = {
+export const LOGIC_DEFAULTS = Object.freeze({
   numberOfLogicWorkers: 1,
-  staggeredUpdates: false, // Enable tick decimation (entities tick every N frames based on tickInterval)
+  staggeredUpdates: false,
   noLimitFPS: false,
-};
+});
 
 // ============================================================================
 // RENDERER DEFAULTS
 // ============================================================================
 
-export const RENDERER_DEFAULTS = {
+export const RENDERER_DEFAULTS = Object.freeze({
   noLimitFPS: false,
   ySorting: false,
-  interpolation: true, // Smooth rendering when renderer FPS > physics FPS
+  interpolation: true,
   cullingRatio: 0.1,
-  startFadingDecorationsAtZoom: 0.5, // Zoom level where decorations start fading out
-  hideDecorationsAtZoom: 0.25, // Zoom level where decorations are completely hidden
-  maxVisibleRenderables: 40000, // Max items in render queue per frame (entities + particles + decorations)
-};
+  startFadingDecorationsAtZoom: 0.5,
+  hideDecorationsAtZoom: 0.25,
+  maxVisibleRenderables: 40000,
+});
 
 // ============================================================================
 // LIGHTING DEFAULTS
@@ -214,29 +208,28 @@ export const RENDERER_DEFAULTS = {
  * The sun provides ambient light during daytime and casts parallel shadows
  * When sun intensity is high, point light shadows are suppressed (realistic behavior)
  */
-export const SUN_DEFAULTS = {
-  enabled: false, // Must be explicitly enabled
-  angle: 180, // Degrees (0=East, 90=South, 180=West, 270=North) - default facing south
-  elevation: 45, // Degrees above horizon (0=horizon, 90=overhead)
-  intensity: 0.7, // Light intensity (0-1), affects ambient brightness
-  color: 0xffffff, // Sun color (warm white default)
-  shadowAlpha: 0.4, // Base darkness of sun-cast shadows (0-1)
-  startHour: 12, // Starting hour for day cycle (0-24)
-  // Shadow configuration
-  shadowAngleOffset: Math.PI, // Hemisphere offset: π for southern (shadows point south), 0 for northern
-  shadowMinLengthRatio: 0.2, // Shadow length multiplier at zenith (noon) - shortest shadows
-  shadowMaxLengthRatio: 2.0, // Shadow length multiplier at horizon (sunrise/sunset) - longest shadows
-  shadowStretchAlphaFactor: 0.5, // Alpha fade when shadows stretch (0=none, 1=full compensation)
-  dayCycle: {
-    enabled: false, // Auto-advance time of day
-    speed: 1, // Multiplier (1 = real time, 60 = 1 minute = 1 hour)
-    dayDurationMinutes: 5, // Real minutes for full day (1440 = 24 real hours)
-  },
-};
-
-export const LIGHTING_DEFAULTS = {
+export const SUN_DEFAULTS = Object.freeze({
   enabled: false,
-  baseAmbient: 0.05, // Minimum ambient light (night/indoor) - renamed from lightingAmbient
+  angle: 180,
+  elevation: 45,
+  intensity: 0.7,
+  color: 0xffffff,
+  shadowAlpha: 0.4,
+  startHour: 12,
+  shadowAngleOffset: Math.PI,
+  shadowMinLengthRatio: 0.2,
+  shadowMaxLengthRatio: 2.0,
+  shadowStretchAlphaFactor: 0.5,
+  dayCycle: Object.freeze({
+    enabled: false,
+    speed: 1,
+    dayDurationMinutes: 5,
+  }),
+});
+
+export const LIGHTING_DEFAULTS = Object.freeze({
+  enabled: false,
+  baseAmbient: 0.05,
   maxLights: 10,
   shadowsEnabled: false,
   maxShadowCastingLights: 20,
@@ -247,41 +240,41 @@ export const LIGHTING_DEFAULTS = {
   resolution: 0.25,
   shadowResolution: 0.5,
   sun: SUN_DEFAULTS,
-};
+});
 
 // ============================================================================
 // LAYER DEFAULTS
 // ============================================================================
 
-export const LAYER_DEFAULTS = {
-  maxItemsPerLayer: 5000, // Default max items per custom layer render queue
-};
+export const LAYER_DEFAULTS = Object.freeze({
+  maxItemsPerLayer: 5000,
+});
 
 // ============================================================================
 // PRE-RENDER DEFAULTS
 // ============================================================================
 
-export const PRE_RENDER_DEFAULTS = {
-  noLimitFPS: true, // Set true to run visibility/render queue as fast as possible
-};
+export const PRE_RENDER_DEFAULTS = Object.freeze({
+  noLimitFPS: true,
+});
 
 // ============================================================================
 // NAVIGATION DEFAULTS
 // ============================================================================
 
-export const NAVIGATION_DEFAULTS = {
-  enabled: false, // Must be explicitly enabled
-  cellSize: 32, // Pixels per navigation cell
-  maxFlowfields: 16, // How many distinct flowfield targets to cache
-  maxPaths: 64, // How many A* paths to cache
-  maxPathLength: 128, // Maximum cells per path
-  noLimitFPS: true, // Navigation (in particle_worker) runs as fast as possible by default
-};
+export const NAVIGATION_DEFAULTS = Object.freeze({
+  enabled: false,
+  cellSize: 32,
+  maxFlowfields: 16,
+  maxPaths: 64,
+  maxPathLength: 128,
+  noLimitFPS: true,
+});
 
 // ============================================================================
 // DEBUG DEFAULTS
 // ============================================================================
 
-export const DEBUG_DEFAULTS = {
-  maxDebugDrawEntries: 256, // Ring buffer capacity for cross-thread debug drawing primitives
-};
+export const DEBUG_DEFAULTS = Object.freeze({
+  maxDebugDrawEntries: 256,
+});
