@@ -12,6 +12,17 @@ const __dirname = path.dirname(__filename);
 
 const shouldObfuscate = process.env.OBFUSCATE === 'true';
 
+// Production mode: swap debug modules with no-op stubs
+const isProd = process.env.WEED_PROD === 'true';
+const debugStubAliases = isProd ? {
+    [path.resolve(__dirname, 'src/core/debug/DebugDraw.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/DebugDraw.js'),
+    [path.resolve(__dirname, 'src/core/debug/DebugUI.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/DebugUI.js'),
+    [path.resolve(__dirname, 'src/core/debug/DebugFlags.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/DebugFlags.js'),
+} : {};
+
 const obfuscatorOptions = {
     rotateStringArray: true,
     stringArray: true,
@@ -38,7 +49,7 @@ const umdConfig = {
     entry: './src/index.bundle.js',
     output: {
         path: path.resolve(__dirname, 'dist'),
-        filename: 'weed.bundle.min.js',
+        filename: isProd ? 'weed.prod.bundle.min.js' : 'weed.bundle.min.js',
         library: {
             name: 'WEED',
             type: 'umd',
@@ -116,7 +127,8 @@ const umdConfig = {
         ...(shouldObfuscate ? [new WebpackObfuscator(obfuscatorOptions, [])] : [])
     ],
     resolve: {
-        extensions: ['.js']
+        extensions: ['.js'],
+        alias: debugStubAliases
     }
 };
 
@@ -127,7 +139,7 @@ const esmConfig = {
     entry: './src/index.bundle.js',
     output: {
         path: path.resolve(__dirname, 'dist'),
-        filename: 'weed.bundle.esm.min.js',
+        filename: isProd ? 'weed.prod.bundle.esm.min.js' : 'weed.bundle.esm.min.js',
         library: {
             type: 'module'
         },

@@ -19,6 +19,17 @@ const workerEntries = {
 // Check if we should obfuscate
 const shouldObfuscate = process.env.OBFUSCATE === 'true';
 
+// Production mode: swap debug modules with no-op stubs
+const isProd = process.env.WEED_PROD === 'true';
+const debugStubAliases = isProd ? {
+    [path.resolve(__dirname, 'src/core/debug/DebugDraw.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/DebugDraw.js'),
+    [path.resolve(__dirname, 'src/core/debug/DebugUI.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/DebugUI.js'),
+    [path.resolve(__dirname, 'src/core/debug/DebugFlags.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/DebugFlags.js'),
+} : {};
+
 // Obfuscator options
 const obfuscatorOptions = {
     rotateStringArray: true,
@@ -95,7 +106,7 @@ const mainConfig = {
             export: 'default'
         },
         globalObject: 'typeof self !== "undefined" ? self : this',
-        clean: true
+        clean: false
     },
     module: {
         rules: [
@@ -109,7 +120,8 @@ const mainConfig = {
     optimization,
     plugins: shouldObfuscate ? [new WebpackObfuscator(obfuscatorOptions, [])] : [],
     resolve: {
-        extensions: ['.js']
+        extensions: ['.js'],
+        alias: debugStubAliases
     }
 };
 
@@ -130,7 +142,8 @@ const workersConfig = {
     optimization,
     plugins: shouldObfuscate ? [new WebpackObfuscator(obfuscatorOptions, [])] : [],
     resolve: {
-        extensions: ['.js']
+        extensions: ['.js'],
+        alias: debugStubAliases
     }
 };
 

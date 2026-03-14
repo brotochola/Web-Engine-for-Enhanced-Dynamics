@@ -1,6 +1,6 @@
 {
   "name": "@weed.js/engine",
-  "version": "0.4.33",
+  "version": "0.4.34",
   "description": "A blazing-fast multithreaded web game engine that handles 20,000+ NPCs without breaking a sweat",
   "type": "module",
   "main": "dist/weed.bundle.min.js",
@@ -29,8 +29,9 @@
     "dev": "node server/node_server.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "make_dist": "node scripts/build-bundle.js",
-    "make_dist:obfuscate": "cross-env OBFUSCATE=true node scripts/build-bundle.js",
+    "make_bundle": "node scripts/build-bundle.js",
+    "make_bundle:obfuscate": "cross-env OBFUSCATE=true node scripts/build-bundle.js",
+    "make_prod_bundle": "cross-env WEED_PROD=true node scripts/build-bundle.js",
     "build:pixi": "esbuild scripts/build-pixi-worker.js --bundle --format=esm --minify --outfile=src/lib/pixi_8.16_.min.js",
     "clean": "rimraf dist"
   },
