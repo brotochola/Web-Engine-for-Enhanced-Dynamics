@@ -1,5 +1,31 @@
+-animatedSpriteRenderer
+-SpriteRenderer
+-bg por layer
+-particulas y decorations en layer
+
+-collision filter o mask (q no todo colisione con todo)
+
+-particleEmitter.emitIsometric()
+-particleEmitter.emit2d()
+
+-TileMap.getTex(x,y)
+
+-shadowCasterIsometric vs otra shadow
+
+-LightEmitter (llamarlo PointLight2d)
+
+-cameraInOutListener
+-collisionListener
+-CircleCollider
+-RectCollider
+-RectanguloqueGiraCoillider
+
 ---
+
+---
+
 ## -- spritesheet registry ---
+
 ---
 
 ---
