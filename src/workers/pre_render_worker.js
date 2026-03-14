@@ -1566,7 +1566,7 @@ class PreRenderWorker extends AbstractWorker {
             const intensity = lightIntensity[lightIdx];
             if (intensity <= 0) continue;
 
-            const isFlash = flashActive[lightIdx] === 1;
+            const isFlash = flashActive ? flashActive[lightIdx] === 1 : false;
             if (!isFlash) {
                 const lightX = worldX[lightIdx];
                 const lightY = worldY[lightIdx];
@@ -1617,7 +1617,7 @@ class PreRenderWorker extends AbstractWorker {
                 ? intensity * ((pointShadowAlphaScale / MIN_POINT_SHADOW_ALPHA) - 1)
                 : 0;
 
-            const isFlash = flashActive[lightIdx] === 1;
+            const isFlash = flashActive ? flashActive[lightIdx] === 1 : false;
 
             // ── Determine candidate source ────────────────────────────
             let candidateCount;
