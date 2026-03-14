@@ -17,6 +17,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
+// Support both env (cross-env) and --obfuscate flag so it works on Windows
+if (process.argv.includes('--obfuscate')) process.env.OBFUSCATE = 'true';
 const shouldObfuscate = process.env.OBFUSCATE === 'true';
 const isProd = process.env.WEED_PROD === 'true';
 

@@ -1,16 +1,19 @@
 /**
  * Webpack config for SINGLE FILE bundle
  * Workers are loaded as raw strings and embedded in WEED.WorkerSources
+ *
+ * Note: Obfuscation is NOT applied here. When OBFUSCATE=true, workers are
+ * already obfuscated in Step 1 (webpack.config.js). Running the obfuscator
+ * on this bundle would process the entire file (main + ~4MB of worker strings),
+ * which is too heavy and causes Step 4 to hang. So the final bundle gets
+ * minification only; embedded worker strings remain obfuscated from Step 1.
  */
 import path from 'path';
 import { fileURLToPath } from 'url';
 import TerserPlugin from 'terser-webpack-plugin';
-import WebpackObfuscator from 'webpack-obfuscator';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const shouldObfuscate = process.env.OBFUSCATE === 'true';
 
 // Production mode: swap debug modules with no-op stubs
 const isProd = process.env.WEED_PROD === 'true';
@@ -22,25 +25,6 @@ const debugStubAliases = isProd ? {
     [path.resolve(__dirname, 'src/core/debug/DebugFlags.js')]:
         path.resolve(__dirname, 'src/core/debug/stubs/DebugFlags.js'),
 } : {};
-
-const obfuscatorOptions = {
-    rotateStringArray: true,
-    stringArray: true,
-    stringArrayThreshold: 0.75,
-    deadCodeInjection: false,
-    debugProtection: false,
-    disableConsoleOutput: false,
-    identifierNamesGenerator: 'hexadecimal',
-    log: false,
-    numbersToExpressions: true,
-    renameGlobals: false,
-    selfDefending: false,
-    simplify: true,
-    splitStrings: true,
-    splitStringsChunkLength: 10,
-    transformObjectKeys: true,
-    unicodeEscapeSequence: false
-};
 
 // UMD build (for <script> tags and CommonJS)
 const umdConfig = {
@@ -123,9 +107,7 @@ const umdConfig = {
             })
         ]
     },
-    plugins: [
-        ...(shouldObfuscate ? [new WebpackObfuscator(obfuscatorOptions, [])] : [])
-    ],
+    plugins: [],
     resolve: {
         extensions: ['.js'],
         alias: debugStubAliases
