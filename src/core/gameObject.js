@@ -7,6 +7,7 @@ import { Collider } from '../components/Collider.js';
 import { SpriteRenderer } from '../components/SpriteRenderer.js';
 import { LightEmitter } from '../components/LightEmitter.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
+import { LightOccluder } from '../components/LightOccluder.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { Layer } from './Layer.js';
 import { Grid } from './Grid.js';
@@ -1403,6 +1404,7 @@ export class GameObject {
     if (this.spriteRenderer) SpriteRenderer.active[i] = 0;
     if (this.lightEmitter) LightEmitter.active[i] = 0;
     if (this.shadowCaster) ShadowCaster.active[i] = 0;
+    if (this.lightOccluder) LightOccluder.active[i] = 0;
 
     // ========================================
     // FREE LIST PUSH (ATOMIC - any thread)
@@ -1761,6 +1763,11 @@ export class GameObject {
       ShadowCaster.heightMultiplier[i] = 1; // Default: normal shadow (0 = no shadow)
     }
 
+    if (has.LightOccluder) {
+      LightOccluder.active[i] = 1;
+      LightOccluder.opacity[i] = 1;
+    }
+
     if (has.SpriteRenderer) {
       SpriteRenderer.active[i] = 1;
       SpriteRenderer.tint[i] = 0xffffff;
@@ -1968,6 +1975,7 @@ export class GameObject {
     const spriteRendererActive = SpriteRenderer.active;
     const lightEmitterActive = LightEmitter.active;
     const shadowCasterActive = ShadowCaster.active;
+    const lightOccluderActive = LightOccluder.active;
 
     for (let i = startIndex; i < endIndex; i++) {
       // Robust clear: treat any active component flag as "active entity".
@@ -1978,7 +1986,8 @@ export class GameObject {
         (colliderActive && colliderActive[i]) ||
         (spriteRendererActive && spriteRendererActive[i]) ||
         (lightEmitterActive && lightEmitterActive[i]) ||
-        (shadowCasterActive && shadowCasterActive[i]);
+        (shadowCasterActive && shadowCasterActive[i]) ||
+        (lightOccluderActive && lightOccluderActive[i]);
 
       if (isAnyComponentActive) {
         const instance = EntityClass.instances[i - startIndex];
@@ -1997,6 +2006,7 @@ export class GameObject {
         if (spriteRendererActive) spriteRendererActive[i] = 0;
         if (lightEmitterActive) lightEmitterActive[i] = 0;
         if (shadowCasterActive) shadowCasterActive[i] = 0;
+        if (lightOccluderActive) lightOccluderActive[i] = 0;
       }
     }
 

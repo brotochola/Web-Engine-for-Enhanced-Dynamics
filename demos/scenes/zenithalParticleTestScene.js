@@ -4,7 +4,6 @@
 import WEED from '/src/index.js';
 import { ZenithalCar } from '../gameObjects/zenithalCar.js';
 import { ZenithalLight } from '../gameObjects/zenithalLight.js';
-
 const { ParticleEmitter, Scene, Camera, Mouse, Transform, RigidBody, enums } = WEED;
 const { CAMERA_TYPES } = enums;
 
@@ -29,7 +28,7 @@ export class ZenithalParticleTestScene extends Scene {
     logic: { noLimitFPS: true },
     physics: { gravity: { x: 0, y: 0 }, noLimitFPS: true },
     spatial: { noLimitFPS: true, cellSize: 128, maxNeighbors: 64 },
-    renderer: { noLimitFPS: true, ySorting: true, maxVisibleRenderables: 5000 },
+    renderer: { noLimitFPS: true, ySorting: false, maxVisibleRenderables: 5000 },
 
     lighting: {
       enabled: true,
@@ -41,6 +40,8 @@ export class ZenithalParticleTestScene extends Scene {
       maxShadowSprites: 200,
       resolution: 0.25,
       shadowResolution: 0.5,
+      raycasted: true,
+      maxPolygonVertices: 5000,
     },
   };
 
@@ -77,7 +78,8 @@ export class ZenithalParticleTestScene extends Scene {
     ZenithalCar.spawn({ x: cx - 120, y: cy + 60 });
 
     ZenithalLight.spawn({ x: cx, y: cy - 150 });
-    ZenithalLight.spawn({ x: cx + 200, y: cy + 100 });
+    // ZenithalLight.spawn({ x: cx + 200, y: cy + 100 });
+
   }
 
   update(dtRatio, deltaTime, accumulatedTime, frameNumber) {

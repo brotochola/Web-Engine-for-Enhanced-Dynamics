@@ -11,7 +11,9 @@ import { LightEmitter } from '../components/LightEmitter.js';
 import { SpriteRenderer } from '../components/SpriteRenderer.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
 import { FlashComponent } from '../components/FlashComponent.js';
+import { LightOccluder } from '../components/LightOccluder.js';
 import { AbstractWorker } from './AbstractWorker.js';
+import { buildVisibilityPolygon } from './visibility/AngularSweep.js';
 import { Grid } from '../core/Grid.js';
 import { Sun } from '../core/Sun.js';
 import {
@@ -451,6 +453,53 @@ class PreRenderWorker extends AbstractWorker {
             console.log(`[PRE_RENDER WORKER] Sun system initialized (enabled: ${this.sunEnabled})`);
         }
 
+        // ========================================
+        // VISIBILITY POLYGONS - Initialize (raycasted light occlusion)
+        // ========================================
+        this.visibilityPolygonsEnabled = false;
+        if (
+            data.visibilityPolygons &&
+            data.visibilityPolygons.enabled &&
+            data.visibilityPolygons.dataA &&
+            data.visibilityPolygons.dataB &&
+            data.buffers?.componentData?.LightOccluder
+        ) {
+            this.visibilityPolygonsEnabled = true;
+            this._vpMaxLights = data.visibilityPolygons.maxLights;
+            this._vpMaxVerts = data.visibilityPolygons.maxPolygonVertices;
+            const maxVerts = this._vpMaxVerts;
+            const maxLts = this._vpMaxLights;
+            // Per-light slot size in Float32 elements: lightIdx(1 int32) + lightX,lightY(2 float32) + vertexCount(1 int32) + x[N] + y[N]
+            // In bytes: 4 + 8 + 4 + N*4*2 = 16 + N*8
+            this._vpSlotBytes = 16 + maxVerts * 8;
+
+            const sabs = [data.visibilityPolygons.dataA, data.visibilityPolygons.dataB];
+            this._vpBuffers = [];
+            for (let b = 0; b < 2; b++) {
+                const sab = sabs[b];
+                this._vpBuffers[b] = {
+                    sab,
+                    header: new Int32Array(sab, 0, 1),    // totalLights count
+                    data: new DataView(sab),
+                };
+            }
+            this._vpWriteBuffer = this._vpBuffers[0];
+
+            // Scratch arrays for collecting nearby occluder circles
+            const maxOccluders = 256;
+            this._vpCircleX = new Float32Array(maxOccluders);
+            this._vpCircleY = new Float32Array(maxOccluders);
+            this._vpCircleR = new Float32Array(maxOccluders);
+            this._vpCircleOpacity = new Float32Array(maxOccluders);
+            this._vpMaxOccluders = maxOccluders;
+
+            // Output scratch for polygon vertices
+            this._vpOutX = new Float32Array(maxVerts);
+            this._vpOutY = new Float32Array(maxVerts);
+
+            console.log(`[PRE_RENDER WORKER] Visibility polygons initialized (max ${maxLts} lights, ${maxVerts} verts/polygon)`);
+        }
+
         console.log('[PRE_RENDER WORKER] ✅ Initialize() completed!');
     }
 
@@ -542,6 +591,10 @@ class PreRenderWorker extends AbstractWorker {
             if (this.shadowsEnabled) {
                 this._setShadowWriteBuffer(writeBufferIdx);
             }
+            // Visibility polygon buffer uses same swap
+            if (this.visibilityPolygonsEnabled) {
+                this._vpWriteBuffer = this._vpBuffers[writeBufferIdx];
+            }
         }
 
         // Latch camera once per pre-render frame to keep all culling and queue writes coherent.
@@ -602,6 +655,9 @@ class PreRenderWorker extends AbstractWorker {
 
         // Build shadow render queue (sun shadows already done in collectVisibleEntities)
         this.buildShadowRenderQueue();
+
+        // Build visibility polygons for raycasted light occlusion
+        this.buildVisibilityPolygons();
 
         // ========================================
         // SIGNAL FRAME READY
@@ -715,7 +771,8 @@ class PreRenderWorker extends AbstractWorker {
         let sunShadowCount = 0;
         const doSunShadows = this.shadowsEnabled &&
             Sun.isInitialized && Sun.enabled && Sun.intensity > 0.1 &&
-            this.shadowRenderQueueX && this.maxShadowRenderItems > 0;
+            this.shadowRenderQueueX && this.maxShadowRenderItems > 0 &&
+            ShadowCaster.active;
         let rqX, rqY, rqScaleX, rqScaleY, rqRotation, rqAlpha, rqTint, rqTextureId, rqAnchorX, rqAnchorY;
         let viewMinX, viewMaxX, viewMinY, viewMaxY;
         let sunShadowRotation, sunShadowAlpha;
@@ -1483,11 +1540,69 @@ class PreRenderWorker extends AbstractWorker {
         const lightIntensity = LightEmitter.lightIntensity;
         const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
         const lightHeight = LightEmitter.height;
+        const flashActive = FlashComponent.active;
+
+        // Sun shadows: use fused pass from collectVisibleEntities, or skip if not done
+        let writeIdx = this._sunShadowWriteIdx ?? 0;
+        let shadowCount = this._sunShadowCount ?? 0;
+        this._sunShadowWriteIdx = undefined;
+        this._sunShadowCount = undefined;
+
+        const zoom = this.cameraData ? this._frameCameraZoom : 1;
+        const camX = this.cameraData ? this._frameCameraX : 0;
+        const camY = this.cameraData ? this._frameCameraY : 0;
+        const screenBounds = calculateCameraScreenBounds(
+            zoom, camX, camY, this.canvasWidth, this.canvasHeight, this.cullingRatio, this._cameraBounds
+        );
+        const worldBounds = screenBoundsToWorldBounds(screenBounds, 0, 0, this._worldBounds);
+        const viewMinX = worldBounds.minX;
+        const viewMaxX = worldBounds.maxX;
+        const viewMinY = worldBounds.minY;
+        const viewMaxY = worldBounds.maxY;
+
+        // Compute visible lights FIRST -- needed by both shadow system and buildVisibilityPolygons
+        const lightEntitiesRaw = this.queryActiveEntities(this._queryLightEmitter);
+        const lightEntities = this._sortedLightEntities;
+        lightEntities.length = 0;
+        for (let i = 0; i < lightEntitiesRaw.length; i++) {
+            const lightIdx = lightEntitiesRaw[i];
+            if (!lightEnabled[lightIdx]) continue;
+
+            const intensity = lightIntensity[lightIdx];
+            if (intensity <= 0) continue;
+
+            const isFlash = flashActive ? flashActive[lightIdx] === 1 : false;
+            if (!isFlash) {
+                const lightX = worldX[lightIdx];
+                const lightY = worldY[lightIdx];
+                const lightInfluenceRadius = sqrtLightIntensity[lightIdx] * 10;
+                if (lightX + lightInfluenceRadius < viewMinX || lightX - lightInfluenceRadius > viewMaxX ||
+                    lightY + lightInfluenceRadius < viewMinY || lightY - lightInfluenceRadius > viewMaxY) {
+                    continue;
+                }
+            }
+
+            lightEntities.push(lightIdx);
+        }
+        lightEntities.sort(this._lightYComparator);
+
+        if (this.visibleLightsData) {
+            const maxWrite = this.visibleLightsData.length - 1;
+            const n = Math.min(lightEntities.length, maxWrite);
+            this.visibleLightsData[0] = n;
+            for (let w = 0; w < n; w++) this.visibleLightsData[1 + w] = lightEntities[w];
+        }
+
+        // Shadow-specific: bail if no ShadowCaster entities exist
         const shadowCasterActive = ShadowCaster.active;
+        if (!shadowCasterActive) {
+            this.shadowRenderQueueCount[0] = writeIdx;
+            this.shadowsUpdatedThisFrame = shadowCount;
+            return;
+        }
         const shadowHeightMultiplier = ShadowCaster.heightMultiplier;
         const shadowAnchorOffsetX = ShadowCaster.anchorOffsetX;
         const shadowAnchorOffsetY = ShadowCaster.anchorOffsetY;
-        const flashActive = FlashComponent.active;
         const spriteScaleY = SpriteRenderer.scaleY;
         const spriteAnchorX = SpriteRenderer.anchorX;
         const spriteAnchorY = SpriteRenderer.anchorY;
@@ -1517,76 +1632,22 @@ class PreRenderWorker extends AbstractWorker {
         const lightGradientAnimIdx = this.animationNameToIndex?.['_lightGradient'] ?? 0;
         const lightGradientTextureId = this.animationFrameStart?.[lightGradientAnimIdx] ?? 0;
 
-        // Sun shadows: use fused pass from collectVisibleEntities, or skip if not done
-        let writeIdx = this._sunShadowWriteIdx ?? 0;
-        let shadowCount = this._sunShadowCount ?? 0;
-        this._sunShadowWriteIdx = undefined;
-        this._sunShadowCount = undefined;
-
         let lightsProcessed = 0;
         const maxItems = this.maxShadowRenderItems;
         const maxShadowSprites = this.maxShadowSprites;
         const PI = Math.PI;
 
-        const zoom = this.cameraData ? this._frameCameraZoom : 1;
-        const camX = this.cameraData ? this._frameCameraX : 0;
-        const camY = this.cameraData ? this._frameCameraY : 0;
-        const screenBounds = calculateCameraScreenBounds(
-            zoom, camX, camY, this.canvasWidth, this.canvasHeight, this.cullingRatio, this._cameraBounds
-        );
-        const worldBounds = screenBoundsToWorldBounds(screenBounds, 0, 0, this._worldBounds);
-        const viewMinX = worldBounds.minX;
-        const viewMaxX = worldBounds.maxX;
-        const viewMinY = worldBounds.minY;
-        const viewMaxY = worldBounds.maxY;
-
         // ========================================
         // POINT LIGHT SHADOWS (suppressed when sun is bright)
         // ========================================
-        // When sun intensity is high, point light shadows are less visible
         const sunIntensity = Sun.isInitialized && Sun.enabled ? Sun.intensity : 0;
-        const pointLightShadowMultiplier = 1 - (sunIntensity * 0.9); // At noon: 10% visibility
+        const pointLightShadowMultiplier = 1 - (sunIntensity * 0.9);
         const pointShadowAlphaScale = 0.33 * pointLightShadowMultiplier;
         const MIN_POINT_SHADOW_ALPHA = 0.003;
         if (pointShadowAlphaScale <= MIN_POINT_SHADOW_ALPHA) {
             this.shadowRenderQueueCount[0] = writeIdx;
             this.shadowsUpdatedThisFrame = shadowCount;
             return;
-        }
-
-        const lightEntitiesRaw = this.queryActiveEntities(this._queryLightEmitter);
-
-        // Only keep relevant on-screen lights, then sort those by Y.
-        const lightEntities = this._sortedLightEntities;
-        lightEntities.length = 0;
-        for (let i = 0; i < lightEntitiesRaw.length; i++) {
-            const lightIdx = lightEntitiesRaw[i];
-            if (!lightEnabled[lightIdx]) continue;
-
-            const intensity = lightIntensity[lightIdx];
-            if (intensity <= 0) continue;
-
-            const isFlash = flashActive ? flashActive[lightIdx] === 1 : false;
-            if (!isFlash) {
-                const lightX = worldX[lightIdx];
-                const lightY = worldY[lightIdx];
-                const lightInfluenceRadius = sqrtLightIntensity[lightIdx] * 10;
-                if (lightX + lightInfluenceRadius < viewMinX || lightX - lightInfluenceRadius > viewMaxX ||
-                    lightY + lightInfluenceRadius < viewMinY || lightY - lightInfluenceRadius > viewMaxY) {
-                    continue;
-                }
-            }
-
-            lightEntities.push(lightIdx);
-        }
-        lightEntities.sort(this._lightYComparator);
-
-        // Write visible lights to shared buffer (pixi reads instead of queryActiveEntities)
-        if (this.visibleLightsData) {
-            const maxWrite = this.visibleLightsData.length - 1;
-            const n = Math.min(lightEntities.length, maxWrite);
-            this.visibleLightsData[0] = n;
-            for (let w = 0; w < n; w++) this.visibleLightsData[1 + w] = lightEntities[w];
         }
 
         // Grid cell data (used for flash direct queries)
@@ -1775,6 +1836,112 @@ class PreRenderWorker extends AbstractWorker {
 
         this.shadowRenderQueueCount[0] = writeIdx;
         this.shadowsUpdatedThisFrame = shadowCount;
+    }
+
+    /**
+     * Build visibility polygons for all visible lights (raycasted light occlusion).
+     * For each light, collects nearby LightOccluder circles, runs Angular Sweep,
+     * and writes the resulting polygon vertices to the shared buffer.
+     */
+    buildVisibilityPolygons() {
+        if (!this.visibilityPolygonsEnabled) return;
+
+        const buf = this._vpWriteBuffer;
+        if (!buf) { return; }
+
+        const worldX = Transform.x;
+        const worldY = Transform.y;
+        const transformActive = Transform.active;
+        const occluderActive = LightOccluder.active;
+        const occluderRadius = LightOccluder.radius;
+        const occluderOpacity = LightOccluder.opacity;
+        const lightEnabled = LightEmitter.active;
+        const lightIntensity = LightEmitter.lightIntensity;
+        const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+
+        const neighborData = Grid.neighborData;
+        const stride = Grid._stride;
+
+        const maxVerts = this._vpMaxVerts;
+        const maxLts = this._vpMaxLights;
+        const slotBytes = this._vpSlotBytes;
+        const cX = this._vpCircleX;
+        const cY = this._vpCircleY;
+        const cR = this._vpCircleR;
+        const cO = this._vpCircleOpacity;
+        const maxOccluders = this._vpMaxOccluders;
+        const outX = this._vpOutX;
+        const outY = this._vpOutY;
+        const dv = buf.data;
+
+        // Use the same visible lights list that buildShadowRenderQueue already wrote
+        const visibleLights = this.visibleLightsData;
+        if (!visibleLights) { buf.header[0] = 0; return; }
+
+        const lightCount = visibleLights[0];
+        if (lightCount === 0) { buf.header[0] = 0; return; }
+
+        let lightsWritten = 0;
+
+        for (let li = 0; li < lightCount && lightsWritten < maxLts; li++) {
+            const lightIdx = visibleLights[1 + li];
+            if (!lightEnabled[lightIdx]) continue;
+
+            const intensity = lightIntensity[lightIdx];
+            if (intensity <= 0) continue;
+
+            const lx = worldX[lightIdx];
+            const ly = worldY[lightIdx];
+            const influenceRadius = sqrtLightIntensity[lightIdx] * 10;
+
+            // Collect nearby occluder circles from neighbor data
+            let circleCount = 0;
+
+            if (neighborData && stride > 0) {
+                const offset = lightIdx * stride;
+                const nCount = neighborData[offset];
+                for (let k = 0; k < nCount && circleCount < maxOccluders; k++) {
+                    const nIdx = neighborData[offset + 2 + k];
+                    if (!transformActive[nIdx] || !occluderActive[nIdx]) continue;
+                    const r = occluderRadius[nIdx];
+                    if (r <= 0) continue;
+
+                    cX[circleCount] = worldX[nIdx];
+                    cY[circleCount] = worldY[nIdx];
+                    cR[circleCount] = r;
+                    cO[circleCount] = occluderOpacity[nIdx] || 1;
+                    circleCount++;
+                }
+            }
+
+            // Run angular sweep
+            const vertCount = buildVisibilityPolygon(
+                lx, ly, influenceRadius,
+                cX, cY, cR, cO,
+                circleCount, outX, outY, maxVerts
+            );
+
+            // Write to SAB slot
+            // Layout: [lightIdx: Int32, lightX: Float32, lightY: Float32, vertexCount: Int32, x[N]: Float32, y[N]: Float32]
+            const baseOffset = 4 + lightsWritten * slotBytes; // 4 bytes header
+            dv.setInt32(baseOffset, lightIdx, true);
+            dv.setFloat32(baseOffset + 4, lx, true);
+            dv.setFloat32(baseOffset + 8, ly, true);
+            dv.setInt32(baseOffset + 12, vertCount, true);
+
+            const vertDataOffset = baseOffset + 16;
+            for (let v = 0; v < vertCount; v++) {
+                dv.setFloat32(vertDataOffset + v * 4, outX[v], true);
+            }
+            const yOffset = vertDataOffset + maxVerts * 4;
+            for (let v = 0; v < vertCount; v++) {
+                dv.setFloat32(yOffset + v * 4, outY[v], true);
+            }
+
+            lightsWritten++;
+        }
+
+        buf.header[0] = lightsWritten;
     }
 
     /**

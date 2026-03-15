@@ -239,6 +239,8 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   maxFlashes: 0,
   resolution: 0.25,
   shadowResolution: 0.5,
+  raycasted: false,
+  maxPolygonVertices: 128,
   sun: SUN_DEFAULTS,
 });
 

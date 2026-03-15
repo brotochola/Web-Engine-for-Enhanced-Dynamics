@@ -15,6 +15,7 @@ import { BulletPool } from './BulletPool.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
 import { FlashComponent } from '../components/FlashComponent.js';
 import { LightEmitter } from '../components/LightEmitter.js';
+import { LightOccluder } from '../components/LightOccluder.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import {
   setupWorkerCommunication,
@@ -220,6 +221,7 @@ class Scene {
       LightEmitter: { ComponentClass: LightEmitter },
       ShadowCaster: { ComponentClass: ShadowCaster },
       FlashComponent: { ComponentClass: FlashComponent },
+      LightOccluder: { ComponentClass: LightOccluder },
     };
 
     // Assign componentId IDs to core and engine components
@@ -230,6 +232,7 @@ class Scene {
     LightEmitter.componentId = this.nextComponentId++;
     ShadowCaster.componentId = this.nextComponentId++;
     FlashComponent.componentId = this.nextComponentId++;
+    LightOccluder.componentId = this.nextComponentId++;
 
     // Typed array views
     this.views = {
@@ -1091,6 +1094,19 @@ class Scene {
       this.buffers.shadowRenderQueueDataA = new SharedArrayBuffer(shadowQueueBufferSize);
       this.buffers.shadowRenderQueueDataB = new SharedArrayBuffer(shadowQueueBufferSize);
       this.maxShadowRenderItems = maxShadowRenderItems;
+    }
+
+    // Visibility polygon buffer (raycasted light occlusion) - DOUBLE BUFFERED
+    // Built by pre_render_worker, consumed by pixi_worker
+    if (this.config.lighting.enabled && this.config.lighting.raycasted) {
+      const maxPolyVerts = this.config.lighting.maxPolygonVertices || 128;
+      // Per-light slot: lightIdx (Int32) + lightX,lightY (2xFloat32) + vertexCount (Int32) + x[N] + y[N] (2*N*Float32)
+      // Header: totalLights (Int32)
+      const LIGHT_SLOT_BYTES = 4 + 8 + 4 + maxPolyVerts * 4 * 2; // 16 + 1024 = 1040 bytes per light
+      const visPolyBufferSize = 4 + maxLights * LIGHT_SLOT_BYTES;
+      this.buffers.visibilityPolygonDataA = new SharedArrayBuffer(visPolyBufferSize);
+      this.buffers.visibilityPolygonDataB = new SharedArrayBuffer(visPolyBufferSize);
+      this.maxPolygonVertices = maxPolyVerts;
     }
 
     // Blood decals tilemap
@@ -2179,6 +2195,16 @@ class Scene {
           renderQueueDataA: this.buffers.shadowRenderQueueDataA,
           renderQueueDataB: this.buffers.shadowRenderQueueDataB,
           maxRenderItems: this.maxShadowRenderItems,
+        }
+        : null,
+      // Raycasted light occlusion (visibility polygons) - DOUBLE BUFFERED
+      visibilityPolygons: this.config.lighting.raycasted
+        ? {
+          enabled: true,
+          maxPolygonVertices: this.config.lighting.maxPolygonVertices || 128,
+          maxLights: this.config.lighting.maxLights || 128,
+          dataA: this.buffers.visibilityPolygonDataA,
+          dataB: this.buffers.visibilityPolygonDataB,
         }
         : null,
       // Sun/directional light system

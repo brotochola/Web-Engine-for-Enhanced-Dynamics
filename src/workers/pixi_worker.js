@@ -524,6 +524,19 @@ class PixiRenderer extends AbstractWorker {
     // OPTIMIZED: Preallocated RGB object to avoid allocation per light per frame
     this._rgbResult = { r: 0, g: 0, b: 0 };
 
+    // ========================================
+    // RAYCASTED LIGHT OCCLUSION (visibility polygons)
+    // ========================================
+    this._visPolyEnabled = false;
+    this._visPolyBuffers = [null, null]; // Double-buffered DataView+header pairs
+    this._visPolyMaxVerts = 128;
+    this._visPolyMaxLights = 10;
+    this._visPolySlotBytes = 0;
+    this._visPolyContainer = null;   // Container for light meshes
+    this._visPolyMeshes = [];        // Reusable PIXI.Mesh pool
+    this._visPolyRT = null;          // RenderTexture for visibility lighting
+    this._visPolyDisplaySprite = null; // Sprite displaying the RT with multiply blend
+
     // Reusable matrices for low-res rendering
     this._shadowTransform = new PIXI.Matrix();
     this._lightingTransform = new PIXI.Matrix(); // NDC mesh doesn't really need it but good to have
@@ -1100,8 +1113,11 @@ class PixiRenderer extends AbstractWorker {
     // Render lighting to lower-resolution texture if configured.
     // This significantly improves performance on GPU-bound systems.
 
-    // Render low-res lighting
-    if (this.lightingRT && this.lightingMesh) {
+    if (this._visPolyEnabled) {
+      // Raycasted lighting: render visibility polygon meshes
+      this.renderVisibilityLighting();
+    } else if (this.lightingRT && this.lightingMesh) {
+      // Standard lighting: render full-screen shader
       this.pixiApp.renderer.render({
         container: this.lightingMesh,
         target: this.lightingRT,
@@ -1410,6 +1426,209 @@ LIGHTING SYSTEM SETUP
       gl_FragColor = vec4(totalLight, 1.0);
     }
     `;
+  }
+
+  /* =====================
+RAYCASTED LIGHT OCCLUSION (visibility polygon system)
+===================== */
+
+  /**
+   * Initialize the visibility polygon rendering system.
+   * Creates a Container, RenderTexture, and display sprite for rendering
+   * light visibility polygons with additive blending.
+   */
+  initVisibilityPolygonSystem(vpConfig) {
+    this._visPolyEnabled = true;
+    this._visPolyMaxVerts = vpConfig.maxPolygonVertices;
+    this._visPolyMaxLights = vpConfig.maxLights;
+    this._visPolySlotBytes = 16 + this._visPolyMaxVerts * 8;
+
+    const sabs = [vpConfig.dataA, vpConfig.dataB];
+    for (let b = 0; b < 2; b++) {
+      this._visPolyBuffers[b] = {
+        header: new Int32Array(sabs[b], 0, 1),
+        data: new DataView(sabs[b]),
+      };
+    }
+
+    // Container for all light meshes (additive blend)
+    this._visPolyContainer = new PIXI.Container();
+
+    // RenderTexture for the visibility-polygon lighting
+    const res = this.lightingResolution || 1.0;
+    const rtW = Math.max(1, Math.floor(this.canvasWidth * res));
+    const rtH = Math.max(1, Math.floor(this.canvasHeight * res));
+    this._visPolyRT = PIXI.RenderTexture.create({ width: rtW, height: rtH });
+
+    // Display sprite with multiply blend (same as existing LIGHTING layer)
+    this._visPolyDisplaySprite = new PIXI.Sprite(this._visPolyRT);
+    this._visPolyDisplaySprite.anchor.set(0, 0);
+    this._visPolyDisplaySprite.position.set(0, 0);
+    this._visPolyDisplaySprite.scale.set(1.0 / res);
+
+    // Replace the existing lighting display on the LIGHTING layer
+    if (this.lightingDisplaySprite) {
+      this.pixiApp.stage.removeChild(this.lightingDisplaySprite);
+    } else if (this.lightingMesh) {
+      this.pixiApp.stage.removeChild(this.lightingMesh);
+    }
+    this._registerLayerDisplayObject('LIGHTING', this._visPolyDisplaySprite);
+    this.pixiApp.stage.addChild(this._visPolyDisplaySprite);
+
+    this._visPolyGlProgram = new PIXI.GlProgram({
+      vertex: this._visPolyVertexShader,
+      fragment: this._visPolyFragmentShader,
+    });
+
+    console.log(`PIXI WORKER: Visibility polygon system initialized (${this._visPolyMaxLights} lights, ${this._visPolyMaxVerts} verts, RT: ${rtW}x${rtH})`);
+  }
+
+  /**
+   * Get or create a PIXI.Mesh for rendering a light's visibility polygon.
+   * Meshes are pooled and reused across frames.
+   */
+  _getVisPolyMesh(index) {
+    if (this._visPolyMeshes[index]) return this._visPolyMeshes[index];
+
+    const geometry = new PIXI.Geometry({
+      attributes: { aPosition: { buffer: new Float32Array((this._visPolyMaxVerts + 1) * 2), size: 2 } },
+      indexBuffer: new Uint16Array(this._visPolyMaxVerts * 3),
+    });
+
+    const shader = new PIXI.Shader({
+      glProgram: this._visPolyGlProgram,
+      resources: {
+        uniforms: {
+          uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
+          uZoom: { value: 1.0, type: 'f32' },
+          uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
+          uLightPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
+          uLightIntensity: { value: 1000, type: 'f32' },
+          uLightColor: { value: new Float32Array([1, 1, 1]), type: 'vec3<f32>' },
+        },
+      },
+    });
+
+    const mesh = new PIXI.Mesh({ geometry, shader });
+    mesh.blendMode = 'add';
+
+    this._visPolyMeshes[index] = { mesh, geometry, shader };
+    return this._visPolyMeshes[index];
+  }
+
+  /**
+   * Render visibility polygon meshes for all visible lights.
+   * Reads polygon data from the SAB, builds triangle-fan meshes,
+   * renders to the visibility RT with additive blending over an ambient base.
+   */
+  renderVisibilityLighting() {
+    if (!this._visPolyEnabled) return;
+
+    const syncFrame = this.renderQueueSync ? Atomics.load(this.renderQueueSync, 0) : 0;
+    const readBufferIdx = syncFrame > 0 ? (syncFrame - 1) % 2 : 0;
+    const buf = this._visPolyBuffers[readBufferIdx];
+    if (!buf) return;
+
+    const lightCount = buf.header[0];
+    const dv = buf.data;
+    const maxVerts = this._visPolyMaxVerts;
+    const slotBytes = this._visPolySlotBytes;
+    const res = this.lightingResolution || 1.0;
+    const zoom = this._renderZoom;
+    const cameraX = this._renderCameraX;
+    const cameraY = this._renderCameraY;
+
+    const container = this._visPolyContainer;
+    container.removeChildren();
+
+    // LightEmitter data for color
+    const lightColor = LightEmitter.lightColor;
+    const lightIntensityArr = LightEmitter.lightIntensity;
+    const lightHeight = LightEmitter.height;
+
+    const rgb = this._rgbResult;
+
+    for (let li = 0; li < lightCount; li++) {
+      const baseOffset = 4 + li * slotBytes;
+      const lightIdx = dv.getInt32(baseOffset, true);
+      const lx = dv.getFloat32(baseOffset + 4, true);
+      const ly = dv.getFloat32(baseOffset + 8, true);
+      const vertCount = dv.getInt32(baseOffset + 12, true);
+
+      if (vertCount < 3) continue;
+
+      const vertDataOffset = baseOffset + 16;
+      const yDataOffset = vertDataOffset + maxVerts * 4;
+
+      // Get or create mesh for this light
+      const { mesh, geometry, shader } = this._getVisPolyMesh(li);
+
+      // Build triangle fan: center = light position, fan around polygon vertices
+      const posBuffer = geometry.attributes.aPosition.buffer;
+      const positions = posBuffer.data;
+      const indexBuffer = geometry.indexBuffer;
+      const indices = indexBuffer.data;
+
+      // Vertex 0 = light center
+      positions[0] = lx;
+      positions[1] = ly - (lightHeight[lightIdx] || 0);
+
+      // Vertices 1..vertCount = polygon boundary
+      for (let v = 0; v < vertCount; v++) {
+        positions[(v + 1) * 2] = dv.getFloat32(vertDataOffset + v * 4, true);
+        positions[(v + 1) * 2 + 1] = dv.getFloat32(yDataOffset + v * 4, true);
+      }
+
+      // Triangle fan indices: (0, v, v+1) for each consecutive boundary pair
+      let iCount = 0;
+      for (let v = 1; v < vertCount; v++) {
+        indices[iCount++] = 0;
+        indices[iCount++] = v;
+        indices[iCount++] = v + 1;
+      }
+      // Close the fan: last boundary vertex connects back to first
+      indices[iCount++] = 0;
+      indices[iCount++] = vertCount;
+      indices[iCount++] = 1;
+
+      // Zero remaining indices (degenerate triangles, no visible fragments)
+      for (let j = iCount; j < indices.length; j++) indices[j] = 0;
+
+      // Push updated data to GPU
+      posBuffer.update();
+      indexBuffer.update();
+
+      // Update shader uniforms
+      const uniforms = shader.resources.uniforms.uniforms;
+      uniforms.uCameraPos[0] = cameraX;
+      uniforms.uCameraPos[1] = cameraY;
+      uniforms.uZoom = zoom;
+      uniforms.uCanvasSize[0] = this.canvasWidth;
+      uniforms.uCanvasSize[1] = this.canvasHeight;
+      uniforms.uLightPos[0] = lx;
+      uniforms.uLightPos[1] = ly - (lightHeight[lightIdx] || 0);
+      uniforms.uLightIntensity = lightIntensityArr[lightIdx];
+
+      extractRGBNormalizedMut(lightColor[lightIdx], rgb);
+      uniforms.uLightColor[0] = rgb.r;
+      uniforms.uLightColor[1] = rgb.g;
+      uniforms.uLightColor[2] = rgb.b;
+
+      container.addChild(mesh);
+    }
+
+    // Render to the visibility RT
+    // Clear with base ambient + sun (same as what the full-screen shader starts with)
+    const sunIntensity = (Sun.isInitialized && Sun.enabled) ? Sun.intensity : 0;
+    const ambient = this.baseAmbient + sunIntensity;
+    const clampedAmbient = Math.min(ambient, 1.0);
+
+    this.pixiApp.renderer.render({
+      container,
+      target: this._visPolyRT,
+      clear: true,
+      clearColor: [clampedAmbient, clampedAmbient, clampedAmbient, 1.0],
+    });
   }
 
   /* =====================
@@ -2274,6 +2493,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
     }
 
+    // Recreate visibility polygon RenderTexture at the new size
+    if (this._visPolyRT) {
+      const res = this.lightingResolution || 1.0;
+      const vw = Math.max(1, Math.floor(width * res));
+      const vh = Math.max(1, Math.floor(height * res));
+      this._visPolyRT.destroy(true);
+      this._visPolyRT = PIXI.RenderTexture.create({ width: vw, height: vh });
+      if (this._visPolyDisplaySprite) {
+        this._visPolyDisplaySprite.texture = this._visPolyRT;
+        this._visPolyDisplaySprite.scale.set(1.0 / res);
+      }
+    }
+
     // Recreate custom layer RenderTextures at new size
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
@@ -2620,6 +2852,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   async initialize(data) {
     // console.log("PIXI WORKER: Initializing with component system", data);
 
+    // Fetch external shader sources (visibility polygon lighting)
+    if (data.visibilityPolygons && data.visibilityPolygons.enabled) {
+      const [vertSrc, fragSrc] = await Promise.all([
+        fetch('/src/shaders/visibility_polygon.vert.glsl').then(r => r.text()),
+        fetch('/src/shaders/visibility_polygon.frag.glsl').then(r => r.text()),
+      ]);
+      this._visPolyVertexShader = vertSrc;
+      this._visPolyFragmentShader = fragSrc;
+    }
+
     // Initialize stats buffer for writing metrics
     if (data.buffers.rendererStats) {
       this.stats = createStatsWriter(data.buffers.rendererStats, RENDERER_STATS);
@@ -2920,6 +3162,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         `PIXI WORKER: Lighting system enabled (baseAmbient: ${this.baseAmbient}, maxLights: ${this.maxLights}, resolution: ${this.lightingResolution})`
       );
 
+    }
+
+    // ========================================
+    // RAYCASTED LIGHT OCCLUSION - Initialize
+    // ========================================
+    if (data.visibilityPolygons && data.visibilityPolygons.enabled) {
+      this.initVisibilityPolygonSystem(data.visibilityPolygons);
     }
 
     // ========================================
@@ -3288,7 +3537,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this.decalTileContainer) this._registerLayerDisplayObject('DECALS', this.decalTileContainer);
     if (this.shadowDisplaySprite) this._registerLayerDisplayObject('CASTED_SHADOWS', this.shadowDisplaySprite);
     if (this.particleContainer) this._registerLayerDisplayObject('ENTITIES', this.particleContainer);
-    if (this.lightingDisplaySprite) this._registerLayerDisplayObject('LIGHTING', this.lightingDisplaySprite);
+    if (this._visPolyDisplaySprite) this._registerLayerDisplayObject('LIGHTING', this._visPolyDisplaySprite);
+    else if (this.lightingDisplaySprite) this._registerLayerDisplayObject('LIGHTING', this.lightingDisplaySprite);
     else if (this.lightingMesh) this._registerLayerDisplayObject('LIGHTING', this.lightingMesh);
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];

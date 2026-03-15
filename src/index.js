@@ -38,6 +38,7 @@ export { ParticleComponent } from './components/ParticleComponent.js';
 export { DecorationComponent } from './components/DecorationComponent.js';
 export { LightEmitter } from './components/LightEmitter.js';
 export { ShadowCaster } from './components/ShadowCaster.js';
+export { LightOccluder } from './components/LightOccluder.js';
 export { FlashComponent } from './components/FlashComponent.js';
 
 // ============================================================================
@@ -133,6 +134,7 @@ import { SharedAtomicPool } from './core/SharedAtomicPool.js';
 import { DecorationComponent } from './components/DecorationComponent.js';
 import { LightEmitter } from './components/LightEmitter.js';
 import { ShadowCaster } from './components/ShadowCaster.js';
+import { LightOccluder } from './components/LightOccluder.js';
 import { FlashComponent } from './components/FlashComponent.js';
 import { Flash } from './core/Flash.js';
 import { Constraint } from './core/Constraint.js';
@@ -186,6 +188,7 @@ const WEED = Object.freeze({
   ParticleComponent,
   LightEmitter,
   ShadowCaster,
+  LightOccluder,
   FlashComponent,
 
   // Particles
