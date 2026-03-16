@@ -533,6 +533,8 @@ class PhysicsWorker extends AbstractWorker {
     const neighborData = Grid.neighborData;
     const stride = Grid._stride;
     const visualRange = Collider.visualRange;
+    const collisionLayer = Collider.collisionLayer;
+    const collisionMask = Collider.collisionMask;
 
     const rigidBodyCount = this.rigidBodyCount;
 
@@ -573,7 +575,9 @@ class PhysicsWorker extends AbstractWorker {
       // NOTE: colliderX_i / colliderY_i CANNOT be hoisted because x[i]/y[i]
       // change during the loop as collisions are resolved!
 
-      // OPTIMIZATION: Cache entity i's static and sleeping state outside the loop
+      // OPTIMIZATION: Cache entity i's layer/mask and static/sleeping state outside the loop
+      const layerBitI = 1 << (collisionLayer[i] & 31);
+      const maskI = collisionMask[i];
       const iHasRigidBody = rigidBodyActive[i];
       const iStatic = !iHasRigidBody || isStatic[i];
       const iSleeping = iHasRigidBody && sleeping[i];
@@ -601,9 +605,12 @@ class PhysicsWorker extends AbstractWorker {
         // However, we still need to check sleeping vs awake to wake them up
         const jSleeping = jHasRigidBody && sleeping[j];
         if (iSleeping && jSleeping) {
-          // Both are sleeping - skip collision check (they won't move)
           continue;
         }
+
+        // Collision layer/mask filtering: skip if either entity's layer isn't in the other's mask
+        const layerBitJ = 1 << (collisionLayer[j] & 31);
+        if (!(layerBitI & collisionMask[j]) || !(layerBitJ & maskI)) continue;
 
         // Get shape type for neighbor 'j'
         const shapeJ = shapeType[j];

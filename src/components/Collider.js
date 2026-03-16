@@ -46,9 +46,9 @@ class Collider extends Component {
     // Trigger mode
     isTrigger: Uint8Array, // trigger=only events, no physical response
 
-    // Collision filtering
-    collisionLayer: Uint16Array,
-    collisionMask: Uint16Array,
+    // Collision filtering (32 layers max; layer is index 0-31, mask is bitmask)
+    collisionLayer: Uint8Array,
+    collisionMask: Uint32Array,
 
     // Perception (for spatial queries)
     visualRange: Float32Array,
@@ -112,15 +112,45 @@ class Collider extends Component {
     return Collider.height[this.index];
   }
   set height(value) {
-    // 1. Store the height value
     Collider.height[this.index] = value;
 
-    // 2. Recompute mass from box area (width * height)
-    //    Use existing width, default to 1 if not set yet
     if (RigidBody.active && RigidBody.active[this.index]) {
       const w = Collider.width[this.index] || 1;
       updateMassFromBox(this.index, w, value, RigidBody);
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // COLLISION LAYER / MASK
+  // Layer = which layer this entity is on (0-31, stored as Uint8)
+  // Mask  = which layers this entity collides with (bitmask, stored as Uint32)
+  // Two entities collide only if each entity's layer bit is set in the other's mask.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  get collisionLayer() {
+    return Collider.collisionLayer[this.index];
+  }
+  set collisionLayer(value) {
+    Collider.collisionLayer[this.index] = value & 31;
+  }
+
+  get collisionMask() {
+    return Collider.collisionMask[this.index];
+  }
+  set collisionMask(value) {
+    Collider.collisionMask[this.index] = value;
+  }
+
+  addLayerToMask(layer) {
+    Collider.collisionMask[this.index] |= (1 << (layer & 31));
+  }
+
+  removeLayerFromMask(layer) {
+    Collider.collisionMask[this.index] &= ~(1 << (layer & 31));
+  }
+
+  collidesWithLayer(layer) {
+    return !!(Collider.collisionMask[this.index] & (1 << (layer & 31)));
   }
 }
 

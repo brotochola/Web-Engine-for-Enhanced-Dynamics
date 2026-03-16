@@ -12,6 +12,7 @@ Engine-focused notes for the current `src/` architecture.
 | Default max neighbors/entity | `500` |
 | Default max entities/cell | `64` |
 | Default max collision pairs/frame | `10000` |
+| Collision layers | `32` (Uint32 bitmask) |
 | Audio mixer slots | `64` default (`maxSlots` param) |
 | Max rendering layers | `16` (`Layer.MAX_LAYERS`) |
 | Default custom layer maxItems | `5000` |
@@ -79,6 +80,42 @@ Lifecycle hooks:
 | `pre_render_worker` | 1 | Animation + render/shadow queue build |
 | `pixi_worker` | 1 | OffscreenCanvas/Pixi draw |
 | `AudioMixerProcessor` (worklet) | 1 | Real-time PCM mixing on the audio thread via SAB |
+
+---
+
+## Collision Filtering
+
+Each `Collider` has two properties that control which other colliders it interacts with:
+
+- **`collisionLayer`** (Uint8, 0-31): which layer this entity is on.
+- **`collisionMask`** (Uint32, bitmask): which layers this entity collides with.
+
+Two entities collide only if **both** see each other: entity A's layer bit must be set in B's mask, **and** B's layer bit must be set in A's mask.
+
+**Defaults:** layer `0`, mask `0xFFFFFFFF` (collide with everything). Mask `0` = collide with nothing.
+
+```javascript
+// In setup() -- assign layers
+this.collider.collisionLayer = 1;                       // "player" layer
+
+// Set mask directly (collide with layers 2 and 4 only)
+this.collider.collisionMask = (1 << 2) | (1 << 4);
+
+// Or build the mask incrementally
+this.collider.collisionMask = 0;                         // start empty
+this.collider.addLayerToMask(2);                          // add bullets
+this.collider.addLayerToMask(4);                          // add enemies
+
+// Remove a layer from the mask
+this.collider.removeLayerFromMask(2);                     // stop colliding with bullets
+
+// Query
+this.collider.collidesWithLayer(4);                       // true (enemies still in mask)
+```
+
+Hard limit: **32 collision layers** (one bit per layer in a Uint32 mask).
+
+> **Note:** These are *physics* collision layers, completely separate from *rendering* layers (see Layer System below).
 
 ---
 

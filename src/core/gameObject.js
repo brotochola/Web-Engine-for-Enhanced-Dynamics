@@ -1752,6 +1752,8 @@ export class GameObject {
 
     if (has.Collider) {
       Collider.active[i] = 1;
+      Collider.collisionLayer[i] = 0;
+      Collider.collisionMask[i] = 0xFFFFFFFF;
     }
 
     if (has.LightEmitter) {
