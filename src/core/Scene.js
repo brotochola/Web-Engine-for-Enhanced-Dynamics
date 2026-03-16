@@ -16,6 +16,7 @@ import { ShadowCaster } from '../components/ShadowCaster.js';
 import { FlashComponent } from '../components/FlashComponent.js';
 import { LightEmitter } from '../components/LightEmitter.js';
 import { LightOccluder } from '../components/LightOccluder.js';
+import { CameraInOutListener } from '../components/CameraInOutListener.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import {
   setupWorkerCommunication,
@@ -222,6 +223,7 @@ class Scene {
       ShadowCaster: { ComponentClass: ShadowCaster },
       FlashComponent: { ComponentClass: FlashComponent },
       LightOccluder: { ComponentClass: LightOccluder },
+      CameraInOutListener: { ComponentClass: CameraInOutListener },
     };
 
     // Assign componentId IDs to core and engine components
@@ -233,6 +235,7 @@ class Scene {
     ShadowCaster.componentId = this.nextComponentId++;
     FlashComponent.componentId = this.nextComponentId++;
     LightOccluder.componentId = this.nextComponentId++;
+    CameraInOutListener.componentId = this.nextComponentId++;
 
     // Typed array views
     this.views = {
@@ -916,11 +919,12 @@ class Scene {
       this.buffers.nextTickData || null
     );
 
-    // Create Component buffers
+    // Create Component buffers (skip tag components with no ARRAY_SCHEMA)
     for (const [componentName, pool] of Object.entries(this.componentPools)) {
       if (pool.ComponentClass) {
         const ComponentClass = pool.ComponentClass;
         const bufferSize = ComponentClass.getBufferSize(this.totalEntityCount);
+        if (bufferSize === 0) continue;
         this.buffers.componentData[componentName] = new SharedArrayBuffer(bufferSize);
         ComponentClass.initializeArrays(
           this.buffers.componentData[componentName],

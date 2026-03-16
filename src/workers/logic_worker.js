@@ -14,6 +14,7 @@ import { Transform } from '../components/Transform.js';
 import { RigidBody } from '../components/RigidBody.js';
 
 import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { CameraInOutListener } from '../components/CameraInOutListener.js';
 
 import { SpriteSheetRegistry } from '../core/SpriteSheetRegistry.js';
 
@@ -216,11 +217,13 @@ class LogicWorker extends AbstractWorker {
         // Get component classes directly from the entity's static components array
         const componentClassMap = {};
         const components = GameObject._collectComponents(EntityClass);
+        let needsScreenCallbacks = false;
 
         for (const ComponentClass of components) {
           const componentName = ComponentClass.name;
           const camelCaseName = componentName.charAt(0).toLowerCase() + componentName.slice(1);
           componentClassMap[camelCaseName] = ComponentClass;
+          if (ComponentClass === CameraInOutListener) needsScreenCallbacks = true;
         }
         EntityClass._componentClassMap = componentClassMap;
 
@@ -260,6 +263,7 @@ class LogicWorker extends AbstractWorker {
               activeList: EntityClass._activeList,
               tickInterval,
               startIndex,
+              needsScreenCallbacks,
             });
           } else {
             // Non-decimated type: simple loop, zero overhead
@@ -267,6 +271,7 @@ class LogicWorker extends AbstractWorker {
               EntityClass,
               activeList: EntityClass._activeList,
               startIndex,
+              needsScreenCallbacks,
             });
           }
         }
@@ -441,6 +446,7 @@ class LogicWorker extends AbstractWorker {
       const typeInfo = nonDecimatedTypes[t];
       const activeList = typeInfo.activeList;
       const count = Math.min(activeList[0], activeList.length - 1);
+      const needsScreenCallbacks = typeInfo.needsScreenCallbacks;
 
       // Worker partitioning within this type's active list
       for (let idx = myIndex; idx < count; idx += totalWorkers) {
@@ -458,8 +464,7 @@ class LogicWorker extends AbstractWorker {
         // Tick entity logic - no decimation checks needed!
         obj.tick(dtRatio, deltaTime, accTime, frameNum);
 
-        // Check for screen visibility changes
-        this.checkScreenVisibility(entityIndex, obj);
+        if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
       }
     }
 
@@ -482,6 +487,7 @@ class LogicWorker extends AbstractWorker {
         const activeList = typeInfo.activeList;
         const count = Math.min(activeList[0], activeList.length - 1);
         const tickInterval = typeInfo.tickInterval; // Pre-cached, no prototype lookup
+        const needsScreenCallbacks = typeInfo.needsScreenCallbacks;
 
         // Worker partitioning within this type's active list
         for (let idx = myIndex; idx < count; idx += totalWorkers) {
@@ -498,8 +504,7 @@ class LogicWorker extends AbstractWorker {
 
           // TICK DECIMATION: Check countdown
           if (--nextTick[entityIndex] > 0) {
-            // Skip tick, but still check screen visibility
-            this.checkScreenVisibility(entityIndex, obj);
+            if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
             continue;
           }
 
@@ -514,8 +519,7 @@ class LogicWorker extends AbstractWorker {
           rbAx[entityIndex] *= tickInterval;
           rbAy[entityIndex] *= tickInterval;
 
-          // Check for screen visibility changes
-          this.checkScreenVisibility(entityIndex, obj);
+          if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
         }
       }
     }

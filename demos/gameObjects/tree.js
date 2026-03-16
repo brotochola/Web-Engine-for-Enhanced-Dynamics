@@ -9,6 +9,7 @@ const {
   RigidBody,
   ShadowCaster,
   enums,
+  CameraInOutListener,
 } = WEED;
 const { ShapeType } = enums;
 
@@ -59,4 +60,5 @@ export class Tree extends GameObject {
   }
 
   onSpawned(spawnConfig = {}) { }
+
 }

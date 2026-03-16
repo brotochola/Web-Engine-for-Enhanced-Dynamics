@@ -21,10 +21,6 @@ class Ball extends GameObject {
 
   }
 
-  onScreenEnter() { }
-
-  onScreenExit() { }
-
   /**
    * LIFECYCLE: Called when ball is spawned/respawned from pool
    * Initialize THIS instance - runs EVERY spawn

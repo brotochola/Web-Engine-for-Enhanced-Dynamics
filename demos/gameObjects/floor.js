@@ -31,10 +31,6 @@ class Floor extends GameObject {
         this.collider.visualRange = 0; // Large range to ensure collisions are detected
     }
 
-    onScreenEnter() { }
-
-    onScreenExit() { }
-
     /**
      * LIFECYCLE: Called when floor is spawned/respawned from pool
      * Initialize THIS instance - runs EVERY spawn

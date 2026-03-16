@@ -45,6 +45,7 @@ import { SpriteRenderer } from '../components/SpriteRenderer.js';
 import { LightEmitter } from '../components/LightEmitter.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
 import { FlashComponent } from '../components/FlashComponent.js';
+import { CameraInOutListener } from '../components/CameraInOutListener.js';
 import { ShapeType } from '../core/ConfigDefaults.js';
 
 /**
@@ -637,6 +638,7 @@ export class AbstractWorker {
     self.FlashComponent = FlashComponent;
     self.DecorationComponent = DecorationComponent;
     self.BulletComponent = BulletComponent;
+    self.CameraInOutListener = CameraInOutListener;
 
     // Systems
     self.ParticleEmitter = ParticleEmitter;

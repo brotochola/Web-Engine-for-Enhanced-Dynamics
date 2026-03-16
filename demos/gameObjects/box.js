@@ -27,10 +27,6 @@ class Box extends GameObject {
     this.onSpawned();
   }
 
-  onScreenEnter() { }
-
-  onScreenExit() { }
-
   /**
    * LIFECYCLE: Called when box is spawned/respawned from pool
    * Initialize THIS instance - runs EVERY spawn
