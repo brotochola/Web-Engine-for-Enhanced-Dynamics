@@ -96,7 +96,7 @@ The engine renders everything through **layers**. Five built-in layers handle th
 | `ENTITIES` | 3 | Default entity rendering (main render queue) |
 | `LIGHTING` | 4 | Point lights, ambient overlay |
 
-All entities render on `ENTITIES` by default. You don't need to touch layers for most games.
+All renderables (entities, particles, decorations, bullets) render on `ENTITIES` by default. You don't need to touch layers for most games.
 
 ### Defining Custom Layers
 
@@ -159,6 +159,22 @@ Open the **Layers** tab in the debug overlay. Each layer shows visibility, alpha
 - **Resolution**, **Y-Sorting**, **maxItems**
 - **Live uniform editors** -- number inputs for every uniform, updated in real-time from SAB. Edit a value and it calls `setUniform()` immediately
 
+### Backgrounds (Layer API)
+
+Backgrounds are set through Layer instances, not Scene methods:
+
+```javascript
+// In scene preload():
+await Layer.get('BACKGROUND').setTilemapBackground('myTilemap', { scale: 1 });
+
+// Other types:
+Layer.get('BACKGROUND').setStaticBackground('sky');
+Layer.get('BACKGROUND').setTilingBackground('clouds', 0.5);
+Layer.get('BACKGROUND').clearBackground();
+```
+
+Any layer can own a background. `setTilemapBackground` returns a Promise (warm-up render).
+
 ### Assigning Entities to Layers
 
 ```javascript
@@ -169,6 +185,39 @@ this.setLayer('ENTITIES');     // move back to default
 // Read-only
 const name = this.layerName;   // 'water', 'ENTITIES', etc.
 ```
+
+### Routing Particles, Decorations, and Bullets to Layers
+
+Any renderable type can target a custom layer via `layerId`:
+
+```javascript
+// Particles
+ParticleEmitter.emit({
+  x: this.x, y: this.y,
+  texture: 'spark',
+  layerId: Layer.getId('FOREGROUND_FX'),
+});
+
+// Decorations
+DecorationPool.spawn({
+  x: 100, y: 200,
+  texture: 'tree_canopy',
+  layerId: Layer.getId('CANOPY'),
+});
+
+// Bullets
+BulletPool.spawn({
+  x: this.x, y: this.y, vx: 10, vy: 0,
+  damage: 25, ownerId: this.index,
+  texture: 'laser',
+  layerId: Layer.getId('LASER_LAYER'),
+});
+
+// Light glows: 0 = inherit entity's layer, non-zero = explicit
+LightEmitter.layerIdOfGlowSprite[this.index] = Layer.getId('GLOW_LAYER');
+```
+
+When `layerId` is 0 (default), everything goes to the main ENTITIES queue. Zero overhead for the common case. See `docs/LAYER_ROUTING.md` for the full architecture.
 
 ### Shader Uniforms
 
@@ -198,12 +247,23 @@ The pixi worker picks up dirty uniforms each frame via an atomic flag.
 ### Layer API Reference
 
 ```javascript
+// Lookup
 WEED.Layer.get('water')       // Layer instance or null
 WEED.Layer.getById(5)         // by numeric id
 WEED.Layer.getAll()           // all registered layers (cached)
 WEED.Layer.getCustomLayers()  // only layers with their own render queue (excludes ENTITIES)
 WEED.Layer.getId('water')     // numeric id or -1
 WEED.Layer.getName(5)         // name string or null
+
+// Background (instance methods -- any layer can own a background)
+Layer.get('BACKGROUND').setStaticBackground(textureId)
+Layer.get('BACKGROUND').setTilingBackground(textureId, tileScale)
+await Layer.get('BACKGROUND').setTilemapBackground(tilemapId, options)
+Layer.get('BACKGROUND').clearBackground()
+
+// Uniforms (cross-worker safe)
+Layer.get('water').setUniform('uTime', t)
+Layer.get('water').getUniform('uThreshold')
 ```
 
 ### Two-RT Shader Pipeline (How It Works)
@@ -267,7 +327,7 @@ if (Mouse.clicked) { ... }             // alias for isButton0Pressed
 WEED.Camera.follow(this.x, this.y);
 WEED.Camera.setZoom(1.5);
 
-// Particles
+// Particles (layerId optional -- 0 = default ENTITIES layer)
 WEED.ParticleEmitter.emit({
   x: this.x,
   y: this.y,
@@ -275,6 +335,7 @@ WEED.ParticleEmitter.emit({
   angleXY: { min: 0, max: 360 },
   speed: { min: 1, max: 3 },
   lifespan: 800,
+  layerId: 0,  // optional: route to custom layer
 });
 
 // Query helpers (worker context)

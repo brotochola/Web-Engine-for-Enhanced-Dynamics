@@ -962,6 +962,18 @@ class PreRenderWorker extends AbstractWorker {
      * Collect a visible renderable for the render queue.
      * Any renderable with a non-default layerId is routed to that layer's
      * dedicated collector; everything else goes into the default ENTITIES queue.
+     *
+     * Layer routing by type:
+     *   type 0 (entity)       -> SpriteRenderer.layerId[index]
+     *   type 1 (particle)     -> ParticleComponent.layerId[index]
+     *   type 2 (decoration)   -> DecorationComponent.layerId[index]
+     *   type 3 (light glow)   -> LightEmitter.layerIdOfGlowSprite[index] || SpriteRenderer.layerId[index]
+     *   type 4 (bullet)       -> BulletComponent.layerId[index]
+     *   type 5 (bullet trail) -> BulletComponent.layerId[index]
+     *
+     * @param {number} type - Renderable type (0-5)
+     * @param {number} index - Pool index into the corresponding component arrays
+     * @param {number} y - Sort key (world Y or -Z for zenithal particles)
      */
     collectRenderable(type, index, y) {
         if (!this.renderQueueEnabled) return;
@@ -1395,8 +1407,15 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * Build render queues for all custom layers.
-     * Each custom layer's collector may contain any renderable type (0-5).
-     * Dispatch mirrors buildRenderQueue per-type branches, writing to per-layer SABs.
+     * Each custom layer's collector may contain any renderable type (0-5):
+     * entities, particles, decorations, light glows, bullets, and bullet trails.
+     *
+     * Per-type dispatch mirrors the corresponding branches in buildRenderQueue(),
+     * writing the same fields (x, y, scaleX, scaleY, rotation, alpha, tint,
+     * textureId, anchorX, anchorY, type, entityIndex) into per-layer SABs.
+     * The pixi_worker reads these fields generically in updateCustomLayers().
+     *
+     * @param {number} deltaTime - Frame delta in milliseconds (for animation advancement)
      */
     buildCustomLayerQueues(deltaTime) {
         if (!this._customLayerCollectors) return;

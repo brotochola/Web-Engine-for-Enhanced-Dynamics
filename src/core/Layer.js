@@ -1,4 +1,4 @@
-// Layer.js - Rendering layer system for custom shader pipelines
+// Layer.js - Rendering layer system for custom shader pipelines and backgrounds
 // Static class with facade instances, backed by SharedArrayBuffer
 //
 // ARCHITECTURE:
@@ -6,10 +6,23 @@
 // - Custom layers defined in scene config.layers
 // - Each Layer instance is a lightweight facade over SAB arrays (like GameObject)
 // - Layer.get('water').setUniform('uThreshold', 0.4) works from any thread
+// - Background ownership: Layer.get('BACKGROUND').setTilemapBackground(...)
+//   replaces the old Scene.setTilemapBackground() API
+//
+// LAYER ROUTING:
+// - Any renderable type (entity, particle, decoration, bullet, light glow)
+//   can target any custom layer via a layerId field on its component
+// - Entities: SpriteRenderer.layerId
+// - Particles: ParticleComponent.layerId
+// - Decorations: DecorationComponent.layerId
+// - Bullets: BulletComponent.layerId
+// - Light glows: LightEmitter.layerIdOfGlowSprite (falls back to SpriteRenderer.layerId)
+// - layerId=0 means default ENTITIES queue (zero overhead for the common case)
 //
 // THREAD SAFETY:
 // - Config arrays written once at init (read-only after)
 // - Uniform arrays use Atomics dirty flag for safe cross-worker writes
+// - _postToRenderer is a main-thread-only callback (not cross-worker)
 
 export class Layer {
     static MAX_LAYERS = 16;
@@ -50,10 +63,19 @@ export class Layer {
     static _allCache = [];
     static _allCacheCount = -1;
 
-    // Communication bridge to renderer worker (set by Scene during init)
+    /**
+     * Communication bridge to renderer worker.
+     * Set by Scene during init: Layer._postToRenderer = (msg) => worker.postMessage(msg)
+     * Main-thread only -- workers do not use this.
+     * @type {function|null}
+     */
     static _postToRenderer = null;
 
-    // Promise resolve for async background operations (tilemap warm-up)
+    /**
+     * Pending Promise resolve for async background operations.
+     * Set by setTilemapBackground(), resolved by resolveBackgroundReady().
+     * @type {function|null}
+     */
     static _backgroundReadyResolve = null;
 
     constructor(id, name) {
