@@ -295,7 +295,7 @@ export const LIGHTING_DEFAULTS = Object.freeze({
 export const LAYER_DEFAULTS = Object.freeze({
   maxItemsPerLayer: 5000,
   resolution: 1.0,
-  alpha: 1.0,
+  alpha: 1.0,             // mutable at runtime via layer.alpha = v (SAB + Atomics)
   shader: null,
   blendMode: BLEND_MODES.NORMAL,
   // ySorting intentionally omitted: custom layers inherit the scene-level

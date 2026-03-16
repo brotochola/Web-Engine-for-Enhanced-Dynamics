@@ -166,6 +166,37 @@ Each `layerId` field is a `Uint8Array` (1 byte per pool slot):
 
 ---
 
+## Layer Alpha (Cross-Worker)
+
+Layer opacity can be set from any worker at any time. It uses the config SAB + an Atomics dirty flag — no messages involved.
+
+```javascript
+// Fade out lighting from any worker
+Layer.get("LIGHTING").alpha = 0;
+
+// Read current alpha
+const a = Layer.get("water").alpha;
+
+// Animate alpha in a tick()
+Layer.get("water").alpha = Math.sin(this.scene.time * 2) * 0.5 + 0.5;
+```
+
+Under the hood, `set alpha(v)` writes to a `Float32Array` slot in the shared config SAB and sets a per-layer `Int32` dirty flag via `Atomics.store`. The renderer polls dirty flags once per frame, applies changed values to the PIXI display object, and clears the flag.
+
+Default alpha is `1.0` (fully opaque). It can also be set in scene config:
+
+```javascript
+layers: {
+  water: {
+    zIndex: 4,
+    alpha: 0.8,   // initial opacity
+    shader: { fragment: 'metaball', ... },
+  }
+}
+```
+
+---
+
 ## Important Constraints
 
 - Items routed to a custom layer only Y-sort with other items in that same layer. A particle on a custom layer won't interleave with entities on the ENTITIES layer -- it renders at the custom layer's zIndex.
