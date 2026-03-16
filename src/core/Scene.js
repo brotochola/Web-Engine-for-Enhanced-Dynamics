@@ -49,8 +49,7 @@ import {
   DEBUG_DEFAULTS,
   SUN_DEFAULTS,
   LAYER_DEFAULTS,
-  Z_INDICES,
-  LAYER_DEFAULT_BLEND_MODES,
+  DEFAULT_LAYERS,
 } from './ConfigDefaults.js';
 import { Sun } from './Sun.js';
 import { Layer } from './Layer.js';
@@ -1176,23 +1175,15 @@ class Scene {
     // ========================================
     // LAYER SYSTEM INITIALIZATION
     // ========================================
-    // Register built-in layers from Z_INDICES with their blend modes,
-    // then register custom layers from scene config.
+    // Register built-in layers from DEFAULT_LAYERS, then custom layers from scene config.
     const builtInLayers = {};
     const defaultYSorting = this.config.renderer?.ySorting !== undefined
       ? !!this.config.renderer.ySorting
       : true;
-    for (const [name, zIndex] of Object.entries(Z_INDICES)) {
+    for (const [name, defaults] of Object.entries(DEFAULT_LAYERS)) {
       builtInLayers[name] = {
-        zIndex,
-        blendMode: LAYER_DEFAULT_BLEND_MODES[name] ?? 0,
-        ySorting: defaultYSorting,
-        layerType:
-          name === 'BACKGROUND' ? 'background'
-            : name === 'DECALS' ? 'decals'
-              : name === 'CASTED_SHADOWS' ? 'shadows'
-                : name === 'LIGHTING' ? 'lighting'
-                  : 'world',
+        ...defaults,
+        ySorting: name === 'ENTITIES' ? defaultYSorting : defaults.ySorting,
       };
     }
     Layer.initializeFromConfig(this.config.layers, builtInLayers, defaultYSorting);

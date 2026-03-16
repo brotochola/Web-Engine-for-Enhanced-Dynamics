@@ -22,7 +22,7 @@ import { AbstractWorker } from './AbstractWorker.js';
 import { LightEmitter } from '../components/LightEmitter.js';
 import { Sun } from '../core/Sun.js';
 
-import { Z_INDICES, RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
+import { DEFAULT_LAYERS, RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
 import { Layer } from '../core/Layer.js';
 import { createViews as createRenderQueueViews } from '../core/RenderQueueLayout.js';
 import { sortByY, normalizeAngleDifference, extractRGBNormalizedMut } from '../core/utils.js';
@@ -287,8 +287,7 @@ class PixiParticlePool {
  * Extends AbstractWorker for common worker functionality
  */
 class PixiRenderer extends AbstractWorker {
-  // Z_INDICES imported from ConfigDefaults.js for centralized layer ordering
-  static Z_INDICES = Z_INDICES;
+  static DEFAULT_LAYERS = DEFAULT_LAYERS;
 
   queryConfig = [SpriteRenderer];
 

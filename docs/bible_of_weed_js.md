@@ -274,7 +274,8 @@ Layer.water.getUniform('uThreshold')
 // Blend modes (numeric enum)
 import { BLEND_MODES } from '/src/core/ConfigDefaults.js';
 // or: const { BLEND_MODES } = WEED.enums;
-// BLEND_MODES.NORMAL (0), BLEND_MODES.ADD (1), BLEND_MODES.MULTIPLY (2), BLEND_MODES.SCREEN (3)
+// BLEND_MODES.NORMAL (0), BLEND_MODES.ADD (2), BLEND_MODES.MULTIPLY (3), BLEND_MODES.SCREEN (4)
+// Full list: 33 modes matching PixiJS (INHERIT, DARKEN, LIGHTEN, ERASE, COLOR_DODGE, ...)
 ```
 
 ### Two-RT Shader Pipeline (How It Works)
@@ -404,7 +405,7 @@ Recommended `<head>` meta tags (add these to your HTML — the engine can't inje
 - Spatial: `cellSize = 128`
 - Logic: `staggeredUpdates = false`
 - Renderer: `interpolation = true`, `maxVisibleRenderables = 40000`
-- Layers: `maxItems = 5000`, `resolution = 1.0`, `ySorting = true`, `blendMode = BLEND_MODES.NORMAL` (0)
+- Layers: `maxItems = 5000`, `resolution = 1.0`, `ySorting = false` (built-in), `blendMode = BLEND_MODES.NORMAL` (0)
 - Audio: `maxSlots = 64`, `mixGain = 0.5`, `masterVolume = 1.0`
 - Navigation: `enabled = false` by default
 

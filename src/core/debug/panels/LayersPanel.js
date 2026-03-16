@@ -1,7 +1,7 @@
 // LayersPanel.js — Per-layer controls (visible, alpha, blend, shader, uniforms, y-sort, z-index)
 
 import { createPanel } from '../ui/DebugDOM.js';
-import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES } from '../../ConfigDefaults.js';
+import { DEFAULT_LAYERS } from '../../ConfigDefaults.js';
 import { Layer } from '../../Layer.js';
 
 export class LayersPanel {
@@ -21,7 +21,7 @@ export class LayersPanel {
   create() {
     this.panel = createPanel();
 
-    for (const layerName of Object.keys(Z_INDICES)) {
+    for (const layerName of Object.keys(DEFAULT_LAYERS)) {
       this._createLayerRow(layerName, this.panel);
     }
 
@@ -99,11 +99,11 @@ export class LayersPanel {
     const blendCont = document.createElement('div'); blendCont.style.cssText = cellStyle;
     const blendLbl = document.createElement('span'); blendLbl.style.cssText = lblStyle; blendLbl.textContent = 'Output Blend:';
     blendCont.appendChild(blendLbl);
-    const blendSelect = this._buildBlendSelect(selectStyle, ['normal', 'normal-npm', 'add', 'add-npm', 'multiply', 'screen', 'screen-npm', 'erase']);
+    const blendSelect = this._buildBlendSelect(selectStyle, Layer._BLEND_MODE_STRINGS);
     const customLayer = Layer.initialized ? Layer.get(layerName) : null;
     blendSelect.value = customLayer
       ? (Layer._BLEND_MODE_STRINGS[Layer._blendModeId[customLayer.id]] || 'normal')
-      : (Layer._BLEND_MODE_STRINGS[LAYER_DEFAULT_BLEND_MODES[layerName]] || 'normal');
+      : (Layer._BLEND_MODE_STRINGS[DEFAULT_LAYERS[layerName]?.blendMode] || 'normal');
     blendSelect.onchange = () => this._setLayerProp(layerName, 'blendMode', blendSelect.value);
     blendCont.appendChild(blendSelect);
     row.appendChild(blendCont);
@@ -112,7 +112,7 @@ export class LayersPanel {
     const cBlendCont = document.createElement('div'); cBlendCont.style.cssText = cellStyle;
     const cBlendLbl = document.createElement('span'); cBlendLbl.style.cssText = lblStyle; cBlendLbl.textContent = 'Container Blend:';
     cBlendCont.appendChild(cBlendLbl);
-    const cBlendSelect = this._buildBlendSelect(selectStyle, ['normal', 'add', 'multiply', 'screen']);
+    const cBlendSelect = this._buildBlendSelect(selectStyle, Layer._BLEND_MODE_STRINGS);
     if (customLayer) cBlendSelect.value = Layer._BLEND_MODE_STRINGS[Layer._containerBlendId[customLayer.id]] || 'normal';
     cBlendSelect.onchange = () => this._setLayerProp(layerName, 'containerBlendMode', cBlendSelect.value);
     cBlendCont.appendChild(cBlendSelect);
@@ -147,7 +147,7 @@ export class LayersPanel {
     zCont.appendChild(zLbl);
     const zInput = document.createElement('input');
     zInput.type = 'number';
-    zInput.value = customLayer ? Layer._zIndex[customLayer.id] : (Z_INDICES[layerName] ?? 0);
+    zInput.value = customLayer ? Layer._zIndex[customLayer.id] : (DEFAULT_LAYERS[layerName]?.zIndex ?? 0);
     zInput.style.cssText = 'width:50px;font-size:10px;padding:2px 4px;background:rgba(0,0,0,0.5);color:white;border:1px solid rgba(255,255,255,0.3);border-radius:3px';
     zInput.onchange = () => this._setLayerProp(layerName, 'zIndex', parseInt(zInput.value));
     zCont.appendChild(zInput);

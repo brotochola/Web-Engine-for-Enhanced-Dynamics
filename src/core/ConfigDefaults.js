@@ -22,48 +22,85 @@ export const ShapeType = Object.freeze({
 });
 
 /**
- * Z-index values for rendering layers
- * Used by PixiRenderer and DebugUI for layer ordering
- * @readonly
- * @enum {number}
- */
-export const Z_INDICES = Object.freeze({
-  /** Background layer (tilemap or texture) */
-  BACKGROUND: 0,
-  /** Decals layer (blood, footprints, etc.) */
-  DECALS: 1,
-  /** Casted shadows from entities */
-  CASTED_SHADOWS: 2,
-  /** Main entities layer (sprites, particles) */
-  ENTITIES: 3,
-  /** Lighting overlay layer */
-  LIGHTING: 4,
-});
-
-/**
- * Blend mode enum for rendering layers.
+ * Blend mode enum — all PixiJS-supported blend modes.
  * Numeric values stored directly in the Layer config SAB (Uint8).
+ * Indices match Layer._BLEND_MODE_STRINGS for id-to-string translation.
  * @readonly
  * @enum {number}
  */
 export const BLEND_MODES = Object.freeze({
-  NORMAL:   0,
-  ADD:      1,
-  MULTIPLY: 2,
-  SCREEN:   3,
+  NORMAL:        0,
+  INHERIT:       1,
+  ADD:           2,
+  MULTIPLY:      3,
+  SCREEN:        4,
+  DARKEN:        5,
+  LIGHTEN:       6,
+  ERASE:         7,
+  COLOR_DODGE:   8,
+  COLOR_BURN:    9,
+  LINEAR_BURN:  10,
+  LINEAR_DODGE: 11,
+  LINEAR_LIGHT: 12,
+  HARD_LIGHT:   13,
+  SOFT_LIGHT:   14,
+  PIN_LIGHT:    15,
+  DIFFERENCE:   16,
+  EXCLUSION:    17,
+  OVERLAY:      18,
+  SATURATION:   19,
+  COLOR:        20,
+  LUMINOSITY:   21,
+  NORMAL_NPM:   22,
+  ADD_NPM:      23,
+  SCREEN_NPM:   24,
+  NONE:         25,
+  SUBTRACT:     26,
+  DIVIDE:       27,
+  VIVID_LIGHT:  28,
+  HARD_MIX:     29,
+  NEGATION:     30,
+  MIN:          31,
+  MAX:          32,
 });
 
 /**
- * Default blend modes for each built-in rendering layer
+ * Built-in layer definitions. Same shape as scene config.layers entries.
+ * ySorting is false for all built-in layers; ENTITIES gets overridden
+ * at runtime by the scene's renderer.ySorting config.
  * @readonly
- * @enum {number}
  */
-export const LAYER_DEFAULT_BLEND_MODES = Object.freeze({
-  BACKGROUND:     BLEND_MODES.NORMAL,
-  DECALS:         BLEND_MODES.NORMAL,
-  CASTED_SHADOWS: BLEND_MODES.MULTIPLY,
-  ENTITIES:       BLEND_MODES.NORMAL,
-  LIGHTING:       BLEND_MODES.MULTIPLY,
+export const DEFAULT_LAYERS = Object.freeze({
+  BACKGROUND: {
+    zIndex: 0,
+    blendMode: BLEND_MODES.NORMAL,
+    ySorting: false,
+    layerType: 'background',
+  },
+  DECALS: {
+    zIndex: 1,
+    blendMode: BLEND_MODES.NORMAL,
+    ySorting: false,
+    layerType: 'decals',
+  },
+  CASTED_SHADOWS: {
+    zIndex: 2,
+    blendMode: BLEND_MODES.MULTIPLY,
+    ySorting: false,
+    layerType: 'shadows',
+  },
+  ENTITIES: {
+    zIndex: 3,
+    blendMode: BLEND_MODES.NORMAL,
+    ySorting: false,
+    layerType: 'world',
+  },
+  LIGHTING: {
+    zIndex: 4,
+    blendMode: BLEND_MODES.MULTIPLY,
+    ySorting: false,
+    layerType: 'lighting',
+  },
 });
 
 /**

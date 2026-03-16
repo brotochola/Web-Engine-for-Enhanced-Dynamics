@@ -142,17 +142,15 @@ import { AbstractWorker } from './workers/AbstractWorker.js';
 import { DEBUG_FLAGS } from './core/debug/DebugFlags.js';
 import {
   ShapeType,
-  Z_INDICES,
   BLEND_MODES,
-  LAYER_DEFAULT_BLEND_MODES,
+  DEFAULT_LAYERS,
   CAMERA_TYPES,
 } from './core/ConfigDefaults.js';
 
 const enums = Object.freeze({
   ShapeType,
-  Z_INDICES,
   BLEND_MODES,
-  LAYER_DEFAULT_BLEND_MODES,
+  DEFAULT_LAYERS,
   CAMERA_TYPES,
   DECAL_STAMPS_BLEND_MODE,
   DEBUG_FLAGS,

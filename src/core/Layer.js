@@ -52,8 +52,14 @@ export class Layer {
     static _uniformDirty = [];    // Int32Array[1][] indexed by layer id
     static _uniformMaps = [];     // { name: { offset, size } }[] indexed by layer id
 
-    // Blend mode ID -> string for debug/logging purposes only
-    static _BLEND_MODE_STRINGS = ['normal', 'add', 'multiply', 'screen'];
+    // Blend mode ID -> PixiJS string. Indices match BLEND_MODES enum in ConfigDefaults.js.
+    static _BLEND_MODE_STRINGS = [
+        'normal', 'inherit', 'add', 'multiply', 'screen', 'darken', 'lighten', 'erase',
+        'color-dodge', 'color-burn', 'linear-burn', 'linear-dodge', 'linear-light',
+        'hard-light', 'soft-light', 'pin-light', 'difference', 'exclusion', 'overlay',
+        'saturation', 'color', 'luminosity', 'normal-npm', 'add-npm', 'screen-npm',
+        'none', 'subtract', 'divide', 'vivid-light', 'hard-mix', 'negation', 'min', 'max',
+    ];
 
     // Metadata for serialization to workers
     static _metadata = null;
