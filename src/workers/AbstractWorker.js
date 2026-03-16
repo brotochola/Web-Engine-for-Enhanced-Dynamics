@@ -24,6 +24,7 @@ import {
 import { Camera } from '../core/Camera.js';
 import { Sun } from '../core/Sun.js';
 import { Layer } from '../core/Layer.js';
+import { TileMap } from '../core/TileMap.js';
 import { Ray } from '../core/Ray.js';
 import { DebugDraw } from '../core/debug/DebugDraw.js';
 import { Grid } from '../core/Grid.js';
@@ -431,6 +432,11 @@ export class AbstractWorker {
     // Initialize Layer static class (rendering layers shared across workers)
     if (data.layerData) {
       Layer.initializeFromBuffers(data.layerData);
+    }
+
+    // Initialize TileMap static class (SAB-backed tile data shared across workers)
+    if (data.tilemapData) {
+      TileMap.initializeFromBuffers(data.tilemapData);
     }
 
     // Initialize neighbor data reference (single buffer - row ownership eliminates races)

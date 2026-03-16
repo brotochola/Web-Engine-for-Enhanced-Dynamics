@@ -53,6 +53,7 @@ import {
 } from './ConfigDefaults.js';
 import { Sun } from './Sun.js';
 import { Layer } from './Layer.js';
+import { TileMap } from './TileMap.js';
 import { computeBufferSize as computeRenderQueueBufferSize } from './RenderQueueLayout.js';
 import { NavGrid } from './NavGrid.js';
 import { Grid } from './Grid.js';
@@ -821,6 +822,7 @@ class Scene {
     window.GameObject = GameObject;
     window.Camera = Camera;
     window.Sun = Sun;
+    window.TileMap = TileMap;
     window.SpriteSheetRegistry = SpriteSheetRegistry;
     window.Mouse = Mouse;
     window.Flash = Flash;
@@ -1675,6 +1677,9 @@ class Scene {
           console.error(`❌ Failed to load tilemap "${tilemapId}":`, error);
         }
       }
+
+      // Initialize TileMap static class from loaded tilemap data (creates SABs)
+      TileMap.initializeFromLoaded(this.loadedTilemaps);
     }
 
     // Load static flowfields (pre-baked direction grids from JSON)
@@ -2230,6 +2235,8 @@ class Scene {
       },
       // Layer system data (static layer config + uniform SABs + per-layer render queues)
       layerData: Layer.getSerializableData(),
+      // TileMap system data (SAB-backed tile data + metadata)
+      tilemapData: TileMap.getSerializableData(),
       customLayerRenderQueues: this.customLayerRenderQueues,
     };
 
@@ -2323,11 +2330,18 @@ class Scene {
     console.log(`[Scene]   → Initializing renderer worker...`);
     const offscreenCanvas = this.canvas.transferControlToOffscreen();
 
+    // Build tilesetBitmaps map (only ImageBitmaps for PIXI Texture creation)
+    // Tile data is already shared via TileMap SABs in initData.tilemapData
+    const tilesetBitmaps = {};
+    for (const [id, loaded] of Object.entries(this.loadedTilemaps || {})) {
+      tilesetBitmaps[id] = loaded.tilesetBitmap;
+    }
+
     const transferables = [
       offscreenCanvas,
       ...Object.values(this.loadedTextures),
       ...Object.values(this.loadedSpritesheets).map((sheet) => sheet.imageBitmap),
-      ...Object.values(this.loadedTilemaps || {}).map((tilemap) => tilemap.tilesetBitmap),
+      ...Object.values(tilesetBitmaps),
       ...(workerPorts.renderer ? Object.values(workerPorts.renderer) : []),
     ];
 
@@ -2337,7 +2351,7 @@ class Scene {
         view: offscreenCanvas,
         textures: this.loadedTextures,
         spritesheets: this.loadedSpritesheets,
-        tilemaps: this.loadedTilemaps || {}, // Pass loaded tilemap data
+        tilesetBitmaps,
         bigAtlasProxySheets: this.bigAtlasProxySheets || {},
         frameRateIndex: RENDERER_INDEX,
         workerPorts: workerPorts.renderer,
@@ -2878,6 +2892,7 @@ class Scene {
     NavGrid.reset();
     Grid.reset();
     Constraint.reset();
+    TileMap.reset();
     ParticleEmitter.reset();
     DecorationPool.reset();
     BulletPool.reset();

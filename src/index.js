@@ -22,6 +22,7 @@ export { NavGrid } from './core/NavGrid.js';
 export { Grid } from './core/Grid.js';
 export { Sun } from './core/Sun.js';
 export { Layer } from './core/Layer.js';
+export { TileMap } from './core/TileMap.js';
 export { SpriteSheetRegistry } from './core/SpriteSheetRegistry.js';
 export { BigAtlasInspector } from './core/BigAtlasInspector.js';
 export { SoundManager } from './core/SoundManager.js';
@@ -117,6 +118,7 @@ import { NavGrid } from './core/NavGrid.js';
 import { Grid } from './core/Grid.js';
 import { Sun } from './core/Sun.js';
 import { Layer } from './core/Layer.js';
+import { TileMap } from './core/TileMap.js';
 import { SpriteSheetRegistry } from './core/SpriteSheetRegistry.js';
 import { BigAtlasInspector } from './core/BigAtlasInspector.js';
 import { SoundManager } from './core/SoundManager.js';
@@ -175,6 +177,7 @@ const WEED = Object.freeze({
   Grid,
   Sun,
   Layer,
+  TileMap,
   Keyboard,
   SpriteSheetRegistry,
   BigAtlasInspector,

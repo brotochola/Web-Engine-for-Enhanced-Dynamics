@@ -1,12 +1,7 @@
 -animatedSpriteRenderer
 -SpriteRenderer
--bg por layer
--particulas y decorations en layer
 
 -collision filter o mask (q no todo colisione con todo)
-
--particleEmitter.emitIsometric()
--particleEmitter.emit2d()
 
 -TileMap.getTex(x,y)
 

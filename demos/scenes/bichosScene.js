@@ -3,6 +3,7 @@
 
 import WEED from '/src/index.js';
 import { Layer } from '/src/core/Layer.js';
+import { TileMap } from '/src/core/TileMap.js';
 import { Boid } from '../gameObjects/boid.js';
 
 // import { Player } from "../gameObjects/player.js";
@@ -379,38 +380,28 @@ export class BichosScene extends WEED.Scene {
   }
 
   /**
-   * Pre-compute valid grass spawn positions from the "pasto" tilemap layer
-   * Only positions where the layer has non-zero tile values are valid
+   * Pre-compute valid grass spawn positions from the "green_grass" tilemap layer.
+   * Only positions where the layer has non-zero tile values are valid.
    */
   computeGrassPositions() {
-    const tilemapData = this.loadedTilemaps['myTilemap']?.data;
-    if (!tilemapData) {
+    const tilemap = TileMap.get('myTilemap');
+    if (!tilemap) {
       console.warn('Tilemap not loaded, grass will spawn everywhere');
       return null;
     }
 
-    // Find the "pasto" layer
-    const pastoLayer = tilemapData.layers.find(
-      layer => layer.name === 'green_grass' && layer.type === 'tilelayer'
-    );
-
-    if (!pastoLayer || !pastoLayer.data) {
+    const grassLayer = tilemap.getLayer('green_grass');
+    if (!grassLayer) {
       console.warn('Layer "green_grass" not found, grass will spawn everywhere');
       return null;
     }
 
-    const tileWidth = tilemapData.tilewidth;
-    const tileHeight = tilemapData.tileheight;
-    const mapWidth = tilemapData.width;
-    const mapHeight = tilemapData.height;
+    const { tileWidth, tileHeight, mapWidth, mapHeight } = tilemap;
 
-    // Collect all valid tile positions (where tile value != 0)
     const validPositions = [];
     for (let tileY = 0; tileY < mapHeight; tileY++) {
       for (let tileX = 0; tileX < mapWidth; tileX++) {
-        const index = tileY * mapWidth + tileX;
-        if (pastoLayer.data[index] !== 0) {
-          // Store the world position (center of tile)
+        if (grassLayer.hasTileAt(tileX, tileY)) {
           validPositions.push({
             x: tileX * tileWidth + tileWidth / 2,
             y: tileY * tileHeight + tileHeight / 2,
