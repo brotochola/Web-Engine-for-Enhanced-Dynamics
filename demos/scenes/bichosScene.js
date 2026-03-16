@@ -2,6 +2,7 @@
 // Demonstrates the new Scene-based architecture for WeedJS
 
 import WEED from '/src/index.js';
+import { Layer } from '/src/core/Layer.js';
 import { Boid } from '../gameObjects/boid.js';
 
 // import { Player } from "../gameObjects/player.js";
@@ -198,7 +199,7 @@ export class BichosScene extends WEED.Scene {
   }
 
   async preload() {
-    await this.setTilemapBackground('myTilemap', { scale: 1 });
+    await Layer.get('BACKGROUND').setTilemapBackground('myTilemap', { scale: 1 });
   }
 
   create() {

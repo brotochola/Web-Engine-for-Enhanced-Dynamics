@@ -10,8 +10,6 @@
 
 -TileMap.getTex(x,y)
 
--shadowCasterIsometric vs otra shadow
-
 -LightEmitter (llamarlo PointLight2d)
 
 -cameraInOutListener

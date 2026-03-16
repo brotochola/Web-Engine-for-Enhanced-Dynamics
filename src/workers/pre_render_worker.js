@@ -960,15 +960,20 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * Collect a visible renderable for the render queue.
-     * Entities (type 0) with a non-default layerId are routed to that layer's
+     * Any renderable with a non-default layerId is routed to that layer's
      * dedicated collector; everything else goes into the default ENTITIES queue.
      */
     collectRenderable(type, index, y) {
         if (!this.renderQueueEnabled) return;
 
-        // Route entities with custom layerId to their layer's collector
-        if (type === 0 && this._customLayerCollectors) {
-            const layerId = SpriteRenderer.layerId[index];
+        if (this._customLayerCollectors) {
+            let layerId = 0;
+            if (type === 0) layerId = SpriteRenderer.layerId[index];
+            else if (type === 1) layerId = ParticleComponent.layerId[index];
+            else if (type === 2) layerId = DecorationComponent.layerId[index];
+            else if (type === 3) layerId = LightEmitter.layerIdOfGlowSprite[index] || SpriteRenderer.layerId[index];
+            else if (type === 4 || type === 5) layerId = BulletComponent.layerId[index];
+
             if (layerId !== 0 && layerId !== Layer.ENTITIES_ID) {
                 const collector = this._customLayerCollectors[layerId];
                 if (collector) {
@@ -987,7 +992,7 @@ class PreRenderWorker extends AbstractWorker {
             }
         }
 
-        // Default ENTITIES layer (or non-entity types)
+        // Default ENTITIES layer
         if (this._renderableCount >= this.renderQueueMaxItems) return;
         const writeIdx = this._renderableCount;
         this._renderableY[writeIdx] = y;
@@ -1390,13 +1395,13 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * Build render queues for all custom layers.
-     * Each custom layer's collector only contains entities (type=0).
-     * Shares the same animation, texture-resolve, and entity-position logic
-     * as the ENTITIES path in buildRenderQueue, but writes to a separate SAB.
+     * Each custom layer's collector may contain any renderable type (0-5).
+     * Dispatch mirrors buildRenderQueue per-type branches, writing to per-layer SABs.
      */
     buildCustomLayerQueues(deltaTime) {
         if (!this._customLayerCollectors) return;
 
+        // Entity arrays
         const entityX = Transform.x;
         const entityY = Transform.y;
         const entityRotation = Transform.rotation;
@@ -1416,6 +1421,62 @@ class PreRenderWorker extends AbstractWorker {
         const frameAccum = this.entityFrameAccumulator;
         const entityLastTextureId = this.entityLastTextureId;
         const deltaSeconds = deltaTime / 1000;
+
+        // Particle arrays
+        const particleX = ParticleComponent.x;
+        const particleY = ParticleComponent.y;
+        const particleZ = ParticleComponent.z;
+        const particleScaleX = ParticleComponent.scaleX;
+        const particleScaleY = ParticleComponent.scaleY;
+        const particleRotation = ParticleComponent.rotation;
+        const particleAlpha = ParticleComponent.alpha;
+        const particleTint = ParticleComponent.tint;
+        const particleTextureId = ParticleComponent.textureId;
+
+        // Decoration arrays
+        const decoX = DecorationComponent.x;
+        const decoY = DecorationComponent.y;
+        const decoOffsetX = DecorationComponent.offsetX;
+        const decoOffsetY = DecorationComponent.offsetY;
+        const decoScaleX = DecorationComponent.scaleX;
+        const decoScaleY = DecorationComponent.scaleY;
+        const decoRotation = DecorationComponent.rotation;
+        const decoAlpha = DecorationComponent.alpha;
+        const decoTint = DecorationComponent.tint;
+        const decoTextureId = DecorationComponent.textureId;
+        const decoAnchorX = DecorationComponent.anchorX;
+        const decoAnchorY = DecorationComponent.anchorY;
+
+        // Bullet arrays
+        const bulletX = BulletComponent.x;
+        const bulletY = BulletComponent.y;
+        const bulletStartX = BulletComponent.startX ?? BulletComponent.prevX;
+        const bulletStartY = BulletComponent.startY ?? BulletComponent.prevY;
+        const bulletOffsetY = BulletComponent.offsetY;
+        const bulletScale = BulletComponent.scale;
+        const bulletAlpha = BulletComponent.alpha;
+        const bulletTint = BulletComponent.tint;
+        const bulletTextureId = BulletComponent.textureId;
+        const bulletSpriteRotation = BulletComponent.spriteRotation;
+        const bulletTrailWidth = BulletComponent.trailWidth;
+        const bulletAngle = BulletComponent.bulletAngle;
+        const bulletAnchorX = BulletComponent.anchorX;
+        const bulletAnchorY = BulletComponent.anchorY;
+        const bulletActive = BulletComponent.active;
+
+        const bulletTrailAnimIdx = this.animationNameToIndex?.['_bulletTrail'] ?? 0;
+        const bulletTrailTextureId = this.animationFrameStart?.[bulletTrailAnimIdx] ?? 0;
+        const BULLET_TRAIL_MIN_LENGTH_SQ = 0.01;
+
+        // Light glow arrays
+        const lightColor = LightEmitter.lightColor;
+        const lightIntensity = LightEmitter.lightIntensity;
+        const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+        const glowHeightOffset = LightEmitter.glowHeightOffset;
+        const visualRange = Collider.visualRange;
+        const lightGradientAnimIdx = this.animationNameToIndex?.['_lightGradient'] ?? 0;
+        const lightGradientTextureId = this.animationFrameStart?.[lightGradientAnimIdx] ?? 0;
+        const GLOW_TEXTURE_RADIUS = 100;
 
         const layerEntries = this._customLayerEntries;
         for (let li = 0; li < layerEntries.length; li++) {
@@ -1471,44 +1532,189 @@ class PreRenderWorker extends AbstractWorker {
             const rqEntityIndex = ref.entityIndex;
 
             for (let i = 0; i < layerCount; i++) {
+                const type = cType[i];
                 const idx = cIndex[i];
 
-                rqX[i] = entityX[idx];
-                rqY[i] = entityY[idx];
-                rqScaleX[i] = srScaleX[idx];
-                rqScaleY[i] = srScaleY[idx];
-                rqRotation[i] = entityRotation[idx];
-                rqAlpha[i] = srAlpha[idx];
-                rqTint[i] = srTint[idx];
-                rqAnchorX[i] = srAnchorX[idx];
-                rqAnchorY[i] = srAnchorY[idx];
-                rqType[i] = 0;
-                rqEntityIndex[i] = idx;
+                if (type === 0) {
+                    // === ENTITY ===
+                    rqX[i] = entityX[idx];
+                    rqY[i] = entityY[idx];
+                    rqScaleX[i] = srScaleX[idx];
+                    rqScaleY[i] = srScaleY[idx];
+                    rqRotation[i] = entityRotation[idx];
+                    rqAlpha[i] = srAlpha[idx];
+                    rqTint[i] = srTint[idx];
+                    rqAnchorX[i] = srAnchorX[idx];
+                    rqAnchorY[i] = srAnchorY[idx];
+                    rqType[i] = 0;
+                    rqEntityIndex[i] = idx;
 
-                // Texture resolve (same logic as buildRenderQueue entity path)
-                const sheetId = srSpritesheetId[idx];
-                const animState = srAnimState[idx];
-                const proxyMap = this.proxyToGlobalAnim?.[sheetId];
-                const globalAnimIdx = proxyMap ? (proxyMap[animState] ?? 0) : 0;
-                const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
+                    const sheetId = srSpritesheetId[idx];
+                    const animState = srAnimState[idx];
+                    const proxyMap = this.proxyToGlobalAnim?.[sheetId];
+                    const globalAnimIdx = proxyMap ? (proxyMap[animState] ?? 0) : 0;
+                    const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
 
-                if (srIsAnimated[idx] && animFrameCount > 1) {
-                    frameAccum[idx] += deltaSeconds;
-                    const frameDuration = 1 / (srAnimSpeed[idx] * 60);
-                    if (frameAccum[idx] >= frameDuration) {
-                        frameAccum[idx] -= frameDuration;
-                        const currentFrame = frameIndex[idx];
-                        const isLastFrame = currentFrame >= animFrameCount - 1;
-                        if (srLoop[idx] === 1 || !isLastFrame) {
-                            frameIndex[idx] = (currentFrame + 1) % animFrameCount;
+                    if (srIsAnimated[idx] && animFrameCount > 1) {
+                        frameAccum[idx] += deltaSeconds;
+                        const frameDuration = 1 / (srAnimSpeed[idx] * 60);
+                        if (frameAccum[idx] >= frameDuration) {
+                            frameAccum[idx] -= frameDuration;
+                            const currentFrame = frameIndex[idx];
+                            const isLastFrame = currentFrame >= animFrameCount - 1;
+                            if (srLoop[idx] === 1 || !isLastFrame) {
+                                frameIndex[idx] = (currentFrame + 1) % animFrameCount;
+                            }
                         }
                     }
-                }
 
-                const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
-                const globalTextureId = animStart + frameIndex[idx];
-                rqTextureId[i] = globalTextureId;
-                if (entityLastTextureId) entityLastTextureId[idx] = globalTextureId;
+                    const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
+                    const globalTextureId = animStart + frameIndex[idx];
+                    rqTextureId[i] = globalTextureId;
+                    if (entityLastTextureId) entityLastTextureId[idx] = globalTextureId;
+
+                } else if (type === 1) {
+                    // === PARTICLE ===
+                    rqX[i] = particleX[idx];
+                    if (this.particleCameraView === CAMERA_TYPES.ZENITHAL) {
+                        rqY[i] = particleY[idx];
+                        const height = -particleZ[idx];
+                        const heightFactor = 1 + (height / this.zenithalMaxHeight) * this.zenithalScaleFactor;
+                        rqScaleX[i] = particleScaleX[idx] * heightFactor;
+                        rqScaleY[i] = particleScaleY[idx] * heightFactor;
+                        let a = particleAlpha[idx];
+                        if (this.zenithalAlphaFade > 0) {
+                            const alphaFade = Math.min(1, (height / this.zenithalMaxHeight) * this.zenithalAlphaFade);
+                            a *= Math.max(0, 1 - alphaFade);
+                        }
+                        rqAlpha[i] = a;
+                    } else {
+                        rqY[i] = particleY[idx] + particleZ[idx];
+                        rqScaleX[i] = particleScaleX[idx];
+                        rqScaleY[i] = particleScaleY[idx];
+                        rqAlpha[i] = particleAlpha[idx];
+                    }
+                    rqRotation[i] = particleRotation[idx];
+                    rqTint[i] = particleTint[idx];
+                    const pAnimIdx = particleTextureId[idx];
+                    rqTextureId[i] = this.animationFrameStart?.[pAnimIdx] ?? 0;
+                    rqAnchorX[i] = 0.5;
+                    rqAnchorY[i] = 0.5;
+                    rqType[i] = 1;
+                    rqEntityIndex[i] = -1;
+
+                } else if (type === 2) {
+                    // === DECORATION ===
+                    rqX[i] = decoX[idx] + decoOffsetX[idx];
+                    rqY[i] = decoY[idx] + decoOffsetY[idx];
+                    rqScaleX[i] = decoScaleX[idx];
+                    rqScaleY[i] = decoScaleY[idx];
+                    rqRotation[i] = decoRotation[idx];
+                    rqAlpha[i] = decoAlpha[idx] * this._decorationZoomAlpha;
+                    rqTint[i] = decoTint[idx];
+                    const dAnimIdx = decoTextureId[idx];
+                    rqTextureId[i] = this.animationFrameStart?.[dAnimIdx] ?? 0;
+                    rqAnchorX[i] = decoAnchorX[idx];
+                    rqAnchorY[i] = decoAnchorY[idx];
+                    rqType[i] = 2;
+                    rqEntityIndex[i] = -1;
+
+                } else if (type === 3) {
+                    // === LIGHT GLOW ===
+                    const rangeVal = visualRange[idx] || sqrtLightIntensity[idx] || 200;
+                    const scale = (rangeVal * 4) / GLOW_TEXTURE_RADIUS;
+                    const glowAlpha = lightIntensity[idx] / 50000;
+
+                    if (scale < 0.1 || glowAlpha < 0.001) {
+                        rqAlpha[i] = 0;
+                        rqScaleX[i] = 0;
+                        rqScaleY[i] = 0;
+                        rqX[i] = -10000;
+                        rqY[i] = -10000;
+                    } else {
+                        rqX[i] = entityX[idx];
+                        rqY[i] = entityY[idx] - (glowHeightOffset[idx] || 0);
+                        rqScaleX[i] = scale;
+                        rqScaleY[i] = scale;
+                        rqAlpha[i] = glowAlpha;
+                        rqTint[i] = lightColor[idx];
+                    }
+                    rqRotation[i] = 0;
+                    rqTextureId[i] = lightGradientTextureId;
+                    rqAnchorX[i] = 0.5;
+                    rqAnchorY[i] = 0.5;
+                    rqType[i] = 3;
+                    rqEntityIndex[i] = idx;
+
+                } else if (type === 4) {
+                    // === BULLET ===
+                    if (!bulletActive[idx]) {
+                        rqAlpha[i] = 0;
+                        rqScaleX[i] = 0;
+                        rqScaleY[i] = 0;
+                        rqX[i] = -10000;
+                        rqY[i] = -10000;
+                    } else {
+                        rqX[i] = bulletX[idx];
+                        rqY[i] = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
+                        rqScaleX[i] = bulletScale[idx];
+                        rqScaleY[i] = bulletScale[idx];
+                        rqRotation[i] = bulletSpriteRotation[idx];
+                        rqAlpha[i] = bulletAlpha[idx];
+                        rqTint[i] = bulletTint[idx];
+                        const bAnimIdx = bulletTextureId[idx];
+                        rqTextureId[i] = this.animationFrameStart?.[bAnimIdx] ?? 0;
+                        rqAnchorX[i] = bulletAnchorX[idx];
+                        rqAnchorY[i] = bulletAnchorY[idx];
+                    }
+                    rqType[i] = 4;
+                    rqEntityIndex[i] = -1;
+
+                } else if (type === 5) {
+                    // === BULLET TRAIL ===
+                    if (!bulletActive[idx]) {
+                        rqAlpha[i] = 0;
+                        rqScaleX[i] = 0;
+                        rqScaleY[i] = 0;
+                        rqX[i] = -10000;
+                        rqY[i] = -10000;
+                    } else {
+                        const currX = bulletX[idx];
+                        const currY = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
+                        const startX = bulletStartX[idx];
+                        const startY = bulletStartY[idx] + (bulletOffsetY[idx] ?? 0);
+                        const dx = currX - startX;
+                        const dy = currY - startY;
+                        const lenSq = dx * dx + dy * dy;
+
+                        if (lenSq < BULLET_TRAIL_MIN_LENGTH_SQ) {
+                            rqAlpha[i] = 0;
+                            rqScaleX[i] = 0;
+                            rqScaleY[i] = 0;
+                            rqX[i] = -10000;
+                            rqY[i] = -10000;
+                        } else {
+                            const adx = dx < 0 ? -dx : dx;
+                            const ady = dy < 0 ? -dy : dy;
+                            const max = adx > ady ? adx : ady;
+                            const min = adx > ady ? ady : adx;
+                            const lengthApprox = 0.96 * max + 0.4 * min;
+
+                            rqX[i] = (startX + currX) * 0.5;
+                            rqY[i] = (startY + currY) * 0.5;
+                            rqScaleX[i] = lengthApprox / 10;
+                            rqScaleY[i] = bulletTrailWidth[idx];
+                            rqRotation[i] = bulletAngle[idx];
+                            rqAlpha[i] = bulletAlpha[idx] * 0.9;
+                            rqTint[i] = 0xffffff;
+                        }
+                    }
+                    rqTextureId[i] = bulletTrailTextureId;
+                    rqAnchorX[i] = 0.5;
+                    rqAnchorY[i] = 0.5;
+                    rqType[i] = 5;
+                    rqEntityIndex[i] = -1;
+                }
             }
 
             ref.count[0] = layerCount;

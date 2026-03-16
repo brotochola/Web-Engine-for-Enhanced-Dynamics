@@ -63,6 +63,10 @@ export class ParticleComponent extends Component {
     // Used when stayOnTheFloor=1 to determine how decal is blended onto tilemap
     // 0 = normal (alpha over), 1 = multiply (darkens underlying pixels)
     blendMode: Uint8Array,
+
+    // === Layer Routing ===
+    // 0 = default ENTITIES layer, non-zero = custom layer id
+    layerId: Uint8Array,
     // Note: Anchor is always 0.5, 0.5 for particles (centered)
     // Note: No animation support - particles are static sprites
   };

@@ -2,6 +2,7 @@
 // Demonstrates the new Scene-based architecture for WeedJS
 
 import WEED from '/src/index.js';
+import { Layer } from '/src/core/Layer.js';
 import { Boid } from '../gameObjects/boid.js';
 
 // import { Player } from "../gameObjects/player.js";
@@ -163,6 +164,16 @@ export class PredatorScene extends WEED.Scene {
       maxPaths: 64,
       maxPathLength: 128,
     },
+
+    // layers: {
+    //   bullets: {
+    //     zIndex: 10,             // Render above default ENTITIES layer (zIndex 3)
+    //     blendMode: 'normal',     // Final display blend of the post-processed sprite
+    //     resolution: 0.33,         // Half-res RT for performance
+    //     maxItems: 50000,
+    //     ySorting: false, // no need to sort water balls
+    //   },
+    // },
   };
 
   // ========================================
@@ -326,7 +337,7 @@ export class PredatorScene extends WEED.Scene {
   }
 
   async preload() {
-    await this.setTilemapBackground('myTilemap', { scale: 1 });
+    await Layer.get('BACKGROUND').setTilemapBackground('myTilemap', { scale: 1 });
   }
 
   create() {

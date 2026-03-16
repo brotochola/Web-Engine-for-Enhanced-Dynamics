@@ -438,7 +438,8 @@ export class Person extends Lootable {
       spriteRotation: shotAngle,
       anchorX: 1,
       anchorY: 0.5,
-      trailWidth: 4
+      trailWidth: 4,
+      // layerId: Layer.getId('bullets')
     });
 
     if (weapon.sound) {

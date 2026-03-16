@@ -89,6 +89,7 @@ class WaterBall extends GameObject {
       vz: -energyRatio * 0.1 - 0.01,
       despawnOnGroundContact: true,
       tweenToAlpha0: true,
+      // layerId: 5,
 
     });
 

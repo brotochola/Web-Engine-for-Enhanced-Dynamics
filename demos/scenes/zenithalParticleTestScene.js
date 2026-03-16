@@ -2,6 +2,7 @@
 // Click (button 0) to emit blood particles that stamp decals on the floor
 
 import WEED from '/src/index.js';
+import { Layer } from '/src/core/Layer.js';
 import { ZenithalCar } from '../gameObjects/zenithalCar.js';
 import { ZenithalLight } from '../gameObjects/zenithalLight.js';
 const { ParticleEmitter, Scene, Camera, Mouse, Transform, RigidBody, enums } = WEED;
@@ -28,7 +29,11 @@ export class ZenithalParticleTestScene extends Scene {
     logic: { noLimitFPS: true },
     physics: { gravity: { x: 0, y: 0 }, noLimitFPS: true },
     spatial: { noLimitFPS: true, cellSize: 128, maxNeighbors: 64 },
-    renderer: { noLimitFPS: true, ySorting: false, maxVisibleRenderables: 5000 },
+    renderer: {
+      noLimitFPS: true,
+      ySorting: false,
+      maxVisibleRenderables: 5000
+    },
 
     lighting: {
       enabled: true,
@@ -64,7 +69,7 @@ export class ZenithalParticleTestScene extends Scene {
   ];
 
   async preload() {
-    await this.setTilemapBackground('roads_tilemap', { scale: 1 });
+    await Layer.get('BACKGROUND').setTilemapBackground('roads_tilemap', { scale: 1 });
 
   }
 

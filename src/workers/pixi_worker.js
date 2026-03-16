@@ -2518,8 +2518,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * Handle background change requests from Scene
+   * Handle background change requests from Layer
    * Supports: static, tiling, tilemap, or none
+   * @param {object} data - { type, layerId, textureId, tileScale, tilemapId, options }
    */
   handleSetBackground(data) {
     console.log(`PIXI WORKER: handleSetBackground called with:`, data);

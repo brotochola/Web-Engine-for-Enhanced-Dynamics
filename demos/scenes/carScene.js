@@ -2,6 +2,7 @@
 // Demonstrates Verlet physics car using two connected circles
 
 import WEED from '/src/index.js';
+import { Layer } from '/src/core/Layer.js';
 import { AICar } from '../gameObjects/aiCar.js';
 import { PlayerCar } from '../gameObjects/playerCar.js';
 import { CarPart } from '../gameObjects/carPart.js';
@@ -227,7 +228,7 @@ export class CarScene extends WEED.Scene {
 
     async preload() {
         console.log('🚗 CarScene: Preloading...');
-        await this.setTilemapBackground('roads_tilemap', { scale: 1 });
+        await Layer.get('BACKGROUND').setTilemapBackground('roads_tilemap', { scale: 1 });
 
         const centerX = this.config.worldWidth / 2;
         const centerY = this.config.worldHeight / 2;

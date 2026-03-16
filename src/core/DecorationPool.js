@@ -64,6 +64,7 @@ export class DecorationPool extends SharedAtomicPool {
    * @param {boolean} [config.sway=false] - Enable sway animation
    * @param {number} [config.swayAmplitude=0.025] - Sway rotation in radians (~1.4°)
    * @param {number} [config.swayFrequency=1.0] - Sway speed multiplier
+   * @param {number} [config.layerId=0] - Layer ID for rendering (0 = default ENTITIES layer, non-zero = custom layer)
    * @returns {number} - Index of spawned decoration, or -1 if pool is full
    *
    * @example
@@ -135,6 +136,9 @@ export class DecorationPool extends SharedAtomicPool {
     sway[i] = config.sway ? 1 : 0;
     swayAmplitude[i] = config.swayAmplitude ?? 0.025;
     swayFrequency[i] = config.swayFrequency ?? 1.0;
+
+    // Layer routing: 0 = default ENTITIES layer
+    DecorationComponent.layerId[i] = config.layerId ?? 0;
 
     // Initially off-screen (will be updated by culling)
     isItOnScreen[i] = 0;

@@ -35,6 +35,9 @@ export class BulletComponent extends Component {
     offsetY: Float32Array, // Visual offset (e.g., muzzle height); sort at y, render at y + offsetY
 
     isItOnScreen: Uint8Array,
+
+    // === Layer Routing ===
+    layerId: Uint8Array, // 0 = default ENTITIES layer, non-zero = custom layer id
   };
 
   static bulletCount = 0;

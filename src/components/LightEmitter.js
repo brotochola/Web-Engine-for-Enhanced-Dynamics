@@ -9,6 +9,7 @@ export class LightEmitter extends Component {
     height: Float32Array,
     glowHeightOffset: Float32Array,
     hasGlowSprite: Uint8Array, // 0 = no glow sprite, 1 = render glow sprite (default for static lights)
+    layerIdOfGlowSprite: Uint8Array, // 0 = inherit from SpriteRenderer.layerId, non-zero = explicit custom layer id
   };
 
   /**

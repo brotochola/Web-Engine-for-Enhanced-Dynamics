@@ -1197,6 +1197,9 @@ class Scene {
     }
     Layer.initializeFromConfig(this.config.layers, builtInLayers, defaultYSorting);
 
+    // Wire Layer -> renderer communication bridge
+    Layer._postToRenderer = (msg) => this.workers.renderer?.postMessage(msg);
+
     // Allocate per-layer render queue SABs for custom layers
     this.customLayerRenderQueues = {};
     const layerMetas = Layer._metadata?.layers || [];
@@ -2399,10 +2402,7 @@ class Scene {
       // Show a visible error message on the page
       this._showFatalErrorMessage(workerName, title, message);
     } else if (e.data.msg === 'backgroundReady') {
-      if (this._backgroundReadyResolve) {
-        this._backgroundReadyResolve();
-        this._backgroundReadyResolve = null;
-      }
+      Layer.resolveBackgroundReady();
     } else {
       // Log unexpected messages for debugging
       console.log(`[Scene] 📨 Received message from ${e.currentTarget.name}:`, e.data.msg, e.data);
@@ -2949,26 +2949,6 @@ class Scene {
     });
   }
 
-  /**
-   * Set a shader uniform on a custom rendering layer.
-   * Can be called from the main thread (Scene subclass) at any time.
-   * The value is written directly to a SharedArrayBuffer; pixi_worker picks it
-   * up on the next frame via an Atomics dirty flag -- zero postMessage overhead.
-   * @param {string} layerName
-   * @param {string} uniformName
-   * @param {number|number[]} value
-   * @returns {this}
-   */
-  setLayerUniform(layerName, uniformName, value) {
-    const layer = Layer.get(layerName);
-    if (!layer) {
-      console.warn(`setLayerUniform: Layer "${layerName}" not found`);
-      return this;
-    }
-    layer.setUniform(uniformName, value);
-    return this;
-  }
-
   spawnEntity(EntityClassOrName, spawnConfig = {}) {
     // Accept either a class or a string name
     let EntityClass;
@@ -3086,94 +3066,6 @@ class Scene {
       active: activeCount,
       available: total - activeCount,
     };
-  }
-
-  // ========================================
-  // BACKGROUND CONTROL METHODS
-  // ========================================
-
-  /**
-   * Set a static background (simple Sprite, does not tile)
-   * @param {string} textureId - ID of texture in assets.textures
-   */
-  setStaticBackground(textureId) {
-    if (!this.workers.renderer) {
-      console.warn('Renderer worker not initialized');
-      return;
-    }
-
-    this.workers.renderer.postMessage({
-      msg: 'setBackground',
-      type: 'static',
-      textureId: textureId,
-    });
-  }
-
-  /**
-   * Set a tiling background (TilingSprite - repeats pattern)
-   * @param {string} textureId - ID of texture in assets.textures
-   * @param {number} tileScale - Scale of tiles (default: 1)
-   */
-  setTilingBackground(textureId, tileScale = 1) {
-    if (!this.workers.renderer) {
-      console.warn('Renderer worker not initialized');
-      return;
-    }
-
-    this.workers.renderer.postMessage({
-      msg: 'setBackground',
-      type: 'tiling',
-      textureId: textureId,
-      tileScale: tileScale,
-    });
-  }
-
-  /**
-   * Set a tilemap background (@pixi/tilemap - varied tiles from Tiled editor)
-   * @param {string} tilemapId - ID of tilemap in assets.tilemaps
-   * @param {object} options - Options: { layers: [...], scale: 1 }
-   */
-  setTilemapBackground(tilemapId, options = {}) {
-    if (!this.workers.renderer) {
-      console.warn('Renderer worker not initialized');
-      return Promise.resolve();
-    }
-
-    // Check if the tilemap asset exists
-    if (!this.loadedTilemaps || !this.loadedTilemaps[tilemapId]) {
-      const availableTilemaps = this.loadedTilemaps ? Object.keys(this.loadedTilemaps) : [];
-      console.error(
-        `Tilemap "${tilemapId}" not found. ` +
-        `Available tilemaps: [${availableTilemaps.join(', ') || 'none'}]`
-      );
-      return Promise.resolve();
-    }
-
-    return new Promise((resolve) => {
-      this._backgroundReadyResolve = resolve;
-
-      this.workers.renderer.postMessage({
-        msg: 'setBackground',
-        type: 'tilemap',
-        tilemapId: tilemapId,
-        options: options,
-      });
-    });
-  }
-
-  /**
-   * Remove the current background
-   */
-  clearBackground() {
-    if (!this.workers.renderer) {
-      console.warn('Renderer worker not initialized');
-      return;
-    }
-
-    this.workers.renderer.postMessage({
-      msg: 'setBackground',
-      type: 'none',
-    });
   }
 
   /**

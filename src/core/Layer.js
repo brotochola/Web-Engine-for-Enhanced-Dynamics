@@ -50,6 +50,12 @@ export class Layer {
     static _allCache = [];
     static _allCacheCount = -1;
 
+    // Communication bridge to renderer worker (set by Scene during init)
+    static _postToRenderer = null;
+
+    // Promise resolve for async background operations (tilemap warm-up)
+    static _backgroundReadyResolve = null;
+
     constructor(id, name) {
         this.id = id;
         this.name = name;
@@ -105,6 +111,84 @@ export class Layer {
     }
 
     // ========================================
+    // BACKGROUND CONTROL (instance methods)
+    // ========================================
+
+    /**
+     * Set a static background on this layer (simple Sprite, does not tile)
+     * @param {string} textureId - ID of texture in assets.textures
+     */
+    setStaticBackground(textureId) {
+        if (!Layer._postToRenderer) {
+            console.warn('Layer: renderer not connected');
+            return;
+        }
+        Layer._postToRenderer({
+            msg: 'setBackground',
+            type: 'static',
+            layerId: this.id,
+            textureId,
+        });
+    }
+
+    /**
+     * Set a tiling background on this layer (TilingSprite - repeats pattern)
+     * @param {string} textureId - ID of texture in assets.textures
+     * @param {number} [tileScale=1] - Scale of tiles
+     */
+    setTilingBackground(textureId, tileScale = 1) {
+        if (!Layer._postToRenderer) {
+            console.warn('Layer: renderer not connected');
+            return;
+        }
+        Layer._postToRenderer({
+            msg: 'setBackground',
+            type: 'tiling',
+            layerId: this.id,
+            textureId,
+            tileScale,
+        });
+    }
+
+    /**
+     * Set a tilemap background on this layer (@pixi/tilemap - varied tiles from Tiled editor)
+     * @param {string} tilemapId - ID of tilemap in assets.tilemaps
+     * @param {object} [options={}] - Options: { layers: [...], scale: 1 }
+     * @returns {Promise<void>} Resolves when tilemap is built and warm-up render is complete
+     */
+    setTilemapBackground(tilemapId, options = {}) {
+        if (!Layer._postToRenderer) {
+            console.warn('Layer: renderer not connected');
+            return Promise.resolve();
+        }
+        return new Promise((resolve) => {
+            Layer._backgroundReadyResolve = resolve;
+            Layer._postToRenderer({
+                msg: 'setBackground',
+                type: 'tilemap',
+                layerId: this.id,
+                tilemapId,
+                options,
+            });
+        });
+    }
+
+    /**
+     * Remove the current background from this layer
+     */
+    clearBackground() {
+        if (!Layer._postToRenderer) {
+            console.warn('Layer: renderer not connected');
+            return;
+        }
+        Layer._postToRenderer({
+            msg: 'setBackground',
+            type: 'none',
+            layerId: this.id,
+        });
+    }
+
+    // ========================================
     // STATIC API
     // ========================================
 
@@ -130,6 +214,16 @@ export class Layer {
 
     static getCustomLayers() {
         return this._byId.filter(l => l && this._hasRenderQueue[l.id] === 1 && l.id !== this.ENTITIES_ID);
+    }
+
+    /**
+     * Resolve the pending background-ready promise (called by Scene on 'backgroundReady' message)
+     */
+    static resolveBackgroundReady() {
+        if (this._backgroundReadyResolve) {
+            this._backgroundReadyResolve();
+            this._backgroundReadyResolve = null;
+        }
     }
 
     // ========================================
@@ -483,5 +577,7 @@ export class Layer {
         this._metadata = null;
         this._allCache = [];
         this._allCacheCount = -1;
+        this._postToRenderer = null;
+        this._backgroundReadyResolve = null;
     }
 }

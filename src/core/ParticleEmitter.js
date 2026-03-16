@@ -90,6 +90,7 @@ export class ParticleEmitter extends SharedAtomicPool {
    * @param {number} [config.fadeOnTheFloor=0] - Time in ms to fade out particles when they hit the floor
    * @param {boolean} [config.stayOnTheFloor=false] - If true, particle stamps a decal on floor and despawns immediately
    * @param {boolean} [config.despawnOnGroundContact=false] - If true, particle despawns immediately when touching the ground (no decal stamping)
+   * @param {number} [config.layerId=0] - Layer ID for rendering (0 = default ENTITIES layer, non-zero = custom layer)
    * @returns {number} - Number of particles actually spawned
    *
    * @example
@@ -189,6 +190,7 @@ export class ParticleEmitter extends SharedAtomicPool {
     const flipX = ParticleComponent.flipX;
     const flipY = ParticleComponent.flipY;
     const blendMode = ParticleComponent.blendMode;
+    const layerId = ParticleComponent.layerId;
 
     while (spawned < count) {
       // Acquire free index from pool (inherited from SharedAtomicPool)
@@ -264,6 +266,9 @@ export class ParticleEmitter extends SharedAtomicPool {
 
       // Decal blend mode: 0 = normal (alpha over), 1 = multiply
       blendMode[i] = config.blendMode ?? DECAL_STAMPS_BLEND_MODE.normal;
+
+      // Layer routing: 0 = default ENTITIES layer
+      layerId[i] = config.layerId ?? 0;
 
       // Claim this particle (must be last - signals to other workers)
       active[i] = 1;

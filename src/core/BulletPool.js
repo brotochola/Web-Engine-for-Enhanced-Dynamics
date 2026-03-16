@@ -38,6 +38,7 @@ export class BulletPool extends SharedAtomicPool {
    * @param {number} [config.anchorX=0] - Anchor X (0=left tip, 0.5=center)
    * @param {number} [config.anchorY=0.5] - Anchor Y (0.5=vertical center)
    * @param {number} [config.offsetY=0] - Visual Y offset (e.g., muzzle height); sort at y, render at y + offsetY
+   * @param {number} [config.layerId=0] - Layer ID for rendering (0 = default ENTITIES layer, non-zero = custom layer)
    * @returns {number} Bullet index or -1 if pool full
    */
   static spawn(config) {
@@ -96,6 +97,7 @@ export class BulletPool extends SharedAtomicPool {
     anchorX[i] = config.anchorX ?? 0;
     anchorY[i] = config.anchorY ?? 0.5;
     offsetY[i] = config.offsetY ?? 0;
+    BulletComponent.layerId[i] = config.layerId ?? 0;
     BulletComponent.isItOnScreen[i] = 0;
     BulletComponent.active[i] = 1;
 
