@@ -85,50 +85,22 @@ Lifecycle hooks:
 
 ## Collision Filtering
 
-Each `Collider` has two properties that control which other colliders it interacts with:
-
 - **`collisionLayer`** (Uint8, 0-31): which layer this entity is on.
 - **`collisionMask`** (Uint32, bitmask): which layers this entity collides with.
-
-Two entities collide only if **both** see each other: entity A's layer bit must be set in B's mask, **and** B's layer bit must be set in A's mask.
-
-**Defaults:** layer `0`, mask `0xFFFFFFFF` (collide with everything). Mask `0` = collide with nothing.
-
-```javascript
-// In setup() -- assign layers
-this.collider.collisionLayer = 1;                       // "player" layer
-
-// Set mask directly (collide with layers 2 and 4 only)
-this.collider.collisionMask = (1 << 2) | (1 << 4);
-
-// Or build the mask incrementally
-this.collider.collisionMask = 0;                         // start empty
-this.collider.addLayerToMask(2);                          // add bullets
-this.collider.addLayerToMask(4);                          // add enemies
-
-// Remove a layer from the mask
-this.collider.removeLayerFromMask(2);                     // stop colliding with bullets
-
-// Query
-this.collider.collidesWithLayer(4);                       // true (enemies still in mask)
-```
-
-Hard limit: **32 collision layers** (one bit per layer in a Uint32 mask).
-
-### Raycasts and Line of Sight
-
-All `Ray` methods accept an optional `mask` parameter (default `0xFFFFFFFF`). Only entities whose `collisionLayer` bit is set in the mask are hit.
+- Two entities collide only if both see each other: A's layer in B's mask **and** B's layer in A's mask.
+- Defaults: layer `0`, mask `0xFFFFFFFF` (collide with all). Mask `0` = collide with nothing.
+- Hard limit: **32 collision layers**.
+- Helper: `layerMask([0, 2, 4])` converts an array of layer indices to a bitmask.
 
 ```javascript
-// Raycast that only hits enemies (layer 4) and terrain (layer 0)
-const hit = Ray.cast(x, y, tx, ty, Infinity, (1 << 0) | (1 << 4));
-
-// Line of sight ignoring bullets (layer 2)
-if (Ray.hasLineOfSight(enemy, player, ~(1 << 2))) { ... }
-
-// castAll with mask
-const hits = Ray.castAll(x, y, tx, ty, Infinity, 10, (1 << 4));
+this.collider.collisionLayer = 1;
+this.collider.collisionMask = layerMask([2, 4]);        // or (1 << 2) | (1 << 4)
+this.collider.addLayerToMask(3);
+this.collider.removeLayerFromMask(2);
+this.collider.collidesWithLayer(4);                      // true
 ```
+
+All `Ray` methods also accept an optional `mask` param (default all layers). See `docs/RAYCASTING.md`.
 
 > **Note:** These are *physics* collision layers, completely separate from *rendering* layers (see Layer System below).
 
