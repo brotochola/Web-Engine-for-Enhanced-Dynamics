@@ -1,10 +1,6 @@
 -animatedSpriteRenderer
 -SpriteRenderer
 
--collision filter o mask (q no todo colisione con todo)
-
--TileMap.getTex(x,y)
-
 -LightEmitter (llamarlo PointLight2d)
 
 -cameraInOutListener

@@ -115,6 +115,21 @@ this.collider.collidesWithLayer(4);                       // true (enemies still
 
 Hard limit: **32 collision layers** (one bit per layer in a Uint32 mask).
 
+### Raycasts and Line of Sight
+
+All `Ray` methods accept an optional `mask` parameter (default `0xFFFFFFFF`). Only entities whose `collisionLayer` bit is set in the mask are hit.
+
+```javascript
+// Raycast that only hits enemies (layer 4) and terrain (layer 0)
+const hit = Ray.cast(x, y, tx, ty, Infinity, (1 << 0) | (1 << 4));
+
+// Line of sight ignoring bullets (layer 2)
+if (Ray.hasLineOfSight(enemy, player, ~(1 << 2))) { ... }
+
+// castAll with mask
+const hits = Ray.castAll(x, y, tx, ty, Infinity, 10, (1 << 4));
+```
+
 > **Note:** These are *physics* collision layers, completely separate from *rendering* layers (see Layer System below).
 
 ---

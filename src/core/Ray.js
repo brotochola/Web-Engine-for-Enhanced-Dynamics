@@ -10,20 +10,27 @@ import { rayCircleIntersect, rayBoxIntersect } from './utils.js';
 /**
  * Ray - Static class for raycasting against entities in the spatial grid
  *
+ * All methods accept an optional `mask` parameter (Uint32 bitmask, default 0xFFFFFFFF).
+ * Only entities whose collisionLayer bit is set in the mask are considered.
+ *
  * Methods:
- *   - cast(x1, y1, x2, y2, maxDist)         → entityIndex or -1
- *   - castWithInfo(x1, y1, x2, y2, maxDist) → { hit, entityIndex, distance, hitX, hitY }
- *   - castAll(x1, y1, x2, y2, maxDist, max) → Array<{ entityIndex, distance, hitX, hitY }>
- *   - linecast(x1, y1, x2, y2, exclude)     → { blocked, entityIndex, distance }
- *   - linecastBetweenEntities(a, b)         → { blocked, entityIndex, distance }
- *   - hasLineOfSight(a, b)                  → boolean (true if clear)
+ *   - cast(x1, y1, x2, y2, maxDist, mask)              → entityIndex or -1
+ *   - castWithInfo(x1, y1, x2, y2, maxDist, mask)       → { hit, entityIndex, distance, hitX, hitY }
+ *   - castAll(x1, y1, x2, y2, maxDist, maxHits, mask)   → Array<{ entityIndex, distance, hitX, hitY }>
+ *   - linecast(x1, y1, x2, y2, exclude, mask)           → { blocked, entityIndex, distance }
+ *   - linecastBetweenEntities(a, b, mask)                → { blocked, entityIndex, distance }
+ *   - hasLineOfSight(a, b, mask)                         → boolean (true if clear)
+ *   - getLineOfSightInfo(a, b, mask)                     → { blocked, entityIndex, distance }
  *
  * @example Basic raycast
  *   const hit = Ray.cast(player.x, player.y, mouseX, mouseY);
  *   if (hit !== -1) damageEntity(hit);
  *
- * @example Line of sight check
- *   if (Ray.hasLineOfSight(enemy, player)) {
+ * @example Raycast filtered by collision layer (only hit layers 2 and 4)
+ *   const hit = Ray.cast(x, y, tx, ty, Infinity, (1 << 2) | (1 << 4));
+ *
+ * @example Line of sight ignoring bullets (layer 2)
+ *   if (Ray.hasLineOfSight(enemy, player, ~(1 << 2))) {
  *     enemy.shoot(player);
  *   }
  *
@@ -64,9 +71,10 @@ export class Ray {
    * @param {number} xTo - Ray end X
    * @param {number} yTo - Ray end Y
    * @param {number} maxDist - Maximum ray distance (optional)
+   * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
    * @returns {number} Entity index or -1
    */
-  static cast(xFrom, yFrom, xTo, yTo, maxDist = Infinity) {
+  static cast(xFrom, yFrom, xTo, yTo, maxDist = Infinity, mask = 0xFFFFFFFF) {
     // Calculate ray direction and length
     const dx = xTo - xFrom;
     const dy = yTo - yFrom;
@@ -146,8 +154,7 @@ export class Ray {
       ) {
         // Get entities in this cell
         const cellIndex = currentCellY * gridCols + currentCellX;
-        // Optimization: _checkCellEntities mutates static _tempResult to avoid GC
-        Ray._checkCellEntities(cellIndex, xFrom, yFrom, dirX, dirY, rayLength, closestDist);
+        Ray._checkCellEntities(cellIndex, xFrom, yFrom, dirX, dirY, rayLength, closestDist, null, mask);
 
         const result = Ray._tempResult;
 
@@ -188,6 +195,7 @@ export class Ray {
    * @param {number} xTo - Ray end X
    * @param {number} yTo - Ray end Y
    * @param {number} maxDist - Maximum ray distance (optional)
+   * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
    * @returns {Object} { hit: boolean, entityIndex: number, distance: number, hitX: number, hitY: number }
    *
    * @example
@@ -197,7 +205,7 @@ export class Ray {
    *     damageEntity(result.entityIndex);
    *   }
    */
-  static castWithInfo(xFrom, yFrom, xTo, yTo, maxDist = Infinity) {
+  static castWithInfo(xFrom, yFrom, xTo, yTo, maxDist = Infinity, mask = 0xFFFFFFFF) {
     // Reset temp result
     const info = Ray._tempHitInfo;
     info.hit = false;
@@ -224,7 +232,7 @@ export class Ray {
     const dirY = dy / rayLength;
 
     // Use internal traversal
-    const result = Ray._traverseGrid(xFrom, yFrom, xTo, yTo, dirX, dirY, rayLength, maxDist);
+    const result = Ray._traverseGrid(xFrom, yFrom, xTo, yTo, dirX, dirY, rayLength, maxDist, null, mask);
 
     if (result.entityIndex !== -1) {
       info.hit = true;
@@ -246,6 +254,7 @@ export class Ray {
    * @param {number} x2 - End point X
    * @param {number} y2 - End point Y
    * @param {Set<number>|Array<number>} excludeEntities - Optional entity indices to ignore
+   * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
    * @returns {Object} { blocked: boolean, entityIndex: number (-1 if clear), distance: number }
    *
    * @example
@@ -256,7 +265,7 @@ export class Ray {
    *     enemy.shoot(player);
    *   }
    */
-  static linecast(x1, y1, x2, y2, excludeEntities = null) {
+  static linecast(x1, y1, x2, y2, excludeEntities = null, mask = 0xFFFFFFFF) {
     const result = Ray._tempLinecastResult;
     result.blocked = false;
     result.entityIndex = -1;
@@ -286,7 +295,8 @@ export class Ray {
       dirY,
       rayLength,
       rayLength,
-      excludeEntities
+      excludeEntities,
+      mask
     );
 
     if (hitResult.entityIndex !== -1) {
@@ -317,19 +327,17 @@ export class Ray {
   // Static reusable Set for zero-allocation linecast between entities
   static _excludeSet = new Set();
 
-  static linecastBetweenEntities(entityIndexA, entityIndexB) {
-    // Get positions of both entities
+  static linecastBetweenEntities(entityIndexA, entityIndexB, mask = 0xFFFFFFFF) {
     const x1 = Transform.x[entityIndexA];
     const y1 = Transform.y[entityIndexA];
     const x2 = Transform.x[entityIndexB];
     const y2 = Transform.y[entityIndexB];
 
-    // Reuse static Set - clear and repopulate (zero allocation)
     Ray._excludeSet.clear();
     Ray._excludeSet.add(entityIndexA);
     Ray._excludeSet.add(entityIndexB);
 
-    return Ray.linecast(x1, y1, x2, y2, Ray._excludeSet);
+    return Ray.linecast(x1, y1, x2, y2, Ray._excludeSet, mask);
   }
 
   /**
@@ -340,8 +348,8 @@ export class Ray {
    * @param {number} entityIndexB - Target entity index
    * @returns {boolean} true if clear line of sight, false if blocked
    */
-  static hasLineOfSight(entityIndexA, entityIndexB) {
-    return !Ray.linecastBetweenEntities(entityIndexA, entityIndexB).blocked;
+  static hasLineOfSight(entityIndexA, entityIndexB, mask = 0xFFFFFFFF) {
+    return !Ray.linecastBetweenEntities(entityIndexA, entityIndexB, mask).blocked;
   }
 
   /**
@@ -352,8 +360,8 @@ export class Ray {
    * @param {number} entityIndexB - Target entity index
    * @returns {Object} { blocked: boolean, entityIndex: number (-1 if clear), distance: number }
    */
-  static getLineOfSightInfo(entityIndexA, entityIndexB) {
-    return Ray.linecastBetweenEntities(entityIndexA, entityIndexB);
+  static getLineOfSightInfo(entityIndexA, entityIndexB, mask = 0xFFFFFFFF) {
+    return Ray.linecastBetweenEntities(entityIndexA, entityIndexB, mask);
   }
 
   /**
@@ -366,6 +374,7 @@ export class Ray {
    * @param {number} yTo - Ray end Y
    * @param {number} maxDist - Maximum ray distance (optional)
    * @param {number} maxHits - Maximum number of hits to return (default: 10)
+   * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
    * @returns {Array<{entityIndex: number, distance: number, hitX: number, hitY: number}>}
    *   Note: returned array and hit objects are reused on the next call.
    *
@@ -377,7 +386,7 @@ export class Ray {
    *     spawnBulletHole(hit.hitX, hit.hitY);
    *   }
    */
-  static castAll(xFrom, yFrom, xTo, yTo, maxDist = Infinity, maxHits = 10) {
+  static castAll(xFrom, yFrom, xTo, yTo, maxDist = Infinity, maxHits = 10, mask = 0xFFFFFFFF) {
     // Clear and reuse the temp array
     Ray._tempHitsArray.length = 0;
     Ray._tempAllHitsArray.length = 0;
@@ -464,7 +473,8 @@ export class Ray {
           dirY,
           rayLength,
           checkedEntities,
-          allHits
+          allHits,
+          mask
         );
       }
 
@@ -524,7 +534,8 @@ export class Ray {
     dirY,
     rayLength,
     maxDist,
-    excludeEntities = null
+    excludeEntities = null,
+    rayMask = 0xFFFFFFFF
   ) {
     const invCellSize = Grid.invCellSize;
     const gridCols = Grid.gridWidth;
@@ -587,7 +598,8 @@ export class Ray {
           dirY,
           rayLength,
           closestDist,
-          excludeEntities
+          excludeEntities,
+          rayMask
         );
 
         const result = Ray._tempResult;
@@ -618,7 +630,7 @@ export class Ray {
    * Internal: Collect ALL hits in a cell (for castAll)
    * @private
    */
-  static _collectCellHits(cellIndex, rayX, rayY, dirX, dirY, rayLength, checkedEntities, allHits) {
+  static _collectCellHits(cellIndex, rayX, rayY, dirX, dirY, rayLength, checkedEntities, allHits, rayMask = 0xFFFFFFFF) {
     const count = Grid.getCellEntityCount(cellIndex);
     if (count === 0) return;
 
@@ -635,16 +647,17 @@ export class Ray {
     const cWidth = Collider.width;
     const cHeight = Collider.height;
     const cShapeParams = Collider.shapeType;
+    const cCollisionLayer = Collider.collisionLayer;
 
     for (let i = 0; i < count; i++) {
       const entityIndex = gridEntities[cellBase + i];
 
-      // Skip already checked entities (may appear in multiple cells)
       if (checkedEntities.has(entityIndex)) continue;
       checkedEntities.add(entityIndex);
 
       if (!active[entityIndex]) continue;
       if (!colliderActive[entityIndex]) continue;
+      if (!((1 << (cCollisionLayer[entityIndex] & 31)) & rayMask)) continue;
 
       const entityX = tx[entityIndex] + (cOffsetX[entityIndex] || 0);
       const entityY = ty[entityIndex] + (cOffsetY[entityIndex] || 0);
@@ -697,9 +710,9 @@ export class Ray {
     dirY,
     rayLength,
     currentClosest,
-    excludeEntities = null
+    excludeEntities = null,
+    rayMask = 0xFFFFFFFF
   ) {
-    // Reset temp result
     Ray._tempResult.entityIndex = -1;
     Ray._tempResult.distance = Infinity;
 
@@ -711,7 +724,6 @@ export class Ray {
     const cellBase = Grid.getCellBase(cellIndex);
     const gridEntities = Grid._gridEntities;
 
-    // CACHE: Component arrays to avoid property lookups in loop
     const active = Transform.active;
     const colliderActive = Collider.active;
     const tx = Transform.x;
@@ -722,15 +734,14 @@ export class Ray {
     const cWidth = Collider.width;
     const cHeight = Collider.height;
     const cShapeParams = Collider.shapeType;
+    const cCollisionLayer = Collider.collisionLayer;
 
     let closestIndex = -1;
     let closestDist = currentClosest;
 
-    // Check all entities in this cell
     for (let i = 0; i < count; i++) {
       const entityIndex = gridEntities[cellBase + i];
 
-      // Skip excluded entities (for linecast between entities)
       if (excludeEntities) {
         if (excludeEntities instanceof Set) {
           if (excludeEntities.has(entityIndex)) continue;
@@ -739,9 +750,9 @@ export class Ray {
         }
       }
 
-      // Skip inactive entities
       if (!active[entityIndex]) continue;
       if (!colliderActive[entityIndex]) continue;
+      if (!((1 << (cCollisionLayer[entityIndex] & 31)) & rayMask)) continue;
 
       // Get entity collider position
       const entityX = tx[entityIndex] + (cOffsetX[entityIndex] || 0);

@@ -11,6 +11,19 @@ import { GameObject } from './gameObject.js';
 // ============================================================================
 
 /**
+ * Convert an array of layer indices (0-31) into a 32-bit bitmask.
+ * @param {number[]} layers - e.g. [0, 4, 12, 15]
+ * @returns {number} Uint32 bitmask with those bits set
+ */
+export function layerMask(layers) {
+  let mask = 0;
+  for (let i = 0; i < layers.length; i++) {
+    mask |= (1 << (layers[i] & 31));
+  }
+  return mask >>> 0;
+}
+
+/**
  * Count trailing zeros in BigInt (position of lowest set bit)
  * OPTIMIZED: Binary search approach - O(log n) instead of O(n)
  * Uses bitmask checks to halve search space each step (max 6 checks)
