@@ -19,7 +19,7 @@ function getDirection8(angleRadians) {
 }
 
 export class Bug extends GameObject {
-    static ANIMATION_SPEED_MULTIPLIER = 0.5
+    static ANIMATION_SPEED_MULTIPLIER = 0.25
     static MOVE_SPEED_THRESHOLD = 0.1;
     // Auto-detected by GameEngine
     static scriptUrl = import.meta.url;

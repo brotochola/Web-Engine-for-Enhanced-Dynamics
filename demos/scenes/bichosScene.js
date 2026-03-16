@@ -46,8 +46,8 @@ export class BichosScene extends WEED.Scene {
     spatial: {
       cellSize: 128,
       maxNeighbors: 1024,
-      maxEntitiesPerCell: 64, //this is very important!!
-      numberOfSpatialWorkers: 1, // Multiple workers for parallel neighbor detection
+      maxEntitiesPerCell: 128, //this is very important!!
+      numberOfSpatialWorkers: 2, // Multiple workers for parallel neighbor detection
       noLimitFPS: false,
     },
 
@@ -73,11 +73,10 @@ export class BichosScene extends WEED.Scene {
 
     // Physics configuration
     physics: {
-      subStepCount: 0,
-      noLimitFPS: false,
+      subStepCount: 3,
+      noLimitFPS: true,
       maxCollisionPairs: 1000000,
-      boundaryElasticity: 0,
-      collisionResponseStrength: 0.9,
+      collisionResponseStrength: 0.66,
       verletDamping: 0.99,
       gravity: { x: 0, y: 0 },
       sleepThreshold: 0.25,
@@ -305,7 +304,7 @@ export class BichosScene extends WEED.Scene {
     Camera.setZoom(Camera.zoom * (1 - Mouse.wheel * 0.01));
     // }
 
-    Camera.follow(Mouse.x, Mouse.y);
+    Camera.follow(Mouse.x, Mouse.y, 0.01);
 
     // if (this.keyboard) {
     //   if (this.keyboard.w) {
