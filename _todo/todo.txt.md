@@ -13,8 +13,6 @@ JSDoc `@typedef`,
 
 -decorations con container!
 
--limitar aceleration en GameObject, en addAcceleration (asi lo hace el logic y no el physics)
-
 4.testear EntityClass.tickAll vs instance.tick()
 
 7-poolsize variable, automatico.. no tener limite para la cantidad de gameobjects de tipo tal
@@ -25,8 +23,6 @@ JSDoc `@typedef`,
 
 -map maker: agregar pasto y faroles, y autos, y tachos de basura
 
-- flowfield en caminos
-
 ---
 
 ## Lighting:
@@ -34,10 +30,6 @@ JSDoc `@typedef`,
 ---
 
 ## Debugger:
-
--clase Debug con cosas tipo:
-Debug.highlightCell(cellID)
-Debug.drawText(entity.x, entity.y, fsm.state)
 
 ---
 
