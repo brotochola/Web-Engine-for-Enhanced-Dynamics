@@ -63,9 +63,77 @@ Lifecycle hooks:
 - `setup()` once per pooled instance
 - `onSpawned(spawnConfig)` each spawn
 - `tick(dtRatio, deltaTime, accumulatedTime, frameNumber)` update
-- `onCollisionEnter/Stay/Exit(otherIndex)`
-- `onScreenEnter/Exit()`
+- `onCollisionEnter/Stay/Exit(otherIndex)` -- requires `CollisionListener` component
+- `onScreenEnter/Exit()` -- requires `CameraInOutListener` component
 - `onDespawned()` before returning to pool
+
+---
+
+## Tag Components (Listener Opt-in)
+
+Some lifecycle callbacks are expensive to check every frame for every entity. The engine uses **tag components** -- empty components with no data -- to let entity types opt in. Entity types without the tag skip the callback entirely at zero cost.
+
+| Tag Component | Enables | What Gets Skipped |
+|---|---|---|
+| `CollisionListener` | `onCollisionEnter`, `onCollisionStay`, `onCollisionExit` | Cantor pairing, Set tracking, callback dispatch per collision pair |
+| `CameraInOutListener` | `onScreenEnter`, `onScreenExit` | Visibility state reads/writes and callback dispatch per entity per frame |
+
+### How it works
+
+Tag components have no `ARRAY_SCHEMA` and allocate no `SharedArrayBuffer`. They exist purely as a declaration in `static components`. The logic worker reads this once at startup and stores per-type flags. The hot loop checks these flags -- not per-entity, but per-type -- so the branch predictor handles it with near-zero overhead.
+
+**Collision:** if no type in the scene has `CollisionListener`, `processCollisionCallbacks()` is skipped entirely (zero Set operations, zero iteration). When some types have it and others don't, each collision pair is checked with two `Uint8Array` reads (`collisionListenerByType[entityType[A/B]]`). Only pairs involving at least one listener type proceed to Cantor key computation, Set tracking, and callback dispatch. Mixed pairs (one listener, one not) only dispatch to the listening entity.
+
+**Screen visibility:** resolved per-type on the `typeInfo` object. The boolean is read once per type in the outer loop (not per entity), and `checkScreenVisibility()` is only called for entities of types that have `CameraInOutListener`.
+
+### Usage
+
+```javascript
+import WEED from '/src/index.js';
+const { GameObject, RigidBody, Collider, SpriteRenderer,
+        CollisionListener, CameraInOutListener } = WEED;
+
+class Enemy extends GameObject {
+  static components = [
+    RigidBody, Collider, SpriteRenderer,
+    CollisionListener,      // opt in to collision callbacks
+    CameraInOutListener,    // opt in to screen enter/exit callbacks
+  ];
+
+  onCollisionEnter(otherIndex) {
+    // only called because CollisionListener is in components
+  }
+
+  onScreenEnter() {
+    // only called because CameraInOutListener is in components
+  }
+
+  onScreenExit() {
+    this.pauseExpensiveAI();
+  }
+}
+```
+
+Entity types without the tag component can still define `onCollisionEnter` etc. on their prototype, but they will **never be called**. The tag is the gate.
+
+### Querying by tag
+
+Tag components participate in the query system like any other component:
+
+```javascript
+const listeners = query([CollisionListener]);
+const visible   = queryActiveEntities([CameraInOutListener, SpriteRenderer]);
+```
+
+### Creating your own tag components
+
+```javascript
+import { Component } from '/src/core/Component.js';
+class MyTag extends Component {}
+export { MyTag };
+```
+
+Add it to `static components` and use `query([MyTag])` to find entities. No registration in Scene.js is needed for user-defined tags -- the engine auto-registers any component found in a registered entity's `static components`.
 
 ---
 
@@ -509,3 +577,4 @@ See `src/core/ConfigDefaults.js` for the canonical defaults.
 - Use particles/decorations for short-lived or static visuals instead of full entities.
 - Sound slots are finite (default 64). One-shot SFX are cheap; don't forget `stop()` on loops.
 - Spatial sound culls anything a full viewport-width outside the camera. Keep that in mind for ambient loops.
+- Only add `CollisionListener` / `CameraInOutListener` to entity types that actually use the callbacks. Without the tag, the engine skips all related per-pair or per-entity work.
