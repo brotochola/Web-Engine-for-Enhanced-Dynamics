@@ -40,6 +40,15 @@ export class LayersPanel {
 
   // ------- layer row -------
 
+  _removeLayerRow(layerName) {
+    const wrapper = this.elements.layerRows[layerName];
+    if (wrapper?.parentNode) wrapper.parentNode.removeChild(wrapper);
+    delete this.elements.layerRows[layerName];
+    delete this.elements.layerControls[layerName];
+    delete this.elements.layerDetails[layerName];
+    delete this.elements.layerUniformInputs[layerName];
+  }
+
   _createLayerRow(layerName, panel) {
     if (this.elements.layerRows[layerName]) return;
 
@@ -267,6 +276,17 @@ export class LayersPanel {
     if (!scene || !this.elements.layerRows) return;
     const config = scene.config;
     const available = this._getAvailableLayers(config);
+
+    // Remove rows for custom layers that no longer exist in the current scene
+    const defaultLayerNames = new Set(Object.keys(DEFAULT_LAYERS));
+    const currentCustomNames = Layer.initialized
+      ? new Set(Layer.getCustomLayers().map((l) => l.name))
+      : new Set();
+    for (const layerName of Object.keys(this.elements.layerRows)) {
+      if (defaultLayerNames.has(layerName)) continue;
+      if (currentCustomNames.has(layerName)) continue;
+      this._removeLayerRow(layerName);
+    }
 
     if (Layer.initialized) {
       for (const l of Layer.getCustomLayers()) {
