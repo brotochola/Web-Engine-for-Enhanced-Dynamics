@@ -14,12 +14,16 @@ Backgrounds are configured through Layer instances, not Scene methods. Every lay
 import { Layer } from '/src/core/Layer.js';
 
 // In scene preload() or create():
-await Layer.get('BACKGROUND').setTilemapBackground('myTilemap', { scale: 1 });
+await Layer.BACKGROUND.setTilemapBackground('myTilemap', { scale: 1 });
 
 // Other background types:
-Layer.get('BACKGROUND').setStaticBackground('sky_texture');
-Layer.get('BACKGROUND').setTilingBackground('clouds', 0.5);
-Layer.get('BACKGROUND').clearBackground();
+Layer.BACKGROUND.setStaticBackground('sky_texture');
+Layer.BACKGROUND.setTilingBackground('clouds', 0.5);
+Layer.BACKGROUND.clearBackground();
+
+// Built-in layers accessible as static properties:
+// Layer.BACKGROUND, Layer.DECALS, Layer.CASTED_SHADOWS, Layer.ENTITIES, Layer.LIGHTING
+// Custom layers also become properties after init: Layer.water, Layer.lava, etc.
 ```
 
 `setTilemapBackground` returns a Promise that resolves after the renderer builds the tilemap and completes a warm-up render pass (GPU shader compilation). The other methods are fire-and-forget.

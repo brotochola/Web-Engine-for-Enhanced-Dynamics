@@ -22,7 +22,7 @@ import { AbstractWorker } from './AbstractWorker.js';
 import { LightEmitter } from '../components/LightEmitter.js';
 import { Sun } from '../core/Sun.js';
 
-import { Z_INDICES, LAYER_DEFAULT_BLEND_MODES, RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
+import { Z_INDICES, RENDERER_DEFAULTS } from '../core/ConfigDefaults.js';
 import { Layer } from '../core/Layer.js';
 import { createViews as createRenderQueueViews } from '../core/RenderQueueLayout.js';
 import { sortByY, normalizeAngleDifference, extractRGBNormalizedMut } from '../core/utils.js';
@@ -2879,7 +2879,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Create ParticleContainer with dynamic properties for sprites
     // PixiJS 8 ParticleContainer API
     this.particleContainer = new PIXI.ParticleContainer({
-      blendMode: Layer.get('ENTITIES')?.blendMode || LAYER_DEFAULT_BLEND_MODES.ENTITIES,
+      blendMode: Layer.ENTITIES?.blendMode || 'normal',
       dynamicProperties: {
         vertex: true, // Must be true to allow dynamic scale changes
         position: true,
@@ -3250,7 +3250,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    *   driven by entity positions without per-entity shader overhead.
    *
    * Uniforms are shared via Layer SABs with Atomics dirty flags -- any thread
-   * can call Layer.get('water').setUniform('uThreshold', 0.4) and the change
+   * can call Layer.water.setUniform('uThreshold', 0.4) and the change
    * is picked up next frame with zero postMessage overhead.
    */
   initializeCustomLayers(data) {

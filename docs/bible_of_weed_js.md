@@ -116,13 +116,13 @@ static config = {
   layers: {
     water: {
       zIndex: 4,              // display order (higher = on top)
-      blendMode: 'normal',    // final composite blend: 'normal', 'add', 'multiply', 'screen'
-      resolution: 0.33,       // RT resolution multiplier (lower = cheaper, blurrier)
-      maxItems: 5000,         // render queue capacity for this layer
-      ySorting: false,        // disable Y-sort if order doesn't matter
+      blendMode: BLEND_MODES.NORMAL,    // final composite blend (numeric enum)
+      resolution: 0.33,                 // RT resolution multiplier (lower = cheaper, blurrier)
+      maxItems: 5000,                   // render queue capacity for this layer
+      ySorting: false,                  // disable Y-sort if order doesn't matter
       shader: {
-        fragment: 'metaball',                   // shader asset name (not a path!)
-        containerBlend: 'add',                  // blend for the density pass
+        fragment: 'metaball',                    // shader asset name (not a path!)
+        containerBlend: BLEND_MODES.ADD,         // blend for the density pass
         uniforms: {
           uThreshold:  { value: 0.8,               type: 'f32' },
           uWaterColor: { value: [0.05, 0.1, 0.95], type: 'vec3<f32>' },
@@ -134,7 +134,7 @@ static config = {
       zIndex: 5,
       shader: {
         fragment: 'metaball',                   // same shader, different uniforms
-        containerBlend: 'add',
+        containerBlend: BLEND_MODES.ADD,
         uniforms: {
           uThreshold:  { value: 0.6,               type: 'f32' },
           uWaterColor: { value: [0.9, 0.2, 0.0],   type: 'vec3<f32>' },
@@ -165,12 +165,12 @@ Backgrounds are set through Layer instances, not Scene methods:
 
 ```javascript
 // In scene preload():
-await Layer.get('BACKGROUND').setTilemapBackground('myTilemap', { scale: 1 });
+await Layer.BACKGROUND.setTilemapBackground('myTilemap', { scale: 1 });
 
 // Other types:
-Layer.get('BACKGROUND').setStaticBackground('sky');
-Layer.get('BACKGROUND').setTilingBackground('clouds', 0.5);
-Layer.get('BACKGROUND').clearBackground();
+Layer.BACKGROUND.setStaticBackground('sky');
+Layer.BACKGROUND.setTilingBackground('clouds', 0.5);
+Layer.BACKGROUND.clearBackground();
 ```
 
 Any layer can own a background. `setTilemapBackground` returns a Promise (warm-up render).
@@ -224,7 +224,7 @@ When `layerId` is 0 (default), everything goes to the main ENTITIES queue. Zero 
 Uniforms are stored in SharedArrayBuffers and can be updated from **any thread**:
 
 ```javascript
-const water = WEED.Layer.get('water');
+const water = WEED.Layer.water;
 water.setUniform('uTime', accumulatedTime);
 water.setUniform('uWaterColor', [0.0, 0.2, 0.8]);
 
@@ -247,23 +247,34 @@ The pixi worker picks up dirty uniforms each frame via an atomic flag.
 ### Layer API Reference
 
 ```javascript
-// Lookup
-WEED.Layer.get('water')       // Layer instance or null
-WEED.Layer.getById(5)         // by numeric id
-WEED.Layer.getAll()           // all registered layers (cached)
-WEED.Layer.getCustomLayers()  // only layers with their own render queue (excludes ENTITIES)
-WEED.Layer.getId('water')     // numeric id or -1
-WEED.Layer.getName(5)         // name string or null
+// Direct property access (built-in + custom layers)
+Layer.BACKGROUND              // built-in layer (static getter)
+Layer.ENTITIES                // built-in layer (static getter)
+Layer.water                   // custom layer (dynamic property, set during init)
+Layer.lava                    // custom layer (dynamic property, set during init)
+
+// Fallback lookup (for dynamic/variable names)
+Layer.get('water')            // Layer instance or null
+Layer.getById(5)              // by numeric id
+Layer.getAll()                // all registered layers (cached)
+Layer.getCustomLayers()       // only layers with their own render queue (excludes ENTITIES)
+Layer.getId('water')          // numeric id or -1
+Layer.getName(5)              // name string or null
 
 // Background (instance methods -- any layer can own a background)
-Layer.get('BACKGROUND').setStaticBackground(textureId)
-Layer.get('BACKGROUND').setTilingBackground(textureId, tileScale)
-await Layer.get('BACKGROUND').setTilemapBackground(tilemapId, options)
-Layer.get('BACKGROUND').clearBackground()
+Layer.BACKGROUND.setStaticBackground(textureId)
+Layer.BACKGROUND.setTilingBackground(textureId, tileScale)
+await Layer.BACKGROUND.setTilemapBackground(tilemapId, options)
+Layer.BACKGROUND.clearBackground()
 
 // Uniforms (cross-worker safe)
-Layer.get('water').setUniform('uTime', t)
-Layer.get('water').getUniform('uThreshold')
+Layer.water.setUniform('uTime', t)
+Layer.water.getUniform('uThreshold')
+
+// Blend modes (numeric enum)
+import { BLEND_MODES } from '/src/core/ConfigDefaults.js';
+// or: const { BLEND_MODES } = WEED.enums;
+// BLEND_MODES.NORMAL (0), BLEND_MODES.ADD (1), BLEND_MODES.MULTIPLY (2), BLEND_MODES.SCREEN (3)
 ```
 
 ### Two-RT Shader Pipeline (How It Works)
@@ -275,7 +286,7 @@ Layer.get('water').getUniform('uThreshold')
           ▼
   ParticleContainer (sprites)
           │
-          │ render with containerBlend (e.g. 'add')
+          │ render with containerBlend (e.g. BLEND_MODES.ADD)
           ▼
     ┌───────────┐
     │  rawRT     │   Density / accumulation texture (resolution × screen)
@@ -393,7 +404,7 @@ Recommended `<head>` meta tags (add these to your HTML — the engine can't inje
 - Spatial: `cellSize = 128`
 - Logic: `staggeredUpdates = false`
 - Renderer: `interpolation = true`, `maxVisibleRenderables = 40000`
-- Layers: `maxItems = 5000`, `resolution = 1.0`, `ySorting = true`, `blendMode = 'normal'`
+- Layers: `maxItems = 5000`, `resolution = 1.0`, `ySorting = true`, `blendMode = BLEND_MODES.NORMAL` (0)
 - Audio: `maxSlots = 64`, `mixGain = 0.5`, `masterVolume = 1.0`
 - Navigation: `enabled = false` by default
 

@@ -168,7 +168,7 @@ export class PredatorScene extends WEED.Scene {
     // layers: {
     //   bullets: {
     //     zIndex: 10,             // Render above default ENTITIES layer (zIndex 3)
-    //     blendMode: 'normal',     // Final display blend of the post-processed sprite
+    //     blendMode: BLEND_MODES.NORMAL,     // Final display blend of the post-processed sprite
     //     resolution: 0.33,         // Half-res RT for performance
     //     maxItems: 50000,
     //     ySorting: false, // no need to sort water balls
@@ -337,7 +337,7 @@ export class PredatorScene extends WEED.Scene {
   }
 
   async preload() {
-    await Layer.get('BACKGROUND').setTilemapBackground('myTilemap', { scale: 1 });
+    await Layer.BACKGROUND.setTilemapBackground('myTilemap', { scale: 1 });
   }
 
   create() {

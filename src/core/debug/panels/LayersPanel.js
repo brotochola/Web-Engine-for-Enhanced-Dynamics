@@ -102,8 +102,8 @@ export class LayersPanel {
     const blendSelect = this._buildBlendSelect(selectStyle, ['normal', 'normal-npm', 'add', 'add-npm', 'multiply', 'screen', 'screen-npm', 'erase']);
     const customLayer = Layer.initialized ? Layer.get(layerName) : null;
     blendSelect.value = customLayer
-      ? (Layer.BLEND_MODES[Layer._blendModeId[customLayer.id]] || 'normal')
-      : (LAYER_DEFAULT_BLEND_MODES[layerName] || 'normal');
+      ? (Layer._BLEND_MODE_STRINGS[Layer._blendModeId[customLayer.id]] || 'normal')
+      : (Layer._BLEND_MODE_STRINGS[LAYER_DEFAULT_BLEND_MODES[layerName]] || 'normal');
     blendSelect.onchange = () => this._setLayerProp(layerName, 'blendMode', blendSelect.value);
     blendCont.appendChild(blendSelect);
     row.appendChild(blendCont);
@@ -113,7 +113,7 @@ export class LayersPanel {
     const cBlendLbl = document.createElement('span'); cBlendLbl.style.cssText = lblStyle; cBlendLbl.textContent = 'Container Blend:';
     cBlendCont.appendChild(cBlendLbl);
     const cBlendSelect = this._buildBlendSelect(selectStyle, ['normal', 'add', 'multiply', 'screen']);
-    if (customLayer) cBlendSelect.value = Layer.BLEND_MODES[Layer._containerBlendId[customLayer.id]] || 'normal';
+    if (customLayer) cBlendSelect.value = Layer._BLEND_MODE_STRINGS[Layer._containerBlendId[customLayer.id]] || 'normal';
     cBlendSelect.onchange = () => this._setLayerProp(layerName, 'containerBlendMode', cBlendSelect.value);
     cBlendCont.appendChild(cBlendSelect);
     row.appendChild(cBlendCont);
@@ -303,7 +303,7 @@ export class LayersPanel {
         if (meta?.shaderName) shaderSelect.value = meta.shaderName;
         controls.ySorting.checked = layer.ySorting;
         controls.resolution.textContent = layer.resolution.toFixed(3) + 'x';
-        if (layer.hasShader) controls.containerBlend.value = Layer.BLEND_MODES[Layer._containerBlendId[layer.id]] || 'normal';
+        if (layer.hasShader) controls.containerBlend.value = Layer._BLEND_MODE_STRINGS[Layer._containerBlendId[layer.id]] || 'normal';
       }
     }
   }

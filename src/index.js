@@ -143,6 +143,7 @@ import { DEBUG_FLAGS } from './core/debug/DebugFlags.js';
 import {
   ShapeType,
   Z_INDICES,
+  BLEND_MODES,
   LAYER_DEFAULT_BLEND_MODES,
   CAMERA_TYPES,
 } from './core/ConfigDefaults.js';
@@ -150,6 +151,7 @@ import {
 const enums = Object.freeze({
   ShapeType,
   Z_INDICES,
+  BLEND_MODES,
   LAYER_DEFAULT_BLEND_MODES,
   CAMERA_TYPES,
   DECAL_STAMPS_BLEND_MODE,

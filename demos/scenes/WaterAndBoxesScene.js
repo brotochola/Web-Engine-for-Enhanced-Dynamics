@@ -8,6 +8,7 @@ import { Box } from '/demos/gameObjects/box.js';
 import { Floor } from '/demos/gameObjects/floor.js';
 import { Camera } from '/src/core/Camera.js';
 import { Layer } from '/src/core/Layer.js';
+import { BLEND_MODES } from '/src/core/ConfigDefaults.js';
 import WEED from '/src/index.js';
 const { Mouse } = WEED;
 
@@ -66,13 +67,13 @@ export class WaterAndBoxesScene extends WEED.Scene {
     layers: {
       water: {
         zIndex: 4,             // Render above default ENTITIES layer (zIndex 3)
-        blendMode: 'normal',     // Final display blend of the post-processed sprite
+        blendMode: BLEND_MODES.NORMAL,     // Final display blend of the post-processed sprite
         resolution: 0.33,         // Half-res RT for performance
         maxItems: 50000,
         ySorting: false, // no need to sort water balls
         shader: {
           fragment: 'metaball',
-          containerBlend: 'add', // Additive blend inside the RT (density field)
+          containerBlend: BLEND_MODES.ADD, // Additive blend inside the RT (density field)
           uniforms: {
             uThreshold: { value: 0.8, type: 'f32' },
             uWaterColor: { value: [0.05, 0.1, 0.95], type: 'vec3<f32>' },
@@ -154,7 +155,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
     Camera.follow(this.cameraFollowX, this.cameraFollowY, 0.15);
     Camera.setZoom(Camera.zoom * (1 - Mouse.wheel * 0.001));
 
-    Layer.get('water').setUniform('uTime', time * 0.002);
+    Layer.water.setUniform('uTime', time * 0.002);
   }
 
   // ========================================

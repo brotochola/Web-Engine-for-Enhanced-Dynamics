@@ -199,7 +199,7 @@ export class BichosScene extends WEED.Scene {
   }
 
   async preload() {
-    await Layer.get('BACKGROUND').setTilemapBackground('myTilemap', { scale: 1 });
+    await Layer.BACKGROUND.setTilemapBackground('myTilemap', { scale: 1 });
   }
 
   create() {

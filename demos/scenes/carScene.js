@@ -228,7 +228,7 @@ export class CarScene extends WEED.Scene {
 
     async preload() {
         console.log('🚗 CarScene: Preloading...');
-        await Layer.get('BACKGROUND').setTilemapBackground('roads_tilemap', { scale: 1 });
+        await Layer.BACKGROUND.setTilemapBackground('roads_tilemap', { scale: 1 });
 
         const centerX = this.config.worldWidth / 2;
         const centerY = this.config.worldHeight / 2;

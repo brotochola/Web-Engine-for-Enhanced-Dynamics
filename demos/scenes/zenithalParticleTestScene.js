@@ -69,7 +69,7 @@ export class ZenithalParticleTestScene extends Scene {
   ];
 
   async preload() {
-    await Layer.get('BACKGROUND').setTilemapBackground('roads_tilemap', { scale: 1 });
+    await Layer.BACKGROUND.setTilemapBackground('roads_tilemap', { scale: 1 });
 
   }
 

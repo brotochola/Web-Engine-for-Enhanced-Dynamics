@@ -41,22 +41,29 @@ export const Z_INDICES = Object.freeze({
 });
 
 /**
- * Default blend modes for each rendering layer
- * Used by PixiRenderer during initialization and DebugUI for displaying current values
+ * Blend mode enum for rendering layers.
+ * Numeric values stored directly in the Layer config SAB (Uint8).
  * @readonly
- * @enum {string}
+ * @enum {number}
+ */
+export const BLEND_MODES = Object.freeze({
+  NORMAL:   0,
+  ADD:      1,
+  MULTIPLY: 2,
+  SCREEN:   3,
+});
+
+/**
+ * Default blend modes for each built-in rendering layer
+ * @readonly
+ * @enum {number}
  */
 export const LAYER_DEFAULT_BLEND_MODES = Object.freeze({
-  /** Background layer - normal blend */
-  BACKGROUND: 'normal',
-  /** Decals layer - normal blend */
-  DECALS: 'normal',
-  /** Casted shadows - multiply to darken scene */
-  CASTED_SHADOWS: 'multiply',
-  /** Entities layer - standard alpha blending (PixiJS 8.16+ uses 'normal' for correct alpha) */
-  ENTITIES: 'normal',
-  /** Lighting overlay - multiply to darken unlit areas */
-  LIGHTING: 'multiply',
+  BACKGROUND:     BLEND_MODES.NORMAL,
+  DECALS:         BLEND_MODES.NORMAL,
+  CASTED_SHADOWS: BLEND_MODES.MULTIPLY,
+  ENTITIES:       BLEND_MODES.NORMAL,
+  LIGHTING:       BLEND_MODES.MULTIPLY,
 });
 
 /**

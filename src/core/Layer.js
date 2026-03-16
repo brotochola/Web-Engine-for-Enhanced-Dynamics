@@ -5,8 +5,8 @@
 // - Built-in layers (BACKGROUND, DECALS, etc.) registered by engine at init
 // - Custom layers defined in scene config.layers
 // - Each Layer instance is a lightweight facade over SAB arrays (like GameObject)
-// - Layer.get('water').setUniform('uThreshold', 0.4) works from any thread
-// - Background ownership: Layer.get('BACKGROUND').setTilemapBackground(...)
+// - Layer.water.setUniform('uThreshold', 0.4) works from any thread
+// - Background ownership: Layer.BACKGROUND.setTilemapBackground(...)
 //   replaces the old Scene.setTilemapBackground() API
 //
 // LAYER ROUTING:
@@ -52,9 +52,8 @@ export class Layer {
     static _uniformDirty = [];    // Int32Array[1][] indexed by layer id
     static _uniformMaps = [];     // { name: { offset, size } }[] indexed by layer id
 
-    // Blend mode string <-> ID mapping
-    static BLEND_MODES = ['normal', 'add', 'multiply', 'screen'];
-    static BLEND_MODE_IDS = { 'normal': 0, 'add': 1, 'multiply': 2, 'screen': 3 };
+    // Blend mode ID -> string for debug/logging purposes only
+    static _BLEND_MODE_STRINGS = ['normal', 'add', 'multiply', 'screen'];
 
     // Metadata for serialization to workers
     static _metadata = null;
@@ -93,8 +92,14 @@ export class Layer {
     get hasShader() { return Layer._hasShader[this.id] === 1; }
     get ySorting() { return Layer._ySorting[this.id] === 1; }
     get available() { return Layer._available[this.id] === 1; }
-    get blendMode() { return Layer.BLEND_MODES[Layer._blendModeId[this.id]] || 'normal'; }
-    get containerBlendMode() { return Layer.BLEND_MODES[Layer._containerBlendId[this.id]] || 'normal'; }
+    /** Returns the blend mode as a human-readable string (for debug UI / logging). */
+    get blendMode() { return Layer._BLEND_MODE_STRINGS[Layer._blendModeId[this.id]] || 'normal'; }
+    /** Returns the blend mode numeric id. */
+    get blendModeId() { return Layer._blendModeId[this.id]; }
+    /** Returns the container blend mode as a human-readable string (for debug UI / logging). */
+    get containerBlendMode() { return Layer._BLEND_MODE_STRINGS[Layer._containerBlendId[this.id]] || 'normal'; }
+    /** Returns the container blend mode numeric id. */
+    get containerBlendModeId() { return Layer._containerBlendId[this.id]; }
     get hasRenderQueue() { return Layer._hasRenderQueue[this.id] === 1; }
     get builtIn() { return this._builtIn; }
     get layerType() { return this._layerType; }
@@ -209,6 +214,16 @@ export class Layer {
             layerId: this.id,
         });
     }
+
+    // ========================================
+    // BUILT-IN LAYER SHORTCUTS
+    // ========================================
+
+    /** @returns {Layer} */ static get BACKGROUND()    { return this._byName['BACKGROUND']; }
+    /** @returns {Layer} */ static get DECALS()        { return this._byName['DECALS']; }
+    /** @returns {Layer} */ static get CASTED_SHADOWS() { return this._byName['CASTED_SHADOWS']; }
+    /** @returns {Layer} */ static get ENTITIES()      { return this._byName['ENTITIES']; }
+    /** @returns {Layer} */ static get LIGHTING()      { return this._byName['LIGHTING']; }
 
     // ========================================
     // STATIC API
@@ -380,19 +395,25 @@ export class Layer {
         layer._layerType = config._layerType || this._deriveLayerType(name, layer._builtIn, !!config.shader);
 
         this._zIndex[id] = config.zIndex !== undefined ? config.zIndex : id;
-        this._blendModeId[id] = this.BLEND_MODE_IDS[config.blendMode || 'normal'] || 0;
+        this._blendModeId[id] = config.blendMode ?? 0;
         this._hasShader[id] = config.shader ? 1 : 0;
         this._ySorting[id] = config.ySorting !== undefined
             ? (config.ySorting ? 1 : 0)
             : (this._defaultYSorting ? 1 : 0);
         this._resolution[id] = config.resolution || 1.0;
-        this._containerBlendId[id] = config.shader?.containerBlend
-            ? (this.BLEND_MODE_IDS[config.shader.containerBlend] || 0)
-            : 0;
+        this._containerBlendId[id] = config.shader?.containerBlend ?? 0;
         this._available[id] = 1;
 
         this._byName[name] = layer;
         this._byId[id] = layer;
+
+        // Dynamic property access: Layer.water, Layer.lava, etc.
+        // Built-in layers already have static getters; custom layers get assigned here.
+        if (!layer._builtIn && !(name in this) && !name.startsWith('_')) {
+            this[name] = layer;
+        } else if (!layer._builtIn && name in this) {
+            console.warn(`Layer: "${name}" collides with an existing Layer property. Use Layer.get('${name}') instead.`);
+        }
 
         return layer;
     }
@@ -474,8 +495,8 @@ export class Layer {
                 builtIn: isBuiltIn,
                 layerType: layer._layerType,
                 zIndex: this._zIndex[i],
-                blendMode: this.BLEND_MODES[this._blendModeId[i]] || 'normal',
-                containerBlendMode: this.BLEND_MODES[this._containerBlendId[i]] || 'normal',
+                blendMode: this._BLEND_MODE_STRINGS[this._blendModeId[i]] || 'normal',
+                containerBlendMode: this._BLEND_MODE_STRINGS[this._containerBlendId[i]] || 'normal',
                 hasShader: this._hasShader[i] === 1,
                 ySorting: this._ySorting[i] === 1,
                 resolution: this._resolution[i],
@@ -578,6 +599,13 @@ export class Layer {
     // ========================================
 
     static reset() {
+        // Remove dynamic custom layer properties from previous scene
+        for (const name of Object.keys(this._byName)) {
+            const layer = this._byName[name];
+            if (layer && !layer._builtIn && this[name] === layer) {
+                delete this[name];
+            }
+        }
         this._byName = {};
         this._byId = [];
         this.count = 0;

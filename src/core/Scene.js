@@ -1185,7 +1185,7 @@ class Scene {
     for (const [name, zIndex] of Object.entries(Z_INDICES)) {
       builtInLayers[name] = {
         zIndex,
-        blendMode: LAYER_DEFAULT_BLEND_MODES[name] || 'normal',
+        blendMode: LAYER_DEFAULT_BLEND_MODES[name] ?? 0,
         ySorting: defaultYSorting,
         layerType:
           name === 'BACKGROUND' ? 'background'
