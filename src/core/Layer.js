@@ -20,9 +20,12 @@
 // - layerId=0 means default ENTITIES queue (zero overhead for the common case)
 //
 // THREAD SAFETY:
-// - Config arrays written once at init (read-only after)
+// - Config arrays written once at init (read-only after), except alpha
+//   which is mutable from any worker via Atomics dirty flag
 // - Uniform arrays use Atomics dirty flag for safe cross-worker writes
 // - _postToRenderer is a main-thread-only callback (not cross-worker)
+
+import { LAYER_DEFAULTS } from './ConfigDefaults.js';
 
 export class Layer {
     static MAX_LAYERS = 16;
@@ -42,6 +45,8 @@ export class Layer {
     static _hasShader = null;         // Uint8Array[MAX_LAYERS]
     static _ySorting = null;          // Uint8Array[MAX_LAYERS]
     static _resolution = null;        // Float32Array[MAX_LAYERS]
+    static _alpha = null;             // Float32Array[MAX_LAYERS]  (mutable via Atomics)
+    static _alphaDirty = null;        // Int32Array[MAX_LAYERS]   (dirty flag for alpha)
     static _containerBlendId = null;  // Uint8Array[MAX_LAYERS]
     static _available = null;         // Uint8Array[MAX_LAYERS]
     static _hasRenderQueue = null;    // Uint8Array[MAX_LAYERS]
@@ -90,11 +95,22 @@ export class Layer {
     }
 
     // ========================================
-    // FACADE GETTERS (read from static SAB arrays via this.id)
+    // FACADE GETTERS / SETTERS (read from static SAB arrays via this.id)
     // ========================================
 
     get zIndex() { return Layer._zIndex[this.id]; }
     get resolution() { return Layer._resolution[this.id]; }
+    /**
+     * Layer opacity (0.0 = fully transparent, 1.0 = fully opaque).
+     * Mutable from any worker — writes go through the config SAB and the
+     * renderer picks up changes via an Atomics dirty flag each frame.
+     * @example Layer.get("LIGHTING").alpha = 0.5;
+     */
+    get alpha() { return Layer._alpha[this.id]; }
+    set alpha(v) {
+        Layer._alpha[this.id] = v;
+        Atomics.store(Layer._alphaDirty, this.id, 1);
+    }
     get hasShader() { return Layer._hasShader[this.id] === 1; }
     get ySorting() { return Layer._ySorting[this.id] === 1; }
     get available() { return Layer._available[this.id] === 1; }
@@ -280,6 +296,8 @@ export class Layer {
     //   ySorting:        Uint8[MAX_LAYERS]
     //   (align to 4)
     //   resolution:      Float32[MAX_LAYERS]
+    //   alpha:           Float32[MAX_LAYERS]  (mutable after init)
+    //   alphaDirty:      Int32[MAX_LAYERS]    (Atomics dirty flag)
     //   containerBlendId:Uint8[MAX_LAYERS]
     //   available:       Uint8[MAX_LAYERS]
     //   hasRenderQueue:  Uint8[MAX_LAYERS]
@@ -304,6 +322,12 @@ export class Layer {
         this._resolution = new Float32Array(sab, offset, this.MAX_LAYERS);
         offset += this.MAX_LAYERS * 4;
 
+        this._alpha = new Float32Array(sab, offset, this.MAX_LAYERS);
+        offset += this.MAX_LAYERS * 4;
+
+        this._alphaDirty = new Int32Array(sab, offset, this.MAX_LAYERS);
+        offset += this.MAX_LAYERS * 4;
+
         this._containerBlendId = new Uint8Array(sab, offset, this.MAX_LAYERS);
         offset += this.MAX_LAYERS;
 
@@ -321,6 +345,8 @@ export class Layer {
         size += this.MAX_LAYERS;      // ySorting Uint8
         size = Math.ceil(size / 4) * 4; // align
         size += this.MAX_LAYERS * 4;  // resolution Float32
+        size += this.MAX_LAYERS * 4;  // alpha Float32
+        size += this.MAX_LAYERS * 4;  // alphaDirty Int32
         size += this.MAX_LAYERS;      // containerBlendId Uint8
         size += this.MAX_LAYERS;      // available Uint8
         size += this.MAX_LAYERS;      // hasRenderQueue Uint8
@@ -401,12 +427,13 @@ export class Layer {
         layer._layerType = config._layerType || this._deriveLayerType(name, layer._builtIn, !!config.shader);
 
         this._zIndex[id] = config.zIndex !== undefined ? config.zIndex : id;
-        this._blendModeId[id] = config.blendMode ?? 0;
+        this._blendModeId[id] = config.blendMode ?? LAYER_DEFAULTS.blendMode;
         this._hasShader[id] = config.shader ? 1 : 0;
         this._ySorting[id] = config.ySorting !== undefined
             ? (config.ySorting ? 1 : 0)
             : (this._defaultYSorting ? 1 : 0);
-        this._resolution[id] = config.resolution || 1.0;
+        this._resolution[id] = config.resolution ?? LAYER_DEFAULTS.resolution;
+        layer.alpha = config.alpha ?? LAYER_DEFAULTS.alpha;
         this._containerBlendId[id] = config.shader?.containerBlend ?? 0;
         this._available[id] = 1;
 
@@ -506,6 +533,7 @@ export class Layer {
                 hasShader: this._hasShader[i] === 1,
                 ySorting: this._ySorting[i] === 1,
                 resolution: this._resolution[i],
+                alpha: this._alpha[i],
                 hasRenderQueue: this._hasRenderQueue[i] === 1,
                 maxItems: isBuiltIn ? 0 : (config.maxItems || 5000),
                 uniformMap: this._uniformMaps[layer.id] || null,
@@ -623,6 +651,8 @@ export class Layer {
         this._hasShader = null;
         this._ySorting = null;
         this._resolution = null;
+        this._alpha = null;
+        this._alphaDirty = null;
         this._containerBlendId = null;
         this._available = null;
         this._hasRenderQueue = null;

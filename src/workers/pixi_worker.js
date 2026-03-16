@@ -1085,6 +1085,18 @@ class PixiRenderer extends AbstractWorker {
 
     this.updateCameraTransform();
 
+    // Sync mutable layer properties from SAB (cross-worker writes via Atomics)
+    if (Layer._alphaDirty) {
+      for (let i = 0; i < Layer.count; i++) {
+        if (Atomics.load(Layer._alphaDirty, i) === 1) {
+          Atomics.store(Layer._alphaDirty, i, 0);
+          const name = Layer.getName(i);
+          const displayObj = name ? this._layerRuntime[name] : null;
+          if (displayObj) displayObj.alpha = Layer._alpha[i];
+        }
+      }
+    }
+
     // Update decal decal tiles (check for dirty tiles from particle_worker)
     this.updateDecalTiles();
 
@@ -2301,10 +2313,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   /**
    * Handle layer property changes from debug UI
-   * @param {Object} data - { layer: string, visible?: boolean, alpha?: number, blendMode?: string, zIndex?: number }
+   * @param {Object} data - { layer: string, visible?: boolean, blendMode?: string, zIndex?: number }
    */
   handleSetLayerProps(data) {
-    const { layer, visible, alpha, blendMode, containerBlendMode, zIndex } = data;
+    const { layer, visible, blendMode, containerBlendMode, zIndex } = data;
 
     const displayObject = this.layerRefs?.[layer];
     if (!displayObject) {
@@ -2313,10 +2325,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     if (visible !== undefined) {
       displayObject.visible = visible;
-    }
-
-    if (alpha !== undefined) {
-      displayObject.alpha = Math.max(0, Math.min(1, alpha));
     }
 
     if (blendMode !== undefined) {
@@ -2344,6 +2352,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const layer = Layer.get(layerName);
     if (!layer) return;
     displayObject.zIndex = layer.zIndex;
+    displayObject.alpha = layer.alpha;
     const useContainerBlend = displayObject instanceof PIXI.ParticleContainer;
     displayObject.blendMode = useContainerBlend ? layer.containerBlendMode : layer.blendMode;
   }

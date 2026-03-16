@@ -271,9 +271,9 @@ The layer system (`src/core/Layer.js`) stores all layer configuration and shader
 
 ### Layer Config SAB (`Layer._configSAB`)
 
-One SAB, allocated during `Layer.initializeFromConfig()`. Holds read-only properties for up to `MAX_LAYERS` (16) layers.
+One SAB, allocated during `Layer.initializeFromConfig()`. Holds properties for up to `MAX_LAYERS` (16) layers. Most fields are written once at init and read-only after that; `alpha` and `alphaDirty` are the exception (mutable from any worker).
 
-**Size:** `_getConfigSABSize()` (~208 bytes at MAX_LAYERS=16)
+**Size:** `_getConfigSABSize()` (~336 bytes at MAX_LAYERS=16)
 
 **Layout (packed, with alignment pads):**
 
@@ -285,15 +285,21 @@ One SAB, allocated during `Layer.initializeFromConfig()`. Holds read-only proper
 | `ySorting` | Uint8 | MAX_LAYERS | 1 if Y-sort is enabled for this layer |
 | *(4-byte align pad)* | | | |
 | `resolution` | Float32 | MAX_LAYERS | RT resolution multiplier (default 1.0) |
+| `alpha` | Float32 | MAX_LAYERS | Layer opacity 0..1 (**mutable** after init) |
+| `alphaDirty` | Int32 | MAX_LAYERS | Atomics dirty flag for alpha changes |
 | `containerBlendId` | Uint8 | MAX_LAYERS | Blend mode for the ParticleContainer pass |
 | `available` | Uint8 | MAX_LAYERS | 1 if the slot is occupied |
 | `hasRenderQueue` | Uint8 | MAX_LAYERS | 1 if this layer has its own render queue |
 
-Written once at init. All fields are read-only after that.
-
 | Writer | Reader |
 |---|---|
-| Main thread (`Layer.initializeFromConfig`) | All workers (`Layer.initializeFromBuffers`) |
+| Main thread (`Layer.initializeFromConfig`); any thread (`layer.alpha = v`) | All workers (`Layer.initializeFromBuffers`); pixi worker (polls `alphaDirty`) |
+
+**Alpha cross-worker protocol:**
+
+1. Any thread sets `layer.alpha = 0.5` → writes Float32 + `Atomics.store(alphaDirty, id, 1)`
+2. Pixi worker checks `Atomics.load(alphaDirty, id)` each frame. If dirty, reads alpha and applies to display object
+3. Pixi clears the flag: `Atomics.store(alphaDirty, id, 0)`
 
 ### Per-Layer Uniform SABs (`Layer._uniformSABs[id]`)
 
@@ -581,7 +587,7 @@ The big picture. Who writes what, who reads what.
 | Custom layer render queues | Pre_render worker | Pixi worker |
 | Render queue sync | Pre_render + pixi (Atomics) | Both |
 | Entity texture data | Pre_render worker | Pixi worker |
-| Layer config SAB | Main thread (once at init) | All workers |
+| Layer config SAB | Main thread (once at init); any thread (`layer.alpha`) | All workers; pixi (alpha dirty poll) |
 | Layer uniform SABs | Any thread (`setUniform`) | Pixi worker |
 | TileMap SABs (per-tilemap tile data) | Main thread (once at scene load) | All workers |
 | Visible lights | Pre_render worker | Pixi worker |

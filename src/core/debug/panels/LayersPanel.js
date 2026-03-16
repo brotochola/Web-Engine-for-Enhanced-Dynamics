@@ -89,7 +89,8 @@ export class LayersPanel {
     const alphaVal = document.createElement('span'); alphaVal.style.cssText = `${lblStyle};min-width:30px`; alphaVal.textContent = '100%';
     alphaSlider.oninput = () => {
       alphaVal.textContent = alphaSlider.value + '%';
-      this._setLayerProp(layerName, 'alpha', parseInt(alphaSlider.value) / 100);
+      const l = Layer.get(layerName);
+      if (l) l.alpha = parseInt(alphaSlider.value) / 100;
     };
     alphaCont.appendChild(alphaSlider); alphaCont.appendChild(alphaVal);
     row.appendChild(alphaCont);
@@ -323,6 +324,11 @@ export class LayersPanel {
         if (meta?.shaderName) shaderSelect.value = meta.shaderName;
         controls.ySorting.checked = layer.ySorting;
         controls.resolution.textContent = layer.resolution.toFixed(3) + 'x';
+        if (document.activeElement !== controls.alpha) {
+          const pct = Math.round(layer.alpha * 100);
+          controls.alpha.value = pct;
+          controls.alphaValue.textContent = pct + '%';
+        }
         if (layer.hasShader) controls.containerBlend.value = Layer._BLEND_MODE_STRINGS[Layer._containerBlendId[layer.id]] || 'normal';
       }
     }

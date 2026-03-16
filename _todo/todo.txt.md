@@ -1,15 +1,4 @@
--animatedSpriteRenderer
--SpriteRenderer
-
--LightEmitter (llamarlo PointLight2d)
-
--collisionListener
--CircleCollider
--RectCollider
--RectanguloqueGiraCoillider
-
 ---
-
 ---
 
 ## -- spritesheet registry ---
