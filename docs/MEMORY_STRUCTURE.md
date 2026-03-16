@@ -332,6 +332,36 @@ To add a new per-sprite field, add an entry to the `FIELDS` array in this file. 
 
 ---
 
+## 7b. TileMap SABs
+
+The TileMap system (`src/core/TileMap.js`) stores all tile data in SharedArrayBuffers so any worker can query tile GIDs without postMessage.
+
+### Per-Tilemap SAB (`TileMap._sabs[id]`)
+
+One SAB per tilemap, allocated during `TileMap.initializeFromLoaded()`. All tile layers for that tilemap are packed contiguously.
+
+**Size:** `numLayers * mapWidth * mapHeight * 4` bytes
+
+**Layout:**
+
+| Section | Type | Count | Description |
+|---|---|---|---|
+| Layer 0 data | Int32 | `mapWidth * mapHeight` | Raw Tiled GIDs (includes flip flags in top 3 bits) |
+| Layer 1 data | Int32 | `mapWidth * mapHeight` | ... |
+| Layer N data | Int32 | `mapWidth * mapHeight` | ... |
+
+Each `TileMapLayer.data` is an `Int32Array` view into its region. `Int32` (not `Uint32`) because Tiled GIDs with flip flags set use the sign bit.
+
+Written once at init by copying from the Tiled JSON `layer.data` arrays. All fields are read-only after that. No Atomics needed.
+
+**Example:** 100x100 map, 3 layers = `100 * 100 * 3 * 4` = 120,000 bytes (117 KB).
+
+| Writer | Reader |
+|---|---|
+| Main thread (`TileMap.initializeFromLoaded`, once at scene load) | All workers (`TileMap.initializeFromBuffers`) |
+
+---
+
 ## 8. Navigation Buffers
 
 ### `navigationData`
@@ -553,6 +583,7 @@ The big picture. Who writes what, who reads what.
 | Entity texture data | Pre_render worker | Pixi worker |
 | Layer config SAB | Main thread (once at init) | All workers |
 | Layer uniform SABs | Any thread (`setUniform`) | Pixi worker |
+| TileMap SABs (per-tilemap tile data) | Main thread (once at scene load) | All workers |
 | Visible lights | Pre_render worker | Pixi worker |
 | Navigation (flowfields, A*, walkability) | Particle worker | Logic workers |
 | Decal tiles (RGBA + dirty) | Particle worker | Pixi worker |

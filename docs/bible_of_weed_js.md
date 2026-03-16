@@ -318,6 +318,70 @@ import { BLEND_MODES } from '/src/core/ConfigDefaults.js';
 
 ---
 
+## TileMap (SAB-backed Tiled data)
+
+Tiled JSON tilemap data backed by `SharedArrayBuffer`. All workers share the same memory. Tile data is immutable after scene load.
+
+### Scene Config
+
+```javascript
+assets: {
+  tilemaps: {
+    myTilemap: {
+      json: '/assets/maps/overworld.json',
+      tileset: '/assets/maps/overworld_tileset.png',
+    },
+  },
+}
+```
+
+### API
+
+```javascript
+import { TileMap } from '/src/core/TileMap.js';
+
+// Direct property access (hot path -- zero lookups, zero allocations)
+TileMap.myTilemap.grass.getTileId(entity.x, entity.y)
+TileMap.myTilemap.walls.hasTile(bullet.x, bullet.y)
+
+// Dictionary lookup (dynamic names)
+TileMap.get('myTilemap').getLayer('grass').getTileId(x, y)
+
+// Convenience: first non-zero GID across all layers
+TileMap.myTilemap.getTileId(worldX, worldY)
+
+// Specific layer by name
+TileMap.myTilemap.getTileId(worldX, worldY, 'walls')
+
+// All layers at once (pre-allocated return object, zero GC)
+const ids = TileMap.myTilemap.getAllTileIds(worldX, worldY)
+// ids = { grass: 7, sidewalk: 0, walls: 42 }
+
+// Coordinate helpers (pre-allocated return objects)
+const { tileX, tileY } = TileMap.myTilemap.worldToTile(worldX, worldY)
+const { x, y } = TileMap.myTilemap.tileToWorld(tileX, tileY)
+
+// Layer inspection
+TileMap.myTilemap.getLayerNames()  // ['grass', 'sidewalk', 'walls']
+TileMap.myTilemap.getLayers()      // TileMapLayer[]
+
+// Properties
+TileMap.myTilemap.mapWidth   // tiles
+TileMap.myTilemap.mapHeight  // tiles
+TileMap.myTilemap.tileWidth  // pixels
+TileMap.myTilemap.tileHeight // pixels
+TileMap.myTilemap.widthPx    // mapWidth * tileWidth
+TileMap.myTilemap.heightPx   // mapHeight * tileHeight
+```
+
+### GIDs and Flip Flags
+
+Tile GIDs include Tiled flip flags in the top 3 bits. Strip with `gid & 0x1FFFFFFF`. GID `0` = empty.
+
+See `docs/TILEMAP.md` for full details on memory layout, lifecycle, and rendering.
+
+---
+
 ## Useful APIs
 
 ```javascript
