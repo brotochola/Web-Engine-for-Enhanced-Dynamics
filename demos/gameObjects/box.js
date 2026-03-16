@@ -96,21 +96,6 @@ class Box extends GameObject {
     RigidBody.invMass[this.index] *= 4;
   }
 
-  onCollisionEnter(otherIndex) {
-    // Optional: visual feedback on collision
-  }
-
-  onCollisionExit(otherIndex) {
-    // Optional: restore visual state
-  }
-
-  /**
-   * LIFECYCLE: Called when box is despawned (returned to pool)
-   */
-  onDespawned() {
-    // Cleanup if needed
-  }
-
   /**
    * Main update - simple behavior for boxes
    * Note: Gravity and collision resolution are handled by physics worker

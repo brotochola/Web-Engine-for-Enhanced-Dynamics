@@ -15,6 +15,7 @@ import { RigidBody } from '../components/RigidBody.js';
 
 import { SpriteRenderer } from '../components/SpriteRenderer.js';
 import { CameraInOutListener } from '../components/CameraInOutListener.js';
+import { CollisionListener } from '../components/CollisionListener.js';
 
 import { SpriteSheetRegistry } from '../core/SpriteSheetRegistry.js';
 
@@ -66,6 +67,11 @@ class LogicWorker extends AbstractWorker {
     // Screen visibility tracking (for onScreenEnter/Exit lifecycle methods)
     // Track previous frame's visibility state to detect transitions
     this.previousScreenVisibility = new Uint8Array(0); // Will be sized in initialize()
+
+    // Collision listener per-type flags (indexed by entityType)
+    // Resolved once in createGameObjectInstances, never changes
+    this.collisionListenerByType = null; // Uint8Array sized to max entity types
+    this.anyTypeNeedsCollisions = false; // Scene-level kill switch
 
     // ========================================
     // TICK DECIMATION OPTIMIZATION
@@ -188,6 +194,9 @@ class LogicWorker extends AbstractWorker {
    * DENSE ALLOCATION: entityIndex === componentIndex for all components
    */
   createGameObjectInstances() {
+    const numTypes = this.registeredClasses.length;
+    this.collisionListenerByType = new Uint8Array(numTypes);
+
     for (const classInfo of this.registeredClasses) {
       const { name, poolSize, startIndex, endIndex, entityType } = classInfo;
 
@@ -218,14 +227,20 @@ class LogicWorker extends AbstractWorker {
         const componentClassMap = {};
         const components = GameObject._collectComponents(EntityClass);
         let needsScreenCallbacks = false;
+        let needsCollisionCallbacks = false;
 
         for (const ComponentClass of components) {
           const componentName = ComponentClass.name;
           const camelCaseName = componentName.charAt(0).toLowerCase() + componentName.slice(1);
           componentClassMap[camelCaseName] = ComponentClass;
           if (ComponentClass === CameraInOutListener) needsScreenCallbacks = true;
+          if (ComponentClass === CollisionListener) needsCollisionCallbacks = true;
         }
         EntityClass._componentClassMap = componentClassMap;
+
+        if (needsCollisionCallbacks) {
+          this.collisionListenerByType[entityType] = 1;
+        }
 
         // Special initialization for internal engine classes
         // Flash needs its initialize() called with the pool size
@@ -279,6 +294,9 @@ class LogicWorker extends AbstractWorker {
         console.warn(`LOGIC WORKER: Class ${name} not found in worker scope!`);
       }
     }
+
+    // Scene-level kill switch: if no type has CollisionListener, skip processCollisionCallbacks entirely
+    this.anyTypeNeedsCollisions = this.collisionListenerByType.includes(1);
   }
 
   // ========================================
@@ -415,9 +433,10 @@ class LogicWorker extends AbstractWorker {
     Mouse.updateEdgeFlags();
 
     // Process collision callbacks BEFORE entity logic (Unity-style)
-    if (this.collisionData) {
+    // Skip entirely if no entity type has CollisionListener component
+    if (this.collisionData && this.anyTypeNeedsCollisions) {
       this.processCollisionCallbacks();
-      this.systemsExecutedThisFrame++; // Collision system executed
+      this.systemsExecutedThisFrame++;
     }
 
     // Count active entities while processing
@@ -578,81 +597,65 @@ class LogicWorker extends AbstractWorker {
    * ZERO ALLOC: Cantor pairing + inline min/max comparison, no string concat
    */
   processCollisionCallbacks() {
-    // Read collision pairs from physics worker
     const pairCount = this.collisionData[0];
 
-    // Clear current collisions set
     this.currentCollisions.clear();
 
-    // Cache for hot loop
     const collisionData = this.collisionData;
     const totalWorkers = this.totalLogicWorkers;
     const myIndex = this.workerIndex;
     const gameObjects = this.gameObjects;
     const prevCollisions = this.previousCollisions;
     const currCollisions = this.currentCollisions;
+    const entityType = Transform.entityType;
+    const collisionFlags = this.collisionListenerByType;
 
-    // Read all collision pairs and populate current collisions
     for (let i = 0; i < pairCount; i++) {
       const rawA = collisionData[1 + i * 2];
       const rawB = collisionData[1 + i * 2 + 1];
 
-      // Normalize to (min, max) - ensures consistent key regardless of collision order
-      // Branch-free would be slower here; ternary is ~2 cycles
       const minE = rawA < rawB ? rawA : rawB;
       const maxE = rawA < rawB ? rawB : rawA;
 
-      // Partition by minEntity for deterministic worker assignment
-      // Same entity pair always handled by same worker (Enter + Stay + Exit)
-      if (minE % totalWorkers !== myIndex) {
-        continue;
-      }
+      if (minE % totalWorkers !== myIndex) continue;
 
-      // Single normalized key per collision pair (half the storage of bidirectional)
-      // Cantor pairing: key = (a + b) * (a + b + 1) / 2 + b
+      // Skip pairs where neither entity type has CollisionListener
+      const aListens = collisionFlags[entityType[rawA]];
+      const bListens = collisionFlags[entityType[rawB]];
+      if (!aListens && !bListens) continue;
+
       const sum = minE + maxE;
       const key = ((sum * (sum + 1)) >> 1) + maxE;
 
       currCollisions.add(key);
 
-      // Check previous frame - was this pair already colliding?
       const isNewCollision = !prevCollisions.has(key);
 
-      const objA = gameObjects[rawA];
-      const objB = gameObjects[rawB];
-
       if (isNewCollision) {
-        // OnCollisionEnter - First frame of collision
-        if (objA && objA.onCollisionEnter) objA.onCollisionEnter(rawB);
-        if (objB && objB.onCollisionEnter) objB.onCollisionEnter(rawA);
+        if (aListens) gameObjects[rawA].onCollisionEnter(rawB);
+        if (bListens) gameObjects[rawB].onCollisionEnter(rawA);
       } else {
-        // OnCollisionStay - Continuous collision
-        if (objA && objA.onCollisionStay) objA.onCollisionStay(rawB);
-        if (objB && objB.onCollisionStay) objB.onCollisionStay(rawA);
+        if (aListens) gameObjects[rawA].onCollisionStay(rawB);
+        if (bListens) gameObjects[rawB].onCollisionStay(rawA);
       }
     }
 
-    // Check for collisions that ended (OnCollisionExit)
-    // cantorUnpair recovers (min, max) from normalized key - zero allocation
+    // OnCollisionExit - pairs that ended this frame
     for (const prevKey of prevCollisions) {
       if (!currCollisions.has(prevKey)) {
-        // Inverse Cantor: recover (minEntity, maxEntity) from key
         cantorUnpair(prevKey, _cantorResult);
         const minE = _cantorResult.a;
         const maxE = _cantorResult.b;
 
-        // Same partitioning as entry path (minEntity % workers)
         if (minE % totalWorkers === myIndex) {
-          const objA = gameObjects[minE];
-          const objB = gameObjects[maxE];
-
-          if (objA && objA.onCollisionExit) objA.onCollisionExit(maxE);
-          if (objB && objB.onCollisionExit) objB.onCollisionExit(minE);
+          const aListens = collisionFlags[entityType[minE]];
+          const bListens = collisionFlags[entityType[maxE]];
+          if (aListens) gameObjects[minE].onCollisionExit(maxE);
+          if (bListens) gameObjects[maxE].onCollisionExit(minE);
         }
       }
     }
 
-    // Swap current and previous for next frame (no allocation)
     const temp = this.previousCollisions;
     this.previousCollisions = this.currentCollisions;
     this.currentCollisions = temp;

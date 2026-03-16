@@ -2,6 +2,7 @@ import WEED from '/src/index.js';
 
 import { SpriteRenderer } from '../../src/components/SpriteRenderer.js';
 import { Collider } from '../../src/components/Collider.js';
+import { CollisionListener } from '../../src/components/CollisionListener.js';
 
 const { GameObject } = WEED;
 
@@ -17,7 +18,7 @@ export const DROP_TYPES = {
 export class Drop extends GameObject {
   static scriptUrl = import.meta.url;
 
-  static components = [SpriteRenderer, Collider];
+  static components = [SpriteRenderer, Collider, CollisionListener];
 
   onSpawned(config) {
     this.dropComponent.amount = config.amount;

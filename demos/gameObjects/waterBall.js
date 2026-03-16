@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, Mouse, RigidBody, Collider, SpriteRenderer, mixTint } = WEED;
+const { GameObject, Mouse, RigidBody, Collider, CollisionListener, SpriteRenderer, mixTint } = WEED;
 
 const BASE_WATER_TINT = 0x0033ff;
 const SPLASH_TINT = 0xbbeeff;
@@ -8,7 +8,7 @@ const SPLASH_TINT = 0xbbeeff;
 class WaterBall extends GameObject {
   static scriptUrl = import.meta.url;
   static instances = [];
-  static components = [RigidBody, Collider, SpriteRenderer];
+  static components = [RigidBody, Collider, CollisionListener, SpriteRenderer];
 
   setup() { }
 

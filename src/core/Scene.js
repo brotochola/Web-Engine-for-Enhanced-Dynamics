@@ -17,6 +17,7 @@ import { FlashComponent } from '../components/FlashComponent.js';
 import { LightEmitter } from '../components/LightEmitter.js';
 import { LightOccluder } from '../components/LightOccluder.js';
 import { CameraInOutListener } from '../components/CameraInOutListener.js';
+import { CollisionListener } from '../components/CollisionListener.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import {
   setupWorkerCommunication,
@@ -224,6 +225,7 @@ class Scene {
       FlashComponent: { ComponentClass: FlashComponent },
       LightOccluder: { ComponentClass: LightOccluder },
       CameraInOutListener: { ComponentClass: CameraInOutListener },
+      CollisionListener: { ComponentClass: CollisionListener },
     };
 
     // Assign componentId IDs to core and engine components
@@ -236,6 +238,7 @@ class Scene {
     FlashComponent.componentId = this.nextComponentId++;
     LightOccluder.componentId = this.nextComponentId++;
     CameraInOutListener.componentId = this.nextComponentId++;
+    CollisionListener.componentId = this.nextComponentId++;
 
     // Typed array views
     this.views = {

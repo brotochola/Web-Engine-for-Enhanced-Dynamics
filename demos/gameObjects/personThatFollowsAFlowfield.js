@@ -7,14 +7,14 @@ import { ParticleEmitter, SpriteSheetRegistry, SoundManager } from '../../src/in
 import { CarPart } from './carPart.js';
 import { Car } from './car.js';
 
-const { rng, GameObject, RigidBody, Collider, SpriteRenderer, ShadowCaster, NavGrid, Transform } = WEED;
+const { rng, GameObject, RigidBody, Collider, CollisionListener, SpriteRenderer, ShadowCaster, NavGrid, Transform } = WEED;
 // Reusable object for flowfield sampling (zero allocation)
 const _navVec = { x: 0, y: 0 };
 export class PersonThatFollowsAFlowfield extends GameObject {
     static scriptUrl = import.meta.url;
     static tickInterval = 8; // Tick every 10 frames (staggered across entities)
 
-    static components = [RigidBody, Collider, SpriteRenderer, ShadowCaster, PersonAnimationFSM, PersonComponent, LootableComponent];
+    static components = [RigidBody, Collider, CollisionListener, SpriteRenderer, ShadowCaster, PersonAnimationFSM, PersonComponent, LootableComponent];
 
     // Flocking behavior (override Person defaults)
     static groupingForce = 1;

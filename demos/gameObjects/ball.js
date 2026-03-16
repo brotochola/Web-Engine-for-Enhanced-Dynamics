@@ -78,14 +78,6 @@ class Ball extends GameObject {
     this.setTint(this.myColor);
   }
 
-  onCollisionEnter(otherIndex) {
-    // this.setTint(0xff0000);
-  }
-
-  onCollisionExit(otherIndex) {
-    // this.setTint(this.myColor);
-  }
-
   /**
    * LIFECYCLE: Called when ball is despawned (returned to pool)
    * Cleanup and save state if needed

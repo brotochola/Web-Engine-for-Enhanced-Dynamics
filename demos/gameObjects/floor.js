@@ -61,21 +61,6 @@ class Floor extends GameObject {
         this.setAlpha(0.8); // Slightly transparent
     }
 
-    onCollisionEnter(otherIndex) {
-        // Optional: visual feedback on collision
-    }
-
-    onCollisionExit(otherIndex) {
-        // Optional: restore visual state
-    }
-
-    /**
-     * LIFECYCLE: Called when floor is despawned (returned to pool)
-     */
-    onDespawned() {
-        // Cleanup if needed
-    }
-
     /**
      * Main update - static objects don't need updates
      */

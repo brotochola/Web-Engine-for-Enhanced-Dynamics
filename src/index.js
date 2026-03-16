@@ -41,6 +41,8 @@ export { LightEmitter } from './components/LightEmitter.js';
 export { ShadowCaster } from './components/ShadowCaster.js';
 export { LightOccluder } from './components/LightOccluder.js';
 export { FlashComponent } from './components/FlashComponent.js';
+export { CameraInOutListener } from './components/CameraInOutListener.js';
+export { CollisionListener } from './components/CollisionListener.js';
 
 // ============================================================================
 // PARTICLES
@@ -140,6 +142,7 @@ import { LightOccluder } from './components/LightOccluder.js';
 import { FlashComponent } from './components/FlashComponent.js';
 import { Flash } from './core/Flash.js';
 import { CameraInOutListener } from './components/CameraInOutListener.js';
+import { CollisionListener } from './components/CollisionListener.js';
 import { Constraint } from './core/Constraint.js';
 import { AbstractWorker } from './workers/AbstractWorker.js';
 import { DEBUG_FLAGS } from './core/debug/DebugFlags.js';
@@ -195,6 +198,7 @@ const WEED = Object.freeze({
   LightOccluder,
   FlashComponent,
   CameraInOutListener,
+  CollisionListener,
 
   // Particles
   ParticleEmitter,

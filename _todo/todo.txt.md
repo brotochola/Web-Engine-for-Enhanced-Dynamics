@@ -3,7 +3,6 @@
 
 -LightEmitter (llamarlo PointLight2d)
 
--cameraInOutListener
 -collisionListener
 -CircleCollider
 -RectCollider

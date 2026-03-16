@@ -4,13 +4,13 @@
 
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, Transform, ParticleEmitter } = WEED;
+const { GameObject, RigidBody, Collider, CollisionListener, Transform, ParticleEmitter } = WEED;
 
 export class CarPart extends GameObject {
     static scriptUrl = import.meta.url;
 
     // No SpriteRenderer - this is an invisible physics body
-    static components = [RigidBody, Collider];
+    static components = [RigidBody, Collider, CollisionListener];
 
     setup() {
         // Basic setup - actual values set in onSpawned

@@ -59,10 +59,6 @@ export class MySoldier extends Person {
     this.soldierBehaviorFSM.tick(dtRatio, this);
   }
 
-  onCollisionStay(other) {
-    // Reserved for future collision handling
-  }
-
   startFollowingDestination() {
     this.soldierBehaviorFSM.changeState(SoldierBehaviorFSM.states.GOING_TO_DESTINATION);
     this.personAnimationFSM.changeState(PersonAnimationFSM.states.IDLE);
