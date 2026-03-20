@@ -19,10 +19,9 @@ import { PHYSICS_STATS, createStatsWriter } from './workers-utils.js';
 import {
   clamp01,
   validatePhysicsConfig,
-  closestPointOnAABB,
   testCircleCircleCollision,
-  testCircleAABBCollision,
-  testAABBAABBCollision,
+  testCircleOBBCollision,
+  testOBBOBBCollision,
 } from '../core/utils.js';
 import { rng } from '../core/utils.js';
 import { Camera } from '../core/Camera.js';
@@ -70,6 +69,8 @@ class PhysicsWorker extends AbstractWorker {
       depth: 0,
       nx: 0,
       ny: 0,
+      contactX: 0,
+      contactY: 0,
     };
 
     // Constraint system
@@ -241,40 +242,25 @@ class PhysicsWorker extends AbstractWorker {
     const gx = this.settings.gravity.x || 0;
     const gy = this.settings.gravity.y || 0;
 
+    // Angular motion arrays
+    const prevRot = RigidBody.prevRotation;
+    const angularVel = RigidBody.angularVelocity;
+    const angularAccelArr = RigidBody.angularAccel;
+    const angularDragArr = RigidBody.angularDrag;
+    const invInertia = RigidBody.invInertia;
+
     // Step 1: Move entities using Verlet integration
     this.moveEntitiesVerlet(
-      active,
-      rigidBodyActive,
-      x,
-      y,
-      px,
-      py,
-      vx,
-      vy,
-      ax,
-      ay,
-      dtRatio,
-      gx,
-      gy,
-      maxVel
+      active, rigidBodyActive, x, y, rotation, px, py, vx, vy, ax, ay,
+      dtRatio, gx, gy, maxVel, prevRot, angularVel, angularAccelArr, angularDragArr
     );
 
     // Step 2: Apply constraints (collisions, boundary) with sub-stepping
     for (let step = 0; step < this.settings.subStepCount; step++) {
       this.resolveCollisionsVerlet(
-        active,
-        rigidBodyActive,
-        colliderActive,
-        x,
-        y,
-        offsetX,
-        offsetY,
-        shapeType,
-        radius,
-        width,
-        height,
-        isTrigger,
-        collisionCount
+        active, rigidBodyActive, colliderActive, x, y, offsetX, offsetY,
+        shapeType, radius, width, height, isTrigger, collisionCount,
+        rotation, invInertia
       );
 
       // Solve distance constraints (position-based dynamics)
@@ -292,12 +278,12 @@ class PhysicsWorker extends AbstractWorker {
    */
   updateVerletFixedStep(fixedDeltaTime, fixedDtRatio) {
     // PERFORMANCE OPTIMIZATION: Cache TypedArray references (see updateVerlet for full explanation)
-    // These local consts eliminate property lookups in hot loops - DO NOT move to instance properties!
     const active = Transform.active;
     const rigidBodyActive = RigidBody.active;
     const colliderActive = Collider.active;
     const x = Transform.x;
     const y = Transform.y;
+    const rotation = Transform.rotation;
     const px = RigidBody.px;
     const py = RigidBody.py;
     const vx = RigidBody.vx;
@@ -316,16 +302,14 @@ class PhysicsWorker extends AbstractWorker {
     const offsetX = Collider.offsetX;
     const offsetY = Collider.offsetY;
 
-    // // Get world bounds for boundary constraints
-    // const worldWidth = this.config.worldWidth;
-    // const worldHeight = this.config.worldHeight;
-
-    // Get the number of entities with RigidBody
-    // const rigidBodyCount = RigidBody.px?.length || 0;
+    // Angular motion arrays
+    const prevRot = RigidBody.prevRotation;
+    const angularVel = RigidBody.angularVelocity;
+    const angularAccelArr = RigidBody.angularAccel;
+    const angularDragArr = RigidBody.angularDrag;
+    const invInertia = RigidBody.invInertia;
 
     // OPTIMIZATION: Use queryActiveEntities to reset collision counters only for active physics entities
-    // Note: In fixed step mode, we reset per-step to avoid accumulation issues
-    // Cache query result to avoid repeated calls in the same frame
     if (!this._cachedPhysicsEntities) {
       this._cachedPhysicsEntities = this.queryActiveEntities([RigidBody]);
     }
@@ -341,37 +325,15 @@ class PhysicsWorker extends AbstractWorker {
 
     // Step 1: Move entities using Verlet integration with fixed timestep
     this.moveEntitiesVerlet(
-      active,
-      rigidBodyActive,
-      x,
-      y,
-      px,
-      py,
-      vx,
-      vy,
-      ax,
-      ay,
-      fixedDtRatio,
-      gx,
-      gy,
-      maxVel
+      active, rigidBodyActive, x, y, rotation, px, py, vx, vy, ax, ay,
+      fixedDtRatio, gx, gy, maxVel, prevRot, angularVel, angularAccelArr, angularDragArr
     );
 
     // Step 2: Apply constraints ONCE per fixed step (substepping is handled by accumulator)
     this.resolveCollisionsVerlet(
-      active,
-      rigidBodyActive,
-      colliderActive,
-      x,
-      y,
-      offsetX,
-      offsetY,
-      shapeType,
-      radius,
-      width,
-      height,
-      isTrigger,
-      collisionCount
+      active, rigidBodyActive, colliderActive, x, y, offsetX, offsetY,
+      shapeType, radius, width, height, isTrigger, collisionCount,
+      rotation, invInertia
     );
 
     // Solve distance constraints (position-based dynamics)
@@ -381,80 +343,68 @@ class PhysicsWorker extends AbstractWorker {
   }
 
   /**
-   * Move entities using Verlet integration
-   * Works for both circles and boxes - shape doesn't affect movement
+   * Move entities using Verlet integration (linear + angular)
    * OPTIMIZED: Uses query system to iterate only entities with RigidBody
    */
   moveEntitiesVerlet(
-    active,
-    rigidBodyActive,
-    x,
-    y,
-    px,
-    py,
-    vx,
-    vy,
-    ax,
-    ay,
-    dtRatio,
-    gx,
-    gy,
-    maxVel
+    active, rigidBodyActive, x, y, rotation, px, py, vx, vy, ax, ay,
+    dtRatio, gx, gy, maxVel, prevRot, angularVel, angularAccelArr, angularDragArr
   ) {
     const damping = this.settings.verletDamping;
     const isStatic = RigidBody.static;
     const friction = RigidBody.friction;
     const sleeping = RigidBody.sleeping;
 
-    // Use cached values (calculated once in applyPhysicsConfig, not per-frame)
     const wakeUpThresholdSq = this._wakeUpThresholdSq;
     const stillnessTime = RigidBody.stillnessTime;
 
     const gravityScale = dtRatio * dtRatio;
-    const invDtRatio = 1 / dtRatio; // Pre-computed inverse to avoid division in loop
+    const invDtRatio = 1 / dtRatio;
 
-    // Use cached query result from updateVerlet/updateVerletFixedStep
-    // This avoids redundant queryActiveEntities calls per frame
     const physicsEntities = this._cachedPhysicsEntities;
 
     for (let idx = 0; idx < physicsEntities.length; idx++) {
       const i = physicsEntities[idx];
-      // Note: active[i] and rigidBodyActive[i] checks removed - queryActiveEntities already filters
 
-      // Combined static + sleeping early-out (single branch for non-moving entities)
       if (isStatic[i] || sleeping[i]) {
         if (sleeping[i]) {
           px[i] = x[i];
           py[i] = y[i];
+          prevRot[i] = rotation[i];
           ax[i] = 0;
           ay[i] = 0;
+          angularAccelArr[i] = 0;
         }
         continue;
       }
 
       const accX = ax[i] * dtRatio;
       const accY = ay[i] * dtRatio;
+      const angAccel = angularAccelArr[i] * dtRatio;
 
-      // Wake-up check: use squared comparison to avoid Math.abs overhead
-      if (accX * accX > wakeUpThresholdSq || accY * accY > wakeUpThresholdSq) {
+      // Wake-up check: linear acceleration OR angular acceleration
+      if (accX * accX > wakeUpThresholdSq || accY * accY > wakeUpThresholdSq || angAccel * angAccel > wakeUpThresholdSq) {
         sleeping[i] = 0;
         stillnessTime[i] = 0;
       }
 
       const oldX = x[i];
       const oldY = y[i];
+      const oldRot = rotation[i];
 
-      // Initialize px/py for newly created entities (NaN !== NaN is faster than isNaN)
+      // Initialize prev positions for newly created entities (NaN !== NaN)
       if (px[i] !== px[i] || py[i] !== py[i]) {
         px[i] = oldX;
         py[i] = oldY;
       }
+      if (prevRot[i] !== prevRot[i]) {
+        prevRot[i] = oldRot;
+      }
 
-      // Verlet Integration
+      // Linear Verlet
       let dx = (x[i] - px[i]) * damping;
       let dy = (y[i] - py[i]) * damping;
 
-      // Apply friction using linear approximation (faster than Math.pow)
       if (friction[i] > 0) {
         const frictionFactor = 1 - friction[i] * dtRatio;
         dx *= frictionFactor;
@@ -464,7 +414,6 @@ class PhysicsWorker extends AbstractWorker {
       dx += gravityScale * gx + accX;
       dy += gravityScale * gy + accY;
 
-      // Velocity clamping using squared comparison (avoids sqrt for most entities)
       const speedSquared = dx * dx + dy * dy;
       const maxSpeed = maxVel[i] * dtRatio;
       const maxSpeedSquared = maxSpeed * maxSpeed;
@@ -475,61 +424,61 @@ class PhysicsWorker extends AbstractWorker {
         dy *= velScale;
       }
 
-      // NaN/Infinity safety: if integration produced non-finite values, reset entity motion.
-      // Catches bugs in game code (e.g. 0/0 in steering) and the Infinity*0=NaN path
-      // in velocity clamping. Without this, one bad frame corrupts the entity permanently.
       if (dx !== dx || dy !== dy || dx === Infinity || dx === -Infinity || dy === Infinity || dy === -Infinity) {
         px[i] = oldX;
         py[i] = oldY;
+        prevRot[i] = oldRot;
         vx[i] = 0;
         vy[i] = 0;
         ax[i] = 0;
         ay[i] = 0;
+        angularVel[i] = 0;
+        angularAccelArr[i] = 0;
         continue;
       }
 
       x[i] = oldX + dx;
       y[i] = oldY + dy;
-
       px[i] = oldX;
       py[i] = oldY;
-
       vx[i] = dx * invDtRatio;
       vy[i] = dy * invDtRatio;
-
       ax[i] = 0;
       ay[i] = 0;
+
+      // Angular Verlet
+      let dAngle = (oldRot - prevRot[i]) * damping;
+
+      if (angularDragArr[i] > 0) {
+        dAngle *= (1 - angularDragArr[i] * dtRatio);
+      }
+
+      dAngle += angAccel;
+
+      rotation[i] = oldRot + dAngle;
+      prevRot[i] = oldRot;
+      angularVel[i] = dAngle * invDtRatio;
+      angularAccelArr[i] = 0;
     }
   }
 
   /**
-   * Resolve collisions - routes to appropriate handler based on shape types
+   * Resolve collisions using OBB detection and angular PBD response
    */
   resolveCollisionsVerlet(
-    active,
-    rigidBodyActive,
-    colliderActive,
-    x,
-    y,
-    offsetX,
-    offsetY,
-    shapeType,
-    radius,
-    width,
-    height,
-    isTrigger,
-    collisionCount
+    active, rigidBodyActive, colliderActive, x, y, offsetX, offsetY,
+    shapeType, radius, width, height, isTrigger, collisionCount,
+    rotation, invInertia
   ) {
-
     const responseStrength = this.settings.collisionResponseStrength;
     const isStatic = RigidBody.static;
     const invMass = RigidBody.invMass;
+    const collResult = this.collisionResult;
 
     let pairCount = 0;
     const collisionData = this.collisionData;
     const maxPairs = this.maxCollisionPairs;
 
-    // PERFORMANCE: Cache Grid arrays locally to avoid method call overhead in hot loop
     const neighborData = Grid.neighborData;
     const stride = Grid._stride;
     const visualRange = Collider.visualRange;
@@ -538,159 +487,102 @@ class PhysicsWorker extends AbstractWorker {
 
     const rigidBodyCount = this.rigidBodyCount;
 
-    // OPTIMIZATION: Query for active entities with Collider component instead of iterating all entities
-    // Cache query result to avoid repeated calls in the same frame
     if (!this._cachedColliderEntities) {
       this._cachedColliderEntities = this.queryActiveEntities([Collider]);
     }
     const colliderEntities = this._cachedColliderEntities;
     const colliderCount = colliderEntities.length;
 
-    // Cache sleeping array reference for performance
     const sleeping = RigidBody.sleeping;
 
     for (let idx = 0; idx < colliderCount; idx++) {
       const i = colliderEntities[idx];
-      // Note: active[i] check no longer needed - queryActiveEntities already filters
-      // If the Entity's collider is disabled, skip collision resolution
       if (!colliderActive[i]) continue;
 
-      // Direct array access (no method call overhead)
-      // Layout: [totalCount, collisionCount, neighbors...]
-      // Physics only iterates collision candidates (first collisionCount neighbors)
       const offset = i * stride;
       const collisionCandidateCount = neighborData[offset + 1];
-
       if (collisionCandidateCount === 0) continue;
 
-      // HOISTED: Access entity 'i' properties ONCE outside the inner loop
       const shapeI = shapeType[i];
       const radiusI = radius[i];
       const widthI = width[i];
       const heightI = height[i];
-      // Hoist offsets (invariant) but NOT position (variant)
       const offXi = offsetX[i];
       const offYi = offsetY[i];
 
-      // NOTE: colliderX_i / colliderY_i CANNOT be hoisted because x[i]/y[i]
-      // change during the loop as collisions are resolved!
-
-      // OPTIMIZATION: Cache entity i's layer/mask and static/sleeping state outside the loop
       const layerBitI = 1 << (collisionLayer[i] & 31);
       const maskI = collisionMask[i];
       const iHasRigidBody = rigidBodyActive[i];
       const iStatic = !iHasRigidBody || isStatic[i];
       const iSleeping = iHasRigidBody && sleeping[i];
 
-      // Iterate only collision candidates (partitioned by spatial worker)
-      // No early break needed - these are pre-filtered to collision range
+      // Hoist trig for entity i (computed once per outer entity)
+      const cosI = Math.cos(rotation[i]);
+      const sinI = Math.sin(rotation[i]);
+
       for (let n = 0; n < collisionCandidateCount; n++) {
         const j = neighborData[offset + 2 + n];
 
         if (i === j || !active[j] || !colliderActive[j]) continue;
-        // Only process each pair once, but always process if j can't see (static obstacle with visualRange=0)
         if (i >= j && visualRange[j] > 0) continue;
 
-        // OPTIMIZATION: Skip collision checks between two static entities
-        // Static entities never move, so collisions between them are already resolved and won't change
         const jHasRigidBody = rigidBodyActive[j];
         const jStatic = !jHasRigidBody || isStatic[j];
-        if (iStatic && jStatic) {
-          // Both are static - skip collision check entirely
-          continue;
-        }
+        if (iStatic && jStatic) continue;
 
-        // OPTIMIZATION: Skip collision checks between two sleeping entities
-        // Sleeping entities won't move, so no collision resolution needed
-        // However, we still need to check sleeping vs awake to wake them up
         const jSleeping = jHasRigidBody && sleeping[j];
-        if (iSleeping && jSleeping) {
-          continue;
-        }
+        if (iSleeping && jSleeping) continue;
 
-        // Collision layer/mask filtering: skip if either entity's layer isn't in the other's mask
         const layerBitJ = 1 << (collisionLayer[j] & 31);
         if (!(layerBitI & collisionMask[j]) || !(layerBitJ & maskI)) continue;
 
-        // Get shape type for neighbor 'j'
         const shapeJ = shapeType[j];
 
-        // Calculate offset-adjusted collider positions
-        // We MUST re-calculate i's position here because it might have moved
-        // in a previous iteration of this same loop (multi-collision)
+        // Recalculate collider positions (x[i] may have shifted from prior iterations)
         const colliderX_i = x[i] + offXi;
         const colliderY_i = y[i] + offYi;
-
         const colliderX_j = x[j] + offsetX[j];
         const colliderY_j = y[j] + offsetY[j];
 
-        // Collision result: { collided, depth, nx, ny }
         let result = null;
-
-        // Track collision check
         this.collisionChecksThisFrame++;
 
         if (shapeI === SHAPE_CIRCLE && shapeJ === SHAPE_CIRCLE) {
-          // Circle vs Circle
-          result = this.testCircleCircle(
-            colliderX_i,
-            colliderY_i,
-            radiusI,
-            colliderX_j,
-            colliderY_j,
-            radius[j]
+          result = testCircleCircleCollision(
+            colliderX_i, colliderY_i, radiusI,
+            colliderX_j, colliderY_j, radius[j], collResult
           );
         } else if (shapeI === SHAPE_CIRCLE && shapeJ === SHAPE_BOX) {
-          // Circle vs Box
-          result = this.testCircleAABB(
-            colliderX_i,
-            colliderY_i,
-            radiusI,
-            colliderX_j,
-            colliderY_j,
-            width[j],
-            height[j]
+          const cosJ = Math.cos(rotation[j]);
+          const sinJ = Math.sin(rotation[j]);
+          result = testCircleOBBCollision(
+            colliderX_i, colliderY_i, radiusI,
+            colliderX_j, colliderY_j, width[j], height[j], cosJ, sinJ, collResult
           );
         } else if (shapeI === SHAPE_BOX && shapeJ === SHAPE_CIRCLE) {
-          // Box vs Circle (swap and invert normal)
-          result = this.testCircleAABB(
-            colliderX_j,
-            colliderY_j,
-            radius[j],
-            colliderX_i,
-            colliderY_i,
-            widthI,
-            heightI
+          result = testCircleOBBCollision(
+            colliderX_j, colliderY_j, radius[j],
+            colliderX_i, colliderY_i, widthI, heightI, cosI, sinI, collResult
           );
-          if (result && result.collided) {
+          if (result) {
             result.nx = -result.nx;
             result.ny = -result.ny;
           }
         } else if (shapeI === SHAPE_BOX && shapeJ === SHAPE_BOX) {
-          // Box vs Box
-          result = this.testAABBAABB(
-            colliderX_i,
-            colliderY_i,
-            widthI,
-            heightI,
-            colliderX_j,
-            colliderY_j,
-            width[j],
-            height[j]
+          const cosJ = Math.cos(rotation[j]);
+          const sinJ = Math.sin(rotation[j]);
+          result = testOBBOBBCollision(
+            colliderX_i, colliderY_i, widthI, heightI, cosI, sinI,
+            colliderX_j, colliderY_j, width[j], height[j], cosJ, sinJ, collResult
           );
         }
 
         if (!result || !result.collided) continue;
 
-        // Track collision resolved
         this.collisionsResolvedThisFrame++;
 
         const eitherIsTrigger = isTrigger[i] || isTrigger[j];
 
-        // SLEEPING OPTIMIZATION: Wake entities on collision
-        // If either entity is sleeping, wake it up (collision means something is happening)
-        // NOTE: Do NOT wake up entities if either is a trigger (triggers are for events only)
-        // Note: iSleeping and jSleeping are already computed above
         if (!eitherIsTrigger) {
           if (iHasRigidBody && iSleeping) {
             sleeping[i] = 0;
@@ -702,40 +594,46 @@ class PhysicsWorker extends AbstractWorker {
           }
         }
 
-        // Apply physical response if neither is a trigger
         if (!eitherIsTrigger) {
-          // OPTIMIZATION: iStatic and jStatic are already computed above
-          // No need to recompute them here
-
-          const correction = result.depth * responseStrength;
           const nx = result.nx;
           const ny = result.ny;
 
-          // Mass-weighted collision response:
-          // Lighter objects move more, heavier objects move less
-          // Static objects have invMass = 0 (infinite mass)
           const invMassI = iStatic ? 0 : invMass[i] || 1;
           const invMassJ = jStatic ? 0 : invMass[j] || 1;
-          const totalInvMass = invMassI + invMassJ;
 
-          if (totalInvMass > 0) {
-            // Distribute correction based on inverse mass ratio
-            const corrI = correction * (invMassI / totalInvMass);
-            const corrJ = correction * (invMassJ / totalInvMass);
+          // Torque arms from entity centers to contact point
+          const rIx = result.contactX - x[i];
+          const rIy = result.contactY - y[i];
+          const rJx = result.contactX - x[j];
+          const rJy = result.contactY - y[j];
 
-            x[i] += nx * corrI;
-            y[i] += ny * corrI;
-            x[j] -= nx * corrJ;
-            y[j] -= ny * corrJ;
+          const crossI = rIx * ny - rIy * nx;
+          const crossJ = rJx * ny - rJy * nx;
+
+          const invInertiaI = iStatic ? 0 : invInertia[i] || 0;
+          const invInertiaJ = jStatic ? 0 : invInertia[j] || 0;
+
+          // Generalized inverse mass: linear + angular contribution
+          const wI = invMassI + crossI * crossI * invInertiaI;
+          const wJ = invMassJ + crossJ * crossJ * invInertiaJ;
+          const totalW = wI + wJ;
+
+          if (totalW > 0) {
+            const lambda = result.depth * responseStrength / totalW;
+
+            x[i] += nx * lambda * invMassI;
+            y[i] += ny * lambda * invMassI;
+            x[j] -= nx * lambda * invMassJ;
+            y[j] -= ny * lambda * invMassJ;
+
+            rotation[i] += lambda * crossI * invInertiaI;
+            rotation[j] -= lambda * crossJ * invInertiaJ;
           }
-          // If totalInvMass === 0, both are static/infinite mass - no movement
         }
 
-        // Track collision count
         if (i < rigidBodyCount) collisionCount[i]++;
         if (j < rigidBodyCount) collisionCount[j]++;
 
-        // Record collision pair for callbacks
         if (collisionData && pairCount < maxPairs) {
           collisionData[1 + pairCount * 2] = i;
           collisionData[1 + pairCount * 2 + 1] = j;
@@ -748,38 +646,7 @@ class PhysicsWorker extends AbstractWorker {
       collisionData[0] = pairCount;
     }
 
-    // Store for stats reporting
     this.collisionPairsThisFrame = pairCount;
-  }
-
-  /**
-   * Test Circle vs Circle collision
-   * @returns {{ collided: boolean, depth: number, nx: number, ny: number } | null}
-   */
-  testCircleCircle(x1, y1, r1, x2, y2, r2) {
-    // Reuse collision result object to avoid GC pressure
-    const result = this.collisionResult;
-    return testCircleCircleCollision(x1, y1, r1, x2, y2, r2, result);
-  }
-
-  /**
-   * Test Circle vs AABB collision
-   * @returns {{ collided: boolean, depth: number, nx: number, ny: number } | null}
-   */
-  testCircleAABB(circleX, circleY, circleR, boxX, boxY, boxW, boxH) {
-    // Reuse collision result object to avoid GC pressure
-    const result = this.collisionResult;
-    return testCircleAABBCollision(circleX, circleY, circleR, boxX, boxY, boxW, boxH, result);
-  }
-
-  /**
-   * Test AABB vs AABB collision
-   * @returns {{ collided: boolean, depth: number, nx: number, ny: number } | null}
-   */
-  testAABBAABB(x1, y1, w1, h1, x2, y2, w2, h2) {
-    // Reuse collision result object to avoid GC pressure
-    const result = this.collisionResult;
-    return testAABBAABBCollision(x1, y1, w1, h1, x2, y2, w2, h2, result);
   }
 
   /**

@@ -1679,6 +1679,7 @@ class ParticleWorker extends AbstractWorker {
     const sleeping = RigidBody.sleeping;
     const stillnessTime = RigidBody.stillnessTime;
     const isStatic = RigidBody.static;
+    const angularVelocity = RigidBody.angularVelocity;
 
     const physicsEntities = this.queryActiveEntities(this._queryRigidBody);
 
@@ -1690,7 +1691,9 @@ class ParticleWorker extends AbstractWorker {
       const currentSpeed = calculateSpeed(vx[i], vy[i]);
       speed[i] = currentSpeed;
 
-      if (currentSpeed < sleepThreshold) {
+      const angVelAbs = angularVelocity[i] < 0 ? -angularVelocity[i] : angularVelocity[i];
+
+      if (currentSpeed < sleepThreshold && angVelAbs < sleepThreshold) {
         stillnessTime[i]++;
         if (stillnessTime[i] >= sleepDuration) {
           sleeping[i] = 1;

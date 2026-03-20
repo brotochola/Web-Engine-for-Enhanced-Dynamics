@@ -343,6 +343,7 @@ class SpatialWorker extends AbstractWorker {
     const radius = Collider.radius;
     const width = Collider.width;
     const height = Collider.height;
+    const rotation = Transform.rotation;
 
     const gridWidth = this.gridWidth;
     const gridHeight = this.gridHeight;
@@ -403,15 +404,18 @@ class SpatialWorker extends AbstractWorker {
       // Skip invalid positions (NaN check via self-comparison)
       if (posX !== posX || posY !== posY) continue;
 
-      // Calculate half-extent based on collider type
       let halfW = 0,
         halfH = 0;
       if (colliderActive[i]) {
         if (shapeType[i] === SHAPE_CIRCLE) {
           halfW = halfH = radius[i] || 0;
         } else {
-          halfW = (width[i] || 0) * 0.5;
-          halfH = (height[i] || 0) * 0.5;
+          const hw = (width[i] || 0) * 0.5;
+          const hh = (height[i] || 0) * 0.5;
+          const cosR = Math.abs(Math.cos(rotation[i]));
+          const sinR = Math.abs(Math.sin(rotation[i]));
+          halfW = hw * cosR + hh * sinR;
+          halfH = hw * sinR + hh * cosR;
         }
       }
 
@@ -498,6 +502,7 @@ class SpatialWorker extends AbstractWorker {
     const radius = Collider.radius;
     const width = Collider.width;
     const height = Collider.height;
+    const rotation = Transform.rotation;
     const SHAPE_CIRCLE = 0;
 
     const gridWidth = this.gridWidth;
@@ -575,15 +580,18 @@ class SpatialWorker extends AbstractWorker {
           const myX = x[entityA] + (offsetX[entityA] || 0);
           const myY = y[entityA] + (offsetY[entityA] || 0);
 
-          // Calculate halfExtent from Collider data (avoid stale entityPosData)
           let myHalfExtent = 0;
           if (colliderActive[entityA]) {
             if (shapeType[entityA] === SHAPE_CIRCLE) {
               myHalfExtent = radius[entityA] || 0;
             } else {
-              const halfW = (width[entityA] || 0) * 0.5;
-              const halfH = (height[entityA] || 0) * 0.5;
-              myHalfExtent = halfW > halfH ? halfW : halfH;
+              const hw = (width[entityA] || 0) * 0.5;
+              const hh = (height[entityA] || 0) * 0.5;
+              const cosR = Math.abs(Math.cos(rotation[entityA]));
+              const sinR = Math.abs(Math.sin(rotation[entityA]));
+              const rotHW = hw * cosR + hh * sinR;
+              const rotHH = hw * sinR + hh * cosR;
+              myHalfExtent = rotHW > rotHH ? rotHW : rotHH;
             }
           }
 
@@ -666,15 +674,18 @@ class SpatialWorker extends AbstractWorker {
               const bX = x[entityB] + (offsetX[entityB] || 0);
               const bY = y[entityB] + (offsetY[entityB] || 0);
 
-              // Calculate halfExtent from Collider data
               let bHalfExtent = 0;
               if (colliderActive[entityB]) {
                 if (shapeType[entityB] === SHAPE_CIRCLE) {
                   bHalfExtent = radius[entityB] || 0;
                 } else {
-                  const bHalfW = (width[entityB] || 0) * 0.5;
-                  const bHalfH = (height[entityB] || 0) * 0.5;
-                  bHalfExtent = bHalfW > bHalfH ? bHalfW : bHalfH;
+                  const bw = (width[entityB] || 0) * 0.5;
+                  const bh = (height[entityB] || 0) * 0.5;
+                  const bCosR = Math.abs(Math.cos(rotation[entityB]));
+                  const bSinR = Math.abs(Math.sin(rotation[entityB]));
+                  const rbHW = bw * bCosR + bh * bSinR;
+                  const rbHH = bw * bSinR + bh * bCosR;
+                  bHalfExtent = rbHW > rbHH ? rbHW : rbHH;
                 }
               }
 

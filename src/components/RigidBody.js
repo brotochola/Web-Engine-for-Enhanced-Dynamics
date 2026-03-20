@@ -25,10 +25,13 @@ export class RigidBody extends Component {
     // Angular motion
     angularVelocity: Float32Array,
     angularAccel: Float32Array,
+    prevRotation: Float32Array,
 
     // Mass properties
     mass: Float32Array,
     invMass: Float32Array,
+    inertia: Float32Array,
+    invInertia: Float32Array,
 
     // Damping
     drag: Float32Array,
@@ -72,6 +75,7 @@ export class RigidBody extends Component {
     //    If dynamic, recalculate mass from collider if available
     if (value) {
       RigidBody.invMass[this.index] = 0;
+      RigidBody.invInertia[this.index] = 0;
     } else {
       // Entity is now dynamic - recalculate mass from collider if it exists
       if (Collider.active && Collider.active[this.index]) {

@@ -1835,9 +1835,10 @@ export class GameObject {
           }
         }
       }
-      // If static, ensure invMass is 0
+      // If static, ensure invMass and invInertia are 0
       else if (isStatic) {
         RigidBody.invMass[i] = 0;
+        RigidBody.invInertia[i] = 0;
       }
     }
 

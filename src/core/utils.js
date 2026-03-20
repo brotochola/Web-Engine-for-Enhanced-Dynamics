@@ -831,6 +831,9 @@ export function updateMassFromCircle(index, radius, RigidBody) {
     const mass = Math.PI * radius * radius;
     RigidBody.mass[index] = mass;
     RigidBody.invMass[index] = 1 / mass;
+    const inertia = 0.5 * mass * radius * radius;
+    RigidBody.inertia[index] = inertia;
+    RigidBody.invInertia[index] = 1 / inertia;
   }
 }
 
@@ -852,6 +855,9 @@ export function updateMassFromBox(index, width, height, RigidBody) {
     const mass = width * height;
     RigidBody.mass[index] = mass;
     RigidBody.invMass[index] = 1 / mass;
+    const inertia = mass * (width * width + height * height) / 12;
+    RigidBody.inertia[index] = inertia;
+    RigidBody.invInertia[index] = 1 / inertia;
   }
 }
 
@@ -914,6 +920,9 @@ export function testCircleCircleCollision(x1, y1, r1, x2, y2, r2, result) {
     result.nx = dx / dist;
     result.ny = dy / dist;
   }
+
+  result.contactX = (x1 + x2 + result.nx * (r2 - r1)) * 0.5;
+  result.contactY = (y1 + y2 + result.ny * (r2 - r1)) * 0.5;
 
   return result;
 }
@@ -1035,6 +1044,195 @@ export function testAABBAABBCollision(x1, y1, w1, h1, x2, y2, w2, h2, result) {
     result.nx = 0;
     result.ny = dy > 0 ? 1 : -1;
   }
+
+  return result;
+}
+
+/**
+ * Test Circle vs OBB (Oriented Bounding Box) collision
+ * Transforms circle into box's local space, runs AABB test, transforms results back.
+ * Normal points from box toward circle.
+ * @param {number} circleX - Circle center X
+ * @param {number} circleY - Circle center Y
+ * @param {number} circleR - Circle radius
+ * @param {number} boxX - Box center X
+ * @param {number} boxY - Box center Y
+ * @param {number} boxW - Box width
+ * @param {number} boxH - Box height
+ * @param {number} boxCos - cos(boxAngle), pre-computed by caller
+ * @param {number} boxSin - sin(boxAngle), pre-computed by caller
+ * @param {Object} result - Result object to mutate {collided, depth, nx, ny, contactX, contactY}
+ * @returns {Object|null} Result object if collision, null if no collision
+ */
+export function testCircleOBBCollision(circleX, circleY, circleR, boxX, boxY, boxW, boxH, boxCos, boxSin, result) {
+  const halfW = boxW * 0.5;
+  const halfH = boxH * 0.5;
+
+  const relX = circleX - boxX;
+  const relY = circleY - boxY;
+  const localX = relX * boxCos + relY * boxSin;
+  const localY = -relX * boxSin + relY * boxCos;
+
+  const closestX = localX < -halfW ? -halfW : localX > halfW ? halfW : localX;
+  const closestY = localY < -halfH ? -halfH : localY > halfH ? halfH : localY;
+
+  const dx = localX - closestX;
+  const dy = localY - closestY;
+  const dist2 = dx * dx + dy * dy;
+
+  if (dist2 >= circleR * circleR) return null;
+
+  const dist = Math.sqrt(dist2);
+  result.collided = true;
+
+  if (dist === 0) {
+    const distToLeft = localX + halfW;
+    const distToRight = halfW - localX;
+    const distToTop = localY + halfH;
+    const distToBottom = halfH - localY;
+
+    const minDistX = distToLeft < distToRight ? distToLeft : distToRight;
+    const minDistY = distToTop < distToBottom ? distToTop : distToBottom;
+
+    let localNx, localNy, contactLX, contactLY;
+    if (minDistX < minDistY) {
+      result.depth = minDistX + circleR;
+      localNx = distToLeft < distToRight ? -1 : 1;
+      localNy = 0;
+      contactLX = localNx > 0 ? halfW : -halfW;
+      contactLY = localY;
+    } else {
+      result.depth = minDistY + circleR;
+      localNx = 0;
+      localNy = distToTop < distToBottom ? -1 : 1;
+      contactLX = localX;
+      contactLY = localNy > 0 ? halfH : -halfH;
+    }
+
+    result.nx = localNx * boxCos - localNy * boxSin;
+    result.ny = localNx * boxSin + localNy * boxCos;
+    result.contactX = boxX + contactLX * boxCos - contactLY * boxSin;
+    result.contactY = boxY + contactLX * boxSin + contactLY * boxCos;
+  } else {
+    result.depth = circleR - dist;
+    const invDist = 1 / dist;
+    const localNx = dx * invDist;
+    const localNy = dy * invDist;
+
+    result.nx = localNx * boxCos - localNy * boxSin;
+    result.ny = localNx * boxSin + localNy * boxCos;
+    result.contactX = boxX + closestX * boxCos - closestY * boxSin;
+    result.contactY = boxY + closestX * boxSin + closestY * boxCos;
+  }
+
+  return result;
+}
+
+/**
+ * Test OBB vs OBB (Oriented Bounding Box) collision using Separating Axis Theorem.
+ * Tests 4 axes (2 per box). Normal points from box2 toward box1.
+ * @param {number} x1 - First box center X
+ * @param {number} y1 - First box center Y
+ * @param {number} w1 - First box width
+ * @param {number} h1 - First box height
+ * @param {number} cos1 - cos(angle1), pre-computed by caller
+ * @param {number} sin1 - sin(angle1), pre-computed by caller
+ * @param {number} x2 - Second box center X
+ * @param {number} y2 - Second box center Y
+ * @param {number} w2 - Second box width
+ * @param {number} h2 - Second box height
+ * @param {number} cos2 - cos(angle2), pre-computed by caller
+ * @param {number} sin2 - sin(angle2), pre-computed by caller
+ * @param {Object} result - Result object to mutate {collided, depth, nx, ny, contactX, contactY}
+ * @returns {Object|null} Result object if collision, null if no collision
+ */
+export function testOBBOBBCollision(x1, y1, w1, h1, cos1, sin1, x2, y2, w2, h2, cos2, sin2, result) {
+  const hw1 = w1 * 0.5;
+  const hh1 = h1 * 0.5;
+  const hw2 = w2 * 0.5;
+  const hh2 = h2 * 0.5;
+
+  const dx = x1 - x2;
+  const dy = y1 - y2;
+
+  // Pre-compute dot products between the two boxes' local axes
+  // c12 = cos(a1-a2), s12 = sin(a1-a2) via angle subtraction identities
+  const c12 = cos1 * cos2 + sin1 * sin2;
+  const s12 = sin1 * cos2 - cos1 * sin2;
+  const absC = c12 < 0 ? -c12 : c12;
+  const absS = s12 < 0 ? -s12 : s12;
+
+  let minOverlap = Infinity;
+  let bestNx = 0, bestNy = 0;
+
+  // Axis 1: Box1 local X = (cos1, sin1)
+  const p1 = dx * cos1 + dy * sin1;
+  const e1_ax1 = hw1;
+  const e2_ax1 = hw2 * absC + hh2 * absS;
+  const overlap1 = e1_ax1 + e2_ax1 - (p1 < 0 ? -p1 : p1);
+  if (overlap1 <= 0) return null;
+  minOverlap = overlap1;
+  bestNx = p1 > 0 ? cos1 : -cos1;
+  bestNy = p1 > 0 ? sin1 : -sin1;
+
+  // Axis 2: Box1 local Y = (-sin1, cos1)
+  const p2 = -dx * sin1 + dy * cos1;
+  const e1_ay1 = hh1;
+  const e2_ay1 = hw2 * absS + hh2 * absC;
+  const overlap2 = e1_ay1 + e2_ay1 - (p2 < 0 ? -p2 : p2);
+  if (overlap2 <= 0) return null;
+  if (overlap2 < minOverlap) {
+    minOverlap = overlap2;
+    bestNx = p2 > 0 ? -sin1 : sin1;
+    bestNy = p2 > 0 ? cos1 : -cos1;
+  }
+
+  // Axis 3: Box2 local X = (cos2, sin2)
+  const p3 = dx * cos2 + dy * sin2;
+  const e1_ax2 = hw1 * absC + hh1 * absS;
+  const e2_ax2 = hw2;
+  const overlap3 = e1_ax2 + e2_ax2 - (p3 < 0 ? -p3 : p3);
+  if (overlap3 <= 0) return null;
+  if (overlap3 < minOverlap) {
+    minOverlap = overlap3;
+    bestNx = p3 > 0 ? cos2 : -cos2;
+    bestNy = p3 > 0 ? sin2 : -sin2;
+  }
+
+  // Axis 4: Box2 local Y = (-sin2, cos2)
+  const p4 = -dx * sin2 + dy * cos2;
+  const e1_ay2 = hw1 * absS + hh1 * absC;
+  const e2_ay2 = hh2;
+  const overlap4 = e1_ay2 + e2_ay2 - (p4 < 0 ? -p4 : p4);
+  if (overlap4 <= 0) return null;
+  if (overlap4 < minOverlap) {
+    minOverlap = overlap4;
+    bestNx = p4 > 0 ? -sin2 : sin2;
+    bestNy = p4 > 0 ? cos2 : -cos2;
+  }
+
+  result.collided = true;
+  result.depth = minOverlap;
+  result.nx = bestNx;
+  result.ny = bestNy;
+
+  // Contact point: midpoint of support vertices along collision normal
+  // Support of box2 in +normal direction (deepest vertex of box2 into box1)
+  const dot2X = bestNx * cos2 + bestNy * sin2;
+  const dot2Y = -bestNx * sin2 + bestNy * cos2;
+  const sx2 = dot2X > 0 ? hw2 : -hw2;
+  const sy2 = dot2Y > 0 ? hh2 : -hh2;
+
+  // Support of box1 in -normal direction (deepest vertex of box1 into box2)
+  const negNx = -bestNx;
+  const negNy = -bestNy;
+  const dot1X = negNx * cos1 + negNy * sin1;
+  const dot1Y = -negNx * sin1 + negNy * cos1;
+  const sx1 = dot1X > 0 ? hw1 : -hw1;
+  const sy1 = dot1Y > 0 ? hh1 : -hh1;
+
+  result.contactX = (x1 + sx1 * cos1 - sy1 * sin1 + x2 + sx2 * cos2 - sy2 * sin2) * 0.5;
+  result.contactY = (y1 + sx1 * sin1 + sy1 * cos1 + y2 + sx2 * sin2 + sy2 * cos2) * 0.5;
 
   return result;
 }
