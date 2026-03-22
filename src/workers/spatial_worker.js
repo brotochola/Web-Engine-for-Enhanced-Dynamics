@@ -510,6 +510,7 @@ class SpatialWorker extends AbstractWorker {
 
     // Single buffer - direct access (row ownership eliminates races)
     const neighborData = Grid.neighborData;
+    const entityPosData = this.entityPosData;
 
     // Direct grid buffer access
     const gridCounts = Grid._gridCounts;
@@ -571,21 +572,11 @@ class SpatialWorker extends AbstractWorker {
           // This prevents race conditions when entities span multiple rows
           // Home row = row containing entity's center Y position
           // =====================================================================
-          // Read position from Transform (source of truth) - entityPosData can be stale/race
-          const myX = x[entityA] + (offsetX[entityA] || 0);
-          const myY = y[entityA] + (offsetY[entityA] || 0);
-
-          // Calculate halfExtent from Collider data (avoid stale entityPosData)
-          let myHalfExtent = 0;
-          if (colliderActive[entityA]) {
-            if (shapeType[entityA] === SHAPE_CIRCLE) {
-              myHalfExtent = radius[entityA] || 0;
-            } else {
-              const halfW = (width[entityA] || 0) * 0.5;
-              const halfH = (height[entityA] || 0) * 0.5;
-              myHalfExtent = halfW > halfH ? halfW : halfH;
-            }
-          }
+          // Read perfectly contiguous cache (built immediately prior by this worker)
+          const baseIdxA = entityA * 4;
+          const myX = entityPosData[baseIdxA];
+          const myY = entityPosData[baseIdxA + 1];
+          const myHalfExtent = entityPosData[baseIdxA + 2];
 
           let homeRow = (myY * invCellSize) | 0;
           // Clamp to grid bounds
@@ -662,21 +653,11 @@ class SpatialWorker extends AbstractWorker {
               processedMarker[entityB] = stampedA;
 
               // Calculate squared distance for range check
-              // Read from Transform/Collider (source of truth) - entityPosData can be stale/race
-              const bX = x[entityB] + (offsetX[entityB] || 0);
-              const bY = y[entityB] + (offsetY[entityB] || 0);
-
-              // Calculate halfExtent from Collider data
-              let bHalfExtent = 0;
-              if (colliderActive[entityB]) {
-                if (shapeType[entityB] === SHAPE_CIRCLE) {
-                  bHalfExtent = radius[entityB] || 0;
-                } else {
-                  const bHalfW = (width[entityB] || 0) * 0.5;
-                  const bHalfH = (height[entityB] || 0) * 0.5;
-                  bHalfExtent = bHalfW > bHalfH ? bHalfW : bHalfH;
-                }
-              }
+              // Read directly from interleaved entityPosData for purely linear cache hits!
+              const baseIdxB = entityB * 4;
+              const bX = entityPosData[baseIdxB];
+              const bY = entityPosData[baseIdxB + 1];
+              const bHalfExtent = entityPosData[baseIdxB + 2];
 
               const dxAB = bX - myX;
               const dyAB = bY - myY;
