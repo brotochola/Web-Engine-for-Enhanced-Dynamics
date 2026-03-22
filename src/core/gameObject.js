@@ -1399,7 +1399,11 @@ export class GameObject {
     // ========================================
     // Deactivate all component active flags
     Transform.active[i] = 0;
-    if (this.rigidBody) RigidBody.active[i] = 0;
+    if (this.rigidBody) {
+      RigidBody.active[i] = 0;
+      RigidBody.sleeping[i] = 0;
+      RigidBody.stillnessTime[i] = 0;
+    }
     if (this.collider) Collider.active[i] = 0;
     if (this.spriteRenderer) SpriteRenderer.active[i] = 0;
     if (this.lightEmitter) LightEmitter.active[i] = 0;
@@ -2003,7 +2007,11 @@ export class GameObject {
 
         // Deactivate all component active flags
         transformActive[i] = 0;
-        if (rigidBodyActive) rigidBodyActive[i] = 0;
+        if (rigidBodyActive) {
+          rigidBodyActive[i] = 0;
+          RigidBody.sleeping[i] = 0;
+          RigidBody.stillnessTime[i] = 0;
+        }
         if (colliderActive) colliderActive[i] = 0;
         if (spriteRendererActive) spriteRendererActive[i] = 0;
         if (lightEmitterActive) lightEmitterActive[i] = 0;

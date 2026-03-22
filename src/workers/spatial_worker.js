@@ -36,6 +36,7 @@ self.postMessage({
 import { Transform } from '../components/Transform.js';
 import { Collider } from '../components/Collider.js';
 import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { RigidBody } from '../components/RigidBody.js';
 import { AbstractWorker } from './AbstractWorker.js';
 import { Grid } from '../core/Grid.js';
 import {
@@ -500,6 +501,10 @@ class SpatialWorker extends AbstractWorker {
     const height = Collider.height;
     const SHAPE_CIRCLE = 0;
 
+    const rigidBodyActive = RigidBody.active;
+    const isStatic = RigidBody.static;
+    const sleeping = RigidBody.sleeping;
+
     const gridWidth = this.gridWidth;
     const gridHeight = this.gridHeight;
     const invCellSize = this.invCellSize;
@@ -590,6 +595,10 @@ class SpatialWorker extends AbstractWorker {
           const stampedA = processedFrameStamp | entityA;
           const myVisualRange = visualRange[entityA];
 
+          const iHasRigidBody = rigidBodyActive[entityA];
+          const iStatic = !iHasRigidBody || isStatic[entityA];
+          const iSleeping = iHasRigidBody && sleeping[entityA];
+
           // Neighbor write offset
           const neighborOffset = entityA * stride;
 
@@ -600,10 +609,16 @@ class SpatialWorker extends AbstractWorker {
             continue;
           }
 
-          // NOTE: Sleeping optimization removed - stale RigidBody data from entity pooling
-          // caused false positives (entities without RigidBody were incorrectly detected
-          // as sleeping because their slot had old data from a previous entity).
-          // TODO: Re-enable once component data is properly cleared on entity despawn.
+          // ================================================================= 
+          // SLEEPING OPTIMIZATION: Reduced scan frequency for sleeping entities
+          // ================================================================= 
+          // Sleeping entities update neighbors every 4 frames instead of every frame.
+          // Stagger by entity ID to spread load evenly across frames.
+          // ================================================================= 
+          if (iSleeping && ((this.frameNumber + entityA) & 3) !== 0) {
+            // Skip this frame for sleeping entity - keep previous neighbor data
+            continue;
+          }
 
           // Calculate cell search radius (bitwise ceiling - avoids Math.ceil overhead in hot path)
           // Using (x | 0) + 1 always rounds up, may add one extra cell ring but negligible impact
@@ -676,11 +691,26 @@ class SpatialWorker extends AbstractWorker {
                 const collisionRangeSq = collisionRange * collisionRange;
 
                 if (distSq < collisionRangeSq) {
-                  // COLLISION CANDIDATE: Write directly to neighborData (first section)
-                  if (collisionCount < maxNeighbors) {
-                    neighborData[neighborOffset + 2 + collisionCount] = entityB;
-                    collisionCount++;
-                    this.neighborsFoundThisFrame++;
+                  // Static / Sleeping early rejection
+                  const jHasRigidBody = rigidBodyActive[entityB];
+                  const jStatic = !jHasRigidBody || isStatic[entityB];
+                  const jSleeping = jHasRigidBody && sleeping[entityB];
+                  const skipCollision = (iStatic && jStatic) || (iSleeping && jSleeping);
+
+                  if (!skipCollision) {
+                    // COLLISION CANDIDATE: Write directly to neighborData (first section)
+                    if (collisionCount < maxNeighbors) {
+                      neighborData[neighborOffset + 2 + collisionCount] = entityB;
+                      collisionCount++;
+                      this.neighborsFoundThisFrame++;
+                    }
+                  } else {
+                    // Demote to VISUAL-ONLY
+                    if (collisionCount + visualOnlyCount < maxNeighbors) {
+                      visualOnlyBuffer[visualOnlyCount] = entityB;
+                      visualOnlyCount++;
+                      this.neighborsFoundThisFrame++;
+                    }
                   }
                 } else {
                   // VISUAL-ONLY: Buffer for later (will be written after collision candidates)
