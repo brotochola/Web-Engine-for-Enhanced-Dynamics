@@ -346,7 +346,6 @@ class ParticleWorker extends AbstractWorker {
     // Derived properties
     this.globalEntityCount = 0;
     this.minSpeedForRotation = 0.1;
-    this.sleepingEnabled = true;
     this.sleepThreshold = 0.1;
     this.sleepDuration = 30;
     this._queryRigidBody = null;
@@ -477,11 +476,9 @@ class ParticleWorker extends AbstractWorker {
     // ========================================
     if (data.buffers?.componentData?.RigidBody && data.componentPools?.RigidBody) {
       const physicsConfig = data.config?.physics || {};
-      const sleepingConfig = physicsConfig.sleeping || PHYSICS_DEFAULTS.sleeping;
-      this.sleepingEnabled = sleepingConfig.enabled !== false;
       this.minSpeedForRotation = physicsConfig.minSpeedForRotation ?? PHYSICS_DEFAULTS.minSpeedForRotation;
-      this.sleepThreshold = sleepingConfig.sleepThreshold ?? PHYSICS_DEFAULTS.sleeping.sleepThreshold;
-      this.sleepDuration = sleepingConfig.sleepDuration ?? PHYSICS_DEFAULTS.sleeping.sleepDuration;
+      this.sleepThreshold = physicsConfig.sleepThreshold ?? PHYSICS_DEFAULTS.sleepThreshold;
+      this.sleepDuration = physicsConfig.sleepDuration ?? PHYSICS_DEFAULTS.sleepDuration;
       this._queryRigidBody = [RigidBody];
 
       // console.log('[PARTICLE WORKER] Derived properties initialized');
@@ -1693,7 +1690,7 @@ class ParticleWorker extends AbstractWorker {
       const currentSpeed = calculateSpeed(vx[i], vy[i]);
       speed[i] = currentSpeed;
 
-      if (this.sleepingEnabled && currentSpeed < sleepThreshold) {
+      if (currentSpeed < sleepThreshold) {
         stillnessTime[i]++;
         if (stillnessTime[i] >= sleepDuration) {
           sleeping[i] = 1;

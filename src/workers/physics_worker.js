@@ -167,11 +167,9 @@ class PhysicsWorker extends AbstractWorker {
     this.settings = validatePhysicsConfig(this.settings, this.config.physics);
 
     // Cache derived values that don't change during the scene
-    const sleepingConfig = this.config.physics.sleeping || PHYSICS_DEFAULTS.sleeping;
-    this.sleepingEnabled = sleepingConfig.enabled !== false;
-    const wakeUpThreshold = sleepingConfig.wakeUpThreshold ?? PHYSICS_DEFAULTS.sleeping.wakeUpThreshold;
+    const wakeUpThreshold = this.config.physics.wakeUpThreshold ?? PHYSICS_DEFAULTS.wakeUpThreshold;
     this._wakeUpThresholdSq = wakeUpThreshold * wakeUpThreshold;
-    this._sleepThreshold = sleepingConfig.sleepThreshold ?? PHYSICS_DEFAULTS.sleeping.sleepThreshold;
+    this._sleepThreshold = this.config.physics.sleepThreshold ?? PHYSICS_DEFAULTS.sleepThreshold;
   }
 
   handleCustomMessage(data) {

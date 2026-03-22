@@ -157,12 +157,9 @@ export const PHYSICS_DEFAULTS = Object.freeze({
   maxCollisionPairs: 10000,
   maxConstraints: 0,
   gravity: Object.freeze({ x: 0, y: 0 }),
-  sleeping: {
-    enabled: true,
-    sleepThreshold: 0.1,
-    wakeUpThreshold: 0.05,
-    sleepDuration: 30,
-  },
+  sleepThreshold: 0.1,
+  wakeUpThreshold: 0.05,
+  sleepDuration: 30,
 });
 
 // ============================================================================
