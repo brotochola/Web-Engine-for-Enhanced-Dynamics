@@ -132,6 +132,8 @@ class PhysicsWorker extends AbstractWorker {
     this._cachedPhysicsEntities = null;
     this._cachedColliderEntities = null;
 
+    this.buildDenseColliders();
+
     if (this.noLimitFPS && this.settings.subStepCount > 1) {
       // Fixed timestep mode: accumulate time and run physics at fixed intervals
       // This ensures subSteps work correctly regardless of actual frame rate
@@ -176,6 +178,40 @@ class PhysicsWorker extends AbstractWorker {
     if (data.msg === 'updatePhysicsConfig') {
       this.applyPhysicsConfig(data.config || {});
     }
+  }
+
+  /**
+   * Build a dense array of active colliders that ACTUALLY have collision candidates.
+   * This runs ONCE per frame, eliminating thousands of empty loop iterations in sub-stepping.
+   */
+  buildDenseColliders() {
+    if (!this._cachedColliderEntities) {
+      this._cachedColliderEntities = this.queryActiveEntities([Collider]);
+    }
+    const colliderEntities = this._cachedColliderEntities;
+    const colliderCount = colliderEntities.length;
+
+    if (!this._denseColliders || this._denseColliders.length < colliderCount) {
+      this._denseColliders = new Uint16Array(Math.max(colliderCount, 1024));
+    }
+    
+    const denseColliders = this._denseColliders;
+    let denseCount = 0;
+    
+    const neighborData = Grid.neighborData;
+    const stride = Grid._stride;
+    const colliderActive = Collider.active;
+
+    for (let idx = 0; idx < colliderCount; idx++) {
+      const i = colliderEntities[idx];
+      if (colliderActive[i]) {
+        if (neighborData[i * stride + 1] > 0) {
+          denseColliders[denseCount++] = i;
+        }
+      }
+    }
+    
+    this._denseColliderCount = denseCount;
   }
 
   /**
@@ -538,30 +574,23 @@ class PhysicsWorker extends AbstractWorker {
 
     const rigidBodyCount = this.rigidBodyCount;
 
-    // OPTIMIZATION: Query for active entities with Collider component instead of iterating all entities
-    // Cache query result to avoid repeated calls in the same frame
-    if (!this._cachedColliderEntities) {
-      this._cachedColliderEntities = this.queryActiveEntities([Collider]);
-    }
-    const colliderEntities = this._cachedColliderEntities;
-    const colliderCount = colliderEntities.length;
+    // OPTIMIZATION: Use pre-built dense list of active colliders that ACTUALLY have collision candidates
+    // This perfectly bypasses thousands of empty loop iterations in sub-stepping.
+    const denseColliders = this._denseColliders;
+    const denseCount = this._denseColliderCount;
 
     // Cache sleeping array reference for performance
     const sleeping = RigidBody.sleeping;
 
-    for (let idx = 0; idx < colliderCount; idx++) {
-      const i = colliderEntities[idx];
-      // Note: active[i] check no longer needed - queryActiveEntities already filters
-      // If the Entity's collider is disabled, skip collision resolution
-      if (!colliderActive[i]) continue;
+    for (let idx = 0; idx < denseCount; idx++) {
+      const i = denseColliders[idx];
+      // Note: active[i], colliderActive[i], and candidateCount > 0 are already checked in buildDenseColliders
 
       // Direct array access (no method call overhead)
       // Layout: [totalCount, collisionCount, neighbors...]
       // Physics only iterates collision candidates (first collisionCount neighbors)
       const offset = i * stride;
       const collisionCandidateCount = neighborData[offset + 1];
-
-      if (collisionCandidateCount === 0) continue;
 
       // HOISTED: Access entity 'i' properties ONCE outside the inner loop
       const shapeI = shapeType[i];
