@@ -138,32 +138,12 @@ export class BallsScene extends Scene {
 
     Camera.setZoom(Camera.zoom * (1 - Mouse.wheel * 0.001));
 
-    if (frameNumber % (60 * 5) === 0) {
-      this.printFPS()
-    }
+    // if (frameNumber % (60 * 5) === 0) {
+    //   this.printFPS()
+    // }
 
   }
-  printFPS() {
-    const smoothing = this.game.debugUI?.fpsSmoothing;
-    if (!smoothing) {
-      console.log('DebugUI not available');
-      return;
-    }
 
-    const getSmoothedFPS = (s) => (s.sum / s.values.length).toFixed(2);
-
-    // Log all worker FPS (smoothed, same as DebugUI)
-    console.log('=== Worker FPS (averaged) ===', performance.now());
-    for (let i = 0; i < smoothing.spatial.length; i++) {
-      console.log(`Spatial ${i}: ${getSmoothedFPS(smoothing.spatial[i])} FPS`);
-    }
-    console.log(`Physics: ${getSmoothedFPS(smoothing.physics)} FPS`);
-    console.log(`Renderer: ${getSmoothedFPS(smoothing.renderer)} FPS`);
-    console.log(`Particle: ${getSmoothedFPS(smoothing.particle)} FPS`);
-    for (let i = 0; i < smoothing.logic.length; i++) {
-      console.log(`Logic ${i}: ${getSmoothedFPS(smoothing.logic[i])} FPS`);
-    }
-  }
   // ========================================
   // SPAWNING HELPERS
   // ========================================
