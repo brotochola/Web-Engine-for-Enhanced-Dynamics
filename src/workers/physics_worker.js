@@ -196,10 +196,10 @@ class PhysicsWorker extends AbstractWorker {
     if (!this._denseColliders || this._denseColliders.length < colliderCount) {
       this._denseColliders = new Uint16Array(Math.max(colliderCount, 1024));
     }
-    
+
     const denseColliders = this._denseColliders;
     let denseCount = 0;
-    
+
     const neighborData = Grid.neighborData;
     const stride = Grid._stride;
     const colliderActive = Collider.active;
@@ -212,7 +212,7 @@ class PhysicsWorker extends AbstractWorker {
         }
       }
     }
-    
+
     this._denseColliderCount = denseCount;
   }
 
@@ -849,6 +849,8 @@ class PhysicsWorker extends AbstractWorker {
   solveDistanceConstraints(x, y, active) {
     const shouldProfile = !!this.stats;
     const startTime = shouldProfile ? performance.now() : 0;
+    const minDistSq = 0.0000001
+    const errorEpsilon = 0.001;
 
     const pairs = Constraint.pairs;
     const restLength = Constraint.restLength;
@@ -873,34 +875,6 @@ class PhysicsWorker extends AbstractWorker {
       // Skip if either entity is inactive
       if (!active[entityA] || !active[entityB]) continue;
 
-      // Get current positions
-      const ax = x[entityA];
-      const ay = y[entityA];
-      const bx = x[entityB];
-      const by = y[entityB];
-
-      // Calculate distance vector and current distance
-      const dx = bx - ax;
-      const dy = by - ay;
-      const currentDist = Math.sqrt(dx * dx + dy * dy);
-
-      // Skip if entities are at same position (avoid division by zero)
-      if (currentDist < 0.0001) continue;
-
-      // Calculate error (how far from rest length)
-      const targetDist = restLength[i];
-      const error = currentDist - targetDist;
-
-      // Skip if already at target distance
-      if (Math.abs(error) < 0.001) continue;
-
-      // Calculate correction direction (normalized)
-      const nx = dx / currentDist;
-      const ny = dy / currentDist;
-
-      // Apply stiffness to correction
-      const correction = error * stiffness[i] * 0.5; // 0.5 for relaxation
-
       // Mass-weighted response (similar to collision resolution)
       const aHasRB = rigidBodyActive[entityA];
       const bHasRB = rigidBodyActive[entityB];
@@ -914,6 +888,37 @@ class PhysicsWorker extends AbstractWorker {
 
       // Skip if both are static (no movement possible)
       if (totalInvMass === 0) continue;
+
+      // Get current positions
+      const ax = x[entityA];
+      const ay = y[entityA];
+      const bx = x[entityB];
+      const by = y[entityB];
+
+      // Calculate distance vector and current distance
+      const dx = bx - ax;
+      const dy = by - ay;
+      const distSq = dx * dx + dy * dy;
+
+      // Skip if entities are at same position (avoid division by zero)
+      if (distSq < minDistSq) continue;
+
+      const currentDist = Math.sqrt(distSq);
+
+      // Calculate error (how far from rest length)
+      const targetDist = restLength[i];
+      const error = currentDist - targetDist;
+
+      // Skip if already at target distance
+      if (error > -errorEpsilon && error < errorEpsilon) continue;
+
+      // Calculate correction direction (normalized)
+      const invCurrentDist = 1 / currentDist;
+      const nx = dx * invCurrentDist;
+      const ny = dy * invCurrentDist;
+
+      // Apply stiffness to correction
+      const correction = error * stiffness[i] * 0.5; // 0.5 for relaxation
 
       // Distribute correction based on mass
       const corrA = correction * (invMassA / totalInvMass);
