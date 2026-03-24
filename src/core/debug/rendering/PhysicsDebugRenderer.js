@@ -529,14 +529,16 @@ export class PhysicsDebugRenderer {
     const restLength = Constraint.restLength;
     const stiffness = Constraint.stiffness;
     const constraintActive = Constraint.active;
-    const maxConstraints = Constraint.maxCount;
+    const activeIndices = Constraint.activeIndices;
+    const activeConstraintCount = Constraint.getDenseActiveCount();
     const x = Transform.x;
     const y = Transform.y;
     const entityActive = Transform.active;
 
     ctx.lineWidth = 2;
 
-    for (let i = 0; i < maxConstraints; i++) {
+    for (let slot = 0; slot < activeConstraintCount; slot++) {
+      const i = activeIndices[slot];
       if (!constraintActive[i]) continue;
       const packed = pairs[i];
       const entityA = packed >>> 16;

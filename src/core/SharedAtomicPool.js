@@ -34,6 +34,18 @@ export class SharedAtomicPool {
     // Pool name for logging (override in subclass)
     static poolName = 'SharedAtomicPool';
 
+    static acquireSpinLock(lockView) {
+        if (!lockView) return;
+        while (Atomics.compareExchange(lockView, 0, 0, 1) !== 0) {
+            // Constraint add/remove is rare, so a short spin lock is acceptable here.
+        }
+    }
+
+    static releaseSpinLock(lockView) {
+        if (!lockView) return;
+        Atomics.store(lockView, 0, 0);
+    }
+
     /**
      * Initialize the pool with max count
      * @param {number} maxCount - Maximum number of items in pool
