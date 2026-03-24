@@ -264,9 +264,10 @@ class SpatialWorker extends AbstractWorker {
     // Cache key: cellIndex * MAX_RADIUS + cellRadius
     const cacheKey = cellIndex * (this._maxCellRadius + 1) + cellRadius;
 
-    // Check cache
-    if (this._cellNeighborCache.has(cacheKey)) {
-      return this._cellNeighborCache.get(cacheKey);
+    // Single lookup avoids an extra Map probe in the hot path.
+    const cached = this._cellNeighborCache.get(cacheKey);
+    if (cached) {
+      return cached;
     }
 
     // Generate neighbor cells from pattern
@@ -345,7 +346,6 @@ class SpatialWorker extends AbstractWorker {
    * might belong to one of our rows. But we only write to our owned cells.
    */
   rebuildOwnedRows() {
-    const active = Transform.active;
     const x = Transform.x;
     const y = Transform.y;
     const offsetX = Collider.offsetX;
@@ -360,7 +360,6 @@ class SpatialWorker extends AbstractWorker {
     const gridWidth = this.gridWidth;
     const gridHeight = this.gridHeight;
     const invCellSize = this.invCellSize;
-    const totalSpatialWorkers = this.totalSpatialWorkers;
     const workerId = this.workerId;
 
     // Interleaved position data: [x, y, halfExtent, pad] per entity (stride 4)
@@ -428,12 +427,7 @@ class SpatialWorker extends AbstractWorker {
         }
       }
 
-      // Store pre-computed position for neighbor detection (interleaved layout)
-      // All 3 values in single cache line: [x, y, halfExtent, pad]
-      const baseIdx = i * 4;
-      entityPosData[baseIdx] = posX;
-      entityPosData[baseIdx + 1] = posY;
-      entityPosData[baseIdx + 2] = halfW > halfH ? halfW : halfH;
+      const maxHalfExtent = halfW > halfH ? halfW : halfH;
 
       // Calculate cell range this entity's bounding box covers
       let minCol = ((posX - halfW) * invCellSize) | 0;
@@ -448,9 +442,20 @@ class SpatialWorker extends AbstractWorker {
       maxRowBB = maxRowBB < 0 ? 0 : maxRowBB > maxRow ? maxRow : maxRowBB;
 
       // Insert entity into ALL cells it overlaps, but only if we own that row
+      let wroteEntityPos = false;
       for (let row = minRow; row <= maxRowBB; row++) {
         // ROW OWNERSHIP CHECK: O(1) lookup replaces division + modulo
         if (rowOwnership[row] !== workerId) continue;
+
+        if (!wroteEntityPos) {
+          // Only publish shared position data if this worker actually touches one of the
+          // entity's rows. This avoids redundant SAB writes in workers that will skip it.
+          const baseIdx = i * 4;
+          entityPosData[baseIdx] = posX;
+          entityPosData[baseIdx + 1] = posY;
+          entityPosData[baseIdx + 2] = maxHalfExtent;
+          wroteEntityPos = true;
+        }
 
         const rowBase = row * gridWidth;
 

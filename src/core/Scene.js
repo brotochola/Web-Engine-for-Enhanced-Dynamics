@@ -85,6 +85,7 @@ class Scene {
     // RENDERER: numberOfSpatialWorkers + 1
     // PARTICLE: numberOfSpatialWorkers + 2
     // LOGIC_START: numberOfSpatialWorkers + 3
+    // PRE_RENDER: numberOfSpatialWorkers + 3 + numberOfLogicWorkers + 1
   };
 
   // Static declarations - override these in subclasses
@@ -1462,9 +1463,9 @@ class Scene {
     DebugDraw.initialize(this.buffers.debugDrawData, maxDebugDrawEntries);
 
     // FrameRate buffer: stores real-time FPS for each worker
-    // Layout: [spatial0_fps, spatial1_fps, ..., physics_fps, renderer_fps, particle_fps, logic0_fps, logic1_fps, ...]
+    // Layout: [spatial..., physics, renderer, particle, logic..., preRender]
     const numSpatialWorkers = this.config.spatial.numberOfSpatialWorkers;
-    const maxWorkers = numSpatialWorkers + 3 + this.numberOfLogicWorkers; // spatial workers + physics + renderer + particle + logic workers
+    const maxWorkers = numSpatialWorkers + 4 + this.numberOfLogicWorkers; // spatial workers + physics + renderer + particle + logic workers + pre-render
     const FRAMERATE_BUFFER_SIZE = maxWorkers * 4; // 1 float per worker
     this.buffers.frameRateData = new SharedArrayBuffer(FRAMERATE_BUFFER_SIZE);
     this.views.frameRate = new Float32Array(this.buffers.frameRateData);

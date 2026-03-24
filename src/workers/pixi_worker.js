@@ -301,7 +301,7 @@ class PixiRenderer extends AbstractWorker {
     // Renderer configuration options (set during initialize)
     this.ySorting = false; // Enable/disable Y-sorting for depth ordering
     this.interpolation = true; // Enable/disable interpolation based on physics FPS
-    this.physicsWorkerIndex = 1; // Index of physics worker in frameRateData (Scene.WORKER_INDICES.PHYSICS)
+    this.physicsWorkerIndex = 1; // Updated during initialize() based on spatial worker count
 
     // PIXI application and rendering
     this.pixiApp = null;
@@ -2714,6 +2714,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.canvasWidth = data.config.canvasWidth;
     this.canvasHeight = data.config.canvasHeight;
     this.canvasView = data.view;
+    this.physicsWorkerIndex = data.config.spatial.numberOfSpatialWorkers;
 
     // Create ParticleContainer with dynamic properties for sprites
     // PixiJS 8 ParticleContainer API
