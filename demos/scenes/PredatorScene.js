@@ -27,8 +27,10 @@ import { DropPistol } from '../gameObjects/dropPistol.js';
 import { Civilian } from '../gameObjects/civilian.js';
 import { CameraController } from '../gameObjects/cameraController.js';
 import { Trash } from '../gameObjects/trash.js';
+import { Cloud } from '../gameObjects/cloud.js';
+import { Sun } from '../../src/index.js';
 
-const { DecorationPool } = WEED;
+const { DecorationPool, enums: { BLEND_MODES } } = WEED;
 
 const excludedLPCAnimations = [
   'spellcast_up',
@@ -166,15 +168,16 @@ export class PredatorScene extends WEED.Scene {
       maxPathLength: 128,
     },
 
-    // layers: {
-    //   bullets: {
-    //     zIndex: 10,             // Render above default ENTITIES layer (zIndex 3)
-    //     blendMode: BLEND_MODES.NORMAL,     // Final display blend of the post-processed sprite
-    //     resolution: 0.33,         // Half-res RT for performance
-    //     maxItems: 50000,
-    //     ySorting: false, // no need to sort water balls
-    //   },
-    // },
+    layers: {
+      clouds: {
+        alpha: 0.5,
+        zIndex: 3.5,
+        blendMode: BLEND_MODES.MULTIPLY,     // Final display blend of the post-processed sprite
+        resolution: 0.25,         // Half-res RT for performance
+        maxItems: 100,
+        ySorting: false, // no need to sort water balls
+      },
+    },
   };
 
   // ========================================
@@ -183,6 +186,7 @@ export class PredatorScene extends WEED.Scene {
 
   static assets = {
     textures: {
+      cloud: '/demos/img/cloud.png',
       bullet: '/demos/img/bullet.png',
       muzzle1: '/demos/img/muzzle1.png',
       muzzle2: '/demos/img/muzzle2.png',
@@ -308,6 +312,7 @@ export class PredatorScene extends WEED.Scene {
     [Fire, 100],
     [Explosion, 100],
     [MySoldier, 10000],
+    [Cloud, 100],
     [Destination, 1],
     [DropMoney, 1000],
     [DropAk47, 1000],
@@ -348,6 +353,8 @@ export class PredatorScene extends WEED.Scene {
     // Spawn player first
     // this.spawnPlayer();
 
+    this.cloudsLayer = Layer.get('clouds');
+
     this.spawnLights(100);
     // this.spawnHouses(this.numberOfHouses);
 
@@ -364,7 +371,7 @@ export class PredatorScene extends WEED.Scene {
     // this.spawnRocks(this.numberOfRocks);
 
     this.spawnMySoldiers(2000);
-
+    // this.spawnClouds(5);
     this.spawnRocksTreesAndHouses();
   }
 
@@ -444,7 +451,7 @@ export class PredatorScene extends WEED.Scene {
     // if (frameNumber % (60 * 10) === 0) {
     //   this.printFPS()
     // }
-
+    this.cloudsLayer.alpha = Sun.intensity * 0.5;
     // // console.log(dtRatio, deltaTime, accumulatedTime, frameNumber)
     if (frameNumber % 300 === 0) {
       this.createNavGridForTheFlowField()
@@ -499,6 +506,17 @@ export class PredatorScene extends WEED.Scene {
       this.spawnEntity(MySoldier, {
         x: centerX + r * Math.cos(angle),
         y: centerY + r * Math.sin(angle),
+      });
+    }
+  }
+
+  spawnClouds(count) {
+
+    for (let i = 0; i < count; i++) {
+
+      this.spawnEntity(Cloud, {
+        x: rng() * this.config.worldWidth,
+        y: rng() * this.config.worldHeight,
       });
     }
   }

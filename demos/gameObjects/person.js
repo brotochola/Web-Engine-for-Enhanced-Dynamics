@@ -372,8 +372,8 @@ export class Person extends Lootable {
     if (!this.canFire(weapon)) return false;
 
     // Face the target
-    const targetX = Transform.x[targetEntityIndex];
-    const targetY = Transform.y[targetEntityIndex];
+    const targetX = Transform.x[targetEntityIndex] + RigidBody.vx[targetEntityIndex] * 10;
+    const targetY = Transform.y[targetEntityIndex] + RigidBody.vy[targetEntityIndex] * 10;
 
     const angle = Math.atan2(targetY - this.y, targetX - this.x) + HALF_PI;
 

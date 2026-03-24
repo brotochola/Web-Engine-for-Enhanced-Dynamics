@@ -5,7 +5,7 @@
 
 ---
 
----
+## hot reload
 
 JSDoc `@typedef`,
 
