@@ -76,6 +76,8 @@ class PhysicsWorker extends AbstractWorker {
     // Constraint system
     this.constraintsEnabled = false;
     this.maxConstraints = 0;
+    this._denseConstraints = null;
+    this._denseConstraintCount = 0;
   }
 
   /**
@@ -103,6 +105,8 @@ class PhysicsWorker extends AbstractWorker {
     if (data.constraints && data.constraints.enabled) {
       this.constraintsEnabled = true;
       this.maxConstraints = data.constraints.maxConstraints;
+      this._denseConstraints = new Uint32Array(this.maxConstraints);
+      this._denseConstraintCount = 0;
 
       // Initialize Constraint arrays from SharedArrayBuffer
       Constraint.initializeArrays(data.constraints.data, this.maxConstraints);
@@ -135,6 +139,9 @@ class PhysicsWorker extends AbstractWorker {
     this._cachedColliderEntities = null;
 
     this.buildDenseColliders();
+    if (this.constraintsEnabled) {
+      this.buildDenseConstraints();
+    }
 
     if (this.noLimitFPS && this.settings.subStepCount > 1) {
       // Fixed timestep mode: accumulate time and run physics at fixed intervals
@@ -154,6 +161,30 @@ class PhysicsWorker extends AbstractWorker {
       // Standard mode: run physics with actual deltaTime
       this.updateVerlet(deltaTime, dtRatio, resuming);
     }
+  }
+
+  /**
+   * Build a dense array of active constraint indices once per physics frame.
+   * This avoids rescanning the entire constraint pool for every substep.
+   */
+  buildDenseConstraints() {
+    const constraintActive = Constraint.active;
+    const maxConstraints = this.maxConstraints;
+    const denseConstraints = this._denseConstraints;
+
+    if (!constraintActive || !denseConstraints || maxConstraints === 0) {
+      this._denseConstraintCount = 0;
+      return;
+    }
+    let denseCount = 0;
+
+    for (let i = 0; i < maxConstraints; i++) {
+      if (constraintActive[i]) {
+        denseConstraints[denseCount++] = i;
+      }
+    }
+
+    this._denseConstraintCount = denseCount;
   }
 
   /**
@@ -855,17 +886,23 @@ class PhysicsWorker extends AbstractWorker {
     const pairs = Constraint.pairs;
     const restLength = Constraint.restLength;
     const stiffness = Constraint.stiffness;
-    const constraintActive = Constraint.active;
-    const maxConstraints = this.maxConstraints;
+    const denseConstraints = this._denseConstraints;
+    const denseConstraintCount = this._denseConstraintCount;
+
+    if (!denseConstraints || denseConstraintCount === 0) {
+      if (shouldProfile) {
+        this.constraintSolveTimeThisFrame += performance.now() - startTime;
+      }
+      return;
+    }
 
     // Cache RigidBody static flags for mass-weighted response
     const isStatic = RigidBody.static;
     const invMass = RigidBody.invMass;
     const rigidBodyActive = RigidBody.active;
 
-    for (let i = 0; i < maxConstraints; i++) {
-      // Skip inactive constraints
-      if (!constraintActive[i]) continue;
+    for (let denseIdx = 0; denseIdx < denseConstraintCount; denseIdx++) {
+      const i = denseConstraints[denseIdx];
 
       // Unpack entity indices
       const packed = pairs[i];
