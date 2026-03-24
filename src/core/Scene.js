@@ -187,7 +187,6 @@ class Scene {
       activeEntitiesData: null, // Active entity list for spatial worker load balancing
       inputData: null,
       cameraData: null,
-      syncData: null,
       debugData: null,
       debugDrawData: null, // Debug draw ring buffer (DebugDraw API)
       frameRateData: null, // Real-time FPS tracking per worker
@@ -1559,18 +1558,6 @@ class Scene {
     // Pre-render stats buffer (for visibility and render queue metrics)
     this.buffers.preRenderStats = new SharedArrayBuffer(PRE_RENDER_STATS.BUFFER_SIZE);
 
-    // Synchronization buffer
-    const SYNC_BUFFER_SIZE = 5 * 4;
-    this.buffers.syncData = new SharedArrayBuffer(SYNC_BUFFER_SIZE);
-    const syncView = new Int32Array(this.buffers.syncData);
-    syncView[0] = 0;
-    syncView[1] = 0;
-
-    const totalWorkers = this.config.logic.numberOfLogicWorkers;
-    syncView[2] = totalWorkers;
-    syncView[3] = 0;
-    syncView[4] = 1;
-
     // Center camera on world
     const worldCenterX = this.config.worldWidth / 2 - this.config.canvasWidth / 2;
     const worldCenterY = this.config.worldHeight / 2 - this.config.canvasHeight / 2;
@@ -2083,7 +2070,6 @@ class Scene {
         visibleLightsData: this.buffers.visibleLightsData || null,
         inputData: this.buffers.inputData,
         cameraData: this.buffers.cameraData,
-        syncData: this.buffers.syncData,
         debugData: this.buffers.debugData,
         debugDrawData: this.buffers.debugDrawData,
         frameRateData: this.buffers.frameRateData,
@@ -2391,10 +2377,7 @@ class Scene {
   }
 
   handleMessageFromWorker(e) {
-    if (e.data.msg === 'fps') {
-      // Store worker stats (DebugUI will read these)
-      this._storeWorkerStats(e.currentTarget.name, e.data.fps, e.data.activeEntities, e.data);
-    } else if (e.data.msg === 'log') {
+    if (e.data.msg === 'log') {
       this.log.push({
         worker: e.currentTarget.name,
         message: e.data.message,
@@ -2540,57 +2523,6 @@ class Scene {
       });
     } else {
       this.pendingPhysicsUpdates.push(updatePayload);
-    }
-  }
-
-  /**
-   * Store worker stats (called from worker messages, read by DebugUI)
-   */
-  _storeWorkerStats(id, fps, activeEntities, data = {}) {
-    // Handle spatial workers (spatial0, spatial1, etc.)
-    if (id.startsWith('spatial')) {
-      const index = parseInt(id.replace('spatial', ''), 10);
-      if (this.workerStats.spatial[index]) {
-        this.workerStats.spatial[index] = {
-          fps,
-          active: activeEntities || 0,
-        };
-      }
-      return;
-    }
-
-    // Handle logic workers (logic0, logic1, etc.)
-    if (id.startsWith('logic')) {
-      const index = parseInt(id.replace('logic', ''), 10);
-      if (this.workerStats.logic[index]) {
-        this.workerStats.logic[index] = {
-          fps,
-          active: activeEntities || 0,
-        };
-      }
-      return;
-    }
-
-    // Handle other workers
-    switch (id) {
-      case 'physics':
-        this.workerStats.physics = { fps, active: activeEntities || 0 };
-        break;
-      case 'renderer':
-        this.workerStats.renderer = {
-          fps,
-          drawCalls: data.drawCalls || 0,
-          visibleEntities: data.visibleEntities || 0,
-          visibleParticles: data.visibleParticles || 0,
-        };
-        break;
-      case 'particle':
-        this.workerStats.particle = {
-          fps,
-          active: data.activeParticles || 0,
-          total: data.totalParticles || 0,
-        };
-        break;
     }
   }
 

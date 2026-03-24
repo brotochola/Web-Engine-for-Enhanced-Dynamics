@@ -110,15 +110,15 @@ class SpatialWorker extends AbstractWorker {
     // We build counts locally, then copy to grid at the end (avoids mid-clear races)
     this._localCellCounts = null; // Uint8Array(totalCells)
 
+    this._maxCellRadius = 12; // Support visual ranges up to ~1500px with cellSize=128
     // Precomputed circle patterns: cellRadius -> Int32Array of [dr, dc, dr, dc, ...]
-    this._circlePatterns = new Map();
+    this._circlePatterns = new Array(this._maxCellRadius + 1);
     // Pattern lengths cache: cellRadius -> length (number of cell pairs)
-    this._patternLengths = new Map();
+    this._patternLengths = new Uint16Array(this._maxCellRadius + 1);
 
     // Cached neighbor cells: (cellIndex * MAX_CELL_RADIUS + cellRadius) -> Uint16Array of neighbor cell indices
     // Uint16Array since cell indices are always positive and < 65535
     this._cellNeighborCache = new Map();
-    this._maxCellRadius = 12; // Support visual ranges up to ~1500px with cellSize=128
 
     // Performance stats
     this.entitiesProcessedThisFrame = 0;
@@ -210,12 +210,12 @@ class SpatialWorker extends AbstractWorker {
       console.log(
         `SPATIAL WORKER ${this.workerId}: Initialized with ${this.ownedRowCount} rows ` +
         `(rows ${this.ownedRows[0]} to ${this.ownedRows[this.ownedRowCount - 1]} step ${this.totalSpatialWorkers}), ` +
-        `precomputed ${this._circlePatterns.size} circle patterns`
+        `precomputed ${this._circlePatterns.length} circle patterns`
       );
     } else {
       console.log(
         `SPATIAL WORKER ${this.workerId}: Initialized with 0 rows, ` +
-        `precomputed ${this._circlePatterns.size} circle patterns`
+        `precomputed ${this._circlePatterns.length} circle patterns`
       );
     }
 
@@ -235,9 +235,9 @@ class SpatialWorker extends AbstractWorker {
 
     for (let cellRadius = 0; cellRadius <= this._maxCellRadius; cellRadius++) {
       const pattern = generateSymmetricalCirclePattern(cellRadius, this.cellSize);
-      this._circlePatterns.set(cellRadius, pattern);
+      this._circlePatterns[cellRadius] = pattern;
       // Cache pattern length (number of cell pairs, so pattern.length / 2)
-      this._patternLengths.set(cellRadius, pattern.length >> 1);
+      this._patternLengths[cellRadius] = pattern.length >> 1;
     }
   }
 
@@ -249,7 +249,7 @@ class SpatialWorker extends AbstractWorker {
   _getCirclePattern(cellRadius) {
     // Clamp to max supported radius
     const clampedRadius = cellRadius > this._maxCellRadius ? this._maxCellRadius : cellRadius;
-    return this._circlePatterns.get(clampedRadius) || this._circlePatterns.get(0);
+    return this._circlePatterns[clampedRadius] || this._circlePatterns[0];
   }
 
   /**
@@ -261,8 +261,9 @@ class SpatialWorker extends AbstractWorker {
    * @returns {Uint16Array} Array of neighbor cell indices (Uint16 since cell indices < 65535)
    */
   _getNeighborCells(cellIndex, cellRadius, centerRow, centerCol) {
+    const clampedRadius = cellRadius > this._maxCellRadius ? this._maxCellRadius : cellRadius;
     // Cache key: cellIndex * MAX_RADIUS + cellRadius
-    const cacheKey = cellIndex * (this._maxCellRadius + 1) + cellRadius;
+    const cacheKey = cellIndex * (this._maxCellRadius + 1) + clampedRadius;
 
     // Single lookup avoids an extra Map probe in the hot path.
     const cached = this._cellNeighborCache.get(cacheKey);
@@ -271,9 +272,9 @@ class SpatialWorker extends AbstractWorker {
     }
 
     // Generate neighbor cells from pattern
-    const pattern = this._getCirclePattern(cellRadius);
+    const pattern = this._circlePatterns[clampedRadius];
     const patternLength = pattern.length;
-    const maxNeighborCells = this._patternLengths.get(cellRadius) || (patternLength >> 1);
+    const maxNeighborCells = this._patternLengths[clampedRadius] || (patternLength >> 1);
 
     // Pre-allocate array (worst case: all cells in pattern are valid)
     const neighborCells = new Uint16Array(maxNeighborCells);
