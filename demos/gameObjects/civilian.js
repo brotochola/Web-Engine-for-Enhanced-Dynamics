@@ -37,18 +37,19 @@ export class Civilian extends Person {
 
     // Store panic origin (where to flee from)
     const i = this.index;
-    const panicX = sourceX != null ? sourceX : this.x - 1;
-    const panicY = sourceY != null ? sourceY : this.y;
-    CivilianComponent.panicOriginX[i] = panicX;
-    CivilianComponent.panicOriginY[i] = panicY;
 
     const PANIC = CivilianBehaviorFSM.states.PANIC;
     const civilianEntityType = Civilian.entityType;
+    const panicX = sourceX != null ? sourceX : this.x - 1;
+    const panicY = sourceY != null ? sourceY : this.y;
+    if (!CivilianBehaviorFSM.isInState(this.index, PANIC)) {
 
-    if (CivilianBehaviorFSM.isInState(this.index, PANIC)) {
+      CivilianComponent.panicOriginX[i] = panicX;
+      CivilianComponent.panicOriginY[i] = panicY;
+
       // Already in panic: reset 20s timer
-      CivilianBehaviorFSM.forceChangeState(this.index, PANIC, this);
-    } else {
+      //   CivilianBehaviorFSM.forceChangeState(this.index, PANIC, this);
+      // } else {
       this.civilianBehaviorFSM.changeState(PANIC);
     }
 
@@ -59,13 +60,12 @@ export class Civilian extends Person {
       if (Transform.entityType[neighborIndex] !== civilianEntityType) continue;
       if (PersonComponent.dead[neighborIndex] === 1) continue;
 
-      CivilianComponent.panicOriginX[neighborIndex] = panicX;
-      CivilianComponent.panicOriginY[neighborIndex] = panicY;
-
       const neighborInstance = GameObject.get(neighborIndex);
-      if (CivilianBehaviorFSM.isInState(neighborIndex, PANIC)) {
-        CivilianBehaviorFSM.forceChangeState(neighborIndex, PANIC, neighborInstance);
-      } else {
+      if (!CivilianBehaviorFSM.isInState(neighborIndex, PANIC)) {
+        //   CivilianBehaviorFSM.forceChangeState(neighborIndex, PANIC, neighborInstance);
+        // } else {
+        CivilianComponent.panicOriginX[neighborIndex] = panicX;
+        CivilianComponent.panicOriginY[neighborIndex] = panicY;
         neighborInstance.civilianBehaviorFSM.changeState(PANIC);
       }
     }
