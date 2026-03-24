@@ -57,25 +57,16 @@ export class AbstractWorker {
   constructor(selfRef) {
     this.self = selfRef;
 
-    // Message queue to ensure sequential processing of async messages
-    this._messageQueue = Promise.resolve();
+    // Explicit queue preserves ordering without building a promise chain per message.
+    this._pendingMessages = [];
+    this._pendingMessageReadIndex = 0;
+    this._isProcessingMessages = false;
 
     this.self.onmessage = (e) => {
-      this._messageQueue = this._messageQueue
-        .then(async () => {
-          const shouldProfileMessages = !!this.stats;
-          const startTime = shouldProfileMessages ? performance.now() : 0;
-
-          await this.handleMessage(e);
-
-          if (shouldProfileMessages) {
-            this.messageTimeThisFrame += performance.now() - startTime;
-          }
-        })
-        .catch((error) => {
-          console.error(`[${this.constructor.name}] Error in handleMessage:`, error);
-          this.reportError('Worker message handling failed', error);
-        });
+      this._pendingMessages.push(e);
+      if (!this._isProcessingMessages) {
+        this._drainMessageQueue();
+      }
     };
 
     // Frame timing and FPS tracking
@@ -125,6 +116,7 @@ export class AbstractWorker {
     // Bind methods
     this.gameLoop = this.gameLoop.bind(this);
     this.handleMessage = this.handleMessage.bind(this);
+    this._drainMessageQueue = this._drainMessageQueue.bind(this);
 
     // PERFORMANCE: Reusable timing object to avoid GC pressure
     // This is returned by updateFrameTiming() every frame on every worker
@@ -137,6 +129,34 @@ export class AbstractWorker {
     this.messageTimeThisFrame = 0;
 
     this.reportLog('finished constructor');
+  }
+
+  async _drainMessageQueue() {
+    this._isProcessingMessages = true;
+
+    try {
+      while (this._pendingMessageReadIndex < this._pendingMessages.length) {
+        const e = this._pendingMessages[this._pendingMessageReadIndex++];
+
+        try {
+          const shouldProfileMessages = !!this.stats;
+          const startTime = shouldProfileMessages ? performance.now() : 0;
+
+          await this.handleMessage(e);
+
+          if (shouldProfileMessages) {
+            this.messageTimeThisFrame += performance.now() - startTime;
+          }
+        } catch (error) {
+          console.error(`[${this.constructor.name}] Error in handleMessage:`, error);
+          this.reportError('Worker message handling failed', error);
+        }
+      }
+    } finally {
+      this._pendingMessages.length = 0;
+      this._pendingMessageReadIndex = 0;
+      this._isProcessingMessages = false;
+    }
   }
 
   /**

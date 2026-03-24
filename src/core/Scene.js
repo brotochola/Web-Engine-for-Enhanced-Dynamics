@@ -2056,75 +2056,81 @@ class Scene {
 
     const workerPorts = this.setupWorkerCommunication();
 
+    const sharedBuffers = {
+      gameObjectData: this.buffers.gameObjectData,
+      // Neighbor data: SINGLE BUFFER (row ownership eliminates races)
+      // "Torn reads" mix current + recent data (never garbage)
+      // Distance checks filter any out-of-range neighbors
+      neighborData: this.buffers.neighborData,
+      collisionData: this.buffers.collisionData,
+      activeEntitiesData: this.buffers.activeEntitiesData,
+      visibleLightsData: this.buffers.visibleLightsData || null,
+      inputData: this.buffers.inputData,
+      cameraData: this.buffers.cameraData,
+      debugData: this.buffers.debugData,
+      debugDrawData: this.buffers.debugDrawData,
+      frameRateData: this.buffers.frameRateData,
+      componentData: this.buffers.componentData,
+      // Spatial grid: SINGLE BUFFER with row-based partitioning
+      gridBuffer: this.buffers.gridBuffer,
+      // Cell sleeping state buffer: written by particle_worker, read by all workers
+      cellSleepingBuffer: this.buffers.cellSleepingBuffer,
+      // Interleaved entity position data: [x, y, halfExtent, pad] per entity (16 bytes each)
+      entityPosData: this.buffers.entityPosData,
+      // Worker stat buffers
+      rendererStats: this.buffers.rendererStats,
+      particleStats: this.buffers.particleStats,
+      physicsStats: this.buffers.physicsStats,
+      spatialStats: this.buffers.spatialStats,
+      logicStats: this.buffers.logicStats,
+      // Navigation buffers (if pathfinding enabled)
+      navigationData: this.buffers.navigationData || null,
+      navigationStats: this.buffers.navigationStats || null,
+      // Tick decimation buffer (if staggeredUpdates enabled)
+      nextTickData: this.buffers.nextTickData || null,
+      // Mouse input buffer (x, y, buttons, presence, wheel, press/release counters)
+      mouseData: this.buffers.mouseData,
+      // Query system SABs (for component-based entity queries)
+      queryEntityMetadata: this.buffers.queryEntityMetadata,
+      queryCache: this.buffers.queryCache,
+      queryResults: this.buffers.queryResults,
+      // Per-type active entity lists (for O(1) type-specific queries)
+      perTypeActiveLists: this.buffers.perTypeActiveLists,
+      // Entity free lists (for atomic spawn/despawn from any worker)
+      entityFreeLists: this.buffers.entityFreeLists,
+      entityFreeListTops: this.buffers.entityFreeListTops,
+    };
+
+    const registeredClassesInfo = this.registeredClasses.map((r) => ({
+      name: r.class.name,
+      poolSize: r.count,
+      startIndex: r.startIndex,
+      endIndex: r.startIndex + r.count,
+      entityType: r.entityType,
+      components: r.components.map((c) => c.name),
+    }));
+
+    const componentPoolsInfo = Object.fromEntries(
+      Object.entries(this.componentPools).map(([name, pool]) => [
+        name,
+        {
+          count: this.totalEntityCount,
+          componentId: pool.ComponentClass.componentId,
+        },
+      ])
+    );
+
     // Create initialization data
     const initData = {
       msg: 'init',
-      buffers: {
-        gameObjectData: this.buffers.gameObjectData,
-        // Neighbor data: SINGLE BUFFER (row ownership eliminates races)
-        // "Torn reads" mix current + recent data (never garbage)
-        // Distance checks filter any out-of-range neighbors
-        neighborData: this.buffers.neighborData,
-        collisionData: this.buffers.collisionData,
-        activeEntitiesData: this.buffers.activeEntitiesData,
-        visibleLightsData: this.buffers.visibleLightsData || null,
-        inputData: this.buffers.inputData,
-        cameraData: this.buffers.cameraData,
-        debugData: this.buffers.debugData,
-        debugDrawData: this.buffers.debugDrawData,
-        frameRateData: this.buffers.frameRateData,
-        componentData: this.buffers.componentData,
-        // Spatial grid: SINGLE BUFFER with row-based partitioning
-        gridBuffer: this.buffers.gridBuffer,
-        // Cell sleeping state buffer: written by particle_worker, read by all workers
-        cellSleepingBuffer: this.buffers.cellSleepingBuffer,
-        // Interleaved entity position data: [x, y, halfExtent, pad] per entity (16 bytes each)
-        entityPosData: this.buffers.entityPosData,
-        // Worker stat buffers
-        rendererStats: this.buffers.rendererStats,
-        particleStats: this.buffers.particleStats,
-        physicsStats: this.buffers.physicsStats,
-        spatialStats: this.buffers.spatialStats,
-        logicStats: this.buffers.logicStats,
-        // Navigation buffers (if pathfinding enabled)
-        navigationData: this.buffers.navigationData || null,
-        navigationStats: this.buffers.navigationStats || null,
-        // Tick decimation buffer (if staggeredUpdates enabled)
-        nextTickData: this.buffers.nextTickData || null,
-        // Mouse input buffer (x, y, buttons, presence, wheel, press/release counters)
-        mouseData: this.buffers.mouseData,
-        // Query system SABs (for component-based entity queries)
-        queryEntityMetadata: this.buffers.queryEntityMetadata,
-        queryCache: this.buffers.queryCache,
-        queryResults: this.buffers.queryResults,
-        // Per-type active entity lists (for O(1) type-specific queries)
-        perTypeActiveLists: this.buffers.perTypeActiveLists,
-        // Entity free lists (for atomic spawn/despawn from any worker)
-        entityFreeLists: this.buffers.entityFreeLists,
-        entityFreeListTops: this.buffers.entityFreeListTops,
-      },
+      buffers: sharedBuffers,
       globalEntityCount: this.totalEntityCount,
       config: this.config,
       gridMetadata: this.gridMetadata,
       maxDebugDrawEntries: this.maxDebugDrawEntries,
       scriptsToLoad: scriptsToLoad,
-      registeredClasses: this.registeredClasses.map((r) => ({
-        name: r.class.name,
-        poolSize: r.count,
-        startIndex: r.startIndex,
-        endIndex: r.startIndex + r.count,
-        entityType: r.entityType,
-        components: r.components.map((c) => c.name),
-      })),
-      componentPools: Object.fromEntries(
-        Object.entries(this.componentPools).map(([name, pool]) => [
-          name,
-          {
-            count: this.totalEntityCount,
-            componentId: pool.ComponentClass.componentId,
-          },
-        ])
-      ),
+      registeredClasses: registeredClassesInfo,
+      componentPools: componentPoolsInfo,
       keyIndexMap: this.createKeyIndexMap(),
       spritesheetMetadata: SpriteSheetRegistry.serialize(),
       maxParticles: this.config.particle.maxParticles,
@@ -2244,11 +2250,21 @@ class Scene {
     const PARTICLE_INDEX = numberOfSpatialWorkers + 2;
     const LOGIC_START_INDEX = numberOfSpatialWorkers + 3;
 
+    const getPortTransferables = (portGroup) => (portGroup ? Object.values(portGroup) : []);
+    const postWorkerInit = (worker, extraData = {}, transferables = []) => {
+      worker.postMessage(
+        {
+          ...initData,
+          ...extraData,
+        },
+        transferables
+      );
+    };
+
     console.log(`[Scene] 📤 Sending init messages to workers...`);
     for (let i = 0; i < numberOfSpatialWorkers; i++) {
       console.log(`[Scene]   → Initializing spatial worker ${i}...`);
-      this.workers.spatialWorkers[i].postMessage({
-        ...initData,
+      postWorkerInit(this.workers.spatialWorkers[i], {
         frameRateIndex: Scene.WORKER_INDICES.SPATIAL_START + i,
         workerIndex: i,
         totalSpatialWorkers: numberOfSpatialWorkers,
@@ -2257,26 +2273,27 @@ class Scene {
 
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
       console.log(`[Scene]   → Initializing logic worker ${i}...`);
-      this.workers.logicWorkers[i].postMessage(
+      const logicPorts = workerPorts[`logic${i}`];
+      postWorkerInit(
+        this.workers.logicWorkers[i],
         {
-          ...initData,
-          workerPorts: workerPorts[`logic${i}`],
+          workerPorts: logicPorts,
           workerIndex: i, // For logic worker job partitioning (0, 1, 2, ...)
           frameRateIndex: LOGIC_START_INDEX + i, // For FPS tracking
           bigAtlasProxySheets: this.bigAtlasProxySheets || {},
         },
-        workerPorts[`logic${i}`] ? Object.values(workerPorts[`logic${i}`]) : []
+        getPortTransferables(logicPorts)
       );
     }
 
     console.log(`[Scene]   → Initializing physics worker...`);
-    this.workers.physics.postMessage(
+    postWorkerInit(
+      this.workers.physics,
       {
-        ...initData,
         workerPorts: workerPorts.physics,
         frameRateIndex: PHYSICS_INDEX,
       },
-      workerPorts.physics ? Object.values(workerPorts.physics) : []
+      getPortTransferables(workerPorts.physics)
     );
 
     // Particle worker - handles particles, decals, navigation, derived properties
@@ -2292,13 +2309,13 @@ class Scene {
     const particlePorts = workerPorts.particle || {};
     particlePorts.mainThread = particleWorkerNavPort;
 
-    this.workers.particle.postMessage(
+    postWorkerInit(
+      this.workers.particle,
       {
-        ...initData,
         workerPorts: particlePorts,
         frameRateIndex: PARTICLE_INDEX,
       },
-      Object.values(particlePorts)
+      getPortTransferables(particlePorts)
     );
 
     // Set up the main thread's NavGrid port for sending requests (only if navigation enabled)
@@ -2311,10 +2328,9 @@ class Scene {
     console.log(`[Scene]   → Initializing pre-render worker...`);
     const PRE_RENDER_INDEX = PARTICLE_NAV_INDEX + 1;
 
-    this.workers.preRender.postMessage({
-      ...initData,
+    postWorkerInit(this.workers.preRender, {
       buffers: {
-        ...initData.buffers,
+        ...sharedBuffers,
         preRenderStats: this.buffers.preRenderStats,
       },
       frameRateIndex: PRE_RENDER_INDEX,
@@ -2339,9 +2355,9 @@ class Scene {
       ...(workerPorts.renderer ? Object.values(workerPorts.renderer) : []),
     ];
 
-    this.workers.renderer.postMessage(
+    postWorkerInit(
+      this.workers.renderer,
       {
-        ...initData,
         view: offscreenCanvas,
         textures: this.loadedTextures,
         spritesheets: this.loadedSpritesheets,
