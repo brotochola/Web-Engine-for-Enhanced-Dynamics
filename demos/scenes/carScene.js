@@ -46,8 +46,8 @@ export class CarScene extends WEED.Scene {
         // Spatial hash grid configuration
         spatial: {
             cellSize: 128,
-            maxNeighbors: 256,
-            maxEntitiesPerCell: 32,
+            maxNeighbors: 512,
+            maxEntitiesPerCell: 128,
             numberOfSpatialWorkers: 1,
             noLimitFPS: true,
         },
@@ -61,14 +61,14 @@ export class CarScene extends WEED.Scene {
         },
 
         decoration: {
-            maxDecorations: 100,
+            maxDecorations: 2000,
         },
 
         // Logic configuration
         logic: {
             noLimitFPS: true,
             numberOfLogicWorkers: 1,
-            staggeredUpdates: false,
+            staggeredUpdates: true,
         },
 
         // Physics configuration
@@ -91,7 +91,7 @@ export class CarScene extends WEED.Scene {
             ySorting: true,
             interpolation: true,
             cullingRatio: 0.5,
-            maxVisibleRenderables: 5000, // Must fit: cars + rocks + particles + decorations (500 cars + 1000 particles = 1500+)
+            maxVisibleRenderables: 50000, // Must fit: cars + rocks + particles + decorations (500 cars + 1000 particles = 1500+)
         },
 
         preRender: {

@@ -12,7 +12,7 @@ const { rng, GameObject, RigidBody, Collider, CollisionListener, SpriteRenderer,
 const _navVec = { x: 0, y: 0 };
 export class PersonThatFollowsAFlowfield extends GameObject {
     static scriptUrl = import.meta.url;
-    static tickInterval = 8; // Tick every 10 frames (staggered across entities)
+    static tickInterval = 4; // Tick every 10 frames (staggered across entities)
 
     static components = [RigidBody, Collider, CollisionListener, SpriteRenderer, ShadowCaster, PersonAnimationFSM, PersonComponent, LootableComponent];
 
