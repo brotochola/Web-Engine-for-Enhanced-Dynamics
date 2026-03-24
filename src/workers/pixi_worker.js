@@ -695,6 +695,7 @@ class PixiRenderer extends AbstractWorker {
 
       // Active decorations count (derived from free list)
       this.stats[RENDERER_STATS.ACTIVE_DECORATIONS] = DecorationPool.getActiveCount();
+      this.stats[RENDERER_STATS.MSG_MS] = this.messageTimeThisFrame;
     }
 
     // Reset draw call counter for next frame

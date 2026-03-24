@@ -2180,6 +2180,7 @@ class PreRenderWorker extends AbstractWorker {
             this.stats[PRE_RENDER_STATS.VISIBLE_DECORATIONS] = this.visibleDecorationsCount;
             this.stats[PRE_RENDER_STATS.SHADOWS_UPDATED] = this.shadowsUpdatedThisFrame;
             this.stats[PRE_RENDER_STATS.RENDER_QUEUE_SIZE] = this.renderQueueCount ? this.renderQueueCount[0] : 0;
+            this.stats[PRE_RENDER_STATS.MSG_MS] = this.messageTimeThisFrame;
         }
     }
 }

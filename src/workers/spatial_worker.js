@@ -124,6 +124,8 @@ class SpatialWorker extends AbstractWorker {
     this.entitiesProcessedThisFrame = 0;
     this.neighborsFoundThisFrame = 0;
     this.cellsCheckedThisFrame = 0;
+    this.rebuildTimeThisFrame = 0;
+    this.neighborSearchTimeThisFrame = 0;
 
   }
 
@@ -310,12 +312,22 @@ class SpatialWorker extends AbstractWorker {
     this.entitiesProcessedThisFrame = 0;
     this.neighborsFoundThisFrame = 0;
     this.cellsCheckedThisFrame = 0;
+    this.rebuildTimeThisFrame = 0;
+    this.neighborSearchTimeThisFrame = 0;
 
     // STEP 1: Rebuild grid (only owned rows)
+    let startTime = this.stats ? performance.now() : 0;
     this.rebuildOwnedRows();
+    if (this.stats) {
+      this.rebuildTimeThisFrame = performance.now() - startTime;
+    }
 
     // STEP 2: Find neighbors (only for entities in owned rows)
+    startTime = this.stats ? performance.now() : 0;
     this.findNeighborsForOwnedEntities();
+    if (this.stats) {
+      this.neighborSearchTimeThisFrame = performance.now() - startTime;
+    }
   }
 
   /**
@@ -753,6 +765,9 @@ class SpatialWorker extends AbstractWorker {
       this.stats[SPATIAL_STATS.ENTITIES_PROCESSED] = this.entitiesProcessedThisFrame;
       this.stats[SPATIAL_STATS.NEIGHBOR_CHECKS] = this.neighborsFoundThisFrame;
       this.stats[SPATIAL_STATS.GRID_CELLS_CHECKED] = this.cellsCheckedThisFrame;
+      this.stats[SPATIAL_STATS.REBUILD_MS] = this.rebuildTimeThisFrame;
+      this.stats[SPATIAL_STATS.NEIGHBOR_MS] = this.neighborSearchTimeThisFrame;
+      this.stats[SPATIAL_STATS.MSG_MS] = this.messageTimeThisFrame;
     }
   }
 }

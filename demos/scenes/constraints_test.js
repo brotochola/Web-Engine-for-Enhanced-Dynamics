@@ -99,12 +99,12 @@ export class ConstraintsTestScene extends Scene {
         // Click-to-connect constraint mode
         this.constraintMode = false;
         this.selectedEntityForConstraint = -1; // First selected entity index
-        this.constraintStiffness = 0.8; // Default stiffness for new constraints
+        this.constraintStiffness = 1; // Default stiffness for new constraints
 
         // Builder mode - click to spawn ball and connect to neighbors
         this.builderMode = false;
         this.builderNeighborRadius = 100; // Max distance to connect neighbors
-        this.builderConstraintStiffness = 0.5; // Stiffness for builder constraints
+        this.builderConstraintStiffness = 0.99; // Stiffness for builder constraints
     }
 
     create() {
@@ -136,7 +136,7 @@ export class ConstraintsTestScene extends Scene {
         // this.createSoftBody(2600, 1500, 6, 80, 0.6);
 
         // Create a grid/cloth simulation
-        this.createCloth(1200, 2500, 20, 20, 40, 0.1, 20);
+        this.createCloth(1200, 2500, 20, 20, 40, this.constraintStiffness, 20);
 
         // Spawn some free balls for interaction
         console.log('🎬 ConstraintsTestScene: Spawning free balls...');

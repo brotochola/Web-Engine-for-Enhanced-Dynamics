@@ -62,6 +62,7 @@ class PhysicsWorker extends AbstractWorker {
     this.collisionChecksThisFrame = 0;
     this.collisionsResolvedThisFrame = 0;
     this.collisionPairsThisFrame = 0;
+    this.constraintSolveTimeThisFrame = 0;
 
     // PERFORMANCE: Reusable collision result object to avoid GC pressure
     // Instead of allocating thousands of objects per frame, we reuse this one
@@ -126,6 +127,7 @@ class PhysicsWorker extends AbstractWorker {
     this.collisionChecksThisFrame = 0;
     this.collisionsResolvedThisFrame = 0;
     this.collisionPairsThisFrame = 0;
+    this.constraintSolveTimeThisFrame = 0;
 
     // OPTIMIZATION: Cache query results per frame to avoid repeated calls
     // These queries are cached by the query system, but accessing them once is still faster
@@ -821,6 +823,8 @@ class PhysicsWorker extends AbstractWorker {
       this.stats[PHYSICS_STATS.COLLISION_CHECKS] = this.collisionChecksThisFrame;
       this.stats[PHYSICS_STATS.COLLISIONS_RESOLVED] = this.collisionsResolvedThisFrame;
       this.stats[PHYSICS_STATS.COLLISION_PAIRS] = this.collisionPairsThisFrame;
+      this.stats[PHYSICS_STATS.CONSTRAINT_MS] = this.constraintSolveTimeThisFrame;
+      this.stats[PHYSICS_STATS.MSG_MS] = this.messageTimeThisFrame;
     }
   }
 
@@ -843,6 +847,9 @@ class PhysicsWorker extends AbstractWorker {
    * @param {Uint8Array} active - Entity active flags
    */
   solveDistanceConstraints(x, y, active) {
+    const shouldProfile = !!this.stats;
+    const startTime = shouldProfile ? performance.now() : 0;
+
     const pairs = Constraint.pairs;
     const restLength = Constraint.restLength;
     const stiffness = Constraint.stiffness;
@@ -919,6 +926,10 @@ class PhysicsWorker extends AbstractWorker {
       y[entityA] += ny * corrA;
       x[entityB] -= nx * corrB;
       y[entityB] -= ny * corrB;
+    }
+
+    if (shouldProfile) {
+      this.constraintSolveTimeThisFrame += performance.now() - startTime;
     }
   }
 }

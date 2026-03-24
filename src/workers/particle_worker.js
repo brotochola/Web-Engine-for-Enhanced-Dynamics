@@ -1789,6 +1789,7 @@ class ParticleWorker extends AbstractWorker {
       this.stats[PARTICLE_STATS.SHADOWS_UPDATED] = 0; // Shadows now in pre_render_worker
       this.stats[PARTICLE_STATS.ACTIVE_ENTITIES] = this.activeEntitiesData ? this.activeEntitiesData[0] : 0;
       this.stats[PARTICLE_STATS.TOTAL_ENTITIES] = this.globalEntityCount || 0;
+      this.stats[PARTICLE_STATS.MSG_MS] = this.messageTimeThisFrame;
     }
   }
 }

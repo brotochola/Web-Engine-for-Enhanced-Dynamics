@@ -26,6 +26,7 @@ export const RENDERER_STATS = Object.freeze({
   VISIBLE_ENTITIES: 6,
   VISIBLE_PARTICLES: 7,
   ACTIVE_DECORATIONS: 8,
+  MSG_MS: 9,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
 });
@@ -43,6 +44,7 @@ export const PARTICLE_STATS = Object.freeze({
   SHADOWS_UPDATED: 5,
   ACTIVE_ENTITIES: 6,
   TOTAL_ENTITIES: 7,
+  MSG_MS: 8,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
 });
@@ -56,6 +58,8 @@ export const PHYSICS_STATS = Object.freeze({
   COLLISION_CHECKS: 1,
   COLLISIONS_RESOLVED: 2,
   COLLISION_PAIRS: 3,
+  CONSTRAINT_MS: 4,
+  MSG_MS: 5,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
 });
@@ -69,6 +73,9 @@ export const SPATIAL_STATS = Object.freeze({
   NEIGHBOR_CHECKS: 1,
   GRID_CELLS_CHECKED: 2,
   ENTITIES_PROCESSED: 3,
+  REBUILD_MS: 4,
+  NEIGHBOR_MS: 5,
+  MSG_MS: 6,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE_PER_WORKER: 16 * 4,
 });
@@ -81,6 +88,7 @@ export const LOGIC_STATS = Object.freeze({
   FPS: 0,
   ENTITIES_PROCESSED: 1,
   SYSTEMS_EXECUTED: 2,
+  MSG_MS: 3,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE_PER_WORKER: 16 * 4,
 });
@@ -115,6 +123,7 @@ export const PRE_RENDER_STATS = Object.freeze({
   VISIBLE_DECORATIONS: 3,
   SHADOWS_UPDATED: 4,
   RENDER_QUEUE_SIZE: 5,
+  MSG_MS: 6,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
 });
@@ -138,6 +147,10 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
         key: 'VISIBLE_SPRITES',
         format: (v) => formatNumber(v),
       },
+      {
+        key: 'MSG_MS',
+        format: (v) => v.toFixed(2) + 'ms',
+      },
     ],
   },
   particle: {
@@ -156,6 +169,10 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       {
         key: 'SHADOWS_UPDATED',
         format: (v) => formatNumber(v),
+      },
+      {
+        key: 'MSG_MS',
+        format: (v) => v.toFixed(2) + 'ms',
       },
     ],
   },
@@ -176,6 +193,14 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
         key: 'COLLISION_PAIRS',
         format: (v) => formatNumber(v),
       },
+      {
+        key: 'CONSTRAINT_MS',
+        format: (v) => v.toFixed(2) + 'ms',
+      },
+      {
+        key: 'MSG_MS',
+        format: (v) => v.toFixed(2) + 'ms',
+      },
     ],
   },
   spatial: {
@@ -195,6 +220,18 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
         key: 'ENTITIES_PROCESSED',
         format: (v) => formatNumber(v),
       },
+      {
+        key: 'REBUILD_MS',
+        format: (v) => v.toFixed(2) + 'ms',
+      },
+      {
+        key: 'NEIGHBOR_MS',
+        format: (v) => v.toFixed(2) + 'ms',
+      },
+      {
+        key: 'MSG_MS',
+        format: (v) => v.toFixed(2) + 'ms',
+      },
     ],
   },
   logic: {
@@ -205,6 +242,10 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       {
         key: 'ENTITIES_PROCESSED',
         format: (v) => formatNumber(v),
+      },
+      {
+        key: 'MSG_MS',
+        format: (v) => v.toFixed(2) + 'ms',
       },
     ],
   },
@@ -259,6 +300,10 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
         key: 'RENDER_QUEUE_SIZE',
         format: (v) => formatNumber(v),
         label: 'Queue Size',
+      },
+      {
+        key: 'MSG_MS',
+        format: (v) => v.toFixed(2) + 'ms',
       },
     ],
   },

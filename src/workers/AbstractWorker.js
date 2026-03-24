@@ -62,7 +62,16 @@ export class AbstractWorker {
 
     this.self.onmessage = (e) => {
       this._messageQueue = this._messageQueue
-        .then(() => this.handleMessage(e))
+        .then(async () => {
+          const shouldProfileMessages = !!this.stats;
+          const startTime = shouldProfileMessages ? performance.now() : 0;
+
+          await this.handleMessage(e);
+
+          if (shouldProfileMessages) {
+            this.messageTimeThisFrame += performance.now() - startTime;
+          }
+        })
         .catch((error) => {
           console.error(`[${this.constructor.name}] Error in handleMessage:`, error);
           this.reportError('Worker message handling failed', error);
@@ -123,6 +132,9 @@ export class AbstractWorker {
       deltaTime: 0,
       dtRatio: 1,
     };
+
+    // Lightweight worker diagnostics written into the existing stats buffers.
+    this.messageTimeThisFrame = 0;
 
     this.reportLog('finished constructor');
   }
@@ -199,6 +211,9 @@ export class AbstractWorker {
 
     // Report FPS
     this.reportFPS();
+
+    // Reset per-frame diagnostics after subclasses publish them.
+    this.messageTimeThisFrame = 0;
 
     // Schedule next frame (only if not using custom scheduler)
     if (!this.usesCustomScheduler) {
