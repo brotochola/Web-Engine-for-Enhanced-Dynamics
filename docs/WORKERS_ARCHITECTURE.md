@@ -3,6 +3,8 @@
 Six specialized Web Workers, all talking through shared memory instead of postMessage.
 Each worker owns its data region. Nobody steps on anybody else's bytes. It's beautiful.
 
+**Deep dives:** [Spatial hashing & neighbors](./SPATIAL_HASHING.md) · [Physics pipeline](./PHYSICS.md)
+
 ---
 
 ## Worker Overview
@@ -48,6 +50,8 @@ Each worker writes only its own rows. No overlap.
 | `spatialStats` | **Write** | FPS, neighbor checks, cells checked |
 | `frameRateData` | **Write** | Own slot |
 
+Details: [SPATIAL_HASHING.md](./SPATIAL_HASHING.md)
+
 ---
 
 ### Physics Worker (1)
@@ -72,6 +76,8 @@ Integrates rigid bodies and resolves collisions. Reads neighbor data from spatia
 | `activeEntitiesData` | Read | Which entities are alive |
 | `physicsStats` | **Write** | FPS, checks, pairs resolved |
 | `frameRateData` | **Write** | Own slot |
+
+Details: [PHYSICS.md](./PHYSICS.md)
 
 ---
 

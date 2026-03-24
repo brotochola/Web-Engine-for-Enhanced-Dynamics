@@ -5,6 +5,8 @@ No cloning. No serialization tax. Just typed arrays pointing at the same memory 
 
 This doc maps every buffer: what's in it, how big it is, who writes it, who reads it.
 
+For how spatial rebuild + neighbors and physics use these buffers in practice, see [SPATIAL_HASHING.md](./SPATIAL_HASHING.md) and [PHYSICS.md](./PHYSICS.md).
+
 ---
 
 ## How It Works
