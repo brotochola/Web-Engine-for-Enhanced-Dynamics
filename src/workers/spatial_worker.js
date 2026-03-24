@@ -119,6 +119,7 @@ class SpatialWorker extends AbstractWorker {
     // Cached neighbor cells: (cellIndex * MAX_CELL_RADIUS + cellRadius) -> Uint16Array of neighbor cell indices
     // Uint16Array since cell indices are always positive and < 65535
     this._cellNeighborCache = new Map();
+    this._maxNeighborCacheEntries = 8192;
 
     // Performance stats
     this.entitiesProcessedThisFrame = 0;
@@ -301,6 +302,10 @@ class SpatialWorker extends AbstractWorker {
       ? neighborCells
       : neighborCells.subarray(0, count);
 
+    // Bound cache growth: this memoization is only a performance hint.
+    if (this._cellNeighborCache.size >= this._maxNeighborCacheEntries) {
+      this._cellNeighborCache.clear();
+    }
     this._cellNeighborCache.set(cacheKey, result);
     return result;
   }

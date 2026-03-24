@@ -858,7 +858,16 @@ export class AbstractWorker {
   handleWorkerMessage(fromWorker, data) {
     // Default implementation - subclasses can override
     // Or just pass to handleCustomMessage for unified handling
-    this.handleCustomMessage({ ...data, _fromWorker: fromWorker });
+    if (data && typeof data === 'object') {
+      data._fromWorker = fromWorker;
+      this.handleCustomMessage(data);
+      return;
+    }
+
+    this.handleCustomMessage({
+      data,
+      _fromWorker: fromWorker,
+    });
   }
 
   /**
