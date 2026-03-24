@@ -52,11 +52,47 @@ export class GameObject {
 
   static instances = [];
 
+  /**
+   * Main thread only: current `Scene` reference, set in `Scene.exposeGlobalReferences()`.
+   * Stays `null` in workers so `GameObject.get` keeps using the dense pool array there.
+   * @type {null | { getEntityView: (index: number, options?: object) => import('./gameObject.js').GameObject }}
+   */
+  static scene = null;
+
   /** @internal Reused by despawnAll to avoid Set allocation per call */
   static _despawnAllBuffer = new Set();
 
+  /**
+   * Worker: pooled instance at global index. Main thread (after scene init): lazy entity view over SABs.
+   * From DevTools: `GameObject.get(12)` once `exposeGlobalReferences` has run.
+   */
   static get(entityIndex) {
-    return this.instances[entityIndex];
+    const scene = GameObject.scene;
+    if (scene && typeof scene.getEntityView === 'function') {
+      return scene.getEntityView(entityIndex);
+    }
+    return GameObject.instances[entityIndex];
+  }
+
+  /**
+   * Main-thread handle for an entity slot (same SABs as workers). Requires `window.scene`.
+   * Engine callbacks (`tick`, collisions, etc.) still run only on logic workers.
+   *
+   * @param {number} entityIndex
+   * @param {{ cache?: boolean }} [options] - cache=true reuses one instance per index until releaseEntityView
+   * @returns {GameObject}
+   */
+  static getEntityView(entityIndex, options = {}) {
+    const scene =
+      GameObject.scene ||
+      (typeof globalThis !== 'undefined' && globalThis.window && globalThis.window.scene) ||
+      null;
+    if (!scene || typeof scene.getEntityView !== 'function') {
+      throw new Error(
+        'GameObject.getEntityView: no active Scene (set GameObject.scene / window.scene via Scene.exposeGlobalReferences)'
+      );
+    }
+    return scene.getEntityView(entityIndex, options);
   }
 
   /**
@@ -372,67 +408,89 @@ export class GameObject {
   }
 
   /**
+   * Build camelCase component name → class map (same layout logic_worker uses).
+   * Called from Scene registration and logic worker pool creation so main-thread
+   * entity views get working `this.rigidBody`-style accessors.
+   * @param {typeof GameObject} EntityClass
+   */
+  static _assignComponentClassMap(EntityClass) {
+    const componentClassMap = {};
+    const components = GameObject._collectComponents(EntityClass);
+    for (const ComponentClass of components) {
+      const componentName = ComponentClass.name;
+      const camelCaseName = componentName.charAt(0).toLowerCase() + componentName.slice(1);
+      componentClassMap[camelCaseName] = ComponentClass;
+    }
+    EntityClass._componentClassMap = componentClassMap;
+  }
+
+  /**
    * Constructor - stores entity index
    * @param {number} index - Entity index (unique across all entities)
    * @param {Object} config - Configuration object from GameEngine
    * @param {Object} logicWorker - Logic worker reference
+   * @param {Object} [options]
+   * @param {boolean} [options.view] - Main-thread view: do not touch pool Transform.active / instances / setup()
    *
    * DENSE COMPONENT ALLOCATION:
    * All components are allocated for all entities. Entity index === component index.
    * This simplifies code: just use SpriteRenderer.property[entityIndex] directly.
    * Unused slots have default values (0/false).
    */
-  constructor(index, config = {}, logicWorker = null) {
+  constructor(index, config = {}, logicWorker = null, options = {}) {
     this.index = index;
     this.config = config;
     this.logicWorker = logicWorker;
+    this.bindToEntitySlot({ view: options.view === true });
+  }
+
+  /**
+   * Wire this instance to its dense entity index: component flags, optional pool registration,
+   * neighbor slice, accessors, and default setup().
+   *
+   * @param {Object} opts
+   * @param {boolean} [opts.view=false] - When true (main-thread view): only attach read/write
+   *   facades over existing SAB data — do not reset Transform, push into pools, or run setup().
+   */
+  bindToEntitySlot({ view = false } = {}) {
+    const index = this.index;
+    const Ctor = this.constructor;
+
+    this._isEntityView = view;
 
     // DENSE ALLOCATION: entityIndex === componentIndex for all components
-    // Store which components this entity TYPE has (for validation)
-    // Keys are stored in BOTH PascalCase and camelCase for easy lookup
     this._hasComponents = {};
-    const entityComponents = collectComponents(this.constructor, GameObject, Transform);
+    const entityComponents = collectComponents(Ctor, GameObject, Transform);
     for (const ComponentClass of entityComponents) {
       const name = ComponentClass.name;
       const camelCaseName = name.charAt(0).toLowerCase() + name.slice(1);
-      this._hasComponents[name] = true; // PascalCase: "RigidBody"
-      this._hasComponents[camelCaseName] = true; // camelCase: "rigidBody"
+      this._hasComponents[name] = true;
+      this._hasComponents[camelCaseName] = true;
     }
 
-    // Set entityType in Transform component (auto-assigned during registration)
-    Transform.entityType[index] = this.constructor.entityType || 0;
+    if (!view) {
+      Transform.entityType[index] = Ctor.entityType || 0;
+      Transform.active[index] = 0;
+      GameObject.instances.push(this);
+      Ctor.instances.push(this);
+    }
 
-    // Set INACTIVE in Transform (entities start in pool, spawn() activates them)
-    // Note: Transform is always present at entity index
-    Transform.active[index] = 0;
-
-    GameObject.instances.push(this);
-    this.constructor.instances.push(this);
-
-    // Neighbor data: computed once in constructor (Grid is initialized before entities)
     if (Grid._stride && Grid.neighborData) {
       this._neighborOffset = index * Grid._stride;
       this._neighbors = new Uint16Array(
         Grid.neighborData.buffer,
-        Grid.neighborData.byteOffset + (this._neighborOffset + 2) * 2, // Uint16 = 2 bytes
+        Grid.neighborData.byteOffset + (this._neighborOffset + 2) * 2,
         Grid.maxNeighbors
       );
     } else {
-      // Fallback for edge cases (shouldn't happen in normal flow)
       this._neighborOffset = -1;
       this._neighbors = null;
     }
 
-    // Component instance cache (lazy-loaded on first access)
     this._componentCache = {};
+    Ctor._ensureComponentAccessors();
 
-    // Ensure component accessors are defined on prototype (done once per class)
-    this.constructor._ensureComponentAccessors();
-
-    // LIFECYCLE: Call setup() at the end of constructor
-    // This allows subclasses to configure entity type properties
-    // All components are now initialized and accessible
-    if (this.setup) {
+    if (!view && this.setup) {
       this.setup();
     }
   }

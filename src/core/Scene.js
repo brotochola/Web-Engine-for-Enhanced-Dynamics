@@ -299,6 +299,8 @@ class Scene {
     this.registeredClasses = [];
     this.gameObjects = [];
     this.totalEntityCount = 0;
+    /** @type {Map<number, import('./gameObject.js').GameObject>} */
+    this._entityViewCache = new Map();
 
     // Key mapping for input buffer
     this.keyMap = {};
@@ -437,6 +439,50 @@ class Scene {
     for (let i = 0; i < count; i++) {
       EntityClass.entityIndices[i] = startIndex + i;
     }
+
+    GameObject._assignComponentClassMap(EntityClass);
+  }
+
+  /**
+   * Main-thread wrapper over an existing entity slot (SharedArrayBuffers).
+   * Does not spawn/despawn. Logic (`tick`, collisions, …) still runs on workers only.
+   *
+   * @param {number} index - Global entity index
+   * @param {{ cache?: boolean }} [options] - If cache is true, reuse the same instance until releaseEntityView(index)
+   * @returns {import('./gameObject.js').GameObject}
+   */
+  getEntityView(index, options = {}) {
+    const cache = options.cache === true;
+    if (index < 0 || index >= this.totalEntityCount) {
+      throw new RangeError(
+        `getEntityView: index ${index} out of range (0..${this.totalEntityCount - 1})`
+      );
+    }
+    if (!Transform.entityType || Transform.entityType.length <= index) {
+      throw new Error('getEntityView: Transform not initialized (call after Scene buffers are ready)');
+    }
+    if (cache && this._entityViewCache.has(index)) {
+      return this._entityViewCache.get(index);
+    }
+    const typeId = Transform.entityType[index];
+    const reg = this.registeredClasses[typeId];
+    if (!reg || !reg.class) {
+      throw new Error(`getEntityView: unknown entityType ${typeId} at index ${index}`);
+    }
+    const EntityClass = reg.class;
+    const instance = new EntityClass(index, this.config, null, { view: true });
+    if (cache) {
+      this._entityViewCache.set(index, instance);
+    }
+    return instance;
+  }
+
+  /**
+   * Drop a cached main-thread view only (does not despawn the entity).
+   * @param {number} index
+   */
+  releaseEntityView(index) {
+    this._entityViewCache.delete(index);
   }
 
   /**
@@ -701,6 +747,8 @@ class Scene {
         if (!ParentClass.hasOwnProperty('instances')) {
           ParentClass.instances = [];
         }
+
+        GameObject._assignComponentClassMap(ParentClass);
       }
     }
   }
@@ -837,7 +885,7 @@ class Scene {
     window.DecorationPool = DecorationPool;
     window.SoundManager = SoundManager;
     window.Layer = Layer;
-
+    GameObject.scene = this;
   }
 
   // User lifecycle hooks - override these in subclasses
@@ -2695,6 +2743,7 @@ class Scene {
       delete window.downloadBigAtlas;
       delete window.inspectBigAtlas;
     }
+    GameObject.scene = null;
 
     // Stop the main loop immediately
     if (this.animationFrameId !== null) {
@@ -2726,6 +2775,10 @@ class Scene {
     // Clear all entity instances AND break buffer references on EntityClass
     // EntityClass.freeList, freeListTop, _activeList, entityIndices point to scene buffers
     // Without clearing, entity classes not used in next scene keep old buffers alive
+    if (this._entityViewCache) {
+      this._entityViewCache.clear();
+    }
+
     for (const registration of this.registeredClasses) {
       const EntityClass = registration.class;
       if (EntityClass.instances) EntityClass.instances = [];

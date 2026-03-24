@@ -13,8 +13,6 @@ JSDoc `@typedef`,
 
 -decorations con container!
 
-4.testear EntityClass.tickAll vs instance.tick()
-
 7-poolsize variable, automatico.. no tener limite para la cantidad de gameobjects de tipo tal
 
 8-const { x, y } = Transform.getValues();
@@ -58,9 +56,6 @@ JSDoc `@typedef`,
 -getAllPropertiesFromAllComponents(): para asi poder clonar
 -this.constructor.spawnCloneFromInstance(this)
 -this.constructor.spawnCloneFromEntity(this.index)
-
--Tener un Prey.tickAll, en lugar de this.tick() ?
-TENER AMBOS! y se puede desde tickall llamar a sistemas, q tmb son metodos estaticos.
 
 ---
 

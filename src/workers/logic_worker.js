@@ -222,21 +222,14 @@ class LogicWorker extends AbstractWorker {
           EntityClass.instances = [];
         }
 
-        // Create component class map for this entity
-        // Get component classes directly from the entity's static components array
-        const componentClassMap = {};
+        GameObject._assignComponentClassMap(EntityClass);
         const components = GameObject._collectComponents(EntityClass);
         let needsScreenCallbacks = false;
         let needsCollisionCallbacks = false;
-
         for (const ComponentClass of components) {
-          const componentName = ComponentClass.name;
-          const camelCaseName = componentName.charAt(0).toLowerCase() + componentName.slice(1);
-          componentClassMap[camelCaseName] = ComponentClass;
           if (ComponentClass === CameraInOutListener) needsScreenCallbacks = true;
           if (ComponentClass === CollisionListener) needsCollisionCallbacks = true;
         }
-        EntityClass._componentClassMap = componentClassMap;
 
         if (needsCollisionCallbacks) {
           this.collisionListenerByType[entityType] = 1;
