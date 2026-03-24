@@ -1811,33 +1811,41 @@ export class GameObject {
       instance.setup();
     }
 
-    // Ensure mass is calculated after setup() if it's still 0 and entity is not static
-    // This handles cases where collider properties were set but mass wasn't calculated
-    if (has.RigidBody && has.Collider && RigidBody.active[i] && Collider.active[i]) {
+    // Ensure mass is initialized after setup().
+    // Dynamic bodies with no valid collider-derived mass fall back to unit mass once here,
+    // instead of paying `invMass || 1` in physics hot loops every frame.
+    if (has.RigidBody && RigidBody.active[i]) {
       const isStatic = RigidBody.static[i];
-      const currentMass = RigidBody.mass[i];
 
-      // If mass is 0 and entity is not static, recalculate from collider
-      if (!isStatic && currentMass === 0) {
-        const shapeType = Collider.shapeType[i];
-        if (shapeType === 0) {
-          // Circle
-          const radius = Collider.radius[i];
-          if (radius > 0) {
-            updateMassFromCircle(i, radius, RigidBody);
-          }
-        } else if (shapeType === 1) {
-          // Box
-          const width = Collider.width[i];
-          const height = Collider.height[i];
-          if (width > 0 && height > 0) {
-            updateMassFromBox(i, width, height, RigidBody);
+      if (isStatic) {
+        RigidBody.invMass[i] = 0;
+      } else if (RigidBody.mass[i] === 0) {
+        let massInitialized = false;
+
+        if (has.Collider && Collider.active[i]) {
+          const shapeType = Collider.shapeType[i];
+          if (shapeType === 0) {
+            // Circle
+            const radius = Collider.radius[i];
+            if (radius > 0) {
+              updateMassFromCircle(i, radius, RigidBody);
+              massInitialized = true;
+            }
+          } else if (shapeType === 1) {
+            // Box
+            const width = Collider.width[i];
+            const height = Collider.height[i];
+            if (width > 0 && height > 0) {
+              updateMassFromBox(i, width, height, RigidBody);
+              massInitialized = true;
+            }
           }
         }
-      }
-      // If static, ensure invMass is 0
-      else if (isStatic) {
-        RigidBody.invMass[i] = 0;
+
+        if (!massInitialized) {
+          RigidBody.mass[i] = 1;
+          RigidBody.invMass[i] = 1;
+        }
       }
     }
 

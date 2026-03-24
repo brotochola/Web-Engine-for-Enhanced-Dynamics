@@ -74,6 +74,7 @@ export class RigidBody extends Component {
       RigidBody.invMass[this.index] = 0;
     } else {
       // Entity is now dynamic - recalculate mass from collider if it exists
+      let massInitialized = false;
       if (Collider.active && Collider.active[this.index]) {
         const shapeType = Collider.shapeType[this.index];
         if (shapeType === 0) {
@@ -81,6 +82,7 @@ export class RigidBody extends Component {
           const radius = Collider.radius[this.index];
           if (radius > 0) {
             updateMassFromCircle(this.index, radius, RigidBody);
+            massInitialized = true;
           }
         } else if (shapeType === 1) {
           // Box
@@ -88,8 +90,15 @@ export class RigidBody extends Component {
           const height = Collider.height[this.index];
           if (width > 0 && height > 0) {
             updateMassFromBox(this.index, width, height, RigidBody);
+            massInitialized = true;
           }
         }
+      }
+
+      // Dynamic bodies without collider-derived mass behave like unit-mass objects.
+      if (!massInitialized) {
+        RigidBody.mass[this.index] = 1;
+        RigidBody.invMass[this.index] = 1;
       }
     }
   }

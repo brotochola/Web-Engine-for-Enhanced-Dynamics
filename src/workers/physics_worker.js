@@ -32,6 +32,8 @@ import { Camera } from '../core/Camera.js';
 // Shape type constants (must match Collider.shapeType values)
 const SHAPE_CIRCLE = 0;
 const SHAPE_BOX = 1;
+const MIN_CONSTRAINT_DIST_SQ = 0.0001 * 0.0001;
+const CONSTRAINT_ERROR_EPSILON = 0.001;
 
 /**
  * PhysicsWorker - Handles physics integration for all entities
@@ -776,8 +778,8 @@ class PhysicsWorker extends AbstractWorker {
           // Mass-weighted collision response:
           // Lighter objects move more, heavier objects move less
           // Static objects have invMass = 0 (infinite mass)
-          const invMassI = iStatic ? 0 : invMass[i] || 1;
-          const invMassJ = jStatic ? 0 : invMass[j] || 1;
+          const invMassI = iStatic ? 0 : invMass[i];
+          const invMassJ = jStatic ? 0 : invMass[j];
           const totalInvMass = invMassI + invMassJ;
 
           if (totalInvMass > 0) {
@@ -880,8 +882,6 @@ class PhysicsWorker extends AbstractWorker {
   solveDistanceConstraints(x, y, active) {
     const shouldProfile = !!this.stats;
     const startTime = shouldProfile ? performance.now() : 0;
-    const minDistSq = 0.0000001
-    const errorEpsilon = 0.001;
 
     const pairs = Constraint.pairs;
     const restLength = Constraint.restLength;
@@ -919,8 +919,8 @@ class PhysicsWorker extends AbstractWorker {
       const bStatic = !bHasRB || isStatic[entityB];
 
       // Get inverse masses (static = 0 = infinite mass)
-      const invMassA = aStatic ? 0 : (invMass[entityA] || 1);
-      const invMassB = bStatic ? 0 : (invMass[entityB] || 1);
+      const invMassA = aStatic ? 0 : invMass[entityA];
+      const invMassB = bStatic ? 0 : invMass[entityB];
       const totalInvMass = invMassA + invMassB;
 
       // Skip if both are static (no movement possible)
@@ -938,7 +938,7 @@ class PhysicsWorker extends AbstractWorker {
       const distSq = dx * dx + dy * dy;
 
       // Skip if entities are at same position (avoid division by zero)
-      if (distSq < minDistSq) continue;
+      if (distSq < MIN_CONSTRAINT_DIST_SQ) continue;
 
       const currentDist = Math.sqrt(distSq);
 
@@ -947,7 +947,7 @@ class PhysicsWorker extends AbstractWorker {
       const error = currentDist - targetDist;
 
       // Skip if already at target distance
-      if (error > -errorEpsilon && error < errorEpsilon) continue;
+      if (error > -CONSTRAINT_ERROR_EPSILON && error < CONSTRAINT_ERROR_EPSILON) continue;
 
       // Calculate correction direction (normalized)
       const invCurrentDist = 1 / currentDist;
