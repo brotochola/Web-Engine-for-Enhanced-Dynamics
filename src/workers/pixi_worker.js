@@ -998,7 +998,7 @@ class PixiRenderer extends AbstractWorker {
     // CRITICAL: Set texture FIRST before position - prevents "texture bleeding" when pool slots
     // are reused (e.g. civilian showing grass texture for one frame). visible=false doesn't work
     // in ParticleContainer, so we rely on correct texture+position assignment order.
-    const fallbackTexture = this.particlePool.defaultTexture || (flatTextures.length > 0 ? flatTextures[0] : PIXI.Texture.WHITE);
+    const fallbackTexture = this.particlePool.defaultTexture || PIXI.Texture.WHITE;
     for (let i = 0; i < count; i++) {
       const sprite = this._rqSprites[i];
       if (!sprite) continue;
@@ -1935,7 +1935,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Apply render queue properties to sprites (pre-sorted by particle_worker!)
     // CRITICAL: Set texture FIRST to prevent texture bleeding when pool slots are reused
-    const fallbackTexture = this.particlePool.defaultTexture || (flatTextures.length > 0 ? flatTextures[0] : PIXI.Texture.WHITE);
+    const fallbackTexture = this.particlePool.defaultTexture || PIXI.Texture.WHITE;
     for (let i = 0; i < count; i++) {
       const sprite = this._shadowSprites[i];
       if (!sprite) continue;
@@ -3240,7 +3240,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   updateCustomLayers() {
     const flatTextures = this.flatTextures;
-    const fallbackTexture = this.particlePool.defaultTexture || (flatTextures.length > 0 ? flatTextures[0] : PIXI.Texture.WHITE);
+    const fallbackTexture = this.particlePool.defaultTexture || PIXI.Texture.WHITE;
 
     for (let li = 0; li < this._customLayerList.length; li++) {
       const cl = this._customLayerList[li];

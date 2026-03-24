@@ -770,7 +770,9 @@ class SpriteSheetRegistry {
     const packer = new this.MaxRectsPacker(maxWidth, maxHeight, padding);
 
     const frames = {};
-    const animations = {};
+    const animations = {
+      _empty: ['_empty'],
+    };
     const imagesToPack = [];
     const proxySheets = {}; // Track proxy sheet metadata
 
@@ -982,6 +984,27 @@ class SpriteSheetRegistry {
     // ========================================
     // INJECT BUILT-IN TEXTURES
     // ========================================
+    // Empty transparent pixel - reserved as animation index 0 so accidental
+    // textureId=0 fallbacks render invisibly instead of showing a real asset.
+    const emptyCanvas = document.createElement('canvas');
+    emptyCanvas.width = 1;
+    emptyCanvas.height = 1;
+    const emptyCtx = emptyCanvas.getContext('2d');
+    emptyCtx.clearRect(0, 0, 1, 1);
+    imagesToPack.push({
+      name: '_empty',
+      sourceImg: emptyCanvas,
+      sourceRect: null,
+      width: 1,
+      height: 1,
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth: 1,
+      sourceHeight: 1,
+      isSpritesheetFrame: false,
+    });
+    console.log(`  ✅ Generated built-in: _empty (1x1 transparent)`);
+
     // Light glow gradient (200px diameter white radial gradient)
     const lightGradientCanvas = createCircularGradientCanvas(100, 0xffffff);
     imagesToPack.push({

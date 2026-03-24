@@ -98,9 +98,9 @@ export class Civilian extends Person {
 
         const fsm = this.civilianBehaviorFSM;
         const PANIC = CivilianBehaviorFSM.states.PANIC;
-        if (CivilianBehaviorFSM.isInState(i, PANIC)) {
-          CivilianBehaviorFSM.forceChangeState(i, PANIC, this);
-        } else {
+        if (!CivilianBehaviorFSM.isInState(i, PANIC)) {
+          // CivilianBehaviorFSM.forceChangeState(i, PANIC, this);
+          // } else {
           fsm.changeState(PANIC);
         }
         return;

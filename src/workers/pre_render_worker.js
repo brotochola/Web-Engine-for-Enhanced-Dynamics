@@ -26,6 +26,8 @@ import { RENDERER_DEFAULTS, CAMERA_TYPES } from '../core/ConfigDefaults.js';
 import { Layer } from '../core/Layer.js';
 import { createViews as createRenderQueueViews } from '../core/RenderQueueLayout.js';
 
+const INVALID_TEXTURE_ID = 0xFFFF;
+
 /**
  * PreRenderWorker - Handles all visual pre-calculations before rendering
  *
@@ -270,6 +272,7 @@ class PreRenderWorker extends AbstractWorker {
             // Entity texture lookup buffer
             if (data.renderQueue.entityTextureData) {
                 this.entityLastTextureId = new Uint16Array(data.renderQueue.entityTextureData);
+                this.entityLastTextureId.fill(INVALID_TEXTURE_ID);
             }
 
             // Animation state buffers
@@ -875,7 +878,8 @@ class PreRenderWorker extends AbstractWorker {
                     if (heightMult > 0 && (maxShadowsPerEntity <= 0 || (entityShadowCounts[i] ?? 0) < maxShadowsPerEntity)) {
                         const casterX = worldX[i];
                         const casterY = worldY[i];
-                        const textureId = this.entityLastTextureId ? this.entityLastTextureId[i] : 0;
+                        const textureId = this.entityLastTextureId ? this.entityLastTextureId[i] : INVALID_TEXTURE_ID;
+                        if (textureId === INVALID_TEXTURE_ID) continue;
                         const entityScaleY = Math.abs(spriteScaleY[i]) || 1;
                         const anchorX = spriteAnchorX[i] ?? 0.5;
                         const anchorY = spriteAnchorY[i] ?? 0.95;
@@ -1223,42 +1227,50 @@ class PreRenderWorker extends AbstractWorker {
                 const animState = srAnimState[idx];
 
                 const proxyMap = this.proxyToGlobalAnim?.[sheetId];
-                const globalAnimIdx = proxyMap ? (proxyMap[animState] ?? 0) : 0;
-                const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
+                const globalAnimIdx = proxyMap?.[animState];
 
-                if (srIsAnimated[idx] && animFrameCount > 1) {
-                    frameAccum[idx] += deltaSeconds;
-                    const frameDuration = 1 / (srAnimSpeed[idx] * 60);
+                if (globalAnimIdx !== undefined) {
+                    const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
+                    if (frameIndex[idx] >= animFrameCount) {
+                        frameIndex[idx] = 0;
+                    }
 
-                    if (frameAccum[idx] >= frameDuration) {
-                        frameAccum[idx] -= frameDuration;
+                    if (srIsAnimated[idx] && animFrameCount > 1) {
+                        frameAccum[idx] += deltaSeconds;
+                        const frameDuration = 1 / (srAnimSpeed[idx] * 60);
 
-                        const currentFrame = frameIndex[idx];
-                        const isLastFrame = currentFrame >= animFrameCount - 1;
-                        const shouldLoop = srLoop[idx] === 1;
+                        if (frameAccum[idx] >= frameDuration) {
+                            frameAccum[idx] -= frameDuration;
 
-                        if (shouldLoop || !isLastFrame) {
-                            frameIndex[idx] = (currentFrame + 1) % animFrameCount;
-                            // Bounds may change (variable frame sizes)
-                            if (this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH) {
-                                const texId = (this.animationFrameStart?.[globalAnimIdx] ?? 0) + frameIndex[idx];
-                                const origW = this.frameWidth[texId] || 0;
-                                const origH = this.frameHeight[texId] || 0;
-                                const sx = srScaleX[idx] || 1;
-                                const sy = srScaleY[idx] || 1;
-                                SpriteRenderer.boundsHalfW[idx] = (origW * sx) * 0.5;
-                                SpriteRenderer.boundsHalfH[idx] = (origH * sy) * 0.5;
+                            const currentFrame = frameIndex[idx];
+                            const isLastFrame = currentFrame >= animFrameCount - 1;
+                            const shouldLoop = srLoop[idx] === 1;
+
+                            if (shouldLoop || !isLastFrame) {
+                                frameIndex[idx] = (currentFrame + 1) % animFrameCount;
+                                // Bounds may change (variable frame sizes)
+                                if (this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH) {
+                                    const texId = (this.animationFrameStart?.[globalAnimIdx] ?? 0) + frameIndex[idx];
+                                    const origW = this.frameWidth[texId] || 0;
+                                    const origH = this.frameHeight[texId] || 0;
+                                    const sx = srScaleX[idx] || 1;
+                                    const sy = srScaleY[idx] || 1;
+                                    SpriteRenderer.boundsHalfW[idx] = (origW * sx) * 0.5;
+                                    SpriteRenderer.boundsHalfH[idx] = (origH * sy) * 0.5;
+                                }
                             }
                         }
                     }
-                }
 
-                const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
-                const globalTextureId = animStart + frameIndex[idx];
-                rqTextureId[i] = globalTextureId;
+                    const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
+                    const globalTextureId = animStart + frameIndex[idx];
+                    rqTextureId[i] = globalTextureId;
 
-                if (entityLastTextureId) {
-                    entityLastTextureId[idx] = globalTextureId;
+                    if (entityLastTextureId) {
+                        entityLastTextureId[idx] = globalTextureId;
+                    }
+                } else {
+                    rqTextureId[i] = entityLastTextureId ? entityLastTextureId[idx] : INVALID_TEXTURE_ID;
                 }
             } else if (type === 1) {
                 // === PARTICLE ===
@@ -1284,7 +1296,7 @@ class PreRenderWorker extends AbstractWorker {
                 rqRotation[i] = particleRotation[idx];
                 rqTint[i] = particleTint[idx];
                 const pAnimIdx = particleTextureId[idx];
-                rqTextureId[i] = this.animationFrameStart?.[pAnimIdx] ?? 0;
+                rqTextureId[i] = this.animationFrameStart?.[pAnimIdx] ?? INVALID_TEXTURE_ID;
                 rqAnchorX[i] = 0.5;
                 rqAnchorY[i] = 0.5;
                 rqType[i] = 1;
@@ -1299,7 +1311,7 @@ class PreRenderWorker extends AbstractWorker {
                 rqAlpha[i] = decoAlpha[idx] * this._decorationZoomAlpha;
                 rqTint[i] = decoTint[idx];
                 const dAnimIdx = decoTextureId[idx];
-                rqTextureId[i] = this.animationFrameStart?.[dAnimIdx] ?? 0;
+                rqTextureId[i] = this.animationFrameStart?.[dAnimIdx] ?? INVALID_TEXTURE_ID;
                 rqAnchorX[i] = decoAnchorX[idx];
                 rqAnchorY[i] = decoAnchorY[idx];
                 rqType[i] = 2;
@@ -1321,7 +1333,7 @@ class PreRenderWorker extends AbstractWorker {
                     rqAlpha[i] = bulletAlpha[idx];
                     rqTint[i] = bulletTint[idx];
                     const bAnimIdx = bulletTextureId[idx];
-                    rqTextureId[i] = this.animationFrameStart?.[bAnimIdx] ?? 0;
+                    rqTextureId[i] = this.animationFrameStart?.[bAnimIdx] ?? INVALID_TEXTURE_ID;
                     rqAnchorX[i] = bulletAnchorX[idx];
                     rqAnchorY[i] = bulletAnchorY[idx];
                 }
@@ -1571,26 +1583,34 @@ class PreRenderWorker extends AbstractWorker {
                     const sheetId = srSpritesheetId[idx];
                     const animState = srAnimState[idx];
                     const proxyMap = this.proxyToGlobalAnim?.[sheetId];
-                    const globalAnimIdx = proxyMap ? (proxyMap[animState] ?? 0) : 0;
-                    const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
+                    const globalAnimIdx = proxyMap?.[animState];
 
-                    if (srIsAnimated[idx] && animFrameCount > 1) {
-                        frameAccum[idx] += deltaSeconds;
-                        const frameDuration = 1 / (srAnimSpeed[idx] * 60);
-                        if (frameAccum[idx] >= frameDuration) {
-                            frameAccum[idx] -= frameDuration;
-                            const currentFrame = frameIndex[idx];
-                            const isLastFrame = currentFrame >= animFrameCount - 1;
-                            if (srLoop[idx] === 1 || !isLastFrame) {
-                                frameIndex[idx] = (currentFrame + 1) % animFrameCount;
+                    if (globalAnimIdx !== undefined) {
+                        const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
+                        if (frameIndex[idx] >= animFrameCount) {
+                            frameIndex[idx] = 0;
+                        }
+
+                        if (srIsAnimated[idx] && animFrameCount > 1) {
+                            frameAccum[idx] += deltaSeconds;
+                            const frameDuration = 1 / (srAnimSpeed[idx] * 60);
+                            if (frameAccum[idx] >= frameDuration) {
+                                frameAccum[idx] -= frameDuration;
+                                const currentFrame = frameIndex[idx];
+                                const isLastFrame = currentFrame >= animFrameCount - 1;
+                                if (srLoop[idx] === 1 || !isLastFrame) {
+                                    frameIndex[idx] = (currentFrame + 1) % animFrameCount;
+                                }
                             }
                         }
-                    }
 
-                    const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
-                    const globalTextureId = animStart + frameIndex[idx];
-                    rqTextureId[i] = globalTextureId;
-                    if (entityLastTextureId) entityLastTextureId[idx] = globalTextureId;
+                        const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
+                        const globalTextureId = animStart + frameIndex[idx];
+                        rqTextureId[i] = globalTextureId;
+                        if (entityLastTextureId) entityLastTextureId[idx] = globalTextureId;
+                    } else {
+                        rqTextureId[i] = entityLastTextureId ? entityLastTextureId[idx] : INVALID_TEXTURE_ID;
+                    }
 
                 } else if (type === 1) {
                     // === PARTICLE ===
@@ -1616,7 +1636,7 @@ class PreRenderWorker extends AbstractWorker {
                     rqRotation[i] = particleRotation[idx];
                     rqTint[i] = particleTint[idx];
                     const pAnimIdx = particleTextureId[idx];
-                    rqTextureId[i] = this.animationFrameStart?.[pAnimIdx] ?? 0;
+                    rqTextureId[i] = this.animationFrameStart?.[pAnimIdx] ?? INVALID_TEXTURE_ID;
                     rqAnchorX[i] = 0.5;
                     rqAnchorY[i] = 0.5;
                     rqType[i] = 1;
@@ -1632,7 +1652,7 @@ class PreRenderWorker extends AbstractWorker {
                     rqAlpha[i] = decoAlpha[idx] * this._decorationZoomAlpha;
                     rqTint[i] = decoTint[idx];
                     const dAnimIdx = decoTextureId[idx];
-                    rqTextureId[i] = this.animationFrameStart?.[dAnimIdx] ?? 0;
+                    rqTextureId[i] = this.animationFrameStart?.[dAnimIdx] ?? INVALID_TEXTURE_ID;
                     rqAnchorX[i] = decoAnchorX[idx];
                     rqAnchorY[i] = decoAnchorY[idx];
                     rqType[i] = 2;
@@ -1682,7 +1702,7 @@ class PreRenderWorker extends AbstractWorker {
                         rqAlpha[i] = bulletAlpha[idx];
                         rqTint[i] = bulletTint[idx];
                         const bAnimIdx = bulletTextureId[idx];
-                        rqTextureId[i] = this.animationFrameStart?.[bAnimIdx] ?? 0;
+                        rqTextureId[i] = this.animationFrameStart?.[bAnimIdx] ?? INVALID_TEXTURE_ID;
                         rqAnchorX[i] = bulletAnchorX[idx];
                         rqAnchorY[i] = bulletAnchorY[idx];
                     }
@@ -1991,7 +2011,8 @@ class PreRenderWorker extends AbstractWorker {
 
                 const casterX = worldX[neighborIdx];
                 const casterY = worldY[neighborIdx];
-                const textureId = entityLastTextureId ? entityLastTextureId[neighborIdx] : 0;
+                const textureId = entityLastTextureId ? entityLastTextureId[neighborIdx] : INVALID_TEXTURE_ID;
+                if (textureId === INVALID_TEXTURE_ID) continue;
 
                 const entityScaleY = Math.abs(spriteScaleY[neighborIdx]) || 1;
                 const anchorX = spriteAnchorX[neighborIdx] ?? 0.5;
