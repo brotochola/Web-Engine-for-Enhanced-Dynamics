@@ -307,8 +307,8 @@ class PhysicsWorker extends AbstractWorker {
       collisionCount[i] = 0;
     }
 
-    const gx = this.settings.gravity.x || 0;
-    const gy = this.settings.gravity.y || 0;
+    const gx = this.settings.gravity.x;
+    const gy = this.settings.gravity.y;
 
     // Step 1: Move entities using Verlet integration
     this.moveEntitiesVerlet(
@@ -405,8 +405,8 @@ class PhysicsWorker extends AbstractWorker {
       collisionCount[i] = 0;
     }
 
-    const gx = this.settings.gravity.x || 0;
-    const gy = this.settings.gravity.y || 0;
+    const gx = this.settings.gravity.x;
+    const gy = this.settings.gravity.y;
 
     // Step 1: Move entities using Verlet integration with fixed timestep
     this.moveEntitiesVerlet(

@@ -409,8 +409,8 @@ class SpatialWorker extends AbstractWorker {
       if (!colliderActive[i] && !spriteRendererActive[i]) continue;
 
       // Calculate collider position
-      const posX = x[i] + (offsetX[i] || 0);
-      const posY = y[i] + (offsetY[i] || 0);
+      const posX = x[i] + offsetX[i];
+      const posY = y[i] + offsetY[i];
 
       // Skip invalid positions (NaN check via self-comparison)
       if (posX !== posX || posY !== posY) continue;
@@ -420,10 +420,10 @@ class SpatialWorker extends AbstractWorker {
         halfH = 0;
       if (colliderActive[i]) {
         if (shapeType[i] === SHAPE_CIRCLE) {
-          halfW = halfH = radius[i] || 0;
+          halfW = halfH = radius[i];
         } else {
-          halfW = (width[i] || 0) * 0.5;
-          halfH = (height[i] || 0) * 0.5;
+          halfW = width[i] * 0.5;
+          halfH = height[i] * 0.5;
         }
       }
 
