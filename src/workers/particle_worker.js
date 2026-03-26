@@ -304,6 +304,8 @@ class ParticleWorker extends AbstractWorker {
     this.maxParticles = 0;
     this.activeParticleCount = 0;
     this.particlesStampedThisFrame = 0;
+    this.buildActiveVisibleTimeThisFrame = 0;
+    this.particlePhysicsTimeThisFrame = 0;
 
     // Blood decals
     this.decalsEnabled = false;
@@ -552,10 +554,17 @@ class ParticleWorker extends AbstractWorker {
     this.particlesStampedThisFrame = 0;
     this.flowfieldsComputedThisFrame = 0;
     this.pathsComputedThisFrame = 0;
+    this.buildActiveVisibleTimeThisFrame = 0;
+    this.particlePhysicsTimeThisFrame = 0;
 
     // Build active particle list AND calculate visibility in one fused pass
     // Writes to: activeParticlesData SAB, visibleParticlesData SAB, isItOnScreen flags
+    const shouldProfile = !!this.stats;
+    let startTime = shouldProfile ? performance.now() : 0;
     this.buildActiveAndVisibleParticleLists();
+    if (shouldProfile) {
+      this.buildActiveVisibleTimeThisFrame += performance.now() - startTime;
+    }
 
     // Update screen visibility for decorations (entities done in pre_render_worker)
     this.updateDecorationScreenVisibility();
@@ -569,7 +578,11 @@ class ParticleWorker extends AbstractWorker {
     this.clearParticleStampList();
 
     // Update particle physics and collect particles to stamp
+    startTime = shouldProfile ? performance.now() : 0;
     this.activeParticleCount = this.updateParticlePhysics(deltaTime, dtRatio);
+    if (shouldProfile) {
+      this.particlePhysicsTimeThisFrame += performance.now() - startTime;
+    }
 
     // Stamp collected particles onto blood decal tiles
     this.stampCollectedParticles();
@@ -620,8 +633,36 @@ class ParticleWorker extends AbstractWorker {
       let count = 0;
       const freeListTop = ParticleEmitter.freeListTop;
       const expectedActive = freeListTop ? this.maxParticles - freeListTop[0] : this.maxParticles;
+      const maxParticles = this.maxParticles;
+      let i = 0;
 
-      for (let i = 0; i < this.maxParticles && count < expectedActive; i++) {
+      for (; i + 3 < maxParticles && count < expectedActive; i += 4) {
+        if (active[i]) {
+          localIndices[count] = i;
+          if (activeData) activeData[1 + count] = i;
+          count++;
+          if (count >= expectedActive) break;
+        }
+        if (active[i + 1]) {
+          localIndices[count] = i + 1;
+          if (activeData) activeData[1 + count] = i + 1;
+          count++;
+          if (count >= expectedActive) break;
+        }
+        if (active[i + 2]) {
+          localIndices[count] = i + 2;
+          if (activeData) activeData[1 + count] = i + 2;
+          count++;
+          if (count >= expectedActive) break;
+        }
+        if (active[i + 3]) {
+          localIndices[count] = i + 3;
+          if (activeData) activeData[1 + count] = i + 3;
+          count++;
+        }
+      }
+
+      for (; i < maxParticles && count < expectedActive; i++) {
         if (active[i]) {
           localIndices[count] = i;
           if (activeData) activeData[1 + count] = i;
@@ -666,17 +707,90 @@ class ParticleWorker extends AbstractWorker {
 
     let activeCount = 0;
     let visibleCount = 0;
+    const maxParticles = this.maxParticles;
+    let i = 0;
 
     // FUSED PASS: Build active list AND calculate visibility in one iteration
-    for (let i = 0; i < this.maxParticles && activeCount < expectedActive; i++) {
+    for (; i + 3 < maxParticles && activeCount < expectedActive; i += 4) {
+      if (active[i]) {
+        localIndices[activeCount] = i;
+        if (activeData) activeData[1 + activeCount] = i;
+        activeCount++;
+
+        const screenX = x[i] * camZoom - camOffX;
+        const screenY = y[i] * camZoom - camOffY;
+        const onScreen = screenX > camMinX && screenX < camMaxX && screenY > camMinY && screenY < camMaxY;
+        if (onScreen) {
+          isItOnScreen[i] = 1;
+          if (visibleData) visibleData[1 + visibleCount] = i;
+          visibleCount++;
+        } else {
+          isItOnScreen[i] = 0;
+        }
+        if (activeCount >= expectedActive) break;
+      }
+
+      if (active[i + 1]) {
+        localIndices[activeCount] = i + 1;
+        if (activeData) activeData[1 + activeCount] = i + 1;
+        activeCount++;
+
+        const screenX = x[i + 1] * camZoom - camOffX;
+        const screenY = y[i + 1] * camZoom - camOffY;
+        const onScreen = screenX > camMinX && screenX < camMaxX && screenY > camMinY && screenY < camMaxY;
+        if (onScreen) {
+          isItOnScreen[i + 1] = 1;
+          if (visibleData) visibleData[1 + visibleCount] = i + 1;
+          visibleCount++;
+        } else {
+          isItOnScreen[i + 1] = 0;
+        }
+        if (activeCount >= expectedActive) break;
+      }
+
+      if (active[i + 2]) {
+        localIndices[activeCount] = i + 2;
+        if (activeData) activeData[1 + activeCount] = i + 2;
+        activeCount++;
+
+        const screenX = x[i + 2] * camZoom - camOffX;
+        const screenY = y[i + 2] * camZoom - camOffY;
+        const onScreen = screenX > camMinX && screenX < camMaxX && screenY > camMinY && screenY < camMaxY;
+        if (onScreen) {
+          isItOnScreen[i + 2] = 1;
+          if (visibleData) visibleData[1 + visibleCount] = i + 2;
+          visibleCount++;
+        } else {
+          isItOnScreen[i + 2] = 0;
+        }
+        if (activeCount >= expectedActive) break;
+      }
+
+      if (active[i + 3]) {
+        localIndices[activeCount] = i + 3;
+        if (activeData) activeData[1 + activeCount] = i + 3;
+        activeCount++;
+
+        const screenX = x[i + 3] * camZoom - camOffX;
+        const screenY = y[i + 3] * camZoom - camOffY;
+        const onScreen = screenX > camMinX && screenX < camMaxX && screenY > camMinY && screenY < camMaxY;
+        if (onScreen) {
+          isItOnScreen[i + 3] = 1;
+          if (visibleData) visibleData[1 + visibleCount] = i + 3;
+          visibleCount++;
+        } else {
+          isItOnScreen[i + 3] = 0;
+        }
+      }
+    }
+
+    for (; i < maxParticles && activeCount < expectedActive; i++) {
       if (!active[i]) continue;
 
-      // Add to active lists (local + SAB)
       localIndices[activeCount] = i;
       if (activeData) activeData[1 + activeCount] = i;
       activeCount++;
 
-      // Calculate screen position and visibility
       const screenX = x[i] * camZoom - camOffX;
       const screenY = y[i] * camZoom - camOffY;
       const onScreen = screenX > camMinX && screenX < camMaxX && screenY > camMinY && screenY < camMaxY;
@@ -1527,7 +1641,6 @@ class ParticleWorker extends AbstractWorker {
     heapPush(fromCell);
     scratch.inOpenSet[fromCell] = 1;
 
-
     let found = false;
 
     while (scratch.heapSize > 0) {
@@ -1790,6 +1903,8 @@ class ParticleWorker extends AbstractWorker {
       this.stats[PARTICLE_STATS.ACTIVE_ENTITIES] = this.activeEntitiesData ? this.activeEntitiesData[0] : 0;
       this.stats[PARTICLE_STATS.TOTAL_ENTITIES] = this.globalEntityCount || 0;
       this.stats[PARTICLE_STATS.MSG_MS] = this.messageTimeThisFrame;
+      this.stats[PARTICLE_STATS.BUILD_ACTIVE_VISIBLE_MS] = this.buildActiveVisibleTimeThisFrame;
+      this.stats[PARTICLE_STATS.PARTICLE_PHYSICS_MS] = this.particlePhysicsTimeThisFrame;
     }
   }
 }

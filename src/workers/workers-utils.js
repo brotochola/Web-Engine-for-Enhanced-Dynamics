@@ -45,6 +45,8 @@ export const PARTICLE_STATS = Object.freeze({
   ACTIVE_ENTITIES: 6,
   TOTAL_ENTITIES: 7,
   MSG_MS: 8,
+  BUILD_ACTIVE_VISIBLE_MS: 9,
+  PARTICLE_PHYSICS_MS: 10,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
 });
@@ -60,6 +62,8 @@ export const PHYSICS_STATS = Object.freeze({
   COLLISION_PAIRS: 3,
   CONSTRAINT_MS: 4,
   MSG_MS: 5,
+  MOVE_MS: 6,
+  COLLISION_MS: 7,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
 });
@@ -174,6 +178,14 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
         key: 'MSG_MS',
         format: (v) => v.toFixed(2) + 'ms',
       },
+      {
+        key: 'BUILD_ACTIVE_VISIBLE_MS',
+        format: (v) => v.toFixed(2) + 'ms',
+      },
+      {
+        key: 'PARTICLE_PHYSICS_MS',
+        format: (v) => v.toFixed(2) + 'ms',
+      },
     ],
   },
   physics: {
@@ -199,6 +211,14 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       },
       {
         key: 'MSG_MS',
+        format: (v) => v.toFixed(2) + 'ms',
+      },
+      {
+        key: 'MOVE_MS',
+        format: (v) => v.toFixed(2) + 'ms',
+      },
+      {
+        key: 'COLLISION_MS',
         format: (v) => v.toFixed(2) + 'ms',
       },
     ],

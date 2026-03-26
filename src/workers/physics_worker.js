@@ -65,6 +65,8 @@ class PhysicsWorker extends AbstractWorker {
     this.collisionsResolvedThisFrame = 0;
     this.collisionPairsThisFrame = 0;
     this.constraintSolveTimeThisFrame = 0;
+    this.moveTimeThisFrame = 0;
+    this.collisionSolveTimeThisFrame = 0;
 
     // PERFORMANCE: Reusable collision result object to avoid GC pressure
     // Instead of allocating thousands of objects per frame, we reuse this one
@@ -130,6 +132,8 @@ class PhysicsWorker extends AbstractWorker {
     this.collisionsResolvedThisFrame = 0;
     this.collisionPairsThisFrame = 0;
     this.constraintSolveTimeThisFrame = 0;
+    this.moveTimeThisFrame = 0;
+    this.collisionSolveTimeThisFrame = 0;
 
     // OPTIMIZATION: Cache query results per frame to avoid repeated calls
     // These queries are cached by the query system, but accessing them once is still faster
@@ -282,6 +286,8 @@ class PhysicsWorker extends AbstractWorker {
     const gy = this.settings.gravity.y;
 
     // Step 1: Move entities using Verlet integration
+    const shouldProfile = !!this.stats;
+    let startTime = shouldProfile ? performance.now() : 0;
     this.moveEntitiesVerlet(
       active,
       rigidBodyActive,
@@ -298,9 +304,13 @@ class PhysicsWorker extends AbstractWorker {
       gy,
       maxVel
     );
+    if (shouldProfile) {
+      this.moveTimeThisFrame += performance.now() - startTime;
+    }
 
     // Step 2: Apply constraints (collisions, boundary) with sub-stepping
     for (let step = 0; step < this.settings.subStepCount; step++) {
+      startTime = shouldProfile ? performance.now() : 0;
       this.resolveCollisionsVerlet(
         active,
         rigidBodyActive,
@@ -316,6 +326,9 @@ class PhysicsWorker extends AbstractWorker {
         isTrigger,
         collisionCount
       );
+      if (shouldProfile) {
+        this.collisionSolveTimeThisFrame += performance.now() - startTime;
+      }
 
       // Solve distance constraints (position-based dynamics)
       if (this.constraintsEnabled) {
@@ -380,6 +393,8 @@ class PhysicsWorker extends AbstractWorker {
     const gy = this.settings.gravity.y;
 
     // Step 1: Move entities using Verlet integration with fixed timestep
+    const shouldProfile = !!this.stats;
+    let startTime = shouldProfile ? performance.now() : 0;
     this.moveEntitiesVerlet(
       active,
       rigidBodyActive,
@@ -396,8 +411,12 @@ class PhysicsWorker extends AbstractWorker {
       gy,
       maxVel
     );
+    if (shouldProfile) {
+      this.moveTimeThisFrame += performance.now() - startTime;
+    }
 
     // Step 2: Apply constraints ONCE per fixed step (substepping is handled by accumulator)
+    startTime = shouldProfile ? performance.now() : 0;
     this.resolveCollisionsVerlet(
       active,
       rigidBodyActive,
@@ -413,6 +432,9 @@ class PhysicsWorker extends AbstractWorker {
       isTrigger,
       collisionCount
     );
+    if (shouldProfile) {
+      this.collisionSolveTimeThisFrame += performance.now() - startTime;
+    }
 
     // Solve distance constraints (position-based dynamics)
     if (this.constraintsEnabled) {
@@ -1055,6 +1077,8 @@ class PhysicsWorker extends AbstractWorker {
       this.stats[PHYSICS_STATS.COLLISION_PAIRS] = this.collisionPairsThisFrame;
       this.stats[PHYSICS_STATS.CONSTRAINT_MS] = this.constraintSolveTimeThisFrame;
       this.stats[PHYSICS_STATS.MSG_MS] = this.messageTimeThisFrame;
+      this.stats[PHYSICS_STATS.MOVE_MS] = this.moveTimeThisFrame;
+      this.stats[PHYSICS_STATS.COLLISION_MS] = this.collisionSolveTimeThisFrame;
     }
   }
 
