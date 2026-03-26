@@ -1,4 +1,9 @@
+- shader de lightOccluders q use el sprite para mask.
+- bitmask para las propiedades booleanas
+- static props en components?
+
 ---
+
 ---
 
 ## -- spritesheet registry ---

@@ -457,7 +457,235 @@ class PhysicsWorker extends AbstractWorker {
     // This avoids redundant queryActiveEntities calls per frame
     const physicsEntities = this._cachedPhysicsEntities;
 
-    for (let idx = 0; idx < physicsEntities.length; idx++) {
+    const physicsCount = physicsEntities.length;
+    let idx = 0;
+
+    // Manual 4-way unrolling keeps the hot math in a straighter-line block,
+    // which gives the JIT a better chance to optimize this SoA loop.
+    for (; idx + 3 < physicsCount; idx += 4) {
+      let i = physicsEntities[idx];
+      // Note: active[i] and rigidBodyActive[i] checks removed - queryActiveEntities already filters
+      if (!(isStatic[i] || sleeping[i])) {
+        const accX = ax[i] * dtRatio;
+        const accY = ay[i] * dtRatio;
+        if (accX * accX > wakeUpThresholdSq || accY * accY > wakeUpThresholdSq) {
+          sleeping[i] = 0;
+          stillnessTime[i] = 0;
+        }
+        const oldX = x[i];
+        const oldY = y[i];
+        if (px[i] !== px[i] || py[i] !== py[i]) {
+          px[i] = oldX;
+          py[i] = oldY;
+        }
+        let dx = (x[i] - px[i]) * damping;
+        let dy = (y[i] - py[i]) * damping;
+        if (friction[i] > 0) {
+          const frictionFactor = 1 - friction[i] * dtRatio;
+          dx *= frictionFactor;
+          dy *= frictionFactor;
+        }
+        dx += gravityScale * gx + accX;
+        dy += gravityScale * gy + accY;
+        const speedSquared = dx * dx + dy * dy;
+        const maxSpeed = maxVel[i] * dtRatio;
+        const maxSpeedSquared = maxSpeed * maxSpeed;
+        if (speedSquared > maxSpeedSquared) {
+          const velScale = maxSpeed / Math.sqrt(speedSquared);
+          dx *= velScale;
+          dy *= velScale;
+        }
+        if (dx !== dx || dy !== dy || dx === Infinity || dx === -Infinity || dy === Infinity || dy === -Infinity) {
+          px[i] = oldX;
+          py[i] = oldY;
+          vx[i] = 0;
+          vy[i] = 0;
+          ax[i] = 0;
+          ay[i] = 0;
+        } else {
+          x[i] = oldX + dx;
+          y[i] = oldY + dy;
+          px[i] = oldX;
+          py[i] = oldY;
+          vx[i] = dx * invDtRatio;
+          vy[i] = dy * invDtRatio;
+          ax[i] = 0;
+          ay[i] = 0;
+        }
+      } else if (sleeping[i]) {
+        px[i] = x[i];
+        py[i] = y[i];
+        ax[i] = 0;
+        ay[i] = 0;
+      }
+
+      i = physicsEntities[idx + 1];
+      if (!(isStatic[i] || sleeping[i])) {
+        const accX = ax[i] * dtRatio;
+        const accY = ay[i] * dtRatio;
+        if (accX * accX > wakeUpThresholdSq || accY * accY > wakeUpThresholdSq) {
+          sleeping[i] = 0;
+          stillnessTime[i] = 0;
+        }
+        const oldX = x[i];
+        const oldY = y[i];
+        if (px[i] !== px[i] || py[i] !== py[i]) {
+          px[i] = oldX;
+          py[i] = oldY;
+        }
+        let dx = (x[i] - px[i]) * damping;
+        let dy = (y[i] - py[i]) * damping;
+        if (friction[i] > 0) {
+          const frictionFactor = 1 - friction[i] * dtRatio;
+          dx *= frictionFactor;
+          dy *= frictionFactor;
+        }
+        dx += gravityScale * gx + accX;
+        dy += gravityScale * gy + accY;
+        const speedSquared = dx * dx + dy * dy;
+        const maxSpeed = maxVel[i] * dtRatio;
+        const maxSpeedSquared = maxSpeed * maxSpeed;
+        if (speedSquared > maxSpeedSquared) {
+          const velScale = maxSpeed / Math.sqrt(speedSquared);
+          dx *= velScale;
+          dy *= velScale;
+        }
+        if (dx !== dx || dy !== dy || dx === Infinity || dx === -Infinity || dy === Infinity || dy === -Infinity) {
+          px[i] = oldX;
+          py[i] = oldY;
+          vx[i] = 0;
+          vy[i] = 0;
+          ax[i] = 0;
+          ay[i] = 0;
+        } else {
+          x[i] = oldX + dx;
+          y[i] = oldY + dy;
+          px[i] = oldX;
+          py[i] = oldY;
+          vx[i] = dx * invDtRatio;
+          vy[i] = dy * invDtRatio;
+          ax[i] = 0;
+          ay[i] = 0;
+        }
+      } else if (sleeping[i]) {
+        px[i] = x[i];
+        py[i] = y[i];
+        ax[i] = 0;
+        ay[i] = 0;
+      }
+
+      i = physicsEntities[idx + 2];
+      if (!(isStatic[i] || sleeping[i])) {
+        const accX = ax[i] * dtRatio;
+        const accY = ay[i] * dtRatio;
+        if (accX * accX > wakeUpThresholdSq || accY * accY > wakeUpThresholdSq) {
+          sleeping[i] = 0;
+          stillnessTime[i] = 0;
+        }
+        const oldX = x[i];
+        const oldY = y[i];
+        if (px[i] !== px[i] || py[i] !== py[i]) {
+          px[i] = oldX;
+          py[i] = oldY;
+        }
+        let dx = (x[i] - px[i]) * damping;
+        let dy = (y[i] - py[i]) * damping;
+        if (friction[i] > 0) {
+          const frictionFactor = 1 - friction[i] * dtRatio;
+          dx *= frictionFactor;
+          dy *= frictionFactor;
+        }
+        dx += gravityScale * gx + accX;
+        dy += gravityScale * gy + accY;
+        const speedSquared = dx * dx + dy * dy;
+        const maxSpeed = maxVel[i] * dtRatio;
+        const maxSpeedSquared = maxSpeed * maxSpeed;
+        if (speedSquared > maxSpeedSquared) {
+          const velScale = maxSpeed / Math.sqrt(speedSquared);
+          dx *= velScale;
+          dy *= velScale;
+        }
+        if (dx !== dx || dy !== dy || dx === Infinity || dx === -Infinity || dy === Infinity || dy === -Infinity) {
+          px[i] = oldX;
+          py[i] = oldY;
+          vx[i] = 0;
+          vy[i] = 0;
+          ax[i] = 0;
+          ay[i] = 0;
+        } else {
+          x[i] = oldX + dx;
+          y[i] = oldY + dy;
+          px[i] = oldX;
+          py[i] = oldY;
+          vx[i] = dx * invDtRatio;
+          vy[i] = dy * invDtRatio;
+          ax[i] = 0;
+          ay[i] = 0;
+        }
+      } else if (sleeping[i]) {
+        px[i] = x[i];
+        py[i] = y[i];
+        ax[i] = 0;
+        ay[i] = 0;
+      }
+
+      i = physicsEntities[idx + 3];
+      if (!(isStatic[i] || sleeping[i])) {
+        const accX = ax[i] * dtRatio;
+        const accY = ay[i] * dtRatio;
+        if (accX * accX > wakeUpThresholdSq || accY * accY > wakeUpThresholdSq) {
+          sleeping[i] = 0;
+          stillnessTime[i] = 0;
+        }
+        const oldX = x[i];
+        const oldY = y[i];
+        if (px[i] !== px[i] || py[i] !== py[i]) {
+          px[i] = oldX;
+          py[i] = oldY;
+        }
+        let dx = (x[i] - px[i]) * damping;
+        let dy = (y[i] - py[i]) * damping;
+        if (friction[i] > 0) {
+          const frictionFactor = 1 - friction[i] * dtRatio;
+          dx *= frictionFactor;
+          dy *= frictionFactor;
+        }
+        dx += gravityScale * gx + accX;
+        dy += gravityScale * gy + accY;
+        const speedSquared = dx * dx + dy * dy;
+        const maxSpeed = maxVel[i] * dtRatio;
+        const maxSpeedSquared = maxSpeed * maxSpeed;
+        if (speedSquared > maxSpeedSquared) {
+          const velScale = maxSpeed / Math.sqrt(speedSquared);
+          dx *= velScale;
+          dy *= velScale;
+        }
+        if (dx !== dx || dy !== dy || dx === Infinity || dx === -Infinity || dy === Infinity || dy === -Infinity) {
+          px[i] = oldX;
+          py[i] = oldY;
+          vx[i] = 0;
+          vy[i] = 0;
+          ax[i] = 0;
+          ay[i] = 0;
+        } else {
+          x[i] = oldX + dx;
+          y[i] = oldY + dy;
+          px[i] = oldX;
+          py[i] = oldY;
+          vx[i] = dx * invDtRatio;
+          vy[i] = dy * invDtRatio;
+          ax[i] = 0;
+          ay[i] = 0;
+        }
+      } else if (sleeping[i]) {
+        px[i] = x[i];
+        py[i] = y[i];
+        ax[i] = 0;
+        ay[i] = 0;
+      }
+    }
+
+    for (; idx < physicsCount; idx++) {
       const i = physicsEntities[idx];
       // Note: active[i] and rigidBodyActive[i] checks removed - queryActiveEntities already filters
 
