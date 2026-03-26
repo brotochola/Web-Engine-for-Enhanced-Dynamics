@@ -100,6 +100,7 @@ export class AbstractWorker {
     this.activeEntitiesData = null; // Compact list of active entity indices [count, idx0, idx1, ...]
     this.frameRateData = null; // Real-time FPS tracking for all workers
     this.frameRateIndex = -1; // Index into frameRateData array (different from workerIndex used by logic workers!)
+    this.frameRateStride = 1; // Float stride between worker FPS slots in frameRateData
 
     // Registered entity classes information (set during initialization)
     this.registeredClasses = [];
@@ -176,7 +177,7 @@ export class AbstractWorker {
     // This allows the renderer to know each worker's FPS for smooth interpolation
     // (e.g., renderer interpolates positions when rendering faster than physics)
     if (this.frameRateData && this.frameRateIndex >= 0) {
-      this.frameRateData[this.frameRateIndex] = instantaneousFPS;
+      this.frameRateData[this.frameRateIndex * this.frameRateStride] = instantaneousFPS;
     }
 
     // Normalize delta time to 60fps (16.67ms per frame)
@@ -514,6 +515,9 @@ export class AbstractWorker {
     // Note: This is different from workerIndex used by logic workers for job partitioning!
     if (data.frameRateIndex !== undefined) {
       this.frameRateIndex = data.frameRateIndex;
+    }
+    if (data.frameRateStride !== undefined) {
+      this.frameRateStride = data.frameRateStride;
     }
 
     // Store registered classes (used by logic worker and potentially others)

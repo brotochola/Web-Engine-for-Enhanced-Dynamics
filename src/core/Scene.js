@@ -1509,11 +1509,13 @@ class Scene {
     this.maxDebugDrawEntries = maxDebugDrawEntries;
     DebugDraw.initialize(this.buffers.debugDrawData, maxDebugDrawEntries);
 
-    // FrameRate buffer: stores real-time FPS for each worker
-    // Layout: [spatial..., physics, renderer, particle, logic..., preRender]
+    // FrameRate buffer: stores real-time FPS for each worker.
+    // Each worker writes to a strided slot to avoid false sharing between
+    // adjacent FPS values when multiple workers update in parallel.
     const numSpatialWorkers = this.config.spatial.numberOfSpatialWorkers;
     const maxWorkers = numSpatialWorkers + 4 + this.numberOfLogicWorkers; // spatial workers + physics + renderer + particle + logic workers + pre-render
-    const FRAMERATE_BUFFER_SIZE = maxWorkers * 4; // 1 float per worker
+    const FRAMERATE_STRIDE_FLOATS = 16;
+    const FRAMERATE_BUFFER_SIZE = maxWorkers * FRAMERATE_STRIDE_FLOATS * 4;
     this.buffers.frameRateData = new SharedArrayBuffer(FRAMERATE_BUFFER_SIZE);
     this.views.frameRate = new Float32Array(this.buffers.frameRateData);
 
@@ -2169,9 +2171,11 @@ class Scene {
     );
 
     // Create initialization data
+    const frameRateStride = 16;
     const initData = {
       msg: 'init',
       buffers: sharedBuffers,
+      frameRateStride,
       globalEntityCount: this.totalEntityCount,
       config: this.config,
       gridMetadata: this.gridMetadata,
