@@ -1069,11 +1069,12 @@ class Scene {
       // ========================================
       // DECORATION COMPACT LISTS - Optimized iteration for particle_worker and pre_render_worker
       // ========================================
-      // activeDecorationsData: [count, idx0, idx1, ...] - maintained incrementally by spawn/despawn
+      // activeDecorationsData: [count, pad..., idx0, idx1, ...] - maintained incrementally by spawn/despawn
       // visibleDecorationsData: [count, idx0, idx1, ...] - subset of active that are on-screen
       // activeDecorationsData written by DecorationPool.spawn/despawn, read by particle_worker
       // visibleDecorationsData written by particle_worker, read by pre_render_worker
-      const ACTIVE_DECORATIONS_BUFFER_SIZE = (1 + maxDecorations) * 2; // count + indices (Uint16)
+      const ACTIVE_DECORATIONS_BUFFER_SIZE =
+        (DecorationPool.ACTIVE_LIST_DATA_OFFSET + maxDecorations) * 2;
       this.buffers.activeDecorationsData = new SharedArrayBuffer(ACTIVE_DECORATIONS_BUFFER_SIZE);
       this.buffers.visibleDecorationsData = new SharedArrayBuffer(ACTIVE_DECORATIONS_BUFFER_SIZE);
 

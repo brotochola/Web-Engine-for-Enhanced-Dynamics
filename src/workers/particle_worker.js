@@ -737,10 +737,11 @@ class ParticleWorker extends AbstractWorker {
     const maxY = cameraBounds.maxY;
 
     let visibleCount = 0;
+    const activeListOffset = DecorationPool.ACTIVE_LIST_DATA_OFFSET;
 
     // OPTIMIZED: Iterate over compact activeDecorationsData instead of maxDecorations
     for (let idx = 0; idx < activeCount; idx++) {
-      const i = activeData[1 + idx];
+      const i = activeData[activeListOffset + idx];
 
       const screenXVal = x[i] * camZoom - cameraOffsetX;
       const screenYVal = y[i] * camZoom - cameraOffsetY;
@@ -1144,10 +1145,11 @@ class ParticleWorker extends AbstractWorker {
     const baseRotation = DecorationComponent.baseRotation;
 
     const swayBaseAngle = this.accumulatedTime * 0.002;
+    const activeListOffset = DecorationPool.ACTIVE_LIST_DATA_OFFSET;
 
     // OPTIMIZED: Iterate over compact activeDecorationsData instead of maxDecorations
     for (let idx = 0; idx < activeCount; idx++) {
-      const i = activeData[1 + idx];
+      const i = activeData[activeListOffset + idx];
 
       if (sway[i]) {
         rotation[i] = baseRotation[i] + Math.sin(swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];

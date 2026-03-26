@@ -17,6 +17,8 @@ import { randomRange } from './utils.js';
 export class DecorationPool extends SharedAtomicPool {
   // Pool name for logging (used by base class)
   static poolName = 'DecorationPool';
+  // Keep the atomic count in its own cache line; payload starts after 64 bytes.
+  static ACTIVE_LIST_DATA_OFFSET = 32; // Uint16 slots
 
   // Compact list of active decoration indices [count, idx0, idx1, ...]
   // Maintained incrementally by spawn/despawn, read by particle_worker
@@ -149,7 +151,7 @@ export class DecorationPool extends SharedAtomicPool {
     // Add to activeDecorationsData compact list (append at end - O(1), atomic count increment)
     if (this.activeDecorationsData) {
       const slot = Atomics.add(this.activeDecorationsData, 0, 1);
-      this.activeDecorationsData[1 + slot] = i;
+      this.activeDecorationsData[this.ACTIVE_LIST_DATA_OFFSET + slot] = i;
     }
 
     return i;
@@ -219,9 +221,11 @@ export class DecorationPool extends SharedAtomicPool {
     if (this.activeDecorationsData) {
       const count = Atomics.load(this.activeDecorationsData, 0);
       for (let i = 0; i < count; i++) {
-        if (this.activeDecorationsData[1 + i] === index) {
+        const payloadIdx = this.ACTIVE_LIST_DATA_OFFSET + i;
+        if (this.activeDecorationsData[payloadIdx] === index) {
           const oldCount = Atomics.sub(this.activeDecorationsData, 0, 1);
-          this.activeDecorationsData[1 + i] = this.activeDecorationsData[oldCount - 1];
+          this.activeDecorationsData[payloadIdx] =
+            this.activeDecorationsData[this.ACTIVE_LIST_DATA_OFFSET + oldCount - 1];
           break;
         }
       }
