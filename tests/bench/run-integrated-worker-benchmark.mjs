@@ -98,7 +98,7 @@ async function main() {
   let browser;
 
   try {
-    browser = await chromium.launch({ headless: false });
+    browser = await chromium.launch({ headless: true });
   } catch (error) {
     await server.close();
     throw new Error(
