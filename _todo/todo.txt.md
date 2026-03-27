@@ -1,6 +1,6 @@
 - shader de lightOccluders q use el sprite para mask.
-- bitmask para las propiedades booleanas
 - static props en components?
+- hacer apps de node para benchmark cada worker (--trace-opt --trace-deopt)
 
 ---
 

@@ -94,6 +94,12 @@ class Ball extends GameObject {
    * For performance-critical loops with 1000+ entities, use direct array access instead
    */
   tick(dtRatio) {
+
+    if (this.y > this.config.worldHeight * 2) {
+      this.despawn();
+      return;
+    }
+
     // Mouse interaction: push balls away from cursor on click
     if (Mouse.isButton1Down) {
       // Calculate distance using ergonomic API (clean and readable!)
@@ -101,15 +107,16 @@ class Ball extends GameObject {
       const dy = this.y - Mouse.y;
       const dist2 = dx * dx + dy * dy;
 
-      if (dist2 > 20000) return; // Only affect nearby balls
+      if (dist2 > 300000) return; // Only affect nearby balls
 
       // Apply repulsion force
-      this.addAcceleration(dx * 0.2, dy * 0.2);
+      this.addAcceleration(1000 * (dx / dist2), 1000 * (dy / dist2));
     }
 
     if (Keyboard.m) {
       this.rigidBody.ax = -3;
     }
+
   }
 }
 
