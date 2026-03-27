@@ -40,7 +40,6 @@
     import { CarScene } from '/demos/scenes/carScene.js';
     import { WaterAndBoxesScene } from '/demos/scenes/WaterAndBoxesScene.js';
     import { ZenithalParticleTestScene } from '/demos/scenes/zenithalParticleTestScene.js';
-
     // Destructure what we need from WEED
     const { GameEngine } = WEED;
 
@@ -75,6 +74,9 @@
       const button = document.createElement('button');
       button.className = 'scene_chooser_button';
       button.onclick = () => {
+        if (scene.class === BallsScene) {
+          BallsScene.benchmarkConfig = {};
+        }
         game.loadScene(scene.class);
         document.getElementById('scene_list').style.display = 'none';
       }

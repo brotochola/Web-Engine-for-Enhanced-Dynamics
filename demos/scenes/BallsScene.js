@@ -109,9 +109,11 @@ export class BallsScene extends Scene {
     Camera.centerOn(this.cameraFollowX, this.cameraFollowY);
 
     console.log('✅ BallsScene: Balls spawned!');
+    // Camera.setZoom(0.5);
   }
 
   update(dtRatio, deltaTime, accumulatedTime, frameNumber) {
+
     // Handle WASD camera panning (use this.keyboard which is the main thread keyboard state)
     const panSpeed = this.cameraPanSpeed / Camera.zoom;
     const kb = this.keyboard;
@@ -136,7 +138,7 @@ export class BallsScene extends Scene {
     // Update camera (handles smooth following and zoom lerping)
     Camera.follow(this.cameraFollowX, this.cameraFollowY, 0.15);
 
-    Camera.setZoom(Camera.zoom * (1 - Mouse.wheel * 0.001));
+    Camera.setZoom(Camera.zoom * (1 - Mouse.wheel * 0.1));
 
     // if (frameNumber % (60 * 5) === 0) {
     //   this.printFPS()
@@ -195,7 +197,7 @@ export class BallsScene extends Scene {
           vx: 0,
           vy: 0,
         });
-      }, i)
+      }, i * 0.01)
 
     }
   }

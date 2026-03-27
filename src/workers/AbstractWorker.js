@@ -72,7 +72,7 @@ export class AbstractWorker {
     // Frame timing and FPS tracking
     this.frameNumber = 0;
     this.lastFrameTime = performance.now();
-    this.accumulatedTime = 0; // Total time elapsed since start (in seconds)
+    this.accumulatedTime = 0; // Total time elapsed since start (in milliseconds)
     this.currentFPS = 0;
 
     // Stats buffer for writing detailed metrics (set during initialization)
@@ -166,11 +166,14 @@ export class AbstractWorker {
    */
   updateFrameTiming() {
     const now = performance.now();
-    const deltaTime = Math.min(now - this.lastFrameTime, 100);
+    const rawDelta = now - this.lastFrameTime;
+    const deltaTime = Math.min(Math.max(rawDelta, 0), 100);
     this.lastFrameTime = now;
 
-    // Calculate instantaneous FPS
-    const instantaneousFPS = 1000 / deltaTime;
+    // FPS from wall-clock delta; tiny or zero deltas happen (timer resolution, same-tick work).
+    // Use a small floor only for FPS so we never divide by zero and stats stay interpretable.
+    const FPS_MIN_DELTA_MS = 0.2;
+    const instantaneousFPS = 1000 / Math.max(deltaTime, FPS_MIN_DELTA_MS);
     this.currentFPS = instantaneousFPS;
 
     // Write instantaneous FPS to shared frameRateData buffer
@@ -183,7 +186,7 @@ export class AbstractWorker {
     // Normalize delta time to 60fps (16.67ms per frame)
     const dtRatio = deltaTime / 16.67;
 
-    // Accumulate total time in seconds
+    // Accumulate total time in milliseconds
     this.accumulatedTime += deltaTime;
 
     // Reuse timing object to avoid GC pressure

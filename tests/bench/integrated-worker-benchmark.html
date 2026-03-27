@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Integrated Worker Benchmark</title>
+</head>
+<body>
+  <script type="module">
+    class BenchmarkAudioContext {
+      constructor() {
+        this.state = 'running';
+        this.destination = {};
+        this.audioWorklet = {
+          addModule: async () => {},
+        };
+      }
+
+      resume() {
+        this.state = 'running';
+        return Promise.resolve();
+      }
+    }
+
+    class BenchmarkAudioWorkletNode {
+      constructor() {
+        this.port = {
+          postMessage() {},
+        };
+      }
+
+      connect() {
+        return this;
+      }
+    }
+
+    globalThis.AudioContext = BenchmarkAudioContext;
+    globalThis.AudioWorkletNode = BenchmarkAudioWorkletNode;
+
+    const DEFAULT_CANVAS_WIDTH = 1024;
+    const DEFAULT_CANVAS_HEIGHT = 800;
+
+    const DEFAULT_CONFIG = Object.freeze({
+      warmupMs: 3000,
+      durationMs: 5000,
+      sampleIntervalMs: 100,
+      bodyCount: 2400,
+      canvasWidth: DEFAULT_CANVAS_WIDTH,
+      canvasHeight: DEFAULT_CANVAS_HEIGHT,
+    });
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    function normalizePositiveInteger(value, fallback) {
+      const normalized = Number(value);
+      return Number.isFinite(normalized) && normalized > 0 ? Math.round(normalized) : fallback;
+    }
+
+    function normalizeOptionalPositiveInteger(value) {
+      const normalized = Number(value);
+      return Number.isFinite(normalized) && normalized > 0 ? Math.round(normalized) : undefined;
+    }
+
+    function normalizeConfig(options = {}) {
+      const canvasWidth = normalizePositiveInteger(options.canvasWidth, DEFAULT_CONFIG.canvasWidth);
+      const canvasHeight = normalizePositiveInteger(options.canvasHeight, DEFAULT_CONFIG.canvasHeight);
+
+      return {
+        warmupMs: normalizePositiveInteger(options.warmupMs, DEFAULT_CONFIG.warmupMs),
+        durationMs: normalizePositiveInteger(options.durationMs, DEFAULT_CONFIG.durationMs),
+        sampleIntervalMs: normalizePositiveInteger(
+          options.sampleIntervalMs,
+          DEFAULT_CONFIG.sampleIntervalMs
+        ),
+        bodyCount: normalizePositiveInteger(options.bodyCount, DEFAULT_CONFIG.bodyCount),
+        spatialWorkers: normalizeOptionalPositiveInteger(options.spatialWorkers),
+        logicWorkers: normalizeOptionalPositiveInteger(options.logicWorkers),
+        canvasWidth,
+        canvasHeight,
+        worldWidth: normalizePositiveInteger(options.worldWidth, canvasWidth),
+        worldHeight: normalizePositiveInteger(options.worldHeight, canvasHeight),
+      };
+    }
+
+    let currentGame = null;
+
+    async function cleanupCurrentGame() {
+      if (!currentGame) return;
+      await currentGame.destroy();
+      currentGame = null;
+    }
+
+    async function loadModules() {
+      const [{ default: WEED }, { BallsScene }, benchmarkMetrics] = await Promise.all([
+        import('/src/index.js'),
+        import('/demos/scenes/BallsScene.js'),
+        import('/src/core/benchmark/workerBenchmarkMetrics.js'),
+      ]);
+
+      return {
+        WEED,
+        BallsScene,
+        createWorkerBenchmarkReader: benchmarkMetrics.createWorkerBenchmarkReader,
+        summarizeWorkerBenchmarkWindow: benchmarkMetrics.summarizeWorkerBenchmarkWindow,
+      };
+    }
+
+    async function runIntegratedWorkerBenchmark(options = {}) {
+      const config = normalizeConfig(options);
+      const {
+        WEED,
+        BallsScene,
+        createWorkerBenchmarkReader,
+        summarizeWorkerBenchmarkWindow,
+      } = await loadModules();
+
+      await cleanupCurrentGame();
+
+      BallsScene.benchmarkConfig = config;
+
+      const game = new WEED.GameEngine({
+        autoResize: false,
+        canvasWidth: config.canvasWidth,
+        canvasHeight: config.canvasHeight,
+        injectStyles: false,
+        preventContextMenu: false,
+        preventDefaultKeys: false,
+        debug: false,
+      });
+      currentGame = game;
+
+      await game.loadScene(BallsScene);
+      const scene = game.currentScene;
+      const reader = createWorkerBenchmarkReader(scene);
+
+      await sleep(config.warmupMs);
+
+      const startSnapshot = reader.snapshot(performance.now());
+      const sampleSnapshots = [];
+      const sampleDeadline = startSnapshot.takenAtMs + config.durationMs;
+
+      while (performance.now() < sampleDeadline) {
+        await sleep(Math.min(config.sampleIntervalMs, Math.max(0, sampleDeadline - performance.now())));
+        sampleSnapshots.push(reader.snapshot(performance.now()));
+      }
+
+      const endSnapshot = reader.snapshot(performance.now());
+
+      const summary = summarizeWorkerBenchmarkWindow(startSnapshot, endSnapshot, {
+        measurementDurationMs: endSnapshot.takenAtMs - startSnapshot.takenAtMs,
+        sampleSnapshots,
+      });
+
+      const result = {
+        ...summary,
+        metadata: {
+          benchmark: 'integrated-worker-benchmark',
+          sceneName: 'BallsScene',
+          bodyCount: config.bodyCount,
+          canvasWidth: config.canvasWidth,
+          canvasHeight: config.canvasHeight,
+          spatialWorkers: scene.config.spatial.numberOfSpatialWorkers,
+          logicWorkers: scene.config.logic.numberOfLogicWorkers,
+          worldWidth: config.worldWidth,
+          worldHeight: config.worldHeight,
+          warmupMs: config.warmupMs,
+          durationMs: config.durationMs,
+          sampleIntervalMs: config.sampleIntervalMs,
+          sampleCount: sampleSnapshots.length,
+        },
+      };
+
+      globalThis.__WEED_LAST_BENCHMARK__ = result;
+      await cleanupCurrentGame();
+      BallsScene.benchmarkConfig = {};
+      return result;
+    }
+
+    globalThis.__WEED_BENCHMARK__ = {
+      run: runIntegratedWorkerBenchmark,
+    };
+
+    document.body.dataset.benchmarkReady = 'true';
+  </script>
+</body>
+</html>

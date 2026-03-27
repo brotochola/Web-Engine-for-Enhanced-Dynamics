@@ -85,7 +85,7 @@ class Scene {
     // RENDERER: numberOfSpatialWorkers + 1
     // PARTICLE: numberOfSpatialWorkers + 2
     // LOGIC_START: numberOfSpatialWorkers + 3
-    // PRE_RENDER: numberOfSpatialWorkers + 3 + numberOfLogicWorkers + 1
+    // PRE_RENDER: numberOfSpatialWorkers + 3 + numberOfLogicWorkers
   };
 
   // Static declarations - override these in subclasses
@@ -2350,8 +2350,6 @@ class Scene {
 
     // Particle worker - handles particles, decals, navigation, derived properties
     console.log(`[Scene]   → Initializing particle worker...`);
-    const PARTICLE_NAV_INDEX = LOGIC_START_INDEX + this.numberOfLogicWorkers;
-
     // Create a MessageChannel for main thread ↔ particle worker communication (for nav requests)
     const mainToParticleChannel = new MessageChannel();
     const mainThreadNavPort = mainToParticleChannel.port1;
@@ -2378,7 +2376,7 @@ class Scene {
 
     // Pre-render worker - handles visibility, animation, render queues
     console.log(`[Scene]   → Initializing pre-render worker...`);
-    const PRE_RENDER_INDEX = PARTICLE_NAV_INDEX + 1;
+    const PRE_RENDER_INDEX = LOGIC_START_INDEX + this.numberOfLogicWorkers;
 
     postWorkerInit(this.workers.preRender, {
       buffers: {
