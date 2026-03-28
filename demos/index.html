@@ -74,9 +74,6 @@
       const button = document.createElement('button');
       button.className = 'scene_chooser_button';
       button.onclick = () => {
-        if (scene.class === BallsScene) {
-          BallsScene.benchmarkConfig = {};
-        }
         game.loadScene(scene.class);
         document.getElementById('scene_list').style.display = 'none';
       }

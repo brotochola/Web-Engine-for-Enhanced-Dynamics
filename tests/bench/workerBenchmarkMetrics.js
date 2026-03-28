@@ -7,9 +7,53 @@ import {
   PRE_RENDER_STATS,
   createStatsReader,
   createMultiWorkerStatsReaderArray,
-} from '../../workers/workers-utils.js';
+} from '../../src/workers/workers-utils.js';
 
 const FRAME_RATE_STRIDE_FLOATS = 16;
+
+/** Keys in frozen stat schemas that are not Float32 buffer column indices */
+const STAT_SCHEMA_META_KEYS = new Set([
+  'STRIDE_FLOATS',
+  'BUFFER_SIZE',
+  'BUFFER_SIZE_PER_WORKER',
+]);
+
+export function readWorkerStatsFields(statsView, statsSchema) {
+  if (!statsView || !statsSchema) return null;
+  const stride = statsSchema.STRIDE_FLOATS;
+  if (typeof stride !== 'number' || stride <= 0) return null;
+  const out = Object.create(null);
+  for (const key of Object.keys(statsSchema)) {
+    if (STAT_SCHEMA_META_KEYS.has(key)) continue;
+    const idx = statsSchema[key];
+    if (typeof idx !== 'number' || idx < 0 || idx >= stride) continue;
+    out[key] = Number(statsView[idx]) || 0;
+  }
+  return out;
+}
+
+function averageStatFieldMaps(statMaps) {
+  const keys = new Set();
+  for (const m of statMaps) {
+    if (m && typeof m === 'object') {
+      for (const k of Object.keys(m)) keys.add(k);
+    }
+  }
+  if (keys.size === 0) return null;
+  const out = Object.create(null);
+  for (const k of keys) {
+    let sum = 0;
+    let n = 0;
+    for (const m of statMaps) {
+      if (m && typeof m === 'object' && typeof m[k] === 'number') {
+        sum += m[k];
+        n++;
+      }
+    }
+    out[k] = n > 0 ? sum / n : 0;
+  }
+  return out;
+}
 
 export function getWorkerFrameRateLayout({
   spatialWorkerCount = 0,
@@ -160,6 +204,7 @@ export function createWorkerBenchmarkReader(scene) {
           currentFPS:
             (statsView && statsSchema ? statsView[statsSchema.FPS] : 0) ||
             getFrameRateValue(scene, frameRateIndex),
+          stats: readWorkerStatsFields(statsView, statsSchema),
         })),
       };
     },
@@ -181,15 +226,19 @@ export function summarizeWorkerBenchmarkWindow(
   const workers = endSnapshot.workers.map((worker) => {
     let sumFPS = 0;
     let sampleCount = 0;
+    const statMaps = [];
 
     for (const sample of effectiveSamples) {
       const sampledWorker = sample.workers.find((candidate) => candidate.id === worker.id);
       if (!sampledWorker) continue;
       sumFPS += sampledWorker.currentFPS || 0;
       sampleCount++;
+      if (sampledWorker.stats) statMaps.push(sampledWorker.stats);
     }
 
     const averageFPS = sampleCount > 0 ? sumFPS / sampleCount : 0;
+    const statsSamplesAverage = averageStatFieldMaps(statMaps);
+    const statsEnd = worker.stats || null;
 
     return {
       id: worker.id,
@@ -199,6 +248,12 @@ export function summarizeWorkerBenchmarkWindow(
       instantaneousFPS: worker.currentFPS,
       averageFPS,
       sampleCount,
+      ...(statsEnd || statsSamplesAverage
+        ? {
+            statsEnd,
+            statsSamplesAverage,
+          }
+        : {}),
     };
   });
 

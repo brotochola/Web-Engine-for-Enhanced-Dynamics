@@ -40,9 +40,10 @@
     const DEFAULT_CANVAS_WIDTH = 1920;
     const DEFAULT_CANVAS_HEIGHT = 1080;
 
+    /* Keep in sync with tests/bench/benchmarkDefaults.mjs */
     const DEFAULT_CONFIG = Object.freeze({
-      warmupMs: 3000,
-      durationMs: 5000,
+      warmupMs: 25000,
+      durationMs: 18000,
       sampleIntervalMs: 100,
       canvasWidth: DEFAULT_CANVAS_WIDTH,
       canvasHeight: DEFAULT_CANVAS_HEIGHT,
@@ -85,7 +86,7 @@
       const [{ default: WEED }, { BallsScene }, benchmarkMetrics] = await Promise.all([
         import('/src/index.js'),
         import('/demos/scenes/BallsScene.js'),
-        import('/src/core/benchmark/workerBenchmarkMetrics.js'),
+        import('/tests/bench/workerBenchmarkMetrics.js'),
       ]);
 
       return {
@@ -106,8 +107,6 @@
       } = await loadModules();
 
       await cleanupCurrentGame();
-
-      BallsScene.benchmarkConfig = config;
 
       const game = new WEED.GameEngine({
         autoResize: false,
@@ -162,7 +161,6 @@
 
       globalThis.__WEED_LAST_BENCHMARK__ = result;
       await cleanupCurrentGame();
-      BallsScene.benchmarkConfig = {};
       return result;
     }
 

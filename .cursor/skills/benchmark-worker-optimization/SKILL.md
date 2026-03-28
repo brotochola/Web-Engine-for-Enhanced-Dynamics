@@ -18,7 +18,7 @@ Change **physics** or **spatial** code (or related query/grid paths), then **ver
 ## Harness (this repo)
 
 - **Runner:** `node tests/bench/run-integrated-worker-benchmark.mjs` — `pnpm test:bench` (see `package.json`).
-- **Page:** `tests/bench/integrated-worker-benchmark.html` — loads **BallsScene** only; worker FPS from shared stat buffers (`src/core/benchmark/workerBenchmarkMetrics.js`).
+- **Page:** `tests/bench/integrated-worker-benchmark.html` — loads **BallsScene** only; worker FPS from shared stat buffers (`tests/bench/workerBenchmarkMetrics.js`).
 - **Output:** `tests/results/integrated-worker-benchmark.json` (override with `--output` or positional 4th arg).
 
 ## Headless vs headed
@@ -46,6 +46,7 @@ Always record `playwrightHeadless` from report `metadata` (or the flag used) whe
 | Flag | Purpose |
 |------|---------|
 | `--headed` | Launch Chromium with a visible window (closer to demo FPS). |
+| `--allow-throttle` | Omit Chromium flags that reduce background/minimized/occluded-window throttling (default benchmark run applies mitigation). |
 | `--canvas-width` / `--canvas-height` | Viewport/canvas size (defaults 1920×1080). |
 | `--warmup-ms`, `--duration-ms`, `--sample-interval-ms` | Timing (also positional 1–3). |
 | `--output` | JSON path (also positional 4). |
@@ -56,6 +57,17 @@ Example (headed, comparable to demos):
 pnpm test:bench:headed
 # or: pnpm test:bench -- --headed
 ```
+
+Repeated runs + median (physics FPS and `statsSamplesAverage` collision fields; prints mean, stdev, **CV**):
+
+```bash
+pnpm bench:headed:median
+pnpm exec node tests/bench/run-headed-median.mjs --runs 7
+```
+
+Default warmup/duration are in `tests/bench/benchmarkDefaults.mjs` (long warmup after spawn pile-up). Methodology: [tests/bench/BENCHMARK_METHODOLOGY.md](tests/bench/BENCHMARK_METHODOLOGY.md).
+
+Each worker in the benchmark JSON may include `statsEnd` and `statsSamplesAverage` for comparing work done, not only FPS. **Only compare FPS across builds when `COLLISION_CHECKS` is similar** (same workload).
 
 ## Output summary template
 

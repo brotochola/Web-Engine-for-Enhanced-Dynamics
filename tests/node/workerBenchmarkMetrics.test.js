@@ -15,7 +15,8 @@ import {
   getWorkerFrameRateLayout,
   createWorkerBenchmarkReader,
   summarizeWorkerBenchmarkWindow,
-} from '../../src/core/benchmark/workerBenchmarkMetrics.js';
+  readWorkerStatsFields,
+} from '../bench/workerBenchmarkMetrics.js';
 
 function createBenchmarkSceneStub() {
   const scene = {
@@ -112,4 +113,44 @@ test('worker benchmark reader summarizes average FPS from sampled worker snapsho
   assert.equal(preRender.averageFPS, 82.5);
   assert.equal(spatial0.sampleCount, 2);
   assert.equal(summary.workersByType.logic.length, 2);
+});
+
+test('readWorkerStatsFields skips schema stride metadata keys', () => {
+  const buf = new SharedArrayBuffer(PHYSICS_STATS.BUFFER_SIZE);
+  const view = createStatsWriter(buf, PHYSICS_STATS);
+  view[PHYSICS_STATS.FPS] = 55;
+  view[PHYSICS_STATS.COLLISION_CHECKS] = 12345;
+  const fields = readWorkerStatsFields(view, PHYSICS_STATS);
+  assert.equal(fields.FPS, 55);
+  assert.equal(fields.COLLISION_CHECKS, 12345);
+  assert.equal('STRIDE_FLOATS' in fields, false);
+});
+
+test('summarizeWorkerBenchmarkWindow averages stats fields across samples', () => {
+  const scene = createBenchmarkSceneStub();
+  const reader = createWorkerBenchmarkReader(scene);
+
+  scene.writers.physics[PHYSICS_STATS.COLLISION_CHECKS] = 1000;
+  scene.writers.physics[PHYSICS_STATS.COLLISION_MS] = 1;
+  const startSnapshot = reader.snapshot(0);
+
+  scene.writers.physics[PHYSICS_STATS.COLLISION_CHECKS] = 2000;
+  scene.writers.physics[PHYSICS_STATS.COLLISION_MS] = 4;
+  const midSnapshot = reader.snapshot(1);
+
+  scene.writers.physics[PHYSICS_STATS.COLLISION_CHECKS] = 4000;
+  scene.writers.physics[PHYSICS_STATS.COLLISION_MS] = 8;
+  const endSnapshot = reader.snapshot(2);
+
+  const summary = summarizeWorkerBenchmarkWindow(startSnapshot, endSnapshot, {
+    sampleSnapshots: [midSnapshot],
+  });
+
+  const physics = summary.workers.find((w) => w.id === 'physics');
+  assert.ok(physics.statsEnd);
+  assert.equal(physics.statsEnd.COLLISION_CHECKS, 4000);
+  assert.equal(physics.statsEnd.COLLISION_MS, 8);
+  assert.ok(physics.statsSamplesAverage);
+  assert.equal(physics.statsSamplesAverage.COLLISION_CHECKS, 3000);
+  assert.equal(physics.statsSamplesAverage.COLLISION_MS, 6);
 });
