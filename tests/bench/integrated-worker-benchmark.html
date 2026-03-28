@@ -36,14 +36,14 @@
     globalThis.AudioContext = BenchmarkAudioContext;
     globalThis.AudioWorkletNode = BenchmarkAudioWorkletNode;
 
-    const DEFAULT_CANVAS_WIDTH = 1024;
-    const DEFAULT_CANVAS_HEIGHT = 800;
+    /** Align with `demos/index.html` typical viewport when opened via the bench runner. */
+    const DEFAULT_CANVAS_WIDTH = 1920;
+    const DEFAULT_CANVAS_HEIGHT = 1080;
 
     const DEFAULT_CONFIG = Object.freeze({
       warmupMs: 3000,
       durationMs: 5000,
       sampleIntervalMs: 100,
-      bodyCount: 2400,
       canvasWidth: DEFAULT_CANVAS_WIDTH,
       canvasHeight: DEFAULT_CANVAS_HEIGHT,
     });
@@ -53,11 +53,6 @@
     function normalizePositiveInteger(value, fallback) {
       const normalized = Number(value);
       return Number.isFinite(normalized) && normalized > 0 ? Math.round(normalized) : fallback;
-    }
-
-    function normalizeOptionalPositiveInteger(value) {
-      const normalized = Number(value);
-      return Number.isFinite(normalized) && normalized > 0 ? Math.round(normalized) : undefined;
     }
 
     function normalizeConfig(options = {}) {
@@ -71,9 +66,6 @@
           options.sampleIntervalMs,
           DEFAULT_CONFIG.sampleIntervalMs
         ),
-        bodyCount: normalizePositiveInteger(options.bodyCount, DEFAULT_CONFIG.bodyCount),
-        spatialWorkers: normalizeOptionalPositiveInteger(options.spatialWorkers),
-        logicWorkers: normalizeOptionalPositiveInteger(options.logicWorkers),
         canvasWidth,
         canvasHeight,
         worldWidth: normalizePositiveInteger(options.worldWidth, canvasWidth),
@@ -155,7 +147,6 @@
         metadata: {
           benchmark: 'integrated-worker-benchmark',
           sceneName: 'BallsScene',
-          bodyCount: config.bodyCount,
           canvasWidth: config.canvasWidth,
           canvasHeight: config.canvasHeight,
           spatialWorkers: scene.config.spatial.numberOfSpatialWorkers,

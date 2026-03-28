@@ -9,6 +9,10 @@ import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkSer
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const defaultOutputPath = path.join(repoRoot, 'tests', 'results', 'integrated-worker-benchmark.json');
 
+/** Match typical `demos/index.html` window size (autoResize), not scene world dimensions. */
+const DEFAULT_DEMO_CANVAS_WIDTH = 1920;
+const DEFAULT_DEMO_CANVAS_HEIGHT = 1080;
+
 function parseArgs(argv) {
   const parsed = Object.create(null);
   parsed._ = [];
@@ -47,38 +51,22 @@ function toOptionalPositiveInteger(value) {
 
 function buildBenchmarkOptions(cliArgs) {
   const positional = cliArgs._ || [];
-  const extendedPositionalMode = positional.length >= 5;
-  const positionalLogicWorkers = extendedPositionalMode
-    ? toOptionalPositiveInteger(positional[5])
-    : undefined;
 
   const canvasWidth = toOptionalPositiveInteger(cliArgs['canvas-width']);
   const canvasHeight = toOptionalPositiveInteger(cliArgs['canvas-height']);
-  const worldWidth = toOptionalPositiveInteger(cliArgs['world-width']);
-  const worldHeight = toOptionalPositiveInteger(cliArgs['world-height']);
-  const warmupMs = toPositiveInteger(cliArgs['warmup-ms'] ?? positional[0], 3000);
-  const durationMs = toPositiveInteger(cliArgs['duration-ms'] ?? positional[1], 5000);
-  const sampleIntervalMs = toPositiveInteger(cliArgs['sample-interval-ms'] ?? positional[2], 100);
-  // const bodyCount = toPositiveInteger(cliArgs['body-count'] ?? positional[3], 2400);
-  const spatialWorkers = toOptionalPositiveInteger(cliArgs['spatial-workers'] ?? positional[4]);
-  const logicWorkers = cliArgs['logic-workers'] ? toOptionalPositiveInteger(cliArgs['logic-workers']) : positionalLogicWorkers;
-  console.log("warm up time:", warmupMs);
-  console.log("duration time:", durationMs);
-  console.log("sample interval time:", sampleIntervalMs);
-  // console.log("body count:", bodyCount);
-  console.log("spatial workers:", spatialWorkers);
-  console.log("logic workers:", logicWorkers);
+  const warmupMs = toPositiveInteger(cliArgs['warmup-ms'] ?? positional[0], 8000);
+  const durationMs = toPositiveInteger(cliArgs['duration-ms'] ?? positional[1], 8000);
+  const sampleIntervalMs = toPositiveInteger(
+    cliArgs['sample-interval-ms'] ?? positional[2],
+    100
+  );
+
   return {
-    warmupMs: warmupMs,
-    durationMs: durationMs,
-    sampleIntervalMs: sampleIntervalMs,
-    // bodyCount: bodyCount,
-    spatialWorkers: spatialWorkers,
-    logicWorkers: logicWorkers,
+    warmupMs,
+    durationMs,
+    sampleIntervalMs,
     ...(canvasWidth != null ? { canvasWidth } : {}),
     ...(canvasHeight != null ? { canvasHeight } : {}),
-    ...(worldWidth != null ? { worldWidth } : {}),
-    ...(worldHeight != null ? { worldHeight } : {}),
   };
 }
 
@@ -86,11 +74,7 @@ async function main() {
   const cliArgs = parseArgs(process.argv.slice(2));
   const benchmarkOptions = buildBenchmarkOptions(cliArgs);
   const positional = cliArgs._ || [];
-  const extendedPositionalMode = positional.length >= 5;
-  const positionalOutput = extendedPositionalMode
-    ? (toOptionalPositiveInteger(positional[5]) ? positional[6] : positional[5])
-    : positional[3];
-  const outputPath = path.resolve(cliArgs.output || positionalOutput || defaultOutputPath);
+  const outputPath = path.resolve(cliArgs.output || positional[3] || defaultOutputPath);
 
   const server = await createStaticBenchmarkServer(repoRoot);
   const benchmarkUrl = `http://127.0.0.1:${server.port}/tests/bench/integrated-worker-benchmark.html`;
@@ -98,7 +82,7 @@ async function main() {
   let browser;
 
   try {
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ headless: false });
   } catch (error) {
     await server.close();
     throw new Error(
@@ -126,16 +110,16 @@ async function main() {
       };
     });
 
-    const canvasWidth = benchmarkOptions.canvasWidth ?? sceneDims.width;
-    const canvasHeight = benchmarkOptions.canvasHeight ?? sceneDims.height;
+    const canvasWidth = benchmarkOptions.canvasWidth ?? DEFAULT_DEMO_CANVAS_WIDTH;
+    const canvasHeight = benchmarkOptions.canvasHeight ?? DEFAULT_DEMO_CANVAS_HEIGHT;
     await page.setViewportSize({ width: canvasWidth, height: canvasHeight });
 
     const runOptions = {
       ...benchmarkOptions,
       canvasWidth,
       canvasHeight,
-      worldWidth: benchmarkOptions.worldWidth ?? sceneDims.width,
-      worldHeight: benchmarkOptions.worldHeight ?? sceneDims.height,
+      worldWidth: sceneDims.width,
+      worldHeight: sceneDims.height,
     };
 
     const result = await page.evaluate((options) => window.__WEED_BENCHMARK__.run(options), runOptions);
