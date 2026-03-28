@@ -1,6 +1,6 @@
 {
   "name": "@weed.js/engine",
-  "version": "0.4.86",
+  "version": "0.4.87",
   "description": "A blazing-fast multithreaded web game engine that handles 20,000+ NPCs without breaking a sweat",
   "type": "module",
   "main": "dist/weed.bundle.min.js",
@@ -30,6 +30,7 @@
     "test": "npm run test:node",
     "test:node": "node --test tests/node/*.test.js",
     "test:bench": "node tests/bench/run-integrated-worker-benchmark.mjs",
+    "test:bench:headed": "node tests/bench/run-integrated-worker-benchmark.mjs --headed",
     "bench:workers": "node tests/bench/run-integrated-worker-benchmark.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

@@ -19,6 +19,9 @@ function parseArgs(argv) {
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    if (arg === '--') {
+      continue;
+    }
     if (!arg.startsWith('--')) {
       parsed._.push(arg);
       continue;
@@ -73,6 +76,7 @@ function buildBenchmarkOptions(cliArgs) {
 async function main() {
   const cliArgs = parseArgs(process.argv.slice(2));
   const benchmarkOptions = buildBenchmarkOptions(cliArgs);
+  const headed = Boolean(cliArgs.headed);
   const positional = cliArgs._ || [];
   const outputPath = path.resolve(cliArgs.output || positional[3] || defaultOutputPath);
 
@@ -82,7 +86,7 @@ async function main() {
   let browser;
 
   try {
-    browser = await chromium.launch({ headless: false });
+    browser = await chromium.launch({ headless: !headed });
   } catch (error) {
     await server.close();
     throw new Error(
@@ -124,10 +128,17 @@ async function main() {
 
     const result = await page.evaluate((options) => window.__WEED_BENCHMARK__.run(options), runOptions);
 
+    result.metadata = {
+      ...result.metadata,
+      playwrightHeadless: !headed,
+    };
+
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
     await fs.writeFile(outputPath, JSON.stringify(result, null, 2) + '\n', 'utf8');
 
-    console.log(`Benchmark report written to ${outputPath}`);
+    console.log(
+      `Benchmark report written to ${outputPath} (${headed ? 'headed' : 'headless'} Chromium)`
+    );
     console.log(`Main thread average FPS: ${result.mainThread.averageFPS.toFixed(2)}`);
     for (const worker of result.workers) {
       console.log(`${worker.id}: avg ${worker.averageFPS.toFixed(2)} FPS, current ${worker.instantaneousFPS.toFixed(2)} FPS`);
