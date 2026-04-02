@@ -776,12 +776,23 @@ class PreRenderWorker extends AbstractWorker {
             Sun.isInitialized && Sun.enabled && Sun.intensity > 0.1 &&
             this.shadowRenderQueueX && this.maxShadowRenderItems > 0 &&
             ShadowCaster.active;
+
+        const maxShadowsPerEntity = this.maxShadowsPerEntity ?? 0;
+        if (this.shadowsEnabled && maxShadowsPerEntity > 0 &&
+            this._entityShadowCounts && this._entityShadowIndicesToClear) {
+            const prevToClearCount = this._entityShadowIndicesToClearCount ?? 0;
+            const counts = this._entityShadowCounts;
+            const toClearBuf = this._entityShadowIndicesToClear;
+            for (let k = 0; k < prevToClearCount; k++) counts[toClearBuf[k]] = 0;
+            this._entityShadowIndicesToClearCount = 0;
+        }
+
         let rqX, rqY, rqScaleX, rqScaleY, rqRotation, rqAlpha, rqTint, rqTextureId, rqAnchorX, rqAnchorY;
         let viewMinX, viewMaxX, viewMinY, viewMaxY;
         let sunShadowRotation, sunShadowAlpha;
         let shadowCasterActive, shadowHeightMultiplier, shadowAnchorOffsetX, shadowAnchorOffsetY;
         let worldX, worldY, transformActive, spriteScaleY, spriteAnchorX, spriteAnchorY;
-        let entityShadowCounts, toClear, maxShadowsPerEntity;
+        let entityShadowCounts, toClear;
         if (doSunShadows) {
             const screenBounds = calculateCameraScreenBounds(
                 this._frameCameraZoom, this._frameCameraX, this._frameCameraY,
@@ -817,13 +828,6 @@ class PreRenderWorker extends AbstractWorker {
             spriteAnchorY = SpriteRenderer.anchorY;
             entityShadowCounts = this._entityShadowCounts;
             toClear = this._entityShadowIndicesToClear;
-            maxShadowsPerEntity = this.maxShadowsPerEntity ?? 0;
-            // Clear entityShadowCounts for entities from previous frame
-            const prevToClearCount = this._entityShadowIndicesToClearCount ?? 0;
-            if (maxShadowsPerEntity > 0 && entityShadowCounts && toClear) {
-                for (let k = 0; k < prevToClearCount; k++) entityShadowCounts[toClear[k]] = 0;
-            }
-            this._entityShadowIndicesToClearCount = 0;
         }
 
         const maxItems = this.maxShadowRenderItems ?? 0;
