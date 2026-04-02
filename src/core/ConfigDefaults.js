@@ -201,7 +201,17 @@ export const PARTICLE_DEFAULTS = Object.freeze({
 
 export const DECORATION_DEFAULTS = Object.freeze({
   maxDecorations: 0,
+  /** Max decorations attached per GameObject (Uint8 count, hard max 255) */
+  maxAttachedDecorationsPerEntity: 32,
 });
+
+/** Composite Y-sort: `worldY * DECORATION_Y_SORT_SCALE + innerZ` (entities, decorations, bullets, particles on ENTITIES layer). */
+export const DECORATION_Y_SORT_SCALE = 128;
+/** Signed decoration sub-layer; reserve the top-most slot for light glow. */
+export const DECORATION_INNER_Z_MAX = DECORATION_Y_SORT_SCALE - 2;
+export const DECORATION_INNER_Z_MIN = -(DECORATION_Y_SORT_SCALE - 1);
+/** Light glow (type 3) sort offset vs entity body at same foot Y; separate from DecorationPool and above child decorations. */
+export const ENTITY_GLOW_SORT_BIAS = DECORATION_Y_SORT_SCALE - 1;
 
 // ============================================================================
 // BULLET DEFAULTS

@@ -54,7 +54,15 @@ export { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/ParticleEmitter
 // DECORATIONS
 // ============================================================================
 // Note: Decorations are NOT GameObjects - they use DecorationComponent directly
-export { DecorationPool } from './core/DecorationPool.js';
+export {
+  DecorationPool,
+  DECORATION_Y_SORT_SCALE,
+  DECORATION_INNER_Z_MIN,
+  DECORATION_INNER_Z_MAX,
+  ENTITY_GLOW_SORT_BIAS,
+  DECORATION_NO_PARENT,
+} from './core/DecorationPool.js';
+export { Decoration } from './core/Decoration.js';
 
 // ============================================================================
 // BULLETS
@@ -134,6 +142,7 @@ import { ParticleComponent } from './components/ParticleComponent.js';
 
 import { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/ParticleEmitter.js';
 import { DecorationPool } from './core/DecorationPool.js';
+import { Decoration } from './core/Decoration.js';
 import { SharedAtomicPool } from './core/SharedAtomicPool.js';
 import { DecorationComponent } from './components/DecorationComponent.js';
 import { LightEmitter } from './components/LightEmitter.js';
@@ -205,6 +214,7 @@ const WEED = Object.freeze({
 
   // Decorations
   DecorationPool,
+  Decoration,
   DecorationComponent,
 
   // Constraints

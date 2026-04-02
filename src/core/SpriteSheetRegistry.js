@@ -1087,7 +1087,33 @@ class SpriteSheetRegistry {
       isSpritesheetFrame: false,
     });
     animations['_whiteCircle'] = ['_whiteCircle'];
+
     console.log(`  ✅ Generated built-in: _whiteCircle (8x8, radius 4px)`);
+
+    /// bigger white circle:
+
+    // White circle filling the 64x64 frame (used when a larger centered circle is needed)
+    const biggerwhiteCircleCanvas = document.createElement('canvas');
+    biggerwhiteCircleCanvas.width = 64;
+    biggerwhiteCircleCanvas.height = 64;
+    const biggerwhiteCircleCtx = biggerwhiteCircleCanvas.getContext('2d');
+    biggerwhiteCircleCtx.fillStyle = '#ffffff';
+    biggerwhiteCircleCtx.beginPath();
+    biggerwhiteCircleCtx.arc(32, 32, 32, 0, Math.PI * 2);
+    biggerwhiteCircleCtx.fill();
+    imagesToPack.push({
+      name: '_whiteCircle_64x64',
+      sourceImg: biggerwhiteCircleCanvas,
+      sourceRect: null,
+      width: 64,
+      height: 64,
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth: 64,
+      sourceHeight: 64,
+      isSpritesheetFrame: false,
+    });
+    animations['_whiteCircle_64x64'] = ['_whiteCircle_64x64'];
 
     // Sort images by size (largest first) for better packing
     imagesToPack.sort((a, b) => Math.max(b.width, b.height) - Math.max(a.width, a.height));

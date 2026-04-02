@@ -1939,9 +1939,25 @@ export function initializeComponentViews(
 ) {
   let initializedCount = 0;
 
+  // These use dedicated pool sizes (maxParticles / maxDecorations / maxBullets), not globalEntityCount.
+  // They are absent from componentPools, so pool?.count || defaultEntityCount would use the entity count
+  // and recreate views larger than the SharedArrayBuffer (RangeError). AbstractWorker.initializeCommonBuffers
+  // already connects them to the correct SABs.
+  const poolSizedComponentNames = new Set([
+    'ParticleComponent',
+    'DecorationComponent',
+    'BulletComponent',
+  ]);
+
   for (const [componentName, ComponentClass] of componentMap) {
     const pool = componentPools?.[componentName];
     const buffer = componentBuffers?.[componentName];
+
+    // No componentPools row → count would fall back to globalEntityCount (wrong for these types).
+    // If a scene later adds explicit pool metadata, initialize normally.
+    if (poolSizedComponentNames.has(componentName) && !pool) {
+      continue;
+    }
 
     // Assign componentId from pool data
     if (pool && pool.componentId !== undefined) {

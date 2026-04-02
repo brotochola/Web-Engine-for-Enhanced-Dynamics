@@ -13,6 +13,22 @@ import { DecorationComponent } from '../components/DecorationComponent.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { SharedAtomicPool } from './SharedAtomicPool.js';
 import { randomRange } from './utils.js';
+import { evictDecorationFacade, clearAllDecorationFacades } from './decorationFacades.js';
+import {
+  DECORATION_Y_SORT_SCALE,
+  DECORATION_INNER_Z_MIN,
+  DECORATION_INNER_Z_MAX,
+  ENTITY_GLOW_SORT_BIAS,
+} from './ConfigDefaults.js';
+
+export {
+  DECORATION_Y_SORT_SCALE,
+  DECORATION_INNER_Z_MIN,
+  DECORATION_INNER_Z_MAX,
+  ENTITY_GLOW_SORT_BIAS,
+};
+/** Uint16 sentinel: decoration not parented to any entity (entity index 0 is valid) */
+export const DECORATION_NO_PARENT = 0xffff;
 
 export class DecorationPool extends SharedAtomicPool {
   // Pool name for logging (used by base class)
@@ -21,6 +37,12 @@ export class DecorationPool extends SharedAtomicPool {
   // Compact list of active decoration indices [count, idx0, idx1, ...]
   // Maintained incrementally by spawn/despawn, read by particle_worker
   static activeDecorationsData = null;
+
+  // Entity -> attached decoration indices (SAB, not ECS). Row stride = _maxAttachedPerEntity.
+  static _attachedDecorationCount = null; // Uint8Array length entityCount
+  static _attachedDecorationIndices = null; // Uint16Array length entityCount * maxAttached
+  static _attachmentEntityCount = 0;
+  static _maxAttachedPerEntity = 0;
 
   // Alias for backwards compatibility
   static get maxDecorations() {
@@ -43,6 +65,140 @@ export class DecorationPool extends SharedAtomicPool {
   static initialize(maxDecorations) {
     // Call base class initialize with the count
     super.initialize(maxDecorations);
+  }
+
+  /**
+   * SharedArrayBuffers for entity→decoration attachment list (engine bookkeeping, not ECS).
+   * @param {SharedArrayBuffer|null} sabCount - Uint8Array, length entityCount
+   * @param {SharedArrayBuffer|null} sabIndices - Uint16Array, length entityCount * maxAttached
+   * @param {number} entityCount
+   * @param {number} maxAttachedPerEntity - 1..255
+   */
+  static initializeAttachmentSlots(sabCount, sabIndices, entityCount, maxAttachedPerEntity) {
+    if (!sabCount || !sabIndices || entityCount <= 0 || maxAttachedPerEntity <= 0) {
+      this._attachedDecorationCount = null;
+      this._attachedDecorationIndices = null;
+      this._attachmentEntityCount = 0;
+      this._maxAttachedPerEntity = 0;
+      return;
+    }
+    this._attachedDecorationCount = new Uint8Array(sabCount);
+    this._attachedDecorationIndices = new Uint16Array(sabIndices);
+    this._attachmentEntityCount = entityCount;
+    this._maxAttachedPerEntity = maxAttachedPerEntity;
+  }
+
+  /**
+   * How many decorations are attached to this entity (attachment table slot count).
+   * @param {number} entityIdx
+   * @returns {number}
+   */
+  static getAttachedCount(entityIdx) {
+    const countArr = this._attachedDecorationCount;
+    if (!countArr || entityIdx < 0 || entityIdx >= this._attachmentEntityCount) return 0;
+    return countArr[entityIdx];
+  }
+
+  /**
+   * Pool index of the decoration at attachment slot `slot` (0 .. getAttachedCount-1).
+   * @param {number} entityIdx
+   * @param {number} slot
+   * @returns {number} decoration index, or -1 if invalid
+   */
+  static getAttachedDecorationIndex(entityIdx, slot) {
+    const countArr = this._attachedDecorationCount;
+    const idxArr = this._attachedDecorationIndices;
+    const maxA = this._maxAttachedPerEntity;
+    if (!countArr || !idxArr || maxA <= 0) return -1;
+    if (entityIdx < 0 || entityIdx >= this._attachmentEntityCount) return -1;
+    const c = countArr[entityIdx];
+    if (slot < 0 || slot >= c) return -1;
+    return idxArr[entityIdx * maxA + slot];
+  }
+
+  static pushAttached(entityIdx, decoIdx) {
+    const countArr = this._attachedDecorationCount;
+    const idxArr = this._attachedDecorationIndices;
+    const maxA = this._maxAttachedPerEntity;
+    if (!countArr || !idxArr || maxA <= 0) return false;
+    if (entityIdx < 0 || entityIdx >= this._attachmentEntityCount) return false;
+    const c = countArr[entityIdx];
+    if (c >= maxA) return false;
+    idxArr[entityIdx * maxA + c] = decoIdx;
+    countArr[entityIdx] = c + 1;
+    return true;
+  }
+
+  static removeAttached(entityIdx, decoIdx) {
+    const countArr = this._attachedDecorationCount;
+    const idxArr = this._attachedDecorationIndices;
+    const maxA = this._maxAttachedPerEntity;
+    if (!countArr || !idxArr || maxA <= 0) return;
+    if (entityIdx < 0 || entityIdx >= this._attachmentEntityCount) return;
+    const row = entityIdx * maxA;
+    let c = countArr[entityIdx];
+    for (let k = 0; k < c; k++) {
+      if (idxArr[row + k] === decoIdx) {
+        idxArr[row + k] = idxArr[row + c - 1];
+        idxArr[row + c - 1] = 0;
+        countArr[entityIdx] = c - 1;
+        return;
+      }
+    }
+  }
+
+  /**
+   * Despawn every decoration attached to this entity (after onDespawned).
+   * @param {number} entityIdx
+   */
+  static clearAttachedAndDespawnAll(entityIdx) {
+    const countArr = this._attachedDecorationCount;
+    const idxArr = this._attachedDecorationIndices;
+    const maxA = this._maxAttachedPerEntity;
+    if (!countArr || !idxArr || maxA <= 0) return;
+    if (entityIdx < 0 || entityIdx >= this._attachmentEntityCount) return;
+    const row = entityIdx * maxA;
+    const n = countArr[entityIdx];
+    countArr[entityIdx] = 0;
+    for (let k = 0; k < n; k++) {
+      const d = idxArr[row + k];
+      idxArr[row + k] = 0;
+      DecorationComponent.parentEntityIndex[d] = DECORATION_NO_PARENT;
+      this._despawnDecorationCore(d);
+    }
+  }
+
+  /**
+   * Core despawn: inactive + compact list + free list. Does not touch attachment table.
+   * @param {number} index
+   * @returns {boolean}
+   */
+  static _despawnDecorationCore(index) {
+    if (!this.initialized || !this.freeList || !this.freeListTop) {
+      return false;
+    }
+    if (index < 0 || index >= this.maxCount) {
+      return false;
+    }
+    if (DecorationComponent.active[index] === 0) {
+      return false;
+    }
+    evictDecorationFacade(index);
+    DecorationComponent.active[index] = 0;
+    DecorationComponent.isItOnScreen[index] = 0;
+
+    if (this.activeDecorationsData) {
+      const count = Atomics.load(this.activeDecorationsData, 0);
+      for (let i = 0; i < count; i++) {
+        if (this.activeDecorationsData[1 + i] === index) {
+          const oldCount = Atomics.sub(this.activeDecorationsData, 0, 1);
+          this.activeDecorationsData[1 + i] = this.activeDecorationsData[oldCount - 1];
+          break;
+        }
+      }
+    }
+    this.returnToPool(index);
+    return true;
   }
 
   /**
@@ -112,9 +268,44 @@ export class DecorationPool extends SharedAtomicPool {
     const swayAmplitude = DecorationComponent.swayAmplitude;
     const swayFrequency = DecorationComponent.swayFrequency;
 
-    // Position
-    x[i] = randomRange(config.x);
-    y[i] = randomRange(config.y);
+    const parentEntityIndex = DecorationComponent.parentEntityIndex;
+    const localX = DecorationComponent.localX;
+    const localY = DecorationComponent.localY;
+    const inheritParentRotation = DecorationComponent.inheritParentRotation;
+    const innerZArr = DecorationComponent.innerZ;
+
+    const rawInner = config.innerZ ?? config.zIndex ?? 0;
+    const z = rawInner | 0;
+    const innerZClamped =
+      z < DECORATION_INNER_Z_MIN
+        ? DECORATION_INNER_Z_MIN
+        : z > DECORATION_INNER_Z_MAX
+          ? DECORATION_INNER_Z_MAX
+          : z;
+
+    const hasParent =
+      config.parent != null &&
+      typeof config.parent === 'number' &&
+      config.parent >= 0 &&
+      Number.isFinite(config.parent);
+    if (hasParent) {
+      const parent = config.parent | 0;
+      parentEntityIndex[i] = parent;
+      localX[i] = config.localX ?? 0;
+      localY[i] = config.localY ?? 0;
+      inheritParentRotation[i] = config.inheritParentRotation === false ? 0 : 1;
+      innerZArr[i] = innerZClamped;
+      x[i] = 0;
+      y[i] = 0;
+    } else {
+      parentEntityIndex[i] = DECORATION_NO_PARENT;
+      localX[i] = 0;
+      localY[i] = 0;
+      inheritParentRotation[i] = 0;
+      innerZArr[i] = innerZClamped;
+      x[i] = randomRange(config.x);
+      y[i] = randomRange(config.y);
+    }
 
     // Offset for depth sorting (defaults to 0)
     offsetX[i] = config.offsetX ?? 0;
@@ -209,28 +400,13 @@ export class DecorationPool extends SharedAtomicPool {
       return false; // Already inactive
     }
 
-    // Mark as inactive (must be first - signals to other workers)
-    DecorationComponent.active[index] = 0;
-    DecorationComponent.isItOnScreen[index] = 0;
-
-    // Remove from activeDecorationsData compact list (swap-with-last - O(n) search, O(1) remove)
-    // NOTE: scan + swap is not fully atomic across workers; concurrent despawns may leave
-    // phantom entries. This is benign: readers skip inactive slots via DecorationComponent.active.
-    if (this.activeDecorationsData) {
-      const count = Atomics.load(this.activeDecorationsData, 0);
-      for (let i = 0; i < count; i++) {
-        if (this.activeDecorationsData[1 + i] === index) {
-          const oldCount = Atomics.sub(this.activeDecorationsData, 0, 1);
-          this.activeDecorationsData[1 + i] = this.activeDecorationsData[oldCount - 1];
-          break;
-        }
-      }
+    const p = DecorationComponent.parentEntityIndex[index];
+    if (p !== DECORATION_NO_PARENT) {
+      this.removeAttached(p, index);
     }
+    DecorationComponent.parentEntityIndex[index] = DECORATION_NO_PARENT;
 
-    // Return index to free list (inherited from SharedAtomicPool)
-    this.returnToPool(index);
-
-    return true;
+    return this._despawnDecorationCore(index);
   }
 
   /**
@@ -241,12 +417,23 @@ export class DecorationPool extends SharedAtomicPool {
   static despawnAll() {
     if (!this.initialized || !this.freeList || !this.freeListTop) return;
 
+    clearAllDecorationFacades();
+
+    if (this._attachedDecorationCount) {
+      this._attachedDecorationCount.fill(0);
+    }
+    if (this._attachedDecorationIndices) {
+      this._attachedDecorationIndices.fill(0);
+    }
+
     // Mark all as inactive
     const active = DecorationComponent.active;
     const isItOnScreen = DecorationComponent.isItOnScreen;
+    const parentEntityIndex = DecorationComponent.parentEntityIndex;
     for (let i = 0; i < this.maxCount; i++) {
       active[i] = 0;
       isItOnScreen[i] = 0;
+      parentEntityIndex[i] = DECORATION_NO_PARENT;
     }
 
     // Clear activeDecorationsData compact list
@@ -276,5 +463,10 @@ export class DecorationPool extends SharedAtomicPool {
   static reset() {
     super.reset();
     this.activeDecorationsData = null;
+    clearAllDecorationFacades();
+    this._attachedDecorationCount = null;
+    this._attachedDecorationIndices = null;
+    this._attachmentEntityCount = 0;
+    this._maxAttachedPerEntity = 0;
   }
 }

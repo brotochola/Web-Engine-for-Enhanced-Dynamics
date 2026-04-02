@@ -4,7 +4,7 @@
 import { ParticleComponent } from '../components/ParticleComponent.js';
 import { ParticleEmitter } from '../core/ParticleEmitter.js';
 import { DecorationComponent } from '../components/DecorationComponent.js';
-import { DecorationPool } from '../core/DecorationPool.js';
+import { DecorationPool, DECORATION_NO_PARENT } from '../core/DecorationPool.js';
 import { BulletPool } from '../core/BulletPool.js';
 import { BulletComponent } from '../components/BulletComponent.js';
 import { Ray } from '../core/Ray.js';
@@ -566,6 +566,9 @@ class ParticleWorker extends AbstractWorker {
       this.buildActiveVisibleTimeThisFrame += performance.now() - startTime;
     }
 
+    // Parented decorations: world x/y/rotation (before culling uses x/y)
+    this.resolveAttachedDecorations();
+
     // Update screen visibility for decorations (entities done in pre_render_worker)
     this.updateDecorationScreenVisibility();
 
@@ -808,6 +811,71 @@ class ParticleWorker extends AbstractWorker {
     this.activeParticleCount = activeCount;
     if (activeData) activeData[0] = activeCount;
     if (visibleData) visibleData[0] = visibleCount;
+  }
+
+  /**
+   * Resolve world position/rotation for decorations parented to entities.
+   * Runs every frame before culling. Orphan parent → despawn.
+   */
+  resolveAttachedDecorations() {
+    if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
+
+    const activeData = this.activeDecorationsData;
+    const activeCount = activeData ? activeData[0] : 0;
+    if (activeCount === 0) return;
+
+    const parentEntityIndex = DecorationComponent.parentEntityIndex;
+    const localX = DecorationComponent.localX;
+    const localY = DecorationComponent.localY;
+    const inherit = DecorationComponent.inheritParentRotation;
+    const x = DecorationComponent.x;
+    const y = DecorationComponent.y;
+    const baseRotation = DecorationComponent.baseRotation;
+    const rotation = DecorationComponent.rotation;
+    const sway = DecorationComponent.sway;
+    const swayAmplitude = DecorationComponent.swayAmplitude;
+    const swayFrequency = DecorationComponent.swayFrequency;
+    const tx = Transform.x;
+    const ty = Transform.y;
+    const tActive = Transform.active;
+    const tRot = Transform.rotation;
+
+    const swayBaseAngle = this.accumulatedTime * 0.002;
+
+    for (let idx = 0; idx < activeCount; idx++) {
+      const i = activeData[1 + idx];
+      const p = parentEntityIndex[i];
+      if (p === DECORATION_NO_PARENT) continue;
+
+      if (!tActive[p]) {
+        DecorationPool.despawn(i);
+        continue;
+      }
+
+      const px = tx[p];
+      const py = ty[p];
+      const pr = tRot[p];
+      const lx = localX[i];
+      const ly = localY[i];
+
+      if (inherit[i]) {
+        const cos = Math.cos(pr);
+        const sin = Math.sin(pr);
+        x[i] = px + cos * lx - sin * ly;
+        y[i] = py + sin * lx + cos * ly;
+      } else {
+        x[i] = px + lx;
+        y[i] = py + ly;
+      }
+
+      const worldBase = inherit[i] ? pr + baseRotation[i] : baseRotation[i];
+      if (sway[i]) {
+        rotation[i] =
+          worldBase + Math.sin(swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
+      } else {
+        rotation[i] = worldBase;
+      }
+    }
   }
 
   /**
@@ -1259,9 +1327,12 @@ class ParticleWorker extends AbstractWorker {
 
     const swayBaseAngle = this.accumulatedTime * 0.002;
 
+    const parentEntityIndex = DecorationComponent.parentEntityIndex;
+
     // OPTIMIZED: Iterate over compact activeDecorationsData instead of maxDecorations
     for (let idx = 0; idx < activeCount; idx++) {
       const i = activeData[1 + idx];
+      if (parentEntityIndex[i] !== DECORATION_NO_PARENT) continue;
 
       if (sway[i]) {
         rotation[i] = baseRotation[i] + Math.sin(swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];

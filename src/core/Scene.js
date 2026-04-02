@@ -73,6 +73,7 @@ import {
 import { ParticleEmitter } from './ParticleEmitter.js';
 import { Constraint } from './Constraint.js';
 import { SoundManager } from './SoundManager.js';
+import { Decoration } from './Decoration.js';
 
 class Scene {
   // Worker index constants for FrameRate SharedArrayBuffer
@@ -528,6 +529,8 @@ class Scene {
       ...DECORATION_DEFAULTS,
       ...(this.config.decoration || {}),
     };
+    const ma = this.config.decoration.maxAttachedDecorationsPerEntity | 0;
+    this.config.decoration.maxAttachedDecorationsPerEntity = ma < 1 ? 1 : ma > 255 ? 255 : ma;
 
     // Bullet defaults from centralized config
     this.config.bullet = {
@@ -885,6 +888,7 @@ class Scene {
     window.DecorationPool = DecorationPool;
     window.SoundManager = SoundManager;
     window.Layer = Layer;
+    window.Decoration = Decoration;
     GameObject.scene = this;
   }
 
@@ -1083,6 +1087,20 @@ class Scene {
 
       // Attach to DecorationPool for incremental maintenance
       DecorationPool.activeDecorationsData = new Uint16Array(this.buffers.activeDecorationsData);
+
+      // Entity -> attached decoration indices (Uint8 count per entity, fixed row of Uint16 indices)
+      const maxAttached = this.config.decoration.maxAttachedDecorationsPerEntity;
+      const ec = this.totalEntityCount;
+      if (ec > 0 && maxAttached > 0) {
+        this.buffers.attachedDecorationCount = new SharedArrayBuffer(ec);
+        this.buffers.attachedDecorationIndices = new SharedArrayBuffer(ec * maxAttached * 2);
+        DecorationPool.initializeAttachmentSlots(
+          this.buffers.attachedDecorationCount,
+          this.buffers.attachedDecorationIndices,
+          ec,
+          maxAttached
+        );
+      }
     }
 
     // BulletComponent buffer
@@ -2192,11 +2210,14 @@ class Scene {
       activeParticlesData: this.buffers.activeParticlesData || null,
       visibleParticlesData: this.buffers.visibleParticlesData || null,
       maxDecorations: this.config.decoration.maxDecorations,
+      maxAttachedDecorationsPerEntity: this.config.decoration.maxAttachedDecorationsPerEntity,
       decorationFreeList: this.buffers.decorationFreeList || null,
       decorationFreeListTop: this.buffers.decorationFreeListTop || null,
       // Decoration compact lists (for optimized iteration)
       activeDecorationsData: this.buffers.activeDecorationsData || null,
       visibleDecorationsData: this.buffers.visibleDecorationsData || null,
+      attachedDecorationCount: this.buffers.attachedDecorationCount || null,
+      attachedDecorationIndices: this.buffers.attachedDecorationIndices || null,
       // Bullet system
       maxBullets: this.config.bullet.maxBullets,
       bulletFreeList: this.buffers.bulletFreeList || null,

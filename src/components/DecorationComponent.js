@@ -38,8 +38,24 @@ export class DecorationComponent extends Component {
 
     // === Layer Routing ===
     layerId: Uint8Array, // 0 = default ENTITIES layer, non-zero = custom layer id
+
+    // === Parent attachment (GameObject-owned decorations) ===
+    parentEntityIndex: Uint16Array, // 0xffff = no parent; else parent entity index (0 is valid)
+    localX: Float32Array,
+    localY: Float32Array,
+    inheritParentRotation: Uint8Array, // 1 = add parent Transform.rotation to baseRotation for display
+    innerZ: Int8Array, // signed; clamp to DECORATION_INNER_Z_MIN..MAX; composite = worldY*SCALE + innerZ
   };
 
   // Static pool tracking (set during initialization)
   static decorationCount = 0;
+
+  static initializeArrays(buffer, count) {
+    super.initializeArrays(buffer, count);
+    // Fresh buffers default to 0; 0 is a valid entity index — use sentinel for "no parent"
+    const SENT = 0xffff;
+    if (this.parentEntityIndex) {
+      this.parentEntityIndex.fill(SENT);
+    }
+  }
 }
