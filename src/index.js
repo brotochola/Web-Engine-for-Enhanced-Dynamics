@@ -57,7 +57,9 @@ export { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/ParticleEmitter
 export {
   DecorationPool,
   DECORATION_Y_SORT_SCALE,
+  DECORATION_INNER_Z_MIN,
   DECORATION_INNER_Z_MAX,
+  ENTITY_GLOW_SORT_BIAS,
   DECORATION_NO_PARENT,
 } from './core/DecorationPool.js';
 export { Decoration } from './core/Decoration.js';

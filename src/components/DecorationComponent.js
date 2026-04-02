@@ -44,7 +44,7 @@ export class DecorationComponent extends Component {
     localX: Float32Array,
     localY: Float32Array,
     inheritParentRotation: Uint8Array, // 1 = add parent Transform.rotation to baseRotation for display
-    innerZ: Uint16Array, // 0..1023 sub-layer for Y-sort (composite = parentY*1024 + innerZ)
+    innerZ: Int8Array, // signed; clamp to DECORATION_INNER_Z_MIN..MAX; composite = worldY*SCALE + innerZ
   };
 
   // Static pool tracking (set during initialization)

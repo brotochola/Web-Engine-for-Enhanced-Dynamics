@@ -14,11 +14,19 @@ import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { SharedAtomicPool } from './SharedAtomicPool.js';
 import { randomRange } from './utils.js';
 import { evictDecorationFacade, clearAllDecorationFacades } from './decorationFacades.js';
+import {
+  DECORATION_Y_SORT_SCALE,
+  DECORATION_INNER_Z_MIN,
+  DECORATION_INNER_Z_MAX,
+  ENTITY_GLOW_SORT_BIAS,
+} from './ConfigDefaults.js';
 
-/** Composite sort key scale: compositeY = worldY * scale + innerZ */
-export const DECORATION_Y_SORT_SCALE = 1024;
-/** Max innerZ (inclusive) for attachment / layer sort */
-export const DECORATION_INNER_Z_MAX = DECORATION_Y_SORT_SCALE - 1;
+export {
+  DECORATION_Y_SORT_SCALE,
+  DECORATION_INNER_Z_MIN,
+  DECORATION_INNER_Z_MAX,
+  ENTITY_GLOW_SORT_BIAS,
+};
 /** Uint16 sentinel: decoration not parented to any entity (entity index 0 is valid) */
 export const DECORATION_NO_PARENT = 0xffff;
 
@@ -267,8 +275,13 @@ export class DecorationPool extends SharedAtomicPool {
     const innerZArr = DecorationComponent.innerZ;
 
     const rawInner = config.innerZ ?? config.zIndex ?? 0;
+    const z = rawInner | 0;
     const innerZClamped =
-      rawInner < 0 ? 0 : rawInner > DECORATION_INNER_Z_MAX ? DECORATION_INNER_Z_MAX : rawInner;
+      z < DECORATION_INNER_Z_MIN
+        ? DECORATION_INNER_Z_MIN
+        : z > DECORATION_INNER_Z_MAX
+          ? DECORATION_INNER_Z_MAX
+          : z;
 
     const hasParent =
       config.parent != null &&

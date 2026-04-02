@@ -39,7 +39,7 @@ export class Barrel extends GameObject {
 
   onSpawned(spawnConfig = {}) {
     // Attached decoration smoke test: access via this.getAttachedDecoration(0) / getAttachedDecorationCount()
-    this.addDecoration('_whiteCircle', 0, -16, 0.25, 0.25, 400, {
+    this.addDecoration('_whiteCircle', 0, -16, 0.25, 0.25, -32, {
       anchorX: 0.5,
       anchorY: 0.5,
       alpha: 0.35,

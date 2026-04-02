@@ -22,17 +22,14 @@ import {
     generateSymmetricalCirclePattern,
 } from '../core/utils.js';
 import { PRE_RENDER_STATS, createStatsWriter } from './workers-utils.js';
-import { RENDERER_DEFAULTS, CAMERA_TYPES } from '../core/ConfigDefaults.js';
+import { RENDERER_DEFAULTS, CAMERA_TYPES, DECORATION_Y_SORT_SCALE, ENTITY_GLOW_SORT_BIAS } from '../core/ConfigDefaults.js';
 import { Layer } from '../core/Layer.js';
 import { createViews as createRenderQueueViews } from '../core/RenderQueueLayout.js';
-import { DECORATION_Y_SORT_SCALE, DECORATION_NO_PARENT } from '../core/DecorationPool.js';
+import { DECORATION_NO_PARENT } from '../core/DecorationPool.js';
 
 const INVALID_TEXTURE_ID = 0xFFFF;
 /** Composite depth sort: worldY * scale + innerZ (entities, decorations, bullets) */
 const Y_SORT_K = DECORATION_Y_SORT_SCALE;
-/** Glow sprites sort after entity body within same foot Y band */
-const ENTITY_GLOW_SORT_BIAS = 900;
-
 /**
  * PreRenderWorker - Handles all visual pre-calculations before rendering
  *

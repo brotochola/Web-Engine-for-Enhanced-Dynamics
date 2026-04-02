@@ -2,6 +2,7 @@
 
 import { DecorationComponent } from '../components/DecorationComponent.js';
 import { ensureDecorationFacade, evictDecorationFacade } from './decorationFacades.js';
+import { DECORATION_INNER_Z_MIN, DECORATION_INNER_Z_MAX } from './ConfigDefaults.js';
 
 export class Decoration {
   /**
@@ -81,7 +82,11 @@ export class Decoration {
     if (!DecorationComponent.active[this.index]) return;
     const z = v | 0;
     DecorationComponent.innerZ[this.index] =
-      z < 0 ? 0 : z > 1023 ? 1023 : z;
+      z < DECORATION_INNER_Z_MIN
+        ? DECORATION_INNER_Z_MIN
+        : z > DECORATION_INNER_Z_MAX
+          ? DECORATION_INNER_Z_MAX
+          : z;
   }
 
   get textureId() {

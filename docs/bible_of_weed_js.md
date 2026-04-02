@@ -72,6 +72,7 @@ Lifecycle hooks:
 Decorations parented to an entity are tracked in a **shared attachment table** (not on the pooled `GameObject` instance). You do **not** need `this._myDeco = this.addDecoration(...)` unless you prefer a cached pool index.
 
 - `addDecoration(texture, localX, localY, scaleX, scaleY, innerZ, extra?)` → decoration **pool index** (or `-1` if spawn/attach failed). Order of attachment is the order of successful `addDecoration` calls while spawned.
+- **innerZ** is signed, clamped to **`DECORATION_INNER_Z_MIN`..`DECORATION_INNER_Z_MAX`** (default scale **128** → **−127..126**). The entity sprite sorts at implicit **0**; **negative** `innerZ` draws **behind** the parent body. Constants live in `ConfigDefaults.js` / `WEED` exports (`DECORATION_Y_SORT_SCALE`, `DECORATION_INNER_Z_*`). Light glow sprites use a **separate** render path with `ENTITY_GLOW_SORT_BIAS`; the very top slot in the band is reserved for glow, not child decorations.
 - `getAttachedDecorationCount()` → how many are attached to this entity.
 - `getAttachedDecorationIndex(slot)` → pool index at `slot` (`0` .. count−1), or `-1`.
 - `getAttachedDecoration(slot)` → `Decoration` facade for that slot, or `null` (same underlying data as `Decoration.get(poolIndex)`).
@@ -80,7 +81,7 @@ Scene config: `decoration.maxAttachedDecorationsPerEntity` caps attachments per 
 
 ```javascript
 onSpawned() {
-  this.addDecoration('_whiteCircle', 0, -16, 0.25, 0.25, 400, { alpha: 0.35 });
+  this.addDecoration('_whiteCircle', 0, -16, 0.25, 0.25, -32, { alpha: 0.35 }); // negative innerZ: behind parent sprite
 }
 
 tick() {

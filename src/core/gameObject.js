@@ -1424,7 +1424,7 @@ export class GameObject {
    * @param {number} localY
    * @param {number} scaleX
    * @param {number} scaleY
-   * @param {number} zIndex - inner sort 0..1023
+   * @param {number} zIndex - signed inner sort (DECORATION_INNER_Z_MIN..DECORATION_INNER_Z_MAX); negative draws behind entity sprite (body is 0)
    * @param {Object} [extra] - optional DecorationPool.spawn fields
    * @returns {number} decoration index or -1
    */
