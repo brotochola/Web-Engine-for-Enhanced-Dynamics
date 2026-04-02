@@ -38,12 +38,20 @@ export class Barrel extends GameObject {
   }
 
   onSpawned(spawnConfig = {}) {
+    //  addDecoration(texture, localX, localY, scaleX, scaleY, zIndex, extra = {}) {
+
     // Attached decoration smoke test: access via this.getAttachedDecoration(0) / getAttachedDecorationCount()
-    this.addDecoration('_whiteCircle', 0, -16, 0.25, 0.25, -32, {
-      anchorX: 0.5,
-      anchorY: 0.5,
-      alpha: 0.35,
-    });
+    // this.addDecoration('_whiteCircle', 10, -10, 4, 4, 1, {
+    //   anchorX: 0.5,
+    //   anchorY: 0.5,
+    //   alpha: 0.66,
+    // });
+
+    // this.addDecoration('_whiteCircle', -10, -10, 4, 4, -1, {
+    //   anchorX: 0.5,
+    //   anchorY: 0.5,
+    //   alpha: 0.66,
+    // });
   }
 
   onDespawned() {

@@ -7,14 +7,14 @@ import { ParticleEmitter, SpriteSheetRegistry, SoundManager } from '../../src/in
 import { CarPart } from './carPart.js';
 import { Car } from './car.js';
 
-const { rng, GameObject, RigidBody, Collider, CollisionListener, SpriteRenderer, ShadowCaster, NavGrid, Transform } = WEED;
+const { rng, GameObject, RigidBody, Collider, CollisionListener, SpriteRenderer, NavGrid, Transform } = WEED;
 // Reusable object for flowfield sampling (zero allocation)
 const _navVec = { x: 0, y: 0 };
 export class PersonThatFollowsAFlowfield extends GameObject {
     static scriptUrl = import.meta.url;
     static tickInterval = 4; // Tick every 10 frames (staggered across entities)
 
-    static components = [RigidBody, Collider, CollisionListener, SpriteRenderer, ShadowCaster, PersonAnimationFSM, PersonComponent, LootableComponent];
+    static components = [RigidBody, Collider, CollisionListener, SpriteRenderer, PersonAnimationFSM, PersonComponent, LootableComponent];
 
     // Flocking behavior (override Person defaults)
     static groupingForce = 1;
@@ -59,7 +59,7 @@ export class PersonThatFollowsAFlowfield extends GameObject {
         this.spriteRenderer.anchorX = 0.5;
         this.spriteRenderer.anchorY = 0.98;
         this.spriteRenderer.animationSpeed = 0.15;
-        this.shadowCaster.heightMultiplier = 1.5
+        // this.shadowCaster.heightMultiplier = 1.5
 
         // Random scale
         const scale = 0.7 + rng() * 0.2;
@@ -88,6 +88,20 @@ export class PersonThatFollowsAFlowfield extends GameObject {
         PersonComponent.lastTeamDataUpdateTime[this.index] = 0;
 
         this.setScale(scale, scale);
+
+        this.addShadowDecoration()
+    }
+
+    addShadowDecoration() {
+
+        this.addDecoration('_whiteCircle_64x64', 0, 0, 0.33, 0.16, -1, {
+            anchorX: 0.5,
+            anchorY: 0.5,
+            alpha: 0.25,
+            offsetY: 0,
+            tint: 0x000000,
+        });
+
     }
     onCollisionEnter(other) {
 

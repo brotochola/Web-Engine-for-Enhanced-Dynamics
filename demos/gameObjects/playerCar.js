@@ -13,6 +13,7 @@ const SPEED_FOR_MAX_ZOOM = 60;
 const LOOK_AHEAD_PER_SPEED = 15;
 const CAMERA_SMOOTH = 0.015;
 const CAMERA_FOLLOW_SMOOTH = 0.05//0.05;
+const SHADOW_TEXTURE_SIZE = 200;
 
 export class PlayerCar extends Car {
     static scriptUrl = import.meta.url;
@@ -22,6 +23,10 @@ export class PlayerCar extends Car {
 
     tick(dtRatio) {
         super.tick(dtRatio);
+        const shadow = this.getAttachedDecoration(0);
+        if (shadow) {
+            shadow.baseRotation = this.carComponent.angle;
+        }
         this._updateCamera(dtRatio);
         this._handleInput(dtRatio);
     }

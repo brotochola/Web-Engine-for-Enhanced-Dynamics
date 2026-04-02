@@ -75,6 +75,13 @@ export class Decoration {
     if (DecorationComponent.active[this.index]) DecorationComponent.localY[this.index] = v;
   }
 
+  get anchorX() {
+    return DecorationComponent.anchorX[this.index];
+  }
+  set anchorX(v) {
+    if (DecorationComponent.active[this.index]) DecorationComponent.anchorX[this.index] = v;
+  }
+
   get innerZ() {
     return DecorationComponent.innerZ[this.index];
   }
