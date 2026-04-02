@@ -1211,6 +1211,12 @@ export function validatePhysicsConfig(currentConfig, newConfig) {
   const current = currentConfig || PHYSICS_DEFAULTS;
   return {
     subStepCount: Math.max(1, newConfig.subStepCount ?? current.subStepCount),
+    distanceConstraintIterations: Math.max(
+      1,
+      newConfig.distanceConstraintIterations ??
+        current.distanceConstraintIterations ??
+        PHYSICS_DEFAULTS.distanceConstraintIterations
+    ),
     boundaryElasticity: clamp01(
       newConfig.boundaryElasticity ?? current.boundaryElasticity,
       current.boundaryElasticity

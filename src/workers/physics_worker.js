@@ -332,14 +332,17 @@ class PhysicsWorker extends AbstractWorker {
 
       // Solve distance constraints (position-based dynamics)
       if (this.constraintsEnabled) {
-        this.solveDistanceConstraints(x, y, active);
+        const distIters = this.settings.distanceConstraintIterations;
+        for (let it = 0; it < distIters; it++) {
+          this.solveDistanceConstraints(x, y, active);
+        }
       }
     }
   }
 
   /**
    * Fixed-step Verlet update for use with accumulator (noLimitFPS mode)
-   * Runs movement + ONE constraint pass per call. The accumulator loop handles substepping.
+   * Runs movement + collision resolve + distance-constraint sweeps per call. The accumulator loop handles substepping.
    * This ensures physics runs at a consistent rate regardless of actual frame rate.
    * OPTIMIZED: Uses query system to iterate only entities with physics components
    */
@@ -415,7 +418,7 @@ class PhysicsWorker extends AbstractWorker {
       this.moveTimeThisFrame += performance.now() - startTime;
     }
 
-    // Step 2: Apply constraints ONCE per fixed step (substepping is handled by accumulator)
+    // Step 2: Apply constraints per fixed step (substepping is handled by accumulator)
     startTime = shouldProfile ? performance.now() : 0;
     this.resolveCollisionsVerlet(
       active,
@@ -438,7 +441,10 @@ class PhysicsWorker extends AbstractWorker {
 
     // Solve distance constraints (position-based dynamics)
     if (this.constraintsEnabled) {
-      this.solveDistanceConstraints(x, y, active);
+      const distIters = this.settings.distanceConstraintIterations;
+      for (let it = 0; it < distIters; it++) {
+        this.solveDistanceConstraints(x, y, active);
+      }
     }
   }
 

@@ -17,6 +17,11 @@ Related: [Spatial hashing & neighbors](./SPATIAL_HASHING.md), [Workers architect
 
 The worker does **not** build the spatial grid or neighbor lists; it **reads** `Grid.neighborData` produced by spatial workers.
 
+### Scene `physics` config: substeps vs distance iterations
+
+- **`subStepCount`** — How many times per frame the worker runs **collision resolution** (and, when constraints are enabled, the distance-constraint block that follows it). In variable-FPS mode this is an outer loop after a single Verlet move. With **`noLimitFPS`** and a fixed accumulator, the same count defines how many fixed micro-steps run per nominal frame; each micro-step runs one collision resolve.
+- **`distanceConstraintIterations`** — How many **full sweeps** over active distance constraints run **after each** collision pass in that loop (default `1`). Raise this for stiffer chains or rope-style setups without increasing collision work as much as raising `subStepCount`. Minimum `1`.
+
 ---
 
 ## Dense collider list (`buildDenseColliders`)

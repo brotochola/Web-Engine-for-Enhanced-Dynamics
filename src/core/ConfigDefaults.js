@@ -149,7 +149,10 @@ export const SCENE_DEFAULTS = Object.freeze({
 // ============================================================================
 
 export const PHYSICS_DEFAULTS = Object.freeze({
+  /** Outer loop: collision resolve passes per frame (variable FPS) or fixed micro-steps (noLimitFPS). */
   subStepCount: 4,
+  /** PBD sweeps over distance constraints after each collision pass (>= 1). */
+  distanceConstraintIterations: 1,
   boundaryElasticity: 0.8,
   collisionResponseStrength: 0.8,
   verletDamping: 0.995,

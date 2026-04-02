@@ -40,7 +40,8 @@ export class ConstraintsTestScene extends Scene {
 
         // Physics configuration
         physics: {
-            subStepCount: 8, // Higher substeps for stable constraints
+            distanceConstraintIterations: 6,
+            subStepCount: 3, // Higher substeps for stable constraints
             noLimitFPS: true,
             maxCollisionPairs: 100000,
             maxConstraints: 50000, // Enable constraint system
