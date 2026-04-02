@@ -13,6 +13,8 @@ import { Layer } from './Layer.js';
 import { Grid } from './Grid.js';
 import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox, distanceSq2D, binarySearchInsertPoint, binarySearchFind } from './utils.js';
 import Keyboard from './Keyboard.js';
+import { DecorationPool } from './DecorationPool.js';
+import { Decoration } from './Decoration.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry };
@@ -1416,13 +1418,65 @@ export class GameObject {
   }
 
   /**
-   * Despawn this entity (return it to the inactive pool)
-   * This is the proper way to deactivate an entity
-   *
-   * MULTI-WORKER SAFETY:
-   * In multi-logic-worker mode, non-primary workers route despawn to logic0.
-   * This serializes shared active-list/query-list mutations and avoids list corruption.
+   * Attach a visual-only decoration to this entity (DecorationPool; resolved in particle_worker).
+   * @param {string} texture - bigAtlas texture name
+   * @param {number} localX
+   * @param {number} localY
+   * @param {number} scaleX
+   * @param {number} scaleY
+   * @param {number} zIndex - inner sort 0..1023
+   * @param {Object} [extra] - optional DecorationPool.spawn fields
+   * @returns {number} decoration index or -1
    */
+  addDecoration(texture, localX, localY, scaleX, scaleY, zIndex, extra = {}) {
+    const decoIndex = DecorationPool.spawn({
+      parent: this.index,
+      localX,
+      localY,
+      scaleX,
+      scaleY,
+      innerZ: zIndex,
+      texture,
+      ...extra,
+    });
+    if (decoIndex < 0) return -1;
+    if (!DecorationPool.pushAttached(this.index, decoIndex)) {
+      DecorationPool.despawn(decoIndex);
+      return -1;
+    }
+    Decoration.ensureForParented(decoIndex);
+    return decoIndex;
+  }
+
+  /**
+   * Number of decorations attached to this entity (see addDecoration).
+   * Uses the shared attachment table; no instance fields required.
+   * @returns {number}
+   */
+  getAttachedDecorationCount() {
+    return DecorationPool.getAttachedCount(this.index);
+  }
+
+  /**
+   * Decoration pool index at attachment slot `slot` (0 .. getAttachedDecorationCount() - 1).
+   * @param {number} slot
+   * @returns {number} pool index, or -1
+   */
+  getAttachedDecorationIndex(slot) {
+    return DecorationPool.getAttachedDecorationIndex(this.index, slot);
+  }
+
+  /**
+   * Lazy facade for an attached decoration at `slot` (same as Decoration.get(poolIndex)).
+   * @param {number} slot
+   * @returns {import('./Decoration.js').Decoration | null}
+   */
+  getAttachedDecoration(slot) {
+    const poolIndex = this.getAttachedDecorationIndex(slot);
+    if (poolIndex < 0) return null;
+    return Decoration.get(poolIndex);
+  }
+
   /**
    * Despawn this entity (return to pool)
    *
@@ -1451,6 +1505,8 @@ export class GameObject {
     if (this.onDespawned) {
       this.onDespawned();
     }
+
+    DecorationPool.clearAttachedAndDespawnAll(i);
 
     // ========================================
     // COMPONENT DEACTIVATION (SAFE - unique index)

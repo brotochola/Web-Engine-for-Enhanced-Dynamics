@@ -25,8 +25,13 @@ import { PRE_RENDER_STATS, createStatsWriter } from './workers-utils.js';
 import { RENDERER_DEFAULTS, CAMERA_TYPES } from '../core/ConfigDefaults.js';
 import { Layer } from '../core/Layer.js';
 import { createViews as createRenderQueueViews } from '../core/RenderQueueLayout.js';
+import { DECORATION_Y_SORT_SCALE, DECORATION_NO_PARENT } from '../core/DecorationPool.js';
 
 const INVALID_TEXTURE_ID = 0xFFFF;
+/** Composite depth sort: worldY * scale + innerZ (entities, decorations, bullets) */
+const Y_SORT_K = DECORATION_Y_SORT_SCALE;
+/** Glow sprites sort after entity body within same foot Y band */
+const ENTITY_GLOW_SORT_BIAS = 900;
 
 /**
  * PreRenderWorker - Handles all visual pre-calculations before rendering
@@ -711,7 +716,7 @@ class PreRenderWorker extends AbstractWorker {
 
         for (let idx = 0; idx < visibleCount; idx++) {
             const i = visibleData[1 + idx];
-            const sortKey = isZenithal ? -z[i] : y[i];
+            const sortKey = isZenithal ? -z[i] : y[i] * Y_SORT_K;
             this.collectRenderable(1, i, sortKey);
             this.visibleParticlesCount++;
         }
@@ -858,7 +863,7 @@ class PreRenderWorker extends AbstractWorker {
             isItOnScreen[i] = 1;
 
             if (renderVisible[i]) {
-                this.collectRenderable(0, i, y[i]);
+                this.collectRenderable(0, i, y[i] * Y_SORT_K);
                 this.visibleEntitiesCount++;
             }
             if (
@@ -868,7 +873,7 @@ class PreRenderWorker extends AbstractWorker {
                 lightIntensity[i] >= MIN_GLOW_INTENSITY &&
                 (visualRange[i] || sqrtLightIntensity[i] || 200) >= MIN_GLOW_RANGE
             ) {
-                this.collectRenderable(3, i, y[i] + 10);
+                this.collectRenderable(3, i, y[i] * Y_SORT_K + ENTITY_GLOW_SORT_BIAS);
             }
 
             // Sun shadows (fused)
@@ -929,10 +934,21 @@ class PreRenderWorker extends AbstractWorker {
 
         const visibleCount = visibleData[0];
         const y = DecorationComponent.y;
+        const parentEntityIndex = DecorationComponent.parentEntityIndex;
+        const innerZ = DecorationComponent.innerZ;
+        const ty = Transform.y;
+        const tActive = Transform.active;
 
         for (let idx = 0; idx < visibleCount; idx++) {
             const i = visibleData[1 + idx];
-            this.collectRenderable(2, i, y[i]);
+            const p = parentEntityIndex[i];
+            let sortY;
+            if (p !== DECORATION_NO_PARENT && tActive[p]) {
+                sortY = ty[p] * Y_SORT_K + innerZ[i];
+            } else {
+                sortY = y[i] * Y_SORT_K + innerZ[i];
+            }
+            this.collectRenderable(2, i, sortY);
             this.visibleDecorationsCount++;
         }
     }
@@ -955,9 +971,9 @@ class PreRenderWorker extends AbstractWorker {
         for (let idx = 0; idx < visibleCount; idx++) {
             const i = visibleData[1 + idx];
             if (!active[i]) continue;
-            this.collectRenderable(4, i, y[i]);
+            this.collectRenderable(4, i, y[i] * Y_SORT_K);
             if (trailWidth[i] > 0) {
-                this.collectRenderable(5, i, y[i] - 0.01);
+                this.collectRenderable(5, i, y[i] * Y_SORT_K - 1);
             }
         }
     }
@@ -977,7 +993,7 @@ class PreRenderWorker extends AbstractWorker {
      *
      * @param {number} type - Renderable type (0-5)
      * @param {number} index - Pool index into the corresponding component arrays
-     * @param {number} y - Sort key (world Y or -Z for zenithal particles)
+     * @param {number} y - Composite sort key (typically worldY * DECORATION_Y_SORT_SCALE + innerZ; or -Z zenithal particles)
      */
     collectRenderable(type, index, y) {
         if (!this.renderQueueEnabled) return;

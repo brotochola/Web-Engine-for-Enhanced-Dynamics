@@ -201,6 +201,8 @@ export const PARTICLE_DEFAULTS = Object.freeze({
 
 export const DECORATION_DEFAULTS = Object.freeze({
   maxDecorations: 0,
+  /** Max decorations attached per GameObject (Uint8 count, hard max 255) */
+  maxAttachedDecorationsPerEntity: 32,
 });
 
 // ============================================================================

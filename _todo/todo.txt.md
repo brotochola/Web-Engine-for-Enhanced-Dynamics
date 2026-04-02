@@ -1,6 +1,5 @@
 - shader de lightOccluders q use el sprite para mask.
 - static props en components?
-- hacer apps de node para benchmark cada worker (--trace-opt --trace-deopt)
 
 ---
 

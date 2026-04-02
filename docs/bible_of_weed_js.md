@@ -67,6 +67,28 @@ Lifecycle hooks:
 - `onScreenEnter/Exit()` -- requires `CameraInOutListener` component
 - `onDespawned()` before returning to pool
 
+### Attached decorations (`addDecoration`)
+
+Decorations parented to an entity are tracked in a **shared attachment table** (not on the pooled `GameObject` instance). You do **not** need `this._myDeco = this.addDecoration(...)` unless you prefer a cached pool index.
+
+- `addDecoration(texture, localX, localY, scaleX, scaleY, innerZ, extra?)` → decoration **pool index** (or `-1` if spawn/attach failed). Order of attachment is the order of successful `addDecoration` calls while spawned.
+- `getAttachedDecorationCount()` → how many are attached to this entity.
+- `getAttachedDecorationIndex(slot)` → pool index at `slot` (`0` .. count−1), or `-1`.
+- `getAttachedDecoration(slot)` → `Decoration` facade for that slot, or `null` (same underlying data as `Decoration.get(poolIndex)`).
+
+Scene config: `decoration.maxAttachedDecorationsPerEntity` caps attachments per entity (default clamped by the engine). To remove one decoration early, call `DecorationPool.despawn(poolIndex)` (it detaches from the parent automatically).
+
+```javascript
+onSpawned() {
+  this.addDecoration('_whiteCircle', 0, -16, 0.25, 0.25, 400, { alpha: 0.35 });
+}
+
+tick() {
+  const rim = this.getAttachedDecoration(0);
+  if (rim) rim.alpha = 0.5;
+}
+```
+
 ---
 
 ## Tag Components (Listener Opt-in)

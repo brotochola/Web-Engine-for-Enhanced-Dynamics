@@ -86,6 +86,7 @@ export class PredatorScene extends WEED.Scene {
 
     decoration: {
       maxDecorations: 40000, // Non-interactive decorations like grass
+      maxAttachedDecorationsPerEntity: 32, // GameObject.addDecoration slots (Uint8 max 255)
     },
 
     bullet: {

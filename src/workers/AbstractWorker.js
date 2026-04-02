@@ -6,6 +6,7 @@ import Keyboard from '../core/Keyboard.js';
 import { Mouse } from '../core/Mouse.js';
 import { ParticleEmitter } from '../core/ParticleEmitter.js';
 import { DecorationPool } from '../core/DecorationPool.js';
+import { Decoration } from '../core/Decoration.js';
 import { BulletPool } from '../core/BulletPool.js';
 import { BulletComponent } from '../components/BulletComponent.js';
 import { Flash } from '../core/Flash.js';
@@ -389,6 +390,24 @@ export class AbstractWorker {
         this.visibleDecorationsData = new Uint16Array(data.visibleDecorationsData);
         this.reportLog(`initialized visibleDecorationsData`);
       }
+
+      const maxAttached = data.maxAttachedDecorationsPerEntity | 0;
+      if (
+        data.attachedDecorationCount &&
+        data.attachedDecorationIndices &&
+        data.globalEntityCount > 0 &&
+        maxAttached > 0
+      ) {
+        DecorationPool.initializeAttachmentSlots(
+          data.attachedDecorationCount,
+          data.attachedDecorationIndices,
+          data.globalEntityCount,
+          maxAttached
+        );
+        this.reportLog(
+          `initialized DecorationPool attachment slots (${data.globalEntityCount} entities × ${maxAttached})`
+        );
+      }
     }
 
     // Initialize BulletComponent arrays (separate bullet pool system)
@@ -687,6 +706,7 @@ export class AbstractWorker {
     // Systems
     self.ParticleEmitter = ParticleEmitter;
     self.DecorationPool = DecorationPool;
+    self.Decoration = Decoration;
     self.BulletPool = BulletPool;
     self.Flash = Flash;
 
