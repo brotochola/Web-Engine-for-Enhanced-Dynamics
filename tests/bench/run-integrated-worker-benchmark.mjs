@@ -103,6 +103,7 @@ async function main() {
   const cliArgs = parseArgs(process.argv.slice(2));
   const benchmarkOptions = buildBenchmarkOptions(cliArgs);
   const headed = Boolean(cliArgs.headed);
+  const trace = Boolean(cliArgs.trace);
   const allowThrottle = Boolean(cliArgs['allow-throttle']);
   const positional = cliArgs._ || [];
   const outputPath = path.resolve(cliArgs.output || positional[3] || defaultOutputPath);
@@ -144,6 +145,23 @@ async function main() {
       console.error('[benchmark page error]', error);
     });
 
+    if (trace) {
+      await fs.mkdir(path.dirname(outputPath), { recursive: true });
+      await browser.startTracing(page, {
+        path: path.join(path.dirname(outputPath), 'engine_trace.json'),
+        screenshots: false,
+        categories: [
+          '-*', 'devtools.timeline', 'v8.execute',
+          'disabled-by-default-devtools.timeline',
+          'disabled-by-default-devtools.timeline.frame',
+          'toplevel', 'blink.console', 'blink.user_timing',
+          'latencyInfo', 'disabled-by-default-devtools.timeline.stack',
+          'disabled-by-default-v8.cpu_profiler',
+          'disabled-by-default-v8.cpu_profiler.hires', 'v8.gc'
+        ]
+      });
+    }
+
     await page.goto(benchmarkUrl, { waitUntil: 'networkidle' });
     await page.waitForFunction(() => Boolean(window.__WEED_BENCHMARK__), undefined, {
       timeout: 30000,
@@ -172,6 +190,23 @@ async function main() {
     };
 
     const result = await page.evaluate((options) => window.__WEED_BENCHMARK__.run(options), runOptions);
+
+    if (trace) {
+      const memoryUsage = await page.evaluate(() => {
+        if (performance.memory) {
+            return {
+                jsHeapSizeLimit: performance.memory.jsHeapSizeLimit,
+                totalJSHeapSize: performance.memory.totalJSHeapSize,
+                usedJSHeapSize: performance.memory.usedJSHeapSize
+            };
+        }
+        return null;
+      });
+      await fs.writeFile(path.join(path.dirname(outputPath), 'memory_snapshot.json'), JSON.stringify(memoryUsage, null, 2), 'utf8');
+      await browser.stopTracing();
+      console.log(`Trace saved to ${path.join(path.dirname(outputPath), 'engine_trace.json')}`);
+      console.log(`Memory snapshot saved to ${path.join(path.dirname(outputPath), 'memory_snapshot.json')}`);
+    }
 
     result.metadata = {
       ...result.metadata,
