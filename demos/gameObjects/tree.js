@@ -8,7 +8,7 @@ const {
   SpriteRenderer,
   RigidBody,
   ShadowCaster,
-  enums,
+  enums, rng,
   CameraInOutListener,
 } = WEED;
 const { ShapeType } = enums;
@@ -20,10 +20,10 @@ export class Tree extends GameObject {
 
   setup() {
     // this.rigidBody.static = 1;
-    const whichTree = Math.random() > 0.5 ? 1 : 2;
+    const whichTree = rng() > 0.5 ? 1 : 2;
     this.setSprite('tree' + whichTree);
-    const scale = Math.random() * 0.5 + 1;
-    this.setScale(Math.random() > 0.5 ? scale : -scale, scale);
+    const scale = rng() * 0.5 + 1;
+    this.setScale(rng > 0.5 ? scale : -scale, scale);
 
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 12 * scale;
@@ -57,6 +57,11 @@ export class Tree extends GameObject {
       stayOnTheFloor: true,
 
     });
+  }
+
+  tick(dtRatio, deltaTime, accumulatedTime, frameNumber) {
+    const factor = this.scaleY * 0.005
+    this.rotation = factor * Math.sin(accumulatedTime * factor * 0.33 + this.index);
   }
 
   onSpawned(spawnConfig = {}) { }
