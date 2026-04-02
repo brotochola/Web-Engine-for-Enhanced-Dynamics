@@ -855,8 +855,11 @@ class PhysicsWorker extends AbstractWorker {
       const offXi = offsetX[i];
       const offYi = offsetY[i];
 
-      // NOTE: colliderX_i / colliderY_i CANNOT be hoisted because x[i]/y[i]
-      // change during the loop as collisions are resolved!
+      // NOTE: colliderX_i / colliderY_i CANNOT be hoisted arbitrarily because x[i]/y[i]
+      // change during the loop as collisions are resolved! 
+      // But reading from SAB over and over is slow, so we cache it in a local register and update when it moves.
+      let localXi = x[i];
+      let localYi = y[i];
 
       // OPTIMIZATION: Cache entity i's layer/mask and static/sleeping state outside the loop
       const layerBitI = 1 << (collisionLayer[i] & 31);
@@ -901,8 +904,8 @@ class PhysicsWorker extends AbstractWorker {
         // Calculate offset-adjusted collider positions
         // We MUST re-calculate i's position here because it might have moved
         // in a previous iteration of this same loop (multi-collision)
-        const colliderX_i = x[i] + offXi;
-        const colliderY_i = y[i] + offYi;
+        const colliderX_i = localXi + offXi;
+        const colliderY_i = localYi + offYi;
 
         const colliderX_j = x[j] + offsetX[j];
         const colliderY_j = y[j] + offsetY[j];
@@ -1006,8 +1009,8 @@ class PhysicsWorker extends AbstractWorker {
             const corrI = correction * (invMassI / totalInvMass);
             const corrJ = correction * (invMassJ / totalInvMass);
 
-            x[i] += nx * corrI;
-            y[i] += ny * corrI;
+            x[i] = localXi += nx * corrI;
+            y[i] = localYi += ny * corrI;
             x[j] -= nx * corrJ;
             y[j] -= ny * corrJ;
           }
