@@ -1467,6 +1467,7 @@ class PreRenderWorker extends AbstractWorker {
 
         const frameIndex = this.entityFrameIndex;
         const frameAccum = this.entityFrameAccumulator;
+        const deltaSeconds = deltaTime / 1000;
         const ref = this._emitRef;
         ref.x = rqX; ref.y = rqY; ref.scaleX = rqScaleX; ref.scaleY = rqScaleY;
         ref.rotation = rqRotation; ref.alpha = rqAlpha; ref.tint = rqTint;
