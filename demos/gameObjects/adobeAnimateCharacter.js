@@ -42,10 +42,10 @@ export class AdobeAnimateCharacter extends GameObject {
     const EntityClass = this.constructor;
     if (!EntityClass.warmClipCache()) return this;
 
-    this.adobeAnim.clipId = EntityClass.clipIds[clipName] ?? 0;
-    this.adobeAnim.time = 0;
-    this.adobeAnim.loop = loop ? 1 : 0;
-    this.adobeAnim.playing = 1;
+    this.adobeAnimComponent.clipId = EntityClass.clipIds[clipName] ?? 0;
+    this.adobeAnimComponent.time = 0;
+    this.adobeAnimComponent.loop = loop ? 1 : 0;
+    this.adobeAnimComponent.playing = 1;
     AdobeAnimComponent.applyClipBounds(this.index);
     return this;
   }
@@ -73,7 +73,7 @@ export class AdobeAnimateCharacter extends GameObject {
     this.collider.radius = 16;
 
     this.collider.visualRange = 50;
-    this.adobeAnim.rotation = spawnConfig.localRotation ?? 0;
+    this.adobeAnimComponent.rotation = spawnConfig.localRotation ?? 0;
   }
 
   tick(dtRatio) {
@@ -84,8 +84,8 @@ export class AdobeAnimateCharacter extends GameObject {
     const jumpDuration = EntityClass.clipDurations[jumpClipName] ?? 0;
 
     if (
-      this.adobeAnim.clipId === jumpClipId &&
-      (!this.adobeAnim.playing || this.adobeAnim.time >= jumpDuration)
+      this.adobeAnimComponent.clipId === jumpClipId &&
+      (!this.adobeAnimComponent.playing || this.adobeAnimComponent.time >= jumpDuration)
     ) {
       this.playCachedClip(idleClipName, true);
     }
@@ -96,7 +96,7 @@ export class AdobeAnimateCharacter extends GameObject {
       const dist2 = dx * dx + dy * dy;
       if (dist2 > 30000) return;
 
-      if (this.adobeAnim.clipId !== jumpClipId || !this.adobeAnim.playing) {
+      if (this.adobeAnimComponent.clipId !== jumpClipId || !this.adobeAnimComponent.playing) {
         this.playCachedClip(jumpClipName, false);
       }
 

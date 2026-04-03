@@ -424,9 +424,6 @@ export class GameObject {
       const componentName = ComponentClass.name;
       const camelCaseName = componentName.charAt(0).toLowerCase() + componentName.slice(1);
       componentClassMap[camelCaseName] = ComponentClass;
-      if (ComponentClass === AdobeAnimComponent) {
-        componentClassMap.adobeAnim = ComponentClass;
-      }
     }
     EntityClass._componentClassMap = componentClassMap;
   }
@@ -473,9 +470,6 @@ export class GameObject {
       const camelCaseName = name.charAt(0).toLowerCase() + name.slice(1);
       this._hasComponents[name] = true;
       this._hasComponents[camelCaseName] = true;
-      if (ComponentClass === AdobeAnimComponent) {
-        this._hasComponents.adobeAnim = true;
-      }
     }
 
     if (!view) {
@@ -751,14 +745,14 @@ export class GameObject {
   /** Anchor X (0-1, 0.5 = center) - read-only, use setAnchor() */
   get anchorX() {
     if (this._hasComponents.SpriteRenderer) return SpriteRenderer.anchorX[this.index];
-    if (this._hasComponents.adobeAnim) return AdobeAnimComponent.anchorX[this.index];
+    if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.anchorX[this.index];
     return 0.5;
   }
 
   /** Anchor Y (0-1, 1.0 = bottom) - read-only, use setAnchor() */
   get anchorY() {
     if (this._hasComponents.SpriteRenderer) return SpriteRenderer.anchorY[this.index];
-    if (this._hasComponents.adobeAnim) return AdobeAnimComponent.anchorY[this.index];
+    if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.anchorY[this.index];
     return 1.0;
   }
 
@@ -834,7 +828,7 @@ export class GameObject {
       SpriteRenderer.renderDirty[this.index] = 1;
       changed = true;
     }
-    if (this._hasComponents.adobeAnim && AdobeAnimComponent.alpha[this.index] !== value) {
+    if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.alpha[this.index] !== value) {
       AdobeAnimComponent.alpha[this.index] = value;
       changed = true;
     }
@@ -867,7 +861,7 @@ export class GameObject {
       SpriteRenderer.renderVisible[this.index] = v;
       SpriteRenderer.renderDirty[this.index] = 1;
     }
-    if (this._hasComponents.adobeAnim) {
+    if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.renderVisible[this.index] = v;
     }
     return this;
@@ -896,7 +890,7 @@ export class GameObject {
       SpriteRenderer.layerId[this.index] = id;
       SpriteRenderer.renderDirty[this.index] = 1;
     }
-    if (this._hasComponents.adobeAnim && AdobeAnimComponent.layerId[this.index] !== id) {
+    if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.layerId[this.index] !== id) {
       AdobeAnimComponent.layerId[this.index] = id;
     }
     return this;
@@ -923,7 +917,7 @@ export class GameObject {
       SpriteRenderer.updateBounds(this.index);
       SpriteRenderer.renderDirty[this.index] = 1;
     }
-    if (this._hasComponents.adobeAnim) {
+    if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.scaleX[this.index] = x;
       AdobeAnimComponent.scaleY[this.index] = yVal;
       AdobeAnimComponent.applyClipBounds(this.index);
@@ -932,18 +926,18 @@ export class GameObject {
   }
 
   setAdobeAnim(assetName, clipName = null, options = {}) {
-    if (!this._hasComponents.adobeAnim) return this;
-    const adobeAnim = this.adobeAnim;
-    if (!adobeAnim) return this;
-    adobeAnim.setAsset(assetName, clipName, options);
+    if (!this._hasComponents.adobeAnimComponent) return this;
+    const adobeAnimComponent = this.adobeAnimComponent;
+    if (!adobeAnimComponent) return this;
+    adobeAnimComponent.setAsset(assetName, clipName, options);
     return this;
   }
 
   playAdobeClip(clipName, loop = true) {
-    if (!this._hasComponents.adobeAnim) return this;
-    const adobeAnim = this.adobeAnim;
-    if (!adobeAnim) return this;
-    adobeAnim.play(clipName, loop);
+    if (!this._hasComponents.adobeAnimComponent) return this;
+    const adobeAnimComponent = this.adobeAnimComponent;
+    if (!adobeAnimComponent) return this;
+    adobeAnimComponent.play(clipName, loop);
     return this;
   }
 
@@ -959,7 +953,7 @@ export class GameObject {
       SpriteRenderer.anchorY[this.index] = y;
       SpriteRenderer.renderDirty[this.index] = 1;
     }
-    if (this._hasComponents.adobeAnim) {
+    if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.anchorX[this.index] = x;
       AdobeAnimComponent.anchorY[this.index] = y;
       AdobeAnimComponent.applyClipBounds(this.index);
@@ -1566,7 +1560,7 @@ export class GameObject {
     }
     if (this.collider) Collider.active[i] = 0;
     if (this.spriteRenderer) SpriteRenderer.active[i] = 0;
-    if (this.adobeAnim) AdobeAnimComponent.active[i] = 0;
+    if (this.adobeAnimComponent) AdobeAnimComponent.active[i] = 0;
     if (this.lightEmitter) LightEmitter.active[i] = 0;
     if (this.shadowCaster) ShadowCaster.active[i] = 0;
     if (this.lightOccluder) LightOccluder.active[i] = 0;
@@ -1954,7 +1948,7 @@ export class GameObject {
       SpriteRenderer.renderDirty[i] = 1;
     }
 
-    if (has.adobeAnim) {
+    if (has.adobeAnimComponent) {
       AdobeAnimComponent.active[i] = 1;
       AdobeAnimComponent.assetId[i] = 0;
       AdobeAnimComponent.clipId[i] = 0;
