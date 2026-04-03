@@ -1404,6 +1404,10 @@ class SpriteSheetRegistry {
    * @private
    */
   static async _loadSpritesheet(name, config) {
+    if (config.jsonData && config.img) {
+      return { img: config.img, jsonData: config.jsonData };
+    }
+
     if (!config.json || !config.png) {
       throw new Error(`Invalid spritesheet config for "${name}": missing json or png`);
     }

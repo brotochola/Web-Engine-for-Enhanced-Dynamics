@@ -2,6 +2,7 @@
 // Provides common functionality: frame timing,  FPS tracking, pause state, message handling
 
 import { GameObject, SpriteSheetRegistry } from '../core/gameObject.js';
+import { AdobeAnimRegistry } from '../core/AdobeAnimRegistry.js';
 import Keyboard from '../core/Keyboard.js';
 import { Mouse } from '../core/Mouse.js';
 import { ParticleEmitter } from '../core/ParticleEmitter.js';
@@ -43,6 +44,7 @@ import { Transform } from '../components/Transform.js';
 import { RigidBody } from '../components/RigidBody.js';
 import { Collider } from '../components/Collider.js';
 import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { AdobeAnimComponent } from '../components/AdobeAnimComponent.js';
 import { LightEmitter } from '../components/LightEmitter.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
 import { FlashComponent } from '../components/FlashComponent.js';
@@ -570,6 +572,10 @@ export class AbstractWorker {
       throw new Error('Query system requires SAB buffers (queryEntityMetadata/queryCache/queryResults)');
     }
 
+    if (data.adobeAnimateMetadata) {
+      AdobeAnimRegistry.deserialize(data.adobeAnimateMetadata);
+    }
+
     this.reportLog('finished initializing common buffers');
 
     // Keep a reference to neighbor data for easy access (already set above, but also from GameObject)
@@ -685,6 +691,7 @@ export class AbstractWorker {
     self.Camera = Camera;
     self.Sun = Sun;
     self.SpriteSheetRegistry = SpriteSheetRegistry;
+    self.AdobeAnimRegistry = AdobeAnimRegistry;
     self.SoundManager = SoundManager;
     self.Constraint = Constraint;
     self.Layer = Layer;
@@ -694,6 +701,7 @@ export class AbstractWorker {
     self.RigidBody = RigidBody;
     self.Collider = Collider;
     self.SpriteRenderer = SpriteRenderer;
+    self.AdobeAnimComponent = AdobeAnimComponent;
     self.ParticleComponent = ParticleComponent;
     self.LightEmitter = LightEmitter;
     self.ShadowCaster = ShadowCaster;
@@ -755,7 +763,7 @@ export class AbstractWorker {
     // Workers receive componentPools as { name: { count, componentId } } (no ComponentClass ref).
     // Without this, scenes whose entities don't use RigidBody/Collider crash in spatial/physics/logic
     // because those workers access .active, .collisionCount etc. which are undefined typed arrays.
-    const coreComponents = [Transform, RigidBody, Collider, SpriteRenderer];
+    const coreComponents = [Transform, RigidBody, Collider, SpriteRenderer, AdobeAnimComponent];
     for (const ComponentClass of coreComponents) {
       const name = ComponentClass.name;
       const buffer = componentData?.[name];

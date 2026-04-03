@@ -135,7 +135,7 @@ class BigAtlasInspector {
     };
 
     const toggleGridBtn = document.createElement('button');
-    toggleGridBtn.textContent = '🔲 Toggle Frame Borders';
+    toggleGridBtn.textContent = '🔲 Toggle Frame Borders + Names';
     toggleGridBtn.style.cssText = `
       padding: 8px 16px;
       background: #FF9800;
@@ -186,10 +186,24 @@ class BigAtlasInspector {
       if (showFrames) {
         overlayCtx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
         overlayCtx.lineWidth = 1;
+        overlayCtx.font = '11px monospace';
+        overlayCtx.textBaseline = 'top';
 
         for (const [frameName, frameData] of Object.entries(atlasJson.frames)) {
           const { x, y, w, h } = frameData.frame;
           overlayCtx.strokeRect(x, y, w, h);
+
+          const textPadding = 2;
+          const textHeight = 14;
+          const textWidth = overlayCtx.measureText(frameName).width + textPadding * 2;
+          const labelWidth = textWidth;
+          const labelX = Math.min(x, overlayCanvas.width - labelWidth);
+          const labelY = Math.min(y, overlayCanvas.height - textHeight);
+
+          overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+          overlayCtx.fillRect(labelX, labelY, labelWidth, textHeight);
+          overlayCtx.fillStyle = '#fff';
+          overlayCtx.fillText(frameName, labelX + textPadding, labelY + textPadding);
         }
       }
     };

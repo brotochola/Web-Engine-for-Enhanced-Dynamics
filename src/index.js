@@ -24,6 +24,7 @@ export { Sun } from './core/Sun.js';
 export { Layer } from './core/Layer.js';
 export { TileMap } from './core/TileMap.js';
 export { SpriteSheetRegistry } from './core/SpriteSheetRegistry.js';
+export { AdobeAnimRegistry } from './core/AdobeAnimRegistry.js';
 export { BigAtlasInspector } from './core/BigAtlasInspector.js';
 export { SoundManager } from './core/SoundManager.js';
 export * from './core/utils.js';
@@ -35,6 +36,7 @@ export { Transform } from './components/Transform.js';
 export { RigidBody } from './components/RigidBody.js';
 export { Collider } from './components/Collider.js';
 export { SpriteRenderer } from './components/SpriteRenderer.js';
+export { AdobeAnimComponent } from './components/AdobeAnimComponent.js';
 export { ParticleComponent } from './components/ParticleComponent.js';
 export { DecorationComponent } from './components/DecorationComponent.js';
 export { LightEmitter } from './components/LightEmitter.js';
@@ -130,6 +132,7 @@ import { Sun } from './core/Sun.js';
 import { Layer } from './core/Layer.js';
 import { TileMap } from './core/TileMap.js';
 import { SpriteSheetRegistry } from './core/SpriteSheetRegistry.js';
+import { AdobeAnimRegistry } from './core/AdobeAnimRegistry.js';
 import { BigAtlasInspector } from './core/BigAtlasInspector.js';
 import { SoundManager } from './core/SoundManager.js';
 import * as utils from './core/utils.js';
@@ -138,6 +141,7 @@ import { Transform } from './components/Transform.js';
 import { RigidBody } from './components/RigidBody.js';
 import { Collider } from './components/Collider.js';
 import { SpriteRenderer } from './components/SpriteRenderer.js';
+import { AdobeAnimComponent } from './components/AdobeAnimComponent.js';
 import { ParticleComponent } from './components/ParticleComponent.js';
 
 import { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/ParticleEmitter.js';
@@ -193,6 +197,7 @@ const WEED = Object.freeze({
   TileMap,
   Keyboard,
   SpriteSheetRegistry,
+  AdobeAnimRegistry,
   BigAtlasInspector,
   SoundManager,
 
@@ -201,6 +206,7 @@ const WEED = Object.freeze({
   RigidBody,
   Collider,
   SpriteRenderer,
+  AdobeAnimComponent,
   ParticleComponent,
   LightEmitter,
   ShadowCaster,

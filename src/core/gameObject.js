@@ -5,6 +5,7 @@ import { Transform } from '../components/Transform.js';
 import { RigidBody } from '../components/RigidBody.js';
 import { Collider } from '../components/Collider.js';
 import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { AdobeAnimComponent } from '../components/AdobeAnimComponent.js';
 import { LightEmitter } from '../components/LightEmitter.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
 import { LightOccluder } from '../components/LightOccluder.js';
@@ -15,6 +16,7 @@ import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox,
 import Keyboard from './Keyboard.js';
 import { DecorationPool } from './DecorationPool.js';
 import { Decoration } from './Decoration.js';
+import { AdobeAnimRegistry } from './AdobeAnimRegistry.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry };
@@ -422,6 +424,9 @@ export class GameObject {
       const componentName = ComponentClass.name;
       const camelCaseName = componentName.charAt(0).toLowerCase() + componentName.slice(1);
       componentClassMap[camelCaseName] = ComponentClass;
+      if (ComponentClass === AdobeAnimComponent) {
+        componentClassMap.adobeAnim = ComponentClass;
+      }
     }
     EntityClass._componentClassMap = componentClassMap;
   }
@@ -468,6 +473,9 @@ export class GameObject {
       const camelCaseName = name.charAt(0).toLowerCase() + name.slice(1);
       this._hasComponents[name] = true;
       this._hasComponents[camelCaseName] = true;
+      if (ComponentClass === AdobeAnimComponent) {
+        this._hasComponents.adobeAnim = true;
+      }
     }
 
     if (!view) {
@@ -818,10 +826,15 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setAlpha(value) {
-    if (!this._hasComponents.SpriteRenderer) return this;
-    if (SpriteRenderer.alpha[this.index] !== value) {
+    let changed = false;
+    if (this._hasComponents.SpriteRenderer && SpriteRenderer.alpha[this.index] !== value) {
       SpriteRenderer.alpha[this.index] = value;
       SpriteRenderer.renderDirty[this.index] = 1;
+      changed = true;
+    }
+    if (this._hasComponents.adobeAnim && AdobeAnimComponent.alpha[this.index] !== value) {
+      AdobeAnimComponent.alpha[this.index] = value;
+      changed = true;
     }
     return this;
   }
@@ -847,11 +860,13 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setVisible(value) {
-    if (!this._hasComponents.SpriteRenderer) return this;
     const v = value ? 1 : 0;
-    if (SpriteRenderer.renderVisible[this.index] !== v) {
+    if (this._hasComponents.SpriteRenderer && SpriteRenderer.renderVisible[this.index] !== v) {
       SpriteRenderer.renderVisible[this.index] = v;
       SpriteRenderer.renderDirty[this.index] = 1;
+    }
+    if (this._hasComponents.adobeAnim) {
+      AdobeAnimComponent.renderVisible[this.index] = v;
     }
     return this;
   }
@@ -870,15 +885,17 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setLayer(layerName) {
-    if (!this._hasComponents.SpriteRenderer) return this;
     const id = Layer.getId(layerName);
     if (id === -1) {
       console.warn(`setLayer: Layer "${layerName}" not found`);
       return this;
     }
-    if (SpriteRenderer.layerId[this.index] !== id) {
+    if (this._hasComponents.SpriteRenderer && SpriteRenderer.layerId[this.index] !== id) {
       SpriteRenderer.layerId[this.index] = id;
       SpriteRenderer.renderDirty[this.index] = 1;
+    }
+    if (this._hasComponents.adobeAnim && AdobeAnimComponent.layerId[this.index] !== id) {
+      AdobeAnimComponent.layerId[this.index] = id;
     }
     return this;
   }
@@ -890,21 +907,41 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setScale(x, y) {
-    if (!this._hasComponents.SpriteRenderer) return this;
     const yVal = y !== undefined ? y : x;
     let changed = false;
-    if (SpriteRenderer.scaleX[this.index] !== x) {
+    if (this._hasComponents.SpriteRenderer && SpriteRenderer.scaleX[this.index] !== x) {
       SpriteRenderer.scaleX[this.index] = x;
       changed = true;
     }
-    if (SpriteRenderer.scaleY[this.index] !== yVal) {
+    if (this._hasComponents.SpriteRenderer && SpriteRenderer.scaleY[this.index] !== yVal) {
       SpriteRenderer.scaleY[this.index] = yVal;
       changed = true;
     }
-    if (changed) {
+    if (this._hasComponents.SpriteRenderer && changed) {
       SpriteRenderer.updateBounds(this.index);
       SpriteRenderer.renderDirty[this.index] = 1;
     }
+    if (this._hasComponents.adobeAnim) {
+      AdobeAnimComponent.scaleX[this.index] = x;
+      AdobeAnimComponent.scaleY[this.index] = yVal;
+      AdobeAnimComponent.applyClipBounds(this.index);
+    }
+    return this;
+  }
+
+  setAdobeAnim(assetName, clipName = null, options = {}) {
+    if (!this._hasComponents.adobeAnim) return this;
+    const adobeAnim = this.adobeAnim;
+    if (!adobeAnim) return this;
+    adobeAnim.setAsset(assetName, clipName, options);
+    return this;
+  }
+
+  playAdobeClip(clipName, loop = true) {
+    if (!this._hasComponents.adobeAnim) return this;
+    const adobeAnim = this.adobeAnim;
+    if (!adobeAnim) return this;
+    adobeAnim.play(clipName, loop);
     return this;
   }
 
@@ -1520,6 +1557,7 @@ export class GameObject {
     }
     if (this.collider) Collider.active[i] = 0;
     if (this.spriteRenderer) SpriteRenderer.active[i] = 0;
+    if (this.adobeAnim) AdobeAnimComponent.active[i] = 0;
     if (this.lightEmitter) LightEmitter.active[i] = 0;
     if (this.shadowCaster) ShadowCaster.active[i] = 0;
     if (this.lightOccluder) LightOccluder.active[i] = 0;
@@ -1907,6 +1945,28 @@ export class GameObject {
       SpriteRenderer.renderDirty[i] = 1;
     }
 
+    if (has.adobeAnim) {
+      AdobeAnimComponent.active[i] = 1;
+      AdobeAnimComponent.assetId[i] = 0;
+      AdobeAnimComponent.clipId[i] = 0;
+      AdobeAnimComponent.time[i] = 0;
+      AdobeAnimComponent.playbackRate[i] = 1;
+      AdobeAnimComponent.loop[i] = 1;
+      AdobeAnimComponent.playing[i] = 1;
+      AdobeAnimComponent.scaleX[i] = 1;
+      AdobeAnimComponent.scaleY[i] = 1;
+      AdobeAnimComponent.rotation[i] = 0;
+      AdobeAnimComponent.alpha[i] = 1;
+      AdobeAnimComponent.tint[i] = 0xffffff;
+      AdobeAnimComponent.layerId[i] = 0;
+      AdobeAnimComponent.renderVisible[i] = 1;
+      AdobeAnimComponent.isItOnScreen[i] = 0;
+      AdobeAnimComponent.boundsHalfW[i] = 0;
+      AdobeAnimComponent.boundsHalfH[i] = 0;
+      AdobeAnimComponent.screenX[i] = 0;
+      AdobeAnimComponent.screenY[i] = 0;
+    }
+
     // Apply spawn config (x, y, vx, vy, rotation, etc.)
     for (const key in spawnConfig) {
       if (instance[key] !== undefined) {
@@ -2101,6 +2161,7 @@ export class GameObject {
     const rigidBodyActive = RigidBody.active;
     const colliderActive = Collider.active;
     const spriteRendererActive = SpriteRenderer.active;
+    const adobeAnimActive = AdobeAnimComponent.active;
     const lightEmitterActive = LightEmitter.active;
     const shadowCasterActive = ShadowCaster.active;
     const lightOccluderActive = LightOccluder.active;
@@ -2113,6 +2174,7 @@ export class GameObject {
         (rigidBodyActive && rigidBodyActive[i]) ||
         (colliderActive && colliderActive[i]) ||
         (spriteRendererActive && spriteRendererActive[i]) ||
+        (adobeAnimActive && adobeAnimActive[i]) ||
         (lightEmitterActive && lightEmitterActive[i]) ||
         (shadowCasterActive && shadowCasterActive[i]) ||
         (lightOccluderActive && lightOccluderActive[i]);
@@ -2132,6 +2194,7 @@ export class GameObject {
         if (rigidBodyActive) rigidBodyActive[i] = 0;
         if (colliderActive) colliderActive[i] = 0;
         if (spriteRendererActive) spriteRendererActive[i] = 0;
+        if (adobeAnimActive) adobeAnimActive[i] = 0;
         if (lightEmitterActive) lightEmitterActive[i] = 0;
         if (shadowCasterActive) shadowCasterActive[i] = 0;
         if (lightOccluderActive) lightOccluderActive[i] = 0;

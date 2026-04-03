@@ -9,6 +9,7 @@ import { Transform } from '../components/Transform.js';
 import { Collider } from '../components/Collider.js';
 import { LightEmitter } from '../components/LightEmitter.js';
 import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { AdobeAnimComponent } from '../components/AdobeAnimComponent.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
 import { FlashComponent } from '../components/FlashComponent.js';
 import { LightOccluder } from '../components/LightOccluder.js';
@@ -26,6 +27,7 @@ import { RENDERER_DEFAULTS, CAMERA_TYPES, DECORATION_Y_SORT_SCALE, ENTITY_GLOW_S
 import { Layer } from '../core/Layer.js';
 import { createViews as createRenderQueueViews } from '../core/RenderQueueLayout.js';
 import { DECORATION_NO_PARENT } from '../core/DecorationPool.js';
+import { AdobeAnimRegistry } from '../core/AdobeAnimRegistry.js';
 
 const INVALID_TEXTURE_ID = 0xFFFF;
 /** Composite depth sort: worldY * scale + innerZ (entities, decorations, bullets) */
@@ -130,6 +132,7 @@ class PreRenderWorker extends AbstractWorker {
         this._queryLightEmitter = null;
         this._queryShadowCaster = null;
         this._querySpriteRenderer = null;
+        this._queryAdobeAnim = null;
 
         // Flash grid-query: scratch buffer for candidate shadow casters + dedup marker
         this._flashCandidateBuffer = null;
@@ -292,6 +295,7 @@ class PreRenderWorker extends AbstractWorker {
             this._queryLightEmitter = [LightEmitter];
             this._queryShadowCaster = [ShadowCaster];
             this._querySpriteRenderer = [SpriteRenderer];
+            this._queryAdobeAnim = [AdobeAnimComponent];
 
             // Flash grid-query buffers (shadow caster candidates for flash lights)
             const maxCandidates = Grid.maxNeighbors || 500;
@@ -646,9 +650,12 @@ class PreRenderWorker extends AbstractWorker {
             this._decorationZoomAlpha = (zoom - this.decorationHideZoom) / (this.decorationFadeStartZoom - this.decorationHideZoom);
         }
 
+        this.advanceAdobeAnimations(deltaTime);
+
         // Collect visible renderables for render queue (entities + sun shadows fused in one pass)
         this.collectVisibleParticles();
         this.collectVisibleEntities();
+        this.collectVisibleAdobeAnimations();
         this.collectVisibleDecorations();
         this.collectVisibleBullets();
 
@@ -922,6 +929,108 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
+    advanceAdobeAnimations(deltaTime) {
+        if (!AdobeAnimComponent.active) return;
+
+        const deltaSeconds = deltaTime / 1000;
+        if (deltaSeconds <= 0) return;
+
+        const active = AdobeAnimComponent.active;
+        const playing = AdobeAnimComponent.playing;
+        const playbackRate = AdobeAnimComponent.playbackRate;
+        const assetId = AdobeAnimComponent.assetId;
+        const clipId = AdobeAnimComponent.clipId;
+        const time = AdobeAnimComponent.time;
+        const loop = AdobeAnimComponent.loop;
+
+        const adobeEntities = this.queryActiveEntities(this._queryAdobeAnim || [AdobeAnimComponent]);
+        if (!adobeEntities || adobeEntities.length === 0) return;
+
+        for (let n = 0; n < adobeEntities.length; n++) {
+            const i = adobeEntities[n];
+            if (!active[i] || !playing[i]) continue;
+
+            const frameCount = AdobeAnimRegistry.getClipFrameCount(assetId[i], clipId[i]);
+            const frameRate = AdobeAnimRegistry.getClipFrameRate(assetId[i], clipId[i]);
+            if (frameCount <= 0 || frameRate <= 0) continue;
+
+            const duration = frameCount / frameRate;
+            const nextTime = time[i] + deltaSeconds * playbackRate[i];
+
+            if (loop[i]) {
+                time[i] = duration > 0 ? ((nextTime % duration) + duration) % duration : 0;
+            } else if (nextTime >= duration) {
+                time[i] = duration;
+                playing[i] = 0;
+            } else if (nextTime <= 0) {
+                time[i] = 0;
+                playing[i] = 0;
+            } else {
+                time[i] = nextTime;
+            }
+        }
+    }
+
+    collectVisibleAdobeAnimations() {
+        if (this.globalEntityCount === 0 || !AdobeAnimComponent.isItOnScreen || !this.cameraData) return;
+
+        const cameraBounds = this.calculateCameraBounds();
+        if (!cameraBounds) return;
+
+        const x = Transform.x;
+        const y = Transform.y;
+        const active = Transform.active;
+        const adobeActive = AdobeAnimComponent.active;
+        const renderVisible = AdobeAnimComponent.renderVisible;
+        const isItOnScreen = AdobeAnimComponent.isItOnScreen;
+        const screenX = AdobeAnimComponent.screenX;
+        const screenY = AdobeAnimComponent.screenY;
+        const halfW = AdobeAnimComponent.boundsHalfW;
+        const halfH = AdobeAnimComponent.boundsHalfH;
+
+        const camZoom = cameraBounds.zoom;
+        const cameraOffsetX = cameraBounds.cameraOffsetX;
+        const cameraOffsetY = cameraBounds.cameraOffsetY;
+        const screenMinX = cameraBounds.minX;
+        const screenMaxX = cameraBounds.maxX;
+        const screenMinY = cameraBounds.minY;
+        const screenMaxY = cameraBounds.maxY;
+
+        const adobeEntities = this.queryActiveEntities(this._queryAdobeAnim || [AdobeAnimComponent]);
+        if (!adobeEntities || adobeEntities.length === 0) return;
+
+        for (let idx = 0; idx < adobeEntities.length; idx++) {
+            const i = adobeEntities[idx];
+            if (!active[i] || !adobeActive[i]) {
+                if (isItOnScreen[i] !== 0) isItOnScreen[i] = 0;
+                continue;
+            }
+
+            const sx = x[i] * camZoom - cameraOffsetX;
+            const sy = y[i] * camZoom - cameraOffsetY;
+            screenX[i] = sx;
+            screenY[i] = sy;
+
+            const extent = (halfW[i] > halfH[i] ? halfW[i] : halfH[i]) * camZoom;
+            const onScreen =
+                sx >= screenMinX - extent &&
+                sx <= screenMaxX + extent &&
+                sy >= screenMinY - extent &&
+                sy <= screenMaxY + extent;
+
+            if (!onScreen) {
+                isItOnScreen[i] = 0;
+                continue;
+            }
+
+            isItOnScreen[i] = 1;
+            if (renderVisible[i]) {
+                this.collectRenderable(6, i, y[i] * Y_SORT_K);
+                this.visibleEntitiesCount++;
+            }
+        }
+    }
+
     /**
      * Collect visible decorations for render queue
      * Uses visibleDecorationsData SAB populated by particle_worker
@@ -991,8 +1100,9 @@ class PreRenderWorker extends AbstractWorker {
      *   type 3 (light glow)   -> LightEmitter.layerIdOfGlowSprite[index] || SpriteRenderer.layerId[index]
      *   type 4 (bullet)       -> BulletComponent.layerId[index]
      *   type 5 (bullet trail) -> BulletComponent.layerId[index]
+     *   type 6 (adobe anim)   -> AdobeAnimComponent.layerId[index]
      *
-     * @param {number} type - Renderable type (0-5)
+     * @param {number} type - Renderable type (0-6)
      * @param {number} index - Pool index into the corresponding component arrays
      * @param {number} y - Composite sort key (typically worldY * DECORATION_Y_SORT_SCALE + innerZ; or -Z zenithal particles)
      */
@@ -1006,6 +1116,7 @@ class PreRenderWorker extends AbstractWorker {
             else if (type === 2) layerId = DecorationComponent.layerId[index];
             else if (type === 3) layerId = LightEmitter.layerIdOfGlowSprite[index] || SpriteRenderer.layerId[index];
             else if (type === 4 || type === 5) layerId = BulletComponent.layerId[index];
+            else if (type === 6) layerId = AdobeAnimComponent.layerId[index];
 
             if (layerId !== 0 && layerId !== Layer.ENTITIES_ID) {
                 const collector = this._customLayerCollectors[layerId];
@@ -1026,12 +1137,117 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         // Default ENTITIES layer
-        if (this._renderableCount >= this.renderQueueMaxItems) return;
+        if (this._renderableCount >= this.renderQueueMaxItems) {
+            if (!this._renderQueueOverflowWarned) {
+                this._renderQueueOverflowWarned = true;
+                console.warn(`[PRE_RENDER] Main render queue collector full (max ${this.renderQueueMaxItems}). Increase renderer.maxVisibleRenderables.`);
+            }
+            return;
+        }
         const writeIdx = this._renderableCount;
         this._renderableY[writeIdx] = y;
         this._renderableType[writeIdx] = type;
         this._renderableIndex[writeIdx] = index;
         this._renderableCount = writeIdx + 1;
+    }
+
+    _resolveAdobeFrameIndex(entityIndex) {
+        const assetId = AdobeAnimComponent.assetId[entityIndex];
+        const clipId = AdobeAnimComponent.clipId[entityIndex];
+        const frameCount = AdobeAnimRegistry.getClipFrameCount(assetId, clipId);
+        const frameRate = AdobeAnimRegistry.getClipFrameRate(assetId, clipId);
+
+        if (frameCount <= 0 || frameRate <= 0) {
+            return { asset: null, clipId: 0, frameIndex: 0 };
+        }
+
+        const asset = AdobeAnimRegistry.getAsset(assetId);
+        if (!asset) {
+            return { asset: null, clipId: 0, frameIndex: 0 };
+        }
+
+        const duration = frameCount / frameRate;
+        let time = AdobeAnimComponent.time[entityIndex];
+        if (duration > 0) {
+            if (AdobeAnimComponent.loop[entityIndex]) {
+                time = ((time % duration) + duration) % duration;
+            } else if (time >= duration) {
+                time = duration;
+            } else if (time < 0) {
+                time = 0;
+            }
+        } else {
+            time = 0;
+        }
+
+        let frameIndex = frameCount > 1 ? (time * frameRate) | 0 : 0;
+        if (frameIndex >= frameCount) frameIndex = frameCount - 1;
+        if (frameIndex < 0) frameIndex = 0;
+
+        return { asset, clipId, frameIndex };
+    }
+
+    _emitAdobePieces(ref, writeIndex, entityIndex) {
+        const resolved = this._resolveAdobeFrameIndex(entityIndex);
+        const asset = resolved.asset;
+        if (!asset) return writeIndex;
+
+        const clipFrameStart = asset.clipFrameStart;
+        const framePieceCount = asset.framePieceCount;
+        const framePieceStart = asset.framePieceStart;
+        const pieceX = asset.pieceX;
+        const pieceY = asset.pieceY;
+        const pieceScaleX = asset.pieceScaleX;
+        const pieceScaleY = asset.pieceScaleY;
+        const pieceRotation = asset.pieceRotation;
+        const pieceAlpha = asset.pieceAlpha;
+        const pieceAnchorX = asset.pieceAnchorX;
+        const pieceAnchorY = asset.pieceAnchorY;
+        const textureIds = asset.pieceTextureId;
+
+        const rootX = Transform.x[entityIndex];
+        const rootY = Transform.y[entityIndex];
+        const rootRotation = Transform.rotation[entityIndex] + AdobeAnimComponent.rotation[entityIndex];
+        const rootScaleX = AdobeAnimComponent.scaleX[entityIndex];
+        const rootScaleY = AdobeAnimComponent.scaleY[entityIndex];
+        const rootAlpha = AdobeAnimComponent.alpha[entityIndex];
+        const rootTint = AdobeAnimComponent.tint[entityIndex];
+        const cos = Math.cos(rootRotation);
+        const sin = Math.sin(rootRotation);
+
+        const frameIndex = resolved.frameIndex;
+        const absoluteFrame = (clipFrameStart?.[resolved.clipId] ?? 0) + frameIndex;
+        const pieceCount = framePieceCount?.[absoluteFrame] ?? 0;
+        const start = framePieceStart?.[absoluteFrame] ?? 0;
+        const end = start + pieceCount;
+        const maxItems = ref.textureId.length;
+
+        let p = start;
+        for (; p < end && writeIndex < maxItems; p++) {
+            const localX = pieceX[p] * rootScaleX;
+            const localY = pieceY[p] * rootScaleY;
+
+            ref.x[writeIndex] = rootX + cos * localX - sin * localY;
+            ref.y[writeIndex] = rootY + sin * localX + cos * localY;
+            ref.scaleX[writeIndex] = pieceScaleX[p] * rootScaleX;
+            ref.scaleY[writeIndex] = pieceScaleY[p] * rootScaleY;
+            ref.rotation[writeIndex] = rootRotation + pieceRotation[p];
+            ref.alpha[writeIndex] = pieceAlpha[p] * rootAlpha;
+            ref.tint[writeIndex] = rootTint;
+            ref.textureId[writeIndex] = textureIds[p];
+            ref.anchorX[writeIndex] = pieceAnchorX[p];
+            ref.anchorY[writeIndex] = pieceAnchorY[p];
+            ref.type[writeIndex] = 6;
+            ref.entityIndex[writeIndex] = entityIndex;
+            writeIndex++;
+        }
+
+        if (p < end && !this._adobeRenderQueueOverflowWarned) {
+            this._adobeRenderQueueOverflowWarned = true;
+            console.warn('[PRE_RENDER] Adobe Animate piece expansion exceeded render queue capacity. Increase renderer.maxVisibleRenderables.');
+        }
+
+        return writeIndex;
     }
 
     /**
@@ -1216,29 +1432,51 @@ class PreRenderWorker extends AbstractWorker {
 
         const frameIndex = this.entityFrameIndex;
         const frameAccum = this.entityFrameAccumulator;
-        const deltaSeconds = deltaTime / 1000;
+        const ref = {
+            x: rqX,
+            y: rqY,
+            scaleX: rqScaleX,
+            scaleY: rqScaleY,
+            rotation: rqRotation,
+            alpha: rqAlpha,
+            tint: rqTint,
+            textureId: rqTextureId,
+            anchorX: rqAnchorX,
+            anchorY: rqAnchorY,
+            type: rqType,
+            entityIndex: rqEntityIndex,
+        };
 
-        for (let i = 0; i < count; i++) {
+        let writeCount = 0;
+
+        for (let i = 0; i < count && writeCount < this.renderQueueMaxItems; i++) {
             const type = collectorType[i];
             const idx = collectorIndex[i];
+
+            if (type === 6) {
+                writeCount = this._emitAdobePieces(ref, writeCount, idx);
+                continue;
+            }
+
+            const out = writeCount++;
 
             if (type === 0) {
                 // === ENTITY ===
                 const currX = entityX[idx];
                 const currY = entityY[idx];
 
-                rqX[i] = currX;
-                rqY[i] = currY;
-                rqScaleX[i] = srScaleX[idx];
-                rqScaleY[i] = srScaleY[idx];
-                rqRotation[i] = entityRotation[idx];
-                rqAlpha[i] = srAlpha[idx];
-                rqTint[i] = srTint[idx];
-                rqAnchorX[i] = srAnchorX[idx];
-                rqAnchorY[i] = srAnchorY[idx];
+                rqX[out] = currX;
+                rqY[out] = currY;
+                rqScaleX[out] = srScaleX[idx];
+                rqScaleY[out] = srScaleY[idx];
+                rqRotation[out] = entityRotation[idx];
+                rqAlpha[out] = srAlpha[idx];
+                rqTint[out] = srTint[idx];
+                rqAnchorX[out] = srAnchorX[idx];
+                rqAnchorY[out] = srAnchorY[idx];
 
-                rqType[i] = 0;
-                rqEntityIndex[i] = idx;
+                rqType[out] = 0;
+                rqEntityIndex[out] = idx;
 
                 const sheetId = srSpritesheetId[idx];
                 const animState = srAnimState[idx];
@@ -1281,89 +1519,89 @@ class PreRenderWorker extends AbstractWorker {
 
                     const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
                     const globalTextureId = animStart + frameIndex[idx];
-                    rqTextureId[i] = globalTextureId;
+                    rqTextureId[out] = globalTextureId;
 
                     if (entityLastTextureId) {
                         entityLastTextureId[idx] = globalTextureId;
                     }
                 } else {
-                    rqTextureId[i] = entityLastTextureId ? entityLastTextureId[idx] : INVALID_TEXTURE_ID;
+                    rqTextureId[out] = entityLastTextureId ? entityLastTextureId[idx] : INVALID_TEXTURE_ID;
                 }
             } else if (type === 1) {
                 // === PARTICLE ===
-                rqX[i] = particleX[idx];
+                rqX[out] = particleX[idx];
                 if (this.particleCameraView === CAMERA_TYPES.ZENITHAL) {
-                    rqY[i] = particleY[idx];
+                    rqY[out] = particleY[idx];
                     const height = -particleZ[idx];
                     const heightFactor = 1 + (height / this.zenithalMaxHeight) * this.zenithalScaleFactor;
-                    rqScaleX[i] = particleScaleX[idx] * heightFactor;
-                    rqScaleY[i] = particleScaleY[idx] * heightFactor;
+                    rqScaleX[out] = particleScaleX[idx] * heightFactor;
+                    rqScaleY[out] = particleScaleY[idx] * heightFactor;
                     let a = particleAlpha[idx];
                     if (this.zenithalAlphaFade > 0) {
                         const alphaFade = Math.min(1, (height / this.zenithalMaxHeight) * this.zenithalAlphaFade);
                         a *= Math.max(0, 1 - alphaFade);
                     }
-                    rqAlpha[i] = a;
+                    rqAlpha[out] = a;
                 } else {
-                    rqY[i] = particleY[idx] + particleZ[idx];
-                    rqScaleX[i] = particleScaleX[idx];
-                    rqScaleY[i] = particleScaleY[idx];
-                    rqAlpha[i] = particleAlpha[idx];
+                    rqY[out] = particleY[idx] + particleZ[idx];
+                    rqScaleX[out] = particleScaleX[idx];
+                    rqScaleY[out] = particleScaleY[idx];
+                    rqAlpha[out] = particleAlpha[idx];
                 }
-                rqRotation[i] = particleRotation[idx];
-                rqTint[i] = particleTint[idx];
+                rqRotation[out] = particleRotation[idx];
+                rqTint[out] = particleTint[idx];
                 const pAnimIdx = particleTextureId[idx];
-                rqTextureId[i] = this.animationFrameStart?.[pAnimIdx] ?? INVALID_TEXTURE_ID;
-                rqAnchorX[i] = 0.5;
-                rqAnchorY[i] = 0.5;
-                rqType[i] = 1;
-                rqEntityIndex[i] = -1;
+                rqTextureId[out] = this.animationFrameStart?.[pAnimIdx] ?? INVALID_TEXTURE_ID;
+                rqAnchorX[out] = 0.5;
+                rqAnchorY[out] = 0.5;
+                rqType[out] = 1;
+                rqEntityIndex[out] = -1;
             } else if (type === 2) {
                 // === DECORATION ===
-                rqX[i] = decoX[idx] + decoOffsetX[idx];
-                rqY[i] = decoY[idx] + decoOffsetY[idx];
-                rqScaleX[i] = decoScaleX[idx];
-                rqScaleY[i] = decoScaleY[idx];
-                rqRotation[i] = decoRotation[idx];
-                rqAlpha[i] = decoAlpha[idx] * this._decorationZoomAlpha;
-                rqTint[i] = decoTint[idx];
+                rqX[out] = decoX[idx] + decoOffsetX[idx];
+                rqY[out] = decoY[idx] + decoOffsetY[idx];
+                rqScaleX[out] = decoScaleX[idx];
+                rqScaleY[out] = decoScaleY[idx];
+                rqRotation[out] = decoRotation[idx];
+                rqAlpha[out] = decoAlpha[idx] * this._decorationZoomAlpha;
+                rqTint[out] = decoTint[idx];
                 const dAnimIdx = decoTextureId[idx];
-                rqTextureId[i] = this.animationFrameStart?.[dAnimIdx] ?? INVALID_TEXTURE_ID;
-                rqAnchorX[i] = decoAnchorX[idx];
-                rqAnchorY[i] = decoAnchorY[idx];
-                rqType[i] = 2;
-                rqEntityIndex[i] = -1;
+                rqTextureId[out] = this.animationFrameStart?.[dAnimIdx] ?? INVALID_TEXTURE_ID;
+                rqAnchorX[out] = decoAnchorX[idx];
+                rqAnchorY[out] = decoAnchorY[idx];
+                rqType[out] = 2;
+                rqEntityIndex[out] = -1;
             } else if (type === 4) {
                 // === BULLET ===
                 if (!bulletActive[idx]) {
-                    rqAlpha[i] = 0;
-                    rqScaleX[i] = 0;
-                    rqScaleY[i] = 0;
-                    rqX[i] = -10000;
-                    rqY[i] = -10000;
+                    rqAlpha[out] = 0;
+                    rqScaleX[out] = 0;
+                    rqScaleY[out] = 0;
+                    rqX[out] = -10000;
+                    rqY[out] = -10000;
                 } else {
-                    rqX[i] = bulletX[idx];
-                    rqY[i] = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
-                    rqScaleX[i] = bulletScale[idx];
-                    rqScaleY[i] = bulletScale[idx];
-                    rqRotation[i] = bulletSpriteRotation[idx];
-                    rqAlpha[i] = bulletAlpha[idx];
-                    rqTint[i] = bulletTint[idx];
+                    rqX[out] = bulletX[idx];
+                    rqY[out] = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
+                    rqScaleX[out] = bulletScale[idx];
+                    rqScaleY[out] = bulletScale[idx];
+                    rqRotation[out] = bulletSpriteRotation[idx];
+                    rqAlpha[out] = bulletAlpha[idx];
+                    rqTint[out] = bulletTint[idx];
                     const bAnimIdx = bulletTextureId[idx];
-                    rqTextureId[i] = this.animationFrameStart?.[bAnimIdx] ?? INVALID_TEXTURE_ID;
-                    rqAnchorX[i] = bulletAnchorX[idx];
-                    rqAnchorY[i] = bulletAnchorY[idx];
+                    rqTextureId[out] = this.animationFrameStart?.[bAnimIdx] ?? INVALID_TEXTURE_ID;
+                    rqAnchorX[out] = bulletAnchorX[idx];
+                    rqAnchorY[out] = bulletAnchorY[idx];
                 }
-                rqType[i] = 4;
-                rqEntityIndex[i] = -1;
+                rqType[out] = 4;
+                rqEntityIndex[out] = -1;
             } else if (type === 5) {
                 // === BULLET TRAIL (line from start to curr, 0-alpha at start) ===
                 if (!bulletActive[idx]) {
-                    rqAlpha[i] = 0;
-                    rqScaleX[i] = 0;
-                    rqScaleY[i] = 0;
-                    rqX[i] = -10000;
-                    rqY[i] = -10000;
+                    rqAlpha[out] = 0;
+                    rqScaleX[out] = 0;
+                    rqScaleY[out] = 0;
+                    rqX[out] = -10000;
+                    rqY[out] = -10000;
                 } else {
                     const currX = bulletX[idx];
                     const currY = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
@@ -1374,11 +1612,11 @@ class PreRenderWorker extends AbstractWorker {
                     const lenSq = dx * dx + dy * dy;
 
                     if (lenSq < BULLET_TRAIL_MIN_LENGTH_SQ) {
-                        rqAlpha[i] = 0;
-                        rqScaleX[i] = 0;
-                        rqScaleY[i] = 0;
-                        rqX[i] = -10000;
-                        rqY[i] = -10000;
+                        rqAlpha[out] = 0;
+                        rqScaleX[out] = 0;
+                        rqScaleY[out] = 0;
+                        rqX[out] = -10000;
+                        rqY[out] = -10000;
                     } else {
                         const adx = dx < 0 ? -dx : dx;
                         const ady = dy < 0 ? -dy : dy;
@@ -1386,20 +1624,20 @@ class PreRenderWorker extends AbstractWorker {
                         const min = adx > ady ? ady : adx;
                         const lengthApprox = 0.96 * max + 0.4 * min;
 
-                        rqX[i] = (startX + currX) * 0.5;
-                        rqY[i] = (startY + currY) * 0.5;
-                        rqScaleX[i] = lengthApprox / 10;
-                        rqScaleY[i] = bulletTrailWidth[idx];
-                        rqRotation[i] = bulletAngle[idx];
-                        rqAlpha[i] = bulletAlpha[idx] * 0.9;
-                        rqTint[i] = 0xffffff;
+                        rqX[out] = (startX + currX) * 0.5;
+                        rqY[out] = (startY + currY) * 0.5;
+                        rqScaleX[out] = lengthApprox / 10;
+                        rqScaleY[out] = bulletTrailWidth[idx];
+                        rqRotation[out] = bulletAngle[idx];
+                        rqAlpha[out] = bulletAlpha[idx] * 0.9;
+                        rqTint[out] = 0xffffff;
                     }
                 }
-                rqTextureId[i] = bulletTrailTextureId;
-                rqAnchorX[i] = 0.5;
-                rqAnchorY[i] = 0.5;
-                rqType[i] = 5;
-                rqEntityIndex[i] = -1;
+                rqTextureId[out] = bulletTrailTextureId;
+                rqAnchorX[out] = 0.5;
+                rqAnchorY[out] = 0.5;
+                rqType[out] = 5;
+                rqEntityIndex[out] = -1;
             } else {
                 // === LIGHT GLOW (type=3) ===
                 // Flash entities have no Collider, so visualRange is 0; fall back to sqrtLightIntensity
@@ -1408,35 +1646,35 @@ class PreRenderWorker extends AbstractWorker {
                 const glowAlpha = lightIntensity[idx] / 50000;
 
                 if (scale < 0.1 || glowAlpha < 0.001) {
-                    rqAlpha[i] = 0;
-                    rqScaleX[i] = 0;
-                    rqScaleY[i] = 0;
-                    rqX[i] = -10000;
-                    rqY[i] = -10000;
+                    rqAlpha[out] = 0;
+                    rqScaleX[out] = 0;
+                    rqScaleY[out] = 0;
+                    rqX[out] = -10000;
+                    rqY[out] = -10000;
                 } else {
-                    rqX[i] = entityX[idx];
-                    rqY[i] = entityY[idx] - (glowHeightOffset[idx] || 0);
-                    rqScaleX[i] = scale;
-                    rqScaleY[i] = scale;
-                    rqAlpha[i] = glowAlpha;
-                    rqTint[i] = lightColor[idx];
+                    rqX[out] = entityX[idx];
+                    rqY[out] = entityY[idx] - (glowHeightOffset[idx] || 0);
+                    rqScaleX[out] = scale;
+                    rqScaleY[out] = scale;
+                    rqAlpha[out] = glowAlpha;
+                    rqTint[out] = lightColor[idx];
                 }
-                rqRotation[i] = 0;
-                rqTextureId[i] = lightGradientTextureId;
-                rqAnchorX[i] = 0.5;
-                rqAnchorY[i] = 0.5;
-                rqType[i] = 3;
-                rqEntityIndex[i] = idx;
+                rqRotation[out] = 0;
+                rqTextureId[out] = lightGradientTextureId;
+                rqAnchorX[out] = 0.5;
+                rqAnchorY[out] = 0.5;
+                rqType[out] = 3;
+                rqEntityIndex[out] = idx;
             }
         }
 
-        this.renderQueueCount[0] = count;
+        this.renderQueueCount[0] = writeCount;
         this._renderableCount = 0;
     }
 
     /**
      * Build render queues for all custom layers.
-     * Each custom layer's collector may contain any renderable type (0-5):
+     * Each custom layer's collector may contain any renderable type (0-6):
      * entities, particles, decorations, light glows, bullets, and bullet trails.
      *
      * Per-type dispatch mirrors the corresponding branches in buildRenderQueue(),
@@ -1468,8 +1706,6 @@ class PreRenderWorker extends AbstractWorker {
         const frameIndex = this.entityFrameIndex;
         const frameAccum = this.entityFrameAccumulator;
         const entityLastTextureId = this.entityLastTextureId;
-        const deltaSeconds = deltaTime / 1000;
-
         // Particle arrays
         const particleX = ParticleComponent.x;
         const particleY = ParticleComponent.y;
@@ -1578,24 +1814,47 @@ class PreRenderWorker extends AbstractWorker {
             const rqAnchorY = ref.anchorY;
             const rqType = ref.type;
             const rqEntityIndex = ref.entityIndex;
+            const layerRef = {
+                x: rqX,
+                y: rqY,
+                scaleX: rqScaleX,
+                scaleY: rqScaleY,
+                rotation: rqRotation,
+                alpha: rqAlpha,
+                tint: rqTint,
+                textureId: rqTextureId,
+                anchorX: rqAnchorX,
+                anchorY: rqAnchorY,
+                type: rqType,
+                entityIndex: rqEntityIndex,
+            };
 
-            for (let i = 0; i < layerCount; i++) {
+            let writeCount = 0;
+
+            for (let i = 0; i < layerCount && writeCount < collector.maxItems; i++) {
                 const type = cType[i];
                 const idx = cIndex[i];
 
+                if (type === 6) {
+                    writeCount = this._emitAdobePieces(layerRef, writeCount, idx);
+                    continue;
+                }
+
+                const out = writeCount++;
+
                 if (type === 0) {
                     // === ENTITY ===
-                    rqX[i] = entityX[idx];
-                    rqY[i] = entityY[idx];
-                    rqScaleX[i] = srScaleX[idx];
-                    rqScaleY[i] = srScaleY[idx];
-                    rqRotation[i] = entityRotation[idx];
-                    rqAlpha[i] = srAlpha[idx];
-                    rqTint[i] = srTint[idx];
-                    rqAnchorX[i] = srAnchorX[idx];
-                    rqAnchorY[i] = srAnchorY[idx];
-                    rqType[i] = 0;
-                    rqEntityIndex[i] = idx;
+                    rqX[out] = entityX[idx];
+                    rqY[out] = entityY[idx];
+                    rqScaleX[out] = srScaleX[idx];
+                    rqScaleY[out] = srScaleY[idx];
+                    rqRotation[out] = entityRotation[idx];
+                    rqAlpha[out] = srAlpha[idx];
+                    rqTint[out] = srTint[idx];
+                    rqAnchorX[out] = srAnchorX[idx];
+                    rqAnchorY[out] = srAnchorY[idx];
+                    rqType[out] = 0;
+                    rqEntityIndex[out] = idx;
 
                     const sheetId = srSpritesheetId[idx];
                     const animState = srAnimState[idx];
@@ -1608,72 +1867,59 @@ class PreRenderWorker extends AbstractWorker {
                             frameIndex[idx] = 0;
                         }
 
-                        if (srIsAnimated[idx] && animFrameCount > 1) {
-                            frameAccum[idx] += deltaSeconds;
-                            const frameDuration = 1 / (srAnimSpeed[idx] * 60);
-                            if (frameAccum[idx] >= frameDuration) {
-                                frameAccum[idx] -= frameDuration;
-                                const currentFrame = frameIndex[idx];
-                                const isLastFrame = currentFrame >= animFrameCount - 1;
-                                if (srLoop[idx] === 1 || !isLastFrame) {
-                                    frameIndex[idx] = (currentFrame + 1) % animFrameCount;
-                                }
-                            }
-                        }
-
                         const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
                         const globalTextureId = animStart + frameIndex[idx];
-                        rqTextureId[i] = globalTextureId;
+                        rqTextureId[out] = globalTextureId;
                         if (entityLastTextureId) entityLastTextureId[idx] = globalTextureId;
                     } else {
-                        rqTextureId[i] = entityLastTextureId ? entityLastTextureId[idx] : INVALID_TEXTURE_ID;
+                        rqTextureId[out] = entityLastTextureId ? entityLastTextureId[idx] : INVALID_TEXTURE_ID;
                     }
 
                 } else if (type === 1) {
                     // === PARTICLE ===
-                    rqX[i] = particleX[idx];
+                    rqX[out] = particleX[idx];
                     if (this.particleCameraView === CAMERA_TYPES.ZENITHAL) {
-                        rqY[i] = particleY[idx];
+                        rqY[out] = particleY[idx];
                         const height = -particleZ[idx];
                         const heightFactor = 1 + (height / this.zenithalMaxHeight) * this.zenithalScaleFactor;
-                        rqScaleX[i] = particleScaleX[idx] * heightFactor;
-                        rqScaleY[i] = particleScaleY[idx] * heightFactor;
+                        rqScaleX[out] = particleScaleX[idx] * heightFactor;
+                        rqScaleY[out] = particleScaleY[idx] * heightFactor;
                         let a = particleAlpha[idx];
                         if (this.zenithalAlphaFade > 0) {
                             const alphaFade = Math.min(1, (height / this.zenithalMaxHeight) * this.zenithalAlphaFade);
                             a *= Math.max(0, 1 - alphaFade);
                         }
-                        rqAlpha[i] = a;
+                        rqAlpha[out] = a;
                     } else {
-                        rqY[i] = particleY[idx] + particleZ[idx];
-                        rqScaleX[i] = particleScaleX[idx];
-                        rqScaleY[i] = particleScaleY[idx];
-                        rqAlpha[i] = particleAlpha[idx];
+                        rqY[out] = particleY[idx] + particleZ[idx];
+                        rqScaleX[out] = particleScaleX[idx];
+                        rqScaleY[out] = particleScaleY[idx];
+                        rqAlpha[out] = particleAlpha[idx];
                     }
-                    rqRotation[i] = particleRotation[idx];
-                    rqTint[i] = particleTint[idx];
+                    rqRotation[out] = particleRotation[idx];
+                    rqTint[out] = particleTint[idx];
                     const pAnimIdx = particleTextureId[idx];
-                    rqTextureId[i] = this.animationFrameStart?.[pAnimIdx] ?? INVALID_TEXTURE_ID;
-                    rqAnchorX[i] = 0.5;
-                    rqAnchorY[i] = 0.5;
-                    rqType[i] = 1;
-                    rqEntityIndex[i] = -1;
+                    rqTextureId[out] = this.animationFrameStart?.[pAnimIdx] ?? INVALID_TEXTURE_ID;
+                    rqAnchorX[out] = 0.5;
+                    rqAnchorY[out] = 0.5;
+                    rqType[out] = 1;
+                    rqEntityIndex[out] = -1;
 
                 } else if (type === 2) {
                     // === DECORATION ===
-                    rqX[i] = decoX[idx] + decoOffsetX[idx];
-                    rqY[i] = decoY[idx] + decoOffsetY[idx];
-                    rqScaleX[i] = decoScaleX[idx];
-                    rqScaleY[i] = decoScaleY[idx];
-                    rqRotation[i] = decoRotation[idx];
-                    rqAlpha[i] = decoAlpha[idx] * this._decorationZoomAlpha;
-                    rqTint[i] = decoTint[idx];
+                    rqX[out] = decoX[idx] + decoOffsetX[idx];
+                    rqY[out] = decoY[idx] + decoOffsetY[idx];
+                    rqScaleX[out] = decoScaleX[idx];
+                    rqScaleY[out] = decoScaleY[idx];
+                    rqRotation[out] = decoRotation[idx];
+                    rqAlpha[out] = decoAlpha[idx] * this._decorationZoomAlpha;
+                    rqTint[out] = decoTint[idx];
                     const dAnimIdx = decoTextureId[idx];
-                    rqTextureId[i] = this.animationFrameStart?.[dAnimIdx] ?? INVALID_TEXTURE_ID;
-                    rqAnchorX[i] = decoAnchorX[idx];
-                    rqAnchorY[i] = decoAnchorY[idx];
-                    rqType[i] = 2;
-                    rqEntityIndex[i] = -1;
+                    rqTextureId[out] = this.animationFrameStart?.[dAnimIdx] ?? INVALID_TEXTURE_ID;
+                    rqAnchorX[out] = decoAnchorX[idx];
+                    rqAnchorY[out] = decoAnchorY[idx];
+                    rqType[out] = 2;
+                    rqEntityIndex[out] = -1;
 
                 } else if (type === 3) {
                     // === LIGHT GLOW ===
@@ -1682,58 +1928,58 @@ class PreRenderWorker extends AbstractWorker {
                     const glowAlpha = lightIntensity[idx] / 50000;
 
                     if (scale < 0.1 || glowAlpha < 0.001) {
-                        rqAlpha[i] = 0;
-                        rqScaleX[i] = 0;
-                        rqScaleY[i] = 0;
-                        rqX[i] = -10000;
-                        rqY[i] = -10000;
+                        rqAlpha[out] = 0;
+                        rqScaleX[out] = 0;
+                        rqScaleY[out] = 0;
+                        rqX[out] = -10000;
+                        rqY[out] = -10000;
                     } else {
-                        rqX[i] = entityX[idx];
-                        rqY[i] = entityY[idx] - (glowHeightOffset[idx] || 0);
-                        rqScaleX[i] = scale;
-                        rqScaleY[i] = scale;
-                        rqAlpha[i] = glowAlpha;
-                        rqTint[i] = lightColor[idx];
+                        rqX[out] = entityX[idx];
+                        rqY[out] = entityY[idx] - (glowHeightOffset[idx] || 0);
+                        rqScaleX[out] = scale;
+                        rqScaleY[out] = scale;
+                        rqAlpha[out] = glowAlpha;
+                        rqTint[out] = lightColor[idx];
                     }
-                    rqRotation[i] = 0;
-                    rqTextureId[i] = lightGradientTextureId;
-                    rqAnchorX[i] = 0.5;
-                    rqAnchorY[i] = 0.5;
-                    rqType[i] = 3;
-                    rqEntityIndex[i] = idx;
+                    rqRotation[out] = 0;
+                    rqTextureId[out] = lightGradientTextureId;
+                    rqAnchorX[out] = 0.5;
+                    rqAnchorY[out] = 0.5;
+                    rqType[out] = 3;
+                    rqEntityIndex[out] = idx;
 
                 } else if (type === 4) {
                     // === BULLET ===
                     if (!bulletActive[idx]) {
-                        rqAlpha[i] = 0;
-                        rqScaleX[i] = 0;
-                        rqScaleY[i] = 0;
-                        rqX[i] = -10000;
-                        rqY[i] = -10000;
+                        rqAlpha[out] = 0;
+                        rqScaleX[out] = 0;
+                        rqScaleY[out] = 0;
+                        rqX[out] = -10000;
+                        rqY[out] = -10000;
                     } else {
-                        rqX[i] = bulletX[idx];
-                        rqY[i] = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
-                        rqScaleX[i] = bulletScale[idx];
-                        rqScaleY[i] = bulletScale[idx];
-                        rqRotation[i] = bulletSpriteRotation[idx];
-                        rqAlpha[i] = bulletAlpha[idx];
-                        rqTint[i] = bulletTint[idx];
+                        rqX[out] = bulletX[idx];
+                        rqY[out] = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
+                        rqScaleX[out] = bulletScale[idx];
+                        rqScaleY[out] = bulletScale[idx];
+                        rqRotation[out] = bulletSpriteRotation[idx];
+                        rqAlpha[out] = bulletAlpha[idx];
+                        rqTint[out] = bulletTint[idx];
                         const bAnimIdx = bulletTextureId[idx];
-                        rqTextureId[i] = this.animationFrameStart?.[bAnimIdx] ?? INVALID_TEXTURE_ID;
-                        rqAnchorX[i] = bulletAnchorX[idx];
-                        rqAnchorY[i] = bulletAnchorY[idx];
+                        rqTextureId[out] = this.animationFrameStart?.[bAnimIdx] ?? INVALID_TEXTURE_ID;
+                        rqAnchorX[out] = bulletAnchorX[idx];
+                        rqAnchorY[out] = bulletAnchorY[idx];
                     }
-                    rqType[i] = 4;
-                    rqEntityIndex[i] = -1;
+                    rqType[out] = 4;
+                    rqEntityIndex[out] = -1;
 
                 } else if (type === 5) {
                     // === BULLET TRAIL ===
                     if (!bulletActive[idx]) {
-                        rqAlpha[i] = 0;
-                        rqScaleX[i] = 0;
-                        rqScaleY[i] = 0;
-                        rqX[i] = -10000;
-                        rqY[i] = -10000;
+                        rqAlpha[out] = 0;
+                        rqScaleX[out] = 0;
+                        rqScaleY[out] = 0;
+                        rqX[out] = -10000;
+                        rqY[out] = -10000;
                     } else {
                         const currX = bulletX[idx];
                         const currY = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
@@ -1744,11 +1990,11 @@ class PreRenderWorker extends AbstractWorker {
                         const lenSq = dx * dx + dy * dy;
 
                         if (lenSq < BULLET_TRAIL_MIN_LENGTH_SQ) {
-                            rqAlpha[i] = 0;
-                            rqScaleX[i] = 0;
-                            rqScaleY[i] = 0;
-                            rqX[i] = -10000;
-                            rqY[i] = -10000;
+                            rqAlpha[out] = 0;
+                            rqScaleX[out] = 0;
+                            rqScaleY[out] = 0;
+                            rqX[out] = -10000;
+                            rqY[out] = -10000;
                         } else {
                             const adx = dx < 0 ? -dx : dx;
                             const ady = dy < 0 ? -dy : dy;
@@ -1756,24 +2002,24 @@ class PreRenderWorker extends AbstractWorker {
                             const min = adx > ady ? ady : adx;
                             const lengthApprox = 0.96 * max + 0.4 * min;
 
-                            rqX[i] = (startX + currX) * 0.5;
-                            rqY[i] = (startY + currY) * 0.5;
-                            rqScaleX[i] = lengthApprox / 10;
-                            rqScaleY[i] = bulletTrailWidth[idx];
-                            rqRotation[i] = bulletAngle[idx];
-                            rqAlpha[i] = bulletAlpha[idx] * 0.9;
-                            rqTint[i] = 0xffffff;
+                            rqX[out] = (startX + currX) * 0.5;
+                            rqY[out] = (startY + currY) * 0.5;
+                            rqScaleX[out] = lengthApprox / 10;
+                            rqScaleY[out] = bulletTrailWidth[idx];
+                            rqRotation[out] = bulletAngle[idx];
+                            rqAlpha[out] = bulletAlpha[idx] * 0.9;
+                            rqTint[out] = 0xffffff;
                         }
                     }
-                    rqTextureId[i] = bulletTrailTextureId;
-                    rqAnchorX[i] = 0.5;
-                    rqAnchorY[i] = 0.5;
-                    rqType[i] = 5;
-                    rqEntityIndex[i] = -1;
+                    rqTextureId[out] = bulletTrailTextureId;
+                    rqAnchorX[out] = 0.5;
+                    rqAnchorY[out] = 0.5;
+                    rqType[out] = 5;
+                    rqEntityIndex[out] = -1;
                 }
             }
 
-            ref.count[0] = layerCount;
+            ref.count[0] = writeCount;
             collector.count = 0;
         }
     }

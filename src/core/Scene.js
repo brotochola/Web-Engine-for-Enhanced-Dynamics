@@ -7,6 +7,7 @@ import { Transform } from '../components/Transform.js';
 import { RigidBody } from '../components/RigidBody.js';
 import { Collider } from '../components/Collider.js';
 import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { AdobeAnimComponent } from '../components/AdobeAnimComponent.js';
 import { ParticleComponent } from '../components/ParticleComponent.js';
 import { DecorationComponent } from '../components/DecorationComponent.js';
 import { BulletComponent } from '../components/BulletComponent.js';
@@ -19,6 +20,8 @@ import { LightOccluder } from '../components/LightOccluder.js';
 import { CameraInOutListener } from '../components/CameraInOutListener.js';
 import { CollisionListener } from '../components/CollisionListener.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
+import { AdobeAnimRegistry } from './AdobeAnimRegistry.js';
+import { AdobeAnimateCompiler } from './AdobeAnimateCompiler.js';
 import {
   setupWorkerCommunication,
   seededRandom,
@@ -221,6 +224,7 @@ class Scene {
       RigidBody: { ComponentClass: RigidBody },
       Collider: { ComponentClass: Collider },
       SpriteRenderer: { ComponentClass: SpriteRenderer },
+      AdobeAnimComponent: { ComponentClass: AdobeAnimComponent },
       LightEmitter: { ComponentClass: LightEmitter },
       ShadowCaster: { ComponentClass: ShadowCaster },
       FlashComponent: { ComponentClass: FlashComponent },
@@ -234,6 +238,7 @@ class Scene {
     RigidBody.componentId = this.nextComponentId++;
     Collider.componentId = this.nextComponentId++;
     SpriteRenderer.componentId = this.nextComponentId++;
+    AdobeAnimComponent.componentId = this.nextComponentId++;
     LightEmitter.componentId = this.nextComponentId++;
     ShadowCaster.componentId = this.nextComponentId++;
     FlashComponent.componentId = this.nextComponentId++;
@@ -881,6 +886,7 @@ class Scene {
     window.Sun = Sun;
     window.TileMap = TileMap;
     window.SpriteSheetRegistry = SpriteSheetRegistry;
+    window.AdobeAnimRegistry = AdobeAnimRegistry;
     window.Mouse = Mouse;
     window.Flash = Flash;
     window.NavGrid = NavGrid;
@@ -1648,13 +1654,79 @@ class Scene {
     }
   }
 
+  async prepareAdobeAnimateAssets(adobeConfigs = {}) {
+    const compiledAssets = {};
+    const spritesheetConfigs = {};
+
+    for (const [assetName, config] of Object.entries(adobeConfigs)) {
+      try {
+        const [atlasResponse, animationResponse, image] = await Promise.all([
+          fetch(config.atlas),
+          fetch(config.animation),
+          SpriteSheetRegistry._loadImage(config.png),
+        ]);
+
+        if (!atlasResponse.ok) {
+          throw new Error(`Failed to load Adobe atlas JSON: ${config.atlas}`);
+        }
+        if (!animationResponse.ok) {
+          throw new Error(`Failed to load Adobe animation JSON: ${config.animation}`);
+        }
+
+        const [atlasData, animationData] = await Promise.all([
+          atlasResponse.json(),
+          animationResponse.json(),
+        ]);
+
+        spritesheetConfigs[assetName] = {
+          jsonData: AdobeAnimateCompiler.buildAtlasSpritesheetJson(atlasData),
+          img: image,
+        };
+        compiledAssets[assetName] = AdobeAnimateCompiler.compile(
+          assetName,
+          animationData,
+          atlasData
+        );
+      } catch (error) {
+        console.error(`❌ Failed to prepare Adobe Animate asset "${assetName}":`, error);
+      }
+    }
+
+    return { compiledAssets, spritesheetConfigs };
+  }
+
+  finalizeAdobeAnimateAssets(compiledAssets = {}) {
+    AdobeAnimRegistry.clearForSceneUnload();
+    this.loadedAdobeAnimateAssets = {};
+
+    for (const [assetName, compiledAsset] of Object.entries(compiledAssets)) {
+      const finalized = AdobeAnimateCompiler.finalizeTextureIds(
+        compiledAsset,
+        assetName,
+        SpriteSheetRegistry
+      );
+      const assetId = AdobeAnimRegistry.register(assetName, finalized);
+      this.loadedAdobeAnimateAssets[assetName] = {
+        id: assetId,
+        clipNames: finalized.clipNames,
+      };
+    }
+  }
+
   async preloadAssets(imageUrls, spritesheetConfigs = {}) {
     this.loadedTextures = {};
     this.loadedSpritesheets = {};
     this.loadedTilemaps = {}; // Store loaded tilemap data
+    this.loadedAdobeAnimateAssets = {};
 
     const textures = imageUrls?.textures || {};
-    const spritesheets = imageUrls?.spritesheets || {};
+    const sceneSpritesheets = imageUrls?.spritesheets || {};
+    const adobeAnimateAnimations = imageUrls?.AdobeAnimateAnimations || {};
+    const preparedAdobeAssets = await this.prepareAdobeAnimateAssets(adobeAnimateAnimations);
+    const spritesheets = {
+      ...sceneSpritesheets,
+      ...preparedAdobeAssets.spritesheetConfigs,
+    };
     const assetsToLoad = {
       ...textures,
       spritesheets,
@@ -1684,6 +1756,8 @@ class Scene {
       for (const [sheetName, proxyData] of Object.entries(bigAtlas.proxySheets)) {
         SpriteSheetRegistry.registerProxy(sheetName, proxyData);
       }
+
+      this.finalizeAdobeAnimateAssets(preparedAdobeAssets.compiledAssets);
 
       this.bigAtlasProxySheets = bigAtlas.proxySheets;
       this.bigAtlasCanvas = bigAtlas.canvas;
@@ -2203,6 +2277,7 @@ class Scene {
       componentPools: componentPoolsInfo,
       keyIndexMap: this.createKeyIndexMap(),
       spritesheetMetadata: SpriteSheetRegistry.serialize(),
+      adobeAnimateMetadata: AdobeAnimRegistry.serialize(),
       maxParticles: this.config.particle.maxParticles,
       particleFreeList: this.buffers.particleFreeList || null,
       particleFreeListTop: this.buffers.particleFreeListTop || null,
@@ -2929,6 +3004,7 @@ class Scene {
     DecorationPool.reset();
     BulletPool.reset();
     SpriteSheetRegistry.clearForSceneUnload();
+    AdobeAnimRegistry.clearForSceneUnload();
 
     // Clear registered classes for next scene
     this.registeredClasses = [];
