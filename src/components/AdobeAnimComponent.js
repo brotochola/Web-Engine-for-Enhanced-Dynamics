@@ -2,6 +2,8 @@ import { Component } from '../core/Component.js';
 import { AdobeAnimRegistry } from '../core/AdobeAnimRegistry.js';
 
 export class AdobeAnimComponent extends Component {
+  static _emptyOptions = Object.freeze({});
+
   static ARRAY_SCHEMA = {
     active: Uint8Array,
     assetId: Uint16Array,
@@ -87,31 +89,29 @@ export class AdobeAnimComponent extends Component {
     AdobeAnimComponent.applyClipBounds(this.index);
   }
 
-  setAsset(assetName, clipName = null, options = {}) {
+  setAsset(assetName, clipName = null, options) {
+    const o = options || AdobeAnimComponent._emptyOptions;
+    const i = this.index;
     const assetId = AdobeAnimRegistry.getAssetId(assetName);
-    AdobeAnimComponent.assetId[this.index] = assetId;
-    AdobeAnimComponent.time[this.index] = 0;
-    AdobeAnimComponent.playbackRate[this.index] = options.playbackRate ?? 1;
-    AdobeAnimComponent.loop[this.index] = options.loop === false ? 0 : 1;
-    AdobeAnimComponent.playing[this.index] = options.playing === false ? 0 : 1;
-    AdobeAnimComponent.scaleX[this.index] = options.scaleX ?? AdobeAnimComponent.scaleX[this.index] ?? 1;
-    AdobeAnimComponent.scaleY[this.index] = options.scaleY ?? AdobeAnimComponent.scaleY[this.index] ?? 1;
-    AdobeAnimComponent.anchorX[this.index] =
-      options.anchorX ?? (Number.isFinite(AdobeAnimComponent.anchorX[this.index]) ? AdobeAnimComponent.anchorX[this.index] : Number.NaN);
-    AdobeAnimComponent.anchorY[this.index] =
-      options.anchorY ?? (Number.isFinite(AdobeAnimComponent.anchorY[this.index]) ? AdobeAnimComponent.anchorY[this.index] : Number.NaN);
-    AdobeAnimComponent.rotation[this.index] = options.rotation ?? AdobeAnimComponent.rotation[this.index] ?? 0;
-    AdobeAnimComponent.alpha[this.index] = options.alpha ?? AdobeAnimComponent.alpha[this.index] ?? 1;
-    AdobeAnimComponent.tint[this.index] = options.tint ?? AdobeAnimComponent.tint[this.index] ?? 0xffffff;
-    AdobeAnimComponent.renderVisible[this.index] = options.visible === false ? 0 : 1;
-    AdobeAnimComponent.layerId[this.index] = options.layerId ?? AdobeAnimComponent.layerId[this.index] ?? 0;
+    AdobeAnimComponent.assetId[i] = assetId;
+    AdobeAnimComponent.time[i] = 0;
+    AdobeAnimComponent.playbackRate[i] = o.playbackRate ?? 1;
+    AdobeAnimComponent.loop[i] = o.loop === false ? 0 : 1;
+    AdobeAnimComponent.playing[i] = o.playing === false ? 0 : 1;
+    AdobeAnimComponent.scaleX[i] = o.scaleX ?? AdobeAnimComponent.scaleX[i] ?? 1;
+    AdobeAnimComponent.scaleY[i] = o.scaleY ?? AdobeAnimComponent.scaleY[i] ?? 1;
+    AdobeAnimComponent.anchorX[i] =
+      o.anchorX ?? (Number.isFinite(AdobeAnimComponent.anchorX[i]) ? AdobeAnimComponent.anchorX[i] : Number.NaN);
+    AdobeAnimComponent.anchorY[i] =
+      o.anchorY ?? (Number.isFinite(AdobeAnimComponent.anchorY[i]) ? AdobeAnimComponent.anchorY[i] : Number.NaN);
+    AdobeAnimComponent.rotation[i] = o.rotation ?? AdobeAnimComponent.rotation[i] ?? 0;
+    AdobeAnimComponent.alpha[i] = o.alpha ?? AdobeAnimComponent.alpha[i] ?? 1;
+    AdobeAnimComponent.tint[i] = o.tint ?? AdobeAnimComponent.tint[i] ?? 0xffffff;
+    AdobeAnimComponent.renderVisible[i] = o.visible === false ? 0 : 1;
+    AdobeAnimComponent.layerId[i] = o.layerId ?? AdobeAnimComponent.layerId[i] ?? 0;
 
-    let nextClipId = 0;
-    if (clipName) {
-      nextClipId = AdobeAnimRegistry.getClipId(assetId, clipName);
-    }
-    AdobeAnimComponent.clipId[this.index] = nextClipId;
-    AdobeAnimComponent.applyClipBounds(this.index);
+    AdobeAnimComponent.clipId[i] = clipName ? AdobeAnimRegistry.getClipId(assetId, clipName) : 0;
+    AdobeAnimComponent.applyClipBounds(i);
     return this;
   }
 

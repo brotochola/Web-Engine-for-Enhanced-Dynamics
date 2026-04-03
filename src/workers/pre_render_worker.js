@@ -134,6 +134,21 @@ class PreRenderWorker extends AbstractWorker {
         this._querySpriteRenderer = null;
         this._queryAdobeAnim = null;
 
+        // Per-frame cached query results (avoids duplicate queryActiveEntities calls)
+        this._frameAdobeEntities = null;
+        // Per-frame cached camera bounds (avoids redundant calculateCameraBounds calls)
+        this._frameCameraBoundsValid = false;
+
+        // Pre-allocated result object for _resolveAdobeFrameIndex (avoids per-entity alloc)
+        this._adobeFrameResult = { asset: null, clipId: 0, frameIndex: 0 };
+
+        // Pre-allocated ref for _emitAdobePieces (avoids per-frame alloc in buildRenderQueue)
+        this._emitRef = {
+            x: null, y: null, scaleX: null, scaleY: null,
+            rotation: null, alpha: null, tint: null, textureId: null,
+            anchorX: null, anchorY: null, type: null, entityIndex: null,
+        };
+
         // Flash grid-query: scratch buffer for candidate shadow casters + dedup marker
         this._flashCandidateBuffer = null;
         this._flashDedupMarker = null;
@@ -650,6 +665,11 @@ class PreRenderWorker extends AbstractWorker {
             this._decorationZoomAlpha = (zoom - this.decorationHideZoom) / (this.decorationFadeStartZoom - this.decorationHideZoom);
         }
 
+        // Cache per-frame camera bounds and adobe entity query (avoids redundant recomputation)
+        this._frameCameraBoundsValid = this.cameraData !== null;
+        if (this._frameCameraBoundsValid) this.calculateCameraBounds();
+        this._frameAdobeEntities = this.queryActiveEntities(this._queryAdobeAnim || [AdobeAnimComponent]);
+
         this.advanceAdobeAnimations(deltaTime);
 
         // Collect visible renderables for render queue (entities + sun shadows fused in one pass)
@@ -943,7 +963,7 @@ class PreRenderWorker extends AbstractWorker {
         const time = AdobeAnimComponent.time;
         const loop = AdobeAnimComponent.loop;
 
-        const adobeEntities = this.queryActiveEntities(this._queryAdobeAnim || [AdobeAnimComponent]);
+        const adobeEntities = this._frameAdobeEntities;
         if (!adobeEntities || adobeEntities.length === 0) return;
 
         for (let n = 0; n < adobeEntities.length; n++) {
@@ -972,10 +992,9 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     collectVisibleAdobeAnimations() {
-        if (this.globalEntityCount === 0 || !AdobeAnimComponent.isItOnScreen || !this.cameraData) return;
+        if (this.globalEntityCount === 0 || !AdobeAnimComponent.isItOnScreen || !this._frameCameraBoundsValid) return;
 
-        const cameraBounds = this.calculateCameraBounds();
-        if (!cameraBounds) return;
+        const cameraBounds = this._cameraBounds;
 
         const x = Transform.x;
         const y = Transform.y;
@@ -996,7 +1015,7 @@ class PreRenderWorker extends AbstractWorker {
         const screenMinY = cameraBounds.minY;
         const screenMaxY = cameraBounds.maxY;
 
-        const adobeEntities = this.queryActiveEntities(this._queryAdobeAnim || [AdobeAnimComponent]);
+        const adobeEntities = this._frameAdobeEntities;
         if (!adobeEntities || adobeEntities.length === 0) return;
 
         for (let idx = 0; idx < adobeEntities.length; idx++) {
@@ -1152,18 +1171,21 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     _resolveAdobeFrameIndex(entityIndex) {
+        const r = this._adobeFrameResult;
         const assetId = AdobeAnimComponent.assetId[entityIndex];
         const clipId = AdobeAnimComponent.clipId[entityIndex];
         const frameCount = AdobeAnimRegistry.getClipFrameCount(assetId, clipId);
         const frameRate = AdobeAnimRegistry.getClipFrameRate(assetId, clipId);
 
         if (frameCount <= 0 || frameRate <= 0) {
-            return { asset: null, clipId: 0, frameIndex: 0 };
+            r.asset = null; r.clipId = 0; r.frameIndex = 0;
+            return r;
         }
 
         const asset = AdobeAnimRegistry.getAsset(assetId);
         if (!asset) {
-            return { asset: null, clipId: 0, frameIndex: 0 };
+            r.asset = null; r.clipId = 0; r.frameIndex = 0;
+            return r;
         }
 
         const duration = frameCount / frameRate;
@@ -1184,7 +1206,8 @@ class PreRenderWorker extends AbstractWorker {
         if (frameIndex >= frameCount) frameIndex = frameCount - 1;
         if (frameIndex < 0) frameIndex = 0;
 
-        return { asset, clipId, frameIndex };
+        r.asset = asset; r.clipId = clipId; r.frameIndex = frameIndex;
+        return r;
     }
 
     _emitAdobePieces(ref, writeIndex, entityIndex) {
@@ -1444,20 +1467,11 @@ class PreRenderWorker extends AbstractWorker {
 
         const frameIndex = this.entityFrameIndex;
         const frameAccum = this.entityFrameAccumulator;
-        const ref = {
-            x: rqX,
-            y: rqY,
-            scaleX: rqScaleX,
-            scaleY: rqScaleY,
-            rotation: rqRotation,
-            alpha: rqAlpha,
-            tint: rqTint,
-            textureId: rqTextureId,
-            anchorX: rqAnchorX,
-            anchorY: rqAnchorY,
-            type: rqType,
-            entityIndex: rqEntityIndex,
-        };
+        const ref = this._emitRef;
+        ref.x = rqX; ref.y = rqY; ref.scaleX = rqScaleX; ref.scaleY = rqScaleY;
+        ref.rotation = rqRotation; ref.alpha = rqAlpha; ref.tint = rqTint;
+        ref.textureId = rqTextureId; ref.anchorX = rqAnchorX; ref.anchorY = rqAnchorY;
+        ref.type = rqType; ref.entityIndex = rqEntityIndex;
 
         let writeCount = 0;
 
@@ -1826,20 +1840,11 @@ class PreRenderWorker extends AbstractWorker {
             const rqAnchorY = ref.anchorY;
             const rqType = ref.type;
             const rqEntityIndex = ref.entityIndex;
-            const layerRef = {
-                x: rqX,
-                y: rqY,
-                scaleX: rqScaleX,
-                scaleY: rqScaleY,
-                rotation: rqRotation,
-                alpha: rqAlpha,
-                tint: rqTint,
-                textureId: rqTextureId,
-                anchorX: rqAnchorX,
-                anchorY: rqAnchorY,
-                type: rqType,
-                entityIndex: rqEntityIndex,
-            };
+            const layerRef = this._emitRef;
+            layerRef.x = rqX; layerRef.y = rqY; layerRef.scaleX = rqScaleX; layerRef.scaleY = rqScaleY;
+            layerRef.rotation = rqRotation; layerRef.alpha = rqAlpha; layerRef.tint = rqTint;
+            layerRef.textureId = rqTextureId; layerRef.anchorX = rqAnchorX; layerRef.anchorY = rqAnchorY;
+            layerRef.type = rqType; layerRef.entityIndex = rqEntityIndex;
 
             let writeCount = 0;
 

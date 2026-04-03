@@ -115,7 +115,7 @@ export class AdobeAnimateScene extends Scene {
     for (let i = 0; i < instances.length; i++) {
       const character = instances[i];
       if (character && character.active) {
-        character.playAdobeClip(clipName, true);
+        character.adobeAnimComponent.play(clipName, true);
       }
     }
   }

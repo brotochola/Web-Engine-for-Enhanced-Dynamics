@@ -59,28 +59,32 @@ export class AdobeAnimRegistry {
     return asset?.clipFrameRate?.[clipId] ?? 0;
   }
 
+  static _clipBoundsResult = { minX: 0, minY: 0, maxX: 0, maxY: 0, halfW: 0, halfH: 0 };
+
   static getClipBounds(assetOrId, clipId) {
     const asset = this.getAsset(assetOrId);
     if (!asset) return null;
-    return {
-      minX: asset.clipBoundsMinX?.[clipId] ?? 0,
-      minY: asset.clipBoundsMinY?.[clipId] ?? 0,
-      maxX: asset.clipBoundsMaxX?.[clipId] ?? 0,
-      maxY: asset.clipBoundsMaxY?.[clipId] ?? 0,
-      halfW: asset.clipBoundsHalfW?.[clipId] ?? 0,
-      halfH: asset.clipBoundsHalfH?.[clipId] ?? 0,
-    };
+    const r = this._clipBoundsResult;
+    r.minX = asset.clipBoundsMinX?.[clipId] ?? 0;
+    r.minY = asset.clipBoundsMinY?.[clipId] ?? 0;
+    r.maxX = asset.clipBoundsMaxX?.[clipId] ?? 0;
+    r.maxY = asset.clipBoundsMaxY?.[clipId] ?? 0;
+    r.halfW = asset.clipBoundsHalfW?.[clipId] ?? 0;
+    r.halfH = asset.clipBoundsHalfH?.[clipId] ?? 0;
+    return r;
   }
+
+  static _assetBoundsResult = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 
   static getAssetBounds(assetOrId) {
     const asset = this.getAsset(assetOrId);
     if (!asset) return null;
-    return {
-      minX: asset.assetBoundsMinX ?? 0,
-      minY: asset.assetBoundsMinY ?? 0,
-      maxX: asset.assetBoundsMaxX ?? 0,
-      maxY: asset.assetBoundsMaxY ?? 0,
-    };
+    const r = this._assetBoundsResult;
+    r.minX = asset.assetBoundsMinX ?? 0;
+    r.minY = asset.assetBoundsMinY ?? 0;
+    r.maxX = asset.assetBoundsMaxX ?? 0;
+    r.maxY = asset.assetBoundsMaxY ?? 0;
+    return r;
   }
 
   static serialize() {

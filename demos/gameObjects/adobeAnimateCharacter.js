@@ -58,7 +58,7 @@ export class AdobeAnimateCharacter extends GameObject {
     const scaleX = spawnConfig.scaleX ?? spawnConfig.scale ?? 1;
     const scaleY = spawnConfig.scaleY ?? spawnConfig.scale ?? 1;
 
-    this.setAdobeAnim(EntityClass.assetName, clipName, {
+    this.adobeAnimComponent.setAsset(EntityClass.assetName, clipName, {
       loop: spawnConfig.loop ?? true,
       playbackRate: spawnConfig.playbackRate ?? 1,
       scaleX,

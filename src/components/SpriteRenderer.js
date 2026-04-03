@@ -29,11 +29,6 @@ export class SpriteRenderer extends Component {
     anchorX: Float32Array, // Separate X anchor
     anchorY: Float32Array, // Separate Y anchor
 
-    // Rendering options
-
-    zOffset: Float32Array,
-    blendMode: Uint8Array, // Blend mode (0=normal, 1=add, 2=multiply, etc.)
-
     // Layer assignment (0 = default ENTITIES layer, set via GameObject.setLayer())
     layerId: Uint8Array,
 

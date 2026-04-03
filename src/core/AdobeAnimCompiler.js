@@ -340,7 +340,7 @@ function flattenSymbolFrame(symbolName, frameIndex, symbolsByName, atlasSprites,
   }
 }
 
-export class AdobeAnimateCompiler {
+export class AdobeAnimCompiler {
   static buildAtlasSpritesheetJson(atlasData) {
     const frames = {};
     const animations = {};

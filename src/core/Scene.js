@@ -21,7 +21,7 @@ import { CameraInOutListener } from '../components/CameraInOutListener.js';
 import { CollisionListener } from '../components/CollisionListener.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { AdobeAnimRegistry } from './AdobeAnimRegistry.js';
-import { AdobeAnimateCompiler } from './AdobeAnimateCompiler.js';
+import { AdobeAnimCompiler } from './AdobeAnimCompiler.js';
 import {
   setupWorkerCommunication,
   seededRandom,
@@ -1679,10 +1679,10 @@ class Scene {
         ]);
 
         spritesheetConfigs[assetName] = {
-          jsonData: AdobeAnimateCompiler.buildAtlasSpritesheetJson(atlasData),
+          jsonData: AdobeAnimCompiler.buildAtlasSpritesheetJson(atlasData),
           img: image,
         };
-        compiledAssets[assetName] = AdobeAnimateCompiler.compile(
+        compiledAssets[assetName] = AdobeAnimCompiler.compile(
           assetName,
           animationData,
           atlasData
@@ -1700,7 +1700,7 @@ class Scene {
     this.loadedAdobeAnimateAssets = {};
 
     for (const [assetName, compiledAsset] of Object.entries(compiledAssets)) {
-      const finalized = AdobeAnimateCompiler.finalizeTextureIds(
+      const finalized = AdobeAnimCompiler.finalizeTextureIds(
         compiledAsset,
         assetName,
         SpriteSheetRegistry

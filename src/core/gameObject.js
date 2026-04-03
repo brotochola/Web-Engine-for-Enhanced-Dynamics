@@ -925,22 +925,6 @@ export class GameObject {
     return this;
   }
 
-  setAdobeAnim(assetName, clipName = null, options = {}) {
-    if (!this._hasComponents.adobeAnimComponent) return this;
-    const adobeAnimComponent = this.adobeAnimComponent;
-    if (!adobeAnimComponent) return this;
-    adobeAnimComponent.setAsset(assetName, clipName, options);
-    return this;
-  }
-
-  playAdobeClip(clipName, loop = true) {
-    if (!this._hasComponents.adobeAnimComponent) return this;
-    const adobeAnimComponent = this.adobeAnimComponent;
-    if (!adobeAnimComponent) return this;
-    adobeAnimComponent.play(clipName, loop);
-    return this;
-  }
-
   /**
    * Set anchor point
    * @param {number} x - Anchor X (0-1)
