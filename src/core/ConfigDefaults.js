@@ -333,6 +333,7 @@ export const NAVIGATION_DEFAULTS = Object.freeze({
   maxFlowfields: 16,
   maxPaths: 64,
   maxPathLength: 128,
+  maxProcessingMsPerFrame: 2,
   noLimitFPS: true,
 });
 

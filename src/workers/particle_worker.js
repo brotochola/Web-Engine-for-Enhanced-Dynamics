@@ -26,7 +26,7 @@ import {
   screenBoundsToWorldBounds,
 } from '../core/utils.js';
 import { PARTICLE_STATS, createStatsWriter } from './workers-utils.js';
-import { PHYSICS_DEFAULTS } from '../core/ConfigDefaults.js';
+import { NAVIGATION_DEFAULTS, PHYSICS_DEFAULTS } from '../core/ConfigDefaults.js';
 import {
   getColliderBounds,
   getCellRange,
@@ -341,6 +341,8 @@ class ParticleWorker extends AbstractWorker {
     this.pathsComputedThisFrame = 0;
     this.cachedFlowfieldsCount = 0;
     this.cachedPathsCount = 0;
+    this.navigationMaxProcessingMsPerFrame = NAVIGATION_DEFAULTS.maxProcessingMsPerFrame;
+    this._processFlowfieldsFirst = true;
 
     // GC OPTIMIZATION: Pre-allocated DataView for nav header reads (avoids creating Uint32Array views)
     this._navDataView = null;
@@ -454,6 +456,9 @@ class ParticleWorker extends AbstractWorker {
       this.totalCells = gridInfo.totalCells;
       this.maxFlowfields = navConfig.maxFlowfields || 16;
       this.maxPaths = navConfig.maxPaths || 64;
+      this.navigationMaxProcessingMsPerFrame = Number.isFinite(navConfig.maxProcessingMsPerFrame) && navConfig.maxProcessingMsPerFrame > 0
+        ? navConfig.maxProcessingMsPerFrame
+        : NAVIGATION_DEFAULTS.maxProcessingMsPerFrame;
 
       this.scratch = new NavScratch(
         this.totalCells,
@@ -1348,20 +1353,39 @@ class ParticleWorker extends AbstractWorker {
     if (!this.navEnabled || !this.scratch) return;
 
     NavGrid._currentFrame = this.frameNumber;
+    const deadline = performance.now() + this.navigationMaxProcessingMsPerFrame;
 
-    // Process flowfield requests
-    let targetCell = this.flowfieldRequests.dequeue();
-    while (targetCell >= 0) {
-      this.computeFlowfield(targetCell);
-      this.flowfieldsComputedThisFrame++;
-      targetCell = this.flowfieldRequests.dequeue();
-    }
+    while (true) {
+      let processedRequest = false;
 
-    // Process path requests
-    while (this.pathRequests.dequeue(this._pathRequestTmp)) {
-      this.computePath(this._pathRequestTmp.fromCell, this._pathRequestTmp.toCell);
-      this.pathsComputedThisFrame++;
+      if (this._processFlowfieldsFirst) {
+        processedRequest = this._processNextFlowfieldRequest() || this._processNextPathRequest();
+      } else {
+        processedRequest = this._processNextPathRequest() || this._processNextFlowfieldRequest();
+      }
+
+      if (!processedRequest) break;
+
+      this._processFlowfieldsFirst = !this._processFlowfieldsFirst;
+      if (performance.now() >= deadline) break;
     }
+  }
+
+  _processNextFlowfieldRequest() {
+    const targetCell = this.flowfieldRequests.dequeue();
+    if (targetCell < 0) return false;
+
+    this.computeFlowfield(targetCell);
+    this.flowfieldsComputedThisFrame++;
+    return true;
+  }
+
+  _processNextPathRequest() {
+    if (!this.pathRequests.dequeue(this._pathRequestTmp)) return false;
+
+    this.computePath(this._pathRequestTmp.fromCell, this._pathRequestTmp.toCell);
+    this.pathsComputedThisFrame++;
+    return true;
   }
 
   _findExistingFlowfieldSlot(targetCell) {

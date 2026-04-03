@@ -38,8 +38,8 @@ export class CarScene extends WEED.Scene {
     // ========================================
 
     static config = {
-        worldWidth: 10000,
-        worldHeight: 5000,
+        worldWidth: 49968,
+        worldHeight: 9984,
         seed: 123456,
         debugUpdateInterval: 100,
 
@@ -182,13 +182,13 @@ export class CarScene extends WEED.Scene {
         },
         tilemaps: {
             roads_tilemap: {
-                json: '/demos/map_n_flowfield/tilemap.json',
+                json: '/demos/map_n_flowfield/tilemap2.json',
                 png: '/demos/img/tilemap/2.png',
             },
         },
         flowfields: {
-            sidewalks: '/demos/map_n_flowfield/sidewalks_flowfield.json',
-            roads: '/demos/map_n_flowfield/roads_flowfield.json',
+            sidewalks: '/demos/map_n_flowfield/sidewalks_flowfield_2.json',
+            roads: '/demos/map_n_flowfield/roads_flowfield_2.json',
 
         },
     };

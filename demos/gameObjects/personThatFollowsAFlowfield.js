@@ -19,7 +19,7 @@ export class PersonThatFollowsAFlowfield extends GameObject {
     // Flocking behavior (override Person defaults)
     static groupingForce = 1;
 
-    static defaultFriction = 0.005;
+    static defaultFriction = 0.05;
 
     static punchRangeSq = 30 ** 2; // Distance to start punching
     static punchDamage = 0.3; // Damage per punch
@@ -210,22 +210,24 @@ export class PersonThatFollowsAFlowfield extends GameObject {
         const myX = this.x;
         const myY = this.y;
 
+        const lookAhead = 10;
+
         for (let n = 0; n < this.neighborCount; n++) {
             const neighborIndex = this.getNeighbor(n);
 
             // Only avoid cars
             if (Transform.entityType[neighborIndex] !== CarPart.entityType) continue;
 
-            const carX = Transform.x[neighborIndex];
-            const carY = Transform.y[neighborIndex];
+            const carX = Transform.x[neighborIndex] + CarComponent.vx[neighborIndex] * lookAhead
+            const carY = Transform.y[neighborIndex] + CarComponent.vy[neighborIndex] * lookAhead
             const speed = RigidBody.speed[neighborIndex]
             const dx = myX - carX;
             const dy = myY - carY;
-            const dist = Math.hypot(dx, dy)
+            const dist2 = dx * dx + dy * dy;
 
-            const avoidStrength = 0.005 + speed * 0.002
+            const avoidStrength = 0.005 + speed * 0.5
             // Push away from car (normalized direction * strength)
-            this.addAcceleration((dx / dist) * avoidStrength, (dy / dist) * avoidStrength);
+            this.addAcceleration((dx / dist2) * avoidStrength, (dy / dist2) * avoidStrength);
         }
     }
 
@@ -252,7 +254,7 @@ export class PersonThatFollowsAFlowfield extends GameObject {
 
         // Flowfield navigation
         NavGrid.requestVectorFromStaticFlowfield(PersonThatFollowsAFlowfield.flowfieldName, this.x, this.y, _navVec);
-        const factor = 0.15;
+        const factor = 0.05;
         this.addAcceleration(_navVec.x * factor, _navVec.y * factor);
 
         // Separation: push away from neighbors that are too close

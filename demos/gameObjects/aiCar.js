@@ -19,6 +19,8 @@ export class AICar extends Car {
 
     static aiTurnStrength = 0.8;
     static aiForwardStrength = 0.9;
+    static aiForwardAlignmentThreshold = 0.15;
+    static aiBrakeForwardSpeedThreshold = 1;
     static flowfieldName = 'roads';
 
     tick(dtRatio) {
@@ -29,13 +31,14 @@ export class AICar extends Car {
         // Fallback to dynamic flowfield toward player if static flowfield has no direction here
         if (_navVec.x === 0 && _navVec.y === 0) {
             const player = PlayerCar.getFirstActiveInstance();
-            if (player && distanceSq2D(this.x, this.y, player.x, player.y) > 250000) {
-                NavGrid.requestVector(this.x, this.y, player.x, player.y, _navVec);
-            }
+            // if (player && distanceSq2D(this.x, this.y, player.x, player.y) > 250000) {
+            //     NavGrid.requestVector(this.x, this.y, player.x, player.y, _navVec);
+            // }
+            if (player && distanceSq2D(this.x, this.y, player.x, player.y) > 250000) this.accelerateTowards(player.x, player.y, 1);
         }
 
-        // const lenSq = _navVec.x * _navVec.x + _navVec.y * _navVec.y;
-        // if (lenSq < 0.01) return;
+        const lenSq = _navVec.x * _navVec.x + _navVec.y * _navVec.y;
+        if (lenSq < 0.01) return;
 
         const { frontIndices, backIndices } = this._getFrontBackParts();
         const frontActive = frontIndices.every(i => Transform.active[i]);
@@ -58,9 +61,15 @@ export class AICar extends Car {
 
         const alignment = Math.cos(angleDiff);
         const accel = this.carComponent.accelerationForce;
-        const forwardForce = alignment > 0
-            ? accel * this.constructor.aiForwardStrength
-            : -accel * this.constructor.aiForwardStrength * 0.6;
+        const brakeForce = this.carComponent.brakeForce;
+        const forwardSpeed = this.carComponent.vx * Math.cos(currentAngle) + this.carComponent.vy * Math.sin(currentAngle);
+
+        let forwardForce = 0;
+        if (alignment > this.constructor.aiForwardAlignmentThreshold) {
+            forwardForce = accel * this.constructor.aiForwardStrength;
+        } else if (forwardSpeed > this.constructor.aiBrakeForwardSpeedThreshold) {
+            forwardForce = -accel * brakeForce;
+        }
 
         this.applyForces(forwardForce, turnForce, dtRatio);
     }

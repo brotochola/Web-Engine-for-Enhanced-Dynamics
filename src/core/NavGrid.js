@@ -161,10 +161,11 @@ export class NavGrid {
   static _navWorkerPort = null;
 
   // Request deduplication (avoid spamming particle worker)
-  // Maps store targetCell/key -> version when request was made
-  // Allows re-requesting after grid invalidation (version changes)
+  // Maps store targetCell/key -> { version, requestedAt }
+  // Allows re-requesting after grid invalidation and stale-request recovery.
   static _pendingFlowfieldRequests = new Map();
   static _pendingPathRequests = new Map();
+  static _PENDING_REQUEST_RETRY_MS = 250;
 
   // Frame tracking for LRU
   static _currentFrame = 0;
@@ -425,6 +426,23 @@ export class NavGrid {
     this._staticFlowfields.clear();
   }
 
+  static _makePathRequestKey(fromCell, toCell) {
+    return `${fromCell}_${toCell}`;
+  }
+
+  static _isPendingRequestFresh(entry, currentVersion) {
+    if (!entry || typeof entry !== 'object') return false;
+    if (entry.version !== currentVersion) return false;
+    return (performance.now() - entry.requestedAt) < this._PENDING_REQUEST_RETRY_MS;
+  }
+
+  static _rememberPendingRequest(map, key, version) {
+    map.set(key, {
+      version,
+      requestedAt: performance.now(),
+    });
+  }
+
   // =========================================================
   // HOT Queries (per frame, O(1))
   // =========================================================
@@ -485,6 +503,7 @@ export class NavGrid {
     const slotIndex = this._findFlowfieldSlot(targetCell);
 
     if (slotIndex >= 0) {
+      this._pendingFlowfieldRequests.delete(targetCell);
       // Flowfield exists - sample vector at our current cell
       this._sampleFlowfield(slotIndex, currentCell, outVec);
       // Note: LRU is handled by particle_worker when it receives requests
@@ -524,10 +543,12 @@ export class NavGrid {
       return;
     }
 
+    const requestKey = this._makePathRequestKey(fromCell, toCell);
     // Find path slot
     const slotIndex = this._findPathSlot(fromCell, toCell);
 
     if (slotIndex >= 0) {
+      this._pendingPathRequests.delete(requestKey);
       // Path exists - get next cell
       const nextCell = this._getPathNextCell(slotIndex, fromCell);
       if (nextCell >= 0) {
@@ -578,9 +599,11 @@ export class NavGrid {
       return;
     }
 
+    const requestKey = this._makePathRequestKey(fromCell, toCell);
     const slotIndex = this._findPathSlot(fromCell, toCell);
 
     if (slotIndex >= 0) {
+      this._pendingPathRequests.delete(requestKey);
       // Path exists - copy to outPath
       this._copyPathToArray(slotIndex, outPath);
       // Note: LRU is handled by particle_worker when it receives requests
@@ -826,10 +849,8 @@ export class NavGrid {
   /**
    * Request flowfield calculation from particle worker
    *
-   * Uses version-based deduplication to avoid spamming requests.
-   * If a request was already made for this targetCell in the current
-   * version, we skip. After invalidate() bumps the version, requests
-   * will be sent again.
+   * Uses version-aware deduplication plus a short retry timeout to avoid
+   * spamming requests while still recovering from stale pending entries.
    *
    * @private
    */
@@ -841,13 +862,11 @@ export class NavGrid {
 
     // Get current version from SAB header
     const currentVersion = Atomics.load(this._headerView, 0);
-    const pendingVersion = this._pendingFlowfieldRequests.get(targetCell);
+    const pendingEntry = this._pendingFlowfieldRequests.get(targetCell);
+    if (this._isPendingRequestFresh(pendingEntry, currentVersion)) return;
 
-    // Skip if we already have a pending request from this version
-    if (pendingVersion === currentVersion) return;
-
-    // Send new request (either no pending, or version changed after invalidate)
-    this._pendingFlowfieldRequests.set(targetCell, currentVersion);
+    // Send new request (either no pending, version changed, or pending went stale)
+    this._rememberPendingRequest(this._pendingFlowfieldRequests, targetCell, currentVersion);
     this._navWorkerPort.postMessage({
       type: 'REQUEST_FLOWFIELD',
       targetCell,
@@ -952,17 +971,15 @@ export class NavGrid {
   static _requestPath(fromCell, toCell) {
     if (!this._navWorkerPort) return;
 
-    const key = `${fromCell}_${toCell}`;
+    const key = this._makePathRequestKey(fromCell, toCell);
 
     // Get current version from SAB header
     const currentVersion = Atomics.load(this._headerView, 0);
-    const pendingVersion = this._pendingPathRequests.get(key);
+    const pendingEntry = this._pendingPathRequests.get(key);
+    if (this._isPendingRequestFresh(pendingEntry, currentVersion)) return;
 
-    // Skip if we already have a pending request from this version
-    if (pendingVersion === currentVersion) return;
-
-    // Send new request (either no pending, or version changed after invalidate)
-    this._pendingPathRequests.set(key, currentVersion);
+    // Send new request (either no pending, version changed, or pending went stale)
+    this._rememberPendingRequest(this._pendingPathRequests, key, currentVersion);
     this._navWorkerPort.postMessage({
       type: 'REQUEST_PATH',
       fromCell,
