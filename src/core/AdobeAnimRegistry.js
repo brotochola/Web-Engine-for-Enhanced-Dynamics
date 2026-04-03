@@ -72,6 +72,17 @@ export class AdobeAnimRegistry {
     };
   }
 
+  static getAssetBounds(assetOrId) {
+    const asset = this.getAsset(assetOrId);
+    if (!asset) return null;
+    return {
+      minX: asset.assetBoundsMinX ?? 0,
+      minY: asset.assetBoundsMinY ?? 0,
+      maxX: asset.assetBoundsMaxX ?? 0,
+      maxY: asset.assetBoundsMaxY ?? 0,
+    };
+  }
+
   static serialize() {
     const serializedAssets = {};
     for (const [name, asset] of this.assets) {
@@ -83,6 +94,10 @@ export class AdobeAnimRegistry {
         clipFrameStart: asset.clipFrameStart,
         clipFrameCount: asset.clipFrameCount,
         clipFrameRate: asset.clipFrameRate,
+        assetBoundsMinX: asset.assetBoundsMinX,
+        assetBoundsMinY: asset.assetBoundsMinY,
+        assetBoundsMaxX: asset.assetBoundsMaxX,
+        assetBoundsMaxY: asset.assetBoundsMaxY,
         clipBoundsMinX: asset.clipBoundsMinX,
         clipBoundsMinY: asset.clipBoundsMinY,
         clipBoundsMaxX: asset.clipBoundsMaxX,

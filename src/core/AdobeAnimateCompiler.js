@@ -66,6 +66,28 @@ function getFrameAtIndex(frames, frameIndex) {
   return frames[frames.length - 1] || null;
 }
 
+function inferRootClipName(rootLayer, layerIndex) {
+  const frames = rootLayer?.Frames || [];
+  let symbolName = null;
+
+  for (let frameIndex = 0; frameIndex < frames.length; frameIndex++) {
+    const elements = frames[frameIndex]?.elements || [];
+    for (let elementIndex = 0; elementIndex < elements.length; elementIndex++) {
+      const nextSymbolName = elements[elementIndex]?.SYMBOL_Instance?.SYMBOL_name;
+      if (!nextSymbolName) continue;
+      if (symbolName == null) {
+        symbolName = nextSymbolName;
+        continue;
+      }
+      if (symbolName !== nextSymbolName) {
+        return rootLayer?.Layer_name || symbolName || `clip_${layerIndex}`;
+      }
+    }
+  }
+
+  return symbolName || rootLayer?.Layer_name || `clip_${layerIndex}`;
+}
+
 function resolveInstanceFrameIndex(symbolInstance, relativeFrame, symbolDuration) {
   const firstFrame = symbolInstance?.firstFrame || 0;
   const loopMode = symbolInstance?.loop || '';
@@ -393,13 +415,17 @@ export class AdobeAnimateCompiler {
     const pieceAnchorX = [];
     const pieceAnchorY = [];
     const pieceInnerZ = [];
+    let assetMinX = Infinity;
+    let assetMinY = Infinity;
+    let assetMaxX = -Infinity;
+    let assetMaxY = -Infinity;
 
     for (let layerIndex = 0; layerIndex < rootLayers.length; layerIndex++) {
       const rootLayer = rootLayers[layerIndex];
       const rootFrames = rootLayer?.Frames || [];
       if (rootFrames.length === 0) continue;
 
-      const clipName = rootLayer.Layer_name || `clip_${layerIndex}`;
+      const clipName = inferRootClipName(rootLayer, layerIndex);
       const discreteFrameCount = getFramesVisualDuration(rootFrames, symbolsByName, symbolDurationCache, new Set());
       if (discreteFrameCount <= 0) continue;
 
@@ -526,6 +552,17 @@ export class AdobeAnimateCompiler {
       clipBoundsMaxY.push(clipMaxY);
       clipBoundsHalfW.push(Math.max(Math.abs(clipMinX), Math.abs(clipMaxX)));
       clipBoundsHalfH.push(Math.max(Math.abs(clipMinY), Math.abs(clipMaxY)));
+      if (clipMinX < assetMinX) assetMinX = clipMinX;
+      if (clipMinY < assetMinY) assetMinY = clipMinY;
+      if (clipMaxX > assetMaxX) assetMaxX = clipMaxX;
+      if (clipMaxY > assetMaxY) assetMaxY = clipMaxY;
+    }
+
+    if (!Number.isFinite(assetMinX)) {
+      assetMinX = 0;
+      assetMinY = 0;
+      assetMaxX = 0;
+      assetMaxY = 0;
     }
 
     return {
@@ -535,6 +572,10 @@ export class AdobeAnimateCompiler {
       clipFrameStart: Uint32Array.from(clipFrameStart),
       clipFrameCount: Uint16Array.from(clipFrameCount),
       clipFrameRate: Float32Array.from(clipFrameRate),
+      assetBoundsMinX: assetMinX,
+      assetBoundsMinY: assetMinY,
+      assetBoundsMaxX: assetMaxX,
+      assetBoundsMaxY: assetMaxY,
       clipBoundsMinX: Float32Array.from(clipBoundsMinX),
       clipBoundsMinY: Float32Array.from(clipBoundsMinY),
       clipBoundsMaxX: Float32Array.from(clipBoundsMaxX),

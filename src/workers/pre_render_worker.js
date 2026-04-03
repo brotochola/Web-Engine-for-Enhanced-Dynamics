@@ -1204,10 +1204,10 @@ class PreRenderWorker extends AbstractWorker {
         const pieceAnchorX = asset.pieceAnchorX;
         const pieceAnchorY = asset.pieceAnchorY;
         const textureIds = asset.pieceTextureId;
-        const clipBoundsMinX = asset.clipBoundsMinX;
-        const clipBoundsMinY = asset.clipBoundsMinY;
-        const clipBoundsMaxX = asset.clipBoundsMaxX;
-        const clipBoundsMaxY = asset.clipBoundsMaxY;
+        const assetBoundsMinX = asset.assetBoundsMinX;
+        const assetBoundsMinY = asset.assetBoundsMinY;
+        const assetBoundsMaxX = asset.assetBoundsMaxX;
+        const assetBoundsMaxY = asset.assetBoundsMaxY;
 
         const rootX = Transform.x[entityIndex];
         const rootY = Transform.y[entityIndex];
@@ -1222,16 +1222,15 @@ class PreRenderWorker extends AbstractWorker {
         const sin = Math.sin(rootRotation);
 
         const frameIndex = resolved.frameIndex;
-        const clipId = resolved.clipId;
         const absoluteFrame = (clipFrameStart?.[resolved.clipId] ?? 0) + frameIndex;
         const pieceCount = framePieceCount?.[absoluteFrame] ?? 0;
         const start = framePieceStart?.[absoluteFrame] ?? 0;
         const end = start + pieceCount;
         const maxItems = ref.textureId.length;
-        const minX = clipBoundsMinX?.[clipId] ?? 0;
-        const minY = clipBoundsMinY?.[clipId] ?? 0;
-        const maxX = clipBoundsMaxX?.[clipId] ?? 0;
-        const maxY = clipBoundsMaxY?.[clipId] ?? 0;
+        const minX = assetBoundsMinX ?? 0;
+        const minY = assetBoundsMinY ?? 0;
+        const maxX = assetBoundsMaxX ?? 0;
+        const maxY = assetBoundsMaxY ?? 0;
         const pivotX = minX + (maxX - minX) * rootAnchorX;
         const pivotY = minY + (maxY - minY) * rootAnchorY;
 

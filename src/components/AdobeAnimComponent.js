@@ -28,8 +28,7 @@ export class AdobeAnimComponent extends Component {
 
   static applyClipBounds(entityIndex) {
     const assetId = this.assetId?.[entityIndex] ?? 0;
-    const clipId = this.clipId?.[entityIndex] ?? 0;
-    const bounds = AdobeAnimRegistry.getClipBounds(assetId, clipId);
+    const bounds = AdobeAnimRegistry.getAssetBounds(assetId);
     if (!bounds) {
       this.boundsHalfW[entityIndex] = 0;
       this.boundsHalfH[entityIndex] = 0;
