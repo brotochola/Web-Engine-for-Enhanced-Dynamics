@@ -750,14 +750,16 @@ export class GameObject {
 
   /** Anchor X (0-1, 0.5 = center) - read-only, use setAnchor() */
   get anchorX() {
-    if (!this._hasComponents.SpriteRenderer) return 0.5;
-    return SpriteRenderer.anchorX[this.index];
+    if (this._hasComponents.SpriteRenderer) return SpriteRenderer.anchorX[this.index];
+    if (this._hasComponents.adobeAnim) return AdobeAnimComponent.anchorX[this.index];
+    return 0.5;
   }
 
   /** Anchor Y (0-1, 1.0 = bottom) - read-only, use setAnchor() */
   get anchorY() {
-    if (!this._hasComponents.SpriteRenderer) return 1.0;
-    return SpriteRenderer.anchorY[this.index];
+    if (this._hasComponents.SpriteRenderer) return SpriteRenderer.anchorY[this.index];
+    if (this._hasComponents.adobeAnim) return AdobeAnimComponent.anchorY[this.index];
+    return 1.0;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -952,10 +954,16 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setAnchor(x, y) {
-    if (!this._hasComponents.SpriteRenderer) return this;
-    SpriteRenderer.anchorX[this.index] = x;
-    SpriteRenderer.anchorY[this.index] = y;
-    SpriteRenderer.renderDirty[this.index] = 1;
+    if (this._hasComponents.SpriteRenderer) {
+      SpriteRenderer.anchorX[this.index] = x;
+      SpriteRenderer.anchorY[this.index] = y;
+      SpriteRenderer.renderDirty[this.index] = 1;
+    }
+    if (this._hasComponents.adobeAnim) {
+      AdobeAnimComponent.anchorX[this.index] = x;
+      AdobeAnimComponent.anchorY[this.index] = y;
+      AdobeAnimComponent.applyClipBounds(this.index);
+    }
     return this;
   }
 
@@ -1090,6 +1098,7 @@ export class GameObject {
    */
   addAcceleration(x, y) {
     if (this._hasComponents.RigidBody) {
+      RigidBody.sleeping[this.index] = 0;
       RigidBody.ax[this.index] += x;
       RigidBody.ay[this.index] += y;
     }
@@ -1955,6 +1964,8 @@ export class GameObject {
       AdobeAnimComponent.playing[i] = 1;
       AdobeAnimComponent.scaleX[i] = 1;
       AdobeAnimComponent.scaleY[i] = 1;
+      AdobeAnimComponent.anchorX[i] = Number.NaN;
+      AdobeAnimComponent.anchorY[i] = Number.NaN;
       AdobeAnimComponent.rotation[i] = 0;
       AdobeAnimComponent.alpha[i] = 1;
       AdobeAnimComponent.tint[i] = 0xffffff;

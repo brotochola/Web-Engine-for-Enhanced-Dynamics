@@ -1204,28 +1204,41 @@ class PreRenderWorker extends AbstractWorker {
         const pieceAnchorX = asset.pieceAnchorX;
         const pieceAnchorY = asset.pieceAnchorY;
         const textureIds = asset.pieceTextureId;
+        const clipBoundsMinX = asset.clipBoundsMinX;
+        const clipBoundsMinY = asset.clipBoundsMinY;
+        const clipBoundsMaxX = asset.clipBoundsMaxX;
+        const clipBoundsMaxY = asset.clipBoundsMaxY;
 
         const rootX = Transform.x[entityIndex];
         const rootY = Transform.y[entityIndex];
         const rootRotation = Transform.rotation[entityIndex] + AdobeAnimComponent.rotation[entityIndex];
         const rootScaleX = AdobeAnimComponent.scaleX[entityIndex];
         const rootScaleY = AdobeAnimComponent.scaleY[entityIndex];
+        const rootAnchorX = AdobeAnimComponent.anchorX[entityIndex];
+        const rootAnchorY = AdobeAnimComponent.anchorY[entityIndex];
         const rootAlpha = AdobeAnimComponent.alpha[entityIndex];
         const rootTint = AdobeAnimComponent.tint[entityIndex];
         const cos = Math.cos(rootRotation);
         const sin = Math.sin(rootRotation);
 
         const frameIndex = resolved.frameIndex;
+        const clipId = resolved.clipId;
         const absoluteFrame = (clipFrameStart?.[resolved.clipId] ?? 0) + frameIndex;
         const pieceCount = framePieceCount?.[absoluteFrame] ?? 0;
         const start = framePieceStart?.[absoluteFrame] ?? 0;
         const end = start + pieceCount;
         const maxItems = ref.textureId.length;
+        const minX = clipBoundsMinX?.[clipId] ?? 0;
+        const minY = clipBoundsMinY?.[clipId] ?? 0;
+        const maxX = clipBoundsMaxX?.[clipId] ?? 0;
+        const maxY = clipBoundsMaxY?.[clipId] ?? 0;
+        const pivotX = minX + (maxX - minX) * rootAnchorX;
+        const pivotY = minY + (maxY - minY) * rootAnchorY;
 
         let p = start;
         for (; p < end && writeIndex < maxItems; p++) {
-            const localX = pieceX[p] * rootScaleX;
-            const localY = pieceY[p] * rootScaleY;
+            const localX = (pieceX[p] - pivotX) * rootScaleX;
+            const localY = (pieceY[p] - pivotY) * rootScaleY;
 
             ref.x[writeIndex] = rootX + cos * localX - sin * localY;
             ref.y[writeIndex] = rootY + sin * localX + cos * localY;

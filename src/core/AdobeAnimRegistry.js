@@ -63,6 +63,10 @@ export class AdobeAnimRegistry {
     const asset = this.getAsset(assetOrId);
     if (!asset) return null;
     return {
+      minX: asset.clipBoundsMinX?.[clipId] ?? 0,
+      minY: asset.clipBoundsMinY?.[clipId] ?? 0,
+      maxX: asset.clipBoundsMaxX?.[clipId] ?? 0,
+      maxY: asset.clipBoundsMaxY?.[clipId] ?? 0,
       halfW: asset.clipBoundsHalfW?.[clipId] ?? 0,
       halfH: asset.clipBoundsHalfH?.[clipId] ?? 0,
     };
@@ -79,6 +83,10 @@ export class AdobeAnimRegistry {
         clipFrameStart: asset.clipFrameStart,
         clipFrameCount: asset.clipFrameCount,
         clipFrameRate: asset.clipFrameRate,
+        clipBoundsMinX: asset.clipBoundsMinX,
+        clipBoundsMinY: asset.clipBoundsMinY,
+        clipBoundsMaxX: asset.clipBoundsMaxX,
+        clipBoundsMaxY: asset.clipBoundsMaxY,
         clipBoundsHalfW: asset.clipBoundsHalfW,
         clipBoundsHalfH: asset.clipBoundsHalfH,
         framePieceStart: asset.framePieceStart,

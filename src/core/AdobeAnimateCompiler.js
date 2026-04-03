@@ -375,6 +375,10 @@ export class AdobeAnimateCompiler {
     const clipFrameStart = [];
     const clipFrameCount = [];
     const clipFrameRate = [];
+    const clipBoundsMinX = [];
+    const clipBoundsMinY = [];
+    const clipBoundsMaxX = [];
+    const clipBoundsMaxY = [];
     const clipBoundsHalfW = [];
     const clipBoundsHalfH = [];
     const framePieceStart = [];
@@ -516,6 +520,10 @@ export class AdobeAnimateCompiler {
         clipMaxY = 0;
       }
 
+      clipBoundsMinX.push(clipMinX);
+      clipBoundsMinY.push(clipMinY);
+      clipBoundsMaxX.push(clipMaxX);
+      clipBoundsMaxY.push(clipMaxY);
       clipBoundsHalfW.push(Math.max(Math.abs(clipMinX), Math.abs(clipMaxX)));
       clipBoundsHalfH.push(Math.max(Math.abs(clipMinY), Math.abs(clipMaxY)));
     }
@@ -527,6 +535,10 @@ export class AdobeAnimateCompiler {
       clipFrameStart: Uint32Array.from(clipFrameStart),
       clipFrameCount: Uint16Array.from(clipFrameCount),
       clipFrameRate: Float32Array.from(clipFrameRate),
+      clipBoundsMinX: Float32Array.from(clipBoundsMinX),
+      clipBoundsMinY: Float32Array.from(clipBoundsMinY),
+      clipBoundsMaxX: Float32Array.from(clipBoundsMaxX),
+      clipBoundsMaxY: Float32Array.from(clipBoundsMaxY),
       clipBoundsHalfW: Float32Array.from(clipBoundsHalfW),
       clipBoundsHalfH: Float32Array.from(clipBoundsHalfH),
       framePieceStart: Uint32Array.from(framePieceStart),

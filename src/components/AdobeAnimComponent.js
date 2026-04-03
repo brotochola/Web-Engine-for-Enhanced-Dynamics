@@ -12,6 +12,8 @@ export class AdobeAnimComponent extends Component {
     playing: Uint8Array,
     scaleX: Float32Array,
     scaleY: Float32Array,
+    anchorX: Float32Array,
+    anchorY: Float32Array,
     rotation: Float32Array,
     alpha: Float32Array,
     tint: Uint32Array,
@@ -28,8 +30,35 @@ export class AdobeAnimComponent extends Component {
     const assetId = this.assetId?.[entityIndex] ?? 0;
     const clipId = this.clipId?.[entityIndex] ?? 0;
     const bounds = AdobeAnimRegistry.getClipBounds(assetId, clipId);
-    this.boundsHalfW[entityIndex] = bounds?.halfW ?? 0;
-    this.boundsHalfH[entityIndex] = bounds?.halfH ?? 0;
+    if (!bounds) {
+      this.boundsHalfW[entityIndex] = 0;
+      this.boundsHalfH[entityIndex] = 0;
+      return;
+    }
+
+    const minX = bounds.minX ?? 0;
+    const minY = bounds.minY ?? 0;
+    const maxX = bounds.maxX ?? 0;
+    const maxY = bounds.maxY ?? 0;
+    const width = maxX - minX;
+    const height = maxY - minY;
+
+    let anchorX = this.anchorX[entityIndex];
+    let anchorY = this.anchorY[entityIndex];
+
+    if (!Number.isFinite(anchorX)) {
+      anchorX = width !== 0 ? (-minX) / width : 0;
+      this.anchorX[entityIndex] = anchorX;
+    }
+    if (!Number.isFinite(anchorY)) {
+      anchorY = height !== 0 ? (-minY) / height : 0;
+      this.anchorY[entityIndex] = anchorY;
+    }
+
+    const pivotX = minX + width * anchorX;
+    const pivotY = minY + height * anchorY;
+    this.boundsHalfW[entityIndex] = Math.max(Math.abs(minX - pivotX), Math.abs(maxX - pivotX));
+    this.boundsHalfH[entityIndex] = Math.max(Math.abs(minY - pivotY), Math.abs(maxY - pivotY));
   }
 
   get assetName() {
@@ -43,6 +72,22 @@ export class AdobeAnimComponent extends Component {
     ) || '';
   }
 
+  get anchorX() {
+    return AdobeAnimComponent.anchorX[this.index];
+  }
+  set anchorX(value) {
+    AdobeAnimComponent.anchorX[this.index] = value;
+    AdobeAnimComponent.applyClipBounds(this.index);
+  }
+
+  get anchorY() {
+    return AdobeAnimComponent.anchorY[this.index];
+  }
+  set anchorY(value) {
+    AdobeAnimComponent.anchorY[this.index] = value;
+    AdobeAnimComponent.applyClipBounds(this.index);
+  }
+
   setAsset(assetName, clipName = null, options = {}) {
     const assetId = AdobeAnimRegistry.getAssetId(assetName);
     AdobeAnimComponent.assetId[this.index] = assetId;
@@ -52,6 +97,10 @@ export class AdobeAnimComponent extends Component {
     AdobeAnimComponent.playing[this.index] = options.playing === false ? 0 : 1;
     AdobeAnimComponent.scaleX[this.index] = options.scaleX ?? AdobeAnimComponent.scaleX[this.index] ?? 1;
     AdobeAnimComponent.scaleY[this.index] = options.scaleY ?? AdobeAnimComponent.scaleY[this.index] ?? 1;
+    AdobeAnimComponent.anchorX[this.index] =
+      options.anchorX ?? (Number.isFinite(AdobeAnimComponent.anchorX[this.index]) ? AdobeAnimComponent.anchorX[this.index] : Number.NaN);
+    AdobeAnimComponent.anchorY[this.index] =
+      options.anchorY ?? (Number.isFinite(AdobeAnimComponent.anchorY[this.index]) ? AdobeAnimComponent.anchorY[this.index] : Number.NaN);
     AdobeAnimComponent.rotation[this.index] = options.rotation ?? AdobeAnimComponent.rotation[this.index] ?? 0;
     AdobeAnimComponent.alpha[this.index] = options.alpha ?? AdobeAnimComponent.alpha[this.index] ?? 1;
     AdobeAnimComponent.tint[this.index] = options.tint ?? AdobeAnimComponent.tint[this.index] ?? 0xffffff;

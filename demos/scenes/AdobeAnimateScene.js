@@ -7,10 +7,10 @@ const CLIPS = ['idle', 'running', 'jumping'];
 
 export class AdobeAnimateScene extends Scene {
   static config = {
-    worldWidth: 3600,
-    worldHeight: 2200,
+    worldWidth: 20600,
+    worldHeight: 15000,
     spatial: {
-      numberOfSpatialWorkers: 2,
+      numberOfSpatialWorkers: 1,
       cellSize: 128,
       maxNeighbors: 64,
       noLimitFPS: true,
@@ -21,6 +21,9 @@ export class AdobeAnimateScene extends Scene {
     physics: {
       noLimitFPS: true,
       gravity: { x: 0, y: 0 },
+      sleepThreshold: 999,
+      wakeUpThreshold: -1,
+      sleepDuration: 30,
     },
     particle: {
       noLimitFPS: true,
@@ -29,7 +32,8 @@ export class AdobeAnimateScene extends Scene {
     },
     renderer: {
       noLimitFPS: true,
-      maxVisibleRenderables: 12000,
+      maxVisibleRenderables: 100000,
+      ySorting: true,
     },
     lighting: {
       enabled: false,
@@ -46,7 +50,7 @@ export class AdobeAnimateScene extends Scene {
     },
   };
 
-  static entities = [[AdobeAnimateCharacter, 512]];
+  static entities = [[AdobeAnimateCharacter, 20000]];
 
   constructor(game) {
     super(game);
@@ -56,14 +60,28 @@ export class AdobeAnimateScene extends Scene {
   }
 
   create() {
-    this.spawnEntity(AdobeAnimateCharacter, {
-      x: this.config.worldWidth * 0.5,
-      y: this.config.worldHeight * 0.65,
-      clipName: 'running',
-      playbackRate: 1,
-      scaleX: 1,
-      scaleY: 1,
-    });
+
+    // Set up grid parameters
+    const totalCharacters = 10000;
+    const gridCols = Math.sqrt(totalCharacters);
+    const gridRows = gridCols
+    const spacingX = 50;
+    const spacingY = 50;
+    const startX = this.cameraFollowX
+    const startY = this.cameraFollowY
+
+    for (let i = 0; i < totalCharacters; i++) {
+      const col = i % gridCols;
+      const row = Math.floor(i / gridCols);
+      this.spawnEntity(AdobeAnimateCharacter, {
+        x: startX + col * spacingX,
+        y: startY + row * spacingY,
+        clipName: 'idle',
+        playbackRate: 1 + i * 0.001,
+        scaleX: 0.25,
+        scaleY: 0.25,
+      });
+    }
 
     Camera.centerOn(this.cameraFollowX, this.cameraFollowY);
     Camera.setZoom(1.4);
@@ -84,9 +102,9 @@ export class AdobeAnimateScene extends Scene {
     Camera.follow(this.cameraFollowX, this.cameraFollowY, 0.18);
     Camera.setZoom(Camera.zoom * (1 - Mouse.wheel * 0.08));
 
-    if (kb.one) this.setAllCharactersClip('idle', 'one');
-    if (kb.two) this.setAllCharactersClip('running', 'two');
-    if (kb.three) this.setAllCharactersClip('jumping', 'three');
+    // if (kb.j) this.setAllCharactersClip('idle', 'one');
+    // if (kb.two) this.setAllCharactersClip('running', 'two');
+    // if (kb.three) this.setAllCharactersClip('jumping', 'three');
   }
 
   setAllCharactersClip(clipName, keyId) {
