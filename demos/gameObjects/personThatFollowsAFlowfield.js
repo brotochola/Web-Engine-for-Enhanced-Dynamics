@@ -3,7 +3,7 @@ import { DIRECTION_DOWN, PersonComponent } from '../components/personComponent.j
 import { PersonAnimationFSM } from '../fsm/PersonAnimationFSM.js';
 import { LootableComponent } from '../components/lootableComponent.js';
 import { CarComponent } from '../components/carComponent.js';
-import { ParticleEmitter, SpriteSheetRegistry, SoundManager } from '../../src/index.js';
+import { ParticleEmitter, SpriteSheetRegistry, SoundManager, randomColor } from '../../src/index.js';
 import { CarPart } from './carPart.js';
 import { Car } from './car.js';
 

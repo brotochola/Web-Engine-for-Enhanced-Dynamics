@@ -47,6 +47,11 @@ export class AdobeAnimateScene extends Scene {
         animation: '/demos/img/adobe_blue_character/Animation.json',
         png: '/demos/img/adobe_blue_character/spritemap1.png',
       },
+      test: {
+        atlas: '/demos/fla/spritemap1.json',
+        animation: '/demos/fla/anim.json',
+        png: '/demos/fla/spritemap1.png',
+      },
     },
   };
 

@@ -30,11 +30,15 @@ export class AICar extends Car {
 
         // Fallback to dynamic flowfield toward player if static flowfield has no direction here
         if (_navVec.x === 0 && _navVec.y === 0) {
+
             const player = PlayerCar.getFirstActiveInstance();
-            // if (player && distanceSq2D(this.x, this.y, player.x, player.y) > 250000) {
-            //     NavGrid.requestVector(this.x, this.y, player.x, player.y, _navVec);
-            // }
-            if (player && distanceSq2D(this.x, this.y, player.x, player.y) > 250000) this.accelerateTowards(player.x, player.y, 1);
+            if (player) {
+                //   NavGrid.requestVector(this.x, this.y, player.x, player.y, _navVec);
+
+                _navVec.x = player.x - this.x
+                _navVec.y = player.y - this.y
+            }
+
         }
 
         const lenSq = _navVec.x * _navVec.x + _navVec.y * _navVec.y;

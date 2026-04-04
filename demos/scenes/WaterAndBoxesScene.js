@@ -152,7 +152,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
     this.cameraFollowX = Math.max(0, Math.min(this.cameraFollowX, this.config.worldWidth));
     this.cameraFollowY = Math.max(0, Math.min(this.cameraFollowY, this.config.worldHeight));
 
-    Camera.follow(this.cameraFollowX, this.cameraFollowY, 0.15);
+    Camera.follow(Mouse.x, Mouse.y, 0.15);
     Camera.setZoom(Camera.zoom * (1 - Mouse.wheel * 0.001));
 
     Layer.water.setUniform('uTime', time * 0.002);
