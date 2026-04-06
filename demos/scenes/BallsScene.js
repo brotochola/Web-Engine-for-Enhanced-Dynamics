@@ -15,6 +15,7 @@ export class BallsScene extends Scene {
   static config = {
     worldWidth: 4000,
     worldHeight: 5000,
+    seed: 123456,
 
     // Spatial hash grid configuration
     spatial: {
@@ -196,6 +197,7 @@ export class BallsScene extends Scene {
           y: 0.2 * this.config.worldHeight + this.rng() * this.config.worldHeight * 0.6,
           vx: 0,
           vy: 0,
+          // radius:20
         });
       }, i * 0.01)
 

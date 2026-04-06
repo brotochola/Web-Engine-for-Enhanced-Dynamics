@@ -111,7 +111,7 @@ class Scene {
     this.audioUrls = this.constructor.audios || [];
     this.loadedAudioNames = [];
 
-    this.seed = this.config.seed || Math.random();
+    this.seed = this.config.seed || 1
     this.rng = seededRandom(this.seed);
     // Make seeded random available globally for entity code
     globalThis.rng = this.rng;

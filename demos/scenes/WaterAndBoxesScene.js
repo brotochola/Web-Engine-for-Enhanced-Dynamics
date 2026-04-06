@@ -24,7 +24,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
     spatial: {
       cellSize: 128,
       maxNeighbors: 900,
-      noLimitFPS: true,
+      noLimitFPS: false,
       numberOfSpatialWorkers: 2,
       maxEntitiesPerCell: 256,
     },
@@ -34,14 +34,14 @@ export class WaterAndBoxesScene extends WEED.Scene {
     },
 
     particle: {
-      noLimitFPS: true,
+      noLimitFPS: false,
       maxParticles: 30000,
       decals: false,
     },
 
     physics: {
       subStepCount: 4,
-      noLimitFPS: true,
+      noLimitFPS: false,
       maxCollisionPairs: 100000,
       verletDamping: 0.997,
       boundaryElasticity: 0.1,
@@ -52,8 +52,12 @@ export class WaterAndBoxesScene extends WEED.Scene {
       sleepDuration: 9999999,
     },
 
+    preRender: {
+      noLimitFPS: false,
+    },
+
     renderer: {
-      noLimitFPS: true,
+      noLimitFPS: false,
       ySorting: false
     },
 
@@ -68,7 +72,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
       water: {
         zIndex: 4,             // Render above default ENTITIES layer (zIndex 3)
         blendMode: BLEND_MODES.NORMAL,     // Final display blend of the post-processed sprite
-        resolution: 0.33,         // Half-res RT for performance
+        resolution: 0.25,         // Half-res RT for performance
         maxItems: 50000,
         ySorting: false, // no need to sort water balls
         shader: {
@@ -152,7 +156,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
     this.cameraFollowX = Math.max(0, Math.min(this.cameraFollowX, this.config.worldWidth));
     this.cameraFollowY = Math.max(0, Math.min(this.cameraFollowY, this.config.worldHeight));
 
-    Camera.follow(Mouse.x, Mouse.y, 0.15);
+    Camera.follow(this.cameraFollowX, this.cameraFollowY, 0.15);
     Camera.setZoom(Camera.zoom * (1 - Mouse.wheel * 0.001));
 
     Layer.water.setUniform('uTime', time * 0.002);
