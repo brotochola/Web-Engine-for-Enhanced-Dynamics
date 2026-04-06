@@ -31,6 +31,15 @@ function getFramesVisualDuration(frames, symbolsByName, cache, visiting) {
   return timelineDuration > maxDuration ? timelineDuration : maxDuration;
 }
 
+function getTimelineVisualDuration(layers, symbolsByName, cache, visiting = new Set()) {
+  let maxDuration = getTimelineDurationFrames(layers);
+  for (let i = 0; i < layers.length; i++) {
+    const duration = getFramesVisualDuration(layers[i]?.Frames || [], symbolsByName, cache, visiting);
+    if (duration > maxDuration) maxDuration = duration;
+  }
+  return maxDuration;
+}
+
 function getSymbolVisualDuration(symbolName, symbolsByName, cache, visiting = new Set()) {
   if (!symbolName) return 0;
   if (cache.has(symbolName)) return cache.get(symbolName);
@@ -40,12 +49,7 @@ function getSymbolVisualDuration(symbolName, symbolsByName, cache, visiting = ne
 
   const symbol = symbolsByName.get(symbolName);
   const layers = symbol?.TIMELINE?.LAYERS || [];
-  let maxDuration = getTimelineDurationFrames(layers);
-
-  for (let i = 0; i < layers.length; i++) {
-    const duration = getFramesVisualDuration(layers[i]?.Frames || [], symbolsByName, cache, visiting);
-    if (duration > maxDuration) maxDuration = duration;
-  }
+  const maxDuration = getTimelineVisualDuration(layers, symbolsByName, cache, visiting);
 
   visiting.delete(symbolName);
   cache.set(symbolName, maxDuration);
@@ -66,27 +70,11 @@ function getFrameAtIndex(frames, frameIndex) {
   return frames[frames.length - 1] || null;
 }
 
-function inferRootClipName(rootLayer, layerIndex) {
-  const frames = rootLayer?.Frames || [];
-  let symbolName = null;
-
-  for (let frameIndex = 0; frameIndex < frames.length; frameIndex++) {
-    const elements = frames[frameIndex]?.elements || [];
-    for (let elementIndex = 0; elementIndex < elements.length; elementIndex++) {
-      const nextSymbolName = elements[elementIndex]?.SYMBOL_Instance?.SYMBOL_name;
-      if (!nextSymbolName) continue;
-      if (symbolName == null) {
-        symbolName = nextSymbolName;
-        continue;
-      }
-      if (symbolName !== nextSymbolName) {
-        return rootLayer?.Layer_name || symbolName || `clip_${layerIndex}`;
-      }
-    }
-  }
-
-  return symbolName || rootLayer?.Layer_name || `clip_${layerIndex}`;
-}
+const IDENTITY_AFFINE = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
+const SYMBOL_MATRIX_RESULT = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
+const LEAF_MATRIX_RESULT = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
+const DECOMPOSED_AFFINE_RESULT = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
+const PIECE_BOUNDS_RESULT = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 
 function resolveInstanceFrameIndex(symbolInstance, relativeFrame, symbolDuration) {
   const firstFrame = symbolInstance?.firstFrame || 0;
@@ -166,17 +154,17 @@ function buildSymbolMatrix(element) {
   const x = getPositionX(matrix);
   const y = getPositionY(matrix);
 
-  return {
-    a,
-    b,
-    c,
-    d,
-    // Animate symbol children are already authored in the symbol's local space.
-    // Applying the transformationPoint here explodes nested rigs apart because
-    // the leaf sprites also carry their own anchor/pivot information.
-    tx: x,
-    ty: y,
-  };
+  const result = SYMBOL_MATRIX_RESULT;
+  result.a = a;
+  result.b = b;
+  result.c = c;
+  result.d = d;
+  // Animate symbol children are already authored in the symbol's local space.
+  // Applying the transformationPoint here explodes nested rigs apart because
+  // the leaf sprites also carry their own anchor/pivot information.
+  result.tx = x;
+  result.ty = y;
+  return result;
 }
 
 function buildLeafMatrix(element) {
@@ -187,14 +175,14 @@ function buildLeafMatrix(element) {
   const scaleX = getScaleX(matrix);
   const scaleY = getScaleY(matrix);
 
-  return {
-    a: cos * scaleX,
-    b: sin * scaleX,
-    c: -sin * scaleY,
-    d: cos * scaleY,
-    tx: getPositionX(matrix),
-    ty: getPositionY(matrix),
-  };
+  const result = LEAF_MATRIX_RESULT;
+  result.a = cos * scaleX;
+  result.b = sin * scaleX;
+  result.c = -sin * scaleY;
+  result.d = cos * scaleY;
+  result.tx = getPositionX(matrix);
+  result.ty = getPositionY(matrix);
+  return result;
 }
 
 function decomposeAffine(matrix) {
@@ -204,13 +192,13 @@ function decomposeAffine(matrix) {
   const scaleY = determinant < 0 ? -scaleYAbs : scaleYAbs;
   const rotation = Math.atan2(matrix.b, matrix.a);
 
-  return {
-    x: matrix.tx,
-    y: matrix.ty,
-    rotation,
-    scaleX,
-    scaleY,
-  };
+  const result = DECOMPOSED_AFFINE_RESULT;
+  result.x = matrix.tx;
+  result.y = matrix.ty;
+  result.rotation = rotation;
+  result.scaleX = scaleX;
+  result.scaleY = scaleY;
+  return result;
 }
 
 function computePieceBounds(piece) {
@@ -226,31 +214,51 @@ function computePieceBounds(piece) {
   const right = left + width;
   const bottom = top + height;
 
-  const corners = [
-    [left, top],
-    [right, top],
-    [right, bottom],
-    [left, bottom],
-  ];
-
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
 
-  for (let i = 0; i < corners.length; i++) {
-    const corner = corners[i];
-    const x = corner[0] * piece.scaleX;
-    const y = corner[1] * piece.scaleY;
-    const worldX = piece.x + cos * x - sin * y;
-    const worldY = piece.y + sin * x + cos * y;
-    if (worldX < minX) minX = worldX;
-    if (worldX > maxX) maxX = worldX;
-    if (worldY < minY) minY = worldY;
-    if (worldY > maxY) maxY = worldY;
-  }
+  let x = left * piece.scaleX;
+  let y = top * piece.scaleY;
+  let worldX = piece.x + cos * x - sin * y;
+  let worldY = piece.y + sin * x + cos * y;
+  minX = maxX = worldX;
+  minY = maxY = worldY;
 
-  return { minX, minY, maxX, maxY };
+  x = right * piece.scaleX;
+  y = top * piece.scaleY;
+  worldX = piece.x + cos * x - sin * y;
+  worldY = piece.y + sin * x + cos * y;
+  if (worldX < minX) minX = worldX;
+  if (worldX > maxX) maxX = worldX;
+  if (worldY < minY) minY = worldY;
+  if (worldY > maxY) maxY = worldY;
+
+  x = right * piece.scaleX;
+  y = bottom * piece.scaleY;
+  worldX = piece.x + cos * x - sin * y;
+  worldY = piece.y + sin * x + cos * y;
+  if (worldX < minX) minX = worldX;
+  if (worldX > maxX) maxX = worldX;
+  if (worldY < minY) minY = worldY;
+  if (worldY > maxY) maxY = worldY;
+
+  x = left * piece.scaleX;
+  y = bottom * piece.scaleY;
+  worldX = piece.x + cos * x - sin * y;
+  worldY = piece.y + sin * x + cos * y;
+  if (worldX < minX) minX = worldX;
+  if (worldX > maxX) maxX = worldX;
+  if (worldY < minY) minY = worldY;
+  if (worldY > maxY) maxY = worldY;
+
+  const result = PIECE_BOUNDS_RESULT;
+  result.minX = minX;
+  result.minY = minY;
+  result.maxX = maxX;
+  result.maxY = maxY;
+  return result;
 }
 
 function getAtlasSpriteMap(atlasData) {
@@ -262,6 +270,141 @@ function getAtlasSpriteMap(atlasData) {
     map.set(sprite.name, sprite);
   }
   return map;
+}
+
+function appendSpriteInstancePiece(spriteInstance, atlasSprites, parentMatrix, parentAlpha, pieces, nextOrderRef) {
+  const spriteMeta = atlasSprites.get(spriteInstance.name);
+  if (!spriteMeta) return;
+
+  const combined = multiplyAffine(parentMatrix, buildLeafMatrix(spriteInstance));
+  const transform = decomposeAffine(combined);
+  const width = spriteMeta.w || 1;
+  const height = spriteMeta.h || 1;
+  const pivotX = spriteInstance.transformationPoint?.x || 0;
+  const pivotY = spriteInstance.transformationPoint?.y || 0;
+
+  pieces.push({
+    spriteName: spriteInstance.name,
+    x: transform.x,
+    y: transform.y,
+    rotation: transform.rotation,
+    scaleX: transform.scaleX || 1,
+    scaleY: transform.scaleY || 1,
+    alpha: parentAlpha * getElementAlpha(spriteInstance),
+    anchorX: width !== 0 ? pivotX / width : 0,
+    anchorY: height !== 0 ? pivotY / height : 0,
+    innerZ: nextOrderRef.value++,
+    width,
+    height,
+  });
+}
+
+function appendSymbolInstancePieces(
+  symbolInstance,
+  relativeFrame,
+  symbolsByName,
+  atlasSprites,
+  symbolDurationCache,
+  parentMatrix,
+  parentAlpha,
+  pieces,
+  nextOrderRef
+) {
+  const symbolMatrix = buildSymbolMatrix(symbolInstance);
+  const childDuration = getSymbolVisualDuration(
+    symbolInstance.SYMBOL_name,
+    symbolsByName,
+    symbolDurationCache
+  );
+  const childFrameIndex = resolveInstanceFrameIndex(
+    symbolInstance,
+    relativeFrame,
+    childDuration
+  );
+
+  flattenSymbolFrame(
+    symbolInstance.SYMBOL_name,
+    childFrameIndex,
+    symbolsByName,
+    atlasSprites,
+    multiplyAffine(parentMatrix, symbolMatrix),
+    parentAlpha * getElementAlpha(symbolInstance),
+    pieces,
+    nextOrderRef
+  );
+}
+
+function appendRootTimelineElements(
+  elements,
+  rootRelativeFrame,
+  symbolsByName,
+  atlasSprites,
+  symbolDurationCache,
+  pieces,
+  nextOrderRef
+) {
+  for (let elementIndex = 0; elementIndex < elements.length; elementIndex++) {
+    const element = elements[elementIndex];
+    const symbolInstance = element?.SYMBOL_Instance;
+    const spriteInstance = element?.ATLAS_SPRITE_instance;
+
+    if (symbolInstance?.SYMBOL_name) {
+      appendSymbolInstancePieces(
+        symbolInstance,
+        rootRelativeFrame,
+        symbolsByName,
+        atlasSprites,
+        symbolDurationCache,
+        IDENTITY_AFFINE,
+        1,
+        pieces,
+        nextOrderRef
+      );
+      continue;
+    }
+
+    if (spriteInstance?.name) {
+      appendSpriteInstancePiece(
+        spriteInstance,
+        atlasSprites,
+        IDENTITY_AFFINE,
+        1,
+        pieces,
+        nextOrderRef
+      );
+    }
+  }
+}
+
+function appendCompositeRootFrame(
+  rootLayers,
+  localFrame,
+  symbolsByName,
+  atlasSprites,
+  symbolDurationCache,
+  pieces,
+  nextOrderRef
+) {
+  for (let layerIndex = rootLayers.length - 1; layerIndex >= 0; layerIndex--) {
+    const rootFrames = rootLayers[layerIndex]?.Frames || [];
+    if (rootFrames.length === 0) continue;
+
+    const rootFrame = getFrameAtIndex(rootFrames, localFrame);
+    if (!rootFrame) continue;
+
+    const elements = rootFrame.elements || [];
+    const rootFrameStart = rootFrame.index || 0;
+    const rootRelativeFrame = localFrame - rootFrameStart;
+    appendRootTimelineElements(
+      elements,
+      rootRelativeFrame,
+      symbolsByName,
+      atlasSprites,
+      symbolDurationCache,
+      pieces,
+      nextOrderRef
+    );
+  }
 }
 
 function flattenSymbolFrame(symbolName, frameIndex, symbolsByName, atlasSprites, parentMatrix, parentAlpha, pieces, nextOrderRef) {
@@ -286,24 +429,14 @@ function flattenSymbolFrame(symbolName, frameIndex, symbolsByName, atlasSprites,
       const spriteInstance = element?.ATLAS_SPRITE_instance;
 
       if (symbolInstance?.SYMBOL_name) {
-        const symbolMatrix = buildSymbolMatrix(symbolInstance);
-        const childDuration = getSymbolVisualDuration(
-          symbolInstance.SYMBOL_name,
-          symbolsByName,
-          symbolDurationCache
-        );
-        const childFrameIndex = resolveInstanceFrameIndex(
+        appendSymbolInstancePieces(
           symbolInstance,
           relativeFrame,
-          childDuration
-        );
-        flattenSymbolFrame(
-          symbolInstance.SYMBOL_name,
-          childFrameIndex,
           symbolsByName,
           atlasSprites,
-          multiplyAffine(parentMatrix, symbolMatrix),
-          parentAlpha * getElementAlpha(symbolInstance),
+          symbolDurationCache,
+          parentMatrix,
+          parentAlpha,
           pieces,
           nextOrderRef
         );
@@ -311,30 +444,14 @@ function flattenSymbolFrame(symbolName, frameIndex, symbolsByName, atlasSprites,
       }
 
       if (spriteInstance?.name) {
-        const spriteMeta = atlasSprites.get(spriteInstance.name);
-        if (!spriteMeta) continue;
-
-        const combined = multiplyAffine(parentMatrix, buildLeafMatrix(spriteInstance));
-        const transform = decomposeAffine(combined);
-        const width = spriteMeta.w || 1;
-        const height = spriteMeta.h || 1;
-        const pivotX = spriteInstance.transformationPoint?.x || 0;
-        const pivotY = spriteInstance.transformationPoint?.y || 0;
-
-        pieces.push({
-          spriteName: spriteInstance.name,
-          x: transform.x,
-          y: transform.y,
-          rotation: transform.rotation,
-          scaleX: transform.scaleX || 1,
-          scaleY: transform.scaleY || 1,
-          alpha: parentAlpha * getElementAlpha(spriteInstance),
-          anchorX: width !== 0 ? pivotX / width : 0,
-          anchorY: height !== 0 ? pivotY / height : 0,
-          innerZ: nextOrderRef.value++,
-          width,
-          height,
-        });
+        appendSpriteInstancePiece(
+          spriteInstance,
+          atlasSprites,
+          parentMatrix,
+          parentAlpha,
+          pieces,
+          nextOrderRef
+        );
       }
     }
   }
@@ -377,11 +494,12 @@ export class AdobeAnimCompiler {
   }
 
   static compile(assetName, animationData, atlasData) {
-    flattenSymbolFrame._durationCache = new Map();
     const atlasSprites = getAtlasSpriteMap(atlasData);
     const symbolEntries = animationData?.SYMBOL_DICTIONARY?.Symbols || [];
     const symbolsByName = new Map();
     const symbolDurationCache = new Map();
+    const durationVisiting = new Set();
+    flattenSymbolFrame._durationCache = symbolDurationCache;
     for (let i = 0; i < symbolEntries.length; i++) {
       const symbol = symbolEntries[i];
       if (symbol?.SYMBOL_name) {
@@ -391,9 +509,10 @@ export class AdobeAnimCompiler {
 
     const rootLayers = animationData?.ANIMATION?.TIMELINE?.LAYERS || [];
     const frameRate = animationData?.metadata?.framerate || 24;
+    const mainSymbolName = animationData?.ANIMATION?.SYMBOL_name || assetName;
 
     const clipNames = [];
-    const clipNameToId = {};
+    const clipNameToId = Object.create(null);
     const clipFrameStart = [];
     const clipFrameCount = [];
     const clipFrameRate = [];
@@ -419,15 +538,11 @@ export class AdobeAnimCompiler {
     let assetMinY = Infinity;
     let assetMaxX = -Infinity;
     let assetMaxY = -Infinity;
+    const piecesScratch = [];
+    const nextOrderRef = { value: 0 };
 
-    for (let layerIndex = 0; layerIndex < rootLayers.length; layerIndex++) {
-      const rootLayer = rootLayers[layerIndex];
-      const rootFrames = rootLayer?.Frames || [];
-      if (rootFrames.length === 0) continue;
-
-      const clipName = inferRootClipName(rootLayer, layerIndex);
-      const discreteFrameCount = getFramesVisualDuration(rootFrames, symbolsByName, symbolDurationCache, new Set());
-      if (discreteFrameCount <= 0) continue;
+    const emitClip = (clipName, discreteFrameCount, frameBuilder) => {
+      if (!clipName || discreteFrameCount <= 0 || clipNameToId[clipName] != null) return;
 
       clipNameToId[clipName] = clipNames.length;
       clipNames.push(clipName);
@@ -441,73 +556,20 @@ export class AdobeAnimCompiler {
       let clipMaxY = -Infinity;
 
       for (let localFrame = 0; localFrame < discreteFrameCount; localFrame++) {
-        const rootFrame = getFrameAtIndex(rootFrames, localFrame);
-        const elements = rootFrame?.elements || [];
-        const rootFrameStart = rootFrame?.index || 0;
-        const rootRelativeFrame = localFrame - rootFrameStart;
-        const pieces = [];
-        const nextOrderRef = { value: 0 };
-        const identity = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
-
-        for (let elementIndex = 0; elementIndex < elements.length; elementIndex++) {
-          const element = elements[elementIndex];
-          if (element?.SYMBOL_Instance?.SYMBOL_name) {
-            const symbolMatrix = buildSymbolMatrix(element.SYMBOL_Instance);
-            const childDuration = getSymbolVisualDuration(
-              element.SYMBOL_Instance.SYMBOL_name,
-              symbolsByName,
-              symbolDurationCache
-            );
-            const childFrameIndex = resolveInstanceFrameIndex(
-              element.SYMBOL_Instance,
-              rootRelativeFrame,
-              childDuration
-            );
-            flattenSymbolFrame(
-              element.SYMBOL_Instance.SYMBOL_name,
-              childFrameIndex,
-              symbolsByName,
-              atlasSprites,
-              multiplyAffine(identity, symbolMatrix),
-              getElementAlpha(element.SYMBOL_Instance),
-              pieces,
-              nextOrderRef
-            );
-          } else if (element?.ATLAS_SPRITE_instance?.name) {
-            const spriteMeta = atlasSprites.get(element.ATLAS_SPRITE_instance.name);
-            if (!spriteMeta) continue;
-            const transform = decomposeAffine(buildLeafMatrix(element.ATLAS_SPRITE_instance));
-            const width = spriteMeta.w || 1;
-            const height = spriteMeta.h || 1;
-            const pivotX = element.ATLAS_SPRITE_instance.transformationPoint?.x || 0;
-            const pivotY = element.ATLAS_SPRITE_instance.transformationPoint?.y || 0;
-            pieces.push({
-              spriteName: element.ATLAS_SPRITE_instance.name,
-              x: transform.x,
-              y: transform.y,
-              rotation: transform.rotation,
-              scaleX: transform.scaleX || 1,
-              scaleY: transform.scaleY || 1,
-              alpha: getElementAlpha(element.ATLAS_SPRITE_instance),
-              anchorX: width !== 0 ? pivotX / width : 0,
-              anchorY: height !== 0 ? pivotY / height : 0,
-              innerZ: nextOrderRef.value++,
-              width,
-              height,
-            });
-          }
-        }
+        piecesScratch.length = 0;
+        nextOrderRef.value = 0;
+        frameBuilder(localFrame);
 
         framePieceStart.push(pieceSpriteNames.length);
-        framePieceCount.push(pieces.length);
+        framePieceCount.push(piecesScratch.length);
 
         let frameMinX = Infinity;
         let frameMinY = Infinity;
         let frameMaxX = -Infinity;
         let frameMaxY = -Infinity;
 
-        for (let i = 0; i < pieces.length; i++) {
-          const piece = pieces[i];
+        for (let i = 0; i < piecesScratch.length; i++) {
+          const piece = piecesScratch[i];
           pieceSpriteNames.push(piece.spriteName);
           pieceX.push(piece.x);
           pieceY.push(piece.y);
@@ -526,7 +588,7 @@ export class AdobeAnimCompiler {
           if (bounds.maxY > frameMaxY) frameMaxY = bounds.maxY;
         }
 
-        if (pieces.length === 0) {
+        if (piecesScratch.length === 0) {
           frameMinX = 0;
           frameMinY = 0;
           frameMaxX = 0;
@@ -556,6 +618,50 @@ export class AdobeAnimCompiler {
       if (clipMinY < assetMinY) assetMinY = clipMinY;
       if (clipMaxX > assetMaxX) assetMaxX = clipMaxX;
       if (clipMaxY > assetMaxY) assetMaxY = clipMaxY;
+    };
+
+    durationVisiting.clear();
+    const mainClipFrameCount = getTimelineVisualDuration(
+      rootLayers,
+      symbolsByName,
+      symbolDurationCache,
+      durationVisiting
+    );
+    emitClip(mainSymbolName, mainClipFrameCount, (localFrame) => {
+      appendCompositeRootFrame(
+        rootLayers,
+        localFrame,
+        symbolsByName,
+        atlasSprites,
+        symbolDurationCache,
+        piecesScratch,
+        nextOrderRef
+      );
+    });
+
+    for (let i = 0; i < symbolEntries.length; i++) {
+      const symbolName = symbolEntries[i]?.SYMBOL_name;
+      if (!symbolName || symbolName === mainSymbolName) continue;
+
+      durationVisiting.clear();
+      const symbolFrameCount = getSymbolVisualDuration(
+        symbolName,
+        symbolsByName,
+        symbolDurationCache,
+        durationVisiting
+      );
+      emitClip(symbolName, symbolFrameCount, (localFrame) => {
+        flattenSymbolFrame(
+          symbolName,
+          localFrame,
+          symbolsByName,
+          atlasSprites,
+          IDENTITY_AFFINE,
+          1,
+          piecesScratch,
+          nextOrderRef
+        );
+      });
     }
 
     if (!Number.isFinite(assetMinX)) {
@@ -564,6 +670,8 @@ export class AdobeAnimCompiler {
       assetMaxX = 0;
       assetMaxY = 0;
     }
+
+    flattenSymbolFrame._durationCache = undefined;
 
     return {
       name: assetName,
