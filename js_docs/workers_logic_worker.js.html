@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: workers/logic_worker.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: workers/logic_worker.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>self.postMessage({
+  msg: 'log',
+  message: 'js loaded',
+  when: Date.now(),
+});
+// logic_worker.js - Calculates game logic using GameObject pattern
+// This worker runs independently, calculating accelerations for all entities
+
+// Import engine dependencies
+import { GameObject } from '../core/gameObject.js';
+import { Mouse } from '../core/Mouse.js';
+import Keyboard from '../core/Keyboard.js';
+import { Transform } from '../components/Transform.js';
+import { RigidBody } from '../components/RigidBody.js';
+
+import { SpriteRenderer } from '../components/SpriteRenderer.js';
+import { CameraInOutListener } from '../components/CameraInOutListener.js';
+import { CollisionListener } from '../components/CollisionListener.js';
+
+import { SpriteSheetRegistry } from '../core/SpriteSheetRegistry.js';
+
+import { AbstractWorker } from './AbstractWorker.js';
+
+import { LOGIC_STATS, createMultiWorkerStatsWriter } from './workers-utils.js';
+import { cantorUnpair, _cantorResult } from '../core/utils.js';
+
+// Note: Core engine classes (GameObject, Mouse, Keyboard, etc.) and components
+// (Transform, RigidBody, etc.) are now registered automatically by AbstractWorker
+// during initialization. Game-specific entity classes are loaded dynamically.
+
+/**
+ * LogicWorker - Handles game logic and AI for all entities
+ * Extends AbstractWorker for common worker functionality
+ */
+class LogicWorker extends AbstractWorker {
+  constructor(selfRef) {
+    super(selfRef);
+
+    // Logic worker needs to CREATE GameObject instances (all workers get scripts/components)
+    this.needsGameScripts = true;
+
+    // Game objects - one per entity
+    this.gameObjects = new Array(this.globalEntityCount).fill(null);
+
+    // Worker identification
+    this.workerIndex = 0; // Which worker am I? (0, 1, 2, ...)
+
+    // Multi-worker coordination
+    this.totalLogicWorkers = 1; // Total number of logic workers
+
+    // Performance tracking
+    this.activeEntityCount = 0; // Number of active entities this worker is processing
+    this.entitiesProcessedThisFrame = 0; // Track actual entities processed
+    this.systemsExecutedThisFrame = 0; // Track number of distinct update phases executed
+    this.frameStartTime = 0; // For timing diagnostics
+
+    // Collision tracking (Unity-style Enter/Stay/Exit)
+    this.collisionData = null; // SharedArrayBuffer for collision pairs from physics worker
+
+    // Optimized collision tracking using numeric keys instead of strings
+    // Uses Cantor pairing function: key = (a + b) * (a + b + 1) / 2 + b
+    // This eliminates string allocation and GC pressure
+    // Reverse lookups use cantorUnpair() - no Map needed (zero GC)
+    this.previousCollisions = new Set(); // Track collisions from last frame (numeric keys)
+    this.currentCollisions = new Set(); // Track collisions in current frame (numeric keys)
+
+    // Screen visibility tracking (for onScreenEnter/Exit lifecycle methods)
+    // Track previous frame's visibility state to detect transitions
+    this.previousScreenVisibility = new Uint8Array(0); // Will be sized in initialize()
+
+    // Collision listener per-type flags (indexed by entityType)
+    // Resolved once in createGameObjectInstances, never changes
+    this.collisionListenerByType = null; // Uint8Array sized to max entity types
+    this.anyTypeNeedsCollisions = false; // Scene-level kill switch
+
+    // ========================================
+    // TICK DECIMATION OPTIMIZATION
+    // ========================================
+    // Entity types are separated into two groups at initialization:
+    // - nonDecimatedTypes: tickInterval === 1 (most entities) → simple loop, zero overhead
+    // - decimatedTypes: tickInterval > 1 → full countdown logic
+    // This eliminates per-entity checks for the common case (no decimation)
+    this.nonDecimatedTypes = []; // Array of {EntityClass, activeList} for tickInterval === 1
+    this.decimatedTypes = [];    // Array of {EntityClass, activeList, tickInterval} for tickInterval > 1
+
+    // ========================================
+    // SPAWN/DESPAWN LIST UPDATE QUEUES
+    // ========================================
+    // List operations (activeEntities, perTypeActive, queries) are NOT thread-safe.
+    // Any worker can spawn/despawn (atomic freeList ops), but list updates are queued
+    // and processed by logic0 at the START of each frame (before any ticks).
+    // This eliminates race conditions in sorted list insertions/removals.
+    this.pendingSpawnListUpdates = [];   // [{entityIndex, entityType, EntityClass}, ...]
+    this.pendingDespawnListUpdates = []; // [{entityIndex, entityType, EntityClass}, ...]
+    this.receivedListUpdates = [];       // Batch updates received from other workers
+    /** @internal Reused by sendListUpdatesToLogic0 to avoid .map() allocation */
+    this._spawnSerializedBuffer = [];
+    this._despawnSerializedBuffer = [];
+  }
+
+  /**
+   * Initialize the logic worker (implementation of AbstractWorker.initialize)
+   * Sets up shared memory and creates GameObject instances
+   */
+  initialize(data) {
+    // Set worker index for identification
+    this.workerIndex = data.workerIndex || 0;
+
+    // Initialize stats buffer for writing metrics (strided access for multi-worker)
+    if (data.buffers.logicStats) {
+      this.stats = createMultiWorkerStatsWriter(
+        data.buffers.logicStats,
+        LOGIC_STATS,
+        this.workerIndex
+      );
+      console.log(`LOGIC WORKER ${this.workerIndex}: Stats buffer initialized`);
+    }
+
+    // Store key index mapping for Keyboard class
+    this.keyIndexMap = data.keyIndexMap || {};
+
+    // Deserialize spritesheet metadata for animation lookups
+    if (data.spritesheetMetadata) {
+      SpriteSheetRegistry.deserialize(data.spritesheetMetadata);
+
+      // Register proxy sheets for transparent lookups
+      if (data.bigAtlasProxySheets) {
+        for (const [sheetName, proxyData] of Object.entries(data.bigAtlasProxySheets)) {
+          SpriteSheetRegistry.registerProxy(sheetName, proxyData);
+        }
+        console.log(
+          `LOGIC WORKER ${this.workerIndex}: Registered ${Object.keys(data.bigAtlasProxySheets).length
+          } proxy sheets`
+        );
+      }
+
+      // console.log(
+      //   `LOGIC WORKER ${this.workerIndex}: Loaded ${
+      //     SpriteSheetRegistry.getSpritesheetNames().length
+      //   } spritesheets`
+      // );
+    }
+
+    // Get total logic workers count from config
+    this.totalLogicWorkers = data.config?.logic?.numberOfLogicWorkers || 1;
+
+    if (data.impactBuffer) {
+      this._impactCount = new Int32Array(data.impactBuffer, 0, 1);
+      this._impactData = new Float32Array(data.impactBuffer, 4, 384);
+    }
+
+    // console.log("LOGIC WORKER: Initializing with component system");
+
+    // Initialize collision buffer
+    if (data.buffers.collisionData) {
+      this.collisionData = new Int32Array(data.buffers.collisionData);
+      console.log('LOGIC WORKER: Collision callbacks enabled');
+    }
+
+    // Initialize screen visibility tracking array
+    this.previousScreenVisibility = new Uint8Array(data.globalEntityCount);
+    // Initialize to 0 (off-screen) - first frame will trigger onScreenEnter for visible entities
+    this.previousScreenVisibility.fill(0);
+    // console.log("LOGIC WORKER: Screen visibility tracking enabled");
+
+    // Note: Game-specific scripts and components are loaded automatically by AbstractWorker.initializeCommonBuffers()
+    // All entity classes and components are now available in the worker's global scope with SharedArrayBuffer connections
+    //
+    // Note: ParticleEmitter and DecorationPool are now initialized by AbstractWorker.initializeCommonBuffers()
+    // with shared free lists, enabling any worker to spawn particles/decorations
+
+    // Pre-allocate gameObjects array to keep V8 in dense/packed mode
+    // Without this, sparse indices cause V8 to switch to dictionary mode (hash table lookups)
+    this.gameObjects = new Array(this.globalEntityCount).fill(null);
+
+    // Create GameObject instances
+    this.createGameObjectInstances();
+
+    // Initialize Keyboard static class with input data (once, not every frame)
+    // Note: Mouse position/state is read from Mouse static class (SharedArrayBuffer)
+    Keyboard.initialize(this.inputData, this.keyIndexMap);
+
+    // console.log(
+    //   `LOGIC WORKER ${this.workerIndex}: Total ${this.globalEntityCount} GameObjects ready (job-based processing)`
+    // );
+    // console.log(
+    //   `LOGIC WORKER ${this.workerIndex}: Initialization complete, waiting for start signal...`
+    // );
+    // Note: Game loop will start when "start" message is received from main thread
+  }
+
+  /**
+   * Create GameObject instances for all registered entity classes - dynamically
+   * DENSE ALLOCATION: entityIndex === componentIndex for all components
+   */
+  createGameObjectInstances() {
+    const numTypes = this.registeredClasses.length;
+    this.collisionListenerByType = new Uint8Array(numTypes);
+
+    for (const classInfo of this.registeredClasses) {
+      const { name, poolSize, startIndex, endIndex, entityType } = classInfo;
+
+      const EntityClass = self[name]; // Get class by name from global scope
+
+      if (EntityClass) {
+        // Store metadata for spawning system
+        EntityClass.startIndex = startIndex;
+        EntityClass.poolSize = poolSize;
+        EntityClass.endIndex = endIndex;
+        EntityClass.entityType = entityType; // Auto-assigned entity type ID
+
+        // Pre-computed typed array of all entity indices for this class
+        // Uses Uint16 since max entities = 65535 (fits in 16 bits)
+        EntityClass.entityIndices = new Uint16Array(poolSize);
+        for (let j = 0; j &lt; poolSize; j++) {
+          EntityClass.entityIndices[j] = startIndex + j;
+        }
+
+        // CRITICAL: Initialize instances array for THIS class (not inherited from GameObject)
+        // Without this, all entity types share GameObject.instances causing spawn bugs
+        if (!EntityClass.hasOwnProperty('instances')) {
+          EntityClass.instances = [];
+        }
+
+        GameObject._assignComponentClassMap(EntityClass);
+        const components = GameObject._collectComponents(EntityClass);
+        let needsScreenCallbacks = false;
+        let needsCollisionCallbacks = false;
+        for (const ComponentClass of components) {
+          if (ComponentClass === CameraInOutListener) needsScreenCallbacks = true;
+          if (ComponentClass === CollisionListener) needsCollisionCallbacks = true;
+        }
+
+        if (needsCollisionCallbacks) {
+          this.collisionListenerByType[entityType] = 1;
+        }
+
+        // Special initialization for internal engine classes
+        // Flash needs its initialize() called with the pool size
+        // Note: Flash uses Camera class directly for off-screen culling
+        if (name === 'Flash' &amp;&amp; EntityClass.initialize) {
+          EntityClass.initialize(poolSize);
+        }
+
+        for (let i = 0; i &lt; poolSize; i++) {
+          const index = startIndex + i;
+
+          // DENSE ALLOCATION: entityIndex === componentIndex for all components
+          // Create instance - GameObject will use entity index for all component access
+          const instance = new EntityClass(index, this.config, this);
+          this.gameObjects[index] = instance;
+
+          // Call start() lifecycle method (one-time initialization)
+          if (instance.start) {
+            instance.start();
+          }
+        }
+
+        // ========================================
+        // TICK DECIMATION: Classify entity type
+        // ========================================
+        // Separate into decimated vs non-decimated for optimized update loops
+        // Only classify if this type has entities (poolSize > 0)
+        if (poolSize > 0) {
+          const tickInterval = EntityClass.tickInterval || 1;
+
+          if (tickInterval > 1 &amp;&amp; GameObject.nextTick) {
+            // Decimated type: needs full countdown logic
+            this.decimatedTypes.push({
+              EntityClass,
+              activeList: EntityClass._activeList,
+              tickInterval,
+              startIndex,
+              needsScreenCallbacks,
+            });
+          } else {
+            // Non-decimated type: simple loop, zero overhead
+            this.nonDecimatedTypes.push({
+              EntityClass,
+              activeList: EntityClass._activeList,
+              startIndex,
+              needsScreenCallbacks,
+            });
+          }
+        }
+      } else {
+        console.warn(`LOGIC WORKER: Class ${name} not found in worker scope!`);
+      }
+    }
+
+    // Scene-level kill switch: if no type has CollisionListener, skip processCollisionCallbacks entirely
+    this.anyTypeNeedsCollisions = this.collisionListenerByType.includes(1);
+  }
+
+  // ========================================
+  // SPAWN/DESPAWN LIST UPDATE QUEUE METHODS
+  // ========================================
+
+  /**
+   * Queue a spawn list update (called by GameObject.spawn)
+   * The actual list insertion will be done by logic0 at start of frame
+   */
+  queueSpawnListUpdate(entityIndex, entityType, EntityClass) {
+    this.pendingSpawnListUpdates.push({ entityIndex, entityType, EntityClass });
+  }
+
+  /**
+   * Queue a despawn list update (called by GameObject.despawn)
+   * The actual list removal will be done by logic0 at start of frame
+   */
+  queueDespawnListUpdate(entityIndex, entityType, EntityClass) {
+    this.pendingDespawnListUpdates.push({ entityIndex, entityType, EntityClass });
+  }
+
+  /**
+   * Process all pending list updates (logic0 only, called at start of frame)
+   * This ensures all list operations happen single-threaded, avoiding race conditions.
+   */
+  processListUpdates() {
+    // ORDERING: Despawns first, then spawns.
+    // This ensures rapid despawn→re-spawn cycles at the same index resolve correctly:
+    // the old entry is removed before the new one is added (with dedup preventing duplicates).
+
+    // Process own pending updates
+    this._processDespawnUpdates(this.pendingDespawnListUpdates);
+    this._processSpawnUpdates(this.pendingSpawnListUpdates);
+    this.pendingDespawnListUpdates.length = 0;
+    this.pendingSpawnListUpdates.length = 0;
+
+    // Process updates received from other workers (same order)
+    for (const batch of this.receivedListUpdates) {
+      if (batch.despawns) {
+        this._processDespawnUpdates(batch.despawns);
+      }
+      if (batch.spawns) {
+        this._processSpawnUpdates(batch.spawns);
+      }
+    }
+    this.receivedListUpdates.length = 0;
+  }
+
+  /**
+   * Process spawn list updates - add entities to active lists
+   */
+  _processSpawnUpdates(updates) {
+    for (const update of updates) {
+      const { entityIndex, entityType, EntityClass } = update;
+      // Only add if entity is still active (wasn't despawned in same frame)
+      if (Transform.active[entityIndex] === 1) {
+        GameObject._addToActiveEntities(entityIndex);
+        GameObject._addToTypeActiveList(EntityClass, entityIndex);
+        GameObject._addToMatchingQueries(entityIndex, entityType);
+      }
+    }
+  }
+
+  /**
+   * Process despawn list updates - remove entities from active lists
+   * No active-state guard: despawns are processed BEFORE spawns, so a re-spawned
+   * entity will be re-added in the subsequent spawn pass (with dedup protection).
+   */
+  _processDespawnUpdates(updates) {
+    for (const update of updates) {
+      const { entityIndex, entityType, EntityClass } = update;
+      GameObject._removeFromMatchingQueries(entityIndex, entityType);
+      GameObject._removeFromActiveEntities(entityIndex);
+      GameObject._removeFromTypeActiveList(EntityClass, entityIndex);
+    }
+  }
+
+  /**
+   * Send pending list updates to logic0 (called at end of frame by non-logic0 workers)
+   */
+  sendListUpdatesToLogic0() {
+    if (this.pendingSpawnListUpdates.length === 0 &amp;&amp; this.pendingDespawnListUpdates.length === 0) {
+      return;
+    }
+
+    // Serialize EntityClass to class name for message passing (reuse buffers to avoid .map() allocation)
+    const spawns = this._spawnSerializedBuffer;
+    const despawns = this._despawnSerializedBuffer;
+    spawns.length = 0;
+    despawns.length = 0;
+
+    for (const u of this.pendingSpawnListUpdates) {
+      spawns.push({ entityIndex: u.entityIndex, entityType: u.entityType, className: u.EntityClass.name });
+    }
+    for (const u of this.pendingDespawnListUpdates) {
+      despawns.push({ entityIndex: u.entityIndex, entityType: u.entityType, className: u.EntityClass.name });
+    }
+
+    this.sendDataToWorker('logic0', {
+      msg: 'listUpdates',
+      spawns,
+      despawns,
+    });
+
+    this.pendingSpawnListUpdates.length = 0;
+    this.pendingDespawnListUpdates.length = 0;
+  }
+
+  update(deltaTime, dtRatio, resuming) {
+    this.frameStartTime = performance.now();
+
+    // Reset stats for this frame
+    this.entitiesProcessedThisFrame = 0;
+    this.systemsExecutedThisFrame = 0;
+
+    // Process bullet impacts from particle_worker (SAB poll - no message needed)
+    if (this._impactCount) {
+      const count = this._impactCount[0];
+      if (count > 0) this.processImpacts(count);
+    }
+
+    // ========================================
+    // PHASE 0: PROCESS LIST UPDATES (logic0 only)
+    // ========================================
+    // All spawn/despawn list updates are queued and processed here BEFORE any ticks.
+    // This ensures single-threaded list operations, avoiding race conditions.
+    if (this.workerIndex === 0) {
+      this.processListUpdates();
+    }
+
+    // Snapshot mouse edge flags BEFORE entity ticks so isButton0Pressed etc. are
+    // stable for the entire frame. Every worker does this independently.
+    Mouse.updateEdgeFlags();
+
+    // Process collision callbacks BEFORE entity logic (Unity-style)
+    // Skip entirely if no entity type has CollisionListener component
+    if (this.collisionData &amp;&amp; this.anyTypeNeedsCollisions) {
+      this.processCollisionCallbacks();
+      this.systemsExecutedThisFrame++;
+    }
+
+    // Count active entities while processing
+    let activeCount = 0;
+
+    // DETERMINISTIC MODULO: Each worker processes entities where (idx % totalWorkers === workerIndex)
+    // Applied per-type to maintain fair load distribution
+    const totalWorkers = this.totalLogicWorkers;
+    const myIndex = this.workerIndex;
+
+    // Cache hot references outside all loops
+    const gameObjects = this.gameObjects;
+    const accTime = this.accumulatedTime;
+    const frameNum = this.frameNumber;
+    const transformActive = Transform.active; // Cache for active check
+
+    // ========================================
+    // PHASE 1: NON-DECIMATED ENTITIES (FAST PATH)
+    // ========================================
+    // Zero decimation overhead - no countdown checks, no prototype lookups
+    // This is the common case for most entity types
+    const nonDecimatedTypes = this.nonDecimatedTypes;
+    const nonDecimatedCount = nonDecimatedTypes.length;
+
+    for (let t = 0; t &lt; nonDecimatedCount; t++) {
+      const typeInfo = nonDecimatedTypes[t];
+      const activeList = typeInfo.activeList;
+      const count = Math.min(activeList[0], activeList.length - 1);
+      const needsScreenCallbacks = typeInfo.needsScreenCallbacks;
+
+      // Worker partitioning within this type's active list
+      for (let idx = myIndex; idx &lt; count; idx += totalWorkers) {
+        const entityIndex = activeList[1 + idx];
+
+        // Skip despawned entities (may still be in list until logic0 processes removal)
+        if (transformActive[entityIndex] === 0) continue;
+
+        const obj = gameObjects[entityIndex];
+        if (!obj || typeof obj.tick !== 'function') continue;
+
+        activeCount++;
+        this.entitiesProcessedThisFrame++;
+
+        // Tick entity logic - no decimation checks needed!
+        obj.tick(dtRatio, deltaTime, accTime, frameNum);
+
+        if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
+      }
+    }
+
+    // ========================================
+    // PHASE 2: DECIMATED ENTITIES (COUNTDOWN PATH)
+    // ========================================
+    // Full countdown logic for entities with tickInterval > 1
+    // tickInterval is cached per-type (no prototype lookup in inner loop)
+    const decimatedTypes = this.decimatedTypes;
+    const decimatedCount = decimatedTypes.length;
+    const nextTick = GameObject.nextTick; // Cache the typed array reference
+
+    if (decimatedCount > 0 &amp;&amp; nextTick) {
+      // Cache RigidBody arrays for acceleration scaling
+      const rbAx = RigidBody.ax;
+      const rbAy = RigidBody.ay;
+
+      for (let t = 0; t &lt; decimatedCount; t++) {
+        const typeInfo = decimatedTypes[t];
+        const activeList = typeInfo.activeList;
+        const count = Math.min(activeList[0], activeList.length - 1);
+        const tickInterval = typeInfo.tickInterval; // Pre-cached, no prototype lookup
+        const needsScreenCallbacks = typeInfo.needsScreenCallbacks;
+
+        // Worker partitioning within this type's active list
+        for (let idx = myIndex; idx &lt; count; idx += totalWorkers) {
+          const entityIndex = activeList[1 + idx];
+
+          // Skip despawned entities (may still be in list until logic0 processes removal)
+          if (transformActive[entityIndex] === 0) continue;
+
+          const obj = gameObjects[entityIndex];
+          if (!obj || typeof obj.tick !== 'function') continue;
+
+          activeCount++;
+          this.entitiesProcessedThisFrame++;
+
+          // TICK DECIMATION: Check countdown
+          if (--nextTick[entityIndex] > 0) {
+            if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
+            continue;
+          }
+
+          // Reset countdown for next cycle
+          nextTick[entityIndex] = tickInterval;
+
+          // Tick entity logic
+          obj.tick(dtRatio, deltaTime, accTime, frameNum);
+
+          // ACCELERATION SCALING: Compensate for tick decimation
+          // Scale acceleration by tickInterval so physics integrates same total impulse
+          rbAx[entityIndex] *= tickInterval;
+          rbAy[entityIndex] *= tickInterval;
+
+          if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
+        }
+      }
+    }
+
+    // Entity processing system executed
+    if (this.entitiesProcessedThisFrame > 0) {
+      this.systemsExecutedThisFrame++; // Entity tick system executed
+    }
+
+    // Store active count for FPS reporting
+    this.activeEntityCount = activeCount;
+
+    // ========================================
+    // PHASE 3: SEND LIST UPDATES TO LOGIC0 (non-logic0 workers)
+    // ========================================
+    // At end of frame, send any queued spawn/despawn list updates to logic0
+    if (this.workerIndex !== 0) {
+      this.sendListUpdatesToLogic0();
+    }
+  }
+
+  /**
+   * Process bullet impact events from particle_worker.
+   * Partitioned by targetId % totalWorkers - each worker processes impacts for its entities.
+   */
+  processImpacts(count) {
+    if (!count || !this._impactData || count &lt;= 0) return;
+    const impactData = this._impactData;
+    const totalWorkers = this.totalLogicWorkers;
+    const myIndex = this.workerIndex;
+    const gameObjects = this.gameObjects;
+
+    for (let i = 0; i &lt; count; i++) {
+      const base = i * 6;
+      const targetId = impactData[base] | 0;
+      if (targetId % totalWorkers !== myIndex) continue;
+
+      const damage = impactData[base + 1];
+      const hitX = impactData[base + 2];
+      const hitY = impactData[base + 3];
+      const ownerId = impactData[base + 4] | 0;
+      const shooterEntityType = impactData[base + 5] | 0;
+
+      const obj = gameObjects[targetId];
+      if (obj &amp;&amp; obj.onGotShot) {
+        obj.onGotShot(damage, hitX, hitY, ownerId, shooterEntityType);
+      }
+    }
+  }
+
+  /**
+   * Process collision callbacks (Unity-style)
+   * Determines Enter/Stay/Exit states and calls appropriate callbacks
+   * Partitions collision processing across workers using modulo (minEntity % workers == myIndex)
+   * OPTIMIZED: Normalized (min,max) ordering - ONE key per collision pair (half the storage)
+   * ZERO ALLOC: Cantor pairing + inline min/max comparison, no string concat
+   */
+  processCollisionCallbacks() {
+    const pairCount = this.collisionData[0];
+
+    this.currentCollisions.clear();
+
+    const collisionData = this.collisionData;
+    const totalWorkers = this.totalLogicWorkers;
+    const myIndex = this.workerIndex;
+    const gameObjects = this.gameObjects;
+    const prevCollisions = this.previousCollisions;
+    const currCollisions = this.currentCollisions;
+    const entityType = Transform.entityType;
+    const collisionFlags = this.collisionListenerByType;
+
+    for (let i = 0; i &lt; pairCount; i++) {
+      const rawA = collisionData[1 + i * 2];
+      const rawB = collisionData[1 + i * 2 + 1];
+
+      const minE = rawA &lt; rawB ? rawA : rawB;
+      const maxE = rawA &lt; rawB ? rawB : rawA;
+
+      if (minE % totalWorkers !== myIndex) continue;
+
+      // Skip pairs where neither entity type has CollisionListener
+      const aListens = collisionFlags[entityType[rawA]];
+      const bListens = collisionFlags[entityType[rawB]];
+      if (!aListens &amp;&amp; !bListens) continue;
+
+      const sum = minE + maxE;
+      const key = ((sum * (sum + 1)) >> 1) + maxE;
+
+      currCollisions.add(key);
+
+      const isNewCollision = !prevCollisions.has(key);
+
+      if (isNewCollision) {
+        if (aListens) gameObjects[rawA].onCollisionEnter(rawB);
+        if (bListens) gameObjects[rawB].onCollisionEnter(rawA);
+      } else {
+        if (aListens) gameObjects[rawA].onCollisionStay(rawB);
+        if (bListens) gameObjects[rawB].onCollisionStay(rawA);
+      }
+    }
+
+    // OnCollisionExit - pairs that ended this frame
+    for (const prevKey of prevCollisions) {
+      if (!currCollisions.has(prevKey)) {
+        cantorUnpair(prevKey, _cantorResult);
+        const minE = _cantorResult.a;
+        const maxE = _cantorResult.b;
+
+        if (minE % totalWorkers === myIndex) {
+          const aListens = collisionFlags[entityType[minE]];
+          const bListens = collisionFlags[entityType[maxE]];
+          if (aListens) gameObjects[minE].onCollisionExit(maxE);
+          if (bListens) gameObjects[maxE].onCollisionExit(minE);
+        }
+      }
+    }
+
+    const temp = this.previousCollisions;
+    this.previousCollisions = this.currentCollisions;
+    this.currentCollisions = temp;
+  }
+
+  /**
+   * Check screen visibility changes and trigger lifecycle methods
+   * Detects when entities enter or exit the screen and calls onScreenEnter/onScreenExit
+   * @param {number} entityIndex - The entity's index
+   * @param {GameObject} obj - The entity instance
+   */
+  checkScreenVisibility(entityIndex, obj) {
+    // Get current visibility state from SpriteRenderer (updated by spatial worker)
+    const currentlyVisible = SpriteRenderer.isItOnScreen[entityIndex];
+    const wasVisible = this.previousScreenVisibility[entityIndex];
+
+    // Check for visibility state transitions
+    if (currentlyVisible &amp;&amp; !wasVisible) {
+      // Entity just entered the screen
+      // if (obj.onScreenEnter) {
+      obj.onScreenEnter();
+      // }
+    } else if (!currentlyVisible &amp;&amp; wasVisible) {
+      // Entity just exited the screen
+      // if (obj.onScreenExit) {
+      obj.onScreenExit();
+      // }
+    }
+
+    // Update previous visibility state for next frame
+    this.previousScreenVisibility[entityIndex] = currentlyVisible;
+  }
+
+  /**
+   * Handle custom messages from main thread or other workers
+   * Implements spawning and despawning commands
+   */
+  handleCustomMessage(data) {
+    const { msg } = data;
+
+    switch (msg) {
+      case 'spawn': {
+        // Only worker 0 handles spawn messages to avoid race conditions
+        // All workers receive the broadcast, but only worker 0 actually spawns
+        if (this.workerIndex !== 0) {
+          break; // Ignore spawn messages on other workers
+        }
+
+        const { className, spawnConfig, entityIndex } = data;
+        const EntityClass = self[className];
+
+        if (!EntityClass) {
+          console.error(
+            `LOGIC WORKER ${this.workerIndex}: Cannot spawn ${className} - class not found!`
+          );
+          return;
+        }
+
+        // If entityIndex is provided, use pre-assigned index from main thread
+        // Otherwise, let GameObject.spawn acquire a new index
+        const instance = GameObject.spawn(EntityClass, spawnConfig, entityIndex);
+        if (!instance) {
+          console.warn(
+            `LOGIC WORKER ${this.workerIndex}: Failed to spawn ${className} - pool exhausted!`
+          );
+        }
+        break;
+      }
+
+      case 'despawn': {
+        // Only worker 0 handles despawn messages from main thread
+        if (this.workerIndex !== 0) {
+          break;
+        }
+
+        const { entityIndex } = data;
+
+        // Basic validation
+        if (entityIndex &lt; 0 || entityIndex >= this.globalEntityCount) {
+          break;
+        }
+
+        // Get the instance and despawn it
+        // Note: despawn() internally checks Transform.active to prevent double-despawn
+        const instance = this.gameObjects[entityIndex];
+        if (instance &amp;&amp; instance.despawn) {
+          instance.despawn();
+        }
+        break;
+      }
+
+      // NOTE: spawnRequest and despawnRequest handlers removed
+      // Entity spawn/despawn now uses atomic SAB-backed free lists
+      // Any worker can spawn/despawn directly without routing to worker-0
+
+      case 'despawnAll': {
+        // Only worker 0 handles despawnAll to avoid duplicate processing
+        // (message is broadcast to all workers, but only one should act on it)
+        if (this.workerIndex !== 0) {
+          break;
+        }
+
+        const { className } = data;
+        const EntityClass = self[className];
+
+        if (!EntityClass) {
+          console.error(
+            `LOGIC WORKER ${this.workerIndex}: Cannot despawn ${className} - class not found!`
+          );
+          return;
+        }
+
+        // Use unified batch despawn which handles:
+        // - Lifecycle hooks (onDespawned)
+        // - Component deactivation
+        // - Active list removal
+        // - Query cache updates
+        // - Free list reset (SAB-backed, interleaved)
+        const despawnedCount = GameObject.despawnAll(EntityClass);
+
+        console.log(
+          `LOGIC WORKER ${this.workerIndex}: Despawned ${despawnedCount} ${className} entities`
+        );
+        break;
+      }
+
+      case 'clearAll': {
+        // Only worker 0 handles clearAll to keep freeList synchronized with spawn
+        if (this.workerIndex !== 0) {
+          break;
+        }
+
+        // Despawn all entities of each type using unified batch despawn
+        let totalDespawned = 0;
+        for (const classInfo of this.registeredClasses) {
+          const EntityClass = self[classInfo.name];
+          if (!EntityClass) continue;
+
+          totalDespawned += GameObject.despawnAll(EntityClass);
+        }
+
+        // console.log(
+        //   `LOGIC WORKER ${this.workerIndex}: Cleared ${totalDespawned} entities`
+        // );
+        break;
+      }
+
+      case 'listUpdates': {
+        // Only worker 0 processes list updates from other workers
+        if (this.workerIndex !== 0) {
+          break;
+        }
+
+        // Deserialize class names to EntityClass references (single-pass loop avoids .map/.filter intermediates)
+        const { spawns, despawns } = data;
+        const deserializedSpawns = [];
+        const deserializedDespawns = [];
+
+        if (spawns) {
+          for (let i = 0; i &lt; spawns.length; i++) {
+            const u = spawns[i];
+            const EntityClass = self[u.className];
+            if (EntityClass) {
+              deserializedSpawns.push({ entityIndex: u.entityIndex, entityType: u.entityType, EntityClass });
+            }
+          }
+        }
+        if (despawns) {
+          for (let i = 0; i &lt; despawns.length; i++) {
+            const u = despawns[i];
+            const EntityClass = self[u.className];
+            if (EntityClass) {
+              deserializedDespawns.push({ entityIndex: u.entityIndex, entityType: u.entityType, EntityClass });
+            }
+          }
+        }
+
+        if (deserializedSpawns.length > 0 || deserializedDespawns.length > 0) {
+          this.receivedListUpdates.push({
+            spawns: deserializedSpawns,
+            despawns: deserializedDespawns,
+          });
+        }
+        break;
+      }
+
+      default:
+        // Unknown message - ignore or log
+        break;
+    }
+  }
+
+  /**
+   * Override reportFPS to write stats to SharedArrayBuffer
+   */
+  reportFPS() {
+    // Write stats to SharedArrayBuffer every frame
+    if (this.stats) {
+      this.stats[LOGIC_STATS.FPS] = this.currentFPS;
+      this.stats[LOGIC_STATS.ENTITIES_PROCESSED] = this.entitiesProcessedThisFrame;
+      this.stats[LOGIC_STATS.SYSTEMS_EXECUTED] = this.systemsExecutedThisFrame;
+      this.stats[LOGIC_STATS.MSG_MS] = this.messageTimeThisFrame;
+    }
+  }
+}
+
+// Create singleton instance and setup message handler
+self.logicWorker = new LogicWorker(self);
+
+/**
+ * Global query function for component-based entity filtering
+ * Available to all entity code running in logic workers
+ * @param {Array&lt;Component>} componentClasses - Array of component classes to query
+ * @returns {Int32Array} - Indices of matching entities
+ *
+ * @example
+ * // Inside Prey.tick() or any entity method:
+ * const allPredators = query([RigidBody, PredatorBehavior]);
+ * const visibleEntities = query([SpriteRenderer, Transform]);
+ *
+ * // Or use via WEED namespace:
+ * import WEED from "/src/index.js";
+ * const { query } = WEED;
+ */
+function query(componentClasses) {
+  return self.logicWorker.query(componentClasses);
+}
+
+// Make query available globally and in WEED namespace for entity code
+self.query = query;
+globalThis.query = query;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbstractWorker.html">AbstractWorker</a></li><li><a href="BigAtlasInspector.html">BigAtlasInspector</a></li><li><a href="Camera.html">Camera</a></li><li><a href="Constraint.html">Constraint</a></li><li><a href="DebugCanvas.html">DebugCanvas</a></li><li><a href="DebugFlags.html">DebugFlags</a></li><li><a href="DebugUI.html">DebugUI</a></li><li><a href="Decoration_Decoration.html">Decoration</a></li><li><a href="GameObject_GameObject.html">GameObject</a></li><li><a href="Grid.html">Grid</a></li><li><a href="LogicWorker.html">LogicWorker</a></li><li><a href="Mouse.html">Mouse</a></li><li><a href="NavGrid.html">NavGrid</a></li><li><a href="NavScratch.html">NavScratch</a></li><li><a href="ParticleWorker.html">ParticleWorker</a></li><li><a href="PhysicsWorker.html">PhysicsWorker</a></li><li><a href="PixiParticlePool.html">PixiParticlePool</a></li><li><a href="PixiRenderer.html">PixiRenderer</a></li><li><a href="PreRenderWorker.html">PreRenderWorker</a></li><li><a href="Ray.html">Ray</a></li><li><a href="SharedAtomicPool.html">SharedAtomicPool</a></li><li><a href="SpatialWorker.html">SpatialWorker</a></li><li><a href="SpriteSheetRegistry.html">SpriteSheetRegistry</a></li><li><a href="StatsCollector.html">StatsCollector</a></li><li><a href="Sun.html">Sun</a></li><li><a href="TileMap.html">TileMap</a></li><li><a href="TileMapLayer.html">TileMapLayer</a></li><li><a href="ToolManager.html">ToolManager</a></li></ul><h3>Global</h3><ul><li><a href="global.html#BLEND_MODES">BLEND_MODES</a></li><li><a href="global.html#Box">Box</a></li><li><a href="global.html#CAMERA_TYPES">CAMERA_TYPES</a></li><li><a href="global.html#COMPONENT_COLORS">COMPONENT_COLORS</a></li><li><a href="global.html#Circle">Circle</a></li><li><a href="global.html#DECORATION_INNER_Z_MAX">DECORATION_INNER_Z_MAX</a></li><li><a href="global.html#DECORATION_NO_PARENT">DECORATION_NO_PARENT</a></li><li><a href="global.html#DECORATION_Y_SORT_SCALE">DECORATION_Y_SORT_SCALE</a></li><li><a href="global.html#DEFAULT_LAYERS">DEFAULT_LAYERS</a></li><li><a href="global.html#DIRECTION">DIRECTION</a></li><li><a href="global.html#DIR_TO_VEC">DIR_TO_VEC</a></li><li><a href="global.html#ENTITY_GLOW_SORT_BIAS">ENTITY_GLOW_SORT_BIAS</a></li><li><a href="global.html#ENTITY_TYPE_ENTRY_SIZE">ENTITY_TYPE_ENTRY_SIZE</a></li><li><a href="global.html#FLOWFIELD_STATUS">FLOWFIELD_STATUS</a></li><li><a href="global.html#LOGIC_STATS">LOGIC_STATS</a></li><li><a href="global.html#MAX_COMPONENTS">MAX_COMPONENTS</a></li><li><a href="global.html#MAX_ENTITIES">MAX_ENTITIES</a></li><li><a href="global.html#MAX_ENTITY_TYPES">MAX_ENTITY_TYPES</a></li><li><a href="global.html#MAX_PRECOMPUTED_QUERIES">MAX_PRECOMPUTED_QUERIES</a></li><li><a href="global.html#NAVIGATION_STATS">NAVIGATION_STATS</a></li><li><a href="global.html#PARTICLE_STATS">PARTICLE_STATS</a></li><li><a href="global.html#PATH_STATUS">PATH_STATUS</a></li><li><a href="global.html#PHYSICS_STATS">PHYSICS_STATS</a></li><li><a href="global.html#PRE_RENDER_STATS">PRE_RENDER_STATS</a></li><li><a href="global.html#Polygon">Polygon</a></li><li><a href="global.html#QUERY_CACHE_ENTRY_SIZE">QUERY_CACHE_ENTRY_SIZE</a></li><li><a href="global.html#QUERY_RESULT_BUFFER_SIZE">QUERY_RESULT_BUFFER_SIZE</a></li><li><a href="global.html#RENDERER_STATS">RENDERER_STATS</a></li><li><a href="global.html#SHAPE_CIRCLE">SHAPE_CIRCLE</a></li><li><a href="global.html#SIDE">SIDE</a></li><li><a href="global.html#SPATIAL_STATS">SPATIAL_STATS</a></li><li><a href="global.html#SUN_DEFAULTS">SUN_DEFAULTS</a></li><li><a href="global.html#ShapeType">ShapeType</a></li><li><a href="global.html#TOPDOWN">TOPDOWN</a></li><li><a href="global.html#WORKER_DISPLAY_CONFIG">WORKER_DISPLAY_CONFIG</a></li><li><a href="global.html#Y_SORT_K">Y_SORT_K</a></li><li><a href="global.html#ZENITHAL">ZENITHAL</a></li><li><a href="global.html#_boundsResult">_boundsResult</a></li><li><a href="global.html#applyBrightnessToColor">applyBrightnessToColor</a></li><li><a href="global.html#atlasPadding">atlasPadding</a></li><li><a href="global.html#binarySearchFind">binarySearchFind</a></li><li><a href="global.html#binarySearchInsertPoint">binarySearchInsertPoint</a></li><li><a href="global.html#binarySearchRange">binarySearchRange</a></li><li><a href="global.html#brightnessToColoredTint">brightnessToColoredTint</a></li><li><a href="global.html#brightnessToTint">brightnessToTint</a></li><li><a href="global.html#buildFullCircle">buildFullCircle</a></li><li><a href="global.html#buildVisibilityPolygon">buildVisibilityPolygon</a></li><li><a href="global.html#calculateCameraScreenBounds">calculateCameraScreenBounds</a></li><li><a href="global.html#calculateDecalTileBounds">calculateDecalTileBounds</a></li><li><a href="global.html#calculateEntityMetadataSABSize">calculateEntityMetadataSABSize</a></li><li><a href="global.html#calculateLightAttenuation">calculateLightAttenuation</a></li><li><a href="global.html#calculateLightFromNeighbors">calculateLightFromNeighbors</a></li><li><a href="global.html#calculateQueryCacheSABSize">calculateQueryCacheSABSize</a></li><li><a href="global.html#calculateQueryResultsSABSize">calculateQueryResultsSABSize</a></li><li><a href="global.html#calculateSpeed">calculateSpeed</a></li><li><a href="global.html#calculateTileClipRegion">calculateTileClipRegion</a></li><li><a href="global.html#calculateTotalLightAtPosition">calculateTotalLightAtPosition</a></li><li><a href="global.html#calculateVelocityAngle">calculateVelocityAngle</a></li><li><a href="global.html#cantorPair">cantorPair</a></li><li><a href="global.html#cantorUnpair">cantorUnpair</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clamp01">clamp01</a></li><li><a href="global.html#clamp01Fast">clamp01Fast</a></li><li><a href="global.html#clampVelocity">clampVelocity</a></li><li><a href="global.html#clampVelocityMut">clampVelocityMut</a></li><li><a href="global.html#closestPointOnAABB">closestPointOnAABB</a></li><li><a href="global.html#closestPointOnAABBMut">closestPointOnAABBMut</a></li><li><a href="global.html#collectAllComponentsFromClasses">collectAllComponentsFromClasses</a></li><li><a href="global.html#collectComponents">collectComponents</a></li><li><a href="global.html#computeBoxMass">computeBoxMass</a></li><li><a href="global.html#computeCircleMass">computeCircleMass</a></li><li><a href="global.html#containerRadius">containerRadius</a></li><li><a href="global.html#countTrailingZeros">countTrailingZeros</a></li><li><a href="global.html#createBulletTrailCanvas">createBulletTrailCanvas</a></li><li><a href="global.html#createButton">createButton</a></li><li><a href="global.html#createCircularGradientCanvas">createCircularGradientCanvas</a></li><li><a href="global.html#createDivider">createDivider</a></li><li><a href="global.html#createMultiWorkerStatsReaderArray">createMultiWorkerStatsReaderArray</a></li><li><a href="global.html#createMultiWorkerStatsWriter">createMultiWorkerStatsWriter</a></li><li><a href="global.html#createPanel">createPanel</a></li><li><a href="global.html#createRow">createRow</a></li><li><a href="global.html#createStat">createStat</a></li><li><a href="global.html#createStatsReader">createStatsReader</a></li><li><a href="global.html#createStatsWriter">createStatsWriter</a></li><li><a href="global.html#createTab">createTab</a></li><li><a href="global.html#createWorkerQueryFunctions">createWorkerQueryFunctions</a></li><li><a href="global.html#directionTo">directionTo</a></li><li><a href="global.html#distance2D">distance2D</a></li><li><a href="global.html#distanceConstraintIterations">distanceConstraintIterations</a></li><li><a href="global.html#distanceSq2D">distanceSq2D</a></li><li><a href="global.html#drawCircle">drawCircle</a></li><li><a href="global.html#drawCross">drawCross</a></li><li><a href="global.html#drawLine">drawLine</a></li><li><a href="global.html#emitArcVertices">emitArcVertices</a></li><li><a href="global.html#emitVertex">emitVertex</a></li><li><a href="global.html#ensureDecorationFacade">ensureDecorationFacade</a></li><li><a href="global.html#evictDecorationFacade">evictDecorationFacade</a></li><li><a href="global.html#exposeComponentsGlobally">exposeComponentsGlobally</a></li><li><a href="global.html#exposeEntityClassesGlobally">exposeEntityClassesGlobally</a></li><li><a href="global.html#extractRGB">extractRGB</a></li><li><a href="global.html#extractRGBMut">extractRGBMut</a></li><li><a href="global.html#extractRGBNormalized">extractRGBNormalized</a></li><li><a href="global.html#extractRGBNormalizedMut">extractRGBNormalizedMut</a></li><li><a href="global.html#formatComponentValue">formatComponentValue</a></li><li><a href="global.html#formatNumber">formatNumber</a></li><li><a href="global.html#generateSymmetricalCirclePattern">generateSymmetricalCirclePattern</a></li><li><a href="global.html#getCellCoords">getCellCoords</a></li><li><a href="global.html#getCellCoordsMut">getCellCoordsMut</a></li><li><a href="global.html#getCellIndex">getCellIndex</a></li><li><a href="global.html#getCellRange">getCellRange</a></li><li><a href="global.html#getColliderBounds">getColliderBounds</a></li><li><a href="global.html#getComponentColor">getComponentColor</a></li><li><a href="global.html#getComponentPropertyNames">getComponentPropertyNames</a></li><li><a href="global.html#getDirectionFromAngle">getDirectionFromAngle</a></li><li><a href="global.html#getEntityHomeCellIndex">getEntityHomeCellIndex</a></li><li><a href="global.html#getParentClasses">getParentClasses</a></li><li><a href="global.html#hashToPastelColorCSS">hashToPastelColorCSS</a></li><li><a href="global.html#hashToPastelColorHex">hashToPastelColorHex</a></li><li><a href="global.html#hslToHex">hslToHex</a></li><li><a href="global.html#initializeComponentViews">initializeComponentViews</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isWithinRange">isWithinRange</a></li><li><a href="global.html#isWithinRangeSq">isWithinRangeSq</a></li><li><a href="global.html#layerMask">layerMask</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#lerpAngle">lerpAngle</a></li><li><a href="global.html#loadEntityScripts">loadEntityScripts</a></li><li><a href="global.html#maxAtlasHeight">maxAtlasHeight</a></li><li><a href="global.html#maxAtlasWidth">maxAtlasWidth</a></li><li><a href="global.html#maxAttachedDecorationsPerEntity">maxAttachedDecorationsPerEntity</a></li><li><a href="global.html#normalizeAngle">normalizeAngle</a></li><li><a href="global.html#normalizeAngleDifference">normalizeAngleDifference</a></li><li><a href="global.html#normalizeDirection">normalizeDirection</a></li><li><a href="global.html#normalizeDirectionFast">normalizeDirectionFast</a></li><li><a href="global.html#normalizeDirectionFromDistSq">normalizeDirectionFromDistSq</a></li><li><a href="global.html#query">query</a></li><li><a href="global.html#randomColor">randomColor</a></li><li><a href="global.html#randomRange">randomRange</a></li><li><a href="global.html#rayBoxHit">rayBoxHit</a></li><li><a href="global.html#rayBoxIntersect">rayBoxIntersect</a></li><li><a href="global.html#rayCircleDist">rayCircleDist</a></li><li><a href="global.html#rayCircleHit">rayCircleHit</a></li><li><a href="global.html#rayCircleIntersect">rayCircleIntersect</a></li><li><a href="global.html#rng">rng</a></li><li><a href="global.html#screenBoundsToWorldBounds">screenBoundsToWorldBounds</a></li><li><a href="global.html#setupWorkerCommunication">setupWorkerCommunication</a></li><li><a href="global.html#sortByY">sortByY</a></li><li><a href="global.html#sortEventsByAngle">sortEventsByAngle</a></li><li><a href="global.html#stringToHash">stringToHash</a></li><li><a href="global.html#subStepCount">subStepCount</a></li><li><a href="global.html#tangentHalfAngle">tangentHalfAngle</a></li><li><a href="global.html#testAABBAABBCollision">testAABBAABBCollision</a></li><li><a href="global.html#testCircleAABBCollision">testCircleAABBCollision</a></li><li><a href="global.html#testCircleCircleCollision">testCircleCircleCollision</a></li><li><a href="global.html#trimAlphaThreshold">trimAlphaThreshold</a></li><li><a href="global.html#trimImages">trimImages</a></li><li><a href="global.html#updateMassFromBox">updateMassFromBox</a></li><li><a href="global.html#updateMassFromCircle">updateMassFromCircle</a></li><li><a href="global.html#urlToPath">urlToPath</a></li><li><a href="global.html#validatePhysicsConfig">validatePhysicsConfig</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Apr 06 2026 16:36:00 GMT-0300 (hora estándar de Argentina)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

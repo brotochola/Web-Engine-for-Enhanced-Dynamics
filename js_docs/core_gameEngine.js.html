@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: core/gameEngine.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: core/gameEngine.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>// GameEngine.js - Lightweight scene orchestrator
+// Manages canvas, scene lifecycle, input listeners, browser hardening, and debug UI
+
+import { DebugUI } from './debug/DebugUI.js';
+import { Mouse } from './Mouse.js';
+import { printLogo } from './utils.js';
+
+const PREVENT_DEFAULT_KEYS = new Set([
+  'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab',
+]);
+
+class GameEngine {
+  static states = {
+    TRANSITIONING: 0,
+    READY: 1,
+  };
+
+  constructor(config = {}) {
+    this.autoResize = config.autoResize || false;
+    this.preventContextMenu = config.preventContextMenu !== false;
+    this.preventDefaultKeys = config.preventDefaultKeys !== false;
+    this.injectStyles = config.injectStyles !== false;
+
+    if (this.autoResize) {
+      this.canvasWidth = window.innerWidth;
+      this.canvasHeight = window.innerHeight;
+    } else {
+      this.canvasWidth = config.canvasWidth || window.innerWidth;
+      this.canvasHeight = config.canvasHeight || window.innerHeight;
+    }
+
+    this.canvas = null;
+    this.currentScene = null;
+
+    // State management
+    this.state = GameEngine.states.READY;
+    this.transitionCooldown = config.transitionCooldown || 100; // ms
+
+    // Debug UI (created if debug: true)
+    this.debugEnabled = config.debug || false;
+    this.debugUI = null;
+
+    if (this.debugEnabled) {
+      this.debugUI = new DebugUI({
+        updateInterval: config.debugUpdateInterval || 100,
+        defaultOpen: config.debugDefaultOpen || null,
+      });
+    }
+
+    // Browser environment hardening
+    this._injectedStyle = null;
+    if (this.injectStyles) this._injectBodyStyles();
+
+    // Create canvas immediately
+    this._createCanvas();
+
+    // Input listeners (engine owns all listeners, forwards to currentScene)
+    this._setupWindowListeners();
+
+    // Auto-resize: track window size changes
+    if (this.autoResize) {
+      this._resizeDebounceTimer = null;
+      this._onWindowResize = () => {
+        clearTimeout(this._resizeDebounceTimer);
+        this._resizeDebounceTimer = setTimeout(() => {
+          this.resize(window.innerWidth, window.innerHeight);
+        }, 150);
+      };
+      window.addEventListener('resize', this._onWindowResize);
+    }
+
+    printLogo();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Browser environment hardening
+  // ---------------------------------------------------------------------------
+
+  _injectBodyStyles() {
+    const style = document.createElement('style');
+    style.textContent = `html, body { margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; background: black; }`;
+    document.head.appendChild(style);
+    this._injectedStyle = style;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Canvas
+  // ---------------------------------------------------------------------------
+
+  _createCanvas() {
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = this.canvasWidth;
+    this.canvas.height = this.canvasHeight;
+
+    const s = this.canvas.style;
+    s.display = 'block';
+    s.position = 'fixed';
+    s.top = '0';
+    s.left = '0';
+    s.touchAction = 'none';
+    s.userSelect = 'none';
+    s.webkitUserSelect = 'none';
+    s.webkitTouchCallout = 'none';
+
+    document.body.appendChild(this.canvas);
+
+    this._setupCanvasListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Input — window-level listeners (registered once, survive scene transitions)
+  // ---------------------------------------------------------------------------
+
+  _setupWindowListeners() {
+    this._keydownHandler = (e) => {
+      if (this.preventDefaultKeys &amp;&amp; PREVENT_DEFAULT_KEYS.has(e.key.toLowerCase())) {
+        e.preventDefault();
+      }
+      this.currentScene?.onKeyDown(e.key.toLowerCase());
+    };
+
+    this._keyupHandler = (e) => {
+      this.currentScene?.onKeyUp(e.key.toLowerCase());
+    };
+
+    this._wheelHandler = (e) => {
+      e.preventDefault();
+      this.currentScene?.onWheel(e.deltaY);
+    };
+
+    window.addEventListener('keydown', this._keydownHandler);
+    window.addEventListener('keyup', this._keyupHandler);
+    window.addEventListener('wheel', this._wheelHandler, { passive: false });
+
+    if (this.preventContextMenu) {
+      this._contextmenuHandler = (e) => e.preventDefault();
+      window.addEventListener('contextmenu', this._contextmenuHandler);
+    }
+
+    this._fullscreenchangeHandler = () => {
+      if (this.autoResize) {
+        this.resize(window.innerWidth, window.innerHeight);
+      }
+    };
+    document.addEventListener('fullscreenchange', this._fullscreenchangeHandler);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Input — canvas-level listeners (re-attached each time canvas is recreated)
+  // ---------------------------------------------------------------------------
+
+  _setupCanvasListeners() {
+    this.canvas.addEventListener('mousedown', (e) => {
+      if (Mouse.isDebugToolActive) return;
+      this.currentScene?.onMouseDown(e.button);
+    });
+
+    this.canvas.addEventListener('mouseup', (e) => {
+      this.currentScene?.onMouseUp(e.button);
+    });
+
+    this.canvas.addEventListener('mousemove', (e) => {
+      const rect = this.canvas.getBoundingClientRect();
+      this.currentScene?.onMouseMove(e.clientX - rect.left, e.clientY - rect.top);
+    });
+
+    this.canvas.addEventListener('mouseleave', () => {
+      this.currentScene?.onMouseLeave();
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fullscreen API
+  // ---------------------------------------------------------------------------
+
+  async requestFullscreen() {
+    if (!document.fullscreenElement) {
+      await document.body.requestFullscreen();
+    }
+  }
+
+  exitFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    }
+  }
+
+  get isFullscreen() {
+    return !!document.fullscreenElement;
+  }
+
+  /**
+   * Load and initialize a new scene
+   * Destroys the current scene if one exists
+   * @param {Class} SceneClass - Scene class to instantiate
+   * @returns {boolean} - true if scene change accepted, false if busy
+   */
+  async loadScene(SceneClass) {
+    // Reject if already transitioning
+    if (this.state === GameEngine.states.TRANSITIONING) {
+      console.warn(
+        `⚠️ Scene transition already in progress. Ignoring request to load ${SceneClass.name}`
+      );
+      return false;
+    }
+
+    // Set state to transitioning
+    this.state = GameEngine.states.TRANSITIONING;
+
+    try {
+      // Detach debug UI from current scene
+      if (this.debugUI &amp;&amp; this.currentScene) {
+        this.debugUI.detach();
+      }
+
+      // Destroy current scene
+      if (this.currentScene) {
+        console.log(`📤 Unloading scene: ${this.currentScene.constructor.name}`);
+        await this.currentScene.destroy();
+        this.currentScene = null;
+
+        // Remove and recreate canvas (required because transferControlToOffscreen can only be called once)
+        if (this.canvas &amp;&amp; this.canvas.parentNode) {
+          this.canvas.parentNode.removeChild(this.canvas);
+        }
+        this._createCanvas();
+      }
+
+      // Create and initialize new scene
+      console.log(`📥 Loading scene: ${SceneClass.name}`);
+      this.currentScene = new SceneClass(this);
+
+      // Engine owns canvas dimensions — inject into scene config before init
+      // so workers receive the correct values during initialization
+      this.currentScene.config.canvasWidth = this.canvasWidth;
+      this.currentScene.config.canvasHeight = this.canvasHeight;
+
+      await this.currentScene.init();
+
+      // Attach debug UI to new scene
+      if (this.debugUI) {
+        this.debugUI.attach(this, this.currentScene);
+      }
+
+      // Add cooldown period before allowing next transition
+      await new Promise((resolve) => setTimeout(resolve, this.transitionCooldown));
+
+      // Scene loaded successfully
+      this.state = GameEngine.states.READY;
+      return true;
+    } catch (error) {
+      console.error('❌ Error loading scene:', error);
+      this.state = GameEngine.states.READY; // Reset state on error
+      throw error;
+    }
+  }
+
+  // Convenience methods that delegate to current scene
+  pause() {
+    if (this.currentScene) {
+      this.currentScene.pause();
+    }
+  }
+
+  resume() {
+    if (this.currentScene) {
+      this.currentScene.resume();
+    }
+  }
+
+  spawnEntity(EntityClassOrName, data) {
+    if (this.currentScene) {
+      this.currentScene.spawnEntity(EntityClassOrName, data);
+    }
+  }
+
+  despawnAllEntities(className) {
+    if (this.currentScene) {
+      this.currentScene.despawnAllEntities(className);
+    }
+  }
+
+  getPoolStats(EntityClass) {
+    if (this.currentScene) {
+      return this.currentScene.getPoolStats(EntityClass);
+    }
+    return { total: 0, active: 0, available: 0 };
+  }
+
+  // Getters for common scene properties
+  get debug() {
+    return this.currentScene?.debugFlags;
+  }
+
+  get debugFlags() {
+    return this.currentScene?.debugFlags;
+  }
+
+  get mouse() {
+    return this.currentScene?.mouse;
+  }
+
+  get camera() {
+    return this.currentScene?.camera;
+  }
+
+  get config() {
+    return this.currentScene?.config;
+  }
+
+  get rng() {
+    return this.currentScene?.rng;
+  }
+
+  get workers() {
+    return this.currentScene?.workers;
+  }
+
+  get numberOfLogicWorkers() {
+    return this.currentScene?.numberOfLogicWorkers;
+  }
+
+  // State getters
+  get isReady() {
+    return this.state === GameEngine.states.READY;
+  }
+
+  get isTransitioning() {
+    return this.state === GameEngine.states.TRANSITIONING;
+  }
+
+  /**
+   * Resize the canvas and propagate to the active scene + all workers
+   * @param {number} width - New canvas width in pixels
+   * @param {number} height - New canvas height in pixels
+   */
+  resize(width, height) {
+    this.canvasWidth = width;
+    this.canvasHeight = height;
+
+    // Update the CSS display size (the actual pixel buffer is owned by the OffscreenCanvas in the worker)
+    if (this.canvas) {
+      this.canvas.style.width = width + 'px';
+      this.canvas.style.height = height + 'px';
+    }
+
+    if (this.currentScene) {
+      this.currentScene.resize(width, height);
+    }
+  }
+
+  // Cleanup
+  async destroy() {
+    this.state = GameEngine.states.TRANSITIONING;
+
+    if (this._onWindowResize) {
+      window.removeEventListener('resize', this._onWindowResize);
+      clearTimeout(this._resizeDebounceTimer);
+    }
+
+    // Remove window-level input listeners
+    window.removeEventListener('keydown', this._keydownHandler);
+    window.removeEventListener('keyup', this._keyupHandler);
+    window.removeEventListener('wheel', this._wheelHandler);
+    if (this._contextmenuHandler) {
+      window.removeEventListener('contextmenu', this._contextmenuHandler);
+    }
+    document.removeEventListener('fullscreenchange', this._fullscreenchangeHandler);
+
+    // Remove injected styles
+    if (this._injectedStyle &amp;&amp; this._injectedStyle.parentNode) {
+      this._injectedStyle.parentNode.removeChild(this._injectedStyle);
+      this._injectedStyle = null;
+    }
+
+    // Destroy debug UI
+    if (this.debugUI) {
+      this.debugUI.destroy();
+      this.debugUI = null;
+    }
+
+    if (this.currentScene) {
+      await this.currentScene.destroy();
+      this.currentScene = null;
+    }
+
+    // Canvas-level listeners die with the element
+    if (this.canvas &amp;&amp; this.canvas.parentNode) {
+      this.canvas.parentNode.removeChild(this.canvas);
+    }
+
+    this.state = GameEngine.states.READY;
+    console.log('🔴 GameEngine destroyed');
+  }
+}
+
+// ES6 module export
+export { GameEngine };
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbstractWorker.html">AbstractWorker</a></li><li><a href="BigAtlasInspector.html">BigAtlasInspector</a></li><li><a href="Camera.html">Camera</a></li><li><a href="Constraint.html">Constraint</a></li><li><a href="DebugCanvas.html">DebugCanvas</a></li><li><a href="DebugFlags.html">DebugFlags</a></li><li><a href="DebugUI.html">DebugUI</a></li><li><a href="Decoration_Decoration.html">Decoration</a></li><li><a href="GameObject_GameObject.html">GameObject</a></li><li><a href="Grid.html">Grid</a></li><li><a href="LogicWorker.html">LogicWorker</a></li><li><a href="Mouse.html">Mouse</a></li><li><a href="NavGrid.html">NavGrid</a></li><li><a href="NavScratch.html">NavScratch</a></li><li><a href="ParticleWorker.html">ParticleWorker</a></li><li><a href="PhysicsWorker.html">PhysicsWorker</a></li><li><a href="PixiParticlePool.html">PixiParticlePool</a></li><li><a href="PixiRenderer.html">PixiRenderer</a></li><li><a href="PreRenderWorker.html">PreRenderWorker</a></li><li><a href="Ray.html">Ray</a></li><li><a href="SharedAtomicPool.html">SharedAtomicPool</a></li><li><a href="SpatialWorker.html">SpatialWorker</a></li><li><a href="SpriteSheetRegistry.html">SpriteSheetRegistry</a></li><li><a href="StatsCollector.html">StatsCollector</a></li><li><a href="Sun.html">Sun</a></li><li><a href="TileMap.html">TileMap</a></li><li><a href="TileMapLayer.html">TileMapLayer</a></li><li><a href="ToolManager.html">ToolManager</a></li></ul><h3>Global</h3><ul><li><a href="global.html#BLEND_MODES">BLEND_MODES</a></li><li><a href="global.html#Box">Box</a></li><li><a href="global.html#CAMERA_TYPES">CAMERA_TYPES</a></li><li><a href="global.html#COMPONENT_COLORS">COMPONENT_COLORS</a></li><li><a href="global.html#Circle">Circle</a></li><li><a href="global.html#DECORATION_INNER_Z_MAX">DECORATION_INNER_Z_MAX</a></li><li><a href="global.html#DECORATION_NO_PARENT">DECORATION_NO_PARENT</a></li><li><a href="global.html#DECORATION_Y_SORT_SCALE">DECORATION_Y_SORT_SCALE</a></li><li><a href="global.html#DEFAULT_LAYERS">DEFAULT_LAYERS</a></li><li><a href="global.html#DIRECTION">DIRECTION</a></li><li><a href="global.html#DIR_TO_VEC">DIR_TO_VEC</a></li><li><a href="global.html#ENTITY_GLOW_SORT_BIAS">ENTITY_GLOW_SORT_BIAS</a></li><li><a href="global.html#ENTITY_TYPE_ENTRY_SIZE">ENTITY_TYPE_ENTRY_SIZE</a></li><li><a href="global.html#FLOWFIELD_STATUS">FLOWFIELD_STATUS</a></li><li><a href="global.html#LOGIC_STATS">LOGIC_STATS</a></li><li><a href="global.html#MAX_COMPONENTS">MAX_COMPONENTS</a></li><li><a href="global.html#MAX_ENTITIES">MAX_ENTITIES</a></li><li><a href="global.html#MAX_ENTITY_TYPES">MAX_ENTITY_TYPES</a></li><li><a href="global.html#MAX_PRECOMPUTED_QUERIES">MAX_PRECOMPUTED_QUERIES</a></li><li><a href="global.html#NAVIGATION_STATS">NAVIGATION_STATS</a></li><li><a href="global.html#PARTICLE_STATS">PARTICLE_STATS</a></li><li><a href="global.html#PATH_STATUS">PATH_STATUS</a></li><li><a href="global.html#PHYSICS_STATS">PHYSICS_STATS</a></li><li><a href="global.html#PRE_RENDER_STATS">PRE_RENDER_STATS</a></li><li><a href="global.html#Polygon">Polygon</a></li><li><a href="global.html#QUERY_CACHE_ENTRY_SIZE">QUERY_CACHE_ENTRY_SIZE</a></li><li><a href="global.html#QUERY_RESULT_BUFFER_SIZE">QUERY_RESULT_BUFFER_SIZE</a></li><li><a href="global.html#RENDERER_STATS">RENDERER_STATS</a></li><li><a href="global.html#SHAPE_CIRCLE">SHAPE_CIRCLE</a></li><li><a href="global.html#SIDE">SIDE</a></li><li><a href="global.html#SPATIAL_STATS">SPATIAL_STATS</a></li><li><a href="global.html#SUN_DEFAULTS">SUN_DEFAULTS</a></li><li><a href="global.html#ShapeType">ShapeType</a></li><li><a href="global.html#TOPDOWN">TOPDOWN</a></li><li><a href="global.html#WORKER_DISPLAY_CONFIG">WORKER_DISPLAY_CONFIG</a></li><li><a href="global.html#Y_SORT_K">Y_SORT_K</a></li><li><a href="global.html#ZENITHAL">ZENITHAL</a></li><li><a href="global.html#_boundsResult">_boundsResult</a></li><li><a href="global.html#applyBrightnessToColor">applyBrightnessToColor</a></li><li><a href="global.html#atlasPadding">atlasPadding</a></li><li><a href="global.html#binarySearchFind">binarySearchFind</a></li><li><a href="global.html#binarySearchInsertPoint">binarySearchInsertPoint</a></li><li><a href="global.html#binarySearchRange">binarySearchRange</a></li><li><a href="global.html#brightnessToColoredTint">brightnessToColoredTint</a></li><li><a href="global.html#brightnessToTint">brightnessToTint</a></li><li><a href="global.html#buildFullCircle">buildFullCircle</a></li><li><a href="global.html#buildVisibilityPolygon">buildVisibilityPolygon</a></li><li><a href="global.html#calculateCameraScreenBounds">calculateCameraScreenBounds</a></li><li><a href="global.html#calculateDecalTileBounds">calculateDecalTileBounds</a></li><li><a href="global.html#calculateEntityMetadataSABSize">calculateEntityMetadataSABSize</a></li><li><a href="global.html#calculateLightAttenuation">calculateLightAttenuation</a></li><li><a href="global.html#calculateLightFromNeighbors">calculateLightFromNeighbors</a></li><li><a href="global.html#calculateQueryCacheSABSize">calculateQueryCacheSABSize</a></li><li><a href="global.html#calculateQueryResultsSABSize">calculateQueryResultsSABSize</a></li><li><a href="global.html#calculateSpeed">calculateSpeed</a></li><li><a href="global.html#calculateTileClipRegion">calculateTileClipRegion</a></li><li><a href="global.html#calculateTotalLightAtPosition">calculateTotalLightAtPosition</a></li><li><a href="global.html#calculateVelocityAngle">calculateVelocityAngle</a></li><li><a href="global.html#cantorPair">cantorPair</a></li><li><a href="global.html#cantorUnpair">cantorUnpair</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clamp01">clamp01</a></li><li><a href="global.html#clamp01Fast">clamp01Fast</a></li><li><a href="global.html#clampVelocity">clampVelocity</a></li><li><a href="global.html#clampVelocityMut">clampVelocityMut</a></li><li><a href="global.html#closestPointOnAABB">closestPointOnAABB</a></li><li><a href="global.html#closestPointOnAABBMut">closestPointOnAABBMut</a></li><li><a href="global.html#collectAllComponentsFromClasses">collectAllComponentsFromClasses</a></li><li><a href="global.html#collectComponents">collectComponents</a></li><li><a href="global.html#computeBoxMass">computeBoxMass</a></li><li><a href="global.html#computeCircleMass">computeCircleMass</a></li><li><a href="global.html#containerRadius">containerRadius</a></li><li><a href="global.html#countTrailingZeros">countTrailingZeros</a></li><li><a href="global.html#createBulletTrailCanvas">createBulletTrailCanvas</a></li><li><a href="global.html#createButton">createButton</a></li><li><a href="global.html#createCircularGradientCanvas">createCircularGradientCanvas</a></li><li><a href="global.html#createDivider">createDivider</a></li><li><a href="global.html#createMultiWorkerStatsReaderArray">createMultiWorkerStatsReaderArray</a></li><li><a href="global.html#createMultiWorkerStatsWriter">createMultiWorkerStatsWriter</a></li><li><a href="global.html#createPanel">createPanel</a></li><li><a href="global.html#createRow">createRow</a></li><li><a href="global.html#createStat">createStat</a></li><li><a href="global.html#createStatsReader">createStatsReader</a></li><li><a href="global.html#createStatsWriter">createStatsWriter</a></li><li><a href="global.html#createTab">createTab</a></li><li><a href="global.html#createWorkerQueryFunctions">createWorkerQueryFunctions</a></li><li><a href="global.html#directionTo">directionTo</a></li><li><a href="global.html#distance2D">distance2D</a></li><li><a href="global.html#distanceConstraintIterations">distanceConstraintIterations</a></li><li><a href="global.html#distanceSq2D">distanceSq2D</a></li><li><a href="global.html#drawCircle">drawCircle</a></li><li><a href="global.html#drawCross">drawCross</a></li><li><a href="global.html#drawLine">drawLine</a></li><li><a href="global.html#emitArcVertices">emitArcVertices</a></li><li><a href="global.html#emitVertex">emitVertex</a></li><li><a href="global.html#ensureDecorationFacade">ensureDecorationFacade</a></li><li><a href="global.html#evictDecorationFacade">evictDecorationFacade</a></li><li><a href="global.html#exposeComponentsGlobally">exposeComponentsGlobally</a></li><li><a href="global.html#exposeEntityClassesGlobally">exposeEntityClassesGlobally</a></li><li><a href="global.html#extractRGB">extractRGB</a></li><li><a href="global.html#extractRGBMut">extractRGBMut</a></li><li><a href="global.html#extractRGBNormalized">extractRGBNormalized</a></li><li><a href="global.html#extractRGBNormalizedMut">extractRGBNormalizedMut</a></li><li><a href="global.html#formatComponentValue">formatComponentValue</a></li><li><a href="global.html#formatNumber">formatNumber</a></li><li><a href="global.html#generateSymmetricalCirclePattern">generateSymmetricalCirclePattern</a></li><li><a href="global.html#getCellCoords">getCellCoords</a></li><li><a href="global.html#getCellCoordsMut">getCellCoordsMut</a></li><li><a href="global.html#getCellIndex">getCellIndex</a></li><li><a href="global.html#getCellRange">getCellRange</a></li><li><a href="global.html#getColliderBounds">getColliderBounds</a></li><li><a href="global.html#getComponentColor">getComponentColor</a></li><li><a href="global.html#getComponentPropertyNames">getComponentPropertyNames</a></li><li><a href="global.html#getDirectionFromAngle">getDirectionFromAngle</a></li><li><a href="global.html#getEntityHomeCellIndex">getEntityHomeCellIndex</a></li><li><a href="global.html#getParentClasses">getParentClasses</a></li><li><a href="global.html#hashToPastelColorCSS">hashToPastelColorCSS</a></li><li><a href="global.html#hashToPastelColorHex">hashToPastelColorHex</a></li><li><a href="global.html#hslToHex">hslToHex</a></li><li><a href="global.html#initializeComponentViews">initializeComponentViews</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isWithinRange">isWithinRange</a></li><li><a href="global.html#isWithinRangeSq">isWithinRangeSq</a></li><li><a href="global.html#layerMask">layerMask</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#lerpAngle">lerpAngle</a></li><li><a href="global.html#loadEntityScripts">loadEntityScripts</a></li><li><a href="global.html#maxAtlasHeight">maxAtlasHeight</a></li><li><a href="global.html#maxAtlasWidth">maxAtlasWidth</a></li><li><a href="global.html#maxAttachedDecorationsPerEntity">maxAttachedDecorationsPerEntity</a></li><li><a href="global.html#normalizeAngle">normalizeAngle</a></li><li><a href="global.html#normalizeAngleDifference">normalizeAngleDifference</a></li><li><a href="global.html#normalizeDirection">normalizeDirection</a></li><li><a href="global.html#normalizeDirectionFast">normalizeDirectionFast</a></li><li><a href="global.html#normalizeDirectionFromDistSq">normalizeDirectionFromDistSq</a></li><li><a href="global.html#query">query</a></li><li><a href="global.html#randomColor">randomColor</a></li><li><a href="global.html#randomRange">randomRange</a></li><li><a href="global.html#rayBoxHit">rayBoxHit</a></li><li><a href="global.html#rayBoxIntersect">rayBoxIntersect</a></li><li><a href="global.html#rayCircleDist">rayCircleDist</a></li><li><a href="global.html#rayCircleHit">rayCircleHit</a></li><li><a href="global.html#rayCircleIntersect">rayCircleIntersect</a></li><li><a href="global.html#rng">rng</a></li><li><a href="global.html#screenBoundsToWorldBounds">screenBoundsToWorldBounds</a></li><li><a href="global.html#setupWorkerCommunication">setupWorkerCommunication</a></li><li><a href="global.html#sortByY">sortByY</a></li><li><a href="global.html#sortEventsByAngle">sortEventsByAngle</a></li><li><a href="global.html#stringToHash">stringToHash</a></li><li><a href="global.html#subStepCount">subStepCount</a></li><li><a href="global.html#tangentHalfAngle">tangentHalfAngle</a></li><li><a href="global.html#testAABBAABBCollision">testAABBAABBCollision</a></li><li><a href="global.html#testCircleAABBCollision">testCircleAABBCollision</a></li><li><a href="global.html#testCircleCircleCollision">testCircleCircleCollision</a></li><li><a href="global.html#trimAlphaThreshold">trimAlphaThreshold</a></li><li><a href="global.html#trimImages">trimImages</a></li><li><a href="global.html#updateMassFromBox">updateMassFromBox</a></li><li><a href="global.html#updateMassFromCircle">updateMassFromCircle</a></li><li><a href="global.html#urlToPath">urlToPath</a></li><li><a href="global.html#validatePhysicsConfig">validatePhysicsConfig</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Apr 06 2026 16:36:00 GMT-0300 (hora estándar de Argentina)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

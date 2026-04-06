@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: core/SoundManager.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: core/SoundManager.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>// SoundManager.js — Static audio mixer for WeedJS (AudioWorklet + SharedArrayBuffer)
+//
+// Workers + main thread write play commands to a shared SAB slot array.
+// AudioWorklet reads SAB slots every process() call, mixes active sounds, outputs audio.
+// Main thread decodes audio files and sends PCM to the worklet via postMessage.
+//
+// SAB Layout (HEADER_SIZE + maxSlots * SLOT_SIZE words × 4 bytes):
+//   HEADER [0..3]: [maxSlots(i32), droppedCount(i32), mixGain(f32), masterVolume(f32)]
+//   Each SLOT [+0..+7]:
+//     +0 state   (Int32)   0=free 1=playing 2=claiming
+//     +1 audioId (Int32)
+//     +2 pitch   (Float32) playback rate
+//     +3 pan     (Float32) -1..+1
+//     +4 volume  (Float32) 0..1
+//     +5 loop    (Int32)   0=once 1=loop
+//     +6 cursor  (Float32) fractional sample position (worklet writes)
+//     +7 reserved
+
+export class SoundManager {
+  static _enabled = true;
+  static _nameToId = new Map();
+  static _idToName = [];
+
+  // SAB slot layout
+  static HEADER_SIZE = 4;
+  static HEADER_DROPPED = 1;
+  static HEADER_MIX_GAIN = 2;
+  static HEADER_MASTER_VOL = 3;
+  static SLOT_SIZE = 8;
+  static STATE_FREE = 0;
+  static STATE_PLAYING = 1;
+  static STATE_CLAIMING = 2;
+
+  // Slot SAB views (shared between workers and main thread)
+  static _sab = null;
+  static _i32 = null;
+  static _f32 = null;
+  static _maxSlots = 0;
+
+  // AudioWorklet (main thread only)
+  static _audioCtx = null;
+  static _workletNode = null;
+
+  // Volume state (main thread tracks these for mute/unmute restore)
+  static _muted = false;
+  static _savedMasterVolume = 1.0;
+
+  // Spatial culling / panning
+  static _spatialResult = { audible: 1, gain: 1, pan: 0 };
+
+  // Autoplay gate
+  static _audioUnlocked = false;
+  static _unlockListenersAttached = false;
+  static _unlockHandler = null;
+
+  // ─── Context helpers ────────────────────────────────────────────────────────
+
+  static _isWorkerContext() {
+    return typeof window === 'undefined' &amp;&amp; typeof self !== 'undefined';
+  }
+
+  static setEnabled(enabled) {
+    this._enabled = !!enabled;
+  }
+
+  // ─── Autoplay gate ──────────────────────────────────────────────────────────
+
+  static initializeAutoplayGate() {
+    if (this._isWorkerContext()) return;
+    if (this._unlockListenersAttached) return;
+
+    if (this._hasUserActivation()) {
+      this._audioUnlocked = true;
+      this._tryResumeAudioContext();
+      return;
+    }
+
+    this._unlockHandler = () => {
+      this._audioUnlocked = true;
+      this._tryResumeAudioContext();
+      this._detachUnlockListeners();
+    };
+
+    const opts = { capture: true, passive: true };
+    document.addEventListener('pointerdown', this._unlockHandler, opts);
+    document.addEventListener('touchstart', this._unlockHandler, opts);
+    document.addEventListener('keydown', this._unlockHandler, opts);
+    this._unlockListenersAttached = true;
+  }
+
+  static isAudioUnlocked() {
+    if (this._isWorkerContext()) return false;
+    return this._audioUnlocked || this._hasUserActivation() || this._isAudioContextRunning();
+  }
+
+  // ─── AudioWorklet initialization (main thread only) ─────────────────────────
+
+  static async initializeAudioWorklet(maxSlots = 64, mixGain = 0.5, masterVolume = 1.0) {
+    if (this._isWorkerContext()) return false;
+
+    if (this._audioCtx) {
+      this._reconfigureForNewScene(maxSlots, mixGain, masterVolume);
+      return true;
+    }
+
+    this._audioCtx = new AudioContext({ latencyHint: 'interactive' });
+
+    let processorUrl;
+    const embedded = typeof globalThis.WEED !== 'undefined' &amp;&amp; globalThis.WEED.AudioWorkletSource;
+    if (embedded) {
+      const blob = new Blob([embedded], { type: 'application/javascript' });
+      processorUrl = URL.createObjectURL(blob);
+    } else {
+      processorUrl = new URL('../workers/AudioMixerProcessor.js', import.meta.url).href;
+    }
+    await this._audioCtx.audioWorklet.addModule(processorUrl);
+
+    this._maxSlots = maxSlots;
+    const sabBytes = (this.HEADER_SIZE + maxSlots * this.SLOT_SIZE) * 4;
+    this._sab = new SharedArrayBuffer(sabBytes);
+    this._i32 = new Int32Array(this._sab);
+    this._f32 = new Float32Array(this._sab);
+    this._i32.fill(0);
+    Atomics.store(this._i32, 0, maxSlots);
+
+    this._f32[this.HEADER_MIX_GAIN] = Math.max(0, Math.min(1, mixGain));
+    this._f32[this.HEADER_MASTER_VOL] = Math.max(0, Math.min(1, masterVolume));
+    this._savedMasterVolume = this._f32[this.HEADER_MASTER_VOL];
+    this._muted = false;
+
+    this._workletNode = new AudioWorkletNode(this._audioCtx, 'weed-audio-mixer', {
+      numberOfOutputs: 1,
+      outputChannelCount: [2],
+    });
+    this._workletNode.connect(this._audioCtx.destination);
+
+    this._workletNode.port.postMessage({ type: 'init', sab: this._sab, maxSlots });
+
+    console.log(
+      `[SoundManager] AudioWorklet mixer initialized (${maxSlots} slots, mixGain=${mixGain}, masterVol=${masterVolume})`
+    );
+    return true;
+  }
+
+  static getSlotSABConfig() {
+    if (!this._sab) return null;
+    return { sab: this._sab, maxSlots: this._maxSlots };
+  }
+
+  static initializeSlotSAB(config) {
+    if (!config || !config.sab) {
+      this._sab = null;
+      this._i32 = null;
+      this._f32 = null;
+      this._maxSlots = 0;
+      return;
+    }
+    this._sab = config.sab;
+    this._i32 = new Int32Array(config.sab);
+    this._f32 = new Float32Array(config.sab);
+    this._maxSlots = config.maxSlots || this._i32[0] || 64;
+  }
+
+  /**
+   * Reconfigure the audio worklet for a new scene without recreating the AudioContext.
+   * Rebuilds the SAB if maxSlots changed, and always applies fresh gain/volume.
+   */
+  static _reconfigureForNewScene(maxSlots, mixGain, masterVolume) {
+    if (maxSlots !== this._maxSlots) {
+      this._maxSlots = maxSlots;
+      const sabBytes = (this.HEADER_SIZE + maxSlots * this.SLOT_SIZE) * 4;
+      this._sab = new SharedArrayBuffer(sabBytes);
+      this._i32 = new Int32Array(this._sab);
+      this._f32 = new Float32Array(this._sab);
+      this._i32.fill(0);
+      Atomics.store(this._i32, 0, maxSlots);
+
+      if (this._workletNode) {
+        this._workletNode.port.postMessage({ type: 'init', sab: this._sab, maxSlots });
+      }
+    }
+
+    this._f32[this.HEADER_MIX_GAIN] = Math.max(0, Math.min(1, mixGain));
+    this._f32[this.HEADER_MASTER_VOL] = Math.max(0, Math.min(1, masterVolume));
+    this._savedMasterVolume = this._f32[this.HEADER_MASTER_VOL];
+    this._muted = false;
+
+    console.log(
+      `[SoundManager] AudioWorklet reconfigured for new scene (${maxSlots} slots, mixGain=${mixGain}, masterVol=${masterVolume})`
+    );
+  }
+
+  // ─── Sound ID mapping ──────────────────────────────────────────────────────
+
+  static importSoundIdMap(soundIdMap) {
+    this._nameToId.clear();
+    this._idToName.length = 0;
+
+    if (!soundIdMap || typeof soundIdMap !== 'object') return;
+
+    for (const [name, idValue] of Object.entries(soundIdMap)) {
+      const id = idValue | 0;
+      if (id &lt; 0) continue;
+      this._nameToId.set(name, id);
+      this._idToName[id] = name;
+    }
+  }
+
+  static exportSoundIdMap() {
+    const out = {};
+    for (const [name, id] of this._nameToId) {
+      out[name] = id;
+    }
+    return out;
+  }
+
+  static getSoundId(name) {
+    if (typeof name !== 'string') return -1;
+    const id = this._nameToId.get(name);
+    return typeof id === 'number' ? id : -1;
+  }
+
+  // ─── Loading ──────────────────────────────────────────────────────────────
+
+  static async loadManifest(manifest) {
+    const entries = this._parseManifest(manifest);
+    const mainThread = !this._isWorkerContext();
+    const loadPromises = [];
+
+    for (const [name, srcUrl] of entries) {
+      const id = this._assignId(name);
+      if (mainThread) {
+        loadPromises.push(this._decodeAndSendToWorklet(id, srcUrl));
+      }
+    }
+
+    if (loadPromises.length > 0) {
+      await Promise.all(loadPromises);
+    }
+  }
+
+  // ─── Playback (works from both workers and main thread) ────────────────────
+
+  static play(
+    nameOrId,
+    volume = 1,
+    rateMin = 1,
+    rateMax = rateMin,
+    loop = 0,
+    mute = 0,
+    worldX = Number.NaN,
+    worldY = Number.NaN
+  ) {
+    if (!this._enabled) return -1;
+
+    const soundDefId = this._resolveSoundId(nameOrId);
+    if (soundDefId &lt; 0) return -1;
+
+    const spatial = this._computeSpatial(worldX, worldY);
+    if (!spatial.audible) return -1;
+
+    const finalVolume = mute ? 0 : (Number.isFinite(volume) ? volume : 1) * spatial.gain;
+    if (!mute &amp;&amp; !(finalVolume > 0)) return -1;
+
+    const playbackRate = this._resolveRateRange(rateMin, rateMax);
+    return this._writeSlot(soundDefId, finalVolume, playbackRate, spatial.pan, !!loop);
+  }
+
+  static stop(nameOrId) {
+    const soundDefId = this._resolveSoundId(nameOrId);
+    if (soundDefId &lt; 0 || !this._i32) return;
+
+    for (let s = 0; s &lt; this._maxSlots; s++) {
+      const b = this.HEADER_SIZE + s * this.SLOT_SIZE;
+      if (
+        Atomics.load(this._i32, b) === this.STATE_PLAYING &amp;&amp;
+        this._i32[b + 1] === soundDefId
+      ) {
+        Atomics.store(this._i32, b, this.STATE_FREE);
+      }
+    }
+  }
+
+  static stopAll() {
+    if (!this._i32) return;
+    for (let s = 0; s &lt; this._maxSlots; s++) {
+      Atomics.store(this._i32, this.HEADER_SIZE + s * this.SLOT_SIZE, this.STATE_FREE);
+    }
+  }
+
+  static unload(nameOrId) {
+    const soundDefId = this._resolveSoundId(nameOrId);
+    if (soundDefId &lt; 0) return;
+
+    this.stop(nameOrId);
+
+    if (this._workletNode) {
+      this._workletNode.port.postMessage({ type: 'unload', id: soundDefId });
+    }
+
+    const name = this._idToName[soundDefId];
+    if (name) this._nameToId.delete(name);
+    this._idToName[soundDefId] = null;
+  }
+
+  static unloadMany(names) {
+    if (!Array.isArray(names)) return;
+    for (let i = 0; i &lt; names.length; i++) {
+      this.unload(names[i]);
+    }
+  }
+
+  static unloadAll() {
+    this.stopAll();
+    if (this._workletNode) {
+      for (const [, id] of this._nameToId) {
+        this._workletNode.port.postMessage({ type: 'unload', id });
+      }
+    }
+    this._idToName.length = 0;
+    this._nameToId.clear();
+  }
+
+  static reset() {
+    this.stopAll();
+    if (this._workletNode) {
+      for (const [, id] of this._nameToId) {
+        this._workletNode.port.postMessage({ type: 'unload', id });
+      }
+    }
+    this._idToName.length = 0;
+    this._nameToId.clear();
+    if (this._i32) {
+      Atomics.store(this._i32, this.HEADER_DROPPED, 0);
+    }
+  }
+
+  static getActiveSlotCount() {
+    if (!this._i32) return 0;
+    let count = 0;
+    for (let s = 0; s &lt; this._maxSlots; s++) {
+      if (Atomics.load(this._i32, this.HEADER_SIZE + s * this.SLOT_SIZE) === this.STATE_PLAYING) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  static getMetrics() {
+    const ctx = this._audioCtx;
+    return {
+      activeSlots: this.getActiveSlotCount(),
+      maxSlots: this._maxSlots,
+      loadedSounds: this._nameToId.size,
+      dropped: this._i32 ? Atomics.load(this._i32, this.HEADER_DROPPED) : 0,
+      mixGain: this._f32 ? this._f32[this.HEADER_MIX_GAIN] : 0,
+      masterVolume: this._muted ? this._savedMasterVolume : (this._f32 ? this._f32[this.HEADER_MASTER_VOL] : 0),
+      muted: this._muted,
+      state: ctx ? ctx.state : 'closed',
+      sampleRate: ctx ? ctx.sampleRate : 0,
+      baseLatency: ctx ? (ctx.baseLatency || 0) : 0,
+      outputLatency: ctx ? (ctx.outputLatency || 0) : 0,
+    };
+  }
+
+  // ─── Volume controls ─────────────────────────────────────────────────────
+
+  static setMixGain(value) {
+    if (!this._f32) return;
+    this._f32[this.HEADER_MIX_GAIN] = Math.max(0, Math.min(1, value));
+  }
+
+  static getMixGain() {
+    return this._f32 ? this._f32[this.HEADER_MIX_GAIN] : 0;
+  }
+
+  static setMasterVolume(value) {
+    const clamped = Math.max(0, Math.min(1, value));
+    this._savedMasterVolume = clamped;
+    if (!this._muted &amp;&amp; this._f32) {
+      this._f32[this.HEADER_MASTER_VOL] = clamped;
+    }
+  }
+
+  static getMasterVolume() {
+    return this._savedMasterVolume;
+  }
+
+  static setMuted(muted) {
+    this._muted = !!muted;
+    if (!this._f32) return;
+    this._f32[this.HEADER_MASTER_VOL] = this._muted ? 0 : this._savedMasterVolume;
+  }
+
+  static isMuted() {
+    return this._muted;
+  }
+
+  // ─── Private ──────────────────────────────────────────────────────────────
+
+  static _writeSlot(audioId, volume, pitch, pan, loop) {
+    if (!this._i32) return -1;
+
+    const H = this.HEADER_SIZE;
+    const S = this.SLOT_SIZE;
+
+    for (let s = 0; s &lt; this._maxSlots; s++) {
+      const b = H + s * S;
+      if (Atomics.compareExchange(this._i32, b, this.STATE_FREE, this.STATE_CLAIMING) === this.STATE_FREE) {
+        this._i32[b + 1] = audioId;
+        this._f32[b + 2] = pitch;
+        this._f32[b + 3] = pan;
+        this._f32[b + 4] = volume;
+        this._i32[b + 5] = loop ? 1 : 0;
+        this._f32[b + 6] = 0;
+        this._i32[b + 7] = 0;
+        Atomics.store(this._i32, b, this.STATE_PLAYING);
+        return s;
+      }
+    }
+    Atomics.add(this._i32, this.HEADER_DROPPED, 1);
+    return -1;
+  }
+
+  static async _decodeAndSendToWorklet(id, srcUrl) {
+    if (!this._workletNode) return;
+
+    const response = await fetch(srcUrl);
+    const arrayBuffer = await response.arrayBuffer();
+    const decoded = await this._audioCtx.decodeAudioData(arrayBuffer);
+
+    const channels = [];
+    for (let c = 0; c &lt; decoded.numberOfChannels; c++) {
+      channels.push(new Float32Array(decoded.getChannelData(c)));
+    }
+
+    this._workletNode.port.postMessage({
+      type: 'load',
+      id,
+      channels,
+      length: decoded.length,
+    });
+  }
+
+  static _resolveRateRange(rateMin, rateMax) {
+    const min = Number.isFinite(rateMin) ? rateMin : 1;
+    const max = Number.isFinite(rateMax) ? rateMax : min;
+    const low = min &lt;= max ? min : max;
+    const high = min &lt;= max ? max : min;
+    const result = low + Math.random() * (high - low);
+    if (!Number.isFinite(result)) return 1;
+    return Math.max(0.25, Math.min(4, result));
+  }
+
+  static _resolveSoundId(nameOrId) {
+    if (typeof nameOrId === 'number' &amp;&amp; Number.isInteger(nameOrId) &amp;&amp; nameOrId >= 0) {
+      return nameOrId;
+    }
+    if (typeof nameOrId !== 'string') return -1;
+    const id = this._nameToId.get(nameOrId);
+    return typeof id === 'number' ? id : -1;
+  }
+
+  static _assignId(name) {
+    let id = this._nameToId.get(name);
+    if (typeof id === 'number') return id;
+    id = this._idToName.length;
+    this._nameToId.set(name, id);
+    this._idToName[id] = name;
+    return id;
+  }
+
+  static _extractSrc(definition) {
+    if (typeof definition === 'string') return definition;
+    if (Array.isArray(definition)) return definition[0];
+    if (definition.src) {
+      return Array.isArray(definition.src) ? definition.src[0] : definition.src;
+    }
+    return null;
+  }
+
+  static _parseManifest(manifest) {
+    const result = [];
+    if (!manifest) return result;
+
+    if (Array.isArray(manifest)) {
+      for (let i = 0; i &lt; manifest.length; i++) {
+        const entry = manifest[i];
+        if (!entry) continue;
+        if (typeof entry === 'string') {
+          result.push([entry, entry]);
+          continue;
+        }
+        const name = entry.name || entry.id;
+        const src = this._extractSrc(entry);
+        if (name &amp;&amp; src) result.push([name, src]);
+      }
+      return result;
+    }
+
+    if (typeof manifest === 'object') {
+      for (const [name, definition] of Object.entries(manifest)) {
+        const src = this._extractSrc(definition);
+        if (src) result.push([name, src]);
+      }
+    }
+
+    return result;
+  }
+
+  static _computeSpatial(worldX, worldY) {
+    const out = this._spatialResult;
+    out.audible = 1;
+    out.gain = 1;
+    out.pan = 0;
+
+    if (!Number.isFinite(worldX) || !Number.isFinite(worldY)) return out;
+
+    const Camera = globalThis.Camera;
+    if (!Camera || typeof Camera.getViewportBounds !== 'function') return out;
+
+    const viewport = Camera.getViewportBounds();
+    if (!viewport || !Number.isFinite(viewport.width) || viewport.width &lt;= 0) return out;
+
+    const zoom = Camera.zoom;
+    const zoomGain = (zoom > 0 &amp;&amp; zoom &lt; 1) ? zoom : 1;
+
+    const left = viewport.left;
+    const right = viewport.right;
+    const top = viewport.top;
+    const bottom = viewport.bottom;
+    const centerX = (left + right) * 0.5;
+    const viewportWidth = viewport.width;
+
+    const dxFromCenter = worldX - centerX;
+    out.pan = Math.max(-1, Math.min(1, dxFromCenter / (viewportWidth * 1.5)));
+
+    const dxOut = worldX &lt; left ? left - worldX : worldX > right ? worldX - right : 0;
+    const dyOut = worldY &lt; top ? top - worldY : worldY > bottom ? worldY - bottom : 0;
+    const outsideDistance = Math.sqrt(dxOut * dxOut + dyOut * dyOut);
+
+    if (outsideDistance &lt;= 0) {
+      out.gain = zoomGain;
+      return out;
+    }
+
+    const gain = 1 - outsideDistance / viewportWidth;
+    if (gain &lt;= 0) {
+      out.audible = 0;
+      out.gain = 0;
+      return out;
+    }
+
+    out.gain = gain * zoomGain;
+    return out;
+  }
+
+  static _hasUserActivation() {
+    return !!globalThis.navigator?.userActivation?.hasBeenActive;
+  }
+
+  static _isAudioContextRunning() {
+    return this._audioCtx?.state === 'running';
+  }
+
+  static _tryResumeAudioContext() {
+    const ctx = this._audioCtx;
+    if (!ctx || ctx.state !== 'suspended') return;
+    Promise.resolve(ctx.resume()).catch(() => { });
+  }
+
+  static _detachUnlockListeners() {
+    if (!this._unlockListenersAttached || !this._unlockHandler) return;
+    document.removeEventListener('pointerdown', this._unlockHandler, true);
+    document.removeEventListener('touchstart', this._unlockHandler, true);
+    document.removeEventListener('keydown', this._unlockHandler, true);
+    this._unlockListenersAttached = false;
+    this._unlockHandler = null;
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbstractWorker.html">AbstractWorker</a></li><li><a href="BigAtlasInspector.html">BigAtlasInspector</a></li><li><a href="Camera.html">Camera</a></li><li><a href="Constraint.html">Constraint</a></li><li><a href="DebugCanvas.html">DebugCanvas</a></li><li><a href="DebugFlags.html">DebugFlags</a></li><li><a href="DebugUI.html">DebugUI</a></li><li><a href="Decoration_Decoration.html">Decoration</a></li><li><a href="GameObject_GameObject.html">GameObject</a></li><li><a href="Grid.html">Grid</a></li><li><a href="LogicWorker.html">LogicWorker</a></li><li><a href="Mouse.html">Mouse</a></li><li><a href="NavGrid.html">NavGrid</a></li><li><a href="NavScratch.html">NavScratch</a></li><li><a href="ParticleWorker.html">ParticleWorker</a></li><li><a href="PhysicsWorker.html">PhysicsWorker</a></li><li><a href="PixiParticlePool.html">PixiParticlePool</a></li><li><a href="PixiRenderer.html">PixiRenderer</a></li><li><a href="PreRenderWorker.html">PreRenderWorker</a></li><li><a href="Ray.html">Ray</a></li><li><a href="SharedAtomicPool.html">SharedAtomicPool</a></li><li><a href="SpatialWorker.html">SpatialWorker</a></li><li><a href="SpriteSheetRegistry.html">SpriteSheetRegistry</a></li><li><a href="StatsCollector.html">StatsCollector</a></li><li><a href="Sun.html">Sun</a></li><li><a href="TileMap.html">TileMap</a></li><li><a href="TileMapLayer.html">TileMapLayer</a></li><li><a href="ToolManager.html">ToolManager</a></li></ul><h3>Global</h3><ul><li><a href="global.html#BLEND_MODES">BLEND_MODES</a></li><li><a href="global.html#Box">Box</a></li><li><a href="global.html#CAMERA_TYPES">CAMERA_TYPES</a></li><li><a href="global.html#COMPONENT_COLORS">COMPONENT_COLORS</a></li><li><a href="global.html#Circle">Circle</a></li><li><a href="global.html#DECORATION_INNER_Z_MAX">DECORATION_INNER_Z_MAX</a></li><li><a href="global.html#DECORATION_NO_PARENT">DECORATION_NO_PARENT</a></li><li><a href="global.html#DECORATION_Y_SORT_SCALE">DECORATION_Y_SORT_SCALE</a></li><li><a href="global.html#DEFAULT_LAYERS">DEFAULT_LAYERS</a></li><li><a href="global.html#DIRECTION">DIRECTION</a></li><li><a href="global.html#DIR_TO_VEC">DIR_TO_VEC</a></li><li><a href="global.html#ENTITY_GLOW_SORT_BIAS">ENTITY_GLOW_SORT_BIAS</a></li><li><a href="global.html#ENTITY_TYPE_ENTRY_SIZE">ENTITY_TYPE_ENTRY_SIZE</a></li><li><a href="global.html#FLOWFIELD_STATUS">FLOWFIELD_STATUS</a></li><li><a href="global.html#LOGIC_STATS">LOGIC_STATS</a></li><li><a href="global.html#MAX_COMPONENTS">MAX_COMPONENTS</a></li><li><a href="global.html#MAX_ENTITIES">MAX_ENTITIES</a></li><li><a href="global.html#MAX_ENTITY_TYPES">MAX_ENTITY_TYPES</a></li><li><a href="global.html#MAX_PRECOMPUTED_QUERIES">MAX_PRECOMPUTED_QUERIES</a></li><li><a href="global.html#NAVIGATION_STATS">NAVIGATION_STATS</a></li><li><a href="global.html#PARTICLE_STATS">PARTICLE_STATS</a></li><li><a href="global.html#PATH_STATUS">PATH_STATUS</a></li><li><a href="global.html#PHYSICS_STATS">PHYSICS_STATS</a></li><li><a href="global.html#PRE_RENDER_STATS">PRE_RENDER_STATS</a></li><li><a href="global.html#Polygon">Polygon</a></li><li><a href="global.html#QUERY_CACHE_ENTRY_SIZE">QUERY_CACHE_ENTRY_SIZE</a></li><li><a href="global.html#QUERY_RESULT_BUFFER_SIZE">QUERY_RESULT_BUFFER_SIZE</a></li><li><a href="global.html#RENDERER_STATS">RENDERER_STATS</a></li><li><a href="global.html#SHAPE_CIRCLE">SHAPE_CIRCLE</a></li><li><a href="global.html#SIDE">SIDE</a></li><li><a href="global.html#SPATIAL_STATS">SPATIAL_STATS</a></li><li><a href="global.html#SUN_DEFAULTS">SUN_DEFAULTS</a></li><li><a href="global.html#ShapeType">ShapeType</a></li><li><a href="global.html#TOPDOWN">TOPDOWN</a></li><li><a href="global.html#WORKER_DISPLAY_CONFIG">WORKER_DISPLAY_CONFIG</a></li><li><a href="global.html#Y_SORT_K">Y_SORT_K</a></li><li><a href="global.html#ZENITHAL">ZENITHAL</a></li><li><a href="global.html#_boundsResult">_boundsResult</a></li><li><a href="global.html#applyBrightnessToColor">applyBrightnessToColor</a></li><li><a href="global.html#atlasPadding">atlasPadding</a></li><li><a href="global.html#binarySearchFind">binarySearchFind</a></li><li><a href="global.html#binarySearchInsertPoint">binarySearchInsertPoint</a></li><li><a href="global.html#binarySearchRange">binarySearchRange</a></li><li><a href="global.html#brightnessToColoredTint">brightnessToColoredTint</a></li><li><a href="global.html#brightnessToTint">brightnessToTint</a></li><li><a href="global.html#buildFullCircle">buildFullCircle</a></li><li><a href="global.html#buildVisibilityPolygon">buildVisibilityPolygon</a></li><li><a href="global.html#calculateCameraScreenBounds">calculateCameraScreenBounds</a></li><li><a href="global.html#calculateDecalTileBounds">calculateDecalTileBounds</a></li><li><a href="global.html#calculateEntityMetadataSABSize">calculateEntityMetadataSABSize</a></li><li><a href="global.html#calculateLightAttenuation">calculateLightAttenuation</a></li><li><a href="global.html#calculateLightFromNeighbors">calculateLightFromNeighbors</a></li><li><a href="global.html#calculateQueryCacheSABSize">calculateQueryCacheSABSize</a></li><li><a href="global.html#calculateQueryResultsSABSize">calculateQueryResultsSABSize</a></li><li><a href="global.html#calculateSpeed">calculateSpeed</a></li><li><a href="global.html#calculateTileClipRegion">calculateTileClipRegion</a></li><li><a href="global.html#calculateTotalLightAtPosition">calculateTotalLightAtPosition</a></li><li><a href="global.html#calculateVelocityAngle">calculateVelocityAngle</a></li><li><a href="global.html#cantorPair">cantorPair</a></li><li><a href="global.html#cantorUnpair">cantorUnpair</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clamp01">clamp01</a></li><li><a href="global.html#clamp01Fast">clamp01Fast</a></li><li><a href="global.html#clampVelocity">clampVelocity</a></li><li><a href="global.html#clampVelocityMut">clampVelocityMut</a></li><li><a href="global.html#closestPointOnAABB">closestPointOnAABB</a></li><li><a href="global.html#closestPointOnAABBMut">closestPointOnAABBMut</a></li><li><a href="global.html#collectAllComponentsFromClasses">collectAllComponentsFromClasses</a></li><li><a href="global.html#collectComponents">collectComponents</a></li><li><a href="global.html#computeBoxMass">computeBoxMass</a></li><li><a href="global.html#computeCircleMass">computeCircleMass</a></li><li><a href="global.html#containerRadius">containerRadius</a></li><li><a href="global.html#countTrailingZeros">countTrailingZeros</a></li><li><a href="global.html#createBulletTrailCanvas">createBulletTrailCanvas</a></li><li><a href="global.html#createButton">createButton</a></li><li><a href="global.html#createCircularGradientCanvas">createCircularGradientCanvas</a></li><li><a href="global.html#createDivider">createDivider</a></li><li><a href="global.html#createMultiWorkerStatsReaderArray">createMultiWorkerStatsReaderArray</a></li><li><a href="global.html#createMultiWorkerStatsWriter">createMultiWorkerStatsWriter</a></li><li><a href="global.html#createPanel">createPanel</a></li><li><a href="global.html#createRow">createRow</a></li><li><a href="global.html#createStat">createStat</a></li><li><a href="global.html#createStatsReader">createStatsReader</a></li><li><a href="global.html#createStatsWriter">createStatsWriter</a></li><li><a href="global.html#createTab">createTab</a></li><li><a href="global.html#createWorkerQueryFunctions">createWorkerQueryFunctions</a></li><li><a href="global.html#directionTo">directionTo</a></li><li><a href="global.html#distance2D">distance2D</a></li><li><a href="global.html#distanceConstraintIterations">distanceConstraintIterations</a></li><li><a href="global.html#distanceSq2D">distanceSq2D</a></li><li><a href="global.html#drawCircle">drawCircle</a></li><li><a href="global.html#drawCross">drawCross</a></li><li><a href="global.html#drawLine">drawLine</a></li><li><a href="global.html#emitArcVertices">emitArcVertices</a></li><li><a href="global.html#emitVertex">emitVertex</a></li><li><a href="global.html#ensureDecorationFacade">ensureDecorationFacade</a></li><li><a href="global.html#evictDecorationFacade">evictDecorationFacade</a></li><li><a href="global.html#exposeComponentsGlobally">exposeComponentsGlobally</a></li><li><a href="global.html#exposeEntityClassesGlobally">exposeEntityClassesGlobally</a></li><li><a href="global.html#extractRGB">extractRGB</a></li><li><a href="global.html#extractRGBMut">extractRGBMut</a></li><li><a href="global.html#extractRGBNormalized">extractRGBNormalized</a></li><li><a href="global.html#extractRGBNormalizedMut">extractRGBNormalizedMut</a></li><li><a href="global.html#formatComponentValue">formatComponentValue</a></li><li><a href="global.html#formatNumber">formatNumber</a></li><li><a href="global.html#generateSymmetricalCirclePattern">generateSymmetricalCirclePattern</a></li><li><a href="global.html#getCellCoords">getCellCoords</a></li><li><a href="global.html#getCellCoordsMut">getCellCoordsMut</a></li><li><a href="global.html#getCellIndex">getCellIndex</a></li><li><a href="global.html#getCellRange">getCellRange</a></li><li><a href="global.html#getColliderBounds">getColliderBounds</a></li><li><a href="global.html#getComponentColor">getComponentColor</a></li><li><a href="global.html#getComponentPropertyNames">getComponentPropertyNames</a></li><li><a href="global.html#getDirectionFromAngle">getDirectionFromAngle</a></li><li><a href="global.html#getEntityHomeCellIndex">getEntityHomeCellIndex</a></li><li><a href="global.html#getParentClasses">getParentClasses</a></li><li><a href="global.html#hashToPastelColorCSS">hashToPastelColorCSS</a></li><li><a href="global.html#hashToPastelColorHex">hashToPastelColorHex</a></li><li><a href="global.html#hslToHex">hslToHex</a></li><li><a href="global.html#initializeComponentViews">initializeComponentViews</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isWithinRange">isWithinRange</a></li><li><a href="global.html#isWithinRangeSq">isWithinRangeSq</a></li><li><a href="global.html#layerMask">layerMask</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#lerpAngle">lerpAngle</a></li><li><a href="global.html#loadEntityScripts">loadEntityScripts</a></li><li><a href="global.html#maxAtlasHeight">maxAtlasHeight</a></li><li><a href="global.html#maxAtlasWidth">maxAtlasWidth</a></li><li><a href="global.html#maxAttachedDecorationsPerEntity">maxAttachedDecorationsPerEntity</a></li><li><a href="global.html#normalizeAngle">normalizeAngle</a></li><li><a href="global.html#normalizeAngleDifference">normalizeAngleDifference</a></li><li><a href="global.html#normalizeDirection">normalizeDirection</a></li><li><a href="global.html#normalizeDirectionFast">normalizeDirectionFast</a></li><li><a href="global.html#normalizeDirectionFromDistSq">normalizeDirectionFromDistSq</a></li><li><a href="global.html#query">query</a></li><li><a href="global.html#randomColor">randomColor</a></li><li><a href="global.html#randomRange">randomRange</a></li><li><a href="global.html#rayBoxHit">rayBoxHit</a></li><li><a href="global.html#rayBoxIntersect">rayBoxIntersect</a></li><li><a href="global.html#rayCircleDist">rayCircleDist</a></li><li><a href="global.html#rayCircleHit">rayCircleHit</a></li><li><a href="global.html#rayCircleIntersect">rayCircleIntersect</a></li><li><a href="global.html#rng">rng</a></li><li><a href="global.html#screenBoundsToWorldBounds">screenBoundsToWorldBounds</a></li><li><a href="global.html#setupWorkerCommunication">setupWorkerCommunication</a></li><li><a href="global.html#sortByY">sortByY</a></li><li><a href="global.html#sortEventsByAngle">sortEventsByAngle</a></li><li><a href="global.html#stringToHash">stringToHash</a></li><li><a href="global.html#subStepCount">subStepCount</a></li><li><a href="global.html#tangentHalfAngle">tangentHalfAngle</a></li><li><a href="global.html#testAABBAABBCollision">testAABBAABBCollision</a></li><li><a href="global.html#testCircleAABBCollision">testCircleAABBCollision</a></li><li><a href="global.html#testCircleCircleCollision">testCircleCircleCollision</a></li><li><a href="global.html#trimAlphaThreshold">trimAlphaThreshold</a></li><li><a href="global.html#trimImages">trimImages</a></li><li><a href="global.html#updateMassFromBox">updateMassFromBox</a></li><li><a href="global.html#updateMassFromCircle">updateMassFromCircle</a></li><li><a href="global.html#urlToPath">urlToPath</a></li><li><a href="global.html#validatePhysicsConfig">validatePhysicsConfig</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Apr 06 2026 16:36:00 GMT-0300 (hora estándar de Argentina)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

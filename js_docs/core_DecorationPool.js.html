@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: core/DecorationPool.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: core/DecorationPool.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>// DecorationPool.js - Static API for spawning/despawning decorations
+// Used by game code to place static visual elements (grass, rocks, bushes, etc.)
+// Decorations are NOT GameObjects - they use DecorationComponent directly
+//
+// EXTENDS SharedAtomicPool for thread-safe free list management
+//
+// THREAD SAFETY:
+// - freeList and freeListTop are backed by SharedArrayBuffer
+// - Spawn/despawn use Atomics for lock-free concurrent access
+// - Any worker or the main thread can safely spawn/despawn decorations
+
+import { DecorationComponent } from '../components/DecorationComponent.js';
+import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
+import { SharedAtomicPool } from './SharedAtomicPool.js';
+import { randomRange } from './utils.js';
+import { evictDecorationFacade, clearAllDecorationFacades } from './decorationFacades.js';
+import {
+  DECORATION_Y_SORT_SCALE,
+  DECORATION_INNER_Z_MIN,
+  DECORATION_INNER_Z_MAX,
+  ENTITY_GLOW_SORT_BIAS,
+} from './ConfigDefaults.js';
+
+export {
+  DECORATION_Y_SORT_SCALE,
+  DECORATION_INNER_Z_MIN,
+  DECORATION_INNER_Z_MAX,
+  ENTITY_GLOW_SORT_BIAS,
+};
+/** Uint16 sentinel: decoration not parented to any entity (entity index 0 is valid) */
+export const DECORATION_NO_PARENT = 0xffff;
+
+export class DecorationPool extends SharedAtomicPool {
+  // Pool name for logging (used by base class)
+  static poolName = 'DecorationPool';
+
+  // Compact list of active decoration indices [count, idx0, idx1, ...]
+  // Maintained incrementally by spawn/despawn, read by particle_worker
+  static activeDecorationsData = null;
+
+  // Entity -> attached decoration indices (SAB, not ECS). Row stride = _maxAttachedPerEntity.
+  static _attachedDecorationCount = null; // Uint8Array length entityCount
+  static _attachedDecorationIndices = null; // Uint16Array length entityCount * maxAttached
+  static _attachmentEntityCount = 0;
+  static _maxAttachedPerEntity = 0;
+
+  // Alias for backwards compatibility
+  static get maxDecorations() {
+    return this.maxCount;
+  }
+
+  /**
+   * Get count of active decorations from the compact list
+   * @returns {number} Number of active decorations
+   */
+  static getActiveCount() {
+    return this.activeDecorationsData ? this.activeDecorationsData[0] : 0;
+  }
+
+  /**
+   * Initialize the decoration pool with max count
+   * Called by AbstractWorker during init
+   * @param {number} maxDecorations - Number of decorations in pool
+   */
+  static initialize(maxDecorations) {
+    // Call base class initialize with the count
+    super.initialize(maxDecorations);
+  }
+
+  /**
+   * SharedArrayBuffers for entity→decoration attachment list (engine bookkeeping, not ECS).
+   * @param {SharedArrayBuffer|null} sabCount - Uint8Array, length entityCount
+   * @param {SharedArrayBuffer|null} sabIndices - Uint16Array, length entityCount * maxAttached
+   * @param {number} entityCount
+   * @param {number} maxAttachedPerEntity - 1..255
+   */
+  static initializeAttachmentSlots(sabCount, sabIndices, entityCount, maxAttachedPerEntity) {
+    if (!sabCount || !sabIndices || entityCount &lt;= 0 || maxAttachedPerEntity &lt;= 0) {
+      this._attachedDecorationCount = null;
+      this._attachedDecorationIndices = null;
+      this._attachmentEntityCount = 0;
+      this._maxAttachedPerEntity = 0;
+      return;
+    }
+    this._attachedDecorationCount = new Uint8Array(sabCount);
+    this._attachedDecorationIndices = new Uint16Array(sabIndices);
+    this._attachmentEntityCount = entityCount;
+    this._maxAttachedPerEntity = maxAttachedPerEntity;
+  }
+
+  /**
+   * How many decorations are attached to this entity (attachment table slot count).
+   * @param {number} entityIdx
+   * @returns {number}
+   */
+  static getAttachedCount(entityIdx) {
+    const countArr = this._attachedDecorationCount;
+    if (!countArr || entityIdx &lt; 0 || entityIdx >= this._attachmentEntityCount) return 0;
+    return countArr[entityIdx];
+  }
+
+  /**
+   * Pool index of the decoration at attachment slot `slot` (0 .. getAttachedCount-1).
+   * @param {number} entityIdx
+   * @param {number} slot
+   * @returns {number} decoration index, or -1 if invalid
+   */
+  static getAttachedDecorationIndex(entityIdx, slot) {
+    const countArr = this._attachedDecorationCount;
+    const idxArr = this._attachedDecorationIndices;
+    const maxA = this._maxAttachedPerEntity;
+    if (!countArr || !idxArr || maxA &lt;= 0) return -1;
+    if (entityIdx &lt; 0 || entityIdx >= this._attachmentEntityCount) return -1;
+    const c = countArr[entityIdx];
+    if (slot &lt; 0 || slot >= c) return -1;
+    return idxArr[entityIdx * maxA + slot];
+  }
+
+  static pushAttached(entityIdx, decoIdx) {
+    const countArr = this._attachedDecorationCount;
+    const idxArr = this._attachedDecorationIndices;
+    const maxA = this._maxAttachedPerEntity;
+    if (!countArr || !idxArr || maxA &lt;= 0) return false;
+    if (entityIdx &lt; 0 || entityIdx >= this._attachmentEntityCount) return false;
+    const c = countArr[entityIdx];
+    if (c >= maxA) return false;
+    idxArr[entityIdx * maxA + c] = decoIdx;
+    countArr[entityIdx] = c + 1;
+    return true;
+  }
+
+  static removeAttached(entityIdx, decoIdx) {
+    const countArr = this._attachedDecorationCount;
+    const idxArr = this._attachedDecorationIndices;
+    const maxA = this._maxAttachedPerEntity;
+    if (!countArr || !idxArr || maxA &lt;= 0) return;
+    if (entityIdx &lt; 0 || entityIdx >= this._attachmentEntityCount) return;
+    const row = entityIdx * maxA;
+    let c = countArr[entityIdx];
+    for (let k = 0; k &lt; c; k++) {
+      if (idxArr[row + k] === decoIdx) {
+        idxArr[row + k] = idxArr[row + c - 1];
+        idxArr[row + c - 1] = 0;
+        countArr[entityIdx] = c - 1;
+        return;
+      }
+    }
+  }
+
+  /**
+   * Despawn every decoration attached to this entity (after onDespawned).
+   * @param {number} entityIdx
+   */
+  static clearAttachedAndDespawnAll(entityIdx) {
+    const countArr = this._attachedDecorationCount;
+    const idxArr = this._attachedDecorationIndices;
+    const maxA = this._maxAttachedPerEntity;
+    if (!countArr || !idxArr || maxA &lt;= 0) return;
+    if (entityIdx &lt; 0 || entityIdx >= this._attachmentEntityCount) return;
+    const row = entityIdx * maxA;
+    const n = countArr[entityIdx];
+    countArr[entityIdx] = 0;
+    for (let k = 0; k &lt; n; k++) {
+      const d = idxArr[row + k];
+      idxArr[row + k] = 0;
+      DecorationComponent.parentEntityIndex[d] = DECORATION_NO_PARENT;
+      this._despawnDecorationCore(d);
+    }
+  }
+
+  /**
+   * Core despawn: inactive + compact list + free list. Does not touch attachment table.
+   * @param {number} index
+   * @returns {boolean}
+   */
+  static _despawnDecorationCore(index) {
+    if (!this.initialized || !this.freeList || !this.freeListTop) {
+      return false;
+    }
+    if (index &lt; 0 || index >= this.maxCount) {
+      return false;
+    }
+    if (DecorationComponent.active[index] === 0) {
+      return false;
+    }
+    evictDecorationFacade(index);
+    DecorationComponent.active[index] = 0;
+    DecorationComponent.isItOnScreen[index] = 0;
+
+    if (this.activeDecorationsData) {
+      const count = Atomics.load(this.activeDecorationsData, 0);
+      for (let i = 0; i &lt; count; i++) {
+        if (this.activeDecorationsData[1 + i] === index) {
+          const oldCount = Atomics.sub(this.activeDecorationsData, 0, 1);
+          this.activeDecorationsData[1 + i] = this.activeDecorationsData[oldCount - 1];
+          break;
+        }
+      }
+    }
+    this.returnToPool(index);
+    return true;
+  }
+
+  /**
+   * Spawn a decoration with the given configuration
+   *
+   * @param {Object} config - Decoration spawn configuration
+   * @param {number|{min,max}} config.x - X position or range
+   * @param {number|{min,max}} config.y - Y position or range
+   * @param {string} config.texture - Texture name (from bigAtlas)
+   * @param {number|{min,max}} [config.scaleX=1] - Scale X or range
+   * @param {number|{min,max}} [config.scaleY=1] - Scale Y or range
+   * @param {number} [config.rotation=0] - Rotation in radians
+   * @param {number|{min,max}} [config.alpha=1] - Alpha (opacity) or range
+   * @param {number} [config.tint=0xFFFFFF] - Color tint (0xRRGGBB)
+   * @param {number} [config.anchorX=0.5] - Anchor X (0-1)
+   * @param {number} [config.anchorY=0.5] - Anchor Y (0-1)
+   * @param {number} [config.offsetX=0] - Offset X for depth sorting (sprite renders at x, sorts at x+offsetX)
+   * @param {number} [config.offsetY=0] - Offset Y for depth sorting (sprite renders at y, sorts at y+offsetY)
+   * @param {boolean} [config.sway=false] - Enable sway animation
+   * @param {number} [config.swayAmplitude=0.025] - Sway rotation in radians (~1.4°)
+   * @param {number} [config.swayFrequency=1.0] - Sway speed multiplier
+   * @param {number} [config.layerId=0] - Layer ID for rendering (0 = default ENTITIES layer, non-zero = custom layer)
+   * @returns {number} - Index of spawned decoration, or -1 if pool is full
+   *
+   * @example
+   * // Spawn grass at random position with bottom anchor
+   * const index = DecorationPool.spawn({
+   *   x: rng() * worldWidth,
+   *   y: rng() * worldHeight,
+   *   texture: "grass3",
+   *   scaleX: { min: 0.8, max: 1.2 },
+   *   scaleY: { min: 0.8, max: 1.2 },
+   *   anchorX: 0.5,
+   *   anchorY: 1.0,
+   * });
+   */
+  static spawn(config) {
+    // Acquire free index from pool (inherited from SharedAtomicPool)
+    const i = this.acquireIndex();
+    if (i &lt; 0) {
+      console.warn('DecorationPool: No free slots available');
+      return -1;
+    }
+
+    // Resolve texture name to textureId (frame index in bigAtlas)
+    let textureId = 0;
+    if (config.texture) {
+      textureId = SpriteSheetRegistry.getAnimationIndex('bigAtlas', config.texture) ?? 0;
+    }
+
+    // Cache array references for performance (zero allocation - just reference copying)
+    const x = DecorationComponent.x;
+    const y = DecorationComponent.y;
+    const offsetX = DecorationComponent.offsetX;
+    const offsetY = DecorationComponent.offsetY;
+    const scaleX = DecorationComponent.scaleX;
+    const scaleY = DecorationComponent.scaleY;
+    const rotation = DecorationComponent.rotation;
+    const baseRotation = DecorationComponent.baseRotation;
+    const alpha = DecorationComponent.alpha;
+    const tint = DecorationComponent.tint;
+    const anchorX = DecorationComponent.anchorX;
+    const anchorY = DecorationComponent.anchorY;
+    const decorationTextureId = DecorationComponent.textureId;
+    const isItOnScreen = DecorationComponent.isItOnScreen;
+    const sway = DecorationComponent.sway;
+    const swayAmplitude = DecorationComponent.swayAmplitude;
+    const swayFrequency = DecorationComponent.swayFrequency;
+
+    const parentEntityIndex = DecorationComponent.parentEntityIndex;
+    const localX = DecorationComponent.localX;
+    const localY = DecorationComponent.localY;
+    const inheritParentRotation = DecorationComponent.inheritParentRotation;
+    const innerZArr = DecorationComponent.innerZ;
+
+    const rawInner = config.innerZ ?? config.zIndex ?? 0;
+    const z = rawInner | 0;
+    const innerZClamped =
+      z &lt; DECORATION_INNER_Z_MIN
+        ? DECORATION_INNER_Z_MIN
+        : z > DECORATION_INNER_Z_MAX
+          ? DECORATION_INNER_Z_MAX
+          : z;
+
+    const hasParent =
+      config.parent != null &amp;&amp;
+      typeof config.parent === 'number' &amp;&amp;
+      config.parent >= 0 &amp;&amp;
+      Number.isFinite(config.parent);
+    if (hasParent) {
+      const parent = config.parent | 0;
+      parentEntityIndex[i] = parent;
+      localX[i] = config.localX ?? 0;
+      localY[i] = config.localY ?? 0;
+      inheritParentRotation[i] = config.inheritParentRotation === false ? 0 : 1;
+      innerZArr[i] = innerZClamped;
+      x[i] = 0;
+      y[i] = 0;
+    } else {
+      parentEntityIndex[i] = DECORATION_NO_PARENT;
+      localX[i] = 0;
+      localY[i] = 0;
+      inheritParentRotation[i] = 0;
+      innerZArr[i] = innerZClamped;
+      x[i] = randomRange(config.x);
+      y[i] = randomRange(config.y);
+    }
+
+    // Offset for depth sorting (defaults to 0)
+    offsetX[i] = config.offsetX ?? 0;
+    offsetY[i] = config.offsetY ?? 0;
+
+    // Visual properties
+    scaleX[i] = randomRange(config.scaleX, 1);
+    scaleY[i] = randomRange(config.scaleY, 1);
+
+    baseRotation[i] = config.rotation ?? 0;
+    rotation[i] = baseRotation[i];
+    alpha[i] = randomRange(config.alpha, 1);
+    tint[i] = config.tint ?? 0xffffff;
+    anchorX[i] = config.anchorX ?? 0.5;
+    anchorY[i] = config.anchorY ?? 1;
+    decorationTextureId[i] = textureId;
+
+    // Sway animation
+    sway[i] = config.sway ? 1 : 0;
+    swayAmplitude[i] = config.swayAmplitude ?? 0.025;
+    swayFrequency[i] = config.swayFrequency ?? 1.0;
+
+    // Layer routing: 0 = default ENTITIES layer
+    DecorationComponent.layerId[i] = config.layerId ?? 0;
+
+    // Initially off-screen (will be updated by culling)
+    isItOnScreen[i] = 0;
+
+    // Claim this slot (must be last - signals to other workers that this slot is in use)
+    DecorationComponent.active[i] = 1;
+
+    // Add to activeDecorationsData compact list (append at end - O(1), atomic count increment)
+    if (this.activeDecorationsData) {
+      const slot = Atomics.add(this.activeDecorationsData, 0, 1);
+      this.activeDecorationsData[1 + slot] = i;
+    }
+
+    return i;
+  }
+
+  /**
+   * Spawn multiple decorations at once (batch spawn)
+   *
+   * @param {Object} config - Same as spawn(), but spawns multiple
+   * @param {number} [config.count=1] - Number of decorations to spawn
+   * @returns {number} - Number of decorations actually spawned
+   *
+   * @example
+   * // Spawn 100 grass decorations
+   * DecorationPool.spawnMany({
+   *   count: 100,
+   *   x: { min: 0, max: worldWidth },
+   *   y: { min: 0, max: worldHeight },
+   *   texture: "grass1",
+   *   anchorY: 1.0,
+   * });
+   */
+  static spawnMany(config) {
+    const count = config.count ?? 1;
+    let spawned = 0;
+
+    for (let i = 0; i &lt; count; i++) {
+      const index = this.spawn(config);
+      if (index >= 0) {
+        spawned++;
+      } else {
+        break; // Pool is full
+      }
+    }
+
+    return spawned;
+  }
+
+  /**
+   * Despawn a decoration by index
+   *
+   * @param {number} index - The decoration index to despawn
+   * @returns {boolean} - True if despawned, false if invalid index or already inactive
+   */
+  static despawn(index) {
+    if (!this.initialized || !this.freeList || !this.freeListTop) {
+      console.warn('DecorationPool.despawn() called before initialization');
+      return false;
+    }
+
+    if (index &lt; 0 || index >= this.maxCount) {
+      console.warn(`DecorationPool.despawn(): Invalid index ${index}`);
+      return false;
+    }
+
+    if (DecorationComponent.active[index] === 0) {
+      return false; // Already inactive
+    }
+
+    const p = DecorationComponent.parentEntityIndex[index];
+    if (p !== DECORATION_NO_PARENT) {
+      this.removeAttached(p, index);
+    }
+    DecorationComponent.parentEntityIndex[index] = DECORATION_NO_PARENT;
+
+    return this._despawnDecorationCore(index);
+  }
+
+  /**
+   * Despawn all decorations
+   * WARNING: This is NOT thread-safe - only call from a single context when no other
+   * workers are spawning/despawning decorations
+   */
+  static despawnAll() {
+    if (!this.initialized || !this.freeList || !this.freeListTop) return;
+
+    clearAllDecorationFacades();
+
+    if (this._attachedDecorationCount) {
+      this._attachedDecorationCount.fill(0);
+    }
+    if (this._attachedDecorationIndices) {
+      this._attachedDecorationIndices.fill(0);
+    }
+
+    // Mark all as inactive
+    const active = DecorationComponent.active;
+    const isItOnScreen = DecorationComponent.isItOnScreen;
+    const parentEntityIndex = DecorationComponent.parentEntityIndex;
+    for (let i = 0; i &lt; this.maxCount; i++) {
+      active[i] = 0;
+      isItOnScreen[i] = 0;
+      parentEntityIndex[i] = DECORATION_NO_PARENT;
+    }
+
+    // Clear activeDecorationsData compact list
+    if (this.activeDecorationsData) {
+      this.activeDecorationsData[0] = 0;
+    }
+
+    // Reset free list with interleaved ordering (reduces cache contention in multi-worker scenarios)
+    this.resetFreeListInterleaved();
+  }
+
+  /**
+   * Initialize activeDecorationsData from SharedArrayBuffer
+   * Called by workers during initialization
+   * @param {SharedArrayBuffer} buffer - The SAB for activeDecorationsData
+   */
+  static initializeActiveList(buffer) {
+    if (buffer) {
+      this.activeDecorationsData = new Uint16Array(buffer);
+    }
+  }
+
+  /**
+   * Reset all decoration pool state (extends parent reset)
+   * Called when switching scenes to clear stale static state
+   */
+  static reset() {
+    super.reset();
+    this.activeDecorationsData = null;
+    clearAllDecorationFacades();
+    this._attachedDecorationCount = null;
+    this._attachedDecorationIndices = null;
+    this._attachmentEntityCount = 0;
+    this._maxAttachedPerEntity = 0;
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbstractWorker.html">AbstractWorker</a></li><li><a href="BigAtlasInspector.html">BigAtlasInspector</a></li><li><a href="Camera.html">Camera</a></li><li><a href="Constraint.html">Constraint</a></li><li><a href="DebugCanvas.html">DebugCanvas</a></li><li><a href="DebugFlags.html">DebugFlags</a></li><li><a href="DebugUI.html">DebugUI</a></li><li><a href="Decoration_Decoration.html">Decoration</a></li><li><a href="GameObject_GameObject.html">GameObject</a></li><li><a href="Grid.html">Grid</a></li><li><a href="LogicWorker.html">LogicWorker</a></li><li><a href="Mouse.html">Mouse</a></li><li><a href="NavGrid.html">NavGrid</a></li><li><a href="NavScratch.html">NavScratch</a></li><li><a href="ParticleWorker.html">ParticleWorker</a></li><li><a href="PhysicsWorker.html">PhysicsWorker</a></li><li><a href="PixiParticlePool.html">PixiParticlePool</a></li><li><a href="PixiRenderer.html">PixiRenderer</a></li><li><a href="PreRenderWorker.html">PreRenderWorker</a></li><li><a href="Ray.html">Ray</a></li><li><a href="SharedAtomicPool.html">SharedAtomicPool</a></li><li><a href="SpatialWorker.html">SpatialWorker</a></li><li><a href="SpriteSheetRegistry.html">SpriteSheetRegistry</a></li><li><a href="StatsCollector.html">StatsCollector</a></li><li><a href="Sun.html">Sun</a></li><li><a href="TileMap.html">TileMap</a></li><li><a href="TileMapLayer.html">TileMapLayer</a></li><li><a href="ToolManager.html">ToolManager</a></li></ul><h3>Global</h3><ul><li><a href="global.html#BLEND_MODES">BLEND_MODES</a></li><li><a href="global.html#Box">Box</a></li><li><a href="global.html#CAMERA_TYPES">CAMERA_TYPES</a></li><li><a href="global.html#COMPONENT_COLORS">COMPONENT_COLORS</a></li><li><a href="global.html#Circle">Circle</a></li><li><a href="global.html#DECORATION_INNER_Z_MAX">DECORATION_INNER_Z_MAX</a></li><li><a href="global.html#DECORATION_NO_PARENT">DECORATION_NO_PARENT</a></li><li><a href="global.html#DECORATION_Y_SORT_SCALE">DECORATION_Y_SORT_SCALE</a></li><li><a href="global.html#DEFAULT_LAYERS">DEFAULT_LAYERS</a></li><li><a href="global.html#DIRECTION">DIRECTION</a></li><li><a href="global.html#DIR_TO_VEC">DIR_TO_VEC</a></li><li><a href="global.html#ENTITY_GLOW_SORT_BIAS">ENTITY_GLOW_SORT_BIAS</a></li><li><a href="global.html#ENTITY_TYPE_ENTRY_SIZE">ENTITY_TYPE_ENTRY_SIZE</a></li><li><a href="global.html#FLOWFIELD_STATUS">FLOWFIELD_STATUS</a></li><li><a href="global.html#LOGIC_STATS">LOGIC_STATS</a></li><li><a href="global.html#MAX_COMPONENTS">MAX_COMPONENTS</a></li><li><a href="global.html#MAX_ENTITIES">MAX_ENTITIES</a></li><li><a href="global.html#MAX_ENTITY_TYPES">MAX_ENTITY_TYPES</a></li><li><a href="global.html#MAX_PRECOMPUTED_QUERIES">MAX_PRECOMPUTED_QUERIES</a></li><li><a href="global.html#NAVIGATION_STATS">NAVIGATION_STATS</a></li><li><a href="global.html#PARTICLE_STATS">PARTICLE_STATS</a></li><li><a href="global.html#PATH_STATUS">PATH_STATUS</a></li><li><a href="global.html#PHYSICS_STATS">PHYSICS_STATS</a></li><li><a href="global.html#PRE_RENDER_STATS">PRE_RENDER_STATS</a></li><li><a href="global.html#Polygon">Polygon</a></li><li><a href="global.html#QUERY_CACHE_ENTRY_SIZE">QUERY_CACHE_ENTRY_SIZE</a></li><li><a href="global.html#QUERY_RESULT_BUFFER_SIZE">QUERY_RESULT_BUFFER_SIZE</a></li><li><a href="global.html#RENDERER_STATS">RENDERER_STATS</a></li><li><a href="global.html#SHAPE_CIRCLE">SHAPE_CIRCLE</a></li><li><a href="global.html#SIDE">SIDE</a></li><li><a href="global.html#SPATIAL_STATS">SPATIAL_STATS</a></li><li><a href="global.html#SUN_DEFAULTS">SUN_DEFAULTS</a></li><li><a href="global.html#ShapeType">ShapeType</a></li><li><a href="global.html#TOPDOWN">TOPDOWN</a></li><li><a href="global.html#WORKER_DISPLAY_CONFIG">WORKER_DISPLAY_CONFIG</a></li><li><a href="global.html#Y_SORT_K">Y_SORT_K</a></li><li><a href="global.html#ZENITHAL">ZENITHAL</a></li><li><a href="global.html#_boundsResult">_boundsResult</a></li><li><a href="global.html#applyBrightnessToColor">applyBrightnessToColor</a></li><li><a href="global.html#atlasPadding">atlasPadding</a></li><li><a href="global.html#binarySearchFind">binarySearchFind</a></li><li><a href="global.html#binarySearchInsertPoint">binarySearchInsertPoint</a></li><li><a href="global.html#binarySearchRange">binarySearchRange</a></li><li><a href="global.html#brightnessToColoredTint">brightnessToColoredTint</a></li><li><a href="global.html#brightnessToTint">brightnessToTint</a></li><li><a href="global.html#buildFullCircle">buildFullCircle</a></li><li><a href="global.html#buildVisibilityPolygon">buildVisibilityPolygon</a></li><li><a href="global.html#calculateCameraScreenBounds">calculateCameraScreenBounds</a></li><li><a href="global.html#calculateDecalTileBounds">calculateDecalTileBounds</a></li><li><a href="global.html#calculateEntityMetadataSABSize">calculateEntityMetadataSABSize</a></li><li><a href="global.html#calculateLightAttenuation">calculateLightAttenuation</a></li><li><a href="global.html#calculateLightFromNeighbors">calculateLightFromNeighbors</a></li><li><a href="global.html#calculateQueryCacheSABSize">calculateQueryCacheSABSize</a></li><li><a href="global.html#calculateQueryResultsSABSize">calculateQueryResultsSABSize</a></li><li><a href="global.html#calculateSpeed">calculateSpeed</a></li><li><a href="global.html#calculateTileClipRegion">calculateTileClipRegion</a></li><li><a href="global.html#calculateTotalLightAtPosition">calculateTotalLightAtPosition</a></li><li><a href="global.html#calculateVelocityAngle">calculateVelocityAngle</a></li><li><a href="global.html#cantorPair">cantorPair</a></li><li><a href="global.html#cantorUnpair">cantorUnpair</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clamp01">clamp01</a></li><li><a href="global.html#clamp01Fast">clamp01Fast</a></li><li><a href="global.html#clampVelocity">clampVelocity</a></li><li><a href="global.html#clampVelocityMut">clampVelocityMut</a></li><li><a href="global.html#closestPointOnAABB">closestPointOnAABB</a></li><li><a href="global.html#closestPointOnAABBMut">closestPointOnAABBMut</a></li><li><a href="global.html#collectAllComponentsFromClasses">collectAllComponentsFromClasses</a></li><li><a href="global.html#collectComponents">collectComponents</a></li><li><a href="global.html#computeBoxMass">computeBoxMass</a></li><li><a href="global.html#computeCircleMass">computeCircleMass</a></li><li><a href="global.html#containerRadius">containerRadius</a></li><li><a href="global.html#countTrailingZeros">countTrailingZeros</a></li><li><a href="global.html#createBulletTrailCanvas">createBulletTrailCanvas</a></li><li><a href="global.html#createButton">createButton</a></li><li><a href="global.html#createCircularGradientCanvas">createCircularGradientCanvas</a></li><li><a href="global.html#createDivider">createDivider</a></li><li><a href="global.html#createMultiWorkerStatsReaderArray">createMultiWorkerStatsReaderArray</a></li><li><a href="global.html#createMultiWorkerStatsWriter">createMultiWorkerStatsWriter</a></li><li><a href="global.html#createPanel">createPanel</a></li><li><a href="global.html#createRow">createRow</a></li><li><a href="global.html#createStat">createStat</a></li><li><a href="global.html#createStatsReader">createStatsReader</a></li><li><a href="global.html#createStatsWriter">createStatsWriter</a></li><li><a href="global.html#createTab">createTab</a></li><li><a href="global.html#createWorkerQueryFunctions">createWorkerQueryFunctions</a></li><li><a href="global.html#directionTo">directionTo</a></li><li><a href="global.html#distance2D">distance2D</a></li><li><a href="global.html#distanceConstraintIterations">distanceConstraintIterations</a></li><li><a href="global.html#distanceSq2D">distanceSq2D</a></li><li><a href="global.html#drawCircle">drawCircle</a></li><li><a href="global.html#drawCross">drawCross</a></li><li><a href="global.html#drawLine">drawLine</a></li><li><a href="global.html#emitArcVertices">emitArcVertices</a></li><li><a href="global.html#emitVertex">emitVertex</a></li><li><a href="global.html#ensureDecorationFacade">ensureDecorationFacade</a></li><li><a href="global.html#evictDecorationFacade">evictDecorationFacade</a></li><li><a href="global.html#exposeComponentsGlobally">exposeComponentsGlobally</a></li><li><a href="global.html#exposeEntityClassesGlobally">exposeEntityClassesGlobally</a></li><li><a href="global.html#extractRGB">extractRGB</a></li><li><a href="global.html#extractRGBMut">extractRGBMut</a></li><li><a href="global.html#extractRGBNormalized">extractRGBNormalized</a></li><li><a href="global.html#extractRGBNormalizedMut">extractRGBNormalizedMut</a></li><li><a href="global.html#formatComponentValue">formatComponentValue</a></li><li><a href="global.html#formatNumber">formatNumber</a></li><li><a href="global.html#generateSymmetricalCirclePattern">generateSymmetricalCirclePattern</a></li><li><a href="global.html#getCellCoords">getCellCoords</a></li><li><a href="global.html#getCellCoordsMut">getCellCoordsMut</a></li><li><a href="global.html#getCellIndex">getCellIndex</a></li><li><a href="global.html#getCellRange">getCellRange</a></li><li><a href="global.html#getColliderBounds">getColliderBounds</a></li><li><a href="global.html#getComponentColor">getComponentColor</a></li><li><a href="global.html#getComponentPropertyNames">getComponentPropertyNames</a></li><li><a href="global.html#getDirectionFromAngle">getDirectionFromAngle</a></li><li><a href="global.html#getEntityHomeCellIndex">getEntityHomeCellIndex</a></li><li><a href="global.html#getParentClasses">getParentClasses</a></li><li><a href="global.html#hashToPastelColorCSS">hashToPastelColorCSS</a></li><li><a href="global.html#hashToPastelColorHex">hashToPastelColorHex</a></li><li><a href="global.html#hslToHex">hslToHex</a></li><li><a href="global.html#initializeComponentViews">initializeComponentViews</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isWithinRange">isWithinRange</a></li><li><a href="global.html#isWithinRangeSq">isWithinRangeSq</a></li><li><a href="global.html#layerMask">layerMask</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#lerpAngle">lerpAngle</a></li><li><a href="global.html#loadEntityScripts">loadEntityScripts</a></li><li><a href="global.html#maxAtlasHeight">maxAtlasHeight</a></li><li><a href="global.html#maxAtlasWidth">maxAtlasWidth</a></li><li><a href="global.html#maxAttachedDecorationsPerEntity">maxAttachedDecorationsPerEntity</a></li><li><a href="global.html#normalizeAngle">normalizeAngle</a></li><li><a href="global.html#normalizeAngleDifference">normalizeAngleDifference</a></li><li><a href="global.html#normalizeDirection">normalizeDirection</a></li><li><a href="global.html#normalizeDirectionFast">normalizeDirectionFast</a></li><li><a href="global.html#normalizeDirectionFromDistSq">normalizeDirectionFromDistSq</a></li><li><a href="global.html#query">query</a></li><li><a href="global.html#randomColor">randomColor</a></li><li><a href="global.html#randomRange">randomRange</a></li><li><a href="global.html#rayBoxHit">rayBoxHit</a></li><li><a href="global.html#rayBoxIntersect">rayBoxIntersect</a></li><li><a href="global.html#rayCircleDist">rayCircleDist</a></li><li><a href="global.html#rayCircleHit">rayCircleHit</a></li><li><a href="global.html#rayCircleIntersect">rayCircleIntersect</a></li><li><a href="global.html#rng">rng</a></li><li><a href="global.html#screenBoundsToWorldBounds">screenBoundsToWorldBounds</a></li><li><a href="global.html#setupWorkerCommunication">setupWorkerCommunication</a></li><li><a href="global.html#sortByY">sortByY</a></li><li><a href="global.html#sortEventsByAngle">sortEventsByAngle</a></li><li><a href="global.html#stringToHash">stringToHash</a></li><li><a href="global.html#subStepCount">subStepCount</a></li><li><a href="global.html#tangentHalfAngle">tangentHalfAngle</a></li><li><a href="global.html#testAABBAABBCollision">testAABBAABBCollision</a></li><li><a href="global.html#testCircleAABBCollision">testCircleAABBCollision</a></li><li><a href="global.html#testCircleCircleCollision">testCircleCircleCollision</a></li><li><a href="global.html#trimAlphaThreshold">trimAlphaThreshold</a></li><li><a href="global.html#trimImages">trimImages</a></li><li><a href="global.html#updateMassFromBox">updateMassFromBox</a></li><li><a href="global.html#updateMassFromCircle">updateMassFromCircle</a></li><li><a href="global.html#urlToPath">urlToPath</a></li><li><a href="global.html#validatePhysicsConfig">validatePhysicsConfig</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Apr 06 2026 16:36:00 GMT-0300 (hora estándar de Argentina)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

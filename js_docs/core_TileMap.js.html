@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: core/TileMap.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: core/TileMap.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>// TileMap.js - Tiled tilemap data with SharedArrayBuffer backing
+// Static class with facade instances, backed by SharedArrayBuffer
+//
+// ARCHITECTURE:
+// - Tilemaps loaded from scene config assets (Tiled JSON + tileset PNG)
+// - Each TileMap instance is a lightweight facade over SAB-backed Int32Arrays
+// - TileMap.myTilemap.sidewalk.getTileId(x, y) -- direct property access, zero lookups
+// - TileMap.get('name') / tilemap.getLayer('name') -- dictionary fallback for dynamic names
+// - TileMapLayer objects provide per-layer tile queries
+//
+// THREAD SAFETY:
+// - Tile data arrays written once at init (read-only after)
+// - All workers share the same SharedArrayBuffer memory -- zero duplication
+// - No Atomics needed since data is immutable after initialization
+
+const FLIPPED_H = 0x80000000;
+const FLIPPED_V = 0x40000000;
+const FLIPPED_D = 0x20000000;
+const FLAG_MASK = ~(FLIPPED_H | FLIPPED_V | FLIPPED_D);
+
+/**
+ * A single tile layer within a TileMap.
+ * Backed by an Int32Array view into a SharedArrayBuffer.
+ */
+class TileMapLayer {
+    /**
+     * @param {string} name
+     * @param {Int32Array} data - View into SAB
+     * @param {number} mapWidth - Map width in tiles
+     * @param {number} mapHeight - Map height in tiles
+     * @param {number} tileWidth - Tile width in pixels
+     * @param {number} tileHeight - Tile height in pixels
+     * @param {boolean} visible
+     * @param {number} opacity - 0..1
+     */
+    constructor(name, data, mapWidth, mapHeight, tileWidth, tileHeight, visible, opacity) {
+        this.name = name;
+        this.data = data;
+        this.mapWidth = mapWidth;
+        this.mapHeight = mapHeight;
+        this.tileWidth = tileWidth;
+        this.tileHeight = tileHeight;
+        this.visible = visible;
+        this.opacity = opacity;
+    }
+
+    /**
+     * Get tile GID at world pixel coordinates.
+     * @param {number} worldX
+     * @param {number} worldY
+     * @returns {number} Raw tile GID (includes flip flags in top 3 bits). 0 = empty.
+     */
+    getTileId(worldX, worldY) {
+        const tileX = (worldX / this.tileWidth) | 0;
+        const tileY = (worldY / this.tileHeight) | 0;
+        if (tileX &lt; 0 || tileX >= this.mapWidth || tileY &lt; 0 || tileY >= this.mapHeight) return 0;
+        return this.data[tileY * this.mapWidth + tileX];
+    }
+
+    /**
+     * Get tile GID at tile grid coordinates.
+     * @param {number} tileX
+     * @param {number} tileY
+     * @returns {number} Raw tile GID. 0 = empty.
+     */
+    getTileIdAt(tileX, tileY) {
+        if (tileX &lt; 0 || tileX >= this.mapWidth || tileY &lt; 0 || tileY >= this.mapHeight) return 0;
+        return this.data[tileY * this.mapWidth + tileX];
+    }
+
+    /**
+     * @param {number} worldX
+     * @param {number} worldY
+     * @returns {boolean}
+     */
+    hasTile(worldX, worldY) {
+        return this.getTileId(worldX, worldY) !== 0;
+    }
+
+    /**
+     * @param {number} tileX
+     * @param {number} tileY
+     * @returns {boolean}
+     */
+    hasTileAt(tileX, tileY) {
+        return this.getTileIdAt(tileX, tileY) !== 0;
+    }
+}
+
+/**
+ * TileMap - SAB-backed tilemap data accessible from any thread.
+ *
+ * Static registry mirrors the Layer.js pattern:
+ * - Main thread: `TileMap.initializeFromLoaded()` creates SABs from Tiled JSON
+ * - Workers: `TileMap.initializeFromBuffers()` creates Int32Array views over shared SABs
+ * - All threads: `TileMap.get('name')` returns the same logical tilemap, backed by shared memory
+ */
+export class TileMap {
+    static _byName = {};
+    static _byId = [];
+    static count = 0;
+    static initialized = false;
+    static _sabs = [];
+    static _metadata = null;
+
+    /**
+     * @param {number} id
+     * @param {string} name
+     * @param {number} mapWidth - Map width in tiles
+     * @param {number} mapHeight - Map height in tiles
+     * @param {number} tileWidth - Tile width in pixels
+     * @param {number} tileHeight - Tile height in pixels
+     * @param {Array&lt;{firstgid:number, columns:number, tileWidth:number, tileHeight:number}>} tilesets
+     */
+    constructor(id, name, mapWidth, mapHeight, tileWidth, tileHeight, tilesets) {
+        this.id = id;
+        this.name = name;
+        this.mapWidth = mapWidth;
+        this.mapHeight = mapHeight;
+        this.tileWidth = tileWidth;
+        this.tileHeight = tileHeight;
+        this.widthPx = mapWidth * tileWidth;
+        this.heightPx = mapHeight * tileHeight;
+        this.tilesets = tilesets;
+
+        /** @type {TileMapLayer[]} */
+        this._layers = [];
+        /** @type {Object&lt;string, TileMapLayer>} */
+        this._layersByName = {};
+        /** @type {string[]} */
+        this._layerNames = [];
+
+        // Pre-allocated result object for getAllTileIds() -- zero GC pressure
+        // Populated with layer name keys after layers are added (_finalize)
+        this._allTileIdsResult = null;
+    }
+
+    /**
+     * Build pre-allocated result objects and assign direct layer property access.
+     * Called once after all layers are registered.
+     * After this, `tilemap.sidewalk` returns the TileMapLayer directly.
+     * @private
+     */
+    _finalize() {
+        const result = Object.create(null);
+        for (let i = 0; i &lt; this._layers.length; i++) {
+            const layer = this._layers[i];
+            result[layer.name] = 0;
+
+            if (!(layer.name in this)) {
+                this[layer.name] = layer;
+            }
+        }
+        this._allTileIdsResult = result;
+    }
+
+    // ========================================
+    // INSTANCE QUERY API
+    // ========================================
+
+    /**
+     * @param {string} name - Layer name
+     * @returns {TileMapLayer|null}
+     */
+    getLayer(name) {
+        return this._layersByName[name] || null;
+    }
+
+    /** @returns {string[]} */
+    getLayerNames() {
+        return this._layerNames;
+    }
+
+    /** @returns {TileMapLayer[]} */
+    getLayers() {
+        return this._layers;
+    }
+
+    /**
+     * Get tile GID at world coordinates, optionally from a specific layer.
+     * Without layerName, returns the first non-zero GID scanning all layers.
+     * @param {number} worldX
+     * @param {number} worldY
+     * @param {string} [layerName]
+     * @returns {number} Tile GID. 0 = empty / out of bounds.
+     */
+    getTileId(worldX, worldY, layerName) {
+        if (layerName !== undefined) {
+            const layer = this._layersByName[layerName];
+            return layer ? layer.getTileId(worldX, worldY) : 0;
+        }
+        for (let i = 0; i &lt; this._layers.length; i++) {
+            const gid = this._layers[i].getTileId(worldX, worldY);
+            if (gid !== 0) return gid;
+        }
+        return 0;
+    }
+
+    /**
+     * Get every layer's tile GID at world coordinates in one call.
+     * Returns a pre-allocated object `{ layerName: gid, ... }` -- no allocation per call.
+     * @param {number} worldX
+     * @param {number} worldY
+     * @returns {Object&lt;string, number>} Reused object. Copy values if you need to store them.
+     */
+    getAllTileIds(worldX, worldY) {
+        const tileX = (worldX / this.tileWidth) | 0;
+        const tileY = (worldY / this.tileHeight) | 0;
+        const oob = tileX &lt; 0 || tileX >= this.mapWidth || tileY &lt; 0 || tileY >= this.mapHeight;
+        const idx = tileY * this.mapWidth + tileX;
+        const result = this._allTileIdsResult;
+        const layers = this._layers;
+        for (let i = 0; i &lt; layers.length; i++) {
+            result[layers[i].name] = oob ? 0 : layers[i].data[idx];
+        }
+        return result;
+    }
+
+    /**
+     * Convert world pixel coordinates to tile grid coordinates.
+     * Returns a pre-allocated object -- no allocation per call.
+     * @param {number} worldX
+     * @param {number} worldY
+     * @returns {{tileX: number, tileY: number}}
+     */
+    worldToTile(worldX, worldY) {
+        TileMap._tileCoord.tileX = (worldX / this.tileWidth) | 0;
+        TileMap._tileCoord.tileY = (worldY / this.tileHeight) | 0;
+        return TileMap._tileCoord;
+    }
+
+    /**
+     * Convert tile grid coordinates to world pixel coordinates (center of tile).
+     * Returns a pre-allocated object -- no allocation per call.
+     * @param {number} tileX
+     * @param {number} tileY
+     * @returns {{x: number, y: number}}
+     */
+    tileToWorld(tileX, tileY) {
+        TileMap._worldCoord.x = tileX * this.tileWidth + this.tileWidth * 0.5;
+        TileMap._worldCoord.y = tileY * this.tileHeight + this.tileHeight * 0.5;
+        return TileMap._worldCoord;
+    }
+
+    // ========================================
+    // COMPOSITE TILEMAP BUILDER (pixi worker)
+    // ========================================
+
+    /**
+     * Populate a @pixi/tilemap CompositeTilemap from this TileMap's SAB data.
+     * Called once during tilemap background setup in the pixi worker.
+     * Handles tile flip flags and converts GIDs to tileset UV coordinates.
+     * @param {*} compositeTilemap - A @pixi/tilemap CompositeTilemap instance
+     * @param {Object} [options]
+     * @param {string[]} [options.layers] - Layer names to render (null = all visible)
+     */
+    buildCompositeTilemap(compositeTilemap, options) {
+        const { tileWidth, tileHeight, mapWidth, mapHeight, tilesets } = this;
+        const tileset = tilesets[0];
+        const tilesetColumns = tileset.columns;
+        const firstGid = tileset.firstgid;
+        const layers = this._layers;
+        const layersFilter = options &amp;&amp; options.layers;
+
+        for (let li = 0; li &lt; layers.length; li++) {
+            const layer = layers[li];
+            if (layersFilter &amp;&amp; !layersFilter.includes(layer.name)) continue;
+            if (!layer.visible) continue;
+
+            const layerData = layer.data;
+            const layerOpacity = layer.opacity;
+
+            for (let y = 0; y &lt; mapHeight; y++) {
+                for (let x = 0; x &lt; mapWidth; x++) {
+                    let gid = layerData[y * mapWidth + x];
+                    if (gid === 0) continue;
+
+                    const fH = (gid &amp; FLIPPED_H) !== 0;
+                    const fV = (gid &amp; FLIPPED_V) !== 0;
+                    const fD = (gid &amp; FLIPPED_D) !== 0;
+                    gid = gid &amp; FLAG_MASK;
+
+                    const tileId = gid - firstGid;
+                    if (tileId &lt; 0) continue;
+
+                    let rotation = 0;
+                    if (fD) {
+                        rotation = (fH &amp;&amp; fV) ? 2 : fH ? 6 : fV ? 2 : 6;
+                    } else if (fH &amp;&amp; fV) {
+                        rotation = 4;
+                    } else if (fH) {
+                        rotation = 12;
+                    } else if (fV) {
+                        rotation = 8;
+                    }
+
+                    compositeTilemap.tile(0, x * tileWidth, y * tileHeight, {
+                        u: (tileId % tilesetColumns) * tileWidth,
+                        v: ((tileId / tilesetColumns) | 0) * tileHeight,
+                        tileWidth,
+                        tileHeight,
+                        rotate: rotation,
+                        alpha: layerOpacity,
+                    });
+                }
+            }
+        }
+    }
+
+    // ========================================
+    // STATIC API
+    // ========================================
+
+    /** @param {string} name @returns {TileMap|null} */
+    static get(name) { return this._byName[name] || null; }
+
+    /** @param {number} id @returns {TileMap|null} */
+    static getById(id) { return this._byId[id] || null; }
+
+    /** @returns {TileMap[]} */
+    static getAll() { return this._byId.filter(Boolean); }
+
+    /**
+     * Register a tilemap in the static registry and assign it as a direct property
+     * on the class for zero-lookup access (e.g. TileMap.myTilemap).
+     * Skips property assignment if the name collides with an existing class member.
+     * @param {TileMap} tilemap
+     * @private
+     */
+    static _registerInstance(tilemap) {
+        this._byName[tilemap.name] = tilemap;
+        this._byId[tilemap.id] = tilemap;
+
+        if (!(tilemap.name in this)) {
+            this[tilemap.name] = tilemap;
+        }
+    }
+
+    // Pre-allocated coord objects shared across all instances (one per thread)
+    static _tileCoord = { tileX: 0, tileY: 0 };
+    static _worldCoord = { x: 0, y: 0 };
+
+    // ========================================
+    // INITIALIZATION (main thread) - from loaded Tiled JSON
+    // ========================================
+
+    /**
+     * Parse loaded tilemap data and create SAB-backed TileMap instances.
+     * @param {Object&lt;string, {data: Object, tilesetBitmap: ImageBitmap}>} loadedTilemaps
+     */
+    static initializeFromLoaded(loadedTilemaps) {
+        this._byName = {};
+        this._byId = [];
+        this._sabs = [];
+        this.count = 0;
+
+        const metadataMap = {};
+
+        for (const [tilemapId, loaded] of Object.entries(loadedTilemaps)) {
+            const tiledData = loaded.data;
+            const mapWidth = tiledData.width;
+            const mapHeight = tiledData.height;
+            const tileWidth = tiledData.tilewidth;
+            const tileHeight = tiledData.tileheight;
+            const tilesets = (tiledData.tilesets || []).map(ts => ({
+                firstgid: ts.firstgid || 1,
+                columns: ts.columns || 1,
+                tileWidth: ts.tilewidth || tileWidth,
+                tileHeight: ts.tileheight || tileHeight,
+            }));
+
+            const tileLayers = [];
+            for (let i = 0; i &lt; tiledData.layers.length; i++) {
+                const layer = tiledData.layers[i];
+                if (layer.type !== 'tilelayer') continue;
+                if (!layer.data || layer.data.length === 0) continue;
+                tileLayers.push(layer);
+            }
+
+            const tilesPerLayer = mapWidth * mapHeight;
+            const sab = new SharedArrayBuffer(tileLayers.length * tilesPerLayer * 4);
+
+            const id = this.count++;
+            this._sabs[id] = sab;
+
+            const tilemap = new TileMap(id, tilemapId, mapWidth, mapHeight, tileWidth, tileHeight, tilesets);
+
+            const layerMetas = [];
+            for (let li = 0; li &lt; tileLayers.length; li++) {
+                const layer = tileLayers[li];
+                const view = new Int32Array(sab, li * tilesPerLayer * 4, tilesPerLayer);
+
+                const src = layer.data;
+                for (let i = 0; i &lt; tilesPerLayer; i++) {
+                    view[i] = src[i];
+                }
+
+                const vis = layer.visible !== false;
+                const opa = layer.opacity !== undefined ? layer.opacity : 1;
+
+                const tileLayer = new TileMapLayer(
+                    layer.name, view, mapWidth, mapHeight, tileWidth, tileHeight, vis, opa,
+                );
+
+                tilemap._layers.push(tileLayer);
+                tilemap._layersByName[layer.name] = tileLayer;
+                tilemap._layerNames.push(layer.name);
+
+                layerMetas.push({ name: layer.name, index: li, visible: vis, opacity: opa });
+            }
+
+            tilemap._finalize();
+            this._registerInstance(tilemap);
+
+            metadataMap[tilemapId] = {
+                id, name: tilemapId,
+                mapWidth, mapHeight, tileWidth, tileHeight,
+                layers: layerMetas, tilesets,
+            };
+        }
+
+        this._metadata = metadataMap;
+        this.initialized = true;
+    }
+
+    // ========================================
+    // SERIALIZATION (main thread -> workers)
+    // ========================================
+
+    /**
+     * @returns {{sabs: Object&lt;string, SharedArrayBuffer>, metadata: Object}|null}
+     */
+    static getSerializableData() {
+        if (!this.initialized) return null;
+
+        const sabs = {};
+        for (let i = 0; i &lt; this.count; i++) {
+            const tilemap = this._byId[i];
+            if (tilemap &amp;&amp; this._sabs[i]) {
+                sabs[tilemap.name] = this._sabs[i];
+            }
+        }
+
+        return { sabs, metadata: this._metadata };
+    }
+
+    // ========================================
+    // INITIALIZATION (workers) - from SABs + metadata
+    // ========================================
+
+    /**
+     * Reconstruct TileMap instances from shared SABs + cloned metadata.
+     * @param {{sabs: Object&lt;string, SharedArrayBuffer>, metadata: Object}} data
+     */
+    static initializeFromBuffers(data) {
+        if (!data || !data.metadata) return;
+
+        this._byName = {};
+        this._byId = [];
+        this._sabs = [];
+        this.count = 0;
+
+        for (const [tilemapName, meta] of Object.entries(data.metadata)) {
+            const sab = data.sabs[tilemapName];
+            if (!sab) continue;
+
+            const id = this.count++;
+            this._sabs[id] = sab;
+
+            const tilemap = new TileMap(
+                id, meta.name,
+                meta.mapWidth, meta.mapHeight,
+                meta.tileWidth, meta.tileHeight,
+                meta.tilesets,
+            );
+
+            const tilesPerLayer = meta.mapWidth * meta.mapHeight;
+
+            for (let i = 0; i &lt; meta.layers.length; i++) {
+                const layerMeta = meta.layers[i];
+                const view = new Int32Array(sab, layerMeta.index * tilesPerLayer * 4, tilesPerLayer);
+
+                const tileLayer = new TileMapLayer(
+                    layerMeta.name, view,
+                    meta.mapWidth, meta.mapHeight,
+                    meta.tileWidth, meta.tileHeight,
+                    layerMeta.visible, layerMeta.opacity,
+                );
+
+                tilemap._layers.push(tileLayer);
+                tilemap._layersByName[layerMeta.name] = tileLayer;
+                tilemap._layerNames.push(layerMeta.name);
+            }
+
+            tilemap._finalize();
+            this._registerInstance(tilemap);
+        }
+
+        this._metadata = data.metadata;
+        this.initialized = true;
+    }
+
+    // ========================================
+    // RESET (scene cleanup)
+    // ========================================
+
+    static reset() {
+        for (const name of Object.keys(this._byName)) {
+            if (this[name] === this._byName[name]) {
+                delete this[name];
+            }
+        }
+        this._byName = {};
+        this._byId = [];
+        this._sabs = [];
+        this.count = 0;
+        this.initialized = false;
+        this._metadata = null;
+    }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbstractWorker.html">AbstractWorker</a></li><li><a href="BigAtlasInspector.html">BigAtlasInspector</a></li><li><a href="Camera.html">Camera</a></li><li><a href="Constraint.html">Constraint</a></li><li><a href="DebugCanvas.html">DebugCanvas</a></li><li><a href="DebugFlags.html">DebugFlags</a></li><li><a href="DebugUI.html">DebugUI</a></li><li><a href="Decoration_Decoration.html">Decoration</a></li><li><a href="GameObject_GameObject.html">GameObject</a></li><li><a href="Grid.html">Grid</a></li><li><a href="LogicWorker.html">LogicWorker</a></li><li><a href="Mouse.html">Mouse</a></li><li><a href="NavGrid.html">NavGrid</a></li><li><a href="NavScratch.html">NavScratch</a></li><li><a href="ParticleWorker.html">ParticleWorker</a></li><li><a href="PhysicsWorker.html">PhysicsWorker</a></li><li><a href="PixiParticlePool.html">PixiParticlePool</a></li><li><a href="PixiRenderer.html">PixiRenderer</a></li><li><a href="PreRenderWorker.html">PreRenderWorker</a></li><li><a href="Ray.html">Ray</a></li><li><a href="SharedAtomicPool.html">SharedAtomicPool</a></li><li><a href="SpatialWorker.html">SpatialWorker</a></li><li><a href="SpriteSheetRegistry.html">SpriteSheetRegistry</a></li><li><a href="StatsCollector.html">StatsCollector</a></li><li><a href="Sun.html">Sun</a></li><li><a href="TileMap.html">TileMap</a></li><li><a href="TileMapLayer.html">TileMapLayer</a></li><li><a href="ToolManager.html">ToolManager</a></li></ul><h3>Global</h3><ul><li><a href="global.html#BLEND_MODES">BLEND_MODES</a></li><li><a href="global.html#Box">Box</a></li><li><a href="global.html#CAMERA_TYPES">CAMERA_TYPES</a></li><li><a href="global.html#COMPONENT_COLORS">COMPONENT_COLORS</a></li><li><a href="global.html#Circle">Circle</a></li><li><a href="global.html#DECORATION_INNER_Z_MAX">DECORATION_INNER_Z_MAX</a></li><li><a href="global.html#DECORATION_NO_PARENT">DECORATION_NO_PARENT</a></li><li><a href="global.html#DECORATION_Y_SORT_SCALE">DECORATION_Y_SORT_SCALE</a></li><li><a href="global.html#DEFAULT_LAYERS">DEFAULT_LAYERS</a></li><li><a href="global.html#DIRECTION">DIRECTION</a></li><li><a href="global.html#DIR_TO_VEC">DIR_TO_VEC</a></li><li><a href="global.html#ENTITY_GLOW_SORT_BIAS">ENTITY_GLOW_SORT_BIAS</a></li><li><a href="global.html#ENTITY_TYPE_ENTRY_SIZE">ENTITY_TYPE_ENTRY_SIZE</a></li><li><a href="global.html#FLOWFIELD_STATUS">FLOWFIELD_STATUS</a></li><li><a href="global.html#LOGIC_STATS">LOGIC_STATS</a></li><li><a href="global.html#MAX_COMPONENTS">MAX_COMPONENTS</a></li><li><a href="global.html#MAX_ENTITIES">MAX_ENTITIES</a></li><li><a href="global.html#MAX_ENTITY_TYPES">MAX_ENTITY_TYPES</a></li><li><a href="global.html#MAX_PRECOMPUTED_QUERIES">MAX_PRECOMPUTED_QUERIES</a></li><li><a href="global.html#NAVIGATION_STATS">NAVIGATION_STATS</a></li><li><a href="global.html#PARTICLE_STATS">PARTICLE_STATS</a></li><li><a href="global.html#PATH_STATUS">PATH_STATUS</a></li><li><a href="global.html#PHYSICS_STATS">PHYSICS_STATS</a></li><li><a href="global.html#PRE_RENDER_STATS">PRE_RENDER_STATS</a></li><li><a href="global.html#Polygon">Polygon</a></li><li><a href="global.html#QUERY_CACHE_ENTRY_SIZE">QUERY_CACHE_ENTRY_SIZE</a></li><li><a href="global.html#QUERY_RESULT_BUFFER_SIZE">QUERY_RESULT_BUFFER_SIZE</a></li><li><a href="global.html#RENDERER_STATS">RENDERER_STATS</a></li><li><a href="global.html#SHAPE_CIRCLE">SHAPE_CIRCLE</a></li><li><a href="global.html#SIDE">SIDE</a></li><li><a href="global.html#SPATIAL_STATS">SPATIAL_STATS</a></li><li><a href="global.html#SUN_DEFAULTS">SUN_DEFAULTS</a></li><li><a href="global.html#ShapeType">ShapeType</a></li><li><a href="global.html#TOPDOWN">TOPDOWN</a></li><li><a href="global.html#WORKER_DISPLAY_CONFIG">WORKER_DISPLAY_CONFIG</a></li><li><a href="global.html#Y_SORT_K">Y_SORT_K</a></li><li><a href="global.html#ZENITHAL">ZENITHAL</a></li><li><a href="global.html#_boundsResult">_boundsResult</a></li><li><a href="global.html#applyBrightnessToColor">applyBrightnessToColor</a></li><li><a href="global.html#atlasPadding">atlasPadding</a></li><li><a href="global.html#binarySearchFind">binarySearchFind</a></li><li><a href="global.html#binarySearchInsertPoint">binarySearchInsertPoint</a></li><li><a href="global.html#binarySearchRange">binarySearchRange</a></li><li><a href="global.html#brightnessToColoredTint">brightnessToColoredTint</a></li><li><a href="global.html#brightnessToTint">brightnessToTint</a></li><li><a href="global.html#buildFullCircle">buildFullCircle</a></li><li><a href="global.html#buildVisibilityPolygon">buildVisibilityPolygon</a></li><li><a href="global.html#calculateCameraScreenBounds">calculateCameraScreenBounds</a></li><li><a href="global.html#calculateDecalTileBounds">calculateDecalTileBounds</a></li><li><a href="global.html#calculateEntityMetadataSABSize">calculateEntityMetadataSABSize</a></li><li><a href="global.html#calculateLightAttenuation">calculateLightAttenuation</a></li><li><a href="global.html#calculateLightFromNeighbors">calculateLightFromNeighbors</a></li><li><a href="global.html#calculateQueryCacheSABSize">calculateQueryCacheSABSize</a></li><li><a href="global.html#calculateQueryResultsSABSize">calculateQueryResultsSABSize</a></li><li><a href="global.html#calculateSpeed">calculateSpeed</a></li><li><a href="global.html#calculateTileClipRegion">calculateTileClipRegion</a></li><li><a href="global.html#calculateTotalLightAtPosition">calculateTotalLightAtPosition</a></li><li><a href="global.html#calculateVelocityAngle">calculateVelocityAngle</a></li><li><a href="global.html#cantorPair">cantorPair</a></li><li><a href="global.html#cantorUnpair">cantorUnpair</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clamp01">clamp01</a></li><li><a href="global.html#clamp01Fast">clamp01Fast</a></li><li><a href="global.html#clampVelocity">clampVelocity</a></li><li><a href="global.html#clampVelocityMut">clampVelocityMut</a></li><li><a href="global.html#closestPointOnAABB">closestPointOnAABB</a></li><li><a href="global.html#closestPointOnAABBMut">closestPointOnAABBMut</a></li><li><a href="global.html#collectAllComponentsFromClasses">collectAllComponentsFromClasses</a></li><li><a href="global.html#collectComponents">collectComponents</a></li><li><a href="global.html#computeBoxMass">computeBoxMass</a></li><li><a href="global.html#computeCircleMass">computeCircleMass</a></li><li><a href="global.html#containerRadius">containerRadius</a></li><li><a href="global.html#countTrailingZeros">countTrailingZeros</a></li><li><a href="global.html#createBulletTrailCanvas">createBulletTrailCanvas</a></li><li><a href="global.html#createButton">createButton</a></li><li><a href="global.html#createCircularGradientCanvas">createCircularGradientCanvas</a></li><li><a href="global.html#createDivider">createDivider</a></li><li><a href="global.html#createMultiWorkerStatsReaderArray">createMultiWorkerStatsReaderArray</a></li><li><a href="global.html#createMultiWorkerStatsWriter">createMultiWorkerStatsWriter</a></li><li><a href="global.html#createPanel">createPanel</a></li><li><a href="global.html#createRow">createRow</a></li><li><a href="global.html#createStat">createStat</a></li><li><a href="global.html#createStatsReader">createStatsReader</a></li><li><a href="global.html#createStatsWriter">createStatsWriter</a></li><li><a href="global.html#createTab">createTab</a></li><li><a href="global.html#createWorkerQueryFunctions">createWorkerQueryFunctions</a></li><li><a href="global.html#directionTo">directionTo</a></li><li><a href="global.html#distance2D">distance2D</a></li><li><a href="global.html#distanceConstraintIterations">distanceConstraintIterations</a></li><li><a href="global.html#distanceSq2D">distanceSq2D</a></li><li><a href="global.html#drawCircle">drawCircle</a></li><li><a href="global.html#drawCross">drawCross</a></li><li><a href="global.html#drawLine">drawLine</a></li><li><a href="global.html#emitArcVertices">emitArcVertices</a></li><li><a href="global.html#emitVertex">emitVertex</a></li><li><a href="global.html#ensureDecorationFacade">ensureDecorationFacade</a></li><li><a href="global.html#evictDecorationFacade">evictDecorationFacade</a></li><li><a href="global.html#exposeComponentsGlobally">exposeComponentsGlobally</a></li><li><a href="global.html#exposeEntityClassesGlobally">exposeEntityClassesGlobally</a></li><li><a href="global.html#extractRGB">extractRGB</a></li><li><a href="global.html#extractRGBMut">extractRGBMut</a></li><li><a href="global.html#extractRGBNormalized">extractRGBNormalized</a></li><li><a href="global.html#extractRGBNormalizedMut">extractRGBNormalizedMut</a></li><li><a href="global.html#formatComponentValue">formatComponentValue</a></li><li><a href="global.html#formatNumber">formatNumber</a></li><li><a href="global.html#generateSymmetricalCirclePattern">generateSymmetricalCirclePattern</a></li><li><a href="global.html#getCellCoords">getCellCoords</a></li><li><a href="global.html#getCellCoordsMut">getCellCoordsMut</a></li><li><a href="global.html#getCellIndex">getCellIndex</a></li><li><a href="global.html#getCellRange">getCellRange</a></li><li><a href="global.html#getColliderBounds">getColliderBounds</a></li><li><a href="global.html#getComponentColor">getComponentColor</a></li><li><a href="global.html#getComponentPropertyNames">getComponentPropertyNames</a></li><li><a href="global.html#getDirectionFromAngle">getDirectionFromAngle</a></li><li><a href="global.html#getEntityHomeCellIndex">getEntityHomeCellIndex</a></li><li><a href="global.html#getParentClasses">getParentClasses</a></li><li><a href="global.html#hashToPastelColorCSS">hashToPastelColorCSS</a></li><li><a href="global.html#hashToPastelColorHex">hashToPastelColorHex</a></li><li><a href="global.html#hslToHex">hslToHex</a></li><li><a href="global.html#initializeComponentViews">initializeComponentViews</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isWithinRange">isWithinRange</a></li><li><a href="global.html#isWithinRangeSq">isWithinRangeSq</a></li><li><a href="global.html#layerMask">layerMask</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#lerpAngle">lerpAngle</a></li><li><a href="global.html#loadEntityScripts">loadEntityScripts</a></li><li><a href="global.html#maxAtlasHeight">maxAtlasHeight</a></li><li><a href="global.html#maxAtlasWidth">maxAtlasWidth</a></li><li><a href="global.html#maxAttachedDecorationsPerEntity">maxAttachedDecorationsPerEntity</a></li><li><a href="global.html#normalizeAngle">normalizeAngle</a></li><li><a href="global.html#normalizeAngleDifference">normalizeAngleDifference</a></li><li><a href="global.html#normalizeDirection">normalizeDirection</a></li><li><a href="global.html#normalizeDirectionFast">normalizeDirectionFast</a></li><li><a href="global.html#normalizeDirectionFromDistSq">normalizeDirectionFromDistSq</a></li><li><a href="global.html#query">query</a></li><li><a href="global.html#randomColor">randomColor</a></li><li><a href="global.html#randomRange">randomRange</a></li><li><a href="global.html#rayBoxHit">rayBoxHit</a></li><li><a href="global.html#rayBoxIntersect">rayBoxIntersect</a></li><li><a href="global.html#rayCircleDist">rayCircleDist</a></li><li><a href="global.html#rayCircleHit">rayCircleHit</a></li><li><a href="global.html#rayCircleIntersect">rayCircleIntersect</a></li><li><a href="global.html#rng">rng</a></li><li><a href="global.html#screenBoundsToWorldBounds">screenBoundsToWorldBounds</a></li><li><a href="global.html#setupWorkerCommunication">setupWorkerCommunication</a></li><li><a href="global.html#sortByY">sortByY</a></li><li><a href="global.html#sortEventsByAngle">sortEventsByAngle</a></li><li><a href="global.html#stringToHash">stringToHash</a></li><li><a href="global.html#subStepCount">subStepCount</a></li><li><a href="global.html#tangentHalfAngle">tangentHalfAngle</a></li><li><a href="global.html#testAABBAABBCollision">testAABBAABBCollision</a></li><li><a href="global.html#testCircleAABBCollision">testCircleAABBCollision</a></li><li><a href="global.html#testCircleCircleCollision">testCircleCircleCollision</a></li><li><a href="global.html#trimAlphaThreshold">trimAlphaThreshold</a></li><li><a href="global.html#trimImages">trimImages</a></li><li><a href="global.html#updateMassFromBox">updateMassFromBox</a></li><li><a href="global.html#updateMassFromCircle">updateMassFromCircle</a></li><li><a href="global.html#urlToPath">urlToPath</a></li><li><a href="global.html#validatePhysicsConfig">validatePhysicsConfig</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Apr 06 2026 16:36:00 GMT-0300 (hora estándar de Argentina)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

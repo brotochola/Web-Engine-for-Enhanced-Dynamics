@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: core/Grid.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: core/Grid.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>// =============================================================================
+// Grid.js - Row-Based Spatial Grid with Deterministic Memory Layout
+// =============================================================================
+//
+// ARCHITECTURE: Pure row-based partitioning with ZERO synchronization
+// - Grid: Single buffer, each spatial worker owns specific rows
+// - Neighbors: Single buffer, each spatial worker writes neighbors for its entities
+// - No double buffering, no Atomics, no locks, no coordination
+// - Fixed memory layout like Excel spreadsheet - 100% deterministic
+// - Accepts stale data by design (imperceptible, filtered by distance checks)
+//
+// MEMORY LAYOUT:
+// SpatialGridSAB: Fixed cells with [count:Uint8, pad:3, entities[MAX_ENTITIES_PER_CELL]:Uint32]
+// NeighborsSAB:   Fixed per-entity with [totalCount:Uint16, collisionCount:Uint16, neighbors[MAX_NEIGHBORS]:Uint16]
+//                 Neighbors are partitioned: [collision candidates..., visual-only neighbors...]
+//                 Physics only iterates collisionCount, logic iterates totalCount
+//                 Uses Uint16 since max entities = 65535 (fits in 16 bits)
+// WHY NO DOUBLE BUFFERING FOR NEIGHBORS?
+// - "Torn reads" only mix current + recent-frame data (never garbage)
+// - All neighbor entries are valid entity IDs (deterministic memory)
+// - Distance checks filter out-of-range entities anyway
+// - Transform.active[] check handles despawned entities
+// - Same guarantees as 1-frame latency, simpler implementation
+//
+// =============================================================================
+
+import { Transform } from '../components/Transform.js';
+import { Collider } from '../components/Collider.js';
+import { distanceSq2D } from './utils.js';
+import { SPATIAL_DEFAULTS } from './ConfigDefaults.js';
+
+// =============================================================================
+// CONSTANTS - Configurable via scene (defaults shown)
+// =============================================================================
+// These are defaults - actual values come from metadata.maxEntitiesPerCell and metadata.maxNeighbors
+
+const DEFAULT_MAX_NEIGHBORS = 500; // Max neighbors per entity (matches ConfigDefaults.js)
+
+/**
+ * Grid - Static class for row-based spatial partitioning
+ *
+ * ROW OWNERSHIP MODEL:
+ * - Worker i owns all cells where: cellY % totalWorkers === workerId
+ * - Each worker rebuilds its own rows and computes neighbors for entities in those rows
+ * - Workers can READ any cell/neighbor but only WRITE to owned data
+ * - No synchronization needed - row ownership prevents all races
+ *
+ * Usage:
+ *   // Cell queries
+ *   const cellIdx = Grid.getCellIndex(worldX, worldY);
+ *   const count = Grid.getCellCount(cellIdx);
+ *   const entityId = Grid.getCellEntity(cellIdx, k);
+ *
+ *   // Neighbor queries (single buffer - always current/recent data)
+ *   const neighborCount = Grid.getNeighborCount(entityId);
+ *   const neighborId = Grid.getNeighbor(entityId, k);
+ *   const distSq = Grid.getNeighborDistanceSq(entityId, k);
+ */
+export class Grid {
+  // ===== GRID METADATA =====
+  static cellSize = 0;
+  static invCellSize = 0; // 1/cellSize for fast division
+  static gridWidth = 0; // Number of columns
+  static gridHeight = 0; // Number of rows
+  static totalCells = 0;
+  static maxEntitiesPerCell = SPATIAL_DEFAULTS.maxEntitiesPerCell; // Configured from scene
+  static maxNeighbors = SPATIAL_DEFAULTS.maxNeighbors; // Configured from scene
+  static rowsPerBlock = SPATIAL_DEFAULTS.rowsPerBlock; // Default to 1 (interleaved)
+
+  // Computed from maxEntitiesPerCell (set during initialize)
+  static cellByteSize = 0; // Bytes per cell
+  static neighborStride = 0; // Elements per entity in neighbor arrays
+
+  // ===== SPATIAL GRID DATA (Single Buffer - Row Ownership) =====
+  // Layout per cell: [count:Uint8, pad:3bytes, entities[16]:Uint32]
+  static _gridBuffer = null; // SharedArrayBuffer
+  static _gridCounts = null; // Uint8Array view - count at byte 0 of each cell
+  static _gridEntities = null; // Uint32Array view - entities starting at byte 4
+
+  // ===== NEIGHBOR DATA (Single Buffer - Row Ownership) =====
+  // Layout per entity: [totalCount:Uint16, collisionCount:Uint16, neighbors[MAX_NEIGHBORS]:Uint16]
+  // Neighbors are partitioned: collision candidates first (for physics), then visual-only (for logic)
+  // Uses Uint16 since max entities = 65535 (fits in 16 bits)
+  static _neighborBuffer = null; // SharedArrayBuffer
+  static _neighborData = null; // Uint16Array view
+
+  // ===== CELL SLEEPING STATE (Single Buffer - Written by particle_worker) =====
+  // Layout: One Uint8 per cell (0 = awake, 1 = sleeping)
+  // A cell is sleeping if ALL entities in it are either sleeping or static
+  // Written by particle_worker, read by all workers for optimization
+  static _cellSleepingBuffer = null; // SharedArrayBuffer
+  static _cellSleepingData = null; // Uint8Array view
+
+  // Internal stride for neighbor arrays (computed as 2 + maxNeighbors during initialize)
+  // Layout: [totalCount, collisionCount, neighbor0, neighbor1, ...]
+  static _stride = 2 + DEFAULT_MAX_NEIGHBORS;
+
+  // =============================================================================
+  // INITIALIZATION
+  // =============================================================================
+
+  /**
+   * Initialize Grid with SharedArrayBuffers and metadata
+   * Called once per worker during initialization
+   *
+   * @param {Object} buffers - SharedArrayBuffers:
+   *   - gridBuffer: Spatial grid cells
+   *   - neighborBuffer: Neighbor indices per entity
+   *   - cellSleepingBuffer: Cell sleeping state (optional)
+   * @param {Object} metadata - Grid configuration
+   */
+  static initialize(buffers, metadata) {
+    // Store metadata - read from scene configuration
+    Grid.cellSize = metadata.cellSize || 128;
+    Grid.invCellSize = 1 / Grid.cellSize;
+    Grid.gridWidth = metadata.gridWidth || metadata.gridCols || 0;
+    Grid.gridHeight = metadata.gridHeight || metadata.gridRows || 0;
+    Grid.totalCells = Grid.gridWidth * Grid.gridHeight;
+
+    // Configure spatial limits from scene
+    Grid.maxNeighbors = metadata.maxNeighbors || SPATIAL_DEFAULTS.maxNeighbors;
+    Grid.maxEntitiesPerCell = metadata.maxEntitiesPerCell || SPATIAL_DEFAULTS.maxEntitiesPerCell;
+    Grid.rowsPerBlock = metadata.rowsPerBlock || SPATIAL_DEFAULTS.rowsPerBlock;
+
+    // Compute derived values
+    Grid.cellByteSize = 4 + Grid.maxEntitiesPerCell * 4;
+    // Stride = 2 (totalCount + collisionCount) + maxNeighbors
+    Grid.neighborStride = 2 + Grid.maxNeighbors;
+    Grid._stride = Grid.neighborStride;
+
+    // ===== SPATIAL GRID (Single Buffer) =====
+    if (buffers.gridBuffer) {
+      Grid._gridBuffer = buffers.gridBuffer;
+      Grid._gridCounts = new Uint8Array(buffers.gridBuffer);
+      Grid._gridEntities = new Uint32Array(buffers.gridBuffer);
+    }
+
+    // ===== NEIGHBOR DATA (Single Buffer) =====
+    // Uses Uint16 since max entities = 65535 (fits in 16 bits)
+    if (buffers.neighborBuffer) {
+      Grid._neighborBuffer = buffers.neighborBuffer;
+      Grid._neighborData = new Uint16Array(buffers.neighborBuffer);
+    }
+
+    // ===== CELL SLEEPING STATE (Single Buffer) =====
+    if (buffers.cellSleepingBuffer) {
+      Grid._cellSleepingBuffer = buffers.cellSleepingBuffer;
+      Grid._cellSleepingData = new Uint8Array(buffers.cellSleepingBuffer);
+      // Initialize all cells as awake (0)
+      Grid._cellSleepingData.fill(0);
+    }
+  }
+
+  /**
+   * Reset Grid state (called when unloading a scene to prevent memory leaks)
+   * Clears buffer references so old SharedArrayBuffers can be GC'd
+   */
+  static reset() {
+    Grid._gridBuffer = null;
+    Grid._gridCounts = null;
+    Grid._gridEntities = null;
+    Grid._neighborBuffer = null;
+    Grid._neighborData = null;
+    Grid._cellSleepingBuffer = null;
+    Grid._cellSleepingData = null;
+    Grid._markerArray = null;
+    Grid._processedSet = null;
+  }
+
+  // =============================================================================
+  // CELL ACCESS (Read from Single Grid Buffer)
+  // =============================================================================
+
+  /**
+   * Get cell index from world position
+   * @param {number} x - World X position
+   * @param {number} y - World Y position
+   * @returns {number} Cell index, or -1 if out of bounds
+   */
+  static getCellIndex(x, y) {
+    const col = (x * Grid.invCellSize) | 0;
+    const row = (y * Grid.invCellSize) | 0;
+
+    if (col &lt; 0 || col >= Grid.gridWidth || row &lt; 0 || row >= Grid.gridHeight) {
+      return -1;
+    }
+
+    return row * Grid.gridWidth + col;
+  }
+
+  /**
+   * Get cell coordinates from cell index
+   * @param {number} cellIndex - Cell index
+   * @returns {Object} {col, row}
+   */
+  static getCellCoords(cellIndex) {
+    return {
+      col: cellIndex % Grid.gridWidth,
+      row: (cellIndex / Grid.gridWidth) | 0,
+    };
+  }
+
+  /**
+   * Get number of entities in a cell
+   * @param {number} cellIndex - Cell index
+   * @returns {number} Entity count (0-maxEntitiesPerCell)
+   */
+  static getCellCount(cellIndex) {
+    if (!Grid._gridCounts || cellIndex &lt; 0 || cellIndex >= Grid.totalCells) return 0;
+    const byteOffset = cellIndex * Grid.cellByteSize;
+    return Grid._gridCounts[byteOffset];
+  }
+
+  /**
+   * Get entity ID at position k in a cell
+   * @param {number} cellIndex - Cell index
+   * @param {number} k - Position in cell (0 to count-1)
+   * @returns {number} Entity ID
+   */
+  static getCellEntity(cellIndex, k) {
+    if (!Grid._gridEntities) return 0;
+    // Entity array starts at byte 4 of each cell
+    const uint32Offset = ((cellIndex * Grid.cellByteSize) >> 2) + 1 + k;
+    return Grid._gridEntities[uint32Offset];
+  }
+
+  /**
+   * Get base byte offset for a cell
+   * @param {number} cellIndex - Cell index
+   * @returns {number} Byte offset into grid buffer
+   */
+  static getCellByteOffset(cellIndex) {
+    return cellIndex * Grid.cellByteSize;
+  }
+
+  /**
+   * Get entity count in a cell (alias for Ray.js compatibility)
+   * @param {number} cellIndex - Cell index
+   * @returns {number} Entity count
+   */
+  static getCellEntityCount(cellIndex) {
+    return Grid.getCellCount(cellIndex);
+  }
+
+  /**
+   * Get base Uint32 index for cell entities (for Ray.js compatibility)
+   * @param {number} cellIndex - Cell index
+   * @returns {number} Base Uint32 index into gridEntities
+   */
+  static getCellBase(cellIndex) {
+    const byteOffset = cellIndex * Grid.cellByteSize;
+    return (byteOffset >> 2) + 1;
+  }
+
+  // =============================================================================
+  // CELL WRITE (Only to Owned Rows)
+  // =============================================================================
+
+  /**
+   * Clear a cell's entity count
+   * IMPORTANT: Only call for cells you own (cellRow % totalWorkers === workerId)
+   * @param {number} cellIndex - Cell index
+   */
+  static clearCell(cellIndex) {
+    if (!Grid._gridCounts) return;
+    const byteOffset = cellIndex * Grid.cellByteSize;
+    Grid._gridCounts[byteOffset] = 0;
+  }
+
+  /**
+   * Add an entity to a cell
+   * IMPORTANT: Only call for cells you own
+   * @param {number} cellIndex - Cell index
+   * @param {number} entityId - Entity ID to add
+   * @returns {boolean} True if added, false if cell is full
+   */
+  static addEntityToCell(cellIndex, entityId) {
+    if (!Grid._gridCounts || !Grid._gridEntities) return false;
+
+    const byteOffset = cellIndex * Grid.cellByteSize;
+    const count = Grid._gridCounts[byteOffset];
+
+    if (count >= Grid.maxEntitiesPerCell) return false;
+
+    const uint32Offset = (byteOffset >> 2) + 1 + count;
+    Grid._gridEntities[uint32Offset] = entityId;
+    Grid._gridCounts[byteOffset] = count + 1;
+
+    return true;
+  }
+
+  // =============================================================================
+  // NEIGHBOR DATA ACCESS (Single Buffer - Direct Read/Write)
+  // =============================================================================
+
+  /**
+   * Get the neighbor data array (single buffer, always current)
+   * Use Grid.neighborData in performance-critical loops
+   */
+  static get neighborData() {
+    return Grid._neighborData;
+  }
+
+  /**
+   * Get total neighbor count for an entity (all neighbors within visual range)
+   * @param {number} entityId - Entity index
+   * @returns {number} Total number of neighbors
+   */
+  static getNeighborCount(entityId) {
+    if (!Grid._neighborData) return 0;
+    return Grid._neighborData[entityId * Grid._stride];
+  }
+
+  /**
+   * Get collision candidate count for an entity (neighbors within collision range)
+   * Physics should only iterate these; they appear first in the neighbor list.
+   * @param {number} entityId - Entity index
+   * @returns {number} Number of collision candidates
+   */
+  static getCollisionCandidateCount(entityId) {
+    if (!Grid._neighborData) return 0;
+    return Grid._neighborData[entityId * Grid._stride + 1];
+  }
+
+  /**
+   * Get neighbor entity ID at index k
+   * Note: Collision candidates are stored first (indices 0 to collisionCount-1)
+   * @param {number} entityId - Entity index
+   * @param {number} k - Neighbor index (0 to count-1)
+   * @returns {number} Neighbor entity ID
+   */
+  static getNeighbor(entityId, k) {
+    if (!Grid._neighborData) return 0;
+    return Grid._neighborData[entityId * Grid._stride + 2 + k];
+  }
+
+  /**
+   * Get offset into neighbor array for an entity
+   * @param {number} entityId - Entity index
+   * @returns {number} Offset into arrays
+   */
+  static getNeighborOffset(entityId) {
+    return entityId * Grid._stride;
+  }
+
+  /**
+   * Get all neighbors of an entity as a typed array view (zero-allocation)
+   * Returns a Uint16Array subarray pointing directly into the neighbor buffer
+   * @param {number} idx - Entity index
+   * @returns {Uint16Array} View of valid neighbor entity IDs (zero-GC subarray)
+   */
+  static getNeighborsOfEntityId(idx) {
+    if (!Grid._neighborData) return new Uint16Array(0);
+    const offset = idx * Grid._stride;
+    const count = Grid._neighborData[offset];
+    return Grid._neighborData.subarray(offset + 2, offset + 2 + count);
+  }
+
+  // =============================================================================
+  // NEIGHBOR DATA WRITE (Only for Entities You Own)
+  // =============================================================================
+
+  /**
+   * Set total neighbor count for an entity
+   * IMPORTANT: Only call for entities in cells you own
+   * @param {number} entityId - Entity index
+   * @param {number} count - Total number of neighbors
+   */
+  static setNeighborCount(entityId, count) {
+    if (!Grid._neighborData) return;
+    const offset = entityId * Grid._stride;
+    Grid._neighborData[offset] = count;
+  }
+
+  /**
+   * Set collision candidate count for an entity
+   * IMPORTANT: Only call for entities in cells you own
+   * @param {number} entityId - Entity index
+   * @param {number} count - Number of collision candidates (stored first in neighbor list)
+   */
+  static setCollisionCandidateCount(entityId, count) {
+    if (!Grid._neighborData) return;
+    const offset = entityId * Grid._stride;
+    Grid._neighborData[offset + 1] = count;
+  }
+
+  /**
+   * Set neighbor data at index k
+   * Note: Collision candidates should be written first (indices 0 to collisionCount-1)
+   * @param {number} entityId - Entity index
+   * @param {number} k - Neighbor index
+   * @param {number} neighborId - Neighbor entity ID
+   */
+  static setNeighbor(entityId, k, neighborId) {
+    if (!Grid._neighborData) return;
+    const idx = entityId * Grid._stride + 2 + k;
+    Grid._neighborData[idx] = neighborId;
+  }
+
+  // =============================================================================
+  // SPATIAL QUERIES
+  // =============================================================================
+
+  /**
+   * Find all active entities within a radius of a point
+   * Zero-allocation: reuses pre-allocated results array
+   * @param {number} x - World X position
+   * @param {number} y - World Y position
+   * @param {number} radius - Search radius in world units
+   * @param {Uint16Array|null} resultsBuffer - Pre-allocated buffer for results (optional)
+   * @returns {{count: number, entities: Uint16Array}} Count and entities array
+   */
+  static _queryResults = new Uint16Array(16384); // Pre-allocated results buffer (Uint16 since entity IDs &lt; 65536)
+  static _queryResultCount = 0;
+
+  // Zero-GC marker array for deduplication (lazy-initialized)
+  static _markerArray = null; // Int32Array for marking processed entities
+  static _markerCounter = 1; // Increments each query to avoid clearing array
+
+  static getEntitiesInRadius(x, y, radius) {
+    const results = Grid._queryResults;
+    let count = 0;
+    const maxResults = results.length;
+    const radiusSq = radius * radius;
+
+    // Get grid bounds to check
+    const cellRadius = Math.ceil(radius * Grid.invCellSize);
+    const centerCol = (x * Grid.invCellSize) | 0;
+    const centerRow = (y * Grid.invCellSize) | 0;
+
+    const startCol = Math.max(0, centerCol - cellRadius);
+    const endCol = Math.min(Grid.gridWidth - 1, centerCol + cellRadius);
+    const startRow = Math.max(0, centerRow - cellRadius);
+    const endRow = Math.min(Grid.gridHeight - 1, centerRow + cellRadius);
+
+    // Import Transform for active check (avoid circular dep by checking existence)
+    const transformX = Transform?.x;
+    const transformY = Transform?.y;
+    const transformActive = Transform?.active;
+    if (!transformX || !transformY || !transformActive) {
+      Grid._queryResultCount = 0;
+      return { count: 0, entities: results };
+    }
+
+    // Track processed entities to avoid duplicates (entities can span multiple cells)
+    // Use a simple Set since we're in main thread and this is called infrequently
+    const processed = Grid._processedSet || (Grid._processedSet = new Set());
+    processed.clear();
+
+    // Iterate cells
+    for (let row = startRow; row &lt;= endRow; row++) {
+      for (let col = startCol; col &lt;= endCol; col++) {
+        const cellIndex = row * Grid.gridWidth + col;
+        const cellCount = Grid.getCellCount(cellIndex);
+
+        for (let k = 0; k &lt; cellCount; k++) {
+          const entityId = Grid.getCellEntity(cellIndex, k);
+
+          // Skip if already processed or inactive
+          if (processed.has(entityId)) continue;
+          if (!transformActive[entityId]) continue;
+          processed.add(entityId);
+
+          // Distance check
+          const ex = transformX[entityId];
+          const ey = transformY[entityId];
+          const distSq = distanceSq2D(x, y, ex, ey);
+
+          if (distSq &lt;= radiusSq) {
+            if (count &lt; maxResults) {
+              results[count++] = entityId;
+            }
+          }
+        }
+      }
+    }
+
+    Grid._queryResultCount = count;
+    return { count, entities: results };
+  }
+
+  /**
+   * Find all active entities within a rectangular region
+   * Zero-allocation: reuses pre-allocated results array and marker array
+   * @param {number} minX - Minimum X world coordinate
+   * @param {number} minY - Minimum Y world coordinate
+   * @param {number} maxX - Maximum X world coordinate
+   * @param {number} maxY - Maximum Y world coordinate
+   * @returns {{count: number, entities: Uint16Array}} Count and entities array
+   */
+  static getEntitiesInRect(minX, minY, maxX, maxY) {
+    const results = Grid._queryResults;
+    let count = 0;
+    const maxResults = results.length;
+
+    // Clamp and convert to cell coordinates
+    const startCol = Math.max(0, (minX * Grid.invCellSize) | 0);
+    const endCol = Math.min(Grid.gridWidth - 1, (maxX * Grid.invCellSize) | 0);
+    const startRow = Math.max(0, (minY * Grid.invCellSize) | 0);
+    const endRow = Math.min(Grid.gridHeight - 1, (maxY * Grid.invCellSize) | 0);
+
+    // Early exit if no cells to check
+    if (startCol > endCol || startRow > endRow) {
+      Grid._queryResultCount = 0;
+      return { count: 0, entities: results };
+    }
+
+    // Import Transform for active check (avoid circular dep by checking existence)
+    const transformX = Transform?.x;
+    const transformY = Transform?.y;
+    const transformActive = Transform?.active;
+    if (!transformX || !transformY || !transformActive) {
+      Grid._queryResultCount = 0;
+      return { count: 0, entities: results };
+    }
+
+    // Lazy-initialize marker array (zero-GC deduplication)
+    // Size it to match Transform array length if available, otherwise use large default
+    if (!Grid._markerArray) {
+      const arrayLength = transformX?.length || 65536;
+      Grid._markerArray = new Int32Array(arrayLength);
+      Grid._markerArray.fill(0);
+    }
+
+    // Increment marker counter (wraps at 2^31, but that's 2 billion queries)
+    const currentMarker = ++Grid._markerCounter;
+    if (Grid._markerCounter >= 2147483647) {
+      Grid._markerCounter = 1;
+      // If counter wrapped, we need to clear array (rare, but handle it)
+      Grid._markerArray.fill(0);
+    }
+
+    const markerArray = Grid._markerArray;
+    const gridCounts = Grid._gridCounts;
+    const gridEntities = Grid._gridEntities;
+    const cellByteSize = Grid.cellByteSize;
+    const gridWidth = Grid.gridWidth;
+
+    // Iterate cells in rectangular region
+    for (let row = startRow; row &lt;= endRow; row++) {
+      const rowBase = row * gridWidth;
+
+      for (let col = startCol; col &lt;= endCol; col++) {
+        const cellIndex = rowBase + col;
+        const byteOffset = cellIndex * cellByteSize;
+        const cellCount = gridCounts[byteOffset];
+
+        // Skip empty cells
+        if (cellCount === 0) continue;
+
+        // Direct buffer access for performance
+        const cellEntityBase = (byteOffset >> 2) + 1;
+
+        for (let k = 0; k &lt; cellCount; k++) {
+          const entityId = gridEntities[cellEntityBase + k];
+
+          // Skip if already processed this query (zero-GC marker check)
+          if (markerArray[entityId] === currentMarker) continue;
+          markerArray[entityId] = currentMarker;
+
+          // Skip inactive entities
+          if (!transformActive[entityId]) continue;
+
+          // Check if entity position is within rectangle bounds
+          const ex = transformX[entityId];
+          const ey = transformY[entityId];
+
+          if (ex >= minX &amp;&amp; ex &lt;= maxX &amp;&amp; ey >= minY &amp;&amp; ey &lt;= maxY) {
+            if (count &lt; maxResults) {
+              results[count++] = entityId;
+            }
+          }
+        }
+      }
+    }
+
+    Grid._queryResultCount = count;
+    return { count, entities: results };
+  }
+
+  /**
+   * Find the nearest entity to a point within a radius
+   * @param {number} x - World X position
+   * @param {number} y - World Y position
+   * @param {number} radius - Max search radius
+   * @param {Set&lt;string>|null} excludeTypes - Set of entity class names to exclude (optional)
+   * @returns {{entityId: number, distSq: number}|null} Nearest entity or null
+   */
+  static getNearestEntity(x, y, radius, excludeTypes = null) {
+    const { count, entities } = Grid.getEntitiesInRadius(x, y, radius);
+    if (count === 0) return null;
+
+    const transformX = Transform?.x;
+    const transformY = Transform?.y;
+    const entityType = Transform?.entityType;
+    if (!transformX || !transformY) return null;
+
+    let nearestId = -1;
+    let nearestDistSq = radius * radius;
+
+    for (let i = 0; i &lt; count; i++) {
+      const entityId = entities[i];
+
+      // Optional type filtering (for DebugUI to skip internal entities)
+      if (excludeTypes &amp;&amp; entityType) {
+        // This requires registeredClasses lookup - caller should handle filtering
+      }
+
+      const distSq = distanceSq2D(x, y, transformX[entityId], transformY[entityId]);
+
+      if (distSq &lt; nearestDistSq) {
+        nearestDistSq = distSq;
+        nearestId = entityId;
+      }
+    }
+
+    return nearestId >= 0 ? { entityId: nearestId, distSq: nearestDistSq } : null;
+  }
+
+  // =============================================================================
+  // ROW OWNERSHIP UTILITIES
+  // =============================================================================
+
+  /**
+   * Check if a row belongs to a specific worker
+   * @param {number} row - Grid row (0 to gridHeight-1)
+   * @param {number} workerId - Worker index (0 to totalWorkers-1)
+   * @param {number} totalWorkers - Total number of spatial workers
+   * @returns {boolean} True if this worker owns this row
+   */
+  static isRowOwnedBy(row, workerId, totalWorkers) {
+    const blockIndex = (row / Grid.rowsPerBlock) | 0;
+    return blockIndex % totalWorkers === workerId;
+  }
+
+  /**
+   * Get all rows owned by a specific worker
+   * @param {number} workerId - Worker index
+   * @param {number} totalWorkers - Total spatial workers
+   * @returns {Array&lt;number>} Array of row indices
+   */
+  static getOwnedRows(workerId, totalWorkers) {
+    const rows = [];
+    for (let row = 0; row &lt; Grid.gridHeight; row++) {
+      const blockIndex = (row / Grid.rowsPerBlock) | 0;
+      if (blockIndex % totalWorkers === workerId) {
+        rows.push(row);
+      }
+    }
+    return rows;
+  }
+
+  // =============================================================================
+  // CELL SLEEPING STATE ACCESS (Written by particle_worker, Read by all workers)
+  // =============================================================================
+
+  /**
+   * Get the cell sleeping state array (direct access for performance)
+   * Use Grid.cellSleepingData in performance-critical loops
+   * @returns {Uint8Array|null} Cell sleeping state array (0=awake, 1=sleeping)
+   */
+  static get cellSleepingData() {
+    return Grid._cellSleepingData;
+  }
+
+  /**
+   * Get sleeping state of a cell
+   * @param {number} cellIndex - Cell index
+   * @returns {number} 0 = awake, 1 = sleeping, 0 if buffer not initialized
+   */
+  static getCellSleeping(cellIndex) {
+    if (!Grid._cellSleepingData || cellIndex &lt; 0 || cellIndex >= Grid.totalCells) return 0;
+    return Grid._cellSleepingData[cellIndex];
+  }
+
+  /**
+   * Set sleeping state of a cell
+   * IMPORTANT: Only particle_worker should write to this buffer
+   * @param {number} cellIndex - Cell index
+   * @param {number} sleeping - 0 = awake, 1 = sleeping
+   */
+  static setCellSleeping(cellIndex, sleeping) {
+    if (!Grid._cellSleepingData || cellIndex &lt; 0 || cellIndex >= Grid.totalCells) return;
+    Grid._cellSleepingData[cellIndex] = sleeping ? 1 : 0;
+  }
+
+  /**
+   * Get statistics about cell sleeping states
+   * Useful for debugging and monitoring from Chrome DevTools
+   * @returns {Object} Statistics object with counts and percentages
+   */
+  static getCellSleepingStats() {
+    if (!Grid._cellSleepingData || Grid.totalCells === 0) {
+      return {
+        totalCells: 0,
+        sleepingCells: 0,
+        awakeCells: 0,
+        sleepingPercentage: 0,
+        awakePercentage: 0,
+      };
+    }
+
+    let sleepingCount = 0;
+    const totalCells = Grid.totalCells;
+
+    // Count sleeping cells (value === 1)
+    for (let i = 0; i &lt; totalCells; i++) {
+      if (Grid._cellSleepingData[i] === 1) {
+        sleepingCount++;
+      }
+    }
+
+    const awakeCount = totalCells - sleepingCount;
+    const sleepingPercentage = totalCells > 0 ? (sleepingCount / totalCells) * 100 : 0;
+    const awakePercentage = totalCells > 0 ? (awakeCount / totalCells) * 100 : 0;
+
+    return {
+      totalCells,
+      sleepingCells: sleepingCount,
+      awakeCells: awakeCount,
+      sleepingPercentage: sleepingPercentage.toFixed(2),
+      awakePercentage: awakePercentage.toFixed(2),
+    };
+  }
+
+  /**
+   * Get the count of sleeping cells (quick access for console)
+   * @returns {number} Number of sleeping cells
+   */
+  static getSleepingCellCount() {
+    if (!Grid._cellSleepingData || Grid.totalCells === 0) return 0;
+
+    let count = 0;
+    for (let i = 0; i &lt; Grid.totalCells; i++) {
+      if (Grid._cellSleepingData[i] === 1) count++;
+    }
+    return count;
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbstractWorker.html">AbstractWorker</a></li><li><a href="BigAtlasInspector.html">BigAtlasInspector</a></li><li><a href="Camera.html">Camera</a></li><li><a href="Constraint.html">Constraint</a></li><li><a href="DebugCanvas.html">DebugCanvas</a></li><li><a href="DebugFlags.html">DebugFlags</a></li><li><a href="DebugUI.html">DebugUI</a></li><li><a href="Decoration_Decoration.html">Decoration</a></li><li><a href="GameObject_GameObject.html">GameObject</a></li><li><a href="Grid.html">Grid</a></li><li><a href="LogicWorker.html">LogicWorker</a></li><li><a href="Mouse.html">Mouse</a></li><li><a href="NavGrid.html">NavGrid</a></li><li><a href="NavScratch.html">NavScratch</a></li><li><a href="ParticleWorker.html">ParticleWorker</a></li><li><a href="PhysicsWorker.html">PhysicsWorker</a></li><li><a href="PixiParticlePool.html">PixiParticlePool</a></li><li><a href="PixiRenderer.html">PixiRenderer</a></li><li><a href="PreRenderWorker.html">PreRenderWorker</a></li><li><a href="Ray.html">Ray</a></li><li><a href="SharedAtomicPool.html">SharedAtomicPool</a></li><li><a href="SpatialWorker.html">SpatialWorker</a></li><li><a href="SpriteSheetRegistry.html">SpriteSheetRegistry</a></li><li><a href="StatsCollector.html">StatsCollector</a></li><li><a href="Sun.html">Sun</a></li><li><a href="TileMap.html">TileMap</a></li><li><a href="TileMapLayer.html">TileMapLayer</a></li><li><a href="ToolManager.html">ToolManager</a></li></ul><h3>Global</h3><ul><li><a href="global.html#BLEND_MODES">BLEND_MODES</a></li><li><a href="global.html#Box">Box</a></li><li><a href="global.html#CAMERA_TYPES">CAMERA_TYPES</a></li><li><a href="global.html#COMPONENT_COLORS">COMPONENT_COLORS</a></li><li><a href="global.html#Circle">Circle</a></li><li><a href="global.html#DECORATION_INNER_Z_MAX">DECORATION_INNER_Z_MAX</a></li><li><a href="global.html#DECORATION_NO_PARENT">DECORATION_NO_PARENT</a></li><li><a href="global.html#DECORATION_Y_SORT_SCALE">DECORATION_Y_SORT_SCALE</a></li><li><a href="global.html#DEFAULT_LAYERS">DEFAULT_LAYERS</a></li><li><a href="global.html#DIRECTION">DIRECTION</a></li><li><a href="global.html#DIR_TO_VEC">DIR_TO_VEC</a></li><li><a href="global.html#ENTITY_GLOW_SORT_BIAS">ENTITY_GLOW_SORT_BIAS</a></li><li><a href="global.html#ENTITY_TYPE_ENTRY_SIZE">ENTITY_TYPE_ENTRY_SIZE</a></li><li><a href="global.html#FLOWFIELD_STATUS">FLOWFIELD_STATUS</a></li><li><a href="global.html#LOGIC_STATS">LOGIC_STATS</a></li><li><a href="global.html#MAX_COMPONENTS">MAX_COMPONENTS</a></li><li><a href="global.html#MAX_ENTITIES">MAX_ENTITIES</a></li><li><a href="global.html#MAX_ENTITY_TYPES">MAX_ENTITY_TYPES</a></li><li><a href="global.html#MAX_PRECOMPUTED_QUERIES">MAX_PRECOMPUTED_QUERIES</a></li><li><a href="global.html#NAVIGATION_STATS">NAVIGATION_STATS</a></li><li><a href="global.html#PARTICLE_STATS">PARTICLE_STATS</a></li><li><a href="global.html#PATH_STATUS">PATH_STATUS</a></li><li><a href="global.html#PHYSICS_STATS">PHYSICS_STATS</a></li><li><a href="global.html#PRE_RENDER_STATS">PRE_RENDER_STATS</a></li><li><a href="global.html#Polygon">Polygon</a></li><li><a href="global.html#QUERY_CACHE_ENTRY_SIZE">QUERY_CACHE_ENTRY_SIZE</a></li><li><a href="global.html#QUERY_RESULT_BUFFER_SIZE">QUERY_RESULT_BUFFER_SIZE</a></li><li><a href="global.html#RENDERER_STATS">RENDERER_STATS</a></li><li><a href="global.html#SHAPE_CIRCLE">SHAPE_CIRCLE</a></li><li><a href="global.html#SIDE">SIDE</a></li><li><a href="global.html#SPATIAL_STATS">SPATIAL_STATS</a></li><li><a href="global.html#SUN_DEFAULTS">SUN_DEFAULTS</a></li><li><a href="global.html#ShapeType">ShapeType</a></li><li><a href="global.html#TOPDOWN">TOPDOWN</a></li><li><a href="global.html#WORKER_DISPLAY_CONFIG">WORKER_DISPLAY_CONFIG</a></li><li><a href="global.html#Y_SORT_K">Y_SORT_K</a></li><li><a href="global.html#ZENITHAL">ZENITHAL</a></li><li><a href="global.html#_boundsResult">_boundsResult</a></li><li><a href="global.html#applyBrightnessToColor">applyBrightnessToColor</a></li><li><a href="global.html#atlasPadding">atlasPadding</a></li><li><a href="global.html#binarySearchFind">binarySearchFind</a></li><li><a href="global.html#binarySearchInsertPoint">binarySearchInsertPoint</a></li><li><a href="global.html#binarySearchRange">binarySearchRange</a></li><li><a href="global.html#brightnessToColoredTint">brightnessToColoredTint</a></li><li><a href="global.html#brightnessToTint">brightnessToTint</a></li><li><a href="global.html#buildFullCircle">buildFullCircle</a></li><li><a href="global.html#buildVisibilityPolygon">buildVisibilityPolygon</a></li><li><a href="global.html#calculateCameraScreenBounds">calculateCameraScreenBounds</a></li><li><a href="global.html#calculateDecalTileBounds">calculateDecalTileBounds</a></li><li><a href="global.html#calculateEntityMetadataSABSize">calculateEntityMetadataSABSize</a></li><li><a href="global.html#calculateLightAttenuation">calculateLightAttenuation</a></li><li><a href="global.html#calculateLightFromNeighbors">calculateLightFromNeighbors</a></li><li><a href="global.html#calculateQueryCacheSABSize">calculateQueryCacheSABSize</a></li><li><a href="global.html#calculateQueryResultsSABSize">calculateQueryResultsSABSize</a></li><li><a href="global.html#calculateSpeed">calculateSpeed</a></li><li><a href="global.html#calculateTileClipRegion">calculateTileClipRegion</a></li><li><a href="global.html#calculateTotalLightAtPosition">calculateTotalLightAtPosition</a></li><li><a href="global.html#calculateVelocityAngle">calculateVelocityAngle</a></li><li><a href="global.html#cantorPair">cantorPair</a></li><li><a href="global.html#cantorUnpair">cantorUnpair</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clamp01">clamp01</a></li><li><a href="global.html#clamp01Fast">clamp01Fast</a></li><li><a href="global.html#clampVelocity">clampVelocity</a></li><li><a href="global.html#clampVelocityMut">clampVelocityMut</a></li><li><a href="global.html#closestPointOnAABB">closestPointOnAABB</a></li><li><a href="global.html#closestPointOnAABBMut">closestPointOnAABBMut</a></li><li><a href="global.html#collectAllComponentsFromClasses">collectAllComponentsFromClasses</a></li><li><a href="global.html#collectComponents">collectComponents</a></li><li><a href="global.html#computeBoxMass">computeBoxMass</a></li><li><a href="global.html#computeCircleMass">computeCircleMass</a></li><li><a href="global.html#containerRadius">containerRadius</a></li><li><a href="global.html#countTrailingZeros">countTrailingZeros</a></li><li><a href="global.html#createBulletTrailCanvas">createBulletTrailCanvas</a></li><li><a href="global.html#createButton">createButton</a></li><li><a href="global.html#createCircularGradientCanvas">createCircularGradientCanvas</a></li><li><a href="global.html#createDivider">createDivider</a></li><li><a href="global.html#createMultiWorkerStatsReaderArray">createMultiWorkerStatsReaderArray</a></li><li><a href="global.html#createMultiWorkerStatsWriter">createMultiWorkerStatsWriter</a></li><li><a href="global.html#createPanel">createPanel</a></li><li><a href="global.html#createRow">createRow</a></li><li><a href="global.html#createStat">createStat</a></li><li><a href="global.html#createStatsReader">createStatsReader</a></li><li><a href="global.html#createStatsWriter">createStatsWriter</a></li><li><a href="global.html#createTab">createTab</a></li><li><a href="global.html#createWorkerQueryFunctions">createWorkerQueryFunctions</a></li><li><a href="global.html#directionTo">directionTo</a></li><li><a href="global.html#distance2D">distance2D</a></li><li><a href="global.html#distanceConstraintIterations">distanceConstraintIterations</a></li><li><a href="global.html#distanceSq2D">distanceSq2D</a></li><li><a href="global.html#drawCircle">drawCircle</a></li><li><a href="global.html#drawCross">drawCross</a></li><li><a href="global.html#drawLine">drawLine</a></li><li><a href="global.html#emitArcVertices">emitArcVertices</a></li><li><a href="global.html#emitVertex">emitVertex</a></li><li><a href="global.html#ensureDecorationFacade">ensureDecorationFacade</a></li><li><a href="global.html#evictDecorationFacade">evictDecorationFacade</a></li><li><a href="global.html#exposeComponentsGlobally">exposeComponentsGlobally</a></li><li><a href="global.html#exposeEntityClassesGlobally">exposeEntityClassesGlobally</a></li><li><a href="global.html#extractRGB">extractRGB</a></li><li><a href="global.html#extractRGBMut">extractRGBMut</a></li><li><a href="global.html#extractRGBNormalized">extractRGBNormalized</a></li><li><a href="global.html#extractRGBNormalizedMut">extractRGBNormalizedMut</a></li><li><a href="global.html#formatComponentValue">formatComponentValue</a></li><li><a href="global.html#formatNumber">formatNumber</a></li><li><a href="global.html#generateSymmetricalCirclePattern">generateSymmetricalCirclePattern</a></li><li><a href="global.html#getCellCoords">getCellCoords</a></li><li><a href="global.html#getCellCoordsMut">getCellCoordsMut</a></li><li><a href="global.html#getCellIndex">getCellIndex</a></li><li><a href="global.html#getCellRange">getCellRange</a></li><li><a href="global.html#getColliderBounds">getColliderBounds</a></li><li><a href="global.html#getComponentColor">getComponentColor</a></li><li><a href="global.html#getComponentPropertyNames">getComponentPropertyNames</a></li><li><a href="global.html#getDirectionFromAngle">getDirectionFromAngle</a></li><li><a href="global.html#getEntityHomeCellIndex">getEntityHomeCellIndex</a></li><li><a href="global.html#getParentClasses">getParentClasses</a></li><li><a href="global.html#hashToPastelColorCSS">hashToPastelColorCSS</a></li><li><a href="global.html#hashToPastelColorHex">hashToPastelColorHex</a></li><li><a href="global.html#hslToHex">hslToHex</a></li><li><a href="global.html#initializeComponentViews">initializeComponentViews</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isWithinRange">isWithinRange</a></li><li><a href="global.html#isWithinRangeSq">isWithinRangeSq</a></li><li><a href="global.html#layerMask">layerMask</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#lerpAngle">lerpAngle</a></li><li><a href="global.html#loadEntityScripts">loadEntityScripts</a></li><li><a href="global.html#maxAtlasHeight">maxAtlasHeight</a></li><li><a href="global.html#maxAtlasWidth">maxAtlasWidth</a></li><li><a href="global.html#maxAttachedDecorationsPerEntity">maxAttachedDecorationsPerEntity</a></li><li><a href="global.html#normalizeAngle">normalizeAngle</a></li><li><a href="global.html#normalizeAngleDifference">normalizeAngleDifference</a></li><li><a href="global.html#normalizeDirection">normalizeDirection</a></li><li><a href="global.html#normalizeDirectionFast">normalizeDirectionFast</a></li><li><a href="global.html#normalizeDirectionFromDistSq">normalizeDirectionFromDistSq</a></li><li><a href="global.html#query">query</a></li><li><a href="global.html#randomColor">randomColor</a></li><li><a href="global.html#randomRange">randomRange</a></li><li><a href="global.html#rayBoxHit">rayBoxHit</a></li><li><a href="global.html#rayBoxIntersect">rayBoxIntersect</a></li><li><a href="global.html#rayCircleDist">rayCircleDist</a></li><li><a href="global.html#rayCircleHit">rayCircleHit</a></li><li><a href="global.html#rayCircleIntersect">rayCircleIntersect</a></li><li><a href="global.html#rng">rng</a></li><li><a href="global.html#screenBoundsToWorldBounds">screenBoundsToWorldBounds</a></li><li><a href="global.html#setupWorkerCommunication">setupWorkerCommunication</a></li><li><a href="global.html#sortByY">sortByY</a></li><li><a href="global.html#sortEventsByAngle">sortEventsByAngle</a></li><li><a href="global.html#stringToHash">stringToHash</a></li><li><a href="global.html#subStepCount">subStepCount</a></li><li><a href="global.html#tangentHalfAngle">tangentHalfAngle</a></li><li><a href="global.html#testAABBAABBCollision">testAABBAABBCollision</a></li><li><a href="global.html#testCircleAABBCollision">testCircleAABBCollision</a></li><li><a href="global.html#testCircleCircleCollision">testCircleCircleCollision</a></li><li><a href="global.html#trimAlphaThreshold">trimAlphaThreshold</a></li><li><a href="global.html#trimImages">trimImages</a></li><li><a href="global.html#updateMassFromBox">updateMassFromBox</a></li><li><a href="global.html#updateMassFromCircle">updateMassFromCircle</a></li><li><a href="global.html#urlToPath">urlToPath</a></li><li><a href="global.html#validatePhysicsConfig">validatePhysicsConfig</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Apr 06 2026 16:36:00 GMT-0300 (hora estándar de Argentina)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

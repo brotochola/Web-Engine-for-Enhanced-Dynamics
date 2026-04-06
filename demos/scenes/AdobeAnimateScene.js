@@ -3,7 +3,7 @@ import { AdobeAnimateCharacter } from '/demos/gameObjects/adobeAnimateCharacter.
 import WEED from '/src/index.js';
 const { Scene, Camera, Mouse } = WEED;
 
-const CLIPS = ['idle', 'running', 'jumping'];
+
 
 export class AdobeAnimateScene extends Scene {
   static config = {
@@ -47,10 +47,10 @@ export class AdobeAnimateScene extends Scene {
         animation: '/demos/img/adobe_blue_character/Animation.json',
         png: '/demos/img/adobe_blue_character/spritemap1.png',
       },
-      test: {
-        atlas: '/demos/fla/spritemap1.json',
-        animation: '/demos/fla/anim.json',
-        png: '/demos/fla/spritemap1.png',
+      willian: {
+        atlas: '/demos/fla/willian/spritemap1.json',
+        animation: '/demos/fla/willian/Animation.json',
+        png: '/demos/fla/willian/spritemap1.png',
       },
     },
   };
@@ -81,7 +81,7 @@ export class AdobeAnimateScene extends Scene {
       this.spawnEntity(AdobeAnimateCharacter, {
         x: startX + col * spacingX,
         y: startY + row * spacingY,
-        clipName: 'idle',
+        // clipName: 'idle',
         playbackRate: 1 + i * 0.001,
         scaleX: 0.25,
         scaleY: 0.25,

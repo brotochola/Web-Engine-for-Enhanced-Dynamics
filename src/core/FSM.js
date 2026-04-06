@@ -164,7 +164,7 @@ export class FSM extends Component {
    * Call this from state's onUpdate: this.fsm.changeState(i, this.fsm.states.CHASE)
    *
    * @param {number} i - Entity index
-   * @param {typeof FSMState} StateClass - Target state class (from this.fsm.states.X)
+   * @param {Class} StateClass - Target state class (from this.fsm.states.X)
    */
   static changeState(i, StateClass) {
     // Queue the transition (will be processed at start of next tick)
@@ -174,7 +174,7 @@ export class FSM extends Component {
   /**
    * Request a state transition (applied once per tick) - INSTANCE version
    * Usage: this.personAnimationFSM.changeState(PersonAnimationFSM.states.IDLE)
-   * @param {typeof FSMState} StateClass - Target state class (from FSMClass.states.X)
+   * @param {Class} StateClass - Target state class (from FSMClass.states.X)
    */
   changeState(StateClass) {
     // Queue the transition (will be processed at start of next tick)
@@ -246,7 +246,7 @@ export class FSM extends Component {
   /**
    * Check if entity is in a specific state
    * @param {number} i - Entity index
-   * @param {typeof FSMState} StateClass - State class to check (from this.fsm.states.X)
+   * @param {Class} StateClass - State class to check (from this.fsm.states.X)
    * @returns {boolean} True if in that state
    */
   static isInState(i, StateClass) {
@@ -257,7 +257,7 @@ export class FSM extends Component {
    * Force immediate state change (skips pending queue) - STATIC version
    * Use sparingly - prefer changeState() for controlled transitions
    * @param {number} i - Entity index
-   * @param {typeof FSMState} StateClass - Target state class (from this.fsm.states.X)
+   * @param {Class} StateClass - Target state class (from this.fsm.states.X)
    * @param {GameObject} owner - The entity instance
    */
   static forceChangeState(i, StateClass, owner) {
@@ -267,7 +267,7 @@ export class FSM extends Component {
   /**
    * Force immediate state change (skips pending queue) - INSTANCE version
    * Usage: this.personAnimationFSM.forceChangeState(PersonAnimationFSM.states.SHOOTING)
-   * @param {typeof FSMState} StateClass - Target state class (from FSMClass.states.X)
+   * @param {Class} StateClass - Target state class (from FSMClass.states.X)
    */
   forceChangeState(StateClass) {
     this.constructor._executeTransition(this.index, StateClass.stateIndex, this.owner);

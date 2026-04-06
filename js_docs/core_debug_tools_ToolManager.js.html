@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: core/debug/tools/ToolManager.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: core/debug/tools/ToolManager.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>// ToolManager.js — Manages painter, eraser, and inspector tools
+
+import { Mouse } from '../../Mouse.js';
+import { Transform } from '../../../components/Transform.js';
+import { Grid } from '../../Grid.js';
+import {
+  distanceSq2D,
+  getComponentColor,
+  getComponentPropertyNames,
+  formatComponentValue,
+} from '../../utils.js';
+
+/**
+ * Unified manager for all debug tools: paint / erase / inspect.
+ * Handles mouse event wiring, tool state, and the inspector side-panel.
+ */
+export class ToolManager {
+  constructor(debugUI) {
+    this.debugUI = debugUI;
+
+    // Painter / eraser
+    this.activeSpawnerType = null;
+    this.eraserActive = false;
+    this.bulkSpawnEnabled = false;
+    this.lastSpawnTime = 0;
+    this.spawnThrottleMs = 50;
+    this._toolMouseDown = false;
+
+    // Inspector
+    this.inspectorActive = false;
+    this.selectedEntityIndex = -1;
+    this._inspectorPanelVisible = false;
+    this._prevInspectorValues = {};
+
+    // Internal entities that should be skipped
+    this._internalEntitiesSet = new Set(['Flash']);
+
+    // DOM references
+    this._toolIndicator = null;
+    this._inspectorPanel = null;
+    this._inspectorEntityInfo = null;
+    this._inspectorComponentsContainer = null;
+    this._inspectorComponentRows = null;
+
+    // Mouse handlers (store references for cleanup)
+    this._onToolMouseDown = null;
+    this._onToolMouseUp = null;
+  }
+
+  // ------- lifecycle -------
+
+  init() {
+    this._createToolIndicator();
+    this._setupMouseHandlers();
+  }
+
+  attach() {
+    this.activeSpawnerType = null;
+    this.eraserActive = false;
+    this._toolMouseDown = false;
+    Mouse.isDebugToolActive = false;
+
+    this.inspectorActive = false;
+    this.selectedEntityIndex = -1;
+    this._prevInspectorValues = {};
+    this._hideInspectorPanel();
+    this.updateToolIndicator();
+  }
+
+  update() {
+    this._updatePaintTool();
+    this._updateInspectorValues();
+  }
+
+  destroy() {
+    Mouse.isDebugToolActive = false;
+    if (this._onToolMouseDown) document.removeEventListener('mousedown', this._onToolMouseDown, true);
+    if (this._onToolMouseUp) document.removeEventListener('mouseup', this._onToolMouseUp, true);
+    if (this._toolIndicator?.parentNode) this._toolIndicator.parentNode.removeChild(this._toolIndicator);
+    if (this._inspectorPanel?.parentNode) this._inspectorPanel.parentNode.removeChild(this._inspectorPanel);
+  }
+
+  // ------- toggling tools -------
+
+  toggleSpawner(className) {
+    if (this.activeSpawnerType === className) {
+      this.activeSpawnerType = null;
+    } else {
+      this.activeSpawnerType = className;
+      this.eraserActive = false;
+      this.inspectorActive = false;
+    }
+    this._syncDebugToolFlag();
+    this.updateToolIndicator();
+    this.debugUI.panels.visual?.updateInspectorButtonState(this.inspectorActive);
+  }
+
+  toggleEraser() {
+    this.eraserActive = !this.eraserActive;
+    if (this.eraserActive) {
+      this.activeSpawnerType = null;
+      this.inspectorActive = false;
+    }
+    this._syncDebugToolFlag();
+    this.updateToolIndicator();
+    this.debugUI.panels.visual?.updateInspectorButtonState(this.inspectorActive);
+  }
+
+  toggleInspector() {
+    this.inspectorActive = !this.inspectorActive;
+    if (this.inspectorActive) {
+      this.activeSpawnerType = null;
+      this.eraserActive = false;
+    }
+    this._syncDebugToolFlag();
+    this.updateToolIndicator();
+    this.debugUI.panels.visual?.updateInspectorButtonState(this.inspectorActive);
+  }
+
+  deactivateAll() {
+    this.activeSpawnerType = null;
+    this.eraserActive = false;
+    this.inspectorActive = false;
+    this._toolMouseDown = false;
+    this.clearSelection();
+    this._syncDebugToolFlag();
+    this.updateToolIndicator();
+    this.debugUI.panels.visual?.updateInspectorButtonState(false);
+  }
+
+  // ------- tool indicator bar -------
+
+  _createToolIndicator() {
+    this._toolIndicator = document.createElement('div');
+    this._toolIndicator.className = 'debug-ui-tool-indicator';
+    document.body.appendChild(this._toolIndicator);
+  }
+
+  updateToolIndicator() {
+    const el = this._toolIndicator;
+    if (!el) return;
+
+    if (this.activeSpawnerType) {
+      const bulk = this.bulkSpawnEnabled ? ' ×50' : '';
+      el.textContent = `🎨 Painting: ${this.activeSpawnerType}${bulk} (click &amp; drag to spawn)`;
+      el.className = 'debug-ui-tool-indicator visible spawner';
+    } else if (this.eraserActive) {
+      el.textContent = '🧹 Eraser Active (click &amp; drag to despawn)';
+      el.className = 'debug-ui-tool-indicator visible eraser';
+    } else if (this.inspectorActive) {
+      el.textContent = '🔍 Inspector Active (click on an entity to inspect)';
+      el.className = 'debug-ui-tool-indicator visible inspector';
+    } else {
+      el.className = 'debug-ui-tool-indicator';
+    }
+  }
+
+  // ------- mouse handlers -------
+
+  _setupMouseHandlers() {
+    this._onToolMouseDown = (e) => {
+      if (e.button !== 0) return;
+      if (this.debugUI.container?.contains(e.target)) return;
+      if (this._inspectorPanel?.contains(e.target)) return;
+      if (this._toolIndicator?.contains(e.target)) return;
+
+      if (this.inspectorActive) {
+        this._selectEntityAtMouse();
+        return;
+      }
+      if (!this.activeSpawnerType &amp;&amp; !this.eraserActive) return;
+      this._toolMouseDown = true;
+    };
+
+    this._onToolMouseUp = (e) => {
+      if (e.button !== 0) return;
+      this._toolMouseDown = false;
+    };
+
+    document.addEventListener('mousedown', this._onToolMouseDown, true);
+    document.addEventListener('mouseup', this._onToolMouseUp, true);
+  }
+
+  // ------- paint / erase per tick -------
+
+  _updatePaintTool() {
+    if (!this.activeSpawnerType &amp;&amp; !this.eraserActive) return;
+    if (this._toolMouseDown &amp;&amp; Mouse.isPresent) this._handlePaintAction();
+  }
+
+  _handlePaintAction() {
+    const now = performance.now();
+    if (now - this.lastSpawnTime &lt; this.spawnThrottleMs) return;
+    this.lastSpawnTime = now;
+
+    if (this.activeSpawnerType) {
+      this._spawnEntityAtMouse(this.activeSpawnerType);
+    } else if (this.eraserActive) {
+      this._despawnEntityAtMouse();
+    }
+  }
+
+  _spawnEntityAtMouse(className) {
+    const engine = this.debugUI.gameEngine;
+    if (!engine) return;
+
+    const count = this.bulkSpawnEnabled ? 50 : 1;
+    const spread = 30;
+
+    for (let i = 0; i &lt; count; i++) {
+      const ox = count > 1 ? (Math.random() - 0.5) * spread * 2 : 0;
+      const oy = count > 1 ? (Math.random() - 0.5) * spread * 2 : 0;
+      engine.spawnEntity(className, { x: Mouse.x + ox, y: Mouse.y + oy });
+    }
+  }
+
+  _despawnEntityAtMouse() {
+    const scene = this.debugUI.scene;
+    if (!scene || !this.debugUI.gameEngine) return;
+
+    const radius = 50;
+    const nearest = this._findNearestEntity(Mouse.x, Mouse.y, radius);
+    if (nearest >= 0) scene.despawnEntity(nearest);
+  }
+
+  // ------- inspector -------
+
+  _selectEntityAtMouse() {
+    if (!this.debugUI.scene || !this.inspectorActive) return;
+
+    const selectRadius = 100;
+    const nearest = this._findNearestEntity(Mouse.x, Mouse.y, selectRadius);
+
+    if (nearest >= 0) {
+      this._selectEntity(nearest);
+    } else {
+      this.clearSelection();
+    }
+  }
+
+  _selectEntity(entityIndex) {
+    this.selectedEntityIndex = entityIndex;
+    const flags = this.debugUI.debugFlags;
+    if (flags) flags.setSelectedEntity(entityIndex);
+    this.debugUI.canvas.startLoop();
+    this._showInspectorPanel();
+    this._populateInspectorPanel();
+  }
+
+  clearSelection() {
+    this.selectedEntityIndex = -1;
+    this._prevInspectorValues = {};
+    const flags = this.debugUI.debugFlags;
+    if (flags) flags.clearSelectedEntity();
+    this.debugUI.canvas.syncLoop();
+    this._hideInspectorPanel();
+  }
+
+  // ------- inspector DOM -------
+
+  _showInspectorPanel() {
+    if (!this._inspectorPanel) this._createInspectorPanel();
+    this._inspectorPanel.style.display = 'flex';
+    this._inspectorPanelVisible = true;
+  }
+
+  _hideInspectorPanel() {
+    if (this._inspectorPanel) this._inspectorPanel.style.display = 'none';
+    this._inspectorPanelVisible = false;
+  }
+
+  _createInspectorPanel() {
+    const panel = document.createElement('div');
+    panel.className = 'debug-ui-inspector-panel';
+    panel.style.cssText = `
+      position:fixed;left:0;top:78px;width:320px;max-height:calc(100vh - 200px);
+      background:rgba(15,15,20,0.95);border-right:2px solid rgba(255,200,100,0.5);
+      border-bottom:2px solid rgba(255,200,100,0.3);border-radius:0 0 8px 0;
+      overflow-y:auto;overflow-x:hidden;display:none;flex-direction:column;
+      font-family:'Consolas','Monaco',monospace;font-size:13px;z-index:10001;
+      box-shadow:4px 4px 12px rgba(0,0,0,0.5);
+    `;
+
+    // Header
+    const header = document.createElement('div');
+    header.style.cssText = `
+      padding:10px 12px;background:linear-gradient(135deg,rgba(255,200,100,0.2),rgba(255,150,50,0.1));
+      border-bottom:1px solid rgba(255,200,100,0.3);display:flex;justify-content:space-between;
+      align-items:center;position:sticky;top:0;z-index:1;
+    `;
+    const title = document.createElement('span');
+    title.style.cssText = 'font-weight:bold;font-size:12px;color:#ffc864';
+    title.textContent = '🔍 Entity Inspector';
+    header.appendChild(title);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.style.cssText = 'background:rgba(255,100,100,0.3);border:1px solid rgba(255,100,100,0.5);color:#ff8888;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:12px';
+    closeBtn.textContent = '✕ Close';
+    closeBtn.onclick = () => this.clearSelection();
+    header.appendChild(closeBtn);
+    panel.appendChild(header);
+
+    this._inspectorEntityInfo = document.createElement('div');
+    this._inspectorEntityInfo.style.cssText = 'padding:8px 12px;background:rgba(0,0,0,0.3);border-bottom:1px solid rgba(255,255,255,0.1);color:#aaa';
+    panel.appendChild(this._inspectorEntityInfo);
+
+    this._inspectorComponentsContainer = document.createElement('div');
+    this._inspectorComponentsContainer.style.cssText = 'padding:8px;display:flex;flex-direction:column;gap:8px';
+    panel.appendChild(this._inspectorComponentsContainer);
+
+    document.body.appendChild(panel);
+    this._inspectorPanel = panel;
+  }
+
+  _populateInspectorPanel() {
+    if (this.selectedEntityIndex &lt; 0 || !this.debugUI.scene) return;
+    const entityIndex = this.selectedEntityIndex;
+    const entityType = Transform.entityType[entityIndex];
+    const regInfo = this.debugUI.scene.registeredClasses?.find((r) => r.entityType === entityType);
+
+    if (this._inspectorEntityInfo) {
+      const name = regInfo ? regInfo.class.name : 'Unknown';
+      this._inspectorEntityInfo.innerHTML = `
+        &lt;div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+          &lt;span style="color:#fff;font-weight:bold;">${name}&lt;/span>
+          &lt;span style="color:#888;">Index: ${entityIndex}&lt;/span>
+        &lt;/div>
+        &lt;div style="color:#666;font-size:12px;">Type ID: ${entityType}&lt;/div>
+      `;
+    }
+
+    const components = regInfo ? regInfo.components : [Transform];
+    const container = this._inspectorComponentsContainer;
+    if (!container) return;
+    container.innerHTML = '';
+    this._inspectorComponentRows = {};
+
+    for (const ComponentClass of components) {
+      const componentName = ComponentClass.name;
+      const color = getComponentColor(componentName);
+
+      const section = document.createElement('div');
+      section.style.cssText = `background:rgba(0,0,0,0.3);border:1px solid ${color.css};border-left:3px solid ${color.css};border-radius:4px;overflow:hidden`;
+
+      const header = document.createElement('div');
+      header.style.cssText = `padding:6px 8px;background:linear-gradient(90deg,${color.css}22,transparent);color:${color.css};font-weight:bold;font-size:11px;border-bottom:1px solid ${color.css}44`;
+      header.textContent = componentName;
+      section.appendChild(header);
+
+      const propsContainer = document.createElement('div');
+      propsContainer.style.cssText = 'padding:4px 0';
+
+      const propNames = getComponentPropertyNames(ComponentClass);
+      this._inspectorComponentRows[componentName] = {};
+
+      for (const propName of propNames) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;justify-content:space-between;padding:2px 8px;border-bottom:1px solid rgba(255,255,255,0.05)';
+
+        const label = document.createElement('span');
+        label.style.cssText = 'color:#888;font-size:12px';
+        label.textContent = propName;
+        row.appendChild(label);
+
+        const value = document.createElement('span');
+        value.style.cssText = 'color:#fff;font-size:12px;font-family:monospace';
+        value.textContent = '--';
+        row.appendChild(value);
+
+        propsContainer.appendChild(row);
+        this._inspectorComponentRows[componentName][propName] = value;
+      }
+
+      section.appendChild(propsContainer);
+      container.appendChild(section);
+    }
+
+    this._updateInspectorValues();
+  }
+
+  _updateInspectorValues() {
+    if (this.selectedEntityIndex &lt; 0 || !this._inspectorPanelVisible) return;
+    const entityIndex = this.selectedEntityIndex;
+
+    if (!Transform.active[entityIndex]) {
+      this.clearSelection();
+      return;
+    }
+
+    const rows = this._inspectorComponentRows;
+    if (!rows) return;
+
+    const entityType = Transform.entityType[entityIndex];
+    const regInfo = this.debugUI.scene?.registeredClasses?.find((r) => r.entityType === entityType);
+    const components = regInfo ? regInfo.components : [Transform];
+
+    for (const ComponentClass of components) {
+      const componentName = ComponentClass.name;
+      const componentRows = rows[componentName];
+      if (!componentRows) continue;
+
+      const schema = ComponentClass.ARRAY_SCHEMA;
+      if (!schema) continue;
+
+      if (!this._prevInspectorValues[componentName]) this._prevInspectorValues[componentName] = {};
+      const prevCache = this._prevInspectorValues[componentName];
+
+      for (const propName of Object.keys(componentRows)) {
+        const arr = ComponentClass[propName];
+        if (!arr || arr[entityIndex] === undefined) continue;
+        const value = arr[entityIndex];
+        const rounded = typeof value === 'number' ? (value * 1000) | 0 : value;
+        if (prevCache[propName] === rounded) continue;
+        prevCache[propName] = rounded;
+        componentRows[propName].textContent = formatComponentValue(propName, value);
+      }
+    }
+  }
+
+  // ------- helpers -------
+
+  _syncDebugToolFlag() {
+    Mouse.isDebugToolActive = !!(this.activeSpawnerType || this.eraserActive || this.inspectorActive);
+  }
+
+  _findNearestEntity(mx, my, radius) {
+    const { count, entities } = Grid.getEntitiesInRadius(mx, my, radius);
+    let nearest = -1;
+    let nearestD2 = radius * radius;
+
+    for (let i = 0; i &lt; count; i++) {
+      const id = entities[i];
+      if (!Transform.active[id]) continue;
+
+      const entityType = Transform.entityType[id];
+      const reg = this.debugUI.scene?.registeredClasses?.find((r) => r.entityType === entityType);
+      if (reg &amp;&amp; this._internalEntitiesSet.has(reg.class.name)) continue;
+
+      const d2 = distanceSq2D(mx, my, Transform.x[id], Transform.y[id]);
+      if (d2 &lt; nearestD2) { nearestD2 = d2; nearest = id; }
+    }
+    return nearest;
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbstractWorker.html">AbstractWorker</a></li><li><a href="BigAtlasInspector.html">BigAtlasInspector</a></li><li><a href="Camera.html">Camera</a></li><li><a href="Constraint.html">Constraint</a></li><li><a href="DebugCanvas.html">DebugCanvas</a></li><li><a href="DebugFlags.html">DebugFlags</a></li><li><a href="DebugUI.html">DebugUI</a></li><li><a href="Decoration_Decoration.html">Decoration</a></li><li><a href="GameObject_GameObject.html">GameObject</a></li><li><a href="Grid.html">Grid</a></li><li><a href="LogicWorker.html">LogicWorker</a></li><li><a href="Mouse.html">Mouse</a></li><li><a href="NavGrid.html">NavGrid</a></li><li><a href="NavScratch.html">NavScratch</a></li><li><a href="ParticleWorker.html">ParticleWorker</a></li><li><a href="PhysicsWorker.html">PhysicsWorker</a></li><li><a href="PixiParticlePool.html">PixiParticlePool</a></li><li><a href="PixiRenderer.html">PixiRenderer</a></li><li><a href="PreRenderWorker.html">PreRenderWorker</a></li><li><a href="Ray.html">Ray</a></li><li><a href="SharedAtomicPool.html">SharedAtomicPool</a></li><li><a href="SpatialWorker.html">SpatialWorker</a></li><li><a href="SpriteSheetRegistry.html">SpriteSheetRegistry</a></li><li><a href="StatsCollector.html">StatsCollector</a></li><li><a href="Sun.html">Sun</a></li><li><a href="TileMap.html">TileMap</a></li><li><a href="TileMapLayer.html">TileMapLayer</a></li><li><a href="ToolManager.html">ToolManager</a></li></ul><h3>Global</h3><ul><li><a href="global.html#BLEND_MODES">BLEND_MODES</a></li><li><a href="global.html#Box">Box</a></li><li><a href="global.html#CAMERA_TYPES">CAMERA_TYPES</a></li><li><a href="global.html#COMPONENT_COLORS">COMPONENT_COLORS</a></li><li><a href="global.html#Circle">Circle</a></li><li><a href="global.html#DECORATION_INNER_Z_MAX">DECORATION_INNER_Z_MAX</a></li><li><a href="global.html#DECORATION_NO_PARENT">DECORATION_NO_PARENT</a></li><li><a href="global.html#DECORATION_Y_SORT_SCALE">DECORATION_Y_SORT_SCALE</a></li><li><a href="global.html#DEFAULT_LAYERS">DEFAULT_LAYERS</a></li><li><a href="global.html#DIRECTION">DIRECTION</a></li><li><a href="global.html#DIR_TO_VEC">DIR_TO_VEC</a></li><li><a href="global.html#ENTITY_GLOW_SORT_BIAS">ENTITY_GLOW_SORT_BIAS</a></li><li><a href="global.html#ENTITY_TYPE_ENTRY_SIZE">ENTITY_TYPE_ENTRY_SIZE</a></li><li><a href="global.html#FLOWFIELD_STATUS">FLOWFIELD_STATUS</a></li><li><a href="global.html#LOGIC_STATS">LOGIC_STATS</a></li><li><a href="global.html#MAX_COMPONENTS">MAX_COMPONENTS</a></li><li><a href="global.html#MAX_ENTITIES">MAX_ENTITIES</a></li><li><a href="global.html#MAX_ENTITY_TYPES">MAX_ENTITY_TYPES</a></li><li><a href="global.html#MAX_PRECOMPUTED_QUERIES">MAX_PRECOMPUTED_QUERIES</a></li><li><a href="global.html#NAVIGATION_STATS">NAVIGATION_STATS</a></li><li><a href="global.html#PARTICLE_STATS">PARTICLE_STATS</a></li><li><a href="global.html#PATH_STATUS">PATH_STATUS</a></li><li><a href="global.html#PHYSICS_STATS">PHYSICS_STATS</a></li><li><a href="global.html#PRE_RENDER_STATS">PRE_RENDER_STATS</a></li><li><a href="global.html#Polygon">Polygon</a></li><li><a href="global.html#QUERY_CACHE_ENTRY_SIZE">QUERY_CACHE_ENTRY_SIZE</a></li><li><a href="global.html#QUERY_RESULT_BUFFER_SIZE">QUERY_RESULT_BUFFER_SIZE</a></li><li><a href="global.html#RENDERER_STATS">RENDERER_STATS</a></li><li><a href="global.html#SHAPE_CIRCLE">SHAPE_CIRCLE</a></li><li><a href="global.html#SIDE">SIDE</a></li><li><a href="global.html#SPATIAL_STATS">SPATIAL_STATS</a></li><li><a href="global.html#SUN_DEFAULTS">SUN_DEFAULTS</a></li><li><a href="global.html#ShapeType">ShapeType</a></li><li><a href="global.html#TOPDOWN">TOPDOWN</a></li><li><a href="global.html#WORKER_DISPLAY_CONFIG">WORKER_DISPLAY_CONFIG</a></li><li><a href="global.html#Y_SORT_K">Y_SORT_K</a></li><li><a href="global.html#ZENITHAL">ZENITHAL</a></li><li><a href="global.html#_boundsResult">_boundsResult</a></li><li><a href="global.html#applyBrightnessToColor">applyBrightnessToColor</a></li><li><a href="global.html#atlasPadding">atlasPadding</a></li><li><a href="global.html#binarySearchFind">binarySearchFind</a></li><li><a href="global.html#binarySearchInsertPoint">binarySearchInsertPoint</a></li><li><a href="global.html#binarySearchRange">binarySearchRange</a></li><li><a href="global.html#brightnessToColoredTint">brightnessToColoredTint</a></li><li><a href="global.html#brightnessToTint">brightnessToTint</a></li><li><a href="global.html#buildFullCircle">buildFullCircle</a></li><li><a href="global.html#buildVisibilityPolygon">buildVisibilityPolygon</a></li><li><a href="global.html#calculateCameraScreenBounds">calculateCameraScreenBounds</a></li><li><a href="global.html#calculateDecalTileBounds">calculateDecalTileBounds</a></li><li><a href="global.html#calculateEntityMetadataSABSize">calculateEntityMetadataSABSize</a></li><li><a href="global.html#calculateLightAttenuation">calculateLightAttenuation</a></li><li><a href="global.html#calculateLightFromNeighbors">calculateLightFromNeighbors</a></li><li><a href="global.html#calculateQueryCacheSABSize">calculateQueryCacheSABSize</a></li><li><a href="global.html#calculateQueryResultsSABSize">calculateQueryResultsSABSize</a></li><li><a href="global.html#calculateSpeed">calculateSpeed</a></li><li><a href="global.html#calculateTileClipRegion">calculateTileClipRegion</a></li><li><a href="global.html#calculateTotalLightAtPosition">calculateTotalLightAtPosition</a></li><li><a href="global.html#calculateVelocityAngle">calculateVelocityAngle</a></li><li><a href="global.html#cantorPair">cantorPair</a></li><li><a href="global.html#cantorUnpair">cantorUnpair</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clamp01">clamp01</a></li><li><a href="global.html#clamp01Fast">clamp01Fast</a></li><li><a href="global.html#clampVelocity">clampVelocity</a></li><li><a href="global.html#clampVelocityMut">clampVelocityMut</a></li><li><a href="global.html#closestPointOnAABB">closestPointOnAABB</a></li><li><a href="global.html#closestPointOnAABBMut">closestPointOnAABBMut</a></li><li><a href="global.html#collectAllComponentsFromClasses">collectAllComponentsFromClasses</a></li><li><a href="global.html#collectComponents">collectComponents</a></li><li><a href="global.html#computeBoxMass">computeBoxMass</a></li><li><a href="global.html#computeCircleMass">computeCircleMass</a></li><li><a href="global.html#containerRadius">containerRadius</a></li><li><a href="global.html#countTrailingZeros">countTrailingZeros</a></li><li><a href="global.html#createBulletTrailCanvas">createBulletTrailCanvas</a></li><li><a href="global.html#createButton">createButton</a></li><li><a href="global.html#createCircularGradientCanvas">createCircularGradientCanvas</a></li><li><a href="global.html#createDivider">createDivider</a></li><li><a href="global.html#createMultiWorkerStatsReaderArray">createMultiWorkerStatsReaderArray</a></li><li><a href="global.html#createMultiWorkerStatsWriter">createMultiWorkerStatsWriter</a></li><li><a href="global.html#createPanel">createPanel</a></li><li><a href="global.html#createRow">createRow</a></li><li><a href="global.html#createStat">createStat</a></li><li><a href="global.html#createStatsReader">createStatsReader</a></li><li><a href="global.html#createStatsWriter">createStatsWriter</a></li><li><a href="global.html#createTab">createTab</a></li><li><a href="global.html#createWorkerQueryFunctions">createWorkerQueryFunctions</a></li><li><a href="global.html#directionTo">directionTo</a></li><li><a href="global.html#distance2D">distance2D</a></li><li><a href="global.html#distanceConstraintIterations">distanceConstraintIterations</a></li><li><a href="global.html#distanceSq2D">distanceSq2D</a></li><li><a href="global.html#drawCircle">drawCircle</a></li><li><a href="global.html#drawCross">drawCross</a></li><li><a href="global.html#drawLine">drawLine</a></li><li><a href="global.html#emitArcVertices">emitArcVertices</a></li><li><a href="global.html#emitVertex">emitVertex</a></li><li><a href="global.html#ensureDecorationFacade">ensureDecorationFacade</a></li><li><a href="global.html#evictDecorationFacade">evictDecorationFacade</a></li><li><a href="global.html#exposeComponentsGlobally">exposeComponentsGlobally</a></li><li><a href="global.html#exposeEntityClassesGlobally">exposeEntityClassesGlobally</a></li><li><a href="global.html#extractRGB">extractRGB</a></li><li><a href="global.html#extractRGBMut">extractRGBMut</a></li><li><a href="global.html#extractRGBNormalized">extractRGBNormalized</a></li><li><a href="global.html#extractRGBNormalizedMut">extractRGBNormalizedMut</a></li><li><a href="global.html#formatComponentValue">formatComponentValue</a></li><li><a href="global.html#formatNumber">formatNumber</a></li><li><a href="global.html#generateSymmetricalCirclePattern">generateSymmetricalCirclePattern</a></li><li><a href="global.html#getCellCoords">getCellCoords</a></li><li><a href="global.html#getCellCoordsMut">getCellCoordsMut</a></li><li><a href="global.html#getCellIndex">getCellIndex</a></li><li><a href="global.html#getCellRange">getCellRange</a></li><li><a href="global.html#getColliderBounds">getColliderBounds</a></li><li><a href="global.html#getComponentColor">getComponentColor</a></li><li><a href="global.html#getComponentPropertyNames">getComponentPropertyNames</a></li><li><a href="global.html#getDirectionFromAngle">getDirectionFromAngle</a></li><li><a href="global.html#getEntityHomeCellIndex">getEntityHomeCellIndex</a></li><li><a href="global.html#getParentClasses">getParentClasses</a></li><li><a href="global.html#hashToPastelColorCSS">hashToPastelColorCSS</a></li><li><a href="global.html#hashToPastelColorHex">hashToPastelColorHex</a></li><li><a href="global.html#hslToHex">hslToHex</a></li><li><a href="global.html#initializeComponentViews">initializeComponentViews</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isWithinRange">isWithinRange</a></li><li><a href="global.html#isWithinRangeSq">isWithinRangeSq</a></li><li><a href="global.html#layerMask">layerMask</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#lerpAngle">lerpAngle</a></li><li><a href="global.html#loadEntityScripts">loadEntityScripts</a></li><li><a href="global.html#maxAtlasHeight">maxAtlasHeight</a></li><li><a href="global.html#maxAtlasWidth">maxAtlasWidth</a></li><li><a href="global.html#maxAttachedDecorationsPerEntity">maxAttachedDecorationsPerEntity</a></li><li><a href="global.html#normalizeAngle">normalizeAngle</a></li><li><a href="global.html#normalizeAngleDifference">normalizeAngleDifference</a></li><li><a href="global.html#normalizeDirection">normalizeDirection</a></li><li><a href="global.html#normalizeDirectionFast">normalizeDirectionFast</a></li><li><a href="global.html#normalizeDirectionFromDistSq">normalizeDirectionFromDistSq</a></li><li><a href="global.html#query">query</a></li><li><a href="global.html#randomColor">randomColor</a></li><li><a href="global.html#randomRange">randomRange</a></li><li><a href="global.html#rayBoxHit">rayBoxHit</a></li><li><a href="global.html#rayBoxIntersect">rayBoxIntersect</a></li><li><a href="global.html#rayCircleDist">rayCircleDist</a></li><li><a href="global.html#rayCircleHit">rayCircleHit</a></li><li><a href="global.html#rayCircleIntersect">rayCircleIntersect</a></li><li><a href="global.html#rng">rng</a></li><li><a href="global.html#screenBoundsToWorldBounds">screenBoundsToWorldBounds</a></li><li><a href="global.html#setupWorkerCommunication">setupWorkerCommunication</a></li><li><a href="global.html#sortByY">sortByY</a></li><li><a href="global.html#sortEventsByAngle">sortEventsByAngle</a></li><li><a href="global.html#stringToHash">stringToHash</a></li><li><a href="global.html#subStepCount">subStepCount</a></li><li><a href="global.html#tangentHalfAngle">tangentHalfAngle</a></li><li><a href="global.html#testAABBAABBCollision">testAABBAABBCollision</a></li><li><a href="global.html#testCircleAABBCollision">testCircleAABBCollision</a></li><li><a href="global.html#testCircleCircleCollision">testCircleCircleCollision</a></li><li><a href="global.html#trimAlphaThreshold">trimAlphaThreshold</a></li><li><a href="global.html#trimImages">trimImages</a></li><li><a href="global.html#updateMassFromBox">updateMassFromBox</a></li><li><a href="global.html#updateMassFromCircle">updateMassFromCircle</a></li><li><a href="global.html#urlToPath">urlToPath</a></li><li><a href="global.html#validatePhysicsConfig">validatePhysicsConfig</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Apr 06 2026 16:36:00 GMT-0300 (hora estándar de Argentina)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

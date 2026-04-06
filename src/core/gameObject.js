@@ -59,7 +59,7 @@ export class GameObject {
   /**
    * Main thread only: current `Scene` reference, set in `Scene.exposeGlobalReferences()`.
    * Stays `null` in workers so `GameObject.get` keeps using the dense pool array there.
-   * @type {null | { getEntityView: (index: number, options?: object) => import('./gameObject.js').GameObject }}
+   * @type {Object|null}
    */
   static scene = null;
 
@@ -83,7 +83,8 @@ export class GameObject {
    * Engine callbacks (`tick`, collisions, etc.) still run only on logic workers.
    *
    * @param {number} entityIndex
-   * @param {{ cache?: boolean }} [options] - cache=true reuses one instance per index until releaseEntityView
+   * @param {Object} [options] - cache=true reuses one instance per index until releaseEntityView
+   * @param {boolean} [options.cache]
    * @returns {GameObject}
    */
   static getEntityView(entityIndex, options = {}) {
@@ -415,7 +416,7 @@ export class GameObject {
    * Build camelCase component name → class map (same layout logic_worker uses).
    * Called from Scene registration and logic worker pool creation so main-thread
    * entity views get working `this.rigidBody`-style accessors.
-   * @param {typeof GameObject} EntityClass
+   * @param {Class} EntityClass
    */
   static _assignComponentClassMap(EntityClass) {
     const componentClassMap = {};
@@ -1493,7 +1494,7 @@ export class GameObject {
   /**
    * Lazy facade for an attached decoration at `slot` (same as Decoration.get(poolIndex)).
    * @param {number} slot
-   * @returns {import('./Decoration.js').Decoration | null}
+   * @returns {Decoration | null}
    */
   getAttachedDecoration(slot) {
     const poolIndex = this.getAttachedDecorationIndex(slot);

@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: core/Sun.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: core/Sun.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * Sun - Static class representing the sun/directional light
+ * Backed by SharedArrayBuffer for cross-worker access
+ * Pattern follows Camera, Mouse, Keyboard static classes
+ *
+ * Main thread: read/write via setters (controls day cycle)
+ * Workers: read-only via getters (consume state)
+ *
+ * The sun provides:
+ * - Directional ambient light (intensity varies with time of day)
+ * - Parallel shadows (all shadows point same direction based on sun angle)
+ * - Color that changes throughout the day (warm at sunrise/sunset, white at noon)
+ *
+ * When sun intensity is high (noon), point light shadows are suppressed
+ * because they would be "drowned out" by sunlight in real life.
+ */
+export class Sun {
+    // SAB layout (64 bytes total, 4-byte aligned)
+    static BYTE_LENGTH = 64;
+
+    // Offsets in bytes
+    static OFFSETS = {
+        ENABLED: 0, // Uint8 (0 or 1)
+        // padding: 1-3
+        ANGLE: 4, // Float32 (degrees, 0=East, 90=South, 180=West, 270=North)
+        ELEVATION: 8, // Float32 (degrees, 0=horizon, 90=directly overhead)
+        INTENSITY: 12, // Float32 (0-1, affects ambient light level)
+        COLOR: 16, // Uint32 (0xRRGGBB)
+        SHADOW_ALPHA: 20, // Float32 (0-1, base shadow darkness from sun)
+        HOUR: 24, // Float32 (0-24, current time of day)
+        // Shadow config (set once from config)
+        SHADOW_ANGLE_OFFSET: 28, // Float32 (radians, π for southern hemisphere)
+        SHADOW_MIN_LENGTH_RATIO: 32, // Float32 (shadow multiplier at zenith)
+        SHADOW_MAX_LENGTH_RATIO: 36, // Float32 (shadow multiplier at horizon)
+        SHADOW_STRETCH_ALPHA_FACTOR: 40, // Float32 (alpha fade when stretched)
+        // Shadow computed (updated in setTimeOfDay)
+        SHADOW_DIR_X: 44, // Float32 (cos of shadow angle)
+        SHADOW_DIR_Y: 48, // Float32 (sin of shadow angle)
+        SHADOW_LENGTH_RATIO: 52, // Float32 (current length ratio based on elevation)
+        SHADOW_ANGLE: 56, // Float32 (radians, for sprite rotation)
+        // reserved: 60-63
+    };
+
+    // Float32 indices (offset / 4)
+    static F32 = {
+        ANGLE: 1,
+        ELEVATION: 2,
+        INTENSITY: 3,
+        SHADOW_ALPHA: 5,
+        HOUR: 6,
+        SHADOW_ANGLE_OFFSET: 7,
+        SHADOW_MIN_LENGTH_RATIO: 8,
+        SHADOW_MAX_LENGTH_RATIO: 9,
+        SHADOW_STRETCH_ALPHA_FACTOR: 10,
+        SHADOW_DIR_X: 11,
+        SHADOW_DIR_Y: 12,
+        SHADOW_LENGTH_RATIO: 13,
+        SHADOW_ANGLE: 14,
+    };
+
+    // Uint32 indices (offset / 4)
+    static U32 = {
+        COLOR: 4,
+    };
+
+    // Default sun colors for different times of day
+    static DEFAULT_COLORS = [
+        { hour: 0, color: 0x1a1a2e }, // Midnight - dark blue
+        { hour: 5, color: 0x2d4a6e }, // Pre-dawn - deep blue
+        { hour: 6, color: 0xff7744 }, // Dawn - orange
+        { hour: 7, color: 0xffaa66 }, // Early morning - warm orange
+        { hour: 8, color: 0xffeedd }, // Morning - warm white
+        { hour: 12, color: 0xffffff }, // Noon - pure white
+        { hour: 16, color: 0xffeedd }, // Afternoon - warm white
+        { hour: 18, color: 0xffaa66 }, // Late afternoon - warm
+        { hour: 19, color: 0xff6633 }, // Sunset - deep orange
+        { hour: 20, color: 0xff4422 }, // Deep sunset - red-orange
+        { hour: 21, color: 0x2d4a6e }, // Dusk - deep blue
+        { hour: 24, color: 0x1a1a2e }, // Midnight - dark blue
+    ];
+
+    // SharedArrayBuffer views (set during initialization)
+    static _sab = null;
+    static _uint8 = null;
+    static _float32 = null;
+    static _uint32 = null;
+
+    // ============ Initialization ============
+
+    /**
+     * Initialize Sun with shared data buffer
+     * @param {SharedArrayBuffer} sharedArrayBuffer - SAB of at least Sun.BYTE_LENGTH bytes
+     */
+    static initialize(sharedArrayBuffer) {
+        if (!sharedArrayBuffer || sharedArrayBuffer.byteLength &lt; Sun.BYTE_LENGTH) {
+            throw new Error(`Sun requires SharedArrayBuffer of at least ${Sun.BYTE_LENGTH} bytes`);
+        }
+
+        this._sab = sharedArrayBuffer;
+        this._uint8 = new Uint8Array(sharedArrayBuffer);
+        this._float32 = new Float32Array(sharedArrayBuffer);
+        this._uint32 = new Uint32Array(sharedArrayBuffer);
+    }
+
+    /**
+     * Check if Sun is initialized
+     * @returns {boolean}
+     */
+    static get isInitialized() {
+        return this._sab !== null;
+    }
+
+    // ============ Getters/Setters ============
+
+    /** Whether sun lighting is enabled */
+    static get enabled() {
+        return this._uint8 ? this._uint8[Sun.OFFSETS.ENABLED] === 1 : false;
+    }
+    static set enabled(v) {
+        if (this._uint8) this._uint8[Sun.OFFSETS.ENABLED] = v ? 1 : 0;
+    }
+
+    /** Sun angle in degrees (0=East, 90=South, 180=West, 270=North) */
+    static get angle() {
+        return this._float32 ? this._float32[Sun.F32.ANGLE] : 0;
+    }
+    static set angle(v) {
+        if (this._float32) this._float32[Sun.F32.ANGLE] = v;
+    }
+
+    /** Sun elevation in degrees (0=horizon, 90=directly overhead) */
+    static get elevation() {
+        return this._float32 ? this._float32[Sun.F32.ELEVATION] : 0;
+    }
+    static set elevation(v) {
+        if (this._float32) this._float32[Sun.F32.ELEVATION] = v;
+    }
+
+    /** Sun intensity (0-1), affects ambient light and point light shadow suppression */
+    static get intensity() {
+        return this._float32 ? this._float32[Sun.F32.INTENSITY] : 0;
+    }
+    static set intensity(v) {
+        if (this._float32) this._float32[Sun.F32.INTENSITY] = Math.max(0, Math.min(1, v));
+    }
+
+    /** Sun color as 0xRRGGBB */
+    static get color() {
+        return this._uint32 ? this._uint32[Sun.U32.COLOR] : 0xffffff;
+    }
+    static set color(v) {
+        if (this._uint32) this._uint32[Sun.U32.COLOR] = v;
+    }
+
+    /** Base shadow alpha for sun-cast shadows (0-1) */
+    static get shadowAlpha() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_ALPHA] : 0;
+    }
+    static set shadowAlpha(v) {
+        if (this._float32) this._float32[Sun.F32.SHADOW_ALPHA] = Math.max(0, Math.min(1, v));
+    }
+
+    /** Current hour of day (0-24) */
+    static get hour() {
+        return this._float32 ? this._float32[Sun.F32.HOUR] : 12;
+    }
+    static set hour(v) {
+        if (this._float32) this._float32[Sun.F32.HOUR] = ((v % 24) + 24) % 24; // Wrap to 0-24
+    }
+
+    // ============ Shadow Config (set once from config) ============
+
+    /** Shadow angle offset in radians (π for southern hemisphere, 0 for northern) */
+    static get shadowAngleOffset() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_ANGLE_OFFSET] : Math.PI;
+    }
+    static set shadowAngleOffset(v) {
+        if (this._float32) this._float32[Sun.F32.SHADOW_ANGLE_OFFSET] = v;
+    }
+
+    /** Shadow length multiplier at zenith (noon) - shortest shadows */
+    static get shadowMinLengthRatio() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_MIN_LENGTH_RATIO] : 0.1;
+    }
+    static set shadowMinLengthRatio(v) {
+        if (this._float32) this._float32[Sun.F32.SHADOW_MIN_LENGTH_RATIO] = v;
+    }
+
+    /** Shadow length multiplier at horizon (sunrise/sunset) - longest shadows */
+    static get shadowMaxLengthRatio() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_MAX_LENGTH_RATIO] : 1.0;
+    }
+    static set shadowMaxLengthRatio(v) {
+        if (this._float32) this._float32[Sun.F32.SHADOW_MAX_LENGTH_RATIO] = v;
+    }
+
+    /** Alpha fade compensation when shadows stretch (0=none, 1=full) */
+    static get shadowStretchAlphaFactor() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_STRETCH_ALPHA_FACTOR] : 0.5;
+    }
+    static set shadowStretchAlphaFactor(v) {
+        if (this._float32) this._float32[Sun.F32.SHADOW_STRETCH_ALPHA_FACTOR] = Math.max(0, Math.min(1, v));
+    }
+
+    // ============ Shadow Computed (read-only for workers) ============
+
+    /** Shadow direction X component (cos of shadow angle) */
+    static get shadowDirX() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_DIR_X] : 0;
+    }
+
+    /** Shadow direction Y component (sin of shadow angle) */
+    static get shadowDirY() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_DIR_Y] : 1;
+    }
+
+    /** Current shadow length ratio based on sun elevation */
+    static get shadowLengthRatio() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_LENGTH_RATIO] : 1;
+    }
+
+    /** Shadow angle in radians (for sprite rotation) */
+    static get shadowAngle() {
+        return this._float32 ? this._float32[Sun.F32.SHADOW_ANGLE] : 0;
+    }
+
+    // ============ Convenience Methods ============
+
+    /**
+     * Set sun position and properties based on time of day (0-24)
+     * Automatically calculates angle, elevation, intensity, and color
+     * @param {number} hour - Hour of day (0-24, wraps automatically)
+     */
+    static setTimeOfDay(hour) {
+        this.hour = hour;
+        const h = this.hour; // Use wrapped value
+
+        const dayProgress = h / 24; // 0-1
+
+        // Sun angle: East (90°) at 6am, South (180°) at noon, West (270°) at 6pm
+        // Offset so sunrise is at ~6am
+        this.angle = ((dayProgress - 0.25) * 360 + 360) % 360;
+
+        // Sun elevation: 0° at sunrise/sunset, peak at noon
+        // Using cosine curve centered on noon (hour 12)
+        const noonOffset = Math.abs(h - 12) / 12; // 0 at noon, 1 at midnight
+        const elevation = Math.max(0, Math.cos(noonOffset * Math.PI) * 90);
+        this.elevation = elevation;
+
+        // Sun intensity: smooth day/night transition using cosine curve
+        // Peak at noon, zero at night
+        this.intensity = Math.max(0, Math.min(1, -Math.cos(dayProgress * Math.PI * 2) * 0.5 + 0.5));
+
+        // Sun color: interpolate from color table
+        this.color = this._getColorForHour(h);
+
+        // Compute shadow direction and length ratio
+        this._updateShadowValues(elevation);
+    }
+
+    /**
+     * Update precomputed shadow values based on current sun state
+     * @param {number} elevation - Sun elevation in degrees
+     * @private
+     */
+    static _updateShadowValues(elevation) {
+        if (!this._float32) return;
+
+        const sunAngleRad = this.angle * (Math.PI / 180);
+        // Shadow points opposite to sun direction
+        // shadowAngleOffset adds π for southern hemisphere (shadows point south/down)
+        const shadowAngle = sunAngleRad + Math.PI + this.shadowAngleOffset;
+
+        this._float32[Sun.F32.SHADOW_ANGLE] = shadowAngle;
+        this._float32[Sun.F32.SHADOW_DIR_X] = Math.cos(shadowAngle);
+        this._float32[Sun.F32.SHADOW_DIR_Y] = Math.sin(shadowAngle);
+
+        // Shadow length ratio based on elevation (lower sun = longer shadows)
+        // Linear interpolation: horizon (0°) = maxLengthRatio, zenith (90°) = minLengthRatio
+        const t = elevation / 90; // 0 at horizon, 1 at zenith
+        const minRatio = this.shadowMinLengthRatio;
+        const maxRatio = this.shadowMaxLengthRatio;
+        this._float32[Sun.F32.SHADOW_LENGTH_RATIO] = maxRatio + t * (minRatio - maxRatio);
+    }
+
+    /**
+     * Get interpolated sun color for a given hour
+     * @param {number} hour - Hour of day (0-24)
+     * @returns {number} Color as 0xRRGGBB
+     * @private
+     */
+    static _getColorForHour(hour) {
+        const colors = Sun.DEFAULT_COLORS;
+
+        // Find surrounding keyframes
+        let prevIdx = 0;
+        let nextIdx = 1;
+
+        for (let i = 0; i &lt; colors.length - 1; i++) {
+            if (hour >= colors[i].hour &amp;&amp; hour &lt; colors[i + 1].hour) {
+                prevIdx = i;
+                nextIdx = i + 1;
+                break;
+            }
+        }
+
+        const prev = colors[prevIdx];
+        const next = colors[nextIdx];
+
+        // Calculate interpolation factor
+        const range = next.hour - prev.hour;
+        const t = range > 0 ? (hour - prev.hour) / range : 0;
+
+        // Interpolate RGB components
+        const prevR = (prev.color >> 16) &amp; 0xff;
+        const prevG = (prev.color >> 8) &amp; 0xff;
+        const prevB = prev.color &amp; 0xff;
+
+        const nextR = (next.color >> 16) &amp; 0xff;
+        const nextG = (next.color >> 8) &amp; 0xff;
+        const nextB = next.color &amp; 0xff;
+
+        const r = Math.round(prevR + (nextR - prevR) * t);
+        const g = Math.round(prevG + (nextG - prevG) * t);
+        const b = Math.round(prevB + (nextB - prevB) * t);
+
+        return (r &lt;&lt; 16) | (g &lt;&lt; 8) | b;
+    }
+
+    /**
+     * Initialize sun properties from a config object
+     * Config should be pre-merged with SUN_DEFAULTS by Scene
+     * @param {Object} config - Sun configuration (merged with defaults)
+     */
+    static initFromConfig(config) {
+        this.enabled = config.enabled;
+        this.angle = config.angle;
+        this.elevation = config.elevation;
+        this.intensity = config.intensity;
+        this.color = config.color;
+        this.shadowAlpha = config.shadowAlpha;
+        this.hour = config.startHour;
+
+        // Shadow config
+        this.shadowAngleOffset = config.shadowAngleOffset;
+        this.shadowMinLengthRatio = config.shadowMinLengthRatio;
+        this.shadowMaxLengthRatio = config.shadowMaxLengthRatio;
+        this.shadowStretchAlphaFactor = config.shadowStretchAlphaFactor;
+
+        // Initialize shadow computed values
+        this._updateShadowValues(this.elevation);
+    }
+
+    /**
+     * Advance time by a delta (for day cycle)
+     * @param {number} deltaMs - Time delta in milliseconds
+     * @param {number} speed - Day cycle speed multiplier (1 = real time)
+     * @param {number} dayDurationMinutes - Real-world minutes for one full day cycle
+     */
+    static advanceTime(deltaMs, speed = 1, dayDurationMinutes = 1440) {
+        // Convert: deltaMs → hours of game time
+        // dayDurationMinutes real minutes = 24 game hours
+        // So 1 real ms = 24 / (dayDurationMinutes * 60 * 1000) game hours
+        const hoursPerMs = 24 / (dayDurationMinutes * 60 * 1000);
+        const deltaHours = deltaMs * hoursPerMs * speed;
+
+        this.setTimeOfDay(this.hour + deltaHours);
+    }
+
+    /**
+     * Get the underlying SharedArrayBuffer (for passing to workers)
+     * @returns {SharedArrayBuffer}
+     */
+    static get buffer() {
+        return this._sab;
+    }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbstractWorker.html">AbstractWorker</a></li><li><a href="BigAtlasInspector.html">BigAtlasInspector</a></li><li><a href="Camera.html">Camera</a></li><li><a href="Constraint.html">Constraint</a></li><li><a href="DebugCanvas.html">DebugCanvas</a></li><li><a href="DebugFlags.html">DebugFlags</a></li><li><a href="DebugUI.html">DebugUI</a></li><li><a href="Decoration_Decoration.html">Decoration</a></li><li><a href="GameObject_GameObject.html">GameObject</a></li><li><a href="Grid.html">Grid</a></li><li><a href="LogicWorker.html">LogicWorker</a></li><li><a href="Mouse.html">Mouse</a></li><li><a href="NavGrid.html">NavGrid</a></li><li><a href="NavScratch.html">NavScratch</a></li><li><a href="ParticleWorker.html">ParticleWorker</a></li><li><a href="PhysicsWorker.html">PhysicsWorker</a></li><li><a href="PixiParticlePool.html">PixiParticlePool</a></li><li><a href="PixiRenderer.html">PixiRenderer</a></li><li><a href="PreRenderWorker.html">PreRenderWorker</a></li><li><a href="Ray.html">Ray</a></li><li><a href="SharedAtomicPool.html">SharedAtomicPool</a></li><li><a href="SpatialWorker.html">SpatialWorker</a></li><li><a href="SpriteSheetRegistry.html">SpriteSheetRegistry</a></li><li><a href="StatsCollector.html">StatsCollector</a></li><li><a href="Sun.html">Sun</a></li><li><a href="TileMap.html">TileMap</a></li><li><a href="TileMapLayer.html">TileMapLayer</a></li><li><a href="ToolManager.html">ToolManager</a></li></ul><h3>Global</h3><ul><li><a href="global.html#BLEND_MODES">BLEND_MODES</a></li><li><a href="global.html#Box">Box</a></li><li><a href="global.html#CAMERA_TYPES">CAMERA_TYPES</a></li><li><a href="global.html#COMPONENT_COLORS">COMPONENT_COLORS</a></li><li><a href="global.html#Circle">Circle</a></li><li><a href="global.html#DECORATION_INNER_Z_MAX">DECORATION_INNER_Z_MAX</a></li><li><a href="global.html#DECORATION_NO_PARENT">DECORATION_NO_PARENT</a></li><li><a href="global.html#DECORATION_Y_SORT_SCALE">DECORATION_Y_SORT_SCALE</a></li><li><a href="global.html#DEFAULT_LAYERS">DEFAULT_LAYERS</a></li><li><a href="global.html#DIRECTION">DIRECTION</a></li><li><a href="global.html#DIR_TO_VEC">DIR_TO_VEC</a></li><li><a href="global.html#ENTITY_GLOW_SORT_BIAS">ENTITY_GLOW_SORT_BIAS</a></li><li><a href="global.html#ENTITY_TYPE_ENTRY_SIZE">ENTITY_TYPE_ENTRY_SIZE</a></li><li><a href="global.html#FLOWFIELD_STATUS">FLOWFIELD_STATUS</a></li><li><a href="global.html#LOGIC_STATS">LOGIC_STATS</a></li><li><a href="global.html#MAX_COMPONENTS">MAX_COMPONENTS</a></li><li><a href="global.html#MAX_ENTITIES">MAX_ENTITIES</a></li><li><a href="global.html#MAX_ENTITY_TYPES">MAX_ENTITY_TYPES</a></li><li><a href="global.html#MAX_PRECOMPUTED_QUERIES">MAX_PRECOMPUTED_QUERIES</a></li><li><a href="global.html#NAVIGATION_STATS">NAVIGATION_STATS</a></li><li><a href="global.html#PARTICLE_STATS">PARTICLE_STATS</a></li><li><a href="global.html#PATH_STATUS">PATH_STATUS</a></li><li><a href="global.html#PHYSICS_STATS">PHYSICS_STATS</a></li><li><a href="global.html#PRE_RENDER_STATS">PRE_RENDER_STATS</a></li><li><a href="global.html#Polygon">Polygon</a></li><li><a href="global.html#QUERY_CACHE_ENTRY_SIZE">QUERY_CACHE_ENTRY_SIZE</a></li><li><a href="global.html#QUERY_RESULT_BUFFER_SIZE">QUERY_RESULT_BUFFER_SIZE</a></li><li><a href="global.html#RENDERER_STATS">RENDERER_STATS</a></li><li><a href="global.html#SHAPE_CIRCLE">SHAPE_CIRCLE</a></li><li><a href="global.html#SIDE">SIDE</a></li><li><a href="global.html#SPATIAL_STATS">SPATIAL_STATS</a></li><li><a href="global.html#SUN_DEFAULTS">SUN_DEFAULTS</a></li><li><a href="global.html#ShapeType">ShapeType</a></li><li><a href="global.html#TOPDOWN">TOPDOWN</a></li><li><a href="global.html#WORKER_DISPLAY_CONFIG">WORKER_DISPLAY_CONFIG</a></li><li><a href="global.html#Y_SORT_K">Y_SORT_K</a></li><li><a href="global.html#ZENITHAL">ZENITHAL</a></li><li><a href="global.html#_boundsResult">_boundsResult</a></li><li><a href="global.html#applyBrightnessToColor">applyBrightnessToColor</a></li><li><a href="global.html#atlasPadding">atlasPadding</a></li><li><a href="global.html#binarySearchFind">binarySearchFind</a></li><li><a href="global.html#binarySearchInsertPoint">binarySearchInsertPoint</a></li><li><a href="global.html#binarySearchRange">binarySearchRange</a></li><li><a href="global.html#brightnessToColoredTint">brightnessToColoredTint</a></li><li><a href="global.html#brightnessToTint">brightnessToTint</a></li><li><a href="global.html#buildFullCircle">buildFullCircle</a></li><li><a href="global.html#buildVisibilityPolygon">buildVisibilityPolygon</a></li><li><a href="global.html#calculateCameraScreenBounds">calculateCameraScreenBounds</a></li><li><a href="global.html#calculateDecalTileBounds">calculateDecalTileBounds</a></li><li><a href="global.html#calculateEntityMetadataSABSize">calculateEntityMetadataSABSize</a></li><li><a href="global.html#calculateLightAttenuation">calculateLightAttenuation</a></li><li><a href="global.html#calculateLightFromNeighbors">calculateLightFromNeighbors</a></li><li><a href="global.html#calculateQueryCacheSABSize">calculateQueryCacheSABSize</a></li><li><a href="global.html#calculateQueryResultsSABSize">calculateQueryResultsSABSize</a></li><li><a href="global.html#calculateSpeed">calculateSpeed</a></li><li><a href="global.html#calculateTileClipRegion">calculateTileClipRegion</a></li><li><a href="global.html#calculateTotalLightAtPosition">calculateTotalLightAtPosition</a></li><li><a href="global.html#calculateVelocityAngle">calculateVelocityAngle</a></li><li><a href="global.html#cantorPair">cantorPair</a></li><li><a href="global.html#cantorUnpair">cantorUnpair</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clamp01">clamp01</a></li><li><a href="global.html#clamp01Fast">clamp01Fast</a></li><li><a href="global.html#clampVelocity">clampVelocity</a></li><li><a href="global.html#clampVelocityMut">clampVelocityMut</a></li><li><a href="global.html#closestPointOnAABB">closestPointOnAABB</a></li><li><a href="global.html#closestPointOnAABBMut">closestPointOnAABBMut</a></li><li><a href="global.html#collectAllComponentsFromClasses">collectAllComponentsFromClasses</a></li><li><a href="global.html#collectComponents">collectComponents</a></li><li><a href="global.html#computeBoxMass">computeBoxMass</a></li><li><a href="global.html#computeCircleMass">computeCircleMass</a></li><li><a href="global.html#containerRadius">containerRadius</a></li><li><a href="global.html#countTrailingZeros">countTrailingZeros</a></li><li><a href="global.html#createBulletTrailCanvas">createBulletTrailCanvas</a></li><li><a href="global.html#createButton">createButton</a></li><li><a href="global.html#createCircularGradientCanvas">createCircularGradientCanvas</a></li><li><a href="global.html#createDivider">createDivider</a></li><li><a href="global.html#createMultiWorkerStatsReaderArray">createMultiWorkerStatsReaderArray</a></li><li><a href="global.html#createMultiWorkerStatsWriter">createMultiWorkerStatsWriter</a></li><li><a href="global.html#createPanel">createPanel</a></li><li><a href="global.html#createRow">createRow</a></li><li><a href="global.html#createStat">createStat</a></li><li><a href="global.html#createStatsReader">createStatsReader</a></li><li><a href="global.html#createStatsWriter">createStatsWriter</a></li><li><a href="global.html#createTab">createTab</a></li><li><a href="global.html#createWorkerQueryFunctions">createWorkerQueryFunctions</a></li><li><a href="global.html#directionTo">directionTo</a></li><li><a href="global.html#distance2D">distance2D</a></li><li><a href="global.html#distanceConstraintIterations">distanceConstraintIterations</a></li><li><a href="global.html#distanceSq2D">distanceSq2D</a></li><li><a href="global.html#drawCircle">drawCircle</a></li><li><a href="global.html#drawCross">drawCross</a></li><li><a href="global.html#drawLine">drawLine</a></li><li><a href="global.html#emitArcVertices">emitArcVertices</a></li><li><a href="global.html#emitVertex">emitVertex</a></li><li><a href="global.html#ensureDecorationFacade">ensureDecorationFacade</a></li><li><a href="global.html#evictDecorationFacade">evictDecorationFacade</a></li><li><a href="global.html#exposeComponentsGlobally">exposeComponentsGlobally</a></li><li><a href="global.html#exposeEntityClassesGlobally">exposeEntityClassesGlobally</a></li><li><a href="global.html#extractRGB">extractRGB</a></li><li><a href="global.html#extractRGBMut">extractRGBMut</a></li><li><a href="global.html#extractRGBNormalized">extractRGBNormalized</a></li><li><a href="global.html#extractRGBNormalizedMut">extractRGBNormalizedMut</a></li><li><a href="global.html#formatComponentValue">formatComponentValue</a></li><li><a href="global.html#formatNumber">formatNumber</a></li><li><a href="global.html#generateSymmetricalCirclePattern">generateSymmetricalCirclePattern</a></li><li><a href="global.html#getCellCoords">getCellCoords</a></li><li><a href="global.html#getCellCoordsMut">getCellCoordsMut</a></li><li><a href="global.html#getCellIndex">getCellIndex</a></li><li><a href="global.html#getCellRange">getCellRange</a></li><li><a href="global.html#getColliderBounds">getColliderBounds</a></li><li><a href="global.html#getComponentColor">getComponentColor</a></li><li><a href="global.html#getComponentPropertyNames">getComponentPropertyNames</a></li><li><a href="global.html#getDirectionFromAngle">getDirectionFromAngle</a></li><li><a href="global.html#getEntityHomeCellIndex">getEntityHomeCellIndex</a></li><li><a href="global.html#getParentClasses">getParentClasses</a></li><li><a href="global.html#hashToPastelColorCSS">hashToPastelColorCSS</a></li><li><a href="global.html#hashToPastelColorHex">hashToPastelColorHex</a></li><li><a href="global.html#hslToHex">hslToHex</a></li><li><a href="global.html#initializeComponentViews">initializeComponentViews</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isWithinRange">isWithinRange</a></li><li><a href="global.html#isWithinRangeSq">isWithinRangeSq</a></li><li><a href="global.html#layerMask">layerMask</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#lerpAngle">lerpAngle</a></li><li><a href="global.html#loadEntityScripts">loadEntityScripts</a></li><li><a href="global.html#maxAtlasHeight">maxAtlasHeight</a></li><li><a href="global.html#maxAtlasWidth">maxAtlasWidth</a></li><li><a href="global.html#maxAttachedDecorationsPerEntity">maxAttachedDecorationsPerEntity</a></li><li><a href="global.html#normalizeAngle">normalizeAngle</a></li><li><a href="global.html#normalizeAngleDifference">normalizeAngleDifference</a></li><li><a href="global.html#normalizeDirection">normalizeDirection</a></li><li><a href="global.html#normalizeDirectionFast">normalizeDirectionFast</a></li><li><a href="global.html#normalizeDirectionFromDistSq">normalizeDirectionFromDistSq</a></li><li><a href="global.html#query">query</a></li><li><a href="global.html#randomColor">randomColor</a></li><li><a href="global.html#randomRange">randomRange</a></li><li><a href="global.html#rayBoxHit">rayBoxHit</a></li><li><a href="global.html#rayBoxIntersect">rayBoxIntersect</a></li><li><a href="global.html#rayCircleDist">rayCircleDist</a></li><li><a href="global.html#rayCircleHit">rayCircleHit</a></li><li><a href="global.html#rayCircleIntersect">rayCircleIntersect</a></li><li><a href="global.html#rng">rng</a></li><li><a href="global.html#screenBoundsToWorldBounds">screenBoundsToWorldBounds</a></li><li><a href="global.html#setupWorkerCommunication">setupWorkerCommunication</a></li><li><a href="global.html#sortByY">sortByY</a></li><li><a href="global.html#sortEventsByAngle">sortEventsByAngle</a></li><li><a href="global.html#stringToHash">stringToHash</a></li><li><a href="global.html#subStepCount">subStepCount</a></li><li><a href="global.html#tangentHalfAngle">tangentHalfAngle</a></li><li><a href="global.html#testAABBAABBCollision">testAABBAABBCollision</a></li><li><a href="global.html#testCircleAABBCollision">testCircleAABBCollision</a></li><li><a href="global.html#testCircleCircleCollision">testCircleCircleCollision</a></li><li><a href="global.html#trimAlphaThreshold">trimAlphaThreshold</a></li><li><a href="global.html#trimImages">trimImages</a></li><li><a href="global.html#updateMassFromBox">updateMassFromBox</a></li><li><a href="global.html#updateMassFromCircle">updateMassFromCircle</a></li><li><a href="global.html#urlToPath">urlToPath</a></li><li><a href="global.html#validatePhysicsConfig">validatePhysicsConfig</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Apr 06 2026 16:36:00 GMT-0300 (hora estándar de Argentina)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

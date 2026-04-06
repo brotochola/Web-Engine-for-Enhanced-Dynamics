@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: core/Ray.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: core/Ray.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>// Ray.js - Raycasting system using spatial grid
+// Uses DDA (Digital Differential Analyzer) to traverse only cells the ray passes through
+// Now uses Grid class for spatial data and utils for geometric intersections
+
+import { Transform } from '../components/Transform.js';
+import { Collider } from '../components/Collider.js';
+import { Grid } from './Grid.js';
+import { rayCircleIntersect, rayBoxIntersect } from './utils.js';
+
+/**
+ * Ray - Static class for raycasting against entities in the spatial grid
+ *
+ * All methods accept an optional `mask` parameter (Uint32 bitmask, default 0xFFFFFFFF).
+ * Only entities whose collisionLayer bit is set in the mask are considered.
+ *
+ * Methods:
+ *   - cast(x1, y1, x2, y2, maxDist, mask)              → entityIndex or -1
+ *   - castWithInfo(x1, y1, x2, y2, maxDist, mask)       → { hit, entityIndex, distance, hitX, hitY }
+ *   - castAll(x1, y1, x2, y2, maxDist, maxHits, mask)   → Array&lt;{ entityIndex, distance, hitX, hitY }>
+ *   - linecast(x1, y1, x2, y2, exclude, mask)           → { blocked, entityIndex, distance }
+ *   - linecastBetweenEntities(a, b, mask)                → { blocked, entityIndex, distance }
+ *   - hasLineOfSight(a, b, mask)                         → boolean (true if clear)
+ *   - getLineOfSightInfo(a, b, mask)                     → { blocked, entityIndex, distance }
+ *
+ * @example Basic raycast
+ *   const hit = Ray.cast(player.x, player.y, mouseX, mouseY);
+ *   if (hit !== -1) damageEntity(hit);
+ *
+ * @example Raycast filtered by collision layer (only hit layers 2 and 4)
+ *   const hit = Ray.cast(x, y, tx, ty, Infinity, (1 &lt;&lt; 2) | (1 &lt;&lt; 4));
+ *
+ * @example Line of sight ignoring bullets (layer 2)
+ *   if (Ray.hasLineOfSight(enemy, player, ~(1 &lt;&lt; 2))) {
+ *     enemy.shoot(player);
+ *   }
+ *
+ * @example Penetrating shot
+ *   const hits = Ray.castAll(gun.x, gun.y, targetX, targetY);
+ *   hits.forEach(h => spawnBulletHole(h.hitX, h.hitY));
+ */
+export class Ray {
+  // Shape type constants (must match Collider.js)
+  static SHAPE_CIRCLE = 0;
+  static SHAPE_BOX = 1;
+
+  // GC Optimization: Reusable objects to avoid GC pressure
+  static _tempResult = { entityIndex: -1, distance: Infinity };
+  static _tempHitInfo = {
+    hit: false,
+    entityIndex: -1,
+    distance: Infinity,
+    hitX: 0,
+    hitY: 0,
+  };
+  static _tempLinecastResult = {
+    blocked: false,
+    entityIndex: -1,
+    distance: Infinity,
+  };
+  static _tempHitsArray = []; // Reusable array for castAll
+  static _tempAllHitsArray = []; // Reusable array for castAll internal hits
+  static _tempAllHitsCount = 0; // Reused counter to avoid allocations
+  static _checkedEntities = new Set(); // Reused Set for castAll
+
+  /**
+   * Cast a ray from (xFrom, yFrom) to (xTo, yTo)
+   * Returns the index of the first entity hit, or -1 if no collision
+   *
+   * @param {number} xFrom - Ray start X
+   * @param {number} yFrom - Ray start Y
+   * @param {number} xTo - Ray end X
+   * @param {number} yTo - Ray end Y
+   * @param {number} maxDist - Maximum ray distance (optional)
+   * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
+   * @returns {number} Entity index or -1
+   */
+  static cast(xFrom, yFrom, xTo, yTo, maxDist = Infinity, mask = 0xFFFFFFFF) {
+    // Calculate ray direction and length
+    const dx = xTo - xFrom;
+    const dy = yTo - yFrom;
+    const distSq = dx * dx + dy * dy; // OPTIMIZED: Calculate distSq first for early exit check
+
+    // Early exit if ray is too short or too long (avoid sqrt if possible)
+    if (distSq === 0 || (maxDist !== Infinity &amp;&amp; distSq > maxDist * maxDist)) {
+      return -1;
+    }
+
+    // Calculate length only if we pass the early exit (OPTIMIZED: avoid sqrt in early exit path)
+    const rayLength = Math.sqrt(distSq);
+
+    // Normalize direction
+    const dirX = dx / rayLength;
+    const dirY = dy / rayLength;
+
+    // Get grid data from Grid class
+    const invCellSize = Grid.invCellSize;
+    const gridCols = Grid.gridWidth;
+    const gridRows = Grid.gridHeight;
+    const cellSize = Grid.cellSize;
+
+    // DDA traversal - find all cells the ray passes through
+    const startCellX = Math.floor(xFrom * invCellSize);
+    const startCellY = Math.floor(yFrom * invCellSize);
+    const endCellX = Math.floor(xTo * invCellSize);
+    const endCellY = Math.floor(yTo * invCellSize);
+
+    // Ray step direction
+    const stepX = dirX >= 0 ? 1 : -1;
+    const stepY = dirY >= 0 ? 1 : -1;
+
+    // Calculate distance to next cell boundary
+    let tMaxX, tMaxY;
+    if (dirX !== 0) {
+      const nextBoundaryX =
+        (stepX > 0 ? Math.floor(xFrom * invCellSize) + 1 : Math.ceil(xFrom * invCellSize) - 1) *
+        cellSize;
+      tMaxX = Math.abs((nextBoundaryX - xFrom) / dirX);
+    } else {
+      tMaxX = Infinity;
+    }
+
+    if (dirY !== 0) {
+      const nextBoundaryY =
+        (stepY > 0 ? Math.floor(yFrom * invCellSize) + 1 : Math.ceil(yFrom * invCellSize) - 1) *
+        cellSize;
+      tMaxY = Math.abs((nextBoundaryY - yFrom) / dirY);
+    } else {
+      tMaxY = Infinity;
+    }
+
+    // Distance to cross one cell
+    const tDeltaX = dirX !== 0 ? cellSize / Math.abs(dirX) : Infinity;
+    const tDeltaY = dirY !== 0 ? cellSize / Math.abs(dirY) : Infinity;
+
+    // Current cell position
+    let currentCellX = startCellX;
+    let currentCellY = startCellY;
+
+    // Track closest hit
+    let closestHit = -1;
+    let closestDist = maxDist;
+
+    // Traverse cells using DDA
+    const maxSteps = gridCols + gridRows; // Safety limit
+    let steps = 0;
+
+    while (steps++ &lt; maxSteps) {
+      // Check if current cell is valid
+      if (
+        currentCellX >= 0 &amp;&amp;
+        currentCellX &lt; gridCols &amp;&amp;
+        currentCellY >= 0 &amp;&amp;
+        currentCellY &lt; gridRows
+      ) {
+        // Get entities in this cell
+        const cellIndex = currentCellY * gridCols + currentCellX;
+        Ray._checkCellEntities(cellIndex, xFrom, yFrom, dirX, dirY, rayLength, closestDist, null, mask);
+
+        const result = Ray._tempResult;
+
+        if (result.entityIndex !== -1) {
+          closestHit = result.entityIndex;
+          closestDist = result.distance;
+        }
+      }
+
+      // Check if we've reached the end cell
+      if (currentCellX === endCellX &amp;&amp; currentCellY === endCellY) {
+        break;
+      }
+
+      // Step to next cell
+      if (tMaxX &lt; tMaxY) {
+        currentCellX += stepX;
+        tMaxX += tDeltaX;
+      } else {
+        currentCellY += stepY;
+        tMaxY += tDeltaY;
+      }
+    }
+
+    if (closestHit !== -1 &amp;&amp; closestDist !== 0) {
+      return closestHit;
+    }
+
+    return -1;
+  }
+
+  /**
+   * Cast a ray and return detailed hit information
+   * Like cast() but returns hit point coordinates and distance
+   *
+   * @param {number} xFrom - Ray start X
+   * @param {number} yFrom - Ray start Y
+   * @param {number} xTo - Ray end X
+   * @param {number} yTo - Ray end Y
+   * @param {number} maxDist - Maximum ray distance (optional)
+   * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
+   * @returns {Object} { hit: boolean, entityIndex: number, distance: number, hitX: number, hitY: number }
+   *
+   * @example
+   *   const result = Ray.castWithInfo(player.x, player.y, targetX, targetY);
+   *   if (result.hit) {
+   *     spawnBulletHole(result.hitX, result.hitY);
+   *     damageEntity(result.entityIndex);
+   *   }
+   */
+  static castWithInfo(xFrom, yFrom, xTo, yTo, maxDist = Infinity, mask = 0xFFFFFFFF) {
+    // Reset temp result
+    const info = Ray._tempHitInfo;
+    info.hit = false;
+    info.entityIndex = -1;
+    info.distance = Infinity;
+    info.hitX = xTo;
+    info.hitY = yTo;
+
+    // Calculate ray direction and length
+    const dx = xTo - xFrom;
+    const dy = yTo - yFrom;
+    const distSq = dx * dx + dy * dy; // OPTIMIZED: Calculate distSq first for early exit check
+
+    // Early exit if ray is too short or too long (avoid sqrt if possible)
+    if (distSq === 0 || (maxDist !== Infinity &amp;&amp; distSq > maxDist * maxDist)) {
+      return info;
+    }
+
+    // Calculate length only if we pass the early exit (OPTIMIZED: avoid sqrt in early exit path)
+    const rayLength = Math.sqrt(distSq);
+
+    // Normalize direction
+    const dirX = dx / rayLength;
+    const dirY = dy / rayLength;
+
+    // Use internal traversal
+    const result = Ray._traverseGrid(xFrom, yFrom, xTo, yTo, dirX, dirY, rayLength, maxDist, null, mask);
+
+    if (result.entityIndex !== -1) {
+      info.hit = true;
+      info.entityIndex = result.entityIndex;
+      info.distance = result.distance;
+      info.hitX = xFrom + dirX * result.distance;
+      info.hitY = yFrom + dirY * result.distance;
+    }
+
+    return info;
+  }
+
+  /**
+   * Check if there's a clear line of sight between two points
+   * Returns true if BLOCKED (something in the way), false if clear
+   *
+   * @param {number} x1 - Start point X
+   * @param {number} y1 - Start point Y
+   * @param {number} x2 - End point X
+   * @param {number} y2 - End point Y
+   * @param {Set&lt;number>|Array&lt;number>} excludeEntities - Optional entity indices to ignore
+   * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
+   * @returns {Object} { blocked: boolean, entityIndex: number (-1 if clear), distance: number }
+   *
+   * @example
+   *   // Check if enemy can shoot player
+   *   const los = Ray.linecast(enemy.x, enemy.y, player.x, player.y);
+   *   if (!los.blocked) {
+   *     // Clear shot!
+   *     enemy.shoot(player);
+   *   }
+   */
+  static linecast(x1, y1, x2, y2, excludeEntities = null, mask = 0xFFFFFFFF) {
+    const result = Ray._tempLinecastResult;
+    result.blocked = false;
+    result.entityIndex = -1;
+    result.distance = Infinity;
+
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const distSq = dx * dx + dy * dy; // OPTIMIZED: Calculate distSq first
+
+    if (distSq === 0) {
+      return result;
+    }
+
+    // Calculate length only if we pass the early exit (OPTIMIZED: avoid sqrt in early exit path)
+    const rayLength = Math.sqrt(distSq);
+
+    const dirX = dx / rayLength;
+    const dirY = dy / rayLength;
+
+    // Use traversal with exclusion set
+    const hitResult = Ray._traverseGrid(
+      x1,
+      y1,
+      x2,
+      y2,
+      dirX,
+      dirY,
+      rayLength,
+      rayLength,
+      excludeEntities,
+      mask
+    );
+
+    if (hitResult.entityIndex !== -1) {
+      result.blocked = true;
+      result.entityIndex = hitResult.entityIndex;
+      result.distance = hitResult.distance;
+    }
+
+    return result;
+  }
+
+  /**
+   * Check if there's a clear line of sight between two entities
+   * Automatically excludes both entities from the check
+   *
+   * @param {number} entityIndexA - First entity index
+   * @param {number} entityIndexB - Second entity index
+   * @returns {Object} { blocked: boolean, entityIndex: number (-1 if clear), distance: number }
+   *
+   * @example
+   *   // Can predator see prey?
+   *   const los = Ray.linecastBetweenEntities(predatorIdx, preyIdx);
+   *   if (!los.blocked) {
+   *     // Predator has line of sight to prey
+   *     predator.chase(preyIdx);
+   *   }
+   */
+  // Static reusable Set for zero-allocation linecast between entities
+  static _excludeSet = new Set();
+
+  static linecastBetweenEntities(entityIndexA, entityIndexB, mask = 0xFFFFFFFF) {
+    const x1 = Transform.x[entityIndexA];
+    const y1 = Transform.y[entityIndexA];
+    const x2 = Transform.x[entityIndexB];
+    const y2 = Transform.y[entityIndexB];
+
+    Ray._excludeSet.clear();
+    Ray._excludeSet.add(entityIndexA);
+    Ray._excludeSet.add(entityIndexB);
+
+    return Ray.linecast(x1, y1, x2, y2, Ray._excludeSet, mask);
+  }
+
+  /**
+   * Check if entity A has clear line of sight to entity B
+   * Convenience method that returns just a boolean
+   *
+   * @param {number} entityIndexA - Source entity index
+   * @param {number} entityIndexB - Target entity index
+   * @returns {boolean} true if clear line of sight, false if blocked
+   */
+  static hasLineOfSight(entityIndexA, entityIndexB, mask = 0xFFFFFFFF) {
+    return !Ray.linecastBetweenEntities(entityIndexA, entityIndexB, mask).blocked;
+  }
+
+  /**
+   * Check line of sight and return blocker info (zero-allocation)
+   * Useful when you need to know WHAT blocked the line of sight
+   *
+   * @param {number} entityIndexA - Source entity index
+   * @param {number} entityIndexB - Target entity index
+   * @returns {Object} { blocked: boolean, entityIndex: number (-1 if clear), distance: number }
+   */
+  static getLineOfSightInfo(entityIndexA, entityIndexB, mask = 0xFFFFFFFF) {
+    return Ray.linecastBetweenEntities(entityIndexA, entityIndexB, mask);
+  }
+
+  /**
+   * Cast a ray and return ALL entities hit along the path (not just the first)
+   * Useful for penetrating shots, showing bullet holes on all surfaces, etc.
+   *
+   * @param {number} xFrom - Ray start X
+   * @param {number} yFrom - Ray start Y
+   * @param {number} xTo - Ray end X
+   * @param {number} yTo - Ray end Y
+   * @param {number} maxDist - Maximum ray distance (optional)
+   * @param {number} maxHits - Maximum number of hits to return (default: 10)
+   * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
+   * @returns {Array&lt;{entityIndex: number, distance: number, hitX: number, hitY: number}>}
+   *   Note: returned array and hit objects are reused on the next call.
+   *
+   * @example
+   *   // Penetrating railgun shot
+   *   const hits = Ray.castAll(gun.x, gun.y, targetX, targetY, Infinity, 5);
+   *   for (const hit of hits) {
+   *     damageEntity(hit.entityIndex, railgunDamage * (1 - hit.distance / maxRange));
+   *     spawnBulletHole(hit.hitX, hit.hitY);
+   *   }
+   */
+  static castAll(xFrom, yFrom, xTo, yTo, maxDist = Infinity, maxHits = 10, mask = 0xFFFFFFFF) {
+    // Clear and reuse the temp array
+    Ray._tempHitsArray.length = 0;
+    Ray._tempAllHitsArray.length = 0;
+    Ray._tempAllHitsCount = 0;
+    Ray._checkedEntities.clear();
+
+    const dx = xTo - xFrom;
+    const dy = yTo - yFrom;
+    const distSq = dx * dx + dy * dy; // OPTIMIZED: Calculate distSq first for early exit check
+
+    // Early exit if ray is too short or too long (avoid sqrt if possible)
+    if (distSq === 0 || (maxDist !== Infinity &amp;&amp; distSq > maxDist * maxDist)) {
+      return Ray._tempHitsArray;
+    }
+
+    // Calculate length only if we pass the early exit (OPTIMIZED: avoid sqrt in early exit path)
+    const rayLength = Math.sqrt(distSq);
+
+    const dirX = dx / rayLength;
+    const dirY = dy / rayLength;
+
+    // Get grid params
+    const invCellSize = Grid.invCellSize;
+    const gridCols = Grid.gridWidth;
+    const gridRows = Grid.gridHeight;
+    const cellSize = Grid.cellSize;
+
+    // Collect all hits across the entire ray path
+    const checkedEntities = Ray._checkedEntities;
+    const allHits = Ray._tempAllHitsArray;
+
+    // DDA setup
+    const startCellX = Math.floor(xFrom * invCellSize);
+    const startCellY = Math.floor(yFrom * invCellSize);
+    const endCellX = Math.floor(xTo * invCellSize);
+    const endCellY = Math.floor(yTo * invCellSize);
+
+    const stepX = dirX >= 0 ? 1 : -1;
+    const stepY = dirY >= 0 ? 1 : -1;
+
+    let tMaxX, tMaxY;
+    if (dirX !== 0) {
+      const nextBoundaryX =
+        (stepX > 0 ? Math.floor(xFrom * invCellSize) + 1 : Math.ceil(xFrom * invCellSize) - 1) *
+        cellSize;
+      tMaxX = Math.abs((nextBoundaryX - xFrom) / dirX);
+    } else {
+      tMaxX = Infinity;
+    }
+
+    if (dirY !== 0) {
+      const nextBoundaryY =
+        (stepY > 0 ? Math.floor(yFrom * invCellSize) + 1 : Math.ceil(yFrom * invCellSize) - 1) *
+        cellSize;
+      tMaxY = Math.abs((nextBoundaryY - yFrom) / dirY);
+    } else {
+      tMaxY = Infinity;
+    }
+
+    const tDeltaX = dirX !== 0 ? cellSize / Math.abs(dirX) : Infinity;
+    const tDeltaY = dirY !== 0 ? cellSize / Math.abs(dirY) : Infinity;
+
+    let currentCellX = startCellX;
+    let currentCellY = startCellY;
+    const maxSteps = gridCols + gridRows;
+    let steps = 0;
+
+    // Traverse all cells
+    while (steps++ &lt; maxSteps) {
+      if (
+        currentCellX >= 0 &amp;&amp;
+        currentCellX &lt; gridCols &amp;&amp;
+        currentCellY >= 0 &amp;&amp;
+        currentCellY &lt; gridRows
+      ) {
+        const cellIndex = currentCellY * gridCols + currentCellX;
+
+        // Check all entities in this cell
+        Ray._collectCellHits(
+          cellIndex,
+          xFrom,
+          yFrom,
+          dirX,
+          dirY,
+          rayLength,
+          checkedEntities,
+          allHits,
+          mask
+        );
+      }
+
+      if (currentCellX === endCellX &amp;&amp; currentCellY === endCellY) {
+        break;
+      }
+
+      if (tMaxX &lt; tMaxY) {
+        currentCellX += stepX;
+        tMaxX += tDeltaX;
+      } else {
+        currentCellY += stepY;
+        tMaxY += tDeltaY;
+      }
+    }
+
+    // Finalize hit list and sort by distance
+    allHits.length = Ray._tempAllHitsCount;
+    allHits.sort((a, b) => a.distance - b.distance);
+
+    // Copy to output array (limited by maxHits)
+    const count = Math.min(allHits.length, maxHits);
+    const outHits = Ray._tempHitsArray;
+    for (let i = 0; i &lt; count; i++) {
+      const hit = allHits[i];
+      let out = outHits[i];
+      if (!out) {
+        out = {
+          entityIndex: -1,
+          distance: 0,
+          hitX: 0,
+          hitY: 0,
+        };
+        outHits[i] = out;
+      }
+      out.entityIndex = hit.entityIndex;
+      out.distance = hit.distance;
+      out.hitX = xFrom + dirX * hit.distance;
+      out.hitY = yFrom + dirY * hit.distance;
+    }
+    outHits.length = count;
+
+    return Ray._tempHitsArray;
+  }
+
+  /**
+   * Internal: Traverse grid and find first hit
+   * Shared logic for cast, castWithInfo, linecast
+   * @private
+   */
+  static _traverseGrid(
+    xFrom,
+    yFrom,
+    xTo,
+    yTo,
+    dirX,
+    dirY,
+    rayLength,
+    maxDist,
+    excludeEntities = null,
+    rayMask = 0xFFFFFFFF
+  ) {
+    const invCellSize = Grid.invCellSize;
+    const gridCols = Grid.gridWidth;
+    const gridRows = Grid.gridHeight;
+    const cellSize = Grid.cellSize;
+
+    const startCellX = Math.floor(xFrom * invCellSize);
+    const startCellY = Math.floor(yFrom * invCellSize);
+    const endCellX = Math.floor(xTo * invCellSize);
+    const endCellY = Math.floor(yTo * invCellSize);
+
+    const stepX = dirX >= 0 ? 1 : -1;
+    const stepY = dirY >= 0 ? 1 : -1;
+
+    let tMaxX, tMaxY;
+    if (dirX !== 0) {
+      const nextBoundaryX =
+        (stepX > 0 ? Math.floor(xFrom * invCellSize) + 1 : Math.ceil(xFrom * invCellSize) - 1) *
+        cellSize;
+      tMaxX = Math.abs((nextBoundaryX - xFrom) / dirX);
+    } else {
+      tMaxX = Infinity;
+    }
+
+    if (dirY !== 0) {
+      const nextBoundaryY =
+        (stepY > 0 ? Math.floor(yFrom * invCellSize) + 1 : Math.ceil(yFrom * invCellSize) - 1) *
+        cellSize;
+      tMaxY = Math.abs((nextBoundaryY - yFrom) / dirY);
+    } else {
+      tMaxY = Infinity;
+    }
+
+    const tDeltaX = dirX !== 0 ? cellSize / Math.abs(dirX) : Infinity;
+    const tDeltaY = dirY !== 0 ? cellSize / Math.abs(dirY) : Infinity;
+
+    let currentCellX = startCellX;
+    let currentCellY = startCellY;
+
+    let closestHit = -1;
+    let closestDist = maxDist;
+
+    const maxSteps = gridCols + gridRows;
+    let steps = 0;
+
+    while (steps++ &lt; maxSteps) {
+      if (
+        currentCellX >= 0 &amp;&amp;
+        currentCellX &lt; gridCols &amp;&amp;
+        currentCellY >= 0 &amp;&amp;
+        currentCellY &lt; gridRows
+      ) {
+        const cellIndex = currentCellY * gridCols + currentCellX;
+
+        Ray._checkCellEntities(
+          cellIndex,
+          xFrom,
+          yFrom,
+          dirX,
+          dirY,
+          rayLength,
+          closestDist,
+          excludeEntities,
+          rayMask
+        );
+
+        const result = Ray._tempResult;
+
+        if (result.entityIndex !== -1) {
+          closestHit = result.entityIndex;
+          closestDist = result.distance;
+        }
+      }
+
+      if (currentCellX === endCellX &amp;&amp; currentCellY === endCellY) {
+        break;
+      }
+
+      if (tMaxX &lt; tMaxY) {
+        currentCellX += stepX;
+        tMaxX += tDeltaX;
+      } else {
+        currentCellY += stepY;
+        tMaxY += tDeltaY;
+      }
+    }
+
+    return { entityIndex: closestHit, distance: closestDist };
+  }
+
+  /**
+   * Internal: Collect ALL hits in a cell (for castAll)
+   * @private
+   */
+  static _collectCellHits(cellIndex, rayX, rayY, dirX, dirY, rayLength, checkedEntities, allHits, rayMask = 0xFFFFFFFF) {
+    const count = Grid.getCellEntityCount(cellIndex);
+    if (count === 0) return;
+
+    const cellBase = Grid.getCellBase(cellIndex);
+    const gridEntities = Grid._gridEntities;
+
+    const active = Transform.active;
+    const colliderActive = Collider.active;
+    const tx = Transform.x;
+    const ty = Transform.y;
+    const cOffsetX = Collider.offsetX;
+    const cOffsetY = Collider.offsetY;
+    const cRadius = Collider.radius;
+    const cWidth = Collider.width;
+    const cHeight = Collider.height;
+    const cShapeParams = Collider.shapeType;
+    const cCollisionLayer = Collider.collisionLayer;
+
+    for (let i = 0; i &lt; count; i++) {
+      const entityIndex = gridEntities[cellBase + i];
+
+      if (checkedEntities.has(entityIndex)) continue;
+      checkedEntities.add(entityIndex);
+
+      if (!active[entityIndex]) continue;
+      if (!colliderActive[entityIndex]) continue;
+      if (!((1 &lt;&lt; (cCollisionLayer[entityIndex] &amp; 31)) &amp; rayMask)) continue;
+
+      const entityX = tx[entityIndex] + (cOffsetX[entityIndex] || 0);
+      const entityY = ty[entityIndex] + (cOffsetY[entityIndex] || 0);
+      const shapeType = cShapeParams[entityIndex];
+
+      let distance = -1;
+
+      if (shapeType === Ray.SHAPE_CIRCLE) {
+        const radius = cRadius[entityIndex];
+        distance = rayCircleIntersect(rayX, rayY, dirX, dirY, entityX, entityY, radius, rayLength);
+      } else if (shapeType === Ray.SHAPE_BOX) {
+        const width = cWidth[entityIndex];
+        const height = cHeight[entityIndex];
+        distance = rayBoxIntersect(
+          rayX,
+          rayY,
+          dirX,
+          dirY,
+          entityX,
+          entityY,
+          width,
+          height,
+          rayLength
+        );
+      }
+
+      if (distance >= 0) {
+        const hitIndex = Ray._tempAllHitsCount++;
+        let hit = allHits[hitIndex];
+        if (!hit) {
+          hit = { entityIndex: -1, distance: 0 };
+          allHits[hitIndex] = hit;
+        }
+        hit.entityIndex = entityIndex;
+        hit.distance = distance;
+      }
+    }
+  }
+
+  /**
+   * Check all entities in a cell for ray collision
+   * Mutates Ray._tempResult with entity index and distance, or {-1, Infinity} if no hit
+   * @private
+   */
+  static _checkCellEntities(
+    cellIndex,
+    rayX,
+    rayY,
+    dirX,
+    dirY,
+    rayLength,
+    currentClosest,
+    excludeEntities = null,
+    rayMask = 0xFFFFFFFF
+  ) {
+    Ray._tempResult.entityIndex = -1;
+    Ray._tempResult.distance = Infinity;
+
+    const count = Grid.getCellEntityCount(cellIndex);
+    if (count === 0) {
+      return;
+    }
+
+    const cellBase = Grid.getCellBase(cellIndex);
+    const gridEntities = Grid._gridEntities;
+
+    const active = Transform.active;
+    const colliderActive = Collider.active;
+    const tx = Transform.x;
+    const ty = Transform.y;
+    const cOffsetX = Collider.offsetX;
+    const cOffsetY = Collider.offsetY;
+    const cRadius = Collider.radius;
+    const cWidth = Collider.width;
+    const cHeight = Collider.height;
+    const cShapeParams = Collider.shapeType;
+    const cCollisionLayer = Collider.collisionLayer;
+
+    let closestIndex = -1;
+    let closestDist = currentClosest;
+
+    for (let i = 0; i &lt; count; i++) {
+      const entityIndex = gridEntities[cellBase + i];
+
+      if (excludeEntities) {
+        if (excludeEntities instanceof Set) {
+          if (excludeEntities.has(entityIndex)) continue;
+        } else if (Array.isArray(excludeEntities)) {
+          if (excludeEntities.includes(entityIndex)) continue;
+        }
+      }
+
+      if (!active[entityIndex]) continue;
+      if (!colliderActive[entityIndex]) continue;
+      if (!((1 &lt;&lt; (cCollisionLayer[entityIndex] &amp; 31)) &amp; rayMask)) continue;
+
+      // Get entity collider position
+      const entityX = tx[entityIndex] + (cOffsetX[entityIndex] || 0);
+      const entityY = ty[entityIndex] + (cOffsetY[entityIndex] || 0);
+      const shapeType = cShapeParams[entityIndex];
+
+      let distance = -1;
+
+      // Check collision based on shape type using utils functions
+      if (shapeType === Ray.SHAPE_CIRCLE) {
+        const radius = cRadius[entityIndex];
+        distance = rayCircleIntersect(rayX, rayY, dirX, dirY, entityX, entityY, radius, rayLength);
+      } else if (shapeType === Ray.SHAPE_BOX) {
+        const width = cWidth[entityIndex];
+        const height = cHeight[entityIndex];
+        distance = rayBoxIntersect(
+          rayX,
+          rayY,
+          dirX,
+          dirY,
+          entityX,
+          entityY,
+          width,
+          height,
+          rayLength
+        );
+      }
+
+      // Track closest hit in this cell
+      if (distance >= 0 &amp;&amp; distance &lt; closestDist) {
+        closestDist = distance;
+        closestIndex = entityIndex;
+      }
+    }
+
+    Ray._tempResult.entityIndex = closestIndex;
+    Ray._tempResult.distance = closestDist;
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbstractWorker.html">AbstractWorker</a></li><li><a href="BigAtlasInspector.html">BigAtlasInspector</a></li><li><a href="Camera.html">Camera</a></li><li><a href="Constraint.html">Constraint</a></li><li><a href="DebugCanvas.html">DebugCanvas</a></li><li><a href="DebugFlags.html">DebugFlags</a></li><li><a href="DebugUI.html">DebugUI</a></li><li><a href="Decoration_Decoration.html">Decoration</a></li><li><a href="GameObject_GameObject.html">GameObject</a></li><li><a href="Grid.html">Grid</a></li><li><a href="LogicWorker.html">LogicWorker</a></li><li><a href="Mouse.html">Mouse</a></li><li><a href="NavGrid.html">NavGrid</a></li><li><a href="NavScratch.html">NavScratch</a></li><li><a href="ParticleWorker.html">ParticleWorker</a></li><li><a href="PhysicsWorker.html">PhysicsWorker</a></li><li><a href="PixiParticlePool.html">PixiParticlePool</a></li><li><a href="PixiRenderer.html">PixiRenderer</a></li><li><a href="PreRenderWorker.html">PreRenderWorker</a></li><li><a href="Ray.html">Ray</a></li><li><a href="SharedAtomicPool.html">SharedAtomicPool</a></li><li><a href="SpatialWorker.html">SpatialWorker</a></li><li><a href="SpriteSheetRegistry.html">SpriteSheetRegistry</a></li><li><a href="StatsCollector.html">StatsCollector</a></li><li><a href="Sun.html">Sun</a></li><li><a href="TileMap.html">TileMap</a></li><li><a href="TileMapLayer.html">TileMapLayer</a></li><li><a href="ToolManager.html">ToolManager</a></li></ul><h3>Global</h3><ul><li><a href="global.html#BLEND_MODES">BLEND_MODES</a></li><li><a href="global.html#Box">Box</a></li><li><a href="global.html#CAMERA_TYPES">CAMERA_TYPES</a></li><li><a href="global.html#COMPONENT_COLORS">COMPONENT_COLORS</a></li><li><a href="global.html#Circle">Circle</a></li><li><a href="global.html#DECORATION_INNER_Z_MAX">DECORATION_INNER_Z_MAX</a></li><li><a href="global.html#DECORATION_NO_PARENT">DECORATION_NO_PARENT</a></li><li><a href="global.html#DECORATION_Y_SORT_SCALE">DECORATION_Y_SORT_SCALE</a></li><li><a href="global.html#DEFAULT_LAYERS">DEFAULT_LAYERS</a></li><li><a href="global.html#DIRECTION">DIRECTION</a></li><li><a href="global.html#DIR_TO_VEC">DIR_TO_VEC</a></li><li><a href="global.html#ENTITY_GLOW_SORT_BIAS">ENTITY_GLOW_SORT_BIAS</a></li><li><a href="global.html#ENTITY_TYPE_ENTRY_SIZE">ENTITY_TYPE_ENTRY_SIZE</a></li><li><a href="global.html#FLOWFIELD_STATUS">FLOWFIELD_STATUS</a></li><li><a href="global.html#LOGIC_STATS">LOGIC_STATS</a></li><li><a href="global.html#MAX_COMPONENTS">MAX_COMPONENTS</a></li><li><a href="global.html#MAX_ENTITIES">MAX_ENTITIES</a></li><li><a href="global.html#MAX_ENTITY_TYPES">MAX_ENTITY_TYPES</a></li><li><a href="global.html#MAX_PRECOMPUTED_QUERIES">MAX_PRECOMPUTED_QUERIES</a></li><li><a href="global.html#NAVIGATION_STATS">NAVIGATION_STATS</a></li><li><a href="global.html#PARTICLE_STATS">PARTICLE_STATS</a></li><li><a href="global.html#PATH_STATUS">PATH_STATUS</a></li><li><a href="global.html#PHYSICS_STATS">PHYSICS_STATS</a></li><li><a href="global.html#PRE_RENDER_STATS">PRE_RENDER_STATS</a></li><li><a href="global.html#Polygon">Polygon</a></li><li><a href="global.html#QUERY_CACHE_ENTRY_SIZE">QUERY_CACHE_ENTRY_SIZE</a></li><li><a href="global.html#QUERY_RESULT_BUFFER_SIZE">QUERY_RESULT_BUFFER_SIZE</a></li><li><a href="global.html#RENDERER_STATS">RENDERER_STATS</a></li><li><a href="global.html#SHAPE_CIRCLE">SHAPE_CIRCLE</a></li><li><a href="global.html#SIDE">SIDE</a></li><li><a href="global.html#SPATIAL_STATS">SPATIAL_STATS</a></li><li><a href="global.html#SUN_DEFAULTS">SUN_DEFAULTS</a></li><li><a href="global.html#ShapeType">ShapeType</a></li><li><a href="global.html#TOPDOWN">TOPDOWN</a></li><li><a href="global.html#WORKER_DISPLAY_CONFIG">WORKER_DISPLAY_CONFIG</a></li><li><a href="global.html#Y_SORT_K">Y_SORT_K</a></li><li><a href="global.html#ZENITHAL">ZENITHAL</a></li><li><a href="global.html#_boundsResult">_boundsResult</a></li><li><a href="global.html#applyBrightnessToColor">applyBrightnessToColor</a></li><li><a href="global.html#atlasPadding">atlasPadding</a></li><li><a href="global.html#binarySearchFind">binarySearchFind</a></li><li><a href="global.html#binarySearchInsertPoint">binarySearchInsertPoint</a></li><li><a href="global.html#binarySearchRange">binarySearchRange</a></li><li><a href="global.html#brightnessToColoredTint">brightnessToColoredTint</a></li><li><a href="global.html#brightnessToTint">brightnessToTint</a></li><li><a href="global.html#buildFullCircle">buildFullCircle</a></li><li><a href="global.html#buildVisibilityPolygon">buildVisibilityPolygon</a></li><li><a href="global.html#calculateCameraScreenBounds">calculateCameraScreenBounds</a></li><li><a href="global.html#calculateDecalTileBounds">calculateDecalTileBounds</a></li><li><a href="global.html#calculateEntityMetadataSABSize">calculateEntityMetadataSABSize</a></li><li><a href="global.html#calculateLightAttenuation">calculateLightAttenuation</a></li><li><a href="global.html#calculateLightFromNeighbors">calculateLightFromNeighbors</a></li><li><a href="global.html#calculateQueryCacheSABSize">calculateQueryCacheSABSize</a></li><li><a href="global.html#calculateQueryResultsSABSize">calculateQueryResultsSABSize</a></li><li><a href="global.html#calculateSpeed">calculateSpeed</a></li><li><a href="global.html#calculateTileClipRegion">calculateTileClipRegion</a></li><li><a href="global.html#calculateTotalLightAtPosition">calculateTotalLightAtPosition</a></li><li><a href="global.html#calculateVelocityAngle">calculateVelocityAngle</a></li><li><a href="global.html#cantorPair">cantorPair</a></li><li><a href="global.html#cantorUnpair">cantorUnpair</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clamp01">clamp01</a></li><li><a href="global.html#clamp01Fast">clamp01Fast</a></li><li><a href="global.html#clampVelocity">clampVelocity</a></li><li><a href="global.html#clampVelocityMut">clampVelocityMut</a></li><li><a href="global.html#closestPointOnAABB">closestPointOnAABB</a></li><li><a href="global.html#closestPointOnAABBMut">closestPointOnAABBMut</a></li><li><a href="global.html#collectAllComponentsFromClasses">collectAllComponentsFromClasses</a></li><li><a href="global.html#collectComponents">collectComponents</a></li><li><a href="global.html#computeBoxMass">computeBoxMass</a></li><li><a href="global.html#computeCircleMass">computeCircleMass</a></li><li><a href="global.html#containerRadius">containerRadius</a></li><li><a href="global.html#countTrailingZeros">countTrailingZeros</a></li><li><a href="global.html#createBulletTrailCanvas">createBulletTrailCanvas</a></li><li><a href="global.html#createButton">createButton</a></li><li><a href="global.html#createCircularGradientCanvas">createCircularGradientCanvas</a></li><li><a href="global.html#createDivider">createDivider</a></li><li><a href="global.html#createMultiWorkerStatsReaderArray">createMultiWorkerStatsReaderArray</a></li><li><a href="global.html#createMultiWorkerStatsWriter">createMultiWorkerStatsWriter</a></li><li><a href="global.html#createPanel">createPanel</a></li><li><a href="global.html#createRow">createRow</a></li><li><a href="global.html#createStat">createStat</a></li><li><a href="global.html#createStatsReader">createStatsReader</a></li><li><a href="global.html#createStatsWriter">createStatsWriter</a></li><li><a href="global.html#createTab">createTab</a></li><li><a href="global.html#createWorkerQueryFunctions">createWorkerQueryFunctions</a></li><li><a href="global.html#directionTo">directionTo</a></li><li><a href="global.html#distance2D">distance2D</a></li><li><a href="global.html#distanceConstraintIterations">distanceConstraintIterations</a></li><li><a href="global.html#distanceSq2D">distanceSq2D</a></li><li><a href="global.html#drawCircle">drawCircle</a></li><li><a href="global.html#drawCross">drawCross</a></li><li><a href="global.html#drawLine">drawLine</a></li><li><a href="global.html#emitArcVertices">emitArcVertices</a></li><li><a href="global.html#emitVertex">emitVertex</a></li><li><a href="global.html#ensureDecorationFacade">ensureDecorationFacade</a></li><li><a href="global.html#evictDecorationFacade">evictDecorationFacade</a></li><li><a href="global.html#exposeComponentsGlobally">exposeComponentsGlobally</a></li><li><a href="global.html#exposeEntityClassesGlobally">exposeEntityClassesGlobally</a></li><li><a href="global.html#extractRGB">extractRGB</a></li><li><a href="global.html#extractRGBMut">extractRGBMut</a></li><li><a href="global.html#extractRGBNormalized">extractRGBNormalized</a></li><li><a href="global.html#extractRGBNormalizedMut">extractRGBNormalizedMut</a></li><li><a href="global.html#formatComponentValue">formatComponentValue</a></li><li><a href="global.html#formatNumber">formatNumber</a></li><li><a href="global.html#generateSymmetricalCirclePattern">generateSymmetricalCirclePattern</a></li><li><a href="global.html#getCellCoords">getCellCoords</a></li><li><a href="global.html#getCellCoordsMut">getCellCoordsMut</a></li><li><a href="global.html#getCellIndex">getCellIndex</a></li><li><a href="global.html#getCellRange">getCellRange</a></li><li><a href="global.html#getColliderBounds">getColliderBounds</a></li><li><a href="global.html#getComponentColor">getComponentColor</a></li><li><a href="global.html#getComponentPropertyNames">getComponentPropertyNames</a></li><li><a href="global.html#getDirectionFromAngle">getDirectionFromAngle</a></li><li><a href="global.html#getEntityHomeCellIndex">getEntityHomeCellIndex</a></li><li><a href="global.html#getParentClasses">getParentClasses</a></li><li><a href="global.html#hashToPastelColorCSS">hashToPastelColorCSS</a></li><li><a href="global.html#hashToPastelColorHex">hashToPastelColorHex</a></li><li><a href="global.html#hslToHex">hslToHex</a></li><li><a href="global.html#initializeComponentViews">initializeComponentViews</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isWithinRange">isWithinRange</a></li><li><a href="global.html#isWithinRangeSq">isWithinRangeSq</a></li><li><a href="global.html#layerMask">layerMask</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#lerpAngle">lerpAngle</a></li><li><a href="global.html#loadEntityScripts">loadEntityScripts</a></li><li><a href="global.html#maxAtlasHeight">maxAtlasHeight</a></li><li><a href="global.html#maxAtlasWidth">maxAtlasWidth</a></li><li><a href="global.html#maxAttachedDecorationsPerEntity">maxAttachedDecorationsPerEntity</a></li><li><a href="global.html#normalizeAngle">normalizeAngle</a></li><li><a href="global.html#normalizeAngleDifference">normalizeAngleDifference</a></li><li><a href="global.html#normalizeDirection">normalizeDirection</a></li><li><a href="global.html#normalizeDirectionFast">normalizeDirectionFast</a></li><li><a href="global.html#normalizeDirectionFromDistSq">normalizeDirectionFromDistSq</a></li><li><a href="global.html#query">query</a></li><li><a href="global.html#randomColor">randomColor</a></li><li><a href="global.html#randomRange">randomRange</a></li><li><a href="global.html#rayBoxHit">rayBoxHit</a></li><li><a href="global.html#rayBoxIntersect">rayBoxIntersect</a></li><li><a href="global.html#rayCircleDist">rayCircleDist</a></li><li><a href="global.html#rayCircleHit">rayCircleHit</a></li><li><a href="global.html#rayCircleIntersect">rayCircleIntersect</a></li><li><a href="global.html#rng">rng</a></li><li><a href="global.html#screenBoundsToWorldBounds">screenBoundsToWorldBounds</a></li><li><a href="global.html#setupWorkerCommunication">setupWorkerCommunication</a></li><li><a href="global.html#sortByY">sortByY</a></li><li><a href="global.html#sortEventsByAngle">sortEventsByAngle</a></li><li><a href="global.html#stringToHash">stringToHash</a></li><li><a href="global.html#subStepCount">subStepCount</a></li><li><a href="global.html#tangentHalfAngle">tangentHalfAngle</a></li><li><a href="global.html#testAABBAABBCollision">testAABBAABBCollision</a></li><li><a href="global.html#testCircleAABBCollision">testCircleAABBCollision</a></li><li><a href="global.html#testCircleCircleCollision">testCircleCircleCollision</a></li><li><a href="global.html#trimAlphaThreshold">trimAlphaThreshold</a></li><li><a href="global.html#trimImages">trimImages</a></li><li><a href="global.html#updateMassFromBox">updateMassFromBox</a></li><li><a href="global.html#updateMassFromCircle">updateMassFromCircle</a></li><li><a href="global.html#urlToPath">urlToPath</a></li><li><a href="global.html#validatePhysicsConfig">validatePhysicsConfig</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Apr 06 2026 16:36:00 GMT-0300 (hora estándar de Argentina)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

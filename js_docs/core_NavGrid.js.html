@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: core/NavGrid.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: core/NavGrid.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>// NavGrid.js - Navigation grid for pathfinding (flowfields and A*)
+//
+// ============================================================================
+// FLOWFIELD SYSTEM OVERVIEW
+// ============================================================================
+//
+// Flowfields provide efficient pathfinding for MANY entities going to the SAME target.
+// Instead of computing individual paths, we compute ONE flowfield per target that
+// ALL entities can sample from.
+//
+// How it works:
+// 1. Entity calls NavGrid.requestVector(myX, myY, targetX, targetY, outVec)
+// 2. If flowfield for targetCell exists → returns direction vector immediately
+// 3. If flowfield doesn't exist → returns (0,0), sends request to particle_worker
+// 4. Particle worker computes flowfield using Dijkstra's algorithm
+// 5. Next frame, entity gets the direction vector
+//
+// Key concepts:
+// - targetCell: The destination cell (world position → grid cell)
+// - Flowfield: A grid where each cell stores a direction pointing toward the target
+// - Slot: Flowfields are cached in slots (default 16 slots, LRU eviction)
+//
+// ============================================================================
+// MEMORY LAYOUT (SharedArrayBuffer)
+// ============================================================================
+//
+// The navigation SAB is laid out as:
+//
+// [HEADER (32 bytes)]
+//   - version (u32)      : Incremented on invalidation
+//   - gridWidth (u32)    : Grid width in cells
+//   - gridHeight (u32)   : Grid height in cells
+//   - cellSize (u32)     : Pixels per cell
+//   - totalCells (u32)   : gridWidth * gridHeight
+//   - maxFlowfields (u32): Number of flowfield slots
+//   - maxPaths (u32)     : Number of A* path slots
+//   - maxPathLength (u32): Max cells per path
+//
+// [WALKABILITY (totalCells bytes)]
+//   - 1 byte per cell: 0 = blocked, 1+ = walkable
+//
+// [FLOWFIELD SLOTS (interleaved)]
+//   For each slot:
+//   - Header (12 bytes): targetCell (u32), lastUsedFrame (u32), status (u32)
+//   - Data (totalCells bytes): direction per cell (1 byte each)
+//
+// [PATH SLOTS]
+//   For each slot:
+//   - Header (20 bytes): fromCell, toCell, lastUsedFrame, length, status
+//   - Data (maxPathLength * 4 bytes): cell indices
+//
+// ============================================================================
+// MULTI-WORKER ARCHITECTURE
+// ============================================================================
+//
+// - Main thread: Initializes SAB, can read for debug visualization
+// - Logic workers: READ-ONLY - call requestVector(), receive directions
+// - Particle worker: READ+WRITE - computes flowfields, writes to SAB
+//
+// Communication flow:
+// 1. Logic worker calls requestVector() → flowfield not found
+// 2. Logic worker sends REQUEST_FLOWFIELD message to particle_worker via MessagePort
+// 3. Particle worker computes Dijkstra, writes to slot, sets status = READY
+// 4. Next frame, logic worker finds flowfield and samples direction
+//
+// ============================================================================
+
+/**
+ * Flowfield slot status values
+ */
+const FLOWFIELD_STATUS = {
+  EMPTY: 0,
+  COMPUTING: 1,
+  READY: 2,
+};
+
+/**
+ * Path slot status values
+ */
+const PATH_STATUS = {
+  EMPTY: 0,
+  COMPUTING: 1,
+  READY: 2,
+};
+
+/**
+ * Direction encoding for flowfields
+ * 8 directions + no movement = 9 values (fits in 4 bits)
+ */
+const DIRECTION = Object.freeze({
+  NONE: 0,
+  N: 1,
+  NE: 2,
+  E: 3,
+  SE: 4,
+  S: 5,
+  SW: 6,
+  W: 7,
+  NW: 8,
+});
+
+/**
+ * Direction to dx/dy lookup table
+ */
+const DIR_TO_VEC = Object.freeze([
+  Object.freeze([0, 0]),
+  Object.freeze([0, -1]),
+  Object.freeze([1, -1]),
+  Object.freeze([1, 0]),
+  Object.freeze([1, 1]),
+  Object.freeze([0, 1]),
+  Object.freeze([-1, 1]),
+  Object.freeze([-1, 0]),
+  Object.freeze([-1, -1]),
+]);
+
+/**
+ * NavGrid - Navigation grid for pathfinding
+ *
+ * Provides:
+ * - Flowfield pathfinding (for masses of entities going to same target)
+ * - A* pathfinding (for individual path queries)
+ * - Grid utilities (walkability checks, cell conversions)
+ *
+ * Usage pattern:
+ * - Call requestVector() or getNextAStarPosition() every frame
+ * - If data not ready, returns fallback (0,0 or current position)
+ * - Particle worker computes in background, next frame will have data
+ */
+export class NavGrid {
+  // =========================================================
+  // Static state (shared across all instances in a worker)
+  // =========================================================
+
+  static _initialized = false;
+
+  // SAB views
+  static _sab = null;
+  static _headerView = null; // Uint32Array for header
+  static _walkability = null; // Uint8Array for walkability grid
+  static _flowfieldHeaders = null; // Flowfield slot headers
+  static _flowfieldData = null; // Flowfield direction data
+  static _pathHeaders = null; // Path slot headers
+  static _pathData = null; // Path cell data
+
+  // Cached metadata (read once from header)
+  static _version = 0;
+  static _gridWidth = 0;
+  static _gridHeight = 0;
+  static _cellSize = 0;
+  static _totalCells = 0;
+  static _maxFlowfields = 0;
+  static _maxPaths = 0;
+  static _maxPathLength = 0;
+
+  // World bounds (for coordinate conversions)
+  static _worldWidth = 0;
+  static _worldHeight = 0;
+
+  // Communication port to particle worker (set by logic workers)
+  static _navWorkerPort = null;
+
+  // Request deduplication (avoid spamming particle worker)
+  // Maps store targetCell/key -> { version, requestedAt }
+  // Allows re-requesting after grid invalidation and stale-request recovery.
+  static _pendingFlowfieldRequests = new Map();
+  static _pendingPathRequests = new Map();
+  static _PENDING_REQUEST_RETRY_MS = 250;
+
+  // Frame tracking for LRU
+  static _currentFrame = 0;
+
+  // Static (pre-baked) flowfields loaded from JSON
+  // Map&lt;name, { gridWidth, gridHeight, cellSize, vectors: Int8Array }>
+  static _staticFlowfields = new Map();
+
+  // =========================================================
+  // Byte offsets in the SAB (calculated in initialize)
+  // =========================================================
+
+  static _HEADER_SIZE = 32; // bytes (8 x Uint32)
+  static _FLOWFIELD_HEADER_SIZE = 12; // bytes per slot (targetCell, lastUsedFrame, status)
+  static _PATH_HEADER_SIZE = 20; // bytes per slot (fromCell, toCell, lastUsedFrame, length, status + padding)
+
+  // Offsets (set in initialize based on grid size)
+  static _walkabilityOffset = 0;
+  static _flowfieldHeadersOffset = 0;
+  static _flowfieldDataOffset = 0;
+  static _pathHeadersOffset = 0;
+  static _pathDataOffset = 0;
+
+  // =========================================================
+  // Initialization
+  // =========================================================
+
+  /**
+   * Calculate the total SAB size needed for navigation data
+   * @param {Object} config - Navigation config
+   * @param {number} gridWidth - Grid width in cells
+   * @param {number} gridHeight - Grid height in cells
+   * @returns {number} - Total bytes needed
+   */
+  static calculateSABSize(config, gridWidth, gridHeight) {
+    const totalCells = gridWidth * gridHeight;
+    const { maxFlowfields, maxPaths, maxPathLength } = config;
+
+    const headerSize = this._HEADER_SIZE;
+    const walkabilitySize = totalCells; // 1 byte per cell
+
+    // Align flowfield headers offset to 4 bytes
+    const flowfieldHeadersOffset = Math.ceil((headerSize + walkabilitySize) / 4) * 4;
+
+    // Flowfield: header (12 bytes) + data (2 bytes per cell: X and Y as Int8)
+    // Align data size to 4 bytes for Uint32Array compatibility
+    const flowfieldDataSize = Math.ceil((totalCells * 2) / 4) * 4;
+    const flowfieldSlotSize = this._FLOWFIELD_HEADER_SIZE + flowfieldDataSize;
+    const flowfieldsSize = maxFlowfields * flowfieldSlotSize;
+
+    // Path: header (20 bytes) + data (4 bytes per cell * maxPathLength)
+    const pathSlotSize = this._PATH_HEADER_SIZE + maxPathLength * 4;
+    const pathsSize = maxPaths * pathSlotSize;
+
+    // Total size from flowfield headers offset
+    return flowfieldHeadersOffset + flowfieldsSize + pathsSize;
+  }
+
+  /**
+   * Initialize NavGrid with SharedArrayBuffer
+   * @param {SharedArrayBuffer} sab - The navigation SAB
+   * @param {Object} metadata - Grid metadata from Scene
+   */
+  static initialize(sab, metadata) {
+    if (!sab) {
+      console.warn('[NavGrid] No SAB provided, navigation disabled');
+      return;
+    }
+
+    this._sab = sab;
+    this._worldWidth = metadata.worldWidth || 1000;
+    this._worldHeight = metadata.worldHeight || 1000;
+
+    // Read header
+    this._headerView = new Uint32Array(sab, 0, 8);
+    this._version = this._headerView[0];
+    this._gridWidth = this._headerView[1];
+    this._gridHeight = this._headerView[2];
+    this._cellSize = this._headerView[3];
+    this._totalCells = this._headerView[4];
+    this._maxFlowfields = this._headerView[5];
+    this._maxPaths = this._headerView[6];
+    this._maxPathLength = this._headerView[7];
+
+    // Calculate offsets (all aligned to 4 bytes for Uint32Array compatibility)
+    this._walkabilityOffset = this._HEADER_SIZE;
+    // Align flowfield headers offset to 4 bytes
+    this._flowfieldHeadersOffset = Math.ceil((this._walkabilityOffset + this._totalCells) / 4) * 4;
+
+    // Align flowfield data size to 4 bytes
+    this._flowfieldDataSize = Math.ceil((this._totalCells * 2) / 4) * 4;
+    this._flowfieldSlotSize = this._FLOWFIELD_HEADER_SIZE + this._flowfieldDataSize;
+
+    this._flowfieldDataOffset =
+      this._flowfieldHeadersOffset + this._maxFlowfields * this._FLOWFIELD_HEADER_SIZE;
+
+    const totalFlowfieldSize = this._maxFlowfields * this._flowfieldSlotSize;
+    this._pathHeadersOffset = this._flowfieldHeadersOffset + totalFlowfieldSize;
+
+    const pathSlotSize = this._PATH_HEADER_SIZE + this._maxPathLength * 4;
+    this._pathDataOffset = this._pathHeadersOffset + this._maxPaths * this._PATH_HEADER_SIZE;
+
+    // Create views
+    this._walkability = new Uint8Array(sab, this._walkabilityOffset, this._totalCells);
+
+    // Flowfield views - we'll access these dynamically per slot
+    // Path views - we'll access these dynamically per slot
+
+    this._initialized = true;
+  }
+
+  /**
+   * Set the MessagePort for communication with particle worker (handles navigation)
+   * Called by logic workers during initialization
+   * @param {MessagePort} port - Port to particle worker
+   */
+  static setNavWorkerPort(port) {
+    this._navWorkerPort = port;
+  }
+
+  // =========================================================
+  // Static (pre-baked) flowfields from JSON
+  // =========================================================
+
+  /**
+   * Register a pre-baked flowfield (loaded from JSON at scene startup).
+   * Called once per flowfield during worker initialization.
+   *
+   * @param {string} name - Unique flowfield identifier (e.g. 'roads', 'sidewalk')
+   * @param {Object} data - Flowfield data
+   * @param {number} data.gridWidth - Width in cells
+   * @param {number} data.gridHeight - Height in cells
+   * @param {number} data.cellSize - World pixels per cell
+   * @param {Int8Array} data.vectors - Flat vector data (2 bytes per cell: X, Y in [-127, 127])
+   */
+  static registerStaticFlowfield(name, data) {
+    this._staticFlowfields.set(name, {
+      gridWidth: data.gridWidth,
+      gridHeight: data.gridHeight,
+      cellSize: data.cellSize,
+      vectors: data.vectors instanceof Int8Array ? data.vectors : new Int8Array(data.vectors),
+    });
+  }
+
+  /**
+   * Load static flowfields from JSON URLs (main thread only).
+   * Fetches each JSON, parses direction data, clips to scene world bounds,
+   * and stores in _staticFlowfields.
+   *
+   * @param {Object} flowfieldUrls - Map of name → URL (e.g. { roads: '/data/roads.json' })
+   * @param {number} sceneWorldWidth - Scene world width in pixels
+   * @param {number} sceneWorldHeight - Scene world height in pixels
+   */
+  static async loadStaticFlowfieldsFromJSON(flowfieldUrls, sceneWorldWidth, sceneWorldHeight) {
+    const worldW = sceneWorldWidth || Infinity;
+    const worldH = sceneWorldHeight || Infinity;
+
+    console.log(`[NavGrid] Loading ${Object.keys(flowfieldUrls).length} static flowfields...`);
+
+    for (const [name, url] of Object.entries(flowfieldUrls)) {
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`Failed to fetch flowfield: ${url}`);
+        const json = await resp.json();
+
+        const { metadata, data } = json;
+        const srcW = metadata.widthCells;
+        const srcH = metadata.heightCells;
+        const cellSize = metadata.cellSizePx;
+
+        const clippedW = Math.min(srcW, Math.floor(worldW / cellSize));
+        const clippedH = Math.min(srcH, Math.floor(worldH / cellSize));
+        const vectors = new Int8Array(clippedW * clippedH * 2);
+
+        for (let row = 0; row &lt; clippedH; row++) {
+          const rowData = data[row];
+          for (let col = 0; col &lt; clippedW; col++) {
+            const cell = rowData[col];
+            if (cell) {
+              const idx = (row * clippedW + col) * 2;
+              vectors[idx] = Math.round(Math.max(-1, Math.min(1, cell[0])) * 127);
+              vectors[idx + 1] = Math.round(Math.max(-1, Math.min(1, cell[1])) * 127);
+            }
+          }
+        }
+
+        this._staticFlowfields.set(name, { gridWidth: clippedW, gridHeight: clippedH, cellSize, vectors });
+        console.log(`[NavGrid]   Loaded flowfield: ${name} (${clippedW}x${clippedH}, cellSize=${cellSize})`);
+      } catch (error) {
+        console.error(`[NavGrid] Failed to load flowfield "${name}":`, error);
+      }
+    }
+  }
+
+  /**
+   * Serialize loaded static flowfields for transfer to workers via initData.
+   * @returns {Object} Plain object { name: { gridWidth, gridHeight, cellSize, vectors } }
+   */
+  static serializeStaticFlowfields() {
+    const result = {};
+    for (const [name, ff] of this._staticFlowfields) {
+      result[name] = {
+        gridWidth: ff.gridWidth,
+        gridHeight: ff.gridHeight,
+        cellSize: ff.cellSize,
+        vectors: ff.vectors,
+      };
+    }
+    return result;
+  }
+
+  /**
+   * Sample a pre-baked static flowfield at a world position.
+   *
+   * @param {string} name - Flowfield identifier (must match a registered flowfield)
+   * @param {number} worldX - World X position to sample
+   * @param {number} worldY - World Y position to sample
+   * @param {Object} outVec - Output vector {x, y} to fill (float values in [-1, 1])
+   */
+  static requestVectorFromStaticFlowfield(name, worldX, worldY, outVec) {
+    const ff = this._staticFlowfields.get(name);
+    if (!ff) {
+      outVec.x = 0;
+      outVec.y = 0;
+      return;
+    }
+
+    const cellX = Math.floor(worldX / ff.cellSize);
+    const cellY = Math.floor(worldY / ff.cellSize);
+
+    if (cellX &lt; 0 || cellX >= ff.gridWidth || cellY &lt; 0 || cellY >= ff.gridHeight) {
+      outVec.x = 0;
+      outVec.y = 0;
+      return;
+    }
+
+    const idx = (cellY * ff.gridWidth + cellX) * 2;
+    outVec.x = ff.vectors[idx] / 127;
+    outVec.y = ff.vectors[idx + 1] / 127;
+  }
+
+  /**
+   * Reset NavGrid state (called when unloading a scene to prevent memory leaks)
+   * Clears port reference and pending requests so old buffers can be GC'd
+   */
+  static reset() {
+    this._navWorkerPort = null;
+    this._initialized = false;
+    this._sab = null;
+    this._headerView = null;
+    this._walkability = null;
+    this._flowfieldHeaders = null;
+    this._flowfieldData = null;
+    this._pathHeaders = null;
+    this._pathData = null;
+    this._pendingFlowfieldRequests.clear();
+    this._pendingPathRequests.clear();
+    this._staticFlowfields.clear();
+  }
+
+  static _makePathRequestKey(fromCell, toCell) {
+    return `${fromCell}_${toCell}`;
+  }
+
+  static _isPendingRequestFresh(entry, currentVersion) {
+    if (!entry || typeof entry !== 'object') return false;
+    if (entry.version !== currentVersion) return false;
+    return (performance.now() - entry.requestedAt) &lt; this._PENDING_REQUEST_RETRY_MS;
+  }
+
+  static _rememberPendingRequest(map, key, version) {
+    map.set(key, {
+      version,
+      requestedAt: performance.now(),
+    });
+  }
+
+  // =========================================================
+  // HOT Queries (per frame, O(1))
+  // =========================================================
+
+  /**
+   * Get movement vector from flowfield pathfinding
+   *
+   * This is the main API for flowfield navigation. Call every frame for each
+   * entity that needs pathfinding. The system handles caching automatically.
+   *
+   * @param {number} cx - Current world X position
+   * @param {number} cy - Current world Y position
+   * @param {number} tx - Target world X position
+   * @param {number} ty - Target world Y position
+   * @param {Object} outVec - Output vector {x, y} to fill
+   *
+   * If flowfield exists: outVec = normalized direction vector (-1, 0, or 1 per axis)
+   * If flowfield not ready: outVec = {x: 0, y: 0}, requests calculation
+   *
+   * @example
+   * const vec = { x: 0, y: 0 };
+   * NavGrid.requestVector(entity.x, entity.y, target.x, target.y, vec);
+   * entity.vx += vec.x * speed;
+   * entity.vy += vec.y * speed;
+   */
+  static requestVector(cx, cy, tx, ty, outVec) {
+
+    if (!this._initialized) {
+      outVec.x = 0;
+      outVec.y = 0;
+      return;
+    }
+
+    // Convert target to cell - flowfields are keyed by target cell
+    const targetCell = this.getCellAt(tx, ty);
+    if (targetCell &lt; 0 || targetCell >= this._totalCells) {
+      outVec.x = 0;
+      outVec.y = 0;
+      return;
+    }
+
+    // Convert current position to cell - used to sample the flowfield
+    const currentCell = this.getCellAt(cx, cy);
+    if (currentCell &lt; 0 || currentCell >= this._totalCells) {
+      outVec.x = 0;
+      outVec.y = 0;
+      return;
+    }
+
+    // Already at target?
+    if (currentCell === targetCell) {
+      outVec.x = 0;
+      outVec.y = 0;
+      return;
+    }
+
+    // Find flowfield slot for this target
+    const slotIndex = this._findFlowfieldSlot(targetCell);
+
+    if (slotIndex >= 0) {
+      this._pendingFlowfieldRequests.delete(targetCell);
+      // Flowfield exists - sample vector at our current cell
+      this._sampleFlowfield(slotIndex, currentCell, outVec);
+      // Note: LRU is handled by particle_worker when it receives requests
+    } else {
+      // Flowfield not ready - return zero and request computation
+      outVec.x = 0;
+      outVec.y = 0;
+      this._requestFlowfield(targetCell);
+    }
+  }
+
+  /**
+   * Get next position from A* pathfinding
+   *
+   * @param {number} fromX - Current world X position
+   * @param {number} fromY - Current world Y position
+   * @param {number} toX - Target world X position
+   * @param {number} toY - Target world Y position
+   * @param {Object} outPos - Output position {x, y} to fill
+   *
+   * If path exists: outPos = center of next cell in path
+   * If path not ready: outPos = current position, requests calculation
+   */
+  static getNextAStarPosition(fromX, fromY, toX, toY, outPos) {
+    if (!this._initialized) {
+      outPos.x = fromX;
+      outPos.y = fromY;
+      return;
+    }
+
+    const fromCell = this.getCellAt(fromX, fromY);
+    const toCell = this.getCellAt(toX, toY);
+
+    if (fromCell &lt; 0 || toCell &lt; 0 || fromCell === toCell) {
+      outPos.x = fromX;
+      outPos.y = fromY;
+      return;
+    }
+
+    const requestKey = this._makePathRequestKey(fromCell, toCell);
+    // Find path slot
+    const slotIndex = this._findPathSlot(fromCell, toCell);
+
+    if (slotIndex >= 0) {
+      this._pendingPathRequests.delete(requestKey);
+      // Path exists - get next cell
+      const nextCell = this._getPathNextCell(slotIndex, fromCell);
+      if (nextCell >= 0) {
+        this.getCellCenter(nextCell, outPos);
+        // Note: LRU is handled by particle_worker when it receives requests
+        return;
+      }
+    }
+
+    // Path not ready - return current position and request
+    outPos.x = fromX;
+    outPos.y = fromY;
+    this._requestPath(fromCell, toCell);
+  }
+
+  // =========================================================
+  // COLD Queries (planning, debug, AI)
+  // =========================================================
+
+  /**
+   * Get complete A* path between two positions
+   *
+   * @param {number} fromX - Start world X position
+   * @param {number} fromY - Start world Y position
+   * @param {number} toX - End world X position
+   * @param {number} toY - End world Y position
+   * @param {Array} outPath - Array to fill with {x, y} positions
+   *
+   * If path cached: fills outPath with cell centers
+   * If not cached: outPath.length = 0, requests calculation
+   */
+  static getPathAStar(fromX, fromY, toX, toY, outPath) {
+    outPath.length = 0;
+
+    if (!this._initialized) {
+      return;
+    }
+
+    const fromCell = this.getCellAt(fromX, fromY);
+    const toCell = this.getCellAt(toX, toY);
+
+    if (fromCell &lt; 0 || toCell &lt; 0) {
+      return;
+    }
+
+    if (fromCell === toCell) {
+      // Already at destination
+      return;
+    }
+
+    const requestKey = this._makePathRequestKey(fromCell, toCell);
+    const slotIndex = this._findPathSlot(fromCell, toCell);
+
+    if (slotIndex >= 0) {
+      this._pendingPathRequests.delete(requestKey);
+      // Path exists - copy to outPath
+      this._copyPathToArray(slotIndex, outPath);
+      // Note: LRU is handled by particle_worker when it receives requests
+    } else {
+      // Request calculation
+      this._requestPath(fromCell, toCell);
+    }
+  }
+
+  // =========================================================
+  // Grid Utilities
+  // =========================================================
+
+  /**
+   * Get cell ID from world position
+   * @param {number} x - World X position
+   * @param {number} y - World Y position
+   * @returns {number} - Cell ID, or -1 if out of bounds
+   */
+  static getCellAt(x, y) {
+    if (!this._initialized) return -1;
+
+    const cellX = Math.floor(x / this._cellSize);
+    const cellY = Math.floor(y / this._cellSize);
+
+    if (cellX &lt; 0 || cellX >= this._gridWidth || cellY &lt; 0 || cellY >= this._gridHeight) {
+      return -1;
+    }
+
+    return cellY * this._gridWidth + cellX;
+  }
+
+  /**
+   * Check if a cell is walkable
+   * @param {number} cellId - Cell ID
+   * @returns {boolean} - True if walkable
+   */
+  static isCellWalkable(cellId) {
+    if (!this._initialized || cellId &lt; 0 || cellId >= this._totalCells) {
+      return false;
+    }
+    return this._walkability[cellId] > 0;
+  }
+
+  /**
+   * Check if a world position is walkable
+   * @param {number} x - World X position
+   * @param {number} y - World Y position
+   * @returns {boolean} - True if walkable
+   */
+  static isPositionWalkable(x, y) {
+    return this.isCellWalkable(this.getCellAt(x, y));
+  }
+
+  /**
+   * Get world position of cell center
+   * @param {number} cellId - Cell ID
+   * @param {Object} outPos - Output position {x, y} to fill
+   */
+  static getCellCenter(cellId, outPos) {
+    if (!this._initialized || cellId &lt; 0 || cellId >= this._totalCells) {
+      outPos.x = 0;
+      outPos.y = 0;
+      return;
+    }
+
+    const cellX = cellId % this._gridWidth;
+    const cellY = Math.floor(cellId / this._gridWidth);
+
+    outPos.x = (cellX + 0.5) * this._cellSize;
+    outPos.y = (cellY + 0.5) * this._cellSize;
+  }
+
+  /**
+   * Get grid dimensions
+   * @returns {Object} - {width, height, cellSize, totalCells}
+   */
+  static getGridInfo() {
+    return {
+      width: this._gridWidth,
+      height: this._gridHeight,
+      cellSize: this._cellSize,
+      totalCells: this._totalCells,
+    };
+  }
+
+  // =========================================================
+  // Mutation / Rebuild (NOT hot path - only particle worker)
+  // =========================================================
+
+  /**
+   * Write header to SAB (called by Scene during setup)
+   * @param {SharedArrayBuffer} sab - The SAB to write to
+   * @param {Object} config - Navigation config
+   * @param {number} gridWidth - Grid width in cells
+   * @param {number} gridHeight - Grid height in cells
+   */
+  static writeHeader(sab, config, gridWidth, gridHeight) {
+    const header = new Uint32Array(sab, 0, 8);
+    header[0] = 1; // version
+    header[1] = gridWidth;
+    header[2] = gridHeight;
+    header[3] = config.cellSize;
+    header[4] = gridWidth * gridHeight; // totalCells
+    header[5] = config.maxFlowfields;
+    header[6] = config.maxPaths;
+    header[7] = config.maxPathLength;
+  }
+
+  /**
+   * Set walkability for a cell (called by particle worker during rebuild)
+   * @param {number} cellId - Cell ID
+   * @param {number} walkable - 0 = blocked, 1+ = walkable (cost)
+   */
+  static setWalkability(cellId, walkable) {
+    if (this._initialized &amp;&amp; cellId >= 0 &amp;&amp; cellId &lt; this._totalCells) {
+      this._walkability[cellId] = walkable;
+    }
+  }
+
+  /**
+   * Get walkability array reference (for particle worker bulk updates)
+   * @returns {Uint8Array} - Walkability array
+   */
+  static getWalkabilityArray() {
+    return this._walkability;
+  }
+
+  /**
+   * Request particle worker to rebuild walkability from entity indices
+   * Can be called from any worker that has NavGrid initialized.
+   * This invalidates ALL cached flowfields and paths.
+   *
+   * @param {number[]} entityIndices - Array of entity indices to mark as obstacles
+   */
+  static updateNavGrid(entityIndices) {
+    if (!this._navWorkerPort) {
+      console.warn('NavGrid: No particle worker port set, cannot update grid');
+      return;
+    }
+
+    // Clear pending requests - they'll be re-requested with new version after rebuild
+    this._pendingFlowfieldRequests.clear();
+    this._pendingPathRequests.clear();
+
+    this._navWorkerPort.postMessage({
+      type: 'REBUILD_FROM_INDICES',
+      entityIndices,
+    });
+  }
+
+  /**
+   * Invalidate all caches (called after rebuild)
+   */
+  static invalidate() {
+    if (!this._initialized) return;
+
+    // Increment version
+    Atomics.add(this._headerView, 0, 1);
+
+    // Clear all flowfield slots
+    for (let i = 0; i &lt; this._maxFlowfields; i++) {
+      this._clearFlowfieldSlot(i);
+    }
+
+    // Clear all path slots
+    for (let i = 0; i &lt; this._maxPaths; i++) {
+      this._clearPathSlot(i);
+    }
+  }
+
+  // =========================================================
+  // Internal - Flowfield slot management
+  // =========================================================
+
+  /**
+   * Find flowfield slot for a target cell
+   *
+   * Flowfield slots use an INTERLEAVED memory layout:
+   * [slot0 header][slot0 data][slot1 header][slot1 data]...
+   *
+   * Each slot = FLOWFIELD_HEADER_SIZE (12 bytes) + totalCells (1 byte per cell)
+   *
+   * @param {number} targetCell - The destination cell to find flowfield for
+   * @returns {number} - Slot index, or -1 if not found
+   */
+  static _findFlowfieldSlot(targetCell) {
+    const slotSize = this._flowfieldSlotSize;
+
+    for (let i = 0; i &lt; this._maxFlowfields; i++) {
+      const offset = this._flowfieldHeadersOffset + i * slotSize;
+      const view = new Uint32Array(this._sab, offset, 3);
+
+      // Check if this slot targets our cell and is ready
+      if (view[0] === targetCell &amp;&amp; view[2] === FLOWFIELD_STATUS.READY) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * Sample flowfield vector at a cell
+   *
+   * @param {number} slotIndex - Which flowfield slot to sample
+   * @param {number} currentCell - The cell to get direction for
+   * @param {Object} outVec - Output vector {x, y} to fill with float values
+   */
+  static _sampleFlowfield(slotIndex, currentCell, outVec) {
+    const slotSize = this._flowfieldSlotSize;
+    const dataOffset =
+      this._flowfieldHeadersOffset + slotIndex * slotSize + this._FLOWFIELD_HEADER_SIZE;
+    // Data is stored as Int8: 2 bytes per cell (X, Y), normalized to [-127, 127]
+    const data = new Int8Array(this._sab, dataOffset, this._totalCells * 2);
+    const idx = currentCell * 2;
+    // Convert from Int8 [-127, 127] to float [-1, 1]
+    outVec.x = data[idx] / 127;
+    outVec.y = data[idx + 1] / 127;
+  }
+
+  /**
+   * Update LRU timestamp for flowfield slot
+   */
+  static _touchFlowfieldSlot(slotIndex) {
+    const slotSize = this._flowfieldSlotSize;
+    const headerOffset = this._flowfieldHeadersOffset + slotIndex * slotSize;
+    const view = new Uint32Array(this._sab, headerOffset, 3);
+    view[1] = this._currentFrame; // lastUsedFrame
+  }
+
+  /**
+   * Clear a flowfield slot
+   */
+  static _clearFlowfieldSlot(slotIndex) {
+    const slotSize = this._flowfieldSlotSize;
+    const headerOffset = this._flowfieldHeadersOffset + slotIndex * slotSize;
+    const view = new Uint32Array(this._sab, headerOffset, 3);
+    view[0] = 0xffffffff; // targetCell = invalid
+    view[1] = 0; // lastUsedFrame
+    view[2] = FLOWFIELD_STATUS.EMPTY;
+  }
+
+  /**
+   * Request flowfield calculation from particle worker
+   *
+   * Uses version-aware deduplication plus a short retry timeout to avoid
+   * spamming requests while still recovering from stale pending entries.
+   *
+   * @private
+   */
+  static _requestFlowfield(targetCell) {
+    if (!this._navWorkerPort) {
+      console.warn('[NavGrid] _requestFlowfield called but no port set!');
+      return;
+    }
+
+    // Get current version from SAB header
+    const currentVersion = Atomics.load(this._headerView, 0);
+    const pendingEntry = this._pendingFlowfieldRequests.get(targetCell);
+    if (this._isPendingRequestFresh(pendingEntry, currentVersion)) return;
+
+    // Send new request (either no pending, version changed, or pending went stale)
+    this._rememberPendingRequest(this._pendingFlowfieldRequests, targetCell, currentVersion);
+    this._navWorkerPort.postMessage({
+      type: 'REQUEST_FLOWFIELD',
+      targetCell,
+    });
+  }
+
+  // =========================================================
+  // Internal - Path slot management
+  // =========================================================
+
+  /**
+   * Find path slot for from/to cells
+   * @returns {number} - Slot index, or -1 if not found
+   */
+  static _findPathSlot(fromCell, toCell) {
+    const headerOffset = this._pathHeadersOffset;
+    const headerSize = this._PATH_HEADER_SIZE;
+
+    for (let i = 0; i &lt; this._maxPaths; i++) {
+      const offset = headerOffset + i * headerSize;
+      const view = new Uint32Array(this._sab, offset, 5);
+
+      if (view[0] === fromCell &amp;&amp; view[1] === toCell &amp;&amp; view[4] === PATH_STATUS.READY) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * Get next cell in path after currentCell
+   */
+  static _getPathNextCell(slotIndex, currentCell) {
+    const headerOffset = this._pathHeadersOffset + slotIndex * this._PATH_HEADER_SIZE;
+    const headerView = new Uint32Array(this._sab, headerOffset, 5);
+    const pathLength = headerView[3];
+
+    if (pathLength === 0) return -1;
+
+    const pathSlotSize = this._PATH_HEADER_SIZE + this._maxPathLength * 4;
+    const dataOffset = this._pathHeadersOffset + slotIndex * pathSlotSize + this._PATH_HEADER_SIZE;
+    const pathData = new Uint32Array(this._sab, dataOffset, pathLength);
+
+    // Find current cell in path and return next
+    for (let i = 0; i &lt; pathLength - 1; i++) {
+      if (pathData[i] === currentCell) {
+        return pathData[i + 1];
+      }
+    }
+
+    // If not found in path or at end, return first cell
+    return pathData[0];
+  }
+
+  /**
+   * Copy path to output array
+   */
+  static _copyPathToArray(slotIndex, outPath) {
+    const headerOffset = this._pathHeadersOffset + slotIndex * this._PATH_HEADER_SIZE;
+    const headerView = new Uint32Array(this._sab, headerOffset, 5);
+    const pathLength = headerView[3];
+
+    if (pathLength === 0) return;
+
+    const pathSlotSize = this._PATH_HEADER_SIZE + this._maxPathLength * 4;
+    const dataOffset = this._pathHeadersOffset + slotIndex * pathSlotSize + this._PATH_HEADER_SIZE;
+    const pathData = new Uint32Array(this._sab, dataOffset, pathLength);
+
+    const pos = { x: 0, y: 0 };
+    for (let i = 0; i &lt; pathLength; i++) {
+      this.getCellCenter(pathData[i], pos);
+      outPath.push({ x: pos.x, y: pos.y });
+    }
+  }
+
+  /**
+   * Update LRU timestamp for path slot
+   */
+  static _touchPathSlot(slotIndex) {
+    const headerOffset = this._pathHeadersOffset + slotIndex * this._PATH_HEADER_SIZE;
+    const view = new Uint32Array(this._sab, headerOffset, 5);
+    view[2] = this._currentFrame; // lastUsedFrame
+  }
+
+  /**
+   * Clear a path slot
+   */
+  static _clearPathSlot(slotIndex) {
+    const headerOffset = this._pathHeadersOffset + slotIndex * this._PATH_HEADER_SIZE;
+    const view = new Uint32Array(this._sab, headerOffset, 5);
+    view[0] = 0xffffffff; // fromCell = invalid
+    view[1] = 0xffffffff; // toCell = invalid
+    view[2] = 0; // lastUsedFrame
+    view[3] = 0; // length
+    view[4] = PATH_STATUS.EMPTY;
+  }
+
+  /**
+   * Request path calculation from particle worker
+   * @private
+   */
+  static _requestPath(fromCell, toCell) {
+    if (!this._navWorkerPort) return;
+
+    const key = this._makePathRequestKey(fromCell, toCell);
+
+    // Get current version from SAB header
+    const currentVersion = Atomics.load(this._headerView, 0);
+    const pendingEntry = this._pendingPathRequests.get(key);
+    if (this._isPendingRequestFresh(pendingEntry, currentVersion)) return;
+
+    // Send new request (either no pending, version changed, or pending went stale)
+    this._rememberPendingRequest(this._pendingPathRequests, key, currentVersion);
+    this._navWorkerPort.postMessage({
+      type: 'REQUEST_PATH',
+      fromCell,
+      toCell,
+    });
+  }
+
+  // =========================================================
+  // Particle Worker specific methods (for writing results)
+  // =========================================================
+
+  /**
+   * Find or allocate a flowfield slot (particle worker only)
+   *
+   * Allocation strategy:
+   * 1. If flowfield for targetCell already exists → return that slot
+   * 2. If empty slot available → use first empty slot
+   * 3. Otherwise → evict least recently used (LRU) slot
+   *
+   * @param {number} targetCell - Destination cell for the flowfield
+   * @returns {number} - Slot index
+   */
+  static allocateFlowfieldSlot(targetCell) {
+    const slotSize = this._flowfieldSlotSize;
+
+    let emptySlot = -1;
+    let lruSlot = 0;
+    let lruFrame = Infinity;
+
+    for (let i = 0; i &lt; this._maxFlowfields; i++) {
+      const offset = this._flowfieldHeadersOffset + i * slotSize;
+      const view = new Uint32Array(this._sab, offset, 3);
+
+      // Already exists for this target? Reuse the slot.
+      if (view[0] === targetCell) {
+        return i;
+      }
+
+      // Empty slot? Remember the first one.
+      if (view[2] === FLOWFIELD_STATUS.EMPTY &amp;&amp; emptySlot &lt; 0) {
+        emptySlot = i;
+      }
+
+      // Track LRU (only for non-empty slots)
+      if (view[2] !== FLOWFIELD_STATUS.EMPTY &amp;&amp; view[1] &lt; lruFrame) {
+        lruFrame = view[1];
+        lruSlot = i;
+      }
+    }
+
+    // Use empty slot if available, otherwise evict LRU
+    const slot = emptySlot >= 0 ? emptySlot : lruSlot;
+
+    // Initialize slot header
+    const offset = this._flowfieldHeadersOffset + slot * slotSize;
+    const view = new Uint32Array(this._sab, offset, 3);
+    view[0] = targetCell;
+    view[1] = this._currentFrame;
+    view[2] = FLOWFIELD_STATUS.COMPUTING;
+
+    return slot;
+  }
+
+  /**
+   * Write flowfield data and mark as ready (particle worker only)
+   *
+   * @param {number} slotIndex - Slot to write to
+   * @param {Int8Array} vectors - Vector data (2 bytes per cell: X, Y as Int8)
+   */
+  static writeFlowfieldData(slotIndex, vectors) {
+    const slotSize = this._flowfieldSlotSize;
+    const dataOffset =
+      this._flowfieldHeadersOffset + slotIndex * slotSize + this._FLOWFIELD_HEADER_SIZE;
+    const data = new Int8Array(this._sab, dataOffset, this._totalCells * 2);
+
+    // Copy vector data
+    data.set(vectors);
+
+    // Mark as ready (header is at start of slot)
+    const headerOffset = this._flowfieldHeadersOffset + slotIndex * slotSize;
+    const view = new Uint32Array(this._sab, headerOffset, 3);
+    view[2] = FLOWFIELD_STATUS.READY;
+  }
+
+  /**
+   * Find or allocate a path slot (particle worker only)
+   * Uses LRU eviction if all slots are full
+   * @returns {number} - Slot index
+   */
+  static allocatePathSlot(fromCell, toCell) {
+    const headerOffset = this._pathHeadersOffset;
+    const headerSize = this._PATH_HEADER_SIZE;
+
+    let emptySlot = -1;
+    let lruSlot = 0;
+    let lruFrame = Infinity;
+
+    for (let i = 0; i &lt; this._maxPaths; i++) {
+      const offset = headerOffset + i * headerSize;
+      const view = new Uint32Array(this._sab, offset, 5);
+
+      // Already exists for this path?
+      if (view[0] === fromCell &amp;&amp; view[1] === toCell) {
+        return i;
+      }
+
+      // Empty slot?
+      if (view[4] === PATH_STATUS.EMPTY &amp;&amp; emptySlot &lt; 0) {
+        emptySlot = i;
+      }
+
+      // Track LRU
+      if (view[2] &lt; lruFrame) {
+        lruFrame = view[2];
+        lruSlot = i;
+      }
+    }
+
+    // Use empty slot if available, otherwise evict LRU
+    const slot = emptySlot >= 0 ? emptySlot : lruSlot;
+
+    // Initialize slot header
+    const offset = headerOffset + slot * headerSize;
+    const view = new Uint32Array(this._sab, offset, 5);
+    view[0] = fromCell;
+    view[1] = toCell;
+    view[2] = this._currentFrame;
+    view[3] = 0; // length
+    view[4] = PATH_STATUS.COMPUTING;
+
+    return slot;
+  }
+
+  /**
+   * Write path data and mark as ready (particle worker only)
+   */
+  static writePathData(slotIndex, pathCells, explicitLength = -1) {
+    const headerOffset = this._pathHeadersOffset + slotIndex * this._PATH_HEADER_SIZE;
+    const headerView = new Uint32Array(this._sab, headerOffset, 5);
+
+    // Clamp path length
+    const sourceLength = explicitLength >= 0 ? explicitLength : pathCells.length;
+    const pathLength = Math.min(sourceLength, this._maxPathLength);
+    headerView[3] = pathLength;
+
+    // Write path data
+    if (pathLength > 0) {
+      const pathSlotSize = this._PATH_HEADER_SIZE + this._maxPathLength * 4;
+      const dataOffset =
+        this._pathHeadersOffset + slotIndex * pathSlotSize + this._PATH_HEADER_SIZE;
+      const pathData = new Uint32Array(this._sab, dataOffset, pathLength);
+
+      for (let i = 0; i &lt; pathLength; i++) {
+        pathData[i] = pathCells[i];
+      }
+    }
+
+    // Mark as ready
+    headerView[4] = PATH_STATUS.READY;
+  }
+
+  // =========================================================
+  // Debug / Visualization methods (for DebugUI)
+  // =========================================================
+
+  /**
+   * Get list of all cached flowfields for debug display
+   * @returns {Array} Array of {slotIndex, targetCell, targetX, targetY, lastUsedFrame}
+   */
+  static getCachedFlowfieldsList() {
+    if (!this._initialized) return [];
+
+    const result = [];
+    const slotSize = this._flowfieldSlotSize;
+
+    for (let i = 0; i &lt; this._maxFlowfields; i++) {
+      const offset = this._flowfieldHeadersOffset + i * slotSize;
+      const view = new Uint32Array(this._sab, offset, 3);
+      const status = view[2];
+
+      if (status === FLOWFIELD_STATUS.READY) {
+        const targetCell = view[0];
+        const lastUsedFrame = view[1];
+        const targetX = (targetCell % this._gridWidth) * this._cellSize + this._cellSize / 2;
+        const targetY =
+          Math.floor(targetCell / this._gridWidth) * this._cellSize + this._cellSize / 2;
+
+        result.push({
+          slotIndex: i,
+          targetCell,
+          targetX: Math.round(targetX),
+          targetY: Math.round(targetY),
+          lastUsedFrame,
+        });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Get list of all cached paths for debug display
+   * @returns {Array} Array of {slotIndex, fromCell, toCell, fromX, fromY, toX, toY, length, lastUsedFrame}
+   */
+  static getCachedPathsList() {
+    if (!this._initialized) return [];
+
+    const result = [];
+    const headerOffset = this._pathHeadersOffset;
+    const headerSize = this._PATH_HEADER_SIZE;
+
+    for (let i = 0; i &lt; this._maxPaths; i++) {
+      const offset = headerOffset + i * headerSize;
+      const view = new Uint32Array(this._sab, offset, 5);
+      const status = view[4];
+
+      if (status === PATH_STATUS.READY) {
+        const fromCell = view[0];
+        const toCell = view[1];
+        const lastUsedFrame = view[2];
+        const length = view[3];
+
+        const fromX = (fromCell % this._gridWidth) * this._cellSize + this._cellSize / 2;
+        const fromY = Math.floor(fromCell / this._gridWidth) * this._cellSize + this._cellSize / 2;
+        const toX = (toCell % this._gridWidth) * this._cellSize + this._cellSize / 2;
+        const toY = Math.floor(toCell / this._gridWidth) * this._cellSize + this._cellSize / 2;
+
+        result.push({
+          slotIndex: i,
+          fromCell,
+          toCell,
+          fromX: Math.round(fromX),
+          fromY: Math.round(fromY),
+          toX: Math.round(toX),
+          toY: Math.round(toY),
+          length,
+          lastUsedFrame,
+        });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Get flowfield data for visualization
+   * @param {number} slotIndex - Slot index
+   * @returns {Object|null} {targetCell, vectors: Int8Array (2 per cell)} or null
+   */
+  static getFlowfieldForVisualization(slotIndex) {
+    if (!this._initialized || slotIndex &lt; 0 || slotIndex >= this._maxFlowfields) return null;
+
+    const slotSize = this._flowfieldSlotSize;
+    const headerOffset = this._flowfieldHeadersOffset + slotIndex * slotSize;
+    const headerView = new Uint32Array(this._sab, headerOffset, 3);
+
+    if (headerView[2] !== FLOWFIELD_STATUS.READY) return null;
+
+    const dataOffset = headerOffset + this._FLOWFIELD_HEADER_SIZE;
+
+    return {
+      targetCell: headerView[0],
+      vectors: new Int8Array(this._sab, dataOffset, this._totalCells * 2),
+      gridWidth: this._gridWidth,
+      gridHeight: this._gridHeight,
+      cellSize: this._cellSize,
+    };
+  }
+
+  /**
+   * Get path data for visualization
+   * @param {number} slotIndex - Slot index
+   * @returns {Array|null} Array of {x, y} world positions or null
+   */
+  static getPathForVisualization(slotIndex) {
+    if (!this._initialized || slotIndex &lt; 0 || slotIndex >= this._maxPaths) return null;
+
+    const headerOffset = this._pathHeadersOffset + slotIndex * this._PATH_HEADER_SIZE;
+    const headerView = new Uint32Array(this._sab, headerOffset, 5);
+
+    if (headerView[4] !== PATH_STATUS.READY) return null;
+
+    const pathLength = headerView[3];
+    if (pathLength === 0) return [];
+
+    const pathSlotSize = this._PATH_HEADER_SIZE + this._maxPathLength * 4;
+    const dataOffset = this._pathHeadersOffset + slotIndex * pathSlotSize + this._PATH_HEADER_SIZE;
+    const pathData = new Uint32Array(this._sab, dataOffset, pathLength);
+
+    const result = [];
+    for (let i = 0; i &lt; pathLength; i++) {
+      const cell = pathData[i];
+      const x = (cell % this._gridWidth) * this._cellSize + this._cellSize / 2;
+      const y = Math.floor(cell / this._gridWidth) * this._cellSize + this._cellSize / 2;
+      result.push({ x, y });
+    }
+
+    return result;
+  }
+}
+
+// Export constants for external use
+export { FLOWFIELD_STATUS, PATH_STATUS, DIRECTION, DIR_TO_VEC };
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbstractWorker.html">AbstractWorker</a></li><li><a href="BigAtlasInspector.html">BigAtlasInspector</a></li><li><a href="Camera.html">Camera</a></li><li><a href="Constraint.html">Constraint</a></li><li><a href="DebugCanvas.html">DebugCanvas</a></li><li><a href="DebugFlags.html">DebugFlags</a></li><li><a href="DebugUI.html">DebugUI</a></li><li><a href="Decoration_Decoration.html">Decoration</a></li><li><a href="GameObject_GameObject.html">GameObject</a></li><li><a href="Grid.html">Grid</a></li><li><a href="LogicWorker.html">LogicWorker</a></li><li><a href="Mouse.html">Mouse</a></li><li><a href="NavGrid.html">NavGrid</a></li><li><a href="NavScratch.html">NavScratch</a></li><li><a href="ParticleWorker.html">ParticleWorker</a></li><li><a href="PhysicsWorker.html">PhysicsWorker</a></li><li><a href="PixiParticlePool.html">PixiParticlePool</a></li><li><a href="PixiRenderer.html">PixiRenderer</a></li><li><a href="PreRenderWorker.html">PreRenderWorker</a></li><li><a href="Ray.html">Ray</a></li><li><a href="SharedAtomicPool.html">SharedAtomicPool</a></li><li><a href="SpatialWorker.html">SpatialWorker</a></li><li><a href="SpriteSheetRegistry.html">SpriteSheetRegistry</a></li><li><a href="StatsCollector.html">StatsCollector</a></li><li><a href="Sun.html">Sun</a></li><li><a href="TileMap.html">TileMap</a></li><li><a href="TileMapLayer.html">TileMapLayer</a></li><li><a href="ToolManager.html">ToolManager</a></li></ul><h3>Global</h3><ul><li><a href="global.html#BLEND_MODES">BLEND_MODES</a></li><li><a href="global.html#Box">Box</a></li><li><a href="global.html#CAMERA_TYPES">CAMERA_TYPES</a></li><li><a href="global.html#COMPONENT_COLORS">COMPONENT_COLORS</a></li><li><a href="global.html#Circle">Circle</a></li><li><a href="global.html#DECORATION_INNER_Z_MAX">DECORATION_INNER_Z_MAX</a></li><li><a href="global.html#DECORATION_NO_PARENT">DECORATION_NO_PARENT</a></li><li><a href="global.html#DECORATION_Y_SORT_SCALE">DECORATION_Y_SORT_SCALE</a></li><li><a href="global.html#DEFAULT_LAYERS">DEFAULT_LAYERS</a></li><li><a href="global.html#DIRECTION">DIRECTION</a></li><li><a href="global.html#DIR_TO_VEC">DIR_TO_VEC</a></li><li><a href="global.html#ENTITY_GLOW_SORT_BIAS">ENTITY_GLOW_SORT_BIAS</a></li><li><a href="global.html#ENTITY_TYPE_ENTRY_SIZE">ENTITY_TYPE_ENTRY_SIZE</a></li><li><a href="global.html#FLOWFIELD_STATUS">FLOWFIELD_STATUS</a></li><li><a href="global.html#LOGIC_STATS">LOGIC_STATS</a></li><li><a href="global.html#MAX_COMPONENTS">MAX_COMPONENTS</a></li><li><a href="global.html#MAX_ENTITIES">MAX_ENTITIES</a></li><li><a href="global.html#MAX_ENTITY_TYPES">MAX_ENTITY_TYPES</a></li><li><a href="global.html#MAX_PRECOMPUTED_QUERIES">MAX_PRECOMPUTED_QUERIES</a></li><li><a href="global.html#NAVIGATION_STATS">NAVIGATION_STATS</a></li><li><a href="global.html#PARTICLE_STATS">PARTICLE_STATS</a></li><li><a href="global.html#PATH_STATUS">PATH_STATUS</a></li><li><a href="global.html#PHYSICS_STATS">PHYSICS_STATS</a></li><li><a href="global.html#PRE_RENDER_STATS">PRE_RENDER_STATS</a></li><li><a href="global.html#Polygon">Polygon</a></li><li><a href="global.html#QUERY_CACHE_ENTRY_SIZE">QUERY_CACHE_ENTRY_SIZE</a></li><li><a href="global.html#QUERY_RESULT_BUFFER_SIZE">QUERY_RESULT_BUFFER_SIZE</a></li><li><a href="global.html#RENDERER_STATS">RENDERER_STATS</a></li><li><a href="global.html#SHAPE_CIRCLE">SHAPE_CIRCLE</a></li><li><a href="global.html#SIDE">SIDE</a></li><li><a href="global.html#SPATIAL_STATS">SPATIAL_STATS</a></li><li><a href="global.html#SUN_DEFAULTS">SUN_DEFAULTS</a></li><li><a href="global.html#ShapeType">ShapeType</a></li><li><a href="global.html#TOPDOWN">TOPDOWN</a></li><li><a href="global.html#WORKER_DISPLAY_CONFIG">WORKER_DISPLAY_CONFIG</a></li><li><a href="global.html#Y_SORT_K">Y_SORT_K</a></li><li><a href="global.html#ZENITHAL">ZENITHAL</a></li><li><a href="global.html#_boundsResult">_boundsResult</a></li><li><a href="global.html#applyBrightnessToColor">applyBrightnessToColor</a></li><li><a href="global.html#atlasPadding">atlasPadding</a></li><li><a href="global.html#binarySearchFind">binarySearchFind</a></li><li><a href="global.html#binarySearchInsertPoint">binarySearchInsertPoint</a></li><li><a href="global.html#binarySearchRange">binarySearchRange</a></li><li><a href="global.html#brightnessToColoredTint">brightnessToColoredTint</a></li><li><a href="global.html#brightnessToTint">brightnessToTint</a></li><li><a href="global.html#buildFullCircle">buildFullCircle</a></li><li><a href="global.html#buildVisibilityPolygon">buildVisibilityPolygon</a></li><li><a href="global.html#calculateCameraScreenBounds">calculateCameraScreenBounds</a></li><li><a href="global.html#calculateDecalTileBounds">calculateDecalTileBounds</a></li><li><a href="global.html#calculateEntityMetadataSABSize">calculateEntityMetadataSABSize</a></li><li><a href="global.html#calculateLightAttenuation">calculateLightAttenuation</a></li><li><a href="global.html#calculateLightFromNeighbors">calculateLightFromNeighbors</a></li><li><a href="global.html#calculateQueryCacheSABSize">calculateQueryCacheSABSize</a></li><li><a href="global.html#calculateQueryResultsSABSize">calculateQueryResultsSABSize</a></li><li><a href="global.html#calculateSpeed">calculateSpeed</a></li><li><a href="global.html#calculateTileClipRegion">calculateTileClipRegion</a></li><li><a href="global.html#calculateTotalLightAtPosition">calculateTotalLightAtPosition</a></li><li><a href="global.html#calculateVelocityAngle">calculateVelocityAngle</a></li><li><a href="global.html#cantorPair">cantorPair</a></li><li><a href="global.html#cantorUnpair">cantorUnpair</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clamp01">clamp01</a></li><li><a href="global.html#clamp01Fast">clamp01Fast</a></li><li><a href="global.html#clampVelocity">clampVelocity</a></li><li><a href="global.html#clampVelocityMut">clampVelocityMut</a></li><li><a href="global.html#closestPointOnAABB">closestPointOnAABB</a></li><li><a href="global.html#closestPointOnAABBMut">closestPointOnAABBMut</a></li><li><a href="global.html#collectAllComponentsFromClasses">collectAllComponentsFromClasses</a></li><li><a href="global.html#collectComponents">collectComponents</a></li><li><a href="global.html#computeBoxMass">computeBoxMass</a></li><li><a href="global.html#computeCircleMass">computeCircleMass</a></li><li><a href="global.html#containerRadius">containerRadius</a></li><li><a href="global.html#countTrailingZeros">countTrailingZeros</a></li><li><a href="global.html#createBulletTrailCanvas">createBulletTrailCanvas</a></li><li><a href="global.html#createButton">createButton</a></li><li><a href="global.html#createCircularGradientCanvas">createCircularGradientCanvas</a></li><li><a href="global.html#createDivider">createDivider</a></li><li><a href="global.html#createMultiWorkerStatsReaderArray">createMultiWorkerStatsReaderArray</a></li><li><a href="global.html#createMultiWorkerStatsWriter">createMultiWorkerStatsWriter</a></li><li><a href="global.html#createPanel">createPanel</a></li><li><a href="global.html#createRow">createRow</a></li><li><a href="global.html#createStat">createStat</a></li><li><a href="global.html#createStatsReader">createStatsReader</a></li><li><a href="global.html#createStatsWriter">createStatsWriter</a></li><li><a href="global.html#createTab">createTab</a></li><li><a href="global.html#createWorkerQueryFunctions">createWorkerQueryFunctions</a></li><li><a href="global.html#directionTo">directionTo</a></li><li><a href="global.html#distance2D">distance2D</a></li><li><a href="global.html#distanceConstraintIterations">distanceConstraintIterations</a></li><li><a href="global.html#distanceSq2D">distanceSq2D</a></li><li><a href="global.html#drawCircle">drawCircle</a></li><li><a href="global.html#drawCross">drawCross</a></li><li><a href="global.html#drawLine">drawLine</a></li><li><a href="global.html#emitArcVertices">emitArcVertices</a></li><li><a href="global.html#emitVertex">emitVertex</a></li><li><a href="global.html#ensureDecorationFacade">ensureDecorationFacade</a></li><li><a href="global.html#evictDecorationFacade">evictDecorationFacade</a></li><li><a href="global.html#exposeComponentsGlobally">exposeComponentsGlobally</a></li><li><a href="global.html#exposeEntityClassesGlobally">exposeEntityClassesGlobally</a></li><li><a href="global.html#extractRGB">extractRGB</a></li><li><a href="global.html#extractRGBMut">extractRGBMut</a></li><li><a href="global.html#extractRGBNormalized">extractRGBNormalized</a></li><li><a href="global.html#extractRGBNormalizedMut">extractRGBNormalizedMut</a></li><li><a href="global.html#formatComponentValue">formatComponentValue</a></li><li><a href="global.html#formatNumber">formatNumber</a></li><li><a href="global.html#generateSymmetricalCirclePattern">generateSymmetricalCirclePattern</a></li><li><a href="global.html#getCellCoords">getCellCoords</a></li><li><a href="global.html#getCellCoordsMut">getCellCoordsMut</a></li><li><a href="global.html#getCellIndex">getCellIndex</a></li><li><a href="global.html#getCellRange">getCellRange</a></li><li><a href="global.html#getColliderBounds">getColliderBounds</a></li><li><a href="global.html#getComponentColor">getComponentColor</a></li><li><a href="global.html#getComponentPropertyNames">getComponentPropertyNames</a></li><li><a href="global.html#getDirectionFromAngle">getDirectionFromAngle</a></li><li><a href="global.html#getEntityHomeCellIndex">getEntityHomeCellIndex</a></li><li><a href="global.html#getParentClasses">getParentClasses</a></li><li><a href="global.html#hashToPastelColorCSS">hashToPastelColorCSS</a></li><li><a href="global.html#hashToPastelColorHex">hashToPastelColorHex</a></li><li><a href="global.html#hslToHex">hslToHex</a></li><li><a href="global.html#initializeComponentViews">initializeComponentViews</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isWithinRange">isWithinRange</a></li><li><a href="global.html#isWithinRangeSq">isWithinRangeSq</a></li><li><a href="global.html#layerMask">layerMask</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#lerpAngle">lerpAngle</a></li><li><a href="global.html#loadEntityScripts">loadEntityScripts</a></li><li><a href="global.html#maxAtlasHeight">maxAtlasHeight</a></li><li><a href="global.html#maxAtlasWidth">maxAtlasWidth</a></li><li><a href="global.html#maxAttachedDecorationsPerEntity">maxAttachedDecorationsPerEntity</a></li><li><a href="global.html#normalizeAngle">normalizeAngle</a></li><li><a href="global.html#normalizeAngleDifference">normalizeAngleDifference</a></li><li><a href="global.html#normalizeDirection">normalizeDirection</a></li><li><a href="global.html#normalizeDirectionFast">normalizeDirectionFast</a></li><li><a href="global.html#normalizeDirectionFromDistSq">normalizeDirectionFromDistSq</a></li><li><a href="global.html#query">query</a></li><li><a href="global.html#randomColor">randomColor</a></li><li><a href="global.html#randomRange">randomRange</a></li><li><a href="global.html#rayBoxHit">rayBoxHit</a></li><li><a href="global.html#rayBoxIntersect">rayBoxIntersect</a></li><li><a href="global.html#rayCircleDist">rayCircleDist</a></li><li><a href="global.html#rayCircleHit">rayCircleHit</a></li><li><a href="global.html#rayCircleIntersect">rayCircleIntersect</a></li><li><a href="global.html#rng">rng</a></li><li><a href="global.html#screenBoundsToWorldBounds">screenBoundsToWorldBounds</a></li><li><a href="global.html#setupWorkerCommunication">setupWorkerCommunication</a></li><li><a href="global.html#sortByY">sortByY</a></li><li><a href="global.html#sortEventsByAngle">sortEventsByAngle</a></li><li><a href="global.html#stringToHash">stringToHash</a></li><li><a href="global.html#subStepCount">subStepCount</a></li><li><a href="global.html#tangentHalfAngle">tangentHalfAngle</a></li><li><a href="global.html#testAABBAABBCollision">testAABBAABBCollision</a></li><li><a href="global.html#testCircleAABBCollision">testCircleAABBCollision</a></li><li><a href="global.html#testCircleCircleCollision">testCircleCircleCollision</a></li><li><a href="global.html#trimAlphaThreshold">trimAlphaThreshold</a></li><li><a href="global.html#trimImages">trimImages</a></li><li><a href="global.html#updateMassFromBox">updateMassFromBox</a></li><li><a href="global.html#updateMassFromCircle">updateMassFromCircle</a></li><li><a href="global.html#urlToPath">urlToPath</a></li><li><a href="global.html#validatePhysicsConfig">validatePhysicsConfig</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Apr 06 2026 16:36:00 GMT-0300 (hora estándar de Argentina)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

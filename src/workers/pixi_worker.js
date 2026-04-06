@@ -2314,7 +2314,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   /**
    * Handle layer property changes from debug UI
-   * @param {Object} data - { layer: string, visible?: boolean, blendMode?: string, zIndex?: number }
+   * @param {Object} data - { layer: string, visible: boolean, blendMode: string, zIndex: number }
    */
   handleSetLayerProps(data) {
     const { layer, visible, blendMode, containerBlendMode, zIndex } = data;

@@ -3,7 +3,7 @@
 const facadeMap = new Map();
 
 /**
- * @param {new (index: number) => object} DecorationCtor
+ * @param {function(new:object, number)} DecorationCtor
  * @param {number} id
  */
 export function ensureDecorationFacade(DecorationCtor, id) {

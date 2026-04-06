@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: core/QuerySystem.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: core/QuerySystem.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * QuerySystem - Entity query system with SharedArrayBuffer support
+ *
+ * Features:
+ * - Bitmask-based component matching (up to 64 components via BigInt)
+ * - Entity indices stored as Uint16 (max 65535 entities)
+ * - Shared query results across all workers via SABs
+ * - Pre-computed queries for engine components
+ * - Lazy computation for developer-defined component queries
+ *
+ * Usage:
+ *   const allLights = query([LightEmitter]);           // All entities with component
+ *   const activeLights = queryActiveEntities([LightEmitter]); // Only active entities
+ */
+
+import { collectComponents, countTrailingZeros, binarySearchRange } from './utils.js';
+import { Transform } from '../components/Transform.js';
+import { GameObject } from './gameObject.js';
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
+
+/** Maximum entity types (fits in BigUint64 bitmask) */
+export const MAX_ENTITY_TYPES = 64;
+
+/** Maximum components (fits in BigUint64 bitmask) */
+export const MAX_COMPONENTS = 64;
+
+/** Maximum entities (fits in Uint16) */
+export const MAX_ENTITIES = 65535;
+
+/** Maximum pre-computed queries */
+export const MAX_PRECOMPUTED_QUERIES = 64;
+
+/** Bytes per entity type metadata entry (aligned to 16 bytes) */
+const ENTITY_TYPE_ENTRY_SIZE = 16;
+
+/** Bytes per query cache entry */
+const QUERY_CACHE_ENTRY_SIZE = 16;
+
+/** Bytes per query result buffer (count + max entities as Uint16) */
+const QUERY_RESULT_BUFFER_SIZE = 2 + MAX_ENTITIES * 2; // ~128KB per query
+
+// =============================================================================
+// SAB LAYOUT HELPERS
+// =============================================================================
+
+/**
+ * Calculate total size needed for entityMetadataSAB
+ * Layout:
+ *   [0-1]   numTypes (Uint16)
+ *   [2-15]  padding (14 bytes for alignment)
+ *   [16+]   Per-type entries (16 bytes each):
+ *           [0-7]   componentMask (BigUint64)
+ *           [8-9]   startIndex (Uint16)
+ *           [10-11] endIndex (Uint16)
+ *           [12-15] padding (4 bytes)
+ *
+ * @param {number} numTypes - Number of entity types
+ * @returns {number} Buffer size in bytes
+ */
+export function calculateEntityMetadataSABSize(numTypes) {
+  return 16 + numTypes * ENTITY_TYPE_ENTRY_SIZE;
+}
+
+/**
+ * Calculate total size needed for queryCacheSAB
+ * Layout:
+ *   [0-1]   numQueries (Uint16)
+ *   [2-3]   maxQueries (Uint16)
+ *   [4-7]   padding (4 bytes)
+ *   [8+]    Per-query entries (16 bytes each):
+ *           [0-7]   queryMask (BigUint64) - component combination
+ *           [8-15]  typeMask (BigUint64) - matching entity types
+ *
+ * @param {number} maxQueries - Maximum number of cached queries
+ * @returns {number} Buffer size in bytes
+ */
+export function calculateQueryCacheSABSize(maxQueries) {
+  return 8 + maxQueries * QUERY_CACHE_ENTRY_SIZE;
+}
+
+/**
+ * Calculate total size needed for queryResultsSAB
+ * Layout:
+ *   Per pre-computed query (QUERY_RESULT_BUFFER_SIZE bytes each):
+ *     [0-1]   count (Uint16)
+ *     [2+]    entity indices (Uint16 array, max 65535 entries)
+ *
+ * @param {number} numQueries - Number of pre-computed queries
+ * @returns {number} Buffer size in bytes
+ */
+export function calculateQueryResultsSABSize(numQueries) {
+  return numQueries * QUERY_RESULT_BUFFER_SIZE;
+}
+
+// =============================================================================
+// QUERYSYSTEM CLASS
+// =============================================================================
+
+export class QuerySystem {
+  constructor() {
+    /**
+     * Entity type metadata (populated during buildQueries)
+     * Array of { entityType, className, componentMask, startIndex, endIndex, poolSize }
+     */
+    this.entityMetadata = [];
+
+    /**
+     * Map from queryMask (BigInt) to typeMask (BigInt)
+     * Cached locally for query() calls (all entities, no SAB needed)
+     */
+    this.queryToTypeMask = new Map();
+
+    /**
+     * Pre-computed query definitions
+     * Array of { name, componentClasses, queryMask, typeMask, resultOffset }
+     */
+    this.precomputedQueries = [];
+
+    /**
+     * Map from queryMask (BigInt) to index in precomputedQueries
+     * For quick lookup in queryActiveEntities()
+     */
+    this.queryMaskToIndex = new Map();
+
+    // SAB references (set after createSharedBuffers)
+    this.entityMetadataSAB = null;
+    this.queryCacheSAB = null;
+    this.queryResultsSAB = null;
+
+    /**
+     * Cache for queryMask generation to avoid repeated BigInt allocations
+     * Map: componentIds string (sorted, comma-joined) → queryMask (BigInt)
+     */
+    this.queryMaskCache = new Map();
+
+    // Typed array views into SABs
+    this.entityMetadataView = null;
+    this.queryCacheView = null;
+    this.queryResultViews = []; // Array of Uint16Array views, one per pre-computed query
+
+    /**
+     * Reusable buffer for query() results - avoids GC pressure from repeated allocations.
+     * Initialized in buildQueries() when entityMetadata is known.
+     * Result is a temporary view - consume immediately, do not store.
+     */
+    this._queryResultBuffer = null;
+  }
+
+  /**
+   * Build metadata from registered classes and compute component masks
+   * @param {Array} registeredClasses - Array of {class, count, startIndex, entityType}
+   */
+  buildQueries(registeredClasses) {
+    console.log('[QuerySystem] Building queries with bitmask optimization...');
+
+    // Store metadata for each entity class with componentMask
+    this.entityMetadata = registeredClasses.map(
+      ({ class: EntityClass, count, startIndex, entityType }) => {
+        // Collect all components including Transform
+        const components = Array.from(collectComponents(EntityClass, GameObject, Transform));
+
+        // Compute componentMask (BigInt bitmask)
+        let componentMask = 0n;
+        for (const ComponentClass of components) {
+          const componentId = ComponentClass.componentId;
+          // Check for null, undefined, or non-number
+          if (componentId == null || typeof componentId !== 'number') {
+            console.warn(
+              `[QuerySystem] Component ${ComponentClass.name} has no componentId assigned (got: ${componentId})`
+            );
+            continue;
+          }
+          if (componentId >= MAX_COMPONENTS) {
+            console.error(
+              `[QuerySystem] Component ${ComponentClass.name} has componentId ${componentId} >= MAX_COMPONENTS (${MAX_COMPONENTS})`
+            );
+            continue;
+          }
+          componentMask |= 1n &lt;&lt; BigInt(componentId);
+        }
+
+        return {
+          entityType,
+          className: EntityClass.name,
+          components,
+          componentMask,
+          startIndex,
+          endIndex: startIndex + count,
+          poolSize: count,
+        };
+      }
+    );
+
+    // Validate entity type count
+    if (this.entityMetadata.length > MAX_ENTITY_TYPES) {
+      console.error(
+        `[QuerySystem] Too many entity types: ${this.entityMetadata.length} > MAX_ENTITY_TYPES (${MAX_ENTITY_TYPES})`
+      );
+    }
+
+    // Initialize reusable buffer for query() results (max size = total entities)
+    const totalEntities = this.entityMetadata.reduce((sum, meta) => sum + meta.poolSize, 0);
+    this._queryResultBuffer = new Uint16Array(totalEntities);
+
+    this._logStatistics();
+  }
+
+  /**
+   * Define which queries to pre-compute for engine components
+   * Call this after buildQueries() and before createSharedBuffers()
+   *
+   * @param {Object} componentClasses - Map of component names to classes
+   */
+  definePrecomputedQueries(componentClasses) {
+    const {
+      Transform,
+      RigidBody,
+      Collider,
+      SpriteRenderer,
+      LightEmitter,
+      ShadowCaster,
+      FlashComponent,
+    } = componentClasses;
+
+    // Define single-component queries
+    const singleComponentQueries = [
+      { name: 'Transform', components: [Transform] },
+      { name: 'RigidBody', components: [RigidBody] },
+      { name: 'Collider', components: [Collider] },
+      { name: 'SpriteRenderer', components: [SpriteRenderer] },
+      { name: 'LightEmitter', components: [LightEmitter] },
+      { name: 'ShadowCaster', components: [ShadowCaster] },
+      { name: 'FlashComponent', components: [FlashComponent] },
+    ].filter((q) => q.components.every((c) => c !== undefined));
+
+    // Define common multi-component queries
+    const multiComponentQueries = [
+      { name: 'RigidBody+Collider', components: [RigidBody, Collider] },
+      { name: 'LightEmitter+ShadowCaster', components: [LightEmitter, ShadowCaster] },
+      { name: 'LightEmitter+FlashComponent', components: [LightEmitter, FlashComponent] },
+      { name: 'SpriteRenderer+RigidBody', components: [SpriteRenderer, RigidBody] },
+    ].filter((q) => q.components.every((c) => c !== undefined));
+
+    const allQueries = [...singleComponentQueries, ...multiComponentQueries];
+
+    // Compute queryMask and typeMask for each
+    this.precomputedQueries = [];
+    let resultOffset = 0;
+
+    for (const queryDef of allQueries) {
+      const queryMask = this._generateQueryMask(queryDef.components);
+      const typeMask = this._computeTypeMask(queryMask);
+
+      this.precomputedQueries.push({
+        name: queryDef.name,
+        componentClasses: queryDef.components,
+        queryMask,
+        typeMask,
+        resultOffset,
+      });
+
+      this.queryMaskToIndex.set(queryMask, this.precomputedQueries.length - 1);
+      this.queryToTypeMask.set(queryMask, typeMask);
+
+      resultOffset += QUERY_RESULT_BUFFER_SIZE;
+    }
+
+    console.log(`[QuerySystem] Defined ${this.precomputedQueries.length} pre-computed queries:`);
+    for (const q of this.precomputedQueries) {
+      const matchingTypes = this._getMatchingTypeNames(q.typeMask);
+      console.log(`  - ${q.name}: matches [${matchingTypes.join(', ')}]`);
+    }
+  }
+
+  /**
+   * Create SharedArrayBuffers for query system
+   * Call this after definePrecomputedQueries()
+   *
+   * @returns {Object} - { entityMetadataSAB, queryCacheSAB, queryResultsSAB }
+   */
+  createSharedBuffers() {
+    const numTypes = this.entityMetadata.length;
+    const numPrecomputed = this.precomputedQueries.length;
+
+    // Create entityMetadataSAB
+    const entityMetadataSize = calculateEntityMetadataSABSize(numTypes);
+    this.entityMetadataSAB = new SharedArrayBuffer(entityMetadataSize);
+    this._writeEntityMetadataToSAB();
+
+    // Create queryCacheSAB
+    const queryCacheSize = calculateQueryCacheSABSize(MAX_PRECOMPUTED_QUERIES);
+    this.queryCacheSAB = new SharedArrayBuffer(queryCacheSize);
+    this._writeQueryCacheToSAB();
+
+    // Create queryResultsSAB
+    const queryResultsSize = calculateQueryResultsSABSize(numPrecomputed);
+    this.queryResultsSAB = new SharedArrayBuffer(queryResultsSize);
+    this._initializeQueryResultViews();
+
+    console.log(`[QuerySystem] Created SABs:`);
+    console.log(`  - entityMetadataSAB: ${entityMetadataSize} bytes (${numTypes} types)`);
+    console.log(
+      `  - queryCacheSAB: ${queryCacheSize} bytes (${numPrecomputed}/${MAX_PRECOMPUTED_QUERIES} queries)`
+    );
+    console.log(
+      `  - queryResultsSAB: ${queryResultsSize} bytes (${numPrecomputed} result buffers)`
+    );
+
+    return {
+      entityMetadataSAB: this.entityMetadataSAB,
+      queryCacheSAB: this.queryCacheSAB,
+      queryResultsSAB: this.queryResultsSAB,
+    };
+  }
+
+  /**
+   * Write entity metadata to SAB
+   * @private
+   */
+  _writeEntityMetadataToSAB() {
+    const buffer = this.entityMetadataSAB;
+    const numTypes = this.entityMetadata.length;
+
+    // Write header
+    const headerView = new Uint16Array(buffer, 0, 1);
+    headerView[0] = numTypes;
+
+    // Write per-type entries
+    for (let i = 0; i &lt; numTypes; i++) {
+      const meta = this.entityMetadata[i];
+      const entryOffset = 16 + i * ENTITY_TYPE_ENTRY_SIZE;
+
+      // componentMask (BigUint64 at offset 0)
+      const maskView = new BigUint64Array(buffer, entryOffset, 1);
+      maskView[0] = meta.componentMask;
+
+      // startIndex and endIndex (Uint16 at offset 8 and 10)
+      const indexView = new Uint16Array(buffer, entryOffset + 8, 2);
+      indexView[0] = meta.startIndex;
+      indexView[1] = meta.endIndex;
+    }
+  }
+
+  /**
+   * Write query cache to SAB
+   * @private
+   */
+  _writeQueryCacheToSAB() {
+    const buffer = this.queryCacheSAB;
+    const numQueries = this.precomputedQueries.length;
+
+    // Write header
+    const headerView = new Uint16Array(buffer, 0, 2);
+    headerView[0] = numQueries;
+    headerView[1] = MAX_PRECOMPUTED_QUERIES;
+
+    // Write per-query entries
+    for (let i = 0; i &lt; numQueries; i++) {
+      const query = this.precomputedQueries[i];
+      const entryOffset = 8 + i * QUERY_CACHE_ENTRY_SIZE;
+
+      // queryMask (BigUint64 at offset 0)
+      const maskView = new BigUint64Array(buffer, entryOffset, 2);
+      maskView[0] = query.queryMask;
+      maskView[1] = query.typeMask;
+    }
+  }
+
+  /**
+   * Initialize query result views
+   * @private
+   */
+  _initializeQueryResultViews() {
+    this.queryResultViews = [];
+
+    for (let i = 0; i &lt; this.precomputedQueries.length; i++) {
+      const offset = i * QUERY_RESULT_BUFFER_SIZE;
+      const view = new Uint16Array(this.queryResultsSAB, offset, 1 + MAX_ENTITIES);
+      view[0] = 0; // Initialize count to 0
+      this.queryResultViews.push(view);
+    }
+  }
+
+  /**
+   * Generate queryMask (BigInt bitmask) from component classes
+   * Uses caching to avoid repeated BigInt allocations in hot paths
+   * @param {Array} componentClasses - Array of component classes
+   * @returns {BigInt} - Bitmask representing the component combination
+   */
+  _generateQueryMask(componentClasses) {
+    // Extract and validate component IDs (cheap number operations)
+    const ids = [];
+    for (const ComponentClass of componentClasses) {
+      const componentId = ComponentClass.componentId;
+      if (componentId == null || typeof componentId !== 'number') {
+        console.warn(
+          `[QuerySystem] Component ${ComponentClass?.name || 'unknown'} has no componentId (got: ${componentId}). Was it registered?`
+        );
+        continue;
+      }
+      if (componentId >= MAX_COMPONENTS) {
+        console.warn(
+          `[QuerySystem] Component ${ComponentClass.name} has componentId ${componentId} >= MAX_COMPONENTS (${MAX_COMPONENTS})`
+        );
+        continue;
+      }
+      ids.push(componentId);
+    }
+
+    // Generate cache key from sorted IDs (string ops are cheaper than BigInt)
+    ids.sort((a, b) => a - b);
+    const cacheKey = ids.join(',');
+
+    // Check cache first
+    const cached = this.queryMaskCache.get(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    // Compute mask (expensive BigInt operations - only done once per unique query)
+    let mask = 0n;
+    for (const id of ids) {
+      mask |= 1n &lt;&lt; BigInt(id);
+    }
+
+    // Cache and return
+    this.queryMaskCache.set(cacheKey, mask);
+    return mask;
+  }
+
+  /**
+   * Compute typeMask (which entity types have all required components)
+   * @param {BigInt} queryMask - Component bitmask
+   * @returns {BigInt} - Entity type bitmask
+   */
+  _computeTypeMask(queryMask) {
+    let typeMask = 0n;
+
+    for (let i = 0; i &lt; this.entityMetadata.length; i++) {
+      const meta = this.entityMetadata[i];
+      // Check if entity type has ALL required components
+      if ((meta.componentMask &amp; queryMask) === queryMask) {
+        typeMask |= 1n &lt;&lt; BigInt(i);
+      }
+    }
+
+    return typeMask;
+  }
+
+  /**
+   * Get entity type names that match a typeMask
+   * @private
+   */
+  _getMatchingTypeNames(typeMask) {
+    const names = [];
+    for (let i = 0; i &lt; this.entityMetadata.length; i++) {
+      if ((typeMask &amp; (1n &lt;&lt; BigInt(i))) !== 0n) {
+        names.push(this.entityMetadata[i].className);
+      }
+    }
+    return names;
+  }
+
+  /**
+   * Query for ALL entities with specified components (regardless of active state)
+   * Returns cached static result - component composition never changes at runtime
+   *
+   * @param {Array} componentClasses - Array of component classes
+   * @returns {Uint16Array} - Entity indices (may be shared, do not modify)
+   */
+  query(componentClasses) {
+    const queryMask = this._generateQueryMask(componentClasses);
+
+    // Check local cache
+    let typeMask = this.queryToTypeMask.get(queryMask);
+    if (typeMask === undefined) {
+      // Compute and cache
+      typeMask = this._computeTypeMask(queryMask);
+      this.queryToTypeMask.set(queryMask, typeMask);
+    }
+
+    // Build result from matching entity type ranges
+    return this._buildQueryResult(typeMask);
+  }
+
+  /**
+   * Build query result array from typeMask
+   * Uses reusable buffer to avoid GC pressure. Result is a temporary view - consume immediately, do not store.
+   * @private
+   */
+  _buildQueryResult(typeMask) {
+    const buffer = this._queryResultBuffer;
+    if (!buffer) return new Uint16Array(0);
+
+    let writeIndex = 0;
+    let mask = typeMask;
+
+    while (mask !== 0n) {
+      const typeIndex = countTrailingZeros(mask);
+      const meta = this.entityMetadata[typeIndex];
+
+      for (let i = meta.startIndex; i &lt; meta.endIndex; i++) {
+        buffer[writeIndex++] = i;
+      }
+
+      mask &amp;= mask - 1n;
+    }
+
+    return buffer.subarray(0, writeIndex);
+  }
+
+  /**
+   * Query for ACTIVE entities with specified components
+   * Returns view into pre-populated SAB (updated each frame by particle_worker)
+   *
+   * @param {Array} componentClasses - Array of component classes
+   * @returns {Uint16Array} - Active entity indices (view into SAB, do not modify)
+   */
+  queryActiveEntities(componentClasses) {
+    const queryMask = this._generateQueryMask(componentClasses);
+
+    // Check if this is a pre-computed query
+    const queryIndex = this.queryMaskToIndex.get(queryMask);
+
+    if (queryIndex !== undefined) {
+      // Return view into pre-computed result buffer
+      const view = this.queryResultViews[queryIndex];
+      const count = view[0];
+      return view.subarray(1, 1 + count);
+    }
+
+    // Not pre-computed - fall back to computing from activeEntitiesData
+    // This path is slower but works for any component combination
+    console.warn(
+      `[QuerySystem] queryActiveEntities called with non-precomputed query. Consider adding to precomputedQueries.`
+    );
+    return this._computeActiveQuery(componentClasses);
+  }
+
+  /**
+   * Compute active query result on-demand (fallback for non-precomputed queries)
+   * @private
+   */
+  _computeActiveQuery(componentClasses) {
+    // Get typeMask
+    const queryMask = this._generateQueryMask(componentClasses);
+    let typeMask = this.queryToTypeMask.get(queryMask);
+    if (typeMask === undefined) {
+      typeMask = this._computeTypeMask(queryMask);
+      this.queryToTypeMask.set(queryMask, typeMask);
+    }
+
+    // Get activeEntitiesData from GameObject
+    const activeData = GameObject.activeEntitiesData;
+    if (!activeData) {
+      return new Uint16Array(0);
+    }
+
+    const totalActive = activeData[0];
+    if (totalActive === 0) {
+      return new Uint16Array(0);
+    }
+
+    const buffer = this._queryResultBuffer;
+    if (!buffer) return new Uint16Array(0);
+
+    let count = 0;
+    let mask = typeMask;
+
+    while (mask !== 0n) {
+      const typeIndex = countTrailingZeros(mask);
+      const meta = this.entityMetadata[typeIndex];
+
+      const slice = binarySearchRange(activeData, meta.startIndex, meta.endIndex);
+
+      for (let i = 0; i &lt; slice.length; i++) {
+        buffer[count++] = slice[i];
+      }
+
+      mask &amp;= mask - 1n;
+    }
+
+    return buffer.subarray(0, count);
+  }
+  /**
+   * Serialize for sending to workers via postMessage
+   */
+  serialize() {
+    return {
+      metadata: this.entityMetadata.map((meta) => ({
+        entityType: meta.entityType,
+        className: meta.className,
+        componentMask: meta.componentMask.toString(), // BigInt → string for serialization
+        startIndex: meta.startIndex,
+        endIndex: meta.endIndex,
+        poolSize: meta.poolSize,
+      })),
+      precomputedQueries: this.precomputedQueries.map((q) => ({
+        name: q.name,
+        queryMask: q.queryMask.toString(),
+        typeMask: q.typeMask.toString(),
+        resultOffset: q.resultOffset,
+      })),
+    };
+  }
+
+  /**
+   * Log statistics about entity metadata
+   * @private
+   */
+  _logStatistics() {
+    const totalEntities = this.entityMetadata.reduce((sum, meta) => sum + meta.poolSize, 0);
+    console.log(
+      `[QuerySystem] Built metadata for ${this.entityMetadata.length} entity types (${totalEntities} total entities)`
+    );
+
+    for (const meta of this.entityMetadata) {
+      const componentNames = meta.components.map((c) => c.name).join(', ');
+      console.log(
+        `  - ${meta.className}: [${componentNames}] (mask: 0x${meta.componentMask.toString(16)})`
+      );
+    }
+  }
+
+  /**
+   * Get the result buffer view for a pre-computed query by index
+   * Used by particle_worker to populate results each frame
+   *
+   * @param {number} queryIndex - Index in precomputedQueries array
+   * @returns {Uint16Array} - Result buffer view (index 0 = count, rest = entity indices)
+   */
+  getQueryResultBuffer(queryIndex) {
+    return this.queryResultViews[queryIndex];
+  }
+
+  /**
+   * Get info about a pre-computed query by index
+   * Used by particle_worker to know which entity types to check
+   *
+   * @param {number} queryIndex - Index in precomputedQueries array
+   * @returns {Object} - { name, queryMask, typeMask }
+   */
+  getPrecomputedQueryInfo(queryIndex) {
+    return this.precomputedQueries[queryIndex];
+  }
+
+  /**
+   * Get number of pre-computed queries
+   */
+  getPrecomputedQueryCount() {
+    return this.precomputedQueries.length;
+  }
+}
+
+// =============================================================================
+// WORKER-SIDE QUERY FUNCTION FACTORY
+// =============================================================================
+
+/**
+ * Create query functions for use in workers
+ * Called after receiving SAB references from main thread
+ *
+ * @param {Object} queryData - Serialized query data from main thread
+ * @param {Object} buffers - SAB references { entityMetadataSAB, queryCacheSAB, queryResultsSAB }
+ * @param {Uint16Array} activeEntitiesData - Reference to active entities SAB
+ * @returns {Object} - { query, queryActiveEntities }
+ */
+export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesData) {
+  // Reconstruct metadata from serialized data
+  const entityMetadata = queryData.metadata.map((m) => ({
+    ...m,
+    componentMask: BigInt(m.componentMask), // string → BigInt
+  }));
+
+  // Reconstruct pre-computed queries
+  const precomputedQueries = queryData.precomputedQueries.map((q) => ({
+    ...q,
+    queryMask: BigInt(q.queryMask),
+    typeMask: BigInt(q.typeMask),
+  }));
+
+  // Build queryMask → index lookup
+  const queryMaskToIndex = new Map();
+  precomputedQueries.forEach((q, i) => {
+    queryMaskToIndex.set(q.queryMask, i);
+  });
+
+  // Build queryMask → typeMask cache
+  const queryToTypeMask = new Map();
+  precomputedQueries.forEach((q) => {
+    queryToTypeMask.set(q.queryMask, q.typeMask);
+  });
+
+  // Create result views for pre-computed queries
+  const queryResultViews = precomputedQueries.map((q, i) => {
+    const offset = i * QUERY_RESULT_BUFFER_SIZE;
+    return new Uint16Array(buffers.queryResultsSAB, offset, 1 + MAX_ENTITIES);
+  });
+
+  // OPTIMIZATION: Cache subarray views to avoid GC pressure
+  // Each entry stores { count, subarray } for the last returned view
+  // Only recreate the subarray when count changes
+  const cachedSubarrayViews = precomputedQueries.map(() => ({
+    count: -1, // -1 means never cached
+    subarray: null,
+  }));
+
+  // OPTIMIZATION: Cache queryMask generation to avoid repeated BigInt allocations
+  // Map: componentIds string (sorted, comma-joined) → queryMask (BigInt)
+  const queryMaskCache = new Map();
+
+  // OPTIMIZATION: Reusable buffers for query() and queryActiveEntities fallback - avoids GC pressure
+  // Multiple buffers allow several queries in the same tick without overwriting
+  // Result is a temporary view - consume immediately, do not store
+  const totalEntityCount = entityMetadata.reduce((sum, m) => sum + m.poolSize, 0);
+  const QUERY_BUFFER_POOL_SIZE = 4;
+  const queryResultBuffers = Array.from({ length: QUERY_BUFFER_POOL_SIZE }, () =>
+    new Uint16Array(totalEntityCount)
+  );
+  let queryResultBufferIndex = 0;
+
+  // Helper: generate queryMask from component classes (with caching)
+  function generateQueryMask(componentClasses) {
+    // Extract and validate component IDs (cheap number operations)
+    const ids = [];
+    for (const ComponentClass of componentClasses) {
+      const componentId = ComponentClass.componentId;
+      if (componentId == null || typeof componentId !== 'number') {
+        // console.warn(
+        //   `[QuerySystem] Component ${ComponentClass?.name || 'unknown'} has no componentId (got: ${componentId}). Was it registered?`
+        // );
+        continue;
+      }
+      if (componentId >= MAX_COMPONENTS) {
+        continue;
+      }
+      ids.push(componentId);
+    }
+
+    // Generate cache key from sorted IDs (string ops are cheaper than BigInt)
+    ids.sort((a, b) => a - b);
+    const cacheKey = ids.join(',');
+
+    // Check cache first
+    const cached = queryMaskCache.get(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    // Compute mask (expensive BigInt operations - only done once per unique query)
+    let mask = 0n;
+    for (const id of ids) {
+      mask |= 1n &lt;&lt; BigInt(id);
+    }
+
+    // Cache and return
+    queryMaskCache.set(cacheKey, mask);
+    return mask;
+  }
+
+  // Helper: compute typeMask for a queryMask
+  function computeTypeMask(queryMask) {
+    let typeMask = 0n;
+    for (let i = 0; i &lt; entityMetadata.length; i++) {
+      const meta = entityMetadata[i];
+      if ((meta.componentMask &amp; queryMask) === queryMask) {
+        typeMask |= 1n &lt;&lt; BigInt(i);
+      }
+    }
+    return typeMask;
+  }
+
+  /**
+   * Query for ALL entities with specified components
+   * including inactive entities.
+   * Result is a temporary view - consume immediately, do not store.
+   */
+  function query(componentClasses) {
+    const queryMask = generateQueryMask(componentClasses);
+
+    let typeMask = queryToTypeMask.get(queryMask);
+    if (typeMask === undefined) {
+      typeMask = computeTypeMask(queryMask);
+      queryToTypeMask.set(queryMask, typeMask);
+    }
+
+    const buffer = queryResultBuffers[queryResultBufferIndex];
+    queryResultBufferIndex = (queryResultBufferIndex + 1) % QUERY_BUFFER_POOL_SIZE;
+    let writeIndex = 0;
+    let mask = typeMask;
+
+    while (mask !== 0n) {
+      const typeIndex = countTrailingZeros(mask);
+      const meta = entityMetadata[typeIndex];
+      for (let i = meta.startIndex; i &lt; meta.endIndex; i++) {
+        buffer[writeIndex++] = i;
+      }
+      mask &amp;= mask - 1n;
+    }
+
+    return buffer.subarray(0, writeIndex);
+  }
+
+  /**
+   * Query for ACTIVE entities with specified components
+   * Returns view into pre-populated SAB for pre-computed queries
+   */
+  function queryActiveEntities(componentClasses) {
+    const queryMask = generateQueryMask(componentClasses);
+
+    // Check if pre-computed
+    const queryIndex = queryMaskToIndex.get(queryMask);
+
+    if (queryIndex !== undefined) {
+      const view = queryResultViews[queryIndex];
+      const count = view[0];
+
+      // OPTIMIZATION: Reuse cached subarray if count hasn't changed
+      // This avoids creating a new TypedArray view object every call
+      const cached = cachedSubarrayViews[queryIndex];
+      if (cached.count === count &amp;&amp; cached.subarray !== null) {
+        return cached.subarray;
+      }
+
+      // Count changed - create new subarray and cache it
+      const subarray = view.subarray(1, 1 + count);
+      cached.count = count;
+      cached.subarray = subarray;
+      return subarray;
+    }
+
+    // Fallback: compute from activeEntitiesData (reuse buffer to avoid GC pressure)
+    let typeMask = queryToTypeMask.get(queryMask);
+    if (typeMask === undefined) {
+      typeMask = computeTypeMask(queryMask);
+      queryToTypeMask.set(queryMask, typeMask);
+    }
+
+    if (!activeEntitiesData || activeEntitiesData[0] === 0) {
+      return new Uint16Array(0);
+    }
+
+    const buffer = queryResultBuffers[queryResultBufferIndex];
+    queryResultBufferIndex = (queryResultBufferIndex + 1) % QUERY_BUFFER_POOL_SIZE;
+    let count = 0;
+    let mask = typeMask;
+
+    while (mask !== 0n) {
+      const typeIndex = countTrailingZeros(mask);
+      const meta = entityMetadata[typeIndex];
+      const slice = binarySearchRange(activeEntitiesData, meta.startIndex, meta.endIndex);
+      for (let i = 0; i &lt; slice.length; i++) {
+        buffer[count++] = slice[i];
+      }
+      mask &amp;= mask - 1n;
+    }
+
+    return buffer.subarray(0, count);
+  }
+
+  return {
+    query,
+    queryActiveEntities,
+    // Expose internals for particle_worker to populate results
+    _queryResultViews: queryResultViews,
+    _precomputedQueries: precomputedQueries,
+    _entityMetadata: entityMetadata,
+  };
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbstractWorker.html">AbstractWorker</a></li><li><a href="BigAtlasInspector.html">BigAtlasInspector</a></li><li><a href="Camera.html">Camera</a></li><li><a href="Constraint.html">Constraint</a></li><li><a href="DebugCanvas.html">DebugCanvas</a></li><li><a href="DebugFlags.html">DebugFlags</a></li><li><a href="DebugUI.html">DebugUI</a></li><li><a href="Decoration_Decoration.html">Decoration</a></li><li><a href="GameObject_GameObject.html">GameObject</a></li><li><a href="Grid.html">Grid</a></li><li><a href="LogicWorker.html">LogicWorker</a></li><li><a href="Mouse.html">Mouse</a></li><li><a href="NavGrid.html">NavGrid</a></li><li><a href="NavScratch.html">NavScratch</a></li><li><a href="ParticleWorker.html">ParticleWorker</a></li><li><a href="PhysicsWorker.html">PhysicsWorker</a></li><li><a href="PixiParticlePool.html">PixiParticlePool</a></li><li><a href="PixiRenderer.html">PixiRenderer</a></li><li><a href="PreRenderWorker.html">PreRenderWorker</a></li><li><a href="Ray.html">Ray</a></li><li><a href="SharedAtomicPool.html">SharedAtomicPool</a></li><li><a href="SpatialWorker.html">SpatialWorker</a></li><li><a href="SpriteSheetRegistry.html">SpriteSheetRegistry</a></li><li><a href="StatsCollector.html">StatsCollector</a></li><li><a href="Sun.html">Sun</a></li><li><a href="TileMap.html">TileMap</a></li><li><a href="TileMapLayer.html">TileMapLayer</a></li><li><a href="ToolManager.html">ToolManager</a></li></ul><h3>Global</h3><ul><li><a href="global.html#BLEND_MODES">BLEND_MODES</a></li><li><a href="global.html#Box">Box</a></li><li><a href="global.html#CAMERA_TYPES">CAMERA_TYPES</a></li><li><a href="global.html#COMPONENT_COLORS">COMPONENT_COLORS</a></li><li><a href="global.html#Circle">Circle</a></li><li><a href="global.html#DECORATION_INNER_Z_MAX">DECORATION_INNER_Z_MAX</a></li><li><a href="global.html#DECORATION_NO_PARENT">DECORATION_NO_PARENT</a></li><li><a href="global.html#DECORATION_Y_SORT_SCALE">DECORATION_Y_SORT_SCALE</a></li><li><a href="global.html#DEFAULT_LAYERS">DEFAULT_LAYERS</a></li><li><a href="global.html#DIRECTION">DIRECTION</a></li><li><a href="global.html#DIR_TO_VEC">DIR_TO_VEC</a></li><li><a href="global.html#ENTITY_GLOW_SORT_BIAS">ENTITY_GLOW_SORT_BIAS</a></li><li><a href="global.html#ENTITY_TYPE_ENTRY_SIZE">ENTITY_TYPE_ENTRY_SIZE</a></li><li><a href="global.html#FLOWFIELD_STATUS">FLOWFIELD_STATUS</a></li><li><a href="global.html#LOGIC_STATS">LOGIC_STATS</a></li><li><a href="global.html#MAX_COMPONENTS">MAX_COMPONENTS</a></li><li><a href="global.html#MAX_ENTITIES">MAX_ENTITIES</a></li><li><a href="global.html#MAX_ENTITY_TYPES">MAX_ENTITY_TYPES</a></li><li><a href="global.html#MAX_PRECOMPUTED_QUERIES">MAX_PRECOMPUTED_QUERIES</a></li><li><a href="global.html#NAVIGATION_STATS">NAVIGATION_STATS</a></li><li><a href="global.html#PARTICLE_STATS">PARTICLE_STATS</a></li><li><a href="global.html#PATH_STATUS">PATH_STATUS</a></li><li><a href="global.html#PHYSICS_STATS">PHYSICS_STATS</a></li><li><a href="global.html#PRE_RENDER_STATS">PRE_RENDER_STATS</a></li><li><a href="global.html#Polygon">Polygon</a></li><li><a href="global.html#QUERY_CACHE_ENTRY_SIZE">QUERY_CACHE_ENTRY_SIZE</a></li><li><a href="global.html#QUERY_RESULT_BUFFER_SIZE">QUERY_RESULT_BUFFER_SIZE</a></li><li><a href="global.html#RENDERER_STATS">RENDERER_STATS</a></li><li><a href="global.html#SHAPE_CIRCLE">SHAPE_CIRCLE</a></li><li><a href="global.html#SIDE">SIDE</a></li><li><a href="global.html#SPATIAL_STATS">SPATIAL_STATS</a></li><li><a href="global.html#SUN_DEFAULTS">SUN_DEFAULTS</a></li><li><a href="global.html#ShapeType">ShapeType</a></li><li><a href="global.html#TOPDOWN">TOPDOWN</a></li><li><a href="global.html#WORKER_DISPLAY_CONFIG">WORKER_DISPLAY_CONFIG</a></li><li><a href="global.html#Y_SORT_K">Y_SORT_K</a></li><li><a href="global.html#ZENITHAL">ZENITHAL</a></li><li><a href="global.html#_boundsResult">_boundsResult</a></li><li><a href="global.html#applyBrightnessToColor">applyBrightnessToColor</a></li><li><a href="global.html#atlasPadding">atlasPadding</a></li><li><a href="global.html#binarySearchFind">binarySearchFind</a></li><li><a href="global.html#binarySearchInsertPoint">binarySearchInsertPoint</a></li><li><a href="global.html#binarySearchRange">binarySearchRange</a></li><li><a href="global.html#brightnessToColoredTint">brightnessToColoredTint</a></li><li><a href="global.html#brightnessToTint">brightnessToTint</a></li><li><a href="global.html#buildFullCircle">buildFullCircle</a></li><li><a href="global.html#buildVisibilityPolygon">buildVisibilityPolygon</a></li><li><a href="global.html#calculateCameraScreenBounds">calculateCameraScreenBounds</a></li><li><a href="global.html#calculateDecalTileBounds">calculateDecalTileBounds</a></li><li><a href="global.html#calculateEntityMetadataSABSize">calculateEntityMetadataSABSize</a></li><li><a href="global.html#calculateLightAttenuation">calculateLightAttenuation</a></li><li><a href="global.html#calculateLightFromNeighbors">calculateLightFromNeighbors</a></li><li><a href="global.html#calculateQueryCacheSABSize">calculateQueryCacheSABSize</a></li><li><a href="global.html#calculateQueryResultsSABSize">calculateQueryResultsSABSize</a></li><li><a href="global.html#calculateSpeed">calculateSpeed</a></li><li><a href="global.html#calculateTileClipRegion">calculateTileClipRegion</a></li><li><a href="global.html#calculateTotalLightAtPosition">calculateTotalLightAtPosition</a></li><li><a href="global.html#calculateVelocityAngle">calculateVelocityAngle</a></li><li><a href="global.html#cantorPair">cantorPair</a></li><li><a href="global.html#cantorUnpair">cantorUnpair</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clamp01">clamp01</a></li><li><a href="global.html#clamp01Fast">clamp01Fast</a></li><li><a href="global.html#clampVelocity">clampVelocity</a></li><li><a href="global.html#clampVelocityMut">clampVelocityMut</a></li><li><a href="global.html#closestPointOnAABB">closestPointOnAABB</a></li><li><a href="global.html#closestPointOnAABBMut">closestPointOnAABBMut</a></li><li><a href="global.html#collectAllComponentsFromClasses">collectAllComponentsFromClasses</a></li><li><a href="global.html#collectComponents">collectComponents</a></li><li><a href="global.html#computeBoxMass">computeBoxMass</a></li><li><a href="global.html#computeCircleMass">computeCircleMass</a></li><li><a href="global.html#containerRadius">containerRadius</a></li><li><a href="global.html#countTrailingZeros">countTrailingZeros</a></li><li><a href="global.html#createBulletTrailCanvas">createBulletTrailCanvas</a></li><li><a href="global.html#createButton">createButton</a></li><li><a href="global.html#createCircularGradientCanvas">createCircularGradientCanvas</a></li><li><a href="global.html#createDivider">createDivider</a></li><li><a href="global.html#createMultiWorkerStatsReaderArray">createMultiWorkerStatsReaderArray</a></li><li><a href="global.html#createMultiWorkerStatsWriter">createMultiWorkerStatsWriter</a></li><li><a href="global.html#createPanel">createPanel</a></li><li><a href="global.html#createRow">createRow</a></li><li><a href="global.html#createStat">createStat</a></li><li><a href="global.html#createStatsReader">createStatsReader</a></li><li><a href="global.html#createStatsWriter">createStatsWriter</a></li><li><a href="global.html#createTab">createTab</a></li><li><a href="global.html#createWorkerQueryFunctions">createWorkerQueryFunctions</a></li><li><a href="global.html#directionTo">directionTo</a></li><li><a href="global.html#distance2D">distance2D</a></li><li><a href="global.html#distanceConstraintIterations">distanceConstraintIterations</a></li><li><a href="global.html#distanceSq2D">distanceSq2D</a></li><li><a href="global.html#drawCircle">drawCircle</a></li><li><a href="global.html#drawCross">drawCross</a></li><li><a href="global.html#drawLine">drawLine</a></li><li><a href="global.html#emitArcVertices">emitArcVertices</a></li><li><a href="global.html#emitVertex">emitVertex</a></li><li><a href="global.html#ensureDecorationFacade">ensureDecorationFacade</a></li><li><a href="global.html#evictDecorationFacade">evictDecorationFacade</a></li><li><a href="global.html#exposeComponentsGlobally">exposeComponentsGlobally</a></li><li><a href="global.html#exposeEntityClassesGlobally">exposeEntityClassesGlobally</a></li><li><a href="global.html#extractRGB">extractRGB</a></li><li><a href="global.html#extractRGBMut">extractRGBMut</a></li><li><a href="global.html#extractRGBNormalized">extractRGBNormalized</a></li><li><a href="global.html#extractRGBNormalizedMut">extractRGBNormalizedMut</a></li><li><a href="global.html#formatComponentValue">formatComponentValue</a></li><li><a href="global.html#formatNumber">formatNumber</a></li><li><a href="global.html#generateSymmetricalCirclePattern">generateSymmetricalCirclePattern</a></li><li><a href="global.html#getCellCoords">getCellCoords</a></li><li><a href="global.html#getCellCoordsMut">getCellCoordsMut</a></li><li><a href="global.html#getCellIndex">getCellIndex</a></li><li><a href="global.html#getCellRange">getCellRange</a></li><li><a href="global.html#getColliderBounds">getColliderBounds</a></li><li><a href="global.html#getComponentColor">getComponentColor</a></li><li><a href="global.html#getComponentPropertyNames">getComponentPropertyNames</a></li><li><a href="global.html#getDirectionFromAngle">getDirectionFromAngle</a></li><li><a href="global.html#getEntityHomeCellIndex">getEntityHomeCellIndex</a></li><li><a href="global.html#getParentClasses">getParentClasses</a></li><li><a href="global.html#hashToPastelColorCSS">hashToPastelColorCSS</a></li><li><a href="global.html#hashToPastelColorHex">hashToPastelColorHex</a></li><li><a href="global.html#hslToHex">hslToHex</a></li><li><a href="global.html#initializeComponentViews">initializeComponentViews</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isWithinRange">isWithinRange</a></li><li><a href="global.html#isWithinRangeSq">isWithinRangeSq</a></li><li><a href="global.html#layerMask">layerMask</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#lerpAngle">lerpAngle</a></li><li><a href="global.html#loadEntityScripts">loadEntityScripts</a></li><li><a href="global.html#maxAtlasHeight">maxAtlasHeight</a></li><li><a href="global.html#maxAtlasWidth">maxAtlasWidth</a></li><li><a href="global.html#maxAttachedDecorationsPerEntity">maxAttachedDecorationsPerEntity</a></li><li><a href="global.html#normalizeAngle">normalizeAngle</a></li><li><a href="global.html#normalizeAngleDifference">normalizeAngleDifference</a></li><li><a href="global.html#normalizeDirection">normalizeDirection</a></li><li><a href="global.html#normalizeDirectionFast">normalizeDirectionFast</a></li><li><a href="global.html#normalizeDirectionFromDistSq">normalizeDirectionFromDistSq</a></li><li><a href="global.html#query">query</a></li><li><a href="global.html#randomColor">randomColor</a></li><li><a href="global.html#randomRange">randomRange</a></li><li><a href="global.html#rayBoxHit">rayBoxHit</a></li><li><a href="global.html#rayBoxIntersect">rayBoxIntersect</a></li><li><a href="global.html#rayCircleDist">rayCircleDist</a></li><li><a href="global.html#rayCircleHit">rayCircleHit</a></li><li><a href="global.html#rayCircleIntersect">rayCircleIntersect</a></li><li><a href="global.html#rng">rng</a></li><li><a href="global.html#screenBoundsToWorldBounds">screenBoundsToWorldBounds</a></li><li><a href="global.html#setupWorkerCommunication">setupWorkerCommunication</a></li><li><a href="global.html#sortByY">sortByY</a></li><li><a href="global.html#sortEventsByAngle">sortEventsByAngle</a></li><li><a href="global.html#stringToHash">stringToHash</a></li><li><a href="global.html#subStepCount">subStepCount</a></li><li><a href="global.html#tangentHalfAngle">tangentHalfAngle</a></li><li><a href="global.html#testAABBAABBCollision">testAABBAABBCollision</a></li><li><a href="global.html#testCircleAABBCollision">testCircleAABBCollision</a></li><li><a href="global.html#testCircleCircleCollision">testCircleCircleCollision</a></li><li><a href="global.html#trimAlphaThreshold">trimAlphaThreshold</a></li><li><a href="global.html#trimImages">trimImages</a></li><li><a href="global.html#updateMassFromBox">updateMassFromBox</a></li><li><a href="global.html#updateMassFromCircle">updateMassFromCircle</a></li><li><a href="global.html#urlToPath">urlToPath</a></li><li><a href="global.html#validatePhysicsConfig">validatePhysicsConfig</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Apr 06 2026 16:36:00 GMT-0300 (hora estándar de Argentina)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

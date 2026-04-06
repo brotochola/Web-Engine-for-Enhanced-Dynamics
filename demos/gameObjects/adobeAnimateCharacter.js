@@ -6,11 +6,11 @@ export class AdobeAnimateCharacter extends GameObject {
   static scriptUrl = import.meta.url;
 
   static components = [AdobeAnimComponent, RigidBody, Collider];
-  static assetName = 'blue_character';
+  static assetName = 'willian';
   static clips = Object.freeze({
-    idle: 'idle',
-    jumping: 'jumping',
-    running: 'running',
+    idle: 'Willian_corriendo',
+    jumping: 'Willian_corriendo',
+    running: 'Willian_corriendo',
   });
   static assetId = 0;
   static clipIds = Object.create(null);

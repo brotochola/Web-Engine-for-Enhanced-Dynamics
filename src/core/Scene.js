@@ -305,7 +305,7 @@ class Scene {
     this.registeredClasses = [];
     this.gameObjects = [];
     this.totalEntityCount = 0;
-    /** @type {Map<number, import('./gameObject.js').GameObject>} */
+    /** @type {Map<number, GameObject>} */
     this._entityViewCache = new Map();
 
     // Key mapping for input buffer
@@ -454,8 +454,9 @@ class Scene {
    * Does not spawn/despawn. Logic (`tick`, collisions, …) still runs on workers only.
    *
    * @param {number} index - Global entity index
-   * @param {{ cache?: boolean }} [options] - If cache is true, reuse the same instance until releaseEntityView(index)
-   * @returns {import('./gameObject.js').GameObject}
+   * @param {Object} [options] - If cache is true, reuse the same instance until releaseEntityView(index)
+   * @param {boolean} [options.cache]
+   * @returns {GameObject}
    */
   getEntityView(index, options = {}) {
     const cache = options.cache === true;

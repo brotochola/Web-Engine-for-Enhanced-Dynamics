@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: core/Camera.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: core/Camera.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>// Camera.js - Static camera interface for cross-worker access
+// Provides consistent camera state via SharedArrayBuffer
+// Pattern follows Mouse and Keyboard static classes
+
+/**
+ * Static Camera class for managing viewport state
+ * Camera data is stored in a SharedArrayBuffer Float32Array[6]:
+ * [zoom, x, y, followTargetX, followTargetY, targetZoom]
+ *
+ * Recommended threading model:
+ * - Single writer for Camera.follow/centerOn/setPosition/setZoom
+ * - Multiple readers in pre_render, pixi, main thread UI/debug
+ */
+export class Camera {
+  // SharedArrayBuffer view: Float32Array [zoom, x, y, followTargetX, followTargetY, targetZoom]
+  static _data = null;
+  static IDX_ZOOM = 0;
+  static IDX_X = 1;
+  static IDX_Y = 2;
+  static IDX_FOLLOW_X = 3;
+  static IDX_FOLLOW_Y = 4;
+  static IDX_TARGET_ZOOM = 5;
+
+  // Canvas dimensions (needed for centering calculations)
+  static _canvasWidth = 0;
+  static _canvasHeight = 0;
+
+  // World bounds (for clamping camera to world edges)
+  static _worldWidth = Infinity;
+  static _worldHeight = Infinity;
+
+  // Zoom limits
+  static _maxZoom = 50;
+
+  // Smoothing factor for camera follow (0-1, lower = smoother)
+  static _smoothing = 0.1;
+
+  // ============================================
+  // INITIALIZATION
+  // ============================================
+
+  /**
+   * Initialize camera with shared data buffer
+   * @param {Float32Array} data - Float32Array view [zoom, x, y, followTargetX, followTargetY, targetZoom]
+   * @param {number} canvasWidth - Canvas width in pixels
+   * @param {number} canvasHeight - Canvas height in pixels
+   */
+  static initialize(data, canvasWidth = 0, canvasHeight = 0) {
+    this._data = data;
+    this._canvasWidth = canvasWidth;
+    this._canvasHeight = canvasHeight;
+    if (this._data &amp;&amp; this._data.length > this.IDX_TARGET_ZOOM) {
+      // Keep buffer fields in a valid state for readers across workers.
+      this._data[this.IDX_TARGET_ZOOM] = this._data[this.IDX_TARGET_ZOOM] > 0
+        ? this._data[this.IDX_TARGET_ZOOM]
+        : (this._data[this.IDX_ZOOM] || 1);
+      if (Number.isNaN(this._data[this.IDX_FOLLOW_X])) this._data[this.IDX_FOLLOW_X] = this._data[this.IDX_X] || 0;
+      if (Number.isNaN(this._data[this.IDX_FOLLOW_Y])) this._data[this.IDX_FOLLOW_Y] = this._data[this.IDX_Y] || 0;
+    }
+  }
+
+  /**
+   * Check if camera is initialized
+   * @returns {boolean}
+   */
+  static get isInitialized() {
+    return this._data !== null;
+  }
+
+  // ============================================
+  // POSITION &amp; ZOOM - getters and setters
+  // ============================================
+
+  static get zoom() {
+    return this._data ? this._data[0] : 1;
+  }
+
+  static set zoom(value) {
+    if (this._data) {
+      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, value));
+      this._clampToWorldBounds();
+    }
+  }
+
+  static get targetZoom() {
+    return this._data ? this._data[5] : 1;
+  }
+
+  static set targetZoom(value) {
+    if (this._data) {
+      this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, value));
+    }
+  }
+
+  static get x() {
+    return this._data ? this._data[1] : 0;
+  }
+
+  static set x(value) {
+    if (this._data) {
+      this._data[1] = value;
+      this._clampToWorldBounds();
+    }
+  }
+
+  static get y() {
+    return this._data ? this._data[2] : 0;
+  }
+
+  static set y(value) {
+    if (this._data) {
+      this._data[2] = value;
+      this._clampToWorldBounds();
+    }
+  }
+
+  // ============================================
+  // VIEWPORT BOUNDS (read-only getters)
+  // ============================================
+
+  /** Left edge of viewport in world coordinates */
+  static get minX() {
+    return this._data ? this._data[1] : 0;
+  }
+
+  /** Right edge of viewport in world coordinates */
+  static get maxX() {
+    const zoom = this._data ? this._data[0] : 1;
+    const cameraX = this._data ? this._data[1] : 0;
+    return cameraX + this._canvasWidth / zoom;
+  }
+
+  /** Top edge of viewport in world coordinates */
+  static get minY() {
+    return this._data ? this._data[2] : 0;
+  }
+
+  /** Bottom edge of viewport in world coordinates */
+  static get maxY() {
+    const zoom = this._data ? this._data[0] : 1;
+    const cameraY = this._data ? this._data[2] : 0;
+    return cameraY + this._canvasHeight / zoom;
+  }
+
+  /** Center X of viewport in world coordinates */
+  static get centerX() {
+    const zoom = this._data ? this._data[0] : 1;
+    const cameraX = this._data ? this._data[1] : 0;
+    return cameraX + this._canvasWidth / (2 * zoom);
+  }
+
+  /** Center Y of viewport in world coordinates */
+  static get centerY() {
+    const zoom = this._data ? this._data[0] : 1;
+    const cameraY = this._data ? this._data[2] : 0;
+    return cameraY + this._canvasHeight / (2 * zoom);
+  }
+
+  // ============================================
+  // CANVAS DIMENSIONS
+  // ============================================
+
+  static get canvasWidth() {
+    return this._canvasWidth;
+  }
+
+  static set canvasWidth(value) {
+    this._canvasWidth = value;
+    // Re-clamp zoom and position since minZoom may have changed
+    if (this._data) {
+      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[0]));
+      if (this._data[5] > 0) {
+        this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[5]));
+      }
+      this._clampToWorldBounds();
+    }
+  }
+
+  static get canvasHeight() {
+    return this._canvasHeight;
+  }
+
+  static set canvasHeight(value) {
+    this._canvasHeight = value;
+    // Re-clamp zoom and position since minZoom may have changed
+    if (this._data) {
+      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[0]));
+      if (this._data[5] > 0) {
+        this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[5]));
+      }
+      this._clampToWorldBounds();
+    }
+  }
+
+  // ============================================
+  // WORLD BOUNDS
+  // ============================================
+
+  static get worldWidth() {
+    return this._worldWidth;
+  }
+
+  static set worldWidth(value) {
+    this._worldWidth = value;
+    // Re-clamp zoom and position since minZoom may have changed
+    if (this._data) {
+      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[0]));
+      if (this._data[5] > 0) {
+        this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[5]));
+      }
+      this._clampToWorldBounds();
+    }
+  }
+
+  static get worldHeight() {
+    return this._worldHeight;
+  }
+
+  static set worldHeight(value) {
+    this._worldHeight = value;
+    // Re-clamp zoom and position since minZoom may have changed
+    if (this._data) {
+      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[0]));
+      if (this._data[5] > 0) {
+        this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[5]));
+      }
+      this._clampToWorldBounds();
+    }
+  }
+
+  /**
+   * Set world bounds for camera clamping
+   * @param {number} width - World width in pixels
+   * @param {number} height - World height in pixels
+   */
+  static setWorldBounds(width, height) {
+    this._worldWidth = width;
+    this._worldHeight = height;
+
+    // Re-clamp zoom and position with new bounds
+    if (this._data) {
+      this._data[0] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[0]));
+      if (this._data[5] > 0) {
+        this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, this._data[5]));
+      }
+      this._clampToWorldBounds();
+    }
+  }
+
+  // ============================================
+  // SMOOTHING
+  // ============================================
+
+  static get smoothing() {
+    return this._smoothing;
+  }
+
+  static set smoothing(value) {
+    this._smoothing = Math.max(0, Math.min(1, value));
+  }
+
+  // ============================================
+  // ZOOM LIMITS
+  // ============================================
+
+  /**
+   * Get minimum zoom to prevent showing void areas beyond world bounds
+   * Ensures viewport never exceeds world dimensions
+   * @returns {number} Minimum allowed zoom level
+   */
+  static get minZoom() {
+    // If world bounds aren't set, allow any zoom
+    if (this._worldWidth === Infinity || this._worldHeight === Infinity) {
+      return 0.01;
+    }
+
+    // minZoom = max(canvasWidth / worldWidth, canvasHeight / worldHeight)
+    const minZoomForWidth = this._canvasWidth / this._worldWidth;
+    const minZoomForHeight = this._canvasHeight / this._worldHeight;
+
+    return Math.max(minZoomForWidth, minZoomForHeight, 0.01);
+  }
+
+  static get maxZoom() {
+    return this._maxZoom;
+  }
+
+  static set maxZoom(value) {
+    this._maxZoom = value;
+  }
+
+  // ============================================
+  // CAMERA METHODS
+  // ============================================
+
+  /**
+   * Clamp camera position to world bounds
+   * Ensures camera never shows beyond world edges
+   */
+  static _clampToWorldBounds() {
+    if (!this._data) return;
+
+    const zoom = this._data[0];
+    const viewportWidth = this._canvasWidth / zoom;
+    const viewportHeight = this._canvasHeight / zoom;
+
+    // Calculate max camera position (so viewport doesn't exceed world bounds)
+    const maxX = Math.max(0, this._worldWidth - viewportWidth);
+    const maxY = Math.max(0, this._worldHeight - viewportHeight);
+
+    // Clamp camera position
+    this._data[1] = Math.max(0, Math.min(this._data[1], maxX));
+    this._data[2] = Math.max(0, Math.min(this._data[2], maxY));
+  }
+
+  /**
+   * Smoothly follow a target position (centers target on screen)
+   * Also lerps zoom toward targetZoom if set
+   * @param {number} targetX - Target X position in world coordinates
+   * @param {number} targetY - Target Y position in world coordinates
+   * @param {number} [smoothing] - Optional smoothing override (0-1)
+   * @param {number} [dtRatio] - Delta time ratio for frame-rate-independent smoothing
+   */
+  static follow(targetX, targetY, smoothing, dtRatio) {
+    if (!this._data) return;
+
+    this._data[3] = targetX;
+    this._data[4] = targetY;
+
+    const s = smoothing ?? this._smoothing;
+    const es = (dtRatio != null &amp;&amp; dtRatio > 0) ? Math.min(s * dtRatio, 1.0) : s;
+
+    // Compute new zoom without writing to the shared buffer yet
+    const currentZoom = this._data[0];
+    let newZoom = currentZoom;
+    const tgtZoom = this._data[5];
+    if (tgtZoom > 0 &amp;&amp; Math.abs(tgtZoom - currentZoom) > 0.0001) {
+      newZoom = currentZoom + (tgtZoom - currentZoom) * es;
+      newZoom = Math.max(this.minZoom, Math.min(this._maxZoom, newZoom));
+    }
+
+    const targetCameraX = targetX - this._canvasWidth / (2 * newZoom);
+    const targetCameraY = targetY - this._canvasHeight / (2 * newZoom);
+
+    const newX = this._data[1] + (targetCameraX - this._data[1]) * es;
+    const newY = this._data[2] + (targetCameraY - this._data[2]) * es;
+
+    // Clamp using the LOWER of old/new zoom so the position is valid for
+    // whichever zoom a cross-thread reader might observe (SAB race window).
+    const clampZoom = Math.min(currentZoom, newZoom);
+    const vpW = this._canvasWidth / clampZoom;
+    const vpH = this._canvasHeight / clampZoom;
+    const maxX = Math.max(0, this._worldWidth - vpW);
+    const maxY = Math.max(0, this._worldHeight - vpH);
+
+    // Write position BEFORE zoom so a reader that still sees the old zoom
+    // will never pair it with a position that exceeds its viewport bounds.
+    this._data[1] = Math.max(0, Math.min(newX, maxX));
+    this._data[2] = Math.max(0, Math.min(newY, maxY));
+    this._data[0] = newZoom;
+  }
+
+  /**
+   * Set target zoom level (will be lerped in follow())
+   * @param {number} targetZoom - Target zoom level
+   */
+  static setZoom(targetZoom) {
+    if (!this._data) return;
+    this._data[5] = Math.max(this.minZoom, Math.min(this._maxZoom, targetZoom));
+  }
+
+  /**
+   * Get the current follow target position (if any)
+   * Reads from SharedArrayBuffer for cross-thread access
+   * @returns {{x: number, y: number} | null} Follow target or null if not following
+   */
+  static getFollowTarget() {
+    if (!this._data) return null;
+
+    // Buffer layout: [zoom, x, y, followTargetX, followTargetY, targetZoom]
+    const targetX = this._data[3];
+    const targetY = this._data[4];
+
+    // NaN indicates no target set
+    if (!Number.isNaN(targetX) &amp;&amp; !Number.isNaN(targetY)) {
+      return { x: targetX, y: targetY };
+    }
+    return null;
+  }
+
+  /**
+   * Clear the follow target (stops following)
+   */
+  static clearFollowTarget() {
+    if (!this._data) return;
+    // Set to NaN to indicate no target
+    this._data[3] = Number.NaN;
+    this._data[4] = Number.NaN;
+  }
+
+  /**
+   * Immediately set camera to center on a target (no smoothing)
+   * @param {number} targetX - Target X position in world coordinates
+   * @param {number} targetY - Target Y position in world coordinates
+   */
+  static centerOn(targetX, targetY) {
+    if (!this._data) return;
+
+    const zoom = this._data[0];
+
+    // Account for zoom when centering
+    this._data[1] = targetX - this._canvasWidth / (2 * zoom);
+    this._data[2] = targetY - this._canvasHeight / (2 * zoom);
+
+    // Clamp to world bounds
+    this._clampToWorldBounds();
+  }
+
+  /**
+   * Set camera position directly (top-left corner)
+   * @param {number} x - X position
+   * @param {number} y - Y position
+   */
+  static setPosition(x, y) {
+    if (!this._data) return;
+    this._data[1] = x;
+    this._data[2] = y;
+
+    // Clamp to world bounds
+    this._clampToWorldBounds();
+  }
+
+  /**
+   * Check if a world position is visible on screen
+   * @param {number} worldX - X position in world coordinates
+   * @param {number} worldY - Y position in world coordinates
+   * @param {number} [margin=0] - Extra margin around screen edges
+   * @returns {boolean} True if position is on screen
+   */
+  static isOnScreen(worldX, worldY, margin = 0) {
+    if (!this._data) return true;
+
+    const zoom = this._data[0];
+    const cameraX = this._data[1];
+    const cameraY = this._data[2];
+
+    // Convert world position to screen position
+    const screenX = (worldX - cameraX) * zoom;
+    const screenY = (worldY - cameraY) * zoom;
+
+    return (
+      screenX >= -margin &amp;&amp;
+      screenX &lt;= this._canvasWidth + margin &amp;&amp;
+      screenY >= -margin &amp;&amp;
+      screenY &lt;= this._canvasHeight + margin
+    );
+  }
+
+  /**
+   * Convert world coordinates to screen coordinates
+   * @param {number} worldX - X in world space
+   * @param {number} worldY - Y in world space
+   * @returns {{x: number, y: number}} Screen coordinates
+   */
+  static worldToScreen(worldX, worldY) {
+    const zoom = this._data ? this._data[0] : 1;
+    const cameraX = this._data ? this._data[1] : 0;
+    const cameraY = this._data ? this._data[2] : 0;
+
+    return {
+      x: (worldX - cameraX) * zoom,
+      y: (worldY - cameraY) * zoom,
+    };
+  }
+
+  /**
+   * Convert screen coordinates to world coordinates
+   * @param {number} screenX - X in screen space
+   * @param {number} screenY - Y in screen space
+   * @returns {{x: number, y: number}} World coordinates
+   */
+  static screenToWorld(screenX, screenY) {
+    const zoom = this._data ? this._data[0] : 1;
+    const cameraX = this._data ? this._data[1] : 0;
+    const cameraY = this._data ? this._data[2] : 0;
+
+    return {
+      x: screenX / zoom + cameraX,
+      y: screenY / zoom + cameraY,
+    };
+  }
+
+  /**
+   * Get viewport bounds in world coordinates
+   * @returns {{left: number, top: number, right: number, bottom: number, width: number, height: number}}
+   */
+  static getViewportBounds() {
+    const zoom = this._data ? this._data[0] : 1;
+    const cameraX = this._data ? this._data[1] : 0;
+    const cameraY = this._data ? this._data[2] : 0;
+
+    const width = this._canvasWidth / zoom;
+    const height = this._canvasHeight / zoom;
+
+    return {
+      left: cameraX,
+      top: cameraY,
+      right: cameraX + width,
+      bottom: cameraY + height,
+      width,
+      height,
+    };
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbstractWorker.html">AbstractWorker</a></li><li><a href="BigAtlasInspector.html">BigAtlasInspector</a></li><li><a href="Camera.html">Camera</a></li><li><a href="Constraint.html">Constraint</a></li><li><a href="DebugCanvas.html">DebugCanvas</a></li><li><a href="DebugFlags.html">DebugFlags</a></li><li><a href="DebugUI.html">DebugUI</a></li><li><a href="Decoration_Decoration.html">Decoration</a></li><li><a href="GameObject_GameObject.html">GameObject</a></li><li><a href="Grid.html">Grid</a></li><li><a href="LogicWorker.html">LogicWorker</a></li><li><a href="Mouse.html">Mouse</a></li><li><a href="NavGrid.html">NavGrid</a></li><li><a href="NavScratch.html">NavScratch</a></li><li><a href="ParticleWorker.html">ParticleWorker</a></li><li><a href="PhysicsWorker.html">PhysicsWorker</a></li><li><a href="PixiParticlePool.html">PixiParticlePool</a></li><li><a href="PixiRenderer.html">PixiRenderer</a></li><li><a href="PreRenderWorker.html">PreRenderWorker</a></li><li><a href="Ray.html">Ray</a></li><li><a href="SharedAtomicPool.html">SharedAtomicPool</a></li><li><a href="SpatialWorker.html">SpatialWorker</a></li><li><a href="SpriteSheetRegistry.html">SpriteSheetRegistry</a></li><li><a href="StatsCollector.html">StatsCollector</a></li><li><a href="Sun.html">Sun</a></li><li><a href="TileMap.html">TileMap</a></li><li><a href="TileMapLayer.html">TileMapLayer</a></li><li><a href="ToolManager.html">ToolManager</a></li></ul><h3>Global</h3><ul><li><a href="global.html#BLEND_MODES">BLEND_MODES</a></li><li><a href="global.html#Box">Box</a></li><li><a href="global.html#CAMERA_TYPES">CAMERA_TYPES</a></li><li><a href="global.html#COMPONENT_COLORS">COMPONENT_COLORS</a></li><li><a href="global.html#Circle">Circle</a></li><li><a href="global.html#DECORATION_INNER_Z_MAX">DECORATION_INNER_Z_MAX</a></li><li><a href="global.html#DECORATION_NO_PARENT">DECORATION_NO_PARENT</a></li><li><a href="global.html#DECORATION_Y_SORT_SCALE">DECORATION_Y_SORT_SCALE</a></li><li><a href="global.html#DEFAULT_LAYERS">DEFAULT_LAYERS</a></li><li><a href="global.html#DIRECTION">DIRECTION</a></li><li><a href="global.html#DIR_TO_VEC">DIR_TO_VEC</a></li><li><a href="global.html#ENTITY_GLOW_SORT_BIAS">ENTITY_GLOW_SORT_BIAS</a></li><li><a href="global.html#ENTITY_TYPE_ENTRY_SIZE">ENTITY_TYPE_ENTRY_SIZE</a></li><li><a href="global.html#FLOWFIELD_STATUS">FLOWFIELD_STATUS</a></li><li><a href="global.html#LOGIC_STATS">LOGIC_STATS</a></li><li><a href="global.html#MAX_COMPONENTS">MAX_COMPONENTS</a></li><li><a href="global.html#MAX_ENTITIES">MAX_ENTITIES</a></li><li><a href="global.html#MAX_ENTITY_TYPES">MAX_ENTITY_TYPES</a></li><li><a href="global.html#MAX_PRECOMPUTED_QUERIES">MAX_PRECOMPUTED_QUERIES</a></li><li><a href="global.html#NAVIGATION_STATS">NAVIGATION_STATS</a></li><li><a href="global.html#PARTICLE_STATS">PARTICLE_STATS</a></li><li><a href="global.html#PATH_STATUS">PATH_STATUS</a></li><li><a href="global.html#PHYSICS_STATS">PHYSICS_STATS</a></li><li><a href="global.html#PRE_RENDER_STATS">PRE_RENDER_STATS</a></li><li><a href="global.html#Polygon">Polygon</a></li><li><a href="global.html#QUERY_CACHE_ENTRY_SIZE">QUERY_CACHE_ENTRY_SIZE</a></li><li><a href="global.html#QUERY_RESULT_BUFFER_SIZE">QUERY_RESULT_BUFFER_SIZE</a></li><li><a href="global.html#RENDERER_STATS">RENDERER_STATS</a></li><li><a href="global.html#SHAPE_CIRCLE">SHAPE_CIRCLE</a></li><li><a href="global.html#SIDE">SIDE</a></li><li><a href="global.html#SPATIAL_STATS">SPATIAL_STATS</a></li><li><a href="global.html#SUN_DEFAULTS">SUN_DEFAULTS</a></li><li><a href="global.html#ShapeType">ShapeType</a></li><li><a href="global.html#TOPDOWN">TOPDOWN</a></li><li><a href="global.html#WORKER_DISPLAY_CONFIG">WORKER_DISPLAY_CONFIG</a></li><li><a href="global.html#Y_SORT_K">Y_SORT_K</a></li><li><a href="global.html#ZENITHAL">ZENITHAL</a></li><li><a href="global.html#_boundsResult">_boundsResult</a></li><li><a href="global.html#applyBrightnessToColor">applyBrightnessToColor</a></li><li><a href="global.html#atlasPadding">atlasPadding</a></li><li><a href="global.html#binarySearchFind">binarySearchFind</a></li><li><a href="global.html#binarySearchInsertPoint">binarySearchInsertPoint</a></li><li><a href="global.html#binarySearchRange">binarySearchRange</a></li><li><a href="global.html#brightnessToColoredTint">brightnessToColoredTint</a></li><li><a href="global.html#brightnessToTint">brightnessToTint</a></li><li><a href="global.html#buildFullCircle">buildFullCircle</a></li><li><a href="global.html#buildVisibilityPolygon">buildVisibilityPolygon</a></li><li><a href="global.html#calculateCameraScreenBounds">calculateCameraScreenBounds</a></li><li><a href="global.html#calculateDecalTileBounds">calculateDecalTileBounds</a></li><li><a href="global.html#calculateEntityMetadataSABSize">calculateEntityMetadataSABSize</a></li><li><a href="global.html#calculateLightAttenuation">calculateLightAttenuation</a></li><li><a href="global.html#calculateLightFromNeighbors">calculateLightFromNeighbors</a></li><li><a href="global.html#calculateQueryCacheSABSize">calculateQueryCacheSABSize</a></li><li><a href="global.html#calculateQueryResultsSABSize">calculateQueryResultsSABSize</a></li><li><a href="global.html#calculateSpeed">calculateSpeed</a></li><li><a href="global.html#calculateTileClipRegion">calculateTileClipRegion</a></li><li><a href="global.html#calculateTotalLightAtPosition">calculateTotalLightAtPosition</a></li><li><a href="global.html#calculateVelocityAngle">calculateVelocityAngle</a></li><li><a href="global.html#cantorPair">cantorPair</a></li><li><a href="global.html#cantorUnpair">cantorUnpair</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clamp01">clamp01</a></li><li><a href="global.html#clamp01Fast">clamp01Fast</a></li><li><a href="global.html#clampVelocity">clampVelocity</a></li><li><a href="global.html#clampVelocityMut">clampVelocityMut</a></li><li><a href="global.html#closestPointOnAABB">closestPointOnAABB</a></li><li><a href="global.html#closestPointOnAABBMut">closestPointOnAABBMut</a></li><li><a href="global.html#collectAllComponentsFromClasses">collectAllComponentsFromClasses</a></li><li><a href="global.html#collectComponents">collectComponents</a></li><li><a href="global.html#computeBoxMass">computeBoxMass</a></li><li><a href="global.html#computeCircleMass">computeCircleMass</a></li><li><a href="global.html#containerRadius">containerRadius</a></li><li><a href="global.html#countTrailingZeros">countTrailingZeros</a></li><li><a href="global.html#createBulletTrailCanvas">createBulletTrailCanvas</a></li><li><a href="global.html#createButton">createButton</a></li><li><a href="global.html#createCircularGradientCanvas">createCircularGradientCanvas</a></li><li><a href="global.html#createDivider">createDivider</a></li><li><a href="global.html#createMultiWorkerStatsReaderArray">createMultiWorkerStatsReaderArray</a></li><li><a href="global.html#createMultiWorkerStatsWriter">createMultiWorkerStatsWriter</a></li><li><a href="global.html#createPanel">createPanel</a></li><li><a href="global.html#createRow">createRow</a></li><li><a href="global.html#createStat">createStat</a></li><li><a href="global.html#createStatsReader">createStatsReader</a></li><li><a href="global.html#createStatsWriter">createStatsWriter</a></li><li><a href="global.html#createTab">createTab</a></li><li><a href="global.html#createWorkerQueryFunctions">createWorkerQueryFunctions</a></li><li><a href="global.html#directionTo">directionTo</a></li><li><a href="global.html#distance2D">distance2D</a></li><li><a href="global.html#distanceConstraintIterations">distanceConstraintIterations</a></li><li><a href="global.html#distanceSq2D">distanceSq2D</a></li><li><a href="global.html#drawCircle">drawCircle</a></li><li><a href="global.html#drawCross">drawCross</a></li><li><a href="global.html#drawLine">drawLine</a></li><li><a href="global.html#emitArcVertices">emitArcVertices</a></li><li><a href="global.html#emitVertex">emitVertex</a></li><li><a href="global.html#ensureDecorationFacade">ensureDecorationFacade</a></li><li><a href="global.html#evictDecorationFacade">evictDecorationFacade</a></li><li><a href="global.html#exposeComponentsGlobally">exposeComponentsGlobally</a></li><li><a href="global.html#exposeEntityClassesGlobally">exposeEntityClassesGlobally</a></li><li><a href="global.html#extractRGB">extractRGB</a></li><li><a href="global.html#extractRGBMut">extractRGBMut</a></li><li><a href="global.html#extractRGBNormalized">extractRGBNormalized</a></li><li><a href="global.html#extractRGBNormalizedMut">extractRGBNormalizedMut</a></li><li><a href="global.html#formatComponentValue">formatComponentValue</a></li><li><a href="global.html#formatNumber">formatNumber</a></li><li><a href="global.html#generateSymmetricalCirclePattern">generateSymmetricalCirclePattern</a></li><li><a href="global.html#getCellCoords">getCellCoords</a></li><li><a href="global.html#getCellCoordsMut">getCellCoordsMut</a></li><li><a href="global.html#getCellIndex">getCellIndex</a></li><li><a href="global.html#getCellRange">getCellRange</a></li><li><a href="global.html#getColliderBounds">getColliderBounds</a></li><li><a href="global.html#getComponentColor">getComponentColor</a></li><li><a href="global.html#getComponentPropertyNames">getComponentPropertyNames</a></li><li><a href="global.html#getDirectionFromAngle">getDirectionFromAngle</a></li><li><a href="global.html#getEntityHomeCellIndex">getEntityHomeCellIndex</a></li><li><a href="global.html#getParentClasses">getParentClasses</a></li><li><a href="global.html#hashToPastelColorCSS">hashToPastelColorCSS</a></li><li><a href="global.html#hashToPastelColorHex">hashToPastelColorHex</a></li><li><a href="global.html#hslToHex">hslToHex</a></li><li><a href="global.html#initializeComponentViews">initializeComponentViews</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isWithinRange">isWithinRange</a></li><li><a href="global.html#isWithinRangeSq">isWithinRangeSq</a></li><li><a href="global.html#layerMask">layerMask</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#lerpAngle">lerpAngle</a></li><li><a href="global.html#loadEntityScripts">loadEntityScripts</a></li><li><a href="global.html#maxAtlasHeight">maxAtlasHeight</a></li><li><a href="global.html#maxAtlasWidth">maxAtlasWidth</a></li><li><a href="global.html#maxAttachedDecorationsPerEntity">maxAttachedDecorationsPerEntity</a></li><li><a href="global.html#normalizeAngle">normalizeAngle</a></li><li><a href="global.html#normalizeAngleDifference">normalizeAngleDifference</a></li><li><a href="global.html#normalizeDirection">normalizeDirection</a></li><li><a href="global.html#normalizeDirectionFast">normalizeDirectionFast</a></li><li><a href="global.html#normalizeDirectionFromDistSq">normalizeDirectionFromDistSq</a></li><li><a href="global.html#query">query</a></li><li><a href="global.html#randomColor">randomColor</a></li><li><a href="global.html#randomRange">randomRange</a></li><li><a href="global.html#rayBoxHit">rayBoxHit</a></li><li><a href="global.html#rayBoxIntersect">rayBoxIntersect</a></li><li><a href="global.html#rayCircleDist">rayCircleDist</a></li><li><a href="global.html#rayCircleHit">rayCircleHit</a></li><li><a href="global.html#rayCircleIntersect">rayCircleIntersect</a></li><li><a href="global.html#rng">rng</a></li><li><a href="global.html#screenBoundsToWorldBounds">screenBoundsToWorldBounds</a></li><li><a href="global.html#setupWorkerCommunication">setupWorkerCommunication</a></li><li><a href="global.html#sortByY">sortByY</a></li><li><a href="global.html#sortEventsByAngle">sortEventsByAngle</a></li><li><a href="global.html#stringToHash">stringToHash</a></li><li><a href="global.html#subStepCount">subStepCount</a></li><li><a href="global.html#tangentHalfAngle">tangentHalfAngle</a></li><li><a href="global.html#testAABBAABBCollision">testAABBAABBCollision</a></li><li><a href="global.html#testCircleAABBCollision">testCircleAABBCollision</a></li><li><a href="global.html#testCircleCircleCollision">testCircleCircleCollision</a></li><li><a href="global.html#trimAlphaThreshold">trimAlphaThreshold</a></li><li><a href="global.html#trimImages">trimImages</a></li><li><a href="global.html#updateMassFromBox">updateMassFromBox</a></li><li><a href="global.html#updateMassFromCircle">updateMassFromCircle</a></li><li><a href="global.html#urlToPath">urlToPath</a></li><li><a href="global.html#validatePhysicsConfig">validatePhysicsConfig</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Apr 06 2026 16:36:00 GMT-0300 (hora estándar de Argentina)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: core/ParticleEmitter.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: core/ParticleEmitter.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>// ParticleEmitter.js - Static API for emitting particles
+// Used by game entities to spawn visual particle effects
+// Particles are NOT GameObjects - they use ParticleComponent directly
+//
+// EXTENDS SharedAtomicPool for thread-safe free list management
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// TEXTURE SPECIFICATION
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Particles and decals can use ANY texture from the bigAtlas:
+//
+// 1. Static textures (from assets.textures):
+//    emit({ texture: "blood" })
+//    emit({ texture: "smoke" })
+//
+// 2. Prefixed animation names (uses first frame):
+//    emit({ texture: "civil1_hurt" })
+//    emit({ texture: "fire_burn" })
+//
+// 3. Specific frame names:
+//    emit({ texture: "civil1_hurt_5" })
+//    stampDecal({ texture: "civil1_hurt_5" })
+//
+// 4. Helper syntax for animation frames (recommended):
+//    emit({ spritesheet: "civil1", animation: "hurt", frame: -1 })
+//    stampDecal({ spritesheet: "civil1", animation: "hurt", frame: -1 })
+//
+// The helper syntax resolves to the frame name automatically.
+// ═══════════════════════════════════════════════════════════════════════════
+
+import { ParticleComponent } from '../components/ParticleComponent.js';
+import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
+import { SharedAtomicPool } from './SharedAtomicPool.js';
+import { randomRange, randomColor } from './utils.js';
+
+export const DECAL_STAMPS_BLEND_MODE = Object.freeze({
+  normal: 0,
+  multiply: 1,
+});
+
+export class ParticleEmitter extends SharedAtomicPool {
+  // Pool name for logging (used by base class)
+  static poolName = 'ParticleEmitter';
+
+  // Alias for backwards compatibility
+  static get maxParticles() {
+    return this.maxCount;
+  }
+
+  /**
+   * Initialize the emitter with particle pool size
+   * Called automatically by logic worker during init
+   * @param {number} maxParticles - Number of particles in pool
+   */
+  static initialize(maxParticles) {
+    // Call base class initialize with the count
+    super.initialize(maxParticles);
+  }
+
+  /**
+   * Emit particles with the given configuration.
+   *
+   * TEXTURE OPTIONS:
+   * - Use `texture` for direct texture/frame names
+   * - Use `spritesheet` + `animation` + `frame` to specify an animation frame
+   *
+   * @param {Object} config - Particle emission configuration
+   * @param {number} [config.count=1] - Number of particles to emit
+   * @param {number|{min,max}} config.x - X position or range
+   * @param {number|{min,max}} config.y - Y position or range
+   * @param {number|{min,max}} [config.z=0] - Z position (height) or range
+   * @param {number|{min,max}} [config.angleXY] - Velocity angle in degrees (0=right, 90=down). Use with speed.
+   * @param {number|{min,max}} [config.speed] - Velocity magnitude. Use with angleXY.
+   * @param {number|{min,max}} [config.vx=0] - X velocity or range (ignored if angleXY/speed provided)
+   * @param {number|{min,max}} [config.vy=0] - Y velocity or range (ignored if angleXY/speed provided)
+   * @param {number|{min,max}} [config.vz=0] - Z velocity or range
+   * @param {number|{min,max}} [config.lifespan=1000] - Lifetime in ms or range
+   * @param {number} [config.gravity=0.15] - Gravity strength
+   * @param {string} [config.texture] - Texture name (from bigAtlas). Can be:
+   *   - Static texture: "blood", "smoke"
+   *   - Prefixed animation: "civil1_hurt" (uses first frame)
+   *   - Specific frame: "civil1_hurt_5"
+   * @param {string} [config.spritesheet] - Spritesheet name for frame resolution (e.g., "civil1")
+   * @param {string} [config.animation] - Animation name for frame resolution (e.g., "hurt")
+   * @param {number} [config.frame=0] - Frame index within animation (0 = first, -1 = last)
+   * @param {number|{min,max}} [config.tint=0xFFFFFF] - Color tint or range (RGB channels interpolated separately)
+   * @param {number|{min,max}} [config.scale=1] - Scale or range
+   * @param {number|{min,max}} [config.alpha=1] - Alpha (opacity) or range
+   * @param {number} [config.fadeOnTheFloor=0] - Time in ms to fade out particles when they hit the floor
+   * @param {boolean} [config.stayOnTheFloor=false] - If true, particle stamps a decal on floor and despawns immediately
+   * @param {boolean} [config.despawnOnGroundContact=false] - If true, particle despawns immediately when touching the ground (no decal stamping)
+   * @param {number} [config.layerId=0] - Layer ID for rendering (0 = default ENTITIES layer, non-zero = custom layer)
+   * @returns {number} - Number of particles actually spawned
+   *
+   * @example
+   * // Using direct texture name
+   * ParticleEmitter.emit({
+   *   count: 10,
+   *   x: this.x,
+   *   y: this.y,
+   *   texture: "blood",
+   *   angleXY: { min: 0, max: 360 },
+   *   speed: { min: 1, max: 3 },
+   * });
+   *
+   * @example
+   * // Using spritesheet + animation + frame (for specific animation frame)
+   * ParticleEmitter.emit({
+   *   count: 1,
+   *   x: this.x,
+   *   y: this.y,
+   *   spritesheet: "civil1",
+   *   animation: "hurt",
+   *   frame: -1,  // Last frame of hurt animation
+   *   stayOnTheFloor: true,  // Stamp as decal
+   * });
+   */
+  static emit(config) {
+    if (!this.initialized) {
+      // console.warn('ParticleEmitter.emit() called before initialization');
+      return 0;
+    }
+
+    const count = Math.round(randomRange(config.count, 1));
+    let spawned = 0;
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // TEXTURE RESOLUTION
+    // ═══════════════════════════════════════════════════════════════════════
+    // Two ways to specify a texture:
+    //
+    // 1. Direct name (config.texture):
+    //    - "blood" → static texture
+    //    - "civil1_hurt" → prefixed animation (first frame)
+    //    - "civil1_hurt_5" → specific frame name
+    //
+    // 2. Helper params (config.spritesheet + config.animation + config.frame):
+    //    - { spritesheet: "civil1", animation: "hurt", frame: -1 }
+    //    - Resolves to "civil1_hurt_5" (last frame)
+    // ═══════════════════════════════════════════════════════════════════════
+    let textureId = 0;
+    let textureName = config.texture;
+
+    // If helper params provided, resolve to frame name first
+    if (config.spritesheet &amp;&amp; config.animation !== undefined) {
+      textureName = SpriteSheetRegistry.getFrameName(
+        config.spritesheet,
+        config.animation,
+        config.frame ?? 0
+      );
+
+      if (!textureName) {
+        console.warn(
+          `ParticleEmitter.emit: Could not resolve frame for ` +
+          `spritesheet="${config.spritesheet}", animation="${config.animation}", frame=${config.frame ?? 0}`
+        );
+      }
+    }
+
+    // Resolve texture name to numeric ID
+    if (textureName) {
+      textureId = SpriteSheetRegistry.getTextureId(textureName);
+    }
+
+    // Cache array references for performance (zero allocation - just reference copying)
+    const active = ParticleComponent.active;
+    const x = ParticleComponent.x;
+    const y = ParticleComponent.y;
+    const z = ParticleComponent.z;
+    const vx = ParticleComponent.vx;
+    const vy = ParticleComponent.vy;
+    const vz = ParticleComponent.vz;
+    const lifespan = ParticleComponent.lifespan;
+    const currentLife = ParticleComponent.currentLife;
+    const gravity = ParticleComponent.gravity;
+    const scaleX = ParticleComponent.scaleX;
+    const scaleY = ParticleComponent.scaleY;
+    const alpha = ParticleComponent.alpha;
+    const tint = ParticleComponent.tint;
+    const baseTint = ParticleComponent.baseTint;
+    const particleTextureId = ParticleComponent.textureId;
+    const fadeOnTheFloor = ParticleComponent.fadeOnTheFloor;
+    const timeOnFloor = ParticleComponent.timeOnFloor;
+    const initialAlpha = ParticleComponent.initialAlpha;
+    const stayOnTheFloor = ParticleComponent.stayOnTheFloor;
+    const despawnOnGroundContact = ParticleComponent.despawnOnGroundContact;
+    const tweenToAlpha0 = ParticleComponent.tweenToAlpha0;
+    const rotation = ParticleComponent.rotation;
+    const flipX = ParticleComponent.flipX;
+    const flipY = ParticleComponent.flipY;
+    const blendMode = ParticleComponent.blendMode;
+    const layerId = ParticleComponent.layerId;
+
+    while (spawned &lt; count) {
+      // Acquire free index from pool (inherited from SharedAtomicPool)
+      const i = this.acquireIndex();
+      if (i &lt; 0) {
+        // Pool exhausted
+        break;
+      }
+
+      // Position
+      x[i] = randomRange(config.x);
+      y[i] = randomRange(config.y);
+      z[i] = randomRange(config.z, 0);
+
+      // Velocity
+      let particleVx, particleVy;
+
+      if (config.angleXY !== undefined &amp;&amp; config.speed !== undefined) {
+        // Polar mode: angleXY (degrees) + speed
+        const angleDeg = randomRange(config.angleXY, 0);
+        const angleRad = (angleDeg * Math.PI) / 180;
+        const speed = randomRange(config.speed, 0);
+
+        particleVx = speed * Math.cos(angleRad);
+        particleVy = speed * Math.sin(angleRad);
+      } else {
+        // Cartesian mode: vx/vy ranges
+        particleVx = randomRange(config.vx, 0);
+        particleVy = randomRange(config.vy, 0);
+      }
+
+      vx[i] = particleVx;
+      vy[i] = particleVy;
+      vz[i] = randomRange(config.vz, 0);
+
+      // Lifecycle
+      lifespan[i] = randomRange(config.lifespan, 1000);
+      currentLife[i] = 0;
+
+      // Physics
+      gravity[i] = config.gravity ?? 0.15;
+
+      // Visual properties
+      // Support both uniform scale and independent scaleX/scaleY
+      const uniformScale = randomRange(config.scale, 1);
+      scaleX[i] =
+        config.scaleX !== undefined ? randomRange(config.scaleX, uniformScale) : uniformScale;
+      scaleY[i] =
+        config.scaleY !== undefined ? randomRange(config.scaleY, uniformScale) : uniformScale;
+      alpha[i] = randomRange(config.alpha, 1);
+      const particleColor = randomColor(config.tint);
+      tint[i] = particleColor;
+      baseTint[i] = particleColor; // Store original RGB for lighting calculation
+      particleTextureId[i] = textureId;
+
+      // Rotation (convert degrees to radians) and flipping
+      const rotationDeg = randomRange(config.rotation, 0);
+      rotation[i] = (rotationDeg * Math.PI) / 180;
+      flipX[i] = config.flipX ? 1 : 0;
+      flipY[i] = config.flipY ? 1 : 0;
+      fadeOnTheFloor[i] = config.fadeOnTheFloor ?? 0;
+      timeOnFloor[i] = 0;
+
+      // Alpha tweening: fade from initial alpha to 0 over lifespan
+      tweenToAlpha0[i] = config.tweenToAlpha0 ? 1 : 0;
+      initialAlpha[i] = config.tweenToAlpha0 ? alpha[i] : 0;
+
+      // Blood decal system: if true, particle stamps decal on floor hit and despawns
+      stayOnTheFloor[i] = config.stayOnTheFloor ? 1 : 0;
+
+      // Ground despawn: if true, particle despawns immediately on ground contact (no decal)
+      despawnOnGroundContact[i] = config.despawnOnGroundContact ? 1 : 0;
+
+      // Decal blend mode: 0 = normal (alpha over), 1 = multiply
+      blendMode[i] = config.blendMode ?? DECAL_STAMPS_BLEND_MODE.normal;
+
+      // Layer routing: 0 = default ENTITIES layer
+      layerId[i] = config.layerId ?? 0;
+
+      // Claim this particle (must be last - signals to other workers)
+      active[i] = 1;
+
+      spawned++;
+    }
+
+    return spawned;
+  }
+
+  /**
+   * Stamp a decal directly onto the floor tilemap.
+   * Convenience wrapper that creates an "instant stamp" particle.
+   *
+   * TEXTURE OPTIONS:
+   * - Use `texture` for direct texture/frame names
+   * - Use `spritesheet` + `animation` + `frame` to specify an animation frame
+   *
+   * @param {Object} config - Decal configuration
+   * @param {number|{min,max}} config.x - X position or range
+   * @param {number|{min,max}} config.y - Y position or range
+   * @param {string} [config.texture] - Texture name (from bigAtlas). Can be:
+   *   - Static texture: "blood", "burn_mark"
+   *   - Prefixed animation: "civil1_hurt" (uses first frame)
+   *   - Specific frame: "civil1_hurt_5"
+   * @param {string} [config.spritesheet] - Spritesheet name for frame resolution (e.g., "civil1")
+   * @param {string} [config.animation] - Animation name for frame resolution (e.g., "hurt")
+   * @param {number} [config.frame=0] - Frame index within animation (0 = first, -1 = last)
+   * @param {number|{min,max}} [config.scale=1] - Scale or range
+   * @param {number|{min,max}} [config.scaleX] - X scale (overrides scale if provided)
+   * @param {number|{min,max}} [config.scaleY] - Y scale (overrides scale if provided)
+   * @param {number|{min,max}} [config.alpha=1] - Alpha (opacity) or range
+   * @param {number|{min,max}} [config.tint=0xFFFFFF] - Color tint or range
+   * @param {number|{min,max}} [config.rotation=0] - Rotation in degrees or range
+   * @param {number} [config.count=1] - Number of decals to stamp
+   * @returns {number} - Number of decals actually spawned
+   *
+   * @example
+   * // Stamp a static texture
+   * ParticleEmitter.stampDecal({
+   *   x: this.x,
+   *   y: this.y,
+   *   texture: "burn_mark",
+   *   scale: { min: 0.8, max: 1.2 },
+   *   rotation: { min: 0, max: 360 },
+   *   alpha: 0.9,
+   * });
+   *
+   * @example
+   * // Stamp the last frame of an animation (e.g., dead body)
+   * ParticleEmitter.stampDecal({
+   *   x: this.x,
+   *   y: this.y,
+   *   spritesheet: "civil1",
+   *   animation: "hurt",
+   *   frame: -1,  // Last frame
+   *   scaleX: this.spriteRenderer.scaleX,
+   *   scaleY: this.spriteRenderer.scaleY,
+   *   tint: this.spriteRenderer.baseTint,
+   * });
+   */
+  static stampDecal(config) {
+    return this.emit({
+      ...config,
+      z: 0,
+      lifespan: 100,
+      stayOnTheFloor: true,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      gravity: 1,
+    });
+  }
+
+  /**
+   * Reset all particle emitter state (extends parent reset)
+   * Called when switching scenes to clear stale static state
+   */
+  static reset() {
+    super.reset();
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbstractWorker.html">AbstractWorker</a></li><li><a href="BigAtlasInspector.html">BigAtlasInspector</a></li><li><a href="Camera.html">Camera</a></li><li><a href="Constraint.html">Constraint</a></li><li><a href="DebugCanvas.html">DebugCanvas</a></li><li><a href="DebugFlags.html">DebugFlags</a></li><li><a href="DebugUI.html">DebugUI</a></li><li><a href="Decoration_Decoration.html">Decoration</a></li><li><a href="GameObject_GameObject.html">GameObject</a></li><li><a href="Grid.html">Grid</a></li><li><a href="LogicWorker.html">LogicWorker</a></li><li><a href="Mouse.html">Mouse</a></li><li><a href="NavGrid.html">NavGrid</a></li><li><a href="NavScratch.html">NavScratch</a></li><li><a href="ParticleWorker.html">ParticleWorker</a></li><li><a href="PhysicsWorker.html">PhysicsWorker</a></li><li><a href="PixiParticlePool.html">PixiParticlePool</a></li><li><a href="PixiRenderer.html">PixiRenderer</a></li><li><a href="PreRenderWorker.html">PreRenderWorker</a></li><li><a href="Ray.html">Ray</a></li><li><a href="SharedAtomicPool.html">SharedAtomicPool</a></li><li><a href="SpatialWorker.html">SpatialWorker</a></li><li><a href="SpriteSheetRegistry.html">SpriteSheetRegistry</a></li><li><a href="StatsCollector.html">StatsCollector</a></li><li><a href="Sun.html">Sun</a></li><li><a href="TileMap.html">TileMap</a></li><li><a href="TileMapLayer.html">TileMapLayer</a></li><li><a href="ToolManager.html">ToolManager</a></li></ul><h3>Global</h3><ul><li><a href="global.html#BLEND_MODES">BLEND_MODES</a></li><li><a href="global.html#Box">Box</a></li><li><a href="global.html#CAMERA_TYPES">CAMERA_TYPES</a></li><li><a href="global.html#COMPONENT_COLORS">COMPONENT_COLORS</a></li><li><a href="global.html#Circle">Circle</a></li><li><a href="global.html#DECORATION_INNER_Z_MAX">DECORATION_INNER_Z_MAX</a></li><li><a href="global.html#DECORATION_NO_PARENT">DECORATION_NO_PARENT</a></li><li><a href="global.html#DECORATION_Y_SORT_SCALE">DECORATION_Y_SORT_SCALE</a></li><li><a href="global.html#DEFAULT_LAYERS">DEFAULT_LAYERS</a></li><li><a href="global.html#DIRECTION">DIRECTION</a></li><li><a href="global.html#DIR_TO_VEC">DIR_TO_VEC</a></li><li><a href="global.html#ENTITY_GLOW_SORT_BIAS">ENTITY_GLOW_SORT_BIAS</a></li><li><a href="global.html#ENTITY_TYPE_ENTRY_SIZE">ENTITY_TYPE_ENTRY_SIZE</a></li><li><a href="global.html#FLOWFIELD_STATUS">FLOWFIELD_STATUS</a></li><li><a href="global.html#LOGIC_STATS">LOGIC_STATS</a></li><li><a href="global.html#MAX_COMPONENTS">MAX_COMPONENTS</a></li><li><a href="global.html#MAX_ENTITIES">MAX_ENTITIES</a></li><li><a href="global.html#MAX_ENTITY_TYPES">MAX_ENTITY_TYPES</a></li><li><a href="global.html#MAX_PRECOMPUTED_QUERIES">MAX_PRECOMPUTED_QUERIES</a></li><li><a href="global.html#NAVIGATION_STATS">NAVIGATION_STATS</a></li><li><a href="global.html#PARTICLE_STATS">PARTICLE_STATS</a></li><li><a href="global.html#PATH_STATUS">PATH_STATUS</a></li><li><a href="global.html#PHYSICS_STATS">PHYSICS_STATS</a></li><li><a href="global.html#PRE_RENDER_STATS">PRE_RENDER_STATS</a></li><li><a href="global.html#Polygon">Polygon</a></li><li><a href="global.html#QUERY_CACHE_ENTRY_SIZE">QUERY_CACHE_ENTRY_SIZE</a></li><li><a href="global.html#QUERY_RESULT_BUFFER_SIZE">QUERY_RESULT_BUFFER_SIZE</a></li><li><a href="global.html#RENDERER_STATS">RENDERER_STATS</a></li><li><a href="global.html#SHAPE_CIRCLE">SHAPE_CIRCLE</a></li><li><a href="global.html#SIDE">SIDE</a></li><li><a href="global.html#SPATIAL_STATS">SPATIAL_STATS</a></li><li><a href="global.html#SUN_DEFAULTS">SUN_DEFAULTS</a></li><li><a href="global.html#ShapeType">ShapeType</a></li><li><a href="global.html#TOPDOWN">TOPDOWN</a></li><li><a href="global.html#WORKER_DISPLAY_CONFIG">WORKER_DISPLAY_CONFIG</a></li><li><a href="global.html#Y_SORT_K">Y_SORT_K</a></li><li><a href="global.html#ZENITHAL">ZENITHAL</a></li><li><a href="global.html#_boundsResult">_boundsResult</a></li><li><a href="global.html#applyBrightnessToColor">applyBrightnessToColor</a></li><li><a href="global.html#atlasPadding">atlasPadding</a></li><li><a href="global.html#binarySearchFind">binarySearchFind</a></li><li><a href="global.html#binarySearchInsertPoint">binarySearchInsertPoint</a></li><li><a href="global.html#binarySearchRange">binarySearchRange</a></li><li><a href="global.html#brightnessToColoredTint">brightnessToColoredTint</a></li><li><a href="global.html#brightnessToTint">brightnessToTint</a></li><li><a href="global.html#buildFullCircle">buildFullCircle</a></li><li><a href="global.html#buildVisibilityPolygon">buildVisibilityPolygon</a></li><li><a href="global.html#calculateCameraScreenBounds">calculateCameraScreenBounds</a></li><li><a href="global.html#calculateDecalTileBounds">calculateDecalTileBounds</a></li><li><a href="global.html#calculateEntityMetadataSABSize">calculateEntityMetadataSABSize</a></li><li><a href="global.html#calculateLightAttenuation">calculateLightAttenuation</a></li><li><a href="global.html#calculateLightFromNeighbors">calculateLightFromNeighbors</a></li><li><a href="global.html#calculateQueryCacheSABSize">calculateQueryCacheSABSize</a></li><li><a href="global.html#calculateQueryResultsSABSize">calculateQueryResultsSABSize</a></li><li><a href="global.html#calculateSpeed">calculateSpeed</a></li><li><a href="global.html#calculateTileClipRegion">calculateTileClipRegion</a></li><li><a href="global.html#calculateTotalLightAtPosition">calculateTotalLightAtPosition</a></li><li><a href="global.html#calculateVelocityAngle">calculateVelocityAngle</a></li><li><a href="global.html#cantorPair">cantorPair</a></li><li><a href="global.html#cantorUnpair">cantorUnpair</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clamp01">clamp01</a></li><li><a href="global.html#clamp01Fast">clamp01Fast</a></li><li><a href="global.html#clampVelocity">clampVelocity</a></li><li><a href="global.html#clampVelocityMut">clampVelocityMut</a></li><li><a href="global.html#closestPointOnAABB">closestPointOnAABB</a></li><li><a href="global.html#closestPointOnAABBMut">closestPointOnAABBMut</a></li><li><a href="global.html#collectAllComponentsFromClasses">collectAllComponentsFromClasses</a></li><li><a href="global.html#collectComponents">collectComponents</a></li><li><a href="global.html#computeBoxMass">computeBoxMass</a></li><li><a href="global.html#computeCircleMass">computeCircleMass</a></li><li><a href="global.html#containerRadius">containerRadius</a></li><li><a href="global.html#countTrailingZeros">countTrailingZeros</a></li><li><a href="global.html#createBulletTrailCanvas">createBulletTrailCanvas</a></li><li><a href="global.html#createButton">createButton</a></li><li><a href="global.html#createCircularGradientCanvas">createCircularGradientCanvas</a></li><li><a href="global.html#createDivider">createDivider</a></li><li><a href="global.html#createMultiWorkerStatsReaderArray">createMultiWorkerStatsReaderArray</a></li><li><a href="global.html#createMultiWorkerStatsWriter">createMultiWorkerStatsWriter</a></li><li><a href="global.html#createPanel">createPanel</a></li><li><a href="global.html#createRow">createRow</a></li><li><a href="global.html#createStat">createStat</a></li><li><a href="global.html#createStatsReader">createStatsReader</a></li><li><a href="global.html#createStatsWriter">createStatsWriter</a></li><li><a href="global.html#createTab">createTab</a></li><li><a href="global.html#createWorkerQueryFunctions">createWorkerQueryFunctions</a></li><li><a href="global.html#directionTo">directionTo</a></li><li><a href="global.html#distance2D">distance2D</a></li><li><a href="global.html#distanceConstraintIterations">distanceConstraintIterations</a></li><li><a href="global.html#distanceSq2D">distanceSq2D</a></li><li><a href="global.html#drawCircle">drawCircle</a></li><li><a href="global.html#drawCross">drawCross</a></li><li><a href="global.html#drawLine">drawLine</a></li><li><a href="global.html#emitArcVertices">emitArcVertices</a></li><li><a href="global.html#emitVertex">emitVertex</a></li><li><a href="global.html#ensureDecorationFacade">ensureDecorationFacade</a></li><li><a href="global.html#evictDecorationFacade">evictDecorationFacade</a></li><li><a href="global.html#exposeComponentsGlobally">exposeComponentsGlobally</a></li><li><a href="global.html#exposeEntityClassesGlobally">exposeEntityClassesGlobally</a></li><li><a href="global.html#extractRGB">extractRGB</a></li><li><a href="global.html#extractRGBMut">extractRGBMut</a></li><li><a href="global.html#extractRGBNormalized">extractRGBNormalized</a></li><li><a href="global.html#extractRGBNormalizedMut">extractRGBNormalizedMut</a></li><li><a href="global.html#formatComponentValue">formatComponentValue</a></li><li><a href="global.html#formatNumber">formatNumber</a></li><li><a href="global.html#generateSymmetricalCirclePattern">generateSymmetricalCirclePattern</a></li><li><a href="global.html#getCellCoords">getCellCoords</a></li><li><a href="global.html#getCellCoordsMut">getCellCoordsMut</a></li><li><a href="global.html#getCellIndex">getCellIndex</a></li><li><a href="global.html#getCellRange">getCellRange</a></li><li><a href="global.html#getColliderBounds">getColliderBounds</a></li><li><a href="global.html#getComponentColor">getComponentColor</a></li><li><a href="global.html#getComponentPropertyNames">getComponentPropertyNames</a></li><li><a href="global.html#getDirectionFromAngle">getDirectionFromAngle</a></li><li><a href="global.html#getEntityHomeCellIndex">getEntityHomeCellIndex</a></li><li><a href="global.html#getParentClasses">getParentClasses</a></li><li><a href="global.html#hashToPastelColorCSS">hashToPastelColorCSS</a></li><li><a href="global.html#hashToPastelColorHex">hashToPastelColorHex</a></li><li><a href="global.html#hslToHex">hslToHex</a></li><li><a href="global.html#initializeComponentViews">initializeComponentViews</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isWithinRange">isWithinRange</a></li><li><a href="global.html#isWithinRangeSq">isWithinRangeSq</a></li><li><a href="global.html#layerMask">layerMask</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#lerpAngle">lerpAngle</a></li><li><a href="global.html#loadEntityScripts">loadEntityScripts</a></li><li><a href="global.html#maxAtlasHeight">maxAtlasHeight</a></li><li><a href="global.html#maxAtlasWidth">maxAtlasWidth</a></li><li><a href="global.html#maxAttachedDecorationsPerEntity">maxAttachedDecorationsPerEntity</a></li><li><a href="global.html#normalizeAngle">normalizeAngle</a></li><li><a href="global.html#normalizeAngleDifference">normalizeAngleDifference</a></li><li><a href="global.html#normalizeDirection">normalizeDirection</a></li><li><a href="global.html#normalizeDirectionFast">normalizeDirectionFast</a></li><li><a href="global.html#normalizeDirectionFromDistSq">normalizeDirectionFromDistSq</a></li><li><a href="global.html#query">query</a></li><li><a href="global.html#randomColor">randomColor</a></li><li><a href="global.html#randomRange">randomRange</a></li><li><a href="global.html#rayBoxHit">rayBoxHit</a></li><li><a href="global.html#rayBoxIntersect">rayBoxIntersect</a></li><li><a href="global.html#rayCircleDist">rayCircleDist</a></li><li><a href="global.html#rayCircleHit">rayCircleHit</a></li><li><a href="global.html#rayCircleIntersect">rayCircleIntersect</a></li><li><a href="global.html#rng">rng</a></li><li><a href="global.html#screenBoundsToWorldBounds">screenBoundsToWorldBounds</a></li><li><a href="global.html#setupWorkerCommunication">setupWorkerCommunication</a></li><li><a href="global.html#sortByY">sortByY</a></li><li><a href="global.html#sortEventsByAngle">sortEventsByAngle</a></li><li><a href="global.html#stringToHash">stringToHash</a></li><li><a href="global.html#subStepCount">subStepCount</a></li><li><a href="global.html#tangentHalfAngle">tangentHalfAngle</a></li><li><a href="global.html#testAABBAABBCollision">testAABBAABBCollision</a></li><li><a href="global.html#testCircleAABBCollision">testCircleAABBCollision</a></li><li><a href="global.html#testCircleCircleCollision">testCircleCircleCollision</a></li><li><a href="global.html#trimAlphaThreshold">trimAlphaThreshold</a></li><li><a href="global.html#trimImages">trimImages</a></li><li><a href="global.html#updateMassFromBox">updateMassFromBox</a></li><li><a href="global.html#updateMassFromCircle">updateMassFromCircle</a></li><li><a href="global.html#urlToPath">urlToPath</a></li><li><a href="global.html#validatePhysicsConfig">validatePhysicsConfig</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Mon Apr 06 2026 16:36:00 GMT-0300 (hora estándar de Argentina)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
