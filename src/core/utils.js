@@ -1196,6 +1196,40 @@ export function setupWorkerCommunication(connections) {
   return workerPorts;
 }
 
+/**
+ * Collect transferable objects from a worker port group.
+ * Returns an empty array when the worker has no direct MessagePorts.
+ *
+ * @param {Object|null|undefined} portGroup - Object mapping peer worker names to MessagePorts
+ * @returns {Array<MessagePort>} Transferable ports
+ */
+export function getPortTransferables(portGroup) {
+  return portGroup ? Object.values(portGroup) : [];
+}
+
+/**
+ * Post a worker init message using a shared base payload plus per-worker extras.
+ *
+ * @param {Worker} worker - Target worker-like object with postMessage()
+ * @param {Object} baseInitData - Shared init payload for all workers
+ * @param {Object} [extraData={}] - Worker-specific init fields
+ * @param {Array<Transferable>} [transferables=[]] - Transferables for postMessage
+ */
+export function postWorkerInitMessage(
+  worker,
+  baseInitData,
+  extraData = {},
+  transferables = []
+) {
+  worker.postMessage(
+    {
+      ...baseInitData,
+      ...extraData,
+    },
+    transferables
+  );
+}
+
 // ============================================================================
 // VALIDATION UTILITIES
 // ============================================================================
@@ -1335,7 +1369,7 @@ export function seededRandom(seed) {
 /**
  * Seeded random number generator - wrapper that accesses globalThis.rng
  * This allows entity code to use rng() which gets initialized in workers
- * In worker context: globalThis.rng is set by AbstractWorker.initSeendedRandom()
+ * In worker context: globalThis.rng is set by AbstractWorker.initSeededRandom()
  * In main thread: can be set via seededRandom() if needed
  * @returns {number} Random number between 0 and 1
  */

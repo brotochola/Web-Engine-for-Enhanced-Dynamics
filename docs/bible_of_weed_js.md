@@ -307,21 +307,21 @@ Any renderable type can target a custom layer via `layerId`:
 
 ```javascript
 // Particles
-ParticleEmitter.emit({
+WEED.ParticleEmitter.emit({
   x: this.x, y: this.y,
   texture: 'spark',
   layerId: Layer.getId('FOREGROUND_FX'),
 });
 
 // Decorations
-DecorationPool.spawn({
+WEED.DecorationPool.spawn({
   x: 100, y: 200,
   texture: 'tree_canopy',
   layerId: Layer.getId('CANOPY'),
 });
 
 // Bullets
-BulletPool.spawn({
+WEED.BulletPool.spawn({
   x: this.x, y: this.y, vx: 10, vy: 0,
   damage: 25, ownerId: this.index,
   texture: 'laser',

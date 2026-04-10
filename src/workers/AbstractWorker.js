@@ -797,13 +797,18 @@ export class AbstractWorker {
     }
   }
 
-  initSeendedRandom(seed) {
+  initSeededRandom(seed) {
     if (seed == null || seed == undefined) {
       seed = Date.now();
     }
     self.rng = seededRandom(seed);
     // Also make it available globally without 'self.' prefix for entity code
     globalThis.rng = self.rng;
+  }
+
+  // Backwards-compatible alias for the long-standing typo.
+  initSeendedRandom(seed) {
+    AbstractWorker.prototype.initSeededRandom.call(this, seed);
   }
 
   /**
@@ -816,7 +821,7 @@ export class AbstractWorker {
     switch (msg) {
       case 'init':
         console.log(`[${this.constructor.name}] Received 'init' message, starting initialization...`);
-        this.initSeendedRandom(e.data.config.seed);
+        this.initSeededRandom(e.data.config.seed);
         this.isPaused = true; // Keep paused until "start" message
         console.log(`[${this.constructor.name}] Initializing common buffers...`);
         await this.initializeCommonBuffers(e.data);

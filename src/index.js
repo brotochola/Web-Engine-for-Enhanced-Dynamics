@@ -149,8 +149,10 @@ import { ParticleComponent } from './components/ParticleComponent.js';
 import { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/ParticleEmitter.js';
 import { DecorationPool } from './core/DecorationPool.js';
 import { Decoration } from './core/Decoration.js';
+import { BulletPool } from './core/BulletPool.js';
 import { SharedAtomicPool } from './core/SharedAtomicPool.js';
 import { DecorationComponent } from './components/DecorationComponent.js';
+import { BulletComponent } from './components/BulletComponent.js';
 import { LightEmitter } from './components/LightEmitter.js';
 import { ShadowCaster } from './components/ShadowCaster.js';
 import { LightOccluder } from './components/LightOccluder.js';
@@ -224,6 +226,10 @@ const WEED = Object.freeze({
   DecorationPool,
   Decoration,
   DecorationComponent,
+
+  // Bullets
+  BulletPool,
+  BulletComponent,
 
   // Constraints
   Constraint,

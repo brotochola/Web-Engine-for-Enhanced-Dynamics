@@ -24,6 +24,8 @@ import { AdobeAnimRegistry } from './AdobeAnimRegistry.js';
 import { AdobeAnimCompiler } from './AdobeAnimCompiler.js';
 import {
   setupWorkerCommunication,
+  getPortTransferables,
+  postWorkerInitMessage,
   seededRandom,
   loadEntityScripts,
   collectAllComponentsFromClasses,
@@ -899,6 +901,8 @@ class Scene {
     window.NavGrid = NavGrid;
     window.Grid = Grid;
     window.DecorationPool = DecorationPool;
+    window.BulletPool = BulletPool;
+    window.BulletComponent = BulletComponent;
     window.SoundManager = SoundManager;
     window.Layer = Layer;
     window.Decoration = Decoration;
@@ -2416,21 +2420,10 @@ class Scene {
     const PARTICLE_INDEX = numberOfSpatialWorkers + 2;
     const LOGIC_START_INDEX = numberOfSpatialWorkers + 3;
 
-    const getPortTransferables = (portGroup) => (portGroup ? Object.values(portGroup) : []);
-    const postWorkerInit = (worker, extraData = {}, transferables = []) => {
-      worker.postMessage(
-        {
-          ...initData,
-          ...extraData,
-        },
-        transferables
-      );
-    };
-
     console.log(`[Scene] 📤 Sending init messages to workers...`);
     for (let i = 0; i < numberOfSpatialWorkers; i++) {
       console.log(`[Scene]   → Initializing spatial worker ${i}...`);
-      postWorkerInit(this.workers.spatialWorkers[i], {
+      postWorkerInitMessage(this.workers.spatialWorkers[i], initData, {
         frameRateIndex: Scene.WORKER_INDICES.SPATIAL_START + i,
         workerIndex: i,
         totalSpatialWorkers: numberOfSpatialWorkers,
@@ -2440,8 +2433,9 @@ class Scene {
     for (let i = 0; i < this.numberOfLogicWorkers; i++) {
       console.log(`[Scene]   → Initializing logic worker ${i}...`);
       const logicPorts = workerPorts[`logic${i}`];
-      postWorkerInit(
+      postWorkerInitMessage(
         this.workers.logicWorkers[i],
+        initData,
         {
           workerPorts: logicPorts,
           workerIndex: i, // For logic worker job partitioning (0, 1, 2, ...)
@@ -2453,8 +2447,9 @@ class Scene {
     }
 
     console.log(`[Scene]   → Initializing physics worker...`);
-    postWorkerInit(
+    postWorkerInitMessage(
       this.workers.physics,
+      initData,
       {
         workerPorts: workerPorts.physics,
         frameRateIndex: PHYSICS_INDEX,
@@ -2473,8 +2468,9 @@ class Scene {
     const particlePorts = workerPorts.particle || {};
     particlePorts.mainThread = particleWorkerNavPort;
 
-    postWorkerInit(
+    postWorkerInitMessage(
       this.workers.particle,
+      initData,
       {
         workerPorts: particlePorts,
         frameRateIndex: PARTICLE_INDEX,
@@ -2492,7 +2488,7 @@ class Scene {
     console.log(`[Scene]   → Initializing pre-render worker...`);
     const PRE_RENDER_INDEX = LOGIC_START_INDEX + this.numberOfLogicWorkers;
 
-    postWorkerInit(this.workers.preRender, {
+    postWorkerInitMessage(this.workers.preRender, initData, {
       buffers: {
         ...sharedBuffers,
         preRenderStats: this.buffers.preRenderStats,
@@ -2519,8 +2515,9 @@ class Scene {
       ...(workerPorts.renderer ? Object.values(workerPorts.renderer) : []),
     ];
 
-    postWorkerInit(
+    postWorkerInitMessage(
       this.workers.renderer,
+      initData,
       {
         view: offscreenCanvas,
         textures: this.loadedTextures,
