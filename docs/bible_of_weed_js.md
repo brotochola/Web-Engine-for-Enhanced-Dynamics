@@ -144,7 +144,7 @@ Entity types without the tag component can still define `onCollisionEnter` etc. 
 Tag components participate in the query system like any other component:
 
 ```javascript
-const listeners = query([CollisionListener]);
+const listeners = query([CollisionListener]); // all matching slots, including inactive pooled ones
 const visible   = queryActiveEntities([CameraInOutListener, SpriteRenderer]);
 ```
 
@@ -531,8 +531,8 @@ WEED.ParticleEmitter.emit({
 });
 
 // Query helpers (worker context)
-const all = query([WEED.Transform, WEED.Collider]);
-const active = queryActiveEntities([WEED.Transform, WEED.SpriteRenderer]);
+const all = query([WEED.Transform, WEED.Collider]); // all matching slots, active or inactive
+const active = queryActiveEntities([WEED.Transform, WEED.SpriteRenderer]); // active only
 
 // Sound (works from both main thread and workers)
 WEED.SoundManager.play('hit', 0.8);                         // name, volume

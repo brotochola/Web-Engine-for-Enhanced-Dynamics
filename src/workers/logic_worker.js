@@ -850,25 +850,3 @@ class LogicWorker extends AbstractWorker {
 // Create singleton instance and setup message handler
 self.logicWorker = new LogicWorker(self);
 
-/**
- * Global query function for component-based entity filtering
- * Available to all entity code running in logic workers
- * @param {Array<Component>} componentClasses - Array of component classes to query
- * @returns {Int32Array} - Indices of matching entities
- *
- * @example
- * // Inside Prey.tick() or any entity method:
- * const allPredators = query([RigidBody, PredatorBehavior]);
- * const visibleEntities = query([SpriteRenderer, Transform]);
- *
- * // Or use via WEED namespace:
- * import WEED from "/src/index.js";
- * const { query } = WEED;
- */
-function query(componentClasses) {
-  return self.logicWorker.query(componentClasses);
-}
-
-// Make query available globally and in WEED namespace for entity code
-self.query = query;
-globalThis.query = query;

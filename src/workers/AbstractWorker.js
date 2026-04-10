@@ -571,6 +571,13 @@ export class AbstractWorker {
       this._precomputedQueries = queryFunctions._precomputedQueries;
       this._queryEntityMetadata = queryFunctions._entityMetadata;
 
+      // Expose query helpers globally in every worker so entity code can use the
+      // same `query()` / `queryActiveEntities()` syntax regardless of worker type.
+      self.query = queryFunctions.query;
+      globalThis.query = queryFunctions.query;
+      self.queryActiveEntities = queryFunctions.queryActiveEntities;
+      globalThis.queryActiveEntities = queryFunctions.queryActiveEntities;
+
       this.reportLog(
         `initialized query system with ${this._precomputedQueries?.length || 0} pre-computed queries`
       );
@@ -957,7 +964,7 @@ export class AbstractWorker {
   }
 
   /**
-   * Get the count of active entities (built by particle_worker each frame)
+   * Get the count of active entities from the shared activeEntitiesData list.
    * @returns {number} - Number of active entities
    */
   getActiveEntityCount() {
@@ -997,7 +1004,8 @@ export class AbstractWorker {
 
   /**
    * Query for ACTIVE entities with specified components
-   * Returns view into pre-populated SAB (updated each frame by particle_worker)
+   * Returns a view into pre-computed shared query results when available,
+   * otherwise computes a fallback result from the shared active-entity list.
    *
    * @param {Array<Component>} componentClasses - Array of component classes to query
    * @returns {Uint16Array} - Active entity indices (view into SAB, do not modify)

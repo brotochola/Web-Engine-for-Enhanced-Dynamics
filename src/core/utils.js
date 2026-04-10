@@ -1351,16 +1351,16 @@ export function rng() {
 
 /**
  * Query entities by component combination - wrapper that accesses globalThis.query
- * This allows entity code to use query() which gets initialized in workers
- * In worker context: globalThis.query is set by logic_worker, physics_worker, etc.
+ * This allows entity code to use query() which gets initialized in all workers.
+ * query() returns ALL matching entity slots for matching entity types, including inactive pooled slots.
  *
  * @param {Array<Component>} componentClasses - Array of component classes to query
- * @returns {Int32Array} - Indices of entities that have ALL specified components
+ * @returns {Uint16Array} - Indices of entities that have ALL specified components
  *
  * @example
  * // Inside entity code (Prey.tick(), etc.):
  * const allPredators = query([RigidBody, PredatorBehavior]);
- * const visibleEntities = query([SpriteRenderer, Transform]);
+ * const activeVisibleEntities = queryActiveEntities([SpriteRenderer, Transform]);
  *
  * // Or via WEED namespace:
  * import WEED from "/src/index.js";
@@ -1373,6 +1373,24 @@ export function query(componentClasses) {
 
   // Not available in main thread context
   console.warn('[query] Query system only available in worker context');
+  return new Uint16Array(0);
+}
+
+/**
+ * Query ACTIVE entities by component combination - wrapper that accesses globalThis.queryActiveEntities
+ * This allows entity code to use queryActiveEntities() in any worker context.
+ * For pre-computed queries it returns a shared SAB-backed view; otherwise it falls back to a slower
+ * computation over the shared active-entity list.
+ *
+ * @param {Array<Component>} componentClasses - Array of component classes to query
+ * @returns {Uint16Array} - Active entity indices
+ */
+export function queryActiveEntities(componentClasses) {
+  if (typeof globalThis.queryActiveEntities === 'function') {
+    return globalThis.queryActiveEntities(componentClasses);
+  }
+
+  console.warn('[queryActiveEntities] Query system only available in worker context');
   return new Uint16Array(0);
 }
 

@@ -88,11 +88,11 @@ export { Flash } from './core/Flash.js';
 // ============================================================================
 // QUERY SYSTEM (Worker Context Only)
 // ============================================================================
-// Note: The query() function is available globally in all workers for
-// component-based entity filtering. Use it in entity code like:
-//   const allPredators = query([RigidBody, PredatorBehavior]);
-//   const visibleEntities = query([SpriteRenderer, Transform]);
-// This is NOT available in main thread context, only in workers.
+// Note: The query helpers are available globally in all workers for
+// component-based entity filtering:
+//   const allPredators = query([RigidBody, PredatorBehavior]);              // all matching slots
+//   const visibleEntities = queryActiveEntities([SpriteRenderer, Transform]); // active only
+// These are NOT available in main thread context, only in workers.
 
 // ============================================================================
 // WORKERS

@@ -9,7 +9,7 @@
  * - Lazy computation for developer-defined component queries
  *
  * Usage:
- *   const allLights = query([LightEmitter]);           // All entities with component
+ *   const allLights = query([LightEmitter]);                // All matching entity slots, active or inactive
  *   const activeLights = queryActiveEntities([LightEmitter]); // Only active entities
  */
 
@@ -514,7 +514,8 @@ export class QuerySystem {
 
   /**
    * Query for ACTIVE entities with specified components
-   * Returns view into pre-populated SAB (updated each frame by particle_worker)
+   * Returns a shared pre-computed result view when available.
+   * Otherwise falls back to computing from the shared active-entity list.
    *
    * @param {Array} componentClasses - Array of component classes
    * @returns {Uint16Array} - Active entity indices (view into SAB, do not modify)
@@ -627,7 +628,7 @@ export class QuerySystem {
 
   /**
    * Get the result buffer view for a pre-computed query by index
-   * Used by particle_worker to populate results each frame
+   * Internal helper for direct access to pre-computed query result buffers.
    *
    * @param {number} queryIndex - Index in precomputedQueries array
    * @returns {Uint16Array} - Result buffer view (index 0 = count, rest = entity indices)
@@ -638,7 +639,7 @@ export class QuerySystem {
 
   /**
    * Get info about a pre-computed query by index
-   * Used by particle_worker to know which entity types to check
+   * Internal helper for systems that need direct access to query metadata.
    *
    * @param {number} queryIndex - Index in precomputedQueries array
    * @returns {Object} - { name, queryMask, typeMask }

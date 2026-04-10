@@ -110,6 +110,7 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 | `inputData` | Read | Keyboard held state + press counters (shared across all workers via `Keyboard`) |
 | `mouseData` | Read | Mouse position + buttons |
 | `cameraData` | Read/**Write** | Camera state SAB `[zoom,x,y,followX,followY,targetZoom]` (prefer single writer policy) |
+| `queryResultsSAB` | Read/**Write** (logic 0 maintenance) | Pre-computed active query results shared with all workers |
 | `constraintData` | **Write** | Create constraints via `Constraint.add` |
 | `constraintFreeList/Top` | Read/**Write** | Pop free constraint slots |
 | `raycastDebugData` | **Write** | Debug ray visualization |
@@ -120,14 +121,14 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 - Receives spawn/despawn messages from main thread
 - Receives `listUpdates` from logic workers 1..N
 - Runs `processListUpdates()` before any ticks (despawns first, spawns second)
-- Updates `activeEntitiesData`, per-type active lists, query caches
+- Updates `activeEntitiesData`, per-type active lists, and pre-computed active query results
 - All logic workers call `Mouse.updateEdgeFlags()` before entity ticks (per-worker edge detection for `isButton0Pressed` etc.)
 
 ---
 
 ### Particle Worker (1)
 
-The multitasker. Handles particles, bullets, decals, navigation computation, visibility lists, query results, and derived rigid body values.
+The multitasker. Handles particles, bullets, decals, navigation computation, visibility lists, and derived rigid body values.
 
 **What it does each frame:**
 1. Update particle simulation (lifetime, gravity, ground collision, alpha fade)
@@ -136,10 +137,9 @@ The multitasker. Handles particles, bullets, decals, navigation computation, vis
 4. Update decoration sway
 5. Build compact active + visible lists for particles, decorations, bullets
 6. Compute cell sleeping flags
-7. Populate query system results
-8. Handle navigation requests (flowfields via Dijkstra, A* paths)
-9. Update walkability grid on rebuild requests
-10. Compute derived rigid body values used downstream
+7. Handle navigation requests (flowfields via Dijkstra, A* paths)
+8. Update walkability grid on rebuild requests
+9. Compute derived rigid body values used downstream
 
 | Buffer | Access | Notes |
 |---|---|---|
@@ -157,7 +157,6 @@ The multitasker. Handles particles, bullets, decals, navigation computation, vis
 | `bloodTilesRGBA` | **Write** | Decal pixel data |
 | `bloodTilesDirty` | **Write** | Dirty tile flags |
 | `navigationData` | Read/**Write** | Flowfields, A* paths, walkability |
-| `queryResultsSAB` | **Write** | Query system results |
 | Transform, RigidBody, Collider | Read | Entity state for visibility/bullet checks |
 | `cameraData` | Read | Camera bounds for visibility |
 | `activeEntitiesData` | Read | Which entities are alive |

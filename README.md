@@ -151,7 +151,8 @@ ParticleEmitter.emit({
 Flash.create({ x: this.x, y: this.y, z: 30, lifespan: 50, color: 0xffaa00, intensity: 10000 });
 
 // Queries (inside worker/entity code)
-const enemies = query([RigidBody, EnemyComponent]);
+const enemies = query([RigidBody, EnemyComponent]);          // all matching slots
+const activeEnemies = queryActiveEntities([RigidBody, EnemyComponent]); // active only
 ```
 
 ---

@@ -476,7 +476,7 @@ All use a strided `Float32Array` layout: **16 floats (64 bytes) per worker slot*
 
 | Writer | Reader |
 |---|---|
-| Particle worker (populates query results), main thread (metadata/cache init) | Logic workers, pre_render worker |
+| Logic worker 0 (incremental active-query maintenance on list updates), main thread (metadata/cache init) | Main thread + all workers |
 
 ---
 
