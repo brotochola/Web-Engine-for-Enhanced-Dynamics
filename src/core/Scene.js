@@ -38,6 +38,10 @@ import Keyboard from './Keyboard.js';
 import { Flash } from './Flash.js';
 import { BigAtlasInspector } from './BigAtlasInspector.js';
 import { Camera } from './Camera.js';
+import {
+  buildMemoryUsageSummary,
+  getSharedBufferSize as getSharedBufferSizeFromBuffers,
+} from './sceneBufferMemory.js';
 import { QuerySystem } from './QuerySystem.js';
 import {
   SCENE_DEFAULTS,
@@ -3206,89 +3210,7 @@ class Scene {
    * @returns {object} Detailed memory summary object
    */
   getMemoryUsageSummary() {
-    if (!this.buffers) {
-      return {
-        totalBytes: 0,
-        totalFormatted: '0 B',
-        bufferCount: 0,
-        categories: {},
-        flatBreakdown: {},
-      };
-    }
-
-    const categories = {};
-    const flatBreakdown = {};
-
-    let totalBytes = 0;
-    let bufferCount = 0;
-
-    for (const [key, value] of Object.entries(this.buffers)) {
-      const summary = this._summarizeBufferNode(value, key, flatBreakdown);
-      if (!summary) continue;
-      categories[key] = summary;
-      totalBytes += summary.totalBytes;
-      bufferCount += summary.bufferCount;
-    }
-
-    return {
-      totalBytes,
-      totalFormatted: this._formatBytes(totalBytes),
-      bufferCount,
-      categories,
-      flatBreakdown,
-    };
-  }
-
-  /**
-   * Recursively summarize SharedArrayBuffer usage for a node in this.buffers.
-   * @private
-   * @param {*} value - Node value (SAB, object, array, or primitive)
-   * @param {string} path - Dot path for flat breakdown keys
-   * @param {object} flatBreakdown - Accumulator for flattened byte map
-   * @returns {object|null} Summary object or null if no SABs found
-   */
-  _summarizeBufferNode(value, path, flatBreakdown) {
-    if (value instanceof SharedArrayBuffer) {
-      const bytes = value.byteLength;
-      flatBreakdown[path] = bytes;
-      return {
-        totalBytes: bytes,
-        totalFormatted: this._formatBytes(bytes),
-        bufferCount: 1,
-        children: null,
-      };
-    }
-
-    if (!value || typeof value !== 'object') {
-      return null;
-    }
-
-    const entries = Array.isArray(value) ? value.entries() : Object.entries(value);
-    const children = {};
-    let totalBytes = 0;
-    let bufferCount = 0;
-
-    for (const [rawKey, childValue] of entries) {
-      const key = String(rawKey);
-      const childPath = `${path}.${key}`;
-      const childSummary = this._summarizeBufferNode(childValue, childPath, flatBreakdown);
-      if (!childSummary) continue;
-
-      children[key] = childSummary;
-      totalBytes += childSummary.totalBytes;
-      bufferCount += childSummary.bufferCount;
-    }
-
-    if (bufferCount === 0) {
-      return null;
-    }
-
-    return {
-      totalBytes,
-      totalFormatted: this._formatBytes(totalBytes),
-      bufferCount,
-      children,
-    };
+    return buildMemoryUsageSummary(this.buffers);
   }
 
   /**
@@ -3297,28 +3219,7 @@ class Scene {
    * @returns {number|object} Total size in bytes, or object with {total, breakdown} if includeBreakdown is true
    */
   getSharedBufferSize(includeBreakdown = false) {
-    const summary = this.getMemoryUsageSummary();
-    if (!includeBreakdown) return summary.totalBytes;
-
-    return {
-      total: summary.totalBytes,
-      totalFormatted: summary.totalFormatted,
-      breakdown: summary.flatBreakdown,
-      categories: summary.categories,
-      bufferCount: summary.bufferCount,
-    };
-  }
-
-  /**
-   * Format bytes to human-readable string
-   * @private
-   */
-  _formatBytes(bytes) {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+    return getSharedBufferSizeFromBuffers(this.buffers, includeBreakdown);
   }
 }
 
