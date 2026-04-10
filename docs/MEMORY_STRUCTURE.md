@@ -555,7 +555,7 @@ The worklet stores assets in a `Map<id, { ch, len, nCh }>`. Only slot state trav
 
 | Buffer | Size | Layout | Writer | Reader |
 |---|---|---|---|---|
-| `inputData` | `inputBufferSize * 4` bytes | `Int32` per key | Main thread | Logic workers |
+| `inputData` | `inputBufferSize * 8` bytes | `[heldState[keyCount], pressCount[keyCount]]` as `Int32` | Main thread | Main thread + all workers |
 | `mouseData` | 52 bytes (13 × Float32) | `[x, y, btn0, btn1, btn2, isPresent, wheel, press0, rel0, press1, rel1, press2, rel2]` | Main thread | All workers |
 | `cameraData` | 24 bytes (6 × Float32) | `[zoom, x, y, followTargetX, followTargetY, targetZoom]` | Main thread + Player.tick | All workers |
 | `debugData` | 32 bytes | `[flags 0-15: Uint8, selectedEntityIndex: Int32]` | Main thread | All workers |

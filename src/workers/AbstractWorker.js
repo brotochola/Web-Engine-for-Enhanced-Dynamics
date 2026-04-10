@@ -233,6 +233,9 @@ export class AbstractWorker {
     this.frameNumber++;
     const timing = this.updateFrameTiming();
 
+    // Snapshot keyboard press edges once per frame for the current worker.
+    Keyboard.updateEdgeFlags();
+
     // Call the worker-specific update logic
     this.update(timing.deltaTime, timing.dtRatio, resuming);
 
@@ -465,6 +468,9 @@ export class AbstractWorker {
     // Initialize common shared buffers using Buffer->Data naming pattern
     if (data.buffers?.inputData) {
       this.inputData = new Int32Array(data.buffers.inputData);
+      if (data.keyIndexMap) {
+        Keyboard.initialize(this.inputData, data.keyIndexMap);
+      }
     }
 
     if (data.buffers?.cameraData) {

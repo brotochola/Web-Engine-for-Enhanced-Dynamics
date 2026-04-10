@@ -501,7 +501,8 @@ See `docs/TILEMAP.md` for full details on memory layout, lifecycle, and renderin
 
 ```javascript
 // Input — Keyboard
-if (WEED.Keyboard.isDown('w')) { ... }
+if (WEED.Keyboard.isDown('w')) { ... }     // true every frame while held
+if (WEED.Keyboard.isPressed('w')) { ... }  // true only on the press frame
 
 // Input — Mouse (held state: true every frame while button is held)
 if (WEED.Mouse.isButton0Down) { ... }   // left button

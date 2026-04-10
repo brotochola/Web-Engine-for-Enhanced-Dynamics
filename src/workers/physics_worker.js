@@ -832,8 +832,6 @@ class PhysicsWorker extends AbstractWorker {
     const collisionLayer = Collider.collisionLayer;
     const collisionMask = Collider.collisionMask;
 
-    const rigidBodyCount = this.rigidBodyCount;
-
     // OPTIMIZATION: Use pre-built dense list of active colliders that ACTUALLY have collision candidates
     // This perfectly bypasses thousands of empty loop iterations in sub-stepping.
     const denseColliders = this._denseColliders;
@@ -1024,8 +1022,8 @@ class PhysicsWorker extends AbstractWorker {
         }
 
         // Track collision count
-        if (i < rigidBodyCount) collisionCount[i]++;
-        if (j < rigidBodyCount) collisionCount[j]++;
+        if (iHasRigidBody) collisionCount[i]++;
+        if (jHasRigidBody) collisionCount[j]++;
 
         // Record collision pair for callbacks
         if (collisionData && pairCount < maxPairs) {

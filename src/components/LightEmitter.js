@@ -31,6 +31,10 @@ export class LightEmitter extends Component {
     LightEmitter.sqrtLightIntensity[this.index] = Math.sqrt(value);
   }
 
+  get lightColor() {
+    return LightEmitter.lightColor[this.index];
+  }
+
   set lightColor(value) {
     LightEmitter.lightColor[this.index] = value;
   }

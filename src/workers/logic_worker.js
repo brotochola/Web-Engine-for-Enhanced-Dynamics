@@ -9,7 +9,6 @@ self.postMessage({
 // Import engine dependencies
 import { GameObject } from '../core/gameObject.js';
 import { Mouse } from '../core/Mouse.js';
-import Keyboard from '../core/Keyboard.js';
 import { Transform } from '../components/Transform.js';
 import { RigidBody } from '../components/RigidBody.js';
 
@@ -116,9 +115,6 @@ class LogicWorker extends AbstractWorker {
       console.log(`LOGIC WORKER ${this.workerIndex}: Stats buffer initialized`);
     }
 
-    // Store key index mapping for Keyboard class
-    this.keyIndexMap = data.keyIndexMap || {};
-
     // Deserialize spritesheet metadata for animation lookups
     if (data.spritesheetMetadata) {
       SpriteSheetRegistry.deserialize(data.spritesheetMetadata);
@@ -175,10 +171,6 @@ class LogicWorker extends AbstractWorker {
 
     // Create GameObject instances
     this.createGameObjectInstances();
-
-    // Initialize Keyboard static class with input data (once, not every frame)
-    // Note: Mouse position/state is read from Mouse static class (SharedArrayBuffer)
-    Keyboard.initialize(this.inputData, this.keyIndexMap);
 
     // console.log(
     //   `LOGIC WORKER ${this.workerIndex}: Total ${this.globalEntityCount} GameObjects ready (job-based processing)`

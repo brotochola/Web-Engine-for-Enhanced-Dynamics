@@ -107,7 +107,7 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 | `activeEntitiesData` | Read/**Write** (logic 0) | Logic 0 maintains the global active list |
 | `perTypeActiveLists` | Read/**Write** (logic 0) | Per-type active lists |
 | `nextTickData` | Read/**Write** | Tick decimation countdown per entity |
-| `inputData` | Read | Keyboard state |
+| `inputData` | Read | Keyboard held state + press counters (shared across all workers via `Keyboard`) |
 | `mouseData` | Read | Mouse position + buttons |
 | `cameraData` | Read/**Write** | Camera state SAB `[zoom,x,y,followX,followY,targetZoom]` (prefer single writer policy) |
 | `constraintData` | **Write** | Create constraints via `Constraint.add` |

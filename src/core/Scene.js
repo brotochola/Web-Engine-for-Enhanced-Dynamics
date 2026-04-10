@@ -34,6 +34,7 @@ import {
 } from './utils.js';
 import { DebugFlags } from './debug/DebugFlags.js';
 import { Mouse } from './Mouse.js';
+import Keyboard from './Keyboard.js';
 import { Flash } from './Flash.js';
 import { BigAtlasInspector } from './BigAtlasInspector.js';
 import { Camera } from './Camera.js';
@@ -1496,9 +1497,14 @@ class Scene {
       EntityClass.freeListTop = freeListTop;
     }
 
-    const INPUT_BUFFER_SIZE = this.inputBufferSize * 4;
+    // Keyboard input layout (Int32):
+    //   [0..keyCount-1]              held state (1/0)
+    //   [keyCount..keyCount*2-1]     press counters (incremented on keydown edge)
+    const INPUT_BUFFER_SIZE = this.inputBufferSize * 2 * 4;
     this.buffers.inputData = new SharedArrayBuffer(INPUT_BUFFER_SIZE);
     this.views.input = new Int32Array(this.buffers.inputData);
+    Keyboard.initialize(this.views.input, this.keyMap);
+    this.updateKeyboardBuffer();
 
     // Camera buffer: [zoom, x, y, followTargetX, followTargetY, targetZoom]
     const CAMERA_BUFFER_SIZE = 6 * 4;
@@ -2694,7 +2700,14 @@ class Scene {
   // ---------------------------------------------------------------------------
 
   onKeyDown(key) {
+    const wasDown = this.keyboard[key] === true;
     this.keyboard[key] = true;
+    if (!wasDown && this.views.input) {
+      const index = this.keyMap[key];
+      if (index !== undefined) {
+        this.views.input[this.inputBufferSize + index]++;
+      }
+    }
     this.updateKeyboardBuffer();
   }
 
@@ -2730,6 +2743,7 @@ class Scene {
 
   updateKeyboardBuffer() {
     const input = this.views.input;
+    if (!input) return;
     for (const [key, index] of Object.entries(this.keyMap)) {
       input[index] = this.keyboard[key] ? 1 : 0;
     }
@@ -2798,8 +2812,9 @@ class Scene {
 
     // Visible/active units are now read directly by DebugUI from Transform/SpriteRenderer arrays
 
-    // Update mouse edge flags (isButton0Pressed, isButton0Released, etc.) on the main thread
-    // so Scene.update() can use them the same way entity tick() does in workers
+    // Update input edge flags on the main thread so Scene.update() can use them
+    // the same way entity tick() does in workers.
+    Keyboard.updateEdgeFlags();
     Mouse.updateEdgeFlags();
 
     // Call user's update hook
@@ -2870,6 +2885,7 @@ class Scene {
 
     // Clear keyboard state
     this.keyboard = {};
+    Keyboard.initialize(null, null);
 
     // Clear all entity instances AND break buffer references on EntityClass
     // EntityClass.freeList, freeListTop, _activeList, entityIndices point to scene buffers
@@ -2914,13 +2930,6 @@ class Scene {
     if (SpriteRenderer.active) {
       for (let i = 0; i < this.totalEntityCount; i++) {
         SpriteRenderer.active[i] = 0;
-      }
-    }
-
-    // Reset GameObject active array
-    if (GameObject.active) {
-      for (let i = 0; i < this.totalEntityCount; i++) {
-        GameObject.active[i] = 0;
       }
     }
 
