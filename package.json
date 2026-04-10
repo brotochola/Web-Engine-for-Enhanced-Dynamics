@@ -1,6 +1,6 @@
 {
   "name": "@weed.js/engine",
-  "version": "0.4.118",
+  "version": "0.4.119",
   "description": "A blazing-fast multithreaded web game engine that handles 20,000+ NPCs without breaking a sweat",
   "type": "module",
   "main": "dist/weed.bundle.min.js",
@@ -26,9 +26,13 @@
     "doc": "docs"
   },
   "scripts": {
+    "sync:version": "node scripts/sync-version.js",
+    "predev": "npm run sync:version",
     "dev": "node server/node_server.js",
+    "pretest:node": "npm run sync:version",
     "test": "npm run test:node",
     "test:node": "node --test tests/node/*.test.js",
+    "pretest:bench": "npm run sync:version",
     "test:bench": "node tests/bench/run-integrated-worker-benchmark.mjs",
     "test:bench:headed": "node tests/bench/run-integrated-worker-benchmark.mjs --headed",
     "bench:headed:profile": "node tests/bench/run-integrated-worker-benchmark.mjs --headed --trace",
@@ -39,10 +43,13 @@
     "bench:workers": "node tests/bench/run-integrated-worker-benchmark.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "premake_bundle": "npm run sync:version",
     "make_bundle": "node scripts/build-bundle.js",
     "make_bundle:obfuscate": "node scripts/build-bundle.js --obfuscate",
+    "premake_prod_bundle": "npm run sync:version",
     "make_prod_bundle": "cross-env WEED_PROD=true node scripts/build-bundle.js",
     "build:pixi": "esbuild scripts/build-pixi-worker.js --bundle --format=esm --minify --outfile=src/lib/pixi_8.16_.min.js",
+    "prebuild:docs": "npm run sync:version",
     "build:docs": "node scripts/build-docs.js",
     "clean": "rimraf dist"
   },
