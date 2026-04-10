@@ -2569,6 +2569,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Update layer refs after background change
     this._updateBackgroundLayerRef();
 
+    // Apply the current camera transform immediately so the warm-up render
+    // doesn't flash the new background at the origin for one frame.
+    if (!this._cameraInitialized && this.cameraData) {
+      this._renderZoom = this.cameraData[0];
+      this._renderCameraX = this.cameraData[1];
+      this._renderCameraY = this.cameraData[2];
+      this._cameraInitialized = true;
+    }
+    this.updateCameraTransform();
+
     // Warm-up render: force GPU to compile shaders and upload geometry/textures now,
     // rather than causing a frame spike on the first visible frame.
     if (this.pixiApp && this.pixiApp.renderer) {
