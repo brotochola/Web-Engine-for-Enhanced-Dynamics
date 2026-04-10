@@ -13,7 +13,20 @@ import { LightOccluder } from '../components/LightOccluder.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { Layer } from './Layer.js';
 import { Grid } from './Grid.js';
-import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox, distanceSq2D, binarySearchInsertPoint, binarySearchFind } from './utils.js';
+import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox, distanceSq2D } from './utils.js';
+import {
+  addToActiveEntities,
+  removeFromActiveEntities,
+  batchRemoveFromActiveEntities,
+  getGameObjectWorkerContext,
+  bumpActiveQueryVersion,
+  addToMatchingQueries,
+  removeFromMatchingQueries,
+  batchRemoveFromMatchingQueries,
+  removeFromTypeActiveList,
+  clearTypeActiveList,
+  addToTypeActiveList,
+} from './gameObjectActiveState.js';
 import Keyboard from './Keyboard.js';
 import { DecorationPool } from './DecorationPool.js';
 import { Decoration } from './Decoration.js';
@@ -154,22 +167,7 @@ export class GameObject {
    * @param {number} entityIndex - The entity index to add
    */
   static _addToActiveEntities(entityIndex) {
-    const data = this.activeEntitiesData;
-    if (!data) return;
-
-    const count = data[0];
-    const insertPos = binarySearchInsertPoint(data, entityIndex, count);
-
-    // Dedup: entity already in list (rapid despawn/re-spawn reuse)
-    if (insertPos <= count && data[insertPos] === entityIndex) return;
-
-    // Shift elements right to make room
-    for (let i = count; i >= insertPos; i--) {
-      data[i + 1] = data[i];
-    }
-
-    data[insertPos] = entityIndex;
-    data[0] = count + 1;
+    addToActiveEntities(this.activeEntitiesData, entityIndex);
   }
 
   /**
@@ -178,20 +176,7 @@ export class GameObject {
    * @param {number} entityIndex - The entity index to remove
    */
   static _removeFromActiveEntities(entityIndex) {
-    const data = this.activeEntitiesData;
-    if (!data) return;
-
-    const count = data[0];
-    if (count === 0) return;
-
-    const pos = binarySearchFind(data, entityIndex, count);
-    if (pos === -1) return;
-
-    // Shift elements left to fill gap
-    for (let i = pos; i < count; i++) {
-      data[i] = data[i + 1];
-    }
-    data[0] = count - 1;
+    removeFromActiveEntities(this.activeEntitiesData, entityIndex);
   }
 
   /**
@@ -200,21 +185,7 @@ export class GameObject {
    * @param {Set<number>} indicesToRemove - Set of entity indices to remove
    */
   static _batchRemoveFromActiveEntities(indicesToRemove) {
-    const data = this.activeEntitiesData;
-    if (!data || indicesToRemove.size === 0) return;
-
-    const count = data[0];
-    if (count === 0) return;
-
-    // Single-pass compaction: copy non-removed elements to front
-    let writePos = 1;
-    for (let readPos = 1; readPos <= count; readPos++) {
-      const entityIndex = data[readPos];
-      if (!indicesToRemove.has(entityIndex)) {
-        data[writePos++] = entityIndex;
-      }
-    }
-    data[0] = writePos - 1;
+    batchRemoveFromActiveEntities(this.activeEntitiesData, indicesToRemove);
   }
 
   /**
@@ -222,16 +193,11 @@ export class GameObject {
    * @returns {Object|null} Worker instance with query system data, or null
    */
   static _getWorkerContext() {
-    if (typeof self === 'undefined') return null;
-    // Try different worker types - whichever is defined
-    return self.logicWorker || self.particleWorker || self.pixiRenderer || self.physicsWorker || self.spatialWorker || null;
+    return getGameObjectWorkerContext();
   }
 
   static _bumpActiveQueryVersion() {
-    const worker = this._getWorkerContext();
-    if (worker?.queryVersionData) {
-      Atomics.add(worker.queryVersionData, 0, 1);
-    }
+    bumpActiveQueryVersion(this._getWorkerContext());
   }
 
   static _forwardDespawnAllToLogic0(EntityClass) {
@@ -262,37 +228,7 @@ export class GameObject {
    * @param {number} entityType - The entity's type ID
    */
   static _addToMatchingQueries(entityIndex, entityType) {
-    // Access query system from worker context (works from any worker type)
-    const worker = this._getWorkerContext();
-    if (!worker || !worker._queryResultViews || !worker._precomputedQueries || !worker._queryEntityMetadata) {
-      return;
-    }
-
-    const entityMeta = worker._queryEntityMetadata[entityType];
-    if (!entityMeta) return;
-
-    const componentMask = entityMeta.componentMask;
-
-    // Check each precomputed query
-    for (let q = 0; q < worker._precomputedQueries.length; q++) {
-      const query = worker._precomputedQueries[q];
-
-      // Entity matches query if it has ALL required components
-      if ((componentMask & query.queryMask) === query.queryMask) {
-        const resultView = worker._queryResultViews[q];
-        const count = resultView[0];
-        const insertPos = binarySearchInsertPoint(resultView, entityIndex, count);
-
-        if (insertPos <= count && resultView[insertPos] === entityIndex) continue;
-
-        for (let i = count; i >= insertPos; i--) {
-          resultView[i + 1] = resultView[i];
-        }
-
-        resultView[insertPos] = entityIndex;
-        resultView[0] = count + 1;
-      }
-    }
+    addToMatchingQueries(entityIndex, entityType, this._getWorkerContext());
   }
 
   /**
@@ -302,35 +238,7 @@ export class GameObject {
    * @param {number} entityType - The entity's type ID
    */
   static _removeFromMatchingQueries(entityIndex, entityType) {
-    // Access query system from worker context (works from any worker type)
-    const worker = this._getWorkerContext();
-    if (!worker || !worker._queryResultViews || !worker._precomputedQueries || !worker._queryEntityMetadata) {
-      return;
-    }
-
-    const entityMeta = worker._queryEntityMetadata[entityType];
-    if (!entityMeta) return;
-
-    const componentMask = entityMeta.componentMask;
-
-    // Check each precomputed query
-    for (let q = 0; q < worker._precomputedQueries.length; q++) {
-      const query = worker._precomputedQueries[q];
-
-      // Entity matches query if it has ALL required components
-      if ((componentMask & query.queryMask) === query.queryMask) {
-        const resultView = worker._queryResultViews[q];
-        const count = resultView[0];
-        const pos = binarySearchFind(resultView, entityIndex, count);
-
-        if (pos !== -1) {
-          for (let i = pos; i < count; i++) {
-            resultView[i] = resultView[i + 1];
-          }
-          resultView[0] = count - 1;
-        }
-      }
-    }
+    removeFromMatchingQueries(entityIndex, entityType, this._getWorkerContext());
   }
 
   /**
@@ -340,19 +248,7 @@ export class GameObject {
    * @param {number} entityIndex - The entity index to remove
    */
   static _removeFromTypeActiveList(EntityClass, entityIndex) {
-    const typeList = EntityClass._activeList;
-    if (!typeList) return;
-
-    const count = typeList[0];
-    if (count === 0) return;
-
-    const pos = binarySearchFind(typeList, entityIndex, count);
-    if (pos !== -1) {
-      for (let i = pos; i < count; i++) {
-        typeList[i] = typeList[i + 1];
-      }
-      typeList[0] = count - 1;
-    }
+    removeFromTypeActiveList(EntityClass._activeList, entityIndex);
   }
 
   /**
@@ -361,10 +257,7 @@ export class GameObject {
    * @param {Class} EntityClass - The entity's class
    */
   static _clearTypeActiveList(EntityClass) {
-    const typeList = EntityClass._activeList;
-    if (typeList) {
-      typeList[0] = 0;
-    }
+    clearTypeActiveList(EntityClass._activeList);
   }
 
   /**
@@ -374,38 +267,7 @@ export class GameObject {
    * @param {number} entityType - The entity type ID (all indices must be same type)
    */
   static _batchRemoveFromMatchingQueries(indicesToRemove, entityType) {
-    if (indicesToRemove.size === 0) return;
-
-    const worker = this._getWorkerContext();
-    if (!worker || !worker._queryResultViews || !worker._precomputedQueries || !worker._queryEntityMetadata) {
-      return;
-    }
-
-    const entityMeta = worker._queryEntityMetadata[entityType];
-    if (!entityMeta) return;
-
-    const componentMask = entityMeta.componentMask;
-
-    // For each matching query, do single-pass compaction
-    for (let q = 0; q < worker._precomputedQueries.length; q++) {
-      const query = worker._precomputedQueries[q];
-
-      if ((componentMask & query.queryMask) === query.queryMask) {
-        const resultView = worker._queryResultViews[q];
-        const count = resultView[0];
-        if (count === 0) continue;
-
-        // Single-pass compaction
-        let writePos = 1;
-        for (let readPos = 1; readPos <= count; readPos++) {
-          const entityIndex = resultView[readPos];
-          if (!indicesToRemove.has(entityIndex)) {
-            resultView[writePos++] = entityIndex;
-          }
-        }
-        resultView[0] = writePos - 1;
-      }
-    }
+    batchRemoveFromMatchingQueries(indicesToRemove, entityType, this._getWorkerContext());
   }
 
   /**
@@ -415,20 +277,7 @@ export class GameObject {
    * @param {number} entityIndex - The entity index to add
    */
   static _addToTypeActiveList(EntityClass, entityIndex) {
-    const typeList = EntityClass._activeList;
-    if (!typeList) return;
-
-    const count = typeList[0];
-    const insertPos = binarySearchInsertPoint(typeList, entityIndex, count);
-
-    if (insertPos <= count && typeList[insertPos] === entityIndex) return;
-
-    for (let i = count; i >= insertPos; i--) {
-      typeList[i + 1] = typeList[i];
-    }
-
-    typeList[insertPos] = entityIndex;
-    typeList[0] = count + 1;
+    addToTypeActiveList(EntityClass._activeList, entityIndex);
   }
 
   /**

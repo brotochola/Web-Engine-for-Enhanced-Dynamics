@@ -19,7 +19,7 @@ Each worker owns its data region. Nobody steps on anybody else's bytes. It's bea
 | `pixi_worker` | 1 | No | No | PixiJS on OffscreenCanvas. Draws the frame. |
 | `AudioMixerProcessor` | 1 | No | No | Real-time PCM mixing on audio thread (AudioWorklet) |
 
-All workers live in `src/workers/`. They are created in `src/core/Scene.js` (`createWorkers()`).
+All workers live in `src/workers/`. They are bootstrapped by `src/core/sceneWorkerBootstrap.js`, invoked from `src/core/Scene.js` (`createWorkers()`).
 
 ---
 

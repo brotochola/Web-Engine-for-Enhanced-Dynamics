@@ -1,6 +1,6 @@
 {
   "name": "@weed.js/engine",
-  "version": "0.4.122",
+  "version": "0.4.123",
   "description": "A blazing-fast multithreaded web game engine that handles 20,000+ NPCs without breaking a sweat",
   "type": "module",
   "main": "dist/weed.bundle.min.js",
@@ -27,7 +27,6 @@
   },
   "scripts": {
     "sync:version": "node scripts/sync-version.js",
-    "predev": "npm run sync:version",
     "dev": "node server/node_server.js",
     "pretest:node": "npm run sync:version",
     "test": "npm run test:node",
