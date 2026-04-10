@@ -82,11 +82,13 @@ export class Layer {
     static _postToRenderer = null;
 
     /**
-     * Pending Promise resolve for async background operations.
-     * Set by setTilemapBackground(), resolved by resolveBackgroundReady().
-     * @type {function|null}
+     * Pending Promise resolvers for async background operations, keyed by request id.
+     * This lets overlapping background changes resolve the correct Promise instead of
+     * using one global slot.
+     * @type {Map<number, function>}
      */
-    static _backgroundReadyResolve = null;
+    static _backgroundReadyResolvers = new Map();
+    static _nextBackgroundRequestId = 1;
 
     constructor(id, name) {
         this.id = id;
@@ -172,7 +174,7 @@ export class Layer {
             console.warn('Layer: renderer not connected');
             return;
         }
-        Layer._postToRenderer({
+        Layer._postBackgroundCommand({
             msg: 'setBackground',
             type: 'static',
             layerId: this.id,
@@ -190,7 +192,7 @@ export class Layer {
             console.warn('Layer: renderer not connected');
             return;
         }
-        Layer._postToRenderer({
+        Layer._postBackgroundCommand({
             msg: 'setBackground',
             type: 'tiling',
             layerId: this.id,
@@ -211,14 +213,13 @@ export class Layer {
             return Promise.resolve();
         }
         return new Promise((resolve) => {
-            Layer._backgroundReadyResolve = resolve;
-            Layer._postToRenderer({
+            Layer._postBackgroundCommand({
                 msg: 'setBackground',
                 type: 'tilemap',
                 layerId: this.id,
                 tilemapId,
                 options,
-            });
+            }, resolve);
         });
     }
 
@@ -230,7 +231,7 @@ export class Layer {
             console.warn('Layer: renderer not connected');
             return;
         }
-        Layer._postToRenderer({
+        Layer._postBackgroundCommand({
             msg: 'setBackground',
             type: 'none',
             layerId: this.id,
@@ -275,14 +276,32 @@ export class Layer {
         return this._byId.filter(l => l && this._hasRenderQueue[l.id] === 1 && l.id !== this.ENTITIES_ID);
     }
 
-    /**
-     * Resolve the pending background-ready promise (called by Scene on 'backgroundReady' message)
-     */
-    static resolveBackgroundReady() {
-        if (this._backgroundReadyResolve) {
-            this._backgroundReadyResolve();
-            this._backgroundReadyResolve = null;
+    static _createBackgroundRequestId() {
+        const id = this._nextBackgroundRequestId;
+        this._nextBackgroundRequestId =
+            this._nextBackgroundRequestId >= 0x7fffffff ? 1 : this._nextBackgroundRequestId + 1;
+        return id;
+    }
+
+    static _postBackgroundCommand(payload, resolve = null) {
+        const requestId = this._createBackgroundRequestId();
+        if (resolve) {
+            this._backgroundReadyResolvers.set(requestId, resolve);
         }
+        this._postToRenderer({ ...payload, requestId });
+        return requestId;
+    }
+
+    /**
+     * Resolve the pending background-ready promise for a specific request.
+     * Called by Scene on `backgroundReady` from the renderer worker.
+     */
+    static resolveBackgroundReady(layerId, requestId) {
+        if (requestId == null) return;
+        const resolve = this._backgroundReadyResolvers.get(requestId);
+        if (!resolve) return;
+        this._backgroundReadyResolvers.delete(requestId);
+        resolve();
     }
 
     // ========================================
@@ -633,6 +652,11 @@ export class Layer {
     // ========================================
 
     static reset() {
+        for (const resolve of this._backgroundReadyResolvers.values()) {
+            resolve();
+        }
+        this._backgroundReadyResolvers.clear();
+
         // Remove dynamic custom layer properties from previous scene
         for (const name of Object.keys(this._byName)) {
             const layer = this._byName[name];
@@ -664,6 +688,6 @@ export class Layer {
         this._allCache = [];
         this._allCacheCount = -1;
         this._postToRenderer = null;
-        this._backgroundReadyResolve = null;
+        this._nextBackgroundRequestId = 1;
     }
 }

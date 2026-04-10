@@ -73,6 +73,26 @@ const _sortIndices = new Int32Array(MAX_EVENTS);
 const MAX_ACTIVE = 256;
 const _activeCircles = new Int32Array(MAX_ACTIVE);
 let _activeCount = 0;
+let _warnedEventOverflow = false;
+let _warnedActiveOverflow = false;
+
+function warnEventOverflow(circleCount) {
+  if (_warnedEventOverflow) return;
+  _warnedEventOverflow = true;
+  console.warn(
+    `[AngularSweep] Event cap exceeded (${MAX_EVENTS} max events, ${circleCount} circles considered). ` +
+    `Falling back to full-circle visibility for this light.`
+  );
+}
+
+function warnActiveOverflow() {
+  if (_warnedActiveOverflow) return;
+  _warnedActiveOverflow = true;
+  console.warn(
+    `[AngularSweep] Active occluder cap exceeded (${MAX_ACTIVE} max simultaneous occluders). ` +
+    `Falling back to full-circle visibility for this light.`
+  );
+}
 
 /**
  * Build a visibility polygon from a light source, blocked by circle occluders.
@@ -118,7 +138,10 @@ export function buildVisibilityPolygon(
     const openAngle = normalizeAngle(centerAngle - halfAngle);
     const closeAngle = normalizeAngle(centerAngle + halfAngle);
 
-    if (eventCount + 2 > MAX_EVENTS) break;
+    if (eventCount + 2 > MAX_EVENTS) {
+      warnEventOverflow(circleCount);
+      return buildFullCircle(lightX, lightY, maxRadius, outX, outY, maxVertices);
+    }
 
     _eventAngles[eventCount] = openAngle;
     _eventCircleIdx[eventCount] = i;
@@ -161,6 +184,9 @@ export function buildVisibilityPolygon(
     if (openAngle > closeAngle) {
       if (_activeCount < MAX_ACTIVE) {
         _activeCircles[_activeCount++] = i;
+      } else {
+        warnActiveOverflow();
+        return buildFullCircle(lightX, lightY, maxRadius, outX, outY, maxVertices);
       }
     }
   }
@@ -203,6 +229,9 @@ export function buildVisibilityPolygon(
     if (isOpen) {
       if (_activeCount < MAX_ACTIVE) {
         _activeCircles[_activeCount++] = ci;
+      } else {
+        warnActiveOverflow();
+        return buildFullCircle(lightX, lightY, maxRadius, outX, outY, maxVertices);
       }
     } else {
       for (let a = 0; a < _activeCount; a++) {

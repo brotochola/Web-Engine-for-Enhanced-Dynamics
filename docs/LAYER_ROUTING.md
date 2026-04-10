@@ -26,13 +26,13 @@ Layer.BACKGROUND.clearBackground();
 // Custom layers also become properties after init: Layer.water, Layer.lava, etc.
 ```
 
-`setTilemapBackground` returns a Promise that resolves after the renderer builds the tilemap and completes a warm-up render pass (GPU shader compilation). The other methods are fire-and-forget.
+`setTilemapBackground` returns a Promise that resolves after the renderer builds the tilemap and completes a warm-up render pass (GPU shader compilation). The other methods are fire-and-forget. Background requests are tagged with a request id, so overlapping background changes resolve the correct Promise instead of sharing one global pending slot.
 
 ### How It Works
 
 1. Layer instance methods post a message to the renderer worker via `Layer._postToRenderer` (a callback wired by Scene during init).
-2. The renderer worker (`pixi_worker.js`) receives the `setBackground` message, creates the appropriate display object, and sends `backgroundReady` back.
-3. Scene forwards the `backgroundReady` message to `Layer.resolveBackgroundReady()`, which resolves the pending Promise.
+2. The renderer worker (`pixi_worker.js`) receives the `setBackground` message, creates the appropriate display object, and sends `backgroundReady` back with the same `requestId`.
+3. Scene forwards the `backgroundReady` message to `Layer.resolveBackgroundReady(layerId, requestId)`, which resolves the matching Promise.
 
 The `layerId` is included in the message for future multi-background-layer support.
 

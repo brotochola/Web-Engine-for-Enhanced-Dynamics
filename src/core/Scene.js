@@ -2567,7 +2567,7 @@ class Scene {
       // Show a visible error message on the page
       this._showFatalErrorMessage(workerName, title, message);
     } else if (e.data.msg === 'backgroundReady') {
-      Layer.resolveBackgroundReady();
+      Layer.resolveBackgroundReady(e.data.layerId, e.data.requestId);
     } else {
       // Log unexpected messages for debugging
       console.log(`[Scene] 📨 Received message from ${e.currentTarget.name}:`, e.data.msg, e.data);

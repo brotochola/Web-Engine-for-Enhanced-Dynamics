@@ -288,7 +288,7 @@ Layer.BACKGROUND.setTilingBackground('clouds', 0.5);
 Layer.BACKGROUND.clearBackground();
 ```
 
-Any layer can own a background. `setTilemapBackground` returns a Promise (warm-up render).
+Any layer can own a background. `setTilemapBackground` returns a request-scoped Promise (warm-up render), so overlapping background changes do not steal each other's completion signal.
 
 ### Assigning Entities to Layers
 

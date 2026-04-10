@@ -19,7 +19,7 @@ Each worker owns its data region. Nobody steps on anybody else's bytes. It's bea
 | `pixi_worker` | 1 | No | No | PixiJS on OffscreenCanvas. Draws the frame. |
 | `AudioMixerProcessor` | 1 | No | No | Real-time PCM mixing on audio thread (AudioWorklet) |
 
-All workers live in `src/workers/`. Created in `Scene.js` (~line 1819).
+All workers live in `src/workers/`. They are created in `src/core/Scene.js` (`createWorkers()`).
 
 ---
 
@@ -184,6 +184,8 @@ Reads visibility lists, advances animations, builds the render and shadow queues
 8. Write to alternating double buffer (`renderQueueFrame % 2`)
 9. Signal pixi via `Atomics.store` + `Atomics.notify` on `renderQueueSync`
 10. Wait if more than 1 frame ahead of pixi
+
+Visibility polygon generation uses bounded event/active pools. If those caps overflow, the engine now falls back to full-circle visibility for that light instead of emitting a silently corrupted polygon.
 
 **Custom layer iteration** is pre-cached at init time as a flat array (`_customLayerEntries`), avoiding `Object.entries()` allocations in the hot path.
 
