@@ -10,6 +10,48 @@ QueryTestComponentA.componentId = 0;
 class QueryTestComponentB {}
 QueryTestComponentB.componentId = 1;
 
+class PrecomputedTransform {}
+PrecomputedTransform.componentId = 10;
+
+class PrecomputedRigidBody {}
+PrecomputedRigidBody.componentId = 11;
+
+class PrecomputedCollider {}
+PrecomputedCollider.componentId = 12;
+
+class PrecomputedSpriteRenderer {}
+PrecomputedSpriteRenderer.componentId = 13;
+
+class PrecomputedAdobeAnimComponent {}
+PrecomputedAdobeAnimComponent.componentId = 14;
+
+class PrecomputedLightEmitter {}
+PrecomputedLightEmitter.componentId = 15;
+
+class PrecomputedShadowCaster {}
+PrecomputedShadowCaster.componentId = 16;
+
+class PrecomputedFlashComponent {}
+PrecomputedFlashComponent.componentId = 17;
+
+class PrecomputedLightOccluder {}
+PrecomputedLightOccluder.componentId = 18;
+
+class PrecomputedCameraInOutListener {}
+PrecomputedCameraInOutListener.componentId = 19;
+
+class PrecomputedCollisionListener {}
+PrecomputedCollisionListener.componentId = 20;
+
+class PrecomputedParticleComponent {}
+PrecomputedParticleComponent.componentId = 21;
+
+class PrecomputedDecorationComponent {}
+PrecomputedDecorationComponent.componentId = 22;
+
+class PrecomputedBulletComponent {}
+PrecomputedBulletComponent.componentId = 23;
+
 function createUint16View(values) {
   const sab = new SharedArrayBuffer(values.length * Uint16Array.BYTES_PER_ELEMENT);
   const view = new Uint16Array(sab);
@@ -83,6 +125,58 @@ function restoreWorkerActiveListGlobals(previous) {
   if (previous.prop === undefined) delete globalThis.QueryTestProp;
   else globalThis.QueryTestProp = previous.prop;
 }
+
+test('definePrecomputedQueries covers all built-in entity components as single-component queries', () => {
+  const previousLog = console.log;
+  console.log = () => {};
+  const querySystem = new QuerySystem();
+  try {
+    querySystem.definePrecomputedQueries({
+      Transform: PrecomputedTransform,
+      RigidBody: PrecomputedRigidBody,
+      Collider: PrecomputedCollider,
+      SpriteRenderer: PrecomputedSpriteRenderer,
+      AdobeAnimComponent: PrecomputedAdobeAnimComponent,
+      LightEmitter: PrecomputedLightEmitter,
+      ShadowCaster: PrecomputedShadowCaster,
+      FlashComponent: PrecomputedFlashComponent,
+      LightOccluder: PrecomputedLightOccluder,
+      CameraInOutListener: PrecomputedCameraInOutListener,
+      CollisionListener: PrecomputedCollisionListener,
+      ParticleComponent: PrecomputedParticleComponent,
+      DecorationComponent: PrecomputedDecorationComponent,
+      BulletComponent: PrecomputedBulletComponent,
+    });
+
+    const queryNames = new Set(querySystem.precomputedQueries.map((query) => query.name));
+
+    assert.deepEqual(
+      Array.from(queryNames).sort(),
+      [
+        'AdobeAnimComponent',
+        'CameraInOutListener',
+        'Collider',
+        'CollisionListener',
+        'FlashComponent',
+        'LightEmitter',
+        'LightEmitter+FlashComponent',
+        'LightEmitter+ShadowCaster',
+        'LightOccluder',
+        'RigidBody',
+        'RigidBody+Collider',
+        'ShadowCaster',
+        'SpriteRenderer',
+        'SpriteRenderer+RigidBody',
+        'Transform',
+      ]
+    );
+    assert.equal(queryNames.has('ParticleComponent'), false);
+    assert.equal(queryNames.has('DecorationComponent'), false);
+    assert.equal(queryNames.has('BulletComponent'), false);
+  } finally {
+    console.log = previousLog;
+  }
+});
 
 test('main-thread fallback queryActiveEntities can use per-type active lists', () => {
   const previousActiveEntitiesData = GameObject.activeEntitiesData;

@@ -269,9 +269,13 @@ export class QuerySystem {
       RigidBody,
       Collider,
       SpriteRenderer,
+      AdobeAnimComponent,
       LightEmitter,
       ShadowCaster,
       FlashComponent,
+      LightOccluder,
+      CameraInOutListener,
+      CollisionListener,
     } = componentClasses;
 
     // Define single-component queries
@@ -280,9 +284,13 @@ export class QuerySystem {
       { name: 'RigidBody', components: [RigidBody] },
       { name: 'Collider', components: [Collider] },
       { name: 'SpriteRenderer', components: [SpriteRenderer] },
+      { name: 'AdobeAnimComponent', components: [AdobeAnimComponent] },
       { name: 'LightEmitter', components: [LightEmitter] },
       { name: 'ShadowCaster', components: [ShadowCaster] },
       { name: 'FlashComponent', components: [FlashComponent] },
+      { name: 'LightOccluder', components: [LightOccluder] },
+      { name: 'CameraInOutListener', components: [CameraInOutListener] },
+      { name: 'CollisionListener', components: [CollisionListener] },
     ].filter((q) => q.components.every((c) => c !== undefined));
 
     // Define common multi-component queries
