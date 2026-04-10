@@ -1005,7 +1005,7 @@ export class AbstractWorker {
   /**
    * Query for ACTIVE entities with specified components
    * Returns a view into pre-computed shared query results when available,
-   * otherwise computes a fallback result from the shared active-entity list.
+   * otherwise computes a fallback result from active entity lists.
    *
    * @param {Array<Component>} componentClasses - Array of component classes to query
    * @returns {Uint16Array} - Active entity indices (view into SAB, do not modify)

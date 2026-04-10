@@ -42,6 +42,9 @@ const QUERY_CACHE_ENTRY_SIZE = 16;
 /** Bytes per query result buffer (count + max entities as Uint16) */
 const QUERY_RESULT_BUFFER_SIZE = 2 + MAX_ENTITIES * 2; // ~128KB per query
 
+/** Reusable empty result view for query misses */
+const EMPTY_QUERY_RESULT = new Uint16Array(0);
+
 // =============================================================================
 // SAB LAYOUT HELPERS
 // =============================================================================
@@ -95,6 +98,48 @@ export function calculateQueryResultsSABSize(numQueries) {
   return numQueries * QUERY_RESULT_BUFFER_SIZE;
 }
 
+function copyActiveMatchesToBuffer(typeMask, entityMetadata, activeEntitiesData, buffer, getTypeActiveList) {
+  let count = 0;
+  let mask = typeMask;
+
+  while (mask !== 0n) {
+    const typeIndex = countTrailingZeros(mask);
+    const typeActiveList = getTypeActiveList ? getTypeActiveList(typeIndex) : null;
+
+    if (typeActiveList) {
+      const typeCount = typeActiveList[0];
+      if (typeCount > 0) {
+        buffer.set(typeActiveList.subarray(1, 1 + typeCount), count);
+        count += typeCount;
+      }
+    } else if (activeEntitiesData) {
+      const meta = entityMetadata[typeIndex];
+      const slice = binarySearchRange(activeEntitiesData, meta.startIndex, meta.endIndex);
+      if (slice.length > 0) {
+        buffer.set(slice, count);
+        count += slice.length;
+      }
+    }
+
+    mask &= mask - 1n;
+  }
+
+  return count;
+}
+
+function warnNonPrecomputedQueryOnce(warnedQueries, queryMask, componentClasses) {
+  if (warnedQueries.has(queryMask)) {
+    return;
+  }
+
+  warnedQueries.add(queryMask);
+  const componentNames = componentClasses.map((ComponentClass) => ComponentClass?.name || 'unknown');
+  console.warn(
+    `[QuerySystem] queryActiveEntities fallback used for [${componentNames.join(', ')}]. ` +
+      `Consider adding this combination to precomputedQueries if it is hot.`
+  );
+}
+
 // =============================================================================
 // QUERYSYSTEM CLASS
 // =============================================================================
@@ -103,7 +148,7 @@ export class QuerySystem {
   constructor() {
     /**
      * Entity type metadata (populated during buildQueries)
-     * Array of { entityType, className, componentMask, startIndex, endIndex, poolSize }
+     * Array of { entityType, className, entityClass, componentMask, startIndex, endIndex, poolSize }
      */
     this.entityMetadata = [];
 
@@ -147,6 +192,9 @@ export class QuerySystem {
      * Result is a temporary view - consume immediately, do not store.
      */
     this._queryResultBuffer = null;
+
+    /** Query masks already warned about in queryActiveEntities() fallback */
+    this._warnedNonPrecomputedQueries = new Set();
   }
 
   /**
@@ -185,6 +233,7 @@ export class QuerySystem {
         return {
           entityType,
           className: EntityClass.name,
+          entityClass: EntityClass,
           components,
           componentMask,
           startIndex,
@@ -515,7 +564,8 @@ export class QuerySystem {
   /**
    * Query for ACTIVE entities with specified components
    * Returns a shared pre-computed result view when available.
-   * Otherwise falls back to computing from the shared active-entity list.
+   * Otherwise falls back to a computed result built from per-type active lists
+   * when available, or the shared active-entity list as a compatibility path.
    *
    * @param {Array} componentClasses - Array of component classes
    * @returns {Uint16Array} - Active entity indices (view into SAB, do not modify)
@@ -533,21 +583,17 @@ export class QuerySystem {
       return view.subarray(1, 1 + count);
     }
 
-    // Not pre-computed - fall back to computing from activeEntitiesData
-    // This path is slower but works for any component combination
-    console.warn(
-      `[QuerySystem] queryActiveEntities called with non-precomputed query. Consider adding to precomputedQueries.`
-    );
-    return this._computeActiveQuery(componentClasses);
+    // Not pre-computed - compute on demand from active entity lists.
+    // This path is slower than a pre-computed SAB result but works for any component combination.
+    warnNonPrecomputedQueryOnce(this._warnedNonPrecomputedQueries, queryMask, componentClasses);
+    return this._computeActiveQueryFromMask(queryMask);
   }
 
   /**
    * Compute active query result on-demand (fallback for non-precomputed queries)
    * @private
    */
-  _computeActiveQuery(componentClasses) {
-    // Get typeMask
-    const queryMask = this._generateQueryMask(componentClasses);
+  _computeActiveQueryFromMask(queryMask) {
     let typeMask = this.queryToTypeMask.get(queryMask);
     if (typeMask === undefined) {
       typeMask = this._computeTypeMask(queryMask);
@@ -556,35 +602,27 @@ export class QuerySystem {
 
     // Get activeEntitiesData from GameObject
     const activeData = GameObject.activeEntitiesData;
-    if (!activeData) {
-      return new Uint16Array(0);
-    }
-
-    const totalActive = activeData[0];
-    if (totalActive === 0) {
-      return new Uint16Array(0);
+    if (activeData && activeData[0] === 0) {
+      return EMPTY_QUERY_RESULT;
     }
 
     const buffer = this._queryResultBuffer;
-    if (!buffer) return new Uint16Array(0);
+    if (!buffer) return EMPTY_QUERY_RESULT;
 
-    let count = 0;
-    let mask = typeMask;
-
-    while (mask !== 0n) {
-      const typeIndex = countTrailingZeros(mask);
-      const meta = this.entityMetadata[typeIndex];
-
-      const slice = binarySearchRange(activeData, meta.startIndex, meta.endIndex);
-
-      for (let i = 0; i < slice.length; i++) {
-        buffer[count++] = slice[i];
-      }
-
-      mask &= mask - 1n;
-    }
+    const count = copyActiveMatchesToBuffer(
+      typeMask,
+      this.entityMetadata,
+      activeData,
+      buffer,
+      (typeIndex) => this._getTypeActiveList(typeIndex)
+    );
 
     return buffer.subarray(0, count);
+  }
+
+  _getTypeActiveList(typeIndex) {
+    const meta = this.entityMetadata[typeIndex];
+    return meta?.entityClass?._activeList || null;
   }
   /**
    * Serialize for sending to workers via postMessage
@@ -713,6 +751,12 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
   // Map: componentIds string (sorted, comma-joined) → queryMask (BigInt)
   const queryMaskCache = new Map();
 
+  // Warn once per unique non-precomputed query to avoid console spam in hot paths.
+  const warnedNonPrecomputedQueries = new Set();
+
+  // Cache per-type active list SAB views once entity classes are attached to global scope.
+  const cachedTypeActiveLists = new Array(entityMetadata.length);
+
   // OPTIMIZATION: Reusable buffers for query() and queryActiveEntities fallback - avoids GC pressure
   // Multiple buffers allow several queries in the same tick without overwriting
   // Result is a temporary view - consume immediately, do not store
@@ -772,6 +816,25 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
       }
     }
     return typeMask;
+  }
+
+  function getTypeActiveList(typeIndex) {
+    const cached = cachedTypeActiveLists[typeIndex];
+    if (cached) {
+      return cached;
+    }
+
+    const className = entityMetadata[typeIndex]?.className;
+    if (!className) {
+      return null;
+    }
+
+    const EntityClass = globalThis[className];
+    const activeList = EntityClass?._activeList || null;
+    if (activeList) {
+      cachedTypeActiveLists[typeIndex] = activeList;
+    }
+    return activeList;
   }
 
   /**
@@ -834,30 +897,27 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
     }
 
     // Fallback: compute from activeEntitiesData (reuse buffer to avoid GC pressure)
+    warnNonPrecomputedQueryOnce(warnedNonPrecomputedQueries, queryMask, componentClasses);
+
     let typeMask = queryToTypeMask.get(queryMask);
     if (typeMask === undefined) {
       typeMask = computeTypeMask(queryMask);
       queryToTypeMask.set(queryMask, typeMask);
     }
 
-    if (!activeEntitiesData || activeEntitiesData[0] === 0) {
-      return new Uint16Array(0);
+    if (activeEntitiesData && activeEntitiesData[0] === 0) {
+      return EMPTY_QUERY_RESULT;
     }
 
     const buffer = queryResultBuffers[queryResultBufferIndex];
     queryResultBufferIndex = (queryResultBufferIndex + 1) % QUERY_BUFFER_POOL_SIZE;
-    let count = 0;
-    let mask = typeMask;
-
-    while (mask !== 0n) {
-      const typeIndex = countTrailingZeros(mask);
-      const meta = entityMetadata[typeIndex];
-      const slice = binarySearchRange(activeEntitiesData, meta.startIndex, meta.endIndex);
-      for (let i = 0; i < slice.length; i++) {
-        buffer[count++] = slice[i];
-      }
-      mask &= mask - 1n;
-    }
+    const count = copyActiveMatchesToBuffer(
+      typeMask,
+      entityMetadata,
+      activeEntitiesData,
+      buffer,
+      getTypeActiveList
+    );
 
     return buffer.subarray(0, count);
   }
@@ -865,7 +925,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
   return {
     query,
     queryActiveEntities,
-    // Expose internals for particle_worker to populate results
+    // Expose internals for logic worker active-query maintenance
     _queryResultViews: queryResultViews,
     _precomputedQueries: precomputedQueries,
     _entityMetadata: entityMetadata,

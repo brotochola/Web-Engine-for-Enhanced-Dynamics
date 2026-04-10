@@ -1380,7 +1380,7 @@ export function query(componentClasses) {
  * Query ACTIVE entities by component combination - wrapper that accesses globalThis.queryActiveEntities
  * This allows entity code to use queryActiveEntities() in any worker context.
  * For pre-computed queries it returns a shared SAB-backed view; otherwise it falls back to a slower
- * computation over the shared active-entity list.
+ * computed result over active entity lists.
  *
  * @param {Array<Component>} componentClasses - Array of component classes to query
  * @returns {Uint16Array} - Active entity indices
