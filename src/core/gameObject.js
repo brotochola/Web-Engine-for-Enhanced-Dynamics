@@ -226,6 +226,13 @@ export class GameObject {
     return self.logicWorker || self.particleWorker || self.pixiRenderer || self.physicsWorker || self.spatialWorker || null;
   }
 
+  static _bumpActiveQueryVersion() {
+    const worker = this._getWorkerContext();
+    if (worker?.queryVersionData) {
+      Atomics.add(worker.queryVersionData, 0, 1);
+    }
+  }
+
   /**
    * Add an entity to all matching precomputed query buffers (sorted insert)
    * Called from spawn() after entity activation
@@ -2149,6 +2156,8 @@ export class GameObject {
     // Cache component active arrays for inner loop
     const transformActive = Transform.active;
     const rigidBodyActive = RigidBody.active;
+    const rigidBodySleeping = RigidBody.sleeping;
+    const rigidBodyStillnessTime = RigidBody.stillnessTime;
     const colliderActive = Collider.active;
     const spriteRendererActive = SpriteRenderer.active;
     const adobeAnimActive = AdobeAnimComponent.active;
@@ -2177,11 +2186,14 @@ export class GameObject {
           instance.onDespawned();
         }
 
+        DecorationPool.clearAttachedAndDespawnAll(i);
         indicesToDespawn.add(i);
 
         // Deactivate all component active flags
         transformActive[i] = 0;
         if (rigidBodyActive) rigidBodyActive[i] = 0;
+        if (rigidBodySleeping) rigidBodySleeping[i] = 0;
+        if (rigidBodyStillnessTime) rigidBodyStillnessTime[i] = 0;
         if (colliderActive) colliderActive[i] = 0;
         if (spriteRendererActive) spriteRendererActive[i] = 0;
         if (adobeAnimActive) adobeAnimActive[i] = 0;
@@ -2199,6 +2211,10 @@ export class GameObject {
 
     // Phase 3: Clear the per-type active list entirely (O(1))
     GameObject._clearTypeActiveList(EntityClass);
+
+    // This path mutates active/query lists immediately instead of routing through
+    // logic0's queued list-update pipeline, so it must invalidate fallback caches directly.
+    GameObject._bumpActiveQueryVersion();
 
     // Phase 4: Reset free list with interleaved ordering (O(N) bulk reinit)
     if (EntityClass.freeList) {

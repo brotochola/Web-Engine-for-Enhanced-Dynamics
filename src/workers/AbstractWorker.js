@@ -110,6 +110,7 @@ export class AbstractWorker {
 
     // Query system cache for component-based entity filtering
     this.emptyQueryWarnings = new Set(); // Track empty query warnings (log once per query key)
+    this.queryVersionData = null; // Shared version for active query result invalidation
 
     // Pre-allocated empty array for query fallbacks
     this._emptyUint16Array = new Uint16Array(0);
@@ -523,6 +524,10 @@ export class AbstractWorker {
       GameObject.activeEntitiesData = this.activeEntitiesData;
     }
 
+    if (data.buffers?.queryVersion) {
+      this.queryVersionData = new Int32Array(data.buffers.queryVersion);
+    }
+
     // Per-type active entity lists (SABs for O(1) type-specific queries)
     // These are attached to EntityClass in createGameObjectInstances()
     if (data.buffers?.perTypeActiveLists) {
@@ -562,7 +567,8 @@ export class AbstractWorker {
           queryCacheSAB: data.buffers.queryCache,
           queryResultsSAB: data.buffers.queryResults,
         },
-        this.activeEntitiesData
+        this.activeEntitiesData,
+        this.queryVersionData
       );
 
       this._queryFn = queryFunctions.query;

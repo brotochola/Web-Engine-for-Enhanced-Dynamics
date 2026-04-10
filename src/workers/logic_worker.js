@@ -309,32 +309,44 @@ class LogicWorker extends AbstractWorker {
    * This ensures all list operations happen single-threaded, avoiding race conditions.
    */
   processListUpdates() {
+    let activeQueryPopulationChanged = false;
+
     // ORDERING: Despawns first, then spawns.
     // This ensures rapid despawn→re-spawn cycles at the same index resolve correctly:
     // the old entry is removed before the new one is added (with dedup preventing duplicates).
 
     // Process own pending updates
-    this._processDespawnUpdates(this.pendingDespawnListUpdates);
-    this._processSpawnUpdates(this.pendingSpawnListUpdates);
+    activeQueryPopulationChanged =
+      this._processDespawnUpdates(this.pendingDespawnListUpdates) || activeQueryPopulationChanged;
+    activeQueryPopulationChanged =
+      this._processSpawnUpdates(this.pendingSpawnListUpdates) || activeQueryPopulationChanged;
     this.pendingDespawnListUpdates.length = 0;
     this.pendingSpawnListUpdates.length = 0;
 
     // Process updates received from other workers (same order)
     for (const batch of this.receivedListUpdates) {
       if (batch.despawns) {
-        this._processDespawnUpdates(batch.despawns);
+        activeQueryPopulationChanged =
+          this._processDespawnUpdates(batch.despawns) || activeQueryPopulationChanged;
       }
       if (batch.spawns) {
-        this._processSpawnUpdates(batch.spawns);
+        activeQueryPopulationChanged =
+          this._processSpawnUpdates(batch.spawns) || activeQueryPopulationChanged;
       }
     }
     this.receivedListUpdates.length = 0;
+
+    // Invalidate cached non-precomputed active queries once after the full batch.
+    if (activeQueryPopulationChanged && this.queryVersionData) {
+      Atomics.add(this.queryVersionData, 0, 1);
+    }
   }
 
   /**
    * Process spawn list updates - add entities to active lists
    */
   _processSpawnUpdates(updates) {
+    let changed = false;
     for (const update of updates) {
       const { entityIndex, entityType, EntityClass } = update;
       // Only add if entity is still active (wasn't despawned in same frame)
@@ -342,8 +354,10 @@ class LogicWorker extends AbstractWorker {
         GameObject._addToActiveEntities(entityIndex);
         GameObject._addToTypeActiveList(EntityClass, entityIndex);
         GameObject._addToMatchingQueries(entityIndex, entityType);
+        changed = true;
       }
     }
+    return changed;
   }
 
   /**
@@ -352,12 +366,17 @@ class LogicWorker extends AbstractWorker {
    * entity will be re-added in the subsequent spawn pass (with dedup protection).
    */
   _processDespawnUpdates(updates) {
+    if (!updates || updates.length === 0) {
+      return false;
+    }
+
     for (const update of updates) {
       const { entityIndex, entityType, EntityClass } = update;
       GameObject._removeFromMatchingQueries(entityIndex, entityType);
       GameObject._removeFromActiveEntities(entityIndex);
       GameObject._removeFromTypeActiveList(EntityClass, entityIndex);
     }
+    return true;
   }
 
   /**

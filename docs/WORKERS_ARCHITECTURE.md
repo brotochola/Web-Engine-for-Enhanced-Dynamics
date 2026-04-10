@@ -111,6 +111,7 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 | `mouseData` | Read | Mouse position + buttons |
 | `cameraData` | Read/**Write** | Camera state SAB `[zoom,x,y,followX,followY,targetZoom]` (prefer single writer policy) |
 | `queryResultsSAB` | Read/**Write** (logic 0 maintenance) | Pre-computed active query results shared with all workers |
+| `queryVersionSAB` | Read/**Write** (logic 0 maintenance) | Shared invalidation counter for cached non-precomputed active queries |
 | `constraintData` | **Write** | Create constraints via `Constraint.add` |
 | `constraintFreeList/Top` | Read/**Write** | Pop free constraint slots |
 | `raycastDebugData` | **Write** | Debug ray visualization |

@@ -13,7 +13,7 @@
  *   const activeLights = queryActiveEntities([LightEmitter]); // Only active entities
  */
 
-import { collectComponents, countTrailingZeros, binarySearchRange } from './utils.js';
+import { collectComponents, countTrailingZeros } from './utils.js';
 import { Transform } from '../components/Transform.js';
 import { GameObject } from './gameObject.js';
 
@@ -41,6 +41,9 @@ const QUERY_CACHE_ENTRY_SIZE = 16;
 
 /** Bytes per query result buffer (count + max entities as Uint16) */
 const QUERY_RESULT_BUFFER_SIZE = 2 + MAX_ENTITIES * 2; // ~128KB per query
+
+/** Bytes in the shared active-query version counter */
+const QUERY_VERSION_BUFFER_SIZE = Int32Array.BYTES_PER_ELEMENT;
 
 /** Reusable empty result view for query misses */
 const EMPTY_QUERY_RESULT = new Uint16Array(0);
@@ -98,8 +101,45 @@ export function calculateQueryResultsSABSize(numQueries) {
   return numQueries * QUERY_RESULT_BUFFER_SIZE;
 }
 
+function copyTypeActiveListToBuffer(typeActiveList, buffer, writeIndex) {
+  const typeCount = typeActiveList[0];
+  for (let i = 1; i <= typeCount; i++) {
+    buffer[writeIndex++] = typeActiveList[i];
+  }
+  return writeIndex;
+}
+
+function copySortedRangeToBuffer(activeEntitiesData, start, end, buffer, writeIndex) {
+  const totalCount = activeEntitiesData[0];
+  if (totalCount === 0) {
+    return writeIndex;
+  }
+
+  let lo = 1;
+  let hi = 1 + totalCount;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (activeEntitiesData[mid] < start) lo = mid + 1;
+    else hi = mid;
+  }
+  const first = lo;
+
+  hi = 1 + totalCount;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (activeEntitiesData[mid] < end) lo = mid + 1;
+    else hi = mid;
+  }
+
+  for (let i = first; i < lo; i++) {
+    buffer[writeIndex++] = activeEntitiesData[i];
+  }
+
+  return writeIndex;
+}
+
 function copyActiveMatchesToBuffer(typeMask, entityMetadata, activeEntitiesData, buffer, getTypeActiveList) {
-  let count = 0;
+  let writeIndex = 0;
   let mask = typeMask;
 
   while (mask !== 0n) {
@@ -107,24 +147,40 @@ function copyActiveMatchesToBuffer(typeMask, entityMetadata, activeEntitiesData,
     const typeActiveList = getTypeActiveList ? getTypeActiveList(typeIndex) : null;
 
     if (typeActiveList) {
-      const typeCount = typeActiveList[0];
-      if (typeCount > 0) {
-        buffer.set(typeActiveList.subarray(1, 1 + typeCount), count);
-        count += typeCount;
-      }
+      writeIndex = copyTypeActiveListToBuffer(typeActiveList, buffer, writeIndex);
     } else if (activeEntitiesData) {
       const meta = entityMetadata[typeIndex];
-      const slice = binarySearchRange(activeEntitiesData, meta.startIndex, meta.endIndex);
-      if (slice.length > 0) {
-        buffer.set(slice, count);
-        count += slice.length;
-      }
+      writeIndex = copySortedRangeToBuffer(
+        activeEntitiesData,
+        meta.startIndex,
+        meta.endIndex,
+        buffer,
+        writeIndex
+      );
     }
 
     mask &= mask - 1n;
   }
 
-  return count;
+  return writeIndex;
+}
+
+function createCachedQueryEntry(totalEntityCount) {
+  return {
+    version: -1,
+    count: -1,
+    buffer: new Uint16Array(totalEntityCount),
+    subarray: EMPTY_QUERY_RESULT,
+  };
+}
+
+function updateCachedQueryEntry(entry, count, version) {
+  entry.version = version;
+  if (entry.count !== count) {
+    entry.count = count;
+    entry.subarray = count === 0 ? EMPTY_QUERY_RESULT : entry.buffer.subarray(0, count);
+  }
+  return entry.subarray;
 }
 
 function warnNonPrecomputedQueryOnce(warnedQueries, queryMask, componentClasses) {
@@ -174,6 +230,7 @@ export class QuerySystem {
     this.entityMetadataSAB = null;
     this.queryCacheSAB = null;
     this.queryResultsSAB = null;
+    this.queryVersionSAB = null;
 
     /**
      * Cache for queryMask generation to avoid repeated BigInt allocations
@@ -184,7 +241,10 @@ export class QuerySystem {
     // Typed array views into SABs
     this.entityMetadataView = null;
     this.queryCacheView = null;
+    this.queryVersionData = null;
     this.queryResultViews = []; // Array of Uint16Array views, one per pre-computed query
+    this._cachedPrecomputedSubarrayViews = [];
+    this._fallbackActiveQueryCache = new Map();
 
     /**
      * Reusable buffer for query() results - avoids GC pressure from repeated allocations.
@@ -352,6 +412,11 @@ export class QuerySystem {
     this.queryCacheSAB = new SharedArrayBuffer(queryCacheSize);
     this._writeQueryCacheToSAB();
 
+    // Create queryVersionSAB
+    this.queryVersionSAB = new SharedArrayBuffer(QUERY_VERSION_BUFFER_SIZE);
+    this.queryVersionData = new Int32Array(this.queryVersionSAB);
+    this.queryVersionData[0] = 1;
+
     // Create queryResultsSAB
     const queryResultsSize = calculateQueryResultsSABSize(numPrecomputed);
     this.queryResultsSAB = new SharedArrayBuffer(queryResultsSize);
@@ -365,11 +430,13 @@ export class QuerySystem {
     console.log(
       `  - queryResultsSAB: ${queryResultsSize} bytes (${numPrecomputed} result buffers)`
     );
+    console.log(`  - queryVersionSAB: ${QUERY_VERSION_BUFFER_SIZE} bytes (shared invalidation counter)`);
 
     return {
       entityMetadataSAB: this.entityMetadataSAB,
       queryCacheSAB: this.queryCacheSAB,
       queryResultsSAB: this.queryResultsSAB,
+      queryVersionSAB: this.queryVersionSAB,
     };
   }
 
@@ -432,12 +499,17 @@ export class QuerySystem {
    */
   _initializeQueryResultViews() {
     this.queryResultViews = [];
+    this._cachedPrecomputedSubarrayViews = [];
 
     for (let i = 0; i < this.precomputedQueries.length; i++) {
       const offset = i * QUERY_RESULT_BUFFER_SIZE;
       const view = new Uint16Array(this.queryResultsSAB, offset, 1 + MAX_ENTITIES);
       view[0] = 0; // Initialize count to 0
       this.queryResultViews.push(view);
+      this._cachedPrecomputedSubarrayViews.push({
+        count: -1,
+        subarray: null,
+      });
     }
   }
 
@@ -588,7 +660,14 @@ export class QuerySystem {
       // Return view into pre-computed result buffer
       const view = this.queryResultViews[queryIndex];
       const count = view[0];
-      return view.subarray(1, 1 + count);
+      const cached = this._cachedPrecomputedSubarrayViews[queryIndex];
+      if (cached.count === count && cached.subarray !== null) {
+        return cached.subarray;
+      }
+      const subarray = count === 0 ? EMPTY_QUERY_RESULT : view.subarray(1, 1 + count);
+      cached.count = count;
+      cached.subarray = subarray;
+      return subarray;
     }
 
     // Not pre-computed - compute on demand from active entity lists.
@@ -608,14 +687,38 @@ export class QuerySystem {
       this.queryToTypeMask.set(queryMask, typeMask);
     }
 
+    const currentVersion = this.queryVersionData ? Atomics.load(this.queryVersionData, 0) : -1;
+    let cachedEntry = currentVersion !== -1 ? this._fallbackActiveQueryCache.get(queryMask) : null;
+
+    if (cachedEntry && cachedEntry.version === currentVersion) {
+      return cachedEntry.subarray;
+    }
+
     // Get activeEntitiesData from GameObject
     const activeData = GameObject.activeEntitiesData;
-    if (activeData && activeData[0] === 0) {
-      return EMPTY_QUERY_RESULT;
+    if (currentVersion !== -1) {
+      if (!cachedEntry) {
+        cachedEntry = createCachedQueryEntry(this._queryResultBuffer?.length || 0);
+        this._fallbackActiveQueryCache.set(queryMask, cachedEntry);
+      }
+      if (activeData && activeData[0] === 0) {
+        return updateCachedQueryEntry(cachedEntry, 0, currentVersion);
+      }
+      const count = copyActiveMatchesToBuffer(
+        typeMask,
+        this.entityMetadata,
+        activeData,
+        cachedEntry.buffer,
+        (typeIndex) => this._getTypeActiveList(typeIndex)
+      );
+      return updateCachedQueryEntry(cachedEntry, count, currentVersion);
     }
 
     const buffer = this._queryResultBuffer;
     if (!buffer) return EMPTY_QUERY_RESULT;
+    if (activeData && activeData[0] === 0) {
+      return EMPTY_QUERY_RESULT;
+    }
 
     const count = copyActiveMatchesToBuffer(
       typeMask,
@@ -625,7 +728,7 @@ export class QuerySystem {
       (typeIndex) => this._getTypeActiveList(typeIndex)
     );
 
-    return buffer.subarray(0, count);
+    return count === 0 ? EMPTY_QUERY_RESULT : buffer.subarray(0, count);
   }
 
   _getTypeActiveList(typeIndex) {
@@ -713,9 +816,10 @@ export class QuerySystem {
  * @param {Object} queryData - Serialized query data from main thread
  * @param {Object} buffers - SAB references { entityMetadataSAB, queryCacheSAB, queryResultsSAB }
  * @param {Uint16Array} activeEntitiesData - Reference to active entities SAB
+ * @param {Int32Array|null} queryVersionData - Shared invalidation counter for active-query result caches
  * @returns {Object} - { query, queryActiveEntities }
  */
-export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesData) {
+export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesData, queryVersionData = null) {
   // Reconstruct metadata from serialized data
   const entityMetadata = queryData.metadata.map((m) => ({
     ...m,
@@ -764,6 +868,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
 
   // Cache per-type active list SAB views once entity classes are attached to global scope.
   const cachedTypeActiveLists = new Array(entityMetadata.length);
+  const fallbackActiveQueryCache = queryVersionData ? new Map() : null;
 
   // OPTIMIZATION: Reusable buffers for query() and queryActiveEntities fallback - avoids GC pressure
   // Multiple buffers allow several queries in the same tick without overwriting
@@ -898,7 +1003,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
       }
 
       // Count changed - create new subarray and cache it
-      const subarray = view.subarray(1, 1 + count);
+      const subarray = count === 0 ? EMPTY_QUERY_RESULT : view.subarray(1, 1 + count);
       cached.count = count;
       cached.subarray = subarray;
       return subarray;
@@ -911,6 +1016,31 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
     if (typeMask === undefined) {
       typeMask = computeTypeMask(queryMask);
       queryToTypeMask.set(queryMask, typeMask);
+    }
+
+    const currentVersion = queryVersionData ? Atomics.load(queryVersionData, 0) : -1;
+    let cachedEntry = currentVersion !== -1 ? fallbackActiveQueryCache.get(queryMask) : null;
+
+    if (cachedEntry && cachedEntry.version === currentVersion) {
+      return cachedEntry.subarray;
+    }
+
+    if (currentVersion !== -1) {
+      if (!cachedEntry) {
+        cachedEntry = createCachedQueryEntry(totalEntityCount);
+        fallbackActiveQueryCache.set(queryMask, cachedEntry);
+      }
+      if (activeEntitiesData && activeEntitiesData[0] === 0) {
+        return updateCachedQueryEntry(cachedEntry, 0, currentVersion);
+      }
+      const count = copyActiveMatchesToBuffer(
+        typeMask,
+        entityMetadata,
+        activeEntitiesData,
+        cachedEntry.buffer,
+        getTypeActiveList
+      );
+      return updateCachedQueryEntry(cachedEntry, count, currentVersion);
     }
 
     if (activeEntitiesData && activeEntitiesData[0] === 0) {
@@ -927,7 +1057,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
       getTypeActiveList
     );
 
-    return buffer.subarray(0, count);
+    return count === 0 ? EMPTY_QUERY_RESULT : buffer.subarray(0, count);
   }
 
   return {

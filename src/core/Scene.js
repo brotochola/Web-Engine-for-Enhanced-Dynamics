@@ -214,6 +214,7 @@ class Scene {
       queryEntityMetadata: null,
       queryCache: null,
       queryResults: null,
+      queryVersion: null,
     };
 
     // Component type ID tracking (similar to entityType)
@@ -1355,9 +1356,13 @@ class Scene {
       RigidBody,
       Collider,
       SpriteRenderer,
+      AdobeAnimComponent,
       LightEmitter,
       ShadowCaster,
       FlashComponent,
+      LightOccluder,
+      CameraInOutListener,
+      CollisionListener,
     });
 
     // Create query system SABs
@@ -1365,6 +1370,7 @@ class Scene {
     this.buffers.queryEntityMetadata = querySABs.entityMetadataSAB;
     this.buffers.queryCache = querySABs.queryCacheSAB;
     this.buffers.queryResults = querySABs.queryResultsSAB;
+    this.buffers.queryVersion = querySABs.queryVersionSAB;
 
     // Collision data buffer
     const maxCollisionPairs = this.config.physics.maxCollisionPairs;
@@ -2243,6 +2249,7 @@ class Scene {
       queryEntityMetadata: this.buffers.queryEntityMetadata,
       queryCache: this.buffers.queryCache,
       queryResults: this.buffers.queryResults,
+      queryVersion: this.buffers.queryVersion,
       // Per-type active entity lists (for O(1) type-specific queries)
       perTypeActiveLists: this.buffers.perTypeActiveLists,
       // Entity free lists (for atomic spawn/despawn from any worker)

@@ -534,6 +534,8 @@ WEED.ParticleEmitter.emit({
 const all = query([WEED.Transform, WEED.Collider]); // all matching slots, active or inactive
 const active = queryActiveEntities([WEED.Transform, WEED.SpriteRenderer]); // active only
 
+Built-in single-component entity queries are precomputed by the engine. Custom combinations still work too: if a combination is not precomputed, the first active query after an active-population change rebuilds a cached result, and repeated calls reuse that cached view until the next spawn/despawn invalidation. Hot custom queries may still emit a one-time warning so you can decide whether they should be promoted to `precomputedQueries`.
+
 // Sound (works from both main thread and workers)
 WEED.SoundManager.play('hit', 0.8);                         // name, volume
 WEED.SoundManager.play('step', 0.5, 0.9, 1.1);             // random pitch 0.9–1.1

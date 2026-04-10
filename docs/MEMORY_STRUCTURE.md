@@ -473,6 +473,7 @@ All use a strided `Float32Array` layout: **16 floats (64 bytes) per worker slot*
 | `queryEntityMetadata` | `16 + numTypes * 16` | `[numTypes, pad, per-type: componentMask, startIndex, endIndex]` |
 | `queryCacheSAB` | `8 + maxQueries * 16` | `[numQueries, maxQueries, pad, per-query: queryMask, typeMask]` |
 | `queryResultsSAB` | `numQueries * (2 + 65535*2)` | Per query: `[count: Uint16, entityIndices: Uint16[65535]]` |
+| `queryVersionSAB` | `4` | `[activeQueryVersion: Int32]` bumped whenever logic 0 mutates active/query lists |
 
 | Writer | Reader |
 |---|---|

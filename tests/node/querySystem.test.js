@@ -59,6 +59,13 @@ function createUint16View(values) {
   return view;
 }
 
+function createQueryVersionData(initialVersion = 1) {
+  const sab = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+  const view = new Int32Array(sab);
+  view[0] = initialVersion;
+  return view;
+}
+
 function createFallbackMetadata() {
   return [
     {
@@ -178,10 +185,11 @@ test('definePrecomputedQueries covers all built-in entity components as single-c
   }
 });
 
-test('main-thread fallback queryActiveEntities can use per-type active lists', () => {
+test('main-thread fallback queryActiveEntities caches until query version changes', () => {
   const previousActiveEntitiesData = GameObject.activeEntitiesData;
   const previousWarn = console.warn;
   const installed = installWorkerActiveListGlobals();
+  const queryVersionData = createQueryVersionData();
   console.warn = () => {};
 
   try {
@@ -191,11 +199,23 @@ test('main-thread fallback queryActiveEntities can use per-type active lists', (
       entityClass: globalThis[meta.className],
     }));
     querySystem._queryResultBuffer = new Uint16Array(3000);
+    querySystem.queryVersionData = queryVersionData;
 
     GameObject.activeEntitiesData = null;
 
-    const result = querySystem.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
-    assert.deepEqual(Array.from(result), [2, 7, 999, 1001, 1500]);
+    const first = querySystem.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
+    const second = querySystem.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
+
+    assert.strictEqual(first, second);
+    assert.deepEqual(Array.from(first), [2, 7, 999, 1001, 1500]);
+
+    globalThis.QueryTestEnemy._activeList.set([3, 4, 8, 998]);
+    globalThis.QueryTestBoss._activeList.set([2, 1002, 1501]);
+    Atomics.add(queryVersionData, 0, 1);
+
+    const third = querySystem.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
+    assert.strictEqual(first, third);
+    assert.deepEqual(Array.from(third), [4, 8, 998, 1002, 1501]);
   } finally {
     console.warn = previousWarn;
     GameObject.activeEntitiesData = previousActiveEntitiesData;
@@ -203,9 +223,10 @@ test('main-thread fallback queryActiveEntities can use per-type active lists', (
   }
 });
 
-test('worker fallback queryActiveEntities uses per-type active lists and warns once', () => {
+test('worker fallback queryActiveEntities caches until query version changes and warns once', () => {
   const installed = installWorkerActiveListGlobals();
   const previousWarn = console.warn;
+  const queryVersionData = createQueryVersionData();
   const warnings = [];
   console.warn = (message) => warnings.push(String(message));
 
@@ -223,14 +244,24 @@ test('worker fallback queryActiveEntities uses per-type active lists and warns o
         queryCacheSAB: new SharedArrayBuffer(0),
         queryResultsSAB: new SharedArrayBuffer(0),
       },
-      null
+      null,
+      queryVersionData
     );
 
     const first = queryFunctions.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
     const second = queryFunctions.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
 
+    assert.strictEqual(first, second);
     assert.deepEqual(Array.from(first), [2, 7, 999, 1001, 1500]);
     assert.deepEqual(Array.from(second), [2, 7, 999, 1001, 1500]);
+
+    globalThis.QueryTestEnemy._activeList.set([3, 4, 8, 998]);
+    globalThis.QueryTestBoss._activeList.set([2, 1002, 1501]);
+    Atomics.add(queryVersionData, 0, 1);
+
+    const third = queryFunctions.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
+    assert.strictEqual(first, third);
+    assert.deepEqual(Array.from(third), [4, 8, 998, 1002, 1501]);
     assert.equal(warnings.length, 1);
     assert.match(warnings[0], /queryActiveEntities fallback used/);
   } finally {
