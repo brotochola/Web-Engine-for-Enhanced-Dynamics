@@ -1540,7 +1540,7 @@ class Scene {
     }
 
     // Debug buffer
-    // Layout: [flags 0-15 as Uint8] [selectedEntityIndex at 16-19 as Int32]
+    // Layout: [flag bytes indexed by DEBUG_FLAGS (0-17) as Uint8] [pad 18-19] [selectedEntityIndex at 20-23 as Int32]
     const DEBUG_BUFFER_SIZE = 32;
     this.buffers.debugData = new SharedArrayBuffer(DEBUG_BUFFER_SIZE);
     this.debugFlags = new DebugFlags(this.buffers.debugData);
@@ -1567,7 +1567,7 @@ class Scene {
     // ==========================================================================
     // SPATIAL GRID - Row-Based Partitioned Single Buffer
     // ==========================================================================
-    // ARCHITECTURE: Each spatial worker owns specific rows (cellY % workerCount === workerId)
+    // ARCHITECTURE: Each spatial worker owns row blocks: owner = floor(row / rowsPerBlock) % workerCount
     // - No double buffering for grid (row ownership eliminates races)
     // - No Atomics needed for grid writes
     // - Each worker rebuilds its own rows and computes neighbors for entities in those rows

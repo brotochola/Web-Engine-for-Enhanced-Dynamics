@@ -8,13 +8,14 @@ import { VERSION } from './version.js';
 // ============================================================================
 // CORE MODULES
 // ============================================================================
+export { VERSION } from './version.js';
 export { GameEngine } from './core/gameEngine.js';
 export { Scene } from './core/Scene.js';
 export { GameObject, Keyboard } from './core/gameObject.js';
 export { Component } from './core/Component.js';
 export { FSM } from './core/FSM.js';
 export { FSMState } from './core/FSMState.js';
-export { DebugFlags } from './core/debug/DebugFlags.js';
+export { DebugFlags, DEBUG_FLAGS, DEBUG_SELECTED_ENTITY_OFFSET } from './core/debug/DebugFlags.js';
 export { DebugUI } from './core/debug/DebugUI.js';
 export { DebugDraw } from './core/debug/DebugDraw.js';
 export { Mouse } from './core/Mouse.js';
@@ -80,6 +81,7 @@ export { BulletComponent } from './components/BulletComponent.js';
 // ============================================================================
 // Distance constraints for position-based dynamics (ropes, springs, rigid connections)
 export { Constraint } from './core/Constraint.js';
+export { SharedAtomicPool } from './core/SharedAtomicPool.js';
 
 // ============================================================================
 // FLASHES
@@ -122,7 +124,7 @@ import { GameObject, Keyboard } from './core/gameObject.js';
 import { Component } from './core/Component.js';
 import { FSM } from './core/FSM.js';
 import { FSMState } from './core/FSMState.js';
-import { DebugFlags } from './core/debug/DebugFlags.js';
+import { DebugFlags, DEBUG_FLAGS, DEBUG_SELECTED_ENTITY_OFFSET } from './core/debug/DebugFlags.js';
 import { DebugUI } from './core/debug/DebugUI.js';
 import { DebugDraw } from './core/debug/DebugDraw.js';
 import { Mouse } from './core/Mouse.js';
@@ -162,7 +164,6 @@ import { CameraInOutListener } from './components/CameraInOutListener.js';
 import { CollisionListener } from './components/CollisionListener.js';
 import { Constraint } from './core/Constraint.js';
 import { AbstractWorker } from './workers/AbstractWorker.js';
-import { DEBUG_FLAGS } from './core/debug/DebugFlags.js';
 import {
   ShapeType,
   BLEND_MODES,
@@ -177,6 +178,7 @@ const enums = Object.freeze({
   CAMERA_TYPES,
   DECAL_STAMPS_BLEND_MODE,
   DEBUG_FLAGS,
+  DEBUG_SELECTED_ENTITY_OFFSET,
 });
 
 const WEED = Object.freeze({

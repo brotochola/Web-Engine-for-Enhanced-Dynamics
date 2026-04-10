@@ -2,7 +2,7 @@
 // SPATIAL WORKER - Row-Based Partitioned Spatial Hashing & Neighbor Detection
 // =============================================================================
 //
-// ARCHITECTURE: Each spatial worker owns specific grid rows (cellY % workerCount === workerId)
+// ARCHITECTURE: Each spatial worker owns row blocks where floor(row / rowsPerBlock) % workerCount === workerId
 // - No double buffering (neither grid nor neighbors)
 // - Each worker rebuilds its own rows AND computes neighbors for entities in those rows
 // - Workers can READ any cell but only WRITE to owned rows/entities

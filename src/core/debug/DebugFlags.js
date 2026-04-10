@@ -21,9 +21,9 @@ export const DEBUG_FLAGS = Object.freeze({
   SHOW_ENTITY_ORIGINS: 17,
 });
 
-// Selected entity index storage (offset in debug buffer after flags)
-// Layout: [flags 0-15] [selectedEntityIndex at offset 16-19 as Int32]
-export const DEBUG_SELECTED_ENTITY_OFFSET = 16;
+// Selected entity index storage (offset in debug buffer after flag bytes).
+// Layout: [flag bytes indexed by DEBUG_FLAGS (0-17)] [pad 18-19] [selectedEntityIndex at 20-23 as Int32]
+export const DEBUG_SELECTED_ENTITY_OFFSET = 20;
 
 /**
  * DebugFlags - Manages debug visualization flags
@@ -184,7 +184,7 @@ export class DebugFlags {
    * @param {number} entityIndex - Entity index or -1 for no selection
    */
   setSelectedEntity(entityIndex) {
-    // Store as Int32 at offset 16 in the buffer
+    // Store as Int32 after the flag byte region to avoid aliasing debug flags.
     const view = new Int32Array(this.flags.buffer, DEBUG_SELECTED_ENTITY_OFFSET, 1);
     view[0] = entityIndex;
     // Auto-enable the flag when selecting
@@ -226,9 +226,11 @@ export class DebugFlags {
     if (options.fpsGraph !== undefined) this.showFPSGraph(options.fpsGraph);
     if (options.profiler !== undefined) this.showProfiler(options.profiler);
     if (options.entityIndices !== undefined) this.showEntityIndices(options.entityIndices);
+    if (options.debugDraws !== undefined) this.showDebugDraws(options.debugDraws);
     if (options.sleepingEntities !== undefined) this.showSleepingEntities(options.sleepingEntities);
     if (options.sleepingCells !== undefined) this.showSleepingCells(options.sleepingCells);
     if (options.collisionCandidates !== undefined) this.showCollisionCandidates(options.collisionCandidates);
+    if (options.constraints !== undefined) this.showConstraints(options.constraints);
     if (options.entityOrigins !== undefined) this.showEntityOrigins(options.entityOrigins);
     return this;
   }

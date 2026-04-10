@@ -59,7 +59,7 @@ The world is divided into cells. Each cell stores a count + entity indices.
 
 | Writer | Reader |
 |---|---|
-| Spatial workers (each owns rows where `cellY % workerCount === workerId`) | Physics, logic, particle |
+| Spatial workers (each owns row blocks where `floor(row / rowsPerBlock) % workerCount === workerId`) | Physics, logic, particle |
 
 ### `neighborData` -- Per-Entity Neighbor List
 
@@ -559,7 +559,7 @@ The worklet stores assets in a `Map<id, { ch, len, nCh }>`. Only slot state trav
 | `inputData` | `inputBufferSize * 8` bytes | `[heldState[keyCount], pressCount[keyCount]]` as `Int32` | Main thread | Main thread + all workers |
 | `mouseData` | 52 bytes (13 × Float32) | `[x, y, btn0, btn1, btn2, isPresent, wheel, press0, rel0, press1, rel1, press2, rel2]` | Main thread | All workers |
 | `cameraData` | 24 bytes (6 × Float32) | `[zoom, x, y, followTargetX, followTargetY, targetZoom]` | Main thread + Player.tick | All workers |
-| `debugData` | 32 bytes | `[flags 0-15: Uint8, selectedEntityIndex: Int32]` | Main thread | All workers |
+| `debugData` | 32 bytes | `[flagBytes[0..17]: Uint8, pad[18..19], selectedEntityIndex: Int32 @ 20..23]` | Main thread | All workers |
 | `raycastDebugData` | `(1 + 100*7) * 4` bytes | `[count, per-ray: startX, startY, endX, endY, hitX, hitY, hit]` Float32 | Logic workers | Main thread |
 | `sunData` | 64 bytes | Mixed Uint8/Float32/Uint32 (see `Sun.OFFSETS`) | Main thread | All workers |
 | `syncData` | 20 bytes (5 × Int32) | `Int32Array[5]` | Main thread | All workers |

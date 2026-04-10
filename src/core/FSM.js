@@ -188,9 +188,8 @@ export class FSM extends Component {
    */
   static _executeTransition(i, newStateIndex, owner) {
     if (!owner) {
-      console.trace("whattt")
-      debugger;
-      return //console.warn("FSM._executeTransition called without owner", this.constructor.name);
+      console.warn('FSM._executeTransition called without owner', this.name);
+      return;
     }
     const oldStateIndex = this.state[i];
 

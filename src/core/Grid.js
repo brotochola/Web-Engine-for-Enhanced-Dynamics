@@ -40,7 +40,7 @@ const DEFAULT_MAX_NEIGHBORS = 500; // Max neighbors per entity (matches ConfigDe
  * Grid - Static class for row-based spatial partitioning
  *
  * ROW OWNERSHIP MODEL:
- * - Worker i owns all cells where: cellY % totalWorkers === workerId
+ * - Worker i owns row blocks where: floor(row / rowsPerBlock) % totalWorkers === workerId
  * - Each worker rebuilds its own rows and computes neighbors for entities in those rows
  * - Workers can READ any cell/neighbor but only WRITE to owned data
  * - No synchronization needed - row ownership prevents all races

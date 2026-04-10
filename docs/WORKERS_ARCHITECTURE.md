@@ -1,6 +1,6 @@
 # WEED Engine Workers Architecture 🌿
 
-Six specialized Web Workers, all talking through shared memory instead of postMessage.
+Six specialized Web Workers. Game state and frame data flow mostly through shared memory, while control messages still use `postMessage` and `MessagePort`s where appropriate.
 Each worker owns its data region. Nobody steps on anybody else's bytes. It's beautiful.
 
 **Deep dives:** [Spatial hashing & neighbors](./SPATIAL_HASHING.md) · [Physics pipeline](./PHYSICS.md)

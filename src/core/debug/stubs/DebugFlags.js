@@ -21,7 +21,7 @@ export const DEBUG_FLAGS = Object.freeze({
   SHOW_ENTITY_ORIGINS: 17,
 });
 
-export const DEBUG_SELECTED_ENTITY_OFFSET = 16;
+export const DEBUG_SELECTED_ENTITY_OFFSET = 20;
 
 export class DebugFlags {
   constructor(debugBuffer) {

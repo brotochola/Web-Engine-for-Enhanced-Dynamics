@@ -649,7 +649,7 @@ export class AbstractWorker {
     // - gridBuffer: SINGLE buffer, each spatial worker owns specific rows
     // - neighborData: SINGLE buffer, row ownership eliminates races
     // - cellSleepingBuffer: SINGLE buffer, written by particle_worker, read by all
-    // Row ownership: worker i owns rows where (cellY % totalWorkers === workerId)
+    // Row ownership: worker i owns row blocks where floor(row / rowsPerBlock) % totalWorkers === workerId
     // No double buffering, no Atomics, no locks - pure deterministic memory.
     if (data.gridMetadata && data.buffers?.gridBuffer) {
       // Use gridMetadata directly - it now includes maxNeighbors and maxEntitiesPerCell from scene config

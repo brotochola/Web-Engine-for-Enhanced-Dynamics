@@ -8,14 +8,13 @@ export class TallLight extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
   static scriptUrl = import.meta.url;
 
-  // Add PreyBehavior component for prey-specific properties
+  // Tall lights are simple lit props with collision, a sprite, and an emitter.
   static components = [Collider, SpriteRenderer, LightEmitter];
 
   // Note: ARRAY_SCHEMA removed - all data now in components (pure ECS architecture)
 
   /**
-   * LIFECYCLE: Configure this entity TYPE - runs ONCE per instance
-   * Overrides and extends Boid's setup()
+   * LIFECYCLE: Configure this entity TYPE - runs ONCE per pooled instance
    */
   setup() {
     // this.rigidBody.static = 1;
@@ -40,17 +39,17 @@ export class TallLight extends GameObject {
   }
 
   /**
-   * LIFECYCLE: Called when prey is spawned/respawned from pool
+   * LIFECYCLE: Called when the light is spawned/respawned from pool
    * Initialize THIS instance - runs EVERY spawn
    * @param {Object} spawnConfig - Spawn-time parameters passed to GameObject.spawn()
    */
   onSpawned(spawnConfig = {}) {
-    //TODO FIX
-    this.setSprite('tallLight'); //WHY???
+    // Restore the sprite in case pooled reuse changed it before this slot respawned.
+    this.setSprite('tallLight');
   }
 
   /**
-   * LIFECYCLE: Called when prey is despawned (returned to pool)
+   * LIFECYCLE: Called when the light is despawned (returned to pool)
    * Cleanup and save state if needed
    */
   onDespawned() {
@@ -92,11 +91,8 @@ export class TallLight extends GameObject {
   }
 
   /**
-   * Main update - applies boid behaviors plus predator avoidance
-   * Note: this.neighbors and this.neighborCount are updated before this is called
+   * Main update hook. Tall lights are static, so there is nothing to do per frame.
    */
   tick(dtRatio) {
-    // DEBUG: Track neighbor count stability
-
   }
 }
