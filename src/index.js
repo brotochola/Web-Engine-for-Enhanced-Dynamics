@@ -240,7 +240,7 @@ const WEED = Object.freeze({
 
   enums,
 
-  VERSION: '1.0.0',
+  VERSION: '0.4.116',
 });
 
 if (typeof window !== 'undefined') {

@@ -8,6 +8,7 @@ import { SpriteRenderer } from '../components/SpriteRenderer.js';
 import { AdobeAnimComponent } from '../components/AdobeAnimComponent.js';
 import { LightEmitter } from '../components/LightEmitter.js';
 import { ShadowCaster } from '../components/ShadowCaster.js';
+import { FlashComponent } from '../components/FlashComponent.js';
 import { LightOccluder } from '../components/LightOccluder.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { Layer } from './Layer.js';
@@ -231,6 +232,27 @@ export class GameObject {
     if (worker?.queryVersionData) {
       Atomics.add(worker.queryVersionData, 0, 1);
     }
+  }
+
+  static _forwardDespawnAllToLogic0(EntityClass) {
+    if (typeof self === 'undefined') return null;
+
+    const logicWorker = self.logicWorker;
+    if (!logicWorker || logicWorker.workerIndex === 0) {
+      return null;
+    }
+
+    if (typeof logicWorker.sendDataToWorker !== 'function') {
+      console.warn(
+        `Cannot forward ${EntityClass.name}.despawnAll() to logic0: worker messaging is unavailable`
+      );
+      return false;
+    }
+
+    return logicWorker.sendDataToWorker('logic0', {
+      msg: 'despawnAll',
+      className: EntityClass.name,
+    });
   }
 
   /**
@@ -1553,8 +1575,23 @@ export class GameObject {
     if (this.collider) Collider.active[i] = 0;
     if (this.spriteRenderer) SpriteRenderer.active[i] = 0;
     if (this.adobeAnimComponent) AdobeAnimComponent.active[i] = 0;
-    if (this.lightEmitter) LightEmitter.active[i] = 0;
+    if (this.lightEmitter) {
+      LightEmitter.active[i] = 0;
+      LightEmitter.lightColor[i] = 0xffffff;
+      LightEmitter.lightIntensity[i] = 0;
+      LightEmitter.sqrtLightIntensity[i] = 0;
+      LightEmitter.height[i] = 0;
+      LightEmitter.glowHeightOffset[i] = 0;
+      LightEmitter.hasGlowSprite[i] = 1;
+      LightEmitter.layerIdOfGlowSprite[i] = 0;
+    }
     if (this.shadowCaster) ShadowCaster.active[i] = 0;
+    if (this.flashComponent) {
+      FlashComponent.active[i] = 0;
+      FlashComponent.lifespan[i] = 0;
+      FlashComponent.currentLife[i] = 0;
+      FlashComponent.initialIntensity[i] = 0;
+    }
     if (this.lightOccluder) LightOccluder.active[i] = 0;
 
     // ========================================
@@ -1909,11 +1946,25 @@ export class GameObject {
 
     if (has.LightEmitter) {
       LightEmitter.active[i] = 1;
+      LightEmitter.lightColor[i] = 0xffffff;
+      LightEmitter.lightIntensity[i] = 0;
+      LightEmitter.sqrtLightIntensity[i] = 0;
+      LightEmitter.height[i] = 0;
+      LightEmitter.glowHeightOffset[i] = 0;
+      LightEmitter.hasGlowSprite[i] = 1;
+      LightEmitter.layerIdOfGlowSprite[i] = 0;
     }
 
     if (has.ShadowCaster) {
       ShadowCaster.active[i] = 1;
       ShadowCaster.heightMultiplier[i] = 1; // Default: normal shadow (0 = no shadow)
+    }
+
+    if (has.FlashComponent) {
+      FlashComponent.active[i] = 1;
+      FlashComponent.lifespan[i] = 0;
+      FlashComponent.currentLife[i] = 0;
+      FlashComponent.initialIntensity[i] = 0;
     }
 
     if (has.LightOccluder) {
@@ -2115,11 +2166,13 @@ export class GameObject {
    * Works from BOTH main thread and logic workers with the same syntax:
    *   Ball.despawnAll()
    *
-   * OPTIMIZED: Uses batch removal methods instead of individual despawn() calls
+   * OPTIMIZED: logic0 uses batch removal methods instead of individual despawn() calls.
+   * Non-logic0 logic workers forward the request to logic0 so all shared list/query
+   * mutations still happen in the same place as normal spawn/despawn list updates.
    * Complexity: O(N) instead of O(N²) for large pools
    *
    * @param {Class} [EntityClass] - The entity class to despawn (optional when called as Ball.despawnAll())
-   * @returns {number} - Number of entities despawned
+   * @returns {number|undefined} - Number of entities despawned when executed locally
    */
   static despawnAll(EntityClass) {
     // Support calling as Ball.despawnAll() without passing the class
@@ -2137,6 +2190,15 @@ export class GameObject {
       window.scene.despawnAllEntities(EntityClass.name);
       return; // Main thread doesn't know the count (async)
     }
+
+    const forwardedToLogic0 = GameObject._forwardDespawnAllToLogic0(EntityClass);
+    if (forwardedToLogic0 === true) {
+      return; // Non-logic0 worker doesn't know the count yet (async)
+    }
+    if (forwardedToLogic0 === false) {
+      return 0; // Keep list ownership with logic0; do not mutate shared lists locally.
+    }
+
     if (EntityClass.startIndex === undefined || EntityClass.poolSize === undefined) {
       return 0;
     }
@@ -2162,7 +2224,18 @@ export class GameObject {
     const spriteRendererActive = SpriteRenderer.active;
     const adobeAnimActive = AdobeAnimComponent.active;
     const lightEmitterActive = LightEmitter.active;
+    const lightEmitterColor = LightEmitter.lightColor;
+    const lightEmitterIntensity = LightEmitter.lightIntensity;
+    const lightEmitterSqrtIntensity = LightEmitter.sqrtLightIntensity;
+    const lightEmitterHeight = LightEmitter.height;
+    const lightEmitterGlowHeightOffset = LightEmitter.glowHeightOffset;
+    const lightEmitterHasGlowSprite = LightEmitter.hasGlowSprite;
+    const lightEmitterGlowLayerId = LightEmitter.layerIdOfGlowSprite;
     const shadowCasterActive = ShadowCaster.active;
+    const flashActive = FlashComponent.active;
+    const flashLifespan = FlashComponent.lifespan;
+    const flashCurrentLife = FlashComponent.currentLife;
+    const flashInitialIntensity = FlashComponent.initialIntensity;
     const lightOccluderActive = LightOccluder.active;
 
     for (let i = startIndex; i < endIndex; i++) {
@@ -2176,6 +2249,7 @@ export class GameObject {
         (adobeAnimActive && adobeAnimActive[i]) ||
         (lightEmitterActive && lightEmitterActive[i]) ||
         (shadowCasterActive && shadowCasterActive[i]) ||
+        (flashActive && flashActive[i]) ||
         (lightOccluderActive && lightOccluderActive[i]);
 
       if (isAnyComponentActive) {
@@ -2198,7 +2272,18 @@ export class GameObject {
         if (spriteRendererActive) spriteRendererActive[i] = 0;
         if (adobeAnimActive) adobeAnimActive[i] = 0;
         if (lightEmitterActive) lightEmitterActive[i] = 0;
+        if (lightEmitterColor) lightEmitterColor[i] = 0xffffff;
+        if (lightEmitterIntensity) lightEmitterIntensity[i] = 0;
+        if (lightEmitterSqrtIntensity) lightEmitterSqrtIntensity[i] = 0;
+        if (lightEmitterHeight) lightEmitterHeight[i] = 0;
+        if (lightEmitterGlowHeightOffset) lightEmitterGlowHeightOffset[i] = 0;
+        if (lightEmitterHasGlowSprite) lightEmitterHasGlowSprite[i] = 1;
+        if (lightEmitterGlowLayerId) lightEmitterGlowLayerId[i] = 0;
         if (shadowCasterActive) shadowCasterActive[i] = 0;
+        if (flashActive) flashActive[i] = 0;
+        if (flashLifespan) flashLifespan[i] = 0;
+        if (flashCurrentLife) flashCurrentLife[i] = 0;
+        if (flashInitialIntensity) flashInitialIntensity[i] = 0;
         if (lightOccluderActive) lightOccluderActive[i] = 0;
       }
     }

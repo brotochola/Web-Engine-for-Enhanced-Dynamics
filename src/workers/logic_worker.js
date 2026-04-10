@@ -384,7 +384,7 @@ class LogicWorker extends AbstractWorker {
    */
   sendListUpdatesToLogic0() {
     if (this.pendingSpawnListUpdates.length === 0 && this.pendingDespawnListUpdates.length === 0) {
-      return;
+      return true;
     }
 
     // Serialize EntityClass to class name for message passing (reuse buffers to avoid .map() allocation)
@@ -400,14 +400,18 @@ class LogicWorker extends AbstractWorker {
       despawns.push({ entityIndex: u.entityIndex, entityType: u.entityType, className: u.EntityClass.name });
     }
 
-    this.sendDataToWorker('logic0', {
+    const sent = this.sendDataToWorker('logic0', {
       msg: 'listUpdates',
       spawns,
       despawns,
     });
 
-    this.pendingSpawnListUpdates.length = 0;
-    this.pendingDespawnListUpdates.length = 0;
+    if (sent) {
+      this.pendingSpawnListUpdates.length = 0;
+      this.pendingDespawnListUpdates.length = 0;
+    }
+
+    return sent;
   }
 
   update(deltaTime, dtRatio, resuming) {

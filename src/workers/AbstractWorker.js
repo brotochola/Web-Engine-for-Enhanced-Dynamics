@@ -910,6 +910,7 @@ export class AbstractWorker {
    * This bypasses the main thread for faster communication
    * @param {string} workerName - Target worker name ('renderer', 'logic', 'physics', etc.)
    * @param {Object} data - Data to send
+   * @returns {boolean} True when the message was posted, false when no port exists
    */
   sendDataToWorker(workerName, data) {
     const port = this.workerPorts.get(workerName);
@@ -918,9 +919,10 @@ export class AbstractWorker {
         `${this.constructor.name}: No port to worker "${workerName}". Available:`,
         Array.from(this.workerPorts.keys())
       );
-      return;
+      return false;
     }
     port.postMessage(data);
+    return true;
   }
 
   /**
