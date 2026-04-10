@@ -11,7 +11,7 @@ For how spatial rebuild + neighbors and physics use these buffers in practice, s
 
 ## How It Works
 
-Every buffer is allocated in `Scene.createSharedBuffers()`. Workers get SAB references at init time through `AbstractWorker`. From that point, workers read/write typed array views directly -- no postMessage overhead for frame data.
+Every buffer is allocated by `src/core/sceneSharedBuffers.js`, invoked from `Scene.createSharedBuffers()`. Workers get SAB references at init time through `AbstractWorker`. From that point, workers read/write typed array views directly -- no postMessage overhead for frame data.
 
 The golden rule: **one writer per data region**. Multiple readers are fine. This avoids Atomics overhead in frame-critical paths.
 
@@ -605,8 +605,8 @@ The big picture. Who writes what, who reads what.
 
 ## Notes for Contributors
 
-- All SABs are created in `Scene.createSharedBuffers()`. If you add a new buffer, that's where it goes.
+- All SABs are created in `src/core/sceneSharedBuffers.js` via `Scene.createSharedBuffers()`. If you add a new buffer, that's where it goes.
 - Prefer extending existing SAB layouts over adding new postMessage payloads for per-frame data.
 - Keep hot-path data in typed arrays. Object allocation in worker loops is the enemy.
 - The audio mixer SAB is created in `SoundManager.initializeAudioWorklet()`, not `Scene.createSharedBuffers()`. Workers receive it via `SoundManager.initializeSlotSAB()`.
-- If you change any layout, update: `Scene.js` (buffer creation), the relevant worker init, and this document.
+- If you change any layout, update: `src/core/sceneSharedBuffers.js`, the relevant worker init, and this document.
