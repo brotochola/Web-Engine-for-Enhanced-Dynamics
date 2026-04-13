@@ -3,8 +3,6 @@ import { AdobeAnimateCharacter } from '/demos/gameObjects/adobeAnimateCharacter.
 import WEED from '/src/index.js';
 const { Scene, Camera, Mouse } = WEED;
 
-
-
 export class AdobeAnimateScene extends Scene {
   static config = {
     worldWidth: 20600,
@@ -48,9 +46,9 @@ export class AdobeAnimateScene extends Scene {
         png: '/demos/img/adobe_blue_character/spritemap1.png',
       },
       willian: {
-        atlas: '/demos/fla/willian/spritemap1.json',
-        animation: '/demos/fla/willian/Animation.json',
-        png: '/demos/fla/willian/spritemap1.png',
+        atlas: '/demos/fla/willian/willian2/spritemap1.json?df=2',
+        animation: '/demos/fla/willian/willian2/Animation.json?dfdfd=55',
+        png: '/demos/fla/willian/willian2/spritemap1.png?fdfdf=55',
       },
     },
   };

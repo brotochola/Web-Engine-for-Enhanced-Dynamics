@@ -159,9 +159,8 @@ function buildSymbolMatrix(element) {
   result.b = b;
   result.c = c;
   result.d = d;
-  // Animate symbol children are already authored in the symbol's local space.
-  // Applying the transformationPoint here explodes nested rigs apart because
-  // the leaf sprites also carry their own anchor/pivot information.
+  // transformationPoint is already baked into Position by Adobe Animate's
+  // export — applying it again would double the offset.
   result.tx = x;
   result.ty = y;
   return result;

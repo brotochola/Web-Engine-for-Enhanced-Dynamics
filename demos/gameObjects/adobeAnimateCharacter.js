@@ -8,9 +8,9 @@ export class AdobeAnimateCharacter extends GameObject {
   static components = [AdobeAnimComponent, RigidBody, Collider];
   static assetName = 'willian';
   static clips = Object.freeze({
-    idle: 'Willian_corriendo',
-    jumping: 'Willian_corriendo',
-    running: 'Willian_corriendo',
+    idle: 'Argen1_Piel2',
+    jumping: 'Argen1_Piel2',
+    running: 'Argen1_Piel2',
   });
   static assetId = 0;
   static clipIds = Object.create(null);
@@ -83,9 +83,12 @@ export class AdobeAnimateCharacter extends GameObject {
     const jumpClipId = EntityClass.clipIds[jumpClipName];
     const jumpDuration = EntityClass.clipDurations[jumpClipName] ?? 0;
 
+    // All demo states currently point at the same clip, so only auto-return to
+    // idle after the non-looping jump clip actually reaches its end.
     if (
       this.adobeAnimComponent.clipId === jumpClipId &&
-      (!this.adobeAnimComponent.playing || this.adobeAnimComponent.time >= jumpDuration)
+      !this.adobeAnimComponent.loop &&
+      this.adobeAnimComponent.time >= jumpDuration
     ) {
       this.playCachedClip(idleClipName, true);
     }
