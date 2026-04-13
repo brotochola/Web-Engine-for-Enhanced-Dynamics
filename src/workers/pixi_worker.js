@@ -2529,6 +2529,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   handleSetBackground(data) {
     console.log(`PIXI WORKER: handleSetBackground called with:`, data);
     const { type, layerId, requestId, textureId, tileScale, tilemapId, options } = data;
+    const targetLayerName = Layer.getName(layerId) || 'BACKGROUND';
+
+    if (targetLayerName !== 'BACKGROUND') {
+      console.warn(
+        `PIXI WORKER: Background commands only support Layer.BACKGROUND (got "${targetLayerName}")`
+      );
+      self.postMessage({ msg: 'backgroundReady', layerId, requestId });
+      return;
+    }
 
     // Remove existing background if any
     if (this.backgroundSprite) {

@@ -548,77 +548,97 @@ export class GameObject {
 
   /** Alpha (opacity) 0-1 */
   get alpha() {
-    if (!this._hasComponents.SpriteRenderer) return 1;
-    return SpriteRenderer.alpha[this.index];
+    if (this._hasComponents.SpriteRenderer) return SpriteRenderer.alpha[this.index];
+    if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.alpha[this.index];
+    return 1;
   }
   set alpha(value) {
-    if (!this._hasComponents.SpriteRenderer) return;
-    if (SpriteRenderer.alpha[this.index] !== value) {
+    if (this._hasComponents.SpriteRenderer && SpriteRenderer.alpha[this.index] !== value) {
       SpriteRenderer.alpha[this.index] = value;
       SpriteRenderer.renderDirty[this.index] = 1;
+    }
+    if (this._hasComponents.adobeAnimComponent) {
+      AdobeAnimComponent.alpha[this.index] = value;
     }
   }
 
   /** Tint color (0xRRGGBB) */
   get tint() {
-    if (!this._hasComponents.SpriteRenderer) return 0xffffff;
-    return SpriteRenderer.baseTint[this.index]; // Return user-facing RGB value
+    if (this._hasComponents.SpriteRenderer) return SpriteRenderer.baseTint[this.index]; // Return user-facing RGB value
+    if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.tint[this.index];
+    return 0xffffff;
   }
   set tint(value) {
-    if (!this._hasComponents.SpriteRenderer) return;
-    SpriteRenderer.baseTint[this.index] = value;
-    if (SpriteRenderer.tint[this.index] !== value) {
-      SpriteRenderer.tint[this.index] = value;
-      SpriteRenderer.renderDirty[this.index] = 1;
+    if (this._hasComponents.SpriteRenderer) {
+      SpriteRenderer.baseTint[this.index] = value;
+      if (SpriteRenderer.tint[this.index] !== value) {
+        SpriteRenderer.tint[this.index] = value;
+        SpriteRenderer.renderDirty[this.index] = 1;
+      }
+    }
+    if (this._hasComponents.adobeAnimComponent) {
+      AdobeAnimComponent.tint[this.index] = value;
     }
   }
 
   /** Visibility flag */
   get visible() {
-    if (!this._hasComponents.SpriteRenderer) return false;
-    return SpriteRenderer.renderVisible[this.index] === 1;
+    if (this._hasComponents.SpriteRenderer) return SpriteRenderer.renderVisible[this.index] === 1;
+    if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.renderVisible[this.index] === 1;
+    return false;
   }
   set visible(value) {
-    if (!this._hasComponents.SpriteRenderer) return;
     const v = value ? 1 : 0;
-    if (SpriteRenderer.renderVisible[this.index] !== v) {
+    if (this._hasComponents.SpriteRenderer && SpriteRenderer.renderVisible[this.index] !== v) {
       SpriteRenderer.renderVisible[this.index] = v;
       SpriteRenderer.renderDirty[this.index] = 1;
+    }
+    if (this._hasComponents.adobeAnimComponent) {
+      AdobeAnimComponent.renderVisible[this.index] = v;
     }
   }
 
   /** Scale X */
   get scaleX() {
-    if (!this._hasComponents.SpriteRenderer) return 1;
-    return SpriteRenderer.scaleX[this.index];
+    if (this._hasComponents.SpriteRenderer) return SpriteRenderer.scaleX[this.index];
+    if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.scaleX[this.index];
+    return 1;
   }
   set scaleX(value) {
-    if (!this._hasComponents.SpriteRenderer) return;
-    if (SpriteRenderer.scaleX[this.index] !== value) {
+    if (this._hasComponents.SpriteRenderer && SpriteRenderer.scaleX[this.index] !== value) {
       SpriteRenderer.scaleX[this.index] = value;
       SpriteRenderer.updateBounds(this.index);
       SpriteRenderer.renderDirty[this.index] = 1;
+    }
+    if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.scaleX[this.index] !== value) {
+      AdobeAnimComponent.scaleX[this.index] = value;
+      AdobeAnimComponent.applyClipBounds(this.index);
     }
   }
 
   /** Scale Y */
   get scaleY() {
-    if (!this._hasComponents.SpriteRenderer) return 1;
-    return SpriteRenderer.scaleY[this.index];
+    if (this._hasComponents.SpriteRenderer) return SpriteRenderer.scaleY[this.index];
+    if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.scaleY[this.index];
+    return 1;
   }
   set scaleY(value) {
-    if (!this._hasComponents.SpriteRenderer) return;
-    if (SpriteRenderer.scaleY[this.index] !== value) {
+    if (this._hasComponents.SpriteRenderer && SpriteRenderer.scaleY[this.index] !== value) {
       SpriteRenderer.scaleY[this.index] = value;
       SpriteRenderer.updateBounds(this.index);
       SpriteRenderer.renderDirty[this.index] = 1;
+    }
+    if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.scaleY[this.index] !== value) {
+      AdobeAnimComponent.scaleY[this.index] = value;
+      AdobeAnimComponent.applyClipBounds(this.index);
     }
   }
 
   /** Is entity currently on screen? Read-only, set by culling system */
   get isOnScreen() {
-    if (!this._hasComponents.SpriteRenderer) return false;
-    return SpriteRenderer.isItOnScreen[this.index] === 1;
+    if (this._hasComponents.SpriteRenderer) return SpriteRenderer.isItOnScreen[this.index] === 1;
+    if (this._hasComponents.adobeAnimComponent) return AdobeAnimComponent.isItOnScreen[this.index] === 1;
+    return false;
   }
 
   /** Anchor X (0-1, 0.5 = center) - read-only, use setAnchor() */
@@ -701,15 +721,12 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setAlpha(value) {
-    let changed = false;
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.alpha[this.index] !== value) {
       SpriteRenderer.alpha[this.index] = value;
       SpriteRenderer.renderDirty[this.index] = 1;
-      changed = true;
     }
     if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.alpha[this.index] !== value) {
       AdobeAnimComponent.alpha[this.index] = value;
-      changed = true;
     }
     return this;
   }
@@ -720,11 +737,15 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setTint(value) {
-    if (!this._hasComponents.SpriteRenderer) return this;
-    SpriteRenderer.baseTint[this.index] = value;
-    if (SpriteRenderer.tint[this.index] !== value) {
-      SpriteRenderer.tint[this.index] = value;
-      SpriteRenderer.renderDirty[this.index] = 1;
+    if (this._hasComponents.SpriteRenderer) {
+      SpriteRenderer.baseTint[this.index] = value;
+      if (SpriteRenderer.tint[this.index] !== value) {
+        SpriteRenderer.tint[this.index] = value;
+        SpriteRenderer.renderDirty[this.index] = 1;
+      }
+    }
+    if (this._hasComponents.adobeAnimComponent) {
+      AdobeAnimComponent.tint[this.index] = value;
     }
     return this;
   }
@@ -748,8 +769,9 @@ export class GameObject {
 
   /** Current rendering layer name (read-only) */
   get layerName() {
-    if (!this._hasComponents.SpriteRenderer) return null;
-    return Layer.getName(SpriteRenderer.layerId[this.index]);
+    if (this._hasComponents.SpriteRenderer) return Layer.getName(SpriteRenderer.layerId[this.index]);
+    if (this._hasComponents.adobeAnimComponent) return Layer.getName(AdobeAnimComponent.layerId[this.index]);
+    return null;
   }
 
   /**

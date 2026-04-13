@@ -1859,7 +1859,7 @@ class Scene {
   }
 
   getPoolStats(EntityClass) {
-    if (!EntityClass.startIndex || !EntityClass.poolSize) {
+    if (EntityClass.startIndex == null || EntityClass.poolSize == null) {
       return { total: 0, active: 0, available: 0 };
     }
 

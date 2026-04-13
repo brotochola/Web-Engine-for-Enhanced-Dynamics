@@ -170,6 +170,9 @@ export class Layer {
      * @param {string} textureId - ID of texture in assets.textures
      */
     setStaticBackground(textureId) {
+        if (!Layer._ensureBackgroundLayer(this)) {
+            return;
+        }
         if (!Layer._postToRenderer) {
             console.warn('Layer: renderer not connected');
             return;
@@ -188,6 +191,9 @@ export class Layer {
      * @param {number} [tileScale=1] - Scale of tiles
      */
     setTilingBackground(textureId, tileScale = 1) {
+        if (!Layer._ensureBackgroundLayer(this)) {
+            return;
+        }
         if (!Layer._postToRenderer) {
             console.warn('Layer: renderer not connected');
             return;
@@ -208,6 +214,9 @@ export class Layer {
      * @returns {Promise<void>} Resolves when tilemap is built and warm-up render is complete
      */
     setTilemapBackground(tilemapId, options = {}) {
+        if (!Layer._ensureBackgroundLayer(this)) {
+            return Promise.resolve();
+        }
         if (!Layer._postToRenderer) {
             console.warn('Layer: renderer not connected');
             return Promise.resolve();
@@ -227,6 +236,9 @@ export class Layer {
      * Remove the current background from this layer
      */
     clearBackground() {
+        if (!Layer._ensureBackgroundLayer(this)) {
+            return;
+        }
         if (!Layer._postToRenderer) {
             console.warn('Layer: renderer not connected');
             return;
@@ -274,6 +286,14 @@ export class Layer {
 
     static getCustomLayers() {
         return this._byId.filter(l => l && this._hasRenderQueue[l.id] === 1 && l.id !== this.ENTITIES_ID);
+    }
+
+    static _ensureBackgroundLayer(layer) {
+        if (layer?.name === 'BACKGROUND') {
+            return true;
+        }
+        console.warn('Layer background APIs are only supported on Layer.BACKGROUND');
+        return false;
     }
 
     static _createBackgroundRequestId() {

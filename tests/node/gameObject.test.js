@@ -2,9 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { GameObject } from '../../src/core/gameObject.js';
+import { Scene } from '../../src/core/Scene.js';
+import { Layer } from '../../src/core/Layer.js';
 import { DecorationPool } from '../../src/core/DecorationPool.js';
 import { Transform } from '../../src/components/Transform.js';
 import { RigidBody } from '../../src/components/RigidBody.js';
+import { SpriteRenderer } from '../../src/components/SpriteRenderer.js';
+import { AdobeAnimComponent } from '../../src/components/AdobeAnimComponent.js';
 import { LightEmitter } from '../../src/components/LightEmitter.js';
 import { FlashComponent } from '../../src/components/FlashComponent.js';
 
@@ -424,5 +428,147 @@ test('despawnAll returns 0 and preserves local state when non-logic0 forwarding 
     DecorationPool.clearAttachedAndDespawnAll = previousClearAttached;
     if (previousSelf === undefined) delete globalThis.self;
     else globalThis.self = previousSelf;
+  }
+});
+
+test('render facade works for Adobe-only entities and fan-outs method updates when both render components exist', () => {
+  const previousSpriteAlpha = SpriteRenderer.alpha;
+  const previousSpriteBaseTint = SpriteRenderer.baseTint;
+  const previousSpriteTint = SpriteRenderer.tint;
+  const previousSpriteVisible = SpriteRenderer.renderVisible;
+  const previousSpriteScaleX = SpriteRenderer.scaleX;
+  const previousSpriteScaleY = SpriteRenderer.scaleY;
+  const previousSpriteDirty = SpriteRenderer.renderDirty;
+  const previousSpriteOnScreen = SpriteRenderer.isItOnScreen;
+  const previousSpriteLayerId = SpriteRenderer.layerId;
+  const previousSpriteUpdateBounds = SpriteRenderer.updateBounds;
+
+  const previousAdobeAlpha = AdobeAnimComponent.alpha;
+  const previousAdobeTint = AdobeAnimComponent.tint;
+  const previousAdobeVisible = AdobeAnimComponent.renderVisible;
+  const previousAdobeScaleX = AdobeAnimComponent.scaleX;
+  const previousAdobeScaleY = AdobeAnimComponent.scaleY;
+  const previousAdobeOnScreen = AdobeAnimComponent.isItOnScreen;
+  const previousAdobeLayerId = AdobeAnimComponent.layerId;
+  const previousAdobeApplyClipBounds = AdobeAnimComponent.applyClipBounds;
+
+  const previousLayerGetName = Layer.getName;
+  const previousLayerGetId = Layer.getId;
+
+  const spriteBoundsUpdates = [];
+  const adobeBoundsUpdates = [];
+
+  SpriteRenderer.alpha = new Float32Array([1, 1]);
+  SpriteRenderer.baseTint = new Uint32Array([0xffffff, 0xffffff]);
+  SpriteRenderer.tint = new Uint32Array([0xffffff, 0xffffff]);
+  SpriteRenderer.renderVisible = new Uint8Array([0, 1]);
+  SpriteRenderer.scaleX = new Float32Array([1, 1]);
+  SpriteRenderer.scaleY = new Float32Array([1, 1]);
+  SpriteRenderer.renderDirty = new Uint8Array([0, 0]);
+  SpriteRenderer.isItOnScreen = new Uint8Array([0, 1]);
+  SpriteRenderer.layerId = new Uint8Array([0, 1]);
+  SpriteRenderer.updateBounds = (index) => spriteBoundsUpdates.push(index);
+
+  AdobeAnimComponent.alpha = new Float32Array([1, 1]);
+  AdobeAnimComponent.tint = new Uint32Array([0xffffff, 0xffffff]);
+  AdobeAnimComponent.renderVisible = new Uint8Array([0, 1]);
+  AdobeAnimComponent.scaleX = new Float32Array([1, 1]);
+  AdobeAnimComponent.scaleY = new Float32Array([1, 1]);
+  AdobeAnimComponent.isItOnScreen = new Uint8Array([1, 0]);
+  AdobeAnimComponent.layerId = new Uint8Array([7, 3]);
+  AdobeAnimComponent.applyClipBounds = (index) => adobeBoundsUpdates.push(index);
+
+  Layer.getName = (id) => `layer-${id}`;
+  Layer.getId = (name) => (name === 'fx' ? 9 : -1);
+
+  const adobeOnly = Object.create(GameObject.prototype);
+  adobeOnly.index = 0;
+  adobeOnly._hasComponents = { adobeAnimComponent: true };
+
+  const both = Object.create(GameObject.prototype);
+  both.index = 1;
+  both._hasComponents = { SpriteRenderer: true, adobeAnimComponent: true };
+
+  try {
+    adobeOnly.alpha = 0.4;
+    adobeOnly.tint = 0x123456;
+    adobeOnly.visible = true;
+    adobeOnly.scaleX = 2;
+    adobeOnly.scaleY = 3;
+
+    assert.ok(Math.abs(adobeOnly.alpha - 0.4) < 1e-6);
+    assert.equal(adobeOnly.tint, 0x123456);
+    assert.equal(adobeOnly.visible, true);
+    assert.equal(adobeOnly.isOnScreen, true);
+    assert.equal(adobeOnly.layerName, 'layer-7');
+    assert.ok(Math.abs(AdobeAnimComponent.alpha[0] - 0.4) < 1e-6);
+    assert.equal(AdobeAnimComponent.tint[0], 0x123456);
+    assert.equal(AdobeAnimComponent.renderVisible[0], 1);
+    assert.ok(Math.abs(AdobeAnimComponent.scaleX[0] - 2) < 1e-6);
+    assert.ok(Math.abs(AdobeAnimComponent.scaleY[0] - 3) < 1e-6);
+
+    both.setAlpha(0.25).setTint(0x224466).setVisible(false).setScale(1.5, 2.5).setLayer('fx');
+
+    assert.ok(Math.abs(SpriteRenderer.alpha[1] - 0.25) < 1e-6);
+    assert.ok(Math.abs(AdobeAnimComponent.alpha[1] - 0.25) < 1e-6);
+    assert.equal(SpriteRenderer.baseTint[1], 0x224466);
+    assert.equal(SpriteRenderer.tint[1], 0x224466);
+    assert.equal(AdobeAnimComponent.tint[1], 0x224466);
+    assert.equal(SpriteRenderer.renderVisible[1], 0);
+    assert.equal(AdobeAnimComponent.renderVisible[1], 0);
+    assert.ok(Math.abs(SpriteRenderer.scaleX[1] - 1.5) < 1e-6);
+    assert.ok(Math.abs(SpriteRenderer.scaleY[1] - 2.5) < 1e-6);
+    assert.ok(Math.abs(AdobeAnimComponent.scaleX[1] - 1.5) < 1e-6);
+    assert.ok(Math.abs(AdobeAnimComponent.scaleY[1] - 2.5) < 1e-6);
+    assert.equal(SpriteRenderer.layerId[1], 9);
+    assert.equal(AdobeAnimComponent.layerId[1], 9);
+    assert.equal(both.layerName, 'layer-9');
+    assert.deepEqual(spriteBoundsUpdates, [1]);
+    assert.deepEqual(adobeBoundsUpdates, [0, 0, 1]);
+    assert.equal(SpriteRenderer.renderDirty[1], 1);
+  } finally {
+    SpriteRenderer.alpha = previousSpriteAlpha;
+    SpriteRenderer.baseTint = previousSpriteBaseTint;
+    SpriteRenderer.tint = previousSpriteTint;
+    SpriteRenderer.renderVisible = previousSpriteVisible;
+    SpriteRenderer.scaleX = previousSpriteScaleX;
+    SpriteRenderer.scaleY = previousSpriteScaleY;
+    SpriteRenderer.renderDirty = previousSpriteDirty;
+    SpriteRenderer.isItOnScreen = previousSpriteOnScreen;
+    SpriteRenderer.layerId = previousSpriteLayerId;
+    SpriteRenderer.updateBounds = previousSpriteUpdateBounds;
+
+    AdobeAnimComponent.alpha = previousAdobeAlpha;
+    AdobeAnimComponent.tint = previousAdobeTint;
+    AdobeAnimComponent.renderVisible = previousAdobeVisible;
+    AdobeAnimComponent.scaleX = previousAdobeScaleX;
+    AdobeAnimComponent.scaleY = previousAdobeScaleY;
+    AdobeAnimComponent.isItOnScreen = previousAdobeOnScreen;
+    AdobeAnimComponent.layerId = previousAdobeLayerId;
+    AdobeAnimComponent.applyClipBounds = previousAdobeApplyClipBounds;
+
+    Layer.getName = previousLayerGetName;
+    Layer.getId = previousLayerGetId;
+  }
+});
+
+test('Scene.getPoolStats handles entity classes that start at index 0', () => {
+  const previousTransformActive = Transform.active;
+  Transform.active = new Uint8Array([1, 0, 1]);
+
+  try {
+    const stats = Scene.prototype.getPoolStats.call({}, {
+      startIndex: 0,
+      endIndex: 3,
+      poolSize: 3,
+    });
+
+    assert.deepEqual(stats, {
+      total: 3,
+      active: 2,
+      available: 1,
+    });
+  } finally {
+    Transform.active = previousTransformActive;
   }
 });
