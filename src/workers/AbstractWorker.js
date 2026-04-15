@@ -28,6 +28,7 @@ import { Sun } from '../core/Sun.js';
 import { Layer } from '../core/Layer.js';
 import { TileMap } from '../core/TileMap.js';
 import { Ray } from '../core/Ray.js';
+import { SceneBridge } from '../core/SceneBridge.js';
 import { DebugDraw } from '../core/debug/DebugDraw.js';
 import { Grid } from '../core/Grid.js';
 import { NavGrid } from '../core/NavGrid.js';
@@ -211,6 +212,11 @@ export class AbstractWorker {
 
   reportLog(message) {
     self.postMessage({ msg: 'log', message, when: Date.now() });
+  }
+
+  postMessageToScene(data) {
+    self.postMessage(data);
+    return true;
   }
 
   reportError(title, error) {
@@ -714,6 +720,7 @@ export class AbstractWorker {
     self.SoundManager = SoundManager;
     self.Constraint = Constraint;
     self.Layer = Layer;
+    self.SceneBridge = SceneBridge;
 
     // Components (required for blob worker entity script evaluation)
     self.Transform = Transform;

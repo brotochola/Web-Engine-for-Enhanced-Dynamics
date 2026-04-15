@@ -8,7 +8,7 @@ import { SoldierBehaviorFSM } from '../fsm/SoldierBehaviorFSM.js';
 import { PersonAnimationFSM } from '../fsm/PersonAnimationFSM.js';
 import { PersonComponent } from '../components/personComponent.js';
 
-const { Transform } = WEED;
+const { Transform, Keyboard } = WEED;
 
 export class MySoldier extends Person {
   static scriptUrl = import.meta.url;
@@ -62,5 +62,11 @@ export class MySoldier extends Person {
   startFollowingDestination() {
     this.soldierBehaviorFSM.changeState(SoldierBehaviorFSM.states.GOING_TO_DESTINATION);
     this.personAnimationFSM.changeState(PersonAnimationFSM.states.IDLE);
+  }
+
+  die() {
+    this.sendMessageToScene('die');
+
+    super.die();
   }
 }

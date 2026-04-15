@@ -11,7 +11,7 @@ import { VERSION } from './version.js';
 export { VERSION } from './version.js';
 export { GameEngine } from './core/gameEngine.js';
 export { Scene } from './core/Scene.js';
-export { GameObject, Keyboard } from './core/gameObject.js';
+export { GameObject, Keyboard, SceneBridge } from './core/gameObject.js';
 export { Component } from './core/Component.js';
 export { FSM } from './core/FSM.js';
 export { FSMState } from './core/FSMState.js';
@@ -120,7 +120,7 @@ export { AbstractWorker } from './workers/AbstractWorker.js';
 // Import everything we need for the namespace
 import { GameEngine } from './core/gameEngine.js';
 import { Scene } from './core/Scene.js';
-import { GameObject, Keyboard } from './core/gameObject.js';
+import { GameObject, Keyboard, SceneBridge } from './core/gameObject.js';
 import { Component } from './core/Component.js';
 import { FSM } from './core/FSM.js';
 import { FSMState } from './core/FSMState.js';
@@ -202,6 +202,7 @@ const WEED = Object.freeze({
   Layer,
   TileMap,
   Keyboard,
+  SceneBridge,
   SpriteSheetRegistry,
   AdobeAnimRegistry,
   BigAtlasInspector,

@@ -948,6 +948,10 @@ class Scene {
     // Override this for per-frame scene logic
   }
 
+  onMessageFromGameObject(data, entityIndex, className, workerName, workerIndex) {
+    // Override this in scenes that want to react to worker-side entity messages.
+  }
+
   createSharedBuffers() {
     createSceneSharedBuffers(this);
   }
@@ -1408,6 +1412,14 @@ class Scene {
       this._showFatalErrorMessage(workerName, title, message);
     } else if (e.data.msg === 'backgroundReady') {
       Layer.resolveBackgroundReady(e.data.layerId, e.data.requestId);
+    } else if (e.data.msg === 'messageFromGameObject') {
+      this.onMessageFromGameObject(
+        e.data.data,
+        e.data.entityIndex,
+        e.data.className,
+        e.currentTarget.name,
+        e.data.workerIndex
+      );
     } else {
       // Log unexpected messages for debugging
       console.log(`[Scene] 📨 Received message from ${e.currentTarget.name}:`, e.data.msg, e.data);

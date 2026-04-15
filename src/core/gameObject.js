@@ -31,9 +31,10 @@ import Keyboard from './Keyboard.js';
 import { DecorationPool } from './DecorationPool.js';
 import { Decoration } from './Decoration.js';
 import { AdobeAnimRegistry } from './AdobeAnimRegistry.js';
+import { SceneBridge } from './SceneBridge.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
-export { Keyboard, SpriteSheetRegistry };
+export { Keyboard, SpriteSheetRegistry, SceneBridge };
 
 export class GameObject {
   // Entity class metadata (for spawning system)
@@ -376,6 +377,14 @@ export class GameObject {
     if (!view && this.setup) {
       this.setup();
     }
+  }
+
+  get sceneBridge() {
+    return SceneBridge;
+  }
+
+  sendMessageToScene(data) {
+    return SceneBridge.sendMessageToScene(data, this);
   }
 
   /**

@@ -448,6 +448,11 @@ export class PredatorScene extends WEED.Scene {
     }
   }
 
+  onMessageFromGameObject(data, entityIndex, className, workerName) {
+    console.log('onMessageFromGameObject', data, entityIndex, className, workerName);
+
+  }
+
   update(dtRatio, deltaTime, accumulatedTime, frameNumber) {
     // if (frameNumber % (60 * 10) === 0) {
     //   this.printFPS()
