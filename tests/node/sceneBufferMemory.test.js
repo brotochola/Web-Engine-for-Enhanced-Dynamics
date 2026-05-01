@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildSceneMemoryUsageReport,
   buildMemoryUsageSummary,
   formatBytes,
   getSharedBufferSize,
@@ -92,4 +93,49 @@ test('formatBytes preserves the existing scene formatting', () => {
   assert.equal(formatBytes(0), '0 B');
   assert.equal(formatBytes(1024), '1.00 KB');
   assert.equal(formatBytes(1536), '1.50 KB');
+});
+
+test('buildSceneMemoryUsageReport includes component allocation metadata', () => {
+  class ReportTransform {}
+  class ReportRigidBody {}
+  class ReportParticleComponent {}
+
+  const scene = {
+    totalEntityCount: 12,
+    config: {
+      particle: { maxParticles: 20 },
+      decoration: { maxDecorations: 0 },
+      bullet: { maxBullets: 0 },
+    },
+    registeredClasses: [
+      { count: 5, components: [ReportTransform, ReportRigidBody] },
+      { count: 7, components: [ReportTransform] },
+    ],
+    buffers: {
+      componentData: {
+        ReportTransform: new SharedArrayBuffer(48),
+        ReportRigidBody: new SharedArrayBuffer(96),
+        ParticleComponent: new SharedArrayBuffer(160),
+      },
+      neighborData: new SharedArrayBuffer(24),
+    },
+  };
+
+  const report = buildSceneMemoryUsageReport(scene);
+
+  assert.equal(report.totalBytes, 328);
+  assert.equal(report.componentAllocations.ReportTransform.bytes, 48);
+  assert.equal(report.componentAllocations.ReportTransform.capacity, 12);
+  assert.equal(report.componentAllocations.ReportTransform.entityTypeCount, 2);
+  assert.equal(report.componentAllocations.ReportTransform.entityPoolSlots, 12);
+
+  assert.equal(report.componentAllocations.ReportRigidBody.bytes, 96);
+  assert.equal(report.componentAllocations.ReportRigidBody.capacity, 12);
+  assert.equal(report.componentAllocations.ReportRigidBody.entityTypeCount, 1);
+  assert.equal(report.componentAllocations.ReportRigidBody.entityPoolSlots, 5);
+
+  assert.equal(report.componentAllocations.ParticleComponent.bytes, 160);
+  assert.equal(report.componentAllocations.ParticleComponent.capacity, 20);
+  assert.equal(report.componentAllocations.ParticleComponent.entityTypeCount, 0);
+  assert.equal(report.componentAllocations.ParticleComponent.entityPoolSlots, 0);
 });
