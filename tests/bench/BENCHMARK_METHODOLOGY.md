@@ -32,9 +32,28 @@ node tests/bench/run-integrated-worker-benchmark.mjs --headed \
 
 Use scene selection for targeted checks:
 
-- **Spatial/physics:** `BallsScene`, `BallsAndRectanglesScene`, or a dedicated churn/stationary scene.
+- **Spatial/physics:** `BallsScene`, `BallsAndRectanglesScene`, or `StationarySpatialScene`.
+- **Query churn:** `QueryChurnScene` for spawn/despawn list updates and custom precomputed active-query publication.
 - **Pre-render/render queues:** a scene with many visible renderables or custom layers.
 - **Particles/decorations:** a scene that actually has active particles/decorations; BallsScene reports `ACTIVE_DECORATIONS: 0`.
+
+Stationary spatial reuse check:
+
+```bash
+node tests/bench/run-integrated-worker-benchmark.mjs --headed \
+  --scene /demos/scenes/StationarySpatialScene.js \
+  --scene-export StationarySpatialScene \
+  --output tests/results/stationary-spatial-headed.json
+```
+
+Query churn check:
+
+```bash
+node tests/bench/run-integrated-worker-benchmark.mjs --headed \
+  --scene /demos/scenes/QueryChurnScene.js \
+  --scene-export QueryChurnScene \
+  --output tests/results/query-churn-headed.json
+```
 
 To compare different static config values inside a scene (e.g. `cellSize`), edit that scene's config between runs; there is no CLI patch into scene config.
 
