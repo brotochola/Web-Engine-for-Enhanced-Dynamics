@@ -1,6 +1,6 @@
 {
   "name": "@weed.js/engine",
-  "version": "0.4.129",
+  "version": "0.4.130",
   "description": "A blazing-fast multithreaded web game engine that handles 20,000+ NPCs without breaking a sweat",
   "type": "module",
   "main": "dist/weed.bundle.min.js",

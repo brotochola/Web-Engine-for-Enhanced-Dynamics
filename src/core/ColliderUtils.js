@@ -1,10 +1,12 @@
-// ColliderUtils.js - Worker-only utilities for collider cell calculations
-// Requires Transform and Collider components to be initialized globally (worker context)
+// ColliderUtils.js - Utilities for collider cell calculations
 //
 // PERFORMANCE NOTES:
 // - Zero allocations: Uses pre-allocated result objects (safe in single-threaded workers)
 // - Caller should pre-compute invariants (invCellSize, maxCol, maxRow) outside loops
 // - For ultra-hot paths (every frame, thousands of entities), inline the math instead
+
+import { Transform } from '../components/Transform.js';
+import { Collider } from '../components/Collider.js';
 
 /**
  * Shape type constants (matches Collider.shapeType values)
