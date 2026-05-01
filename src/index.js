@@ -95,7 +95,8 @@ export { Flash } from './core/Flash.js';
 // Note: The query helpers are available globally in all workers for
 // component-based entity filtering:
 //   const allPredators = query([RigidBody, PredatorBehavior]);              // all matching slots
-//   const visibleEntities = queryActiveEntities([SpriteRenderer, Transform]); // active only
+//   const visibleEntities = queryActiveEntities([SpriteRenderer]);          // active precomputed only
+//   const customActive = queryActiveEntitiesSlow([RigidBody, EnemyTag]);    // explicit slow path
 // These are NOT available in main thread context, only in workers.
 
 // ============================================================================

@@ -579,6 +579,7 @@ export class AbstractWorker {
 
       this._queryFn = queryFunctions.query;
       this._queryActiveEntitiesFn = queryFunctions.queryActiveEntities;
+      this._queryActiveEntitiesSlowFn = queryFunctions.queryActiveEntitiesSlow;
       this._publishPrecomputedActiveQueries = queryFunctions.publishPrecomputedActiveQueries;
       this._precomputedQueries = queryFunctions._precomputedQueries;
       this._queryEntityMetadata = queryFunctions._entityMetadata;
@@ -589,6 +590,8 @@ export class AbstractWorker {
       globalThis.query = queryFunctions.query;
       self.queryActiveEntities = queryFunctions.queryActiveEntities;
       globalThis.queryActiveEntities = queryFunctions.queryActiveEntities;
+      self.queryActiveEntitiesSlow = queryFunctions.queryActiveEntitiesSlow;
+      globalThis.queryActiveEntitiesSlow = queryFunctions.queryActiveEntitiesSlow;
 
       this.reportLog(
         `initialized query system with ${this._precomputedQueries?.length || 0} pre-computed queries`
@@ -1025,15 +1028,16 @@ export class AbstractWorker {
 
   /**
    * Query for ACTIVE entities with specified components
-   * Returns a view into pre-computed shared query results when available,
-   * otherwise computes a fallback result from active entity lists.
+   * Requires a precomputed active query. Use queryActiveEntitiesSlow()
+   * explicitly for ad hoc combinations.
    *
    * @param {Array<Component>} componentClasses - Array of component classes to query
    * @returns {Uint16Array} - Active entity indices (view into SAB, do not modify)
    *
    * @example
    * const activeLights = this.queryActiveEntities([LightEmitter]);
-   * const activePhysics = this.queryActiveEntities([RigidBody, Collider]);
+   * const activePhysics = this.queryActiveEntities([RigidBody]); // precomputed
+   * const custom = this.queryActiveEntitiesSlow([RigidBody, MyCustomComponent]);
    */
   queryActiveEntities(componentClasses) {
     if (!this._queryActiveEntitiesFn) {
@@ -1041,6 +1045,14 @@ export class AbstractWorker {
       return this._emptyUint16Array;
     }
     return this._queryActiveEntitiesFn(componentClasses);
+  }
+
+  queryActiveEntitiesSlow(componentClasses) {
+    if (!this._queryActiveEntitiesSlowFn) {
+      console.warn(`[${this.constructor.name}] Active query system not initialized!`);
+      return this._emptyUint16Array;
+    }
+    return this._queryActiveEntitiesSlowFn(componentClasses);
   }
 
   // ==========================================

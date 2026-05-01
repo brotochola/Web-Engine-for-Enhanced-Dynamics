@@ -152,7 +152,8 @@ Flash.create({ x: this.x, y: this.y, z: 30, lifespan: 50, color: 0xffaa00, inten
 
 // Queries (inside worker/entity code)
 const enemies = query([RigidBody, EnemyComponent]);          // all matching slots
-const activeEnemies = queryActiveEntities([RigidBody, EnemyComponent]); // active only
+const activeBodies = queryActiveEntities([RigidBody]);       // active precomputed query
+const activeEnemies = queryActiveEntitiesSlow([RigidBody, EnemyComponent]); // explicit slow path
 ```
 
 ---

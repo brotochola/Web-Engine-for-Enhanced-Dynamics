@@ -128,14 +128,25 @@ test('buildSceneMemoryUsageReport includes component allocation metadata', () =>
   assert.equal(report.componentAllocations.ReportTransform.capacity, 12);
   assert.equal(report.componentAllocations.ReportTransform.entityTypeCount, 2);
   assert.equal(report.componentAllocations.ReportTransform.entityPoolSlots, 12);
+  assert.equal(report.componentAllocations.ReportTransform.estimatedUnusedSlots, 0);
+  assert.equal(report.componentAllocations.ReportTransform.estimatedUnusedBytes, 0);
 
   assert.equal(report.componentAllocations.ReportRigidBody.bytes, 96);
   assert.equal(report.componentAllocations.ReportRigidBody.capacity, 12);
   assert.equal(report.componentAllocations.ReportRigidBody.entityTypeCount, 1);
   assert.equal(report.componentAllocations.ReportRigidBody.entityPoolSlots, 5);
+  assert.equal(report.componentAllocations.ReportRigidBody.bytesPerSlot, 8);
+  assert.equal(report.componentAllocations.ReportRigidBody.estimatedUsedSlots, 5);
+  assert.equal(report.componentAllocations.ReportRigidBody.estimatedUnusedSlots, 7);
+  assert.equal(report.componentAllocations.ReportRigidBody.estimatedUnusedBytes, 56);
+  assert.equal(report.componentAllocations.ReportRigidBody.estimatedUnusedFormatted, '56.00 B');
+  assert.equal(report.componentAllocations.ReportRigidBody.dedicatedPool, false);
 
   assert.equal(report.componentAllocations.ParticleComponent.bytes, 160);
   assert.equal(report.componentAllocations.ParticleComponent.capacity, 20);
   assert.equal(report.componentAllocations.ParticleComponent.entityTypeCount, 0);
   assert.equal(report.componentAllocations.ParticleComponent.entityPoolSlots, 0);
+  assert.equal(report.componentAllocations.ParticleComponent.estimatedUsedSlots, 20);
+  assert.equal(report.componentAllocations.ParticleComponent.estimatedUnusedSlots, 0);
+  assert.equal(report.componentAllocations.ParticleComponent.dedicatedPool, true);
 });

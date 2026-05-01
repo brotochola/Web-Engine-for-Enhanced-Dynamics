@@ -254,17 +254,8 @@ function publishQuerySnapshot(snapshotView, count, frameNumber) {
   Atomics.store(snapshotView.header, 0, nextSnapshot);
 }
 
-function warnNonPrecomputedQueryOnce(warnedQueries, queryMask, componentClasses) {
-  if (warnedQueries.has(queryMask)) {
-    return;
-  }
-
-  warnedQueries.add(queryMask);
-  const componentNames = componentClasses.map((ComponentClass) => ComponentClass?.name || 'unknown');
-  console.warn(
-    `[QuerySystem] queryActiveEntities fallback used for [${componentNames.join(', ')}]. ` +
-      `Consider adding this combination to precomputedQueries if it is hot.`
-  );
+function getQueryComponentNames(componentClasses) {
+  return componentClasses.map((ComponentClass) => ComponentClass?.name || 'unknown').join(', ');
 }
 
 // =============================================================================
@@ -323,9 +314,6 @@ export class QuerySystem {
      * Result is a temporary view - consume immediately, do not store.
      */
     this._queryResultBuffer = null;
-
-    /** Query masks already warned about in queryActiveEntities() fallback */
-    this._warnedNonPrecomputedQueries = new Set();
   }
 
   /**
@@ -707,9 +695,7 @@ export class QuerySystem {
 
   /**
    * Query for ACTIVE entities with specified components
-   * Returns a shared pre-computed result view when available.
-   * Otherwise falls back to a computed result built from per-type active lists
-   * when available, or the shared active-entity list as a compatibility path.
+   * Requires a pre-computed query. Use queryActiveEntitiesSlow() for explicit ad hoc queries.
    *
    * @param {Array} componentClasses - Array of component classes
    * @returns {Uint16Array} - Active entity indices (view into SAB, do not modify)
@@ -724,9 +710,21 @@ export class QuerySystem {
       return readPublishedQuerySnapshot(this.queryResultViews[queryIndex]);
     }
 
-    // Not pre-computed - compute on demand from active entity lists.
-    // This path is slower than a pre-computed SAB result but works for any component combination.
-    warnNonPrecomputedQueryOnce(this._warnedNonPrecomputedQueries, queryMask, componentClasses);
+    throw new Error(
+      `[QuerySystem] queryActiveEntities([${getQueryComponentNames(componentClasses)}]) is not precomputed. ` +
+      `Declare it as a scene query or call queryActiveEntitiesSlow() explicitly.`
+    );
+  }
+
+  /**
+   * Explicit slow active query path for ad hoc component combinations.
+   * Prefer GameObject/type APIs or precomputed scene queries in hot code.
+   *
+   * @param {Array} componentClasses - Array of component classes
+   * @returns {Uint16Array} - Active entity indices
+   */
+  queryActiveEntitiesSlow(componentClasses) {
+    const queryMask = this._generateQueryMask(componentClasses);
     return this._computeActiveQueryFromMask(queryMask);
   }
 
@@ -931,14 +929,11 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
   // Map: componentIds string (sorted, comma-joined) → queryMask (BigInt)
   const queryMaskCache = new Map();
 
-  // Warn once per unique non-precomputed query to avoid console spam in hot paths.
-  const warnedNonPrecomputedQueries = new Set();
-
   // Cache per-type active list SAB views once entity classes are attached to global scope.
   const cachedTypeActiveLists = new Array(entityMetadata.length);
   const fallbackActiveQueryCache = queryVersionData ? new Map() : null;
 
-  // OPTIMIZATION: Reusable buffers for query() and queryActiveEntities fallback - avoids GC pressure
+  // OPTIMIZATION: Reusable buffers for query() and queryActiveEntitiesSlow() - avoids GC pressure
   // Multiple buffers allow several queries in the same tick without overwriting
   // Result is a temporary view - consume immediately, do not store
   const totalEntityCount = entityMetadata.reduce((sum, m) => sum + m.poolSize, 0);
@@ -1051,7 +1046,8 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
 
   /**
    * Query for ACTIVE entities with specified components
-   * Returns view into pre-populated SAB for pre-computed queries
+   * Returns view into pre-populated SAB for pre-computed queries.
+   * Throws for ad hoc combinations; use queryActiveEntitiesSlow() explicitly.
    */
   function queryActiveEntities(componentClasses) {
     const queryMask = generateQueryMask(componentClasses);
@@ -1063,8 +1059,14 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
       return readPublishedQuerySnapshot(queryResultViews[queryIndex]);
     }
 
-    // Fallback: compute from activeEntitiesData (reuse buffer to avoid GC pressure)
-    warnNonPrecomputedQueryOnce(warnedNonPrecomputedQueries, queryMask, componentClasses);
+    throw new Error(
+      `[QuerySystem] queryActiveEntities([${getQueryComponentNames(componentClasses)}]) is not precomputed. ` +
+      `Declare it as a scene query or call queryActiveEntitiesSlow() explicitly.`
+    );
+  }
+
+  function queryActiveEntitiesSlow(componentClasses) {
+    const queryMask = generateQueryMask(componentClasses);
 
     let typeMask = queryToTypeMask.get(queryMask);
     if (typeMask === undefined) {
@@ -1117,6 +1119,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
   return {
     query,
     queryActiveEntities,
+    queryActiveEntitiesSlow,
     publishPrecomputedActiveQueries(frameNumber = 0) {
       for (let q = 0; q < precomputedQueries.length; q++) {
         const queryDef = precomputedQueries[q];

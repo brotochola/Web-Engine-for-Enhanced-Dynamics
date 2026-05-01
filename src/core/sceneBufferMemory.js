@@ -104,6 +104,14 @@ function getComponentPoolCapacity(scene, componentName) {
   return scene.totalEntityCount || 0;
 }
 
+function isDedicatedPoolComponent(componentName) {
+  return (
+    componentName === 'ParticleComponent' ||
+    componentName === 'DecorationComponent' ||
+    componentName === 'BulletComponent'
+  );
+}
+
 function countEntityTypesUsingComponent(scene, componentName) {
   let count = 0;
   let totalPoolSlots = 0;
@@ -130,12 +138,26 @@ export function buildSceneMemoryUsageReport(scene) {
     if (!(buffer instanceof SharedArrayBuffer)) continue;
 
     const usage = countEntityTypesUsingComponent(scene, componentName);
+    const capacity = getComponentPoolCapacity(scene, componentName);
+    const bytesPerSlot = capacity > 0 ? buffer.byteLength / capacity : 0;
+    const estimatedUsedSlots = isDedicatedPoolComponent(componentName)
+      ? capacity
+      : usage.entityPoolSlots;
+    const estimatedUnusedSlots = Math.max(0, capacity - estimatedUsedSlots);
+    const estimatedUnusedBytes = Math.round(estimatedUnusedSlots * bytesPerSlot);
+
     componentAllocations[componentName] = {
       bytes: buffer.byteLength,
       formatted: formatBytes(buffer.byteLength),
-      capacity: getComponentPoolCapacity(scene, componentName),
+      capacity,
       entityTypeCount: usage.entityTypeCount,
       entityPoolSlots: usage.entityPoolSlots,
+      bytesPerSlot,
+      estimatedUsedSlots,
+      estimatedUnusedSlots,
+      estimatedUnusedBytes,
+      estimatedUnusedFormatted: formatBytes(estimatedUnusedBytes),
+      dedicatedPool: isDedicatedPoolComponent(componentName),
     };
   }
 

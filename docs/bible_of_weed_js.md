@@ -150,7 +150,8 @@ Tag components participate in the query system like any other component:
 
 ```javascript
 const listeners = query([CollisionListener]); // all matching slots, including inactive pooled ones
-const visible   = queryActiveEntities([CameraInOutListener, SpriteRenderer]);
+const listenerSlots = queryActiveEntities([CameraInOutListener]); // active precomputed query
+const visibleListeners = queryActiveEntitiesSlow([CameraInOutListener, SpriteRenderer]); // explicit slow path
 ```
 
 ### Creating your own tag components
@@ -539,9 +540,10 @@ WEED.ParticleEmitter.emit({
 
 // Query helpers (worker context)
 const all = query([WEED.Transform, WEED.Collider]); // all matching slots, active or inactive
-const active = queryActiveEntities([WEED.Transform, WEED.SpriteRenderer]); // active only
+const activeSprites = queryActiveEntities([WEED.SpriteRenderer]); // active precomputed query
+const customActive = queryActiveEntitiesSlow([WEED.Transform, WEED.SpriteRenderer]); // explicit slow path
 
-Built-in single-component entity queries are precomputed by the engine. Active precomputed queries are published as complete snapshots by logic0: a reader may see a slightly stale result, but never a half-shifted list. Custom combinations still work too: if a combination is not precomputed, the first active query after an active-population change rebuilds a cached result, and repeated calls reuse that cached view until the next spawn/despawn invalidation. Hot custom queries may still emit a one-time warning so you can decide whether they should be promoted to `precomputedQueries`.
+Built-in single-component entity queries are precomputed by the engine. Active precomputed queries are published as complete snapshots by logic0: a reader may see a slightly stale result, but never a half-shifted list. `queryActiveEntities()` only accepts precomputed combinations. Use `queryActiveEntitiesSlow()` for deliberate ad hoc active component queries; do not put that path in hot loops unless benchmarked.
 
 // Public utility helpers intentionally exposed on WEED
 WEED.rng()
@@ -619,7 +621,7 @@ scene.getMemoryUsageSummary(); // raw SharedArrayBuffer tree and total bytes
 scene.getMemoryUsageReport();  // summary + per-component allocation metadata
 ```
 
-`getMemoryUsageReport().componentAllocations` shows each component buffer's byte size, capacity, number of entity types using it, and total pool slots for those types. Use it before changing component storage: dense component arrays are fast, but rare components can waste memory when allocated for every entity slot.
+`getMemoryUsageReport().componentAllocations` shows each component buffer's byte size, capacity, number of entity types using it, total pool slots for those types, and estimated unused dense slots/bytes. Use it before changing component storage: dense component arrays are fast, but rare components can waste memory when allocated for every entity slot. See `docs/COMPONENT_STORAGE.md` for the dense-vs-sparse decision policy.
 
 ---
 

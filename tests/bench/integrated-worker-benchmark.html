@@ -19,6 +19,15 @@
         this.state = 'running';
         return Promise.resolve();
       }
+
+      decodeAudioData() {
+        const silence = new Float32Array(1);
+        return Promise.resolve({
+          numberOfChannels: 1,
+          length: silence.length,
+          getChannelData: () => silence,
+        });
+      }
     }
 
     class BenchmarkAudioWorkletNode {

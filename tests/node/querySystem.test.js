@@ -189,7 +189,16 @@ test('definePrecomputedQueries covers all built-in entity components as single-c
   }
 });
 
-test('main-thread fallback queryActiveEntities caches until query version changes', () => {
+test('main-thread queryActiveEntities requires precomputed queries', () => {
+  const querySystem = new QuerySystem();
+
+  assert.throws(
+    () => querySystem.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]),
+    /queryActiveEntities\(\[QueryTestComponentA, QueryTestComponentB\]\) is not precomputed/
+  );
+});
+
+test('main-thread queryActiveEntitiesSlow caches until query version changes', () => {
   const previousActiveEntitiesData = GameObject.activeEntitiesData;
   const previousWarn = console.warn;
   const installed = installWorkerActiveListGlobals();
@@ -207,8 +216,8 @@ test('main-thread fallback queryActiveEntities caches until query version change
 
     GameObject.activeEntitiesData = null;
 
-    const first = querySystem.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
-    const second = querySystem.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
+    const first = querySystem.queryActiveEntitiesSlow([QueryTestComponentA, QueryTestComponentB]);
+    const second = querySystem.queryActiveEntitiesSlow([QueryTestComponentA, QueryTestComponentB]);
 
     assert.strictEqual(first, second);
     assert.deepEqual(Array.from(first), [2, 7, 999, 1001, 1500]);
@@ -217,7 +226,7 @@ test('main-thread fallback queryActiveEntities caches until query version change
     globalThis.QueryTestBoss._activeList.set([2, 1002, 1501]);
     Atomics.add(queryVersionData, 0, 1);
 
-    const third = querySystem.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
+    const third = querySystem.queryActiveEntitiesSlow([QueryTestComponentA, QueryTestComponentB]);
     assert.strictEqual(first, third);
     assert.deepEqual(Array.from(third), [4, 8, 998, 1002, 1501]);
   } finally {
@@ -278,12 +287,33 @@ test('precomputed active queries read only published complete snapshots', () => 
   }
 });
 
-test('worker fallback queryActiveEntities caches until query version changes and warns once', () => {
+test('worker queryActiveEntities requires precomputed queries', () => {
+  const queryFunctions = createWorkerQueryFunctions(
+    {
+      metadata: createFallbackMetadata().map((meta) => ({
+        ...meta,
+        componentMask: meta.componentMask.toString(),
+      })),
+      precomputedQueries: [],
+    },
+    {
+      entityMetadataSAB: new SharedArrayBuffer(0),
+      queryCacheSAB: new SharedArrayBuffer(0),
+      queryResultsSAB: new SharedArrayBuffer(0),
+    },
+    null,
+    createQueryVersionData()
+  );
+
+  assert.throws(
+    () => queryFunctions.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]),
+    /queryActiveEntities\(\[QueryTestComponentA, QueryTestComponentB\]\) is not precomputed/
+  );
+});
+
+test('worker queryActiveEntitiesSlow caches until query version changes', () => {
   const installed = installWorkerActiveListGlobals();
-  const previousWarn = console.warn;
   const queryVersionData = createQueryVersionData();
-  const warnings = [];
-  console.warn = (message) => warnings.push(String(message));
 
   try {
     const queryFunctions = createWorkerQueryFunctions(
@@ -303,8 +333,8 @@ test('worker fallback queryActiveEntities caches until query version changes and
       queryVersionData
     );
 
-    const first = queryFunctions.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
-    const second = queryFunctions.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
+    const first = queryFunctions.queryActiveEntitiesSlow([QueryTestComponentA, QueryTestComponentB]);
+    const second = queryFunctions.queryActiveEntitiesSlow([QueryTestComponentA, QueryTestComponentB]);
 
     assert.strictEqual(first, second);
     assert.deepEqual(Array.from(first), [2, 7, 999, 1001, 1500]);
@@ -314,13 +344,10 @@ test('worker fallback queryActiveEntities caches until query version changes and
     globalThis.QueryTestBoss._activeList.set([2, 1002, 1501]);
     Atomics.add(queryVersionData, 0, 1);
 
-    const third = queryFunctions.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
+    const third = queryFunctions.queryActiveEntitiesSlow([QueryTestComponentA, QueryTestComponentB]);
     assert.strictEqual(first, third);
     assert.deepEqual(Array.from(third), [4, 8, 998, 1002, 1501]);
-    assert.equal(warnings.length, 1);
-    assert.match(warnings[0], /queryActiveEntities fallback used/);
   } finally {
-    console.warn = previousWarn;
     restoreWorkerActiveListGlobals(installed.previous);
   }
 });

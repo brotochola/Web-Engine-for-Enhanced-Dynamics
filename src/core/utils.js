@@ -1394,7 +1394,7 @@ export function rng() {
  * @example
  * // Inside entity code (Prey.tick(), etc.):
  * const allPredators = query([RigidBody, PredatorBehavior]);
- * const activeVisibleEntities = queryActiveEntities([SpriteRenderer, Transform]);
+ * const activeSprites = queryActiveEntities([SpriteRenderer]);
  *
  * // Query helpers are worker globals, not part of the public WEED namespace.
  */
@@ -1411,8 +1411,7 @@ export function query(componentClasses) {
 /**
  * Query ACTIVE entities by component combination - wrapper that accesses globalThis.queryActiveEntities
  * This allows entity code to use queryActiveEntities() in any worker context.
- * For pre-computed queries it returns a shared SAB-backed view; otherwise it falls back to a slower
- * computed result over active entity lists.
+ * Requires a precomputed active query.
  *
  * @param {Array<Component>} componentClasses - Array of component classes to query
  * @returns {Uint16Array} - Active entity indices
@@ -1423,6 +1422,22 @@ export function queryActiveEntities(componentClasses) {
   }
 
   console.warn('[queryActiveEntities] Query system only available in worker context');
+  return new Uint16Array(0);
+}
+
+/**
+ * Explicit slow active query path for ad hoc component combinations.
+ * Prefer GameObject/type APIs or precomputed queries in hot code.
+ *
+ * @param {Array<Component>} componentClasses - Array of component classes to query
+ * @returns {Uint16Array} - Active entity indices
+ */
+export function queryActiveEntitiesSlow(componentClasses) {
+  if (typeof globalThis.queryActiveEntitiesSlow === 'function') {
+    return globalThis.queryActiveEntitiesSlow(componentClasses);
+  }
+
+  console.warn('[queryActiveEntitiesSlow] Query system only available in worker context');
   return new Uint16Array(0);
 }
 
