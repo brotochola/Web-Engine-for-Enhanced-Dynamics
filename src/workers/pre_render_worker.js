@@ -514,7 +514,6 @@ class PreRenderWorker extends AbstractWorker {
             this._vpCircleX = new Float32Array(maxOccluders);
             this._vpCircleY = new Float32Array(maxOccluders);
             this._vpCircleR = new Float32Array(maxOccluders);
-            this._vpCircleOpacity = new Float32Array(maxOccluders);
             this._vpMaxOccluders = maxOccluders;
 
             // Output scratch for polygon vertices
@@ -2394,7 +2393,6 @@ class PreRenderWorker extends AbstractWorker {
         const transformActive = Transform.active;
         const occluderActive = LightOccluder.active;
         const occluderRadius = LightOccluder.radius;
-        const occluderOpacity = LightOccluder.opacity;
         const lightEnabled = LightEmitter.active;
         const lightIntensity = LightEmitter.lightIntensity;
         const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
@@ -2408,7 +2406,6 @@ class PreRenderWorker extends AbstractWorker {
         const cX = this._vpCircleX;
         const cY = this._vpCircleY;
         const cR = this._vpCircleR;
-        const cO = this._vpCircleOpacity;
         const maxOccluders = this._vpMaxOccluders;
         const outX = this._vpOutX;
         const outY = this._vpOutY;
@@ -2449,7 +2446,6 @@ class PreRenderWorker extends AbstractWorker {
                     cX[circleCount] = worldX[nIdx];
                     cY[circleCount] = worldY[nIdx];
                     cR[circleCount] = r;
-                    cO[circleCount] = occluderOpacity[nIdx] || 1;
                     circleCount++;
                 }
             }
@@ -2457,7 +2453,7 @@ class PreRenderWorker extends AbstractWorker {
             // Run angular sweep
             const vertCount = buildVisibilityPolygon(
                 lx, ly, influenceRadius,
-                cX, cY, cR, cO,
+                cX, cY, cR,
                 circleCount, outX, outY, maxVerts
             );
 

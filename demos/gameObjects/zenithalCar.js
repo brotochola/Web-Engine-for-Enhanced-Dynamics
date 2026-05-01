@@ -22,7 +22,6 @@ export class ZenithalCar extends GameObject {
     // this.shadowCaster.heightMultiplier = 1.5;
 
     this.lightOccluder.radius = 0.5 * Math.sqrt(this.spriteRenderer.originalHeight * this.spriteRenderer.originalWidth);
-    this.lightOccluder.opacity = 0.1;
   }
 
   onSpawned(spawnConfig = {}) { }

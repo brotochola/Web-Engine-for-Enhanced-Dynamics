@@ -1849,7 +1849,6 @@ export class GameObject {
 
     if (has.LightOccluder) {
       LightOccluder.active[i] = 1;
-      LightOccluder.opacity[i] = 1;
     }
 
     if (has.SpriteRenderer) {

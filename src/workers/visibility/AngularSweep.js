@@ -103,7 +103,6 @@ function warnActiveOverflow() {
  * @param {Float32Array} circleX - Circle center X positions
  * @param {Float32Array} circleY - Circle center Y positions
  * @param {Float32Array} circleR - Circle radii
- * @param {Float32Array} circleOpacity - Circle opacity (0-1)
  * @param {number} circleCount - Number of circles to process
  * @param {Float32Array} outX - Output polygon vertex X (pre-allocated)
  * @param {Float32Array} outY - Output polygon vertex Y (pre-allocated)
@@ -112,7 +111,7 @@ function warnActiveOverflow() {
  */
 export function buildVisibilityPolygon(
   lightX, lightY, maxRadius,
-  circleX, circleY, circleR, circleOpacity,
+  circleX, circleY, circleR,
   circleCount, outX, outY, maxVertices
 ) {
   if (circleCount === 0) {
@@ -198,7 +197,7 @@ export function buildVisibilityPolygon(
 
   // Emit vertex at the sweep start (-PI)
   vertCount = emitVertex(lightX, lightY, startAngle, maxRadius,
-    circleX, circleY, circleR, circleOpacity,
+    circleX, circleY, circleR,
     outX, outY, vertCount, maxVertices);
 
   let lastAngle = startAngle;
@@ -215,13 +214,13 @@ export function buildVisibilityPolygon(
     // the triangle-fan chord cuts across the circle, creating visible cutoffs.
     const preAngle = angle - EPSILON;
     vertCount = emitArcVertices(lightX, lightY, lastAngle, preAngle, maxRadius,
-      circleX, circleY, circleR, circleOpacity,
+      circleX, circleY, circleR,
       outX, outY, vertCount, maxVertices);
 
     // Emit vertex just BEFORE the event (at current closest occluder)
     if (vertCount < maxVertices) {
       vertCount = emitVertex(lightX, lightY, preAngle, maxRadius,
-        circleX, circleY, circleR, circleOpacity,
+        circleX, circleY, circleR,
         outX, outY, vertCount, maxVertices);
     }
 
@@ -246,7 +245,7 @@ export function buildVisibilityPolygon(
     const postAngle = angle + EPSILON;
     if (vertCount < maxVertices) {
       vertCount = emitVertex(lightX, lightY, postAngle, maxRadius,
-        circleX, circleY, circleR, circleOpacity,
+        circleX, circleY, circleR,
         outX, outY, vertCount, maxVertices);
     }
 
@@ -255,13 +254,13 @@ export function buildVisibilityPolygon(
 
   // Fill arc gap from last event to end angle
   vertCount = emitArcVertices(lightX, lightY, lastAngle, endAngle, maxRadius,
-    circleX, circleY, circleR, circleOpacity,
+    circleX, circleY, circleR,
     outX, outY, vertCount, maxVertices);
 
   // Close the polygon: emit vertex at end angle (just before +PI)
   if (vertCount < maxVertices) {
     vertCount = emitVertex(lightX, lightY, endAngle, maxRadius,
-      circleX, circleY, circleR, circleOpacity,
+      circleX, circleY, circleR,
       outX, outY, vertCount, maxVertices);
   }
 
@@ -275,7 +274,7 @@ export function buildVisibilityPolygon(
  */
 function emitVertex(
   lightX, lightY, angle, maxRadius,
-  circleX, circleY, circleR, circleOpacity,
+  circleX, circleY, circleR,
   outX, outY, vertCount, maxVertices
 ) {
   if (vertCount >= maxVertices) return vertCount;
@@ -315,7 +314,7 @@ function emitVertex(
  */
 function emitArcVertices(
   lightX, lightY, fromAngle, toAngle, maxRadius,
-  circleX, circleY, circleR, circleOpacity,
+  circleX, circleY, circleR,
   outX, outY, vertCount, maxVertices
 ) {
   const gap = toAngle - fromAngle;
@@ -327,7 +326,7 @@ function emitArcVertices(
   for (let s = 1; s < steps && vertCount < maxVertices; s++) {
     const angle = fromAngle + s * step;
     vertCount = emitVertex(lightX, lightY, angle, maxRadius,
-      circleX, circleY, circleR, circleOpacity,
+      circleX, circleY, circleR,
       outX, outY, vertCount, maxVertices);
   }
 
