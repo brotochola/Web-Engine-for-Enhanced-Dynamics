@@ -139,7 +139,14 @@ import { SpriteSheetRegistry } from './core/SpriteSheetRegistry.js';
 import { AdobeAnimRegistry } from './core/AdobeAnimRegistry.js';
 import { BigAtlasInspector } from './core/BigAtlasInspector.js';
 import { SoundManager } from './core/SoundManager.js';
-import * as utils from './core/utils.js';
+import {
+  containerRadius,
+  distanceSq2D,
+  getDirectionFromAngle,
+  mixTint,
+  randomColor,
+  rng,
+} from './core/utils.js';
 
 import { Transform } from './components/Transform.js';
 import { RigidBody } from './components/RigidBody.js';
@@ -246,8 +253,13 @@ const WEED = Object.freeze({
   // Workers
   AbstractWorker,
 
-  // Utils
-  ...utils,
+  // Public utility helpers
+  containerRadius,
+  distanceSq2D,
+  getDirectionFromAngle,
+  mixTint,
+  randomColor,
+  rng,
 
   enums,
 

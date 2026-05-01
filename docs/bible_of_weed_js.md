@@ -538,6 +538,14 @@ const active = queryActiveEntities([WEED.Transform, WEED.SpriteRenderer]); // ac
 
 Built-in single-component entity queries are precomputed by the engine. Custom combinations still work too: if a combination is not precomputed, the first active query after an active-population change rebuilds a cached result, and repeated calls reuse that cached view until the next spawn/despawn invalidation. Hot custom queries may still emit a one-time warning so you can decide whether they should be promoted to `precomputedQueries`.
 
+// Public utility helpers intentionally exposed on WEED
+WEED.rng()
+WEED.randomColor({ min: 0x333333, max: 0xffffff })
+WEED.distanceSq2D(x1, y1, x2, y2)
+WEED.getDirectionFromAngle(angle)
+WEED.containerRadius(count, radius)
+WEED.mixTint(colorA, colorB, t)
+
 // Sound (works from both main thread and workers)
 WEED.SoundManager.play('hit', 0.8);                         // name, volume
 WEED.SoundManager.play('step', 0.5, 0.9, 1.1);             // random pitch 0.9–1.1

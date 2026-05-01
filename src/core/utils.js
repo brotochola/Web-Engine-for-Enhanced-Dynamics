@@ -1396,9 +1396,7 @@ export function rng() {
  * const allPredators = query([RigidBody, PredatorBehavior]);
  * const activeVisibleEntities = queryActiveEntities([SpriteRenderer, Transform]);
  *
- * // Or via WEED namespace:
- * import WEED from "/src/index.js";
- * const entities = WEED.query([RigidBody, Collider]);
+ * // Query helpers are worker globals, not part of the public WEED namespace.
  */
 export function query(componentClasses) {
   if (typeof globalThis.query === 'function') {

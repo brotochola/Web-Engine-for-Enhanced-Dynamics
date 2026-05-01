@@ -961,14 +961,12 @@ class Scene {
   }
 
   preInitializeEntityTypeArrays() {
-    for (let i = 0; i < this.totalEntityCount; i++) {
-      for (const registration of this.registeredClasses) {
-        const { class: EntityClass, startIndex, count } = registration;
-        if (i >= startIndex && i < startIndex + count) {
-          Transform.entityType[i] = EntityClass.entityType;
-          break;
-        }
-      }
+    for (const registration of this.registeredClasses) {
+      const { class: EntityClass, startIndex, count } = registration;
+      if (count <= 0) continue;
+      // Entity pools are registered as contiguous ranges, so one native fill
+      // replaces the old entity-by-registration scan.
+      Transform.entityType.fill(EntityClass.entityType, startIndex, startIndex + count);
     }
   }
 
