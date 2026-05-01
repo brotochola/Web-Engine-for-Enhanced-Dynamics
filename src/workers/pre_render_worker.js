@@ -504,7 +504,8 @@ class PreRenderWorker extends AbstractWorker {
                 this._vpBuffers[b] = {
                     sab,
                     header: new Int32Array(sab, 0, 1),    // totalLights count
-                    data: new DataView(sab),
+                    i32: new Int32Array(sab),
+                    f32: new Float32Array(sab),
                 };
             }
             this._vpWriteBuffer = this._vpBuffers[0];
@@ -2409,7 +2410,8 @@ class PreRenderWorker extends AbstractWorker {
         const maxOccluders = this._vpMaxOccluders;
         const outX = this._vpOutX;
         const outY = this._vpOutY;
-        const dv = buf.data;
+        const i32 = buf.i32;
+        const f32 = buf.f32;
 
         // Use the same visible lights list that buildShadowRenderQueue already wrote
         const visibleLights = this.visibleLightsData;
@@ -2457,22 +2459,17 @@ class PreRenderWorker extends AbstractWorker {
                 circleCount, outX, outY, maxVerts
             );
 
-            // Write to SAB slot
-            // Layout: [lightIdx: Int32, lightX: Float32, lightY: Float32, vertexCount: Int32, x[N]: Float32, y[N]: Float32]
-            const baseOffset = 4 + lightsWritten * slotBytes; // 4 bytes header
-            dv.setInt32(baseOffset, lightIdx, true);
-            dv.setFloat32(baseOffset + 4, lx, true);
-            dv.setFloat32(baseOffset + 8, ly, true);
-            dv.setInt32(baseOffset + 12, vertCount, true);
+            // Layout: [lightIdx:i32, lightX:f32, lightY:f32, vertexCount:i32, x[N]:f32, y[N]:f32]
+            // The slot is 4-byte aligned, so typed views can bulk-copy vertices.
+            const baseIndex = (4 + lightsWritten * slotBytes) >> 2; // 4 bytes header
+            i32[baseIndex] = lightIdx;
+            f32[baseIndex + 1] = lx;
+            f32[baseIndex + 2] = ly;
+            i32[baseIndex + 3] = vertCount;
 
-            const vertDataOffset = baseOffset + 16;
-            for (let v = 0; v < vertCount; v++) {
-                dv.setFloat32(vertDataOffset + v * 4, outX[v], true);
-            }
-            const yOffset = vertDataOffset + maxVerts * 4;
-            for (let v = 0; v < vertCount; v++) {
-                dv.setFloat32(yOffset + v * 4, outY[v], true);
-            }
+            const xStart = baseIndex + 4;
+            f32.set(outX.subarray(0, vertCount), xStart);
+            f32.set(outY.subarray(0, vertCount), xStart + maxVerts);
 
             lightsWritten++;
         }

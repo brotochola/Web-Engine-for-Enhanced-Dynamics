@@ -530,7 +530,7 @@ class PixiRenderer extends AbstractWorker {
     // RAYCASTED LIGHT OCCLUSION (visibility polygons)
     // ========================================
     this._visPolyEnabled = false;
-    this._visPolyBuffers = [null, null]; // Double-buffered DataView+header pairs
+    this._visPolyBuffers = [null, null]; // Double-buffered typed views + header pairs
     this._visPolyMaxVerts = 128;
     this._visPolyMaxLights = 10;
     this._visPolySlotBytes = 0;
@@ -1479,7 +1479,8 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     for (let b = 0; b < 2; b++) {
       this._visPolyBuffers[b] = {
         header: new Int32Array(sabs[b], 0, 1),
-        data: new DataView(sabs[b]),
+        i32: new Int32Array(sabs[b]),
+        f32: new Float32Array(sabs[b]),
       };
     }
 
@@ -1562,7 +1563,8 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     if (!buf) return;
 
     const lightCount = buf.header[0];
-    const dv = buf.data;
+    const i32 = buf.i32;
+    const f32 = buf.f32;
     const maxVerts = this._visPolyMaxVerts;
     const slotBytes = this._visPolySlotBytes;
     const res = this.lightingResolution || 1.0;
@@ -1581,16 +1583,16 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const rgb = this._rgbResult;
 
     for (let li = 0; li < lightCount; li++) {
-      const baseOffset = 4 + li * slotBytes;
-      const lightIdx = dv.getInt32(baseOffset, true);
-      const lx = dv.getFloat32(baseOffset + 4, true);
-      const ly = dv.getFloat32(baseOffset + 8, true);
-      const vertCount = dv.getInt32(baseOffset + 12, true);
+      const baseIndex = (4 + li * slotBytes) >> 2;
+      const lightIdx = i32[baseIndex];
+      const lx = f32[baseIndex + 1];
+      const ly = f32[baseIndex + 2];
+      const vertCount = i32[baseIndex + 3];
 
       if (vertCount < 3) continue;
 
-      const vertDataOffset = baseOffset + 16;
-      const yDataOffset = vertDataOffset + maxVerts * 4;
+      const xStart = baseIndex + 4;
+      const yStart = xStart + maxVerts;
 
       // Get or create mesh for this light
       const { mesh, geometry, shader } = this._getVisPolyMesh(li);
@@ -1607,8 +1609,8 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 
       // Vertices 1..vertCount = polygon boundary
       for (let v = 0; v < vertCount; v++) {
-        positions[(v + 1) * 2] = dv.getFloat32(vertDataOffset + v * 4, true);
-        positions[(v + 1) * 2 + 1] = dv.getFloat32(yDataOffset + v * 4, true);
+        positions[(v + 1) * 2] = f32[xStart + v];
+        positions[(v + 1) * 2 + 1] = f32[yStart + v];
       }
 
       // Triangle fan indices: (0, v, v+1) for each consecutive boundary pair
