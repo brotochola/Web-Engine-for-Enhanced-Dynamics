@@ -12,6 +12,35 @@ import { AdobeAnimComponent } from '../../src/components/AdobeAnimComponent.js';
 import { LightEmitter } from '../../src/components/LightEmitter.js';
 import { FlashComponent } from '../../src/components/FlashComponent.js';
 
+test('Scene.preInitializeEntityTypeArrays fills registered ranges directly', { concurrency: false }, () => {
+  class RangeFillA extends GameObject {}
+  class RangeFillB extends GameObject {}
+  class RangeFillEmpty extends GameObject {}
+
+  const previousEntityType = Transform.entityType;
+
+  RangeFillA.entityType = 2;
+  RangeFillB.entityType = 5;
+  RangeFillEmpty.entityType = 9;
+  Transform.entityType = new Uint8Array(7);
+  Transform.entityType.fill(255);
+
+  try {
+    Scene.prototype.preInitializeEntityTypeArrays.call({
+      totalEntityCount: 7,
+      registeredClasses: [
+        { class: RangeFillA, startIndex: 0, count: 3 },
+        { class: RangeFillEmpty, startIndex: 3, count: 0 },
+        { class: RangeFillB, startIndex: 3, count: 4 },
+      ],
+    });
+
+    assert.deepEqual(Array.from(Transform.entityType), [2, 2, 2, 5, 5, 5, 5]);
+  } finally {
+    Transform.entityType = previousEntityType;
+  }
+});
+
 test('despawnAll clears attached decorations plus rigidbody, light, and flash pooled state', { concurrency: false }, () => {
   class BulkDespawnEntity extends GameObject {}
 
