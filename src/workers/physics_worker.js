@@ -15,6 +15,7 @@ import { Collider } from '../components/Collider.js';
 import { Constraint } from '../core/Constraint.js';
 import { AbstractWorker } from './AbstractWorker.js';
 import { Grid } from '../core/Grid.js';
+import { PHYSICS_DEFAULTS } from '../core/ConfigDefaults.js';
 import { PHYSICS_STATS, createStatsWriter } from './workers-utils.js';
 import {
   clamp01,

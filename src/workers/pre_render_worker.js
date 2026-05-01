@@ -654,6 +654,10 @@ class PreRenderWorker extends AbstractWorker {
         this.visibleDecorationsCount = 0;
         this.shadowsUpdatedThisFrame = 0;
         this._renderableCount = 0;
+        // Canonical entity visibility for CameraInOutListener. Native fill is
+        // cheaper than per-renderer false writes and keeps future renderers simple:
+        // any render pass only sets Transform.isItOnScreen[i] = 1 when visible.
+        if (Transform.isItOnScreen) Transform.isItOnScreen.fill(0);
 
         // Compute decoration zoom alpha (fully visible above fadeStart, fades to 0 at hideZoom)
         const zoom = this._frameCameraZoom;
@@ -760,6 +764,7 @@ class PreRenderWorker extends AbstractWorker {
         const x = Transform.x;
         const y = Transform.y;
         const active = Transform.active;
+        const entityIsItOnScreen = Transform.isItOnScreen;
         const isItOnScreen = SpriteRenderer.isItOnScreen;
         const screenX = SpriteRenderer.screenX;
         const screenY = SpriteRenderer.screenY;
@@ -889,6 +894,7 @@ class PreRenderWorker extends AbstractWorker {
                 continue;
             }
             isItOnScreen[i] = 1;
+            entityIsItOnScreen[i] = 1;
 
             if (renderVisible[i]) {
                 this.collectRenderable(0, i, y[i] * Y_SORT_K);
@@ -999,6 +1005,7 @@ class PreRenderWorker extends AbstractWorker {
         const x = Transform.x;
         const y = Transform.y;
         const active = Transform.active;
+        const entityIsItOnScreen = Transform.isItOnScreen;
         const adobeActive = AdobeAnimComponent.active;
         const renderVisible = AdobeAnimComponent.renderVisible;
         const isItOnScreen = AdobeAnimComponent.isItOnScreen;
@@ -1043,6 +1050,7 @@ class PreRenderWorker extends AbstractWorker {
             }
 
             isItOnScreen[i] = 1;
+            entityIsItOnScreen[i] = 1;
             if (renderVisible[i]) {
                 this.collectRenderable(6, i, y[i] * Y_SORT_K);
                 this.visibleEntitiesCount++;

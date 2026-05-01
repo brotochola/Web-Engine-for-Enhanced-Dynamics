@@ -17,8 +17,6 @@ export const ShapeType = Object.freeze({
   Circle: 0,
   /** Box/rectangle collider - uses width and height properties */
   Box: 1,
-  /** Polygon collider - uses custom vertices (future) */
-  Polygon: 2,
 });
 
 /**

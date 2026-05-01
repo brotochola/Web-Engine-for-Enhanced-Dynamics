@@ -34,7 +34,7 @@ export class SpriteRenderer extends Component {
 
     // Visibility
     renderVisible: Uint8Array, // Override visibility (separate from culling)
-    isItOnScreen: Uint8Array, // Screen culling - updated by spatial worker
+    isItOnScreen: Uint8Array, // Sprite-specific screen culling - updated by pre_render_worker
 
     // Performance optimization - dirty flag
     renderDirty: Uint8Array, // 1 = visual properties changed, needs update this frame

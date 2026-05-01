@@ -21,7 +21,7 @@ export class AdobeAnimComponent extends Component {
     tint: Uint32Array,
     layerId: Uint8Array,
     renderVisible: Uint8Array,
-    isItOnScreen: Uint8Array,
+    isItOnScreen: Uint8Array, // Adobe-specific screen culling - updated by pre_render_worker
     boundsHalfW: Float32Array,
     boundsHalfH: Float32Array,
     screenX: Float32Array,

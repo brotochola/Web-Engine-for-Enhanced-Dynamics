@@ -107,7 +107,7 @@ Tag components have no `ARRAY_SCHEMA` and allocate no `SharedArrayBuffer`. They 
 
 **Collision:** if no type in the scene has `CollisionListener`, `processCollisionCallbacks()` is skipped entirely (zero Set operations, zero iteration). When some types have it and others don't, each collision pair is checked with two `Uint8Array` reads (`collisionListenerByType[entityType[A/B]]`). Only pairs involving at least one listener type proceed to Cantor key computation, Set tracking, and callback dispatch. Mixed pairs (one listener, one not) only dispatch to the listening entity.
 
-**Screen visibility:** resolved per-type on the `typeInfo` object. The boolean is read once per type in the outer loop (not per entity), and `checkScreenVisibility()` is only called for entities of types that have `CameraInOutListener`.
+**Screen visibility:** resolved per-type on the `typeInfo` object. `pre_render_worker` clears `Transform.isItOnScreen` once per visual frame and each entity render pass sets it to `1` when that entity is visible. The logic worker reads that single canonical byte only for entity types that have `CameraInOutListener`, so the callback path does not need to know which render component made the entity visible.
 
 ### Usage
 

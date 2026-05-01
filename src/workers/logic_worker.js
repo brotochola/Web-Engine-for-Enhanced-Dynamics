@@ -12,7 +12,6 @@ import { Mouse } from '../core/Mouse.js';
 import { Transform } from '../components/Transform.js';
 import { RigidBody } from '../components/RigidBody.js';
 
-import { SpriteRenderer } from '../components/SpriteRenderer.js';
 import { CameraInOutListener } from '../components/CameraInOutListener.js';
 import { CollisionListener } from '../components/CollisionListener.js';
 
@@ -676,8 +675,7 @@ class LogicWorker extends AbstractWorker {
    * @param {GameObject} obj - The entity instance
    */
   checkScreenVisibility(entityIndex, obj) {
-    // Get current visibility state from SpriteRenderer (updated by spatial worker)
-    const currentlyVisible = SpriteRenderer.isItOnScreen[entityIndex];
+    const currentlyVisible = Transform.isItOnScreen[entityIndex];
     const wasVisible = this.previousScreenVisibility[entityIndex];
 
     // Check for visibility state transitions
@@ -872,4 +870,3 @@ class LogicWorker extends AbstractWorker {
 
 // Create singleton instance and setup message handler
 self.logicWorker = new LogicWorker(self);
-

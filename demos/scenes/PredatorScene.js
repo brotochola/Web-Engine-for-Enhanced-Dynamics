@@ -28,9 +28,9 @@ import { Civilian } from '../gameObjects/civilian.js';
 import { CameraController } from '../gameObjects/cameraController.js';
 import { Trash } from '../gameObjects/trash.js';
 import { Cloud } from '../gameObjects/cloud.js';
-import { Sun } from '../../src/index.js';
+// import { Sun } from '../../src/index.js';
 
-const { DecorationPool, enums: { BLEND_MODES } } = WEED;
+const { DecorationPool, enums: { BLEND_MODES }, rng, Sun } = WEED;
 
 const excludedLPCAnimations = [
   'spellcast_up',
