@@ -12,15 +12,17 @@ import { rayCircleIntersect, rayBoxIntersect } from './utils.js';
  *
  * All methods accept an optional `mask` parameter (Uint32 bitmask, default 0xFFFFFFFF).
  * Only entities whose collisionLayer bit is set in the mask are considered.
+ * Object/array-returning methods use borrowed static results by default; pass
+ * the optional `out` argument when you need to keep a result across later Ray calls.
  *
  * Methods:
  *   - cast(x1, y1, x2, y2, maxDist, mask)              → entityIndex or -1
- *   - castWithInfo(x1, y1, x2, y2, maxDist, mask)       → { hit, entityIndex, distance, hitX, hitY }
- *   - castAll(x1, y1, x2, y2, maxDist, maxHits, mask)   → Array<{ entityIndex, distance, hitX, hitY }>
- *   - linecast(x1, y1, x2, y2, exclude, mask)           → { blocked, entityIndex, distance }
- *   - linecastBetweenEntities(a, b, mask)                → { blocked, entityIndex, distance }
+ *   - castWithInfo(x1, y1, x2, y2, maxDist, mask, out)  → { hit, entityIndex, distance, hitX, hitY }
+ *   - castAll(x1, y1, x2, y2, maxDist, maxHits, mask, out) → Array<{ entityIndex, distance, hitX, hitY }>
+ *   - linecast(x1, y1, x2, y2, exclude, mask, out)      → { blocked, entityIndex, distance }
+ *   - linecastBetweenEntities(a, b, mask, out)           → { blocked, entityIndex, distance }
  *   - hasLineOfSight(a, b, mask)                         → boolean (true if clear)
- *   - getLineOfSightInfo(a, b, mask)                     → { blocked, entityIndex, distance }
+ *   - getLineOfSightInfo(a, b, mask, out)                → { blocked, entityIndex, distance }
  *
  * @example Basic raycast
  *   const hit = Ray.cast(player.x, player.y, mouseX, mouseY);
@@ -196,7 +198,9 @@ export class Ray {
    * @param {number} yTo - Ray end Y
    * @param {number} maxDist - Maximum ray distance (optional)
    * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
+   * @param {Object} [out] - Optional stable output object. Defaults to a borrowed static object.
    * @returns {Object} { hit: boolean, entityIndex: number, distance: number, hitX: number, hitY: number }
+   *   Borrowed by default: consume immediately or pass `out` if you need to store it.
    *
    * @example
    *   const result = Ray.castWithInfo(player.x, player.y, targetX, targetY);
@@ -205,9 +209,9 @@ export class Ray {
    *     damageEntity(result.entityIndex);
    *   }
    */
-  static castWithInfo(xFrom, yFrom, xTo, yTo, maxDist = Infinity, mask = 0xFFFFFFFF) {
+  static castWithInfo(xFrom, yFrom, xTo, yTo, maxDist = Infinity, mask = 0xFFFFFFFF, out = null) {
     // Reset temp result
-    const info = Ray._tempHitInfo;
+    const info = out || Ray._tempHitInfo;
     info.hit = false;
     info.entityIndex = -1;
     info.distance = Infinity;
@@ -246,8 +250,7 @@ export class Ray {
   }
 
   /**
-   * Check if there's a clear line of sight between two points
-   * Returns true if BLOCKED (something in the way), false if clear
+   * Check if the path between two points is blocked.
    *
    * @param {number} x1 - Start point X
    * @param {number} y1 - Start point Y
@@ -255,7 +258,9 @@ export class Ray {
    * @param {number} y2 - End point Y
    * @param {Set<number>|Array<number>} excludeEntities - Optional entity indices to ignore
    * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
+   * @param {Object} [out] - Optional stable output object. Defaults to a borrowed static object.
    * @returns {Object} { blocked: boolean, entityIndex: number (-1 if clear), distance: number }
+   *   Borrowed by default: consume immediately or pass `out` if you need to store it.
    *
    * @example
    *   // Check if enemy can shoot player
@@ -265,8 +270,8 @@ export class Ray {
    *     enemy.shoot(player);
    *   }
    */
-  static linecast(x1, y1, x2, y2, excludeEntities = null, mask = 0xFFFFFFFF) {
-    const result = Ray._tempLinecastResult;
+  static linecast(x1, y1, x2, y2, excludeEntities = null, mask = 0xFFFFFFFF, out = null) {
+    const result = out || Ray._tempLinecastResult;
     result.blocked = false;
     result.entityIndex = -1;
     result.distance = Infinity;
@@ -314,7 +319,10 @@ export class Ray {
    *
    * @param {number} entityIndexA - First entity index
    * @param {number} entityIndexB - Second entity index
+   * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
+   * @param {Object} [out] - Optional stable output object. Defaults to a borrowed static object.
    * @returns {Object} { blocked: boolean, entityIndex: number (-1 if clear), distance: number }
+   *   Borrowed by default: consume immediately or pass `out` if you need to store it.
    *
    * @example
    *   // Can predator see prey?
@@ -327,7 +335,7 @@ export class Ray {
   // Static reusable Set for zero-allocation linecast between entities
   static _excludeSet = new Set();
 
-  static linecastBetweenEntities(entityIndexA, entityIndexB, mask = 0xFFFFFFFF) {
+  static linecastBetweenEntities(entityIndexA, entityIndexB, mask = 0xFFFFFFFF, out = null) {
     const x1 = Transform.x[entityIndexA];
     const y1 = Transform.y[entityIndexA];
     const x2 = Transform.x[entityIndexB];
@@ -337,7 +345,7 @@ export class Ray {
     Ray._excludeSet.add(entityIndexA);
     Ray._excludeSet.add(entityIndexB);
 
-    return Ray.linecast(x1, y1, x2, y2, Ray._excludeSet, mask);
+    return Ray.linecast(x1, y1, x2, y2, Ray._excludeSet, mask, out);
   }
 
   /**
@@ -358,10 +366,13 @@ export class Ray {
    *
    * @param {number} entityIndexA - Source entity index
    * @param {number} entityIndexB - Target entity index
+   * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
+   * @param {Object} [out] - Optional stable output object. Defaults to a borrowed static object.
    * @returns {Object} { blocked: boolean, entityIndex: number (-1 if clear), distance: number }
+   *   Borrowed by default: consume immediately or pass `out` if you need to store it.
    */
-  static getLineOfSightInfo(entityIndexA, entityIndexB, mask = 0xFFFFFFFF) {
-    return Ray.linecastBetweenEntities(entityIndexA, entityIndexB, mask);
+  static getLineOfSightInfo(entityIndexA, entityIndexB, mask = 0xFFFFFFFF, out = null) {
+    return Ray.linecastBetweenEntities(entityIndexA, entityIndexB, mask, out);
   }
 
   /**
@@ -375,8 +386,9 @@ export class Ray {
    * @param {number} maxDist - Maximum ray distance (optional)
    * @param {number} maxHits - Maximum number of hits to return (default: 10)
    * @param {number} mask - Collision layer bitmask (default 0xFFFFFFFF = hit all layers)
+   * @param {Array} [out] - Optional stable output array. Defaults to a borrowed static array.
    * @returns {Array<{entityIndex: number, distance: number, hitX: number, hitY: number}>}
-   *   Note: returned array and hit objects are reused on the next call.
+   *   Borrowed by default: returned array and hit objects are reused on the next call.
    *
    * @example
    *   // Penetrating railgun shot
@@ -386,9 +398,9 @@ export class Ray {
    *     spawnBulletHole(hit.hitX, hit.hitY);
    *   }
    */
-  static castAll(xFrom, yFrom, xTo, yTo, maxDist = Infinity, maxHits = 10, mask = 0xFFFFFFFF) {
-    // Clear and reuse the temp array
-    Ray._tempHitsArray.length = 0;
+  static castAll(xFrom, yFrom, xTo, yTo, maxDist = Infinity, maxHits = 10, mask = 0xFFFFFFFF, out = null) {
+    const outHits = out || Ray._tempHitsArray;
+    outHits.length = 0;
     Ray._tempAllHitsArray.length = 0;
     Ray._tempAllHitsCount = 0;
     Ray._checkedEntities.clear();
@@ -399,7 +411,7 @@ export class Ray {
 
     // Early exit if ray is too short or too long (avoid sqrt if possible)
     if (distSq === 0 || (maxDist !== Infinity && distSq > maxDist * maxDist)) {
-      return Ray._tempHitsArray;
+      return outHits;
     }
 
     // Calculate length only if we pass the early exit (OPTIMIZED: avoid sqrt in early exit path)
@@ -497,7 +509,6 @@ export class Ray {
 
     // Copy to output array (limited by maxHits)
     const count = Math.min(allHits.length, maxHits);
-    const outHits = Ray._tempHitsArray;
     for (let i = 0; i < count; i++) {
       const hit = allHits[i];
       let out = outHits[i];
@@ -517,7 +528,7 @@ export class Ray {
     }
     outHits.length = count;
 
-    return Ray._tempHitsArray;
+    return outHits;
   }
 
   /**
