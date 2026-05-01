@@ -382,7 +382,7 @@ export class QuerySystem {
    *
    * @param {Object} componentClasses - Map of component names to classes
    */
-  definePrecomputedQueries(componentClasses) {
+  definePrecomputedQueries(componentClasses, sceneQueries = []) {
     const {
       Transform,
       RigidBody,
@@ -420,14 +420,26 @@ export class QuerySystem {
       { name: 'SpriteRenderer+RigidBody', components: [SpriteRenderer, RigidBody] },
     ].filter((q) => q.components.every((c) => c !== undefined));
 
-    const allQueries = [...singleComponentQueries, ...multiComponentQueries];
+    const customQueries = sceneQueries
+      .filter((components) => Array.isArray(components) && components.length > 0)
+      .map((components) => ({
+        name: components.map((ComponentClass) => ComponentClass?.name || 'unknown').join('+'),
+        components,
+      }))
+      .filter((q) => q.components.every((c) => c !== undefined));
+
+    const allQueries = [...singleComponentQueries, ...multiComponentQueries, ...customQueries];
 
     // Compute queryMask and typeMask for each
     this.precomputedQueries = [];
+    this.queryMaskToIndex.clear();
     let resultOffset = 0;
+    const seenQueryMasks = new Set();
 
     for (const queryDef of allQueries) {
       const queryMask = this._generateQueryMask(queryDef.components);
+      if (seenQueryMasks.has(queryMask)) continue;
+      seenQueryMasks.add(queryMask);
       const typeMask = this._computeTypeMask(queryMask);
 
       this.precomputedQueries.push({

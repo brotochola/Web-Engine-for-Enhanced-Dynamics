@@ -105,6 +105,7 @@ class Scene {
   static assets = {};
   static audios = [];
   static entities = []; // [[EntityClass, poolSize], ...]
+  static queries = []; // [[ComponentClass, ...], ...] custom active queries to precompute
 
   static now = Date.now();
 

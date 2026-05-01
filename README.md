@@ -92,6 +92,7 @@ class ZombieScene extends Scene {
   };
 
   static entities = [[Zombie, 20000]];
+  static queries = [[RigidBody, Collider]]; // optional hot active query combinations
 
   create() {
     for (let i = 0; i < 20000; i++) {

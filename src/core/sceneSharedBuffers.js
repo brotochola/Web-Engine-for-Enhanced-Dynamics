@@ -422,7 +422,7 @@ function initializeNavigationAndQueryBuffers(scene) {
     LightOccluder,
     CameraInOutListener,
     CollisionListener,
-  });
+  }, scene.constructor.queries || []);
 
   const querySABs = querySystem.createSharedBuffers();
   buffers.queryEntityMetadata = querySABs.entityMetadataSAB;

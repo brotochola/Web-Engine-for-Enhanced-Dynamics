@@ -32,6 +32,7 @@ Every scene defines:
 - `static assets` (textures/spritesheets)
 - `static audios` (optional)
 - `static entities = [[EntityClass, poolSize], ...]`
+- `static queries = [[ComponentClass, ...], ...]` (optional hot active query combinations)
 
 ```javascript
 class MyScene extends WEED.Scene {
@@ -46,6 +47,7 @@ class MyScene extends WEED.Scene {
   };
 
   static entities = [[MyEntity, 5000]];
+  static queries = [[WEED.RigidBody, MyCustomComponent]];
 }
 ```
 
@@ -543,7 +545,7 @@ const all = query([WEED.Transform, WEED.Collider]); // all matching slots, activ
 const activeSprites = queryActiveEntities([WEED.SpriteRenderer]); // active precomputed query
 const customActive = queryActiveEntitiesSlow([WEED.Transform, WEED.SpriteRenderer]); // explicit slow path
 
-Built-in single-component entity queries are precomputed by the engine. Active precomputed queries are published as complete snapshots by logic0: a reader may see a slightly stale result, but never a half-shifted list. `queryActiveEntities()` only accepts precomputed combinations. Use `queryActiveEntitiesSlow()` for deliberate ad hoc active component queries; do not put that path in hot loops unless benchmarked.
+Built-in single-component entity queries are precomputed by the engine. Add scene-specific hot combinations with `static queries = [[ComponentA, ComponentB], ...]`. Active precomputed queries are published as complete snapshots by logic0: a reader may see a slightly stale result, but never a half-shifted list. `queryActiveEntities()` only accepts precomputed combinations. Use `queryActiveEntitiesSlow()` for deliberate ad hoc active component queries; do not put that path in hot loops unless benchmarked.
 
 // Public utility helpers intentionally exposed on WEED
 WEED.rng()

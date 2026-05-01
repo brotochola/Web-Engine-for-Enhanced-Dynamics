@@ -7,6 +7,7 @@ import {
   createWorkerQueryFunctions,
 } from '../../src/core/QuerySystem.js';
 import { GameObject } from '../../src/core/gameObject.js';
+import { Transform } from '../../src/components/Transform.js';
 
 class QueryTestComponentA {}
 QueryTestComponentA.componentId = 0;
@@ -186,6 +187,60 @@ test('definePrecomputedQueries covers all built-in entity components as single-c
     assert.equal(queryNames.has('BulletComponent'), false);
   } finally {
     console.log = previousLog;
+  }
+});
+
+test('definePrecomputedQueries merges scene-declared custom active queries and dedupes overlaps', () => {
+  const previousLog = console.log;
+  const previousTransformComponentId = Transform.componentId;
+  console.log = () => {};
+  const querySystem = new QuerySystem();
+
+  class SceneQueryEnemy extends GameObject {}
+  class SceneQueryProp extends GameObject {}
+
+  SceneQueryEnemy.components = [QueryTestComponentA, QueryTestComponentB];
+  SceneQueryProp.components = [QueryTestComponentA];
+  Transform.componentId = 30;
+  QueryTestComponentA.componentId = 0;
+  QueryTestComponentB.componentId = 1;
+
+  try {
+    querySystem.buildQueries([
+      { class: SceneQueryEnemy, count: 10, startIndex: 0, entityType: 0 },
+      { class: SceneQueryProp, count: 5, startIndex: 10, entityType: 1 },
+    ]);
+    querySystem.definePrecomputedQueries(
+      {
+        Transform: PrecomputedTransform,
+        RigidBody: PrecomputedRigidBody,
+        Collider: PrecomputedCollider,
+        SpriteRenderer: PrecomputedSpriteRenderer,
+        AdobeAnimComponent: PrecomputedAdobeAnimComponent,
+        LightEmitter: PrecomputedLightEmitter,
+        ShadowCaster: PrecomputedShadowCaster,
+        FlashComponent: PrecomputedFlashComponent,
+        LightOccluder: PrecomputedLightOccluder,
+        CameraInOutListener: PrecomputedCameraInOutListener,
+        CollisionListener: PrecomputedCollisionListener,
+      },
+      [
+        [QueryTestComponentA, QueryTestComponentB],
+        [PrecomputedRigidBody, PrecomputedCollider], // duplicate of built-in query
+      ]
+    );
+
+    const queryNames = querySystem.precomputedQueries.map((query) => query.name);
+    assert.equal(queryNames.filter((name) => name === 'RigidBody+Collider').length, 1);
+    assert.ok(queryNames.includes('QueryTestComponentA+QueryTestComponentB'));
+
+    const customQuery = querySystem.precomputedQueries.find(
+      (query) => query.name === 'QueryTestComponentA+QueryTestComponentB'
+    );
+    assert.equal(customQuery.typeMask, 1n);
+  } finally {
+    console.log = previousLog;
+    Transform.componentId = previousTransformComponentId;
   }
 });
 
