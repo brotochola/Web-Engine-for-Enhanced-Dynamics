@@ -40,6 +40,7 @@ import { BigAtlasInspector } from './BigAtlasInspector.js';
 import { Camera } from './Camera.js';
 import {
   buildMemoryUsageSummary,
+  buildSceneMemoryUsageReport,
   getSharedBufferSize as getSharedBufferSizeFromBuffers,
 } from './sceneBufferMemory.js';
 import { createSceneSharedBuffers, teardownSceneSharedState } from './sceneSharedBuffers.js';
@@ -1902,6 +1903,16 @@ class Scene {
    */
   getMemoryUsageSummary() {
     return buildMemoryUsageSummary(this.buffers);
+  }
+
+  /**
+   * Get memory usage plus component allocation metadata.
+   * Useful for spotting sparse components that are expensive under dense storage.
+   *
+   * @returns {object} Detailed memory report with componentAllocations
+   */
+  getMemoryUsageReport() {
+    return buildSceneMemoryUsageReport(this);
   }
 
   /**

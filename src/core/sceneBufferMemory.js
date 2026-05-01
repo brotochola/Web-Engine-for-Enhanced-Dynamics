@@ -96,3 +96,51 @@ export function getSharedBufferSize(buffers, includeBreakdown = false) {
     bufferCount: summary.bufferCount,
   };
 }
+
+function getComponentPoolCapacity(scene, componentName) {
+  if (componentName === 'ParticleComponent') return scene.config?.particle?.maxParticles || 0;
+  if (componentName === 'DecorationComponent') return scene.config?.decoration?.maxDecorations || 0;
+  if (componentName === 'BulletComponent') return scene.config?.bullet?.maxBullets || 0;
+  return scene.totalEntityCount || 0;
+}
+
+function countEntityTypesUsingComponent(scene, componentName) {
+  let count = 0;
+  let totalPoolSlots = 0;
+
+  for (const registration of scene.registeredClasses || []) {
+    const usesComponent = registration.components?.some(
+      (ComponentClass) => ComponentClass?.name === componentName
+    );
+    if (!usesComponent) continue;
+
+    count++;
+    totalPoolSlots += registration.count || 0;
+  }
+
+  return { entityTypeCount: count, entityPoolSlots: totalPoolSlots };
+}
+
+export function buildSceneMemoryUsageReport(scene) {
+  const summary = buildMemoryUsageSummary(scene.buffers);
+  const componentAllocations = {};
+  const componentData = scene.buffers?.componentData || {};
+
+  for (const [componentName, buffer] of Object.entries(componentData)) {
+    if (!(buffer instanceof SharedArrayBuffer)) continue;
+
+    const usage = countEntityTypesUsingComponent(scene, componentName);
+    componentAllocations[componentName] = {
+      bytes: buffer.byteLength,
+      formatted: formatBytes(buffer.byteLength),
+      capacity: getComponentPoolCapacity(scene, componentName),
+      entityTypeCount: usage.entityTypeCount,
+      entityPoolSlots: usage.entityPoolSlots,
+    };
+  }
+
+  return {
+    ...summary,
+    componentAllocations,
+  };
+}

@@ -608,6 +608,19 @@ See `src/core/ConfigDefaults.js` for the canonical defaults.
 
 ---
 
+## Memory Reports
+
+Scenes expose two DevTools-friendly memory helpers:
+
+```javascript
+scene.getMemoryUsageSummary(); // raw SharedArrayBuffer tree and total bytes
+scene.getMemoryUsageReport();  // summary + per-component allocation metadata
+```
+
+`getMemoryUsageReport().componentAllocations` shows each component buffer's byte size, capacity, number of entity types using it, and total pool slots for those types. Use it before changing component storage: dense component arrays are fast, but rare components can waste memory when allocated for every entity slot.
+
+---
+
 ## Performance Notes
 
 - Prefer component-array reads in hot loops.
