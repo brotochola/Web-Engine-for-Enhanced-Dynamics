@@ -27,7 +27,7 @@ class Collider extends Component {
     active: Uint8Array, // 0 = entity doesn't have this component, 1 = active
 
     // Shape type
-    shapeType: Uint8Array, // 0=Circle, 1=Box, 2=Polygon
+    shapeType: Uint8Array, // 0=Circle, 1=Box
 
     // Offset from entity position
     offsetX: Float32Array,
@@ -39,9 +39,6 @@ class Collider extends Component {
     // Box shape
     width: Float32Array,
     height: Float32Array,
-
-    // Polygon shape (TODO: future)
-    // pointsOffset: Int32Array, // pointer/index to polygon points in SAB
 
     // Trigger mode
     isTrigger: Uint8Array, // trigger=only events, no physical response
