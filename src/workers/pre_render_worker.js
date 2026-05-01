@@ -213,6 +213,20 @@ class PreRenderWorker extends AbstractWorker {
 
         // Sun shadow values are now computed centrally in Sun class
         // Workers just read: Sun.shadowDirX, Sun.shadowDirY, Sun.shadowLengthRatio, Sun.shadowAngle
+
+        // One-shot cap warnings. These are only checked on truncation paths.
+        this._warnedVisibleLightsCap = false;
+        this._warnedShadowCastingLightsCap = false;
+        this._warnedShadowRenderQueueCap = false;
+        this._warnedShadowSpriteCap = false;
+        this._warnedVisibilityPolygonLightCap = false;
+        this._warnedVisibilityPolygonOccluderCap = false;
+    }
+
+    _warnOnce(flagName, message) {
+        if (this[flagName]) return;
+        this[flagName] = true;
+        console.warn(message);
     }
 
     /**
@@ -2128,6 +2142,12 @@ class PreRenderWorker extends AbstractWorker {
         if (this.visibleLightsData) {
             const maxWrite = this.visibleLightsData.length - 1;
             const n = Math.min(lightEntities.length, maxWrite);
+            if (lightEntities.length > maxWrite) {
+                this._warnOnce(
+                    '_warnedVisibleLightsCap',
+                    `[PRE_RENDER] visible light list full (${maxWrite}). Increase lighting.maxLights or reduce visible lights.`
+                );
+            }
             this.visibleLightsData[0] = n;
             for (let w = 0; w < n; w++) this.visibleLightsData[1 + w] = lightEntities[w];
         }
@@ -2205,8 +2225,20 @@ class PreRenderWorker extends AbstractWorker {
         let dedupTag = 0;
 
         for (let i = 0; i < lightEntities.length; i++) {
-            if (writeIdx >= maxItems) break;
-            if (lightsProcessed >= this.maxShadowCastingLights) break;
+            if (writeIdx >= maxItems) {
+                this._warnOnce(
+                    '_warnedShadowRenderQueueCap',
+                    `[PRE_RENDER] shadow render queue full (${maxItems} items). Increase lighting.maxShadowSprites/maxLights or reduce shadow density.`
+                );
+                break;
+            }
+            if (lightsProcessed >= this.maxShadowCastingLights) {
+                this._warnOnce(
+                    '_warnedShadowCastingLightsCap',
+                    `[PRE_RENDER] maxShadowCastingLights reached (${this.maxShadowCastingLights}). Increase lighting.maxShadowCastingLights or reduce visible shadow-casting lights.`
+                );
+                break;
+            }
 
             const lightIdx = lightEntities[i];
             const intensity = lightIntensity[lightIdx];
@@ -2281,9 +2313,27 @@ class PreRenderWorker extends AbstractWorker {
             const lightYWithOffset = isFlash ? lightY : lightY + (colliderOffsetY[lightIdx] || 0);
 
             for (let k = 0; k < candidateCount; k++) {
-                if (shadowsForThisLight >= this.maxShadowsPerLight) break;
-                if (shadowCount >= maxShadowSprites) break;
-                if (writeIdx + 1 + shadowsForThisLight >= maxItems) break;
+                if (shadowsForThisLight >= this.maxShadowsPerLight) {
+                    this._warnOnce(
+                        '_warnedShadowSpriteCap',
+                        `[PRE_RENDER] maxShadowsPerLight reached (${this.maxShadowsPerLight}). Increase lighting.maxShadowsPerLight or reduce nearby shadow casters.`
+                    );
+                    break;
+                }
+                if (shadowCount >= maxShadowSprites) {
+                    this._warnOnce(
+                        '_warnedShadowSpriteCap',
+                        `[PRE_RENDER] maxShadowSprites reached (${maxShadowSprites}). Increase lighting.maxShadowSprites or reduce shadow density.`
+                    );
+                    break;
+                }
+                if (writeIdx + 1 + shadowsForThisLight >= maxItems) {
+                    this._warnOnce(
+                        '_warnedShadowRenderQueueCap',
+                        `[PRE_RENDER] shadow render queue full (${maxItems} items). Increase lighting.maxShadowSprites/maxLights or reduce shadow density.`
+                    );
+                    break;
+                }
 
                 const neighborIdx = candidateSource[candidateOffset + k];
 
@@ -2419,6 +2469,12 @@ class PreRenderWorker extends AbstractWorker {
 
         const lightCount = visibleLights[0];
         if (lightCount === 0) { buf.header[0] = 0; return; }
+        if (lightCount > maxLts) {
+            this._warnOnce(
+                '_warnedVisibilityPolygonLightCap',
+                `[PRE_RENDER] visibility polygon light cap reached (${maxLts}). Increase lighting.maxLights or reduce raycasted visible lights.`
+            );
+        }
 
         let lightsWritten = 0;
 
@@ -2435,11 +2491,16 @@ class PreRenderWorker extends AbstractWorker {
 
             // Collect nearby occluder circles from neighbor data
             let circleCount = 0;
+            let occluderLimitHit = false;
 
             if (neighborData && stride > 0) {
                 const offset = lightIdx * stride;
                 const nCount = neighborData[offset];
-                for (let k = 0; k < nCount && circleCount < maxOccluders; k++) {
+                for (let k = 0; k < nCount; k++) {
+                    if (circleCount >= maxOccluders) {
+                        occluderLimitHit = true;
+                        break;
+                    }
                     const nIdx = neighborData[offset + 2 + k];
                     if (!transformActive[nIdx] || !occluderActive[nIdx]) continue;
                     const r = occluderRadius[nIdx];
@@ -2450,6 +2511,12 @@ class PreRenderWorker extends AbstractWorker {
                     cR[circleCount] = r;
                     circleCount++;
                 }
+            }
+            if (occluderLimitHit) {
+                this._warnOnce(
+                    '_warnedVisibilityPolygonOccluderCap',
+                    `[PRE_RENDER] visibility polygon occluder cap reached (${maxOccluders} per light). Reduce occluder density or raise the internal cap.`
+                );
             }
 
             // Run angular sweep

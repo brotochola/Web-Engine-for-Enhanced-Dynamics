@@ -630,6 +630,7 @@ scene.getMemoryUsageReport();  // summary + per-component allocation metadata
 - Use `tickInterval > 1` for heavy AI and enable `logic.staggeredUpdates`.
 - Use particles/decorations for short-lived or static visuals instead of full entities.
 - Particle and bullet pools are finite. Exhaustion warnings are one-shot per scene/init; increase `particle.maxParticles` or `bullet.maxBullets` when they appear.
+- Rendering caps are finite too. One-shot pre-render warnings for visible lights, shadow queues, shadow sprites, and visibility polygon occluders mean the scene is truncating work. Tune `lighting.maxLights`, `lighting.maxShadowCastingLights`, `lighting.maxShadowsPerLight`, `lighting.maxShadowSprites`, or reduce light/occluder density.
 - Sound slots are finite (default 64). One-shot SFX are cheap; don't forget `stop()` on loops.
 - Spatial sound culls anything a full viewport-width outside the camera. Keep that in mind for ambient loops.
 - Only add `CollisionListener` / `CameraInOutListener` to entity types that actually use the callbacks. Without the tag, the engine skips all related per-pair or per-entity work.
