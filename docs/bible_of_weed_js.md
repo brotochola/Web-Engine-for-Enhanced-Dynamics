@@ -7,10 +7,13 @@ Engine-focused notes for the current `src/` architecture.
 | Resource | Current Limit |
 |---|---|
 | Entity indices | `0..65534` (`Uint16`) |
+| Total pooled entities | `65535` max |
+| Particle / decoration / bullet / constraint pool indices | `0..65534` (`Uint16`) |
 | QuerySystem component mask width | `64` components |
 | QuerySystem entity-type mask width | `64` entity types |
+| Spatial grid cells | `65535` max (cell indices cached as `Uint16`) |
 | Default max neighbors/entity | `500` |
-| Default max entities/cell | `64` |
+| Max entities/cell | `255` hard cap (`Uint8` count), `64` default |
 | Default max collision pairs/frame | `10000` |
 | Collision layers | `32` (Uint32 bitmask) |
 | Audio mixer slots | `64` default (`maxSlots` param) |

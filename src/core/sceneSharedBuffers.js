@@ -47,6 +47,51 @@ import {
 import { ParticleEmitter } from './ParticleEmitter.js';
 import { Constraint } from './Constraint.js';
 import { SoundManager } from './SoundManager.js';
+import { MAX_COMPONENTS, MAX_ENTITIES, MAX_ENTITY_TYPES } from './QuerySystem.js';
+
+function assertIntegerInRange(label, value, min, max) {
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new RangeError(`${label} must be an integer in [${min}, ${max}], got ${value}`);
+  }
+}
+
+function validateSceneSharedBufferConfig(scene) {
+  const { config, registeredClasses, totalEntityCount, nextComponentId } = scene;
+
+  assertIntegerInRange('totalEntityCount', totalEntityCount, 0, MAX_ENTITIES);
+  assertIntegerInRange('registered entity type count', registeredClasses.length, 0, MAX_ENTITY_TYPES);
+  assertIntegerInRange('component type count', nextComponentId, 0, MAX_COMPONENTS);
+
+  for (const registration of registeredClasses) {
+    const label = `entity pool "${registration.class?.name || 'unknown'}"`;
+    assertIntegerInRange(`${label} count`, registration.count, 0, MAX_ENTITIES);
+    assertIntegerInRange(`${label} startIndex`, registration.startIndex, 0, MAX_ENTITIES);
+    assertIntegerInRange(
+      `${label} endIndex`,
+      registration.startIndex + registration.count,
+      0,
+      MAX_ENTITIES
+    );
+  }
+
+  assertIntegerInRange('particle.maxParticles', config.particle.maxParticles, 0, MAX_ENTITIES);
+  assertIntegerInRange('decoration.maxDecorations', config.decoration.maxDecorations, 0, MAX_ENTITIES);
+  assertIntegerInRange('bullet.maxBullets', config.bullet.maxBullets, 0, MAX_ENTITIES);
+  assertIntegerInRange('physics.maxConstraints', config.physics.maxConstraints || 0, 0, MAX_ENTITIES);
+  assertIntegerInRange('spatial.maxNeighbors', config.spatial.maxNeighbors, 0, MAX_ENTITIES);
+  assertIntegerInRange('spatial.maxEntitiesPerCell', config.spatial.maxEntitiesPerCell, 1, 255);
+
+  const cellSize = config.spatial?.cellSize || config.cellSize;
+  assertIntegerInRange('spatial.cellSize', cellSize, 1, Number.MAX_SAFE_INTEGER);
+  const gridCols = Math.ceil(config.worldWidth / cellSize);
+  const gridRows = Math.ceil(config.worldHeight / cellSize);
+  assertIntegerInRange('spatial grid columns', gridCols, 1, MAX_ENTITIES);
+  assertIntegerInRange('spatial grid rows', gridRows, 1, MAX_ENTITIES);
+  assertIntegerInRange('spatial total cells', gridCols * gridRows, 1, MAX_ENTITIES);
+
+  const maxLights = config.lighting.maxLights || 128;
+  assertIntegerInRange('lighting.maxLights', maxLights, 0, MAX_ENTITIES);
+}
 
 function createUint16FreeListBuffers(buffers, freeListKey, freeListTopKey, count) {
   buffers[freeListKey] = new SharedArrayBuffer(count * 2);
@@ -561,6 +606,7 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
 }
 
 export function createSceneSharedBuffers(scene) {
+  validateSceneSharedBufferConfig(scene);
   initializeCoreEntityAndComponentBuffers(scene);
   initializeParticleBuffers(scene);
   initializeDecorationBuffers(scene);
