@@ -9,6 +9,7 @@ export class DecorationComponent extends Component {
   static ARRAY_SCHEMA = {
     // === State ===
     active: Uint8Array, // 0 = inactive (in pool), 1 = active
+    generation: Uint32Array, // increments on spawn; prevents stale facades mutating recycled slots
 
     // === Position ===
     x: Float32Array,

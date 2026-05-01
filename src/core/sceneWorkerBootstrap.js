@@ -188,6 +188,7 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     decorationFreeList: scene.buffers.decorationFreeList || null,
     decorationFreeListTop: scene.buffers.decorationFreeListTop || null,
     activeDecorationsData: scene.buffers.activeDecorationsData || null,
+    activeDecorationsLock: scene.buffers.activeDecorationsLock || null,
     visibleDecorationsData: scene.buffers.visibleDecorationsData || null,
     attachedDecorationCount: scene.buffers.attachedDecorationCount || null,
     attachedDecorationIndices: scene.buffers.attachedDecorationIndices || null,

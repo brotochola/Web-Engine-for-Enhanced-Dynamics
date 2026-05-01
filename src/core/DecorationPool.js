@@ -7,6 +7,7 @@
 // THREAD SAFETY:
 // - freeList and freeListTop are backed by SharedArrayBuffer
 // - Spawn/despawn use Atomics for lock-free concurrent access
+// - activeDecorationsData compact-list mutation is protected by a tiny SAB lock
 // - Any worker or the main thread can safely spawn/despawn decorations
 
 import { DecorationComponent } from '../components/DecorationComponent.js';
@@ -37,6 +38,7 @@ export class DecorationPool extends SharedAtomicPool {
   // Compact list of active decoration indices [count, idx0, idx1, ...]
   // Maintained incrementally by spawn/despawn, read by particle_worker
   static activeDecorationsData = null;
+  static _activeListLock = null;
 
   // Entity -> attached decoration indices (SAB, not ECS). Row stride = _maxAttachedPerEntity.
   static _attachedDecorationCount = null; // Uint8Array length entityCount
@@ -55,6 +57,35 @@ export class DecorationPool extends SharedAtomicPool {
    */
   static getActiveCount() {
     return this.activeDecorationsData ? this.activeDecorationsData[0] : 0;
+  }
+
+  static _lockActiveList() {
+    const lock = this._activeListLock;
+    if (!lock) return;
+    while (Atomics.compareExchange(lock, 0, 0, 1) !== 0) {
+      // Keep the critical section tiny (count + one swap/append). This lock is
+      // only for decoration list metadata, not for particle/render hot loops.
+    }
+  }
+
+  static _unlockActiveList() {
+    if (this._activeListLock) Atomics.store(this._activeListLock, 0, 0);
+  }
+
+  static copyActiveSnapshot(out) {
+    const data = this.activeDecorationsData;
+    if (!data || !out) return 0;
+
+    this._lockActiveList();
+    try {
+      const count = Math.min(data[0], out.length);
+      for (let i = 0; i < count; i++) {
+        out[i] = data[1 + i];
+      }
+      return count;
+    } finally {
+      this._unlockActiveList();
+    }
   }
 
   /**
@@ -188,13 +219,20 @@ export class DecorationPool extends SharedAtomicPool {
     DecorationComponent.isItOnScreen[index] = 0;
 
     if (this.activeDecorationsData) {
-      const count = Atomics.load(this.activeDecorationsData, 0);
-      for (let i = 0; i < count; i++) {
-        if (this.activeDecorationsData[1 + i] === index) {
-          const oldCount = Atomics.sub(this.activeDecorationsData, 0, 1);
-          this.activeDecorationsData[1 + i] = this.activeDecorationsData[oldCount - 1];
-          break;
+      this._lockActiveList();
+      try {
+        const count = this.activeDecorationsData[0];
+        for (let i = 0; i < count; i++) {
+          if (this.activeDecorationsData[1 + i] === index) {
+            const last = count - 1;
+            this.activeDecorationsData[1 + i] = this.activeDecorationsData[1 + last];
+            this.activeDecorationsData[1 + last] = 0;
+            this.activeDecorationsData[0] = last;
+            break;
+          }
         }
+      } finally {
+        this._unlockActiveList();
       }
     }
     this.returnToPool(index);
@@ -252,6 +290,7 @@ export class DecorationPool extends SharedAtomicPool {
     // Cache array references for performance (zero allocation - just reference copying)
     const x = DecorationComponent.x;
     const y = DecorationComponent.y;
+    const generation = DecorationComponent.generation;
     const offsetX = DecorationComponent.offsetX;
     const offsetY = DecorationComponent.offsetY;
     const scaleX = DecorationComponent.scaleX;
@@ -307,6 +346,9 @@ export class DecorationPool extends SharedAtomicPool {
       y[i] = randomRange(config.y);
     }
 
+    // New generation invalidates stale Decoration facades held across despawn/reuse.
+    generation[i] = (generation[i] + 1) >>> 0;
+
     // Offset for depth sorting (defaults to 0)
     offsetX[i] = config.offsetX ?? 0;
     offsetY[i] = config.offsetY ?? 0;
@@ -339,8 +381,14 @@ export class DecorationPool extends SharedAtomicPool {
 
     // Add to activeDecorationsData compact list (append at end - O(1), atomic count increment)
     if (this.activeDecorationsData) {
-      const slot = Atomics.add(this.activeDecorationsData, 0, 1);
-      this.activeDecorationsData[1 + slot] = i;
+      this._lockActiveList();
+      try {
+        const slot = this.activeDecorationsData[0];
+        this.activeDecorationsData[1 + slot] = i;
+        this.activeDecorationsData[0] = slot + 1;
+      } finally {
+        this._unlockActiveList();
+      }
     }
 
     return i;
@@ -438,7 +486,12 @@ export class DecorationPool extends SharedAtomicPool {
 
     // Clear activeDecorationsData compact list
     if (this.activeDecorationsData) {
-      this.activeDecorationsData[0] = 0;
+      this._lockActiveList();
+      try {
+        this.activeDecorationsData[0] = 0;
+      } finally {
+        this._unlockActiveList();
+      }
     }
 
     // Reset free list with interleaved ordering (reduces cache contention in multi-worker scenarios)
@@ -450,10 +503,11 @@ export class DecorationPool extends SharedAtomicPool {
    * Called by workers during initialization
    * @param {SharedArrayBuffer} buffer - The SAB for activeDecorationsData
    */
-  static initializeActiveList(buffer) {
+  static initializeActiveList(buffer, lockBuffer = null) {
     if (buffer) {
       this.activeDecorationsData = new Uint16Array(buffer);
     }
+    this._activeListLock = lockBuffer ? new Int32Array(lockBuffer) : null;
   }
 
   /**
@@ -463,6 +517,7 @@ export class DecorationPool extends SharedAtomicPool {
   static reset() {
     super.reset();
     this.activeDecorationsData = null;
+    this._activeListLock = null;
     clearAllDecorationFacades();
     this._attachedDecorationCount = null;
     this._attachedDecorationIndices = null;

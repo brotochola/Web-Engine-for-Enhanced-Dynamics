@@ -82,6 +82,8 @@ Decorations parented to an entity are tracked in a **shared attachment table** (
 
 Scene config: `decoration.maxAttachedDecorationsPerEntity` caps attachments per entity (default clamped by the engine). To remove one decoration early, call `DecorationPool.despawn(poolIndex)` (it detaches from the parent automatically).
 
+`Decoration.get(poolIndex)` returns a lightweight facade for the current pool slot generation. If you keep a facade after its decoration despawns and that pool index is reused, the old facade becomes inactive and will not mutate the new decoration. Store pool indices for long-lived references, and call `Decoration.get(index)` again when you need the current facade.
+
 ```javascript
 onSpawned() {
   this.addDecoration('_whiteCircle', 0, -16, 0.25, 0.25, -32, { alpha: 0.35 }); // negative innerZ: behind parent sprite

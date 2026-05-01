@@ -325,6 +325,8 @@ class ParticleWorker extends AbstractWorker {
     this.maxDecorations = 0;
     this.swayDecimation = 1; // Calculate sway every N frames (1 = every frame)
     this._swayFrameCounter = 0;
+    this._activeDecorationSnapshot = null;
+    this._activeDecorationSnapshotCount = 0;
 
     // Navigation
     this.navEnabled = false;
@@ -408,6 +410,9 @@ class ParticleWorker extends AbstractWorker {
     if (this.maxParticles > 0 && data.buffers.componentData.ParticleComponent) {
       this.particlesToStamp = new Uint16Array(this.maxParticles);
       this.activeParticleIndices = new Uint16Array(this.maxParticles);
+    }
+    if (this.maxDecorations > 0) {
+      this._activeDecorationSnapshot = new Uint16Array(this.maxDecorations);
     }
 
     // ========================================
@@ -572,6 +577,7 @@ class ParticleWorker extends AbstractWorker {
     }
 
     // Parented decorations: world x/y/rotation (before culling uses x/y)
+    this.refreshActiveDecorationSnapshot();
     this.resolveAttachedDecorations();
 
     // Update screen visibility for decorations (entities done in pre_render_worker)
@@ -615,6 +621,15 @@ class ParticleWorker extends AbstractWorker {
   // ========================================
   // PARTICLE PHYSICS
   // ========================================
+
+  refreshActiveDecorationSnapshot() {
+    if (!this._activeDecorationSnapshot) {
+      this._activeDecorationSnapshotCount = 0;
+      return 0;
+    }
+    this._activeDecorationSnapshotCount = DecorationPool.copyActiveSnapshot(this._activeDecorationSnapshot);
+    return this._activeDecorationSnapshotCount;
+  }
 
   /**
    * Build active particle list AND calculate screen visibility in a single fused pass.
@@ -825,10 +840,11 @@ class ParticleWorker extends AbstractWorker {
   resolveAttachedDecorations() {
     if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
 
-    const activeData = this.activeDecorationsData;
-    const activeCount = activeData ? activeData[0] : 0;
+    const activeData = this._activeDecorationSnapshot;
+    const activeCount = this._activeDecorationSnapshotCount;
     if (activeCount === 0) return;
 
+    const active = DecorationComponent.active;
     const parentEntityIndex = DecorationComponent.parentEntityIndex;
     const localX = DecorationComponent.localX;
     const localY = DecorationComponent.localY;
@@ -848,7 +864,8 @@ class ParticleWorker extends AbstractWorker {
     const swayBaseAngle = this.accumulatedTime * 0.002;
 
     for (let idx = 0; idx < activeCount; idx++) {
-      const i = activeData[1 + idx];
+      const i = activeData[idx];
+      if (!active[i]) continue;
       const p = parentEntityIndex[i];
       if (p === DECORATION_NO_PARENT) continue;
 
@@ -885,15 +902,15 @@ class ParticleWorker extends AbstractWorker {
 
   /**
    * Update screen visibility for all active decorations
-   * Uses activeDecorationsData compact list (maintained by DecorationPool.spawn/despawn)
+   * Uses the per-frame active decoration snapshot copied from DecorationPool.
    * Writes to visibleDecorationsData SAB for pre_render_worker to consume
    */
   updateDecorationScreenVisibility() {
     if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
 
-    const activeData = this.activeDecorationsData;
+    const activeData = this._activeDecorationSnapshot;
     const visibleData = this.visibleDecorationsData;
-    const activeCount = activeData ? activeData[0] : 0;
+    const activeCount = this._activeDecorationSnapshotCount;
 
     if (activeCount === 0 || !this.cameraData) {
       if (visibleData) visibleData[0] = 0;
@@ -913,6 +930,7 @@ class ParticleWorker extends AbstractWorker {
 
     const x = DecorationComponent.x;
     const y = DecorationComponent.y;
+    const active = DecorationComponent.active;
     const isItOnScreen = DecorationComponent.isItOnScreen;
 
     const camZoom = cameraBounds.zoom;
@@ -925,9 +943,10 @@ class ParticleWorker extends AbstractWorker {
 
     let visibleCount = 0;
 
-    // OPTIMIZED: Iterate over compact activeDecorationsData instead of maxDecorations
+    // OPTIMIZED: Iterate over the stable active snapshot instead of maxDecorations.
     for (let idx = 0; idx < activeCount; idx++) {
-      const i = activeData[1 + idx];
+      const i = activeData[idx];
+      if (!active[i]) continue;
 
       const screenXVal = x[i] * camZoom - cameraOffsetX;
       const screenYVal = y[i] * camZoom - cameraOffsetY;
@@ -1320,10 +1339,11 @@ class ParticleWorker extends AbstractWorker {
   updateDecorationSway() {
     if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
 
-    const activeData = this.activeDecorationsData;
-    const activeCount = activeData ? activeData[0] : 0;
+    const activeData = this._activeDecorationSnapshot;
+    const activeCount = this._activeDecorationSnapshotCount;
     if (activeCount === 0) return;
 
+    const active = DecorationComponent.active;
     const sway = DecorationComponent.sway;
     const swayAmplitude = DecorationComponent.swayAmplitude;
     const swayFrequency = DecorationComponent.swayFrequency;
@@ -1334,9 +1354,10 @@ class ParticleWorker extends AbstractWorker {
 
     const parentEntityIndex = DecorationComponent.parentEntityIndex;
 
-    // OPTIMIZED: Iterate over compact activeDecorationsData instead of maxDecorations
+    // OPTIMIZED: Iterate over the stable active snapshot instead of maxDecorations.
     for (let idx = 0; idx < activeCount; idx++) {
-      const i = activeData[1 + idx];
+      const i = activeData[idx];
+      if (!active[i]) continue;
       if (parentEntityIndex[i] !== DECORATION_NO_PARENT) continue;
 
       if (sway[i]) {

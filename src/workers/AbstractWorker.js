@@ -392,7 +392,7 @@ export class AbstractWorker {
 
       // Initialize activeDecorationsData compact list (for optimized iteration)
       if (data.activeDecorationsData) {
-        DecorationPool.initializeActiveList(data.activeDecorationsData);
+        DecorationPool.initializeActiveList(data.activeDecorationsData, data.activeDecorationsLock || null);
         this.activeDecorationsData = new Uint16Array(data.activeDecorationsData);
         this.reportLog(`initialized DecorationPool activeDecorationsData`);
       }

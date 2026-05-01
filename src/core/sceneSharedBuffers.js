@@ -228,7 +228,8 @@ function initializeDecorationBuffers(scene) {
   DecorationPool.initializeFreeList(buffers.decorationFreeList, buffers.decorationFreeListTop);
 
   createCompactUint16ListPair(buffers, 'activeDecorationsData', 'visibleDecorationsData', maxDecorations);
-  DecorationPool.activeDecorationsData = new Uint16Array(buffers.activeDecorationsData);
+  buffers.activeDecorationsLock = new SharedArrayBuffer(4);
+  DecorationPool.initializeActiveList(buffers.activeDecorationsData, buffers.activeDecorationsLock);
 
   const maxAttached = config.decoration.maxAttachedDecorationsPerEntity;
   if (totalEntityCount > 0 && maxAttached > 0) {

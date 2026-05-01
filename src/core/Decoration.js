@@ -10,6 +10,7 @@ export class Decoration {
    */
   constructor(index) {
     this.index = index;
+    this._generation = DecorationComponent.generation?.[index] ?? 0;
   }
 
   /**
@@ -29,64 +30,71 @@ export class Decoration {
     evictDecorationFacade(id);
   }
 
+  _isCurrent() {
+    return (
+      DecorationComponent.active[this.index] !== 0 &&
+      (DecorationComponent.generation?.[this.index] ?? 0) === this._generation
+    );
+  }
+
   get active() {
-    return DecorationComponent.active[this.index] !== 0;
+    return this._isCurrent();
   }
 
   get scaleX() {
-    return DecorationComponent.scaleX[this.index];
+    return this._isCurrent() ? DecorationComponent.scaleX[this.index] : 0;
   }
   set scaleX(v) {
-    if (DecorationComponent.active[this.index]) DecorationComponent.scaleX[this.index] = v;
+    if (this._isCurrent()) DecorationComponent.scaleX[this.index] = v;
   }
 
   get scaleY() {
-    return DecorationComponent.scaleY[this.index];
+    return this._isCurrent() ? DecorationComponent.scaleY[this.index] : 0;
   }
   set scaleY(v) {
-    if (DecorationComponent.active[this.index]) DecorationComponent.scaleY[this.index] = v;
+    if (this._isCurrent()) DecorationComponent.scaleY[this.index] = v;
   }
 
   get alpha() {
-    return DecorationComponent.alpha[this.index];
+    return this._isCurrent() ? DecorationComponent.alpha[this.index] : 0;
   }
   set alpha(v) {
-    if (DecorationComponent.active[this.index]) DecorationComponent.alpha[this.index] = v;
+    if (this._isCurrent()) DecorationComponent.alpha[this.index] = v;
   }
 
   get tint() {
-    return DecorationComponent.tint[this.index];
+    return this._isCurrent() ? DecorationComponent.tint[this.index] : 0xffffff;
   }
   set tint(v) {
-    if (DecorationComponent.active[this.index]) DecorationComponent.tint[this.index] = v;
+    if (this._isCurrent()) DecorationComponent.tint[this.index] = v;
   }
 
   get localX() {
-    return DecorationComponent.localX[this.index];
+    return this._isCurrent() ? DecorationComponent.localX[this.index] : 0;
   }
   set localX(v) {
-    if (DecorationComponent.active[this.index]) DecorationComponent.localX[this.index] = v;
+    if (this._isCurrent()) DecorationComponent.localX[this.index] = v;
   }
 
   get localY() {
-    return DecorationComponent.localY[this.index];
+    return this._isCurrent() ? DecorationComponent.localY[this.index] : 0;
   }
   set localY(v) {
-    if (DecorationComponent.active[this.index]) DecorationComponent.localY[this.index] = v;
+    if (this._isCurrent()) DecorationComponent.localY[this.index] = v;
   }
 
   get anchorX() {
-    return DecorationComponent.anchorX[this.index];
+    return this._isCurrent() ? DecorationComponent.anchorX[this.index] : 0.5;
   }
   set anchorX(v) {
-    if (DecorationComponent.active[this.index]) DecorationComponent.anchorX[this.index] = v;
+    if (this._isCurrent()) DecorationComponent.anchorX[this.index] = v;
   }
 
   get innerZ() {
-    return DecorationComponent.innerZ[this.index];
+    return this._isCurrent() ? DecorationComponent.innerZ[this.index] : 0;
   }
   set innerZ(v) {
-    if (!DecorationComponent.active[this.index]) return;
+    if (!this._isCurrent()) return;
     const z = v | 0;
     DecorationComponent.innerZ[this.index] =
       z < DECORATION_INNER_Z_MIN
@@ -97,30 +105,30 @@ export class Decoration {
   }
 
   get textureId() {
-    return DecorationComponent.textureId[this.index];
+    return this._isCurrent() ? DecorationComponent.textureId[this.index] : 0;
   }
   set textureId(v) {
-    if (DecorationComponent.active[this.index]) DecorationComponent.textureId[this.index] = v;
+    if (this._isCurrent()) DecorationComponent.textureId[this.index] = v;
   }
 
   get offsetX() {
-    return DecorationComponent.offsetX[this.index];
+    return this._isCurrent() ? DecorationComponent.offsetX[this.index] : 0;
   }
   set offsetX(v) {
-    if (DecorationComponent.active[this.index]) DecorationComponent.offsetX[this.index] = v;
+    if (this._isCurrent()) DecorationComponent.offsetX[this.index] = v;
   }
 
   get offsetY() {
-    return DecorationComponent.offsetY[this.index];
+    return this._isCurrent() ? DecorationComponent.offsetY[this.index] : 0;
   }
   set offsetY(v) {
-    if (DecorationComponent.active[this.index]) DecorationComponent.offsetY[this.index] = v;
+    if (this._isCurrent()) DecorationComponent.offsetY[this.index] = v;
   }
 
   get baseRotation() {
-    return DecorationComponent.baseRotation[this.index];
+    return this._isCurrent() ? DecorationComponent.baseRotation[this.index] : 0;
   }
   set baseRotation(v) {
-    if (DecorationComponent.active[this.index]) DecorationComponent.baseRotation[this.index] = v;
+    if (this._isCurrent()) DecorationComponent.baseRotation[this.index] = v;
   }
 }
