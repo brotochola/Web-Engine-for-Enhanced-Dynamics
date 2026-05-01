@@ -47,6 +47,8 @@
       sampleIntervalMs: 100,
       canvasWidth: DEFAULT_CANVAS_WIDTH,
       canvasHeight: DEFAULT_CANVAS_HEIGHT,
+      sceneModule: '/demos/scenes/BallsScene.js',
+      sceneExport: 'BallsScene',
     });
 
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -71,6 +73,8 @@
         canvasHeight,
         worldWidth: normalizePositiveInteger(options.worldWidth, canvasWidth),
         worldHeight: normalizePositiveInteger(options.worldHeight, canvasHeight),
+        sceneModule: options.sceneModule || DEFAULT_CONFIG.sceneModule,
+        sceneExport: options.sceneExport || DEFAULT_CONFIG.sceneExport,
       };
     }
 
@@ -82,16 +86,20 @@
       currentGame = null;
     }
 
-    async function loadModules() {
-      const [{ default: WEED }, { BallsScene }, benchmarkMetrics] = await Promise.all([
+    async function loadModules(sceneModule, sceneExport) {
+      const [{ default: WEED }, sceneModuleExports, benchmarkMetrics] = await Promise.all([
         import('/src/index.js'),
-        import('/demos/scenes/BallsScene.js'),
+        import(sceneModule),
         import('/tests/bench/workerBenchmarkMetrics.js'),
       ]);
+      const SceneClass = sceneModuleExports[sceneExport];
+      if (!SceneClass) {
+        throw new Error(`Benchmark scene export "${sceneExport}" not found in ${sceneModule}`);
+      }
 
       return {
         WEED,
-        BallsScene,
+        SceneClass,
         createWorkerBenchmarkReader: benchmarkMetrics.createWorkerBenchmarkReader,
         summarizeWorkerBenchmarkWindow: benchmarkMetrics.summarizeWorkerBenchmarkWindow,
       };
@@ -101,10 +109,10 @@
       const config = normalizeConfig(options);
       const {
         WEED,
-        BallsScene,
+        SceneClass,
         createWorkerBenchmarkReader,
         summarizeWorkerBenchmarkWindow,
-      } = await loadModules();
+      } = await loadModules(config.sceneModule, config.sceneExport);
 
       await cleanupCurrentGame();
 
@@ -119,7 +127,7 @@
       });
       currentGame = game;
 
-      await game.loadScene(BallsScene);
+      await game.loadScene(SceneClass);
       const scene = game.currentScene;
       const reader = createWorkerBenchmarkReader(scene);
 
@@ -145,7 +153,9 @@
         ...summary,
         metadata: {
           benchmark: 'integrated-worker-benchmark',
-          sceneName: 'BallsScene',
+          sceneName: SceneClass.name || config.sceneExport,
+          sceneModule: config.sceneModule,
+          sceneExport: config.sceneExport,
           canvasWidth: config.canvasWidth,
           canvasHeight: config.canvasHeight,
           spatialWorkers: scene.config.spatial.numberOfSpatialWorkers,

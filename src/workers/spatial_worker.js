@@ -138,7 +138,6 @@ class SpatialWorker extends AbstractWorker {
     this.rebuildTimeThisFrame = 0;
     this.neighborSearchTimeThisFrame = 0;
     this.neighborsReusedThisFrame = 0;
-    this.neighborsReusedThisFrame = 0;
 
   }
 
@@ -343,6 +342,7 @@ class SpatialWorker extends AbstractWorker {
     this.cellsCheckedThisFrame = 0;
     this.rebuildTimeThisFrame = 0;
     this.neighborSearchTimeThisFrame = 0;
+    this.neighborsReusedThisFrame = 0;
 
     // STEP 1: Rebuild grid (only owned rows)
     let startTime = this.stats ? performance.now() : 0;
@@ -823,7 +823,6 @@ class SpatialWorker extends AbstractWorker {
                   }
                 }
 
-                // Stop if we've hit the neighbor limit
                 if (collisionCount + visualOnlyCount >= maxNeighbors) break;
               }
             }

@@ -18,6 +18,8 @@ const defaultOutputPath = path.join(repoRoot, 'tests', 'results', 'integrated-wo
 /** Match typical `demos/index.html` window size (autoResize), not scene world dimensions. */
 const DEFAULT_DEMO_CANVAS_WIDTH = 1920;
 const DEFAULT_DEMO_CANVAS_HEIGHT = 1080;
+const DEFAULT_SCENE_MODULE = '/demos/scenes/BallsScene.js';
+const DEFAULT_SCENE_EXPORT = 'BallsScene';
 
 /**
  * Reduce Chromium throttling when the window loses focus, is minimized, or is fully
@@ -94,6 +96,8 @@ function buildBenchmarkOptions(cliArgs) {
     warmupMs,
     durationMs,
     sampleIntervalMs,
+    sceneModule: cliArgs.scene || DEFAULT_SCENE_MODULE,
+    sceneExport: cliArgs['scene-export'] || DEFAULT_SCENE_EXPORT,
     ...(canvasWidth != null ? { canvasWidth } : {}),
     ...(canvasHeight != null ? { canvasHeight } : {}),
   };
@@ -167,13 +171,18 @@ async function main() {
       timeout: 30000,
     });
 
-    const sceneDims = await page.evaluate(async () => {
-      const { BallsScene } = await import('/demos/scenes/BallsScene.js');
+    const sceneDims = await page.evaluate(async ({ sceneModule, sceneExport }) => {
+      const sceneModuleExports = await import(sceneModule);
+      const SceneClass = sceneModuleExports[sceneExport];
+      if (!SceneClass) {
+        throw new Error(`Benchmark scene export "${sceneExport}" not found in ${sceneModule}`);
+      }
       return {
-        width: BallsScene.config.worldWidth,
-        height: BallsScene.config.worldHeight,
+        name: SceneClass.name || sceneExport,
+        width: SceneClass.config.worldWidth,
+        height: SceneClass.config.worldHeight,
       };
-    });
+    }, benchmarkOptions);
 
     const canvasWidth = benchmarkOptions.canvasWidth ?? DEFAULT_DEMO_CANVAS_WIDTH;
     const canvasHeight = benchmarkOptions.canvasHeight ?? DEFAULT_DEMO_CANVAS_HEIGHT;
@@ -187,6 +196,8 @@ async function main() {
       canvasHeight,
       worldWidth: sceneDims.width,
       worldHeight: sceneDims.height,
+      sceneModule: benchmarkOptions.sceneModule,
+      sceneExport: benchmarkOptions.sceneExport,
     };
 
     const result = await page.evaluate((options) => window.__WEED_BENCHMARK__.run(options), runOptions);

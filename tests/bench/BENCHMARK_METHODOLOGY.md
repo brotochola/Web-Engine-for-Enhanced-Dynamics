@@ -21,7 +21,22 @@ BallsScene starts with a **dense spawn**; the first seconds are not representati
 
 ## Scene configuration
 
-Integrated benchmarks use **BallsScene** as defined in `demos/scenes/BallsScene.js`. To compare different spatial settings (e.g. `cellSize`), edit that static config between runs; there is no CLI patch into the scene.
+Integrated benchmarks use **BallsScene** by default. You can select another scene module/export when the workload you care about is not represented by BallsScene:
+
+```bash
+node tests/bench/run-integrated-worker-benchmark.mjs --headed \
+  --scene /demos/scenes/BallsAndRectanglesScene.js \
+  --scene-export BallsAndRectanglesScene \
+  --output tests/results/balls-and-rectangles-headed.json
+```
+
+Use scene selection for targeted checks:
+
+- **Spatial/physics:** `BallsScene`, `BallsAndRectanglesScene`, or a dedicated churn/stationary scene.
+- **Pre-render/render queues:** a scene with many visible renderables or custom layers.
+- **Particles/decorations:** a scene that actually has active particles/decorations; BallsScene reports `ACTIVE_DECORATIONS: 0`.
+
+To compare different static config values inside a scene (e.g. `cellSize`), edit that scene's config between runs; there is no CLI patch into scene config.
 
 ## Limits
 
