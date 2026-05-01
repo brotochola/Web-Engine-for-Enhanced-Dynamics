@@ -1,0 +1,446 @@
+{
+  "sceneName": "BallsScene",
+  "measurementDurationMs": 18000.180000007153,
+  "mainThread": {
+    "averageFPS": 59.99930961446664,
+    "instantaneousFPS": 59.99940000600008,
+    "frameDelta": 1080
+  },
+  "workers": [
+    {
+      "id": "spatial0",
+      "type": "spatial",
+      "workerIndex": 0,
+      "frameRateIndex": 0,
+      "instantaneousFPS": 83.1946792602539,
+      "averageFPS": 78.29955485679584,
+      "sampleCount": 179,
+      "statsEnd": {
+        "FPS": 83.1946792602539,
+        "NEIGHBOR_CHECKS": 66752,
+        "GRID_CELLS_CHECKED": 40735,
+        "ENTITIES_PROCESSED": 4636,
+        "REBUILD_MS": 0.5149999856948853,
+        "NEIGHBOR_MS": 7.46999979019165,
+        "MSG_MS": 0
+      },
+      "statsSamplesAverage": {
+        "FPS": 78.29955485679584,
+        "NEIGHBOR_CHECKS": 66407.64804469273,
+        "GRID_CELLS_CHECKED": 40603.31843575419,
+        "ENTITIES_PROCESSED": 4620.675977653631,
+        "REBUILD_MS": 0.4599162007177342,
+        "NEIGHBOR_MS": 7.468072630173667,
+        "MSG_MS": 0
+      }
+    },
+    {
+      "id": "spatial1",
+      "type": "spatial",
+      "workerIndex": 1,
+      "frameRateIndex": 1,
+      "instantaneousFPS": 83.47245025634766,
+      "averageFPS": 81.02668101561136,
+      "sampleCount": 179,
+      "statsEnd": {
+        "FPS": 83.47245025634766,
+        "NEIGHBOR_CHECKS": 61855,
+        "GRID_CELLS_CHECKED": 38916,
+        "ENTITIES_PROCESSED": 4369,
+        "REBUILD_MS": 0.32999998331069946,
+        "NEIGHBOR_MS": 8.675000190734863,
+        "MSG_MS": 0
+      },
+      "statsSamplesAverage": {
+        "FPS": 81.02668101561136,
+        "NEIGHBOR_CHECKS": 62239.581005586595,
+        "GRID_CELLS_CHECKED": 39029.01117318436,
+        "ENTITIES_PROCESSED": 4382.251396648045,
+        "REBUILD_MS": 0.44388268030555555,
+        "NEIGHBOR_MS": 7.2237988930174755,
+        "MSG_MS": 0
+      }
+    },
+    {
+      "id": "physics",
+      "type": "physics",
+      "workerIndex": 0,
+      "frameRateIndex": 2,
+      "instantaneousFPS": 22.21481704711914,
+      "averageFPS": 21.88369000823804,
+      "sampleCount": 179,
+      "statsEnd": {
+        "FPS": 22.21481704711914,
+        "COLLISION_CHECKS": 612327,
+        "COLLISIONS_RESOLVED": 235565,
+        "COLLISION_PAIRS": 23555,
+        "CONSTRAINT_MS": 0,
+        "MSG_MS": 0,
+        "MOVE_MS": 2.6050000190734863,
+        "COLLISION_MS": 37.01499938964844
+      },
+      "statsSamplesAverage": {
+        "FPS": 21.88369000823804,
+        "COLLISION_CHECKS": 671143.8379888268,
+        "COLLISIONS_RESOLVED": 257672.16201117318,
+        "COLLISION_PAIRS": 23537.13966480447,
+        "CONSTRAINT_MS": 0,
+        "MSG_MS": 0,
+        "MOVE_MS": 2.722318440176255,
+        "COLLISION_MS": 38.76170399202315
+      }
+    },
+    {
+      "id": "renderer",
+      "type": "renderer",
+      "workerIndex": 0,
+      "frameRateIndex": 3,
+      "instantaneousFPS": 200.4008026123047,
+      "averageFPS": 185.32840775644314,
+      "sampleCount": 179,
+      "statsEnd": {
+        "FPS": 200.4008026123047,
+        "DRAW_CALLS": 0,
+        "VISIBLE_SPRITES": 2067,
+        "SPRITES_CREATED": 6000,
+        "DECORATION_SPRITES": 6000,
+        "VISIBLE_DECORATIONS": 0,
+        "VISIBLE_ENTITIES": 2067,
+        "VISIBLE_PARTICLES": 0,
+        "ACTIVE_DECORATIONS": 0,
+        "MSG_MS": 0
+      },
+      "statsSamplesAverage": {
+        "FPS": 185.32840775644314,
+        "DRAW_CALLS": 0.2737430167597765,
+        "VISIBLE_SPRITES": 2069.223463687151,
+        "SPRITES_CREATED": 6000,
+        "DECORATION_SPRITES": 6000,
+        "VISIBLE_DECORATIONS": 0,
+        "VISIBLE_ENTITIES": 2069.223463687151,
+        "VISIBLE_PARTICLES": 0,
+        "ACTIVE_DECORATIONS": 0,
+        "MSG_MS": 0
+      }
+    },
+    {
+      "id": "particle",
+      "type": "particle",
+      "workerIndex": 0,
+      "frameRateIndex": 4,
+      "instantaneousFPS": 166.52789306640625,
+      "averageFPS": 188.40803323244916,
+      "sampleCount": 179,
+      "statsEnd": {
+        "FPS": 166.52789306640625,
+        "ACTIVE_PARTICLES": 0,
+        "TOTAL_PARTICLES": 0,
+        "PARTICLES_STAMPED": 0,
+        "FLASHES_UPDATED": 0,
+        "SHADOWS_UPDATED": 0,
+        "ACTIVE_ENTITIES": 9003,
+        "TOTAL_ENTITIES": 11000,
+        "MSG_MS": 0,
+        "BUILD_ACTIVE_VISIBLE_MS": 0.01000000536441803,
+        "PARTICLE_PHYSICS_MS": 0
+      },
+      "statsSamplesAverage": {
+        "FPS": 188.40803323244916,
+        "ACTIVE_PARTICLES": 0,
+        "TOTAL_PARTICLES": 0,
+        "PARTICLES_STAMPED": 0,
+        "FLASHES_UPDATED": 0,
+        "SHADOWS_UPDATED": 0,
+        "ACTIVE_ENTITIES": 9003,
+        "TOTAL_ENTITIES": 11000,
+        "MSG_MS": 0,
+        "BUILD_ACTIVE_VISIBLE_MS": 0.002290502357083326,
+        "PARTICLE_PHYSICS_MS": 0.0007541896411160517
+      }
+    },
+    {
+      "id": "logic0",
+      "type": "logic",
+      "workerIndex": 0,
+      "frameRateIndex": 5,
+      "instantaneousFPS": 199.00497436523438,
+      "averageFPS": 175.84326862356517,
+      "sampleCount": 179,
+      "statsEnd": {
+        "FPS": 199.00497436523438,
+        "ENTITIES_PROCESSED": 9003,
+        "SYSTEMS_EXECUTED": 1,
+        "MSG_MS": 0
+      },
+      "statsSamplesAverage": {
+        "FPS": 175.84326862356517,
+        "ENTITIES_PROCESSED": 9003,
+        "SYSTEMS_EXECUTED": 1,
+        "MSG_MS": 0
+      }
+    },
+    {
+      "id": "preRender",
+      "type": "preRender",
+      "workerIndex": 0,
+      "frameRateIndex": 6,
+      "instantaneousFPS": 166.3893585205078,
+      "averageFPS": 188.09630640125806,
+      "sampleCount": 179,
+      "statsEnd": {
+        "FPS": 166.3893585205078,
+        "VISIBLE_ENTITIES": 2067,
+        "VISIBLE_PARTICLES": 0,
+        "VISIBLE_DECORATIONS": 0,
+        "SHADOWS_UPDATED": 0,
+        "RENDER_QUEUE_SIZE": 2067,
+        "MSG_MS": 0
+      },
+      "statsSamplesAverage": {
+        "FPS": 188.09630640125806,
+        "VISIBLE_ENTITIES": 2069.2960893854747,
+        "VISIBLE_PARTICLES": 0,
+        "VISIBLE_DECORATIONS": 0,
+        "SHADOWS_UPDATED": 0,
+        "RENDER_QUEUE_SIZE": 2069.2960893854747,
+        "MSG_MS": 0
+      }
+    }
+  ],
+  "workersByType": {
+    "spatial": [
+      {
+        "id": "spatial0",
+        "type": "spatial",
+        "workerIndex": 0,
+        "frameRateIndex": 0,
+        "instantaneousFPS": 83.1946792602539,
+        "averageFPS": 78.29955485679584,
+        "sampleCount": 179,
+        "statsEnd": {
+          "FPS": 83.1946792602539,
+          "NEIGHBOR_CHECKS": 66752,
+          "GRID_CELLS_CHECKED": 40735,
+          "ENTITIES_PROCESSED": 4636,
+          "REBUILD_MS": 0.5149999856948853,
+          "NEIGHBOR_MS": 7.46999979019165,
+          "MSG_MS": 0
+        },
+        "statsSamplesAverage": {
+          "FPS": 78.29955485679584,
+          "NEIGHBOR_CHECKS": 66407.64804469273,
+          "GRID_CELLS_CHECKED": 40603.31843575419,
+          "ENTITIES_PROCESSED": 4620.675977653631,
+          "REBUILD_MS": 0.4599162007177342,
+          "NEIGHBOR_MS": 7.468072630173667,
+          "MSG_MS": 0
+        }
+      },
+      {
+        "id": "spatial1",
+        "type": "spatial",
+        "workerIndex": 1,
+        "frameRateIndex": 1,
+        "instantaneousFPS": 83.47245025634766,
+        "averageFPS": 81.02668101561136,
+        "sampleCount": 179,
+        "statsEnd": {
+          "FPS": 83.47245025634766,
+          "NEIGHBOR_CHECKS": 61855,
+          "GRID_CELLS_CHECKED": 38916,
+          "ENTITIES_PROCESSED": 4369,
+          "REBUILD_MS": 0.32999998331069946,
+          "NEIGHBOR_MS": 8.675000190734863,
+          "MSG_MS": 0
+        },
+        "statsSamplesAverage": {
+          "FPS": 81.02668101561136,
+          "NEIGHBOR_CHECKS": 62239.581005586595,
+          "GRID_CELLS_CHECKED": 39029.01117318436,
+          "ENTITIES_PROCESSED": 4382.251396648045,
+          "REBUILD_MS": 0.44388268030555555,
+          "NEIGHBOR_MS": 7.2237988930174755,
+          "MSG_MS": 0
+        }
+      }
+    ],
+    "physics": [
+      {
+        "id": "physics",
+        "type": "physics",
+        "workerIndex": 0,
+        "frameRateIndex": 2,
+        "instantaneousFPS": 22.21481704711914,
+        "averageFPS": 21.88369000823804,
+        "sampleCount": 179,
+        "statsEnd": {
+          "FPS": 22.21481704711914,
+          "COLLISION_CHECKS": 612327,
+          "COLLISIONS_RESOLVED": 235565,
+          "COLLISION_PAIRS": 23555,
+          "CONSTRAINT_MS": 0,
+          "MSG_MS": 0,
+          "MOVE_MS": 2.6050000190734863,
+          "COLLISION_MS": 37.01499938964844
+        },
+        "statsSamplesAverage": {
+          "FPS": 21.88369000823804,
+          "COLLISION_CHECKS": 671143.8379888268,
+          "COLLISIONS_RESOLVED": 257672.16201117318,
+          "COLLISION_PAIRS": 23537.13966480447,
+          "CONSTRAINT_MS": 0,
+          "MSG_MS": 0,
+          "MOVE_MS": 2.722318440176255,
+          "COLLISION_MS": 38.76170399202315
+        }
+      }
+    ],
+    "renderer": [
+      {
+        "id": "renderer",
+        "type": "renderer",
+        "workerIndex": 0,
+        "frameRateIndex": 3,
+        "instantaneousFPS": 200.4008026123047,
+        "averageFPS": 185.32840775644314,
+        "sampleCount": 179,
+        "statsEnd": {
+          "FPS": 200.4008026123047,
+          "DRAW_CALLS": 0,
+          "VISIBLE_SPRITES": 2067,
+          "SPRITES_CREATED": 6000,
+          "DECORATION_SPRITES": 6000,
+          "VISIBLE_DECORATIONS": 0,
+          "VISIBLE_ENTITIES": 2067,
+          "VISIBLE_PARTICLES": 0,
+          "ACTIVE_DECORATIONS": 0,
+          "MSG_MS": 0
+        },
+        "statsSamplesAverage": {
+          "FPS": 185.32840775644314,
+          "DRAW_CALLS": 0.2737430167597765,
+          "VISIBLE_SPRITES": 2069.223463687151,
+          "SPRITES_CREATED": 6000,
+          "DECORATION_SPRITES": 6000,
+          "VISIBLE_DECORATIONS": 0,
+          "VISIBLE_ENTITIES": 2069.223463687151,
+          "VISIBLE_PARTICLES": 0,
+          "ACTIVE_DECORATIONS": 0,
+          "MSG_MS": 0
+        }
+      }
+    ],
+    "particle": [
+      {
+        "id": "particle",
+        "type": "particle",
+        "workerIndex": 0,
+        "frameRateIndex": 4,
+        "instantaneousFPS": 166.52789306640625,
+        "averageFPS": 188.40803323244916,
+        "sampleCount": 179,
+        "statsEnd": {
+          "FPS": 166.52789306640625,
+          "ACTIVE_PARTICLES": 0,
+          "TOTAL_PARTICLES": 0,
+          "PARTICLES_STAMPED": 0,
+          "FLASHES_UPDATED": 0,
+          "SHADOWS_UPDATED": 0,
+          "ACTIVE_ENTITIES": 9003,
+          "TOTAL_ENTITIES": 11000,
+          "MSG_MS": 0,
+          "BUILD_ACTIVE_VISIBLE_MS": 0.01000000536441803,
+          "PARTICLE_PHYSICS_MS": 0
+        },
+        "statsSamplesAverage": {
+          "FPS": 188.40803323244916,
+          "ACTIVE_PARTICLES": 0,
+          "TOTAL_PARTICLES": 0,
+          "PARTICLES_STAMPED": 0,
+          "FLASHES_UPDATED": 0,
+          "SHADOWS_UPDATED": 0,
+          "ACTIVE_ENTITIES": 9003,
+          "TOTAL_ENTITIES": 11000,
+          "MSG_MS": 0,
+          "BUILD_ACTIVE_VISIBLE_MS": 0.002290502357083326,
+          "PARTICLE_PHYSICS_MS": 0.0007541896411160517
+        }
+      }
+    ],
+    "logic": [
+      {
+        "id": "logic0",
+        "type": "logic",
+        "workerIndex": 0,
+        "frameRateIndex": 5,
+        "instantaneousFPS": 199.00497436523438,
+        "averageFPS": 175.84326862356517,
+        "sampleCount": 179,
+        "statsEnd": {
+          "FPS": 199.00497436523438,
+          "ENTITIES_PROCESSED": 9003,
+          "SYSTEMS_EXECUTED": 1,
+          "MSG_MS": 0
+        },
+        "statsSamplesAverage": {
+          "FPS": 175.84326862356517,
+          "ENTITIES_PROCESSED": 9003,
+          "SYSTEMS_EXECUTED": 1,
+          "MSG_MS": 0
+        }
+      }
+    ],
+    "preRender": [
+      {
+        "id": "preRender",
+        "type": "preRender",
+        "workerIndex": 0,
+        "frameRateIndex": 6,
+        "instantaneousFPS": 166.3893585205078,
+        "averageFPS": 188.09630640125806,
+        "sampleCount": 179,
+        "statsEnd": {
+          "FPS": 166.3893585205078,
+          "VISIBLE_ENTITIES": 2067,
+          "VISIBLE_PARTICLES": 0,
+          "VISIBLE_DECORATIONS": 0,
+          "SHADOWS_UPDATED": 0,
+          "RENDER_QUEUE_SIZE": 2067,
+          "MSG_MS": 0
+        },
+        "statsSamplesAverage": {
+          "FPS": 188.09630640125806,
+          "VISIBLE_ENTITIES": 2069.2960893854747,
+          "VISIBLE_PARTICLES": 0,
+          "VISIBLE_DECORATIONS": 0,
+          "SHADOWS_UPDATED": 0,
+          "RENDER_QUEUE_SIZE": 2069.2960893854747,
+          "MSG_MS": 0
+        }
+      }
+    ]
+  },
+  "metadata": {
+    "benchmark": "integrated-worker-benchmark",
+    "sceneName": "BallsScene",
+    "canvasWidth": 1920,
+    "canvasHeight": 1080,
+    "spatialWorkers": 2,
+    "logicWorkers": 1,
+    "worldWidth": 4000,
+    "worldHeight": 5000,
+    "warmupMs": 25000,
+    "durationMs": 18000,
+    "sampleIntervalMs": 100,
+    "sampleCount": 178,
+    "playwrightHeadless": false,
+    "chromiumBackgroundThrottleMitigation": true,
+    "chromiumExtraArgs": [
+      "--disable-background-timer-throttling",
+      "--disable-renderer-backgrounding",
+      "--disable-backgrounding-occluded-windows",
+      "--disable-features=CalculateNativeWinOcclusion"
+    ],
+    "benchmarkNote": "Headed runs: keep the Chromium window visible and not minimized for comparable FPS; hidden/occluded windows can still throttle despite launch flags."
+  }
+}

@@ -203,6 +203,7 @@ class PreRenderWorker extends AbstractWorker {
         this.visibleEntitiesCount = 0;
         this.visibleParticlesCount = 0;
         this.visibleDecorationsCount = 0;
+        this.skippedFramesThisFrame = 0;
 
         // ========================================
         // SUN / DIRECTIONAL LIGHT
@@ -600,20 +601,19 @@ class PreRenderWorker extends AbstractWorker {
      * Update method called each frame
      */
     update(deltaTime, dtRatio) {
+        this.skippedFramesThisFrame = 0;
+
         // ========================================
-        // DOUBLE BUFFER SYNC: Wait if needed
+        // DOUBLE BUFFER BACKPRESSURE: skip instead of waiting
         // ========================================
-        // Only wait if we're more than 1 frame ahead of pixi_worker
-        // This prevents overwriting a buffer pixi hasn't consumed yet
-        // pixi_worker NEVER waits - it always reads the latest available frame
+        // If pre-render is more than one frame ahead of pixi, do not block this
+        // worker. Skip producing this tick; pixi keeps rendering the latest
+        // complete queue until it catches up.
         if (this.renderQueueSync && this.renderQueueFrame > 0) {
             const consumedFrame = Atomics.load(this.renderQueueSync, 1);
-            // If we're about to write to a buffer pixi hasn't read yet, wait
-            // (this only happens if pre_render is >1 frame ahead)
             if (this.renderQueueFrame > consumedFrame + 1) {
-                // Wait for pixi to consume at least one more frame
-                // Timeout after 16ms to avoid deadlock (just skip sync if timeout)
-                Atomics.wait(this.renderQueueSync, 1, consumedFrame, 16);
+                this.skippedFramesThisFrame = 1;
+                return;
             }
         }
 
@@ -2556,6 +2556,7 @@ class PreRenderWorker extends AbstractWorker {
             this.stats[PRE_RENDER_STATS.SHADOWS_UPDATED] = this.shadowsUpdatedThisFrame;
             this.stats[PRE_RENDER_STATS.RENDER_QUEUE_SIZE] = this.renderQueueCount ? this.renderQueueCount[0] : 0;
             this.stats[PRE_RENDER_STATS.MSG_MS] = this.messageTimeThisFrame;
+            this.stats[PRE_RENDER_STATS.SKIPPED_FRAMES] = this.skippedFramesThisFrame;
         }
     }
 }

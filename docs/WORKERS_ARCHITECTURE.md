@@ -183,9 +183,9 @@ Reads visibility lists, advances animations, builds the render and shadow queues
 5. Build main render queue (Y-sorted, SoA packed via `RenderQueueLayout.js`). Uses heapsort for >256 items, insertion sort otherwise
 6. Build per-layer custom render queues (same Y-sort + heapsort fallback). Emits `console.warn` if a layer's queue overflows `maxItems`
 7. Build shadow/light render queue (respects `maxShadowsPerEntity` budget across sun + point lights)
-8. Write to alternating double buffer (`renderQueueFrame % 2`)
-9. Signal pixi via `Atomics.store` + `Atomics.notify` on `renderQueueSync`
-10. Wait if more than 1 frame ahead of pixi
+8. If more than 1 frame ahead of pixi, skip this pre-render tick and let pixi reuse the latest complete queue
+9. Write to alternating double buffer (`renderQueueFrame % 2`)
+10. Signal pixi via `Atomics.store` + `Atomics.notify` on `renderQueueSync`
 
 Visibility polygon generation uses bounded event/active pools. If those caps overflow, the engine now falls back to full-circle visibility for that light instead of emitting a silently corrupted polygon.
 

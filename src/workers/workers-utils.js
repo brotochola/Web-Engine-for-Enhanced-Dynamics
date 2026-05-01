@@ -128,6 +128,7 @@ export const PRE_RENDER_STATS = Object.freeze({
   SHADOWS_UPDATED: 4,
   RENDER_QUEUE_SIZE: 5,
   MSG_MS: 6,
+  SKIPPED_FRAMES: 7,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE: 16 * 4,
 });
@@ -320,6 +321,11 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
         key: 'RENDER_QUEUE_SIZE',
         format: (v) => formatNumber(v),
         label: 'Queue Size',
+      },
+      {
+        key: 'SKIPPED_FRAMES',
+        format: (v) => formatNumber(v),
+        label: 'Skipped',
       },
       {
         key: 'MSG_MS',
