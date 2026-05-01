@@ -539,7 +539,7 @@ WEED.ParticleEmitter.emit({
 const all = query([WEED.Transform, WEED.Collider]); // all matching slots, active or inactive
 const active = queryActiveEntities([WEED.Transform, WEED.SpriteRenderer]); // active only
 
-Built-in single-component entity queries are precomputed by the engine. Custom combinations still work too: if a combination is not precomputed, the first active query after an active-population change rebuilds a cached result, and repeated calls reuse that cached view until the next spawn/despawn invalidation. Hot custom queries may still emit a one-time warning so you can decide whether they should be promoted to `precomputedQueries`.
+Built-in single-component entity queries are precomputed by the engine. Active precomputed queries are published as complete snapshots by logic0: a reader may see a slightly stale result, but never a half-shifted list. Custom combinations still work too: if a combination is not precomputed, the first active query after an active-population change rebuilds a cached result, and repeated calls reuse that cached view until the next spawn/despawn invalidation. Hot custom queries may still emit a one-time warning so you can decide whether they should be promoted to `precomputedQueries`.
 
 // Public utility helpers intentionally exposed on WEED
 WEED.rng()

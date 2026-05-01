@@ -579,7 +579,7 @@ export class AbstractWorker {
 
       this._queryFn = queryFunctions.query;
       this._queryActiveEntitiesFn = queryFunctions.queryActiveEntities;
-      this._queryResultViews = queryFunctions._queryResultViews;
+      this._publishPrecomputedActiveQueries = queryFunctions.publishPrecomputedActiveQueries;
       this._precomputedQueries = queryFunctions._precomputedQueries;
       this._queryEntityMetadata = queryFunctions._entityMetadata;
 

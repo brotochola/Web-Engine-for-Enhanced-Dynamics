@@ -33,14 +33,26 @@ export const MAX_ENTITIES = 65535;
 /** Maximum pre-computed queries */
 export const MAX_PRECOMPUTED_QUERIES = 64;
 
+/** Complete snapshots per pre-computed active query (readers may lag without seeing torn writes) */
+const QUERY_SNAPSHOT_COUNT = 3;
+
 /** Bytes per entity type metadata entry (aligned to 16 bytes) */
 const ENTITY_TYPE_ENTRY_SIZE = 16;
 
 /** Bytes per query cache entry */
 const QUERY_CACHE_ENTRY_SIZE = 16;
 
-/** Bytes per query result buffer (count + max entities as Uint16) */
-const QUERY_RESULT_BUFFER_SIZE = 2 + MAX_ENTITIES * 2; // ~128KB per query
+/** Int32 header per query: [publishedSnapshot, publishedCount, publishedFrame, reserved] */
+const QUERY_RESULT_HEADER_INTS = 4;
+const QUERY_RESULT_HEADER_BYTES = QUERY_RESULT_HEADER_INTS * Int32Array.BYTES_PER_ELEMENT;
+
+/** Uint16 entries per snapshot: [count, entity0, entity1, ...] */
+const QUERY_RESULT_SNAPSHOT_ELEMENTS = 1 + MAX_ENTITIES;
+const QUERY_RESULT_SNAPSHOT_BYTES = QUERY_RESULT_SNAPSHOT_ELEMENTS * Uint16Array.BYTES_PER_ELEMENT;
+
+/** Bytes per pre-computed query: atomic header + complete active-list snapshots */
+const QUERY_RESULT_BUFFER_SIZE =
+  QUERY_RESULT_HEADER_BYTES + QUERY_SNAPSHOT_COUNT * QUERY_RESULT_SNAPSHOT_BYTES;
 
 /** Bytes in the shared active-query version counter */
 const QUERY_VERSION_BUFFER_SIZE = Int32Array.BYTES_PER_ELEMENT;
@@ -91,8 +103,8 @@ export function calculateQueryCacheSABSize(maxQueries) {
  * Calculate total size needed for queryResultsSAB
  * Layout:
  *   Per pre-computed query (QUERY_RESULT_BUFFER_SIZE bytes each):
- *     [0-1]   count (Uint16)
- *     [2+]    entity indices (Uint16 array, max 65535 entries)
+ *     [0-15]  Int32 header [publishedSnapshot, publishedCount, publishedFrame, reserved]
+ *     [16+]   QUERY_SNAPSHOT_COUNT snapshots, each [count, entity indices...]
  *
  * @param {number} numQueries - Number of pre-computed queries
  * @returns {number} Buffer size in bytes
@@ -138,8 +150,15 @@ function copySortedRangeToBuffer(activeEntitiesData, start, end, buffer, writeIn
   return writeIndex;
 }
 
-function copyActiveMatchesToBuffer(typeMask, entityMetadata, activeEntitiesData, buffer, getTypeActiveList) {
-  let writeIndex = 0;
+function copyActiveMatchesToBuffer(
+  typeMask,
+  entityMetadata,
+  activeEntitiesData,
+  buffer,
+  getTypeActiveList,
+  initialWriteIndex = 0
+) {
+  let writeIndex = initialWriteIndex;
   let mask = typeMask;
 
   while (mask !== 0n) {
@@ -181,6 +200,58 @@ function updateCachedQueryEntry(entry, count, version) {
     entry.subarray = count === 0 ? EMPTY_QUERY_RESULT : entry.buffer.subarray(0, count);
   }
   return entry.subarray;
+}
+
+function createQuerySnapshotViews(sab, queryIndex) {
+  const baseOffset = queryIndex * QUERY_RESULT_BUFFER_SIZE;
+  const header = new Int32Array(sab, baseOffset, QUERY_RESULT_HEADER_INTS);
+  const snapshots = [];
+
+  for (let i = 0; i < QUERY_SNAPSHOT_COUNT; i++) {
+    const snapshotOffset =
+      baseOffset + QUERY_RESULT_HEADER_BYTES + i * QUERY_RESULT_SNAPSHOT_BYTES;
+    snapshots.push(new Uint16Array(sab, snapshotOffset, QUERY_RESULT_SNAPSHOT_ELEMENTS));
+  }
+
+  return {
+    header,
+    snapshots,
+    cachedSnapshot: -1,
+    cachedCount: -1,
+    subarray: null,
+  };
+}
+
+function readPublishedQuerySnapshot(snapshotView) {
+  const snapshotIndex = Atomics.load(snapshotView.header, 0);
+  const count = Atomics.load(snapshotView.header, 1);
+
+  if (
+    snapshotView.cachedSnapshot === snapshotIndex &&
+    snapshotView.cachedCount === count &&
+    snapshotView.subarray !== null
+  ) {
+    return snapshotView.subarray;
+  }
+
+  const snapshot = snapshotView.snapshots[snapshotIndex] || snapshotView.snapshots[0];
+  const subarray = count === 0 ? EMPTY_QUERY_RESULT : snapshot.subarray(1, 1 + count);
+  snapshotView.cachedSnapshot = snapshotIndex;
+  snapshotView.cachedCount = count;
+  snapshotView.subarray = subarray;
+  return subarray;
+}
+
+function publishQuerySnapshot(snapshotView, count, frameNumber) {
+  const currentSnapshot = Atomics.load(snapshotView.header, 0);
+  const nextSnapshot = (currentSnapshot + 1) % QUERY_SNAPSHOT_COUNT;
+  const snapshot = snapshotView.snapshots[nextSnapshot];
+
+  snapshot[0] = count;
+  Atomics.store(snapshotView.header, 1, count);
+  Atomics.store(snapshotView.header, 2, frameNumber | 0);
+  // Publish the index last so readers never observe the new buffer before its data/count.
+  Atomics.store(snapshotView.header, 0, nextSnapshot);
 }
 
 function warnNonPrecomputedQueryOnce(warnedQueries, queryMask, componentClasses) {
@@ -502,14 +573,7 @@ export class QuerySystem {
     this._cachedPrecomputedSubarrayViews = [];
 
     for (let i = 0; i < this.precomputedQueries.length; i++) {
-      const offset = i * QUERY_RESULT_BUFFER_SIZE;
-      const view = new Uint16Array(this.queryResultsSAB, offset, 1 + MAX_ENTITIES);
-      view[0] = 0; // Initialize count to 0
-      this.queryResultViews.push(view);
-      this._cachedPrecomputedSubarrayViews.push({
-        count: -1,
-        subarray: null,
-      });
+      this.queryResultViews.push(createQuerySnapshotViews(this.queryResultsSAB, i));
     }
   }
 
@@ -657,17 +721,7 @@ export class QuerySystem {
     const queryIndex = this.queryMaskToIndex.get(queryMask);
 
     if (queryIndex !== undefined) {
-      // Return view into pre-computed result buffer
-      const view = this.queryResultViews[queryIndex];
-      const count = view[0];
-      const cached = this._cachedPrecomputedSubarrayViews[queryIndex];
-      if (cached.count === count && cached.subarray !== null) {
-        return cached.subarray;
-      }
-      const subarray = count === 0 ? EMPTY_QUERY_RESULT : view.subarray(1, 1 + count);
-      cached.count = count;
-      cached.subarray = subarray;
-      return subarray;
+      return readPublishedQuerySnapshot(this.queryResultViews[queryIndex]);
     }
 
     // Not pre-computed - compute on demand from active entity lists.
@@ -735,6 +789,29 @@ export class QuerySystem {
     const meta = this.entityMetadata[typeIndex];
     return meta?.entityClass?._activeList || null;
   }
+
+  publishPrecomputedActiveQueries(frameNumber = 0) {
+    const activeData = GameObject.activeEntitiesData;
+
+    for (let q = 0; q < this.precomputedQueries.length; q++) {
+      const query = this.precomputedQueries[q];
+      const snapshotView = this.queryResultViews[q];
+      const writeSnapshot =
+        (Atomics.load(snapshotView.header, 0) + 1) % QUERY_SNAPSHOT_COUNT;
+      const buffer = snapshotView.snapshots[writeSnapshot];
+      const count =
+        copyActiveMatchesToBuffer(
+          query.typeMask,
+          this.entityMetadata,
+          activeData,
+          buffer,
+          (typeIndex) => this._getTypeActiveList(typeIndex),
+          1
+        ) - 1;
+      publishQuerySnapshot(snapshotView, count, frameNumber);
+    }
+  }
+
   /**
    * Serialize for sending to workers via postMessage
    */
@@ -847,17 +924,8 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
 
   // Create result views for pre-computed queries
   const queryResultViews = precomputedQueries.map((q, i) => {
-    const offset = i * QUERY_RESULT_BUFFER_SIZE;
-    return new Uint16Array(buffers.queryResultsSAB, offset, 1 + MAX_ENTITIES);
+    return createQuerySnapshotViews(buffers.queryResultsSAB, i);
   });
-
-  // OPTIMIZATION: Cache subarray views to avoid GC pressure
-  // Each entry stores { count, subarray } for the last returned view
-  // Only recreate the subarray when count changes
-  const cachedSubarrayViews = precomputedQueries.map(() => ({
-    count: -1, // -1 means never cached
-    subarray: null,
-  }));
 
   // OPTIMIZATION: Cache queryMask generation to avoid repeated BigInt allocations
   // Map: componentIds string (sorted, comma-joined) → queryMask (BigInt)
@@ -992,21 +1060,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
     const queryIndex = queryMaskToIndex.get(queryMask);
 
     if (queryIndex !== undefined) {
-      const view = queryResultViews[queryIndex];
-      const count = view[0];
-
-      // OPTIMIZATION: Reuse cached subarray if count hasn't changed
-      // This avoids creating a new TypedArray view object every call
-      const cached = cachedSubarrayViews[queryIndex];
-      if (cached.count === count && cached.subarray !== null) {
-        return cached.subarray;
-      }
-
-      // Count changed - create new subarray and cache it
-      const subarray = count === 0 ? EMPTY_QUERY_RESULT : view.subarray(1, 1 + count);
-      cached.count = count;
-      cached.subarray = subarray;
-      return subarray;
+      return readPublishedQuerySnapshot(queryResultViews[queryIndex]);
     }
 
     // Fallback: compute from activeEntitiesData (reuse buffer to avoid GC pressure)
@@ -1063,8 +1117,25 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
   return {
     query,
     queryActiveEntities,
-    // Expose internals for logic worker active-query maintenance
-    _queryResultViews: queryResultViews,
+    publishPrecomputedActiveQueries(frameNumber = 0) {
+      for (let q = 0; q < precomputedQueries.length; q++) {
+        const queryDef = precomputedQueries[q];
+        const snapshotView = queryResultViews[q];
+        const writeSnapshot =
+          (Atomics.load(snapshotView.header, 0) + 1) % QUERY_SNAPSHOT_COUNT;
+        const buffer = snapshotView.snapshots[writeSnapshot];
+        const count =
+          copyActiveMatchesToBuffer(
+            queryDef.typeMask,
+            entityMetadata,
+            activeEntitiesData,
+            buffer,
+            getTypeActiveList,
+            1
+          ) - 1;
+        publishQuerySnapshot(snapshotView, count, frameNumber);
+      }
+    },
     _precomputedQueries: precomputedQueries,
     _entityMetadata: entityMetadata,
   };

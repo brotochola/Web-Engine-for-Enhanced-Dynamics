@@ -339,6 +339,10 @@ class LogicWorker extends AbstractWorker {
     if (activeQueryPopulationChanged && this.queryVersionData) {
       Atomics.add(this.queryVersionData, 0, 1);
     }
+
+    if (activeQueryPopulationChanged && this._publishPrecomputedActiveQueries) {
+      this._publishPrecomputedActiveQueries(this.frameNumber);
+    }
   }
 
   /**
@@ -347,12 +351,11 @@ class LogicWorker extends AbstractWorker {
   _processSpawnUpdates(updates) {
     let changed = false;
     for (const update of updates) {
-      const { entityIndex, entityType, EntityClass } = update;
+      const { entityIndex, EntityClass } = update;
       // Only add if entity is still active (wasn't despawned in same frame)
       if (Transform.active[entityIndex] === 1) {
         GameObject._addToActiveEntities(entityIndex);
         GameObject._addToTypeActiveList(EntityClass, entityIndex);
-        GameObject._addToMatchingQueries(entityIndex, entityType);
         changed = true;
       }
     }
@@ -370,8 +373,7 @@ class LogicWorker extends AbstractWorker {
     }
 
     for (const update of updates) {
-      const { entityIndex, entityType, EntityClass } = update;
-      GameObject._removeFromMatchingQueries(entityIndex, entityType);
+      const { entityIndex, EntityClass } = update;
       GameObject._removeFromActiveEntities(entityIndex);
       GameObject._removeFromTypeActiveList(EntityClass, entityIndex);
     }

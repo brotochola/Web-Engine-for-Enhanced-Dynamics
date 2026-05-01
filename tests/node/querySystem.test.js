@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { QuerySystem, createWorkerQueryFunctions } from '../../src/core/QuerySystem.js';
+import {
+  QuerySystem,
+  calculateQueryResultsSABSize,
+  createWorkerQueryFunctions,
+} from '../../src/core/QuerySystem.js';
 import { GameObject } from '../../src/core/gameObject.js';
 
 class QueryTestComponentA {}
@@ -219,6 +223,57 @@ test('main-thread fallback queryActiveEntities caches until query version change
   } finally {
     console.warn = previousWarn;
     GameObject.activeEntitiesData = previousActiveEntitiesData;
+    restoreWorkerActiveListGlobals(installed.previous);
+  }
+});
+
+test('precomputed active queries read only published complete snapshots', () => {
+  const installed = installWorkerActiveListGlobals();
+  const previousWarn = console.warn;
+  console.warn = () => {};
+
+  try {
+    const querySystem = new QuerySystem();
+    const metadata = createFallbackMetadata();
+    querySystem.entityMetadata = metadata.map((meta) => ({
+      ...meta,
+      entityClass: globalThis[meta.className],
+    }));
+
+    const queryMask = 3n;
+    const typeMask = 3n;
+    querySystem.precomputedQueries = [{
+      name: 'QueryTestComponentA+QueryTestComponentB',
+      componentClasses: [QueryTestComponentA, QueryTestComponentB],
+      queryMask,
+      typeMask,
+      resultOffset: 0,
+    }];
+    querySystem.queryMaskToIndex.set(queryMask, 0);
+    querySystem.queryToTypeMask.set(queryMask, typeMask);
+    querySystem.queryResultsSAB = new SharedArrayBuffer(calculateQueryResultsSABSize(1));
+    querySystem._initializeQueryResultViews();
+
+    assert.deepEqual(
+      Array.from(querySystem.queryActiveEntities([QueryTestComponentA, QueryTestComponentB])),
+      []
+    );
+
+    querySystem.publishPrecomputedActiveQueries(1);
+    const first = querySystem.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
+    assert.deepEqual(Array.from(first), [2, 7, 999, 1001, 1500]);
+
+    globalThis.QueryTestEnemy._activeList.set([3, 4, 8, 998]);
+    globalThis.QueryTestBoss._activeList.set([2, 1002, 1501]);
+
+    const staleButComplete = querySystem.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
+    assert.deepEqual(Array.from(staleButComplete), [2, 7, 999, 1001, 1500]);
+
+    querySystem.publishPrecomputedActiveQueries(2);
+    const published = querySystem.queryActiveEntities([QueryTestComponentA, QueryTestComponentB]);
+    assert.deepEqual(Array.from(published), [4, 8, 998, 1002, 1501]);
+  } finally {
+    console.warn = previousWarn;
     restoreWorkerActiveListGlobals(installed.previous);
   }
 });

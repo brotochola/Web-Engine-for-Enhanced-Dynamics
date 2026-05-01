@@ -201,6 +201,13 @@ export class GameObject {
     bumpActiveQueryVersion(this._getWorkerContext());
   }
 
+  static _publishPrecomputedActiveQueries() {
+    const worker = this._getWorkerContext();
+    if (typeof worker?._publishPrecomputedActiveQueries === 'function') {
+      worker._publishPrecomputedActiveQueries(worker.frameNumber || 0);
+    }
+  }
+
   static _forwardDespawnAllToLogic0(EntityClass) {
     if (typeof self === 'undefined') return null;
 
@@ -2146,6 +2153,7 @@ export class GameObject {
     // This path mutates active/query lists immediately instead of routing through
     // logic0's queued list-update pipeline, so it must invalidate fallback caches directly.
     GameObject._bumpActiveQueryVersion();
+    GameObject._publishPrecomputedActiveQueries();
 
     // Phase 4: Reset free list with interleaved ordering (O(N) bulk reinit)
     if (EntityClass.freeList) {

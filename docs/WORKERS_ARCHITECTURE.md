@@ -110,7 +110,7 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 | `inputData` | Read | Keyboard held state + press counters (shared across all workers via `Keyboard`) |
 | `mouseData` | Read | Mouse position + buttons |
 | `cameraData` | Read/**Write** | Camera state SAB `[zoom,x,y,followX,followY,targetZoom]` (prefer single writer policy) |
-| `queryResultsSAB` | Read/**Write** (logic 0 maintenance) | Pre-computed active query results shared with all workers |
+| `queryResultsSAB` | Read, **published write** (logic 0) | Triple-buffered pre-computed active query snapshots |
 | `queryVersionSAB` | Read/**Write** (logic 0 maintenance) | Shared invalidation counter for cached non-precomputed active queries |
 | `constraintData` | **Write** | Create constraints via `Constraint.add` |
 | `constraintFreeList/Top` | Read/**Write** | Pop free constraint slots |
@@ -122,8 +122,10 @@ Where your game code runs. Every entity's `tick()` executes here. Also handles c
 - Receives spawn/despawn messages from main thread
 - Receives `listUpdates` from logic workers 1..N
 - Runs `processListUpdates()` before any ticks (despawns first, spawns second)
-- Updates `activeEntitiesData`, per-type active lists, and pre-computed active query results
+- Updates `activeEntitiesData` and per-type active lists, then publishes complete pre-computed active query snapshots
 - All logic workers call `Mouse.updateEdgeFlags()` before entity ticks (per-worker edge detection for `isButton0Pressed` etc.)
+
+**Active query snapshots:** pre-computed `queryActiveEntities()` results use complete published snapshots in `queryResultsSAB`. Readers may see a slightly stale active-query result, but they do not observe logic0 shifting the same list in place.
 
 ---
 
