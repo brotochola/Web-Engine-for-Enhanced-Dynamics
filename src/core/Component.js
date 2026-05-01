@@ -5,7 +5,7 @@
 // Subclasses can define custom getters/setters for any property in ARRAY_SCHEMA.
 // These custom accessors will be preserved and NOT overwritten by auto-generation.
 //
-// Example - Adding a custom setter to Collider that auto-computes mass:
+// Example - Adding a custom setter to Collider that syncs RigidBody mass:
 //
 //   class Collider extends Component {
 //     static ARRAY_SCHEMA = { radius: Float32Array, ... };
@@ -16,7 +16,7 @@
 //       Collider.radius[this.index] = value;
 //       // Custom logic: also update RigidBody mass
 //       if (RigidBody.active[this.index]) {
-//         updateMassFromCircle(this.index, value, RigidBody);
+//         RigidBody.syncMassFromCollider(this.index);
 //       }
 //     }
 //   }

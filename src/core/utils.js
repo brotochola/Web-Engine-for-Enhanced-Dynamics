@@ -816,14 +816,14 @@ export function computeBoxMass(width, height) {
 
 /**
  * Update RigidBody mass arrays from circle radius
- * Called by Collider.radius setter to auto-compute mass when radius changes.
+ * Low-level helper used by RigidBody.syncMassFromCollider().
  *
  * @param {number} index - Entity index in component arrays
  * @param {number} radius - Circle radius
  * @param {Object} RigidBody - RigidBody component class with mass/invMass arrays
  *
  * @example
- *   // In Collider.js radius setter:
+ *   // In RigidBody.syncMassFromCollider():
  *   updateMassFromCircle(this.index, value, RigidBody);
  */
 export function updateMassFromCircle(index, radius, RigidBody) {
@@ -836,7 +836,7 @@ export function updateMassFromCircle(index, radius, RigidBody) {
 
 /**
  * Update RigidBody mass arrays from box dimensions
- * Called by Collider.width/height setters to auto-compute mass when size changes.
+ * Low-level helper used by RigidBody.syncMassFromCollider().
  *
  * @param {number} index - Entity index in component arrays
  * @param {number} width - Box width
@@ -844,7 +844,7 @@ export function updateMassFromCircle(index, radius, RigidBody) {
  * @param {Object} RigidBody - RigidBody component class with mass/invMass arrays
  *
  * @example
- *   // In Collider.js width setter:
+ *   // In RigidBody.syncMassFromCollider():
  *   updateMassFromBox(this.index, value, existingHeight, RigidBody);
  */
 export function updateMassFromBox(index, width, height, RigidBody) {

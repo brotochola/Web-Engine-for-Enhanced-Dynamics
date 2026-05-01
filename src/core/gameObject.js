@@ -13,7 +13,7 @@ import { LightOccluder } from '../components/LightOccluder.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { Layer } from './Layer.js';
 import { Grid } from './Grid.js';
-import { collectComponents, cantorPair, updateMassFromCircle, updateMassFromBox, distanceSq2D } from './utils.js';
+import { collectComponents, cantorPair, distanceSq2D } from './utils.js';
 import {
   addToActiveEntities,
   removeFromActiveEntities,
@@ -668,7 +668,7 @@ export class GameObject {
   // COLLIDER PROPERTIES
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /** Collision radius - also auto-computes mass from area (π * r²) */
+  /** Collision radius - also syncs RigidBody mass from collider geometry */
   get radius() {
     if (!this._hasComponents.Collider) return 0;
     return Collider.radius[this.index];
@@ -678,11 +678,11 @@ export class GameObject {
     if (!this._hasComponents.Collider) return;
     Collider.radius[this.index] = value;
     if (this._hasComponents.RigidBody) {
-      updateMassFromCircle(this.index, value, RigidBody);
+      RigidBody.syncMassFromCollider(this.index);
     }
   }
 
-  /** Collider width - also auto-computes mass from area (width * height) */
+  /** Collider width - also syncs RigidBody mass from collider geometry */
   get width() {
     if (!this._hasComponents.Collider) return 0;
     return Collider.width[this.index];
@@ -691,12 +691,11 @@ export class GameObject {
     if (!this._hasComponents.Collider) return;
     Collider.width[this.index] = value;
     if (this._hasComponents.RigidBody) {
-      const h = Collider.height[this.index] || 1;
-      updateMassFromBox(this.index, value, h, RigidBody);
+      RigidBody.syncMassFromCollider(this.index);
     }
   }
 
-  /** Collider height - also auto-computes mass from area (width * height) */
+  /** Collider height - also syncs RigidBody mass from collider geometry */
   get height() {
     if (!this._hasComponents.Collider) return 0;
     return Collider.height[this.index];
@@ -705,8 +704,7 @@ export class GameObject {
     if (!this._hasComponents.Collider) return;
     Collider.height[this.index] = value;
     if (this._hasComponents.RigidBody) {
-      const w = Collider.width[this.index] || 1;
-      updateMassFromBox(this.index, w, value, RigidBody);
+      RigidBody.syncMassFromCollider(this.index);
     }
   }
 
@@ -1920,38 +1918,7 @@ export class GameObject {
     // Dynamic bodies with no valid collider-derived mass fall back to unit mass once here,
     // instead of paying `invMass || 1` in physics hot loops every frame.
     if (has.RigidBody && RigidBody.active[i]) {
-      const isStatic = RigidBody.static[i];
-
-      if (isStatic) {
-        RigidBody.invMass[i] = 0;
-      } else if (RigidBody.mass[i] === 0) {
-        let massInitialized = false;
-
-        if (has.Collider && Collider.active[i]) {
-          const shapeType = Collider.shapeType[i];
-          if (shapeType === 0) {
-            // Circle
-            const radius = Collider.radius[i];
-            if (radius > 0) {
-              updateMassFromCircle(i, radius, RigidBody);
-              massInitialized = true;
-            }
-          } else if (shapeType === 1) {
-            // Box
-            const width = Collider.width[i];
-            const height = Collider.height[i];
-            if (width > 0 && height > 0) {
-              updateMassFromBox(i, width, height, RigidBody);
-              massInitialized = true;
-            }
-          }
-        }
-
-        if (!massInitialized) {
-          RigidBody.mass[i] = 1;
-          RigidBody.invMass[i] = 1;
-        }
-      }
+      RigidBody.syncMassFromCollider(i);
     }
 
     // LIFECYCLE: Call onSpawned() for INSTANCE-level initialization

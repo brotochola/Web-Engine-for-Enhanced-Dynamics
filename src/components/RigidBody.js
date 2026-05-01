@@ -55,6 +55,74 @@ export class RigidBody extends Component {
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
+   * Recompute mass and inverse mass from the entity's Collider.
+   *
+   * Dynamic bodies with invalid or missing collider geometry become unit-mass
+   * bodies once here. Static bodies keep `invMass = 0` even if their collider
+   * dimensions change later.
+   *
+   * @param {number} index - Entity index
+   * @returns {boolean} True when collider geometry supplied mass, false when unit mass was used
+   */
+  static syncMassFromCollider(index) {
+    if (!RigidBody.active || !RigidBody.active[index]) return false;
+
+    const isStatic = RigidBody.static[index] !== 0;
+    let massInitialized = false;
+
+    if (Collider.active && Collider.active[index]) {
+      const shapeType = Collider.shapeType[index];
+      if (shapeType === 0) {
+        const radius = Collider.radius[index];
+        if (radius > 0) {
+          if (isStatic) {
+            RigidBody.mass[index] = Math.PI * radius * radius;
+            RigidBody.invMass[index] = 0;
+          } else {
+            updateMassFromCircle(index, radius, RigidBody);
+          }
+          massInitialized = true;
+        }
+      } else if (shapeType === 1) {
+        const width = Collider.width[index];
+        const height = Collider.height[index];
+        if (width > 0 && height > 0) {
+          if (isStatic) {
+            RigidBody.mass[index] = width * height;
+            RigidBody.invMass[index] = 0;
+          } else {
+            updateMassFromBox(index, width, height, RigidBody);
+          }
+          massInitialized = true;
+        }
+      }
+    }
+
+    if (!massInitialized) {
+      const currentMass = RigidBody.mass[index];
+      if (isStatic) {
+        if (!(currentMass > 0)) RigidBody.mass[index] = 0;
+        RigidBody.invMass[index] = 0;
+      } else if (currentMass > 0) {
+        RigidBody.invMass[index] = 1 / currentMass;
+      } else {
+        RigidBody.mass[index] = 1;
+        RigidBody.invMass[index] = 1;
+      }
+    }
+
+    return massInitialized;
+  }
+
+  /**
+   * Instance convenience wrapper for custom setup/onSpawned code.
+   * @returns {boolean}
+   */
+  syncMassFromCollider() {
+    return RigidBody.syncMassFromCollider(this.index);
+  }
+
+  /**
    * Static property - custom setter that sets invMass = 0 for static entities
    * Static entities have infinite mass (invMass = 0) and don't move
    *
@@ -68,39 +136,8 @@ export class RigidBody extends Component {
     // 1. Store the static value
     RigidBody.static[this.index] = value ? 1 : 0;
 
-    // 2. If static, set invMass to 0 (infinite mass - entity won't move)
-    //    If dynamic, recalculate mass from collider if available
-    if (value) {
-      RigidBody.invMass[this.index] = 0;
-    } else {
-      // Entity is now dynamic - recalculate mass from collider if it exists
-      let massInitialized = false;
-      if (Collider.active && Collider.active[this.index]) {
-        const shapeType = Collider.shapeType[this.index];
-        if (shapeType === 0) {
-          // Circle
-          const radius = Collider.radius[this.index];
-          if (radius > 0) {
-            updateMassFromCircle(this.index, radius, RigidBody);
-            massInitialized = true;
-          }
-        } else if (shapeType === 1) {
-          // Box
-          const width = Collider.width[this.index];
-          const height = Collider.height[this.index];
-          if (width > 0 && height > 0) {
-            updateMassFromBox(this.index, width, height, RigidBody);
-            massInitialized = true;
-          }
-        }
-      }
-
-      // Dynamic bodies without collider-derived mass behave like unit-mass objects.
-      if (!massInitialized) {
-        RigidBody.mass[this.index] = 1;
-        RigidBody.invMass[this.index] = 1;
-      }
-    }
+    // 2. Re-sync from collider geometry; static bodies preserve invMass = 0.
+    RigidBody.syncMassFromCollider(this.index);
   }
 
 }

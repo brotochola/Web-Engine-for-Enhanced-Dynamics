@@ -45,11 +45,19 @@ Collision response uses **inverse mass** directly (`invMass[i]`, `invMass[j]`) *
 **Invariant:** For every **dynamic** body that participates in physics, `mass` and `invMass` must be valid after spawn / `setup()`:
 
 - Mass derived from collider geometry when a collider can supply it.
-- Otherwise **unit mass** (`mass = 1`, `invMass = 1`) is set once in `GameObject` spawn logic and when toggling rigidbody mode in `RigidBody`.
+- Otherwise an explicit custom `mass` is respected, or **unit mass** (`mass = 1`, `invMass = 1`) is set once by `RigidBody.syncMassFromCollider()`.
 
 **Why:** Removes a branch and implicit default from the hottest collision code; keeps behavior explicit.
 
-**Static bodies:** `invMass` is `0` (infinite mass). Ensure static flags stay consistent with `RigidBody.static`.
+**Static bodies:** `invMass` is `0` (infinite mass). Collider size changes also go through `RigidBody.syncMassFromCollider()`, so a static body keeps `invMass = 0` even if its collider geometry changes later.
+
+If custom setup changes collider geometry through direct typed-array writes instead of the `Collider` / `GameObject` setters, call:
+
+```javascript
+this.rigidBody.syncMassFromCollider();
+// or
+RigidBody.syncMassFromCollider(entityIndex);
+```
 
 ---
 

@@ -19,7 +19,6 @@
 
 import { Component } from '../core/Component.js';
 import { RigidBody } from './RigidBody.js';
-import { updateMassFromCircle, updateMassFromBox } from '../core/utils.js';
 
 class Collider extends Component {
   // Array schema - defines all collision properties
@@ -71,11 +70,8 @@ class Collider extends Component {
     // 1. Store the radius value in the shared array
     Collider.radius[this.index] = value;
 
-    // 2. Auto-compute mass from circle area (π * r²) if entity has RigidBody
-    //    Check RigidBody.active exists (arrays initialized) AND entity has component
-    if (RigidBody.active && RigidBody.active[this.index]) {
-      updateMassFromCircle(this.index, value, RigidBody);
-    }
+    // 2. Let RigidBody enforce dynamic/static mass invariants from collider geometry.
+    RigidBody.syncMassFromCollider(this.index);
   }
 
   /**
@@ -93,12 +89,8 @@ class Collider extends Component {
     // 1. Store the width value
     Collider.width[this.index] = value;
 
-    // 2. Recompute mass from box area (width * height)
-    //    Use existing height, default to 1 if not set yet
-    if (RigidBody.active && RigidBody.active[this.index]) {
-      const h = Collider.height[this.index] || 1;
-      updateMassFromBox(this.index, value, h, RigidBody);
-    }
+    // 2. Let RigidBody enforce dynamic/static mass invariants from collider geometry.
+    RigidBody.syncMassFromCollider(this.index);
   }
 
   /**
@@ -111,10 +103,7 @@ class Collider extends Component {
   set height(value) {
     Collider.height[this.index] = value;
 
-    if (RigidBody.active && RigidBody.active[this.index]) {
-      const w = Collider.width[this.index] || 1;
-      updateMassFromBox(this.index, w, value, RigidBody);
-    }
+    RigidBody.syncMassFromCollider(this.index);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
