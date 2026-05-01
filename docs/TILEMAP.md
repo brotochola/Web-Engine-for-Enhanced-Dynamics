@@ -73,9 +73,11 @@ tilemap.getTileId(worldX, worldY, 'walls');
 // { sidewalk: 0, walls: 42, grass: 7 }
 const ids = tilemap.getAllTileIds(worldX, worldY);
 
-// Coordinate conversion (pre-allocated return objects, no allocation)
-const { tileX, tileY } = tilemap.worldToTile(worldX, worldY);
-const { x, y } = tilemap.tileToWorld(tileX, tileY);
+// Coordinate conversion (caller-owned output objects, no allocation)
+const tile = { tileX: 0, tileY: 0 };
+const world = { x: 0, y: 0 };
+tilemap.worldToTile(worldX, worldY, tile);
+tilemap.tileToWorld(tile.tileX, tile.tileY, world);
 ```
 
 ### TileMapLayer Methods
@@ -207,7 +209,7 @@ Each `TileMapLayer.data` is an `Int32Array` view into the corresponding region. 
 
 ## Performance Notes
 
-- **Zero allocation queries**: `getAllTileIds()`, `worldToTile()`, `tileToWorld()` return pre-allocated objects. Do not store references to the returned objects across frames.
+- **Zero allocation queries**: `getAllTileIds()` returns a borrowed pre-allocated object; copy values if you need to store them. `worldToTile()` and `tileToWorld()` require caller-owned output objects so stored references stay safe.
 - **Direct property access**: `TileMap.myTilemap.sidewalk` is a V8 hidden-class property read. No dictionary lookup, no string hashing.
 - **No Atomics**: Tile data is immutable after init. Plain typed array reads are sufficient.
 - **Tileset images not in BigAtlas**: `@pixi/tilemap` manages its own texture UVs. Merging tileset PNGs into the BigAtlas would break UV assumptions with no perf benefit.

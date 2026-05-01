@@ -472,9 +472,11 @@ TileMap.myTilemap.getTileId(worldX, worldY, 'walls')
 const ids = TileMap.myTilemap.getAllTileIds(worldX, worldY)
 // ids = { grass: 7, sidewalk: 0, walls: 42 }
 
-// Coordinate helpers (pre-allocated return objects)
-const { tileX, tileY } = TileMap.myTilemap.worldToTile(worldX, worldY)
-const { x, y } = TileMap.myTilemap.tileToWorld(tileX, tileY)
+// Coordinate helpers (caller-owned output objects)
+const tile = { tileX: 0, tileY: 0 }
+const world = { x: 0, y: 0 }
+TileMap.myTilemap.worldToTile(worldX, worldY, tile)
+TileMap.myTilemap.tileToWorld(tile.tileX, tile.tileY, world)
 
 // Layer inspection
 TileMap.myTilemap.getLayerNames()  // ['grass', 'sidewalk', 'walls']

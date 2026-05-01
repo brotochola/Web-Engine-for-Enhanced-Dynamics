@@ -218,28 +218,30 @@ export class TileMap {
 
     /**
      * Convert world pixel coordinates to tile grid coordinates.
-     * Returns a pre-allocated object -- no allocation per call.
+     * Writes into caller-owned output storage to avoid borrowed-object footguns.
      * @param {number} worldX
      * @param {number} worldY
-     * @returns {{tileX: number, tileY: number}}
+     * @param {{tileX:number, tileY:number}} out
+     * @returns {{tileX: number, tileY: number}} The same `out` object.
      */
-    worldToTile(worldX, worldY) {
-        TileMap._tileCoord.tileX = (worldX / this.tileWidth) | 0;
-        TileMap._tileCoord.tileY = (worldY / this.tileHeight) | 0;
-        return TileMap._tileCoord;
+    worldToTile(worldX, worldY, out) {
+        out.tileX = (worldX / this.tileWidth) | 0;
+        out.tileY = (worldY / this.tileHeight) | 0;
+        return out;
     }
 
     /**
      * Convert tile grid coordinates to world pixel coordinates (center of tile).
-     * Returns a pre-allocated object -- no allocation per call.
+     * Writes into caller-owned output storage to avoid borrowed-object footguns.
      * @param {number} tileX
      * @param {number} tileY
-     * @returns {{x: number, y: number}}
+     * @param {{x:number, y:number}} out
+     * @returns {{x: number, y: number}} The same `out` object.
      */
-    tileToWorld(tileX, tileY) {
-        TileMap._worldCoord.x = tileX * this.tileWidth + this.tileWidth * 0.5;
-        TileMap._worldCoord.y = tileY * this.tileHeight + this.tileHeight * 0.5;
-        return TileMap._worldCoord;
+    tileToWorld(tileX, tileY, out) {
+        out.x = tileX * this.tileWidth + this.tileWidth * 0.5;
+        out.y = tileY * this.tileHeight + this.tileHeight * 0.5;
+        return out;
     }
 
     // ========================================
@@ -335,10 +337,6 @@ export class TileMap {
             this[tilemap.name] = tilemap;
         }
     }
-
-    // Pre-allocated coord objects shared across all instances (one per thread)
-    static _tileCoord = { tileX: 0, tileY: 0 };
-    static _worldCoord = { x: 0, y: 0 };
 
     // ========================================
     // INITIALIZATION (main thread) - from loaded Tiled JSON
