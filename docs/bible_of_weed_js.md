@@ -603,6 +603,7 @@ See `src/core/ConfigDefaults.js` for the canonical defaults.
 - Keep `collider.visualRange` tight to reduce neighbor pressure.
 - Use `tickInterval > 1` for heavy AI and enable `logic.staggeredUpdates`.
 - Use particles/decorations for short-lived or static visuals instead of full entities.
+- Particle and bullet pools are finite. Exhaustion warnings are one-shot per scene/init; increase `particle.maxParticles` or `bullet.maxBullets` when they appear.
 - Sound slots are finite (default 64). One-shot SFX are cheap; don't forget `stop()` on loops.
 - Spatial sound culls anything a full viewport-width outside the camera. Keep that in mind for ambient loops.
 - Only add `CollisionListener` / `CameraInOutListener` to entity types that actually use the callbacks. Without the tag, the engine skips all related per-pair or per-entity work.

@@ -10,6 +10,8 @@ import { SharedAtomicPool } from './SharedAtomicPool.js';
 
 export class BulletPool extends SharedAtomicPool {
   static poolName = 'BulletPool';
+  static _warnedPoolExhausted = false;
+  static _warnedMissingTextures = new Set();
 
   static get maxBullets() {
     return this.maxCount;
@@ -17,6 +19,8 @@ export class BulletPool extends SharedAtomicPool {
 
   static initialize(maxBullets) {
     super.initialize(maxBullets);
+    this._warnedPoolExhausted = false;
+    this._warnedMissingTextures.clear();
   }
 
   /**
@@ -43,7 +47,15 @@ export class BulletPool extends SharedAtomicPool {
    */
   static spawn(config) {
     const i = this.acquireIndex();
-    if (i < 0) return -1;
+    if (i < 0) {
+      if (!this._warnedPoolExhausted) {
+        this._warnedPoolExhausted = true;
+        console.warn(
+          `BulletPool.spawn: pool exhausted (maxBullets=${this.maxCount}). Increase bullet.maxBullets.`
+        );
+      }
+      return -1;
+    }
 
     const x = BulletComponent.x;
     const y = BulletComponent.y;
@@ -86,7 +98,17 @@ export class BulletPool extends SharedAtomicPool {
 
     let texId = 0;
     if (config.texture) {
-      texId = SpriteSheetRegistry.getAnimationIndex('bigAtlas', config.texture) ?? 0;
+      const resolvedTextureId = SpriteSheetRegistry.getAnimationIndex('bigAtlas', config.texture);
+      if (resolvedTextureId === undefined) {
+        if (!this._warnedMissingTextures.has(config.texture)) {
+          this._warnedMissingTextures.add(config.texture);
+          console.warn(
+            `BulletPool.spawn: texture "${config.texture}" not found in bigAtlas; using textureId 0.`
+          );
+        }
+      } else {
+        texId = resolvedTextureId;
+      }
     }
     textureId[i] = texId;
     scale[i] = config.scale ?? 1;
@@ -112,5 +134,11 @@ export class BulletPool extends SharedAtomicPool {
     if (BulletComponent.active[i] === 0) return;
     BulletComponent.active[i] = 0;
     this.returnToPool(i);
+  }
+
+  static reset() {
+    super.reset();
+    this._warnedPoolExhausted = false;
+    this._warnedMissingTextures.clear();
   }
 }

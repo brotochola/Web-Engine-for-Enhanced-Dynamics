@@ -42,6 +42,7 @@ export const DECAL_STAMPS_BLEND_MODE = Object.freeze({
 export class ParticleEmitter extends SharedAtomicPool {
   // Pool name for logging (used by base class)
   static poolName = 'ParticleEmitter';
+  static _warnedPoolExhausted = false;
 
   // Alias for backwards compatibility
   static get maxParticles() {
@@ -56,6 +57,7 @@ export class ParticleEmitter extends SharedAtomicPool {
   static initialize(maxParticles) {
     // Call base class initialize with the count
     super.initialize(maxParticles);
+    this._warnedPoolExhausted = false;
   }
 
   /**
@@ -276,6 +278,14 @@ export class ParticleEmitter extends SharedAtomicPool {
       spawned++;
     }
 
+    if (spawned < count && !this._warnedPoolExhausted) {
+      this._warnedPoolExhausted = true;
+      console.warn(
+        `ParticleEmitter.emit: pool exhausted; spawned ${spawned}/${count}. ` +
+        'Increase particle.maxParticles.'
+      );
+    }
+
     return spawned;
   }
 
@@ -349,5 +359,6 @@ export class ParticleEmitter extends SharedAtomicPool {
    */
   static reset() {
     super.reset();
+    this._warnedPoolExhausted = false;
   }
 }
