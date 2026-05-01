@@ -109,6 +109,16 @@ class SpatialWorker extends AbstractWorker {
     // Local cell counts for race-free grid rebuilding
     // We build counts locally, then copy to grid at the end (avoids mid-clear races)
     this._localCellCounts = null; // Uint8Array(totalCells)
+    this._localCellHashes = null; // Uint32Array(totalCells)
+    this._cellHashes = null; // Uint32Array(totalCells)
+    this._entityLastX = null;
+    this._entityLastY = null;
+    this._entityLastHalfExtent = null;
+    this._entityLastVisualRange = null;
+    this._entityLastCellIndex = null;
+    this._entityLastCellRadius = null;
+    this._entityLastDependencyHash = null;
+    this._entityReuseInitialized = null;
 
     this._maxCellRadius = 12; // Support visual ranges up to ~1500px with cellSize=128
     // Precomputed circle patterns: cellRadius -> Int32Array of [dr, dc, dr, dc, ...]
@@ -127,6 +137,8 @@ class SpatialWorker extends AbstractWorker {
     this.cellsCheckedThisFrame = 0;
     this.rebuildTimeThisFrame = 0;
     this.neighborSearchTimeThisFrame = 0;
+    this.neighborsReusedThisFrame = 0;
+    this.neighborsReusedThisFrame = 0;
 
   }
 
@@ -203,6 +215,16 @@ class SpatialWorker extends AbstractWorker {
 
     // Initialize local cell counts array for race-free grid rebuilding
     this._localCellCounts = new Uint8Array(this.totalCells);
+    this._localCellHashes = new Uint32Array(this.totalCells);
+    this._cellHashes = new Uint32Array(this.totalCells);
+    this._entityLastX = new Float32Array(this.globalEntityCount);
+    this._entityLastY = new Float32Array(this.globalEntityCount);
+    this._entityLastHalfExtent = new Float32Array(this.globalEntityCount);
+    this._entityLastVisualRange = new Float32Array(this.globalEntityCount);
+    this._entityLastCellIndex = new Uint32Array(this.globalEntityCount);
+    this._entityLastCellRadius = new Uint16Array(this.globalEntityCount);
+    this._entityLastDependencyHash = new Uint32Array(this.globalEntityCount);
+    this._entityReuseInitialized = new Uint8Array(this.globalEntityCount);
 
     // Precompute circle patterns for all possible cellRadius values (0 to maxCellRadius)
     this._precomputeCirclePatterns();
@@ -388,13 +410,16 @@ class SpatialWorker extends AbstractWorker {
     // Grid counts remain unchanged - other workers can safely read them
     // =========================================================================
     const localCounts = this._localCellCounts;
+    const localHashes = this._localCellHashes;
 
     for (let r = 0; r < ownedRowCount; r++) {
       const row = ownedRows[r];
       const rowBase = row * gridWidth;
 
       for (let col = 0; col < gridWidth; col++) {
-        localCounts[rowBase + col] = 0;
+        const cellIndex = rowBase + col;
+        localCounts[cellIndex] = 0;
+        localHashes[cellIndex] = 2166136261;
       }
     }
 
@@ -476,6 +501,7 @@ class SpatialWorker extends AbstractWorker {
             const uint32Offset = (byteOffset >> 2) + 1 + localCount;
             gridEntities[uint32Offset] = i;
             localCounts[cellIndex] = localCount + 1;
+            localHashes[cellIndex] = Math.imul(localHashes[cellIndex] ^ (i + 1), 16777619) >>> 0;
           }
         }
       }
@@ -489,10 +515,18 @@ class SpatialWorker extends AbstractWorker {
     for (let r = 0; r < ownedRowCount; r++) {
       const row = ownedRows[r];
       const rowBase = row * gridWidth;
+      const cellVersions = Grid._cellVersionData;
+      const cellHashes = this._cellHashes;
 
       for (let col = 0; col < gridWidth; col++) {
         const cellIndex = rowBase + col;
         const byteOffset = cellIndex * Grid.cellByteSize;
+        const nextCount = localCounts[cellIndex];
+        const nextHash = localHashes[cellIndex];
+        if (gridCounts[byteOffset] !== nextCount || cellHashes[cellIndex] !== nextHash) {
+          cellHashes[cellIndex] = nextHash;
+          if (cellVersions) cellVersions[cellIndex] = (cellVersions[cellIndex] + 1) >>> 0;
+        }
         gridCounts[byteOffset] = localCounts[cellIndex];
       }
     }
@@ -510,6 +544,42 @@ class SpatialWorker extends AbstractWorker {
    * "home row" (the row containing its center Y position). This prevents race
    * conditions when entities span multiple rows due to their bounding box.
    */
+  _computeDependencyHash(neighborCells) {
+    const versions = Grid._cellVersionData;
+    if (!versions) return 0;
+
+    let hash = 2166136261;
+    for (let i = 0; i < neighborCells.length; i++) {
+      const cellIndex = neighborCells[i];
+      hash = Math.imul(hash ^ versions[cellIndex], 16777619) >>> 0;
+    }
+    return hash;
+  }
+
+  _canReuseNeighbors(entityId, myX, myY, myHalfExtent, myVisualRange, entityCellIndex, cellRadius, dependencyHash) {
+    return (
+      this._entityReuseInitialized[entityId] === 1 &&
+      this._entityLastX[entityId] === myX &&
+      this._entityLastY[entityId] === myY &&
+      this._entityLastHalfExtent[entityId] === myHalfExtent &&
+      this._entityLastVisualRange[entityId] === myVisualRange &&
+      this._entityLastCellIndex[entityId] === entityCellIndex &&
+      this._entityLastCellRadius[entityId] === cellRadius &&
+      this._entityLastDependencyHash[entityId] === dependencyHash
+    );
+  }
+
+  _storeNeighborReuseSignature(entityId, myX, myY, myHalfExtent, myVisualRange, entityCellIndex, cellRadius, dependencyHash) {
+    this._entityReuseInitialized[entityId] = 1;
+    this._entityLastX[entityId] = myX;
+    this._entityLastY[entityId] = myY;
+    this._entityLastHalfExtent[entityId] = myHalfExtent;
+    this._entityLastVisualRange[entityId] = myVisualRange;
+    this._entityLastCellIndex[entityId] = entityCellIndex;
+    this._entityLastCellRadius[entityId] = cellRadius;
+    this._entityLastDependencyHash[entityId] = dependencyHash;
+  }
+
   findNeighborsForOwnedEntities() {
     const visualRange = Collider.visualRange;
     const active = Transform.active;
@@ -650,6 +720,21 @@ class SpatialWorker extends AbstractWorker {
           // Get neighbor cells using precomputed circle pattern (cached per cell+radius)
           const neighborCells = this._getNeighborCells(entityCellIndex, cellRadius, homeRow, homeCol);
           const neighborCellsLength = neighborCells.length;
+          const dependencyHash = this._computeDependencyHash(neighborCells);
+
+          if (this._canReuseNeighbors(
+            entityA,
+            myX,
+            myY,
+            myHalfExtent,
+            myVisualRange,
+            entityCellIndex,
+            cellRadius,
+            dependencyHash
+          )) {
+            this.neighborsReusedThisFrame++;
+            continue;
+          }
 
           // =============================================================
           // NEIGHBOR DETECTION with PARTITIONING
@@ -756,6 +841,16 @@ class SpatialWorker extends AbstractWorker {
           // Write counts: [totalCount, collisionCount, neighbors...]
           neighborData[neighborOffset] = neighborCount;
           neighborData[neighborOffset + 1] = collisionCount;
+          this._storeNeighborReuseSignature(
+            entityA,
+            myX,
+            myY,
+            myHalfExtent,
+            myVisualRange,
+            entityCellIndex,
+            cellRadius,
+            dependencyHash
+          );
 
           // DEBUG: Log when we have visual-only neighbors but no collision candidates
           // This is the case the user reports as failing
@@ -779,6 +874,7 @@ class SpatialWorker extends AbstractWorker {
       this.stats[SPATIAL_STATS.REBUILD_MS] = this.rebuildTimeThisFrame;
       this.stats[SPATIAL_STATS.NEIGHBOR_MS] = this.neighborSearchTimeThisFrame;
       this.stats[SPATIAL_STATS.MSG_MS] = this.messageTimeThisFrame;
+      this.stats[SPATIAL_STATS.NEIGHBORS_REUSED] = this.neighborsReusedThisFrame;
     }
   }
 }

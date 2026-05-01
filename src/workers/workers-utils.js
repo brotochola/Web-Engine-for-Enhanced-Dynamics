@@ -80,6 +80,7 @@ export const SPATIAL_STATS = Object.freeze({
   REBUILD_MS: 4,
   NEIGHBOR_MS: 5,
   MSG_MS: 6,
+  NEIGHBORS_REUSED: 7,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE_PER_WORKER: 16 * 4,
 });
@@ -236,6 +237,11 @@ export const WORKER_DISPLAY_CONFIG = Object.freeze({
       {
         key: 'GRID_CELLS_CHECKED',
         format: (v) => formatNumber(v),
+      },
+      {
+        key: 'NEIGHBORS_REUSED',
+        format: (v) => formatNumber(v),
+        label: 'Reused',
       },
       {
         key: 'ENTITIES_PROCESSED',

@@ -120,6 +120,7 @@ function buildSceneSharedBuffers(scene) {
     componentData: scene.buffers.componentData,
     gridBuffer: scene.buffers.gridBuffer,
     cellSleepingBuffer: scene.buffers.cellSleepingBuffer,
+    cellVersionBuffer: scene.buffers.cellVersionBuffer,
     entityPosData: scene.buffers.entityPosData,
     rendererStats: scene.buffers.rendererStats,
     particleStats: scene.buffers.particleStats,

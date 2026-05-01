@@ -557,6 +557,7 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
 
   buffers.gridBuffer = new SharedArrayBuffer(totalCells * cellByteSize);
   buffers.cellSleepingBuffer = new SharedArrayBuffer(totalCells);
+  buffers.cellVersionBuffer = new SharedArrayBuffer(totalCells * 4);
   buffers.entityPosData = new SharedArrayBuffer(totalEntityCount * 4 * 4);
 
   scene.gridMetadata = {
@@ -575,6 +576,7 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
       gridBuffer: buffers.gridBuffer,
       neighborBuffer: buffers.neighborData,
       cellSleepingBuffer: buffers.cellSleepingBuffer,
+      cellVersionBuffer: buffers.cellVersionBuffer,
     },
     {
       cellSize,

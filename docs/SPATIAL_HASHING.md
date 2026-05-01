@@ -24,9 +24,11 @@ This trades **strict global consistency** for **one-frame eventual consistency**
    - Clear **local** cell counts (not the shared grid mid-frame).
    - Insert entities that overlap owned rows into the grid.
    - Copy local counts into the shared `gridBuffer` so readers never see a half-cleared grid.
+   - Update a shared per-cell version when an owned cell's membership count/hash changes.
 
 2. **Find neighbors** (`findNeighborsForOwnedEntities`)
    - For each entity whose **home row** falls in an owned row, gather neighbors within `visualRange` using precomputed **circle patterns** over grid cells.
+   - Reuse the previous `neighborData` for that entity when its position/range signature and every searched cell version are unchanged.
    - Split results into **collision candidates** vs **visual-only** neighbors (see below).
    - Write `neighborData` for that entity.
 
@@ -72,6 +74,12 @@ The physics worker uses **`collisionCount`** and the dense collider optimization
 - Key: `cellIndex * (maxCellRadius + 1) + clampedRadius`
 - Value: `Uint16Array` of neighbor **cell indices**
 - **Bounded size:** when the map reaches **8192** entries, it is **cleared** to cap memory in long-running scenes. After a clear, cache misses regenerate arrays (performance hint only, not correctness).
+
+## Neighbor reuse
+
+Each spatial worker keeps a per-entity signature for the last neighbor search: position, half extent, visual range, source cell, cell radius, and a dependency hash built from the shared versions of every searched cell. If both the entity signature and dependency hash match, the worker leaves that entity's existing `neighborData` in place and increments the `NEIGHBORS_REUSED` stat.
+
+This preserves the no-barrier model: workers may read recent data, but reuse only happens when the cells that would be searched are unchanged according to the row owners.
 
 ---
 

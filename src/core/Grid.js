@@ -91,6 +91,12 @@ export class Grid {
   static _cellSleepingBuffer = null; // SharedArrayBuffer
   static _cellSleepingData = null; // Uint8Array view
 
+  // ===== CELL VERSION STATE (Single Buffer - Written by row owner) =====
+  // Incremented when a cell's count/hash changes so spatial workers can reuse
+  // neighbor lists only when every searched cell is unchanged.
+  static _cellVersionBuffer = null; // SharedArrayBuffer
+  static _cellVersionData = null; // Uint32Array view
+
   // Internal stride for neighbor arrays (computed as 2 + maxNeighbors during initialize)
   // Layout: [totalCount, collisionCount, neighbor0, neighbor1, ...]
   static _stride = 2 + DEFAULT_MAX_NEIGHBORS;
@@ -149,6 +155,11 @@ export class Grid {
       // Initialize all cells as awake (0)
       Grid._cellSleepingData.fill(0);
     }
+
+    if (buffers.cellVersionBuffer) {
+      Grid._cellVersionBuffer = buffers.cellVersionBuffer;
+      Grid._cellVersionData = new Uint32Array(buffers.cellVersionBuffer);
+    }
   }
 
   /**
@@ -163,6 +174,8 @@ export class Grid {
     Grid._neighborData = null;
     Grid._cellSleepingBuffer = null;
     Grid._cellSleepingData = null;
+    Grid._cellVersionBuffer = null;
+    Grid._cellVersionData = null;
     Grid._markerArray = null;
     Grid._processedSet = null;
   }

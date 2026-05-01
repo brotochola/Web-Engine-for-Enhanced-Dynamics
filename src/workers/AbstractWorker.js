@@ -664,6 +664,7 @@ export class AbstractWorker {
           gridBuffer: data.buffers.gridBuffer,
           neighborBuffer: data.buffers.neighborData,
           cellSleepingBuffer: data.buffers.cellSleepingBuffer,
+          cellVersionBuffer: data.buffers.cellVersionBuffer,
         },
         data.gridMetadata
       );
