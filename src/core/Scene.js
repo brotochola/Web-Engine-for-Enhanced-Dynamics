@@ -506,6 +506,8 @@ class Scene {
    * Access config via this.config.section.property (e.g., this.config.lighting.maxFlashes)
    */
   _applyConfigDefaults() {
+    const userLightingConfig = this.config.lighting || {};
+
     // Top-level defaults from centralized config
     this.config = {
       ...SCENE_DEFAULTS,
@@ -580,9 +582,11 @@ class Scene {
       ...LIGHTING_DEFAULTS,
       ...(this.config.lighting || {}),
     };
-    // Compute maxShadowSprites based on light count and shadows per light
-    this.config.lighting.maxShadowSprites =
-      this.config.lighting.maxShadowCastingLights * this.config.lighting.maxShadowsPerLight;
+    // Compute maxShadowSprites unless the scene explicitly provides a global cap.
+    if (userLightingConfig.maxShadowSprites == null) {
+      this.config.lighting.maxShadowSprites =
+        this.config.lighting.maxShadowCastingLights * this.config.lighting.maxShadowsPerLight;
+    }
     // Compute shadowsEnabled (requires both enabled and shadowsEnabled)
     this.config.lighting.shadowsEnabled =
       this.config.lighting.enabled && this.config.lighting.shadowsEnabled !== false;

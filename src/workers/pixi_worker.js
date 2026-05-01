@@ -439,6 +439,8 @@ class PixiRenderer extends AbstractWorker {
     this.decalsTilesX = 0;
     this.decalsTilesY = 0;
     this.decalsTotalTiles = 0;
+    this.maxDecalTileUploadsPerFrame = RENDERER_DEFAULTS.maxDecalTileUploadsPerFrame;
+    this._nextDecalTileScanIndex = 0;
 
     // SharedArrayBuffer views (shared with particle_worker)
     this.decalTilesRGBA = null; // Uint8ClampedArray - RGBA pixel data
@@ -1209,10 +1211,21 @@ class PixiRenderer extends AbstractWorker {
     const tilePixelSize = this.decalsTilePixelSize;
     const bytesPerTile = tilePixelSize * tilePixelSize * 4;
     const ctx = this._decalTileCtx;
+    const totalTiles = this.decalsTotalTiles;
+    if (totalTiles <= 0) return;
 
-    for (let tileIndex = 0; tileIndex < this.decalsTotalTiles; tileIndex++) {
+    const maxUploads = Math.min(this.maxDecalTileUploadsPerFrame || totalTiles, totalTiles);
+    let processed = 0;
+    let scanned = 0;
+    let tileIndex = this._nextDecalTileScanIndex % totalTiles;
+
+    while (scanned < totalTiles && processed < maxUploads) {
       // Check if this tile was modified by particle_worker
-      if (this.decalTilesDirty[tileIndex] === 0) continue;
+      if (this.decalTilesDirty[tileIndex] === 0) {
+        tileIndex = (tileIndex + 1) % totalTiles;
+        scanned++;
+        continue;
+      }
 
       // Clear dirty flag immediately (particle_worker may set it again)
       this.decalTilesDirty[tileIndex] = 0;
@@ -1262,7 +1275,13 @@ class PixiRenderer extends AbstractWorker {
         sprite.texture = new PIXI.Texture({ source });
       }
       sprite.visible = true; // Show the tile now that it has content
+
+      processed++;
+      tileIndex = (tileIndex + 1) % totalTiles;
+      scanned++;
     }
+
+    this._nextDecalTileScanIndex = tileIndex;
   }
 
   /* =====================
@@ -2780,6 +2799,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       rendererConfig.hideDecorationsAtZoom !== undefined
         ? rendererConfig.hideDecorationsAtZoom
         : RENDERER_DEFAULTS.hideDecorationsAtZoom;
+    const maxDecalUploads = rendererConfig.maxDecalTileUploadsPerFrame;
+    this.maxDecalTileUploadsPerFrame =
+      Number.isFinite(maxDecalUploads) && maxDecalUploads > 0
+        ? maxDecalUploads
+        : RENDERER_DEFAULTS.maxDecalTileUploadsPerFrame;
 
     // Note: Component arrays are automatically initialized by AbstractWorker.initializeAllComponents()
     // This includes Transform, RigidBody, SpriteRenderer, and all custom components

@@ -252,6 +252,7 @@ export const RENDERER_DEFAULTS = Object.freeze({
   startFadingDecorationsAtZoom: 0.5,
   hideDecorationsAtZoom: 0.25,
   maxVisibleRenderables: 40000,
+  maxDecalTileUploadsPerFrame: 32,
 });
 
 // ============================================================================
