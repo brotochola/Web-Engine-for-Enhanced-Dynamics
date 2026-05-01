@@ -34,7 +34,7 @@ Use scene selection for targeted checks:
 
 - **Spatial/physics:** `BallsScene`, `BallsAndRectanglesScene`, or `StationarySpatialScene`.
 - **Query churn:** `QueryChurnScene` for spawn/despawn list updates and custom precomputed active-query publication.
-- **Pre-render/render queues:** a scene with many visible renderables or custom layers.
+- **Pre-render/render queues:** `RenderQueueStressScene` for many visible renderables and Y-sorted queue pressure.
 - **Particles/decorations:** a scene that actually has active particles/decorations; BallsScene reports `ACTIVE_DECORATIONS: 0`.
 
 Stationary spatial reuse check:
@@ -53,6 +53,21 @@ node tests/bench/run-integrated-worker-benchmark.mjs --headed \
   --scene /demos/scenes/QueryChurnScene.js \
   --scene-export QueryChurnScene \
   --output tests/results/query-churn-headed.json
+```
+
+Render queue stress check:
+
+```bash
+node tests/bench/run-integrated-worker-benchmark.mjs --headed \
+  --scene /demos/scenes/RenderQueueStressScene.js \
+  --scene-export RenderQueueStressScene \
+  --output tests/results/render-queue-stress-headed.json
+```
+
+Physics kernel study (isolated JavaScript loop research, not an engine scene):
+
+```bash
+node tests/bench/run-physics-kernel-study.mjs --entities 100000 --iterations 240
 ```
 
 To compare different static config values inside a scene (e.g. `cellSize`), edit that scene's config between runs; there is no CLI patch into scene config.
