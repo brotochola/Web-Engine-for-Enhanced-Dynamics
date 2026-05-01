@@ -2,8 +2,6 @@
 // Demonstrates the new Scene-based architecture for WeedJS
 
 import WEED from '/src/index.js';
-import { Layer } from '/src/core/Layer.js';
-import { TileMap } from '/src/core/TileMap.js';
 import { Boid } from '../gameObjects/boid.js';
 
 // import { Player } from "../gameObjects/player.js";
@@ -18,8 +16,6 @@ import { Fire } from '../gameObjects/fire.js';
 import { Explosion } from '../gameObjects/explosion.js';
 import { MySoldier } from '../gameObjects/mySoldier.js';
 import { Destination } from '../gameObjects/destination.js';
-import { NavGrid } from '../../src/core/NavGrid.js';
-import { containerRadius } from '../../src/core/utils.js';
 import { DropMoney } from '../gameObjects/dropMoney.js';
 import { DropAk47 } from '../gameObjects/dropAk47.js';
 import { DropShotgun } from '../gameObjects/dropShotgun.js';
@@ -28,9 +24,16 @@ import { Civilian } from '../gameObjects/civilian.js';
 import { CameraController } from '../gameObjects/cameraController.js';
 import { Trash } from '../gameObjects/trash.js';
 import { Cloud } from '../gameObjects/cloud.js';
-// import { Sun } from '../../src/index.js';
 
-const { DecorationPool, enums: { BLEND_MODES }, rng, Sun } = WEED;
+const {
+  DecorationPool,
+  Layer,
+  NavGrid,
+  Sun,
+  TileMap,
+  containerRadius,
+  enums: { BLEND_MODES },
+} = WEED;
 
 const excludedLPCAnimations = [
   'spellcast_up',
@@ -521,8 +524,8 @@ export class PredatorScene extends WEED.Scene {
     for (let i = 0; i < count; i++) {
 
       this.spawnEntity(Cloud, {
-        x: rng() * this.config.worldWidth,
-        y: rng() * this.config.worldHeight,
+        x: this.rng() * this.config.worldWidth,
+        y: this.rng() * this.config.worldHeight,
       });
     }
   }
@@ -547,8 +550,8 @@ export class PredatorScene extends WEED.Scene {
   spawnCivilians(count) {
     for (let i = 0; i < count; i++) {
       this.spawnEntity(Civilian, {
-        x: this.config.worldWidth * rng(),
-        y: this.config.worldHeight * rng(),
+        x: this.config.worldWidth * this.rng(),
+        y: this.config.worldHeight * this.rng(),
       });
     }
   }
