@@ -1,55 +1,81 @@
-# WeedJS 🌿
+# WeedJS
 
-**20,000 entities. 60fps. In your browser. No, seriously.**
+**A multithreaded 2D web game engine for high-entity-count browser games.**
 
-Most web game engines tap out around 2000 sprites and call it a day. WeedJS looked at that, took a hit, and said _"what if we just... didn't have that problem?"_
+WeedJS is built around Web Workers, `SharedArrayBuffer`-backed component data, and a PixiJS renderer running on `OffscreenCanvas`. Spatial queries, physics, game logic, particles, render preparation, rendering, and audio mixing each have dedicated execution paths so busy scenes can stay responsive.
 
-The result: a multithreaded 2D engine where your game logic, physics, spatial queries, particles, and rendering all run on separate threads through `SharedArrayBuffer` pipelines. Zero message-passing bottlenecks. Zero main-thread rendering. Just raw parallel throughput.
-
-🔗 **Live Demo**: https://multithreaded-game-engine.vercel.app/demos
+Live demo: https://multithreaded-game-engine.vercel.app/demos
 
 ![WeedJS Demo](screen-capture.gif)
 
 ---
 
-## Philosophy
+## Why the Web
 
-Games shouldn't depend on corporations. Not to build them, not to distribute them.
+WeedJS is designed for developers who want the strengths of the browser as a game platform: open standards, instant URL-based distribution, inspectable source, and a runtime players already have installed.
 
-Unity can change their pricing overnight and hold your project hostage. Steam takes 30% for being a middleman. Unreal wants 5% of your revenue. These aren't platforms -- they're tollbooths between you and your players.
-
-The web is the most democratic platform ever built. It's open standards, owned by nobody. Everyone already has the runtime installed -- it's called a browser. Distribution is a URL. No app store approval, no 500MB installer, no SDK license. You send a link, someone clicks it, they're playing your game. That's it. That's the whole pipeline.
-
-A web game with WeedJS -- sprites, physics, AI, audio, 20,000 entities -- weighs about 3MB. A Unity "Hello World" weighs 50MB+. An Unreal project starts in the hundreds. That matters when your player is on a phone with 4G.
-
-And JavaScript is the language of the web. Not TypeScript, not Dart, not something that compiles-to-JS. Actual JavaScript. No transpiler. No bundler. No webpack config from hell. No `package.json` with 400 dependencies. No build step between you and the browser. You write `.js` files, the browser runs `.js` files. Zero intermediaries.
-
-Chrome DevTools is a better debugger than most paid IDEs. View Source is built into every browser -- anyone can open your game and learn from it. The web was designed to be inspectable, hackable, and free. Games should be too.
-
-**Stop asking permission to make games. The browser is right there.**
+The engine works with plain JavaScript and browser-native ES modules. The demos can run directly from `src/` during development, while the npm package also ships bundled `dist/` builds for consumers who prefer package imports.
 
 ---
 
-## Why It Hits Different
+## Architecture at a Glance
 
-Other engines serialize everything through one thread and pray. WeedJS splits the work across 6+ dedicated Web Workers that share memory directly:
+WeedJS brings console-style, data-oriented optimization patterns to the browser: pooled objects, dense memory, explicit worker ownership, and predictable frame pipelines. It does not pretend the browser is a console, but it treats the browser runtime with the same seriousness: keep hot data contiguous, avoid unnecessary allocation, move work off the main thread, and measure the result.
 
-| Worker                  | What It Does                                                       |
-| ----------------------- | ------------------------------------------------------------------ |
-| `spatial_worker` (1..N) | Spatial hashing, neighbor detection. Knows who's near who.         |
-| `physics_worker` (1)    | Verlet integration, collision resolution. Solid and predictable.   |
-| `logic_worker` (1..N)   | Your `tick()` code runs here. AI, behaviors, the fun stuff.        |
-| `particle_worker` (1)   | Particles, decals, navigation, visibility lists. The multitasker.  |
-| `pre_render_worker` (1) | Animation, Y-sorting, render queue assembly. The stage manager.    |
-| `pixi_worker` (1)       | PixiJS on an OffscreenCanvas. Draws frames, stays out of your way. |
+WeedJS splits work across specialized workers. Hot frame data lives in typed arrays on `SharedArrayBuffer`; control flow and setup still use `postMessage` and `MessagePort` where that is the right browser primitive.
 
-All backed by typed arrays on SharedArrayBuffers. Single-writer ownership per data region. No locks, no Atomics spam, no drama.
+| Worker                | Count | Primary job                                              |
+| --------------------- | ----: | -------------------------------------------------------- |
+| `spatial_worker`      |  1..N | Spatial hash rebuilds and neighbor lists                 |
+| `physics_worker`      |     1 | Verlet integration, collision solving, constraints       |
+| `logic_worker`        |  1..N | Entity `tick()`, lifecycle, collision callbacks          |
+| `particle_worker`     |     1 | Particles, bullets, decals, navigation, visibility lists |
+| `pre_render_worker`   |     1 | Animation, Y-sorting, render queue assembly              |
+| `pixi_worker`         |     1 | PixiJS rendering on `OffscreenCanvas`                    |
+| `AudioMixerProcessor` |     1 | Real-time audio mixing on an AudioWorklet thread         |
+
+The core design rule is single-writer ownership for each shared data region. That keeps most hot paths lock-free and allocation-light while still allowing all workers to read the state they need.
 
 ---
 
-## The Stupid-Simple API
+## Quick Start
 
-You define entities. You give them components. You write a `tick()`. That's it.
+```bash
+git clone https://github.com/brotochola/MultithreadedGameEngine.git
+cd MultithreadedGameEngine
+npm install
+npm run dev
+```
+
+Open `http://localhost:8000/demos/`, or use the port printed by the server if `8000` is already in use.
+
+`SharedArrayBuffer` requires cross-origin isolation headers. The included development server sets the required COOP/COEP headers.
+
+---
+
+## Install from npm
+
+```bash
+npm i @weed.js/engine
+```
+
+```javascript
+import WEED from '@weed.js/engine';
+
+const { GameEngine, Scene, GameObject, RigidBody, Collider, SpriteRenderer } = WEED;
+```
+
+For local experiments or advanced integrations, the package also exposes the unbundled source modules:
+
+```javascript
+import { Scene, GameObject } from '@weed.js/engine/src';
+```
+
+---
+
+## Minimal Entity Example
+
+You define pooled entities, attach fixed components, and implement lifecycle hooks.
 
 ```javascript
 import WEED from '/src/index.js';
@@ -74,11 +100,10 @@ class Zombie extends GameObject {
     this.setAnimation('walk_down');
   }
 
-  tick(dtRatio) {
-    // Neighbors are pre-computed by the spatial worker. Just use them.
+  tick(dtRatio, deltaTime, accumulatedTime, frameNumber) {
     for (let n = 0; n < this.neighborCount; n++) {
       const neighborIndex = this.getNeighbor(n);
-      // chase, flee, bite, whatever
+      // Neighbors are precomputed by the spatial worker.
     }
   }
 }
@@ -92,7 +117,7 @@ class ZombieScene extends Scene {
   };
 
   static entities = [[Zombie, 20000]];
-  static queries = [[RigidBody, Collider]]; // optional hot active query combinations
+  static queries = [[RigidBody, Collider]];
 
   create() {
     for (let i = 0; i < 20000; i++) {
@@ -108,30 +133,43 @@ const game = new WEED.GameEngine({ debug: true });
 await game.loadScene(ZombieScene);
 ```
 
-20,000 zombies with spatial awareness, physics, and animations. All at 60fps. You're welcome.
+---
+
+## What's Included
+
+WeedJS is intended to be a full 2D game runtime, not just a renderer. The major subsystems are all built around pooled objects, typed arrays, shared memory, worker ownership, and low-allocation hot paths.
+
+- **Pooled ECS-style entities**: `GameObject` instances are facades over typed arrays, with fixed component sets per entity type and reusable spawn/despawn pools.
+- **Particle emitter**: `ParticleEmitter.emit()` supports sparks, smoke, blood, muzzle effects, floor decals, alpha/scale/tint controls, gravity, blending, and worker-side particle simulation.
+- **Bullets and projectile trails**: `BulletPool` and `BulletComponent` provide lightweight projectile slots, impact reporting, damage payloads, trail rendering, and visibility culling without turning every shot into a full entity.
+- **Decorations and attachments**: `DecorationPool` handles trees, rocks, props, child decorations attached to entities, sway animation, custom anchors, tint, alpha, and Y-sort ordering.
+- **Physics**: the physics worker uses Verlet integration, velocity/friction/drag controls, gravity, circle and AABB collisions, triggers, static bodies, sleeping bodies, collision layers/masks, and distance constraints for ropes, links, springs, and rigid connections.
+- **Spatial hashing**: row-owned spatial workers rebuild the grid, cache entity positions, reuse neighbor results when cells have not changed, and expose nearby entities through `this.neighborCount` / `this.getNeighbor(i)`.
+- **Ray casting**: `Ray.cast`, `Ray.castWithInfo`, `Ray.castAll`, `Ray.linecast`, and line-of-sight helpers traverse the spatial grid with DDA and support collision layer masks.
+- **Point lights and shadows**: `LightEmitter`, `ShadowCaster`, `LightOccluder`, `Flash`, and `Sun` support point lights, glow sprites, temporary flashes, ambient lighting, day/night-style sun control, and shadow queues.
+- **Layers**: built-in layers handle backgrounds, decals, cast shadows, entities, and lighting. Custom layers can route entities, particles, decorations, bullets, trails, and glow sprites into separate render queues.
+- **Custom shader layers**: custom layers can define fragment shaders, uniforms, blend modes, render-target resolution, and a two-render-texture pipeline for effects like metaballs, fog, heat distortion, glow accumulation, water, and other screen-space passes.
+- **Tilemaps**: `TileMap` loads Tiled JSON maps, stores layer data in `SharedArrayBuffer`, supports allocation-free tile queries from any worker, and renders tilemap backgrounds through the Pixi worker.
+- **Rendering**: the pre-render worker builds double-buffered render queues, Y-sorts sprites, advances animations, prepares shadows/lights, and feeds a PixiJS renderer running on `OffscreenCanvas`.
+- **Animation**: `SpriteSheetRegistry`, `AdobeAnimRegistry`, `AdobeAnimCompiler`, `SpriteRenderer`, and `AdobeAnimComponent` cover spritesheets and Adobe Animate-style exports.
+- **Navigation**: `NavGrid` provides SAB-backed walkability data, flowfield requests, and A\* path requests computed off the logic hot path.
+- **Audio**: `SoundManager` uses an AudioWorklet mixer with a shared slot buffer for low-overhead play requests from the main thread or workers, including pitch, volume, loop, pan, and distance attenuation.
+- **Input and camera**: keyboard, mouse, edge-triggered mouse events, camera follow, zoom, and shared input/camera buffers are available inside workers.
+- **FSM helpers**: `FSM` and `FSMState` support behavior and animation state machines without imposing a specific gameplay architecture.
+- **Debugging tools**: the debug UI includes worker FPS stats, performance panels, scene/entity/decorations/layers/navigation panels, selected entity inspection, visual aids, physics debug rendering, navigation debug rendering, raycast debug drawing, and configurable debug flags.
+
+Everything performance-critical is aggressively optimized: pooled allocation, dense typed-array component storage, `SharedArrayBuffer` data paths, single-writer regions, preallocated scratch buffers, compact active/visible lists, double-buffered render queues, worker-side broadphase/physics/render preparation, and benchmark scripts for measuring worker throughput.
 
 ---
 
-## What's In The Box
-
-- **Pooled ECS** -- entities are indices into typed arrays, not objects on the heap. Spawn and despawn cost basically nothing.
-- **Spatial hashing** -- neighbor queries are automatic. Every entity knows who's nearby without you writing a single spatial algorithm.
-- **2D lighting & shadows** -- point lights, shadow casters, sun/day cycle, muzzle flashes. All rendered on a separate thread.
-- **Particles & decals** -- blood, sparks, smoke, floor stamps. Separate optimized pool, not full entities.
-- **Flowfield + A\* navigation** -- request a direction vector and the engine handles pathfinding in the background.
-- **Collision callbacks** -- `onCollisionEnter`, `onCollisionStay`, `onCollisionExit`. Unity vibes, worker performance.
-- **FSM system** -- built-in finite state machines for animation and behavior, component-style.
-- **Debug UI** -- real-time FPS per worker, entity inspector, visual debugging. Toggle it on and watch the machine breathe.
-
----
-
-## APIs You'll Actually Use
+## Common APIs
 
 ```javascript
 // Input
 Keyboard.isDown('w');
 Mouse.isButton0Down;
-(Mouse.x, Mouse.y);
+Mouse.x;
+Mouse.y;
 
 // Camera
 Camera.follow(this.x, this.y);
@@ -139,55 +177,61 @@ Camera.setZoom(1.5);
 
 // Particles
 ParticleEmitter.emit({
-  texture: 'blood',
+  texture: 'spark',
   x: this.x,
   y: this.y,
-  angleXY: { min: 0, max: 360 },
   speed: { min: 1, max: 3 },
   lifespan: 800,
-  stayOnTheFloor: true,
 });
 
 // Flashes
 Flash.create({ x: this.x, y: this.y, z: 30, lifespan: 50, color: 0xffaa00, intensity: 10000 });
 
-// Queries (inside worker/entity code)
-const enemies = query([RigidBody, EnemyComponent]);          // all matching slots
-const activeBodies = queryActiveEntities([RigidBody]);       // active precomputed query
-const activeEnemies = queryActiveEntitiesSlow([RigidBody, EnemyComponent]); // explicit slow path
+// Queries inside worker/entity code
+const allEnemies = query([RigidBody, EnemyComponent]);
+const activeBodies = queryActiveEntities([RigidBody]);
+const activeEnemies = queryActiveEntitiesSlow([RigidBody, EnemyComponent]);
 ```
 
 ---
 
-## Quick Start
+## Tests and Benchmarks
 
 ```bash
-git clone https://github.com/your-repo/weedjs.git
-cd weedjs
-node server/node_server.js
+npm test
+npm run test:bench
 ```
 
-Open `http://localhost:3000/demos/`.
-
-> `SharedArrayBuffer` requires cross-origin isolation headers. The included server handles this.
+The benchmark harness uses Playwright and the integrated worker benchmark scene to measure worker FPS, frame timing, and throughput. Performance depends on browser, hardware, scene configuration, and whether cross-origin isolation is active; use the benchmark scripts and `tests/bench/BENCHMARK_METHODOLOGY.md` when validating changes.
 
 ---
 
-## 🌿 Why "WeedJS"?
+## Documentation
 
-Because it grows fast, spreads everywhere, and just won't die.
-Also, this engine is _dope_.
+Start with `docs/README.md` for the full docs index.
+
+| File                           | Contents                                         |
+| ------------------------------ | ------------------------------------------------ |
+| `docs/bible_of_weed_js.md`     | Practical quick reference and engine contracts   |
+| `docs/WORKERS_ARCHITECTURE.md` | Worker roles, data flow, message protocols       |
+| `docs/MEMORY_STRUCTURE.md`     | Shared memory layout and ownership map           |
+| `docs/COMPONENT_STORAGE.md`    | Dense component storage policy                   |
+| `docs/SPATIAL_HASHING.md`      | Spatial grid and neighbor query pipeline         |
+| `docs/PHYSICS.md`              | Physics worker pipeline and invariants           |
+| `docs/LAYER_ROUTING.md`        | Render layers, backgrounds, custom layer routing |
+| `docs/TILEMAP.md`              | SAB-backed Tiled map API                         |
+| `docs/RAYCASTING.md`           | Grid-based raycast API                           |
+| `docs/ENTITY_TEMPLATE.js`      | Copy-paste entity starter                        |
 
 ---
 
-## Docs
+## Package Entry Points
 
-| File                           | What's In It                   |
-| ------------------------------ | ------------------------------ |
-| `docs/bible_of_weed_js.md`     | Quick reference for the engine |
-| `docs/WORKERS_ARCHITECTURE.md` | Worker roles and data flow     |
-| `docs/MEMORY_STRUCTURE.md`     | SAB layout and ownership model |
-| `docs/ENTITY_TEMPLATE.js`      | Copy-paste starter entity      |
+| Import                  | Resolves to                   |
+| ----------------------- | ----------------------------- |
+| `@weed.js/engine`       | Bundled `dist` build          |
+| `@weed.js/engine/src`   | Unbundled source entry        |
+| `@weed.js/engine/src/*` | Direct source subpath imports |
 
 ---
 

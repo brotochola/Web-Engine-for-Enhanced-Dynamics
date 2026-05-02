@@ -1,12 +1,12 @@
 # TileMap API
 
-SAB-backed Tiled tilemap data accessible from any thread. Zero duplication, zero allocation queries.
+SAB-backed Tiled tilemap data accessible from any thread, with allocation-free query helpers for hot paths.
 
 ---
 
 ## Overview
 
-TileMap loads [Tiled](https://www.mapeditor.org/) JSON tilemaps and backs their tile data with `SharedArrayBuffer`. All workers share the same memory -- no cloning, no message passing. Tile data is written once at scene load and is immutable after that.
+TileMap loads [Tiled](https://www.mapeditor.org/) JSON tilemaps and backs their tile data with `SharedArrayBuffer`. All workers share the same tile memory instead of receiving cloned map payloads. Tile data is written once at scene load and is immutable after that.
 
 Architecture mirrors `Layer.js`: static registry + lightweight facade instances.
 
@@ -43,8 +43,8 @@ After initialization, tilemaps are assigned as static properties on `TileMap`, a
 
 ```javascript
 // Direct property chain -- three hidden-class reads + one method call
-TileMap.myTilemap.sidewalk.getTileId(entity.x, entity.y)
-TileMap.myTilemap.walls.hasTile(bullet.x, bullet.y)
+TileMap.myTilemap.sidewalk.getTileId(entity.x, entity.y);
+TileMap.myTilemap.walls.hasTile(bullet.x, bullet.y);
 ```
 
 If a tilemap or layer name collides with an existing class/instance property, the direct property is silently skipped. Fall back to `get()` / `getLayer()` in that case.
@@ -85,10 +85,10 @@ tilemap.tileToWorld(tile.tileX, tile.tileY, world);
 ```javascript
 const layer = TileMap.myTilemap.grass;
 
-layer.getTileId(worldX, worldY)    // GID at world pixel coords (0 = empty)
-layer.getTileIdAt(tileX, tileY)    // GID at tile grid coords
-layer.hasTile(worldX, worldY)      // true if GID != 0
-layer.hasTileAt(tileX, tileY)      // true if GID != 0
+layer.getTileId(worldX, worldY); // GID at world pixel coords (0 = empty)
+layer.getTileIdAt(tileX, tileY); // GID at tile grid coords
+layer.hasTile(worldX, worldY); // true if GID != 0
+layer.hasTileAt(tileX, tileY); // true if GID != 0
 ```
 
 ---
@@ -98,38 +98,38 @@ layer.hasTileAt(tileX, tileY)      // true if GID != 0
 ```javascript
 const tilemap = TileMap.myTilemap;
 
-tilemap.getLayerNames()  // ['grass', 'sidewalk', 'walls']
-tilemap.getLayers()      // TileMapLayer[]
+tilemap.getLayerNames(); // ['grass', 'sidewalk', 'walls']
+tilemap.getLayers(); // TileMapLayer[]
 ```
 
 ---
 
 ## Tilemap Properties
 
-| Property | Type | Description |
-|---|---|---|
-| `name` | string | Tilemap ID from scene config |
-| `id` | number | Internal numeric ID |
-| `mapWidth` | number | Map width in tiles |
-| `mapHeight` | number | Map height in tiles |
-| `tileWidth` | number | Tile width in pixels |
-| `tileHeight` | number | Tile height in pixels |
-| `widthPx` | number | Map width in pixels (`mapWidth * tileWidth`) |
-| `heightPx` | number | Map height in pixels (`mapHeight * tileHeight`) |
-| `tilesets` | Array | Tileset metadata (`firstgid`, `columns`, `tileWidth`, `tileHeight`) |
+| Property     | Type   | Description                                                         |
+| ------------ | ------ | ------------------------------------------------------------------- |
+| `name`       | string | Tilemap ID from scene config                                        |
+| `id`         | number | Internal numeric ID                                                 |
+| `mapWidth`   | number | Map width in tiles                                                  |
+| `mapHeight`  | number | Map height in tiles                                                 |
+| `tileWidth`  | number | Tile width in pixels                                                |
+| `tileHeight` | number | Tile height in pixels                                               |
+| `widthPx`    | number | Map width in pixels (`mapWidth * tileWidth`)                        |
+| `heightPx`   | number | Map height in pixels (`mapHeight * tileHeight`)                     |
+| `tilesets`   | Array  | Tileset metadata (`firstgid`, `columns`, `tileWidth`, `tileHeight`) |
 
 ## TileMapLayer Properties
 
-| Property | Type | Description |
-|---|---|---|
-| `name` | string | Layer name from Tiled |
-| `data` | Int32Array | Raw tile GIDs (SAB-backed, read-only) |
-| `mapWidth` | number | Map width in tiles |
-| `mapHeight` | number | Map height in tiles |
-| `tileWidth` | number | Tile width in pixels |
-| `tileHeight` | number | Tile height in pixels |
-| `visible` | boolean | Layer visibility from Tiled |
-| `opacity` | number | Layer opacity 0..1 from Tiled |
+| Property     | Type       | Description                           |
+| ------------ | ---------- | ------------------------------------- |
+| `name`       | string     | Layer name from Tiled                 |
+| `data`       | Int32Array | Raw tile GIDs (SAB-backed, read-only) |
+| `mapWidth`   | number     | Map width in tiles                    |
+| `mapHeight`  | number     | Map height in tiles                   |
+| `tileWidth`  | number     | Tile width in pixels                  |
+| `tileHeight` | number     | Tile height in pixels                 |
+| `visible`    | boolean    | Layer visibility from Tiled           |
+| `opacity`    | number     | Layer opacity 0..1 from Tiled         |
 
 ---
 
@@ -137,11 +137,11 @@ tilemap.getLayers()      // TileMapLayer[]
 
 Tile GIDs follow the Tiled convention. The top 3 bits encode flip flags:
 
-| Bit | Hex | Flag |
-|---|---|---|
-| 31 | `0x80000000` | Horizontal flip |
-| 30 | `0x40000000` | Vertical flip |
-| 29 | `0x20000000` | Diagonal flip (90° rotation) |
+| Bit | Hex          | Flag                         |
+| --- | ------------ | ---------------------------- |
+| 31  | `0x80000000` | Horizontal flip              |
+| 30  | `0x40000000` | Vertical flip                |
+| 29  | `0x20000000` | Diagonal flip (90° rotation) |
 
 Strip flags to get the base tile ID: `gid & 0x1FFFFFFF`. A GID of `0` means empty (no tile).
 
@@ -183,27 +183,27 @@ Each `TileMapLayer.data` is an `Int32Array` view into the corresponding region. 
 
 ## Lifecycle
 
-| Phase | Thread | What Happens |
-|---|---|---|
-| Scene `preloadAssets()` | Main | Loads Tiled JSON + tileset PNG |
-| After loading | Main | `TileMap.initializeFromLoaded(loadedTilemaps)` creates SABs, copies tile data |
-| Worker init | All workers | `TileMap.initializeFromBuffers(data.tilemapData)` creates Int32Array views over shared SABs |
-| Runtime | Any thread | `TileMap.myTilemap.grass.getTileId(x, y)` reads directly from SAB |
-| Scene `destroy()` | Main | `TileMap.reset()` clears registry and releases SAB references |
+| Phase                   | Thread      | What Happens                                                                                |
+| ----------------------- | ----------- | ------------------------------------------------------------------------------------------- |
+| Scene `preloadAssets()` | Main        | Loads Tiled JSON + tileset PNG                                                              |
+| After loading           | Main        | `TileMap.initializeFromLoaded(loadedTilemaps)` creates SABs, copies tile data               |
+| Worker init             | All workers | `TileMap.initializeFromBuffers(data.tilemapData)` creates Int32Array views over shared SABs |
+| Runtime                 | Any thread  | `TileMap.myTilemap.grass.getTileId(x, y)` reads directly from SAB                           |
+| Scene `destroy()`       | Main        | `TileMap.reset()` clears registry and releases SAB references                               |
 
 ---
 
 ## Static API
 
-| Method | Description |
-|---|---|
-| `TileMap.get(name)` | Get tilemap by name (dictionary lookup) |
-| `TileMap.getById(id)` | Get tilemap by numeric ID |
-| `TileMap.getAll()` | Get all registered tilemaps |
-| `TileMap.initializeFromLoaded(loadedTilemaps)` | Main thread: create SABs from Tiled JSON |
-| `TileMap.initializeFromBuffers(data)` | Workers: create views over shared SABs |
-| `TileMap.getSerializableData()` | Main thread: package SABs + metadata for worker transfer |
-| `TileMap.reset()` | Scene cleanup: clear registry, release SAB references |
+| Method                                         | Description                                              |
+| ---------------------------------------------- | -------------------------------------------------------- |
+| `TileMap.get(name)`                            | Get tilemap by name (dictionary lookup)                  |
+| `TileMap.getById(id)`                          | Get tilemap by numeric ID                                |
+| `TileMap.getAll()`                             | Get all registered tilemaps                              |
+| `TileMap.initializeFromLoaded(loadedTilemaps)` | Main thread: create SABs from Tiled JSON                 |
+| `TileMap.initializeFromBuffers(data)`          | Workers: create views over shared SABs                   |
+| `TileMap.getSerializableData()`                | Main thread: package SABs + metadata for worker transfer |
+| `TileMap.reset()`                              | Scene cleanup: clear registry, release SAB references    |
 
 ---
 
