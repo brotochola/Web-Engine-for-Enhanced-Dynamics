@@ -9,11 +9,20 @@
  * minification only; embedded worker strings remain obfuscated from Step 1.
  */
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import TerserPlugin from 'terser-webpack-plugin';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Cap terser worker_threads parallelism. See webpack.config.js for context —
+// each worker thread gets V8's default ~2GB heap, and the embedded ~4MB worker
+// strings make the AST heavy. A small cap prevents OOM in the minifier pool.
+const TERSER_PARALLEL = Math.max(
+    1,
+    Math.min(2, (os.cpus().length || 2) - 1)
+);
 
 // Production mode: swap debug modules with no-op stubs
 const isProd = process.env.WEED_PROD === 'true';
@@ -74,6 +83,7 @@ const umdConfig = {
         minimize: true,
         minimizer: [
             new TerserPlugin({
+                parallel: TERSER_PARALLEL,
                 terserOptions: {
                     keep_classnames: true,
                     compress: {

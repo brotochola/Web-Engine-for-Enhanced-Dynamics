@@ -1857,9 +1857,18 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
         // Remove ALL import statements (we provide WEED via parameters, other classes are already global)
         .replace(/import\s+[\w\s{},*]+\s+from\s+['"][^'"]+['"]\s*;?/g, '')
         .replace(/import\s+['"][^'"]+['"]\s*;?/g, '') // side-effect imports
-        // Remove const/let destructuring from WEED (we provide these as parameters)
+        // Remove const/let destructuring from WEED (we provide these as parameters).
+        // Also strip destructuring of any local that came from WEED (e.g.
+        // `const { ShapeType } = enums;` after `const { enums } = WEED;` was stripped).
+        // The names destructured from `enums` collide with same-named Function
+        // parameters below (`ShapeType`, etc.) and would crash the wrapper with
+        // "Identifier 'X' has already been declared". Stripping the line is safe
+        // because every member that scripts use from `enums` is already provided
+        // as a wrapper parameter.
         .replace(/const\s*\{[\s\S]*?\}\s*=\s*WEED\s*;?/g, '')
         .replace(/let\s*\{[\s\S]*?\}\s*=\s*WEED\s*;?/g, '')
+        .replace(/const\s*\{[\s\S]*?\}\s*=\s*enums\s*;?/g, '')
+        .replace(/let\s*\{[\s\S]*?\}\s*=\s*enums\s*;?/g, '')
         // Replace import.meta.url with the script path
         .replace(/import\.meta\.url/g, `'${scriptPath}'`)
         // Transform exports to assignments on our exports object
@@ -1873,7 +1882,9 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
           }).join('\n');
         });
 
-      // Build the wrapper with WEED globals as function parameters
+      // Build the wrapper with WEED globals as function parameters.
+      // All enum members are passed individually so scripts can reference them
+      // even after we strip their `const { X } = enums;` line above.
       const moduleWrapper = new Function(
         'exports', 'WEED',
         'GameObject', 'Component', 'FSM', 'FSMState', 'Transform', 'RigidBody', 'Collider',
@@ -1881,12 +1892,18 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
         'DecorationComponent', 'ParticleEmitter', 'DecorationPool', 'Flash', 'Mouse', 'Camera',
         'NavGrid', 'Ray', 'ShapeType', 'rng', 'randomColor', 'distanceSq2D', 'getDirectionFromAngle',
         'containerRadius', 'SpriteSheetRegistry', 'Keyboard', 'SoundManager',
+        // Enum members (previously only ShapeType — anything destructured from
+        // `enums` in user scripts must be provided here, otherwise the script
+        // gets a ReferenceError after we strip the destructuring line).
+        'BLEND_MODES', 'DEFAULT_LAYERS', 'CAMERA_TYPES', 'DECAL_STAMPS_BLEND_MODE',
+        'DEBUG_FLAGS', 'DEBUG_SELECTED_ENTITY_OFFSET',
         transformedScript
       );
 
       // Get references - in workers, classes are directly on self, not self.WEED
       const WEED = globalContext.WEED || globalContext;
       const g = globalContext; // shorthand for getting classes
+      const e = WEED.enums || {};
 
       try {
         moduleWrapper(
@@ -1911,7 +1928,7 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
           g.Camera || WEED.Camera,
           g.NavGrid || WEED.NavGrid,
           g.Ray || WEED.Ray,
-          g.ShapeType || WEED.enums?.ShapeType,
+          g.ShapeType || e.ShapeType,
           g.rng || WEED.rng,
           g.randomColor || WEED.randomColor,
           g.distanceSq2D || WEED.distanceSq2D,
@@ -1919,7 +1936,13 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
           g.containerRadius || WEED.containerRadius,
           g.SpriteSheetRegistry || WEED.SpriteSheetRegistry,
           g.Keyboard || WEED.Keyboard,
-          g.SoundManager || WEED.SoundManager
+          g.SoundManager || WEED.SoundManager,
+          e.BLEND_MODES,
+          e.DEFAULT_LAYERS,
+          e.CAMERA_TYPES,
+          e.DECAL_STAMPS_BLEND_MODE,
+          e.DEBUG_FLAGS,
+          e.DEBUG_SELECTED_ENTITY_OFFSET
         );
       } catch (evalError) {
         console.error(`  ✗ Error evaluating ${scriptPath}:`, evalError);

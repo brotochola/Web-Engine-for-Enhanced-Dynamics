@@ -1,4 +1,5 @@
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import TerserPlugin from 'terser-webpack-plugin';
 import WebpackObfuscator from 'webpack-obfuscator';
@@ -50,11 +51,22 @@ const obfuscatorOptions = {
     unicodeEscapeSequence: false
 };
 
+// Cap terser worker_threads parallelism. The default (cpus-1) can spawn 15+
+// worker threads on big machines; each one gets V8's default ~2GB heap and
+// can OOM ("Worker terminated due to reaching memory limit") while minifying
+// the worker bundles that inline pixi + the whole src/ tree. A small fixed
+// cap keeps build speed reasonable while bounding peak memory.
+const TERSER_PARALLEL = Math.max(
+    1,
+    Math.min(4, (os.cpus().length || 2) - 1)
+);
+
 // Common optimization
 const optimization = {
     minimize: true,
     minimizer: [
         new TerserPlugin({
+            parallel: TERSER_PARALLEL,
             terserOptions: {
                 keep_classnames: true,
                 compress: {

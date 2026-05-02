@@ -25,13 +25,37 @@ const isProd = process.env.WEED_PROD === 'true';
 const buildLabel = isProd ? 'production (no debug)' : 'development';
 console.log(`🌿 Building WeedJS single-file bundle [${buildLabel}]...\n`);
 
+// Webpack + terser-webpack-plugin spawns N worker threads (default = cpus-1).
+// On machines with many cores, each terser worker gets V8's default ~2GB heap
+// and one of them OOMs while minifying the worker bundles (which inline
+// pixi_8.16_.min.js + the whole src/ tree per worker entry).
+// Bumping NODE_OPTIONS gives the parent process headroom; the parallel cap
+// in webpack.config.js bounds peak memory across worker threads.
+const buildEnv = {
+    ...process.env,
+    OBFUSCATE: shouldObfuscate ? 'true' : 'false',
+    WEED_PROD: isProd ? 'true' : 'false',
+    NODE_OPTIONS: [process.env.NODE_OPTIONS, '--max-old-space-size=8192']
+        .filter(Boolean)
+        .join(' '),
+};
+
+// Invoke webpack-cli directly via Node, bypassing `npx`. Going through npx
+// (which is `npm exec`) re-enters npm and surfaces noisy "Unknown env config"
+// warnings for any pnpm-only or scope-registry env vars propagated by the
+// caller. Calling cli.js directly skips the npm subshell entirely.
+const webpackCli = path.join(rootDir, 'node_modules', 'webpack-cli', 'bin', 'cli.js');
+function runWebpack(configFile) {
+    execSync(`node "${webpackCli}" --config ${configFile}`, {
+        cwd: rootDir,
+        stdio: 'inherit',
+        env: buildEnv,
+    });
+}
+
 // Step 1: Build workers first
 console.log('📦 Step 1: Building workers...');
-execSync('npx webpack --config webpack.config.js', {
-    cwd: rootDir,
-    stdio: 'inherit',
-    env: { ...process.env, OBFUSCATE: shouldObfuscate ? 'true' : 'false', WEED_PROD: isProd ? 'true' : 'false' }
-});
+runWebpack('webpack.config.js');
 
 // Step 2: Read compiled workers as strings
 console.log('\n📝 Step 2: Reading compiled workers...');
@@ -107,11 +131,7 @@ console.log('   Created: src/index.bundle.js');
 
 // Step 4: Build final bundle
 console.log('\n🎁 Step 4: Building final bundle...');
-execSync('npx webpack --config webpack.bundle.config.js', {
-    cwd: rootDir,
-    stdio: 'inherit',
-    env: { ...process.env, OBFUSCATE: shouldObfuscate ? 'true' : 'false', WEED_PROD: isProd ? 'true' : 'false' }
-});
+runWebpack('webpack.bundle.config.js');
 
 // Cleanup temp files
 fs.unlinkSync(bundleEntryPath);
