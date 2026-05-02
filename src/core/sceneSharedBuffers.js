@@ -658,7 +658,9 @@ export function teardownSceneSharedState(scene) {
 
   if (scene.querySystem && scene.querySystem.queryResultViews) {
     for (const view of scene.querySystem.queryResultViews) {
-      view[0] = 0;
+      // Snapshot views are { header, snapshots, ... }; published count lives at header[1].
+      Atomics.store(view.header, 1, 0);
+      for (const snapshot of view.snapshots) snapshot[0] = 0;
     }
   }
 

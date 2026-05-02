@@ -304,8 +304,7 @@ export class QuerySystem {
     this.entityMetadataView = null;
     this.queryCacheView = null;
     this.queryVersionData = null;
-    this.queryResultViews = []; // Array of Uint16Array views, one per pre-computed query
-    this._cachedPrecomputedSubarrayViews = [];
+    this.queryResultViews = []; // Snapshot views, one per pre-computed query
     this._fallbackActiveQueryCache = new Map();
 
     /**
@@ -570,7 +569,6 @@ export class QuerySystem {
    */
   _initializeQueryResultViews() {
     this.queryResultViews = [];
-    this._cachedPrecomputedSubarrayViews = [];
 
     for (let i = 0; i < this.precomputedQueries.length; i++) {
       this.queryResultViews.push(createQuerySnapshotViews(this.queryResultsSAB, i));
@@ -860,17 +858,6 @@ export class QuerySystem {
         `  - ${meta.className}: [${componentNames}] (mask: 0x${meta.componentMask.toString(16)})`
       );
     }
-  }
-
-  /**
-   * Get the result buffer view for a pre-computed query by index
-   * Internal helper for direct access to pre-computed query result buffers.
-   *
-   * @param {number} queryIndex - Index in precomputedQueries array
-   * @returns {Uint16Array} - Result buffer view (index 0 = count, rest = entity indices)
-   */
-  getQueryResultBuffer(queryIndex) {
-    return this.queryResultViews[queryIndex];
   }
 
   /**

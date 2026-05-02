@@ -20,9 +20,6 @@ import {
   batchRemoveFromActiveEntities,
   getGameObjectWorkerContext,
   bumpActiveQueryVersion,
-  addToMatchingQueries,
-  removeFromMatchingQueries,
-  batchRemoveFromMatchingQueries,
   removeFromTypeActiveList,
   clearTypeActiveList,
   addToTypeActiveList,
@@ -230,26 +227,6 @@ export class GameObject {
   }
 
   /**
-   * Add an entity to all matching precomputed query buffers (sorted insert)
-   * Called from spawn() after entity activation
-   * @param {number} entityIndex - The entity index to add
-   * @param {number} entityType - The entity's type ID
-   */
-  static _addToMatchingQueries(entityIndex, entityType) {
-    addToMatchingQueries(entityIndex, entityType, this._getWorkerContext());
-  }
-
-  /**
-   * Remove an entity from all matching precomputed query buffers (binary search + shift)
-   * Called from despawn() before entity deactivation
-   * @param {number} entityIndex - The entity index to remove
-   * @param {number} entityType - The entity's type ID
-   */
-  static _removeFromMatchingQueries(entityIndex, entityType) {
-    removeFromMatchingQueries(entityIndex, entityType, this._getWorkerContext());
-  }
-
-  /**
    * Remove an entity from its type's active list (binary search + shift)
    * Called from despawn() before entity deactivation
    * @param {Class} EntityClass - The entity's class
@@ -266,16 +243,6 @@ export class GameObject {
    */
   static _clearTypeActiveList(EntityClass) {
     clearTypeActiveList(EntityClass._activeList);
-  }
-
-  /**
-   * Batch remove entities from all matching query buffers (single-pass compaction)
-   * Much faster than individual removals: O(n * queries) vs O(k * n * queries)
-   * @param {Set<number>} indicesToRemove - Set of entity indices to remove
-   * @param {number} entityType - The entity type ID (all indices must be same type)
-   */
-  static _batchRemoveFromMatchingQueries(indicesToRemove, entityType) {
-    batchRemoveFromMatchingQueries(indicesToRemove, entityType, this._getWorkerContext());
   }
 
   /**
@@ -2060,7 +2027,6 @@ export class GameObject {
     const endIndex = (EntityClass.endIndex !== undefined)
       ? EntityClass.endIndex
       : (startIndex + EntityClass.poolSize);
-    const entityType = EntityClass.entityType;
 
     // Phase 1: Collect all active indices and call lifecycle hooks
     // Using Set for O(1) lookup in batch removal methods
@@ -2145,7 +2111,6 @@ export class GameObject {
 
     // Phase 2: Batch remove from active lists (O(N) instead of O(N²))
     GameObject._batchRemoveFromActiveEntities(indicesToDespawn);
-    GameObject._batchRemoveFromMatchingQueries(indicesToDespawn, entityType);
 
     // Phase 3: Clear the per-type active list entirely (O(1))
     GameObject._clearTypeActiveList(EntityClass);

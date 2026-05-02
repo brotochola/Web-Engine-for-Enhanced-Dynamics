@@ -5,9 +5,6 @@ import {
   addToActiveEntities,
   removeFromActiveEntities,
   batchRemoveFromActiveEntities,
-  addToMatchingQueries,
-  removeFromMatchingQueries,
-  batchRemoveFromMatchingQueries,
   addToTypeActiveList,
   removeFromTypeActiveList,
   clearTypeActiveList,
@@ -52,39 +49,3 @@ test('type active list helpers keep per-type lists sorted and clearable', () => 
   assert.equal(typeList[0], 0);
 });
 
-test('matching query helpers mutate only queries whose masks match', () => {
-  const queryA = new Uint16Array(8);
-  const queryB = new Uint16Array(8);
-  const queryC = new Uint16Array(8);
-  const worker = {
-    _queryEntityMetadata: {
-      2: { componentMask: 0b011 },
-    },
-    _precomputedQueries: [
-      { queryMask: 0b001 },
-      { queryMask: 0b010 },
-      { queryMask: 0b111 },
-    ],
-    _queryResultViews: [queryA, queryB, queryC],
-  };
-
-  addToMatchingQueries(8, 2, worker);
-  addToMatchingQueries(4, 2, worker);
-  addToMatchingQueries(6, 2, worker);
-  addToMatchingQueries(4, 2, worker);
-
-  assert.equal(queryA[0], 3);
-  assert.deepEqual(Array.from(queryA.slice(1, 4)), [4, 6, 8]);
-  assert.equal(queryB[0], 3);
-  assert.deepEqual(Array.from(queryB.slice(1, 4)), [4, 6, 8]);
-  assert.equal(queryC[0], 0);
-
-  removeFromMatchingQueries(6, 2, worker);
-  assert.deepEqual(Array.from(queryA.slice(1, 3)), [4, 8]);
-  assert.deepEqual(Array.from(queryB.slice(1, 3)), [4, 8]);
-
-  batchRemoveFromMatchingQueries(new Set([4, 8]), 2, worker);
-  assert.equal(queryA[0], 0);
-  assert.equal(queryB[0], 0);
-  assert.equal(queryC[0], 0);
-});
