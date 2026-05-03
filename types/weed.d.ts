@@ -9,7 +9,15 @@ export * from './utils';
 
 export const ShapeType: Readonly<{ Circle: 0; Box: 1 }>;
 export const BLEND_MODES: Readonly<Record<string, number>>;
-export const DEFAULT_LAYERS: Readonly<Record<string, unknown>>;
+
+export interface DefaultLayerEntry {
+  zIndex: number;
+  blendMode: number;
+  ySorting: boolean;
+  layerType: string;
+}
+
+export const DEFAULT_LAYERS: Readonly<Record<string, DefaultLayerEntry>>;
 export const CAMERA_TYPES: Readonly<Record<string, number>>;
 
 export type SpawnConfig = Record<string, unknown>;
@@ -23,8 +31,215 @@ export interface GameEngineConfig {
   canvasHeight?: number;
   debug?: boolean;
   debugUpdateInterval?: number;
-  debugDefaultOpen?: boolean | null;
+  debugDefaultOpen?: boolean | string | null;
   transitionCooldown?: number;
+}
+
+export interface SceneLogEntry {
+  worker: string;
+  message: unknown;
+  when: number;
+}
+
+/** Main-thread camera snapshot synced from {@link Camera} static state. */
+export interface SceneCameraView {
+  zoom: number;
+  x: number;
+  y: number;
+}
+
+export interface SceneBuiltinState {
+  pause: boolean;
+}
+
+export interface MemoryUsageCategorySummary {
+  totalBytes: number;
+  totalFormatted: string;
+  bufferCount: number;
+  children: Record<string, MemoryUsageCategorySummary> | null;
+}
+
+export interface MemoryUsageSummary {
+  totalBytes: number;
+  totalFormatted: string;
+  bufferCount: number;
+  categories: Record<string, MemoryUsageCategorySummary>;
+  flatBreakdown: Record<string, number>;
+}
+
+export interface SceneMemoryComponentAllocation {
+  bytes: number;
+  formatted: string;
+  capacity: number;
+  entityTypeCount: number;
+  entityPoolSlots: number;
+  bytesPerSlot: number;
+  estimatedUsedSlots: number;
+  estimatedUnusedSlots: number;
+  estimatedUnusedBytes: number;
+  estimatedUnusedFormatted: string;
+  dedicatedPool: boolean;
+}
+
+export interface SceneMemoryUsageReport extends MemoryUsageSummary {
+  componentAllocations: Record<string, SceneMemoryComponentAllocation>;
+}
+
+export interface SharedBufferSizeBreakdown {
+  total: number;
+  totalFormatted: string;
+  breakdown: Record<string, number>;
+  categories: Record<string, MemoryUsageCategorySummary>;
+  bufferCount: number;
+}
+
+export interface SceneWorkers {
+  spatialWorkers: Worker[];
+  logicWorkers: Worker[];
+  physics: Worker | null;
+  renderer: Worker | null;
+  particle: Worker | null;
+  preRender: Worker | null;
+}
+
+export interface SceneComponentDataBuffers {
+  Transform: SharedArrayBuffer | null;
+  RigidBody: SharedArrayBuffer | null;
+  Collider: SharedArrayBuffer | null;
+  SpriteRenderer: SharedArrayBuffer | null;
+  [componentName: string]: SharedArrayBuffer | null | undefined;
+}
+
+export interface SceneBuffers {
+  gameObjectData: SharedArrayBuffer | null;
+  neighborData: SharedArrayBuffer | null;
+  collisionData: SharedArrayBuffer | null;
+  activeEntitiesData: SharedArrayBuffer | null;
+  inputData: SharedArrayBuffer | null;
+  cameraData: SharedArrayBuffer | null;
+  debugData: SharedArrayBuffer | null;
+  debugDrawData: SharedArrayBuffer | null;
+  frameRateData: SharedArrayBuffer | null;
+  componentData: SceneComponentDataBuffers;
+  gridEntities: SharedArrayBuffer | null;
+  gridCounts: SharedArrayBuffer | null;
+  rendererStats: SharedArrayBuffer | null;
+  particleStats: SharedArrayBuffer | null;
+  physicsStats: SharedArrayBuffer | null;
+  spatialStats: SharedArrayBuffer | null;
+  logicStats: SharedArrayBuffer | null;
+  queryEntityMetadata: SharedArrayBuffer | null;
+  queryCache: SharedArrayBuffer | null;
+  queryResults: SharedArrayBuffer | null;
+  queryVersion: SharedArrayBuffer | null;
+}
+
+export interface SceneRegisteredClassEntry {
+  class: typeof GameObject;
+  count: number;
+  startIndex?: number;
+  entityType?: number;
+  scriptPath?: string | null;
+  components?: (typeof Component)[];
+}
+
+export type SceneEntityDefinitionTuple = [typeof GameObject, number];
+
+export type SceneQueryTuple = readonly (typeof Component)[];
+
+/** Merged runtime scene config (static defaults + `Scene.config` + nested worker blocks). */
+export type SceneConfig = Record<string, unknown>;
+
+export interface DebugFlagConstants {
+  readonly SHOW_COLLIDERS: 0;
+  readonly SHOW_VELOCITY: 1;
+  readonly SHOW_ACCELERATION: 2;
+  readonly SHOW_NEIGHBORS: 3;
+  readonly SHOW_SPATIAL_GRID: 4;
+  readonly SHOW_ENTITY_INFO: 5;
+  readonly SHOW_FPS_GRAPH: 7;
+  readonly SHOW_PROFILER: 8;
+  readonly SHOW_ENTITY_INDICES: 9;
+  readonly SHOW_ACTIVE_ONLY: 10;
+  readonly SHOW_DEBUG_DRAWS: 11;
+  readonly SHOW_SELECTED_ENTITY: 12;
+  readonly SHOW_SLEEPING_ENTITIES: 13;
+  readonly SHOW_SLEEPING_CELLS: 14;
+  readonly SHOW_COLLISION_CANDIDATES: 15;
+  readonly SHOW_CONSTRAINTS: 16;
+  readonly SHOW_ENTITY_ORIGINS: 17;
+}
+
+export interface DebugFlagsPalette {
+  collider: number;
+  trigger: number;
+  velocity: number;
+  acceleration: number;
+  neighbor: number;
+  grid: number;
+  text: number;
+}
+
+export interface DebugFlagsEnableOptions {
+  colliders?: boolean;
+  velocity?: boolean;
+  acceleration?: boolean;
+  neighbors?: boolean;
+  spatialGrid?: boolean;
+  entityInfo?: boolean;
+  fpsGraph?: boolean;
+  profiler?: boolean;
+  entityIndices?: boolean;
+  debugDraws?: boolean;
+  sleepingEntities?: boolean;
+  sleepingCells?: boolean;
+  collisionCandidates?: boolean;
+  constraints?: boolean;
+  entityOrigins?: boolean;
+}
+
+export interface DebugFlagsStateSnapshot {
+  colliders: boolean;
+  velocity: boolean;
+  acceleration: boolean;
+  neighbors: boolean;
+  spatialGrid: boolean;
+  entityInfo: boolean;
+  fpsGraph: boolean;
+  profiler: boolean;
+  entityIndices: boolean;
+  debugDraws: boolean;
+  sleepingEntities: boolean;
+  sleepingCells: boolean;
+  collisionCandidates: boolean;
+  constraints: boolean;
+  entityOrigins: boolean;
+}
+
+export interface QuerySystemPrecomputeComponentMap {
+  Transform: typeof Transform;
+  RigidBody: typeof RigidBody;
+  Collider: typeof Collider;
+  SpriteRenderer: typeof SpriteRenderer;
+  AdobeAnimComponent: typeof AdobeAnimComponent;
+  LightEmitter: typeof LightEmitter;
+  ShadowCaster: typeof ShadowCaster;
+  FlashComponent: typeof FlashComponent;
+  LightOccluder: typeof LightOccluder;
+  CameraInOutListener: typeof CameraInOutListener;
+  CollisionListener: typeof CollisionListener;
+}
+
+export interface QuerySystemSharedBuffersResult {
+  entityMetadataSAB: SharedArrayBuffer;
+  queryCacheSAB: SharedArrayBuffer;
+  queryResultsSAB: SharedArrayBuffer;
+  queryVersionSAB: SharedArrayBuffer;
+}
+
+export interface DebugUIOptions {
+  updateInterval?: number;
+  defaultOpen?: string | null;
 }
 
 /** Mutable 2D vector used as output by several static APIs. */
@@ -404,7 +619,15 @@ export declare class Component {
   static sharedBuffer: SharedArrayBuffer | null;
   static globalEntityCount: number;
   static componentId: number | null;
-  static ARRAY_SCHEMA: Record<string, typeof Float32Array | typeof Int32Array | typeof Uint8Array>;
+  static ARRAY_SCHEMA: Record<
+    string,
+    | typeof Float32Array
+    | typeof Int32Array
+    | typeof Int16Array
+    | typeof Uint8Array
+    | typeof Uint16Array
+    | typeof Uint32Array
+  >;
   index: number;
   owner?: GameObject;
   static initializeArrays(buffer: SharedArrayBuffer, count: number): void;
@@ -475,12 +698,15 @@ export declare class GameObject {
   static get(index: number): GameObject | null;
   static getEntityView(entityIndex: number, options?: { cache?: boolean }): GameObject;
   despawn(): void;
-  tick(...args: unknown[]): void;
+  tick(dtRatio?: number, deltaTime?: number): void;
 }
 
 export declare class GameEngine {
   static states: Readonly<{ TRANSITIONING: 0; READY: 1 }>;
   autoResize: boolean;
+  preventContextMenu: boolean;
+  preventDefaultKeys: boolean;
+  injectStyles: boolean;
   canvasWidth: number;
   canvasHeight: number;
   canvas: HTMLCanvasElement | null;
@@ -493,17 +719,20 @@ export declare class GameEngine {
   loadScene(SceneClass: typeof Scene): Promise<boolean>;
   pause(): void;
   resume(): void;
-  spawnEntity(EntityClassOrName: unknown, data?: SpawnConfig): void;
+  spawnEntity(EntityClassOrName: string | typeof GameObject, data?: SpawnConfig): void;
   despawnAllEntities(className: string): void;
-  getPoolStats(EntityClass: unknown): { total: number; active: number; available: number };
-  readonly debug: unknown;
-  readonly debugFlags: unknown;
-  readonly mouse: Mouse;
-  readonly camera: Camera;
-  readonly config: Record<string, unknown> | undefined;
-  readonly rng: unknown;
-  readonly workers: unknown;
-  readonly numberOfLogicWorkers: number | undefined;
+  getPoolStats(EntityClass: string | typeof GameObject): { total: number; active: number; available: number };
+  /** Scene debug flags buffer (same as {@link Scene.debugFlags}). */
+  get debug(): DebugFlags | undefined;
+  get debugFlags(): DebugFlags | undefined;
+  /** Engine forwards to `Mouse` static API; `undefined` when no scene. */
+  get mouse(): typeof Mouse | undefined;
+  /** World-space snapshot `{ zoom, x, y }` from the active scene (not the {@link Camera} class). */
+  get camera(): SceneCameraView | undefined;
+  get config(): SceneConfig | undefined;
+  get rng(): (() => number) | undefined;
+  get workers(): SceneWorkers | undefined;
+  get numberOfLogicWorkers(): number | undefined;
   readonly isReady: boolean;
   readonly isTransitioning: boolean;
   readonly isFullscreen: boolean;
@@ -513,39 +742,142 @@ export declare class GameEngine {
   destroy(): Promise<void>;
 }
 
+export interface QueryEntityMetadataEntry {
+  entityType: number;
+  className: string;
+  entityClass: typeof GameObject;
+  components: (typeof Component)[];
+  componentMask: bigint;
+  startIndex: number;
+  endIndex: number;
+  poolSize: number;
+}
+
+export interface QueryPrecomputedDefinition {
+  name: string;
+  componentClasses: (typeof Component)[];
+  queryMask: bigint;
+  typeMask: bigint;
+  resultOffset: number;
+}
+
+export declare class QuerySystem {
+  entityMetadata: QueryEntityMetadataEntry[];
+  queryToTypeMask: Map<bigint, bigint>;
+  precomputedQueries: QueryPrecomputedDefinition[];
+  queryMaskToIndex: Map<bigint, number>;
+  entityMetadataSAB: SharedArrayBuffer | null;
+  queryCacheSAB: SharedArrayBuffer | null;
+  queryResultsSAB: SharedArrayBuffer | null;
+  queryVersionSAB: SharedArrayBuffer | null;
+  queryMaskCache: Map<string, bigint>;
+  entityMetadataView: Uint16Array | null;
+  queryCacheView: DataView | Uint8Array | null;
+  queryVersionData: Int32Array | null;
+  queryResultViews: unknown[];
+  _fallbackActiveQueryCache: Map<bigint, unknown>;
+  _queryResultBuffer: Uint16Array | null;
+  buildQueries(registeredClasses: SceneRegisteredClassEntry[]): void;
+  definePrecomputedQueries(
+    componentClasses: QuerySystemPrecomputeComponentMap,
+    sceneQueries?: ReadonlyArray<SceneQueryTuple>,
+  ): void;
+  createSharedBuffers(): QuerySystemSharedBuffersResult;
+  query(componentClasses: ReadonlyArray<typeof Component>): Uint16Array;
+  queryActiveEntities(componentClasses: ReadonlyArray<typeof Component>): Uint16Array;
+  queryActiveEntitiesSlow(componentClasses: ReadonlyArray<typeof Component>): Uint16Array;
+  publishPrecomputedActiveQueries(frameNumber?: number): void;
+  serialize(): Record<string, unknown>;
+  getPrecomputedQueryInfo(queryIndex: number): unknown;
+  getPrecomputedQueryCount(): number;
+}
+
 export declare class Scene {
-  static WORKER_INDICES: Record<string, number>;
-  static config: Record<string, unknown>;
-  static assets: Record<string, unknown>;
+  static WORKER_INDICES: Readonly<Record<string, number>>;
+  static config: SceneConfig;
+  static assets: Record<string, string>;
   static audios: string[];
-  static entities: unknown[];
-  static queries: unknown[][];
+  static entities: SceneEntityDefinitionTuple[];
+  static queries: SceneQueryTuple[];
   static now: number;
   game: GameEngine;
-  config: Record<string, unknown>;
-  log: unknown[];
-  workers: Record<string, unknown>;
-  camera: Camera;
-  mouse: Mouse;
-  debugFlags: unknown;
+  log: SceneLogEntry[];
+  loadedTextures: unknown;
+  config: SceneConfig;
+  imageUrls: Record<string, string>;
+  audioUrls: string[];
+  loadedAudioNames: string[];
+  seed: number;
   rng: () => number;
-  numberOfLogicWorkers: number;
+  state: SceneBuiltinState;
+  keyboard: Record<string, boolean>;
+  camera: SceneCameraView;
+  workers: SceneWorkers;
+  querySystem: QuerySystem;
+  pendingPhysicsUpdates: unknown[];
+  /** Proxied view of `config.physics`; writes forward to workers via {@link Scene.updatePhysicsConfig}. */
+  physics: Record<string, unknown>;
+  workerReadyStates: Record<string, boolean>;
+  numberOfSpatialWorkers: number;
+  totalWorkers: number;
+  buffers: SceneBuffers;
+  nextComponentId: number;
+  componentPools: Record<
+    string,
+    {
+      ComponentClass: typeof Component;
+    }
+  >;
+  registeredClasses: SceneRegisteredClassEntry[];
+  totalEntityCount: number;
+  debugFlags: DebugFlags | null;
+  get numberOfLogicWorkers(): number;
+  get hasParticles(): boolean;
+  get maxParticles(): number;
+  get hasDecorations(): boolean;
+  get maxDecorations(): boolean;
+  get hasBullets(): boolean;
+  get maxBullets(): boolean;
+  get needsParticleWorker(): boolean;
+  get shadowsEnabled(): boolean;
+  get maxShadowCastingLights(): number;
+  get maxShadowsPerLight(): number;
+  get maxShadowsPerEntity(): number;
+  get maxShadowSprites(): number;
+  get decalsEnabled(): boolean;
+  get decalsTileSize(): number;
+  get decalsResolution(): number;
+  get decalsTilePixelSize(): number;
+  get maxFlashes(): number;
+  get navigationEnabled(): boolean;
   constructor(game: GameEngine);
   init(): Promise<void>;
-  destroy(): Promise<void>;
-  pause(): void;
-  resume(): void;
-  resize(width: number, height: number): void;
-  spawnEntity(EntityClassOrName: unknown, spawnConfig?: SpawnConfig): void;
-  despawnEntity(entityIndex: number): void;
-  despawnAllEntities(className: string): void;
-  getPoolStats(EntityClass: unknown): { total: number; active: number; available: number };
-  registerEntityClass(EntityClass: unknown, count: number, scriptPath?: string | null): void;
-  getEntityView(index: number, options?: Record<string, unknown>): GameObject;
-  releaseEntityView(index: number): void;
-  update(dtRatio: number, deltaTime: number, accumulatedTime: number, frameNumber: number): void;
+  exposeGlobalReferences(): void;
   preload(): void | Promise<void>;
   create(): void | Promise<void>;
+  update(dtRatio: number, deltaTime: number, accumulatedTime: number, frameNumber: number): void;
+  onMessageFromGameObject(
+    data: unknown,
+    entityIndex: number,
+    className: string,
+    workerName: string,
+    workerIndex: number,
+  ): void;
+  createSharedBuffers(): void;
+  preInitializeEntityTypeArrays(): void;
+  prepareAdobeAnimateAssets(adobeConfigs?: Record<string, unknown>): Promise<void>;
+  finalizeAdobeAnimateAssets(compiledAssets?: Record<string, unknown>): void;
+  preloadAssets(imageUrls: Record<string, string>, spritesheetConfigs?: Record<string, unknown>): Promise<void>;
+  preloadAudios(audioManifest: unknown): Promise<void>;
+  extractDecalTextures(atlasCanvas: HTMLCanvasElement, atlasJson: Record<string, unknown>): void;
+  buildTextureMetadata(): void;
+  setupWorkerCommunication(): Promise<unknown>;
+  createWorkers(): Promise<void>;
+  handleMessageFromWorker(e: MessageEvent): void;
+  handleWorkerReady(workerName: string): void;
+  getAllWorkers(): Worker[];
+  startAllWorkers(): void;
+  updatePhysicsConfig(partialConfig?: Record<string, unknown>): void;
   onKeyDown(key: string): void;
   onKeyUp(key: string): void;
   onMouseDown(button: number): void;
@@ -553,9 +885,29 @@ export declare class Scene {
   onMouseMove(canvasX: number, canvasY: number): void;
   onMouseLeave(): void;
   onWheel(deltaY: number): void;
-  getMemoryUsageSummary(): unknown;
-  getMemoryUsageReport(): unknown;
-  getSharedBufferSize(includeBreakdown?: boolean): unknown;
+  updateKeyboardBuffer(): void;
+  updateCameraBuffer(): void;
+  startMainLoop(): void;
+  updateInternal(deltaTime: number): void;
+  updateSunDayCycle(deltaTime: number): void;
+  createKeyIndexMap(): Record<string, number>;
+  destroy(): Promise<void>;
+  pause(): void;
+  resume(): void;
+  resize(width: number, height: number): void;
+  spawnEntity(EntityClassOrName: string | typeof GameObject, spawnConfig?: SpawnConfig): void;
+  despawnEntity(entityIndex: number): void;
+  despawnAllEntities(className: string): void;
+  getPoolStats(EntityClass: string | typeof GameObject): { total: number; active: number; available: number };
+  registerEntityClass(EntityClass: typeof GameObject, count: number, scriptPath?: string | null): void;
+  getEntityView(index: number, options?: { cache?: boolean }): GameObject;
+  releaseEntityView(index: number): void;
+  loadEntityScriptsInMainThread(): Promise<void>;
+  getMemoryUsageSummary(): MemoryUsageSummary;
+  getMemoryUsageReport(): SceneMemoryUsageReport;
+  getSharedBufferSize(includeBreakdown?: false): number;
+  getSharedBufferSize(includeBreakdown: true): SharedBufferSizeBreakdown;
+  getSharedBufferSize(includeBreakdown?: boolean): number | SharedBufferSizeBreakdown;
 }
 
 export declare class FSM extends Component {
@@ -583,6 +935,10 @@ export declare class FSM extends Component {
   static initializeEntity(i: number, owner: GameObject): void;
 }
 
+/**
+ * Pure static state node for {@link FSM}. Subclass per state; the engine sets {@link FSMState.fsm}
+ * and {@link FSMState.stateIndex} when linking the graph.
+ */
 export declare class FSMState {
   static fsm: typeof FSM | null;
   /** Assigned when the FSM links states at init. */
@@ -592,15 +948,70 @@ export declare class FSMState {
   static onUpdate(owner: GameObject, i: number, dt: number, timeInState?: number): void;
 }
 
-export declare const DebugFlags: unknown;
-export declare const DEBUG_FLAGS: Readonly<Record<string, number>>;
-export declare const DEBUG_SELECTED_ENTITY_OFFSET: number;
+export declare const DEBUG_FLAGS: Readonly<DebugFlagConstants>;
+export declare const DEBUG_SELECTED_ENTITY_OFFSET: 20;
+
+export declare class DebugFlags {
+  flags: Uint8Array;
+  colors: DebugFlagsPalette;
+  constructor(debugBuffer: SharedArrayBuffer);
+  showColliders(enabled?: boolean): this;
+  showVelocity(enabled?: boolean): this;
+  showAcceleration(enabled?: boolean): this;
+  showNeighbors(enabled?: boolean): this;
+  showSpatialGrid(enabled?: boolean): this;
+  showEntityInfo(enabled?: boolean): this;
+  showFPSGraph(enabled?: boolean): this;
+  showProfiler(enabled?: boolean): this;
+  showEntityIndices(enabled?: boolean): this;
+  showDebugDraws(enabled?: boolean): this;
+  showSelectedEntity(enabled?: boolean): this;
+  showSleepingEntities(enabled?: boolean): this;
+  showSleepingCells(enabled?: boolean): this;
+  showCollisionCandidates(enabled?: boolean): this;
+  showConstraints(enabled?: boolean): this;
+  showEntityOrigins(enabled?: boolean): this;
+  setSelectedEntity(entityIndex: number): this;
+  getSelectedEntity(): number;
+  clearSelectedEntity(): this;
+  enable(options?: DebugFlagsEnableOptions): this;
+  disableAll(): this;
+  enablePhysicsDebug(): this;
+  enableAIDebug(): this;
+  enablePerformanceDebug(): this;
+  isEnabled(flag: number): boolean;
+  getState(): DebugFlagsStateSnapshot;
+}
 
 export declare class DebugUI {
-  constructor(options?: Record<string, unknown>);
-  attach(game: GameEngine, scene: Scene): void;
+  scene: Scene | null;
+  debugFlags: DebugFlags | null;
+  gameEngine: GameEngine | null;
+  updateInterval: number;
+  openSection: string | null;
+  sections: Record<string, { tab: HTMLElement; panel?: HTMLElement }>;
+  registeredScenes: unknown[];
+  container: HTMLDivElement | null;
+  stats: unknown;
+  canvas: unknown;
+  tools: unknown;
+  panels: Record<string, unknown>;
+  constructor(options?: DebugUIOptions);
+  registerScenes(scenes: unknown[]): void;
+  attach(gameEngine: GameEngine, scene: Scene): void;
   detach(): void;
+  start(): void;
+  stop(): void;
+  toggle(): void;
+  show(): void;
+  hide(): void;
   destroy(): void;
+  static drawLine: typeof DebugDraw.drawLine;
+  static drawCircle: typeof DebugDraw.drawCircle;
+  static drawRect: typeof DebugDraw.drawRect;
+  static drawText: typeof DebugDraw.drawText;
+  static drawPoint: typeof DebugDraw.drawPoint;
+  static highlightCell: typeof DebugDraw.highlightCell;
 }
 
 export declare class DebugDraw {
@@ -1042,7 +1453,7 @@ export interface LayerSceneConfigEntry {
   alpha?: number;
   layerType?: string;
   maxItems?: number;
-  dynamicResolution?: unknown;
+  dynamicResolution?: Record<string, unknown> | null;
   shader?: {
     fragment?: string;
     containerBlend?: number;
@@ -1084,7 +1495,7 @@ export interface LayerSerializableLayerMeta {
   uniformMap: Record<string, LayerUniformMapEntry> | null;
   shaderFragment: string | null;
   shaderName: string | null;
-  dynamicResolution: unknown;
+  dynamicResolution: Record<string, unknown> | null;
   uniformTypes: Record<string, string> | null;
 }
 
@@ -1187,6 +1598,66 @@ export declare class TileMapLayer {
   hasTileAt(tileX: number, tileY: number): boolean;
 }
 
+/** Minimal `@pixi/tilemap` CompositeTilemap surface used by {@link TileMap.buildCompositeTilemap}. */
+export interface PixiCompositeTilemap {
+  tile(
+    tilesetUid: number,
+    x: number,
+    y: number,
+    frame: {
+      u: number;
+      v: number;
+      tileWidth: number;
+      tileHeight: number;
+      rotate?: number;
+      alpha?: number;
+    },
+  ): void;
+}
+
+export interface SpriteFrameDimensions {
+  w: number;
+  h: number;
+}
+
+export interface SpriteAnimationData {
+  frameCount: number;
+  frames: string[];
+}
+
+export interface SpriteSheetRuntimeData {
+  isProxy?: boolean;
+  totalAnimations: number;
+  indexToName: string[];
+  animations: Record<string, SpriteAnimationData>;
+}
+
+export interface MaxRectsPackedRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface MaxRectsPackerApi {
+  readonly width: number;
+  readonly height: number;
+  readonly padding: number;
+  insert(width: number, height: number, heuristic?: string): MaxRectsPackedRect | null;
+}
+
+export interface SoundManifestFileEntry {
+  name?: string;
+  id?: string;
+  src?: string;
+  url?: string;
+  path?: string;
+}
+
+export type SoundManifest =
+  | readonly (string | SoundManifestFileEntry)[]
+  | Record<string, string | SoundManifestFileEntry>;
+
 export declare class TileMap {
   readonly id: number;
   readonly name: string;
@@ -1206,7 +1677,7 @@ export declare class TileMap {
   getAllTileIds(worldX: number, worldY: number): Record<string, number>;
   worldToTile(worldX: number, worldY: number, out: { tileX: number; tileY: number }): { tileX: number; tileY: number };
   tileToWorld(tileX: number, tileY: number, out: Vec2Mutable): Vec2Mutable;
-  buildCompositeTilemap(compositeTilemap: unknown, options?: { layers?: string[] | null }): void;
+  buildCompositeTilemap(compositeTilemap: PixiCompositeTilemap, options?: { layers?: string[] | null }): void;
 
   static count: number;
   static initialized: boolean;
@@ -1220,27 +1691,31 @@ export declare class TileMap {
 }
 
 export declare class SpriteSheetRegistry {
-  static spritesheets: Map<string, unknown>;
-  static frameDimensions: Map<string, unknown>;
+  static spritesheets: Map<string, SpriteSheetRuntimeData>;
+  static frameDimensions: Map<string, Map<string, SpriteFrameDimensions>>;
   static spritesheetNames: string[];
   static spritesheetNameToId: Map<string, number>;
   static decalFrameNameToId: Map<string, number> | null;
-  static MaxRectsPacker: new (width: number, height: number, padding?: number) => unknown;
+  static MaxRectsPacker: new (width: number, height: number, padding?: number) => MaxRectsPackerApi;
 
   static register(name: string, jsonData: Record<string, unknown>): void;
   static getAnimationIndex(sheetName: string, animName: string): number;
-  static getAnimationName(sheetName: string, index: number): string | null;
-  static getAnimationData(sheetName: string, animName: string): unknown;
+  static getAnimationName(sheetName: string, index: number): string | undefined;
+  static getAnimationData(sheetName: string, animName: string): SpriteAnimationData | undefined;
   static getAnimationNames(sheetName: string): string[];
   static hasAnimation(sheetName: string, animName: string): boolean;
-  static getFrameDimensions(sheetName: string, animName: string): unknown;
-  static buildFrameDimensionArrays(): void;
-  static getFrameDimensionsById(spritesheetId: number, animIndex: number): unknown;
+  static getFrameDimensions(sheetName: string, animName: string): SpriteFrameDimensions | null;
+  static buildFrameDimensionArrays(): {
+    frameWidth: Uint16Array;
+    frameHeight: Uint16Array;
+    totalFrames: number;
+  } | null;
+  static getFrameDimensionsById(spritesheetId: number, animIndex: number): SpriteFrameDimensions | null;
   static serialize(): Record<string, unknown>;
   static deserialize(serialized: Record<string, unknown> | null | undefined): void;
   static clearForSceneUnload(): void;
   static getSpritesheetNames(): string[];
-  static validateSpriteConfig(entityName: string, spriteConfig: unknown): void;
+  static validateSpriteConfig(entityName: string, spriteConfig: Record<string, unknown>): void;
   static registerSpritesheetId(name: string): number;
   static getSpritesheetId(name: string): number;
   static getSpritesheetName(id: number): string;
@@ -1248,7 +1723,7 @@ export declare class SpriteSheetRegistry {
     assetsConfig: Record<string, unknown>,
     options?: SpriteSheetCreateBigAtlasOptions,
   ): Promise<BigAtlasCreateResult>;
-  static registerProxy(sheetName: string, proxyData: unknown): void;
+  static registerProxy(sheetName: string, proxyData: Record<string, unknown>): void;
   static getFrameName(sheetName: string, animName: string, frameIndex?: number): string | null;
   static getBigAtlasAnimName(sheetName: string, animName: string): string;
   static getAnimationFrameCount(sheetName: string, animName: string): number;
@@ -1257,14 +1732,14 @@ export declare class SpriteSheetRegistry {
 }
 
 export declare class AdobeAnimRegistry {
-  static assets: Map<string, AdobeAnimSerializedClip & Record<string, unknown>>;
+  static assets: Map<string, AdobeAnimSerializedClip>;
   static assetNames: string[];
   static assetNameToId: Map<string, number>;
 
   static clearForSceneUnload(): void;
-  static register(name: string, asset: AdobeAnimSerializedClip & Record<string, unknown>): number;
+  static register(name: string, asset: AdobeAnimSerializedClip): number;
   static getAssetId(name: string): number;
-  static getAsset(assetOrId: string | number): (AdobeAnimSerializedClip & Record<string, unknown>) | null;
+  static getAsset(assetOrId: string | number): AdobeAnimSerializedClip | null;
   static getClipId(assetOrId: string | number, clipName: string): number;
   static getClipName(assetOrId: string | number, clipId: number): string | null;
   static getClipFrameCount(assetOrId: string | number, clipId: number): number;
@@ -1305,7 +1780,7 @@ export declare class SoundManager {
   static importSoundIdMap(soundIdMap: Record<string, number> | null | undefined): void;
   static exportSoundIdMap(): Record<string, number>;
   static getSoundId(name: string): number;
-  static loadManifest(manifest: unknown): Promise<void>;
+  static loadManifest(manifest: SoundManifest | null | undefined): Promise<void>;
   static play(
     nameOrId: string | number,
     volume?: number,
@@ -2015,7 +2490,18 @@ export declare class AbstractWorker {
   noLimitFPS: boolean;
   timeoutId: ReturnType<typeof setTimeout> | null;
   needsGameScripts: boolean;
-  updateFrameTiming(): void;
+  inputData: Int32Array | null;
+  cameraData: Float32Array | null;
+  neighborData: Uint16Array | null;
+  activeEntitiesData: Uint16Array | null;
+  frameRateData: Float32Array | null;
+  frameRateIndex: number;
+  frameRateStride: number;
+  registeredClasses: SceneRegisteredClassEntry[];
+  queryVersionData: Int32Array | null;
+  messageTimeThisFrame: number;
+  workerPorts: Map<string, MessagePort>;
+  updateFrameTiming(): { deltaTime: number; dtRatio: number };
   reportFPS(): void;
   reportLog(message: unknown): void;
   postMessageToScene(data: unknown): void;
@@ -2024,23 +2510,23 @@ export declare class AbstractWorker {
   scheduleNextFrame(): void;
   startGameLoop(): void;
   onCustomSchedulerStart(): void;
-  initializeCommonBuffers(data: unknown): Promise<void>;
+  initializeCommonBuffers(data: Record<string, unknown>): Promise<void>;
   registerCoreClasses(): void;
-  initializeAllComponents(data: unknown): void;
+  initializeAllComponents(data: Record<string, unknown>): void;
   initSeededRandom(seed: number): void;
   handleMessage(e: MessageEvent): Promise<void> | void;
   reportReady(): void;
-  initializeWorkerPorts(ports: unknown): void;
-  sendDataToWorker(workerName: string, data: unknown): void;
+  initializeWorkerPorts(ports: Record<string, MessagePort> | null | undefined): void;
+  sendDataToWorker(workerName: string, data: unknown): boolean;
   handleWorkerMessage(fromWorker: string, data: unknown): void;
   pause(): void;
   resume(): void;
   getActiveEntityCount(): number;
   getActiveEntityIndex(activeIndex: number): number;
-  query(componentClasses: unknown): unknown;
-  queryActiveEntities(componentClasses: unknown): unknown;
-  queryActiveEntitiesSlow(componentClasses: unknown): unknown;
-  initialize(data: unknown): Promise<void>;
+  query(componentClasses: ReadonlyArray<typeof Component>): Uint16Array;
+  queryActiveEntities(componentClasses: ReadonlyArray<typeof Component>): Uint16Array;
+  queryActiveEntitiesSlow(componentClasses: ReadonlyArray<typeof Component>): Uint16Array;
+  initialize(data: Record<string, unknown>): Promise<void>;
   update(deltaTime: number, dtRatio: number, resuming: boolean): void;
   onResize(width: number, height: number): void;
   handleCustomMessage(data: unknown): void;

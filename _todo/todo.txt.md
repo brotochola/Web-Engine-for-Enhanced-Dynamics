@@ -1,4 +1,6 @@
 - shader de lightOccluders q use el sprite para mask.
+- lightoccluder rectangluar
+
 - static props en components?
 
 ---
@@ -14,8 +16,6 @@
 JSDoc `@typedef`,
 
 ---
-
--decorations con container!
 
 7-poolsize variable, automatico.. no tener limite para la cantidad de gameobjects de tipo tal
 
@@ -47,8 +47,6 @@ JSDoc `@typedef`,
 
 - TWEENS - GSAP
 
--VEC2, VEC3
-
 -generar mas chaboncitos
 
 ---
@@ -62,8 +60,6 @@ JSDoc `@typedef`,
 -this.constructor.spawnCloneFromEntity(this.index)
 
 ---
-
-    --- SCENES ----
 
 ---
 
@@ -103,5 +99,3 @@ bouncing/sliding !
 ---
 
 ## --- GAME OBJECT
-
-- cuando spawneamos cosas q no sea colisionando con otras
