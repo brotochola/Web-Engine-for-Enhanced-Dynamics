@@ -1284,6 +1284,13 @@ class PreRenderWorker extends AbstractWorker {
         const pivotX = minX + (maxX - minX) * rootAnchorX;
         const pivotY = minY + (maxY - minY) * rootAnchorY;
 
+        // Mirror sign: -1 when exactly one of the parent scales is negative
+        // (a reflection). Required because S(-1,1)*R(θ) = R(-θ)*S(-1,1), so a
+        // piece's local rotation must be negated under a single-axis flip,
+        // otherwise rotated pieces (e.g. tilted hands in a "running" clip)
+        // appear mirrored to the wrong side after a horizontal flip.
+        const mirrorSign = ((rootScaleX < 0) !== (rootScaleY < 0)) ? -1 : 1;
+
         let p = start;
         for (; p < end && writeIndex < maxItems; p++) {
             const localX = (pieceX[p] - pivotX) * rootScaleX;
@@ -1293,7 +1300,7 @@ class PreRenderWorker extends AbstractWorker {
             ref.y[writeIndex] = rootY + sin * localX + cos * localY;
             ref.scaleX[writeIndex] = pieceScaleX[p] * rootScaleX;
             ref.scaleY[writeIndex] = pieceScaleY[p] * rootScaleY;
-            ref.rotation[writeIndex] = rootRotation + pieceRotation[p];
+            ref.rotation[writeIndex] = rootRotation + pieceRotation[p] * mirrorSign;
             ref.alpha[writeIndex] = pieceAlpha[p] * rootAlpha;
             ref.tint[writeIndex] = rootTint;
             ref.textureId[writeIndex] = textureIds[p];

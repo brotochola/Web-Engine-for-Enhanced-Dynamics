@@ -1,22 +1,29 @@
 {
   "name": "@weed.js/engine",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "A multithreaded 2D web game engine for high-entity-count browser games",
   "type": "module",
   "main": "dist/weed.bundle.min.js",
   "module": "dist/weed.bundle.esm.min.js",
+  "types": "./types/weed.d.ts",
   "exports": {
     ".": {
+      "types": "./types/weed.d.ts",
       "import": "./dist/weed.bundle.esm.min.js",
       "require": "./dist/weed.bundle.min.js",
       "default": "./dist/weed.bundle.min.js"
     },
-    "./src": "./src/index.js",
+    "./src": {
+      "types": "./types/weed.d.ts",
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    },
     "./src/*": "./src/*"
   },
   "files": [
     "src",
     "dist",
+    "types",
     "README.md",
     "LICENSE"
   ],
@@ -31,6 +38,7 @@
     "pretest:node": "node scripts/sync-version.js",
     "test": "npm run test:node",
     "test:node": "node --test tests/node/*.test.js",
+    "check:types": "npx -p typescript@5.7.2 tsc --noEmit --skipLibCheck types/weed.d.ts types/utils.d.ts",
     "pretest:bench": "node scripts/sync-version.js",
     "test:bench": "node tests/bench/run-integrated-worker-benchmark.mjs",
     "test:bench:headed": "node tests/bench/run-integrated-worker-benchmark.mjs --headed",
