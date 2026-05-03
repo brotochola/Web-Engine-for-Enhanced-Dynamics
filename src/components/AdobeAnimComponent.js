@@ -175,6 +175,7 @@ export class AdobeAnimComponent extends Component {
   }
 
   play(clipName, loop = true) {
+
     const assetId = AdobeAnimComponent.assetId[this.index];
     AdobeAnimComponent.clipId[this.index] = AdobeAnimRegistry.getClipId(assetId, clipName);
     AdobeAnimComponent.time[this.index] = 0;

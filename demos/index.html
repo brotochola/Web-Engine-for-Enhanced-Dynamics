@@ -41,6 +41,7 @@
     import { WaterAndBoxesScene } from '/demos/scenes/WaterAndBoxesScene.js';
     import { ZenithalParticleTestScene } from '/demos/scenes/zenithalParticleTestScene.js';
     import { AdobeAnimateScene } from '/demos/scenes/AdobeAnimateScene.js';
+    import { PlatformerGameScene } from '/demos/scenes/PlatformerGameScene.js';
     // Destructure what we need from WEED
     const { GameEngine } = WEED;
 
@@ -64,6 +65,7 @@
       { name: '💧 Water & Boxes', class: WaterAndBoxesScene },
       { name: '🔬 Zenithal Particles', class: ZenithalParticleTestScene },
       { name: '🦴 Adobe Animate', class: AdobeAnimateScene },
+      { name: 'platformer game', class: PlatformerGameScene },
     ]
     // Register available scenes with DebugUI for scene switching
     if (game.debugUI) {

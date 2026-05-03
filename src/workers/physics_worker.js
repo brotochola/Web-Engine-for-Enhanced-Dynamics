@@ -339,6 +339,23 @@ class PhysicsWorker extends AbstractWorker {
         }
       }
     }
+
+    // Keep velocity arrays consistent with final post-collision positions.
+    // moveEntitiesVerlet() computes vx/vy before collision correction.
+    const invDtRatio = dtRatio !== 0 ? 1 / dtRatio : 0;
+    this.syncVelocitiesFromPositions(
+      physicsEntities,
+      this.rigidBodyCount,
+      rigidBodyActive,
+      RigidBody.static,
+      x,
+      y,
+      px,
+      py,
+      vx,
+      vy,
+      invDtRatio
+    );
   }
 
   /**
@@ -445,6 +462,51 @@ class PhysicsWorker extends AbstractWorker {
       const distIters = this.settings.distanceConstraintIterations;
       for (let it = 0; it < distIters; it++) {
         this.solveDistanceConstraints(x, y, active);
+      }
+    }
+
+    // Keep velocity arrays consistent with final post-collision positions.
+    const invFixedDtRatio = fixedDtRatio !== 0 ? 1 / fixedDtRatio : 0;
+    this.syncVelocitiesFromPositions(
+      physicsEntities,
+      rigidBodyCount,
+      rigidBodyActive,
+      RigidBody.static,
+      x,
+      y,
+      px,
+      py,
+      vx,
+      vy,
+      invFixedDtRatio
+    );
+  }
+
+  syncVelocitiesFromPositions(
+    physicsEntities,
+    count,
+    rigidBodyActive,
+    isStatic,
+    x,
+    y,
+    px,
+    py,
+    vx,
+    vy,
+    invDtRatio
+  ) {
+    if (count === 0) return;
+
+    for (let idx = 0; idx < count; idx++) {
+      const i = physicsEntities[idx];
+      if (!rigidBodyActive[i]) continue;
+
+      if (isStatic[i]) {
+        vx[i] = 0;
+        vy[i] = 0;
+      } else {
+        vx[i] = (x[i] - px[i]) * invDtRatio;
+        vy[i] = (y[i] - py[i]) * invDtRatio;
       }
     }
   }
@@ -861,7 +923,7 @@ class PhysicsWorker extends AbstractWorker {
       const offYi = offsetY[i];
 
       // NOTE: colliderX_i / colliderY_i CANNOT be hoisted arbitrarily because x[i]/y[i]
-      // change during the loop as collisions are resolved! 
+      // change during the loop as collisions are resolved!
       // But reading from SAB over and over is slow, so we cache it in a local register and update when it moves.
       let localXi = x[i];
       let localYi = y[i];
