@@ -102,6 +102,18 @@ export const DEFAULT_LAYERS = Object.freeze({
 });
 
 /**
+ * WebRTC data channel identifiers for Network.send / broadcast / sendToHost / onMessage.
+ * RELIABLE: ordered, guaranteed delivery — use for game events, commands, spawns.
+ * FAST:     unordered, no retransmits   — use for per-frame positional snapshots.
+ * @readonly
+ * @enum {number}
+ */
+export const NETWORK_CHANNEL = Object.freeze({
+  RELIABLE: 0,
+  FAST: 1,
+});
+
+/**
  * Camera / view styles for particle (and future entity) rendering.
  * @readonly
  * @enum {number}

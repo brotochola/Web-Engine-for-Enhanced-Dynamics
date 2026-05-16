@@ -181,6 +181,7 @@ import {
   BLEND_MODES,
   DEFAULT_LAYERS,
   CAMERA_TYPES,
+  NETWORK_CHANNEL,
 } from './core/ConfigDefaults.js';
 
 const enums = Object.freeze({
@@ -188,6 +189,7 @@ const enums = Object.freeze({
   BLEND_MODES,
   DEFAULT_LAYERS,
   CAMERA_TYPES,
+  NETWORK_CHANNEL,
   DECAL_STAMPS_BLEND_MODE,
   DEBUG_FLAGS,
   DEBUG_SELECTED_ENTITY_OFFSET,

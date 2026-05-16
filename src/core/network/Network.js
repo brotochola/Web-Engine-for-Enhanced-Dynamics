@@ -23,6 +23,7 @@
  */
 
 import { FirebaseSignaling } from './FirebaseSignaling.js';
+import { NETWORK_CHANNEL } from '../ConfigDefaults.js';
 
 const DEFAULT_ICE = [
   {
@@ -64,6 +65,10 @@ export class Network {
     // event callbacks
     this._onPeerConnectedCbs = [];
     this._onPeerDisconnectedCbs = [];
+
+    // single message handler — set via `network.onMessage = fn`
+    // fn signature: (peerId: string, data: ArrayBuffer, channel: 0|1) => void
+    this._onMessageHandler = null;
   }
 
   // ---------------------------------------------------------------------------
@@ -148,27 +153,56 @@ export class Network {
   }
 
   /**
+   * Registers the single incoming-message handler.
+   * There is only one handler (not an array) to keep the hot path allocation-free.
+   * @param {function(string, ArrayBuffer, 0|1): void} handler
+   *   - peerId:  sender's peer ID
+   *   - data:    raw ArrayBuffer from the data channel
+   *   - channel: NETWORK_CHANNEL.RELIABLE (0) or NETWORK_CHANNEL.FAST (1)
+   */
+  set onMessage(handler) {
+    this._onMessageHandler = handler;
+  }
+
+  /**
    * Sends data to a specific peer.
    * @param {string} peerId
-   * @param {ArrayBuffer|string} data
-   * @param {'reliable'|'fast'} [channel='reliable']
+   * @param {ArrayBuffer|TypedArray|DataView} data
+   * @param {0|1} [channel=NETWORK_CHANNEL.RELIABLE]
    */
-  send(peerId, data, channel = 'reliable') {
+  send(peerId, data, channel = NETWORK_CHANNEL.RELIABLE) {
     const peer = this._peers.get(peerId);
     if (!peer) return;
-    const dc = channel === 'fast' ? peer.fastDc : peer.reliableDc;
+    const dc = channel === NETWORK_CHANNEL.FAST ? peer.fastDc : peer.reliableDc;
     if (dc?.readyState === 'open') dc.send(data);
   }
 
   /**
    * Sends data to all connected peers.
-   * @param {ArrayBuffer|string} data
-   * @param {'reliable'|'fast'} [channel='reliable']
+   * Iterates peers.values() directly to avoid a redundant Map lookup per peer.
+   * @param {ArrayBuffer|TypedArray|DataView} data
+   * @param {0|1} [channel=NETWORK_CHANNEL.RELIABLE]
    */
-  broadcast(data, channel = 'reliable') {
-    for (const peerId of this._peers.keys()) {
-      this.send(peerId, data, channel);
+  broadcast(data, channel = NETWORK_CHANNEL.RELIABLE) {
+    const fast = channel === NETWORK_CHANNEL.FAST;
+    for (const peer of this._peers.values()) {
+      const dc = fast ? peer.fastDc : peer.reliableDc;
+      if (dc?.readyState === 'open') dc.send(data);
     }
+  }
+
+  /**
+   * Sends data to the host. Only valid when this peer is a client.
+   * Bypasses the send() wrapper for a direct single Map lookup.
+   * @param {ArrayBuffer|TypedArray|DataView} data
+   * @param {0|1} [channel=NETWORK_CHANNEL.RELIABLE]
+   */
+  sendToHost(data, channel = NETWORK_CHANNEL.RELIABLE) {
+    if (!this._hostId) return;
+    const peer = this._peers.get(this._hostId);
+    if (!peer) return;
+    const dc = channel === NETWORK_CHANNEL.FAST ? peer.fastDc : peer.reliableDc;
+    if (dc?.readyState === 'open') dc.send(data);
   }
 
   // ---------------------------------------------------------------------------
@@ -265,10 +299,16 @@ export class Network {
       this._onPeerConnectedCbs.forEach(cb => cb(clientId));
     };
     peer.reliableDc.onerror = e => console.error(`[Network] reliable error → ${clientId}:`, e);
+    peer.reliableDc.onmessage = e => {
+      if (this._onMessageHandler) this._onMessageHandler(clientId, e.data, NETWORK_CHANNEL.RELIABLE);
+    };
 
     peer.fastDc = pc.createDataChannel('fast', { ordered: false, maxRetransmits: 0 });
     peer.fastDc.binaryType = 'arraybuffer';
     peer.fastDc.onerror = e => console.error(`[Network] fast error → ${clientId}:`, e);
+    peer.fastDc.onmessage = e => {
+      if (this._onMessageHandler) this._onMessageHandler(clientId, e.data, NETWORK_CHANNEL.FAST);
+    };
 
     let currentOfferId = null;
     let lastAnswerOfferId = null;
@@ -377,8 +417,14 @@ export class Network {
         reliableDc = ch;
         ch.onopen = () => settle(null);
         ch.onerror = err => settle(new Error(`[Network] reliable channel error: ${err}`));
+        ch.onmessage = e => {
+          if (this._onMessageHandler) this._onMessageHandler(this._hostId, e.data, NETWORK_CHANNEL.RELIABLE);
+        };
       } else if (ch.label === 'fast') {
         fastDc = ch;
+        ch.onmessage = e => {
+          if (this._onMessageHandler) this._onMessageHandler(this._hostId, e.data, NETWORK_CHANNEL.FAST);
+        };
       }
     };
 
