@@ -49,9 +49,23 @@
     // GAME ENGINE SETUP
     // ========================================
 
+    const firebaseConfig = {
+      apiKey: "AIzaSyA2PW7pAnTSrutVDYabtwL7Q3JB2Mir3Pw",
+      authDomain: "webrtc-5c119.firebaseapp.com",
+      databaseURL: "https://webrtc-5c119-default-rtdb.firebaseio.com",
+      projectId: "webrtc-5c119",
+      storageBucket: "webrtc-5c119.firebasestorage.app",
+      messagingSenderId: "334466186648",
+      appId: "1:334466186648:web:10429db094bf249c203fed",
+    };
+
     const game = new GameEngine({
       autoResize: true,
       debug: true,
+      network: {
+        firebase: firebaseConfig,
+        // iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      }
     });
     // Make game global for console access
     window.game = game;

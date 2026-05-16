@@ -4,6 +4,7 @@
 import { DebugUI } from './debug/DebugUI.js';
 import { Mouse } from './Mouse.js';
 import { printLogo } from './utils.js';
+import { Network } from './network/Network.js';
 
 const PREVENT_DEFAULT_KEYS = new Set([
   'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab',
@@ -46,6 +47,9 @@ class GameEngine {
         defaultOpen: config.debugDefaultOpen || null,
       });
     }
+
+    // Networking (optional — requires config.network with Firebase config)
+    this._network = config.network ? new Network(config.network) : null;
 
     // Browser environment hardening
     this._injectedStyle = null;
@@ -320,6 +324,15 @@ class GameEngine {
     return this.currentScene?.numberOfLogicWorkers;
   }
 
+  /**
+   * The Network instance for multiplayer rooms.
+   * Available only when config.network was provided to the constructor.
+   * @returns {Network|null}
+   */
+  get network() {
+    return this._network;
+  }
+
   // State getters
   get isReady() {
     return this.state === GameEngine.states.READY;
@@ -382,6 +395,11 @@ class GameEngine {
     if (this.currentScene) {
       await this.currentScene.destroy();
       this.currentScene = null;
+    }
+
+    if (this._network) {
+      await this._network.destroy();
+      this._network = null;
     }
 
     // Canvas-level listeners die with the element

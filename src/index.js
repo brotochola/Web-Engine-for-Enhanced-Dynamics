@@ -30,6 +30,8 @@ export { SpriteSheetRegistry } from './core/SpriteSheetRegistry.js';
 export { AdobeAnimRegistry } from './core/AdobeAnimRegistry.js';
 export { BigAtlasInspector } from './core/BigAtlasInspector.js';
 export { SoundManager } from './core/SoundManager.js';
+export { Network } from './core/network/Network.js';
+export { FirebaseSignaling } from './core/network/FirebaseSignaling.js';
 export * from './core/utils.js';
 
 // ============================================================================
@@ -140,6 +142,8 @@ import { SpriteSheetRegistry } from './core/SpriteSheetRegistry.js';
 import { AdobeAnimRegistry } from './core/AdobeAnimRegistry.js';
 import { BigAtlasInspector } from './core/BigAtlasInspector.js';
 import { SoundManager } from './core/SoundManager.js';
+import { Network } from './core/network/Network.js';
+import { FirebaseSignaling } from './core/network/FirebaseSignaling.js';
 import {
   containerRadius,
   distanceSq2D,
@@ -215,6 +219,10 @@ const WEED = Object.freeze({
   AdobeAnimRegistry,
   BigAtlasInspector,
   SoundManager,
+
+  // Networking
+  Network,
+  FirebaseSignaling,
 
   // Components
   Transform,
