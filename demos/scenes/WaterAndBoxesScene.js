@@ -26,7 +26,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
       maxNeighbors: 900,
       noLimitFPS: false,
       numberOfSpatialWorkers: 2,
-      maxEntitiesPerCell: 256,
+      maxEntitiesPerCell: 255, // hard cap: per-cell count is stored as Uint8 in the grid SAB
     },
 
     logic: {
