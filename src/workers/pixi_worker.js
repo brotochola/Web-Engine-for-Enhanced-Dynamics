@@ -12,7 +12,6 @@ self.postMessage({
 import { Transform } from '../components/Transform.js';
 
 import { Collider } from '../components/Collider.js';
-import { SpriteRenderer } from '../components/SpriteRenderer.js';
 import { ParticleComponent } from '../components/ParticleComponent.js';
 import { DecorationComponent } from '../components/DecorationComponent.js';
 import { DecorationPool } from '../core/DecorationPool.js';
@@ -290,8 +289,6 @@ class PixiParticlePool {
 class PixiRenderer extends AbstractWorker {
   static DEFAULT_LAYERS = DEFAULT_LAYERS;
 
-  queryConfig = [SpriteRenderer];
-
   constructor(selfRef) {
     super(selfRef);
 
@@ -323,18 +320,9 @@ class PixiRenderer extends AbstractWorker {
     // All sprites (entities, decorations, particles) share the same pool
     this.particlePool = new PixiParticlePool();
 
-    // Entity rendering
-    // this.containers = []; // Array of PIXI containers (one per entity)
-    this.bodySprites = []; // Array of PIXI.Particle references (indexed by entityIndex, null if not spawned)
-    this.bodySpritePoolIndices = null; // Int32Array - Maps entityIndex to pool index (or -1 if no sprite)
-    this.entitySpriteConfigs = {}; // Store sprite config per entityType
-    this.previousAnimStates = null; // Int16Array - Track previous animation state per entity (-1 = unset, initialized in createSprites)
-
-    // Manual animation tracking (for regular Sprites)
-    this.currentAnimationFrames = []; // Array of texture arrays (one per entity)
-    this.currentFrameIndex = null; // Uint16Array - Current frame index in animation (initialized in createSprites)
-    this.frameAccumulator = null; // Float32Array - Time accumulator for frame advancement (initialized in createSprites)
-    this.animationSpeed = null; // Float32Array - Animation speed per entity (frames per second) (initialized in createSprites)
+    // Entity rendering goes exclusively through the render queue from pre_render_worker
+    // (see updateSpritesFromRenderQueue). Animation/texture selection happens in
+    // pre_render_worker, which writes resolved textureIds into the queue.
 
     // Particle rendering (separate from entities)
     this.particleSprites = []; // Array of PIXI.Particle references (indexed 0 to maxParticles-1, null if not active)
@@ -365,9 +353,6 @@ class PixiRenderer extends AbstractWorker {
     this.drawCallCount = 0;
     this.visibleEntityCount = 0;
     this.visibleParticleCount = 0;
-
-    // Per-instance spritesheet tracking
-    this.currentSpritesheetIds = null; // Will be initialized in createSprites
 
     // ========================================
     // Y-SORTING POOL (GC optimization)
@@ -748,188 +733,6 @@ class PixiRenderer extends AbstractWorker {
         cl.pc.scale.set(zoom);
         cl.pc.x = -cameraX * zoom;
         cl.pc.y = -cameraY * zoom;
-      }
-    }
-  }
-
-  /**
-   * Update animation state for an entity (manual animation with regular Sprite)
-   * Requires spritesheet to be set via setSpritesheet() first
-   */
-  updateSpriteAnimation(sprite, entityId, newState) {
-    // Check if animation state changed
-    if (this.previousAnimStates[entityId] === newState) return;
-    this.previousAnimStates[entityId] = newState;
-
-    // Get the entity's current spritesheet (set via setSpritesheet)
-    const spritesheetId = SpriteRenderer.spritesheetId[entityId];
-    if (!spritesheetId || spritesheetId === 0) return; // No spritesheet set yet
-
-    const sheetName = SpriteSheetRegistry.getSpritesheetName(spritesheetId);
-    if (!sheetName) return;
-
-    // Check if this is an animated spritesheet
-    const sheet = this.spritesheets[sheetName];
-    if (!sheet || !sheet.animations) return; // Static texture, no animation
-
-    // Get animation name from registry using numeric index
-    const animName = SpriteSheetRegistry.getAnimationName(sheetName, newState);
-    if (!animName) {
-      console.warn(
-        `Animation index ${newState} not found in SpriteSheetRegistry for "${sheetName}"`
-      );
-      return;
-    }
-
-    if (!sheet.animations[animName]) {
-      console.warn(
-        `Animation "${animName}" (index ${newState}) not found in PIXI spritesheet "${sheetName}"`,
-        `\nAvailable animations:`,
-        Object.keys(sheet.animations || {})
-      );
-      return;
-    }
-
-    // Update animation frames array for manual playback
-    const frames = sheet.animations[animName];
-    this.currentAnimationFrames[entityId] = frames;
-    this.currentFrameIndex[entityId] = 0;
-    this.frameAccumulator[entityId] = 0;
-
-    // Set initial texture
-    if (frames.length > 0) {
-      sprite.texture = frames[0];
-    }
-  }
-
-  /**
-   * Update an entity's sprite to use a different spritesheet or texture
-   * Handles both animated spritesheets and static textures
-   * Called when spritesheetId changes in SharedArrayBuffer
-   *
-   * @param {PIXI.Sprite} sprite - The entity's sprite
-   * @param {number} entityId - Entity index
-   * @param {number} newSpritesheetId - New spritesheet ID (0 = not set, 1-255 = valid)
-   */
-  updateEntitySpritesheet(sprite, entityId, newSpritesheetId) {
-    if (newSpritesheetId === 0) return; // Not set yet
-
-    const targetName = SpriteSheetRegistry.getSpritesheetName(newSpritesheetId);
-    if (!targetName) {
-      console.warn(`Invalid spritesheetId ${newSpritesheetId} for entity ${entityId}`);
-      return;
-    }
-
-    // Check if it's an animated spritesheet or a static texture
-    const sheet = this.spritesheets[targetName];
-
-    if (sheet && sheet.animations && Object.keys(sheet.animations).length > 0) {
-      // ANIMATED SPRITESHEET - has animations
-      this.setAnimatedSpritesheet(sprite, entityId, targetName, sheet);
-    } else {
-      // STATIC TEXTURE - check textures map
-      const texture = this.textures[targetName];
-      if (texture) {
-        this.setStaticTexture(sprite, entityId, texture);
-      } else {
-        console.warn(`Neither spritesheet nor texture "${targetName}" found`);
-      }
-    }
-  }
-
-  /**
-   * Set an animated spritesheet on a sprite
-   * @private
-   */
-  setAnimatedSpritesheet(sprite, entityId, sheetName, sheet) {
-    // Get current animation name from OLD spritesheet (if any)
-    const oldSpritesheetId = this.currentSpritesheetIds[entityId];
-    const currentAnimState = SpriteRenderer.animationState[entityId];
-
-    let animName = null;
-    if (oldSpritesheetId > 0) {
-      const oldSheetName = SpriteSheetRegistry.getSpritesheetName(oldSpritesheetId);
-      if (oldSheetName) {
-        animName = SpriteSheetRegistry.getAnimationName(oldSheetName, currentAnimState);
-      }
-    }
-
-    // BUGFIX: If oldSpritesheetId is 0 (first time setting sprite), try to get animation name from NEW sheet
-    // This respects the animationState that was set by logic worker's setSprite()
-    if (!animName) {
-      animName = SpriteSheetRegistry.getAnimationName(sheetName, currentAnimState);
-    }
-
-    // If no animation name resolved, or it doesn't exist in new sheet, use first animation
-    if (!animName || !sheet.animations[animName]) {
-      animName = Object.keys(sheet.animations)[0];
-    }
-
-    if (!animName) {
-      console.warn(`No animations found in spritesheet "${sheetName}"`);
-      return;
-    }
-
-    // Update to new spritesheet's animation
-    const frames = sheet.animations[animName];
-    if (!frames || !frames[0]) {
-      console.error(
-        `PIXI: Animation "${animName}" has no frames! sheet.animations:`,
-        Object.keys(sheet.animations)
-      );
-      return;
-    }
-    this.currentAnimationFrames[entityId] = frames;
-    this.currentFrameIndex[entityId] = 0;
-    this.frameAccumulator[entityId] = 0;
-    sprite.texture = frames[0];
-
-    // Update animation state to match new sheet's index
-    const newIndex = SpriteSheetRegistry.getAnimationIndex(sheetName, animName);
-    if (newIndex !== undefined) {
-      SpriteRenderer.animationState[entityId] = newIndex;
-      this.previousAnimStates[entityId] = newIndex;
-    }
-  }
-
-  /**
-   * Set a static texture on a sprite
-   * @private
-   */
-  setStaticTexture(sprite, entityId, texture) {
-    sprite.texture = texture;
-    // Clear animation data for static sprites
-    this.currentAnimationFrames[entityId] = [];
-    this.currentFrameIndex[entityId] = 0;
-    this.frameAccumulator[entityId] = 0;
-  }
-
-  changeFrameOfSprite(bodySprite, i, deltaSeconds) {
-    // Manual animation frame advancement (for animated sprites only)
-    const frames = this.currentAnimationFrames[i];
-    if (frames && frames.length > 1) {
-      // Accumulate time
-      this.frameAccumulator[i] += deltaSeconds;
-
-      // Calculate frame duration based on animation speed
-      // animationSpeed represents frames per second (FPS)
-      const frameDuration = 1 / (this.animationSpeed[i] * 60); // Convert to seconds per frame
-
-      // Advance frames if enough time has passed
-      if (this.frameAccumulator[i] >= frameDuration) {
-        this.frameAccumulator[i] -= frameDuration;
-
-        const currentFrame = this.currentFrameIndex[i];
-        const isLastFrame = currentFrame >= frames.length - 1;
-        const shouldLoop = SpriteRenderer.loop[i] === 1;
-
-        // Only advance if looping OR not at last frame
-        if (shouldLoop || !isLastFrame) {
-          this.currentFrameIndex[i] = (currentFrame + 1) % frames.length;
-          // Update sprite texture
-          bodySprite.texture = frames[this.currentFrameIndex[i]];
-        }
-        // If non-looping and at last frame, stay there (do nothing)
       }
     }
   }
@@ -1727,10 +1530,10 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
       const i = useSharedBuffer ? this.visibleLightsData[1 + idx] : lightEntities[idx];
       if (!lightEnabled[i]) continue;
 
-      // Use sprite position if available (already interpolated)
-      const sprite = this.bodySprites[i];
-      const x = sprite ? sprite.x : worldX[i];
-      const yForLight = (sprite ? sprite.y : worldY[i]) - (lightHeight[i] || 0);
+      // World-space light position from Transform SAB, same source as
+      // updateLighting/updateShadowSprites/renderVisibilityLighting use.
+      const x = worldX[i];
+      const yForLight = worldY[i] - (lightHeight[i] || 0);
 
       // Viewport culling: influenceRadius = 10 * sqrt(intensity)
       const influenceRadius = 10 * sqrtLightIntensity[i];
@@ -2002,24 +1805,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       target: this.shadowRT,
       clear: true,
     });
-  }
-
-  /**
-   * Build map of entity types that have SpriteRenderer component
-   * Spritesheets are now set per-instance via setSpritesheet(), not per-class
-   */
-  buildEntitySpriteConfigs(registeredClasses) {
-    // Track which entity types have SpriteRenderer (they need placeholder sprites)
-    for (const registration of registeredClasses) {
-      if (registration.poolSize === 0) continue;
-      if (!registration.components?.includes('SpriteRenderer')) continue;
-
-      const entityType = registration.entityType;
-      if (entityType === undefined || typeof entityType !== 'number') continue;
-
-      // Mark this entity type as having SpriteRenderer (spritesheet set per-instance)
-      this.entitySpriteConfigs[entityType] = { hasSpriteRenderer: true };
-    }
   }
 
   /**
@@ -2307,29 +2092,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     console.log(
       `PIXI WORKER: Decoration system initialized (${this.maxDecorations} slots, using central particle pool)`
-    );
-  }
-
-  /**
-   * Initialize entity sprite tracking arrays
-   * OPTIMIZATION: Sprites are now acquired lazily from central pool when entities spawn
-   * This saves memory for unused entity slots
-   */
-  createSprites() {
-    // Initialize sprite tracking arrays
-    this.bodySprites = new Array(this.globalEntityCount).fill(null);
-    this.bodySpritePoolIndices = new Uint16Array(this.globalEntityCount).fill(0xFFFF);
-    this.currentSpritesheetIds = new Uint8Array(this.globalEntityCount);
-
-    // Initialize animation tracking typed arrays
-    this.previousAnimStates = new Int16Array(this.globalEntityCount).fill(-1);
-    this.currentFrameIndex = new Uint16Array(this.globalEntityCount);
-    this.frameAccumulator = new Float32Array(this.globalEntityCount);
-    this.animationSpeed = new Float32Array(this.globalEntityCount);
-    this.currentAnimationFrames = new Array(this.globalEntityCount).fill(null).map(() => []);
-
-    console.log(
-      `PIXI WORKER: Entity sprite system initialized (${this.globalEntityCount} slots, using central particle pool)`
     );
   }
 
@@ -3085,13 +2847,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Note: Debug visualization is now handled by DebugUI on main thread
     // This removes ~400 lines of debug rendering code from pixi_worker
 
-    // Build entity sprite configs from class definitions
-    this.buildEntitySpriteConfigs(data.registeredClasses);
-    // Query system is already initialized in AbstractWorker and handles light entity lookups
-    this.reportLog('finished building entity sprite configs');
-    // Create sprites for all entities
-    this.createSprites();
-    this.reportLog('finished creating sprites');
+    // Entity sprites come from the render queue (see updateSpritesFromRenderQueue);
+    // no per-entity sprite arrays are needed in this worker.
     // Create particle sprites (separate pool)
     this.createParticleSprites();
     this.reportLog('finished creating particle sprites');
