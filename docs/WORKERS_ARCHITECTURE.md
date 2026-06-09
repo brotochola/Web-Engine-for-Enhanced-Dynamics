@@ -160,7 +160,7 @@ The multitasker. Handles particles, bullets, decals, navigation computation, vis
 | `visibleDecorationsData`       | **Write**      | Visible decoration index list                                      |
 | `activeBulletsData`            | **Write**      | Active bullet index list                                           |
 | `visibleBulletsData`           | **Write**      | Visible bullet index list                                          |
-| `impactBuffer`                 | **Write**      | `[count, targetId, damage, hitX, hitY, ownerId, shooterType, ...]` |
+| `impactBuffer`                 | **Write**      | `[count, seq, targetId, damage, hitX, hitY, ownerId, shooterType, ...]` |
 | `cellSleepingBuffer`           | **Write**      | Per-cell sleeping state                                            |
 | `bloodTilesRGBA`               | **Write**      | Decal pixel data                                                   |
 | `bloodTilesDirty`              | **Write**      | Dirty tile flags                                                   |

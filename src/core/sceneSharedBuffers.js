@@ -269,9 +269,11 @@ function initializeBulletBuffers(scene) {
 
   createCompactUint16ListPair(buffers, 'activeBulletsData', 'visibleBulletsData', maxBullets);
 
+  // Header: [0]=count (Int32), [1]=batch sequence (Int32). Impact data starts at byte 8.
+  // The sequence lets logic workers detect new batches and avoid double-processing
+  // the same impacts when their frame rate differs from the particle worker's.
   const impactStride = 24;
-  buffers.impactBuffer = new SharedArrayBuffer(4 + maxImpactsPerFrame * impactStride);
-  new Int32Array(buffers.impactBuffer)[0] = 0;
+  buffers.impactBuffer = new SharedArrayBuffer(8 + maxImpactsPerFrame * impactStride);
 
   BulletPool.initialize(maxBullets);
   BulletPool.initializeFreeList(buffers.bulletFreeList, buffers.bulletFreeListTop);

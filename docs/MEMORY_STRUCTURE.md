@@ -135,12 +135,13 @@ All lists share the same layout: `[count: Uint16, idx0: Uint16, idx1: Uint16, ..
 
 ### `impactBuffer` -- Bullet/Projectile Impacts
 
-| Property         | Value                                                                       |
-| ---------------- | --------------------------------------------------------------------------- |
-| **Size**         | `4 + maxImpactsPerFrame * 24` bytes. Default 64 impacts = ~1.5 KB           |
-| **Stride**       | 24 bytes (6 floats): `[targetId, damage, hitX, hitY, ownerId, shooterType]` |
-| **Layout**       | `[count: Int32, impact0[6]: Float32, impact1[6]: Float32, ...]`             |
-| **Typed arrays** | `Int32Array` (count), `Float32Array` (impact data)                          |
+| Property         | Value                                                                         |
+| ---------------- | ----------------------------------------------------------------------------- |
+| **Size**         | `8 + maxImpactsPerFrame * 24` bytes. Default 64 impacts = ~1.5 KB             |
+| **Stride**       | 24 bytes (6 floats): `[targetId, damage, hitX, hitY, ownerId, shooterType]`   |
+| **Layout**       | `[count: Int32, seq: Int32, impact0[6]: Float32, impact1[6]: Float32, ...]`   |
+| **Typed arrays** | `Int32Array` (count + batch sequence), `Float32Array` (impact data at byte 8) |
+| **Sync**         | Particle worker bumps `seq` (Atomics) after each batch; logic workers process a batch only when `seq` changes, so impacts are never double-processed across differing frame rates |
 
 | Writer          | Reader        |
 | --------------- | ------------- |

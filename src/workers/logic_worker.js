@@ -144,8 +144,11 @@ class LogicWorker extends AbstractWorker {
     this.totalLogicWorkers = data.config?.logic?.numberOfLogicWorkers || 1;
 
     if (data.impactBuffer) {
-      this._impactCount = new Int32Array(data.impactBuffer, 0, 1);
-      this._impactData = new Float32Array(data.impactBuffer, 4, 384);
+      // Sizes derive from config (buffer is allocated as 8 + maxImpactsPerFrame * 24)
+      const maxImpacts = data.config?.bullet?.maxImpactsPerFrame ?? 64;
+      this._impactHeader = new Int32Array(data.impactBuffer, 0, 2); // [0]=count, [1]=batch sequence
+      this._impactData = new Float32Array(data.impactBuffer, 8, maxImpacts * 6);
+      this._lastImpactSeq = 0;
     }
 
     // console.log("LOGIC WORKER: Initializing with component system");
@@ -427,9 +430,16 @@ class LogicWorker extends AbstractWorker {
     this.systemsExecutedThisFrame = 0;
 
     // Process bullet impacts from particle_worker (SAB poll - no message needed)
-    if (this._impactCount) {
-      const count = this._impactCount[0];
-      if (count > 0) this.processImpacts(count);
+    // Gated on the batch sequence so each batch is processed exactly once,
+    // regardless of logic/particle frame-rate differences (no double damage,
+    // no reprocessing of stale batches).
+    if (this._impactHeader) {
+      const seq = Atomics.load(this._impactHeader, 1);
+      if (seq !== this._lastImpactSeq) {
+        this._lastImpactSeq = seq;
+        const count = Atomics.load(this._impactHeader, 0);
+        if (count > 0) this.processImpacts(count);
+      }
     }
 
     // ========================================

@@ -377,8 +377,9 @@ class ParticleWorker extends AbstractWorker {
 
     // Bullets
     this.maxBullets = 0;
-    this._impactCount = null;
+    this._impactHeader = null; // Int32Array view: [0]=count, [1]=batch sequence
     this._impactData = null;
+    this._maxImpactsPerFrame = 0;
     this._bulletExcludeSet = new Set();
   }
 
@@ -400,8 +401,11 @@ class ParticleWorker extends AbstractWorker {
     this.globalEntityCount = data.globalEntityCount || 0;
 
     if (data.impactBuffer && this.maxBullets > 0) {
-      this._impactCount = new Int32Array(data.impactBuffer, 0, 1);
-      this._impactData = new Float32Array(data.impactBuffer, 4, 384);
+      // Sizes derive from config (buffer is allocated as 8 + maxImpactsPerFrame * 24)
+      const maxImpacts = data.config?.bullet?.maxImpactsPerFrame ?? 64;
+      this._maxImpactsPerFrame = maxImpacts;
+      this._impactHeader = new Int32Array(data.impactBuffer, 0, 2);
+      this._impactData = new Float32Array(data.impactBuffer, 8, maxImpacts * 6);
     }
 
     // console.log(`[PARTICLE WORKER] Max particles: ${this.maxParticles}, Decorations: ${this.maxDecorations}, Entities: ${this.globalEntityCount}`);
@@ -986,14 +990,14 @@ class ParticleWorker extends AbstractWorker {
 
     const activeData = this.activeBulletsData;
     const visibleData = this.visibleBulletsData;
-    const impactCount = this._impactCount;
+    const impactHeader = this._impactHeader;
     const impactData = this._impactData;
     const dt = dtRatio * (1 / 60);
     const excludeSet = this._bulletExcludeSet;
 
     let activeWrite = 1;
     let impactWrite = 0;
-    const maxImpacts = 64;
+    const maxImpacts = this._maxImpactsPerFrame;
 
     for (let i = 0; i < maxBullets; i++) {
       if (!active[i]) continue;
@@ -1020,7 +1024,7 @@ class ParticleWorker extends AbstractWorker {
         const hitX = px + dx * t;
         const hitY = py + dy * t;
 
-        if (impactCount && impactWrite < maxImpacts) {
+        if (impactHeader && impactWrite < maxImpacts) {
           const base = impactWrite * 6;
           impactData[base] = hit.entityIndex;
           impactData[base + 1] = damage[i];
@@ -1042,7 +1046,13 @@ class ParticleWorker extends AbstractWorker {
     }
 
     activeData[0] = activeWrite - 1;
-    if (impactCount) impactCount[0] = impactWrite;
+    if (impactHeader) {
+      // Publish order matters: impact data (plain writes) -> count -> sequence bump.
+      // Logic workers gate on the sequence, so the Atomics edge guarantees they
+      // see the full batch and never re-process the same one twice.
+      Atomics.store(impactHeader, 0, impactWrite);
+      Atomics.add(impactHeader, 1, 1);
+    }
 
     if (activeWrite <= 1 || !this.cameraData || !visibleData) return;
 
