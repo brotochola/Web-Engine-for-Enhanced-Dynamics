@@ -63,6 +63,7 @@ export class Ray {
   static _tempAllHitsArray = []; // Reusable array for castAll internal hits
   static _tempAllHitsCount = 0; // Reused counter to avoid allocations
   static _checkedEntities = new Set(); // Reused Set for castAll
+  static _traverseResult = { entityIndex: -1, distance: Infinity }; // Reused by _traverseGrid
 
   /**
    * Cast a ray from (xFrom, yFrom) to (xTo, yTo)
@@ -164,6 +165,14 @@ export class Ray {
           closestHit = result.entityIndex;
           closestDist = result.distance;
         }
+      }
+
+      // EARLY-OUT: spatial workers insert entities into every cell their AABB
+      // overlaps, so any hit at t < exit-of-current-cell is already found.
+      // Once the closest hit (or maxDist) is not past the current cell's exit
+      // boundary, later cells cannot contain a closer hit.
+      if (closestDist <= (tMaxX < tMaxY ? tMaxX : tMaxY)) {
+        break;
       }
 
       // Check if we've reached the end cell
@@ -621,6 +630,12 @@ export class Ray {
         }
       }
 
+      // EARLY-OUT: spatial workers insert entities into every cell their AABB
+      // overlaps, so any hit at t < exit-of-current-cell is already found.
+      if (closestDist <= (tMaxX < tMaxY ? tMaxX : tMaxY)) {
+        break;
+      }
+
       if (currentCellX === endCellX && currentCellY === endCellY) {
         break;
       }
@@ -634,7 +649,11 @@ export class Ray {
       }
     }
 
-    return { entityIndex: closestHit, distance: closestDist };
+    // Borrowed static result: consumed immediately by castWithInfo/linecast
+    const out = Ray._traverseResult;
+    out.entityIndex = closestHit;
+    out.distance = closestDist;
+    return out;
   }
 
   /**
