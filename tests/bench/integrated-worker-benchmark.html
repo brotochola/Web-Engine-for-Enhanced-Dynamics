@@ -20,6 +20,11 @@
         return Promise.resolve();
       }
 
+      close() {
+        this.state = 'closed';
+        return Promise.resolve();
+      }
+
       decodeAudioData() {
         const silence = new Float32Array(1);
         return Promise.resolve({
@@ -40,6 +45,8 @@
       connect() {
         return this;
       }
+
+      disconnect() {}
     }
 
     globalThis.AudioContext = BenchmarkAudioContext;

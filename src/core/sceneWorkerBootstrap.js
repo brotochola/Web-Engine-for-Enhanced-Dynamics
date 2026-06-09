@@ -7,6 +7,11 @@ import { TileMap } from './TileMap.js';
 import { NavGrid } from './NavGrid.js';
 import { SoundManager } from './SoundManager.js';
 
+// One cache-bust token per page load: a hard refresh still picks up new worker
+// code, but cycling scenes within a session reuses the browser's HTTP and
+// compiled-module caches instead of re-fetching + re-compiling every worker.
+const WORKER_CACHE_BUST = `?v=${Date.now()}`;
+
 function createSceneWorkerFactory(useInlineWorkers, cacheBust) {
   return (workerName) => {
     if (useInlineWorkers) {
@@ -411,7 +416,7 @@ function attachSceneWorkerRuntimeHandlers(scene) {
 }
 
 export async function createSceneWorkers(scene) {
-  const cacheBust = `?v=${Date.now()}`;
+  const cacheBust = WORKER_CACHE_BUST;
   const useInlineWorkers =
     typeof window !== 'undefined' && window.WEED?.BUNDLE_MODE && window.WEED?.WorkerSources;
 

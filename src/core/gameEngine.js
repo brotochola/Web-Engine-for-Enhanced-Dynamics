@@ -3,6 +3,7 @@
 
 import { DebugUI } from './debug/DebugUI.js';
 import { Mouse } from './Mouse.js';
+import { SoundManager } from './SoundManager.js';
 import { printLogo } from './utils.js';
 
 const PREVENT_DEFAULT_KEYS = new Set([
@@ -383,6 +384,10 @@ class GameEngine {
       await this.currentScene.destroy();
       this.currentScene = null;
     }
+
+    // Full audio teardown (scene switches keep the AudioContext alive on purpose;
+    // engine destruction is the only place it should be closed)
+    await SoundManager.dispose();
 
     // Canvas-level listeners die with the element
     if (this.canvas && this.canvas.parentNode) {

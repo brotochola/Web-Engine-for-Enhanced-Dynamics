@@ -1738,7 +1738,39 @@ class Scene {
 
     teardownSceneSharedState(this);
 
+    this._releaseBootAssets();
+
     console.log(`✅ Scene ${this.constructor.name}: Destroyed!`);
+  }
+
+  /**
+   * Deterministically release boot-time asset memory (atlas canvas, ImageBitmaps,
+   * decal RGBA extracts). After a successful init most ImageBitmaps were
+   * transferred to the renderer worker (so close() is a no-op on the detached
+   * husks), but on a failed/partial init they are still alive on this thread --
+   * closing them here frees the pixel memory immediately instead of waiting
+   * for GC of the scene graph.
+   */
+  _releaseBootAssets() {
+    for (const sheet of Object.values(this.loadedSpritesheets || {})) {
+      sheet?.imageBitmap?.close?.();
+    }
+    for (const texture of Object.values(this.loadedTextures || {})) {
+      texture?.close?.();
+    }
+    for (const tilemap of Object.values(this.loadedTilemaps || {})) {
+      tilemap?.tilesetBitmap?.close?.();
+    }
+
+    this.loadedSpritesheets = {};
+    this.loadedTextures = {};
+    this.loadedTilemaps = {};
+    this.loadedAdobeAnimateAssets = {};
+    this.decalTextureData = null;
+    this.bigAtlasCanvas = null;
+    this.bigAtlasJson = null;
+    this.bigAtlasProxySheets = null;
+    this._loadedShaderSources = null;
   }
 
   pause() {

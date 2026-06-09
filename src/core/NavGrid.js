@@ -424,6 +424,11 @@ export class NavGrid {
    * Clears port reference and pending requests so old buffers can be GC'd
    */
   static reset() {
+    // Close our end of the MessageChannel deterministically (the particle
+    // worker's end died with worker.terminate()).
+    if (this._navWorkerPort && typeof this._navWorkerPort.close === 'function') {
+      this._navWorkerPort.close();
+    }
     this._navWorkerPort = null;
     this._initialized = false;
     this._sab = null;

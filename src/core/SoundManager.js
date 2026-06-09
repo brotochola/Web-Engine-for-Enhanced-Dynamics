@@ -113,7 +113,12 @@ export class SoundManager {
     } else {
       processorUrl = new URL('../workers/AudioMixerProcessor.js', import.meta.url).href;
     }
-    await this._audioCtx.audioWorklet.addModule(processorUrl);
+    try {
+      await this._audioCtx.audioWorklet.addModule(processorUrl);
+    } finally {
+      // The module is compiled at this point; the blob URL is no longer needed.
+      if (embedded) URL.revokeObjectURL(processorUrl);
+    }
 
     this._maxSlots = maxSlots;
     const sabBytes = (this.HEADER_SIZE + maxSlots * this.SLOT_SIZE) * 4;
@@ -333,6 +338,39 @@ export class SoundManager {
     if (this._i32) {
       Atomics.store(this._i32, this.HEADER_DROPPED, 0);
     }
+  }
+
+  /**
+   * Full teardown for engine shutdown (NOT scene switches -- scene switches use
+   * reset(), which intentionally keeps the AudioContext alive so the next scene
+   * doesn't need a new user gesture to unlock audio).
+   * Closes the AudioContext, disconnects the worklet, and detaches DOM listeners.
+   */
+  static async dispose() {
+    if (this._isWorkerContext()) return;
+
+    this.reset();
+    this._detachUnlockListeners();
+
+    if (this._workletNode) {
+      this._workletNode.disconnect();
+      this._workletNode = null;
+    }
+
+    if (this._audioCtx) {
+      try {
+        await this._audioCtx.close();
+      } catch (_) {
+        // Context may already be closed (e.g. by the browser); nothing to do.
+      }
+      this._audioCtx = null;
+    }
+
+    this._sab = null;
+    this._i32 = null;
+    this._f32 = null;
+    this._maxSlots = 0;
+    this._audioUnlocked = false;
   }
 
   static getActiveSlotCount() {

@@ -697,6 +697,10 @@ export function teardownSceneSharedState(scene) {
   ParticleEmitter.reset();
   DecorationPool.reset();
   BulletPool.reset();
+  // Releases the _postToRenderer closure (would otherwise retain the
+  // terminated renderer Worker), resolves pending background promises,
+  // and drops SAB-backed config/uniform views from the previous scene.
+  Layer.reset();
   SpriteSheetRegistry.clearForSceneUnload();
   AdobeAnimRegistry.clearForSceneUnload();
 
