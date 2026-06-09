@@ -1,10 +1,10 @@
 {
   "sceneName": "BallsScene",
-  "measurementDurationMs": 18000.240000009537,
+  "measurementDurationMs": 18000.445000052452,
   "mainThread": {
-    "averageFPS": 60.00240680087,
-    "instantaneousFPS": 60.00240009600371,
-    "frameDelta": 1081
+    "averageFPS": 60.0023833353727,
+    "instantaneousFPS": 60.002700121505605,
+    "frameDelta": 1080
   },
   "workers": [
     {
@@ -12,28 +12,28 @@
       "type": "spatial",
       "workerIndex": 0,
       "frameRateIndex": 0,
-      "instantaneousFPS": 58.719905853271484,
-      "averageFPS": 67.44356803254708,
+      "instantaneousFPS": 54.510765075683594,
+      "averageFPS": 65.87828193962908,
       "sampleCount": 179,
       "statsEnd": {
-        "FPS": 58.719905853271484,
-        "NEIGHBOR_CHECKS": 65799,
-        "GRID_CELLS_CHECKED": 40296,
-        "ENTITIES_PROCESSED": 4605,
-        "REBUILD_MS": 0.8049999475479126,
-        "NEIGHBOR_MS": 7.684999942779541,
+        "FPS": 54.510765075683594,
+        "NEIGHBOR_CHECKS": 66792,
+        "GRID_CELLS_CHECKED": 40778,
+        "ENTITIES_PROCESSED": 4673,
+        "REBUILD_MS": 0.3900001049041748,
+        "NEIGHBOR_MS": 8.069999694824219,
         "MSG_MS": 0,
-        "NEIGHBORS_REUSED": 16
+        "NEIGHBORS_REUSED": 23
       },
       "statsSamplesAverage": {
-        "FPS": 67.44356803254708,
-        "NEIGHBOR_CHECKS": 66086.156424581,
-        "GRID_CELLS_CHECKED": 40348.73184357542,
-        "ENTITIES_PROCESSED": 4618.312849162011,
-        "REBUILD_MS": 0.5167318442680316,
-        "NEIGHBOR_MS": 9.017318416574147,
+        "FPS": 65.87828193962908,
+        "NEIGHBOR_CHECKS": 67066.18994413408,
+        "GRID_CELLS_CHECKED": 40866.4469273743,
+        "ENTITIES_PROCESSED": 4682.748603351955,
+        "REBUILD_MS": 0.596284924938692,
+        "NEIGHBOR_MS": 9.39592176309511,
         "MSG_MS": 0,
-        "NEIGHBORS_REUSED": 21.29608938547486
+        "NEIGHBORS_REUSED": 22.078212290502794
       }
     },
     {
@@ -41,28 +41,28 @@
       "type": "spatial",
       "workerIndex": 1,
       "frameRateIndex": 1,
-      "instantaneousFPS": 83.1946792602539,
-      "averageFPS": 68.50519921926147,
+      "instantaneousFPS": 58.771671295166016,
+      "averageFPS": 68.21364968582239,
       "sampleCount": 179,
       "statsEnd": {
-        "FPS": 83.1946792602539,
-        "NEIGHBOR_CHECKS": 62255,
-        "GRID_CELLS_CHECKED": 39081,
-        "ENTITIES_PROCESSED": 4387,
-        "REBUILD_MS": 0.41499996185302734,
-        "NEIGHBOR_MS": 12.550000190734863,
+        "FPS": 58.771671295166016,
+        "NEIGHBOR_CHECKS": 61371,
+        "GRID_CELLS_CHECKED": 38517,
+        "ENTITIES_PROCESSED": 4329,
+        "REBUILD_MS": 0.5549999475479126,
+        "NEIGHBOR_MS": 6.914999961853027,
         "MSG_MS": 0,
-        "NEIGHBORS_REUSED": 1
+        "NEIGHBORS_REUSED": 3
       },
       "statsSamplesAverage": {
-        "FPS": 68.50519921926147,
-        "NEIGHBOR_CHECKS": 62144.23463687151,
-        "GRID_CELLS_CHECKED": 39027.01675977654,
-        "ENTITIES_PROCESSED": 4380.497206703911,
-        "REBUILD_MS": 0.5170111762744755,
-        "NEIGHBOR_MS": 9.21938546942599,
+        "FPS": 68.21364968582239,
+        "NEIGHBOR_CHECKS": 61177.73184357542,
+        "GRID_CELLS_CHECKED": 38419.34636871509,
+        "ENTITIES_PROCESSED": 4318.994413407821,
+        "REBUILD_MS": 0.6362011119640073,
+        "NEIGHBOR_MS": 8.780055871888912,
         "MSG_MS": 0,
-        "NEIGHBORS_REUSED": 0.8547486033519553
+        "NEIGHBORS_REUSED": 3.804469273743017
       }
     },
     {
@@ -70,28 +70,28 @@
       "type": "physics",
       "workerIndex": 0,
       "frameRateIndex": 2,
-      "instantaneousFPS": 15.876795768737793,
-      "averageFPS": 16.78496732125735,
+      "instantaneousFPS": 18.134010314941406,
+      "averageFPS": 16.671505192804602,
       "sampleCount": 179,
       "statsEnd": {
-        "FPS": 15.876795768737793,
-        "COLLISION_CHECKS": 735433,
-        "COLLISIONS_RESOLVED": 281594,
-        "COLLISION_PAIRS": 23501,
+        "FPS": 18.134010314941406,
+        "COLLISION_CHECKS": 732983,
+        "COLLISIONS_RESOLVED": 280938,
+        "COLLISION_PAIRS": 23359,
         "CONSTRAINT_MS": 0,
         "MSG_MS": 0,
-        "MOVE_MS": 3.3499999046325684,
-        "COLLISION_MS": 51.2400016784668
+        "MOVE_MS": 3.565000057220459,
+        "COLLISION_MS": 47.779998779296875
       },
       "statsSamplesAverage": {
-        "FPS": 16.78496732125735,
-        "COLLISION_CHECKS": 735765.2346368715,
-        "COLLISIONS_RESOLVED": 281884.2458100559,
-        "COLLISION_PAIRS": 23513.748603351956,
+        "FPS": 16.671505192804602,
+        "COLLISION_CHECKS": 734153.9162011173,
+        "COLLISIONS_RESOLVED": 281616.6145251397,
+        "COLLISION_PAIRS": 23494.50279329609,
         "CONSTRAINT_MS": 0,
         "MSG_MS": 0,
-        "MOVE_MS": 3.5646368604798555,
-        "COLLISION_MS": 49.564944304567476
+        "MOVE_MS": 3.5483799180505,
+        "COLLISION_MS": 50.59418981967691
       }
     },
     {
@@ -99,29 +99,29 @@
       "type": "renderer",
       "workerIndex": 0,
       "frameRateIndex": 3,
-      "instantaneousFPS": 20.523345947265625,
-      "averageFPS": 19.914688866897666,
+      "instantaneousFPS": 18.585634231567383,
+      "averageFPS": 20.84343955503496,
       "sampleCount": 179,
       "statsEnd": {
-        "FPS": 20.523345947265625,
+        "FPS": 18.585634231567383,
         "DRAW_CALLS": 2,
-        "VISIBLE_SPRITES": 2114,
+        "VISIBLE_SPRITES": 2041,
         "SPRITES_CREATED": 6000,
         "DECORATION_SPRITES": 6000,
         "VISIBLE_DECORATIONS": 0,
-        "VISIBLE_ENTITIES": 2114,
+        "VISIBLE_ENTITIES": 2041,
         "VISIBLE_PARTICLES": 0,
         "ACTIVE_DECORATIONS": 0,
         "MSG_MS": 0
       },
       "statsSamplesAverage": {
-        "FPS": 19.914688866897666,
-        "DRAW_CALLS": 2.122905027932961,
-        "VISIBLE_SPRITES": 2110.6480446927376,
+        "FPS": 20.84343955503496,
+        "DRAW_CALLS": 2.0279329608938546,
+        "VISIBLE_SPRITES": 2039.8826815642458,
         "SPRITES_CREATED": 6000,
         "DECORATION_SPRITES": 6000,
         "VISIBLE_DECORATIONS": 0,
-        "VISIBLE_ENTITIES": 2110.6480446927376,
+        "VISIBLE_ENTITIES": 2039.8826815642458,
         "VISIBLE_PARTICLES": 0,
         "ACTIVE_DECORATIONS": 0,
         "MSG_MS": 0
@@ -132,34 +132,34 @@
       "type": "particle",
       "workerIndex": 0,
       "frameRateIndex": 4,
-      "instantaneousFPS": 166.8056640625,
-      "averageFPS": 169.16260737413802,
+      "instantaneousFPS": 175.59262084960938,
+      "averageFPS": 170.13508674152737,
       "sampleCount": 179,
       "statsEnd": {
-        "FPS": 166.8056640625,
+        "FPS": 175.59262084960938,
         "ACTIVE_PARTICLES": 0,
         "TOTAL_PARTICLES": 0,
         "PARTICLES_STAMPED": 0,
         "FLASHES_UPDATED": 0,
         "SHADOWS_UPDATED": 0,
-        "ACTIVE_ENTITIES": 8999,
+        "ACTIVE_ENTITIES": 9002,
         "TOTAL_ENTITIES": 11000,
         "MSG_MS": 0,
-        "BUILD_ACTIVE_VISIBLE_MS": 0.004999995231628418,
-        "PARTICLE_PHYSICS_MS": 0
+        "BUILD_ACTIVE_VISIBLE_MS": 0,
+        "PARTICLE_PHYSICS_MS": 0.004999995231628418
       },
       "statsSamplesAverage": {
-        "FPS": 169.16260737413802,
+        "FPS": 170.13508674152737,
         "ACTIVE_PARTICLES": 0,
         "TOTAL_PARTICLES": 0,
         "PARTICLES_STAMPED": 0,
         "FLASHES_UPDATED": 0,
         "SHADOWS_UPDATED": 0,
-        "ACTIVE_ENTITIES": 8999,
+        "ACTIVE_ENTITIES": 9002,
         "TOTAL_ENTITIES": 11000,
         "MSG_MS": 0,
-        "BUILD_ACTIVE_VISIBLE_MS": 0.0022067018061376815,
-        "PARTICLE_PHYSICS_MS": 0.0009776526989217578
+        "BUILD_ACTIVE_VISIBLE_MS": 0.0024301652801769404,
+        "PARTICLE_PHYSICS_MS": 0.0011173173701962945
       }
     },
     {
@@ -167,18 +167,18 @@
       "type": "logic",
       "workerIndex": 0,
       "frameRateIndex": 5,
-      "instantaneousFPS": 142.2475128173828,
-      "averageFPS": 147.1982044667505,
+      "instantaneousFPS": 178.73101806640625,
+      "averageFPS": 150.95097321238597,
       "sampleCount": 179,
       "statsEnd": {
-        "FPS": 142.2475128173828,
-        "ENTITIES_PROCESSED": 8999,
+        "FPS": 178.73101806640625,
+        "ENTITIES_PROCESSED": 9002,
         "SYSTEMS_EXECUTED": 1,
         "MSG_MS": 0
       },
       "statsSamplesAverage": {
-        "FPS": 147.1982044667505,
-        "ENTITIES_PROCESSED": 8999,
+        "FPS": 150.95097321238597,
+        "ENTITIES_PROCESSED": 9002,
         "SYSTEMS_EXECUTED": 1,
         "MSG_MS": 0
       }
@@ -188,28 +188,28 @@
       "type": "preRender",
       "workerIndex": 0,
       "frameRateIndex": 6,
-      "instantaneousFPS": 166.8056640625,
-      "averageFPS": 178.81625110477043,
+      "instantaneousFPS": 165.7000732421875,
+      "averageFPS": 183.15758399324045,
       "sampleCount": 179,
       "statsEnd": {
-        "FPS": 166.8056640625,
-        "VISIBLE_ENTITIES": 2114,
+        "FPS": 165.7000732421875,
+        "VISIBLE_ENTITIES": 2040,
         "VISIBLE_PARTICLES": 0,
         "VISIBLE_DECORATIONS": 0,
         "SHADOWS_UPDATED": 0,
-        "RENDER_QUEUE_SIZE": 2114,
+        "RENDER_QUEUE_SIZE": 2040,
         "MSG_MS": 0,
-        "SKIPPED_FRAMES": 1
+        "SKIPPED_FRAMES": 0
       },
       "statsSamplesAverage": {
-        "FPS": 178.81625110477043,
-        "VISIBLE_ENTITIES": 2110.631284916201,
+        "FPS": 183.15758399324045,
+        "VISIBLE_ENTITIES": 2039.9329608938547,
         "VISIBLE_PARTICLES": 0,
         "VISIBLE_DECORATIONS": 0,
         "SHADOWS_UPDATED": 0,
-        "RENDER_QUEUE_SIZE": 2110.631284916201,
+        "RENDER_QUEUE_SIZE": 2039.9329608938547,
         "MSG_MS": 0,
-        "SKIPPED_FRAMES": 0.7597765363128491
+        "SKIPPED_FRAMES": 0.776536312849162
       }
     }
   ],
@@ -220,28 +220,28 @@
         "type": "spatial",
         "workerIndex": 0,
         "frameRateIndex": 0,
-        "instantaneousFPS": 58.719905853271484,
-        "averageFPS": 67.44356803254708,
+        "instantaneousFPS": 54.510765075683594,
+        "averageFPS": 65.87828193962908,
         "sampleCount": 179,
         "statsEnd": {
-          "FPS": 58.719905853271484,
-          "NEIGHBOR_CHECKS": 65799,
-          "GRID_CELLS_CHECKED": 40296,
-          "ENTITIES_PROCESSED": 4605,
-          "REBUILD_MS": 0.8049999475479126,
-          "NEIGHBOR_MS": 7.684999942779541,
+          "FPS": 54.510765075683594,
+          "NEIGHBOR_CHECKS": 66792,
+          "GRID_CELLS_CHECKED": 40778,
+          "ENTITIES_PROCESSED": 4673,
+          "REBUILD_MS": 0.3900001049041748,
+          "NEIGHBOR_MS": 8.069999694824219,
           "MSG_MS": 0,
-          "NEIGHBORS_REUSED": 16
+          "NEIGHBORS_REUSED": 23
         },
         "statsSamplesAverage": {
-          "FPS": 67.44356803254708,
-          "NEIGHBOR_CHECKS": 66086.156424581,
-          "GRID_CELLS_CHECKED": 40348.73184357542,
-          "ENTITIES_PROCESSED": 4618.312849162011,
-          "REBUILD_MS": 0.5167318442680316,
-          "NEIGHBOR_MS": 9.017318416574147,
+          "FPS": 65.87828193962908,
+          "NEIGHBOR_CHECKS": 67066.18994413408,
+          "GRID_CELLS_CHECKED": 40866.4469273743,
+          "ENTITIES_PROCESSED": 4682.748603351955,
+          "REBUILD_MS": 0.596284924938692,
+          "NEIGHBOR_MS": 9.39592176309511,
           "MSG_MS": 0,
-          "NEIGHBORS_REUSED": 21.29608938547486
+          "NEIGHBORS_REUSED": 22.078212290502794
         }
       },
       {
@@ -249,28 +249,28 @@
         "type": "spatial",
         "workerIndex": 1,
         "frameRateIndex": 1,
-        "instantaneousFPS": 83.1946792602539,
-        "averageFPS": 68.50519921926147,
+        "instantaneousFPS": 58.771671295166016,
+        "averageFPS": 68.21364968582239,
         "sampleCount": 179,
         "statsEnd": {
-          "FPS": 83.1946792602539,
-          "NEIGHBOR_CHECKS": 62255,
-          "GRID_CELLS_CHECKED": 39081,
-          "ENTITIES_PROCESSED": 4387,
-          "REBUILD_MS": 0.41499996185302734,
-          "NEIGHBOR_MS": 12.550000190734863,
+          "FPS": 58.771671295166016,
+          "NEIGHBOR_CHECKS": 61371,
+          "GRID_CELLS_CHECKED": 38517,
+          "ENTITIES_PROCESSED": 4329,
+          "REBUILD_MS": 0.5549999475479126,
+          "NEIGHBOR_MS": 6.914999961853027,
           "MSG_MS": 0,
-          "NEIGHBORS_REUSED": 1
+          "NEIGHBORS_REUSED": 3
         },
         "statsSamplesAverage": {
-          "FPS": 68.50519921926147,
-          "NEIGHBOR_CHECKS": 62144.23463687151,
-          "GRID_CELLS_CHECKED": 39027.01675977654,
-          "ENTITIES_PROCESSED": 4380.497206703911,
-          "REBUILD_MS": 0.5170111762744755,
-          "NEIGHBOR_MS": 9.21938546942599,
+          "FPS": 68.21364968582239,
+          "NEIGHBOR_CHECKS": 61177.73184357542,
+          "GRID_CELLS_CHECKED": 38419.34636871509,
+          "ENTITIES_PROCESSED": 4318.994413407821,
+          "REBUILD_MS": 0.6362011119640073,
+          "NEIGHBOR_MS": 8.780055871888912,
           "MSG_MS": 0,
-          "NEIGHBORS_REUSED": 0.8547486033519553
+          "NEIGHBORS_REUSED": 3.804469273743017
         }
       }
     ],
@@ -280,28 +280,28 @@
         "type": "physics",
         "workerIndex": 0,
         "frameRateIndex": 2,
-        "instantaneousFPS": 15.876795768737793,
-        "averageFPS": 16.78496732125735,
+        "instantaneousFPS": 18.134010314941406,
+        "averageFPS": 16.671505192804602,
         "sampleCount": 179,
         "statsEnd": {
-          "FPS": 15.876795768737793,
-          "COLLISION_CHECKS": 735433,
-          "COLLISIONS_RESOLVED": 281594,
-          "COLLISION_PAIRS": 23501,
+          "FPS": 18.134010314941406,
+          "COLLISION_CHECKS": 732983,
+          "COLLISIONS_RESOLVED": 280938,
+          "COLLISION_PAIRS": 23359,
           "CONSTRAINT_MS": 0,
           "MSG_MS": 0,
-          "MOVE_MS": 3.3499999046325684,
-          "COLLISION_MS": 51.2400016784668
+          "MOVE_MS": 3.565000057220459,
+          "COLLISION_MS": 47.779998779296875
         },
         "statsSamplesAverage": {
-          "FPS": 16.78496732125735,
-          "COLLISION_CHECKS": 735765.2346368715,
-          "COLLISIONS_RESOLVED": 281884.2458100559,
-          "COLLISION_PAIRS": 23513.748603351956,
+          "FPS": 16.671505192804602,
+          "COLLISION_CHECKS": 734153.9162011173,
+          "COLLISIONS_RESOLVED": 281616.6145251397,
+          "COLLISION_PAIRS": 23494.50279329609,
           "CONSTRAINT_MS": 0,
           "MSG_MS": 0,
-          "MOVE_MS": 3.5646368604798555,
-          "COLLISION_MS": 49.564944304567476
+          "MOVE_MS": 3.5483799180505,
+          "COLLISION_MS": 50.59418981967691
         }
       }
     ],
@@ -311,29 +311,29 @@
         "type": "renderer",
         "workerIndex": 0,
         "frameRateIndex": 3,
-        "instantaneousFPS": 20.523345947265625,
-        "averageFPS": 19.914688866897666,
+        "instantaneousFPS": 18.585634231567383,
+        "averageFPS": 20.84343955503496,
         "sampleCount": 179,
         "statsEnd": {
-          "FPS": 20.523345947265625,
+          "FPS": 18.585634231567383,
           "DRAW_CALLS": 2,
-          "VISIBLE_SPRITES": 2114,
+          "VISIBLE_SPRITES": 2041,
           "SPRITES_CREATED": 6000,
           "DECORATION_SPRITES": 6000,
           "VISIBLE_DECORATIONS": 0,
-          "VISIBLE_ENTITIES": 2114,
+          "VISIBLE_ENTITIES": 2041,
           "VISIBLE_PARTICLES": 0,
           "ACTIVE_DECORATIONS": 0,
           "MSG_MS": 0
         },
         "statsSamplesAverage": {
-          "FPS": 19.914688866897666,
-          "DRAW_CALLS": 2.122905027932961,
-          "VISIBLE_SPRITES": 2110.6480446927376,
+          "FPS": 20.84343955503496,
+          "DRAW_CALLS": 2.0279329608938546,
+          "VISIBLE_SPRITES": 2039.8826815642458,
           "SPRITES_CREATED": 6000,
           "DECORATION_SPRITES": 6000,
           "VISIBLE_DECORATIONS": 0,
-          "VISIBLE_ENTITIES": 2110.6480446927376,
+          "VISIBLE_ENTITIES": 2039.8826815642458,
           "VISIBLE_PARTICLES": 0,
           "ACTIVE_DECORATIONS": 0,
           "MSG_MS": 0
@@ -346,34 +346,34 @@
         "type": "particle",
         "workerIndex": 0,
         "frameRateIndex": 4,
-        "instantaneousFPS": 166.8056640625,
-        "averageFPS": 169.16260737413802,
+        "instantaneousFPS": 175.59262084960938,
+        "averageFPS": 170.13508674152737,
         "sampleCount": 179,
         "statsEnd": {
-          "FPS": 166.8056640625,
+          "FPS": 175.59262084960938,
           "ACTIVE_PARTICLES": 0,
           "TOTAL_PARTICLES": 0,
           "PARTICLES_STAMPED": 0,
           "FLASHES_UPDATED": 0,
           "SHADOWS_UPDATED": 0,
-          "ACTIVE_ENTITIES": 8999,
+          "ACTIVE_ENTITIES": 9002,
           "TOTAL_ENTITIES": 11000,
           "MSG_MS": 0,
-          "BUILD_ACTIVE_VISIBLE_MS": 0.004999995231628418,
-          "PARTICLE_PHYSICS_MS": 0
+          "BUILD_ACTIVE_VISIBLE_MS": 0,
+          "PARTICLE_PHYSICS_MS": 0.004999995231628418
         },
         "statsSamplesAverage": {
-          "FPS": 169.16260737413802,
+          "FPS": 170.13508674152737,
           "ACTIVE_PARTICLES": 0,
           "TOTAL_PARTICLES": 0,
           "PARTICLES_STAMPED": 0,
           "FLASHES_UPDATED": 0,
           "SHADOWS_UPDATED": 0,
-          "ACTIVE_ENTITIES": 8999,
+          "ACTIVE_ENTITIES": 9002,
           "TOTAL_ENTITIES": 11000,
           "MSG_MS": 0,
-          "BUILD_ACTIVE_VISIBLE_MS": 0.0022067018061376815,
-          "PARTICLE_PHYSICS_MS": 0.0009776526989217578
+          "BUILD_ACTIVE_VISIBLE_MS": 0.0024301652801769404,
+          "PARTICLE_PHYSICS_MS": 0.0011173173701962945
         }
       }
     ],
@@ -383,18 +383,18 @@
         "type": "logic",
         "workerIndex": 0,
         "frameRateIndex": 5,
-        "instantaneousFPS": 142.2475128173828,
-        "averageFPS": 147.1982044667505,
+        "instantaneousFPS": 178.73101806640625,
+        "averageFPS": 150.95097321238597,
         "sampleCount": 179,
         "statsEnd": {
-          "FPS": 142.2475128173828,
-          "ENTITIES_PROCESSED": 8999,
+          "FPS": 178.73101806640625,
+          "ENTITIES_PROCESSED": 9002,
           "SYSTEMS_EXECUTED": 1,
           "MSG_MS": 0
         },
         "statsSamplesAverage": {
-          "FPS": 147.1982044667505,
-          "ENTITIES_PROCESSED": 8999,
+          "FPS": 150.95097321238597,
+          "ENTITIES_PROCESSED": 9002,
           "SYSTEMS_EXECUTED": 1,
           "MSG_MS": 0
         }
@@ -406,28 +406,28 @@
         "type": "preRender",
         "workerIndex": 0,
         "frameRateIndex": 6,
-        "instantaneousFPS": 166.8056640625,
-        "averageFPS": 178.81625110477043,
+        "instantaneousFPS": 165.7000732421875,
+        "averageFPS": 183.15758399324045,
         "sampleCount": 179,
         "statsEnd": {
-          "FPS": 166.8056640625,
-          "VISIBLE_ENTITIES": 2114,
+          "FPS": 165.7000732421875,
+          "VISIBLE_ENTITIES": 2040,
           "VISIBLE_PARTICLES": 0,
           "VISIBLE_DECORATIONS": 0,
           "SHADOWS_UPDATED": 0,
-          "RENDER_QUEUE_SIZE": 2114,
+          "RENDER_QUEUE_SIZE": 2040,
           "MSG_MS": 0,
-          "SKIPPED_FRAMES": 1
+          "SKIPPED_FRAMES": 0
         },
         "statsSamplesAverage": {
-          "FPS": 178.81625110477043,
-          "VISIBLE_ENTITIES": 2110.631284916201,
+          "FPS": 183.15758399324045,
+          "VISIBLE_ENTITIES": 2039.9329608938547,
           "VISIBLE_PARTICLES": 0,
           "VISIBLE_DECORATIONS": 0,
           "SHADOWS_UPDATED": 0,
-          "RENDER_QUEUE_SIZE": 2110.631284916201,
+          "RENDER_QUEUE_SIZE": 2039.9329608938547,
           "MSG_MS": 0,
-          "SKIPPED_FRAMES": 0.7597765363128491
+          "SKIPPED_FRAMES": 0.776536312849162
         }
       }
     ]

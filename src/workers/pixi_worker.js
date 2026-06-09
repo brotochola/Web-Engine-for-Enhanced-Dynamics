@@ -1042,11 +1042,13 @@ class PixiRenderer extends AbstractWorker {
     // If pre_render hasn't written anything new, we just re-render the same buffer
     // pre_render writes to (renderQueueFrame % 2) BEFORE incrementing, then stores sync[0]=renderQueueFrame
     // So when sync[0]=N, the data is in buffer (N-1)%2, not N%2
+    let consumedNewFrame = false;
     if (this.renderQueueSync) {
       const readyFrame = Atomics.load(this.renderQueueSync, 0);
 
       // Only switch buffers if a new frame is available (readyFrame>0 ensures at least one frame was written)
       if (readyFrame > this.lastReadFrame && readyFrame > 0) {
+        consumedNewFrame = true;
         const readBufferIdx = (readyFrame - 1) % 2;
         this._setReadBuffer(readBufferIdx);
 
@@ -1077,6 +1079,17 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
+    // STALE-FRAME GATING: every input to the sprite syncs and offscreen GPU
+    // passes below is frame-locked to the render queue (sprite/shadow/custom
+    // queues, camera snapshot, pre_render's visible-lights buffer). When no
+    // new frame arrived, re-running them produces pixel-identical output, so
+    // skip the work (matters when pixi outpaces pre_render, i.e. exactly when
+    // the system is loaded). Fall back to per-tick behavior before the first
+    // frame (keeps lightingRT/shadowRT initialized), if the queue is absent,
+    // and on resume after a pause.
+    const runFrameLockedPasses =
+      consumedNewFrame || resuming || this.lastReadFrame <= 0 || !this.renderQueueSync;
+
     // Camera is always provided by the pre-render worker via renderQueueCamera.
     // Fall back to live SAB only during the very first frames before init completes.
     if (!this._cameraInitialized && this.cameraData) {
@@ -1101,43 +1114,46 @@ class PixiRenderer extends AbstractWorker {
     }
 
     // Update decal decal tiles (check for dirty tiles from particle_worker)
+    // Not frame-locked: driven by particle_worker dirty flags, so always poll.
     this.updateDecalTiles();
 
-    // Pre-compute visible lights once (shared by updateLighting, updateShadowSprites)
-    this.computeVisibleLights();
+    if (runFrameLockedPasses) {
+      // Pre-compute visible lights once (shared by updateLighting, updateShadowSprites)
+      this.computeVisibleLights();
 
-    // Grow the central pool before any queue update loops acquire particles.
-    this.prewarmParticlePoolForFrameDemand();
+      // Grow the central pool before any queue update loops acquire particles.
+      this.prewarmParticlePoolForFrameDemand();
 
-    // Update lighting shader uniforms from LightEmitter components
-    this.updateLighting();
+      // Update lighting shader uniforms from LightEmitter components
+      this.updateLighting();
 
-    // Update shadow RenderTexture with interleaved lights + shadows
-    // This renders lights and shadows to shadowRT, which is displayed via shadowDisplaySprite (multiply blend)
-    this.updateShadowSprites();
+      // Update shadow RenderTexture with interleaved lights + shadows
+      // This renders lights and shadows to shadowRT, which is displayed via shadowDisplaySprite (multiply blend)
+      this.updateShadowSprites();
 
-    // Use render queue from pre_render_worker - no fallback
-    this.updateSpritesFromRenderQueue();
+      // Use render queue from pre_render_worker - no fallback
+      this.updateSpritesFromRenderQueue();
 
-    // Update custom layer sprites and render shader layers to their RenderTextures
-    this.updateCustomLayers();
+      // Update custom layer sprites and render shader layers to their RenderTextures
+      this.updateCustomLayers();
 
-    // ========================================
-    // LOW-RES OFF-SCREEN RENDERING
-    // ========================================
-    // Render lighting to lower-resolution texture if configured.
-    // This significantly improves performance on GPU-bound systems.
+      // ========================================
+      // LOW-RES OFF-SCREEN RENDERING
+      // ========================================
+      // Render lighting to lower-resolution texture if configured.
+      // This significantly improves performance on GPU-bound systems.
 
-    if (this._visPolyEnabled) {
-      // Raycasted lighting: render visibility polygon meshes
-      this.renderVisibilityLighting();
-    } else if (this.lightingRT && this.lightingMesh) {
-      // Standard lighting: render full-screen shader
-      this.pixiApp.renderer.render({
-        container: this.lightingMesh,
-        target: this.lightingRT,
-        clear: true,
-      });
+      if (this._visPolyEnabled) {
+        // Raycasted lighting: render visibility polygon meshes
+        this.renderVisibilityLighting();
+      } else if (this.lightingRT && this.lightingMesh) {
+        // Standard lighting: render full-screen shader
+        this.pixiApp.renderer.render({
+          container: this.lightingMesh,
+          target: this.lightingRT,
+          clear: true,
+        });
+      }
     }
 
     // Let particle pool handle deferred pre-allocation during idle frames
