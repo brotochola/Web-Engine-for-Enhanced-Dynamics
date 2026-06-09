@@ -7,9 +7,9 @@ export function addToActiveEntities(activeEntitiesData, entityIndex) {
   const insertPos = binarySearchInsertPoint(activeEntitiesData, entityIndex, count);
   if (insertPos <= count && activeEntitiesData[insertPos] === entityIndex) return;
 
-  for (let i = count; i >= insertPos; i--) {
-    activeEntitiesData[i + 1] = activeEntitiesData[i];
-  }
+  // Shift [insertPos..count] right by one (native memmove - these lists hold
+  // thousands of entries and this runs per spawned entity)
+  activeEntitiesData.copyWithin(insertPos + 1, insertPos, count + 1);
 
   activeEntitiesData[insertPos] = entityIndex;
   activeEntitiesData[0] = count + 1;
@@ -24,9 +24,8 @@ export function removeFromActiveEntities(activeEntitiesData, entityIndex) {
   const pos = binarySearchFind(activeEntitiesData, entityIndex, count);
   if (pos === -1) return;
 
-  for (let i = pos; i < count; i++) {
-    activeEntitiesData[i] = activeEntitiesData[i + 1];
-  }
+  // Shift [pos+1..count] left by one (native memmove)
+  activeEntitiesData.copyWithin(pos, pos + 1, count + 1);
   activeEntitiesData[0] = count - 1;
 }
 
@@ -73,9 +72,8 @@ export function removeFromTypeActiveList(typeList, entityIndex) {
   const pos = binarySearchFind(typeList, entityIndex, count);
   if (pos === -1) return;
 
-  for (let i = pos; i < count; i++) {
-    typeList[i] = typeList[i + 1];
-  }
+  // Shift [pos+1..count] left by one (native memmove)
+  typeList.copyWithin(pos, pos + 1, count + 1);
   typeList[0] = count - 1;
 }
 
@@ -92,9 +90,8 @@ export function addToTypeActiveList(typeList, entityIndex) {
   const insertPos = binarySearchInsertPoint(typeList, entityIndex, count);
   if (insertPos <= count && typeList[insertPos] === entityIndex) return;
 
-  for (let i = count; i >= insertPos; i--) {
-    typeList[i + 1] = typeList[i];
-  }
+  // Shift [insertPos..count] right by one (native memmove)
+  typeList.copyWithin(insertPos + 1, insertPos, count + 1);
 
   typeList[insertPos] = entityIndex;
   typeList[0] = count + 1;
