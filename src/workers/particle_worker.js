@@ -1383,7 +1383,6 @@ class ParticleWorker extends AbstractWorker {
   processNavigationRequests() {
     if (!this.navEnabled || !this.scratch) return;
 
-    NavGrid._currentFrame = this.frameNumber;
     const deadline = performance.now() + this.navigationMaxProcessingMsPerFrame;
 
     while (true) {
@@ -1440,18 +1439,20 @@ class ParticleWorker extends AbstractWorker {
     const dv = this._navDataView;
     const slotSize = NavGrid._flowfieldSlotSize;
     const headerOffset = NavGrid._flowfieldHeadersOffset + slotIndex * slotSize;
-    dv.setUint32(headerOffset + 4, this.frameNumber, true); // lastUsedFrame at offset 4
+    // lastUsedFrame at offset 4 - must use NavGrid.lruNow() (wall-clock
+    // seconds), the same clock all workers use for LRU stamps
+    dv.setUint32(headerOffset + 4, NavGrid.lruNow(), true);
   }
 
   _findExistingPathSlot(fromCell, toCell) {
     if (!NavGrid._initialized || !this._navDataView) return -1;
     const dv = this._navDataView;
     const headerOffset = NavGrid._pathHeadersOffset;
-    const headerSize = NavGrid._PATH_HEADER_SIZE;
+    const slotSize = NavGrid._pathSlotSize; // interleaved: header + data per slot
     const maxPaths = NavGrid._maxPaths;
 
     for (let i = 0; i < maxPaths; i++) {
-      const offset = headerOffset + i * headerSize;
+      const offset = headerOffset + i * slotSize;
       // Read header: [fromCell, toCell, lastUsedFrame, length, status]
       const slotFrom = dv.getUint32(offset, true);
       const slotTo = dv.getUint32(offset + 4, true);
@@ -1464,8 +1465,9 @@ class ParticleWorker extends AbstractWorker {
   _updatePathLRU(slotIndex) {
     if (!this._navDataView) return;
     const dv = this._navDataView;
-    const headerOffset = NavGrid._pathHeadersOffset + slotIndex * NavGrid._PATH_HEADER_SIZE;
-    dv.setUint32(headerOffset + 8, this.frameNumber, true); // lastUsedFrame at offset 8
+    const headerOffset = NavGrid._pathHeadersOffset + slotIndex * NavGrid._pathSlotSize;
+    // lastUsedFrame at offset 8 - same shared LRU clock as NavGrid.lruNow()
+    dv.setUint32(headerOffset + 8, NavGrid.lruNow(), true);
   }
 
   _hasEmptyFlowfieldSlot() {
@@ -1485,10 +1487,10 @@ class ParticleWorker extends AbstractWorker {
     if (!NavGrid._initialized || !this._navDataView) return false;
     const dv = this._navDataView;
     const headerOffset = NavGrid._pathHeadersOffset;
-    const headerSize = NavGrid._PATH_HEADER_SIZE;
+    const slotSize = NavGrid._pathSlotSize; // interleaved: header + data per slot
 
     for (let i = 0; i < this.maxPaths; i++) {
-      const offset = headerOffset + i * headerSize;
+      const offset = headerOffset + i * slotSize;
       const slotStatus = dv.getUint32(offset + 16, true); // status at offset 16
       if (slotStatus === 0) return true;
     }
@@ -1838,6 +1840,13 @@ class ParticleWorker extends AbstractWorker {
   rebuildWalkability(staticEntities) {
     if (!this.scratch) return;
 
+    // Invalidate FIRST: clears all READY slots and bumps the version before
+    // walkability changes, so logic workers never sample flowfields computed
+    // against the OLD walkability while the NEW one is being written.
+    // Re-requests triggered by the cleared slots queue behind this handler
+    // (same thread) and compute on the fully rebuilt grid.
+    NavGrid.invalidate();
+
     const walkability = NavGrid.getWalkabilityArray();
     const cellSize = NavGrid._cellSize;
     const gridWidth = this.gridWidth;
@@ -1863,13 +1872,15 @@ class ParticleWorker extends AbstractWorker {
       }
     }
 
-    NavGrid.invalidate();
     this.cachedFlowfieldsCount = 0;
     this.cachedPathsCount = 0;
   }
 
   rebuildWalkabilityFromIndices(entityIndices) {
     if (!this.scratch) return;
+
+    // Invalidate FIRST - see rebuildWalkability for rationale
+    NavGrid.invalidate();
 
     const walkability = NavGrid.getWalkabilityArray();
     const cellSize = NavGrid._cellSize;
@@ -1895,7 +1906,6 @@ class ParticleWorker extends AbstractWorker {
       }
     }
 
-    NavGrid.invalidate();
     this.cachedFlowfieldsCount = 0;
     this.cachedPathsCount = 0;
   }

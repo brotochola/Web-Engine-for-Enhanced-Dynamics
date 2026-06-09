@@ -42,12 +42,14 @@
 // [FLOWFIELD SLOTS (interleaved)]
 //   For each slot:
 //   - Header (12 bytes): targetCell (u32), lastUsedFrame (u32), status (u32)
-//   - Data (totalCells bytes): direction per cell (1 byte each)
+//   - Data (totalCells * 2 bytes, 4-aligned): direction per cell (2 x Int8: X, Y)
 //
-// [PATH SLOTS]
+// [PATH SLOTS (interleaved)]
 //   For each slot:
 //   - Header (20 bytes): fromCell, toCell, lastUsedFrame, length, status
 //   - Data (maxPathLength * 4 bytes): cell indices
+//   Slot stride = 20 + maxPathLength * 4 (header and data are interleaved
+//   per slot, exactly like flowfield slots)
 //
 // ============================================================================
 // MULTI-WORKER ARCHITECTURE
@@ -55,6 +57,8 @@
 //
 // - Main thread: Initializes SAB, can read for debug visualization
 // - Logic workers: READ-ONLY - call requestVector(), receive directions
+//   (exception: they update the lastUsedFrame LRU hint on read hits -
+//   a benign aligned u32 store so hot slots are not evicted)
 // - Particle worker: READ+WRITE - computes flowfields, writes to SAB
 //
 // Communication flow:
@@ -138,10 +142,6 @@ export class NavGrid {
   static _sab = null;
   static _headerView = null; // Uint32Array for header
   static _walkability = null; // Uint8Array for walkability grid
-  static _flowfieldHeaders = null; // Flowfield slot headers
-  static _flowfieldData = null; // Flowfield direction data
-  static _pathHeaders = null; // Path slot headers
-  static _pathData = null; // Path cell data
 
   // Cached metadata (read once from header)
   static _version = 0;
@@ -167,8 +167,10 @@ export class NavGrid {
   static _pendingPathRequests = new Map();
   static _PENDING_REQUEST_RETRY_MS = 250;
 
-  // Frame tracking for LRU
-  static _currentFrame = 0;
+  // Cached full-SAB views (created once in initialize - hot paths must not
+  // allocate per-call typed array views)
+  static _u32 = null; // Uint32Array over the whole SAB
+  static _i8 = null; // Int8Array over the whole SAB (flowfield vector data)
 
   // Static (pre-baked) flowfields loaded from JSON
   // Map<name, { gridWidth, gridHeight, cellSize, vectors: Int8Array }>
@@ -182,12 +184,22 @@ export class NavGrid {
   static _FLOWFIELD_HEADER_SIZE = 12; // bytes per slot (targetCell, lastUsedFrame, status)
   static _PATH_HEADER_SIZE = 20; // bytes per slot (fromCell, toCell, lastUsedFrame, length, status + padding)
 
-  // Offsets (set in initialize based on grid size)
+  // Offsets / strides (set in initialize based on grid size)
   static _walkabilityOffset = 0;
   static _flowfieldHeadersOffset = 0;
-  static _flowfieldDataOffset = 0;
+  static _flowfieldDataSize = 0;
+  static _flowfieldSlotSize = 0; // 12-byte header + aligned vector data, interleaved
   static _pathHeadersOffset = 0;
-  static _pathDataOffset = 0;
+  static _pathSlotSize = 0; // 20-byte header + maxPathLength*4 data, interleaved
+
+  /**
+   * Shared LRU clock: wall-clock seconds. Consistent across ALL workers
+   * (frame counters are per-worker and would corrupt LRU ordering).
+   * Fits in u32 until year 2106.
+   */
+  static lruNow() {
+    return (Date.now() / 1000) >>> 0;
+  }
 
   // =========================================================
   // Initialization
@@ -259,20 +271,20 @@ export class NavGrid {
     this._flowfieldDataSize = Math.ceil((this._totalCells * 2) / 4) * 4;
     this._flowfieldSlotSize = this._FLOWFIELD_HEADER_SIZE + this._flowfieldDataSize;
 
-    this._flowfieldDataOffset =
-      this._flowfieldHeadersOffset + this._maxFlowfields * this._FLOWFIELD_HEADER_SIZE;
-
     const totalFlowfieldSize = this._maxFlowfields * this._flowfieldSlotSize;
     this._pathHeadersOffset = this._flowfieldHeadersOffset + totalFlowfieldSize;
 
-    const pathSlotSize = this._PATH_HEADER_SIZE + this._maxPathLength * 4;
-    this._pathDataOffset = this._pathHeadersOffset + this._maxPaths * this._PATH_HEADER_SIZE;
+    // Path slots are INTERLEAVED (header + data per slot), same as flowfields.
+    // Every path accessor MUST use this stride for both header and data.
+    this._pathSlotSize = this._PATH_HEADER_SIZE + this._maxPathLength * 4;
 
     // Create views
     this._walkability = new Uint8Array(sab, this._walkabilityOffset, this._totalCells);
 
-    // Flowfield views - we'll access these dynamically per slot
-    // Path views - we'll access these dynamically per slot
+    // Cached full-SAB views for zero-allocation hot-path access.
+    // All slot header/data offsets are 4-byte aligned by construction.
+    this._u32 = new Uint32Array(sab, 0, sab.byteLength >> 2);
+    this._i8 = new Int8Array(sab);
 
     this._initialized = true;
   }
@@ -417,10 +429,8 @@ export class NavGrid {
     this._sab = null;
     this._headerView = null;
     this._walkability = null;
-    this._flowfieldHeaders = null;
-    this._flowfieldData = null;
-    this._pathHeaders = null;
-    this._pathData = null;
+    this._u32 = null;
+    this._i8 = null;
     this._pendingFlowfieldRequests.clear();
     this._pendingPathRequests.clear();
     this._staticFlowfields.clear();
@@ -506,7 +516,8 @@ export class NavGrid {
       this._pendingFlowfieldRequests.delete(targetCell);
       // Flowfield exists - sample vector at our current cell
       this._sampleFlowfield(slotIndex, currentCell, outVec);
-      // Note: LRU is handled by particle_worker when it receives requests
+      // Refresh LRU on read so actively-used flowfields are not evicted
+      this._touchFlowfieldSlot(slotIndex);
     } else {
       // Flowfield not ready - return zero and request computation
       outVec.x = 0;
@@ -553,7 +564,8 @@ export class NavGrid {
       const nextCell = this._getPathNextCell(slotIndex, fromCell);
       if (nextCell >= 0) {
         this.getCellCenter(nextCell, outPos);
-        // Note: LRU is handled by particle_worker when it receives requests
+        // Refresh LRU on read so actively-used paths are not evicted
+        this._touchPathSlot(slotIndex);
         return;
       }
     }
@@ -606,7 +618,8 @@ export class NavGrid {
       this._pendingPathRequests.delete(requestKey);
       // Path exists - copy to outPath
       this._copyPathToArray(slotIndex, outPath);
-      // Note: LRU is handled by particle_worker when it receives requests
+      // Refresh LRU on read so actively-used paths are not evicted
+      this._touchPathSlot(slotIndex);
     } else {
       // Request calculation
       this._requestPath(fromCell, toCell);
@@ -792,13 +805,19 @@ export class NavGrid {
    */
   static _findFlowfieldSlot(targetCell) {
     const slotSize = this._flowfieldSlotSize;
+    const u32 = this._u32;
+    const baseIndex = this._flowfieldHeadersOffset >> 2;
+    const slotStride = slotSize >> 2;
 
     for (let i = 0; i < this._maxFlowfields; i++) {
-      const offset = this._flowfieldHeadersOffset + i * slotSize;
-      const view = new Uint32Array(this._sab, offset, 3);
-
-      // Check if this slot targets our cell and is ready
-      if (view[0] === targetCell && view[2] === FLOWFIELD_STATUS.READY) {
+      const idx = baseIndex + i * slotStride;
+      // Status is the publication gate: Atomics.load gives a happens-before
+      // edge with the writer's Atomics.store(READY), so targetCell and the
+      // vector data written before it are guaranteed visible.
+      if (
+        Atomics.load(u32, idx + 2) === FLOWFIELD_STATUS.READY &&
+        u32[idx] === targetCell
+      ) {
         return i;
       }
     }
@@ -813,37 +832,36 @@ export class NavGrid {
    * @param {Object} outVec - Output vector {x, y} to fill with float values
    */
   static _sampleFlowfield(slotIndex, currentCell, outVec) {
-    const slotSize = this._flowfieldSlotSize;
     const dataOffset =
-      this._flowfieldHeadersOffset + slotIndex * slotSize + this._FLOWFIELD_HEADER_SIZE;
+      this._flowfieldHeadersOffset + slotIndex * this._flowfieldSlotSize + this._FLOWFIELD_HEADER_SIZE;
     // Data is stored as Int8: 2 bytes per cell (X, Y), normalized to [-127, 127]
-    const data = new Int8Array(this._sab, dataOffset, this._totalCells * 2);
-    const idx = currentCell * 2;
+    const i8 = this._i8;
+    const idx = dataOffset + currentCell * 2;
     // Convert from Int8 [-127, 127] to float [-1, 1]
-    outVec.x = data[idx] / 127;
-    outVec.y = data[idx + 1] / 127;
+    outVec.x = i8[idx] / 127;
+    outVec.y = i8[idx + 1] / 127;
   }
 
   /**
-   * Update LRU timestamp for flowfield slot
+   * Update LRU timestamp for flowfield slot (zero-alloc, second granularity).
+   * Compare-first so the shared header cache line is only dirtied once per
+   * second per slot, no matter how many entities sample it.
    */
   static _touchFlowfieldSlot(slotIndex) {
-    const slotSize = this._flowfieldSlotSize;
-    const headerOffset = this._flowfieldHeadersOffset + slotIndex * slotSize;
-    const view = new Uint32Array(this._sab, headerOffset, 3);
-    view[1] = this._currentFrame; // lastUsedFrame
+    const idx = ((this._flowfieldHeadersOffset + slotIndex * this._flowfieldSlotSize) >> 2) + 1;
+    const now = this.lruNow();
+    if (this._u32[idx] !== now) this._u32[idx] = now;
   }
 
   /**
    * Clear a flowfield slot
    */
   static _clearFlowfieldSlot(slotIndex) {
-    const slotSize = this._flowfieldSlotSize;
-    const headerOffset = this._flowfieldHeadersOffset + slotIndex * slotSize;
-    const view = new Uint32Array(this._sab, headerOffset, 3);
-    view[0] = 0xffffffff; // targetCell = invalid
-    view[1] = 0; // lastUsedFrame
-    view[2] = FLOWFIELD_STATUS.EMPTY;
+    const idx = (this._flowfieldHeadersOffset + slotIndex * this._flowfieldSlotSize) >> 2;
+    const u32 = this._u32;
+    u32[idx] = 0xffffffff; // targetCell = invalid
+    u32[idx + 1] = 0; // lastUsedFrame
+    Atomics.store(u32, idx + 2, FLOWFIELD_STATUS.EMPTY);
   }
 
   /**
@@ -879,17 +897,23 @@ export class NavGrid {
 
   /**
    * Find path slot for from/to cells
+   * NOTE: path slots are interleaved - header offsets MUST use _pathSlotSize
+   * stride (header-size stride would land inside other slots' data).
    * @returns {number} - Slot index, or -1 if not found
    */
   static _findPathSlot(fromCell, toCell) {
-    const headerOffset = this._pathHeadersOffset;
-    const headerSize = this._PATH_HEADER_SIZE;
+    const u32 = this._u32;
+    const baseIndex = this._pathHeadersOffset >> 2;
+    const slotStride = this._pathSlotSize >> 2;
 
     for (let i = 0; i < this._maxPaths; i++) {
-      const offset = headerOffset + i * headerSize;
-      const view = new Uint32Array(this._sab, offset, 5);
-
-      if (view[0] === fromCell && view[1] === toCell && view[4] === PATH_STATUS.READY) {
+      const idx = baseIndex + i * slotStride;
+      // Status first (Atomics) = publication gate; see _findFlowfieldSlot
+      if (
+        Atomics.load(u32, idx + 4) === PATH_STATUS.READY &&
+        u32[idx] === fromCell &&
+        u32[idx + 1] === toCell
+      ) {
         return i;
       }
     }
@@ -900,68 +924,66 @@ export class NavGrid {
    * Get next cell in path after currentCell
    */
   static _getPathNextCell(slotIndex, currentCell) {
-    const headerOffset = this._pathHeadersOffset + slotIndex * this._PATH_HEADER_SIZE;
-    const headerView = new Uint32Array(this._sab, headerOffset, 5);
-    const pathLength = headerView[3];
+    const u32 = this._u32;
+    const slotOffset = this._pathHeadersOffset + slotIndex * this._pathSlotSize;
+    const headerIdx = slotOffset >> 2;
+    const pathLength = u32[headerIdx + 3];
 
     if (pathLength === 0) return -1;
 
-    const pathSlotSize = this._PATH_HEADER_SIZE + this._maxPathLength * 4;
-    const dataOffset = this._pathHeadersOffset + slotIndex * pathSlotSize + this._PATH_HEADER_SIZE;
-    const pathData = new Uint32Array(this._sab, dataOffset, pathLength);
+    const dataIdx = (slotOffset + this._PATH_HEADER_SIZE) >> 2;
 
     // Find current cell in path and return next
     for (let i = 0; i < pathLength - 1; i++) {
-      if (pathData[i] === currentCell) {
-        return pathData[i + 1];
+      if (u32[dataIdx + i] === currentCell) {
+        return u32[dataIdx + i + 1];
       }
     }
 
     // If not found in path or at end, return first cell
-    return pathData[0];
+    return u32[dataIdx];
   }
 
   /**
    * Copy path to output array
    */
   static _copyPathToArray(slotIndex, outPath) {
-    const headerOffset = this._pathHeadersOffset + slotIndex * this._PATH_HEADER_SIZE;
-    const headerView = new Uint32Array(this._sab, headerOffset, 5);
-    const pathLength = headerView[3];
+    const u32 = this._u32;
+    const slotOffset = this._pathHeadersOffset + slotIndex * this._pathSlotSize;
+    const pathLength = u32[(slotOffset >> 2) + 3];
 
     if (pathLength === 0) return;
 
-    const pathSlotSize = this._PATH_HEADER_SIZE + this._maxPathLength * 4;
-    const dataOffset = this._pathHeadersOffset + slotIndex * pathSlotSize + this._PATH_HEADER_SIZE;
-    const pathData = new Uint32Array(this._sab, dataOffset, pathLength);
+    const dataIdx = (slotOffset + this._PATH_HEADER_SIZE) >> 2;
 
     const pos = { x: 0, y: 0 };
     for (let i = 0; i < pathLength; i++) {
-      this.getCellCenter(pathData[i], pos);
+      this.getCellCenter(u32[dataIdx + i], pos);
       outPath.push({ x: pos.x, y: pos.y });
     }
   }
 
   /**
-   * Update LRU timestamp for path slot
+   * Update LRU timestamp for path slot (zero-alloc, second granularity,
+   * compare-first to avoid dirtying the shared cache line redundantly)
    */
   static _touchPathSlot(slotIndex) {
-    const headerOffset = this._pathHeadersOffset + slotIndex * this._PATH_HEADER_SIZE;
-    const view = new Uint32Array(this._sab, headerOffset, 5);
-    view[2] = this._currentFrame; // lastUsedFrame
+    const idx = ((this._pathHeadersOffset + slotIndex * this._pathSlotSize) >> 2) + 2;
+    const now = this.lruNow();
+    if (this._u32[idx] !== now) this._u32[idx] = now;
   }
 
   /**
    * Clear a path slot
    */
   static _clearPathSlot(slotIndex) {
-    const headerOffset = this._pathHeadersOffset + slotIndex * this._PATH_HEADER_SIZE;
-    const view = new Uint32Array(this._sab, headerOffset, 5);
-    view[0] = 0xffffffff; // fromCell = invalid
-    view[1] = 0xffffffff; // toCell = invalid
-    view[2] = 0; // lastUsedFrame
-    view[3] = 0; // length
-    view[4] = PATH_STATUS.EMPTY;
+    const idx = (this._pathHeadersOffset + slotIndex * this._pathSlotSize) >> 2;
+    const u32 = this._u32;
+    u32[idx] = 0xffffffff; // fromCell = invalid
+    u32[idx + 1] = 0xffffffff; // toCell = invalid
+    u32[idx + 2] = 0; // lastUsedFrame
+    u32[idx + 3] = 0; // length
+    Atomics.store(u32, idx + 4, PATH_STATUS.EMPTY);
   }
 
   /**
@@ -1033,12 +1055,13 @@ export class NavGrid {
     // Use empty slot if available, otherwise evict LRU
     const slot = emptySlot >= 0 ? emptySlot : lruSlot;
 
-    // Initialize slot header
-    const offset = this._flowfieldHeadersOffset + slot * slotSize;
-    const view = new Uint32Array(this._sab, offset, 3);
-    view[0] = targetCell;
-    view[1] = this._currentFrame;
-    view[2] = FLOWFIELD_STATUS.COMPUTING;
+    // Initialize slot header. Status goes through Atomics so readers never
+    // see READY while the slot is being repurposed.
+    const idx = (this._flowfieldHeadersOffset + slot * slotSize) >> 2;
+    const u32 = this._u32;
+    Atomics.store(u32, idx + 2, FLOWFIELD_STATUS.COMPUTING);
+    u32[idx] = targetCell;
+    u32[idx + 1] = this.lruNow();
 
     return slot;
   }
@@ -1058,10 +1081,10 @@ export class NavGrid {
     // Copy vector data
     data.set(vectors);
 
-    // Mark as ready (header is at start of slot)
-    const headerOffset = this._flowfieldHeadersOffset + slotIndex * slotSize;
-    const view = new Uint32Array(this._sab, headerOffset, 3);
-    view[2] = FLOWFIELD_STATUS.READY;
+    // Publish: Atomics.store(READY) AFTER the data writes gives readers a
+    // happens-before edge - they can never see READY with stale vector data.
+    const idx = (this._flowfieldHeadersOffset + slotIndex * slotSize) >> 2;
+    Atomics.store(this._u32, idx + 2, FLOWFIELD_STATUS.READY);
   }
 
   /**
@@ -1070,30 +1093,30 @@ export class NavGrid {
    * @returns {number} - Slot index
    */
   static allocatePathSlot(fromCell, toCell) {
-    const headerOffset = this._pathHeadersOffset;
-    const headerSize = this._PATH_HEADER_SIZE;
+    const u32 = this._u32;
+    const baseIndex = this._pathHeadersOffset >> 2;
+    const slotStride = this._pathSlotSize >> 2;
 
     let emptySlot = -1;
     let lruSlot = 0;
     let lruFrame = Infinity;
 
     for (let i = 0; i < this._maxPaths; i++) {
-      const offset = headerOffset + i * headerSize;
-      const view = new Uint32Array(this._sab, offset, 5);
+      const idx = baseIndex + i * slotStride;
 
       // Already exists for this path?
-      if (view[0] === fromCell && view[1] === toCell) {
+      if (u32[idx] === fromCell && u32[idx + 1] === toCell) {
         return i;
       }
 
       // Empty slot?
-      if (view[4] === PATH_STATUS.EMPTY && emptySlot < 0) {
+      if (u32[idx + 4] === PATH_STATUS.EMPTY && emptySlot < 0) {
         emptySlot = i;
       }
 
       // Track LRU
-      if (view[2] < lruFrame) {
-        lruFrame = view[2];
+      if (u32[idx + 2] < lruFrame) {
+        lruFrame = u32[idx + 2];
         lruSlot = i;
       }
     }
@@ -1101,14 +1124,14 @@ export class NavGrid {
     // Use empty slot if available, otherwise evict LRU
     const slot = emptySlot >= 0 ? emptySlot : lruSlot;
 
-    // Initialize slot header
-    const offset = headerOffset + slot * headerSize;
-    const view = new Uint32Array(this._sab, offset, 5);
-    view[0] = fromCell;
-    view[1] = toCell;
-    view[2] = this._currentFrame;
-    view[3] = 0; // length
-    view[4] = PATH_STATUS.COMPUTING;
+    // Initialize slot header. Status first (Atomics) so readers never see
+    // READY while the slot is being repurposed.
+    const idx = baseIndex + slot * slotStride;
+    Atomics.store(u32, idx + 4, PATH_STATUS.COMPUTING);
+    u32[idx] = fromCell;
+    u32[idx + 1] = toCell;
+    u32[idx + 2] = this.lruNow();
+    u32[idx + 3] = 0; // length
 
     return slot;
   }
@@ -1117,28 +1140,25 @@ export class NavGrid {
    * Write path data and mark as ready (particle worker only)
    */
   static writePathData(slotIndex, pathCells, explicitLength = -1) {
-    const headerOffset = this._pathHeadersOffset + slotIndex * this._PATH_HEADER_SIZE;
-    const headerView = new Uint32Array(this._sab, headerOffset, 5);
+    const u32 = this._u32;
+    const slotOffset = this._pathHeadersOffset + slotIndex * this._pathSlotSize;
+    const headerIdx = slotOffset >> 2;
 
     // Clamp path length
     const sourceLength = explicitLength >= 0 ? explicitLength : pathCells.length;
     const pathLength = Math.min(sourceLength, this._maxPathLength);
-    headerView[3] = pathLength;
+    u32[headerIdx + 3] = pathLength;
 
     // Write path data
     if (pathLength > 0) {
-      const pathSlotSize = this._PATH_HEADER_SIZE + this._maxPathLength * 4;
-      const dataOffset =
-        this._pathHeadersOffset + slotIndex * pathSlotSize + this._PATH_HEADER_SIZE;
-      const pathData = new Uint32Array(this._sab, dataOffset, pathLength);
-
+      const dataIdx = (slotOffset + this._PATH_HEADER_SIZE) >> 2;
       for (let i = 0; i < pathLength; i++) {
-        pathData[i] = pathCells[i];
+        u32[dataIdx + i] = pathCells[i];
       }
     }
 
-    // Mark as ready
-    headerView[4] = PATH_STATUS.READY;
+    // Publish: Atomics.store(READY) after all data writes (see writeFlowfieldData)
+    Atomics.store(u32, headerIdx + 4, PATH_STATUS.READY);
   }
 
   // =========================================================
@@ -1189,10 +1209,10 @@ export class NavGrid {
 
     const result = [];
     const headerOffset = this._pathHeadersOffset;
-    const headerSize = this._PATH_HEADER_SIZE;
+    const slotSize = this._pathSlotSize;
 
     for (let i = 0; i < this._maxPaths; i++) {
-      const offset = headerOffset + i * headerSize;
+      const offset = headerOffset + i * slotSize;
       const view = new Uint32Array(this._sab, offset, 5);
       const status = view[4];
 
@@ -1257,16 +1277,15 @@ export class NavGrid {
   static getPathForVisualization(slotIndex) {
     if (!this._initialized || slotIndex < 0 || slotIndex >= this._maxPaths) return null;
 
-    const headerOffset = this._pathHeadersOffset + slotIndex * this._PATH_HEADER_SIZE;
-    const headerView = new Uint32Array(this._sab, headerOffset, 5);
+    const slotOffset = this._pathHeadersOffset + slotIndex * this._pathSlotSize;
+    const headerView = new Uint32Array(this._sab, slotOffset, 5);
 
     if (headerView[4] !== PATH_STATUS.READY) return null;
 
     const pathLength = headerView[3];
     if (pathLength === 0) return [];
 
-    const pathSlotSize = this._PATH_HEADER_SIZE + this._maxPathLength * 4;
-    const dataOffset = this._pathHeadersOffset + slotIndex * pathSlotSize + this._PATH_HEADER_SIZE;
+    const dataOffset = slotOffset + this._PATH_HEADER_SIZE;
     const pathData = new Uint32Array(this._sab, dataOffset, pathLength);
 
     const result = [];

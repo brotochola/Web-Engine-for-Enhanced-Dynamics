@@ -386,13 +386,15 @@ All navigation state lives in one SAB. Size comes from `NavGrid.calculateSABSize
 | **Flowfield slots** | `maxFlowfields * (12 + ceil(totalCells*2/4)*4)` | Per slot: `[targetCell, lastUsedFrame, status]` header + 2 bytes/cell direction data (4-byte aligned)        |
 | **Path slots**      | `maxPaths * (20 + maxPathLength*4)`             | Per slot: `[fromCell, toCell, lastUsedFrame, length, status]` header + `Uint32` cell indices                 |
 
-**Typed arrays:** `Uint32Array` (header, path indices), `Uint8Array` (walkability), dynamic views for flowfield/path data.
+**Typed arrays:** `Uint32Array` (header, path indices), `Uint8Array` (walkability), plus cached full-SAB `Uint32Array`/`Int8Array` views for zero-allocation hot-path access. Both slot kinds are **interleaved** (header + data per slot); all accessors use the slot stride, never the bare header size.
 
-**Eviction:** LRU by `lastUsedFrame` for both flowfield and path slots.
+**Eviction:** LRU by `lastUsedFrame`, which stores `NavGrid.lruNow()` (wall-clock seconds — the only clock consistent across workers). Readers refresh it on every cache hit (compare-first store, so the shared cache line is dirtied at most once per second per slot).
+
+**Publication:** slot `status` is written with `Atomics.store` after the data writes and read with `Atomics.load`, so a reader that sees `READY` is guaranteed to see the full flowfield/path data. On rebuild, `NavGrid.invalidate()` runs **before** walkability is rewritten so stale flowfields can never be sampled against the new grid.
 
 | Writer                                                                | Reader                                                              |
 | --------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Particle worker (computes flowfields, A\* paths, walkability updates) | Logic workers (via `NavGrid.requestVector`, `getNextAStarPosition`) |
+| Particle worker (computes flowfields, A\* paths, walkability updates) | Logic workers (via `NavGrid.requestVector`, `getNextAStarPosition`); they also write the `lastUsedFrame` LRU hint on read hits |
 
 ---
 
