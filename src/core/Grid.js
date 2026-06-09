@@ -596,16 +596,14 @@ export class Grid {
    * @param {number} x - World X position
    * @param {number} y - World Y position
    * @param {number} radius - Max search radius
-   * @param {Set<string>|null} excludeTypes - Set of entity class names to exclude (optional)
    * @returns {{entityId: number, distSq: number}|null} Nearest entity or null
    */
-  static getNearestEntity(x, y, radius, excludeTypes = null) {
+  static getNearestEntity(x, y, radius) {
     const { count, entities } = Grid.getEntitiesInRadius(x, y, radius);
     if (count === 0) return null;
 
     const transformX = Transform?.x;
     const transformY = Transform?.y;
-    const entityType = Transform?.entityType;
     if (!transformX || !transformY) return null;
 
     let nearestId = -1;
@@ -613,11 +611,6 @@ export class Grid {
 
     for (let i = 0; i < count; i++) {
       const entityId = entities[i];
-
-      // Optional type filtering (for DebugUI to skip internal entities)
-      if (excludeTypes && entityType) {
-        // This requires registeredClasses lookup - caller should handle filtering
-      }
 
       const distSq = distanceSq2D(x, y, transformX[entityId], transformY[entityId]);
 

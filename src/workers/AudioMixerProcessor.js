@@ -57,14 +57,16 @@ class MixerProcessor extends AudioWorkletProcessor {
     var i32 = this._i32;
     var f32 = this._f32;
     var PI_4 = Math.PI * 0.25;
-    var mixGain = f32[2] || 1;
+    var mixGain = f32[2];
+    if (mixGain < 0) mixGain = 0;
 
     for (var s = 0; s < this._max; s++) {
       var b = H + s * S;
       if (Atomics.load(i32, b) !== 1) continue;
 
       var id = i32[b + 1];
-      var pitch = f32[b + 2] || 1;
+      var pitch = f32[b + 2];
+      if (!(pitch > 0)) pitch = 1;
       var pan = f32[b + 3];
       var vol = f32[b + 4] * mixGain;
       var loop = i32[b + 5];

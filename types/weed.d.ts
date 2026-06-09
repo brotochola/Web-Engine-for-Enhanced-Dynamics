@@ -1314,7 +1314,6 @@ export declare class Grid {
     x: number,
     y: number,
     radius: number,
-    excludeTypes?: Set<string> | null,
   ): GridNearestEntityResult | null;
 
   static isRowOwnedBy(row: number, workerId: number, totalWorkers: number): boolean;

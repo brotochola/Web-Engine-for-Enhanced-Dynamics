@@ -542,7 +542,7 @@ class PhysicsWorker extends AbstractWorker {
     const stillnessTime = RigidBody.stillnessTime;
 
     const gravityScale = dtRatio * dtRatio;
-    const invDtRatio = 1 / dtRatio; // Pre-computed inverse to avoid division in loop
+    const invDtRatio = dtRatio !== 0 ? 1 / dtRatio : 0;
 
     // Use cached query result from updateVerlet/updateVerletFixedStep
     // This avoids redundant queryActiveEntities calls per frame

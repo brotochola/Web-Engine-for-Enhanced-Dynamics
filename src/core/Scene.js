@@ -1679,6 +1679,7 @@ class Scene {
 
     // Reset per-frame input state (after update so devs can read it)
     Mouse.wheel = 0;
+    Mouse.snapshotPreviousFrame();
   }
 
   /**

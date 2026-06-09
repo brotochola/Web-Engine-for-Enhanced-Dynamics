@@ -780,8 +780,6 @@ class SpatialWorker extends AbstractWorker {
               const dyAB = bY - myY;
               const distSq = dxAB * dxAB + dyAB * dyAB;
 
-              // Early rejection: if distSq is 0, skip (same position)
-              if (distSq === 0) continue;
               const effectiveRange = myVisualRange + bHalfExtent;
               const effectiveRangeSq = effectiveRange * effectiveRange;
 

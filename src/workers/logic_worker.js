@@ -581,6 +581,8 @@ class LogicWorker extends AbstractWorker {
     if (this.workerIndex !== 0) {
       this.sendListUpdatesToLogic0();
     }
+
+    Mouse.snapshotPreviousFrame();
   }
 
   /**

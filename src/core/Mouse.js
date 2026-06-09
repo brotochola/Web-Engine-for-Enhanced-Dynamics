@@ -82,7 +82,7 @@ export class Mouse {
   static _button2JustPressed = false;
   static _button2JustReleased = false;
 
-  // Previous position/presence (per-worker, updated by updateEdgeFlags)
+  // Previous position/wheel (per-worker, snapshotted at end of each frame)
   static _prevX = 0;
   static _prevY = 0;
   static _prevWheel = 0;
@@ -254,8 +254,10 @@ export class Mouse {
 
   /**
    * Compare SAB event counters against this worker's local counters and
-   * set stable edge-detection flags for the current frame. Also snapshots
-   * previous position/wheel values.
+   * set stable edge-detection flags for the current frame.
+   *
+   * Position prev values are NOT updated here — call snapshotPreviousFrame()
+   * at the end of the frame so x - prevX reflects movement since last frame.
    *
    * Replaces the old updatePreviousValues() — works correctly across all
    * logic workers, not just worker 0.
@@ -279,11 +281,17 @@ export class Mouse {
     this._lastRelease1 = d[10];
     this._lastPress2 = d[11];
     this._lastRelease2 = d[12];
+  }
 
-    // Snapshot position/wheel for delta calculations
-    this._prevX = d[0];
-    this._prevY = d[1];
-    this._prevWheel = d[6];
+  /**
+   * Snapshot current SAB position/wheel as "previous" for the next frame.
+   * Call once at end of frame (after entity ticks on workers, after update() on main).
+   */
+  static snapshotPreviousFrame() {
+    if (!this._data) return;
+    this._prevX = this._data[0];
+    this._prevY = this._data[1];
+    this._prevWheel = this._data[6];
   }
 
   // ============================================
