@@ -2817,7 +2817,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     // Initialize particle free list for early-exit optimization
-    // freeListTop tells us how many slots are free, so activeCount = maxParticles - freeListTop[0]
+    // freeListTop[1] is the free count, so activeCount = maxParticles - freeListTop[1]
     this.particleFreeListTop = data.particleFreeListTop
       ? new Int32Array(data.particleFreeListTop)
       : null;

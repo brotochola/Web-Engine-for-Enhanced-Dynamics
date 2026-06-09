@@ -3,6 +3,7 @@
 // This was previously GameEngine.js - renamed to better reflect its role
 
 import { GameObject } from './gameObject.js';
+import { popFreeIndex } from './atomicFreeList.js';
 import { Transform } from '../components/Transform.js';
 import { RigidBody } from '../components/RigidBody.js';
 import { Collider } from '../components/Collider.js';
@@ -1803,13 +1804,15 @@ class Scene {
     let entityIndex = -1;
 
     if (EntityClass && EntityClass.freeList && EntityClass.freeListTop) {
-      // Atomic decrement to pop from free list (thread-safe)
-      const oldTop = Atomics.sub(EntityClass.freeListTop, 0, 1);
+      // Lock-free CAS pop (Treiber stack) - safe against concurrent
+      // spawns/despawns on logic workers
+      entityIndex = popFreeIndex(
+        EntityClass.freeListTop,
+        EntityClass.freeList,
+        EntityClass.startIndex
+      );
 
-      if (oldTop > 0) {
-        // Got a valid index
-        entityIndex = EntityClass.freeList[oldTop - 1];
-
+      if (entityIndex >= 0) {
         // NOTE: Do NOT set Transform.active here!
         // Worker 0 will set Transform.active = 1 after full setup.
         // Setting it here would cause spatial_worker to add entity to Grid
@@ -1819,8 +1822,7 @@ class Scene {
         Transform.x[entityIndex] = spawnConfig.x ?? 0;
         Transform.y[entityIndex] = spawnConfig.y ?? 0;
       } else {
-        // Pool exhausted - restore counter
-        Atomics.add(EntityClass.freeListTop, 0, 1);
+        // Pool exhausted
         console.warn(`spawnEntity: Pool exhausted for ${className}`);
         return null;
       }

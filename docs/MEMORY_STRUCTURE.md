@@ -160,10 +160,10 @@ All lists share the same layout: `[count: Uint16, idx0: Uint16, idx1: Uint16, ..
 
 ### `constraintFreeList` / `constraintFreeListTop`
 
-| Property        | Value                                                                      |
-| --------------- | -------------------------------------------------------------------------- |
-| **Free list**   | `maxConstraints * 2` bytes (`Uint16Array`) -- stack of available indices   |
-| **Top pointer** | 4 bytes (`Int32Array`) -- atomic stack top via `Atomics.sub`/`Atomics.add` |
+| Property        | Value                                                                              |
+| --------------- | ----------------------------------------------------------------------------------- |
+| **Free list**   | `maxConstraints * 2` bytes (`Uint16Array`) -- per-slot next links (Treiber stack)  |
+| **Top pointer** | 8 bytes (`Int32Array[2]`) -- `[0]` packed head (tag + index), `[1]` free count     |
 
 | Writer                                           | Reader         |
 | ------------------------------------------------ | -------------- |
@@ -427,12 +427,14 @@ Persistent decals (blood, scorch marks, etc.) are stamped onto tile-based RGBA b
 
 ## 10. Entity + Particle + Decoration + Bullet Free Lists
 
-O(1) pool allocation via atomic stacks. Every pooled type gets the same pattern:
+O(1) lock-free pool allocation via a Treiber stack with an ABA tag (`src/core/atomicFreeList.js`). Every pooled type gets the same pattern:
 
-| Buffer        | Size                 | Typed Array   | Purpose                                                            |
-| ------------- | -------------------- | ------------- | ------------------------------------------------------------------ |
-| `freeList`    | `poolSize * 2` bytes | `Uint16Array` | Stack of available indices                                         |
-| `freeListTop` | 4 bytes              | `Int32Array`  | Atomic stack pointer (`Atomics.sub` to pop, `Atomics.add` to push) |
+| Buffer        | Size                 | Typed Array     | Purpose                                                                                  |
+| ------------- | -------------------- | --------------- | ----------------------------------------------------------------------------------------- |
+| `freeList`    | `poolSize * 2` bytes | `Uint16Array`   | Per-slot next links, value = `localIndex + 1`, `0` = end of chain                        |
+| `freeListTop` | 8 bytes              | `Int32Array[2]` | `[0]` packed head: `(tag << 16) \| (localIndex + 1)`, CAS-updated; `[1]` free count (stats) |
+
+Pops and pushes retry a `compareExchange` on the packed head; the 16-bit tag is bumped on every successful operation, which defeats ABA. The previous counter+array design raced (a pop's payload read vs. a concurrent push's payload write on the same slot), so indices could be handed out twice. Entity pool links store LOCAL slot indices; pops translate to global indices via the pool's `startIndex`.
 
 **Applied to:**
 

@@ -11,6 +11,7 @@ import { SpriteRenderer } from '../../src/components/SpriteRenderer.js';
 import { AdobeAnimComponent } from '../../src/components/AdobeAnimComponent.js';
 import { LightEmitter } from '../../src/components/LightEmitter.js';
 import { FlashComponent } from '../../src/components/FlashComponent.js';
+import { resetFreeList } from '../../src/core/atomicFreeList.js';
 
 test('Scene.preInitializeEntityTypeArrays fills registered ranges directly', { concurrency: false }, () => {
   class RangeFillA extends GameObject {}
@@ -260,9 +261,11 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
   FlashComponent.initialIntensity = new Float32Array([8000]);
   GameObject.nextTick = null;
 
-  const freeListTopSAB = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+  // Treiber-stack free list: links array + [head, count] header
+  const freeListTopSAB = new SharedArrayBuffer(2 * Int32Array.BYTES_PER_ELEMENT);
   const freeListTop = new Int32Array(freeListTopSAB);
-  freeListTop[0] = 1;
+  const freeListLinks = new Uint16Array(1);
+  resetFreeList(freeListTop, freeListLinks, 1, 1);
 
   const pooledInstance = {
     _hasComponents: {
@@ -274,7 +277,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
   SpawnFlashEntity.startIndex = 0;
   SpawnFlashEntity.poolSize = 1;
   SpawnFlashEntity.entityType = 0;
-  SpawnFlashEntity.freeList = new Uint16Array([0]);
+  SpawnFlashEntity.freeList = freeListLinks;
   SpawnFlashEntity.freeListTop = freeListTop;
   SpawnFlashEntity.instances = [pooledInstance];
   SpawnFlashEntity._componentClassMap = {};
@@ -299,7 +302,8 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
     assert.deepEqual(Array.from(FlashComponent.lifespan), [0]);
     assert.deepEqual(Array.from(FlashComponent.currentLife), [0]);
     assert.deepEqual(Array.from(FlashComponent.initialIntensity), [0]);
-    assert.equal(freeListTop[0], 0);
+    assert.equal(freeListTop[1], 0); // free count drained
+    assert.equal(freeListTop[0] & 0xffff, 0); // stack head empty
   } finally {
     Transform.active = previousTransformActive;
     Transform.x = previousTransformX;

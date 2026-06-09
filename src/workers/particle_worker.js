@@ -658,8 +658,9 @@ class ParticleWorker extends AbstractWorker {
     if (!this.cameraData) {
       // Fall back to just building active list
       let count = 0;
+      // freeListTop[1] is the free count (eventually consistent - fine for an early-exit bound)
       const freeListTop = ParticleEmitter.freeListTop;
-      const expectedActive = freeListTop ? this.maxParticles - freeListTop[0] : this.maxParticles;
+      const expectedActive = freeListTop ? this.maxParticles - freeListTop[1] : this.maxParticles;
       const maxParticles = this.maxParticles;
       let i = 0;
 
@@ -729,8 +730,9 @@ class ParticleWorker extends AbstractWorker {
     const camMinY = cameraBounds.minY;
     const camMaxY = cameraBounds.maxY;
 
+    // freeListTop[1] is the free count (eventually consistent - fine for an early-exit bound)
     const freeListTop = ParticleEmitter.freeListTop;
-    const expectedActive = freeListTop ? this.maxParticles - freeListTop[0] : this.maxParticles;
+    const expectedActive = freeListTop ? this.maxParticles - freeListTop[1] : this.maxParticles;
 
     let activeCount = 0;
     let visibleCount = 0;

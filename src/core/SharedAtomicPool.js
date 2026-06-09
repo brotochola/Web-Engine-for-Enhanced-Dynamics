@@ -3,13 +3,21 @@
 //
 // THREAD SAFETY:
 // - freeList and freeListTop are backed by SharedArrayBuffer
-// - All operations use Atomics for lock-free concurrent access
+// - The free list is a lock-free Treiber stack (see atomicFreeList.js):
+//   freeListTop[0] is the CAS-updated packed head, freeListTop[1] the free
+//   count, and freeList holds the per-slot next links
 // - Any worker or the main thread can safely acquire/return indices
 //
 // ARCHITECTURE:
-// - LIFO stack for O(1) allocation and deallocation
-// - Atomic operations prevent race conditions between workers
+// - LIFO linked stack for O(1) allocation and deallocation
 // - Subclasses implement spawn() to set their specific component data
+
+import {
+  resetFreeList,
+  popFreeIndex,
+  pushFreeIndex,
+  getFreeListCount,
+} from './atomicFreeList.js';
 
 /**
  * Base class for atomic object pools backed by SharedArrayBuffer.
@@ -26,10 +34,10 @@ export class SharedAtomicPool {
     static maxCount = 0;
     static initialized = false;
 
-    // Free list for O(1) allocation (LIFO stack backed by SharedArrayBuffer)
+    // Free list for O(1) allocation (lock-free linked stack backed by SAB)
     // Shared between all workers and main thread
-    static freeList = null; // Uint16Array - stack of free indices
-    static freeListTop = null; // Int32Array[1] - atomic counter for stack top
+    static freeList = null; // Uint16Array - per-slot next links
+    static freeListTop = null; // Int32Array[2] - [0]=packed head, [1]=free count
 
     // Pool name for logging (override in subclass)
     static poolName = 'SharedAtomicPool';
@@ -61,20 +69,20 @@ export class SharedAtomicPool {
     /**
      * Initialize the shared free list buffers
      * Called by workers to connect to the shared free list
-     * @param {SharedArrayBuffer} freeListBuffer - Buffer for free indices (Uint16Array)
-     * @param {SharedArrayBuffer} freeListTopBuffer - Buffer for stack top (Int32Array[1])
+     * @param {SharedArrayBuffer} freeListBuffer - Buffer for next links (Uint16Array)
+     * @param {SharedArrayBuffer} freeListTopBuffer - Buffer for head + count (Int32Array[2])
      */
     static initializeFreeList(freeListBuffer, freeListTopBuffer) {
         this.freeList = new Uint16Array(freeListBuffer);
         this.freeListTop = new Int32Array(freeListTopBuffer);
         console.log(
-            `${this.poolName}: Free list initialized (top: ${this.freeListTop[0]})`
+            `${this.poolName}: Free list initialized (free: ${getFreeListCount(this.freeListTop)})`
         );
     }
 
     /**
      * Atomically acquire a free index from the pool
-     * Thread-safe: uses Atomics for concurrent access
+     * Thread-safe: lock-free CAS pop, safe against concurrent returns
      *
      * @returns {number} Free index (0 to maxCount-1), or -1 if pool exhausted
      */
@@ -82,67 +90,41 @@ export class SharedAtomicPool {
         if (!this.initialized || !this.freeList || !this.freeListTop) {
             return -1;
         }
-
-        // Atomic decrement to pop from free list
-        // Atomics.sub returns the OLD value, then decrements
-        const oldTop = Atomics.sub(this.freeListTop, 0, 1);
-
-        if (oldTop <= 0) {
-            // Pool exhausted - restore counter and return failure
-            Atomics.add(this.freeListTop, 0, 1);
-            return -1;
-        }
-
-        // Return the index from the free list
-        // oldTop was the count, so valid indices are 0 to oldTop-1
-        // We want the last item at index oldTop-1
-        return this.freeList[oldTop - 1];
+        return popFreeIndex(this.freeListTop, this.freeList);
     }
 
     /**
      * Return an index to the free list (called when items die/despawn)
-     * Thread-safe: uses Atomics for concurrent access
+     * Thread-safe: lock-free CAS push, safe against concurrent acquires
      *
      * @param {number} index - Index to return to pool
      */
     static returnToPool(index) {
         if (!this.freeList || !this.freeListTop) return;
-
-        // Atomic increment and get previous value (this is our write slot)
-        // Atomics.add returns the OLD value, then increments
-        const slot = Atomics.add(this.freeListTop, 0, 1);
-
-        // Safety check - don't overflow the free list
-        if (slot >= this.maxCount) {
-            // Rollback - this shouldn't happen in normal operation
-            Atomics.sub(this.freeListTop, 0, 1);
-            return;
-        }
-
-        // Write the index to the free list at the old top position
-        this.freeList[slot] = index;
+        if (index < 0 || index >= this.maxCount) return;
+        pushFreeIndex(this.freeListTop, this.freeList, index);
     }
 
     /**
      * Get the number of active items (total - free)
-     * Thread-safe: reads atomic counter
+     * Eventually consistent - for stats and heuristics only
      *
      * @returns {number} Count of active items
      */
     static getActiveCount() {
         if (!this.initialized || !this.freeListTop) return 0;
-        return this.maxCount - this.freeListTop[0];
+        return this.maxCount - getFreeListCount(this.freeListTop);
     }
 
     /**
      * Get the number of free slots available
-     * Thread-safe: reads atomic counter
+     * Eventually consistent - for stats and heuristics only
      *
      * @returns {number} Count of free slots
      */
     static getFreeCount() {
         if (!this.freeListTop) return 0;
-        return this.freeListTop[0];
+        return getFreeListCount(this.freeListTop);
     }
 
     /**
@@ -151,7 +133,7 @@ export class SharedAtomicPool {
      */
     static isExhausted() {
         if (!this.freeListTop) return true;
-        return this.freeListTop[0] <= 0;
+        return getFreeListCount(this.freeListTop) <= 0;
     }
 
     /**
@@ -160,7 +142,7 @@ export class SharedAtomicPool {
      */
     static hasCapacity() {
         if (!this.freeListTop) return false;
-        return this.freeListTop[0] > 0;
+        return getFreeListCount(this.freeListTop) > 0;
     }
 
     /**
@@ -182,22 +164,12 @@ export class SharedAtomicPool {
      * Sequential [0,1,2,3...] causes workers to access adjacent memory, thrashing L3 cache
      * Interleaved [0,8,16,24...,1,9,17,25...] spreads access across cache lines
      *
+     * NOT thread-safe: only call while no other thread spawns/despawns.
+     *
      * @param {number} [interleaveFactor=8] - Stride between consecutive spawns
      */
     static resetFreeListInterleaved(interleaveFactor = 8) {
         if (!this.freeList || !this.freeListTop || this.maxCount === 0) return;
-
-        const count = this.maxCount;
-
-        // Build interleaved free list
-        let writeIndex = 0;
-        for (let offset = 0; offset < interleaveFactor && writeIndex < count; offset++) {
-            for (let i = offset; i < count && writeIndex < count; i += interleaveFactor) {
-                this.freeList[writeIndex++] = i;
-            }
-        }
-
-        // Reset stack top to full (all slots free)
-        this.freeListTop[0] = count;
+        resetFreeList(this.freeListTop, this.freeList, this.maxCount, interleaveFactor);
     }
 }

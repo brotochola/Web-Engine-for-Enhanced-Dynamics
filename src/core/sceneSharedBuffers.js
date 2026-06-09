@@ -31,6 +31,7 @@ import { Sun } from './Sun.js';
 import { Layer } from './Layer.js';
 import { TileMap } from './TileMap.js';
 import { computeBufferSize as computeRenderQueueBufferSize } from './RenderQueueLayout.js';
+import { resetFreeList } from './atomicFreeList.js';
 import { NavGrid } from './NavGrid.js';
 import { Grid } from './Grid.js';
 import { Ray } from './Ray.js';
@@ -94,31 +95,15 @@ function validateSceneSharedBufferConfig(scene) {
 }
 
 function createUint16FreeListBuffers(buffers, freeListKey, freeListTopKey, count) {
+  // freeList holds the Treiber-stack next links (u16 per slot);
+  // top buffer is Int32Array[2]: [0]=packed head, [1]=free count
   buffers[freeListKey] = new SharedArrayBuffer(count * 2);
-  buffers[freeListTopKey] = new SharedArrayBuffer(4);
+  buffers[freeListTopKey] = new SharedArrayBuffer(8);
 
   return {
     freeList: new Uint16Array(buffers[freeListKey]),
     freeListTop: new Int32Array(buffers[freeListTopKey]),
   };
-}
-
-function fillSequentialFreeList(freeList) {
-  for (let i = 0; i < freeList.length; i++) {
-    freeList[i] = i;
-  }
-}
-
-function fillInterleavedEntityFreeList(freeList, startIndex) {
-  const count = freeList.length;
-  const interleaveFactor = 8;
-
-  let writeIndex = 0;
-  for (let offset = 0; offset < interleaveFactor && writeIndex < count; offset++) {
-    for (let i = offset; i < count && writeIndex < count; i += interleaveFactor) {
-      freeList[writeIndex++] = startIndex + i;
-    }
-  }
 }
 
 function createCompactUint16ListPair(buffers, activeKey, visibleKey, maxEntries) {
@@ -192,8 +177,7 @@ function initializeParticleBuffers(scene) {
     'particleFreeListTop',
     maxParticles
   );
-  fillSequentialFreeList(freeList);
-  freeListTop[0] = maxParticles;
+  resetFreeList(freeListTop, freeList, maxParticles, 1);
 
   ParticleEmitter.initialize(maxParticles);
   ParticleEmitter.initializeFreeList(buffers.particleFreeList, buffers.particleFreeListTop);
@@ -221,8 +205,7 @@ function initializeDecorationBuffers(scene) {
     'decorationFreeListTop',
     maxDecorations
   );
-  fillSequentialFreeList(freeList);
-  freeListTop[0] = maxDecorations;
+  resetFreeList(freeListTop, freeList, maxDecorations, 1);
 
   DecorationPool.initialize(maxDecorations);
   DecorationPool.initializeFreeList(buffers.decorationFreeList, buffers.decorationFreeListTop);
@@ -264,8 +247,7 @@ function initializeBulletBuffers(scene) {
     'bulletFreeListTop',
     maxBullets
   );
-  fillSequentialFreeList(freeList);
-  freeListTop[0] = maxBullets;
+  resetFreeList(freeListTop, freeList, maxBullets, 1);
 
   createCompactUint16ListPair(buffers, 'activeBulletsData', 'visibleBulletsData', maxBullets);
 
@@ -456,8 +438,7 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
       'constraintFreeListTop',
       maxConstraints
     );
-    fillSequentialFreeList(freeList);
-    freeListTop[0] = maxConstraints;
+    resetFreeList(freeListTop, freeList, maxConstraints, 1);
 
     Constraint.initialize(maxConstraints);
     Constraint.initializeFreeList(buffers.constraintFreeList, buffers.constraintFreeListTop);
@@ -495,16 +476,17 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
     const poolSize = registration.count;
     if (poolSize === 0) continue;
 
+    // Links are LOCAL slot indices; pops translate to global via startIndex
     const freeListBuffer = new SharedArrayBuffer(poolSize * 2);
-    const freeListTopBuffer = new SharedArrayBuffer(4);
+    const freeListTopBuffer = new SharedArrayBuffer(8);
     buffers.entityFreeLists[typeName] = freeListBuffer;
     buffers.entityFreeListTops[typeName] = freeListTopBuffer;
 
     const freeList = new Uint16Array(freeListBuffer);
     const freeListTop = new Int32Array(freeListTopBuffer);
 
-    fillInterleavedEntityFreeList(freeList, registration.startIndex);
-    freeListTop[0] = poolSize;
+    // Interleaved ordering scatters concurrent spawns across cache lines
+    resetFreeList(freeListTop, freeList, poolSize, 8);
 
     const EntityClass = registration.class;
     EntityClass.freeList = freeList;

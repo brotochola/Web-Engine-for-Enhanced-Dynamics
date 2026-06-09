@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { DecorationComponent } from '../../src/components/DecorationComponent.js';
 import { Decoration } from '../../src/core/Decoration.js';
 import { DecorationPool } from '../../src/core/DecorationPool.js';
+import { resetFreeList } from '../../src/core/atomicFreeList.js';
 
 function assertApprox(actual, expected, epsilon = 0.00001) {
   assert.ok(Math.abs(actual - expected) <= epsilon, `expected ${actual} to be close to ${expected}`);
@@ -20,12 +21,12 @@ function setupDecorationPool(count) {
   DecorationComponent.initializeArrays(componentBuffer, count);
   DecorationComponent.decorationCount = count;
 
+  // Treiber-stack free list: links buffer + [head, count] header
   const freeListBuffer = new SharedArrayBuffer(count * Uint16Array.BYTES_PER_ELEMENT);
   const freeList = new Uint16Array(freeListBuffer);
-  for (let i = 0; i < count; i++) freeList[i] = i;
 
-  const freeListTopBuffer = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
-  new Int32Array(freeListTopBuffer)[0] = count;
+  const freeListTopBuffer = new SharedArrayBuffer(2 * Int32Array.BYTES_PER_ELEMENT);
+  resetFreeList(new Int32Array(freeListTopBuffer), freeList, count, 1);
 
   const activeListBuffer = new SharedArrayBuffer((1 + count) * Uint16Array.BYTES_PER_ELEMENT);
   const activeListLockBuffer = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);

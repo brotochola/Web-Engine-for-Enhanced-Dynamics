@@ -15,6 +15,12 @@ import { Layer } from './Layer.js';
 import { Grid } from './Grid.js';
 import { collectComponents, cantorPair, distanceSq2D } from './utils.js';
 import {
+  resetFreeList,
+  popFreeIndex,
+  pushFreeIndex,
+  getFreeListCount,
+} from './atomicFreeList.js';
+import {
   addToActiveEntities,
   removeFromActiveEntities,
   batchRemoveFromActiveEntities,
@@ -1453,18 +1459,10 @@ export class GameObject {
     // ========================================
     // FREE LIST PUSH (ATOMIC - any thread)
     // ========================================
-    // ATOMIC: Return to free list using atomic increment (thread-safe)
-    // Atomics.add returns OLD value, then increments
+    // Lock-free CAS push (Treiber stack) - safe against concurrent
+    // spawns/despawns from any worker or the main thread
     if (EntityClass.freeList && EntityClass.freeListTop) {
-      const slot = Atomics.add(EntityClass.freeListTop, 0, 1);
-      // Safety check - don't overflow the free list
-      if (slot < EntityClass.poolSize) {
-        // slot is the old count, so write at index slot
-        EntityClass.freeList[slot] = i;
-      } else {
-        // Rollback - this shouldn't happen in normal operation
-        Atomics.sub(EntityClass.freeListTop, 0, 1);
-      }
+      pushFreeIndex(EntityClass.freeListTop, EntityClass.freeList, i, EntityClass.startIndex);
     }
 
     // ========================================
@@ -1631,7 +1629,6 @@ export class GameObject {
    */
   static initializeFreeList(EntityClass) {
     const count = EntityClass.poolSize;
-    const startIndex = EntityClass.startIndex;
 
     // Free list should already exist (SAB-backed, created by Scene.js)
     if (!EntityClass.freeList || !EntityClass.freeListTop) {
@@ -1657,20 +1654,10 @@ export class GameObject {
     // inter-core contention on shared L3 cache and memory controller.
     const interleaveFactor = 8;
 
-    // Build interleaved free list:
-    // First loop (offset=0): writes indices 0, 8, 16, 24...
-    // Second loop (offset=1): writes indices 1, 9, 17, 25...
-    // etc.
-    // Result: popping from stack yields 7, 15, 23... then 6, 14, 22... etc.
-    let writeIndex = 0;
-    for (let offset = 0; offset < interleaveFactor && writeIndex < count; offset++) {
-      for (let i = offset; i < count && writeIndex < count; i += interleaveFactor) {
-        EntityClass.freeList[writeIndex++] = startIndex + i;
-      }
-    }
-
-    // Reset stack top to full (all slots free)
-    EntityClass.freeListTop[0] = count;
+    // Rebuild the lock-free linked free list (all slots free, interleaved
+    // pop order). Links store LOCAL slot indices; pops translate to global
+    // via EntityClass.startIndex.
+    resetFreeList(EntityClass.freeListTop, EntityClass.freeList, count, interleaveFactor);
   }
 
   /**
@@ -1742,21 +1729,14 @@ export class GameObject {
         return null;
       }
 
-      // Atomic decrement to pop from free list (thread-safe)
-      // Atomics.sub returns OLD value, then decrements
-      const oldTop = Atomics.sub(EntityClass.freeListTop, 0, 1);
+      // Lock-free CAS pop (Treiber stack) - safe against concurrent
+      // spawns/despawns from any worker or the main thread
+      i = popFreeIndex(EntityClass.freeListTop, EntityClass.freeList, EntityClass.startIndex);
 
-      // Check if pool is exhausted (oldTop was 0 or less before decrement)
-      if (oldTop <= 0) {
-        // Pool exhausted - restore counter and return failure
-        Atomics.add(EntityClass.freeListTop, 0, 1);
+      if (i < 0) {
+        // Pool exhausted
         return null;
       }
-
-      // Get index from free list
-      // oldTop was the count, so valid indices are 0 to oldTop-1
-      // We want the last item, at index oldTop-1
-      i = EntityClass.freeList[oldTop - 1];
     }
 
     // Get the instance (already created during initialization)
@@ -1958,7 +1938,7 @@ export class GameObject {
 
     // If free list exists, use it for O(1) stats
     if (EntityClass.freeList && EntityClass.freeListTop) {
-      const available = EntityClass.freeListTop[0]; // SAB-backed Int32Array
+      const available = getFreeListCount(EntityClass.freeListTop); // SAB-backed
       return {
         total: EntityClass.poolSize,
         active: EntityClass.poolSize - available,
