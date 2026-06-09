@@ -107,6 +107,10 @@ export class DebugUI {
     this._lastTickTime = 0;
 
     const loop = (time) => {
+      if (!this._needsTick()) {
+        this._rafId = null;
+        return;
+      }
       if (time - this._lastTickTime >= this.updateInterval) {
         this._lastTickTime = time;
         this._tick();
@@ -116,6 +120,21 @@ export class DebugUI {
     this._rafId = requestAnimationFrame(loop);
   }
 
+  /** True while panel/tool updates are needed (overlay visible or active tools). */
+  _needsTick() {
+    if (!this.scene) return false;
+    if (!this.container?.classList.contains('hidden')) return true;
+    const tools = this.tools;
+    return !!(tools.inspectorActive || tools.activeSpawnerType || tools.eraserActive);
+  }
+
+  /** Restart the RAF loop after hide/toggle if work resumed. */
+  _ensureTickLoop() {
+    if (this._needsTick() && !this._rafId) {
+      this.start();
+    }
+  }
+
   stop() {
     if (this._rafId) {
       cancelAnimationFrame(this._rafId);
@@ -123,9 +142,17 @@ export class DebugUI {
     }
   }
 
-  toggle() { this.container.classList.toggle('hidden'); }
-  show() { this.container.classList.remove('hidden'); }
-  hide() { this.container.classList.add('hidden'); }
+  toggle() {
+    this.container.classList.toggle('hidden');
+    this._ensureTickLoop();
+  }
+  show() {
+    this.container.classList.remove('hidden');
+    this._ensureTickLoop();
+  }
+  hide() {
+    this.container.classList.add('hidden');
+  }
 
   destroy() {
     this.stop();

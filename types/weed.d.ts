@@ -1148,7 +1148,7 @@ export declare class Camera {
   static isOnScreen(worldX: number, worldY: number, margin?: number): boolean;
   static worldToScreen(worldX: number, worldY: number): Vec2Mutable;
   static screenToWorld(screenX: number, screenY: number): Vec2Mutable;
-  static getViewportBounds(): CameraViewportBounds;
+  static getViewportBounds(out?: CameraViewportBounds): CameraViewportBounds;
 }
 
 export declare class Ray {

@@ -11,6 +11,16 @@ export class Keyboard {
   static _lastPressCounts = null; // Per-thread snapshot of SAB press counters
   static _pressedThisFrame = null; // Stable edge flags updated once per frame
 
+  /** Aliases resolved once — avoids per-key lookup object allocation. */
+  static _SPECIAL_KEYS = Object.freeze({
+    space: ' ',
+    spacebar: ' ',
+    ctrl: 'control',
+    ctl: 'control',
+    alt: 'alt',
+    return: 'enter',
+  });
+
   /**
    * Initialize keyboard with shared input data and key mapping
    * @param {Int32Array} inputData - Shared input data array
@@ -49,16 +59,7 @@ export class Keyboard {
     if (typeof key !== 'string') return null;
 
     const normalizedKey = key.toLowerCase();
-    const specialKeys = {
-      space: ' ',
-      spacebar: ' ',
-      ctrl: 'control',
-      ctl: 'control',
-      alt: 'alt',
-      return: 'enter',
-    };
-
-    return specialKeys[normalizedKey] || normalizedKey;
+    return this._SPECIAL_KEYS[normalizedKey] || normalizedKey;
   }
 
   static _getKeyIndex(key) {

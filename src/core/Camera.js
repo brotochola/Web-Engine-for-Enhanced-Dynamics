@@ -29,6 +29,16 @@ export class Camera {
   static _worldWidth = Infinity;
   static _worldHeight = Infinity;
 
+  /** Reused by getViewportBounds() when no out-param is passed. */
+  static _viewportBoundsScratch = {
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: 0,
+    height: 0,
+  };
+
   // Zoom limits
   static _maxZoom = 50;
 
@@ -491,10 +501,14 @@ export class Camera {
   }
 
   /**
-   * Get viewport bounds in world coordinates
+   * Get viewport bounds in world coordinates.
+   * Writes into `out` when provided; otherwise reuses a static scratch object
+   * (zero allocation on the hot path used by SoundManager spatial culling).
+   * @param {{left?: number, top?: number, right?: number, bottom?: number, width?: number, height?: number}|null} [out]
    * @returns {{left: number, top: number, right: number, bottom: number, width: number, height: number}}
    */
-  static getViewportBounds() {
+  static getViewportBounds(out = null) {
+    const result = out || Camera._viewportBoundsScratch;
     const zoom = this._data ? this._data[0] : 1;
     const cameraX = this._data ? this._data[1] : 0;
     const cameraY = this._data ? this._data[2] : 0;
@@ -502,13 +516,12 @@ export class Camera {
     const width = this._canvasWidth / zoom;
     const height = this._canvasHeight / zoom;
 
-    return {
-      left: cameraX,
-      top: cameraY,
-      right: cameraX + width,
-      bottom: cameraY + height,
-      width,
-      height,
-    };
+    result.left = cameraX;
+    result.top = cameraY;
+    result.right = cameraX + width;
+    result.bottom = cameraY + height;
+    result.width = width;
+    result.height = height;
+    return result;
   }
 }

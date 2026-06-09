@@ -93,6 +93,7 @@ export class ToolManager {
     this._syncDebugToolFlag();
     this.updateToolIndicator();
     this.debugUI.panels.visual?.updateInspectorButtonState(this.inspectorActive);
+    this.debugUI._ensureTickLoop();
   }
 
   toggleEraser() {
@@ -104,6 +105,7 @@ export class ToolManager {
     this._syncDebugToolFlag();
     this.updateToolIndicator();
     this.debugUI.panels.visual?.updateInspectorButtonState(this.inspectorActive);
+    this.debugUI._ensureTickLoop();
   }
 
   toggleInspector() {
@@ -115,6 +117,7 @@ export class ToolManager {
     this._syncDebugToolFlag();
     this.updateToolIndicator();
     this.debugUI.panels.visual?.updateInspectorButtonState(this.inspectorActive);
+    this.debugUI._ensureTickLoop();
   }
 
   deactivateAll() {

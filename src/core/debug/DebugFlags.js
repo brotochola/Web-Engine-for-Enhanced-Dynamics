@@ -33,6 +33,8 @@ export class DebugFlags {
   constructor(debugBuffer) {
     // Uint8Array view of debug flags
     this.flags = new Uint8Array(debugBuffer);
+    // Cached view — getSelectedEntity/setSelectedEntity are read on the render hot path.
+    this._selectedEntityView = new Int32Array(debugBuffer, DEBUG_SELECTED_ENTITY_OFFSET, 1);
 
     // Initialize all flags to 0 (disabled)
     for (let i = 0; i < this.flags.length; i++) {
@@ -184,9 +186,7 @@ export class DebugFlags {
    * @param {number} entityIndex - Entity index or -1 for no selection
    */
   setSelectedEntity(entityIndex) {
-    // Store as Int32 after the flag byte region to avoid aliasing debug flags.
-    const view = new Int32Array(this.flags.buffer, DEBUG_SELECTED_ENTITY_OFFSET, 1);
-    view[0] = entityIndex;
+    this._selectedEntityView[0] = entityIndex;
     // Auto-enable the flag when selecting
     if (entityIndex >= 0) {
       this.flags[DEBUG_FLAGS.SHOW_SELECTED_ENTITY] = 1;
@@ -199,8 +199,7 @@ export class DebugFlags {
    * @returns {number} Entity index or -1 for no selection
    */
   getSelectedEntity() {
-    const view = new Int32Array(this.flags.buffer, DEBUG_SELECTED_ENTITY_OFFSET, 1);
-    return view[0];
+    return this._selectedEntityView[0];
   }
 
   /**
