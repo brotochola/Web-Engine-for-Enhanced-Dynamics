@@ -1312,15 +1312,19 @@ export class GameObject {
     // Access collision tracking from logic worker context
     // self.logicWorker is the LogicWorker instance in logic_worker.js
     const logicWorker = typeof self !== 'undefined' ? self.logicWorker : null;
-    if (!logicWorker || !logicWorker.currentCollisions) {
+    if (!logicWorker || !logicWorker.frameCollisions) {
       return false;
     }
 
-    // Use Cantor pairing function to generate collision key
-    // Note: Both directions (A,B) and (B,A) are stored in currentCollisions
-    const key = cantorPair(this.index, otherIndex);
+    // Collision keys are stored ONCE per pair, normalized as (min, max).
+    // Cantor pairing is order-sensitive, so normalize before keying.
+    const a = this.index;
+    const minE = a < otherIndex ? a : otherIndex;
+    const maxE = a < otherIndex ? otherIndex : a;
+    const key = cantorPair(minE, maxE);
 
-    return logicWorker.currentCollisions.has(key);
+    // frameCollisions always points at the latest completed frame's pair set
+    return logicWorker.frameCollisions.has(key);
   }
 
   /**

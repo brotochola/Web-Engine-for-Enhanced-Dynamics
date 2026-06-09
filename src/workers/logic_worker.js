@@ -20,7 +20,7 @@ import { SpriteSheetRegistry } from '../core/SpriteSheetRegistry.js';
 import { AbstractWorker } from './AbstractWorker.js';
 
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from './workers-utils.js';
-import { cantorUnpair, _cantorResult } from '../core/utils.js';
+import { cantorPair, cantorUnpair, _cantorResult } from '../core/utils.js';
 
 // Note: Core engine classes (GameObject, Mouse, Keyboard, etc.) and components
 // (Transform, RigidBody, etc.) are now registered automatically by AbstractWorker
@@ -61,6 +61,10 @@ class LogicWorker extends AbstractWorker {
     // Reverse lookups use cantorUnpair() - no Map needed (zero GC)
     this.previousCollisions = new Set(); // Track collisions from last frame (numeric keys)
     this.currentCollisions = new Set(); // Track collisions in current frame (numeric keys)
+    // Stable reference to the latest COMPLETED frame's collision set.
+    // previousCollisions/currentCollisions swap every frame, so entity ticks
+    // (which run after processCollisionCallbacks) must query through this alias.
+    this.frameCollisions = this.currentCollisions;
 
     // Screen visibility tracking (for onScreenEnter/Exit lifecycle methods)
     // Track previous frame's visibility state to detect transitions
@@ -601,9 +605,11 @@ class LogicWorker extends AbstractWorker {
   /**
    * Process collision callbacks (Unity-style)
    * Determines Enter/Stay/Exit states and calls appropriate callbacks
-   * Partitions collision processing across workers using modulo (minEntity % workers == myIndex)
+   * Partitions CALLBACK dispatch across workers using modulo (minEntity % workers == myIndex),
+   * but EVERY worker records EVERY pair in its collision set so isCollidingWith()
+   * works regardless of which worker ticks the querying entity.
    * OPTIMIZED: Normalized (min,max) ordering - ONE key per collision pair (half the storage)
-   * ZERO ALLOC: Cantor pairing + inline min/max comparison, no string concat
+   * ZERO ALLOC: Cantor pairing (exact float math, no Int32 overflow) + inline min/max, no string concat
    */
   processCollisionCallbacks() {
     const pairCount = this.collisionData[0];
@@ -626,17 +632,22 @@ class LogicWorker extends AbstractWorker {
       const minE = rawA < rawB ? rawA : rawB;
       const maxE = rawA < rawB ? rawB : rawA;
 
+      // IMPORTANT: must match utils.cantorPair(minE, maxE) exactly.
+      // Float division is exact here (sum*(sum+1) is even and < 2^53);
+      // the previous `>> 1` version overflowed Int32 for minE+maxE >= 46341.
+      const key = cantorPair(minE, maxE);
+
+      // Record ALL pairs (even non-owned / non-listening ones) so
+      // isCollidingWith() is accurate on every worker for every entity type.
+      currCollisions.add(key);
+
+      // Callback dispatch is owned by exactly one worker per pair
       if (minE % totalWorkers !== myIndex) continue;
 
       // Skip pairs where neither entity type has CollisionListener
       const aListens = collisionFlags[entityType[rawA]];
       const bListens = collisionFlags[entityType[rawB]];
       if (!aListens && !bListens) continue;
-
-      const sum = minE + maxE;
-      const key = ((sum * (sum + 1)) >> 1) + maxE;
-
-      currCollisions.add(key);
 
       const isNewCollision = !prevCollisions.has(key);
 
@@ -668,6 +679,10 @@ class LogicWorker extends AbstractWorker {
     const temp = this.previousCollisions;
     this.previousCollisions = this.currentCollisions;
     this.currentCollisions = temp;
+
+    // After the swap, previousCollisions holds THIS frame's completed set.
+    // Entity ticks run after this method, so point the query alias at it.
+    this.frameCollisions = this.previousCollisions;
   }
 
   /**
