@@ -802,19 +802,23 @@ class PreRenderWorker extends AbstractWorker {
         const screenMinY = cameraBounds.minY;
         const screenMaxY = cameraBounds.maxY;
 
-        // Iteration source: queryActiveEntities([SpriteRenderer]) for only sprite entities, else fallback
-        let iterCount, getEntityIdx;
+        // Iteration source: queryActiveEntities([SpriteRenderer]) for only sprite entities, else fallback.
+        // Normalized to (array, base offset) instead of a per-frame closure so the
+        // hot loop below stays allocation-free and the index load stays inlineable.
+        let iterCount, iterSource, iterBase;
         const spriteEntities = this.queryActiveEntities(this._querySpriteRenderer || [SpriteRenderer]);
         if (spriteEntities && spriteEntities.length > 0) {
             iterCount = spriteEntities.length;
-            getEntityIdx = (idx) => spriteEntities[idx];
+            iterSource = spriteEntities;
+            iterBase = 0;
         } else if (this.activeEntitiesData && this.activeEntitiesData[0] > 0) {
-            const activeData = this.activeEntitiesData;
-            iterCount = activeData[0];
-            getEntityIdx = (idx) => activeData[1 + idx];
+            iterSource = this.activeEntitiesData;
+            iterCount = iterSource[0];
+            iterBase = 1;
         } else {
             iterCount = this.globalEntityCount;
-            getEntityIdx = (idx) => idx;
+            iterSource = null; // identity: entity index == loop index
+            iterBase = 0;
         }
 
         // Sun shadows (fused): write during same pass when enabled
@@ -882,7 +886,7 @@ class PreRenderWorker extends AbstractWorker {
         const maxShadowSprites = this.maxShadowSprites ?? 0;
 
         for (let idx = 0; idx < iterCount; idx++) {
-            const i = getEntityIdx(idx);
+            const i = iterSource ? iterSource[iterBase + idx] : idx;
             if (!active[i]) {
                 if (isItOnScreen[i] !== 0) isItOnScreen[i] = 0;
                 continue;
@@ -1767,6 +1771,7 @@ class PreRenderWorker extends AbstractWorker {
         const frameIndex = this.entityFrameIndex;
         const frameAccum = this.entityFrameAccumulator;
         const entityLastTextureId = this.entityLastTextureId;
+        const deltaSeconds = deltaTime / 1000;
         // Particle arrays
         const particleX = ParticleComponent.x;
         const particleY = ParticleComponent.y;
@@ -1917,6 +1922,36 @@ class PreRenderWorker extends AbstractWorker {
                         const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
                         if (frameIndex[idx] >= animFrameCount) {
                             frameIndex[idx] = 0;
+                        }
+
+                        // Advance animation (mirrors buildRenderQueue's entity branch).
+                        // Routing is exclusive: an entity is either in the main queue or
+                        // one custom layer, so the accumulator advances once per frame.
+                        if (srIsAnimated[idx] && animFrameCount > 1) {
+                            frameAccum[idx] += deltaSeconds;
+                            const frameDuration = 1 / (srAnimSpeed[idx] * 60);
+
+                            if (frameAccum[idx] >= frameDuration) {
+                                frameAccum[idx] -= frameDuration;
+
+                                const currentFrame = frameIndex[idx];
+                                const isLastFrame = currentFrame >= animFrameCount - 1;
+                                const shouldLoop = srLoop[idx] === 1;
+
+                                if (shouldLoop || !isLastFrame) {
+                                    frameIndex[idx] = (currentFrame + 1) % animFrameCount;
+                                    // Bounds may change (variable frame sizes)
+                                    if (this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH) {
+                                        const texId = (this.animationFrameStart?.[globalAnimIdx] ?? 0) + frameIndex[idx];
+                                        const origW = this.frameWidth[texId] || 0;
+                                        const origH = this.frameHeight[texId] || 0;
+                                        const sx = srScaleX[idx] || 1;
+                                        const sy = srScaleY[idx] || 1;
+                                        SpriteRenderer.boundsHalfW[idx] = (origW * sx) * 0.5;
+                                        SpriteRenderer.boundsHalfH[idx] = (origH * sy) * 0.5;
+                                    }
+                                }
+                            }
                         }
 
                         const animStart = this.animationFrameStart?.[globalAnimIdx] ?? 0;
