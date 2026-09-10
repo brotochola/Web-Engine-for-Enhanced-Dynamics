@@ -12,6 +12,7 @@ Thumbs.db
 # IDE files
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~
@@ -22,9 +23,13 @@ package-lock.json
 src/index.bundle.js
 js_docs/
 
+# Local one-off scripts
+scratch/
+
 # Local profiling dumps (not source)
 engine_trace.json
 memory_snapshot.json
 
 # Generated benchmark / smoke JSON (local only)
 tests/results/
+

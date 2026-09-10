@@ -1,21 +1,23 @@
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer, enums } = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, Grab, Mouse, Keyboard, enums } = WEED;
 const { ShapeType } = enums;
 
 const HEAT = 1;
+const IGNITE_RANGE_SQ = 80 * 80;
 
 export class BurningBox extends GameObject {
   static scriptUrl = import.meta.url;
   static instances = [];
   static serializable = true;
-  static components = [RigidBody, Collider, SpriteRenderer];
+  static components = [RigidBody, Collider, SpriteRenderer, Grab];
 
   setup() {
     this.rigidBody.linearDamping = 0.01;
   }
 
   ignite() {
+    console.log('ignite', this);
     this.setFeedBits(this.getFeedBits() | HEAT);
     return this;
   }
@@ -50,5 +52,11 @@ export class BurningBox extends GameObject {
     if (config.startIgnited) this.ignite();
   }
 
-  tick() {}
+  tick() {
+    if (!Mouse.isButton0Pressed && !Keyboard.isPressed('f')) return;
+
+    const dx = this.x - Mouse.x;
+    const dy = this.y - Mouse.y;
+    if (dx * dx + dy * dy < IGNITE_RANGE_SQ) this.ignite();
+  }
 }

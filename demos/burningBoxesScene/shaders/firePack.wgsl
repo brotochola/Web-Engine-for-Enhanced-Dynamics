@@ -67,14 +67,12 @@ fn pack_heat(@builtin(global_invocation_id) gid: vec3<u32>) {
   let scale = 0.12;
   let g = 0.5 + 0.5 * tanh(u * scale);
   let b = 0.5 + 0.5 * tanh(v * scale);
-  let row = i32(sim.numY) - 1 - id.y;
-  textureStore(heatWrite, vec2<i32>(id.x, row), vec4<f32>(heat, g, b, 1.0));
+  textureStore(heatWrite, id, vec4<f32>(heat, g, b, 1.0));
 }
 
 @compute @workgroup_size(8, 8)
 fn clear_heat(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
   if (id.x >= i32(sim.numX) || id.y >= i32(sim.numY)) { return; }
-  let row = i32(sim.numY) - 1 - id.y;
-  textureStore(heatWrite, vec2<i32>(id.x, row), vec4<f32>(0.0, 0.5, 0.5, 0.0));
+  textureStore(heatWrite, id, vec4<f32>(0.0, 0.5, 0.5, 0.0));
 }

@@ -4,7 +4,7 @@ import { Camera } from '/src/core/Camera.js';
 import { BLEND_MODES, LAYER_COMPUTE_SOURCE } from '/src/core/ConfigDefaults.js';
 import WEED from '/src/index.js';
 
-const { Mouse, Keyboard, Layer } = WEED;
+const { Layer } = WEED;
 
 const FIRE_PASSES = [
   { entry: 'raster_stamp', source: 'fireStamp', layout: 'stamp' },
@@ -120,32 +120,6 @@ export class BurningBoxesScene extends WEED.Scene {
 
   update(dtRatio, deltaTime, time) {
     Layer.fire.setUniform('uTime', time * 0.001);
-    if (Keyboard.isPressed('f')) this.igniteNearest();
-    if (Mouse.isButton0Pressed) this.igniteNearest();
-  }
-
-  igniteNearest() {
-    const mx = Mouse.x;
-    const my = Mouse.y;
-    let best = null;
-    let bestD = 80 * 80;
-    const list = BurningBox.getAllActive();
-
-    console.log('list', list);
-    for (let i = 0; i < list.length; i++) {
-      const box = list[i];
-
-      const dx = Transform[box].x - mx;
-      const dy = Transform[box].y - my;
-      const d = dx * dx + dy * dy;
-      if (d < bestD) {
-        bestD = d;
-        best = box;
-      }
-    }
-
-    console.log('best', best);
-    if (best) best.ignite();
   }
 
   spawnFloorAndLedges() {
