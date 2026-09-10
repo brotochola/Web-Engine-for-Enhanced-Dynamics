@@ -849,6 +849,9 @@ export class Layer {
             layer._scaleMode = Layer._normalizeScaleMode(layerMeta.scaleMode);
             this._byName[layerMeta.name] = layer;
             this._byId[i] = layer;
+            if (!layer._builtIn && !(layerMeta.name in this) && !layerMeta.name.startsWith('_')) {
+                this[layerMeta.name] = layer;
+            }
         }
 
         // Initialize uniform SAB views

@@ -2262,8 +2262,9 @@ export class GameObject {
     }
 
     // Apply spawn config (x, y, vx, vy, rotation, etc.)
+    // Skip methods — spawnConfig.feedLayer:'fire' must not overwrite GameObject.feedLayer.
     for (const key in spawnConfig) {
-      if (instance[key] !== undefined) {
+      if (instance[key] !== undefined && typeof instance[key] !== 'function') {
         instance[key] = spawnConfig[key];
       }
     }
@@ -2288,6 +2289,9 @@ export class GameObject {
     // onSpawned() defines "this specific instance" (position, random variations, health)
     if (instance.onSpawned) {
       instance.onSpawned(spawnConfig);
+    }
+    if (typeof spawnConfig.feedLayer === 'string') {
+      instance.feedLayer(spawnConfig.feedLayer);
     }
 
     // AUTOMATION: Automatically initialize any FSM components AFTER onSpawned()

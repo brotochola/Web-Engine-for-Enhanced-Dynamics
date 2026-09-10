@@ -2582,6 +2582,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       cl.shader = this._createLookShader(fragmentSource, lookSource, uniformDefs, shaderName || 'look');
       cl.uniformStore = cl.shader.resources?.customUniforms?.uniforms || null;
       cl.shaderMesh = new Mesh({ geometry: this._createLayerFullscreenGeometry(), shader: cl.shader });
+      cl.shaderMesh.eventMode = 'none';
     } catch (err) {
       console.error(`PIXI WORKER: Failed to apply shader "${shaderName}" on layer "${layerName}":`, err);
       cl.shaderBypass = true;
@@ -3547,12 +3548,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         const device = this.pixiApp.renderer.gpu.device;
         cl.heatSource = PIXI.TextureSource.from({
           resource: new Uint8Array(4),
-          width: 1,
-          height: 1,
+          width: 8,
+          height: 8,
           format: 'rgba8unorm',
           scaleMode: 'linear',
           autoGenerateMipmaps: false,
+          alphaMode: 'no-premultiply-alpha',
         });
+        cl.heatSource.autoGarbageCollect = false;
         cl.heatSource.uploadMethodId = 'external';
         cl.compute = new ComputeLayer({
           device,
@@ -3611,6 +3614,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           cl.uniformStore = cl.shader.resources?.customUniforms?.uniforms || null;
 
           cl.shaderMesh = new Mesh({ geometry, shader: cl.shader });
+          cl.shaderMesh.eventMode = 'none';
         } catch (err) {
           console.error(`PIXI WORKER: Failed to compile shader for layer "${layerName}":`, err);
         }
@@ -3656,6 +3660,33 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const cl = this._customLayerList[li];
       const renderToRT = !!cl.rt;
       let densityMesh = null;
+
+      if (cl.shader && Layer._uniformDirty[cl.layerId]) {
+        const dirtyRef = Layer._uniformDirty[cl.layerId];
+        if (Atomics.load(dirtyRef, 0) === 1) {
+          Atomics.store(dirtyRef, 0, 0);
+          const floats = Layer._uniformFloats[cl.layerId];
+          const entries = cl.uniformEntries;
+          const u = cl.uniformStore;
+          if (floats && entries && u) {
+            for (let ei = 0; ei < entries.length; ei++) {
+              const [uName, entry] = entries[ei];
+              if (entry.size === 1) {
+                u[uName] = floats[entry.offset];
+              } else {
+                const target = u[uName];
+                if (target && typeof target.set === 'function') {
+                  target.set(floats.subarray(entry.offset, entry.offset + entry.size));
+                } else if (target && typeof target === 'object' && target.length) {
+                  for (let k = 0; k < entry.size; k++) {
+                    target[k] = floats[entry.offset + k];
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
 
       if (cl.compute) {
         cl.compute.step({
@@ -3751,33 +3782,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this.pixiApp.renderer.render({ container: densityMesh, target: cl.rt, clear: true });
         if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
           this.pixiApp.renderer.render({ container: cl.shaderMesh, target: cl.rtOut, clear: true });
-        }
-      }
-
-      if (cl.shader && Layer._uniformDirty[cl.layerId]) {
-        const dirtyRef = Layer._uniformDirty[cl.layerId];
-        if (Atomics.load(dirtyRef, 0) === 1) {
-          Atomics.store(dirtyRef, 0, 0);
-          const floats = Layer._uniformFloats[cl.layerId];
-          const entries = cl.uniformEntries;
-          const u = cl.uniformStore;
-          if (floats && entries && u) {
-            for (let ei = 0; ei < entries.length; ei++) {
-              const [uName, entry] = entries[ei];
-              if (entry.size === 1) {
-                u[uName] = floats[entry.offset];
-              } else {
-                const target = u[uName];
-                if (target && typeof target.set === 'function') {
-                  target.set(floats.subarray(entry.offset, entry.offset + entry.size));
-                } else if (target && typeof target === 'object' && target.length) {
-                  for (let k = 0; k < entry.size; k++) {
-                    target[k] = floats[entry.offset + k];
-                  }
-                }
-              }
-            }
-          }
         }
       }
     }

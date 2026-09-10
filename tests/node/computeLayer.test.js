@@ -51,6 +51,26 @@ test('compute layer metadata: no sprite queue, BOX2D_BODIES default, maxBodies 5
     assert.equal(Layer._metadata.layers[fire.id].hasRenderQueue, false);
     assert.equal(Layer._metadata.layers[fire.id].maxBodies, 512);
     assert.equal(Layer._feedMax[fire.id], 512);
+    assert.equal(Layer.fire, fire);
+  } finally {
+    Layer.reset();
+  }
+});
+
+test('initializeFromBuffers restores Layer.fire accessor', () => {
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      { fire: { shader: { fragment: 'f', compute: 's' } } },
+      BUILT_IN_LAYERS,
+      true
+    );
+    const data = Layer.getSerializableData();
+    const fireId = Layer.get('fire').id;
+    Layer.reset();
+    Layer.initializeFromBuffers(data);
+    assert.ok(Layer.fire);
+    assert.equal(Layer.fire.id, fireId);
   } finally {
     Layer.reset();
   }

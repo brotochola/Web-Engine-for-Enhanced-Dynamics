@@ -40,14 +40,7 @@ export function writeRgba32Float(renderer, source, data, width, height, label) {
   );
 }
 
-export function pinGpuTexture(renderer, source, gpuTexture) {
-  if (!renderer || !source || !gpuTexture) return;
-  const uid = renderer.uid;
-  if (source._gpuData == null) source._gpuData = [];
-  const prev = source._gpuData[uid];
-  if (prev && prev.gpuTexture === gpuTexture && prev.textureView) return;
-  source.uploadMethodId = 'external';
-  const textureView = gpuTexture.createView();
+function attachGpuData(source, uid, gpuTexture, textureView) {
   source._gpuData[uid] = {
     gpuTexture,
     textureView,
@@ -58,6 +51,28 @@ export function pinGpuTexture(renderer, source, gpuTexture) {
       this.textureViews = null;
     },
   };
+}
+
+export function pinGpuTexture(renderer, source, gpuTexture) {
+  if (!renderer || !source || !gpuTexture) return;
+  const uid = renderer.uid;
+  if (source._gpuData == null) source._gpuData = [];
+  source.uploadMethodId = 'external';
+  source.autoGarbageCollect = false;
+  const prev = source._gpuData[uid];
+  const already = prev && prev.gpuTexture === gpuTexture && prev.textureView;
+  const sizeMismatch =
+    source.pixelWidth !== gpuTexture.width || source.pixelHeight !== gpuTexture.height;
+  if (already && !sizeMismatch) return;
+  const textureView = already ? prev.textureView : gpuTexture.createView();
+  if (!already) attachGpuData(source, uid, gpuTexture, textureView);
+  // Pixi 8.20 GpuTextureSystem.onSourceResize destroys gpuTexture when
+  // source.pixelWidth/Height !== gpuTexture size, then initSource() a 1x1.
+  if (sizeMismatch) source.resize(gpuTexture.width, gpuTexture.height, 1);
+  const cur = source._gpuData[uid];
+  if (!cur || cur.gpuTexture !== gpuTexture) {
+    attachGpuData(source, uid, gpuTexture, gpuTexture.createView());
+  }
   const texSys = renderer.texture;
   if (texSys && texSys._bindGroupHash) {
     texSys._bindGroupHash[source.uid] = null;

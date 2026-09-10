@@ -17,7 +17,6 @@ export class BurningBox extends GameObject {
   }
 
   ignite() {
-    console.log('ignite', this);
     this.setFeedBits(this.getFeedBits() | HEAT);
     return this;
   }

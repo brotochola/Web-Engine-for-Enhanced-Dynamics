@@ -72,6 +72,7 @@ export class ComputeLayer {
     this.stampTex = null;
     this.velTex = null;
     this.heatTex = null;
+    this.heatLookTex = null;
     this._layouts = null;
     this._ready = false;
     this._compileError = false;
@@ -108,12 +109,12 @@ export class ComputeLayer {
         }
         this.modules.set(code, module);
       }
+      this._ensurePipelines();
     } catch (err) {
       console.error(`ComputeLayer "${this.meta.name}":`, err);
       this._compileError = true;
       return false;
     }
-    this._ensurePipelines();
     this._ready = true;
     return true;
   }
@@ -263,6 +264,12 @@ export class ComputeLayer {
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
     this.heatTex = fieldTexture(device, numX, numY, 'rgba8unorm');
+    // Sample-only copy: some GPUs reject filterable sample of a storage tex.
+    this.heatLookTex = device.createTexture({
+      size: { width: numX, height: numY },
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
     this._bindPersistent();
   }
 
@@ -477,9 +484,16 @@ export class ComputeLayer {
       }
     }
 
+    if (this.heatTex && this.heatLookTex) {
+      encoder.copyTextureToTexture(
+        { texture: this.heatTex },
+        { texture: this.heatLookTex },
+        { width: this.numX, height: this.numY }
+      );
+    }
     device.queue.submit([encoder.finish()]);
-    if (this.heatSource && this.heatTex) {
-      pinGpuTexture(this.renderer, this.heatSource, this.heatTex);
+    if (this.heatSource && this.heatLookTex) {
+      pinGpuTexture(this.renderer, this.heatSource, this.heatLookTex);
     }
     return true;
   }

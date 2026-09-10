@@ -80,7 +80,8 @@ fn fireGrain(uv: vec2<f32>) -> f32 {
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let heat = textureSample(uTexture, uSampler, in.vTextureCoord);
   let t = heat.r;
-  let cutoff = max(0.002, customUniforms.uDrawCutoff);
+  // Clamp: if UBO packing ever lands uPressureIters (6) on cutoff, t<=6 discards all heat.
+  let cutoff = min(max(customUniforms.uDrawCutoff, 0.002), 0.05);
   if (t <= cutoff) {
     return vec4<f32>(0.0);
   }
