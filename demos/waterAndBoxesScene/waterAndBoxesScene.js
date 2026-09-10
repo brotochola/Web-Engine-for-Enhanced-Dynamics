@@ -96,7 +96,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
       box: '/demos/img/box_100_100.png',
     },
     shaders: {
-      metaball: '/demos/shaders/metaball.frag',
+      metaball: '/demos/shaders/metaball.wgsl',
     },
   };
 

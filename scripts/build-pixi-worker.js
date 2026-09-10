@@ -12,8 +12,8 @@
 //   npm install pixi.js@<version>
 //   npm run build:pixi
 //
-// WebGPURenderer + CanvasRenderer are stubbed in scripts/build-pixi.mjs
-// (worker forces preference: 'webgl').
+// Outfile stays src/lib/pixi_8.16_.min.js (import paths). Packed version is package.json pixi.js.
+// WebGPURenderer is bundled (compute layers + GpuProgram). CanvasRenderer stays stubbed.
 
 import { ExtensionType, extensions } from '../node_modules/pixi.js/lib/extensions/Extensions.mjs';
 
@@ -36,6 +36,8 @@ import { Geometry } from '../node_modules/pixi.js/lib/rendering/renderers/shared
 import { Mesh } from '../node_modules/pixi.js/lib/scene/mesh/shared/Mesh.mjs';
 import { Shader } from '../node_modules/pixi.js/lib/rendering/renderers/shared/shader/Shader.mjs';
 import { GlProgram } from '../node_modules/pixi.js/lib/rendering/renderers/gl/shader/GlProgram.mjs';
+import { GpuProgram } from '../node_modules/pixi.js/lib/rendering/renderers/gpu/shader/GpuProgram.mjs';
+import { BindGroup } from '../node_modules/pixi.js/lib/rendering/renderers/gpu/shader/BindGroup.mjs';
 import { RendererType } from '../node_modules/pixi.js/lib/rendering/renderers/types.mjs';
 import { RenderTexture } from '../node_modules/pixi.js/lib/rendering/renderers/shared/texture/RenderTexture.mjs';
 import { DOMAdapter } from '../node_modules/pixi.js/lib/environment/adapter.mjs';
@@ -65,6 +67,8 @@ export {
   Mesh,
   Shader,
   GlProgram,
+  GpuProgram,
+  BindGroup,
   RendererType,
   RenderTexture,
   DOMAdapter,

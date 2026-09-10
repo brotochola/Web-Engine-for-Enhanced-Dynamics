@@ -342,8 +342,8 @@ Shaders are loaded as named assets in `static assets.shaders`, then referenced b
 static assets = {
   textures: { box: '/img/box.png' },
   shaders: {
-    metaball: '/shaders/metaball.frag',
-    heatDistortion: '/shaders/heat.frag',
+    metaball: '/demos/shaders/metaball.wgsl',
+    heatDistortion: '/shaders/heat.wgsl',
   },
 };
 
@@ -397,6 +397,22 @@ Two ways to fill a shader layer’s density RT:
 | **Buffer density** | `LAYER_DENSITY_SOURCE.LIQUID_FUN` | Engine reads live HEAP pose and draws procedural soft kernels (no atlas, no type-7 queue). |
 
 Look fragment is unchanged: samples `uTexture` (density) and applies threshold / foam / color. Author only the look frag + uniforms; engine owns the splat when configured.
+
+### Compute layers (`LAYER_COMPUTE_SOURCE`)
+
+WebGPU-only. A compute layer has `maxItems: 0` (no sprite queue). The look draws a fullscreen field; colliders that `feedLayer()` that name are packed into storage buffers. See [`COMPUTE_LAYERS.md`](./COMPUTE_LAYERS.md).
+
+```javascript
+this.setLayer('ENTITIES');
+this.feedLayer('fire');
+this.setFeedBits(1); // scene bit 0 (heat in burning boxes); engine ORs static onto bit 1
+```
+
+
+
+Renderer `preference` is `webgpu`. Missing device throws at init.
+
+### DebugUI Layer Inspector
 
 ```javascript
 import { BLEND_MODES, LAYER_DENSITY_SOURCE, LAYER_SPLAT_FALLOFF, LAYER_SCALE_MODE } from '/src/core/ConfigDefaults.js';
@@ -459,14 +475,14 @@ Layer.get('dulceDeLeche').setSplatRadius(56); // live kernel size
 
 v1 is an LF-only density layer (mixed sprites on the same layer are ignored). Debug Layers panel shows **Density: liquidFun**; shader `(none)` still bypasses the look pass and shows the raw density RT.
 
-#### Look-shader uniforms (`dulceDeLeche.frag` / similar fluid looks)
+#### Look-shader uniforms (`dulceDeLeche.wgsl` / similar fluid looks)
 
 Density RT `uTexture.a` is the accumulated soft-disk coverage (ADD splat). The look fragment turns that scalar field into visible fluid. Demo uniforms (live-editable in Layers debug panel via `Layer.setUniform`):
 
 | Uniform | Typical range | What it does |
 |---------|---------------|--------------|
 | **`uCutoff`** | ~0.2–0.4 | Density below this is discarded. Raise → thinner / broken surface (more holes). Lower → fills more of the soft fringe (blobbier silhouette). |
-| **`uRim`** | must be `≥ uCutoff` | Upper bound of the **rim band** (`uCutoff` … `uRim`). In `dulceDeLeche.frag` this is a soft cream/amber edge (not white foam). Density in this band uses rim colors + `uEdgeAlpha`. In `liquid.frag` the same role is named **`uFoam`** (hard white foam when `dens < uFoam`). |
+| **`uRim`** | must be `≥ uCutoff` | Upper bound of the **rim band** (`uCutoff` … `uRim`). In `dulceDeLeche.wgsl` this is a soft cream/amber edge (not white foam). Density in this band uses rim colors + `uEdgeAlpha`. In `liquid.wgsl` the same role is named **`uFoam`** (hard white foam when `dens < uFoam`). |
 | **`uDepth`** | ~0.2–0.8 | Width of the body gradient **above** the rim: `smoothstep(uRim, uRim + uDepth, dens)`. Larger → softer transition from edge color to burnt/core color. Smaller → sharper core. |
 | **`uBodyAlpha`** | 0–1 | Opacity of the **dense core** (high density). Mixed toward as `depth` increases. |
 | **`uEdgeAlpha`** | 0–1 | Opacity of **rim / near-threshold** fluid. Mixed from at the rim; also scales the rim-band alpha in dulce. |

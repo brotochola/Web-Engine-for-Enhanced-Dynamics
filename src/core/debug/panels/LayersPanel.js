@@ -174,6 +174,23 @@ export class LayersPanel {
       row.appendChild(densCont);
     }
 
+    let computeVal = null;
+    if (customLayer?.compute) {
+      const meta = Layer._metadata?.layers?.[customLayer.id];
+      const computeCont = document.createElement('div'); computeCont.style.cssText = cellStyle;
+      const computeLbl = document.createElement('span'); computeLbl.style.cssText = lblStyle; computeLbl.textContent = 'Compute:';
+      computeCont.appendChild(computeLbl);
+      computeVal = document.createElement('span');
+      computeVal.style.cssText = `${lblStyle};color:rgba(255,255,255,0.8)`;
+      const srcName = meta?.compute?.passes?.[0]?.source || meta?.shaderName || 'wgsl';
+      const feedN = Layer._feedCount ? Atomics.load(Layer._feedCount, customLayer.id) : 0;
+      const maxB = meta?.maxBodies || 0;
+      const cell = meta?.computeGrid?.cellSize || 8;
+      computeVal.textContent = `${srcName} · ${feedN}/${maxB} feed · ${cell}px · WebGPU`;
+      computeCont.appendChild(computeVal);
+      row.appendChild(computeCont);
+    }
+
     // Z-Index
     const zCont = document.createElement('div'); zCont.style.cssText = cellStyle;
     const zLbl = document.createElement('span'); zLbl.style.cssText = lblStyle; zLbl.textContent = 'Z:';
@@ -207,7 +224,7 @@ export class LayersPanel {
       visible: visibleCb, alpha: alphaSlider, alphaValue: alphaVal,
       blendMode: blendSelect, containerBlend: cBlendSelect,
       shader: shaderSelect, ySorting: ySortCb,
-      resolution: resVal, zIndex: zInput,
+      resolution: resVal, zIndex: zInput, computeVal,
     };
     this.elements.layerRows[layerName] = wrapper;
     this.elements.layerDetails[layerName] = uniformsBlock;
@@ -353,6 +370,17 @@ export class LayersPanel {
           controls.alphaValue.textContent = pct + '%';
         }
         if (layer.hasShader) controls.containerBlend.value = Layer._BLEND_MODE_STRINGS[Layer._containerBlendId[layer.id]] || 'normal';
+        if (controls.computeVal && layer.compute) {
+          const meta = Layer._metadata?.layers?.[layer.id];
+          const srcName = meta?.compute?.passes?.[0]?.source || meta?.shaderName || 'wgsl';
+          const feedN = Layer._feedCount ? Atomics.load(Layer._feedCount, layer.id) : 0;
+          const maxB = meta?.maxBodies || 0;
+          const cell = meta?.computeGrid?.cellSize || 8;
+          const nx = meta?.computeGrid?.numX;
+          const ny = meta?.computeGrid?.numY;
+          const grid = nx && ny ? `${nx}×${ny}` : `${cell}px`;
+          controls.computeVal.textContent = `${srcName} · ${feedN}/${maxB} feed · ${grid} · WebGPU`;
+        }
       }
     }
   }

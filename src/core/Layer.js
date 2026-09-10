@@ -25,7 +25,14 @@
 // - Uniform arrays use Atomics dirty flag for safe cross-worker writes
 // - _postToRenderer is a main-thread-only callback (not cross-worker)
 
-import { LAYER_DEFAULTS, LAYER_DENSITY_SOURCE, LAYER_SPLAT_FALLOFF, LAYER_SCALE_MODE } from './ConfigDefaults.js';
+import {
+    LAYER_DEFAULTS,
+    LAYER_DENSITY_SOURCE,
+    LAYER_SPLAT_FALLOFF,
+    LAYER_SCALE_MODE,
+    LAYER_COMPUTE_SOURCE,
+    COMPUTE_LAYER_DEFAULT_MAX_BODIES,
+} from './ConfigDefaults.js';
 
 export class Layer {
     static MAX_LAYERS = 16;
@@ -50,6 +57,14 @@ export class Layer {
     static _containerBlendId = null;  // Uint8Array[MAX_LAYERS]
     static _available = null;         // Uint8Array[MAX_LAYERS]
     static _hasRenderQueue = null;    // Uint8Array[MAX_LAYERS]
+
+    /** Per-layer compute feeder lists (SAB). */
+    static _feedCountSAB = null;
+    static _feedCount = null; // Int32Array[MAX_LAYERS]
+    static _feedIndexSABs = [];
+    static _feedIndices = [];
+    static _feedMax = [];
+    static _feedOverflowWarned = 0;
 
     // Per-layer uniform SABs (only for layers with shaders)
     static _uniformSABs = [];     // SharedArrayBuffer[] indexed by layer id
@@ -131,6 +146,10 @@ export class Layer {
     get layerType() { return this._layerType; }
     /** {@link LAYER_DENSITY_SOURCE} value (`SPRITES` or `LIQUID_FUN`). */
     get densitySource() { return this._densitySource || LAYER_DENSITY_SOURCE.SPRITES; }
+    /** {@link LAYER_COMPUTE_SOURCE} or null. */
+    get computeSource() { return this._computeSource || null; }
+    /** Compute pass list / module names (read-only mirror). */
+    get compute() { return this._compute || null; }
     /** Splat kernel controls when densitySource is liquidFun (read-only mirror). */
     get splat() { return this._splat || null; }
 
@@ -435,11 +454,17 @@ export class Layer {
         this._uniformFloats = [];
         this._uniformDirty = [];
         this._uniformMaps = [];
+        this._feedIndexSABs = [];
+        this._feedIndices = [];
+        this._feedMax = [];
+        this._feedOverflowWarned = 0;
         this._defaultYSorting = !!defaultYSorting;
 
         // Allocate config SAB
         this._configSAB = new SharedArrayBuffer(this._getConfigSABSize());
         this._createConfigViews(this._configSAB);
+        this._feedCountSAB = new SharedArrayBuffer(this.MAX_LAYERS * 4);
+        this._feedCount = new Int32Array(this._feedCountSAB);
 
         // Register built-in layers (BACKGROUND, DECALS, CASTED_SHADOWS, ENTITIES, LIGHTING)
         for (const [name, config] of Object.entries(builtInLayers)) {
@@ -457,17 +482,36 @@ export class Layer {
         // Register custom layers from scene config
         for (const [name, config] of Object.entries(layersConfig)) {
             const densitySource = Layer._normalizeDensitySource(config.shader);
+            const compute = Layer._normalizeCompute(config.shader);
             const layer = this._register(name, {
                 ...config,
                 _builtIn: false,
                 _layerType: config.layerType || this._deriveLayerType(name, false, !!config.shader),
                 _densitySource: densitySource,
+                _compute: compute,
+                _computeSource: compute
+                    ? (config.shader?.source === LAYER_COMPUTE_SOURCE.BOX2D_BODIES
+                        || config.shader?.source === 'box2dBodies'
+                        || !config.shader?.source
+                        ? LAYER_COMPUTE_SOURCE.BOX2D_BODIES
+                        : config.shader.source)
+                    : null,
                 _splat: densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
                     ? Layer._normalizeSplat(config.shader, densitySource)
                     : null,
             });
-            // Buffer-density LF layers skip the sprite render queue (engine splats HEAP pose).
-            this._hasRenderQueue[layer.id] = densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN ? 0 : 1;
+            // LF density and compute layers skip the sprite render queue.
+            this._hasRenderQueue[layer.id] = (
+                densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN || compute
+            ) ? 0 : 1;
+
+            if (compute) {
+                const maxBodies = Layer._normalizeMaxBodies(config.shader);
+                const sab = new SharedArrayBuffer(maxBodies * 4);
+                this._feedIndexSABs[layer.id] = sab;
+                this._feedIndices[layer.id] = new Uint32Array(sab);
+                this._feedMax[layer.id] = maxBodies;
+            }
 
             if (config.shader && config.shader.uniforms) {
                 this._allocateUniformSAB(layer.id, config.shader.uniforms);
@@ -496,6 +540,54 @@ export class Layer {
         return src === LAYER_DENSITY_SOURCE.LIQUID_FUN || src === 'liquidFun'
             ? LAYER_DENSITY_SOURCE.LIQUID_FUN
             : LAYER_DENSITY_SOURCE.SPRITES;
+    }
+
+    /**
+     * @param {object|null|undefined} shader
+     * @returns {null|{ passes: Array<{entry:string, source?:string, layout?:string, iterate?:string|number, swap?:string[], workgroup?:number[]}> , maxBodies: number, grid: {cellSize:number} }}
+     */
+    static _normalizeCompute(shader) {
+        const raw = shader?.compute;
+        if (!raw) return null;
+        const grid = shader.grid && Number.isFinite(shader.grid.cellSize) && shader.grid.cellSize > 0
+            ? { cellSize: shader.grid.cellSize }
+            : { cellSize: 8 };
+        const maxBodies = Layer._normalizeMaxBodies(shader);
+        if (typeof raw === 'string') {
+            return {
+                passes: [{ entry: 'main', source: raw, layout: 'simple' }],
+                maxBodies,
+                grid,
+            };
+        }
+        const sourceName = typeof raw.source === 'string' ? raw.source : null;
+        const passesIn = Array.isArray(raw.passes) && raw.passes.length
+            ? raw.passes
+            : [{ entry: 'main' }];
+        const passes = [];
+        for (let i = 0; i < passesIn.length; i++) {
+            const p = passesIn[i] || {};
+            const entry = typeof p.entry === 'string' ? p.entry : 'main';
+            passes.push({
+                entry,
+                source: typeof p.source === 'string' ? p.source : sourceName,
+                layout: typeof p.layout === 'string' ? p.layout : 'simple',
+                iterate: p.iterate,
+                swap: Array.isArray(p.swap) ? p.swap.slice() : null,
+                workgroup: Array.isArray(p.workgroup) ? p.workgroup.slice() : null,
+            });
+        }
+        return { passes, maxBodies, grid, textures: raw.textures || null };
+    }
+
+    static _normalizeMaxBodies(shader) {
+        const n = shader?.maxBodies;
+        return Number.isFinite(n) && n > 0 ? (n | 0) : COMPUTE_LAYER_DEFAULT_MAX_BODIES;
+    }
+
+    static isComputeLayer(layerId) {
+        const layer = this._byId[layerId | 0];
+        return !!(layer && layer._compute);
     }
 
     /**
@@ -548,6 +640,8 @@ export class Layer {
         layer._builtIn = !!config._builtIn;
         layer._layerType = config._layerType || this._deriveLayerType(name, layer._builtIn, !!config.shader);
         layer._densitySource = config._densitySource || LAYER_DENSITY_SOURCE.SPRITES;
+        layer._compute = config._compute || null;
+        layer._computeSource = config._computeSource || null;
         layer._splat = config._splat || null;
         layer._scaleMode = Layer._normalizeScaleMode(
             config._scaleMode ?? config.scaleMode ?? LAYER_DEFAULTS.scaleMode
@@ -679,6 +773,10 @@ export class Layer {
                 uniformTypes: null,
                 densitySource,
                 splat,
+                compute: layer._compute || null,
+                computeSource: layer._computeSource || null,
+                computeGrid: layer._compute?.grid || null,
+                maxBodies: layer._compute?.maxBodies || 0,
             };
 
             if (config.shader?.uniforms) {
@@ -705,6 +803,9 @@ export class Layer {
             configSAB: this._configSAB,
             uniformSABs,
             metadata: this._metadata,
+            feedCountSAB: this._feedCountSAB,
+            feedIndexSABs: this._feedIndexSABs,
+            feedMax: this._feedMax,
         };
     }
 
@@ -721,7 +822,10 @@ export class Layer {
         this._uniformSABs = [];
         this._uniformFloats = [];
         this._uniformDirty = [];
-        this._uniformMaps = [];
+        this._feedIndexSABs = [];
+        this._feedIndices = [];
+        this._feedMax = [];
+        this._feedOverflowWarned = 0;
 
         // Create typed views over the shared config SAB
         this._configSAB = data.configSAB;
@@ -739,6 +843,8 @@ export class Layer {
             layer._builtIn = !!layerMeta.builtIn;
             layer._layerType = layerMeta.layerType || 'world';
             layer._densitySource = layerMeta.densitySource || LAYER_DENSITY_SOURCE.SPRITES;
+            layer._compute = layerMeta.compute || null;
+            layer._computeSource = layerMeta.computeSource || null;
             layer._splat = layerMeta.splat || null;
             layer._scaleMode = Layer._normalizeScaleMode(layerMeta.scaleMode);
             this._byName[layerMeta.name] = layer;
@@ -764,6 +870,16 @@ export class Layer {
             this._uniformFloats[id] = new Float32Array(sab, 0, floatCount);
             this._uniformDirty[id] = new Int32Array(sab, dirtyOffset, 1);
             this._uniformMaps[id] = uMap;
+        }
+
+        this._feedCountSAB = data.feedCountSAB || null;
+        this._feedCount = this._feedCountSAB ? new Int32Array(this._feedCountSAB) : null;
+        this._feedIndexSABs = data.feedIndexSABs || [];
+        this._feedMax = data.feedMax || [];
+        this._feedIndices = [];
+        for (let i = 0; i < this._feedIndexSABs.length; i++) {
+            const sab = this._feedIndexSABs[i];
+            if (sab) this._feedIndices[i] = new Uint32Array(sab);
         }
 
         this.initialized = true;

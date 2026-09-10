@@ -132,8 +132,8 @@ export class MamushkaDigScene extends WEED.Scene {
       rocky: '/demos/img/rocky.jpg',
     },
     shaders: {
-      rockContour: '/demos/shaders/rockContour.frag',
-      dulceDeLeche: '/demos/shaders/dulceDeLeche.frag',
+      rockContour: '/demos/shaders/rockContour.wgsl',
+      dulceDeLeche: '/demos/shaders/dulceDeLeche.wgsl',
     },
     AdobeAnimateAnimations: {
       blue_character: {

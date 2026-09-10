@@ -76,6 +76,26 @@ export const LAYER_DENSITY_SOURCE = Object.freeze({
 });
 
 /**
+ * What a compute layer packs into GPU storage (not the look vertex shader).
+ * @enum {string}
+ */
+export const LAYER_COMPUTE_SOURCE = Object.freeze({
+  /** Colliders with feedLayerId === this layer: pose/vel + box/circle/polygon verts. */
+  BOX2D_BODIES: 'box2dBodies',
+});
+
+/** Collider.feedLayerId sentinel — BACKGROUND is layer id 0, so 0 cannot mean "none". */
+export const FEED_LAYER_NONE = 255;
+/** Collider.feedSlot sentinel. */
+export const FEED_SLOT_NONE = 0xffff;
+/** Default GPU/CPU body cap for BOX2D_BODIES compute layers. */
+export const COMPUTE_LAYER_DEFAULT_MAX_BODIES = 512;
+/** Engine-owned Body.flags bit: RigidBody.static. Bit 0 and others are shader-defined. */
+export const COMPUTE_FLAG_STATIC = 2;
+/** Engine-owned Body.flags bit: motion-sweep ghost (no heat). */
+export const COMPUTE_FLAG_SWEEP = 4;
+
+/**
  * Soft-disk falloff for `LAYER_DENSITY_SOURCE.LIQUID_FUN` splat kernels.
  * @enum {string}
  */

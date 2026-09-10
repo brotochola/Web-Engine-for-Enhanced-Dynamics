@@ -11,7 +11,7 @@
 
 import { Component } from '../core/Component.js';
 import { RigidBody } from './RigidBody.js';
-import { MAX_POLYGON_VERTICES, ShapeType } from '../core/ConfigDefaults.js';
+import { MAX_POLYGON_VERTICES, ShapeType, FEED_LAYER_NONE, FEED_SLOT_NONE } from '../core/ConfigDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
 
 class Collider extends Component {
@@ -64,7 +64,18 @@ class Collider extends Component {
     polyVertexY: { type: Float32Array, length: MAX_POLYGON_VERTICES },
     polyNormalX: { type: Float32Array, length: MAX_POLYGON_VERTICES },
     polyNormalY: { type: Float32Array, length: MAX_POLYGON_VERTICES },
+
+    // Compute-layer feed (append-only so prior field offsets stay stable)
+    feedLayerId: Uint8Array, // FEED_LAYER_NONE (255) = not fed; not 0 (BACKGROUND)
+    feedBits: Uint8Array, // opaque shader flags; engine ORs COMPUTE_FLAG_STATIC at pack
+    feedSlot: Uint16Array, // index into that layer's dense feeder list
   };
+
+  static initializeArrays(buffer, count) {
+    super.initializeArrays(buffer, count);
+    if (this.feedLayerId) this.feedLayerId.fill(FEED_LAYER_NONE);
+    if (this.feedSlot) this.feedSlot.fill(FEED_SLOT_NONE);
+  }
 
   /** @type {number} */
   static MAX_POLYGON_VERTICES = MAX_POLYGON_VERTICES;

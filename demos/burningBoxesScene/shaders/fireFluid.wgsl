@@ -1,0 +1,547 @@
+struct SimParams {
+  dt: f32,
+  h: f32,
+  numX: f32,
+  numY: f32,
+  overRelax: f32,
+  smokeSplit: f32,
+  fireCool: f32,
+  smokeCool: f32,
+  rise: f32,
+  diffusion: f32,
+  swirlCount: f32,
+  swirlForce: f32,
+  originX: f32,
+  originY: f32,
+  shapeCount: f32,
+  emberT: f32,
+  bodyDrive: f32,
+  sourcePad: f32,
+  swirlDamp: f32,
+  drawCutoff: f32,
+  stampPad: f32,
+  emberOn: f32,
+  swirlChance: f32,
+  swirlSpin: f32,
+  swirlLife: f32,
+  swirlRadius: f32,
+  maxSwirls: f32,
+  shiftX: f32,
+  shiftY: f32,
+  padEnd: f32,
+}
+
+struct Swirl {
+  x: f32,
+  y: f32,
+  omega: f32,
+  radius: f32,
+  vx: f32,
+  life: f32,
+  pad0: f32,
+  pad1: f32,
+}
+
+struct ShapeDescriptor {
+  posX: f32,
+  posY: f32,
+  cosA: f32,
+  sinA: f32,
+  halfW: f32,
+  halfH: f32,
+  shapeKind: f32,
+  flags: f32,
+  velX: f32,
+  velY: f32,
+  omega: f32,
+  vertStart: f32,
+  vertCount: f32,
+  pad0: f32,
+  pad1: f32,
+  pad2: f32,
+}
+
+@group(0) @binding(0) var<uniform> sim: SimParams;
+@group(0) @binding(1) var<storage, read_write> swirls: array<Swirl>;
+@group(0) @binding(2) var<storage, read> shapes: array<ShapeDescriptor>;
+
+@group(1) @binding(0) var uRead: texture_2d<f32>;
+@group(1) @binding(1) var vRead: texture_2d<f32>;
+@group(1) @binding(2) var tRead: texture_2d<f32>;
+@group(1) @binding(3) var pRead: texture_2d<f32>;
+@group(1) @binding(4) var stampTex: texture_2d<f32>;
+@group(1) @binding(5) var velTex: texture_2d<f32>;
+
+@group(2) @binding(0) var uWrite: texture_storage_2d<r32float, write>;
+@group(2) @binding(1) var vWrite: texture_storage_2d<r32float, write>;
+@group(2) @binding(2) var tWrite: texture_storage_2d<r32float, write>;
+@group(2) @binding(3) var pWrite: texture_storage_2d<r32float, write>;
+
+fn in_grid(c: vec2<i32>) -> bool {
+  return c.x >= 0 && c.y >= 0 && c.x < i32(sim.numX) && c.y < i32(sim.numY);
+}
+
+fn load_u(c: vec2<i32>) -> f32 {
+  if (!in_grid(c)) { return 0.0; }
+  return textureLoad(uRead, c, 0).x;
+}
+
+fn load_v(c: vec2<i32>) -> f32 {
+  if (!in_grid(c)) { return 0.0; }
+  return textureLoad(vRead, c, 0).x;
+}
+
+fn load_t(c: vec2<i32>) -> f32 {
+  if (!in_grid(c)) { return 0.0; }
+  return textureLoad(tRead, c, 0).x;
+}
+
+fn load_p(c: vec2<i32>) -> f32 {
+  if (!in_grid(c)) { return 0.0; }
+  return textureLoad(pRead, c, 0).x;
+}
+
+fn open_cell(c: vec2<i32>) -> f32 {
+  if (!in_grid(c)) { return 0.0; }
+  return textureLoad(stampTex, c, 0).r;
+}
+
+fn load_body_vel(c: vec2<i32>) -> vec4<f32> {
+  if (!in_grid(c)) { return vec4<f32>(0.0); }
+  return textureLoad(velTex, c, 0);
+}
+
+fn interior(id: vec2<i32>) -> bool {
+  let nx = i32(sim.numX);
+  let ny = i32(sim.numY);
+  return id.x > 0 && id.y > 0 && id.x < nx - 1 && id.y < ny - 1;
+}
+
+fn sample_bilinear(field: i32, x: f32, y: f32) -> f32 {
+  let h = sim.h;
+  let nx = sim.numX;
+  let ny = sim.numY;
+  if (x < h || y < h || x > nx * h || y > ny * h) {
+    return 0.0;
+  }
+  var px = x;
+  var py = y;
+  var dx = 0.0;
+  var dy = 0.0;
+  if (field == 0) {
+    dy = 0.5 * h;
+  } else if (field == 1) {
+    dx = 0.5 * h;
+  } else {
+    dx = 0.5 * h;
+    dy = 0.5 * h;
+  }
+  let h1 = 1.0 / h;
+  let fx = (px - dx) * h1;
+  let fy = (py - dy) * h1;
+  let x0 = i32(clamp(floor(fx), 0.0, nx - 1.0));
+  let y0 = i32(clamp(floor(fy), 0.0, ny - 1.0));
+  let x1 = min(x0 + 1, i32(nx) - 1);
+  let y1 = min(y0 + 1, i32(ny) - 1);
+  let tx = clamp(fx - f32(x0), 0.0, 1.0);
+  let ty = clamp(fy - f32(y0), 0.0, 1.0);
+  let sx = 1.0 - tx;
+  let sy = 1.0 - ty;
+  var a: f32;
+  var b: f32;
+  var c: f32;
+  var d: f32;
+  if (field == 0) {
+    a = load_u(vec2<i32>(x0, y0));
+    b = load_u(vec2<i32>(x1, y0));
+    c = load_u(vec2<i32>(x0, y1));
+    d = load_u(vec2<i32>(x1, y1));
+  } else if (field == 1) {
+    a = load_v(vec2<i32>(x0, y0));
+    b = load_v(vec2<i32>(x1, y0));
+    c = load_v(vec2<i32>(x0, y1));
+    d = load_v(vec2<i32>(x1, y1));
+  } else {
+    a = load_t(vec2<i32>(x0, y0));
+    b = load_t(vec2<i32>(x1, y0));
+    c = load_t(vec2<i32>(x0, y1));
+    d = load_t(vec2<i32>(x1, y1));
+  }
+  return sx * sy * a + tx * sy * b + sx * ty * c + tx * ty * d;
+}
+
+@compute @workgroup_size(8, 8)
+fn clear_fields(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let id = vec2<i32>(i32(gid.x), i32(gid.y));
+  if (!in_grid(id)) { return; }
+  textureStore(uWrite, id, vec4<f32>(0.0));
+  textureStore(vWrite, id, vec4<f32>(0.0));
+  textureStore(tWrite, id, vec4<f32>(0.0));
+  textureStore(pWrite, id, vec4<f32>(0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn clear_pressure(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let id = vec2<i32>(i32(gid.x), i32(gid.y));
+  if (!in_grid(id)) { return; }
+  textureStore(pWrite, id, vec4<f32>(0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn shift_fields(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let id = vec2<i32>(i32(gid.x), i32(gid.y));
+  if (!in_grid(id)) { return; }
+  let src = id + vec2<i32>(i32(sim.shiftX), i32(sim.shiftY));
+  if (!in_grid(src)) {
+    textureStore(uWrite, id, vec4<f32>(0.0));
+    textureStore(vWrite, id, vec4<f32>(0.0));
+    textureStore(tWrite, id, vec4<f32>(0.0));
+    textureStore(pWrite, id, vec4<f32>(0.0));
+    return;
+  }
+  textureStore(uWrite, id, vec4<f32>(load_u(src), 0.0, 0.0, 0.0));
+  textureStore(vWrite, id, vec4<f32>(load_v(src), 0.0, 0.0, 0.0));
+  textureStore(tWrite, id, vec4<f32>(load_t(src), 0.0, 0.0, 0.0));
+  textureStore(pWrite, id, vec4<f32>(load_p(src), 0.0, 0.0, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn jacobi_pressure(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let id = vec2<i32>(i32(gid.x), i32(gid.y));
+  if (!in_grid(id)) { return; }
+  if (!interior(id) || open_cell(id) < 0.5) {
+    textureStore(pWrite, id, vec4<f32>(0.0));
+    return;
+  }
+  let sx0 = open_cell(id + vec2<i32>(-1, 0));
+  let sx1 = open_cell(id + vec2<i32>(1, 0));
+  let sy0 = open_cell(id + vec2<i32>(0, -1));
+  let sy1 = open_cell(id + vec2<i32>(0, 1));
+  let s = sx0 + sx1 + sy0 + sy1;
+  if (s == 0.0) {
+    textureStore(pWrite, id, vec4<f32>(0.0));
+    return;
+  }
+  let div = load_u(id + vec2<i32>(1, 0)) - load_u(id) + load_v(id + vec2<i32>(0, 1)) - load_v(id);
+  let sum_p = load_p(id + vec2<i32>(-1, 0)) * sx0
+    + load_p(id + vec2<i32>(1, 0)) * sx1
+    + load_p(id + vec2<i32>(0, -1)) * sy0
+    + load_p(id + vec2<i32>(0, 1)) * sy1;
+  let jacobi = (sum_p - div) / s;
+  let next = mix(load_p(id), jacobi, sim.overRelax);
+  textureStore(pWrite, id, vec4<f32>(next, 0.0, 0.0, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn project_velocity(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let id = vec2<i32>(i32(gid.x), i32(gid.y));
+  if (!in_grid(id)) { return; }
+  var u = load_u(id);
+  var v = load_v(id);
+  if (open_cell(id) < 0.5) {
+    let vel0 = load_body_vel(id);
+    if (vel0.z > 0.5) {
+      textureStore(uWrite, id, vec4<f32>(vel0.x, 0.0, 0.0, 0.0));
+      textureStore(vWrite, id, vec4<f32>(vel0.y, 0.0, 0.0, 0.0));
+    } else {
+      textureStore(uWrite, id, vec4<f32>(0.0));
+      textureStore(vWrite, id, vec4<f32>(0.0));
+    }
+    return;
+  }
+  let p = load_p(id);
+  if (id.x > 0 && open_cell(id + vec2<i32>(-1, 0)) > 0.5) {
+    u -= (p - load_p(id + vec2<i32>(-1, 0)));
+  }
+  if (id.y > 0 && open_cell(id + vec2<i32>(0, -1)) > 0.5) {
+    v -= (p - load_p(id + vec2<i32>(0, -1)));
+  }
+  textureStore(uWrite, id, vec4<f32>(u, 0.0, 0.0, 0.0));
+  textureStore(vWrite, id, vec4<f32>(v, 0.0, 0.0, 0.0));
+}
+
+
+@compute @workgroup_size(8, 8)
+fn advect_velocity(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let id = vec2<i32>(i32(gid.x), i32(gid.y));
+  if (!in_grid(id)) { return; }
+  let h = sim.h;
+  let i = id.x;
+  let j = id.y;
+  var nu = load_u(id);
+  var nv = load_v(id);
+  if (open_cell(id) > 0.5 && open_cell(id + vec2<i32>(-1, 0)) > 0.5 && j < i32(sim.numY) - 1) {
+    let u = load_u(id);
+    let vv = 0.25 * (
+      load_v(id + vec2<i32>(-1, 0)) + load_v(id) +
+      load_v(id + vec2<i32>(-1, 1)) + load_v(id + vec2<i32>(0, 1))
+    );
+    let x = f32(i) * h - sim.dt * u;
+    let y = f32(j) * h + 0.5 * h - sim.dt * vv;
+    nu = sample_bilinear(0, x, y);
+  }
+  if (open_cell(id) > 0.5 && open_cell(id + vec2<i32>(0, -1)) > 0.5 && i < i32(sim.numX) - 1) {
+    let uu = 0.25 * (
+      load_u(id + vec2<i32>(0, -1)) + load_u(id) +
+      load_u(id + vec2<i32>(1, -1)) + load_u(id + vec2<i32>(1, 0))
+    );
+    let v = load_v(id);
+    let x = f32(i) * h + 0.5 * h - sim.dt * uu;
+    let y = f32(j) * h - sim.dt * v;
+    nv = sample_bilinear(1, x, y);
+  }
+  textureStore(uWrite, id, vec4<f32>(nu, 0.0, 0.0, 0.0));
+  textureStore(vWrite, id, vec4<f32>(nv, 0.0, 0.0, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn advect_temperature(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let id = vec2<i32>(i32(gid.x), i32(gid.y));
+  if (!in_grid(id)) { return; }
+  if (!interior(id) || open_cell(id) < 0.5) {
+    textureStore(tWrite, id, vec4<f32>(0.0));
+    return;
+  }
+  let h = sim.h;
+  let u = 0.5 * (load_u(id) + load_u(id + vec2<i32>(1, 0)));
+  let v = 0.5 * (load_v(id) + load_v(id + vec2<i32>(0, 1)));
+  let x = f32(id.x) * h + 0.5 * h - sim.dt * u;
+  let y = f32(id.y) * h + 0.5 * h - sim.dt * v;
+  textureStore(tWrite, id, vec4<f32>(sample_bilinear(2, x, y), 0.0, 0.0, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn cool_rise(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let id = vec2<i32>(i32(gid.x), i32(gid.y));
+  if (!in_grid(id)) { return; }
+  var t = load_t(id);
+  var v = load_v(id);
+  if (open_cell(id) < 0.5) {
+    textureStore(tWrite, id, vec4<f32>(0.0));
+    textureStore(vWrite, id, vec4<f32>(0.0));
+    return;
+  }
+  let cool = select(sim.fireCool, sim.smokeCool, t < sim.smokeSplit) * sim.dt;
+  t = max(t - cool, 0.0);
+  let accel = 6.0 * sim.dt;
+  v += (t * sim.rise - v) * accel;
+  textureStore(tWrite, id, vec4<f32>(t, 0.0, 0.0, 0.0));
+  textureStore(vWrite, id, vec4<f32>(v, 0.0, 0.0, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn apply_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let id = vec2<i32>(i32(gid.x), i32(gid.y));
+  if (!in_grid(id)) { return; }
+  var u = load_u(id);
+  var v = load_v(id);
+  let h = sim.h;
+  let count = i32(sim.swirlCount);
+  let force = max(0.0, sim.swirlForce);
+  if (count <= 0 || force <= 0.0) {
+    textureStore(uWrite, id, vec4<f32>(u, 0.0, 0.0, 0.0));
+    textureStore(vWrite, id, vec4<f32>(v, 0.0, 0.0, 0.0));
+    return;
+  }
+  let vx = f32(id.x) * h;
+  let vy = (f32(id.y) + 0.5) * h;
+  let hx = (f32(id.x) + 0.5) * h;
+  let hy = f32(id.y) * h;
+  for (var n = 0; n < count; n++) {
+    let s = swirls[n];
+    if (s.life <= 0.0 || s.radius <= 0.0) { continue; }
+    let r0 = vx - s.x;
+    let r1 = vy - s.y;
+    let ru = sqrt(r0 * r0 + r1 * r1);
+    if (ru < s.radius && s.radius > 0.0) {
+      var w = 1.0;
+      if (ru > 0.7 * s.radius) {
+        w = max(0.0, (s.radius - ru) / (0.3 * s.radius));
+      }
+      let aim_u = -r1 * s.omega;
+      u += (aim_u - u) * (w * force);
+    }
+
+    let q0 = hx - s.x;
+    let q1 = hy - s.y;
+    let rv = sqrt(q0 * q0 + q1 * q1);
+    if (rv < s.radius && s.radius > 0.0) {
+      var w = 1.0;
+      if (rv > 0.7 * s.radius) {
+        w = max(0.0, (s.radius - rv) / (0.3 * s.radius));
+      }
+      let aim_v = q0 * s.omega;
+      v += (aim_v - v) * (w * force);
+    }
+  }
+  textureStore(uWrite, id, vec4<f32>(u, 0.0, 0.0, 0.0));
+  textureStore(vWrite, id, vec4<f32>(v, 0.0, 0.0, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn apply_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let id = vec2<i32>(i32(gid.x), i32(gid.y));
+  if (!in_grid(id)) { return; }
+  let mark = textureLoad(stampTex, id, 0);
+  var t = load_t(id);
+  if (mark.r < 0.5) {
+    t = 0.0;
+  } else if (mark.g > 0.5) {
+    let wall = open_cell(id + vec2<i32>(-1, 0)) < 0.5
+      || open_cell(id + vec2<i32>(1, 0)) < 0.5
+      || open_cell(id + vec2<i32>(0, -1)) < 0.5
+      || open_cell(id + vec2<i32>(0, 1)) < 0.5;
+    if (!wall || mark.b > 0.0) {
+      t = 1.0;
+    }
+  }
+  textureStore(tWrite, id, vec4<f32>(t, 0.0, 0.0, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn apply_body_vel(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let id = vec2<i32>(i32(gid.x), i32(gid.y));
+  if (!in_grid(id)) { return; }
+  let vel0 = load_body_vel(id);
+  if (open_cell(id) < 0.5 && vel0.z < 0.5) {
+    textureStore(uWrite, id, vec4<f32>(0.0));
+    textureStore(vWrite, id, vec4<f32>(0.0));
+    return;
+  }
+  var u = load_u(id);
+  var v = load_v(id);
+  let velL = load_body_vel(id + vec2<i32>(-1, 0));
+  let velR = load_body_vel(id + vec2<i32>(1, 0));
+  let velD = load_body_vel(id + vec2<i32>(0, -1));
+  let velU = load_body_vel(id + vec2<i32>(0, 1));
+  let k = clamp(sim.bodyDrive, 0.0, 1.0);
+  if (vel0.z > 0.5) {
+    u = mix(u, vel0.x, k);
+    v = mix(v, vel0.y, k);
+  } else {
+    if (velL.z > 0.5) { u = mix(u, velL.x, k); }
+    if (velR.z > 0.5) { u = mix(u, velR.x, k); }
+    if (velD.z > 0.5) { v = mix(v, velD.y, k); }
+    if (velU.z > 0.5) { v = mix(v, velU.y, k); }
+  }
+  textureStore(uWrite, id, vec4<f32>(u, 0.0, 0.0, 0.0));
+  textureStore(vWrite, id, vec4<f32>(v, 0.0, 0.0, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn diffuse_temperature(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let id = vec2<i32>(i32(gid.x), i32(gid.y));
+  if (!in_grid(id)) { return; }
+  let t = load_t(id);
+  if (!interior(id) || sim.diffusion <= 0.0) {
+    textureStore(tWrite, id, vec4<f32>(t, 0.0, 0.0, 0.0));
+    return;
+  }
+  let avg = 0.25 * (
+    load_t(id + vec2<i32>(-1, 0)) + load_t(id + vec2<i32>(1, 0)) +
+    load_t(id + vec2<i32>(0, -1)) + load_t(id + vec2<i32>(0, 1))
+  );
+  if (t <= 0.0 && avg <= 0.0) {
+    textureStore(tWrite, id, vec4<f32>(0.0));
+    return;
+  }
+  let a = min(1.0, sim.diffusion);
+  textureStore(tWrite, id, vec4<f32>(t * (1.0 - a) + avg * a, 0.0, 0.0, 0.0));
+}
+
+fn hash11(n: f32) -> f32 {
+  return fract(sin(n) * 43758.5453123);
+}
+
+fn swirl_bound(s: ShapeDescriptor) -> f32 {
+  let kind = i32(s.shapeKind + 0.5);
+  if (kind == 0 || kind == 2) {
+    return length(vec2<f32>(s.halfW, s.halfH));
+  }
+  return s.halfW;
+}
+
+fn shape_burning(s: ShapeDescriptor) -> bool {
+  let flags = i32(s.flags);
+  return (flags & 1) != 0 && (flags & 2) == 0 && (flags & 4) == 0;
+}
+
+@compute @workgroup_size(64)
+fn step_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let i = i32(gid.x);
+  let cap = i32(arrayLength(&swirls));
+  if (i >= cap) { return; }
+  let maxN = i32(sim.maxSwirls);
+  if (i >= maxN || sim.swirlLife <= 0.0 || sim.swirlChance <= 0.0) {
+    swirls[i] = Swirl(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    return;
+  }
+
+  var s = swirls[i];
+  let dt = sim.dt;
+  let damp = max(0.0, 1.0 - sim.swirlDamp * dt);
+  if (s.life > 0.0) {
+    s.life -= dt;
+    s.vx *= damp;
+    s.omega *= damp;
+    s.y += sim.rise * 0.35 * dt;
+    s.x += s.vx * dt;
+    if (s.life <= 0.0 || abs(s.omega) < 0.5) {
+      s.life = 0.0;
+      s.radius = 0.0;
+    }
+  }
+
+  if (s.life <= 0.0) {
+    var nBurn = 0;
+    let nShapes = i32(sim.shapeCount);
+    for (var k = 0; k < nShapes; k++) {
+      if (shape_burning(shapes[k])) { nBurn++; }
+    }
+    if (nBurn > 0) {
+      let pick = min(i32(floor(hash11(f32(i) * 19.7 + sim.emberT * 3.1) * f32(nBurn))), nBurn - 1);
+      var seen = 0;
+      var body: ShapeDescriptor;
+      var found = false;
+      for (var k = 0; k < nShapes; k++) {
+        if (shape_burning(shapes[k])) {
+          if (seen == pick) {
+            body = shapes[k];
+            found = true;
+            break;
+          }
+          seen++;
+        }
+      }
+      if (found) {
+        let bound = max(swirl_bound(body), sim.h);
+        let p = min(1.0, sim.swirlChance * bound * sim.h * 8.0);
+        let pSlot = p * f32(nBurn) / max(sim.maxSwirls, 1.0);
+        let roll = hash11(f32(i) * 91.7 + sim.emberT * 8.3);
+        if (roll < pSlot) {
+          let ang = hash11(f32(i) * 4.1 + sim.emberT * 1.9) * 6.2831853;
+          let rad = bound * (0.8 + 0.3 * hash11(f32(i) * 11.3 + sim.emberT * 2.7));
+          let spinSign = select(-1.0, 1.0, hash11(f32(i) * 2.3 + sim.emberT) < 0.5);
+          s.x = body.posX + cos(ang) * rad - sim.originX;
+          s.y = body.posY + sin(ang) * rad - sim.originY;
+          s.vx = (-0.5 + hash11(f32(i) * 6.6 + sim.emberT * 5.2)) * 0.4;
+          s.omega = spinSign * sim.swirlSpin * (0.8 + 0.4 * hash11(f32(i) * 3.9 + sim.emberT * 4.4));
+          s.radius = max(sim.h * sim.swirlRadius, 0.12);
+          s.life = sim.swirlLife * (0.4 + hash11(f32(i) * 7.2 + sim.emberT * 6.1));
+        }
+      }
+    }
+  }
+  swirls[i] = s;
+}
+
+@compute @workgroup_size(64)
+fn shift_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let i = i32(gid.x);
+  let cap = i32(arrayLength(&swirls));
+  if (i >= cap) { return; }
+  var s = swirls[i];
+  s.x -= sim.shiftX * sim.h;
+  s.y -= sim.shiftY * sim.h;
+  swirls[i] = s;
+}

@@ -7,7 +7,7 @@
  *
  * Copyright 2025, Ivan Popelyshev, All Rights Reserved
  *
- * Weed: WebGPU adaptor stripped (worker is WebGL-only). Re-apply on @pixi/tilemap upgrade.
+ * Weed: WebGPU adaptor restored (GpuTilemapAdaptor). Canvas still stubbed.
  */ import {
   Geometry as me,
   Buffer as ee,
@@ -19,6 +19,8 @@
   Texture as ie,
   Shader as le,
   GlProgram as _e,
+  GpuProgram as He,
+  BindGroup as Ke,
   ViewContainer as Te,
   State as be,
   Bounds as ge,
@@ -169,7 +171,7 @@ class ae {
       this.adaptor.execute(this, e));
   }
 }
-E(ae, 'extension', { type: [$.WebGLPipes], name: 'tilemap' });
+E(ae, 'extension', { type: [$.WebGLPipes, $.WebGPUPipes], name: 'tilemap' });
 function Ee(r, e) {
   const t = r * 6;
   if (e.length !== t)
@@ -256,6 +258,45 @@ class F {
       u_textures: { value: t, type: 'i32', size: e },
       u_texture_size: { value: i, type: 'vec4<f32>', size: e },
     };
+  }
+  getBindGroup() {
+    this.update();
+    if (!this.dirty_gpu && this.bind_group) return this.bind_group;
+    this.dirty_gpu = false;
+    const { bind_group_resources: t, max_textures: i, arr: s, count: n } = this;
+    let u = 0;
+    t[u++] = new te({
+      u_texture_size: { value: this.tex_sizes, type: 'vec4<f32>', size: i },
+      u_null_color: { value: this.null_color, type: 'vec4<f32>' },
+    });
+    for (let l = 0; l < i; l++) {
+      const a = (l < n ? s[l] : null) || ie.EMPTY.source;
+      const o = a.source || a;
+      t[u++] = o;
+      t[u++] = o.style;
+    }
+    this.bind_group = new Ke(t);
+    return this.bind_group;
+  }
+  static generate_gpu_textures(e) {
+    const t = [];
+    t.push('struct TextureArrayFields {');
+    t.push(` u_texture_size: array<vec4f, ${e}>,`);
+    t.push(' u_null_color: vec4f');
+    t.push('}');
+    t.push('@group(1) @binding(0) var<uniform> taf: TextureArrayFields;');
+    for (let i = 0; i < e; i++) {
+      t.push(`@group(1) @binding(${i * 2 + 1}) var u_texture_${i}: texture_2d<f32>;`);
+      t.push(`@group(1) @binding(${i * 2 + 2}) var u_sampler_${i}: sampler;`);
+    }
+    t.push('fn sampleMultiTexture(texture_id: i32, uv: vec2f, dx: vec2f, dy: vec2f) -> vec4f {');
+    t.push('switch texture_id {');
+    for (let i = 0; i < e; i++) {
+      t.push(` case ${i}: { return textureSampleGrad(u_texture_${i}, u_sampler_${i}, uv, dx, dy); }`);
+    }
+    t.push(' default: { return taf.u_null_color; }');
+    t.push('} }');
+    return t.join('\n');
   }
 }
 var Xe = Object.defineProperty,
@@ -355,6 +396,108 @@ class de extends se {
   }
 }
 ne(de, 'extension', { type: [$.WebGLPipesAdaptor], name: 'tilemap' });
+const gpu_tilemap_vertex = `
+struct GlobalUniforms {
+ uProjectionMatrix:mat3x3f,
+ uWorldTransformMatrix:mat3x3f,
+ uWorldColorAlpha: vec4f,
+ uResolution: vec2f,
+}
+
+struct TilemapUniforms {
+ u_proj_trans:mat3x3f,
+ u_anim_frame:vec2f
+}
+
+@group(0) @binding(0) var<uniform> globalUniforms : GlobalUniforms;
+@group(2) @binding(0) var<uniform> loc: TilemapUniforms;
+
+struct VSOutput {
+ @builtin(position) vPosition: vec4f,
+ @location(0) @interpolate(flat) vTextureId : i32,
+ @location(1) vTextureCoord : vec2f,
+ @location(2) @interpolate(flat) vFrame : vec4f,
+ @location(3) vAlpha : f32
+};
+
+@vertex
+fn mainVert(
+ @location(6) aVertexPosition: vec2f,
+ @location(4) aTextureCoord: vec2f,
+ @location(3) aFrame: vec4f,
+ @location(1) aAnim: vec2f,
+ @location(2) aAnimDivisor: f32,
+ @location(5) aTextureId: i32,
+ @location(0) aAlpha: f32,
+ ) -> VSOutput {
+
+ var vPosition = vec4((loc.u_proj_trans * vec3(aVertexPosition, 1.0)).xy, 0.0, 1.0);
+ var animCount = floor((aAnim + 0.5) / 2048.0);
+ var animFrameOffset = aAnim - animCount * 2048.0;
+ var currentFrame = floor(loc.u_anim_frame / aAnimDivisor);
+ var loop_num = floor((currentFrame + 0.5) / animCount);
+ var animOffset = animFrameOffset * floor(currentFrame - loop_num * animCount);
+ var vTextureCoord = aTextureCoord + animOffset;
+ var vFrame = aFrame + vec4(animOffset, animOffset);
+
+ return VSOutput(vPosition, aTextureId, vTextureCoord, vFrame, aAlpha);
+};
+`;
+const gpu_tilemap_fragment = `
+//include_textures
+
+@fragment
+fn mainFrag(
+ @location(0) @interpolate(flat) vTextureId : i32,
+ @location(1) vTextureCoord : vec2f,
+ @location(2) @interpolate(flat) vFrame : vec4f,
+ @location(3) vAlpha : f32,
+ ) -> @location(0) vec4f {
+ var textureCoord = clamp(vTextureCoord, vFrame.xy, vFrame.zw);
+ var uv = textureCoord * taf.u_texture_size[vTextureId].zw;
+ var dx = dpdx(uv);
+ var dy = dpdy(uv);
+ var color = sampleMultiTexture(vTextureId, uv, dx, dy);
+ return color * vAlpha;
+};
+`;
+class fe extends se {
+  constructor() {
+    (super(...arguments),
+      ne(this, '_shader', null),
+      ne(this, 'max_textures', w.TEXTURES_PER_TILEMAP),
+      ne(this, 'bind_group', null));
+  }
+  destroy() {
+    (this._shader.destroy(!0), (this._shader = null));
+  }
+  execute(e, t) {
+    const i = e.renderer,
+      s = this._shader;
+    s.groups[0] = i.globalUniforms.bindGroup;
+    s.groups[1] = t.getTileset().getBindGroup();
+    s.groups[2] = this.bind_group;
+    i.encoder.draw({
+      geometry: t.vb,
+      shader: s,
+      state: t.state,
+      size: t.rects_count * 6,
+    });
+  }
+  init() {
+    this._shader = new le({
+      gpuProgram: He.from({
+        vertex: { source: gpu_tilemap_vertex, entryPoint: 'mainVert' },
+        fragment: {
+          source: gpu_tilemap_fragment.replace('//include_textures', F.generate_gpu_textures(this.max_textures)),
+          entryPoint: 'mainFrag',
+        },
+      }),
+    });
+    this.bind_group = new Ke({ ut: this.pipe_uniforms });
+  }
+}
+ne(fe, 'extension', { type: [$.WebGPUPipesAdaptor], name: 'tilemap' });
 var De = Object.defineProperty,
   $e = (r, e, t) =>
     e in r ? De(r, e, { enumerable: !0, configurable: !0, writable: !0, value: t }) : (r[e] = t),
@@ -799,7 +942,7 @@ class Le extends Ae {
     return this.texturesPerTilemap;
   }
 }
-(re.add(ae), re.add(de));
+(re.add(ae), re.add(de), re.add(fe));
 export {
   Le as CompositeTilemap,
   Pe as Constant,
@@ -808,6 +951,7 @@ export {
   se as TilemapAdaptor,
   he as TilemapGeometry,
   ae as TilemapPipe,
+  fe as GpuTilemapAdaptor,
   w as settings,
 };
 //# sourceMappingURL=pixi-tilemap.mjs.map

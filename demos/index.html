@@ -52,6 +52,7 @@
     import { LiquidFunDemoScene } from '/demos/liquidFunDemoScene/liquidFunDemoScene.js';
     import { LiquidFunStressScene } from '/tests/bench/stressScenes/LiquidFunStressScene.js';
     import { MamushkaDigScene } from '/demos/mamushkaDigScene/mamushkaDigScene.js';
+    import { BurningBoxesScene } from '/demos/burningBoxesScene/burningBoxesScene.js';
 
     // Destructure what we need from WEED
     const { GameEngine } = WEED;
@@ -87,6 +88,7 @@
       { name: '🌊 LiquidFun Fluid', class: LiquidFunDemoScene },
       { name: '🧪 LiquidFun Stress (bench)', class: LiquidFunStressScene },
       { name: '🧱 Mamushka Dig', class: MamushkaDigScene },
+      { name: '🔥 Burning Boxes', class: BurningBoxesScene },
     ]
     // Register available scenes with DebugUI for scene switching
     if (game.debugUI) {

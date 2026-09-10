@@ -97,6 +97,21 @@ function injectLoadedShaderSources(scene) {
     layerMeta.shaderFragment = source;
     layerMeta.shaderName = fragRef;
   }
+
+  for (const [layerName, layerConfig] of Object.entries(scene.config.layers)) {
+    const compute = layerConfig.shader?.compute;
+    if (!compute) continue;
+    const layer = Layer.get(layerName);
+    const layerMeta = layer ? Layer._metadata?.layers?.[layer.id] : null;
+    if (!layerMeta?.compute?.passes) continue;
+    const passes = layerMeta.compute.passes;
+    for (let i = 0; i < passes.length; i++) {
+      const srcName = passes[i].source;
+      if (!srcName) continue;
+      const code = scene._loadedShaderSources[srcName];
+      if (code) passes[i].code = code;
+    }
+  }
 }
 
 export function collectSceneWorkerScriptUrls(registeredClasses, origin = '') {

@@ -1,6 +1,6 @@
-/** Stub: weed Pixi worker is WebGL-only. autoDetect must never instantiate this. */
+/** Unused: worker bundle includes real WebGPURenderer via autoDetectRenderer. */
 export class WebGPURenderer {
   constructor() {
-    throw new Error('WebGPU renderer stripped from weed Pixi worker bundle');
+    throw new Error('WebGPURenderer stub should not instantiate');
   }
 }

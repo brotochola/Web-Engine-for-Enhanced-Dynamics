@@ -143,7 +143,14 @@ function resolveScreenshotDir(cliArgs, outputPath) {
 async function captureCanvasScreenshot(page, filePath) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const canvas = page.locator('canvas').first();
-  await canvas.screenshot({ path: filePath, type: 'png' });
+  // WebGPU OffscreenCanvas often leaves the element bitmap empty (tiny black
+  // PNG). Clip the page compositor instead — that is what the user sees.
+  const box = await canvas.boundingBox();
+  if (box && box.width > 0 && box.height > 0) {
+    await page.screenshot({ path: filePath, type: 'png', clip: box });
+  } else {
+    await canvas.screenshot({ path: filePath, type: 'png' });
+  }
   return filePath;
 }
 
@@ -210,6 +217,18 @@ async function main() {
 
     page.on('pageerror', (error) => {
       console.error('[benchmark page error]', error);
+    });
+    page.on('console', (msg) => {
+      const text = msg.text();
+      if (
+        msg.type() === 'error' ||
+        text.includes('WebGPU') ||
+        text.includes('PIXI WORKER') ||
+        text.includes('uncaptured') ||
+        text.includes('ComputeLayer')
+      ) {
+        console.log(`[page ${msg.type()}] ${text}`);
+      }
     });
 
     if (trace) {

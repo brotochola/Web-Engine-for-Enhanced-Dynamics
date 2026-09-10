@@ -13,9 +13,10 @@ import { FlashComponent } from '../components/FlashComponent.js';
 import { LightOccluder } from '../components/LightOccluder.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { Layer } from './Layer.js';
+import { feedLayerAt, clearFeedLayerAt } from './computeFeed.js';
 import { Grid } from './Grid.js';
 import { Joint } from './Joint.js';
-import { ShapeType, SPRITE_TILE_MODE } from './ConfigDefaults.js';
+import { ShapeType, SPRITE_TILE_MODE, FEED_LAYER_NONE, FEED_SLOT_NONE } from './ConfigDefaults.js';
 import { collectComponents, cantorPair, distanceSq2D } from './utils.js';
 import {
   resetFreeList,
@@ -914,6 +915,47 @@ export class GameObject {
   }
 
   /**
+   * Feed this collider into a compute layer (sim input). Does not move the sprite.
+   * Use with setLayer for draw vs simulate on different layers.
+   * @param {string} layerName
+   * @returns {this}
+   */
+  feedLayer(layerName) {
+    if (!this._hasComponents.Collider) return this;
+    const id = Layer.getId(layerName);
+    if (id === -1) {
+      console.warn(`feedLayer: Layer "${layerName}" not found`);
+      return this;
+    }
+    feedLayerAt(this.index, id);
+    return this;
+  }
+
+  /** Stop feeding any compute layer. */
+  clearFeedLayer() {
+    if (!this._hasComponents.Collider) return this;
+    clearFeedLayerAt(this.index);
+    return this;
+  }
+
+  /**
+   * Opaque compute flags packed into Body.flags (bit 1 reserved for static).
+   * @param {number} bits
+   * @returns {this}
+   */
+  setFeedBits(bits) {
+    if (!this._hasComponents.Collider || !Collider.feedBits) return this;
+    Collider.feedBits[this.index] = bits & 0xff;
+    return this;
+  }
+
+  /** @returns {number} */
+  getFeedBits() {
+    if (!this._hasComponents.Collider || !Collider.feedBits) return 0;
+    return Collider.feedBits[this.index] | 0;
+  }
+
+  /**
    * World-lock atlas tiling. `period` is world px per full texture repeat.
    * Optional `u0/v0` phase in 0..1 (parallax). Shader layers still tile in world
    * (internal screen upload reconstructs world XY).
@@ -1679,6 +1721,8 @@ export class GameObject {
       this.onDespawned();
     }
 
+    if (this._hasComponents?.Collider && Collider.feedLayerId) clearFeedLayerAt(i);
+
     DecorationPool.clearAttachedAndDespawnAll(i);
 
     // ========================================
@@ -2131,6 +2175,9 @@ export class GameObject {
       Collider.polyCount[i] = 0;
       Collider.polyCentroidX[i] = 0;
       Collider.polyCentroidY[i] = 0;
+      if (Collider.feedLayerId) Collider.feedLayerId[i] = FEED_LAYER_NONE;
+      if (Collider.feedBits) Collider.feedBits[i] = 0;
+      if (Collider.feedSlot) Collider.feedSlot[i] = FEED_SLOT_NONE;
     }
 
     if (has.LightEmitter) {

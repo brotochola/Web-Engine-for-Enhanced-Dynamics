@@ -135,7 +135,7 @@
     "esbuild": "^0.27.3",
     "eslint": "^9.39.2",
     "javascript-obfuscator": "^4.1.0",
-    "pixi.js": "^8.16.0",
+    "pixi.js": "8.20.1",
     "playwright": "^1.62.1",
     "prettier": "^3.8.0",
     "rimraf": "^5.0.5",

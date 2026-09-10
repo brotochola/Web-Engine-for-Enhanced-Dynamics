@@ -9,50 +9,15 @@ import {
   Geometry,
   Mesh,
   Shader,
-  GlProgram,
+  GpuProgram,
   Buffer,
   BufferUsage,
   State,
 } from '../lib/pixi_8.16_.min.js';
+import { LF_SPLAT_WGSL } from './instancedSpriteWgsl.js';
 
 export const LF_SPLAT_FLOATS = 4;
 export const LF_SPLAT_STRIDE = LF_SPLAT_FLOATS * 4;
-
-const VERTEX_SRC = `
-in vec2 aQuad;
-in vec2 aInstXY;
-in float aInstRadius;
-in vec4 aInstColor;
-
-uniform mat3 uProjectionMatrix;
-uniform mat3 uWorldTransformMatrix;
-uniform mat3 uTransformMatrix;
-
-out vec2 vLocal;
-out vec4 vColor;
-
-void main() {
-  vec2 world = aInstXY + aQuad * aInstRadius;
-  mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
-  vec3 clip = mvp * vec3(world, 1.0);
-  gl_Position = vec4(clip.xy, 0.0, 1.0);
-  vLocal = aQuad;
-  vColor = aInstColor;
-}
-`;
-
-const FRAGMENT_SRC = `
-precision highp float;
-in vec2 vLocal;
-in vec4 vColor;
-
-void main() {
-  float d2 = dot(vLocal, vLocal);
-  float a = max(0.0, 1.0 - d2) * vColor.a;
-  if (a < 0.001) discard;
-  gl_FragColor = vec4(vColor.rgb * a, a);
-}
-`;
 
 export class LiquidFunDensitySplat {
   /**
@@ -87,13 +52,13 @@ export class LiquidFunDensitySplat {
     });
     this.geometry.instanceCount = 0;
 
-    const glProgram = GlProgram.from({
-      vertex: VERTEX_SRC,
-      fragment: FRAGMENT_SRC,
+    const gpuProgram = GpuProgram.from({
       name: label || 'lf-density-splat',
+      vertex: { source: LF_SPLAT_WGSL, entryPoint: 'mainVert' },
+      fragment: { source: LF_SPLAT_WGSL, entryPoint: 'mainFrag' },
     });
 
-    this.shader = new Shader({ glProgram, resources: {} });
+    this.shader = new Shader({ gpuProgram, resources: {} });
 
     const state = new State();
     state.blend = true;
@@ -213,7 +178,7 @@ export class LiquidFunDensitySplat {
       return 0;
     }
 
-    this.buffer.update(this.data.subarray(0, out * LF_SPLAT_FLOATS));
+    this.buffer.update(out * LF_SPLAT_STRIDE);
     this.geometry.instanceCount = out;
     this.mesh.visible = true;
     return out;

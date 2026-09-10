@@ -9,11 +9,8 @@ function stubPixiBackends() {
   return {
     name: 'stub-pixi-backends',
     setup(build) {
-      build.onResolve({ filter: /\/(WebGPURenderer|CanvasRenderer)\.mjs$/ }, (args) => {
-        const name = args.path.endsWith('WebGPURenderer.mjs')
-          ? 'WebGPURenderer.mjs'
-          : 'CanvasRenderer.mjs';
-        return { path: path.join(stubDir, name) };
+      build.onResolve({ filter: /\/CanvasRenderer\.mjs$/ }, () => {
+        return { path: path.join(stubDir, 'CanvasRenderer.mjs') };
       });
     },
   };

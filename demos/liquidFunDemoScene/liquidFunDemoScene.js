@@ -125,7 +125,7 @@ export class LiquidFunDemoScene extends WEED.Scene {
       ball: '/demos/img/bola.png',
     },
     shaders: {
-      dulceDeLeche: '/demos/shaders/dulceDeLeche.frag',
+      dulceDeLeche: '/demos/shaders/dulceDeLeche.wgsl',
     },
   };
 

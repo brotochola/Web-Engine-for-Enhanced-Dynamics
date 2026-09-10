@@ -14,7 +14,7 @@ import {
   Geometry,
   Mesh,
   Shader,
-  GlProgram,
+  GpuProgram,
   Buffer,
   BufferUsage,
   State,
@@ -23,6 +23,7 @@ import {
 } from '../lib/pixi_8.16_.min.js';
 
 import { DECORATION_Y_SORT_SCALE, ENTITY_GLOW_SORT_BIAS } from '../core/ConfigDefaults.js';
+import { instancedSpriteGpuProgram } from './instancedSpriteWgsl.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
@@ -32,155 +33,6 @@ export const INSTANCED_SPRITE_STRIDE = INSTANCED_SPRITE_FLOATS * 4;
 
 const Y_SORT_K = DECORATION_Y_SORT_SCALE;
 const GLOW_BIAS = ENTITY_GLOW_SORT_BIAS;
-
-const VERTEX_SRC = `
-in vec2 aQuad;
-in vec2 aInstXY;
-in vec2 aInstScale;
-in vec2 aInstAnchor;
-in vec2 aInstRotCS;
-in float aInstDepth;
-in float aInstTintBits;
-in float aInstTexId;
-in vec2 aInstTileInv;
-in vec2 aInstTileOff;
-
-uniform mat3 uProjectionMatrix;
-uniform mat3 uWorldTransformMatrix;
-uniform mat3 uTransformMatrix;
-uniform sampler2D uTexLut;
-uniform vec4 uTileWorld;
-
-out vec2 vLocal;
-out vec4 vColor;
-out vec2 vWorld;
-out vec4 vAtlasUV;
-out vec2 vTileInv;
-out vec2 vTileOff;
-
-void main() {
-  int tid = int(aInstTexId + 0.5);
-  ivec2 lutSize = textureSize(uTexLut, 0);
-  vec2 aInstSize = vec2(0.0);
-  vec4 aInstUV = vec4(0.0);
-  vec4 aInstTrim = vec4(0.0);
-  if (tid >= 0 && tid < lutSize.y) {
-    vec4 t0 = texelFetch(uTexLut, ivec2(0, tid), 0);
-    vec4 t1 = texelFetch(uTexLut, ivec2(1, tid), 0);
-    vec4 t2 = texelFetch(uTexLut, ivec2(2, tid), 0);
-    aInstSize = t0.xy;
-    aInstUV = vec4(t0.zw, t1.xy);
-    aInstTrim = vec4(t1.zw, t2.xy);
-  }
-
-  uint tintBits = floatBitsToUint(aInstTintBits);
-  vec3 rgb = vec3(
-    float((tintBits >> 16u) & 255u),
-    float((tintBits >> 8u) & 255u),
-    float(tintBits & 255u)
-  ) / 255.0;
-  float instA = float((tintBits >> 24u) & 255u) / 255.0;
-
-  vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
-  vec2 local = (content - aInstAnchor * aInstSize) * aInstScale;
-  float c = aInstRotCS.x;
-  float s = aInstRotCS.y;
-  vec2 rotated = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
-  vec2 world = rotated + aInstXY;
-  mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
-  vec3 clip = mvp * vec3(world, 1.0);
-  gl_Position = vec4(clip.xy, aInstDepth, 1.0);
-  vLocal = aQuad;
-  vColor = vec4(rgb, instA);
-  vWorld = uTileWorld.w > 0.5 ? world * uTileWorld.z + uTileWorld.xy : world;
-  vAtlasUV = aInstUV;
-  vTileInv = aInstTileInv;
-  vTileOff = aInstTileOff;
-}
-`;
-
-/** Sample atlas rect; WORLD (+tileInv) vs LOCAL (-tileInv) vs stretch (0). */
-function tiledSamplePrelude() {
-  return `
-vec2 weedUv() {
-  vec2 t = vLocal;
-  if (vTileInv.x > 0.0) t.x = fract(vWorld.x * vTileInv.x + vTileOff.x);
-  else if (vTileInv.x < 0.0) t.x = fract(vLocal.x * (-vTileInv.x) + vTileOff.x);
-  if (vTileInv.y > 0.0) t.y = fract(vWorld.y * vTileInv.y + vTileOff.y);
-  else if (vTileInv.y < 0.0) t.y = fract(vLocal.y * (-vTileInv.y) + vTileOff.y);
-  return mix(vAtlasUV.xy, vAtlasUV.zw, t);
-}
-`;
-}
-
-/** Pixi GlProgram only injects GLSL 300 if the fragment contains this string. */
-const GLSL300 = '#version 300 es';
-
-/** Normal + depth-write: discard clear atlas texels so they do not punch Z. */
-const FRAGMENT_SRC = `
-${GLSL300}
-precision highp float;
-in vec2 vLocal;
-in vec4 vColor;
-in vec2 vWorld;
-in vec4 vAtlasUV;
-in vec2 vTileInv;
-in vec2 vTileOff;
-uniform sampler2D uTexture;
-out vec4 finalColor;
-
-${tiledSamplePrelude()}
-
-void main() {
-  vec4 t = texture(uTexture, weedUv());
-  float a = t.a * vColor.a;
-  if (a < 0.01) discard;
-  finalColor = vec4(t.rgb * vColor.rgb * vColor.a, a);
-}
-`;
-
-/** Soft particles (no Z write): PMA blend only — no discard (ParticleContainer-style fill). */
-const FRAGMENT_SRC_BLEND = `
-${GLSL300}
-precision highp float;
-in vec2 vLocal;
-in vec4 vColor;
-in vec2 vWorld;
-in vec4 vAtlasUV;
-in vec2 vTileInv;
-in vec2 vTileOff;
-uniform sampler2D uTexture;
-out vec4 finalColor;
-
-${tiledSamplePrelude()}
-
-void main() {
-  vec4 t = texture(uTexture, weedUv());
-  float a = t.a * vColor.a;
-  finalColor = vec4(t.rgb * vColor.rgb * vColor.a, a);
-}
-`;
-
-/** Additive glows: same rgb scale, alpha 0 so ADD (ONE,ONE) never darkens. */
-const FRAGMENT_SRC_ADDITIVE = `
-${GLSL300}
-precision highp float;
-in vec2 vLocal;
-in vec4 vColor;
-in vec2 vWorld;
-in vec4 vAtlasUV;
-in vec2 vTileInv;
-in vec2 vTileOff;
-uniform sampler2D uTexture;
-out vec4 finalColor;
-
-${tiledSamplePrelude()}
-
-void main() {
-  vec4 t = texture(uTexture, weedUv());
-  finalColor = vec4(t.rgb * vColor.rgb * vColor.a, 0.0);
-}
-`;
 
 /**
  * Per-textureId LUT: origW, origH, u0, v0, u1, v1, trimX, trimY, trimW, trimH
@@ -275,6 +127,7 @@ function dummyLutSource() {
     addressMode: 'clamp-to-edge',
     autoGenerateMipmaps: false,
   });
+  _dummyLutSource.uploadMethodId = 'external';
   return _dummyLutSource;
 }
 
@@ -331,22 +184,24 @@ export class InstancedSpriteBatch {
     });
     this.geometry.instanceCount = 0;
 
-    let fragment = FRAGMENT_SRC_ADDITIVE;
+    let fragEntry = 'mainFragAdd';
     if (premultiplyAlpha) {
-      fragment = alphaDiscard !== false ? FRAGMENT_SRC : FRAGMENT_SRC_BLEND;
+      fragEntry = alphaDiscard !== false ? 'mainFrag' : 'mainFragBlend';
     }
-    const glProgram = GlProgram.from({
-      vertex: VERTEX_SRC,
-      fragment,
-      name: label || 'instanced-sprites',
-    });
+    const gpuProgram = instancedSpriteGpuProgram(
+      GpuProgram,
+      fragEntry,
+      label || 'instanced-sprites'
+    );
 
     this._tileWorld = new Float32Array(4);
     this._tileWorld[2] = 1;
+    const atlas = atlasSource || Texture.WHITE.source;
     this.shader = new Shader({
-      glProgram,
+      gpuProgram,
       resources: {
-        uTexture: atlasSource || Texture.WHITE.source,
+        uTexture: atlas,
+        uSampler: atlas.style,
         uTexLut: lutSource || dummyLutSource(),
         uniforms: {
           uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
@@ -373,7 +228,9 @@ export class InstancedSpriteBatch {
   }
 
   setAtlasSource(source) {
-    if (source) this.shader.resources.uTexture = source;
+    if (!source) return;
+    this.shader.resources.uTexture = source;
+    this.shader.resources.uSampler = source.style;
   }
 
   setLutSource(source) {
