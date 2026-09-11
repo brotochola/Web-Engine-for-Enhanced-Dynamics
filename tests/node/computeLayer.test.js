@@ -48,6 +48,7 @@ test('compute layer metadata: no sprite queue, BOX2D_BODIES default, maxBodies 5
     assert.equal(fire.computeSource, LAYER_COMPUTE_SOURCE.BOX2D_BODIES);
     assert.equal(fire.compute.maxBodies, 512);
     assert.equal(fire.compute.grid.cellSize, 8);
+    assert.equal(fire.compute.grid.fit, 'view');
     assert.equal(Layer._metadata.layers[fire.id].hasRenderQueue, false);
     assert.equal(Layer._metadata.layers[fire.id].maxBodies, 512);
     assert.equal(Layer._feedMax[fire.id], 512);
@@ -165,6 +166,89 @@ test('packBox2dBodies stride 16 and polygon vert range', () => {
     assert.equal((bodies[7] | 0) & COMPUTE_FLAG_STATIC, COMPUTE_FLAG_STATIC);
     assert.equal(verts[0], -10);
     assert.equal(verts[5], 12);
+  } finally {
+    Layer.reset();
+  }
+});
+
+test('compute textures, layouts, grid.fit, and pass extras round-trip', () => {
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      {
+        fire: {
+          zIndex: 6,
+          maxItems: 0,
+          shader: {
+            fragment: 'fireLook',
+            compute: {
+              source: 'fireFluid',
+              passes: [
+                {
+                  entry: 'shift_fields',
+                  layout: 'fluid',
+                  when: 'originShift',
+                  swap: ['u', 'v', 't', 'p'],
+                },
+                {
+                  entry: 'step_swirls',
+                  layout: 'fluid',
+                  workgroup: [64],
+                  dispatchFrom: 'swirls',
+                },
+                { entry: 'pack_heat', source: 'firePack', layout: 'pack' },
+              ],
+              textures: [
+                { name: 'u', format: 'r32float', pingPong: true },
+                { name: 'pack', format: 'rgba8unorm', look: true },
+              ],
+              buffers: [{ name: 'swirls', strideFloats: 8, count: 200 }],
+              layouts: {
+                pack: [
+                  [{ binding: 0, buffer: 'uniform', resource: 'params' }],
+                  [
+                    {
+                      binding: 0,
+                      storageTexture: { format: 'rgba8unorm', access: 'write-only' },
+                      resource: 'pack',
+                    },
+                  ],
+                ],
+              },
+            },
+            grid: { cellSize: 8, fit: 'canvas' },
+          },
+        },
+      },
+      BUILT_IN_LAYERS,
+      true
+    );
+    const fire = Layer.get('fire');
+    assert.equal(fire.hasRenderQueue, false);
+    assert.equal(fire.compute.grid.fit, 'canvas');
+    assert.equal(fire.compute.textures.length, 2);
+    assert.equal(fire.compute.textures[0].name, 'u');
+    assert.equal(fire.compute.textures[0].pingPong, true);
+    assert.equal(fire.compute.textures[1].look, true);
+    assert.equal(fire.compute.buffers[0].name, 'swirls');
+    assert.equal(fire.compute.buffers[0].count, 200);
+    assert.equal(fire.compute.passes[0].when, 'originShift');
+    assert.deepEqual(fire.compute.passes[0].swap, ['u', 'v', 't', 'p']);
+    assert.deepEqual(fire.compute.passes[1].workgroup, [64]);
+    assert.equal(fire.compute.passes[1].dispatchFrom, 'swirls');
+    assert.equal(fire.compute.layouts.pack[0][0].resource, 'params');
+    assert.equal(fire.compute.layouts.pack[1][0].storageTexture.format, 'rgba8unorm');
+
+    const data = Layer.getSerializableData();
+    const fireId = fire.id;
+    Layer.reset();
+    Layer.initializeFromBuffers(data);
+    const restored = Layer.get('fire');
+    assert.equal(restored.id, fireId);
+    assert.equal(restored.compute.grid.fit, 'canvas');
+    assert.equal(restored.compute.textures[1].look, true);
+    assert.equal(restored.compute.layouts.pack[0][0].resource, 'params');
+    assert.equal(Layer._metadata.layers[fireId].hasRenderQueue, false);
   } finally {
     Layer.reset();
   }

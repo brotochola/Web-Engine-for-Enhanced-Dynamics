@@ -3,32 +3,34 @@ struct SimParams {
   h: f32,
   numX: f32,
   numY: f32,
-  overRelax: f32,
-  smokeSplit: f32,
-  fireCool: f32,
-  smokeCool: f32,
-  rise: f32,
-  diffusion: f32,
-  swirlCount: f32,
-  swirlForce: f32,
   originX: f32,
   originY: f32,
   shapeCount: f32,
+  shiftX: f32,
+  shiftY: f32,
+  pad0: f32,
+  rise: f32,
+  smokeSplit: f32,
+  pressureIters: f32,
   emberT: f32,
+  drawCutoff: f32,
+  fireCool: f32,
+  smokeCool: f32,
+  diffusion: f32,
+  swirlForce: f32,
+  emberOn: f32,
+  overRelax: f32,
   bodyDrive: f32,
   sourcePad: f32,
   swirlDamp: f32,
-  drawCutoff: f32,
   stampPad: f32,
-  emberOn: f32,
   swirlChance: f32,
   swirlSpin: f32,
   swirlLife: f32,
   swirlRadius: f32,
   maxSwirls: f32,
-  shiftX: f32,
-  shiftY: f32,
-  padEnd: f32,
+  pad1: f32,
+  pad2: f32,
 }
 
 struct Swirl {
@@ -336,7 +338,7 @@ fn apply_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
   var u = load_u(id);
   var v = load_v(id);
   let h = sim.h;
-  let count = i32(sim.swirlCount);
+  let count = i32(sim.maxSwirls);
   let force = max(0.0, sim.swirlForce);
   if (count <= 0 || force <= 0.0) {
     textureStore(uWrite, id, vec4<f32>(u, 0.0, 0.0, 0.0));

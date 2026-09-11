@@ -1,59 +1,88 @@
 /**
  * Generic WebGPU compute-layer runner. Same GPUDevice as Pixi.
- * Bind groups created on grid resize / field swap, not per dispatch.
+ * Scene owns textures, extra buffers, bind layouts, and pass graph.
+ * Engine owns Body/verts pack, SimParams prefix, dispatch, look pin.
  *
- * ponytail: field-subset ping-pong rebuilds bind groups after each swap
- * (kindling). Ceiling: createBindGroup per swap. Upgrade: 16-combo cache.
+ * ponytail: field-subset ping-pong rebuilds bind groups after each swap.
+ * Ceiling: createBindGroup per swap. Upgrade: 16-combo cache.
  */
 import { packBox2dBodies, BODY_FLOATS } from './Box2dBodyPack.js';
 import { Layer } from '../core/Layer.js';
 import { pinGpuTexture } from './pinGpuTexture.js';
 
 const WORK = 8;
-const MAX_SWIRLS = 200;
-const SWIRL_FLOATS = 8;
-const SIM_FLOATS = 32;
+/** Engine SimParams prefix (floats). Scene uniforms memcpy at this offset. */
+export const ENGINE_SIM_PREFIX_FLOATS = 10;
+
+const DEFAULT_LAYOUTS = {
+  simple: [
+    [
+      { binding: 0, buffer: 'uniform', resource: 'params' },
+      { binding: 1, buffer: 'read-only-storage', resource: 'bodies' },
+      { binding: 2, buffer: 'read-only-storage', resource: 'verts' },
+    ],
+    [
+      { binding: 0, storageTexture: { format: 'rgba8unorm', access: 'write-only' }, resource: 'out' },
+    ],
+  ],
+};
 
 function ceilDiv(n, d) {
   return Math.ceil(n / d) | 0;
 }
 
-function fieldTexture(device, width, height, format) {
+function gpuTexture(device, width, height, format, storage) {
+  let usage =
+    GPUTextureUsage.TEXTURE_BINDING |
+    GPUTextureUsage.COPY_DST |
+    GPUTextureUsage.COPY_SRC;
+  if (storage) usage |= GPUTextureUsage.STORAGE_BINDING;
   return device.createTexture({
     size: { width, height },
     format,
-    usage:
-      GPUTextureUsage.STORAGE_BINDING |
-      GPUTextureUsage.TEXTURE_BINDING |
-      GPUTextureUsage.COPY_DST |
-      GPUTextureUsage.COPY_SRC,
+    usage,
   });
 }
 
+function destroyTex(t) {
+  if (t && typeof t.destroy === 'function') t.destroy();
+}
+
 export class ComputeLayer {
-  constructor({ device, meta, renderer, heatSource }) {
+  constructor({ device, meta, renderer, lookSource }) {
     this.device = device;
     this.meta = meta;
     this.renderer = renderer;
-    this.heatSource = heatSource;
+    this.lookSource = lookSource;
     this.layerId = meta.id;
     this.maxBodies = (meta.maxBodies | 0) || 512;
-    this.cellSize = meta.computeGrid?.cellSize > 0 ? meta.computeGrid.cellSize : 8;
+    const grid = meta.computeGrid || meta.compute?.grid || {};
+    this.cellSize = grid.cellSize > 0 ? grid.cellSize : 8;
+    this.gridFit = grid.fit === 'canvas' ? 'canvas' : 'view';
     this.passes = (meta.compute?.passes || []).slice();
+    this.texDecls = (meta.compute?.textures || []).slice();
+    this.bufDecls = (meta.compute?.buffers || []).slice();
+    this.layoutSpecs = meta.compute?.layouts || null;
+    if (!this.texDecls.length) {
+      this.texDecls = [{ name: 'out', format: 'rgba8unorm', pingPong: false, look: true }];
+    }
     this.numX = 0;
     this.numY = 0;
     this.h = this.cellSize;
     this.originX = 0;
     this.originY = 0;
     this._originReady = false;
-    this.params = new Float32Array(SIM_FLOATS);
+    this._texReady = false;
+
+    const extra = Layer._uniformFloats[this.layerId]?.length || 0;
+    this._paramCount = Math.max(32, Math.ceil((ENGINE_SIM_PREFIX_FLOATS + extra) / 4) * 4);
+    this.params = new Float32Array(this._paramCount);
     this.bodyData = new Float32Array(this.maxBodies * BODY_FLOATS);
     this.vertData = new Float32Array(this.maxBodies * 8 * 2);
-    this.swirlData = new Float32Array(MAX_SWIRLS * SWIRL_FLOATS);
     this.modules = new Map();
     this.pipelines = [];
     this.paramsBuffer = device.createBuffer({
-      size: SIM_FLOATS * 4,
+      size: this.params.byteLength,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.bodyBuffer = device.createBuffer({
@@ -64,22 +93,43 @@ export class ComputeLayer {
       size: Math.max(16, this.vertData.byteLength),
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    this.swirlBuffer = device.createBuffer({
-      size: this.swirlData.byteLength,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
-    this.fields = null;
-    this.stampTex = null;
-    this.velTex = null;
-    this.heatTex = null;
-    this.heatLookTex = null;
+    this._tex = Object.create(null);
+    this._buf = Object.create(null);
+    this._bufCount = Object.create(null);
+    this._allocSceneBuffers();
+    this._lookName = null;
+    for (let i = 0; i < this.texDecls.length; i++) {
+      if (this.texDecls[i].look) {
+        this._lookName = this.texDecls[i].name;
+        break;
+      }
+    }
+    if (!this._lookName && this.texDecls.length) this._lookName = this.texDecls[0].name;
+    this._lookSample = null;
     this._layouts = null;
+    this._layoutNames = null;
+    this._bindGroups = Object.create(null);
+    this._passDX = new Int32Array(Math.max(1, this.passes.length));
+    this._passDY = new Int32Array(Math.max(1, this.passes.length));
+    this._gridOut = { numX: 0, numY: 0, h: 0 };
     this._ready = false;
     this._compileError = false;
-    this._shiftPipe = null;
-    this._shiftSwirlPipe = null;
     this.feederCount = 0;
     this.lastBodyCount = 0;
+  }
+
+  _allocSceneBuffers() {
+    const device = this.device;
+    for (let i = 0; i < this.bufDecls.length; i++) {
+      const d = this.bufDecls[i];
+      const floats = Math.max(1, d.strideFloats | 0) * Math.max(1, d.count | 0);
+      const bytes = Math.max(16, floats * 4);
+      this._buf[d.name] = device.createBuffer({
+        size: bytes,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      });
+      this._bufCount[d.name] = Math.max(1, d.count | 0);
+    }
   }
 
   async compile() {
@@ -122,16 +172,25 @@ export class ComputeLayer {
   _ensurePipelines() {
     if (this.pipelines.length || this._compileError || this.modules.size === 0) return;
     const device = this.device;
-    this._layouts = {
-      stamp: this._makeStampLayout(),
-      fluid: this._makeFluidLayout(),
-      pack: this._makePackLayout(),
-      simple: this._makeSimpleLayout(),
-    };
+    const specs = this.layoutSpecs && Object.keys(this.layoutSpecs).length
+      ? this.layoutSpecs
+      : DEFAULT_LAYOUTS;
+    this._layouts = Object.create(null);
+    const names = Object.keys(specs);
+    this._layoutNames = names;
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i];
+      this._layouts[name] = this._makeLayoutFromSpec(specs[name]);
+    }
     for (let i = 0; i < this.passes.length; i++) {
       const p = this.passes[i];
       const layoutName = p.layout || 'simple';
       const layout = this._layouts[layoutName] || this._layouts.simple;
+      if (!layout) {
+        console.error(`ComputeLayer "${this.meta.name}": missing layout "${layoutName}"`);
+        this._compileError = true;
+        return;
+      }
       const module = this.modules.get(p.code);
       this.pipelines[i] = device.createComputePipeline({
         label: p.entry,
@@ -139,294 +198,222 @@ export class ComputeLayer {
         compute: { module, entryPoint: p.entry },
       });
     }
-    const fluidPass = this.passes.find((p) => p.layout === 'fluid' && p.code);
-    if (fluidPass && /fn shift_fields\b/.test(fluidPass.code)) {
-      const module = this.modules.get(fluidPass.code);
-      this._shiftPipe = device.createComputePipeline({
-        label: 'shift_fields',
-        layout: this._layouts.fluid.pipeline,
-        compute: { module, entryPoint: 'shift_fields' },
-      });
-      if (/fn shift_swirls\b/.test(fluidPass.code)) {
-        this._shiftSwirlPipe = device.createComputePipeline({
-          label: 'shift_swirls',
-          layout: this._layouts.fluid.pipeline,
-          compute: { module, entryPoint: 'shift_swirls' },
-        });
+  }
+
+  _makeLayoutFromSpec(groups) {
+    const device = this.device;
+    const gpuGroups = [];
+    for (let g = 0; g < groups.length; g++) {
+      const specs = groups[g];
+      const entries = [];
+      for (let i = 0; i < specs.length; i++) {
+        const s = specs[i];
+        const e = { binding: s.binding, visibility: GPUShaderStage.COMPUTE };
+        const buf = typeof s.buffer === 'string' ? s.buffer : s.buffer?.type;
+        if (buf) {
+          e.buffer = { type: buf };
+        } else if (s.storageTexture) {
+          e.storageTexture = {
+            access: s.storageTexture.access || 'write-only',
+            format: s.storageTexture.format,
+          };
+        } else if (s.texture) {
+          e.texture = { sampleType: s.texture.sampleType || 'unfilterable-float' };
+        }
+        entries.push(e);
       }
+      gpuGroups.push(device.createBindGroupLayout({ entries }));
     }
+    return {
+      groups: gpuGroups,
+      pipeline: device.createPipelineLayout({ bindGroupLayouts: gpuGroups }),
+      spec: groups,
+    };
   }
 
-  _makeStampLayout() {
-    const device = this.device;
-    const g0 = device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-      ],
-    });
-    const g1 = device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba8unorm' } },
-        { binding: 1, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba32float' } },
-      ],
-    });
-    return { g0, g1, pipeline: device.createPipelineLayout({ bindGroupLayouts: [g0, g1] }) };
-  }
-
-  _makeFluidLayout() {
-    const device = this.device;
-    const g0 = device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-      ],
-    });
-    const g1 = device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
-        { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
-        { binding: 2, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
-        { binding: 3, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
-        { binding: 4, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
-        { binding: 5, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
-      ],
-    });
-    const g2 = device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'r32float' } },
-        { binding: 1, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'r32float' } },
-        { binding: 2, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'r32float' } },
-        { binding: 3, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'r32float' } },
-      ],
-    });
-    return { g0, g1, g2, pipeline: device.createPipelineLayout({ bindGroupLayouts: [g0, g1, g2] }) };
-  }
-
-  _makePackLayout() {
-    const device = this.device;
-    const g0 = device.createBindGroupLayout({
-      entries: [{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }],
-    });
-    const g1 = device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
-        { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
-        { binding: 2, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
-        { binding: 3, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
-      ],
-    });
-    const g2 = device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba8unorm' } },
-      ],
-    });
-    return { g0, g1, g2, pipeline: device.createPipelineLayout({ bindGroupLayouts: [g0, g1, g2] }) };
-  }
-
-  _makeSimpleLayout() {
-    const device = this.device;
-    const g0 = device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-      ],
-    });
-    const g1 = device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba8unorm' } },
-      ],
-    });
-    return { g0, g1, pipeline: device.createPipelineLayout({ bindGroupLayouts: [g0, g1] }) };
+  _destroyTextures() {
+    const tex = this._tex;
+    const names = Object.keys(tex);
+    for (let i = 0; i < names.length; i++) {
+      const t = tex[names[i]];
+      destroyTex(t.read);
+      destroyTex(t.write);
+      destroyTex(t.tex);
+    }
+    this._tex = Object.create(null);
+    destroyTex(this._lookSample);
+    this._lookSample = null;
+    this._texReady = false;
   }
 
   resize(numX, numY, h) {
-    if (this.numX === numX && this.numY === numY && Math.abs(this.h - h) < 1e-6 && this.fields) {
-      return;
-    }
+    this.h = h;
+    if (this.numX === numX && this.numY === numY && this._texReady) return;
+    this._destroyTextures();
     this.numX = numX;
     this.numY = numY;
-    this.h = h;
     this._ensurePipelines();
     const device = this.device;
-    const pair = () => ({
-      read: fieldTexture(device, numX, numY, 'r32float'),
-      write: fieldTexture(device, numX, numY, 'r32float'),
-    });
-    this.fields = { u: pair(), v: pair(), t: pair(), p: pair() };
-    this.stampTex = fieldTexture(device, numX, numY, 'rgba8unorm');
-    this.velTex = device.createTexture({
-      size: { width: numX, height: numY },
-      format: 'rgba32float',
-      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
-    this.heatTex = fieldTexture(device, numX, numY, 'rgba8unorm');
-    // Sample-only copy: some GPUs reject filterable sample of a storage tex.
-    this.heatLookTex = device.createTexture({
-      size: { width: numX, height: numY },
-      format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
-    this._bindPersistent();
+    for (let i = 0; i < this.texDecls.length; i++) {
+      const d = this.texDecls[i];
+      const format = d.format || 'rgba8unorm';
+      if (d.pingPong) {
+        this._tex[d.name] = {
+          read: gpuTexture(device, numX, numY, format, true),
+          write: gpuTexture(device, numX, numY, format, true),
+        };
+      } else {
+        this._tex[d.name] = { tex: gpuTexture(device, numX, numY, format, true) };
+      }
+    }
+    this._lookSample = gpuTexture(device, numX, numY, this._lookFormat(), false);
+    this._texReady = true;
+    this._refreshDispatch();
+    this._rebuildBindGroups();
   }
 
-  _bindPersistent() {
-    const device = this.device;
-    const L = this._layouts;
-    if (!L) return;
-    this._stampParams = device.createBindGroup({
-      layout: L.stamp.g0,
-      entries: [
-        { binding: 0, resource: { buffer: this.paramsBuffer } },
-        { binding: 1, resource: { buffer: this.bodyBuffer } },
-        { binding: 2, resource: { buffer: this.vertBuffer } },
-      ],
-    });
-    this._fluidParams = device.createBindGroup({
-      layout: L.fluid.g0,
-      entries: [
-        { binding: 0, resource: { buffer: this.paramsBuffer } },
-        { binding: 1, resource: { buffer: this.swirlBuffer } },
-        { binding: 2, resource: { buffer: this.bodyBuffer } },
-      ],
-    });
-    this._packParams = device.createBindGroup({
-      layout: L.pack.g0,
-      entries: [{ binding: 0, resource: { buffer: this.paramsBuffer } }],
-    });
-    this._simpleParams = this._stampParams;
-    this._rebuildFieldGroups();
+  _lookFormat() {
+    for (let i = 0; i < this.texDecls.length; i++) {
+      if (this.texDecls[i].name === this._lookName) {
+        return this.texDecls[i].format || 'rgba8unorm';
+      }
+    }
+    return 'rgba8unorm';
   }
 
-  _rebuildFieldGroups() {
+  _lookGpu() {
+    const t = this._tex[this._lookName];
+    if (!t) return null;
+    if (t.tex) return t.tex;
+    return t.write || t.read;
+  }
+
+  _resourceGpu(spec) {
+    const name = spec.resource;
+    if (name === 'params') return { buffer: this.paramsBuffer };
+    if (name === 'bodies') return { buffer: this.bodyBuffer };
+    if (name === 'verts') return { buffer: this.vertBuffer };
+    const buf = this._buf[name];
+    if (buf) return { buffer: buf };
+    const t = this._tex[name];
+    if (!t) return null;
+    let ping = spec.ping;
+    if (!ping) ping = spec.storageTexture ? 'write' : 'read';
+    if (t.read && t.write) {
+      const gpu = ping === 'write' ? t.write : t.read;
+      return gpu.createView();
+    }
+    return t.tex.createView();
+  }
+
+  _rebuildBindGroups() {
     const device = this.device;
-    const L = this._layouts;
-    const f = this.fields;
-    if (!L || !f) return;
-    this._fluidRead = device.createBindGroup({
-      layout: L.fluid.g1,
-      entries: [
-        { binding: 0, resource: f.u.read.createView() },
-        { binding: 1, resource: f.v.read.createView() },
-        { binding: 2, resource: f.t.read.createView() },
-        { binding: 3, resource: f.p.read.createView() },
-        { binding: 4, resource: this.stampTex.createView() },
-        { binding: 5, resource: this.velTex.createView() },
-      ],
-    });
-    this._fluidWrite = device.createBindGroup({
-      layout: L.fluid.g2,
-      entries: [
-        { binding: 0, resource: f.u.write.createView() },
-        { binding: 1, resource: f.v.write.createView() },
-        { binding: 2, resource: f.t.write.createView() },
-        { binding: 3, resource: f.p.write.createView() },
-      ],
-    });
-    this._stampWrite = device.createBindGroup({
-      layout: L.stamp.g1,
-      entries: [
-        { binding: 0, resource: this.stampTex.createView() },
-        { binding: 1, resource: this.velTex.createView() },
-      ],
-    });
-    this._simpleWrite = device.createBindGroup({
-      layout: L.simple.g1,
-      entries: [{ binding: 0, resource: this.heatTex.createView() }],
-    });
-    this._packWrite = device.createBindGroup({
-      layout: L.pack.g2,
-      entries: [{ binding: 0, resource: this.heatTex.createView() }],
-    });
-    this._packRead = device.createBindGroup({
-      layout: L.pack.g1,
-      entries: [
-        { binding: 0, resource: f.t.read.createView() },
-        { binding: 1, resource: this.stampTex.createView() },
-        { binding: 2, resource: f.u.read.createView() },
-        { binding: 3, resource: f.v.read.createView() },
-      ],
-    });
+    const layouts = this._layouts;
+    const names = this._layoutNames;
+    if (!layouts || !this._texReady || !names) return;
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i];
+      const L = layouts[name];
+      const groups = [];
+      for (let g = 0; g < L.spec.length; g++) {
+        const specs = L.spec[g];
+        const entries = [];
+        for (let b = 0; b < specs.length; b++) {
+          const s = specs[b];
+          const resource = this._resourceGpu(s);
+          if (!resource) continue;
+          entries.push({ binding: s.binding, resource });
+        }
+        groups.push(device.createBindGroup({ layout: L.groups[g], entries }));
+      }
+      this._bindGroups[name] = groups;
+    }
   }
 
   _swapNamed(names) {
-    if (!names || !this.fields) return;
+    if (!names) return;
+    let any = false;
     for (let i = 0; i < names.length; i++) {
-      const pair = this.fields[names[i]];
-      if (!pair) continue;
+      const pair = this._tex[names[i]];
+      if (!pair || !pair.read || !pair.write) continue;
       const tmp = pair.read;
       pair.read = pair.write;
       pair.write = tmp;
+      any = true;
     }
-    this._rebuildFieldGroups();
+    if (any) this._rebuildBindGroups();
   }
 
-  _uniformMap(layerId) {
-    const floats = Layer._uniformFloats[layerId];
-    const map = Layer._uniformMaps[layerId];
-    const out = Object.create(null);
-    if (!floats || !map) return out;
-    for (const name of Object.keys(map)) {
-      const e = map[name];
-      out[name] = floats[e.offset];
+  _refreshDispatch() {
+    for (let i = 0; i < this.passes.length; i++) {
+      const p = this.passes[i];
+      const wg = p.workgroup;
+      const wx = wg && wg[0] > 0 ? (wg[0] | 0) : WORK;
+      if (p.dispatchFrom) {
+        const n = this._bufCount[p.dispatchFrom] || 1;
+        this._passDX[i] = ceilDiv(n, wx);
+        this._passDY[i] = 1;
+        continue;
+      }
+      const wy = wg && wg.length > 1 && wg[1] > 0 ? (wg[1] | 0) : WORK;
+      this._passDX[i] = ceilDiv(this.numX, wx);
+      this._passDY[i] = ceilDiv(this.numY, wy);
     }
-    return out;
   }
 
-  _writeParams(dt, originX, originY, bodyCount, uniforms, shiftX, shiftY) {
+  _writeParams(dt, originX, originY, bodyCount, shiftX, shiftY) {
     const p = this.params;
     p[0] = dt;
     p[1] = this.h;
     p[2] = this.numX;
     p[3] = this.numY;
-    p[4] = uniforms.uOverRelax ?? uniforms.overRelax ?? 1.0;
-    p[5] = uniforms.uSmokeSplit ?? 0.06;
-    p[6] = uniforms.uFireCool ?? 0.55;
-    p[7] = uniforms.uSmokeCool ?? 0.12;
-    p[8] = uniforms.uRise ?? 1.2;
-    p[9] = uniforms.uDiffusion ?? 0;
-    p[10] = MAX_SWIRLS;
-    p[11] = uniforms.uSwirlForce ?? 0.45;
-    p[12] = originX;
-    p[13] = originY;
-    p[14] = bodyCount;
-    p[15] = uniforms.uTime ?? 0;
-    p[16] = uniforms.uBodyDrive ?? 1;
-    p[17] = uniforms.uSourcePad ?? 0;
-    p[18] = uniforms.uSwirlDamp ?? 0;
-    p[19] = uniforms.uDrawCutoff ?? 0;
-    p[20] = uniforms.uStampPad ?? 0;
-    p[21] = uniforms.uEmberOn ?? 1;
-    p[22] = uniforms.uSwirlChance ?? 0.35;
-    p[23] = uniforms.uSwirlSpin ?? 28;
-    p[24] = uniforms.uSwirlLife ?? 1.2;
-    p[25] = uniforms.uSwirlRadius ?? 2.5;
-    p[26] = uniforms.uMaxSwirls ?? MAX_SWIRLS;
-    p[27] = shiftX;
-    p[28] = shiftY;
-    p[29] = 0;
-    p[30] = 0;
-    p[31] = 0;
+    p[4] = originX;
+    p[5] = originY;
+    p[6] = bodyCount;
+    p[7] = shiftX;
+    p[8] = shiftY;
+    p[9] = 0;
+    const floats = Layer._uniformFloats[this.layerId];
+    if (floats && floats.length) {
+      const n = Math.min(floats.length, p.length - ENGINE_SIM_PREFIX_FLOATS);
+      if (n > 0) p.set(floats.subarray(0, n), ENGINE_SIM_PREFIX_FLOATS);
+    }
     this.device.queue.writeBuffer(this.paramsBuffer, 0, p);
+  }
+
+  _gridSize(frame, out) {
+    const zoom = frame.zoom > 0 ? frame.zoom : 1;
+    const cell = this.cellSize;
+    const canvasW = frame.canvasW;
+    const canvasH = frame.canvasH;
+    const viewW = canvasW / zoom;
+    const viewH = canvasH / zoom;
+    if (this.gridFit === 'canvas') {
+      out.numX = Math.max(8, (Math.ceil(canvasW / cell) | 0) + 2);
+      out.numY = Math.max(8, (Math.ceil(canvasH / cell) | 0) + 2);
+      out.h = viewW / out.numX;
+      return out;
+    }
+    out.h = cell;
+    out.numX = Math.max(8, (Math.ceil(viewW / out.h) | 0) + 2);
+    out.numY = Math.max(8, (Math.ceil(viewH / out.h) | 0) + 2);
+    return out;
   }
 
   step(frame) {
     if (this._compileError || !this._ready) return false;
-    const zoom = frame.zoom > 0 ? frame.zoom : 1;
-    const h = this.cellSize;
-    const viewW = frame.canvasW / zoom;
-    const viewH = frame.canvasH / zoom;
-    const numX = Math.max(8, (Math.ceil(viewW / h) | 0) + 2);
-    const numY = Math.max(8, (Math.ceil(viewH / h) | 0) + 2);
+    const g = this._gridSize(frame, this._gridOut);
+    const numX = g.numX;
+    const numY = g.numY;
+    const h = g.h;
+    const texelsChanged = this.numX !== numX || this.numY !== numY || !this._texReady;
+    const hChanged = this._originReady && Math.abs(this.h - h) > 1e-6;
+    this.resize(numX, numY, h);
     const originX = Math.floor(frame.cameraX / h) * h;
     const originY = Math.floor(frame.cameraY / h) * h;
-    this.resize(numX, numY, h);
     let di = 0;
     let dj = 0;
-    if (this._originReady) {
+    if (this._originReady && !texelsChanged && !hChanged) {
       di = Math.round((originX - this.originX) / h);
       dj = Math.round((originY - this.originY) / h);
     } else {
@@ -452,76 +439,53 @@ export class ComputeLayer {
       device.queue.writeBuffer(this.vertBuffer, 0, this.vertData.subarray(0, packed.vertCount * 2));
     }
 
-    const uniforms = this._uniformMap(this.layerId);
-    this._writeParams(frame.dt, originX, originY, packed.bodyCount, uniforms, di, dj);
+    this._writeParams(frame.dt, originX, originY, packed.bodyCount, di, dj);
 
     const encoder = device.createCommandEncoder();
-    const gx = ceilDiv(this.numX, WORK);
-    const gy = ceilDiv(this.numY, WORK);
-
-    if ((di || dj) && this._shiftPipe) {
-      this._dispatchPipe(encoder, this._shiftPipe, 'fluid', gx, gy);
-      this._swapNamed(['u', 'v', 't', 'p']);
-      if (this._shiftSwirlPipe) {
-        this._dispatchPipe(encoder, this._shiftSwirlPipe, 'fluid', ceilDiv(MAX_SWIRLS, 64), 1);
-      }
-    }
+    const map = Layer._uniformMaps[this.layerId];
+    const floats = Layer._uniformFloats[this.layerId];
 
     for (let i = 0; i < this.passes.length; i++) {
       const p = this.passes[i];
+      if (p.when === 'originShift' && di === 0 && dj === 0) continue;
       const layout = p.layout || 'simple';
       let iters = 1;
       if (typeof p.iterate === 'number') iters = Math.max(0, p.iterate | 0);
       else if (typeof p.iterate === 'string') {
-        iters = Math.max(0, (uniforms[p.iterate] | 0) || 0);
+        const e = map && map[p.iterate];
+        iters = e && floats ? Math.max(0, floats[e.offset] | 0) : 0;
       }
-      const swirlPass = p.entry === 'step_swirls' || p.entry === 'shift_swirls';
-      const dx = swirlPass ? ceilDiv(MAX_SWIRLS, 64) : gx;
-      const dy = swirlPass ? 1 : gy;
+      const dx = this._passDX[i];
+      const dy = this._passDY[i];
       for (let k = 0; k < iters; k++) {
         this._dispatchIndex(encoder, i, layout, dx, dy);
         if (p.swap && p.swap.length) this._swapNamed(p.swap);
       }
     }
 
-    if (this.heatTex && this.heatLookTex) {
+    const lookGpu = this._lookGpu();
+    if (lookGpu && this._lookSample) {
       encoder.copyTextureToTexture(
-        { texture: this.heatTex },
-        { texture: this.heatLookTex },
+        { texture: lookGpu },
+        { texture: this._lookSample },
         { width: this.numX, height: this.numY }
       );
     }
     device.queue.submit([encoder.finish()]);
-    if (this.heatSource && this.heatLookTex) {
-      pinGpuTexture(this.renderer, this.heatSource, this.heatLookTex);
+    if (this.lookSource && this._lookSample) {
+      pinGpuTexture(this.renderer, this.lookSource, this._lookSample);
     }
     return true;
   }
 
   _dispatchPipe(encoder, pipe, layout, gx, gy) {
+    const groups = this._bindGroups[layout];
+    if (!pipe || !groups) return;
     const pass = encoder.beginComputePass();
     pass.setPipeline(pipe);
-    this._bindLayout(pass, layout);
+    for (let g = 0; g < groups.length; g++) pass.setBindGroup(g, groups[g]);
     pass.dispatchWorkgroups(gx, gy);
     pass.end();
-  }
-
-  _bindLayout(pass, layout) {
-    if (layout === 'stamp') {
-      pass.setBindGroup(0, this._stampParams);
-      pass.setBindGroup(1, this._stampWrite);
-    } else if (layout === 'fluid') {
-      pass.setBindGroup(0, this._fluidParams);
-      pass.setBindGroup(1, this._fluidRead);
-      pass.setBindGroup(2, this._fluidWrite);
-    } else if (layout === 'pack') {
-      pass.setBindGroup(0, this._packParams);
-      pass.setBindGroup(1, this._packRead);
-      pass.setBindGroup(2, this._packWrite);
-    } else {
-      pass.setBindGroup(0, this._simpleParams);
-      pass.setBindGroup(1, this._simpleWrite);
-    }
   }
 
   _dispatchIndex(encoder, passIndex, layout, gx, gy) {

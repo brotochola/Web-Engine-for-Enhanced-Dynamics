@@ -2578,7 +2578,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const uniformDefs = this._buildCustomLayerUniformDefs(cl.layerId, uniformMap, uniformTypes);
 
     try {
-      const lookSource = cl.heatSource || cl.rt.source;
+      const lookSource = cl.lookSource || cl.rt.source;
       cl.shader = this._createLookShader(fragmentSource, lookSource, uniformDefs, shaderName || 'look');
       cl.uniformStore = cl.shader.resources?.customUniforms?.uniforms || null;
       cl.shaderMesh = new Mesh({ geometry: this._createLayerFullscreenGeometry(), shader: cl.shader });
@@ -3541,12 +3541,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         uniformStore: null,
         shaderBypass: false,
         compute: null,
-        heatSource: null,
+        lookSource: null,
       };
 
       if (isCompute) {
         const device = this.pixiApp.renderer.gpu.device;
-        cl.heatSource = PIXI.TextureSource.from({
+        cl.lookSource = PIXI.TextureSource.from({
           resource: new Uint8Array(4),
           width: 8,
           height: 8,
@@ -3555,13 +3555,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           autoGenerateMipmaps: false,
           alphaMode: 'no-premultiply-alpha',
         });
-        cl.heatSource.autoGarbageCollect = false;
-        cl.heatSource.uploadMethodId = 'external';
+        cl.lookSource.autoGarbageCollect = false;
+        cl.lookSource.uploadMethodId = 'external';
         cl.compute = new ComputeLayer({
           device,
           meta: config,
           renderer: this.pixiApp.renderer,
-          heatSource: cl.heatSource,
+          lookSource: cl.lookSource,
         });
         const ok = await cl.compute.compile();
         if (!ok) {
@@ -3604,7 +3604,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }
 
         try {
-          const lookSource = cl.heatSource || cl.rt.source;
+          const lookSource = cl.lookSource || cl.rt.source;
           cl.shader = this._createLookShader(
             config.shaderFragment,
             lookSource,

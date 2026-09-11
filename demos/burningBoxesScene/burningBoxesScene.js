@@ -7,10 +7,12 @@ import WEED from '/src/index.js';
 const { Layer } = WEED;
 
 const FIRE_PASSES = [
+  { entry: 'shift_fields', source: 'fireFluid', layout: 'fluid', when: 'originShift', swap: ['u', 'v', 't', 'p'] },
+  { entry: 'shift_swirls', source: 'fireFluid', layout: 'fluid', when: 'originShift', workgroup: [64], dispatchFrom: 'swirls' },
   { entry: 'raster_stamp', source: 'fireStamp', layout: 'stamp' },
   { entry: 'apply_stamp', source: 'fireFluid', layout: 'fluid', swap: ['t'] },
   { entry: 'cool_rise', source: 'fireFluid', layout: 'fluid', swap: ['t', 'v'] },
-  { entry: 'step_swirls', source: 'fireFluid', layout: 'fluid' },
+  { entry: 'step_swirls', source: 'fireFluid', layout: 'fluid', workgroup: [64], dispatchFrom: 'swirls' },
   { entry: 'apply_swirls', source: 'fireFluid', layout: 'fluid', swap: ['u', 'v'] },
   { entry: 'apply_body_vel', source: 'fireFluid', layout: 'fluid', swap: ['u', 'v'] },
   { entry: 'clear_pressure', source: 'fireFluid', layout: 'fluid', swap: ['p'] },
@@ -22,6 +24,65 @@ const FIRE_PASSES = [
   { entry: 'diffuse_temperature', source: 'fireFluid', layout: 'fluid', swap: ['t'] },
   { entry: 'pack_heat', source: 'firePack', layout: 'pack' },
 ];
+
+const FIRE_TEXTURES = [
+  { name: 'u', format: 'r32float', pingPong: true },
+  { name: 'v', format: 'r32float', pingPong: true },
+  { name: 't', format: 'r32float', pingPong: true },
+  { name: 'p', format: 'r32float', pingPong: true },
+  { name: 'stamp', format: 'rgba8unorm' },
+  { name: 'vel', format: 'rgba32float' },
+  { name: 'pack', format: 'rgba8unorm', look: true },
+];
+
+const FIRE_LAYOUTS = {
+  stamp: [
+    [
+      { binding: 0, buffer: 'uniform', resource: 'params' },
+      { binding: 1, buffer: 'read-only-storage', resource: 'bodies' },
+      { binding: 2, buffer: 'read-only-storage', resource: 'verts' },
+    ],
+    [
+      { binding: 0, storageTexture: { format: 'rgba8unorm', access: 'write-only' }, resource: 'stamp' },
+      { binding: 1, storageTexture: { format: 'rgba32float', access: 'write-only' }, resource: 'vel' },
+    ],
+  ],
+  fluid: [
+    [
+      { binding: 0, buffer: 'uniform', resource: 'params' },
+      { binding: 1, buffer: 'storage', resource: 'swirls' },
+      { binding: 2, buffer: 'read-only-storage', resource: 'bodies' },
+    ],
+    [
+      { binding: 0, texture: { sampleType: 'unfilterable-float' }, resource: 'u', ping: 'read' },
+      { binding: 1, texture: { sampleType: 'unfilterable-float' }, resource: 'v', ping: 'read' },
+      { binding: 2, texture: { sampleType: 'unfilterable-float' }, resource: 't', ping: 'read' },
+      { binding: 3, texture: { sampleType: 'unfilterable-float' }, resource: 'p', ping: 'read' },
+      { binding: 4, texture: { sampleType: 'float' }, resource: 'stamp' },
+      { binding: 5, texture: { sampleType: 'unfilterable-float' }, resource: 'vel' },
+    ],
+    [
+      { binding: 0, storageTexture: { format: 'r32float', access: 'write-only' }, resource: 'u', ping: 'write' },
+      { binding: 1, storageTexture: { format: 'r32float', access: 'write-only' }, resource: 'v', ping: 'write' },
+      { binding: 2, storageTexture: { format: 'r32float', access: 'write-only' }, resource: 't', ping: 'write' },
+      { binding: 3, storageTexture: { format: 'r32float', access: 'write-only' }, resource: 'p', ping: 'write' },
+    ],
+  ],
+  pack: [
+    [
+      { binding: 0, buffer: 'uniform', resource: 'params' },
+    ],
+    [
+      { binding: 0, texture: { sampleType: 'unfilterable-float' }, resource: 't', ping: 'read' },
+      { binding: 1, texture: { sampleType: 'float' }, resource: 'stamp' },
+      { binding: 2, texture: { sampleType: 'unfilterable-float' }, resource: 'u', ping: 'read' },
+      { binding: 3, texture: { sampleType: 'unfilterable-float' }, resource: 'v', ping: 'read' },
+    ],
+    [
+      { binding: 0, storageTexture: { format: 'rgba8unorm', access: 'write-only' }, resource: 'pack' },
+    ],
+  ],
+};
 
 export class BurningBoxesScene extends WEED.Scene {
   static config = {
@@ -63,21 +124,34 @@ export class BurningBoxesScene extends WEED.Scene {
           compute: {
             source: 'fireFluid',
             passes: FIRE_PASSES,
+            textures: FIRE_TEXTURES,
+            buffers: [{ name: 'swirls', strideFloats: 8, count: 200 }],
+            layouts: FIRE_LAYOUTS,
           },
           source: LAYER_COMPUTE_SOURCE.BOX2D_BODIES,
-          grid: { cellSize: 8 },
+          grid: { cellSize: 4, fit: 'canvas' },
           maxBodies: 512,
           uniforms: {
-            uRise: { value: 1.2, type: 'f32' },
-            uSmokeSplit: { value: 0.06, type: 'f32' },
+            uRise: { value: -1000, type: 'f32' },
+            uSmokeSplit: { value: 0.28, type: 'f32' },
             uPressureIters: { value: 6, type: 'f32' },
             uTime: { value: 0, type: 'f32' },
             uDrawCutoff: { value: 0, type: 'f32' },
-            uFireCool: { value: 0.55, type: 'f32' },
-            uSmokeCool: { value: 0.12, type: 'f32' },
+            uFireCool: { value: 1.8, type: 'f32' },
+            uSmokeCool: { value: 0.01, type: 'f32' },
             uDiffusion: { value: 0.03, type: 'f32' },
-            uSwirlForce: { value: 0.45, type: 'f32' },
+            uSwirlForce: { value: 0.66, type: 'f32' },
             uEmberOn: { value: 1, type: 'f32' },
+            uOverRelax: { value: 1, type: 'f32' },
+            uBodyDrive: { value: 1, type: 'f32' },
+            uSourcePad: { value: 0, type: 'f32' },
+            uSwirlDamp: { value: 15.5, type: 'f32' },
+            uStampPad: { value: -1, type: 'f32' },
+            uSwirlChance: { value: 0.8, type: 'f32' },
+            uSwirlSpin: { value: 28, type: 'f32' },
+            uSwirlLife: { value: 1.2, type: 'f32' },
+            uSwirlRadius: { value: 2.5, type: 'f32' },
+            uMaxSwirls: { value: 155, type: 'f32' },
           },
         },
       },

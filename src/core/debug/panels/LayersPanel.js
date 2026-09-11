@@ -4,6 +4,17 @@ import { createPanel } from '../ui/DebugDOM.js';
 import { DEFAULT_LAYERS } from '../../ConfigDefaults.js';
 import { Layer } from '../../Layer.js';
 
+function computeGridLabel(meta) {
+  const grid = meta?.computeGrid;
+  if (!grid) return '—';
+  const nx = grid.numX;
+  const ny = grid.numY;
+  if (nx && ny) return `${nx}×${ny}`;
+  const cell = grid.cellSize || 8;
+  const fit = grid.fit === 'canvas' ? 'canvas' : 'view';
+  return `${cell}px ${fit}`;
+}
+
 export class LayersPanel {
   constructor(debugUI) {
     this.debugUI = debugUI;
@@ -185,8 +196,7 @@ export class LayersPanel {
       const srcName = meta?.compute?.passes?.[0]?.source || meta?.shaderName || 'wgsl';
       const feedN = Layer._feedCount ? Atomics.load(Layer._feedCount, customLayer.id) : 0;
       const maxB = meta?.maxBodies || 0;
-      const cell = meta?.computeGrid?.cellSize || 8;
-      computeVal.textContent = `${srcName} · ${feedN}/${maxB} feed · ${cell}px · WebGPU`;
+      computeVal.textContent = `${srcName} · ${feedN}/${maxB} feed · ${computeGridLabel(meta)} · WebGPU`;
       computeCont.appendChild(computeVal);
       row.appendChild(computeCont);
     }
@@ -375,11 +385,7 @@ export class LayersPanel {
           const srcName = meta?.compute?.passes?.[0]?.source || meta?.shaderName || 'wgsl';
           const feedN = Layer._feedCount ? Atomics.load(Layer._feedCount, layer.id) : 0;
           const maxB = meta?.maxBodies || 0;
-          const cell = meta?.computeGrid?.cellSize || 8;
-          const nx = meta?.computeGrid?.numX;
-          const ny = meta?.computeGrid?.numY;
-          const grid = nx && ny ? `${nx}×${ny}` : `${cell}px`;
-          controls.computeVal.textContent = `${srcName} · ${feedN}/${maxB} feed · ${grid} · WebGPU`;
+          controls.computeVal.textContent = `${srcName} · ${feedN}/${maxB} feed · ${computeGridLabel(meta)} · WebGPU`;
         }
       }
     }

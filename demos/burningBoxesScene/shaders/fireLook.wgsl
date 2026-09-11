@@ -24,6 +24,16 @@ struct CustomUniforms {
   uDiffusion: f32,
   uSwirlForce: f32,
   uEmberOn: f32,
+  uOverRelax: f32,
+  uBodyDrive: f32,
+  uSourcePad: f32,
+  uSwirlDamp: f32,
+  uStampPad: f32,
+  uSwirlChance: f32,
+  uSwirlSpin: f32,
+  uSwirlLife: f32,
+  uSwirlRadius: f32,
+  uMaxSwirls: f32,
 }
 @group(2) @binding(0) var<uniform> customUniforms: CustomUniforms;
 @group(2) @binding(1) var uTexture: texture_2d<f32>;

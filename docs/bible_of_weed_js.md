@@ -400,12 +400,12 @@ Look fragment is unchanged: samples `uTexture` (density) and applies threshold /
 
 ### Compute layers (`LAYER_COMPUTE_SOURCE`)
 
-WebGPU-only. A compute layer has `maxItems: 0` (no sprite queue). The look draws a fullscreen field; colliders that `feedLayer()` that name are packed into storage buffers. See [`COMPUTE_LAYERS.md`](./COMPUTE_LAYERS.md).
+WebGPU-only. A compute layer has `maxItems: 0` (no sprite queue). The look draws a fullscreen field; colliders that `feedLayer()` that name are packed into storage buffers. Scene declares textures, extra buffers, bind layouts, and the pass graph. Engine packs bodies, dispatches, and pins the `look: true` texture as `uTexture`. See [`COMPUTE_LAYERS.md`](./COMPUTE_LAYERS.md).
 
 ```javascript
 this.setLayer('ENTITIES');
 this.feedLayer('fire');
-this.setFeedBits(1); // scene bit 0 (heat in burning boxes); engine ORs static onto bit 1
+this.setFeedBits(1); // scene bit 0 (burning boxes ignite); engine ORs static onto bit 1
 ```
 
 

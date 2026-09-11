@@ -92,7 +92,7 @@ export const FEED_SLOT_NONE = 0xffff;
 export const COMPUTE_LAYER_DEFAULT_MAX_BODIES = 512;
 /** Engine-owned Body.flags bit: RigidBody.static. Bit 0 and others are shader-defined. */
 export const COMPUTE_FLAG_STATIC = 2;
-/** Engine-owned Body.flags bit: motion-sweep ghost (no heat). */
+/** Engine-owned Body.flags bit: motion-sweep ghost (shader occupancy). */
 export const COMPUTE_FLAG_SWEEP = 4;
 
 /**

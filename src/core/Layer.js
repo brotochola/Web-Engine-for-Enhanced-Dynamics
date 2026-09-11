@@ -302,11 +302,11 @@ export class Layer {
     // BUILT-IN LAYER SHORTCUTS
     // ========================================
 
-    /** @returns {Layer} */ static get BACKGROUND()    { return this._byName['BACKGROUND']; }
-    /** @returns {Layer} */ static get DECALS()        { return this._byName['DECALS']; }
+    /** @returns {Layer} */ static get BACKGROUND() { return this._byName['BACKGROUND']; }
+    /** @returns {Layer} */ static get DECALS() { return this._byName['DECALS']; }
     /** @returns {Layer} */ static get CASTED_SHADOWS() { return this._byName['CASTED_SHADOWS']; }
-    /** @returns {Layer} */ static get ENTITIES()      { return this._byName['ENTITIES']; }
-    /** @returns {Layer} */ static get LIGHTING()      { return this._byName['LIGHTING']; }
+    /** @returns {Layer} */ static get ENTITIES() { return this._byName['ENTITIES']; }
+    /** @returns {Layer} */ static get LIGHTING() { return this._byName['LIGHTING']; }
 
     // ========================================
     // STATIC API
@@ -544,20 +544,41 @@ export class Layer {
 
     /**
      * @param {object|null|undefined} shader
-     * @returns {null|{ passes: Array<{entry:string, source?:string, layout?:string, iterate?:string|number, swap?:string[], workgroup?:number[]}> , maxBodies: number, grid: {cellSize:number} }}
+     * @returns {null|{
+     *   passes: Array<{entry:string, source?:string, layout?:string, iterate?:string|number, swap?:string[], workgroup?:number[], when?:string, dispatchFrom?:string}>,
+     *   maxBodies: number,
+     *   grid: {cellSize:number, fit:string},
+     *   textures: Array<{name:string, format:string, pingPong:boolean, look:boolean}>,
+     *   buffers: Array<{name:string, strideFloats:number, count:number}>,
+     *   layouts: object|null,
+     * }}
      */
     static _normalizeCompute(shader) {
         const raw = shader?.compute;
         if (!raw) return null;
-        const grid = shader.grid && Number.isFinite(shader.grid.cellSize) && shader.grid.cellSize > 0
-            ? { cellSize: shader.grid.cellSize }
-            : { cellSize: 8 };
+        const cellSize = shader.grid && Number.isFinite(shader.grid.cellSize) && shader.grid.cellSize > 0
+            ? shader.grid.cellSize
+            : 8;
+        const fit = shader.grid?.fit === 'canvas' ? 'canvas' : 'view';
+        const grid = { cellSize, fit };
         const maxBodies = Layer._normalizeMaxBodies(shader);
         if (typeof raw === 'string') {
             return {
-                passes: [{ entry: 'main', source: raw, layout: 'simple' }],
+                passes: [{
+                    entry: 'main',
+                    source: raw,
+                    layout: 'simple',
+                    iterate: undefined,
+                    swap: null,
+                    workgroup: null,
+                    when: null,
+                    dispatchFrom: null,
+                }],
                 maxBodies,
                 grid,
+                textures: [],
+                buffers: [],
+                layouts: null,
             };
         }
         const sourceName = typeof raw.source === 'string' ? raw.source : null;
@@ -575,9 +596,81 @@ export class Layer {
                 iterate: p.iterate,
                 swap: Array.isArray(p.swap) ? p.swap.slice() : null,
                 workgroup: Array.isArray(p.workgroup) ? p.workgroup.slice() : null,
+                when: typeof p.when === 'string' ? p.when : null,
+                dispatchFrom: typeof p.dispatchFrom === 'string' ? p.dispatchFrom : null,
             });
         }
-        return { passes, maxBodies, grid, textures: raw.textures || null };
+        return {
+            passes,
+            maxBodies,
+            grid,
+            textures: Layer._normalizeComputeTextures(raw.textures),
+            buffers: Layer._normalizeComputeBuffers(raw.buffers),
+            layouts: Layer._normalizeComputeLayouts(raw.layouts),
+        };
+    }
+
+    /** @param {unknown} raw */
+    static _normalizeComputeTextures(raw) {
+        if (!Array.isArray(raw)) return [];
+        const out = [];
+        for (let i = 0; i < raw.length; i++) {
+            const p = raw[i];
+            if (!p || typeof p.name !== 'string' || !p.name) continue;
+            out.push({
+                name: p.name,
+                format: typeof p.format === 'string' ? p.format : 'rgba8unorm',
+                pingPong: !!p.pingPong,
+                look: !!p.look,
+            });
+        }
+        return out;
+    }
+
+    /** @param {unknown} raw */
+    static _normalizeComputeBuffers(raw) {
+        if (!Array.isArray(raw)) return [];
+        const out = [];
+        for (let i = 0; i < raw.length; i++) {
+            const b = raw[i];
+            if (!b || typeof b.name !== 'string' || !b.name) continue;
+            out.push({
+                name: b.name,
+                strideFloats: Math.max(1, b.strideFloats | 0),
+                count: Math.max(1, b.count | 0),
+            });
+        }
+        return out;
+    }
+
+    /** @param {unknown} raw */
+    static _normalizeComputeLayouts(raw) {
+        if (!raw || typeof raw !== 'object') return null;
+        const names = Object.keys(raw);
+        if (!names.length) return null;
+        const out = Object.create(null);
+        for (let n = 0; n < names.length; n++) {
+            const name = names[n];
+            const groups = raw[name];
+            if (!Array.isArray(groups)) continue;
+            out[name] = groups.map((group) => {
+                if (!Array.isArray(group)) return [];
+                return group.map((e) => Layer._cloneLayoutEntry(e));
+            });
+        }
+        return out;
+    }
+
+    /** @param {object|null|undefined} e */
+    static _cloneLayoutEntry(e) {
+        if (!e || typeof e !== 'object') return { binding: 0 };
+        const out = { binding: e.binding | 0, resource: e.resource };
+        if (typeof e.buffer === 'string') out.buffer = e.buffer;
+        else if (e.buffer && typeof e.buffer === 'object') out.buffer = { ...e.buffer };
+        if (e.storageTexture) out.storageTexture = { ...e.storageTexture };
+        if (e.texture) out.texture = { ...e.texture };
+        if (e.ping) out.ping = e.ping;
+        return out;
     }
 
     static _normalizeMaxBodies(shader) {
@@ -835,6 +928,7 @@ export class Layer {
         const meta = data.metadata;
         this.count = meta.count;
         this.ENTITIES_ID = meta.entitiesId;
+        this._metadata = meta;
 
         for (let i = 0; i < meta.count; i++) {
             const layerMeta = meta.layers[i];

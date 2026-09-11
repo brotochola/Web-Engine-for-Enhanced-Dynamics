@@ -292,7 +292,25 @@ async function main() {
         runOptions
       );
 
-      await sleep(prepared.warmupMs);
+      const warmupMs = prepared.warmupMs;
+      const zoomScene = runOptions.sceneExport === 'BurningBoxesScene';
+      if (zoomScene) {
+        await sleep(Math.max(400, Math.floor(warmupMs * 0.45)));
+        await page.evaluate(() => {
+          const Cam = window.WEED?.Camera;
+          if (!Cam || typeof Cam.setZoom !== 'function') return;
+          Cam.setZoom((Cam.zoom || 1) * 1.8);
+        });
+        await sleep(Math.max(400, Math.floor(warmupMs * 0.2)));
+        await page.evaluate(() => {
+          const Cam = window.WEED?.Camera;
+          if (!Cam || typeof Cam.setZoom !== 'function') return;
+          Cam.setZoom(Math.max(0.35, (Cam.zoom || 1) / 1.8));
+        });
+        await sleep(Math.max(200, warmupMs - Math.floor(warmupMs * 0.45) - Math.floor(warmupMs * 0.2)));
+      } else {
+        await sleep(warmupMs);
+      }
       screenshotPaths.push(
         await captureCanvasScreenshot(page, path.join(screenshotDir, '01-post-warmup.png'))
       );
