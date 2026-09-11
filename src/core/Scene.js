@@ -105,6 +105,7 @@ import { Decoration } from './Decoration.js';
 import {
   assertSceneRendererConfig,
   assertLoadedShadersCompatible,
+  collectComputeAssetNames,
   errorShaderFetchFailed,
 } from './rendererBackend.js';
 
@@ -1303,6 +1304,15 @@ class Scene {
 
   async _loadShaderSources(imageUrls) {
     this._loadedShaderSources = {};
+    // Tag-at-load: names used as a compute source anywhere in config.layers are
+    // compute-only WGSL (no mainFrag) — LayersPanel excludes them from the look
+    // shader dropdown so picking one there can't throw a compile error.
+    this._computeShaderNames = new Set();
+    for (const layerConfig of Object.values(this.config.layers || {})) {
+      for (const name of collectComputeAssetNames(layerConfig.shader)) {
+        this._computeShaderNames.add(name);
+      }
+    }
     const shaderAssets = imageUrls?.shaders || {};
     const shaderAssetPromises = [];
     for (const [shaderName, shaderPath] of Object.entries(shaderAssets)) {
@@ -2113,6 +2123,7 @@ class Scene {
     this.bigAtlasJson = null;
     this.bigAtlasProxySheets = null;
     this._loadedShaderSources = null;
+    this._computeShaderNames = null;
   }
 
   pause() {

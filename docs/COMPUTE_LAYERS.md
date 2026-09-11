@@ -70,11 +70,11 @@ Missing/invalid WGSL or a look shader that does not match `renderer.backend`: th
 
 Declared compute textures are allocated at a **pixel extent**. Independent of `layer.resolution` (look RT). Zoom does not realloc.
 
-| `compute.size` | Extent |
-|----------------|--------|
+| `compute.size`           | Extent                      |
+| ------------------------ | --------------------------- |
 | omitted / `{ scale: 1 }` | `canvasW × canvasH` (min 8) |
-| `{ scale: s }` | `ceil(canvas * s)` |
-| `{ width, height }` | explicit pixels |
+| `{ scale: s }`           | `ceil(canvas * s)`          |
+| `{ width, height }`      | explicit pixels             |
 
 Rebuild only when that pixel size changes (window resize). A world lattice (`h`, origin snap, pan shift) is derived in WGSL from the Frame prefix (`texW`, camera, zoom, canvasW, prevCamera), not from engine JS.
 
@@ -82,16 +82,16 @@ Rebuild only when that pixel size changes (window resize). A world lattice (`h`,
 
 ## `setLayer` vs `feedLayer`
 
-| API | What it does |
-|-----|----------------|
+| API                 | What it does                                                                                |
+| ------------------- | ------------------------------------------------------------------------------------------- |
 | `setLayer('water')` | Sprite draws on that layer (`SpriteRenderer.layerId`). Metaball water **is** those sprites. |
-| `feedLayer('fire')` | This **collider** is packed into that layer’s compute storage. Sprite layer is unchanged. |
+| `feedLayer('fire')` | This **collider** is packed into that layer’s compute storage. Sprite layer is unchanged.   |
 
 Compute layers use `maxItems: 0` (no sprite queue). Intended combo:
 
 ```javascript
 this.setLayer('ENTITIES'); // crate stays visible
-this.feedLayer('fire');    // same collider occupies the field
+this.feedLayer('fire'); // same collider occupies the field
 ```
 
 `GameObject` API: `feedLayer(name)`, `clearFeedLayer()`, `setFeedBits(byte)`, `getFeedBits()`. Not `ignite()` — that belongs on a scene class.
@@ -153,20 +153,20 @@ Scene WGSL starts directly at its own structs/bindings/functions and reads frame
 
 Engine prefix (`ENGINE_FRAME_PREFIX_FLOATS = 16`), then memcpy `shader.uniforms` in map order:
 
-| floats | meaning |
-|-------:|---------|
-| 0 | dt (seconds) |
-| 1–2 | texW, texH (allocated storage pixels) |
-| 3–4 | cameraX, cameraY (view top-left) |
-| 5 | zoom |
-| 6 | bodyCount (`shapeCount` in WGSL) |
-| 7–8 | canvasW, canvasH |
-| 9–10 | worldW, worldH (`0` if not finite) |
-| 11 | time (seconds) |
-| 12–13 | prevCameraX, prevCameraY |
-| 14 | prevZoom |
-| 15 | pad |
-| 16+ | reserved look uniforms, then scene uniforms (map order, WGSL-aligned) |
+| floats | meaning                                                               |
+| ------ | --------------------------------------------------------------------- |
+| 0      | dt (seconds)                                                          |
+| 1–2    | texW, texH (allocated storage pixels)                                 |
+| 3–4    | cameraX, cameraY (view top-left)                                      |
+| 5      | zoom                                                                  |
+| 6      | bodyCount (`shapeCount` in WGSL)                                      |
+| 7–8    | canvasW, canvasH                                                      |
+| 9–10   | worldW, worldH (`0` if not finite)                                    |
+| 11     | time (seconds)                                                        |
+| 12–13  | prevCameraX, prevCameraY                                              |
+| 14     | prevZoom                                                              |
+| 15     | pad                                                                   |
+| 16+    | reserved look uniforms, then scene uniforms (map order, WGSL-aligned) |
 
 First frame copies current camera into prev so shift is 0. Ubo size is 16-byte aligned. SAB offsets follow WGSL uniform alignment (vec2 → 2 floats, vec3/vec4 → 4), so the generated struct matches byte-for-byte.
 
@@ -211,4 +211,4 @@ uniforms: {
 - `label` / `tip` → display name / tooltip; `negate: true` shows and edits `-value`
 - No hints → plain number input(s). Reserved uniforms show as read-only live values under "Engine (auto-fed)".
 
-Engine default `renderer.backend` is **`webgpu`**. Compute layers require WebGPU. Look shaders must be WGSL on WebGPU and GLSL (`.frag`) on WebGL. A WebGL scene with `shader.compute` throws. Missing GPU device throws at Pixi init when the scene requested WebGPU.
+Engine default `renderer.backend` is `webgpu`. Compute layers require WebGPU. Look shaders must be WGSL on WebGPU and GLSL (`.frag`) on WebGL. A WebGL scene with `shader.compute` throws. Missing GPU device throws at Pixi init when the scene requested WebGPU.

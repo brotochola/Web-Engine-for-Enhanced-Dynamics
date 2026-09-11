@@ -1,6 +1,7 @@
 // LayersPanel.js — Per-layer controls (visible, alpha, blend, shader, uniforms, y-sort, z-index)
 
 import { createPanel } from '../ui/DebugDOM.js';
+import { FloatingPanel } from '../ui/FloatingPanel.js';
 import { DEFAULT_LAYERS } from '../../ConfigDefaults.js';
 import { Layer, RESERVED_LOOK_UNIFORMS } from '../../Layer.js';
 
@@ -25,6 +26,25 @@ function fmtLive(floats, entry) {
   return parts.join(', ');
 }
 
+function hasSceneUniforms(layer, meta) {
+  if (!layer.hasShader || !meta?.uniformMap) return false;
+  return Object.keys(meta.uniformMap).length > 0;
+}
+
+const FLOAT_BUTTON_STYLE =
+  'font-size:9px;padding:2px 6px;cursor:pointer;background:rgba(255,255,255,0.08);' +
+  'color:rgba(255,255,255,0.8);border:1px solid rgba(255,255,255,0.2);border-radius:3px';
+
+/** Default left offset per popup kind so both can open side by side without overlap. */
+const FLOAT_LEFT = { uniforms: 12, compute: 326 };
+const FLOAT_TITLES = { uniforms: 'Uniforms', compute: 'Compute passes' };
+
+// Fixed column widths shared by the header row and every layer row, so
+// controls (and critically, Z-index) line up vertically across all layers
+// regardless of how long a select's current value or the layer name is.
+const ROW_GRID_TEMPLATE = '112px 40px 92px 116px 108px 108px 52px 44px 72px 82px';
+const ROW_GRID_STYLE = `display:grid;grid-template-columns:${ROW_GRID_TEMPLATE};column-gap:8px;align-items:center`;
+
 export class LayersPanel {
   constructor(debugUI) {
     this.debugUI = debugUI;
@@ -35,16 +55,15 @@ export class LayersPanel {
     };
     this.panel = null;
     this._shaderOptionsSynced = false;
-    // Floating details popup (uniforms + compute passes), one at a time.
-    this._float = null;
-    this._floatBody = null;
-    this._floatLayer = null;
+    // Floating popups, one per kind ('uniforms' | 'compute'), independent of each other.
+    this._floats = { uniforms: null, compute: null };
   }
 
   // ------- DOM creation -------
 
   create() {
     this.panel = createPanel();
+    this.panel.appendChild(this._createHeaderRow());
 
     for (const layerName of Object.keys(DEFAULT_LAYERS)) {
       this._createLayerRow(layerName, this.panel);
@@ -53,11 +72,32 @@ export class LayersPanel {
     return this.panel;
   }
 
+  _createHeaderRow() {
+    const head = document.createElement('div');
+    head.style.cssText =
+      `${ROW_GRID_STYLE};margin-bottom:6px;padding-bottom:4px;` +
+      'border-bottom:1px solid rgba(255,255,255,0.1);font-size:9px;font-weight:600;' +
+      'text-transform:uppercase;letter-spacing:0.4px;color:rgba(255,255,255,0.35)';
+
+    for (const text of ['Layer', 'Vis', 'Alpha', 'Shader', 'Out Blend', 'Cont Blend', 'Y-Sort', 'Z']) {
+      const cell = document.createElement('span');
+      cell.textContent = text;
+      head.appendChild(cell);
+    }
+    const panelsCell = document.createElement('span');
+    panelsCell.textContent = 'Panels';
+    panelsCell.style.gridColumn = '9 / 11';
+    head.appendChild(panelsCell);
+
+    return head;
+  }
+
   // ------- lifecycle -------
 
   attach() {
     this._shaderOptionsSynced = false;
-    this._closeLayerFloat();
+    this._closeFloat('uniforms');
+    this._closeFloat('compute');
     this._updateLayersAvailability();
   }
 
@@ -74,7 +114,8 @@ export class LayersPanel {
   // ------- layer row -------
 
   _removeLayerRow(layerName) {
-    if (this._floatLayer === layerName) this._closeLayerFloat();
+    if (this._floats.uniforms?.layerName === layerName) this._closeFloat('uniforms');
+    if (this._floats.compute?.layerName === layerName) this._closeFloat('compute');
     const wrapper = this.elements.layerRows[layerName];
     if (wrapper?.parentNode) wrapper.parentNode.removeChild(wrapper);
     delete this.elements.layerRows[layerName];
@@ -85,223 +126,196 @@ export class LayersPanel {
   _createLayerRow(layerName, panel) {
     if (this.elements.layerRows[layerName]) return;
 
-    const selectStyle = 'font-size:10px;padding:2px 4px;cursor:pointer;background:rgba(0,0,0,0.5);color:white;border:1px solid rgba(255,255,255,0.3);border-radius:3px';
-    const lblStyle = 'font-size:10px;color:rgba(255,255,255,0.7)';
-    const cellStyle = 'display:flex;align-items:center;gap:4px';
+    const selectStyle =
+      'width:100%;font-size:10px;padding:2px 4px;cursor:pointer;background:rgba(0,0,0,0.5);color:white;' +
+      'border:1px solid rgba(255,255,255,0.3);border-radius:3px;overflow:hidden;text-overflow:ellipsis';
 
     const wrapper = document.createElement('div');
-    wrapper.style.cssText = 'margin-bottom:4px;border-bottom:1px solid rgba(255,255,255,0.04);padding-bottom:4px';
+    wrapper.style.cssText = 'margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.04);padding-bottom:6px';
 
     const row = document.createElement('div');
-    row.className = 'debug-ui-row';
-    row.style.cssText = 'gap:10px;align-items:center;margin-bottom:2px';
+    row.style.cssText = ROW_GRID_STYLE;
 
+    const customLayer = Layer.initialized ? Layer.get(layerName) : null;
+
+    // Layer name
     const label = document.createElement('span');
-    label.className = 'debug-ui-stat';
-    label.style.cssText = 'min-width:110px;font-weight:bold';
+    label.style.cssText = 'font-weight:bold;color:rgba(255,255,255,0.85);overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
     label.textContent = layerName;
+    label.title = layerName;
     row.appendChild(label);
 
     // Visible
-    const visibleLabel = document.createElement('label');
-    visibleLabel.style.cssText = `${cellStyle};cursor:pointer;${lblStyle}`;
     const visibleCb = document.createElement('input');
-    visibleCb.type = 'checkbox'; visibleCb.checked = true; visibleCb.style.cursor = 'pointer';
+    visibleCb.type = 'checkbox';
+    visibleCb.className = 'debug-ui-checkbox';
+    visibleCb.checked = true;
+    visibleCb.title = 'Show or hide this layer';
     visibleCb.onchange = () => this._setLayerProp(layerName, 'visible', visibleCb.checked);
-    visibleLabel.appendChild(visibleCb);
-    visibleLabel.appendChild(document.createTextNode('Visible'));
-    row.appendChild(visibleLabel);
+    row.appendChild(visibleCb);
 
     // Alpha
-    const alphaCont = document.createElement('div'); alphaCont.style.cssText = cellStyle;
-    const alphaLbl = document.createElement('span'); alphaLbl.style.cssText = lblStyle; alphaLbl.textContent = 'Alpha:';
-    alphaCont.appendChild(alphaLbl);
+    const alphaCont = document.createElement('div');
+    alphaCont.style.cssText = 'display:flex;align-items:center;gap:4px;min-width:0';
     const alphaSlider = document.createElement('input');
     alphaSlider.type = 'range'; alphaSlider.min = '0'; alphaSlider.max = '100'; alphaSlider.value = '100';
-    alphaSlider.style.cssText = 'width:60px;cursor:pointer';
-    const alphaVal = document.createElement('span'); alphaVal.style.cssText = `${lblStyle};min-width:30px`; alphaVal.textContent = '100%';
+    alphaSlider.className = 'debug-ui-range';
+    alphaSlider.style.cssText = 'flex:1;min-width:0';
+    alphaSlider.title = 'Layer opacity';
+    const alphaVal = document.createElement('span');
+    alphaVal.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.6);min-width:28px;text-align:right;flex:none';
+    alphaVal.textContent = '100%';
     alphaSlider.oninput = () => {
       alphaVal.textContent = alphaSlider.value + '%';
       const l = Layer.get(layerName);
       if (l) l.alpha = parseInt(alphaSlider.value) / 100;
     };
-    alphaCont.appendChild(alphaSlider); alphaCont.appendChild(alphaVal);
+    alphaCont.appendChild(alphaSlider);
+    alphaCont.appendChild(alphaVal);
     row.appendChild(alphaCont);
 
     // Shader (custom layers only — runtime swap / none for live testing)
-    const shaderCont = document.createElement('div'); shaderCont.style.cssText = cellStyle;
-    const shaderLbl = document.createElement('span'); shaderLbl.style.cssText = lblStyle; shaderLbl.textContent = 'Shader:';
-    shaderCont.appendChild(shaderLbl);
-    const shaderSelect = document.createElement('select'); shaderSelect.style.cssText = selectStyle; shaderSelect.disabled = true;
+    const shaderSelect = document.createElement('select');
+    shaderSelect.style.cssText = selectStyle;
+    shaderSelect.disabled = true;
+    shaderSelect.title = 'Fragment shader assigned to this layer (custom WebGPU layers only)';
     const noneOpt = document.createElement('option'); noneOpt.value = ''; noneOpt.textContent = '(none)';
     shaderSelect.appendChild(noneOpt);
     shaderSelect.onchange = () => this._setLayerShader(layerName, shaderSelect.value);
-    shaderCont.appendChild(shaderSelect);
-    row.appendChild(shaderCont);
+    row.appendChild(shaderSelect);
 
     // Output blend
-    const blendCont = document.createElement('div'); blendCont.style.cssText = cellStyle;
-    const blendLbl = document.createElement('span'); blendLbl.style.cssText = lblStyle; blendLbl.textContent = 'Output Blend:';
-    blendCont.appendChild(blendLbl);
     const blendSelect = this._buildBlendSelect(selectStyle, Layer._BLEND_MODE_STRINGS);
-    const customLayer = Layer.initialized ? Layer.get(layerName) : null;
+    blendSelect.title = "Blend mode used when compositing this layer's render target onto the scene";
     blendSelect.value = customLayer
       ? (Layer._BLEND_MODE_STRINGS[Layer._blendModeId[customLayer.id]] || 'normal')
       : (Layer._BLEND_MODE_STRINGS[DEFAULT_LAYERS[layerName]?.blendMode] || 'normal');
     blendSelect.onchange = () => this._setLayerProp(layerName, 'blendMode', blendSelect.value);
-    blendCont.appendChild(blendSelect);
-    row.appendChild(blendCont);
+    row.appendChild(blendSelect);
 
     // Container blend
-    const cBlendCont = document.createElement('div'); cBlendCont.style.cssText = cellStyle;
-    const cBlendLbl = document.createElement('span'); cBlendLbl.style.cssText = lblStyle; cBlendLbl.textContent = 'Container Blend:';
-    cBlendCont.appendChild(cBlendLbl);
     const cBlendSelect = this._buildBlendSelect(selectStyle, Layer._BLEND_MODE_STRINGS);
+    cBlendSelect.title = "Blend mode used between this layer's own children, inside its render container";
     if (customLayer) cBlendSelect.value = Layer._BLEND_MODE_STRINGS[Layer._containerBlendId[customLayer.id]] || 'normal';
     cBlendSelect.onchange = () => this._setLayerProp(layerName, 'containerBlendMode', cBlendSelect.value);
-    cBlendCont.appendChild(cBlendSelect);
-    row.appendChild(cBlendCont);
+    row.appendChild(cBlendSelect);
 
     // Y-Sort
-    const ySortLabel = document.createElement('label');
-    ySortLabel.style.cssText = `${cellStyle};cursor:pointer;${lblStyle}`;
     const ySortCb = document.createElement('input');
-    ySortCb.type = 'checkbox'; ySortCb.style.cursor = 'pointer';
+    ySortCb.type = 'checkbox';
+    ySortCb.className = 'debug-ui-checkbox';
     ySortCb.checked = customLayer ? customLayer.ySorting : true;
+    ySortCb.title = 'Sort children by Y position for depth ordering';
     ySortCb.onchange = () => {
       const l = Layer.get(layerName);
       if (l && Layer._ySorting) Layer._ySorting[l.id] = ySortCb.checked ? 1 : 0;
     };
-    ySortLabel.appendChild(ySortCb);
-    ySortLabel.appendChild(document.createTextNode('Y-Sort'));
-    row.appendChild(ySortLabel);
+    row.appendChild(ySortCb);
 
-    // Resolution
-    const resCont = document.createElement('div'); resCont.style.cssText = cellStyle;
-    const resLbl = document.createElement('span'); resLbl.style.cssText = lblStyle; resLbl.textContent = 'Res:';
-    resCont.appendChild(resLbl);
-    const resVal = document.createElement('span'); resVal.style.cssText = `${lblStyle};color:rgba(255,255,255,0.8)`;
-    resVal.textContent = customLayer ? customLayer.resolution + 'x' : '1x';
-    resCont.appendChild(resVal);
-    row.appendChild(resCont);
+    // Z-Index
+    const zInput = document.createElement('input');
+    zInput.type = 'number';
+    zInput.value = customLayer ? Layer._zIndex[customLayer.id] : (DEFAULT_LAYERS[layerName]?.zIndex ?? 0);
+    zInput.style.cssText =
+      'width:100%;font-size:10px;padding:2px 4px;background:rgba(0,0,0,0.5);color:white;' +
+      'border:1px solid rgba(255,255,255,0.3);border-radius:3px';
+    zInput.title = 'Z-index — draw order relative to other layers';
+    zInput.onchange = () => this._setLayerProp(layerName, 'zIndex', parseInt(zInput.value));
+    row.appendChild(zInput);
 
-    // Density source (sprite queue vs LiquidFun HEAP splat)
+    // Uniforms popup — only shown when the layer has a shader with uniforms
+    const uniformsBtn = document.createElement('button');
+    uniformsBtn.textContent = 'Uniforms';
+    uniformsBtn.style.cssText = FLOAT_BUTTON_STYLE;
+    uniformsBtn.style.display = 'none';
+    uniformsBtn.title = 'Open the uniforms panel for this layer';
+    uniformsBtn.onclick = () => this._toggleFloat('uniforms', layerName);
+    row.appendChild(uniformsBtn);
+
+    // Compute passes popup — only shown for compute layers
+    const computeBtn = document.createElement('button');
+    computeBtn.textContent = 'Compute';
+    computeBtn.style.cssText = FLOAT_BUTTON_STYLE;
+    computeBtn.style.display = 'none';
+    computeBtn.title = 'Open the compute passes panel for this layer';
+    computeBtn.onclick = () => this._toggleFloat('compute', layerName);
+    row.appendChild(computeBtn);
+
+    wrapper.appendChild(row);
+
+    // Read-only info line (resolution / density source / compute source) — kept
+    // out of the grid above so it can't push Z / the panel buttons out of
+    // alignment with other rows; dimmer color marks it as not editable.
+    const metaRow = document.createElement('div');
+    metaRow.style.cssText =
+      'display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;padding-left:2px;' +
+      'font-size:9px;color:rgba(255,255,255,0.35)';
+
+    const resVal = document.createElement('span');
+    resVal.title = 'Render target resolution scale (read-only)';
+    resVal.textContent = `Res ${customLayer ? customLayer.resolution.toFixed(3) : '1.000'}x`;
+    metaRow.appendChild(resVal);
+
+    let densVal = null;
     if (customLayer) {
-      const densCont = document.createElement('div'); densCont.style.cssText = cellStyle;
-      const densLbl = document.createElement('span'); densLbl.style.cssText = lblStyle; densLbl.textContent = 'Density:';
-      densCont.appendChild(densLbl);
-      const densVal = document.createElement('span');
-      densVal.style.cssText = `${lblStyle};color:rgba(255,255,255,0.8)`;
-      densVal.textContent = customLayer.densitySource === 'liquidFun'
-        ? 'liquidFun'
-        : 'sprites';
-      densCont.appendChild(densVal);
-      row.appendChild(densCont);
+      densVal = document.createElement('span');
+      densVal.title = 'Where per-pixel density data comes from — sprite queue or LiquidFun HEAP splat (read-only)';
+      densVal.textContent = `Density ${customLayer.densitySource === 'liquidFun' ? 'liquidFun' : 'sprites'}`;
+      metaRow.appendChild(densVal);
     }
 
     let computeVal = null;
     if (customLayer?.compute) {
-      const meta = Layer._metadata?.layers?.[customLayer.id];
-      const computeCont = document.createElement('div'); computeCont.style.cssText = cellStyle;
-      const computeLbl = document.createElement('span'); computeLbl.style.cssText = lblStyle; computeLbl.textContent = 'Compute:';
-      computeCont.appendChild(computeLbl);
       computeVal = document.createElement('span');
-      computeVal.style.cssText = `${lblStyle};color:rgba(255,255,255,0.8)`;
-      const srcName = meta?.compute?.passes?.[0]?.source || meta?.shaderName || 'wgsl';
-      const feedN = Layer._feedCount ? Atomics.load(Layer._feedCount, customLayer.id) : 0;
-      const maxB = meta?.maxBodies || 0;
-      computeVal.textContent = `${srcName} · ${feedN}/${maxB} feed · ${computeSizeLabel(meta)} · WebGPU`;
-      computeCont.appendChild(computeVal);
-      row.appendChild(computeCont);
+      computeVal.title = 'Compute shader driving this layer — source · live feed / max bodies · target size · backend (read-only)';
+      metaRow.appendChild(computeVal);
     }
 
-    // Z-Index
-    const zCont = document.createElement('div'); zCont.style.cssText = cellStyle;
-    const zLbl = document.createElement('span'); zLbl.style.cssText = lblStyle; zLbl.textContent = 'Z:';
-    zCont.appendChild(zLbl);
-    const zInput = document.createElement('input');
-    zInput.type = 'number';
-    zInput.value = customLayer ? Layer._zIndex[customLayer.id] : (DEFAULT_LAYERS[layerName]?.zIndex ?? 0);
-    zInput.style.cssText = 'width:50px;font-size:10px;padding:2px 4px;background:rgba(0,0,0,0.5);color:white;border:1px solid rgba(255,255,255,0.3);border-radius:3px';
-    zInput.onchange = () => this._setLayerProp(layerName, 'zIndex', parseInt(zInput.value));
-    zCont.appendChild(zInput);
-    row.appendChild(zCont);
-
-    // Details popup button (uniforms + compute passes)
-    const tuneBtn = document.createElement('button');
-    tuneBtn.textContent = 'Tune';
-    tuneBtn.style.cssText = 'font-size:9px;padding:2px 6px;cursor:pointer;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.8);border:1px solid rgba(255,255,255,0.2);border-radius:3px';
-    tuneBtn.title = 'Open uniforms / compute panel';
-    tuneBtn.onclick = () => this._toggleLayerFloat(layerName);
-    row.appendChild(tuneBtn);
-
-    wrapper.appendChild(row);
-
+    wrapper.appendChild(metaRow);
     panel.appendChild(wrapper);
 
     this.elements.layerControls[layerName] = {
       visible: visibleCb, alpha: alphaSlider, alphaValue: alphaVal,
       blendMode: blendSelect, containerBlend: cBlendSelect,
       shader: shaderSelect, ySorting: ySortCb,
-      resolution: resVal, zIndex: zInput, computeVal, tune: tuneBtn,
+      resolution: resVal, zIndex: zInput, computeVal, uniformsBtn, computeBtn,
     };
     this.elements.layerRows[layerName] = wrapper;
   }
 
-  // ------- floating details popup (uniforms + compute) -------
+  // ------- floating popups (uniforms / compute, independent) -------
 
-  _toggleLayerFloat(layerName) {
-    if (this._floatLayer === layerName) {
-      this._closeLayerFloat();
+  _toggleFloat(kind, layerName) {
+    if (this._floats[kind]?.layerName === layerName) {
+      this._closeFloat(kind);
       return;
     }
-    this._openLayerFloat(layerName);
+    this._openFloat(kind, layerName);
   }
 
-  _openLayerFloat(layerName) {
-    this._closeLayerFloat();
+  _openFloat(kind, layerName) {
+    this._closeFloat(kind);
 
-    const el = document.createElement('div');
-    el.style.cssText =
-      'position:fixed;left:12px;top:48px;width:300px;max-height:calc(100vh - 60px);z-index:950;' +
-      'overflow:auto;color:#e8e8e8;font:12px/1.35 system-ui,sans-serif;' +
-      'background:rgba(12,14,20,0.92);border:1px solid #3a4254;border-radius:10px;' +
-      'padding:10px 12px 14px;box-shadow:0 8px 28px rgba(0,0,0,0.45);';
-    // Keep wheel/drag from reaching the canvas (free camera zoom/pan).
-    el.addEventListener('wheel', (e) => e.stopPropagation());
-    el.addEventListener('pointerdown', (e) => e.stopPropagation());
+    const panel = new FloatingPanel({
+      title: `${layerName} — ${FLOAT_TITLES[kind]}`,
+      left: FLOAT_LEFT[kind],
+      top: 48,
+      width: 300,
+      onClose: () => {
+        this._floats[kind] = null;
+        if (kind === 'uniforms') delete this.elements.layerUniformInputs[layerName];
+      },
+    });
+    panel.mount();
 
-    const head = document.createElement('div');
-    head.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:2px';
-    const title = document.createElement('span');
-    title.textContent = layerName;
-    title.style.cssText = 'font-weight:600;font-size:13px;color:#fff';
-    const closeBtn = document.createElement('button');
-    closeBtn.textContent = '×';
-    closeBtn.title = 'Close';
-    closeBtn.style.cssText = 'background:none;border:none;color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;padding:0 2px;line-height:1';
-    closeBtn.onclick = () => this._closeLayerFloat();
-    head.appendChild(title);
-    head.appendChild(closeBtn);
-    el.appendChild(head);
+    this._floats[kind] = { panel, layerName };
 
-    const body = document.createElement('div');
-    el.appendChild(body);
-    document.body.appendChild(el);
-
-    this._float = el;
-    this._floatBody = body;
-    this._floatLayer = layerName;
-
-    this._populateLayerDetails(layerName);
+    if (kind === 'uniforms') this._populateUniformsFloat(layerName);
+    else this._populateComputeFloat(layerName);
   }
 
-  _closeLayerFloat() {
-    if (this._float?.parentNode) this._float.parentNode.removeChild(this._float);
-    if (this._floatLayer) delete this.elements.layerUniformInputs[this._floatLayer];
-    this._float = null;
-    this._floatBody = null;
-    this._floatLayer = null;
+  _closeFloat(kind) {
+    this._floats[kind]?.panel.close();
   }
 
   _sectionTitle(text) {
@@ -313,9 +327,10 @@ export class LayersPanel {
     return el;
   }
 
-  _populateLayerDetails(layerName) {
-    const block = this._floatBody;
-    if (!block || this._floatLayer !== layerName) return;
+  _populateUniformsFloat(layerName) {
+    const f = this._floats.uniforms;
+    if (!f || f.layerName !== layerName) return;
+    const block = f.panel.body;
     const layer = Layer.initialized ? Layer.get(layerName) : null;
     if (!layer) { block.textContent = 'Layer not initialized'; return; }
 
@@ -323,14 +338,27 @@ export class LayersPanel {
     block.innerHTML = '';
     this.elements.layerUniformInputs[layerName] = {};
 
-    const hasUniforms = layer.hasShader && meta?.uniformMap && Object.keys(meta.uniformMap).length;
-    if (!hasUniforms && !layer.compute) {
+    if (!hasSceneUniforms(layer, meta)) {
       block.innerHTML = '<span style="color:rgba(255,255,255,0.3)">No shader uniforms</span>';
       return;
     }
+    this._buildUniformsSection(block, layer, meta, layerName);
+  }
 
-    if (hasUniforms) this._buildUniformsSection(block, layer, meta, layerName);
-    if (layer.compute) this._buildComputeSection(block, meta);
+  _populateComputeFloat(layerName) {
+    const f = this._floats.compute;
+    if (!f || f.layerName !== layerName) return;
+    const block = f.panel.body;
+    const layer = Layer.initialized ? Layer.get(layerName) : null;
+    if (!layer) { block.textContent = 'Layer not initialized'; return; }
+
+    const meta = Layer._metadata?.layers?.[layer.id];
+    block.innerHTML = '';
+    if (!layer.compute) {
+      block.innerHTML = '<span style="color:rgba(255,255,255,0.3)">Not a compute layer</span>';
+      return;
+    }
+    this._buildComputeSection(block, meta);
   }
 
   _buildUniformsSection(block, layer, meta, layerName) {
@@ -343,7 +371,6 @@ export class LayersPanel {
     }
 
     if (sceneNames.length) {
-      block.appendChild(this._sectionTitle('Uniforms'));
       for (const uName of sceneNames) {
         const entry = meta.uniformMap[uName];
         const row = this._uniformRow(layer, uName, entry, hints[uName] || {}, floats);
@@ -371,8 +398,8 @@ export class LayersPanel {
       if (hint.tip) node.title = hint.tip;
       const cb = document.createElement('input');
       cb.type = 'checkbox';
+      cb.className = 'debug-ui-checkbox';
       cb.checked = (floats ? floats[entry.offset] : 0) > 0.5;
-      cb.style.cursor = 'pointer';
       cb.onchange = () => layer.setUniform(uName, cb.checked ? 1 : 0);
       const span = document.createElement('span');
       span.textContent = label;
@@ -395,11 +422,12 @@ export class LayersPanel {
       name.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
       const input = document.createElement('input');
       input.type = 'range';
+      input.className = 'debug-ui-range';
       input.min = String(hint.min);
       input.max = String(hint.max);
       input.step = String(step);
       input.value = String(read());
-      input.style.cssText = 'width:100%;cursor:pointer';
+      input.style.cssText = 'width:100%';
       const val = document.createElement('span');
       val.style.cssText = 'text-align:right;font-variant-numeric:tabular-nums;color:rgba(255,255,255,0.85)';
       val.textContent = fmtUniform(read(), step);
@@ -460,7 +488,6 @@ export class LayersPanel {
   _buildComputeSection(block, meta) {
     const compute = meta?.compute;
     if (!compute) return;
-    block.appendChild(this._sectionTitle('Compute passes'));
     const passes = compute.passes || [];
     for (const p of passes) {
       const row = document.createElement('div');
@@ -552,7 +579,11 @@ export class LayersPanel {
       }
     }
 
-    const shaderNames = scene._loadedShaderSources ? Object.keys(scene._loadedShaderSources) : [];
+    // Tag-at-load: compute-only WGSL assets never appear as look-shader choices.
+    const computeNames = scene._computeShaderNames || null;
+    const shaderNames = scene._loadedShaderSources
+      ? Object.keys(scene._loadedShaderSources).filter((n) => !computeNames?.has(n))
+      : [];
 
     for (const [layerName, wrapper] of Object.entries(this.elements.layerRows)) {
       const isAvailable = available.has(layerName);
@@ -564,7 +595,8 @@ export class LayersPanel {
       controls.alpha.disabled = !isAvailable;
       controls.blendMode.disabled = !isAvailable;
       controls.zIndex.disabled = !isAvailable;
-      controls.tune.disabled = !isAvailable;
+      controls.uniformsBtn.disabled = !isAvailable;
+      controls.computeBtn.disabled = !isAvailable;
 
       const layer = Layer.initialized ? Layer.get(layerName) : null;
       // Shader RT layers (incl. liquidFun density, no sprite queue) stay editable.
@@ -578,8 +610,10 @@ export class LayersPanel {
         if (document.activeElement !== shaderSelect) {
           shaderSelect.value = meta?.shaderName || '';
         }
+        controls.uniformsBtn.style.display = (isAvailable && hasSceneUniforms(layer, meta)) ? '' : 'none';
+        controls.computeBtn.style.display = (isAvailable && !!layer.compute) ? '' : 'none';
         controls.ySorting.checked = layer.ySorting;
-        controls.resolution.textContent = layer.resolution.toFixed(3) + 'x';
+        controls.resolution.textContent = `Res ${layer.resolution.toFixed(3)}x`;
         if (document.activeElement !== controls.alpha) {
           const pct = Math.round(layer.alpha * 100);
           controls.alpha.value = pct;
@@ -593,6 +627,9 @@ export class LayersPanel {
           const maxB = meta?.maxBodies || 0;
           controls.computeVal.textContent = `${srcName} · ${feedN}/${maxB} feed · ${computeSizeLabel(meta)} · WebGPU`;
         }
+      } else {
+        controls.uniformsBtn.style.display = 'none';
+        controls.computeBtn.style.display = 'none';
       }
     }
   }
@@ -676,7 +713,7 @@ export class LayersPanel {
       shaderFragment: source || null,
     });
 
-    if (this._floatLayer === layerName) this._populateLayerDetails(layerName);
+    if (this._floats.uniforms?.layerName === layerName) this._populateUniformsFloat(layerName);
   }
 
   _buildBlendSelect(style, modes) {
