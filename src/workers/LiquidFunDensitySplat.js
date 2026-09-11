@@ -15,8 +15,6 @@ import {
   BufferUsage,
   State,
 } from '../lib/pixi_8.16_.min.js';
-import { LF_SPLAT_WGSL } from './instancedSpriteWgsl.js';
-import { LF_SPLAT_VERTEX_GLSL, LF_SPLAT_FRAGMENT_GLSL } from './instancedSpriteGlsl.js';
 
 export const LF_SPLAT_FLOATS = 4;
 export const LF_SPLAT_STRIDE = LF_SPLAT_FLOATS * 4;
@@ -28,8 +26,9 @@ export class LiquidFunDensitySplat {
    * @param {string} [opts.label]
    * @param {string} [opts.blendMode='add']
    * @param {boolean} [opts.useWebGpu=true]
+   * @param {object} opts.shaders - fetched engine sources (`lfSplat` or lfSplatVert/Frag)
    */
-  constructor({ capacity, label, blendMode = 'add', useWebGpu = true }) {
+  constructor({ capacity, label, blendMode = 'add', useWebGpu = true, shaders = null }) {
     this.capacity = Math.max(1, capacity | 0);
     this.data = new Float32Array(this.capacity * LF_SPLAT_FLOATS);
     this.dataU32 = new Uint32Array(this.data.buffer);
@@ -57,16 +56,29 @@ export class LiquidFunDensitySplat {
 
     const name = label || 'lf-density-splat';
     if (useWebGpu) {
+      const source = shaders?.lfSplat;
+      if (!source) {
+        throw new Error(
+          'WeedJS: LiquidFun splat WGSL was not loaded before LiquidFunDensitySplat construction.'
+        );
+      }
       const gpuProgram = GpuProgram.from({
         name,
-        vertex: { source: LF_SPLAT_WGSL, entryPoint: 'mainVert' },
-        fragment: { source: LF_SPLAT_WGSL, entryPoint: 'mainFrag' },
+        vertex: { source, entryPoint: 'mainVert' },
+        fragment: { source, entryPoint: 'mainFrag' },
       });
       this.shader = new Shader({ gpuProgram, resources: {} });
     } else {
+      const vertex = shaders?.lfSplatVert;
+      const fragment = shaders?.lfSplatFrag;
+      if (!vertex || !fragment) {
+        throw new Error(
+          'WeedJS: LiquidFun splat GLSL was not loaded before LiquidFunDensitySplat construction.'
+        );
+      }
       const glProgram = GlProgram.from({
-        vertex: LF_SPLAT_VERTEX_GLSL,
-        fragment: LF_SPLAT_FRAGMENT_GLSL,
+        vertex,
+        fragment,
         name,
       });
       this.shader = new Shader({ glProgram, resources: {} });

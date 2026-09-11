@@ -26,7 +26,7 @@ import {
 import { DECORATION_Y_SORT_SCALE, ENTITY_GLOW_SORT_BIAS } from '../core/ConfigDefaults.js';
 import { instancedSpriteGpuProgram } from './instancedSpriteWgsl.js';
 import {
-  INSTANCED_SPRITE_VERTEX_GLSL,
+  instancedSpriteGlProgram,
   pickInstancedSpriteFragmentGlsl,
 } from './instancedSpriteGlsl.js';
 
@@ -163,6 +163,7 @@ export class InstancedSpriteBatch {
    * @param {boolean} [opts.premultiplyAlpha=true] - true → normal PMA out; false → additive (glows)
    * @param {string} [opts.blendMode='normal'] - Pixi State blend mode
    * @param {boolean} [opts.useWebGpu=true] - compile GpuProgram vs GlProgram
+   * @param {object} opts.shaders - fetched engine sources (`sprite` or spriteVert/frag*)
    */
   constructor({
     capacity,
@@ -175,6 +176,7 @@ export class InstancedSpriteBatch {
     blendMode = 'normal',
     lutSource = null,
     useWebGpu = true,
+    shaders = null,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this.data = new Float32Array(this.capacity * INSTANCED_SPRITE_FLOATS);
@@ -223,19 +225,22 @@ export class InstancedSpriteBatch {
         uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
       },
     };
+    const name = label || 'instanced-sprites';
     if (useWebGpu) {
       const gpuProgram = instancedSpriteGpuProgram(
         GpuProgram,
+        shaders?.sprite,
         fragEntry,
-        label || 'instanced-sprites'
+        name
       );
       this.shader = new Shader({ gpuProgram, resources });
     } else {
-      const glProgram = GlProgram.from({
-        vertex: INSTANCED_SPRITE_VERTEX_GLSL,
-        fragment: pickInstancedSpriteFragmentGlsl(premultiplyAlpha, alphaDiscard),
-        name: label || 'instanced-sprites',
-      });
+      const glProgram = instancedSpriteGlProgram(
+        GlProgram,
+        shaders?.spriteVert,
+        pickInstancedSpriteFragmentGlsl(premultiplyAlpha, alphaDiscard, shaders),
+        name
+      );
       this.shader = new Shader({ glProgram, resources });
     }
 

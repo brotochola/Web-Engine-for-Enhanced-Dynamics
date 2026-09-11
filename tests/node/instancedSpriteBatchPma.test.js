@@ -6,7 +6,8 @@ import { dirname, join } from 'node:path';
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(dir, '../../src/workers/InstancedSpriteBatch.js'), 'utf8');
-const wgsl = readFileSync(join(dir, '../../src/workers/instancedSpriteWgsl.js'), 'utf8');
+const gpuJs = readFileSync(join(dir, '../../src/workers/instancedSpriteWgsl.js'), 'utf8');
+const wgsl = readFileSync(join(dir, '../../src/shaders/instanced_sprite.wgsl'), 'utf8');
 
 test('normal fragment scales PMA rgb by instance alpha without re-multiplying tex.a', () => {
   assert.match(wgsl, /let a = t\.a \* in\.vColor\.a;/);
@@ -51,7 +52,7 @@ test('vertex shader uses aInstRotCS without cos/sin of angle', () => {
   assert.match(wgsl, /bitcast<u32>\(aInstTintBits\)/);
   assert.match(src, /instancedSpriteGpuProgram/);
   assert.match(wgsl, /@group\(2\) @binding\(2\) var uTexLut/);
-  assert.match(wgsl, /unfilterable-float/);
+  assert.match(gpuJs, /unfilterable-float/);
 });
 
 test('ctor sets State.depthMask; upload excludeType accepts a list; indices skip filter', () => {
@@ -96,10 +97,15 @@ test('entity and custom-layer uploads pass queue repeatX/Y and tile fields', () 
 });
 
 test('GLSL twins keep PMA rgb * instance alpha; no tex.a re-multiply', () => {
-  const glsl = readFileSync(join(dir, '../../src/workers/instancedSpriteGlsl.js'), 'utf8');
+  const shaderDir = join(dir, '../../src/shaders');
+  const glsl = [
+    readFileSync(join(shaderDir, 'instanced_sprite.frag.glsl'), 'utf8'),
+    readFileSync(join(shaderDir, 'instanced_sprite_blend.frag.glsl'), 'utf8'),
+    readFileSync(join(shaderDir, 'instanced_sprite_additive.frag.glsl'), 'utf8'),
+  ].join('\n');
   assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, a\);/);
   assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, 0\.0\);/);
-  assert.match(src, /GlProgram\.from/);
+  assert.match(src, /instancedSpriteGlProgram/);
   assert.match(src, /useWebGpu = true/);
 });
 
@@ -125,4 +131,14 @@ test('packTextureLutRgba writes 10 floats into 3 RGBA32F texels', async () => {
   for (let i = 0; i < 10; i++) assert.equal(rgba[i], i + 1);
   assert.equal(rgba[10], 0);
   assert.equal(rgba[11], 0);
+});
+
+test('lighting GLSL loop bound is MAX_LIGHTS token', () => {
+  const lighting = readFileSync(join(dir, '../../src/shaders/lighting_basic.frag.glsl'), 'utf8');
+  assert.match(lighting, /for \(int i = 0; i < MAX_LIGHTS; i\+\+\)/);
+  assert.doesNotMatch(lighting, /\$\{this\.maxLights\}/);
+  assert.match(pixiSrc, /\/MAX_LIGHTS\/g/);
+  assert.match(pixiSrc, /lighting_basic\.frag\.glsl/);
+  assert.match(pixiSrc, /instanced_sprite\.wgsl/);
+  assert.match(pixiSrc, /instanced_sprite\.vert\.glsl/);
 });
