@@ -400,12 +400,13 @@ Look fragment is unchanged: samples `uTexture` (density) and applies threshold /
 
 ### Compute layers (`LAYER_COMPUTE_SOURCE`)
 
-WebGPU-only. A compute layer has `maxItems: 0` (no sprite queue). The look draws a fullscreen field; colliders that `feedLayer()` that name are packed into storage buffers. Scene declares textures, extra buffers, and the pass graph. Bind layouts are inferred from WGSL `@group`/`@binding` (optional `compute.layouts` override). Engine packs bodies, sizes storage textures from the canvas (optional `compute.size.scale`), writes a 16-float Frame prefix (time, camera, zoom, canvas, world, previous camera), dispatches, and pins the `look: true` texture as `uTexture`. Look shaders that declare `uTime` / `uCameraPos` / `uZoom` / `uCanvasSize` / `uWorldSize` / `uViewSize` / `uDt` are filled every frame. See [`COMPUTE_LAYERS.md`](./COMPUTE_LAYERS.md).
+WebGPU-only. A compute layer has `maxItems: 0` (no sprite queue). The look draws a fullscreen field; colliders that `feedLayer()` that name are packed into storage buffers. `shader.maxParticles > 0` also packs LiquidFun HEAP particles (`x,y,vx,vy`) into the engine `particles` SSBO. Scene declares textures, extra buffers, and the pass graph. Bind layouts are inferred from WGSL `@group`/`@binding` (optional `compute.layouts` override). Engine packs bodies (and particles when capped), sizes storage textures from the canvas (optional `compute.size.scale`), writes a 16-float Frame prefix (time, camera, zoom, canvas, world, previous camera, particleCount), dispatches, and pins the `look: true` texture as `uTexture`. Look shaders that declare `uTime` / `uCameraPos` / `uZoom` / `uCanvasSize` / `uWorldSize` / `uViewSize` / `uDt` are filled every frame. See [`COMPUTE_LAYERS.md`](./COMPUTE_LAYERS.md).
 
 ```javascript
 this.setLayer('ENTITIES');
 this.feedLayer('fire');
 this.setFeedBits(1); // scene bit 0 (burning boxes ignite); engine ORs static onto bit 1
+// shader.maxParticles > 0: LiquidFun particles also feed the same compute layer
 ```
 
 
@@ -503,15 +504,24 @@ Open the **Layers** tab in the debug overlay. Each layer shows visibility, alpha
 - **Resolution**, **Y-Sorting**, **maxItems**
 - **Live uniform editors** -- number inputs for every uniform, updated in real-time from SAB. Edit a value and it calls `setUniform()` immediately
 
-### Backgrounds (Layer API)
+### Backgrounds
 
-Backgrounds are set through Layer instances, not Scene methods:
+Viewport-cover image (fills the canvas, extra size at zoom=1, optional pan/zoom parallax):
 
 ```javascript
-// In scene preload():
-await Layer.BACKGROUND.setTilemapBackground('myTilemap', { scale: 1 });
+this.setBackground({
+  texture: 'landscape',
+  parallax: 0.15,          // or { x: 0.15, y: 0.1 }; 0 = glued to camera, 1 = full overscan pan
+  zoomParallax: 0.35,     // 0 = no zoom, 1 = same as camera (default)
+  margin: 0.2,            // extra 20% beyond cover-fit at zoom = 1
+});
+// this.setBackground('landscape') uses the same defaults
+```
 
-// Other types:
+Tilemap / world-stretch / tiling still go through Layer:
+
+```javascript
+await Layer.BACKGROUND.setTilemapBackground('myTilemap', { scale: 1 });
 Layer.BACKGROUND.setStaticBackground('sky');
 Layer.BACKGROUND.setTilingBackground('clouds', 0.5);
 Layer.BACKGROUND.clearBackground();
@@ -629,6 +639,7 @@ Layer.getId('water')          // numeric id or -1
 Layer.getName(5)              // name string or null
 
 // Background (instance methods -- any layer can own a background)
+Layer.BACKGROUND.setCoverBackground({ texture, parallax, zoomParallax, margin })
 Layer.BACKGROUND.setStaticBackground(textureId)
 Layer.BACKGROUND.setTilingBackground(textureId, tileScale)
 await Layer.BACKGROUND.setTilemapBackground(tilemapId, options)

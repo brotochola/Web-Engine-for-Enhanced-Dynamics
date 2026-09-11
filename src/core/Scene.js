@@ -1064,6 +1064,14 @@ class Scene {
   }
 
   /**
+   * Viewport-cover background (fills the canvas, extra size at zoom=1, optional pan/zoom parallax).
+   * @param {string|{texture?:string,textureId?:string,parallax?:number|{x?:number,y?:number},margin?:number,zoomParallax?:number}} textureOrOpts
+   */
+  setBackground(textureOrOpts) {
+    Layer.BACKGROUND.setCoverBackground(textureOrOpts);
+  }
+
+  /**
    * Called after preload(), right before workers start their game loops.
    * Runs for **both** new games and save loads.
    * Use for static world setup that is not restored from a save

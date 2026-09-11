@@ -1,6 +1,6 @@
 // Engine prelude provides: struct FrameData + var<uniform> frame, struct Body.
 // Frame prefix: dt, texW/H, cameraX/Y, zoom, shapeCount, canvasW/H, worldW/H,
-// time, prevCameraX/Y, prevZoom. Scene tail: config uniforms (frame.uRise, ...).
+// time, prevCameraX/Y, prevZoom, particleCount. Scene tail: config uniforms (frame.uRise, ...).
 
 struct Swirl {
   x: f32,
@@ -22,6 +22,7 @@ struct Swirl {
 @group(1) @binding(3) var pRead: texture_2d<f32>;
 @group(1) @binding(4) var stampTex: texture_2d<f32>;
 @group(1) @binding(5) var velTex: texture_2d<f32>;
+@group(1) @binding(6) var fuelTex: texture_2d<f32>;
 
 @group(2) @binding(0) var uWrite: texture_storage_2d<r32float, write>;
 @group(2) @binding(1) var vWrite: texture_storage_2d<r32float, write>;
@@ -375,10 +376,11 @@ fn apply_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
     return;
   }
   let mark = textureLoad(stampTex, id, 0);
+  let fuel = textureLoad(fuelTex, id, 0);
   var t = load_t(id);
   if (mark.r < 0.5) {
     t = mark.b;
-  } else if (mark.g > 0.5) {
+  } else if (mark.g > 0.5 || fuel.r > 0.5) {
     t = 1.0;
   }
   textureStore(tWrite, id, vec4<f32>(t, 0.0, 0.0, 0.0));
@@ -414,6 +416,12 @@ fn apply_body_vel(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (velR.z > 0.5) { u = mix(u, velR.x, k); }
     if (velD.z > 0.5) { v = mix(v, velD.y, k); }
     if (velU.z > 0.5) { v = mix(v, velU.y, k); }
+  }
+  let fuel = textureLoad(fuelTex, id, 0);
+  if (fuel.r > 0.5) {
+    let d = clamp(frame.uLfDrive, 0.0, 1.0);
+    u = mix(u, fuel.g, d);
+    v = mix(v, fuel.b, d);
   }
   textureStore(uWrite, id, vec4<f32>(u, 0.0, 0.0, 0.0));
   textureStore(vWrite, id, vec4<f32>(v, 0.0, 0.0, 0.0));

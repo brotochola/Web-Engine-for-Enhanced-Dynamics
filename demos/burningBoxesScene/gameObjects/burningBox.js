@@ -1,24 +1,32 @@
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer, Grab, Mouse, Keyboard, enums } = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, Grab, LightEmitter, Mouse, Keyboard, enums } = WEED;
 const { ShapeType } = enums;
 
 const HEAT = 1;
 const IGNITE_RANGE_SQ = 80 * 80;
+const LIGHT_BASE = 9000;
+const LIGHT_RANGE = 640;
 
 export class BurningBox extends GameObject {
   static scriptUrl = import.meta.url;
   static instances = [];
   static serializable = true;
-  static components = [RigidBody, Collider, SpriteRenderer, Grab];
+  static components = [RigidBody, Collider, SpriteRenderer, Grab, LightEmitter];
 
   ignite() {
     this.setFeedBits(this.getFeedBits() | HEAT);
+    this.lightEmitter.active = 1;
+    this.lightEmitter.lightColor = 0xff9944;
+    this.lightEmitter.lightIntensity = LIGHT_BASE;
+    this.collider.visualRange = LIGHT_RANGE;
     return this;
   }
 
   extinguish() {
     this.setFeedBits(this.getFeedBits() & ~HEAT);
+    this.lightEmitter.lightIntensity = 0;
+    this.lightEmitter.active = 0;
     return this;
   }
 
@@ -44,11 +52,23 @@ export class BurningBox extends GameObject {
     this.setAlpha(1);
 
     this.rigidBody.static = config.static ? 1 : 0;
+    this.lightEmitter.active = 0;
+    this.lightEmitter.hasGlowSprite = 1;
+    this.lightEmitter.height = 0;
+    this.lightEmitter.glowHeightOffset = height * 0.25;
+    this.lightEmitter.lightIntensity = 0;
     this.feedLayer('fire');
     if (config.startIgnited) this.ignite();
+    else this.extinguish();
   }
 
-  tick() {
+  tick(dtRatio, deltaTime, accTime) {
+    if (this.getFeedBits() & HEAT) {
+      const t = (accTime || 0) * 0.001;
+      const flick = 1 + Math.sin(t * 8 + this.index) * 0.15 + Math.sin(t * 12.7 + this.index * 1.7) * 0.1;
+      this.lightEmitter.lightIntensity = Math.max(400, LIGHT_BASE * flick);
+    }
+
     if (!Mouse.isButton0Pressed && !Keyboard.isPressed('f')) return;
 
     const dx = this.x - Mouse.x;

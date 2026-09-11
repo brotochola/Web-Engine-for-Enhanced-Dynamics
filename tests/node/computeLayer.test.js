@@ -22,7 +22,11 @@ import {
   FEED_SLOT_NONE,
   ShapeType,
   COMPUTE_FLAG_STATIC,
+  COMPUTE_LAYER_DEFAULT_MAX_PARTICLES,
 } from '../../src/core/ConfigDefaults.js';
+import { LiquidFun } from '../../src/core/LiquidFun.js';
+import { liquidFunRenderByteSize } from '../../src/core/liquidFunRender.js';
+import { packLiquidFunParticles, PARTICLE_FLOATS } from '../../src/workers/LiquidFunParticlePack.js';
 
 const BUILT_IN_LAYERS = {
   BACKGROUND: {},
@@ -55,9 +59,11 @@ test('compute layer metadata: no sprite queue, BOX2D_BODIES default, maxBodies 5
     assert.equal(Layer.isComputeLayer(fire.id), true);
     assert.equal(fire.computeSource, LAYER_COMPUTE_SOURCE.BOX2D_BODIES);
     assert.equal(fire.compute.maxBodies, 512);
+    assert.equal(fire.compute.maxParticles, 0);
     assert.equal(fire.compute.size.scale, 1);
     assert.equal(Layer._metadata.layers[fire.id].hasRenderQueue, false);
     assert.equal(Layer._metadata.layers[fire.id].maxBodies, 512);
+    assert.equal(Layer._metadata.layers[fire.id].maxParticles, 0);
     assert.equal(Layer._feedMax[fire.id], 512);
     assert.equal(Layer.fire, fire);
   } finally {
@@ -313,6 +319,7 @@ const FIRE_TEX = [
   { name: 'p', format: 'r32float', pingPong: true },
   { name: 'stamp', format: 'rgba8unorm' },
   { name: 'vel', format: 'rgba32float' },
+  { name: 'fuel', format: 'rgba32float' },
   { name: 'pack', format: 'rgba8unorm', look: true },
 ];
 const FIRE_BUF = [{ name: 'swirls', strideFloats: 8, count: 200 }];
@@ -333,6 +340,8 @@ test('inferComputeLayout: fireStamp / fireFluid / firePack', () => {
   assert.equal(stamp[1][0].ping, 'write');
   assert.equal(stamp[1][1].resource, 'vel');
   assert.equal(stamp[1][1].storageTexture.format, 'rgba32float');
+  assert.equal(stamp[1][2].resource, 'fuel');
+  assert.equal(stamp[1][2].storageTexture.format, 'rgba32float');
 
   const fluid = inferComputeLayout(preluded('fireFluid.wgsl'), ctx);
   assert.equal(fluid[0][0].resource, 'params');
@@ -345,6 +354,8 @@ test('inferComputeLayout: fireStamp / fireFluid / firePack', () => {
   assert.equal(fluid[1][0].texture.sampleType, 'unfilterable-float');
   assert.equal(fluid[1][4].resource, 'stamp');
   assert.equal(fluid[1][4].texture.sampleType, 'float');
+  assert.equal(fluid[1][6].resource, 'fuel');
+  assert.equal(fluid[1][6].texture.sampleType, 'unfilterable-float');
   assert.equal(fluid[2][0].resource, 'u');
   assert.equal(fluid[2][0].ping, 'write');
   assert.equal(fluid[2][0].storageTexture.format, 'r32float');
@@ -355,6 +366,13 @@ test('inferComputeLayout: fireStamp / fireFluid / firePack', () => {
   assert.equal(pack[1][1].resource, 'stamp');
   assert.equal(pack[2][0].resource, 'pack');
   assert.equal(pack[2][0].storageTexture.format, 'rgba8unorm');
+
+  const particles = inferComputeLayout(preluded('fireParticles.wgsl'), ctx);
+  assert.equal(particles[0][0].resource, 'params');
+  assert.equal(particles[0][1].resource, 'particles');
+  assert.equal(particles[0][1].buffer, 'read-only-storage');
+  assert.equal(particles[1][0].resource, 'fuel');
+  assert.equal(particles[1][0].ping, 'write');
 });
 
 test('inferComputeLayout: heatWrite without heat texture throws', () => {
@@ -363,6 +381,16 @@ test('inferComputeLayout: heatWrite without heat texture throws', () => {
     () => inferComputeLayout(wgsl, { textures: FIRE_TEX, buffers: FIRE_BUF }),
     /WeedJS: unknown compute resource "heatWrite"/
   );
+});
+
+test('inferComputeLayout: particles alias', () => {
+  const wgsl = `
+    @group(0) @binding(0) var<uniform> frame: FrameData;
+    @group(0) @binding(1) var<storage, read> particles: array<LfParticle>;
+  `;
+  const groups = inferComputeLayout(wgsl, { textures: [], buffers: [] });
+  assert.equal(groups[0][0].resource, 'params');
+  assert.equal(groups[0][1].resource, 'particles');
 });
 
 test('inferComputeLayout: frame and shapes aliases', () => {
@@ -402,9 +430,11 @@ test('world-fixed lattice: no camera-relative origin/shift, cell_active gates th
   const fluid = readFileSync(join(SHADER_DIR, 'fireFluid.wgsl'), 'utf8');
   const stamp = readFileSync(join(SHADER_DIR, 'fireStamp.wgsl'), 'utf8');
   const look = readFileSync(join(SHADER_DIR, 'fireLook.wgsl'), 'utf8');
-  for (const src of [fluid, stamp, look]) {
+  const particles = readFileSync(join(SHADER_DIR, 'fireParticles.wgsl'), 'utf8');
+  for (const src of [fluid, stamp, look, particles]) {
     assert.equal(/lattice_origin|lattice_shift/.test(src), false);
   }
+  assert.match(particles, /fn cell_active\(id: vec2<i32>\)/);
   assert.equal(/fn shift_swirls/.test(fluid), false);
   assert.match(fluid, /fn cell_active\(id: vec2<i32>\)/);
   assert.match(stamp, /fn cell_active\(id: vec2<i32>\)/);
@@ -429,6 +459,11 @@ test('fire stamp: burning crust is live fluid; inert solids push; ember overlays
   assert.match(stamp, /uStampOuter/);
   assert.match(stamp, /burnSolid/);
   assert.match(stamp, /uEmberPad/);
+  assert.match(stamp, /isBlow/);
+  assert.match(stamp, /isJet/);
+  assert.match(stamp, /fuelWrite/);
+  assert.match(fluid, /fuel\.r > 0\.5/);
+  assert.match(fluid, /uLfDrive/);
   assert.match(fluid, /fn inert_solid/);
   assert.match(fluid, /fn push_from_solid/);
   assert.match(pack, /let ember = clamp\(mark\.b/);
@@ -511,4 +546,170 @@ test('layerN: kindling negative scroll + +uTime*scroll moves uv.y toward screen 
   const offsetY = (time, scroll) => time * scroll;
   assert.ok(offsetY(1, -0.35) < 0);
   assert.ok(offsetY(1, 0.35) > 0);
+});
+
+test('compute layer: source liquidFun defaults maxParticles to 4096', () => {
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      {
+        fire: {
+          shader: {
+            fragment: 'fireLook',
+            compute: { source: 'fireFluid', passes: [{ entry: 'main' }] },
+            source: LAYER_COMPUTE_SOURCE.LIQUID_FUN,
+          },
+        },
+      },
+      BUILT_IN_LAYERS,
+      true
+    );
+    const fire = Layer.get('fire');
+    assert.equal(fire.computeSource, LAYER_COMPUTE_SOURCE.LIQUID_FUN);
+    assert.equal(fire.compute.maxParticles, COMPUTE_LAYER_DEFAULT_MAX_PARTICLES);
+    assert.equal(Layer._metadata.layers[fire.id].maxParticles, COMPUTE_LAYER_DEFAULT_MAX_PARTICLES);
+  } finally {
+    Layer.reset();
+  }
+});
+
+test('compute layer: dispatchFrom particles round-trips', () => {
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      {
+        fire: {
+          shader: {
+            fragment: 'fireLook',
+            compute: {
+              source: 'fireFluid',
+              passes: [
+                { entry: 'raster_particles', source: 'fireParticles', workgroup: [64], dispatchFrom: 'particles' },
+              ],
+            },
+            maxParticles: 4096,
+          },
+        },
+      },
+      BUILT_IN_LAYERS,
+      true
+    );
+    const fire = Layer.get('fire');
+    assert.equal(fire.compute.maxParticles, 4096);
+    assert.equal(fire.compute.passes[0].dispatchFrom, 'particles');
+    assert.deepEqual(fire.compute.passes[0].workgroup, [64]);
+  } finally {
+    Layer.reset();
+  }
+});
+
+function makeLfHeap(n) {
+  const floatsStart = 16;
+  const sab = new SharedArrayBuffer(floatsStart + n * 5 * 4);
+  return {
+    sab,
+    n,
+    countByteOffset: 0,
+    xByteOffset: floatsStart,
+    yByteOffset: floatsStart + n * 4,
+    vxByteOffset: floatsStart + n * 8,
+    vyByteOffset: floatsStart + n * 12,
+    alphaByteOffset: floatsStart + n * 16,
+  };
+}
+
+test('packLiquidFunParticles: HEAP x/y/vx/vy into SSBO', () => {
+  const n = 4;
+  const heap = makeLfHeap(n);
+  try {
+    LiquidFun.unbindSabs();
+    LiquidFun.bindHeapPose({
+      sab: heap.sab,
+      maxCount: n,
+      countByteOffset: heap.countByteOffset,
+      xByteOffset: heap.xByteOffset,
+      yByteOffset: heap.yByteOffset,
+      vxByteOffset: heap.vxByteOffset,
+      vyByteOffset: heap.vyByteOffset,
+      alphaByteOffset: heap.alphaByteOffset,
+    });
+    const views = LiquidFun.getViews();
+    views.count[0] = 2;
+    views.x[0] = 10;
+    views.y[0] = 20;
+    views.vx[0] = 3;
+    views.vy[0] = 4;
+    views.x[1] = 50;
+    views.y[1] = 60;
+    views.vx[1] = -1;
+    views.vy[1] = 8;
+    const out = new Float32Array(8 * PARTICLE_FLOATS);
+    const packed = packLiquidFunParticles(1, out, 8);
+    assert.equal(packed.particleCount, 2);
+    assert.equal(out[0], 10);
+    assert.equal(out[1], 20);
+    assert.equal(out[2], 3);
+    assert.equal(out[3], 4);
+    assert.equal(out[4], 50);
+    assert.equal(out[5], 60);
+    assert.equal(out[6], -1);
+    assert.equal(out[7], 8);
+  } finally {
+    LiquidFun.unbindSabs();
+  }
+});
+
+test('packLiquidFunParticles: layerId 0 or this compute layer; cap overflow', () => {
+  const n = 4;
+  const heap = makeLfHeap(n);
+  const render = new SharedArrayBuffer(liquidFunRenderByteSize(n));
+  try {
+    LiquidFun.unbindSabs();
+    LiquidFun.bindSabs({ render, maxCount: n });
+    LiquidFun.bindHeapPose({
+      sab: heap.sab,
+      maxCount: n,
+      countByteOffset: heap.countByteOffset,
+      xByteOffset: heap.xByteOffset,
+      yByteOffset: heap.yByteOffset,
+      vxByteOffset: heap.vxByteOffset,
+      vyByteOffset: heap.vyByteOffset,
+      alphaByteOffset: heap.alphaByteOffset,
+    });
+    const views = LiquidFun.getViews();
+    views.count[0] = 3;
+    views.x[0] = 1;
+    views.y[0] = 2;
+    views.vx[0] = 0;
+    views.vy[0] = 0;
+    views.x[1] = 3;
+    views.y[1] = 4;
+    views.x[2] = 5;
+    views.y[2] = 6;
+    views.layerId[0] = 0;
+    views.layerId[1] = 9;
+    views.layerId[2] = 3;
+    const out = new Float32Array(8 * PARTICLE_FLOATS);
+    const packed = packLiquidFunParticles(3, out, 8);
+    assert.equal(packed.particleCount, 2);
+    assert.equal(out[0], 1);
+    assert.equal(out[4], 5);
+    const capped = packLiquidFunParticles(3, out, 1);
+    assert.equal(capped.particleCount, 1);
+    assert.equal(packLiquidFunParticles(3, out, 0).particleCount, 0);
+  } finally {
+    LiquidFun.unbindSabs();
+  }
+});
+
+test('burningBoxesScene: landscape bg + particle fuel pass', () => {
+  const scene = readFileSync(
+    join(SHADER_DIR, '../burningBoxesScene.js'),
+    'utf8'
+  );
+  assert.match(scene, /setBackground\(\{ texture: 'landscape'/);
+  assert.match(scene, /zoomParallax: 0\.35/);
+  assert.match(scene, /background_lanscape\.jpg/);
+  assert.match(scene, /dispatchFrom: 'particles'/);
+  assert.match(scene, /maxParticles: FIRE_LF_MAX/);
 });

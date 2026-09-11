@@ -17,6 +17,7 @@ static assets = {
     fireFluid: '/shaders/fireFluid.wgsl',
     fireStamp: '/shaders/fireStamp.wgsl',
     firePack: '/shaders/firePack.wgsl',
+    fireParticles: '/shaders/fireParticles.wgsl',
   },
 };
 
@@ -37,6 +38,7 @@ static config = {
           size: { width: Math.ceil(worldWidth / FIRE_CELL_SIZE), height: Math.ceil(worldHeight / FIRE_CELL_SIZE) },
           passes: [
             { entry: 'raster_stamp', source: 'fireStamp' },
+            { entry: 'raster_particles', source: 'fireParticles', workgroup: [64], dispatchFrom: 'particles' },
             { entry: 'apply_stamp', source: 'fireFluid', swap: ['t'] },
             { entry: 'pack_heat', source: 'firePack' },
           ],
@@ -47,12 +49,14 @@ static config = {
             { name: 'p', format: 'r32float', pingPong: true },
             { name: 'stamp', format: 'rgba8unorm' },
             { name: 'vel', format: 'rgba32float' },
+            { name: 'fuel', format: 'rgba32float' },
             { name: 'pack', format: 'rgba8unorm', look: true },
           ],
           buffers: [{ name: 'swirls', strideFloats: 8, count: 200 }],
         },
         source: LAYER_COMPUTE_SOURCE.BOX2D_BODIES,
         maxBodies: 512,
+        maxParticles: 4096,
         uniforms: {
           uRise: { value: 1.2, type: 'f32' },
           uSmokeSplit: { value: 0.06, type: 'f32' },
@@ -80,7 +84,11 @@ Declared compute textures are allocated at a **pixel extent**. Independent of `l
 
 Same idea as the look pass: `scale` is resolution. Rebuild only when that pixel size changes (window resize). A world-fixed lattice (fixed world-unit cell size, whole-world extent, viewport+margin gating) is scene WGSL + scene uniforms sized through the plain `{ width, height }` mode above — not an engine size concept. See the "World-fixed lattice pattern" section below.
 
-`maxBodies` is the feeder SSBO cap (default 512). Overflow clamps and warns once.
+`maxBodies` is the collider feeder SSBO cap (default 512). Overflow clamps and warns once.
+
+`maxParticles` (default **0**) packs LiquidFun HEAP particles into the engine `particles` SSBO (`x,y,vx,vy`). `0` = off. Set `shader.source: LAYER_COMPUTE_SOURCE.LIQUID_FUN` for a particle-only layer (default cap 4096 if `maxParticles` is omitted). Particles with `layerId === 0` or `layerId ===` this compute layer are packed; others are skipped. Scene WGSL should scatter from particles (`dispatchFrom: 'particles'`) — do not loop particles inside the per-cell stamp.
+
+Live packed count is `frame.particleCount` (FrameData prefix slot 15).
 
 ## `setLayer` vs `feedLayer`
 
@@ -113,7 +121,7 @@ velX, velY, omega, vertStart, vertCount, prevX, prevY, pad
 
 `Body.flags`: bit 0+ are shader-defined. Engine ORs **bit 1** (`COMPUTE_FLAG_STATIC = 2`) from `RigidBody.static`, **bit 2** (`COMPUTE_FLAG_SWEEP = 4`) for motion-sweep ghosts.
 
-Engine bind resources: `params`, `bodies`, `verts`. Scene storage buffers use the names in `compute.buffers`.
+Engine bind resources: `params`, `bodies`, `verts`, `particles`. Scene storage buffers use the names in `compute.buffers`.
 
 ## Bind layouts
 
@@ -127,7 +135,7 @@ Naming: after stripping a trailing `Texture`, `Write`, `Read`, or `Tex` (longest
 
 Unknown identifier → `WeedJS:` error with group and binding. `compute.layouts` still wins if present (escape hatch). Default `simple` (params + bodies + verts, `out` rgba8unorm write) only when a module has no `@group` bindings.
 
-Workgroup: **8×8** unless `passes[].workgroup` is set (e.g. `[64]`). `dispatchFrom: 'swirls'` dispatches `ceil(count/workgroupX)` in X from that buffer’s `count`.
+Workgroup: **8×8** unless `passes[].workgroup` is set (e.g. `[64]`). `dispatchFrom: 'swirls'` dispatches `ceil(count/workgroupX)` in X from that buffer’s `count`. `dispatchFrom: 'particles'` uses the **live** packed LiquidFun count.
 
 Pass extras:
 
@@ -148,6 +156,7 @@ The engine prepends a prelude to every compute WGSL and every WGSL look shader. 
 
 - `struct FrameData` + `@group(0) @binding(0) var<uniform> frame: FrameData;` (compute)
 - `struct Body` (compute) — matches the `BODY_FLOATS = 16` pack
+- `struct LfParticle` (compute) — matches the `PARTICLE_FLOATS = 4` pack (`x,y,vx,vy`)
 - `struct GlobalUniforms` / `LocalUniforms` / `CustomUniforms` / `VertexOut`, the `customUniforms` / `uTexture` / `uSampler` bindings (look)
 
 Scene WGSL starts directly at its own structs/bindings/functions and reads frame data as `frame.dt`, `frame.cameraX`, and scene uniforms as `frame.uRise` (compute) or `customUniforms.uRise` (look). Field names in the generated structs are the **exact config uniform names**, in SAB order — reordering config can never corrupt the layout.
@@ -168,7 +177,7 @@ Engine prefix (`ENGINE_FRAME_PREFIX_FLOATS = 16`), then memcpy `shader.uniforms`
 | 11     | time (seconds)                                                        |
 | 12–13  | prevCameraX, prevCameraY                                              |
 | 14     | prevZoom                                                              |
-| 15     | pad                                                                   |
+| 15     | particleCount (packed LiquidFun particles this frame)                |
 | 16+    | reserved look uniforms, then scene uniforms (map order, WGSL-aligned) |
 
 First frame copies current camera into prev so shift is 0. Ubo size is 16-byte aligned. SAB offsets follow WGSL uniform alignment (vec2 → 2 floats, vec3/vec4 → 4), so the generated struct matches byte-for-byte.

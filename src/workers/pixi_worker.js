@@ -40,6 +40,7 @@ import {
   writePolygonVerts,
 } from './visibility/AngularSweep.js';
 import { Layer } from '../core/Layer.js';
+import { coverBackgroundTransform } from '../core/coverBackground.js';
 import { TileMap } from '../core/TileMap.js';
 import {
   deriveViewportChunkSize,
@@ -264,6 +265,7 @@ class PixiRenderer extends AbstractWorker {
     this._rqIdxParticle = null;
     this._rqIdxGlow = null;
     this.backgroundSprite = null;
+    this._coverBackground = null;
 
     /** From renderer.autoGenerateMipmaps (default false) — applied at ImageSource create */
     this.autoGenerateMipmaps = RENDERER_DEFAULTS.autoGenerateMipmaps;
@@ -758,9 +760,13 @@ class PixiRenderer extends AbstractWorker {
 
     // Apply camera state to background (since it's not a child of the ENTITIES mesh)
     if (this.backgroundSprite) {
-      this.backgroundSprite.scale.set(zoom);
-      this.backgroundSprite.x = -cameraX * zoom;
-      this.backgroundSprite.y = -cameraY * zoom;
+      if (this._coverBackground) {
+        this._applyCoverBackgroundTransform();
+      } else {
+        this.backgroundSprite.scale.set(zoom);
+        this.backgroundSprite.x = -cameraX * zoom;
+        this.backgroundSprite.y = -cameraY * zoom;
+      }
     }
 
     // Apply camera state to tilemap background
@@ -2955,17 +2961,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
     }
 
+    if (this._coverBackground) this._applyCoverBackgroundTransform();
+
     console.log(`PIXI WORKER: Resized to ${width}x${height}`);
   }
 
   /**
    * Handle background change requests from Layer
-   * Supports: static, tiling, tilemap, or none
-   * @param {object} data - { type, layerId, requestId, textureId, tileScale, tilemapId, options }
+   * Supports: static, cover, tiling, tilemap, or none
+   * @param {object} data - { type, layerId, requestId, textureId, tileScale, tilemapId, options, parallaxX, parallaxY, margin, zoomParallax }
    */
   handleSetBackground(data) {
     console.log(`PIXI WORKER: handleSetBackground called with:`, data);
-    const { type, layerId, requestId, textureId, tileScale, tilemapId, options } = data;
+    const { type, layerId, requestId, textureId, tileScale, tilemapId, options, parallaxX, parallaxY, margin, zoomParallax } = data;
     const targetLayerName = Layer.getName(layerId) || 'BACKGROUND';
 
     if (targetLayerName !== 'BACKGROUND') {
@@ -2983,6 +2991,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.backgroundSprite.destroy();
       this.backgroundSprite = null;
     }
+    this._coverBackground = null;
 
     // Remove existing tilemap if any
     if (this.currentTilemap) {
@@ -3002,6 +3011,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     switch (type) {
       case 'static':
         this.createStaticBackground(textureId);
+        break;
+      case 'cover':
+        this.createCoverBackground(textureId, { parallaxX, parallaxY, margin, zoomParallax });
         break;
       case 'tiling':
         this.createTilingBackground(textureId, tileScale);
@@ -3071,6 +3083,48 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.pixiApp.stage.addChild(this.backgroundSprite);
 
     console.log(`PIXI WORKER: Static background set to "${textureId}"`);
+  }
+
+  /**
+   * Viewport-cover background: fills the canvas, extra size at zoom=1, scales with zoom.
+   */
+  createCoverBackground(textureId, { parallaxX, parallaxY, margin, zoomParallax } = {}) {
+    const texture = this.textures[textureId];
+    if (!texture) {
+      console.warn(`PIXI WORKER: Texture "${textureId}" not found for cover background`);
+      return;
+    }
+    this._coverBackground = { parallaxX, parallaxY, margin, zoomParallax };
+    this.backgroundSprite = new PIXI.Sprite(texture);
+    this._registerLayerDisplayObject('BACKGROUND', this.backgroundSprite);
+    this.pixiApp.stage.addChild(this.backgroundSprite);
+    this._applyCoverBackgroundTransform();
+    console.log(`PIXI WORKER: Cover background set to "${textureId}"`);
+  }
+
+  _applyCoverBackgroundTransform() {
+    const sprite = this.backgroundSprite;
+    const cfg = this._coverBackground;
+    if (!sprite || !cfg) return;
+    const tex = sprite.texture;
+    const t = coverBackgroundTransform({
+      canvasW: this.canvasWidth,
+      canvasH: this.canvasHeight,
+      texW: tex?.width || 1,
+      texH: tex?.height || 1,
+      zoom: this._renderZoom,
+      cameraX: this._renderCameraX,
+      cameraY: this._renderCameraY,
+      worldW: this.worldWidth,
+      worldH: this.worldHeight,
+      parallaxX: cfg.parallaxX,
+      parallaxY: cfg.parallaxY,
+      margin: cfg.margin,
+      zoomParallax: cfg.zoomParallax,
+    });
+    sprite.scale.set(t.scale);
+    sprite.x = t.x;
+    sprite.y = t.y;
   }
 
   /**
@@ -4075,7 +4129,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (cl.compute) {
         cl.compute.step(frameUniforms);
         if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
-          this.pixiApp.renderer.render({ container: cl.shaderMesh, target: cl.rtOut, clear: true });
+          this.pixiApp.renderer.render({
+            container: cl.shaderMesh,
+            target: cl.rtOut,
+            clear: true,
+            clearColor: [0, 0, 0, 0],
+          });
         }
       } else if (cl.densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN && cl.splatBatch) {
         const views = LiquidFun.getViews();
@@ -4157,7 +4216,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (cl.rt && densityMesh) {
         this.pixiApp.renderer.render({ container: densityMesh, target: cl.rt, clear: true });
         if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
-          this.pixiApp.renderer.render({ container: cl.shaderMesh, target: cl.rtOut, clear: true });
+          this.pixiApp.renderer.render({
+            container: cl.shaderMesh,
+            target: cl.rtOut,
+            clear: true,
+            clearColor: [0, 0, 0, 0],
+          });
         }
       }
     }

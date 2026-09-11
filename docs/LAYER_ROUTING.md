@@ -6,17 +6,21 @@ How any renderable type (entity, particle, decoration, bullet, light glow) can t
 
 ## Background: Layer-Owned Backgrounds
 
-Backgrounds are configured through Layer instances, not Scene methods. Every layer can have its own background (static texture, tiling sprite, or tilemap).
+Backgrounds are configured through `Scene.setBackground` (viewport-cover + parallax) or Layer instance methods (world-stretch static, tiling, tilemap). Cover mode posts through `Layer.BACKGROUND`.
 
 ### API
 
 ```javascript
 import { Layer } from '/src/core/Layer.js';
 
-// In scene preload() or create():
-await Layer.BACKGROUND.setTilemapBackground('myTilemap', { scale: 1 });
+this.setBackground({
+  texture: 'landscape',
+  parallax: 0.15,
+  zoomParallax: 0.35,
+  margin: 0.2,
+});
 
-// Other background types:
+await Layer.BACKGROUND.setTilemapBackground('myTilemap', { scale: 1 });
 Layer.BACKGROUND.setStaticBackground('sky_texture');
 Layer.BACKGROUND.setTilingBackground('clouds', 0.5);
 Layer.BACKGROUND.clearBackground();

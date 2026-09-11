@@ -32,7 +32,9 @@ import {
     LAYER_SCALE_MODE,
     LAYER_COMPUTE_SOURCE,
     COMPUTE_LAYER_DEFAULT_MAX_BODIES,
+    COMPUTE_LAYER_DEFAULT_MAX_PARTICLES,
 } from './ConfigDefaults.js';
+import { normalizeCoverBackgroundOptions } from './coverBackground.js';
 
 /**
  * Engine-reserved look uniforms, auto-declared on every custom shader layer
@@ -250,6 +252,36 @@ export class Layer {
             type: 'static',
             layerId: this.id,
             textureId,
+        });
+    }
+
+    /**
+     * Viewport-cover background (always fills the canvas, scales with zoom, optional pan/zoom parallax).
+     * Prefer Scene.setBackground() from scenes.
+     * @param {string|{texture?:string,textureId?:string,parallax?:number|{x?:number,y?:number},margin?:number,zoomParallax?:number}} textureOrOpts
+     */
+    setCoverBackground(textureOrOpts) {
+        if (!Layer._ensureBackgroundLayer(this)) {
+            return;
+        }
+        if (!Layer._postToRenderer) {
+            console.warn('Layer: renderer not connected');
+            return;
+        }
+        const opts = normalizeCoverBackgroundOptions(textureOrOpts);
+        if (!opts.texture) {
+            console.warn('Layer.setCoverBackground: texture is required');
+            return;
+        }
+        Layer._postBackgroundCommand({
+            msg: 'setBackground',
+            type: 'cover',
+            layerId: this.id,
+            textureId: opts.texture,
+            parallaxX: opts.parallaxX,
+            parallaxY: opts.parallaxY,
+            margin: opts.margin,
+            zoomParallax: opts.zoomParallax,
         });
     }
 
@@ -510,11 +542,7 @@ export class Layer {
                 _densitySource: densitySource,
                 _compute: compute,
                 _computeSource: compute
-                    ? (config.shader?.source === LAYER_COMPUTE_SOURCE.BOX2D_BODIES
-                        || config.shader?.source === 'box2dBodies'
-                        || !config.shader?.source
-                        ? LAYER_COMPUTE_SOURCE.BOX2D_BODIES
-                        : config.shader.source)
+                    ? Layer._normalizeComputeSource(config.shader)
                     : null,
                 _splat: densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
                     ? Layer._normalizeSplat(config.shader, densitySource)
@@ -570,6 +598,7 @@ export class Layer {
      * @returns {null|{
      *   passes: Array<{entry:string, source?:string, layout?:string, iterate?:string|number, swap?:string[], workgroup?:number[], when?:string, dispatchFrom?:string}>,
      *   maxBodies: number,
+     *   maxParticles: number,
      *   size: {scale:number, width?:number, height?:number},
      *   textures: Array<{name:string, format:string, pingPong:boolean, look:boolean}>,
      *   buffers: Array<{name:string, strideFloats:number, count:number}>,
@@ -581,6 +610,7 @@ export class Layer {
         if (!raw) return null;
         const size = Layer._normalizeComputeSize(typeof raw === 'object' ? raw.size : null);
         const maxBodies = Layer._normalizeMaxBodies(shader);
+        const maxParticles = Layer._normalizeMaxParticles(shader);
         if (typeof raw === 'string') {
             return {
                 passes: [{
@@ -594,6 +624,7 @@ export class Layer {
                     dispatchFrom: null,
                 }],
                 maxBodies,
+                maxParticles,
                 size,
                 textures: [],
                 buffers: [],
@@ -622,6 +653,7 @@ export class Layer {
         return {
             passes,
             maxBodies,
+            maxParticles,
             size,
             textures: Layer._normalizeComputeTextures(raw.textures),
             buffers: Layer._normalizeComputeBuffers(raw.buffers),
@@ -731,6 +763,31 @@ export class Layer {
     static _normalizeMaxBodies(shader) {
         const n = shader?.maxBodies;
         return Number.isFinite(n) && n > 0 ? (n | 0) : COMPUTE_LAYER_DEFAULT_MAX_BODIES;
+    }
+
+    static _normalizeMaxParticles(shader) {
+        const n = shader?.maxParticles;
+        if (Number.isFinite(n)) return Math.max(0, n | 0);
+        const src = shader?.source;
+        if (src === LAYER_COMPUTE_SOURCE.LIQUID_FUN || src === 'liquidFun') {
+            return COMPUTE_LAYER_DEFAULT_MAX_PARTICLES;
+        }
+        return 0;
+    }
+
+    static _normalizeComputeSource(shader) {
+        const src = shader?.source;
+        if (src === LAYER_COMPUTE_SOURCE.LIQUID_FUN || src === 'liquidFun') {
+            return LAYER_COMPUTE_SOURCE.LIQUID_FUN;
+        }
+        if (
+            src === LAYER_COMPUTE_SOURCE.BOX2D_BODIES
+            || src === 'box2dBodies'
+            || !src
+        ) {
+            return LAYER_COMPUTE_SOURCE.BOX2D_BODIES;
+        }
+        return src;
     }
 
     static isComputeLayer(layerId) {
@@ -944,6 +1001,7 @@ export class Layer {
                 compute: layer._compute || null,
                 computeSource: layer._computeSource || null,
                 maxBodies: layer._compute?.maxBodies || 0,
+                maxParticles: layer._compute?.maxParticles || 0,
             };
 
             if (config.shader) {

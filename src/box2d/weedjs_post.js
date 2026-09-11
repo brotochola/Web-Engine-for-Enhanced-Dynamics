@@ -1545,6 +1545,8 @@
       countByteOffset: world.getParticleCountByteOffset() | 0,
       xByteOffset,
       yByteOffset: world.getParticleYByteOffset() | 0,
+      vxByteOffset: (world.getParticleVxByteOffset && world.getParticleVxByteOffset()) || 0,
+      vyByteOffset: (world.getParticleVyByteOffset && world.getParticleVyByteOffset()) || 0,
       alphaByteOffset:
         (world.getParticleAlphaByteOffset && world.getParticleAlphaByteOffset()) || 0,
       weightByteOffset:
@@ -2113,6 +2115,8 @@
         countByteOffset: world.getParticleCountByteOffset() | 0,
         xByteOffset: world.getParticleXByteOffset() | 0,
         yByteOffset: world.getParticleYByteOffset() | 0,
+        vxByteOffset: (world.getParticleVxByteOffset && world.getParticleVxByteOffset()) || 0,
+        vyByteOffset: (world.getParticleVyByteOffset && world.getParticleVyByteOffset()) || 0,
         alphaByteOffset: (world.getParticleAlphaByteOffset && world.getParticleAlphaByteOffset()) || 0,
         weightByteOffset:
           (world.getParticleWeightByteOffset && world.getParticleWeightByteOffset()) || 0,

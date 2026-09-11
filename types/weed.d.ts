@@ -1028,6 +1028,17 @@ export declare class Scene {
   init(): Promise<void>;
   exposeGlobalReferences(): void;
   preload(): void | Promise<void>;
+  setBackground(
+    textureOrOpts:
+      | string
+      | {
+          texture?: string;
+          textureId?: string;
+          parallax?: number | { x?: number; y?: number };
+          margin?: number;
+          zoomParallax?: number;
+        }
+  ): void;
   create(): void | Promise<void>;
   update(dtRatio: number, deltaTime: number, accumulatedTime: number, frameNumber: number): void;
   onMessageFromGameObject(
@@ -1916,6 +1927,17 @@ export declare class Layer {
   setSplatRadius(worldPx: number): this;
 
   setStaticBackground(textureId: string): void;
+  setCoverBackground(
+    textureOrOpts:
+      | string
+      | {
+          texture?: string;
+          textureId?: string;
+          parallax?: number | { x?: number; y?: number };
+          margin?: number;
+          zoomParallax?: number;
+        }
+  ): void;
   setTilingBackground(textureId: string, tileScale?: number): void;
   setTilemapBackground(tilemapId: string, options?: Record<string, unknown>): Promise<void>;
   clearBackground(): void;

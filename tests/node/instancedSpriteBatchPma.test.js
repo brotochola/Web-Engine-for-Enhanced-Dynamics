@@ -142,3 +142,11 @@ test('lighting GLSL loop bound is MAX_LIGHTS token', () => {
   assert.match(pixiSrc, /instanced_sprite\.wgsl/);
   assert.match(pixiSrc, /instanced_sprite\.vert\.glsl/);
 });
+
+test('lighting WGSL reconstructs world from framebuffer Y without flip', () => {
+  const glsl = readFileSync(join(dir, '../../src/shaders/lighting_basic.frag.glsl'), 'utf8');
+  const wgsl = readFileSync(join(dir, '../../src/shaders/lighting_basic.wgsl'), 'utf8');
+  assert.match(glsl, /normCoord = gl_FragCoord\.xy \/ uViewport/);
+  assert.match(wgsl, /normCoord = in\.position\.xy \/ vp/);
+  assert.doesNotMatch(wgsl, /1\.0 - in\.position\.y/);
+});

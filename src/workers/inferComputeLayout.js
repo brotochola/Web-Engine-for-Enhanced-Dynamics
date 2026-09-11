@@ -9,6 +9,7 @@ const ENGINE_ALIASES = {
   bodies: 'bodies',
   shapes: 'bodies',
   verts: 'verts',
+  particles: 'particles',
 };
 
 const SUFFIXES = ['Texture', 'Write', 'Read', 'Tex'];
@@ -49,7 +50,7 @@ function stemResource(ident) {
 }
 
 function knownResource(name, textures, buffers) {
-  if (name === 'params' || name === 'bodies' || name === 'verts') return true;
+  if (name === 'params' || name === 'bodies' || name === 'verts' || name === 'particles') return true;
   for (let i = 0; i < textures.length; i++) {
     if (textures[i].name === name) return true;
   }

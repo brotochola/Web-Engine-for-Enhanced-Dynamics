@@ -43,8 +43,10 @@ fn mainVert(@location(0) aPosition: vec2<f32>) -> VertexOut {
 
 @fragment
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
+  // Framebuffer origin is top-left (WebGPU + Pixi Y-down). Same as GLSL
+  // gl_FragCoord / uViewport — do not invert Y (that mirrors lights).
   let vp = uniforms.uViewport;
-  let normCoord = vec2<f32>(in.position.x / vp.x, 1.0 - in.position.y / vp.y);
+  let normCoord = in.position.xy / vp;
   let screenPos = normCoord * uniforms.uFullCanvasSize;
   let fragWorld = (screenPos / uniforms.uZoom) + uniforms.uCameraPos;
   var totalLight = vec3<f32>(uniforms.uBaseAmbient);

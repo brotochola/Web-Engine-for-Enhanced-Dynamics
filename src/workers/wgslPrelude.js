@@ -26,13 +26,13 @@ export const FRAME_PREFIX_FIELDS = [
   'prevCameraX',
   'prevCameraY',
   'prevZoom',
-  'padFrame',
+  'particleCount',
 ];
 
 const WGSL_TYPE_RE = /^(f32|i32|u32|vec[234]<f32>)$/;
 
 const COMPUTE_REDECLARE_RE =
-  /struct\s+(FrameData|SimParams|Body|ShapeDescriptor)\s*\{|var\s*<\s*uniform\s*>\s*(frame|sim)\s*:/;
+  /struct\s+(FrameData|SimParams|Body|LfParticle|ShapeDescriptor)\s*\{|var\s*<\s*uniform\s*>\s*(frame|sim)\s*:/;
 
 const LOOK_REDECLARE_RE =
   /struct\s+(GlobalUniforms|LocalUniforms|CustomUniforms|VertexOut)\s*\{|var\s*<\s*uniform\s*>\s*(globalUniforms|localUniforms|customUniforms)\s*:|var\s+(uTexture|uSampler)\s*:/;
@@ -69,6 +69,10 @@ export function buildComputePrelude(uniformMap, uniformTypes) {
   s += '  velX: f32,\n  velY: f32,\n  omega: f32,\n';
   s += '  vertStart: f32,\n  vertCount: f32,\n';
   s += '  prevX: f32,\n  prevY: f32,\n  pad: f32,\n';
+  s += '}\n\n';
+  // Matches PARTICLE_FLOATS pack in LiquidFunParticlePack.js (4 floats).
+  s += 'struct LfParticle {\n';
+  s += '  x: f32,\n  y: f32,\n  vx: f32,\n  vy: f32,\n';
   s += '}\n\n';
   return s;
 }
@@ -110,7 +114,7 @@ export function prependComputePrelude(code, uniformMap, uniformTypes) {
   const m = COMPUTE_REDECLARE_RE.exec(code);
   if (m) {
     throw new Error(
-      `WeedJS: compute shader declares "${m[0]}" — the engine prelude generates FrameData, Body and the "frame" binding. Delete the declaration and use frame.<field>.`
+      `WeedJS: compute shader declares "${m[0]}" — the engine prelude generates FrameData, Body, LfParticle and the "frame" binding. Delete the declaration and use frame.<field>.`
     );
   }
   return buildComputePrelude(uniformMap, uniformTypes) + code;

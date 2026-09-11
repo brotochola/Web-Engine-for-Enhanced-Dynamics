@@ -26,6 +26,7 @@ test('compute prelude: FrameData prefix fields + frame binding + Body', () => {
   assert.ok(out.includes('struct FrameData {'));
   assert.ok(out.includes('@group(0) @binding(0) var<uniform> frame: FrameData;'));
   assert.ok(out.includes('struct Body {'));
+  assert.ok(out.includes('struct LfParticle {'));
   assert.ok(out.includes('vertStart: f32,'));
   assert.ok(out.includes('prevX: f32,'));
   assert.ok(out.includes('prevY: f32,'));
@@ -44,13 +45,14 @@ test('compute prelude: tail fields in map offset order with config names/types',
   const iCount = out.indexOf('uCount: f32,');
   assert.ok(iRise > 0 && iTint > iRise && iCount > iTint, 'tail order must follow offsets');
   // prefix ends before tail starts
-  assert.ok(out.indexOf('padFrame: f32,') < iRise);
+  assert.ok(out.indexOf('particleCount: f32,') < iRise);
 });
 
 test('compute prelude guard: hand-written structs/bindings throw', () => {
   assert.throws(() => prependComputePrelude('struct SimParams {\n  dt: f32,\n}\n', null, null), /WeedJS:/);
   assert.throws(() => prependComputePrelude('struct FrameData {\n  dt: f32,\n}\n', null, null), /WeedJS:/);
   assert.throws(() => prependComputePrelude('struct Body {\n  posX: f32,\n}\n', null, null), /WeedJS:/);
+  assert.throws(() => prependComputePrelude('struct LfParticle {\n  x: f32,\n}\n', null, null), /WeedJS:/);
   assert.throws(
     () => prependComputePrelude('@group(0) @binding(0) var<uniform> frame: FrameData;', null, null),
     /WeedJS:/

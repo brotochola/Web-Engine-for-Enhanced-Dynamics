@@ -152,7 +152,7 @@ export class LiquidFun {
 
   /**
    * Bind live particle pose onto the WASM HEAP SAB (same pattern as Transform).
-   * @param {{ sab: SharedArrayBuffer, countByteOffset: number, xByteOffset: number, yByteOffset: number, alphaByteOffset: number, weightByteOffset?: number, maxCount: number }} payload
+   * @param {{ sab: SharedArrayBuffer, countByteOffset: number, xByteOffset: number, yByteOffset: number, vxByteOffset?: number, vyByteOffset?: number, alphaByteOffset: number, weightByteOffset?: number, maxCount: number }} payload
    */
   static bindHeapPose(payload) {
     if (!payload?.sab || !(payload.maxCount > 0)) {
@@ -160,6 +160,8 @@ export class LiquidFun {
         _particleViews.count = _renderViews?.count ?? null;
         _particleViews.x = _renderViews?.x ?? null;
         _particleViews.y = _renderViews?.y ?? null;
+        _particleViews.vx = null;
+        _particleViews.vy = null;
         _particleViews.alpha = _renderViews?.alpha ?? null;
         _particleViews.weight = null;
       }
@@ -170,11 +172,15 @@ export class LiquidFun {
     const count = new Int32Array(sab, payload.countByteOffset | 0, 1);
     const x = new Float32Array(sab, payload.xByteOffset | 0, n);
     const y = new Float32Array(sab, payload.yByteOffset | 0, n);
+    const vx =
+      payload.vxByteOffset > 0 ? new Float32Array(sab, payload.vxByteOffset | 0, n) : null;
+    const vy =
+      payload.vyByteOffset > 0 ? new Float32Array(sab, payload.vyByteOffset | 0, n) : null;
     const alpha =
       payload.alphaByteOffset > 0 ? new Float32Array(sab, payload.alphaByteOffset | 0, n) : null;
     const weight =
       payload.weightByteOffset > 0 ? new Float32Array(sab, payload.weightByteOffset | 0, n) : null;
-    _particleViews = LiquidFun._mergeParticleViews({ count, x, y, alpha, weight, maxCount: n });
+    _particleViews = LiquidFun._mergeParticleViews({ count, x, y, vx, vy, alpha, weight, maxCount: n });
   }
 
   static _mergeParticleViews(heap) {
@@ -183,6 +189,8 @@ export class LiquidFun {
       count: heap.count,
       x: heap.x,
       y: heap.y,
+      vx: heap.vx || null,
+      vy: heap.vy || null,
       alpha: heap.alpha || thin?.alpha || null,
       weight: heap.weight || null,
       scaleX: thin?.scaleX || null,
@@ -216,6 +224,8 @@ export class LiquidFun {
         count: _renderViews.count,
         x: _renderViews.x,
         y: _renderViews.y,
+        vx: null,
+        vy: null,
         alpha: _renderViews.alpha,
         weight: null,
         scaleX: _renderViews.scaleX,

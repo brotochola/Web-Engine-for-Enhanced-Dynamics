@@ -29,6 +29,12 @@ test('background commands are only posted for Layer.BACKGROUND', async () => {
     Layer._postToRenderer = (msg) => posted.push(msg);
 
     Layer.BACKGROUND.setStaticBackground('sky');
+    Layer.BACKGROUND.setCoverBackground({
+      texture: 'landscape',
+      parallax: { x: 0.2, y: 0.1 },
+      margin: 0.25,
+      zoomParallax: 0.35,
+    });
     Layer.BACKGROUND.setTilingBackground('clouds', 0.5);
     const pendingBackgroundPromise = Layer.BACKGROUND.setTilemapBackground('roads', { scale: 1 });
     Layer.BACKGROUND.clearBackground();
@@ -38,17 +44,23 @@ test('background commands are only posted for Layer.BACKGROUND', async () => {
     await Layer.ENTITIES.setTilemapBackground('bad-map', { scale: 3 });
     Layer.ENTITIES.clearBackground();
 
-    assert.equal(posted.length, 4);
+    assert.equal(posted.length, 5);
     assert.ok(pendingBackgroundPromise instanceof Promise);
     assert.deepEqual(
       posted.map((msg) => ({ type: msg.type, layerId: msg.layerId })),
       [
         { type: 'static', layerId: Layer.BACKGROUND.id },
+        { type: 'cover', layerId: Layer.BACKGROUND.id },
         { type: 'tiling', layerId: Layer.BACKGROUND.id },
         { type: 'tilemap', layerId: Layer.BACKGROUND.id },
         { type: 'none', layerId: Layer.BACKGROUND.id },
       ]
     );
+    assert.equal(posted[1].textureId, 'landscape');
+    assert.equal(posted[1].parallaxX, 0.2);
+    assert.equal(posted[1].parallaxY, 0.1);
+    assert.equal(posted[1].margin, 0.25);
+    assert.equal(posted[1].zoomParallax, 0.35);
     assert.equal(warnings.length, 4);
     assert.ok(warnings.every((message) => message.includes('Layer.BACKGROUND')));
   } finally {

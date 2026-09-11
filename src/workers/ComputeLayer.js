@@ -7,6 +7,7 @@
  * Ceiling: createBindGroup per swap. Upgrade: 16-combo cache.
  */
 import { packBox2dBodies, BODY_FLOATS } from './Box2dBodyPack.js';
+import { packLiquidFunParticles, PARTICLE_FLOATS } from './LiquidFunParticlePack.js';
 import { Layer } from '../core/Layer.js';
 import { pinGpuTexture } from './pinGpuTexture.js';
 import { inferComputeLayout } from './inferComputeLayout.js';
@@ -73,6 +74,7 @@ export class ComputeLayer {
     this.lookSource = lookSource;
     this.layerId = meta.id;
     this.maxBodies = (meta.maxBodies | 0) || 512;
+    this.maxParticles = (meta.maxParticles | 0) || (meta.compute?.maxParticles | 0) || 0;
     this._texSize = meta.compute?.size || { scale: 1 };
     // Shallow-copy passes: compile() rewrites p.code with the engine prelude.
     this.passes = (meta.compute?.passes || []).map((p) => ({ ...p }));
@@ -91,6 +93,7 @@ export class ComputeLayer {
     this.params = new Float32Array(this._paramCount);
     this.bodyData = new Float32Array(this.maxBodies * BODY_FLOATS);
     this.vertData = new Float32Array(this.maxBodies * 8 * 2);
+    this.particleData = new Float32Array(Math.max(1, this.maxParticles) * PARTICLE_FLOATS);
     this.modules = new Map();
     this.pipelines = [];
     this.paramsBuffer = device.createBuffer({
@@ -103,6 +106,10 @@ export class ComputeLayer {
     });
     this.vertBuffer = device.createBuffer({
       size: Math.max(16, this.vertData.byteLength),
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.particleBuffer = device.createBuffer({
+      size: Math.max(16, this.particleData.byteLength),
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this._tex = Object.create(null);
@@ -127,6 +134,7 @@ export class ComputeLayer {
     this._compileError = false;
     this.feederCount = 0;
     this.lastBodyCount = 0;
+    this.lastParticleCount = 0;
     this._prevCameraX = 0;
     this._prevCameraY = 0;
     this._prevZoom = 1;
@@ -321,6 +329,7 @@ export class ComputeLayer {
     if (name === 'params') return { buffer: this.paramsBuffer };
     if (name === 'bodies') return { buffer: this.bodyBuffer };
     if (name === 'verts') return { buffer: this.vertBuffer };
+    if (name === 'particles') return { buffer: this.particleBuffer };
     const buf = this._buf[name];
     if (buf) return { buffer: buf };
     const t = this._tex[name];
@@ -378,7 +387,9 @@ export class ComputeLayer {
       const wg = p.workgroup;
       const wx = wg && wg[0] > 0 ? (wg[0] | 0) : WORK;
       if (p.dispatchFrom) {
-        const n = this._bufCount[p.dispatchFrom] || 1;
+        const n = p.dispatchFrom === 'particles'
+          ? Math.max(1, this.lastParticleCount | 0)
+          : (this._bufCount[p.dispatchFrom] || 1);
         this._passDX[i] = ceilDiv(n, wx);
         this._passDY[i] = 1;
         continue;
@@ -389,7 +400,7 @@ export class ComputeLayer {
     }
   }
 
-  _writeParams(frame, bodyCount, prevX, prevY, prevZoom) {
+  _writeParams(frame, bodyCount, particleCount, prevX, prevY, prevZoom) {
     const p = this.params;
     const zoom = frame.zoom > 0 ? frame.zoom : 1;
     p[0] = frame.dt;
@@ -407,7 +418,7 @@ export class ComputeLayer {
     p[12] = prevX;
     p[13] = prevY;
     p[14] = prevZoom > 0 ? prevZoom : 1;
-    p[15] = 0;
+    p[15] = particleCount;
     const floats = Layer._uniformFloats[this.layerId];
     if (floats && floats.length) {
       const n = Math.min(floats.length, p.length - ENGINE_FRAME_PREFIX_FLOATS);
@@ -426,6 +437,16 @@ export class ComputeLayer {
     });
     this.lastBodyCount = packed.bodyCount;
     this.feederCount = Layer._feedCount ? Atomics.load(Layer._feedCount, this.layerId) : 0;
+    let particleCount = 0;
+    if (this.maxParticles > 0) {
+      particleCount = packLiquidFunParticles(
+        this.layerId,
+        this.particleData,
+        this.maxParticles
+      ).particleCount;
+    }
+    this.lastParticleCount = particleCount;
+    this._refreshDispatch();
     const device = this.device;
     if (packed.bodyCount > 0) {
       device.queue.writeBuffer(
@@ -437,6 +458,13 @@ export class ComputeLayer {
     if (packed.vertCount > 0) {
       device.queue.writeBuffer(this.vertBuffer, 0, this.vertData.subarray(0, packed.vertCount * 2));
     }
+    if (particleCount > 0) {
+      device.queue.writeBuffer(
+        this.particleBuffer,
+        0,
+        this.particleData.subarray(0, particleCount * PARTICLE_FLOATS)
+      );
+    }
 
     const zoom = frame.zoom > 0 ? frame.zoom : 1;
     const camX = frame.cameraX;
@@ -445,7 +473,7 @@ export class ComputeLayer {
     const prevY = this._hasPrevFrame ? this._prevCameraY : camY;
     const prevZoom = this._hasPrevFrame ? this._prevZoom : zoom;
 
-    this._writeParams(frame, packed.bodyCount, prevX, prevY, prevZoom);
+    this._writeParams(frame, packed.bodyCount, particleCount, prevX, prevY, prevZoom);
 
     const encoder = device.createCommandEncoder();
     const map = Layer._uniformMaps[this.layerId];
@@ -463,6 +491,7 @@ export class ComputeLayer {
         const e = map && map[p.iterate];
         iters = e && floats ? Math.max(0, floats[e.offset] | 0) : 0;
       }
+      if (p.dispatchFrom === 'particles' && particleCount <= 0) continue;
       const dx = this._passDX[i];
       const dy = this._passDY[i];
       for (let k = 0; k < iters; k++) {

@@ -4,6 +4,7 @@
 @group(0) @binding(2) var<storage, read> verts: array<vec2<f32>>;
 @group(1) @binding(0) var stampWrite: texture_storage_2d<rgba8unorm, write>;
 @group(1) @binding(1) var velWrite: texture_storage_2d<rgba32float, write>;
+@group(1) @binding(2) var fuelWrite: texture_storage_2d<rgba32float, write>;
 
 // World-fixed lattice (see fireFluid.wgsl): texel (i,j) = world cell (i,j),
 // origin always (0,0). WGSL doesn't share code across files, so cell_h/
@@ -55,6 +56,7 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (!cell_active(id)) {
     textureStore(stampWrite, id, vec4<f32>(1.0, 0.0, 0.0, 0.0));
     textureStore(velWrite, id, vec4<f32>(0.0, 0.0, 0.0, 1.0));
+    textureStore(fuelWrite, id, vec4<f32>(0.0));
     return;
   }
 
@@ -108,11 +110,23 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
     let isBurning = (i32(s.flags) & 1) != 0;
     let isStatic = (i32(s.flags) & 2) != 0;
     let isSweep = (i32(s.flags) & 4) != 0;
+    let isBlow = (i32(s.flags) & 8) != 0;
+    let isJet = (i32(s.flags) & 16) != 0;
     let inner = max(frame.uStampInner, 0.0) * h;
     let outer = frame.uStampOuter * h;
     let skin = frame.uStampPad * h;
 
-    if (d <= skin) {
+    if (isBlow && !isSweep) {
+      let reach = max(frame.uBlowReach, 0.0) * h;
+      if (lx > s.halfW && lx < s.halfW + reach && abs(ly) < s.halfH) {
+        let force = frame.uBlowForce;
+        bodyVx = s.cosA * force;
+        bodyVy = s.sinA * force;
+        hasBody = 1.0;
+      }
+    }
+
+    if (d <= skin && !isBlow) {
       if (isStatic) {
         openCell = 0.0;
         hasBody = 0.0;
@@ -142,7 +156,15 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
       let heat = clamp(bright * (0.75 + 0.25 * n) * (0.7 + 0.3 * depth) * flick, 0.0, 1.0);
       maxEmber = max(maxEmber, heat);
     }
-    if (isBurning && !isStatic && !isSweep && d <= outer) {
+    if (isJet && isBurning && !isStatic && !isSweep) {
+      if (lx > s.halfW - h && lx < s.halfW + max(outer, h) && abs(ly) < s.halfH) {
+        isSource = 1.0;
+        hasBody = 1.0;
+        let force = frame.uJetForce;
+        bodyVx = s.cosA * force;
+        bodyVy = s.sinA * force;
+      }
+    } else if (isBurning && !isStatic && !isSweep && d <= outer) {
       isSource = 1.0;
     }
   }
@@ -152,4 +174,5 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   textureStore(stampWrite, id, vec4<f32>(openCell, isSource, maxEmber, burnSolid));
   textureStore(velWrite, id, vec4<f32>(bodyVx, bodyVy, hasBody, 1.0));
+  textureStore(fuelWrite, id, vec4<f32>(0.0));
 }
