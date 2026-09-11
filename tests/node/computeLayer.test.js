@@ -410,13 +410,64 @@ test('world-fixed lattice: no camera-relative origin/shift, cell_active gates th
   assert.match(stamp, /fn cell_active\(id: vec2<i32>\)/);
   // Every fluid pass that swaps a texture must gate on cell_active, since
   // inactive cells must stay zeroed (empty), not stale/undefined.
-  for (const entry of ['cool_rise', 'apply_swirls', 'apply_stamp', 'apply_body_vel', 'diffuse_temperature', 'jacobi_pressure', 'project_velocity', 'advect_velocity', 'advect_temperature']) {
+  for (const entry of ['cool_rise', 'apply_swirls', 'apply_stamp', 'apply_body_vel', 'push_from_solid', 'diffuse_temperature', 'jacobi_pressure', 'project_velocity', 'advect_velocity', 'advect_temperature']) {
     const fnStart = fluid.indexOf(`fn ${entry}(`);
     assert.ok(fnStart >= 0, `${entry} should exist`);
     const nextFn = fluid.indexOf('\n@compute', fnStart + 1);
     const body = fluid.slice(fnStart, nextFn === -1 ? undefined : nextFn);
     assert.match(body, /cell_active\(id\)/, `${entry} should gate on cell_active`);
   }
+});
+
+test('fire stamp: burning crust is live fluid; inert solids push; ember overlays in look', () => {
+  const stamp = readFileSync(join(SHADER_DIR, 'fireStamp.wgsl'), 'utf8');
+  const fluid = readFileSync(join(SHADER_DIR, 'fireFluid.wgsl'), 'utf8');
+  const pack = readFileSync(join(SHADER_DIR, 'firePack.wgsl'), 'utf8');
+  const look = readFileSync(join(SHADER_DIR, 'fireLook.wgsl'), 'utf8');
+  assert.match(stamp, /!isBurning \|\| d <= -inner/);
+  assert.match(stamp, /uStampInner/);
+  assert.match(stamp, /uStampOuter/);
+  assert.match(stamp, /burnSolid/);
+  assert.match(stamp, /uEmberPad/);
+  assert.match(fluid, /fn inert_solid/);
+  assert.match(fluid, /fn push_from_solid/);
+  assert.match(pack, /let ember = clamp\(mark\.b/);
+  assert.match(look, /let ember = heat\.a/);
+  assert.match(look, /eRgb \* eA \+ premul/);
+
+  const inertSolid = (open, burnA) => open < 0.5 && burnA < 0.5;
+  assert.equal(inertSolid(0, 0), true);
+  assert.equal(inertSolid(0, 1), false);
+  assert.equal(inertSolid(1, 0), false);
+
+  const pushNormal = (l, r, d, u) => {
+    let nx = 0;
+    let ny = 0;
+    if (l) nx += 1;
+    if (r) nx -= 1;
+    if (d) ny += 1;
+    if (u) ny -= 1;
+    const len = Math.hypot(nx, ny);
+    if (len <= 1e-4) return { nx: 0, ny: 0 };
+    return { nx: nx / len, ny: ny / len };
+  };
+  const one = pushNormal(true, false, false, false);
+  assert.ok(Math.abs(one.nx - 1) < 1e-9 && Math.abs(one.ny) < 1e-9);
+  const burnNeighbor = pushNormal(false, false, false, false);
+  assert.equal(burnNeighbor.nx, 0);
+  assert.equal(burnNeighbor.ny, 0);
+
+  const overA = (dstA, srcA) => srcA + dstA * (1 - srcA);
+  assert.ok(overA(0.5, 0.8) > 0.5);
+
+  const closed = (d, skin, burning, inner) => {
+    if (d > skin) return false;
+    if (!burning) return true;
+    return d <= -inner;
+  };
+  assert.equal(closed(0, 0, true, 0), true);
+  assert.equal(closed(-10, 0, true, 64), false);
+  assert.equal(closed(-10, 0, false, 64), true);
 });
 
 test("burningBoxesScene: fire layer sizes compute.size from world dims via FIRE_CELL_SIZE (demo math, not an engine mode)", () => {

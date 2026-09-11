@@ -51,6 +51,19 @@ fn fireGrain(uv: vec2<f32>) -> f32 {
     + layerN(uv, 48.0, 0.125, customUniforms.uFireScroll2);
 }
 
+fn fireRgb(f: f32) -> vec3<f32> {
+  if (f < 0.25) {
+    let k = f / 0.25;
+    return vec3<f32>(0.45 + 0.55 * k, 0.05 + 0.12 * k, 0.02);
+  }
+  if (f < 0.65) {
+    let k = (f - 0.25) / 0.40;
+    return vec3<f32>(1.0, 0.17 + 0.60 * k, 0.02 + 0.08 * k);
+  }
+  let k = (f - 0.65) / 0.35;
+  return vec3<f32>(1.0, 0.77 + 0.23 * k, 0.10 + 0.75 * k);
+}
+
 fn hsv2rgb(h: f32, s: f32, v: f32) -> vec3<f32> {
   let k = vec3<f32>(1.0, 2.0 / 3.0, 1.0 / 3.0);
   let p = abs(fract(vec3<f32>(h) + k) * 6.0 - 3.0);
@@ -87,14 +100,16 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   }
 
   let cutoff = max(0.002, customUniforms.uDrawCutoff);
-  if (t <= cutoff) {
+  let ember = heat.a;
+  let emberOn = customUniforms.uEmberOn > 0.5;
+  if (t <= cutoff && (!emberOn || ember <= cutoff)) {
     return vec4<f32>(0.0);
   }
   let split = customUniforms.uSmokeSplit;
-  var rgb: vec3<f32>;
-  var a: f32;
+  var rgb: vec3<f32> = vec3<f32>(0.0);
+  var a: f32 = 0.0;
 
-  if (t < split) {
+  if (t > cutoff && t < split) {
     let s = select(0.0, t / split, split > 0.0);
     let puff = pow(max(s, 0.0), max(customUniforms.uSmokePuff, 0.2));
     let n = smokeN(uv);
@@ -109,31 +124,24 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     let pale = mix(vec3<f32>(0.07, 0.075, 0.08), ash, clamp(s * 1.25, 0.0, 1.0));
     let sootMix = clamp((customUniforms.uSmokeDens - 0.4) / 2.1, 0.0, 1.0);
     rgb = mix(pale, soot, sootMix * 0.82);
-  } else if (customUniforms.uFireOn < 0.5) {
-    return vec4<f32>(0.0);
-  } else {
+  } else if (t > cutoff && customUniforms.uFireOn > 0.5) {
     let nAmt = clamp(customUniforms.uFireNoise, 0.0, 1.0);
     let fireN = fireGrain(uv);
     var f = (t - split) / max(1.0 - split, 0.0001);
     f = clamp(f + nAmt * (fireN - 0.5) * 0.85, 0.0, 1.0);
-    let alphaScale = customUniforms.uFireAlpha;
     let shadeK = mix(1.0, 0.12 + 1.15 * fireN, nAmt);
-
-    if (f < 0.25) {
-      let k = f / 0.25;
-      rgb = vec3<f32>(0.45 + 0.55 * k, 0.05 + 0.12 * k, 0.02);
-    } else if (f < 0.65) {
-      let k = (f - 0.25) / 0.40;
-      rgb = vec3<f32>(1.0, 0.17 + 0.60 * k, 0.02 + 0.08 * k);
-    } else {
-      let k = (f - 0.65) / 0.35;
-      rgb = vec3<f32>(1.0, 0.77 + 0.23 * k, 0.10 + 0.75 * k);
-    }
-    a = alphaScale * min(1.0, 0.7 + 0.3 * f);
-    rgb *= shadeK;
-    a *= shadeK;
+    rgb = fireRgb(f) * shadeK;
+    a = customUniforms.uFireAlpha * min(1.0, 0.7 + 0.3 * f) * shadeK;
   }
 
   a = clamp(a, 0.0, 1.0);
-  return vec4<f32>(rgb * a, a);
+  var premul = rgb * a;
+  var outA = a;
+  if (emberOn && ember > cutoff) {
+    let eA = clamp(ember * customUniforms.uEmberAlpha, 0.0, 1.0);
+    let eRgb = fireRgb(clamp(ember, 0.0, 1.0));
+    premul = eRgb * eA + premul * (1.0 - eA);
+    outA = eA + outA * (1.0 - eA);
+  }
+  return vec4<f32>(premul, outA);
 }

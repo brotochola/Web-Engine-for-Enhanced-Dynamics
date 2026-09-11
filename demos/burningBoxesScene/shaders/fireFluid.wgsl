@@ -78,6 +78,12 @@ fn open_cell(c: vec2<i32>) -> f32 {
   return textureLoad(stampTex, c, 0).r;
 }
 
+fn inert_solid(c: vec2<i32>) -> bool {
+  if (!in_grid(c)) { return false; }
+  let mark = textureLoad(stampTex, c, 0);
+  return mark.r < 0.5 && mark.a < 0.5;
+}
+
 fn load_body_vel(c: vec2<i32>) -> vec4<f32> {
   if (!in_grid(c)) { return vec4<f32>(0.0); }
   return textureLoad(velTex, c, 0);
@@ -373,13 +379,7 @@ fn apply_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (mark.r < 0.5) {
     t = mark.b;
   } else if (mark.g > 0.5) {
-    let wall = open_cell(id + vec2<i32>(-1, 0)) < 0.5
-      || open_cell(id + vec2<i32>(1, 0)) < 0.5
-      || open_cell(id + vec2<i32>(0, -1)) < 0.5
-      || open_cell(id + vec2<i32>(0, 1)) < 0.5;
-    if (!wall || mark.b > 0.0) {
-      t = 1.0;
-    }
+    t = 1.0;
   }
   textureStore(tWrite, id, vec4<f32>(t, 0.0, 0.0, 0.0));
 }
@@ -414,6 +414,37 @@ fn apply_body_vel(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (velR.z > 0.5) { u = mix(u, velR.x, k); }
     if (velD.z > 0.5) { v = mix(v, velD.y, k); }
     if (velU.z > 0.5) { v = mix(v, velU.y, k); }
+  }
+  textureStore(uWrite, id, vec4<f32>(u, 0.0, 0.0, 0.0));
+  textureStore(vWrite, id, vec4<f32>(v, 0.0, 0.0, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn push_from_solid(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let id = vec2<i32>(i32(gid.x), i32(gid.y));
+  if (!in_grid(id)) { return; }
+  if (!cell_active(id)) {
+    textureStore(uWrite, id, vec4<f32>(0.0));
+    textureStore(vWrite, id, vec4<f32>(0.0));
+    return;
+  }
+  var u = load_u(id);
+  var v = load_v(id);
+  let push = max(frame.uSolidPush, 0.0);
+  let t = load_t(id);
+  if (open_cell(id) > 0.5 && push > 0.0 && t > 0.0) {
+    var nx = 0.0;
+    var ny = 0.0;
+    if (inert_solid(id + vec2<i32>(-1, 0))) { nx += 1.0; }
+    if (inert_solid(id + vec2<i32>(1, 0))) { nx -= 1.0; }
+    if (inert_solid(id + vec2<i32>(0, -1))) { ny += 1.0; }
+    if (inert_solid(id + vec2<i32>(0, 1))) { ny -= 1.0; }
+    let len = sqrt(nx * nx + ny * ny);
+    if (len > 1e-4) {
+      let k = push * frame.dt / len;
+      u += nx * k;
+      v += ny * k;
+    }
   }
   textureStore(uWrite, id, vec4<f32>(u, 0.0, 0.0, 0.0));
   textureStore(vWrite, id, vec4<f32>(v, 0.0, 0.0, 0.0));

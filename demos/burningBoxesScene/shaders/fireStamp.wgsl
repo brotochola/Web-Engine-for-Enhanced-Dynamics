@@ -53,7 +53,7 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
   if (id.x >= i32(frame.texW) || id.y >= i32(frame.texH)) { return; }
   if (!cell_active(id)) {
-    textureStore(stampWrite, id, vec4<f32>(1.0, 0.0, 0.0, 1.0));
+    textureStore(stampWrite, id, vec4<f32>(1.0, 0.0, 0.0, 0.0));
     textureStore(velWrite, id, vec4<f32>(0.0, 0.0, 0.0, 1.0));
     return;
   }
@@ -65,6 +65,7 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
   var openCell = 1.0;
   var isSource = 0.0;
   var maxEmber = 0.0;
+  var burnSolid = 0.0;
   var bodyVx = 0.0;
   var bodyVy = 0.0;
   var hasBody = 0.0;
@@ -107,8 +108,8 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
     let isBurning = (i32(s.flags) & 1) != 0;
     let isStatic = (i32(s.flags) & 2) != 0;
     let isSweep = (i32(s.flags) & 4) != 0;
-    let pad = frame.uSourcePad;
-    let band = max(0.0, max(2.0 * h, 0.15 * max(size, 0.0)) + pad);
+    let inner = max(frame.uStampInner, 0.0) * h;
+    let outer = frame.uStampOuter * h;
     let skin = frame.uStampPad * h;
 
     if (d <= skin) {
@@ -124,18 +125,24 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
         let vy = (s.posY - s.prevY) / dt;
         bodyVx = vx - s.omega * (wy - s.posY);
         bodyVy = vy + s.omega * (wx - s.posX);
-        if (!isSweep && (!isBurning || d < -band)) {
+        if (!isSweep && (!isBurning || d <= -inner)) {
           openCell = 0.0;
+        }
+        if (isBurning) {
+          burnSolid = 1.0;
         }
       }
     }
-    if (d <= 0.0 && isBurning && !isStatic && !isSweep && frame.uEmberOn > 0.5) {
+    let emberSkin = frame.uEmberPad * h;
+    if (d <= emberSkin && isBurning && !isStatic && !isSweep && frame.uEmberOn > 0.5) {
       let n = fract(abs(sin(f32(id.x) * 12.9898 + f32(id.y) * 78.233) * 43758.5453));
-      let flick = 0.84 + 0.16 * sin(frame.time * 9.0 + f32(id.x) * 1.7 + f32(id.y) * 2.3);
-      let heat = clamp((0.7 + 0.3 * n) * (0.85 + 0.15 * depth) * flick, 0.0, 1.0);
+      let flickAmt = clamp(frame.uEmberFlick, 0.0, 1.0);
+      let flick = mix(1.0, 0.84 + 0.16 * sin(frame.time * 9.0 + f32(id.x) * 1.7 + f32(id.y) * 2.3), flickAmt);
+      let bright = clamp(frame.uEmberBright, 0.0, 1.0);
+      let heat = clamp(bright * (0.75 + 0.25 * n) * (0.7 + 0.3 * depth) * flick, 0.0, 1.0);
       maxEmber = max(maxEmber, heat);
     }
-    if (isBurning && !isStatic && d <= h + pad) {
+    if (isBurning && !isStatic && !isSweep && d <= outer) {
       isSource = 1.0;
     }
   }
@@ -143,6 +150,6 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
     isSource = 0.0;
   }
 
-  textureStore(stampWrite, id, vec4<f32>(openCell, isSource, maxEmber, 1.0));
+  textureStore(stampWrite, id, vec4<f32>(openCell, isSource, maxEmber, burnSolid));
   textureStore(velWrite, id, vec4<f32>(bodyVx, bodyVy, hasBody, 1.0));
 }

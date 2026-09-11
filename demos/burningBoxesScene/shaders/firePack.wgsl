@@ -26,17 +26,17 @@ fn pack_heat(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (id.x >= i32(frame.texW) || id.y >= i32(frame.texH)) { return; }
   let mark = textureLoad(stampTex, id, 0);
   var heat = textureLoad(tRead, id, 0).x;
-  heat = max(heat, mark.b);
-  if (mark.r < 0.5 && mark.b <= 0.0) {
+  if (mark.r < 0.5) {
     heat = 0.0;
   }
   heat = clamp(heat, 0.0, 1.0);
+  let ember = clamp(mark.b, 0.0, 1.0);
   let u = 0.5 * (pack_load_u(id) + pack_load_u(id + vec2<i32>(1, 0)));
   let v = 0.5 * (pack_load_v(id) + pack_load_v(id + vec2<i32>(0, 1)));
   let scale = 0.12;
   let g = 0.5 + 0.5 * tanh(u * scale);
   let b = 0.5 + 0.5 * tanh(v * scale);
-  textureStore(packWrite, id, vec4<f32>(heat, g, b, 1.0));
+  textureStore(packWrite, id, vec4<f32>(heat, g, b, ember));
 }
 
 @compute @workgroup_size(8, 8)
