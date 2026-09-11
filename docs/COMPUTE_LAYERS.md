@@ -76,7 +76,7 @@ Declared compute textures are allocated at a **pixel extent**. Independent of `l
 | `{ scale: s }`           | `ceil(canvas * s)`          |
 | `{ width, height }`      | explicit pixels             |
 
-Rebuild only when that pixel size changes (window resize). A world lattice (`h`, origin snap, pan shift) is derived in WGSL from the Frame prefix (`texW`, camera, zoom, canvasW, prevCamera), not from engine JS.
+Same idea as the look pass: `scale` is resolution. Rebuild only when that pixel size changes (window resize). A world lattice (cell size, origin snap, pad) is scene WGSL + scene uniforms, not an engine size mode.
 
 `maxBodies` is the feeder SSBO cap (default 512). Overflow clamps and warns once.
 
@@ -104,7 +104,7 @@ CPU writes a preallocated AoS then `writeBuffer`. Layout (`BODY_FLOATS = 16`):
 
 ```
 posX, posY, cosA, sinA, halfW, halfH, shapeKind, flags,
-velX, velY, omega, vertStart, vertCount, pad, pad, pad
+velX, velY, omega, vertStart, vertCount, prevX, prevY, pad
 ```
 
 `shapeKind`: 0 box, 1 circle, 2 polygon (up to 8 local verts in `verts[]`).
@@ -131,8 +131,8 @@ Pass extras:
 
 - `swap: ['t']` — ping-pong named `pingPong` textures after the dispatch
 - `iterate: 'uPressureIters'` — repeat; number or uniform name
-- `when: 'originShift'` — skip if zoom changed or camera XY unchanged vs the previous frame. Lattice shift amounts are computed in WGSL from `prevCamera*` / `prevZoom`.
-- `when: 'zoomChanged'` — run only if zoom moved vs the previous frame. Use this to wipe fields (`clear_fields` + swirl clear). Do not persist a lattice across an `h` change; zoom does not realloc textures.
+- `when: 'originShift'` — skip if camera XY unchanged vs the previous frame. Lattice shift amounts are computed in WGSL from `prevCamera*`. Zoom does not skip this pass.
+- `when: 'zoomChanged'` — run only if zoom moved vs the previous frame. Optional wipe. Fire demo world-locks `h` (`canvasW/texW`) so it does not wipe on zoom.
 
 Storage formats are explicit (`r32float`, `rgba8unorm`, `rgba32float`). Do not match the look write to the canvas swapchain (`bgra8unorm` is often illegal as storage).
 
@@ -171,16 +171,20 @@ Engine prefix (`ENGINE_FRAME_PREFIX_FLOATS = 16`), then memcpy `shader.uniforms`
 
 First frame copies current camera into prev so shift is 0. Ubo size is 16-byte aligned. SAB offsets follow WGSL uniform alignment (vec2 → 2 floats, vec3/vec4 → 4), so the generated struct matches byte-for-byte.
 
-Lattice helper (copy into the compute WGSL; not an engine include yet):
+World lattice math lives in **scene WGSL** (not an engine include). Engine still feeds camera / prevCamera / `texW` so a scene can snap and shift:
 
 ```wgsl
-fn cell_h() -> f32 {
-  return (frame.canvasW / max(frame.zoom, 1e-6)) / max(frame.texW, 1.0);
+fn lattice_origin_axis(cam: f32, view: f32, extent: f32, h: f32, padCells: f32) -> f32 {
+  let minO = cam + view - extent;
+  let kMin = ceil(minO / h);
+  let kMax = floor(cam / h);
+  if (kMin > kMax) { return kMin * h; }
+  let want = cam - max(padCells, 0.0) * h;
+  return clamp(floor(want / h), kMin, kMax) * h;
 }
-fn snap_origin(cam: f32, h: f32) -> f32 { return floor(cam / h) * h; }
 ```
 
-`shift = 0` when `abs(zoom - prevZoom) > 1e-6`, else `round((origin - snap(prevCam, h)) / h)`.
+`h` and pad are scene uniforms. Pad only uses leftover texels (`extent - view`); it must not hang the origin off the top-left when `tex = canvas * scale`. `shift = round((origin - origin_at(prevCam)) / h)`. `when: 'originShift'` skips the pass when the camera XY did not move.
 
 ## Look reserved uniforms
 
@@ -195,17 +199,20 @@ Auto-declared on every custom shader layer — do **not** add them to `shader.un
 - `uViewSize` vec2 — `canvas / zoom`
 - `uTexSize` vec2 — allocated compute storage pixels (`numX`, `numY`). `0` on layers without compute.
 
-Look fragments that sample a lattice pack (not stretched mesh UV) reconstruct world UV the same way compute does:
+Look fragments that sample a compute pack as a world field (not stretched mesh UV) reconstruct UV from engine camera/view/`uTexSize` plus the scene’s own cell-size / pad uniforms:
 
 ```wgsl
-let h = (uCanvasSize.x / max(uZoom, 1e-6)) / max(uTexSize.x, 1.0);
-let origin = floor(uCameraPos / h) * h;
+let h = max(/* scene cell-size uniform */, 1e-6);
 let extent = uTexSize * h;
+let origin = vec2(
+  lattice_origin_axis(uCameraPos.x, uViewSize.x, extent.x, h, padCells),
+  lattice_origin_axis(uCameraPos.y, uViewSize.y, extent.y, h, padCells)
+);
 let world = uCameraPos + in.vTextureCoord * uViewSize;
 let uv = (world - origin) / extent;
 ```
 
-`cell_h` uses **width only**. `texH * h` is not always `viewH` after `ceil`. Zoom changes `h` without realloc — pair with `when: 'zoomChanged'` wipe, not `originShift` persist.
+If `uv` is outside 0–1, return transparent **after** `textureSample` (WGSL: sample is uniform-control-flow only). Clamp the fetch coords if needed; do not *keep* the clamped color — that smears the last pack row.
 
 Art rate belongs in WGSL (`sin(uTime * 2.0)`), not a scaled `setUniform`.
 

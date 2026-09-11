@@ -56,7 +56,7 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
 
   const n = feederCount < cap ? feederCount : cap;
 
-  function emit(i, x, y, c, s, hw, hh, kind, flags, velx, vely, w, vStart, vCount) {
+  function emit(i, x, y, c, s, hw, hh, kind, flags, velx, vely, w, vStart, vCount, prevX, prevY) {
     if (bodyCount >= cap) return false;
     const b = bodyCount * BODY_FLOATS;
     bodyData[b] = x;
@@ -72,8 +72,8 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
     bodyData[b + 10] = w;
     bodyData[b + 11] = vStart;
     bodyData[b + 12] = vCount;
-    bodyData[b + 13] = 0;
-    bodyData[b + 14] = 0;
+    bodyData[b + 13] = prevX;
+    bodyData[b + 14] = prevY;
     bodyData[b + 15] = 0;
     bodyCount++;
     return true;
@@ -129,7 +129,11 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
     const velx = vx ? vx[i] : 0;
     const vely = vy ? vy[i] : 0;
     const w = omega ? omega[i] : 0;
-    if (!emit(i, worldX, worldY, c, s, hw, hh, kind, flags, velx, vely, w, vStart, vCount)) break;
+    const prevPx = px ? px[i] : worldX;
+    const prevPy = py ? py[i] : worldY;
+    const ddx = worldX - prevPx;
+    const ddy = worldY - prevPy;
+    if (!emit(i, worldX, worldY, c, s, hw, hh, kind, flags, velx, vely, w, vStart, vCount, worldX - ddx, worldY - ddy)) break;
 
     if (!sweep || (isStatic && isStatic[i]) || !px) continue;
     const dx = worldX - px[i];
@@ -145,7 +149,7 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
       const t = k / samples;
       const sx = px[i] + dx * t;
       const sy = py[i] + dy * t;
-      if (!emit(i, sx, sy, prevC, prevS, hw, hh, kind, sweepFlags, velx, vely, w, vStart, vCount)) break;
+      if (!emit(i, sx, sy, prevC, prevS, hw, hh, kind, sweepFlags, velx, vely, w, vStart, vCount, sx - ddx, sy - ddy)) break;
     }
   }
 

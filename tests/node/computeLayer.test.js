@@ -12,7 +12,6 @@ import { prependComputePrelude } from '../../src/workers/wgslPrelude.js';
 import {
   ENGINE_FRAME_PREFIX_FLOATS,
   computePassActive,
-  latticeLookUv,
 } from '../../src/workers/ComputeLayer.js';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -136,6 +135,8 @@ test('packBox2dBodies stride 16 and polygon vert range', () => {
   RigidBody.vx = new Float32Array(n);
   RigidBody.vy = new Float32Array(n);
   RigidBody.angularVelocity = new Float32Array(n);
+  RigidBody.px = new Float32Array(n);
+  RigidBody.py = new Float32Array(n);
 
   try {
     Layer.reset();
@@ -161,6 +162,8 @@ test('packBox2dBodies stride 16 and polygon vert range', () => {
     Transform.rotC[0] = 1;
     Transform.rotS[0] = 0;
     RigidBody.static[0] = 1;
+    RigidBody.px[0] = 80;
+    RigidBody.py[0] = 40;
     feedLayerAt(0, id);
 
     const bodies = new Float32Array(8 * BODY_FLOATS);
@@ -171,6 +174,8 @@ test('packBox2dBodies stride 16 and polygon vert range', () => {
     assert.equal(bodies[6], ShapeType.Polygon);
     assert.equal(bodies[11], 0);
     assert.equal(bodies[12], 3);
+    assert.equal(bodies[13], 80);
+    assert.equal(bodies[14], 40);
     assert.equal((bodies[7] | 0) & COMPUTE_FLAG_STATIC, COMPUTE_FLAG_STATIC);
     assert.equal(verts[0], -10);
     assert.equal(verts[5], 12);
@@ -370,27 +375,28 @@ test('inferComputeLayout: frame and shapes aliases', () => {
   assert.equal(groups[0][1].resource, 'bodies');
 });
 
-test('computePassActive: originShift skips zoom/still; zoomChanged only on zoom', () => {
+test('computePassActive: originShift skips still cam; zoomChanged only on zoom', () => {
   assert.equal(computePassActive('originShift', false, false), true);
-  assert.equal(computePassActive('originShift', true, false), false);
+  assert.equal(computePassActive('originShift', true, false), true);
   assert.equal(computePassActive('originShift', false, true), false);
+  assert.equal(computePassActive('originShift', true, true), false);
   assert.equal(computePassActive('zoomChanged', true, false), true);
   assert.equal(computePassActive('zoomChanged', false, false), false);
   assert.equal(computePassActive('zoomChanged', true, true), true);
   assert.equal(computePassActive(null, true, true), true);
 });
 
-test('latticeLookUv: snapped origin, non-square canvas, view center in 0-1', () => {
-  const centered = latticeLookUv(0, 0, 800, 400, 200, 100, 800, 1, 0.5, 0.5);
-  assert.equal(centered.u, 0.5);
-  assert.equal(centered.v, 0.5);
-
-  const snapped = latticeLookUv(101, 53, 800, 400, 200, 100, 800, 1, 0.5, 0.5);
-  assert.ok(snapped.u > 0 && snapped.u < 1);
-  assert.ok(snapped.v > 0 && snapped.v < 1);
-  const h = 800 / 200;
-  const originX = Math.floor(101 / h) * h;
-  assert.ok(Math.abs(snapped.u - (0.5 + (101 - originX) / 800)) < 1e-12);
+test('fireLook: sample then discard outside 0-1; fluid uses scene uCellSize', () => {
+  const look = readFileSync(join(SHADER_DIR, 'fireLook.wgsl'), 'utf8');
+  const sampleAt = look.indexOf('textureSample(uTexture, uSampler');
+  const discardAt = look.indexOf('uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0');
+  assert.ok(sampleAt >= 0);
+  assert.ok(discardAt > sampleAt);
+  assert.match(look, /uCellSize/);
+  assert.match(look, /uLatticePad/);
+  const fluid = readFileSync(join(SHADER_DIR, 'fireFluid.wgsl'), 'utf8');
+  assert.match(fluid, /max\(frame\.uCellSize/);
+  assert.equal(/canvasW \/ max\(frame\.texW/.test(fluid), false);
 });
 
 test('layerN: kindling negative scroll + +uTime*scroll moves uv.y toward screen up', () => {

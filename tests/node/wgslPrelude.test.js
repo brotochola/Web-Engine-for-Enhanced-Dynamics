@@ -27,6 +27,8 @@ test('compute prelude: FrameData prefix fields + frame binding + Body', () => {
   assert.ok(out.includes('@group(0) @binding(0) var<uniform> frame: FrameData;'));
   assert.ok(out.includes('struct Body {'));
   assert.ok(out.includes('vertStart: f32,'));
+  assert.ok(out.includes('prevX: f32,'));
+  assert.ok(out.includes('prevY: f32,'));
 });
 
 test('compute prelude: tail fields in map offset order with config names/types', () => {

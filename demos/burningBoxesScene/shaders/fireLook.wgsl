@@ -21,9 +21,35 @@ fn noise21(p: vec2<f32>) -> f32 {
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
+fn cell_h() -> f32 {
+  return max(customUniforms.uCellSize, 1e-6);
+}
+
+fn lattice_origin_axis(cam: f32, view: f32, extent: f32, h: f32, padCells: f32) -> f32 {
+  let minO = cam + view - extent;
+  let kMin = ceil(minO / h);
+  let kMax = floor(cam / h);
+  if (kMin > kMax) {
+    return kMin * h;
+  }
+  let want = cam - max(padCells, 0.0) * h;
+  return clamp(floor(want / h), kMin, kMax) * h;
+}
+
+fn lattice_origin() -> vec2<f32> {
+  let h = cell_h();
+  let cam = customUniforms.uCameraPos;
+  let view = customUniforms.uViewSize;
+  let extent = customUniforms.uTexSize * h;
+  return vec2<f32>(
+    lattice_origin_axis(cam.x, view.x, extent.x, h, customUniforms.uLatticePad),
+    lattice_origin_axis(cam.y, view.y, extent.y, h, customUniforms.uLatticePad)
+  );
+}
+
 fn latticeUv(quad: vec2<f32>) -> vec2<f32> {
-  let h = (customUniforms.uCanvasSize.x / max(customUniforms.uZoom, 1e-6)) / max(customUniforms.uTexSize.x, 1.0);
-  let origin = floor(customUniforms.uCameraPos / h) * h;
+  let h = cell_h();
+  let origin = lattice_origin();
   let extent = customUniforms.uTexSize * h;
   let world = customUniforms.uCameraPos + quad * customUniforms.uViewSize;
   return (world - origin) / extent;
@@ -54,7 +80,12 @@ fn hsv2rgb(h: f32, s: f32, v: f32) -> vec3<f32> {
 @fragment
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let uv = latticeUv(in.vTextureCoord);
+  // textureSample must run for every fragment (uniform control flow).
+  // Clamp only the fetch; discard uses unclamped uv so edge rows do not smear.
   let heat = textureSample(uTexture, uSampler, clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0)));
+  if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) {
+    return vec4<f32>(0.0);
+  }
   let t = heat.r;
   let view = i32(customUniforms.uView + 0.5);
 

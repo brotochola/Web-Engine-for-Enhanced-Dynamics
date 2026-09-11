@@ -18,25 +18,9 @@ export const ENGINE_FRAME_PREFIX_FLOATS = 16;
 
 /** Skip/run a compute pass gated on camera origin vs zoom. */
 export function computePassActive(when, zoomChanged, camStill) {
-  if (when === 'originShift') return !zoomChanged && !camStill;
+  if (when === 'originShift') return !camStill;
   if (when === 'zoomChanged') return !!zoomChanged;
   return true;
-}
-
-/**
- * Lattice UV for a look-quad sample (Y-down, view top-left camera).
- * Matches fireFluid cell_h: h = (canvasW / zoom) / texW.
- */
-export function latticeLookUv(camX, camY, viewW, viewH, texW, texH, canvasW, zoom, u, v) {
-  const h = (canvasW / Math.max(zoom, 1e-6)) / Math.max(texW, 1);
-  const originX = Math.floor(camX / h) * h;
-  const originY = Math.floor(camY / h) * h;
-  const worldX = camX + u * viewW;
-  const worldY = camY + v * viewH;
-  return {
-    u: (worldX - originX) / (texW * h),
-    v: (worldY - originY) / (texH * h),
-  };
 }
 
 function finiteOrZero(n) {

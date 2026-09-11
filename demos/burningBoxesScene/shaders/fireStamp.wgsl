@@ -6,14 +6,28 @@
 @group(1) @binding(1) var velWrite: texture_storage_2d<rgba32float, write>;
 
 fn cell_h() -> f32 {
-  return (frame.canvasW / max(frame.zoom, 1e-6)) / max(frame.texW, 1.0);
+  return max(frame.uCellSize, 1e-6);
 }
-fn snap_origin(cam: f32, h: f32) -> f32 {
-  return floor(cam / h) * h;
+
+fn lattice_origin_axis(cam: f32, view: f32, extent: f32, h: f32, padCells: f32) -> f32 {
+  let minO = cam + view - extent;
+  let kMin = ceil(minO / h);
+  let kMax = floor(cam / h);
+  if (kMin > kMax) {
+    return kMin * h;
+  }
+  let want = cam - max(padCells, 0.0) * h;
+  return clamp(floor(want / h), kMin, kMax) * h;
 }
+
 fn lattice_origin() -> vec2<f32> {
   let h = cell_h();
-  return vec2<f32>(snap_origin(frame.cameraX, h), snap_origin(frame.cameraY, h));
+  let view = vec2<f32>(frame.canvasW, frame.canvasH) / max(frame.zoom, 1e-6);
+  let extent = vec2<f32>(frame.texW, frame.texH) * h;
+  return vec2<f32>(
+    lattice_origin_axis(frame.cameraX, view.x, extent.x, h, frame.uLatticePad),
+    lattice_origin_axis(frame.cameraY, view.y, extent.y, h, frame.uLatticePad)
+  );
 }
 
 fn sdBox(p: vec2<f32>, b: vec2<f32>) -> f32 {
@@ -108,8 +122,11 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
         bodyVy = 0.0;
       } else {
         hasBody = 1.0;
-        bodyVx = s.velX - s.omega * (wy - s.posY);
-        bodyVy = s.velY + s.omega * (wx - s.posX);
+        let dt = max(frame.dt, 1e-6);
+        let vx = (s.posX - s.prevX) / dt;
+        let vy = (s.posY - s.prevY) / dt;
+        bodyVx = vx - s.omega * (wy - s.posY);
+        bodyVy = vy + s.omega * (wx - s.posX);
         if (!isSweep && (!isBurning || d < -band)) {
           openCell = 0.0;
         }
@@ -121,7 +138,7 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
       let heat = clamp((0.7 + 0.3 * n) * (0.85 + 0.15 * depth) * flick, 0.0, 1.0);
       maxEmber = max(maxEmber, heat);
     }
-    if (isBurning && !isStatic && d <= h + pad && d >= -band) {
+    if (isBurning && !isStatic && d <= h + pad) {
       isSource = 1.0;
     }
   }

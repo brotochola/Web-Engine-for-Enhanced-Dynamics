@@ -68,7 +68,7 @@ export function buildComputePrelude(uniformMap, uniformTypes) {
   s += '  halfW: f32,\n  halfH: f32,\n  shapeKind: f32,\n  flags: f32,\n';
   s += '  velX: f32,\n  velY: f32,\n  omega: f32,\n';
   s += '  vertStart: f32,\n  vertCount: f32,\n';
-  s += '  pad0: f32,\n  pad1: f32,\n  pad2: f32,\n';
+  s += '  prevX: f32,\n  prevY: f32,\n  pad: f32,\n';
   s += '}\n\n';
   return s;
 }

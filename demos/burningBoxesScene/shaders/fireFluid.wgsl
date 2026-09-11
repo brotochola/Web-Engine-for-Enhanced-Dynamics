@@ -29,24 +29,40 @@ struct Swirl {
 @group(2) @binding(3) var pWrite: texture_storage_2d<r32float, write>;
 
 fn cell_h() -> f32 {
-  return (frame.canvasW / max(frame.zoom, 1e-6)) / max(frame.texW, 1.0);
+  return max(frame.uCellSize, 1e-6);
 }
-fn snap_origin(cam: f32, h: f32) -> f32 {
-  return floor(cam / h) * h;
+
+// Snap origin so the view stays inside the allocated texels when it can.
+// Unconditional pad (cam - pad*h) with tex = canvas*scale steals the
+// bottom-right: extent ~= view, so pad makes uv.xy > 1 there.
+fn lattice_origin_axis(cam: f32, view: f32, extent: f32, h: f32, padCells: f32) -> f32 {
+  let minO = cam + view - extent;
+  let kMin = ceil(minO / h);
+  let kMax = floor(cam / h);
+  if (kMin > kMax) {
+    return kMin * h;
+  }
+  let want = cam - max(padCells, 0.0) * h;
+  return clamp(floor(want / h), kMin, kMax) * h;
+}
+
+fn lattice_origin_at(camX: f32, camY: f32) -> vec2<f32> {
+  let h = cell_h();
+  let view = vec2<f32>(frame.canvasW, frame.canvasH) / max(frame.zoom, 1e-6);
+  let extent = vec2<f32>(frame.texW, frame.texH) * h;
+  return vec2<f32>(
+    lattice_origin_axis(camX, view.x, extent.x, h, frame.uLatticePad),
+    lattice_origin_axis(camY, view.y, extent.y, h, frame.uLatticePad)
+  );
 }
 fn lattice_origin() -> vec2<f32> {
-  let h = cell_h();
-  return vec2<f32>(snap_origin(frame.cameraX, h), snap_origin(frame.cameraY, h));
+  return lattice_origin_at(frame.cameraX, frame.cameraY);
 }
 fn lattice_shift() -> vec2<f32> {
   let h = cell_h();
-  if (abs(frame.zoom - frame.prevZoom) > 1e-6) {
-    return vec2<f32>(0.0);
-  }
   let o = lattice_origin();
-  let pox = snap_origin(frame.prevCameraX, h);
-  let poy = snap_origin(frame.prevCameraY, h);
-  return vec2<f32>(round((o.x - pox) / h), round((o.y - poy) / h));
+  let p = lattice_origin_at(frame.prevCameraX, frame.prevCameraY);
+  return vec2<f32>(round((o.x - p.x) / h), round((o.y - p.y) / h));
 }
 
 fn in_grid(c: vec2<i32>) -> bool {
@@ -357,7 +373,7 @@ fn apply_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
   let mark = textureLoad(stampTex, id, 0);
   var t = load_t(id);
   if (mark.r < 0.5) {
-    t = 0.0;
+    t = mark.b;
   } else if (mark.g > 0.5) {
     let wall = open_cell(id + vec2<i32>(-1, 0)) < 0.5
       || open_cell(id + vec2<i32>(1, 0)) < 0.5
@@ -505,14 +521,6 @@ fn step_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
   }
   swirls[i] = s;
-}
-
-@compute @workgroup_size(64)
-fn clear_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let i = i32(gid.x);
-  let cap = i32(arrayLength(&swirls));
-  if (i >= cap) { return; }
-  swirls[i] = Swirl(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 }
 
 @compute @workgroup_size(64)
