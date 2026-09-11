@@ -25,34 +25,14 @@ fn cell_h() -> f32 {
   return max(customUniforms.uCellSize, 1e-6);
 }
 
-fn lattice_origin_axis(cam: f32, view: f32, extent: f32, h: f32, padCells: f32) -> f32 {
-  let minO = cam + view - extent;
-  let kMin = ceil(minO / h);
-  let kMax = floor(cam / h);
-  if (kMin > kMax) {
-    return kMin * h;
-  }
-  let want = cam - max(padCells, 0.0) * h;
-  return clamp(floor(want / h), kMin, kMax) * h;
-}
-
-fn lattice_origin() -> vec2<f32> {
-  let h = cell_h();
-  let cam = customUniforms.uCameraPos;
-  let view = customUniforms.uViewSize;
-  let extent = customUniforms.uTexSize * h;
-  return vec2<f32>(
-    lattice_origin_axis(cam.x, view.x, extent.x, h, customUniforms.uLatticePad),
-    lattice_origin_axis(cam.y, view.y, extent.y, h, customUniforms.uLatticePad)
-  );
-}
-
+// World-fixed lattice: texel (i,j) = world cell (i,j), origin always (0,0).
+// Grid covers the whole world, so UV is just world position over world
+// extent — no camera-relative origin math.
 fn latticeUv(quad: vec2<f32>) -> vec2<f32> {
   let h = cell_h();
-  let origin = lattice_origin();
   let extent = customUniforms.uTexSize * h;
   let world = customUniforms.uCameraPos + quad * customUniforms.uViewSize;
-  return (world - origin) / extent;
+  return world / extent;
 }
 
 fn layerN(uv: vec2<f32>, freq: f32, amp: f32, scroll: f32) -> f32 {

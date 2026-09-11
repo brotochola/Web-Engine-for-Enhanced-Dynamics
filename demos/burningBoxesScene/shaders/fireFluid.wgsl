@@ -28,41 +28,25 @@ struct Swirl {
 @group(2) @binding(2) var tWrite: texture_storage_2d<r32float, write>;
 @group(2) @binding(3) var pWrite: texture_storage_2d<r32float, write>;
 
+// World-fixed lattice: texel (i,j) = world cell (i,j), origin always (0,0).
+// Texture covers the whole world (scene sizes compute.size.{width,height}
+// from worldWidth/worldHeight/FIRE_CELL_SIZE) so panning/zoom never shift or
+// resize it — no shift_fields, no wipe. `cell_active` bounds the *simulated*
+// window to camera view + a margin (uLatticePad, in cells); cells outside
+// stay zeroed (empty).
 fn cell_h() -> f32 {
   return max(frame.uCellSize, 1e-6);
 }
 
-// Snap origin so the view stays inside the allocated texels when it can.
-// Unconditional pad (cam - pad*h) with tex = canvas*scale steals the
-// bottom-right: extent ~= view, so pad makes uv.xy > 1 there.
-fn lattice_origin_axis(cam: f32, view: f32, extent: f32, h: f32, padCells: f32) -> f32 {
-  let minO = cam + view - extent;
-  let kMin = ceil(minO / h);
-  let kMax = floor(cam / h);
-  if (kMin > kMax) {
-    return kMin * h;
-  }
-  let want = cam - max(padCells, 0.0) * h;
-  return clamp(floor(want / h), kMin, kMax) * h;
-}
-
-fn lattice_origin_at(camX: f32, camY: f32) -> vec2<f32> {
+fn cell_active(id: vec2<i32>) -> bool {
   let h = cell_h();
+  let pad = max(frame.uLatticePad, 0.0) * h;
   let view = vec2<f32>(frame.canvasW, frame.canvasH) / max(frame.zoom, 1e-6);
-  let extent = vec2<f32>(frame.texW, frame.texH) * h;
-  return vec2<f32>(
-    lattice_origin_axis(camX, view.x, extent.x, h, frame.uLatticePad),
-    lattice_origin_axis(camY, view.y, extent.y, h, frame.uLatticePad)
-  );
-}
-fn lattice_origin() -> vec2<f32> {
-  return lattice_origin_at(frame.cameraX, frame.cameraY);
-}
-fn lattice_shift() -> vec2<f32> {
-  let h = cell_h();
-  let o = lattice_origin();
-  let p = lattice_origin_at(frame.prevCameraX, frame.prevCameraY);
-  return vec2<f32>(round((o.x - p.x) / h), round((o.y - p.y) / h));
+  let cam = vec2<f32>(frame.cameraX, frame.cameraY);
+  let lo = cam - vec2<f32>(pad, pad);
+  let hi = cam + view + vec2<f32>(pad, pad);
+  let wpos = (vec2<f32>(id) + vec2<f32>(0.5)) * h;
+  return wpos.x >= lo.x && wpos.y >= lo.y && wpos.x <= hi.x && wpos.y <= hi.y;
 }
 
 fn in_grid(c: vec2<i32>) -> bool {
@@ -176,27 +160,13 @@ fn clear_pressure(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 
 @compute @workgroup_size(8, 8)
-fn shift_fields(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let id = vec2<i32>(i32(gid.x), i32(gid.y));
-  if (!in_grid(id)) { return; }
-  let src = id + vec2<i32>(i32(lattice_shift().x), i32(lattice_shift().y));
-  if (!in_grid(src)) {
-    textureStore(uWrite, id, vec4<f32>(0.0));
-    textureStore(vWrite, id, vec4<f32>(0.0));
-    textureStore(tWrite, id, vec4<f32>(0.0));
-    textureStore(pWrite, id, vec4<f32>(0.0));
-    return;
-  }
-  textureStore(uWrite, id, vec4<f32>(load_u(src), 0.0, 0.0, 0.0));
-  textureStore(vWrite, id, vec4<f32>(load_v(src), 0.0, 0.0, 0.0));
-  textureStore(tWrite, id, vec4<f32>(load_t(src), 0.0, 0.0, 0.0));
-  textureStore(pWrite, id, vec4<f32>(load_p(src), 0.0, 0.0, 0.0));
-}
-
-@compute @workgroup_size(8, 8)
 fn jacobi_pressure(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
   if (!in_grid(id)) { return; }
+  if (!cell_active(id)) {
+    textureStore(pWrite, id, vec4<f32>(0.0));
+    return;
+  }
   if (!interior(id) || open_cell(id) < 0.5) {
     textureStore(pWrite, id, vec4<f32>(0.0));
     return;
@@ -224,6 +194,11 @@ fn jacobi_pressure(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn project_velocity(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
   if (!in_grid(id)) { return; }
+  if (!cell_active(id)) {
+    textureStore(uWrite, id, vec4<f32>(0.0));
+    textureStore(vWrite, id, vec4<f32>(0.0));
+    return;
+  }
   var u = load_u(id);
   var v = load_v(id);
   if (open_cell(id) < 0.5) {
@@ -253,6 +228,11 @@ fn project_velocity(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn advect_velocity(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
   if (!in_grid(id)) { return; }
+  if (!cell_active(id)) {
+    textureStore(uWrite, id, vec4<f32>(0.0));
+    textureStore(vWrite, id, vec4<f32>(0.0));
+    return;
+  }
   let h = cell_h();
   let i = id.x;
   let j = id.y;
@@ -286,6 +266,10 @@ fn advect_velocity(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn advect_temperature(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
   if (!in_grid(id)) { return; }
+  if (!cell_active(id)) {
+    textureStore(tWrite, id, vec4<f32>(0.0));
+    return;
+  }
   if (!interior(id) || open_cell(id) < 0.5) {
     textureStore(tWrite, id, vec4<f32>(0.0));
     return;
@@ -302,6 +286,11 @@ fn advect_temperature(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn cool_rise(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
   if (!in_grid(id)) { return; }
+  if (!cell_active(id)) {
+    textureStore(tWrite, id, vec4<f32>(0.0));
+    textureStore(vWrite, id, vec4<f32>(0.0));
+    return;
+  }
   var t = load_t(id);
   var v = load_v(id);
   if (open_cell(id) < 0.5) {
@@ -321,6 +310,11 @@ fn cool_rise(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn apply_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
   if (!in_grid(id)) { return; }
+  if (!cell_active(id)) {
+    textureStore(uWrite, id, vec4<f32>(0.0));
+    textureStore(vWrite, id, vec4<f32>(0.0));
+    return;
+  }
   var u = load_u(id);
   var v = load_v(id);
   let h = cell_h();
@@ -370,6 +364,10 @@ fn apply_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn apply_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
   if (!in_grid(id)) { return; }
+  if (!cell_active(id)) {
+    textureStore(tWrite, id, vec4<f32>(0.0));
+    return;
+  }
   let mark = textureLoad(stampTex, id, 0);
   var t = load_t(id);
   if (mark.r < 0.5) {
@@ -390,6 +388,11 @@ fn apply_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn apply_body_vel(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
   if (!in_grid(id)) { return; }
+  if (!cell_active(id)) {
+    textureStore(uWrite, id, vec4<f32>(0.0));
+    textureStore(vWrite, id, vec4<f32>(0.0));
+    return;
+  }
   let vel0 = load_body_vel(id);
   if (open_cell(id) < 0.5 && vel0.z < 0.5) {
     textureStore(uWrite, id, vec4<f32>(0.0));
@@ -420,15 +423,28 @@ fn apply_body_vel(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn diffuse_temperature(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
   if (!in_grid(id)) { return; }
+  if (!cell_active(id)) {
+    textureStore(tWrite, id, vec4<f32>(0.0));
+    return;
+  }
   let t = load_t(id);
   if (!interior(id) || frame.uDiffusion <= 0.0) {
     textureStore(tWrite, id, vec4<f32>(t, 0.0, 0.0, 0.0));
     return;
   }
-  let avg = 0.25 * (
-    load_t(id + vec2<i32>(-1, 0)) + load_t(id + vec2<i32>(1, 0)) +
-    load_t(id + vec2<i32>(0, -1)) + load_t(id + vec2<i32>(0, 1))
-  );
+  let wL = open_cell(id + vec2<i32>(-1, 0));
+  let wR = open_cell(id + vec2<i32>(1, 0));
+  let wD = open_cell(id + vec2<i32>(0, -1));
+  let wU = open_cell(id + vec2<i32>(0, 1));
+  let wSum = wL + wR + wD + wU;
+  if (wSum <= 0.0) {
+    textureStore(tWrite, id, vec4<f32>(t, 0.0, 0.0, 0.0));
+    return;
+  }
+  let avg = (
+    load_t(id + vec2<i32>(-1, 0)) * wL + load_t(id + vec2<i32>(1, 0)) * wR +
+    load_t(id + vec2<i32>(0, -1)) * wD + load_t(id + vec2<i32>(0, 1)) * wU
+  ) / wSum;
   if (t <= 0.0 && avg <= 0.0) {
     textureStore(tWrite, id, vec4<f32>(0.0));
     return;
@@ -510,8 +526,9 @@ fn step_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
           let ang = hash11(f32(i) * 4.1 + frame.time * 1.9) * 6.2831853;
           let rad = bound * (0.8 + 0.3 * hash11(f32(i) * 11.3 + frame.time * 2.7));
           let spinSign = select(-1.0, 1.0, hash11(f32(i) * 2.3 + frame.time) < 0.5);
-          s.x = body.posX + cos(ang) * rad - lattice_origin().x;
-          s.y = body.posY + sin(ang) * rad - lattice_origin().y;
+          // World-fixed grid: swirl position is a true world position, no origin offset.
+          s.x = body.posX + cos(ang) * rad;
+          s.y = body.posY + sin(ang) * rad;
           s.vx = (-0.5 + hash11(f32(i) * 6.6 + frame.time * 5.2)) * 0.4;
           s.omega = spinSign * frame.uSwirlSpin * (0.8 + 0.4 * hash11(f32(i) * 3.9 + frame.time * 4.4));
           s.radius = max(cell_h() * frame.uSwirlRadius, 0.12);
@@ -520,16 +537,5 @@ fn step_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
       }
     }
   }
-  swirls[i] = s;
-}
-
-@compute @workgroup_size(64)
-fn shift_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let i = i32(gid.x);
-  let cap = i32(arrayLength(&swirls));
-  if (i >= cap) { return; }
-  var s = swirls[i];
-  s.x -= lattice_shift().x * cell_h();
-  s.y -= lattice_shift().y * cell_h();
   swirls[i] = s;
 }

@@ -5,29 +5,22 @@
 @group(1) @binding(0) var stampWrite: texture_storage_2d<rgba8unorm, write>;
 @group(1) @binding(1) var velWrite: texture_storage_2d<rgba32float, write>;
 
+// World-fixed lattice (see fireFluid.wgsl): texel (i,j) = world cell (i,j),
+// origin always (0,0). WGSL doesn't share code across files, so cell_h/
+// cell_active are redefined here to match fireFluid.wgsl exactly.
 fn cell_h() -> f32 {
   return max(frame.uCellSize, 1e-6);
 }
 
-fn lattice_origin_axis(cam: f32, view: f32, extent: f32, h: f32, padCells: f32) -> f32 {
-  let minO = cam + view - extent;
-  let kMin = ceil(minO / h);
-  let kMax = floor(cam / h);
-  if (kMin > kMax) {
-    return kMin * h;
-  }
-  let want = cam - max(padCells, 0.0) * h;
-  return clamp(floor(want / h), kMin, kMax) * h;
-}
-
-fn lattice_origin() -> vec2<f32> {
+fn cell_active(id: vec2<i32>) -> bool {
   let h = cell_h();
+  let pad = max(frame.uLatticePad, 0.0) * h;
   let view = vec2<f32>(frame.canvasW, frame.canvasH) / max(frame.zoom, 1e-6);
-  let extent = vec2<f32>(frame.texW, frame.texH) * h;
-  return vec2<f32>(
-    lattice_origin_axis(frame.cameraX, view.x, extent.x, h, frame.uLatticePad),
-    lattice_origin_axis(frame.cameraY, view.y, extent.y, h, frame.uLatticePad)
-  );
+  let cam = vec2<f32>(frame.cameraX, frame.cameraY);
+  let lo = cam - vec2<f32>(pad, pad);
+  let hi = cam + view + vec2<f32>(pad, pad);
+  let wpos = (vec2<f32>(id) + vec2<f32>(0.5)) * h;
+  return wpos.x >= lo.x && wpos.y >= lo.y && wpos.x <= hi.x && wpos.y <= hi.y;
 }
 
 fn sdBox(p: vec2<f32>, b: vec2<f32>) -> f32 {
@@ -59,11 +52,15 @@ fn sdConvexPoly(p: vec2<f32>, start: i32, n: i32) -> f32 {
 fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
   if (id.x >= i32(frame.texW) || id.y >= i32(frame.texH)) { return; }
+  if (!cell_active(id)) {
+    textureStore(stampWrite, id, vec4<f32>(1.0, 0.0, 0.0, 1.0));
+    textureStore(velWrite, id, vec4<f32>(0.0, 0.0, 0.0, 1.0));
+    return;
+  }
 
   let h = cell_h();
-  let origin = lattice_origin();
-  let wx = (f32(id.x) + 0.5) * h + origin.x;
-  let wy = (f32(id.y) + 0.5) * h + origin.y;
+  let wx = (f32(id.x) + 0.5) * h;
+  let wy = (f32(id.y) + 0.5) * h;
 
   var openCell = 1.0;
   var isSource = 0.0;

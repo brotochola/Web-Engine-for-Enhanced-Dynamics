@@ -1,6 +1,6 @@
 # Compute layers
 
-Generic WebGPU compute on a custom layer. The engine packs Box2D colliders, allocates **declared** GPU textures/buffers, dispatches **your** WGSL, and pins the look texture as `uTexture`. It does not ship a fire/fluid builtin. No auto `shift_fields`. Names: `lookSource`, not heat.
+Generic WebGPU compute on a custom layer. The engine packs Box2D colliders, allocates **declared** GPU textures/buffers, dispatches **your** WGSL, and pins the look texture as `uTexture`. It does not ship a fire/fluid builtin. No auto passes of any kind — every dispatch is a scene-declared entry in `compute.passes`. Names: `lookSource`, not heat.
 
 Look fragment samples the last compute write as `uTexture` (fullscreen quad). Collider geometry never becomes draw vertices.
 
@@ -32,10 +32,12 @@ static config = {
         fragment: 'fireLook',
         compute: {
           source: 'fireFluid',
-          size: { scale: 0.25 },
+          // World-fixed lattice: scene computes explicit pixel size from
+          // world dims / its own cell-size constant. Not an engine mode.
+          size: { width: Math.ceil(worldWidth / FIRE_CELL_SIZE), height: Math.ceil(worldHeight / FIRE_CELL_SIZE) },
           passes: [
-            { entry: 'shift_fields', source: 'fireFluid', when: 'originShift', swap: ['u', 'v', 't', 'p'] },
             { entry: 'raster_stamp', source: 'fireStamp' },
+            { entry: 'apply_stamp', source: 'fireFluid', swap: ['t'] },
             { entry: 'pack_heat', source: 'firePack' },
           ],
           textures: [
@@ -76,7 +78,7 @@ Declared compute textures are allocated at a **pixel extent**. Independent of `l
 | `{ scale: s }`           | `ceil(canvas * s)`          |
 | `{ width, height }`      | explicit pixels             |
 
-Same idea as the look pass: `scale` is resolution. Rebuild only when that pixel size changes (window resize). A world lattice (cell size, origin snap, pad) is scene WGSL + scene uniforms, not an engine size mode.
+Same idea as the look pass: `scale` is resolution. Rebuild only when that pixel size changes (window resize). A world-fixed lattice (fixed world-unit cell size, whole-world extent, viewport+margin gating) is scene WGSL + scene uniforms sized through the plain `{ width, height }` mode above — not an engine size concept. See the "World-fixed lattice pattern" section below.
 
 `maxBodies` is the feeder SSBO cap (default 512). Overflow clamps and warns once.
 
@@ -131,8 +133,8 @@ Pass extras:
 
 - `swap: ['t']` — ping-pong named `pingPong` textures after the dispatch
 - `iterate: 'uPressureIters'` — repeat; number or uniform name
-- `when: 'originShift'` — skip if camera XY unchanged vs the previous frame. Lattice shift amounts are computed in WGSL from `prevCamera*`. Zoom does not skip this pass.
-- `when: 'zoomChanged'` — run only if zoom moved vs the previous frame. Optional wipe. Fire demo world-locks `h` (`canvasW/texW`) so it does not wipe on zoom.
+- `when: 'originShift'` — skip if camera XY unchanged vs the previous frame. For a scene that keeps its own camera-relative offset in WGSL (computed from `prevCamera*`). Zoom does not skip this pass.
+- `when: 'zoomChanged'` — run only if zoom moved vs the previous frame.
 
 Storage formats are explicit (`r32float`, `rgba8unorm`, `rgba32float`). Do not match the look write to the canvas swapchain (`bgra8unorm` is often illegal as storage).
 
@@ -171,20 +173,30 @@ Engine prefix (`ENGINE_FRAME_PREFIX_FLOATS = 16`), then memcpy `shader.uniforms`
 
 First frame copies current camera into prev so shift is 0. Ubo size is 16-byte aligned. SAB offsets follow WGSL uniform alignment (vec2 → 2 floats, vec3/vec4 → 4), so the generated struct matches byte-for-byte.
 
-World lattice math lives in **scene WGSL** (not an engine include). Engine still feeds camera / prevCamera / `texW` so a scene can snap and shift:
+### World-fixed lattice pattern (scene recipe, not an engine feature)
+
+World lattice math lives entirely in **scene WGSL + scene JS** — the engine has no "cell", "lattice", or "margin" concept, only the generic `compute.size.{width,height}` mode and the generic per-frame camera/zoom/world floats above.
+
+The pattern the fire demo uses (see `demos/burningBoxesScene/`), analogous to `src/core/Grid.js` spatial hashing:
+
+1. Pick a fixed world-units-per-cell size (a scene constant, e.g. `FIRE_CELL_SIZE`). Size the compute texture from world dims: `compute.size = { width: ceil(worldWidth / cellSize), height: ceil(worldHeight / cellSize) }`. This texture covers the **whole world**, allocated once — it never resizes or shifts on pan/zoom.
+2. Texel `(i, j)` is always world cell `(i, j)`: world position `(i+0.5, j+0.5) * h` where `h` is the cell-size scene uniform. Origin is always `(0, 0)` — no camera-relative offset, no `lattice_origin`/shift pass.
+3. Gate expensive per-cell math with a `cell_active(id)` helper that checks whether the cell's world position falls inside the camera view plus a margin (a `uLatticePad` scene uniform, in cells). Cells outside that window skip their math and write a zeroed/"at rest" result instead — this is what keeps the simulated area small even though the texture spans the whole world:
 
 ```wgsl
-fn lattice_origin_axis(cam: f32, view: f32, extent: f32, h: f32, padCells: f32) -> f32 {
-  let minO = cam + view - extent;
-  let kMin = ceil(minO / h);
-  let kMax = floor(cam / h);
-  if (kMin > kMax) { return kMin * h; }
-  let want = cam - max(padCells, 0.0) * h;
-  return clamp(floor(want / h), kMin, kMax) * h;
+fn cell_active(id: vec2<i32>) -> bool {
+  let h = cell_h(); // max(frame.uCellSize, 1e-6)
+  let pad = max(frame.uLatticePad, 0.0) * h;
+  let view = vec2<f32>(frame.canvasW, frame.canvasH) / max(frame.zoom, 1e-6);
+  let cam = vec2<f32>(frame.cameraX, frame.cameraY);
+  let lo = cam - vec2<f32>(pad, pad);
+  let hi = cam + view + vec2<f32>(pad, pad);
+  let wpos = (vec2<f32>(id) + vec2<f32>(0.5)) * h;
+  return wpos.x >= lo.x && wpos.y >= lo.y && wpos.x <= hi.x && wpos.y <= hi.y;
 }
 ```
 
-`h` and pad are scene uniforms. Pad only uses leftover texels (`extent - view`); it must not hang the origin off the top-left when `tex = canvas * scale`. `shift = round((origin - origin_at(prevCam)) / h)`. `when: 'originShift'` skips the pass when the camera XY did not move.
+WGSL functions are not shared across compute source files — redefine `cell_h`/`cell_active` identically in each `.wgsl` file that needs them (e.g. both the fluid sim and the stamp raster pass).
 
 ## Look reserved uniforms
 
@@ -199,17 +211,13 @@ Auto-declared on every custom shader layer — do **not** add them to `shader.un
 - `uViewSize` vec2 — `canvas / zoom`
 - `uTexSize` vec2 — allocated compute storage pixels (`numX`, `numY`). `0` on layers without compute.
 
-Look fragments that sample a compute pack as a world field (not stretched mesh UV) reconstruct UV from engine camera/view/`uTexSize` plus the scene’s own cell-size / pad uniforms:
+Look fragments that sample a compute pack as a world field (not stretched mesh UV) reconstruct UV from engine camera/view/`uTexSize` plus the scene’s own cell-size uniform. For a world-fixed lattice (origin always `(0,0)`, see above) this is a direct world-position-over-extent divide, no origin subtraction:
 
 ```wgsl
 let h = max(/* scene cell-size uniform */, 1e-6);
 let extent = uTexSize * h;
-let origin = vec2(
-  lattice_origin_axis(uCameraPos.x, uViewSize.x, extent.x, h, padCells),
-  lattice_origin_axis(uCameraPos.y, uViewSize.y, extent.y, h, padCells)
-);
 let world = uCameraPos + in.vTextureCoord * uViewSize;
-let uv = (world - origin) / extent;
+let uv = world / extent;
 ```
 
 If `uv` is outside 0–1, return transparent **after** `textureSample` (WGSL: sample is uniform-control-flow only). Clamp the fetch coords if needed; do not *keep* the clamped color — that smears the last pack row.

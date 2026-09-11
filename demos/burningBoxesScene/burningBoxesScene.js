@@ -4,9 +4,17 @@ import { Camera } from '/src/core/Camera.js';
 import { BLEND_MODES, LAYER_COMPUTE_SOURCE } from '/src/core/ConfigDefaults.js';
 import WEED from '/src/index.js';
 
+// World-fixed fire lattice (this demo's own concept, not an engine feature):
+// the compute texture covers the whole world at FIRE_CELL_SIZE world-units
+// per texel, so texel (i,j) is always the same world position — no origin
+// shift/wipe on pan or zoom. uLatticePad (in cells) bounds which cells the
+// fluid passes actually simulate (camera view + margin); the rest stay at
+// rest (see cell_active() in fireFluid.wgsl / fireStamp.wgsl).
+const FIRE_WORLD_WIDTH = 4000;
+const FIRE_WORLD_HEIGHT = 3000;
+const FIRE_CELL_SIZE = 4;
+
 const FIRE_PASSES = [
-  { entry: 'shift_fields', source: 'fireFluid', when: 'originShift', swap: ['u', 'v', 't', 'p'] },
-  { entry: 'shift_swirls', source: 'fireFluid', when: 'originShift', workgroup: [64], dispatchFrom: 'swirls' },
   { entry: 'raster_stamp', source: 'fireStamp' },
   { entry: 'apply_stamp', source: 'fireFluid', swap: ['t'] },
   { entry: 'cool_rise', source: 'fireFluid', swap: ['t', 'v'] },
@@ -41,8 +49,8 @@ const FIRE_TEXTURES = [
  */
 export class BurningBoxesScene extends WEED.Scene {
   static config = {
-    worldWidth: 4000,
-    worldHeight: 3000,
+    worldWidth: FIRE_WORLD_WIDTH,
+    worldHeight: FIRE_WORLD_HEIGHT,
 
     spatial: {
       cellSize: 128,
@@ -79,7 +87,13 @@ export class BurningBoxesScene extends WEED.Scene {
           fragment: 'fireLook',
           compute: {
             source: 'fireFluid',
-            size: { scale: 0.25 },
+            // Explicit pixels via the engine's plain {width,height} mode —
+            // computed here from world dims / FIRE_CELL_SIZE (demo math, not
+            // an engine sizing concept). Whole world, allocated once.
+            size: {
+              width: Math.ceil(FIRE_WORLD_WIDTH / FIRE_CELL_SIZE),
+              height: Math.ceil(FIRE_WORLD_HEIGHT / FIRE_CELL_SIZE),
+            },
             passes: FIRE_PASSES,
             textures: FIRE_TEXTURES,
             buffers: [{ name: 'swirls', strideFloats: 8, count: 200 }],
@@ -87,8 +101,8 @@ export class BurningBoxesScene extends WEED.Scene {
           source: LAYER_COMPUTE_SOURCE.BOX2D_BODIES,
           maxBodies: 512,
           uniforms: {
-            uCellSize: { value: 4, type: 'f32', min: 1, max: 32, step: 0.5, label: 'Cell size', tip: 'World units per fluid cell. Fixed. Zoom and canvas size do not change this.' },
-            uLatticePad: { value: 32, type: 'f32', min: 0, max: 128, step: 1, label: 'Lattice pad', tip: 'Off-screen cells only if compute.size.scale leaves leftover texels. Does not punch a hole in the view.' },
+            uCellSize: { value: FIRE_CELL_SIZE, type: 'f32', min: 1, max: 32, step: 0.5, label: 'Cell size', tip: 'World units per fluid cell. Grid covers the whole world at this size (compute.size above). Dragging this live does not resize the grid — reload to apply.' },
+            uLatticePad: { value: 32, type: 'f32', min: 0, max: 256, step: 1, label: 'Lattice pad', tip: 'Cells outside camera view + this margin (in cells) do not simulate — they stay at rest (no heat/velocity).' },
             uRise: { value: -1000, type: 'f32', min: 0, max: 4000, step: 0.5, label: 'Rise', negate: true, tip: 'Buoyancy. How hard hot air lifts. 0 = no plume.' },
             uSmokeSplit: { value: 0.28, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Smoke split', tip: 'Heat below this draws as smoke, above as fire.' },
             uPressureIters: { value: 20, type: 'f32', min: 0, max: 20, step: 1, label: 'Pressure', tip: 'Incompressibility iterations. More = less mushy flow, more cost.' },

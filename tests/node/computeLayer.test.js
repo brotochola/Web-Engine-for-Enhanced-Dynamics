@@ -393,10 +393,66 @@ test('fireLook: sample then discard outside 0-1; fluid uses scene uCellSize', ()
   assert.ok(sampleAt >= 0);
   assert.ok(discardAt > sampleAt);
   assert.match(look, /uCellSize/);
-  assert.match(look, /uLatticePad/);
   const fluid = readFileSync(join(SHADER_DIR, 'fireFluid.wgsl'), 'utf8');
   assert.match(fluid, /max\(frame\.uCellSize/);
   assert.equal(/canvasW \/ max\(frame\.texW/.test(fluid), false);
+});
+
+test('world-fixed lattice: no camera-relative origin/shift, cell_active gates the fluid+stamp sim', () => {
+  const fluid = readFileSync(join(SHADER_DIR, 'fireFluid.wgsl'), 'utf8');
+  const stamp = readFileSync(join(SHADER_DIR, 'fireStamp.wgsl'), 'utf8');
+  const look = readFileSync(join(SHADER_DIR, 'fireLook.wgsl'), 'utf8');
+  for (const src of [fluid, stamp, look]) {
+    assert.equal(/lattice_origin|lattice_shift/.test(src), false);
+  }
+  assert.equal(/fn shift_swirls/.test(fluid), false);
+  assert.match(fluid, /fn cell_active\(id: vec2<i32>\)/);
+  assert.match(stamp, /fn cell_active\(id: vec2<i32>\)/);
+  // Every fluid pass that swaps a texture must gate on cell_active, since
+  // inactive cells must stay zeroed (empty), not stale/undefined.
+  for (const entry of ['cool_rise', 'apply_swirls', 'apply_stamp', 'apply_body_vel', 'diffuse_temperature', 'jacobi_pressure', 'project_velocity', 'advect_velocity', 'advect_temperature']) {
+    const fnStart = fluid.indexOf(`fn ${entry}(`);
+    assert.ok(fnStart >= 0, `${entry} should exist`);
+    const nextFn = fluid.indexOf('\n@compute', fnStart + 1);
+    const body = fluid.slice(fnStart, nextFn === -1 ? undefined : nextFn);
+    assert.match(body, /cell_active\(id\)/, `${entry} should gate on cell_active`);
+  }
+});
+
+test("burningBoxesScene: fire layer sizes compute.size from world dims via FIRE_CELL_SIZE (demo math, not an engine mode)", () => {
+  try {
+    Layer.reset();
+    const cellSize = 4;
+    const worldWidth = 4000;
+    const worldHeight = 3000;
+    Layer.initializeFromConfig(
+      {
+        fire: {
+          shader: {
+            fragment: 'fireLook',
+            compute: {
+              source: 'fireFluid',
+              size: {
+                width: Math.ceil(worldWidth / cellSize),
+                height: Math.ceil(worldHeight / cellSize),
+              },
+              passes: [{ entry: 'main' }],
+            },
+          },
+        },
+      },
+      BUILT_IN_LAYERS,
+      true
+    );
+    const fire = Layer.get('fire');
+    assert.equal(fire.compute.size.width, 1000);
+    assert.equal(fire.compute.size.height, 750);
+    const ext = Layer.computeTextureExtent(800, 600, fire.compute.size);
+    assert.equal(ext.texW, 1000);
+    assert.equal(ext.texH, 750);
+  } finally {
+    Layer.reset();
+  }
 });
 
 test('layerN: kindling negative scroll + +uTime*scroll moves uv.y toward screen up', () => {
