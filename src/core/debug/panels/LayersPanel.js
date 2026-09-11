@@ -2,7 +2,7 @@
 
 import { createPanel } from '../ui/DebugDOM.js';
 import { DEFAULT_LAYERS } from '../../ConfigDefaults.js';
-import { Layer } from '../../Layer.js';
+import { Layer, RESERVED_LOOK_UNIFORMS } from '../../Layer.js';
 
 function computeSizeLabel(meta) {
   const size = meta?.compute?.size;
@@ -12,17 +12,33 @@ function computeSizeLabel(meta) {
   return scale === 1 ? 'canvas' : `canvas×${scale}`;
 }
 
+function fmtUniform(n, step) {
+  if (typeof n !== 'number' || Number.isNaN(n)) return '—';
+  if (step && step < 1) return Number(n).toFixed(2);
+  return String(Math.round(n));
+}
+
+function fmtLive(floats, entry) {
+  if (entry.size === 1) return Number(floats[entry.offset]).toFixed(2);
+  const parts = [];
+  for (let i = 0; i < entry.size; i++) parts.push(Number(floats[entry.offset + i]).toFixed(1));
+  return parts.join(', ');
+}
+
 export class LayersPanel {
   constructor(debugUI) {
     this.debugUI = debugUI;
     this.elements = {
       layerControls: {},
       layerRows: {},
-      layerDetails: {},
       layerUniformInputs: {},
     };
     this.panel = null;
     this._shaderOptionsSynced = false;
+    // Floating details popup (uniforms + compute passes), one at a time.
+    this._float = null;
+    this._floatBody = null;
+    this._floatLayer = null;
   }
 
   // ------- DOM creation -------
@@ -41,6 +57,7 @@ export class LayersPanel {
 
   attach() {
     this._shaderOptionsSynced = false;
+    this._closeLayerFloat();
     this._updateLayersAvailability();
   }
 
@@ -57,11 +74,11 @@ export class LayersPanel {
   // ------- layer row -------
 
   _removeLayerRow(layerName) {
+    if (this._floatLayer === layerName) this._closeLayerFloat();
     const wrapper = this.elements.layerRows[layerName];
     if (wrapper?.parentNode) wrapper.parentNode.removeChild(wrapper);
     delete this.elements.layerRows[layerName];
     delete this.elements.layerControls[layerName];
-    delete this.elements.layerDetails[layerName];
     delete this.elements.layerUniformInputs[layerName];
   }
 
@@ -210,20 +227,15 @@ export class LayersPanel {
     zCont.appendChild(zInput);
     row.appendChild(zCont);
 
+    // Details popup button (uniforms + compute passes)
+    const tuneBtn = document.createElement('button');
+    tuneBtn.textContent = 'Tune';
+    tuneBtn.style.cssText = 'font-size:9px;padding:2px 6px;cursor:pointer;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.8);border:1px solid rgba(255,255,255,0.2);border-radius:3px';
+    tuneBtn.title = 'Open uniforms / compute panel';
+    tuneBtn.onclick = () => this._toggleLayerFloat(layerName);
+    row.appendChild(tuneBtn);
+
     wrapper.appendChild(row);
-
-    // Uniforms expandable
-    const uniformsBlock = document.createElement('div');
-    uniformsBlock.style.cssText = 'display:none;padding:4px 0 4px 16px;font-size:10px;color:rgba(255,255,255,0.55);line-height:1.6';
-    wrapper.appendChild(uniformsBlock);
-
-    label.style.cursor = 'pointer';
-    label.title = 'Click to expand uniforms';
-    label.onclick = () => {
-      const open = uniformsBlock.style.display === 'none';
-      uniformsBlock.style.display = open ? 'block' : 'none';
-      if (open) this._populateLayerUniforms(layerName);
-    };
 
     panel.appendChild(wrapper);
 
@@ -231,17 +243,79 @@ export class LayersPanel {
       visible: visibleCb, alpha: alphaSlider, alphaValue: alphaVal,
       blendMode: blendSelect, containerBlend: cBlendSelect,
       shader: shaderSelect, ySorting: ySortCb,
-      resolution: resVal, zIndex: zInput, computeVal,
+      resolution: resVal, zIndex: zInput, computeVal, tune: tuneBtn,
     };
     this.elements.layerRows[layerName] = wrapper;
-    this.elements.layerDetails[layerName] = uniformsBlock;
   }
 
-  // ------- uniforms -------
+  // ------- floating details popup (uniforms + compute) -------
 
-  _populateLayerUniforms(layerName) {
-    const block = this.elements.layerDetails[layerName];
-    if (!block) return;
+  _toggleLayerFloat(layerName) {
+    if (this._floatLayer === layerName) {
+      this._closeLayerFloat();
+      return;
+    }
+    this._openLayerFloat(layerName);
+  }
+
+  _openLayerFloat(layerName) {
+    this._closeLayerFloat();
+
+    const el = document.createElement('div');
+    el.style.cssText =
+      'position:fixed;left:12px;top:48px;width:300px;max-height:calc(100vh - 60px);z-index:950;' +
+      'overflow:auto;color:#e8e8e8;font:12px/1.35 system-ui,sans-serif;' +
+      'background:rgba(12,14,20,0.92);border:1px solid #3a4254;border-radius:10px;' +
+      'padding:10px 12px 14px;box-shadow:0 8px 28px rgba(0,0,0,0.45);';
+    // Keep wheel/drag from reaching the canvas (free camera zoom/pan).
+    el.addEventListener('wheel', (e) => e.stopPropagation());
+    el.addEventListener('pointerdown', (e) => e.stopPropagation());
+
+    const head = document.createElement('div');
+    head.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:2px';
+    const title = document.createElement('span');
+    title.textContent = layerName;
+    title.style.cssText = 'font-weight:600;font-size:13px;color:#fff';
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '×';
+    closeBtn.title = 'Close';
+    closeBtn.style.cssText = 'background:none;border:none;color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;padding:0 2px;line-height:1';
+    closeBtn.onclick = () => this._closeLayerFloat();
+    head.appendChild(title);
+    head.appendChild(closeBtn);
+    el.appendChild(head);
+
+    const body = document.createElement('div');
+    el.appendChild(body);
+    document.body.appendChild(el);
+
+    this._float = el;
+    this._floatBody = body;
+    this._floatLayer = layerName;
+
+    this._populateLayerDetails(layerName);
+  }
+
+  _closeLayerFloat() {
+    if (this._float?.parentNode) this._float.parentNode.removeChild(this._float);
+    if (this._floatLayer) delete this.elements.layerUniformInputs[this._floatLayer];
+    this._float = null;
+    this._floatBody = null;
+    this._floatLayer = null;
+  }
+
+  _sectionTitle(text) {
+    const el = document.createElement('div');
+    el.textContent = text;
+    el.style.cssText =
+      'font-weight:600;font-size:9px;text-transform:uppercase;letter-spacing:0.6px;' +
+      'color:rgba(255,255,255,0.35);margin:8px 0 3px;border-bottom:1px solid rgba(255,255,255,0.06);padding-bottom:2px';
+    return el;
+  }
+
+  _populateLayerDetails(layerName) {
+    const block = this._floatBody;
+    if (!block || this._floatLayer !== layerName) return;
     const layer = Layer.initialized ? Layer.get(layerName) : null;
     if (!layer) { block.textContent = 'Layer not initialized'; return; }
 
@@ -249,49 +323,166 @@ export class LayersPanel {
     block.innerHTML = '';
     this.elements.layerUniformInputs[layerName] = {};
 
-    if (!layer.hasShader || !meta?.uniformMap) {
+    const hasUniforms = layer.hasShader && meta?.uniformMap && Object.keys(meta.uniformMap).length;
+    if (!hasUniforms && !layer.compute) {
       block.innerHTML = '<span style="color:rgba(255,255,255,0.3)">No shader uniforms</span>';
       return;
     }
 
-    const dimStyle = 'color:rgba(255,255,255,0.4)';
+    if (hasUniforms) this._buildUniformsSection(block, layer, meta, layerName);
+    if (layer.compute) this._buildComputeSection(block, meta);
+  }
 
-    for (const [uName, entry] of Object.entries(meta.uniformMap)) {
-      const uType = meta.uniformTypes?.[uName] || 'f32';
-      const uRow = document.createElement('div');
-      uRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:2px';
+  _buildUniformsSection(block, layer, meta, layerName) {
+    const hints = meta.uniformHints || {};
+    const floats = Layer._uniformFloats[layer.id];
+    const sceneNames = [];
+    const engineNames = [];
+    for (const uName of Object.keys(meta.uniformMap)) {
+      (uName in RESERVED_LOOK_UNIFORMS ? engineNames : sceneNames).push(uName);
+    }
 
-      const uLabel = document.createElement('span');
-      uLabel.style.cssText = `${dimStyle};min-width:120px`; uLabel.textContent = uName;
-      uRow.appendChild(uLabel);
-
-      const uTypeSpan = document.createElement('span');
-      uTypeSpan.style.cssText = 'color:rgba(255,255,255,0.3);font-size:9px;min-width:55px';
-      uTypeSpan.textContent = uType;
-      uRow.appendChild(uTypeSpan);
-
-      const inputs = [];
-      for (let i = 0; i < entry.size; i++) {
-        const inp = document.createElement('input');
-        inp.type = 'number'; inp.step = '0.01';
-        inp.style.cssText = 'width:60px;font-size:10px;padding:1px 4px;background:rgba(0,0,0,0.5);color:#fbbf24;border:1px solid rgba(255,255,255,0.2);border-radius:3px';
-        const currentVal = Layer._uniformFloats[layer.id] ? Layer._uniformFloats[layer.id][entry.offset + i] : 0;
-        inp.value = parseFloat(currentVal.toFixed(4));
-        inp.onchange = () => {
-          if (entry.size === 1) {
-            layer.setUniform(uName, parseFloat(inp.value));
-          } else {
-            const arr = [];
-            for (let j = 0; j < inputs.length; j++) arr.push(parseFloat(inputs[j].value));
-            layer.setUniform(uName, arr);
-          }
-        };
-        inputs.push(inp);
-        uRow.appendChild(inp);
+    if (sceneNames.length) {
+      block.appendChild(this._sectionTitle('Uniforms'));
+      for (const uName of sceneNames) {
+        const entry = meta.uniformMap[uName];
+        const row = this._uniformRow(layer, uName, entry, hints[uName] || {}, floats);
+        block.appendChild(row.node);
+        this.elements.layerUniformInputs[layerName][uName] = row;
       }
+    }
+    if (engineNames.length) {
+      block.appendChild(this._sectionTitle('Engine (auto-fed)'));
+      for (const uName of engineNames) {
+        const entry = meta.uniformMap[uName];
+        const row = this._engineUniformRow(uName, entry);
+        block.appendChild(row.node);
+        this.elements.layerUniformInputs[layerName][uName] = row;
+      }
+    }
+  }
 
-      block.appendChild(uRow);
-      this.elements.layerUniformInputs[layerName][uName] = inputs;
+  _uniformRow(layer, uName, entry, hint, floats) {
+    const label = hint.label || uName;
+
+    if (hint.widget === 'check') {
+      const node = document.createElement('label');
+      node.style.cssText = 'display:flex;align-items:center;gap:6px;margin:2px 0;cursor:pointer';
+      if (hint.tip) node.title = hint.tip;
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = (floats ? floats[entry.offset] : 0) > 0.5;
+      cb.style.cursor = 'pointer';
+      cb.onchange = () => layer.setUniform(uName, cb.checked ? 1 : 0);
+      const span = document.createElement('span');
+      span.textContent = label;
+      node.appendChild(cb);
+      node.appendChild(span);
+      return { node, kind: 'check', entry, hint, input: cb };
+    }
+
+    if (typeof hint.min === 'number' && typeof hint.max === 'number' && entry.size === 1) {
+      const step = hint.step || 0.01;
+      const read = () => {
+        let v = floats ? floats[entry.offset] : 0;
+        return hint.negate ? -v : v;
+      };
+      const node = document.createElement('div');
+      node.style.cssText = 'display:grid;grid-template-columns:110px 1fr 44px;gap:6px;align-items:center;margin:2px 0';
+      if (hint.tip) node.title = hint.tip;
+      const name = document.createElement('span');
+      name.textContent = label;
+      name.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      const input = document.createElement('input');
+      input.type = 'range';
+      input.min = String(hint.min);
+      input.max = String(hint.max);
+      input.step = String(step);
+      input.value = String(read());
+      input.style.cssText = 'width:100%;cursor:pointer';
+      const val = document.createElement('span');
+      val.style.cssText = 'text-align:right;font-variant-numeric:tabular-nums;color:rgba(255,255,255,0.85)';
+      val.textContent = fmtUniform(read(), step);
+      input.oninput = () => {
+        const n = Number(input.value);
+        val.textContent = fmtUniform(n, step);
+        layer.setUniform(uName, hint.negate ? -n : n);
+      };
+      node.appendChild(name);
+      node.appendChild(input);
+      node.appendChild(val);
+      return { node, kind: 'slider', entry, hint, input, valEl: val };
+    }
+
+    // Fallback: one number input per component
+    const node = document.createElement('div');
+    node.style.cssText = 'display:flex;align-items:center;gap:6px;margin:2px 0';
+    if (hint.tip) node.title = hint.tip;
+    const name = document.createElement('span');
+    name.style.cssText = 'min-width:110px';
+    name.textContent = label;
+    node.appendChild(name);
+    const inputs = [];
+    for (let i = 0; i < entry.size; i++) {
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.step = String(hint.step || 0.01);
+      inp.style.cssText = 'width:60px;font-size:10px;padding:1px 4px;background:rgba(0,0,0,0.5);color:#fbbf24;border:1px solid rgba(255,255,255,0.2);border-radius:3px';
+      const currentVal = floats ? floats[entry.offset + i] : 0;
+      inp.value = parseFloat(currentVal.toFixed(4));
+      inp.onchange = () => {
+        if (entry.size === 1) {
+          layer.setUniform(uName, parseFloat(inp.value));
+        } else {
+          layer.setUniform(uName, inputs.map((x) => parseFloat(x.value)));
+        }
+      };
+      inputs.push(inp);
+      node.appendChild(inp);
+    }
+    return { node, kind: 'number', entry, hint, inputs };
+  }
+
+  _engineUniformRow(uName, entry) {
+    const node = document.createElement('div');
+    node.style.cssText = 'display:flex;align-items:center;gap:6px;margin:2px 0;opacity:0.6';
+    node.title = 'Engine-fed every frame (read-only)';
+    const name = document.createElement('span');
+    name.style.cssText = 'min-width:110px;color:rgba(255,255,255,0.4)';
+    name.textContent = uName;
+    const val = document.createElement('span');
+    val.style.cssText = 'font-variant-numeric:tabular-nums;color:rgba(255,255,255,0.6)';
+    node.appendChild(name);
+    node.appendChild(val);
+    return { node, kind: 'engine', entry, valEl: val };
+  }
+
+  _buildComputeSection(block, meta) {
+    const compute = meta?.compute;
+    if (!compute) return;
+    block.appendChild(this._sectionTitle('Compute passes'));
+    const passes = compute.passes || [];
+    for (const p of passes) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:6px;align-items:baseline;margin:1px 0;font-family:monospace;font-size:10px';
+      const name = document.createElement('span');
+      name.style.color = 'rgba(255,255,255,0.75)';
+      name.textContent = p.entry;
+      row.appendChild(name);
+      const tags = [];
+      if (p.source) tags.push(p.source);
+      if (p.swap && p.swap.length) tags.push('swap ' + p.swap.join(','));
+      if (p.iterate) tags.push('×' + p.iterate);
+      if (p.when) tags.push('when ' + p.when);
+      if (p.workgroup) tags.push('wg ' + p.workgroup.join('x'));
+      if (p.dispatchFrom) tags.push('n=' + p.dispatchFrom);
+      if (tags.length) {
+        const t = document.createElement('span');
+        t.style.cssText = 'color:rgba(255,255,255,0.35);font-size:9px';
+        t.textContent = tags.join(' · ');
+        row.appendChild(t);
+      }
+      block.appendChild(row);
     }
   }
 
@@ -303,17 +494,34 @@ export class LayersPanel {
     for (const [layerName, inputMap] of Object.entries(this.elements.layerUniformInputs)) {
       const layer = Layer.get(layerName);
       if (!layer || !Layer._uniformFloats[layer.id]) continue;
-      const meta = Layer._metadata?.layers?.[layer.id];
-      if (!meta?.uniformMap) continue;
+      const floats = Layer._uniformFloats[layer.id];
 
-      for (const [uName, inputs] of Object.entries(inputMap)) {
-        const entry = meta.uniformMap[uName];
+      for (const row of Object.values(inputMap)) {
+        const entry = row.entry;
         if (!entry) continue;
-        for (let i = 0; i < inputs.length; i++) {
-          if (document.activeElement === inputs[i]) continue;
-          const live = Layer._uniformFloats[layer.id][entry.offset + i];
-          const display = parseFloat(live.toFixed(4));
-          if (parseFloat(inputs[i].value) !== display) inputs[i].value = display;
+
+        if (row.kind === 'engine') {
+          row.valEl.textContent = fmtLive(floats, entry);
+          continue;
+        }
+        if (row.kind === 'check') {
+          if (document.activeElement !== row.input) {
+            row.input.checked = floats[entry.offset] > 0.5;
+          }
+          continue;
+        }
+        if (row.kind === 'slider') {
+          if (document.activeElement === row.input) continue;
+          let v = floats[entry.offset];
+          if (row.hint.negate) v = -v;
+          row.input.value = String(v);
+          row.valEl.textContent = fmtUniform(v, row.hint.step || 0.01);
+          continue;
+        }
+        for (let i = 0; i < row.inputs.length; i++) {
+          if (document.activeElement === row.inputs[i]) continue;
+          const display = parseFloat(floats[entry.offset + i].toFixed(4));
+          if (parseFloat(row.inputs[i].value) !== display) row.inputs[i].value = display;
         }
       }
     }
@@ -356,6 +564,7 @@ export class LayersPanel {
       controls.alpha.disabled = !isAvailable;
       controls.blendMode.disabled = !isAvailable;
       controls.zIndex.disabled = !isAvailable;
+      controls.tune.disabled = !isAvailable;
 
       const layer = Layer.initialized ? Layer.get(layerName) : null;
       // Shader RT layers (incl. liquidFun density, no sprite queue) stay editable.
@@ -467,8 +676,7 @@ export class LayersPanel {
       shaderFragment: source || null,
     });
 
-    const block = this.elements.layerDetails[layerName];
-    if (block && block.style.display !== 'none') this._populateLayerUniforms(layerName);
+    if (this._floatLayer === layerName) this._populateLayerDetails(layerName);
   }
 
   _buildBlendSelect(style, modes) {

@@ -1764,6 +1764,20 @@ export declare class Sun {
 export interface LayerUniformDef {
   type?: 'f32' | 'i32' | 'vec2<f32>' | 'vec3<f32>' | 'vec4<f32>' | string;
   value?: number | number[];
+  /** LayersPanel: with `max`, renders a slider (f32 only). */
+  min?: number;
+  /** LayersPanel: with `min`, renders a slider (f32 only). */
+  max?: number;
+  /** LayersPanel: slider/number step. */
+  step?: number;
+  /** LayersPanel: display label (defaults to the uniform name). */
+  label?: string;
+  /** LayersPanel: tooltip. */
+  tip?: string;
+  /** LayersPanel: show and edit `-value` (e.g. Y-down buoyancy). */
+  negate?: boolean;
+  /** LayersPanel: 'check' renders a checkbox writing 0/1. */
+  widget?: 'check';
 }
 
 /** Per-layer entry in scene `config.layers` (custom layers). */

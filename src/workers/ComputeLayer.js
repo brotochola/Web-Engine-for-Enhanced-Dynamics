@@ -10,10 +10,11 @@ import { packBox2dBodies, BODY_FLOATS } from './Box2dBodyPack.js';
 import { Layer } from '../core/Layer.js';
 import { pinGpuTexture } from './pinGpuTexture.js';
 import { inferComputeLayout } from './inferComputeLayout.js';
+import { prependComputePrelude } from './wgslPrelude.js';
 
 const WORK = 8;
-/** Engine SimParams Frame prefix (floats). Scene uniforms memcpy at this offset. */
-export const ENGINE_SIM_PREFIX_FLOATS = 16;
+/** Engine FrameData prefix (floats). Scene uniforms memcpy at this offset. */
+export const ENGINE_FRAME_PREFIX_FLOATS = 16;
 
 function finiteOrZero(n) {
   return Number.isFinite(n) ? n : 0;
@@ -66,7 +67,8 @@ export class ComputeLayer {
     this.layerId = meta.id;
     this.maxBodies = (meta.maxBodies | 0) || 512;
     this._texSize = meta.compute?.size || { scale: 1 };
-    this.passes = (meta.compute?.passes || []).slice();
+    // Shallow-copy passes: compile() rewrites p.code with the engine prelude.
+    this.passes = (meta.compute?.passes || []).map((p) => ({ ...p }));
     this.texDecls = (meta.compute?.textures || []).slice();
     this.bufDecls = (meta.compute?.buffers || []).slice();
     this.layoutSpecs = meta.compute?.layouts || null;
@@ -78,7 +80,7 @@ export class ComputeLayer {
     this._texReady = false;
 
     const extra = Layer._uniformFloats[this.layerId]?.length || 0;
-    this._paramCount = Math.max(32, Math.ceil((ENGINE_SIM_PREFIX_FLOATS + extra) / 4) * 4);
+    this._paramCount = Math.max(32, Math.ceil((ENGINE_FRAME_PREFIX_FLOATS + extra) / 4) * 4);
     this.params = new Float32Array(this._paramCount);
     this.bodyData = new Float32Array(this.maxBodies * BODY_FLOATS);
     this.vertData = new Float32Array(this.maxBodies * 8 * 2);
@@ -140,12 +142,20 @@ export class ComputeLayer {
 
   async compile() {
     const device = this.device;
+    const uniformMap = Layer._uniformMaps[this.layerId] || null;
+    const uniformTypes = this.meta.uniformTypes || null;
     try {
       for (let i = 0; i < this.passes.length; i++) {
-        const code = this.passes[i].code;
-        if (!code) {
+        const raw = this.passes[i].code;
+        if (!raw) {
           throw new Error(`pass "${this.passes[i].entry}" missing WGSL`);
         }
+        // Prepend engine FrameData/Body prelude; throws on redeclared structs.
+        if (!this.passes[i]._preluded) {
+          this.passes[i].code = prependComputePrelude(raw, uniformMap, uniformTypes);
+          this.passes[i]._preluded = true;
+        }
+        const code = this.passes[i].code;
         if (this.modules.has(code)) continue;
         const module = device.createShaderModule({
           label: `compute-${this.meta.name}-${i}`,
@@ -393,8 +403,8 @@ export class ComputeLayer {
     p[15] = 0;
     const floats = Layer._uniformFloats[this.layerId];
     if (floats && floats.length) {
-      const n = Math.min(floats.length, p.length - ENGINE_SIM_PREFIX_FLOATS);
-      if (n > 0) p.set(floats.subarray(0, n), ENGINE_SIM_PREFIX_FLOATS);
+      const n = Math.min(floats.length, p.length - ENGINE_FRAME_PREFIX_FLOATS);
+      if (n > 0) p.set(floats.subarray(0, n), ENGINE_FRAME_PREFIX_FLOATS);
     }
     this.device.queue.writeBuffer(this.paramsBuffer, 0, p);
   }

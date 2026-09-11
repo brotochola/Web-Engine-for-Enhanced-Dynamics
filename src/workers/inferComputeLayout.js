@@ -4,7 +4,7 @@
  */
 
 const ENGINE_ALIASES = {
-  sim: 'params',
+  frame: 'params',
   params: 'params',
   bodies: 'bodies',
   shapes: 'bodies',

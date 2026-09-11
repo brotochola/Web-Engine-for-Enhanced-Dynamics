@@ -66,14 +66,21 @@ test('liquidFunRayCastAsync + error path', async () => {
     clearInterval(rayTimer);
   }
 
+  const logged = [];
+  const origError = console.error;
+  console.error = (...args) => {
+    logged.push(args);
+  };
   const errTimer = startService('error');
   try {
     await assert.rejects(
       () => liquidFunQueryAABBAsync(0, 0, 1, 1, out),
       /physics reported error/,
     );
+    assert.equal(logged.length, 1);
   } finally {
     clearInterval(errTimer);
+    console.error = origError;
     bindLiquidFunQuerySab(null);
   }
 });

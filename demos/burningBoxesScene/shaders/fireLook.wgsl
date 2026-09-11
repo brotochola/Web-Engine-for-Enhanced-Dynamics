@@ -1,59 +1,7 @@
-struct GlobalUniforms {
-  uProjectionMatrix: mat3x3<f32>,
-  uWorldTransformMatrix: mat3x3<f32>,
-  uWorldColorAlpha: vec4<f32>,
-  uResolution: vec2<f32>,
-}
-@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
-
-struct LocalUniforms {
-  uTransformMatrix: mat3x3<f32>,
-  uColor: vec4<f32>,
-  uRound: f32,
-}
-@group(1) @binding(0) var<uniform> localUniforms: LocalUniforms;
-
-struct CustomUniforms {
-  uRise: f32,
-  uSmokeSplit: f32,
-  uPressureIters: f32,
-  uTime: f32,
-  uDrawCutoff: f32,
-  uFireCool: f32,
-  uSmokeCool: f32,
-  uDiffusion: f32,
-  uSwirlForce: f32,
-  uEmberOn: f32,
-  uOverRelax: f32,
-  uBodyDrive: f32,
-  uSourcePad: f32,
-  uSwirlDamp: f32,
-  uStampPad: f32,
-  uSwirlChance: f32,
-  uSwirlSpin: f32,
-  uSwirlLife: f32,
-  uSwirlRadius: f32,
-  uMaxSwirls: f32,
-}
-@group(2) @binding(0) var<uniform> customUniforms: CustomUniforms;
-@group(2) @binding(1) var uTexture: texture_2d<f32>;
-@group(2) @binding(2) var uSampler: sampler;
-
-struct VertexOut {
-  @builtin(position) position: vec4<f32>,
-  @location(0) vTextureCoord: vec2<f32>,
-}
-
-@vertex
-fn mainVert(
-  @location(0) aPosition: vec2<f32>,
-  @location(1) aUV: vec2<f32>,
-) -> VertexOut {
-  var out: VertexOut;
-  out.position = vec4<f32>(aPosition, 0.0, 1.0);
-  out.vTextureCoord = aUV;
-  return out;
-}
+// Engine look prelude provides: GlobalUniforms/LocalUniforms/CustomUniforms,
+// VertexOut, and the customUniforms/uTexture/uSampler bindings.
+// Scene uniforms (config) are fields of customUniforms; uTime/uDt/uZoom/
+// uCameraPos/uCanvasSize/uWorldSize/uViewSize are engine-fed reserved fields.
 
 fn hash21(p: vec2<f32>) -> f32 {
   return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);

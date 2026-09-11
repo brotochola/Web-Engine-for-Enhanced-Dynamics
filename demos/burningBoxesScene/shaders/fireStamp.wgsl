@@ -1,76 +1,19 @@
-struct SimParams {
-  dt: f32,
-  texW: f32,
-  texH: f32,
-  cameraX: f32,
-  cameraY: f32,
-  zoom: f32,
-  shapeCount: f32,
-  canvasW: f32,
-  canvasH: f32,
-  worldW: f32,
-  worldH: f32,
-  time: f32,
-  prevCameraX: f32,
-  prevCameraY: f32,
-  prevZoom: f32,
-  padFrame: f32,
-  rise: f32,
-  smokeSplit: f32,
-  pressureIters: f32,
-  emberT: f32,
-  drawCutoff: f32,
-  fireCool: f32,
-  smokeCool: f32,
-  diffusion: f32,
-  swirlForce: f32,
-  emberOn: f32,
-  overRelax: f32,
-  bodyDrive: f32,
-  sourcePad: f32,
-  swirlDamp: f32,
-  stampPad: f32,
-  swirlChance: f32,
-  swirlSpin: f32,
-  swirlLife: f32,
-  swirlRadius: f32,
-  maxSwirls: f32,
-}
+// Engine prelude provides: struct FrameData + var<uniform> frame, struct Body.
 
-struct Body {
-  posX: f32,
-  posY: f32,
-  cosA: f32,
-  sinA: f32,
-  halfW: f32,
-  halfH: f32,
-  shapeKind: f32,
-  flags: f32,
-  velX: f32,
-  velY: f32,
-  omega: f32,
-  vertStart: f32,
-  vertCount: f32,
-  pad0: f32,
-  pad1: f32,
-  pad2: f32,
-}
-
-@group(0) @binding(0) var<uniform> sim: SimParams;
 @group(0) @binding(1) var<storage, read> bodies: array<Body>;
 @group(0) @binding(2) var<storage, read> verts: array<vec2<f32>>;
 @group(1) @binding(0) var stampWrite: texture_storage_2d<rgba8unorm, write>;
 @group(1) @binding(1) var velWrite: texture_storage_2d<rgba32float, write>;
 
 fn cell_h() -> f32 {
-  return (sim.canvasW / max(sim.zoom, 1e-6)) / max(sim.texW, 1.0);
+  return (frame.canvasW / max(frame.zoom, 1e-6)) / max(frame.texW, 1.0);
 }
 fn snap_origin(cam: f32, h: f32) -> f32 {
   return floor(cam / h) * h;
 }
 fn lattice_origin() -> vec2<f32> {
   let h = cell_h();
-  return vec2<f32>(snap_origin(sim.cameraX, h), snap_origin(sim.cameraY, h));
+  return vec2<f32>(snap_origin(frame.cameraX, h), snap_origin(frame.cameraY, h));
 }
 
 fn sdBox(p: vec2<f32>, b: vec2<f32>) -> f32 {
@@ -101,7 +44,7 @@ fn sdConvexPoly(p: vec2<f32>, start: i32, n: i32) -> f32 {
 @compute @workgroup_size(8, 8)
 fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
-  if (id.x >= i32(sim.texW) || id.y >= i32(sim.texH)) { return; }
+  if (id.x >= i32(frame.texW) || id.y >= i32(frame.texH)) { return; }
 
   let h = cell_h();
   let origin = lattice_origin();
@@ -114,7 +57,7 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
   var bodyVx = 0.0;
   var bodyVy = 0.0;
   var hasBody = 0.0;
-  let count = i32(sim.shapeCount);
+  let count = i32(frame.shapeCount);
 
   for (var i = 0; i < count; i++) {
     let s = bodies[i];
@@ -153,9 +96,9 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
     let isBurning = (i32(s.flags) & 1) != 0;
     let isStatic = (i32(s.flags) & 2) != 0;
     let isSweep = (i32(s.flags) & 4) != 0;
-    let pad = sim.sourcePad;
+    let pad = frame.uSourcePad;
     let band = max(0.0, max(2.0 * h, 0.15 * max(size, 0.0)) + pad);
-    let skin = sim.stampPad * h;
+    let skin = frame.uStampPad * h;
 
     if (d <= skin) {
       if (isStatic) {
@@ -172,9 +115,9 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
       }
     }
-    if (d <= 0.0 && isBurning && !isStatic && !isSweep && sim.emberOn > 0.5) {
+    if (d <= 0.0 && isBurning && !isStatic && !isSweep && frame.uEmberOn > 0.5) {
       let n = fract(abs(sin(f32(id.x) * 12.9898 + f32(id.y) * 78.233) * 43758.5453));
-      let flick = 0.84 + 0.16 * sin(sim.emberT * 9.0 + f32(id.x) * 1.7 + f32(id.y) * 2.3);
+      let flick = 0.84 + 0.16 * sin(frame.time * 9.0 + f32(id.x) * 1.7 + f32(id.y) * 2.3);
       let heat = clamp((0.7 + 0.3 * n) * (0.85 + 0.15 * depth) * flick, 0.0, 1.0);
       maxEmber = max(maxEmber, heat);
     }

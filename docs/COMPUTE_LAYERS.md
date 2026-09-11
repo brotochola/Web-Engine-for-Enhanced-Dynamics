@@ -119,7 +119,7 @@ Inferred from each compute WGSL file’s `@group` / `@binding` declarations. Pas
 
 Naming: after stripping a trailing `Texture`, `Write`, `Read`, or `Tex` (longest first), the identifier must be an engine resource:
 
-- Aliases: `sim` / `params` → `params`; `bodies` / `shapes` → `bodies`; `verts` → `verts`.
+- Aliases: `frame` / `params` → `params`; `bodies` / `shapes` → `bodies`; `verts` → `verts`.
 - Otherwise the stem must equal a `compute.textures[].name` or `compute.buffers[].name`.
 - `Write` / `texture_storage_2d` on a ping-pong texture → `ping: 'write'`. Sampled `texture_2d` → `ping: 'read'`.
 
@@ -139,9 +139,19 @@ The texture marked `look: true` is copied to a sample-only view (storage tex sam
 
 Look / instanced mesh shaders may use **at most 4 bind groups** (WebGPU `maxBindGroups` minimum). Pixi already occupies 0–1 (`globalUniforms`, `localUniforms`). Put look uniforms + `uTexture` in group 2. Do not add group 4.
 
-## SimParams UBO (Frame prefix)
+## WGSL prelude (engine-generated structs)
 
-Engine prefix (`ENGINE_SIM_PREFIX_FLOATS = 16`), then memcpy `shader.uniforms` in config order:
+The engine prepends a prelude to every compute WGSL and every WGSL look shader. **Never declare these yourself** — a guard throws a `WeedJS:` error naming the declaration to delete:
+
+- `struct FrameData` + `@group(0) @binding(0) var<uniform> frame: FrameData;` (compute)
+- `struct Body` (compute) — matches the `BODY_FLOATS = 16` pack
+- `struct GlobalUniforms` / `LocalUniforms` / `CustomUniforms` / `VertexOut`, the `customUniforms` / `uTexture` / `uSampler` bindings (look)
+
+Scene WGSL starts directly at its own structs/bindings/functions and reads frame data as `frame.dt`, `frame.cameraX`, and scene uniforms as `frame.uRise` (compute) or `customUniforms.uRise` (look). Field names in the generated structs are the **exact config uniform names**, in SAB order — reordering config can never corrupt the layout.
+
+## FrameData UBO
+
+Engine prefix (`ENGINE_FRAME_PREFIX_FLOATS = 16`), then memcpy `shader.uniforms` in map order:
 
 | floats | meaning |
 |-------:|---------|
@@ -156,17 +166,15 @@ Engine prefix (`ENGINE_SIM_PREFIX_FLOATS = 16`), then memcpy `shader.uniforms` i
 | 12–13 | prevCameraX, prevCameraY |
 | 14 | prevZoom |
 | 15 | pad |
-| 16+ | scene uniforms in `config.shader.uniforms` order |
+| 16+ | reserved look uniforms, then scene uniforms (map order, WGSL-aligned) |
 
-WGSL `struct SimParams` must match this packing. First frame copies current camera into prev so shift is 0.
-
-Ubo size is 16-byte aligned (padded to a multiple of 4 floats).
+First frame copies current camera into prev so shift is 0. Ubo size is 16-byte aligned. SAB offsets follow WGSL uniform alignment (vec2 → 2 floats, vec3/vec4 → 4), so the generated struct matches byte-for-byte.
 
 Lattice helper (copy into the compute WGSL; not an engine include yet):
 
 ```wgsl
 fn cell_h() -> f32 {
-  return (sim.canvasW / max(sim.zoom, 1e-6)) / max(sim.texW, 1.0);
+  return (frame.canvasW / max(frame.zoom, 1e-6)) / max(frame.texW, 1.0);
 }
 fn snap_origin(cam: f32, h: f32) -> f32 { return floor(cam / h) * h; }
 ```
@@ -175,7 +183,7 @@ fn snap_origin(cam: f32, h: f32) -> f32 { return floor(cam / h) * h; }
 
 ## Look reserved uniforms
 
-If the look `CustomUniforms` / `shader.uniforms` map declares these names, the engine writes them every frame (overwrites `setUniform`):
+Auto-declared on every custom shader layer — do **not** add them to `shader.uniforms`. The engine writes them every frame (overwrites `setUniform`):
 
 - `uTime` f32 — seconds
 - `uDt` f32
@@ -186,5 +194,21 @@ If the look `CustomUniforms` / `shader.uniforms` map declares these names, the e
 - `uViewSize` vec2 — `canvas / zoom`
 
 Art rate belongs in WGSL (`sin(uTime * 2.0)`), not a scaled `setUniform`.
+
+## Panel hints (LayersPanel)
+
+Uniform defs accept optional hints that drive the debug LayersPanel widgets (expand the layer row):
+
+```javascript
+uniforms: {
+  uRise: { value: -1000, type: 'f32', min: 0, max: 4000, step: 0.5, label: 'Rise', negate: true, tip: 'Buoyancy.' },
+  uEmberOn: { value: 1, type: 'f32', widget: 'check', label: 'Ember' },
+}
+```
+
+- `min` + `max` → slider (f32 only); `step` sets resolution
+- `widget: 'check'` → checkbox (0/1)
+- `label` / `tip` → display name / tooltip; `negate: true` shows and edits `-value`
+- No hints → plain number input(s). Reserved uniforms show as read-only live values under "Engine (auto-fed)".
 
 Engine default `renderer.backend` is **`webgpu`**. Compute layers require WebGPU. Look shaders must be WGSL on WebGPU and GLSL (`.frag`) on WebGL. A WebGL scene with `shader.compute` throws. Missing GPU device throws at Pixi init when the scene requested WebGPU.

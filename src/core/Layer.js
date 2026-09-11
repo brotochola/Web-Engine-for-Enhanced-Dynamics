@@ -34,6 +34,25 @@ import {
     COMPUTE_LAYER_DEFAULT_MAX_BODIES,
 } from './ConfigDefaults.js';
 
+/**
+ * Engine-reserved look uniforms, auto-declared on every custom shader layer
+ * and fed every frame by applyEngineLookUniforms in pixi_worker. Scenes use
+ * them in WGSL/GLSL without declaring them in config. Scene defs win on
+ * name collision (only the scene's initial value is kept).
+ */
+export const RESERVED_LOOK_UNIFORMS = {
+    uTime: { value: 0, type: 'f32' },
+    uDt: { value: 0, type: 'f32' },
+    uZoom: { value: 1, type: 'f32' },
+    uCameraPos: { value: [0, 0], type: 'vec2<f32>' },
+    uCanvasSize: { value: [0, 0], type: 'vec2<f32>' },
+    uWorldSize: { value: [0, 0], type: 'vec2<f32>' },
+    uViewSize: { value: [0, 0], type: 'vec2<f32>' },
+};
+
+/** Panel hint keys carried into metadata (LayersPanel widgets). */
+const UNIFORM_HINT_KEYS = ['min', 'max', 'step', 'label', 'tip', 'negate', 'widget'];
+
 export class Layer {
     static MAX_LAYERS = 16;
     static ENTITIES_ID = -1; // Set during init when ENTITIES is registered
@@ -513,8 +532,11 @@ export class Layer {
                 this._feedMax[layer.id] = maxBodies;
             }
 
-            if (config.shader && config.shader.uniforms) {
-                this._allocateUniformSAB(layer.id, config.shader.uniforms);
+            if (config.shader) {
+                this._allocateUniformSAB(
+                    layer.id,
+                    this._mergeReservedLookUniforms(config.shader.uniforms)
+                );
             }
         }
 
@@ -801,12 +823,31 @@ export class Layer {
     // UNIFORM SAB ALLOCATION (main thread)
     // ========================================
 
+    /**
+     * Reserved look uniforms first, then scene uniforms. Scene defs override
+     * reserved ones on name collision (keeps scene initial value/type).
+     */
+    static _mergeReservedLookUniforms(uniforms) {
+        const merged = {};
+        for (const [name, def] of Object.entries(RESERVED_LOOK_UNIFORMS)) {
+            merged[name] = def;
+        }
+        for (const [name, def] of Object.entries(uniforms || {})) {
+            merged[name] = name in merged ? { ...merged[name], ...def } : def;
+        }
+        return merged;
+    }
+
     static _allocateUniformSAB(layerId, uniformsConfig) {
         const map = {};
         let floatCount = 0;
 
         for (const [name, def] of Object.entries(uniformsConfig)) {
             const size = this._getUniformSize(def.type);
+            // WGSL uniform address-space alignment (in floats): vec2 -> 2, vec3/vec4 -> 4.
+            // Keeps SAB offsets identical to the engine-generated WGSL struct layout.
+            if (size === 2) floatCount = (floatCount + 1) & ~1;
+            else if (size >= 3) floatCount = (floatCount + 3) & ~3;
             map[name] = { offset: floatCount, size };
             floatCount += size;
         }
@@ -896,6 +937,7 @@ export class Layer {
                 shaderName: null,
                 dynamicResolution: config.dynamicResolution || null,
                 uniformTypes: null,
+                uniformHints: null,
                 densitySource,
                 splat,
                 compute: layer._compute || null,
@@ -903,12 +945,24 @@ export class Layer {
                 maxBodies: layer._compute?.maxBodies || 0,
             };
 
-            if (config.shader?.uniforms) {
-                const uniformTypes = {};
-                for (const [uName, uDef] of Object.entries(config.shader.uniforms)) {
-                    uniformTypes[uName] = uDef.type || 'f32';
+            if (config.shader) {
+                const merged = isBuiltIn
+                    ? config.shader.uniforms
+                    : this._mergeReservedLookUniforms(config.shader.uniforms);
+                if (merged) {
+                    const uniformTypes = {};
+                    const uniformHints = {};
+                    for (const [uName, uDef] of Object.entries(merged)) {
+                        uniformTypes[uName] = uDef.type || 'f32';
+                        const hint = {};
+                        for (const key of UNIFORM_HINT_KEYS) {
+                            if (uDef[key] !== undefined) hint[key] = uDef[key];
+                        }
+                        if (Object.keys(hint).length) uniformHints[uName] = hint;
+                    }
+                    meta.uniformTypes = uniformTypes;
+                    if (Object.keys(uniformHints).length) meta.uniformHints = uniformHints;
                 }
-                meta.uniformTypes = uniformTypes;
             }
 
             this._metadata.layers[i] = meta;

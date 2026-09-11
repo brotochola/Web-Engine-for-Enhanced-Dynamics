@@ -8,7 +8,8 @@ import { RigidBody } from '../../src/components/RigidBody.js';
 import { feedLayerAt, clearFeedLayerAt } from '../../src/core/computeFeed.js';
 import { packBox2dBodies, BODY_FLOATS } from '../../src/workers/Box2dBodyPack.js';
 import { inferComputeLayout } from '../../src/workers/inferComputeLayout.js';
-import { ENGINE_SIM_PREFIX_FLOATS } from '../../src/workers/ComputeLayer.js';
+import { prependComputePrelude } from '../../src/workers/wgslPrelude.js';
+import { ENGINE_FRAME_PREFIX_FLOATS } from '../../src/workers/ComputeLayer.js';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -265,8 +266,8 @@ test('computeTextureExtent: scale, default canvas, explicit size, min 8', () => 
   assert.deepEqual(Layer.computeTextureExtent(1, 1, { scale: 1 }), { texW: 8, texH: 8 });
 });
 
-test('ENGINE_SIM_PREFIX_FLOATS is 16', () => {
-  assert.equal(ENGINE_SIM_PREFIX_FLOATS, 16);
+test('ENGINE_FRAME_PREFIX_FLOATS is 16', () => {
+  assert.equal(ENGINE_FRAME_PREFIX_FLOATS, 16);
 });
 
 test('omitted pass layout stays null (source is the infer key)', () => {
@@ -310,7 +311,10 @@ const SHADER_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../demos/bu
 
 test('inferComputeLayout: fireStamp / fireFluid / firePack', () => {
   const ctx = { textures: FIRE_TEX, buffers: FIRE_BUF };
-  const stamp = inferComputeLayout(readFileSync(join(SHADER_DIR, 'fireStamp.wgsl'), 'utf8'), ctx);
+  // Demo WGSL no longer declares the frame binding — the engine prelude does.
+  const preluded = (name) =>
+    prependComputePrelude(readFileSync(join(SHADER_DIR, name), 'utf8'), null, null);
+  const stamp = inferComputeLayout(preluded('fireStamp.wgsl'), ctx);
   assert.equal(stamp[0][0].resource, 'params');
   assert.equal(stamp[0][1].resource, 'bodies');
   assert.equal(stamp[0][1].buffer, 'read-only-storage');
@@ -321,7 +325,7 @@ test('inferComputeLayout: fireStamp / fireFluid / firePack', () => {
   assert.equal(stamp[1][1].resource, 'vel');
   assert.equal(stamp[1][1].storageTexture.format, 'rgba32float');
 
-  const fluid = inferComputeLayout(readFileSync(join(SHADER_DIR, 'fireFluid.wgsl'), 'utf8'), ctx);
+  const fluid = inferComputeLayout(preluded('fireFluid.wgsl'), ctx);
   assert.equal(fluid[0][0].resource, 'params');
   assert.equal(fluid[0][1].resource, 'swirls');
   assert.equal(fluid[0][1].buffer, 'storage');
@@ -336,7 +340,7 @@ test('inferComputeLayout: fireStamp / fireFluid / firePack', () => {
   assert.equal(fluid[2][0].ping, 'write');
   assert.equal(fluid[2][0].storageTexture.format, 'r32float');
 
-  const pack = inferComputeLayout(readFileSync(join(SHADER_DIR, 'firePack.wgsl'), 'utf8'), ctx);
+  const pack = inferComputeLayout(preluded('firePack.wgsl'), ctx);
   assert.equal(pack[0][0].resource, 'params');
   assert.equal(pack[1][0].resource, 't');
   assert.equal(pack[1][1].resource, 'stamp');
@@ -352,9 +356,9 @@ test('inferComputeLayout: heatWrite without heat texture throws', () => {
   );
 });
 
-test('inferComputeLayout: sim and shapes aliases', () => {
+test('inferComputeLayout: frame and shapes aliases', () => {
   const wgsl = `
-    @group(0) @binding(0) var<uniform> sim: SimParams;
+    @group(0) @binding(0) var<uniform> frame: FrameData;
     @group(0) @binding(1) var<storage, read> shapes: array<Body>;
   `;
   const groups = inferComputeLayout(wgsl, { textures: [], buffers: [] });

@@ -110,7 +110,8 @@ function applyEngineLookUniforms(cl, frame) {
   setLookUniform2(map, floats, store, 'uViewSize', frame.canvasW / zoom, frame.canvasH / zoom);
 }
 import { writeRgba32Float } from './pinGpuTexture.js';
-import { lightingGpuProgram, lookGpuProgram, gpuProgramFromWgsl } from './pixiMeshWgsl.js';
+import { lightingGpuProgram, lookGpuProgram, gpuProgramFromWgsl, isWgslSource } from './pixiMeshWgsl.js';
+import { prependLookPrelude } from './wgslPrelude.js';
 import {
   normalizeRendererBackend,
   assertLookShaderCompatible,
@@ -3726,9 +3727,21 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const backendLabel = this._useWebGpu ? 'WebGPU' : 'WebGL';
     try {
       if (this._useWebGpu) {
+        // Engine prelude generates GlobalUniforms/LocalUniforms/CustomUniforms/
+        // VertexOut + group(2) bindings from the layer uniform map.
+        let wgslSource = fragmentSource;
+        if (isWgslSource(wgslSource)) {
+          const layerObj = Layer.get(layer);
+          const lid = layerObj ? layerObj.id : -1;
+          wgslSource = prependLookPrelude(
+            wgslSource,
+            Layer._uniformMaps[lid] || null,
+            Layer._metadata?.layers?.[lid]?.uniformTypes || null
+          );
+        }
         const gpuProgram = lookGpuProgram(
           GpuProgram,
-          fragmentSource,
+          wgslSource,
           asset,
           this._engineShaders.lookVert
         );
