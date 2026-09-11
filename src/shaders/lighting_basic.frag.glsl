@@ -33,13 +33,14 @@ void main() {
     float intensity = posInt.z;
     vec3 color = col.rgb;
 
-    const float DISTANCE_SCALE = 1.0 / 1024.0;
-    vec2 deltaScaled = (fragWorld - lightWorld) * DISTANCE_SCALE;
-    float d2Scaled = dot(deltaScaled, deltaScaled);
-    float intensityScaled = intensity * DISTANCE_SCALE * DISTANCE_SCALE;
-    float attenuation = intensityScaled / (intensityScaled + d2Scaled);
-
-    totalLight += color * attenuation;
+    if (intensity > 0.0) {
+      const float DISTANCE_SCALE = 1.0 / 1024.0;
+      vec2 deltaScaled = (fragWorld - lightWorld) * DISTANCE_SCALE;
+      float d2Scaled = dot(deltaScaled, deltaScaled);
+      float intensityScaled = intensity * DISTANCE_SCALE * DISTANCE_SCALE;
+      float attenuation = intensityScaled / (intensityScaled + d2Scaled);
+      totalLight += color * attenuation;
+    }
   }
 
   totalLight = min(totalLight, vec3(1.0));

@@ -60,11 +60,13 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     let lightWorld = posInt.xy;
     let intensity = posInt.z;
     let DISTANCE_SCALE = 1.0 / 1024.0;
-    let deltaScaled = (fragWorld - lightWorld) * DISTANCE_SCALE;
-    let d2Scaled = dot(deltaScaled, deltaScaled);
-    let intensityScaled = intensity * DISTANCE_SCALE * DISTANCE_SCALE;
-    let attenuation = intensityScaled / (intensityScaled + d2Scaled);
-    totalLight += col.rgb * attenuation;
+    if (intensity > 0.0) {
+      let deltaScaled = (fragWorld - lightWorld) * DISTANCE_SCALE;
+      let d2Scaled = dot(deltaScaled, deltaScaled);
+      let intensityScaled = intensity * DISTANCE_SCALE * DISTANCE_SCALE;
+      let attenuation = intensityScaled / (intensityScaled + d2Scaled);
+      totalLight += col.rgb * attenuation;
+    }
   }
   totalLight = min(totalLight, vec3<f32>(1.0));
   return vec4<f32>(totalLight, 1.0);

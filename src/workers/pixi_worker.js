@@ -56,6 +56,7 @@ import {
   lightInfluenceRadius,
   lightDataTextureFloatCount,
   packLightDataTexel,
+  clearUnusedLightDataTexels,
   LIGHT_DATA_TEX_HEIGHT,
 } from '../core/utils.js';
 import {
@@ -2124,6 +2125,7 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
     for (let idx = 0; idx < iterCount; idx++) {
       const i = useSharedBuffer ? this.visibleLightsData[1 + idx] : lightEntities[idx];
       if (!lightEnabled[i]) continue;
+      if (!(sqrtLightIntensity[i] > 0)) continue;
 
       // World-space light position from Transform SAB, same source as
       // updateLighting/updateShadowSprites/renderVisibilityLighting use.
@@ -2246,6 +2248,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       );
     }
 
+    clearUnusedLightDataTexels(lightData, maxLights, countToRender);
+
     if (this._lightDataSource) {
       this._uploadLightDataTexture();
     }
@@ -2272,6 +2276,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Sun disabled - no sun contribution
       uniformGroup.uniforms.uSunIntensity = 0;
     }
+
+    if (typeof uniformGroup.update === 'function') uniformGroup.update();
   }
 
   /**

@@ -241,6 +241,18 @@ export function packLightDataTexel(data, maxLights, lightIndex, x, y, intensity,
   data[i1 + 3] = 0;
 }
 
+/**
+ * Zero compact slots [liveCount, maxLights) so leftover lights cannot ghost.
+ * Row 0 and row 1 are contiguous; two fills, no alloc.
+ */
+export function clearUnusedLightDataTexels(data, maxLights, liveCount) {
+  const n = maxLights | 0;
+  const live = Math.max(0, Math.min(liveCount | 0, n));
+  if (live >= n) return;
+  data.fill(0, live * 4, n * 4);
+  data.fill(0, n * 4 + live * 4, n * 8);
+}
+
 /** Read back a packed light (for tests / debug). Writes into `out` and returns it. */
 export function readLightDataTexel(data, maxLights, lightIndex, out = {}) {
   const i0 = lightIndex * 4;

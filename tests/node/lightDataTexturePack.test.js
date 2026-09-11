@@ -5,6 +5,7 @@ import {
   lightDataTextureFloatCount,
   packLightDataTexel,
   readLightDataTexel,
+  clearUnusedLightDataTexels,
 } from '../../src/core/utils.js';
 
 test('light data texture pack/read matches 2-row RGBA32F layout', () => {
@@ -44,4 +45,42 @@ test('light data texture pack/read matches 2-row RGBA32F layout', () => {
   assert.equal(b.r, 0);
   assert.equal(b.g, 1);
   assert.equal(b.b, 0);
+});
+
+test('clearUnusedLightDataTexels zeros leftover compact slots after shrink', () => {
+  const maxLights = 4;
+  const data = new Float32Array(lightDataTextureFloatCount(maxLights));
+  packLightDataTexel(data, maxLights, 0, 10, 20, 5000, 1, 0.5, 0.25);
+  packLightDataTexel(data, maxLights, 1, 30, 40, 6000, 0.2, 0.3, 0.4);
+  packLightDataTexel(data, maxLights, 2, -3, 7.5, 10000, 0, 1, 0);
+
+  packLightDataTexel(data, maxLights, 0, 11, 22, 4000, 0.5, 0.25, 0.125);
+  clearUnusedLightDataTexels(data, maxLights, 1);
+
+  const live = readLightDataTexel(data, maxLights, 0);
+  assert.equal(live.x, 11);
+  assert.equal(live.y, 22);
+  assert.equal(live.intensity, 4000);
+  assert.equal(live.r, 0.5);
+  assert.equal(live.g, 0.25);
+  assert.equal(live.b, 0.125);
+
+  for (let i = 1; i < maxLights; i++) {
+    const slot = readLightDataTexel(data, maxLights, i);
+    assert.equal(slot.x, 0);
+    assert.equal(slot.y, 0);
+    assert.equal(slot.intensity, 0);
+    assert.equal(slot.r, 0);
+    assert.equal(slot.g, 0);
+    assert.equal(slot.b, 0);
+  }
+});
+
+test('clearUnusedLightDataTexels with liveCount 0 zeros the whole buffer', () => {
+  const maxLights = 4;
+  const data = new Float32Array(lightDataTextureFloatCount(maxLights));
+  packLightDataTexel(data, maxLights, 0, 10, 20, 5000, 1, 0.5, 0.25);
+  packLightDataTexel(data, maxLights, 1, 30, 40, 6000, 0.2, 0.3, 0.4);
+  clearUnusedLightDataTexels(data, maxLights, 0);
+  assert.deepEqual(Array.from(data), new Array(lightDataTextureFloatCount(maxLights)).fill(0));
 });
