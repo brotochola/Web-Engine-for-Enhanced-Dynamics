@@ -14,6 +14,7 @@ export const BODY_DIRTY = Object.freeze({
 let dirtyFlags = null;
 let dirtyWords = null;
 let generation = null;
+let dirtyDeferDepth = 0;
 
 export function bindBodySyncBuffers(buffers) {
   if (
@@ -33,7 +34,17 @@ export function bindBodySyncBuffers(buffers) {
   return { dirtyFlags, dirtyWords, generation };
 }
 
+export function withBodyDirtyDeferred(fn) {
+  dirtyDeferDepth++;
+  try {
+    return fn();
+  } finally {
+    dirtyDeferDepth--;
+  }
+}
+
 export function markBodyDirty(entityIndex, flags = BODY_DIRTY.LIFECYCLE) {
+  if (dirtyDeferDepth > 0) return false;
   if (!dirtyFlags || !dirtyWords) return false;
   const i = entityIndex | 0;
   if (i < 0 || i >= dirtyFlags.length) return false;

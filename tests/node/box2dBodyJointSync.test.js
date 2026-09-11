@@ -5,6 +5,7 @@ import {
   bindBodySyncBuffers,
   markBodyDirty,
   bumpBodyGeneration,
+  withBodyDirtyDeferred,
 } from '../../src/box2d/box2dBodySync.js';
 import { Joint } from '../../src/core/Joint.js';
 import { resetFreeList } from '../../src/core/atomicFreeList.js';
@@ -26,6 +27,29 @@ test('body dirty: coalesces flags and publishes dirty words', () => {
   assert.equal(markBodyDirty(5, BODY_DIRTY.FILTER), true);
   assert.equal(flags[5] & BODY_DIRTY.MASS, BODY_DIRTY.MASS);
   assert.equal(flags[5] & BODY_DIRTY.FILTER, BODY_DIRTY.FILTER);
+  assert.ok(words[0] & (1 << 5));
+});
+
+test('body dirty: defer swallows marks until bump after activate', () => {
+  const entityCount = 16;
+  const buffers = {
+    bodyDirtyFlags: new SharedArrayBuffer(entityCount * 4),
+    bodyDirtyWords: new SharedArrayBuffer(4),
+    bodyGeneration: new SharedArrayBuffer(entityCount * 4),
+  };
+  bindBodySyncBuffers(buffers);
+  const flags = new Int32Array(buffers.bodyDirtyFlags);
+  const words = new Int32Array(buffers.bodyDirtyWords);
+
+  withBodyDirtyDeferred(() => {
+    markBodyDirty(5, BODY_DIRTY.GEOMETRY);
+    markBodyDirty(5, BODY_DIRTY.DAMPING);
+  });
+  assert.equal(flags[5], 0);
+  assert.equal(words[0], 0);
+
+  assert.equal(bumpBodyGeneration(5), 1);
+  assert.equal(flags[5] & BODY_DIRTY.LIFECYCLE, BODY_DIRTY.LIFECYCLE);
   assert.ok(words[0] & (1 << 5));
 });
 

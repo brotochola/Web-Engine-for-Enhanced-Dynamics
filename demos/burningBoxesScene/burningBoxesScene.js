@@ -103,7 +103,7 @@ export class BurningBoxesScene extends WEED.Scene {
     layers: {
       fire: {
         zIndex: 6,
-        blendMode: BLEND_MODES.ADD,
+        blendMode: BLEND_MODES.NORMAL,
         resolution: 1.0,
         maxItems: 0,
         shader: {

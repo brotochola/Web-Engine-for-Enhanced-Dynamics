@@ -85,12 +85,10 @@ export class Person extends Lootable {
   };
 
   setup() {
-    // Physics properties
-    this.rigidBody.linearDamping = Person.defaultFriction;
-
-    // Collision/perception
+    // Collision/perception — size before damping so Box2D never sees Circle r=0
     this.collider.radius = 10;
     this.collider.visualRange = 150;
+    this.rigidBody.linearDamping = Person.defaultFriction;
 
     // Sprite setup
     this.spriteRenderer.anchorX = 0.5;
@@ -122,9 +120,8 @@ export class Person extends Lootable {
 
     // Random scale
     const scale = 0.9 + rng() * 0.2;
-    this.setScale(scale, scale);
-
     this.collider.radius = 10 * scale;
+    this.setScale(scale, scale);
     // Shadow uses default heightMultiplier = 1 (matches sprite scale)
 
     this.lootableComponent.health = 1;

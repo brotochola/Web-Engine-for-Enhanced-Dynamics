@@ -12,10 +12,6 @@ export class BurningBox extends GameObject {
   static serializable = true;
   static components = [RigidBody, Collider, SpriteRenderer, Grab];
 
-  setup() {
-    this.rigidBody.linearDamping = 0.01;
-  }
-
   ignite() {
     this.setFeedBits(this.getFeedBits() | HEAT);
     return this;
@@ -32,12 +28,13 @@ export class BurningBox extends GameObject {
 
     const width = config.width || 100;
     const height = config.height || 100;
-    this.collider.shapeType = ShapeType.Box;
     this.collider.width = width;
     this.collider.height = height;
     this.collider.radius = 0;
+    this.collider.shapeType = ShapeType.Box;
     this.collider.friction = config.friction ?? 0.6;
     this.collider.visualRange = Math.hypot(width, height) / 2 + 200;
+    this.rigidBody.linearDamping = 0.01;
 
     const origW = this.spriteRenderer.originalWidth || 100;
     const origH = this.spriteRenderer.originalHeight || 100;

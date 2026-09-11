@@ -54,6 +54,7 @@ import { box2dCastRayClosest as runBox2dCastRayClosest } from '../box2d/box2dRay
 import {
   bumpBodyGeneration,
   markBodyDirty,
+  withBodyDirtyDeferred,
 } from '../box2d/box2dBodySync.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
@@ -364,7 +365,7 @@ export class GameObject {
     Ctor._ensureComponentAccessors();
 
     if (!view && this.setup) {
-      this.setup();
+      withBodyDirtyDeferred(() => this.setup());
     }
   }
 
@@ -2149,7 +2150,9 @@ export class GameObject {
       RigidBody.sleepThreshold[i] = 0;
     }
 
-    // Transform is always present
+    // Transform is always present. Stay inactive until geometry exists so
+    // physics cannot createBody on Box 0×0 mid-setup.
+    Transform.active[i] = 0;
     Transform.x[i] = 0;
     Transform.y[i] = 0;
     Transform.rotation[i] = 0;
@@ -2261,54 +2264,57 @@ export class GameObject {
       AdobeAnimComponent.screenY[i] = 0;
     }
 
-    // Apply spawn config (x, y, vx, vy, rotation, etc.)
-    // Skip methods — spawnConfig.feedLayer:'fire' must not overwrite GameObject.feedLayer.
-    for (const key in spawnConfig) {
-      if (instance[key] !== undefined && typeof instance[key] !== 'function') {
-        instance[key] = spawnConfig[key];
+    // Swallow markBodyDirty from setters/setup/onSpawned. Physics must not
+    // see want=1 with spawn-reset Box 0×0. One bump after activate.
+    withBodyDirtyDeferred(() => {
+      // Size before other spawnConfig keys (and before setup damping/static).
+      // Skip active — Transform.active stays 0 until the bump below.
+      if (has.Collider) {
+        if (spawnConfig.radius != null) instance.radius = spawnConfig.radius;
+        if (spawnConfig.width != null) instance.width = spawnConfig.width;
+        if (spawnConfig.height != null) instance.height = spawnConfig.height;
       }
-    }
-
-    // ========================================
-    // LIFECYCLE HOOKS (SAFE - local call)
-    // ========================================
-    // LIFECYCLE: Call setup() to restore TYPE-level config after defaults were applied
-    // setup() defines "what this entity type IS" (physics params, collision, render config)
-    if (instance.setup) {
-      instance.setup();
-    }
-
-    // Ensure mass is initialized after setup().
-    // Dynamic bodies with no valid collider-derived mass fall back to unit mass once here,
-    // instead of paying `invMass || 1` in physics hot loops every frame.
-    if (has.RigidBody && RigidBody.active[i]) {
-      RigidBody.syncMassFromCollider(i);
-    }
-
-    // LIFECYCLE: Call onSpawned() for INSTANCE-level initialization
-    // onSpawned() defines "this specific instance" (position, random variations, health)
-    if (instance.onSpawned) {
-      instance.onSpawned(spawnConfig);
-    }
-    if (typeof spawnConfig.feedLayer === 'string') {
-      instance.feedLayer(spawnConfig.feedLayer);
-    }
-
-    // AUTOMATION: Automatically initialize any FSM components AFTER onSpawned()
-    // This ensures FSM's onEnter() has access to fully configured entity state
-    // Developers don't need to manually call initializeEntity() anymore
-    const entityComponentMap = EntityClass._componentClassMap || {};
-    for (const name in entityComponentMap) {
-      const ComponentClass = entityComponentMap[name];
-      if (ComponentClass && ComponentClass.isFSM) {
-        ComponentClass.initializeEntity(i, instance);
+      for (const key in spawnConfig) {
+        if (
+          key === 'active' ||
+          key === 'width' ||
+          key === 'height' ||
+          key === 'radius'
+        ) {
+          continue;
+        }
+        if (instance[key] !== undefined && typeof instance[key] !== 'function') {
+          instance[key] = spawnConfig[key];
+        }
       }
-    }
 
-    // Save-game restore: overwrite SoA (+ pose) after defaults / onSpawned / FSM init
-    if (spawnConfig && spawnConfig._saveRestore) {
-      applyEntitySaveRestore(i, EntityClass, spawnConfig._saveRestore);
-    }
+      if (instance.setup) {
+        instance.setup();
+      }
+
+      if (has.RigidBody && RigidBody.active[i]) {
+        RigidBody.syncMassFromCollider(i);
+      }
+
+      if (instance.onSpawned) {
+        instance.onSpawned(spawnConfig);
+      }
+      if (typeof spawnConfig.feedLayer === 'string') {
+        instance.feedLayer(spawnConfig.feedLayer);
+      }
+
+      const entityComponentMap = EntityClass._componentClassMap || {};
+      for (const name in entityComponentMap) {
+        const ComponentClass = entityComponentMap[name];
+        if (ComponentClass && ComponentClass.isFSM) {
+          ComponentClass.initializeEntity(i, instance);
+        }
+      }
+
+      if (spawnConfig && spawnConfig._saveRestore) {
+        applyEntitySaveRestore(i, EntityClass, spawnConfig._saveRestore);
+      }
+    });
 
     // Initialize tick decimation countdown (if staggeredUpdates enabled)
     // Stagger entities across frames using index offset: (index % tickInterval) + 1

@@ -21,11 +21,11 @@ export class Drop extends GameObject {
   static components = [SpriteRenderer, Collider, CollisionListener];
 
   onSpawned(config) {
-    this.dropComponent.amount = config.amount;
-
     this.collider.radius = 10;
     this.collider.isTrigger = 0;
     this.collider.visualRange = 0;
+
+    this.dropComponent.amount = config.amount;
 
     setTimeout(() => {
       this.collider.isTrigger = 1;

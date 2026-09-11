@@ -9,8 +9,6 @@ class Floor extends GameObject {
     static components = [RigidBody, Collider, SpriteRenderer];
 
     setup() {
-        this.rigidBody.static = 1;
-        this.collider.shapeType = ShapeType.Box;
         this.spriteRenderer.active = 1;
         this.collider.visualRange = 0;
     }
@@ -18,14 +16,14 @@ class Floor extends GameObject {
     onSpawned(spawnConfig = {}) {
         const config = spawnConfig || {};
 
-        this.rigidBody.static = 1;
-
         const width = config.width || 100;
         const height = config.height || 100;
 
         this.collider.width = width;
         this.collider.height = height;
         this.collider.radius = 0;
+        this.collider.shapeType = ShapeType.Box;
+        this.rigidBody.static = 1;
         this.collider.friction = config.friction ?? 0.6;
         this.rotation = config.rotation ?? 0;
 
