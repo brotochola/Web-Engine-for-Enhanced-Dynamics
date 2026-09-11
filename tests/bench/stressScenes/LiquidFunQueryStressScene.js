@@ -34,6 +34,7 @@ export class LiquidFunQueryStressScene extends WEED.Scene {
       liquidFun: { enabled: true, radius: 8, maxCount: 12000, subSteps: 1, strictContactCheck: false },
     },
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       maxVisibleRenderables: 16000,
     },

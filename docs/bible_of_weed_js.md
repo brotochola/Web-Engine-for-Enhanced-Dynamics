@@ -342,7 +342,7 @@ Shaders are loaded as named assets in `static assets.shaders`, then referenced b
 static assets = {
   textures: { box: '/img/box.png' },
   shaders: {
-    metaball: '/demos/shaders/metaball.wgsl',
+    metaball: '/demos/shaders/metaball.frag', // WebGL look; use .wgsl if renderer.backend is webgpu
     heatDistortion: '/shaders/heat.wgsl',
   },
 };
@@ -410,7 +410,7 @@ this.setFeedBits(1); // scene bit 0 (burning boxes ignite); engine ORs static on
 
 
 
-Renderer `preference` is `webgpu`. Missing device throws at init.
+Renderer default is `config.renderer.backend: 'webgpu'`. Demo scenes other than burning boxes set `'webgl'`. Look shaders must match the backend (`.frag` / GLSL on WebGL, `.wgsl` on WebGPU). Compute layers require `'webgpu'`. Mismatches throw `WeedJS:` errors at scene load. Missing GPU device throws at Pixi init if the scene asked for WebGPU.
 
 ### DebugUI Layer Inspector
 

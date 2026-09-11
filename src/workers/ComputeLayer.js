@@ -138,9 +138,7 @@ export class ComputeLayer {
       for (let i = 0; i < this.passes.length; i++) {
         const code = this.passes[i].code;
         if (!code) {
-          console.error(`ComputeLayer "${this.meta.name}": pass "${this.passes[i].entry}" missing WGSL`);
-          this._compileError = true;
-          return false;
+          throw new Error(`pass "${this.passes[i].entry}" missing WGSL`);
         }
         if (this.modules.has(code)) continue;
         const module = device.createShaderModule({
@@ -150,20 +148,15 @@ export class ComputeLayer {
         const info = await module.getCompilationInfo();
         const errs = info.messages.filter((m) => m.type === 'error');
         if (errs.length) {
-          console.error(
-            `ComputeLayer "${this.meta.name}" compile:`,
-            errs.map((m) => m.message).join('\n')
-          );
-          this._compileError = true;
-          return false;
+          throw new Error(errs.map((m) => m.message).join('\n'));
         }
         this.modules.set(code, module);
       }
       this._ensurePipelines();
     } catch (err) {
-      console.error(`ComputeLayer "${this.meta.name}":`, err);
       this._compileError = true;
-      return false;
+      this._compileErrorMessage = err && err.message ? err.message : String(err);
+      throw err;
     }
     this._ready = true;
     return true;
@@ -187,9 +180,7 @@ export class ComputeLayer {
       const layoutName = p.layout || 'simple';
       const layout = this._layouts[layoutName] || this._layouts.simple;
       if (!layout) {
-        console.error(`ComputeLayer "${this.meta.name}": missing layout "${layoutName}"`);
-        this._compileError = true;
-        return;
+        throw new Error(`missing layout "${layoutName}"`);
       }
       const module = this.modules.get(p.code);
       this.pipelines[i] = device.createComputePipeline({

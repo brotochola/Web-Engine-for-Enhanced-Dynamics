@@ -29,6 +29,7 @@ export class ZenithalParticleTestScene extends Scene {
     physics: { gravity: { x: 0, y: 0 }, noLimitFPS: false },
     spatial: { noLimitFPS: false, cellSize: 128, maxNeighbors: 64 },
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       ySorting: false,
       maxVisibleRenderables: 5000

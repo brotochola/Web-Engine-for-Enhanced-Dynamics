@@ -4,6 +4,8 @@ Generic WebGPU compute on a custom layer. The engine packs Box2D colliders, allo
 
 Look fragment samples the last compute write as `uTexture` (fullscreen quad). Collider geometry never becomes draw vertices.
 
+Set `renderer: { backend: 'webgpu' }` on any scene that uses `shader.compute`. Other demos in this repo use `'webgl'` and GLSL `.frag` looks.
+
 ## Config
 
 ```javascript
@@ -19,6 +21,7 @@ static assets = {
 };
 
 static config = {
+  renderer: { backend: 'webgpu' },
   layers: {
     fire: {
       zIndex: 6,
@@ -62,7 +65,7 @@ static config = {
 
 `compute: 'mySim'` (string) = one file, entry `main`, layout `simple` (engine default: params+bodies+verts, one `out` rgba8unorm look write). Declare `textures` / `layouts` for anything else.
 
-Missing/invalid WGSL: compile error, skip layer, `console.error`. No CPU fallback.
+Missing/invalid WGSL or a look shader that does not match `renderer.backend`: throw a `WeedJS:` error (no skip, no silent fallback). Compute is WebGPU-only.
 
 ### Grid
 
@@ -148,4 +151,4 @@ WGSL `struct SimParams` must match this packing. Scene fields (`rise`, swirl kno
 
 Ubo size is 16-byte aligned (padded to a multiple of 4 floats).
 
-Renderer is **WebGPU only**. Missing device throws at Pixi init.
+Engine default `renderer.backend` is **`webgpu`**. Compute layers require WebGPU. Look shaders must be WGSL on WebGPU and GLSL (`.frag`) on WebGL. A WebGL scene with `shader.compute` throws. Missing GPU device throws at Pixi init when the scene requested WebGPU.

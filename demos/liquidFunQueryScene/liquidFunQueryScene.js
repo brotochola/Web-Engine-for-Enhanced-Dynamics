@@ -27,7 +27,10 @@ export class LiquidFunQueryScene extends Scene {
       liquidFun: { enabled: true, radius: 10, maxCount: 2000, subSteps: 1 },
     },
     particle: { maxParticles: 0, decals: false },
-    renderer: { noLimitFPS: false },
+    renderer: {
+      backend: 'webgl',
+      noLimitFPS: false,
+    },
     lighting: { enabled: false },
   };
 

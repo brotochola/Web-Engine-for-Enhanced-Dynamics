@@ -49,6 +49,7 @@ export class WeldBreakScene extends WEED.Scene {
     },
 
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
     },
 

@@ -29,6 +29,7 @@ export class RenderQueueStressScene extends Scene {
       decals: false,
     },
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       ySorting: true,
       maxVisibleRenderables: 18000,

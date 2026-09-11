@@ -35,6 +35,7 @@ export class RayStressScene extends Scene {
       decals: false,
     },
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       maxVisibleRenderables: 4000,
     },

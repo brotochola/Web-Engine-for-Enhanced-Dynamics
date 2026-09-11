@@ -102,6 +102,11 @@ import { ParticleEmitter } from './ParticleEmitter.js';
 import { Joint } from './Joint.js';
 import { SoundManager } from './SoundManager.js';
 import { Decoration } from './Decoration.js';
+import {
+  assertSceneRendererConfig,
+  assertLoadedShadersCompatible,
+  errorShaderFetchFailed,
+} from './rendererBackend.js';
 
 class Scene {
   // Worker index constants for FrameRate SharedArrayBuffer
@@ -643,6 +648,7 @@ class Scene {
       ...RENDERER_DEFAULTS,
       ...(this.config.renderer || {}),
     };
+    this.config.renderer.backend = assertSceneRendererConfig(this.config);
 
     // Pre-render defaults from centralized config
     this.config.preRender = {
@@ -1303,7 +1309,7 @@ class Scene {
       shaderAssetPromises.push(
         fetch(shaderPath)
           .then((res) => {
-            if (!res.ok) throw new Error(`Failed to load shader asset "${shaderName}": ${shaderPath}`);
+            if (!res.ok) throw errorShaderFetchFailed(shaderName, shaderPath, res.status);
             return res.text();
           })
           .then((source) => {
@@ -1326,7 +1332,7 @@ class Scene {
           inlinePromises.push(
             fetch(fragRef)
               .then((res) => {
-                if (!res.ok) throw new Error(`Failed to load shader: ${fragRef}`);
+                if (!res.ok) throw errorShaderFetchFailed(fragRef, fragRef, res.status);
                 return res.text();
               })
               .then((source) => {
@@ -1339,6 +1345,13 @@ class Scene {
         await Promise.all(inlinePromises);
       }
     }
+
+    assertLoadedShadersCompatible({
+      backend: this.config.renderer.backend,
+      layers: this.config.layers,
+      shaderAssets,
+      loadedSources: this._loadedShaderSources,
+    });
   }
 
   async preloadAssets(imageUrls, spritesheetConfigs = {}, audioManifest = null) {

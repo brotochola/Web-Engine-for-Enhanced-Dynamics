@@ -95,6 +95,14 @@ test('entity and custom-layer uploads pass queue repeatX/Y and tile fields', () 
   assert.match(pixiSrc, /tileOffsetU: ref\.tileOffsetU/);
 });
 
+test('GLSL twins keep PMA rgb * instance alpha; no tex.a re-multiply', () => {
+  const glsl = readFileSync(join(dir, '../../src/workers/instancedSpriteGlsl.js'), 'utf8');
+  assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, a\);/);
+  assert.match(glsl, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a, 0\.0\);/);
+  assert.match(src, /GlProgram\.from/);
+  assert.match(src, /useWebGpu = true/);
+});
+
 test('pixi binds packed LUT as rgba32float TextureSource', () => {
   assert.match(pixiSrc, /packTextureLutRgba/);
   assert.match(pixiSrc, /TEX_LUT_RGBA_WIDTH/);
@@ -103,7 +111,7 @@ test('pixi binds packed LUT as rgba32float TextureSource', () => {
   assert.match(pixiSrc, /_uploadTexLutTexture/);
   assert.match(pixiSrc, /uploadMethodId = 'external'/);
   assert.match(pixiSrc, /writeRgba32Float/);
-  assert.match(pixiSrc, /preference: 'webgpu'/);
+  assert.match(pixiSrc, /preference: backend/);
 });
 
 test('packTextureLutRgba writes 10 floats into 3 RGBA32F texels', async () => {

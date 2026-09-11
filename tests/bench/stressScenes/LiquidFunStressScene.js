@@ -45,6 +45,7 @@ export class LiquidFunStressScene extends WEED.Scene {
     },
 
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       maxVisibleRenderables: 20000,
     },

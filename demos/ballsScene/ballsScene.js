@@ -47,6 +47,7 @@ export class BallsScene extends Scene {
     },
 
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       maxVisibleRenderables: 11000,
     },

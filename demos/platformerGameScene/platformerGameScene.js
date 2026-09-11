@@ -28,6 +28,7 @@ export class PlatformerGameScene extends Scene {
       decals: false,
     },
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       ySorting: false,
       maxVisibleRenderables: 10000,

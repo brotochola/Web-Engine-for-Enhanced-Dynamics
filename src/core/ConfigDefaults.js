@@ -452,6 +452,8 @@ export const TILEMAP_CULL_DEFAULTS = Object.freeze({
 });
 
 export const RENDERER_DEFAULTS = Object.freeze({
+  /** Pixi init preference. Compute layers require 'webgpu'. */
+  backend: 'webgpu',
   noLimitFPS: false,
   fixedFps: 0,
   ySorting: false,

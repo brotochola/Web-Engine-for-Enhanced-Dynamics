@@ -29,7 +29,10 @@ export class Box2dQueryAabbScene extends Scene {
       sleeping: false,
     },
     particle: { maxParticles: 0, decals: false },
-    renderer: { noLimitFPS: false },
+    renderer: {
+      backend: 'webgl',
+      noLimitFPS: false,
+    },
     lighting: { enabled: false },
   };
 

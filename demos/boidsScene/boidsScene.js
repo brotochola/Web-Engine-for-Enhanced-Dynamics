@@ -43,6 +43,7 @@ export class BoidsScene extends Scene {
     },
 
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       maxVisibleRenderables: 11000,
       ySorting: false,

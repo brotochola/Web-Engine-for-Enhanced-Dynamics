@@ -102,6 +102,7 @@ export class BadPiggiesScene extends Scene {
     },
 
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       maxVisibleRenderables: 120000,
     },

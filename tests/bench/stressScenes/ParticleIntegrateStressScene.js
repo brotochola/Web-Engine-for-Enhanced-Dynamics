@@ -33,6 +33,7 @@ export class ParticleIntegrateStressScene extends Scene {
       decals: false,
     },
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       maxVisibleRenderables: 20000,
     },

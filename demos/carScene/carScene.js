@@ -85,6 +85,7 @@ export class CarScene extends WEED.Scene {
         },
 
         renderer: {
+            backend: 'webgl',
             noLimitFPS: false,
             ySorting: true,
             cullingRatio: 0.1,

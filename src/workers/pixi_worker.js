@@ -68,6 +68,16 @@ import { LiquidFun } from '../core/LiquidFun.js';
 import { ComputeLayer } from './ComputeLayer.js';
 import { writeRgba32Float } from './pinGpuTexture.js';
 import { lightingGpuProgram, lookGpuProgram, gpuProgramFromWgsl } from './pixiMeshWgsl.js';
+import { FULLSCREEN_LOOK_VERTEX_GLSL } from './instancedSpriteGlsl.js';
+import {
+  normalizeRendererBackend,
+  assertLookShaderCompatible,
+  errorPixiTypeMismatch,
+  errorMissingGpuDevice,
+  errorCompileFailed,
+  pixiRendererTypeName,
+  RENDERER_BACKEND_WEBGPU,
+} from '../core/rendererBackend.js';
 
 // OPTIMIZED: Pre-defined comparator function for light sorting (avoids closure allocation per frame)
 function sortByDistSq(a, b) {
@@ -93,6 +103,7 @@ import {
   Mesh,
   Shader,
   GpuProgram,
+  GlProgram,
   State,
   extensions,
   RendererType,
@@ -140,6 +151,7 @@ const PIXI = Object.freeze({
   Mesh,
   Shader,
   GpuProgram,
+  GlProgram,
   State,
   RendererType,
   RenderTexture,
@@ -495,7 +507,33 @@ class PixiRenderer extends AbstractWorker {
    * Hook into WebGL context to count draw calls per frame
    */
   setupWebGLHooks() {
+    if (this._useWebGpu) return;
     this.setupDrawCallMonitoring();
+
+    const gl = this.pixiApp.renderer.gl;
+    if (gl && gl.canvas) {
+      gl.canvas.addEventListener(
+        'webglcontextlost',
+        (e) => {
+          e.preventDefault();
+          this.reportError(
+            'WebGL Context Lost',
+            new Error(
+              'The GPU context was lost. This usually happens due to GPU driver crashes or excessive resource usage.'
+            )
+          );
+        },
+        false
+      );
+
+      gl.canvas.addEventListener(
+        'webglcontextrestored',
+        () => {
+          this.reportLog('WebGL context restored');
+        },
+        false
+      );
+    }
   }
 
   /**
@@ -551,10 +589,41 @@ class PixiRenderer extends AbstractWorker {
   }
 
   setupDrawCallMonitoring() {
-    const renderer = this.pixiApp?.renderer;
-    const device = renderer?.gpu?.device;
-    if (!device) {
-      console.warn('PIXI WORKER: WebGPU device missing; DRAW_CALLS stay 0');
+    if (this._useWebGpu) return;
+    const gl = this.pixiApp.renderer.gl;
+    if (!gl) {
+      console.warn('PIXI WORKER: Could not access WebGL context for draw call monitoring');
+      return;
+    }
+
+    const renderer = this;
+
+    const originalDrawArrays = gl.drawArrays.bind(gl);
+    gl.drawArrays = function (...args) {
+      renderer.drawCallCount++;
+      return originalDrawArrays(...args);
+    };
+
+    const originalDrawElements = gl.drawElements.bind(gl);
+    gl.drawElements = function (...args) {
+      renderer.drawCallCount++;
+      return originalDrawElements(...args);
+    };
+
+    if (gl.drawArraysInstanced) {
+      const originalDrawArraysInstanced = gl.drawArraysInstanced.bind(gl);
+      gl.drawArraysInstanced = function (...args) {
+        renderer.drawCallCount++;
+        return originalDrawArraysInstanced(...args);
+      };
+    }
+
+    if (gl.drawElementsInstanced) {
+      const originalDrawElementsInstanced = gl.drawElementsInstanced.bind(gl);
+      gl.drawElementsInstanced = function (...args) {
+        renderer.drawCallCount++;
+        return originalDrawElementsInstanced(...args);
+      };
     }
   }
 
@@ -785,19 +854,69 @@ class PixiRenderer extends AbstractWorker {
    * Force RGBA32F LUT into a GPUTexture Pixi samples (no RENDER_ATTACHMENT).
    */
   _uploadTexLutTexture() {
-    const renderer = this.pixiApp?.renderer;
     const source = this._texLutSource;
     const data = this._texLutRgba;
-    if (!renderer?.gpu?.device || !source || !data) return;
-    writeRgba32Float(
-      renderer,
-      source,
-      data,
-      TEX_LUT_RGBA_WIDTH,
-      Math.max(1, this._texLutCount),
-      'weed-tex-lut'
-    );
+    if (!source || !data) return;
+    if (this._useWebGpu) {
+      const renderer = this.pixiApp?.renderer;
+      if (!renderer?.gpu?.device) return;
+      writeRgba32Float(
+        renderer,
+        source,
+        data,
+        TEX_LUT_RGBA_WIDTH,
+        Math.max(1, this._texLutCount),
+        'weed-tex-lut'
+      );
+      this._texLutNeedsGpuUpload = false;
+      return;
+    }
+    this._uploadRgba32FloatGl(source, data, TEX_LUT_RGBA_WIDTH, Math.max(1, this._texLutCount));
     this._texLutNeedsGpuUpload = false;
+  }
+
+  _uploadRgba32FloatGl(source, data, width, height) {
+    const renderer = this.pixiApp?.renderer;
+    const gl = renderer?.gl;
+    if (!gl || !source || !data || !renderer?.texture) return;
+
+    source.update();
+
+    const texSys = renderer.texture;
+    if (typeof texSys.bind === 'function') {
+      texSys.bind(source, 0);
+    } else if (typeof texSys.bindSource === 'function') {
+      texSys.bindSource(source, 0);
+    }
+
+    const glSource = typeof texSys.getGlSource === 'function' ? texSys.getGlSource(source) : null;
+    const target = glSource?.target || gl.TEXTURE_2D;
+    if (glSource?.texture) {
+      gl.bindTexture(target, glSource.texture);
+    }
+
+    const internalFormat = gl.RGBA32F != null ? gl.RGBA32F : gl.RGBA;
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    if (gl.UNPACK_FLIP_Y_WEBGL != null) gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
+    if (gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL != null) {
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
+    }
+
+    gl.texImage2D(
+      target,
+      0,
+      internalFormat,
+      width,
+      height,
+      0,
+      gl.RGBA,
+      gl.FLOAT,
+      data
+    );
+    gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   }
 
   _bindLutToBatches() {
@@ -829,7 +948,7 @@ class PixiRenderer extends AbstractWorker {
       addressMode: 'clamp-to-edge',
       autoGenerateMipmaps: false,
     });
-    this._texLutSource.uploadMethodId = 'external';
+    this._texLutSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
     this._texLutNeedsGpuUpload = true;
     this._uploadTexLutTexture();
     const src = this._resolveAtlasSource();
@@ -859,6 +978,7 @@ class PixiRenderer extends AbstractWorker {
       lutSource: this._texLutSource,
       depthTest: useGpuYSort,
       premultiplyAlpha: true,
+      useWebGpu: this._useWebGpu,
     });
     this.spriteMesh = this.entitiesBatch.mesh;
 
@@ -872,6 +992,7 @@ class PixiRenderer extends AbstractWorker {
       depthMask: false,
       alphaDiscard: false,
       premultiplyAlpha: true,
+      useWebGpu: this._useWebGpu,
     });
     this.spriteParticleMesh = this.entitiesParticleBatch.mesh;
 
@@ -884,6 +1005,7 @@ class PixiRenderer extends AbstractWorker {
       depthTest: false,
       premultiplyAlpha: false,
       blendMode: 'add',
+      useWebGpu: this._useWebGpu,
     });
     this.spriteGlowMesh = this.entitiesGlowBatch.mesh;
 
@@ -1182,12 +1304,6 @@ LIGHTING SYSTEM SETUP
 ===================== */
 
   createLightingSystem() {
-    const wgsl = (this._lightingWgsl || '').replace(/MAX_LIGHTS/g, String(this.maxLights | 0 || 64));
-    if (!wgsl) {
-      throw new Error('PIXI WORKER: lighting_basic.wgsl missing');
-    }
-    const gpuProgram = lightingGpuProgram(GpuProgram, wgsl, 'lighting-basic');
-
     const geometry = new PIXI.Geometry({
       attributes: {
         aPosition: [-1, -1, 1, -1, 1, 1, -1, 1],
@@ -1207,37 +1323,54 @@ LIGHTING SYSTEM SETUP
       addressMode: 'clamp-to-edge',
       autoGenerateMipmaps: false,
     });
-    this._lightDataSource.uploadMethodId = 'external';
+    this._lightDataSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
 
-    this.lightingShader = new PIXI.Shader({
-      gpuProgram,
-      resources: {
-        uLightData: this._lightDataSource,
-        uniforms: {
-          uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
-          uZoom: { value: 1.0, type: 'f32' },
-          uViewport: {
-            value: new Float32Array([
-              this.canvasWidth * this.lightingResolution,
-              this.canvasHeight * this.lightingResolution,
-            ]),
-            type: 'vec2<f32>',
-          },
-          uFullCanvasSize: {
-            value: new Float32Array([this.canvasWidth, this.canvasHeight]),
-            type: 'vec2<f32>',
-          },
-          uInvResolution: { value: 1.0 / this.lightingResolution, type: 'f32' },
-          uLightTexWidth: { value: maxLights, type: 'f32' },
-          uLightCount: { value: 0, type: 'i32' },
-          uBaseAmbient: { value: this.baseAmbient, type: 'f32' },
-          uSunIntensity: { value: 0, type: 'f32' },
-          uSunR: { value: 1.0, type: 'f32' },
-          uSunG: { value: 1.0, type: 'f32' },
-          uSunB: { value: 1.0, type: 'f32' },
+    const lightingResources = {
+      uLightData: this._lightDataSource,
+      uniforms: {
+        uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
+        uZoom: { value: 1.0, type: 'f32' },
+        uViewport: {
+          value: new Float32Array([
+            this.canvasWidth * this.lightingResolution,
+            this.canvasHeight * this.lightingResolution,
+          ]),
+          type: 'vec2<f32>',
         },
+        uFullCanvasSize: {
+          value: new Float32Array([this.canvasWidth, this.canvasHeight]),
+          type: 'vec2<f32>',
+        },
+        uInvResolution: { value: 1.0 / this.lightingResolution, type: 'f32' },
+        uLightTexWidth: { value: maxLights, type: 'f32' },
+        uLightCount: { value: 0, type: 'i32' },
+        uBaseAmbient: { value: this.baseAmbient, type: 'f32' },
+        uSunIntensity: { value: 0, type: 'f32' },
+        uSunR: { value: 1.0, type: 'f32' },
+        uSunG: { value: 1.0, type: 'f32' },
+        uSunB: { value: 1.0, type: 'f32' },
       },
-    });
+    };
+
+    if (this._useWebGpu) {
+      const wgsl = (this._lightingWgsl || '').replace(/MAX_LIGHTS/g, String(this.maxLights | 0 || 64));
+      if (!wgsl) {
+        throw new Error('WeedJS: Failed to compile look shader "lighting_basic" for layer "LIGHTING" on WebGPU: lighting_basic.wgsl is missing.');
+      }
+      const gpuProgram = lightingGpuProgram(GpuProgram, wgsl, 'lighting-basic');
+      this.lightingShader = new PIXI.Shader({ gpuProgram, resources: lightingResources });
+    } else {
+      const glProgram = new PIXI.GlProgram({
+        vertex: `
+  in vec2 aPosition;
+  void main() {
+  gl_Position = vec4(aPosition, 0.0, 1.0);
+  }
+  `,
+        fragment: this.buildFragmentShaderBasic(),
+      });
+      this.lightingShader = new PIXI.Shader({ glProgram, resources: lightingResources });
+    }
 
     this.lightingMesh = new PIXI.Mesh({
       geometry,
@@ -1264,6 +1397,58 @@ LIGHTING SYSTEM SETUP
       this._registerLayerDisplayObject('LIGHTING', this.lightingMesh);
       this.pixiApp.stage.addChild(this.lightingMesh);
     }
+  }
+
+  buildFragmentShaderBasic() {
+    return `
+    precision highp float;
+
+    uniform vec2 uCameraPos;
+    uniform float uZoom;
+    uniform vec2 uViewport;
+    uniform vec2 uFullCanvasSize;
+
+    uniform sampler2D uLightData;
+    uniform float uLightTexWidth;
+    uniform int uLightCount;
+    uniform float uBaseAmbient;
+    uniform float uSunIntensity;
+    uniform float uSunR;
+    uniform float uSunG;
+    uniform float uSunB;
+
+    void main() {
+      vec2 normCoord = gl_FragCoord.xy / uViewport;
+      vec2 screenPos = normCoord * uFullCanvasSize;
+      vec2 fragWorld = (screenPos / uZoom) + uCameraPos;
+      vec3 totalLight = vec3(uBaseAmbient);
+      vec3 sunColor = vec3(uSunR, uSunG, uSunB);
+      totalLight += sunColor * uSunIntensity;
+
+      for (int i = 0; i < ${this.maxLights}; i++) {
+        if (i >= uLightCount) break;
+
+        float u = (float(i) + 0.5) / uLightTexWidth;
+        vec4 posInt = texture2D(uLightData, vec2(u, 0.25));
+        vec4 col = texture2D(uLightData, vec2(u, 0.75));
+
+        vec2 lightWorld = posInt.xy;
+        float intensity = posInt.z;
+        vec3 color = col.rgb;
+
+        const float DISTANCE_SCALE = 1.0 / 1024.0;
+        vec2 deltaScaled = (fragWorld - lightWorld) * DISTANCE_SCALE;
+        float d2Scaled = dot(deltaScaled, deltaScaled);
+        float intensityScaled = intensity * DISTANCE_SCALE * DISTANCE_SCALE;
+        float attenuation = intensityScaled / (intensityScaled + d2Scaled);
+
+        totalLight += color * attenuation;
+      }
+
+      totalLight = min(totalLight, vec3(1.0));
+      gl_FragColor = vec4(totalLight, 1.0);
+    }
+    `;
   }
 
   /* =====================
@@ -1340,7 +1525,41 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     }
     this.shadowSpritesEnabled = false;
 
-    this._visPolyGpuProgram = gpuFromWgsl(this._visPolyWgsl, 'visibility-polygon');
+    const visPolyUniforms = {
+      uniforms: {
+        uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
+        uZoom: { value: 1.0, type: 'f32' },
+        uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
+        uLightPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
+        uLightIntensity: { value: 1000, type: 'f32' },
+        uLightRadius: { value: 1e6, type: 'f32' },
+        uLightColor: { value: new Float32Array([1, 1, 1]), type: 'vec3<f32>' },
+      },
+    };
+
+    if (this._useWebGpu) {
+      this._visPolyProgramOpts = { gpuProgram: gpuFromWgsl(this._visPolyWgsl, 'visibility-polygon') };
+      if (this._selfLitSpriteWgsl) {
+        this._selfLitSpriteProgramOpts = {
+          gpuProgram: gpuFromWgsl(this._selfLitSpriteWgsl, 'occluder-self-lit-sprite'),
+        };
+      }
+    } else {
+      this._visPolyProgramOpts = {
+        glProgram: new PIXI.GlProgram({
+          vertex: this._visPolyVertexShader,
+          fragment: this._visPolyFragmentShader,
+        }),
+      };
+      if (this._selfLitSpriteVertShader && this._selfLitSpriteFragShader) {
+        this._selfLitSpriteProgramOpts = {
+          glProgram: new PIXI.GlProgram({
+            vertex: this._selfLitSpriteVertShader,
+            fragment: this._selfLitSpriteFragShader,
+          }),
+        };
+      }
+    }
 
     // Collider self-lit reuses vis-poly program (attenuation, no texture)
     {
@@ -1351,26 +1570,12 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         indexBuffer: new Uint16Array(maxFillVerts * 3),
       });
       const shader = new PIXI.Shader({
-        gpuProgram: this._visPolyGpuProgram,
-        resources: {
-          uniforms: {
-            uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
-            uZoom: { value: 1.0, type: 'f32' },
-            uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
-            uLightPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
-            uLightIntensity: { value: 1000, type: 'f32' },
-            uLightRadius: { value: 1e6, type: 'f32' },
-            uLightColor: { value: new Float32Array([1, 1, 1]), type: 'vec3<f32>' },
-          },
-        },
+        ...this._visPolyProgramOpts,
+        resources: visPolyUniforms,
       });
       const mesh = new PIXI.Mesh({ geometry, shader });
       mesh.blendMode = 'add';
       this._selfLitColliderMesh = { mesh, geometry, shader };
-    }
-
-    if (this._selfLitSpriteWgsl) {
-      this._selfLitSpriteGpuProgram = gpuFromWgsl(this._selfLitSpriteWgsl, 'occluder-self-lit-sprite');
     }
 
     console.log(`PIXI WORKER: Visibility polygon system initialized (${this._visPolyMaxLights} lights, ${this._visPolyMaxVerts} verts, RT: ${rtW}x${rtH})`);
@@ -1389,7 +1594,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     });
 
     const shader = new PIXI.Shader({
-      gpuProgram: this._visPolyGpuProgram,
+      ...this._visPolyProgramOpts,
       resources: {
         uniforms: {
           uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
@@ -1703,7 +1908,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       }
 
       // --- Sprite mask fills for this light ---
-      if (this._selfLitSpriteGpuProgram) {
+      if (this._selfLitSpriteProgramOpts) {
         let spriteMeshIdx = 0;
         const container = this._selfLitContainer;
         container.removeChildren();
@@ -1810,7 +2015,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
   }
 
   _getSelfLitSpriteMesh(index, texture) {
-    if (!this._selfLitSpriteGpuProgram) return null;
+    if (!this._selfLitSpriteProgramOpts) return null;
 
     if (!this._selfLitSpriteMeshes[index]) {
       const geometry = new PIXI.Geometry({
@@ -1822,7 +2027,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       });
 
       const shader = new PIXI.Shader({
-        gpuProgram: this._selfLitSpriteGpuProgram,
+        ...this._selfLitSpriteProgramOpts,
         resources: {
           uniforms: {
             uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
@@ -1937,18 +2142,23 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
    * Pack path mutates _lightDataFloats in place. Pin RGBA32F GPUTexture (no RENDER_ATTACHMENT).
    */
   _uploadLightDataTexture() {
-    const renderer = this.pixiApp?.renderer;
     const source = this._lightDataSource;
     const data = this._lightDataFloats;
-    if (!renderer?.gpu?.device || !source || !data) return;
-    writeRgba32Float(
-      renderer,
-      source,
-      data,
-      this.maxLights,
-      LIGHT_DATA_TEX_HEIGHT,
-      'weed-light-data'
-    );
+    if (!source || !data) return;
+    if (this._useWebGpu) {
+      const renderer = this.pixiApp?.renderer;
+      if (!renderer?.gpu?.device) return;
+      writeRgba32Float(
+        renderer,
+        source,
+        data,
+        this.maxLights,
+        LIGHT_DATA_TEX_HEIGHT,
+        'weed-light-data'
+      );
+      return;
+    }
+    this._uploadRgba32FloatGl(source, data, this.maxLights, LIGHT_DATA_TEX_HEIGHT);
   }
 
   /* =====================
@@ -2066,6 +2276,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       atlasSource: this._resolveAtlasSource(),
       lutSource: this._texLutSource,
       depthTest: false,
+      useWebGpu: this._useWebGpu,
     });
 
     this.shadowDisplaySprite = new PIXI.Sprite(this.shadowRT);
@@ -2579,18 +2790,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     try {
       const lookSource = cl.lookSource || cl.rt.source;
-      cl.shader = this._createLookShader(fragmentSource, lookSource, uniformDefs, shaderName || 'look');
+      cl.shader = this._createLookShader(fragmentSource, lookSource, uniformDefs, shaderName || 'look', layerName);
       cl.uniformStore = cl.shader.resources?.customUniforms?.uniforms || null;
       cl.shaderMesh = new Mesh({ geometry: this._createLayerFullscreenGeometry(), shader: cl.shader });
       cl.shaderMesh.eventMode = 'none';
     } catch (err) {
-      console.error(`PIXI WORKER: Failed to apply shader "${shaderName}" on layer "${layerName}":`, err);
-      cl.shaderBypass = true;
-      if (cl.displaySprite && cl.rt) cl.displaySprite.texture = cl.rt;
-      this._registerLayerDisplayObject(layerName, cl.displaySprite);
-      this.pixiApp.stage.sortChildren();
-      this._syncLayerRefsFromRuntime();
-      return;
+      if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
+      throw errorCompileFailed('look', shaderName || 'look', layerName, this._useWebGpu ? 'WebGPU' : 'WebGL', err);
     }
 
     cl.displaySprite.texture = cl.rtOut;
@@ -2674,7 +2880,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (this.canvasView.width !== width) this.canvasView.width = width;
       if (this.canvasView.height !== height) this.canvasView.height = height;
     }
-    this._bindWebGpuSwapchain();
+    if (this._useWebGpu) this._bindWebGpuSwapchain();
 
     // Recreate lighting RenderTexture at the new size.
     // RT.resize() in PixiJS 8 can fail to update the GPU framebuffer;
@@ -3082,22 +3288,46 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Initialize the PIXI renderer with provided data
    */
   async initialize(data) {
-    // console.log("PIXI WORKER: Initializing with component system", data);
+    const backend = normalizeRendererBackend(
+      data.config?.renderer?.backend ?? this.config?.renderer?.backend
+    );
+    this._rendererBackend = backend;
+    this._useWebGpu = backend === RENDERER_BACKEND_WEBGPU;
 
-    const shaderFetches = [
-      fetch('/src/shaders/lighting_basic.wgsl').then((r) => r.text()).then((s) => {
-        this._lightingWgsl = s;
-      }),
-    ];
-    if (data.visibilityPolygons && data.visibilityPolygons.enabled) {
+    const shaderFetches = [];
+    if (this._useWebGpu) {
       shaderFetches.push(
-        fetch('/src/shaders/visibility_polygon.wgsl').then((r) => r.text()).then((s) => {
-          this._visPolyWgsl = s;
-        }),
-        fetch('/src/shaders/occluder_self_lit_sprite.wgsl').then((r) => r.text()).then((s) => {
-          this._selfLitSpriteWgsl = s;
+        fetch('/src/shaders/lighting_basic.wgsl').then((r) => r.text()).then((s) => {
+          this._lightingWgsl = s;
         })
       );
+    }
+    if (data.visibilityPolygons && data.visibilityPolygons.enabled) {
+      if (this._useWebGpu) {
+        shaderFetches.push(
+          fetch('/src/shaders/visibility_polygon.wgsl').then((r) => r.text()).then((s) => {
+            this._visPolyWgsl = s;
+          }),
+          fetch('/src/shaders/occluder_self_lit_sprite.wgsl').then((r) => r.text()).then((s) => {
+            this._selfLitSpriteWgsl = s;
+          })
+        );
+      } else {
+        shaderFetches.push(
+          fetch('/src/shaders/visibility_polygon.vert.glsl').then((r) => r.text()).then((s) => {
+            this._visPolyVertexShader = s;
+          }),
+          fetch('/src/shaders/visibility_polygon.frag.glsl').then((r) => r.text()).then((s) => {
+            this._visPolyFragmentShader = s;
+          }),
+          fetch('/src/shaders/occluder_self_lit_sprite.vert.glsl').then((r) => r.text()).then((s) => {
+            this._selfLitSpriteVertShader = s;
+          }),
+          fetch('/src/shaders/occluder_self_lit_sprite.frag.glsl').then((r) => r.text()).then((s) => {
+            this._selfLitSpriteFragShader = s;
+          })
+        );
+      }
     }
     await Promise.all(shaderFetches);
 
@@ -3213,25 +3443,35 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         depth: true,
         // Performance optimizations
         powerPreference: 'high-performance',
-        preference: 'webgpu',
+        preference: backend,
       });
 
       if (!this.pixiApp.renderer) {
         throw new Error('PIXI.Application.init() succeeded but renderer is null');
       }
 
-      if (
-        this.pixiApp.renderer.type !== PIXI.RendererType.WEBGPU ||
-        !this.pixiApp.renderer.gpu?.device
-      ) {
-        throw new Error(
-          'WeedJS requires WebGPU. Pixi renderer.type is not WEBGPU or GPUDevice is missing.'
-        );
+      const actualName = pixiRendererTypeName(this.pixiApp.renderer.type, PIXI.RendererType);
+      if (this._useWebGpu) {
+        if (this.pixiApp.renderer.type !== PIXI.RendererType.WEBGPU) {
+          throw errorPixiTypeMismatch(backend, actualName);
+        }
+        if (!this.pixiApp.renderer.gpu?.device) {
+          throw errorMissingGpuDevice();
+        }
+        this.pixiApp.renderer.gpu.device.addEventListener('uncapturederror', (ev) => {
+          console.error('WebGPU uncapturederror:', ev.error?.message || String(ev.error));
+        });
+        this._bindWebGpuSwapchain();
+      } else {
+        if (this.pixiApp.renderer.type !== PIXI.RendererType.WEBGL) {
+          throw errorPixiTypeMismatch(backend, actualName);
+        }
+        if (!this.pixiApp.renderer.gl) {
+          throw new Error(
+            'WeedJS: This scene requested renderer.backend "webgl", but the WebGL context is missing.'
+          );
+        }
       }
-      this.pixiApp.renderer.gpu.device.addEventListener('uncapturederror', (ev) => {
-        console.error('WebGPU uncapturederror:', ev.error?.message || String(ev.error));
-      });
-      this._bindWebGpuSwapchain();
     } catch (error) {
       this.reportError('PIXI Initialization Failed', error);
       return;
@@ -3422,16 +3662,45 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Standard fullscreen quad vertex shader for post-processing meshes.
    * Maps NDC quad to UV space so the fragment shader can sample a RenderTexture.
    */
-  _createLookShader(fragmentSource, textureSource, uniformDefs, name) {
-    const gpuProgram = lookGpuProgram(GpuProgram, fragmentSource, name || 'look');
-    return new Shader({
-      gpuProgram,
-      resources: {
-        customUniforms: uniformDefs,
-        uTexture: textureSource,
-        uSampler: textureSource.style,
-      },
+  _createLookShader(fragmentSource, textureSource, uniformDefs, name, layerName) {
+    const asset = name || 'look';
+    const layer = layerName || name || 'look';
+    const backend = this._useWebGpu ? 'webgpu' : 'webgl';
+    assertLookShaderCompatible({
+      backend,
+      layerName: layer,
+      asset,
+      path: asset,
+      source: fragmentSource,
     });
+    const backendLabel = this._useWebGpu ? 'WebGPU' : 'WebGL';
+    try {
+      if (this._useWebGpu) {
+        const gpuProgram = lookGpuProgram(GpuProgram, fragmentSource, asset);
+        return new Shader({
+          gpuProgram,
+          resources: {
+            customUniforms: uniformDefs,
+            uTexture: textureSource,
+            uSampler: textureSource.style,
+          },
+        });
+      }
+      const glProgram = GlProgram.from({
+        vertex: FULLSCREEN_LOOK_VERTEX_GLSL,
+        fragment: fragmentSource,
+        name: asset,
+      });
+      return new Shader({
+        glProgram,
+        resources: {
+          customUniforms: uniformDefs,
+          uTexture: textureSource,
+        },
+      });
+    } catch (err) {
+      throw errorCompileFailed('look', asset, layer, backendLabel, err);
+    }
   }
 
   /**
@@ -3501,6 +3770,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           atlasSource: this._resolveAtlasSource(),
           lutSource: this._texLutSource,
           depthTest: layerYSort,
+          useWebGpu: this._useWebGpu,
         });
         batch.mesh.blendMode = containerBlend;
       }
@@ -3511,6 +3781,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           capacity: Math.max(1, lfMax),
           label: `lf-splat-${layerName}`,
           blendMode: containerBlend,
+          useWebGpu: this._useWebGpu,
         });
         splatBatch.mesh.blendMode = containerBlend;
       }
@@ -3545,7 +3816,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       };
 
       if (isCompute) {
-        const device = this.pixiApp.renderer.gpu.device;
+        const device = this.pixiApp.renderer.gpu?.device;
+        if (!this._useWebGpu || !device) {
+          throw errorCompileFailed(
+            'compute',
+            config.shaderName || layerName,
+            layerName,
+            'WebGPU',
+            new Error('Compute layers require WebGPU')
+          );
+        }
         cl.lookSource = PIXI.TextureSource.from({
           resource: new Uint8Array(4),
           width: 8,
@@ -3563,10 +3843,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           renderer: this.pixiApp.renderer,
           lookSource: cl.lookSource,
         });
-        const ok = await cl.compute.compile();
-        if (!ok) {
-          console.error(`PIXI WORKER: Compute layer "${layerName}" failed to compile, skipped`);
-          continue;
+        try {
+          const ok = await cl.compute.compile();
+          if (!ok) {
+            throw new Error(cl.compute._compileErrorMessage || 'compute pipeline failed');
+          }
+        } catch (err) {
+          throw errorCompileFailed('compute', config.shaderName || layerName, layerName, 'WebGPU', err);
         }
       }
 
@@ -3609,14 +3892,22 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             config.shaderFragment,
             lookSource,
             uniformDefs,
-            config.shaderName || layerName
+            config.shaderName || layerName,
+            layerName
           );
           cl.uniformStore = cl.shader.resources?.customUniforms?.uniforms || null;
 
           cl.shaderMesh = new Mesh({ geometry, shader: cl.shader });
           cl.shaderMesh.eventMode = 'none';
         } catch (err) {
-          console.error(`PIXI WORKER: Failed to compile shader for layer "${layerName}":`, err);
+          if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
+          throw errorCompileFailed(
+            'look',
+            config.shaderName || layerName,
+            layerName,
+            this._useWebGpu ? 'WebGPU' : 'WebGL',
+            err
+          );
         }
 
         cl.displaySprite = new PIXI.Sprite(cl.rtOut);

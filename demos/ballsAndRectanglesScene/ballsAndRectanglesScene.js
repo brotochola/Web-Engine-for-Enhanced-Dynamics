@@ -44,6 +44,7 @@ export class BallsAndRectanglesScene extends WEED.Scene {
     },
 
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
     },
 

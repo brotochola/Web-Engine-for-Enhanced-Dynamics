@@ -59,6 +59,7 @@ export class MamushkaDigScene extends WEED.Scene {
     },
 
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       maxVisibleRenderables: 40000,
     },
@@ -132,8 +133,8 @@ export class MamushkaDigScene extends WEED.Scene {
       rocky: '/demos/img/rocky.jpg',
     },
     shaders: {
-      rockContour: '/demos/shaders/rockContour.wgsl',
-      dulceDeLeche: '/demos/shaders/dulceDeLeche.wgsl',
+      rockContour: '/demos/shaders/rockContour.frag',
+      dulceDeLeche: '/demos/shaders/dulceDeLeche.frag',
     },
     AdobeAnimateAnimations: {
       blue_character: {

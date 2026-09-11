@@ -31,6 +31,7 @@ export class DecalStampStressScene extends Scene {
       noLimitFPS: false,
     },
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       maxVisibleRenderables: 2000,
     },

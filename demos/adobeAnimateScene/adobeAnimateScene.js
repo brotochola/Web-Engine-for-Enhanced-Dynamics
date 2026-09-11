@@ -27,6 +27,7 @@ export class AdobeAnimateScene extends Scene {
       decals: false,
     },
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       ySorting: true,
       maxVisibleRenderables: 250000,

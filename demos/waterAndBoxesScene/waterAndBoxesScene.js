@@ -51,6 +51,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
     },
 
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       ySorting: false,
       maxVisibleRenderables: 50000,
@@ -96,7 +97,7 @@ export class WaterAndBoxesScene extends WEED.Scene {
       box: '/demos/img/box_100_100.png',
     },
     shaders: {
-      metaball: '/demos/shaders/metaball.wgsl',
+      metaball: '/demos/shaders/metaball.frag',
     },
   };
 

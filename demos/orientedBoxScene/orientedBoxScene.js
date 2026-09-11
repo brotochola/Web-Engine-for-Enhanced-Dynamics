@@ -35,6 +35,7 @@ export class OrientedBoxScene extends WEED.Scene {
         },
 
         renderer: {
+            backend: 'webgl',
             noLimitFPS: false,
         },
 

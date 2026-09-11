@@ -75,6 +75,7 @@ export class LiquidFunDemoScene extends WEED.Scene {
     },
 
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       maxVisibleRenderables: 120000,
     },
@@ -125,7 +126,7 @@ export class LiquidFunDemoScene extends WEED.Scene {
       ball: '/demos/img/bola.png',
     },
     shaders: {
-      dulceDeLeche: '/demos/shaders/dulceDeLeche.wgsl',
+      dulceDeLeche: '/demos/shaders/dulceDeLeche.frag',
     },
   };
 

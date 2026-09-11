@@ -48,6 +48,7 @@ export class ConstraintsTestScene extends Scene {
         },
 
         renderer: {
+            backend: 'webgl',
             noLimitFPS: false,
         },
 

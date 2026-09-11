@@ -15,6 +15,7 @@ import {
   Mesh,
   Shader,
   GpuProgram,
+  GlProgram,
   Buffer,
   BufferUsage,
   State,
@@ -24,6 +25,10 @@ import {
 
 import { DECORATION_Y_SORT_SCALE, ENTITY_GLOW_SORT_BIAS } from '../core/ConfigDefaults.js';
 import { instancedSpriteGpuProgram } from './instancedSpriteWgsl.js';
+import {
+  INSTANCED_SPRITE_VERTEX_GLSL,
+  pickInstancedSpriteFragmentGlsl,
+} from './instancedSpriteGlsl.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
@@ -115,10 +120,25 @@ export function packTextureLutRgba(lut, count) {
   return out;
 }
 
-let _dummyLutSource = null;
-function dummyLutSource() {
-  if (_dummyLutSource) return _dummyLutSource;
-  _dummyLutSource = TextureSource.from({
+let _dummyLutGpu = null;
+let _dummyLutGl = null;
+function dummyLutSource(useWebGpu) {
+  if (useWebGpu) {
+    if (_dummyLutGpu) return _dummyLutGpu;
+    _dummyLutGpu = TextureSource.from({
+      resource: packTextureLutRgba(null, 1),
+      width: TEX_LUT_RGBA_WIDTH,
+      height: 1,
+      format: 'rgba32float',
+      scaleMode: 'nearest',
+      addressMode: 'clamp-to-edge',
+      autoGenerateMipmaps: false,
+    });
+    _dummyLutGpu.uploadMethodId = 'external';
+    return _dummyLutGpu;
+  }
+  if (_dummyLutGl) return _dummyLutGl;
+  _dummyLutGl = TextureSource.from({
     resource: packTextureLutRgba(null, 1),
     width: TEX_LUT_RGBA_WIDTH,
     height: 1,
@@ -127,8 +147,8 @@ function dummyLutSource() {
     addressMode: 'clamp-to-edge',
     autoGenerateMipmaps: false,
   });
-  _dummyLutSource.uploadMethodId = 'external';
-  return _dummyLutSource;
+  _dummyLutGl.uploadMethodId = 'unknown';
+  return _dummyLutGl;
 }
 
 export class InstancedSpriteBatch {
@@ -142,6 +162,7 @@ export class InstancedSpriteBatch {
    * @param {boolean} [opts.alphaDiscard=true] - false → blend-only fragment (no discard; soft particles)
    * @param {boolean} [opts.premultiplyAlpha=true] - true → normal PMA out; false → additive (glows)
    * @param {string} [opts.blendMode='normal'] - Pixi State blend mode
+   * @param {boolean} [opts.useWebGpu=true] - compile GpuProgram vs GlProgram
    */
   constructor({
     capacity,
@@ -153,6 +174,7 @@ export class InstancedSpriteBatch {
     premultiplyAlpha = true,
     blendMode = 'normal',
     lutSource = null,
+    useWebGpu = true,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this.data = new Float32Array(this.capacity * INSTANCED_SPRITE_FLOATS);
@@ -188,26 +210,34 @@ export class InstancedSpriteBatch {
     if (premultiplyAlpha) {
       fragEntry = alphaDiscard !== false ? 'mainFrag' : 'mainFragBlend';
     }
-    const gpuProgram = instancedSpriteGpuProgram(
-      GpuProgram,
-      fragEntry,
-      label || 'instanced-sprites'
-    );
 
     this._tileWorld = new Float32Array(4);
     this._tileWorld[2] = 1;
     const atlas = atlasSource || Texture.WHITE.source;
-    this.shader = new Shader({
-      gpuProgram,
-      resources: {
-        uTexture: atlas,
-        uSampler: atlas.style,
-        uTexLut: lutSource || dummyLutSource(),
-        uniforms: {
-          uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
-        },
+    const lut = lutSource || dummyLutSource(useWebGpu);
+    const resources = {
+      uTexture: atlas,
+      uSampler: atlas.style,
+      uTexLut: lut,
+      uniforms: {
+        uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
       },
-    });
+    };
+    if (useWebGpu) {
+      const gpuProgram = instancedSpriteGpuProgram(
+        GpuProgram,
+        fragEntry,
+        label || 'instanced-sprites'
+      );
+      this.shader = new Shader({ gpuProgram, resources });
+    } else {
+      const glProgram = GlProgram.from({
+        vertex: INSTANCED_SPRITE_VERTEX_GLSL,
+        fragment: pickInstancedSpriteFragmentGlsl(premultiplyAlpha, alphaDiscard),
+        name: label || 'instanced-sprites',
+      });
+      this.shader = new Shader({ glProgram, resources });
+    }
 
     const state = new State();
     state.blend = true;

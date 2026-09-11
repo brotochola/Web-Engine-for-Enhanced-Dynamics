@@ -32,6 +32,7 @@ export class QueryChurnScene extends Scene {
       decals: false,
     },
     renderer: {
+      backend: 'webgl',
       noLimitFPS: false,
       maxVisibleRenderables: 10000,
     },

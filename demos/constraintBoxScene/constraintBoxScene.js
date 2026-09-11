@@ -41,6 +41,7 @@ export class ConstraintBoxScene extends WEED.Scene {
         },
 
         renderer: {
+            backend: 'webgl',
             noLimitFPS: false,
         },
 

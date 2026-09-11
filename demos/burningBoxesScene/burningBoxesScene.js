@@ -142,6 +142,7 @@ export class BurningBoxesScene extends WEED.Scene {
     },
     preRender: { noLimitFPS: false },
     renderer: {
+      backend: 'webgpu',
       noLimitFPS: false,
       ySorting: true,
       maxVisibleRenderables: 4000,

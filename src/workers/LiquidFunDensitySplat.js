@@ -10,11 +10,13 @@ import {
   Mesh,
   Shader,
   GpuProgram,
+  GlProgram,
   Buffer,
   BufferUsage,
   State,
 } from '../lib/pixi_8.16_.min.js';
 import { LF_SPLAT_WGSL } from './instancedSpriteWgsl.js';
+import { LF_SPLAT_VERTEX_GLSL, LF_SPLAT_FRAGMENT_GLSL } from './instancedSpriteGlsl.js';
 
 export const LF_SPLAT_FLOATS = 4;
 export const LF_SPLAT_STRIDE = LF_SPLAT_FLOATS * 4;
@@ -25,8 +27,9 @@ export class LiquidFunDensitySplat {
    * @param {number} opts.capacity
    * @param {string} [opts.label]
    * @param {string} [opts.blendMode='add']
+   * @param {boolean} [opts.useWebGpu=true]
    */
-  constructor({ capacity, label, blendMode = 'add' }) {
+  constructor({ capacity, label, blendMode = 'add', useWebGpu = true }) {
     this.capacity = Math.max(1, capacity | 0);
     this.data = new Float32Array(this.capacity * LF_SPLAT_FLOATS);
     this.dataU32 = new Uint32Array(this.data.buffer);
@@ -52,13 +55,22 @@ export class LiquidFunDensitySplat {
     });
     this.geometry.instanceCount = 0;
 
-    const gpuProgram = GpuProgram.from({
-      name: label || 'lf-density-splat',
-      vertex: { source: LF_SPLAT_WGSL, entryPoint: 'mainVert' },
-      fragment: { source: LF_SPLAT_WGSL, entryPoint: 'mainFrag' },
-    });
-
-    this.shader = new Shader({ gpuProgram, resources: {} });
+    const name = label || 'lf-density-splat';
+    if (useWebGpu) {
+      const gpuProgram = GpuProgram.from({
+        name,
+        vertex: { source: LF_SPLAT_WGSL, entryPoint: 'mainVert' },
+        fragment: { source: LF_SPLAT_WGSL, entryPoint: 'mainFrag' },
+      });
+      this.shader = new Shader({ gpuProgram, resources: {} });
+    } else {
+      const glProgram = GlProgram.from({
+        vertex: LF_SPLAT_VERTEX_GLSL,
+        fragment: LF_SPLAT_FRAGMENT_GLSL,
+        name,
+      });
+      this.shader = new Shader({ glProgram, resources: {} });
+    }
 
     const state = new State();
     state.blend = true;
