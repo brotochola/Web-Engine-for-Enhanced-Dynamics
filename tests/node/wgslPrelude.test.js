@@ -110,8 +110,11 @@ test('reserved look uniforms injected for custom shader layers', () => {
     assert.equal(map.uZoom.offset, 2);
     assert.equal(map.uCameraPos.offset % 2, 0);
     assert.equal(map.uCameraPos.size, 2);
+    assert.equal(map.uViewSize.offset, 10);
+    assert.equal(map.uTexSize.offset, 12);
+    assert.equal(map.uTexSize.size, 2);
     // Scene uniform lands after the reserved block
-    assert.ok(map.uThreshold.offset >= 12);
+    assert.ok(map.uThreshold.offset >= 14);
     // Types and metadata
     const meta = Layer._metadata.layers[id];
     assert.equal(meta.uniformTypes.uCameraPos, 'vec2<f32>');
@@ -154,7 +157,8 @@ test('shader layer without uniforms still gets the reserved block', () => {
     );
     const id = Layer.get('plain').id;
     assert.ok(Layer._uniformMaps[id].uTime);
-    assert.ok(Layer._uniformFloats[id].length >= 11);
+    assert.ok(Layer._uniformMaps[id].uTexSize);
+    assert.ok(Layer._uniformFloats[id].length >= 14);
   } finally {
     Layer.reset();
   }
@@ -180,7 +184,7 @@ test('vec uniforms align to WGSL uniform rules in the SAB map', () => {
       true
     );
     const map = Layer._uniformMaps[Layer.get('water').id];
-    // uA after reserved block (11 floats + pad to 12), vec3 aligns to 4 floats
+    // uA after reserved block (uTexSize ends at 14)
     const a = map.uA.offset;
     assert.equal(map.uColor.offset % 4, 0);
     assert.ok(map.uColor.offset >= a + 1);

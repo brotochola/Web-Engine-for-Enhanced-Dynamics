@@ -5,6 +5,8 @@ import { BLEND_MODES, LAYER_COMPUTE_SOURCE } from '/src/core/ConfigDefaults.js';
 import WEED from '/src/index.js';
 
 const FIRE_PASSES = [
+  { entry: 'clear_fields', source: 'fireFluid', when: 'zoomChanged', swap: ['u', 'v', 't', 'p'] },
+  { entry: 'clear_swirls', source: 'fireFluid', when: 'zoomChanged', workgroup: [64], dispatchFrom: 'swirls' },
   { entry: 'shift_fields', source: 'fireFluid', when: 'originShift', swap: ['u', 'v', 't', 'p'] },
   { entry: 'shift_swirls', source: 'fireFluid', when: 'originShift', workgroup: [64], dispatchFrom: 'swirls' },
   { entry: 'raster_stamp', source: 'fireStamp' },
@@ -36,7 +38,7 @@ const FIRE_TEXTURES = [
 /**
  * Uniform hints (min/max/step/label/tip/widget/negate) drive the engine
  * LayersPanel sliders — expand the "fire" layer in the debug UI to tweak.
- * uTime/uDt/uZoom/uCameraPos/uCanvasSize/uWorldSize/uViewSize are
+ * uTime/uDt/uZoom/uCameraPos/uCanvasSize/uWorldSize/uViewSize/uTexSize are
  * engine-reserved: fed every frame, never declared here.
  */
 export class BurningBoxesScene extends WEED.Scene {
@@ -106,6 +108,21 @@ export class BurningBoxesScene extends WEED.Scene {
             uSwirlLife: { value: 1.2, type: 'f32', min: 0, max: 5, step: 0.1, label: 'Swirl life', tip: 'Seconds a swirl lives before it dies.' },
             uSwirlRadius: { value: 2.5, type: 'f32', min: 0.5, max: 8, step: 0.1, label: 'Swirl size', tip: 'Radius of each swirl, in grid cells.' },
             uMaxSwirls: { value: 155, type: 'f32', min: 0, max: 200, step: 1, label: 'Max swirls', tip: 'Cap on live swirls. 0 = none.' },
+            uSmokeOn: { value: 1, type: 'f32', widget: 'check', label: 'Smoke', tip: 'Draw smoke (heat below the split). Off = flames only.' },
+            uFireOn: { value: 1, type: 'f32', widget: 'check', label: 'Fire', tip: 'Draw flame pixels (heat at or above the split).' },
+            uView: { value: 0, type: 'f32', min: 0, max: 3, step: 1, label: 'View', tip: 'Look = composite. Heat = raw t. FBM = overlay grain (not the fluid). Flow = velocity color.' },
+            uSmokeAlpha: { value: 0.77, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Smoke alpha', tip: 'Smoke opacity.' },
+            uSmokePuff: { value: 1.55, type: 'f32', min: 0.4, max: 3, step: 0.05, label: 'Smoke puff', tip: 'Wisp shape. Higher = thinner, puffier edges.' },
+            uSmokeNoise: { value: 0.55, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Smoke noise', tip: 'How lumpy the smoke is. At 1, noise punches holes in the puff.' },
+            uSmokeDens: { value: 1.3, type: 'f32', min: 0.4, max: 2.5, step: 0.05, label: 'Smoke density', tip: 'How thick and sooty the smoke is. Raise this for darker plumes.' },
+            uSmokeScroll0: { value: 3.5, type: 'f32', min: -20, max: 20, step: 0.05, label: 'Smoke n1', tip: 'Slow coarse smoke grain crawl. Negative = up with the plume (Y-down lattice).' },
+            uSmokeScroll1: { value: 7.0, type: 'f32', min: -20, max: 20, step: 0.05, label: 'Smoke n2', tip: 'Mid smoke octave crawl.' },
+            uSmokeScroll2: { value: 12.0, type: 'f32', min: -20, max: 20, step: 0.05, label: 'Smoke n3', tip: 'Fine smoke octave crawl. Faster = more boil.' },
+            uFireScroll0: { value: 10.0, type: 'f32', min: -20, max: 20, step: 0.05, label: 'Fire n1', tip: 'Slow coarse fire grain crawl.' },
+            uFireScroll1: { value: 18.0, type: 'f32', min: -20, max: 20, step: 0.05, label: 'Fire n2', tip: 'Mid fire octave crawl.' },
+            uFireScroll2: { value: 28.0, type: 'f32', min: -20, max: 20, step: 0.05, label: 'Fire n3', tip: 'Fine fire octave crawl.' },
+            uFireAlpha: { value: 0.9, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Fire alpha', tip: 'Flame opacity.' },
+            uFireNoise: { value: 0.4, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Fire noise', tip: 'How hard FBM wriggles flame bands and punches dark patches. 0 = smooth fill.' },
           },
         },
       },

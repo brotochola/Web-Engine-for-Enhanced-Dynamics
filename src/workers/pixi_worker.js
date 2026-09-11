@@ -108,6 +108,10 @@ function applyEngineLookUniforms(cl, frame) {
   setLookUniform2(map, floats, store, 'uCanvasSize', frame.canvasW, frame.canvasH);
   setLookUniform2(map, floats, store, 'uWorldSize', frame.worldW, frame.worldH);
   setLookUniform2(map, floats, store, 'uViewSize', frame.canvasW / zoom, frame.canvasH / zoom);
+  if (cl.compute) {
+    const ext = Layer.computeTextureExtent(frame.canvasW, frame.canvasH, cl.compute._texSize);
+    setLookUniform2(map, floats, store, 'uTexSize', ext.texW, ext.texH);
+  }
 }
 import { writeRgba32Float } from './pinGpuTexture.js';
 import { lightingGpuProgram, lookGpuProgram, gpuProgramFromWgsl, isWgslSource } from './pixiMeshWgsl.js';

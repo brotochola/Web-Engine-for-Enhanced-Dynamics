@@ -9,7 +9,11 @@ import { feedLayerAt, clearFeedLayerAt } from '../../src/core/computeFeed.js';
 import { packBox2dBodies, BODY_FLOATS } from '../../src/workers/Box2dBodyPack.js';
 import { inferComputeLayout } from '../../src/workers/inferComputeLayout.js';
 import { prependComputePrelude } from '../../src/workers/wgslPrelude.js';
-import { ENGINE_FRAME_PREFIX_FLOATS } from '../../src/workers/ComputeLayer.js';
+import {
+  ENGINE_FRAME_PREFIX_FLOATS,
+  computePassActive,
+  latticeLookUv,
+} from '../../src/workers/ComputeLayer.js';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -364,4 +368,34 @@ test('inferComputeLayout: frame and shapes aliases', () => {
   const groups = inferComputeLayout(wgsl, { textures: [], buffers: [] });
   assert.equal(groups[0][0].resource, 'params');
   assert.equal(groups[0][1].resource, 'bodies');
+});
+
+test('computePassActive: originShift skips zoom/still; zoomChanged only on zoom', () => {
+  assert.equal(computePassActive('originShift', false, false), true);
+  assert.equal(computePassActive('originShift', true, false), false);
+  assert.equal(computePassActive('originShift', false, true), false);
+  assert.equal(computePassActive('zoomChanged', true, false), true);
+  assert.equal(computePassActive('zoomChanged', false, false), false);
+  assert.equal(computePassActive('zoomChanged', true, true), true);
+  assert.equal(computePassActive(null, true, true), true);
+});
+
+test('latticeLookUv: snapped origin, non-square canvas, view center in 0-1', () => {
+  const centered = latticeLookUv(0, 0, 800, 400, 200, 100, 800, 1, 0.5, 0.5);
+  assert.equal(centered.u, 0.5);
+  assert.equal(centered.v, 0.5);
+
+  const snapped = latticeLookUv(101, 53, 800, 400, 200, 100, 800, 1, 0.5, 0.5);
+  assert.ok(snapped.u > 0 && snapped.u < 1);
+  assert.ok(snapped.v > 0 && snapped.v < 1);
+  const h = 800 / 200;
+  const originX = Math.floor(101 / h) * h;
+  assert.ok(Math.abs(snapped.u - (0.5 + (101 - originX) / 800)) < 1e-12);
+});
+
+test('layerN: kindling negative scroll + +uTime*scroll moves uv.y toward screen up', () => {
+  // Matches fireLook layerN. Y-down lattice: smaller uv.y is screen up.
+  const offsetY = (time, scroll) => time * scroll;
+  assert.ok(offsetY(1, -0.35) < 0);
+  assert.ok(offsetY(1, 0.35) > 0);
 });

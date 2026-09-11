@@ -589,8 +589,9 @@ export class LayersPanel {
       const isAvailable = available.has(layerName);
       const controls = this.elements.layerControls[layerName];
 
-      wrapper.style.opacity = isAvailable ? '1' : '0.4';
-      wrapper.style.pointerEvents = isAvailable ? 'auto' : 'none';
+      // DECALS / LIGHTING / CASTED_SHADOWS don't exist at all unless the scene
+      // config enables them — hide the row instead of just graying it out.
+      wrapper.style.display = isAvailable ? '' : 'none';
       controls.visible.disabled = !isAvailable;
       controls.alpha.disabled = !isAvailable;
       controls.blendMode.disabled = !isAvailable;

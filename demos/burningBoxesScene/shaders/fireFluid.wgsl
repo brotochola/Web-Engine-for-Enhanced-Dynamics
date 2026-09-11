@@ -508,6 +508,14 @@ fn step_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 
 @compute @workgroup_size(64)
+fn clear_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let i = i32(gid.x);
+  let cap = i32(arrayLength(&swirls));
+  if (i >= cap) { return; }
+  swirls[i] = Swirl(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+}
+
+@compute @workgroup_size(64)
 fn shift_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
   let i = i32(gid.x);
   let cap = i32(arrayLength(&swirls));

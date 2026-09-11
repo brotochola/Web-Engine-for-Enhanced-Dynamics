@@ -48,6 +48,7 @@ export const RESERVED_LOOK_UNIFORMS = {
     uCanvasSize: { value: [0, 0], type: 'vec2<f32>' },
     uWorldSize: { value: [0, 0], type: 'vec2<f32>' },
     uViewSize: { value: [0, 0], type: 'vec2<f32>' },
+    uTexSize: { value: [0, 0], type: 'vec2<f32>' },
 };
 
 /** Panel hint keys carried into metadata (LayersPanel widgets). */

@@ -132,6 +132,7 @@ Pass extras:
 - `swap: ['t']` — ping-pong named `pingPong` textures after the dispatch
 - `iterate: 'uPressureIters'` — repeat; number or uniform name
 - `when: 'originShift'` — skip if zoom changed or camera XY unchanged vs the previous frame. Lattice shift amounts are computed in WGSL from `prevCamera*` / `prevZoom`.
+- `when: 'zoomChanged'` — run only if zoom moved vs the previous frame. Use this to wipe fields (`clear_fields` + swirl clear). Do not persist a lattice across an `h` change; zoom does not realloc textures.
 
 Storage formats are explicit (`r32float`, `rgba8unorm`, `rgba32float`). Do not match the look write to the canvas swapchain (`bgra8unorm` is often illegal as storage).
 
@@ -192,6 +193,19 @@ Auto-declared on every custom shader layer — do **not** add them to `shader.un
 - `uCanvasSize` vec2
 - `uWorldSize` vec2
 - `uViewSize` vec2 — `canvas / zoom`
+- `uTexSize` vec2 — allocated compute storage pixels (`numX`, `numY`). `0` on layers without compute.
+
+Look fragments that sample a lattice pack (not stretched mesh UV) reconstruct world UV the same way compute does:
+
+```wgsl
+let h = (uCanvasSize.x / max(uZoom, 1e-6)) / max(uTexSize.x, 1.0);
+let origin = floor(uCameraPos / h) * h;
+let extent = uTexSize * h;
+let world = uCameraPos + in.vTextureCoord * uViewSize;
+let uv = (world - origin) / extent;
+```
+
+`cell_h` uses **width only**. `texH * h` is not always `viewH` after `ceil`. Zoom changes `h` without realloc — pair with `when: 'zoomChanged'` wipe, not `originShift` persist.
 
 Art rate belongs in WGSL (`sin(uTime * 2.0)`), not a scaled `setUniform`.
 

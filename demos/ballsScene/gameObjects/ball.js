@@ -72,7 +72,7 @@ class Ball extends GameObject {
       0x48dbfb, // Blue
       0xff9ff3, // Pink
     ];
-    this.myColor = colors[Math.floor(Math.random() * colors.length)];
+    this.myColor = colors[Math.floor(rng() * colors.length)];
     this.setTint(this.myColor);
   }
 
