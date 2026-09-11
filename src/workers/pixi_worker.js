@@ -67,6 +67,7 @@ import {
 import { LiquidFunDensitySplat } from './LiquidFunDensitySplat.js';
 import { LiquidFun } from '../core/LiquidFun.js';
 import { ComputeLayer } from './ComputeLayer.js';
+import { releasePixiBindGroupsOnResource } from './releasePixiBindGroups.js';
 
 function finiteOrZero(n) {
   return Number.isFinite(n) ? n : 0;
@@ -2745,6 +2746,51 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._setRtScaleMode(cl.rtOut, mode);
   }
 
+  _unbindLookShaderTexture(shader) {
+    const res = shader?.resources;
+    if (!res) return;
+    const empty = PIXI.Texture.EMPTY;
+    if (res.uTexture) res.uTexture = empty.source;
+    if (res.uSampler) res.uSampler = empty.source.style;
+  }
+
+  /**
+   * Pixi batch BindGroups stay subscribed to TextureSource "change" after
+   * sprite.texture is swapped. Destroy those groups before RT.destroy(true)
+   * or we get the BindGroup warning and a dead GPU bind.
+   */
+  _releaseTextureBindGroups(texture) {
+    if (!texture) return;
+    const hash = this.pixiApp?.renderer?.texture?._bindGroupHash;
+    if (hash && texture.uid != null) {
+      const bg = hash[texture.uid];
+      if (bg && typeof bg.destroy === 'function') bg.destroy();
+      hash[texture.uid] = null;
+    }
+    releasePixiBindGroupsOnResource(texture.source);
+    releasePixiBindGroupsOnResource(texture.source?.style);
+  }
+
+  /**
+   * Destroy+create at the new pixel size. source.resize() does not rebuild
+   * the GPU framebuffer for look/lighting RTs (fire desyncs vs bodies).
+   */
+  _replaceRT(rt, width, height, sprite, scale) {
+    const w = Math.max(1, width);
+    const h = Math.max(1, height);
+    if (sprite) sprite.texture = PIXI.Texture.EMPTY;
+    if (rt) {
+      this._releaseTextureBindGroups(rt);
+      rt.destroy(true);
+    }
+    const next = PIXI.RenderTexture.create({ width: w, height: h });
+    if (sprite) {
+      sprite.texture = next;
+      if (scale != null) sprite.scale.set(scale);
+    }
+    return next;
+  }
+
   _ensureCustomLayerDensityRT(cl) {
     const resolution = cl.resolution || 1.0;
     const w = this.canvasWidth * resolution;
@@ -2860,22 +2906,34 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.layerRefs = refs;
   }
 
-  _recreateCustomLayerRTs(cl, width, height) {
-    if (!cl || !cl.rt) return;
+  _resizeCustomLayerRTs(cl, width, height) {
+    if (!Layer.customLayerNeedsViewportResize(cl)) return;
     const resolution = cl.resolution || 1.0;
     const lw = width * resolution;
     const lh = height * resolution;
 
-    cl.rt.destroy(true);
-    cl.rt = PIXI.RenderTexture.create({ width: lw, height: lh });
+    if (cl.displaySprite) cl.displaySprite.texture = PIXI.Texture.EMPTY;
+    this._unbindLookShaderTexture(cl.shader);
 
-    if (cl.shader) {
-      cl.shader.resources.uTexture = cl.rt.source;
+    if (cl.rt) {
+      this._releaseTextureBindGroups(cl.rt);
+      cl.rt.destroy(true);
+      cl.rt = PIXI.RenderTexture.create({ width: lw, height: lh });
     }
-
     if (cl.rtOut) {
+      this._releaseTextureBindGroups(cl.rtOut);
       cl.rtOut.destroy(true);
       cl.rtOut = PIXI.RenderTexture.create({ width: lw, height: lh });
+    }
+
+    if (cl.shader) {
+      const lookTex = Layer.customLayerLookTexture(cl);
+      if (lookTex) {
+        cl.shader.resources.uTexture = lookTex;
+        if (cl.shader.resources.uSampler && lookTex.style) {
+          cl.shader.resources.uSampler = lookTex.style;
+        }
+      }
     }
 
     this._applyCustomLayerScaleMode(cl);
@@ -2905,18 +2963,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     if (this._useWebGpu) this._bindWebGpuSwapchain();
 
-    // Recreate lighting RenderTexture at the new size.
-    // RT.resize() in PixiJS 8 can fail to update the GPU framebuffer;
-    // destroy + create guarantees a fresh texture at the correct dimensions.
+    // Viewport RTs follow canvas. Destroy+create (source.resize leaves a
+    // stale GPU framebuffer). Unbind BindGroups first to avoid Pixi warns.
     if (this.lightingRT) {
-      const lw = width * this.lightingResolution;
-      const lh = height * this.lightingResolution;
-      this.lightingRT.destroy(true);
-      this.lightingRT = PIXI.RenderTexture.create({ width: lw, height: lh });
-      if (this.lightingDisplaySprite) {
-        this.lightingDisplaySprite.texture = this.lightingRT;
-        this.lightingDisplaySprite.scale.set(1.0 / this.lightingResolution);
-      }
+      this.lightingRT = this._replaceRT(
+        this.lightingRT,
+        width * this.lightingResolution,
+        height * this.lightingResolution,
+        this.lightingDisplaySprite,
+        1.0 / this.lightingResolution
+      );
     }
 
     // Sync lighting shader uniforms immediately
@@ -2928,37 +2984,30 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       u.uFullCanvasSize[1] = height;
     }
 
-    // Recreate shadow RenderTexture at the new size
     if (this.shadowRT) {
-      const sw = width * this.shadowResolution;
-      const sh = height * this.shadowResolution;
-      this.shadowRT.destroy(true);
-      this.shadowRT = PIXI.RenderTexture.create({ width: sw, height: sh });
-      if (this.shadowDisplaySprite) {
-        this.shadowDisplaySprite.texture = this.shadowRT;
-        this.shadowDisplaySprite.scale.set(1.0 / this.shadowResolution);
-      }
+      this.shadowRT = this._replaceRT(
+        this.shadowRT,
+        width * this.shadowResolution,
+        height * this.shadowResolution,
+        this.shadowDisplaySprite,
+        1.0 / this.shadowResolution
+      );
     }
 
-    // Recreate visibility polygon RenderTexture at the new size
     if (this._visPolyRT) {
       const res = this.lightingResolution || 1.0;
-      const vw = Math.max(1, Math.floor(width * res));
-      const vh = Math.max(1, Math.floor(height * res));
-      this._visPolyRT.destroy(true);
-      this._visPolyRT = PIXI.RenderTexture.create({ width: vw, height: vh });
-      if (this._visPolyDisplaySprite) {
-        this._visPolyDisplaySprite.texture = this._visPolyRT;
-        this._visPolyDisplaySprite.scale.set(1.0 / res);
-      }
+      this._visPolyRT = this._replaceRT(
+        this._visPolyRT,
+        Math.max(1, Math.floor(width * res)),
+        Math.max(1, Math.floor(height * res)),
+        this._visPolyDisplaySprite,
+        1.0 / res
+      );
     }
 
-    // Recreate custom layer RenderTextures at new size
+    // Viewport look/density RTs (compute layers have rtOut only).
     for (let i = 0; i < this._customLayerList.length; i++) {
-      const cl = this._customLayerList[i];
-      if (cl.rt) {
-        this._recreateCustomLayerRTs(cl, width, height);
-      }
+      this._resizeCustomLayerRTs(this._customLayerList[i], width, height);
     }
 
     if (this._coverBackground) this._applyCoverBackgroundTransform();

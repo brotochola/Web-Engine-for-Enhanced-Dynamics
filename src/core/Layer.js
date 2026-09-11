@@ -683,6 +683,27 @@ export class Layer {
         };
     }
 
+    /**
+     * Density RT (`rt`) and look output (`rtOut`) follow the canvas.
+     * Compute storage textures do not — they use {@link computeTextureExtent}.
+     * Compute look layers have `rtOut` only (`rt` stays null).
+     * @param {{rt?: unknown, rtOut?: unknown}|null|undefined} cl
+     */
+    static customLayerNeedsViewportResize(cl) {
+        return !!(cl && (cl.rt || cl.rtOut));
+    }
+
+    /**
+     * Look `uTexture` after viewport RT recreate.
+     * Density layers sample `cl.rt`; compute layers keep the pinned pack (`lookSource`).
+     * @param {{compute?: unknown, lookSource?: unknown, rt?: {source?: unknown}}|null|undefined} cl
+     */
+    static customLayerLookTexture(cl) {
+        if (!cl) return null;
+        if (cl.compute) return cl.lookSource || null;
+        return cl.rt?.source || null;
+    }
+
     /** @param {unknown} raw */
     static _normalizeComputeSize(raw) {
         const s = raw && typeof raw === 'object' ? raw : {};

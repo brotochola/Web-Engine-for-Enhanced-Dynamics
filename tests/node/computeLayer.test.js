@@ -281,6 +281,17 @@ test('computeTextureExtent: scale, default canvas, explicit size, min 8', () => 
   assert.deepEqual(Layer.computeTextureExtent(1, 1, { scale: 1 }), { texW: 8, texH: 8 });
 });
 
+test('viewport RT resize: compute look has rtOut only; uTexture stays lookSource', () => {
+  const lookSource = { id: 'pack' };
+  const densitySource = { id: 'density' };
+  const computeCl = { compute: {}, lookSource, rt: null, rtOut: { id: 'lookOut' } };
+  const densityCl = { rt: { source: densitySource }, rtOut: { id: 'lookOut' } };
+  assert.equal(Layer.customLayerNeedsViewportResize(computeCl), true);
+  assert.equal(Layer.customLayerNeedsViewportResize({ rt: null, rtOut: null }), false);
+  assert.equal(Layer.customLayerLookTexture(computeCl), lookSource);
+  assert.equal(Layer.customLayerLookTexture(densityCl), densitySource);
+});
+
 test('ENGINE_FRAME_PREFIX_FLOATS is 16', () => {
   assert.equal(ENGINE_FRAME_PREFIX_FLOATS, 16);
 });
