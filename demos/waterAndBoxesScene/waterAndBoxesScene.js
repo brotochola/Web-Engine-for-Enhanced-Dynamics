@@ -7,7 +7,6 @@ import { WaterBall } from './gameObjects/waterBall.js';
 import { Box } from '/demos/ballsAndRectanglesScene/gameObjects/box.js';
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import { Camera } from '/src/core/Camera.js';
-import { Layer } from '/src/core/Layer.js';
 import { BLEND_MODES } from '/src/core/ConfigDefaults.js';
 import WEED from '/src/index.js';
 
@@ -138,10 +137,6 @@ export class WaterAndBoxesScene extends WEED.Scene {
     console.log(
       `WaterAndBoxesScene: Spawned ${this.numberOfWaterBalls} water balls and ${this.numberOfBoxes} boxes`
     );
-  }
-
-  update(dtRatio, deltaTime, time) {
-    Layer.water.setUniform('uTime', time * 0.002);
   }
 
   // ========================================

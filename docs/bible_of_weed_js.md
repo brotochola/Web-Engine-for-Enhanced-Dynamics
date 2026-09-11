@@ -400,7 +400,7 @@ Look fragment is unchanged: samples `uTexture` (density) and applies threshold /
 
 ### Compute layers (`LAYER_COMPUTE_SOURCE`)
 
-WebGPU-only. A compute layer has `maxItems: 0` (no sprite queue). The look draws a fullscreen field; colliders that `feedLayer()` that name are packed into storage buffers. Scene declares textures, extra buffers, bind layouts, and the pass graph. Engine packs bodies, dispatches, and pins the `look: true` texture as `uTexture`. See [`COMPUTE_LAYERS.md`](./COMPUTE_LAYERS.md).
+WebGPU-only. A compute layer has `maxItems: 0` (no sprite queue). The look draws a fullscreen field; colliders that `feedLayer()` that name are packed into storage buffers. Scene declares textures, extra buffers, and the pass graph. Bind layouts are inferred from WGSL `@group`/`@binding` (optional `compute.layouts` override). Engine packs bodies, sizes storage textures from the canvas (optional `compute.size.scale`), writes a 16-float Frame prefix (time, camera, zoom, canvas, world, previous camera), dispatches, and pins the `look: true` texture as `uTexture`. Look shaders that declare `uTime` / `uCameraPos` / `uZoom` / `uCanvasSize` / `uWorldSize` / `uViewSize` / `uDt` are filled every frame. See [`COMPUTE_LAYERS.md`](./COMPUTE_LAYERS.md).
 
 ```javascript
 this.setLayer('ENTITIES');
@@ -589,11 +589,10 @@ Do not keep WORLD mode on a sprite that spins — the texture will swim. Bake to
 
 ### Shader Uniforms
 
-Uniforms are stored in SharedArrayBuffers and can be updated from **any thread**:
+Uniforms are stored in SharedArrayBuffers and can be updated from **any thread**. Reserved names `uTime` (seconds), `uDt`, `uZoom`, `uCameraPos`, `uCanvasSize`, `uWorldSize`, and `uViewSize` are overwritten by the engine every frame if declared.
 
 ```javascript
 const water = WEED.Layer.water;
-water.setUniform('uTime', accumulatedTime);
 water.setUniform('uWaterColor', [0.0, 0.2, 0.8]);
 
 const val   = water.getUniform('uThreshold');   // number
@@ -636,7 +635,7 @@ await Layer.BACKGROUND.setTilemapBackground(tilemapId, options)
 Layer.BACKGROUND.clearBackground()
 
 // Uniforms (cross-worker safe)
-Layer.water.setUniform('uTime', t)
+Layer.water.setUniform('uWaterColor', [0.05, 0.1, 0.95])
 Layer.water.getUniform('uThreshold')
 
 // Blend modes (numeric enum)

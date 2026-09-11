@@ -66,6 +66,49 @@ import {
 import { LiquidFunDensitySplat } from './LiquidFunDensitySplat.js';
 import { LiquidFun } from '../core/LiquidFun.js';
 import { ComputeLayer } from './ComputeLayer.js';
+
+function finiteOrZero(n) {
+  return Number.isFinite(n) ? n : 0;
+}
+
+function setLookUniform1(map, floats, store, name, value) {
+  const e = map[name];
+  if (!e || e.size !== 1) return;
+  if (floats) floats[e.offset] = value;
+  if (store) store[name] = value;
+}
+
+function setLookUniform2(map, floats, store, name, x, y) {
+  const e = map[name];
+  if (!e || e.size < 2) return;
+  if (floats) {
+    floats[e.offset] = x;
+    floats[e.offset + 1] = y;
+  }
+  if (!store) return;
+  const target = store[name];
+  if (target && typeof target.set === 'function') target.set([x, y]);
+  else if (target && typeof target === 'object' && target.length) {
+    target[0] = x;
+    target[1] = y;
+  }
+}
+
+/** Engine Frame into declared look uniforms. Overwrites reserved names every frame. */
+function applyEngineLookUniforms(cl, frame) {
+  const map = Layer._uniformMaps[cl.layerId];
+  if (!map) return;
+  const floats = Layer._uniformFloats[cl.layerId];
+  const store = cl.uniformStore;
+  const zoom = frame.zoom > 0 ? frame.zoom : 1;
+  setLookUniform1(map, floats, store, 'uTime', frame.time);
+  setLookUniform1(map, floats, store, 'uDt', frame.dt);
+  setLookUniform1(map, floats, store, 'uZoom', zoom);
+  setLookUniform2(map, floats, store, 'uCameraPos', frame.cameraX, frame.cameraY);
+  setLookUniform2(map, floats, store, 'uCanvasSize', frame.canvasW, frame.canvasH);
+  setLookUniform2(map, floats, store, 'uWorldSize', frame.worldW, frame.worldH);
+  setLookUniform2(map, floats, store, 'uViewSize', frame.canvasW / zoom, frame.canvasH / zoom);
+}
 import { writeRgba32Float } from './pinGpuTexture.js';
 import { lightingGpuProgram, lookGpuProgram, gpuProgramFromWgsl } from './pixiMeshWgsl.js';
 import {
@@ -3999,16 +4042,21 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }
       }
 
+      const frameUniforms = {
+        dt: this._lastDt || 1 / 60,
+        cameraX: this._renderCameraX,
+        cameraY: this._renderCameraY,
+        canvasW: this.canvasWidth,
+        canvasH: this.canvasHeight,
+        zoom: this._renderZoom,
+        time: (this.accumulatedTime || 0) * 0.001,
+        worldW: finiteOrZero(this.worldWidth),
+        worldH: finiteOrZero(this.worldHeight),
+      };
+      applyEngineLookUniforms(cl, frameUniforms);
+
       if (cl.compute) {
-        cl.compute.step({
-          dt: this._lastDt || 1 / 60,
-          cameraX: this._renderCameraX,
-          cameraY: this._renderCameraY,
-          canvasW: this.canvasWidth,
-          canvasH: this.canvasHeight,
-          zoom: this._renderZoom,
-          time: this.accumulatedTime || 0,
-        });
+        cl.compute.step(frameUniforms);
         if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
           this.pixiApp.renderer.render({ container: cl.shaderMesh, target: cl.rtOut, clear: true });
         }

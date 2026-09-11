@@ -4,15 +4,12 @@ import { createPanel } from '../ui/DebugDOM.js';
 import { DEFAULT_LAYERS } from '../../ConfigDefaults.js';
 import { Layer } from '../../Layer.js';
 
-function computeGridLabel(meta) {
-  const grid = meta?.computeGrid;
-  if (!grid) return '—';
-  const nx = grid.numX;
-  const ny = grid.numY;
-  if (nx && ny) return `${nx}×${ny}`;
-  const cell = grid.cellSize || 8;
-  const fit = grid.fit === 'canvas' ? 'canvas' : 'view';
-  return `${cell}px ${fit}`;
+function computeSizeLabel(meta) {
+  const size = meta?.compute?.size;
+  if (!size) return 'canvas';
+  if ((size.width | 0) > 0 && (size.height | 0) > 0) return `${size.width}×${size.height}`;
+  const scale = size.scale > 0 ? size.scale : 1;
+  return scale === 1 ? 'canvas' : `canvas×${scale}`;
 }
 
 export class LayersPanel {
@@ -196,7 +193,7 @@ export class LayersPanel {
       const srcName = meta?.compute?.passes?.[0]?.source || meta?.shaderName || 'wgsl';
       const feedN = Layer._feedCount ? Atomics.load(Layer._feedCount, customLayer.id) : 0;
       const maxB = meta?.maxBodies || 0;
-      computeVal.textContent = `${srcName} · ${feedN}/${maxB} feed · ${computeGridLabel(meta)} · WebGPU`;
+      computeVal.textContent = `${srcName} · ${feedN}/${maxB} feed · ${computeSizeLabel(meta)} · WebGPU`;
       computeCont.appendChild(computeVal);
       row.appendChild(computeCont);
     }
@@ -385,7 +382,7 @@ export class LayersPanel {
           const srcName = meta?.compute?.passes?.[0]?.source || meta?.shaderName || 'wgsl';
           const feedN = Layer._feedCount ? Atomics.load(Layer._feedCount, layer.id) : 0;
           const maxB = meta?.maxBodies || 0;
-          controls.computeVal.textContent = `${srcName} · ${feedN}/${maxB} feed · ${computeGridLabel(meta)} · WebGPU`;
+          controls.computeVal.textContent = `${srcName} · ${feedN}/${maxB} feed · ${computeSizeLabel(meta)} · WebGPU`;
         }
       }
     }

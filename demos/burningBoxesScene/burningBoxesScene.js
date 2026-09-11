@@ -7,22 +7,22 @@ import WEED from '/src/index.js';
 const { Layer } = WEED;
 
 const FIRE_PASSES = [
-  { entry: 'shift_fields', source: 'fireFluid', layout: 'fluid', when: 'originShift', swap: ['u', 'v', 't', 'p'] },
-  { entry: 'shift_swirls', source: 'fireFluid', layout: 'fluid', when: 'originShift', workgroup: [64], dispatchFrom: 'swirls' },
-  { entry: 'raster_stamp', source: 'fireStamp', layout: 'stamp' },
-  { entry: 'apply_stamp', source: 'fireFluid', layout: 'fluid', swap: ['t'] },
-  { entry: 'cool_rise', source: 'fireFluid', layout: 'fluid', swap: ['t', 'v'] },
-  { entry: 'step_swirls', source: 'fireFluid', layout: 'fluid', workgroup: [64], dispatchFrom: 'swirls' },
-  { entry: 'apply_swirls', source: 'fireFluid', layout: 'fluid', swap: ['u', 'v'] },
-  { entry: 'apply_body_vel', source: 'fireFluid', layout: 'fluid', swap: ['u', 'v'] },
-  { entry: 'clear_pressure', source: 'fireFluid', layout: 'fluid', swap: ['p'] },
-  { entry: 'jacobi_pressure', source: 'fireFluid', layout: 'fluid', iterate: 'uPressureIters', swap: ['p'] },
-  { entry: 'project_velocity', source: 'fireFluid', layout: 'fluid', swap: ['u', 'v'] },
-  { entry: 'apply_body_vel', source: 'fireFluid', layout: 'fluid', swap: ['u', 'v'] },
-  { entry: 'advect_velocity', source: 'fireFluid', layout: 'fluid', swap: ['u', 'v'] },
-  { entry: 'advect_temperature', source: 'fireFluid', layout: 'fluid', swap: ['t'] },
-  { entry: 'diffuse_temperature', source: 'fireFluid', layout: 'fluid', swap: ['t'] },
-  { entry: 'pack_heat', source: 'firePack', layout: 'pack' },
+  { entry: 'shift_fields', source: 'fireFluid', when: 'originShift', swap: ['u', 'v', 't', 'p'] },
+  { entry: 'shift_swirls', source: 'fireFluid', when: 'originShift', workgroup: [64], dispatchFrom: 'swirls' },
+  { entry: 'raster_stamp', source: 'fireStamp' },
+  { entry: 'apply_stamp', source: 'fireFluid', swap: ['t'] },
+  { entry: 'cool_rise', source: 'fireFluid', swap: ['t', 'v'] },
+  { entry: 'step_swirls', source: 'fireFluid', workgroup: [64], dispatchFrom: 'swirls' },
+  { entry: 'apply_swirls', source: 'fireFluid', swap: ['u', 'v'] },
+  { entry: 'apply_body_vel', source: 'fireFluid', swap: ['u', 'v'] },
+  { entry: 'clear_pressure', source: 'fireFluid', swap: ['p'] },
+  { entry: 'jacobi_pressure', source: 'fireFluid', iterate: 'uPressureIters', swap: ['p'] },
+  { entry: 'project_velocity', source: 'fireFluid', swap: ['u', 'v'] },
+  { entry: 'apply_body_vel', source: 'fireFluid', swap: ['u', 'v'] },
+  { entry: 'advect_velocity', source: 'fireFluid', swap: ['u', 'v'] },
+  { entry: 'advect_temperature', source: 'fireFluid', swap: ['t'] },
+  { entry: 'diffuse_temperature', source: 'fireFluid', swap: ['t'] },
+  { entry: 'pack_heat', source: 'firePack' },
 ];
 
 const FIRE_TEXTURES = [
@@ -34,55 +34,6 @@ const FIRE_TEXTURES = [
   { name: 'vel', format: 'rgba32float' },
   { name: 'pack', format: 'rgba8unorm', look: true },
 ];
-
-const FIRE_LAYOUTS = {
-  stamp: [
-    [
-      { binding: 0, buffer: 'uniform', resource: 'params' },
-      { binding: 1, buffer: 'read-only-storage', resource: 'bodies' },
-      { binding: 2, buffer: 'read-only-storage', resource: 'verts' },
-    ],
-    [
-      { binding: 0, storageTexture: { format: 'rgba8unorm', access: 'write-only' }, resource: 'stamp' },
-      { binding: 1, storageTexture: { format: 'rgba32float', access: 'write-only' }, resource: 'vel' },
-    ],
-  ],
-  fluid: [
-    [
-      { binding: 0, buffer: 'uniform', resource: 'params' },
-      { binding: 1, buffer: 'storage', resource: 'swirls' },
-      { binding: 2, buffer: 'read-only-storage', resource: 'bodies' },
-    ],
-    [
-      { binding: 0, texture: { sampleType: 'unfilterable-float' }, resource: 'u', ping: 'read' },
-      { binding: 1, texture: { sampleType: 'unfilterable-float' }, resource: 'v', ping: 'read' },
-      { binding: 2, texture: { sampleType: 'unfilterable-float' }, resource: 't', ping: 'read' },
-      { binding: 3, texture: { sampleType: 'unfilterable-float' }, resource: 'p', ping: 'read' },
-      { binding: 4, texture: { sampleType: 'float' }, resource: 'stamp' },
-      { binding: 5, texture: { sampleType: 'unfilterable-float' }, resource: 'vel' },
-    ],
-    [
-      { binding: 0, storageTexture: { format: 'r32float', access: 'write-only' }, resource: 'u', ping: 'write' },
-      { binding: 1, storageTexture: { format: 'r32float', access: 'write-only' }, resource: 'v', ping: 'write' },
-      { binding: 2, storageTexture: { format: 'r32float', access: 'write-only' }, resource: 't', ping: 'write' },
-      { binding: 3, storageTexture: { format: 'r32float', access: 'write-only' }, resource: 'p', ping: 'write' },
-    ],
-  ],
-  pack: [
-    [
-      { binding: 0, buffer: 'uniform', resource: 'params' },
-    ],
-    [
-      { binding: 0, texture: { sampleType: 'unfilterable-float' }, resource: 't', ping: 'read' },
-      { binding: 1, texture: { sampleType: 'float' }, resource: 'stamp' },
-      { binding: 2, texture: { sampleType: 'unfilterable-float' }, resource: 'u', ping: 'read' },
-      { binding: 3, texture: { sampleType: 'unfilterable-float' }, resource: 'v', ping: 'read' },
-    ],
-    [
-      { binding: 0, storageTexture: { format: 'rgba8unorm', access: 'write-only' }, resource: 'pack' },
-    ],
-  ],
-};
 
 const FIRE_PANEL_CSS =
   'position:fixed;left:12px;top:48px;width:280px;max-height:calc(100vh - 60px);z-index:950;' +
@@ -108,7 +59,7 @@ const FIRE_UI = [
   { uniform: 'uSwirlRadius', label: 'Swirl size', min: 0.5, max: 8, step: 0.1, tip: 'Radius of each swirl, in grid cells.' },
   { uniform: 'uMaxSwirls', label: 'Max swirls', min: 0, max: 200, step: 1, tip: 'Cap on live swirls. 0 = none.' },
   { uniform: 'uDrawCutoff', label: 'Draw cutoff', min: 0, max: 0.2, step: 0.005, tip: 'Hide heat below this. Cuts faint haze.' },
-  { uniform: 'uBodyDrive', label: 'Body drive', min: 0, max: 1, step: 0.01, tip: 'How much a body drags the air. 1 = solid. 0 = ghost.' },
+  { uniform: 'uBodyDrive', label: 'Body drive', min: -10, max: 10, step: 0.01, tip: 'How much a body drags the air. 1 = solid. 0 = ghost.' },
   { uniform: 'uSourcePad', label: 'Fire pad', min: -2, max: 0.4, step: 0.01, tip: 'Fire crust margin around the body.' },
   { uniform: 'uStampPad', label: 'Stamp pad', min: -4, max: 4, step: 0.25, tip: 'Solid stamp inset/outset, in grid cells.' },
 ];
@@ -159,13 +110,12 @@ export class BurningBoxesScene extends WEED.Scene {
           fragment: 'fireLook',
           compute: {
             source: 'fireFluid',
+            size: { scale: 0.25 },
             passes: FIRE_PASSES,
             textures: FIRE_TEXTURES,
             buffers: [{ name: 'swirls', strideFloats: 8, count: 200 }],
-            layouts: FIRE_LAYOUTS,
           },
           source: LAYER_COMPUTE_SOURCE.BOX2D_BODIES,
-          grid: { cellSize: 4, fit: 'canvas' },
           maxBodies: 512,
           uniforms: {
             uRise: { value: -1000, type: 'f32' },
@@ -179,7 +129,7 @@ export class BurningBoxesScene extends WEED.Scene {
             uSwirlForce: { value: 0.66, type: 'f32' },
             uEmberOn: { value: 1, type: 'f32' },
             uOverRelax: { value: 1, type: 'f32' },
-            uBodyDrive: { value: 1, type: 'f32' },
+            uBodyDrive: { value: 10, type: 'f32' },
             uSourcePad: { value: 0, type: 'f32' },
             uSwirlDamp: { value: 15.5, type: 'f32' },
             uStampPad: { value: -1, type: 'f32' },
@@ -233,7 +183,6 @@ export class BurningBoxesScene extends WEED.Scene {
 
   update(dtRatio, deltaTime, time) {
     if (this._pointerOnPanel) Camera.pauseFreeZoom();
-    Layer.fire.setUniform('uTime', time * 0.001);
   }
 
   async destroy() {

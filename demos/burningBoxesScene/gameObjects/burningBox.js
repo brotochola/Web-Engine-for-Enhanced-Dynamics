@@ -56,6 +56,9 @@ export class BurningBox extends GameObject {
 
     const dx = this.x - Mouse.x;
     const dy = this.y - Mouse.y;
-    if (dx * dx + dy * dy < IGNITE_RANGE_SQ) this.ignite();
+    if (dx * dx + dy * dy < IGNITE_RANGE_SQ) {
+      if (this.getFeedBits() & HEAT) this.extinguish();
+      else this.ignite();
+    }
   }
 }

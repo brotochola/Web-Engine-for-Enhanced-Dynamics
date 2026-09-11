@@ -547,7 +547,7 @@ export class Layer {
      * @returns {null|{
      *   passes: Array<{entry:string, source?:string, layout?:string, iterate?:string|number, swap?:string[], workgroup?:number[], when?:string, dispatchFrom?:string}>,
      *   maxBodies: number,
-     *   grid: {cellSize:number, fit:string},
+     *   size: {scale:number, width?:number, height?:number},
      *   textures: Array<{name:string, format:string, pingPong:boolean, look:boolean}>,
      *   buffers: Array<{name:string, strideFloats:number, count:number}>,
      *   layouts: object|null,
@@ -556,11 +556,7 @@ export class Layer {
     static _normalizeCompute(shader) {
         const raw = shader?.compute;
         if (!raw) return null;
-        const cellSize = shader.grid && Number.isFinite(shader.grid.cellSize) && shader.grid.cellSize > 0
-            ? shader.grid.cellSize
-            : 8;
-        const fit = shader.grid?.fit === 'canvas' ? 'canvas' : 'view';
-        const grid = { cellSize, fit };
+        const size = Layer._normalizeComputeSize(typeof raw === 'object' ? raw.size : null);
         const maxBodies = Layer._normalizeMaxBodies(shader);
         if (typeof raw === 'string') {
             return {
@@ -575,7 +571,7 @@ export class Layer {
                     dispatchFrom: null,
                 }],
                 maxBodies,
-                grid,
+                size,
                 textures: [],
                 buffers: [],
                 layouts: null,
@@ -592,7 +588,7 @@ export class Layer {
             passes.push({
                 entry,
                 source: typeof p.source === 'string' ? p.source : sourceName,
-                layout: typeof p.layout === 'string' ? p.layout : 'simple',
+                layout: typeof p.layout === 'string' ? p.layout : null,
                 iterate: p.iterate,
                 swap: Array.isArray(p.swap) ? p.swap.slice() : null,
                 workgroup: Array.isArray(p.workgroup) ? p.workgroup.slice() : null,
@@ -603,11 +599,47 @@ export class Layer {
         return {
             passes,
             maxBodies,
-            grid,
+            size,
             textures: Layer._normalizeComputeTextures(raw.textures),
             buffers: Layer._normalizeComputeBuffers(raw.buffers),
             layouts: Layer._normalizeComputeLayouts(raw.layouts),
         };
+    }
+
+    /**
+     * Storage texture pixel size. Zoom does not change this.
+     * Default scale 1 = canvas pixels. Optional { scale } or { width, height }.
+     * @param {number} canvasW
+     * @param {number} canvasH
+     * @param {{scale?:number, width?:number, height?:number}|null|undefined} size
+     * @returns {{ texW: number, texH: number }}
+     */
+    static computeTextureExtent(canvasW, canvasH, size) {
+        const s = size || {};
+        const w = s.width | 0;
+        const h = s.height | 0;
+        if (w > 0 && h > 0) {
+            return { texW: Math.max(8, w), texH: Math.max(8, h) };
+        }
+        const scale = Number.isFinite(s.scale) && s.scale > 0 ? s.scale : 1;
+        return {
+            texW: Math.max(8, Math.ceil(canvasW * scale) | 0),
+            texH: Math.max(8, Math.ceil(canvasH * scale) | 0),
+        };
+    }
+
+    /** @param {unknown} raw */
+    static _normalizeComputeSize(raw) {
+        const s = raw && typeof raw === 'object' ? raw : {};
+        const out = { scale: 1 };
+        if (Number.isFinite(s.scale) && s.scale > 0) out.scale = s.scale;
+        const w = s.width | 0;
+        const h = s.height | 0;
+        if (w > 0 && h > 0) {
+            out.width = w;
+            out.height = h;
+        }
+        return out;
     }
 
     /** @param {unknown} raw */
@@ -868,7 +900,6 @@ export class Layer {
                 splat,
                 compute: layer._compute || null,
                 computeSource: layer._computeSource || null,
-                computeGrid: layer._compute?.grid || null,
                 maxBodies: layer._compute?.maxBodies || 0,
             };
 

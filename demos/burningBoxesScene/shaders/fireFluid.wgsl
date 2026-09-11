@@ -1,14 +1,20 @@
 struct SimParams {
   dt: f32,
-  h: f32,
-  numX: f32,
-  numY: f32,
-  originX: f32,
-  originY: f32,
+  texW: f32,
+  texH: f32,
+  cameraX: f32,
+  cameraY: f32,
+  zoom: f32,
   shapeCount: f32,
-  shiftX: f32,
-  shiftY: f32,
-  pad0: f32,
+  canvasW: f32,
+  canvasH: f32,
+  worldW: f32,
+  worldH: f32,
+  time: f32,
+  prevCameraX: f32,
+  prevCameraY: f32,
+  prevZoom: f32,
+  padFrame: f32,
   rise: f32,
   smokeSplit: f32,
   pressureIters: f32,
@@ -29,8 +35,6 @@ struct SimParams {
   swirlLife: f32,
   swirlRadius: f32,
   maxSwirls: f32,
-  pad1: f32,
-  pad2: f32,
 }
 
 struct Swirl {
@@ -79,8 +83,29 @@ struct ShapeDescriptor {
 @group(2) @binding(2) var tWrite: texture_storage_2d<r32float, write>;
 @group(2) @binding(3) var pWrite: texture_storage_2d<r32float, write>;
 
+fn cell_h() -> f32 {
+  return (sim.canvasW / max(sim.zoom, 1e-6)) / max(sim.texW, 1.0);
+}
+fn snap_origin(cam: f32, h: f32) -> f32 {
+  return floor(cam / h) * h;
+}
+fn lattice_origin() -> vec2<f32> {
+  let h = cell_h();
+  return vec2<f32>(snap_origin(sim.cameraX, h), snap_origin(sim.cameraY, h));
+}
+fn lattice_shift() -> vec2<f32> {
+  let h = cell_h();
+  if (abs(sim.zoom - sim.prevZoom) > 1e-6) {
+    return vec2<f32>(0.0);
+  }
+  let o = lattice_origin();
+  let pox = snap_origin(sim.prevCameraX, h);
+  let poy = snap_origin(sim.prevCameraY, h);
+  return vec2<f32>(round((o.x - pox) / h), round((o.y - poy) / h));
+}
+
 fn in_grid(c: vec2<i32>) -> bool {
-  return c.x >= 0 && c.y >= 0 && c.x < i32(sim.numX) && c.y < i32(sim.numY);
+  return c.x >= 0 && c.y >= 0 && c.x < i32(sim.texW) && c.y < i32(sim.texH);
 }
 
 fn load_u(c: vec2<i32>) -> f32 {
@@ -114,15 +139,15 @@ fn load_body_vel(c: vec2<i32>) -> vec4<f32> {
 }
 
 fn interior(id: vec2<i32>) -> bool {
-  let nx = i32(sim.numX);
-  let ny = i32(sim.numY);
+  let nx = i32(sim.texW);
+  let ny = i32(sim.texH);
   return id.x > 0 && id.y > 0 && id.x < nx - 1 && id.y < ny - 1;
 }
 
 fn sample_bilinear(field: i32, x: f32, y: f32) -> f32 {
-  let h = sim.h;
-  let nx = sim.numX;
-  let ny = sim.numY;
+  let h = cell_h();
+  let nx = sim.texW;
+  let ny = sim.texH;
   if (x < h || y < h || x > nx * h || y > ny * h) {
     return 0.0;
   }
@@ -193,7 +218,7 @@ fn clear_pressure(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn shift_fields(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
   if (!in_grid(id)) { return; }
-  let src = id + vec2<i32>(i32(sim.shiftX), i32(sim.shiftY));
+  let src = id + vec2<i32>(i32(lattice_shift().x), i32(lattice_shift().y));
   if (!in_grid(src)) {
     textureStore(uWrite, id, vec4<f32>(0.0));
     textureStore(vWrite, id, vec4<f32>(0.0));
@@ -267,12 +292,12 @@ fn project_velocity(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn advect_velocity(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
   if (!in_grid(id)) { return; }
-  let h = sim.h;
+  let h = cell_h();
   let i = id.x;
   let j = id.y;
   var nu = load_u(id);
   var nv = load_v(id);
-  if (open_cell(id) > 0.5 && open_cell(id + vec2<i32>(-1, 0)) > 0.5 && j < i32(sim.numY) - 1) {
+  if (open_cell(id) > 0.5 && open_cell(id + vec2<i32>(-1, 0)) > 0.5 && j < i32(sim.texH) - 1) {
     let u = load_u(id);
     let vv = 0.25 * (
       load_v(id + vec2<i32>(-1, 0)) + load_v(id) +
@@ -282,7 +307,7 @@ fn advect_velocity(@builtin(global_invocation_id) gid: vec3<u32>) {
     let y = f32(j) * h + 0.5 * h - sim.dt * vv;
     nu = sample_bilinear(0, x, y);
   }
-  if (open_cell(id) > 0.5 && open_cell(id + vec2<i32>(0, -1)) > 0.5 && i < i32(sim.numX) - 1) {
+  if (open_cell(id) > 0.5 && open_cell(id + vec2<i32>(0, -1)) > 0.5 && i < i32(sim.texW) - 1) {
     let uu = 0.25 * (
       load_u(id + vec2<i32>(0, -1)) + load_u(id) +
       load_u(id + vec2<i32>(1, -1)) + load_u(id + vec2<i32>(1, 0))
@@ -304,7 +329,7 @@ fn advect_temperature(@builtin(global_invocation_id) gid: vec3<u32>) {
     textureStore(tWrite, id, vec4<f32>(0.0));
     return;
   }
-  let h = sim.h;
+  let h = cell_h();
   let u = 0.5 * (load_u(id) + load_u(id + vec2<i32>(1, 0)));
   let v = 0.5 * (load_v(id) + load_v(id + vec2<i32>(0, 1)));
   let x = f32(id.x) * h + 0.5 * h - sim.dt * u;
@@ -337,7 +362,7 @@ fn apply_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (!in_grid(id)) { return; }
   var u = load_u(id);
   var v = load_v(id);
-  let h = sim.h;
+  let h = cell_h();
   let count = i32(sim.maxSwirls);
   let force = max(0.0, sim.swirlForce);
   if (count <= 0 || force <= 0.0) {
@@ -516,19 +541,19 @@ fn step_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
       }
       if (found) {
-        let bound = max(swirl_bound(body), sim.h);
-        let p = min(1.0, sim.swirlChance * bound * sim.h * 8.0);
+        let bound = max(swirl_bound(body), cell_h());
+        let p = min(1.0, sim.swirlChance * bound * cell_h() * 8.0);
         let pSlot = p * f32(nBurn) / max(sim.maxSwirls, 1.0);
         let roll = hash11(f32(i) * 91.7 + sim.emberT * 8.3);
         if (roll < pSlot) {
           let ang = hash11(f32(i) * 4.1 + sim.emberT * 1.9) * 6.2831853;
           let rad = bound * (0.8 + 0.3 * hash11(f32(i) * 11.3 + sim.emberT * 2.7));
           let spinSign = select(-1.0, 1.0, hash11(f32(i) * 2.3 + sim.emberT) < 0.5);
-          s.x = body.posX + cos(ang) * rad - sim.originX;
-          s.y = body.posY + sin(ang) * rad - sim.originY;
+          s.x = body.posX + cos(ang) * rad - lattice_origin().x;
+          s.y = body.posY + sin(ang) * rad - lattice_origin().y;
           s.vx = (-0.5 + hash11(f32(i) * 6.6 + sim.emberT * 5.2)) * 0.4;
           s.omega = spinSign * sim.swirlSpin * (0.8 + 0.4 * hash11(f32(i) * 3.9 + sim.emberT * 4.4));
-          s.radius = max(sim.h * sim.swirlRadius, 0.12);
+          s.radius = max(cell_h() * sim.swirlRadius, 0.12);
           s.life = sim.swirlLife * (0.4 + hash11(f32(i) * 7.2 + sim.emberT * 6.1));
         }
       }
@@ -543,7 +568,7 @@ fn shift_swirls(@builtin(global_invocation_id) gid: vec3<u32>) {
   let cap = i32(arrayLength(&swirls));
   if (i >= cap) { return; }
   var s = swirls[i];
-  s.x -= sim.shiftX * sim.h;
-  s.y -= sim.shiftY * sim.h;
+  s.x -= lattice_shift().x * cell_h();
+  s.y -= lattice_shift().y * cell_h();
   swirls[i] = s;
 }

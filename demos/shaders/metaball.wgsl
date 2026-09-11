@@ -97,7 +97,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   );
   foam += speedFactor * surfaceBand * 0.3;
   foam = clamp(foam, 0.0, 1.0);
-  let caustics = causticPattern(in.vTextureCoord * 3.0, customUniforms.uTime);
+  let caustics = causticPattern(in.vTextureCoord * 3.0, customUniforms.uTime * 2.0);
   let causticStrength = 5.0 * depth * (1.0 - speedFactor * 0.5) * 0.4;
   baseColor += caustics * (1.0 - baseColor) * edge * causticStrength;
   let finalRGB = mix(baseColor, vec3<f32>(1.0), foam);

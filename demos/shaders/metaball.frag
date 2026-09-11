@@ -90,7 +90,7 @@ void main() {
     foam = clamp(foam, 0.0, 1.0);
 
     // caustics
-    vec3 caustics = causticPattern(vTextureCoord * 3.0, uTime);
+    vec3 caustics = causticPattern(vTextureCoord * 3.0, uTime * 2.0);
     float causticStrength = 5.0 * depth * (1.0 - speedFactor * 0.5) * 0.4;
 
     baseColor += caustics * (1.0 - baseColor) * edge * causticStrength;

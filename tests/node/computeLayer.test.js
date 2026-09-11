@@ -7,6 +7,11 @@ import { Transform } from '../../src/components/Transform.js';
 import { RigidBody } from '../../src/components/RigidBody.js';
 import { feedLayerAt, clearFeedLayerAt } from '../../src/core/computeFeed.js';
 import { packBox2dBodies, BODY_FLOATS } from '../../src/workers/Box2dBodyPack.js';
+import { inferComputeLayout } from '../../src/workers/inferComputeLayout.js';
+import { ENGINE_SIM_PREFIX_FLOATS } from '../../src/workers/ComputeLayer.js';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   LAYER_COMPUTE_SOURCE,
   FEED_LAYER_NONE,
@@ -34,7 +39,6 @@ test('compute layer metadata: no sprite queue, BOX2D_BODIES default, maxBodies 5
           shader: {
             fragment: 'fireLook',
             compute: { source: 'fireSim', passes: [{ entry: 'main', layout: 'simple' }] },
-            grid: { cellSize: 8 },
           },
         },
       },
@@ -47,8 +51,7 @@ test('compute layer metadata: no sprite queue, BOX2D_BODIES default, maxBodies 5
     assert.equal(Layer.isComputeLayer(fire.id), true);
     assert.equal(fire.computeSource, LAYER_COMPUTE_SOURCE.BOX2D_BODIES);
     assert.equal(fire.compute.maxBodies, 512);
-    assert.equal(fire.compute.grid.cellSize, 8);
-    assert.equal(fire.compute.grid.fit, 'view');
+    assert.equal(fire.compute.size.scale, 1);
     assert.equal(Layer._metadata.layers[fire.id].hasRenderQueue, false);
     assert.equal(Layer._metadata.layers[fire.id].maxBodies, 512);
     assert.equal(Layer._feedMax[fire.id], 512);
@@ -171,7 +174,7 @@ test('packBox2dBodies stride 16 and polygon vert range', () => {
   }
 });
 
-test('compute textures, layouts, grid.fit, and pass extras round-trip', () => {
+test('compute textures, layouts, size.scale, and pass extras round-trip', () => {
   try {
     Layer.reset();
     Layer.initializeFromConfig(
@@ -215,8 +218,8 @@ test('compute textures, layouts, grid.fit, and pass extras round-trip', () => {
                   ],
                 ],
               },
+              size: { scale: 0.25 },
             },
-            grid: { cellSize: 8, fit: 'canvas' },
           },
         },
       },
@@ -225,7 +228,7 @@ test('compute textures, layouts, grid.fit, and pass extras round-trip', () => {
     );
     const fire = Layer.get('fire');
     assert.equal(fire.hasRenderQueue, false);
-    assert.equal(fire.compute.grid.fit, 'canvas');
+    assert.equal(fire.compute.size.scale, 0.25);
     assert.equal(fire.compute.textures.length, 2);
     assert.equal(fire.compute.textures[0].name, 'u');
     assert.equal(fire.compute.textures[0].pingPong, true);
@@ -245,11 +248,116 @@ test('compute textures, layouts, grid.fit, and pass extras round-trip', () => {
     Layer.initializeFromBuffers(data);
     const restored = Layer.get('fire');
     assert.equal(restored.id, fireId);
-    assert.equal(restored.compute.grid.fit, 'canvas');
+    assert.equal(restored.compute.size.scale, 0.25);
     assert.equal(restored.compute.textures[1].look, true);
     assert.equal(restored.compute.layouts.pack[0][0].resource, 'params');
     assert.equal(Layer._metadata.layers[fireId].hasRenderQueue, false);
   } finally {
     Layer.reset();
   }
+});
+
+test('computeTextureExtent: scale, default canvas, explicit size, min 8', () => {
+  assert.deepEqual(Layer.computeTextureExtent(1920, 1080, { scale: 0.25 }), { texW: 480, texH: 270 });
+  assert.deepEqual(Layer.computeTextureExtent(1920, 1080, { scale: 1 }), { texW: 1920, texH: 1080 });
+  assert.deepEqual(Layer.computeTextureExtent(100, 50, null), { texW: 100, texH: 50 });
+  assert.deepEqual(Layer.computeTextureExtent(10, 10, { width: 64, height: 32 }), { texW: 64, texH: 32 });
+  assert.deepEqual(Layer.computeTextureExtent(1, 1, { scale: 1 }), { texW: 8, texH: 8 });
+});
+
+test('ENGINE_SIM_PREFIX_FLOATS is 16', () => {
+  assert.equal(ENGINE_SIM_PREFIX_FLOATS, 16);
+});
+
+test('omitted pass layout stays null (source is the infer key)', () => {
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      {
+        fire: {
+          shader: {
+            fragment: 'fireLook',
+            compute: {
+              source: 'fireFluid',
+              passes: [{ entry: 'shift_fields' }],
+            },
+          },
+        },
+      },
+      BUILT_IN_LAYERS,
+      true
+    );
+    const fire = Layer.get('fire');
+    assert.equal(fire.compute.passes[0].layout, null);
+    assert.equal(fire.compute.passes[0].source, 'fireFluid');
+    assert.equal(fire.compute.layouts, null);
+  } finally {
+    Layer.reset();
+  }
+});
+
+const FIRE_TEX = [
+  { name: 'u', format: 'r32float', pingPong: true },
+  { name: 'v', format: 'r32float', pingPong: true },
+  { name: 't', format: 'r32float', pingPong: true },
+  { name: 'p', format: 'r32float', pingPong: true },
+  { name: 'stamp', format: 'rgba8unorm' },
+  { name: 'vel', format: 'rgba32float' },
+  { name: 'pack', format: 'rgba8unorm', look: true },
+];
+const FIRE_BUF = [{ name: 'swirls', strideFloats: 8, count: 200 }];
+const SHADER_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../demos/burningBoxesScene/shaders');
+
+test('inferComputeLayout: fireStamp / fireFluid / firePack', () => {
+  const ctx = { textures: FIRE_TEX, buffers: FIRE_BUF };
+  const stamp = inferComputeLayout(readFileSync(join(SHADER_DIR, 'fireStamp.wgsl'), 'utf8'), ctx);
+  assert.equal(stamp[0][0].resource, 'params');
+  assert.equal(stamp[0][1].resource, 'bodies');
+  assert.equal(stamp[0][1].buffer, 'read-only-storage');
+  assert.equal(stamp[0][2].resource, 'verts');
+  assert.equal(stamp[1][0].resource, 'stamp');
+  assert.equal(stamp[1][0].storageTexture.format, 'rgba8unorm');
+  assert.equal(stamp[1][0].ping, 'write');
+  assert.equal(stamp[1][1].resource, 'vel');
+  assert.equal(stamp[1][1].storageTexture.format, 'rgba32float');
+
+  const fluid = inferComputeLayout(readFileSync(join(SHADER_DIR, 'fireFluid.wgsl'), 'utf8'), ctx);
+  assert.equal(fluid[0][0].resource, 'params');
+  assert.equal(fluid[0][1].resource, 'swirls');
+  assert.equal(fluid[0][1].buffer, 'storage');
+  assert.equal(fluid[0][2].resource, 'bodies');
+  assert.equal(fluid[0][2].buffer, 'read-only-storage');
+  assert.equal(fluid[1][0].resource, 'u');
+  assert.equal(fluid[1][0].ping, 'read');
+  assert.equal(fluid[1][0].texture.sampleType, 'unfilterable-float');
+  assert.equal(fluid[1][4].resource, 'stamp');
+  assert.equal(fluid[1][4].texture.sampleType, 'float');
+  assert.equal(fluid[2][0].resource, 'u');
+  assert.equal(fluid[2][0].ping, 'write');
+  assert.equal(fluid[2][0].storageTexture.format, 'r32float');
+
+  const pack = inferComputeLayout(readFileSync(join(SHADER_DIR, 'firePack.wgsl'), 'utf8'), ctx);
+  assert.equal(pack[0][0].resource, 'params');
+  assert.equal(pack[1][0].resource, 't');
+  assert.equal(pack[1][1].resource, 'stamp');
+  assert.equal(pack[2][0].resource, 'pack');
+  assert.equal(pack[2][0].storageTexture.format, 'rgba8unorm');
+});
+
+test('inferComputeLayout: heatWrite without heat texture throws', () => {
+  const wgsl = `@group(2) @binding(0) var heatWrite: texture_storage_2d<rgba8unorm, write>;`;
+  assert.throws(
+    () => inferComputeLayout(wgsl, { textures: FIRE_TEX, buffers: FIRE_BUF }),
+    /WeedJS: unknown compute resource "heatWrite"/
+  );
+});
+
+test('inferComputeLayout: sim and shapes aliases', () => {
+  const wgsl = `
+    @group(0) @binding(0) var<uniform> sim: SimParams;
+    @group(0) @binding(1) var<storage, read> shapes: array<Body>;
+  `;
+  const groups = inferComputeLayout(wgsl, { textures: [], buffers: [] });
+  assert.equal(groups[0][0].resource, 'params');
+  assert.equal(groups[0][1].resource, 'bodies');
 });

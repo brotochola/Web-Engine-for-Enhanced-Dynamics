@@ -1,14 +1,20 @@
 struct SimParams {
   dt: f32,
-  h: f32,
-  numX: f32,
-  numY: f32,
-  originX: f32,
-  originY: f32,
+  texW: f32,
+  texH: f32,
+  cameraX: f32,
+  cameraY: f32,
+  zoom: f32,
   shapeCount: f32,
-  shiftX: f32,
-  shiftY: f32,
-  pad0: f32,
+  canvasW: f32,
+  canvasH: f32,
+  worldW: f32,
+  worldH: f32,
+  time: f32,
+  prevCameraX: f32,
+  prevCameraY: f32,
+  prevZoom: f32,
+  padFrame: f32,
   rise: f32,
   smokeSplit: f32,
   pressureIters: f32,
@@ -29,8 +35,6 @@ struct SimParams {
   swirlLife: f32,
   swirlRadius: f32,
   maxSwirls: f32,
-  pad1: f32,
-  pad2: f32,
 }
 
 struct Body {
@@ -57,6 +61,17 @@ struct Body {
 @group(0) @binding(2) var<storage, read> verts: array<vec2<f32>>;
 @group(1) @binding(0) var stampWrite: texture_storage_2d<rgba8unorm, write>;
 @group(1) @binding(1) var velWrite: texture_storage_2d<rgba32float, write>;
+
+fn cell_h() -> f32 {
+  return (sim.canvasW / max(sim.zoom, 1e-6)) / max(sim.texW, 1.0);
+}
+fn snap_origin(cam: f32, h: f32) -> f32 {
+  return floor(cam / h) * h;
+}
+fn lattice_origin() -> vec2<f32> {
+  let h = cell_h();
+  return vec2<f32>(snap_origin(sim.cameraX, h), snap_origin(sim.cameraY, h));
+}
 
 fn sdBox(p: vec2<f32>, b: vec2<f32>) -> f32 {
   let d = abs(p) - b;
@@ -86,11 +101,12 @@ fn sdConvexPoly(p: vec2<f32>, start: i32, n: i32) -> f32 {
 @compute @workgroup_size(8, 8)
 fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = vec2<i32>(i32(gid.x), i32(gid.y));
-  if (id.x >= i32(sim.numX) || id.y >= i32(sim.numY)) { return; }
+  if (id.x >= i32(sim.texW) || id.y >= i32(sim.texH)) { return; }
 
-  let h = sim.h;
-  let wx = (f32(id.x) + 0.5) * h + sim.originX;
-  let wy = (f32(id.y) + 0.5) * h + sim.originY;
+  let h = cell_h();
+  let origin = lattice_origin();
+  let wx = (f32(id.x) + 0.5) * h + origin.x;
+  let wy = (f32(id.y) + 0.5) * h + origin.y;
 
   var openCell = 1.0;
   var isSource = 0.0;
