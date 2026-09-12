@@ -8,6 +8,32 @@ Demos are how the engine gets tested. They are not the product. The engine is th
 
 ---
 
+## Monday 29 – Tuesday 30 December 2025 — A Real Flash, and a Real Scene
+
+Two births the same night. `Flash.create()` — a real short-lived light, not a particle pretending to be one, and flashes that cast shadows too. Then, hours later: `Scene`. Well over a thousand lines that used to live loose inside `gameEngine.js`, wired by hand in an HTML file every time, moved into an actual class you load — `PredatorScene`, `BallsScene`. You stop copy-pasting boot sequences and start writing a scene. The next evening: folders reorganized, `loadScene` gets smarter, tile backgrounds get a scale knob.
+
+## Thursday 18 December 2025 — Let the Particle Worker Carry Its Own Weight
+
+One focused commit. Angle and linear speed move onto the particle worker, since it already owns everything else about how a thing looks and moves on screen. The physics worker gets lighter, and it's the right worker for that job anyway — physics should care about forces, not about which way a sprite is facing.
+
+## Monday 15 December 2025 — Can the Main Thread Pull Its Own Weight?
+
+Dense day. The shader does the whole look now — no more tint as a crutch underneath it. `MainThreadLogicHelper` shows up: the main thread becomes an extra logic worker too, four hundred lines of it, with one catch I had to account for immediately — if the tab isn't focused, the browser throttles `requestAnimationFrame` right down, so that "worker" just stops ticking while you're not looking at it. Visibility and screen-position math move onto the particle worker, because it had room to spare and physics didn't. Drawcalls get watched. Light glows show up by the end of the night.
+
+## Friday 12 – Saturday 13 December 2025 — Shadows That Actually Follow the Light
+
+Light formula refined, every component gets an `active` flag. Then I actually sat down with the profiler and went looking for garbage collection pauses, and found two real ones. `particle_worker` was building a brand-new camera-bounds object, every single frame, just to check what's on screen — so I gave it one scratch object, `_cameraBounds`, and started writing into the same one instead. `pixi_worker` was worse: every frame it built a fresh array and a fresh `{entityId, sprite, y}` object per visible sprite, just to sort them by depth — so that became `_ySortPool`, a pool of objects reused frame to frame, only truncated to the active count before sorting.
+
+Then the big one: projected shadows, wired into the real rendering pipeline this time, not a test file. `ShadowCaster` as a component. Still a little slow. Still a little to go, in my own words that night.
+
+## Thursday 11 December 2025 — Lights and Decals, Proven Alone Before Proven for Real
+
+Decals that actually stick to the ground and don't look wrong when they do. And lights — but tested first in an isolated `tests/shader.html`, five hundred lines of nothing but the shader itself, before any of it touched the real pipeline. Only after that held up: a real `LightEmitter` component and a `tallLight` demo entity to hang it on.
+
+## Monday 8 December 2025 — The Particle System Gets Its Own Worker
+
+Quick warm-up first: `rng()` and seeded random tried out in the demos, Pixi upgraded to v8. Then the real event, same evening: `ParticleEmitter`, `ParticleComponent`, and a brand-new `particle_worker` — a whole separate system, but built from the start to Y-sort and render exactly like everything else, not bolted on as a second pipeline nobody trusts. First real use: blood particles on `Predator`.
+
 ## Friday 5 – Saturday 6 December 2025 — The Indices Don't Match. Why Am I Even Mapping Them?
 
 Made Mouse a GameObject, and right after that, indices started mismatching. I could have patched around it. Instead I asked why there was a mapping layer between an entity and its data at all. There wasn't a good reason. Ripped the whole thing out — entity indices are just absolute now, no lookup table anywhere in the engine. That commit message has more exclamation marks than any other I've ever written, and I meant every one of them.
