@@ -482,6 +482,17 @@ class PixiRenderer extends AbstractWorker {
     this._renderCameraY = 0;
     this._renderZoom = 1.0;
     this._cameraInitialized = false;
+    // Reused compute pack pose (same SAB sprites latch). Filled after _latchPose.
+    this._computePose = {
+      poseX: null,
+      poseY: null,
+      poseRotC: null,
+      poseRotS: null,
+      prevPoseX: null,
+      prevPoseY: null,
+      prevPoseRotC: null,
+      prevPoseRotS: null,
+    };
 
     // OPTIMIZED: Preallocated RGB object to avoid allocation per light per frame
     this._rgbResult = { r: 0, g: 0, b: 0 };
@@ -1210,6 +1221,18 @@ class PixiRenderer extends AbstractWorker {
       if (detail) t0 = performance.now();
       this.updateSpritesFromRenderQueue();
       if (detail) this.spritesTimeThisFrame = performance.now() - t0;
+
+      // Display pose for compute body pack (no consume — pre_render owns poseSync[1]).
+      this._latchPose(false);
+      const computePose = this._computePose;
+      computePose.poseX = this._poseX;
+      computePose.poseY = this._poseY;
+      computePose.poseRotC = this._poseRotC;
+      computePose.poseRotS = this._poseRotS;
+      computePose.prevPoseX = this._prevPoseX;
+      computePose.prevPoseY = this._prevPoseY;
+      computePose.prevPoseRotC = this._prevPoseRotC;
+      computePose.prevPoseRotS = this._prevPoseRotS;
 
       // Update custom layer sprites and render shader layers to their RenderTextures
       if (detail) t0 = performance.now();
@@ -4201,7 +4224,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       applyEngineLookUniforms(cl, frameUniforms);
 
       if (cl.compute) {
-        cl.compute.step(frameUniforms);
+        cl.compute.step(frameUniforms, this._computePose);
         if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
           this.pixiApp.renderer.render({
             container: cl.shaderMesh,

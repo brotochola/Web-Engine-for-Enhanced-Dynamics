@@ -235,9 +235,10 @@ const activeEnemies = queryActiveEntitiesSlow([RigidBody, EnemyComponent]);
 ```bash
 npm test
 npm run test:bench
+npm run test:visual
 ```
 
-The benchmark harness uses Playwright and the integrated worker benchmark scene to measure worker FPS, frame timing, and throughput. Performance depends on browser, hardware, scene configuration, and whether cross-origin isolation is active; use the benchmark scripts and `tests/bench/BENCHMARK_METHODOLOGY.md` when validating changes.
+`test:visual` is a headed lockstep screenshot gate (`tests/bench/run-lockstep-visual.mjs`). Not part of `npm test`. LiquidFun demo + stress scenes are two-run pixel-exact after the H10 WASM. Methodology for the FPS harness: `tests/bench/BENCHMARK_METHODOLOGY.md`.
 
 ---
 
@@ -248,6 +249,7 @@ Start with `docs/README.md` for the full docs index.
 | File                           | Contents                                         |
 | ------------------------------ | ------------------------------------------------ |
 | `docs/bible_of_weed_js.md`     | Practical quick reference and engine contracts   |
+| `docs/DEVLOG.md`               | Dated project journal (stories; fill gaps)      |
 | `docs/WORKERS_ARCHITECTURE.md` | Worker roles, data flow, message protocols       |
 | `docs/MEMORY_STRUCTURE.md`     | Shared memory layout and ownership map           |
 | `docs/COMPONENT_STORAGE.md`    | Dense component storage policy                   |

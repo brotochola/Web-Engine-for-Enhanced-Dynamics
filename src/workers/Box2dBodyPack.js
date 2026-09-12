@@ -1,5 +1,10 @@
 /**
  * Pack fed colliders into GPU Body + verts arrays (no alloc in the hot loop).
+ *
+ * Pose views (opts.poseX/Y/rotC/S) are the published display-pose SAB sprites
+ * use. RigidBody.active + pose present → pack that clock, not live HEAP
+ * Transform (grab writes HEAP immediately). Sweep/prev stay on the same clock:
+ * previous pose slot, or HEAP px/py when packing Transform. Never mix.
  */
 import { Collider } from '../components/Collider.js';
 import { Transform } from '../components/Transform.js';
@@ -15,7 +20,7 @@ export const BODY_STRIDE_BYTES = BODY_FLOATS * 4;
  * @param {Float32Array} bodyData
  * @param {Float32Array} vertData
  * @param {number} maxBodies
- * @param {{ sweep: boolean }} [opts]
+ * @param {{ sweep?: boolean, poseX?: Float32Array|null, poseY?: Float32Array|null, poseRotC?: Float32Array|null, poseRotS?: Float32Array|null, prevPoseX?: Float32Array|null, prevPoseY?: Float32Array|null, prevPoseRotC?: Float32Array|null, prevPoseRotS?: Float32Array|null }} [opts]
  * @returns {{ bodyCount: number, vertCount: number }}
  */
 export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
@@ -24,6 +29,14 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
   const feederCount = countArr ? Atomics.load(countArr, layerId) : 0;
   const cap = maxBodies | 0;
   const sweep = !opts || opts.sweep !== false;
+  const poseX = opts ? opts.poseX : null;
+  const poseY = opts ? opts.poseY : null;
+  const poseRotC = opts ? opts.poseRotC : null;
+  const poseRotS = opts ? opts.poseRotS : null;
+  const prevPoseX = opts ? opts.prevPoseX : null;
+  const prevPoseY = opts ? opts.prevPoseY : null;
+  const prevPoseRotC = opts ? opts.prevPoseRotC : null;
+  const prevPoseRotS = opts ? opts.prevPoseRotS : null;
   let bodyCount = 0;
   let vertCount = 0;
   const maxVerts = vertData ? (vertData.length / 2) | 0 : 0;
@@ -36,6 +49,7 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
   const ty = Transform.y;
   const rotC = Transform.rotC;
   const rotS = Transform.rotS;
+  const rbActive = RigidBody.active;
   const vx = RigidBody.vx;
   const vy = RigidBody.vy;
   const omega = RigidBody.angularVelocity;
@@ -83,12 +97,15 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
     if (bodyCount >= cap) break;
     const i = indices[f];
     if (!collActive || !collActive[i]) continue;
-    const c = rotC ? rotC[i] : 1;
-    const s = rotS ? rotS[i] : 0;
+    const usePose = !!(poseX && rbActive && rbActive[i]);
+    const c = usePose && poseRotC ? poseRotC[i] : (rotC ? rotC[i] : 1);
+    const s = usePose && poseRotS ? poseRotS[i] : (rotS ? rotS[i] : 0);
     const offX = ox ? ox[i] : 0;
     const offY = oy ? oy[i] : 0;
-    const worldX = tx[i] + c * offX - s * offY;
-    const worldY = ty[i] + s * offX + c * offY;
+    const posX = usePose ? poseX[i] : tx[i];
+    const posY = usePose ? (poseY ? poseY[i] : ty[i]) : ty[i];
+    const worldX = posX + c * offX - s * offY;
+    const worldY = posY + s * offX + c * offY;
     const kind = shapeType[i] | 0;
     let hw = 0;
     let hh = 0;
@@ -129,27 +146,51 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
     const velx = vx ? vx[i] : 0;
     const vely = vy ? vy[i] : 0;
     const w = omega ? omega[i] : 0;
-    const prevPx = px ? px[i] : worldX;
-    const prevPy = py ? py[i] : worldY;
+
+    let prevPx = worldX;
+    let prevPy = worldY;
+    let sweepFromX = 0;
+    let sweepFromY = 0;
+    let sweepC = c;
+    let sweepS = s;
+    let canSweep = false;
+    if (usePose) {
+      if (prevPoseX && prevPoseY) {
+        prevPx = prevPoseX[i];
+        prevPy = prevPoseY[i];
+        sweepFromX = prevPx;
+        sweepFromY = prevPy;
+        sweepC = prevPoseRotC ? prevPoseRotC[i] : c;
+        sweepS = prevPoseRotS ? prevPoseRotS[i] : s;
+        canSweep = true;
+      }
+    } else if (px) {
+      prevPx = px[i];
+      prevPy = py ? py[i] : worldY;
+      sweepFromX = prevPx;
+      sweepFromY = prevPy;
+      sweepC = rotC ? rotC[i] : c;
+      sweepS = rotS ? rotS[i] : s;
+      canSweep = true;
+    }
+
     const ddx = worldX - prevPx;
     const ddy = worldY - prevPy;
     if (!emit(i, worldX, worldY, c, s, hw, hh, kind, flags, velx, vely, w, vStart, vCount, worldX - ddx, worldY - ddy)) break;
 
-    if (!sweep || (isStatic && isStatic[i]) || !px) continue;
-    const dx = worldX - px[i];
-    const dy = worldY - py[i];
+    if (!sweep || !canSweep || (isStatic && isStatic[i])) continue;
+    const dx = worldX - sweepFromX;
+    const dy = worldY - sweepFromY;
     const dist = Math.hypot(dx, dy);
     const cell = 8;
     const samples = Math.min(8, Math.ceil(dist / cell));
     if (samples <= 1) continue;
     const sweepFlags = (flags & ~1) | COMPUTE_FLAG_SWEEP;
-    const prevC = rotC ? rotC[i] : c;
-    const prevS = rotS ? rotS[i] : s;
     for (let k = 0; k < samples; k++) {
       const t = k / samples;
-      const sx = px[i] + dx * t;
-      const sy = py[i] + dy * t;
-      if (!emit(i, sx, sy, prevC, prevS, hw, hh, kind, sweepFlags, velx, vely, w, vStart, vCount, sx - ddx, sy - ddy)) break;
+      const sx = sweepFromX + dx * t;
+      const sy = sweepFromY + dy * t;
+      if (!emit(i, sx, sy, sweepC, sweepS, hw, hh, kind, sweepFlags, velx, vely, w, vStart, vCount, sx - ddx, sy - ddy)) break;
     }
   }
 

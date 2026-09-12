@@ -33,7 +33,7 @@ Shared helpers: [`tests/bench/feature-tournament-lib.mjs`](../tests/bench/featur
 | I | Treiber / rings | Next | pop-push/s | Balls |
 | J | Bullet tick | Next | particle STEP | Predator |
 | K | TileMap queries | L1 only | ns/getTileId | — |
-| **L** | LiquidFun particle step | Campaign complete: H1-H4+H6-H8 shipped, H5 rejected | `physics.BOX2D_MS` | `demos/liquidFunDemoScene` |
+| **L** | LiquidFun particle step | H1, H6–H10 shipped; H5 rejected; H2–H4 still open | `physics.LIQUIDFUN_MS` / `BOX2D_MS` | `pnpm test:visual --scene liquidfun,lfstress` |
 
 Skip: full rigid-body Box2D WASM step (LiquidFun's *particle* step is in scope — see Wave L).
 
@@ -89,8 +89,10 @@ pnpm bench:particle:tournament
 | H6 | CapturePairs via grid instead of O(n^2) |
 | H7 | Compact static-pressure contact sublist |
 | H8 | JS/WASM particle position deinterleave moved into C |
+| H9 | Scope `ComputeDepth` to dirty solid contacts (shipped) |
+| H10 | Parallel contact merge by block index — bit-exact fluids, no qsort (shipped) |
 
-No L1 (hot loop is C, not JS) or tournament — single-thread sequential hyps, L2 only. Full log: [`LIQUIDFUN_HYPOTHESES.md`](./LIQUIDFUN_HYPOTHESES.md).
+Hot loop is C. L1 micros exist for create-time (`CapturePairs`) and ice hitch (`ComputeDepth`). Steady-state is L2. Visual lockstep: `pnpm test:visual --scene liquidfun,lfstress`. Full log: [`LIQUIDFUN_HYPOTHESES.md`](./LIQUIDFUN_HYPOTHESES.md).
 
 ```bash
 pnpm bench:feature:liquidfun

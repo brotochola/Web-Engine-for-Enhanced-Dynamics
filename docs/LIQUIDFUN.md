@@ -192,7 +192,9 @@ Create spacing `0` → **0.75 × diameter** (Google `b2_particleStride`). Discre
 
 Skipped on purpose: NEON, colorMixing, repulsive, solid/rigid groups, fixture contact filter.
 
-`lfParticleSystem_Step` cannot run in parallel with `b2World_Step` **of the same frame** (world locked; queries invalid). Overlay `Box2d` ms stays `step_world`. In-step parallel_for is a later lever (sibling ROADMAP Fase 6).
+`lfParticleSystem_Step` cannot run in parallel with `b2World_Step` **of the same frame** (world locked; queries invalid). Overlay `Box2d` ms stays `step_world`.
+
+**In-step `lfParallelFor` is already live** (not a later lever). `FindParticleContacts` parallelizes on the Box2D pthread pool (Weed default **4**) when live count ≥ `LF_CONTACT_PARALLEL_MIN` (4096). Work is stolen by block. Contacts land in **per-block** buckets and merge in block-index order, matching a serial `for i in 0..n` walk — same set **and** same order, so pressure / tensile stay bit-stable. Do **not** qsort the merge (see [H10](./LIQUIDFUN_HYPOTHESES.md)). A future snapshot+pipeline that overlaps LiquidFun with the *next* rigid step is still sibling ROADMAP Fase 6.
 
 LiquidFun lagging rigid bodies by **1-2 frames is acceptable** for Weed — confirmed, not just assumed. That's the slack a future snapshot+pipeline design would need (main thread owns the live `b2WorldId` exclusively, copies what a background LiquidFun thread needs once per step, drains its impulses back in on a later step); see the sibling ROADMAP's rewritten Fase 6 for the concrete design and its one still-open problem (`FindBodyContacts`/`SolveCollision` would need their own spatial structure over a snapshot, not live Box2D queries). Not implemented — recorded so the constraint isn't rediscovered from scratch later.
 
@@ -297,7 +299,7 @@ before/after numbers for every optimization: [LIQUIDFUN_HYPOTHESES.md](./LIQUIDF
 
 ## Rebuild
 
-From `Box2d_3.2_C_-_liquidfun`:
+Weed only consumes **WASM** from the sibling `Box2d_3.2_C_-_liquidfun` tree. Native `test.exe`, samples, `demo_*.exe`, and ctest are **not** the product — skip them unless someone explicitly asks.
 
 ```bat
 weedjs\build_for_weed.bat
@@ -305,10 +307,11 @@ weedjs\build_for_weed.bat
 
 Copies `box2d_wasm.js` + `.wasm` into `src/box2d/`. Do not copy a plain `build_wasm.bat` output (lab `game-constants.js` / missing `weedjs_post.js`).
 
-After C changes, engine tests:
+After C changes, engine tests (Node WASM + lockstep visual). Not native Box2D binaries:
 
 ```bat
 node --test tests/node/liquidfun.test.js tests/node/liquidfun.wasm.test.js
+pnpm test:visual --scene liquidfun,lfstress
 ```
 
 ---
@@ -319,6 +322,7 @@ node --test tests/node/liquidfun.test.js tests/node/liquidfun.wasm.test.js
 |------|------|
 | [`tests/node/liquidfun.test.js`](../tests/node/liquidfun.test.js) | Flags (including BARRIER / STATIC_PRESSURE), AABB, `SET_LIQUIDFUN_EMIT` ring, `physics.liquidFun` merge + maxCount clamp 65535 |
 | [`tests/node/liquidfun.wasm.test.js`](../tests/node/liquidfun.wasm.test.js) | Y-down floor settle + `spanY`; no wall-climb **and** no centers inside the wall; water beside a thick box (`maxPen < radius`); 10k create/step smoke; **1-particle point rest** on floor top (`|vy|` small); barrier smoke; staticPressure finite; deinterleaved `x`/`y` exactly match interleaved `pos`; `strictContactCheck` 5th-arg smoke |
+| [`tests/bench/run-lockstep-visual.mjs`](../tests/bench/run-lockstep-visual.mjs) (`pnpm test:visual`) | Headed two-run lockstep. `liquidfun` + `lfstress` are `match: 'exact'` at 100 steps (CPU `hashLiquidFun` + PNG). Catalog: [`lockstepVisualScenes.mjs`](../tests/bench/lockstepVisualScenes.mjs). `water` stays `not-black` (rigid metaball balls, not LiquidFun). |
 
 
 ## Save / restore (groups + pairs)

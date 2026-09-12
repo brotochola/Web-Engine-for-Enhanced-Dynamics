@@ -18,7 +18,7 @@ instantiate the WASM in Node (`CapturePairs` create-time, `ComputeDepth` spawn-s
 | **L1 (H9)** | `pnpm bench:micro:liquidfun-computedepth` ([`tests/bench/liquidfun-computedepth-microbench.mjs`](../tests/bench/liquidfun-computedepth-microbench.mjs)) | First `step_world` after a SOLID ice create, with a large tracked puddle already in the system |
 | **L2** | `pnpm bench:feature:liquidfun` (`LiquidFunStressScene`), **2 runs per point** | `physics.LIQUIDFUN_MS` (fluid solve); `BOX2D_MS` still full `step_world` (rigid + LiquidFun) |
 | **L2 query** | `pnpm bench:feature:liquidfun-query` (`LiquidFunQueryStressScene`) | physics `STEP_MS` / `BOX2D_MS` / `LIQUIDFUN_MS` + logic `STEP_MS` under sync QueryAABB/RayCast churn |
-| **L3** | `demos/liquidFunDemoScene` (manual) | Visual: still stable, no explosions/tunneling |
+| **L3** | `pnpm test:visual --scene liquidfun,lfstress` (headed lockstep; catalog `match: 'exact'`, 100 steps) | Two-run CPU `hashLiquidFun` + PNG exact. Demo still fine to poke by hand. |
 
 Every C change: edit sibling repo → `weedjs\build_for_weed.bat` (incremental, ~10-15s once configured) → copies `box2d_wasm.js`/`.wasm` into `src/box2d/` → correctness gate → L2 ×2 → record here → stop for manual sanity check before the next hypothesis.
 
@@ -46,6 +46,7 @@ Every C change: edit sibling repo → `weedjs\build_for_weed.bat` (incremental, 
 | **H7** | `SolveStaticPressure`'s 8-iteration Poisson loop re-filters the *entire* `particleContacts` array every iteration by flag | Compact the qualifying-contact index list once, iterate that 8× | **Done** |
 | **H8** | `syncLiquidFunParticlesToSharedBuffers` (JS) scalar-loops the interleaved→deinterleaved position copy every frame | Deinterleave in C once (tight loop over contiguous `b2Vec2`), JS does two bulk `.set()` calls | **Done** |
 | **H9** | Ice spawn hitch: `ComputeDepth` walks `sqrt(all particles)` × all contacts, including tracked viscous blobs | Scope to dirty solid intra-contacts; `sqrt(dirtySolidCount)`; reuse H7 `staticPressureContactIndices` scratch | **Done** |
+| **H10** | Parallel `FindParticleContacts` merge by worker index → contact **order** changes run-to-run → float32 pressure/tensile drift | Per-block buckets, merge in block-index order (serial walk). Steal stays. No qsort. | **Done** |
 
 ## Results log
 
@@ -482,6 +483,38 @@ frame should not jump ~10× on `LIQUIDFUN_MS`. Cubes still push apart. **G** jel
 still leaves the world (rest rebuild, not this hyp).
 
 **Verdict: L1 win, L2 expected-null.** Ship.
+
+### H10 — Contact merge by block index (determinism, 2026-09-11)
+
+**Claim:** `lfParallelFor` on `FindParticleContacts` (n ≥ 4096) stole blocks and pushed contacts into `contactBucket[workerIndex]`. Merge concatenated workers 0,1,2,3. Same contact *set*, different *order* depending on which worker finished which block. `ComputeWeight` / `SolvePressure` / `SolveTensile` then drifted in float32. Gravity/integrate stayed serial. `demo_parallel.c` only checked count + COM, so it never caught this.
+
+**Wrong first story:** in-step `parallel_for` was “later” (`LIQUIDFUN.md`). It was already on. Production WASM pthread pool stays **4** — do not force `box2dWorkerCount: 1` for visual gates.
+
+**Change (sibling `lf_particle_system.c`, no qsort):** buckets are per **block**, not worker. `MergeContactBuckets` concatenates `k = 0 .. blockCount-1` = serial `for i in 0..n`. Steal still unique per block (no race, still load-balanced).
+
+Rebuild: `weedjs\build_for_weed.bat` → copy WASM into `src/box2d/`. Native `test.exe` not run (not the product).
+
+**Correctness:** Weed `liquidfun.test.js` + `liquidfun.wasm.test.js` + `liquidFunQuery.test.js` 52/52. Box2D wasm composition tests 18/18.
+
+**L2** (headless, 25s warmup + 18s). RayStressScene = control (C change should not move rays).
+
+| | Ray `logic.STEP_MS` | Ray `RAYCAST_MS` | LF `LIQUIDFUN_MS` | LF physics `STEP_MS` |
+|---|---|---|---|---|
+| Before | 1.837 / 1.857 | 0.796 / 0.814 | 4.479 / 4.464 | 4.583 / 4.570 |
+| After | 1.875 / 1.977 | 0.837 / 0.819 | 4.649 / 4.608 | 4.773 / 4.732 |
+
+Ray in band. LF ~+0.15 ms (~3%). Not qsort. Acceptable for bit-exact fluids.
+
+**L3:** `pnpm test:visual --scene lfstress,liquidfun --steps 100`
+
+| Scene | CPU (transforms + `hashLiquidFun`) | Pixels |
+|---|---|---|
+| `liquidfun` | MATCH | 0 / 921600 |
+| `lfstress` | MATCH | 0 / 921600 |
+
+Catalog: both `match: 'exact'`, `lfstress` steps **100**. `water` stays `not-black` (rigid `WaterBall` entities).
+
+**Verdict: ship.** Determinism win. Tiny L2 tax. No sort.
 
 ## Related
 

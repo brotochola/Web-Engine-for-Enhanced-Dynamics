@@ -126,6 +126,18 @@ export class ComputeLayer {
     if (!this._lookName && this.texDecls.length) this._lookName = this.texDecls[0].name;
     this._lookSample = null;
     this._layouts = null;
+    // Reused packBox2dBodies opts — filled in step(), never allocated per tick.
+    this._packOpts = {
+      sweep: true,
+      poseX: null,
+      poseY: null,
+      poseRotC: null,
+      poseRotS: null,
+      prevPoseX: null,
+      prevPoseY: null,
+      prevPoseRotC: null,
+      prevPoseRotS: null,
+    };
     this._layoutNames = null;
     this._bindGroups = Object.create(null);
     this._passDX = new Int32Array(Math.max(1, this.passes.length));
@@ -427,14 +439,25 @@ export class ComputeLayer {
     this.device.queue.writeBuffer(this.paramsBuffer, 0, p);
   }
 
-  step(frame) {
+  /**
+   * @param {object} frame
+   * @param {{ poseX?: Float32Array|null, poseY?: Float32Array|null, poseRotC?: Float32Array|null, poseRotS?: Float32Array|null, prevPoseX?: Float32Array|null, prevPoseY?: Float32Array|null, prevPoseRotC?: Float32Array|null, prevPoseRotS?: Float32Array|null }|null} [pose]
+   */
+  step(frame, pose) {
     if (this._compileError || !this._ready) return false;
     const ext = Layer.computeTextureExtent(frame.canvasW, frame.canvasH, this._texSize);
     this.resize(ext.texW, ext.texH);
 
-    const packed = packBox2dBodies(this.layerId, this.bodyData, this.vertData, this.maxBodies, {
-      sweep: true,
-    });
+    const packOpts = this._packOpts;
+    packOpts.poseX = pose ? pose.poseX : null;
+    packOpts.poseY = pose ? pose.poseY : null;
+    packOpts.poseRotC = pose ? pose.poseRotC : null;
+    packOpts.poseRotS = pose ? pose.poseRotS : null;
+    packOpts.prevPoseX = pose ? pose.prevPoseX : null;
+    packOpts.prevPoseY = pose ? pose.prevPoseY : null;
+    packOpts.prevPoseRotC = pose ? pose.prevPoseRotC : null;
+    packOpts.prevPoseRotS = pose ? pose.prevPoseRotS : null;
+    const packed = packBox2dBodies(this.layerId, this.bodyData, this.vertData, this.maxBodies, packOpts);
     this.lastBodyCount = packed.bodyCount;
     this.feederCount = Layer._feedCount ? Atomics.load(Layer._feedCount, this.layerId) : 0;
     let particleCount = 0;

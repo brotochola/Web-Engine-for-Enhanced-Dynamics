@@ -22,6 +22,7 @@ import {
   FEED_SLOT_NONE,
   ShapeType,
   COMPUTE_FLAG_STATIC,
+  COMPUTE_FLAG_SWEEP,
   COMPUTE_LAYER_DEFAULT_MAX_PARTICLES,
 } from '../../src/core/ConfigDefaults.js';
 import { LiquidFun } from '../../src/core/LiquidFun.js';
@@ -185,6 +186,114 @@ test('packBox2dBodies stride 16 and polygon vert range', () => {
     assert.equal((bodies[7] | 0) & COMPUTE_FLAG_STATIC, COMPUTE_FLAG_STATIC);
     assert.equal(verts[0], -10);
     assert.equal(verts[5], 12);
+  } finally {
+    Layer.reset();
+  }
+});
+
+test('packBox2dBodies uses latched pose not live Transform', () => {
+  const n = 4;
+  Collider.initializeArrays(new SharedArrayBuffer(Collider.getBufferSize(n)), n);
+  Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(n)), n);
+  RigidBody.initializeArrays(new SharedArrayBuffer(RigidBody.getBufferSize(n)), n);
+  Transform.x = new Float32Array(n);
+  Transform.y = new Float32Array(n);
+  Transform.rotC = new Float32Array(n);
+  Transform.rotS = new Float32Array(n);
+  RigidBody.vx = new Float32Array(n);
+  RigidBody.vy = new Float32Array(n);
+  RigidBody.angularVelocity = new Float32Array(n);
+  RigidBody.px = new Float32Array(n);
+  RigidBody.py = new Float32Array(n);
+  const poseX = new Float32Array(n);
+  const poseY = new Float32Array(n);
+  const poseRotC = new Float32Array(n);
+  const poseRotS = new Float32Array(n);
+  const prevPoseX = new Float32Array(n);
+  const prevPoseY = new Float32Array(n);
+  const prevPoseRotC = new Float32Array(n);
+  const prevPoseRotS = new Float32Array(n);
+
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      {
+        fire: {
+          shader: { fragment: 'f', compute: 's', maxBodies: 16 },
+        },
+      },
+      BUILT_IN_LAYERS,
+      true
+    );
+    const id = Layer.get('fire').id;
+    Collider.active[0] = 1;
+    Collider.shapeType[0] = ShapeType.Box;
+    Collider.width[0] = 40;
+    Collider.height[0] = 40;
+    Transform.x[0] = 100;
+    Transform.y[0] = 50;
+    Transform.rotC[0] = 1;
+    Transform.rotS[0] = 0;
+    RigidBody.active[0] = 1;
+    RigidBody.static[0] = 0;
+    RigidBody.px[0] = 999;
+    RigidBody.py[0] = 888;
+    poseX[0] = 200;
+    poseY[0] = 80;
+    poseRotC[0] = 1;
+    poseRotS[0] = 0;
+    feedLayerAt(0, id);
+
+    const bodies = new Float32Array(16 * BODY_FLOATS);
+    const verts = new Float32Array(64);
+    const poseOpts = {
+      sweep: false,
+      poseX,
+      poseY,
+      poseRotC,
+      poseRotS,
+      prevPoseX,
+      prevPoseY,
+      prevPoseRotC,
+      prevPoseRotS,
+    };
+
+    let packed = packBox2dBodies(id, bodies, verts, 16, poseOpts);
+    assert.equal(packed.bodyCount, 1);
+    assert.equal(bodies[0], 200);
+    assert.equal(bodies[1], 80);
+
+    RigidBody.active[0] = 0;
+    bodies.fill(0);
+    packed = packBox2dBodies(id, bodies, verts, 16, poseOpts);
+    assert.equal(packed.bodyCount, 1);
+    assert.equal(bodies[0], 100);
+    assert.equal(bodies[1], 50);
+
+    RigidBody.active[0] = 1;
+    poseX[0] = 80;
+    poseY[0] = 80;
+    prevPoseX[0] = 0;
+    prevPoseY[0] = 80;
+    prevPoseRotC[0] = 1;
+    prevPoseRotS[0] = 0;
+    poseOpts.sweep = true;
+    bodies.fill(0);
+    packed = packBox2dBodies(id, bodies, verts, 16, poseOpts);
+    assert.ok(packed.bodyCount > 1, 'sweep emits extra samples');
+    assert.equal(bodies[0], 80);
+    assert.equal(bodies[1], 80);
+    assert.equal(bodies[13], 0);
+    assert.equal(bodies[14], 80);
+    assert.equal(bodies[BODY_FLOATS], 0);
+    assert.equal(bodies[BODY_FLOATS + 1], 80);
+    assert.equal((bodies[BODY_FLOATS + 7] | 0) & COMPUTE_FLAG_SWEEP, COMPUTE_FLAG_SWEEP);
+    for (let b = 0; b < packed.bodyCount; b++) {
+      const x = bodies[b * BODY_FLOATS];
+      const y = bodies[b * BODY_FLOATS + 1];
+      assert.notEqual(x, 999);
+      assert.notEqual(y, 888);
+    }
   } finally {
     Layer.reset();
   }
