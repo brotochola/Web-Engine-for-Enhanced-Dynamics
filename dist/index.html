@@ -215,7 +215,7 @@ export class Floor extends GameObject {
           decalsResolution: 0.5,
         }),
         physics: applyFixedFps({
-          box2dWorkerCount: box2dWorkers > 0 ? box2dWorkers : (manualStep ? 1 : 4),
+          box2dWorkerCount: box2dWorkers > 0 ? box2dWorkers : 4,
           subStepCount: 4,
           noLimitFPS: false,
           gravity: { x: 0, y: 1800 },

@@ -1,7 +1,7 @@
 import { MySoldier } from './mySoldier.js';
 
 import WEED from '/src/index.js';
-const { Camera, Mouse } = WEED;
+const { Camera, Transform } = WEED;
 export class CameraController extends WEED.GameObject {
   static scriptUrl = import.meta.url;
   static components = [];

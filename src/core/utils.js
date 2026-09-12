@@ -1258,6 +1258,124 @@ export function calculateSpeed(vx, vy) {
   return Math.sqrt(vx * vx + vy * vy);
 }
 
+/** Wrapper params in loadSingleScript — must not emit `const X = ...` for these. */
+const BLOB_SCRIPT_PARAM_NAMES = new Set([
+  'exports', 'WEED', 'GameObject', 'Component', 'FSM', 'FSMState', 'Transform', 'RigidBody',
+  'Collider', 'SpriteRenderer', 'ParticleComponent', 'ShadowCaster', 'LightEmitter',
+  'FlashComponent', 'DecorationComponent', 'ParticleEmitter', 'DecorationPool', 'Flash',
+  'Mouse', 'Camera', 'NavGrid', 'Ray', 'ShapeType', 'rng', 'randomColor', 'distanceSq2D',
+  'getDirectionFromAngle', 'getDirection8FromVector', 'containerRadius', 'SpriteSheetRegistry',
+  'Keyboard', 'SoundManager', 'CollisionListener', 'CameraInOutListener', 'JointBreakListener',
+  'Grab', 'BLEND_MODES', 'DEFAULT_LAYERS', 'CAMERA_TYPES', 'DECAL_STAMPS_BLEND_MODE',
+  'DEBUG_FLAGS', 'DEBUG_SELECTED_ENTITY_OFFSET',
+]);
+
+function isEngineImportSpec(spec) {
+  return (
+    spec.startsWith('/src/') ||
+    spec.startsWith('http://') ||
+    spec.startsWith('https://') ||
+    spec.startsWith('blob:') ||
+    spec.startsWith('data:')
+  );
+}
+
+function blobImportBinding(imported, local) {
+  if (!local || !/^[A-Za-z_$][\w$]*$/.test(local) || BLOB_SCRIPT_PARAM_NAMES.has(local)) {
+    return '';
+  }
+  const from = imported && /^[A-Za-z_$][\w$]*$/.test(imported) ? imported : local;
+  return `if (!globalThis.${from}) throw new Error('blob-dep ${from}');
+const ${local} = globalThis.${from};`;
+}
+
+/**
+ * Blob eval cannot `import()`. Devs still write `import { MySoldier }`.
+ * Engine specs are dropped (wrapper params). Sibling/demo imports become
+ * `const Name = globalThis.Name` so tick sees the class after it is registered.
+ */
+export function rewriteBlobImports(scriptText) {
+  return scriptText
+    .replace(/import\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]\s*;?/g, (match, names, spec) => {
+      if (isEngineImportSpec(spec)) return '';
+      return names
+        .split(',')
+        .map((part) => {
+          const bits = part.trim().split(/\s+as\s+/);
+          const imported = bits[0].trim();
+          const local = bits[bits.length - 1].trim();
+          return blobImportBinding(imported, local);
+        })
+        .filter(Boolean)
+        .join('\n');
+    })
+    .replace(/import\s+\*\s+as\s+\w+\s+from\s+['"][^'"]+['"]\s*;?/g, '')
+    .replace(/import\s+(\w+)\s+from\s+['"]([^'"]+)['"]\s*;?/g, (match, name, spec) => {
+      if (isEngineImportSpec(spec) || name === 'WEED') return '';
+      return blobImportBinding(name, name);
+    })
+    .replace(/import\s+['"][^'"]+['"]\s*;?/g, '');
+}
+
+/**
+ * Relative / demo / test module specifiers blob-eval must fetch.
+ * `/src/` is already in the worker bundle — do not fetch it as an entity script.
+ */
+export function collectBlobScriptDeps(scriptText, scriptUrl) {
+  const deps = [];
+  const re = /(?:from|import)\s+['"]([^'"]+)['"]/g;
+  let m;
+  while ((m = re.exec(scriptText))) {
+    const spec = m[1];
+    if (
+      spec.startsWith('/src/') ||
+      spec.startsWith('http://') ||
+      spec.startsWith('https://') ||
+      spec.startsWith('blob:') ||
+      spec.startsWith('data:')
+    ) {
+      continue;
+    }
+    if (spec.startsWith('.') || spec.startsWith('/demos/') || spec.startsWith('/tests/')) {
+      try {
+        deps.push(new URL(spec, scriptUrl).href);
+      } catch {
+        /* invalid specifier */
+      }
+    }
+  }
+  return deps;
+}
+
+/** DFS post-order so imported files eval before the importer. */
+export async function expandBlobEntityScripts(entryUrls, fetchText = fetch) {
+  const ordered = [];
+  const seen = new Set();
+
+  async function visit(url) {
+    if (seen.has(url)) return;
+    seen.add(url);
+    try {
+      const response = await fetchText(url);
+      if (response && response.ok) {
+        const text = await response.text();
+        const deps = collectBlobScriptDeps(text, url);
+        for (let i = 0; i < deps.length; i++) {
+          await visit(deps[i]);
+        }
+      }
+    } catch {
+      /* loadSingleScript reports fetch failures */
+    }
+    ordered.push(url);
+  }
+
+  for (let i = 0; i < entryUrls.length; i++) {
+    await visit(entryUrls[i]);
+  }
+  return ordered;
+}
+
 /**
  * Load entity scripts dynamically and register them globally
  * Unified function used by both main thread and workers
@@ -1297,8 +1415,10 @@ export async function loadEntityScripts(scriptsToLoad, globalContext = null, ver
 
   // For Blob workers, load scripts in multiple passes to handle dependencies
   // Scripts that fail (due to missing dependencies) are retried after others load
-  let pendingScripts = [...scriptsToLoad];
-  const maxPasses = 5;
+  let pendingScripts = isBlobWorker
+    ? await expandBlobEntityScripts(scriptsToLoad)
+    : [...scriptsToLoad];
+  const maxPasses = 8;
   let pass = 0;
 
   while (pendingScripts.length > 0 && pass < maxPasses) {
@@ -1352,10 +1472,7 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
       const exports = {};
 
       // Transform the script to work in non-module context
-      let transformedScript = scriptText
-        // Remove ALL import statements (we provide WEED via parameters, other classes are already global)
-        .replace(/import\s+[\w\s{},*]+\s+from\s+['"][^'"]+['"]\s*;?/g, '')
-        .replace(/import\s+['"][^'"]+['"]\s*;?/g, '') // side-effect imports
+      let transformedScript = rewriteBlobImports(scriptText)
         // Remove const/let destructuring from WEED (we provide these as parameters).
         // Also strip destructuring of any local that came from WEED (e.g.
         // `const { ShapeType } = enums;` after `const { enums } = WEED;` was stripped).
