@@ -40,7 +40,7 @@ export const LOCKSTEP_VISUAL_SCENES = [
     zoom: 0.3,
     centerX: 2000,
     centerY: 1200,
-    match: 'not-black',
+    match: 'exact',
   },
   {
     id: 'particles',
@@ -70,8 +70,7 @@ export const LOCKSTEP_VISUAL_SCENES = [
     id: 'lfstress',
     module: '/tests/bench/stressScenes/LiquidFunStressScene.js',
     exportName: 'LiquidFunStressScene',
-    // 4-thread LF solver: step 1 bit-exact; step 2+ pose/pixels drift.
-    steps: 1,
+    steps: 100,
     dtMs: 16.67,
     minActive: 3,
     minLiquidFun: 8000,

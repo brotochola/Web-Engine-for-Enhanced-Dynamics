@@ -13,7 +13,7 @@ instantiate the WASM in Node (`CapturePairs` create-time, `ComputeDepth` spawn-s
 
 | Layer | Command | Primary metric |
 |-------|---------|-----------------|
-| **Correctness** | `node --test tests/node/liquidfun.test.js tests/node/liquidfun.wasm.test.js` (then full `npm test`) | All pass — a faster `STEP_MS` that breaks physics is invalid |
+| **Correctness** | `node --test tests/node/liquidfun.test.js tests/node/liquidfun.wasm.test.js` (then `pnpm test:node`) | All pass. Sibling C: ship **WASM only** (`weedjs\build_for_weed.bat`). Do not build native Box2D `test.exe`. |
 | **L1 (H6)** | `pnpm bench:micro:liquidfun-capturepairs` ([`tests/bench/liquidfun-capturepairs-microbench.mjs`](../tests/bench/liquidfun-capturepairs-microbench.mjs)) | Wall-clock ms for one large SPRING-group `create_particle_group_box` call — create-time-only; L2 steady-state never sees it |
 | **L1 (H9)** | `pnpm bench:micro:liquidfun-computedepth` ([`tests/bench/liquidfun-computedepth-microbench.mjs`](../tests/bench/liquidfun-computedepth-microbench.mjs)) | First `step_world` after a SOLID ice create, with a large tracked puddle already in the system |
 | **L2** | `pnpm bench:feature:liquidfun` (`LiquidFunStressScene`), **2 runs per point** | `physics.LIQUIDFUN_MS` (fluid solve); `BOX2D_MS` still full `step_world` (rigid + LiquidFun) |

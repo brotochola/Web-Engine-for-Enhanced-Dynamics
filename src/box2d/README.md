@@ -40,7 +40,9 @@ From `Box2d_3.2_C_-_liquidfun`:
 weedjs\build_for_weed.bat
 ```
 
-Default: **9 pthreads + `-flto=full`** (`weedjs\build_for_weed.bat` / `weedjs\build_for_weed.bat 9 full`) — 4 Box2D + 1 LF async + 4 LF contact. Use `9 1` for plain `-flto`. Pool 4 starves LF contacts (serial fallback); do not ship that for LiquidFun demos. Builds with `weedjs/weed_post.js` (`importScripts('weedjs_post.js')` then `physics_host.impl.js`), runs a post-link `wasm-opt` size pass (threads + SIMD features enabled), and copies `box2d_wasm.js` + `.wasm` into this folder.
+Default: **4 pthreads + `-flto=full`** (`weedjs\build_for_weed.bat`). Builds with `weedjs/weed_post.js` (`importScripts('weedjs_post.js')` then `physics_host.impl.js`), runs a post-link `wasm-opt` size pass, and copies `box2d_wasm.js` + `.wasm` into this folder.
+
+**WASM only.** Weed never needs sibling native `test.exe`, samples, or `demo_*.exe`. Correctness after a C change is Weed Node WASM tests + L2/visual, not ctest.
 
 Fluids: `liquidfun-c` is compiled into this WASM. Integration and SAB rules: [`docs/LIQUIDFUN.md`](../../docs/LIQUIDFUN.md).
 
