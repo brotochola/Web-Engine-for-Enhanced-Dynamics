@@ -8,6 +8,40 @@ Demos are how the engine gets tested. They are not the product. The engine is th
 
 ---
 
+## Monday 24 August 2026 (evening) — Two Particle Systems, One Clean Line Between Them
+
+The water shader experiment from the night before turns into a real property: texture scale on the emit call, controllable the same way every other sprite in this engine controls its texture. Then the split that had been overdue since the very first LiquidFun bug: `ParticleEmitter` stays exactly what it always was — WeedJS's own CPU particles. `LiquidFun` becomes its own class, its own surface — `LiquidFun.setGroupViscousScale`, and everything else that touches real physics-obeying particles, living apart from the system that never touched Box2D at all. Two particle systems. One clean line between where each one's API begins.
+
+## Monday 24 August 2026 (afternoon) — The WASM Heap Was Already Shared Memory
+
+Deep in a session about exposing LiquidFun state to every worker, not just the main thread — the same comfort `Camera` and `Mouse` already had — a wrong assumption got caught in real time: "you said 'WASM heap is not a SharedArrayBuffer', but i think it actually is!" It was. A `WebAssembly.Memory` built with `shared: true` is backed by a real `SharedArrayBuffer` the whole time — there was never a reason to copy particle position and alpha out of it every frame. "ok bro, nice finding, update the plan." That one correction is the reason LiquidFun's pose today lives directly on the WASM heap instead of a second buffer somebody has to remember to keep in sync.
+
+Before that: a real, curated decision about which of Google's original LiquidFun 1.1 features actually deserved a place here. Yes to `SplitParticleGroup`, `JoinParticleGroups`, contiguous group ranges, solid and rigid particle groups. No to color-mixing particles, repulsive and reactive particle flags, destroy-oldest-particle logic — features that exist in the original but didn't earn their keep in this engine. Not a port of everything Google ever shipped. A port of what this engine actually needed, checked line against line against the real source so nothing got left out by accident: "i feel you're not telling me things... what of google's architecture we're not respecting?"
+
+## Monday 24 August 2026 (morning) — Dulce de Leche
+
+`LiquidFunSystem.js` had a viscosity preset by then, and it wasn't behaving: "this dulce de leche thing, even tho i put a very very high strength is not acting viscous.. am i doing it right?" The want behind fixing it, in full: "i want the devs of my beloved weedjs to be able to have oil thin + thick dulce de leche, or even change the viscosity of a particle group as it melts. you dig? can we do that without fucking up liquid fun c that so far runs like a charm." Landed on per-group viscosity as the fast path, with per-particle melting kept as a real idea for later, not shipped yet because it wasn't clearly worth what it would cost.
+
+Along the way: `getLiquidFunParticleGroups()` silently returning an empty array every time, a `RangeError` on a 256-length typed array that shouldn't have existed, and a real complaint about the API's own honesty — hiding viscosity behind a named material string instead of just exposing the number was, in so many words, "kinda stupid," because the people using this engine deserve full control with a clean surface, not a preset menu standing in the way.
+
+## Sunday 23 – Monday 24 August 2026 — Real Interpolation, No C Changes Needed
+
+A long fight with motion that never looked smooth no matter what got tried. Extrapolation felt wrong with gravity in the picture — it can't predict a collision that hasn't happened yet, so a falling particle would extrapolate straight through a floor it was about to hit. `fixedFPS` turned out to change the simulation's actual speed, not just how often it got sampled, which wasn't the intent at all. The fix, once found, didn't touch the C side at all: LiquidFun already tracked enough state that real interpolation was possible in JS, once the previous position was captured properly. Extrapolation got removed outright.
+
+Lifespan for particles came right after — random-range lifetimes, `{min, max}` — and a real check against Google's own docs turned up something already built and simply unused: `SetParticleDestructionByAge`. The original engine had already solved this. The job was noticing that, not reinventing it a second time.
+
+## Sunday 23 August 2026 (evening) — SIMD Must Work, or Fail Loud
+
+Comparing this engine's LiquidFun port against Google's original for fidelity, then hunting every micro-optimization available. The real line on SIMD: "we should assume there is simd... i'm the only person who is gonna compile this code.. i dont wanna add extra complexity. Also, if it is not working, i wanna know it, and throw an error, and fix it. SIMD must work!" No silent scalar fallback pretending to be fine.
+
+A real benchmark scene got built specifically so every optimization had a number attached to it — five thousand water particles, a thousand of something else, same scene, every time. Then the payoff, typed out mid-session with the exact number still fresh: "ok dude great!! physics: STEP_MS 2.860 !! at this point i'm going to make a commit!" And immediately after: the benchmark scene needed more particles, because 2.86 ms was already too fast to trust as a stress test. You don't get to celebrate a good number without making sure it's a number that will still mean something next week.
+
+## Sunday 23 August 2026 (morning) — First Contact, and Catching Myself Reinventing the Wheel
+
+The first real session with LiquidFun particles actually moving in WeedJS, and almost everything about it was wrong. Particles didn't collide with each other — spawn any number of them and they'd collapse into a single flat line the instant they touched the floor. They compressed far past where real water should — "i need thousands of particles to fill a little space." They climbed straight through walls while supposedly colliding with them. At three thousand particles, the physics step already blew past the 16.67 ms frame budget.
+
+The moment that mattered most wasn't a bug, it was a question aimed at the process itself: "isn't this solved in the original liquid fun??? can't you take a look at the original repo? i feel you're trying to reinvent the wheel." Right alongside it, the architectural line that held for the rest of the project: WeedJS's own CPU particles (`ParticleComponent`, `particle_worker`) and these new LiquidFun particles are never the same system and must never get mixed — not the same gravity pass, not the same buffer, not the same anything, except where they're deliberately asked to touch.
+
 ## Tuesday 28 July 2026 (evening) — Gamepad, and Sleeping For Real
 
 `GamePad` joins `Mouse` and `Keyboard` as a real input class, same shape, same comfort. Then back into Box2D's own C source to find the real sleep exports — `body_set_awake`, whether `b2World_EnableSleeping` exists — because sleeping had been broken since the migration and I wasn't going to fake it with a JS-side timer. A sequenced contact ring lands not long after, with joint revision tracking, so a stale contact from a body that already got despawned and reused can't wrongly fire a callback. By the time August 1st closes this stretch out: savegames work, `DecorationSpatial` replaces putting every blade of grass in the spatial hash, and the neighbor-reuse work from earlier in the year finally ships its real defaults.
