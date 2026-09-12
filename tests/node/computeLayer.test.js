@@ -586,14 +586,24 @@ test('fire stamp: burning crust is live fluid; inert solids push; ember overlays
   assert.match(fluid, /uLfDrive/);
   assert.match(fluid, /fn inert_solid/);
   assert.match(fluid, /fn push_from_solid/);
+  assert.match(stamp, /s\.velX/);
+  assert.match(stamp, /velKind = 2\.0/);
+  const applyStart = fluid.indexOf('fn apply_body_vel(');
+  const applyNext = fluid.indexOf('\n@compute', applyStart + 1);
+  const applyBody = fluid.slice(applyStart, applyNext === -1 ? undefined : applyNext);
+  assert.match(applyBody, /velL/);
+  assert.match(applyBody, /velT/);
+  assert.equal(/velR/.test(applyBody), false);
+  assert.equal(/velU/.test(applyBody), false);
+
+  const inertSolid = (open, burnA, hasBody) => open < 0.5 && burnA < 0.5 && hasBody < 0.5;
+  assert.equal(inertSolid(0, 0, 0), true);
+  assert.equal(inertSolid(0, 1, 0), false);
+  assert.equal(inertSolid(1, 0, 0), false);
+  assert.equal(inertSolid(0, 0, 1), false, 'flying crate is not an inert floor');
   assert.match(pack, /let ember = clamp\(mark\.b/);
   assert.match(look, /let ember = heat\.a/);
   assert.match(look, /eRgb \* eA \+ premul/);
-
-  const inertSolid = (open, burnA) => open < 0.5 && burnA < 0.5;
-  assert.equal(inertSolid(0, 0), true);
-  assert.equal(inertSolid(0, 1), false);
-  assert.equal(inertSolid(1, 0), false);
 
   const pushNormal = (l, r, d, u) => {
     let nx = 0;
@@ -623,6 +633,16 @@ test('fire stamp: burning crust is live fluid; inert solids push; ember overlays
   assert.equal(closed(0, 0, true, 0), true);
   assert.equal(closed(-10, 0, true, 64), false);
   assert.equal(closed(-10, 0, false, 64), true);
+
+  // MAC left face of an air cell is the right wall of a solid on the left.
+  const sharedFaceU = (closedSelf, bodySelf, closedLeft, bodyLeft, vx, airU) => {
+    if (closedSelf && bodySelf) return vx;
+    if (!closedSelf && closedLeft && bodyLeft) return vx;
+    return airU;
+  };
+  assert.equal(sharedFaceU(false, false, true, true, 400, 0), 400);
+  assert.equal(sharedFaceU(true, true, false, false, 400, 0), 400);
+  assert.equal(sharedFaceU(false, false, false, false, 400, 0), 0);
 });
 
 test("burningBoxesScene: fire layer sizes compute.size from world dims via FIRE_CELL_SIZE (demo math, not an engine mode)", () => {

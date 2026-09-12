@@ -55,7 +55,7 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (id.x >= i32(frame.texW) || id.y >= i32(frame.texH)) { return; }
   if (!cell_active(id)) {
     textureStore(stampWrite, id, vec4<f32>(1.0, 0.0, 0.0, 0.0));
-    textureStore(velWrite, id, vec4<f32>(0.0, 0.0, 0.0, 1.0));
+    textureStore(velWrite, id, vec4<f32>(0.0, 0.0, 0.0, 0.0));
     textureStore(fuelWrite, id, vec4<f32>(0.0));
     return;
   }
@@ -71,6 +71,8 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
   var bodyVx = 0.0;
   var bodyVy = 0.0;
   var hasBody = 0.0;
+  // vel.w: 0 none, 1 = rigid wall, 2 = forced wind (blow/jet).
+  var velKind = 0.0;
   let count = i32(frame.shapeCount);
 
   for (var i = 0; i < count; i++) {
@@ -123,6 +125,7 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
         bodyVx = s.cosA * force;
         bodyVy = s.sinA * force;
         hasBody = 1.0;
+        velKind = 2.0;
       }
     }
 
@@ -132,13 +135,12 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
         hasBody = 0.0;
         bodyVx = 0.0;
         bodyVy = 0.0;
+        velKind = 0.0;
       } else {
         hasBody = 1.0;
-        let dt = max(frame.dt, 1e-6);
-        let vx = (s.posX - s.prevX) / dt;
-        let vy = (s.posY - s.prevY) / dt;
-        bodyVx = vx - s.omega * (wy - s.posY);
-        bodyVy = vy + s.omega * (wx - s.posX);
+        velKind = 1.0;
+        bodyVx = s.velX - s.omega * (wy - s.posY);
+        bodyVy = s.velY + s.omega * (wx - s.posX);
         if (!isSweep && (!isBurning || d <= -inner)) {
           openCell = 0.0;
         }
@@ -160,6 +162,7 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
       if (lx > s.halfW - h && lx < s.halfW + max(outer, h) && abs(ly) < s.halfH) {
         isSource = 1.0;
         hasBody = 1.0;
+        velKind = 2.0;
         let force = frame.uJetForce;
         bodyVx = s.cosA * force;
         bodyVy = s.sinA * force;
@@ -173,6 +176,6 @@ fn raster_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
   }
 
   textureStore(stampWrite, id, vec4<f32>(openCell, isSource, maxEmber, burnSolid));
-  textureStore(velWrite, id, vec4<f32>(bodyVx, bodyVy, hasBody, 1.0));
+  textureStore(velWrite, id, vec4<f32>(bodyVx, bodyVy, hasBody, velKind));
   textureStore(fuelWrite, id, vec4<f32>(0.0));
 }

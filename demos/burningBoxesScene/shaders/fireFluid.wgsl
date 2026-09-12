@@ -82,7 +82,8 @@ fn open_cell(c: vec2<i32>) -> f32 {
 fn inert_solid(c: vec2<i32>) -> bool {
   if (!in_grid(c)) { return false; }
   let mark = textureLoad(stampTex, c, 0);
-  return mark.r < 0.5 && mark.a < 0.5;
+  if (mark.r >= 0.5 || mark.a >= 0.5) { return false; }
+  return textureLoad(velTex, c, 0).z < 0.5;
 }
 
 fn load_body_vel(c: vec2<i32>) -> vec4<f32> {
@@ -226,6 +227,17 @@ fn project_velocity(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (id.y > 0 && open_cell(id + vec2<i32>(0, -1)) > 0.5) {
     v -= (p - load_p(id + vec2<i32>(0, -1)));
   }
+  // This cell's u is the left face, v the top face. If the neighbor across
+  // that face is a moving solid, the face is the solid's missing right/bottom
+  // wall — pin it to body vel or the solid is a sink on the front.
+  let velL = load_body_vel(id + vec2<i32>(-1, 0));
+  let velT = load_body_vel(id + vec2<i32>(0, -1));
+  if (open_cell(id + vec2<i32>(-1, 0)) < 0.5 && velL.z > 0.5) {
+    u = velL.x;
+  }
+  if (open_cell(id + vec2<i32>(0, -1)) < 0.5 && velT.z > 0.5) {
+    v = velT.y;
+  }
   textureStore(uWrite, id, vec4<f32>(u, 0.0, 0.0, 0.0));
   textureStore(vWrite, id, vec4<f32>(v, 0.0, 0.0, 0.0));
 }
@@ -301,7 +313,10 @@ fn cool_rise(@builtin(global_invocation_id) gid: vec3<u32>) {
   var t = load_t(id);
   var v = load_v(id);
   if (open_cell(id) < 0.5) {
-    textureStore(tWrite, id, vec4<f32>(0.0));
+    // Keep leftover heat inside a moving solid so later SL can gather it
+    // from the front. Static floors stay empty.
+    if (load_body_vel(id).z < 0.5) { t = 0.0; }
+    textureStore(tWrite, id, vec4<f32>(t, 0.0, 0.0, 0.0));
     textureStore(vWrite, id, vec4<f32>(0.0));
     return;
   }
@@ -379,7 +394,12 @@ fn apply_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
   let fuel = textureLoad(fuelTex, id, 0);
   var t = load_t(id);
   if (mark.r < 0.5) {
-    t = mark.b;
+    if (mark.a > 0.5) {
+      t = mark.b;
+    } else if (load_body_vel(id).z < 0.5) {
+      t = 0.0;
+    }
+    // else moving cold solid: keep t so advect can sample it from the front
   } else if (mark.g > 0.5 || fuel.r > 0.5) {
     t = 1.0;
   }
@@ -396,26 +416,36 @@ fn apply_body_vel(@builtin(global_invocation_id) gid: vec3<u32>) {
     return;
   }
   let vel0 = load_body_vel(id);
-  if (open_cell(id) < 0.5 && vel0.z < 0.5) {
+  var u = load_u(id);
+  var v = load_v(id);
+  let closed = open_cell(id) < 0.5;
+  if (closed && vel0.z < 0.5) {
     textureStore(uWrite, id, vec4<f32>(0.0));
     textureStore(vWrite, id, vec4<f32>(0.0));
     return;
   }
-  var u = load_u(id);
-  var v = load_v(id);
   let velL = load_body_vel(id + vec2<i32>(-1, 0));
-  let velR = load_body_vel(id + vec2<i32>(1, 0));
-  let velD = load_body_vel(id + vec2<i32>(0, -1));
-  let velU = load_body_vel(id + vec2<i32>(0, 1));
+  let velT = load_body_vel(id + vec2<i32>(0, -1));
+  let source = textureLoad(stampTex, id, 0).g > 0.5;
   let k = clamp(frame.uBodyDrive, 0.0, 1.0);
-  if (vel0.z > 0.5) {
-    u = mix(u, vel0.x, k);
-    v = mix(v, vel0.y, k);
+  let wind = vel0.z > 0.5 && vel0.w > 1.5;
+  if (closed) {
+    u = vel0.x;
+    v = vel0.y;
   } else {
-    if (velL.z > 0.5) { u = mix(u, velL.x, k); }
-    if (velR.z > 0.5) { u = mix(u, velR.x, k); }
-    if (velD.z > 0.5) { v = mix(v, velD.y, k); }
-    if (velU.z > 0.5) { v = mix(v, velU.y, k); }
+    if (open_cell(id + vec2<i32>(-1, 0)) < 0.5 && velL.z > 0.5) {
+      u = velL.x;
+    }
+    if (open_cell(id + vec2<i32>(0, -1)) < 0.5 && velT.z > 0.5) {
+      v = velT.y;
+    }
+    if (wind) {
+      u = vel0.x;
+      v = vel0.y;
+    } else if (k > 0.0 && vel0.z > 0.5 && !source) {
+      u = mix(u, vel0.x, k);
+      v = mix(v, vel0.y, k);
+    }
   }
   let fuel = textureLoad(fuelTex, id, 0);
   if (fuel.r > 0.5) {
