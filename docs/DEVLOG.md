@@ -8,13 +8,59 @@ Demos are how the engine gets tested. They are not the product. The engine is th
 
 ---
 
-## Monday 27 July 2026 — Kinda Back to Where We Were
+## Tuesday 28 July 2026 (evening) — Gamepad, and Sleeping For Real
 
-The biggest single commit of the stretch, and the name undersells it. Real polygon colliders. A contact-sync test suite. OBB collision tests expanded. Actual benchmark numbers captured to a file this time, not eyeballed off a debug overlay. Three days of OBB work that had drifted sideways somewhere in the middle — I don't have a clean account of exactly where, just that it did — landing back on solid ground. Just with real tests under it now. The day before everything about physics in this engine changes anyway.
+`GamePad` joins `Mouse` and `Keyboard` as a real input class, same shape, same comfort. Then back into Box2D's own C source to find the real sleep exports — `body_set_awake`, whether `b2World_EnableSleeping` exists — because sleeping had been broken since the migration and I wasn't going to fake it with a JS-side timer. A sequenced contact ring lands not long after, with joint revision tracking, so a stale contact from a body that already got despawned and reused can't wrongly fire a callback. By the time August 1st closes this stretch out: savegames work, `DecorationSpatial` replaces putting every blade of grass in the spatial hash, and the neighbor-reuse work from earlier in the year finally ships its real defaults.
 
-## Saturday 25 – Sunday 26 July 2026 — Making It Actually Stable
+## Tuesday 28 July 2026 (late afternoon) — Making It Small, and Breaking a Few More Things on the Way
 
-`OrientedBox` dynamics refined, physics sleeping reworked to account for the new shape correctly. "stable" as a checkpoint commit — the kind you leave yourself when something finally stops fighting back.
+Bundle size, for real this time: `wasm-opt` on the binary, gzip before the base64 encode, one debug build and one prod build, both landing in `dist/`. A real memory deep-dive, seeded by a small, sharp observation — entity IDs never go above 65,535, so why was anything using a wider type than `Uint16` to hold one. Found a jsDelivr URL that already worked for the published package and put it in the README, because apparently `import` from a CDN was already possible and nobody had written it down.
+
+More crashes on the way: `Invalid typed array length: 100000` out of nowhere in the Pixi worker, a contact ring overrunning and clearing its own state mid-frame. Fixed both, then went hunting for dead code and backwards-compatibility shims with a very specific instruction to be ruthless about it — if it's not part of the real public API, and nothing uses it, delete it, don't preserve it out of politeness.
+
+## Tuesday 28 July 2026 (afternoon) — Merged to Main, and a Real Fight About Attribution
+
+Built the actual `dist` bundle with Box2D living inside it for the first time, fixed it so the shipped demo didn't quietly depend on files that only exist in the source tree. Then: "i wanna checkout to main, merge this branch into main, update the readme and all the docs, mentioning our awesome version of box2d 3.0 (better than the phaser one!)" That confidence was earned by that point, not posturing.
+
+And a real, all-caps moment that afternoon, over Cursor stamping its own co-author line onto commits without asking: "I WANNA REMOVE CURSOR AGENT FROM THE COMMITS IN GITHUB! REMOVE IT FROM EVERYWHERE! SUCH A DISRESPECT." That anger is exactly why a rule exists in this repo, to this day, forbidding any tool from adding attribution to a commit that isn't mine.
+
+## Tuesday 28 July 2026 (morning, continued) — "Congrats, Bro"
+
+Nine in the morning, after the crash gauntlet: "we finally integrated box2d 3.0 wasm, data oriented, with our own hooks/wrapper, simd, multithreaded! congrats bro!" Said to my own assistant, and meant for both of us. Then, instead of trusting that same assistant's word that everything was clean, I asked a second one to check its work — "I want you GPT5.6 to Audit the box2d integration, not composer 2.5, and make a plan." Trust the work. Still get a second opinion before you call it done.
+
+## Tuesday 28 July 2026 (early morning) — The Crash Gauntlet
+
+`box2d_wasm.js` failed to even load one of its own generated files. Fixed that, and hit `createDistanceJointLocal failed` — the WASM joint table, full. Fixed that, and hit the real wall: `Aborted(OOM)`, a genuine out-of-memory abort deep inside the WASM heap, with a native stack trace running through function indices instead of source lines. One demo had a pool of 50,000 `ConstraintBox` slots left over from before the fork — cut to 600, because nothing in that scene ever needed more than a few hundred at once, and the WASM heap doesn't forgive being asked for that much space by accident.
+
+Fixed the heap properly after that: 512 MB, fixed, no growth allowed. And a question that mattered more than it looked like: if Box2D's own memory ever did grow, would WeedJS even notice — because growth means a new `ArrayBuffer` under the hood, and every existing typed-array view into the old one goes stale silently, still readable, just wrong. Locking the heap size sidestepped having to answer that for now. It's still an open question for later.
+
+## Tuesday 28 July 2026 (before dawn) — No Backwards Compatibility, Change the Demo Files
+
+Debug view stopped showing colliders and neighbors right after the migration — first thing to fix, because you can't trust what you can't see. Then a real decision, stated plainly: unify the whole engine to speak Box2D's own language. Box versus polygon stops being a real distinction, because Box2D already treats every box as a four-sided polygon. `drag` gets checked against Box2D's `frictionAir`. `Constraint` starts becoming `Joint` — `DistanceJoint`, `RevoluteJoint`, `WeldJoint` — matching Box2D's own vocabulary instead of a name WeedJS made up two years earlier. And the rule for all of it: "do not keep anything for backwards compatibility, change the demo files." No shim layer pretending the old names still worked.
+
+## Tuesday 28 July 2026, 2:32 AM — Stop 0, Then I Test
+
+Started from a plan and the WASM files already sitting in a sibling folder, copied in fresh that same night. The whole rollout ran one deliberate step at a time: "only do stop 0. then stop, i test, and i tell you when to continue." Position and velocity sync landed first, the most load-bearing piece — set a transform, set a velocity, watch it actually move. "it works fine!" Then: "go." The rest of the day built on that one working step.
+
+## Monday 27 July 2026 — Should We Just Compile Box2D Into WASM?
+
+Woke up still fighting yesterday's boxes and decided to stop guessing and copy the source. Box2D 3.0 doesn't use OBB the way I'd built it — it uses SAT against real polygons, capped at eight vertices per shape. Started rebuilding around that: a real polygon collider, matching Box2D's own limit, not my own invented shape.
+
+It got worse before it got better. Boxes still vibrated and now dropped through the floor in `OrientedBoxScene`. Then a completely unrelated system broke as collateral damage — `BallsScene`, which had nothing to do with polygons at all, started letting balls crush into each other and fall through a floor that wasn't even rotating. Fixed that, and found the real cost of the day: the balls-scene physics worker was running at 18 FPS. It had been 50 the day before. Same scene, same entity count, just a slower solver underneath it now.
+
+Kept pushing on the polygon rewrite anyway. Boxes stopped vibrating and started rotating in slow motion instead. Fixed that, and stacked boxes started drifting sideways until they spun off on their own. At every step, the same question kept coming back: why am I reinventing what Box2D 3.0 already solved.
+
+So I asked straight out, no hedging: should we keep trying this? What if there were a real `PolygonCollider` component? Does any other engine even use Verlet the way I do? And the question underneath all of them — should we just compile Box2D 3.0 to WASM and make it write into our own SharedArrayBuffers instead of its own memory?
+
+That question is the whole next chapter. I didn't know it yet, sitting there that evening, but I'd already half-decided.
+
+## Saturday 25 – Sunday 26 July 2026 — Boxes That Would Not Stop Vibrating
+
+Pointed a session at comparing my own OBB collision code against how `phaser-box2d` does it, hoping to borrow enough to stop the shaking. It didn't go well. "boxes dont even stack now! and they vibrate all over." Tried again — the balls started vibrating too, and they'd been fine. "still very wrong!" Tried a third time and lost ground I'd already had: "ahora se rompio todo y volvimos a antes q vibran en el piso sin colisiones!" — now everything's broken and we're back to before, vibrating on the floor with no real collision at all. By the end of one session I was asking out loud whether the boxes' center of mass was even computed right, because nothing else explained what I was seeing.
+
+In the middle of all that, a real fork in the road, typed out plainly: given how complex OBB and friction were turning out to be, and given that the old circles-plus-constraints trick in `ConstraintBoxScene` was working *better* than the real oriented boxes I was trying to build — what if I just kept not thinking about angular velocity at all? The problem with that answer was obvious too: circles don't stack. They're round. A box made of circles drifts until the curves find a compromise instead of sitting flat.
+
+I asked which existing 2D engine would be easiest to bolt onto this architecture. The next evening, half-serious, I asked for a plan to bring in Rapier instead of fixing what I had.
 
 ## Friday 24 July 2026 — Oriented Boxes, and a Real Test of the Hypothesis
 
