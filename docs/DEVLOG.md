@@ -8,13 +8,43 @@ Demos are how the engine gets tested. They are not the product. The engine is th
 
 ---
 
+## Friday 11 September 2026 (night) — Same Hundred Steps, Same Pixels
+
+Once the test could actually run, it lied in a useful way at first. Two lockstep runs, `LiquidFun` and `OrientedBoxScene`, same hundred steps, same 16.67 ms each time — and the pixels didn't match. Not close. Different.
+
+The instinct was to blame the obvious thing: Box2D's own solver runs four worker threads in production, and threads plus floating point is a classic recipe for "of course it's not deterministic." That instinct was wrong, and finding out why mattered more than the fix itself. `FindParticleContacts` — the part of LiquidFun that finds which particles are touching — was already splitting its work across worker threads and dumping each thread's contacts into its own bucket, then concatenating bucket 0, then 1, then 2, then 3. Same contacts, every run. Different order, depending on which thread happened to finish first that particular run. Addition in float32 is not associative. Walk the same list in a different order, get a very slightly different number, and a few frames later a puddle has drifted into a different puddle.
+
+The fix wasn't turning multithreading off — production runs four Box2D worker threads and the test had to respect that, not weaken it into something that would never actually ship. The fix was bucketing by block of work instead of by which thread happened to grab it, so the merge order was always the same regardless of which thread finished when. Rebuilt the WASM, ran the lockstep suite again. `liquidfun`: zero of 921,600 pixels different. `lfstress`: zero of 921,600 pixels different. `Math.random()` got replaced with `rng()` across every demo the same night, so nothing else could quietly reintroduce the thing just fixed.
+
+## Friday 11 September 2026 (afternoon) — Is the Engine Even Deterministic?
+
+The idea, stated as a hypothesis and not a fact: run every worker at a fixed timestep, take a screenshot, run it again the exact same way, take another screenshot, and compare. If they ever came back all black, something broke the renderer in a way you couldn't miss. If they matched pixel for pixel, the engine was deterministic. "but that's a hypothesis i wanna confirm before writing these tests."
+
+It did not go smoothly. A step got skipped without a report back, and got called out directly: "wait, is the engine deterministic? you didnt stop to tell me the report." Then a real moment of doubt about whether to keep going at all: "should we remove the extra code you introduced then? if we cannot make it work deterministically.. what do you think?" The answer was to try harder, not to walk away — a real test design, stated in plain terms: "scene init, make time not run. advance 16ms 100 times. take a screenshot." That is, almost word for word, the test that ended up shipping.
+
+One more decision mattered as much as the test itself: Box2D running single-threaded is trivially deterministic, but that's not what ships. Production runs the multithreaded WASM, so the test had to run against that, threads and all — plus every shader-driven scene, LiquidFun and the water demo included. No shrinking the problem down to something easy to pass. Test the real configuration, or the test proves nothing.
+
+## Thursday 10 September 2026 — Fire, and Both Hats at Once
+
+A prototype sitting in a sibling folder, `box2d+fire_sim (lbm)`, showed a compute shader driving a fragment shader to make bodies actually burn. The want, stated with the project's whole ambition behind it: "i want to allow custom computeshaders in weedjs, no fallbacks, no backwards compatibility. we're building the best 2d web game engine on the planet."
+
+And then the line that is this whole project's rule, said out loud in the moment it actually mattered: "i dont want WeedJS to have a built-in fire shader. I want to allow devs to put their own compute shaders. So we're wearing both hats now: change the engine AND create a new scene that uses compute shaders." The engine gets a real, generic compute-layer API — any dev's own WGSL, not a baked-in fire effect. The burning-boxes scene gets built on top of that API, as a demo proving the API is worth having, with `ignite()` as a method on a GameObject subclass that only exists in demo code. Neither hat worn instead of the other.
+
+## Monday 31 August – Thursday 3 September 2026 — SIMD, Job Stealing, and a Number That Went the Wrong Way
+
+A question that started the week, aimed straight at the part of LiquidFun still costing the most: "aah nos queda algo q no es SoA todavia y no es usa simd! hace un plan!" — there was still a piece that wasn't Structure-of-Arrays and wasn't using SIMD, and it was the biggest remaining cost in the whole step.
+
+A real architectural question followed it, about whether the machine was being asked to do too much at once: sixteen hardware threads, four already claimed by Box2D, more for LiquidFun, more still for collisions on top of whatever the browser's own workers needed — "igualmente no quiero q el cpu esté al maximo todo el tiempo" — not wanting the CPU pinned at maximum all the time just because it technically could be. That question led somewhere better than adding more threads: since Erin Catto's own Box2D already used job stealing to balance work across its pool, why not put LiquidFun's contact-finding into that same job system instead of giving it threads of its own. `liquidfun uses the job stealing system that box2d uses` shipped that week, one pool, shared, instead of two pools competing for the same cores.
+
+Not everything that week landed clean. A SIMD pass on the SoA rewrite came back with a real, honest number moving the wrong way: "anda bien, pero está peor, la stress scene paso de 5ms a 7ms" — it ran, but it was worse, the stress scene went from five milliseconds to seven. The response wasn't to defend the work already done. "revertimos todo entonces? o q?" Revert all of it, then. "ok, dale." Two words, and the wrong path was gone by the end of the session.
+
 ## Monday 24 August 2026 (evening) — Two Particle Systems, One Clean Line Between Them
 
 The water shader experiment from the night before turns into a real property: texture scale on the emit call, controllable the same way every other sprite in this engine controls its texture. Then the split that had been overdue since the very first LiquidFun bug: `ParticleEmitter` stays exactly what it always was — WeedJS's own CPU particles. `LiquidFun` becomes its own class, its own surface — `LiquidFun.setGroupViscousScale`, and everything else that touches real physics-obeying particles, living apart from the system that never touched Box2D at all. Two particle systems. One clean line between where each one's API begins.
 
 ## Monday 24 August 2026 (afternoon) — The WASM Heap Was Already Shared Memory
 
-Deep in a session about exposing LiquidFun state to every worker, not just the main thread — the same comfort `Camera` and `Mouse` already had — a wrong assumption got caught in real time: "you said 'WASM heap is not a SharedArrayBuffer', but i think it actually is!" It was. A `WebAssembly.Memory` built with `shared: true` is backed by a real `SharedArrayBuffer` the whole time — there was never a reason to copy particle position and alpha out of it every frame. "ok bro, nice finding, update the plan." That one correction is the reason LiquidFun's pose today lives directly on the WASM heap instead of a second buffer somebody has to remember to keep in sync.
+While working out how to expose LiquidFun state to every worker, not just the main thread — the same comfort `Camera` and `Mouse` already had — a wrong assumption I'd been carrying finally got questioned: wait, is a WASM heap really not a `SharedArrayBuffer`? It is, when it's built with `shared: true`. There was never a reason to copy particle position and alpha out of it every frame. That one correction is the reason LiquidFun's pose today lives directly on the WASM heap instead of a second buffer somebody has to remember to keep in sync.
 
 Before that: a real, curated decision about which of Google's original LiquidFun 1.1 features actually deserved a place here. Yes to `SplitParticleGroup`, `JoinParticleGroups`, contiguous group ranges, solid and rigid particle groups. No to color-mixing particles, repulsive and reactive particle flags, destroy-oldest-particle logic — features that exist in the original but didn't earn their keep in this engine. Not a port of everything Google ever shipped. A port of what this engine actually needed, checked line against line against the real source so nothing got left out by accident: "i feel you're not telling me things... what of google's architecture we're not respecting?"
 
@@ -34,7 +64,7 @@ Lifespan for particles came right after — random-range lifetimes, `{min, max}`
 
 Comparing this engine's LiquidFun port against Google's original for fidelity, then hunting every micro-optimization available. The real line on SIMD: "we should assume there is simd... i'm the only person who is gonna compile this code.. i dont wanna add extra complexity. Also, if it is not working, i wanna know it, and throw an error, and fix it. SIMD must work!" No silent scalar fallback pretending to be fine.
 
-A real benchmark scene got built specifically so every optimization had a number attached to it — five thousand water particles, a thousand of something else, same scene, every time. Then the payoff, typed out mid-session with the exact number still fresh: "ok dude great!! physics: STEP_MS 2.860 !! at this point i'm going to make a commit!" And immediately after: the benchmark scene needed more particles, because 2.86 ms was already too fast to trust as a stress test. You don't get to celebrate a good number without making sure it's a number that will still mean something next week.
+Built a real benchmark scene specifically so every optimization had a number attached to it — five thousand water particles, a thousand of something else, same scene, every time. Then the payoff, with the number still fresh: physics STEP_MS down to 2.860. Good enough to commit right there. And immediately after: the benchmark scene needed more particles, because 2.86 ms was already too fast to trust as a stress test. You don't get to celebrate a good number without making sure it's a number that will still mean something next week.
 
 ## Sunday 23 August 2026 (morning) — First Contact, and Catching Myself Reinventing the Wheel
 
@@ -58,9 +88,9 @@ Built the actual `dist` bundle with Box2D living inside it for the first time, f
 
 And a real, all-caps moment that afternoon, over Cursor stamping its own co-author line onto commits without asking: "I WANNA REMOVE CURSOR AGENT FROM THE COMMITS IN GITHUB! REMOVE IT FROM EVERYWHERE! SUCH A DISRESPECT." That anger is exactly why a rule exists in this repo, to this day, forbidding any tool from adding attribution to a commit that isn't mine.
 
-## Tuesday 28 July 2026 (morning, continued) — "Congrats, Bro"
+## Tuesday 28 July 2026 (morning, continued) — Congrats, Man
 
-Nine in the morning, after the crash gauntlet: "we finally integrated box2d 3.0 wasm, data oriented, with our own hooks/wrapper, simd, multithreaded! congrats bro!" Said to my own assistant, and meant for both of us. Then, instead of trusting that same assistant's word that everything was clean, I asked a second one to check its work — "I want you GPT5.6 to Audit the box2d integration, not composer 2.5, and make a plan." Trust the work. Still get a second opinion before you call it done.
+Nine in the morning, after the crash gauntlet: Box2D 3.0 WASM, data-oriented, our own hooks and wrapper on top, SIMD, multithreaded. Actually integrated, actually running. Said it out loud to no one in particular and meant it. Then didn't just take that win at face value — ran a completely independent audit pass over the whole integration before calling it done, line by line, as if someone else had written it. Trust the work. Still double-check it before you ship it.
 
 ## Tuesday 28 July 2026 (early morning) — The Crash Gauntlet
 
@@ -90,9 +120,9 @@ That question is the whole next chapter. I didn't know it yet, sitting there tha
 
 ## Saturday 25 – Sunday 26 July 2026 — Boxes That Would Not Stop Vibrating
 
-Pointed a session at comparing my own OBB collision code against how `phaser-box2d` does it, hoping to borrow enough to stop the shaking. It didn't go well. "boxes dont even stack now! and they vibrate all over." Tried again — the balls started vibrating too, and they'd been fine. "still very wrong!" Tried a third time and lost ground I'd already had: "ahora se rompio todo y volvimos a antes q vibran en el piso sin colisiones!" — now everything's broken and we're back to before, vibrating on the floor with no real collision at all. By the end of one session I was asking out loud whether the boxes' center of mass was even computed right, because nothing else explained what I was seeing.
+Went digging through `phaser-box2d`'s own OBB and collision code, comparing it against mine, hoping to borrow enough to stop the shaking. It didn't go well. "boxes dont even stack now! and they vibrate all over." Tried again — the balls started vibrating too, and they'd been fine. "still very wrong!" Tried a third time and lost ground I'd already had: "ahora se rompio todo y volvimos a antes q vibran en el piso sin colisiones!" — now everything's broken and we're back to before, vibrating on the floor with no real collision at all. By the end of one session I was asking out loud whether the boxes' center of mass was even computed right, because nothing else explained what I was seeing.
 
-In the middle of all that, a real fork in the road, typed out plainly: given how complex OBB and friction were turning out to be, and given that the old circles-plus-constraints trick in `ConstraintBoxScene` was working *better* than the real oriented boxes I was trying to build — what if I just kept not thinking about angular velocity at all? The problem with that answer was obvious too: circles don't stack. They're round. A box made of circles drifts until the curves find a compromise instead of sitting flat.
+In the middle of all that, a real fork in the road: given how complex OBB and friction were turning out to be, and given that the old circles-plus-constraints trick in `ConstraintBoxScene` was working *better* than the real oriented boxes I was trying to build — what if I just kept not thinking about angular velocity at all? The problem with that answer was obvious too: circles don't stack. They're round. A box made of circles drifts until the curves find a compromise instead of sitting flat.
 
 I asked which existing 2D engine would be easiest to bolt onto this architecture. The next evening, half-serious, I asked for a plan to bring in Rapier instead of fixing what I had.
 
@@ -351,7 +381,7 @@ Dense day. The shader does the whole look now — no more tint as a crutch under
 
 ## Friday 12 – Saturday 13 December 2025 — Shadows That Actually Follow the Light
 
-Light formula refined, every component gets an `active` flag. Then I actually sat down with the profiler and went looking for garbage collection pauses, and found two real ones. `particle_worker` was building a brand-new camera-bounds object, every single frame, just to check what's on screen — so I gave it one scratch object, `_cameraBounds`, and started writing into the same one instead. `pixi_worker` was worse: every frame it built a fresh array and a fresh `{entityId, sprite, y}` object per visible sprite, just to sort them by depth — so that became `_ySortPool`, a pool of objects reused frame to frame, only truncated to the active count before sorting.21212
+Light formula refined, every component gets an `active` flag. Then I actually sat down with the profiler and went looking for garbage collection pauses, and found two real ones. `particle_worker` was building a brand-new camera-bounds object, every single frame, just to check what's on screen — so I gave it one scratch object, `_cameraBounds`, and started writing into the same one instead. `pixi_worker` was worse: every frame it built a fresh array and a fresh `{entityId, sprite, y}` object per visible sprite, just to sort them by depth — so that became `_ySortPool`, a pool of objects reused frame to frame, only truncated to the active count before sorting.
 
 Then the big one: projected shadows, wired into the real rendering pipeline this time, not a test file. `ShadowCaster` as a component. The trick is a rotation, not a flip — point the shadow sprite away from the light with `atan2`, then stretch it, width from the caster's radius, length growing the farther the light is:
 
