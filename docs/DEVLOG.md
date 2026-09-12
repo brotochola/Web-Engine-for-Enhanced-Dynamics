@@ -8,6 +8,26 @@ Demos are how the engine gets tested. They are not the product. The engine is th
 
 ---
 
+## Monday 27 July 2026 — Kinda Back to Where We Were
+
+The biggest single commit of the stretch, and the name undersells it. Real polygon colliders. A contact-sync test suite. OBB collision tests expanded. Actual benchmark numbers captured to a file this time, not eyeballed off a debug overlay. Three days of OBB work that had drifted sideways somewhere in the middle — I don't have a clean account of exactly where, just that it did — landing back on solid ground. Just with real tests under it now. The day before everything about physics in this engine changes anyway.
+
+## Saturday 25 – Sunday 26 July 2026 — Making It Actually Stable
+
+`OrientedBox` dynamics refined, physics sleeping reworked to account for the new shape correctly. "stable" as a checkpoint commit — the kind you leave yourself when something finally stops fighting back.
+
+## Friday 24 July 2026 — Oriented Boxes, and a Real Test of the Hypothesis
+
+`OrientedBox` lands as a real collider shape. `Ray` gets extended to actually intersect one, `PhysicsDebugRenderer` can draw one. And right alongside it, in the same commit: `ConstraintBoxScene` — the old trick, circles held rigid by a distance constraint, the same approach the first car used back in February — built as a direct side-by-side against `OrientedBoxScene`. This was the actual test of the hypothesis: could constraints fake a rigid rectangle well enough that real oriented boxes were never necessary? Building both scenes at once was the only honest way to find out.
+
+## Tuesday 9 June 2026 — Lock-Free, For Real This Time
+
+The free list becomes a real Treiber stack — compare-and-swap push and pop, not just an atomic counter that could still race under the wrong conditions. The initial ordering gets an eight-way interleave, so when multiple cores start popping from it at once, they're not all fighting over the same handful of cache lines. `copyWithin` replaces manual array shifting for active-entity lists — same operation, no per-element loop.
+
+Pixi stops re-walking the world every frame it doesn't need to — stale-frame gating, skip the pass entirely if nothing new arrived. The leftover sprite-animation code path gets removed outright, because the render queue already is the renderer; that second path was dead weight pretending to be a feature. Ray traversal, `PreRenderWorker`, `Grid`, `Mouse`, `Camera`, `Keyboard` all get touched the same evening — not one big idea, just a night of sanding down rough edges across the whole render and input path.
+
+Then quiet. Six weeks pass before the next real push.
+
 ## Friday 15 May 2026 — Quiet
 
 `jsconfig.json` lands, a small thing. Then nothing of real weight for months. Not every stretch of a project is a story. Some of it is just maintenance, breathing room, other things pulling focus. The next real push doesn't come until the physics rewrite in July.
