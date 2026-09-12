@@ -8,6 +8,138 @@ Demos are how the engine gets tested. They are not the product. The engine is th
 
 ---
 
+## Friday 15 May 2026 — Quiet
+
+`jsconfig.json` lands, a small thing. Then nothing of real weight for months. Not every stretch of a project is a story. Some of it is just maintenance, breathing room, other things pulling focus. The next real push doesn't come until the physics rewrite in July.
+
+## Sunday 3 May 2026 — A Platformer, Just to See
+
+`PlatformerGameScene`, a real character controller, platforms you can stand on. Not because the engine needed a platformer — because if the public API can't hold up a genre this different from flocks and top-down shooters without fighting you, the API isn't actually general. First real type definitions land the same day, `weed.d.ts`, so an editor can tell you what a `GameObject` has before you guess and check the console.
+
+## Friday 1 May 2026 — The Biggest Cleanup Day
+
+One day, an enormous amount of ground covered. Visibility-polygon buffers get reworked in both Pixi and pre-render. Decorations get generation tracking and active-list locking so a decoration that's mid-despawn can't get reused out from under something still reading it. Query results get precomputed into real snapshots instead of recalculated live. `BulletPool` and `ParticleEmitter` warn you now instead of silently doing nothing when their pool runs dry — that used to just fail quiet, which is worse than crashing.
+
+The first real unit tests show up in the repo today — `buildSceneMemoryUsageReport`, `preInitializeEntityTypeArrays`. Small, but it's the first time "does this function actually do what the comment says" gets checked by code instead of by eyeballing a demo.
+
+And `Ray` grows up: `castWithInfo`, `castAll`, `linecast` all take an optional `out` parameter now. January's fix was an internal pool nobody outside `Ray.js` could see. This is that same idea, made a real public contract — pass your own object in if you need a result to survive past the next Ray call, otherwise you're borrowing a shared one and you'd better use it immediately. Mass finally syncs properly between `Collider` and `RigidBody` instead of drifting apart. Version 0.5.2. A README that actually describes what's here now, not what was here in November.
+
+## Friday 10 April 2026 — QuerySystem, Round Three
+
+Third real pass on the query system this year. Precomputed queries get versioned, so active-entity tracking doesn't have to guess whether its cached answer is stale. `Keyboard` gets held-state and press counters, same idea `Mouse` got back in December. `BulletPool` and `BulletComponent` graduate into the public `WEED` namespace — they'd been living as demo code for months before that.
+
+## Friday 3 April 2026 — Adobe Animate Joins the Engine
+
+A whole new animation pipeline: characters authored in Adobe Animate, playable in the engine. Same day, immediately after landing it: a pass to eliminate per-frame allocations across the entire pipeline, with enough exclamation marks in the commit message that I clearly meant it. Ship the feature, then don't let it get away with being slow just because it's new.
+
+## Wednesday 1 – Thursday 2 April 2026 — A Real Benchmark Harness, Decorations Get Parents
+
+Playwright tracing and memory snapshots, wired into an actual benchmark script — thirty thousand lines of trace data from one run, because now there's a real record of what a frame costs instead of a feeling. Decorations become children of GameObjects, with real z-index, so a tree can move with whatever it's attached to instead of being stuck to world coordinates forever.
+
+## Wednesday 25 – Saturday 28 March 2026 — Balls Were Escaping, and Headless Was Lying
+
+A real bug — "balls were escaping!!" — chased down alongside manual loop-unrolling in the physics worker and real profiling on particle and physics timings. Then the bigger lesson, the one that changes how every benchmark gets run from here on: headless Chrome renders WebGL and WebGPU differently than a real window does. "we need to run it with headless:false, otherwise webgpu and webgl work differently." Ran the benchmarks headed after that. Called the headless results "headless torsos" in the commit right before, which in hindsight was a pretty good description of what they actually were — bodies with nothing real behind the numbers.
+
+## Sunday 22 – Tuesday 24 March 2026 — Constraints Get Dense, Bodies Get Mass Properly
+
+A dense array of active colliders, built once per frame, holding only the ones that actually have collision candidates — the comment I left on it says exactly why: "eliminating thousands of empty loop iterations in sub-stepping." Constraints get the same dense treatment. A distance-constraint stability fix. Mass initialization gets refactored so a dynamic body without a collider-derived mass defaults sanely instead of quietly being wrong. Sleeping comes back into the mix, clouds cast shadows, and the interleaved entity-position buffer that had come and gone before shows up again in the spatial worker — apparently that idea just keeps being worth revisiting.
+
+## Sunday 15 – Monday 16 March 2026 — Layers Own Their Backgrounds, Collisions Get Layers and Masks
+
+A real overhaul of how layers work: backgrounds belong to layers now, not scenes, and custom layers can route particles, decorations, bullets to themselves by `layerId`. `Collider` gets `collisionLayer` and `collisionMask`, and `Ray` takes the same mask, so you can finally ask "does this hit anything on this specific layer" instead of "does this hit anything, and I'll check the type myself after." `CameraInOutListener` so an entity can react to entering or leaving the viewport without polling `Camera` every tick. `Layer.alpha` synced across workers with atomics.
+
+## Saturday 14 March 2026 — Visibility Polygons
+
+The lighting system's fifth real form this year. Not a shader, not `LightEmitter`, not a projected blob — actual raycasted visibility polygons, `LightOccluder` as a component, so a light can be genuinely blocked by geometry instead of just fading with distance. "ok. we need another type of shadows," and this time it's the type that can hide behind a wall. Production builds start stubbing debug code out of the bundle entirely around the same time — the debug UI was never meant to ship.
+
+## Friday 13 March 2026 (afternoon into evening) — One Debug-Draw API Instead of a Pile of Overlays
+
+Raycast visualization used to be its own one-off thing. Replaced it with `DebugDraw` — lines, circles, text, real primitives, synced across threads so what you see matches what's actually happening on whichever worker owns the data, centralized on `Scene` instead of scattered wherever a raycast happened to need to show itself.
+
+## Friday 13 March 2026 (morning) — Consolidating Debug, Hunting a NaN
+
+`DebugUI` split into real submodules instead of one growing file. Browser hardening — no context menu on right-click, because a game shouldn't feel like a webpage. `Mouse` gets real press/release edge detection instead of just "is the button down right now." A NaN hunt in physics that took most of the morning. And max-acceleration properties stripped off of every entity that had one — `Ball`, `Boid`, `Box`, `Bug`, `CarPart`, all of them — because that cap had been fighting the physics more than helping it for a while.
+
+## Wednesday 11 – Thursday 12 March 2026 — Layers With Shaders, and Waterrr
+
+Custom layers can carry their own shader now, not just a look. `WaterAndBoxesScene` is the proof — `WaterBall` entities, a metaball fragment shader, collision-triggered particle bursts. This is a **look**, built entirely in demo code (`demos/gameObjects/waterBall.js`, a `.frag` file) — not LiquidFun, not real fluid physics. That's still months away. `RenderQueueLayout` lands the same window, so every custom layer computes its buffer size the same documented way instead of each one inventing its own math.
+
+## Saturday 7 March 2026 — A Real Audio System
+
+Audio queue, a scene-selection screen so you're not always booting straight into Predator, spatial sound, real metrics for audio in the debug UI. An FSM/tick-decimation bug caught and fixed. Canvas auto-resizes now instead of assuming a fixed size. And after a week of fighting the build pipeline across babel, webpack, and worker bundling: "bundle works fine!" — four words that took a lot longer to earn than they read.
+
+## Tuesday 3 March 2026 — Self-Driving Cars on a Flowfield
+
+A car can load an external, static flowfield and just follow it — no player, no input, the field does all the steering. First real README/philosophy pass on the project, and a new gif to go with it, because by now there's actually something worth showing someone in twenty seconds.
+
+## Sunday 1 – Monday 2 March 2026 — Cars Get a Voice
+
+AI-driven cars, tuned until they stop feeling like a boat. Sparks and smoke when they crash into something. And the first real sound effects on GameObjects — not a beep, actual audio tied to actual events.
+
+## Wednesday 18 – Friday 27 February 2026 — Chasing a Flicker
+
+Scene-unload memory leaks patched — `Grid`, `NavGrid`, `SpriteSheetRegistry` all get reset methods now, so switching scenes doesn't leave the last world's ghosts in memory. `Flash` loses its `Collider` entirely, so it stops paying spatial-hash rent it never needed to pay in the first place — it doesn't collide with anything, why was it in the grid. A `Car` class gets deleted outright, didn't survive contact with wherever the redesign was going. And the balls-scene flicker that had been bugging me finally gets traced down: a stale `visibleEntitiesData` buffer, one frame behind where it should be. Removed the buffer, went to direct visibility checks instead. Sometimes the fix for a flicker isn't a new system, it's deleting the one that was lying to you.
+
+## Monday 16 February 2026 — Sun, and the First Car
+
+`Sun` becomes a static class every worker can read from directly — one shared source of truth for shadow direction and the day/night cycle, instead of each worker guessing. `heightMultiplier` replaces `shadowRadius` for how tall a shadow gets cast.
+
+And the first car. I didn't have oriented boxes yet — that's still five months away. So a car is two circles, `CarPart` front and back, joined by a `Constraint` distance-joint holding them a fixed distance apart. The sprite draws at their midpoint, rotated to the angle between the two circles. It looks like a rigid rectangle. It's actually two dots and a spring pretending to be rigid. Part of the hope was that this might just be enough — that constraints could fake rectangle physics well enough that I'd never need a real oriented box. Steering came right after: speed-sensitive, so it doesn't feel like a boat at any speed.
+
+## Saturday 14 February 2026 — The Worker Born in January Gets Deleted
+
+`nav_worker` — maybe a month old, built in January for pathfinding — removed outright. Its job folds into `particle_worker` and a brand new `pre_render_worker`, because it turns out pathfinding and shadow-queue building didn't need a whole dedicated thread to themselves. Real physics constraints land the same day — joints, cloth, something you can actually build a ragdoll or a rope out of. Render queues get double-buffered so `pre_render_worker` can write the next frame while `pixi_worker` is still reading the current one.
+
+## Thursday 12 February 2026 — Any Worker Can Spawn Now
+
+Atomic spawn and despawn through SAB-backed free lists. Before this, every spawn request had to route through worker 0 first, because that was the only one allowed to touch the free list safely. Now any worker can claim a slot atomically. One less thing that has to funnel through a single point.
+
+## Wednesday 11 February 2026 — I Hate Synching Shit
+
+Light glow sprites fold into the main particle container instead of needing their own separate one. Shadows stop disappearing the instant their caster walks offscreen. Job stealing ripped out of the spatial worker, in my own words: "i hate synching shit dedup in spatial worker." The dedup logic across workers cost more than the load balancing was worth. Flashes get fixed by removing flash logic from the particle worker entirely — it never belonged there, it belonged with `Flash` itself.
+
+## Tuesday 10 February 2026 — 150 FPS Render, But Shadows Broke
+
+`particle_worker` starts building the actual render queue that `pixi_worker` just consumes, instead of Pixi walking the whole entity list itself every frame. 150 FPS. Same commit: shadows broke. Spent the rest of the session rebuilding shadows on top of the new queue — entity type and index carried along with each item, a texture lookup added, the whole thing pre-sorted before it ever reaches Pixi. You don't get the speed for free. You get the speed, then you pay off what it broke.
+
+## Monday 9 February 2026 — A Real Bundle
+
+First real `dist` build. Then an ESM version alongside the UMD one. Then telling the minifier to stop mangling the names that other code needs to actually find at runtime.
+
+## Friday 6 – Saturday 7 February 2026 — 130 to 150, Then 160 Without Touching Anything
+
+The single densest GC day yet. `QuerySystem` caches subarray views instead of slicing fresh ones. Neighbor arrays become `Uint16Array`. `gameObjects` gets pre-allocated in `LogicWorker` so V8 never sees a sparse array. Collision keys get normalized so there's no pair cache to maintain at all — the inverse Cantor pairing function recovers both entity IDs straight from the key, no lookup, no cache. A texture-id typed array replaces a `Map` in the renderer. Visible lights get precomputed into two pools instead of walked fresh every frame.
+
+The particle worker goes from 130 FPS to 150. Physics hits 160 on the exact same Predator demo, without touching anything, ten seconds after boot — sometimes the number moves because the JIT finally finished warming up, not because you did anything that day. Active-entity tracking goes from an O(N) full rebuild every frame to O(1) incremental updates on spawn/despawn, and the active list gets sorted, because it turns out the workers process a sorted list faster.
+
+One optimization shipped and got reverted in this same window: skipping neighbor updates for sleeping entities. Looked free. Wasn't — stale `RigidBody` data on entities that had despawned and respawned was causing false positives. Left a note to come back to it once despawn actually clears component data instead of leaving it stale.
+
+## Wednesday 4 February 2026 — Collision Candidates!!!
+
+Neighbor search moves to a spiral pattern around each cell instead of a flat scan, with early returns once you've found enough. Then the real win: a collision-candidate list built once per frame and handed to the physics worker directly, instead of physics re-deriving who might be touching whom from scratch every substep. My own exclamation marks in the commit message, not mine to add.
+
+## Wednesday 5 February 2026 — Flowfields That Know About Walls
+
+Averaging a flowfield now actually accounts for unwalkable cells instead of blending straight through them like they weren't there. A nicer-looking tilemap the same evening, unrelated, just something that had been bothering me.
+
+## Tuesday 3 February 2026 — STOP FUCKING AROUND WITH THE PHYSICS WORKER!
+
+Earlier that day: `QuerySystem` gets real `SharedArrayBuffer` support, and the particle and physics workers start filtering to active entities only instead of walking the full list and checking a flag per entity. Small, real wins, the kind that don't need a story.
+
+Then, that evening: spatial workers switched from interleaved row ownership (`row % totalWorkers`, so worker 0 gets rows 0, 4, 8, 12…) to block-based ownership — each worker owns a contiguous chunk of rows instead of scattered ones. The hypothesis: entities near each other in the world are more likely owned by the same worker, so fewer neighbor lookups have to cross worker boundaries. That one stuck.
+
+Then, two hours later, this commit. The actual code change is nothing — one blank line in `physics_worker.js`. What really happened is in `todo.txt`: I deleted a whole paragraph I'd written to myself about Morton-code cell indexing for cache locality, turning `QuerySystem` into bitmasks instead of string keys, removing every division in favor of multiplication. No bug. No revert. I caught myself sketching next-level physics-worker research instead of shipping anything, and the commit message is me telling myself to stop.
+
+## Sunday 1 February 2026 — Static Properties, After Decades
+
+Neighbor search used to check a 3×3 box of grid cells around each entity — nine cells, including the far corners, even though the actual search area is a circle, not a square. Fixed it properly: `generateSymmetricalCirclePattern` precomputes a real circle-shaped list of cell offsets for every possible search radius, once, at startup, cached in a map. A second cache remembers which actual cell indices that shape points to for a given cell, so even the offset-to-index math only happens the first time.
+
+A GC sweep across the particle, Pixi, logic, and nav workers — reusing sets and arrays instead of allocating fresh ones every frame. Separation force only kicks in when a soldier is idle, not constantly. And somewhere in the middle of all this, a small realization, exactly as written: "i think just now i understood why they are called static properties.. after decades of using them :P"
+
+## Monday 2 February 2026 — Sleeping Bodies, Sleeping Cells
+
+Bodies that stop simulating once they're not moving. Then, later the same day, cells themselves learn to sleep too — a whole region of the grid can stop doing work if nothing in it is active. A note to myself mid-session: "this is a commit to leave the physics worker alone for some time." Muzzle lines and a sway calculation land on the shooting side, unrelated, just because they were next on the list.
+
 ## Saturday 31 January 2026 — Mouse Stops Pretending to Be an Entity
 
 Tick intervals staggered across entities so they don't all recompute the same thing on the same frame. `invertedMass` for collision response. Shooting. Punching. And Mouse, which became a GameObject back in December because that made the plumbing easier, stops being one — it wasn't the right fit, and the mapping-table lesson from a month ago made that obvious the moment I looked at it again. Month closes on a version bump.
