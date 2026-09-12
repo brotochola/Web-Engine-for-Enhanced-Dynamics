@@ -1,77 +1,47 @@
 # WeedJS Dev Log
 
-A journal of what we built, why it mattered, and how it felt to get there.
+Newest first. This is not a changelog. This is the journey of trying to make the browser behave like a console — like a PlayStation.
 
-Subsystem docs stay the source of truth for APIs and invariants. This file is for the story. Newest entries first. Write like you are showing a friend the experiment on stream: optimistic, specific, a little in love with the problem.
+Every entry here is something I wanted: more speed, an easier API, a feature that still holds 60 FPS, or something I had to learn about how engines, or the machine itself, actually work. A lot of it came from benchmarking, breaking things, and figuring out why. Titles are the want, not the API. The systems and the APIs live in the body of the entry.
 
-**How to add an entry:** copy the heading below, put a local date and time, tell the story, then drop anything you still want to remember into _Gaps_.
+Demos are how the engine gets tested. They are not the product. The engine is the product.
 
 ---
 
-## Friday 11 September 2026, 10:03 PM ART — Two puddles, one universe
+## Sunday 2 November 2025 — Can Two Workers Talk Without the Main Thread in the Middle?
 
-Alright. I want to tell you about a bug that looked like magic until it wasn't.
+New scratch folder, `render_from_webworkers_and_multithreading`. 1200 boids, still plain objects with a `class Boid` and a naive O(n²) neighbor loop — the win tonight is not the algorithm, it is the wiring.
 
-We had LiquidFun running in WeedJS. Real fluids. Thousands of particles. Box2D 3 compiled to multithreaded WASM, sitting on a SharedArrayBuffer, ticking inside the physics worker. You can spray honey, you can drop ice, you can watch a tank slosh. It is one of those systems where you zoom out and think: _the browser can do this now. That is wild._
+I built a `MessageChannel` on the main thread, then immediately gave both of its ports away — one transferred into the logic worker, one into the Pixi worker. Now they talk to **each other**, directly. The main thread just handed out a canvas and got out of the way.
 
-Then we asked a boring, almost rude question.
+Double-buffered `Float32Array`s for position, rotation, scale. Every frame the logic worker transfers its back buffer straight into the Pixi worker's hands with `postMessage(data, [buffer, buffer, ...])` — no copy, the memory just changes owners. A `waitingForReturn` flag so logic never outruns the buffer Pixi is still drawing from.
 
-If we take the same scene, inject the same 100 steps of 16.67 ms, and take two screenshots… do they match?
+The main thread renders nothing and touches no boid data. It is not "free" the way `_webworkers` was free. It is not even in the conversation.
 
-Not “look similar.” Match. Same pixels. Same particle positions. Bit for bit.
+## Thursday 28 April 2022 — Can Physics Run on Its Own Clock, Away from the Screen?
 
-They did not.
+Before there was any engine, there was `ropeball`. Ten thousand circles, and a question: can the physics live somewhere the render loop cannot touch it, and still look smooth?
 
-### The screenshot that should have been boring
+`RopeBallEngine` runs on Verlet integration — no velocity field anywhere. Just current position and previous position, `x/y` and `px/py`. Velocity is just the difference between the two, implicit, free. Collisions are resolved by nudging positions directly, not by pushing forces around.
 
-We built a headed lockstep harness for this (`pnpm test:visual`). Manual step. Serial pipeline. No “the GPU woke up in a funny mood.” Two runs. Hash the LiquidFun poses. Diff the PNGs.
+Ten thousand balls means naive collision checking is out of the question, so the world is a grid of chunks, and each ball only checks the balls in its own chunk and the ones next door. O(n²) down to something closer to O(n).
 
-At ninety steps the stress puddle was already lying to us. Same particle _count_ — 12,753 and 12,753, very polite — and a transform hash on the floors that matched, and then the fluid hash did not, and a couple thousand pixels disagreed. Step one was exact. Step two was already two pixels off. That is the universe splitting in half while you are still tying your shoes.
+The physics worker runs its own `setInterval`, on its own schedule, completely separate from whatever the main thread's `requestAnimationFrame` is doing. The main thread keeps its own last-two-frames of positions and **interpolates** between them, so the screen can paint faster than the physics ticks. Physics at 60, paint at whatever the monitor wants.
 
-And here is the part I love: the first story we told ourselves was wrong, and it was wrong in a _useful_ way.
+That interpolation trick is the one I would carry into every worker architecture after this. Physics does not have to run at render rate. It just has to leave enough breadcrumbs for render to fake the rest.
 
-### The story that was too tidy
+## Saturday 8 April 2023 — Can Code Run Without Freezing the Page?
 
-The docs said in-step `parallel_for` was a later lever. A thing on the sibling ROADMAP. So of course the drift was “multithreaded Box2D, what are you gonna do,” or maybe “the solver is four threads and physics is chaos.” We even knew not to force `box2dWorkerCount: 1` for the visual gate, because production is a 4-wide pthread pool and the product is the product.
+I had a scratch folder called `_webworkers`. No framework, no plan, just a question: if I run something heavy, does the page have to freeze while it runs?
 
-We opened the sibling C anyway. `lf_particle_system.c`.
+Web Workers were the answer. `worker.js` is where I proved it: a pool of them, one per `navigator.hardwareConcurrency`, sitting idle until I hand one a job. `mandarAProcesarEnSegundoPlano` (send-it-to-run-in-the-background) picks whichever worker is free, marks it `working`, and ships it a function — literally `func.toString()` over `postMessage`, `eval`'d on the other side. Ugly, but it proved the point: the main thread asked a question, a second thread answered it, and the page never stopped painting.
 
-Contacts were already parallel.
+That is the whole engine, in embryo. Years before there was any GameObject or SharedArrayBuffer, there was just: the CPU has more than one lane, and JavaScript can use more than one of them.
 
-When you have enough particles (4,096 or more), `FindParticleContacts` farms the work onto the same Box2D worker pool Weed already uses. Threads steal blocks. Each worker pushed the contacts it found into `contactBucket[workerIndex]`. Then we concatenated buckets 0, 1, 2, 3.
+## Saturday 11 January 2025 — Can a Worker Keep Its Own Clock?
 
-Same _set_ of contacts. Different _order_, depending on who finished which block.
+Almost two years later I came back to that same folder and asked a different question. So far every worker had been a function-in, result-out box — the main thread decided when it ran. What if the worker just... kept its own time?
 
-Now. Addition is not associative in float32. Pressure and tensile walk that list. You shuffle the walk, you get a slightly different impulse, you integrate a slightly different velocity, and two frames later your puddle has moved to a neighboring timeline.
+`interval_worker.js` runs `requestAnimationFrame` **inside** the worker. Not triggered from outside, not polled — the worker has its own loop, its own `lastTime`, and posts a frame of data back on its own schedule. That is a different animal from a job queue. That is a thread that lives.
 
-Gravity and integrate were still serial. The demo on the C side only checked count and center of mass. Of course it looked fine. COM does not care about the poetry of contact order.
-
-That is such a satisfying bug. Nothing is “random.” The code is doing exactly what you asked. You just asked for “merge however the workers arrived,” and floating point said “okay, I will remember that.”
-
-### The fix that is almost too small
-
-We did not sort.
-
-Sorting would have made the order canonical and also would have made the hot path sad, and we already burned a hypothesis on `qsort` once (H5: insertion sort lost; the array was not the tiny cap we thought it was). So the move was: stop bucketing by _worker_. Bucket by _block_. Steal still unique per block, still load-balanced. Merge `k = 0 .. blockCount-1`. That _is_ the serial `for i in 0..n` walk. Same contacts. Same order. Threads still get to be threads.
-
-Rebuild with `weedjs\build_for_weed.bat`. Copy the WASM. That is the whole product from the sibling tree. We do not care about `test.exe`. We do not need a native demo binary. The browser is the stage.
-
-### Did it work?
-
-Node WASM tests still green. Ray stress as a control scene stayed in band, because rays should not care about particle contact buckets. LiquidFun itself picked up about 0.15 ms — a few percent. We will take a sliver of a millisecond for a universe that does not fork.
-
-Then the fun part. One hundred lockstep steps. Two runs.
-
-`liquidfun` demo: CPU match, **0 / 921,600** pixels different.
-
-`lfstress`: CPU match, **0 / 921,600** pixels different.
-
-I want you to sit with that for a second. A multithreaded particle fluid, in a web worker, with a stolen-block parallel contact pass, and the screenshot is a fingerprint. You can put that on a T-shirt.
-
-The catalog now treats those two scenes as `exact`. The water-and-boxes demo stays `not-black` on purpose — those are rigid metaball balls, not LiquidFun, and Box2D's own contact order is a different movie.
-
-### What this is really about
-
-WeedJS is trying to be a serious 2D engine in the place people actually ship games with a URL. Shared memory. Workers. WASM. The whole “fastest 2D engine” dare. Determinism is not a luxury for a replay tool we might never write. It is how you know the experiment is the same experiment tomorrow.
-
-Specs: [`LIQUIDFUN.md`](./LIQUIDFUN.md), [H10 in `LIQUIDFUN_HYPOTHESES.md`](./LIQUIDFUN_HYPOTHESES.md). Visual catalog: `tests/bench/lockstepVisualScenes.mjs`.
+It still posts an array of `{x, y}` objects every frame, one per boid-to-be. I had not yet learned that was expensive. That lesson was next.
