@@ -23,7 +23,7 @@ export class House extends GameObject {
 
   setup() {
     this.rigidBody.static = 1;
-    const type = Math.random() > 0.5 ? 1 : 2;
+    const type = rng() > 0.5 ? 1 : 2;
     this.setSprite('house' + type);
 
     this.collider.shapeType = ShapeType.Box;

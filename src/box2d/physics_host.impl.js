@@ -496,8 +496,11 @@
 
   function writeFPS() {
     if (state.frameRateData && state.frameRateIndex >= 0) {
-      state.frameRateData[state.frameRateIndex * state.frameRateStride] =
-        state.currentFPS;
+      var base = state.frameRateIndex * state.frameRateStride;
+      state.frameRateData[base] = state.currentFPS;
+      if (state.frameRateStride > 1) {
+        state.frameRateData[base + 1] = state.frameNumber;
+      }
     }
     if (state.stats) {
       state.stats[PS.FPS] = state.currentFPS;
@@ -891,17 +894,17 @@
 
     if (state.box2dReady) {
       var t0 = performance.now();
-      var dt = deltaTime / 1000;
-      // Stutter guard: cap a single step's dt so one huge frame hitch can't
-      // hand Box2D/LiquidFun an unstable step. Ceiling tracks a deliberately
-      // configured physics.fixedFps (large single steps already trade off
-      // some solver stability, same tradeoff AbstractWorker's own 100ms
-      // deltaTime clamp accepts elsewhere) instead of a fixed 20fps-equivalent —
-      // otherwise fixedFps < 20 gets silently re-capped and the sim runs in
-      // slow motion (fixedFps:10 simulated dt=0.05 out of a real 0.1s elapsed
-      // == half speed) rather than "same speed, bigger/rarer steps".
-      var maxDt = state.fixedFps > 0 ? 1 / state.fixedFps : 1 / 20;
-      if (dt > maxDt) dt = maxDt;
+      var dt;
+      if (state.fixedFps > 0) {
+        // Lockstep: ignore wall clock so each interval fires the same sim step.
+        dt = 1 / state.fixedFps;
+      } else {
+        dt = deltaTime / 1000;
+        // Stutter guard: cap a single step so one hitch cannot hand Box2D /
+        // LiquidFun an unstable dt. Variable-rate path stays at 1/20s.
+        var maxDt = 1 / 20;
+        if (dt > maxDt) dt = maxDt;
+      }
       if (dt > 0) {
         weedjsDoStep(dt, state.settings.subStepCount);
       }
@@ -922,6 +925,23 @@
     } else {
       requestAnimationFrame(gameLoop);
     }
+  }
+
+  function stepOnce(deltaTimeMs) {
+    if (!(deltaTimeMs > 0)) deltaTimeMs = 1000 / 60;
+    state.frameNumber++;
+    state.lastFrameTime = performance.now();
+    state.currentFPS = 1000 / deltaTimeMs;
+    var dt = deltaTimeMs / 1000;
+    if (state.box2dReady && dt > 0) {
+      var t0 = performance.now();
+      weedjsDoStep(dt, state.settings.subStepCount);
+      if (state.stats) {
+        state.stats[PS.STEP_MS] = performance.now() - t0;
+      }
+    }
+    writeFPS();
+    state.messageTimeThisFrame = 0;
   }
 
   function clearSchedulers() {
@@ -957,6 +977,12 @@
         clearSchedulers();
       } else if (data.msg === 'resume') {
         startGameLoop();
+      } else if (data.msg === 'step') {
+        var stepMs = Number(data.deltaTime);
+        state.isPaused = false;
+        stepOnce(stepMs);
+        state.isPaused = true;
+        self.postMessage({ msg: 'stepDone', id: data.id | 0 });
       } else if (data.msg === 'updatePhysicsConfig') {
         applyPhysicsConfig(data.config || {});
       } else if (data.msg === 'snapshotLiquidFun') {

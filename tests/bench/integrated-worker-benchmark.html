@@ -3,6 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <title>Integrated Worker Benchmark</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "/src/index.js": "/dist/weed.bundle.esm.min.js"
+      }
+    }
+  </script>
 </head>
 <body>
   <script type="module">
@@ -131,6 +138,9 @@
         import(sceneModule),
         import('/tests/bench/workerBenchmarkMetrics.js'),
       ]);
+      if (typeof WEED.ensureEmbeddedSources === 'function') {
+        await WEED.ensureEmbeddedSources();
+      }
       const SceneClass = sceneModuleExports[sceneExport];
       if (!SceneClass) {
         throw new Error(`Benchmark scene export "${sceneExport}" not found in ${sceneModule}`);

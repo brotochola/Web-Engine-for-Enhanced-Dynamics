@@ -191,6 +191,9 @@ class Scene {
       },
     });
 
+    this._stepSeq = 0;
+    this._stepWaiters = new Map();
+
     // Worker synchronization
     this.workerReadyStates = {
       physics: false,
@@ -959,8 +962,11 @@ class Scene {
     // LIFECYCLE PHASE 3: Start everything.
     // Main thread loop first (for input handling), then worker game loops.
     // Workers see a fully populated scene with infrastructure ready on frame 1.
-    this.startMainLoop();
-    this.startAllWorkers();
+    // manualStep: tests drive time via stepFrame(); loops stay paused.
+    if (!this.config.manualStep) {
+      this.startMainLoop();
+      this.startAllWorkers();
+    }
   }
 
   /**
@@ -1637,6 +1643,14 @@ class Scene {
   handleMessageFromWorker(e) {
     if (e.data.msg === 'log') {
       return;
+    } else if (e.data.msg === 'stepDone') {
+      const waiter = this._stepWaiters.get(e.data.id | 0);
+      if (!waiter) return;
+      waiter.pending.delete(e.currentTarget.name);
+      if (waiter.pending.size === 0) {
+        clearTimeout(waiter.timer);
+        waiter.resolve();
+      }
     } else if (e.data.msg === 'workerReady') {
       console.log(`[Scene] 📬 Received 'workerReady' message from ${e.currentTarget.name}`);
       this.handleWorkerReady(e.currentTarget.name);
@@ -1846,6 +1860,165 @@ class Scene {
       }
     }
     console.log(`[Scene] ✅ All start messages sent`);
+  }
+
+  /**
+   * One lockstep frame: main-thread update, then workers in pipeline order.
+   * Requires config.manualStep. Does not schedule further frames.
+   * @param {number} [deltaTimeMs=16.67]
+   */
+  async stepFrame(deltaTimeMs = 16.67) {
+    if (!this.config.manualStep) {
+      throw new Error('stepFrame requires config.manualStep: true');
+    }
+    const dt = Number(deltaTimeMs);
+    if (!(dt > 0)) {
+      throw new Error('stepFrame needs deltaTime > 0');
+    }
+
+    this.updateInternal(dt);
+
+    await this._stepWorkerGroup(this.workers.logicWorkers, dt);
+    await this._stepWorkerGroup(this.workers.physics ? [this.workers.physics] : [], dt);
+    await this._stepWorkerGroup(this.workers.spatialWorkers, dt);
+    await this._stepWorkerGroup(this.workers.particle ? [this.workers.particle] : [], dt);
+    await this._stepWorkerGroup(this.workers.preRender ? [this.workers.preRender] : [], dt);
+    await this._stepWorkerGroup(this.workers.renderer ? [this.workers.renderer] : [], dt);
+  }
+
+  /**
+   * @param {number} count
+   * @param {number} [deltaTimeMs=16.67]
+   */
+  async stepFrames(count, deltaTimeMs = 16.67) {
+    const n = count | 0;
+    for (let i = 0; i < n; i++) {
+      await this.stepFrame(deltaTimeMs);
+    }
+  }
+
+  _stepWorkerGroup(workers, deltaTime) {
+    const list = (workers || []).filter(Boolean);
+    if (list.length === 0) return Promise.resolve();
+    const id = ++this._stepSeq;
+    return new Promise((resolve, reject) => {
+      const pending = new Set(list.map((w) => w.name));
+      const timer = setTimeout(() => {
+        const waiter = this._stepWaiters.get(id);
+        if (!waiter) return;
+        this._stepWaiters.delete(id);
+        reject(new Error(`step ${id} timeout waiting for ${[...waiter.pending].join(',')}`));
+      }, 20000);
+      this._stepWaiters.set(id, { pending, resolve, reject, timer });
+      for (const w of list) {
+        w.postMessage({ msg: 'step', deltaTime, id });
+      }
+    }).finally(() => {
+      const waiter = this._stepWaiters.get(id);
+      if (waiter?.timer) clearTimeout(waiter.timer);
+      this._stepWaiters.delete(id);
+    });
+  }
+
+  /**
+   * FNV-1a of active Transform x/y/rotation bits (main-thread HEAP views).
+   * @returns {{ hash: string, count: number }}
+   */
+  hashActiveTransforms() {
+    const active = Transform.active;
+    const xs = Transform.x;
+    const ys = Transform.y;
+    const rot = Transform.rotation;
+    if (!active || !xs || !ys) {
+      return { hash: 'missing', count: 0 };
+    }
+    const bits = new Uint32Array(1);
+    const f32 = new Float32Array(bits.buffer);
+    let h = 2166136261 >>> 0;
+    let count = 0;
+    const n = active.length;
+    for (let i = 0; i < n; i++) {
+      if (active[i] === 0) continue;
+      count++;
+      h ^= i;
+      h = Math.imul(h, 16777619) >>> 0;
+      f32[0] = xs[i];
+      h ^= bits[0];
+      h = Math.imul(h, 16777619) >>> 0;
+      f32[0] = ys[i];
+      h ^= bits[0];
+      h = Math.imul(h, 16777619) >>> 0;
+      if (rot) {
+        f32[0] = rot[i];
+        h ^= bits[0];
+        h = Math.imul(h, 16777619) >>> 0;
+      }
+    }
+    return { hash: (h >>> 0).toString(16).padStart(8, '0'), count };
+  }
+
+  /**
+   * FNV-1a of live LiquidFun particle x/y bits. count 0 / hash 'none' if LF unbound.
+   * @returns {{ hash: string, count: number }}
+   */
+  hashLiquidFun() {
+    const views = LiquidFun.getViews();
+    if (!views?.x || !views.y || !views.count) {
+      return { hash: 'none', count: 0 };
+    }
+    const n = views.count[0] | 0;
+    const xs = views.x;
+    const ys = views.y;
+    const bits = new Uint32Array(1);
+    const f32 = new Float32Array(bits.buffer);
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < n; i++) {
+      h ^= i;
+      h = Math.imul(h, 16777619) >>> 0;
+      f32[0] = xs[i];
+      h ^= bits[0];
+      h = Math.imul(h, 16777619) >>> 0;
+      f32[0] = ys[i];
+      h ^= bits[0];
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return { hash: (h >>> 0).toString(16).padStart(8, '0'), count: n };
+  }
+
+  countActiveTransforms() {
+    const active = Transform.active;
+    if (!active) return 0;
+    let n = 0;
+    for (let i = 0; i < active.length; i++) {
+      if (active[i]) n++;
+    }
+    return n;
+  }
+
+  readWorkerStepMs() {
+    const one = (sab, slot) => {
+      if (!sab) return 0;
+      return new Float32Array(sab)[slot] || 0;
+    };
+    const multi = (sab, schema, count) => {
+      if (!sab || count < 1) return 0;
+      const view = new Float32Array(sab);
+      let sum = 0;
+      for (let i = 0; i < count; i++) {
+        sum += view[i * schema.STRIDE_FLOATS + schema.STEP_MS] || 0;
+      }
+      return sum;
+    };
+    const logicCount = this.config.logic?.numberOfLogicWorkers || 1;
+    return {
+      physics: one(this.buffers.physicsStats, PHYSICS_STATS.STEP_MS),
+      particle: one(this.buffers.particleStats, PARTICLE_STATS.STEP_MS),
+      renderer: one(this.buffers.rendererStats, RENDERER_STATS.STEP_MS),
+      preRender: one(this.buffers.preRenderStats, PRE_RENDER_STATS.STEP_MS),
+      spatial: multi(this.buffers.spatialStats, SPATIAL_STATS, this.numberOfSpatialWorkers),
+      logic: multi(this.buffers.logicStats, LOGIC_STATS, logicCount),
+      main: this.mainStepMs || 0,
+    };
   }
 
   /**

@@ -32,12 +32,13 @@ async function sampleMode(browser, baseUrl, mode) {
     return await page.evaluate(
       async ({ mode, fixedFps, sampleMs }) => {
         const sceneModule = '/demos/ballsScene/ballsScene.js';
-        const [{ BallsScene }, { Ball }, RenderQueueLayout, { RigidBody }] = await Promise.all([
+        const [{ default: WEED }, { BallsScene }, { Ball }, RenderQueueLayout] = await Promise.all([
+          import('/src/index.js'),
           import(sceneModule),
           import('/demos/ballsScene/gameObjects/ball.js'),
           import('/src/core/RenderQueueLayout.js'),
-          import('/src/components/RigidBody.js'),
         ]);
+        const { RigidBody } = WEED;
 
         // Deliberate, now-correctly-paced gap (dt-clamp fix): physics genuinely
         // simulates real time at fixedFps:12, renderer stays uncapped.

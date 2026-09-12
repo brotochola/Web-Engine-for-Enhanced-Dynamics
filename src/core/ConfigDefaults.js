@@ -216,6 +216,11 @@ export const SCENE_DEFAULTS = Object.freeze({
   worldWidth: 1000,
   worldHeight: 1000,
   seed: 1,
+  /**
+   * When true, Scene.init does not start the main rAF loop or worker loops.
+   * Drive simulation with scene.stepFrame(dtMs) / stepFrames(n, dtMs).
+   */
+  manualStep: false,
 });
 
 // ============================================================================

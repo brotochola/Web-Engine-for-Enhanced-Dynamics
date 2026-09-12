@@ -164,9 +164,9 @@ export class BluePlatformerPlayer extends GameObject {
 
   emitPArticlesAsIWalk() {
     if (this.platformerCharacterComponent.isItStandingOnPlatform > -1 && Math.abs(this.vx) > 0) {
-      const randomOffset = Math.random() * 2 - 1
+      const randomOffset = rng() * 2 - 1
       ParticleEmitter.emitFlat({
-        count: Math.random() * 3,
+        count: rng() * 3,
         x: this.x,
         y: this.y + randomOffset * 10 + 10,
         texture: '_whiteCircle',
@@ -183,7 +183,7 @@ export class BluePlatformerPlayer extends GameObject {
   emitPArticlesAsJump() {
 
     ParticleEmitter.emitFlat({
-      count: Math.random() * 3,
+      count: rng() * 3,
       x: this.x,
       y: this.y,
       texture: '_whiteCircle',

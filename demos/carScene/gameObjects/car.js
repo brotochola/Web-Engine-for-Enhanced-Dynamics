@@ -211,7 +211,7 @@ export class Car extends GameObject {
     }
 
     _emitDust() {
-        if (this.speed < 10 || Math.random() > 0.35) return;
+        if (this.speed < 10 || rng() > 0.35) return;
 
         randomUnitCS(_randCS);
         ParticleEmitter.emit({

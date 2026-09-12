@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WeedJS lockstep visual</title>
+  <script>
+    (function () {
+      const q = new URLSearchParams(location.search);
+      if (q.get('bundle') === '1' || q.get('bundle') === 'true') {
+        document.write(
+          '<script type="importmap">{"imports":{"/src/index.js":"/dist/weed.bundle.esm.min.js"}}<\/script>'
+        );
+      }
+    })();
+  </script>
+  <style>
+    html, body { margin: 0; background: #000; overflow: hidden; }
+    #particle-lab-panel, #liquidfun-demo-hud { display: none !important; }
+  </style>
+</head>
+<body>
+  <script type="module">
+    const params = new URLSearchParams(location.search);
+    const sceneId = params.get('scene') || 'balls';
+    const sceneModule = params.get('module');
+    const exportName = params.get('export');
+    const steps = Math.max(1, Number(params.get('steps')) || 90);
+    const dtMs = Number(params.get('dt')) || 16.67;
+    const minActive = Math.max(0, Number(params.get('minActive')) || 0);
+    const minLiquidFun = Math.max(0, Number(params.get('minLiquidFun')) || 0);
+    const minParticles = Math.max(0, Number(params.get('minParticles')) || 0);
+    const zoom = Number(params.get('zoom') ?? NaN);
+    const centerX = Number(params.get('centerX') ?? NaN);
+    const centerY = Number(params.get('centerY') ?? NaN);
+    const auto = params.get('auto') !== '0';
+
+    const weedMod = await import('/src/index.js');
+    const WEED = weedMod.default;
+    if (typeof WEED.ensureEmbeddedSources === 'function') {
+      await WEED.ensureEmbeddedSources();
+    }
+
+    const sceneExports = await import(sceneModule);
+    const SceneClass = sceneExports[exportName];
+    if (!SceneClass) {
+      throw new Error(`export ${exportName} missing in ${sceneModule}`);
+    }
+
+    SceneClass.config = { ...SceneClass.config, manualStep: true };
+
+    const { GameEngine, Camera, ParticleEmitter, ParticleComponent, LiquidFun } = WEED;
+
+    const game = new GameEngine({
+      autoResize: false,
+      canvasWidth: 1280,
+      canvasHeight: 720,
+      debug: false,
+    });
+    window.game = game;
+    await game.loadScene(SceneClass);
+    const scene = game.currentScene;
+
+    function hideOverlays() {
+      const ids = ['particle-lab-panel', 'liquidfun-demo-hud'];
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      }
+      if (scene._hud) scene._hud.style.display = 'none';
+      if (scene._hint) scene._hint.style.display = 'none';
+      if (scene._statusEl) scene._statusEl.style.display = 'none';
+    }
+
+    function countParticles() {
+      const a = ParticleComponent?.active;
+      if (!a) return 0;
+      let n = 0;
+      for (let i = 0; i < a.length; i++) if (a[i]) n++;
+      return n;
+    }
+
+    function liquidFunCount() {
+      try {
+        return LiquidFun.getParticleCount() | 0;
+      } catch {
+        return 0;
+      }
+    }
+
+    async function waitCount(get, min, label) {
+      if (min <= 0) return get();
+      const deadline = performance.now() + 120000;
+      let last = -1;
+      let stable = 0;
+      while (performance.now() < deadline) {
+        const n = get();
+        if (n >= min && n === last) {
+          stable++;
+          if (stable >= 4) return n;
+        } else {
+          stable = 0;
+          last = n;
+        }
+        await new Promise((r) => setTimeout(r, 16));
+      }
+      throw new Error(`${label} timeout: ${get()} need ${min}`);
+    }
+
+    Camera.setFree(false);
+    hideOverlays();
+    if (Number.isFinite(zoom) && zoom > 0) {
+      Camera.setZoom(zoom);
+    }
+    const cx = Number.isFinite(centerX) ? centerX : scene.config.worldWidth / 2;
+    const cy = Number.isFinite(centerY) ? centerY : scene.config.worldHeight / 2;
+    Camera.centerOn(cx, cy);
+
+    if (sceneId === 'particles') {
+      ParticleEmitter.emitZenithal({
+        texture: 'blood',
+        count: 80,
+        x: scene.config.worldWidth / 2,
+        y: scene.config.worldHeight / 2,
+        lifespan: 4000,
+        speed: 8,
+        z: -80,
+        vz: 0,
+        gravity: 0.9,
+        alpha: 1,
+        scale: 1,
+        tint: 0xff2222,
+      });
+    }
+
+    function snapshot() {
+      return {
+        transforms: scene.hashActiveTransforms(),
+        liquidFun: scene.hashLiquidFun(),
+        stepMs: scene.readWorkerStepMs(),
+        active: scene.countActiveTransforms(),
+        particles: countParticles(),
+        liquidFunCount: liquidFunCount(),
+      };
+    }
+
+    window.__weedLockstep = {
+      ready: true,
+      sceneId,
+      steps,
+      dtMs,
+      minActive,
+      minLiquidFun,
+      minParticles,
+      countActive: () => scene.countActiveTransforms(),
+      countParticles,
+      liquidFunCount,
+      snapshot,
+      async run() {
+        await waitCount(() => scene.countActiveTransforms(), minActive, 'spawn');
+        await waitCount(countParticles, minParticles, 'particle');
+        await scene.stepFrames(steps, dtMs);
+        const afterDeadline = performance.now() + 5000;
+        while (minLiquidFun > 0 && liquidFunCount() < minLiquidFun) {
+          if (performance.now() > afterDeadline) break;
+          await scene.stepFrame(dtMs);
+        }
+        hideOverlays();
+        return snapshot();
+      },
+    };
+
+    if (!auto) {
+      /* Playwright drives run() */
+    }
+  </script>
+</body>
+</html>

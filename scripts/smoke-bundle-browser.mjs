@@ -1,42 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createServer } from 'http';
 import { chromium } from 'playwright';
 import { BUNDLE_ARTIFACTS } from './build-bundle.js';
+import { createStaticBenchmarkServer } from '../tests/helpers/createStaticBenchmarkServer.mjs';
+import { analyzePng, captureCanvasPng } from '../tests/helpers/visualPngCompare.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
-
-const MIME = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.css': 'text/css',
-  '.wasm': 'application/wasm',
-};
-
-function startServer() {
-  return new Promise((resolve) => {
-    const server = createServer((req, res) => {
-      res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-      res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
-      const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
-      const filePath = path.join(dist, urlPath === '/' ? 'index.html' : urlPath);
-      if (!filePath.startsWith(dist) || !fs.existsSync(filePath)) {
-        res.writeHead(404);
-        res.end('not found');
-        return;
-      }
-      const ext = path.extname(filePath);
-      res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
-      fs.createReadStream(filePath).pipe(res);
-    });
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      resolve({ server, port });
-    });
-  });
-}
 
 const missing = BUNDLE_ARTIFACTS.filter((name) => !fs.existsSync(path.join(dist, name)));
 if (missing.length) {
@@ -46,7 +17,7 @@ if (missing.length) {
   process.exit(1);
 }
 
-const { server, port } = await startServer();
+const server = await createStaticBenchmarkServer(root);
 const browser = await chromium.launch({ headless: true });
 let failed = false;
 
@@ -59,7 +30,7 @@ try {
       if (msg.type() === 'error') errors.push(msg.text());
     });
 
-    const url = `http://127.0.0.1:${port}/index.html?bundle=${encodeURIComponent(bundle)}`;
+    const url = `http://127.0.0.1:${server.port}/dist/index.html?bundle=${encodeURIComponent(bundle)}`;
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
     const result = await page.waitForFunction(() => {
@@ -73,6 +44,29 @@ try {
       return { ok: false, text: text || 'timeout' };
     });
 
+    let canvasBlack = false;
+    if (result?.ok) {
+      const visualReady = await page.waitForFunction(
+        () => Boolean(window.__weedVisual?.ready),
+        undefined,
+        { timeout: 90000 },
+      ).then(() => true).catch(() => false);
+      if (!visualReady) {
+        result.ok = false;
+        result.text = `${result.text || ''} (workers never ready)`;
+      } else {
+        await page.locator('#info').evaluate((el) => {
+          el.style.display = 'none';
+        }).catch(() => {});
+        const png = await captureCanvasPng(page);
+        const analysis = await analyzePng(page, png);
+        console.log(`  canvas: nonBlack=${analysis.nonBlack}/${analysis.pixels} max=${analysis.maxChannel}`);
+        if (analysis.nonBlack < 100) {
+          canvasBlack = true;
+        }
+      }
+    }
+
     await page.close();
 
     const fatal = errors.filter((e) =>
@@ -85,8 +79,9 @@ try {
       for (const e of fatal.slice(0, 8)) console.log('   ', e);
     }
 
-    if (!result?.ok || fatal.length) {
+    if (!result?.ok || fatal.length || canvasBlack) {
       failed = true;
+      if (canvasBlack) console.log('  FAIL: canvas all-black');
       if (errors.length && !fatal.length) {
         console.log('  page errors:');
         for (const e of errors.slice(0, 8)) console.log('   ', e);
@@ -97,7 +92,7 @@ try {
   }
 } finally {
   await browser.close();
-  server.close();
+  await server.close();
 }
 
 if (failed) {

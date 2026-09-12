@@ -161,7 +161,7 @@ export class Person extends Lootable {
     if (damage < 0.1) return;
 
     ParticleEmitter.emit({
-      count: Math.floor(damage * (Math.random() * 10 + 4)),
+      count: Math.floor(damage * (rng() * 10 + 4)),
       texture: 'blood',
       x: this.x,
       y: this.y,
@@ -461,12 +461,12 @@ export class Person extends Lootable {
       count: 1,
       x: muzzleX,
       y: muzzleY + 1,
-      texture: "muzzle" + Math.floor(Math.random() * 3 + 1),
-      scaleX: Math.random() * 0.5 + 0.5,
-      scaleY: Math.random() * 0.5 + 0.5,
+      texture: "muzzle" + Math.floor(rng() * 3 + 1),
+      scaleX: rng() * 0.5 + 0.5,
+      scaleY: rng() * 0.5 + 0.5,
       rotC: shotDirX,
       rotS: shotDirY,
-      alpha: Math.random() * 0.5 + 0.5,
+      alpha: rng() * 0.5 + 0.5,
       anchorX: 0,
       anchorY: 0.5,
       z: muzzleHeightPx,
@@ -479,12 +479,12 @@ export class Person extends Lootable {
       count: 1,
       x: muzzleX,
       y: muzzleY + 1,
-      texture: "muzzle" + Math.floor(Math.random() * 3 + 1),
-      scaleX: Math.random() * 0.5 + 0.5,
-      scaleY: Math.random() * 0.5 + 0.5,
+      texture: "muzzle" + Math.floor(rng() * 3 + 1),
+      scaleX: rng() * 0.5 + 0.5,
+      scaleY: rng() * 0.5 + 0.5,
       rotC: shotDirX,
       rotS: shotDirY,
-      alpha: Math.random() * 0.5 + 0.5,
+      alpha: rng() * 0.5 + 0.5,
       anchorX: 0,
       anchorY: 0.5,
       z: muzzleHeightPx,
@@ -513,7 +513,7 @@ export class Person extends Lootable {
   shootingSparks(dirX, dirY, muzzleX, muzzleY, muzzleHeightPx) {
     // Unit dir + spread rad — no atan2→deg→angleXY round-trip
     ParticleEmitter.emit({
-      count: Math.floor(Math.random() * 10) + 10,
+      count: Math.floor(rng() * 10) + 10,
       x: muzzleX,
       y: muzzleY + 1,
       z: muzzleHeightPx,
@@ -630,12 +630,12 @@ export class Person extends Lootable {
     PersonComponent.dead[this.index] = 1;
 
     const deathSounds = ['dolor1', 'dolor2', 'dolor3', 'dolor4'];
-    const deathSound = deathSounds[(Math.random() * deathSounds.length) | 0];
+    const deathSound = deathSounds[(rng() * deathSounds.length) | 0];
     SoundManager.play(deathSound, 0.8, 0.9, 1.1, 0, 0, this.x, this.y);
 
     // Emit blood particles
     ParticleEmitter.emit({
-      count: Math.floor(10 + Math.random() * 5),
+      count: Math.floor(10 + rng() * 5),
       texture: 'blood',
       x: this.x,
       y: this.y,

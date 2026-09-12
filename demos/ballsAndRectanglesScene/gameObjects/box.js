@@ -50,8 +50,8 @@ class Box extends GameObject {
     const baseSize = 100; // The texture is 100x100
     const scaleMin = 0.5;
     const scaleMax = 4.5;
-    const scaleX = Math.random() * (scaleMax - scaleMin) + scaleMin;
-    const scaleY = Math.random() * (scaleMax - scaleMin) + scaleMin;
+    const scaleX = rng() * (scaleMax - scaleMin) + scaleMin;
+    const scaleY = rng() * (scaleMax - scaleMin) + scaleMin;
 
     const boxWidth = baseSize * scaleX;
     const boxHeight = baseSize * scaleY;
@@ -88,7 +88,7 @@ class Box extends GameObject {
       0xbc8f8f, // Rosy Brown
       0xd2b48c, // Tan
     ];
-    this.myColor = colors[Math.floor(Math.random() * colors.length)];
+    this.myColor = colors[Math.floor(rng() * colors.length)];
     this.setTint(this.myColor);
 
     RigidBody.mass[this.index] *= 0.25;

@@ -37,8 +37,8 @@ export class Lootable extends GameObject {
     if (amountOfMoney > 0) {
       DropMoney.spawn({
         amount: amountOfMoney,
-        x: this.x + Math.random() * this.radius * 4 - this.radius * 2,
-        y: this.y + Math.random() * this.radius * 4 - this.radius * 2,
+        x: this.x + rng() * this.radius * 4 - this.radius * 2,
+        y: this.y + rng() * this.radius * 4 - this.radius * 2,
       });
     }
 
@@ -48,14 +48,14 @@ export class Lootable extends GameObject {
   emitSparks() {
     const radius = this.collider.radius;
     ParticleEmitter.emit({
-      count: Math.floor(Math.random() * radius) + radius * 0.5,
-      x: this.x + (Math.random() * radius - radius * 0.5),
-      y: this.y + (Math.random() * radius - radius * 0.5),
-      z: -radius - Math.random() * radius,
+      count: Math.floor(rng() * radius) + radius * 0.5,
+      x: this.x + (rng() * radius - radius * 0.5),
+      y: this.y + (rng() * radius - radius * 0.5),
+      z: -radius - rng() * radius,
       angleXY: { min: 0, max: 360 },
       speed: { min: radius * 0.1, max: radius * 0.2 },
       rotation: { min: 0, max: 360 },
-      vz: -Math.random() * 2 - 2,
+      vz: -rng() * 2 - 2,
       gravity: 0.6,
       lifespan: { min: 100, max: 300 },
       scale: { min: 0.25, max: 0.5 },

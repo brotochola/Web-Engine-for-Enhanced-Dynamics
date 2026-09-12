@@ -107,7 +107,7 @@ export class AbstractWorker {
     // Scheduling
     this.usesCustomScheduler = false; // Override in subclass if using custom scheduler
     this.noLimitFPS = false; // Set to true to run as fast as possible (no RAF limiting)
-    this.fixedFps = 0; // >0 → setInterval at that rate; overrides noLimitFPS/RAF
+    this.fixedFps = 0; // >0 → setInterval at that rate AND constant sim dt; overrides noLimitFPS/RAF
     this.timeoutId = null; // Store timeout ID for clearing
     this.intervalId = null; // Store interval ID for fixedFps
 
@@ -168,6 +168,9 @@ export class AbstractWorker {
     // Lightweight worker diagnostics written into the existing stats buffers.
     this.messageTimeThisFrame = 0;
 
+    // Injected dt for `{ msg: 'step' }` (lockstep). 0 = use wall / fixedFps.
+    this._injectedDeltaTime = 0;
+
     this.reportLog('finished constructor');
   }
 
@@ -206,18 +209,30 @@ export class AbstractWorker {
   updateFrameTiming() {
     const now = performance.now();
     const rawDelta = now - this.lastFrameTime;
-    const deltaTime = Math.min(Math.max(rawDelta, 0), 100);
+    const wallDelta = Math.min(Math.max(rawDelta, 0), 100);
     this.lastFrameTime = now;
 
     // FPS from wall-clock delta; tiny or zero deltas happen (timer resolution, same-tick work).
     // Use a small floor only for FPS so we never divide by zero and stats stay interpretable.
     const FPS_MIN_DELTA_MS = 0.2;
-    const instantaneousFPS = 1000 / Math.max(deltaTime, FPS_MIN_DELTA_MS);
+    const instantaneousFPS = 1000 / Math.max(wallDelta, FPS_MIN_DELTA_MS);
     this.currentFPS = instantaneousFPS;
 
-    // Write instantaneous FPS to shared frameRateData buffer (debug / stats)
+    // Sim dt: injected lockstep step, else freeze when fixedFps > 0.
+    // Wall delta stays for FPS / STEP_MS only.
+    const deltaTime = this._injectedDeltaTime > 0
+      ? this._injectedDeltaTime
+      : this.fixedFps > 0
+        ? 1000 / this.fixedFps
+        : wallDelta;
+
+    // Write instantaneous FPS + frame index (slot 1, unused by FPS readers).
     if (this.frameRateData && this.frameRateIndex >= 0) {
-      this.frameRateData[this.frameRateIndex * this.frameRateStride] = instantaneousFPS;
+      const base = this.frameRateIndex * this.frameRateStride;
+      this.frameRateData[base] = instantaneousFPS;
+      if (this.frameRateStride > 1) {
+        this.frameRateData[base + 1] = this.frameNumber;
+      }
     }
 
     // Normalize delta time to 60fps (16.67ms per frame)
@@ -268,6 +283,19 @@ export class AbstractWorker {
   gameLoop(resuming = false) {
     if (this.isPaused) return;
 
+    this._runFrame(resuming);
+
+    // Schedule next frame (only if not using custom scheduler)
+    if (!this.usesCustomScheduler) {
+      this.scheduleNextFrame();
+    }
+  }
+
+  /**
+   * One simulation/render tick without scheduling the next frame.
+   * Used by gameLoop and by `{ msg: 'step' }` lockstep.
+   */
+  _runFrame(resuming = false) {
     this.frameNumber++;
     const timing = this.updateFrameTiming();
 
@@ -285,12 +313,12 @@ export class AbstractWorker {
 
     // Reset per-frame diagnostics after subclasses publish them.
     this.messageTimeThisFrame = 0;
-
-    // Schedule next frame (only if not using custom scheduler)
-    if (!this.usesCustomScheduler) {
-      this.scheduleNextFrame();
-    }
   }
+
+  /**
+   * Hook after a lockstep `{ msg: 'step' }` (pixi presents the canvas).
+   */
+  afterManualStep() {}
 
   /**
    * Schedule the next frame (can be overridden for custom scheduling)
@@ -1011,6 +1039,9 @@ export class AbstractWorker {
     switch (msg) {
       case 'init':
         console.log(`[${this.constructor.name}] Received 'init' message, starting initialization...`);
+        if (e.data.pageOrigin) {
+          self.__weedPageOrigin = e.data.pageOrigin;
+        }
         this.initSeededRandom(e.data.config.seed);
         this.isPaused = true; // Keep paused until "start" message
         console.log(`[${this.constructor.name}] Initializing common buffers...`);
@@ -1043,6 +1074,20 @@ export class AbstractWorker {
       case 'resume':
         this.resume();
         break;
+
+      case 'step': {
+        const dt = Number(e.data.deltaTime);
+        this._injectedDeltaTime = dt > 0 ? dt : 16.67;
+        this.isPaused = false;
+        this._runFrame(false);
+        this._injectedDeltaTime = 0;
+        if (this.config?.manualStep) {
+          this.isPaused = true;
+        }
+        this.afterManualStep();
+        self.postMessage({ msg: 'stepDone', id: e.data.id | 0 });
+        break;
+      }
 
       case 'resize': {
         const { width, height } = e.data;

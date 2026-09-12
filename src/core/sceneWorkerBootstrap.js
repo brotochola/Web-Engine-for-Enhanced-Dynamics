@@ -201,6 +201,7 @@ function buildComponentPoolsInfo(scene) {
 function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
   return {
     msg: 'init',
+    pageOrigin: typeof window !== 'undefined' ? window.location.origin : '',
     buffers: sharedBuffers,
     frameRateStride: 16,
     globalEntityCount: scene.totalEntityCount,

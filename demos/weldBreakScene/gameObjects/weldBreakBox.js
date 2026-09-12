@@ -93,7 +93,7 @@ export class WeldBreakBox extends GameObject {
     const y = (Transform.y[entityA] + Transform.y[entityB]) * 0.5;
 
     ParticleEmitter.emit({
-      count: 15 + Math.floor(Math.random() * 8),
+      count: 15 + Math.floor(rng() * 8),
       x,
       y: y + 50,
       z: -50,

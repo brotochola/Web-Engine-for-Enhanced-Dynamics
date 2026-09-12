@@ -1065,6 +1065,20 @@ export declare class Scene {
   handleWorkerReady(workerName: string): void;
   getAllWorkers(): Worker[];
   startAllWorkers(): void;
+  stepFrame(deltaTimeMs?: number): Promise<void>;
+  stepFrames(count: number, deltaTimeMs?: number): Promise<void>;
+  hashActiveTransforms(): { hash: string; count: number };
+  hashLiquidFun(): { hash: string; count: number };
+  countActiveTransforms(): number;
+  readWorkerStepMs(): {
+    physics: number;
+    particle: number;
+    renderer: number;
+    preRender: number;
+    spatial: number;
+    logic: number;
+    main: number;
+  };
   updatePhysicsConfig(partialConfig?: Record<string, unknown>): void;
   onKeyDown(key: string): void;
   onKeyUp(key: string): void;

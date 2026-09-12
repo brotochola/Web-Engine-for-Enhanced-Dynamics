@@ -71,7 +71,7 @@ export class MySoldier extends Person {
 
   swayGrassAround() {
     //this is heavy for 10k soldiers!
-    if (Math.random() > 0.9) return
+    if (rng() > 0.9) return
     this.countOfDecorationsHit = Decoration.queryCircle(
       this.x,
       this.y,
@@ -81,8 +81,8 @@ export class MySoldier extends Person {
 
     for (let i = 0; i < this.countOfDecorationsHit; i++) {
       const index = this.outQueryDecorationIndices[i];
-      const amplitude = this.vx > 0.5 ? Math.random() * 0.5 : Math.random() * -0.5;
-      const frequency = Math.random() * 2 + 1
+      const amplitude = this.vx > 0.5 ? rng() * 0.5 : rng() * -0.5;
+      const frequency = rng() * 2 + 1
       const deco = Decoration.get(index);
       if (!deco || !deco.active) continue
       deco.impulseSway(amplitude, frequency);

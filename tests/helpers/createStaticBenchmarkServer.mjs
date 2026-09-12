@@ -19,6 +19,10 @@ const MIME_TYPES = {
   '.webm': 'video/webm',
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
+  '.wgsl': 'text/plain',
+  '.glsl': 'text/plain',
+  '.frag': 'text/plain',
+  '.vert': 'text/plain',
 };
 
 export async function createStaticBenchmarkServer(rootDirectory, preferredPort = 0) {

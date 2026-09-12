@@ -131,11 +131,11 @@ export class PersonThatFollowsAFlowfield extends GameObject {
     PersonComponent.dead[this.index] = 1;
 
     const deathSounds = ['dolor1', 'dolor2', 'dolor3', 'dolor4'];
-    const deathSound = deathSounds[(Math.random() * deathSounds.length) | 0];
+    const deathSound = deathSounds[(rng() * deathSounds.length) | 0];
     SoundManager.play(deathSound, 0.8, 0.9, 1.1, 0, 0, this.x, this.y);
 
     ParticleEmitter.emit({
-      count: Math.floor(10 + Math.random() * 5),
+      count: Math.floor(10 + rng() * 5),
       texture: 'blood',
       x: this.x,
       y: this.y,

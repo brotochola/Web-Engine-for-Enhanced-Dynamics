@@ -133,7 +133,11 @@ import {
 function fetchEngineShader(path) {
   const slash = path.lastIndexOf('/');
   const name = slash >= 0 ? path.slice(slash + 1) : path;
-  return fetch(path).then(async (r) => {
+  // Blob workers have an opaque origin — root-relative `/src/...` is not a
+  // valid URL there. Init posts pageOrigin from the page.
+  const origin = self.__weedPageOrigin || '';
+  const url = path.charCodeAt(0) === 47 && origin ? origin + path : path;
+  return fetch(url).then(async (r) => {
     if (!r.ok) throw errorShaderFetchFailed(name, path, r.status);
     const s = await r.text();
     if (!String(s).trim()) throw errorShaderFetchFailed(name, path, 'empty');
@@ -1245,6 +1249,16 @@ class PixiRenderer extends AbstractWorker {
       // Standard mode: PIXI ticker will call gameLoop on every tick (60fps)
       this.pixiApp.ticker.add(() => this.gameLoop());
     }
+  }
+
+  afterManualStep() {
+    const app = this.pixiApp;
+    if (!app?.renderer || !app.stage) return;
+    if (app.ticker) {
+      app.ticker.autoStart = false;
+      app.ticker.stop();
+    }
+    app.renderer.render(app.stage);
   }
 
   /**
@@ -3639,6 +3653,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     } catch (error) {
       this.reportError('PIXI Initialization Failed', error);
       return;
+    }
+
+    if (this.config?.manualStep && this.pixiApp.ticker) {
+      this.pixiApp.ticker.autoStart = false;
+      this.pixiApp.ticker.stop();
     }
 
     // Enable z-index based sorting on the stage

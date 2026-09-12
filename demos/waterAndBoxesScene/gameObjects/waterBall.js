@@ -102,7 +102,7 @@ class WaterBall extends GameObject {
       count: Math.floor(18 + intensity * 55),
       x: this.x,
       y: this.y,
-      z: -r * (0.6 + Math.random() * 0.8),
+      z: -r * (0.6 + rng() * 0.8),
       texture: '_whiteCircle',
       tint: { min: 0x66aaff, max: 0xffffff },
       alpha: { from: { min: 0.55, max: 1 }, to: 0 },

@@ -68,14 +68,14 @@ async function main() {
         };
         const heap = () => (performance.memory ? performance.memory.usedJSHeapSize : 0);
 
-        const [{ default: WEED }, sceneExports, { Layer }, { NavGrid }, { SoundManager }] =
-          await Promise.all([
-            import('/src/index.js'),
-            import(sceneModule),
-            import('/src/core/Layer.js'),
-            import('/src/core/NavGrid.js'),
-            import('/src/core/SoundManager.js'),
-          ]);
+        const [{ default: WEED }, sceneExports] = await Promise.all([
+          import('/src/index.js'),
+          import(sceneModule),
+        ]);
+        if (typeof WEED.ensureEmbeddedSources === 'function') {
+          await WEED.ensureEmbeddedSources();
+        }
+        const { Layer, NavGrid, SoundManager } = WEED;
         const SceneClass = sceneExports[sceneExport];
         if (!SceneClass) throw new Error(`Scene export "${sceneExport}" not found in ${sceneModule}`);
 

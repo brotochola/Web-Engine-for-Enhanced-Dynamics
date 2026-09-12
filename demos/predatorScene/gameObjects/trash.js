@@ -25,7 +25,7 @@ export class Trash extends Lootable {
 
     setup() {
         this.setSprite('trash');
-        this.setScale(Math.random() > 0.5 ? 1 : -1, 1);
+        this.setScale(rng() > 0.5 ? 1 : -1, 1);
 
         this.spriteRenderer.anchorY = 0.66
         this.spriteRenderer.anchorX = 0.5

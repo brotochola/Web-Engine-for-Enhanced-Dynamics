@@ -23,12 +23,12 @@ export class Fire extends GameObject {
   static components = [Collider, SpriteRenderer, LightEmitter, FireComponent];
 
   setup(spawnConfig) {
-    this.fireComponent.baseScale = Math.random() * 0.5 + 1;
+    this.fireComponent.baseScale = rng() * 0.5 + 1;
 
     if (spawnConfig && spawnConfig.scale) this.fireComponent.baseScale = spawnConfig.scale;
     const scale = this.fireComponent.baseScale;
-    this.setScale(Math.random() > 0.5 ? scale : -scale, scale);
-    this.fireComponent.flipped = Math.random() > 0.5;
+    this.setScale(rng() > 0.5 ? scale : -scale, scale);
+    this.fireComponent.flipped = rng() > 0.5;
     this.collider.shapeType = ShapeType.Circle;
 
     // Store initial radius for fade calculations
@@ -45,14 +45,14 @@ export class Fire extends GameObject {
     this.lightEmitter.height = 0;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 1;
-    this.setAlpha(0.6 + Math.random() * 0.2);
+    this.setAlpha(0.6 + rng() * 0.2);
 
     this.setSpritesheet('fire');
     this.setAnimation('fire');
 
     // Initialize FireComponent properties
     this.fireComponent.baseAnimationSpeed = 1;
-    this.fireComponent.lifespan = spawnConfig?.lifespan ?? 8000 + Math.random() * 10000; // 2-3 seconds default
+    this.fireComponent.lifespan = spawnConfig?.lifespan ?? 8000 + rng() * 10000; // 2-3 seconds default
     this.fireComponent.elapsedTime = 0;
 
     this.fireComponent.baseIntensity = 8000;
@@ -95,7 +95,7 @@ export class Fire extends GameObject {
     // Add flickering with multiple sine waves and random noise
     const flicker1 = Math.sin(t * 8) * 0.15;
     const flicker2 = Math.sin(t * 12.5) * 0.1;
-    const randomFlicker = (Math.random() - 0.5) * 0.2;
+    const randomFlicker = (rng() - 0.5) * 0.2;
     const totalFlicker = 1 + flicker1 + flicker2 + randomFlicker;
 
     const intensity = (baseIntensity + intensityVariation) * totalFlicker;
@@ -110,14 +110,14 @@ export class Fire extends GameObject {
 
     // Update scale based on fade factor (visual shrinking) with flickering
     const currentScale = this.fireComponent.baseScale * fadeFactor;
-    if (Math.random() < 0.01) {
+    if (rng() < 0.01) {
       fc.flipped = !fc.flipped;
     }
 
     // Add flickering to scaleY with multiple waves
     const scaleFlicker1 = Math.sin(t * 6) * 0.08;
     const scaleFlicker2 = Math.sin(t * 10.3) * 0.05;
-    const scaleRandomFlicker = (Math.random() - 0.5) * 0.06;
+    const scaleRandomFlicker = (rng() - 0.5) * 0.06;
     const scaleYModulation = 1 + scaleFlicker1 + scaleFlicker2 + scaleRandomFlicker;
 
     const scaleX = fc.flipped ? currentScale : -currentScale;
@@ -140,15 +140,15 @@ export class Fire extends GameObject {
 
   emitSparks(radius, fadeFactor = 1) {
     // Reduce spark frequency as fire dies
-    if (Math.random() > 0.4 * fadeFactor) return;
+    if (rng() > 0.4 * fadeFactor) return;
     ParticleEmitter.emit({
-      count: Math.floor(Math.random() * 3 * fadeFactor) + 1,
-      x: this.x + (Math.random() * radius - radius * 0.5),
-      y: this.y + (Math.random() * radius - radius * 0.5),
-      z: -radius - Math.random() * radius,
+      count: Math.floor(rng() * 3 * fadeFactor) + 1,
+      x: this.x + (rng() * radius - radius * 0.5),
+      y: this.y + (rng() * radius - radius * 0.5),
+      z: -radius - rng() * radius,
       angleXY: { min: 0, max: 360 },
       speed: { min: 0, max: 1 },
-      vz: -Math.random() * 2 - 2,
+      vz: -rng() * 2 - 2,
       gravity: -0.1,
       lifespan: { min: 200, max: 500 },
       scale: 0.25 * fadeFactor,
@@ -160,19 +160,19 @@ export class Fire extends GameObject {
 
   emitSmoke(radius, fadeFactor = 1) {
     // Reduce smoke frequency as fire dies
-    if (Math.random() > 0.3 * fadeFactor) return;
+    if (rng() > 0.3 * fadeFactor) return;
     ParticleEmitter.emit({
-      count: Math.floor(Math.random() * 2 * fadeFactor) + 1,
+      count: Math.floor(rng() * 2 * fadeFactor) + 1,
       x: this.x,
       y: this.y,
       angleXY: { min: 0, max: 360 },
       speed: { min: 0, max: 1 },
-      vz: -Math.random() * 2 - 2,
+      vz: -rng() * 2 - 2,
       gravity: 0,
       rotation: { min: 0, max: 360 },
-      flipX: Math.random() > 0.5,
-      flipY: Math.random() > 0.5,
-      z: -radius * 2 - Math.random() * radius * 2,
+      flipX: rng() > 0.5,
+      flipY: rng() > 0.5,
+      z: -radius * 2 - rng() * radius * 2,
       lifespan: { min: 500, max: 2000 },
       scale: {
         min: this.fireComponent.baseScale * fadeFactor,

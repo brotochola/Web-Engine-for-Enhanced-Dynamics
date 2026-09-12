@@ -40,14 +40,14 @@ export class Tree extends GameObject {
     // const count = Math.floor(damage * 8) + 3;
     const radius = this.collider.radius;
     ParticleEmitter.emit({
-      count: Math.floor(Math.random() * radius) + radius * 0.5,
-      x: hitX + (Math.random() * radius - radius * 0.5),
-      y: hitY + (Math.random() * radius - radius * 0.5),
-      z: - Math.random() * 40,
+      count: Math.floor(rng() * radius) + radius * 0.5,
+      x: hitX + (rng() * radius - radius * 0.5),
+      y: hitY + (rng() * radius - radius * 0.5),
+      z: - rng() * 40,
       angleXY: { min: 0, max: 360 },
       speed: { min: 2, max: 8 },
       rotation: { min: 0, max: 360 },
-      vz: -Math.random() * 4 - 2,
+      vz: -rng() * 4 - 2,
       gravity: 0.6,
       lifespan: { min: 100, max: 300 },
       scale: { min: 0.15, max: 1 },

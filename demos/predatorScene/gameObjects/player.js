@@ -103,7 +103,7 @@ export class Player extends GameObject {
   }
 
   shoot(x, y) {
-    if (Math.random() > 0.5) return;
+    if (rng() > 0.5) return;
     // Raycast from player position to target
     const hitEntityIndex = Ray.cast(
       this.x,

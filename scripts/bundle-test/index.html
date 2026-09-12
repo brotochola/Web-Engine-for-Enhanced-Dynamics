@@ -60,7 +60,7 @@ export class Ball extends GameObject {
       0xff6b6b, 0x4ecdc4, 0xffe66d, 0xa29bfe,
       0x95e1d3, 0xfeca57, 0x48dbfb, 0xff9ff3,
     ];
-    this.myColor = colors[Math.floor(Math.random() * colors.length)];
+    this.myColor = colors[Math.floor(rng() * colors.length)];
     this.setTint(this.myColor);
   }
 
@@ -134,8 +134,19 @@ export class Floor extends GameObject {
       'weed.prod.bundle.compressed.min.js',
       'weed.prod.bundle.esm.compressed.min.js',
     ]);
-    const requested = new URLSearchParams(location.search).get('bundle') || 'weed.bundle.min.js';
+    const params = new URLSearchParams(location.search);
+    const requested = params.get('bundle') || 'weed.bundle.min.js';
     const bundle = BUNDLES.has(requested) ? requested : 'weed.bundle.min.js';
+    const fixedFps = Math.max(0, Number(params.get('fixedFps')) || 0);
+    const box2dWorkers = Math.max(0, Number(params.get('box2dWorkers')) || 0);
+    const ticksParam = Math.max(0, Number(params.get('ticks')) || 0);
+    const secondsParam = Math.max(0, Number(params.get('seconds')) || 0);
+    const ballCount = Math.max(1, Number(params.get('balls')) || 9000);
+    const manualStep = params.get('manualStep') === '1' || params.get('manualStep') === 'true';
+    const visualLock = fixedFps > 0 || ticksParam > 0 || secondsParam > 0 || manualStep;
+    const targetTicks = ticksParam > 0
+      ? ticksParam
+      : (secondsParam > 0 && fixedFps > 0 ? Math.round(secondsParam * fixedFps) : 0);
 
     async function loadWeed(file) {
       if (file.includes('.esm.')) {
@@ -174,7 +185,13 @@ export class Floor extends GameObject {
     Ball.scriptUrl = entityBlobUrl;
     Floor.scriptUrl = entityBlobUrl;
 
-    const BALL_COUNT = 9000;
+    const FRAME_RATE_STRIDE = 16;
+    const FRAME_RATE_FRAME_SLOT = 1;
+
+    function applyFixedFps(section) {
+      if (fixedFps <= 0) return { ...section };
+      return { ...section, fixedFps, noLimitFPS: false };
+    }
 
     // Mirrors demos/ballsScene/ballsScene.js
     class TestScene extends Scene {
@@ -182,38 +199,46 @@ export class Floor extends GameObject {
         worldWidth: 4000,
         worldHeight: 5000,
         seed: 123456,
-        spatial: {
+        manualStep,
+        spatial: applyFixedFps({
           numberOfSpatialWorkers: 1,
           cellSize: 100,
           maxNeighbors: 512,
           noLimitFPS: false,
-        },
-        logic: { noLimitFPS: false },
-        particle: {
+        }),
+        logic: applyFixedFps({ noLimitFPS: false }),
+        particle: applyFixedFps({
           noLimitFPS: false,
           maxParticles: 0,
           decals: false,
           decalsTileSize: 256,
           decalsResolution: 0.5,
-        },
-        physics: {
-          box2dWorkerCount: 4,
+        }),
+        physics: applyFixedFps({
+          box2dWorkerCount: box2dWorkers > 0 ? box2dWorkers : 4,
           subStepCount: 4,
           noLimitFPS: false,
           gravity: { x: 0, y: 1800 },
           sleepThreshold: 30,
           wakeUpThreshold: 30,
           sleepDuration: 10,
-        },
-        preRender: {
+          ...(manualStep ? { sleeping: false } : {}),
+        }),
+        preRender: applyFixedFps({
           noLimitFPS: false,
-        },
-        renderer: { noLimitFPS: false },
+          interpolation: { mode: 'off' },
+        }),
+        renderer: applyFixedFps({
+          noLimitFPS: false,
+          backend: 'webgl',
+          ...(manualStep ? { ySorting: false } : {}),
+        }),
         lighting: { enabled: false },
+        debug: { collectDetailedStats: true },
       };
 
       static entities = [
-        [Ball, 10000],
+        [Ball, Math.max(10000, ballCount + 100)],
         [Floor, 1000],
       ];
 
@@ -226,18 +251,24 @@ export class Floor extends GameObject {
 
       create() {
         this.spawnFloorAndWalls();
-        this.spawnBalls(BALL_COUNT);
+        this.spawnBalls(ballCount);
 
         this.cameraFollowX = this.config.worldWidth / 2;
         this.cameraFollowY = this.config.worldHeight / 2;
+        if (visualLock) {
+          Camera.setZoom(0.15);
+          document.getElementById('info').style.display = 'none';
+        }
         Camera.centerOn(this.cameraFollowX, this.cameraFollowY);
 
         document.getElementById('info').innerHTML =
           'WeedJS Bundle Test &#10004;<br>' +
-          BALL_COUNT + ' balls &mdash; click to push, scroll to zoom, WASD to pan';
+          ballCount + ' balls &mdash; click to push, scroll to zoom, WASD to pan';
       }
 
       update(dtRatio) {
+        if (visualLock) return;
+
         const panSpeed = this.cameraPanSpeed / Camera.zoom;
         const kb = this.keyboard;
 
@@ -285,22 +316,98 @@ export class Floor extends GameObject {
       }
 
       spawnBalls(count) {
+        const worldWidth = this.config.worldWidth;
+        const worldHeight = this.config.worldHeight;
         for (let i = 0; i < count; i++) {
-          setTimeout(() => {
-            this.spawnEntity(Ball, {
-              x: 0.2 * this.config.worldWidth + this.rng() * this.config.worldWidth * 0.6,
-              y: 0.2 * this.config.worldHeight + this.rng() * this.config.worldHeight * 0.6,
-              vx: 0,
-              vy: 0,
-            });
-          }, i * 0.01);
+          this.spawnEntity(Ball, {
+            x: 0.2 * worldWidth + this.rng() * worldWidth * 0.6,
+            y: 0.2 * worldHeight + this.rng() * worldHeight * 0.6,
+            vx: 0,
+            vy: 0,
+          });
         }
       }
     }
 
-    const game = new GameEngine({ autoResize: true, debug: true });
+    const game = new GameEngine({
+      autoResize: !visualLock,
+      canvasWidth: visualLock ? 1280 : undefined,
+      canvasHeight: visualLock ? 720 : undefined,
+      debug: !visualLock,
+    });
     window.game = game;
-    game.loadScene(TestScene);
+    await game.loadScene(TestScene);
+
+    const spatialCount = TestScene.config.spatial.numberOfSpatialWorkers || 1;
+    const physicsIndex = spatialCount;
+    const rendererIndex = spatialCount + 1;
+
+    function readWorkerFrame(index) {
+      const view = game.currentScene?.views?.frameRate;
+      if (!view) return 0;
+      return view[index * FRAME_RATE_STRIDE + FRAME_RATE_FRAME_SLOT] | 0;
+    }
+
+    function readActiveEntities() {
+      const data = WEED.GameObject?.activeEntitiesData;
+      return data ? data[0] | 0 : 0;
+    }
+
+    function readVisibleSprites() {
+      const sab = game.currentScene?.buffers?.rendererStats;
+      if (!sab) return 0;
+      return new Float32Array(sab)[2] | 0;
+    }
+
+    window.__weedVisual = {
+      tick: 0,
+      physicsFrame: 0,
+      pixiFrame: 0,
+      visibleSprites: 0,
+      activeEntities: 0,
+      ready: false,
+      targetTicks,
+      visualLock,
+    };
+
+    const pump = () => {
+      const physicsFrame = readWorkerFrame(physicsIndex);
+      const pixiFrame = readWorkerFrame(rendererIndex);
+      const visibleSprites = readVisibleSprites();
+      const activeEntities = readActiveEntities();
+      const tick = physicsFrame;
+      const ready =
+        physicsFrame >= 1 &&
+        pixiFrame >= 1 &&
+        (!visualLock || visibleSprites > 10);
+      window.__weedVisual.tick = tick;
+      window.__weedVisual.physicsFrame = physicsFrame;
+      window.__weedVisual.pixiFrame = pixiFrame;
+      window.__weedVisual.visibleSprites = visibleSprites;
+      window.__weedVisual.activeEntities = activeEntities;
+      window.__weedVisual.ready = ready;
+      requestAnimationFrame(pump);
+    };
+    requestAnimationFrame(pump);
+
+    window.__weedLockstep = {
+      ready: true,
+      manualStep,
+      expectedActive: ballCount + 4,
+      countActive() {
+        const a = WEED.Transform?.active;
+        if (!a) return 0;
+        let n = 0;
+        for (let i = 0; i < a.length; i++) if (a[i]) n++;
+        return n;
+      },
+      hash() {
+        return game.currentScene.hashActiveTransforms();
+      },
+      stepFrames(n, dt) {
+        return game.currentScene.stepFrames(n, dt);
+      },
+    };
   </script>
 </body>
 </html>

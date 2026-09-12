@@ -24,9 +24,9 @@ export class Barrel extends GameObject {
   setup() {
     // Override Boid's physics properties for prey behavior
     this.rigidBody.linearDamping = 0.8;
-    this.setSprite('barrel' + Math.floor(Math.random() * 3 + 1));
+    this.setSprite('barrel' + Math.floor(rng() * 3 + 1));
 
-    this.setScale(Math.random() > 0.5 ? 1 : 1);
+    this.setScale(rng() > 0.5 ? 1 : 1);
 
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 10;
@@ -59,19 +59,19 @@ export class Barrel extends GameObject {
   }
 
   onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
-    const impactSound = Math.random() > 0.5 ? 'bala_golpea_metal' : 'bala_golpea_metal_2';
+    const impactSound = rng() > 0.5 ? 'bala_golpea_metal' : 'bala_golpea_metal_2';
     SoundManager.play(impactSound, 0.6, 0.85, 1.15, 0, 0, hitX, hitY);
 
     const radius = this.collider.radius;
     ParticleEmitter.emit({
-      count: Math.floor(Math.random() * radius) + radius * 0.5,
+      count: Math.floor(rng() * radius) + radius * 0.5,
       x: hitX,
       y: hitY,
-      z: - Math.random() * this.spriteRenderer.originalHeight,
+      z: - rng() * this.spriteRenderer.originalHeight,
       angleXY: { min: 0, max: 360 },
       speed: { min: radius * 0.2, max: radius * 0.4 },
       rotation: { min: 0, max: 360 },
-      vz: -Math.random() * 4 - 2,
+      vz: -rng() * 4 - 2,
       gravity: 0.6,
       lifespan: { min: 100, max: 300 },
       scale: { min: 0.15, max: 0.5 },
@@ -89,7 +89,7 @@ export class Barrel extends GameObject {
       y: hitY,
       lifespan: 18,
       color: 0xffee00,
-      intensity: Math.random() * 1000 + 1000,
+      intensity: rng() * 1000 + 1000,
       hasGlowSprite: 1,
     });
   }
