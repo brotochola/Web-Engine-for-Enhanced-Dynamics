@@ -8,6 +8,103 @@ Demos are how the engine gets tested. They are not the product. The engine is th
 
 ---
 
+## Saturday 31 January 2026 — Mouse Stops Pretending to Be an Entity
+
+Tick intervals staggered across entities so they don't all recompute the same thing on the same frame. `invertedMass` for collision response. Shooting. Punching. And Mouse, which became a GameObject back in December because that made the plumbing easier, stops being one — it wasn't the right fit, and the mapping-table lesson from a month ago made that obvious the moment I looked at it again. Month closes on a version bump.
+
+## Tuesday 27 – Friday 30 January 2026 — Predator Becomes a Game
+
+Loading entity layouts straight from JSON instead of hardcoding spawn points. Dropping and picking up items. Flowfield pathfinding that's actually nice to watch instead of just technically working. Decals stamped in multiply mode that can span more than one tile. People dying with a real death state, blood left behind where they fell. Soldiers running `FSM` behavior, checking line of sight with `Ray.cast` before they engage instead of just measuring distance. This is the week the demo stopped being a stress test and started being a thing you'd call a game, even a rough one.
+
+## Sunday 18 – Friday 23 January 2026 — Giving Entities a Place to Navigate
+
+`NavGrid`: A* and flowfield pathfinding, a smart cache, its own dedicated worker. My own commit message that day was three emoji long — `:O :D :(` — and honestly that's a more accurate changelog than most of what I write with actual words. DebugUI moves onto its own canvas so the Pixi worker isn't also running a UI on the side. A neighbor-count bug that had been wrong for even longer than the one two weeks ago finally, actually, gets fixed.
+
+## Saturday 17 January 2026 — The Ancient Lockless Proverb
+
+The payoff to that `Atomics.add` toy from back in November, in `sharedArrayBuffer_hack`. `Atomics.wait()` ripped out of the spatial workers, completely. Double-buffering instead — read from a stable buffer while the next one gets built in the background, one frame of latency traded for workers that never block on each other again. My commit message that day got a little theatrical about it, and I stand by every word.
+
+Same day, smaller but it bugged me more: `Ray.castAll()` was building a fresh `{entityIndex, distance, hitX, hitY}` object per hit, every single call, and sorting a throwaway array on top of that. Fixed it the same way I fix everything now — a pool of hit objects that grows lazily and gets reused, `outHits[i]` written into instead of pushed, `.length` truncated to how many hits actually happened instead of the array being thrown away and rebuilt:
+
+```js
+let out = outHits[i];
+if (!out) {
+  out = { entityIndex: -1, distance: 0, hitX: 0, hitY: 0 };
+  outHits[i] = out;
+}
+out.entityIndex = hit.entityIndex;
+out.distance = hit.distance;
+```
+
+Same object, every call, after the first few grow the pool to size. `Ray.castAll` never has to ask the garbage collector for anything again.
+
+## Thursday 15 – Friday 16 January 2026 — Shadows That Actually Look Right
+
+Spatial worker stops resetting markers it doesn't need to reset every frame. Shaped shadows. Glows come back better than they were before I broke them in December. Fire and Rock show up as new entities, purely to give the shadow and lighting systems something harder to chew on. Ray gets new methods. Scattered helper functions finally start collecting into one `utils.js` instead of living wherever I happened to need them first.
+
+## Tuesday 13 – Wednesday 14 January 2026 — Shipping It, Finally Fixing the Neighbor Bug
+
+Flashes cast real shadows now, not just light. First real npm package — you can `npm install` this thing instead of cloning a repo and hoping. Light culling with a reusable pool so I stop allocating a lights array every frame just to throw it away. And a neighbor-count bug that had been quietly wrong for a while finally gets tracked down and fixed.
+
+## Tuesday 13 January 2026 — Raycasts, and a Grid Class of Its Own
+
+I didn't want a raycast worker. I wanted `Ray.cast()` to just be a static method any worker's entity tick could call directly, because the spatial grid already lives on a SharedArrayBuffer — no message, no round trip, just read the same memory `spatial_worker` already wrote:
+
+```js
+const hitEntityIndex = Ray.cast(fromX, fromY, toX, toY, maxDistance);
+```
+
+Underneath that one call: DDA — walk only the grid cells the ray line actually crosses, cell by cell, stepping toward whichever axis boundary is closer, instead of testing every entity in the world. `utils.js` picks up the real geometry underneath it, `rayCircleIntersect` and `rayBoxIntersect`. It wasn't cheap on allocation yet — every cell check that found something built a fresh `{entityIndex, distance}` object — but the traversal shape was right, and that's the part that's hard to get right. The allocation would get fixed later, once I actually felt it.
+
+Same session: grid rebuilding moves onto the particle worker for load balancing, and neighbor lists get double-buffered — logic can read last frame's neighbors while spatial is still writing this frame's. Shadows still a little buggy. Less than before, in my own words that night.
+
+## Monday 12 January 2026 — Ten Thousand Civilians, and Deleting December's Idea
+
+I wanted a finite state machine that felt like writing a normal class, but stored its state the same way everything else in this engine stores state — flat, per-entity, in a typed array, not a JS object living somewhere on the heap.
+
+The trick: `FSM` is itself a `Component`. That's it. That's the whole idea. It gets `state`, `time`, `nextState` as SoA arrays for free, the exact same machinery `Transform` and `RigidBody` already use — one entity, one row, no allocation per entity, no allocation per tick.
+
+States themselves are classes, never instances — `onEnter` / `onUpdate` / `onExit` as static methods, looked up by a small integer index into an array of state classes, not by name, not through a map, every frame:
+
+```js
+class CivilianBehaviorFSM extends FSM {
+  static states = { IDLE: IdleState, FLEEING: FleeingState };
+  static initial = this.states.IDLE;
+}
+```
+
+And transitions don't happen the instant you ask for them. `changeState(i, this.fsm.states.FLEEING)` just writes an index into `nextState[i]` — a request, not an action. The actual `onExit`/`onEnter` pair runs at the top of the *next* tick, before that state's `onUpdate`. Queuing it that way means a state can never trigger its own exit mid-update by accident, and the write pattern stays exactly as boring and cache-friendly as every other array write in this engine.
+
+Ten thousand civilians ran on it the same day, as the real test. Not ten. Ten thousand — because that's the number that tells you whether a state machine design actually holds at engine scale or just looks nice in a demo with five guys standing around.
+
+And in the same session, almost as a coda: `MainThreadLogicHelper` — the whole "main thread as an extra logic worker" idea from December — deleted outright, nearly 500 lines gone. I never did solve the tab-focus throttling problem it ran into. Turns out I didn't need to. I just needed to stop needing it.
+
+## Thursday 8 – Saturday 10 January 2026 — Decorations, Pools, and Never Showing 20,000 at Once
+
+Decorations skip the spatial hash entirely — they don't move, they don't need neighbors, so why pay for it. Typed arrays for everything that still wasn't one. A real stats buffer instead of guessing. A `PIXI.Particle` pool, because the whole point is you're never rendering all 20,000 entities on screen at the same time, so stop pretending you need 20,000 live sprites. More GC reuse on collision result objects. `cantorPair` replaces inline pair-key math for neighbor lookups. Tilemap backgrounds land.
+
+## Wednesday 7 January 2026 — Too Good to Be True
+
+A spatial hash optimization that looked completely free — cut the visual range on lights, skip some neighbor work. It wasn't free. Something broke in a way that only showed up once you actually played with it, and I reverted the whole thing that same afternoon. My own words in the commit message still say it best.
+
+## Monday 5 January 2026 — An API That's Easy to Write, and Expensive to Get Wrong
+
+I wanted a query API that felt effortless to use in entity code and did real work underneath, without the person writing `tick()` ever having to think about it:
+
+```js
+const allPrey = query([RigidBody, PreyBehavior]);
+```
+
+That one line is pre-calculated at scene load and reads as an O(1) lookup at runtime — not a scan. `QuerySystem` is the whole reason that's true. Same day: Pixi starts interpolating poses whenever it's running faster than the physics worker, so a slow physics tick reads as smooth motion instead of stutter.
+
+## Sunday 4 January 2026 — Tried a Shortcut, Walked It Back
+
+Another GC pass through `GameObject` and the physics worker — fewer reads, less garbage, delta-time-scaled acceleration caps instead of hardcoded ones. Then, same evening, walking two of those changes straight back out: the time correction, the acceleration limit. Sometimes you ship the fix and the revert on the same day, and that's not failure, that's just how fast you can find out something was wrong.
+
+## Friday 2 – Saturday 3 January 2026 — New Year, New Toys
+
+Player and camera actually following each other, real friction, a proper `Camera` class. Boxes with colliders. The debug UI gets an eraser and a spawner — tools, not just readouts. Entities can spawn by class reference or by a plain string name, whichever's convenient at the call site. Small, useful things, the kind you only get around to once the big scary architecture work has a break in it.
+
 ## Monday 29 – Tuesday 30 December 2025 — A Real Flash, and a Real Scene
 
 Two births the same night. `Flash.create()` — a real short-lived light, not a particle pretending to be one, and flashes that cast shadows too. Then, hours later: `Scene`. Well over a thousand lines that used to live loose inside `gameEngine.js`, wired by hand in an HTML file every time, moved into an actual class you load — `PredatorScene`, `BallsScene`. You stop copy-pasting boot sequences and start writing a scene. The next evening: folders reorganized, `loadScene` gets smarter, tile backgrounds get a scale knob.
@@ -22,9 +119,18 @@ Dense day. The shader does the whole look now — no more tint as a crutch under
 
 ## Friday 12 – Saturday 13 December 2025 — Shadows That Actually Follow the Light
 
-Light formula refined, every component gets an `active` flag. Then I actually sat down with the profiler and went looking for garbage collection pauses, and found two real ones. `particle_worker` was building a brand-new camera-bounds object, every single frame, just to check what's on screen — so I gave it one scratch object, `_cameraBounds`, and started writing into the same one instead. `pixi_worker` was worse: every frame it built a fresh array and a fresh `{entityId, sprite, y}` object per visible sprite, just to sort them by depth — so that became `_ySortPool`, a pool of objects reused frame to frame, only truncated to the active count before sorting.
+Light formula refined, every component gets an `active` flag. Then I actually sat down with the profiler and went looking for garbage collection pauses, and found two real ones. `particle_worker` was building a brand-new camera-bounds object, every single frame, just to check what's on screen — so I gave it one scratch object, `_cameraBounds`, and started writing into the same one instead. `pixi_worker` was worse: every frame it built a fresh array and a fresh `{entityId, sprite, y}` object per visible sprite, just to sort them by depth — so that became `_ySortPool`, a pool of objects reused frame to frame, only truncated to the active count before sorting.21212
 
-Then the big one: projected shadows, wired into the real rendering pipeline this time, not a test file. `ShadowCaster` as a component. Still a little slow. Still a little to go, in my own words that night.
+Then the big one: projected shadows, wired into the real rendering pipeline this time, not a test file. `ShadowCaster` as a component. The trick is a rotation, not a flip — point the shadow sprite away from the light with `atan2`, then stretch it, width from the caster's radius, length growing the farther the light is:
+
+```js
+const angle = Math.atan2(dy, dx);
+shadowRotation[shadowIdx] = angle - Math.PI / 2; // FIXED: was + PI/2, now - PI/2
+shadowScaleX[shadowIdx] = widthScale;
+shadowScaleY[shadowIdx] = lengthScale; // 0.8 to 2.3, based on distance from light
+```
+
+Had that sign backwards once, shadows pointing the wrong way. Still a little slow. Still a little to go, in my own words that night.
 
 ## Thursday 11 December 2025 — Lights and Decals, Proven Alone Before Proven for Real
 
