@@ -2,6 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { AbstractWorker } from '../../src/workers/AbstractWorker.js';
+import {
+  RENDER_QUEUE_CAMERA_BYTES,
+  RENDER_QUEUE_POSE_READY_OFFSET,
+  createRenderQueueCameraViews,
+} from '../../src/core/RenderQueueLayout.js';
 
 // Regression: src/box2d/weedjs_post.js (physics-worker writer) and
 // AbstractWorker._bindPosePublish (every consumer worker's reader) each keep
@@ -64,4 +69,42 @@ test('_latchPose gates the previous-frame slot on readyFrame >= 2 (for interpola
   AbstractWorker.prototype._latchPose.call(ctx, false);
   assert.equal(ctx._poseX[0], 20, 'current pose is the latest published frame');
   assert.equal(ctx._prevPoseX[0], 10, 'previous pose is the prior frame, for interpolate blending');
+});
+
+test('_latchPose readyOverride pins that generation even if poseSync moved', () => {
+  const n = 4;
+  const dataA = makePoseSab(n);
+  const dataB = makePoseSab(n);
+  const sync = new SharedArrayBuffer(8);
+  const syncView = new Int32Array(sync);
+
+  const ctx = {};
+  AbstractWorker.prototype._bindPosePublish.call(ctx, { sync, dataA, dataB, capacity: n });
+
+  ctx.poseBuffers[0].x[0] = 10;
+  ctx.poseBuffers[1].x[0] = 20;
+  Atomics.store(syncView, 0, 2);
+
+  AbstractWorker.prototype._latchPose.call(ctx, false, 1);
+  assert.equal(ctx._poseReadyFrame, 1);
+  assert.equal(ctx._poseX[0], 10, 'override pins slot N, not live poseSync N+1');
+  assert.equal(ctx._prevPoseX, null, 'ready 1 has no previous slot');
+
+  AbstractWorker.prototype._latchPose.call(ctx, false);
+  assert.equal(ctx._poseReadyFrame, 2);
+  assert.equal(ctx._poseX[0], 20);
+});
+
+test('render queue camera SAB is 16 bytes with Int32 poseReady at offset 12', () => {
+  assert.equal(RENDER_QUEUE_CAMERA_BYTES, 16);
+  assert.equal(RENDER_QUEUE_POSE_READY_OFFSET, 12);
+  const sab = new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES);
+  const views = createRenderQueueCameraViews(sab);
+  views.camera[0] = 1.5;
+  views.camera[1] = 10;
+  views.camera[2] = 20;
+  views.poseReady[0] = 0x1000000;
+  assert.equal(views.poseReady[0], 0x1000000, 'poseFrame can pass 2^24');
+  assert.equal(views.camera[0], 1.5);
+  assert.equal(new Int32Array(sab, RENDER_QUEUE_POSE_READY_OFFSET, 1)[0], 0x1000000);
 });

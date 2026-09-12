@@ -98,7 +98,7 @@ export class PhysicsDebugRenderer {
 
   // ------- colliders -------
 
-  drawColliders(ctx, canvas, camera, zoom) {
+  drawColliders(ctx, canvas, camera, zoom, pose) {
     const active = Transform.active;
     const x = Transform.x;
     const y = Transform.y;
@@ -111,7 +111,11 @@ export class PhysicsDebugRenderer {
     const height = Collider.height;
     const offsetX = Collider.offsetX;
     const offsetY = Collider.offsetY;
-    const rotation = Transform.rotation;
+    const rbActive = RigidBody.active;
+    const poseX = pose ? pose.x : null;
+    const poseY = pose ? pose.y : null;
+    const poseRotC = pose ? pose.rotC : null;
+    const poseRotS = pose ? pose.rotS : null;
     const n = Math.min(active.length, x.length);
 
     const viewLeft = camera.x - 100;
@@ -123,16 +127,17 @@ export class PhysicsDebugRenderer {
 
     for (let i = 0; i < n; i++) {
       if (!active[i] || !colActive?.[i]) continue;
-      const entityX = x[i];
-      const entityY = y[i];
+      const usePose = !!(poseX && rbActive && rbActive[i]);
+      const entityX = usePose ? poseX[i] : x[i];
+      const entityY = usePose ? (poseY ? poseY[i] : y[i]) : y[i];
       const onScreen = isOnScreen[i] || (entityX >= viewLeft && entityX <= viewRight && entityY >= viewTop && entityY <= viewBottom);
       if (!onScreen) continue;
 
       const ox = offsetX?.[i] || 0;
       const oy = offsetY?.[i] || 0;
       const shape = shapeType[i];
-      const c = Transform.rotC ? Transform.rotC[i] : 1;
-      const s = Transform.rotS ? Transform.rotS[i] : 0;
+      const c = usePose && poseRotC ? poseRotC[i] : (Transform.rotC ? Transform.rotC[i] : 1);
+      const s = usePose && poseRotS ? poseRotS[i] : (Transform.rotS ? Transform.rotS[i] : 0);
 
       // Rotate offset for Box and Polygon (Circle keeps axis-aligned offset)
       let posX;

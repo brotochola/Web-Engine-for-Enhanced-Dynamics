@@ -44,7 +44,7 @@ import {
     SPRITE_TILE_MODE,
 } from '../core/ConfigDefaults.js';
 import { Layer } from '../core/Layer.js';
-import { createViews as createRenderQueueViews } from '../core/RenderQueueLayout.js';
+import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../core/RenderQueueLayout.js';
 import { bindLiquidFunRender } from '../core/liquidFunRender.js';
 import { LiquidFun } from '../core/LiquidFun.js';
 import { DECORATION_NO_PARENT } from '../core/DecorationPool.js';
@@ -159,6 +159,7 @@ class PreRenderWorker extends AbstractWorker {
         // Index 0 = buffer A, Index 1 = buffer B
         this.renderQueueBuffers = [null, null];
         this.renderQueueCameraBuffers = [null, null];
+        this.renderQueuePoseReadyBuffers = [null, null];
 
         // Sync buffer for coordination: [readyFrame, consumedFrame]
         this.renderQueueSync = null;
@@ -183,6 +184,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueRepeatX = null;
         this.renderQueueRepeatY = null;
         this.renderQueueCamera = null;
+        this.renderQueuePoseReady = null;
         this._frameCameraZoom = 1;
         this._frameCameraX = 0;
         this._frameCameraY = 0;
@@ -412,9 +414,9 @@ class PreRenderWorker extends AbstractWorker {
 
             for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
                 this.renderQueueBuffers[bufIdx] = createRenderQueueViews(bufferSABs[bufIdx], maxItems);
-                this.renderQueueCameraBuffers[bufIdx] = cameraSABs[bufIdx]
-                    ? new Float32Array(cameraSABs[bufIdx], 0, 3)
-                    : null;
+                const camViews = createRenderQueueCameraViews(cameraSABs[bufIdx]);
+                this.renderQueueCameraBuffers[bufIdx] = camViews ? camViews.camera : null;
+                this.renderQueuePoseReadyBuffers[bufIdx] = camViews ? camViews.poseReady : null;
             }
 
             // Set initial write buffer (will be updated each frame)
@@ -736,6 +738,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTileMulX = buffer.tileMulX;
         this.renderQueueTileMulY = buffer.tileMulY;
         this.renderQueueCamera = this.renderQueueCameraBuffers[bufferIdx];
+        this.renderQueuePoseReady = this.renderQueuePoseReadyBuffers[bufferIdx];
 
         // Swap custom layer write buffers in sync
         const entries = this._customLayerEntries;
@@ -810,6 +813,7 @@ class PreRenderWorker extends AbstractWorker {
 
         // Latch published physics pose once per frame (Atomics seq, same as pixi render queue).
         this._latchPose();
+        if (this.renderQueuePoseReady) this.renderQueuePoseReady[0] = this._poseReadyFrame;
 
         // Latch camera once per pre-render frame to keep all culling and queue writes coherent.
         if (this.cameraData) {

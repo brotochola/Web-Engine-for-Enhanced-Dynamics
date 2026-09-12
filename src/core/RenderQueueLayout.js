@@ -43,6 +43,22 @@ const FIELDS = [
     ['tileMulY',    Float32Array,           4,   0],
 ];
 
+/** Sibling SAB: Float32 zoom/x/y + Int32 poseReady (not stuffed in a float). */
+export const RENDER_QUEUE_CAMERA_BYTES = 16;
+export const RENDER_QUEUE_POSE_READY_OFFSET = 12;
+
+/**
+ * @param {SharedArrayBuffer|null|undefined} sab
+ * @returns {{ camera: Float32Array, poseReady: Int32Array }|null}
+ */
+export function createRenderQueueCameraViews(sab) {
+    if (!sab) return null;
+    return {
+        camera: new Float32Array(sab, 0, 3),
+        poseReady: new Int32Array(sab, RENDER_QUEUE_POSE_READY_OFFSET, 1),
+    };
+}
+
 function align4(n) { return (n + 3) & ~3; }
 
 export function computeBufferSize(maxItems) {

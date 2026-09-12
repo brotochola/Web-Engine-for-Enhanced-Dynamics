@@ -4,6 +4,7 @@ import { DEBUG_FLAGS } from '../DebugFlags.js';
 import { NavDebugRenderer } from './NavDebugRenderer.js';
 import { PhysicsDebugRenderer } from './PhysicsDebugRenderer.js';
 import { bindBox2dHotFields, isBox2dHotFieldsBound } from '../../../box2d/box2dHotFields.js';
+import { createRenderQueueCameraViews } from '../../RenderQueueLayout.js';
 
 /**
  * Owns the <canvas> overlay that sits above the game viewport.
@@ -23,6 +24,15 @@ export class DebugCanvas {
     this._rqSync = null;
     this._rqCamA = null;
     this._rqCamB = null;
+    this._rqPoseReadyA = null;
+    this._rqPoseReadyB = null;
+    this._queuePoseReady = 0;
+    this._poseBuffers = [null, null];
+    this._poseX = null;
+    this._poseY = null;
+    this._poseRotC = null;
+    this._poseRotS = null;
+    this._colliderPose = { x: null, y: null, rotC: null, rotS: null };
 
     this.nav = new NavDebugRenderer();
     this.physics = new PhysicsDebugRenderer();
@@ -64,6 +74,7 @@ export class DebugCanvas {
     this.nav.attach(scene);
     this.physics.attach(scene);
     this._bindRenderQueueCamera(scene);
+    this._bindDisplayPose(scene);
   }
 
   detach() {
@@ -72,6 +83,19 @@ export class DebugCanvas {
     this._rqSync = null;
     this._rqCamA = null;
     this._rqCamB = null;
+    this._rqPoseReadyA = null;
+    this._rqPoseReadyB = null;
+    this._queuePoseReady = 0;
+    this._poseBuffers[0] = null;
+    this._poseBuffers[1] = null;
+    this._poseX = null;
+    this._poseY = null;
+    this._poseRotC = null;
+    this._poseRotS = null;
+    this._colliderPose.x = null;
+    this._colliderPose.y = null;
+    this._colliderPose.rotC = null;
+    this._colliderPose.rotS = null;
   }
 
   /** Cache SAB views once (no per-frame alloc). */
@@ -81,11 +105,65 @@ export class DebugCanvas {
       this._rqSync = null;
       this._rqCamA = null;
       this._rqCamB = null;
+      this._rqPoseReadyA = null;
+      this._rqPoseReadyB = null;
       return;
     }
     this._rqSync = new Int32Array(buffers.renderQueueSync);
-    this._rqCamA = new Float32Array(buffers.renderQueueCameraA, 0, 3);
-    this._rqCamB = new Float32Array(buffers.renderQueueCameraB, 0, 3);
+    const a = createRenderQueueCameraViews(buffers.renderQueueCameraA);
+    const b = createRenderQueueCameraViews(buffers.renderQueueCameraB);
+    this._rqCamA = a ? a.camera : null;
+    this._rqCamB = b ? b.camera : null;
+    this._rqPoseReadyA = a ? a.poseReady : null;
+    this._rqPoseReadyB = b ? b.poseReady : null;
+  }
+
+  /** Same 4-channel pose SAB as AbstractWorker._bindPosePublish. */
+  _bindDisplayPose(scene) {
+    const buffers = scene?.buffers;
+    const n = scene?.poseCapacity | 0;
+    if (!buffers?.poseSync || !buffers.poseDataA || !buffers.poseDataB || !(n > 0)) {
+      this._poseBuffers[0] = null;
+      this._poseBuffers[1] = null;
+      return;
+    }
+    const sabs = [buffers.poseDataA, buffers.poseDataB];
+    for (let i = 0; i < 2; i++) {
+      const sab = sabs[i];
+      this._poseBuffers[i] = {
+        x: new Float32Array(sab, 0, n),
+        y: new Float32Array(sab, n * 4, n),
+        rotC: new Float32Array(sab, n * 8, n),
+        rotS: new Float32Array(sab, n * 12, n),
+      };
+    }
+  }
+
+  /**
+   * Pin pose views to the generation stamped on the render-queue camera.
+   * Read-only: do not consume poseSync (pre_render owns that).
+   */
+  _pinDisplayPose(poseReady) {
+    this._poseX = null;
+    this._poseY = null;
+    this._poseRotC = null;
+    this._poseRotS = null;
+    const pose = this._colliderPose;
+    pose.x = null;
+    pose.y = null;
+    pose.rotC = null;
+    pose.rotS = null;
+    if (!this._poseBuffers[0] || !(poseReady > 0)) return;
+    const curIdx = (poseReady - 1) & 1;
+    const buf = this._poseBuffers[curIdx];
+    this._poseX = buf.x;
+    this._poseY = buf.y;
+    this._poseRotC = buf.rotC;
+    this._poseRotS = buf.rotS;
+    pose.x = buf.x;
+    pose.y = buf.y;
+    pose.rotC = buf.rotC;
+    pose.rotS = buf.rotS;
   }
 
   /**
@@ -94,13 +172,17 @@ export class DebugCanvas {
    */
   _latchRenderCamera(scene) {
     const cam = this._cam;
+    this._queuePoseReady = 0;
     if (this._rqSync && this._rqCamA && this._rqCamB) {
       const ready = Atomics.load(this._rqSync, 0);
       if (ready > 0) {
-        const view = ((ready - 1) % 2) === 0 ? this._rqCamA : this._rqCamB;
+        const slotA = ((ready - 1) % 2) === 0;
+        const view = slotA ? this._rqCamA : this._rqCamB;
+        const poseReady = slotA ? this._rqPoseReadyA : this._rqPoseReadyB;
         cam.zoom = view[0];
         cam.x = view[1];
         cam.y = view[2];
+        this._queuePoseReady = poseReady ? poseReady[0] : 0;
         return cam;
       }
     }
@@ -192,6 +274,7 @@ export class DebugCanvas {
     const flags = this.debugUI.debugFlags;
     this._ensureBox2dHotFields(scene);
     if (!this._rqSync && scene) this._bindRenderQueueCamera(scene);
+    if (!this._poseBuffers[0] && scene) this._bindDisplayPose(scene);
     const camera = this._latchRenderCamera(scene);
     const zoom = camera.zoom;
 
@@ -221,9 +304,11 @@ export class DebugCanvas {
     if (this.nav.selectedPathSlot >= 0)
       this.nav.drawPath(ctx, canvas, camera, zoom, this.nav.selectedPathSlot);
 
-    // 5. Colliders
-    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_COLLIDERS))
-      this.physics.drawColliders(ctx, canvas, camera, zoom);
+    // 5. Colliders — same stamped poseReady as sprites / compute pack
+    if (flags?.isEnabled(DEBUG_FLAGS.SHOW_COLLIDERS)) {
+      this._pinDisplayPose(this._queuePoseReady);
+      this.physics.drawColliders(ctx, canvas, camera, zoom, this._colliderPose);
+    }
 
     // 5.5 Entity origins
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_ENTITY_ORIGINS))
@@ -285,5 +370,9 @@ export class DebugCanvas {
     this._rqSync = null;
     this._rqCamA = null;
     this._rqCamB = null;
+    this._rqPoseReadyA = null;
+    this._rqPoseReadyB = null;
+    this._poseBuffers[0] = null;
+    this._poseBuffers[1] = null;
   }
 }

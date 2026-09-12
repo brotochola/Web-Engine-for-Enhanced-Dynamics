@@ -48,7 +48,7 @@ import {
   listEvictChunkKeys,
   chunkRing,
 } from '../core/tilemapCull.js';
-import { createViews as createRenderQueueViews } from '../core/RenderQueueLayout.js';
+import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../core/RenderQueueLayout.js';
 import {
   sortByY,
   normalizeAngleDifference,
@@ -348,6 +348,7 @@ class PixiRenderer extends AbstractWorker {
     // Double buffer storage - views for both buffers
     this.renderQueueBuffers = [null, null];
     this.renderQueueCameraBuffers = [null, null];
+    this.renderQueuePoseReadyBuffers = [null, null];
 
     // Sync buffer for coordination: [readyFrame, consumedFrame]
     this.renderQueueSync = null;
@@ -372,6 +373,7 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueEntityIndex = null;
     this.renderQueueSortKey = null;
     this.renderQueueCamera = null; // Float32Array[3] -> [zoom, x, y]
+    this.renderQueuePoseReady = null; // Int32Array[1] -> pose generation stamped with this queue slot
 
     // Render queue — instanced Mesh (no Particle pool for ENTITIES)
     this._rqPrevCount = 0;
@@ -482,7 +484,7 @@ class PixiRenderer extends AbstractWorker {
     this._renderCameraY = 0;
     this._renderZoom = 1.0;
     this._cameraInitialized = false;
-    // Reused compute pack pose (same SAB sprites latch). Filled after _latchPose.
+    // Reused compute pack pose (same generation as sprites). Filled on new queue frame.
     this._computePose = {
       poseX: null,
       poseY: null,
@@ -557,6 +559,20 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueEntityIndex = buffer.entityIndex;
     this.renderQueueSortKey = buffer.sortKey;
     this.renderQueueCamera = this.renderQueueCameraBuffers[bufferIdx];
+    this.renderQueuePoseReady = this.renderQueuePoseReadyBuffers[bufferIdx];
+  }
+
+  /** Copy latched pose views into reused _computePose (no alloc). */
+  _syncComputePose() {
+    const computePose = this._computePose;
+    computePose.poseX = this._poseX;
+    computePose.poseY = this._poseY;
+    computePose.poseRotC = this._poseRotC;
+    computePose.poseRotS = this._poseRotS;
+    computePose.prevPoseX = this._prevPoseX;
+    computePose.prevPoseY = this._prevPoseY;
+    computePose.prevPoseRotC = this._prevPoseRotC;
+    computePose.prevPoseRotS = this._prevPoseRotS;
   }
 
   /**
@@ -1143,13 +1159,15 @@ class PixiRenderer extends AbstractWorker {
         // Wake pre_render_worker if it was waiting (it might be if >1 frame ahead)
         Atomics.notify(this.renderQueueSync, 1, 1);
 
-        // Frame-locked camera: consume camera snapshot from the same renderQueue generation.
+        // Frame-locked camera + pose generation from the same renderQueue slot.
         if (this.renderQueueCamera) {
           this._renderZoom = this.renderQueueCamera[0];
           this._renderCameraX = this.renderQueueCamera[1];
           this._renderCameraY = this.renderQueueCamera[2];
           this._cameraInitialized = true;
         }
+        this._latchPose(false, this.renderQueuePoseReady ? this.renderQueuePoseReady[0] : 0);
+        this._syncComputePose();
       }
     }
 
@@ -1221,18 +1239,6 @@ class PixiRenderer extends AbstractWorker {
       if (detail) t0 = performance.now();
       this.updateSpritesFromRenderQueue();
       if (detail) this.spritesTimeThisFrame = performance.now() - t0;
-
-      // Display pose for compute body pack (no consume — pre_render owns poseSync[1]).
-      this._latchPose(false);
-      const computePose = this._computePose;
-      computePose.poseX = this._poseX;
-      computePose.poseY = this._poseY;
-      computePose.poseRotC = this._poseRotC;
-      computePose.poseRotS = this._poseRotS;
-      computePose.prevPoseX = this._prevPoseX;
-      computePose.prevPoseY = this._prevPoseY;
-      computePose.prevPoseRotC = this._prevPoseRotC;
-      computePose.prevPoseRotS = this._prevPoseRotS;
 
       // Update custom layer sprites and render shader layers to their RenderTextures
       if (detail) t0 = performance.now();
@@ -3753,9 +3759,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       for (let bufIdx = 0; bufIdx < 2; bufIdx++) {
         this.renderQueueBuffers[bufIdx] = createRenderQueueViews(bufferSABs[bufIdx], maxItems);
-        this.renderQueueCameraBuffers[bufIdx] = cameraSABs[bufIdx]
-          ? new Float32Array(cameraSABs[bufIdx], 0, 3)
-          : null;
+        const camViews = createRenderQueueCameraViews(cameraSABs[bufIdx]);
+        this.renderQueueCameraBuffers[bufIdx] = camViews ? camViews.camera : null;
+        this.renderQueuePoseReadyBuffers[bufIdx] = camViews ? camViews.poseReady : null;
       }
 
       // Set initial read buffer (frame 0 uses buffer 0)

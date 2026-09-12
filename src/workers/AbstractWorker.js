@@ -139,6 +139,7 @@ export class AbstractWorker {
     this._prevPoseY = null;
     this._prevPoseRotC = null;
     this._prevPoseRotS = null;
+    this._poseReadyFrame = 0;
 
     // Registered entity classes information (set during initialization)
     this.registeredClasses = [];
@@ -988,16 +989,21 @@ export class AbstractWorker {
   }
 
   /**
-   * Pin latest published pose views on this._poseX/Y/rotC/rotS.
+   * Pin published pose views on this._poseX/Y/rotC/rotS.
    * @param {boolean} [consume=false] - If true, store sync[1] (pre_render only).
+   * @param {number} [readyOverride] - If a number (including 0), pin that generation
+   *   and skip Atomics.load(poseSync). Pixi passes the render-queue stamp.
    */
-  _latchPose(consume = false) {
+  _latchPose(consume = false, readyOverride) {
     this._poseX = null;
     this._poseY = null;
     this._poseRotC = null;
     this._poseRotS = null;
-    if (!this.poseSync || !this.poseBuffers[0]) return;
-    const ready = Atomics.load(this.poseSync, 0);
+    this._poseReadyFrame = 0;
+    if (!this.poseBuffers[0]) return;
+    const ready = readyOverride !== undefined && readyOverride !== null
+      ? readyOverride | 0
+      : (this.poseSync ? Atomics.load(this.poseSync, 0) : 0);
     if (!(ready > 0)) return;
     const curIdx = (ready - 1) & 1;
     const buf = this.poseBuffers[curIdx];
@@ -1005,6 +1011,7 @@ export class AbstractWorker {
     this._poseY = buf.y;
     this._poseRotC = buf.rotC;
     this._poseRotS = buf.rotS;
+    this._poseReadyFrame = ready;
     if (ready >= 2) {
       const prevBuf = this.poseBuffers[1 - curIdx];
       this._prevPoseX = prevBuf.x;
@@ -1017,7 +1024,7 @@ export class AbstractWorker {
       this._prevPoseRotC = null;
       this._prevPoseRotS = null;
     }
-    if (consume) Atomics.store(this.poseSync, 1, ready);
+    if (consume && this.poseSync) Atomics.store(this.poseSync, 1, ready);
   }
 
   initSeededRandom(seed) {

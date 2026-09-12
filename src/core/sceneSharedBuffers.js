@@ -33,7 +33,7 @@ import {
 import { Sun } from './Sun.js';
 import { Layer } from './Layer.js';
 import { TileMap } from './TileMap.js';
-import { computeBufferSize as computeRenderQueueBufferSize } from './RenderQueueLayout.js';
+import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_BYTES } from './RenderQueueLayout.js';
 import { resetFreeList } from './atomicFreeList.js';
 import { NavGrid } from './NavGrid.js';
 import { Grid } from './Grid.js';
@@ -435,8 +435,8 @@ function initializeLightingAndRenderBuffers(scene) {
 
   buffers.renderQueueDataA = new SharedArrayBuffer(renderQueueBufferSize);
   buffers.renderQueueDataB = new SharedArrayBuffer(renderQueueBufferSize);
-  buffers.renderQueueCameraA = new SharedArrayBuffer(12);
-  buffers.renderQueueCameraB = new SharedArrayBuffer(12);
+  buffers.renderQueueCameraA = new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES);
+  buffers.renderQueueCameraB = new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES);
   buffers.renderQueueSync = new SharedArrayBuffer(8);
   new Int32Array(buffers.renderQueueSync)[0] = 0;
   new Int32Array(buffers.renderQueueSync)[1] = 0;

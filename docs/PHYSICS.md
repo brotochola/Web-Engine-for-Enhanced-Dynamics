@@ -67,7 +67,7 @@ Live HEAP `Transform` mutates during solver substeps. Async readers must not sam
 | `poseSync` | `Int32[2]` `[readyFrame, consumedFrame]` | Writer stores ready; pre_render latches `(ready-1)%2` and stores consumed |
 
 - **Writer:** `weedjs_post.publishPose` after `world.step` (dense body list → typed views; no alloc).
-- **Readers:** `pre_render_worker` (entities / adobe / shadows / parented deco compose) consumes; `particle_worker` parent-follow latches without consume. Logic binds the same latch for `Camera.followEntity`.
+- **Readers:** `pre_render_worker` (entities / adobe / shadows / parented deco compose) consumes; `particle_worker` parent-follow latches without consume. Logic binds the same latch for `Camera.followEntity`. Pixi compute pack and debug colliders pin the generation stamped as `Int32 poseReady` on the render-queue camera SAB (same slot as sprites; no `Atomics.load` of live `poseSync`).
 - **Boot:** `readyFrame === 0` → fall back to live `Transform`.
 - **Not** soft interpolation / `averaged*` — one coherent post-step snapshot per publish.
 
@@ -89,7 +89,7 @@ Sprites use latched pose xy. `Camera.followEntity` used to add **live HEAP** `Ri
 
 Speed zoom: write `Camera.targetZoom` **then** `followEntity`. `follow()` lerps zoom and keeps screen-center. `setZoom` every tick snaps zoom without that pan and fights the lerp.
 
-Debug colliders still draw live `Transform` through the render-queue camera — they can swim vs sprites by ~1 physics frame. Overlay clock, not the gameplay hitch above.
+Debug colliders and the pixi compute pack follow **stamped `poseReady`** on the render-queue camera SAB (same generation sprites packed), not live HEAP / latest pose. Overlay clock, not the gameplay hitch above.
 
 Tests: `tests/node/pipelineBackpressure.test.js`, `tests/node/cameraFreeZoom.test.js` (`followEntity look-ahead ignores live vx…`).
 
