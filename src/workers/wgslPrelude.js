@@ -1,3 +1,5 @@
+import { RESERVED_LOOK_UNIFORMS } from '../core/Layer.js';
+
 /**
  * Engine WGSL preludes. Structs are generated from the layer uniform map so
  * the JS SAB layout and the WGSL layout can never drift. Scene shaders must
@@ -37,12 +39,13 @@ const COMPUTE_REDECLARE_RE =
 const LOOK_REDECLARE_RE =
   /struct\s+(GlobalUniforms|LocalUniforms|CustomUniforms|VertexOut)\s*\{|var\s*<\s*uniform\s*>\s*(globalUniforms|localUniforms|customUniforms)\s*:|var\s+(uTexture|uSampler)\s*:/;
 
-function tailLines(uniformMap, uniformTypes, indent) {
+function tailLines(uniformMap, uniformTypes, indent, skipReserved) {
   if (!uniformMap) return '';
   const entries = Object.entries(uniformMap).sort((a, b) => a[1].offset - b[1].offset);
   let out = '';
   for (let i = 0; i < entries.length; i++) {
     const name = entries[i][0];
+    if (skipReserved && name in RESERVED_LOOK_UNIFORMS) continue;
     const entry = entries[i][1];
     let type = uniformTypes && uniformTypes[name];
     if (!type || !WGSL_TYPE_RE.test(type)) {
@@ -53,13 +56,13 @@ function tailLines(uniformMap, uniformTypes, indent) {
   return out;
 }
 
-/** FrameData (engine prefix + scene tail) + frame binding + Body. */
+/** FrameData (engine prefix + scene uniforms only; reserved look names stay on CustomUniforms). */
 export function buildComputePrelude(uniformMap, uniformTypes) {
   let s = 'struct FrameData {\n';
   for (let i = 0; i < FRAME_PREFIX_FIELDS.length; i++) {
     s += `  ${FRAME_PREFIX_FIELDS[i]}: f32,\n`;
   }
-  s += tailLines(uniformMap, uniformTypes, '  ');
+  s += tailLines(uniformMap, uniformTypes, '  ', true);
   s += '}\n';
   s += '@group(0) @binding(0) var<uniform> frame: FrameData;\n\n';
   // Matches BODY_FLOATS pack in Box2dBodyPack.js (16 floats).

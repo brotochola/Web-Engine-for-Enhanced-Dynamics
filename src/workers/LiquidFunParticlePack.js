@@ -6,6 +6,9 @@ import { LiquidFun } from '../core/LiquidFun.js';
 export const PARTICLE_FLOATS = 4;
 export const PARTICLE_STRIDE_BYTES = PARTICLE_FLOATS * 4;
 
+/** Reused pack result (no alloc in the hot loop). */
+export const PARTICLE_OUT = { particleCount: 0 };
+
 let _overflowWarned = 0;
 
 /**
@@ -16,11 +19,20 @@ let _overflowWarned = 0;
  */
 export function packLiquidFunParticles(layerId, particleData, maxParticles) {
   const cap = maxParticles | 0;
-  if (!particleData || cap <= 0) return { particleCount: 0 };
+  if (!particleData || cap <= 0) {
+    PARTICLE_OUT.particleCount = 0;
+    return PARTICLE_OUT;
+  }
   const views = LiquidFun.getViews();
-  if (!views || !views.count || !views.x || !views.y) return { particleCount: 0 };
+  if (!views || !views.count || !views.x || !views.y) {
+    PARTICLE_OUT.particleCount = 0;
+    return PARTICLE_OUT;
+  }
   const live = views.count[0] | 0;
-  if (live <= 0) return { particleCount: 0 };
+  if (live <= 0) {
+    PARTICLE_OUT.particleCount = 0;
+    return PARTICLE_OUT;
+  }
   const maxN = views.maxCount | 0;
   const n = live < maxN ? live : maxN;
   const x = views.x;
@@ -49,5 +61,6 @@ export function packLiquidFunParticles(layerId, particleData, maxParticles) {
     particleData[b + 3] = vy ? vy[i] : 0;
     written++;
   }
-  return { particleCount: written };
+  PARTICLE_OUT.particleCount = written;
+  return PARTICLE_OUT;
 }

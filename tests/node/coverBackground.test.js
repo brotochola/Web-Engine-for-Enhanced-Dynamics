@@ -122,7 +122,8 @@ test('pixi_worker: cover type + look RT transparent clear', () => {
   assert.match(pixi, /case 'cover':/);
   assert.match(pixi, /createCoverBackground/);
   assert.match(pixi, /_applyCoverBackgroundTransform/);
-  assert.match(pixi, /clearColor: \[0, 0, 0, 0\]/);
+  assert.match(pixi, /_clearTransparent = \[0, 0, 0, 0\]/);
+  assert.match(pixi, /clearColor: this\._clearTransparent/);
 });
 
 test('Scene.setBackground is a prototype method', async () => {

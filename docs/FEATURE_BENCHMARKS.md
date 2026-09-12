@@ -54,6 +54,11 @@ pnpm bench:micro:particle-integrate
 pnpm bench:feature:particle-emit
 pnpm bench:feature:particle-integrate
 pnpm bench:particle:tournament
+
+# Compute (WebGPU; skip L2 if no GPU — do not fake WebGL)
+pnpm bench:micro:compute-pack
+pnpm bench:feature:compute
+pnpm bench:feature:compute:headed
 ```
 
 Hypothesis index + fill order: [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md).
@@ -78,6 +83,7 @@ Ray: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md). Decals: [`DECAL_HYPOTHESES.md`]
 | TileMap SAB queries | `TileMap.js` | (todo) | low value | tile demos | ns/`getTileId` |
 | QuerySystem publish | `QuerySystem.js` | (todo) | `stressScenes/QueryChurnScene` | — | publish / churn |
 | Pre-render cull + queue | `pre_render_worker` | `sr-flags-microbench.mjs` (7 Uint8 vs packed — **kill** L1+L3: cull kernel wins, queue noise, dirty RMW loses; Predator `preRender.STEP_MS` in noise vs 7 columns) | `stressScenes/RenderQueueStressScene` | Predator | L1 packed/strided; L3 `COLLECT_MS`/`EMIT_MS`/`STEP_MS` |
+| Compute layer (pack + dispatch) | `ComputeLayer.js`, `Box2dBodyPack.js` | `compute-pack-microbench.mjs` | `stressScenes/ComputeStressScene` (256², iterate 20, WebGPU) | burningBoxes | L1 pack ms; L2 `CUSTOM_LAYERS_MS` (headed) |
 | DecorationsSpatial | `DecorationSpatial.js` | (todo) | (todo) | zenithal | `queryCircle` ms |
 | Bullet tick + Ray | `BulletPool`, particle_worker | (todo) | can share RayStress | Predator | particle `STEP_MS` |
 | Treiber free list / rings | `atomicFreeList`, rings | (todo) | (todo) spawn-storm | Balls spawn | pop/push/s |
@@ -105,6 +111,7 @@ Microbenches import production `src/...` code (no algorithm copies). Run a corre
 | RenderQueueStressScene | `/tests/bench/stressScenes/RenderQueueStressScene.js` | Cull / Y-sort / render queue |
 | LiquidFunStressScene | `/tests/bench/stressScenes/LiquidFunStressScene.js` | ~10.2k water + ~2k spring/staticPressure → `lfParticleSystem_Step` cost |
 | LiquidFunQueryStressScene | `/tests/bench/stressScenes/LiquidFunQueryStressScene.js` | Dense fluid + per-frame sync `LiquidFun.queryAABB` / `rayCast` |
+| ComputeStressScene | `/tests/bench/stressScenes/ComputeStressScene.js` | 256² ping-pong, 20 iterate+swap, 64 fed boxes → `CUSTOM_LAYERS_MS` (WebGPU) |
 
 ```bash
 node tests/bench/run-integrated-worker-benchmark.mjs --headed \

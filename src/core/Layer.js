@@ -53,6 +53,27 @@ export const RESERVED_LOOK_UNIFORMS = {
     uTexSize: { value: [0, 0], type: 'vec2<f32>' },
 };
 
+/** @param {string} name */
+export function isReservedLookUniform(name) {
+    return name in RESERVED_LOOK_UNIFORMS;
+}
+
+/**
+ * SAB float count of {@link RESERVED_LOOK_UNIFORMS} with the same vec2/vec4 pad
+ * as {@link Layer._allocateUniformSAB}.
+ */
+export function reservedLookUniformFloatCount() {
+    let floatCount = 0;
+    const names = Object.keys(RESERVED_LOOK_UNIFORMS);
+    for (let i = 0; i < names.length; i++) {
+        const size = Layer._getUniformSize(RESERVED_LOOK_UNIFORMS[names[i]].type);
+        if (size === 2) floatCount = (floatCount + 1) & ~1;
+        else if (size >= 3) floatCount = (floatCount + 3) & ~3;
+        floatCount += size;
+    }
+    return floatCount;
+}
+
 /** Panel hint keys carried into metadata (LayersPanel widgets). */
 const UNIFORM_HINT_KEYS = ['min', 'max', 'step', 'label', 'tip', 'negate', 'widget'];
 
@@ -83,6 +104,7 @@ export class Layer {
     /** Per-layer compute feeder lists (SAB). */
     static _feedCountSAB = null;
     static _feedCount = null; // Int32Array[MAX_LAYERS]
+    static _feedLock = null; // Int32Array[MAX_LAYERS] spinlocks (same SAB, second half)
     static _feedIndexSABs = [];
     static _feedIndices = [];
     static _feedMax = [];
@@ -515,8 +537,7 @@ export class Layer {
         // Allocate config SAB
         this._configSAB = new SharedArrayBuffer(this._getConfigSABSize());
         this._createConfigViews(this._configSAB);
-        this._feedCountSAB = new SharedArrayBuffer(this.MAX_LAYERS * 4);
-        this._feedCount = new Int32Array(this._feedCountSAB);
+        this._bindFeedCountSAB(new SharedArrayBuffer(this.MAX_LAYERS * 8));
 
         // Register built-in layers (BACKGROUND, DECALS, CASTED_SHADOWS, ENTITIES, LIGHTING)
         for (const [name, config] of Object.entries(builtInLayers)) {
@@ -622,6 +643,7 @@ export class Layer {
                     workgroup: null,
                     when: null,
                     dispatchFrom: null,
+                    dispatch: null,
                 }],
                 maxBodies,
                 maxParticles,
@@ -648,6 +670,7 @@ export class Layer {
                 workgroup: Array.isArray(p.workgroup) ? p.workgroup.slice() : null,
                 when: typeof p.when === 'string' ? p.when : null,
                 dispatchFrom: typeof p.dispatchFrom === 'string' ? p.dispatchFrom : null,
+                dispatch: Layer._normalizePassDispatch(p.dispatch),
             });
         }
         return {
@@ -667,20 +690,23 @@ export class Layer {
      * @param {number} canvasW
      * @param {number} canvasH
      * @param {{scale?:number, width?:number, height?:number}|null|undefined} size
+     * @param {{ texW: number, texH: number }|null} [out]
      * @returns {{ texW: number, texH: number }}
      */
-    static computeTextureExtent(canvasW, canvasH, size) {
+    static computeTextureExtent(canvasW, canvasH, size, out) {
+        const dest = out || { texW: 8, texH: 8 };
         const s = size || {};
         const w = s.width | 0;
         const h = s.height | 0;
         if (w > 0 && h > 0) {
-            return { texW: Math.max(8, w), texH: Math.max(8, h) };
+            dest.texW = Math.max(8, w);
+            dest.texH = Math.max(8, h);
+            return dest;
         }
         const scale = Number.isFinite(s.scale) && s.scale > 0 ? s.scale : 1;
-        return {
-            texW: Math.max(8, Math.ceil(canvasW * scale) | 0),
-            texH: Math.max(8, Math.ceil(canvasH * scale) | 0),
-        };
+        dest.texW = Math.max(8, Math.ceil(canvasW * scale) | 0);
+        dest.texH = Math.max(8, Math.ceil(canvasH * scale) | 0);
+        return dest;
     }
 
     /**
@@ -781,6 +807,18 @@ export class Layer {
         return out;
     }
 
+    /** Count + per-layer spinlock share one SAB (count at 0, lock at MAX_LAYERS*4). */
+    static _bindFeedCountSAB(sab) {
+        this._feedCountSAB = sab || null;
+        this._feedCount = null;
+        this._feedLock = null;
+        if (!sab) return;
+        this._feedCount = new Int32Array(sab, 0, this.MAX_LAYERS);
+        if (sab.byteLength >= this.MAX_LAYERS * 8) {
+            this._feedLock = new Int32Array(sab, this.MAX_LAYERS * 4, this.MAX_LAYERS);
+        }
+    }
+
     static _normalizeMaxBodies(shader) {
         const n = shader?.maxBodies;
         return Number.isFinite(n) && n > 0 ? (n | 0) : COMPUTE_LAYER_DEFAULT_MAX_BODIES;
@@ -809,6 +847,19 @@ export class Layer {
             return LAYER_COMPUTE_SOURCE.BOX2D_BODIES;
         }
         return src;
+    }
+
+    /**
+     * Generic workgroup counts (Unity Dispatch(x,y)). Not a lattice origin —
+     * WebGPU has no dispatch offset; scene WGSL interprets gid.
+     * @param {unknown} raw
+     */
+    static _normalizePassDispatch(raw) {
+        if (!raw || typeof raw !== 'object') return null;
+        const x = raw.x;
+        const y = raw.y;
+        if (x == null && y == null) return null;
+        return { x: x != null ? x : 0, y: y != null ? y : 0 };
     }
 
     static isComputeLayer(layerId) {
@@ -1135,7 +1186,7 @@ export class Layer {
         }
 
         this._feedCountSAB = data.feedCountSAB || null;
-        this._feedCount = this._feedCountSAB ? new Int32Array(this._feedCountSAB) : null;
+        this._bindFeedCountSAB(this._feedCountSAB);
         this._feedIndexSABs = data.feedIndexSABs || [];
         this._feedMax = data.feedMax || [];
         this._feedIndices = [];
@@ -1180,6 +1231,12 @@ export class Layer {
         this._containerBlendId = null;
         this._available = null;
         this._hasRenderQueue = null;
+        this._feedCountSAB = null;
+        this._feedCount = null;
+        this._feedLock = null;
+        this._feedIndexSABs = [];
+        this._feedIndices = [];
+        this._feedMax = [];
         this._uniformSABs = [];
         this._uniformFloats = [];
         this._uniformDirty = [];

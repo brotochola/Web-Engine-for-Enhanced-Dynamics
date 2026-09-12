@@ -90,8 +90,7 @@ function setLookUniform2(map, floats, store, name, x, y) {
   }
   if (!store) return;
   const target = store[name];
-  if (target && typeof target.set === 'function') target.set([x, y]);
-  else if (target && typeof target === 'object' && target.length) {
+  if (target) {
     target[0] = x;
     target[1] = y;
   }
@@ -112,8 +111,8 @@ function applyEngineLookUniforms(cl, frame) {
   setLookUniform2(map, floats, store, 'uWorldSize', frame.worldW, frame.worldH);
   setLookUniform2(map, floats, store, 'uViewSize', frame.canvasW / zoom, frame.canvasH / zoom);
   if (cl.compute) {
-    const ext = Layer.computeTextureExtent(frame.canvasW, frame.canvasH, cl.compute._texSize);
-    setLookUniform2(map, floats, store, 'uTexSize', ext.texW, ext.texH);
+    Layer.computeTextureExtent(frame.canvasW, frame.canvasH, cl.compute._texSize, cl.compute._extent);
+    setLookUniform2(map, floats, store, 'uTexSize', cl.compute._extent.texW, cl.compute._extent.texH);
   }
 }
 import { writeRgba32Float } from './pinGpuTexture.js';
@@ -495,6 +494,18 @@ class PixiRenderer extends AbstractWorker {
       prevPoseRotC: null,
       prevPoseRotS: null,
     };
+    this._computeFrame = {
+      dt: 0,
+      cameraX: 0,
+      cameraY: 0,
+      canvasW: 0,
+      canvasH: 0,
+      zoom: 1,
+      time: 0,
+      worldW: 0,
+      worldH: 0,
+    };
+    this._clearTransparent = [0, 0, 0, 0];
 
     // OPTIMIZED: Preallocated RGB object to avoid allocation per light per frame
     this._rgbResult = { r: 0, g: 0, b: 0 };
@@ -2777,6 +2788,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     cl.uniformStore = null;
   }
 
+  _destroyCustomLayerCompute(cl) {
+    if (!cl?.compute) return;
+    cl.compute.destroy();
+    cl.compute = null;
+  }
+
+  _destroyAllCustomLayerCompute() {
+    const ids = Object.keys(this._customLayers);
+    for (let i = 0; i < ids.length; i++) {
+      this._destroyCustomLayerCompute(this._customLayers[ids[i]]);
+    }
+  }
+
   /**
    * Pixi v8 TextureSource.scaleMode for RT upsample (LINEAR soft / NEAREST blocky).
    * @param {import('../lib/pixi_8.16_.min.js').RenderTexture|null|undefined} rt
@@ -3957,6 +3981,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * is picked up next frame with zero postMessage overhead.
    */
   async initializeCustomLayers(data) {
+    this._destroyAllCustomLayerCompute();
+    this._customLayers = {};
     if (!data.layerData) return;
 
     const metadata = data.layerData.metadata;
@@ -4216,17 +4242,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }
       }
 
-      const frameUniforms = {
-        dt: this._lastDt || 1 / 60,
-        cameraX: this._renderCameraX,
-        cameraY: this._renderCameraY,
-        canvasW: this.canvasWidth,
-        canvasH: this.canvasHeight,
-        zoom: this._renderZoom,
-        time: (this.accumulatedTime || 0) * 0.001,
-        worldW: finiteOrZero(this.worldWidth),
-        worldH: finiteOrZero(this.worldHeight),
-      };
+      const frameUniforms = this._computeFrame;
+      frameUniforms.dt = this._lastDt || 1 / 60;
+      frameUniforms.cameraX = this._renderCameraX;
+      frameUniforms.cameraY = this._renderCameraY;
+      frameUniforms.canvasW = this.canvasWidth;
+      frameUniforms.canvasH = this.canvasHeight;
+      frameUniforms.zoom = this._renderZoom;
+      frameUniforms.time = (this.accumulatedTime || 0) * 0.001;
+      frameUniforms.worldW = finiteOrZero(this.worldWidth);
+      frameUniforms.worldH = finiteOrZero(this.worldHeight);
       applyEngineLookUniforms(cl, frameUniforms);
 
       if (cl.compute) {
@@ -4236,7 +4261,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             container: cl.shaderMesh,
             target: cl.rtOut,
             clear: true,
-            clearColor: [0, 0, 0, 0],
+            clearColor: this._clearTransparent,
           });
         }
       } else if (cl.densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN && cl.splatBatch) {
@@ -4323,7 +4348,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             container: cl.shaderMesh,
             target: cl.rtOut,
             clear: true,
-            clearColor: [0, 0, 0, 0],
+            clearColor: this._clearTransparent,
           });
         }
       }

@@ -7,6 +7,69 @@ function feedMax(layerId) {
   return max > 0 ? max : 0;
 }
 
+function acquireFeedLock(id) {
+  const locks = Layer._feedLock;
+  if (!locks) return;
+  while (Atomics.compareExchange(locks, id, 0, 1) !== 0) {
+    /* spin — Atomics.wait not allowed on the main thread */
+  }
+}
+
+function releaseFeedLock(id) {
+  const locks = Layer._feedLock;
+  if (!locks) return;
+  Atomics.store(locks, id, 0);
+}
+
+function lockLayerPair(a, b) {
+  if (b < 0 || a === b) {
+    acquireFeedLock(a);
+    return;
+  }
+  const lo = a < b ? a : b;
+  const hi = a < b ? b : a;
+  acquireFeedLock(lo);
+  acquireFeedLock(hi);
+}
+
+function unlockLayerPair(a, b) {
+  if (b < 0 || a === b) {
+    releaseFeedLock(a);
+    return;
+  }
+  const lo = a < b ? a : b;
+  const hi = a < b ? b : a;
+  releaseFeedLock(hi);
+  releaseFeedLock(lo);
+}
+
+function clearFeedLayerAtUnlocked(i) {
+  const id = Collider.feedLayerId[i];
+  if (id === FEED_LAYER_NONE) return;
+  const indices = Layer._feedIndices[id];
+  const countArr = Layer._feedCount;
+  if (!indices || !countArr) {
+    Collider.feedLayerId[i] = FEED_LAYER_NONE;
+    Collider.feedSlot[i] = FEED_SLOT_NONE;
+    Collider.feedBits[i] = 0;
+    return;
+  }
+  const slot = Collider.feedSlot[i];
+  const count = Atomics.load(countArr, id);
+  if (count > 0 && slot < count) {
+    const last = count - 1;
+    if (slot !== last) {
+      const moved = indices[last];
+      indices[slot] = moved;
+      if (Collider.feedSlot) Collider.feedSlot[moved] = slot;
+    }
+    Atomics.store(countArr, id, last);
+  }
+  Collider.feedLayerId[i] = FEED_LAYER_NONE;
+  Collider.feedSlot[i] = FEED_SLOT_NONE;
+  Collider.feedBits[i] = 0;
+}
+
 /**
  * Attach collider `index` to compute layer `layerId` (dense feeder list).
  * @param {number} index
@@ -23,21 +86,25 @@ export function feedLayerAt(index, layerId) {
   if (!indices || !countArr || maxB <= 0) return false;
 
   const prev = Collider.feedLayerId[i];
-  if (prev !== FEED_LAYER_NONE) clearFeedLayerAt(i);
-
-  const slot = Atomics.add(countArr, id, 1);
-  if (slot >= maxB) {
-    Atomics.sub(countArr, id, 1);
-    if (!Layer._feedOverflowWarned) {
-      Layer._feedOverflowWarned = 1;
-      console.warn(`feedLayer: layer ${id} overflow (maxBodies=${maxB})`);
+  lockLayerPair(id, prev === FEED_LAYER_NONE ? id : prev);
+  try {
+    if (Collider.feedLayerId[i] !== FEED_LAYER_NONE) clearFeedLayerAtUnlocked(i);
+    const slot = Atomics.load(countArr, id);
+    if (slot >= maxB) {
+      if (!Layer._feedOverflowWarned) {
+        Layer._feedOverflowWarned = 1;
+        console.warn(`feedLayer: layer ${id} overflow (maxBodies=${maxB})`);
+      }
+      return false;
     }
-    return false;
+    indices[slot] = i >>> 0;
+    Collider.feedLayerId[i] = id;
+    Collider.feedSlot[i] = slot;
+    Atomics.store(countArr, id, slot + 1);
+    return true;
+  } finally {
+    unlockLayerPair(id, prev === FEED_LAYER_NONE ? id : prev);
   }
-  indices[slot] = i >>> 0;
-  Collider.feedLayerId[i] = id;
-  Collider.feedSlot[i] = slot;
-  return true;
 }
 
 /**
@@ -49,26 +116,10 @@ export function clearFeedLayerAt(index) {
   if (!Collider.feedLayerId) return;
   const id = Collider.feedLayerId[i];
   if (id === FEED_LAYER_NONE) return;
-  const indices = Layer._feedIndices[id];
-  const countArr = Layer._feedCount;
-  if (!indices || !countArr) {
-    Collider.feedLayerId[i] = FEED_LAYER_NONE;
-    Collider.feedSlot[i] = FEED_SLOT_NONE;
-    Collider.feedBits[i] = 0;
-    return;
+  acquireFeedLock(id);
+  try {
+    clearFeedLayerAtUnlocked(i);
+  } finally {
+    releaseFeedLock(id);
   }
-  const slot = Collider.feedSlot[i];
-  let count = Atomics.load(countArr, id);
-  if (count > 0 && slot < count) {
-    const last = count - 1;
-    if (slot !== last) {
-      const moved = indices[last];
-      indices[slot] = moved;
-      if (Collider.feedSlot) Collider.feedSlot[moved] = slot;
-    }
-    Atomics.store(countArr, id, last);
-  }
-  Collider.feedLayerId[i] = FEED_LAYER_NONE;
-  Collider.feedSlot[i] = FEED_SLOT_NONE;
-  Collider.feedBits[i] = 0;
 }

@@ -5,6 +5,8 @@
  */
 const RGBA32_BYTES = 16;
 
+let _padBuf = null;
+
 /** WebGPU writeTexture bytesPerRow must be a multiple of 256. */
 export function writeRgba32Float(renderer, source, data, width, height, label) {
   const device = renderer?.gpu?.device;
@@ -26,7 +28,9 @@ export function writeRgba32Float(renderer, source, data, width, height, label) {
   if (bytesPerRow !== unpadded) {
     const srcFloats = width * 4;
     const dstFloats = bytesPerRow / 4;
-    const padded = new Float32Array(dstFloats * height);
+    const need = dstFloats * height;
+    if (!_padBuf || _padBuf.length < need) _padBuf = new Float32Array(need);
+    const padded = _padBuf;
     for (let y = 0; y < height; y++) {
       padded.set(data.subarray(y * srcFloats, (y + 1) * srcFloats), y * dstFloats);
     }

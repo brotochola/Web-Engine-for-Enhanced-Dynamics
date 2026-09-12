@@ -15,6 +15,30 @@ import { MAX_POLYGON_VERTICES, ShapeType, COMPUTE_FLAG_STATIC, COMPUTE_FLAG_SWEE
 export const BODY_FLOATS = 16;
 export const BODY_STRIDE_BYTES = BODY_FLOATS * 4;
 
+/** Reused pack result (no alloc in the hot loop). */
+export const PACK_OUT = { bodyCount: 0, vertCount: 0 };
+
+function writeBody(bodyData, bodyCount, x, y, c, s, hw, hh, kind, flags, velx, vely, w, vStart, vCount, prevX, prevY) {
+  const b = bodyCount * BODY_FLOATS;
+  bodyData[b] = x;
+  bodyData[b + 1] = y;
+  bodyData[b + 2] = c;
+  bodyData[b + 3] = s;
+  bodyData[b + 4] = hw;
+  bodyData[b + 5] = hh;
+  bodyData[b + 6] = kind;
+  bodyData[b + 7] = flags;
+  bodyData[b + 8] = velx;
+  bodyData[b + 9] = vely;
+  bodyData[b + 10] = w;
+  bodyData[b + 11] = vStart;
+  bodyData[b + 12] = vCount;
+  bodyData[b + 13] = prevX;
+  bodyData[b + 14] = prevY;
+  bodyData[b + 15] = 0;
+  return bodyCount + 1;
+}
+
 /**
  * @param {number} layerId
  * @param {Float32Array} bodyData
@@ -42,7 +66,9 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
   const maxVerts = vertData ? (vertData.length / 2) | 0 : 0;
 
   if (!indices || feederCount <= 0 || cap <= 0) {
-    return { bodyCount: 0, vertCount: 0 };
+    PACK_OUT.bodyCount = 0;
+    PACK_OUT.vertCount = 0;
+    return PACK_OUT;
   }
 
   const tx = Transform.x;
@@ -69,29 +95,6 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
   const feedBits = Collider.feedBits;
 
   const n = feederCount < cap ? feederCount : cap;
-
-  function emit(i, x, y, c, s, hw, hh, kind, flags, velx, vely, w, vStart, vCount, prevX, prevY) {
-    if (bodyCount >= cap) return false;
-    const b = bodyCount * BODY_FLOATS;
-    bodyData[b] = x;
-    bodyData[b + 1] = y;
-    bodyData[b + 2] = c;
-    bodyData[b + 3] = s;
-    bodyData[b + 4] = hw;
-    bodyData[b + 5] = hh;
-    bodyData[b + 6] = kind;
-    bodyData[b + 7] = flags;
-    bodyData[b + 8] = velx;
-    bodyData[b + 9] = vely;
-    bodyData[b + 10] = w;
-    bodyData[b + 11] = vStart;
-    bodyData[b + 12] = vCount;
-    bodyData[b + 13] = prevX;
-    bodyData[b + 14] = prevY;
-    bodyData[b + 15] = 0;
-    bodyCount++;
-    return true;
-  }
 
   for (let f = 0; f < n; f++) {
     if (bodyCount >= cap) break;
@@ -176,23 +179,28 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
 
     const ddx = worldX - prevPx;
     const ddy = worldY - prevPy;
-    if (!emit(i, worldX, worldY, c, s, hw, hh, kind, flags, velx, vely, w, vStart, vCount, worldX - ddx, worldY - ddy)) break;
+    if (bodyCount >= cap) break;
+    bodyCount = writeBody(bodyData, bodyCount, worldX, worldY, c, s, hw, hh, kind, flags, velx, vely, w, vStart, vCount, prevPx, prevPy);
 
     if (!sweep || !canSweep || (isStatic && isStatic[i])) continue;
     const dx = worldX - sweepFromX;
     const dy = worldY - sweepFromY;
-    const dist = Math.hypot(dx, dy);
+    const distSq = dx * dx + dy * dy;
     const cell = 8;
-    const samples = Math.min(8, Math.ceil(dist / cell));
+    if (distSq <= cell * cell) continue;
+    const samples = Math.min(8, Math.ceil(Math.sqrt(distSq) / cell));
     if (samples <= 1) continue;
     const sweepFlags = (flags & ~1) | COMPUTE_FLAG_SWEEP;
     for (let k = 0; k < samples; k++) {
       const t = k / samples;
       const sx = sweepFromX + dx * t;
       const sy = sweepFromY + dy * t;
-      if (!emit(i, sx, sy, sweepC, sweepS, hw, hh, kind, sweepFlags, velx, vely, w, vStart, vCount, sx - ddx, sy - ddy)) break;
+      if (bodyCount >= cap) break;
+      bodyCount = writeBody(bodyData, bodyCount, sx, sy, sweepC, sweepS, hw, hh, kind, sweepFlags, velx, vely, w, vStart, vCount, sx - ddx, sy - ddy);
     }
   }
 
-  return { bodyCount, vertCount };
+  PACK_OUT.bodyCount = bodyCount;
+  PACK_OUT.vertCount = vertCount;
+  return PACK_OUT;
 }

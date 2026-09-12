@@ -221,8 +221,9 @@ test('prelude tail matches SAB map order (integration)', () => {
     const map = Layer._uniformMaps[id];
     const types = Layer._metadata.layers[id].uniformTypes;
     const out = buildComputePrelude(map, types);
-    // Every map entry appears as a struct field, ordered by offset
+    // Scene uniforms only (reserved look names stay on CustomUniforms)
     const positions = Object.entries(map)
+      .filter(([name]) => !(name in RESERVED_LOOK_UNIFORMS))
       .sort((a, b) => a[1].offset - b[1].offset)
       .map(([name]) => {
         const idx = out.indexOf(`  ${name}: `);
@@ -232,6 +233,7 @@ test('prelude tail matches SAB map order (integration)', () => {
     const sorted = [...positions].sort((a, b) => a - b);
     assert.deepEqual(positions, sorted);
     assert.ok(out.includes('uTint: vec3<f32>,'));
+    assert.equal(out.includes('  uTime: '), false);
   } finally {
     Layer.reset();
   }

@@ -1,17 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Layer } from '../../src/core/Layer.js';
+import { Layer, reservedLookUniformFloatCount } from '../../src/core/Layer.js';
 import { Collider } from '../../src/components/Collider.js';
 import { Transform } from '../../src/components/Transform.js';
 import { RigidBody } from '../../src/components/RigidBody.js';
 import { feedLayerAt, clearFeedLayerAt } from '../../src/core/computeFeed.js';
 import { packBox2dBodies, BODY_FLOATS } from '../../src/workers/Box2dBodyPack.js';
-import { inferComputeLayout } from '../../src/workers/inferComputeLayout.js';
-import { prependComputePrelude } from '../../src/workers/wgslPrelude.js';
+import { inferComputeLayout, resolveComputeLayout, DEFAULT_SIMPLE_LAYOUT } from '../../src/workers/inferComputeLayout.js';
+import { prependComputePrelude, buildComputePrelude } from '../../src/workers/wgslPrelude.js';
 import {
   ENGINE_FRAME_PREFIX_FLOATS,
   computePassActive,
+  allComputePassesIdle,
+  computeLayerPacksBodies,
+  ComputeLayer,
 } from '../../src/workers/ComputeLayer.js';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -388,6 +391,9 @@ test('computeTextureExtent: scale, default canvas, explicit size, min 8', () => 
   assert.deepEqual(Layer.computeTextureExtent(100, 50, null), { texW: 100, texH: 50 });
   assert.deepEqual(Layer.computeTextureExtent(10, 10, { width: 64, height: 32 }), { texW: 64, texH: 32 });
   assert.deepEqual(Layer.computeTextureExtent(1, 1, { scale: 1 }), { texW: 8, texH: 8 });
+  const out = { texW: 0, texH: 0 };
+  assert.equal(Layer.computeTextureExtent(10, 10, { width: 64, height: 32 }, out), out);
+  assert.deepEqual(out, { texW: 64, texH: 32 });
 });
 
 test('viewport RT resize: compute look has rtOut only; uTexture stays lookSource', () => {
@@ -853,3 +859,168 @@ test('burningBoxesScene: landscape bg + particle fuel pass', () => {
   assert.match(scene, /dispatchFrom: 'particles'/);
   assert.match(scene, /maxParticles: FIRE_LF_MAX/);
 });
+
+test('resolveComputeLayout: empty WGSL gets simple params+bodies+verts+out', () => {
+  const groups = resolveComputeLayout('fn x() {}', { textures: [], buffers: [] });
+  assert.deepEqual(groups, DEFAULT_SIMPLE_LAYOUT);
+  assert.equal(groups[0][0].resource, 'params');
+  assert.equal(groups[0][1].resource, 'bodies');
+  assert.equal(groups[0][2].resource, 'verts');
+  assert.equal(groups[1][0].resource, 'out');
+});
+
+test('resolveComputeLayout: fireStamp raw merges prelude params', () => {
+  const ctx = { textures: FIRE_TEX, buffers: FIRE_BUF };
+  const raw = readFileSync(join(SHADER_DIR, 'fireStamp.wgsl'), 'utf8');
+  const groups = resolveComputeLayout(raw, ctx);
+  assert.equal(groups[0][0].resource, 'params');
+  assert.equal(groups[0][1].resource, 'bodies');
+  assert.equal(groups[0][2].resource, 'verts');
+  assert.equal(groups[1][0].resource, 'stamp');
+  const preluded = inferComputeLayout(prependComputePrelude(raw, null, null), ctx);
+  assert.equal(groups[0][0].resource, preluded[0][0].resource);
+  assert.equal(groups[1][0].resource, preluded[1][0].resource);
+});
+
+test('feedLayerAt/clearFeedLayerAt interleaved stays dense and bijective', () => {
+  const count = 8;
+  Collider.initializeArrays(new SharedArrayBuffer(Collider.getBufferSize(count)), count);
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      { sim: { shader: { fragment: 'f', compute: 's', maxBodies: 8 } } },
+      BUILT_IN_LAYERS,
+      true
+    );
+    const id = Layer.get('sim').id;
+    for (let i = 0; i < 4; i++) Collider.active[i] = 1;
+    assert.equal(feedLayerAt(0, id), true);
+    assert.equal(feedLayerAt(1, id), true);
+    assert.equal(clearFeedLayerAt(0) || true, true);
+    assert.equal(feedLayerAt(2, id), true);
+    assert.equal(feedLayerAt(3, id), true);
+    assert.equal(clearFeedLayerAt(1) || true, true);
+    assert.equal(feedLayerAt(0, id), true);
+    const n = Atomics.load(Layer._feedCount, id);
+    const seen = new Set();
+    for (let s = 0; s < n; s++) {
+      const idx = Layer._feedIndices[id][s];
+      assert.equal(Collider.feedLayerId[idx], id);
+      assert.equal(Collider.feedSlot[idx], s);
+      assert.equal(seen.has(idx), false);
+      seen.add(idx);
+    }
+    assert.equal(seen.size, n);
+    assert.equal(n, 3);
+  } finally {
+    Layer.reset();
+  }
+});
+
+test('ComputeLayer.destroy then resize throws WeedJS error', () => {
+  globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2, STORAGE: 4 };
+  globalThis.GPUTextureUsage = {
+    TEXTURE_BINDING: 1,
+    COPY_DST: 2,
+    COPY_SRC: 4,
+    STORAGE_BINDING: 8,
+  };
+  globalThis.GPUShaderStage = { COMPUTE: 1 };
+  const mkBuf = () => ({ destroy() {} });
+  const mkTex = () => ({ destroy() {}, createView() { return {}; } });
+  const device = {
+    createBuffer: () => mkBuf(),
+    createTexture: () => mkTex(),
+    createBindGroupLayout: () => ({}),
+    createPipelineLayout: () => ({}),
+    createComputePipeline: () => ({}),
+    createBindGroup: () => ({}),
+    queue: { writeBuffer() {}, submit() {} },
+  };
+  const cl = new ComputeLayer({
+    device,
+    meta: {
+      id: 0,
+      name: 'sim',
+      compute: { passes: [], textures: [], size: { width: 16, height: 16 } },
+    },
+    renderer: {},
+    lookSource: {},
+  });
+  cl.resize(16, 16);
+  cl.destroy();
+  assert.throws(() => cl.resize(32, 32), /WeedJS: ComputeLayer used after destroy/);
+});
+
+test('compute FrameData is prefix + scene uniforms, not reserved look slots', () => {
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      {
+        fire: {
+          shader: {
+            fragment: 'f',
+            compute: 's',
+            uniforms: {
+              uRise: { value: -1, type: 'f32' },
+              uCellSize: { value: 8, type: 'f32' },
+            },
+          },
+        },
+      },
+      BUILT_IN_LAYERS,
+      true
+    );
+    const fire = Layer.get('fire');
+    const map = Layer._uniformMaps[fire.id];
+    assert.equal(reservedLookUniformFloatCount(), 14);
+    assert.equal(map.uTime.offset, 0);
+    assert.equal(map.uRise.offset, 14);
+    assert.equal(map.uCellSize.offset, 15);
+    const prelude = buildComputePrelude(map, Layer._metadata.layers[fire.id].uniformTypes);
+    assert.match(prelude, /uRise: f32/);
+    assert.match(prelude, /uCellSize: f32/);
+    assert.equal(/^\s+uTime:/m.test(prelude), false);
+    assert.match(prelude, /time: f32/);
+  } finally {
+    Layer.reset();
+  }
+});
+
+test('computeLayerPacksBodies false for LIQUID_FUN', () => {
+  assert.equal(computeLayerPacksBodies(LAYER_COMPUTE_SOURCE.LIQUID_FUN), false);
+  assert.equal(computeLayerPacksBodies(LAYER_COMPUTE_SOURCE.BOX2D_BODIES), true);
+});
+
+test('allComputePassesIdle true only when every pass is gated off', () => {
+  const origin = [{ when: 'originShift' }, { when: 'originShift' }];
+  assert.equal(allComputePassesIdle(origin, false, true), true);
+  assert.equal(allComputePassesIdle(origin, false, false), false);
+  assert.equal(allComputePassesIdle([{ when: null }], false, true), false);
+});
+
+test('pass dispatch workgroup counts round-trip', () => {
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      {
+        sim: {
+          shader: {
+            fragment: 'look',
+            compute: {
+              source: 'sim',
+              passes: [{ entry: 'main', dispatch: { x: 4, y: 2 } }],
+            },
+          },
+        },
+      },
+      BUILT_IN_LAYERS,
+      true
+    );
+    const sim = Layer.get('sim');
+    assert.deepEqual(sim.compute.passes[0].dispatch, { x: 4, y: 2 });
+  } finally {
+    Layer.reset();
+  }
+});
+

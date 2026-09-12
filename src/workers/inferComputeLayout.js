@@ -1,7 +1,24 @@
 /**
  * Infer compute bind-group specs from WGSL @group/@binding declarations.
  * Scene still declares textures/buffers; this only wires slots to those names.
+ * Infer from **scene** WGSL (pre-prelude). {@link resolveComputeLayout} merges
+ * engine `params` at group 0 binding 0 and applies the simple default when
+ * the shader has no storage/texture bindings.
  */
+
+/** params + bodies + verts + one `out` storage tex. Used when WGSL has no @group. */
+export const DEFAULT_SIMPLE_LAYOUT = [
+  [
+    { binding: 0, buffer: 'uniform', resource: 'params' },
+    { binding: 1, buffer: 'read-only-storage', resource: 'bodies' },
+    { binding: 2, buffer: 'read-only-storage', resource: 'verts' },
+  ],
+  [
+    { binding: 0, storageTexture: { format: 'rgba8unorm', access: 'write-only' }, resource: 'out' },
+  ],
+];
+
+const PRELUDE_PARAMS = { binding: 0, buffer: 'uniform', resource: 'params' };
 
 const ENGINE_ALIASES = {
   frame: 'params',
@@ -148,4 +165,48 @@ export function inferComputeLayout(wgsl, ctx) {
     groups.push(list);
   }
   return groups;
+}
+
+function hasStorageOrTexture(groups) {
+  for (let g = 0; g < groups.length; g++) {
+    const list = groups[g];
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i];
+      if (e.storageTexture || e.texture) return true;
+      if (e.buffer && e.resource !== 'params') return true;
+    }
+  }
+  return false;
+}
+
+/** Insert prelude `params` at @group(0) @binding(0) if missing. */
+export function mergePreludeParams(groups) {
+  const out = [];
+  const src = groups && groups.length ? groups : [];
+  for (let g = 0; g < src.length; g++) out.push(src[g].slice());
+  if (!out.length) out.push([]);
+  const g0 = out[0];
+  let hasParams = false;
+  for (let i = 0; i < g0.length; i++) {
+    if (g0[i].resource === 'params' && g0[i].binding === 0) {
+      hasParams = true;
+      break;
+    }
+  }
+  if (!hasParams) g0.unshift(PRELUDE_PARAMS);
+  return out;
+}
+
+/**
+ * Infer from scene WGSL, merge prelude params, fall back to simple layout.
+ * @param {string} sceneWgsl
+ * @param {{ textures?: Array<{name:string, format?:string}>, buffers?: Array<{name:string}> }} ctx
+ * @returns {Array<Array<object>>}
+ */
+export function resolveComputeLayout(sceneWgsl, ctx) {
+  const inferred = inferComputeLayout(sceneWgsl, ctx);
+  if (!inferred.length) return DEFAULT_SIMPLE_LAYOUT;
+  const merged = mergePreludeParams(inferred);
+  if (!hasStorageOrTexture(merged)) return DEFAULT_SIMPLE_LAYOUT;
+  return merged;
 }

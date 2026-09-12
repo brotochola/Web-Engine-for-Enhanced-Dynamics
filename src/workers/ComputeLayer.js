@@ -1,27 +1,46 @@
 /**
  * Generic WebGPU compute-layer runner. Same GPUDevice as Pixi.
- * Scene owns textures, extra buffers, pass graph. Layouts inferred from WGSL
- * unless compute.layouts is set. Engine owns Body/verts pack, Frame prefix, pin.
+ * Scene owns textures, extra buffers, pass graph. Layouts inferred from scene
+ * WGSL (pre-prelude) unless compute.layouts is set. Engine owns Body/verts
+ * pack, Frame prefix, pin.
  *
- * ponytail: field-subset ping-pong rebuilds bind groups after each swap.
- * Ceiling: createBindGroup per swap. Upgrade: 16-combo cache.
+ * ponytail: ping-pong bind groups cached by phase bitmask (shipped). Ceiling
+ * was createBindGroup per swap. WebGPU has no dispatch origin; passes.dispatch
+ * is workgroup counts only.
  */
 import { packBox2dBodies, BODY_FLOATS } from './Box2dBodyPack.js';
 import { packLiquidFunParticles, PARTICLE_FLOATS } from './LiquidFunParticlePack.js';
-import { Layer } from '../core/Layer.js';
+import { LAYER_COMPUTE_SOURCE } from '../core/ConfigDefaults.js';
+import { Layer, RESERVED_LOOK_UNIFORMS } from '../core/Layer.js';
 import { pinGpuTexture } from './pinGpuTexture.js';
-import { inferComputeLayout } from './inferComputeLayout.js';
+import { resolveComputeLayout } from './inferComputeLayout.js';
 import { prependComputePrelude } from './wgslPrelude.js';
 
 const WORK = 8;
 /** Engine FrameData prefix (floats). Scene uniforms memcpy at this offset. */
 export const ENGINE_FRAME_PREFIX_FLOATS = 16;
 
+const DESTROYED_ERR = 'WeedJS: ComputeLayer used after destroy';
+
 /** Skip/run a compute pass gated on camera origin vs zoom. */
 export function computePassActive(when, zoomChanged, camStill) {
   if (when === 'originShift') return !camStill;
   if (when === 'zoomChanged') return !!zoomChanged;
   return true;
+}
+
+/** True when every pass is gated off (Hyp C skip pack/copy). */
+export function allComputePassesIdle(passes, zoomChanged, camStill) {
+  if (!passes || !passes.length) return false;
+  for (let i = 0; i < passes.length; i++) {
+    if (computePassActive(passes[i].when, zoomChanged, camStill)) return false;
+  }
+  return true;
+}
+
+/** LiquidFun layers do not pack Box2D colliders. */
+export function computeLayerPacksBodies(computeSource) {
+  return computeSource !== LAYER_COMPUTE_SOURCE.LIQUID_FUN;
 }
 
 function finiteOrZero(n) {
@@ -31,19 +50,6 @@ function finiteOrZero(n) {
 function passLayoutName(p) {
   return p.layout || p.source || 'simple';
 }
-
-const DEFAULT_LAYOUTS = {
-  simple: [
-    [
-      { binding: 0, buffer: 'uniform', resource: 'params' },
-      { binding: 1, buffer: 'read-only-storage', resource: 'bodies' },
-      { binding: 2, buffer: 'read-only-storage', resource: 'verts' },
-    ],
-    [
-      { binding: 0, storageTexture: { format: 'rgba8unorm', access: 'write-only' }, resource: 'out' },
-    ],
-  ],
-};
 
 function ceilDiv(n, d) {
   return Math.ceil(n / d) | 0;
@@ -66,6 +72,10 @@ function destroyTex(t) {
   if (t && typeof t.destroy === 'function') t.destroy();
 }
 
+function destroyBuf(b) {
+  if (b && typeof b.destroy === 'function') b.destroy();
+}
+
 export class ComputeLayer {
   constructor({ device, meta, renderer, lookSource }) {
     this.device = device;
@@ -73,6 +83,7 @@ export class ComputeLayer {
     this.renderer = renderer;
     this.lookSource = lookSource;
     this.layerId = meta.id;
+    this.computeSource = meta.computeSource || null;
     this.maxBodies = (meta.maxBodies | 0) || 512;
     this.maxParticles = (meta.maxParticles | 0) || (meta.compute?.maxParticles | 0) || 0;
     this._texSize = meta.compute?.size || { scale: 1 };
@@ -87,6 +98,7 @@ export class ComputeLayer {
     this.numX = 0;
     this.numY = 0;
     this._texReady = false;
+    this._destroyed = false;
 
     const extra = Layer._uniformFloats[this.layerId]?.length || 0;
     this._paramCount = Math.max(32, Math.ceil((ENGINE_FRAME_PREFIX_FLOATS + extra) / 4) * 4);
@@ -126,7 +138,6 @@ export class ComputeLayer {
     if (!this._lookName && this.texDecls.length) this._lookName = this.texDecls[0].name;
     this._lookSample = null;
     this._layouts = null;
-    // Reused packBox2dBodies opts — filled in step(), never allocated per tick.
     this._packOpts = {
       sweep: true,
       poseX: null,
@@ -140,17 +151,30 @@ export class ComputeLayer {
     };
     this._layoutNames = null;
     this._bindGroups = Object.create(null);
+    this._bindCache = [];
+    this._pingPhase = 0;
+    this._pingBits = Object.create(null);
     this._passDX = new Int32Array(Math.max(1, this.passes.length));
     this._passDY = new Int32Array(Math.max(1, this.passes.length));
+    this._dispX = -1;
+    this._dispY = -1;
+    this._dispPc = -1;
+    this._extent = { texW: 8, texH: 8 };
+    this._submitList = [null];
+    this._sceneCopy = [];
+    this._computePass = null;
     this._ready = false;
     this._compileError = false;
-    this.feederCount = 0;
     this.lastBodyCount = 0;
     this.lastParticleCount = 0;
     this._prevCameraX = 0;
     this._prevCameraY = 0;
     this._prevZoom = 1;
     this._hasPrevFrame = false;
+  }
+
+  _assertAlive() {
+    if (this._destroyed) throw new Error(DESTROYED_ERR);
   }
 
   _allocSceneBuffers() {
@@ -167,7 +191,28 @@ export class ComputeLayer {
     }
   }
 
+  _buildSceneUniformCopy() {
+    const map = Layer._uniformMaps[this.layerId];
+    const list = [];
+    this._sceneCopy = list;
+    if (!map) return;
+    const names = Object.keys(map);
+    names.sort((a, b) => map[a].offset - map[b].offset);
+    let packed = 0;
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i];
+      if (name in RESERVED_LOOK_UNIFORMS) continue;
+      const e = map[name];
+      const size = e.size;
+      if (size === 2) packed = (packed + 1) & ~1;
+      else if (size >= 3) packed = (packed + 3) & ~3;
+      list.push(e.offset, ENGINE_FRAME_PREFIX_FLOATS + packed, size);
+      packed += size;
+    }
+  }
+
   async compile() {
+    this._assertAlive();
     const device = this.device;
     const uniformMap = Layer._uniformMaps[this.layerId] || null;
     const uniformTypes = this.meta.uniformTypes || null;
@@ -177,8 +222,8 @@ export class ComputeLayer {
         if (!raw) {
           throw new Error(`pass "${this.passes[i].entry}" missing WGSL`);
         }
-        // Prepend engine FrameData/Body prelude; throws on redeclared structs.
         if (!this.passes[i]._preluded) {
+          this.passes[i]._sceneCode = raw;
           this.passes[i].code = prependComputePrelude(raw, uniformMap, uniformTypes);
           this.passes[i]._preluded = true;
         }
@@ -195,6 +240,7 @@ export class ComputeLayer {
         }
         this.modules.set(code, module);
       }
+      this._buildSceneUniformCopy();
       this._ensurePipelines();
     } catch (err) {
       this._compileError = true;
@@ -215,10 +261,12 @@ export class ComputeLayer {
       const p = this.passes[i];
       const key = passLayoutName(p);
       if (out[key]) continue;
-      const inferred = inferComputeLayout(p.code || '', ctx);
-      out[key] = inferred.length ? inferred : DEFAULT_LAYOUTS.simple;
+      const sceneWgsl = p._sceneCode || '';
+      out[key] = resolveComputeLayout(sceneWgsl, ctx);
     }
-    if (!Object.keys(out).length) return DEFAULT_LAYOUTS;
+    if (!Object.keys(out).length) {
+      out.simple = resolveComputeLayout('', ctx);
+    }
     return out;
   }
 
@@ -293,15 +341,45 @@ export class ComputeLayer {
     destroyTex(this._lookSample);
     this._lookSample = null;
     this._texReady = false;
+    this._bindCache = [];
+    this._pingPhase = 0;
+    this._bindGroups = Object.create(null);
+  }
+
+  destroy() {
+    if (this._destroyed) return;
+    this._destroyTextures();
+    destroyBuf(this.paramsBuffer);
+    destroyBuf(this.bodyBuffer);
+    destroyBuf(this.vertBuffer);
+    destroyBuf(this.particleBuffer);
+    this.paramsBuffer = null;
+    this.bodyBuffer = null;
+    this.vertBuffer = null;
+    this.particleBuffer = null;
+    const bufNames = Object.keys(this._buf);
+    for (let i = 0; i < bufNames.length; i++) {
+      destroyBuf(this._buf[bufNames[i]]);
+    }
+    this._buf = Object.create(null);
+    this.modules.clear();
+    this.pipelines.length = 0;
+    this._layouts = null;
+    this._layoutNames = null;
+    this._ready = false;
+    this._destroyed = true;
   }
 
   resize(numX, numY) {
+    this._assertAlive();
     if (this.numX === numX && this.numY === numY && this._texReady) return;
     this._destroyTextures();
     this.numX = numX;
     this.numY = numY;
     this._ensurePipelines();
     const device = this.device;
+    this._pingBits = Object.create(null);
+    let bit = 1;
     for (let i = 0; i < this.texDecls.length; i++) {
       const d = this.texDecls[i];
       const format = d.format || 'rgba8unorm';
@@ -310,12 +388,16 @@ export class ComputeLayer {
           read: gpuTexture(device, numX, numY, format, true),
           write: gpuTexture(device, numX, numY, format, true),
         };
+        this._pingBits[d.name] = bit;
+        bit <<= 1;
       } else {
         this._tex[d.name] = { tex: gpuTexture(device, numX, numY, format, true) };
       }
     }
     this._lookSample = gpuTexture(device, numX, numY, this._lookFormat(), false);
     this._texReady = true;
+    this._pingPhase = 0;
+    this._dispX = -1;
     this._refreshDispatch();
     this._rebuildBindGroups();
   }
@@ -360,6 +442,7 @@ export class ComputeLayer {
     const layouts = this._layouts;
     const names = this._layoutNames;
     if (!layouts || !this._texReady || !names) return;
+    const groupsByLayout = Object.create(null);
     for (let i = 0; i < names.length; i++) {
       const name = names[i];
       const L = layouts[name];
@@ -375,25 +458,38 @@ export class ComputeLayer {
         }
         groups.push(device.createBindGroup({ layout: L.groups[g], entries }));
       }
-      this._bindGroups[name] = groups;
+      groupsByLayout[name] = groups;
     }
+    this._bindCache[this._pingPhase] = groupsByLayout;
+    this._bindGroups = groupsByLayout;
   }
 
   _swapNamed(names) {
     if (!names) return;
-    let any = false;
+    let bits = 0;
     for (let i = 0; i < names.length; i++) {
       const pair = this._tex[names[i]];
       if (!pair || !pair.read || !pair.write) continue;
       const tmp = pair.read;
       pair.read = pair.write;
       pair.write = tmp;
-      any = true;
+      bits |= this._pingBits[names[i]] || 0;
     }
-    if (any) this._rebuildBindGroups();
+    if (!bits) return;
+    this._pingPhase ^= bits;
+    const cached = this._bindCache[this._pingPhase];
+    if (cached) this._bindGroups = cached;
+    else this._rebuildBindGroups();
   }
 
   _refreshDispatch() {
+    const nX = this.numX;
+    const nY = this.numY;
+    const pc = this.lastParticleCount | 0;
+    if (nX === this._dispX && nY === this._dispY && pc === this._dispPc) return;
+    this._dispX = nX;
+    this._dispY = nY;
+    this._dispPc = pc;
     for (let i = 0; i < this.passes.length; i++) {
       const p = this.passes[i];
       const wg = p.workgroup;
@@ -410,6 +506,15 @@ export class ComputeLayer {
       this._passDX[i] = ceilDiv(this.numX, wx);
       this._passDY[i] = ceilDiv(this.numY, wy);
     }
+  }
+
+  _dispatchDim(raw, fallback, map, floats) {
+    if (typeof raw === 'number' && Number.isFinite(raw)) return Math.max(0, raw | 0);
+    if (typeof raw === 'string' && map && floats) {
+      const e = map[raw];
+      return e ? Math.max(0, floats[e.offset] | 0) : 0;
+    }
+    return fallback | 0;
   }
 
   _writeParams(frame, bodyCount, particleCount, prevX, prevY, prevZoom) {
@@ -432,9 +537,14 @@ export class ComputeLayer {
     p[14] = prevZoom > 0 ? prevZoom : 1;
     p[15] = particleCount;
     const floats = Layer._uniformFloats[this.layerId];
-    if (floats && floats.length) {
-      const n = Math.min(floats.length, p.length - ENGINE_FRAME_PREFIX_FLOATS);
-      if (n > 0) p.set(floats.subarray(0, n), ENGINE_FRAME_PREFIX_FLOATS);
+    const copy = this._sceneCopy;
+    if (floats && copy && copy.length) {
+      for (let i = 0; i < copy.length; i += 3) {
+        const src = copy[i];
+        const dst = copy[i + 1];
+        const size = copy[i + 2];
+        for (let k = 0; k < size; k++) p[dst + k] = floats[src + k];
+      }
     }
     this.device.queue.writeBuffer(this.paramsBuffer, 0, p);
   }
@@ -445,8 +555,25 @@ export class ComputeLayer {
    */
   step(frame, pose) {
     if (this._compileError || !this._ready) return false;
-    const ext = Layer.computeTextureExtent(frame.canvasW, frame.canvasH, this._texSize);
-    this.resize(ext.texW, ext.texH);
+    this._assertAlive();
+    Layer.computeTextureExtent(frame.canvasW, frame.canvasH, this._texSize, this._extent);
+    this.resize(this._extent.texW, this._extent.texH);
+
+    const zoom = frame.zoom > 0 ? frame.zoom : 1;
+    const camX = frame.cameraX;
+    const camY = frame.cameraY;
+    const prevX = this._hasPrevFrame ? this._prevCameraX : camX;
+    const prevY = this._hasPrevFrame ? this._prevCameraY : camY;
+    const prevZoom = this._hasPrevFrame ? this._prevZoom : zoom;
+    const zoomChanged = Math.abs(zoom - prevZoom) > 1e-6;
+    const camStill = Math.abs(camX - prevX) < 1e-6 && Math.abs(camY - prevY) < 1e-6;
+
+    if (this._hasPrevFrame && allComputePassesIdle(this.passes, zoomChanged, camStill)) {
+      this._prevCameraX = camX;
+      this._prevCameraY = camY;
+      this._prevZoom = zoom;
+      return true;
+    }
 
     const packOpts = this._packOpts;
     packOpts.poseX = pose ? pose.poseX : null;
@@ -457,9 +584,16 @@ export class ComputeLayer {
     packOpts.prevPoseY = pose ? pose.prevPoseY : null;
     packOpts.prevPoseRotC = pose ? pose.prevPoseRotC : null;
     packOpts.prevPoseRotS = pose ? pose.prevPoseRotS : null;
-    const packed = packBox2dBodies(this.layerId, this.bodyData, this.vertData, this.maxBodies, packOpts);
-    this.lastBodyCount = packed.bodyCount;
-    this.feederCount = Layer._feedCount ? Atomics.load(Layer._feedCount, this.layerId) : 0;
+
+    let bodyCount = 0;
+    let vertCount = 0;
+    if (computeLayerPacksBodies(this.computeSource)) {
+      const packed = packBox2dBodies(this.layerId, this.bodyData, this.vertData, this.maxBodies, packOpts);
+      bodyCount = packed.bodyCount;
+      vertCount = packed.vertCount;
+    }
+    this.lastBodyCount = bodyCount;
+
     let particleCount = 0;
     if (this.maxParticles > 0) {
       particleCount = packLiquidFunParticles(
@@ -471,38 +605,28 @@ export class ComputeLayer {
     this.lastParticleCount = particleCount;
     this._refreshDispatch();
     const device = this.device;
-    if (packed.bodyCount > 0) {
-      device.queue.writeBuffer(
-        this.bodyBuffer,
-        0,
-        this.bodyData.subarray(0, packed.bodyCount * BODY_FLOATS)
-      );
+    if (bodyCount > 0) {
+      device.queue.writeBuffer(this.bodyBuffer, 0, this.bodyData, 0, bodyCount * BODY_FLOATS * 4);
     }
-    if (packed.vertCount > 0) {
-      device.queue.writeBuffer(this.vertBuffer, 0, this.vertData.subarray(0, packed.vertCount * 2));
+    if (vertCount > 0) {
+      device.queue.writeBuffer(this.vertBuffer, 0, this.vertData, 0, vertCount * 2 * 4);
     }
     if (particleCount > 0) {
       device.queue.writeBuffer(
         this.particleBuffer,
         0,
-        this.particleData.subarray(0, particleCount * PARTICLE_FLOATS)
+        this.particleData,
+        0,
+        particleCount * PARTICLE_FLOATS * 4
       );
     }
 
-    const zoom = frame.zoom > 0 ? frame.zoom : 1;
-    const camX = frame.cameraX;
-    const camY = frame.cameraY;
-    const prevX = this._hasPrevFrame ? this._prevCameraX : camX;
-    const prevY = this._hasPrevFrame ? this._prevCameraY : camY;
-    const prevZoom = this._hasPrevFrame ? this._prevZoom : zoom;
-
-    this._writeParams(frame, packed.bodyCount, particleCount, prevX, prevY, prevZoom);
+    this._writeParams(frame, bodyCount, particleCount, prevX, prevY, prevZoom);
 
     const encoder = device.createCommandEncoder();
     const map = Layer._uniformMaps[this.layerId];
     const floats = Layer._uniformFloats[this.layerId];
-    const zoomChanged = Math.abs(zoom - prevZoom) > 1e-6;
-    const camStill = Math.abs(camX - prevX) < 1e-6 && Math.abs(camY - prevY) < 1e-6;
+    this._computePass = null;
 
     for (let i = 0; i < this.passes.length; i++) {
       const p = this.passes[i];
@@ -515,12 +639,21 @@ export class ComputeLayer {
         iters = e && floats ? Math.max(0, floats[e.offset] | 0) : 0;
       }
       if (p.dispatchFrom === 'particles' && particleCount <= 0) continue;
-      const dx = this._passDX[i];
-      const dy = this._passDY[i];
+      let dx = this._passDX[i];
+      let dy = this._passDY[i];
+      if (p.dispatch) {
+        dx = this._dispatchDim(p.dispatch.x, dx, map, floats);
+        dy = this._dispatchDim(p.dispatch.y, dy, map, floats);
+      }
       for (let k = 0; k < iters; k++) {
         this._dispatchIndex(encoder, i, layout, dx, dy);
         if (p.swap && p.swap.length) this._swapNamed(p.swap);
       }
+    }
+
+    if (this._computePass) {
+      this._computePass.end();
+      this._computePass = null;
     }
 
     const lookGpu = this._lookGpu();
@@ -531,7 +664,8 @@ export class ComputeLayer {
         { width: this.numX, height: this.numY }
       );
     }
-    device.queue.submit([encoder.finish()]);
+    this._submitList[0] = encoder.finish();
+    device.queue.submit(this._submitList);
     if (this.lookSource && this._lookSample) {
       pinGpuTexture(this.renderer, this.lookSource, this._lookSample);
     }
@@ -542,14 +676,18 @@ export class ComputeLayer {
     return true;
   }
 
+  _beginStepPass(encoder) {
+    if (!this._computePass) this._computePass = encoder.beginComputePass();
+    return this._computePass;
+  }
+
   _dispatchPipe(encoder, pipe, layout, gx, gy) {
     const groups = this._bindGroups[layout];
     if (!pipe || !groups) return;
-    const pass = encoder.beginComputePass();
+    const pass = this._beginStepPass(encoder);
     pass.setPipeline(pipe);
     for (let g = 0; g < groups.length; g++) pass.setBindGroup(g, groups[g]);
     pass.dispatchWorkgroups(gx, gy);
-    pass.end();
   }
 
   _dispatchIndex(encoder, passIndex, layout, gx, gy) {
