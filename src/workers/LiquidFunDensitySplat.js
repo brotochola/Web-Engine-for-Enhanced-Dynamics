@@ -15,6 +15,7 @@ import {
   BufferUsage,
   State,
 } from '../lib/pixi_8.16_.min.js';
+import { packLiquidFunLightSlabs } from '../core/liquidFunLightSplat.js';
 
 export const LF_SPLAT_FLOATS = 4;
 export const LF_SPLAT_STRIDE = LF_SPLAT_FLOATS * 4;
@@ -27,8 +28,9 @@ export class LiquidFunDensitySplat {
    * @param {string} [opts.blendMode='add']
    * @param {boolean} [opts.useWebGpu=true]
    * @param {object} opts.shaders - fetched engine sources (`lfSplat` or lfSplatVert/Frag)
+   * @param {object} [opts.shaderResources] - extra Pixi shader resources (lighting splat uniforms)
    */
-  constructor({ capacity, label, blendMode = 'add', useWebGpu = true, shaders = null }) {
+  constructor({ capacity, label, blendMode = 'add', useWebGpu = true, shaders = null, shaderResources = null }) {
     this.capacity = Math.max(1, capacity | 0);
     this.data = new Float32Array(this.capacity * LF_SPLAT_FLOATS);
     this.dataU32 = new Uint32Array(this.data.buffer);
@@ -67,7 +69,7 @@ export class LiquidFunDensitySplat {
         vertex: { source, entryPoint: 'mainVert' },
         fragment: { source, entryPoint: 'mainFrag' },
       });
-      this.shader = new Shader({ gpuProgram, resources: {} });
+      this.shader = new Shader({ gpuProgram, resources: shaderResources || {} });
     } else {
       const vertex = shaders?.lfSplatVert;
       const fragment = shaders?.lfSplatFrag;
@@ -81,7 +83,7 @@ export class LiquidFunDensitySplat {
         fragment,
         name,
       });
-      this.shader = new Shader({ glProgram, resources: {} });
+      this.shader = new Shader({ glProgram, resources: shaderResources || {} });
     }
 
     const state = new State();
@@ -206,6 +208,30 @@ export class LiquidFunDensitySplat {
     this.geometry.instanceCount = out;
     this.mesh.visible = true;
     return out;
+  }
+
+  /**
+   * Pack HEAP particles in lit group slabs (lightIntensity[id] > 0). Ignores sprite layerId.
+   * @returns {number} packed instance count
+   */
+  uploadLitGroups(views, groups, opts = {}) {
+    const n = packLiquidFunLightSlabs(
+      this.data,
+      this.dataU32,
+      this.capacity,
+      views,
+      groups,
+      opts,
+    );
+    if (n <= 0) {
+      this.geometry.instanceCount = 0;
+      this.mesh.visible = false;
+      return 0;
+    }
+    this.buffer.update(n * LF_SPLAT_STRIDE);
+    this.geometry.instanceCount = n;
+    this.mesh.visible = true;
+    return n;
   }
 
   destroy() {

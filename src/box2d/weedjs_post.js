@@ -102,6 +102,7 @@
     alphaMin: 1,
     alphaMax: 1,
     layerId: 0,
+    lightIntensity: 0,
     pending: false,
   };
   let pendingParticleTuning = {
@@ -1035,6 +1036,10 @@
       pendingLiquidFunEmit.alphaMax = alphaMax;
       pendingLiquidFunEmit.pending = true;
     },
+    setLiquidFunLight(lightIntensity) {
+      pendingLiquidFunEmit.lightIntensity = lightIntensity > 0 ? lightIntensity : 0;
+      pendingLiquidFunEmit.pending = true;
+    },
     setParticleTuning(phase, a, b, c, d) {
       const p = phase | 0;
       if (p === 0) {
@@ -1105,7 +1110,7 @@
       if (!world) return;
       const emit = takePendingLiquidFunEmit();
       const oldCount = world.getParticleCount();
-      world.createParticleGroupBox(
+      const gid = world.createParticleGroupBox(
         posX,
         posY,
         halfWidth,
@@ -1121,12 +1126,13 @@
         emit.groupFlags || 0,
       );
       paintNewLiquidFunParticles(oldCount, emit);
+      stampGroupLightIntensity(gid, emit.lightIntensity);
     },
     createParticleGroupCircle(systemId, posX, posY, radius, flags) {
       if (!world) return;
       const emit = takePendingLiquidFunEmit();
       const oldCount = world.getParticleCount();
-      world.createParticleGroupCircle(
+      const gid = world.createParticleGroupCircle(
         posX,
         posY,
         radius,
@@ -1141,9 +1147,11 @@
         emit.groupFlags || 0,
       );
       paintNewLiquidFunParticles(oldCount, emit);
+      stampGroupLightIntensity(gid, emit.lightIntensity);
     },
     destroyParticleGroup(systemId, groupId) {
       if (!world) return;
+      stampGroupLightIntensity(groupId, 0);
       world.destroyParticleGroup(groupId);
     },
     destroyParticleSystem(systemId) {
@@ -1364,6 +1372,7 @@
       alphaMin: 1,
       alphaMax: 1,
       layerId: 0,
+      lightIntensity: 0,
       pending: false,
     };
     if (!emit.pending) {
@@ -1383,6 +1392,7 @@
       emit.alphaMin = 1;
       emit.alphaMax = 1;
       emit.layerId = 0;
+      emit.lightIntensity = 0;
     }
     return emit;
   }
@@ -1466,6 +1476,29 @@
     for (let i = start; i < end; i++) arr[i] = value;
   }
 
+  function stampGroupLightIntensity(gid, intensity) {
+    const arr = liquidFunGroupsViews && liquidFunGroupsViews.lightIntensity;
+    if (!arr) return;
+    const maxG = liquidFunGroupsViews.maxGroups | 0;
+    const id = gid | 0;
+    if (id < 0 || id >= maxG) return;
+    const I = intensity > 0 ? intensity : 0;
+    arr[id] = I;
+    const sqrtArr = liquidFunGroupsViews.sqrtLightIntensity;
+    if (sqrtArr) sqrtArr[id] = I > 0 ? Math.sqrt(I) : 0;
+  }
+
+  function refillGroupLightSqrt() {
+    const I = liquidFunGroupsViews && liquidFunGroupsViews.lightIntensity;
+    const s = liquidFunGroupsViews && liquidFunGroupsViews.sqrtLightIntensity;
+    if (!I || !s) return;
+    const n = I.length < s.length ? I.length : s.length;
+    for (let i = 0; i < n; i++) {
+      const v = I[i];
+      s[i] = v > 0 ? Math.sqrt(v) : 0;
+    }
+  }
+
   function clearLiquidFunRenderState() {
     const hi = liquidFunPaintedHighWater | 0;
     wipeLiquidFunHeapPose(hi);
@@ -1488,6 +1521,22 @@
       }
     }
     if (liquidFunGroupsViews?.count) liquidFunGroupsViews.count[0] = 0;
+    if (liquidFunGroupsViews?.lightIntensity) {
+      fillLiquidFunRange(
+        liquidFunGroupsViews.lightIntensity,
+        0,
+        liquidFunGroupsViews.maxGroups | 0,
+        0,
+      );
+    }
+    if (liquidFunGroupsViews?.sqrtLightIntensity) {
+      fillLiquidFunRange(
+        liquidFunGroupsViews.sqrtLightIntensity,
+        0,
+        liquidFunGroupsViews.maxGroups | 0,
+        0,
+      );
+    }
     liquidFunPaintedHighWater = 0;
     liquidFunPrevSyncedCount = 0;
   }
@@ -2079,6 +2128,12 @@
         vy: viewFromDesc(data.liquidFunGroupsViews.vy, Float32Array),
         angularVelocity: viewFromDesc(data.liquidFunGroupsViews.angularVelocity, Float32Array),
         angle: viewFromDesc(data.liquidFunGroupsViews.angle, Float32Array),
+        lightIntensity: data.liquidFunGroupsViews.lightIntensity
+          ? viewFromDesc(data.liquidFunGroupsViews.lightIntensity, Float32Array)
+          : null,
+        sqrtLightIntensity: data.liquidFunGroupsViews.sqrtLightIntensity
+          ? viewFromDesc(data.liquidFunGroupsViews.sqrtLightIntensity, Float32Array)
+          : null,
         maxGroups: data.liquidFunGroupsMax | 0,
       };
     } else {
@@ -2225,6 +2280,10 @@
         layerId: liquidFunViews.layerId ? new Uint8Array(liquidFunViews.layerId.subarray(0, n)) : null,
       };
     }
+    let groupsLightIntensity = null;
+    if (liquidFunGroupsViews?.lightIntensity) {
+      groupsLightIntensity = new Float32Array(liquidFunGroupsViews.lightIntensity);
+    }
     return {
       count: n,
       radius: snap.radius,
@@ -2239,6 +2298,7 @@
       groups: snap.groups || null,
       pairs: snap.pairs || null,
       render,
+      groupsLightIntensity,
     };
   }
 
@@ -2279,6 +2339,17 @@
         pairs: payload.pairs,
       });
       if (gr < 0) return { ok: false, reason: "groups", code: gr };
+    }
+
+    if (liquidFunGroupsViews?.lightIntensity) {
+      const src = payload.groupsLightIntensity;
+      const dst = liquidFunGroupsViews.lightIntensity;
+      dst.fill(0);
+      if (src && src.length) {
+        const nCopy = src.length < dst.length ? src.length : dst.length;
+        dst.set(src.subarray ? src.subarray(0, nCopy) : src, 0);
+      }
+      refillGroupLightSqrt();
     }
 
     if (liquidFunViews) {

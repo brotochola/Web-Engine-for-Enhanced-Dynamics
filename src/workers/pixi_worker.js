@@ -439,6 +439,8 @@ class PixiRenderer extends AbstractWorker {
     this.lightingDisplaySprite = null; // Sprite to display the lightingRT on stage
     this._lightDataFloats = null; // Float32Array RGBA32F payload (maxLights x 2)
     this._lightDataSource = null; // BufferImageSource uploading _lightDataFloats
+    this.liquidFunMaxCount = 0;
+    this._lfLightSplat = null;
 
     // ========================================
     // SUN / DIRECTIONAL LIGHT
@@ -1281,6 +1283,7 @@ class PixiRenderer extends AbstractWorker {
           target: this.lightingRT,
           clear: true,
         });
+        this._renderLiquidFunLightingField();
       }
       if (detail) this.lightsTimeThisFrame += performance.now() - t0;
     }
@@ -1516,8 +1519,9 @@ LIGHTING SYSTEM SETUP
       shader: this.lightingShader,
     });
 
-    // Handle low-res lighting via RenderTexture
-    if (this.lightingResolution < 1.0) {
+    // Low-res lighting, or LiquidFun field splat, needs an RT target.
+    const needRt = this.lightingResolution < 1.0 || this.liquidFunMaxCount > 0;
+    if (needRt) {
       this.lightingRT = PIXI.RenderTexture.create({
         width: this.canvasWidth * this.lightingResolution,
         height: this.canvasHeight * this.lightingResolution,
@@ -1536,6 +1540,56 @@ LIGHTING SYSTEM SETUP
       this._registerLayerDisplayObject('LIGHTING', this.lightingMesh);
       this.pixiApp.stage.addChild(this.lightingMesh);
     }
+  }
+
+  _createLiquidFunLightSplat(lfMax) {
+    const cap = lfMax | 0;
+    if (cap <= 0) return;
+    const shaders = this._useWebGpu
+      ? { lfSplat: this._engineShaders.lfLightSplat }
+      : {
+          lfSplatVert: this._engineShaders.lfLightSplatVert,
+          lfSplatFrag: this._engineShaders.lfLightSplatFrag,
+        };
+    if (this._useWebGpu && !shaders.lfSplat) return;
+    if (!this._useWebGpu && (!shaders.lfSplatVert || !shaders.lfSplatFrag)) return;
+    this._lfLightSplat = new LiquidFunDensitySplat({
+      capacity: Math.max(1, cap),
+      label: 'lf-light-splat',
+      blendMode: 'add',
+      useWebGpu: this._useWebGpu,
+      shaders,
+      shaderResources: {
+        uniforms: {
+          uInvScreenScale: { value: 1.0, type: 'f32' },
+        },
+      },
+    });
+    this._lfLightSplat.mesh.blendMode = 'add';
+  }
+
+  _renderLiquidFunLightingField() {
+    const splat = this._lfLightSplat;
+    if (!splat || !this.lightingRT || this._visPolyEnabled) return;
+    const views = LiquidFun.getViews();
+    const groups = LiquidFun.getGroupViews();
+    const packed = splat.uploadLitGroups(views, groups, {
+      zoom: this._renderZoom,
+      cameraX: this._renderCameraX,
+      cameraY: this._renderCameraY,
+      resolution: this.lightingResolution,
+      canvasW: this.canvasWidth,
+      canvasH: this.canvasHeight,
+    });
+    if (packed <= 0) return;
+    const screenScale = (this._renderZoom || 1) * (this.lightingResolution || 1);
+    const u = splat.shader?.resources?.uniforms?.uniforms;
+    if (u) u.uInvScreenScale = screenScale > 0 ? 1 / screenScale : 0;
+    this.pixiApp.renderer.render({
+      container: splat.mesh,
+      target: this.lightingRT,
+      clear: false,
+    });
   }
 
   /* =====================
@@ -3507,6 +3561,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         fetchEngineShader('/src/shaders/lf_splat.wgsl').then((s) => {
           sh.lfSplat = s;
         }),
+        fetchEngineShader('/src/shaders/lf_light_splat.wgsl').then((s) => {
+          sh.lfLightSplat = s;
+        }),
         fetchEngineShader('/src/shaders/fullscreen_look.vert.wgsl').then((s) => {
           sh.lookVert = s;
         }),
@@ -3533,6 +3590,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }),
         fetchEngineShader('/src/shaders/lf_splat.frag.glsl').then((s) => {
           sh.lfSplatFrag = s;
+        }),
+        fetchEngineShader('/src/shaders/lf_light_splat.vert.glsl').then((s) => {
+          sh.lfLightSplatVert = s;
+        }),
+        fetchEngineShader('/src/shaders/lf_light_splat.frag.glsl').then((s) => {
+          sh.lfLightSplatFrag = s;
         }),
         fetchEngineShader('/src/shaders/fullscreen_look.vert.glsl').then((s) => {
           sh.lookVert = s;
@@ -3848,10 +3911,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // baseAmbient is the night/minimum light level (when sun is down)
       this.baseAmbient = lightingConfig.baseAmbient !== undefined ? lightingConfig.baseAmbient : 0.05;
       this.maxLights = lightingConfig.maxLights !== undefined ? lightingConfig.maxLights : 128;
+      this.liquidFunMaxCount = data.liquidFunMaxCount | 0;
 
       // Create lighting mesh (full-screen quad with multiply blend)
       // Shadows are now sprites, not in shader
       this.createLightingSystem();
+      this._createLiquidFunLightSplat(this.liquidFunMaxCount);
 
       console.log(
         `PIXI WORKER: Lighting system enabled (baseAmbient: ${this.baseAmbient}, maxLights: ${this.maxLights}, resolution: ${this.lightingResolution})`

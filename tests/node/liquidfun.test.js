@@ -5,6 +5,7 @@ import {
   bindCommandRing,
   drainCommandRing,
   enqueueSetAwake,
+  enqueueSetLiquidFunLight,
   BOX2D_CMD,
 } from '../../src/box2d/box2dCommandRing.js';
 import { LiquidFun, LIQUIDFUN_FLAGS } from '../../src/core/LiquidFun.js';
@@ -408,6 +409,43 @@ test('LiquidFun enqueues SET_LIQUIDFUN_SCALE for scale/alpha/layerId', () => {
   assert.ok(Math.abs(received[6].alphaMax - 0.5) < 1e-6);
 });
 
+test('LiquidFun enqueues SET_LIQUIDFUN_LIGHT and forces trackGroup', () => {
+  const sab = createCommandRingSab(64);
+  bindCommandRing(sab);
+  const i32 = new Int32Array(sab);
+  const f32 = new Float32Array(sab);
+  LiquidFun.createSystem();
+  LiquidFun.emit({
+    shape: 'circle',
+    posX: 0,
+    posY: 0,
+    radius: 20,
+    lightIntensity: 5000,
+  });
+
+  const received = [];
+  drainCommandRing(i32, f32, {
+    createParticleSystem() {},
+    setLiquidFunEmit(packed) {
+      received.push({ type: 'setLiquidFunEmit', packed });
+    },
+    setLiquidFunLight(lightIntensity) {
+      received.push({ type: 'setLiquidFunLight', lightIntensity });
+    },
+    createParticleGroupCircle() {
+      received.push({ type: 'createParticleGroupCircle' });
+    },
+  });
+
+  assert.equal(BOX2D_CMD.SET_LIQUIDFUN_LIGHT, 26);
+  assert.deepEqual(
+    received.map((r) => r.type),
+    ['setLiquidFunEmit', 'setLiquidFunLight', 'createParticleGroupCircle'],
+  );
+  assert.ok(received[0].packed & (1 << 16), 'lightIntensity forces trackGroup');
+  assert.ok(Math.abs(received[1].lightIntensity - 5000) < 1e-6);
+});
+
 test('LiquidFun enqueues join/split/force ring commands', () => {
   const sab = createCommandRingSab(32);
   bindCommandRing(sab);
@@ -497,6 +535,28 @@ test('enqueueSetAwake drains SET_AWAKE to setAwake(entity, flag)', () => {
   ]);
 });
 
+test('enqueueSetLiquidFunLight drains SET_LIQUIDFUN_LIGHT', () => {
+  const sab = createCommandRingSab(64);
+  bindCommandRing(sab);
+  const i32 = new Int32Array(sab);
+  const f32 = new Float32Array(sab);
+
+  enqueueSetLiquidFunLight(5000);
+  enqueueSetLiquidFunLight(0);
+
+  const received = [];
+  drainCommandRing(i32, f32, {
+    setLiquidFunLight(lightIntensity) {
+      received.push(lightIntensity);
+    },
+  });
+
+  assert.equal(BOX2D_CMD.SET_LIQUIDFUN_LIGHT, 26);
+  assert.equal(received.length, 2);
+  assert.ok(Math.abs(received[0] - 5000) < 1e-6);
+  assert.equal(received[1], 0);
+});
+
 test('liquidFun render SAB is not ParticleComponent', () => {
   const n = 16;
   const sab = new SharedArrayBuffer(liquidFunRenderByteSize(n));
@@ -528,8 +588,9 @@ test('liquidFun render SAB is not ParticleComponent', () => {
   assert.ok(!('flat' in views));
 });
 
-test('liquidFun groups SAB fits bindLiquidFunGroups (first/last + 7 f32)', () => {
+test('liquidFun groups SAB fits bindLiquidFunGroups (first/last + pose + lightIntensity)', () => {
   const n = LIQUIDFUN_GROUPS_MAX;
+  assert.equal(liquidFunGroupsByteSize(n), 4 + n * 4 * 13);
   const sab = new SharedArrayBuffer(liquidFunGroupsByteSize(n));
   const views = bindLiquidFunGroups(sab, n);
   assert.equal(views.count.length, 1);
@@ -544,13 +605,19 @@ test('liquidFun groups SAB fits bindLiquidFunGroups (first/last + 7 f32)', () =>
   assert.equal(views.vy.length, n);
   assert.equal(views.angularVelocity.length, n);
   assert.equal(views.angle.length, n);
+  assert.equal(views.lightIntensity.length, n);
+  assert.equal(views.sqrtLightIntensity.length, n);
   views.count[0] = 1;
   views.id[n - 1] = 7;
   views.firstIndex[n - 1] = 10;
   views.lastIndex[n - 1] = 40;
   views.angle[n - 1] = 1.5;
+  views.lightIntensity[7] = 5000;
+  views.sqrtLightIntensity[7] = Math.sqrt(5000);
   assert.equal(views.id[n - 1], 7);
   assert.equal(views.firstIndex[n - 1], 10);
   assert.equal(views.lastIndex[n - 1], 40);
   assert.equal(views.angle[n - 1], 1.5);
+  assert.equal(views.lightIntensity[7], 5000);
+  assert.ok(Math.abs(views.sqrtLightIntensity[7] - Math.sqrt(5000)) < 1e-6);
 });

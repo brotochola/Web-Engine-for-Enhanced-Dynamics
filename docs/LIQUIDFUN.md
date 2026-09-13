@@ -163,7 +163,9 @@ Emit is **explicit knobs**, not a named cookbook. `LIQUIDFUN_FLAGS` + per-call `
 
 **Viscosity:** `effective = viscousStrength * 0.5 * (scale[a] + scale[b])`. System baseline via `physics.liquidFun.viscousStrength` (default `0.25`) or `LiquidFun.setTuning`. Per-emit `viscousScale` stamps particles (default 1). Melt: `LiquidFun.setGroupViscousScale(id, scale)` bulk-stamps members.
 
-**Groups:** Kept when `ELASTIC|SPRING`, or `trackGroup: true`, or `viscousScale != 1`. Shape groups set `hasShapeGroups` (stats + elastic/spring). Bookkeeping viscous groups do **not**. Ungrouped create returns **`-1`** (not `0`). List via `LiquidFun.getGroups()` (thin SAB, cap 256).
+**Groups:** Kept when `ELASTIC|SPRING`, or `trackGroup: true`, or `viscousScale != 1`. `lightIntensity > 0` also forces `trackGroup` so the burst has a group id. Shape groups set `hasShapeGroups` (stats + elastic/spring). Bookkeeping viscous groups do **not**. Ungrouped create returns **`-1`** (not `0`). List via `LiquidFun.getGroups()` (thin SAB, cap 256).
+
+**Lighting field:** per-emit `lightIntensity` (same units as `LightEmitter`). Reach is `10 * sqrt(I)` — same helper as entity cookies / cull. Pixi splats lit group slabs ADD into `lightingRT` with \(I/(I+d^2)\) (world px), not extra `uLightData` slots. No shadows. Independent of compute `maxParticles`. `tint` is the light color. Fire density splat is a different kernel (`1 - d²`).
 
 What is slow: a new **shape** group every mouse splash. Spray viscous blobs with `viscousScale != 1` keeps bookkeeping groups only.
 
@@ -254,6 +256,7 @@ LiquidFun.emit({
   flags: LIQUIDFUN_FLAGS.VISCOUS | LIQUIDFUN_FLAGS.TENSILE,
   viscousScale: 10,
   tint: 0xc6862a,
+  lightIntensity: 150, // optional; same units as LightEmitter; reach = 10*sqrt(I)
   shape: 'circle',
   posX, posY, radius: 30,
   texture: '_whiteCircle',

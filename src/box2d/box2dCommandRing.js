@@ -23,6 +23,7 @@ export const enqueueCreateParticleSystem = R.enqueueCreateParticleSystem;
 export const enqueueSetLiquidFunEmit = R.enqueueSetLiquidFunEmit;
 export const enqueueSetLiquidFunLifespan = R.enqueueSetLiquidFunLifespan;
 export const enqueueSetLiquidFunScale = R.enqueueSetLiquidFunScale;
+export const enqueueSetLiquidFunLight = R.enqueueSetLiquidFunLight;
 export const enqueueSetParticleTuning = R.enqueueSetParticleTuning;
 export const enqueueSetGroupViscousScale = R.enqueueSetGroupViscousScale;
 export const enqueueJoinParticleGroups = R.enqueueJoinParticleGroups;

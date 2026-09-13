@@ -35,6 +35,7 @@
     GROUP_APPLY_IMPULSE: 23, // entity=groupId, a=ix, b=iy
     CLEAR_LIQUIDFUN_PARTICLES: 24, // systemId — destroy groups + zombie rest; keep system
     SET_AWAKE: 25, // entity, flag (0|1) — b2Body_SetAwake
+    SET_LIQUIDFUN_LIGHT: 26, // a=lightIntensity; next create consumes; 0 = not a light
   });
 
   var BOX2D_CMD_HEADER_I32 = 4;
@@ -221,6 +222,10 @@
     );
   }
 
+  function enqueueSetLiquidFunLight(lightIntensity) {
+    return enqueue(BOX2D_CMD.SET_LIQUIDFUN_LIGHT, 0, lightIntensity > 0 ? lightIntensity : 0, 0, 0, 0);
+  }
+
   /** Apply system def coeffs. Three ring slots (phase 0/1/2). */
   function enqueueSetParticleTuning(t) {
     var o = t || {};
@@ -369,6 +374,9 @@
         case BOX2D_CMD.SET_LIQUIDFUN_SCALE:
           if (handlers.setLiquidFunScale) handlers.setLiquidFunScale(entity, a, b, c, d);
           break;
+        case BOX2D_CMD.SET_LIQUIDFUN_LIGHT:
+          if (handlers.setLiquidFunLight) handlers.setLiquidFunLight(a);
+          break;
         case BOX2D_CMD.SET_PARTICLE_TUNING:
           if (handlers.setParticleTuning) handlers.setParticleTuning(entity, a, b, c, d);
           break;
@@ -424,6 +432,7 @@
     enqueueSetLiquidFunEmit: enqueueSetLiquidFunEmit,
     enqueueSetLiquidFunLifespan: enqueueSetLiquidFunLifespan,
     enqueueSetLiquidFunScale: enqueueSetLiquidFunScale,
+    enqueueSetLiquidFunLight: enqueueSetLiquidFunLight,
     enqueueSetParticleTuning: enqueueSetParticleTuning,
     enqueueSetGroupViscousScale: enqueueSetGroupViscousScale,
     enqueueJoinParticleGroups: enqueueJoinParticleGroups,

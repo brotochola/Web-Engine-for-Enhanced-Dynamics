@@ -466,6 +466,10 @@ function writeLiquidFun(w, lf) {
     w.u8(render.layerId ? 1 : 0);
     if (render.layerId) writeTyped(w, render.layerId);
   }
+
+  // Appended after v4 render block; readers skip if the section ends here.
+  w.u8(lf.groupsLightIntensity ? 1 : 0);
+  if (lf.groupsLightIntensity) writeTyped(w, lf.groupsLightIntensity);
 }
 
 function readLiquidFun(r) {
@@ -520,6 +524,11 @@ function readLiquidFun(r) {
     };
   }
 
+  let groupsLightIntensity = null;
+  if (r.o < r.buf.byteLength) {
+    groupsLightIntensity = r.u8() ? readTyped(r) : null;
+  }
+
   return {
     count,
     radius,
@@ -534,6 +543,7 @@ function readLiquidFun(r) {
     groups,
     pairs,
     render,
+    groupsLightIntensity,
   };
 }
 

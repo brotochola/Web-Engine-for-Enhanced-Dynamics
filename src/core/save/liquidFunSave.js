@@ -22,6 +22,7 @@ export function packLiquidFunSnapshot(snap) {
     groups: snap.groups && snap.groups.slotCount > 0 ? snap.groups : null,
     pairs: snap.pairs && snap.pairs.count > 0 ? snap.pairs : null,
     render: snap.render || null,
+    groupsLightIntensity: snap.groupsLightIntensity || null,
   };
 }
 
@@ -43,6 +44,7 @@ export function unpackLiquidFunSnapshot(blob) {
       groups: null,
       pairs: null,
       render: null,
+      groupsLightIntensity: null,
     };
   }
   return blob;
@@ -131,6 +133,7 @@ export function requestLiquidFunRestore(physicsWorker, payload, timeoutMs = 5000
     if (payload?.render) {
       for (const k of Object.keys(payload.render)) pushBuf(payload.render[k]);
     }
+    pushBuf(payload?.groupsLightIntensity);
     physicsWorker.addEventListener('message', onMessage);
     physicsWorker.postMessage({ msg: 'restoreLiquidFun', requestId, payload }, transfer);
   });

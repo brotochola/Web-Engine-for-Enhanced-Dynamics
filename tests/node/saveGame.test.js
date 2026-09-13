@@ -226,7 +226,9 @@ test('liquidFun typed-array pack + binary roundtrip', async () => {
       scaleY: new Float32Array([1, 1]),
       alpha: new Float32Array([1, 0.5]),
     },
+    groupsLightIntensity: new Float32Array(256),
   };
+  snap.groupsLightIntensity[7] = 5000;
   const packed = packLiquidFunSnapshot(snap);
   assert.ok(packed.x instanceof Float32Array);
   const unpacked = unpackLiquidFunSnapshot(packed);
@@ -253,6 +255,7 @@ test('liquidFun typed-array pack + binary roundtrip', async () => {
   assert.ok(Math.abs(decoded.liquidFun.groups.strength[0] - 0.55) < 1e-6);
   assert.equal(decoded.liquidFun.pairs.count, 1);
   assert.deepEqual([...decoded.liquidFun.render.tint], [0xff0000, 0x00ff00]);
+  assert.equal(decoded.liquidFun.groupsLightIntensity[7], 5000);
 });
 
 test('decal pack/apply raw bytes + binary roundtrip', async () => {

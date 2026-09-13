@@ -60,6 +60,7 @@ function resolveEmit(options) {
   }
   const life = resolveLifespanSec(o.lifespan);
   const viscousScale = o.viscousScale != null ? o.viscousScale : 1;
+  const lightIntensity = o.lightIntensity > 0 ? +o.lightIntensity : 0;
   return {
     posX: o.posX,
     posY: o.posY,
@@ -71,7 +72,8 @@ function resolveEmit(options) {
     spacing: o.spacing != null ? o.spacing : 0,
     strength: o.strength != null ? o.strength : 0,
     viscousScale: viscousScale > 0 ? viscousScale : 1,
-    trackGroup: !!o.trackGroup,
+    trackGroup: !!o.trackGroup || lightIntensity > 0,
+    lightIntensity,
     groupFlags: o.groupFlags != null ? o.groupFlags >>> 0 : 0,
     tint: o.tint != null ? o.tint : 0,
     textureId,
@@ -112,6 +114,9 @@ function enqueueEmitParams(resolved) {
       a.min,
       a.max,
     );
+  }
+  if (resolved.lightIntensity > 0) {
+    Box2dCommandRing.enqueueSetLiquidFunLight(resolved.lightIntensity);
   }
 }
 
@@ -248,6 +253,11 @@ export class LiquidFun {
   /** @deprecated Prefer getViews() */
   static getParticleViews() {
     return LiquidFun.getViews();
+  }
+
+  /** Zero-alloc group SoA (including lightIntensity by id). Null until bindSabs. */
+  static getGroupViews() {
+    return _groupsViews;
   }
 
   static createSystem({ radius = 10, maxCount = 10000, subSteps = 1, systemId = 0, strictContactCheck = false } = {}) {

@@ -266,8 +266,9 @@ export class BurningBoxesScene extends WEED.Scene {
     if (n > FIRE_LF_MAX - 80) return;
     LiquidFun.emit({
       flags: LIQUIDFUN_FLAGS.VISCOUS,
-      viscousScale: 2,
+      viscousScale: 5,
       tint: 0x6b3a1f,
+      lightIntensity: 50,
       shape: 'circle',
       posX: x,
       posY: y,

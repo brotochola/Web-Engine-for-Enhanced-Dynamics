@@ -189,6 +189,10 @@
     var angularVelocity = new Float32Array(sab, off, n);
     off += n * 4;
     var angle = new Float32Array(sab, off, n);
+    off += n * 4;
+    var lightIntensity = new Float32Array(sab, off, n);
+    off += n * 4;
+    var sqrtLightIntensity = new Float32Array(sab, off, n);
     return {
       count: count,
       id: id,
@@ -202,6 +206,8 @@
       vy: vy,
       angularVelocity: angularVelocity,
       angle: angle,
+      lightIntensity: lightIntensity,
+      sqrtLightIntensity: sqrtLightIntensity,
       maxGroups: n,
     };
   }
@@ -724,6 +730,8 @@
         vy: packView(G.vy),
         angularVelocity: packView(G.angularVelocity),
         angle: packView(G.angle),
+        lightIntensity: packView(G.lightIntensity),
+        sqrtLightIntensity: packView(G.sqrtLightIntensity),
       };
     }
 
@@ -1027,6 +1035,7 @@
           if (snap.render) {
             Object.keys(snap.render).forEach(function (k) { pushBuf(snap.render[k]); });
           }
+          pushBuf(snap.groupsLightIntensity);
         }
         self.postMessage({ msg: 'liquidFunSnapshot', requestId: data.requestId | 0, snapshot: snap }, transfer);
       } else if (data.msg === 'restoreLiquidFun') {
