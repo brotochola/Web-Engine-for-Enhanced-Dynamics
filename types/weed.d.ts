@@ -2223,8 +2223,9 @@ export declare class SoundManager {
 }
 
 /**
- * Keyboard state (including `Keyboard.a`-style access) comes from a Proxy in the JS bundle.
- * Prefer {@link Keyboard.isDown} / {@link Keyboard.isPressed} for strict typing.
+ * Keyboard state. `Keyboard.a`-style getters are stamped in {@link Keyboard.initialize}
+ * from the scene key map (no Proxy). Prefer {@link Keyboard.isDown} / {@link Keyboard.isPressed}
+ * for dynamic key names and for strict typing.
  */
 export declare class Keyboard {
   static initialize(inputData: Int32Array | null, keyIndexMap: Record<string, number> | null): void;

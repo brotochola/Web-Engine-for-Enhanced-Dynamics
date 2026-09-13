@@ -589,7 +589,9 @@ export const DEBUG_DEFAULTS = Object.freeze({
   maxDebugDrawEntries: 256,
   /**
    * Worker subtimers + SAB detail fields (Collect/Sort/Vis/Ray/Lights/…).
-   * false → only FPS + STEP_MS written; DebugUI shows Step / Load% / Fps.
+   * Independent of GameEngine({ debug }) — overlay ≠ profiler.
+   * false (default) → only FPS + STEP_MS written; DebugUI shows Step / Load% / Fps.
+   * Opt in per scene: debug: { collectDetailedStats: true }.
    */
   collectDetailedStats: false,
   /** Warn when cmd-ring / Ray get non-unit (rotC,rotS) or dir. Off in prod. */

@@ -689,20 +689,12 @@ class Scene {
       ...(this.config.navigation || {}),
     };
 
-    // Debug defaults from centralized config
-    const userDebug = this.constructor.config?.debug || {};
-    const userSetCollectDetailedStats = Object.prototype.hasOwnProperty.call(
-      userDebug,
-      'collectDetailedStats'
-    );
+    // Debug defaults from centralized config.
+    // collectDetailedStats is opt-in on the scene; GameEngine({ debug }) does not force it.
     this.config.debug = {
       ...DEBUG_DEFAULTS,
       ...(this.config.debug || {}),
     };
-    // Demos with GameEngine({ debug: true }) get fine timers unless scene opts out
-    if (!userSetCollectDetailedStats && this.game?.debugEnabled) {
-      this.config.debug.collectDetailedStats = true;
-    }
 
     // Layers defaults (custom layers are user-defined, empty by default)
     if (!this.config.layers) {

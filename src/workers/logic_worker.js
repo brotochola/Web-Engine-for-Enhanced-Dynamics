@@ -532,9 +532,9 @@ class LogicWorker extends AbstractWorker {
 
     // Process collision/hit/joint-break callbacks BEFORE entity logic (Unity-style).
     // Contacts/hits need CollisionListener; joint breaks need JointBreakListener.
+    // hitSab always exists — do not let useBox2dHits bypass the listener kill switch.
     if (
-      (this.anyTypeNeedsCollisions && this.useBox2dContacts) ||
-      this.useBox2dHits ||
+      (this.anyTypeNeedsCollisions && (this.useBox2dContacts || this.useBox2dHits)) ||
       (this.anyTypeNeedsJointBreaks && this.useBox2dJointBreaks)
     ) {
       this.processCollisionCallbacks();
@@ -729,8 +729,10 @@ class LogicWorker extends AbstractWorker {
    * Unity-style Enter/Stay/Exit from Box2D begin/end (Delta Stay).
    */
   processCollisionCallbacks() {
-    this._processBox2dCollisionCallbacks();
-    if (this.useBox2dHits) this._processBox2dHitCallbacks();
+    if (this.anyTypeNeedsCollisions) {
+      if (this.useBox2dContacts) this._processBox2dCollisionCallbacks();
+      if (this.useBox2dHits) this._processBox2dHitCallbacks();
+    }
     if (this.anyTypeNeedsJointBreaks && this.useBox2dJointBreaks) {
       this._processBox2dJointBreakCallbacks();
     }

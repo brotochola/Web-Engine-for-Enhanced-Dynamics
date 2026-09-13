@@ -10,6 +10,8 @@ export class Keyboard {
   static _pressCounterOffset = -1; // Offset of press counters in _inputData
   static _lastPressCounts = null; // Per-thread snapshot of SAB press counters
   static _pressedThisFrame = null; // Stable edge flags updated once per frame
+  /** Own-property key getters stamped in initialize(); deleted on re-init. */
+  static _stampedKeys = [];
 
   /** Aliases resolved once — avoids per-key lookup object allocation. */
   static _SPECIAL_KEYS = Object.freeze({
@@ -21,12 +23,83 @@ export class Keyboard {
     return: 'enter',
   });
 
+  static _RESERVED_STAMP = new Set([
+    'length',
+    'name',
+    'prototype',
+    'caller',
+    'arguments',
+    'initialize',
+    'isDown',
+    'isPressed',
+    'updateEdgeFlags',
+    '_inputData',
+    '_keyIndexMap',
+    '_keyCount',
+    '_pressCounterOffset',
+    '_lastPressCounts',
+    '_pressedThisFrame',
+    '_stampedKeys',
+    '_SPECIAL_KEYS',
+    '_RESERVED_STAMP',
+    '_unstampKeyProps',
+    '_stampKeyProp',
+    '_stampKeyProps',
+    '_normalizeKeyName',
+    '_getKeyIndex',
+  ]);
+
+  static _unstampKeyProps() {
+    for (const name of this._stampedKeys) {
+      delete this[name];
+    }
+    this._stampedKeys = [];
+  }
+
+  static _stampKeyProp(prop, index) {
+    if (typeof prop !== 'string' || prop.length === 0) return;
+    if (this._RESERVED_STAMP.has(prop)) return;
+    if (this._stampedKeys.includes(prop)) return;
+    const existing = Object.getOwnPropertyDescriptor(this, prop);
+    if (existing && typeof existing.value === 'function') return;
+    const idx = index | 0;
+    Object.defineProperty(this, prop, {
+      configurable: true,
+      enumerable: true,
+      get() {
+        const data = Keyboard._inputData;
+        return !!(data && data[idx] === 1);
+      },
+    });
+    this._stampedKeys.push(prop);
+  }
+
+  static _stampKeyProps(keyIndexMap) {
+    this._unstampKeyProps();
+    for (const [name, index] of Object.entries(keyIndexMap)) {
+      this._stampKeyProp(name, index);
+      if (name.length === 1 && name >= 'a' && name <= 'z') {
+        this._stampKeyProp(name.toUpperCase(), index);
+      }
+    }
+    for (const [alias, canonical] of Object.entries(this._SPECIAL_KEYS)) {
+      const index = keyIndexMap[canonical];
+      if (index === undefined) continue;
+      this._stampKeyProp(alias, index);
+      this._stampKeyProp(alias.toUpperCase(), index);
+      if (alias.length > 1) {
+        this._stampKeyProp(alias[0].toUpperCase() + alias.slice(1), index);
+      }
+    }
+  }
+
   /**
    * Initialize keyboard with shared input data and key mapping
    * @param {Int32Array} inputData - Shared input data array
    * @param {Object} keyIndexMap - Map of key names to buffer indices
    */
   static initialize(inputData, keyIndexMap) {
+    this._unstampKeyProps();
     this._inputData = inputData;
     this._keyIndexMap = keyIndexMap;
 
@@ -53,6 +126,8 @@ export class Keyboard {
         this._lastPressCounts[i] = inputData[this._pressCounterOffset + i];
       }
     }
+
+    this._stampKeyProps(keyIndexMap);
   }
 
   static _normalizeKeyName(key) {
@@ -110,23 +185,4 @@ export class Keyboard {
   }
 }
 
-// Create a Proxy to allow direct property access (e.g., Keyboard.a, Keyboard.Space)
-// This works for both lowercase and uppercase property access
-const KeyboardProxy = new Proxy(Keyboard, {
-  get(target, prop, receiver) {
-    // First check if it's an existing static property/method
-    if (prop in target) {
-      return Reflect.get(target, prop, receiver);
-    }
-
-    // Handle key property access (e.g., Keyboard.a, Keyboard.Tab, Keyboard.SPACE)
-    if (typeof prop === 'string') {
-      const index = target._getKeyIndex(prop);
-      return index !== undefined ? target._inputData[index] === 1 : false;
-    }
-
-    return undefined;
-  },
-});
-
-export default KeyboardProxy;
+export default Keyboard;
