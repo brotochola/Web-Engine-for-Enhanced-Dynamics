@@ -605,11 +605,12 @@ export class ComputeLayer {
     this.lastParticleCount = particleCount;
     this._refreshDispatch();
     const device = this.device;
+    // writeBuffer dataOffset/size are elements when `data` is a TypedArray.
     if (bodyCount > 0) {
-      device.queue.writeBuffer(this.bodyBuffer, 0, this.bodyData, 0, bodyCount * BODY_FLOATS * 4);
+      device.queue.writeBuffer(this.bodyBuffer, 0, this.bodyData, 0, bodyCount * BODY_FLOATS);
     }
     if (vertCount > 0) {
-      device.queue.writeBuffer(this.vertBuffer, 0, this.vertData, 0, vertCount * 2 * 4);
+      device.queue.writeBuffer(this.vertBuffer, 0, this.vertData, 0, vertCount * 2);
     }
     if (particleCount > 0) {
       device.queue.writeBuffer(
@@ -617,7 +618,7 @@ export class ComputeLayer {
         0,
         this.particleData,
         0,
-        particleCount * PARTICLE_FLOATS * 4
+        particleCount * PARTICLE_FLOATS
       );
     }
 

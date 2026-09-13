@@ -3,11 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <title>Integrated Worker Benchmark</title>
-  <script type="importmap">
-    {
-      "imports": {
-        "/src/index.js": "/dist/weed.bundle.esm.min.js"
-      }
+  <script>
+    // Default: shipped bundle. ?src=1 loads /src modules + /src/workers (uncommitted engine).
+    if (!new URLSearchParams(location.search).has('src')) {
+      document.write('<script type="importmap">{"imports":{"/src/index.js":"/dist/weed.bundle.esm.min.js"}}<\/script>');
     }
   </script>
 </head>

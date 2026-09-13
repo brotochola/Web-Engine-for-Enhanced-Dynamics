@@ -1024,3 +1024,105 @@ test('pass dispatch workgroup counts round-trip', () => {
   }
 });
 
+test('ComputeLayer.writeBuffer body size is TypedArray elements', () => {
+  globalThis.GPUBufferUsage = { UNIFORM: 1, COPY_DST: 2, STORAGE: 4 };
+  globalThis.GPUTextureUsage = {
+    TEXTURE_BINDING: 1,
+    COPY_DST: 2,
+    COPY_SRC: 4,
+    STORAGE_BINDING: 8,
+  };
+  globalThis.GPUShaderStage = { COMPUTE: 1 };
+  const n = 4;
+  Collider.initializeArrays(new SharedArrayBuffer(Collider.getBufferSize(n)), n);
+  Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(n)), n);
+  RigidBody.initializeArrays(new SharedArrayBuffer(RigidBody.getBufferSize(n)), n);
+  Transform.x = new Float32Array(n);
+  Transform.y = new Float32Array(n);
+  Transform.rotC = new Float32Array(n);
+  Transform.rotS = new Float32Array(n);
+  RigidBody.vx = new Float32Array(n);
+  RigidBody.vy = new Float32Array(n);
+  RigidBody.angularVelocity = new Float32Array(n);
+  RigidBody.px = new Float32Array(n);
+  RigidBody.py = new Float32Array(n);
+  const writes = [];
+  const mkBuf = () => ({ destroy() {} });
+  const mkTex = () => ({ destroy() {}, createView() { return {}; } });
+  const device = {
+    createBuffer: () => mkBuf(),
+    createTexture: () => mkTex(),
+    createBindGroupLayout: () => ({}),
+    createPipelineLayout: () => ({}),
+    createComputePipeline: () => ({}),
+    createBindGroup: () => ({}),
+    createCommandEncoder: () => ({
+      copyTextureToTexture() {},
+      finish() { return {}; },
+      beginComputePass() {
+        return { end() {}, setPipeline() {}, setBindGroup() {}, dispatchWorkgroups() {} };
+      },
+    }),
+    queue: {
+      writeBuffer(_buf, _off, data, _dataOff, size) {
+        if (size != null) writes.push({ length: data.length, size });
+      },
+      submit() {},
+    },
+  };
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      { sim: { shader: { fragment: 'f', compute: 's', maxBodies: 8 } } },
+      BUILT_IN_LAYERS,
+      true
+    );
+    const id = Layer.get('sim').id;
+    Collider.active[0] = 1;
+    Collider.active[1] = 1;
+    Collider.shapeType[0] = ShapeType.Box;
+    Collider.shapeType[1] = ShapeType.Box;
+    Collider.width[0] = 16;
+    Collider.height[0] = 16;
+    Collider.width[1] = 16;
+    Collider.height[1] = 16;
+    Transform.rotC[0] = 1;
+    Transform.rotC[1] = 1;
+    feedLayerAt(0, id);
+    feedLayerAt(1, id);
+    const cl = new ComputeLayer({
+      device,
+      meta: {
+        id,
+        name: 'sim',
+        maxBodies: 8,
+        computeSource: LAYER_COMPUTE_SOURCE.BOX2D_BODIES,
+        compute: { passes: [], textures: [], size: { width: 16, height: 16 } },
+      },
+      renderer: {},
+      lookSource: null,
+    });
+    cl._ready = true;
+    cl.step(
+      {
+        dt: 0.016,
+        cameraX: 0,
+        cameraY: 0,
+        canvasW: 16,
+        canvasH: 16,
+        zoom: 1,
+        time: 0,
+        worldW: 16,
+        worldH: 16,
+      },
+      null
+    );
+    const bodyWrite = writes.find((w) => w.size === 2 * BODY_FLOATS);
+    assert.ok(bodyWrite, `expected body write of ${2 * BODY_FLOATS} floats, got ${JSON.stringify(writes)}`);
+    assert.ok(bodyWrite.size <= bodyWrite.length);
+    assert.equal(writes.some((w) => w.size === 2 * BODY_FLOATS * 4), false);
+  } finally {
+    Layer.reset();
+  }
+});
+

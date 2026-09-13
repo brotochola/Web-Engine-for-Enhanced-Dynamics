@@ -170,7 +170,13 @@ async function main() {
   const usePhasedScreenshots = Boolean(screenshotDir);
 
   const server = await createStaticBenchmarkServer(repoRoot);
-  const benchmarkUrl = `http://127.0.0.1:${server.port}/tests/bench/integrated-worker-benchmark.html`;
+  const srcModules = Boolean(cliArgs.src);
+  const benchmarkUrl =
+    `http://127.0.0.1:${server.port}/tests/bench/integrated-worker-benchmark.html` +
+    (srcModules ? '?src=1' : '');
+  if (srcModules) {
+    console.log('Benchmark: live /src modules (not dist bundle).');
+  }
 
   if (headed) {
     console.log(

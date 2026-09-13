@@ -110,10 +110,19 @@ function applyEngineLookUniforms(cl, frame) {
   setLookUniform2(map, floats, store, 'uCanvasSize', frame.canvasW, frame.canvasH);
   setLookUniform2(map, floats, store, 'uWorldSize', frame.worldW, frame.worldH);
   setLookUniform2(map, floats, store, 'uViewSize', frame.canvasW / zoom, frame.canvasH / zoom);
-  if (cl.compute) {
-    Layer.computeTextureExtent(frame.canvasW, frame.canvasH, cl.compute._texSize, cl.compute._extent);
-    setLookUniform2(map, floats, store, 'uTexSize', cl.compute._extent.texW, cl.compute._extent.texH);
-  }
+}
+
+function applyComputeTexSizeUniform(cl) {
+  const map = Layer._uniformMaps[cl.layerId];
+  if (!map || !cl.compute) return;
+  setLookUniform2(
+    map,
+    Layer._uniformFloats[cl.layerId],
+    cl.uniformStore,
+    'uTexSize',
+    cl.compute.numX,
+    cl.compute.numY
+  );
 }
 import { writeRgba32Float } from './pinGpuTexture.js';
 import { lightingGpuProgram, lookGpuProgram, gpuProgramFromWgsl, isWgslSource } from './pixiMeshWgsl.js';
@@ -4256,6 +4265,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       if (cl.compute) {
         cl.compute.step(frameUniforms, this._computePose);
+        applyComputeTexSizeUniform(cl);
         if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
           this.pixiApp.renderer.render({
             container: cl.shaderMesh,
