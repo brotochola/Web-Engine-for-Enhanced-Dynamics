@@ -1538,8 +1538,8 @@ export class GameObject {
    *
    * Example:
    *   onSpawned(spawnConfig) {
-   *     this.x = spawnConfig.x ?? Math.random() * 800;
-   *     this.y = spawnConfig.y ?? Math.random() * 600;
+   *     this.x = spawnConfig.x ?? rng() * 800;
+   *     this.y = spawnConfig.y ?? rng() * 600;
    *     this.health = 100;
    *     this.rigidBody.vx = 0;
    *     this.rigidBody.vy = 0;

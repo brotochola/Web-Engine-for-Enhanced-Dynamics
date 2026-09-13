@@ -145,8 +145,8 @@ class ZombieScene extends Scene {
   createNewGame() {
     for (let i = 0; i < 20000; i++) {
       this.spawnEntity(Zombie, {
-        x: Math.random() * 5000,
-        y: Math.random() * 3000,
+        x: this.rng() * 5000,
+        y: this.rng() * 3000,
       });
     }
   }

@@ -1408,14 +1408,14 @@
       for (let i = oldCount; i < maxP; i++) {
         tint[i] = emit.tintBits ? emit.tintBits >>> 0 : 0x3399ff;
         textureId[i] = emit.textureId | 0;
-        const s = scaleHi === scaleLo ? scaleLo : scaleLo + Math.random() * (scaleHi - scaleLo);
+        const s = scaleHi === scaleLo ? scaleLo : scaleLo + self.rng() * (scaleHi - scaleLo);
         scaleX[i] = s;
         scaleY[i] = s;
         if (rotC) rotC[i] = 1.0;
         if (rotS) rotS[i] = 0.0;
         if (baseAlpha) {
           baseAlpha[i] =
-            alphaHi === alphaLo ? alphaLo : alphaLo + Math.random() * (alphaHi - alphaLo);
+            alphaHi === alphaLo ? alphaLo : alphaLo + self.rng() * (alphaHi - alphaLo);
         }
         if (layerId) layerId[i] = lid;
       }

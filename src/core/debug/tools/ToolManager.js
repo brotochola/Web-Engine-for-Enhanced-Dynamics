@@ -8,6 +8,7 @@ import {
   getComponentColor,
   getComponentPropertyNames,
   formatComponentValue,
+  rng,
 } from '../../utils.js';
 
 /**
@@ -211,8 +212,8 @@ export class ToolManager {
     const spread = 30;
 
     for (let i = 0; i < count; i++) {
-      const ox = count > 1 ? (Math.random() - 0.5) * spread * 2 : 0;
-      const oy = count > 1 ? (Math.random() - 0.5) * spread * 2 : 0;
+      const ox = count > 1 ? (rng() - 0.5) * spread * 2 : 0;
+      const oy = count > 1 ? (rng() - 0.5) * spread * 2 : 0;
       engine.spawnEntity(className, { x: Mouse.x + ox, y: Mouse.y + oy });
     }
   }

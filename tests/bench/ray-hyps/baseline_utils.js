@@ -170,7 +170,7 @@ export function setRotCSFromAngle(cArr, sArr, index, angle) {
  * @param {{ c: number, s: number }} out
  */
 export function randomUnitCS(out) {
-  const a = Math.random() * Math.PI * 2;
+  const a = rng() * Math.PI * 2;
   out.c = Math.cos(a);
   out.s = Math.sin(a);
   return out;
@@ -936,9 +936,9 @@ export function rng() {
     return globalThis.rng();
   }
 
-  // Fallback to Math.random if not initialized (shouldn't happen in worker context)
-  console.warn('rng() called before initialization, using Math.random()');
-  return Math.random();
+  console.warn('rng() called before initialization, seeding with 0');
+  globalThis.rng = seededRandom(0);
+  return globalThis.rng();
 }
 
 /**

@@ -784,8 +784,29 @@
     }
   }
 
+  function installSeededRng(data) {
+    var seed = data.config && data.config.seed != null ? data.config.seed : Date.now();
+    var workerId = data.workerName || 'physics';
+    var sid = 5381;
+    var s = String(workerId);
+    for (var i = 0; i < s.length; i++) {
+      sid = (((sid << 5) + sid) ^ s.charCodeAt(i)) >>> 0;
+    }
+    var z = ((seed >>> 0) + Math.imul(sid, 0x9e3779b9)) >>> 0;
+    z = Math.imul(z ^ (z >>> 16), 0x85ebca6b);
+    z = Math.imul(z ^ (z >>> 13), 0xc2b2ae35);
+    var t = (z ^ (z >>> 16)) >>> 0;
+    self.rng = function () {
+      t += 0x6d2b79f5;
+      var r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
   function initializeFromWeedInit(data) {
     state.config = data.config || {};
+    installSeededRng(data);
     state.globalEntityCount = data.globalEntityCount | 0;
     state.posePublish = data.posePublish || null;
     state.collectDetailedStats = !!(state.config.debug && state.config.debug.collectDetailedStats);

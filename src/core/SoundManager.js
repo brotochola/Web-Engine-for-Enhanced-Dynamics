@@ -17,6 +17,7 @@
 //     +7 reserved
 
 import { AUDIO_DEFAULTS } from './ConfigDefaults.js';
+import { rng } from './utils.js';
 
 export class SoundManager {
   static _enabled = true;
@@ -510,7 +511,7 @@ export class SoundManager {
     const max = Number.isFinite(rateMax) ? rateMax : min;
     const low = min <= max ? min : max;
     const high = min <= max ? max : min;
-    const result = low + Math.random() * (high - low);
+    const result = low + rng() * (high - low);
     if (!Number.isFinite(result)) return 1;
     return Math.max(0.25, Math.min(4, result));
   }

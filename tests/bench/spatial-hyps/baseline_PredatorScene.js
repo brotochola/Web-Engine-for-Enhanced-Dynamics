@@ -618,8 +618,8 @@ export class PredatorScene extends WEED.Scene {
         anchorX: 0.5,
         anchorY: 1.0, // Bottom anchor for grass
         sway: true,
-        swayAmplitude: 0.05 + Math.random() * 0.03,
-        swayFrequency: 1 + Math.random() * 2,
+        swayAmplitude: 0.05 + this.rng() * 0.03,
+        swayFrequency: 1 + this.rng() * 2,
       });
     }
   }

@@ -8,6 +8,16 @@ Demos are how the engine gets tested. They are not the product. The engine is th
 
 ---
 
+## Sunday 13 September 2026 (evening) — The Random Was Working. That's Why It Lined Up
+
+Two nights ago `Math.random()` got replaced with `rng()` across every demo, so nothing could quietly reintroduce the non-determinism the lockstep test had just killed. BallsScene was the first place it showed on screen: colors in bands, small balls on the left, big ones on the right. Swap `rng()` for `Math.random()` and the pile looked random again. The feeling was that the seeded generator was broken.
+
+It wasn't. Mulberry32 was fine. Main and logic0 each built `seededRandom(123456)` — same seed, two closures, two copies of `t`. Spawn on main burns two draws for `x` and `y`, then posts the entity. `onSpawned` on the worker burns two draws for radius and tint. Floor never touches `rng()`, so both streams still sit at the start when the balls begin. Draw 1 on main is draw 1 on the worker. Radius is a linear function of X. Color is a function of spawn Y, and gravity keeps spawn-Y in the pile, so the bands survive.
+
+`Math.random()` only looked honest because it is a different stream. The engine PRNG was being too faithful: one seed, cloned onto every thread, lockstepped by accident.
+
+The want is that `rng()` is seeded, deterministic, and safe to call from whichever thread happens to own that bit of the spawn. Mixing the worker id into the seed is the smallest thing that holds. Main gets `'main'`. Logic0 gets `'logic0'`. Same scene seed, independent streams, same stream if you run it again. The demo did not need a workaround. The engine had been handing every worker the same dice.
+
 ## Sunday 13 September 2026 — Eight Thousand Balls, and Logic Doing Physics's Job
 
 BallsScene on the overlay: eight thousand circles in a pile, physics working as hard as a pile that size should, and the **logic** worker sitting at sixteen milliseconds. Tick was five. Entity was a fifth of a millisecond. Rays were zero. The step was still sixteen. The expensive work wasn't in the meters.
