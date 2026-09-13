@@ -3113,7 +3113,7 @@ export declare class AbstractWorker {
   initializeCommonBuffers(data: Record<string, unknown>): Promise<void>;
   registerCoreClasses(): void;
   initializeAllComponents(data: Record<string, unknown>): void;
-  initSeededRandom(seed: number): void;
+  initSeededRandom(seed: number, workerId?: number | string): void;
   handleMessage(e: MessageEvent): Promise<void> | void;
   reportReady(): void;
   initializeWorkerPorts(ports: Record<string, MessagePort> | null | undefined): void;

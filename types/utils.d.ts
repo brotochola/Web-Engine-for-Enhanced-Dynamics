@@ -102,7 +102,8 @@ export function normalizeAngleDifference(angle1: number, angle2: number): number
 export function getDirectionFromAngle(angle: number): string;
 export function getDirectionFromVector(dx: number, dy: number): string;
 export function getDirection8FromVector(dx: number, dy: number): string;
-export function seededRandom(seed: number): () => number;
+export function mixSeed(seed: number, workerId?: number | string): number;
+export function seededRandom(seed: number, workerId?: number | string): () => number;
 export function rng(): number;
 export function query(componentClasses: unknown[]): number[];
 export function queryActiveEntities(componentClasses: unknown[]): number[];

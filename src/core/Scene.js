@@ -148,7 +148,7 @@ class Scene {
     this._applyConfigDefaults();
 
     this.seed = this.config.seed;
-    this.rng = seededRandom(this.seed);
+    this.rng = seededRandom(this.seed, 'main');
     // Make seeded random available globally for entity code
     globalThis.rng = this.rng;
 

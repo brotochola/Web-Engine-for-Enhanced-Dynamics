@@ -750,10 +750,12 @@ export function postWorkerInitMessage(
   extraData = {},
   transferables = []
 ) {
+  const workerName = extraData.workerName ?? worker.name;
   worker.postMessage(
     {
       ...baseInitData,
       ...extraData,
+      ...(workerName ? { workerName } : {}),
     },
     transferables
   );
@@ -960,8 +962,23 @@ export function getDirection8FromVector(dx, dy) {
   return 'ne';
 }
 
-export function seededRandom(seed) {
-  let t = seed;
+/**
+ * Mix scene seed with a per-thread id so main + each worker get independent
+ * mulberry32 streams. Same (seed, workerId) always same uint32.
+ * @param {number} seed
+ * @param {number|string} [workerId=0]
+ * @returns {number}
+ */
+export function mixSeed(seed, workerId = 0) {
+  const sid = typeof workerId === 'string' ? stringToHash(workerId) : workerId | 0;
+  let z = ((seed >>> 0) + Math.imul(sid, 0x9e3779b9)) >>> 0;
+  z = Math.imul(z ^ (z >>> 16), 0x85ebca6b);
+  z = Math.imul(z ^ (z >>> 13), 0xc2b2ae35);
+  return (z ^ (z >>> 16)) >>> 0;
+}
+
+export function seededRandom(seed, workerId) {
+  let t = workerId == null ? seed : mixSeed(seed, workerId);
   const fn = function () {
     t += 0x6d2b79f5;
     let r = Math.imul(t ^ (t >>> 15), 1 | t);

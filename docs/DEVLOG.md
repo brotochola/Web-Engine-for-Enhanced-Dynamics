@@ -8,6 +8,18 @@ Demos are how the engine gets tested. They are not the product. The engine is th
 
 ---
 
+## Sunday 13 September 2026 — Eight Thousand Balls, and Logic Doing Physics's Job
+
+BallsScene on the overlay: eight thousand circles in a pile, physics working as hard as a pile that size should, and the **logic** worker sitting at sixteen milliseconds. Tick was five. Entity was a fifth of a millisecond. Rays were zero. The step was still sixteen. The expensive work wasn't in the meters.
+
+The contract was already written down. If no type in the scene has `CollisionListener`, logic does not drain contacts. Zero Sets. Zero iteration. Balls and floors never opted in. The kill switch, `anyTypeNeedsCollisions`, was false. Then contact-hit rings landed. Physics always allocates `hitSab`. Logic always bound it. `useBox2dHits` became true on every scene, listening or not, and that boolean was ORed into the gate **without** the listener check that joint-breaks already had. One `true` reopened `processCollisionCallbacks()`, which still built the full pair Set — `previousCollisions`, a BigInt generation Map, `Atomics.load` on every live pair in the Stay pass — for every Box2D contact in the pile. Physics solving eight thousand overlapping circles is expected. Logic cloning that graph, on a scene that never asked for enter/stay/exit, is not.
+
+The overlay had been making it worse on purpose. `GameEngine({ debug: true })` is the DebugUI. Fine timers are a profiler. They had been collapsed into one: opening the overlay forced `collectDetailedStats`, so every entity `tick` got two `performance.now()` calls around it. Eight thousand of those is not free, and the Tick chip was summing quantized crumbs into a number that looked like work. Overlay stays overlay. Profiler stays `debug: { collectDetailedStats: true }` on the scene that actually wants it.
+
+And `Keyboard.m` in every ball tick was going through a Proxy: `in` check, `toLowerCase`, alias table, map lookup, for a key that never changes name. Comfort API. Not a hot-path tax. Getters get stamped once at `initialize()` now. `Keyboard.m` is a property read. `isDown('ArrowUp')` still normalizes, for the cases that need a string.
+
+The demo did not break. The engine had quietly started doing physics's bookkeeping on the logic thread. The meters couldn't show it, because that work ran before the timers started.
+
 ## Friday 11 September 2026 (night) — Same Hundred Steps, Same Pixels
 
 Once the test could actually run, it lied in a useful way at first. Two lockstep runs, `LiquidFun` and `OrientedBoxScene`, same hundred steps, same 16.67 ms each time — and the pixels didn't match. Not close. Different.

@@ -1027,11 +1027,11 @@ export class AbstractWorker {
     if (consume && this.poseSync) Atomics.store(this.poseSync, 1, ready);
   }
 
-  initSeededRandom(seed) {
+  initSeededRandom(seed, workerId) {
     if (seed == null || seed == undefined) {
       seed = Date.now();
     }
-    self.rng = seededRandom(seed);
+    self.rng = seededRandom(seed, workerId ?? 'worker');
     // Also make it available globally without 'self.' prefix for entity code
     globalThis.rng = self.rng;
   }
@@ -1049,7 +1049,10 @@ export class AbstractWorker {
         if (e.data.pageOrigin) {
           self.__weedPageOrigin = e.data.pageOrigin;
         }
-        this.initSeededRandom(e.data.config.seed);
+        this.initSeededRandom(
+          e.data.config.seed,
+          e.data.workerName ?? e.data.frameRateIndex ?? e.data.workerIndex ?? 'worker'
+        );
         this.isPaused = true; // Keep paused until "start" message
         console.log(`[${this.constructor.name}] Initializing common buffers...`);
         await this.initializeCommonBuffers(e.data);
