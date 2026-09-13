@@ -55,6 +55,10 @@ export class BallsScene extends Scene {
     lighting: {
       enabled: false,
     },
+    // debug: {
+    //   maxDebugDrawEntries: 30192,
+    //   collectDetailedStats: true,
+    // },
   };
 
   // ========================================

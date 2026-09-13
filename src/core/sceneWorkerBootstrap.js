@@ -114,24 +114,35 @@ function injectLoadedShaderSources(scene) {
   }
 }
 
+function toAbsoluteScriptUrl(path, origin) {
+  if (path.startsWith('blob:')) {
+    return path;
+  }
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
+  }
+  if (path.startsWith('/')) {
+    return `${origin}${path}`;
+  }
+  return new URL(path, origin).href;
+}
+
 export function collectSceneWorkerScriptUrls(registeredClasses, origin = '') {
+  // Module workers import() this list as entries. Auto-registered parents
+  // (count 0) first poisons cyclic ESM (Lootable → Drop → MySoldier → Person).
+  // Pooled types first; parent scripts load later as cache hits onto self.
+  // Blob workers ignore this order (expandBlobEntityScripts DFS).
+  const ordered = registeredClasses.slice().sort((a, b) => {
+    const ac = a.count > 0 ? 1 : 0;
+    const bc = b.count > 0 ? 1 : 0;
+    return bc - ac;
+  });
   return [
     ...new Set(
-      registeredClasses
+      ordered
         .map((r) => r.scriptPath)
         .filter((path) => path !== null && path !== undefined)
-        .map((path) => {
-          if (path.startsWith('blob:')) {
-            return path;
-          }
-          if (path.startsWith('http://') || path.startsWith('https://')) {
-            return path;
-          }
-          if (path.startsWith('/')) {
-            return `${origin}${path}`;
-          }
-          return new URL(path, origin).href;
-        })
+        .map((path) => toAbsoluteScriptUrl(path, origin))
     ),
   ];
 }

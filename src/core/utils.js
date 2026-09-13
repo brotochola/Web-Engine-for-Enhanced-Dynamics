@@ -1413,36 +1413,56 @@ export async function loadEntityScripts(scriptsToLoad, globalContext = null, ver
     console.log(`📦 ${contextName}: Loading ${scriptsToLoad.length} entity scripts...`);
   }
 
-  // For Blob workers, load scripts in multiple passes to handle dependencies
-  // Scripts that fail (due to missing dependencies) are retried after others load
+  // Blob: DFS then retry (Function eval, missing sibling on globalThis).
+  // Module import() failures stick in the module map — retry cannot unpoison.
   let pendingScripts = isBlobWorker
     ? await expandBlobEntityScripts(scriptsToLoad)
     : [...scriptsToLoad];
-  const maxPasses = 8;
-  let pass = 0;
 
-  while (pendingScripts.length > 0 && pass < maxPasses) {
-    pass++;
-    const failedScripts = [];
-
+  if (!isBlobWorker) {
     for (const scriptPath of pendingScripts) {
-      const success = await loadSingleScript(
-        scriptPath, loadedClasses, globalContext, isBlobWorker, contextName, verbose
+      await loadSingleScript(
+        scriptPath,
+        loadedClasses,
+        globalContext,
+        isBlobWorker,
+        contextName,
+        verbose
       );
-      if (!success) {
-        failedScripts.push(scriptPath);
-      }
     }
+  } else {
+    const maxPasses = 8;
+    let pass = 0;
 
-    // If no progress was made, break to avoid infinite loop
-    if (failedScripts.length === pendingScripts.length) {
-      if (verbose) {
-        console.warn(`⚠️ ${contextName}: Could not load ${failedScripts.length} scripts after ${pass} passes`);
+    while (pendingScripts.length > 0 && pass < maxPasses) {
+      pass++;
+      const failedScripts = [];
+
+      for (const scriptPath of pendingScripts) {
+        const success = await loadSingleScript(
+          scriptPath,
+          loadedClasses,
+          globalContext,
+          isBlobWorker,
+          contextName,
+          verbose
+        );
+        if (!success) {
+          failedScripts.push(scriptPath);
+        }
       }
-      break;
-    }
 
-    pendingScripts = failedScripts;
+      if (failedScripts.length === pendingScripts.length) {
+        if (verbose) {
+          console.warn(
+            `⚠️ ${contextName}: Could not load ${failedScripts.length} scripts after ${pass} passes`
+          );
+        }
+        break;
+      }
+
+      pendingScripts = failedScripts;
+    }
   }
 
   if (verbose) {
@@ -1588,11 +1608,14 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
     });
     return true; // Success
   } catch (error) {
-    // Only log on first pass or if verbose
-    if (verbose) {
-      console.warn(`  ⏳ ${contextName}: Deferred ${scriptPath} (dependency not ready)`);
+    if (isBlobWorker) {
+      if (verbose) {
+        console.warn(`  ⏳ ${contextName}: Deferred ${scriptPath} (dependency not ready)`);
+      }
+      return false;
     }
-    return false; // Failed, will retry
+    console.error(`${contextName}: failed to load ${scriptPath}`, error);
+    return false;
   }
 }
 
