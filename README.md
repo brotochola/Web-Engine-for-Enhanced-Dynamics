@@ -6,7 +6,7 @@ WeedJS is built around Web Workers, `SharedArrayBuffer`-backed component data, a
 
 Live demo: https://multithreaded-game-engine.vercel.app/demos
 
-![WeedJS Demo](screen-capture.gif)
+![WeedJS Demo](https://raw.githubusercontent.com/brotochola/MultithreadedGameEngine/main/screen-capture.gif)
 
 ---
 
@@ -57,8 +57,8 @@ Open `http://localhost:8000/demos/`, or use the port printed by the server if `8
 
 `npm run dev` (or the [live demo](https://multithreaded-game-engine.vercel.app/demos)) opens a scene picker; every scene runs on the same engine build, nothing is a separate app.
 
-- 🔥 **Burning Boxes** — WebGPU compute layer: a fire/smoke fluid sim (advection, buoyancy, pressure, swirls) driven straight from packed Box2D collider geometry and LiquidFun oil particles, stepped in WGSL on the GPU. [`demos/burningBoxesScene`](demos/burningBoxesScene) · [`docs/COMPUTE_LAYERS.md`](docs/COMPUTE_LAYERS.md)
-- 🌊 **LiquidFun Fluid** — six liquid tools (water, oil, cream, dulce de leche, rigid "ice" groups, elastic jelly) with distinct viscosity/tension/group flags, dynamic Box2D boxes falling into the tanks. [`demos/liquidFunDemoScene`](demos/liquidFunDemoScene) · [`docs/LIQUIDFUN.md`](docs/LIQUIDFUN.md)
+- 🔥 **Burning Boxes** — WebGPU compute layer: a fire/smoke fluid sim (advection, buoyancy, pressure, swirls) driven straight from packed Box2D collider geometry and LiquidFun oil particles, stepped in WGSL on the GPU. [`demos/burningBoxesScene`](https://github.com/brotochola/MultithreadedGameEngine/tree/main/demos/burningBoxesScene) · [`docs/COMPUTE_LAYERS.md`](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/COMPUTE_LAYERS.md)
+- 🌊 **LiquidFun Fluid** — six liquid tools (water, oil, cream, dulce de leche, rigid "ice" groups, elastic jelly) with distinct viscosity/tension/group flags, dynamic Box2D boxes falling into the tanks. [`demos/liquidFunDemoScene`](https://github.com/brotochola/MultithreadedGameEngine/tree/main/demos/liquidFunDemoScene) · [`docs/LIQUIDFUN.md`](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/LIQUIDFUN.md)
 - 🧪 **LiquidFun Stress (bench)** — particle-count stress scene used by the benchmark harness.
 - 💧 **Water & Boxes** — custom-layer metaball water (additive blend + threshold shader) next to regular Box2D boxes; CPU sprite density, no LiquidFun involved.
 - 🐺 **Predators**, 🐦 **Boids**, 🐜 **Ants** — large-population entity/AI demos exercising spatial hashing and neighbor queries.
@@ -80,6 +80,10 @@ import WEED from '@weed.js/engine';
 const { GameEngine, Scene, GameObject, RigidBody, Collider, SpriteRenderer } = WEED;
 ```
 
+The published bundle is a **default export only**. Destructure from `WEED`. `import { Scene } from '@weed.js/engine'` may type-check (the `.d.ts` also exports class names) but fails at runtime.
+
+`SharedArrayBuffer` needs cross-origin isolation (COOP/COEP) on the page that hosts the game.
+
 ### CDN (jsDelivr)
 
 No install — import the prod ESM build from a module script. Your page still needs COOP/COEP for `SharedArrayBuffer`.
@@ -98,7 +102,7 @@ Or a classic script tag (UMD, sets `window.WEED`):
 <script src="https://cdn.jsdelivr.net/npm/@weed.js/engine/dist/weed.prod.bundle.min.js"></script>
 ```
 
-Pin a version for real apps (`@0.6.4/...`). Bare `/npm/@weed.js/engine/...` tracks latest. Debug builds (debug UI included) use `weed.bundle*.min.js` instead of `weed.prod.bundle*.min.js`. Gzip-embedded worker variants add `.compressed` before `.min.js` (smaller disk, inflate on first load). `package.json` `main` / `module` stay uncompressed.
+Pin a version for real apps (`@0.7.14/...`). Bare `/npm/@weed.js/engine/...` tracks latest. Debug builds (debug UI included) use `weed.bundle*.min.js` instead of `weed.prod.bundle*.min.js`. Gzip-embedded worker variants add `.compressed` before `.min.js` (smaller disk, inflate on first load). `package.json` `main` / `module` stay uncompressed.
 
 ---
 
@@ -107,7 +111,7 @@ Pin a version for real apps (`@0.6.4/...`). Bare `/npm/@weed.js/engine/...` trac
 You define pooled entities, attach fixed components, and implement lifecycle hooks.
 
 ```javascript
-import WEED from '/src/index.js';
+import WEED from '@weed.js/engine';
 
 const { GameObject, Scene, RigidBody, Collider, SpriteRenderer } = WEED;
 
@@ -178,14 +182,14 @@ WeedJS is intended to be a full 2D game runtime, not just a renderer. The major 
 - **Particle emitter**: `ParticleEmitter.emit()` supports sparks, smoke, blood, muzzle effects, floor decals, alpha/scale/tint controls, gravity, blending, and worker-side particle simulation.
 - **Bullets and projectile trails**: `BulletPool` and `BulletComponent` provide lightweight projectile slots, impact reporting, damage payloads, trail rendering, and visibility culling without turning every shot into a full entity.
 - **Decorations and attachments**: `DecorationPool` handles trees, rocks, props, child decorations attached to entities, sway animation, custom anchors, tint, alpha, and Y-sort ordering.
-- **Physics (Box2D 3.0)**: real Box2D 3 — the C rewrite — compiled to multithreaded WASM (SIMD + pthreads), not a JS reimplementation. Phaser games usually run Arcade or Matter on the main thread; Weed keeps the solver off-thread. Pose and velocity live on the WASM HEAP (`bindBox2dHotFields`), with sequenced contact/command rings feeding logic workers. Circles, boxes, polygons, sensors, sleeping, layers/masks/`groupIndex`, damping, friction, world `maximumLinearSpeed`, and Weed `Joint`s (`addDistance` / `addRevolute` / `addWeld`). Runtime lives under `src/box2d/`; `npm run make_bundle` embeds glue + wasm into `weed.bundle*.min.js` (no loose `dist/box2d/`). Smoke: `dist/index.html`. Details: [`src/box2d/README.md`](src/box2d/README.md), [`docs/PHYSICS.md`](docs/PHYSICS.md).
-- **Fluids (LiquidFun)**: `liquidfun-c` — a from-scratch C17 particle sidecar on Box2D 3's public C API (not Google's C++ pasted in), compiled into the same WASM as rigid bodies. Particle pose (`count`/`x`/`y`/`alpha`/`weight`) lives HEAP-bound like `Transform`, no per-frame memcpy. Water, viscous/tensile liquids, and `SOLID`/`RIGID` particle groups two-way-couple with Box2D bodies; `QueryAABB`/`RayCast` walk the particle spatial hash. Two render paths — sprite density (atlas splat) or `LAYER_DENSITY_SOURCE.LIQUID_FUN` buffer density for large counts, straight from HEAP into a metaball-style layer. Details: [`docs/LIQUIDFUN.md`](docs/LIQUIDFUN.md).
+- **Physics (Box2D 3.0)**: real Box2D 3 — the C rewrite — compiled to multithreaded WASM (SIMD + pthreads), not a JS reimplementation. Phaser games usually run Arcade or Matter on the main thread; Weed keeps the solver off-thread. Pose and velocity live on the WASM HEAP (`bindBox2dHotFields`), with sequenced contact/command rings feeding logic workers. Circles, boxes, polygons, sensors, sleeping, layers/masks/`groupIndex`, damping, friction, world `maximumLinearSpeed`, and Weed `Joint`s (`addDistance` / `addRevolute` / `addWeld`). Runtime lives under `src/box2d/`; `npm run make_bundle` embeds glue + wasm into `weed.bundle*.min.js` (no loose `dist/box2d/`). Smoke: `dist/index.html`. Details: [`src/box2d/README.md`](https://github.com/brotochola/MultithreadedGameEngine/blob/main/src/box2d/README.md), [`docs/PHYSICS.md`](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/PHYSICS.md).
+- **Fluids (LiquidFun)**: `liquidfun-c` — a from-scratch C17 particle sidecar on Box2D 3's public C API (not Google's C++ pasted in), compiled into the same WASM as rigid bodies. Particle pose (`count`/`x`/`y`/`alpha`/`weight`) lives HEAP-bound like `Transform`, no per-frame memcpy. Water, viscous/tensile liquids, and `SOLID`/`RIGID` particle groups two-way-couple with Box2D bodies; `QueryAABB`/`RayCast` walk the particle spatial hash. Two render paths — sprite density (atlas splat) or `LAYER_DENSITY_SOURCE.LIQUID_FUN` buffer density for large counts, straight from HEAP into a metaball-style layer. Details: [`docs/LIQUIDFUN.md`](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/LIQUIDFUN.md).
 - **Spatial hashing**: row-owned spatial workers rebuild the grid, cache entity positions, reuse neighbor results when cells have not changed, and expose nearby entities through `this.neighborCount` / `this.getNeighbor(i)`.
 - **Ray casting**: `Ray.cast`, `Ray.castWithInfo`, `Ray.castAll`, `Ray.linecast`, and line-of-sight helpers traverse the spatial grid with DDA and support collision layer masks.
 - **Point lights and shadows**: `LightEmitter`, `ShadowCaster`, `LightOccluder`, `Flash`, and `Sun` support point lights, glow sprites, temporary flashes, ambient lighting, day/night-style sun control, and shadow queues.
 - **Layers**: built-in layers handle backgrounds, decals, cast shadows, entities, and lighting. Custom layers can route entities, particles, decorations, bullets, trails, and glow sprites into separate render queues.
 - **Custom shader layers**: custom layers can define fragment shaders, uniforms, blend modes, render-target resolution, and a two-render-texture pipeline for effects like metaballs, fog, heat distortion, glow accumulation, water, and other screen-space passes.
-- **Compute layers (WebGPU)**: generic compute on a custom layer — engine packs Box2D collider geometry and live LiquidFun particle poses into GPU storage buffers, dispatches scene-declared WGSL passes (ping-pong textures, iteration, camera/zoom-gated skips), and pins the last write as the layer's look texture. No built-in fire/fluid shader ships; the engine only does the plumbing (bind-layout inference, `FrameData` UBO, panel-driven uniforms). `renderer: { backend: 'webgpu' }` opt-in per scene. Details: [`docs/COMPUTE_LAYERS.md`](docs/COMPUTE_LAYERS.md).
+- **Compute layers (WebGPU)**: generic compute on a custom layer — engine packs Box2D collider geometry and live LiquidFun particle poses into GPU storage buffers, dispatches scene-declared WGSL passes (ping-pong textures, iteration, camera/zoom-gated skips), and pins the last write as the layer's look texture. No built-in fire/fluid shader ships; the engine only does the plumbing (bind-layout inference, `FrameData` UBO, panel-driven uniforms). `renderer: { backend: 'webgpu' }` opt-in per scene. Details: [`docs/COMPUTE_LAYERS.md`](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/COMPUTE_LAYERS.md).
 - **Tilemaps**: `TileMap` loads Tiled JSON maps, stores layer data in `SharedArrayBuffer`, supports allocation-free tile queries from any worker, and renders tilemap backgrounds through the Pixi worker.
 - **Rendering**: the pre-render worker builds double-buffered render queues, Y-sorts sprites, advances animations, prepares shadows/lights, and feeds a PixiJS renderer running on `OffscreenCanvas`.
 - **Animation**: `SpriteSheetRegistry`, `AdobeAnimRegistry`, `AdobeAnimCompiler`, `SpriteRenderer`, and `AdobeAnimComponent` cover spritesheets and Adobe Animate-style exports.
@@ -194,7 +198,7 @@ WeedJS is intended to be a full 2D game runtime, not just a renderer. The major 
 - **Input and camera**: keyboard, mouse, edge-triggered mouse events, camera follow, zoom, and shared input/camera buffers are available inside workers.
 - **FSM helpers**: `FSM` and `FSMState` support behavior and animation state machines without imposing a specific gameplay architecture.
 - **Debugging tools**: the debug UI includes worker FPS stats, performance panels, scene/entity/decorations/layers/navigation panels, selected entity inspection, visual aids, physics debug rendering, navigation debug rendering, raycast debug drawing, and configurable debug flags.
-- **Save games**: sparse snapshots of `static serializable` active entities (IndexedDB + DebugUI **Saves** tab). Scene hooks: `create()` (always), `createNewGame()` (fresh start), `onLoadGame(payload)` (after restore). See [`docs/SAVE_GAME.md`](docs/SAVE_GAME.md).
+- **Save games**: sparse snapshots of `static serializable` active entities (IndexedDB + DebugUI **Saves** tab). Scene hooks: `create()` (always), `createNewGame()` (fresh start), `onLoadGame(payload)` (after restore). See [`docs/SAVE_GAME.md`](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/SAVE_GAME.md).
 
 Everything performance-critical is aggressively optimized: pooled allocation, dense typed-array component storage, `SharedArrayBuffer` data paths, single-writer regions, preallocated scratch buffers, compact active/visible lists, double-buffered render queues, worker-side broadphase/physics/render preparation, and benchmark scripts for measuring worker throughput.
 
@@ -222,7 +226,7 @@ ParticleEmitter.emit({
   lifespan: 800,
 });
 
-// Flashes (see docs/FLASHES.md) — castShadows defaults true; false = light only
+// Flashes (see docs/FLASHES.md on GitHub) — castShadows defaults true; false = light only
 Flash.create({
   x: this.x,
   y: this.y,
@@ -255,26 +259,26 @@ npm run test:visual
 
 ## Documentation
 
-Start with `docs/README.md` for the full docs index.
+Docs live in the GitHub repo, not in the npm tarball. Start with the [docs index](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/README.md).
 
-| File                           | Contents                                                        |
-| ------------------------------ | --------------------------------------------------------------- |
-| `docs/bible_of_weed_js.md`     | Practical quick reference and engine contracts                  |
-| `docs/DEVLOG.md`               | Dated project journal (stories; fill gaps)                      |
-| `docs/WORKERS_ARCHITECTURE.md` | Worker roles, data flow, message protocols                      |
-| `docs/MEMORY_STRUCTURE.md`     | Shared memory layout and ownership map                          |
-| `docs/COMPONENT_STORAGE.md`    | Dense component storage policy                                  |
-| `docs/SPATIAL_HASHING.md`      | Spatial grid and neighbor query pipeline                        |
-| `docs/PHYSICS.md`              | Box2D 3.0 worker pipeline and invariants                        |
-| `docs/LIQUIDFUN.md`            | liquidfun-c fluids, HEAP-bound particle pose, body coupling     |
-| `src/box2d/README.md`          | Nested WASM runtime, rebuild, bundle embed                      |
-| `docs/LAYER_ROUTING.md`        | Render layers, backgrounds, custom layer routing                |
-| `docs/COMPUTE_LAYERS.md`       | WebGPU compute layers, Box2D/LiquidFun GPU packing, WGSL passes |
-| `docs/PARTICLES.md`            | ParticleEmitter modes and physics vs view                       |
-| `docs/FLASHES.md`              | Flash.create, castShadows, light budget                         |
-| `docs/TILEMAP.md`              | SAB-backed Tiled map API                                        |
-| `docs/RAYCASTING.md`           | Grid-based raycast API                                          |
-| `docs/ENTITY_TEMPLATE.js`      | Copy-paste entity starter                                       |
+| File | Contents |
+| ---- | -------- |
+| [docs/bible_of_weed_js.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/bible_of_weed_js.md) | Practical quick reference and engine contracts |
+| [docs/DEVLOG.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/DEVLOG.md) | Dated project journal (stories; fill gaps) |
+| [docs/WORKERS_ARCHITECTURE.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/WORKERS_ARCHITECTURE.md) | Worker roles, data flow, message protocols |
+| [docs/MEMORY_STRUCTURE.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/MEMORY_STRUCTURE.md) | Shared memory layout and ownership map |
+| [docs/COMPONENT_STORAGE.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/COMPONENT_STORAGE.md) | Dense component storage policy |
+| [docs/SPATIAL_HASHING.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/SPATIAL_HASHING.md) | Spatial grid and neighbor query pipeline |
+| [docs/PHYSICS.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/PHYSICS.md) | Box2D 3.0 worker pipeline and invariants |
+| [docs/LIQUIDFUN.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/LIQUIDFUN.md) | liquidfun-c fluids, HEAP-bound particle pose, body coupling |
+| [src/box2d/README.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/src/box2d/README.md) | Nested WASM runtime, rebuild, bundle embed |
+| [docs/LAYER_ROUTING.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/LAYER_ROUTING.md) | Render layers, backgrounds, custom layer routing |
+| [docs/COMPUTE_LAYERS.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/COMPUTE_LAYERS.md) | WebGPU compute layers, Box2D/LiquidFun GPU packing, WGSL passes |
+| [docs/PARTICLES.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/PARTICLES.md) | ParticleEmitter modes and physics vs view |
+| [docs/FLASHES.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/FLASHES.md) | Flash.create, castShadows, light budget |
+| [docs/TILEMAP.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/TILEMAP.md) | SAB-backed Tiled map API |
+| [docs/RAYCASTING.md](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/RAYCASTING.md) | Grid-based raycast API |
+| [docs/ENTITY_TEMPLATE.js](https://github.com/brotochola/MultithreadedGameEngine/blob/main/docs/ENTITY_TEMPLATE.js) | Copy-paste entity starter |
 
 ---
 

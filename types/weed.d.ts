@@ -2254,6 +2254,61 @@ export declare class SoundManager {
   static isMuted(): boolean;
 }
 
+export interface SaveMeta {
+  id: string;
+  scene: string;
+  savedAt: string;
+  bytes: number;
+  engineVersion: string;
+  entityCount?: number;
+  particleCount?: number;
+}
+
+export declare class SaveStore {
+  static list(): Promise<SaveMeta[]>;
+  static listForScene(sceneName: string): Promise<SaveMeta[]>;
+  static put(
+    slotId: string,
+    blob: Uint8Array | ArrayBuffer,
+    meta: Partial<SaveMeta> & { scene: string },
+  ): Promise<SaveMeta>;
+  static get(slotId: string): Promise<Uint8Array | null>;
+  static getMeta(slotId: string): Promise<SaveMeta | null>;
+  static remove(slotId: string): Promise<void>;
+  static downloadSave(blob: Uint8Array | Blob, filename?: string): void;
+  static parseUploadedFile(file: File | Blob): Promise<Uint8Array>;
+}
+
+export function saveGame(
+  scene: Scene,
+  slotId?: string,
+): Promise<{ meta: SaveMeta; bytes: number; entityCount: number; particleCount: number }>;
+export function loadGame(
+  gameEngine: GameEngine,
+  SceneClass: typeof Scene,
+  slotId: string,
+): Promise<unknown>;
+export function buildSavePayload(scene: Scene, globals?: Record<string, unknown>): unknown;
+export function encodeSave(payload: unknown): Promise<Uint8Array>;
+export function decodeSave(blob: Uint8Array): Promise<unknown>;
+export function collectSerializableEntities(scene: Scene): unknown;
+export function isEntityClassSerializable(EntityClass: typeof GameObject): boolean;
+export function shouldSaveEntity(...args: unknown[]): boolean;
+export function applyEntitySaveRestore(...args: unknown[]): void;
+
+export const SaveGame: {
+  SaveStore: typeof SaveStore;
+  saveGame: typeof saveGame;
+  loadGame: typeof loadGame;
+  buildSavePayload: typeof buildSavePayload;
+  encodeSave: typeof encodeSave;
+  decodeSave: typeof decodeSave;
+  collectSerializableEntities: typeof collectSerializableEntities;
+  isEntityClassSerializable: typeof isEntityClassSerializable;
+  shouldSaveEntity: typeof shouldSaveEntity;
+  applyEntitySaveRestore: typeof applyEntitySaveRestore;
+};
+
 /**
  * Keyboard state. `Keyboard.a`-style getters are stamped in {@link Keyboard.initialize}
  * from the scene key map (no Proxy). Prefer {@link Keyboard.isDown} / {@link Keyboard.isPressed}
@@ -2798,6 +2853,9 @@ export declare class CameraInOutListener extends Component {}
 /** Marker: enables collision callbacks on the entity class. No SoA schema. */
 export declare class CollisionListener extends Component {}
 
+/** Marker: enables `onJointBreak` on the entity class. No SoA schema. */
+export declare class JointBreakListener extends Component {}
+
 /** Marker: enables main-thread mouse grab on the entity class. No SoA schema. */
 export declare class Grab extends Component {}
 
@@ -2894,6 +2952,74 @@ export declare class ParticleEmitter extends SharedAtomicPool {
   static emitZenithal(config: ParticleEmitConfig): number;
   static stampDecal(config: ParticleEmitConfig): number;
   static reset(): void;
+}
+
+export const LIQUIDFUN_FLAGS: Readonly<{
+  WATER: 0;
+  ZOMBIE: number;
+  WALL: number;
+  VISCOUS: number;
+  TENSILE: number;
+  ELASTIC: number;
+  POWDER: number;
+  SPRING: number;
+  BARRIER: number;
+  STATIC_PRESSURE: number;
+}>;
+
+export const LIQUIDFUN_GROUP_FLAGS: Readonly<{
+  SOLID: number;
+  RIGID: number;
+  CAN_BE_EMPTY: number;
+}>;
+
+export interface LiquidFunHeapPose {
+  sab: SharedArrayBuffer;
+  countByteOffset: number;
+  xByteOffset: number;
+  yByteOffset: number;
+  vxByteOffset?: number;
+  vyByteOffset?: number;
+  alphaByteOffset: number;
+  weightByteOffset?: number;
+  maxCount: number;
+}
+
+/** WASM LiquidFun particle physics (not {@link ParticleEmitter}). */
+export declare class LiquidFun {
+  static bindGroupsSab(sab: SharedArrayBuffer | null): void;
+  static bindSabs(opts?: {
+    groups?: SharedArrayBuffer | null;
+    render?: SharedArrayBuffer | null;
+    maxCount?: number;
+  }): void;
+  static unbindSabs(): void;
+  static bindHeapPose(payload: LiquidFunHeapPose | null): void;
+  static getParticleCount(): number;
+  static getViews(): Record<string, unknown> | null;
+  static getParticleViews(): Record<string, unknown> | null;
+  static getGroupViews(): Record<string, unknown> | null;
+  static createSystem(opts?: Record<string, unknown>): void;
+  static setTuning(tuning: Record<string, unknown>): void;
+  static setGroupViscousScale(groupId: number, scale: number): void;
+  static joinParticleGroups(groupA: number, groupB: number): void;
+  static splitParticleGroup(groupId: number): void;
+  static applyForce(index: number, fx: number, fy: number): void;
+  static applyLinearImpulse(index: number, ix: number, iy: number): void;
+  static groupApplyForce(groupId: number, fx: number, fy: number): void;
+  static groupApplyLinearImpulse(groupId: number, ix: number, iy: number): void;
+  static getGroups(): unknown[];
+  static getParticleGroups(): unknown[];
+  static emit(options: Record<string, unknown>): number;
+  static createParticleBox(options: Record<string, unknown>): number;
+  static createParticleCircle(options: Record<string, unknown>): number;
+  static destroyGroup(groupId: number, systemId?: number): void;
+  static destroySystem(systemId?: number): void;
+  static clear(systemId?: number): void;
+  static queryAABB(x0: number, y0: number, x1: number, y1: number, out?: unknown): unknown;
+  static queryAABBAsync(x0: number, y0: number, x1: number, y1: number, out?: unknown): Promise<unknown>;
+  static rayCast(x1: number, y1: number, x2: number, y2: number, out?: unknown): unknown;
+  static rayCastAsync(x1: number, y1: number, x2: number, y2: number, out?: unknown): Promise<unknown>;
 }
 
 export declare const DECORATION_Y_SORT_SCALE: number;
@@ -3091,6 +3217,78 @@ export declare class Joint extends SharedAtomicPool {
   static reset(): void;
 }
 
+export function getMovedBodiesViews(): unknown;
+export function bindMovedBodies(sab: SharedArrayBuffer | null): void;
+export function isMovedBodiesBound(): boolean;
+
+export function box2dQueryAABB(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  out?: unknown,
+  filter?: unknown,
+): unknown;
+export function box2dQueryAABBAsync(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  out?: unknown,
+  filter?: unknown,
+): Promise<unknown>;
+export function bindQueryAabbSab(sab: SharedArrayBuffer | null): void;
+export function isQueryAabbBound(): boolean;
+
+export function box2dCastRayClosest(
+  ox: number,
+  oy: number,
+  dx: number,
+  dy: number,
+  out?: unknown,
+  filter?: unknown,
+): unknown;
+export function box2dCastRayClosestAsync(
+  ox: number,
+  oy: number,
+  dx: number,
+  dy: number,
+  out?: unknown,
+  filter?: unknown,
+): Promise<unknown>;
+export function bindRayCastSab(sab: SharedArrayBuffer | null): void;
+export function isRayCastBound(): boolean;
+
+export function liquidFunQueryAABB(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  out?: unknown,
+): unknown;
+export function liquidFunQueryAABBAsync(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  out?: unknown,
+): Promise<unknown>;
+export function liquidFunRayCast(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  out?: unknown,
+): unknown;
+export function liquidFunRayCastAsync(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  out?: unknown,
+): Promise<unknown>;
+export function bindLiquidFunQuerySab(sab: SharedArrayBuffer | null): void;
+
 export declare class Flash extends GameObject {
   static scriptUrl: null;
   static readonly components: ReadonlyArray<typeof LightEmitter | typeof FlashComponent>;
@@ -3196,6 +3394,7 @@ export interface WeedNamespace {
   Mouse: typeof Mouse;
   Gamepad: typeof Gamepad;
   Camera: typeof Camera;
+  Noise2D: typeof Noise2D;
   Ray: typeof Ray;
   NavGrid: typeof NavGrid;
   Grid: typeof Grid;
@@ -3208,6 +3407,8 @@ export interface WeedNamespace {
   AdobeAnimRegistry: typeof AdobeAnimRegistry;
   BigAtlasInspector: typeof BigAtlasInspector;
   SoundManager: typeof SoundManager;
+  SaveGame: typeof SaveGame;
+  SaveStore: typeof SaveStore;
   Transform: typeof Transform;
   RigidBody: typeof RigidBody;
   Collider: typeof Collider;
@@ -3222,8 +3423,12 @@ export interface WeedNamespace {
   FlashComponent: typeof FlashComponent;
   CameraInOutListener: typeof CameraInOutListener;
   CollisionListener: typeof CollisionListener;
+  JointBreakListener: typeof JointBreakListener;
   Grab: typeof Grab;
   ParticleEmitter: typeof ParticleEmitter;
+  LiquidFun: typeof LiquidFun;
+  LIQUIDFUN_FLAGS: typeof LIQUIDFUN_FLAGS;
+  LIQUIDFUN_GROUP_FLAGS: typeof LIQUIDFUN_GROUP_FLAGS;
   DecorationPool: typeof DecorationPool;
   Decoration: typeof Decoration;
   DecorationComponent: typeof DecorationComponent;
@@ -3235,6 +3440,22 @@ export interface WeedNamespace {
   BulletComponent: typeof BulletComponent;
   Joint: typeof Joint;
   SharedAtomicPool: typeof SharedAtomicPool;
+  getMovedBodiesViews: typeof getMovedBodiesViews;
+  bindMovedBodies: typeof bindMovedBodies;
+  isMovedBodiesBound: typeof isMovedBodiesBound;
+  box2dQueryAABB: typeof box2dQueryAABB;
+  box2dQueryAABBAsync: typeof box2dQueryAABBAsync;
+  bindQueryAabbSab: typeof bindQueryAabbSab;
+  isQueryAabbBound: typeof isQueryAabbBound;
+  box2dCastRayClosest: typeof box2dCastRayClosest;
+  box2dCastRayClosestAsync: typeof box2dCastRayClosestAsync;
+  bindRayCastSab: typeof bindRayCastSab;
+  isRayCastBound: typeof isRayCastBound;
+  liquidFunQueryAABB: typeof liquidFunQueryAABB;
+  liquidFunQueryAABBAsync: typeof liquidFunQueryAABBAsync;
+  liquidFunRayCast: typeof liquidFunRayCast;
+  liquidFunRayCastAsync: typeof liquidFunRayCastAsync;
+  bindLiquidFunQuerySab: typeof bindLiquidFunQuerySab;
   Flash: typeof Flash;
   AbstractWorker: typeof AbstractWorker;
   containerRadius: typeof import('./utils').containerRadius;

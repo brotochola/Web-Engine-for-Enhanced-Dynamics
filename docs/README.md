@@ -1,5 +1,7 @@
 # WeedJS Documentation
 
+This folder is the contributor docs index. It is **not** included in the npm package (`npm i @weed.js/engine` ships `dist/` + types). Package consumers: GitHub or the package README.
+
 This folder contains the engine notes that are closest to the code. The docs are organized by subsystem so contributors can update a focused file when changing shared memory layouts, worker behavior, rendering, physics, or gameplay-facing APIs.
 
 ## Start Here

@@ -27,6 +27,7 @@
   },
   "scripts": {
     "prepare": "node scripts/installGitHooks.js",
+    "prepublishOnly": "node scripts/assertDistBundles.js",
     "sync:version": "node scripts/syncVersion.js",
     "dev": "node server/node_server.js",
     "pretest:node": "node scripts/syncVersion.js",
@@ -114,7 +115,10 @@
     "ecs",
     "entity-component-system",
     "pixi.js",
-    "physics"
+    "physics",
+    "liquidfun",
+    "webgpu",
+    "offscreen-canvas"
   ],
   "author": "Facundo Saiegh",
   "license": "ISC",
