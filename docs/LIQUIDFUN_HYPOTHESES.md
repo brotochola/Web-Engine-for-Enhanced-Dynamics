@@ -730,7 +730,7 @@ No H26-off L2 pair (flag is WASM-only; L1 already isolated 5.8%). Do not add the
 
 ### Wave L passes — H29 (2026-09-14)
 
-Eight always-on `passMs` buckets on `lfParticleSystem_Step`, exported as `get_lf_pass_ms(id)` / `get_lf_particle_contact_count`. Ceiling flags: `set_lf_reuse_particle_contacts`, `set_lf_skip_pass`. PHYSICS_STATS 37–44 (stride still 48). L2 HUD `ccall` stayed 0 in Chromium; **L1 Node is the split**. Accept bar still L2 `LIQUIDFUN_MS`.
+Eight `passMs` buckets on `lfParticleSystem_Step`, exported as `get_lf_pass_ms(id)` / `get_lf_particle_contact_count`. **Pass profile is opt-in** (`set_lf_pass_profile(1)` after `create_particle_system`); default off so prod never calls `emscripten_get_now`. Ceiling flags: `set_lf_reuse_particle_contacts`, `set_lf_skip_pass`. PHYSICS_STATS 37–44 stay 0 in prod (no per-frame `ccall`). L1 Node is the split. Accept bar still L2 `LIQUIDFUN_MS`.
 
 **L1** `pnpm bench:micro:liquidfun-pass-profile`, n=12753, 25328 particle contacts, `subSteps=1`:
 
@@ -751,7 +751,7 @@ Winner: **findContacts**. H17 died (weight ~1%). H18 died (staticPressure ~8%, n
 
 | Claim | Stayed / dropped | Why | Next |
 |-------|------------------|-----|------|
-| Pass timers (infra) | **Stayed** | 8 buckets + skip/reuse + L1 micro | Leave on. |
+| Pass timers (infra) | **Stayed, default off** | 8 buckets + skip/reuse + L1 micro; `set_lf_pass_profile` opt-in | Leave opt-in. |
 | H17 weight is the bound | **Died** | 1.2% of step | Do not patch weight. |
 | H18 staticPressure clamp | **Died** | 8%, not find | Do not retry clamp SIMD. |
 | findContacts is the bound | **Stayed** (fact) | ~60% L1; reuse −64% | Next hyp must cut **search**, not `distSqr`. |

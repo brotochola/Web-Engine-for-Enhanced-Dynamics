@@ -41,6 +41,7 @@ function measure(fn, workerCount, opts = {}) {
   if (!fn('create_particle_system')(worldId, RADIUS, 1.0, 15000, 0)) {
     throw new Error('create_particle_system failed');
   }
+  fn('set_lf_pass_profile')(1);
   fn('set_particle_sub_steps')(1);
   // Same AABBs as LiquidFunStressScene (radius 8, default spacing).
   if (fn('create_particle_group_box')(400, 500, 2800, 1100, 0, WATER | TENSILE, 0.5, 0, 0, 0, 1, 1, 0) < 0) {
