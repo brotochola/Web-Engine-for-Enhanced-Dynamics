@@ -658,6 +658,16 @@ test('liquidFun render SAB is not ParticleComponent', () => {
   assert.ok(!('flat' in views));
 });
 
+test('liquidFun render SAB fits bind when maxCount is odd', () => {
+  for (const n of [1, 32767, 65535]) {
+    const sab = new SharedArrayBuffer(liquidFunRenderByteSize(n));
+    const views = bindLiquidFunRender(sab, n);
+    assert.equal(views.layerMask.length, n);
+    views.layerMask[n - 1] = 1;
+    assert.equal(views.layerMask[n - 1], 1);
+  }
+});
+
 test('liquidFun groups SAB fits bindLiquidFunGroups (first/last + pose + lightIntensity)', () => {
   const n = LIQUIDFUN_GROUPS_MAX;
   assert.equal(liquidFunGroupsByteSize(n), 4 + n * 4 * 13);

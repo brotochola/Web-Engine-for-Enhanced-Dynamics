@@ -13,10 +13,14 @@
 
 export function liquidFunRenderByteSize(maxCount) {
   const n = maxCount | 0;
-  const header = 8;
-  // 9 f32 pose fields + tint u32 + textureId u16 + baseAlpha f32 + layerMask u16
-  const bytes = header + 9 * n * 4 + n * 4 + n * 2 + n * 4 + n * 2;
-  return (bytes + 3) & ~3;
+  let off = 8;
+  off += 9 * n * 4; // x y scaleX scaleY rotC rotS alpha px py
+  off += n * 4; // tint
+  off += n * 2; // textureId
+  off = (off + 3) & ~3; // baseAlpha needs f32 align (2 bytes when n odd)
+  off += n * 4;
+  off += n * 2; // layerMask
+  return (off + 3) & ~3;
 }
 
 export function bindLiquidFunRender(sab, maxCount) {
