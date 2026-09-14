@@ -8,6 +8,16 @@ Demos are how the engine gets tested. They are not the product. The engine is th
 
 ---
 
+## Monday 14 September 2026 (evening) — The Fire Was There. The Light Wasn't
+
+The want was a drip of fire that lights the cave the same way a crate does. Burning Boxes already had the pieces: Q writes LiquidFun onto the fire compute layer, `lightIntensity` on the emit, a group splat ADD into `lightingRT`. The crates shoved. The compute fire showed up. The landscape stayed black. Turning the intensity from 50 to 5330 did nothing. The instinct was the shader, or a missing uniform, or to cheat and also splat Q onto oil. That last one is a demo hat pretending to be an engine fix.
+
+The pack already refused to draw a slab unless `sqrtLightIntensity[gid] > 0`. Reach is `10 * sqrt(I)`, same helper as `LightEmitter`. Pixi and logic bind the groups SAB with `groupFlags` between `lastIndex` and `viscousScale`. The physics host bind skipped that column and still claimed it mirrored the util. Stamp wrote `I` and `sqrt(I)` by group id into physics columns 11–12. Pixi read those bytes as `angle` and `lightIntensity`. Column 13 — the one pack uses for radius — was never written. Always zero. Intensity could not save it.
+
+One layout. Physics bind, init payload, `weedjsPost` `handleInit`. Then Q lights the rock wall. Oil stays caramel. Crate `LightEmitter` still does the crates.
+
+The same afternoon, the sibling C tree was still compiling `box2d_wasm.*`. Weed had renamed everything to camelCase and loads `/src/box2d/box2dWasm.js`. The copy script papered over it by dropping both names into the engine folder. Glue camelCase still `locateFile("box2d_wasm.wasm")`. Two copies, they drift. `BOX2D_WEED_INTEGRATION` now emits `box2dWasm.js` / `.wasm`. Lab `build_wasm.bat` stays snake. Weed copies only camelCase. The leftover snake files in `src/box2d` are gone.
+
 ## Monday 14 September 2026 (later) — Don't Compute What Nobody Reads
 
 Yesterday logic was cloning eight thousand Box2D contacts for a scene that never asked. The same pattern was still sitting in the other workers: physics copying the contact ring into a SAB nobody drained, the particle worker `hypot` of every dynamic body so `RigidBody.speed` would be fresh for readers that didn't exist, keyboard edge flags on spatial and pre-render, and balls asking spatial for neighbors they never looked at. The want was not a new system. It was to stop paying for opt-in features on scenes that never opted in. One hyp at a time. Headed bench, live `/src`, Predator as the guard — that scene has `CollisionListener` and it does read speed.

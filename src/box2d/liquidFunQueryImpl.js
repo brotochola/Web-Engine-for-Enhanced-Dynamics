@@ -33,6 +33,7 @@
   var i32 = null;
   var f32 = null;
   var resultCap = 0;
+  var resultsView = null;
 
   function createLiquidFunQuerySab(cap) {
     var resultCapacity = Math.max(
@@ -54,11 +55,13 @@
       i32 = null;
       f32 = null;
       resultCap = 0;
+      resultsView = null;
       return;
     }
     i32 = new Int32Array(sab);
     f32 = new Float32Array(sab);
     resultCap = Atomics.load(i32, HDR_RESULT_CAP) | 0;
+    resultsView = i32.subarray(RESULTS_I32, RESULTS_I32 + resultCap);
   }
 
   function isLiquidFunQueryBound() {
@@ -223,7 +226,7 @@
     var c = f32[COORDS_F32 + 2];
     var d = f32[COORDS_F32 + 3];
     var cap = resultCap | 0;
-    var results = i32.subarray(RESULTS_I32, RESULTS_I32 + cap);
+    var results = resultsView || i32.subarray(RESULTS_I32, RESULTS_I32 + cap);
 
     try {
       var count = queryFn(op, a, b, c, d, results, cap) | 0;
@@ -238,6 +241,45 @@
     }
     Atomics.notify(i32, HDR_STATUS, 1);
     return true;
+  }
+
+  /**
+   * Drain a burst of single-flight queries within one physics step.
+   * Same spin/wait pattern as box2dRayCast burst.
+   * @returns {number} queries serviced
+   */
+  function servicePendingLiquidFunQueryBurst(queryFn, maxQueries) {
+    if (!i32 || typeof queryFn !== 'function') return 0;
+    var max = maxQueries | 0;
+    if (max <= 0) max = 1;
+    var serviced = 0;
+    while (serviced < max) {
+      if (servicePendingLiquidFunQuery(queryFn)) {
+        serviced++;
+        continue;
+      }
+      if (serviced === 0) break;
+
+      var found = false;
+      for (var spin = 0; spin < 100000; spin++) {
+        if ((Atomics.load(i32, HDR_STATUS) | 0) === STATUS_PENDING) {
+          found = true;
+          break;
+        }
+      }
+      if (found) continue;
+
+      var s2 = Atomics.load(i32, HDR_STATUS) | 0;
+      if (s2 === STATUS_PENDING) continue;
+      if (s2 === STATUS_CLAIMED) {
+        Atomics.wait(i32, HDR_STATUS, STATUS_CLAIMED, 2.0);
+        continue;
+      }
+      Atomics.wait(i32, HDR_STATUS, s2, 2.0);
+      var s3 = Atomics.load(i32, HDR_STATUS) | 0;
+      if (s3 !== STATUS_PENDING && s3 !== STATUS_CLAIMED) break;
+    }
+    return serviced;
   }
 
   global.LiquidFunQuery = {
@@ -257,5 +299,6 @@
     liquidFunRayCast: liquidFunRayCast,
     liquidFunRayCastAsync: liquidFunRayCastAsync,
     servicePendingLiquidFunQuery: servicePendingLiquidFunQuery,
+    servicePendingLiquidFunQueryBurst: servicePendingLiquidFunQueryBurst,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

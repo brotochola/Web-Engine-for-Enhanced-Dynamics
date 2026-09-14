@@ -9,6 +9,7 @@ import {
   liquidFunRayCastAsync,
   liquidFunQueryAABB,
   servicePendingLiquidFunQuery,
+  servicePendingLiquidFunQueryBurst,
   LIQUIDFUN_QUERY_OP_AABB,
   LIQUIDFUN_QUERY_OP_RAY,
 } from '../../src/box2d/liquidFunQuery.js';
@@ -83,6 +84,24 @@ test('liquidFunRayCastAsync + error path', async () => {
     console.error = origError;
     bindLiquidFunQuerySab(null);
   }
+});
+
+test('liquidFunQuery burst services one pending query', async () => {
+  const sab = createLiquidFunQuerySab(32);
+  bindLiquidFunQuerySab(sab);
+  const out = new Int32Array(8);
+  const pending = liquidFunQueryAABBAsync(1, 2, 3, 4, out);
+  await new Promise((r) => setTimeout(r, 0));
+  const n = servicePendingLiquidFunQueryBurst((op, a, b, c, d, results) => {
+    assert.equal(op, LIQUIDFUN_QUERY_OP_AABB);
+    assert.equal(a, 1);
+    results[0] = 42;
+    return 1;
+  }, 8);
+  assert.equal(n, 1);
+  assert.equal(await pending, 1);
+  assert.equal(out[0], 42);
+  bindLiquidFunQuerySab(null);
 });
 
 test('liquidFunQuery rejects non-Int32Array out', () => {

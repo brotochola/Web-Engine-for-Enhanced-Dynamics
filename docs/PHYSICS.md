@@ -21,7 +21,7 @@ Box2D always attaches **shapes to a body**. Weed maps ECS components like Unity:
 | **Collider only** | **Implicit static** body + shape | Yes | Walls, triggers, occluders. No force response. |
 | **Neither** | No Box2D body | — | Transform (+ optional sprite bounds in spatial) |
 
-Host sync (`weedjs_post.syncBodySlot`):
+Host sync (`weedjsPost.syncBodySlot`):
 
 - `wantBody = entityActive && (rbActive || colActive)`
 - Create: RB-only → `world.create()` / `create_body`; Col-only → static `create_*` with shape; both → existing `createBox` / `createCircle` / `createPolygon`
@@ -52,7 +52,7 @@ Command ring `setVelocity` works once `hasBody` (RB-only included). Col-only sta
 
 1. **Box2D step** — classic WASM host advances bodies in-process (`weedjsDoStep`); hot pose/vel (`Transform.x/y/rotation/rotC/rotS`, `RigidBody.vx/vy/angularVelocity/sleeping`) live on HEAP. World `maximumLinearSpeed` clamps in the solver. Body damping: `linearDamping` / `angularDamping`. Before `world.step`, physics snapshots prev pose into `RigidBody.px/py/pRotation`. After the step, it **publishes** live `Transform.x/y/rotC/rotS` for dense bodies into double-buffered `poseDataA/B` and bumps `poseSync[readyFrame]` (same Atomics idiom as the render queue).
 2. **Contacts** — Box2D owns narrowphase; fixture μ from `Collider.friction`.
-3. **Joints** — Weed `Joint` SAB (`addDistance` / `addRevolute` / `addWeld` with body-local anchors) syncs to Box2D joints each step (`weedjs_post.syncJoints`). Cap: WASM `MAX_JOINTS` (4096).
+3. **Joints** — Weed `Joint` SAB (`addDistance` / `addRevolute` / `addWeld` with body-local anchors) syncs to Box2D joints each step (`weedjsPost.syncJoints`). Cap: WASM `MAX_JOINTS` (4096).
 4. **Stats** — write counters and timing into `physicsStats`.
 
 The worker does **not** build the spatial grid or neighbor lists; it **reads** `Grid.neighborData` produced by spatial workers.
@@ -66,7 +66,7 @@ Live HEAP `Transform` mutates during solver substeps. Async readers must not sam
 | `poseDataA` / `poseDataB` | SoA `Float32` `x[N]`, `y[N]`, `rotC[N]`, `rotS[N]` (`N = totalEntityCount`) | Post-step display snapshot |
 | `poseSync` | `Int32[2]` `[readyFrame, consumedFrame]` | Writer stores ready; pre_render latches `(ready-1)%2` and stores consumed |
 
-- **Writer:** `weedjs_post.publishPose` after `world.step` (dense body list → typed views; no alloc).
+- **Writer:** `weedjsPost.publishPose` after `world.step` (dense body list → typed views; no alloc).
 - **Readers:** `preRenderWorker` (entities / adobe / shadows / parented deco compose) consumes; `particleWorker` parent-follow latches without consume. Logic binds the same latch for `Camera.followEntity`. Pixi compute pack and debug colliders pin the generation stamped as `Int32 poseReady` on the render-queue camera SAB (same slot as sprites; no `Atomics.load` of live `poseSync`).
 - **Boot:** `readyFrame === 0` → fall back to live `Transform`.
 - **Not** soft interpolation / `averaged*` — one coherent post-step snapshot per publish.
@@ -161,7 +161,7 @@ See [Collision Filtering](./bible_of_weed_js.md#collision-filtering) in the bibl
 
 - **`subStepCount`** — Box2D solver sub-step count per physics tick (`world.step(dt, subStepCount)`). Raise for stiffer stacking / joints at higher CPU cost. Minimum `1`.
 
-Contacts for gameplay callbacks come from a **sequenced contact ring** (`box2dContactRing`): nested `weedjs_post` publishes Box2D begin/end (+ sensor) records with body generations after each step; each logic worker keeps its own read cursor (no physics/logic lockstep). Stale generations and inactive entities are rejected; ring overrun clears local pair state.
+Contacts for gameplay callbacks come from a **sequenced contact ring** (`box2dContactRing`): nested `weedjsPost` publishes Box2D begin/end (+ sensor) records with body generations after each step; each logic worker keeps its own read cursor (no physics/logic lockstep). Stale generations and inactive entities are rejected; ring overrun clears local pair state.
 
 Body create/destroy sync uses a **dirty bitset + generation** (`box2dBodySync`), not `queryActiveEntities`. Command writes use an **MPSC sequence-slot ring** (`box2dCommandRing`).
 
@@ -242,11 +242,11 @@ Physics sync iterates the dense active list (`activeIndices` / `activeCount`), n
 
 ### Sync
 
-`weedjs_post.syncJoints` after `syncBodies` and `drainCommands` (pose commands land on Box2D bodies before weld create): create/destroy/recreate Box2D joints via `create*_joint_local`. Change detection uses `Joint.revision` (bumped on add/update/remove), not float fingerprints. Live WASM handles tracked via a dense list (no full `maxJoints` sweep). Failed creates (`handle === -2`) retry only after the slot's revision changes.
+`weedjsPost.syncJoints` after `syncBodies` and `drainCommands` (pose commands land on Box2D bodies before weld create): create/destroy/recreate Box2D joints via `create*_joint_local`. Change detection uses `Joint.revision` (bumped on add/update/remove), not float fingerprints. Live WASM handles tracked via a dense list (no full `maxJoints` sweep). Failed creates (`handle === -2`) retry only after the slot's revision changes.
 
 ### Break thresholds
 
-`Joint.addDistance` / `addRevolute` / `addWeld` accept `forceThreshold` / `torqueThreshold` (default `Infinity` — never breaks). On successful create, `weedjs_post` wires them via `joint_configure(handle, weedJointIndex, forceThreshold, torqueThreshold)`. When Box2D reports the joint exceeded a threshold, `weedjs_post` destroys the WASM joint, removes it from the `Joint` dense active list, and publishes a **joint-break ring** (`box2dJointBreakRing`) record. Logic workers drain it only when at least one entity type has **`JointBreakListener`**, and dispatch `GameObject.onJointBreak(jointIndex, entityA, entityB)` only to listening types on A and/or B (same worker-partition + generation rules as contacts). Hits stay on `CollisionListener`; breaks use `JointBreakListener`. Demo: **Weld Break** scene (`demos/weldBreakScene/weldBreakScene.js`) — welded stacks + particle burst on snap.
+`Joint.addDistance` / `addRevolute` / `addWeld` accept `forceThreshold` / `torqueThreshold` (default `Infinity` — never breaks). On successful create, `weedjsPost` wires them via `joint_configure(handle, weedJointIndex, forceThreshold, torqueThreshold)`. When Box2D reports the joint exceeded a threshold, `weedjsPost` destroys the WASM joint, removes it from the `Joint` dense active list, and publishes a **joint-break ring** (`box2dJointBreakRing`) record. Logic workers drain it only when at least one entity type has **`JointBreakListener`**, and dispatch `GameObject.onJointBreak(jointIndex, entityA, entityB)` only to listening types on A and/or B (same worker-partition + generation rules as contacts). Hits stay on `CollisionListener`; breaks use `JointBreakListener`. Demo: **Weld Break** scene (`demos/weldBreakScene/weldBreakScene.js`) — welded stacks + particle burst on snap.
 
 ### Explosions
 
@@ -258,7 +258,7 @@ Physics sync iterates the dense active list (`activeIndices` / `activeCount`), n
 
 - Hot pose/vel/sleeping bound to WASM HEAP (`bindBox2dHotFields`) — not allocated in Weed SoA.
 - Display pose publish copies dense-body `x/y/rotC/rotS` into pre-bound `poseData` typed views (no per-step heap objects).
-- Command ring handlers hoisted once in `weedjs_post` (no per-step `{}`).
+- Command ring handlers hoisted once in `weedjsPost` (no per-step `{}`).
 - Joint sync uses typed arrays + revision ints only; no per-joint heap objects in the hot path.
 - Contact callbacks: logic drains the contact ring; begin/end apply helpers are instance methods (no per-frame closures).
 

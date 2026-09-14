@@ -1049,6 +1049,7 @@ class Scene {
     window.Layer = Layer;
     window.Decoration = Decoration;
     window.Joint = Joint;
+    window.LiquidFun = LiquidFun;
     GameObject.scene = this;
   }
 

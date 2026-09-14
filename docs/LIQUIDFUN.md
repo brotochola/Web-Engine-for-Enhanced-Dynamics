@@ -76,7 +76,7 @@ Scene.create
     ring CMD 9 / 10 CREATE           // next create consumes emit params
   Floor / RigidBody spawn            → body dirty → syncBodies
 
-physics worker (box2d_wasm.js + weedjs_post + physics_host)
+physics worker (box2dWasm.js + weedjsPost.js + physicsHostImpl.js)
   syncBodies
   drainCommands          // create system / emit / groups (rare)
   world.step(dt)
@@ -172,7 +172,9 @@ Emit is **explicit knobs**, not a named cookbook. `LIQUIDFUN_FLAGS` + per-call `
 
 **Groups:** Kept when `ELASTIC|SPRING`, or `trackGroup: true`, or `viscousScale != 1`. `lightIntensity > 0` also forces `trackGroup` so the burst has a group id. Shape groups set `hasShapeGroups` (stats + elastic/spring). Bookkeeping viscous groups do **not**. Ungrouped create returns **`-1`** (not `0`). List via `LiquidFun.getGroups()` (thin SAB, cap 256).
 
-**Lighting field:** per-emit `lightIntensity` (same units as `LightEmitter`). Reach is `10 * sqrt(I)` — same helper as entity cookies / cull. Pixi splats lit group slabs ADD into `lightingRT` with \(I/(I+d^2)\) (world px), not extra `uLightData` slots. No shadows. Independent of compute `maxParticles`. `tint` is the light color. Fire density splat is a different kernel (`1 - d²`).
+Thin groups SAB is **one layout** (`src/util/liquidFunGroups.js`): `count` then 14 columns `id, particleCount, first, last, groupFlags, viscousScale, x, y, vx, vy, angVel, angle, lightIntensity, sqrtLightIntensity`. Physics `bindLiquidFunGroupsViews` must match. `lightIntensity` / `sqrtLightIntensity` are **by group id**. Pose / flags / first / last are dense live slots. If physics omits `groupFlags`, Pixi’s `sqrtLightIntensity` lands on zeros and the light splat packs nothing — raising emit intensity cannot help.
+
+**Lighting field:** per-emit `lightIntensity` (same units as `LightEmitter`). Reach is `10 * sqrt(I)` — same helper as entity cookies / cull. Pack skips a group unless **both** `I[gid] > 0` and `sqrtI[gid] > 0`. Pixi splats lit group slabs ADD into `lightingRT` with \(I/(I+d^2)\) (world px), not extra `uLightData` slots. No shadows. Independent of compute `maxParticles`. `tint` is the light color. Fire density splat is a different kernel (`1 - d²`). Do not put fire compute particles on the oil layer to “fix” lights.
 
 What is slow: a new **shape** group every mouse splash. Spray viscous blobs with `viscousScale != 1` keeps bookkeeping groups only.
 
@@ -234,7 +236,7 @@ CPU ParticleEmitter poses use the same `layerMask` for density splat and compute
 
 - `syncBodies` + `drainCommands` + `world.step` — no `new`, no `postMessage` of positions.
 - Particle SoA lives in WASM HEAP (`growable=false` so TypedArray views stay valid).
-- `syncLiquidFunParticlesToSharedBuffers` bulk-`.set()`s the C-side deinterleaved `x`/`y` HEAP arrays (see WASM ABI) → render SAB `x/y`. Tint/texture/scale painted on new slots of **that** SAB. Cached `x`/`y` byte offsets, not `pos`.
+- Pose is **HEAP-bound** (`bindHeapPose`) — no per-step x/y memcpy. Thin render SAB still gets tint/texture/scale on new slots. `get_particle_pos_byte_offset` is 0 (interleaved `pos` removed).
 
 **Render (hot, other workers):** `particleWorker` scans the CPU pool only. `preRenderWorker` collects CPU visibles then LiquidFun from the render SAB (same camera cull) into the same queue. Pixi unchanged (`rqType=1`).
 
@@ -282,15 +284,15 @@ LiquidFun.emit({
 
 const v = LiquidFun.getViews(); // HEAP: userData, color, flags, viscousScale, groupIndex (read-only)
 LiquidFun.setUserData(i, bits);
-LiquidFun.setUserDataRange(first, last, bits);
+LiquidFun.setUserDataRange(first, last, bits); // last exclusive
 LiquidFun.setColor(i, 0xff3399ff); // 0xAARRGGBB
 LiquidFun.setFlags(i, LIQUIDFUN_FLAGS.COLOR_MIXING);
 LiquidFun.setViscousScale(i, 4);
 LiquidFun.setGroupFlags(id, 0); // RIGID is whole-group; corner melt needs extract, not only this
 LiquidFun.destroyParticle(i);
 LiquidFun.createParticle({ x, y, vx, vy, flags, userData, color });
-LiquidFun.extract(groupId, indices, count, { groupFlags: 0, trackGroup: true }); // → newGroupId or -1
-LiquidFun.applyForceRange(first, last, fx, fy);
+LiquidFun.extract(groupId, indices, count, { groupFlags: 0 }); // → newGroupId; C always tracks
+LiquidFun.applyForceRange(first, last, fx, fy); // last exclusive; force split across members
 
 LiquidFun.getGroups(); // includes groupFlags
 LiquidFun.setGroupViscousScale(id, scale);
@@ -306,7 +308,7 @@ await LiquidFun.queryAABBAsync(x0, y0, x1, y1, out);
 await LiquidFun.rayCastAsync(x1, y1, x2, y2, out);
 ```
 
-Single-flight SAB (`liquidFunQuery` / `liquidFunExtract`), same pattern as body `box2dQueryAABB`. Physics services pending queries/extracts in `doStep` (including paused/`dt==0`). Particle indices are **unstable** after zombie compact, join, split, or extract — query every tick. No `ParticleHandle` this pass.
+Single-flight SAB (`liquidFunQuery` / `liquidFunExtract`), same pattern as body `box2dQueryAABB`. Physics **burst-drains** pending queries/extracts in `doStep` (including paused/`dt==0`) so many sync callers in one logic tick do not stall a frame each. Extract index cap is **4096** (matches C `g_extract_indices`). Particle indices are **unstable** after zombie compact, join, split, or extract — query every tick. No `ParticleHandle` this pass. Gameplay heat/melt: walk `getGroupViews()` slabs, do not `queryAABB` per entity. Range setters are C `[first, last)`.
 
 Compute pack (`LfParticle`) is 8 floats / 32 bytes: `x,y,vx,vy` + `userData: u32` + pad. Scene shaders read `particles[i].userData`, not an engine `heat` field.
 
@@ -338,7 +340,7 @@ Weed only consumes **WASM** from the sibling `Box2d_3.2_C_-_liquidfun` tree. Nat
 weedjs\build_for_weed.bat
 ```
 
-Copies `box2dWasm.js` + `.wasm` into `src/box2d/`. Do not copy a plain `build_wasm.bat` output (lab `game-constants.js` / missing `weedjsPost.js`).
+Copies **only** `box2dWasm.js` + `.wasm` into `src/box2d/`. Sibling CMake `OUTPUT_NAME` is `box2dWasm` when `BOX2D_WEED_INTEGRATION=ON` (glue `locateFile("box2dWasm.wasm")`). Lab `build_wasm.bat` stays `box2d_wasm.*` — do not copy that output (lab `game-constants.js` / missing `weedjsPost.js`). After an `OUTPUT_NAME` change, `weedjs\build_for_weed.bat clean` once so CMake reconfigures.
 
 After C changes, engine tests (Node WASM + lockstep visual). Not native Box2D binaries:
 
@@ -353,7 +355,9 @@ pnpm test:visual --scene liquidfun,lfstress
 
 | File | What |
 |------|------|
-| [`tests/node/liquidFun.test.js`](../tests/node/liquidFun.test.js) | Flags (including COLOR_MIXING / REPULSIVE / REACTIVE), AABB, `SET_LIQUIDFUN_EMIT` ring, opaque userData i32 opcodes, `physics.liquidFun` merge + maxCount clamp 65535 |
+| [`tests/node/liquidFun.test.js`](../tests/node/liquidFun.test.js) | Flags (including COLOR_MIXING / REPULSIVE / REACTIVE), AABB, `SET_LIQUIDFUN_EMIT` ring, opaque userData i32 opcodes, `physics.liquidFun` merge + maxCount clamp 65535, groups SAB 14-column bind (physics host matches util, including `groupFlags`) |
+| [`tests/node/liquidFunLightSplat.test.js`](../tests/node/liquidFunLightSplat.test.js) | CPU pack of lit group slabs; `I > 0` with `sqrtI === 0` packs 0 |
+| [`tests/node/box2dBundleSiblings.test.js`](../tests/node/box2dBundleSiblings.test.js) | Glue is `box2dWasm.js` only; `locateFile("box2dWasm.wasm")`; `importScripts` camelCase siblings |
 | [`tests/node/liquidFun.wasm.test.js`](../tests/node/liquidFun.wasm.test.js) | Y-down floor settle + `spanY`; no wall-climb **and** no centers inside the wall; water beside a thick box (`maxPen < radius`); 10k create/step smoke; **1-particle point rest** on floor top (`|vy|` small); barrier smoke; staticPressure finite; deinterleaved `x`/`y` exactly match interleaved `pos`; `strictContactCheck` 5th-arg smoke |
 | [`tests/bench/runLockstepVisual.mjs`](../tests/bench/runLockstepVisual.mjs) (`pnpm test:visual`) | Headed two-run lockstep. `liquidfun` + `lfstress` are `match: 'exact'` at 100 steps (CPU `hashLiquidFun` + PNG). Catalog: [`lockstepVisualScenes.mjs`](../tests/bench/lockstepVisualScenes.mjs). `water` stays `not-black` (rigid metaball balls, not LiquidFun). |
 

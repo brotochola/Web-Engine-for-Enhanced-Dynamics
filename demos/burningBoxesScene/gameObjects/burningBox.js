@@ -7,16 +7,21 @@ const HEAT = 1;
 const IGNITE_RANGE_SQ = 80 * 80;
 const LIGHT_BASE = 9000;
 const LIGHT_RANGE = 640;
-const QUERY = new Int32Array(1024);
-const HOT = new Int32Array(1024);
+const HOT = new Int32Array(4096);
+const BOX_X0 = new Float32Array(256);
+const BOX_Y0 = new Float32Array(256);
+const BOX_X1 = new Float32Array(256);
+const BOX_Y1 = new Float32Array(256);
 const MELT_T = 180;
 const RIGID = LIQUIDFUN_GROUP_FLAGS.RIGID;
+const EXTRACT_OPTS = { groupFlags: 0 };
 
 export class BurningBox extends GameObject {
   static scriptUrl = import.meta.url;
   static instances = [];
   static serializable = true;
   static components = [RigidBody, Collider, SpriteRenderer, Grab, LightEmitter];
+  static _meltAcc = -1;
 
   ignite() {
     this.setFeedBits(this.getFeedBits() | HEAT);
@@ -71,7 +76,10 @@ export class BurningBox extends GameObject {
       const t = (accTime || 0) * 0.001;
       const flick = 1 + Math.sin(t * 8 + this.index) * 0.15 + Math.sin(t * 12.7 + this.index * 1.7) * 0.1;
       this.lightEmitter.lightIntensity = Math.max(400, LIGHT_BASE * flick);
-      this._meltIce(deltaTime);
+      if (BurningBox._meltAcc !== accTime) {
+        BurningBox._meltAcc = accTime;
+        BurningBox.meltIce(deltaTime);
+      }
     }
 
     if (!Mouse.isButton0Pressed && !Keyboard.isPressed('f')) return;
@@ -80,50 +88,63 @@ export class BurningBox extends GameObject {
     const dy = this.y - Mouse.y;
     if (dx * dx + dy * dy < IGNITE_RANGE_SQ) this.ignite();
   }
-  _meltIce(deltaTime) {
+
+  /** One pass over RIGID slabs. No queryAABB. One extract per ice group. */
+  static meltIce(deltaTime) {
     const views = LiquidFun.getViews();
-    if (!views || !views.userData || !views.groupIndex) return;
-    const hw = (this.collider.width || 100) * 0.5 + 48;
-    const hh = (this.collider.height || 100) * 0.5 + 48;
-    let n = 0;
-    try {
-      n = LiquidFun.queryAABB(this.x - hw, this.y - hh, this.x + hw, this.y + hh, QUERY);
-    } catch (_) {
-      return;
+    const gv = LiquidFun.getGroupViews();
+    if (!views || !views.userData || !views.x || !views.y || !gv || !gv.count) return;
+    const list = BurningBox.instances;
+    let boxN = 0;
+    for (let i = 0; i < list.length && boxN < BOX_X0.length; i++) {
+      const box = list[i];
+      if (!box || !(box.getFeedBits() & HEAT)) continue;
+      const hw = (box.collider.width || 100) * 0.5 + 48;
+      const hh = (box.collider.height || 100) * 0.5 + 48;
+      BOX_X0[boxN] = box.x - hw;
+      BOX_Y0[boxN] = box.y - hh;
+      BOX_X1[boxN] = box.x + hw;
+      BOX_Y1[boxN] = box.y + hh;
+      boxN++;
     }
-    if (n <= 0) return;
+    if (boxN <= 0) return;
+
     const live = views.count ? views.count[0] | 0 : 0;
-    const groups = LiquidFun.getGroups();
+    const gn = gv.count[0] | 0;
     const add = Math.max(1, ((deltaTime || 16) * 0.25) | 0);
-    let gid = -1;
-    let hotN = 0;
-    const cap = n < QUERY.length ? n : QUERY.length;
-    for (let i = 0; i < cap; i++) {
-      const idx = QUERY[i] | 0;
-      if (idx < 0 || idx >= live) continue;
-      const g = views.groupIndex[idx] | 0;
-      let gFlags = 0;
-      for (let k = 0; k < groups.length; k++) {
-        if (groups[k].id === g) {
-          gFlags = groups[k].groupFlags | 0;
-          break;
+    const xArr = views.x;
+    const yArr = views.y;
+    const ud = views.userData;
+    for (let k = 0; k < gn; k++) {
+      if (!(gv.groupFlags[k] & RIGID)) continue;
+      const first = gv.firstIndex[k] | 0;
+      const last = gv.lastIndex[k] | 0;
+      const gid = gv.id[k] | 0;
+      let hotN = 0;
+      const hi = last < live ? last : live;
+      for (let idx = first; idx < hi; idx++) {
+        if (idx < 0) continue;
+        const x = xArr[idx];
+        const y = yArr[idx];
+        let hit = false;
+        for (let b = 0; b < boxN; b++) {
+          if (x >= BOX_X0[b] && x <= BOX_X1[b] && y >= BOX_Y0[b] && y <= BOX_Y1[b]) {
+            hit = true;
+            break;
+          }
         }
+        if (!hit) continue;
+        const prev = ud[idx] >>> 0;
+        let t = (prev & 255) + add;
+        if (t > 255) t = 255;
+        const next = (prev & ~255) | t;
+        if (next !== prev) LiquidFun.setUserData(idx, next);
+        if (t < MELT_T) continue;
+        if (hotN < HOT.length) HOT[hotN++] = idx;
       }
-      if (!(gFlags & RIGID)) continue;
-      const prev = views.userData[idx] >>> 0;
-      let t = (prev & 255) + add;
-      if (t > 255) t = 255;
-      const next = (prev & ~255) | t;
-      if (next !== prev) LiquidFun.setUserData(idx, next);
-      if (t < MELT_T) continue;
-      if (gid < 0) gid = g;
-      if (g !== gid) continue;
-      if (hotN < HOT.length) HOT[hotN++] = idx;
-    }
-    if (gid < 0 || hotN <= 0) return;
-    const newId = LiquidFun.extract(gid, HOT, hotN, { groupFlags: 0, trackGroup: true });
-    if (newId >= 0) {
-      LiquidFun.setGroupViscousScale(newId, 4);
+      if (hotN <= 0) continue;
+      const newId = LiquidFun.extract(gid, HOT, hotN, EXTRACT_OPTS);
+      if (newId >= 0) LiquidFun.setGroupViscousScale(newId, 4);
     }
   }
 }

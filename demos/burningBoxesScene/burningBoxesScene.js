@@ -25,8 +25,8 @@ const OIL_LAYER = 'oil';
 const FIRE_WORLD_WIDTH = 4000;
 const FIRE_WORLD_HEIGHT = 3000;
 const FIRE_CELL_SIZE = 4;
-const FIRE_LF_RADIUS = 10;
-const FIRE_LF_MAX = 4096;
+const FIRE_LF_RADIUS = 6;
+const FIRE_LF_MAX = 16000;
 const OIL_DRIP_MS = 220;
 
 const FIRE_PASSES = [
@@ -81,7 +81,7 @@ export class BurningBoxesScene extends WEED.Scene {
     logic: { noLimitFPS: false },
     particle: { noLimitFPS: false, maxParticles: 100, decals: false },
     physics: {
-      subStepCount: 4,
+      subStepCount: 1,
       noLimitFPS: false,
       gravity: { x: 0, y: 2400 },
       sleeping: true,
@@ -89,7 +89,7 @@ export class BurningBoxesScene extends WEED.Scene {
         enabled: true,
         radius: FIRE_LF_RADIUS,
         maxCount: FIRE_LF_MAX,
-        subSteps: 1,
+        subSteps: 2,
       },
     },
     preRender: { noLimitFPS: false },
@@ -253,7 +253,7 @@ export class BurningBoxesScene extends WEED.Scene {
   createNewGame() {
     this.spawnCrates();
     this.spawnGadgets();
-    this.spawnIce();
+    // this.spawnIce();
   }
 
   spawnIce() {
@@ -269,11 +269,11 @@ export class BurningBoxesScene extends WEED.Scene {
       userData: 0,
       tint: 0xaadfff,
       shape: 'box',
-      posX: cx + 80,
-      posY: floorY - 40,
-      halfWidth: 110,
-      halfHeight: 36,
-      layers: ['fire'],
+      posX: Mouse.x,
+      posY: Mouse.y,
+      halfWidth: 200,
+      halfHeight: 200,
+      layers: ['oil'],
     });
   }
 
@@ -349,5 +349,9 @@ export class BurningBoxesScene extends WEED.Scene {
       this.emitOil(Mouse.x, Mouse.y, 28, !!Keyboard.q);
     }
     if (!hold) this._oilAcc = OIL_DRIP_MS;
+
+    if (Keyboard.isPressed('i')) {
+      this.spawnIce();
+    }
   }
 }

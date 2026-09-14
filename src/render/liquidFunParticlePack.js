@@ -12,6 +12,24 @@ export const PARTICLE_STRIDE_BYTES = PARTICLE_FLOATS * 4;
 export const PARTICLE_OUT = { particleCount: 0 };
 
 let _overflowWarned = 0;
+let _packU32 = null;
+let _packU32Buf = null;
+let _packU32Off = 0;
+let _packU32Len = 0;
+
+function u32View(particleData) {
+  const buf = particleData.buffer;
+  const off = particleData.byteOffset;
+  const len = particleData.length;
+  if (_packU32 && _packU32Buf === buf && _packU32Off === off && _packU32Len === len) {
+    return _packU32;
+  }
+  _packU32 = new Uint32Array(buf, off, len);
+  _packU32Buf = buf;
+  _packU32Off = off;
+  _packU32Len = len;
+  return _packU32;
+}
 
 function packOne(particleData, u32, written, x, y, vx, vy, userData) {
   const b = written * PARTICLE_FLOATS;
@@ -41,7 +59,7 @@ export function packLiquidFunParticles(layerId, particleData, maxParticles) {
   }
   const want = 1 << (layerId | 0);
   let written = 0;
-  const u32 = new Uint32Array(particleData.buffer, particleData.byteOffset, particleData.length);
+  const u32 = u32View(particleData);
 
   const views = LiquidFun.getViews();
   if (views && views.count && views.x && views.y) {

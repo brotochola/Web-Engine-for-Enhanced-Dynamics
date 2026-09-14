@@ -1819,6 +1819,83 @@ test('WASM extract pulls subset out of rigid group', () => {
   assert.equal(getCount(newId), take);
 });
 
+test('WASM extract from front of rigid group keeps remaining range then steps', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  const createWorld = fn('create_world');
+  const bindGameBuffers = fn('bind_game_buffers');
+  const createParticleSystem = fn('create_particle_system');
+  const createParticleGroupBox = fn('create_particle_group_box');
+  const getParticleCount = fn('get_particle_count');
+  const getCount = fn('get_particle_group_particle_count');
+  const getFirst = fn('get_particle_group_first_index');
+  const getLast = fn('get_particle_group_last_index');
+  const getAlive = fn('get_particle_group_alive');
+  const getIdxOff = fn('get_extract_indices_byte_offset');
+  const extractParticles = fn('extract_particles');
+  const stepWorld = fn('step_world');
+
+  const worldId = createWorld(0, 980, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(bindGameBuffers(16));
+  assert.ok(createParticleSystem(worldId, 10, 1.0, 800));
+  const gid = createParticleGroupBox(
+    -60, -40, 60, 40, 0, 0, 0.5, 0, 0, 0, 1, 1, LF_SOLID_GROUP | LF_RIGID_GROUP,
+  );
+  assert.ok(gid >= 0);
+  const nGroup = getCount(gid);
+  assert.ok(nGroup >= 8);
+  const first = getFirst(gid);
+  const idx = new Int32Array(memory.buffer, getIdxOff(), 4096);
+  const take = 3;
+  for (let i = 0; i < take; i++) idx[i] = first + i;
+  const newId = extractParticles(gid, take, 0, 1);
+  assert.ok(newId >= 0 && newId !== gid, `extract ${newId}`);
+  assert.equal(getCount(gid), nGroup - take, 'remaining rigid count');
+  assert.equal(getFirst(gid), first, 'remaining must stay packed at original firstIndex');
+  assert.equal(getLast(gid), first + (nGroup - take));
+  assert.equal(getCount(newId), take);
+  assert.equal(getAlive(gid), 1);
+  for (let i = 0; i < 45; i++) stepWorld(worldId, 1 / 60, 1);
+  assert.equal(getParticleCount(), nGroup);
+  assert.equal(getCount(gid), nGroup - take);
+});
+
+test('WASM extract 12 times then step (group table realloc)', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  const createWorld = fn('create_world');
+  const bindGameBuffers = fn('bind_game_buffers');
+  const createParticleSystem = fn('create_particle_system');
+  const createParticleGroupBox = fn('create_particle_group_box');
+  const getCount = fn('get_particle_group_particle_count');
+  const getFirst = fn('get_particle_group_first_index');
+  const getIdxOff = fn('get_extract_indices_byte_offset');
+  const extractParticles = fn('extract_particles');
+  const stepWorld = fn('step_world');
+
+  const worldId = createWorld(0, 980, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(bindGameBuffers(16));
+  assert.ok(createParticleSystem(worldId, 10, 1.0, 800));
+  const gid = createParticleGroupBox(
+    -80, -40, 80, 40, 0, 0, 0.5, 0, 0, 0, 1, 1, LF_SOLID_GROUP | LF_RIGID_GROUP,
+  );
+  assert.ok(gid >= 0);
+  const n0 = getCount(gid);
+  assert.ok(n0 >= 20);
+  const idx = new Int32Array(memory.buffer, getIdxOff(), 4096);
+  let left = n0;
+  for (let round = 0; round < 12; round++) {
+    const first = getFirst(gid);
+    idx[0] = first;
+    const newId = extractParticles(gid, 1, 0, 1);
+    assert.ok(newId >= 0 && newId !== gid, `round ${round} extract ${newId}`);
+    left -= 1;
+    assert.equal(getCount(gid), left, `round ${round} remaining`);
+  }
+  for (let i = 0; i < 30; i++) stepWorld(worldId, 1 / 60, 1);
+  assert.equal(getCount(gid), n0 - 12);
+});
+
 test('WASM setGroupFlags and per-index viscousScale', () => {
   const { memory, fn } = instantiateBox2dWasm();
   const createWorld = fn('create_world');

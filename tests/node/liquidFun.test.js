@@ -21,6 +21,35 @@ import { PHYSICS_DEFAULTS } from '../../src/util/configDefaults.js';
 import { validatePhysicsConfig } from '../../src/util/utils.js';
 import { bindLiquidFunRender, liquidFunRenderByteSize } from '../../src/render/liquidFunRender.js';
 import { bindLiquidFunGroups, liquidFunGroupsByteSize, LIQUIDFUN_GROUPS_MAX } from '../../src/util/liquidFunGroups.js';
+import {
+  createLiquidFunExtractSab,
+  bindLiquidFunExtractSab,
+  liquidFunExtractAsync,
+  servicePendingLiquidFunExtractBurst,
+  LIQUIDFUN_EXTRACT_DEFAULT_INDEX_CAP,
+} from '../../src/box2d/liquidFunExtract.js';
+
+test('extract SAB default cap matches C g_extract_indices (4096)', () => {
+  assert.equal(LIQUIDFUN_EXTRACT_DEFAULT_INDEX_CAP, 4096);
+});
+
+test('extract burst services one pending extract', async () => {
+  const sab = createLiquidFunExtractSab();
+  bindLiquidFunExtractSab(sab);
+  const idx = new Int32Array([3, 7, 11]);
+  const pending = liquidFunExtractAsync(4, idx, 3, { groupFlags: 0 });
+  await new Promise((r) => setTimeout(r, 0));
+  const n = servicePendingLiquidFunExtractBurst((groupId, indices, count, groupFlags) => {
+    assert.equal(groupId, 4);
+    assert.equal(count, 3);
+    assert.equal(indices[0], 3);
+    assert.equal(groupFlags, 0);
+    return 9;
+  }, 8);
+  assert.equal(n, 1);
+  assert.equal(await pending, 9);
+  bindLiquidFunExtractSab(null);
+});
 
 test('LIQUIDFUN_FLAGS match liquidfun-c lfParticleFlag', () => {
   assert.equal(LIQUIDFUN_FLAGS.WATER, 0);
@@ -715,6 +744,42 @@ test('liquidFun groups SAB fits bindLiquidFunGroups (first/last + pose + lightIn
   assert.equal(views.angle[n - 1], 1.5);
   assert.equal(views.lightIntensity[7], 5000);
   assert.ok(Math.abs(views.sqrtLightIntensity[7] - Math.sqrt(5000)) < 1e-6);
+});
+
+test('logic worker binds LiquidFun HEAP pose on box2dReady and liquidFunHeap', () => {
+  const src = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '../../src/workers/logicWorker.js'),
+    'utf8',
+  );
+  assert.match(src, /LiquidFun\.bindHeapPose\(data\.liquidFunHeap\)/);
+  assert.match(src, /default:\s*super\.handleCustomMessage\(data\);/);
+});
+
+test('bindSabs after bindHeapPose keeps HEAP userData and groupIndex', () => {
+  const n = 4;
+  const giOff = 16;
+  const udOff = giOff + n * 4;
+  const sab = new SharedArrayBuffer(udOff + n * 4);
+  const render = new SharedArrayBuffer(liquidFunRenderByteSize(n));
+  try {
+    LiquidFun.unbindSabs();
+    LiquidFun.bindHeapPose({
+      sab,
+      maxCount: n,
+      countByteOffset: 0,
+      xByteOffset: 16,
+      yByteOffset: 16,
+      alphaByteOffset: 0,
+      groupIndexByteOffset: giOff,
+      userDataByteOffset: udOff,
+    });
+    LiquidFun.bindSabs({ render, maxCount: n });
+    const views = LiquidFun.getViews();
+    assert.ok(views.userData, 'userData must stay HEAP-backed after bindSabs');
+    assert.ok(views.groupIndex, 'groupIndex must stay HEAP-backed after bindSabs');
+  } finally {
+    LiquidFun.unbindSabs();
+  }
 });
 
 test('physicsHostImpl group SAB layout matches util bindLiquidFunGroups', () => {

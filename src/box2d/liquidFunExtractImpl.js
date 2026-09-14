@@ -19,10 +19,11 @@
   var HEADER_I32 = 8;
   var INDICES_I32 = HEADER_I32;
 
-  var DEFAULT_INDEX_CAP = 1024;
+  var DEFAULT_INDEX_CAP = 4096;
 
   var i32 = null;
   var indexCap = 0;
+  var indicesView = null;
 
   function createLiquidFunExtractSab(cap) {
     var indexCapacity = Math.max(
@@ -45,10 +46,12 @@
     if (!sab) {
       i32 = null;
       indexCap = 0;
+      indicesView = null;
       return;
     }
     i32 = new Int32Array(sab);
     indexCap = Atomics.load(i32, HDR_RESULT_CAP) | 0;
+    indicesView = i32.subarray(INDICES_I32, INDICES_I32 + indexCap);
   }
 
   function isLiquidFunExtractBound() {
@@ -152,7 +155,7 @@
     var count = Atomics.load(i32, HDR_COUNT) | 0;
     var groupFlags = Atomics.load(i32, HDR_GROUP_FLAGS) >>> 0;
     var trackGroup = Atomics.load(i32, HDR_TRACK) | 0;
-    var indices = i32.subarray(INDICES_I32, INDICES_I32 + indexCap);
+    var indices = indicesView || i32.subarray(INDICES_I32, INDICES_I32 + indexCap);
     try {
       var id = extractFn(groupId, indices, count, groupFlags, trackGroup) | 0;
       Atomics.store(i32, HDR_NEW_GROUP, id);
@@ -168,6 +171,45 @@
     return true;
   }
 
+  /**
+   * Drain a burst of single-flight extracts within one physics step.
+   * Same spin/wait pattern as ray + LiquidFun query.
+   * @returns {number} extracts serviced
+   */
+  function servicePendingLiquidFunExtractBurst(extractFn, maxExtracts) {
+    if (!i32 || typeof extractFn !== 'function') return 0;
+    var max = maxExtracts | 0;
+    if (max <= 0) max = 1;
+    var serviced = 0;
+    while (serviced < max) {
+      if (servicePendingLiquidFunExtract(extractFn)) {
+        serviced++;
+        continue;
+      }
+      if (serviced === 0) break;
+
+      var found = false;
+      for (var spin = 0; spin < 100000; spin++) {
+        if ((Atomics.load(i32, HDR_STATUS) | 0) === STATUS_PENDING) {
+          found = true;
+          break;
+        }
+      }
+      if (found) continue;
+
+      var s2 = Atomics.load(i32, HDR_STATUS) | 0;
+      if (s2 === STATUS_PENDING) continue;
+      if (s2 === STATUS_CLAIMED) {
+        Atomics.wait(i32, HDR_STATUS, STATUS_CLAIMED, 2.0);
+        continue;
+      }
+      Atomics.wait(i32, HDR_STATUS, s2, 2.0);
+      var s3 = Atomics.load(i32, HDR_STATUS) | 0;
+      if (s3 !== STATUS_PENDING && s3 !== STATUS_CLAIMED) break;
+    }
+    return serviced;
+  }
+
   global.LiquidFunExtract = {
     STATUS_IDLE: STATUS_IDLE,
     STATUS_PENDING: STATUS_PENDING,
@@ -180,5 +222,6 @@
     liquidFunExtract: liquidFunExtract,
     liquidFunExtractAsync: liquidFunExtractAsync,
     servicePendingLiquidFunExtract: servicePendingLiquidFunExtract,
+    servicePendingLiquidFunExtractBurst: servicePendingLiquidFunExtractBurst,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

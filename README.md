@@ -27,7 +27,7 @@ WeedJS splits work across specialized workers. Hot frame data lives in typed arr
 | Worker                | Count | Primary job                                                           |
 | --------------------- | ----: | --------------------------------------------------------------------- |
 | `spatial_worker`      |  1..N | Spatial hash rebuilds and neighbor lists                              |
-| `physics` (classic)   |     1 | Box2D 3.0 WASM host (`box2d_wasm` + `physics_host`), contacts, joints |
+| `physics` (classic)   |     1 | Box2D 3.0 WASM host (`box2dWasm` + `physicsHostImpl`), contacts, joints |
 | `logic_worker`        |  1..N | Entity `tick()`, lifecycle, collision callbacks                       |
 | `particle_worker`     |     1 | Particles, bullets, decals, navigation, visibility lists              |
 | `pre_render_worker`   |     1 | Animation, Y-sorting, render queue assembly                           |

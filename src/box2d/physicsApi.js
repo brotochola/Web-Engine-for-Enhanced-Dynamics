@@ -2235,7 +2235,9 @@ function createPhysicsApi(Module) {
       const write = n < cap ? n : cap;
       const off = getExtractIndicesByteOffset() | 0;
       if (!off) return;
-      Module.HEAP32.set(indices.subarray(0, write), off >> 2);
+      const base = off >> 2;
+      const heap = Module.HEAP32;
+      for (let i = 0; i < write; i++) heap[base + i] = indices[i] | 0;
     }
 
     syncActiveParticleGroups(maxGroups) {

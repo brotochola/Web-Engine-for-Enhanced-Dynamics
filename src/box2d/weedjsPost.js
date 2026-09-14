@@ -86,7 +86,7 @@
   const LF_ZOMBIE = 1 << 0;
   /** Off-screen pose written into HEAP x/y on clear so mid-step readers never see old puddles. */
   const LF_CLEARED_XY = -1e8;
-  let pendingLiquidFunEmit = {
+  let pendingLiquidFunEmitA = {
     spacing: 0,
     strength: 0.5,
     tintBits: 0,
@@ -112,6 +112,7 @@
     omega: 0,
     pending: false,
   };
+  let pendingLiquidFunEmit = pendingLiquidFunEmitA;
   let pendingParticleTuning = {
     dampingStrength: 1,
     pressureStrength: 0.05,
@@ -1326,7 +1327,7 @@
   function serviceLiquidFunQuery() {
     if (!world || typeof LiquidFunQuery === 'undefined') return;
     var OP_AABB = LiquidFunQuery.OP_AABB;
-    LiquidFunQuery.servicePendingLiquidFunQuery(function (
+    var queryFn = function (
       op,
       a,
       b,
@@ -1342,12 +1343,17 @@
         n = world.fillParticleRayCast(a, b, c, d, results, cap);
       }
       return n | 0;
-    });
+    };
+    if (typeof LiquidFunQuery.servicePendingLiquidFunQueryBurst === 'function') {
+      LiquidFunQuery.servicePendingLiquidFunQueryBurst(queryFn, 1024);
+    } else {
+      LiquidFunQuery.servicePendingLiquidFunQuery(queryFn);
+    }
   }
 
   function serviceLiquidFunExtract() {
     if (!world || typeof LiquidFunExtract === 'undefined') return;
-    LiquidFunExtract.servicePendingLiquidFunExtract(function (
+    var extractFn = function (
       groupId,
       indices,
       count,
@@ -1358,7 +1364,12 @@
         world.fillExtractIndices(indices, count | 0);
       }
       return world.extractParticles(groupId, count | 0, groupFlags, trackGroup) | 0;
-    });
+    };
+    if (typeof LiquidFunExtract.servicePendingLiquidFunExtractBurst === 'function') {
+      LiquidFunExtract.servicePendingLiquidFunExtractBurst(extractFn, 1024);
+    } else {
+      LiquidFunExtract.servicePendingLiquidFunExtract(extractFn);
+    }
   }
 
   function applyForcesAndTorque() {
@@ -1462,59 +1473,64 @@
     }
   }
 
+  function resetLiquidFunEmit(e) {
+    e.spacing = 0;
+    e.strength = 0.5;
+    e.tintBits = 0;
+    e.textureId = 0;
+    e.viscousScale = 1;
+    e.trackGroup = 0;
+    e.groupFlags = 0;
+    e.lifetimeMin = 0;
+    e.lifetimeMax = 0;
+    e.fadeToAlpha0 = 0;
+    e.scaleSet = 0;
+    e.scaleMin = 1;
+    e.scaleMax = 1;
+    e.alphaMin = 1;
+    e.alphaMax = 1;
+    e.layerMask = 0;
+    e.layerMaskSet = 0;
+    e.lightIntensity = 0;
+    e.userData = 0;
+    e.color = 0;
+    e.vx = 0;
+    e.vy = 0;
+    e.omega = 0;
+    e.pending = false;
+  }
+
+  const pendingLiquidFunEmitB = {
+    spacing: 0,
+    strength: 0.5,
+    tintBits: 0,
+    textureId: 0,
+    viscousScale: 1,
+    trackGroup: 0,
+    groupFlags: 0,
+    lifetimeMin: 0,
+    lifetimeMax: 0,
+    fadeToAlpha0: 0,
+    scaleSet: 0,
+    scaleMin: 1,
+    scaleMax: 1,
+    alphaMin: 1,
+    alphaMax: 1,
+    layerMask: 0,
+    layerMaskSet: 0,
+    lightIntensity: 0,
+    userData: 0,
+    color: 0,
+    vx: 0,
+    vy: 0,
+    omega: 0,
+    pending: false,
+  };
+
   function takePendingLiquidFunEmit() {
     const emit = pendingLiquidFunEmit;
-    pendingLiquidFunEmit = {
-      spacing: 0,
-      strength: 0.5,
-      tintBits: 0,
-      textureId: 0,
-      viscousScale: 1,
-      trackGroup: 0,
-      groupFlags: 0,
-      lifetimeMin: 0,
-      lifetimeMax: 0,
-      fadeToAlpha0: 0,
-      scaleSet: 0,
-      scaleMin: 1,
-      scaleMax: 1,
-      alphaMin: 1,
-      alphaMax: 1,
-      layerMask: 0,
-      layerMaskSet: 0,
-      lightIntensity: 0,
-      userData: 0,
-      color: 0,
-      vx: 0,
-      vy: 0,
-      omega: 0,
-      pending: false,
-    };
-    if (!emit.pending) {
-      emit.spacing = 0;
-      emit.strength = 0.5;
-      emit.tintBits = 0;
-      emit.textureId = 0;
-      emit.viscousScale = 1;
-      emit.trackGroup = 0;
-      emit.groupFlags = 0;
-      emit.lifetimeMin = 0;
-      emit.lifetimeMax = 0;
-      emit.fadeToAlpha0 = 0;
-      emit.scaleSet = 0;
-      emit.scaleMin = 1;
-      emit.scaleMax = 1;
-      emit.alphaMin = 1;
-      emit.alphaMax = 1;
-      emit.layerMask = 0;
-      emit.layerMaskSet = 0;
-      emit.lightIntensity = 0;
-      emit.userData = 0;
-      emit.color = 0;
-      emit.vx = 0;
-      emit.vy = 0;
-      emit.omega = 0;
-    }
+    pendingLiquidFunEmit = emit === pendingLiquidFunEmitB ? pendingLiquidFunEmitA : pendingLiquidFunEmitB;
+    resetLiquidFunEmit(pendingLiquidFunEmit);
     return emit;
   }
 
@@ -1790,23 +1806,31 @@
     const stride = lfSyncStride;
     const heap32 = Module.HEAP32;
     const heapF32 = Module.HEAPF32;
-    liquidFunGroupsViews.id.set(heap32.subarray(base, base + n));
-    liquidFunGroupsViews.particleCount.set(heap32.subarray(base + stride, base + stride + n));
-    if (liquidFunGroupsViews.firstIndex) {
-      liquidFunGroupsViews.firstIndex.set(heap32.subarray(base + stride * 2, base + stride * 2 + n));
-    }
-    if (liquidFunGroupsViews.lastIndex) {
-      liquidFunGroupsViews.lastIndex.set(heap32.subarray(base + stride * 3, base + stride * 3 + n));
-    }
-    liquidFunGroupsViews.viscousScale.set(heapF32.subarray(base + stride * 4, base + stride * 4 + n));
-    liquidFunGroupsViews.x.set(heapF32.subarray(base + stride * 5, base + stride * 5 + n));
-    liquidFunGroupsViews.y.set(heapF32.subarray(base + stride * 6, base + stride * 6 + n));
-    liquidFunGroupsViews.vx.set(heapF32.subarray(base + stride * 7, base + stride * 7 + n));
-    liquidFunGroupsViews.vy.set(heapF32.subarray(base + stride * 8, base + stride * 8 + n));
-    liquidFunGroupsViews.angularVelocity.set(heapF32.subarray(base + stride * 9, base + stride * 9 + n));
-    liquidFunGroupsViews.angle.set(heapF32.subarray(base + stride * 10, base + stride * 10 + n));
-    if (liquidFunGroupsViews.groupFlags) {
-      liquidFunGroupsViews.groupFlags.set(heap32.subarray(base + stride * 11, base + stride * 11 + n));
+    const id = liquidFunGroupsViews.id;
+    const pc = liquidFunGroupsViews.particleCount;
+    const first = liquidFunGroupsViews.firstIndex;
+    const last = liquidFunGroupsViews.lastIndex;
+    const vs = liquidFunGroupsViews.viscousScale;
+    const gx = liquidFunGroupsViews.x;
+    const gy = liquidFunGroupsViews.y;
+    const gvx = liquidFunGroupsViews.vx;
+    const gvy = liquidFunGroupsViews.vy;
+    const ang = liquidFunGroupsViews.angularVelocity;
+    const angle = liquidFunGroupsViews.angle;
+    const gFlags = liquidFunGroupsViews.groupFlags;
+    for (let i = 0; i < n; i++) {
+      id[i] = heap32[base + i];
+      pc[i] = heap32[base + stride + i];
+      if (first) first[i] = heap32[base + stride * 2 + i];
+      if (last) last[i] = heap32[base + stride * 3 + i];
+      vs[i] = heapF32[base + stride * 4 + i];
+      gx[i] = heapF32[base + stride * 5 + i];
+      gy[i] = heapF32[base + stride * 6 + i];
+      gvx[i] = heapF32[base + stride * 7 + i];
+      gvy[i] = heapF32[base + stride * 8 + i];
+      ang[i] = heapF32[base + stride * 9 + i];
+      angle[i] = heapF32[base + stride * 10 + i];
+      if (gFlags) gFlags[i] = heap32[base + stride * 11 + i];
     }
   }
 
@@ -2494,6 +2518,17 @@
         pairs: payload.pairs,
       });
       if (gr < 0) return { ok: false, reason: "groups", code: gr };
+      const slots = payload.groups;
+      if (slots && world.setGroupViscousScale) {
+        const nSlots = slots.slotCount | 0;
+        const alive = slots.alive;
+        const scales = slots.viscousScale;
+        for (let i = 0; i < nSlots; i++) {
+          if (alive && !alive[i]) continue;
+          const scale = scales ? scales[i] : 1;
+          if (scale > 0 && scale !== 1) world.setGroupViscousScale(i, scale);
+        }
+      }
     }
 
     if (liquidFunGroupsViews?.lightIntensity) {

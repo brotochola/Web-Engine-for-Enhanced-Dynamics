@@ -31,6 +31,7 @@ import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
 import { bindRayCastSab } from '../box2d/box2dRayCast.js';
 import { bindLiquidFunQuerySab } from '../box2d/liquidFunQuery.js';
 import { bindLiquidFunExtractSab } from '../box2d/liquidFunExtract.js';
+import { LiquidFun } from '../core/liquidFun.js';
 import { bindMovedBodies } from '../box2d/box2dMovedBodies.js';
 import {
   bindContactRing,
@@ -986,6 +987,9 @@ class LogicWorker extends AbstractWorker {
         if (data.liquidFunExtractSab) {
           bindLiquidFunExtractSab(data.liquidFunExtractSab);
         }
+        if (data.liquidFunHeap) {
+          LiquidFun.bindHeapPose(data.liquidFunHeap);
+        }
         if (data.movedSab) {
           bindMovedBodies(data.movedSab);
         }
@@ -1242,7 +1246,7 @@ class LogicWorker extends AbstractWorker {
       }
 
       default:
-        // Unknown message - ignore or log
+        super.handleCustomMessage(data);
         break;
     }
   }

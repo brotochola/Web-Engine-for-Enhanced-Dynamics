@@ -151,6 +151,8 @@ function packedRgba(tint, color) {
 
 let _groupsViews = null;
 let _renderViews = null;
+/** Last bindHeapPose payload — bindSabs must re-apply or getViews() falls back to thin SAB (no userData/groupIndex). */
+let _heapPose = null;
 /** Cached mix of HEAP pose + thin emit SAB — same object every getViews(). */
 let _particleViews = null;
 const _groupsScratch = [];
@@ -175,6 +177,7 @@ export class LiquidFun {
     const n = maxCount | 0;
     _renderViews = render && n > 0 ? bindLiquidFunRender(render, n) : null;
     _particleViews = null;
+    if (_heapPose) LiquidFun.bindHeapPose(_heapPose);
   }
 
   /** Unbind all LiquidFun views (scene teardown). */
@@ -182,6 +185,7 @@ export class LiquidFun {
     _groupsViews = null;
     _renderViews = null;
     _particleViews = null;
+    _heapPose = null;
   }
 
   /**
@@ -190,6 +194,7 @@ export class LiquidFun {
    */
   static bindHeapPose(payload) {
     if (!payload?.sab || !(payload.maxCount > 0)) {
+      _heapPose = null;
       if (_particleViews) {
         _particleViews.count = _renderViews?.count ?? null;
         _particleViews.x = _renderViews?.x ?? null;
@@ -206,6 +211,7 @@ export class LiquidFun {
       }
       return;
     }
+    _heapPose = payload;
     const sab = payload.sab;
     const n = payload.maxCount | 0;
     const count = new Int32Array(sab, payload.countByteOffset | 0, 1);
@@ -426,16 +432,10 @@ export class LiquidFun {
    * @param {Object} options — same fields as createParticleBox/Circle; `shape: 'box'|'circle'`
    */
   static emit(options) {
-    const o = options || {};
-    let textureId = o.textureId | 0;
-    if (!textureId && o.texture) {
-      textureId = SpriteSheetRegistry.getTextureId(o.texture) | 0;
-    }
-    const resolved = textureId ? { ...o, textureId } : o;
-    if (resolved.shape === 'box') {
-      LiquidFun.createParticleBox(resolved);
+    if (options && options.shape === 'box') {
+      LiquidFun.createParticleBox(options);
     } else {
-      LiquidFun.createParticleCircle(resolved);
+      LiquidFun.createParticleCircle(options);
     }
   }
 
@@ -495,6 +495,7 @@ export class LiquidFun {
     Box2dCommandRing.enqueueSetParticleUserData(index, bits);
   }
 
+  /** last exclusive, half-open. */
   static setUserDataRange(first, last, bits) {
     Box2dCommandRing.enqueueSetParticleUserDataRange(first, last, bits);
   }
@@ -503,6 +504,7 @@ export class LiquidFun {
     Box2dCommandRing.enqueueSetParticleColor(index, rgba);
   }
 
+  /** last exclusive, half-open. */
   static setColorRange(first, last, rgba) {
     Box2dCommandRing.enqueueSetParticleColorRange(first, last, rgba);
   }
@@ -515,6 +517,7 @@ export class LiquidFun {
     Box2dCommandRing.enqueueSetParticleViscousScale(index, scale);
   }
 
+  /** last exclusive, half-open. */
   static setViscousScaleRange(first, last, scale) {
     Box2dCommandRing.enqueueSetParticleViscousScaleRange(first, last, scale);
   }
@@ -542,6 +545,7 @@ export class LiquidFun {
   /**
    * Pull live members out of a group into a new group. Indices invalid after.
    * Logic: sync (Atomics.wait). Main: extractAsync.
+   * C always tracks the new group (`trackGroup` is ignored).
    * @returns {number} new group id, or -1
    */
   static extract(groupId, indices, count, opts) {
@@ -552,10 +556,12 @@ export class LiquidFun {
     return liquidFunExtractAsync(groupId, indices, count, opts);
   }
 
+  /** last exclusive. Total force is split across members. */
   static applyForceRange(first, last, fx, fy) {
     Box2dCommandRing.enqueueParticleApplyForceRange(first, last, fx, fy);
   }
 
+  /** last exclusive. */
   static applyLinearImpulseRange(first, last, ix, iy) {
     Box2dCommandRing.enqueueParticleApplyImpulseRange(first, last, ix, iy);
   }
