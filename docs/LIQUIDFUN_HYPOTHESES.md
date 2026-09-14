@@ -22,6 +22,7 @@ instantiate the WASM in Node (`CapturePairs` create-time, `ComputeDepth` spawn-s
 | **L2** | `pnpm bench:feature:liquidfun` (`LiquidFunStressScene`), **2 runs per point** | `physics.LIQUIDFUN_MS` (fluid solve); `BOX2D_MS` still full `step_world` (rigid + LiquidFun). Particle-pass control only. |
 | **L2 coupling** | `pnpm bench:feature:liquidfun-bodycouple` / `liquidfun-manyshapes` | Dynamics + many-shape/subStep oracles for H24–H28 |
 | **L1 coupling** | `pnpm bench:micro:liquidfun-bodycouple` / `overlap-substep` / `strict-contact` | Skip-API ceilings; OverlapAABB × subSteps; strict qsort |
+| **L1 passes** | `pnpm bench:micro:liquidfun-pass-profile` | 8-bucket `get_lf_pass_ms` on lfstress mix; `--reuse` ceiling |
 | **L2 query** | `pnpm bench:feature:liquidfun-query` (`LiquidFunQueryStressScene`) | physics `STEP_MS` / `BOX2D_MS` / `LIQUIDFUN_MS` + logic `STEP_MS` under sync QueryAABB/RayCast churn |
 | **L3** | `pnpm test:visual --scene liquidfun,lfstress` (headed lockstep; catalog `match: 'exact'`, 100 steps) | Two-run CPU `hashLiquidFun` + PNG exact. Demo still fine to poke by hand. Coupling L2 scenes are **not** in the exact catalog. |
 
@@ -70,6 +71,7 @@ Every C change: edit sibling repo → `weedjs\build_for_weed.bat` (incremental, 
 | **H26** | Reuse `queryShapes` across sub-steps; first query uses full `dt` AABB (user B leftover of H4) | Default ON. Plan alias: coupling “H14” — **not** extract H14. | **Done** (L1 5.8% at subSteps=4 × 180 shapes) |
 | **H27** | Stash GetMass / inertia / center on body contacts for `SolveRigidDamping` (user C) | Only dynamics hit these APIs. Plan alias: coupling H15. | **Rejected** (cheap id lookup; A2 skip class 0%) |
 | **H28** | Counting/radix by uint16 index then tiny weight runs instead of `qsort` (user D) | Strict path only. Plan alias: coupling H16. Do not retry H5. | **Rejected** (whole strict path +2.7%) |
+| **H29** | SIMD 4-wide `distSqr` in `FindParticleContacts` (gather `j>i`) | Reuse-contacts ceiling was 64%; SIMD is a slice. Must keep emit order (H10). | **Rejected** (L1 +1.6%; gather/store > distSqr) |
 
 ## Results log
 
@@ -725,6 +727,40 @@ No H26-off L2 pair (flag is WASM-only; L1 already isolated 5.8%). Do not add the
 2. **Do not** batch impulses, cache point-velocity, radix-sort body contacts, or spawn a second pthread pool.
 3. Next LF speed still lives in **particle contacts / pressure**, not Box2D id lookup — `FindParticleContacts` is why sub4 ≈ 3× sub1.
 4. Optional later: JS-visible `reuseQueryAcrossSubsteps` only if a game needs the old per-sub-step query (H26-off) for a moving-shape-during-LF product that does not exist here.
+
+### Wave L passes — H29 (2026-09-14)
+
+Eight always-on `passMs` buckets on `lfParticleSystem_Step`, exported as `get_lf_pass_ms(id)` / `get_lf_particle_contact_count`. Ceiling flags: `set_lf_reuse_particle_contacts`, `set_lf_skip_pass`. PHYSICS_STATS 37–44 (stride still 48). L2 HUD `ccall` stayed 0 in Chromium; **L1 Node is the split**. Accept bar still L2 `LIQUIDFUN_MS`.
+
+**L1** `pnpm bench:micro:liquidfun-pass-profile`, n=12753, 25328 particle contacts, `subSteps=1`:
+
+| workers | `LIQUIDFUN_MS` | find | contactSolvers | rest | staticP | pressure | weight | body | grid |
+|---------|----------------|------|----------------|------|---------|----------|--------|------|------|
+| 1 | 3.094 | **60.7%** | 10.8% | 13.3% | 7.5% | 4.0% | 1.3% | 0.5% | 1.7% |
+| 4 | 2.845 | **59.9%** | 10.8% | 13.6% | 8.2% | 4.0% | 1.2% | 0.5% | 1.8% |
+
+Winner: **findContacts**. H17 died (weight ~1%). H18 died (staticPressure ~8%, not the bound). Body 0.5% confirms coupling. `workerCount` 4 ≈ 1 on find % — Node pool does not change the story.
+
+**Reuse-contacts ceiling** (skip `FindParticleContacts`, keep last list): 3.094 → **1.105 ms (−64%)**. find 0%. Search is the real bound. 3% bar cleared for *eliminating* search, not for a 4-wide `distSqr`.
+
+**L2** `LiquidFunStressScene` ×2 (8s/10s), timers-only C: `LIQUIDFUN_MS` **4.490 / 4.387**. FPS 60. Pass HUD 0 (worker `ccall`); do not treat L2 split as measured.
+
+**H29 SIMD `distSqr`:** gather 4 `j>i`, 4-wide compare, scalar `lfInvSqrt` + push in list order. Correctness 61/61. L1 after: 3.142 / 3.019 (**+1.6%** vs 3.094). Most 3×3 neighbors already hit; gather/`storeu` cost more than the compare. **Reverted.**
+
+**L3:** `pnpm test:visual --scene liquidfun,lfstress --headless` — both MATCH, 0/921600 (post-revert).
+
+| Claim | Stayed / dropped | Why | Next |
+|-------|------------------|-----|------|
+| Pass timers (infra) | **Stayed** | 8 buckets + skip/reuse + L1 micro | Leave on. |
+| H17 weight is the bound | **Died** | 1.2% of step | Do not patch weight. |
+| H18 staticPressure clamp | **Died** | 8%, not find | Do not retry clamp SIMD. |
+| findContacts is the bound | **Stayed** (fact) | ~60% L1; reuse −64% | Next hyp must cut **search**, not `distSqr`. |
+| H29 SIMD distSqr | **Dropped** | +1.6% L1 | Do not retry gather-4. |
+| Fuse contactSolvers (plan if 6 won) | **Not started** | 6 lost (11%) | Only if find is solved first. |
+
+**Do not touch:** H10 merge order, H3 cell cache, Box2D id lookup, second pthread pool, insertion sort.
+
+**Next if another campaign:** change *how* neighbors are enumerated (SoA lists / fewer hash probes), not SIMD on the linked-list walk. `FindParticleContacts` is still ~60% of `LIQUIDFUN_MS`.
 
 ## Related
 

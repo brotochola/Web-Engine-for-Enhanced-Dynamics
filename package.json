@@ -83,6 +83,7 @@
     "bench:micro:liquidfun-bodycouple": "node tests/bench/liquidFunBodyCoupleMicrobench.mjs",
     "bench:micro:liquidfun-overlap-substep": "node tests/bench/liquidFunOverlapSubstepMicrobench.mjs",
     "bench:micro:liquidfun-strict-contact": "node tests/bench/liquidFunStrictContactMicrobench.mjs",
+    "bench:micro:liquidfun-pass-profile": "node tests/bench/liquidFunPassProfileMicrobench.mjs",
     "bench:micro:log-pair": "node tests/bench/logPairMicrobench.mjs",
     "bench:micro:par-cam": "node tests/bench/parCamMicrobench.mjs",
     "bench:micro:pre-anim": "node tests/bench/preAnimMicrobench.mjs",

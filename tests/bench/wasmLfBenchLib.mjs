@@ -69,5 +69,28 @@ export function lfCounters(fn) {
     impulse: fn('get_lf_apply_impulse_calls')(),
     pointVel: fn('get_lf_world_point_velocity_calls')(),
     bodyProp: fn('get_lf_body_prop_calls')(),
+    particleContacts: fn('get_lf_particle_contact_count')(),
   };
+}
+
+export const LF_PASS_NAMES = [
+  'grid',
+  'findContacts',
+  'body',
+  'weight',
+  'staticPressure',
+  'pressure',
+  'contactSolvers',
+  'rest',
+];
+
+export function lfPasses(fn) {
+  const passMs = {};
+  let sum = 0;
+  for (let i = 0; i < LF_PASS_NAMES.length; i++) {
+    const ms = fn('get_lf_pass_ms')(i);
+    passMs[LF_PASS_NAMES[i]] = ms;
+    sum += ms;
+  }
+  return { passMs, passSumMs: sum };
 }

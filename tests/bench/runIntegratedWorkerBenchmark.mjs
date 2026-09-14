@@ -27,6 +27,21 @@ function formatWorkerConsoleLine(worker) {
   if (worker.type === 'physics' || worker.id === 'physics') {
     if (avg.BOX2D_MS != null) line += ` | BOX2D_MS ${Number(avg.BOX2D_MS).toFixed(3)}`;
     if (avg.LIQUIDFUN_MS != null) line += ` | LIQUIDFUN_MS ${Number(avg.LIQUIDFUN_MS).toFixed(3)}`;
+    const passKeys = [
+      ['grid', avg.LF_PASS_GRID_MS],
+      ['find', avg.LF_PASS_FIND_CONTACTS_MS],
+      ['body', avg.LF_PASS_BODY_MS],
+      ['wt', avg.LF_PASS_WEIGHT_MS],
+      ['statP', avg.LF_PASS_STATIC_PRESSURE_MS],
+      ['P', avg.LF_PASS_PRESSURE_MS],
+      ['solv', avg.LF_PASS_CONTACT_SOLVERS_MS],
+      ['rest', avg.LF_PASS_REST_MS],
+    ];
+    if (passKeys.some(([, v]) => v != null && Number(v) > 0)) {
+      line +=
+        ' | LF ' +
+        passKeys.map(([k, v]) => `${k} ${Number(v || 0).toFixed(2)}`).join(' ');
+    }
     if (avg.BODY_MOVED_COUNT != null) line += ` | Moved ${Number(avg.BODY_MOVED_COUNT).toFixed(0)}`;
     if (avg.AWAKE_COUNT != null) line += ` | Awake ${Number(avg.AWAKE_COUNT).toFixed(0)}`;
     if (avg.BODY_COUNT != null) line += ` | BODY_COUNT ${Number(avg.BODY_COUNT).toFixed(0)}`;

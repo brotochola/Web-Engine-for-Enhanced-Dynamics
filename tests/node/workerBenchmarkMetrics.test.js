@@ -142,6 +142,14 @@ test('PHYSICS_STATS.LIQUIDFUN_MS slot + display row', () => {
   assert.ok(physicsRows.some((r) => r.key === 'LIQUIDFUN_MS'));
 });
 
+test('PHYSICS_STATS LF pass slots 37-44 stay inside stride 48', () => {
+  assert.equal(PHYSICS_STATS.LF_PASS_GRID_MS, 37);
+  assert.equal(PHYSICS_STATS.LF_PASS_REST_MS, 44);
+  assert.equal(PHYSICS_STATS.STRIDE_FLOATS, 48);
+  const physicsRows = WORKER_DISPLAY_CONFIG.physics.stats;
+  assert.ok(physicsRows.some((r) => r.key === 'LF_PASS_FIND_CONTACTS_MS'));
+});
+
 test('summarizeWorkerBenchmarkWindow averages stats fields across samples', () => {
   const scene = createBenchmarkSceneStub();
   const reader = createWorkerBenchmarkReader(scene);

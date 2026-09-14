@@ -189,6 +189,14 @@
     COUNTER_AWAKE_CONTACTS: 34,
     COUNTER_TREE_HEIGHT: 35,
     LIQUIDFUN_MS: 36,
+    LF_PASS_GRID_MS: 37,
+    LF_PASS_FIND_CONTACTS_MS: 38,
+    LF_PASS_BODY_MS: 39,
+    LF_PASS_WEIGHT_MS: 40,
+    LF_PASS_STATIC_PRESSURE_MS: 41,
+    LF_PASS_PRESSURE_MS: 42,
+    LF_PASS_CONTACT_SOLVERS_MS: 43,
+    LF_PASS_REST_MS: 44,
   };
 
   let heapHighWaterKb = 0;
@@ -1954,6 +1962,25 @@
       world && typeof world.getLiquidFunStepMs === 'function'
         ? world.getLiquidFunStepMs()
         : 0;
+    if (typeof Module !== 'undefined' && typeof Module.ccall === 'function') {
+      statsF32[PS.LF_PASS_GRID_MS] = Module.ccall('get_lf_pass_ms', 'number', ['number'], [0]);
+      statsF32[PS.LF_PASS_FIND_CONTACTS_MS] = Module.ccall('get_lf_pass_ms', 'number', ['number'], [1]);
+      statsF32[PS.LF_PASS_BODY_MS] = Module.ccall('get_lf_pass_ms', 'number', ['number'], [2]);
+      statsF32[PS.LF_PASS_WEIGHT_MS] = Module.ccall('get_lf_pass_ms', 'number', ['number'], [3]);
+      statsF32[PS.LF_PASS_STATIC_PRESSURE_MS] = Module.ccall('get_lf_pass_ms', 'number', ['number'], [4]);
+      statsF32[PS.LF_PASS_PRESSURE_MS] = Module.ccall('get_lf_pass_ms', 'number', ['number'], [5]);
+      statsF32[PS.LF_PASS_CONTACT_SOLVERS_MS] = Module.ccall('get_lf_pass_ms', 'number', ['number'], [6]);
+      statsF32[PS.LF_PASS_REST_MS] = Module.ccall('get_lf_pass_ms', 'number', ['number'], [7]);
+    } else if (world && typeof world.getLfPassMs === 'function') {
+      statsF32[PS.LF_PASS_GRID_MS] = world.getLfPassMs(0);
+      statsF32[PS.LF_PASS_FIND_CONTACTS_MS] = world.getLfPassMs(1);
+      statsF32[PS.LF_PASS_BODY_MS] = world.getLfPassMs(2);
+      statsF32[PS.LF_PASS_WEIGHT_MS] = world.getLfPassMs(3);
+      statsF32[PS.LF_PASS_STATIC_PRESSURE_MS] = world.getLfPassMs(4);
+      statsF32[PS.LF_PASS_PRESSURE_MS] = world.getLfPassMs(5);
+      statsF32[PS.LF_PASS_CONTACT_SOLVERS_MS] = world.getLfPassMs(6);
+      statsF32[PS.LF_PASS_REST_MS] = world.getLfPassMs(7);
+    }
     statsF32[PS.POST_MS] = postMs;
     statsF32[PS.BODY_SYNC_CHANGES] = bodySyncChanges;
     statsF32[PS.BODY_SYNC_VISITED] = lastBodySyncVisited;

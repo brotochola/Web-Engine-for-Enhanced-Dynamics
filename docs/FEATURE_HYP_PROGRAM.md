@@ -33,7 +33,7 @@ Shared helpers: [`tests/bench/featureTournamentLib.mjs`](../tests/bench/featureT
 | I | Treiber / rings | Next | pop-push/s | Balls |
 | J | Bullet tick | Next | particle STEP | Predator |
 | K | TileMap queries | L1 only | ns/getTileId | — |
-| **L** | LiquidFun particle step | H1–H4, H6–H14, H16, H21, **H26** shipped; H5 / H15 / H17–H20 / H22 / H24–H25 / H27–H28 rejected; H23 docs | `physics.LIQUIDFUN_MS` / `BOX2D_MS` | `pnpm test:visual --scene liquidfun,lfstress` |
+| **L** | LiquidFun particle step | H1–H4, H6–H14, H16, H21, **H26** shipped; H5 / H15 / H17–H20 / H22 / H24–H25 / H27–H29 rejected; H23 docs | `physics.LIQUIDFUN_MS` / `BOX2D_MS` | `pnpm test:visual --scene liquidfun,lfstress` |
 
 Skip: full rigid-body Box2D WASM step (LiquidFun's *particle* step is in scope — see Wave L).
 
@@ -109,6 +109,7 @@ pnpm bench:particle:tournament
 | H26 | Reuse OverlapAABB query list **across** sub-steps, first query uses full `dt` (shipped; L1 5.8% at subSteps=4 × 180 shapes). Leftover of H4. Plan alias was “H14”. |
 | H27 | Cache GetMass / inertia / center on `lfBodyContact` for SolveRigidDamping (rejected; same cheap-API class as H24) |
 | H28 | Counting/radix sort on uint16 particle index instead of qsort (rejected; whole strict path +2.7%; do not retry H5) |
+| H29 | SIMD 4-wide `distSqr` in `FindParticleContacts` (rejected; L1 +1.6%, gather/store overhead) |
 
 Do **not** confuse: **H4** = one tree walk per sub-step; **H14** = `ExtractParticles` partition; **H26** = one tree walk per **frame** (plan/user-B “H14”). `LiquidFunStressScene` (`subSteps:1`, 3 static floors) cannot decide H24–H28.
 
@@ -121,6 +122,7 @@ pnpm bench:feature:liquidfun-manyshapes
 pnpm bench:micro:liquidfun-bodycouple
 pnpm bench:micro:liquidfun-overlap-substep
 pnpm bench:micro:liquidfun-strict-contact
+pnpm bench:micro:liquidfun-pass-profile
 ```
 
 ## Related

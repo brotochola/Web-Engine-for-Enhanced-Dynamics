@@ -661,6 +661,7 @@ function createPhysicsApi(Module) {
   const heapU16 = () => new Uint16Array(heapBuf());
   const heapU32 = () => new Uint32Array(heapBuf());
   const getLiquidFunStepMs = wrap("get_liquidfun_step_ms", "number", []);
+  const getLfParticleContactCount = wrap("get_lf_particle_contact_count", "number", []);
   const getParticleCapacity = wrap("get_particle_capacity", "number", []);
   const getParticleRadius = wrap("get_particle_radius", "number", []);
   const getParticleCountByteOffset = wrap("get_particle_count_byte_offset", "number", []);
@@ -2114,6 +2115,14 @@ function createPhysicsApi(Module) {
 
     getLiquidFunStepMs() {
       return getLiquidFunStepMs();
+    }
+
+    getLfPassMs(id) {
+      return Module.ccall("get_lf_pass_ms", "number", ["number"], [id | 0]);
+    }
+
+    getLfParticleContactCount() {
+      return getLfParticleContactCount();
     }
 
     getParticleCapacity() {

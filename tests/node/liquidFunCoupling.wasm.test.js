@@ -366,3 +366,63 @@ test('WASM skip-impulse flag still counts calls but crate is not pushed', () => 
   const moved = Math.hypot(after.x - spawn.x, after.y - spawn.y);
   assert.ok(moved < 2, `skip impulse should leave crate put: moved=${moved}`);
 });
+
+test('WASM pass timers: puddle find/weight > 0; empty system all 0', () => {
+  const { fn } = instantiateBox2dWasm();
+  const emptyId = fn('create_world')(0, 0, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(emptyId);
+  assert.ok(fn('bind_game_buffers')(CAP));
+  assert.ok(fn('create_particle_system')(emptyId, 10, 1.0, 400));
+  fn('step_world')(emptyId, 1 / 60, 1);
+  assert.equal(fn('get_lf_particle_contact_count')(), 0);
+  for (let i = 0; i < 8; i++) {
+    assert.equal(fn('get_lf_pass_ms')(i), 0);
+  }
+
+  const worldId = fn('create_world')(0, 980, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(fn('bind_game_buffers')(CAP));
+  assert.ok(staticFloor(fn, worldId, 0) >= 0);
+  assert.ok(fn('create_particle_system')(worldId, 10, 1.0, 400));
+  assert.ok(fn('create_particle_group_box')(-80, 40, 80, 160, 0, 0, 0.5, 0, 0, 0, 1, 1) >= 0);
+  for (let i = 0; i < 20; i++) fn('step_world')(worldId, 1 / 60, 1);
+  assert.ok(fn('get_lf_particle_contact_count')() > 0);
+  assert.ok(fn('get_lf_pass_ms')(1) > 0, 'findContacts');
+  assert.ok(fn('get_lf_pass_ms')(3) > 0, 'weight');
+  let sum = 0;
+  for (let i = 0; i < 8; i++) sum += fn('get_lf_pass_ms')(i);
+  const total = fn('get_liquidfun_step_ms')();
+  assert.ok(sum > 0 && total > 0);
+  assert.ok(sum < total * 3 + 1, `pass sum ${sum} vs step ${total}`);
+});
+
+test('WASM reuse particle contacts skips FindParticleContacts', () => {
+  const { fn } = instantiateBox2dWasm();
+  const worldId = fn('create_world')(0, 980, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(fn('bind_game_buffers')(CAP));
+  assert.ok(staticFloor(fn, worldId, 0) >= 0);
+  assert.ok(fn('create_particle_system')(worldId, 10, 1.0, 400));
+  assert.ok(fn('create_particle_group_box')(-80, 40, 80, 160, 0, 0, 0.5, 0, 0, 0, 1, 1) >= 0);
+  for (let i = 0; i < 20; i++) fn('step_world')(worldId, 1 / 60, 1);
+  const contacts = fn('get_lf_particle_contact_count')();
+  assert.ok(contacts > 0);
+  fn('set_lf_reuse_particle_contacts')(1);
+  fn('step_world')(worldId, 1 / 60, 1);
+  assert.equal(fn('get_lf_particle_contact_count')(), contacts);
+  assert.ok(fn('get_lf_pass_ms')(1) < 0.05, 'findContacts should be a no-op');
+});
+
+test('WASM skip_pass(6) zeros contactSolvers time', () => {
+  const { fn } = instantiateBox2dWasm();
+  const worldId = fn('create_world')(0, 980, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(fn('bind_game_buffers')(CAP));
+  assert.ok(staticFloor(fn, worldId, 0) >= 0);
+  assert.ok(fn('create_particle_system')(worldId, 10, 1.0, 400));
+  assert.ok(fn('create_particle_group_box')(-80, 40, 80, 160, 0, 8, 0.5, 0, 0, 0, 1, 1) >= 0);
+  for (let i = 0; i < 15; i++) fn('step_world')(worldId, 1 / 60, 1);
+  fn('set_lf_skip_pass')(6, 1);
+  fn('step_world')(worldId, 1 / 60, 1);
+  assert.ok(fn('get_lf_pass_ms')(6) < 0.05);
+});
