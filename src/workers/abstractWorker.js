@@ -48,6 +48,7 @@ import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
 import { bindRayCastSab } from '../box2d/box2dRayCast.js';
 import { bindLiquidFunQuerySab } from '../box2d/liquidFunQuery.js';
+import { bindLiquidFunExtractSab } from '../box2d/liquidFunExtract.js';
 import { bindMovedBodies } from '../box2d/box2dMovedBodies.js';
 import { bindBodySyncBuffers } from '../box2d/box2dBodySync.js';
 
@@ -1351,6 +1352,9 @@ export class AbstractWorker {
       }
       if (data.liquidFunQuerySab) {
         bindLiquidFunQuerySab(data.liquidFunQuerySab);
+      }
+      if (data.liquidFunExtractSab) {
+        bindLiquidFunExtractSab(data.liquidFunExtractSab);
       }
       if (data.movedSab) {
         bindMovedBodies(data.movedSab);

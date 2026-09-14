@@ -14,7 +14,7 @@ import { LAYER_COMPUTE_SOURCE } from '../../util/configDefaults.js';
 import { Layer, RESERVED_LOOK_UNIFORMS } from '../../core/layer.js';
 import { pinGpuTexture } from './pinGpuTexture.js';
 import { resolveComputeLayout } from './inferComputeLayout.js';
-import { prependComputePrelude } from './wgslPrelude.js';
+import { prependComputePrelude, findWgslUseBeforeDeclare } from './wgslPrelude.js';
 
 const WORK = 8;
 /** Engine FrameData prefix (floats). Scene uniforms memcpy at this offset. */
@@ -163,6 +163,7 @@ export class ComputeLayer {
     this._submitList = [null];
     this._sceneCopy = [];
     this._computePass = null;
+    this._computePassLayout = null;
     this._ready = false;
     this._compileError = false;
     this.lastBodyCount = 0;
@@ -228,6 +229,14 @@ export class ComputeLayer {
           this.passes[i]._preluded = true;
         }
         const code = this.passes[i].code;
+        const entry = this.passes[i].entry;
+        const early = findWgslUseBeforeDeclare(code);
+        if (early.length) {
+          throw new Error(
+            `compute pass "${entry}": ` +
+              early.map((e) => `'${e.name}' used before declaration (line ${e.line})`).join('; ')
+          );
+        }
         if (this.modules.has(code)) continue;
         const module = device.createShaderModule({
           label: `compute-${this.meta.name}-${i}`,
@@ -236,7 +245,7 @@ export class ComputeLayer {
         const info = await module.getCompilationInfo();
         const errs = info.messages.filter((m) => m.type === 'error');
         if (errs.length) {
-          throw new Error(errs.map((m) => m.message).join('\n'));
+          throw new Error(`compute pass "${entry}": ${errs.map((m) => m.message).join('\n')}`);
         }
         this.modules.set(code, module);
       }
@@ -628,6 +637,7 @@ export class ComputeLayer {
     const map = Layer._uniformMaps[this.layerId];
     const floats = Layer._uniformFloats[this.layerId];
     this._computePass = null;
+    this._computePassLayout = null;
 
     for (let i = 0; i < this.passes.length; i++) {
       const p = this.passes[i];
@@ -652,10 +662,7 @@ export class ComputeLayer {
       }
     }
 
-    if (this._computePass) {
-      this._computePass.end();
-      this._computePass = null;
-    }
+    this._endStepPass();
 
     const lookGpu = this._lookGpu();
     if (lookGpu && this._lookSample) {
@@ -677,6 +684,14 @@ export class ComputeLayer {
     return true;
   }
 
+  _endStepPass() {
+    if (this._computePass) {
+      this._computePass.end();
+      this._computePass = null;
+    }
+    this._computePassLayout = null;
+  }
+
   _beginStepPass(encoder) {
     if (!this._computePass) this._computePass = encoder.beginComputePass();
     return this._computePass;
@@ -685,7 +700,14 @@ export class ComputeLayer {
   _dispatchPipe(encoder, pipe, layout, gx, gy) {
     const groups = this._bindGroups[layout];
     if (!pipe || !groups) return;
+    // fireStamp + fireParticles both write `fuel` under different layouts.
+    // One compute pass + two storage bind groups on the same texture drops
+    // the second write (Q oil invisible; crate stamp still works via stamp.g).
+    if (this._computePass && this._computePassLayout && this._computePassLayout !== layout) {
+      this._endStepPass();
+    }
     const pass = this._beginStepPass(encoder);
+    this._computePassLayout = layout;
     pass.setPipeline(pipe);
     for (let g = 0; g < groups.length; g++) pass.setBindGroup(g, groups[g]);
     pass.dispatchWorkgroups(gx, gy);

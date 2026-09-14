@@ -199,6 +199,8 @@ test('liquidFun typed-array pack + binary roundtrip', async () => {
     vx: new Float32Array([0.1, 0.3]),
     vy: new Float32Array([0.2, 0.4]),
     flags: new Uint32Array([1, 2]),
+    userData: new Uint32Array([0x80000001, 42]),
+    color: new Uint32Array([0xff112233, 0xff445566]),
     groupIndex: new Int32Array([0, 0]),
     restOffset: new Float32Array([0.5, -0.5, -0.5, 0.5]),
     groups: {
@@ -252,6 +254,8 @@ test('liquidFun typed-array pack + binary roundtrip', async () => {
   assert.deepEqual([...decoded.liquidFun.vx], [...new Float32Array([0.1, 0.3])]);
   assert.deepEqual([...decoded.liquidFun.vy], [...new Float32Array([0.2, 0.4])]);
   assert.deepEqual([...decoded.liquidFun.groupIndex], [0, 0]);
+  assert.deepEqual([...decoded.liquidFun.userData], [0x80000001, 42]);
+  assert.deepEqual([...decoded.liquidFun.color], [0xff112233, 0xff445566]);
   assert.equal(decoded.liquidFun.groups.slotCount, 1);
   assert.ok(Math.abs(decoded.liquidFun.groups.strength[0] - 0.55) < 1e-6);
   assert.equal(decoded.liquidFun.pairs.count, 1);

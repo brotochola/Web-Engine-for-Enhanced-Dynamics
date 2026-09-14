@@ -132,6 +132,11 @@ export {
   liquidFunRayCastAsync,
   bindLiquidFunQuerySab,
 } from './box2d/liquidFunQuery.js';
+export {
+  liquidFunExtract,
+  liquidFunExtractAsync,
+  bindLiquidFunExtractSab,
+} from './box2d/liquidFunExtract.js';
 
 // ============================================================================
 // FLASHES
@@ -278,6 +283,11 @@ import {
   bindLiquidFunQuerySab,
 } from './box2d/liquidFunQuery.js';
 import {
+  liquidFunExtract,
+  liquidFunExtractAsync,
+  bindLiquidFunExtractSab,
+} from './box2d/liquidFunExtract.js';
+import {
   ShapeType,
   MAX_POLYGON_VERTICES,
   Box2dBodyType,
@@ -415,6 +425,9 @@ const WEED = Object.freeze({
   liquidFunRayCast,
   liquidFunRayCastAsync,
   bindLiquidFunQuerySab,
+  liquidFunExtract,
+  liquidFunExtractAsync,
+  bindLiquidFunExtractSab,
 
   // Flashes
   Flash,

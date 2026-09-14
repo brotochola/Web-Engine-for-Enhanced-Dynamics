@@ -1,5 +1,5 @@
-// WeedJS bridge — loaded by box2d_wasm.js (always).
-// Owns Module; physics_host.impl.js calls weedjsDoStep in-process.
+// WeedJS bridge — loaded by box2dWasm.js (always).
+// Owns Module; physicsHostImpl.js calls weedjsDoStep in-process.
 // Skip on em-pthread pool workers.
 
 (function () {
@@ -18,6 +18,7 @@
     'box2dQueryAabbImpl.js',
     'box2dRayCastImpl.js',
     'liquidFunQueryImpl.js',
+    'liquidFunExtractImpl.js',
   );
   const drainBox2dCommandRing = Box2dCommandRing.drainCommandRing;
   const publishBox2dContactEvent = Box2dContactRing.publishContactEvent;
@@ -104,6 +105,11 @@
     layerMask: 0,
     layerMaskSet: 0,
     lightIntensity: 0,
+    userData: 0,
+    color: 0,
+    vx: 0,
+    vy: 0,
+    omega: 0,
     pending: false,
   };
   let pendingParticleTuning = {
@@ -116,6 +122,9 @@
     staticPressureStrength: 0.2,
     staticPressureRelaxation: 0.2,
     staticPressureIterations: 8,
+    ejectionStrength: 0.5,
+    colorMixingStrength: 0.5,
+    repulsiveStrength: 1,
   };
   let jointHandle = null; // Int32Array, -1 = none, -2 = fail this revision
   let jointSeenRev = null; // Uint32Array — last synced Joint.revision
@@ -1046,6 +1055,68 @@
       pendingLiquidFunEmit.layerMaskSet = 1;
       pendingLiquidFunEmit.pending = true;
     },
+    setLiquidFunPayload(userData, color, vx, vy, omega) {
+      pendingLiquidFunEmit.userData = userData >>> 0;
+      pendingLiquidFunEmit.color = color >>> 0;
+      pendingLiquidFunEmit.vx = vx || 0;
+      pendingLiquidFunEmit.vy = vy || 0;
+      pendingLiquidFunEmit.omega = omega || 0;
+      pendingLiquidFunEmit.pending = true;
+    },
+    setParticleUserData(index, bits) {
+      if (!world || typeof world.setParticleUserData !== 'function') return;
+      world.setParticleUserData(index, bits);
+    },
+    setParticleUserDataRange(first, last, bits) {
+      if (!world || typeof world.setParticleUserDataRange !== 'function') return;
+      world.setParticleUserDataRange(first, last, bits);
+    },
+    setParticleColor(index, rgba) {
+      if (!world || typeof world.setParticleColor !== 'function') return;
+      world.setParticleColor(index, rgba);
+    },
+    setParticleColorRange(first, last, rgba) {
+      if (!world || typeof world.setParticleColorRange !== 'function') return;
+      world.setParticleColorRange(first, last, rgba);
+    },
+    setParticleFlags(index, flags) {
+      if (!world || typeof world.setParticleFlags !== 'function') return;
+      world.setParticleFlags(index, flags);
+    },
+    setParticleViscousScale(index, scale) {
+      if (!world || typeof world.setParticleViscousScale !== 'function') return;
+      world.setParticleViscousScale(index, scale);
+    },
+    setParticleViscousScaleRange(first, last, scale) {
+      if (!world || typeof world.setParticleViscousScaleRange !== 'function') return;
+      world.setParticleViscousScaleRange(first, last, scale);
+    },
+    setGroupFlags(groupId, flags) {
+      if (!world || typeof world.setParticleGroupFlags !== 'function') return;
+      world.setParticleGroupFlags(groupId, flags);
+    },
+    destroyParticle(index) {
+      if (!world || typeof world.destroyParticle !== 'function') return;
+      world.destroyParticle(index);
+    },
+    createParticle(flags, x, y, vx, vy) {
+      if (!world || typeof world.createParticle !== 'function') return;
+      const emit = takePendingLiquidFunEmit();
+      const oldCount = world.getParticleCount();
+      world.createParticle(x, y, vx, vy, flags || 0, emit.userData, packedEmitColor(emit));
+      paintNewLiquidFunParticles(oldCount, emit);
+    },
+    particleApplyForceRange(first, last, fx, fy) {
+      if (!world || typeof world.particleApplyForceRange !== 'function') return;
+      world.particleApplyForceRange(first, last, fx, fy);
+    },
+    particleApplyImpulseRange(first, last, ix, iy) {
+      if (!world || typeof world.particleApplyLinearImpulseRange !== 'function') return;
+      world.particleApplyLinearImpulseRange(first, last, ix, iy);
+    },
+    extractParticles(groupId, count, groupFlags, trackGroup) {
+      serviceLiquidFunExtract();
+    },
     setParticleTuning(phase, a, b, c, d) {
       const p = phase | 0;
       if (p === 0) {
@@ -1060,6 +1131,10 @@
         pendingParticleTuning.staticPressureRelaxation = d;
       } else if (p === 2) {
         pendingParticleTuning.staticPressureIterations = a | 0;
+      } else if (p === 3) {
+        pendingParticleTuning.ejectionStrength = a;
+        pendingParticleTuning.colorMixingStrength = b;
+        pendingParticleTuning.repulsiveStrength = c;
         if (world && typeof world.setParticleTuning === 'function') {
           world.setParticleTuning(pendingParticleTuning);
         }
@@ -1130,6 +1205,11 @@
         emit.viscousScale,
         emit.trackGroup,
         emit.groupFlags || 0,
+        emit.vx || 0,
+        emit.vy || 0,
+        emit.omega || 0,
+        emit.userData >>> 0,
+        packedEmitColor(emit),
       );
       paintNewLiquidFunParticles(oldCount, emit);
       stampGroupLightIntensity(gid, emit.lightIntensity);
@@ -1151,6 +1231,11 @@
         emit.viscousScale,
         emit.trackGroup,
         emit.groupFlags || 0,
+        emit.vx || 0,
+        emit.vy || 0,
+        emit.omega || 0,
+        emit.userData >>> 0,
+        packedEmitColor(emit),
       );
       paintNewLiquidFunParticles(oldCount, emit);
       stampGroupLightIntensity(gid, emit.lightIntensity);
@@ -1257,6 +1342,22 @@
         n = world.fillParticleRayCast(a, b, c, d, results, cap);
       }
       return n | 0;
+    });
+  }
+
+  function serviceLiquidFunExtract() {
+    if (!world || typeof LiquidFunExtract === 'undefined') return;
+    LiquidFunExtract.servicePendingLiquidFunExtract(function (
+      groupId,
+      indices,
+      count,
+      groupFlags,
+      trackGroup,
+    ) {
+      if (typeof world.fillExtractIndices === 'function') {
+        world.fillExtractIndices(indices, count | 0);
+      }
+      return world.extractParticles(groupId, count | 0, groupFlags, trackGroup) | 0;
     });
   }
 
@@ -1382,6 +1483,11 @@
       layerMask: 0,
       layerMaskSet: 0,
       lightIntensity: 0,
+      userData: 0,
+      color: 0,
+      vx: 0,
+      vy: 0,
+      omega: 0,
       pending: false,
     };
     if (!emit.pending) {
@@ -1403,8 +1509,21 @@
       emit.layerMask = 0;
       emit.layerMaskSet = 0;
       emit.lightIntensity = 0;
+      emit.userData = 0;
+      emit.color = 0;
+      emit.vx = 0;
+      emit.vy = 0;
+      emit.omega = 0;
     }
     return emit;
+  }
+
+  function packedEmitColor(emit) {
+    if (emit.color) return emit.color >>> 0;
+    const t = emit.tintBits >>> 0;
+    if (!t) return 0;
+    if ((t >>> 24) === 0) return (0xff000000 | t) >>> 0;
+    return t;
   }
 
   function paintNewLiquidFunParticles(oldCount, emit) {
@@ -1594,13 +1713,16 @@
     publishLiquidFunCleared();
   }
 
-  function publishLiquidFunHeap() {
-    if (!world || !(liquidFunMaxCount > 0)) return;
-    if (typeof world.getParticleXByteOffset !== 'function') return;
+  function buildLiquidFunHeap(sab) {
+    if (!world || !(liquidFunMaxCount > 0)) return null;
+    if (typeof world.getParticleXByteOffset !== 'function') return null;
     const xByteOffset = world.getParticleXByteOffset() | 0;
-    if (!xByteOffset) return;
-    const heap = {
-      sab: typeof world.getSharedBuffer === 'function' ? world.getSharedBuffer() : Module.HEAPF32.buffer,
+    if (!xByteOffset) return null;
+    const buf =
+      sab ||
+      (typeof world.getSharedBuffer === 'function' ? world.getSharedBuffer() : Module.HEAPF32.buffer);
+    return {
+      sab: buf,
       countByteOffset: world.getParticleCountByteOffset() | 0,
       xByteOffset,
       yByteOffset: world.getParticleYByteOffset() | 0,
@@ -1610,8 +1732,23 @@
         (world.getParticleAlphaByteOffset && world.getParticleAlphaByteOffset()) || 0,
       weightByteOffset:
         (world.getParticleWeightByteOffset && world.getParticleWeightByteOffset()) || 0,
+      flagsByteOffset:
+        (world.getParticleFlagsByteOffset && world.getParticleFlagsByteOffset()) || 0,
+      viscousScaleByteOffset:
+        (world.getParticleViscousScaleByteOffset && world.getParticleViscousScaleByteOffset()) || 0,
+      groupIndexByteOffset:
+        (world.getParticleGroupIndexByteOffset && world.getParticleGroupIndexByteOffset()) || 0,
+      userDataByteOffset:
+        (world.getParticleUserDataByteOffset && world.getParticleUserDataByteOffset()) || 0,
+      colorByteOffset:
+        (world.getParticleColorByteOffset && world.getParticleColorByteOffset()) || 0,
       maxCount: liquidFunMaxCount | 0,
     };
+  }
+
+  function publishLiquidFunHeap() {
+    const heap = buildLiquidFunHeap();
+    if (!heap) return;
     if (typeof globalThis.weedjsOnLiquidFunHeap === 'function') {
       globalThis.weedjsOnLiquidFunHeap(heap);
     } else if (typeof postMessage === 'function') {
@@ -1668,6 +1805,9 @@
     liquidFunGroupsViews.vy.set(heapF32.subarray(base + stride * 8, base + stride * 8 + n));
     liquidFunGroupsViews.angularVelocity.set(heapF32.subarray(base + stride * 9, base + stride * 9 + n));
     liquidFunGroupsViews.angle.set(heapF32.subarray(base + stride * 10, base + stride * 10 + n));
+    if (liquidFunGroupsViews.groupFlags) {
+      liquidFunGroupsViews.groupFlags.set(heap32.subarray(base + stride * 11, base + stride * 11 + n));
+    }
   }
 
   function applyLiquidFunTuningFromConfig(lf) {
@@ -1696,6 +1836,12 @@
       lf.staticPressureIterations != null
         ? lf.staticPressureIterations | 0
         : pendingParticleTuning.staticPressureIterations;
+    pendingParticleTuning.ejectionStrength =
+      lf.ejectionStrength != null ? lf.ejectionStrength : pendingParticleTuning.ejectionStrength;
+    pendingParticleTuning.colorMixingStrength =
+      lf.colorMixingStrength != null ? lf.colorMixingStrength : pendingParticleTuning.colorMixingStrength;
+    pendingParticleTuning.repulsiveStrength =
+      lf.repulsiveStrength != null ? lf.repulsiveStrength : pendingParticleTuning.repulsiveStrength;
   }
 
   /** Mark particles whose centers leave scene world AABB so SolveZombie compact removes them this step. */
@@ -1859,6 +2005,7 @@
       serviceQueryAabb();
       serviceRayCast();
       serviceLiquidFunQuery();
+      serviceLiquidFunExtract();
       return;
     }
     if (!collectDetailedStats) {
@@ -1868,6 +2015,7 @@
       serviceQueryAabb();
       serviceRayCast();
       serviceLiquidFunQuery();
+      serviceLiquidFunExtract();
       snapshotPrevPose(entityCount);
       applyForcesAndTorque();
       cullLiquidFunOutsideWorld();
@@ -1886,6 +2034,7 @@
     serviceQueryAabb();
     serviceRayCast();
     serviceLiquidFunQuery();
+    serviceLiquidFunExtract();
     snapshotPrevPose(entityCount);
     applyForcesAndTorque();
     const t4 = performance.now();
@@ -2038,6 +2187,9 @@
     if (data.liquidFunQuerySab) {
       LiquidFunQuery.bindLiquidFunQuerySab(data.liquidFunQuerySab);
     }
+    if (data.liquidFunExtractSab && typeof LiquidFunExtract !== 'undefined') {
+      LiquidFunExtract.bindLiquidFunExtractSab(data.liquidFunExtractSab);
+    }
     if (data.contactSab) {
       Box2dContactRing.bindContactRing(data.contactSab);
       contactRingI32 = new Int32Array(data.contactSab);
@@ -2132,6 +2284,9 @@
         lastIndex: data.liquidFunGroupsViews.lastIndex
           ? viewFromDesc(data.liquidFunGroupsViews.lastIndex, Int32Array)
           : null,
+        groupFlags: data.liquidFunGroupsViews.groupFlags
+          ? viewFromDesc(data.liquidFunGroupsViews.groupFlags, Int32Array)
+          : null,
         viscousScale: viewFromDesc(data.liquidFunGroupsViews.viscousScale, Float32Array),
         x: viewFromDesc(data.liquidFunGroupsViews.x, Float32Array),
         y: viewFromDesc(data.liquidFunGroupsViews.y, Float32Array),
@@ -2170,25 +2325,7 @@
     const ready = world.getReadyPayload();
     bindStateChannels(ready, entityCount);
 
-    let liquidFunHeap = null;
-    if (
-      liquidFunMaxCount > 0 &&
-      typeof world.getParticleXByteOffset === 'function' &&
-      world.getParticleXByteOffset()
-    ) {
-      liquidFunHeap = {
-        sab: ready.sab,
-        countByteOffset: world.getParticleCountByteOffset() | 0,
-        xByteOffset: world.getParticleXByteOffset() | 0,
-        yByteOffset: world.getParticleYByteOffset() | 0,
-        vxByteOffset: (world.getParticleVxByteOffset && world.getParticleVxByteOffset()) || 0,
-        vyByteOffset: (world.getParticleVyByteOffset && world.getParticleVyByteOffset()) || 0,
-        alphaByteOffset: (world.getParticleAlphaByteOffset && world.getParticleAlphaByteOffset()) || 0,
-        weightByteOffset:
-          (world.getParticleWeightByteOffset && world.getParticleWeightByteOffset()) || 0,
-        maxCount: liquidFunMaxCount | 0,
-      };
-    }
+    const liquidFunHeap = buildLiquidFunHeap(ready.sab);
 
     const readyMsg = {
       type: 'WEEDJS_READY',
@@ -2307,6 +2444,8 @@
       vx: snap.vx,
       vy: snap.vy,
       flags: snap.flags,
+      userData: snap.userData || null,
+      color: snap.color || null,
       groupIndex: snap.groupIndex || null,
       restOffset: snap.restOffset || null,
       groups: snap.groups || null,
@@ -2338,7 +2477,9 @@
     const vx = payload.vx instanceof Float32Array ? payload.vx : new Float32Array(payload.vx || []);
     const vy = payload.vy instanceof Float32Array ? payload.vy : new Float32Array(payload.vy || []);
     const flags = payload.flags instanceof Uint32Array ? payload.flags : new Uint32Array(payload.flags || []);
-    const r = world.restoreParticles(n, x, y, vx, vy, flags);
+    const userData = payload.userData instanceof Uint32Array ? payload.userData : payload.userData ? new Uint32Array(payload.userData) : null;
+    const color = payload.color instanceof Uint32Array ? payload.color : payload.color ? new Uint32Array(payload.color) : null;
+    const r = world.restoreParticles(n, x, y, vx, vy, flags, userData, color);
     if (r < 0) return { ok: false, reason: "wasm", code: r };
 
     const hasGroups =

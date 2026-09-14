@@ -472,6 +472,11 @@ function writeLiquidFun(w, lf) {
   // Appended after v4 render block; readers skip if the section ends here.
   w.u8(lf.groupsLightIntensity ? 1 : 0);
   if (lf.groupsLightIntensity) writeTyped(w, lf.groupsLightIntensity);
+  w.u8(0); // no legacy feedLayerId
+  w.u8(lf.userData ? 1 : 0);
+  if (lf.userData) writeTyped(w, lf.userData);
+  w.u8(lf.color ? 1 : 0);
+  if (lf.color) writeTyped(w, lf.color);
 }
 
 function readLiquidFun(r) {
@@ -539,6 +544,15 @@ function readLiquidFun(r) {
     delete render.layerField;
   }
 
+  let userData = null;
+  let color = null;
+  if (r.o < r.buf.byteLength) {
+    userData = r.u8() ? readTyped(r) : null;
+  }
+  if (r.o < r.buf.byteLength) {
+    color = r.u8() ? readTyped(r) : null;
+  }
+
   return {
     count,
     radius,
@@ -548,6 +562,8 @@ function readLiquidFun(r) {
     vx,
     vy,
     flags,
+    userData,
+    color,
     groupIndex,
     restOffset,
     groups,

@@ -12,7 +12,7 @@ import {
 } from '/src/util/configDefaults.js';
 import WEED from '/src/index.js';
 
-const { Mouse, Keyboard, LiquidFun, LIQUIDFUN_FLAGS } = WEED;
+const { Mouse, Keyboard, LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } = WEED;
 
 const OIL_LAYER = 'oil';
 
@@ -253,6 +253,28 @@ export class BurningBoxesScene extends WEED.Scene {
   createNewGame() {
     this.spawnCrates();
     this.spawnGadgets();
+    this.spawnIce();
+  }
+
+  spawnIce() {
+    const w = this.config.worldWidth;
+    const h = this.config.worldHeight;
+    const floorY = h * 0.72 - 80;
+    const cx = w / 2;
+    LiquidFun.emit({
+      flags: LIQUIDFUN_FLAGS.WATER | LIQUIDFUN_FLAGS.VISCOUS,
+      groupFlags: LIQUIDFUN_GROUP_FLAGS.SOLID | LIQUIDFUN_GROUP_FLAGS.RIGID,
+      trackGroup: true,
+      viscousScale: 1,
+      userData: 0,
+      tint: 0xaadfff,
+      shape: 'box',
+      posX: cx + 80,
+      posY: floorY - 40,
+      halfWidth: 110,
+      halfHeight: 36,
+      layers: ['fire'],
+    });
   }
 
   spawnFloorAndLedges() {
@@ -303,7 +325,8 @@ export class BurningBoxesScene extends WEED.Scene {
       flags: LIQUIDFUN_FLAGS.VISCOUS,
       viscousScale: 9,
       tint: 0x6b3a1f,
-      lightIntensity: burning ? 50 : 0,
+      userData: burning ? 255 : 0,
+      lightIntensity: burning ? 100 : 0,
       shape: 'circle',
       posX: x,
       posY: y,
@@ -318,12 +341,13 @@ export class BurningBoxesScene extends WEED.Scene {
     //   this._oilAcc = 0;
     //   this.emitOil(this._oilX, this._oilY, 22);
     // }
-    if (Keyboard.isPressed('q')) {
-      this.emitOil(Mouse.x, Mouse.y, 28, true);
+    this._oilAcc = (this._oilAcc || 0) + (deltaTime || 0);
+    const hold = Keyboard.q || Keyboard.e;
+    const tap = Keyboard.isPressed('q') || Keyboard.isPressed('e');
+    if (hold && (tap || this._oilAcc >= OIL_DRIP_MS)) {
+      this._oilAcc = 0;
+      this.emitOil(Mouse.x, Mouse.y, 28, !!Keyboard.q);
     }
-
-    if (Keyboard.isPressed('e')) {
-      this.emitOil(Mouse.x, Mouse.y, 28, false);
-    }
+    if (!hold) this._oilAcc = OIL_DRIP_MS;
   }
 }

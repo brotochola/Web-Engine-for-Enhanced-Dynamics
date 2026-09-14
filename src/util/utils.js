@@ -860,6 +860,9 @@ function mergeLiquidFunConfig(currentLf, newLf) {
       1,
       (src.staticPressureIterations != null ? src.staticPressureIterations : d.staticPressureIterations) | 0,
     ),
+    ejectionStrength: num(src.ejectionStrength, d.ejectionStrength),
+    colorMixingStrength: num(src.colorMixingStrength, d.colorMixingStrength),
+    repulsiveStrength: num(src.repulsiveStrength, d.repulsiveStrength),
   };
 }
 

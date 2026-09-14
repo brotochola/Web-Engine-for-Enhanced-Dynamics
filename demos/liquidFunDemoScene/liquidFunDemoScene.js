@@ -1,5 +1,5 @@
 // liquidFunDemoScene.js - LiquidFun Particle Physics Demo Scene in WeedJS
-// WASD pans. Q/E/R/F/G/T pick a liquid; LMB sprays at the cursor.
+// WASD pans. Q/E/R/F/G/T/Y/U/I/O/H pick a liquid; LMB sprays at the cursor.
 // Dynamic Box bodies fall into the tank with the fluids.
 // Density: LAYER_DENSITY_SOURCE.LIQUID_FUN (procedural splat → dulceDeLeche look frag).
 
@@ -35,6 +35,29 @@ const LIQUID_TOOLS = [
     groupFlags: GF.SOLID | GF.RIGID,
     viscousScale: 1,
     tint: 0xaadfff,
+    grouped: true,
+  },
+  { key: 'u', name: 'mixA', shape: 'circle', radius: 90, flags: F.COLOR_MIXING, viscousScale: 1, tint: 0xff3366 },
+  { key: 'i', name: 'mixB', shape: 'circle', radius: 90, flags: F.COLOR_MIXING, viscousScale: 1, tint: 0x33ffcc },
+  {
+    key: 'o',
+    name: 'repulse',
+    shape: 'circle',
+    radius: 80,
+    flags: F.REPULSIVE,
+    viscousScale: 1,
+    tint: 0xff66aa,
+    grouped: true,
+  },
+  {
+    key: 'h',
+    name: 'reactive',
+    shape: 'circle',
+    radius: 70,
+    flags: F.SPRING | F.REACTIVE,
+    strength: 0.4,
+    viscousScale: 1,
+    tint: 0xffee55,
     grouped: true,
   },
 ];
@@ -342,7 +365,7 @@ export class LiquidFunDemoScene extends WEED.Scene {
       `\n${lines.join('\n')}` +
       `\ngroups=${groups.length}  particles=${pCount}` +
       (this._meltGroupId >= 0 ? `  melt#${this._meltGroupId}=${this._meltScale.toFixed(2)}` : '') +
-      `\nLMB spray  M melt  N thicken  Y ice  WASD pan  wheel zoom`;
+      `\nLMB spray  M melt  N thicken  Y ice  U/I mix  O repulse  H reactive  WASD pan  wheel zoom`;
   }
 
   _removeHud() {

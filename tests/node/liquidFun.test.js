@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   createCommandRingSab,
   bindCommandRing,
@@ -30,6 +33,9 @@ test('LIQUIDFUN_FLAGS match liquidfun-c lfParticleFlag', () => {
   assert.equal(LIQUIDFUN_FLAGS.SPRING, 1 << 6);
   assert.equal(LIQUIDFUN_FLAGS.BARRIER, 1 << 7);
   assert.equal(LIQUIDFUN_FLAGS.STATIC_PRESSURE, 1 << 8);
+  assert.equal(LIQUIDFUN_FLAGS.COLOR_MIXING, 1 << 9);
+  assert.equal(LIQUIDFUN_FLAGS.REPULSIVE, 1 << 10);
+  assert.equal(LIQUIDFUN_FLAGS.REACTIVE, 1 << 11);
 });
 
 test('ParticleEmitter has no LiquidFun API (use LiquidFun class)', () => {
@@ -38,6 +44,9 @@ test('ParticleEmitter has no LiquidFun API (use LiquidFun class)', () => {
   assert.equal(typeof ParticleEmitter.setLiquidFunGroupViscousScale, 'undefined');
   assert.equal(typeof LiquidFun.emit, 'function');
   assert.equal(typeof LiquidFun.queryAABB, 'function');
+  assert.equal(typeof LiquidFun.extract, 'function');
+  assert.equal(typeof LiquidFun.setUserData, 'function');
+  assert.equal(typeof LiquidFun.setFlags, 'function');
   assert.equal(typeof LiquidFun.rayCast, 'function');
   assert.equal(typeof LiquidFun.queryAABBAsync, 'function');
   assert.equal(typeof LiquidFun.rayCastAsync, 'function');
@@ -74,6 +83,9 @@ test('validatePhysicsConfig shallow-merges liquidFun defaults', () => {
   assert.equal(merged.liquidFun.subSteps, 1);
   assert.equal(merged.liquidFun.density, PHYSICS_DEFAULTS.liquidFun.density);
   assert.equal(merged.liquidFun.viscousStrength, PHYSICS_DEFAULTS.liquidFun.viscousStrength);
+  assert.equal(merged.liquidFun.ejectionStrength, PHYSICS_DEFAULTS.liquidFun.ejectionStrength);
+  assert.equal(merged.liquidFun.colorMixingStrength, 0.5);
+  assert.equal(merged.liquidFun.repulsiveStrength, 1);
 });
 
 test('validatePhysicsConfig merges viscousStrength override', () => {
@@ -256,7 +268,7 @@ test('setGroupViscousScale and setTuning enqueue', () => {
   assert.equal(received[1].type, 'setParticleTuning');
   assert.equal(received[1].phase, 0);
   assert.equal(received[1].c, 1.5);
-  assert.equal(received.length, 4); // 1 setGroup + 3 tuning phases
+  assert.equal(received.length, 5); // 1 setGroup + 4 tuning phases
 });
 
 test('LiquidFun enqueues SET_LIQUIDFUN_LIFESPAN (ms -> sec) only when options.lifespan is set', () => {
@@ -668,9 +680,9 @@ test('liquidFun render SAB fits bind when maxCount is odd', () => {
   }
 });
 
-test('liquidFun groups SAB fits bindLiquidFunGroups (first/last + pose + lightIntensity)', () => {
+test('liquidFun groups SAB fits bindLiquidFunGroups (first/last + pose + lightIntensity + groupFlags)', () => {
   const n = LIQUIDFUN_GROUPS_MAX;
-  assert.equal(liquidFunGroupsByteSize(n), 4 + n * 4 * 13);
+  assert.equal(liquidFunGroupsByteSize(n), 4 + n * 4 * 14);
   const sab = new SharedArrayBuffer(liquidFunGroupsByteSize(n));
   const views = bindLiquidFunGroups(sab, n);
   assert.equal(views.count.length, 1);
@@ -678,6 +690,7 @@ test('liquidFun groups SAB fits bindLiquidFunGroups (first/last + pose + lightIn
   assert.equal(views.particleCount.length, n);
   assert.equal(views.firstIndex.length, n);
   assert.equal(views.lastIndex.length, n);
+  assert.equal(views.groupFlags.length, n);
   assert.equal(views.viscousScale.length, n);
   assert.equal(views.x.length, n);
   assert.equal(views.y.length, n);
@@ -691,13 +704,60 @@ test('liquidFun groups SAB fits bindLiquidFunGroups (first/last + pose + lightIn
   views.id[n - 1] = 7;
   views.firstIndex[n - 1] = 10;
   views.lastIndex[n - 1] = 40;
+  views.groupFlags[n - 1] = 3;
   views.angle[n - 1] = 1.5;
   views.lightIntensity[7] = 5000;
   views.sqrtLightIntensity[7] = Math.sqrt(5000);
   assert.equal(views.id[n - 1], 7);
   assert.equal(views.firstIndex[n - 1], 10);
   assert.equal(views.lastIndex[n - 1], 40);
+  assert.equal(views.groupFlags[n - 1], 3);
   assert.equal(views.angle[n - 1], 1.5);
   assert.equal(views.lightIntensity[7], 5000);
   assert.ok(Math.abs(views.sqrtLightIntensity[7] - Math.sqrt(5000)) < 1e-6);
+});
+
+test('physicsHostImpl group SAB layout matches util bindLiquidFunGroups', () => {
+  const dir = join(dirname(fileURLToPath(import.meta.url)), '../../src/box2d');
+  const host = readFileSync(join(dir, 'physicsHostImpl.js'), 'utf8');
+  const post = readFileSync(join(dir, 'weedjsPost.js'), 'utf8');
+  const start = host.indexOf('function bindLiquidFunGroupsViews');
+  assert.ok(start >= 0, 'missing bindLiquidFunGroupsViews');
+  const bind = host.slice(start, host.indexOf('function schemaEntry', start));
+  assert.match(
+    bind,
+    /lastIndex[\s\S]*groupFlags[\s\S]*viscousScale[\s\S]*lightIntensity[\s\S]*sqrtLightIntensity/,
+  );
+  assert.match(host, /groupFlags: packView\(G\.groupFlags\)/);
+  assert.match(post, /groupFlags: data\.liquidFunGroupsViews\.groupFlags/);
+});
+
+test('LiquidFun mutators enqueue opaque userData on i32 slots', () => {
+  const sab = createCommandRingSab(32);
+  bindCommandRing(sab);
+  const i32 = new Int32Array(sab);
+  const f32 = new Float32Array(sab);
+  LiquidFun.setUserData(3, 0x80000001);
+  LiquidFun.setFlags(4, LIQUIDFUN_FLAGS.COLOR_MIXING);
+  LiquidFun.setGroupFlags(2, 0);
+  const received = [];
+  drainCommandRing(i32, f32, {
+    setParticleUserData(index, bits) {
+      received.push({ type: 'userData', index, bits: bits >>> 0 });
+    },
+    setParticleFlags(index, flags) {
+      received.push({ type: 'flags', index, flags: flags >>> 0 });
+    },
+    setGroupFlags(groupId, flags) {
+      received.push({ type: 'groupFlags', groupId, flags: flags >>> 0 });
+    },
+  });
+  assert.equal(BOX2D_CMD.SET_PARTICLE_USER_DATA, 28);
+  assert.equal(BOX2D_CMD.SET_PARTICLE_FLAGS, 32);
+  assert.equal(BOX2D_CMD.SET_GROUP_FLAGS, 35);
+  assert.deepEqual(received, [
+    { type: 'userData', index: 3, bits: 0x80000001 },
+    { type: 'flags', index: 4, flags: LIQUIDFUN_FLAGS.COLOR_MIXING },
+    { type: 'groupFlags', groupId: 2, flags: 0 },
+  ]);
 });

@@ -25,7 +25,7 @@ Box2D 3 (Erin Catto C, this fork) has opaque ids, SoA buffers, and no hook to in
 
 ### Particle pose: HEAP SAB (like Transform)
 
-`WebAssembly.Memory({ shared: true })` — the WASM heap **is** a SharedArrayBuffer. Rigid bodies already bind `Transform.x/y` onto it. LiquidFun particle `count` / `x` / `y` / `alpha` / `weight` use the same pattern via `liquidFunHeap` on `box2dReady`. The thin LiquidFun render SAB keeps only emit fields C does not own (`tint`, `scale*`, `textureId`, `layerMask`, …).
+`WebAssembly.Memory({ shared: true })` — the WASM heap **is** a SharedArrayBuffer. Rigid bodies already bind `Transform.x/y` onto it. LiquidFun particle `count` / `x` / `y` / `alpha` / `weight` / `flags` / `viscousScale` / `groupIndex` / **`userData`** / **`color`** (0xAARRGGBB) use the same pattern via `liquidFunHeap` on `box2dReady`. `getViews()` is **read-only**. Writes go through the command ring (physics worker, pre-step). Mixing mixes **color**, never `userData`. The thin LiquidFun render SAB keeps only emit fields C does not own (`tint`, `scale*`, `textureId`, `layerMask`, …).
 
 ### Rendering: sprite density vs buffer density
 
@@ -110,11 +110,15 @@ Scene sets `enabled: true` to auto-create the system at physics init. Do not als
 
 ## WASM ABI (do not invent extra args)
 
+Trailing extras after `trackGroup`: `groupFlags, vx, vy, omega, userData, color`.
+Omitted JS **f32** args become **NaN** (not 0). C zeros non-finite `vx/vy/omega`.
+Omitted **i32** (`groupFlags`, `userData`, `color`) are 0. Engine wrappers always pass numbers.
+
 | Export | Signature | Notes |
 |--------|-----------|--------|
 | `create_particle_system` | `(worldPacked, radius, density, maxParticles, strictContactCheck) → 0\|1` | `growable=false`; destroys any previous system. 5th param added — was hardcoded `true` |
-| `create_particle_group_box` | `(x0,y0,x1,y1, spacing, flags, strength, lifeMin, lifeMax, fade, viscousScale, trackGroup) → groupId` | **AABB corners**. `-1` = fail / ungrouped |
-| `create_particle_group_circle` | `(cx,cy,radius, spacing, flags, strength, lifeMin, lifeMax, fade, viscousScale, trackGroup) → groupId` | `spacing<=0` → 0.75 × diameter |
+| `create_particle_group_box` | `(x0,y0,x1,y1, spacing, flags, strength, lifeMin, lifeMax, fade, viscousScale, trackGroup, groupFlags, vx, vy, omega, userData, color) → groupId` | **AABB corners**. `-1` = fail / ungrouped |
+| `create_particle_group_circle` | `(cx,cy,radius, spacing, flags, strength, lifeMin, lifeMax, fade, viscousScale, trackGroup, groupFlags, vx, vy, omega, userData, color) → groupId` | `spacing<=0` → 0.75 × diameter |
 | `set_particle_tuning` | `(9 coeffs)` | Live `lfParticleSystemDef` strengths |
 | `set_group_viscous_scale` | `(groupId, scale)` | Stamp members + group field |
 | `create_particle_box` | `(x0,y0,x1,y1, spacing, flags) → count` | Ungrouped fill |
@@ -131,7 +135,7 @@ JS scene API stays **center + half extents** (same as Weed boxes). Conversion to
 
 ## Flags
 
-Match sibling `lfParticleFlag` only. Google listener / color-mixing bits do nothing here.
+Match sibling `lfParticleFlag` only. Google contact-listener bits are not ported.
 
 | `LIQUIDFUN_FLAGS` | Value | C |
 |-------------------|------:|---|
@@ -145,6 +149,9 @@ Match sibling `lfParticleFlag` only. Google listener / color-mixing bits do noth
 | `SPRING` | 1<<6 | rest-length pairs at create |
 | `BARRIER` | 1<<7 | with `WALL`: zero vel; neighbor pairs form a segment dam (`SolveBarrier`) |
 | `STATIC_PRESSURE` | 1<<8 | extra Poisson pressure so fluid does not vanish in a crack |
+| `COLOR_MIXING` | 1<<9 | mix packed `color` with neighbor that also has the bit |
+| `REPULSIVE` | 1<<10 | extra force vs particles in another group |
+| `REACTIVE` | 1<<11 | one-shot spring/barrier pair recapture, then bit clears |
 
 Existing bits are **not** Google’s `b2ParticleFlag` layout (Google’s barrier is `1<<10`). New flags are appended only. Do not remap WATER…SPRING.
 
@@ -152,7 +159,7 @@ Body collision is **not** a flag. Water particles hit fixtures by default.
 
 Engine cap: `physics.liquidFun.maxCount` is clamped to **65535** (uint16 indices, empty sentinel `0xFFFF`, live `0..65534`). WASM `create_particle_system` already rejects a larger cap.
 
-Skipped on purpose: NEON (ARM), color mixing, fixture/particle contact filters.
+Skipped on purpose: NEON (ARM), fixture/particle contact filters.
 SIMD itself is **not** skipped — `Integrate`/`SolveGravity`/`LimitVelocity` are
 explicit SSE2/wasm128 intrinsics (`<emmintrin.h>`, same technique Box2D's own
 `contact_solver.c` uses for `B2_SIMD_SSE2` on `B2_CPU_WASM`); the build fails
@@ -169,7 +176,7 @@ Emit is **explicit knobs**, not a named cookbook. `LIQUIDFUN_FLAGS` + per-call `
 
 What is slow: a new **shape** group every mouse splash. Spray viscous blobs with `viscousScale != 1` keeps bookkeeping groups only.
 
-System tuning knobs on `physics.liquidFun` (also `LiquidFun.setTuning`): `dampingStrength`, `pressureStrength`, `viscousStrength`, `tensileStrength`, `powderStrength`, `springStrength`, `staticPressureStrength`, `staticPressureRelaxation`, `staticPressureIterations`.
+System tuning knobs on `physics.liquidFun` (also `LiquidFun.setTuning`): `dampingStrength`, `pressureStrength`, `viscousStrength`, `tensileStrength`, `powderStrength`, `springStrength`, `staticPressureStrength`, `staticPressureRelaxation`, `staticPressureIterations`, `ejectionStrength` (default 0.5), `colorMixingStrength` (0.5), `repulsiveStrength` (1).
 
 ---
 
@@ -182,7 +189,7 @@ Each particle **sub-step** (default `subSteps=1`):
 1. `BuildGrid` (hash sized from **live count**, not `maxParticles`) + `FindParticleContacts`. Each particle's cell `(ix,iy)` is cached (`cellX`/`cellY`) right here and reused everywhere else that would otherwise recompute `GetCell` (`ForEachParticleNearShape`, `SolveBarrier`).
 2. **One shared `OverlapAABB`** (swept-cloud AABB — see step 7) feeds both `FindBodyContacts` and `SolveCollision`; `FindBodyContacts` itself does `GetClosestPoint` + `TestPoint` per candidate shape. Signed distance: `weight = 1 - d/diameter` (**can be > 1** inside). `contact.normal = -n` (particle toward body). Reduced `mass = 1/invMassSum`. **No axis-snap.**
 3. `RemoveSpuriousBodyContacts` only if `strictContactCheck` (config default **false**, genuinely wired through now — see Scene API). Sort by index then weight; keep ≤3; project along the inverse normal; drop if that probe is not on/in the fixture.
-4. Flagged: `SolveViscous`, `SolvePowder`, `SolveTensile` (two-pass `accumulation2`).
+4. Flagged (Google-ish order after contacts): `SolveReactive` (pair recapture, then clear bit), Force, Viscous, **Repulsive**, Powder, Tensile, Solid, **ColorMixing**. Then gravity / pressure / damping.
 5. `SolveGravity`. If `STATIC_PRESSURE`, `SolveStaticPressure` (Poisson; Google defaults: strength **0.2**, relaxation 0.2, 8 iters; `pressurePerWeight = strength * density * (diameter/dt)²`). `SolvePressure` **one** accumulate + apply using **critical pressure** `density * (diameter/dt)²` (no `|g|/10`, no pressure-iteration loop, no PBD). `SolveDamping` (linear + quadratic `1/criticalVelocity`) on body then particle contacts.
 6. Elastic / spring **late** (after damping; they read current velocities). `LimitVelocity` at `|v| <= diameter/dt`. If `BARRIER`, `SolveBarrier` (`tmax = 2.5 * dt`).
 7. **`SolveCollision`** — reuses step 2's shared query (same swept-cloud AABB, one `OverlapAABB` per sub-step total, not two), `b2Shape_RayCast(shape, p, dt*v)`. Point particle. `target = lerp(p1,p2,fraction) + B2_LINEAR_SLOP * n` (Weed 100 px/m → 0.5 px). `v = inv_dt * (target - p)`. **No radius offset. Do not write position.** Do **not** `b2World_CastShape` per particle. The search padding (`diameter`) is sufficient because `LimitVelocity` (step 6) already caps `dt·|v| <= diameter` for every particle — same CFL bound closes the loop, not a coincidence. Known gap: `SolveBarrier` runs after `LimitVelocity` and doesn't re-clamp, so a `BARRIER`-paired particle could in principle exceed that bound (unresolved, low-impact — opt-in flag, few particles in practice).
@@ -192,7 +199,9 @@ A lone particle on a static floor can rest (body-contact damping). Neighbor pair
 
 Create spacing `0` → **0.75 × diameter** (Google `b2_particleStride`). Discrete only: a particle that tunnels a thin shape in one sub-step is gone (sibling ROADMAP Fase 4).
 
-Skipped on purpose: NEON, colorMixing, repulsive, solid/rigid groups, fixture contact filter.
+Skipped on purpose: NEON, destroy-oldest, contact listeners/filters, ParticleHandle, polygon group fill.
+
+`COLOR_MIXING` / `REPULSIVE` / `REACTIVE` are ported (Google 1.1.0 *behavior*, Weed bit numbers). `SOLID`/`RIGID` group flags already existed. `REACTIVE` is **one-shot spring/barrier pair recapture**, then the bit clears — not acid / zombie-on-touch.
 
 `lfParticleSystem_Step` cannot run in parallel with `b2World_Step` **of the same frame** (world locked; queries invalid). Overlay `Box2d` ms stays `step_world`.
 
@@ -258,6 +267,8 @@ LiquidFun.emit({
   flags: LIQUIDFUN_FLAGS.VISCOUS | LIQUIDFUN_FLAGS.TENSILE,
   viscousScale: 10,
   tint: 0xc6862a,
+  userData: 0, // opaque uint32 — engine never interprets (game may pack temperature)
+  vx: 0, vy: 0, omega: 0,
   lightIntensity: 150, // optional; same units as LightEmitter; reach = 10*sqrt(I)
   layer: 'oil',
   layers: ['oil', 'fire'], // density + compute; omit = ENTITIES sprites only
@@ -269,8 +280,19 @@ LiquidFun.emit({
   groupFlags: LIQUIDFUN_GROUP_FLAGS.SOLID | LIQUIDFUN_GROUP_FLAGS.RIGID, // optional ice
 });
 
-LiquidFun.getGroups();
-LiquidFun.getViews();
+const v = LiquidFun.getViews(); // HEAP: userData, color, flags, viscousScale, groupIndex (read-only)
+LiquidFun.setUserData(i, bits);
+LiquidFun.setUserDataRange(first, last, bits);
+LiquidFun.setColor(i, 0xff3399ff); // 0xAARRGGBB
+LiquidFun.setFlags(i, LIQUIDFUN_FLAGS.COLOR_MIXING);
+LiquidFun.setViscousScale(i, 4);
+LiquidFun.setGroupFlags(id, 0); // RIGID is whole-group; corner melt needs extract, not only this
+LiquidFun.destroyParticle(i);
+LiquidFun.createParticle({ x, y, vx, vy, flags, userData, color });
+LiquidFun.extract(groupId, indices, count, { groupFlags: 0, trackGroup: true }); // → newGroupId or -1
+LiquidFun.applyForceRange(first, last, fx, fy);
+
+LiquidFun.getGroups(); // includes groupFlags
 LiquidFun.setGroupViscousScale(id, scale);
 LiquidFun.joinParticleGroups(a, b);
 LiquidFun.splitParticleGroup(id);
@@ -284,7 +306,11 @@ await LiquidFun.queryAABBAsync(x0, y0, x1, y1, out);
 await LiquidFun.rayCastAsync(x1, y1, x2, y2, out);
 ```
 
-Single-flight SAB (`liquidFunQuery`), same pattern as body `box2dQueryAABB`. Physics services pending queries in `doStep` (including paused/`dt==0`). No GameObject/Scene query methods — call `LiquidFun.*` like `Camera` / `Mouse`.
+Single-flight SAB (`liquidFunQuery` / `liquidFunExtract`), same pattern as body `box2dQueryAABB`. Physics services pending queries/extracts in `doStep` (including paused/`dt==0`). Particle indices are **unstable** after zombie compact, join, split, or extract — query every tick. No `ParticleHandle` this pass.
+
+Compute pack (`LfParticle`) is 8 floats / 32 bytes: `x,y,vx,vy` + `userData: u32` + pad. Scene shaders read `particles[i].userData`, not an engine `heat` field.
+
+`COLOR_MIXING` requires the bit on **both** particles; it mixes packed `color`, never `userData`. `REPULSIVE` is extra force vs **other group**.
 
 **Debug stats:** with `config.debug.collectDetailedStats`, physics panel shows **LiquidFun** (`LIQUIDFUN_MS`) = wall time of `lfParticleSystem_Step` + pose deinterleave inside `step_world`. `BOX2D_MS` remains the full `world.step` wall time (rigid + LiquidFun).
 
@@ -327,7 +353,7 @@ pnpm test:visual --scene liquidfun,lfstress
 
 | File | What |
 |------|------|
-| [`tests/node/liquidFun.test.js`](../tests/node/liquidFun.test.js) | Flags (including BARRIER / STATIC_PRESSURE), AABB, `SET_LIQUIDFUN_EMIT` ring, `physics.liquidFun` merge + maxCount clamp 65535 |
+| [`tests/node/liquidFun.test.js`](../tests/node/liquidFun.test.js) | Flags (including COLOR_MIXING / REPULSIVE / REACTIVE), AABB, `SET_LIQUIDFUN_EMIT` ring, opaque userData i32 opcodes, `physics.liquidFun` merge + maxCount clamp 65535 |
 | [`tests/node/liquidFun.wasm.test.js`](../tests/node/liquidFun.wasm.test.js) | Y-down floor settle + `spanY`; no wall-climb **and** no centers inside the wall; water beside a thick box (`maxPen < radius`); 10k create/step smoke; **1-particle point rest** on floor top (`|vy|` small); barrier smoke; staticPressure finite; deinterleaved `x`/`y` exactly match interleaved `pos`; `strictContactCheck` 5th-arg smoke |
 | [`tests/bench/runLockstepVisual.mjs`](../tests/bench/runLockstepVisual.mjs) (`pnpm test:visual`) | Headed two-run lockstep. `liquidfun` + `lfstress` are `match: 'exact'` at 100 steps (CPU `hashLiquidFun` + PNG). Catalog: [`lockstepVisualScenes.mjs`](../tests/bench/lockstepVisualScenes.mjs). `water` stays `not-black` (rigid metaball balls, not LiquidFun). |
 
@@ -336,7 +362,7 @@ pnpm test:visual --scene liquidfun,lfstress
 
 Weed save games snapshot LiquidFun via sibling WASM (`D:\\xampp\\htdocs\\Box2d_3.2_C_-_liquidfun`):
 
-1. `restore_particles` — clear + recreate particles (pos / vel / flags)
+1. `restore_particles` — clear + recreate particles (pos / vel / flags / **userData** / **color**)
 2. `restore_particle_groups_and_pairs` — reinstall `groupIndex`, elastic `restOffset`, group slots, spring/barrier pairs
 
-Also saved: thin render SAB fields (tint / textureId / scale / alpha / layerMask). Old saves: `layerId` 0 → ENTITIES bit; `feedLayerId !== 255` ORs that bit. Rebuild WASM with `weedjs\\build_for_weed.bat`.
+Also saved: thin render SAB fields (tint / textureId / scale / alpha / layerMask). Old saves: `layerId` 0 → ENTITIES bit; `feedLayerId !== 255` ORs that bit; trailing `userData`/`color` optional. Rebuild WASM with `weedjs\\build_for_weed.bat`.

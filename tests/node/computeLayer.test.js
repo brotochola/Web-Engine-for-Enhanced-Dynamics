@@ -616,7 +616,7 @@ test('fire stamp: burning crust is live fluid; inert solids push; ember overlays
   assert.match(stamp, /isBlow/);
   assert.match(stamp, /isJet/);
   assert.match(stamp, /fuelWrite/);
-  assert.match(fluid, /fuel\.r > 0\.5/);
+  assert.match(fluid, /fuel\.a > 0\.5/);
   assert.match(fluid, /uLfDrive/);
   assert.match(fluid, /fn inert_solid/);
   assert.match(fluid, /fn push_from_solid/);
@@ -779,7 +779,8 @@ test('compute layer: dispatchFrom particles round-trips', () => {
 
 function makeLfHeap(n) {
   const floatsStart = 16;
-  const sab = new SharedArrayBuffer(floatsStart + n * 5 * 4);
+  const userDataByteOffset = floatsStart + n * 20;
+  const sab = new SharedArrayBuffer(userDataByteOffset + n * 4);
   return {
     sab,
     n,
@@ -789,6 +790,7 @@ function makeLfHeap(n) {
     vxByteOffset: floatsStart + n * 8,
     vyByteOffset: floatsStart + n * 12,
     alphaByteOffset: floatsStart + n * 16,
+    userDataByteOffset,
   };
 }
 
@@ -806,6 +808,7 @@ test('packLiquidFunParticles: HEAP x/y/vx/vy into SSBO', () => {
       vxByteOffset: heap.vxByteOffset,
       vyByteOffset: heap.vyByteOffset,
       alphaByteOffset: heap.alphaByteOffset,
+      userDataByteOffset: heap.userDataByteOffset,
     });
     const views = LiquidFun.getViews();
     views.count[0] = 2;
@@ -824,10 +827,45 @@ test('packLiquidFunParticles: HEAP x/y/vx/vy into SSBO', () => {
     assert.equal(out[1], 20);
     assert.equal(out[2], 3);
     assert.equal(out[3], 4);
-    assert.equal(out[4], 50);
-    assert.equal(out[5], 60);
-    assert.equal(out[6], -1);
-    assert.equal(out[7], 8);
+    assert.equal(out[8], 50);
+    assert.equal(out[9], 60);
+    assert.equal(out[10], -1);
+    assert.equal(out[11], 8);
+    views.userData[0] = 255;
+    views.userData[1] = 1;
+    packLiquidFunParticles(1, out, 8);
+    const u32 = new Uint32Array(out.buffer, out.byteOffset, out.length);
+    assert.equal(u32[4], 255);
+    assert.equal(u32[4 + PARTICLE_FLOATS], 1);
+  } finally {
+    LiquidFun.unbindSabs();
+  }
+});
+
+test('packLiquidFunParticles: missing HEAP userData writes 0 (Q fire stays dark)', () => {
+  const n = 2;
+  const heap = makeLfHeap(n);
+  try {
+    LiquidFun.unbindSabs();
+    LiquidFun.bindHeapPose({
+      sab: heap.sab,
+      maxCount: n,
+      countByteOffset: heap.countByteOffset,
+      xByteOffset: heap.xByteOffset,
+      yByteOffset: heap.yByteOffset,
+      vxByteOffset: heap.vxByteOffset,
+      vyByteOffset: heap.vyByteOffset,
+      alphaByteOffset: heap.alphaByteOffset,
+    });
+    const views = LiquidFun.getViews();
+    views.count[0] = 1;
+    views.x[0] = 10;
+    views.y[0] = 20;
+    assert.equal(views.userData, null);
+    const out = new Float32Array(PARTICLE_FLOATS);
+    packLiquidFunParticles(1, out, 1);
+    const u32 = new Uint32Array(out.buffer, out.byteOffset, out.length);
+    assert.equal(u32[4], 0);
   } finally {
     LiquidFun.unbindSabs();
   }
@@ -882,8 +920,8 @@ test('packLiquidFunParticles: layerMask bit match; CPU particles; cap overflow',
     assert.equal(packed.particleCount, 2);
     assert.equal(out[0], 5);
     assert.equal(out[1], 6);
-    assert.equal(out[4], 70);
-    assert.equal(out[5], 71);
+    assert.equal(out[8], 70);
+    assert.equal(out[9], 71);
     views.layerMask[0] = 1 << 3;
     const two = packLiquidFunParticles(3, out, 8);
     assert.equal(two.particleCount, 3);
@@ -901,6 +939,21 @@ test('packLiquidFunParticles: layerMask bit match; CPU particles; cap overflow',
   }
 });
 
+test('fireParticles writes fuel.a; apply_stamp ignites on fuel.a not fuel.r', () => {
+  const particles = readFileSync(join(SHADER_DIR, 'fireParticles.wgsl'), 'utf8');
+  const fluid = readFileSync(join(SHADER_DIR, 'fireFluid.wgsl'), 'utf8');
+  assert.match(particles, /textureStore\(fuelWrite, id, vec4<f32>\(heat, p\.vx, p\.vy, 1\.0\)\)/);
+  const stampFn = fluid.slice(fluid.indexOf('fn apply_stamp('), fluid.indexOf('fn apply_body_vel('));
+  assert.match(stampFn, /fuel\.a > 0\.5/);
+  assert.equal(/fuel\.r > 0\.5/.test(stampFn), false);
+});
+
+test('ComputeLayer ends the compute pass when the layout changes', () => {
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../src/render/webgpu/computeLayer.js'), 'utf8');
+  assert.match(src, /_computePassLayout !== layout/);
+  assert.match(src, /_endStepPass\(\)/);
+});
+
 test('burningBoxesScene: landscape bg + particle fuel pass', () => {
   const scene = readFileSync(
     join(SHADER_DIR, '../burningBoxesScene.js'),
@@ -913,6 +966,17 @@ test('burningBoxesScene: landscape bg + particle fuel pass', () => {
   assert.match(scene, /maxParticles: FIRE_LF_MAX/);
   assert.match(scene, /densitySource: LAYER_DENSITY_SOURCE.LIQUID_FUN/);
   assert.match(scene, /layers: burning \? \['fire'\] : \['oil'\]/);
+  assert.match(scene, /Keyboard\.q \|\| Keyboard\.e/);
+  assert.match(scene, /OIL_DRIP_MS/);
+});
+
+test('burningBox click/F ignites crates in range', () => {
+  const box = readFileSync(
+    join(SHADER_DIR, '../gameObjects/burningBox.js'),
+    'utf8'
+  );
+  assert.match(box, /dx \* dx \+ dy \* dy < IGNITE_RANGE_SQ/);
+  assert.match(box, /this\.ignite\(\)/);
 });
 
 test('resolveComputeLayout: empty WGSL gets simple params+bodies+verts+out', () => {

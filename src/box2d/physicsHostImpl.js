@@ -1,4 +1,4 @@
-// Classic physics host — Scene's workers.physics IS box2d_wasm + weedjs_post + this file.
+// Classic physics host — Scene's workers.physics IS box2dWasm + weedjsPost + this file.
 // Speak Weed protocol (init/start/…) and call weedjsDoStep in-process (no nest Atomics).
 // Loaded only when wired as the physics worker (B2); skip on em-pthread pool threads.
 //
@@ -10,7 +10,7 @@
     return;
   }
   if (typeof weedjsEnableHostMode !== 'function' || typeof weedjsDoStep !== 'function') {
-    console.error('[physics_host] weedjs host APIs missing — load after weedjs_post.js');
+    console.error('[physics_host] weedjs host APIs missing — load after weedjsPost.js');
     return;
   }
 
@@ -50,6 +50,9 @@
       staticPressureStrength: 0.2,
       staticPressureRelaxation: 0.2,
       staticPressureIterations: 8,
+      ejectionStrength: 0.5,
+      colorMixingStrength: 0.5,
+      repulsiveStrength: 1,
     },
   };
 
@@ -176,6 +179,8 @@
     off += n * 4;
     var lastIndex = new Int32Array(sab, off, n);
     off += n * 4;
+    var groupFlags = new Int32Array(sab, off, n);
+    off += n * 4;
     var viscousScale = new Float32Array(sab, off, n);
     off += n * 4;
     var x = new Float32Array(sab, off, n);
@@ -199,6 +204,7 @@
       particleCount: particleCount,
       firstIndex: firstIndex,
       lastIndex: lastIndex,
+      groupFlags: groupFlags,
       viscousScale: viscousScale,
       x: x,
       y: y,
@@ -352,6 +358,18 @@
         1,
         (src.staticPressureIterations != null ? src.staticPressureIterations : d.staticPressureIterations) | 0,
       ),
+      ejectionStrength:
+        typeof src.ejectionStrength === 'number' && isFinite(src.ejectionStrength)
+          ? src.ejectionStrength
+          : d.ejectionStrength,
+      colorMixingStrength:
+        typeof src.colorMixingStrength === 'number' && isFinite(src.colorMixingStrength)
+          ? src.colorMixingStrength
+          : d.colorMixingStrength,
+      repulsiveStrength:
+        typeof src.repulsiveStrength === 'number' && isFinite(src.repulsiveStrength)
+          ? src.repulsiveStrength
+          : d.repulsiveStrength,
     };
   }
 
@@ -460,6 +478,7 @@
     queryAabbSab: null,
     rayCastSab: null,
     liquidFunQuerySab: null,
+    liquidFunExtractSab: null,
     contactSab: null,
     movedSab: null,
     hitSab: null,
@@ -527,6 +546,7 @@
       queryAabbSab: state.queryAabbSab,
       rayCastSab: state.rayCastSab,
       liquidFunQuerySab: state.liquidFunQuerySab,
+      liquidFunExtractSab: state.liquidFunExtractSab,
       contactSab: state.contactSab,
       movedSab: state.movedSab,
       hitSab: state.hitSab,
@@ -566,6 +586,8 @@
     Box2dRayCast.bindRayCastSab(state.rayCastSab);
     state.liquidFunQuerySab = LiquidFunQuery.createLiquidFunQuerySab();
     LiquidFunQuery.bindLiquidFunQuerySab(state.liquidFunQuerySab);
+    state.liquidFunExtractSab = LiquidFunExtract.createLiquidFunExtractSab();
+    LiquidFunExtract.bindLiquidFunExtractSab(state.liquidFunExtractSab);
     state.contactSab = Box2dContactRing.createContactRingSab(
       state.settings.contactRingCapacity,
     );
@@ -600,6 +622,7 @@
       queryAabbSab: state.queryAabbSab,
       rayCastSab: state.rayCastSab,
       liquidFunQuerySab: state.liquidFunQuerySab,
+      liquidFunExtractSab: state.liquidFunExtractSab,
       contactSab: state.contactSab,
       movedSab: state.movedSab,
       hitSab: state.hitSab,
@@ -724,6 +747,7 @@
         particleCount: packView(G.particleCount),
         firstIndex: packView(G.firstIndex),
         lastIndex: packView(G.lastIndex),
+        groupFlags: packView(G.groupFlags),
         viscousScale: packView(G.viscousScale),
         x: packView(G.x),
         y: packView(G.y),

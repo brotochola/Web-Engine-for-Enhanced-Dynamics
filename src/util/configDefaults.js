@@ -317,6 +317,9 @@ export const PHYSICS_DEFAULTS = Object.freeze({
     staticPressureStrength: 0.2,
     staticPressureRelaxation: 0.2,
     staticPressureIterations: 8,
+    ejectionStrength: 0.5,
+    colorMixingStrength: 0.5,
+    repulsiveStrength: 1,
   }),
 });
 

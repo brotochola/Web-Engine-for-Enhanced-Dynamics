@@ -150,7 +150,7 @@ The engine prepends a prelude to every compute WGSL and every WGSL look shader. 
 
 - `struct FrameData` + `@group(0) @binding(0) var<uniform> frame: FrameData;` (compute)
 - `struct Body` (compute) — matches the `BODY_FLOATS = 16` pack
-- `struct LfParticle` (compute) — matches the `PARTICLE_FLOATS = 4` pack (`x,y,vx,vy`)
+- `struct LfParticle` (compute) — matches the `PARTICLE_FLOATS = 8` pack (`x,y,vx,vy` + `userData: u32` + pad)
 - `struct GlobalUniforms` / `LocalUniforms` / `CustomUniforms` / `VertexOut`, the `customUniforms` / `uTexture` / `uSampler` bindings (look)
 
 Scene WGSL starts directly at its own structs/bindings/functions and reads frame data as `frame.dt`, `frame.cameraX`, and scene uniforms as `frame.uRise` (compute) or `customUniforms.uRise` (look). Field names in the generated structs are the **exact config uniform names**, in SAB order — reordering config can never corrupt the layout.

@@ -58,6 +58,19 @@ export function extractImportScriptNames(source) {
     return [...match[1].matchAll(/['"]([^'"]+\.js)['"]/g)].map((m) => m[1].split('/').pop());
 }
 
+/** Quoted .js filenames in every importScripts(...) call (wasm glue has one file per call). */
+export function extractAllImportScriptNames(source) {
+    const names = [];
+    const re = /importScripts\s*\(([\s\S]*?)\)/g;
+    let match;
+    while ((match = re.exec(source))) {
+        for (const m of match[1].matchAll(/['"]([^'"]+\.js)['"]/g)) {
+            names.push(m[1].split('/').pop());
+        }
+    }
+    return names;
+}
+
 /** Box2D blob-remap list: glue + every file weedjs_post importScripts. */
 export function listBox2dSiblingNames(weedPostSource) {
     return [...new Set([...BOX2D_ALWAYS_SIBLINGS, ...extractImportScriptNames(weedPostSource)])];
@@ -129,13 +142,23 @@ function buildBox2dWorkerSource() {
     );
     console.log(`   Box2D siblings: ${siblingNames.join(', ')}`);
 
-    const box2dGluePatched = box2dGlue.replace(
-        /importScripts\(\s*["']weedjs_post\.js["']\s*\)\s*;?\s*importScripts\(\s*["']physics_host\.impl\.js["']\s*\)/,
-        '/* weedjs_post + physics_host preloaded for bundle embed */',
-    ).replace(
-        /importScripts\(\s*["']weedjs_post\.js["']\s*\)/,
-        '/* weedjs_post preloaded for bundle embed */',
-    );
+    const box2dGluePatched = box2dGlue
+        .replace(
+            /importScripts\(\s*["']weedjsPost\.js["']\s*\)\s*;?\s*importScripts\(\s*["']physicsHostImpl\.js["']\s*\)/,
+            '/* weedjsPost + physicsHostImpl preloaded for bundle embed */',
+        )
+        .replace(
+            /importScripts\(\s*["']weedjs_post\.js["']\s*\)\s*;?\s*importScripts\(\s*["']physics_host\.impl\.js["']\s*\)/,
+            '/* weedjs_post + physics_host preloaded for bundle embed */',
+        )
+        .replace(
+            /importScripts\(\s*["']weedjsPost\.js["']\s*\)/,
+            '/* weedjsPost preloaded for bundle embed */',
+        )
+        .replace(
+            /importScripts\(\s*["']weedjs_post\.js["']\s*\)/,
+            '/* weedjs_post preloaded for bundle embed */',
+        );
 
     // gzip-before-base64; inflate async via DecompressionStream, then instantiate.
     return (

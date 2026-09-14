@@ -488,8 +488,18 @@ function createPhysicsApi(Module) {
     "number",
     "number",
     "number",
+    "number",
+    "number",
+    "number",
+    "number",
+    "number",
   ]);
   const createParticleGroupCircle = wrap("create_particle_group_circle", "number", [
+    "number",
+    "number",
+    "number",
+    "number",
+    "number",
     "number",
     "number",
     "number",
@@ -603,6 +613,8 @@ function createPhysicsApi(Module) {
     "number",
     "number",
     "number",
+    "number",
+    "number",
   ]);
   const getParticleGroupIndexByteOffset = wrap("get_particle_group_index_byte_offset", "number", []);
   const getParticleRestOffsetByteOffset = wrap("get_particle_rest_offset_byte_offset", "number", []);
@@ -660,6 +672,64 @@ function createPhysicsApi(Module) {
   const getParticleVxByteOffset = wrap("get_particle_vx_byte_offset", "number", []);
   const getParticleVyByteOffset = wrap("get_particle_vy_byte_offset", "number", []);
   const getParticleAlphaByteOffset = wrap("get_particle_alpha_byte_offset", "number", []);
+  const getParticleUserDataByteOffset = wrap("get_particle_user_data_byte_offset", "number", []);
+  const getParticleColorByteOffset = wrap("get_particle_color_byte_offset", "number", []);
+  const getParticleViscousScaleByteOffset = wrap("get_particle_viscous_scale_byte_offset", "number", []);
+  const setParticleUserDataFn = wrap("set_particle_user_data", null, ["number", "number"]);
+  const setParticleUserDataRangeFn = wrap("set_particle_user_data_range", null, [
+    "number",
+    "number",
+    "number",
+  ]);
+  const setParticleColorFn = wrap("set_particle_color", null, ["number", "number"]);
+  const setParticleColorRangeFn = wrap("set_particle_color_range", null, [
+    "number",
+    "number",
+    "number",
+  ]);
+  const setParticleFlagsFn = wrap("set_particle_flags", null, ["number", "number"]);
+  const setParticleViscousScaleFn = wrap("set_particle_viscous_scale", null, ["number", "number"]);
+  const setParticleViscousScaleRangeFn = wrap("set_particle_viscous_scale_range", null, [
+    "number",
+    "number",
+    "number",
+  ]);
+  const setParticleGroupFlagsFn = wrap("set_particle_group_flags", null, ["number", "number"]);
+  const destroyParticleFn = wrap("destroy_particle", null, ["number"]);
+  const createParticleFn = wrap("create_particle", "number", [
+    "number",
+    "number",
+    "number",
+    "number",
+    "number",
+    "number",
+    "number",
+  ]);
+  const particleApplyForceRangeFn = wrap("particle_apply_force_range", null, [
+    "number",
+    "number",
+    "number",
+    "number",
+  ]);
+  const particleApplyLinearImpulseRangeFn = wrap("particle_apply_linear_impulse_range", null, [
+    "number",
+    "number",
+    "number",
+    "number",
+  ]);
+  const setParticleExtraTuningFn = wrap("set_particle_extra_tuning", null, [
+    "number",
+    "number",
+    "number",
+  ]);
+  const getExtractIndicesByteOffset = wrap("get_extract_indices_byte_offset", "number", []);
+  const getExtractIndicesMax = wrap("get_extract_indices_max", "number", []);
+  const extractParticlesFn = wrap("extract_particles", "number", [
+    "number",
+    "number",
+    "number",
+    "number",
+  ]);
   const DEFAULT_MATERIAL = Object.freeze({
     density: 1.0,
     friction: 0.3,
@@ -1525,6 +1595,11 @@ function createPhysicsApi(Module) {
       viscousScale = 1,
       trackGroup = 0,
       groupFlags = 0,
+      vx = 0,
+      vy = 0,
+      omega = 0,
+      userData = 0,
+      color = 0,
     ) {
       if (!this._particleSystem) this.createParticleSystem();
       return createParticleGroupBox(
@@ -1541,6 +1616,11 @@ function createPhysicsApi(Module) {
         viscousScale > 0 ? viscousScale : 1,
         trackGroup ? 1 : 0,
         groupFlags >>> 0,
+        vx || 0,
+        vy || 0,
+        omega || 0,
+        userData >>> 0,
+        color >>> 0,
       );
     }
 
@@ -1557,6 +1637,11 @@ function createPhysicsApi(Module) {
       viscousScale = 1,
       trackGroup = 0,
       groupFlags = 0,
+      vx = 0,
+      vy = 0,
+      omega = 0,
+      userData = 0,
+      color = 0,
     ) {
       if (!this._particleSystem) this.createParticleSystem();
       return createParticleGroupCircle(
@@ -1572,6 +1657,11 @@ function createPhysicsApi(Module) {
         viscousScale > 0 ? viscousScale : 1,
         trackGroup ? 1 : 0,
         groupFlags >>> 0,
+        vx || 0,
+        vy || 0,
+        omega || 0,
+        userData >>> 0,
+        color >>> 0,
       );
     }
 
@@ -1595,6 +1685,11 @@ function createPhysicsApi(Module) {
         t.staticPressureStrength != null ? t.staticPressureStrength : 0.2,
         t.staticPressureRelaxation != null ? t.staticPressureRelaxation : 0.2,
         t.staticPressureIterations != null ? t.staticPressureIterations | 0 : 8,
+      );
+      setParticleExtraTuningFn(
+        t.ejectionStrength != null ? t.ejectionStrength : 0.5,
+        t.colorMixingStrength != null ? t.colorMixingStrength : 0.5,
+        t.repulsiveStrength != null ? t.repulsiveStrength : 1,
       );
     }
 
@@ -1726,13 +1821,15 @@ function createPhysicsApi(Module) {
      * @param {Float32Array} vy length count
      * @param {Uint32Array} flags length count
      * @returns {number} restored count, or negative error
+     * @param {Uint32Array} [userData]
+     * @param {Uint32Array} [color]
      */
-    restoreParticles(count, x, y, vx, vy, flags) {
+    restoreParticles(count, x, y, vx, vy, flags, userData, color) {
       const n = count | 0;
       if (n < 0) return -2;
       if (n === 0) {
         const empty = Module._malloc(4);
-        const r = restoreParticlesFn(0, empty, empty, empty, empty, empty);
+        const r = restoreParticlesFn(0, empty, empty, empty, empty, empty, 0, 0);
         Module._free(empty);
         return r;
       }
@@ -1742,17 +1839,29 @@ function createPhysicsApi(Module) {
       const vxPtr = Module._malloc(fBytes);
       const vyPtr = Module._malloc(fBytes);
       const flagsPtr = Module._malloc(fBytes);
+      let userPtr = 0;
+      let colorPtr = 0;
       Module.HEAPF32.set(x.subarray(0, n), xPtr >> 2);
       Module.HEAPF32.set(y.subarray(0, n), yPtr >> 2);
       Module.HEAPF32.set(vx.subarray(0, n), vxPtr >> 2);
       Module.HEAPF32.set(vy.subarray(0, n), vyPtr >> 2);
       heapU32().set(flags.subarray(0, n), flagsPtr >> 2);
-      const r = restoreParticlesFn(n, xPtr, yPtr, vxPtr, vyPtr, flagsPtr);
+      if (userData) {
+        userPtr = Module._malloc(fBytes);
+        heapU32().set(userData.subarray(0, n), userPtr >> 2);
+      }
+      if (color) {
+        colorPtr = Module._malloc(fBytes);
+        heapU32().set(color.subarray(0, n), colorPtr >> 2);
+      }
+      const r = restoreParticlesFn(n, xPtr, yPtr, vxPtr, vyPtr, flagsPtr, userPtr, colorPtr);
       Module._free(xPtr);
       Module._free(yPtr);
       Module._free(vxPtr);
       Module._free(vyPtr);
       Module._free(flagsPtr);
+      if (userPtr) Module._free(userPtr);
+      if (colorPtr) Module._free(colorPtr);
       return r;
     }
 
@@ -1774,6 +1883,8 @@ function createPhysicsApi(Module) {
           vx: new Float32Array(0),
           vy: new Float32Array(0),
           flags: new Uint32Array(0),
+          userData: new Uint32Array(0),
+          color: new Uint32Array(0),
           groupIndex: new Int32Array(0),
           restOffset: new Float32Array(0),
           groups: null,
@@ -1792,6 +1903,12 @@ function createPhysicsApi(Module) {
       const vx = new Float32Array(new Float32Array(buf, vxOff, count));
       const vy = new Float32Array(new Float32Array(buf, vyOff, count));
       const flags = new Uint32Array(new Uint32Array(buf, flagsOff, count));
+      let userData = new Uint32Array(count);
+      let color = new Uint32Array(count);
+      const udOff = getParticleUserDataByteOffset() | 0;
+      const colOff = getParticleColorByteOffset() | 0;
+      if (udOff) userData = new Uint32Array(new Uint32Array(buf, udOff, count));
+      if (colOff) color = new Uint32Array(new Uint32Array(buf, colOff, count));
 
       let groupIndex = new Int32Array(count);
       let restOffset = new Float32Array(count * 2);
@@ -1881,6 +1998,8 @@ function createPhysicsApi(Module) {
         vx,
         vy,
         flags,
+        userData,
+        color,
         groupIndex,
         restOffset,
         groups,
@@ -2039,6 +2158,84 @@ function createPhysicsApi(Module) {
 
     getParticleAlphaByteOffset() {
       return getParticleAlphaByteOffset();
+    }
+
+    getParticleUserDataByteOffset() {
+      return getParticleUserDataByteOffset();
+    }
+
+    getParticleColorByteOffset() {
+      return getParticleColorByteOffset();
+    }
+
+    getParticleViscousScaleByteOffset() {
+      return getParticleViscousScaleByteOffset();
+    }
+
+    getParticleGroupIndexByteOffset() {
+      return getParticleGroupIndexByteOffset();
+    }
+
+    setParticleUserData(index, bits) {
+      setParticleUserDataFn(index | 0, bits >>> 0);
+    }
+
+    setParticleUserDataRange(first, last, bits) {
+      setParticleUserDataRangeFn(first | 0, last | 0, bits >>> 0);
+    }
+
+    setParticleColor(index, rgba) {
+      setParticleColorFn(index | 0, rgba >>> 0);
+    }
+
+    setParticleColorRange(first, last, rgba) {
+      setParticleColorRangeFn(first | 0, last | 0, rgba >>> 0);
+    }
+
+    setParticleFlags(index, flags) {
+      setParticleFlagsFn(index | 0, flags >>> 0);
+    }
+
+    setParticleViscousScale(index, scale) {
+      setParticleViscousScaleFn(index | 0, scale);
+    }
+
+    setParticleViscousScaleRange(first, last, scale) {
+      setParticleViscousScaleRangeFn(first | 0, last | 0, scale);
+    }
+
+    setParticleGroupFlags(groupId, flags) {
+      setParticleGroupFlagsFn(groupId | 0, flags >>> 0);
+    }
+
+    destroyParticle(index) {
+      destroyParticleFn(index | 0);
+    }
+
+    createParticle(x, y, vx, vy, flags, userData, color) {
+      return createParticleFn(x, y, vx || 0, vy || 0, flags >>> 0, userData >>> 0, color >>> 0);
+    }
+
+    particleApplyForceRange(first, last, fx, fy) {
+      particleApplyForceRangeFn(first | 0, last | 0, fx, fy);
+    }
+
+    particleApplyLinearImpulseRange(first, last, ix, iy) {
+      particleApplyLinearImpulseRangeFn(first | 0, last | 0, ix, iy);
+    }
+
+    extractParticles(groupId, count, groupFlags, trackGroup) {
+      return extractParticlesFn(groupId | 0, count | 0, groupFlags >>> 0, trackGroup ? 1 : 0);
+    }
+
+    fillExtractIndices(indices, count) {
+      const n = count | 0;
+      if (n <= 0) return;
+      const cap = getExtractIndicesMax() | 0;
+      const write = n < cap ? n : cap;
+      const off = getExtractIndicesByteOffset() | 0;
+      if (!off) return;
+      Module.HEAP32.set(indices.subarray(0, write), off >> 2);
     }
 
     syncActiveParticleGroups(maxGroups) {

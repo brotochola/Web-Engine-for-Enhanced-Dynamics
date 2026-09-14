@@ -27,9 +27,9 @@ fn raster_particles(@builtin(global_invocation_id) gid: vec3<u32>) {
   let i = i32(gid.x);
   let n = i32(frame.particleCount);
   if (i >= n) { return; }
-  let heat = clamp(frame.uLfHeat, 0.0, 1.0);
-  if (heat <= 0.0) { return; }
   let p = particles[i];
+  let heat = (f32(p.userData & 0xFFu) / 255.0) * clamp(frame.uLfHeat, 0.0, 1.0);
+  if (heat <= 0.0) { return; }
   let h = cell_h();
   let r = max(frame.uLfRadius, h);
   let reach = i32(ceil(r / h));

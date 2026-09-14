@@ -400,7 +400,7 @@ fn apply_stamp(@builtin(global_invocation_id) gid: vec3<u32>) {
       t = 0.0;
     }
     // else moving cold solid: keep t so advect can sample it from the front
-  } else if (mark.g > 0.5 || fuel.r > 0.5) {
+  } else if (mark.g > 0.5 || fuel.a > 0.5) {
     t = 1.0;
   }
   textureStore(tWrite, id, vec4<f32>(t, 0.0, 0.0, 0.0));
@@ -448,7 +448,7 @@ fn apply_body_vel(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
   }
   let fuel = textureLoad(fuelTex, id, 0);
-  if (fuel.r > 0.5) {
+  if (fuel.a > 0.5) {
     let d = clamp(frame.uLfDrive, 0.0, 1.0);
     u = mix(u, fuel.g, d);
     v = mix(v, fuel.b, d);

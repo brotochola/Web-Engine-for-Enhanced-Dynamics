@@ -17,6 +17,8 @@ export function packLiquidFunSnapshot(snap) {
     vx: snap.vx,
     vy: snap.vy,
     flags: snap.flags,
+    userData: snap.userData || null,
+    color: snap.color || null,
     groupIndex: snap.groupIndex || null,
     restOffset: snap.restOffset || null,
     groups: snap.groups && snap.groups.slotCount > 0 ? snap.groups : null,
@@ -39,6 +41,8 @@ export function unpackLiquidFunSnapshot(blob) {
       vx: new Float32Array(0),
       vy: new Float32Array(0),
       flags: new Uint32Array(0),
+      userData: null,
+      color: null,
       groupIndex: null,
       restOffset: null,
       groups: null,
@@ -122,6 +126,8 @@ export function requestLiquidFunRestore(physicsWorker, payload, timeoutMs = 5000
     pushBuf(payload?.vx);
     pushBuf(payload?.vy);
     pushBuf(payload?.flags);
+    pushBuf(payload?.userData);
+    pushBuf(payload?.color);
     pushBuf(payload?.groupIndex);
     pushBuf(payload?.restOffset);
     if (payload?.groups) {

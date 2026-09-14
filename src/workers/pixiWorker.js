@@ -170,7 +170,7 @@ function applyComputeTexSizeUniform(cl) {
 }
 import { writeRgba32Float } from '../render/webgpu/pinGpuTexture.js';
 import { lightingGpuProgram, lookGpuProgram, gpuProgramFromWgsl, isWgslSource } from '../render/webgpu/pixiMeshWgsl.js';
-import { prependLookPrelude } from '../render/webgpu/wgslPrelude.js';
+import { prependLookPrelude, findWgslUseBeforeDeclare } from '../render/webgpu/wgslPrelude.js';
 import {
   normalizeRendererBackend,
   assertLookShaderCompatible,
@@ -4143,6 +4143,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             Layer._metadata?.layers?.[lid]?.uniformTypes || null
           );
         }
+        const earlyLook = findWgslUseBeforeDeclare(wgslSource);
+        if (earlyLook.length) {
+          throw new Error(
+            earlyLook.map((e) => `'${e.name}' used before declaration (line ${e.line})`).join('; ')
+          );
+        }
         const gpuProgram = lookGpuProgram(
           GpuProgram,
           wgslSource,
@@ -4333,7 +4339,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             throw new Error(cl.compute._compileErrorMessage || 'compute pipeline failed');
           }
         } catch (err) {
-          throw errorCompileFailed('compute', config.shaderName || layerName, layerName, 'WebGPU', err);
+          const computeAsset =
+            (config.compute?.passes || [])
+              .map((p) => p.source || p.entry)
+              .filter(Boolean)
+              .join(',') ||
+            config.shaderName ||
+            layerName;
+          throw errorCompileFailed('compute', computeAsset, layerName, 'WebGPU', err);
         }
       }
 

@@ -27,6 +27,7 @@ test('compute prelude: FrameData prefix fields + frame binding + Body', () => {
   assert.ok(out.includes('@group(0) @binding(0) var<uniform> frame: FrameData;'));
   assert.ok(out.includes('struct Body {'));
   assert.ok(out.includes('struct LfParticle {'));
+  assert.ok(out.includes('userData: u32,'));
   assert.ok(out.includes('vertStart: f32,'));
   assert.ok(out.includes('prevX: f32,'));
   assert.ok(out.includes('prevY: f32,'));

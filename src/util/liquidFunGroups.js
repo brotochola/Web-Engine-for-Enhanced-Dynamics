@@ -8,8 +8,8 @@ export const LIQUIDFUN_GROUPS_MAX = 256;
 
 export function liquidFunGroupsByteSize(maxGroups = LIQUIDFUN_GROUPS_MAX) {
   const n = maxGroups | 0;
-  // count i32 + id/particleCount/first/last i32 + 7 f32 pose + lightIntensity + sqrtLightIntensity (by group id)
-  const bytes = 4 + n * 4 * 13;
+  // count i32 + id/particleCount/first/last/groupFlags i32 + 7 f32 pose + lightIntensity + sqrtLightIntensity (by group id)
+  const bytes = 4 + n * 4 * 14;
   return (bytes + 3) & ~3;
 }
 
@@ -25,6 +25,8 @@ export function bindLiquidFunGroups(sab, maxGroups = LIQUIDFUN_GROUPS_MAX) {
   const firstIndex = new Int32Array(sab, off, n);
   off += n * 4;
   const lastIndex = new Int32Array(sab, off, n);
+  off += n * 4;
+  const groupFlags = new Int32Array(sab, off, n);
   off += n * 4;
   const viscousScale = new Float32Array(sab, off, n);
   off += n * 4;
@@ -49,6 +51,7 @@ export function bindLiquidFunGroups(sab, maxGroups = LIQUIDFUN_GROUPS_MAX) {
     particleCount,
     firstIndex,
     lastIndex,
+    groupFlags,
     viscousScale,
     x,
     y,

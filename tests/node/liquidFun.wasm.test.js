@@ -1626,4 +1626,223 @@ test('WASM restore_particles SoA roundtrip matches x/y/vx/vy', () => {
   assert.deepEqual([...vys], [...vy]);
 });
 
+const LF_COLOR_MIXING = 1 << 9;
+const LF_REPULSIVE = 1 << 10;
+const LF_REACTIVE = 1 << 11;
+const LF_SPRING = 1 << 6;
+const LF_VISCOUS = 1 << 2;
+
+test('WASM compact preserves userData and color', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  const createWorld = fn('create_world');
+  const bindGameBuffers = fn('bind_game_buffers');
+  const createParticleSystem = fn('create_particle_system');
+  const createParticleGroupBox = fn('create_particle_group_box');
+  const getParticleCount = fn('get_particle_count');
+  const getFlagsOff = fn('get_particle_flags_byte_offset');
+  const getUserOff = fn('get_particle_user_data_byte_offset');
+  const getColorOff = fn('get_particle_color_byte_offset');
+  const stepWorld = fn('step_world');
+
+  const worldId = createWorld(0, 0, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(bindGameBuffers(16));
+  assert.ok(createParticleSystem(worldId, 10, 1.0, 500));
+
+  const UD = 0x80000001;
+  const COL = 0xff112233;
+  const gid = createParticleGroupBox(-60, -40, 60, 40, 0, 0, 0.5, 0, 0, 0, 1, 1, 0, 0, 0, 0, UD, COL);
+  assert.ok(gid >= 0, `group create failed: ${gid}`);
+  const n0 = getParticleCount();
+  assert.ok(n0 >= 9);
+  const user0 = new Uint32Array(memory.buffer, getUserOff(), n0);
+  const color0 = new Uint32Array(memory.buffer, getColorOff(), n0);
+  for (let i = 0; i < n0; i++) {
+    assert.equal(user0[i], UD);
+    assert.equal(color0[i], COL);
+  }
+
+  const flags = new Uint32Array(memory.buffer, getFlagsOff(), n0);
+  flags[(n0 >> 1)] |= LF_ZOMBIE;
+  flags[(n0 >> 1) + 1] |= LF_ZOMBIE;
+  flags[(n0 >> 1) - 1] |= LF_ZOMBIE;
+  stepWorld(worldId, 1 / 60, 1);
+  const n1 = getParticleCount();
+  assert.equal(n1, n0 - 3);
+  const user1 = new Uint32Array(memory.buffer, getUserOff(), n1);
+  const color1 = new Uint32Array(memory.buffer, getColorOff(), n1);
+  for (let i = 0; i < n1; i++) {
+    assert.equal(user1[i], UD);
+    assert.equal(color1[i], COL);
+  }
+});
+
+test('WASM color mixing moves packed RGBA toward neighbor', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  const createWorld = fn('create_world');
+  const bindGameBuffers = fn('bind_game_buffers');
+  const createParticleSystem = fn('create_particle_system');
+  const createParticle = fn('create_particle');
+  const getParticleCount = fn('get_particle_count');
+  const getColorOff = fn('get_particle_color_byte_offset');
+  const setExtra = fn('set_particle_extra_tuning');
+  const stepWorld = fn('step_world');
+
+  const worldId = createWorld(0, 0, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(bindGameBuffers(16));
+  assert.ok(createParticleSystem(worldId, 10, 1.0, 500));
+  setExtra(0.5, 0.5, 1);
+
+  const a = createParticle(0, 0, 0, 0, LF_COLOR_MIXING, 0, 0xffff0000);
+  const b = createParticle(8, 0, 0, 0, LF_COLOR_MIXING, 0, 0xff0000ff);
+  assert.ok(a >= 0 && b >= 0);
+  assert.equal(getParticleCount(), 2);
+  for (let i = 0; i < 12; i++) stepWorld(worldId, 1 / 60, 1);
+  const col = new Uint32Array(memory.buffer, getColorOff(), 2);
+  const r0 = (col[0] >>> 16) & 255;
+  const b0 = col[0] & 255;
+  const r1 = (col[1] >>> 16) & 255;
+  const b1 = col[1] & 255;
+  assert.ok(b0 > 0, `left particle B should rise, got 0x${col[0].toString(16)}`);
+  assert.ok(r1 > 0, `right particle R should rise, got 0x${col[1].toString(16)}`);
+  assert.ok(r0 < 255 || b1 < 255);
+});
+
+test('WASM repulsive pushes other-group neighbors apart', () => {
+  // get_particle_group_vx is create-time cache unless UpdateGroupStatistics ran
+  // (shape / solid / rigid only). Assert on HEAP pose.
+  function gapAfter(flags) {
+    const { memory, fn } = instantiateBox2dWasm();
+    const createWorld = fn('create_world');
+    const bindGameBuffers = fn('bind_game_buffers');
+    const createParticleSystem = fn('create_particle_system');
+    const createParticleGroupBox = fn('create_particle_group_box');
+    const getXOff = fn('get_particle_x_byte_offset');
+    const getFirst = fn('get_particle_group_first_index');
+    const getLast = fn('get_particle_group_last_index');
+    const setExtra = fn('set_particle_extra_tuning');
+    const stepWorld = fn('step_world');
+
+    const worldId = createWorld(0, 0, 100, 30, 0.7, 3, 4000, 1);
+    assert.ok(worldId);
+    assert.ok(bindGameBuffers(16));
+    assert.ok(createParticleSystem(worldId, 10, 1.0, 500));
+    setExtra(0.5, 0.5, 1);
+
+    const left = createParticleGroupBox(-24, -16, 6, 16, 0, flags, 0.5, 0, 0, 0, 1, 1, 0);
+    const right = createParticleGroupBox(-6, -16, 24, 16, 0, flags, 0.5, 0, 0, 0, 1, 1, 0);
+    assert.ok(left >= 0 && right >= 0);
+    for (let i = 0; i < 8; i++) stepWorld(worldId, 1 / 60, 1);
+
+    const x = new Float32Array(memory.buffer, getXOff());
+    const mean = (gid) => {
+      const a = getFirst(gid);
+      const b = getLast(gid);
+      let s = 0;
+      for (let i = a; i < b; i++) s += x[i];
+      return s / (b - a);
+    };
+    return mean(right) - mean(left);
+  }
+
+  const waterGap = gapAfter(0);
+  const repulsiveGap = gapAfter(LF_REPULSIVE);
+  assert.ok(
+    repulsiveGap > waterGap + 0.25,
+    `repulsive gap ${repulsiveGap} should exceed water ${waterGap}`,
+  );
+});
+
+test('WASM reactive clears flag after pair recapture', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  const createWorld = fn('create_world');
+  const bindGameBuffers = fn('bind_game_buffers');
+  const createParticleSystem = fn('create_particle_system');
+  const createParticle = fn('create_particle');
+  const getParticleCount = fn('get_particle_count');
+  const getFlagsOff = fn('get_particle_flags_byte_offset');
+  const stepWorld = fn('step_world');
+
+  const worldId = createWorld(0, 0, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(bindGameBuffers(16));
+  assert.ok(createParticleSystem(worldId, 10, 1.0, 500));
+  const bits = LF_SPRING | LF_REACTIVE;
+  assert.ok(createParticle(0, 0, 0, 0, bits, 0, 0) >= 0);
+  assert.ok(createParticle(8, 0, 0, 0, bits, 0, 0) >= 0);
+  assert.equal(getParticleCount(), 2);
+  const flags0 = new Uint32Array(memory.buffer, getFlagsOff(), 2);
+  assert.equal(flags0[0] & LF_REACTIVE, LF_REACTIVE);
+  stepWorld(worldId, 1 / 60, 1);
+  const flags1 = new Uint32Array(memory.buffer, getFlagsOff(), 2);
+  assert.equal(flags1[0] & LF_REACTIVE, 0);
+  assert.equal(flags1[1] & LF_REACTIVE, 0);
+  assert.equal(flags1[0] & LF_SPRING, LF_SPRING);
+});
+
+test('WASM extract pulls subset out of rigid group', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  const createWorld = fn('create_world');
+  const bindGameBuffers = fn('bind_game_buffers');
+  const createParticleSystem = fn('create_particle_system');
+  const createParticleGroupBox = fn('create_particle_group_box');
+  const getParticleCount = fn('get_particle_count');
+  const getCount = fn('get_particle_group_particle_count');
+  const getGroupFlags = fn('get_particle_group_flags');
+  const getFirst = fn('get_particle_group_first_index');
+  const getLast = fn('get_particle_group_last_index');
+  const getIdxOff = fn('get_extract_indices_byte_offset');
+  const extractParticles = fn('extract_particles');
+
+  const worldId = createWorld(0, 0, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(bindGameBuffers(16));
+  assert.ok(createParticleSystem(worldId, 10, 1.0, 500));
+  const gid = createParticleGroupBox(-40, -20, 40, 20, 0, 0, 0.5, 0, 0, 0, 1, 1, LF_RIGID_GROUP);
+  assert.ok(gid >= 0);
+  const n0 = getParticleCount();
+  const nGroup = getCount(gid);
+  assert.ok(nGroup >= 4);
+  assert.equal(getGroupFlags(gid) & LF_RIGID_GROUP, LF_RIGID_GROUP);
+  const first = getFirst(gid);
+  const last = getLast(gid);
+  const idx = new Int32Array(memory.buffer, getIdxOff(), 4096);
+  const take = 3;
+  for (let i = 0; i < take; i++) idx[i] = last - 1 - i;
+  const newId = extractParticles(gid, take, 0, 1);
+  assert.ok(newId >= 0 && newId !== gid, `extract ${newId}`);
+  assert.equal(getParticleCount(), n0);
+  assert.equal(getCount(gid), nGroup - take);
+  assert.equal(getGroupFlags(gid) & LF_RIGID_GROUP, LF_RIGID_GROUP);
+  assert.equal(getGroupFlags(newId) & LF_RIGID_GROUP, 0);
+  assert.equal(getCount(newId), take);
+});
+
+test('WASM setGroupFlags and per-index viscousScale', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  const createWorld = fn('create_world');
+  const bindGameBuffers = fn('bind_game_buffers');
+  const createParticleSystem = fn('create_particle_system');
+  const createParticleGroupBox = fn('create_particle_group_box');
+  const setGroupFlags = fn('set_particle_group_flags');
+  const getGroupFlags = fn('get_particle_group_flags');
+  const setVisc = fn('set_particle_viscous_scale');
+  const getViscOff = fn('get_particle_viscous_scale_byte_offset');
+  const getFirst = fn('get_particle_group_first_index');
+
+  const worldId = createWorld(0, 0, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(bindGameBuffers(16));
+  assert.ok(createParticleSystem(worldId, 10, 1.0, 500));
+  const gid = createParticleGroupBox(-20, -20, 20, 20, 0, LF_VISCOUS, 0.5, 0, 0, 0, 1, 1, LF_RIGID_GROUP);
+  assert.ok(gid >= 0);
+  assert.equal(getGroupFlags(gid) & LF_RIGID_GROUP, LF_RIGID_GROUP);
+  setGroupFlags(gid, 0);
+  assert.equal(getGroupFlags(gid) & LF_RIGID_GROUP, 0);
+  const i0 = getFirst(gid);
+  setVisc(i0, 3.25);
+  const visc = new Float32Array(memory.buffer, getViscOff(), i0 + 1);
+  assert.ok(Math.abs(visc[i0] - 3.25) < 1e-5);
+});
 

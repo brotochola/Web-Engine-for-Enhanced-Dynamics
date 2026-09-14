@@ -37,6 +37,20 @@
     SET_AWAKE: 25, // entity, flag (0|1) — b2Body_SetAwake
     SET_LIQUIDFUN_LIGHT: 26, // a=lightIntensity; next create consumes; 0 = not a light
     SET_LIQUIDFUN_LAYERS: 27, // entity=layerMask u16; next create consumes
+    SET_PARTICLE_USER_DATA: 28, // entity=index; bits in i32 slot 3
+    SET_PARTICLE_USER_DATA_RANGE: 29, // entity=first; last i32[3]; bits i32[4]
+    SET_PARTICLE_COLOR: 30, // entity=index; rgba i32[3]
+    SET_PARTICLE_COLOR_RANGE: 31, // entity=first; last i32[3]; rgba i32[4]
+    SET_PARTICLE_FLAGS: 32, // entity=index; flags i32[3]
+    SET_PARTICLE_VISCOUS_SCALE: 33, // entity=index, a=scale
+    SET_PARTICLE_VISCOUS_SCALE_RANGE: 34, // entity=first, a=last, b=scale
+    SET_GROUP_FLAGS: 35, // entity=groupId; flags i32[3]
+    DESTROY_PARTICLE: 36, // entity=index
+    CREATE_PARTICLE: 37, // entity=flags; x,y,vx,vy
+    SET_LIQUIDFUN_PAYLOAD: 38, // entity=userData; color i32[3]; vx,vy,omega f32
+    PARTICLE_APPLY_FORCE_RANGE: 39, // entity=first; last i32[3]; fx,fy
+    PARTICLE_APPLY_IMPULSE_RANGE: 40, // entity=first; last i32[3]; ix,iy
+    EXTRACT_PARTICLES: 41, // entity=groupId; count, groupFlags, trackGroup (SAB holds indices)
   });
 
   var BOX2D_CMD_HEADER_I32 = 4;
@@ -260,7 +274,214 @@
         0,
         0,
       ) && ok;
+    ok =
+      enqueue(
+        BOX2D_CMD.SET_PARTICLE_TUNING,
+        3,
+        o.ejectionStrength != null ? o.ejectionStrength : 0.5,
+        o.colorMixingStrength != null ? o.colorMixingStrength : 0.5,
+        o.repulsiveStrength != null ? o.repulsiveStrength : 1,
+        0,
+      ) && ok;
     return ok;
+  }
+
+  function enqueueBits(opcode, entity, bits) {
+    if (!ringI32) return false;
+    var cap = capacity;
+    for (;;) {
+      var write = Atomics.load(ringI32, HDR_WRITE);
+      var read = Atomics.load(ringI32, HDR_READ);
+      if (write - read >= cap) {
+        Atomics.add(ringI32, HDR_OVERFLOW, 1);
+        return false;
+      }
+      if (Atomics.compareExchange(ringI32, HDR_WRITE, write, write + 1) !== write) {
+        continue;
+      }
+      var base = BOX2D_CMD_HEADER_I32 + (write % cap) * BOX2D_CMD_STRIDE_I32;
+      while (Atomics.load(ringI32, base) !== write) {
+        /* wait */
+      }
+      ringI32[base + 1] = opcode | 0;
+      ringI32[base + 2] = entity | 0;
+      ringI32[base + 3] = bits >>> 0;
+      ringF32[base + 4] = 0;
+      ringF32[base + 5] = 0;
+      ringF32[base + 6] = 0;
+      Atomics.store(ringI32, base, write + 1);
+      return true;
+    }
+  }
+
+  function enqueueRangeBits(opcode, first, last, bits) {
+    if (!ringI32) return false;
+    var cap = capacity;
+    for (;;) {
+      var write = Atomics.load(ringI32, HDR_WRITE);
+      var read = Atomics.load(ringI32, HDR_READ);
+      if (write - read >= cap) {
+        Atomics.add(ringI32, HDR_OVERFLOW, 1);
+        return false;
+      }
+      if (Atomics.compareExchange(ringI32, HDR_WRITE, write, write + 1) !== write) {
+        continue;
+      }
+      var base = BOX2D_CMD_HEADER_I32 + (write % cap) * BOX2D_CMD_STRIDE_I32;
+      while (Atomics.load(ringI32, base) !== write) {
+        /* wait */
+      }
+      ringI32[base + 1] = opcode | 0;
+      ringI32[base + 2] = first | 0;
+      ringI32[base + 3] = last | 0;
+      ringI32[base + 4] = bits >>> 0;
+      ringF32[base + 5] = 0;
+      ringF32[base + 6] = 0;
+      Atomics.store(ringI32, base, write + 1);
+      return true;
+    }
+  }
+
+  function enqueueSetParticleUserData(index, bits) {
+    return enqueueBits(BOX2D_CMD.SET_PARTICLE_USER_DATA, index | 0, bits);
+  }
+
+  function enqueueSetParticleUserDataRange(first, last, bits) {
+    return enqueueRangeBits(BOX2D_CMD.SET_PARTICLE_USER_DATA_RANGE, first | 0, last | 0, bits);
+  }
+
+  function enqueueSetParticleColor(index, rgba) {
+    return enqueueBits(BOX2D_CMD.SET_PARTICLE_COLOR, index | 0, rgba);
+  }
+
+  function enqueueSetParticleColorRange(first, last, rgba) {
+    return enqueueRangeBits(BOX2D_CMD.SET_PARTICLE_COLOR_RANGE, first | 0, last | 0, rgba);
+  }
+
+  function enqueueSetParticleFlags(index, flags) {
+    return enqueueBits(BOX2D_CMD.SET_PARTICLE_FLAGS, index | 0, flags);
+  }
+
+  function enqueueSetParticleViscousScale(index, scale) {
+    return enqueue(BOX2D_CMD.SET_PARTICLE_VISCOUS_SCALE, index | 0, scale > 0 ? scale : 1, 0, 0, 0);
+  }
+
+  function enqueueSetParticleViscousScaleRange(first, last, scale) {
+    return enqueue(
+      BOX2D_CMD.SET_PARTICLE_VISCOUS_SCALE_RANGE,
+      first | 0,
+      last | 0,
+      scale > 0 ? scale : 1,
+      0,
+      0,
+    );
+  }
+
+  function enqueueSetGroupFlags(groupId, flags) {
+    return enqueueBits(BOX2D_CMD.SET_GROUP_FLAGS, groupId | 0, flags);
+  }
+
+  function enqueueDestroyParticle(index) {
+    return enqueue(BOX2D_CMD.DESTROY_PARTICLE, index | 0, 0, 0, 0, 0);
+  }
+
+  function enqueueCreateParticle(x, y, vx, vy, flags) {
+    return enqueue(BOX2D_CMD.CREATE_PARTICLE, flags || 0, x, y, vx || 0, vy || 0);
+  }
+
+  function enqueueSetLiquidFunPayload(userData, color, vx, vy, omega) {
+    if (!ringI32) return false;
+    var cap = capacity;
+    for (;;) {
+      var write = Atomics.load(ringI32, HDR_WRITE);
+      var read = Atomics.load(ringI32, HDR_READ);
+      if (write - read >= cap) {
+        Atomics.add(ringI32, HDR_OVERFLOW, 1);
+        return false;
+      }
+      if (Atomics.compareExchange(ringI32, HDR_WRITE, write, write + 1) !== write) {
+        continue;
+      }
+      var base = BOX2D_CMD_HEADER_I32 + (write % cap) * BOX2D_CMD_STRIDE_I32;
+      while (Atomics.load(ringI32, base) !== write) {
+        /* wait */
+      }
+      ringI32[base + 1] = BOX2D_CMD.SET_LIQUIDFUN_PAYLOAD;
+      ringI32[base + 2] = userData >>> 0;
+      ringI32[base + 3] = color >>> 0;
+      ringF32[base + 4] = vx || 0;
+      ringF32[base + 5] = vy || 0;
+      ringF32[base + 6] = omega || 0;
+      Atomics.store(ringI32, base, write + 1);
+      return true;
+    }
+  }
+
+  function enqueueParticleApplyForceRange(first, last, fx, fy) {
+    if (!ringI32) return false;
+    var cap = capacity;
+    for (;;) {
+      var write = Atomics.load(ringI32, HDR_WRITE);
+      var read = Atomics.load(ringI32, HDR_READ);
+      if (write - read >= cap) {
+        Atomics.add(ringI32, HDR_OVERFLOW, 1);
+        return false;
+      }
+      if (Atomics.compareExchange(ringI32, HDR_WRITE, write, write + 1) !== write) {
+        continue;
+      }
+      var base = BOX2D_CMD_HEADER_I32 + (write % cap) * BOX2D_CMD_STRIDE_I32;
+      while (Atomics.load(ringI32, base) !== write) {
+        /* wait */
+      }
+      ringI32[base + 1] = BOX2D_CMD.PARTICLE_APPLY_FORCE_RANGE;
+      ringI32[base + 2] = first | 0;
+      ringI32[base + 3] = last | 0;
+      ringF32[base + 4] = fx;
+      ringF32[base + 5] = fy;
+      ringF32[base + 6] = 0;
+      Atomics.store(ringI32, base, write + 1);
+      return true;
+    }
+  }
+
+  function enqueueParticleApplyImpulseRange(first, last, ix, iy) {
+    if (!ringI32) return false;
+    var cap = capacity;
+    for (;;) {
+      var write = Atomics.load(ringI32, HDR_WRITE);
+      var read = Atomics.load(ringI32, HDR_READ);
+      if (write - read >= cap) {
+        Atomics.add(ringI32, HDR_OVERFLOW, 1);
+        return false;
+      }
+      if (Atomics.compareExchange(ringI32, HDR_WRITE, write, write + 1) !== write) {
+        continue;
+      }
+      var base = BOX2D_CMD_HEADER_I32 + (write % cap) * BOX2D_CMD_STRIDE_I32;
+      while (Atomics.load(ringI32, base) !== write) {
+        /* wait */
+      }
+      ringI32[base + 1] = BOX2D_CMD.PARTICLE_APPLY_IMPULSE_RANGE;
+      ringI32[base + 2] = first | 0;
+      ringI32[base + 3] = last | 0;
+      ringF32[base + 4] = ix;
+      ringF32[base + 5] = iy;
+      ringF32[base + 6] = 0;
+      Atomics.store(ringI32, base, write + 1);
+      return true;
+    }
+  }
+
+  function enqueueExtractParticles(groupId, count, groupFlags, trackGroup) {
+    return enqueue(
+      BOX2D_CMD.EXTRACT_PARTICLES,
+      groupId | 0,
+      count | 0,
+      groupFlags >>> 0,
+      trackGroup ? 1 : 0,
+      0,
+    );
   }
 
   function enqueueSetGroupViscousScale(groupId, scale) {
@@ -323,6 +544,8 @@
       if (Atomics.load(i32, base) !== read + 1) break;
       var op = i32[base + 1] | 0;
       var entity = i32[base + 2] | 0;
+      var aI = i32[base + 3] | 0;
+      var bI = i32[base + 4] | 0;
       var a = f32[base + 3];
       var b = f32[base + 4];
       var c = f32[base + 5];
@@ -409,6 +632,48 @@
         case BOX2D_CMD.GROUP_APPLY_IMPULSE:
           if (handlers.groupApplyImpulse) handlers.groupApplyImpulse(entity, a, b);
           break;
+        case BOX2D_CMD.SET_PARTICLE_USER_DATA:
+          if (handlers.setParticleUserData) handlers.setParticleUserData(entity, aI >>> 0);
+          break;
+        case BOX2D_CMD.SET_PARTICLE_USER_DATA_RANGE:
+          if (handlers.setParticleUserDataRange) handlers.setParticleUserDataRange(entity, aI, bI >>> 0);
+          break;
+        case BOX2D_CMD.SET_PARTICLE_COLOR:
+          if (handlers.setParticleColor) handlers.setParticleColor(entity, aI >>> 0);
+          break;
+        case BOX2D_CMD.SET_PARTICLE_COLOR_RANGE:
+          if (handlers.setParticleColorRange) handlers.setParticleColorRange(entity, aI, bI >>> 0);
+          break;
+        case BOX2D_CMD.SET_PARTICLE_FLAGS:
+          if (handlers.setParticleFlags) handlers.setParticleFlags(entity, aI >>> 0);
+          break;
+        case BOX2D_CMD.SET_PARTICLE_VISCOUS_SCALE:
+          if (handlers.setParticleViscousScale) handlers.setParticleViscousScale(entity, a);
+          break;
+        case BOX2D_CMD.SET_PARTICLE_VISCOUS_SCALE_RANGE:
+          if (handlers.setParticleViscousScaleRange) handlers.setParticleViscousScaleRange(entity, a, b);
+          break;
+        case BOX2D_CMD.SET_GROUP_FLAGS:
+          if (handlers.setGroupFlags) handlers.setGroupFlags(entity, aI >>> 0);
+          break;
+        case BOX2D_CMD.DESTROY_PARTICLE:
+          if (handlers.destroyParticle) handlers.destroyParticle(entity);
+          break;
+        case BOX2D_CMD.CREATE_PARTICLE:
+          if (handlers.createParticle) handlers.createParticle(entity, a, b, c, d);
+          break;
+        case BOX2D_CMD.SET_LIQUIDFUN_PAYLOAD:
+          if (handlers.setLiquidFunPayload) handlers.setLiquidFunPayload(entity >>> 0, aI >>> 0, b, c, d);
+          break;
+        case BOX2D_CMD.PARTICLE_APPLY_FORCE_RANGE:
+          if (handlers.particleApplyForceRange) handlers.particleApplyForceRange(entity, aI, b, c);
+          break;
+        case BOX2D_CMD.PARTICLE_APPLY_IMPULSE_RANGE:
+          if (handlers.particleApplyImpulseRange) handlers.particleApplyImpulseRange(entity, aI, b, c);
+          break;
+        case BOX2D_CMD.EXTRACT_PARTICLES:
+          if (handlers.extractParticles) handlers.extractParticles(entity, a, b, c);
+          break;
         default:
           break;
       }
@@ -455,6 +720,20 @@
     enqueueDestroyParticleGroup: enqueueDestroyParticleGroup,
     enqueueDestroyParticleSystem: enqueueDestroyParticleSystem,
     enqueueClearLiquidFunParticles: enqueueClearLiquidFunParticles,
+    enqueueSetParticleUserData: enqueueSetParticleUserData,
+    enqueueSetParticleUserDataRange: enqueueSetParticleUserDataRange,
+    enqueueSetParticleColor: enqueueSetParticleColor,
+    enqueueSetParticleColorRange: enqueueSetParticleColorRange,
+    enqueueSetParticleFlags: enqueueSetParticleFlags,
+    enqueueSetParticleViscousScale: enqueueSetParticleViscousScale,
+    enqueueSetParticleViscousScaleRange: enqueueSetParticleViscousScaleRange,
+    enqueueSetGroupFlags: enqueueSetGroupFlags,
+    enqueueDestroyParticle: enqueueDestroyParticle,
+    enqueueCreateParticle: enqueueCreateParticle,
+    enqueueSetLiquidFunPayload: enqueueSetLiquidFunPayload,
+    enqueueParticleApplyForceRange: enqueueParticleApplyForceRange,
+    enqueueParticleApplyImpulseRange: enqueueParticleApplyImpulseRange,
+    enqueueExtractParticles: enqueueExtractParticles,
     drainCommandRing: drainCommandRing,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

@@ -73,9 +73,10 @@ export function buildComputePrelude(uniformMap, uniformTypes) {
   s += '  vertStart: f32,\n  vertCount: f32,\n';
   s += '  prevX: f32,\n  prevY: f32,\n  pad: f32,\n';
   s += '}\n\n';
-  // Matches PARTICLE_FLOATS pack in LiquidFunParticlePack.js (4 floats).
+  // Matches PARTICLE_FLOATS pack in LiquidFunParticlePack.js (8 floats / 32 bytes).
   s += 'struct LfParticle {\n';
   s += '  x: f32,\n  y: f32,\n  vx: f32,\n  vy: f32,\n';
+  s += '  userData: u32,\n  _pad0: u32,\n  _pad1: u32,\n  _pad2: u32,\n';
   s += '}\n\n';
   return s;
 }
@@ -131,4 +132,104 @@ export function prependLookPrelude(code, uniformMap, uniformTypes) {
     );
   }
   return buildLookPrelude(uniformMap, uniformTypes) + code;
+}
+
+function stripWgslCommentsSameLength(src) {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
+    .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
+}
+
+function lineAt(src, index) {
+  let line = 1;
+  for (let i = 0; i < index; i++) {
+    if (src.charCodeAt(i) === 10) line++;
+  }
+  return line;
+}
+
+function matchDelim(text, start, open, close) {
+  let depth = 0;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (c === open) depth++;
+    else if (c === close) {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function parseWgslParamNames(params) {
+  const cleaned = params.replace(/@\w+(?:\s*\([^)]*\))?/g, ' ');
+  const names = [];
+  const parts = cleaned.split(',');
+  for (let i = 0; i < parts.length; i++) {
+    const m = parts[i].match(/\b([A-Za-z_]\w*)\s*:/);
+    if (m) names.push(m[1]);
+  }
+  return names;
+}
+
+function scanWgslFnUseBeforeDeclare(body, paramNames, lineBaseSrc, bodyStart) {
+  const declAt = new Map();
+  const declRe = /\b(?:let|var|const)\s+([A-Za-z_]\w*)/g;
+  let d;
+  while ((d = declRe.exec(body))) {
+    if (!declAt.has(d[1])) declAt.set(d[1], d.index);
+  }
+  const issues = [];
+  let i = 0;
+  while (i < body.length) {
+    const c = body.charCodeAt(i);
+    if (c === 46) {
+      i++;
+      while (i < body.length && body.charCodeAt(i) <= 32) i++;
+      while (i < body.length && /[A-Za-z0-9_]/.test(body[i])) i++;
+      continue;
+    }
+    if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95) {
+      let j = i + 1;
+      while (j < body.length && /[A-Za-z0-9_]/.test(body[j])) j++;
+      const name = body.slice(i, j);
+      const at = declAt.get(name);
+      if (at !== undefined && i < at && !paramNames.has(name)) {
+        const before = body.slice(Math.max(0, i - 6), i);
+        if (!/\b(?:let|var|const)\s+$/.test(before)) {
+          issues.push({ name, line: lineAt(lineBaseSrc, bodyStart + i) });
+        }
+      }
+      i = j;
+      continue;
+    }
+    i++;
+  }
+  return issues;
+}
+
+/**
+ * Cheap WGSL check: identifiers used in a function before their `let`/`var`/`const`
+ * in that same function. Catches `p.userData` before `let p = ...` without a GPU compiler.
+ * Does not resolve globals — only names that ARE declared later in the function.
+ */
+export function findWgslUseBeforeDeclare(source) {
+  const text = stripWgslCommentsSameLength(source);
+  const issues = [];
+  const fnRe = /\bfn\s+[A-Za-z_]\w*\s*\(/g;
+  let m;
+  while ((m = fnRe.exec(text))) {
+    const parenStart = m.index + m[0].length - 1;
+    const paramsEnd = matchDelim(text, parenStart, '(', ')');
+    if (paramsEnd < 0) break;
+    const braceStart = text.indexOf('{', paramsEnd);
+    if (braceStart < 0) break;
+    const braceEnd = matchDelim(text, braceStart, '{', '}');
+    if (braceEnd < 0) break;
+    const paramNames = new Set(parseWgslParamNames(text.slice(parenStart + 1, paramsEnd)));
+    const body = text.slice(braceStart, braceEnd + 1);
+    issues.push(...scanWgslFnUseBeforeDeclare(body, paramNames, text, braceStart));
+    fnRe.lastIndex = braceEnd + 1;
+  }
+  return issues;
 }

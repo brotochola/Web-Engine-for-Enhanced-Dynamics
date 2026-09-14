@@ -7,6 +7,10 @@ import {
   liquidFunRayCast,
   liquidFunRayCastAsync,
 } from '../box2d/liquidFunQuery.js';
+import {
+  liquidFunExtract,
+  liquidFunExtractAsync,
+} from '../box2d/liquidFunExtract.js';
 import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
 import { bindLiquidFunGroups, LIQUIDFUN_GROUPS_MAX } from '../util/liquidFunGroups.js';
 import { bindLiquidFunRender } from '../render/liquidFunRender.js';
@@ -24,6 +28,9 @@ export const LIQUIDFUN_FLAGS = Object.freeze({
   SPRING: 1 << 6,
   BARRIER: 1 << 7,
   STATIC_PRESSURE: 1 << 8,
+  COLOR_MIXING: 1 << 9,
+  REPULSIVE: 1 << 10,
+  REACTIVE: 1 << 11,
 });
 
 /** Google b2ParticleGroupFlag subset (group construction, not particle bits). */
@@ -86,6 +93,11 @@ function resolveEmit(options) {
     alpha: resolveRange(o.alpha, 1),
     layerMask,
     hasSprite: o.scale != null || o.alpha != null,
+    userData: o.userData != null ? o.userData >>> 0 : 0,
+    color: o.color != null ? o.color >>> 0 : 0,
+    vx: o.vx || 0,
+    vy: o.vy || 0,
+    omega: o.omega || 0,
   };
 }
 
@@ -120,6 +132,21 @@ function enqueueEmitParams(resolved) {
     Box2dCommandRing.enqueueSetLiquidFunLight(resolved.lightIntensity);
   }
   Box2dCommandRing.enqueueSetLiquidFunLayers(resolved.layerMask);
+  Box2dCommandRing.enqueueSetLiquidFunPayload(
+    resolved.userData >>> 0,
+    packedRgba(resolved.tint, resolved.color),
+    resolved.vx || 0,
+    resolved.vy || 0,
+    resolved.omega || 0,
+  );
+}
+
+function packedRgba(tint, color) {
+  if (color) return color >>> 0;
+  const t = tint >>> 0;
+  if (!t) return 0;
+  if ((t >>> 24) === 0) return (0xff000000 | t) >>> 0;
+  return t;
 }
 
 let _groupsViews = null;
@@ -159,7 +186,7 @@ export class LiquidFun {
 
   /**
    * Bind live particle pose onto the WASM HEAP SAB (same pattern as Transform).
-   * @param {{ sab: SharedArrayBuffer, countByteOffset: number, xByteOffset: number, yByteOffset: number, vxByteOffset?: number, vyByteOffset?: number, alphaByteOffset: number, weightByteOffset?: number, maxCount: number }} payload
+   * @param {{ sab: SharedArrayBuffer, countByteOffset: number, xByteOffset: number, yByteOffset: number, vxByteOffset?: number, vyByteOffset?: number, alphaByteOffset: number, weightByteOffset?: number, flagsByteOffset?: number, viscousScaleByteOffset?: number, groupIndexByteOffset?: number, userDataByteOffset?: number, colorByteOffset?: number, maxCount: number }} payload
    */
   static bindHeapPose(payload) {
     if (!payload?.sab || !(payload.maxCount > 0)) {
@@ -171,6 +198,11 @@ export class LiquidFun {
         _particleViews.vy = null;
         _particleViews.alpha = _renderViews?.alpha ?? null;
         _particleViews.weight = null;
+        _particleViews.flags = null;
+        _particleViews.viscousScale = null;
+        _particleViews.groupIndex = null;
+        _particleViews.userData = null;
+        _particleViews.color = null;
       }
       return;
     }
@@ -187,7 +219,35 @@ export class LiquidFun {
       payload.alphaByteOffset > 0 ? new Float32Array(sab, payload.alphaByteOffset | 0, n) : null;
     const weight =
       payload.weightByteOffset > 0 ? new Float32Array(sab, payload.weightByteOffset | 0, n) : null;
-    _particleViews = LiquidFun._mergeParticleViews({ count, x, y, vx, vy, alpha, weight, maxCount: n });
+    const flags =
+      payload.flagsByteOffset > 0 ? new Uint32Array(sab, payload.flagsByteOffset | 0, n) : null;
+    const viscousScale =
+      payload.viscousScaleByteOffset > 0
+        ? new Float32Array(sab, payload.viscousScaleByteOffset | 0, n)
+        : null;
+    const groupIndex =
+      payload.groupIndexByteOffset > 0
+        ? new Int32Array(sab, payload.groupIndexByteOffset | 0, n)
+        : null;
+    const userData =
+      payload.userDataByteOffset > 0 ? new Uint32Array(sab, payload.userDataByteOffset | 0, n) : null;
+    const color =
+      payload.colorByteOffset > 0 ? new Uint32Array(sab, payload.colorByteOffset | 0, n) : null;
+    _particleViews = LiquidFun._mergeParticleViews({
+      count,
+      x,
+      y,
+      vx,
+      vy,
+      alpha,
+      weight,
+      flags,
+      viscousScale,
+      groupIndex,
+      userData,
+      color,
+      maxCount: n,
+    });
   }
 
   static _mergeParticleViews(heap) {
@@ -200,6 +260,11 @@ export class LiquidFun {
       vy: heap.vy || null,
       alpha: heap.alpha || thin?.alpha || null,
       weight: heap.weight || null,
+      flags: heap.flags || null,
+      viscousScale: heap.viscousScale || null,
+      groupIndex: heap.groupIndex || null,
+      userData: heap.userData || null,
+      color: heap.color || null,
       scaleX: thin?.scaleX || null,
       scaleY: thin?.scaleY || null,
       rotC: thin?.rotC || null,
@@ -235,6 +300,11 @@ export class LiquidFun {
         vy: null,
         alpha: _renderViews.alpha,
         weight: null,
+        flags: null,
+        viscousScale: null,
+        groupIndex: null,
+        userData: null,
+        color: null,
         scaleX: _renderViews.scaleX,
         scaleY: _renderViews.scaleY,
         rotC: _renderViews.rotC,
@@ -326,6 +396,7 @@ export class LiquidFun {
           angle: 0,
           firstIndex: 0,
           lastIndex: 0,
+          groupFlags: 0,
         };
         out[i] = g;
       }
@@ -340,6 +411,7 @@ export class LiquidFun {
       g.angle = v.angle[i];
       g.firstIndex = v.firstIndex ? v.firstIndex[i] | 0 : 0;
       g.lastIndex = v.lastIndex ? v.lastIndex[i] | 0 : 0;
+      g.groupFlags = v.groupFlags ? v.groupFlags[i] | 0 : 0;
     }
     return out;
   }
@@ -417,5 +489,74 @@ export class LiquidFun {
   /** Async RayCast (main thread). */
   static rayCastAsync(x1, y1, x2, y2, out) {
     return liquidFunRayCastAsync(x1, y1, x2, y2, out);
+  }
+
+  static setUserData(index, bits) {
+    Box2dCommandRing.enqueueSetParticleUserData(index, bits);
+  }
+
+  static setUserDataRange(first, last, bits) {
+    Box2dCommandRing.enqueueSetParticleUserDataRange(first, last, bits);
+  }
+
+  static setColor(index, rgba) {
+    Box2dCommandRing.enqueueSetParticleColor(index, rgba);
+  }
+
+  static setColorRange(first, last, rgba) {
+    Box2dCommandRing.enqueueSetParticleColorRange(first, last, rgba);
+  }
+
+  static setFlags(index, bits) {
+    Box2dCommandRing.enqueueSetParticleFlags(index, bits);
+  }
+
+  static setViscousScale(index, scale) {
+    Box2dCommandRing.enqueueSetParticleViscousScale(index, scale);
+  }
+
+  static setViscousScaleRange(first, last, scale) {
+    Box2dCommandRing.enqueueSetParticleViscousScaleRange(first, last, scale);
+  }
+
+  static setGroupFlags(groupId, flags) {
+    Box2dCommandRing.enqueueSetGroupFlags(groupId, flags);
+  }
+
+  static destroyParticle(index) {
+    Box2dCommandRing.enqueueDestroyParticle(index);
+  }
+
+  static createParticle(options) {
+    const o = options || {};
+    Box2dCommandRing.enqueueSetLiquidFunPayload(
+      o.userData != null ? o.userData >>> 0 : 0,
+      packedRgba(o.tint, o.color),
+      o.vx || 0,
+      o.vy || 0,
+      0,
+    );
+    Box2dCommandRing.enqueueCreateParticle(o.x, o.y, o.vx || 0, o.vy || 0, o.flags || 0);
+  }
+
+  /**
+   * Pull live members out of a group into a new group. Indices invalid after.
+   * Logic: sync (Atomics.wait). Main: extractAsync.
+   * @returns {number} new group id, or -1
+   */
+  static extract(groupId, indices, count, opts) {
+    return liquidFunExtract(groupId, indices, count, opts);
+  }
+
+  static extractAsync(groupId, indices, count, opts) {
+    return liquidFunExtractAsync(groupId, indices, count, opts);
+  }
+
+  static applyForceRange(first, last, fx, fy) {
+    Box2dCommandRing.enqueueParticleApplyForceRange(first, last, fx, fy);
+  }
+
+  static applyLinearImpulseRange(first, last, ix, iy) {
+    Box2dCommandRing.enqueueParticleApplyImpulseRange(first, last, ix, iy);
   }
 }

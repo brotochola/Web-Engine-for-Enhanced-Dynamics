@@ -169,3 +169,28 @@ test('packLiquidFunLightSlabs returns 0 when intensity is 0', () => {
   const dataU32 = new Uint32Array(data.buffer);
   assert.equal(packLiquidFunLightSlabs(data, dataU32, 4, views, groups, {}), 0);
 });
+
+test('packLiquidFunLightSlabs returns 0 when intensity is set but sqrtI is 0', () => {
+  const views = makeViews(1);
+  views.x[0] = 0;
+  views.y[0] = 0;
+  const groups = makeGroups(2);
+  groups.count[0] = 1;
+  groups.id[0] = 1;
+  groups.particleCount[0] = 1;
+  groups.firstIndex[0] = 0;
+  groups.lastIndex[0] = 1;
+  groups.lightIntensity[1] = 5330;
+  groups.sqrtLightIntensity[1] = 0;
+  const data = new Float32Array(4);
+  const dataU32 = new Uint32Array(data.buffer);
+  assert.equal(
+    packLiquidFunLightSlabs(data, dataU32, 4, views, groups, {
+      zoom: 1,
+      resolution: 1,
+      canvasW: 100,
+      canvasH: 100,
+    }),
+    0,
+  );
+});

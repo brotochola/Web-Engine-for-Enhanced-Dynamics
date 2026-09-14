@@ -148,6 +148,7 @@ export class LiquidFunDensitySplat {
       const xArr = views.x;
       const yArr = views.y;
       const tintArr = views.tint;
+      const colorArr = views.color;
       const baseAlpha = views.baseAlpha;
       const alphaArr = views.alpha;
       const maskArr = views.layerMask;
@@ -156,7 +157,8 @@ export class LiquidFunDensitySplat {
         let a = 1;
         if (baseAlpha) a *= baseAlpha[i];
         if (alphaArr) a *= alphaArr[i];
-        this._writeInst(xArr[i], yArr[i], tintArr ? tintArr[i] : 0, a);
+        const packed = colorArr && colorArr[i] ? colorArr[i] : (tintArr ? tintArr[i] : 0);
+        this._writeInst(xArr[i], yArr[i], packed, a);
       }
     }
 

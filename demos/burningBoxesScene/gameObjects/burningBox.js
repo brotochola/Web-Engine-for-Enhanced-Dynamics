@@ -1,12 +1,16 @@
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer, Grab, LightEmitter, Mouse, Keyboard, enums } = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, Grab, LightEmitter, Mouse, Keyboard, enums, LiquidFun, LIQUIDFUN_GROUP_FLAGS } = WEED;
 const { ShapeType } = enums;
 
 const HEAT = 1;
 const IGNITE_RANGE_SQ = 80 * 80;
 const LIGHT_BASE = 9000;
 const LIGHT_RANGE = 640;
+const QUERY = new Int32Array(1024);
+const HOT = new Int32Array(1024);
+const MELT_T = 180;
+const RIGID = LIQUIDFUN_GROUP_FLAGS.RIGID;
 
 export class BurningBox extends GameObject {
   static scriptUrl = import.meta.url;
@@ -67,15 +71,59 @@ export class BurningBox extends GameObject {
       const t = (accTime || 0) * 0.001;
       const flick = 1 + Math.sin(t * 8 + this.index) * 0.15 + Math.sin(t * 12.7 + this.index * 1.7) * 0.1;
       this.lightEmitter.lightIntensity = Math.max(400, LIGHT_BASE * flick);
+      this._meltIce(deltaTime);
     }
 
     if (!Mouse.isButton0Pressed && !Keyboard.isPressed('f')) return;
 
     const dx = this.x - Mouse.x;
     const dy = this.y - Mouse.y;
-    if (dx * dx + dy * dy < IGNITE_RANGE_SQ) {
-      if (this.getFeedBits() & HEAT) this.extinguish();
-      else this.ignite();
+    if (dx * dx + dy * dy < IGNITE_RANGE_SQ) this.ignite();
+  }
+  _meltIce(deltaTime) {
+    const views = LiquidFun.getViews();
+    if (!views || !views.userData || !views.groupIndex) return;
+    const hw = (this.collider.width || 100) * 0.5 + 48;
+    const hh = (this.collider.height || 100) * 0.5 + 48;
+    let n = 0;
+    try {
+      n = LiquidFun.queryAABB(this.x - hw, this.y - hh, this.x + hw, this.y + hh, QUERY);
+    } catch (_) {
+      return;
+    }
+    if (n <= 0) return;
+    const live = views.count ? views.count[0] | 0 : 0;
+    const groups = LiquidFun.getGroups();
+    const add = Math.max(1, ((deltaTime || 16) * 0.25) | 0);
+    let gid = -1;
+    let hotN = 0;
+    const cap = n < QUERY.length ? n : QUERY.length;
+    for (let i = 0; i < cap; i++) {
+      const idx = QUERY[i] | 0;
+      if (idx < 0 || idx >= live) continue;
+      const g = views.groupIndex[idx] | 0;
+      let gFlags = 0;
+      for (let k = 0; k < groups.length; k++) {
+        if (groups[k].id === g) {
+          gFlags = groups[k].groupFlags | 0;
+          break;
+        }
+      }
+      if (!(gFlags & RIGID)) continue;
+      const prev = views.userData[idx] >>> 0;
+      let t = (prev & 255) + add;
+      if (t > 255) t = 255;
+      const next = (prev & ~255) | t;
+      if (next !== prev) LiquidFun.setUserData(idx, next);
+      if (t < MELT_T) continue;
+      if (gid < 0) gid = g;
+      if (g !== gid) continue;
+      if (hotN < HOT.length) HOT[hotN++] = idx;
+    }
+    if (gid < 0 || hotN <= 0) return;
+    const newId = LiquidFun.extract(gid, HOT, hotN, { groupFlags: 0, trackGroup: true });
+    if (newId >= 0) {
+      LiquidFun.setGroupViscousScale(newId, 4);
     }
   }
 }
