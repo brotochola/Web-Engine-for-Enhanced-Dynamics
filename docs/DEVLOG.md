@@ -8,6 +8,24 @@ Demos are how the engine gets tested. They are not the product. The engine is th
 
 ---
 
+## Monday 14 September 2026 (later) — Don't Compute What Nobody Reads
+
+Yesterday logic was cloning eight thousand Box2D contacts for a scene that never asked. The same pattern was still sitting in the other workers: physics copying the contact ring into a SAB nobody drained, the particle worker `hypot` of every dynamic body so `RigidBody.speed` would be fresh for readers that didn't exist, keyboard edge flags on spatial and pre-render, and balls asking spatial for neighbors they never looked at. The want was not a new system. It was to stop paying for opt-in features on scenes that never opted in. One hyp at a time. Headed bench, live `/src`, Predator as the guard — that scene has `CollisionListener` and it does read speed.
+
+Physics still published every begin/end pair, `Atomics.load` on generation per endpoint, even when `anyTypeNeedsCollisions` was false. WASM still has to generate contacts. JS does not have to copy them. Scene now stamps `publishContactRing` from whether any registered type has `CollisionListener`. Balls is false. Predator stays true (Drop listens). The balls physics STEP did not move a clean −3%: BOX2D itself wandered by more than the afterStep copy is worth. Predator physics was flat. The skip still ships. A file that existed only to wrap `=== true` did not.
+
+`RigidBody.speed` was the clearer win. Particle was walking every dynamic body, every frame, for a number Balls never reads. `GameObject.deriveSpeed` defaults false. Person, Boid, Car, CarPart, the flowfield walker, and Bug set it true — the types that already touched `this.speed` or `RigidBody.speed[i]`. Balls particle STEP went from 0.243 ms to 0.083 ms. Predator still derives, and its particle STEP did not go up. That is the contract: the scene that needs the number still gets it.
+
+Keyboard and gamepad edges were running on every AbstractWorker, including the ones with `needsGameScripts = false`. Main already snapshots in `Scene.updateInternal`. Logic still needs the edges for `isPressed`. Spatial, particle, and pre-render do not. The call sat outside `STEP_MS`, so the benches could not show it. The skip is still the right site.
+
+Balls had `visualRange = radius * 3` and never used the neighbor list. That is a demo hat, not an engine one. Spatial already `continue`s at `visualRange <= 0`. Setting the default to 0 dropped balls neighbor time from 5.3 ms to 0.87 ms, spatial STEP from 6.2 ms to 1.7 ms. Floor keeps a range. The pile looks the same.
+
+One hyp did not ship. Particle writes `Grid.cellSleepingData` every frame. Production spatial does not read it — `SLEEP_NEIGHBOR_SKIPS` stays zero. The debug overlay **Sleep Cells** does. Skipping the write to save particle time would have lied to the overlay. Skipping it only on Balls would have been special-casing a demo inside the engine. Cancelled.
+
+Sleep itself got a closer look because the magenta overlay flickered while the cyan cells looked right. They are not the same buffer. Entities sample live HEAP `RigidBody.sleeping` on a rAF that does not wait for `world.step`, and they also required `SpriteRenderer.isItOnScreen` with no AABB fallback — colliders already had one. HEAP pose tears during substeps; that is why display pose is double-buffered. Sleeping had no snapshot. Cells are a particle-worker aggregate, one bit per cell, viewport only. Writing `RigidBody.sleeping[i] = 0` from a predator FSM `onEnter` did not wake Box2D either. `addAcceleration` already does, and `applyForcesAndTorque` passes wake. Those HEAP pokes are gone. Despawn still clears the byte so a reused slot is not a stale 1. Mamushka far-LOD stays `setAwake`, not `rigidBody.static` — that would be a body-type change, frozen walls, welds as anchors. The overlay now uses the same `isOnScreen || viewport AABB` idea as colliders, and it pins the published pose.
+
+Numbers in `tests/results/skip-work-hyps/`. The two that moved: particle hypot nobody asked for, and neighbor search for balls that never looked.
+
 ## Monday 14 September 2026 — One Name, Several Layers, and the Pool Stay Off the Hot Path
 
 The want was the same sentence twice: a crate that draws on ENTITIES and still feeds fire, oil that splatters one layer and heats another, and a call site that says `layer: 'oil'` instead of `Layer.getId(...)` stuffed into a u8. One mask. Bits are layer ids. Omit the field and you land on ENTITIES. `setLayer('fire')` on a compute-only layer keeps the sprite where it belongs.
