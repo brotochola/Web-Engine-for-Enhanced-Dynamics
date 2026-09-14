@@ -8,6 +8,16 @@ Demos are how the engine gets tested. They are not the product. The engine is th
 
 ---
 
+## Monday 14 September 2026 — One Name, Several Layers, and the Pool Stay Off the Hot Path
+
+The want was the same sentence twice: a crate that draws on ENTITIES and still feeds fire, oil that splatters one layer and heats another, and a call site that says `layer: 'oil'` instead of `Layer.getId(...)` stuffed into a u8. One mask. Bits are layer ids. Omit the field and you land on ENTITIES. `setLayer('fire')` on a compute-only layer keeps the sprite where it belongs.
+
+That comfort almost paid for itself in the worst currency this engine has. Every visible sprite walked `0..Layer.count` with two method calls per slot. Every compute pack walked the whole collider pool to find the handful that actually subscribed. The old dense feeder list was still allocated — SharedArrayBuffers, spinlocks, counts — and the helpers that filled it had been deleted when `layerId` became a mask. The infrastructure survived. The write path did not.
+
+The list comes back as a diff on the mask, not a second API. Spawn and despawn write bits; add and remove run then, not every frame. Pack copies the live indices out from under the lock and walks that snapshot. Collect bit-scans `mask & _spriteQueueBits` instead of testing every layer id. On the collect microbench the old loop is 0.177 of the new one — five times the work for the same set. Sweep pack at 512 bodies went from 167 ms to 88 ms. The all-fed no-sweep case is a hair slower (copy plus lock when every body is already in the list) and that is the honest number: the win is a large pool and a small subscription, which is the scene, not the microbench that feeds everyone.
+
+The compute stress bench had been shouting a 404 with no URL. Chromium does that. The missing file was `/demos/img/bola.png`, a demo texture, not an engine one. The bench now uses `_white`. The static server prints the path when something is actually gone.
+
 ## Sunday 13 September 2026 (evening) — The Random Was Working. That's Why It Lined Up
 
 Two nights ago `Math.random()` got replaced with `rng()` across every demo, so nothing could quietly reintroduce the non-determinism the lockstep test had just killed. BallsScene was the first place it showed on screen: colors in bands, small balls on the left, big ones on the right. Swap `rng()` for `Math.random()` and the pile looked random again. The feeling was that the seeded generator was broken.
