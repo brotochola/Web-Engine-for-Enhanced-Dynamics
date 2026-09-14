@@ -11,6 +11,10 @@ import {
   liquidFunExtract,
   liquidFunExtractAsync,
 } from '../box2d/liquidFunExtract.js';
+import {
+  writeLiquidFunUserDataAdd,
+  writeLiquidFunUserDataSet,
+} from '../box2d/liquidFunUserDataList.js';
 import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
 import { bindLiquidFunGroups, LIQUIDFUN_GROUPS_MAX } from '../util/liquidFunGroups.js';
 import { bindLiquidFunRender } from '../render/liquidFunRender.js';
@@ -493,6 +497,21 @@ export class LiquidFun {
 
   static setUserData(index, bits) {
     Box2dCommandRing.enqueueSetParticleUserData(index, bits);
+  }
+
+  /**
+   * Fire-and-forget: add `add` to the low 8 bits of each index (clamp 255).
+   * One ring slot. Overwrites a pending list not yet drained.
+   */
+  static addUserData(indices, count, add) {
+    if (!writeLiquidFunUserDataAdd(indices, count, add)) return false;
+    return Box2dCommandRing.enqueueSetParticleUserDataList();
+  }
+
+  /** Fire-and-forget: write the same bits on each index. One ring slot. */
+  static setUserDataList(indices, count, bits) {
+    if (!writeLiquidFunUserDataSet(indices, count, bits)) return false;
+    return Box2dCommandRing.enqueueSetParticleUserDataList();
   }
 
   /** last exclusive, half-open. */

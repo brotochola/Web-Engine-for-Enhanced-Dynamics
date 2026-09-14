@@ -28,6 +28,46 @@ import {
   servicePendingLiquidFunExtractBurst,
   LIQUIDFUN_EXTRACT_DEFAULT_INDEX_CAP,
 } from '../../src/box2d/liquidFunExtract.js';
+import {
+  createLiquidFunUserDataListSab,
+  bindLiquidFunUserDataListSab,
+  applyLiquidFunUserDataList,
+  LIQUIDFUN_USER_DATA_LIST_DEFAULT_INDEX_CAP,
+} from '../../src/box2d/liquidFunUserDataList.js';
+
+test('userData list SAB cap is 4096', () => {
+  assert.equal(LIQUIDFUN_USER_DATA_LIST_DEFAULT_INDEX_CAP, 4096);
+});
+
+test('addUserData enqueues one LIST opcode and apply adds low 8', () => {
+  const listSab = createLiquidFunUserDataListSab();
+  bindLiquidFunUserDataListSab(listSab);
+  const ring = createCommandRingSab(32);
+  bindCommandRing(ring);
+  const i32 = new Int32Array(ring);
+  const f32 = new Float32Array(ring);
+  const ud = new Uint32Array([10, 20, 250]);
+  const idx = new Int32Array([0, 2]);
+  assert.equal(LiquidFun.addUserData(idx, 2, 10), true);
+  let lists = 0;
+  let singles = 0;
+  drainCommandRing(i32, f32, {
+    setParticleUserDataList() {
+      lists++;
+      applyLiquidFunUserDataList(ud);
+    },
+    setParticleUserData() {
+      singles++;
+    },
+  });
+  assert.equal(BOX2D_CMD.SET_PARTICLE_USER_DATA_LIST, 42);
+  assert.equal(lists, 1);
+  assert.equal(singles, 0);
+  assert.equal(ud[0], 20);
+  assert.equal(ud[1], 20);
+  assert.equal(ud[2], 255);
+  bindLiquidFunUserDataListSab(null);
+});
 
 test('extract SAB default cap matches C g_extract_indices (4096)', () => {
   assert.equal(LIQUIDFUN_EXTRACT_DEFAULT_INDEX_CAP, 4096);

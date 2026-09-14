@@ -479,6 +479,7 @@
     rayCastSab: null,
     liquidFunQuerySab: null,
     liquidFunExtractSab: null,
+    liquidFunUserDataListSab: null,
     contactSab: null,
     movedSab: null,
     hitSab: null,
@@ -547,6 +548,7 @@
       rayCastSab: state.rayCastSab,
       liquidFunQuerySab: state.liquidFunQuerySab,
       liquidFunExtractSab: state.liquidFunExtractSab,
+      liquidFunUserDataListSab: state.liquidFunUserDataListSab,
       contactSab: state.contactSab,
       movedSab: state.movedSab,
       hitSab: state.hitSab,
@@ -588,6 +590,8 @@
     LiquidFunQuery.bindLiquidFunQuerySab(state.liquidFunQuerySab);
     state.liquidFunExtractSab = LiquidFunExtract.createLiquidFunExtractSab();
     LiquidFunExtract.bindLiquidFunExtractSab(state.liquidFunExtractSab);
+    state.liquidFunUserDataListSab = LiquidFunUserDataList.createLiquidFunUserDataListSab();
+    LiquidFunUserDataList.bindLiquidFunUserDataListSab(state.liquidFunUserDataListSab);
     state.contactSab = Box2dContactRing.createContactRingSab(
       state.settings.contactRingCapacity,
     );
@@ -623,6 +627,7 @@
       rayCastSab: state.rayCastSab,
       liquidFunQuerySab: state.liquidFunQuerySab,
       liquidFunExtractSab: state.liquidFunExtractSab,
+      liquidFunUserDataListSab: state.liquidFunUserDataListSab,
       contactSab: state.contactSab,
       movedSab: state.movedSab,
       hitSab: state.hitSab,

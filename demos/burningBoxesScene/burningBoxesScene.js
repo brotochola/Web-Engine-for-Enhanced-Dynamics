@@ -81,10 +81,10 @@ export class BurningBoxesScene extends WEED.Scene {
     logic: { noLimitFPS: false },
     particle: { noLimitFPS: false, maxParticles: 100, decals: false },
     physics: {
-      subStepCount: 1,
+      subStepCount: 2,
       noLimitFPS: false,
       gravity: { x: 0, y: 2400 },
-      sleeping: true,
+      sleeping: false,
       liquidFun: {
         enabled: true,
         radius: FIRE_LF_RADIUS,
@@ -96,8 +96,8 @@ export class BurningBoxesScene extends WEED.Scene {
     renderer: {
       backend: 'webgpu',
       noLimitFPS: false,
-      ySorting: true,
-      maxVisibleRenderables: 4000,
+      ySorting: false,
+      // maxVisibleRenderables: 4000,
     },
     lighting: {
       enabled: true,
@@ -256,11 +256,7 @@ export class BurningBoxesScene extends WEED.Scene {
     // this.spawnIce();
   }
 
-  spawnIce() {
-    const w = this.config.worldWidth;
-    const h = this.config.worldHeight;
-    const floorY = h * 0.72 - 80;
-    const cx = w / 2;
+  spawnIceAt(posX, posY, halfWidth, halfHeight) {
     LiquidFun.emit({
       flags: LIQUIDFUN_FLAGS.WATER | LIQUIDFUN_FLAGS.VISCOUS,
       groupFlags: LIQUIDFUN_GROUP_FLAGS.SOLID | LIQUIDFUN_GROUP_FLAGS.RIGID,
@@ -269,19 +265,32 @@ export class BurningBoxesScene extends WEED.Scene {
       userData: 0,
       tint: 0xaadfff,
       shape: 'box',
-      posX: Mouse.x,
-      posY: Mouse.y,
-      halfWidth: 200,
-      halfHeight: 200,
-      layers: ['oil'],
+      posX,
+      posY,
+      halfWidth,
+      halfHeight,
     });
+  }
+
+  spawnIce() {
+    this.spawnIceAt(Mouse.x, Mouse.y, 200, 20);
+  }
+
+  /** Ice over the crate stack so melt heat writes stay live for headed A/B. */
+  spawnBenchIce() {
+    const w = this.config.worldWidth;
+    const h = this.config.worldHeight;
+    const floorY = h * 0.72 - 80;
+    const cx = w / 2;
+    this.spawnIceAt(cx - 50, floorY - 160, 340, 220);
+    this.spawnIceAt(cx - 50, floorY - 40, 340, 50);
   }
 
   spawnFloorAndLedges() {
     const w = this.config.worldWidth;
     const h = this.config.worldHeight;
     const floorY = h * 0.72;
-    this.spawnEntity(Floor, { x: w / 2, y: floorY, width: 1800, height: 80, sprite: '_white', tint: 0x3a322c, layers: ['ENTITIES', 'fire'] });
+    this.spawnEntity(Floor, { x: w / 2, y: floorY, width: 6800, height: 80, sprite: '_white', tint: 0x3a322c, layers: ['ENTITIES', 'fire'] });
     this.spawnEntity(Floor, { x: w / 2 - 420, y: floorY - 220, width: 380, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['ENTITIES', 'fire'] });
     this.spawnEntity(Floor, { x: w / 2 + 380, y: floorY - 340, width: 320, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['ENTITIES', 'fire'] });
     // this.spawnEntity(Floor, { x: this.config.worldWidth / 2 - 80, y: floorY - 480, width: 36, height: 70, sprite: '_white', tint: 0x2c2622, layers: ['ENTITIES', 'fire'] });
@@ -353,5 +362,29 @@ export class BurningBoxesScene extends WEED.Scene {
     if (Keyboard.isPressed('i')) {
       this.spawnIce();
     }
+  }
+}
+
+/** Headed bench: ice + list opcode (42). `meltBench` rides scene.config into logic. */
+export class BurningBoxesMeltListScene extends BurningBoxesScene {
+  static config = Object.assign({}, BurningBoxesScene.config, {
+    meltBench: { list: true, keepWriting: true },
+  });
+
+  createNewGame() {
+    super.createNewGame();
+    this.spawnBenchIce();
+  }
+}
+
+/** Headed bench: ice + N× setUserData (opcode 28). */
+export class BurningBoxesMeltPerParticleScene extends BurningBoxesScene {
+  static config = Object.assign({}, BurningBoxesScene.config, {
+    meltBench: { list: false, keepWriting: true },
+  });
+
+  createNewGame() {
+    super.createNewGame();
+    this.spawnBenchIce();
   }
 }

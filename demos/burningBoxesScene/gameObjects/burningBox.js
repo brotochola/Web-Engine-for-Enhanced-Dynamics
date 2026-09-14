@@ -8,6 +8,11 @@ const IGNITE_RANGE_SQ = 80 * 80;
 const LIGHT_BASE = 9000;
 const LIGHT_RANGE = 640;
 const HOT = new Int32Array(4096);
+const HEATED = new Int32Array(4096);
+const SCRATCH = new Int32Array(4096);
+const JOB_GID = new Int32Array(32);
+const JOB_OFF = new Int32Array(32);
+const JOB_N = new Int32Array(32);
 const BOX_X0 = new Float32Array(256);
 const BOX_Y0 = new Float32Array(256);
 const BOX_X1 = new Float32Array(256);
@@ -109,18 +114,26 @@ export class BurningBox extends GameObject {
     }
     if (boxN <= 0) return;
 
+    const meltBench = list[0] && list[0].config && list[0].config.meltBench;
+    const useList = !meltBench || meltBench.list !== false;
+    const keepWriting = !!(meltBench && meltBench.keepWriting);
+
     const live = views.count ? views.count[0] | 0 : 0;
     const gn = gv.count[0] | 0;
     const add = Math.max(1, ((deltaTime || 16) * 0.25) | 0);
     const xArr = views.x;
     const yArr = views.y;
     const ud = views.userData;
+    let heatedN = 0;
+    let hotPacked = 0;
+    let jobs = 0;
     for (let k = 0; k < gn; k++) {
       if (!(gv.groupFlags[k] & RIGID)) continue;
       const first = gv.firstIndex[k] | 0;
       const last = gv.lastIndex[k] | 0;
       const gid = gv.id[k] | 0;
       let hotN = 0;
+      const hotOff = hotPacked;
       const hi = last < live ? last : live;
       for (let idx = first; idx < hi; idx++) {
         if (idx < 0) continue;
@@ -137,13 +150,39 @@ export class BurningBox extends GameObject {
         const prev = ud[idx] >>> 0;
         let t = (prev & 255) + add;
         if (t > 255) t = 255;
-        const next = (prev & ~255) | t;
-        if (next !== prev) LiquidFun.setUserData(idx, next);
-        if (t < MELT_T) continue;
-        if (hotN < HOT.length) HOT[hotN++] = idx;
+        if ((t !== (prev & 255) || keepWriting) && heatedN < HEATED.length) {
+          HEATED[heatedN++] = idx;
+        }
+        if (keepWriting || t < MELT_T) continue;
+        if (hotPacked < HOT.length) {
+          HOT[hotPacked++] = idx;
+          hotN++;
+        }
       }
-      if (hotN <= 0) continue;
-      const newId = LiquidFun.extract(gid, HOT, hotN, EXTRACT_OPTS);
+      if (hotN <= 0 || jobs >= JOB_GID.length) continue;
+      JOB_GID[jobs] = gid;
+      JOB_OFF[jobs] = hotOff;
+      JOB_N[jobs] = hotN;
+      jobs++;
+    }
+    if (heatedN > 0 && add > 0) {
+      if (useList) {
+        LiquidFun.addUserData(HEATED, heatedN, add);
+      } else {
+        for (let i = 0; i < heatedN; i++) {
+          const idx = HEATED[i];
+          const prev = ud[idx] >>> 0;
+          let t = (prev & 255) + add;
+          if (t > 255) t = 255;
+          LiquidFun.setUserData(idx, (prev & ~255) | t);
+        }
+      }
+    }
+    for (let j = 0; j < jobs; j++) {
+      const n = JOB_N[j];
+      const off = JOB_OFF[j];
+      for (let i = 0; i < n; i++) SCRATCH[i] = HOT[off + i];
+      const newId = LiquidFun.extract(JOB_GID[j], SCRATCH, n, EXTRACT_OPTS);
       if (newId >= 0) LiquidFun.setGroupViscousScale(newId, 4);
     }
   }

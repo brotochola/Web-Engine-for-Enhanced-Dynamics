@@ -285,6 +285,8 @@ LiquidFun.emit({
 const v = LiquidFun.getViews(); // HEAP: userData, color, flags, viscousScale, groupIndex (read-only)
 LiquidFun.setUserData(i, bits);
 LiquidFun.setUserDataRange(first, last, bits); // last exclusive
+LiquidFun.addUserData(indices, count, add); // fire-and-forget list; +add on low 8, clamp 255; one ring slot; not the extract SAB
+LiquidFun.setUserDataList(indices, count, bits); // same bits on each index
 LiquidFun.setColor(i, 0xff3399ff); // 0xAARRGGBB
 LiquidFun.setFlags(i, LIQUIDFUN_FLAGS.COLOR_MIXING);
 LiquidFun.setViscousScale(i, 4);

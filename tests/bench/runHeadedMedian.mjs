@@ -7,6 +7,7 @@
  *   node tests/bench/runHeadedMedian.mjs
  *   node tests/bench/runHeadedMedian.mjs --runs 6 --json-out tests/results/research-spatial-headed.json
  *   node tests/bench/runHeadedMedian.mjs --scene /demos/carScene/carScene.js --scene-export CarScene
+ *   node tests/bench/runHeadedMedian.mjs --src --scene /demos/burningBoxesScene/burningBoxesScene.js --scene-export BurningBoxesMeltListScene
  *
  * Leave the Chromium window visible; do not minimize during measurement.
  */
@@ -35,6 +36,7 @@ function parseArgs(argv) {
     jsonOut: null,
     scene: null,
     sceneExport: null,
+    src: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -44,6 +46,7 @@ function parseArgs(argv) {
     else if (a === '--json-out' && argv[i + 1]) out.jsonOut = path.resolve(argv[++i]);
     else if (a === '--scene' && argv[i + 1]) out.scene = argv[++i];
     else if (a === '--scene-export' && argv[i + 1]) out.sceneExport = argv[++i];
+    else if (a === '--src') out.src = true;
   }
   return out;
 }
@@ -175,6 +178,7 @@ const PHYSICS_DIAGNOSTIC_FIELDS = [
   'COMMAND_MS',
   'FORCE_MS',
   'BOX2D_MS',
+  'LIQUIDFUN_MS',
   'POST_MS',
   'BODY_MOVED_COUNT',
   'AWAKE_COUNT',
@@ -208,7 +212,7 @@ function printPhysicsDiagnostics(accumulator, runs) {
   }
 }
 
-function runMedianBlock(runs, warmupMs, durationMs, tmpDir, runPrefix, scene, sceneExport) {
+function runMedianBlock(runs, warmupMs, durationMs, tmpDir, runPrefix, scene, sceneExport, src) {
   const physicsFps = [];
   const bodyCounts = [];
   const stepMs = [];
@@ -233,6 +237,7 @@ function runMedianBlock(runs, warmupMs, durationMs, tmpDir, runPrefix, scene, sc
     ];
     if (scene) args.push('--scene', scene);
     if (sceneExport) args.push('--scene-export', sceneExport);
+    if (src) args.push('--src');
     try {
       execFileSync(process.execPath, args, { stdio: 'inherit', cwd: repoRoot });
     } catch (err) {
@@ -283,7 +288,7 @@ function runMedianBlock(runs, warmupMs, durationMs, tmpDir, runPrefix, scene, sc
   return { physicsFps, bodyCounts, stepMs, physicsStats, spatialAcc, runsCompleted };
 }
 
-const { runs, warmupMs, durationMs, jsonOut, scene, sceneExport } = parseArgs(process.argv.slice(2));
+const { runs, warmupMs, durationMs, jsonOut, scene, sceneExport, src } = parseArgs(process.argv.slice(2));
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'weed-bench-'));
 let exitCode = 0;
@@ -302,6 +307,7 @@ try {
     'run',
     scene,
     sceneExport,
+    src,
   );
   if (block.physicsFps.length === 0) exitCode = 1;
   else {

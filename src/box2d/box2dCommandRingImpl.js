@@ -51,6 +51,7 @@
     PARTICLE_APPLY_FORCE_RANGE: 39, // entity=first; last i32[3]; fx,fy
     PARTICLE_APPLY_IMPULSE_RANGE: 40, // entity=first; last i32[3]; ix,iy
     EXTRACT_PARTICLES: 41, // entity=groupId; count, groupFlags, trackGroup (SAB holds indices)
+    SET_PARTICLE_USER_DATA_LIST: 42, // indices+add/set in liquidFunUserDataList SAB
   });
 
   var BOX2D_CMD_HEADER_I32 = 4;
@@ -473,6 +474,10 @@
     }
   }
 
+  function enqueueSetParticleUserDataList() {
+    return enqueue(BOX2D_CMD.SET_PARTICLE_USER_DATA_LIST, 0, 0, 0, 0, 0);
+  }
+
   function enqueueExtractParticles(groupId, count, groupFlags, trackGroup) {
     return enqueue(
       BOX2D_CMD.EXTRACT_PARTICLES,
@@ -674,6 +679,9 @@
         case BOX2D_CMD.EXTRACT_PARTICLES:
           if (handlers.extractParticles) handlers.extractParticles(entity, a, b, c);
           break;
+        case BOX2D_CMD.SET_PARTICLE_USER_DATA_LIST:
+          if (handlers.setParticleUserDataList) handlers.setParticleUserDataList();
+          break;
         default:
           break;
       }
@@ -734,6 +742,7 @@
     enqueueParticleApplyForceRange: enqueueParticleApplyForceRange,
     enqueueParticleApplyImpulseRange: enqueueParticleApplyImpulseRange,
     enqueueExtractParticles: enqueueExtractParticles,
+    enqueueSetParticleUserDataList: enqueueSetParticleUserDataList,
     drainCommandRing: drainCommandRing,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

@@ -19,6 +19,7 @@
     'box2dRayCastImpl.js',
     'liquidFunQueryImpl.js',
     'liquidFunExtractImpl.js',
+    'liquidFunUserDataListImpl.js',
   );
   const drainBox2dCommandRing = Box2dCommandRing.drainCommandRing;
   const publishBox2dContactEvent = Box2dContactRing.publishContactEvent;
@@ -69,6 +70,7 @@
   let liquidFunViews = null;
   let liquidFunGroupsViews = null;
   let liquidFunMaxCount = 0;
+  let liquidFunUserDataU32 = null;
   let liquidFunDensity = 1.0;
   let liquidFunXFloatOffset = 0;
   let liquidFunYFloatOffset = 0;
@@ -1072,6 +1074,14 @@
       if (!world || typeof world.setParticleUserDataRange !== 'function') return;
       world.setParticleUserDataRange(first, last, bits);
     },
+    setParticleUserDataList() {
+      if (typeof LiquidFunUserDataList === 'undefined') return;
+      LiquidFunUserDataList.applyLiquidFunUserDataList(liquidFunUserDataU32, function (index, bits) {
+        if (world && typeof world.setParticleUserData === 'function') {
+          world.setParticleUserData(index, bits);
+        }
+      });
+    },
     setParticleColor(index, rgba) {
       if (!world || typeof world.setParticleColor !== 'function') return;
       world.setParticleColor(index, rgba);
@@ -1762,9 +1772,22 @@
     };
   }
 
+  function bindLiquidFunUserDataHeap(heap) {
+    if (!heap || !heap.sab || !(heap.userDataByteOffset > 0) || !(heap.maxCount > 0)) {
+      liquidFunUserDataU32 = null;
+      return;
+    }
+    liquidFunUserDataU32 = new Uint32Array(
+      heap.sab,
+      heap.userDataByteOffset | 0,
+      heap.maxCount | 0,
+    );
+  }
+
   function publishLiquidFunHeap() {
     const heap = buildLiquidFunHeap();
     if (!heap) return;
+    bindLiquidFunUserDataHeap(heap);
     if (typeof globalThis.weedjsOnLiquidFunHeap === 'function') {
       globalThis.weedjsOnLiquidFunHeap(heap);
     } else if (typeof postMessage === 'function') {
@@ -2213,6 +2236,9 @@
     }
     if (data.liquidFunExtractSab && typeof LiquidFunExtract !== 'undefined') {
       LiquidFunExtract.bindLiquidFunExtractSab(data.liquidFunExtractSab);
+    }
+    if (data.liquidFunUserDataListSab && typeof LiquidFunUserDataList !== 'undefined') {
+      LiquidFunUserDataList.bindLiquidFunUserDataListSab(data.liquidFunUserDataListSab);
     }
     if (data.contactSab) {
       Box2dContactRing.bindContactRing(data.contactSab);

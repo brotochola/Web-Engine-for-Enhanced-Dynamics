@@ -31,6 +31,7 @@ import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
 import { bindRayCastSab } from '../box2d/box2dRayCast.js';
 import { bindLiquidFunQuerySab } from '../box2d/liquidFunQuery.js';
 import { bindLiquidFunExtractSab } from '../box2d/liquidFunExtract.js';
+import { bindLiquidFunUserDataListSab } from '../box2d/liquidFunUserDataList.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { bindMovedBodies } from '../box2d/box2dMovedBodies.js';
 import {
@@ -986,6 +987,9 @@ class LogicWorker extends AbstractWorker {
         }
         if (data.liquidFunExtractSab) {
           bindLiquidFunExtractSab(data.liquidFunExtractSab);
+        }
+        if (data.liquidFunUserDataListSab) {
+          bindLiquidFunUserDataListSab(data.liquidFunUserDataListSab);
         }
         if (data.liquidFunHeap) {
           LiquidFun.bindHeapPose(data.liquidFunHeap);

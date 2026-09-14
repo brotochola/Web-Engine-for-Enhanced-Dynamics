@@ -20,6 +20,7 @@ import {
 } from '../box2d/box2dRayCast.js';
 import { bindLiquidFunQuerySab } from '../box2d/liquidFunQuery.js';
 import { bindLiquidFunExtractSab } from '../box2d/liquidFunExtract.js';
+import { bindLiquidFunUserDataListSab } from '../box2d/liquidFunUserDataList.js';
 import { bindMovedBodies, getMovedBodiesViews } from '../box2d/box2dMovedBodies.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
@@ -1677,6 +1678,7 @@ class Scene {
         rayCastSab: e.data.rayCastSab || null,
         liquidFunQuerySab: e.data.liquidFunQuerySab || null,
         liquidFunExtractSab: e.data.liquidFunExtractSab || null,
+        liquidFunUserDataListSab: e.data.liquidFunUserDataListSab || null,
         contactSab: e.data.contactSab,
         movedSab: e.data.movedSab || null,
         hitSab: e.data.hitSab || null,
@@ -1711,6 +1713,9 @@ class Scene {
       }
       if (payload.liquidFunExtractSab) {
         bindLiquidFunExtractSab(payload.liquidFunExtractSab);
+      }
+      if (payload.liquidFunUserDataListSab) {
+        bindLiquidFunUserDataListSab(payload.liquidFunUserDataListSab);
       }
       if (payload.movedSab) {
         bindMovedBodies(payload.movedSab);
