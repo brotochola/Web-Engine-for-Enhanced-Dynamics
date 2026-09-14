@@ -23,7 +23,7 @@ test('custom layers write sortKey and skip CPU heapsort', () => {
 
 test('pixi custom layers use sortKey depth when layer.ySorting', () => {
   assert.match(pixi, /depthTest: layerYSort/);
-  assert.match(pixi, /depthMode: useSortKey \? 'sortKey' : 'index'/);
+  assert.match(pixi, /depthMode = useSortKey \? BATCH_DEPTH\.SORT_KEY : BATCH_DEPTH\.INDEX/);
   assert.doesNotMatch(pixi, /this\.instancedSprites\s*=/);
 });
 
@@ -41,4 +41,12 @@ test('visible lights SAB fills even when cookie shadows are off', () => {
   );
   assert.ok(updateCall >= 0 && updateCall < shadowFn);
   assert.ok(earlyReturn > shadowFn);
+});
+
+test('shadow RT clears transparent each frame (not opaque black)', () => {
+  const fn = pixi.indexOf('updateShadowSprites() {');
+  const body = pixi.slice(fn, pixi.indexOf('\n  loadTextures(', fn));
+  assert.match(body, /rtOpts\.clear = true/);
+  assert.match(body, /rtOpts\.clearColor = this\._clearTransparent/);
+  assert.doesNotMatch(body, /_clearBlack|\[0,\s*0,\s*0,\s*1\]/);
 });

@@ -26,6 +26,8 @@ import {
     LAYER_SPLAT_FALLOFF,
     LAYER_SCALE_MODE,
     LAYER_COMPUTE_SOURCE,
+    LAYER_FEEDER_KIND,
+    LAYER_SUBSCRIBE_KIND,
     COMPUTE_LAYER_DEFAULT_MAX_BODIES,
     COMPUTE_LAYER_DEFAULT_MAX_PARTICLES,
 } from './ConfigDefaults.js';
@@ -98,6 +100,9 @@ export class Layer {
     static _containerBlendId = null;  // Uint8Array[MAX_LAYERS]
     static _available = null;         // Uint8Array[MAX_LAYERS]
     static _hasRenderQueue = null;    // Uint8Array[MAX_LAYERS]
+    static _visible = null;           // Uint8Array[MAX_LAYERS]  (mutable via Atomics)
+    static _feederKind = null;        // Uint8Array[MAX_LAYERS]  (LAYER_FEEDER_KIND)
+    static _visibleDirty = null;      // Int32Array[MAX_LAYERS]  (dirty flag for visible)
 
     /** Per-layer compute feeder lists (SAB). */
     static _feedCountSAB = null;
@@ -122,6 +127,9 @@ export class Layer {
         'saturation', 'color', 'luminosity', 'normal-npm', 'add-npm', 'screen-npm',
         'none', 'subtract', 'divide', 'vivid-light', 'hard-mix', 'negation', 'min', 'max',
     ];
+
+    // LAYER_SCALE_MODE id -> Pixi TextureSource.scaleMode string.
+    static _SCALE_MODE_STRINGS = ['linear', 'nearest'];
 
     // Metadata for serialization to workers
     static _metadata = null;
@@ -160,7 +168,7 @@ export class Layer {
     get zIndex() { return Layer._zIndex[this.id]; }
     get resolution() { return Layer._resolution[this.id]; }
     /** Pixi upsample filter for shader RTs ({@link LAYER_SCALE_MODE}). */
-    get scaleMode() { return this._scaleMode || LAYER_SCALE_MODE.LINEAR; }
+    get scaleMode() { return this._scaleMode ?? LAYER_SCALE_MODE.LINEAR; }
     /**
      * Layer opacity (0.0 = fully transparent, 1.0 = fully opaque).
      * Mutable from any worker — writes go through the config SAB and the
@@ -171,6 +179,15 @@ export class Layer {
     set alpha(v) {
         Layer._alpha[this.id] = v;
         Atomics.store(Layer._alphaDirty, this.id, 1);
+    }
+    /**
+     * Stage visibility. Mutable from any worker — SAB + Atomics dirty, same as alpha.
+     * Renderer skips pack/RT for hidden layers and applies `.visible` after uploads.
+     */
+    get visible() { return Layer._visible[this.id] === 1; }
+    set visible(v) {
+        Layer._visible[this.id] = v ? 1 : 0;
+        Atomics.store(Layer._visibleDirty, this.id, 1);
     }
     get hasShader() { return Layer._hasShader[this.id] === 1; }
     get ySorting() { return Layer._ySorting[this.id] === 1; }
@@ -187,9 +204,9 @@ export class Layer {
     get builtIn() { return this._builtIn; }
     get layerType() { return this._layerType; }
     /** {@link LAYER_DENSITY_SOURCE} value (`SPRITES` or `LIQUID_FUN`). */
-    get densitySource() { return this._densitySource || LAYER_DENSITY_SOURCE.SPRITES; }
+    get densitySource() { return this._densitySource ?? LAYER_DENSITY_SOURCE.SPRITES; }
     /** {@link LAYER_COMPUTE_SOURCE} or null. */
-    get computeSource() { return this._computeSource || null; }
+    get computeSource() { return this._computeSource ?? null; }
     /** Compute pass list / module names (read-only mirror). */
     get compute() { return this._compute || null; }
     /** Splat kernel controls when densitySource is liquidFun (read-only mirror). */
@@ -461,6 +478,10 @@ export class Layer {
     //   containerBlendId:Uint8[MAX_LAYERS]
     //   available:       Uint8[MAX_LAYERS]
     //   hasRenderQueue:  Uint8[MAX_LAYERS]
+    //   visible:         Uint8[MAX_LAYERS]  (mutable after init)
+    //   feederKind:      Uint8[MAX_LAYERS]  (LAYER_FEEDER_KIND)
+    //   (align to 4)
+    //   visibleDirty:    Int32[MAX_LAYERS]  (Atomics dirty flag)
 
     static _createConfigViews(sab) {
         let offset = 0;
@@ -495,6 +516,16 @@ export class Layer {
         offset += this.MAX_LAYERS;
 
         this._hasRenderQueue = new Uint8Array(sab, offset, this.MAX_LAYERS);
+        offset += this.MAX_LAYERS;
+
+        this._visible = new Uint8Array(sab, offset, this.MAX_LAYERS);
+        offset += this.MAX_LAYERS;
+
+        this._feederKind = new Uint8Array(sab, offset, this.MAX_LAYERS);
+        offset += this.MAX_LAYERS;
+
+        offset = Math.ceil(offset / 4) * 4;
+        this._visibleDirty = new Int32Array(sab, offset, this.MAX_LAYERS);
     }
 
     static _getConfigSABSize() {
@@ -510,7 +541,11 @@ export class Layer {
         size += this.MAX_LAYERS;      // containerBlendId Uint8
         size += this.MAX_LAYERS;      // available Uint8
         size += this.MAX_LAYERS;      // hasRenderQueue Uint8
-        return Math.ceil(size / 4) * 4; // final align
+        size += this.MAX_LAYERS;      // visible Uint8
+        size += this.MAX_LAYERS;      // feederKind Uint8
+        size = Math.ceil(size / 4) * 4;
+        size += this.MAX_LAYERS * 4;  // visibleDirty Int32
+        return size;
     }
 
     // ========================================
@@ -589,6 +624,7 @@ export class Layer {
         }
 
         this.initialized = true;
+        for (let i = 0; i < this.count; i++) this._writeFeederKind(i);
         this._buildMetadata(layersConfig, builtInLayers);
         return this;
     }
@@ -607,9 +643,10 @@ export class Layer {
     /** @param {object|null|undefined} shader */
     static _normalizeDensitySource(shader) {
         const src = shader?.densitySource;
-        return src === LAYER_DENSITY_SOURCE.LIQUID_FUN || src === 'liquidFun'
-            ? LAYER_DENSITY_SOURCE.LIQUID_FUN
-            : LAYER_DENSITY_SOURCE.SPRITES;
+        if (src === LAYER_DENSITY_SOURCE.LIQUID_FUN || src === 'liquidFun') {
+            return LAYER_DENSITY_SOURCE.LIQUID_FUN;
+        }
+        return LAYER_DENSITY_SOURCE.SPRITES;
     }
 
     /**
@@ -837,14 +874,7 @@ export class Layer {
         if (src === LAYER_COMPUTE_SOURCE.LIQUID_FUN || src === 'liquidFun') {
             return LAYER_COMPUTE_SOURCE.LIQUID_FUN;
         }
-        if (
-            src === LAYER_COMPUTE_SOURCE.BOX2D_BODIES
-            || src === 'box2dBodies'
-            || !src
-        ) {
-            return LAYER_COMPUTE_SOURCE.BOX2D_BODIES;
-        }
-        return src;
+        return LAYER_COMPUTE_SOURCE.BOX2D_BODIES;
     }
 
     /**
@@ -868,16 +898,23 @@ export class Layer {
     /**
      * How this layer consumes subscribed particles/colliders.
      * @param {number} layerId
-     * @returns {'compute'|'density'|'sprites'|'builtin'|null}
+     * @returns {number} {@link LAYER_FEEDER_KIND}
      */
     static feederKind(layerId) {
         const id = layerId | 0;
-        const layer = this._byId[id];
-        if (!layer) return null;
-        if (layer._compute) return 'compute';
-        if (layer._densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN) return 'density';
-        if (this._hasRenderQueue && this._hasRenderQueue[id] === 1) return 'sprites';
-        return 'builtin';
+        if (!this._feederKind || id < 0 || id >= this.MAX_LAYERS) return LAYER_FEEDER_KIND.NONE;
+        return this._feederKind[id] | 0;
+    }
+
+    /** Cache {@link LAYER_FEEDER_KIND} after `_hasRenderQueue` is known. */
+    static _writeFeederKind(id) {
+        const layer = this._byId[id | 0];
+        if (!layer || !this._feederKind) return;
+        let kind = LAYER_FEEDER_KIND.BUILTIN;
+        if (layer._compute) kind = LAYER_FEEDER_KIND.COMPUTE;
+        else if (layer._densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN) kind = LAYER_FEEDER_KIND.DENSITY;
+        else if (this._hasRenderQueue && this._hasRenderQueue[id] === 1) kind = LAYER_FEEDER_KIND.SPRITES;
+        this._feederKind[id] = kind;
     }
 
     /** @param {number} id */
@@ -927,7 +964,7 @@ export class Layer {
             console.warn(`layer: Layer "${name}" is not a subscription target`);
             return -1;
         }
-        if (kind === 'gameObject' && this.feederKind(id) === 'density') {
+        if (kind === LAYER_SUBSCRIBE_KIND.GAME_OBJECT && this.feederKind(id) === LAYER_FEEDER_KIND.DENSITY) {
             console.warn(
                 `layer: Layer "${name}" is density (particles splat it); colliders are not splat`
             );
@@ -949,12 +986,30 @@ export class Layer {
     }
 
     /**
-     * Subscription bitmask from `layer` / `layers`.
-     * @param {object|null|undefined} opts
-     * @param {'particle'|'gameObject'} [kind]
+     * One-entry mask without allocating a list (GameObject.setLayer).
+     * @param {string|number} entry
+     * @param {number} [kind]
      * @returns {number} Uint16 mask
      */
-    static resolveSubscriptions(opts, kind = 'particle') {
+    static resolveOne(entry, kind = LAYER_SUBSCRIBE_KIND.PARTICLE) {
+        const id = this._resolveOneSubscription(entry, kind);
+        if (id < 0) {
+            return kind === LAYER_SUBSCRIBE_KIND.GAME_OBJECT ? this.entitiesMask() : 0;
+        }
+        let mask = this.bit(id);
+        if (kind === LAYER_SUBSCRIBE_KIND.GAME_OBJECT && this.feederKind(id) !== LAYER_FEEDER_KIND.SPRITES) {
+            mask |= this.entitiesMask();
+        }
+        return mask;
+    }
+
+    /**
+     * Subscription bitmask from `layer` / `layers`.
+     * @param {object|null|undefined} opts
+     * @param {number} [kind]
+     * @returns {number} Uint16 mask
+     */
+    static resolveSubscriptions(opts, kind = LAYER_SUBSCRIBE_KIND.PARTICLE) {
         const { omitted, list } = this._subscriptionList(opts);
         if (omitted) return this.entitiesMask();
         let mask = 0;
@@ -963,9 +1018,9 @@ export class Layer {
             const id = this._resolveOneSubscription(list[i], kind);
             if (id < 0) continue;
             mask |= this.bit(id);
-            if (this.feederKind(id) === 'sprites') hasSpriteQueue = true;
+            if (this.feederKind(id) === LAYER_FEEDER_KIND.SPRITES) hasSpriteQueue = true;
         }
-        if (kind === 'gameObject') {
+        if (kind === LAYER_SUBSCRIBE_KIND.GAME_OBJECT) {
             if (!hasSpriteQueue) mask |= this.entitiesMask();
             return mask;
         }
@@ -1012,15 +1067,10 @@ export class Layer {
         if (densitySource !== LAYER_DENSITY_SOURCE.LIQUID_FUN) return null;
         const s = shader?.splat || {};
         let falloff = LAYER_SPLAT_FALLOFF.QUADRATIC;
-        if (
-            s.falloff === LAYER_SPLAT_FALLOFF.SMOOTHSTEP ||
-            s.falloff === LAYER_SPLAT_FALLOFF.GAUSSIAN ||
-            s.falloff === 'smoothstep' ||
-            s.falloff === 'gaussian'
-        ) {
-            falloff = s.falloff === 'smoothstep' || s.falloff === LAYER_SPLAT_FALLOFF.SMOOTHSTEP
-                ? LAYER_SPLAT_FALLOFF.SMOOTHSTEP
-                : LAYER_SPLAT_FALLOFF.GAUSSIAN;
+        if (s.falloff === LAYER_SPLAT_FALLOFF.SMOOTHSTEP || s.falloff === 'smoothstep') {
+            falloff = LAYER_SPLAT_FALLOFF.SMOOTHSTEP;
+        } else if (s.falloff === LAYER_SPLAT_FALLOFF.GAUSSIAN || s.falloff === 'gaussian') {
+            falloff = LAYER_SPLAT_FALLOFF.GAUSSIAN;
         }
         return {
             radius: Number.isFinite(s.radius) && s.radius > 0 ? s.radius : 48,
@@ -1032,15 +1082,19 @@ export class Layer {
 
     /** True when layer uses HEAP pose splat (no type-7 sprite queue). */
     static isLiquidFunDensityLayer(layerId) {
-        const layer = this._byId[layerId | 0];
-        return !!(layer && layer._densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN);
+        return this.feederKind(layerId) === LAYER_FEEDER_KIND.DENSITY;
     }
 
-    /** @param {string|undefined|null} mode */
+    /** @param {string|number|undefined|null} mode */
     static _normalizeScaleMode(mode) {
         return mode === LAYER_SCALE_MODE.NEAREST || mode === 'nearest'
             ? LAYER_SCALE_MODE.NEAREST
             : LAYER_SCALE_MODE.LINEAR;
+    }
+
+    /** Pixi TextureSource.scaleMode string for a {@link LAYER_SCALE_MODE} id. */
+    static scaleModeString(mode) {
+        return this._SCALE_MODE_STRINGS[mode === LAYER_SCALE_MODE.NEAREST ? LAYER_SCALE_MODE.NEAREST : LAYER_SCALE_MODE.LINEAR];
     }
 
     static _register(name, config = {}) {
@@ -1053,9 +1107,9 @@ export class Layer {
         const layer = new Layer(id, name);
         layer._builtIn = !!config._builtIn;
         layer._layerType = config._layerType || this._deriveLayerType(name, layer._builtIn, !!config.shader);
-        layer._densitySource = config._densitySource || LAYER_DENSITY_SOURCE.SPRITES;
+        layer._densitySource = config._densitySource ?? LAYER_DENSITY_SOURCE.SPRITES;
         layer._compute = config._compute || null;
-        layer._computeSource = config._computeSource || null;
+        layer._computeSource = config._computeSource ?? null;
         layer._splat = config._splat || null;
         layer._scaleMode = Layer._normalizeScaleMode(
             config._scaleMode ?? config.scaleMode ?? LAYER_DEFAULTS.scaleMode
@@ -1071,6 +1125,8 @@ export class Layer {
         layer.alpha = config.alpha ?? LAYER_DEFAULTS.alpha;
         this._containerBlendId[id] = config.shader?.containerBlend ?? 0;
         this._available[id] = 1;
+        this._visible[id] = 1;
+        if (this._visibleDirty) this._visibleDirty[id] = 0;
 
         this._byName[name] = layer;
         this._byId[id] = layer;
@@ -1176,7 +1232,7 @@ export class Layer {
                 ? (builtInLayers[name] || {})
                 : (layersConfig[name] || {});
 
-            const densitySource = layer._densitySource || LAYER_DENSITY_SOURCE.SPRITES;
+            const densitySource = layer._densitySource ?? LAYER_DENSITY_SOURCE.SPRITES;
             const splat = layer._splat || (
                 densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
                     ? Layer._normalizeSplat(config.shader, densitySource)
@@ -1193,9 +1249,10 @@ export class Layer {
                 hasShader: this._hasShader[i] === 1,
                 ySorting: this._ySorting[i] === 1,
                 resolution: this._resolution[i],
-                scaleMode: layer._scaleMode || LAYER_SCALE_MODE.LINEAR,
+                scaleMode: layer._scaleMode ?? LAYER_SCALE_MODE.LINEAR,
                 alpha: this._alpha[i],
                 hasRenderQueue: this._hasRenderQueue[i] === 1,
+                feederKind: this._feederKind[i] | 0,
                 maxItems: isBuiltIn || densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
                     ? 0
                     : (config.maxItems || LAYER_DEFAULTS.maxItemsPerLayer),
@@ -1208,7 +1265,7 @@ export class Layer {
                 densitySource,
                 splat,
                 compute: layer._compute || null,
-                computeSource: layer._computeSource || null,
+                computeSource: layer._computeSource ?? null,
                 maxBodies: layer._compute?.maxBodies || 0,
                 maxParticles: layer._compute?.maxParticles || 0,
             };
@@ -1289,9 +1346,9 @@ export class Layer {
             const layer = new Layer(i, layerMeta.name);
             layer._builtIn = !!layerMeta.builtIn;
             layer._layerType = layerMeta.layerType || 'world';
-            layer._densitySource = layerMeta.densitySource || LAYER_DENSITY_SOURCE.SPRITES;
+            layer._densitySource = layerMeta.densitySource ?? LAYER_DENSITY_SOURCE.SPRITES;
             layer._compute = layerMeta.compute || null;
-            layer._computeSource = layerMeta.computeSource || null;
+            layer._computeSource = layerMeta.computeSource ?? null;
             layer._splat = layerMeta.splat || null;
             layer._scaleMode = Layer._normalizeScaleMode(layerMeta.scaleMode);
             this._byName[layerMeta.name] = layer;
@@ -1368,6 +1425,9 @@ export class Layer {
         this._containerBlendId = null;
         this._available = null;
         this._hasRenderQueue = null;
+        this._visible = null;
+        this._feederKind = null;
+        this._visibleDirty = null;
         this._feedCountSAB = null;
         this._feedCount = null;
         this._feedLock = null;

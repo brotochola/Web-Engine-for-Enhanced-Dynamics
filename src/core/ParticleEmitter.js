@@ -247,7 +247,7 @@ export class ParticleEmitter extends SharedAtomicPool {
     const flipY = ParticleComponent.flipY;
     const blendMode = ParticleComponent.blendMode;
     const layerMask = ParticleComponent.layerMask;
-    const subMask = Layer.resolveSubscriptions(cfg, 'particle');
+    const subMask = Layer.resolveSubscriptions(cfg);
     const flat = ParticleComponent.flat;
     const viewModeArr = ParticleComponent.viewMode;
     if (!flat || !viewModeArr) {

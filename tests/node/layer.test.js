@@ -6,6 +6,7 @@ import {
   LAYER_DENSITY_SOURCE,
   LAYER_SPLAT_FALLOFF,
   LAYER_SCALE_MODE,
+  LAYER_FEEDER_KIND,
 } from '../../src/core/ConfigDefaults.js';
 
 const BUILT_IN_LAYERS = {
@@ -176,6 +177,56 @@ test('scaleMode NEAREST round-trips in metadata', () => {
     const layer = Layer.get('pixelFluid');
     assert.equal(layer.scaleMode, LAYER_SCALE_MODE.NEAREST);
     assert.equal(Layer._metadata.layers[layer.id].scaleMode, LAYER_SCALE_MODE.NEAREST);
+  } finally {
+    Layer.reset();
+  }
+});
+
+test('feederKind is an int enum; visible SAB round-trips', () => {
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      {
+        oil: { shader: { fragment: 'f', densitySource: LAYER_DENSITY_SOURCE.LIQUID_FUN } },
+        fire: { shader: { fragment: 'f', compute: 's' } },
+        fx: { zIndex: 8 },
+      },
+      BUILT_IN_LAYERS,
+      true
+    );
+    assert.equal(Layer.feederKind(Layer.ENTITIES_ID), LAYER_FEEDER_KIND.SPRITES);
+    assert.equal(Layer.feederKind(Layer.getId('oil')), LAYER_FEEDER_KIND.DENSITY);
+    assert.equal(Layer.feederKind(Layer.getId('fire')), LAYER_FEEDER_KIND.COMPUTE);
+    assert.equal(Layer.feederKind(Layer.getId('fx')), LAYER_FEEDER_KIND.SPRITES);
+    assert.equal(Layer.feederKind(Layer.BACKGROUND.id), LAYER_FEEDER_KIND.BUILTIN);
+    assert.equal(typeof Layer.feederKind(Layer.ENTITIES_ID), 'number');
+
+    const oil = Layer.get('oil');
+    assert.equal(oil.visible, true);
+    oil.visible = false;
+    assert.equal(oil.visible, false);
+    assert.equal(Layer._visible[oil.id], 0);
+    assert.equal(Atomics.load(Layer._visibleDirty, oil.id), 1);
+    oil.visible = true;
+    assert.equal(oil.visible, true);
+  } finally {
+    Layer.reset();
+  }
+});
+
+test('densitySource string alias liquidFun still normalizes to int enum', () => {
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      {
+        oil: { shader: { fragment: 'f', densitySource: 'liquidFun' } },
+      },
+      BUILT_IN_LAYERS,
+      true
+    );
+    const oil = Layer.get('oil');
+    assert.equal(oil.densitySource, LAYER_DENSITY_SOURCE.LIQUID_FUN);
+    assert.equal(Layer.feederKind(oil.id), LAYER_FEEDER_KIND.DENSITY);
   } finally {
     Layer.reset();
   }

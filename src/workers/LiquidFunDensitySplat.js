@@ -102,6 +102,18 @@ export class LiquidFunDensitySplat {
     this.mesh.label = label || 'lf-density-splat';
     this.mesh.blendMode = blendMode || 'add';
     this.mesh.visible = false;
+    this._camX = 0;
+    this._camY = 0;
+    this._screenScale = 1;
+    this._canvasW = 0;
+    this._canvasH = 0;
+    this._resolution = 1;
+    this._screenRadius = 1;
+    this._pad = 0;
+    this._cull = false;
+    this._useTint = true;
+    this._intensity = 1;
+    this._out = 0;
   }
 
   /**
@@ -109,57 +121,25 @@ export class LiquidFunDensitySplat {
    * @param {object} views - LiquidFun.getViews()
    * @param {object} opts
    */
-  upload(views, opts = {}) {
+  upload(views, opts) {
     const zoom = opts.zoom ?? 1;
-    const cameraX = opts.cameraX ?? 0;
-    const cameraY = opts.cameraY ?? 0;
     const resolution = opts.resolution ?? 1;
     const screenScale = zoom * resolution;
     const worldRadius = opts.radius > 0 ? opts.radius : 48;
-    const screenRadius = worldRadius * screenScale;
-    const intensity = opts.intensity ?? 1;
-    const useTint = opts.useParticleTint !== false;
+    this._camX = opts.cameraX ?? 0;
+    this._camY = opts.cameraY ?? 0;
+    this._screenScale = screenScale;
+    this._resolution = resolution;
+    this._screenRadius = worldRadius * screenScale;
+    this._intensity = opts.intensity ?? 1;
+    this._useTint = opts.useParticleTint !== false;
+    this._canvasW = opts.canvasW > 0 ? opts.canvasW : 0;
+    this._canvasH = opts.canvasH > 0 ? opts.canvasH : 0;
+    this._cull = this._canvasW > 0 && this._canvasH > 0;
+    this._pad = this._screenRadius;
+    this._out = 0;
     const want = 1 << (opts.layerId | 0);
-    const canvasW = opts.canvasW > 0 ? opts.canvasW : 0;
-    const canvasH = opts.canvasH > 0 ? opts.canvasH : 0;
-    const cull = canvasW > 0 && canvasH > 0;
-    const pad = screenRadius;
-    const data = this.data;
-    const dataU32 = this.dataU32;
     const maxOut = this.capacity;
-    let out = 0;
-
-    const writeInst = (wx, wy, tint, alphaMul) => {
-      const sx = (wx - cameraX) * screenScale;
-      const sy = (wy - cameraY) * screenScale;
-      if (cull) {
-        if (sx < -pad || sy < -pad || sx > canvasW * resolution + pad || sy > canvasH * resolution + pad) {
-          return;
-        }
-      }
-      if (out >= maxOut) return;
-      let r = 255;
-      let g = 255;
-      let b = 255;
-      if (useTint && tint) {
-        const t = tint >>> 0;
-        if (t) {
-          r = (t >> 16) & 0xff;
-          g = (t >> 8) & 0xff;
-          b = t & 0xff;
-        }
-      }
-      let a = intensity * (alphaMul != null ? alphaMul : 1);
-      let ai = (a * 255 + 0.5) | 0;
-      if (ai < 0) ai = 0;
-      else if (ai > 255) ai = 255;
-      const base = out * LF_SPLAT_FLOATS;
-      data[base] = sx;
-      data[base + 1] = sy;
-      data[base + 2] = screenRadius;
-      dataU32[base + 3] = r | (g << 8) | (b << 16) | (ai << 24);
-      out++;
-    };
 
     if (views?.count && views.x && views.y) {
       const count = views.count[0] | 0;
@@ -170,12 +150,12 @@ export class LiquidFunDensitySplat {
       const baseAlpha = views.baseAlpha;
       const alphaArr = views.alpha;
       const maskArr = views.layerMask;
-      for (let i = 0; i < n && out < maxOut; i++) {
+      for (let i = 0; i < n && this._out < maxOut; i++) {
         if (maskArr && !(maskArr[i] & want)) continue;
         let a = 1;
         if (baseAlpha) a *= baseAlpha[i];
         if (alphaArr) a *= alphaArr[i];
-        writeInst(xArr[i], yArr[i], tintArr ? tintArr[i] : 0, a);
+        this._writeInst(xArr[i], yArr[i], tintArr ? tintArr[i] : 0, a);
       }
     }
 
@@ -187,13 +167,14 @@ export class LiquidFunDensitySplat {
       const cpuTint = ParticleComponent.tint;
       const cpuAlpha = ParticleComponent.alpha;
       const n = active.length;
-      for (let i = 0; i < n && out < maxOut; i++) {
+      for (let i = 0; i < n && this._out < maxOut; i++) {
         if (!active[i]) continue;
         if (cpuMask && !(cpuMask[i] & want)) continue;
-        writeInst(px[i], py[i], cpuTint ? cpuTint[i] : 0, cpuAlpha ? cpuAlpha[i] : 1);
+        this._writeInst(px[i], py[i], cpuTint ? cpuTint[i] : 0, cpuAlpha ? cpuAlpha[i] : 1);
       }
     }
 
+    const out = this._out;
     if (out <= 0) {
       this.geometry.instanceCount = 0;
       this.mesh.visible = false;
@@ -206,11 +187,45 @@ export class LiquidFunDensitySplat {
     return out;
   }
 
+  _writeInst(wx, wy, tint, alphaMul) {
+    const sx = (wx - this._camX) * this._screenScale;
+    const sy = (wy - this._camY) * this._screenScale;
+    if (this._cull) {
+      const pad = this._pad;
+      if (sx < -pad || sy < -pad || sx > this._canvasW * this._resolution + pad || sy > this._canvasH * this._resolution + pad) {
+        return;
+      }
+    }
+    let out = this._out;
+    if (out >= this.capacity) return;
+    let r = 255;
+    let g = 255;
+    let b = 255;
+    if (this._useTint && tint) {
+      const t = tint >>> 0;
+      if (t) {
+        r = (t >> 16) & 0xff;
+        g = (t >> 8) & 0xff;
+        b = t & 0xff;
+      }
+    }
+    let a = this._intensity * (alphaMul != null ? alphaMul : 1);
+    let ai = (a * 255 + 0.5) | 0;
+    if (ai < 0) ai = 0;
+    else if (ai > 255) ai = 255;
+    const base = out * LF_SPLAT_FLOATS;
+    this.data[base] = sx;
+    this.data[base + 1] = sy;
+    this.data[base + 2] = this._screenRadius;
+    this.dataU32[base + 3] = r | (g << 8) | (b << 16) | (ai << 24);
+    this._out = out + 1;
+  }
+
   /**
    * Pack HEAP particles in lit group slabs (lightIntensity[id] > 0). Ignores sprite layerId.
    * @returns {number} packed instance count
    */
-  uploadLitGroups(views, groups, opts = {}) {
+  uploadLitGroups(views, groups, opts) {
     const n = packLiquidFunLightSlabs(
       this.data,
       this.dataU32,

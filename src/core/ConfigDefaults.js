@@ -65,25 +65,53 @@ export const BLEND_MODES = Object.freeze({
 
 /**
  * How a shader layer builds its density RT (pass 1 before the look fragment).
- * String values — stored in layer metadata / compared on workers.
- * @enum {string}
+ * Int values — stored in layer metadata / compared on workers.
+ * Config still accepts the old strings `'sprites'` / `'liquidFun'` at normalize.
+ * @readonly
+ * @enum {number}
  */
 export const LAYER_DENSITY_SOURCE = Object.freeze({
   /** InstancedSpriteBatch + atlas kernels (default). */
-  SPRITES: 'sprites',
+  SPRITES: 0,
   /** Procedural soft disks from LiquidFun HEAP pose (no type-7 sprite queue). */
-  LIQUID_FUN: 'liquidFun',
+  LIQUID_FUN: 1,
 });
 
 /**
  * What a compute layer packs into GPU storage (not the look vertex shader).
- * @enum {string}
+ * Int values. Config still accepts `'box2dBodies'` / `'liquidFun'` at normalize.
+ * @readonly
+ * @enum {number}
  */
 export const LAYER_COMPUTE_SOURCE = Object.freeze({
   /** Colliders whose layerMask includes this layer: pose/vel + box/circle/polygon verts. */
-  BOX2D_BODIES: 'box2dBodies',
+  BOX2D_BODIES: 0,
   /** Layer particles (LiquidFun HEAP + CPU ParticleEmitter) packed into the engine `particles` SSBO. */
-  LIQUID_FUN: 'liquidFun',
+  LIQUID_FUN: 1,
+});
+
+/**
+ * How a layer consumes subscribed particles/colliders.
+ * Cached in Layer config SAB (`Uint8` per id).
+ * @readonly
+ * @enum {number}
+ */
+export const LAYER_FEEDER_KIND = Object.freeze({
+  NONE: 0,
+  BUILTIN: 1,
+  SPRITES: 2,
+  DENSITY: 3,
+  COMPUTE: 4,
+});
+
+/**
+ * `Layer.resolveSubscriptions` kind.
+ * @readonly
+ * @enum {number}
+ */
+export const LAYER_SUBSCRIBE_KIND = Object.freeze({
+  PARTICLE: 0,
+  GAME_OBJECT: 1,
 });
 
 /** Default GPU/CPU body cap for BOX2D_BODIES compute layers. */
@@ -97,27 +125,31 @@ export const COMPUTE_FLAG_SWEEP = 4;
 
 /**
  * Soft-disk falloff for `LAYER_DENSITY_SOURCE.LIQUID_FUN` splat kernels.
- * @enum {string}
+ * Int values. Config still accepts `'quadratic'` / `'smoothstep'` / `'gaussian'`.
+ * @readonly
+ * @enum {number}
  */
 export const LAYER_SPLAT_FALLOFF = Object.freeze({
   /** alpha = max(0, 1 - d*d) where d is normalized radius in [0,1]. Default / v1 active. */
-  QUADRATIC: 'quadratic',
+  QUADRATIC: 0,
   /** alpha = 1 - smoothstep(0, 1, d). Reserved — falls back to quadratic until wired. */
-  SMOOTHSTEP: 'smoothstep',
+  SMOOTHSTEP: 1,
   /** alpha = exp(-4 * d*d). Reserved — falls back to quadratic until wired. */
-  GAUSSIAN: 'gaussian',
+  GAUSSIAN: 2,
 });
 
 /**
  * Pixi v8 TextureSource.scaleMode for low-res layer RT upsample (displaySprite stretch).
  * Not MSAA / FXAA — only bilinear vs nearest when sampling the RT.
- * @enum {string}
+ * Int values. Pixi string is `Layer._SCALE_MODE_STRINGS[id]` at RT create.
+ * @readonly
+ * @enum {number}
  */
 export const LAYER_SCALE_MODE = Object.freeze({
   /** Soft bilinear upsample (default; good for soft fluid looks at resolution < 1). */
-  LINEAR: 'linear',
+  LINEAR: 0,
   /** Crisp / blocky upsample. */
-  NEAREST: 'nearest',
+  NEAREST: 1,
 });
 
 /**

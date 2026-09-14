@@ -62,7 +62,7 @@ function resolveEmit(options) {
   const life = resolveLifespanSec(o.lifespan);
   const viscousScale = o.viscousScale != null ? o.viscousScale : 1;
   const lightIntensity = o.lightIntensity > 0 ? +o.lightIntensity : 0;
-  const layerMask = Layer.resolveSubscriptions(o, 'particle');
+  const layerMask = Layer.resolveSubscriptions(o);
   return {
     posX: o.posX,
     posY: o.posY,

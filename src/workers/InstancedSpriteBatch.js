@@ -36,6 +36,30 @@ import {
 export const INSTANCED_SPRITE_FLOATS = 15;
 export const INSTANCED_SPRITE_STRIDE = INSTANCED_SPRITE_FLOATS * 4;
 
+export const BATCH_SPACE = Object.freeze({ WORLD: 0, SCREEN: 1 });
+export const BATCH_DEPTH = Object.freeze({ INDEX: 0, SORT_KEY: 1 });
+
+const EMPTY_UPLOAD_OPTS = Object.freeze({
+  space: BATCH_SPACE.WORLD,
+  zoom: 1,
+  cameraX: 0,
+  cameraY: 0,
+  resolution: 1,
+  depthMode: BATCH_DEPTH.INDEX,
+  depthDenom: 0,
+  worldHeight: 1,
+  sortKey: null,
+  texLut: null,
+  texLutCount: 0,
+  textures: null,
+  type: null,
+  includeType: -1,
+  excludeType0: -1,
+  excludeType1: -1,
+  indices: null,
+  indexCount: 0,
+});
+
 const Y_SORT_K = DECORATION_Y_SORT_SCALE;
 const GLOW_BIAS = ENTITY_GLOW_SORT_BIAS;
 
@@ -275,28 +299,30 @@ export class InstancedSpriteBatch {
   /**
    * Upload SoA views into instance buffer.
    * @param {object} q - typed array views + count
-   * @param {object} opts
-   * @param {'world'|'screen'} [opts.space='world']
+   * @param {object} [opts]
+   * @param {number} [opts.space=0] - BATCH_SPACE.WORLD | SCREEN
    * @param {number} [opts.zoom=1]
    * @param {number} [opts.cameraX=0]
    * @param {number} [opts.cameraY=0]
    * @param {number} [opts.resolution=1] - RT scale (shadows/custom shader layers)
-   * @param {'index'|'sortKey'} [opts.depthMode='index']
+   * @param {number} [opts.depthMode=0] - BATCH_DEPTH.INDEX | SORT_KEY
    * @param {number} [opts.worldHeight=1]
-   * @param {Float32Array|null} [opts.sortKey] - composite collector keys (depthMode sortKey)
+   * @param {Float32Array|null} [opts.sortKey] - composite collector keys (depthMode SORT_KEY)
    * @param {Float32Array|null} [opts.texLut] - unused (LUT is a vertex texture); kept for callers
    * @param {number} [opts.texLutCount=0]
    * @param {Array|null} [opts.textures]
    * @param {Uint8Array|null} [opts.type] - render queue type (filter)
-   * @param {number} [opts.includeType] - only pack this type (e.g. 3 = light glow)
-   * @param {number|number[]} [opts.excludeType] - skip this type / these types
+   * @param {number} [opts.includeType=-1] - only pack this type (e.g. 3 = light glow)
+   * @param {number} [opts.excludeType0=-1]
+   * @param {number} [opts.excludeType1=-1]
    * @param {Uint16Array|null} [opts.indices] - compact source indices (skips type filter)
    * @param {number} [opts.indexCount]
    */
-  upload(q, opts = {}) {
+  upload(q, opts) {
+    const o = opts || EMPTY_UPLOAD_OPTS;
     const count = q.count | 0;
-    const indices = opts.indices;
-    const indexCount = opts.indexCount | 0;
+    const indices = o.indices;
+    const indexCount = o.indexCount | 0;
     const useIndices = indices != null;
     if ((!useIndices && count <= 0) || (useIndices && indexCount <= 0)) {
       this.geometry.instanceCount = 0;
@@ -306,12 +332,12 @@ export class InstancedSpriteBatch {
 
     const data = this.data;
     const dataU32 = this.dataU32;
-    const space = opts.space || 'world';
-    const zoom = opts.zoom ?? 1;
-    const cameraX = opts.cameraX ?? 0;
-    const cameraY = opts.cameraY ?? 0;
-    const resolution = opts.resolution ?? 1;
-    const useScreen = space === 'screen';
+    const space = o.space | 0;
+    const zoom = o.zoom ?? 1;
+    const cameraX = o.cameraX ?? 0;
+    const cameraY = o.cameraY ?? 0;
+    const resolution = o.resolution ?? 1;
+    const useScreen = space === BATCH_SPACE.SCREEN;
     const screenScale = zoom * resolution;
     const tw = this._tileWorld;
     if (tw) {
@@ -327,16 +353,17 @@ export class InstancedSpriteBatch {
         tw[3] = 0;
       }
     }
-    const depthMode = opts.depthMode || 'index';
-    const worldHeight = opts.worldHeight > 0 ? opts.worldHeight : 1;
-    const typeArr = opts.type || null;
-    const sortKeyArr = opts.sortKey || null;
-    const includeType = opts.includeType;
-    const excludeRaw = opts.excludeType;
-    const excludeList =
-      excludeRaw == null ? null : typeof excludeRaw === 'number' ? [excludeRaw] : excludeRaw;
-    const filterTypes = !useIndices && typeArr && (includeType !== undefined || excludeList);
-    const depthDenom = (opts.depthDenom || this.capacity) + 1;
+    const depthMode = o.depthMode | 0;
+    const worldHeight = o.worldHeight > 0 ? o.worldHeight : 1;
+    const typeArr = o.type || null;
+    const sortKeyArr = o.sortKey || null;
+    const includeType = o.includeType | 0;
+    const exclude0 = o.excludeType0 | 0;
+    const exclude1 = o.excludeType1 | 0;
+    const hasInclude = includeType >= 0;
+    const hasExclude = exclude0 >= 0 || exclude1 >= 0;
+    const filterTypes = !useIndices && typeArr && (hasInclude || hasExclude);
+    const depthDenom = (o.depthDenom || this.capacity) + 1;
     const sortKeyMax = worldHeight * Y_SORT_K + GLOW_BIAS + 1;
 
     const rqX = q.x;
@@ -357,8 +384,8 @@ export class InstancedSpriteBatch {
     const rqTileOffU = q.tileOffsetU;
     const rqTileOffV = q.tileOffsetV;
 
-    const useSortKey = depthMode === 'sortKey' && sortKeyArr;
-    if (!useIndices && includeType !== undefined && !typeArr) {
+    const useSortKey = depthMode === BATCH_DEPTH.SORT_KEY && sortKeyArr;
+    if (!useIndices && hasInclude && !typeArr) {
       this.geometry.instanceCount = 0;
       this.mesh.visible = false;
       return 0;
@@ -374,17 +401,8 @@ export class InstancedSpriteBatch {
       const i = useIndices ? indices[k] : k;
       if (filterTypes) {
         const t = typeArr[i];
-        if (includeType !== undefined && t !== includeType) continue;
-        if (excludeList) {
-          let skip = false;
-          for (let e = 0; e < excludeList.length; e++) {
-            if (t === excludeList[e]) {
-              skip = true;
-              break;
-            }
-          }
-          if (skip) continue;
-        }
+        if (hasInclude && t !== includeType) continue;
+        if ((exclude0 >= 0 && t === exclude0) || (exclude1 >= 0 && t === exclude1)) continue;
       }
       if (out >= this.capacity) break;
 

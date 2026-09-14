@@ -47,7 +47,7 @@ test('vertex shader uses aInstRotCS without cos/sin of angle', () => {
   assert.match(wgsl, /select\(world, world \* uniforms\.uTileWorld\.z \+ uniforms\.uTileWorld\.xy, uniforms\.uTileWorld\.w > 0\.5\)/);
   assert.match(src, /this\._tileWorld = new Float32Array\(4\)/);
   assert.match(src, /tw\[3\] = 1/);
-  assert.match(src, /useScreen = space === 'screen'/);
+  assert.match(src, /useScreen = space === BATCH_SPACE\.SCREEN/);
   assert.match(wgsl, /textureLoad\(uTexLut/);
   assert.match(wgsl, /bitcast<u32>\(aInstTintBits\)/);
   assert.match(src, /instancedSpriteGpuProgram/);
@@ -55,11 +55,12 @@ test('vertex shader uses aInstRotCS without cos/sin of angle', () => {
   assert.match(gpuJs, /unfilterable-float/);
 });
 
-test('ctor sets State.depthMask; upload excludeType accepts a list; indices skip filter', () => {
+test('ctor sets State.depthMask; upload excludeType0/1; indices skip filter', () => {
   assert.match(src, /depthMask = true/);
   assert.match(src, /state\.depthMask = depthMask !== false/);
-  assert.match(src, /typeof excludeRaw === 'number' \? \[excludeRaw\] : excludeRaw/);
-  assert.match(src, /opts\.indices/);
+  assert.match(src, /excludeType0/);
+  assert.match(src, /excludeType1/);
+  assert.match(src, /o\.indices/);
   assert.match(src, /useIndices/);
 });
 
@@ -68,8 +69,8 @@ const pixiSrc = readFileSync(join(dir, '../../src/workers/pixi_worker.js'), 'utf
 test('particle batch: no Z write, no alpha discard; main queue partitions type 1/3', () => {
   assert.match(pixiSrc, /t === 1\) idxP\[np\+\+\]/);
   assert.match(pixiSrc, /t === 3\) idxG\[ng\+\+\]/);
-  assert.match(pixiSrc, /indices: idxP/);
-  assert.match(pixiSrc, /indices: idxG/);
+  assert.match(pixiSrc, /opts\.indices = idxP/);
+  assert.match(pixiSrc, /opts\.indices = idxG/);
   assert.match(pixiSrc, /depthMask: false/);
   assert.match(pixiSrc, /alphaDiscard: false/);
   assert.match(pixiSrc, /entitiesParticleBatch/);
@@ -86,14 +87,14 @@ test('render-queue partition idx buffers are Uint32 (no Uint16 wrap past 65535)'
 
 test('entity and custom-layer uploads pass queue repeatX/Y and tile fields', () => {
   assert.match(pixiSrc, /this\.renderQueueRepeatX = buffer\.repeatX/);
-  assert.match(pixiSrc, /repeatX: this\.renderQueueRepeatX/);
-  assert.match(pixiSrc, /repeatY: this\.renderQueueRepeatY/);
-  assert.match(pixiSrc, /tileMulX: this\.renderQueueTileMulX/);
-  assert.match(pixiSrc, /tileOffsetU: this\.renderQueueTileOffsetU/);
-  assert.match(pixiSrc, /repeatX: ref\.repeatX/);
-  assert.match(pixiSrc, /repeatY: ref\.repeatY/);
-  assert.match(pixiSrc, /tileMulX: ref\.tileMulX/);
-  assert.match(pixiSrc, /tileOffsetU: ref\.tileOffsetU/);
+  assert.match(pixiSrc, /q\.repeatX = this\.renderQueueRepeatX/);
+  assert.match(pixiSrc, /q\.repeatY = this\.renderQueueRepeatY/);
+  assert.match(pixiSrc, /q\.tileMulX = this\.renderQueueTileMulX/);
+  assert.match(pixiSrc, /q\.tileOffsetU = this\.renderQueueTileOffsetU/);
+  assert.match(pixiSrc, /q\.repeatX = ref\.repeatX/);
+  assert.match(pixiSrc, /q\.repeatY = ref\.repeatY/);
+  assert.match(pixiSrc, /q\.tileMulX = ref\.tileMulX/);
+  assert.match(pixiSrc, /q\.tileOffsetU = ref\.tileOffsetU/);
 });
 
 test('GLSL twins keep PMA rgb * instance alpha; no tex.a re-multiply', () => {

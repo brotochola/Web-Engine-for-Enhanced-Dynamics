@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { GameObject } from '../../src/core/gameObject.js';
 import { Scene } from '../../src/core/Scene.js';
 import { Layer } from '../../src/core/Layer.js';
+import { LAYER_FEEDER_KIND } from '../../src/core/ConfigDefaults.js';
 import { DecorationPool } from '../../src/core/DecorationPool.js';
 import { Transform } from '../../src/components/Transform.js';
 import { RigidBody } from '../../src/components/RigidBody.js';
@@ -518,7 +519,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
   Layer.getName = (id) => `layer-${id}`;
   Layer.getId = (name) => (name === 'fx' ? 9 : -1);
   Layer.getById = (id) => ({ name: `layer-${id}` });
-  Layer.feederKind = () => 'sprites';
+  Layer.feederKind = () => LAYER_FEEDER_KIND.SPRITES;
   Layer.ENTITIES_ID = 4;
 
   const adobeOnly = Object.create(GameObject.prototype);

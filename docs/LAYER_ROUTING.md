@@ -190,6 +190,6 @@ layers: {
 - Items routed to a custom layer only Y-sort with other items in that same layer. A particle on a custom layer won't interleave with entities on the ENTITIES layer -- it renders at the custom layer's zIndex.
 - Decal stamping (`stayOnTheFloor`) always stamps to the built-in DECALS layer, regardless of the particle's `layerMask`. The particle's mask controls where it renders while alive; the decal destination is independent.
 - BACKGROUND / DECALS / CASTED_SHADOWS / LIGHTING are not subscription targets (`Layer.resolveSubscriptions` warns and skips).
-- `LAYER_DENSITY_SOURCE.LIQUID_FUN` layers have **no** sprite render queue; subscribe particles with `layer: 'oil'` for density splat (LiquidFun HEAP and CPU ParticleEmitter).
+- `LAYER_DENSITY_SOURCE.LIQUID_FUN` layers have **no** sprite render queue; subscribe particles with `layer: 'oil'` for density splat (LiquidFun HEAP and CPU ParticleEmitter). Density / compute / scale / feeder-kind enums are **ints** (`LAYER_FEEDER_KIND` lives in the layer config SAB).
 - `Layer.MAX_LAYERS = 16`, so valid IDs are 0-15. Mask is `Uint16`.
 - Shader-layer density RTs are viewport-sized. The worker may convert instance XY to screen pixels for that pass; tiling still uses world coordinates (`uTileWorld`). There is no public `space` / `uploadSpace` layer config.

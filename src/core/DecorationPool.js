@@ -387,7 +387,7 @@ export class DecorationPool extends SharedAtomicPool {
     swayFrequency[i] = config.swayFrequency ?? 1.0;
     DecorationComponent.swayPhase[i] = 0;
 
-    DecorationComponent.layerMask[i] = Layer.resolveSubscriptions(config, 'particle');
+    DecorationComponent.layerMask[i] = Layer.resolveSubscriptions(config);
 
     // Initially off-screen (will be updated by culling)
     isItOnScreen[i] = 0;

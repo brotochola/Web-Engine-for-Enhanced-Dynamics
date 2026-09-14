@@ -38,7 +38,7 @@ Prefer buffer density for large particle counts. Sprite path still useful for no
 
 **Pitfall (Main Fps collapse):** `_lightGradient` is ~200×200. With a large emit `scale`, each particle becomes a huge soft quad. Present/GPU fill tanks while Main STEP_MS stays tiny (CPU step is cheap; rAF waits on GPU). Prefer `_metaball` (small procedural atlas kernel) for sprite density, or `LAYER_DENSITY_SOURCE.LIQUID_FUN` (no atlas). Kernel `splat.radius` / layer `resolution` remain the main GPU knobs in buffer mode. Low `resolution` upscales with Pixi `scaleMode` (`LAYER_SCALE_MODE.LINEAR` default softens edges; `NEAREST` is blocky — not MSAA).
 
-Enums: `LAYER_DENSITY_SOURCE` (`SPRITES` \| `LIQUID_FUN`), `LAYER_SPLAT_FALLOFF` (`QUADRATIC` active; `SMOOTHSTEP` / `GAUSSIAN` reserved). Look uniforms (`uCutoff`, `uRim`/`uFoam`, `uDepth`, `uBodyAlpha`, `uEdgeAlpha`) are documented in the [bible Layers](./bible_of_weed_js.md#look-shader-uniforms-dulcedelechefrag--similar-fluid-looks) section.
+Enums: `LAYER_DENSITY_SOURCE` (`SPRITES`=0 \| `LIQUID_FUN`=1), `LAYER_SPLAT_FALLOFF` (`QUADRATIC`=0 active; `SMOOTHSTEP` / `GAUSSIAN` reserved). Look uniforms (`uCutoff`, `uRim`/`uFoam`, `uDepth`, `uBodyAlpha`, `uEdgeAlpha`) are documented in the [bible Layers](./bible_of_weed_js.md#look-shader-uniforms-dulcedelechefrag--similar-fluid-looks) section.
 
 See [bible Layers](./bible_of_weed_js.md) for the full config example. Demo: [`demos/liquidFunDemoScene`](../demos/liquidFunDemoScene/liquidFunDemoScene.js).
 

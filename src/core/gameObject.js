@@ -15,7 +15,7 @@ import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { Layer } from './Layer.js';
 import { Grid } from './Grid.js';
 import { Joint } from './Joint.js';
-import { ShapeType, SPRITE_TILE_MODE } from './ConfigDefaults.js';
+import { ShapeType, SPRITE_TILE_MODE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from './ConfigDefaults.js';
 import { collectComponents, cantorPair, distanceSq2D } from './utils.js';
 import {
   resetFreeList,
@@ -895,7 +895,7 @@ export class GameObject {
     if (!mask) return Layer.getName(Layer.ENTITIES_ID);
     for (let id = 0; id < Layer.MAX_LAYERS; id++) {
       if (!(mask & (1 << id))) continue;
-      if (Layer.feederKind(id) === 'sprites') return Layer.getName(id);
+      if (Layer.feederKind(id) === LAYER_FEEDER_KIND.SPRITES) return Layer.getName(id);
     }
     return Layer.getName(Layer.ENTITIES_ID);
   }
@@ -906,7 +906,8 @@ export class GameObject {
    * @returns {this}
    */
   setLayer(layerName) {
-    return this.setLayers([layerName]);
+    this._applyLayerMask(Layer.resolveOne(layerName, LAYER_SUBSCRIBE_KIND.GAME_OBJECT));
+    return this;
   }
 
   /**
@@ -916,7 +917,7 @@ export class GameObject {
    * @returns {this}
    */
   setLayers(names) {
-    const mask = Layer.resolveSubscriptions({ layers: names || [] }, 'gameObject');
+    const mask = Layer.resolveSubscriptions({ layers: names || [] }, LAYER_SUBSCRIBE_KIND.GAME_OBJECT);
     this._applyLayerMask(mask);
     return this;
   }

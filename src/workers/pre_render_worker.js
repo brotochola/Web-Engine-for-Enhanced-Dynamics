@@ -500,16 +500,6 @@ class PreRenderWorker extends AbstractWorker {
                     console.log(`[PRE_RENDER WORKER] Custom layer ${layerId} render queue initialized (max ${layerMax} items)`);
                 }
             }
-
-            // Layers with LAYER_DENSITY_SOURCE.LIQUID_FUN skip type-7 sprite queues (pixi splats HEAP).
-            this._lfDensityLayerIds = new Uint8Array(Layer.MAX_LAYERS);
-            const metas = data.layerData?.metadata?.layers || [];
-            for (let mi = 0; mi < metas.length; mi++) {
-                const m = metas[mi];
-                if (m?.densitySource === 'liquidFun') {
-                    this._lfDensityLayerIds[m.id | 0] = 1;
-                }
-            }
         }
 
         // ========================================

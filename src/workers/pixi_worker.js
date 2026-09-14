@@ -61,6 +61,8 @@ import {
 } from '../core/utils.js';
 import {
   InstancedSpriteBatch,
+  BATCH_SPACE,
+  BATCH_DEPTH,
   buildTextureLut,
   packTextureLutRgba,
   TEX_LUT_RGBA_WIDTH,
@@ -72,6 +74,38 @@ import { releasePixiBindGroupsOnResource } from './releasePixiBindGroups.js';
 
 function finiteOrZero(n) {
   return Number.isFinite(n) ? n : 0;
+}
+
+function makeBatchViews() {
+  return {
+    count: 0,
+    x: null,
+    y: null,
+    scaleX: null,
+    scaleY: null,
+    rotC: null,
+    rotS: null,
+    alpha: null,
+    tint: null,
+    textureId: null,
+    anchorX: null,
+    anchorY: null,
+    repeatX: null,
+    repeatY: null,
+    tileMode: null,
+    tileOffsetU: null,
+    tileOffsetV: null,
+    tileMulX: null,
+    tileMulY: null,
+  };
+}
+
+function layerIsVisible(id) {
+  if (id == null || id < 0) return true;
+  if (!Layer._visible) return true;
+  const i = id | 0;
+  if (Layer._visibleDirty) Atomics.load(Layer._visibleDirty, i);
+  return Layer._visible[i] !== 0;
 }
 
 function setLookUniform1(map, floats, store, name, value) {
@@ -517,6 +551,79 @@ class PixiRenderer extends AbstractWorker {
       worldH: 0,
     };
     this._clearTransparent = [0, 0, 0, 0];
+    this._entityUploadQ = makeBatchViews();
+    this._entityUploadOpts = {
+      space: BATCH_SPACE.WORLD,
+      zoom: 1,
+      cameraX: 0,
+      cameraY: 0,
+      resolution: 1,
+      depthMode: BATCH_DEPTH.INDEX,
+      depthDenom: 1,
+      worldHeight: 10000,
+      sortKey: null,
+      texLut: null,
+      texLutCount: 0,
+      textures: null,
+      type: null,
+      includeType: -1,
+      excludeType0: -1,
+      excludeType1: -1,
+      indices: null,
+      indexCount: 0,
+    };
+    this._shadowUploadQ = makeBatchViews();
+    this._shadowUploadOpts = {
+      space: BATCH_SPACE.SCREEN,
+      zoom: 1,
+      cameraX: 0,
+      cameraY: 0,
+      resolution: 1,
+      depthMode: BATCH_DEPTH.INDEX,
+      depthDenom: 1,
+      worldHeight: 1,
+      sortKey: null,
+      texLut: null,
+      texLutCount: 0,
+      textures: null,
+      type: null,
+      includeType: -1,
+      excludeType0: -1,
+      excludeType1: -1,
+      indices: null,
+      indexCount: 0,
+    };
+    this._splatUploadOpts = {
+      layerId: 0,
+      zoom: 1,
+      cameraX: 0,
+      cameraY: 0,
+      resolution: 1,
+      radius: 48,
+      intensity: 1,
+      useParticleTint: true,
+      canvasW: 0,
+      canvasH: 0,
+    };
+    this._lfLightOpts = {
+      zoom: 1,
+      cameraX: 0,
+      cameraY: 0,
+      resolution: 1,
+      canvasW: 0,
+      canvasH: 0,
+    };
+    this._rtRenderOpts = {
+      container: null,
+      target: null,
+      clear: true,
+      clearColor: this._clearTransparent,
+    };
+    this._rtRenderOptsNoClear = {
+      container: null,
+      target: null,
+      clear: false,
+    };
 
     // OPTIMIZED: Preallocated RGB object to avoid allocation per light per frame
     this._rgbResult = { r: 0, g: 0, b: 0 };
@@ -862,45 +969,57 @@ class PixiRenderer extends AbstractWorker {
    */
   updateSpritesFromRenderQueue() {
     if (!this.renderQueueEnabled || !this.entitiesBatch) return;
+    if (!layerIsVisible(Layer.ENTITIES_ID)) {
+      this.entitiesBatch.mesh.visible = false;
+      if (this.entitiesParticleBatch) this.entitiesParticleBatch.mesh.visible = false;
+      if (this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
+      this.visibleEntityCount = 0;
+      this.visibleParticleCount = 0;
+      return;
+    }
 
     const count = this.renderQueueCount[0];
-    // if (count !== this._lastLoggedRenderQueueCount) {
-    //   this._lastLoggedRenderQueueCount = count;
-    //   console.log(`[pixi_worker] DRAW: renderQueueCount = ${count}`);
-    // }
-    const q = {
-      count,
-      x: this.renderQueueX,
-      y: this.renderQueueY,
-      scaleX: this.renderQueueScaleX,
-      scaleY: this.renderQueueScaleY,
-      rotC: this.renderQueueRotC,
-      rotS: this.renderQueueRotS,
-      alpha: this.renderQueueAlpha,
-      tint: this.renderQueueTint,
-      textureId: this.renderQueueTextureId,
-      anchorX: this.renderQueueAnchorX,
-      anchorY: this.renderQueueAnchorY,
-      repeatX: this.renderQueueRepeatX,
-      repeatY: this.renderQueueRepeatY,
-      tileMode: this.renderQueueTileMode,
-      tileOffsetU: this.renderQueueTileOffsetU,
-      tileOffsetV: this.renderQueueTileOffsetV,
-      tileMulX: this.renderQueueTileMulX,
-      tileMulY: this.renderQueueTileMulY,
-    };
+    const q = this._entityUploadQ;
+    q.count = count;
+    q.x = this.renderQueueX;
+    q.y = this.renderQueueY;
+    q.scaleX = this.renderQueueScaleX;
+    q.scaleY = this.renderQueueScaleY;
+    q.rotC = this.renderQueueRotC;
+    q.rotS = this.renderQueueRotS;
+    q.alpha = this.renderQueueAlpha;
+    q.tint = this.renderQueueTint;
+    q.textureId = this.renderQueueTextureId;
+    q.anchorX = this.renderQueueAnchorX;
+    q.anchorY = this.renderQueueAnchorY;
+    q.repeatX = this.renderQueueRepeatX;
+    q.repeatY = this.renderQueueRepeatY;
+    q.tileMode = this.renderQueueTileMode;
+    q.tileOffsetU = this.renderQueueTileOffsetU;
+    q.tileOffsetV = this.renderQueueTileOffsetV;
+    q.tileMulX = this.renderQueueTileMulX;
+    q.tileMulY = this.renderQueueTileMulY;
+
     const useSortKey = !!(this.ySorting && this.renderQueueSortKey);
-    const baseOpts = {
-      space: 'world',
-      depthMode: useSortKey ? 'sortKey' : 'index',
-      depthDenom: this.renderQueueMaxItems,
-      worldHeight: this.config?.worldHeight || 10000,
-      sortKey: useSortKey ? this.renderQueueSortKey : null,
-      texLut: this._texLut,
-      texLutCount: this._texLutCount,
-      textures: this.flatTextures,
-      type: this.renderQueueType,
-    };
+    const opts = this._entityUploadOpts;
+    opts.space = BATCH_SPACE.WORLD;
+    opts.depthMode = useSortKey ? BATCH_DEPTH.SORT_KEY : BATCH_DEPTH.INDEX;
+    opts.depthDenom = this.renderQueueMaxItems;
+    opts.worldHeight = this.config?.worldHeight || 10000;
+    opts.sortKey = useSortKey ? this.renderQueueSortKey : null;
+    opts.texLut = this._texLut;
+    opts.texLutCount = this._texLutCount;
+    opts.textures = this.flatTextures;
+    opts.type = this.renderQueueType;
+    opts.zoom = 1;
+    opts.cameraX = 0;
+    opts.cameraY = 0;
+    opts.resolution = 1;
+    opts.includeType = -1;
+    opts.excludeType0 = -1;
+    opts.excludeType1 = -1;
+    opts.indices = null;
+    opts.indexCount = 0;
 
     const typeArr = this.renderQueueType;
     let ne = count;
@@ -917,45 +1036,34 @@ class PixiRenderer extends AbstractWorker {
         else if (t === 3) idxG[ng++] = i;
         else idxE[ne++] = i;
       }
-      this.visibleEntityCount = this.entitiesBatch.upload(q, {
-        ...baseOpts,
-        indices: idxE,
-        indexCount: ne,
-      });
+      opts.indices = idxE;
+      opts.indexCount = ne;
+      this.visibleEntityCount = this.entitiesBatch.upload(q, opts);
+      opts.indices = idxP;
+      opts.indexCount = np;
       this.visibleParticleCount = this.entitiesParticleBatch
-        ? this.entitiesParticleBatch.upload(q, {
-          ...baseOpts,
-          indices: idxP,
-          indexCount: np,
-        })
+        ? this.entitiesParticleBatch.upload(q, opts)
         : 0;
       if (this.entitiesGlowBatch) {
-        this.entitiesGlowBatch.upload(q, {
-          ...baseOpts,
-          indices: idxG,
-          indexCount: ng,
-        });
+        opts.indices = idxG;
+        opts.indexCount = ng;
+        this.entitiesGlowBatch.upload(q, opts);
       }
       return;
     }
 
-    this.visibleEntityCount = this.entitiesBatch.upload(q, {
-      ...baseOpts,
-      excludeType: [1, 3],
-    });
-
+    opts.excludeType0 = 1;
+    opts.excludeType1 = 3;
+    this.visibleEntityCount = this.entitiesBatch.upload(q, opts);
+    opts.excludeType0 = -1;
+    opts.excludeType1 = -1;
+    opts.includeType = 1;
     this.visibleParticleCount = this.entitiesParticleBatch
-      ? this.entitiesParticleBatch.upload(q, {
-        ...baseOpts,
-        includeType: 1,
-      })
+      ? this.entitiesParticleBatch.upload(q, opts)
       : 0;
-
     if (this.entitiesGlowBatch) {
-      this.entitiesGlowBatch.upload(q, {
-        ...baseOpts,
-        includeType: 3,
-      });
+      opts.includeType = 3;
+      this.entitiesGlowBatch.upload(q, opts);
     }
   }
 
@@ -1276,17 +1384,20 @@ class PixiRenderer extends AbstractWorker {
       if (this._visPolyEnabled) {
         // Raycasted lighting: render visibility polygon meshes
         this.renderVisibilityLighting();
-      } else if (this.lightingRT && this.lightingMesh) {
+      } else if (this.lightingRT && this.lightingMesh && layerIsVisible(Layer.LIGHTING?.id)) {
         // Standard lighting: render full-screen shader
-        this.pixiApp.renderer.render({
-          container: this.lightingMesh,
-          target: this.lightingRT,
-          clear: true,
-        });
+        const rtOpts = this._rtRenderOpts;
+        rtOpts.container = this.lightingMesh;
+        rtOpts.target = this.lightingRT;
+        rtOpts.clear = true;
+        rtOpts.clearColor = this._clearTransparent;
+        this.pixiApp.renderer.render(rtOpts);
         this._renderLiquidFunLightingField();
       }
       if (detail) this.lightsTimeThisFrame += performance.now() - t0;
     }
+
+    this._applyLayerVisibility();
   }
 
   /**
@@ -1573,23 +1684,22 @@ LIGHTING SYSTEM SETUP
     if (!splat || !this.lightingRT || this._visPolyEnabled) return;
     const views = LiquidFun.getViews();
     const groups = LiquidFun.getGroupViews();
-    const packed = splat.uploadLitGroups(views, groups, {
-      zoom: this._renderZoom,
-      cameraX: this._renderCameraX,
-      cameraY: this._renderCameraY,
-      resolution: this.lightingResolution,
-      canvasW: this.canvasWidth,
-      canvasH: this.canvasHeight,
-    });
+    const o = this._lfLightOpts;
+    o.zoom = this._renderZoom;
+    o.cameraX = this._renderCameraX;
+    o.cameraY = this._renderCameraY;
+    o.resolution = this.lightingResolution;
+    o.canvasW = this.canvasWidth;
+    o.canvasH = this.canvasHeight;
+    const packed = splat.uploadLitGroups(views, groups, o);
     if (packed <= 0) return;
     const screenScale = (this._renderZoom || 1) * (this.lightingResolution || 1);
     const u = splat.shader?.resources?.uniforms?.uniforms;
     if (u) u.uInvScreenScale = screenScale > 0 ? 1 / screenScale : 0;
-    this.pixiApp.renderer.render({
-      container: splat.mesh,
-      target: this.lightingRT,
-      clear: false,
-    });
+    const rtOpts = this._rtRenderOptsNoClear;
+    rtOpts.container = splat.mesh;
+    rtOpts.target = this.lightingRT;
+    this.pixiApp.renderer.render(rtOpts);
   }
 
   /* =====================
@@ -2399,12 +2509,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   /**
    * Create the RenderTexture-based shadow system:
-   * 1. Create shadowRT (RenderTexture) - cleared to black each frame
+   * 1. Create shadowRT (RenderTexture) - cleared transparent each frame
    * 2. Create shadowBatch - instanced Mesh (per-light soft cookies + black shadows)
    * 3. Create shadowDisplaySprite - displays shadowRT with multiply blend
    *
    * Rendering order per frame (SoA already interleaved per light):
-   * - Clear shadowRT to black
+   * - Clear shadowRT to transparent (not opaque black — that fills the multiply layer)
    * - Draw light cookies then that light's shadows (multi-light attenuation)
    * - shadowDisplaySprite (multiply) darkens the scene where RT is dark
    */
@@ -2444,42 +2554,41 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   updateShadowSprites() {
     if (!this.shadowSpritesEnabled || !this.shadowRenderQueueCount) return;
     if (!this.shadowBatch || !this.shadowRT) return;
+    if (!layerIsVisible(Layer.CASTED_SHADOWS?.id)) return;
 
-    this.shadowBatch.upload(
-      {
-        count: this.shadowRenderQueueCount[0],
-        x: this.shadowRenderQueueX,
-        y: this.shadowRenderQueueY,
-        scaleX: this.shadowRenderQueueScaleX,
-        scaleY: this.shadowRenderQueueScaleY,
-        rotC: this.shadowRenderQueueRotC,
-        rotS: this.shadowRenderQueueRotS,
-        alpha: this.shadowRenderQueueAlpha,
-        tint: this.shadowRenderQueueTint,
-        textureId: this.shadowRenderQueueTextureId,
-        anchorX: this.shadowRenderQueueAnchorX,
-        anchorY: this.shadowRenderQueueAnchorY,
-      },
-      {
-        space: 'screen',
-        zoom: this._renderZoom,
-        cameraX: this._renderCameraX,
-        cameraY: this._renderCameraY,
-        resolution: this.shadowResolution,
-        depthMode: 'index',
-        depthDenom: this.maxShadowRenderItems,
-        texLut: this._texLut,
-        texLutCount: this._texLutCount,
-        textures: this.flatTextures,
-      }
-    );
+    const q = this._shadowUploadQ;
+    q.count = this.shadowRenderQueueCount[0];
+    q.x = this.shadowRenderQueueX;
+    q.y = this.shadowRenderQueueY;
+    q.scaleX = this.shadowRenderQueueScaleX;
+    q.scaleY = this.shadowRenderQueueScaleY;
+    q.rotC = this.shadowRenderQueueRotC;
+    q.rotS = this.shadowRenderQueueRotS;
+    q.alpha = this.shadowRenderQueueAlpha;
+    q.tint = this.shadowRenderQueueTint;
+    q.textureId = this.shadowRenderQueueTextureId;
+    q.anchorX = this.shadowRenderQueueAnchorX;
+    q.anchorY = this.shadowRenderQueueAnchorY;
 
-    this.pixiApp.renderer.render({
-      container: this.shadowBatch.mesh,
-      target: this.shadowRT,
-      // clear: true,
-      // clearColor: [0, 0, 0, 1],
-    });
+    const opts = this._shadowUploadOpts;
+    opts.space = BATCH_SPACE.SCREEN;
+    opts.zoom = this._renderZoom;
+    opts.cameraX = this._renderCameraX;
+    opts.cameraY = this._renderCameraY;
+    opts.resolution = this.shadowResolution;
+    opts.depthMode = BATCH_DEPTH.INDEX;
+    opts.depthDenom = this.maxShadowRenderItems;
+    opts.texLut = this._texLut;
+    opts.texLutCount = this._texLutCount;
+    opts.textures = this.flatTextures;
+    this.shadowBatch.upload(q, opts);
+
+    const rtOpts = this._rtRenderOpts;
+    rtOpts.container = this.shadowBatch.mesh;
+    rtOpts.target = this.shadowRT;
+    rtOpts.clear = true;
+    rtOpts.clearColor = this._clearTransparent;
+    this.pixiApp.renderer.render(rtOpts);
   }
 
   /**
@@ -2879,13 +2988,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   _setRtScaleMode(rt, mode) {
     if (!rt?.source) return;
-    const scaleMode = mode === LAYER_SCALE_MODE.NEAREST ? LAYER_SCALE_MODE.NEAREST : LAYER_SCALE_MODE.LINEAR;
-    rt.source.scaleMode = scaleMode;
+    rt.source.scaleMode = Layer.scaleModeString(mode);
   }
 
   _applyCustomLayerScaleMode(cl) {
     if (!cl) return;
-    const mode = cl.scaleMode || LAYER_SCALE_MODE.LINEAR;
+    const mode = cl.scaleMode ?? LAYER_SCALE_MODE.LINEAR;
     this._setRtScaleMode(cl.rt, mode);
     this._setRtScaleMode(cl.rtOut, mode);
   }
@@ -3029,7 +3137,23 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!layer) return;
     displayObject.zIndex = layer.zIndex;
     displayObject.alpha = layer.alpha;
+    displayObject.visible = layer.visible;
     displayObject.blendMode = forceContainerBlend ? layer.containerBlendMode : layer.blendMode;
+  }
+
+  _applyLayerVisibility() {
+    if (!Layer._visible) return;
+    for (let i = 0; i < Layer.count; i++) {
+      if (Layer._visibleDirty) Atomics.load(Layer._visibleDirty, i);
+      const on = Layer._visible[i] === 1;
+      const name = Layer.getName(i);
+      const displayObj = name ? this._layerRuntime[name] : null;
+      if (displayObj) displayObj.visible = on;
+      if (i === Layer.ENTITIES_ID) {
+        if (this.spriteParticleMesh) this.spriteParticleMesh.visible = on;
+        if (this.spriteGlowMesh) this.spriteGlowMesh.visible = on;
+      }
+    }
   }
 
   _registerLayerDisplayObject(layerName, displayObject, forceContainerBlend) {
@@ -4296,6 +4420,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   updateCustomLayers() {
     for (let li = 0; li < this._customLayerList.length; li++) {
       const cl = this._customLayerList[li];
+      if (!layerIsVisible(cl.layerId)) continue;
       const renderToRT = !!cl.rt;
       let densityMesh = null;
 
@@ -4338,31 +4463,31 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       frameUniforms.worldH = finiteOrZero(this.worldHeight);
       applyEngineLookUniforms(cl, frameUniforms);
 
+      const rtOpts = this._rtRenderOpts;
       if (cl.compute) {
         cl.compute.step(frameUniforms, this._computePose);
         applyComputeTexSizeUniform(cl);
         if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
-          this.pixiApp.renderer.render({
-            container: cl.shaderMesh,
-            target: cl.rtOut,
-            clear: true,
-            clearColor: this._clearTransparent,
-          });
+          rtOpts.container = cl.shaderMesh;
+          rtOpts.target = cl.rtOut;
+          rtOpts.clear = true;
+          rtOpts.clearColor = this._clearTransparent;
+          this.pixiApp.renderer.render(rtOpts);
         }
       } else if (cl.densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN && cl.splatBatch) {
         const views = LiquidFun.getViews();
-        cl.splatBatch.upload(views, {
-          layerId: cl.layerId,
-          zoom: this._renderZoom,
-          cameraX: this._renderCameraX,
-          cameraY: this._renderCameraY,
-          resolution: cl.resolution || 1.0,
-          radius: cl.splatRadius || cl.splat?.radius || 48,
-          intensity: cl.splat?.intensity ?? 1,
-          useParticleTint: cl.splat?.useParticleTint !== false,
-          canvasW: this.canvasWidth,
-          canvasH: this.canvasHeight,
-        });
+        const so = this._splatUploadOpts;
+        so.layerId = cl.layerId;
+        so.zoom = this._renderZoom;
+        so.cameraX = this._renderCameraX;
+        so.cameraY = this._renderCameraY;
+        so.resolution = cl.resolution || 1.0;
+        so.radius = cl.splatRadius || cl.splat?.radius || 48;
+        so.intensity = cl.splat?.intensity ?? 1;
+        so.useParticleTint = cl.splat?.useParticleTint !== false;
+        so.canvasW = this.canvasWidth;
+        so.canvasH = this.canvasHeight;
+        cl.splatBatch.upload(views, so);
         densityMesh = cl.splatBatch.mesh;
         cl.prevCount = views?.count ? views.count[0] | 0 : 0;
       } else if (cl.batch && cl.readRef) {
@@ -4370,71 +4495,70 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         const count = ref.count[0];
         cl.prevCount = count;
         const useSortKey = !!(cl.ySorting && ref.sortKey);
-        const uploadBase = {
-          depthMode: useSortKey ? 'sortKey' : 'index',
-          depthDenom: cl.maxItems,
-          worldHeight: this.config?.worldHeight || 10000,
-          sortKey: useSortKey ? ref.sortKey : null,
-          texLut: this._texLut,
-          texLutCount: this._texLutCount,
-          textures: this.flatTextures,
-          type: ref.type,
-        };
+        const q = this._entityUploadQ;
+        q.count = count;
+        q.x = ref.x;
+        q.y = ref.y;
+        q.scaleX = ref.scaleX;
+        q.scaleY = ref.scaleY;
+        q.rotC = ref.rotC;
+        q.rotS = ref.rotS;
+        q.alpha = ref.alpha;
+        q.tint = ref.tint;
+        q.textureId = ref.textureId;
+        q.anchorX = ref.anchorX;
+        q.anchorY = ref.anchorY;
+        q.repeatX = ref.repeatX;
+        q.repeatY = ref.repeatY;
+        q.tileMode = ref.tileMode;
+        q.tileOffsetU = ref.tileOffsetU;
+        q.tileOffsetV = ref.tileOffsetV;
+        q.tileMulX = ref.tileMulX;
+        q.tileMulY = ref.tileMulY;
 
-        cl.batch.upload(
-          {
-            count,
-            x: ref.x,
-            y: ref.y,
-            scaleX: ref.scaleX,
-            scaleY: ref.scaleY,
-            rotC: ref.rotC,
-            rotS: ref.rotS,
-            alpha: ref.alpha,
-            tint: ref.tint,
-            textureId: ref.textureId,
-            anchorX: ref.anchorX,
-            anchorY: ref.anchorY,
-            repeatX: ref.repeatX,
-            repeatY: ref.repeatY,
-            tileMode: ref.tileMode,
-            tileOffsetU: ref.tileOffsetU,
-            tileOffsetV: ref.tileOffsetV,
-            tileMulX: ref.tileMulX,
-            tileMulY: ref.tileMulY,
-          },
-          renderToRT
-            ? {
-              space: 'screen',
-              zoom: this._renderZoom,
-              cameraX: this._renderCameraX,
-              cameraY: this._renderCameraY,
-              resolution: cl.resolution || 1.0,
-              ...uploadBase,
-            }
-            : {
-              space: 'world',
-              ...uploadBase,
-            }
-        );
+        const opts = this._entityUploadOpts;
+        opts.indices = null;
+        opts.indexCount = 0;
+        opts.includeType = -1;
+        opts.excludeType0 = -1;
+        opts.excludeType1 = -1;
+        opts.depthMode = useSortKey ? BATCH_DEPTH.SORT_KEY : BATCH_DEPTH.INDEX;
+        opts.depthDenom = cl.maxItems;
+        opts.worldHeight = this.config?.worldHeight || 10000;
+        opts.sortKey = useSortKey ? ref.sortKey : null;
+        opts.texLut = this._texLut;
+        opts.texLutCount = this._texLutCount;
+        opts.textures = this.flatTextures;
+        opts.type = ref.type;
+        if (renderToRT) {
+          opts.space = BATCH_SPACE.SCREEN;
+          opts.zoom = this._renderZoom;
+          opts.cameraX = this._renderCameraX;
+          opts.cameraY = this._renderCameraY;
+          opts.resolution = cl.resolution || 1.0;
+        } else {
+          opts.space = BATCH_SPACE.WORLD;
+          opts.zoom = 1;
+          opts.cameraX = 0;
+          opts.cameraY = 0;
+          opts.resolution = 1;
+        }
+        cl.batch.upload(q, opts);
         densityMesh = cl.batch.mesh;
       } else {
         continue;
       }
 
-      // Two-pass shader pipeline for shader layers:
-      // 1. Render density mesh (container-blend accumulation) → raw density RT
-      // 2. Render fullscreen Mesh (look shader reads raw RT) → processed RT
-      // Bypass (debug UI "(none)"): skip pass 2, displaySprite shows cl.rt directly.
       if (cl.rt && densityMesh) {
-        this.pixiApp.renderer.render({ container: densityMesh, target: cl.rt, clear: true });
+        rtOpts.container = densityMesh;
+        rtOpts.target = cl.rt;
+        rtOpts.clear = true;
+        rtOpts.clearColor = this._clearTransparent;
+        this.pixiApp.renderer.render(rtOpts);
         if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
-          this.pixiApp.renderer.render({
-            container: cl.shaderMesh,
-            target: cl.rtOut,
-            clear: true,
-            clearColor: this._clearTransparent,
-          });
+          rtOpts.container = cl.shaderMesh;
+          rtOpts.target = cl.rtOut;
+          this.pixiApp.renderer.render(rtOpts);
         }
       }
     }

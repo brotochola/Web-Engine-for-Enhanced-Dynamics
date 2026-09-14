@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkServer.mjs';
+import { LAYER_DENSITY_SOURCE } from '../../src/core/ConfigDefaults.js';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const headed = process.argv.includes('--headed');
@@ -59,7 +60,7 @@ async function main() {
     if (pageErrors.length) {
       throw new Error(`page errors:\n${pageErrors.join('\n')}`);
     }
-    if (result.densitySource !== 'liquidFun') {
+    if (result.densitySource !== LAYER_DENSITY_SOURCE.LIQUID_FUN) {
       throw new Error(`expected densitySource liquidFun, got ${result.densitySource}`);
     }
     if (result.hasRenderQueue !== false) {

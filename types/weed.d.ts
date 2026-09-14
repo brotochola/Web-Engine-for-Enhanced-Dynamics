@@ -11,23 +11,44 @@ export const ShapeType: Readonly<{ Box: 0; Circle: 1; Polygon: 2 }>;
 export const MAX_POLYGON_VERTICES: 8;
 export const BLEND_MODES: Readonly<Record<string, number>>;
 
-/** How a shader layer builds density RT before the look fragment. */
+/** How a shader layer builds density RT before the look fragment. Ints; config still accepts old strings. */
 export const LAYER_DENSITY_SOURCE: Readonly<{
-  SPRITES: 'sprites';
-  LIQUID_FUN: 'liquidFun';
+  SPRITES: 0;
+  LIQUID_FUN: 1;
+}>;
+
+/** What a compute layer packs into GPU storage. Ints; config still accepts old strings. */
+export const LAYER_COMPUTE_SOURCE: Readonly<{
+  BOX2D_BODIES: 0;
+  LIQUID_FUN: 1;
+}>;
+
+/** How a layer consumes subscriptions. Cached as Uint8 in the layer config SAB. */
+export const LAYER_FEEDER_KIND: Readonly<{
+  NONE: 0;
+  BUILTIN: 1;
+  SPRITES: 2;
+  DENSITY: 3;
+  COMPUTE: 4;
+}>;
+
+/** {@link Layer.resolveSubscriptions} kind. */
+export const LAYER_SUBSCRIBE_KIND: Readonly<{
+  PARTICLE: 0;
+  GAME_OBJECT: 1;
 }>;
 
 /** Soft-disk falloff for {@link LAYER_DENSITY_SOURCE}.LIQUID_FUN splat kernels. */
 export const LAYER_SPLAT_FALLOFF: Readonly<{
-  QUADRATIC: 'quadratic';
-  SMOOTHSTEP: 'smoothstep';
-  GAUSSIAN: 'gaussian';
+  QUADRATIC: 0;
+  SMOOTHSTEP: 1;
+  GAUSSIAN: 2;
 }>;
 
 /** Pixi v8 TextureSource.scaleMode for low-res custom layer RT upsample. */
 export const LAYER_SCALE_MODE: Readonly<{
-  LINEAR: 'linear';
-  NEAREST: 'nearest';
+  LINEAR: 0;
+  NEAREST: 1;
 }>;
 
 /** Sprite atlas tiling. repeatX/Y is world-px period; 0 = stretch. */
@@ -1868,6 +1889,7 @@ export interface LayerSerializableLayerMeta {
   scaleMode: LayerScaleMode;
   alpha: number;
   hasRenderQueue: boolean;
+  feederKind?: number;
   maxItems: number;
   uniformMap: Record<string, LayerUniformMapEntry> | null;
   shaderFragment: string | null;
@@ -1918,6 +1940,8 @@ export declare class Layer {
   get scaleMode(): LayerScaleMode;
   get alpha(): number;
   set alpha(value: number);
+  get visible(): boolean;
+  set visible(value: boolean);
   get hasShader(): boolean;
   get ySorting(): boolean;
   get available(): boolean;
@@ -1974,6 +1998,12 @@ export declare class Layer {
   static getName(id: number): string | null;
   static getCustomLayers(): Layer[];
   static isLiquidFunDensityLayer(layerId: number): boolean;
+  static feederKind(layerId: number): number;
+  static resolveOne(entry: string | number, kind?: number): number;
+  static resolveSubscriptions(
+    opts: { layer?: string | number; layers?: Array<string | number> } | null | undefined,
+    kind?: number
+  ): number;
 
   static initializeFromConfig(
     layersConfig?: Record<string, LayerSceneConfigEntry>,
@@ -3138,6 +3168,9 @@ export interface WeedEnums {
   ShapeType: typeof ShapeType;
   BLEND_MODES: typeof BLEND_MODES;
   LAYER_DENSITY_SOURCE: typeof LAYER_DENSITY_SOURCE;
+  LAYER_COMPUTE_SOURCE: typeof LAYER_COMPUTE_SOURCE;
+  LAYER_FEEDER_KIND: typeof LAYER_FEEDER_KIND;
+  LAYER_SUBSCRIBE_KIND: typeof LAYER_SUBSCRIBE_KIND;
   LAYER_SPLAT_FALLOFF: typeof LAYER_SPLAT_FALLOFF;
   LAYER_SCALE_MODE: typeof LAYER_SCALE_MODE;
   SPRITE_TILE_MODE: typeof SPRITE_TILE_MODE;

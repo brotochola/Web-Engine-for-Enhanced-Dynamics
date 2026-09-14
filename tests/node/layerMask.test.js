@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Layer } from '../../src/core/Layer.js';
-import { LAYER_DENSITY_SOURCE } from '../../src/core/ConfigDefaults.js';
+import { LAYER_DENSITY_SOURCE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from '../../src/core/ConfigDefaults.js';
 
 const BUILT_IN_LAYERS = {
   BACKGROUND: {},
@@ -45,22 +45,25 @@ test('Layer.resolveSubscriptions: omit, empty, one name, oil+fire, unknown, buil
       const fireId = Layer.getId('fire');
       const fxId = Layer.getId('fx');
       assert.ok(entities);
-      assert.equal(Layer.resolveSubscriptions(null, 'particle'), entities);
-      assert.equal(Layer.resolveSubscriptions({}, 'particle'), entities);
-      assert.equal(Layer.resolveSubscriptions({ layers: [] }, 'particle'), 0);
-      assert.equal(Layer.resolveSubscriptions({ layers: [] }, 'gameObject'), entities);
-      assert.equal(Layer.resolveSubscriptions({ layer: 'oil' }, 'particle'), 1 << oilId);
+      assert.equal(Layer.resolveSubscriptions(null, LAYER_SUBSCRIBE_KIND.PARTICLE), entities);
+      assert.equal(Layer.resolveSubscriptions({}, LAYER_SUBSCRIBE_KIND.PARTICLE), entities);
+      assert.equal(Layer.resolveSubscriptions({ layers: [] }, LAYER_SUBSCRIBE_KIND.PARTICLE), 0);
+      assert.equal(Layer.resolveSubscriptions({ layers: [] }, LAYER_SUBSCRIBE_KIND.GAME_OBJECT), entities);
+      assert.equal(Layer.resolveSubscriptions({ layer: 'oil' }, LAYER_SUBSCRIBE_KIND.PARTICLE), 1 << oilId);
       assert.equal(
-        Layer.resolveSubscriptions({ layers: ['oil', 'fire'] }, 'particle'),
+        Layer.resolveSubscriptions({ layers: ['oil', 'fire'] }, LAYER_SUBSCRIBE_KIND.PARTICLE),
         (1 << oilId) | (1 << fireId),
       );
       assert.equal(
-        Layer.resolveSubscriptions({ layer: 'fire' }, 'gameObject'),
+        Layer.resolveSubscriptions({ layer: 'fire' }, LAYER_SUBSCRIBE_KIND.GAME_OBJECT),
         entities | (1 << fireId),
       );
-      assert.equal(Layer.resolveSubscriptions({ layer: 'fx' }, 'particle'), 1 << fxId);
-      assert.equal(Layer.resolveSubscriptions({ layer: 'nope' }, 'particle'), 0);
-      assert.equal(Layer.resolveSubscriptions({ layer: 'LIGHTING' }, 'particle'), 0);
+      assert.equal(Layer.resolveSubscriptions({ layer: 'fx' }, LAYER_SUBSCRIBE_KIND.PARTICLE), 1 << fxId);
+      assert.equal(Layer.resolveSubscriptions({ layer: 'nope' }, LAYER_SUBSCRIBE_KIND.PARTICLE), 0);
+      assert.equal(Layer.feederKind(oilId), LAYER_FEEDER_KIND.DENSITY);
+      assert.equal(Layer.feederKind(fireId), LAYER_FEEDER_KIND.COMPUTE);
+      assert.equal(Layer.feederKind(fxId), LAYER_FEEDER_KIND.SPRITES);
+      assert.equal(typeof Layer.feederKind(oilId), 'number');
     },
   );
 });

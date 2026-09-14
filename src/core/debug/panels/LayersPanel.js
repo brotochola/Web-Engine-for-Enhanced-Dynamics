@@ -2,7 +2,7 @@
 
 import { createPanel } from '../ui/DebugDOM.js';
 import { FloatingPanel } from '../ui/FloatingPanel.js';
-import { DEFAULT_LAYERS } from '../../ConfigDefaults.js';
+import { DEFAULT_LAYERS, LAYER_DENSITY_SOURCE } from '../../ConfigDefaults.js';
 import { Layer, RESERVED_LOOK_UNIFORMS } from '../../Layer.js';
 
 function computeSizeLabel(meta) {
@@ -151,7 +151,10 @@ export class LayersPanel {
     visibleCb.className = 'debug-ui-checkbox';
     visibleCb.checked = true;
     visibleCb.title = 'Show or hide this layer';
-    visibleCb.onchange = () => this._setLayerProp(layerName, 'visible', visibleCb.checked);
+    visibleCb.onchange = () => {
+      const l = Layer.get(layerName);
+      if (l) l.visible = visibleCb.checked;
+    };
     row.appendChild(visibleCb);
 
     // Alpha
@@ -260,7 +263,7 @@ export class LayersPanel {
     if (customLayer) {
       densVal = document.createElement('span');
       densVal.title = 'Where per-pixel density data comes from — sprite queue or LiquidFun HEAP splat (read-only)';
-      densVal.textContent = `Density ${customLayer.densitySource === 'liquidFun' ? 'liquidFun' : 'sprites'}`;
+      densVal.textContent = `Density ${customLayer.densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN ? 'liquidFun' : 'sprites'}`;
       metaRow.appendChild(densVal);
     }
 
@@ -614,6 +617,9 @@ export class LayersPanel {
         controls.uniformsBtn.style.display = (isAvailable && hasSceneUniforms(layer, meta)) ? '' : 'none';
         controls.computeBtn.style.display = (isAvailable && !!layer.compute) ? '' : 'none';
         controls.ySorting.checked = layer.ySorting;
+        if (document.activeElement !== controls.visible) {
+          controls.visible.checked = layer.visible;
+        }
         controls.resolution.textContent = `Res ${layer.resolution.toFixed(3)}x`;
         if (document.activeElement !== controls.alpha) {
           const pct = Math.round(layer.alpha * 100);

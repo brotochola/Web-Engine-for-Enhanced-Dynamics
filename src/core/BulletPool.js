@@ -143,7 +143,7 @@ export class BulletPool extends SharedAtomicPool {
     anchorX[i] = config.anchorX ?? 0;
     anchorY[i] = config.anchorY ?? 0.5;
     offsetY[i] = config.offsetY ?? 0;
-    BulletComponent.layerMask[i] = Layer.resolveSubscriptions(config, 'particle');
+    BulletComponent.layerMask[i] = Layer.resolveSubscriptions(config);
     BulletComponent.isItOnScreen[i] = 0;
     BulletComponent.active[i] = 1;
 
