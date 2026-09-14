@@ -60,3 +60,14 @@ export function median(samples) {
   const s = samples.slice().sort((a, b) => a - b);
   return s[(s.length / 2) | 0];
 }
+
+export function lfCounters(fn) {
+  return {
+    bodyContacts: fn('get_lf_body_contact_count')(),
+    queryShapes: fn('get_lf_query_shape_count')(),
+    overlapAabb: fn('get_lf_overlap_aabb_calls')(),
+    impulse: fn('get_lf_apply_impulse_calls')(),
+    pointVel: fn('get_lf_world_point_velocity_calls')(),
+    bodyProp: fn('get_lf_body_prop_calls')(),
+  };
+}

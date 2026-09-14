@@ -19,9 +19,11 @@ instantiate the WASM in Node (`CapturePairs` create-time, `ComputeDepth` spawn-s
 | **L1 (H14)** | `pnpm bench:micro:liquidfun-extract` | Wall-clock `extract_particles` from a ~4k group; k in {64, 512, 1024} |
 | **L1 (H13)** | `pnpm bench:micro:liquidfun-reactive` | First `step_world` after SPRING\|REACTIVE create (`--spring-only` control) |
 | **L1 (H16)** | `pnpm bench:micro:liquidfun-sparse-step` | Steady `get_liquidfun_step_ms` on ~10k particles spaced > diameter (AABB + grid, almost no contacts) |
-| **L2** | `pnpm bench:feature:liquidfun` (`LiquidFunStressScene`), **2 runs per point** | `physics.LIQUIDFUN_MS` (fluid solve); `BOX2D_MS` still full `step_world` (rigid + LiquidFun) |
+| **L2** | `pnpm bench:feature:liquidfun` (`LiquidFunStressScene`), **2 runs per point** | `physics.LIQUIDFUN_MS` (fluid solve); `BOX2D_MS` still full `step_world` (rigid + LiquidFun). Particle-pass control only. |
+| **L2 coupling** | `pnpm bench:feature:liquidfun-bodycouple` / `liquidfun-manyshapes` | Dynamics + many-shape/subStep oracles for H24–H28 |
+| **L1 coupling** | `pnpm bench:micro:liquidfun-bodycouple` / `overlap-substep` / `strict-contact` | Skip-API ceilings; OverlapAABB × subSteps; strict qsort |
 | **L2 query** | `pnpm bench:feature:liquidfun-query` (`LiquidFunQueryStressScene`) | physics `STEP_MS` / `BOX2D_MS` / `LIQUIDFUN_MS` + logic `STEP_MS` under sync QueryAABB/RayCast churn |
-| **L3** | `pnpm test:visual --scene liquidfun,lfstress` (headed lockstep; catalog `match: 'exact'`, 100 steps) | Two-run CPU `hashLiquidFun` + PNG exact. Demo still fine to poke by hand. |
+| **L3** | `pnpm test:visual --scene liquidfun,lfstress` (headed lockstep; catalog `match: 'exact'`, 100 steps) | Two-run CPU `hashLiquidFun` + PNG exact. Demo still fine to poke by hand. Coupling L2 scenes are **not** in the exact catalog. |
 
 Every C change: edit sibling repo → `weedjs\build_for_weed.bat` (incremental, ~10-15s once configured) → copies `box2dWasm.js`/`.wasm` into `src/box2d/` → correctness gate → L2 ×2 → record here → stop for manual sanity check before the next hypothesis.
 
@@ -62,6 +64,12 @@ Every C change: edit sibling repo → `weedjs\build_for_weed.bat` (incremental, 
 | **H20** | `RotateTyped` 17 mallocs per `RotateBuffer` | Depends on H14; extract no longer rotates | **Skipped** (H14 shipped) |
 | **H21** | `LF_SOLID_PAIR_CAP` 64 silent drop | Cap 256 | **Done** |
 | **H22** | Fuse `UpdateGroupStatistics` two passes | COM must exist before second pass; one-pass Welford not bit-exact | **Rejected** |
+| **H23** | Product `step_world` is rigid then particles; sleeper vx can lag one frame; LF never writes body transforms | WASM tests + docs. No step-order swap. Plan alias: coupling H11. | **Done** (correctness) |
+| **H24** | Hashmap-batch `b2Body_ApplyLinearImpulse` per unique body (user A) | Skip-impulse ceiling first. Plan alias: coupling H12. | **Rejected** (A1 1.4%, A2 ≤1.2%) |
+| **H25** | Cache `GetWorldPointVelocity` per unique body per sub-step (user §3) | Same A1/A2 skip-velocity ceiling. Plan alias: coupling H13. | **Rejected** (A1 0.6%) |
+| **H26** | Reuse `queryShapes` across sub-steps; first query uses full `dt` AABB (user B leftover of H4) | Default ON. Plan alias: coupling “H14” — **not** extract H14. | **Done** (L1 5.8% at subSteps=4 × 180 shapes) |
+| **H27** | Stash GetMass / inertia / center on body contacts for `SolveRigidDamping` (user C) | Only dynamics hit these APIs. Plan alias: coupling H15. | **Rejected** (cheap id lookup; A2 skip class 0%) |
+| **H28** | Counting/radix by uint16 index then tiny weight runs instead of `qsort` (user D) | Strict path only. Plan alias: coupling H16. Do not retry H5. | **Rejected** (whole strict path +2.7%) |
 
 ## Results log
 
@@ -618,6 +626,105 @@ SoA; SSE2 gravity/integrate/limit (H2); `lfInvSqrt`; grid CapturePairs 5×5 (H6)
 | Particle `EnsureCapacity` realloc is the WASM OOM hole | Wrapper sets `growable=false`; live realloc is contacts / pairs / `queryShapes` |
 
 **Shipped:** H11, H12, H13, H14, H16, H21. **Rejected / skipped:** H15, H17, H18, H19, H20, H22.
+
+### Wave L coupling — Box2D 3.2 public API (H23–H28) (2026-09-14)
+
+Campaign plan called these **H11–H16**. Those IDs already mean collision-dt / realloc / reactive / extract / SoA / SIMD-AABB. Coupling continues at **H23**. Kill bar unchanged: correctness green; L1 or matching L2 median **≥3%** `LIQUIDFUN_MS` to ship a perf patch. Public Box2D API only — no `b2BodyState*` cache.
+
+**Blinds:** `LiquidFunStressScene` is `subSteps:1`, 3 static floors, `strictContactCheck:false`. It cannot decide impulse batching, cross-sub-step AABB reuse, dynamic body-prop cache, or strict qsort. Keep it as the particle-pass control (H2/H7/H9).
+
+**Already true before measuring:**
+
+- Wrapper `step_world` is `b2World_Step` → `lfParticleSystem_Step` → `export_body_move_events`. Impulses cannot affect **this** rigid island. Google’s particles-first order is a different product.
+- **H4** already shares one `b2World_OverlapAABB` **inside** a sub-step. Leftover is reuse **across** sub-steps (H26).
+- **H5** already rejected insertion-sort of the whole contact array. H28 is a different algorithm (radix by index, then tiny weight runs).
+- User F (tighter later-sub-step AABB): skipped by author. User E (`lfBindBox2dWorld` internals): watch-only; `get_lf_worker_count` pins pool size; no second pthread pool.
+
+#### Counters (always-on, reset each `lfParticleSystem_Step`)
+
+WASM: `get_lf_body_contact_count`, `get_lf_query_shape_count`, `get_lf_overlap_aabb_calls`, `get_lf_apply_impulse_calls`, `get_lf_world_point_velocity_calls`, `get_lf_body_prop_calls`. Skip flags: `set_lf_skip_body_impulse`, `set_lf_skip_body_velocity`. Reuse: `set_lf_reuse_query_across_substeps` (default **1**).
+
+Puddle+floor: contacts / impulse / overlap **nonzero**. Empty particle system: contacts **0**. Tests: [`tests/node/liquidFunCoupling.wasm.test.js`](../tests/node/liquidFunCoupling.wasm.test.js).
+
+#### Correctness (H23)
+
+Pose from `get_state_byte_offset()` SoA. Dynamic `create_body_box(..., type=1)`.
+
+| Gate | Result |
+|------|--------|
+| Awake mover in water | LF vx same frame (`export_body_move_events` re-reads velocity). Position is still the rigid-step transform. |
+| Sleeping crate + `wake=true` | Velocity may appear **next** `step_world`. |
+| Light crate in a blob | Net Δ after ~45 steps (two-way coupling). |
+| Static floor | vx stays 0 (impulse early-out). |
+| `world_enable_sleeping(1)` | Sleeping crate in fluid wakes on following rigid step. |
+| `create_body_circle` | No particle centers inside the disk (`ShapeComputeDistance` circle branch). Do **not** replace with `b2Shape_GetClosestPoint` (unsigned world point). |
+| Cull then `step_world` | `get_particle_count` drops (SolveZombie). |
+| `get_lf_worker_count` | Equals clamped `create_world` workerCount. |
+| `set_particle_sub_steps(4)` | Puddle still rests; default H26 → `overlap_aabb_calls == 1`. Flag off → 4. |
+
+No step-order swap. Lag is the export contract.
+
+#### L1
+
+**Body-couple** (`pnpm bench:micro:liquidfun-bodycouple`), ~6420 water, `subSteps=1`:
+
+| Scene | `LIQUIDFUN_MS` | impulse | contacts | body_prop |
+|-------|----------------|---------|----------|-----------|
+| A1 static floor | 1.941 | 1402 | 876 | 876 |
+| A1 skip impulse | 1.913 (**1.4%**) | 1402 (still counted) | 876 | 876 |
+| A1 skip impulse+vel | 1.930 (**0.6%**) | 1402 | 876 | 876 |
+| A2 48 crates | 2.575 | 3871 | 2516 | 7469 |
+| A2 skip impulse | 2.577 (**−0.1%**; contacts dropped to 2083) | 3093 | 2083 | 5731 |
+| A2 skip impulse+vel | 2.545 (**1.2%**) | 3195 | 2138 | 5948 |
+
+**Overlap × subSteps** (`pnpm bench:micro:liquidfun-overlap-substep`), 3025 water, 180 statics:
+
+| Scene | `LIQUIDFUN_MS` | overlap_aabb | query_shapes |
+|-------|----------------|--------------|--------------|
+| subSteps=1, reuse off | 1.526 | 1 | 180 |
+| subSteps=2, reuse off | 2.618 | 2 | 180 |
+| subSteps=4, reuse off | 4.782 | 4 | 180 |
+| subSteps=4, reuse on | 4.506 (**5.8%** vs reuse off) | 1 | 180 |
+
+sub4 vs sub1 ≈ **3.13×** (not 4×) — contacts dominate, but three extra tree walks are a real slice at 180 shapes.
+
+**Strict contact** (`pnpm bench:micro:liquidfun-strict-contact`), 915 water, 229 contacts:
+
+| Scene | `LIQUIDFUN_MS` |
+|-------|----------------|
+| strict off | 0.364 |
+| strict on | 0.374 (**+2.7%** whole path) |
+
+#### L2 ×2 (headless 8s warmup / 10s)
+
+| Scene | Run | `LIQUIDFUN_MS` | `BOX2D_MS` | `STEP_MS` | notes |
+|-------|-----|----------------|------------|-----------|-------|
+| BodyCouple (100 dynamics, sleeping) | 1 | 5.351 | 5.717 | 5.774 | Moved 100 / Awake 100 / BODY_COUNT 103 |
+| BodyCouple | 2 | 4.912 | 5.220 | 5.282 | same |
+| ManyShapes (180 platforms, `subSteps:2`, H26 on) | 1 | 5.150 | 5.202 | 5.258 | BODY_COUNT 183, Moved 0 |
+| ManyShapes | 2 | 5.463 | 5.535 | 5.598 | same |
+
+No H26-off L2 pair (flag is WASM-only; L1 already isolated 5.8%). Do not add these scenes to exact lockstep.
+
+#### Verdict vs priors
+
+| Claim (plan alias) | Official | Stayed / dropped | Why | Next |
+|--------------------|----------|------------------|-----|------|
+| Stepping/export (H11) | **H23** | **Stayed** as tests+docs | Rigid then particles. Awake: same-frame vx. Sleeper: next rigid step. Position never moves in LF. | Leave wrapper order. |
+| A batch impulse (H12) | **H24** | **Dropped** | Skip-impulse ceiling 1.4% / −0.1%. ~1400 id lookups ≈ 0.03 ms. Ice-on-crate COM risk unused. | Do not hashmap. Do not touch `b2BodyState*`. |
+| §3 velocity cache (H13) | **H25** | **Dropped** | Skip impulse+vel 0.6%. `pointVel == bodyContacts` (1×, not 2–3×). | Only if it rode with H24 — it didn’t. |
+| B overlap reuse (H14) | **H26** | **Shipped** default ON | 180 shapes, subSteps=4: 4.782 → 4.506 ms (**5.8%**). `overlap_aabb_calls` 4→1. Safe: Box2D frozen during LF; first AABB uses full `dt`. At `subSteps=1` queryDt == subDt (no behavior change). | Leave on. Watch if a future product steps particles **before** rigid. |
+| C body props (H15) | **H27** | **Dropped** | Same cheap public getters as A. A2 `body_prop` 7469 still under the skip-impulse ceiling. | Copying fields into `SolveRigidDamping` is tiny code but not 3%. |
+| D radix (H16) | **H28** | **Dropped** | Strict-on vs off **+2.7%** for the **entire** spurious-contact path. Radix is a slice of that. H5 already taught: cap of 3 is output size. | Leave `qsort`. |
+| E bind internals | — | **Stay** watch | `get_lf_worker_count` matches `create_world` workerCount. No public `b2World_GetTaskCallbacks`. | No second pool. |
+| F tighter later AABB | — | **Dropped** (never coded) | Author: not worth it. H26 already queries full `dt` once. | Don’t. |
+
+#### Recommended work order
+
+1. Nothing left in this coupling set that clears 3%.
+2. **Do not** batch impulses, cache point-velocity, radix-sort body contacts, or spawn a second pthread pool.
+3. Next LF speed still lives in **particle contacts / pressure**, not Box2D id lookup — `FindParticleContacts` is why sub4 ≈ 3× sub1.
+4. Optional later: JS-visible `reuseQueryAcrossSubsteps` only if a game needs the old per-sub-step query (H26-off) for a moving-shape-during-LF product that does not exist here.
 
 ## Related
 

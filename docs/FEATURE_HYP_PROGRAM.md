@@ -33,7 +33,7 @@ Shared helpers: [`tests/bench/featureTournamentLib.mjs`](../tests/bench/featureT
 | I | Treiber / rings | Next | pop-push/s | Balls |
 | J | Bullet tick | Next | particle STEP | Predator |
 | K | TileMap queries | L1 only | ns/getTileId | — |
-| **L** | LiquidFun particle step | H1, H6–H10 shipped; H5 rejected; H2–H4 still open | `physics.LIQUIDFUN_MS` / `BOX2D_MS` | `pnpm test:visual --scene liquidfun,lfstress` |
+| **L** | LiquidFun particle step | H1–H4, H6–H14, H16, H21, **H26** shipped; H5 / H15 / H17–H20 / H22 / H24–H25 / H27–H28 rejected; H23 docs | `physics.LIQUIDFUN_MS` / `BOX2D_MS` | `pnpm test:visual --scene liquidfun,lfstress` |
 
 Skip: full rigid-body Box2D WASM step (LiquidFun's *particle* step is in scope — see Wave L).
 
@@ -84,8 +84,8 @@ pnpm bench:particle:tournament
 | H1 | `strictContactCheck` configurable, default false (shipped) |
 | H2 | Explicit SIMD for Integrate/SolveGravity/LimitVelocity (shipped before review) |
 | H3 | Cache per-particle grid cell (shipped; do not reopen) |
-| H4 | Share one broad-phase query (FindBodyContacts + SolveCollision) (shipped; do not reopen) |
-| H5 | Insertion sort instead of qsort in RemoveSpuriousBodyContacts |
+| H4 | Share one `b2World_OverlapAABB` **inside** a sub-step (FindBodyContacts + SolveCollision) (shipped; do not reopen). Not H14 extract. Not H26 (reuse that list **across** sub-steps). |
+| H5 | Insertion sort instead of qsort in RemoveSpuriousBodyContacts (rejected; cap of 3 is output, not input size) |
 | H6 | CapturePairs via grid instead of O(n^2) |
 | H7 | Compact static-pressure contact sublist |
 | H8 | JS/WASM particle position deinterleave moved into C |
@@ -103,11 +103,24 @@ pnpm bench:particle:tournament
 | H20 | `RotateTyped` scratch arena (skipped; H14 removed extract rotates) |
 | H21 | `LF_SOLID_PAIR_CAP` 256 (shipped) |
 | H22 | Fuse `UpdateGroupStatistics` two passes (rejected, not bit-exact / not L2) |
+| H23 | Stepping/export contract: rigid then particles; sleeper vx lag (docs + WASM tests; no step-order swap) |
+| H24 | Batch `b2Body_ApplyLinearImpulse` per unique body (rejected; skip ceiling &lt;3%) |
+| H25 | Cache `GetWorldPointVelocity` per unique body (rejected; skip ceiling noise) |
+| H26 | Reuse OverlapAABB query list **across** sub-steps, first query uses full `dt` (shipped; L1 5.8% at subSteps=4 × 180 shapes). Leftover of H4. Plan alias was “H14”. |
+| H27 | Cache GetMass / inertia / center on `lfBodyContact` for SolveRigidDamping (rejected; same cheap-API class as H24) |
+| H28 | Counting/radix sort on uint16 particle index instead of qsort (rejected; whole strict path +2.7%; do not retry H5) |
 
-Hot loop is C. L1 micros: create-time (`CapturePairs`), ice hitch (`ComputeDepth`), extract, reactive first-step, sparse-step (AABB+grid). Steady-state is L2. Visual lockstep: `pnpm test:visual --scene liquidfun,lfstress`. Full log: [`LIQUIDFUN_HYPOTHESES.md`](./LIQUIDFUN_HYPOTHESES.md).
+Do **not** confuse: **H4** = one tree walk per sub-step; **H14** = `ExtractParticles` partition; **H26** = one tree walk per **frame** (plan/user-B “H14”). `LiquidFunStressScene` (`subSteps:1`, 3 static floors) cannot decide H24–H28.
+
+Hot loop is C. L1 micros: create-time (`CapturePairs`), ice hitch (`ComputeDepth`), extract, reactive first-step, sparse-step (AABB+grid), body-couple, overlap×subSteps, strict-contact. Steady-state: particle-pass L2 plus body-couple / many-shapes L2. Visual lockstep: `pnpm test:visual --scene liquidfun,lfstress`. Full log: [`LIQUIDFUN_HYPOTHESES.md`](./LIQUIDFUN_HYPOTHESES.md).
 
 ```bash
 pnpm bench:feature:liquidfun
+pnpm bench:feature:liquidfun-bodycouple
+pnpm bench:feature:liquidfun-manyshapes
+pnpm bench:micro:liquidfun-bodycouple
+pnpm bench:micro:liquidfun-overlap-substep
+pnpm bench:micro:liquidfun-strict-contact
 ```
 
 ## Related
