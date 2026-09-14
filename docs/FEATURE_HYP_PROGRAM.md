@@ -82,17 +82,29 @@ pnpm bench:particle:tournament
 | ID | Claim |
 |----|-------|
 | H1 | `strictContactCheck` configurable, default false (shipped) |
-| H2 | Explicit SIMD for Integrate/SolveGravity/LimitVelocity |
-| H3 | Cache per-particle grid cell |
-| H4 | Share one broad-phase query (FindBodyContacts + SolveCollision) |
+| H2 | Explicit SIMD for Integrate/SolveGravity/LimitVelocity (shipped before review) |
+| H3 | Cache per-particle grid cell (shipped; do not reopen) |
+| H4 | Share one broad-phase query (FindBodyContacts + SolveCollision) (shipped; do not reopen) |
 | H5 | Insertion sort instead of qsort in RemoveSpuriousBodyContacts |
 | H6 | CapturePairs via grid instead of O(n^2) |
 | H7 | Compact static-pressure contact sublist |
 | H8 | JS/WASM particle position deinterleave moved into C |
 | H9 | Scope `ComputeDepth` to dirty solid contacts (shipped) |
 | H10 | Parallel contact merge by block index — bit-exact fluids, no qsort (shipped) |
+| H11 | Collision dt on `lfParticleSystem`, not process statics (shipped) |
+| H12 | `realloc` NULL guards; drop contact/pair on OOM (shipped) |
+| H13 | `SolveReactive` pair hash vs O(contacts×pairs) (shipped) |
+| H14 | `ExtractParticles` O(n) partition vs RotateBuffer per index (shipped) |
+| H15 | SoA `b2Vec2` temps leftover after LTO (rejected) |
+| H16 | SIMD `ComputeSweptCloudAABB` (shipped; sparse-step ~12%, L2 null) |
+| H17 | `ComputeWeight` memory-bound (rejected, no patch) |
+| H18 | SSE clamp in `SolveStaticPressure` (rejected, not the bound) |
+| H19 | Dedup serial/parallel contact inner loop (skipped, not a speed hyp) |
+| H20 | `RotateTyped` scratch arena (skipped; H14 removed extract rotates) |
+| H21 | `LF_SOLID_PAIR_CAP` 256 (shipped) |
+| H22 | Fuse `UpdateGroupStatistics` two passes (rejected, not bit-exact / not L2) |
 
-Hot loop is C. L1 micros exist for create-time (`CapturePairs`) and ice hitch (`ComputeDepth`). Steady-state is L2. Visual lockstep: `pnpm test:visual --scene liquidfun,lfstress`. Full log: [`LIQUIDFUN_HYPOTHESES.md`](./LIQUIDFUN_HYPOTHESES.md).
+Hot loop is C. L1 micros: create-time (`CapturePairs`), ice hitch (`ComputeDepth`), extract, reactive first-step, sparse-step (AABB+grid). Steady-state is L2. Visual lockstep: `pnpm test:visual --scene liquidfun,lfstress`. Full log: [`LIQUIDFUN_HYPOTHESES.md`](./LIQUIDFUN_HYPOTHESES.md).
 
 ```bash
 pnpm bench:feature:liquidfun

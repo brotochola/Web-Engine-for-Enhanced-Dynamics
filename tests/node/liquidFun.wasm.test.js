@@ -1058,6 +1058,86 @@ test('WASM overlapping solid groups eject (centers move apart)', () => {
   assert.ok(d1 > d0 + 0.5, `SolveSolid should eject overlapping ice, d0=${d0} d1=${d1}`);
 });
 
+test('WASM eight overlapping ice groups still eject (solid-pair cap)', () => {
+  const { fn } = instantiateBox2dWasm();
+  const createWorld = fn('create_world');
+  const bindGameBuffers = fn('bind_game_buffers');
+  const createParticleSystem = fn('create_particle_system');
+  const createParticleGroupBox = fn('create_particle_group_box');
+  const getCx = fn('get_particle_group_center_x');
+  const getCy = fn('get_particle_group_center_y');
+  const stepWorld = fn('step_world');
+
+  const worldId = createWorld(0, 0, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(bindGameBuffers(16));
+  assert.ok(createParticleSystem(worldId, 10, 1.0, 2000));
+
+  const ids = [];
+  for (let i = 0; i < 8; i++) {
+    const x = i * 28;
+    const gid = createParticleGroupBox(
+      x - 40, -22, x + 22, 22, 0, 0, 0.5, 0, 0, 0, 1, 1, LF_SOLID_GROUP | LF_RIGID_GROUP,
+    );
+    assert.ok(gid >= 0, `ice ${i} create ${gid}`);
+    ids.push(gid);
+  }
+
+  const d0 = [];
+  for (let i = 0; i < 7; i++) {
+    d0.push(Math.hypot(getCx(ids[i + 1]) - getCx(ids[i]), getCy(ids[i + 1]) - getCy(ids[i])));
+  }
+  for (let s = 0; s < 30; s++) stepWorld(worldId, 1 / 60, 1);
+  for (let i = 0; i < 7; i++) {
+    const d1 = Math.hypot(getCx(ids[i + 1]) - getCx(ids[i]), getCy(ids[i + 1]) - getCy(ids[i]));
+    assert.ok(d1 > d0[i], `pair ${i}-${i + 1} should recede, d0=${d0[i]} d1=${d1}`);
+  }
+});
+
+test('WASM many overlapping fixtures vs particle cloud still steps', () => {
+  const { fn } = instantiateBox2dWasm();
+  const createWorld = fn('create_world');
+  const bindGameBuffers = fn('bind_game_buffers');
+  const createBodyBox = fn('create_body_box');
+  const createParticleSystem = fn('create_particle_system');
+  const createParticleGroupBox = fn('create_particle_group_box');
+  const getParticleCount = fn('get_particle_count');
+  const stepWorld = fn('step_world');
+
+  const worldId = createWorld(0, 980, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(bindGameBuffers(256));
+  assert.ok(createParticleSystem(worldId, 10, 1.0, 800));
+  const gid = createParticleGroupBox(-120, -80, 120, 80, 0, 0, 0.5, 0, 0, 0, 1, 1, 0);
+  assert.ok(gid >= 0);
+  const n0 = getParticleCount();
+  assert.ok(n0 > 40);
+
+  for (let i = 0; i < 180; i++) {
+    const col = i % 18;
+    const row = (i / 18) | 0;
+    const slot = createBodyBox(
+      worldId,
+      0,
+      -150 + col * 18, -90 + row * 18, 0,
+      8, 8,
+      0, 0,
+      1, 0.6, 0,
+      0, 0, 1,
+      0, 0, 0,
+      0, 0,
+      1, 0xffffffff,
+      0, 0, i,
+    );
+    assert.ok(slot >= 0, `fixture ${i} slot ${slot}`);
+  }
+
+  for (let s = 0; s < 12; s++) stepWorld(worldId, 1 / 60, 1);
+  const n1 = getParticleCount();
+  assert.ok(Number.isFinite(n1) && n1 > 0, `count after fixture grow path ${n1}`);
+  assert.equal(n1, n0);
+});
+
 test('WASM overlapping SOLID|RIGID ice bars do not nest (AABB overlap < 3 radius)', () => {
   const { memory, fn } = instantiateBox2dWasm();
   const createWorld = fn('create_world');
@@ -2104,6 +2184,92 @@ test('WASM extract 12 times then step (group table realloc)', () => {
   }
   for (let i = 0; i < 30; i++) stepWorld(worldId, 1 / 60, 1);
   assert.equal(getCount(gid), n0 - 12);
+});
+
+test('WASM extract from middle of rigid group packs remaining then steps', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  const createWorld = fn('create_world');
+  const bindGameBuffers = fn('bind_game_buffers');
+  const createParticleSystem = fn('create_particle_system');
+  const createParticleGroupBox = fn('create_particle_group_box');
+  const getParticleCount = fn('get_particle_count');
+  const getCount = fn('get_particle_group_particle_count');
+  const getGroupFlags = fn('get_particle_group_flags');
+  const getFirst = fn('get_particle_group_first_index');
+  const getLast = fn('get_particle_group_last_index');
+  const getIdxOff = fn('get_extract_indices_byte_offset');
+  const extractParticles = fn('extract_particles');
+  const stepWorld = fn('step_world');
+
+  const worldId = createWorld(0, 980, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(bindGameBuffers(16));
+  assert.ok(createParticleSystem(worldId, 10, 1.0, 800));
+  const gid = createParticleGroupBox(
+    -60, -40, 60, 40, 0, 0, 0.5, 0, 0, 0, 1, 1, LF_SOLID_GROUP | LF_RIGID_GROUP,
+  );
+  assert.ok(gid >= 0);
+  const nGroup = getCount(gid);
+  assert.ok(nGroup >= 12);
+  const first = getFirst(gid);
+  const idx = new Int32Array(memory.buffer, getIdxOff(), 4096);
+  const take = 4;
+  const start = first + (((nGroup - take) / 2) | 0);
+  for (let i = 0; i < take; i++) idx[i] = start + i;
+  const newId = extractParticles(gid, take, 0, 1);
+  assert.ok(newId >= 0 && newId !== gid, `extract ${newId}`);
+  assert.equal(getCount(gid), nGroup - take);
+  assert.equal(getFirst(gid), first, 'remaining packed at original firstIndex');
+  assert.equal(getLast(gid), first + (nGroup - take));
+  assert.equal(getCount(newId), take);
+  assert.equal(getGroupFlags(newId) & LF_RIGID_GROUP, 0);
+  for (let i = 0; i < 30; i++) stepWorld(worldId, 1 / 60, 1);
+  assert.equal(getParticleCount(), nGroup);
+  assert.equal(getCount(gid), nGroup - take);
+});
+
+test('WASM extract n/4 from 4k group then step finite', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  const createWorld = fn('create_world');
+  const bindGameBuffers = fn('bind_game_buffers');
+  const createParticleSystem = fn('create_particle_system');
+  const createParticleGroupBox = fn('create_particle_group_box');
+  const getParticleCount = fn('get_particle_count');
+  const getCount = fn('get_particle_group_particle_count');
+  const getFirst = fn('get_particle_group_first_index');
+  const getLast = fn('get_particle_group_last_index');
+  const getIdxOff = fn('get_extract_indices_byte_offset');
+  const extractParticles = fn('extract_particles');
+  const stepWorld = fn('step_world');
+  const getXOff = fn('get_particle_x_byte_offset');
+
+  const worldId = createWorld(0, 0, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(bindGameBuffers(16));
+  assert.ok(createParticleSystem(worldId, 10, 1.0, 6000));
+  const gid = createParticleGroupBox(-500, -500, 500, 500, 0, 0, 0.5, 0, 0, 0, 1, 1, LF_RIGID_GROUP);
+  assert.ok(gid >= 0);
+  const nGroup = getCount(gid);
+  assert.ok(nGroup >= 2000, `expected large group, got ${nGroup}`);
+  const take = (nGroup / 4) | 0;
+  assert.ok(take > 64 && take <= 4096);
+  const first = getFirst(gid);
+  const idx = new Int32Array(memory.buffer, getIdxOff(), 4096);
+  const start = first + (((nGroup - take) / 2) | 0);
+  for (let i = 0; i < take; i++) idx[i] = start + i;
+  const newId = extractParticles(gid, take, 0, 1);
+  assert.ok(newId >= 0 && newId !== gid);
+  assert.equal(getCount(gid), nGroup - take);
+  assert.equal(getFirst(gid), first);
+  assert.equal(getLast(gid), first + (nGroup - take));
+  assert.equal(getCount(newId), take);
+  for (let i = 0; i < 20; i++) stepWorld(worldId, 1 / 60, 1);
+  assert.equal(getParticleCount(), nGroup);
+  const heap = new Float32Array(memory.buffer);
+  const xBase = getXOff() >> 2;
+  for (let i = 0; i < nGroup; i++) {
+    assert.ok(Number.isFinite(heap[xBase + i]), `x[${i}] not finite`);
+  }
 });
 
 test('WASM setGroupFlags and per-index viscousScale', () => {

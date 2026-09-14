@@ -16,6 +16,9 @@ instantiate the WASM in Node (`CapturePairs` create-time, `ComputeDepth` spawn-s
 | **Correctness** | `node --test tests/node/liquidFun.test.js tests/node/liquidFun.wasm.test.js` (then `pnpm test:node`) | All pass. Sibling C: ship **WASM only** (`weedjs\build_for_weed.bat`). Do not build native Box2D `test.exe`. |
 | **L1 (H6)** | `pnpm bench:micro:liquidfun-capturepairs` ([`tests/bench/liquidFunCapturePairsMicrobench.mjs`](../tests/bench/liquidFunCapturePairsMicrobench.mjs)) | Wall-clock ms for one large SPRING-group `create_particle_group_box` call — create-time-only; L2 steady-state never sees it |
 | **L1 (H9)** | `pnpm bench:micro:liquidfun-computedepth` ([`tests/bench/liquidFunComputeDepthMicrobench.mjs`](../tests/bench/liquidFunComputeDepthMicrobench.mjs)) | First `step_world` after a SOLID ice create, with a large tracked puddle already in the system |
+| **L1 (H14)** | `pnpm bench:micro:liquidfun-extract` | Wall-clock `extract_particles` from a ~4k group; k in {64, 512, 1024} |
+| **L1 (H13)** | `pnpm bench:micro:liquidfun-reactive` | First `step_world` after SPRING\|REACTIVE create (`--spring-only` control) |
+| **L1 (H16)** | `pnpm bench:micro:liquidfun-sparse-step` | Steady `get_liquidfun_step_ms` on ~10k particles spaced > diameter (AABB + grid, almost no contacts) |
 | **L2** | `pnpm bench:feature:liquidfun` (`LiquidFunStressScene`), **2 runs per point** | `physics.LIQUIDFUN_MS` (fluid solve); `BOX2D_MS` still full `step_world` (rigid + LiquidFun) |
 | **L2 query** | `pnpm bench:feature:liquidfun-query` (`LiquidFunQueryStressScene`) | physics `STEP_MS` / `BOX2D_MS` / `LIQUIDFUN_MS` + logic `STEP_MS` under sync QueryAABB/RayCast churn |
 | **L3** | `pnpm test:visual --scene liquidfun,lfstress` (headed lockstep; catalog `match: 'exact'`, 100 steps) | Two-run CPU `hashLiquidFun` + PNG exact. Demo still fine to poke by hand. |
@@ -38,15 +41,27 @@ Every C change: edit sibling repo → `weedjs\build_for_weed.bat` (incremental, 
 | ID | Claim | Change | Status |
 |----|-------|--------|--------|
 | **H1** | `create_particle_system` hardcodes `strictContactCheck=true`; liquidfun-c/Google's own default is `false` | Thread `physics.liquidFun.strictContactCheck` through config → command ring → wasm export; default `false` | **Done** |
-| **H2** | `Integrate`/`SolveGravity`/`LimitVelocity` are scalar loops despite `-msimd128 -msse2` already being compile flags (auto-vectorization only, no intrinsics) | Explicit SSE2/wasm128 intrinsics (`<emmintrin.h>`, same technique `contact_solver.c` uses on this target) + `memset` for zero-fill loops | Next |
-| **H3** | Every particle's grid cell `(ix,iy)` is recomputed via `floorf`+multiply in `FindParticleContacts`, `ForEachParticleNearShape`, and `SolveBarrier`'s inner loop, on top of the one computed in `BuildGrid` | Cache `cellX`/`cellY` arrays, filled once in `BuildGrid`, read everywhere else | Planned |
-| **H4** | `FindBodyContacts` and `SolveCollision` each run their own `b2World_OverlapAABB` broad-phase query per substep | Swept-cloud AABB is a proven superset of the static-cloud AABB (same padding) — one shared query feeds both passes | Planned |
+| **H2** | `Integrate`/`SolveGravity`/`LimitVelocity` are scalar loops despite `-msimd128 -msse2` already being compile flags (auto-vectorization only, no intrinsics) | Explicit SSE2/wasm128 range jobs (`GravityRange` / `LimitVelocityRange` / `IntegrateRange`) | **Done** (already on HEAD before Wave L review; table was stale) |
+| **H3** | Every particle's grid cell `(ix,iy)` is recomputed via `floorf`+multiply in `FindParticleContacts`, `ForEachParticleNearShape`, and `SolveBarrier`'s inner loop, on top of the one computed in `BuildGrid` | Cache `cellX`/`cellY` arrays, filled once in `BuildGrid`, read everywhere else | **Done** (do not reopen) |
+| **H4** | `FindBodyContacts` and `SolveCollision` each run their own `b2World_OverlapAABB` broad-phase query per substep | Swept-cloud AABB is a proven superset of the static-cloud AABB (same padding) — one shared query feeds both passes | **Done** (do not reopen) |
 | **H5** | `RemoveSpuriousBodyContacts` uses `qsort` (indirect comparator calls) for runs capped at 3 kept contacts per particle | Insertion sort | **Rejected** (see log — the "≤3" cap is post-filter, not the sorted array size) |
 | **H6** | `CapturePairs` (SPRING/BARRIER group creation) is an O(n²) double loop over the new particle range | Route through a scratch grid over just the new range | **Done** |
 | **H7** | `SolveStaticPressure`'s 8-iteration Poisson loop re-filters the *entire* `particleContacts` array every iteration by flag | Compact the qualifying-contact index list once, iterate that 8× | **Done** |
 | **H8** | `syncLiquidFunParticlesToSharedBuffers` (JS) scalar-loops the interleaved→deinterleaved position copy every frame | Deinterleave in C once (tight loop over contiguous `b2Vec2`), JS does two bulk `.set()` calls | **Done** |
 | **H9** | Ice spawn hitch: `ComputeDepth` walks `sqrt(all particles)` × all contacts, including tracked viscous blobs | Scope to dirty solid intra-contacts; `sqrt(dirtySolidCount)`; reuse H7 `staticPressureContactIndices` scratch | **Done** |
 | **H10** | Parallel `FindParticleContacts` merge by worker index → contact **order** changes run-to-run → float32 pressure/tensile drift | Per-block buckets, merge in block-index order (serial walk). Steal stays. No qsort. | **Done** |
+| **H11** | `s_collisionDt` / `s_collisionInvDt` process statics are a pthread race | Put `collisionDt` / `collisionInvDt` on `lfParticleSystem` (multi-system safe; current collision pass is still serial) | **Done** |
+| **H12** | `realloc` without NULL (particle `EnsureCapacity`, body contacts, queryShapes, pairs) | Keep old pointer/cap on failure; drop the new contact/pair; don't bump cap | **Done** |
+| **H13** | `SolveReactive` `PairExists` is O(contacts × pairs); one-shot then bits clear | Open-address hash of `(min,max)` pair keys for that pass only | **Done** |
+| **H14** | `ExtractParticles` `RotateBuffer` per index is O(k·n) | Stable partition remaining-left / extracted-right inside the group range, remap pairs once | **Done** |
+| **H15** | SoA `{ b2Vec2 __v = ...; velX; velY }` temps survive `-O2`/`-flto=full` | Disasm-only | **Rejected** |
+| **H16** | Scalar `ComputeSweptCloudAABB` min/max over all particles | SSE2 `_mm_min_ps` / `_mm_max_ps` on pos and swept `p+dt*v`, scalar tail | **Done** |
+| **H17** | `ComputeWeight` is the step bound (memory) | No patch | **Rejected** |
+| **H18** | SSE clamp in `SolveStaticPressure` (8 iters × count) | Don't SIMD a loop that isn't the bound | **Rejected** |
+| **H19** | Serial vs parallel `FindParticleContacts` duplicated inner loop | Optional refactor; must not change contact order (H10). Not a speed hyp | **Skipped** |
+| **H20** | `RotateTyped` 17 mallocs per `RotateBuffer` | Depends on H14; extract no longer rotates | **Skipped** (H14 shipped) |
+| **H21** | `LF_SOLID_PAIR_CAP` 64 silent drop | Cap 256 | **Done** |
+| **H22** | Fuse `UpdateGroupStatistics` two passes | COM must exist before second pass; one-pass Welford not bit-exact | **Rejected** |
 
 ## Results log
 
@@ -515,6 +530,94 @@ Ray in band. LF ~+0.15 ms (~3%). Not qsort. Acceptable for bit-exact fluids.
 Catalog: both `match: 'exact'`, `lfstress` steps **100**. `water` stays `not-black` (rigid `WaterBall` entities).
 
 **Verdict: ship.** Determinism win. Tiny L2 tax. No sort.
+
+### Wave L review — H11–H22 (2026-09-14)
+
+External C review treated as new hypotheses. Kill bar: correctness green; L1 or L2 median **≥3%** to ship a perf patch; non-target not worse than −5%. Did **not** reopen H3/H4. H2 already SSE2 on HEAD (`GravityRange` / `LimitVelocityRange` / `IntegrateRange`).
+
+Going-in prediction: SIMD AABB + fused stats are function-local; L2 is contact/pressure bound (~4.4 ms `LIQUIDFUN_MS`); product win is extract `O(k·n)`; realloc NULL is live on **contact** growth (WASM `growable=false` never hits particle `EnsureCapacity`).
+
+**Baseline** (HEAD wasm before these C edits), L2 ×2 + new L1 micros:
+
+| Meter | Median |
+|-------|--------|
+| L2 `LIQUIDFUN_MS` | 4.583 / 4.493 |
+| extract k=64 / 512 / 1024 (n=4489) | 0.289 / 1.721 / 3.133 ms |
+| reactive first step SPRING\|REACTIVE n=1444 | 12.043 ms |
+| sparse-step n=10201 spacing=80 | 0.7412 ms |
+| rigid-damping ice-ice n=1802 | 0.5081 ms |
+
+#### H11 — collision dt on `lfParticleSystem` — **ship** (correctness)
+
+Review overstated the **current** pthread race: `lfSetTaskSystem` parallelizes `FindParticleContacts`, not `SolveCollision` (`ForEachParticleNearShape` is serial). Real bug class: two systems / future parallel collision sharing process statics. Moved `collisionDt` / `collisionInvDt` onto the system. L2 null (4.505 / 4.492 vs baseline). Existing floor/box rest tests hold.
+
+#### H12 — `realloc` NULL guards — **ship** (correctness)
+
+Particle `EnsureCapacity` (~23 reallocs) no longer bumps `capacity` unless every field succeeded. `EnsureGroupCapacity` no longer sets cap if `groups == NULL`. Live in WASM: `PushBodyContact`, particle-contact grow, `queryShapes`, `CapturePairs` / `SolveReactive` pairs (already had a NULL check; still bumped cap first — now `EnsurePairCapacity`). Fail path keeps old pointer/cap and **drops** the new contact/pair. WASM test: 180 overlapping fixtures vs a cloud still steps (`bindGameBuffers(256)`, unique entity indices). L2 null.
+
+#### H21 — `LF_SOLID_PAIR_CAP` 256 — **ship** (correctness)
+
+Silent `continue` at 64 was a nesting cliff. Cap 256. Wasm: 8 overlapping ice groups, adjacent pairs recede (`d1 > d0`). L2 null.
+
+#### H14 — extract partition O(n) — **ship**
+
+Confirmed: descending `RotateBuffer(idx, idx+1, end)` per particle, 17× `RotateTyped` malloc. Melt extracts hundreds. One stable partition remaining-left / extracted-right inside `[origFirst, origLast)`, remap pairs once. Remaining stay packed at `origFirst` (`InitGroupFromRange`).
+
+| k | before ms | after ms | speedup |
+|---|-----------|----------|---------|
+| 64 | 0.289 | 0.111 | 2.6× |
+| 512 | 1.721 | 0.108 | **15.9×** (gate was ≥2×) |
+| 1024 | 3.133 | 0.078 | 40× |
+
+Correctness: extract-front / 12× extract keep; added extract-middle + extract n/4 from ~4k then `step_world` finite. Remaining order preserved (stable partition) — no L3. L2 4.365 / 4.451 (extract not in stress scene).
+
+#### H16 — SIMD `ComputeSweptCloudAABB` — **ship**
+
+Scalar min/max over all particles. SSE2 on pos and swept `p+dt*v`, horizontal min/max of 4, scalar tail. Conservative pad unchanged. First sparse run after rebuild was a cold outlier (0.887 ms); two confirm runs 0.647 / 0.660 vs baseline **0.741** (~12%, ≥3%). L2 4.500 / 4.437 vs H14 4.365 / 4.451 (~+1.4%, inside −5%). Review's "4×" is that loop, not `LIQUIDFUN_MS`. Water-beside-box / ice-floor still hold.
+
+#### H13 — `SolveReactive` pair hash — **ship**
+
+`PairExists` linear scan confirmed. One-shot then bits clear — cliff is **one frame**. SPRING-only first step **0.377 ms**; SPRING\|REACTIVE **14.050 ms** (not "demo sizes << 1 ms"). Open-address hash of `(min<<16)|max` for that function only; linear `PairExists` if calloc fails.
+
+After: **0.820 ms** (~17× vs 14.05; ~2× vs spring-only remainder). Existing `WASM reactive clears flag` still green. L2 4.530 / 4.397 (no REACTIVE in lfstress steady-state).
+
+#### H15 — SoA `__v` temps — **rejected**
+
+Measure-only. No `wasm-objdump` / godbolt pass on this machine. Compiler at `-O2`/`-flto=full` should kill them. L1 would not see 0.1%. Default reject; no product patch.
+
+#### H17 — `ComputeWeight` memory-bound — **rejected**
+
+Scatter-add over contacts. No patch. L2 stays contact/pressure bound.
+
+#### H18 — SSE clamp in `SolveStaticPressure` — **rejected**
+
+Clamp is O(count)×8 iters; inner Poisson is gather/scatter on compacted contacts (H7). lfstress ~2k static-pressure particles — clamp is tiny vs gathers. Did not SIMD. L2 already ~4.4 ms with no clamp change.
+
+#### H19 — serial vs parallel contact inner loop — **skipped**
+
+True maintenance. Extracting `TryContact(i,j)` must not change contact order (H10). Not a speed hyp. Left alone.
+
+#### H20 — `RotateTyped` 17 mallocs — **skipped**
+
+True, but H14 extract no longer calls `RotateBuffer` per index. One tmp buffer reused across 17 SoA slices inside `PermuteParticleRange`. Join/zombie still rotate; melt path is the product.
+
+#### H22 — fuse `UpdateGroupStatistics` — **rejected**
+
+COM pass then accumulator pass. Cannot fully fuse without two logical phases. One-pass mean+second-moment is **not** bit-exact vs current (ice rest / L3). Ice-ice rigid-damping L1 0.526 ms vs baseline 0.508 (noise). Two O(n) loops on ~1.8k ice cannot move L2 4.4 ms by 3%.
+
+#### Already good (no hyp)
+
+SoA; SSE2 gravity/integrate/limit (H2); `lfInvSqrt`; grid CapturePairs 5×5 (H6); parallel contacts block merge (H10); staticPressure index compact (H7); shared queryShapes (H4); cell cache (H3).
+
+#### Review items that were wrong
+
+| Review claim | Measurement |
+|--------------|-------------|
+| Collision statics are a current pthread race | Parallel path is **contacts**, not `SolveCollision` |
+| Biggest win is SIMD AABB + fused stats | Product wins: **extract 16×** and **reactive 17×** one-shot. SIMD AABB ~12% on sparse-step, ~0% L2. Fused stats rejected |
+| Particle `EnsureCapacity` realloc is the WASM OOM hole | Wrapper sets `growable=false`; live realloc is contacts / pairs / `queryShapes` |
+
+**Shipped:** H11, H12, H13, H14, H16, H21. **Rejected / skipped:** H15, H17, H18, H19, H20, H22.
 
 ## Related
 
