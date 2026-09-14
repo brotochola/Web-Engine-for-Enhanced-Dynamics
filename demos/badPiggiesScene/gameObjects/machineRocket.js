@@ -60,10 +60,9 @@ export class MachineRocket extends GameObject {
     const ny = -s;
     const tailX = this.x + nx * (ROCKET_LEN);
     const tailY = this.y + ny * (ROCKET_LEN);
-    // const exhaustDeg = (Math.atan2(ny, nx) * 180) / Math.PI;
 
     ParticleEmitter.emitFlat({
-      count: { min: 5, max: 15 },
+      count: { min: 1, max: 5 },
       x: tailX,
       y: tailY,
       dirX: nx,
@@ -71,28 +70,28 @@ export class MachineRocket extends GameObject {
       spread: 0.1,
       speed: { min: 20, max: 60 },
       gravity: 0.66,
-      lifespan: { min: 180, max: 580 },
+      lifespan: { min: 100, max: 300 },
       scale: { min: 0.5, max: 1 },
-      texture: '_whiteCircle',
+      texture: '_metaball',
       tint: { min: 0xffee66, max: 0xff6600 },
-      alpha: { min: 0.7, max: 1 },
+      alpha: { from: 0.5, to: 0 },
+      layer: 'fire',
     });
 
     ParticleEmitter.emitFlat({
-      count: { min: 1, max: 3 },
+      count: 1,
       x: tailX,
       y: tailY,
       spread: { min: 100, max: 360 },
-      // angleXY: { min: exhaustDeg - 18, max: exhaustDeg + 18 },
       speed: { min: 1, max: 5 },
-      gravity: -0.33,
-      lifespan: { min: 350, max: 900 },
-      scale: { min: 0.66, max: 1.5 },
+      gravity: -0.05,
+      lifespan: { min: 1000, max: 5900 },
+      scale: { from: { min: 0.2, max: 1 }, to: 5 },
       texture: 'smoke',
       tint: { min: 0x666666, max: 0xbbbbbb },
-      alpha: { from: { min: 0.1, max: 0.3 }, to: 0 },
-
-      rotation: { min: 0, max: 360 },
+      alpha: { from: { min: 0.1, max: 0.25 }, to: 0 },
+      rotation: { from: { min: 0, max: 360 }, to: { min: 0, max: 360 } },
+      layer: 'smoke',
     });
   }
 }

@@ -6,6 +6,12 @@ import { GhostMachineWheel } from './gameObjects/ghostMachineWheel.js';
 import { GhostMachineRocket } from './gameObjects/ghostMachineRocket.js';
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import { Camera } from '/src/core/Camera.js';
+import {
+  BLEND_MODES,
+  LAYER_DENSITY_SOURCE,
+  LAYER_SCALE_MODE,
+  LAYER_SPLAT_FALLOFF,
+} from '/src/core/ConfigDefaults.js';
 import WEED from '/src/index.js';
 import {
   CELL,
@@ -102,7 +108,7 @@ export class BadPiggiesScene extends Scene {
     },
 
     renderer: {
-      backend: 'webgl',
+      backend: 'webgpu',
       noLimitFPS: false,
       maxVisibleRenderables: 120000,
     },
@@ -114,6 +120,71 @@ export class BadPiggiesScene extends Scene {
     },
 
     lighting: { enabled: false },
+
+    layers: {
+      smoke: {
+        zIndex: 3.4,
+        blendMode: BLEND_MODES.NORMAL,
+        resolution: 0.5,
+        scaleMode: LAYER_SCALE_MODE.LINEAR,
+        maxItems: 8000,
+        ySorting: false,
+        // shader: {
+        //   // fragment: 'metaball',
+        //   containerBlend: BLEND_MODES.ADD,
+        //   uniforms: {
+        //     uThreshold: { value: 0.35, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Threshold', tip: 'Density needed before smoke draws. Higher = tighter blobs.' },
+        //     uWaterColor: { value: [0.22, 0.22, 0.24], type: 'vec3<f32>', min: 0, max: 1, step: 0.01, label: 'Smoke color', tip: 'Base RGB. Sprite tint still wins in the look.' },
+        //     uFoamIntensity: { value: 0.12, type: 'f32', min: 0, max: 4, step: 0.05, label: 'Edge', tip: 'How strong the pale rim is.' },
+        //     uFoamWidth: { value: 0.14, type: 'f32', min: 0.01, max: 1, step: 0.01, label: 'Rim width', tip: 'How wide the rim around the blob is.' },
+        //     uSampleStep: { value: 0.003, type: 'f32', min: 0.0005, max: 0.02, step: 0.0005, label: 'Sample step', tip: 'Neighbor sample distance for the rim.' },
+        //     uOpacity: { value: 0.72, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Opacity', tip: 'Smoke body alpha.' },
+        //   },
+        // },
+      },
+      water: {
+        zIndex: 3.3,
+        blendMode: BLEND_MODES.NORMAL,
+        resolution: 1,
+        scaleMode: LAYER_SCALE_MODE.LINEAR,
+        maxItems: 0,
+        ySorting: false,
+        shader: {
+          fragment: 'dulceDeLeche',
+          containerBlend: BLEND_MODES.ADD,
+          densitySource: LAYER_DENSITY_SOURCE.LIQUID_FUN,
+          splat: {
+            radius: 40,
+            falloff: LAYER_SPLAT_FALLOFF.QUADRATIC,
+            useParticleTint: true,
+            intensity: 0.166,
+          },
+          uniforms: {
+            uCutoff: { value: 0.29, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Cutoff', tip: 'Hide density below this. Higher = thinner looking fluid.' },
+            uRim: { value: 0.4, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Rim', tip: 'Density where the cream rim ends and the body starts. Keep above cutoff.' },
+            uDepth: { value: 0.5, type: 'f32', min: 0.01, max: 2, step: 0.01, label: 'Depth', tip: 'How quickly the body darkens from rim to burnt core.' },
+            uBodyAlpha: { value: 0.85, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Body alpha', tip: 'Opacity of thick fluid.' },
+            uEdgeAlpha: { value: 0.7, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Edge alpha', tip: 'Opacity of the thin rim.' },
+          },
+        },
+      },
+      fire: {
+        zIndex: 3.5,
+        blendMode: BLEND_MODES.NORMAL,
+        resolution: 0.5,
+        scaleMode: LAYER_SCALE_MODE.LINEAR,
+        maxItems: 8000,
+        ySorting: false,
+        shader: {
+          fragment: 'fireBlob',
+          containerBlend: BLEND_MODES.ADD,
+          uniforms: {
+            uThreshold: { value: 0.22, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Threshold', tip: 'Density needed before flame draws. Higher = tighter blobs.' },
+            uOpacity: { value: 1, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Opacity', tip: 'Flame alpha.' },
+          },
+        },
+      },
+    },
   };
 
   static assets = {
@@ -122,6 +193,11 @@ export class BadPiggiesScene extends Scene {
       ball: '/demos/img/bola.png',
       rocky: '/demos/img/rocky.jpg',
       smoke: '/demos/img/smoke.png',
+      landscape: '/demos/img/background_lanscape.jpg',
+    },
+    shaders: {
+      fireBlob: '/demos/badPiggiesScene/shaders/fireBlob.wgsl',
+      dulceDeLeche: '/demos/shaders/dulceDeLeche.wgsl',
     },
   };
 
@@ -185,6 +261,10 @@ export class BadPiggiesScene extends Scene {
     this._createFollowToggle();
     this._createHud();
     this._refreshHud();
+  }
+
+  preload() {
+    this.setBackground({ texture: 'landscape', parallax: 0.15, zoomParallax: 0.35, margin: 0.2 });
   }
 
   onLoadGame(_payload) {
@@ -607,9 +687,7 @@ export class BadPiggiesScene extends Scene {
       shape: tool.shape,
       posX: Mouse.x,
       posY: Mouse.y,
-      texture: '_whiteCircle',
-      scale: 1,
-      alpha: 0.85,
+      layer: 'water',
     };
     if (tool.shape === 'box') {
       emit.halfWidth = tool.halfWidth;

@@ -26,11 +26,11 @@ export class MachineBox extends GameObject {
     this.rotation = 0;
 
     this.collider.shapeType = ShapeType.Box;
-    this.collider.width = size * 1.1;
-    this.collider.height = size * 1.1;
+    this.collider.width = size //* 1.1;
+    this.collider.height = size //* 1.1;
     this.collider.radius = 0;
     this.collider.isTrigger = ghost ? 1 : 0;
-    this.collider.friction = 0.6;
+    this.collider.friction = 1;
     this.collider.visualRange = Math.hypot(size, size) * 0.5 + 200;
     this.collider.collisionLayer = LAYER_BOX;
     this.collider.collisionMask = ghost ? 0 : MASK_BOX;
