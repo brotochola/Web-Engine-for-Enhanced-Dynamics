@@ -1058,6 +1058,211 @@ test('WASM overlapping solid groups eject (centers move apart)', () => {
   assert.ok(d1 > d0 + 0.5, `SolveSolid should eject overlapping ice, d0=${d0} d1=${d1}`);
 });
 
+test('WASM overlapping SOLID|RIGID ice bars do not nest (AABB overlap < 3 radius)', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  const createWorld = fn('create_world');
+  const bindGameBuffers = fn('bind_game_buffers');
+  const createParticleSystem = fn('create_particle_system');
+  const createParticleGroupBox = fn('create_particle_group_box');
+  const getCx = fn('get_particle_group_center_x');
+  const getCy = fn('get_particle_group_center_y');
+  const getFirst = fn('get_particle_group_first_index');
+  const getLast = fn('get_particle_group_last_index');
+  const getXOff = fn('get_particle_x_byte_offset');
+  const stepWorld = fn('step_world');
+
+  const radius = 10;
+  const worldId = createWorld(0, 0, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(bindGameBuffers(16));
+  assert.ok(createParticleSystem(worldId, radius, 1.0, 800));
+
+  const a = createParticleGroupBox(-50, -30, 30, 30, 0, 0, 0.5, 0, 0, 0, 1, 1, LF_SOLID_GROUP | LF_RIGID_GROUP);
+  const b = createParticleGroupBox(-10, -30, 70, 30, 0, 0, 0.5, 0, 0, 0, 1, 1, LF_SOLID_GROUP | LF_RIGID_GROUP);
+  assert.ok(a >= 0 && b >= 0 && a !== b);
+
+  const d0 = Math.hypot(getCx(b) - getCx(a), getCy(b) - getCy(a));
+  for (let i = 0; i < 60; i++) {
+    stepWorld(worldId, 1 / 60, 1);
+  }
+
+  const d1 = Math.hypot(getCx(b) - getCx(a), getCy(b) - getCy(a));
+  assert.ok(d1 > d0, `ice bars should recede, d0=${d0} d1=${d1}`);
+
+  const heap = new Float32Array(memory.buffer);
+  const xBase = getXOff() >> 2;
+  assert.ok(xBase > 0, 'particle x buffer missing');
+  const spanX = (gid) => {
+    const first = getFirst(gid);
+    const last = getLast(gid);
+    let minX = Infinity;
+    let maxX = -Infinity;
+    for (let i = first; i < last; i++) {
+      const x = heap[xBase + i];
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+    }
+    return { minX, maxX };
+  };
+  const sa = spanX(a);
+  const sb = spanX(b);
+  const overlapX = Math.min(sa.maxX, sb.maxX) - Math.max(sa.minX, sb.minX);
+  assert.ok(
+    overlapX < radius * 3,
+    `ice bars nested: overlapX=${overlapX} a=[${sa.minX},${sa.maxX}] b=[${sb.minX},${sb.maxX}]`,
+  );
+});
+
+test('WASM SOLID|RIGID ice rests on a static floor (no tunnel)', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  const createWorld = fn('create_world');
+  const bindGameBuffers = fn('bind_game_buffers');
+  const createBodyBox = fn('create_body_box');
+  const createParticleSystem = fn('create_particle_system');
+  const createParticleGroupBox = fn('create_particle_group_box');
+  const getParticleCount = fn('get_particle_count');
+  const getParticleXByteOffset = fn('get_particle_x_byte_offset');
+  const getParticleYByteOffset = fn('get_particle_y_byte_offset');
+  const stepWorld = fn('step_world');
+
+  const worldId = createWorld(0, 980, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId, 'create_world failed');
+  assert.ok(bindGameBuffers(16), 'bind_game_buffers failed');
+
+  const radius = 10;
+  const floorSlot = createBodyBox(
+    worldId,
+    0,
+    0, 400, 0,
+    2000, 130,
+    0, 0,
+    1, 0.6, 0,
+    0, 0, 1,
+    0, 0, 0,
+    0, 0,
+    1, 0xffffffff,
+    0, 0, 0,
+  );
+  assert.ok(floorSlot >= 0, `create_body_box failed: ${floorSlot}`);
+  assert.ok(createParticleSystem(worldId, radius, 1.0, 800), 'create_particle_system failed');
+
+  const gid = createParticleGroupBox(
+    -80, 40, 80, 140, 0, 0, 0.5, 0, 0, 0, 1, 1, LF_SOLID_GROUP | LF_RIGID_GROUP,
+  );
+  assert.ok(gid >= 0, `ice group failed: ${gid}`);
+  const count = getParticleCount();
+  assert.ok(count > 8, `expected an ice slab, got ${count}`);
+
+  const dt = 1 / 60;
+  for (let i = 0; i < 180; i++) {
+    stepWorld(worldId, dt, 4);
+  }
+
+  const heap = new Float32Array(memory.buffer);
+  const xBase = getParticleXByteOffset() >> 2;
+  const yBase = getParticleYByteOffset() >> 2;
+  assert.ok(xBase > 0 && yBase > 0, 'particle x/y SoA buffers missing');
+  let maxY = -Infinity;
+  let minY = Infinity;
+  for (let i = 0; i < count; i++) {
+    const y = heap[yBase + i];
+    if (y > maxY) maxY = y;
+    if (y < minY) minY = y;
+  }
+  const floorTop = 270;
+  assert.ok(
+    maxY < floorTop + radius,
+    `ice tunneled through floor: maxY=${maxY} floorTop=${floorTop}`,
+  );
+  assert.ok(
+    maxY > floorTop - 80,
+    `ice never reached the floor: maxY=${maxY} floorTop=${floorTop}`,
+  );
+  assert.ok(minY > -200, `ice escaped upward: minY=${minY}`);
+  assert.equal(getParticleCount(), count);
+});
+
+test('WASM SOLID|RIGID ice beside a thick static box stays outside (max pen < radius)', () => {
+  const { memory, fn } = instantiateBox2dWasm();
+  const createWorld = fn('create_world');
+  const bindGameBuffers = fn('bind_game_buffers');
+  const createBodyBox = fn('create_body_box');
+  const createParticleSystem = fn('create_particle_system');
+  const createParticleGroupBox = fn('create_particle_group_box');
+  const getParticleCount = fn('get_particle_count');
+  const getParticleXByteOffset = fn('get_particle_x_byte_offset');
+  const getParticleYByteOffset = fn('get_particle_y_byte_offset');
+  const stepWorld = fn('step_world');
+
+  const worldId = createWorld(0, 980, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId, 'create_world failed');
+  assert.ok(bindGameBuffers(16), 'bind_game_buffers failed');
+
+  const radius = 10;
+  const floorSlot = createBodyBox(
+    worldId,
+    0,
+    0, 400, 0,
+    400, 30,
+    0, 0,
+    1, 0.6, 0,
+    0, 0, 1,
+    0, 0, 0,
+    0, 0,
+    1, 0xffffffff,
+    0, 0, 0,
+  );
+  const boxSlot = createBodyBox(
+    worldId,
+    0,
+    200, 280, 0,
+    80, 80,
+    0, 0,
+    1, 0.6, 0,
+    0, 0, 1,
+    0, 0, 0,
+    0, 0,
+    1, 0xffffffff,
+    0, 0, 1,
+  );
+  assert.ok(floorSlot >= 0, `floor failed: ${floorSlot}`);
+  assert.ok(boxSlot >= 0, `box failed: ${boxSlot}`);
+  assert.ok(createParticleSystem(worldId, radius, 1.0, 800), 'create_particle_system failed');
+
+  const gid = createParticleGroupBox(
+    360, 180, 440, 260, 0, 0, 0.5, 0, 0, 0, 1, 1, LF_SOLID_GROUP | LF_RIGID_GROUP,
+  );
+  assert.ok(gid >= 0, `ice group failed: ${gid}`);
+  const count = getParticleCount();
+  assert.ok(count > 8, `expected an ice slab, got ${count}`);
+
+  const dt = 1 / 60;
+  for (let i = 0; i < 180; i++) {
+    stepWorld(worldId, dt, 4);
+  }
+
+  const heap = new Float32Array(memory.buffer);
+  const xBase = getParticleXByteOffset() >> 2;
+  const yBase = getParticleYByteOffset() >> 2;
+  assert.ok(xBase > 0 && yBase > 0, 'particle x/y SoA buffers missing');
+  const x0 = 120;
+  const x1 = 280;
+  const y0 = 200;
+  const y1 = 360;
+  let maxPen = 0;
+  for (let i = 0; i < count; i++) {
+    const x = heap[xBase + i];
+    const y = heap[yBase + i];
+    if (x <= x0 || x >= x1 || y <= y0 || y >= y1) continue;
+    const pen = Math.min(x - x0, x1 - x, y - y0, y1 - y);
+    if (pen > maxPen) maxPen = pen;
+  }
+  assert.ok(
+    maxPen < radius,
+    `ice centers tunneled into thick box: maxPen=${maxPen} radius=${radius}`,
+  );
+});
+
 test('WASM second ice still ejects after first group depth is stale', () => {
   const { fn } = instantiateBox2dWasm();
   const createWorld = fn('create_world');
@@ -1386,12 +1591,13 @@ test('WASM sync_active_particle_groups matches per-slot getters', () => {
   const getVisc = fn('get_particle_group_viscous_scale');
   const getCx = fn('get_particle_group_center_x');
   const getCy = fn('get_particle_group_center_y');
+  const getGroupFlags = fn('get_particle_group_flags');
 
   const worldId = createWorld(0, 0, 100, 30, 0.7, 3, 4000, 1);
   assert.ok(worldId);
   assert.ok(bindGameBuffers(16));
   assert.ok(createParticleSystem(worldId, 10, 1.0, 500));
-  const a = createParticleGroupBox(-80, -20, -20, 20, 0, 0, 0.5, 0, 0, 0, 1, 1, 0);
+  const a = createParticleGroupBox(-80, -20, -20, 20, 0, 0, 0.5, 0, 0, 0, 1, 1, LF_SOLID_GROUP | LF_RIGID_GROUP);
   const b = createParticleGroupBox(20, -20, 80, 20, 0, 0, 0.5, 0, 0, 0, 1, 1, 0);
   assert.ok(a >= 0 && b >= 0);
 
@@ -1413,7 +1619,11 @@ test('WASM sync_active_particle_groups matches per-slot getters', () => {
     assert.ok(Math.abs(heapF32[base + stride * 4 + w] - getVisc(gid)) < 1e-6);
     assert.ok(Math.abs(heapF32[base + stride * 5 + w] - getCx(gid)) < 1e-4);
     assert.ok(Math.abs(heapF32[base + stride * 6 + w] - getCy(gid)) < 1e-4);
+    assert.equal(heap32[base + stride * 11 + w] >>> 0, getGroupFlags(gid) >>> 0);
   }
+  const flagsA = getGroupFlags(a);
+  assert.equal(flagsA & LF_SOLID_GROUP, LF_SOLID_GROUP);
+  assert.equal(flagsA & LF_RIGID_GROUP, LF_RIGID_GROUP);
 });
 
 test('WASM cull_particles_outside_bounds marks OOB centers zombie', () => {

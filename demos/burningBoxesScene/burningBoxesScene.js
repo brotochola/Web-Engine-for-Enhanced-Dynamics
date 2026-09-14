@@ -269,6 +269,7 @@ export class BurningBoxesScene extends WEED.Scene {
       posY,
       halfWidth,
       halfHeight,
+      layers: ['oil'],
     });
   }
 

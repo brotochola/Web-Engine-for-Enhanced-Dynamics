@@ -8,7 +8,6 @@ const IGNITE_RANGE_SQ = 80 * 80;
 const LIGHT_BASE = 9000;
 const LIGHT_RANGE = 640;
 const HOT = new Int32Array(4096);
-const HEATED = new Int32Array(4096);
 const SCRATCH = new Int32Array(4096);
 const JOB_GID = new Int32Array(32);
 const JOB_OFF = new Int32Array(32);
@@ -17,6 +16,7 @@ const BOX_X0 = new Float32Array(256);
 const BOX_Y0 = new Float32Array(256);
 const BOX_X1 = new Float32Array(256);
 const BOX_Y1 = new Float32Array(256);
+const GROUP_HIT = new Uint8Array(256);
 const MELT_T = 180;
 const RIGID = LIQUIDFUN_GROUP_FLAGS.RIGID;
 const EXTRACT_OPTS = { groupFlags: 0 };
@@ -94,7 +94,7 @@ export class BurningBox extends GameObject {
     if (dx * dx + dy * dy < IGNITE_RANGE_SQ) this.ignite();
   }
 
-  /** One pass over RIGID slabs. No queryAABB. One extract per ice group. */
+  /** One pass over RIGID slabs. Overlap any heat AABB → heat every member. */
   static meltIce(deltaTime) {
     const views = LiquidFun.getViews();
     const gv = LiquidFun.getGroupViews();
@@ -115,7 +115,6 @@ export class BurningBox extends GameObject {
     if (boxN <= 0) return;
 
     const meltBench = list[0] && list[0].config && list[0].config.meltBench;
-    const useList = !meltBench || meltBench.list !== false;
     const keepWriting = !!(meltBench && meltBench.keepWriting);
 
     const live = views.count ? views.count[0] | 0 : 0;
@@ -124,39 +123,70 @@ export class BurningBox extends GameObject {
     const xArr = views.x;
     const yArr = views.y;
     const ud = views.userData;
-    let heatedN = 0;
-    let hotPacked = 0;
-    let jobs = 0;
+    const gi = views.groupIndex;
+    if (gn > 0) GROUP_HIT.fill(0, 0, gn);
+
+    const inHeat = (x, y) => {
+      for (let b = 0; b < boxN; b++) {
+        if (x >= BOX_X0[b] && x <= BOX_X1[b] && y >= BOX_Y0[b] && y <= BOX_Y1[b]) return true;
+      }
+      return false;
+    };
+
+    const spanOk = (first, last) => first >= 0 && last > first;
+
     for (let k = 0; k < gn; k++) {
       if (!(gv.groupFlags[k] & RIGID)) continue;
+      const gid = gv.id[k] | 0;
       const first = gv.firstIndex[k] | 0;
       const last = gv.lastIndex[k] | 0;
-      const gid = gv.id[k] | 0;
-      let hotN = 0;
-      const hotOff = hotPacked;
       const hi = last < live ? last : live;
-      for (let idx = first; idx < hi; idx++) {
-        if (idx < 0) continue;
-        const x = xArr[idx];
-        const y = yArr[idx];
-        let hit = false;
-        for (let b = 0; b < boxN; b++) {
-          if (x >= BOX_X0[b] && x <= BOX_X1[b] && y >= BOX_Y0[b] && y <= BOX_Y1[b]) {
+      let hit = false;
+      if (spanOk(first, hi)) {
+        for (let idx = first; idx < hi; idx++) {
+          if (inHeat(xArr[idx], yArr[idx])) {
             hit = true;
             break;
           }
         }
-        if (!hit) continue;
+      } else if (gi) {
+        for (let idx = 0; idx < live; idx++) {
+          if ((gi[idx] | 0) !== gid) continue;
+          if (inHeat(xArr[idx], yArr[idx])) {
+            hit = true;
+            break;
+          }
+        }
+      }
+      if (hit) GROUP_HIT[k] = 1;
+    }
+
+    let hotPacked = 0;
+    let jobs = 0;
+    for (let k = 0; k < gn; k++) {
+      if (!GROUP_HIT[k]) continue;
+      const gid = gv.id[k] | 0;
+      const first = gv.firstIndex[k] | 0;
+      const last = gv.lastIndex[k] | 0;
+      const hi = last < live ? last : live;
+      let hotN = 0;
+      const hotOff = hotPacked;
+      const heatIdx = (idx) => {
         const prev = ud[idx] >>> 0;
         let t = (prev & 255) + add;
         if (t > 255) t = 255;
-        if ((t !== (prev & 255) || keepWriting) && heatedN < HEATED.length) {
-          HEATED[heatedN++] = idx;
-        }
-        if (keepWriting || t < MELT_T) continue;
+        ud[idx] = (prev & ~255) | t;
+        if (keepWriting || t < MELT_T) return;
         if (hotPacked < HOT.length) {
           HOT[hotPacked++] = idx;
           hotN++;
+        }
+      };
+      if (spanOk(first, hi)) {
+        for (let idx = first; idx < hi; idx++) heatIdx(idx);
+      } else if (gi) {
+        for (let idx = 0; idx < live; idx++) {
+          if ((gi[idx] | 0) === gid) heatIdx(idx);
         }
       }
       if (hotN <= 0 || jobs >= JOB_GID.length) continue;
@@ -164,19 +194,6 @@ export class BurningBox extends GameObject {
       JOB_OFF[jobs] = hotOff;
       JOB_N[jobs] = hotN;
       jobs++;
-    }
-    if (heatedN > 0 && add > 0) {
-      if (useList) {
-        LiquidFun.addUserData(HEATED, heatedN, add);
-      } else {
-        for (let i = 0; i < heatedN; i++) {
-          const idx = HEATED[i];
-          const prev = ud[idx] >>> 0;
-          let t = (prev & 255) + add;
-          if (t > 255) t = 255;
-          LiquidFun.setUserData(idx, (prev & ~255) | t);
-        }
-      }
     }
     for (let j = 0; j < jobs; j++) {
       const n = JOB_N[j];
