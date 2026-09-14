@@ -12,7 +12,6 @@ const {
   Grab,
   ParticleEmitter,
   Transform,
-  Layer,
   enums,
 } = WEED;
 const { ShapeType } = enums;
@@ -108,7 +107,7 @@ export class WeldBreakBox extends GameObject {
       alpha: { from: { min: 0.5, max: 0.95 }, to: 0 },
       despawnOnGroundContact: false,
 
-      layerId: Layer.getId('sparks'),
+      layer: 'sparks',
     });
   }
 }

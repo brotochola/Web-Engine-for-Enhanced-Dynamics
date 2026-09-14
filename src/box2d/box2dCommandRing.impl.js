@@ -24,7 +24,7 @@
     DESTROY_PARTICLE_SYSTEM: 12, // systemId
     SET_LIQUIDFUN_EMIT: 13, // entity=textureId|(trackGroup<<16); spacing, strength, tintBits, viscousScale
     SET_LIQUIDFUN_LIFESPAN: 14, // lifetimeMinSec, lifetimeMaxSec, fadeToAlpha0 (0|1); next create consumes; 0,0 = no lifespan
-    SET_LIQUIDFUN_SCALE: 15, // entity=layerId; scaleMin, scaleMax, alphaMin, alphaMax (next create)
+    SET_LIQUIDFUN_SCALE: 15, // scaleMin, scaleMax, alphaMin, alphaMax (next create)
     SET_PARTICLE_TUNING: 16, // entity=phase 0|1|2; four floats per phase (see enqueueSetParticleTuning)
     SET_GROUP_VISCOUS_SCALE: 17, // entity=groupId, a=viscousScale
     JOIN_PARTICLE_GROUPS: 18, // entity=groupA, a=groupB
@@ -36,6 +36,7 @@
     CLEAR_LIQUIDFUN_PARTICLES: 24, // systemId — destroy groups + zombie rest; keep system
     SET_AWAKE: 25, // entity, flag (0|1) — b2Body_SetAwake
     SET_LIQUIDFUN_LIGHT: 26, // a=lightIntensity; next create consumes; 0 = not a light
+    SET_LIQUIDFUN_LAYERS: 27, // entity=layerMask u16; next create consumes
   });
 
   var BOX2D_CMD_HEADER_I32 = 4;
@@ -211,10 +212,10 @@
     );
   }
 
-  function enqueueSetLiquidFunScale(layerId, scaleMin, scaleMax, alphaMin, alphaMax) {
+  function enqueueSetLiquidFunScale(scaleMin, scaleMax, alphaMin, alphaMax) {
     return enqueue(
       BOX2D_CMD.SET_LIQUIDFUN_SCALE,
-      layerId | 0,
+      0,
       scaleMin,
       scaleMax,
       alphaMin,
@@ -224,6 +225,10 @@
 
   function enqueueSetLiquidFunLight(lightIntensity) {
     return enqueue(BOX2D_CMD.SET_LIQUIDFUN_LIGHT, 0, lightIntensity > 0 ? lightIntensity : 0, 0, 0, 0);
+  }
+
+  function enqueueSetLiquidFunLayers(mask) {
+    return enqueue(BOX2D_CMD.SET_LIQUIDFUN_LAYERS, mask & 0xffff, 0, 0, 0, 0);
   }
 
   /** Apply system def coeffs. Three ring slots (phase 0/1/2). */
@@ -372,10 +377,13 @@
           if (handlers.setLiquidFunLifespan) handlers.setLiquidFunLifespan(a, b, c);
           break;
         case BOX2D_CMD.SET_LIQUIDFUN_SCALE:
-          if (handlers.setLiquidFunScale) handlers.setLiquidFunScale(entity, a, b, c, d);
+          if (handlers.setLiquidFunScale) handlers.setLiquidFunScale(a, b, c, d);
           break;
         case BOX2D_CMD.SET_LIQUIDFUN_LIGHT:
           if (handlers.setLiquidFunLight) handlers.setLiquidFunLight(a);
+          break;
+        case BOX2D_CMD.SET_LIQUIDFUN_LAYERS:
+          if (handlers.setLiquidFunLayers) handlers.setLiquidFunLayers(entity);
           break;
         case BOX2D_CMD.SET_PARTICLE_TUNING:
           if (handlers.setParticleTuning) handlers.setParticleTuning(entity, a, b, c, d);
@@ -433,6 +441,7 @@
     enqueueSetLiquidFunLifespan: enqueueSetLiquidFunLifespan,
     enqueueSetLiquidFunScale: enqueueSetLiquidFunScale,
     enqueueSetLiquidFunLight: enqueueSetLiquidFunLight,
+    enqueueSetLiquidFunLayers: enqueueSetLiquidFunLayers,
     enqueueSetParticleTuning: enqueueSetParticleTuning,
     enqueueSetGroupViscousScale: enqueueSetGroupViscousScale,
     enqueueJoinParticleGroups: enqueueJoinParticleGroups,

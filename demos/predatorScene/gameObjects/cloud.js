@@ -23,7 +23,7 @@ export class Cloud extends GameObject {
         this.spriteRenderer.scaleX = 4 + rng() * 6;
         this.spriteRenderer.scaleY = 4 + rng() * 6;
         this.rotation = rng() * Math.PI * 2;
-        this.spriteRenderer.layerId = Layer.getId('clouds');
+        this.setLayer('clouds');
 
         this.setTint(0x000000);
     }

@@ -32,7 +32,7 @@ export class Blower extends GameObject {
     this.setTint(config.tint ?? 0x7ec8e3);
     this.setAlpha(1);
 
-    this.feedLayer('fire');
+    this.setLayer('fire');
     this.setFeedBits(BLOW);
   }
 

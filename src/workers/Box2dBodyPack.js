@@ -9,7 +9,6 @@
 import { Collider } from '../components/Collider.js';
 import { Transform } from '../components/Transform.js';
 import { RigidBody } from '../components/RigidBody.js';
-import { Layer } from '../core/Layer.js';
 import { MAX_POLYGON_VERTICES, ShapeType, COMPUTE_FLAG_STATIC, COMPUTE_FLAG_SWEEP } from '../core/ConfigDefaults.js';
 
 export const BODY_FLOATS = 16;
@@ -48,9 +47,6 @@ function writeBody(bodyData, bodyCount, x, y, c, s, hw, hh, kind, flags, velx, v
  * @returns {{ bodyCount: number, vertCount: number }}
  */
 export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
-  const indices = Layer._feedIndices[layerId];
-  const countArr = Layer._feedCount;
-  const feederCount = countArr ? Atomics.load(countArr, layerId) : 0;
   const cap = maxBodies | 0;
   const sweep = !opts || opts.sweep !== false;
   const poseX = opts ? opts.poseX : null;
@@ -64,8 +60,9 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
   let bodyCount = 0;
   let vertCount = 0;
   const maxVerts = vertData ? (vertData.length / 2) | 0 : 0;
+  const want = 1 << (layerId | 0);
 
-  if (!indices || feederCount <= 0 || cap <= 0) {
+  if (cap <= 0) {
     PACK_OUT.bodyCount = 0;
     PACK_OUT.vertCount = 0;
     return PACK_OUT;
@@ -93,13 +90,17 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
   const polyVX = Collider.polyVertexX;
   const polyVY = Collider.polyVertexY;
   const feedBits = Collider.feedBits;
+  const layerMask = Collider.layerMask;
+  const n = collActive ? collActive.length : 0;
 
-  const n = feederCount < cap ? feederCount : cap;
-
-  for (let f = 0; f < n; f++) {
-    if (bodyCount >= cap) break;
-    const i = indices[f];
-    if (!collActive || !collActive[i]) continue;
+  let overflow = false;
+  for (let i = 0; i < n; i++) {
+    if (!collActive[i]) continue;
+    if (layerMask && !(layerMask[i] & want)) continue;
+    if (bodyCount >= cap) {
+      overflow = true;
+      break;
+    }
     const usePose = !!(poseX && rbActive && rbActive[i]);
     const c = usePose && poseRotC ? poseRotC[i] : (rotC ? rotC[i] : 1);
     const s = usePose && poseRotS ? poseRotS[i] : (rotS ? rotS[i] : 0);
@@ -202,5 +203,9 @@ export function packBox2dBodies(layerId, bodyData, vertData, maxBodies, opts) {
 
   PACK_OUT.bodyCount = bodyCount;
   PACK_OUT.vertCount = vertCount;
+  if (overflow && !packBox2dBodies._overflowWarned) {
+    packBox2dBodies._overflowWarned = 1;
+    console.warn(`packBox2dBodies: overflow (maxBodies=${cap})`);
+  }
   return PACK_OUT;
 }

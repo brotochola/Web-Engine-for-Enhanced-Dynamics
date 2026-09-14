@@ -5,7 +5,6 @@ import { Layer, reservedLookUniformFloatCount } from '../../src/core/Layer.js';
 import { Collider } from '../../src/components/Collider.js';
 import { Transform } from '../../src/components/Transform.js';
 import { RigidBody } from '../../src/components/RigidBody.js';
-import { feedLayerAt, clearFeedLayerAt } from '../../src/core/computeFeed.js';
 import { packBox2dBodies, BODY_FLOATS } from '../../src/workers/Box2dBodyPack.js';
 import { inferComputeLayout, resolveComputeLayout, DEFAULT_SIMPLE_LAYOUT } from '../../src/workers/inferComputeLayout.js';
 import { prependComputePrelude, buildComputePrelude } from '../../src/workers/wgslPrelude.js';
@@ -21,8 +20,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   LAYER_COMPUTE_SOURCE,
-  FEED_LAYER_NONE,
-  FEED_SLOT_NONE,
   ShapeType,
   COMPUTE_FLAG_STATIC,
   COMPUTE_FLAG_SWEEP,
@@ -31,6 +28,11 @@ import {
 import { LiquidFun } from '../../src/core/LiquidFun.js';
 import { liquidFunRenderByteSize } from '../../src/core/liquidFunRender.js';
 import { packLiquidFunParticles, PARTICLE_FLOATS } from '../../src/workers/LiquidFunParticlePack.js';
+import { ParticleComponent } from '../../src/components/ParticleComponent.js';
+
+function subscribeCollider(index, layerId) {
+  Collider.layerMask[index] = 1 << (layerId | 0);
+}
 
 const BUILT_IN_LAYERS = {
   BACKGROUND: {},
@@ -94,11 +96,20 @@ test('initializeFromBuffers restores Layer.fire accessor', () => {
   }
 });
 
-test('feedLayerId sentinel is 255 and swap-remove keeps dense list', () => {
+test('packBox2dBodies scans Collider.layerMask bits', () => {
   const count = 8;
   Collider.initializeArrays(new SharedArrayBuffer(Collider.getBufferSize(count)), count);
-  assert.equal(Collider.feedLayerId[0], FEED_LAYER_NONE);
-  assert.equal(Collider.feedSlot[0], FEED_SLOT_NONE);
+  Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(count)), count);
+  RigidBody.initializeArrays(new SharedArrayBuffer(RigidBody.getBufferSize(count)), count);
+  Transform.x = new Float32Array(count);
+  Transform.y = new Float32Array(count);
+  Transform.rotC = new Float32Array(count);
+  Transform.rotS = new Float32Array(count);
+  RigidBody.vx = new Float32Array(count);
+  RigidBody.vy = new Float32Array(count);
+  RigidBody.angularVelocity = new Float32Array(count);
+  RigidBody.px = new Float32Array(count);
+  RigidBody.py = new Float32Array(count);
 
   try {
     Layer.reset();
@@ -112,21 +123,32 @@ test('feedLayerId sentinel is 255 and swap-remove keeps dense list', () => {
       true
     );
     const id = Layer.get('fire').id;
+    const bit = 1 << id;
     Collider.active[1] = 1;
     Collider.active[2] = 1;
     Collider.active[3] = 1;
-    assert.equal(feedLayerAt(1, id), true);
-    assert.equal(feedLayerAt(2, id), true);
-    assert.equal(feedLayerAt(3, id), true);
-    assert.equal(Collider.feedLayerId[1], id);
-    assert.equal(Atomics.load(Layer._feedCount, id), 3);
-
-    clearFeedLayerAt(1);
-    assert.equal(Collider.feedLayerId[1], FEED_LAYER_NONE);
-    assert.equal(Atomics.load(Layer._feedCount, id), 2);
-    const slot0 = Layer._feedIndices[id][0];
-    assert.ok(slot0 === 2 || slot0 === 3);
-    assert.equal(Collider.feedSlot[slot0], 0);
+    Collider.shapeType[1] = ShapeType.Box;
+    Collider.shapeType[2] = ShapeType.Box;
+    Collider.shapeType[3] = ShapeType.Box;
+    Collider.width[1] = 10;
+    Collider.height[1] = 10;
+    Collider.width[2] = 10;
+    Collider.height[2] = 10;
+    Collider.width[3] = 10;
+    Collider.height[3] = 10;
+    Transform.rotC[1] = 1;
+    Transform.rotC[2] = 1;
+    Transform.rotC[3] = 1;
+    Collider.layerMask[1] = bit;
+    Collider.layerMask[2] = bit;
+    Collider.layerMask[3] = bit;
+    const bodies = new Float32Array(8 * BODY_FLOATS);
+    const verts = new Float32Array(64);
+    let packed = packBox2dBodies(id, bodies, verts, 8, { sweep: false });
+    assert.equal(packed.bodyCount, 3);
+    Collider.layerMask[1] = 0;
+    packed = packBox2dBodies(id, bodies, verts, 8, { sweep: false });
+    assert.equal(packed.bodyCount, 2);
   } finally {
     Layer.reset();
   }
@@ -174,7 +196,7 @@ test('packBox2dBodies stride 16 and polygon vert range', () => {
     RigidBody.static[0] = 1;
     RigidBody.px[0] = 80;
     RigidBody.py[0] = 40;
-    feedLayerAt(0, id);
+    subscribeCollider(0, id);
 
     const bodies = new Float32Array(8 * BODY_FLOATS);
     const verts = new Float32Array(64);
@@ -245,7 +267,7 @@ test('packBox2dBodies uses latched pose not live Transform', () => {
     poseY[0] = 80;
     poseRotC[0] = 1;
     poseRotS[0] = 0;
-    feedLayerAt(0, id);
+    subscribeCollider(0, id);
 
     const bodies = new Float32Array(16 * BODY_FLOATS);
     const verts = new Float32Array(64);
@@ -805,10 +827,18 @@ test('packLiquidFunParticles: HEAP x/y/vx/vy into SSBO', () => {
   }
 });
 
-test('packLiquidFunParticles: layerId 0 or this compute layer; cap overflow', () => {
+test('packLiquidFunParticles: layerMask bit match; CPU particles; cap overflow', () => {
   const n = 4;
   const heap = makeLfHeap(n);
   const render = new SharedArrayBuffer(liquidFunRenderByteSize(n));
+  const prevPc = {
+    active: ParticleComponent.active,
+    x: ParticleComponent.x,
+    y: ParticleComponent.y,
+    vx: ParticleComponent.vx,
+    vy: ParticleComponent.vy,
+    layerMask: ParticleComponent.layerMask,
+  };
   try {
     LiquidFun.unbindSabs();
     LiquidFun.bindSabs({ render, maxCount: n });
@@ -832,19 +862,36 @@ test('packLiquidFunParticles: layerId 0 or this compute layer; cap overflow', ()
     views.y[1] = 4;
     views.x[2] = 5;
     views.y[2] = 6;
-    views.layerId[0] = 0;
-    views.layerId[1] = 9;
-    views.layerId[2] = 3;
+    views.layerMask[0] = 0;
+    views.layerMask[1] = 1 << 9;
+    views.layerMask[2] = 1 << 3;
+    ParticleComponent.active = new Uint8Array([1, 1]);
+    ParticleComponent.x = new Float32Array([70, 80]);
+    ParticleComponent.y = new Float32Array([71, 90]);
+    ParticleComponent.vx = new Float32Array([1, 0]);
+    ParticleComponent.vy = new Float32Array([2, 0]);
+    ParticleComponent.layerMask = new Uint16Array([1 << 3, 0]);
     const out = new Float32Array(8 * PARTICLE_FLOATS);
     const packed = packLiquidFunParticles(3, out, 8);
     assert.equal(packed.particleCount, 2);
-    assert.equal(out[0], 1);
-    assert.equal(out[4], 5);
+    assert.equal(out[0], 5);
+    assert.equal(out[1], 6);
+    assert.equal(out[4], 70);
+    assert.equal(out[5], 71);
+    views.layerMask[0] = 1 << 3;
+    const two = packLiquidFunParticles(3, out, 8);
+    assert.equal(two.particleCount, 3);
     const capped = packLiquidFunParticles(3, out, 1);
     assert.equal(capped.particleCount, 1);
     assert.equal(packLiquidFunParticles(3, out, 0).particleCount, 0);
   } finally {
     LiquidFun.unbindSabs();
+    ParticleComponent.active = prevPc.active;
+    ParticleComponent.x = prevPc.x;
+    ParticleComponent.y = prevPc.y;
+    ParticleComponent.vx = prevPc.vx;
+    ParticleComponent.vy = prevPc.vy;
+    ParticleComponent.layerMask = prevPc.layerMask;
   }
 });
 
@@ -858,6 +905,8 @@ test('burningBoxesScene: landscape bg + particle fuel pass', () => {
   assert.match(scene, /background_lanscape\.jpg/);
   assert.match(scene, /dispatchFrom: 'particles'/);
   assert.match(scene, /maxParticles: FIRE_LF_MAX/);
+  assert.match(scene, /densitySource: LAYER_DENSITY_SOURCE.LIQUID_FUN/);
+  assert.match(scene, /layers: burning \? \['fire'\] : \['oil'\]/);
 });
 
 test('resolveComputeLayout: empty WGSL gets simple params+bodies+verts+out', () => {
@@ -882,36 +931,43 @@ test('resolveComputeLayout: fireStamp raw merges prelude params', () => {
   assert.equal(groups[1][0].resource, preluded[1][0].resource);
 });
 
-test('feedLayerAt/clearFeedLayerAt interleaved stays dense and bijective', () => {
+test('Collider.layerMask can subscribe one body to two compute layers', () => {
   const count = 8;
   Collider.initializeArrays(new SharedArrayBuffer(Collider.getBufferSize(count)), count);
+  Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(count)), count);
+  RigidBody.initializeArrays(new SharedArrayBuffer(RigidBody.getBufferSize(count)), count);
+  Transform.rotC = new Float32Array(count).fill(1);
+  Transform.rotS = new Float32Array(count);
+  Transform.x = new Float32Array(count);
+  Transform.y = new Float32Array(count);
+  RigidBody.vx = new Float32Array(count);
+  RigidBody.vy = new Float32Array(count);
+  RigidBody.angularVelocity = new Float32Array(count);
+  RigidBody.px = new Float32Array(count);
+  RigidBody.py = new Float32Array(count);
   try {
     Layer.reset();
     Layer.initializeFromConfig(
-      { sim: { shader: { fragment: 'f', compute: 's', maxBodies: 8 } } },
+      {
+        sim: { shader: { fragment: 'f', compute: 's', maxBodies: 8 } },
+        fire: { shader: { fragment: 'f', compute: 's', maxBodies: 8 } },
+      },
       BUILT_IN_LAYERS,
       true
     );
-    const id = Layer.get('sim').id;
-    for (let i = 0; i < 4; i++) Collider.active[i] = 1;
-    assert.equal(feedLayerAt(0, id), true);
-    assert.equal(feedLayerAt(1, id), true);
-    assert.equal(clearFeedLayerAt(0) || true, true);
-    assert.equal(feedLayerAt(2, id), true);
-    assert.equal(feedLayerAt(3, id), true);
-    assert.equal(clearFeedLayerAt(1) || true, true);
-    assert.equal(feedLayerAt(0, id), true);
-    const n = Atomics.load(Layer._feedCount, id);
-    const seen = new Set();
-    for (let s = 0; s < n; s++) {
-      const idx = Layer._feedIndices[id][s];
-      assert.equal(Collider.feedLayerId[idx], id);
-      assert.equal(Collider.feedSlot[idx], s);
-      assert.equal(seen.has(idx), false);
-      seen.add(idx);
-    }
-    assert.equal(seen.size, n);
-    assert.equal(n, 3);
+    const simId = Layer.get('sim').id;
+    const fireId = Layer.get('fire').id;
+    Collider.active[0] = 1;
+    Collider.shapeType[0] = ShapeType.Box;
+    Collider.width[0] = 16;
+    Collider.height[0] = 16;
+    Collider.layerMask[0] = (1 << simId) | (1 << fireId);
+    const bodies = new Float32Array(8 * BODY_FLOATS);
+    const verts = new Float32Array(64);
+    assert.equal(packBox2dBodies(simId, bodies, verts, 8, { sweep: false }).bodyCount, 1);
+    assert.equal(packBox2dBodies(fireId, bodies, verts, 8, { sweep: false }).bodyCount, 1);
+    Collider.layerMask[0] = 1 << simId;
+    assert.equal(packBox2dBodies(fireId, bodies, verts, 8, { sweep: false }).bodyCount, 0);
   } finally {
     Layer.reset();
   }
@@ -1088,8 +1144,8 @@ test('ComputeLayer.writeBuffer body size is TypedArray elements', () => {
     Collider.height[1] = 16;
     Transform.rotC[0] = 1;
     Transform.rotC[1] = 1;
-    feedLayerAt(0, id);
-    feedLayerAt(1, id);
+    subscribeCollider(0, id);
+    subscribeCollider(1, id);
     const cl = new ComputeLayer({
       device,
       meta: {

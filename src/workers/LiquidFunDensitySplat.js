@@ -16,6 +16,7 @@ import {
   State,
 } from '../lib/pixi_8.16_.min.js';
 import { packLiquidFunLightSlabs } from '../core/liquidFunLightSplat.js';
+import { ParticleComponent } from '../components/ParticleComponent.js';
 
 export const LF_SPLAT_FLOATS = 4;
 export const LF_SPLAT_STRIDE = LF_SPLAT_FLOATS * 4;
@@ -104,34 +105,11 @@ export class LiquidFunDensitySplat {
   }
 
   /**
-   * Pack LiquidFun pose into instance buffer (screen-space for RT).
+   * Pack LiquidFun + CPU particle pose into instance buffer (screen-space for RT).
    * @param {object} views - LiquidFun.getViews()
    * @param {object} opts
-   * @param {number} opts.layerId
-   * @param {number} opts.zoom
-   * @param {number} opts.cameraX
-   * @param {number} opts.cameraY
-   * @param {number} [opts.resolution=1]
-   * @param {number} opts.radius - world-space kernel radius
-   * @param {number} [opts.intensity=1]
-   * @param {boolean} [opts.useParticleTint=true]
-   * @param {number} [opts.canvasW]
-   * @param {number} [opts.canvasH]
    */
   upload(views, opts = {}) {
-    if (!views?.count || !views.x || !views.y) {
-      this.geometry.instanceCount = 0;
-      this.mesh.visible = false;
-      return 0;
-    }
-
-    const count = views.count[0] | 0;
-    if (count <= 0) {
-      this.geometry.instanceCount = 0;
-      this.mesh.visible = false;
-      return 0;
-    }
-
     const zoom = opts.zoom ?? 1;
     const cameraX = opts.cameraX ?? 0;
     const cameraY = opts.cameraY ?? 0;
@@ -141,61 +119,79 @@ export class LiquidFunDensitySplat {
     const screenRadius = worldRadius * screenScale;
     const intensity = opts.intensity ?? 1;
     const useTint = opts.useParticleTint !== false;
-    const layerId = opts.layerId | 0;
-    const xArr = views.x;
-    const yArr = views.y;
-    const tintArr = views.tint;
-    const baseAlpha = views.baseAlpha;
-    const alphaArr = views.alpha;
-    const layerArr = views.layerId;
+    const want = 1 << (opts.layerId | 0);
     const canvasW = opts.canvasW > 0 ? opts.canvasW : 0;
     const canvasH = opts.canvasH > 0 ? opts.canvasH : 0;
     const cull = canvasW > 0 && canvasH > 0;
     const pad = screenRadius;
     const data = this.data;
     const dataU32 = this.dataU32;
-
-    let out = 0;
     const maxOut = this.capacity;
-    const n = count > views.maxCount ? views.maxCount : count;
+    let out = 0;
 
-    for (let i = 0; i < n; i++) {
-      if (layerArr && (layerArr[i] | 0) !== layerId) continue;
-
-      const sx = (xArr[i] - cameraX) * screenScale;
-      const sy = (yArr[i] - cameraY) * screenScale;
+    const writeInst = (wx, wy, tint, alphaMul) => {
+      const sx = (wx - cameraX) * screenScale;
+      const sy = (wy - cameraY) * screenScale;
       if (cull) {
         if (sx < -pad || sy < -pad || sx > canvasW * resolution + pad || sy > canvasH * resolution + pad) {
-          continue;
+          return;
         }
       }
-      if (out >= maxOut) break;
-
+      if (out >= maxOut) return;
       let r = 255;
       let g = 255;
       let b = 255;
-      if (useTint && tintArr) {
-        const tint = tintArr[i] >>> 0;
-        if (tint) {
-          r = (tint >> 16) & 0xff;
-          g = (tint >> 8) & 0xff;
-          b = tint & 0xff;
+      if (useTint && tint) {
+        const t = tint >>> 0;
+        if (t) {
+          r = (t >> 16) & 0xff;
+          g = (t >> 8) & 0xff;
+          b = t & 0xff;
         }
       }
-
-      let a = intensity;
-      if (baseAlpha) a *= baseAlpha[i];
-      if (alphaArr) a *= alphaArr[i];
+      let a = intensity * (alphaMul != null ? alphaMul : 1);
       let ai = (a * 255 + 0.5) | 0;
       if (ai < 0) ai = 0;
       else if (ai > 255) ai = 255;
-
       const base = out * LF_SPLAT_FLOATS;
       data[base] = sx;
       data[base + 1] = sy;
       data[base + 2] = screenRadius;
       dataU32[base + 3] = r | (g << 8) | (b << 16) | (ai << 24);
       out++;
+    };
+
+    if (views?.count && views.x && views.y) {
+      const count = views.count[0] | 0;
+      const n = count > views.maxCount ? views.maxCount : count;
+      const xArr = views.x;
+      const yArr = views.y;
+      const tintArr = views.tint;
+      const baseAlpha = views.baseAlpha;
+      const alphaArr = views.alpha;
+      const maskArr = views.layerMask;
+      for (let i = 0; i < n && out < maxOut; i++) {
+        if (maskArr && !(maskArr[i] & want)) continue;
+        let a = 1;
+        if (baseAlpha) a *= baseAlpha[i];
+        if (alphaArr) a *= alphaArr[i];
+        writeInst(xArr[i], yArr[i], tintArr ? tintArr[i] : 0, a);
+      }
+    }
+
+    const active = ParticleComponent.active;
+    const px = ParticleComponent.x;
+    const py = ParticleComponent.y;
+    if (active && px && py) {
+      const cpuMask = ParticleComponent.layerMask;
+      const cpuTint = ParticleComponent.tint;
+      const cpuAlpha = ParticleComponent.alpha;
+      const n = active.length;
+      for (let i = 0; i < n && out < maxOut; i++) {
+        if (!active[i]) continue;
+        if (cpuMask && !(cpuMask[i] & want)) continue;
+        writeInst(px[i], py[i], cpuTint ? cpuTint[i] : 0, cpuAlpha ? cpuAlpha[i] : 1);
+      }
     }
 
     if (out <= 0) {

@@ -44,35 +44,33 @@ The `layerId` is included in the message for future multi-background-layer suppo
 
 ## Layer Routing for All Renderable Types
 
-Every renderable type supports a `layerId` field that routes it to a custom layer instead of the default ENTITIES queue.
+Every renderable carries a **Uint16 `layerMask`**: bit `i` means subscribed to layer `i`. `Layer.resolveSubscriptions({ layer }` / `{ layers })` builds that mask. Each layer still decides what the bit means (sprite queue, density splat, compute pack).
+
+Omit `layer`/`layers` → ENTITIES bit. `layers: []` on particles → mask 0. GameObject `setLayers([])` → ENTITIES sprite, no compute.
 
 ### Renderable Types
 
-| Type | Renderable | layerId Source | Default |
-|------|-----------|---------------|---------|
-| 0 | Entity | `SpriteRenderer.layerId` | 0 (ENTITIES) |
-| 1 | Particle | `ParticleComponent.layerId` | 0 (ENTITIES) |
-| 2 | Decoration | `DecorationComponent.layerId` | 0 (ENTITIES) |
-| 3 | Light Glow | `LightEmitter.layerIdOfGlowSprite`, falls back to `SpriteRenderer.layerId` | 0 (ENTITIES) |
-| 4 | Bullet | `BulletComponent.layerId` | 0 (ENTITIES) |
-| 5 | Bullet Trail | `BulletComponent.layerId` (same as parent bullet) | 0 (ENTITIES) |
-| 7 | LiquidFun | thin SAB `liquidFun.layerId` (emit-time) | 0 (ENTITIES) |
+| Type | Renderable | Mask source | Omit |
+|------|-----------|-------------|------|
+| 0 | Entity | `SpriteRenderer.layerMask` | ENTITIES bit (`setLayer` also ORs ENTITIES if no sprite-queue bit) |
+| 1 | Particle | `ParticleComponent.layerMask` | ENTITIES bit |
+| 2 | Decoration | `DecorationComponent.layerMask` | ENTITIES bit |
+| 3 | Light Glow | `LightEmitter.layerIdOfGlowSprite` (legacy id) or entity `layerMask` | ENTITIES |
+| 4 | Bullet | `BulletComponent.layerMask` | ENTITIES bit |
+| 5 | Bullet Trail | same as parent bullet | ENTITIES bit |
+| 7 | LiquidFun | thin SAB `layerMask` | ENTITIES bit |
 
-When `layerId === 0` (or `Layer.ENTITIES_ID`), the renderable goes into the default Y-sorted ENTITIES render queue. Any other value routes it to that custom layer's dedicated collector.
+Sprite-queue bits: collect **once per bit**. Density bits: splat pose, no type-7/type-1 into that layer's sprite queue. Compute bits: pack particles (`x,y,vx,vy`) and/or colliders. See [COMPUTE_LAYERS.md](./COMPUTE_LAYERS.md).
 
-**LiquidFun buffer density:** if the target layer has `shader.densitySource: LAYER_DENSITY_SOURCE.LIQUID_FUN`, type-7 rows are **not** written to that layer’s sprite queue (and the layer usually has `hasRenderQueue: false` / `maxItems: 0`). Pixi splats HEAP pose into the density RT instead. See [LIQUIDFUN.md](./LIQUIDFUN.md) and the bible Layers section.
+**LiquidFun / CPU particles** are the same mask inputs. Density splat and compute pack both. Only the simulator differs.
 
-### Setting layerId
+### Setting subscriptions
 
-**Particles:**
+**Particles / LiquidFun:**
 ```javascript
-ParticleEmitter.emit({
-  x: this.x,
-  y: this.y,
-  texture: 'spark',
-  layerId: Layer.getId('FOREGROUND_FX'),
-  // ... other params
-});
+ParticleEmitter.emit({ x, y, texture: 'spark', layer: 'FOREGROUND_FX' });
+LiquidFun.emit({ layer: 'oil', ... });
+LiquidFun.emit({ layers: ['oil', 'fire'] });
 ```
 
 **Decorations:**
@@ -81,7 +79,7 @@ DecorationPool.spawn({
   x: 100,
   y: 200,
   texture: 'tree_canopy',
-  layerId: Layer.getId('CANOPY'),
+  layer: 'CANOPY',
   anchorY: 0.5,
 });
 ```
@@ -96,14 +94,15 @@ BulletPool.spawn({
   damage: 25,
   ownerId: this.index,
   texture: 'laser',
-  layerId: Layer.getId('LASER_LAYER'),
+  layer: 'LASER_LAYER',
 });
 ```
 
 **Entities:**
 ```javascript
-// Inside entity tick() or onSpawned()
 this.setLayer('water');
+this.setLayer('fire');                // sprite stays ENTITIES; collider packed into fire
+this.setLayers(['ENTITIES', 'fire']); // same, explicit
 this.setTileWorld(128); // optional: world-lock atlas tiling on this sprite
 ```
 
@@ -111,22 +110,15 @@ World vs local tiling (`setTileWorld` / `setTileLocal` / `bakeWorldTileToLocal`)
 
 **Light Glows:**
 ```javascript
-// In entity setup or onSpawned:
 LightEmitter.layerIdOfGlowSprite[this.index] = Layer.getId('GLOW_LAYER');
-
-// Or set to 0 to inherit from the entity's SpriteRenderer.layerId
-LightEmitter.layerIdOfGlowSprite[this.index] = 0;
+LightEmitter.layerIdOfGlowSprite[this.index] = 0; // inherit entity layerMask
 ```
 
 ### Glow Layer Inheritance
 
-Light glows (type 3) have special fallback logic:
-
-1. If `LightEmitter.layerIdOfGlowSprite[i]` is non-zero, that value is used.
-2. If it's 0, `SpriteRenderer.layerId[i]` is used (the glow follows the entity's layer).
-3. If both are 0, the glow goes to the default ENTITIES queue.
-
-This means an entity on a custom layer automatically has its glow follow it, unless you explicitly override the glow's layer.
+1. If `LightEmitter.layerIdOfGlowSprite[i]` is non-zero, that layer id bit is used.
+2. If it's 0, the entity `SpriteRenderer.layerMask` is used.
+3. Mask 0 on a glow (no sprite) still draws on ENTITIES.
 
 ---
 
@@ -139,16 +131,10 @@ pre_render_worker:
   collectVisible*()
     --> collectRenderable(type, index, sortKey)
           |
-          +-- check layerId for this type
-          |     type 0: SpriteRenderer.layerId
-          |     type 1: ParticleComponent.layerId
-          |     type 2: DecorationComponent.layerId
-          |     type 3: LightEmitter.layerIdOfGlowSprite || SpriteRenderer.layerId
-          |     type 4/5: BulletComponent.layerId
-          |
-          +-- layerId != 0 && layerId != ENTITIES_ID?
-          |     YES --> write to custom layer collector
-          |     NO  --> write to default ENTITIES collector
+          +-- read layerMask for this type
+          |     for each set bit:
+          |       density → skip sprite collect
+          |       hasSpriteQueue (incl. ENTITIES) → write that collector
           |
   buildRenderQueue()        --> Y-sort default collector, dispatch by type, write to main SAB
   buildCustomLayerQueues()  --> per-layer Y-sort, dispatch by type, write to per-layer SABs
@@ -158,17 +144,9 @@ pixi_worker:
   updateCustomLayers()            --> read each layer SAB, apply to sprites (type-agnostic)
 ```
 
-### Zero Overhead for Default Case
-
-When `layerId === 0` (the common case), the routing check is a single byte read and comparison. No allocation, no branching into the collector write path. Particles, decorations, and bullets that don't use layer routing pay effectively zero cost.
-
 ### SAB Cost
 
-Each `layerId` field is a `Uint8Array` (1 byte per pool slot):
-- 10,000 particles = 10 KB
-- 5,000 decorations = 5 KB
-- 1,000 bullets = 1 KB
-- Entities already had `SpriteRenderer.layerId`
+Each `layerMask` field is a `Uint16Array` (2 bytes per pool slot). `Layer.MAX_LAYERS = 16`.
 
 ### Custom Layer Dispatch
 
@@ -210,8 +188,8 @@ layers: {
 ## Important Constraints
 
 - Items routed to a custom layer only Y-sort with other items in that same layer. A particle on a custom layer won't interleave with entities on the ENTITIES layer -- it renders at the custom layer's zIndex.
-- Decal stamping (`stayOnTheFloor`) always stamps to the built-in DECALS layer, regardless of the particle's `layerId`. The particle's layer controls where it renders while alive; the decal destination is independent.
-- `layerId` values must correspond to registered custom layers that have render queues. Built-in layer IDs (BACKGROUND, DECALS, CASTED_SHADOWS, LIGHTING) won't work as routing targets because they don't have generic render queues.
-- Exception: `LAYER_DENSITY_SOURCE.LIQUID_FUN` layers intentionally have **no** sprite render queue; route LiquidFun there via `layerId` for buffer density only (v1 = LF-only density layer).
-- `Layer.MAX_LAYERS = 16`, so valid IDs are 0-15.
+- Decal stamping (`stayOnTheFloor`) always stamps to the built-in DECALS layer, regardless of the particle's `layerMask`. The particle's mask controls where it renders while alive; the decal destination is independent.
+- BACKGROUND / DECALS / CASTED_SHADOWS / LIGHTING are not subscription targets (`Layer.resolveSubscriptions` warns and skips).
+- `LAYER_DENSITY_SOURCE.LIQUID_FUN` layers have **no** sprite render queue; subscribe particles with `layer: 'oil'` for density splat (LiquidFun HEAP and CPU ParticleEmitter).
+- `Layer.MAX_LAYERS = 16`, so valid IDs are 0-15. Mask is `Uint16`.
 - Shader-layer density RTs are viewport-sized. The worker may convert instance XY to screen pixels for that pass; tiling still uses world coordinates (`uTileWorld`). There is no public `space` / `uploadSpace` layer config.

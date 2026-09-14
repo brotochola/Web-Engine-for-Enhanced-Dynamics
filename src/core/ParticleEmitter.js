@@ -43,9 +43,9 @@
 import { ParticleComponent } from '../components/ParticleComponent.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { SharedAtomicPool } from './SharedAtomicPool.js';
-import { CAMERA_TYPES } from './ConfigDefaults.js';
+import { CAMERA_TYPES, PARTICLE_EASE } from './ConfigDefaults.js';
 import { randomRange, randomColor, rng } from './utils.js';
-import { PARTICLE_EASE } from './ConfigDefaults.js';
+import { Layer } from './Layer.js';
 import {
   PARTICLE_TWEEN,
   resolveParticleOp,
@@ -246,7 +246,8 @@ export class ParticleEmitter extends SharedAtomicPool {
     const flipX = ParticleComponent.flipX;
     const flipY = ParticleComponent.flipY;
     const blendMode = ParticleComponent.blendMode;
-    const layerId = ParticleComponent.layerId;
+    const layerMask = ParticleComponent.layerMask;
+    const subMask = Layer.resolveSubscriptions(cfg, 'particle');
     const flat = ParticleComponent.flat;
     const viewModeArr = ParticleComponent.viewMode;
     if (!flat || !viewModeArr) {
@@ -424,7 +425,7 @@ export class ParticleEmitter extends SharedAtomicPool {
       despawnOnGroundContact[i] = flatMode ? 0 : (cfg.despawnOnGroundContact ? 1 : 0);
 
       blendMode[i] = cfg.blendMode ?? DECAL_STAMPS_BLEND_MODE.normal;
-      layerId[i] = cfg.layerId ?? 0;
+      if (layerMask) layerMask[i] = subMask;
 
       flat[i] = flatMode;
       viewModeArr[i] = viewMode;

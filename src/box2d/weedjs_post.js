@@ -96,12 +96,13 @@
     lifetimeMin: 0,
     lifetimeMax: 0, // <= 0 = no age-based destruction (default)
     fadeToAlpha0: 0, // 0 = opaque until destroy; 1 = lerp alpha over life
-    scaleSet: 0, // 1 = this burst set scale/alpha/layerId
+    scaleSet: 0, // 1 = this burst set scale/alpha
     scaleMin: 1,
     scaleMax: 1,
     alphaMin: 1,
     alphaMax: 1,
-    layerId: 0,
+    layerMask: 0,
+    layerMaskSet: 0,
     lightIntensity: 0,
     pending: false,
   };
@@ -1027,9 +1028,8 @@
       pendingLiquidFunEmit.fadeToAlpha0 = fadeToAlpha0 ? 1 : 0;
       pendingLiquidFunEmit.pending = true;
     },
-    setLiquidFunScale(layerId, scaleMin, scaleMax, alphaMin, alphaMax) {
+    setLiquidFunScale(scaleMin, scaleMax, alphaMin, alphaMax) {
       pendingLiquidFunEmit.scaleSet = 1;
-      pendingLiquidFunEmit.layerId = layerId | 0;
       pendingLiquidFunEmit.scaleMin = scaleMin;
       pendingLiquidFunEmit.scaleMax = scaleMax;
       pendingLiquidFunEmit.alphaMin = alphaMin;
@@ -1038,6 +1038,11 @@
     },
     setLiquidFunLight(lightIntensity) {
       pendingLiquidFunEmit.lightIntensity = lightIntensity > 0 ? lightIntensity : 0;
+      pendingLiquidFunEmit.pending = true;
+    },
+    setLiquidFunLayers(mask) {
+      pendingLiquidFunEmit.layerMask = mask & 0xffff;
+      pendingLiquidFunEmit.layerMaskSet = 1;
       pendingLiquidFunEmit.pending = true;
     },
     setParticleTuning(phase, a, b, c, d) {
@@ -1371,7 +1376,8 @@
       scaleMax: 1,
       alphaMin: 1,
       alphaMax: 1,
-      layerId: 0,
+      layerMask: 0,
+      layerMaskSet: 0,
       lightIntensity: 0,
       pending: false,
     };
@@ -1391,7 +1397,8 @@
       emit.scaleMax = 1;
       emit.alphaMin = 1;
       emit.alphaMax = 1;
-      emit.layerId = 0;
+      emit.layerMask = 0;
+      emit.layerMaskSet = 0;
       emit.lightIntensity = 0;
     }
     return emit;
@@ -1409,12 +1416,12 @@
       const rotC = liquidFunViews.rotC;
       const rotS = liquidFunViews.rotS;
       const baseAlpha = liquidFunViews.baseAlpha;
-      const layerId = liquidFunViews.layerId;
+      const layerMask = liquidFunViews.layerMask;
       const scaleLo = emit.scaleSet ? emit.scaleMin : 1;
       const scaleHi = emit.scaleSet ? emit.scaleMax : 1;
       const alphaLo = emit.scaleSet ? emit.alphaMin : 1;
       const alphaHi = emit.scaleSet ? emit.alphaMax : 1;
-      const lid = emit.scaleSet ? emit.layerId | 0 : 0;
+      const mask = emit.layerMaskSet ? emit.layerMask & 0xffff : 0;
       for (let i = oldCount; i < maxP; i++) {
         tint[i] = emit.tintBits ? emit.tintBits >>> 0 : 0x3399ff;
         textureId[i] = emit.textureId | 0;
@@ -1427,7 +1434,7 @@
           baseAlpha[i] =
             alphaHi === alphaLo ? alphaLo : alphaLo + self.rng() * (alphaHi - alphaLo);
         }
-        if (layerId) layerId[i] = lid;
+        if (layerMask) layerMask[i] = mask;
       }
     }
     if (maxP > liquidFunPaintedHighWater) liquidFunPaintedHighWater = maxP;
@@ -1512,7 +1519,7 @@
         fillLiquidFunRange(liquidFunViews.rotC, 0, hi, 1);
         fillLiquidFunRange(liquidFunViews.rotS, 0, hi, 0);
         fillLiquidFunRange(liquidFunViews.baseAlpha, 0, hi, 0);
-        fillLiquidFunRange(liquidFunViews.layerId, 0, hi, 0);
+        fillLiquidFunRange(liquidFunViews.layerMask, 0, hi, 0);
         fillLiquidFunRange(liquidFunViews.x, 0, hi, 0);
         fillLiquidFunRange(liquidFunViews.y, 0, hi, 0);
         fillLiquidFunRange(liquidFunViews.alpha, 0, hi, 0);
@@ -2097,8 +2104,8 @@
         baseAlpha: data.liquidFunViews.baseAlpha
           ? viewFromDesc(data.liquidFunViews.baseAlpha, Float32Array)
           : null,
-        layerId: data.liquidFunViews.layerId
-          ? viewFromDesc(data.liquidFunViews.layerId, Uint8Array)
+        layerMask: data.liquidFunViews.layerMask
+          ? viewFromDesc(data.liquidFunViews.layerMask, Uint16Array)
           : null,
       };
       liquidFunMaxCount = data.liquidFunMaxCount | 0;
@@ -2277,7 +2284,7 @@
           : (liquidFunViews.alpha ? liquidFunViews.alpha.subarray(0, n) : new Float32Array(n).fill(1))),
         rotC: liquidFunViews.rotC ? new Float32Array(liquidFunViews.rotC.subarray(0, n)) : null,
         rotS: liquidFunViews.rotS ? new Float32Array(liquidFunViews.rotS.subarray(0, n)) : null,
-        layerId: liquidFunViews.layerId ? new Uint8Array(liquidFunViews.layerId.subarray(0, n)) : null,
+        layerMask: liquidFunViews.layerMask ? new Uint16Array(liquidFunViews.layerMask.subarray(0, n)) : null,
       };
     }
     let groupsLightIntensity = null;
@@ -2367,7 +2374,28 @@
         }
         if (liquidFunViews.rotC && render.rotC) liquidFunViews.rotC.set(render.rotC.subarray ? render.rotC.subarray(0, n) : render.rotC, 0);
         if (liquidFunViews.rotS && render.rotS) liquidFunViews.rotS.set(render.rotS.subarray ? render.rotS.subarray(0, n) : render.rotS, 0);
-        if (liquidFunViews.layerId && render.layerId) liquidFunViews.layerId.set(render.layerId.subarray ? render.layerId.subarray(0, n) : render.layerId, 0);
+        if (liquidFunViews.layerMask) {
+          if (render.layerMask) {
+            liquidFunViews.layerMask.set(
+              render.layerMask.subarray ? render.layerMask.subarray(0, n) : render.layerMask,
+              0,
+            );
+          } else {
+            liquidFunViews.layerMask.fill(0);
+            const layerId = render.layerId;
+            const feed = render.feedLayerId;
+            if (layerId || feed) {
+              for (let i = 0; i < n; i++) {
+                let m = 0;
+                const lid = layerId ? layerId[i] | 0 : 0;
+                if (lid > 0 && lid < 16) m |= 1 << lid;
+                const fid = feed ? feed[i] | 0 : 255;
+                if (fid !== 255 && fid >= 0 && fid < 16) m |= 1 << fid;
+                liquidFunViews.layerMask[i] = m;
+              }
+            }
+          }
+        }
       }
       liquidFunPrevSyncedCount = n;
       liquidFunPaintedHighWater = Math.max(liquidFunPaintedHighWater | 0, n);

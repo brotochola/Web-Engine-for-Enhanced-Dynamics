@@ -189,9 +189,10 @@ Reads visibility lists, advances animations, builds the render and shadow queues
 1. Latch published physics pose (`poseSync` / `poseDataA/B`) once — entities, adobe, shadows, parented deco compose from that snapshot (boot: live `Transform` if `ready===0`)
 2. Read compact visible lists (entities, particles, decorations, bullets)
 3. Advance sprite animation frames (including custom-layer entities)
-4. Collect visible renderables -- entities routed by `SpriteRenderer.layerId`:
-   - `layerId === ENTITIES_ID` → main render queue
-   - Otherwise → per-layer custom collector
+4. Collect visible renderables -- entities routed by `layerMask` bits:
+   - ENTITIES bit → main render queue
+   - other sprite-queue bits → per-layer custom collector
+   - density bits skip sprite collect
 5. Build main render queue (Y-sorted, SoA packed via `RenderQueueLayout.js`). Uses heapsort for >256 items, insertion sort otherwise
 6. Build per-layer custom render queues (same Y-sort + heapsort fallback). Emits `console.warn` if a layer's queue overflows `maxItems`
 7. Build shadow/light render queue (respects `maxShadowsPerEntity` budget across sun + point lights)

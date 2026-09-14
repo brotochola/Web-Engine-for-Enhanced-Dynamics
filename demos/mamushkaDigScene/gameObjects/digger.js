@@ -16,7 +16,6 @@ const {
   Mouse,
   Ray,
   ParticleEmitter,
-  Layer,
   Transform,
 } = WEED;
 
@@ -35,11 +34,6 @@ const CLIPS = Object.freeze({
   running: 'running',
   jumping: 'jumping',
 });
-
-function fxLayerId() {
-  const id = Layer.getId('fx');
-  return id >= 0 ? id : 0;
-}
 
 export class Digger extends GameObject {
   static scriptUrl = import.meta.url;
@@ -168,7 +162,6 @@ export class Digger extends GameObject {
   }
 
   _emitJetpack() {
-    const layerId = fxLayerId();
     ParticleEmitter.emitFlat({
       count: { min: 6, max: 12 },
       x: this.x,
@@ -183,7 +176,7 @@ export class Digger extends GameObject {
       texture: '_whiteCircle',
       tint: { min: 0xffeeaa, max: 0xff3300 },
       alpha: { min: 0.7, max: 1 },
-      layerId,
+      layer: 'fx',
     });
     ParticleEmitter.emitFlat({
       count: { min: 2, max: 5 },
@@ -197,7 +190,7 @@ export class Digger extends GameObject {
       texture: '_whiteCircle',
       tint: { min: 0x555555, max: 0xbbbbbb },
       alpha: { from: { min: 0.1, max: 0.26 }, to: 0 },
-      layerId,
+      layer: 'fx',
     });
   }
 
@@ -232,7 +225,6 @@ export class Digger extends GameObject {
     );
     const hitX = hit.hit ? hit.hitX : muzzleX + dirX * LASER_RANGE;
     const hitY = hit.hit ? hit.hitY : muzzleY + dirY * LASER_RANGE;
-    const layerId = fxLayerId();
     const beamDist = hit.hit ? hit.distance : LASER_RANGE;
     const numberOfParticles = beamDist > 150 ? 150 : beamDist / 10;
 
@@ -250,7 +242,7 @@ export class Digger extends GameObject {
       scale: { from: { min: 1.0, max: 1.4 }, to: { min: 1.5, max: 2 } },
       tint: { min: 0x7ef9ff, max: 0xddffff },
       alpha: { from: { min: 0.55, max: 0.95 }, to: 0 },
-      layerId,
+      layer: 'fx',
     });
 
     if (hit.hit) {
@@ -266,7 +258,7 @@ export class Digger extends GameObject {
         texture: '_whiteCircle',
         tint: { min: 0xaaffff, max: 0xffffff },
         alpha: { from: { min: 0.5, max: 0.95 }, to: 0 },
-        layerId,
+        layer: 'fx',
       });
     }
 

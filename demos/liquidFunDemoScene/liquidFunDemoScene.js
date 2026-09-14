@@ -9,7 +9,7 @@ import { Camera } from '/src/core/Camera.js';
 import { BLEND_MODES, LAYER_DENSITY_SOURCE, LAYER_SPLAT_FALLOFF, LAYER_SCALE_MODE } from '/src/core/ConfigDefaults.js';
 import WEED from '/src/index.js';
 
-const { Mouse, Keyboard, LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS, Layer } = WEED;
+const { Mouse, Keyboard, LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } = WEED;
 
 const F = LIQUIDFUN_FLAGS;
 const GF = LIQUIDFUN_GROUP_FLAGS;
@@ -214,7 +214,6 @@ export class LiquidFunDemoScene extends WEED.Scene {
   }
 
   spawnParticleGroups() {
-    const layerId = Layer.getId(LAYER);
     LiquidFun.emit({
       flags: F.VISCOUS,
       viscousScale: 1,
@@ -223,7 +222,7 @@ export class LiquidFunDemoScene extends WEED.Scene {
       posX: 1600,
       posY: 500,
       radius: 120,
-      layerId,
+      layer: LAYER,
     });
     LiquidFun.emit({
       flags: F.VISCOUS | F.TENSILE,
@@ -234,7 +233,7 @@ export class LiquidFunDemoScene extends WEED.Scene {
       posY: 500,
       radius: 400,
       trackGroup: true,
-      layerId,
+      layer: LAYER,
     });
     LiquidFun.emit({
       flags: F.WATER,
@@ -245,7 +244,7 @@ export class LiquidFunDemoScene extends WEED.Scene {
       posY: 200,
       halfWidth: 120,
       halfHeight: 80,
-      layerId,
+      layer: LAYER,
     });
   }
 
@@ -305,7 +304,7 @@ export class LiquidFunDemoScene extends WEED.Scene {
       shape: tool.shape,
       posX: Mouse.x,
       posY: Mouse.y,
-      layerId: Layer.getId(LAYER),
+      layer: LAYER,
     };
     if (tool.shape === 'box') {
       emit.halfWidth = tool.halfWidth;

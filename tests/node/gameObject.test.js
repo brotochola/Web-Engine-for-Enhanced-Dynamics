@@ -10,6 +10,7 @@ import { RigidBody } from '../../src/components/RigidBody.js';
 import { SpriteRenderer } from '../../src/components/SpriteRenderer.js';
 import { AdobeAnimComponent } from '../../src/components/AdobeAnimComponent.js';
 import { LightEmitter } from '../../src/components/LightEmitter.js';
+import { Collider } from '../../src/components/Collider.js';
 import { FlashComponent } from '../../src/components/FlashComponent.js';
 import { resetFreeList } from '../../src/core/atomicFreeList.js';
 
@@ -473,7 +474,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
   const previousSpriteScaleY = SpriteRenderer.scaleY;
   const previousSpriteDirty = SpriteRenderer.renderDirty;
   const previousSpriteOnScreen = SpriteRenderer.isItOnScreen;
-  const previousSpriteLayerId = SpriteRenderer.layerId;
+  const previousSpriteLayerMask = SpriteRenderer.layerMask;
   const previousSpriteUpdateBounds = SpriteRenderer.updateBounds;
 
   const previousAdobeAlpha = AdobeAnimComponent.alpha;
@@ -482,11 +483,14 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
   const previousAdobeScaleX = AdobeAnimComponent.scaleX;
   const previousAdobeScaleY = AdobeAnimComponent.scaleY;
   const previousAdobeOnScreen = AdobeAnimComponent.isItOnScreen;
-  const previousAdobeLayerId = AdobeAnimComponent.layerId;
+  const previousAdobeLayerMask = AdobeAnimComponent.layerMask;
   const previousAdobeApplyClipBounds = AdobeAnimComponent.applyClipBounds;
 
   const previousLayerGetName = Layer.getName;
   const previousLayerGetId = Layer.getId;
+  const previousLayerGetById = Layer.getById;
+  const previousFeederKind = Layer.feederKind;
+  const previousEntitiesId = Layer.ENTITIES_ID;
 
   const spriteBoundsUpdates = [];
   const adobeBoundsUpdates = [];
@@ -499,7 +503,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
   SpriteRenderer.scaleY = new Float32Array([1, 1]);
   SpriteRenderer.renderDirty = new Uint8Array([0, 0]);
   SpriteRenderer.isItOnScreen = new Uint8Array([0, 1]);
-  SpriteRenderer.layerId = new Uint8Array([0, 1]);
+  SpriteRenderer.layerMask = new Uint16Array([0, 1 << 1]);
   SpriteRenderer.updateBounds = (index) => spriteBoundsUpdates.push(index);
 
   AdobeAnimComponent.alpha = new Float32Array([1, 1]);
@@ -508,11 +512,14 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
   AdobeAnimComponent.scaleX = new Float32Array([1, 1]);
   AdobeAnimComponent.scaleY = new Float32Array([1, 1]);
   AdobeAnimComponent.isItOnScreen = new Uint8Array([1, 0]);
-  AdobeAnimComponent.layerId = new Uint8Array([7, 3]);
+  AdobeAnimComponent.layerMask = new Uint16Array([1 << 7, 1 << 3]);
   AdobeAnimComponent.applyClipBounds = (index) => adobeBoundsUpdates.push(index);
 
   Layer.getName = (id) => `layer-${id}`;
   Layer.getId = (name) => (name === 'fx' ? 9 : -1);
+  Layer.getById = (id) => ({ name: `layer-${id}` });
+  Layer.feederKind = () => 'sprites';
+  Layer.ENTITIES_ID = 4;
 
   const adobeOnly = Object.create(GameObject.prototype);
   adobeOnly.index = 0;
@@ -553,8 +560,8 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
     assert.ok(Math.abs(SpriteRenderer.scaleY[1] - 2.5) < 1e-6);
     assert.ok(Math.abs(AdobeAnimComponent.scaleX[1] - 1.5) < 1e-6);
     assert.ok(Math.abs(AdobeAnimComponent.scaleY[1] - 2.5) < 1e-6);
-    assert.equal(SpriteRenderer.layerId[1], 9);
-    assert.equal(AdobeAnimComponent.layerId[1], 9);
+    assert.equal(SpriteRenderer.layerMask[1], 1 << 9);
+    assert.equal(AdobeAnimComponent.layerMask[1], 1 << 9);
     assert.equal(both.layerName, 'layer-9');
     assert.deepEqual(spriteBoundsUpdates, [1]);
     assert.deepEqual(adobeBoundsUpdates, [0, 0, 1]);
@@ -568,7 +575,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
     SpriteRenderer.scaleY = previousSpriteScaleY;
     SpriteRenderer.renderDirty = previousSpriteDirty;
     SpriteRenderer.isItOnScreen = previousSpriteOnScreen;
-    SpriteRenderer.layerId = previousSpriteLayerId;
+    SpriteRenderer.layerMask = previousSpriteLayerMask;
     SpriteRenderer.updateBounds = previousSpriteUpdateBounds;
 
     AdobeAnimComponent.alpha = previousAdobeAlpha;
@@ -577,11 +584,14 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
     AdobeAnimComponent.scaleX = previousAdobeScaleX;
     AdobeAnimComponent.scaleY = previousAdobeScaleY;
     AdobeAnimComponent.isItOnScreen = previousAdobeOnScreen;
-    AdobeAnimComponent.layerId = previousAdobeLayerId;
+    AdobeAnimComponent.layerMask = previousAdobeLayerMask;
     AdobeAnimComponent.applyClipBounds = previousAdobeApplyClipBounds;
 
     Layer.getName = previousLayerGetName;
     Layer.getId = previousLayerGetId;
+    Layer.getById = previousLayerGetById;
+    Layer.feederKind = previousFeederKind;
+    Layer.ENTITIES_ID = previousEntitiesId;
   }
 });
 
@@ -603,5 +613,37 @@ test('Scene.getPoolStats handles entity classes that start at index 0', () => {
     });
   } finally {
     Transform.active = previousTransformActive;
+  }
+});
+
+test('setLayer(fire) keeps ENTITIES sprite bit and packs collider into fire', () => {
+  const previousSpriteMask = SpriteRenderer.layerMask;
+  const previousSpriteDirty = SpriteRenderer.renderDirty;
+  const previousColliderMask = Collider.layerMask;
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      { fire: { shader: { fragment: 'f', compute: 's' } } },
+      { BACKGROUND: {}, DECALS: {}, CASTED_SHADOWS: {}, ENTITIES: {}, LIGHTING: {} },
+      true
+    );
+    const fireId = Layer.getId('fire');
+    const entities = Layer.entitiesMask();
+    SpriteRenderer.layerMask = new Uint16Array(2);
+    SpriteRenderer.renderDirty = new Uint8Array(2);
+    Collider.layerMask = new Uint16Array(2);
+    const go = Object.create(GameObject.prototype);
+    go.index = 0;
+    go._hasComponents = { SpriteRenderer: true, Collider: true };
+    go.setLayer('fire');
+    assert.equal(SpriteRenderer.layerMask[0] & entities, entities);
+    assert.equal(SpriteRenderer.layerMask[0] & (1 << fireId), 1 << fireId);
+    assert.equal(Collider.layerMask[0] & (1 << fireId), 1 << fireId);
+    assert.equal(go.layerName, 'ENTITIES');
+  } finally {
+    Layer.reset();
+    SpriteRenderer.layerMask = previousSpriteMask;
+    SpriteRenderer.renderDirty = previousSpriteDirty;
+    Collider.layerMask = previousColliderMask;
   }
 });

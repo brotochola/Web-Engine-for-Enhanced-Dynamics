@@ -69,8 +69,8 @@ export class SpriteRenderer extends Component {
     tileOffsetU: Uint16Array,
     tileOffsetV: Uint16Array,
 
-    // Layer assignment (0 = default ENTITIES layer, set via GameObject.setLayer())
-    layerId: Uint8Array,
+    // Layer assignment (bit i = Layer.id; 0 = ENTITIES in collect for sprites)
+    layerMask: Uint16Array,
 
     // Visibility
     renderVisible: Uint8Array, // Override visibility (separate from culling)

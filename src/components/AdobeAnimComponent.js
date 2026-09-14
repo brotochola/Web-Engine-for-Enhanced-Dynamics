@@ -20,7 +20,7 @@ export class AdobeAnimComponent extends Component {
     rotS: Float32Array,
     alpha: Float32Array,
     tint: Uint32Array,
-    layerId: Uint8Array,
+    layerMask: Uint16Array,
     renderVisible: Uint8Array,
     isItOnScreen: Uint8Array, // Adobe-specific screen culling - updated by pre_render_worker
     boundsHalfW: Float32Array,
@@ -177,7 +177,7 @@ export class AdobeAnimComponent extends Component {
     AdobeAnimComponent.alpha[i] = o.alpha ?? AdobeAnimComponent.alpha[i] ?? 1;
     AdobeAnimComponent.tint[i] = o.tint ?? AdobeAnimComponent.tint[i] ?? 0xffffff;
     AdobeAnimComponent.renderVisible[i] = o.visible === false ? 0 : 1;
-    AdobeAnimComponent.layerId[i] = o.layerId ?? AdobeAnimComponent.layerId[i] ?? 0;
+    AdobeAnimComponent.layerMask[i] = o.layerMask ?? AdobeAnimComponent.layerMask[i] ?? 0;
 
     AdobeAnimComponent.clipId[i] = clipName ? AdobeAnimRegistry.getClipId(assetId, clipName) : 0;
     AdobeAnimComponent.applyClipBounds(i);

@@ -7,6 +7,7 @@
 import { BulletComponent } from '../components/BulletComponent.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { SharedAtomicPool } from './SharedAtomicPool.js';
+import { Layer } from './Layer.js';
 
 export class BulletPool extends SharedAtomicPool {
   static poolName = 'BulletPool';
@@ -42,7 +43,8 @@ export class BulletPool extends SharedAtomicPool {
    * @param {number} [config.anchorX=0] - Anchor X (0=left tip, 0.5=center)
    * @param {number} [config.anchorY=0.5] - Anchor Y (0.5=vertical center)
    * @param {number} [config.offsetY=0] - Visual Y offset (e.g., muzzle height); sort at y, render at y + offsetY
-   * @param {number} [config.layerId=0] - Layer ID for rendering (0 = default ENTITIES layer, non-zero = custom layer)
+   * @param {string|number} [config.layer] - Subscribe to one layer (same as layers: [layer])
+   * @param {Array<string|number>} [config.layers] - Subscription list; omit = ENTITIES
    * @returns {number} Bullet index or -1 if pool full
    */
   static spawn(config) {
@@ -141,7 +143,7 @@ export class BulletPool extends SharedAtomicPool {
     anchorX[i] = config.anchorX ?? 0;
     anchorY[i] = config.anchorY ?? 0.5;
     offsetY[i] = config.offsetY ?? 0;
-    BulletComponent.layerId[i] = config.layerId ?? 0;
+    BulletComponent.layerMask[i] = Layer.resolveSubscriptions(config, 'particle');
     BulletComponent.isItOnScreen[i] = 0;
     BulletComponent.active[i] = 1;
 

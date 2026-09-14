@@ -2776,6 +2776,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     if (visible !== undefined && displayObject) {
       displayObject.visible = visible;
+      if (layer === 'ENTITIES') {
+        if (this.spriteParticleMesh) this.spriteParticleMesh.visible = visible;
+        if (this.spriteGlowMesh) this.spriteGlowMesh.visible = visible;
+      }
     }
 
     if (blendMode !== undefined && displayObject) {
@@ -2808,6 +2812,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     if (zIndex !== undefined && displayObject) {
       displayObject.zIndex = zIndex;
+      if (layer === 'ENTITIES') {
+        if (this.spriteParticleMesh) this.spriteParticleMesh.zIndex = zIndex + 0.0005;
+        if (this.spriteGlowMesh) this.spriteGlowMesh.zIndex = zIndex + 0.001;
+      }
       this.pixiApp.stage.sortChildren();
     }
   }
@@ -4067,6 +4075,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       (data.liquidFunMaxCount | 0) ||
       (this.config?.physics?.liquidFun?.maxCount | 0) ||
       10000;
+    const particleMax =
+      (this.config?.particle?.maxParticles | 0) || 0;
 
     const layerMetas = metadata.layers;
     for (let mi = 0; mi < layerMetas.length; mi++) {
@@ -4114,7 +4124,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       let splatBatch = null;
       if (isLfDensity) {
         splatBatch = new LiquidFunDensitySplat({
-          capacity: Math.max(1, lfMax),
+          capacity: Math.max(1, lfMax + particleMax),
           label: `lf-splat-${layerName}`,
           blendMode: containerBlend,
           useWebGpu: this._useWebGpu,

@@ -1,5 +1,7 @@
 // Binary save body codec — sectioned little-endian payload (sole wire format).
 
+import { Layer } from '../Layer.js';
+
 export const SECTION = Object.freeze({
   META: 1,
   CAMERA: 2,
@@ -463,8 +465,8 @@ function writeLiquidFun(w, lf) {
     if (render.rotC) writeTyped(w, render.rotC);
     w.u8(render.rotS ? 1 : 0);
     if (render.rotS) writeTyped(w, render.rotS);
-    w.u8(render.layerId ? 1 : 0);
-    if (render.layerId) writeTyped(w, render.layerId);
+    w.u8(render.layerMask ? 1 : 0);
+    if (render.layerMask) writeTyped(w, render.layerMask);
   }
 
   // Appended after v4 render block; readers skip if the section ends here.
@@ -520,13 +522,21 @@ function readLiquidFun(r) {
       alpha: readTyped(r),
       rotC: r.u8() ? readTyped(r) : null,
       rotS: r.u8() ? readTyped(r) : null,
-      layerId: r.u8() ? readTyped(r) : null,
+      layerField: r.u8() ? readTyped(r) : null,
     };
   }
 
   let groupsLightIntensity = null;
   if (r.o < r.buf.byteLength) {
     groupsLightIntensity = r.u8() ? readTyped(r) : null;
+  }
+  let feedLayerId = null;
+  if (r.o < r.buf.byteLength) {
+    feedLayerId = r.u8() ? readTyped(r) : null;
+  }
+  if (render) {
+    render.layerMask = Layer.maskFromLegacy(render.layerField, feedLayerId);
+    delete render.layerField;
   }
 
   return {

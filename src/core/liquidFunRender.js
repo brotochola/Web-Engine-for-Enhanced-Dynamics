@@ -8,14 +8,14 @@
  *
  * alpha = WASM life-fade (1→0 when fadeToAlpha0). baseAlpha = emit opacity
  * (never overwritten by sync). rqAlpha = alpha * baseAlpha.
- * layerId = emit routing (0 = ENTITIES), same idea as ParticleComponent.layerId.
+ * layerMask = emit subscriptions (bit i = Layer.id). Same idea as SpriteRenderer.layerMask.
  */
 
 export function liquidFunRenderByteSize(maxCount) {
   const n = maxCount | 0;
   const header = 8;
-  // 9 f32 pose fields + tint u32 + textureId u16 + baseAlpha f32 + layerId u8
-  const bytes = header + 9 * n * 4 + n * 4 + n * 2 + n * 4 + n;
+  // 9 f32 pose fields + tint u32 + textureId u16 + baseAlpha f32 + layerMask u16
+  const bytes = header + 9 * n * 4 + n * 4 + n * 2 + n * 4 + n * 2;
   return (bytes + 3) & ~3;
 }
 
@@ -48,7 +48,7 @@ export function bindLiquidFunRender(sab, maxCount) {
   off = (off + 3) & ~3;
   const baseAlpha = new Float32Array(sab, off, n);
   off += n * 4;
-  const layerId = new Uint8Array(sab, off, n);
+  const layerMask = new Uint16Array(sab, off, n);
   return {
     count,
     x,
@@ -63,7 +63,7 @@ export function bindLiquidFunRender(sab, maxCount) {
     tint,
     textureId,
     baseAlpha,
-    layerId,
+    layerMask,
     maxCount: n,
   };
 }

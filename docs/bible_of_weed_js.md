@@ -393,20 +393,19 @@ Two ways to fill a shader layer’s density RT:
 
 | Path | Enum | How density is built |
 |------|------|----------------------|
-| **Sprite density** (default) | `LAYER_DENSITY_SOURCE.SPRITES` | Route sprites / `LiquidFun.emit({ texture, scale, layerId })` into the layer queue; atlas kernel (`_metaball` / `_lightGradient`). |
-| **Buffer density** | `LAYER_DENSITY_SOURCE.LIQUID_FUN` | Engine reads live HEAP pose and draws procedural soft kernels (no atlas, no type-7 queue). |
+| **Sprite density** (default) | `LAYER_DENSITY_SOURCE.SPRITES` | Route sprites / `LiquidFun.emit({ texture, scale, layer: 'name' })` into the layer queue; atlas kernel (`_metaball` / `_lightGradient`). |
+| **Buffer density** | `LAYER_DENSITY_SOURCE.LIQUID_FUN` | Engine reads LiquidFun HEAP **and** CPU ParticleEmitter poses whose `layerMask` includes this layer; procedural soft kernels (no atlas, no type-7/type-1 queue). |
 
 Look fragment is unchanged: samples `uTexture` (density) and applies threshold / foam / color. Author only the look frag + uniforms; engine owns the splat when configured.
 
 ### Compute layers (`LAYER_COMPUTE_SOURCE`)
 
-WebGPU-only. A compute layer has `maxItems: 0` (no sprite queue). The look draws a fullscreen field; colliders that `feedLayer()` that name are packed into storage buffers. `shader.maxParticles > 0` also packs LiquidFun HEAP particles (`x,y,vx,vy`) into the engine `particles` SSBO. Scene declares textures, extra buffers, and the pass graph. Bind layouts are inferred from WGSL `@group`/`@binding` (optional `compute.layouts` override). Engine packs bodies (and particles when capped), sizes storage textures from the canvas (optional `compute.size.scale`), writes a 16-float Frame prefix (time, camera, zoom, canvas, world, previous camera, particleCount), dispatches, and pins the `look: true` texture as `uTexture`. Look shaders that declare `uTime` / `uCameraPos` / `uZoom` / `uCanvasSize` / `uWorldSize` / `uViewSize` / `uDt` are filled every frame. See [`COMPUTE_LAYERS.md`](./COMPUTE_LAYERS.md).
+WebGPU-only. A compute layer has `maxItems: 0` (no sprite queue). The look draws a fullscreen field; colliders whose `layerMask` includes that name are packed into storage buffers. `shader.maxParticles > 0` also packs layer particles (LiquidFun HEAP + CPU ParticleEmitter, `x,y,vx,vy`) into the engine `particles` SSBO. Scene declares textures, extra buffers, and the pass graph. Bind layouts are inferred from WGSL `@group`/`@binding` (optional `compute.layouts` override). Engine packs bodies (and particles when capped), sizes storage textures from the canvas (optional `compute.size.scale`), writes a 16-float Frame prefix (time, camera, zoom, canvas, world, previous camera, particleCount), dispatches, and pins the `look: true` texture as `uTexture`. Look shaders that declare `uTime` / `uCameraPos` / `uZoom` / `uCanvasSize` / `uWorldSize` / `uViewSize` / `uDt` are filled every frame. See [`COMPUTE_LAYERS.md`](./COMPUTE_LAYERS.md).
 
 ```javascript
-this.setLayer('ENTITIES');
-this.feedLayer('fire');
+this.setLayer('fire');
 this.setFeedBits(1); // scene bit 0 (burning boxes ignite); engine ORs static onto bit 1
-// shader.maxParticles > 0: LiquidFun particles also feed the same compute layer
+// shader.maxParticles > 0: LiquidFun + CPU particles with that bit also feed the same compute layer
 ```
 
 
@@ -458,7 +457,7 @@ LiquidFun.emit({
   posX: Mouse.x,
   posY: Mouse.y,
   radius: 100,
-  layerId: Layer.getId('dulceDeLeche'),
+  layer: 'dulceDeLeche',
 });
 
 Layer.get('dulceDeLeche').setUniform('uCutoff', 0.35);
@@ -534,7 +533,8 @@ Any layer can own a background. `setTilemapBackground` returns a request-scoped 
 ```javascript
 // Inside entity tick() or onSpawned()
 this.setLayer('water');        // route to the 'water' custom layer
-this.setLayer('ENTITIES');     // move back to default
+this.setLayer('ENTITIES');     // ENTITIES only
+this.setLayer('fire');        // sprite stays ENTITIES; collider packed into fire
 
 // Read-only
 const name = this.layerName;   // 'water', 'ENTITIES', etc.
@@ -542,36 +542,32 @@ const name = this.layerName;   // 'water', 'ENTITIES', etc.
 
 ### Routing Particles, Decorations, and Bullets to Layers
 
-Any renderable type can target a custom layer via `layerId`:
+Any renderable type can subscribe via `layer` / `layers`:
 
 ```javascript
-// Particles (emit / emitFlat / emitZenithal — see docs/PARTICLES.md)
 WEED.ParticleEmitter.emit({
   x: this.x, y: this.y,
   texture: 'spark',
-  layerId: Layer.getId('FOREGROUND_FX'),
+  layer: 'FOREGROUND_FX',
 });
 
-// Decorations
 WEED.DecorationPool.spawn({
   x: 100, y: 200,
   texture: 'tree_canopy',
-  layerId: Layer.getId('CANOPY'),
+  layer: 'CANOPY',
 });
 
-// Bullets
 WEED.BulletPool.spawn({
   x: this.x, y: this.y, vx: 10, vy: 0,
   damage: 25, ownerId: this.index,
   texture: 'laser',
-  layerId: Layer.getId('LASER_LAYER'),
+  layer: 'LASER_LAYER',
 });
 
-// Light glows: 0 = inherit entity's layer, non-zero = explicit
 LightEmitter.layerIdOfGlowSprite[this.index] = Layer.getId('GLOW_LAYER');
 ```
 
-When `layerId` is 0 (default), everything goes to the main ENTITIES queue. Zero overhead for the common case. See `docs/LAYER_ROUTING.md` for the full architecture.
+Omit `layer`/`layers` → ENTITIES bit. See `docs/LAYER_ROUTING.md`.
 
 ### Sprite tiling (`setTileWorld` / `setTileLocal`)
 
@@ -818,7 +814,7 @@ WEED.ParticleEmitter.emit({
   speed: { min: 1, max: 3 },
   lifespan: 800,
   stayOnTheFloor: true,
-  layerId: 0,  // optional: route to custom layer
+  layer: 'sparks',
 });
 WEED.ParticleEmitter.emitFlat({
   x: this.x, y: this.y,

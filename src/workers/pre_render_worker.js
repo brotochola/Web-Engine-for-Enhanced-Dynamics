@@ -899,7 +899,7 @@ class PreRenderWorker extends AbstractWorker {
         // Build the final render queue (sorts by Y, writes to SAB)
         this.buildRenderQueue(deltaTime);
 
-        // Build custom layer render queues (entities routed by SpriteRenderer.layerId)
+        // Build custom layer render queues (entities routed by layerMask bits)
         if (detail) t0 = performance.now();
         this.buildCustomLayerQueues(deltaTime);
         if (detail) this.customLayerTimeThisFrame = performance.now() - t0;
@@ -993,14 +993,11 @@ class PreRenderWorker extends AbstractWorker {
         const count = lf.count[0] | 0;
         if (count <= 0) return;
 
-        const dens = this._lfDensityLayerIds;
         const x = lf.x;
         const y = lf.y;
-        const layerArr = lf.layerId;
         const bounds = this._frameCameraBoundsValid ? this.calculateCameraBounds() : null;
         if (!bounds) {
             for (let i = 0; i < count; i++) {
-                if (dens && layerArr && dens[layerArr[i] | 0]) continue;
                 this.collectRenderable(7, i, y[i] * Y_SORT_K);
                 this.visibleParticlesCount++;
             }
@@ -1015,7 +1012,6 @@ class PreRenderWorker extends AbstractWorker {
         const minY = bounds.minY;
         const maxY = bounds.maxY;
         for (let i = 0; i < count; i++) {
-            if (dens && layerArr && dens[layerArr[i] | 0]) continue;
             const sx = x[i] * camZoom - camOffX;
             const sy = y[i] * camZoom - camOffY;
             if (sx > minX && sx < maxX && sy > minY && sy < maxY) {
@@ -1410,58 +1406,63 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * Collect a visible renderable for the render queue.
-     * Any renderable with a non-default layerId is routed to that layer's
-     * dedicated collector; everything else goes into the default ENTITIES queue.
-     *
-     * Layer routing by type:
-     *   type 0 (entity)       -> SpriteRenderer.layerId[index]
-     *   type 1 (particle)     -> ParticleComponent.layerId[index]
-     *   type 7 (LiquidFun)    -> liquidFun.layerId[index] (emit-time)
-     *   type 2 (decoration)   -> DecorationComponent.layerId[index]
-     *   type 3 (light glow)   -> LightEmitter.layerIdOfGlowSprite[index] || SpriteRenderer.layerId[index]
-     *   type 4 (bullet)       -> BulletComponent.layerId[index]
-     *   type 5 (bullet trail) -> BulletComponent.layerId[index]
-     *   type 6 (adobe anim)   -> AdobeAnimComponent.layerId[index]
-     *
-     * @param {number} type - Renderable type (0-6)
-     * @param {number} index - Pool index into the corresponding component arrays
-     * @param {number} y - Composite sort key (typically worldY * DECORATION_Y_SORT_SCALE + innerZ; or -Z zenithal particles)
+     * layerMask bits route to each sprite-queue layer. Density bits are splat, not queued.
      */
     collectRenderable(type, index, y) {
         if (!this.renderQueueEnabled) return;
 
-        if (this._customLayerCollectors) {
-            let layerId = 0;
-            if (type === 0) layerId = SpriteRenderer.layerId[index];
-            else if (type === 1) layerId = ParticleComponent.layerId[index];
-            else if (type === 7) {
-                layerId = this.liquidFun?.layerId?.[index] || 0;
-                if (this._lfDensityLayerIds && this._lfDensityLayerIds[layerId]) return;
-            }
-            else if (type === 2) layerId = DecorationComponent.layerId[index];
-            else if (type === 3) layerId = LightEmitter.layerIdOfGlowSprite[index] || SpriteRenderer.layerId[index];
-            else if (type === 4 || type === 5) layerId = BulletComponent.layerId[index];
-            else if (type === 6) layerId = AdobeAnimComponent.layerId[index];
-
-            if (layerId !== 0 && layerId !== Layer.ENTITIES_ID) {
-                const collector = this._customLayerCollectors[layerId];
-                if (collector) {
-                    if (collector.count < collector.maxItems) {
-                        const wi = collector.count;
-                        collector.y[wi] = y;
-                        collector.type[wi] = type;
-                        collector.index[wi] = index;
-                        collector.count = wi + 1;
-                    } else if (!collector._overflowWarned) {
-                        collector._overflowWarned = true;
-                        console.warn(`[PRE_RENDER] Layer ${Layer.getName(layerId)} render queue full (max ${collector.maxItems}). Increase maxItems in scene config.`);
-                    }
-                }
-                return;
-            }
+        let mask = 0;
+        if (type === 0) mask = SpriteRenderer.layerMask ? SpriteRenderer.layerMask[index] | 0 : 0;
+        else if (type === 1) mask = ParticleComponent.layerMask ? ParticleComponent.layerMask[index] | 0 : 0;
+        else if (type === 7) mask = this.liquidFun?.layerMask?.[index] | 0;
+        else if (type === 2) mask = DecorationComponent.layerMask ? DecorationComponent.layerMask[index] | 0 : 0;
+        else if (type === 3) {
+            const g = LightEmitter.layerIdOfGlowSprite[index] | 0;
+            if (g) mask = 1 << g;
+            else mask = SpriteRenderer.layerMask ? SpriteRenderer.layerMask[index] | 0 : 0;
+        } else if (type === 4 || type === 5) {
+            mask = BulletComponent.layerMask ? BulletComponent.layerMask[index] | 0 : 0;
+        } else if (type === 6) {
+            mask = AdobeAnimComponent.layerMask ? AdobeAnimComponent.layerMask[index] | 0 : 0;
         }
 
-        // Default ENTITIES layer
+        const isParticle = type === 1 || type === 7;
+        if (!mask) {
+            if (isParticle) return;
+            mask = Layer.entitiesMask();
+        }
+
+        let wroteSprite = false;
+        for (let layerId = 0; layerId < Layer.count; layerId++) {
+            if (!(mask & (1 << layerId))) continue;
+            if (Layer.isLiquidFunDensityLayer(layerId)) continue;
+            if (!Layer.hasSpriteQueue(layerId)) continue;
+            this._writeRenderable(type, index, y, layerId);
+            wroteSprite = true;
+        }
+        if (!wroteSprite && !isParticle) {
+            this._writeRenderable(type, index, y, Layer.ENTITIES_ID);
+        }
+    }
+
+    _writeRenderable(type, index, y, layerId) {
+        if (this._customLayerCollectors && layerId !== 0 && layerId !== Layer.ENTITIES_ID) {
+            const collector = this._customLayerCollectors[layerId];
+            if (collector) {
+                if (collector.count < collector.maxItems) {
+                    const wi = collector.count;
+                    collector.y[wi] = y;
+                    collector.type[wi] = type;
+                    collector.index[wi] = index;
+                    collector.count = wi + 1;
+                } else if (!collector._overflowWarned) {
+                    collector._overflowWarned = true;
+                    console.warn(`[PRE_RENDER] Layer ${Layer.getName(layerId)} render queue full (max ${collector.maxItems}). Increase maxItems in scene config.`);
+                }
+            }
+            return;
+        }
+
         if (this._renderableCount >= this.renderQueueMaxItems) {
             if (!this._renderQueueOverflowWarned) {
                 this._renderQueueOverflowWarned = true;
@@ -1473,7 +1474,6 @@ class PreRenderWorker extends AbstractWorker {
         this._renderableY[writeIdx] = y;
         this._renderableType[writeIdx] = type;
         this._renderableIndex[writeIdx] = index;
-        // Stash pose for entity / decoration / adobe (emit copies — no second _displayPose)
         if (type === 0 || type === 6) {
             const pose = this._displayPoseOut;
             this._displayPose(index, pose);

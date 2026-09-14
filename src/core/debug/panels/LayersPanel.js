@@ -624,9 +624,8 @@ export class LayersPanel {
         if (controls.computeVal && layer.compute) {
           const meta = Layer._metadata?.layers?.[layer.id];
           const srcName = meta?.compute?.passes?.[0]?.source || meta?.shaderName || 'wgsl';
-          const feedN = Layer._feedCount ? Atomics.load(Layer._feedCount, layer.id) : 0;
           const maxB = meta?.maxBodies || 0;
-          controls.computeVal.textContent = `${srcName} · ${feedN}/${maxB} feed · ${computeSizeLabel(meta)} · WebGPU`;
+          controls.computeVal.textContent = `${srcName} · maxBodies ${maxB} · ${computeSizeLabel(meta)} · WebGPU`;
         }
       } else {
         controls.uniformsBtn.style.display = 'none';

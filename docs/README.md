@@ -23,7 +23,7 @@ This folder contains the engine notes that are closest to the code. The docs are
 | [`LIQUIDFUN.md`](./LIQUIDFUN.md)                       | liquidfun-c on Box2D 3 C, WASM/SAB fluids, flags, body collision                      |
 | [`PHYSICS_KERNEL_STUDY.md`](./PHYSICS_KERNEL_STUDY.md) | Historical JS kernel microbench (pre–Box2D 3.0)                                       |
 | [`LAYER_ROUTING.md`](./LAYER_ROUTING.md)               | Render layer routing, layer-owned backgrounds, and custom layer constraints           |
-| [`COMPUTE_LAYERS.md`](./COMPUTE_LAYERS.md)             | WebGPU compute layers, `feedLayer`, Box2D body pack, pass layouts                     |
+| [`COMPUTE_LAYERS.md`](./COMPUTE_LAYERS.md)             | WebGPU compute layers, `setLayer`/`layers` mask, Box2D body pack, pass layouts                     |
 | [`PARTICLES.md`](./PARTICLES.md)                       | ParticleEmitter emit / emitFlat / emitZenithal, physics vs view, decals               |
 | [`FLASHES.md`](./FLASHES.md)                           | Flash.create, castShadows, lighting budget vs persistent lights                       |
 | [`TILEMAP.md`](./TILEMAP.md)                           | Tiled JSON loading, SAB tile data, queries, viewport chunk streaming                  |

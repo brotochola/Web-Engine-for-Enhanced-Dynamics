@@ -3,10 +3,18 @@ import { Blower } from './gameObjects/blower.js';
 import { RocketBox } from './gameObjects/rocketBox.js';
 import { Floor } from '/demos/ballsScene/gameObjects/floor.js';
 import { Camera } from '/src/core/Camera.js';
-import { BLEND_MODES, LAYER_COMPUTE_SOURCE } from '/src/core/ConfigDefaults.js';
+import {
+  BLEND_MODES,
+  LAYER_COMPUTE_SOURCE,
+  LAYER_DENSITY_SOURCE,
+  LAYER_SPLAT_FALLOFF,
+  LAYER_SCALE_MODE,
+} from '/src/core/ConfigDefaults.js';
 import WEED from '/src/index.js';
 
 const { Mouse, Keyboard, LiquidFun, LIQUIDFUN_FLAGS } = WEED;
+
+const OIL_LAYER = 'oil';
 
 // World-fixed fire lattice (this demo's own concept, not an engine feature):
 // the compute texture covers the whole world at FIRE_CELL_SIZE world-units
@@ -100,6 +108,32 @@ export class BurningBoxesScene extends WEED.Scene {
     },
 
     layers: {
+      oil: {
+        zIndex: 3.4,
+        blendMode: BLEND_MODES.NORMAL,
+        resolution: 1,
+        scaleMode: LAYER_SCALE_MODE.LINEAR,
+        maxItems: 0,
+        ySorting: false,
+        shader: {
+          fragment: 'dulceDeLeche',
+          containerBlend: BLEND_MODES.ADD,
+          densitySource: LAYER_DENSITY_SOURCE.LIQUID_FUN,
+          splat: {
+            radius: 40,
+            falloff: LAYER_SPLAT_FALLOFF.QUADRATIC,
+            useParticleTint: true,
+            intensity: 0.166,
+          },
+          uniforms: {
+            uCutoff: { value: 0.53, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Cutoff', tip: 'Hide density below this. Higher = thinner looking fluid.' },
+            uRim: { value: 0.0, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Rim', tip: 'Density where the cream rim ends and the body starts. Keep above cutoff.' },
+            uDepth: { value: 2.0, type: 'f32', min: 0.01, max: 2, step: 0.01, label: 'Depth', tip: 'How quickly the body darkens from rim to burnt core.' },
+            uBodyAlpha: { value: 1, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Body alpha', tip: 'Opacity of thick fluid.' },
+            uEdgeAlpha: { value: 1, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Edge alpha', tip: 'Opacity of the thin rim.' },
+          },
+        },
+      },
       fire: {
         zIndex: 3.5,
         blendMode: BLEND_MODES.NORMAL,
@@ -184,6 +218,7 @@ export class BurningBoxesScene extends WEED.Scene {
       landscape: '/demos/img/background_lanscape.jpg',
     },
     shaders: {
+      dulceDeLeche: '/demos/shaders/dulceDeLeche.wgsl',
       fireLook: '/demos/burningBoxesScene/shaders/fireLook.wgsl',
       fireFluid: '/demos/burningBoxesScene/shaders/fireFluid.wgsl',
       fireStamp: '/demos/burningBoxesScene/shaders/fireStamp.wgsl',
@@ -224,10 +259,10 @@ export class BurningBoxesScene extends WEED.Scene {
     const w = this.config.worldWidth;
     const h = this.config.worldHeight;
     const floorY = h * 0.72;
-    this.spawnEntity(Floor, { x: w / 2, y: floorY, width: 1800, height: 80, sprite: '_white', tint: 0x3a322c, feedLayer: 'fire' });
-    this.spawnEntity(Floor, { x: w / 2 - 420, y: floorY - 220, width: 380, height: 36, sprite: '_white', tint: 0x4a4034, feedLayer: 'fire' });
-    this.spawnEntity(Floor, { x: w / 2 + 380, y: floorY - 340, width: 320, height: 36, sprite: '_white', tint: 0x4a4034, feedLayer: 'fire' });
-    // this.spawnEntity(Floor, { x: this.config.worldWidth / 2 - 80, y: floorY - 480, width: 36, height: 70, sprite: '_white', tint: 0x2c2622, feedLayer: 'fire' });
+    this.spawnEntity(Floor, { x: w / 2, y: floorY, width: 1800, height: 80, sprite: '_white', tint: 0x3a322c, layers: ['ENTITIES', 'fire'] });
+    this.spawnEntity(Floor, { x: w / 2 - 420, y: floorY - 220, width: 380, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['ENTITIES', 'fire'] });
+    this.spawnEntity(Floor, { x: w / 2 + 380, y: floorY - 340, width: 320, height: 36, sprite: '_white', tint: 0x4a4034, layers: ['ENTITIES', 'fire'] });
+    // this.spawnEntity(Floor, { x: this.config.worldWidth / 2 - 80, y: floorY - 480, width: 36, height: 70, sprite: '_white', tint: 0x2c2622, layers: ['ENTITIES', 'fire'] });
   }
 
   spawnCrates() {
@@ -260,19 +295,20 @@ export class BurningBoxesScene extends WEED.Scene {
     // this.spawnEntity(RocketBox, { x: cx + 200, y: floorY - 360, width: 96, height: 44, rotation: 0 });
   }
 
-  emitOil(x, y, radius) {
+  emitOil(x, y, radius, burning) {
     const views = LiquidFun.getViews();
     const n = views && views.count ? views.count[0] | 0 : 0;
     if (n > FIRE_LF_MAX - 80) return;
     LiquidFun.emit({
       flags: LIQUIDFUN_FLAGS.VISCOUS,
-      viscousScale: 5,
+      viscousScale: 9,
       tint: 0x6b3a1f,
-      lightIntensity: 50,
+      lightIntensity: burning ? 50 : 0,
       shape: 'circle',
       posX: x,
       posY: y,
       radius,
+      layers: burning ? ['fire'] : ['oil'],
     });
   }
 
@@ -283,7 +319,11 @@ export class BurningBoxesScene extends WEED.Scene {
     //   this.emitOil(this._oilX, this._oilY, 22);
     // }
     if (Keyboard.isPressed('q')) {
-      this.emitOil(Mouse.x, Mouse.y, 28);
+      this.emitOil(Mouse.x, Mouse.y, 28, true);
+    }
+
+    if (Keyboard.isPressed('e')) {
+      this.emitOil(Mouse.x, Mouse.y, 28, false);
     }
   }
 }

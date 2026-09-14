@@ -25,7 +25,7 @@ Box2D 3 (Erin Catto C, this fork) has opaque ids, SoA buffers, and no hook to in
 
 ### Particle pose: HEAP SAB (like Transform)
 
-`WebAssembly.Memory({ shared: true })` — the WASM heap **is** a SharedArrayBuffer. Rigid bodies already bind `Transform.x/y` onto it. LiquidFun particle `count` / `x` / `y` / `alpha` / `weight` use the same pattern via `liquidFunHeap` on `box2dReady`. The thin LiquidFun render SAB keeps only emit fields C does not own (`tint`, `scale*`, `textureId`, `layerId`, …).
+`WebAssembly.Memory({ shared: true })` — the WASM heap **is** a SharedArrayBuffer. Rigid bodies already bind `Transform.x/y` onto it. LiquidFun particle `count` / `x` / `y` / `alpha` / `weight` use the same pattern via `liquidFunHeap` on `box2dReady`. The thin LiquidFun render SAB keeps only emit fields C does not own (`tint`, `scale*`, `textureId`, `layerMask`, …).
 
 ### Rendering: sprite density vs buffer density
 
@@ -211,7 +211,9 @@ LiquidFun lagging rigid bodies by **1-2 frames is acceptable** for Weed — conf
 | Store | `ParticleComponent` SAB | WASM pos/vel/flags + **thin render SAB** |
 | Render | pre_render collect | pre_render collect | same pixi particle batch |
 
-Thin render SAB size is `physics.liquidFun.maxCount`, not `particle.maxParticles`. Fields: `x, y, scaleX, scaleY, rotC, rotS, alpha, tint, textureId`. No vx/vy/gravity/lifespan/z/flat/floor.
+Thin render SAB size is `physics.liquidFun.maxCount`, not `particle.maxParticles`. Fields: `x, y, scaleX, scaleY, rotC, rotS, alpha, tint, textureId, layerMask`. No vx/vy/gravity/lifespan/z/flat/floor.
+
+CPU ParticleEmitter poses use the same `layerMask` for density splat and compute pack. They never enter WASM.
 
 `particle.maxParticles` = CPU pool only (demo sets `0` so the CPU worker does not scan an empty 10k pool). `physics.liquidFun.maxCount` = fluids.
 
@@ -257,6 +259,8 @@ LiquidFun.emit({
   viscousScale: 10,
   tint: 0xc6862a,
   lightIntensity: 150, // optional; same units as LightEmitter; reach = 10*sqrt(I)
+  layer: 'oil',
+  layers: ['oil', 'fire'], // density + compute; omit = ENTITIES sprites only
   shape: 'circle',
   posX, posY, radius: 30,
   texture: '_whiteCircle',
@@ -335,4 +339,4 @@ Weed save games snapshot LiquidFun via sibling WASM (`D:\\xampp\\htdocs\\Box2d_3
 1. `restore_particles` — clear + recreate particles (pos / vel / flags)
 2. `restore_particle_groups_and_pairs` — reinstall `groupIndex`, elastic `restOffset`, group slots, spring/barrier pairs
 
-Also saved: thin render SAB fields (tint / textureId / scale / alpha). Rebuild WASM with `weedjs\\build_for_weed.bat`.
+Also saved: thin render SAB fields (tint / textureId / scale / alpha / layerMask). Old saves: `layerId` 0 → ENTITIES bit; `feedLayerId !== 255` ORs that bit. Rebuild WASM with `weedjs\\build_for_weed.bat`.

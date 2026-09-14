@@ -14,6 +14,7 @@ import { DecorationComponent } from '../components/DecorationComponent.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { SharedAtomicPool } from './SharedAtomicPool.js';
 import { randomRange } from './utils.js';
+import { Layer } from './Layer.js';
 import { evictDecorationFacade, clearAllDecorationFacades } from './decorationFacades.js';
 import { DecorationSpatial } from './DecorationSpatial.js';
 import {
@@ -263,7 +264,8 @@ export class DecorationPool extends SharedAtomicPool {
    * @param {boolean} [config.sway=false] - Enable sway animation
    * @param {number} [config.swayAmplitude=0.025] - Sway rotation in radians (~1.4°)
    * @param {number} [config.swayFrequency=1.0] - Sway speed multiplier
-   * @param {number} [config.layerId=0] - Layer ID for rendering (0 = default ENTITIES layer, non-zero = custom layer)
+   * @param {string|number} [config.layer] - Subscribe to one layer (same as layers: [layer])
+   * @param {Array<string|number>} [config.layers] - Subscription list; omit = ENTITIES
    * @returns {number} - Index of spawned decoration, or -1 if pool is full
    *
    * @example
@@ -385,8 +387,7 @@ export class DecorationPool extends SharedAtomicPool {
     swayFrequency[i] = config.swayFrequency ?? 1.0;
     DecorationComponent.swayPhase[i] = 0;
 
-    // Layer routing: 0 = default ENTITIES layer
-    DecorationComponent.layerId[i] = config.layerId ?? 0;
+    DecorationComponent.layerMask[i] = Layer.resolveSubscriptions(config, 'particle');
 
     // Initially off-screen (will be updated by culling)
     isItOnScreen[i] = 0;

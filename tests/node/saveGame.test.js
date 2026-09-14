@@ -225,6 +225,7 @@ test('liquidFun typed-array pack + binary roundtrip', async () => {
       scaleX: new Float32Array([1, 1]),
       scaleY: new Float32Array([1, 1]),
       alpha: new Float32Array([1, 0.5]),
+      layerMask: new Uint16Array([1 << 3, 0]),
     },
     groupsLightIntensity: new Float32Array(256),
   };
@@ -255,6 +256,7 @@ test('liquidFun typed-array pack + binary roundtrip', async () => {
   assert.ok(Math.abs(decoded.liquidFun.groups.strength[0] - 0.55) < 1e-6);
   assert.equal(decoded.liquidFun.pairs.count, 1);
   assert.deepEqual([...decoded.liquidFun.render.tint], [0xff0000, 0x00ff00]);
+  assert.deepEqual([...decoded.liquidFun.render.layerMask], [1 << 3, 0]);
   assert.equal(decoded.liquidFun.groupsLightIntensity[7], 5000);
 });
 

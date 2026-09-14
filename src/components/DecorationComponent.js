@@ -42,7 +42,7 @@ export class DecorationComponent extends Component {
     swayPhase: Float32Array, // Impulse progress in radians [0, π); unused for loop
 
     // === Layer Routing ===
-    layerId: Uint8Array, // 0 = default ENTITIES layer, non-zero = custom layer id
+    layerMask: Uint16Array,
 
     // === Parent attachment (GameObject-owned decorations) ===
     parentEntityIndex: Uint16Array, // 0xffff = no parent; else parent entity index (0 is valid)

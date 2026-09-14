@@ -84,9 +84,8 @@ export class ParticleComponent extends Component {
     // 0 = normal (alpha over), 1 = multiply (darkens underlying pixels)
     blendMode: Uint8Array,
 
-    // === Layer Routing ===
-    // 0 = default ENTITIES layer, non-zero = custom layer id
-    layerId: Uint8Array,
+    // Layer subscriptions (bit i = Layer.id)
+    layerMask: Uint16Array,
 
     // === Physics / view mode (set by ParticleEmitter.emit / emitFlat / emitZenithal) ===
     // flat=1: screen-plane XY + gravity on vy; ignore ground / floor flags

@@ -27,7 +27,7 @@ export class ComputeStressBox extends GameObject {
     this.setAnchor(0.5, 0.5);
     this.setScale(Math.max(width, height) / 14);
     this.setAlpha(0.7);
-    this.feedLayer('sim');
+    this.setLayer('sim');
   }
 
   tick() {}

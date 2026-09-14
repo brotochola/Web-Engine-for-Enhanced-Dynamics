@@ -86,27 +86,21 @@ Same idea as the look pass: `scale` is resolution. Rebuild only when that pixel 
 
 `maxBodies` is the collider feeder SSBO cap (default 512). Overflow clamps and warns once.
 
-`maxParticles` (default **0**) packs LiquidFun HEAP particles into the engine `particles` SSBO (`x,y,vx,vy`). `0` = off. Set `shader.source: LAYER_COMPUTE_SOURCE.LIQUID_FUN` for a particle-only layer (default cap 4096 if `maxParticles` is omitted). Particles with `layerId === 0` or `layerId ===` this compute layer are packed; others are skipped. Scene WGSL should scatter from particles (`dispatchFrom: 'particles'`) — do not loop particles inside the per-cell stamp.
+`maxParticles` (default **0**) packs **layer particles** into the engine `particles` SSBO (`x,y,vx,vy`): LiquidFun HEAP, then active CPU `ParticleComponent` poses, filtered by `layerMask & (1 << layerId)`, clamped to `maxParticles`. `0` = off. Set `shader.source: LAYER_COMPUTE_SOURCE.LIQUID_FUN` for a particle-only layer (default cap 4096 if `maxParticles` is omitted). Enum name stays `LIQUID_FUN` — it means particle pose, not LF-only. Missing `layerMask` on the thin SAB packs the live HEAP prefix. Scene WGSL should scatter from particles (`dispatchFrom: 'particles'`).
 
 Live packed count is `frame.particleCount` (FrameData prefix slot 15).
 
-## `setLayer` vs `feedLayer`
+## Subscriptions (`setLayer` / `layer` / `layers`)
 
-| API                 | What it does                                                                                |
-| ------------------- | ------------------------------------------------------------------------------------------- |
-| `setLayer('water')` | Sprite draws on that layer (`SpriteRenderer.layerId`). Metaball water **is** those sprites. |
-| `feedLayer('fire')` | This **collider** is packed into that layer’s compute storage. Sprite layer is unchanged.   |
-
-Compute layers use `maxItems: 0` (no sprite queue). Intended combo:
+One mask. Layer config picks the pipeline.
 
 ```javascript
-this.setLayer('ENTITIES'); // crate stays visible
-this.feedLayer('fire'); // same collider occupies the field
+this.setLayer('fire'); // crate sprite stays ENTITIES; collider packed into fire
+LiquidFun.emit({ layers: ['oil', 'fire'] }); // density splat + compute SSBO
+ParticleEmitter.emit({ layer: 'fire' }); // same compute SSBO (aesthetic CPU fuel)
 ```
 
-`GameObject` API: `feedLayer(name)`, `clearFeedLayer()`, `setFeedBits(byte)`, `getFeedBits()`. Not `ignite()` — that belongs on a scene class.
-
-`Collider.feedLayerId`: **255 = none** (`FEED_LAYER_NONE`). BACKGROUND is id 0.
+`setFeedBits(byte)` / `getFeedBits()` stay as opaque shader flags on the collider. Not membership.
 
 ## Body pack (GPU storage)
 

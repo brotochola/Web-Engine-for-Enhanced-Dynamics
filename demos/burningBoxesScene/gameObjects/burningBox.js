@@ -57,7 +57,7 @@ export class BurningBox extends GameObject {
     this.lightEmitter.height = 0;
     this.lightEmitter.glowHeightOffset = height * 0.25;
     this.lightEmitter.lightIntensity = 0;
-    this.feedLayer('fire');
+    this.setLayer('fire');
     if (config.startIgnited) this.ignite();
     else this.extinguish();
   }

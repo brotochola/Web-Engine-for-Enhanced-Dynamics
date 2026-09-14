@@ -13,10 +13,9 @@ import { FlashComponent } from '../components/FlashComponent.js';
 import { LightOccluder } from '../components/LightOccluder.js';
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { Layer } from './Layer.js';
-import { feedLayerAt, clearFeedLayerAt } from './computeFeed.js';
 import { Grid } from './Grid.js';
 import { Joint } from './Joint.js';
-import { ShapeType, SPRITE_TILE_MODE, FEED_LAYER_NONE, FEED_SLOT_NONE } from './ConfigDefaults.js';
+import { ShapeType, SPRITE_TILE_MODE } from './ConfigDefaults.js';
 import { collectComponents, cantorPair, distanceSq2D } from './utils.js';
 import {
   resetFreeList,
@@ -885,58 +884,58 @@ export class GameObject {
     return this;
   }
 
-  /** Current rendering layer name (read-only) */
+  /** First sprite-queue layer name in the subscription mask. */
   get layerName() {
-    if (this._hasComponents.SpriteRenderer) return Layer.getName(SpriteRenderer.layerId[this.index]);
-    if (this._hasComponents.adobeAnimComponent) return Layer.getName(AdobeAnimComponent.layerId[this.index]);
-    return null;
+    let mask = 0;
+    if (this._hasComponents.SpriteRenderer && SpriteRenderer.layerMask) {
+      mask = SpriteRenderer.layerMask[this.index] | 0;
+    } else if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.layerMask) {
+      mask = AdobeAnimComponent.layerMask[this.index] | 0;
+    }
+    if (!mask) return Layer.getName(Layer.ENTITIES_ID);
+    for (let id = 0; id < Layer.MAX_LAYERS; id++) {
+      if (!(mask & (1 << id))) continue;
+      if (Layer.feederKind(id) === 'sprites') return Layer.getName(id);
+    }
+    return Layer.getName(Layer.ENTITIES_ID);
   }
 
   /**
-   * Set rendering layer for this entity
-   * Entities in different layers are rendered into separate instanced batches
-   * and can have custom shaders applied (e.g., metaball water effect).
-   * @param {string} layerName - Layer name (e.g., 'water') or 'ENTITIES' for default
-   * @returns {this} For chaining
-   */
-  setLayer(layerName) {
-    const id = Layer.getId(layerName);
-    if (id === -1) {
-      console.warn(`setLayer: Layer "${layerName}" not found`);
-      return this;
-    }
-    if (this._hasComponents.SpriteRenderer && SpriteRenderer.layerId[this.index] !== id) {
-      SpriteRenderer.layerId[this.index] = id;
-      SpriteRenderer.renderDirty[this.index] = 1;
-    }
-    if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.layerId[this.index] !== id) {
-      AdobeAnimComponent.layerId[this.index] = id;
-    }
-    return this;
-  }
-
-  /**
-   * Feed this collider into a compute layer (sim input). Does not move the sprite.
-   * Use with setLayer for draw vs simulate on different layers.
+   * Subscribe this entity to one layer. Same as setLayers([layerName]).
    * @param {string} layerName
    * @returns {this}
    */
-  feedLayer(layerName) {
-    if (!this._hasComponents.Collider) return this;
-    const id = Layer.getId(layerName);
-    if (id === -1) {
-      console.warn(`feedLayer: Layer "${layerName}" not found`);
-      return this;
-    }
-    feedLayerAt(this.index, id);
+  setLayer(layerName) {
+    return this.setLayers([layerName]);
+  }
+
+  /**
+   * Subscribe this entity to layers (sprites, compute, density bits).
+   * Compute-only lists keep the sprite on ENTITIES.
+   * @param {Array<string|number>} names
+   * @returns {this}
+   */
+  setLayers(names) {
+    const mask = Layer.resolveSubscriptions({ layers: names || [] }, 'gameObject');
+    this._applyLayerMask(mask);
     return this;
   }
 
-  /** Stop feeding any compute layer. */
-  clearFeedLayer() {
-    if (!this._hasComponents.Collider) return this;
-    clearFeedLayerAt(this.index);
-    return this;
+  _applyLayerMask(mask) {
+    const i = this.index;
+    const m = mask & 0xffff;
+    if (this._hasComponents.SpriteRenderer && SpriteRenderer.layerMask) {
+      if (SpriteRenderer.layerMask[i] !== m) {
+        SpriteRenderer.layerMask[i] = m;
+        SpriteRenderer.renderDirty[i] = 1;
+      }
+    }
+    if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.layerMask) {
+      AdobeAnimComponent.layerMask[i] = m;
+    }
+    if (this._hasComponents.Collider && Collider.layerMask) {
+      Collider.layerMask[i] = m;
+    }
   }
 
   /**
@@ -1722,7 +1721,7 @@ export class GameObject {
       this.onDespawned();
     }
 
-    if (this._hasComponents?.Collider && Collider.feedLayerId) clearFeedLayerAt(i);
+    if (this._hasComponents?.Collider && Collider.layerMask) Collider.layerMask[i] = 0;
 
     DecorationPool.clearAttachedAndDespawnAll(i);
 
@@ -2178,9 +2177,8 @@ export class GameObject {
       Collider.polyCount[i] = 0;
       Collider.polyCentroidX[i] = 0;
       Collider.polyCentroidY[i] = 0;
-      if (Collider.feedLayerId) Collider.feedLayerId[i] = FEED_LAYER_NONE;
+      if (Collider.layerMask) Collider.layerMask[i] = 0;
       if (Collider.feedBits) Collider.feedBits[i] = 0;
-      if (Collider.feedSlot) Collider.feedSlot[i] = FEED_SLOT_NONE;
     }
 
     if (has.LightEmitter) {
@@ -2237,6 +2235,7 @@ export class GameObject {
       SpriteRenderer.spritesheetId[i] = 0;
       SpriteRenderer.loop[i] = 1; // Default: animations loop
       SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.layerMask[i] = 0;
     }
 
     if (has.adobeAnimComponent) {
@@ -2255,7 +2254,7 @@ export class GameObject {
       AdobeAnimComponent.rotS[i] = 0;
       AdobeAnimComponent.alpha[i] = 1;
       AdobeAnimComponent.tint[i] = 0xffffff;
-      AdobeAnimComponent.layerId[i] = 0;
+      AdobeAnimComponent.layerMask[i] = 0;
       AdobeAnimComponent.renderVisible[i] = 1;
       AdobeAnimComponent.isItOnScreen[i] = 0;
       AdobeAnimComponent.boundsHalfW[i] = 0;
@@ -2279,7 +2278,9 @@ export class GameObject {
           key === 'active' ||
           key === 'width' ||
           key === 'height' ||
-          key === 'radius'
+          key === 'radius' ||
+          key === 'layer' ||
+          key === 'layers'
         ) {
           continue;
         }
@@ -2299,8 +2300,10 @@ export class GameObject {
       if (instance.onSpawned) {
         instance.onSpawned(spawnConfig);
       }
-      if (typeof spawnConfig.feedLayer === 'string') {
-        instance.feedLayer(spawnConfig.feedLayer);
+      if (spawnConfig.layers) {
+        instance.setLayers(spawnConfig.layers);
+      } else if (spawnConfig.layer != null) {
+        instance.setLayer(spawnConfig.layer);
       }
 
       const entityComponentMap = EntityClass._componentClassMap || {};

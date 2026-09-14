@@ -40,7 +40,7 @@ export class BulletComponent extends Component {
     isItOnScreen: Uint8Array,
 
     // === Layer Routing ===
-    layerId: Uint8Array, // 0 = default ENTITIES layer, non-zero = custom layer id
+    layerMask: Uint16Array,
   };
 
   static bulletCount = 0;

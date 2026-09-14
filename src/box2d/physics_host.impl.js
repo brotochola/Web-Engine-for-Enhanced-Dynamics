@@ -143,7 +143,7 @@
     off = (off + 3) & ~3;
     var baseAlpha = new Float32Array(sab, off, n);
     off += n * 4;
-    var layerId = new Uint8Array(sab, off, n);
+    var layerMask = new Uint16Array(sab, off, n);
     return {
       count: count,
       x: x,
@@ -158,7 +158,7 @@
       tint: tint,
       textureId: textureId,
       baseAlpha: baseAlpha,
-      layerId: layerId,
+      layerMask: layerMask,
     };
   }
 
@@ -710,7 +710,7 @@
         tint: packView(L.tint),
         textureId: packView(L.textureId),
         baseAlpha: packView(L.baseAlpha),
-        layerId: packView(L.layerId),
+        layerMask: packView(L.layerMask),
       };
     }
 

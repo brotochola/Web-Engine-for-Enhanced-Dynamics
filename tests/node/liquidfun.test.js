@@ -6,9 +6,11 @@ import {
   drainCommandRing,
   enqueueSetAwake,
   enqueueSetLiquidFunLight,
+  enqueueSetLiquidFunLayers,
   BOX2D_CMD,
 } from '../../src/box2d/box2dCommandRing.js';
 import { LiquidFun, LIQUIDFUN_FLAGS } from '../../src/core/LiquidFun.js';
+import { Layer } from '../../src/core/Layer.js';
 import { ParticleEmitter } from '../../src/core/ParticleEmitter.js';
 import { GameObject } from '../../src/core/gameObject.js';
 import { Scene } from '../../src/core/Scene.js';
@@ -344,7 +346,7 @@ test('LiquidFun enqueues SET_LIQUIDFUN_LIFESPAN (ms -> sec) only when options.li
   assert.equal(fadeCmd.fadeToAlpha0, 1, 'fadeToAlpha0: true -> 1');
 });
 
-test('LiquidFun enqueues SET_LIQUIDFUN_SCALE for scale/alpha/layerId', () => {
+test('LiquidFun enqueues SET_LIQUIDFUN_SCALE for scale/alpha only', () => {
   const sab = createCommandRingSab(64);
   bindCommandRing(sab);
   const i32 = new Int32Array(sab);
@@ -366,7 +368,6 @@ test('LiquidFun enqueues SET_LIQUIDFUN_SCALE for scale/alpha/layerId', () => {
     radius: 20,
     scale: { min: 0.12, max: 0.3 },
     alpha: 0.5,
-    layerId: 4,
   });
 
   const received = [];
@@ -375,8 +376,8 @@ test('LiquidFun enqueues SET_LIQUIDFUN_SCALE for scale/alpha/layerId', () => {
     setLiquidFunEmit() {
       received.push({ type: 'setLiquidFunEmit' });
     },
-    setLiquidFunScale(layerId, scaleMin, scaleMax, alphaMin, alphaMax) {
-      received.push({ type: 'setLiquidFunScale', layerId, scaleMin, scaleMax, alphaMin, alphaMax });
+    setLiquidFunScale(scaleMin, scaleMax, alphaMin, alphaMax) {
+      received.push({ type: 'setLiquidFunScale', scaleMin, scaleMax, alphaMin, alphaMax });
     },
     createParticleGroupCircle() {
       received.push({ type: 'createParticleGroupCircle' });
@@ -397,12 +398,10 @@ test('LiquidFun enqueues SET_LIQUIDFUN_SCALE for scale/alpha/layerId', () => {
       'createParticleGroupCircle',
     ],
   );
-  assert.equal(received[3].layerId, 0);
   assert.ok(Math.abs(received[3].scaleMin - 0.2) < 1e-6);
   assert.ok(Math.abs(received[3].scaleMax - 0.2) < 1e-6);
   assert.ok(Math.abs(received[3].alphaMin - 1) < 1e-6);
   assert.ok(Math.abs(received[3].alphaMax - 1) < 1e-6);
-  assert.equal(received[6].layerId, 4);
   assert.ok(Math.abs(received[6].scaleMin - 0.12) < 1e-6);
   assert.ok(Math.abs(received[6].scaleMax - 0.3) < 1e-6);
   assert.ok(Math.abs(received[6].alphaMin - 0.5) < 1e-6);
@@ -557,6 +556,76 @@ test('enqueueSetLiquidFunLight drains SET_LIQUIDFUN_LIGHT', () => {
   assert.equal(received[1], 0);
 });
 
+test('LiquidFun enqueues SET_LIQUIDFUN_LAYERS for layer/layers', () => {
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig({
+      fire: { shader: { fragment: 'f', compute: 's' } },
+    }, {
+      BACKGROUND: {},
+      DECALS: {},
+      CASTED_SHADOWS: {},
+      ENTITIES: {},
+      LIGHTING: {},
+    }, true);
+    const fireId = Layer.getId('fire');
+    assert.ok(fireId >= 0);
+    const entities = Layer.entitiesMask();
+
+    const sab = createCommandRingSab(64);
+    bindCommandRing(sab);
+    const i32 = new Int32Array(sab);
+    const f32 = new Float32Array(sab);
+    LiquidFun.createSystem();
+    LiquidFun.emit({ shape: 'circle', posX: 0, posY: 0, radius: 20 });
+    LiquidFun.emit({ shape: 'circle', posX: 0, posY: 0, radius: 20, layer: 'fire' });
+    LiquidFun.emit({ shape: 'circle', posX: 0, posY: 0, radius: 20, layers: [] });
+
+    const received = [];
+    drainCommandRing(i32, f32, {
+      createParticleSystem() {},
+      setLiquidFunEmit() {
+        received.push({ type: 'setLiquidFunEmit' });
+      },
+      setLiquidFunLayers(mask) {
+        received.push({ type: 'setLiquidFunLayers', mask });
+      },
+      createParticleGroupCircle() {
+        received.push({ type: 'createParticleGroupCircle' });
+      },
+    });
+
+    assert.equal(BOX2D_CMD.SET_LIQUIDFUN_LAYERS, 27);
+    const layers = received.filter((r) => r.type === 'setLiquidFunLayers');
+    assert.equal(layers.length, 3);
+    assert.equal(layers[0].mask, entities);
+    assert.equal(layers[1].mask, 1 << fireId);
+    assert.equal(layers[2].mask, 0);
+  } finally {
+    Layer.reset();
+  }
+});
+
+test('enqueueSetLiquidFunLayers drains SET_LIQUIDFUN_LAYERS', () => {
+  const sab = createCommandRingSab(64);
+  bindCommandRing(sab);
+  const i32 = new Int32Array(sab);
+  const f32 = new Float32Array(sab);
+
+  enqueueSetLiquidFunLayers(1 << 3);
+  enqueueSetLiquidFunLayers(0);
+
+  const received = [];
+  drainCommandRing(i32, f32, {
+    setLiquidFunLayers(mask) {
+      received.push(mask);
+    },
+  });
+
+  assert.equal(BOX2D_CMD.SET_LIQUIDFUN_LAYERS, 27);
+  assert.deepEqual(received, [1 << 3, 0]);
+});
+
 test('liquidFun render SAB is not ParticleComponent', () => {
   const n = 16;
   const sab = new SharedArrayBuffer(liquidFunRenderByteSize(n));
@@ -565,15 +634,16 @@ test('liquidFun render SAB is not ParticleComponent', () => {
   assert.equal(views.x.length, n);
   assert.equal(views.textureId.length, n);
   assert.equal(views.baseAlpha.length, n);
-  assert.equal(views.layerId.length, n);
+  assert.equal(views.layerMask.length, n);
+  assert.equal(views.layerMask[0], 0);
   views.count[0] = 3;
   views.x[2] = 42;
   views.tint[2] = 0x3399ff;
   views.baseAlpha[2] = 0.5;
-  views.layerId[2] = 4;
+  views.layerMask[2] = 1 << 4;
   assert.equal(views.y[2], 0);
   assert.equal(views.baseAlpha[2], 0.5);
-  assert.equal(views.layerId[2], 4);
+  assert.equal(views.layerMask[2], 1 << 4);
   // px/py: previous-frame position snapshot feeding preRender.interpolation
   // 'interpolate' - not the same thing as ParticleComponent's simulation
   // state, which is why lifespan/flat (CPU-particle-only fields) still must

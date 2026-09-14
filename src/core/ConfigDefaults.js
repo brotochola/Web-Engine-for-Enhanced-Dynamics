@@ -80,16 +80,12 @@ export const LAYER_DENSITY_SOURCE = Object.freeze({
  * @enum {string}
  */
 export const LAYER_COMPUTE_SOURCE = Object.freeze({
-  /** Colliders with feedLayerId === this layer: pose/vel + box/circle/polygon verts. */
+  /** Colliders whose layerMask includes this layer: pose/vel + box/circle/polygon verts. */
   BOX2D_BODIES: 'box2dBodies',
-  /** LiquidFun HEAP particles packed into the engine `particles` SSBO. */
+  /** Layer particles (LiquidFun HEAP + CPU ParticleEmitter) packed into the engine `particles` SSBO. */
   LIQUID_FUN: 'liquidFun',
 });
 
-/** Collider.feedLayerId sentinel — BACKGROUND is layer id 0, so 0 cannot mean "none". */
-export const FEED_LAYER_NONE = 255;
-/** Collider.feedSlot sentinel. */
-export const FEED_SLOT_NONE = 0xffff;
 /** Default GPU/CPU body cap for BOX2D_BODIES compute layers. */
 export const COMPUTE_LAYER_DEFAULT_MAX_BODIES = 512;
 /** Default GPU particle cap when `shader.source` is LIQUID_FUN and `maxParticles` is omitted. */

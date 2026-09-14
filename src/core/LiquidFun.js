@@ -10,6 +10,7 @@ import {
 import { SpriteSheetRegistry } from './SpriteSheetRegistry.js';
 import { bindLiquidFunGroups, LIQUIDFUN_GROUPS_MAX } from './liquidFunGroups.js';
 import { bindLiquidFunRender } from './liquidFunRender.js';
+import { Layer } from './Layer.js';
 
 // Bits match liquidfun-c lfParticleFlag (not Google LiquidFun's extra listener bits).
 export const LIQUIDFUN_FLAGS = Object.freeze({
@@ -61,6 +62,7 @@ function resolveEmit(options) {
   const life = resolveLifespanSec(o.lifespan);
   const viscousScale = o.viscousScale != null ? o.viscousScale : 1;
   const lightIntensity = o.lightIntensity > 0 ? +o.lightIntensity : 0;
+  const layerMask = Layer.resolveSubscriptions(o, 'particle');
   return {
     posX: o.posX,
     posY: o.posY,
@@ -82,8 +84,8 @@ function resolveEmit(options) {
     fadeToAlpha0: !!o.fadeToAlpha0,
     scale: resolveRange(o.scale, 1),
     alpha: resolveRange(o.alpha, 1),
-    layerId: o.layerId != null ? o.layerId | 0 : 0,
-    hasSprite: o.scale != null || o.alpha != null || (o.layerId != null && (o.layerId | 0) !== 0),
+    layerMask,
+    hasSprite: o.scale != null || o.alpha != null,
   };
 }
 
@@ -108,7 +110,6 @@ function enqueueEmitParams(resolved) {
     const s = resolved.scale || { min: 1, max: 1 };
     const a = resolved.alpha || { min: 1, max: 1 };
     Box2dCommandRing.enqueueSetLiquidFunScale(
-      resolved.layerId,
       s.min,
       s.max,
       a.min,
@@ -118,6 +119,7 @@ function enqueueEmitParams(resolved) {
   if (resolved.lightIntensity > 0) {
     Box2dCommandRing.enqueueSetLiquidFunLight(resolved.lightIntensity);
   }
+  Box2dCommandRing.enqueueSetLiquidFunLayers(resolved.layerMask);
 }
 
 let _groupsViews = null;
@@ -205,7 +207,7 @@ export class LiquidFun {
       tint: thin?.tint || null,
       textureId: thin?.textureId || null,
       baseAlpha: thin?.baseAlpha || null,
-      layerId: thin?.layerId || null,
+      layerMask: thin?.layerMask || null,
       px: thin?.px || null,
       py: thin?.py || null,
       firstIndex: null,
@@ -240,7 +242,7 @@ export class LiquidFun {
         tint: _renderViews.tint,
         textureId: _renderViews.textureId,
         baseAlpha: _renderViews.baseAlpha,
-        layerId: _renderViews.layerId,
+        layerMask: _renderViews.layerMask,
         px: _renderViews.px,
         py: _renderViews.py,
         maxCount: _renderViews.maxCount,

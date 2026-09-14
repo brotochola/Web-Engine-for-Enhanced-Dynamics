@@ -36,7 +36,7 @@ export class RocketBox extends GameObject {
     this.setTint(config.tint ?? 0xc45c2a);
     this.setAlpha(1);
 
-    this.feedLayer('fire');
+    this.setLayer('fire');
     this.setFeedBits(HEAT | JET);
     this._thrust = config.thrust ?? THRUST;
   }

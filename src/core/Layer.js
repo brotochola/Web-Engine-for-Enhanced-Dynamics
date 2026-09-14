@@ -10,14 +10,9 @@
 //   replaces the old Scene.setTilemapBackground() API
 //
 // LAYER ROUTING:
-// - Any renderable type (entity, particle, decoration, bullet, light glow)
-//   can target any custom layer via a layerId field on its component
-// - Entities: SpriteRenderer.layerId
-// - Particles: ParticleComponent.layerId
-// - Decorations: DecorationComponent.layerId
-// - Bullets: BulletComponent.layerId
-// - Light glows: LightEmitter.layerIdOfGlowSprite (falls back to SpriteRenderer.layerId)
-// - layerId=0 means default ENTITIES queue (zero overhead for the common case)
+// - Renderables subscribe via layerMask (Uint16, bit = Layer.id). See Layer.resolveSubscriptions.
+// - GameObject.setLayer / setLayers; emit/spawn `layer` / `layers`.
+// - Each layer's config picks the pipeline (sprites, density splat, compute pack).
 //
 // THREAD SAFETY:
 // - Config arrays written once at init (read-only after), except alpha
@@ -76,6 +71,9 @@ export function reservedLookUniformFloatCount() {
 
 /** Panel hint keys carried into metadata (LayersPanel widgets). */
 const UNIFORM_HINT_KEYS = ['min', 'max', 'step', 'label', 'tip', 'negate', 'widget'];
+
+const SKIP_SUBSCRIBE = new Set(['BACKGROUND', 'DECALS', 'CASTED_SHADOWS', 'LIGHTING']);
+const LEGACY_FEED_NONE = 255;
 
 export class Layer {
     static MAX_LAYERS = 16;
@@ -865,6 +863,145 @@ export class Layer {
     static isComputeLayer(layerId) {
         const layer = this._byId[layerId | 0];
         return !!(layer && layer._compute);
+    }
+
+    /**
+     * How this layer consumes subscribed particles/colliders.
+     * @param {number} layerId
+     * @returns {'compute'|'density'|'sprites'|'builtin'|null}
+     */
+    static feederKind(layerId) {
+        const id = layerId | 0;
+        const layer = this._byId[id];
+        if (!layer) return null;
+        if (layer._compute) return 'compute';
+        if (layer._densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN) return 'density';
+        if (this._hasRenderQueue && this._hasRenderQueue[id] === 1) return 'sprites';
+        return 'builtin';
+    }
+
+    /** @param {number} id */
+    static bit(id) {
+        const i = id | 0;
+        if (i < 0 || i >= this.MAX_LAYERS) return 0;
+        return 1 << i;
+    }
+
+    /** ENTITIES bit after initializeFromConfig. 0 if not registered. */
+    static entitiesMask() {
+        const id = this.ENTITIES_ID | 0;
+        return id >= 0 ? (1 << id) : 0;
+    }
+
+    /**
+     * True when this layer bit should receive instanced sprites (not density/compute).
+     * @param {number} layerId
+     */
+    static hasSpriteQueue(layerId) {
+        const id = layerId | 0;
+        if (id < 0 || id >= this.MAX_LAYERS) return false;
+        if (this._hasRenderQueue && this._hasRenderQueue[id] === 1) return true;
+        return id === this.ENTITIES_ID;
+    }
+
+    static _resolveOneSubscription(entry, kind) {
+        let id = -1;
+        if (typeof entry === 'number') {
+            id = entry | 0;
+            if (!this.getById(id)) {
+                console.warn(`layer: id ${id} not found`);
+                return -1;
+            }
+        } else {
+            const name = String(entry);
+            if (!name) return -1;
+            id = this.getId(name);
+            if (id === -1) {
+                console.warn(`layer: Layer "${name}" not found`);
+                return -1;
+            }
+        }
+        const layer = this.getById(id);
+        const name = layer ? layer.name : null;
+        if (name && SKIP_SUBSCRIBE.has(name)) {
+            console.warn(`layer: Layer "${name}" is not a subscription target`);
+            return -1;
+        }
+        if (kind === 'gameObject' && this.feederKind(id) === 'density') {
+            console.warn(
+                `layer: Layer "${name}" is density (particles splat it); colliders are not splat`
+            );
+        }
+        return id;
+    }
+
+    static _subscriptionList(opts) {
+        if (!opts) return { omitted: true, list: null };
+        if (opts.layers !== undefined) {
+            const raw = opts.layers;
+            const list = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
+            return { omitted: false, list };
+        }
+        if (opts.layer !== undefined && opts.layer !== null) {
+            return { omitted: false, list: [opts.layer] };
+        }
+        return { omitted: true, list: null };
+    }
+
+    /**
+     * Subscription bitmask from `layer` / `layers`.
+     * @param {object|null|undefined} opts
+     * @param {'particle'|'gameObject'} [kind]
+     * @returns {number} Uint16 mask
+     */
+    static resolveSubscriptions(opts, kind = 'particle') {
+        const { omitted, list } = this._subscriptionList(opts);
+        if (omitted) return this.entitiesMask();
+        let mask = 0;
+        let hasSpriteQueue = false;
+        for (let i = 0; i < list.length; i++) {
+            const id = this._resolveOneSubscription(list[i], kind);
+            if (id < 0) continue;
+            mask |= this.bit(id);
+            if (this.feederKind(id) === 'sprites') hasSpriteQueue = true;
+        }
+        if (kind === 'gameObject') {
+            if (!hasSpriteQueue) mask |= this.entitiesMask();
+            return mask;
+        }
+        return mask;
+    }
+
+    /**
+     * Old saves stored u8 layerId + feedLayerId (255 = none).
+     * layerId 0 means ENTITIES bit. Non-255 feed bits are OR'd in.
+     * @param {Uint8Array|Uint16Array|null|undefined} layerField
+     * @param {Uint8Array|null|undefined} feedLayerId
+     * @returns {Uint16Array|null}
+     */
+    static maskFromLegacy(layerField, feedLayerId) {
+        const n = Math.max(layerField?.length || 0, feedLayerId?.length || 0);
+        if (!n) return layerField instanceof Uint16Array ? layerField : null;
+        if (layerField instanceof Uint16Array && !feedLayerId) return layerField;
+        const out = new Uint16Array(n);
+        const entities = this.entitiesMask();
+        if (layerField instanceof Uint16Array) {
+            out.set(layerField.subarray(0, n));
+        } else if (layerField) {
+            const len = Math.min(n, layerField.length);
+            for (let i = 0; i < len; i++) {
+                const id = layerField[i] | 0;
+                out[i] = id === 0 ? entities : (1 << id);
+            }
+        }
+        if (feedLayerId) {
+            const len = Math.min(n, feedLayerId.length);
+            for (let i = 0; i < len; i++) {
+                const fid = feedLayerId[i] | 0;
+                if (fid !== LEGACY_FEED_NONE && fid >= 0 && fid < this.MAX_LAYERS) out[i] |= 1 << fid;
+            }
+        }
+        return out;
     }
 
     /**
